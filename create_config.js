@@ -305,7 +305,6 @@ const createConfig = async () => {
     console.log(
       'Arquivo de configuração (config.env) criado com sucesso!'.blue
     )
-
   } catch (e) {
     handleError(e)
   }
