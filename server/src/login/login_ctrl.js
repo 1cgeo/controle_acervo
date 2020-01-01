@@ -41,7 +41,7 @@ const signJWT = (data, secret) => {
   })
 }
 
-controller.login = async (usuario, senha) => {
+controller.login = async (usuario, senha, cliente) => {
   const usuarioDb = await db.sapConn.oneOrNone(
     'SELECT id, administrador FROM dgeo.usuario WHERE login = $<usuario> and ativo IS TRUE',
     { usuario }
@@ -53,7 +53,7 @@ controller.login = async (usuario, senha) => {
     )
   }
 
-  const verifyAuthentication = await authenticateUser(usuario, senha)
+  const verifyAuthentication = await authenticateUser(usuario, senha, cliente)
   if (!verifyAuthentication) {
     throw new AppError('Usuário ou senha inválida', httpCode.Unauthorized)
   }
