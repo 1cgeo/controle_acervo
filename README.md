@@ -1,8 +1,12 @@
-﻿# Controle do Acervo v0.1
+﻿# Controle do Acervo
+Serviço em Node.js e cliente web para gerenciamento dos dados geoespaciais produzidos.
 
-Serviço em Node.js para gerenciamento dos dados geoespaciais produzidos.
-
-Deve ser usando em conjunto com o Plugin do Controle do Acervo para QGIS 3.
+Para sua utilização é necessária a utilização do [Serviço de Autenticação](https://github.com/1cgeo/auth_server) e do Plugin do Controle do Acervo para QGIS 3 (em desenvolvimento).
 
 
-Possui integração com o [SAP Dashboard](https://github.com/1cgeo/sap_dashboard)
+Possui integração com o [SAP Dashboard](https://github.com/1cgeo/sap_dashboard) e com o [Sistema de Pedidos da Mapoteca](https://github.com/1cgeo/mapoteca).
+
+
+## Releases
+
+Sem relases concluídas até o momento.
