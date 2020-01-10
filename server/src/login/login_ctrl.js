@@ -14,22 +14,13 @@ const { authenticateUser } = require('../authentication')
 
 const controller = {}
 
-const gravaLogin = async usuarioId => {
-  await db.sapConn.any(
-    `
-      INSERT INTO dgeo.login(usuario_id, data_login) VALUES($<usuarioId>, now())
-      `,
-    { usuarioId }
-  )
-}
-
 const signJWT = (data, secret) => {
   return new Promise((resolve, reject) => {
     jwt.sign(
       data,
       secret,
       {
-        expiresIn: '10h'
+        expiresIn: '1h'
       },
       (err, token) => {
         if (err) {
@@ -41,30 +32,28 @@ const signJWT = (data, secret) => {
   })
 }
 
-controller.login = async (usuario, senha, cliente) => {
-  const usuarioDb = await db.sapConn.oneOrNone(
-    'SELECT id, administrador FROM dgeo.usuario WHERE login = $<usuario> and ativo IS TRUE',
-    { usuario }
+controller.login = async (login, senha, aplicacao) => {
+  const usuarioDb = await db.conn.oneOrNone(
+    'SELECT uuid, administrador FROM dgeo.usuario WHERE login = $<login> and ativo IS TRUE',
+    { login }
   )
   if (!usuarioDb) {
     throw new AppError(
-      'Usuário não autorizado para utilizar o SCA',
-      httpCode.Unauthorized
+      'Usuário não autorizado para utilizar o Sistema de Controle do Acervo',
+      httpCode.BadRequest
     )
   }
 
-  const verifyAuthentication = await authenticateUser(usuario, senha, cliente)
+  const verifyAuthentication = await authenticateUser(login, senha, aplicacao)
   if (!verifyAuthentication) {
-    throw new AppError('Usuário ou senha inválida', httpCode.Unauthorized)
+    throw new AppError('Usuário ou senha inválida', httpCode.BadRequest)
   }
 
-  const { id, administrador } = usuarioDb
+  const { uuid, administrador } = usuarioDb
 
-  const token = await signJWT({ id, administrador }, JWT_SECRET)
+  const token = await signJWT({ uuid, administrador }, JWT_SECRET)
 
-  await gravaLogin(id)
-
-  return { token, administrador }
+  return { token, administrador, uuid }
 }
 
 module.exports = controller

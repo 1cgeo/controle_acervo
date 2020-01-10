@@ -19,10 +19,10 @@ controller.getEstilo = async () => {
 
 controller.getPathDownload = async arquivosId => {
   return db.conn.any(
-    `SELECT a.id, va.volume || '/' || a.path_relativo || '/' ||  a.nome || '.' || a.extensao AS path
+    `SELECT a.id, va.volume || '/' || a.path_relativo AS path, a.tamanho_mb
     FROM acervo.arquivo AS a
-    INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento
-    WHERE a.id IN ($<arquivosId:csv>)`
+    INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
+    WHERE a.id IN ($<arquivosId:csv>)`, { arquivosId }
   )
 }
 

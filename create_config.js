@@ -21,7 +21,7 @@ const readSqlFile = file => {
 }
 
 const verifyDotEnv = () => {
-  return fs.existsSync('config.env')
+  return fs.existsSync(path.join(__dirname, 'server', 'config.env'))
 }
 
 const verifyAuthServer = async authServer => {
@@ -44,21 +44,60 @@ const verifyAuthServer = async authServer => {
   }
 }
 
+const getAuthUserData = async (servidor, token, uuid) => {
+  const server = `${servidor}/usuarios/${uuid}`
+
+  try {
+    const config = {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      }
+    }
+    const response = await axios.get(server, config)
+
+    if (
+      !('status' in response) ||
+      response.status !== 200 ||
+      !('data' in response) ||
+      !('dados' in response.data)
+    ) {
+      throw new Error()
+    }
+    return response.data.dados
+  } catch (e) {
+    throw new Error('Erro ao se comunicar com o servidor de autenticação')
+  }
+}
+
 const verifyLoginAuthServer = async (servidor, usuario, senha) => {
-  const server = servidor.endsWith('/')
-    ? `${servidor}login`
-    : `${servidor}/login`
+  const server = `${servidor}/login`
+
   try {
     const response = await axios.post(server, {
       usuario,
-      senha
+      senha,
+      aplicacao: 'fme_web'
     })
-
-    if (!response || response.status !== 201 || !('data' in response)) {
-      throw new Error()
+    if (
+      !response ||
+      !('status' in response) ||
+      response.status !== 201 ||
+      !('data' in response) ||
+      !('dados' in response.data) ||
+      !('success' in response.data) ||
+      !('token' in response.data.dados) ||
+      !('uuid' in response.data.dados)
+    ) {
+      throw new Error('')
     }
 
-    return response.data.success || false
+    const authenticated = response.data.success || false
+    const authUserUUID = response.data.dados.uuid
+    const token = response.data.dados.token
+
+    const authUserData = await getAuthUserData(servidor, token, authUserUUID)
+    return { authenticated, authUserData }
   } catch (e) {
     throw new Error('Erro ao se comunicar com o servidor de autenticação')
   }
@@ -84,7 +123,7 @@ DB_PASSWORD=${dbPassword}
 JWT_SECRET=${secret}
 AUTH_SERVER=${authServer}`
 
-  fs.writeFileSync('config.env', env)
+  fs.writeFileSync(path.join(__dirname, 'server', 'config.env'), env)
 }
 
 const givePermission = async ({
@@ -103,11 +142,13 @@ const givePermission = async ({
   await connection.none(readSqlFile('./er/permissao.sql'), [dbUser])
 }
 
-const insertAdminUser = async (nome, connection) => {
+const insertAdminUser = async (authUserData, connection) => {
+  const { login, nome, nome_guerra: nomeGuerra, tipo_posto_grad_id: tpgId, uuid } = authUserData
+
   await connection.none(
-    `INSERT INTO dgeo.usuario (nome, nome_guerra, administrador, ativo, tipo_posto_grad_id) VALUES
-    ($<nome>, $<nome>, TRUE, TRUE, 3, 13)`,
-    { nome }
+    `INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid) VALUES
+    ($<login>, $<nome>, $<nomeGuerra>, $<tpgId>, TRUE, TRUE, $<uuid>)`,
+    { login, nome, nomeGuerra, tpgId, uuid }
   )
 }
 
@@ -117,7 +158,7 @@ const createDatabase = async (
   dbPort,
   dbServer,
   dbName,
-  authUser
+  authUserData
 ) => {
   const config = {
     user: dbUser,
@@ -137,7 +178,7 @@ const createDatabase = async (
     await t.none(readSqlFile('./er/dgeo.sql'))
     await t.none(readSqlFile('./er/acervo.sql'))
     await givePermission({ dbUser, connection: t })
-    await insertAdminUser(authUser, t)
+    await insertAdminUser(authUserData, t)
   })
 }
 
@@ -222,7 +263,7 @@ const createConfig = async () => {
         type: 'input',
         name: 'port',
         message: 'Qual a porta do serviço do SCA?',
-        default: 3013
+        default: 3015
       },
       {
         type: 'confirm',
@@ -259,18 +300,21 @@ const createConfig = async () => {
       dbUser,
       dbPassword,
       dbCreate,
-      authServer,
+      authServerRaw,
       authUser,
       authPassword
     } = await inquirer.prompt(questions)
 
+    const authServer = authServerRaw.endsWith('/') ? authServerRaw.slice(0, -1) : authServerRaw
+
     await verifyAuthServer(authServer)
 
-    const authenticated = await verifyLoginAuthServer(
+    const { authenticated, authUserData } = await verifyLoginAuthServer(
       authServer,
       authUser,
       authPassword
     )
+
     if (!authenticated) {
       throw new Error('Usuário ou senha inválida no Serviço de Autenticação.')
     }
@@ -282,10 +326,10 @@ const createConfig = async () => {
         dbPort,
         dbServer,
         dbName,
-        authUser
+        authUserData
       )
 
-      console.log('Banco de dados do SCA criado com sucesso!'.blue)
+      console.log('Banco de dados do Sistema de Controle do Acervo criado com sucesso!'.blue)
     } else {
       await givePermission({ dbUser, dbPassword, dbPort, dbServer, dbName })
 

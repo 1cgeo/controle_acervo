@@ -8,20 +8,16 @@ const {
   config: { AUTH_SERVER }
 } = require('../utils')
 
-const authorization = async (usuario, senha, aplicacao) => {
-  const server = `${AUTH_SERVER}/login`
+const getUsuarios = async (usuario, senha, cliente) => {
+  const server = `${AUTH_SERVER}/usuarios`
   try {
-    const response = await axios.post(server, {
-      usuario,
-      senha,
-      aplicacao
-    })
+    const response = await axios.get(server)
 
-    if (!response || response.status !== 201 || !('data' in response)) {
+    if (!response || response.status !== 200 || !('data' in response) || !('dados' in response.data)) {
       throw new Error()
     }
 
-    return response.data.success || false
+    return response.data.dados
   } catch (err) {
     if (
       'response' in err &&
@@ -40,4 +36,4 @@ const authorization = async (usuario, senha, aplicacao) => {
   }
 }
 
-module.exports = authorization
+module.exports = getUsuarios

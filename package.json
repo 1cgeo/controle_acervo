@@ -1,6 +1,6 @@
 {
-  "name": "controle_acervo",
-  "version": "0.0.1",
+  "name": "controle-acervo",
+  "version": "1.0.0",
   "description": "Sistema de Controle do Acervo",
   "main": "src/index.js",
   "repository": {
