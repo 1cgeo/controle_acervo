@@ -4,13 +4,6 @@ const { db } = require('../database')
 
 const controller = {}
 
-controller.getTipoProduto = async () => {
-  return db.conn.any(
-    `SELECT id, nome
-    FROM acervo.tipo_produto`
-  )
-}
-
 controller.getEstilo = async () => {
   return db.conn.oneOrNone(
     'SELECT * FROM public.layer_styles LIMIT 1'

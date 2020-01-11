@@ -8,7 +8,7 @@ const {
 
 const { loginRoute } = require('../login')
 const { acervoRoute } = require('../acervo')
-const { tipoProdutoRoute } = require('../produto')
+const { tipoProdutoRoute } = require('../tipo_produto')
 const { volumeRoute } = require('../volume')
 const { usuarioRoute } = require('../usuario')
 

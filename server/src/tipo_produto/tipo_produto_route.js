@@ -6,8 +6,8 @@ const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
 const { verifyAdmin } = require('../login')
 
-const tipoProdutoCtrl = require('./produto_ctrl')
-const tipoProdutoSchema = require('./produto_schema')
+const tipoProdutoCtrl = require('./tipo_produto_ctrl')
+const tipoProdutoSchema = require('./tipo_produto_schema')
 
 const router = express.Router()
 

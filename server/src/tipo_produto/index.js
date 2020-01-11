@@ -1,5 +1,5 @@
 'use strict'
 
 module.exports = {
-  tipoProdutoRoute: require('./produto_route')
+  tipoProdutoRoute: require('./tipo_produto_route')
 }
