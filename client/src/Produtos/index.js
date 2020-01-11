@@ -5,6 +5,7 @@ import TextField from '@material-ui/core/TextField'
 import { getTiposProduto, atualizaTipoProduto, deletaTipoProduto, criaTipoProduto } from './api'
 import { MessageSnackBar, MaterialTable } from '../helpers'
 import styles from './styles'
+import { handleApiError } from '../services'
 
 export default withRouter(props => {
   const classes = styles()
@@ -24,15 +25,8 @@ export default withRouter(props => {
         setTiposProduto(response)
         setLoaded(true)
       } catch (err) {
-        if (
-          'response' in err &&
-          'data' in err.response &&
-          'message' in err.response.data
-        ) {
-          setSnackbar({ status: 'error', msg: err.response.data.message, date: new Date() })
-        } else {
-          setSnackbar({ status: 'error', msg: 'Ocorreu um erro ao se comunicar com o servidor.', date: new Date() })
-        }
+        if (!isCurrent) return
+        handleApiError(err, setSnackbar)
       }
     }
     load()
@@ -50,15 +44,7 @@ export default withRouter(props => {
       setRefresh(new Date())
       setSnackbar({ status: 'success', msg: 'Tipo de produto adicionado com sucesso', date: new Date() })
     } catch (err) {
-      if (
-        'response' in err &&
-        'data' in err.response &&
-        'message' in err.response.data
-      ) {
-        setSnackbar({ status: 'error', msg: err.response.data.message, date: new Date() })
-      } else {
-        setSnackbar({ status: 'error', msg: 'Ocorreu um erro ao se comunicar com o servidor.', date: new Date() })
-      }
+      handleApiError(err, setSnackbar)
     }
   }
 
@@ -70,15 +56,7 @@ export default withRouter(props => {
       setRefresh(new Date())
       setSnackbar({ status: 'success', msg: 'Tipo de produto atualizado com sucesso', date: new Date() })
     } catch (err) {
-      if (
-        'response' in err &&
-        'data' in err.response &&
-        'message' in err.response.data
-      ) {
-        setSnackbar({ status: 'error', msg: err.response.data.message, date: new Date() })
-      } else {
-        setSnackbar({ status: 'error', msg: 'Ocorreu um erro ao se comunicar com o servidor.', date: new Date() })
-      }
+      handleApiError(err, setSnackbar)
     }
   }
 
@@ -90,15 +68,7 @@ export default withRouter(props => {
       setRefresh(new Date())
       setSnackbar({ status: 'success', msg: 'Tipo de produto deletado com sucesso', date: new Date() })
     } catch (err) {
-      if (
-        'response' in err &&
-        'data' in err.response &&
-        'message' in err.response.data
-      ) {
-        setSnackbar({ status: 'error', msg: err.response.data.message, date: new Date() })
-      } else {
-        setSnackbar({ status: 'error', msg: 'Ocorreu um erro ao se comunicar com o servidor.', date: new Date() })
-      }
+      handleApiError(err, setSnackbar)
     }
   }
 

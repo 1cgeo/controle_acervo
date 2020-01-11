@@ -1,4 +1,10 @@
 'use strict'
+const express = require('express')
+
+const { databaseVersion } = require('../database')
+const {
+  httpCode
+} = require('../utils')
 
 const { loginRoute } = require('../login')
 const { acervoRoute } = require('../acervo')
@@ -6,15 +12,27 @@ const { tipoProdutoRoute } = require('../produto')
 const { volumeRoute } = require('../volume')
 const { usuarioRoute } = require('../usuario')
 
-const routes = app => {
-  app.use('/login', loginRoute)
+const router = express.Router()
 
-  app.use('/acervo', acervoRoute)
+router.get('/', (req, res, next) => {
+  return res.sendJsonAndLog(
+    true,
+    'Sistema de Controle do Acervo operacional',
+    httpCode.OK,
+    {
+      database_version: databaseVersion.nome
+    }
+  )
+})
 
-  app.use('/usuarios', usuarioRoute)
+router.use('/login', loginRoute)
 
-  app.use('/tipos_produto', tipoProdutoRoute)
+router.use('/acervo', acervoRoute)
 
-  app.use('/volumes', volumeRoute)
-}
-module.exports = routes
+router.use('/usuarios', usuarioRoute)
+
+router.use('/tipos_produto', tipoProdutoRoute)
+
+router.use('/volumes', volumeRoute)
+
+module.exports = router
