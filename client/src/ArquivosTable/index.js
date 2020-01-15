@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { withRouter } from 'react-router-dom'
 
-import { getExecucaoPaginacao } from './api'
+import { getDadosPaginacao } from './api'
 import { MessageSnackBar, DataTable } from '../helpers'
 import { handleApiError } from '../services'
 
@@ -10,7 +10,7 @@ export default withRouter(props => {
 
   const fetchData = useMemo(() => async (page, perPage, column, sortDirection, filterText) => {
     try {
-      const response = await getExecucaoPaginacao(page, perPage, column, sortDirection, filterText)
+      const response = await getDadosPaginacao(page, perPage, column, sortDirection, filterText)
       if (!response) return
 
       return response
@@ -23,16 +23,15 @@ export default withRouter(props => {
   return (
     <>
       <DataTable
-        title='Logs de execução'
+        title='Arquivos'
         columns={[
           { name: 'uuid', selector: 'uuid' },
-          { name: 'Rotina', selector: 'rotina' },
-          { name: 'Versão', selector: 'versao_rotina' },
-          { name: 'Status', selector: 'nome' },
-          { name: 'Data', selector: 'data_execucao' },
-          { name: 'Tempo', selector: 'tempo_execucao' },
-          { name: 'Log', selector: 'log' },
-          { name: 'Parametros', selector: 'parametros' }
+          { name: 'Produto', selector: 'produto' },
+          { name: 'Tipo de produto', selector: 'tipo_produto' },
+          { name: 'Data do produto', selector: 'data_produto' },
+          { name: 'Arquivo', selector: 'arquivo' },
+          { name: 'Extensão', selector: 'extensao' },
+          { name: 'Tamanho (mb)', selector: 'tamanho_mb' }
 
         ]}
         fetchData={fetchData}

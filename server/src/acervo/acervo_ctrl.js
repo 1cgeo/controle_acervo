@@ -1,6 +1,7 @@
 'use strict'
 
 const { db } = require('../database')
+const { AppError, httpCode } = require('../utils')
 
 const controller = {}
 
@@ -10,9 +11,83 @@ controller.getEstilo = async () => {
   )
 }
 
+controller.downloadInfo = async (produtosIds, usuarioUuid) => {
+  const table = new db.pgp.helpers.TableName({
+    table: 'download',
+    schema: 'acervo'
+  })
+
+  const cs = new db.pgp.helpers.ColumnSet(
+    [
+      'produto_id',
+      'usuario_id',
+      'data'
+    ],
+    { table }
+  )
+
+  const usuario = db.oneOrNone('SELECT id FROM dgeo.usuario WHERE uuid = $<uuid>', { usuarioUuid })
+
+  if (!usuario) {
+    throw new AppError('Usuário não encontrado', httpCode.NotFound)
+  }
+
+  const downloads = []
+  const date = new Date()
+  produtosIds.forEach(id => {
+    downloads.push({
+      produto_id: id,
+      usuario_id: usuario.id,
+      data: date
+    })
+  })
+
+  const query = db.pgp.helpers.insert(downloads, cs)
+
+  return db.conn.none(query)
+}
+
+controller.getArquivosPagination = async (pagina, totalPagina, colunaOrdem, direcaoOrdem, filtro) => {
+  let where = ''
+
+  if (filtro) {
+    where = ` WHERE lower(concat_ws('|',p.uuid,p.nome,a.nome, a.extensao, a.tamanho_mb, tp.nome, p.data_produto)) LIKE '%${filtro.toLowerCase()}%'`
+  }
+
+  let sort = ''
+  if (colunaOrdem) {
+    if (direcaoOrdem) {
+      sort = ` ORDER BY e.${colunaOrdem} ${direcaoOrdem}`
+    } else {
+      sort = ` ORDER BY e.${colunaOrdem} ASC`
+    }
+  }
+
+  let paginacao = ''
+
+  if (pagina && totalPagina) {
+    paginacao = ` LIMIT ${totalPagina} OFFSET (${pagina} - 1)*${totalPagina}`
+  }
+
+  const sql = `SELECT p.uuid, p.nome AS produto, a.nome AS arquivo, a.extensao, 
+  a.tamanho_mb, p.data_produto, tp.nome AS tipo_produto
+  FROM acervo.produto AS p
+  INNER JOIN acervo.arquivo AS a ON a.produto_id = p.id
+  INNER JOIN acervo.tipo_produto AS tp ON tp.id = p.tipo_produto_id
+  ${where} ${sort} ${paginacao}`
+
+  const arquivos = await db.conn.any(sql)
+
+  const result = { arquivos }
+
+  result.total = arquivos.length
+
+  return result
+}
+
 controller.getPathDownload = async arquivosId => {
   return db.conn.any(
-    `SELECT a.id, va.volume || '/' || a.path_relativo AS path, a.tamanho_mb
+    `SELECT a.id, va.volume || '/' || a.nome || '.' || a.extensao AS path, a.tamanho_mb
     FROM acervo.arquivo AS a
     INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
     WHERE a.id IN ($<arquivosId:csv>)`, { arquivosId }

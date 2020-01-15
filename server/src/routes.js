@@ -1,16 +1,16 @@
 'use strict'
 const express = require('express')
 
-const { databaseVersion } = require('../database')
+const { databaseVersion } = require('./database')
 const {
   httpCode
-} = require('../utils')
+} = require('./utils')
 
-const { loginRoute } = require('../login')
-const { acervoRoute } = require('../acervo')
-const { tipoProdutoRoute } = require('../tipo_produto')
-const { volumeRoute } = require('../volume')
-const { usuarioRoute } = require('../usuario')
+const { loginRoute } = require('./login')
+const { acervoRoute } = require('./acervo')
+const { tipoProdutoRoute } = require('./tipo_produto')
+const { volumeRoute } = require('./volume')
+const { usuarioRoute } = require('./usuario')
 
 const router = express.Router()
 

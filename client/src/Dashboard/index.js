@@ -3,15 +3,11 @@ import { withRouter } from 'react-router-dom'
 import Grid from '@material-ui/core/Grid'
 import ReactLoading from 'react-loading'
 
-import CardGraph from './card_graph'
-import Card from './card'
-import UltimasExecucoesDataTable from './ultimas_execucoes'
-import StackedArea from './stacked_area'
-import RegularBar from './regular_bar'
+import UltimasModificacoesDataTable from './ultimas_modificacoes'
 import styles from './styles'
 
 import { getDashboardData } from './api'
-import { MessageSnackBar } from '../helpers'
+import { MessageSnackBar, Pie, Card, StackedArea, StackedBar } from '../helpers'
 
 export default withRouter(props => {
   const classes = styles()
@@ -19,14 +15,16 @@ export default withRouter(props => {
   const [snackbar, setSnackbar] = useState('')
   const [loaded, setLoaded] = useState(false)
 
-  const [execucoes, setExecucoes] = useState(0)
-  const [rotinas, setRotinas] = useState(0)
-  const [ultimasExecucoes, setUltimasExecucoes] = useState([])
-  const [execucoesPorDia, setExecucoesPorDia] = useState([])
-  const [execucoesPorMes, setExecucoesPorMes] = useState([])
-  const [execucoesRotinas, setExecucoesRotinas] = useState([])
-  const [errosRotinas, setErrosRotinas] = useState([])
-  const [tempoExecucao, setTempoExecucao] = useState([])
+  const [produtosCadastrados, setProdutosCadastrados] = useState(0)
+  const [tamanhoArquivos, setTamanhoArquivos] = useState(0)
+  const [downloads, setDownloads] = useState([])
+  const [tiposProdutos, setTiposProdutos] = useState([])
+  const [produtosTipo, setProdutosTipo] = useState([])
+  const [tamanhoVolume, setTamanhoVolume] = useState([])
+  const [downloadsUsuario, setDownloadsUsuario] = useState([])
+  const [situacaoBDGEx, setSituacaoBDGEx] = useState([])
+  const [produtosTipoDia, setProdutosTipoDia] = useState([])
+  const [ultimasModificacoes, setUltimasModificacoes] = useState([])
 
   useEffect(() => {
     let isCurrent = true
@@ -34,14 +32,16 @@ export default withRouter(props => {
       try {
         const response = await getDashboardData()
         if (!response || !isCurrent) return
-        setExecucoes(response.execucoes)
-        setRotinas(response.rotinas)
-        setUltimasExecucoes(response.ultimasExecucoes)
-        setExecucoesPorDia(response.execucoesPorDia)
-        setExecucoesPorMes(response.execucoesPorMes)
-        setExecucoesRotinas(response.execucoesRotinas)
-        setErrosRotinas(response.errosRotinas)
-        setTempoExecucao(response.tempoExecucao)
+        setProdutosCadastrados(response.produtosCadastrados)
+        setTamanhoArquivos(response.tamanhoArquivos)
+        setDownloads(response.downloads)
+        setTiposProdutos(response.tiposProdutos)
+        setProdutosTipo(response.produtosTipo)
+        setTamanhoVolume(response.tamanhoVolume)
+        setDownloadsUsuario(response.downloadsUsuario)
+        setSituacaoBDGEx(response.situacaoBDGEx)
+        setProdutosTipoDia(response.produtosTipoDia)
+        setUltimasModificacoes(response.ultimasModificacoes)
         setLoaded(true)
       } catch (err) {
         setSnackbar({ status: 'error', msg: 'Ocorreu um erro ao se comunicar com o servidor.', date: new Date() })
@@ -59,28 +59,34 @@ export default withRouter(props => {
       {loaded ? (
         <Grid container spacing={3}>
           <Grid item xs={12} md={6} lg={3}>
-            <CardGraph label='Execuções hoje' series={execucoesPorDia} seriesKey='execucoes' fill='#8dd3c7' />
+            <Card label='Produtos cadastrados' currentValue={produtosCadastrados} />
           </Grid>
           <Grid item xs={12} md={6} lg={3}>
-            <CardGraph label='Execuções este mês' series={execucoesPorMes} seriesKey='execucoes' fill='#bebada' />
+            <Card label='Tamanho dos arquivos' currentValue={tamanhoArquivos} />
           </Grid>
           <Grid item xs={12} md={6} lg={3}>
-            <Card label='Execuções' currentValue={execucoes} />
+            <Card label='Downloads' currentValue={downloads} />
           </Grid>
           <Grid item xs={12} md={6} lg={3}>
-            <Card label='Rotinas' currentValue={rotinas} />
+            <Card label='Tipos de produtos' currentValue={tiposProdutos} />
+          </Grid>
+          <Grid item xs={12} md={12} lg={6}>
+            <StackedBar title='Produtos por tipo' series={produtosTipo} dataKey='data' />
+          </Grid>
+          <Grid item xs={12} md={12} lg={6}>
+            <StackedBar title='Tamanho por volume' series={tamanhoVolume} dataKey='data' />
+          </Grid>
+          <Grid item xs={12} md={12} lg={8}>
+            <StackedArea title='Downloads por usuário' series={downloadsUsuario} dataKey='data' />
+          </Grid>
+          <Grid item xs={12} md={12} lg={4}>
+            <Pie title='Situação BDGEx' data={situacaoBDGEx} nameKey='situacao' valueKey='quantidade' />
           </Grid>
           <Grid item xs={12} md={12} lg={12}>
-            <StackedArea title='Execuções por dia por rotina' series={execucoesRotinas} dataKey='data' />
-          </Grid>
-          <Grid item xs={12} md={12} lg={6}>
-            <RegularBar title='Tempo de execução por rotina' series={tempoExecucao} fill='#8dd3c7' groupKey='rotina' valueKey='tempo_execucao_medio' />
-          </Grid>
-          <Grid item xs={12} md={12} lg={6}>
-            <StackedArea title='Erros por dia por rotina' series={errosRotinas} dataKey='data' />
+            <StackedArea title='Produtos carregados por dia' series={produtosTipoDia} dataKey='data' />
           </Grid>
           <Grid item xs={12}>
-            <UltimasExecucoesDataTable data={ultimasExecucoes} />
+            <UltimasModificacoesDataTable data={ultimasModificacoes} />
           </Grid>
         </Grid>
       )

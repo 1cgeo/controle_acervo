@@ -257,7 +257,7 @@ const createConfig = async () => {
         type: 'input',
         name: 'dbName',
         message: 'Qual o nome do banco de dados do SCA?',
-        default: 'sap'
+        default: 'sca'
       },
       {
         type: 'input',
@@ -281,14 +281,14 @@ const createConfig = async () => {
         type: 'input',
         name: 'authUser',
         message:
-          'Qual o nome do usuário já existente Serviço de Autenticação que será administrador do SAP?'
+          'Qual o nome do usuário já existente Serviço de Autenticação que será administrador do SCA?'
       },
       {
         type: 'password',
         name: 'authPassword',
         mask: '*',
         message:
-          'Qual a senha do usuário já existente Serviço de Autenticação que será administrador do SAP?'
+          'Qual a senha do usuário já existente Serviço de Autenticação que será administrador do SCA?'
       }
     ]
 

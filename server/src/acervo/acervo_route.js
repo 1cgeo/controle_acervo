@@ -4,7 +4,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
-const { verifyLogin } = require('../login')
+const { verifyLogin, verifyAdmin } = require('../login')
 
 const acervoCtrl = require('./acervo_ctrl')
 const acervoSchema = require('./acervo_schema')
@@ -22,6 +22,25 @@ router.get(
   })
 )
 
+router.get(
+  '/arquivos',
+  verifyAdmin,
+  schemaValidation({ query: acervoSchema.paginacaoQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getArquivosPagination(
+      req.query.pagina,
+      req.query.total_pagina,
+      req.query.coluna_ordem,
+      req.query.direcao_ordem,
+      req.query.filtro
+    )
+
+    const msg = 'Lista de execuções retornadas'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.post(
   '/path_download',
   verifyLogin,
@@ -30,6 +49,22 @@ router.post(
     const dados = await acervoCtrl.getPathDownload(req.body.arquivos_id)
 
     const msg = 'Paths para download retornados com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/download',
+  verifyLogin,
+  schemaValidation({ body: acervoSchema.produtosIds }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.downloadInfo(
+      req.body.produtos_id,
+      req.usuarioUuid
+    )
+
+    const msg = 'Informação de download cadastrada com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

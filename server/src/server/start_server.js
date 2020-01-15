@@ -4,11 +4,9 @@ const { databaseVersion } = require('../database')
 
 const app = require('./app')
 
-const {
-  logger,
-  AppError,
-  config: { VERSION, PORT }
-} = require('../utils')
+const { logger, AppError } = require('../utils')
+
+const { VERSION, PORT } = require('../config')
 
 const httpsConfig = () => {
   const fs = require('fs')
@@ -20,7 +18,7 @@ const httpsConfig = () => {
 
   if (!fs.existsSync(key) || !fs.existsSync(cert)) {
     throw new AppError(
-      'Para executar o SAP no modo HTTPS é necessário criar a chave e certificado com OpenSSL. Verifique a Wiki do SAP no Github para mais informações'
+      'Para executar o serviço no modo HTTPS é necessário criar a chave e certificado com OpenSSL. Verifique a Wiki do serviço no Github para mais informações'
     )
   }
 
@@ -33,7 +31,7 @@ const httpsConfig = () => {
   )
 
   return httpsServer.listen(PORT, () => {
-    logger.info('Servidor HTTPS do SAP iniciado', {
+    logger.info('Servidor HTTPS do Serviço iniciado', {
       success: true,
       information: {
         version: VERSION,
@@ -46,7 +44,7 @@ const httpsConfig = () => {
 
 const httpConfig = () => {
   return app.listen(PORT, () => {
-    logger.info('Servidor HTTP do SAP iniciado', {
+    logger.info('Servidor HTTP do Serviço iniciado', {
       success: true,
       information: {
         version: VERSION,

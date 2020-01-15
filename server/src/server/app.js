@@ -11,7 +11,7 @@ const rateLimit = require('express-rate-limit')
 const swaggerUi = require('swagger-ui-express')
 const swaggerJSDoc = require('swagger-jsdoc')
 
-const appRoutes = require('./routes')
+const appRoutes = require('../routes')
 const swaggerOptions = require('./swagger_options')
 
 const swaggerSpec = swaggerJSDoc(swaggerOptions)

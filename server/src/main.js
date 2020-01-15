@@ -5,7 +5,7 @@ const { startServer } = require('./server')
 const { db, databaseVersion } = require('./database')
 const { verifyAuthServer } = require('./authentication')
 
-db.createSapConn()
+db.createConn()
   .then(databaseVersion.load)
   .then(verifyAuthServer)
   .then(startServer)

@@ -13,6 +13,19 @@ models.arquivosIds = Joi.object().keys({
         .required()
     )
     .required()
+    .min(1)
+})
+
+models.produtosId = Joi.object().keys({
+  produtos_id: Joi.array()
+    .items(
+      Joi.number()
+        .integer()
+        .strict()
+        .required()
+    )
+    .required()
+    .min(1)
 })
 
 models.mvtParams = Joi.object().keys({
@@ -26,6 +39,14 @@ models.mvtParams = Joi.object().keys({
   z: Joi.number()
     .integer()
     .required()
+})
+
+models.paginacaoQuery = Joi.object().keys({
+  pagina: Joi.number().integer().min(1),
+  total_pagina: Joi.number().integer().min(5),
+  coluna_ordem: Joi.string().allow(''),
+  direcao_ordem: Joi.string().valid('asc', 'desc', ''),
+  filtro: Joi.string().allow('')
 })
 
 module.exports = models

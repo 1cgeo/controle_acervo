@@ -87,7 +87,6 @@ CREATE TABLE acervo.arquivo(
 	id SERIAL NOT NULL PRIMARY KEY,
 	volume_armazenamento_id SMALLINT NOT NULL REFERENCES acervo.volume_armazenamento (id),
 	produto_id SMALLINT NOT NULL REFERENCES acervo.produto (id),
-	path_relativo TEXT NOT NULL,
 	nome VARCHAR(255) NOT NULL,
 	extensao VARCHAR(255) NOT NULL,
 	tamanho_mb REAL NOT NULL,
@@ -131,10 +130,9 @@ CREATE TABLE acervo.produto_deletado(
 	nome VARCHAR(255) NOT NULL,
 	uuid UUID UNIQUE NOT NULL,
 	data_produto TIMESTAMP WITH TIME ZONE NOT NULL,
-	mi VARCHAR(255),
-	inom VARCHAR(255),
-	denominador_escala INTEGER,
 	tipo_produto_id SMALLINT REFERENCES acervo.tipo_produto (id),
+	data_delete  timestamp with time zone,
+	usuario_delete_id SMALLINT REFERENCES dgeo.usuario (id),
 	geom geometry(POLYGON, 4326) NOT NULL
 );
 
