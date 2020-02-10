@@ -17,6 +17,8 @@ const swaggerOptions = require('./swagger_options')
 const swaggerSpec = swaggerJSDoc(swaggerOptions)
 
 const {
+  AppError,
+  httpCode,
   logger,
   errorHandler,
   sendJsonAndLogMiddleware
