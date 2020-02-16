@@ -12,18 +12,12 @@ controller.getEstilo = async () => {
 }
 
 controller.downloadInfo = async (produtosIds, usuarioUuid) => {
-  const table = new db.pgp.helpers.TableName({
-    table: 'download',
-    schema: 'acervo'
-  })
-
   const cs = new db.pgp.helpers.ColumnSet(
     [
       'produto_id',
       'usuario_id',
-      'data'
-    ],
-    { table }
+      { name: 'data', mod: ':raw', init: () => 'NOW()' }
+    ]
   )
 
   const usuario = db.oneOrNone('SELECT id FROM dgeo.usuario WHERE uuid = $<uuid>', { usuarioUuid })
@@ -33,16 +27,14 @@ controller.downloadInfo = async (produtosIds, usuarioUuid) => {
   }
 
   const downloads = []
-  const date = new Date()
   produtosIds.forEach(id => {
     downloads.push({
       produto_id: id,
-      usuario_id: usuario.id,
-      data: date
+      usuario_id: usuario.id
     })
   })
 
-  const query = db.pgp.helpers.insert(downloads, cs)
+  const query = db.pgp.helpers.insert(downloads, cs, { table: 'download', schema: 'acervo' })
 
   return db.conn.none(query)
 }
