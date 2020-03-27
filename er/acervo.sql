@@ -17,6 +17,8 @@ INSERT INTO acervo.tipo_produto (nome) VALUES
 ('Modelo Digital de Superfície'),
 ('Modelo Digital de Terreno'),
 ('Carta Temática'),
+('Carta de Trafegabilidade'),
+('Conjunto de dados geoespaciais vetoriais - Trafegabilidade'),
 ('Conjunto de dados geoespaciais vetoriais - MGCP'),
 ('Fototriangulação'),
 ('Imagem aérea/satélite'),
@@ -24,8 +26,13 @@ INSERT INTO acervo.tipo_produto (nome) VALUES
 
 CREATE TABLE acervo.volume_armazenamento(
 	id SERIAL NOT NULL PRIMARY KEY,
-	tipo_produto_id SMALLINT NOT NULL REFERENCES acervo.tipo_produto (id),
 	volume VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE acervo.volume_tipo_produto(
+	id SERIAL NOT NULL PRIMARY KEY,
+	tipo_produto_id SMALLINT NOT NULL REFERENCES acervo.tipo_produto (id),
+	volume_armazenamento_id SMALLINT NOT NULL REFERENCES acervo.volume_armazenamento (id),
 	primario BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -36,11 +43,11 @@ $BODY$
     DECLARE erro BOOLEAN;
     BEGIN
 
-	SELECT count(CASE WHEN va.primario THEN 1 END) != 1 INTO erro 
-	FROM acervo.volume_armazenamento AS va
-	GROUP BY va.tipo_produto_id
+	SELECT count(CASE WHEN vtp.primario THEN 1 END) != 1 INTO erro 
+	FROM acervo.volume_tipo_produto AS vtp
+	GROUP BY vtp.tipo_produto_id;
 
-	IF erro THEN
+	IF erro IS TRUE THEN
 		RAISE EXCEPTION 'Deve existir um e somente um volume primário para cada tipo de produto';
 	END IF;
 
@@ -54,7 +61,7 @@ ALTER FUNCTION acervo.verifica_volume_primario()
   OWNER TO postgres;
 
 CREATE TRIGGER verifica_volume_primario
-BEFORE UPDATE OR INSERT ON acervo.volume_armazenamento
+BEFORE UPDATE OR INSERT ON acervo.volume_tipo_produto
 FOR EACH STATEMENT EXECUTE PROCEDURE acervo.verifica_volume_primario();
 
 --
@@ -92,38 +99,6 @@ CREATE TABLE acervo.arquivo(
 	tamanho_mb REAL NOT NULL,
 	metadado BOOLEAN NOT NULL DEFAULT FALSE
 );
-
--- Constraint
-CREATE OR REPLACE FUNCTION acervo.verifica_tipo_produto()
-  RETURNS trigger AS
-$BODY$
-    DECLARE nr_erro integer;
-    BEGIN
-
-	SELECT count(*) INTO nr_erro 
-	FROM acervo.arquivo AS a
-	INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
-	INNER JOIN acervo.produto AS p ON p.id = a.produto_id
-	WHERE va.tipo_produto_id != p.tipo_produto_id;
-
-	IF nr_erro > 0 THEN
-		RAISE EXCEPTION 'O arquivo deve ser adicionado em um volume compatível com o tipo_produto.';
-	END IF;
-
-	RETURN NEW;
-
-    END;
-$BODY$
-  LANGUAGE plpgsql VOLATILE
-  COST 100;
-ALTER FUNCTION acervo.verifica_tipo_produto()
-  OWNER TO postgres;
-
-CREATE TRIGGER verifica_tipo_produto
-BEFORE UPDATE OR INSERT ON acervo.arquivo
-FOR EACH STATEMENT EXECUTE PROCEDURE acervo.verifica_tipo_produto();
-
---
 
 CREATE TABLE acervo.produto_deletado(
 	id SERIAL NOT NULL PRIMARY KEY,

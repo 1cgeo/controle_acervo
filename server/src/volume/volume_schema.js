@@ -1,19 +1,31 @@
-'use strict'
+"use strict";
 
-const Joi = require('joi')
+const Joi = require("joi");
 
-const models = {}
+const models = {};
 
 models.idParams = Joi.object().keys({
   id: Joi.number()
     .integer()
     .required()
-})
+});
 
 models.volume = Joi.object().keys({
-  tipo_produto_id: Joi.number().integer().strict().required(),
-  volume: Joi.string().required(),
-  primario: Joi.boolean().strict()
-})
+  volume: Joi.string().required()
+});
 
-module.exports = models
+models.volumeTipoProduto = Joi.object().keys({
+  tipo_produto_id: Joi.number()
+    .integer()
+    .strict()
+    .required(),
+  volume_armazenamento_id: Joi.number()
+    .integer()
+    .strict()
+    .required(),
+  primario: Joi.boolean()
+    .strict()
+    .required()
+});
+
+module.exports = models;
