@@ -32,7 +32,7 @@ const signJWT = (data, secret) => {
 
 controller.login = async (login, senha, aplicacao) => {
   const usuarioDb = await db.conn.oneOrNone(
-    'SELECT uuid, administrador FROM dgeo.usuario WHERE login = $<login> and ativo IS TRUE',
+    'SELECT id, uuid, administrador FROM dgeo.usuario WHERE login = $<login> and ativo IS TRUE',
     { login }
   )
   if (!usuarioDb) {
@@ -47,9 +47,9 @@ controller.login = async (login, senha, aplicacao) => {
     throw new AppError('Usuário ou senha inválida', httpCode.BadRequest)
   }
 
-  const { uuid, administrador } = usuarioDb
+  const { id, uuid, administrador } = usuarioDb
 
-  const token = await signJWT({ uuid, administrador }, JWT_SECRET)
+  const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
 
   return { token, administrador, uuid }
 }

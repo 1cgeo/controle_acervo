@@ -28,6 +28,8 @@ const verifyAdmin = asyncHandler(async (req, res, next) => {
     )
   }
   req.usuarioUuid = decoded.uuid
+  req.usuarioId = decoded.id
+  req.administrador = true
 
   next()
 })
