@@ -1,22 +1,55 @@
-import { api } from '../services'
+import { api } from "../services";
 
 const getData = async () => {
   return api.axiosAll({
-    volumes: api.getData('/api/volume'),
-    tipoProduto: api.getData('/api/tipos_produdo')
-  })
-}
+    volumes: api.getData("/api/volumes"),
+    tipoProduto: api.getData("/api/tipos_produto"),
+    associacao: api.getData("/api/volumes/associacao")
+  });
+};
 
-const atualizaVolume = async (id, tipoProdutoId, volume, primario) => {
-  return api.put(`/api/volumes/${id}`, { tipo_produto_id: tipoProdutoId, volume, primario })
-}
+const atualizaVolume = async (id, volume) => {
+  return api.put(`/api/volumes/${id}`, {
+    volume
+  });
+};
 
 const deletaVolume = async id => {
-  return api.delete(`/api/volumes/${id}`)
-}
+  return api.delete(`/api/volumes/${id}`);
+};
 
-const criaVolume = async (tipoProdutoId, volume, primario) => {
-  return api.post('/api/volumes', { tipo_produto_id: tipoProdutoId, volume, primario })
-}
+const criaVolume = async volume => {
+  return api.post("/api/volumes", {
+    volume
+  });
+};
 
-export { getData, atualizaVolume, deletaVolume, criaVolume }
+const atualizaAssociacao = async (id, tipoProdutoId, volumeId, primario) => {
+  return api.put(`/api/volumes/associacao/${id}`, {
+    tipo_produto_id: tipoProdutoId,
+    volume_armazenamento_id: volumeId,
+    primario
+  });
+};
+
+const deletaAssociacao = async id => {
+  return api.delete(`/api/volumes/associacao/${id}`);
+};
+
+const criaAssociacao = async (tipoProdutoId, volumeId, primario) => {
+  return api.post("/api/volumes/associacao", {
+    tipo_produto_id: tipoProdutoId,
+    volume_armazenamento_id: volumeId,
+    primario
+  });
+};
+
+export {
+  getData,
+  atualizaVolume,
+  deletaVolume,
+  criaVolume,
+  atualizaAssociacao,
+  deletaAssociacao,
+  criaAssociacao
+};

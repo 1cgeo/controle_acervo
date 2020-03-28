@@ -5,7 +5,6 @@ const path = require("path");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const helmet = require("helmet");
-const xss = require("xss-clean");
 const hpp = require("hpp");
 const rateLimit = require("express-rate-limit");
 const swaggerUi = require("swagger-ui-express");
@@ -32,7 +31,6 @@ app.use(sendJsonAndLogMiddleware);
 
 app.use(bodyParser.json({ limit: "50mb" })); // parsear POST em JSON
 app.use(hpp()); // protection against parameter polution
-app.use(xss());
 
 // CORS middleware
 app.use(cors());

@@ -8,10 +8,17 @@ const controller = {};
 
 controller.getVolumes = async () => {
   return db.conn.any(
-    `SELECT va.id, va.volume, vta.primario, vta.tipo_produto_id, tp.nome AS tipo_produto
-    FROM acervo.volume_armazenamento AS va
-    INNER JOIN acervo.volume_tipo_produto AS vta ON vta.volume_armazenamento_id = va.id
-    INNER JOIN acervo.tipo_produto AS tp ON tp.id = va.tipo_produto_id`
+    `SELECT va.id, va.volume
+    FROM acervo.volume_armazenamento AS va`
+  );
+};
+
+controller.getVolumesAssociados = async () => {
+  return db.conn.any(
+    `SELECT vta.id, vta.volume_armazenamento_id, vta.primario, vta.tipo_produto_id, va.volume, tp.nome AS tipo_produto
+    FROM acervo.volume_tipo_produto AS vta
+    INNER JOIN acervo.volume_armazenamento AS va ON vta.volume_armazenamento_id = va.id
+    INNER JOIN acervo.tipo_produto AS tp ON tp.id = vta.tipo_produto_id`
   );
 };
 

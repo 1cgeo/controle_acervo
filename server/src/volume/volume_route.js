@@ -63,6 +63,18 @@ router.post(
   })
 );
 
+router.get(
+  "/associacao",
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await volumeCtrl.getVolumesAssociados();
+
+    const msg = "Volumes de armazenamento associados retornados com sucesso";
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 router.put(
   "/:id",
   schemaValidation({

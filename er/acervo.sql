@@ -36,36 +36,6 @@ CREATE TABLE acervo.volume_tipo_produto(
 	primario BOOLEAN NOT NULL DEFAULT TRUE
 );
 
--- Constraint
-CREATE OR REPLACE FUNCTION acervo.verifica_volume_primario()
-  RETURNS trigger AS
-$BODY$
-    DECLARE erro BOOLEAN;
-    BEGIN
-
-	SELECT count(CASE WHEN vtp.primario THEN 1 END) != 1 INTO erro 
-	FROM acervo.volume_tipo_produto AS vtp
-	GROUP BY vtp.tipo_produto_id;
-
-	IF erro IS TRUE THEN
-		RAISE EXCEPTION 'Deve existir um e somente um volume primário para cada tipo de produto';
-	END IF;
-
-	RETURN NEW;
-
-    END;
-$BODY$
-  LANGUAGE plpgsql VOLATILE
-  COST 100;
-ALTER FUNCTION acervo.verifica_volume_primario()
-  OWNER TO postgres;
-
-CREATE TRIGGER verifica_volume_primario
-BEFORE UPDATE OR INSERT ON acervo.volume_tipo_produto
-FOR EACH STATEMENT EXECUTE PROCEDURE acervo.verifica_volume_primario();
-
---
-
 CREATE TABLE acervo.produto(
 	id SERIAL NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
