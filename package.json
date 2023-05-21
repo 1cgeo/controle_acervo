@@ -7,17 +7,13 @@
     "type": "git",
     "url": "git://github.com/1cgeo/controle_acervo"
   },
-  "engines": {
-    "node": "~8.7.0",
-    "npm": ">=5.4.2"
-  },
   "scripts": {
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "config": "node create_config.js",
     "build": "node create_build.js",
     "create-docs": "node server/create_documentation.js",
     "start": "pm2 start server/src/index.js --name controle-acervo",
-    "start-dev": "concurrently \"cd server && npm run dev\" \"cd client && npm run start\""
+    "start-dev": "concurrently \"cd server && npm run dev\""
   },
   "keywords": [
     "Controle do Acervo",
@@ -30,15 +26,17 @@
     "url": "https://github.com/1cgeo/controle_acervo/issues"
   },
   "dependencies": {
+    "axios": "^0.27.2",
     "bcryptjs": "^2.4.3",
     "bluebird": "^3.7.2",
     "colors": "^1.4.0",
-    "concurrently": "^5.1.0",
-    "fs-extra": "^9.0.0",
-    "inquirer": "^7.1.0",
+    "concurrently": "^7.2.2",
+    "fs-extra": "^10.1.0",
+    "inquirer": "8.2.2",
+    "npm-check-updates": "^15.0.2",
     "npm-run": "^5.0.1",
-    "pg-promise": "^10.4.4",
-    "pgtools": "^0.3.0",
-    "pm2": "^4.2.3"
+    "pg-promise": "^10.11.1",
+    "pgtools": "^0.3.2",
+    "pm2": "^5.2.0"
   }
 }

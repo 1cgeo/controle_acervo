@@ -10,19 +10,29 @@ CREATE TABLE acervo.tipo_produto(
 );
 
 INSERT INTO acervo.tipo_produto (nome) VALUES
-('Conjunto de dados geoespaciais vetoriais'),
-('Carta Topográfica'),
+('Conjunto de dados geoespaciais vetoriais - ET-EDGV 2.1.3'),
+('Carta Topográfica - T34-700'),
 ('Carta Ortoimagem'),
 ('Ortoimagem'),
 ('Modelo Digital de Superfície'),
 ('Modelo Digital de Terreno'),
-('Carta Temática'),
-('Carta de Trafegabilidade'),
-('Conjunto de dados geoespaciais vetoriais - Trafegabilidade'),
+('Conjunto de dados geoespaciais vetoriais - ET-EDGV 3.0'),
 ('Conjunto de dados geoespaciais vetoriais - MGCP'),
 ('Fototriangulação'),
 ('Imagem aérea/satélite'),
-('Ponto de controle');
+('Ponto de controle'),
+('Carta Topográfica - ET-RDG'),
+('Carta Temática'),
+('Mapa de unidades'),
+('Carta de trafegabilidade'),
+('Rede de transporte'),
+('Mapa de geografia humana'),
+('Levantamento topográfico'),
+('Carta ortoimagem de OM'),
+('Conjunto de dados geoespaciais vetoriais - MUVD'),
+('Modelo Digital de Superfície - TREx'),
+('Conjunto de dados geoespaciais vetoriais para Ortoimagem - ET-EDGV 3.0'),
+('Conjunto de dados geoespaciais vetoriais para Trafegabilidade');
 
 CREATE TABLE acervo.volume_armazenamento(
 	id SERIAL NOT NULL PRIMARY KEY,
@@ -87,28 +97,5 @@ CREATE TABLE acervo.download(
 	usuario_id SMALLINT REFERENCES dgeo.usuario (id),
 	data TIMESTAMP WITH TIME ZONE NOT NULL
 );
-
--- Adapted from
--- https://raw.githubusercontent.com/jawg/blog-resources/master/how-to-make-mvt-with-postgis/bbox.sql
-CREATE OR REPLACE FUNCTION acervo.BBox(x integer, y integer, zoom integer)
-    RETURNS geometry AS
-$BODY$
-DECLARE
-    max numeric := 6378137 * pi();
-    res numeric := max * 2 / 2^zoom;
-    bbox geometry;
-BEGIN
-    return ST_Transform(ST_MakeEnvelope(
-        -max + (x * res),
-        max - (y * res),
-        -max + (x * res) + res,
-        max - (y * res) - res,
-        3857), 4326);
-END;
-$BODY$
-LANGUAGE plpgsql IMMUTABLE;
-
-ALTER FUNCTION acervo.BBox(integer,integer,integer)
-  OWNER TO postgres;
 
 COMMIT;

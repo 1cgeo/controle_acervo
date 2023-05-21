@@ -48,63 +48,6 @@ controller.atualizaUsuarioLista = async usuarios => {
   return db.sapConn.none(query);
 };
 
-controller.deletaUsuario = async uuid => {
-  return db.conn.tx(async t => {
-    const adm = await t.oneOrNone(
-      `SELECT uuid FROM dgeo.usuario 
-      WHERE uuid = $<uuid> AND administrador IS TRUE `,
-      { uuid }
-    );
-
-    if (adm) {
-      throw new AppError(
-        "Usuário com privilégio de administrador não pode ser deletado",
-        httpCode.BadRequest
-      );
-    }
-
-    await t.none(
-      `UPDATE acervo.produto
-      SET usuario_cadastramento_id = NULL
-      WHERE usuario_cadastramento_id IN
-      (SELECT id FROM dgeo.usuario WHERE uuid = $<uuid> AND administrador IS FALSE)`,
-      { uuid }
-    );
-
-    await t.none(
-      `UPDATE acervo.produto
-      SET usuario_modificacao_id = NULL
-      WHERE usuario_modificacao_id IN
-      (SELECT id FROM dgeo.usuario WHERE uuid = $<uuid> AND administrador IS FALSE)`,
-      { uuid }
-    );
-
-    await t.none(
-      `UPDATE acervo.download
-      SET usuario_id = NULL
-      WHERE usuario_id IN
-      (SELECT id FROM dgeo.usuario WHERE uuid = $<uuid> AND administrador IS FALSE)`,
-      { uuid }
-    );
-
-    await t.none(
-      `UPDATE acervo.produto_deletado
-      SET usuario_delete_id = NULL
-      WHERE usuario_delete_id IN
-      (SELECT id FROM dgeo.usuario WHERE uuid = $<uuid> AND administrador IS FALSE)`,
-      { uuid }
-    );
-
-    const result = await t.result(
-      "DELETE FROM dgeo.usuario WHERE uuid = $<uuid> AND administrador IS FALSE",
-      { uuid }
-    );
-    if (!result.rowCount || result.rowCount < 1) {
-      throw new AppError("Usuário não encontrado", httpCode.NotFound);
-    }
-  });
-};
-
 controller.getUsuariosAuthServer = async () => {
   const usuariosAuth = await getUsuariosAuth();
 
