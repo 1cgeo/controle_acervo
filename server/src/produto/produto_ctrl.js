@@ -5,120 +5,103 @@ const { AppError, httpCode } = require("../utils");
 
 const controller = {};
 
-controller.getEstilo = async () => {
-  return db.conn.oneOrNone("SELECT * FROM public.layer_styles LIMIT 1");
-};
+controller.criaProduto = async (produto, userId) => {
+  return db.sapConn.tx(async t => {
+    produto.uuid_produto = produto.uuid_produto || uuid.v4()
+    produto.uuid_versao = produto.uuid_versao || uuid.v4()
+    produto.data_cadastramento = new Date()
+    produto.usuario_cadastramento_id = userId
+    produto.geom = `ST_GeomFromEWKT('${produto.geom}')`
 
-controller.downloadInfo = async (produtosIds, usuarioUuid) => {
-  const cs = new db.pgp.helpers.ColumnSet([
-    "produto_id",
-    "usuario_id",
-    { name: "data", mod: ":raw", init: () => "NOW()" }
-  ]);
+    const colunasProduto = [
+      'nome', 'uuid_produto', 'uuid_versao', 'data_criacao',
+      'data_edicao', 'mi', 'inom', 'denominador_escala',
+      'tipo_produto_id', 'situacao_bdgex_id', 'orgao_produtor',
+      'descricao', 'data_cadastramento', 'usuario_cadastramento_id',
+      'geom'
+    ]
 
-  const usuario = db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<uuid>",
-    { usuarioUuid }
-  );
+    const csProduto = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
+    const queryProduto = db.pgp.helpers.insert(produto, csProduto)
+    const produtoId = await t.one(`${queryProduto} RETURNING id`)
 
-  if (!usuario) {
-    throw new AppError("Usuário não encontrado", httpCode.NotFound);
-  }
-
-  const downloads = [];
-  produtosIds.forEach(id => {
-    downloads.push({
-      produto_id: id,
-      usuario_id: usuario.id
-    });
-  });
-
-  const query = db.pgp.helpers.insert(downloads, cs, {
-    table: "download",
-    schema: "acervo"
-  });
-
-  return db.conn.none(query);
-};
-
-controller.getArquivosPagination = async (
-  pagina,
-  totalPagina,
-  colunaOrdem,
-  direcaoOrdem,
-  filtro
-) => {
-  let where = "";
-
-  if (filtro) {
-    where = ` WHERE lower(concat_ws('|',p.uuid,p.nome,a.nome, a.extensao, a.tamanho_mb, tp.nome, p.data_produto)) LIKE '%${filtro.toLowerCase()}%'`;
-  }
-
-  let sort = "";
-  if (colunaOrdem) {
-    if (direcaoOrdem) {
-      sort = ` ORDER BY e.${colunaOrdem} ${direcaoOrdem}`;
-    } else {
-      sort = ` ORDER BY e.${colunaOrdem} ASC`;
+    for (const arquivo of produto.arquivos) {
+      arquivo.produto_id = produtoId.id
     }
-  }
 
-  let paginacao = "";
+    const colunasArquivo = ['volume_armazenamento_id', 'produto_id', 'nome', 'descricao', 'extensao', 'tamanho_mb']
+    const csArquivo = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' })
+    const queryArquivo = db.pgp.helpers.insert(produto.arquivos, csArquivo)
+    await t.none(queryArquivo)
+  })
+}
 
-  if (pagina && totalPagina) {
-    paginacao = ` LIMIT ${totalPagina} OFFSET (${pagina} - 1)*${totalPagina}`;
-  }
+controller.atualizaProduto = async (produto, userId) => {
+  return db.sapConn.tx(async t => {
+    produto.data_modificacao = new Date()
+    produto.usuario_modificacao_id = userId
+    produto.geom = `ST_GeomFromEWKT('${produto.geom}')`
 
-  const sql = `SELECT p.uuid, p.nome AS produto, a.nome AS arquivo, a.extensao, 
-  a.tamanho_mb, p.data_produto, tp.nome AS tipo_produto
-  FROM acervo.produto AS p
-  INNER JOIN acervo.arquivo AS a ON a.produto_id = p.id
-  INNER JOIN acervo.tipo_produto AS tp ON tp.id = p.tipo_produto_id
-  ${where} ${sort} ${paginacao}`;
+    const colunasProduto = [
+      'id', 'nome', 'uuid_produto', 'uuid_versao', 'data_criacao',
+      'data_edicao', 'mi', 'inom', 'denominador_escala',
+      'tipo_produto_id', 'situacao_bdgex_id', 'orgao_produtor',
+      'descricao', 'data_modificacao', 'usuario_modificacao_id',
+      'geom'
+    ]
 
-  const arquivos = await db.conn.any(sql);
+    const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
+    const query = db.pgp.helpers.update(produto, cs) + `WHERE id = ${produto.id}`
 
-  const result = { arquivos };
+    await t.none(query)
+  })
+}
 
-  result.total = arquivos.length;
+controller.deleteArquivos = async (arquivoIds, userId) => {
+  return db.sapConn.tx(async t => {
+    const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE id IN ($<arquivoIds:csv>)', { arquivoIds })
+    const data_delete = new Date()
+    const usuario_delete_id = userId
 
-  return result;
-};
+    for (let arquivo of arquivos) {
+      await t.none(`
+        INSERT INTO acervo.arquivo_deletado(volume_armazenamento_id, produto_id, nome, descricao, extensao, tamanho_mb, data_delete, usuario_delete_id) 
+        VALUES($1, $2, $3, $4, $5, $6, $7, $8)`, 
+      [arquivo.volume_armazenamento_id, arquivo.produto_id, arquivo.nome, arquivo.descricao, arquivo.extensao, arquivo.tamanho_mb, data_delete, usuario_delete_id])
+    }
 
-controller.getPathDownload = async arquivosId => {
-  return db.conn.any(
-    `SELECT a.id, va.volume || '/' || a.nome || '.' || a.extensao AS path, a.tamanho_mb
-    FROM acervo.arquivo AS a
-    INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
-    WHERE a.id IN ($<arquivosId:csv>)`,
-    { arquivosId }
-  );
-};
+    await t.none('DELETE FROM acervo.arquivo WHERE id IN ($<arquivoIds:csv>)', { arquivoIds })
+  })
+}
 
-controller.getMvtProduto = async (tipoProduto, x, y, z) => {
-  return db.conn.one(
-    `
-  SELECT ST_AsMVT(q, 'produto_mvt', 4096, 'geom')
-    FROM (
-      SELECT
-          p.id, p.uuid, p.nome, p.mi, p.inom, p.data_produto, p.denominador_escala,
-          p.orgao_produtor, p.observacao, sb.nome AS situacao_bdgex,
-          ST_AsMVTGeom(
-              p.geom
-              BBox($<x>, $<y>, $<z>),
-              4096,
-              0,
-              false
-          ) AS geom
-      FROM acervo.produto AS p
-      INNER JOIN dominio.situacao_bdgex AS sb ON sb.code = p.situacao_bdgex_id
-      WHERE p.tipo_produto_id = $<tipoProduto>
-      AND p.geom && BBox($<x>, $<y>, $<z>)
-      AND ST_Intersects(p.geom, BBox($<x>, $<y>, $<z>))
-    ) q
-  `,
-    { tipoProduto, x, y, z }
-  );
-};
+controller.deleteProdutos = async (produtoIds, userId) => {
+  const data_delete = new Date()
+  const usuario_delete_id = userId
+
+  return db.sapConn.tx(async t => {
+    for (let id of produtoIds) {
+      // Primeiro, obtenha o produto que você deseja deletar.
+      const produto = await t.oneOrNone('SELECT * FROM acervo.produto WHERE id = $1', [id])
+      if (!produto) continue;
+
+      // Copie o produto para a tabela produto_deletado.
+      await t.none('INSERT INTO acervo.produto_deletado(nome, uuid_produto, uuid_versao, data_criacao, data_edicao, mi, inom, denominador_escala, tipo_produto_id, situacao_bdgex_id, orgao_produtor, descricao, data_cadastramento, usuario_cadastramento_id, data_modificacao, usuario_modificacao_id, data_delete, usuario_delete_id, geom) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)', 
+      [produto.nome, produto.uuid_produto, produto.uuid_versao, produto.data_criacao, produto.data_edicao, produto.mi, produto.inom, produto.denominador_escala, produto.tipo_produto_id, produto.situacao_bdgex_id, produto.orgao_produtor, produto.descricao, produto.data_cadastramento, produto.usuario_cadastramento_id, produto.data_modificacao, produto.usuario_modificacao_id, data_delete, usuario_delete_id, produto.geom])
+
+      // Mova os arquivos associados para a tabela arquivo_deletado.
+      const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE produto_id = $1', [id])
+      for (let arquivo of arquivos) {
+        await t.none('INSERT INTO acervo.arquivo_deletado(volume_armazenamento_id, produto_id, nome, descricao, extensao, tamanho_mb, data_delete, usuario_delete_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8)', 
+        [arquivo.volume_armazenamento_id, id, arquivo.nome, arquivo.descricao, arquivo.extensao, arquivo.tamanho_mb, data_delete, usuario_delete_id])
+      }
+
+      // Depois de mover todos os arquivos, delete-os da tabela original.
+      await t.none('DELETE FROM acervo.arquivo WHERE produto_id = $1', [id])
+
+      // Finalmente, delete o produto da tabela original.
+      await t.none('DELETE FROM acervo.produto WHERE id = $1', [id])
+    }
+  })
+}
 
 module.exports = controller;

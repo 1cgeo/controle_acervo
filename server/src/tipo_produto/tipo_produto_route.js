@@ -11,63 +11,60 @@ const tipoProdutoSchema = require('./tipo_produto_schema')
 
 const router = express.Router()
 
-router.put(
-  '/:id',
-  schemaValidation({
-    body: tipoProdutoSchema.produto,
-    params: tipoProdutoSchema.idParams
-  }),
-  verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    await tipoProdutoCtrl.updateTipoProduto(
-      req.params.id,
-      req.body.nome
-    )
-
-    const msg = 'Tipo de produto atualizado com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-router.delete(
-  '/:id',
-  schemaValidation({
-    params: tipoProdutoSchema.idParams
-  }),
-  verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    await tipoProdutoCtrl.deletaTipoProduto(req.params.id)
-
-    const msg = 'Tipo de produto deletado com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
 router.get(
-  '/',
+  '/tipo_produto',
   verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    const dados = await tipoProdutoCtrl.getTiposProduto()
+    const dados = await tipoProdutoCtrl.getTipoProduto()
 
-    const msg = 'Tipos de produto retornados com sucesso'
+    const msg = 'Tipo Produto retornada com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 
-router.post(
-  '/',
+router.delete(
+  '/tipo_produto',
   verifyAdmin,
-  schemaValidation({ body: tipoProdutoSchema.produto }),
+  schemaValidation({
+    body: tipoProdutoSchema.tipoProdutoIds
+  }),
   asyncHandler(async (req, res, next) => {
-    await tipoProdutoCtrl.criaTipoProduto(
-      req.body.nome
-    )
-    const msg = 'Tipo de produto adicionado com sucesso'
+    await tipoProdutoCtrl.deleteTipoProduto(req.body.tipo_produto_ids)
+
+    const msg = 'Entradas do Tipo Produto deletadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
+router.post(
+  '/tipo_produto',
+  verifyAdmin,
+  schemaValidation({
+    body: tipoProdutoSchema.tipoProduto
+  }),
+  asyncHandler(async (req, res, next) => {
+    await tipoProdutoCtrl.criaTipoProduto(req.body.tipo_produto)
+
+    const msg = 'Entradas do Tipo Produto criadas com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.Created)
+  })
+)
+
+router.put(
+  '/tipo_produto',
+  verifyAdmin,
+  schemaValidation({
+    body: tipoProdutoSchema.tipoProdutoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await tipoProdutoCtrl.atualizaTipoProduto(req.body.tipo_produto)
+
+    const msg = 'Entradas do Tipo Produto atualizadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
 

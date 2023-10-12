@@ -11,123 +11,119 @@ const volumeSchema = require("./volume_schema");
 
 const router = express.Router();
 
-router.put(
-  "/associacao/:id",
-  schemaValidation({
-    body: volumeSchema.volumeTipoProduto,
-    params: volumeSchema.idParams
-  }),
+router.get(
+  '/volume_tipo_produto',
   verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.updateAssociacao(
-      req.params.id,
-      req.body.tipo_produto_id,
-      req.body.volume_armazenamento_id,
-      req.body.primario
-    );
+    const dados = await volumeCtrl.getVolumeTipoProduto()
 
-    const msg = "Associação do volume atualizada com sucesso";
+    const msg = 'Volume Tipo Produto retornada com sucesso'
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
-);
+)
 
 router.delete(
-  "/associacao/:id",
-  schemaValidation({
-    params: volumeSchema.idParams
-  }),
+  '/volume_tipo_produto',
   verifyAdmin,
+  schemaValidation({
+    body: volumeSchema.volumeTipoProdutoIds
+  }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.deletaAssociacao(req.params.id);
+    await volumeCtrl.deleteVolumeTipoProduto(req.body.volume_tipo_produto_ids)
 
-    const msg = "Associação deletada com sucesso";
+    const msg = 'Entradas do Volume Tipo Produto deletadas com sucesso'
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
-);
+)
 
 router.post(
-  "/associacao",
+  '/volume_tipo_produto',
   verifyAdmin,
-  schemaValidation({ body: volumeSchema.volumeTipoProduto }),
+  schemaValidation({
+    body: volumeSchema.volumeTipoProduto
+  }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.associaVolume(
-      req.body.tipo_produto_id,
-      req.body.volume_armazenamento_id,
-      req.body.primario
-    );
-    const msg = "Associação adicionada com sucesso";
+    await volumeCtrl.criaVolumeTipoProduto(req.body.volume_tipo_produto)
 
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
+    const msg = 'Entradas do Volume Tipo Produto criadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
-);
-
-router.get(
-  "/associacao",
-  verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    const dados = await volumeCtrl.getVolumesAssociados();
-
-    const msg = "Volumes de armazenamento associados retornados com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
-  })
-);
+)
 
 router.put(
-  "/:id",
-  schemaValidation({
-    body: volumeSchema.volume,
-    params: volumeSchema.idParams
-  }),
+  '/volume_tipo_produto',
   verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    await volumeCtrl.updateVolume(req.params.id, req.body.volume);
-
-    const msg = "Volume de armazenamento atualizado com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
-  })
-);
-
-router.delete(
-  "/:id",
   schemaValidation({
-    params: volumeSchema.idParams
+    body: volumeSchema.volumeTipoProdutoAtualizacao
   }),
-  verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.deletaVolume(req.params.id);
+    await volumeCtrl.atualizaVolumeTipoProduto(req.body.volume_tipo_produto)
 
-    const msg = "Volume de armazenamento deletado com sucesso";
+    const msg = 'Entradas do Volume Tipo Produto atualizadas com sucesso'
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
-);
+)
 
 router.get(
-  "/",
+  '/volume_armazenamento',
   verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    const dados = await volumeCtrl.getVolumes();
+    const dados = await volumeCtrl.getVolumeArmazenamento()
 
-    const msg = "Volumes de armazenamento retornados com sucesso";
+    const msg = 'Volume de armazenamento retornada com sucesso'
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
-);
+)
+
+router.delete(
+  '/volume_armazenamento',
+  verifyAdmin,
+  schemaValidation({
+    body: volumeSchema.volumeArmazenamentoIds
+  }),
+  asyncHandler(async (req, res, next) => {
+    await volumeCtrl.deleteVolumeArmazenamento(req.body.volume_armazenamento_ids)
+
+    const msg = 'Entradas do volume de armazenamento deletadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
 
 router.post(
-  "/",
+  '/volume_armazenamento',
   verifyAdmin,
-  schemaValidation({ body: volumeSchema.volume }),
+  schemaValidation({
+    body: volumeSchema.volumeArmazenamento
+  }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.criaVolume(req.body.volume);
-    const msg = "Volume de armazenamento adicionado com sucesso";
+    await volumeCtrl.criaVolumeArmazenamento(req.body.volume_armazenamento)
 
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
+    const msg = 'Entradas do volume de armazenamento criadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
-);
+)
+
+router.put(
+  '/volume_armazenamento',
+  verifyAdmin,
+  schemaValidation({
+    body: volumeSchema.volumeArmazenamentoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await volumeCtrl.atualizaVolumeArmazenamento(req.body.volume_armazenamento)
+
+    const msg = 'Entradas do volume de armazenamento atualizadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
 
 module.exports = router;

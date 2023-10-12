@@ -11,59 +11,56 @@ const produtoSchema = require("./produto_schema");
 
 const router = express.Router();
 
-router.put(
-  "/:id",
+router.post(
+  '/produto',
+  verifyAdmin, 
   schemaValidation({
-    body: produtoSchema.produto,
-    params: produtoSchema.idParams
+    body: produtoSchema.produto
   }),
-  verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.updateProduto(req.params.id, req.body.volume);
+    const data = await produtoCtrl.criaProduto(req.body, req.usuarioId)
 
-    const msg = "Produto atualizado com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    const msg = 'Produto criado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.Created, data)
   })
-);
+)
+
+router.put(
+  '/produto',
+  verifyAdmin,
+  schemaValidation({
+    body: produtoSchema.produtoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.atualizaProduto(req.body, req.usuarioId)
+
+    const msg = 'Produto atualizado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
 
 router.delete(
-  "/:id",
+  '/produto',
   schemaValidation({
-    params: produtoSchema.idParams
+    body: produtoSchema.produtoIds
   }),
-  verifyAdmin,
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deletaProduto(req.params.id);
-
-    const msg = "Produto deletado com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    await produtoCtrl.deleteProdutos(req.body.produto_ids, req.usuarioId)
+    const msg = 'Produtos deletados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
-);
+)
 
-router.post(
-  "/",
-  verifyAdmin,
-  schemaValidation({ body: produtoSchema.produtos }),
+router.delete(
+  '/arquivo',
+  schemaValidation({
+    body: produtoSchema.arquivoIds
+  }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaProdutos(req.body.produtos);
-    const msg = "Produtos adicionados com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
+    await produtoCtrl.deleteArquivos(req.body.arquivo_ids, req.usuarioId)
+    const msg = 'Arquivos deletados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
-);
-
-router.get(
-  "/",
-  verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    const dados = await produtoCtrl.getProdutos();
-
-    const msg = "Produtos retornados com sucesso";
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
-  })
-);
+)
 
 module.exports = router;

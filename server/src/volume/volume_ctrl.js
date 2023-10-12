@@ -6,177 +6,148 @@ const { AppError, httpCode } = require("../utils");
 
 const controller = {};
 
-controller.getVolumes = async () => {
-  return db.conn.any(
-    `SELECT va.id, va.volume
-    FROM acervo.volume_armazenamento AS va`
-  );
-};
+controller.getVolumeArmazenamento = async () => {
+  return db.sapConn.any(
+    `SELECT id, volume, capacidade_mb FROM acervo.volume_armazenamento`
+  )
+}
 
-controller.getVolumesAssociados = async () => {
-  return db.conn.any(
-    `SELECT vta.id, vta.volume_armazenamento_id, vta.primario, vta.tipo_produto_id, va.volume, tp.nome AS tipo_produto
-    FROM acervo.volume_tipo_produto AS vta
-    INNER JOIN acervo.volume_armazenamento AS va ON vta.volume_armazenamento_id = va.id
-    INNER JOIN acervo.tipo_produto AS tp ON tp.id = vta.tipo_produto_id`
-  );
-};
+controller.criaVolumeArmazenamento = async volumeArmazenamento => {
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'volume', 'capacidade_mb'
+    ])
 
-controller.deletaVolume = async id => {
-  return db.conn.tx(async t => {
-    const usedVolume = await t.oneOrNone(
-      `SELECT volume_armazenamento_id FROM acervo.arquivo
-      WHERE volume_armazenamento_id = $<id> LIMIT 1`,
-      { id }
-    );
+    const query = db.pgp.helpers.insert(volumeArmazenamento, cs, {
+      table: 'volume_armazenamento',
+      schema: 'acervo'
+    })
 
-    if (usedVolume) {
-      throw new AppError(
-        "Não pode deletar volumes com arquivos associados",
-        httpCode.BadRequest
-      );
-    }
+    await t.none(query)
+  })
+}
 
-    const associatedVolume = await t.oneOrNone(
+controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'id', 'volume', 'capacidade_mb'
+    ])
+
+    const query = 
+      db.pgp.helpers.update(
+        volumeArmazenamento,
+        cs,
+        { table: 'volume_armazenamento', schema: 'acervo' },
+        {
+          tableAlias: 'X',
+          valueAlias: 'Y'
+        }
+      ) + 'WHERE Y.id = X.id'
+
+    await t.none(query)
+  })
+}
+
+controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
+  return db.sapConn.task(async t => {
+    const associated = await t.any(
       `SELECT volume_armazenamento_id FROM acervo.volume_tipo_produto
-      WHERE volume_armazenamento_id = $<id> LIMIT 1`,
-      { id }
-    );
+      WHERE volume_armazenamento_id in ($<volumeArmazenamentoIds:csv>)`,
+      { volumeArmazenamentoIds }
+    )
 
-    if (associatedVolume) {
+    if (associated.length > 0) {
       throw new AppError(
-        "Não pode deletar volumes associados a tipo de produto",
+        'Não é possível deletar pois há Volume Tipo Produto associados',
         httpCode.BadRequest
-      );
+      )
     }
 
-    const result = await t.result(
-      "DELETE FROM acervo.volume_armazenamento WHERE id = $<id>",
-      { id }
-    );
-    if (!result.rowCount || result.rowCount < 1) {
-      throw new AppError("Volume não encontrado", httpCode.NotFound);
-    }
-  });
-};
+    const exists = await t.any(
+      `SELECT id FROM acervo.volume_armazenamento
+      WHERE id in ($<volumeArmazenamentoIds:csv>)`,
+      { volumeArmazenamentoIds }
+    )
 
-controller.criaVolume = async volume => {
-  return db.conn.tx(async t => {
-    const duplicated = await t.oneOrNone(
-      `SELECT volume FROM acervo.volume_armazenamento
-      WHERE volume = $<volume> LIMIT 1`,
-      { volume }
-    );
-
-    if (duplicated) {
+    if (exists && exists.length < volumeArmazenamentoIds.length) {
       throw new AppError(
-        "Já existe um volume com esse nome",
+        'O id informado não corresponde a uma entrada do volume de armazenamento',
         httpCode.BadRequest
-      );
+      )
     }
 
-    t.none(
-      `INSERT INTO acervo.volume_armazenamento(volume)
-       VALUES ($<volume>)
-      `,
-      { volume }
-    );
-  });
-};
+    return t.any(
+      `DELETE FROM acervo.volume_armazenamento
+      WHERE id in ($<volumeArmazenamentoIds:csv>)`,
+      { volumeArmazenamentoIds }
+    )
+  })
+}
 
-controller.updateVolume = async (id, volume) => {
-  return db.conn.tx(async t => {
-    const duplicated = await t.oneOrNone(
-      `SELECT volume FROM acervo.volume_armazenamento
-      WHERE volume = $<volume> AND id != $<id> LIMIT 1`,
-      { id, volume }
-    );
+controller.getVolumeTipoProduto = async () => {
+  return db.sapConn.any(
+    `SELECT id, tipo_produto_id, volume_armazenamento_id, primario FROM acervo.volume_tipo_produto`
+  )
+}
 
-    if (duplicated) {
-      throw new AppError(
-        "Já existe um volume com esse nome",
-        httpCode.BadRequest
-      );
-    }
+controller.criaVolumeTipoProduto = async volumeTipoProduto => {
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'tipo_produto_id', 'volume_armazenamento_id', 'primario'
+    ])
 
-    t.none(
-      `UPDATE acervo.volume_armazenamento
-      SET volume = $<volume>
-      WHERE id = $<id>`,
-      { id, volume }
-    );
-  });
-};
+    const query = db.pgp.helpers.insert(volumeTipoProduto, cs, {
+      table: 'volume_tipo_produto',
+      schema: 'acervo'
+    })
 
-controller.associaVolume = async (tipoProdutoId, volumeId, primario) => {
-  return db.conn.tx(async t => {
-    primario = !!primario;
+    await t.none(query)
+  })
+}
 
-    if (primario) {
-      t.none(
-        `UPDATE acervo.volume_tipo_produto
-        SET primario = FALSE
-        WHERE tipo_produto_id = $<tipoProdutoId>`,
-        { tipoProdutoId }
-      );
-    }
+controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'id', 'tipo_produto_id', 'volume_armazenamento_id', 'primario'
+    ])
 
-    t.none(
-      `INSERT INTO acervo.volume_tipo_produto(tipo_produto_id, volume_armazenamento_id, primario)
-    VALUES ($<tipoProdutoId>, $<volumeId>, $<primario>)`,
-      { tipoProdutoId, volumeId, primario }
-    );
-  });
-};
+    const query = 
+      db.pgp.helpers.update(
+        volumeTipoProduto,
+        cs,
+        { table: 'volume_tipo_produto', schema: 'acervo' },
+        {
+          tableAlias: 'X',
+          valueAlias: 'Y'
+        }
+      ) + 'WHERE Y.id = X.id'
 
-controller.updateAssociacao = async (id, tipoProdutoId, volumeId, primario) => {
-  return db.conn.tx(async t => {
-    primario = !!primario;
+    await t.none(query)
+  })
+}
 
-    if (primario) {
-      t.none(
-        `UPDATE acervo.volume_tipo_produto
-        SET primario = FALSE
-        WHERE tipo_produto_id = $<tipoProdutoId>`,
-        { tipoProdutoId }
-      );
-    }
-
-    t.none(
-      `UPDATE acervo.volume_tipo_produto
-      SET tipo_produto_id = $<tipoProdutoId>, volume_armazenamento_id = $<volumeId>, primario = $<primario>
-      WHERE id = $<id>`,
-      { id, tipoProdutoId, volumeId, primario }
-    );
-  });
-};
-
-controller.deletaAssociacao = async id => {
-  return db.conn.tx(async t => {
-    const primaryVolume = await t.oneOrNone(
+controller.deleteVolumeTipoProduto = async volumeTipoProdutoIds => {
+  return db.sapConn.task(async t => {
+    const exists = await t.any(
       `SELECT id FROM acervo.volume_tipo_produto
-      WHERE id = $<id> AND primario IS TRUE LIMIT 1`,
-      { id }
-    );
+      WHERE id in ($<volumeTipoProdutoIds:csv>)`,
+      { volumeTipoProdutoIds }
+    )
 
-    if (primaryVolume) {
+    if (exists && exists.length < volumeTipoProdutoIds.length) {
       throw new AppError(
-        "Não pode deletar volumes primários. Atualize um outro volume a primário para este tipo de produto.",
+        'O id informado não corresponde a uma entrada do Volume Tipo Produto',
         httpCode.BadRequest
-      );
+      )
     }
 
-    const result = await t.result(
-      "DELETE FROM acervo.volume_tipo_produto WHERE id = $<id>",
-      { id }
-    );
-    if (!result.rowCount || result.rowCount < 1) {
-      throw new AppError(
-        "Associação de volume não encontrada",
-        httpCode.NotFound
-      );
-    }
-  });
-};
+    return t.any(
+      `DELETE FROM acervo.volume_tipo_produto
+      WHERE id in ($<volumeTipoProdutoIds:csv>)`,
+      { volumeTipoProdutoIds }
+    )
+  })
+}
+
 
 module.exports = controller;
