@@ -6,14 +6,36 @@ const { AppError, httpCode } = require("../utils");
 const controller = {};
 
 controller.getEstilo = async () => {
-  return db.conn.oneOrNone("SELECT * FROM public.layer_styles LIMIT 1");
+  return db.conn.any("SELECT * FROM public.layer_styles");
 };
 
-controller.downloadInfo = async (produtosIds, usuarioUuid) => {
+controller.getDownload = async () => {
+  return db.conn.any(
+    `
+    SELECT 
+      d.id,
+      d.arquivo_id,
+      d.usuario_id,
+      d.data_download,
+      false AS apagado
+    FROM acervo.download d
+    UNION ALL
+    SELECT 
+      dd.id,
+      dd.arquivo_deletado_id AS arquivo_id,
+      dd.usuario_id,
+      dd.data_download,
+      true AS apagado
+    FROM acervo.download_deletado dd
+    `
+  );
+}
+
+controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
   const cs = new db.pgp.helpers.ColumnSet([
-    "produto_id",
+    "arquivo_id",
     "usuario_id",
-    { name: "data", mod: ":raw", init: () => "NOW()" }
+    { name: "data_download", mod: ":raw", init: () => "NOW()" }
   ]);
 
   const usuario = db.oneOrNone(
@@ -26,9 +48,9 @@ controller.downloadInfo = async (produtosIds, usuarioUuid) => {
   }
 
   const downloads = [];
-  produtosIds.forEach(id => {
+  arquivosIds.forEach(id => {
     downloads.push({
-      produto_id: id,
+      arquivo_id: id,
       usuario_id: usuario.id
     });
   });
@@ -41,84 +63,5 @@ controller.downloadInfo = async (produtosIds, usuarioUuid) => {
   return db.conn.none(query);
 };
 
-controller.getArquivosPagination = async (
-  pagina,
-  totalPagina,
-  colunaOrdem,
-  direcaoOrdem,
-  filtro
-) => {
-  let where = "";
-
-  if (filtro) {
-    where = ` WHERE lower(concat_ws('|',p.uuid,p.nome,a.nome, a.extensao, a.tamanho_mb, tp.nome, p.data_produto)) LIKE '%${filtro.toLowerCase()}%'`;
-  }
-
-  let sort = "";
-  if (colunaOrdem) {
-    if (direcaoOrdem) {
-      sort = ` ORDER BY e.${colunaOrdem} ${direcaoOrdem}`;
-    } else {
-      sort = ` ORDER BY e.${colunaOrdem} ASC`;
-    }
-  }
-
-  let paginacao = "";
-
-  if (pagina && totalPagina) {
-    paginacao = ` LIMIT ${totalPagina} OFFSET (${pagina} - 1)*${totalPagina}`;
-  }
-
-  const sql = `SELECT p.uuid, p.nome AS produto, a.nome AS arquivo, a.extensao, 
-  a.tamanho_mb, p.data_produto, tp.nome AS tipo_produto
-  FROM acervo.produto AS p
-  INNER JOIN acervo.arquivo AS a ON a.produto_id = p.id
-  INNER JOIN acervo.tipo_produto AS tp ON tp.id = p.tipo_produto_id
-  ${where} ${sort} ${paginacao}`;
-
-  const arquivos = await db.conn.any(sql);
-
-  const result = { arquivos };
-
-  result.total = arquivos.length;
-
-  return result;
-};
-
-controller.getPathDownload = async arquivosId => {
-  return db.conn.any(
-    `SELECT a.id, va.volume || '/' || a.nome || '.' || a.extensao AS path, a.tamanho_mb
-    FROM acervo.arquivo AS a
-    INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
-    WHERE a.id IN ($<arquivosId:csv>)`,
-    { arquivosId }
-  );
-};
-
-controller.getMvtProduto = async (tipoProduto, x, y, z) => {
-  return db.conn.one(
-    `
-  SELECT ST_AsMVT(q, 'produto_mvt', 4096, 'geom')
-    FROM (
-      SELECT
-          p.id, p.uuid, p.nome, p.mi, p.inom, p.data_produto, p.denominador_escala,
-          p.orgao_produtor, p.observacao, sb.nome AS situacao_bdgex,
-          ST_AsMVTGeom(
-              p.geom
-              BBox($<x>, $<y>, $<z>),
-              4096,
-              0,
-              false
-          ) AS geom
-      FROM acervo.produto AS p
-      INNER JOIN dominio.situacao_bdgex AS sb ON sb.code = p.situacao_bdgex_id
-      WHERE p.tipo_produto_id = $<tipoProduto>
-      AND p.geom && BBox($<x>, $<y>, $<z>)
-      AND ST_Intersects(p.geom, BBox($<x>, $<y>, $<z>))
-    ) q
-  `,
-    { tipoProduto, x, y, z }
-  );
-};
 
 module.exports = controller;

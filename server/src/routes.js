@@ -6,7 +6,6 @@ const { httpCode } = require("./utils");
 
 const { loginRoute } = require("./login");
 const { acervoRoute } = require("./acervo");
-const { tipoProdutoRoute } = require("./tipo_produto");
 const { volumeRoute } = require("./volume");
 const { usuarioRoute } = require("./usuario");
 const { produtoRoute } = require("./produto");
@@ -29,8 +28,6 @@ router.use("/login", loginRoute);
 router.use("/acervo", acervoRoute);
 
 router.use("/usuarios", usuarioRoute);
-
-router.use("/tipos_produto", tipoProdutoRoute);
 
 router.use("/volumes", volumeRoute);
 

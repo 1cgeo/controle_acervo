@@ -11,20 +11,6 @@ const produtoSchema = require("./produto_schema");
 
 const router = express.Router();
 
-router.post(
-  '/produto',
-  verifyAdmin, 
-  schemaValidation({
-    body: produtoSchema.produto
-  }),
-  asyncHandler(async (req, res, next) => {
-    const data = await produtoCtrl.criaProduto(req.body, req.usuarioId)
-
-    const msg = 'Produto criado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created, data)
-  })
-)
-
 router.put(
   '/produto',
   verifyAdmin,
@@ -39,17 +25,57 @@ router.put(
   })
 )
 
+router.put(
+  '/versao',
+  verifyAdmin,
+  schemaValidation({
+    body: versaoSchema.versaoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await versaoCtrl.atualizaVersao(req.body, req.usuarioId);
+
+    const msg = 'Versão atualizada com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+)
+
+router.put(
+  '/arquivo',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.arquivoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await arquivoCtrl.atualizaArquivo(req.body, req.usuarioId);
+
+    const msg = 'Arquivo atualizado com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
 router.delete(
   '/produto',
   schemaValidation({
     body: produtoSchema.produtoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deleteProdutos(req.body.produto_ids, req.usuarioId)
+    await produtoCtrl.deleteProdutos(req.body.produto_ids, req.body.motivo_exclusao, req.usuarioId)
     const msg = 'Produtos deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
+
+router.delete(
+  '/versao',
+  schemaValidation({
+    body: versaoSchema.versaoIds
+  }),
+  asyncHandler(async (req, res, next) => {
+    await versaoCtrl.deleteVersoes(req.body.versao_ids, req.body.motivo_exclusao, req.usuarioId);
+    const msg = 'Versões deletadas com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
 
 router.delete(
   '/arquivo',
@@ -62,5 +88,17 @@ router.delete(
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
+
+router.delete(
+  '/arquivo',
+  schemaValidation({
+    body: arquivoSchema.arquivoIds
+  }),
+  asyncHandler(async (req, res, next) => {
+    await arquivoCtrl.deleteArquivos(req.body.arquivo_ids, req.body.motivo_exclusao, req.usuarioId);
+    const msg = 'Arquivos deletados com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
 
 module.exports = router;

@@ -82,9 +82,6 @@ app.use('/logs', (req, res) => {
 // Serve SwaggerDoc
 app.use('/api/api_docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
 
-// Serve JSDocs
-app.use('/api/js_docs', express.static(path.join(__dirname, '..', 'js_docs')))
-
 // Serve Client
 app.use(express.static(path.join(__dirname, "..", "build")));
 

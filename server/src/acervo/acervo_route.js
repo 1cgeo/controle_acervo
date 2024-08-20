@@ -23,32 +23,11 @@ router.get(
 )
 
 router.get(
-  '/arquivos',
-  verifyAdmin,
-  schemaValidation({ query: acervoSchema.paginacaoQuery }),
+  '/download',
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.getArquivosPagination(
-      req.query.pagina,
-      req.query.total_pagina,
-      req.query.coluna_ordem,
-      req.query.direcao_ordem,
-      req.query.filtro
-    )
+    const dados = await acervoCtrl.getDownload()
 
-    const msg = 'Lista de execuções retornadas'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.post(
-  '/path_download',
-  verifyLogin,
-  schemaValidation({ body: acervoSchema.arquivosIds }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.getPathDownload(req.body.arquivos_id)
-
-    const msg = 'Paths para download retornados com sucesso'
+    const msg = 'Informação de download retornadas com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -67,27 +46,6 @@ router.post(
     const msg = 'Informação de download cadastrada com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.get(
-  '/:produto_id/:z/:x/:y.mvt',
-  schemaValidation({
-    params: acervoSchema.mvtParams
-  }),
-  asyncHandler(async (req, res, next) => {
-    const tile = await acervoCtrl.getMvtProduto(
-      req.params.produto_id,
-      req.params.x,
-      req.params.y,
-      req.params.z
-    )
-
-    res.setHeader('Content-Type', 'application/x-protobuf')
-    if (tile.length === 0) {
-      res.status(204)
-    }
-    res.send(tile)
   })
 )
 

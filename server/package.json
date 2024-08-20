@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "main": "src/index.js",
   "scripts": {
-    "create-docs": "node create_documentation.js",
     "dev": "nodemon src/index.js",
     "dev-https": "nodemon src/index.js --https",
     "production": "pm2 start src/index.js --name controle-acervo",
