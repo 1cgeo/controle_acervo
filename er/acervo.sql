@@ -6,6 +6,7 @@ CREATE SCHEMA acervo;
 
 CREATE TABLE acervo.volume_armazenamento(
 	id SERIAL NOT NULL PRIMARY KEY,
+	nome VARCHAR(255) NOT NULL,
 	volume VARCHAR(255) NOT NULL,
 	capacidade_mb FLOAT NOT NULL
 );

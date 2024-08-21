@@ -4,142 +4,90 @@ const { db } = require('../database')
 
 const controller = {}
 
-controller.getUltimasExecucoes = async (total = 10) => {
-  return db.conn.any(
-    `
-    SELECT s.nome AS status, e.data_execucao, e.tempo_execucao,
-    r.nome AS rotina, vr.nome AS versao_rotina
-    FROM fme.execucao AS e
-    INNER JOIN dominio.status AS s ON s.code = e.status_id
-    INNER JOIN fme.versao_rotina AS vr ON vr.id = e.versao_rotina_id
-    INNER JOIN fme.rotina AS r ON r.id = e.rotina_id
-    ORDER BY e.data_execucao DESC
-    LIMIT $<total:raw>
-    `,
-    { total }
-  )
+controller.getTotalProdutos = async () => {
+  return db.sapConn.one('SELECT COUNT(*) AS total_oprodutos FROM acervo.produto');
 }
 
-controller.getExecucoesDia = async (total = 14) => {
-  const result = await db.conn.any(
-    `SELECT day::date AS data_execucao,count(e.id) AS execucoes FROM 
-    generate_series((now() - interval '$<total:raw> day')::date, now()::date, interval  '1 day') AS day
-    LEFT JOIN fme.execucao AS e ON e.data_execucao::date = day.day::date
-    GROUP BY day::date
-    ORDER BY day::date
-    `,
-    { total: total - 1 }
-  )
-  result.forEach(r => {
-    r.execucoes = +r.execucoes
-  })
-
-  return result
+controller.getTotalArquivosGb = async () => {
+  return db.sapConn.one('SELECT SUM(tamanho_mb) / 1024 AS total_gb FROM acervo.arquivo');
 }
 
-controller.getExecucoesMes = async (total = 12) => {
-  const result = await db.conn.any(
-    `SELECT date_trunc('month', month.month)::date AS data_execucao, count(e.id) AS execucoes FROM 
-    generate_series(date_trunc('month', (date_trunc('month', now()) - interval '$<total:raw> months'))::date, date_trunc('month', now())::date, interval  '1 month') AS month
-    LEFT JOIN fme.execucao AS e ON date_trunc('month', e.data_execucao) = date_trunc('month', month.month)
-    GROUP BY date_trunc('month', month.month)
-    ORDER BY date_trunc('month', month.month)
-    `,
-    { total: total - 1 }
-  )
-
-  result.forEach(r => {
-    r.execucoes = +r.execucoes
-  })
-
-  return result
+controller.getProdutosPorTipo = async () => {
+  return db.sapConn.any(`
+    SELECT p.tipo_produto_id, tp.nome AS tipo_produto, COUNT(*) AS quantidade 
+    FROM acervo.produto AS p
+    INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+    GROUP BY p.tipo_produto_id, tp.nome`
+  );
 }
 
-controller.getExecucoes = async () => {
-  const result = await db.conn.one(
-    'SELECT count(*) FROM fme.execucao WHERE status_id = 2'
-  )
-
-  return result.count
+controller.getGbPorTipoProduto = async () => {
+  return db.sapConn.any(`
+    SELECT p.tipo_produto_id, tp.nome AS tipo_produto, SUM(a.tamanho_mb) / 1024 AS total_gb 
+    FROM acervo.produto p 
+    INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+    INNER JOIN acervo.versao AS v ON v.produto_id = p.id
+    INNER JOIN acervo.arquivo a ON v.id = a.versao_id 
+    GROUP BY p.tipo_produto_id, tp.nome
+  `);
 }
 
-controller.getRotinas = async () => {
-  const result = await db.conn.one(
-    'SELECT count(*) FROM fme.rotina WHERE ativa IS TRUE'
-  )
-
-  return result.count
+controller.getTotalUsuarios = async () => {
+  return db.sapConn.one('SELECT COUNT(*) AS total_usuarios FROM dgeo.usuario');
 }
 
-const getExecRotinaByStatus = async (status, total, max) => {
-  const rotinas = await db.conn.any(
-    `SELECT COALESCE(r.nome, 'Rotina deletada') AS rotina, count(e.id) AS execucoes 
-    FROM fme.execucao AS e
-    LEFT JOIN fme.rotina AS r ON r.id = e.rotina_id
-    WHERE e.data_execucao::date >= (now() - interval '$<total:raw> day')::date AND e.status_id = $<status>
-    GROUP BY r.nome
-    ORDER BY count(e.id) DESC
-    LIMIT $<max:raw>`,
-    { status, total: total - 1, max: max - 1 }
-  )
-  const dados = await db.conn.any(
-    `SELECT day::date AS data_execucao,  COALESCE(r.nome, 'Rotina deletada') AS rotina, count(e.id) AS execucoes
-    FROM generate_series((now() - interval '$<total:raw> day')::date, now()::date, interval  '1 day') AS day
-    LEFT JOIN fme.execucao AS e ON e.data_execucao::date = day.day::date
-    LEFT JOIN fme.rotina AS r ON r.id = e.rotina_id
-    WHERE e.status_id = $<status>
-    GROUP BY day::date, r.nome
-    ORDER BY day::date, r.nome`,
-    { status, total: total - 1 }
-  )
-
-  const rotinasFixed = []
-  rotinas.forEach(r => rotinasFixed.push(r.rotina))
-
-  const resultDict = {}
-  dados.forEach(d => {
-    if (!(d.data_execucao in resultDict)) {
-      resultDict[d.data_execucao] = {}
-      resultDict[d.data_execucao].data = d.data_execucao.toISOString().split('T')[0]
-      rotinasFixed.forEach(r => {
-        resultDict[d.data_execucao][r] = 0
-      })
-      resultDict[d.data_execucao].outros = 0
-    }
-    if (rotinasFixed.indexOf(d.rotina) !== -1) {
-      resultDict[d.data_execucao][d.rotina] = +d.execucoes
-    } else {
-      resultDict[d.data_execucao].outros += d.execucoes
-    }
-  })
-
-  const result = []
-  Object.keys(resultDict).forEach(key => {
-    result.push(resultDict[key])
-  })
-
-  return result
+controller.getArquivosPorDia = async () => {
+  return db.sapConn.any(`
+    SELECT DATE(data_cadastramento) AS dia, COUNT(*) AS quantidade
+    FROM acervo.arquivo 
+    GROUP BY dia ORDER BY dia
+    LIMIT 30`
+  );
 }
 
-controller.getExecucoesRotinas = async (total = 14, max = 10) => {
-  return getExecRotinaByStatus(2, total, max)
+controller.getDownloadsPorDia = async () => {
+  return db.sapConn.any(`
+    SELECT DATE(data_download) AS dia, COUNT(*) AS quantidade 
+    FROM acervo.download 
+    GROUP BY dia ORDER BY dia
+    LIMIT 30`
+  );
 }
 
-controller.getErrorsRotinas = async (total = 14, max = 10) => {
-  return getExecRotinaByStatus(3, total, max)
+controller.getGbPorVolume = async () => {
+  return db.sapConn.any(`
+    SELECT a.volume_armazenamento_id, va.nome AS nome_volume, va.volume, 
+    va.capacidade_mb AS capacidade_mb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb 
+    FROM acervo.arquivo AS a
+    INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
+    GROUP BY a.volume_armazenamento_id, va.nome, va.volume, va.capacidade_mb`
+  );
 }
 
-controller.getTempoExecucaoRotinas = async (total = 365, max = 10) => {
-  return db.conn.any(
-    `SELECT COALESCE(r.nome, 'Rotina deletada') AS rotina, avg(e.tempo_execucao) AS tempo_execucao_medio
-    FROM fme.execucao AS e
-    LEFT JOIN fme.rotina AS r ON r.id = e.rotina_id
-    WHERE e.data_execucao::date >= (now() - interval '$<total:raw> day')::date AND e.status_id = 2
-    GROUP BY r.nome
-    ORDER BY avg(e.tempo_execucao) DESC
-    LIMIT $<max:raw>`,
-    { total: total - 1, max }
-  )
+controller.getUltimosCarregamentos = async () => {
+  return db.sapConn.any(`
+    SELECT * FROM acervo.arquivo 
+    ORDER BY data_cadastramento DESC 
+    LIMIT 10`);
+}
+
+controller.getUltimasModificacoes = async () => {
+  return db.sapConn.any(`
+    SELECT * 
+    FROM acervo.arquivo 
+    WHERE data_modificacao IS NOT NULL 
+    ORDER BY data_modificacao DESC 
+    LIMIT 10`
+  );
+}
+
+controller.getUltimosDeletes = async () => {
+  return db.sapConn.any(`
+    SELECT * 
+    FROM acervo.arquivo_deletado 
+    ORDER BY data_delete DESC 
+    LIMIT 10`
+  );
 }
 
 module.exports = controller

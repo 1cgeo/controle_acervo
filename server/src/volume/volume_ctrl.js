@@ -8,14 +8,14 @@ const controller = {};
 
 controller.getVolumeArmazenamento = async () => {
   return db.sapConn.any(
-    `SELECT id, volume, capacidade_mb FROM acervo.volume_armazenamento`
+    `SELECT id, volume, nome, capacidade_mb FROM acervo.volume_armazenamento`
   )
 }
 
 controller.criaVolumeArmazenamento = async volumeArmazenamento => {
   return db.sapConn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'volume', 'capacidade_mb'
+      'nome', 'volume', 'capacidade_mb'
     ])
 
     const query = db.pgp.helpers.insert(volumeArmazenamento, cs, {
@@ -30,7 +30,7 @@ controller.criaVolumeArmazenamento = async volumeArmazenamento => {
 controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
   return db.sapConn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'volume', 'capacidade_mb'
+      'id', 'nome', 'volume', 'capacidade_mb'
     ])
 
     const query = 

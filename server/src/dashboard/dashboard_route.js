@@ -10,109 +10,102 @@ const dashboardSchema = require('./dashboard_schema')
 const router = express.Router()
 
 router.get(
-  '/ultimas_execucoes',
-  schemaValidation({
-    query: dashboardSchema.totalQuery
-  }),
+  '/produtos_total',
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getUltimasExecucoes(req.query.total)
+  const dados = await dashboardCtrl.getTotalProdutos();
+  const msg = 'Total de produtos retornado com sucesso'
 
-    const msg = 'Ultimas execuções retornadas com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/execucoes/dia',
-  schemaValidation({
-    query: dashboardSchema.totalQuery
-  }),
+  '/arquivos_total_gb', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getExecucoesDia(req.query.total)
+  const dados = await dashboardCtrl.getTotalArquivosGb();
+  const msg = 'Total de gb retornado com sucesso'
 
-    const msg = 'Execuções por dia retornadas com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/execucoes/mes',
-  schemaValidation({
-    query: dashboardSchema.totalQuery
-  }),
+  '/produtos_tipo', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getExecucoesMes(req.query.total)
+  const dados = await dashboardCtrl.getProdutosPorTipo();
+  const msg = 'Total de produtos por tipo com sucesso'
 
-    const msg = 'Execuções por mês retornadas com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/execucoes/rotinas',
-  schemaValidation({
-    query: dashboardSchema.totalMaxQuery
-  }),
+  '/gb_tipo_produto', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getExecucoesRotinas(req.query.total, req.query.max)
+  const dados = await dashboardCtrl.getGbPorTipoProduto();
+  const msg = 'Gb por tipo de produto retornado com sucesso'
 
-    const msg = 'Execuções por rotinas retornadas com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/erros/rotinas',
-  schemaValidation({
-    query: dashboardSchema.totalMaxQuery
-  }),
+  '/usuarios_total', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getErrorsRotinas(req.query.total, req.query.max)
+  const dados = await dashboardCtrl.getTotalUsuarios();
+  const msg = 'Total de usuários retornados com sucesso'
 
-    const msg = 'Erros por rotinas retornados com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/tempo_execucao/rotinas',
-  schemaValidation({
-    query: dashboardSchema.totalMaxQuery
-  }),
+  '/arquivos_dia', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getTempoExecucaoRotinas(req.query.total, req.query.max)
+  const dados = await dashboardCtrl.getTotalUsuarios();
+  const msg = 'Arquivos carregados por dia retornadas com sucesso'
 
-    const msg = 'Tempo de execução por rotinas retornados com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/execucoes',
+  '/downloads_dia', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getExecucoes()
+  const dados = await dashboardCtrl.getDownloadsPorDia();
+  const msg = 'Download por dia retornados com sucesso'
 
-    const msg = 'Número de execuções retornado com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 router.get(
-  '/rotinas',
+  '/gb_volume', 
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getRotinas()
+  const dados = await dashboardCtrl.getGbPorVolume();
+  const msg = 'Gb por volume retornados com sucesso'
 
-    const msg = 'Número de rotinas retornado com sucesso'
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+router.get(
+  '/ultimos_carregamentos', 
+  asyncHandler(async (req, res, next) => {
+  const dados = await dashboardCtrl.getUltimosCarregamentos();
+  const msg = 'Ultimos carregamentos de arquivo retornados com sucesso'
+
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
+
+router.get(
+  '/ultimas_modificacoes', 
+  asyncHandler(async (req, res, next) => {
+  const dados = await dashboardCtrl.getUltimasModificacoes();
+  const msg = 'Ultimas modificações de arquivo retornadas com sucesso'
+
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
+
+router.get(
+  '/ultimos_deletes', 
+  asyncHandler(async (req, res, next) => {
+  const dados = await dashboardCtrl.getUltimosDeletes();
+  const msg = 'Ultimos delete de arquivo retornados com sucesso'
+
+  return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+}));
 
 module.exports = router
