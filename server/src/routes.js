@@ -9,6 +9,7 @@ const { acervoRoute } = require("./acervo");
 const { volumeRoute } = require("./volume");
 const { usuarioRoute } = require("./usuario");
 const { produtoRoute } = require("./produto");
+const { projetoRoute } = require("./projeto");
 
 const router = express.Router();
 
@@ -32,5 +33,7 @@ router.use("/usuarios", usuarioRoute);
 router.use("/volumes", volumeRoute);
 
 router.use("/produtos", produtoRoute);
+
+router.use("/projetos", projetoRoute);
 
 module.exports = router;

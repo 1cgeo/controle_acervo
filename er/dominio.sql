@@ -52,7 +52,8 @@ INSERT INTO dominio.tipo_arquivo (nome) VALUES
 (5, 'JSON Edição'),
 (6, 'Documentos'),
 (7, 'Projeto QGIS'),
-(8, 'Arquivos complementares');
+(8, 'Arquivos complementares'),
+(9, 'Tileserver');
 
 CREATE TABLE dominio.tipo_relacionamento(
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -71,11 +72,18 @@ CREATE TABLE dominio.tipo_status_arquivo (
 
 INSERT INTO dominio.tipo_status_arquivo (nome) VALUES
 (1, 'Carregado'),
-(2, 'Em carregamento'),
-(3, 'Erro no carregamento'),
-(4, 'Em exclusão'),
-(5, 'Excluído'),
-(6, 'Erro na exclusão');
+(2, 'Erro no carregamento'),
+(3, 'Excluído'),
+(4, 'Erro na exclusão');
+
+CREATE TABLE dominio.tipo_versao (
+	code SMALLINT NOT NULL PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.tipo_versao (nome) VALUES
+(1, 'Regular'),
+(2, 'Registro Histórico');
 
 CREATE TABLE dominio.tipo_status (
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -117,6 +125,7 @@ INSERT INTO dominio.tipo_produto (nome) VALUES
 (20, 'Conjunto de dados geoespaciais vetoriais - MUVD'),
 (21, 'Modelo Digital de Superfície - TREx'),
 (22, 'Conjunto de dados geoespaciais vetoriais para Ortoimagem - ET-EDGV 3.0'),
-(23, 'Conjunto de dados geoespaciais vetoriais para Trafegabilidade');
+(23, 'Conjunto de dados geoespaciais vetoriais para Trafegabilidade'),
+(24, 'Carta Topográfica Militar');
 
 COMMIT;

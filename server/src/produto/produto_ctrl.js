@@ -5,15 +5,15 @@ const { AppError, httpCode } = require("../utils");
 
 const controller = {};
 
-controller.atualizaProduto = async (produto, userId) => {
+controller.atualizaProduto = async (produto, usuarioUuid) => {
   return db.sapConn.tx(async t => {
     produto.data_modificacao = new Date()
-    produto.usuario_modificacao_id = userId
+    produto.usuario_modificacao_uuid = usuarioUuid
 
     const colunasProduto = [
       'nome', 'mi', 'inom', 'denominador_escala',
       'tipo_produto_id', 'descricao',
-      'data_modificacao', 'usuario_modificacao_id'
+      'data_modificacao', 'usuario_modificacao_uuid'
     ]
 
     const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
@@ -23,15 +23,15 @@ controller.atualizaProduto = async (produto, userId) => {
   })
 }
 
-controller.atualizaVersao = async (versao, userId) => {
+controller.atualizaVersao = async (versao, usuarioUuid) => {
   return db.sapConn.tx(async t => {
     versao.data_modificacao = new Date();
-    versao.usuario_modificacao_id = userId;
+    versao.usuario_modificacao_uuid = usuarioUuid;
 
     const colunasVersao = [
-      'versao', 'descricao','descricao',
+      'versao', 'uuid_versao','descricao', 'metadata', 'lote_id',
       'data_criacao', 'data_edicao',
-      'data_modificacao', 'usuario_modificacao_id'
+      'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: 'versao', schema: 'acervo' });
@@ -41,15 +41,15 @@ controller.atualizaVersao = async (versao, userId) => {
   });
 };
 
-controller.atualizaArquivo = async (arquivo, userId) => {
+controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
   return db.sapConn.tx(async t => {
     arquivo.data_modificacao = new Date();
-    arquivo.usuario_modificacao_id = userId;
+    arquivo.usuario_modificacao_uuid = usuarioUuid;
 
     const colunasArquivo = [
       'nome', 'tipo_arquivo_id',
-      'metadata', 'situacao_bdgex_id', 'orgao_produtor', 'descricao', 
-      'data_modificacao', 'usuario_modificacao_id'
+      'metadado', 'situacao_bdgex_id', 'orgao_produtor', 'descricao', 
+      'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' });
@@ -59,9 +59,9 @@ controller.atualizaArquivo = async (arquivo, userId) => {
   });
 };
 
-controller.deleteProdutos = async (produtoIds, motivo_exclusao, userId) => {
+controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
-  const usuario_delete_id = userId;
+  const usuario_delete_uuid = usuarioUuid;
 
   return db.sapConn.tx(async t => {
     for (let id of produtoIds) {
@@ -74,15 +74,16 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, userId) => {
         // Move associated files to arquivo_deletado table
         const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
         for (let arquivo of arquivos) {
-          await t.none(
+          const arquivoDeletadoId = await t.one(
             `INSERT INTO acervo.arquivo_deletado (
               uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
               volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
               tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
-              data_cadastramento, usuario_cadastramento_id, data_modificacao, 
-              usuario_modificacao_id, data_delete, usuario_delete_id
+              data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+              usuario_modificacao_uuid, data_delete, usuario_delete_uuid
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                      $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+                      $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+              RETURNING id`,
             [
               arquivo.uuid_arquivo, 
               arquivo.nome, 
@@ -100,14 +101,26 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, userId) => {
               arquivo.orgao_produtor, 
               arquivo.descricao, 
               arquivo.data_cadastramento, 
-              arquivo.usuario_cadastramento_id, 
+              arquivo.usuario_cadastramento_uuid, 
               arquivo.data_modificacao, 
-              arquivo.usuario_modificacao_id, 
+              arquivo.usuario_modificacao_uuid, 
               data_delete, 
-              usuario_delete_id
+              usuario_delete_uuid
             ]
           );
         }
+
+        // Move related downloads to download_deletado table using the new arquivo_deletado_id
+        await t.none(
+          `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+           SELECT $1, d.usuario_uuid, d.data_download
+           FROM acervo.download d
+           WHERE d.arquivo_id = $2`,
+          [arquivoDeletadoId.id, arquivo.id]
+        );
+
+        // Delete related downloads from the original download table
+       await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
         // Delete files from the original arquivo table
         await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
@@ -122,9 +135,9 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, userId) => {
   });
 };
 
-controller.deleteVersoes = async (versaoIds, motivo_exclusao, userId) => {
+controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
-  const usuario_delete_id = userId;
+  const usuario_delete_uuid = usuarioUuid;
 
   return db.sapConn.tx(async t => {
     for (let id of versaoIds) {
@@ -134,15 +147,16 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, userId) => {
       // Move associated files to arquivo_deletado table
       const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
       for (let arquivo of arquivos) {
-        await t.none(
+        const arquivoDeletadoId = await t.one(
           `INSERT INTO acervo.arquivo_deletado (
             uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
             tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
-            data_cadastramento, usuario_cadastramento_id, data_modificacao, 
-            usuario_modificacao_id, data_delete, usuario_delete_id
+            data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+            usuario_modificacao_uuid, data_delete, usuario_delete_uuid
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          RETURNING id`,
           [
             arquivo.uuid_arquivo, 
             arquivo.nome, 
@@ -160,14 +174,26 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, userId) => {
             arquivo.orgao_produtor, 
             arquivo.descricao, 
             arquivo.data_cadastramento, 
-            arquivo.usuario_cadastramento_id, 
+            arquivo.usuario_cadastramento_uuid, 
             arquivo.data_modificacao, 
-            arquivo.usuario_modificacao_id, 
+            arquivo.usuario_modificacao_uuid, 
             data_delete, 
-            usuario_delete_id
+            usuario_delete_uuid
           ]
         );
       }
+
+       // Move related downloads to download_deletado table using the new arquivo_deletado_id
+       await t.none(
+        `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+         SELECT $1, d.usuario_uuid, d.data_download
+         FROM acervo.download d
+         WHERE d.arquivo_id = $2`,
+        [arquivoDeletadoId.id, arquivo.id]
+      );
+
+      // Delete related downloads from the original download table
+      await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
       // Delete files from the original arquivo table
       await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
@@ -178,9 +204,9 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, userId) => {
   });
 };
 
-controller.deleteArquivos = async (arquivoIds, motivo_exclusao, userId) => {
+controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
-  const usuario_delete_id = userId;
+  const usuario_delete_uuid = usuarioUuid;
 
   return db.sapConn.tx(async t => {
     for (let id of arquivoIds) {
@@ -188,15 +214,16 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, userId) => {
       if (!arquivo) continue;
 
       // Move the file to arquivo_deletado table
-      await t.none(
+      const arquivoDeletadoId = await t.one(
         `INSERT INTO acervo.arquivo_deletado (
           uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
           volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
           tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
-          data_cadastramento, usuario_cadastramento_id, data_modificacao, 
-          usuario_modificacao_id, data_delete, usuario_delete_id
+          data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+          usuario_modificacao_uuid, data_delete, usuario_delete_uuid
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                  $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+                  $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        RETURNING id`,
         [
           arquivo.uuid_arquivo, 
           arquivo.nome, 
@@ -214,17 +241,99 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, userId) => {
           arquivo.orgao_produtor, 
           arquivo.descricao, 
           arquivo.data_cadastramento, 
-          arquivo.usuario_cadastramento_id, 
+          arquivo.usuario_cadastramento_uuid, 
           arquivo.data_modificacao, 
-          arquivo.usuario_modificacao_id, 
+          arquivo.usuario_modificacao_uuid, 
           data_delete, 
-          usuario_delete_id
+          usuario_delete_uuid
         ]
       );
+
+      // Move related downloads to download_deletado table using the new arquivo_deletado_id
+      await t.none(
+        `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+         SELECT $1, d.usuario_uuid, d.data_download
+         FROM acervo.download d
+         WHERE d.arquivo_id = $2`,
+        [arquivoDeletadoId.id, arquivo.id]
+      );
+
+      // Delete related downloads from the original download table
+      await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
       // Finally, delete the file itself from the arquivo table
       await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [id]);
     }
+  });
+};
+
+controller.getVersaoRelacionamento = async () => {
+  return db.sapConn.any(
+    `SELECT id, versao_id_1, versao_id_2, tipo_relacionamento_id, data_relacionamento, usuario_relacionamento_uuid 
+     FROM acervo.versao_relacionamento`
+  );
+};
+
+controller.criaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
+  versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
+
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
+    ]);
+
+    const query = db.pgp.helpers.insert(versaoRelacionamento, cs, {
+      table: 'versao_relacionamento',
+      schema: 'acervo'
+    });
+
+    await t.none(query);
+  });
+};
+
+controller.atualizaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
+  versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
+
+  return db.sapConn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
+    ]);
+
+    const query = 
+      db.pgp.helpers.update(
+        versaoRelacionamento,
+        cs,
+        { table: 'versao_relacionamento', schema: 'acervo' },
+        {
+          tableAlias: 'X',
+          valueAlias: 'Y'
+        }
+      ) + ' WHERE Y.id = X.id';
+
+    await t.none(query);
+  });
+};
+
+controller.deleteVersaoRelacionamento = async versaoRelacionamentoIds => {
+  return db.sapConn.task(async t => {
+    const exists = await t.any(
+      `SELECT id FROM acervo.versao_relacionamento
+      WHERE id in ($<versaoRelacionamentoIds:csv>)`,
+      { versaoRelacionamentoIds }
+    );
+
+    if (exists && exists.length < versaoRelacionamentoIds.length) {
+      throw new AppError(
+        'O id informado não corresponde a uma entrada do Versão Relacionamento',
+        httpCode.BadRequest
+      );
+    }
+
+    return t.any(
+      `DELETE FROM acervo.versao_relacionamento
+      WHERE id in ($<versaoRelacionamentoIds:csv>)`,
+      { versaoRelacionamentoIds }
+    );
   });
 };
 
