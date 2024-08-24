@@ -1,5 +1,7 @@
 "use strict";
-
+const fs = require('fs').promises;
+const path = require('path');
+const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
@@ -649,5 +651,115 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
     return results;
   });
 }
+
+controller.verificarConsistencia = async () => {
+  return db.sapConn.tx(async t => {
+    const arquivos = await t.any(`
+      SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume
+      FROM acervo.arquivo a
+      JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
+      WHERE a.tipo_arquivo_id != 9
+    `);
+
+    const arquivosDeletados = await t.any(`
+      SELECT ad.id, ad.nome_arquivo, ad.extensao, v.volume
+      FROM acervo.arquivo_deletado ad
+      JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
+    `);
+
+    const resultados = [];
+
+    // Check existing files
+    for (const arquivo of arquivos) {
+      const filePath = path.join(arquivo.volume, arquivo.nome_arquivo + arquivo.extensao);
+
+      try {
+        await fs.access(filePath);
+        const fileBuffer = await fs.readFile(filePath);
+        const calculatedChecksum = crypto
+          .createHash('sha256')
+          .update(fileBuffer)
+          .digest('hex');
+
+        if (calculatedChecksum !== arquivo.checksum) {
+          resultados.push({
+            id: arquivo.id,
+            nome_arquivo: arquivo.nome_arquivo,
+            descricao: "Checksum inválido"
+          });
+          await t.none(`
+            UPDATE acervo.arquivo
+            SET tipo_status_id = 2
+            WHERE id = $1
+          `, [arquivo.id]);
+        }
+      } catch (error) {
+        resultados.push({
+          id: arquivo.id,
+          nome_arquivo: arquivo.nome_arquivo,
+          descricao: "Arquivo faltando"
+        });
+        await t.none(`
+          UPDATE acervo.arquivo
+          SET tipo_status_id = 2
+          WHERE id = $1
+        `, [arquivo.id]);
+      }
+    }
+
+    // Check deleted files
+    for (const arquivoDeletado of arquivosDeletados) {
+      const deletedFilePath = path.join(arquivoDeletado.volume, arquivoDeletado.nome_arquivo + arquivoDeletado.extensao);
+
+      try {
+        await fs.access(deletedFilePath);
+        // File exists, check if it's associated with an existing arquivo
+        const existingArquivo = await t.oneOrNone(`
+          SELECT a.id 
+          FROM acervo.arquivo a
+          JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
+          WHERE concat(v.volume, a.nome_arquivo, a.extensao) = $1
+        `, [deletedFilePath]);
+
+        if (!existingArquivo) {
+          resultados.push({
+            id: arquivoDeletado.id,
+            nome_arquivo: arquivoDeletado.nome_arquivo,
+            descricao: "Erro na exclusão"
+          });
+          await t.none(`
+            UPDATE acervo.arquivo_deletado
+            SET tipo_status_id = 4
+            WHERE id = $1
+          `, [arquivoDeletado.id]);
+        }
+      } catch (error) {
+        // File doesn't exist, which is expected for deleted files
+      }
+    }
+
+    return resultados;
+  });
+};
+
+controller.getArquivosIncorretos = async () => {
+  return db.sapConn.task(async t => {
+    const arquivosIncorretos = await t.any(`
+      SELECT a.id, a.nome, a.nome_arquivo, a.extensao, v.volume, 'Arquivo com erro' as tipo
+      FROM acervo.arquivo AS a
+      INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
+      WHERE a.tipo_status_id = 2
+    `);
+
+    const arquivosDeletadosIncorretos = await t.any(`
+      SELECT ad.id, ad.nome, ad.nome_arquivo, ad.extensao, v.volume, 'Arquivo deletado com erro' as tipo
+      FROM acervo.arquivo_deletado AS ad
+      INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
+      WHERE ad.tipo_status_id = 4
+    `);
+
+    return [...arquivosIncorretos, ...arquivosDeletadosIncorretos];
+  });
+};
 
 module.exports = controller;

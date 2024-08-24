@@ -203,4 +203,28 @@ router.post(
   })
 );
 
+router.get(
+  '/verificar_consistencia',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const resultados = await acervoCtrl.verificarConsistencia()
+
+    const msg = 'Verificação de consistência concluída com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, resultados)
+  })
+)
+
+router.get(
+  '/arquivos_incorretos',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const arquivosIncorretos = await acervoCtrl.getArquivosIncorretos()
+
+    const msg = 'Arquivos incorretos recuperados com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, arquivosIncorretos)
+  })
+)
+
 module.exports = router
