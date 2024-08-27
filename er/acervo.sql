@@ -28,9 +28,9 @@ CREATE TABLE acervo.projeto (
     data_fim DATE,
     status_execucao SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+    usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
-    usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid)
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
 CREATE TABLE acervo.lote (
@@ -41,11 +41,11 @@ CREATE TABLE acervo.lote (
     descricao TEXT,
     data_inicio DATE NOT NULL,
     data_fim DATE,
-    status_execucao SMALLINT NOT NULL REFERENCES dominio.tipotipo_status_execucao_status (code),
+    status_execucao SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+    usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
-    usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid)
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
 CREATE TABLE acervo.produto(
@@ -57,9 +57,9 @@ CREATE TABLE acervo.produto(
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
 	descricao TEXT,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
-	usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid),
+	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
 	geom geometry(POLYGON, 4674) NOT NULL	
 );
 
@@ -72,7 +72,7 @@ CREATE TABLE acervo.versao(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	uuid_versao UUID UNIQUE NOT NULL,
 	versao VARCHAR(255) NOT NULL,
-	tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code);
+	tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
 	produto_id BIGINT NOT NULL REFERENCES acervo.produto (id),
 	lote_id BIGINT REFERENCES acervo.lote (id),
 	metadado JSONB,
@@ -80,9 +80,9 @@ CREATE TABLE acervo.versao(
 	data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
 	data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
-	usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid),
+	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
     CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao)
 );
 
@@ -148,9 +148,9 @@ CREATE TABLE acervo.arquivo(
     orgao_produtor VARCHAR(255) NOT NULL,
     descricao TEXT,
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+    usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
-    usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid),
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
     CONSTRAINT unique_file_per_version UNIQUE (checksum, versao_id),
     CHECK (
         (tipo_arquivo_id != 9 AND volume_armazenamento_id IS NOT NULL) OR
@@ -179,7 +179,7 @@ CREATE TABLE acervo.arquivo_deletado(
 	nome_arquivo TEXT NOT NULL,
 	motivo_exclusao TEXT,
 	versao_id BIGINT REFERENCES acervo.versao (id) ON DELETE SET NULL,
-	tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code);
+	tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code),
 	volume_armazenamento_id SMALLINT REFERENCES acervo.volume_armazenamento (id) ON DELETE SET NULL,
 	extensao VARCHAR(255),
 	tamanho_mb REAL,
@@ -190,24 +190,24 @@ CREATE TABLE acervo.arquivo_deletado(
 	orgao_produtor VARCHAR(255),
 	descricao TEXT,
 	data_cadastramento timestamp with time zone,
-	usuario_cadastramento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
-	usuario_modificacao_uuid SMALLINT REFERENCES dgeo.usuario (uuid),
+	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
 	data_delete  timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-	usuario_delete_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid)
+	usuario_delete_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
 CREATE TABLE acervo.download(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	arquivo_id BIGINT NOT NULL REFERENCES acervo.arquivo (id),
-	usuario_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+	usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_download TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE acervo.download_deletado(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	arquivo_deletado_id BIGINT NOT NULL REFERENCES acervo.arquivo_deletado (id),
-	usuario_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid),
+	usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_download TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -215,9 +215,9 @@ CREATE TABLE acervo.versao_relacionamento(
     id BIGSERIAL NOT NULL PRIMARY KEY,
     versao_id_1 BIGINT NOT NULL REFERENCES acervo.versao (id),
     versao_id_2 BIGINT NOT NULL REFERENCES acervo.versao (id),
-    tipo_relacionamento_id SMALLINT NOT NULL REFERENCES dominio.tipo_relacionamento (code);
+    tipo_relacionamento_id SMALLINT NOT NULL REFERENCES dominio.tipo_relacionamento (code),
     data_relacionamento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_relacionamento_uuid SMALLINT NOT NULL REFERENCES dgeo.usuario (uuid)
+    usuario_relacionamento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
 COMMIT;

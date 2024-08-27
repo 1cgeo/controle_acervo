@@ -8,7 +8,7 @@ CREATE TABLE dominio.tipo_posto_grad(
 	nome_abrev VARCHAR(255) NOT NULL
 );
 
-INSERT INTO dominio.tipo_posto_grad (code, nome,nome_abrev) VALUES
+INSERT INTO dominio.tipo_posto_grad (code, nome, nome_abrev) VALUES
 (1, 'Civil', 'Civ'),
 (2, 'Mão de Obra Temporária', 'MOT'),
 (3, 'Soldado EV', 'Sd EV'),
@@ -44,7 +44,7 @@ CREATE TABLE dominio.tipo_arquivo(
     nome VARCHAR(50) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_arquivo (nome) VALUES
+INSERT INTO dominio.tipo_arquivo (code, nome) VALUES
 (1, 'Arquivo principal'),
 (2, 'Formato alternativo'),
 (3, 'Insumo'),
@@ -60,7 +60,7 @@ CREATE TABLE dominio.tipo_relacionamento(
     nome VARCHAR(50) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_relacionamento (nome) VALUES
+INSERT INTO dominio.tipo_relacionamento (code, nome) VALUES
 (1, 'Insumo'),
 (2, 'Complementar'),
 (3, 'Conjunto');
@@ -70,7 +70,7 @@ CREATE TABLE dominio.tipo_status_arquivo (
     nome VARCHAR(50) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_status_arquivo (nome) VALUES
+INSERT INTO dominio.tipo_status_arquivo (code, nome) VALUES
 (1, 'Carregado'),
 (2, 'Erro no carregamento'),
 (3, 'Excluído'),
@@ -81,28 +81,28 @@ CREATE TABLE dominio.tipo_versao (
     nome VARCHAR(50) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_versao (nome) VALUES
+INSERT INTO dominio.tipo_versao (code, nome) VALUES
 (1, 'Regular'),
 (2, 'Registro Histórico');
 
-CREATE TABLE dominio.tipo_status (
+CREATE TABLE dominio.tipo_status_execucao (
 	code SMALLINT NOT NULL PRIMARY KEY,
     nome VARCHAR(50) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_status_execucao (nome) VALUES
+INSERT INTO dominio.tipo_status_execucao (code, nome) VALUES
 (1, 'Não iniciado'),
 (2, 'Em execução'),
 (3, 'Concluído'),
-(4, 'Concluído parcialmente')
+(4, 'Concluído parcialmente'),
 (5, 'Pausado');
 
-CREATE TABLE dominio.tipo_produto(
+CREATE TABLE dominio.tipo_produto (
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.tipo_produto (nome) VALUES
+INSERT INTO dominio.tipo_produto (code, nome) VALUES
 (1, 'Conjunto de dados geoespaciais vetoriais - ET-EDGV 2.1.3'),
 (2, 'Carta Topográfica - T34-700'),
 (3, 'Carta Ortoimagem'),

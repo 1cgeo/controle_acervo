@@ -272,7 +272,7 @@ const getConfigFromUser = options => {
       default: 3015
     })
   }
-  if (options.dbCreate) {
+  if (!options.dbCreate) {
     questions.push({
       type: 'confirm',
       name: 'dbCreate',
