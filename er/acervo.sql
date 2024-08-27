@@ -94,9 +94,17 @@ DECLARE
     version_number INTEGER;
     acronym TEXT;
     previous_version TEXT;
+    current_year INTEGER;
 BEGIN
+    -- Get the current year
+    current_year := EXTRACT(YEAR FROM CURRENT_DATE);
+
     -- Check for old standard: "Xª Edição"
     IF NEW.versao ~ '^[0-9]+ª Edição$' THEN
+        -- Only allow old standard for years before 2024
+        IF current_year >= 2024 THEN
+            RAISE EXCEPTION 'A partir de 2024 versões devem utilizar o formato "X-YYYYY"';
+        END IF;
         RETURN NEW;
     -- Check for new standard: "X-YYYYY" where X is a number and YYYYY is 1-5 uppercase letters
     ELSIF NEW.versao ~ '^[0-9]+-[A-Z]{1,5}$' THEN
@@ -113,16 +121,17 @@ BEGIN
                 SELECT 1 FROM acervo.versao 
                 WHERE produto_id = NEW.produto_id AND versao = previous_version
             ) THEN
-                RAISE EXCEPTION 'Previous version % does not exist for this product', previous_version;
+                RAISE EXCEPTION 'Não existe a versão anterior % para este produto', previous_version;
             END IF;
         END IF;
         
         RETURN NEW;
     ELSE
-        RAISE EXCEPTION 'Invalid version name format: %', NEW.versao;
+        RAISE EXCEPTION 'Formato inválido para versão: %', NEW.versao;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
 
 CREATE TRIGGER validate_version_trigger
 BEFORE INSERT OR UPDATE ON acervo.versao
