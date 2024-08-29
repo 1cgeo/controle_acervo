@@ -8,7 +8,13 @@ const controller = {};
 
 controller.getProjetos = async () => {
   return db.conn.any(
-    `SELECT * FROM acervo.projeto`
+    `SELECT p.id, p.nome, p.descricao, p.data_inicio,
+    p.data_fim, p.status_execucao_id, p.data_cadastramento,
+    p.usuario_cadastramento_uuid, p.data_modificacao,
+    p.usuario_modificacao_uuid, tse.nome AS status_execucao
+    FROM acervo.projeto AS p
+    INNER JOIN dominio.tipo_status_execucao AS tse On tse.code = p.status_execucao_id
+    `
   );
 };
 
@@ -21,7 +27,7 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
       'nome', 'descricao', 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao', 
+      'status_execucao_id', 
       {name: 'data_cadastramento', cast: 'date'},
       'usuario_cadastramento_uuid'
     ]);
@@ -43,7 +49,7 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
       'id', 'nome', 'descricao', 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao', 
+      'status_execucao_id', 
       {name: 'data_modificacao', cast: 'date'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
@@ -102,7 +108,15 @@ controller.deleteProjetos = async projetoIds => {
 
 controller.getLotes = async () => {
   return db.conn.any(
-    `SELECT * FROM acervo.lote`
+    `SELECT l.id, l.projeto_id, l.pit, l.nome, l.descricao, l.data_inicio,
+    l.data_fim, l.status_execucao_id, l.data_cadastramento,
+    l.usuario_cadastramento_uuid, l.data_modificacao,
+    l.usuario_modificacao_uuid, tse.nome AS status_execucao,
+    p.nome AS projeto
+    FROM acervo.lote AS l
+    INNER JOIN dominio.tipo_status_execucao AS tse On tse.code = l.status_execucao_id
+    INNER JOIN acervo.projeto AS p ON p.id = l.projeto_id
+    `
   );
 };
 
@@ -114,7 +128,7 @@ controller.criaLote = async (lote, usuarioUuid) => {
       'projeto_id', 'pit', 'nome', 'descricao', 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao', 
+      'status_execucao_id', 
       {name: 'data_cadastramento', cast: 'date'},
       'usuario_cadastramento_uuid'
     ]);
@@ -137,7 +151,7 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
       'id', 'projeto_id', 'pit', 'nome', 'descricao', 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao',
+      'status_execucao_id',
       {name: 'data_modificacao', cast: 'date'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);

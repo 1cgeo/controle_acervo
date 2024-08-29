@@ -117,7 +117,7 @@ router.get(
 );
 
 router.get(
-  '/produto/detailed/id/:produto_id',
+  '/produto/detalhado/id/:produto_id',
   verifyLogin,
   schemaValidation({ 
     params: acervoSchema.produtoByIdParams
