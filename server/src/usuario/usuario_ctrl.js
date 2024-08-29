@@ -45,7 +45,7 @@ controller.atualizaUsuarioLista = async usuarios => {
       }
     ) + "WHERE Y.uuid::uuid = X.uuid";
 
-  return db.sapConn.none(query);
+  return db.conn.none(query);
 };
 
 controller.getUsuariosAuthServer = async () => {

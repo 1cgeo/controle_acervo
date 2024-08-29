@@ -12,61 +12,95 @@ const acervoSchema = require('./acervo_schema')
 const router = express.Router()
 
 router.get(
-  '/estilo',
-  asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.getEstilo()
-
-    const msg = 'Estilo retornado com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.get(
-  '/download',
-  asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.getDownload()
-
-    const msg = 'Informação de download retornadas com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.get(
-  '/tipo_produto',
+  '/dominio/tipo_produto',
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.getTipoProduto()
 
-    const msg = 'Tipos de produto retornados com sucesso'
+    const msg = 'Domínio Tipos de produto retornados com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 
 router.get(
-  'produto/tipo/:tipo_produto_id',
-  schemaValidation({ 
-    params: acervoSchema.produtoByTipoParams,
-    query:  acervoSchema.produtoByTipoQuery
-  }),
+  '/dominio/situacao_bdgex',
   asyncHandler(async (req, res, next) => {
-    const { tipo_produto_id } = req.params;
-    const { projeto_id, lote_id } = req.query;
-    
-    const dados = await produtoCtrl.getProdutosByTipo(
-      tipo_produto_id, 
-      projeto_id || null, 
-      lote_id || null
-    );
-    const msg = 'Produtos retornados com sucesso';
+    const dados = await acervoCtrl.getSituacaoBDGEx()
+
+    const msg = 'Domínio Situação no BDGEx retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_arquivo',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoArquivo()
+
+    const msg = 'Domínio Tipo de Arquivos retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_relacionamento',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoRelacionamento()
+
+    const msg = 'Domínio Tipo de Relacionamento retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_status_arquivo',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoStatusArquivo()
+
+    const msg = 'Domínio Tipo de Status do Arquivo retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_versao',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoVersao()
+
+    const msg = 'Domínio Tipo de Versão retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_status_execucao',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoStatusExecucao()
+
+    const msg = 'Domínio Tipo de Status de Execução retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/camadas_produto',
+  asyncHandler(async (req, res, next) => {
+  
+    const dados = await produtoCtrl.getProdutosLayer();
+    const msg = 'Camadas de Produtos retornados com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 
 router.get(
-  'produto/id/:produto_id',
+  '/produto/id/:produto_id',
   verifyLogin,
   schemaValidation({ 
     params: acervoSchema.produtoByIdParams
@@ -83,7 +117,7 @@ router.get(
 );
 
 router.get(
-  'produto/detailed/id/:produto_id',
+  '/produto/detailed/id/:produto_id',
   verifyLogin,
   schemaValidation({ 
     params: acervoSchema.produtoByIdParams
@@ -144,15 +178,30 @@ router.get(
 )
 
 router.post(
-  '/versao_historico',
+  '/versao_historica',
   verifyAdmin,
   schemaValidation({
-    body: acervoSchema.versaoHistorico
+    body: acervoSchema.versoesHistoricas
   }),
   asyncHandler(async (req, res, next) => {
-    await acervoCtrl.criaVersaoHistorico(req.body, req.usuarioUuid);
+    await acervoCtrl.criaVersaoHistorica(req.body, req.usuarioUuid);
 
-    const msg = 'Versão histórica criada com sucesso';
+    const msg = 'Versões históricas criadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
+router.post(
+  '/produto_versao_historica',
+  verifyAdmin,
+  schemaValidation({
+    body: acervoSchema.produtosVersoesHistoricas
+  }),
+  asyncHandler(async (req, res, next) => {
+    await acervoCtrl.criaProdutoVersaoHistorica(req.body, req.usuarioUuid);
+
+    const msg = 'Produtos com versões históricas criados com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.Created);
   })
@@ -203,7 +252,7 @@ router.post(
   })
 );
 
-router.get(
+router.post(
   '/verificar_consistencia',
   verifyAdmin,
   asyncHandler(async (req, res, next) => {

@@ -108,4 +108,15 @@ router.get(
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
 }));
 
+router.get(
+  '/download',
+  asyncHandler(async (req, res, next) => {
+    const dados = await dashboardCtrl.getDownload()
+
+    const msg = 'Informação de download retornadas com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 module.exports = router

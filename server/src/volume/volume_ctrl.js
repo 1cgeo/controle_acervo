@@ -7,13 +7,13 @@ const { AppError, httpCode } = require("../utils");
 const controller = {};
 
 controller.getVolumeArmazenamento = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `SELECT id, volume, nome, capacidade_mb FROM acervo.volume_armazenamento`
   )
 }
 
 controller.criaVolumeArmazenamento = async volumeArmazenamento => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome', 'volume', 'capacidade_mb'
     ])
@@ -28,7 +28,7 @@ controller.criaVolumeArmazenamento = async volumeArmazenamento => {
 }
 
 controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'nome', 'volume', 'capacidade_mb'
     ])
@@ -49,7 +49,7 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
 }
 
 controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const associated = await t.any(
       `SELECT volume_armazenamento_id FROM acervo.volume_tipo_produto
       WHERE volume_armazenamento_id in ($<volumeArmazenamentoIds:csv>)`,
@@ -85,13 +85,13 @@ controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
 }
 
 controller.getVolumeTipoProduto = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `SELECT id, tipo_produto_id, volume_armazenamento_id, primario FROM acervo.volume_tipo_produto`
   )
 }
 
 controller.criaVolumeTipoProduto = async volumeTipoProduto => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'tipo_produto_id', 'volume_armazenamento_id', 'primario'
     ])
@@ -106,7 +106,7 @@ controller.criaVolumeTipoProduto = async volumeTipoProduto => {
 }
 
 controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'tipo_produto_id', 'volume_armazenamento_id', 'primario'
     ])
@@ -127,7 +127,7 @@ controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
 }
 
 controller.deleteVolumeTipoProduto = async volumeTipoProdutoIds => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.volume_tipo_produto
       WHERE id in ($<volumeTipoProdutoIds:csv>)`,

@@ -7,7 +7,7 @@ const { AppError, httpCode } = require("../utils");
 const controller = {};
 
 controller.getProjetos = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `SELECT * FROM acervo.projeto`
   );
 };
@@ -16,9 +16,14 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
   projeto.data_cadastramento = new Date();
   projeto.usuario_cadastramento_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'descricao', 'data_inicio', 'data_fim', 'status_execucao', 'data_cadastramento', 'usuario_cadastramento_id'
+      'nome', 'descricao', 
+      {name: 'data_inicio', cast: 'date'},
+      {name: 'data_fim', cast: 'date'},
+      'status_execucao', 
+      {name: 'data_cadastramento', cast: 'date'},
+      'usuario_cadastramento_uuid'
     ]);
 
     const query = db.pgp.helpers.insert(projeto, cs, {
@@ -33,14 +38,19 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
 controller.atualizaProjeto = async (projeto, usuarioUuid) => {
   projeto.data_modificacao = new Date();
   projeto.usuario_modificacao_uuid = usuarioUuid;
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'nome', 'descricao', 'data_inicio', 'data_fim', 'status_execucao', 'data_modificacao', 'usuario_modificacao_id'
+      'id', 'nome', 'descricao', 
+      {name: 'data_inicio', cast: 'date'},
+      {name: 'data_fim', cast: 'date'},
+      'status_execucao', 
+      {name: 'data_modificacao', cast: 'date'},
+      {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
 
     const query = 
       db.pgp.helpers.update(
-        projeto,
+        [projeto],
         cs,
         { table: 'projeto', schema: 'acervo' },
         {
@@ -48,13 +58,12 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
           valueAlias: 'Y'
         }
       ) + ' WHERE Y.id = X.id';
-
     await t.none(query);
   });
 };
 
 controller.deleteProjetos = async projetoIds => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.projeto
       WHERE id in ($<projetoIds:csv>)`,
@@ -92,7 +101,7 @@ controller.deleteProjetos = async projetoIds => {
 };
 
 controller.getLotes = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `SELECT * FROM acervo.lote`
   );
 };
@@ -100,10 +109,14 @@ controller.getLotes = async () => {
 controller.criaLote = async (lote, usuarioUuid) => {
   lote.data_cadastramento = new Date();
   lote.usuario_cadastramento_uuid = usuarioUuid;
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'projeto_id', 'pit', 'nome', 'descricao', 'data_inicio', 'data_fim', 
-      'status_execucao', 'data_cadastramento', 'usuario_cadastramento_uuid'
+      'projeto_id', 'pit', 'nome', 'descricao', 
+      {name: 'data_inicio', cast: 'date'},
+      {name: 'data_fim', cast: 'date'},
+      'status_execucao', 
+      {name: 'data_cadastramento', cast: 'date'},
+      'usuario_cadastramento_uuid'
     ]);
 
     const query = db.pgp.helpers.insert(lote, cs, {
@@ -119,15 +132,19 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   lote.data_modificacao = new Date();
   lote.usuario_modificacao_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'projeto_id', 'pit', 'nome', 'descricao', 'data_inicio', 
-      'data_fim', 'status_execucao', 'data_modificacao', 'usuario_modificacao_uuid'
+      'id', 'projeto_id', 'pit', 'nome', 'descricao', 
+      {name: 'data_inicio', cast: 'date'},
+      {name: 'data_fim', cast: 'date'},
+      'status_execucao',
+      {name: 'data_modificacao', cast: 'date'},
+      {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
 
     const query = 
       db.pgp.helpers.update(
-        lote,
+        [lote],
         cs,
         { table: 'lote', schema: 'acervo' },
         {
@@ -141,7 +158,7 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
 };
 
 controller.deleteLotes = async loteIds => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,

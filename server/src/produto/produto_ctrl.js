@@ -1,12 +1,12 @@
 "use strict";
 
-const { db } = require("../database");
+const { db, refreshViews } = require("../database");
 const { AppError, httpCode } = require("../utils");
 
 const controller = {};
 
 controller.atualizaProduto = async (produto, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     produto.data_modificacao = new Date()
     produto.usuario_modificacao_uuid = usuarioUuid
 
@@ -20,11 +20,13 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
     const query = db.pgp.helpers.update(produto, cs) + `WHERE id = ${produto.id}`
 
     await t.none(query)
+
+    await refreshViews.atualizarViewsPorProdutos(t, [produto.id])
   })
 }
 
 controller.atualizaVersao = async (versao, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     versao.data_modificacao = new Date();
     versao.usuario_modificacao_uuid = usuarioUuid;
 
@@ -38,11 +40,13 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     const query = db.pgp.helpers.update(versao, cs) + ` WHERE id = ${versao.id}`;
 
     await t.none(query);
+
+    await refreshViews.atualizarViewsPorVersoes(t, [versao.id])
   });
 };
 
 controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     arquivo.data_modificacao = new Date();
     arquivo.usuario_modificacao_uuid = usuarioUuid;
 
@@ -56,6 +60,8 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
     const query = db.pgp.helpers.update(arquivo, cs) + ` WHERE id = ${arquivo.id}`;
 
     await t.none(query);
+
+    await refreshViews.atualizarViewsPorArquivos(t, [arquivo.id])
   });
 };
 
@@ -63,7 +69,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     for (let id of produtoIds) {
       const produto = await t.oneOrNone('SELECT * FROM acervo.produto WHERE id = $1', [id]);
       if (!produto) continue;
@@ -131,7 +137,9 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
 
       // Finally, delete the product itself from the produto table
       await t.none('DELETE FROM acervo.produto WHERE id = $1', [id]);
+
     }
+    await refreshViews.atualizarViewsPorProdutos(t, produtoIds)
   });
 };
 
@@ -139,7 +147,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     for (let id of versaoIds) {
       const versao = await t.oneOrNone('SELECT * FROM acervo.versao WHERE id = $1', [id]);
       if (!versao) continue;
@@ -201,6 +209,8 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       // Finally, delete the version itself from the versao table
       await t.none('DELETE FROM acervo.versao WHERE id = $1', [versao.id]);
     }
+
+    await refreshViews.atualizarViewsPorVersoes(t, versaoIds)
   });
 };
 
@@ -208,7 +218,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     for (let id of arquivoIds) {
       const arquivo = await t.oneOrNone('SELECT * FROM acervo.arquivo WHERE id = $1', [id]);
       if (!arquivo) continue;
@@ -264,11 +274,13 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
       // Finally, delete the file itself from the arquivo table
       await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [id]);
     }
+
+    await refreshViews.atualizarViewsPorArquivos(t, arquivoIds)
   });
 };
 
 controller.getVersaoRelacionamento = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `SELECT id, versao_id_1, versao_id_2, tipo_relacionamento_id, data_relacionamento, usuario_relacionamento_uuid 
      FROM acervo.versao_relacionamento`
   );
@@ -277,7 +289,7 @@ controller.getVersaoRelacionamento = async () => {
 controller.criaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
   versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
     ]);
@@ -294,7 +306,7 @@ controller.criaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) 
 controller.atualizaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
   versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
 
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
     ]);
@@ -315,7 +327,7 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamento, usuarioUu
 };
 
 controller.deleteVersaoRelacionamento = async versaoRelacionamentoIds => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.versao_relacionamento
       WHERE id in ($<versaoRelacionamentoIds:csv>)`,

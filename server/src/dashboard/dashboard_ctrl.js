@@ -5,15 +5,15 @@ const { db } = require('../database')
 const controller = {}
 
 controller.getTotalProdutos = async () => {
-  return db.sapConn.one('SELECT COUNT(*) AS total_oprodutos FROM acervo.produto');
+  return db.conn.one('SELECT COUNT(*) AS total_oprodutos FROM acervo.produto');
 }
 
 controller.getTotalArquivosGb = async () => {
-  return db.sapConn.one('SELECT SUM(tamanho_mb) / 1024 AS total_gb FROM acervo.arquivo');
+  return db.conn.one('SELECT SUM(tamanho_mb) / 1024 AS total_gb FROM acervo.arquivo');
 }
 
 controller.getProdutosPorTipo = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT p.tipo_produto_id, tp.nome AS tipo_produto, COUNT(*) AS quantidade 
     FROM acervo.produto AS p
     INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
@@ -22,7 +22,7 @@ controller.getProdutosPorTipo = async () => {
 }
 
 controller.getGbPorTipoProduto = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT p.tipo_produto_id, tp.nome AS tipo_produto, SUM(a.tamanho_mb) / 1024 AS total_gb 
     FROM acervo.produto p 
     INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
@@ -33,11 +33,11 @@ controller.getGbPorTipoProduto = async () => {
 }
 
 controller.getTotalUsuarios = async () => {
-  return db.sapConn.one('SELECT COUNT(*) AS total_usuarios FROM dgeo.usuario');
+  return db.conn.one('SELECT COUNT(*) AS total_usuarios FROM dgeo.usuario');
 }
 
 controller.getArquivosPorDia = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT DATE(data_cadastramento) AS dia, COUNT(*) AS quantidade
     FROM acervo.arquivo 
     GROUP BY dia ORDER BY dia
@@ -46,7 +46,7 @@ controller.getArquivosPorDia = async () => {
 }
 
 controller.getDownloadsPorDia = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT DATE(data_download) AS dia, COUNT(*) AS quantidade 
     FROM acervo.download 
     GROUP BY dia ORDER BY dia
@@ -55,7 +55,7 @@ controller.getDownloadsPorDia = async () => {
 }
 
 controller.getGbPorVolume = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT a.volume_armazenamento_id, va.nome AS nome_volume, va.volume, 
     va.capacidade_mb AS capacidade_mb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb 
     FROM acervo.arquivo AS a
@@ -65,14 +65,14 @@ controller.getGbPorVolume = async () => {
 }
 
 controller.getUltimosCarregamentos = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT * FROM acervo.arquivo 
     ORDER BY data_cadastramento DESC 
     LIMIT 10`);
 }
 
 controller.getUltimasModificacoes = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT * 
     FROM acervo.arquivo 
     WHERE data_modificacao IS NOT NULL 
@@ -82,11 +82,36 @@ controller.getUltimasModificacoes = async () => {
 }
 
 controller.getUltimosDeletes = async () => {
-  return db.sapConn.any(`
+  return db.conn.any(`
     SELECT * 
     FROM acervo.arquivo_deletado 
     ORDER BY data_delete DESC 
     LIMIT 10`
+  );
+}
+
+controller.getDownload = async () => {
+  return db.conn.any(
+    `
+    SELECT * FROM
+    (SELECT 
+      d.id,
+      d.arquivo_id,
+      d.usuario_uuid,
+      d.data_download,
+      false AS apagado
+    FROM acervo.download d
+    UNION ALL
+    SELECT 
+      dd.id,
+      dd.arquivo_deletado_id AS arquivo_id,
+      dd.usuario_uuid,
+      dd.data_download,
+      true AS apagado
+    FROM acervo.download_deletado dd) AS downloads
+    ORDER BY data_download DESC
+    LIMIT 50
+    `
   );
 }
 

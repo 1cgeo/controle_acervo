@@ -2,106 +2,104 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
-const { db } = require("../database");
+const { db, refreshViews } = require("../database");
 const { AppError, httpCode } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
+const { version } = require('os');
+
+const {
+  DB_USER,
+  DB_PASSWORD,
+  DB_SERVER,
+  DB_PORT,
+  DB_NAME
+} = require('../config')
 
 const controller = {};
 
-controller.getEstilo = async () => {
-  return db.conn.any("SELECT * FROM public.layer_styles");
-};
-
-controller.getDownload = async () => {
-  return db.conn.any(
-    `
-    SELECT 
-      d.id,
-      d.arquivo_id,
-      d.usuario_uuid,
-      d.data_download,
-      false AS apagado
-    FROM acervo.download d
-    UNION ALL
-    SELECT 
-      dd.id,
-      dd.arquivo_deletado_id AS arquivo_id,
-      dd.usuario_uuid,
-      dd.data_download,
-      true AS apagado
-    FROM acervo.download_deletado dd
-    `
-  );
-}
-
 controller.getTipoProduto = async () => {
   return db.conn.any(`
-    SELECT tp.code, tp.nome, COUNT(p.id) AS num_produtos
-    FROM dominio.tipo_produto AS tp
-    LEFT JOIN acervo.produto p ON tp.code = p.tipo_produto_id
-    GROUP BY tp.code, tp.nome
-    ORDER BY num_produtos DESC;
+    SELECT code, nome
+    FROM dominio.tipo_produto
     `);
 };
 
-controller.getProdutosByTipo = async (tipoId, projetoId = null, loteId = null) => {
-  return db.sapConn.task(async t => {
-    let query = `
-      SELECT p.id, p.nome, p.mi, p.inom, p.denominador_escala, p.descricao,
-             p.geom, tp.nome AS tipo_produto
-             p.data_cadastramento, u1.nome AS usuario_cadastramento
-             p.data_modificacao, u2.nome AS usuario_modificacao
-             COUNT(DISTINCT v.id) AS num_versoes,
-             MAX(v.data_criacao) AS data_criacao_recente,
-             MAX(v.data_edicao) AS data_edicao_recente,
-             ARRAY(
-               SELECT DISTINCT EXTRACT(YEAR FROM v2.data_criacao)::integer
-               FROM acervo.versao v2
-               WHERE v2.produto_id = p.id
-               ORDER BY EXTRACT(YEAR FROM v2.data_criacao) DESC
-             ) AS anos_criacao,
-             ARRAY(
-               SELECT DISTINCT EXTRACT(YEAR FROM v2.data_edicao)::integer
-               FROM acervo.versao v2
-               WHERE v2.produto_id = p.id
-               ORDER BY EXTRACT(YEAR FROM v2.data_edicao) DESC
-             ) AS anos_edicao,
-             COUNT(DISTINCT a.id) AS num_arquivos,
-             COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS tamanho_total_gb
-      FROM acervo.produto p
-      INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
-      INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
-      INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
-      LEFT JOIN acervo.versao v ON p.id = v.produto_id
-      LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
-      WHERE p.tipo_produto_id = $1
+controller.getSituacaoBDGEx = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.situacao_bdgex
+    `);
+};
+
+controller.getTipoArquivo = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_arquivo
+    `);
+};
+
+controller.getTipoRelacionamento = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_relacionamento
+    `);
+};
+
+controller.getTipoStatusArquivo = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_status_arquivo
+    `);
+};
+
+controller.getTipoVersao = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_versao
+    `);
+};
+
+controller.getTipoStatusExecucao = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_status_execucao
+    `);
+};
+
+controller.getProdutosLayer = async () => {
+  return db.conn.task(async t => {
+    const query = `
+      SELECT 
+        mv.matviewname,
+        tp.nome AS tipo_produto,
+        (SELECT COUNT(*) FROM acervo.produto WHERE tipo_produto_id = tp.code) AS quantidade_produtos
+      FROM pg_matviews mv
+      JOIN dominio.tipo_produto tp ON mv.matviewname = 'mv_produtos_tipo_' || tp.code
+      WHERE mv.schemaname = 'acervo' AND mv.matviewname LIKE 'mv_produtos_tipo_%'
+      ORDER BY tp.code
     `;
-
-    const queryParams = [tipoId];
-    let paramCount = 1;
-
-    if (projetoId !== null) {
-      paramCount++;
-      query += ` AND v.projeto_id = $${paramCount}`;
-      queryParams.push(projetoId);
+    
+    const result = await t.any(query);
+    
+    const banco_dados = {
+      nome_db: DB_NAME,
+      servidor: DB_SERVER,
+      porta: DB_PORT,
+      login: DB_USER,
+      senha: DB_PASSWORD
     }
 
-    if (loteId !== null) {
-      paramCount++;
-      query += ` AND v.lote_id = $${paramCount}`;
-      queryParams.push(loteId);
-    }
-
-    query += ` GROUP BY p.id`;
-
-    const produtos = await t.any(query, queryParams);
-
-    return produtos;
+    return result.map(row => ({
+      matviewname: row.matviewname,
+      tipo_produto: row.tipo_produto,
+      quantidade_produtos: parseInt(row.quantidade_produtos),
+      banco_dados: banco_dados
+    }));
   });
 };
 
 controller.getProdutoById = async produtoId => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const result = await t.one(`
       WITH newest_version AS (
         SELECT v.id AS versao_id, tv.nome AS tipo_versao, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
@@ -188,7 +186,7 @@ controller.getProdutoById = async produtoId => {
 };
 
 controller.getProdutoDetailedById = async produtoId => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const result = await t.one(`
       WITH versoes AS (
         SELECT 
@@ -287,7 +285,7 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
   }
 
   // Check if all arquivoIds exist in the database
-  const existingArquivos = await db.sapConn.any(
+  const existingArquivos = await db.conn.any(
     `SELECT id FROM acervo.arquivo WHERE id IN ($<arquivoIds:csv>)`,
     { arquivoIds }
   );
@@ -308,7 +306,7 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
 
   await db.conn.none(query);
 
-  const filePaths = await db.sapConn.any(
+  const filePaths = await db.conn.any(
     `
     SELECT
       a.id AS arquivo_id,
@@ -339,7 +337,7 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
   }
 
   // Get the newest versao for each produto and its associated arquivos
-  const newestVersionsWithFiles = await db.sapConn.any(
+  const newestVersionsWithFiles = await db.conn.any(
     `
     WITH newest_versions AS (
       SELECT v.produto_id, v.id AS versao_id
@@ -381,7 +379,7 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
     schema: "acervo"
   });
 
-  await db.sapConn.none(query);
+  await db.conn.none(query);
 
   // Prepare file paths for response
   const filePaths = newestVersionsWithFiles.map(file => ({
@@ -393,7 +391,7 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
 };
 
 controller.getArquivosDeletados = async () => {
-  return db.sapConn.any(
+  return db.conn.any(
     `
     SELECT 
       ad.id, 
@@ -465,32 +463,77 @@ controller.getArquivosDeletados = async () => {
   );
 };
 
-controller.criaVersaoHistorico = async (versao, usuarioUuid) => {
-  versao.data_cadastramento = new Date();
-  versao.usuario_cadastramento_uuid = usuarioUuid;
-  versao.tipo_versao = 2; //Registro Histórico
+controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
+  const data_cadastramento = new Date();
 
-  if (!versao.uuid_versao) {
-    versao.uuid_versao = uuidv4();
-  }
+  const versoesPreparadas = versoes.map(versao => {
+    return {
+      ...versao,
+      uuid_versao: versao.uuid_versao || uuidv4(),
+      data_cadastramento: data_cadastramento,
+      usuario_cadastramento_uuid: usuarioUuid,
+      tipo_versao: 2, // Registro Histórico
+    };
+  });
 
-  return db.sapConn.tx(async t => {
+  const versoesId = versoes.map(versao => versao.id)
+
+  return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
       'data_criacao', 'data_edicao', 'tipo_versao', 'data_cadastramento', 'usuario_cadastramento_uuid'
-    ]);
+    ], { table: 'versao', schema: 'acervo' });
 
-    const query = db.pgp.helpers.insert(lote, cs, {
-      table: 'versao',
-      schema: 'acervo'
-    });
+    const query = db.pgp.helpers.insert(versoesPreparadas, cs);
 
     await t.none(query);
+
+    await refreshViews.atualizarViewsPorVersoes(t, versoesId);
+  });
+};
+
+controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
+  const data_cadastramento = new Date();
+
+  return db.conn.tx(async t => {
+    const produtosIds = []
+
+    for (const produto of produtos) {
+      // Inserir o produto
+      const [novoProduto] = await t.any(`
+        INSERT INTO acervo.produto(nome, mi, inom, denominador_escala, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
+        VALUES($1, $2, $3, $4, $5, $6, ST_GeomFromGeoJSON($7), $8, $9)
+        RETURNING id
+      `, [produto.nome, produto.mi, produto.inom, produto.denominador_escala, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
+
+      produtosIds.push(novoProduto.id)
+
+      // Preparar e inserir as versões
+      const versoesPreparadas = produto.versoes.map(versao => ({
+        ...versao,
+        uuid_versao: versao.uuid_versao || uuidv4(),
+        produto_id: novoProduto.id,
+        data_cadastramento: data_cadastramento,
+        usuario_cadastramento_uuid: usuarioUuid,
+        tipo_versao_id: 2 // Registro Histórico
+      }));
+
+      const cs = new db.pgp.helpers.ColumnSet([
+        'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
+        'data_criacao', 'data_edicao', 'tipo_versao_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
+      ], { table: 'versao', schema: 'acervo' });
+
+      const query = db.pgp.helpers.insert(versoesPreparadas, cs);
+      await t.none(query);
+    }
+
+    await refreshViews.atualizarViewsPorProdutos(t, produtosIds);
   });
 };
 
 controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
+    const produtosId = []
     for (const item of produtos) {
       const { produto, versao, arquivos } = item;
 
@@ -504,6 +547,8 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
         [produto.nome, produto.mi, produto.inom, produto.denominador_escala,
          produto.tipo_produto_id, produto.descricao, usuarioUuid, produto.geom]
       );
+
+      produtosId.push(productId)
 
       if (!versao.uuid_versao) {
         versao.uuid_versao = uuidv4();
@@ -521,12 +566,18 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
       );
 
       // Get the appropriate volume_armazenamento_id
-      const { volume_armazenamento_id } = await t.one(
+      const volumeTipoProduto = await t.oneOrNone(
         `SELECT volume_armazenamento_id 
          FROM acervo.volume_tipo_produto 
          WHERE tipo_produto_id = $1 AND primario = TRUE`,
         [produto.tipo_produto_id]
       );
+
+      if (!volumeTipoProduto) {
+        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto ${produto.tipo_produto_id}`, httpCode.NotFound);
+      }
+
+      const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
 
       // Insert files
       for (const arquivo of arquivos) {
@@ -544,12 +595,15 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
         );
       }
     }
+
+    await refreshViews.atualizarViewsPorProdutos(t, produtosId);
+
   });
 }
 
 controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
-    const results = [];
+  return db.conn.tx(async t => {
+    const versoesId = [];
 
     for (const item of versoes) {
       const { produto_id, versao, arquivos } = item;
@@ -574,15 +628,21 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
          versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
          versao.data_edicao, usuarioUuid]
       );
+      versoesId.push(versionId)
 
-      // Get the appropriate volume_armazenamento_id
-      const { volume_armazenamento_id } = await t.one(
-        `SELECT vtp.volume_armazenamento_id 
-         FROM acervo.volume_tipo_produto vtp
-         JOIN acervo.produto p ON p.tipo_produto_id = vtp.tipo_produto_id
-         WHERE p.id = $1 AND vtp.primario = TRUE`,
-        [produto_id]
+      // Check if volume_tipo_produto exists
+      const volumeTipoProduto = await t.oneOrNone(
+        `SELECT volume_armazenamento_id 
+         FROM acervo.volume_tipo_produto 
+         WHERE tipo_produto_id = $1 AND primario = TRUE`,
+        [product.tipo_produto_id]
       );
+
+      if (!volumeTipoProduto) {
+        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto do produto ${produto_id}`, httpCode.NotFound);
+      }
+
+      const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
 
       // Insert files
       for (const arquivo of arquivos) {
@@ -599,20 +659,19 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
            arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
-
-      results.push({ produto_id, versao_id: versionId, versao_uuid: versao.uuid_versao });
     }
 
-    return results;
+    await refreshViews.atualizarViewsPorVersoes(t, versoesId);
   });
 }
 
 controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
-  return db.sapConn.tx(async t => {
-    const results = [];
+  return db.conn.tx(async t => {
+    const versoesIds = [];
 
     for (const item of arquivos_por_versao) {
       const { versao_id, arquivos } = item;
+      versoesIds.push(versao_id)
 
       // Check if the version exists and get the associated product_id
       const version = await t.oneOrNone('SELECT id, produto_id FROM acervo.versao WHERE id = $1', [versao_id]);
@@ -620,14 +679,19 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
         throw new AppError(`Versão com id ${versao_id} não encontrada`, httpCode.NotFound);
       }
 
-      // Get the appropriate volume_armazenamento_id
-      const { volume_armazenamento_id } = await t.one(
-        `SELECT vtp.volume_armazenamento_id 
-         FROM acervo.volume_tipo_produto vtp
-         JOIN acervo.produto p ON p.tipo_produto_id = vtp.tipo_produto_id
-         WHERE p.id = $1 AND vtp.primario = TRUE`,
-        [version.produto_id]
+      // Check if volume_tipo_produto exists
+      const volumeTipoProduto = await t.oneOrNone(
+        `SELECT volume_armazenamento_id 
+         FROM acervo.volume_tipo_produto 
+         WHERE tipo_produto_id = $1 AND primario = TRUE`,
+        [version.tipo_produto_id]
       );
+
+      if (!volumeTipoProduto) {
+        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto da versão ${versao_id}`, httpCode.NotFound);
+      }
+
+      const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
 
       // Insert files
       for (const arquivo of arquivos) {
@@ -644,16 +708,14 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
            arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
-
-      results.push({ versao_id, arquivos_adicionados: arquivos.length });
     }
+    await refreshViews.atualizarViewsPorArquivos(t, versoesIds);
 
-    return results;
   });
 }
 
 controller.verificarConsistencia = async () => {
-  return db.sapConn.tx(async t => {
+  return db.conn.tx(async t => {
     const arquivos = await t.any(`
       SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume
       FROM acervo.arquivo a
@@ -667,7 +729,8 @@ controller.verificarConsistencia = async () => {
       JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
     `);
 
-    const resultados = [];
+    const arquivosParaAtualizar = [];
+    const arquivosDeletadosParaAtualizar = [];
 
     // Check existing files
     for (const arquivo of arquivos) {
@@ -682,28 +745,10 @@ controller.verificarConsistencia = async () => {
           .digest('hex');
 
         if (calculatedChecksum !== arquivo.checksum) {
-          resultados.push({
-            id: arquivo.id,
-            nome_arquivo: arquivo.nome_arquivo,
-            descricao: "Checksum inválido"
-          });
-          await t.none(`
-            UPDATE acervo.arquivo
-            SET tipo_status_id = 2
-            WHERE id = $1
-          `, [arquivo.id]);
+          arquivosParaAtualizar.push(arquivo.id);
         }
       } catch (error) {
-        resultados.push({
-          id: arquivo.id,
-          nome_arquivo: arquivo.nome_arquivo,
-          descricao: "Arquivo faltando"
-        });
-        await t.none(`
-          UPDATE acervo.arquivo
-          SET tipo_status_id = 2
-          WHERE id = $1
-        `, [arquivo.id]);
+        arquivosParaAtualizar.push(arquivo.id);
       }
     }
 
@@ -722,28 +767,56 @@ controller.verificarConsistencia = async () => {
         `, [deletedFilePath]);
 
         if (!existingArquivo) {
-          resultados.push({
-            id: arquivoDeletado.id,
-            nome_arquivo: arquivoDeletado.nome_arquivo,
-            descricao: "Erro na exclusão"
-          });
-          await t.none(`
-            UPDATE acervo.arquivo_deletado
-            SET tipo_status_id = 4
-            WHERE id = $1
-          `, [arquivoDeletado.id]);
+          arquivosDeletadosParaAtualizar.push(arquivoDeletado.id);
         }
       } catch (error) {
         // File doesn't exist, which is expected for deleted files
       }
     }
 
-    return resultados;
+    if (arquivosParaAtualizar.length > 0) {
+      await t.none(`
+        UPDATE acervo.arquivo
+        SET tipo_status_id = 2
+        WHERE id = ANY($1)
+        AND tipo_status_id = 1
+      `, [arquivosParaAtualizar]);
+    }
+
+    if (arquivosDeletadosParaAtualizar.length > 0) {
+      await t.none(`
+        UPDATE acervo.arquivo_deletado
+        SET tipo_status_id = 4
+        WHERE id = ANY($1)
+        AND tipo_status_id = 3
+      `, [arquivosDeletadosParaAtualizar]);
+    }
+
+    // Verificar e atualizar arquivos classificados incorretamente como incorretos
+    await t.none(`
+      UPDATE acervo.arquivo
+      SET tipo_status_id = 1
+      WHERE tipo_status_id = 2
+      AND id NOT IN (SELECT unnest($1::bigint[]))
+    `, [arquivosParaAtualizar]);
+
+    // Verificar e atualizar arquivos deletados classificados incorretamente como incorretos
+    await t.none(`
+      UPDATE acervo.arquivo_deletado
+      SET tipo_status_id = 3
+      WHERE tipo_status_id = 4
+      AND id NOT IN (SELECT unnest($1::bigint[]))
+    `, [arquivosDeletadosParaAtualizar]);
+
+    return {
+      arquivos_atualizados: arquivosParaAtualizar.length,
+      arquivos_deletados_atualizados: arquivosDeletadosParaAtualizar.length
+    };
   });
 };
 
 controller.getArquivosIncorretos = async () => {
-  return db.sapConn.task(async t => {
+  return db.conn.task(async t => {
     const arquivosIncorretos = await t.any(`
       SELECT a.id, a.nome, a.nome_arquivo, a.extensao, v.volume, 'Arquivo com erro' as tipo
       FROM acervo.arquivo AS a
