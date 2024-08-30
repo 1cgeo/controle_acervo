@@ -57,10 +57,10 @@ controller.getDownloadsPorDia = async () => {
 controller.getGbPorVolume = async () => {
   return db.conn.any(`
     SELECT a.volume_armazenamento_id, va.nome AS nome_volume, va.volume, 
-    va.capacidade_mb AS capacidade_mb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb 
+    va.capacidade_gb AS capacidade_gb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb 
     FROM acervo.arquivo AS a
     INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
-    GROUP BY a.volume_armazenamento_id, va.nome, va.volume, va.capacidade_mb`
+    GROUP BY a.volume_armazenamento_id, va.nome, va.volume, va.capacidade_gb`
   );
 }
 

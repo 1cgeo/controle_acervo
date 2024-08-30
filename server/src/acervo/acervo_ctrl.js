@@ -17,6 +17,13 @@ const {
 
 const controller = {};
 
+controller.getTipoPostoGrad = async () => {
+  return db.conn.any(`
+    SELECT code, nome, nome_brev
+    FROM dominio.tipo_posto_grad
+    `);
+};
+
 controller.getTipoProduto = async () => {
   return db.conn.any(`
     SELECT code, nome

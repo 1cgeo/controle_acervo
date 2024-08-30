@@ -11,6 +11,18 @@ const acervoSchema = require('./acervo_schema')
 
 const router = express.Router()
 
+
+router.get(
+  '/dominio/tipo_posto_grad',
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getTipoPostoGrad()
+
+    const msg = 'Domínio Tipo Posto Graduação retornados com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.get(
   '/dominio/tipo_produto',
   asyncHandler(async (req, res, next) => {
