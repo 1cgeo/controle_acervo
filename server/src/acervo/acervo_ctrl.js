@@ -581,7 +581,7 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
       );
 
       if (!volumeTipoProduto) {
-        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto ${produto.tipo_produto_id}`, httpCode.NotFound);
+        throw new AppError(`Não existe volume_tipo_produto primário cadastrado para o tipo de produto ${produto.tipo_produto_id}`, httpCode.NotFound);
       }
 
       const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
@@ -646,7 +646,7 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
       );
 
       if (!volumeTipoProduto) {
-        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto do produto ${produto_id}`, httpCode.NotFound);
+        throw new AppError(`Não existe volume_tipo_produto primário cadastrado para o tipo de produto do produto ${produto_id}`, httpCode.NotFound);
       }
 
       const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
@@ -695,7 +695,7 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
       );
 
       if (!volumeTipoProduto) {
-        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto da versão ${versao_id}`, httpCode.NotFound);
+        throw new AppError(`Não existe volume_tipo_produto primário cadastrado para o tipo de produto da versão ${versao_id}`, httpCode.NotFound);
       }
 
       const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
