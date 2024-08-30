@@ -86,7 +86,12 @@ controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
 
 controller.getVolumeTipoProduto = async () => {
   return db.conn.any(
-    `SELECT id, tipo_produto_id, volume_armazenamento_id, primario FROM acervo.volume_tipo_produto`
+    `SELECT vtp.id, vtp.tipo_produto_id, vtp.volume_armazenamento_id, vtp.primario,
+    tp.nome AS tipo_produto, va.volume AS volume, va.nome AS nome_volume, va.capacidade_gb AS volume_capacidade_gb
+    FROM acervo.volume_tipo_produto AS vtp
+    INNER JOIN acervo.volume_armazenamento AS va ON va.id = vtp.volume_armazenamento_id
+    INNER JOIN dominio.tipo_produto AS tp ON tp.code = vtp.tipo_produto_id
+    `
   )
 }
 
