@@ -10,6 +10,7 @@ const { volumeRoute } = require("./volume");
 const { usuarioRoute } = require("./usuario");
 const { produtoRoute } = require("./produto");
 const { projetoRoute } = require("./projeto");
+const { gerenciaRoute } = require("./gerencia");
 
 const router = express.Router();
 
@@ -35,5 +36,7 @@ router.use("/volumes", volumeRoute);
 router.use("/produtos", produtoRoute);
 
 router.use("/projetos", projetoRoute);
+
+router.use("/gerencia", gerenciaRoute);
 
 module.exports = router;
