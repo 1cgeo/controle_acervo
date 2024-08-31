@@ -84,6 +84,7 @@ controller.getArquivosDeletados = async () => {
       ad.motivo_exclusao, 
       ad.versao_id, 
       v.versao AS versao, 
+      v.nome AS versao_nome,
       p.nome AS produto,
       p.mi,
       p.inom,

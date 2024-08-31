@@ -50,7 +50,7 @@ CREATE TABLE acervo.lote (
 
 CREATE TABLE acervo.produto(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
-	nome VARCHAR(255) NOT NULL,
+	nome VARCHAR(255),
 	mi VARCHAR(255),
 	inom VARCHAR(255),
 	denominador_escala INTEGER NOT NULL,
@@ -71,6 +71,7 @@ CREATE INDEX produto_geom
 CREATE TABLE acervo.versao(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	uuid_versao UUID UNIQUE NOT NULL,
+	nome VARCHAR(255),
 	versao VARCHAR(255) NOT NULL,
 	tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
 	produto_id BIGINT NOT NULL REFERENCES acervo.produto (id),

@@ -47,6 +47,7 @@ models.versoesHistoricas = Joi.array().items(
   Joi.object().keys({
     uuid_versao: Joi.string().uuid().allow(null).required(),
     versao: Joi.string().required(),
+    nome: Joi.string().allow(null).required(),  
     produto_id: Joi.number().integer().strict().required(),
     lote_id: Joi.number().integer().strict().allow(null).required(),
     metadado: Joi.object().required(),
@@ -61,7 +62,7 @@ models.versoesHistoricas = Joi.array().items(
 models.produtosVersoesHistoricas = Joi.array().items(
   Joi.object().keys({
     produto: Joi.object().keys({
-      nome: Joi.string().required(),
+      nome: Joi.string().allow(null).required(),
       mi: Joi.string().allow(null),
       inom: Joi.string().allow(null),
       denominador_escala: Joi.number().integer().strict().required(),
@@ -72,6 +73,7 @@ models.produtosVersoesHistoricas = Joi.array().items(
     versao: Joi.object().keys({
       uuid_versao: Joi.string().uuid().allow(null).required(),
       versao: Joi.string().required(),
+      nome: Joi.string().allow(null).required(),
       lote_id: Joi.number().integer().strict().allow(null).required(),
       metadado: Joi.object().required(),
       descricao: Joi.string().allow('').required(),
@@ -110,7 +112,7 @@ models.produtosMultiplosArquivos = Joi.object().keys({
   produtos: Joi.array().items(
     Joi.object().keys({
       produto: Joi.object().keys({
-        nome: Joi.string().required(),
+        nome: Joi.string().allow(null).required(),
         mi: Joi.string().allow(null).required(),
         inom: Joi.string().allow(null).required(),
         denominador_escala: Joi.number().integer().required(),
@@ -121,6 +123,7 @@ models.produtosMultiplosArquivos = Joi.object().keys({
       versao: Joi.object().keys({
         uuid_versao: Joi.string().uuid().allow(null).required(),
         versao: Joi.string().required(),
+        nome: Joi.string().allow(null).required(),
         tipo_versao_id: Joi.number().integer().required(),
         lote_id: Joi.number().integer().allow(null).required(),
         metadado: Joi.object().allow(null).required(),
@@ -140,6 +143,7 @@ models.versoesMultiplosArquivos = Joi.object().keys({
       versao: Joi.object().keys({
         uuid_versao: Joi.string().uuid().allow(null).required(),
         versao: Joi.string().required(),
+        nome: Joi.string().allow(null).required(),
         tipo_versao_id: Joi.number().integer().required(),
         lote_id: Joi.number().integer().allow(null).required(),
         metadado: Joi.object().allow(null).required(),
@@ -157,6 +161,20 @@ models.multiplosArquivos = Joi.object().keys({
     Joi.object().keys({
       versao_id: Joi.number().integer().required(),
       arquivos: Joi.array().items(fileSchema).min(1).required()
+    })
+  ).min(1).required()
+})
+
+models.produtos = Joi.object().keys({
+  produtos: Joi.array().items(
+    Joi.object().keys({
+      nome: Joi.string().allow(null).required(),
+      mi: Joi.string().allow(null).required(),
+      inom: Joi.string().allow(null).required(),
+      denominador_escala: Joi.number().integer().required(),
+      tipo_produto_id: Joi.number().integer().required(),
+      descricao: Joi.string().allow(null).required(),
+      geom: Joi.string().required()
     })
   ).min(1).required()
 })

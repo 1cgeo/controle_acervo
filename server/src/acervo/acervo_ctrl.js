@@ -53,7 +53,7 @@ controller.getProdutoById = async produtoId => {
   return db.conn.task(async t => {
     const result = await t.one(`
       WITH newest_version AS (
-        SELECT v.id AS versao_id, tv.nome AS tipo_versao, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
+        SELECT v.id AS versao_id, v.versao, v.nome AS nome_versao, tv.nome AS tipo_versao, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
         FROM acervo.versao v
         INNER JOIN dominio.tipo_versao AS tv ON tv.code = v.tipo_versao_id
         WHERE v.produto_id = $1
@@ -93,11 +93,11 @@ controller.getProdutoById = async produtoId => {
         LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
       )
       SELECT 
-        p.id AS produto_id, p.nome AS produto, p.mi, p.inom, p.denominador_escala, p.descricao AS descricao_produto,
+        p.id AS produto_id, p.nome AS nome_produto, p.mi, p.inom, p.denominador_escala, p.descricao AS descricao_produto,
         p.geom, tp.nome AS tipo_produto
         p.data_cadastramento, u1.nome AS usuario_cadastramento,
         p.data_modificacao, u2.nome AS usuario_modificacao,
-        nv.*,
+        nv.versao_id, nv.versao, nv.nome_versao, nv.tipo_versao, nv.metadado, nv.descricao_versao, nv.data_criacao, nv.data_edicao,
         l.nome AS lote_nome,
         l.pit AS lote_pit,
         pr.nome AS projeto_nome,
@@ -592,124 +592,50 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
   });
 }
 
-controller.verificarConsistencia = async () => {
+controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
   return db.conn.tx(async t => {
-    const arquivos = await t.any(`
-      SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume
-      FROM acervo.arquivo a
-      JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-      WHERE a.tipo_arquivo_id != 9
-    `);
+    const produtosId = []
+    for (const produto of produtos) {
+      // Insert product
+      const { id: productId } = await t.one(
+        `INSERT INTO acervo.produto(
+          nome, mi, inom, denominador_escala, tipo_produto_id, descricao, 
+          usuario_cadastramento_uuid, data_cadastramento, geom
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, ST_GeomFromEWKT($8))
+         RETURNING id`,
+        [produto.nome, produto.mi, produto.inom, produto.denominador_escala,
+         produto.tipo_produto_id, produto.descricao, usuarioUuid, produto.geom]
+      );
 
-    const arquivosDeletados = await t.any(`
-      SELECT ad.id, ad.nome_arquivo, ad.extensao, v.volume
-      FROM acervo.arquivo_deletado ad
-      JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
-    `);
-
-    const arquivosParaAtualizar = [];
-    const arquivosDeletadosParaAtualizar = [];
-
-    // Check existing files
-    for (const arquivo of arquivos) {
-      const filePath = path.join(arquivo.volume, arquivo.nome_arquivo + arquivo.extensao);
-
-      try {
-        await fs.access(filePath);
-        const fileBuffer = await fs.readFile(filePath);
-        const calculatedChecksum = crypto
-          .createHash('sha256')
-          .update(fileBuffer)
-          .digest('hex');
-
-        if (calculatedChecksum !== arquivo.checksum) {
-          arquivosParaAtualizar.push(arquivo.id);
-        }
-      } catch (error) {
-        arquivosParaAtualizar.push(arquivo.id);
-      }
+      produtosId.push(productId)
     }
 
-    // Check deleted files
-    for (const arquivoDeletado of arquivosDeletados) {
-      const deletedFilePath = path.join(arquivoDeletado.volume, arquivoDeletado.nome_arquivo + arquivoDeletado.extensao);
+    await refreshViews.atualizarViewsPorProdutos(t, produtosId);
 
-      try {
-        await fs.access(deletedFilePath);
-        // File exists, check if it's associated with an existing arquivo
-        const existingArquivo = await t.oneOrNone(`
-          SELECT a.id 
-          FROM acervo.arquivo a
-          JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-          WHERE concat(v.volume, a.nome_arquivo, a.extensao) = $1
-        `, [deletedFilePath]);
-
-        if (!existingArquivo) {
-          arquivosDeletadosParaAtualizar.push(arquivoDeletado.id);
-        }
-      } catch (error) {
-        // File doesn't exist, which is expected for deleted files
-      }
-    }
-
-    if (arquivosParaAtualizar.length > 0) {
-      await t.none(`
-        UPDATE acervo.arquivo
-        SET tipo_status_id = 2
-        WHERE id = ANY($1)
-        AND tipo_status_id = 1
-      `, [arquivosParaAtualizar]);
-    }
-
-    if (arquivosDeletadosParaAtualizar.length > 0) {
-      await t.none(`
-        UPDATE acervo.arquivo_deletado
-        SET tipo_status_id = 4
-        WHERE id = ANY($1)
-        AND tipo_status_id = 3
-      `, [arquivosDeletadosParaAtualizar]);
-    }
-
-    // Verificar e atualizar arquivos classificados incorretamente como incorretos
-    await t.none(`
-      UPDATE acervo.arquivo
-      SET tipo_status_id = 1
-      WHERE tipo_status_id = 2
-      AND id NOT IN (SELECT unnest($1::bigint[]))
-    `, [arquivosParaAtualizar]);
-
-    // Verificar e atualizar arquivos deletados classificados incorretamente como incorretos
-    await t.none(`
-      UPDATE acervo.arquivo_deletado
-      SET tipo_status_id = 3
-      WHERE tipo_status_id = 4
-      AND id NOT IN (SELECT unnest($1::bigint[]))
-    `, [arquivosDeletadosParaAtualizar]);
-
-    return {
-      arquivos_atualizados: arquivosParaAtualizar.length,
-      arquivos_deletados_atualizados: arquivosDeletadosParaAtualizar.length
-    };
   });
-};
+}
 
-controller.getArquivosIncorretos = async () => {
-  return db.conn.task(async t => {
-    const arquivosIncorretos = await t.any(`
-      SELECT a.id, a.nome, a.nome_arquivo, a.extensao, v.volume, 'Arquivo com erro' as tipo
-      FROM acervo.arquivo AS a
-      INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
-      WHERE a.tipo_status_id = 2
-    `);
+controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
+  produtos.forEach(produto => {
+    produto.data_cadastramento = new Date();
+    produto.usuario_cadastramento_uuid = usuarioUuid;
+    produto.geom = `ST_GeomFromEWKT('${produto.geom}')`;
+  });
 
-    const arquivosDeletadosIncorretos = await t.any(`
-      SELECT ad.id, ad.nome, ad.nome_arquivo, ad.extensao, v.volume, 'Arquivo deletado com erro' as tipo
-      FROM acervo.arquivo_deletado AS ad
-      INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
-      WHERE ad.tipo_status_id = 4
-    `);
+  return db.conn.tx(async t => {
+    const cs = new db.pgp.helpers.ColumnSet([
+      'nome', 'mi', 'inom', 'denominador_escala', 'tipo_produto_id', 'descricao',
+      'usuario_cadastramento_uuid',
+      {name: 'data_cadastramento', cast: 'date'},
+      {name: 'geom', mod: ':raw'}
+    ]);
 
-    return [...arquivosIncorretos, ...arquivosDeletadosIncorretos];
+    const query = db.pgp.helpers.insert(produtos, cs, {
+      table: 'produto',
+      schema: 'acervo'
+    });
+
+    await t.none(query);
   });
 };
 

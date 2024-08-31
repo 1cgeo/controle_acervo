@@ -163,4 +163,19 @@ router.post(
   })
 );
 
+router.post(
+  '/produtos',
+  verifyLogin,
+  schemaValidation({
+    body: acervoSchema.produtos
+  }),
+  asyncHandler(async (req, res, next) => {
+    await acervoCtrl.bulkCreateProducts(req.body.produtos, req.usuarioUuid);
+
+    const msg = 'Produtos criados com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
 module.exports = router

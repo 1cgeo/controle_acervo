@@ -9,30 +9,70 @@ BEGIN
         
         query := format('
             CREATE MATERIALIZED VIEW IF NOT EXISTS acervo.%I AS
-            SELECT p.id, p.nome, p.mi, p.inom, p.denominador_escala, p.descricao,
-                   p.geom, %L AS tipo_produto,
-                   p.data_cadastramento, u1.nome AS usuario_cadastramento,
-                   p.data_modificacao, u2.nome AS usuario_modificacao,
-                   COUNT(DISTINCT v.id) AS num_versoes,
-                   MAX(v.data_criacao) AS data_criacao_recente,
-                   MAX(v.data_edicao) AS data_edicao_recente,
-					ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_criacao)::integer ORDER BY EXTRACT(YEAR FROM v.data_criacao)::integer DESC) AS anos_criacao,
-                   ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::integer ORDER BY EXTRACT(YEAR FROM v.data_edicao)::integer DESC) AS anos_edicao,
-                   COUNT(DISTINCT a.id) AS num_arquivos,
-                   COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS tamanho_total_gb
+            WITH ultima_versao AS (
+                SELECT DISTINCT ON (v.produto_id)
+                    v.id AS versao_id,
+                    v.produto_id,
+                    v.nome AS nome_versao,
+                    v.versao,
+                    v.data_criacao,
+                    v.data_edicao,
+                    tv.nome AS tipo_versao,
+                    l.nome AS nome_lote,
+                    l.pit AS pit_lote,
+                    pr.nome AS nome_projeto,
+                    COUNT(DISTINCT a.id) AS num_arquivos_ultima_versao,
+                    COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS tamanho_total_gb_ultima_versao
+                FROM acervo.versao v
+                LEFT JOIN dominio.tipo_versao tv ON v.tipo_versao_id = tv.code
+                LEFT JOIN acervo.lote l ON v.lote_id = l.id
+                LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
+                LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
+                WHERE v.produto_id IN (SELECT id FROM acervo.produto WHERE tipo_produto_id = %s)
+                GROUP BY v.id, v.produto_id, v.versao, tv.nome, l.nome, l.pit, pr.nome
+                ORDER BY v.produto_id, v.data_edicao DESC
+            )
+            SELECT 
+                p.id, 
+                p.nome, 
+                p.mi, 
+                p.inom, 
+                p.denominador_escala, 
+                p.descricao,
+                COUNT(DISTINCT v.id) AS num_versoes,
+                ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_criacao)::integer ORDER BY EXTRACT(YEAR FROM v.data_criacao)::integer DESC) AS anos_criacao,
+                ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::integer ORDER BY EXTRACT(YEAR FROM v.data_edicao)::integer DESC) AS anos_edicao,
+                uv.versao AS versao_ultima,
+                uv.nome_versao AS nome_versao_ultima,
+                uv.tipo_versao AS tipo_versao_ultima,
+                uv.data_criacao AS data_criacao_ultima,
+                uv.data_edicao AS data_edicao_ultima,
+                uv.num_arquivos_ultima,
+                uv.tamanho_total_gb_ultima,
+                uv.nome_lote AS nome_lote_ultima,
+                uv.pit_lote AS pit_lote_ultima,
+                uv.nome_projeto AS nome_projeto_ultima,
+                COUNT(DISTINCT a.id) AS num_arquivos,
+                COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS tamanho_total_gb,
+                p.data_cadastramento, 
+                u1.nome AS usuario_cadastramento,
+                p.data_modificacao, 
+                u2.nome AS usuario_modificacao,
+                p.geom
             FROM acervo.produto p
             INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
             INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
             LEFT JOIN acervo.versao v ON p.id = v.produto_id
             LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
-			WHERE p.tipo_produto_id = %s
-            GROUP BY p.id, u1.nome, u2.nome
+            LEFT JOIN ultima_versao uv ON p.id = uv.produto_id
+            WHERE p.tipo_produto_id = %s
+            GROUP BY p.id, u1.nome, u2.nome, uv.versao, uv.nome_versao, uv.tipo_versao, uv.data_criacao, uv.data_edicao, uv.nome_lote, uv.pit_lote, uv.nome_projeto, uv.num_arquivos_ultima, uv.tamanho_total_gb_ultima
             WITH DATA;
             
             CREATE UNIQUE INDEX IF NOT EXISTS %I ON acervo.%I (id);
             CREATE INDEX IF NOT EXISTS idx_%I_geom ON acervo.%I USING gist (geom);
             GRANT SELECT ON TABLE acervo.%I TO PUBLIC;
-        ', view_name, tipo.nome, tipo.code, 'idx_' || view_name, view_name, view_name, view_name, view_name);
+        ', view_name, tipo.code, tipo.code, 'idx_' || view_name, view_name, view_name, view_name, view_name);
         
         EXECUTE query;
     END LOOP;
