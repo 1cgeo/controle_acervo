@@ -312,6 +312,7 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
     FROM newest_versions nv
     JOIN acervo.arquivo a ON a.versao_id = nv.versao_id
     JOIN acervo.volume_armazenamento va ON a.volume_armazenamento_id = va.id
+    WHERE a.tipo_arquivo_id = 1
     `,
     { produtosIds }
   );

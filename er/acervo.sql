@@ -54,7 +54,7 @@ CREATE TABLE acervo.produto(
 	mi VARCHAR(255),
 	inom VARCHAR(255),
     tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
-	denominador_escala_especial INTEGER NOT NULL,
+	denominador_escala_especial INTEGER,
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
 	descricao TEXT,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,

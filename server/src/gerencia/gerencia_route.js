@@ -113,7 +113,7 @@ router.get(
 )
 
 router.post(
-  '/verificar_consistencia',
+  '/verificar_inconsistencias',
   verifyAdmin,
   asyncHandler(async (req, res, next) => {
     const resultados = await gerenciaCtrl.verificarConsistencia()
