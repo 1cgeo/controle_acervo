@@ -134,6 +134,21 @@ router.post(
 );
 
 router.post(
+  '/sistematico_versoes_multiplos_arquivos',
+  verifyLogin,
+  schemaValidation({
+    body: acervoSchema.sistematicoVersoesMultiplosArquivos
+  }),
+  asyncHandler(async (req, res, next) => {
+    const results = await acervoCtrl.bulkSistematicCreateVersionWithFiles(req.body.versoes, req.usuarioUuid);
+
+    const msg = 'Versões de produtos sistemáticos com múltiplos arquivos criadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
+  })
+);
+
+router.post(
   '/versoes_multiplos_arquivos',
   verifyLogin,
   schemaValidation({

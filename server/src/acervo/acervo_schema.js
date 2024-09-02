@@ -158,6 +158,26 @@ models.versoesMultiplosArquivos = Joi.object().keys({
   ).min(1).required()
 })
 
+models.sistematicoVersoesMultiplosArquivos = Joi.object().keys({
+  versoes: Joi.array().items(
+    Joi.object().keys({
+      produto_inom: Joi.string().required(),
+      versao: Joi.object().keys({
+        uuid_versao: Joi.string().uuid().allow(null).required(),
+        versao: Joi.string().required(),
+        nome: Joi.string().allow(null).required(),
+        tipo_versao_id: Joi.number().integer().required(),
+        lote_id: Joi.number().integer().allow(null).required(),
+        metadado: Joi.object().allow(null).required(),
+        descricao: Joi.string().allow(null).required(),
+        data_criacao: Joi.date().iso().required(),
+        data_edicao: Joi.date().iso().required()
+      }).required(),
+      arquivos: Joi.array().items(fileSchema).min(1).required()
+    })
+  ).min(1).required()
+})
+
 models.multiplosArquivos = Joi.object().keys({
   arquivos_por_versao: Joi.array().items(
     Joi.object().keys({

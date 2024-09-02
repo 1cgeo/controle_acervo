@@ -150,6 +150,7 @@ controller.getProdutoDetailedById = async produtoId => {
           v.id AS versao_id,
           v.uuid_versao,
           v.versao,
+          v.nome as nome_versao,
           v.tipo_versao_id,
           v.lote_id,
           v.metadado AS versao_metadado,
@@ -443,11 +444,11 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
 
       const { id: versionId } = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [versao.uuid_versao, versao.versao, versao.tipo_versao_id, productId,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, productId,
          versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
          versao.data_edicao, usuarioUuid]
       );
@@ -507,11 +508,11 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
 
       const { id: versionId } = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [versao.uuid_versao, versao.versao, versao.tipo_versao_id, produto_id,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, produto_id,
          versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
          versao.data_edicao, usuarioUuid]
       );
@@ -551,6 +552,69 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
     await refreshViews.atualizarViewsPorVersoes(t, versoesId);
   });
 }
+
+controller.bulkSistematicCreateVersionWithFiles = async (versoes, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const versoesId = [];
+
+    for (const item of versoes) {
+      const { produto_inom, versao, arquivos } = item;
+
+      // Encontrar o produto pelo INOM
+      const produto = await t.oneOrNone('SELECT id, tipo_produto_id FROM acervo.produto WHERE inom = $1', [produto_inom]);
+      if (!produto) {
+        throw new AppError(`Produto com INOM ${produto_inom} não encontrado`, httpCode.NotFound);
+      }
+
+      if (!versao.uuid_versao) {
+        versao.uuid_versao = uuidv4();
+      }
+
+      const { id: versionId } = await t.one(
+        `INSERT INTO acervo.versao(
+          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+         RETURNING id`,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, produto.id,
+         versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
+         versao.data_edicao, usuarioUuid]
+      );
+      versoesId.push(versionId);
+
+      // Obter o volume_armazenamento_id apropriado
+      const volumeTipoProduto = await t.oneOrNone(
+        `SELECT volume_armazenamento_id 
+         FROM acervo.volume_tipo_produto 
+         WHERE tipo_produto_id = $1 AND primario = TRUE`,
+        [produto.tipo_produto_id]
+      );
+
+      if (!volumeTipoProduto) {
+        throw new AppError(`Não existe volume_tipo_produto cadastrado para o tipo de produto do produto ${produto.id}`, httpCode.NotFound);
+      }
+
+      const volume_armazenamento_id = volumeTipoProduto.volume_armazenamento_id;
+
+      // Inserir arquivos
+      for (const arquivo of arquivos) {
+        await t.none(
+          `INSERT INTO acervo.arquivo(
+            uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao,
+            usuario_cadastramento_uuid, data_cadastramento
+          ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+          [arquivo.nome, arquivo.nome_arquivo, versionId, arquivo.tipo_arquivo_id,
+           volume_armazenamento_id, arquivo.extensao, arquivo.tamanho_mb,
+           arquivo.checksum, arquivo.metadado, 1, // tipo_status_id is always 1
+           arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
+        );
+      }
+    }
+    await refreshViews.atualizarViewsPorVersoes(t, versoesId);
+  });
+};
 
 controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
   return db.conn.tx(async t => {
