@@ -29,6 +29,18 @@ INSERT INTO dominio.tipo_posto_grad (code, nome, nome_abrev) VALUES
 (18, 'General de Divisão', 'Gen Div'),
 (19, 'General de Exército', 'Gen Ex');
 
+CREATE TABLE dominio.tipo_escala (
+	code SMALLINT NOT NULL PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.tipo_escala (code, nome) VALUES
+(1, '1:25.000'),
+(2, '1:50.000'),
+(3, '1:100.000'),
+(4, '1:250.000'),
+(5, 'Escala personalizada');
+
 CREATE TABLE dominio.situacao_bdgex(
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL

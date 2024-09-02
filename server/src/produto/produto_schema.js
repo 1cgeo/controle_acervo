@@ -5,12 +5,13 @@ const Joi = require("joi");
 const models = {};
 
 models.produtoAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().strict().required(),
+  id: Joi.number().integer().strict().strict().required(),
   nome: Joi.string().required(),
   mi: Joi.string(),
   inom: Joi.string(),
-  denominador_escala: Joi.number().integer(),
-  tipo_produto_id: Joi.number().integer().required(),
+  tipo_escala_id: Joi.number().integer().strict().required(),
+  denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+  tipo_produto_id: Joi.number().integer().strict().required(),
   descricao: Joi.string().allow('').required()
 })
 
@@ -20,7 +21,7 @@ models.versaoAtualizacao = Joi.object().keys({
   versao: Joi.string().required(),
   descricao: Joi.string().allow('').required(),
   metadado: Joi.object().required(),
-  lote_id: Joi.number().integer().required(),
+  lote_id: Joi.number().integer().strict().required(),
   data_criacao: Joi.date().required(),
   data_edicao: Joi.date().required()
 });
@@ -28,10 +29,10 @@ models.versaoAtualizacao = Joi.object().keys({
 models.arquivoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
   nome: Joi.string().required(),
-  tipo_arquivo_id: Joi.number().integer().required(),
-  volume_armazenamento_id: Joi.number().integer().required(),
+  tipo_arquivo_id: Joi.number().integer().strict().required(),
+  volume_armazenamento_id: Joi.number().integer().strict().required(),
   metadado: Joi.object().required(),
-  situacao_bdgex_id: Joi.number().integer().required(),
+  situacao_bdgex_id: Joi.number().integer().strict().required(),
   orgao_produtor: Joi.string().required(),
   descricao: Joi.string().allow('').required()
 });

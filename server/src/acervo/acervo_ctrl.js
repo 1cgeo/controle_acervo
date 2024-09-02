@@ -23,11 +23,15 @@ controller.getProdutosLayer = async () => {
       SELECT 
         mv.matviewname,
         tp.nome AS tipo_produto,
-        (SELECT COUNT(*) FROM acervo.produto WHERE tipo_produto_id = tp.code) AS quantidade_produtos
+        te.nome AS tipo_escala,
+        (SELECT COUNT(*) 
+         FROM acervo.produto 
+         WHERE tipo_produto_id = tp.code AND tipo_escala_id = te.code) AS quantidade_produtos
       FROM pg_matviews mv
-      JOIN dominio.tipo_produto tp ON mv.matviewname = 'mv_produtos_tipo_' || tp.code
-      WHERE mv.schemaname = 'acervo' AND mv.matviewname LIKE 'mv_produtos_tipo_%'
-      ORDER BY tp.code
+      JOIN dominio.tipo_produto tp ON mv.matviewname LIKE 'mv_produto_' || tp.code || '_%'
+      JOIN dominio.tipo_escala te ON mv.matviewname LIKE '%_' || te.code
+      WHERE mv.schemaname = 'acervo' AND mv.matviewname LIKE 'mv_produto_%'
+      ORDER BY tp.code, te.code
     `;
     
     const result = await t.any(query);
@@ -38,11 +42,12 @@ controller.getProdutosLayer = async () => {
       porta: DB_PORT,
       login: DB_USER,
       senha: DB_PASSWORD
-    }
+    };
 
     return result.map(row => ({
       matviewname: row.matviewname,
       tipo_produto: row.tipo_produto,
+      tipo_escala: row.tipo_escala,
       quantidade_produtos: parseInt(row.quantidade_produtos),
       banco_dados: banco_dados
     }));
@@ -93,7 +98,7 @@ controller.getProdutoById = async produtoId => {
         LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
       )
       SELECT 
-        p.id AS produto_id, p.nome AS nome_produto, p.mi, p.inom, p.denominador_escala, p.descricao AS descricao_produto,
+        p.id AS produto_id, p.nome AS nome_produto, p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial, p.descricao AS descricao_produto,
         p.geom, tp.nome AS tipo_produto
         p.data_cadastramento, u1.nome AS usuario_cadastramento,
         p.data_modificacao, u2.nome AS usuario_modificacao,
@@ -119,6 +124,7 @@ controller.getProdutoById = async produtoId => {
           WHERE a.versao_id = nv.id
         ) AS arquivos
       FROM acervo.produto p
+      INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
       INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
       INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
       INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
@@ -201,7 +207,8 @@ controller.getProdutoDetailedById = async produtoId => {
         p.nome,
         p.mi,
         p.inom,
-        p.denominador_escala,
+        te.nome AS escala,
+        p.denominador_escala_especial,
         p.tipo_produto_id,
         p.descricao,
         p.data_cadastramento, u1.nome AS usuario_cadastramento
@@ -209,6 +216,7 @@ controller.getProdutoDetailedById = async produtoId => {
         p.geom,
         (SELECT json_agg(v.*) FROM versoes v) as versoes
       FROM acervo.produto p
+      INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
       INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
       INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
       INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
@@ -379,10 +387,10 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
     for (const produto of produtos) {
       // Inserir o produto
       const [novoProduto] = await t.any(`
-        INSERT INTO acervo.produto(nome, mi, inom, denominador_escala, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
+        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
         VALUES($1, $2, $3, $4, $5, $6, ST_GeomFromGeoJSON($7), $8, $9)
         RETURNING id
-      `, [produto.nome, produto.mi, produto.inom, produto.denominador_escala, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
+      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
       produtosIds.push(novoProduto.id)
 
@@ -418,11 +426,11 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
       // Insert product
       const { id: productId } = await t.one(
         `INSERT INTO acervo.produto(
-          nome, mi, inom, denominador_escala, tipo_produto_id, descricao, 
+          nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, 
           usuario_cadastramento_uuid, data_cadastramento, geom
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, ST_GeomFromEWKT($8))
          RETURNING id`,
-        [produto.nome, produto.mi, produto.inom, produto.denominador_escala,
+        [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial,
          produto.tipo_produto_id, produto.descricao, usuarioUuid, produto.geom]
       );
 
@@ -599,11 +607,11 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
       // Insert product
       const { id: productId } = await t.one(
         `INSERT INTO acervo.produto(
-          nome, mi, inom, denominador_escala, tipo_produto_id, descricao, 
+          nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, 
           usuario_cadastramento_uuid, data_cadastramento, geom
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, ST_GeomFromEWKT($8))
          RETURNING id`,
-        [produto.nome, produto.mi, produto.inom, produto.denominador_escala,
+        [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial,
          produto.tipo_produto_id, produto.descricao, usuarioUuid, produto.geom]
       );
 
@@ -624,7 +632,7 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'mi', 'inom', 'denominador_escala', 'tipo_produto_id', 'descricao',
+      'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial', 'tipo_produto_id', 'descricao',
       'usuario_cadastramento_uuid',
       {name: 'data_cadastramento', cast: 'date'},
       {name: 'geom', mod: ':raw'}

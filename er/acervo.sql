@@ -53,14 +53,19 @@ CREATE TABLE acervo.produto(
 	nome VARCHAR(255),
 	mi VARCHAR(255),
 	inom VARCHAR(255),
-	denominador_escala INTEGER NOT NULL,
+    tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
+	denominador_escala_especial INTEGER NOT NULL,
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
 	descricao TEXT,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
 	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-	geom geometry(POLYGON, 4674) NOT NULL	
+	geom geometry(POLYGON, 4674) NOT NULL,
+    CHECK (
+        (tipo_escala_id = 5 AND denominador_escala_especial IS NOT NULL) OR
+        (tipo_escala_id != 5 AND denominador_escala_especial IS NULL)
+    );
 );
 
 CREATE INDEX produto_geom

@@ -65,7 +65,8 @@ models.produtosVersoesHistoricas = Joi.array().items(
       nome: Joi.string().allow(null).required(),
       mi: Joi.string().allow(null),
       inom: Joi.string().allow(null),
-      denominador_escala: Joi.number().integer().strict().required(),
+      tipo_escala_id: Joi.number().integer().strict().required(),
+      denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
       tipo_produto_id: Joi.number().integer().strict().required(),
       descricao: Joi.string().allow('').required(),
       geom: Joi.string().required()
@@ -115,7 +116,8 @@ models.produtosMultiplosArquivos = Joi.object().keys({
         nome: Joi.string().allow(null).required(),
         mi: Joi.string().allow(null).required(),
         inom: Joi.string().allow(null).required(),
-        denominador_escala: Joi.number().integer().required(),
+        tipo_escala_id: Joi.number().integer().strict().required(),
+        denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
         tipo_produto_id: Joi.number().integer().required(),
         descricao: Joi.string().allow(null).required(),
         geom: Joi.string().required()
@@ -171,7 +173,8 @@ models.produtos = Joi.object().keys({
       nome: Joi.string().allow(null).required(),
       mi: Joi.string().allow(null).required(),
       inom: Joi.string().allow(null).required(),
-      denominador_escala: Joi.number().integer().required(),
+      tipo_escala_id: Joi.number().integer().strict().required(),
+      denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
       tipo_produto_id: Joi.number().integer().required(),
       descricao: Joi.string().allow(null).required(),
       geom: Joi.string().required()

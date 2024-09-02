@@ -11,7 +11,7 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
     produto.usuario_modificacao_uuid = usuarioUuid
 
     const colunasProduto = [
-      'nome', 'mi', 'inom', 'denominador_escala',
+      'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial',
       'tipo_produto_id', 'descricao',
       'data_modificacao', 'usuario_modificacao_uuid'
     ]

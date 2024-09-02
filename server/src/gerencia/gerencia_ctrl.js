@@ -88,7 +88,8 @@ controller.getArquivosDeletados = async () => {
       p.nome AS produto,
       p.mi,
       p.inom,
-      p.denominador_escala,
+      te.nome AS escala,
+      p.denominador_escala_especial,
       l.nome AS lote,
       l.pit,
       proj.nome AS projeto,
@@ -122,6 +123,8 @@ controller.getArquivosDeletados = async () => {
       acervo.versao v ON ad.versao_id = v.id
     LEFT JOIN 
       acervo.produto p ON v.produto_id = p.id
+    LEFT JOIN
+      dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
     LEFT JOIN 
       acervo.lote l ON v.lote_id = l.id
     LEFT JOIN 
