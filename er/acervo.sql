@@ -65,7 +65,7 @@ CREATE TABLE acervo.produto(
     CHECK (
         (tipo_escala_id = 5 AND denominador_escala_especial IS NOT NULL) OR
         (tipo_escala_id != 5 AND denominador_escala_especial IS NULL)
-    );
+    )
 );
 
 CREATE INDEX produto_geom

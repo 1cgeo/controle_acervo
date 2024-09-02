@@ -6,7 +6,7 @@ const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
 const { verifyLogin, verifyAdmin } = require('../login')
 
-const gerenciaCtrl = require('./acervo_ctrl')
+const gerenciaCtrl = require('./gerencia_ctrl')
 const gerenciaSchema = require('./gerencia_schema')
 
 const router = express.Router()
