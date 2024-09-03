@@ -23,10 +23,7 @@ controller.getProdutosLayer = async () => {
       SELECT 
           mv.matviewname,
           tp.nome AS tipo_produto,
-          te.nome AS tipo_escala,
-          (SELECT COUNT(*) 
-          FROM acervo.produto 
-          WHERE tipo_produto_id = tp.code AND tipo_escala_id = te.code) AS quantidade_produtos
+          te.nome AS tipo_escala
       FROM pg_matviews mv
       JOIN dominio.tipo_produto tp 
           ON SUBSTRING(mv.matviewname FROM 'mv_produto_(\\d+)_') = tp.code::text
@@ -37,7 +34,7 @@ controller.getProdutosLayer = async () => {
       ORDER BY tp.code, te.code;
     `;
     
-    const result = await t.any(query);
+    const views = await t.any(query);
     
     const banco_dados = {
       nome_db: DB_NAME,
@@ -47,13 +44,23 @@ controller.getProdutosLayer = async () => {
       senha: DB_PASSWORD
     };
 
-    return result.map(row => ({
-      matviewname: row.matviewname,
-      tipo_produto: row.tipo_produto,
-      tipo_escala: row.tipo_escala,
-      quantidade_produtos: parseInt(row.quantidade_produtos),
-      banco_dados: banco_dados
+    const resultWithCounts = await Promise.all(views.map(async view => {
+      const countQuery = `
+        SELECT COUNT(*) AS quantidade_produtos
+        FROM acervo.${view.matviewname};
+      `;
+      const countResult = await t.one(countQuery);
+      
+      return {
+        matviewname: view.matviewname,
+        tipo_produto: view.tipo_produto,
+        tipo_escala: view.tipo_escala,
+        quantidade_produtos: parseInt(countResult.quantidade_produtos),
+        banco_dados: banco_dados
+      };
     }));
+
+    return resultWithCounts;
   });
 };
 
