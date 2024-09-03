@@ -11,6 +11,7 @@ const { usuarioRoute } = require("./usuario");
 const { produtoRoute } = require("./produto");
 const { projetoRoute } = require("./projeto");
 const { gerenciaRoute } = require("./gerencia");
+const { arquivoRoute } = require("./arquivo");
 
 const router = express.Router();
 
@@ -38,5 +39,7 @@ router.use("/produtos", produtoRoute);
 router.use("/projetos", projetoRoute);
 
 router.use("/gerencia", gerenciaRoute);
+
+router.use("/arquivo", arquivoRoute);
 
 module.exports = router;

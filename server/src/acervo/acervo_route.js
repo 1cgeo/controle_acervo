@@ -15,7 +15,7 @@ router.get(
   '/camadas_produto',
   asyncHandler(async (req, res, next) => {
   
-    const dados = await produtoCtrl.getProdutosLayer();
+    const dados = await acervoCtrl.getProdutosLayer();
     const msg = 'Camadas de Produtos retornados com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
@@ -31,7 +31,7 @@ router.get(
   asyncHandler(async (req, res, next) => {
     const { produto_id } = req.params;
     
-    const dados = await produtoCtrl.getProdutoById(produto_id);
+    const dados = await acervoCtrl.getProdutoById(produto_id);
 
     const msg = 'Informações do produto retornadas com sucesso';
 
@@ -48,7 +48,7 @@ router.get(
   asyncHandler(async (req, res, next) => {
     const { produto_id } = req.params;
     
-    const dados = await produtoCtrl.getProdutoDetailedById(produto_id);
+    const dados = await acervoCtrl.getProdutoDetailedById(produto_id);
 
     const msg = 'Informações detalhadas do produto retornadas com sucesso';
 
@@ -115,66 +115,6 @@ router.post(
     const msg = 'Produtos com versões históricas criados com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
-router.post(
-  '/produtos_multiplos_arquivos',
-  verifyLogin,
-  schemaValidation({
-    body: acervoSchema.produtosMultiplosArquivos
-  }),
-  asyncHandler(async (req, res, next) => {
-    await acervoCtrl.bulkCreateProductsWithVersionAndMultipleFiles(req.body.produtos, req.usuarioUuid);
-
-    const msg = 'Produtos com versões e múltiplos arquivos criados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
-router.post(
-  '/sistematico_versoes_multiplos_arquivos',
-  verifyLogin,
-  schemaValidation({
-    body: acervoSchema.sistematicoVersoesMultiplosArquivos
-  }),
-  asyncHandler(async (req, res, next) => {
-    const results = await acervoCtrl.bulkSistematicCreateVersionWithFiles(req.body.versoes, req.usuarioUuid);
-
-    const msg = 'Versões de produtos sistemáticos com múltiplos arquivos criadas com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
-  })
-);
-
-router.post(
-  '/versoes_multiplos_arquivos',
-  verifyLogin,
-  schemaValidation({
-    body: acervoSchema.versoesMultiplosArquivos
-  }),
-  asyncHandler(async (req, res, next) => {
-    const results = await acervoCtrl.bulkCreateVersionWithFiles(req.body.versoes, req.usuarioUuid);
-
-    const msg = 'Versões com múltiplos arquivos criadas com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
-  })
-);
-
-router.post(
-  '/multiplos_arquivos',
-  verifyLogin,
-  schemaValidation({
-    body: acervoSchema.multiplosArquivos
-  }),
-  asyncHandler(async (req, res, next) => {
-    const results = await acervoCtrl.bulkAddFilesToVersion(req.body.arquivos_por_versao, req.usuarioUuid);
-
-    const msg = 'Múltiplos arquivos adicionados às versões com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
   })
 );
 
