@@ -20,6 +20,7 @@ BEGIN
                         v.data_criacao,
                         v.data_edicao,
                         tv.nome AS tipo_versao,
+                        sp.nome AS subtipo_produto,
                         l.nome AS nome_lote,
                         l.pit AS pit_lote,
                         pr.nome AS nome_projeto,
@@ -27,6 +28,7 @@ BEGIN
                         COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS tamanho_total_gb_ultima
                     FROM acervo.versao v
                     LEFT JOIN dominio.tipo_versao tv ON v.tipo_versao_id = tv.code
+                    LEFT JOIN dominio.subtipo_produto sp ON v.subtipo_produto_id = sp.code
                     LEFT JOIN acervo.lote l ON v.lote_id = l.id
                     LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
                     LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
@@ -48,6 +50,7 @@ BEGIN
                     uv.versao AS versao_ultima,
                     uv.nome_versao AS nome_versao_ultima,
                     uv.tipo_versao AS tipo_versao_ultima,
+                    uv.subtipo_produto AS subtipo_produto_ultima,
                     uv.data_criacao AS data_criacao_ultima,
                     uv.data_edicao AS data_edicao_ultima,
                     uv.num_arquivos_ultima,
@@ -70,7 +73,7 @@ BEGIN
                 LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
                 LEFT JOIN ultima_versao uv ON p.id = uv.produto_id
                 WHERE p.tipo_produto_id = %s AND p.tipo_escala_id = %s
-                GROUP BY p.id, te.nome, u1.nome, u2.nome, uv.versao, uv.nome_versao, uv.tipo_versao, uv.data_criacao, uv.data_edicao, uv.nome_lote, uv.pit_lote, uv.nome_projeto, uv.num_arquivos_ultima, uv.tamanho_total_gb_ultima
+                GROUP BY p.id, te.nome, u1.nome, u2.nome, uv.versao, uv.nome_versao, uv.tipo_versao, uv.subtipo_produto, uv.data_criacao, uv.data_edicao, uv.nome_lote, uv.pit_lote, uv.nome_projeto, uv.num_arquivos_ultima, uv.tamanho_total_gb_ultima
                 WITH DATA;
                 
                 CREATE UNIQUE INDEX IF NOT EXISTS %I ON acervo.%I (id);

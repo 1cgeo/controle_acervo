@@ -79,6 +79,7 @@ CREATE TABLE acervo.versao(
 	nome VARCHAR(255),
 	versao VARCHAR(255) NOT NULL,
 	tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
+	subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
 	produto_id BIGINT NOT NULL REFERENCES acervo.produto (id),
 	lote_id BIGINT REFERENCES acervo.lote (id),
 	metadado JSONB,

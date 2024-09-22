@@ -42,11 +42,11 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
 
       const { id: versionId } = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, productId,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, productId,
         versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
         versao.data_edicao, usuarioUuid]
       );
@@ -106,11 +106,11 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
 
       const { id: versionId } = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, produto_id,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, produto_id,
         versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
         versao.data_edicao, usuarioUuid]
       );
@@ -285,11 +285,11 @@ controller.bulkSistematicCreateVersionWithFiles = async (versoes, usuarioUuid) =
       // Inserir versão
       const { id: versionId } = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, nome, tipo_versao_id, produto_id, lote_id, metadado, descricao,
+          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, produto.id,
+        [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, produto.id,
          versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
          versao.data_edicao, usuarioUuid]
       );

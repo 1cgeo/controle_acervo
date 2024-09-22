@@ -68,9 +68,10 @@ controller.getProdutoById = async produtoId => {
   return db.conn.task(async t => {
     const result = await t.one(`
       WITH newest_version AS (
-        SELECT v.id AS versao_id, v.versao, v.nome AS nome_versao, tv.nome AS tipo_versao, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
+        SELECT v.id AS versao_id, v.versao, v.nome AS nome_versao, tv.nome AS tipo_versao, sp.nome AS subtipo_produto, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
         FROM acervo.versao v
         INNER JOIN dominio.tipo_versao AS tv ON tv.code = v.tipo_versao_id
+        INNER JOIN dominio.subtipo_produto AS sp ON sp.code = v.subtipo_produto_id
         WHERE v.produto_id = $1
         ORDER BY v.data_edicao DESC
         LIMIT 1
@@ -162,6 +163,7 @@ controller.getProdutoDetailedById = async produtoId => {
           v.versao,
           v.nome as nome_versao,
           v.tipo_versao_id,
+          v.subtipo_produto_id,
           v.lote_id,
           v.metadado AS versao_metadado,
           v.descricao AS versao_descricao,
@@ -379,7 +381,7 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
-      'data_criacao', 'data_edicao', 'tipo_versao', 'data_cadastramento', 'usuario_cadastramento_uuid'
+      'data_criacao', 'data_edicao', 'tipo_versao', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
     ], { table: 'versao', schema: 'acervo' });
 
     const query = db.pgp.helpers.insert(versoesPreparadas, cs);
@@ -418,7 +420,7 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
 
       const cs = new db.pgp.helpers.ColumnSet([
         'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
-        'data_criacao', 'data_edicao', 'tipo_versao_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
+        'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
       ], { table: 'versao', schema: 'acervo' });
 
       const query = db.pgp.helpers.insert(versoesPreparadas, cs);

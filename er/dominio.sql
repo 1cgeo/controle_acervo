@@ -115,29 +115,51 @@ CREATE TABLE dominio.tipo_produto (
 );
 
 INSERT INTO dominio.tipo_produto (code, nome) VALUES
-(1, 'Conjunto de dados geoespaciais vetoriais - ET-EDGV 2.1.3'),
-(2, 'Carta Topográfica - T34-700'),
+(1, 'CDGV'),
+(2, 'Carta Topográfica'),
 (3, 'Carta Ortoimagem'),
 (4, 'Ortoimagem'),
 (5, 'Modelo Digital de Superfície'),
 (6, 'Modelo Digital de Terreno'),
-(7, 'Conjunto de dados geoespaciais vetoriais - ET-EDGV 3.0'),
-(8, 'Conjunto de dados geoespaciais vetoriais - MGCP'),
-(9, 'Fototriangulação'),
-(10, 'Imagem aérea/satélite'),
-(11, 'Ponto de controle'),
-(12, 'Carta Topográfica - ET-RDG'),
-(13, 'Carta Temática'),
-(14, 'Mapa de unidades'),
-(15, 'Carta de trafegabilidade'),
-(16, 'Rede de transporte'),
-(17, 'Mapa de geografia humana'),
-(18, 'Levantamento topográfico'),
-(19, 'Carta ortoimagem de OM'),
-(20, 'Conjunto de dados geoespaciais vetoriais - MUVD'),
-(21, 'Modelo Digital de Superfície - TREx'),
-(22, 'Conjunto de dados geoespaciais vetoriais para Ortoimagem - ET-EDGV 3.0'),
-(23, 'Conjunto de dados geoespaciais vetoriais para Trafegabilidade'),
-(24, 'Carta Topográfica Militar');
+(7, 'Carta temática'),
+(8, 'CDGV temático'),
+(9, 'Modelo 3D'),
+(10, 'Ponto de controle'),
+(11, 'CDGV Carta Ortoimagem'),
+(12, 'Insumos fotogramétricos');
+
+CREATE TABLE dominio.subtipo_produto (
+	code SMALLINT NOT NULL PRIMARY KEY,
+	nome VARCHAR(255) NOT NULL UNIQUE,
+	tipo_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto(code)
+);
+
+INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
+(1, 'Conjunto de dados geoespaciais vetoriais - ET-EDGV 2.1.3', 1),
+(2, 'Carta Topográfica - T34-700', 2),
+(3, 'Carta Ortoimagem', 3),
+(4, 'Ortoimagem', 4),
+(5, 'Modelo Digital de Superfície', 5),
+(6, 'Modelo Digital de Terreno', 6),
+(7, 'Conjunto de dados geoespaciais vetoriais - ET-EDGV 3.0', 1),
+(8, 'Conjunto de dados geoespaciais vetoriais - MGCP', 1),
+(9, 'Fototriangulação', 12),
+(10, 'Imagem aérea/satélite', 12),
+(11, 'Ponto de controle', 10),
+(12, 'Carta Topográfica - ET-RDG', 2),
+(13, 'Carta Temática', 7),
+(14, 'Mapa de unidades', 7),
+(15, 'Carta de trafegabilidade', 7),
+(16, 'Rede de transporte', 8),
+(17, 'Mapa de geografia humana', 7),
+(18, 'Levantamento topográfico', ),
+(19, 'Carta ortoimagem de OM', 3),
+(20, 'Conjunto de dados geoespaciais vetoriais - MUVD', 1),
+(21, 'Modelo Digital de Superfície - TREx', 5),
+(22, 'Conjunto de dados geoespaciais vetoriais para Ortoimagem - ET-EDGV 3.0', 11),
+(23, 'Conjunto de dados geoespaciais vetoriais para Trafegabilidade', 8),
+(24, 'Carta Topográfica Militar', 2),
+(25, 'Modelo 3D Tiles', 9),
+(26, 'Modelo 3D', 9);
 
 COMMIT;
