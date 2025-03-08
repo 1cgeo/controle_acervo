@@ -1,4 +1,4 @@
-// Validates Node Version then starts the main code
+// Path: index.js
 var version = process.versions.node.split('.')
 var major = +version[0]
 var minor = +version[1]

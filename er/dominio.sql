@@ -126,7 +126,8 @@ INSERT INTO dominio.tipo_produto (code, nome) VALUES
 (9, 'Modelo 3D'),
 (10, 'Ponto de controle'),
 (11, 'CDGV Carta Ortoimagem'),
-(12, 'Insumos fotogramétricos');
+(12, 'Insumos fotogramétricos'),
+(13, 'Levantamento topográfico');
 
 CREATE TABLE dominio.subtipo_produto (
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -152,7 +153,7 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (15, 'Carta de trafegabilidade', 7),
 (16, 'Rede de transporte', 8),
 (17, 'Mapa de geografia humana', 7),
-(18, 'Levantamento topográfico', ),
+(18, 'Levantamento topográfico', 13),
 (19, 'Carta ortoimagem de OM', 3),
 (20, 'Conjunto de dados geoespaciais vetoriais - MUVD', 1),
 (21, 'Modelo Digital de Superfície - TREx', 5),

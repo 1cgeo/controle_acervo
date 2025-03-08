@@ -25,18 +25,18 @@
     "url": "https://github.com/1cgeo/controle_acervo/issues"
   },
   "dependencies": {
-    "axios": "^0.27.2",
-    "bcryptjs": "^2.4.3",
+    "axios": "^1.8.2",
+    "bcryptjs": "^3.0.2",
     "bluebird": "^3.7.2",
     "colors": "^1.4.0",
-    "commander": "^11.0.0",
-    "concurrently": "^7.2.2",
-    "fs-extra": "^10.1.0",
-    "inquirer": "8.2.2",
-    "npm-check-updates": "^15.0.2",
+    "commander": "^13.1.0",
+    "concurrently": "^9.1.2",
+    "fs-extra": "^11.3.0",
+    "inquirer": "12.4.3",
+    "npm-check-updates": "^17.1.15",
     "npm-run": "^5.0.1",
-    "pg-promise": "^10.11.1",
-    "pgtools": "^0.3.2",
-    "pm2": "^5.2.0"
+    "pg-promise": "^11.10.2",
+    "pgtools": "^1.0.1",
+    "pm2": "^5.4.3"
   }
 }

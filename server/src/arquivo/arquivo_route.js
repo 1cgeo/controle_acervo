@@ -1,3 +1,4 @@
+// Path: arquivo\arquivo_route.js
 'use strict'
 
 const express = require('express')
@@ -30,7 +31,7 @@ router.post(
   '/verifica_sistematico_versoes_multiplos_arquivos',
   verifyLogin,
   schemaValidation({
-    body: arquivoCtrl.sistematicoVersoesMultiplosArquivos
+    body: arquivoSchema.sistematicoVersoesMultiplosArquivos
   }),
   asyncHandler(async (req, res, next) => {
     const dados = await arquivoCtrl.verifica_sistematico_versoes_multiplos_arquivos(req.body.versoes);

@@ -1,3 +1,4 @@
+// Path: acervo\acervo_route.js
 'use strict'
 
 const express = require('express')
@@ -62,7 +63,7 @@ router.post(
   schemaValidation({ body: acervoSchema.arquivosIds }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.downloadInfo(
-      req.body.arquivos_id,
+      req.body.arquivos_ids,
       req.usuarioUuid
     )
 
@@ -110,7 +111,7 @@ router.post(
     body: acervoSchema.produtosVersoesHistoricas
   }),
   asyncHandler(async (req, res, next) => {
-    await acervoCtrl.criaProdutoVersaoHistorica(req.body, req.usuarioUuid);
+    await acervoCtrl.criaProdutoVersoesHistoricas(req.body, req.usuarioUuid);
 
     const msg = 'Produtos com versões históricas criados com sucesso';
 

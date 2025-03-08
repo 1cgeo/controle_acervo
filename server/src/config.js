@@ -1,3 +1,4 @@
+// Path: config.js
 'use strict'
 
 const dotenv = require('dotenv')

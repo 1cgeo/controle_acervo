@@ -1,3 +1,4 @@
+// Path: server\start_server.js
 'use strict'
 
 const { databaseVersion } = require('../database')

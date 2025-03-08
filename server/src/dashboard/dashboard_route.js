@@ -1,3 +1,4 @@
+// Path: dashboard\dashboard_route.js
 'use strict'
 
 const express = require('express')
@@ -57,7 +58,7 @@ router.get(
 router.get(
   '/arquivos_dia', 
   asyncHandler(async (req, res, next) => {
-  const dados = await dashboardCtrl.getTotalUsuarios();
+  const dados = await dashboardCtrl.getArquivosPorDia();
   const msg = 'Arquivos carregados por dia retornadas com sucesso'
 
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);

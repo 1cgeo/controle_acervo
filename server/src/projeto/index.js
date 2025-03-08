@@ -1,3 +1,4 @@
+// Path: projeto\index.js
 'use strict'
 
 module.exports = {

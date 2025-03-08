@@ -1,3 +1,4 @@
+// Path: dashboard\index.js
 'use strict'
 
 module.exports = {

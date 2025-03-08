@@ -1,3 +1,4 @@
+// Path: gerencia\gerencia_ctrl.js
 "use strict";
 const fs = require('fs').promises;
 const path = require('path');
@@ -6,6 +7,9 @@ const { db, refreshViews } = require("../database");
 const { AppError, httpCode } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const pipelineAsync = promisify(pipeline);
 
 const {
   DB_USER,
@@ -101,7 +105,7 @@ controller.getArquivosDeletados = async () => {
       ad.extensao, 
       ad.tamanho_mb, 
       ad.checksum, 
-      ad.metadata, 
+      ad.metadado, 
       ad.tipo_status_id, 
       ts.nome AS tipo_status_nome, 
       ad.situacao_bdgex_id, 
@@ -152,8 +156,9 @@ controller.getArquivosDeletados = async () => {
 
 controller.verificarConsistencia = async () => {
   return db.conn.tx(async t => {
+    // 1. Obter todos os arquivos e suas informações em uma consulta
     const arquivos = await t.any(`
-      SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume
+      SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume, a.tipo_arquivo_id
       FROM acervo.arquivo a
       JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
       WHERE a.tipo_arquivo_id != 9
@@ -163,53 +168,106 @@ controller.verificarConsistencia = async () => {
       SELECT ad.id, ad.nome_arquivo, ad.extensao, v.volume
       FROM acervo.arquivo_deletado ad
       JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
+      WHERE ad.tipo_arquivo_id != 9
     `);
 
+    // 2. Processar em lotes menores para evitar sobrecarga de memória
+    const BATCH_SIZE = 50;
     const arquivosParaAtualizar = [];
     const arquivosDeletadosParaAtualizar = [];
-
-    // Check existing files
-    for (const arquivo of arquivos) {
-      const filePath = path.join(arquivo.volume, arquivo.nome_arquivo + arquivo.extensao);
-
-      try {
-        await fs.access(filePath);
-        const fileBuffer = await fs.readFile(filePath);
-        const calculatedChecksum = crypto
-          .createHash('sha256')
-          .update(fileBuffer)
-          .digest('hex');
-
-        if (calculatedChecksum !== arquivo.checksum) {
-          arquivosParaAtualizar.push(arquivo.id);
+    
+    // Função auxiliar para cálculo de checksum com streams
+    async function calculaChecksumStream(filePath) {
+      return new Promise(async (resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const readStream = fs.createReadStream(filePath);
+        
+        try {
+          // pipeline garante que todos os streams sejam limpos
+          await pipelineAsync(
+            readStream,
+            // Transform stream (opcional se quiser processar em chunks)
+            hash
+          );
+          resolve(hash.digest('hex'));
+        } catch (error) {
+          reject(error);
         }
-      } catch (error) {
-        arquivosParaAtualizar.push(arquivo.id);
-      }
+      });
+    }
+    
+    // Processar arquivos existentes
+    for (let i = 0; i < arquivos.length; i += BATCH_SIZE) {
+      const batch = arquivos.slice(i, i + BATCH_SIZE);
+      
+      // Usar Promise.all para processamento paralelo dentro do lote
+      const resultados = await Promise.all(batch.map(async arquivo => {
+        const filePath = path.join(arquivo.volume, arquivo.nome_arquivo + arquivo.extensao);
+        
+        try {
+          // Verificar existência do arquivo antes de ler
+          await fs.access(filePath);
+          // Usar stream para grandes arquivos
+          const calculatedChecksum = await calculaChecksumStream(filePath);
+          
+          return {
+            id: arquivo.id,
+            status: calculatedChecksum !== arquivo.checksum ? 'checksum_invalido' : 'ok'
+          };
+        } catch (error) {
+          return {
+            id: arquivo.id,
+            status: 'nao_encontrado'
+          };
+        }
+      }));
+      
+      // Adicionar apenas os arquivos com problema
+      resultados
+        .filter(r => r.status !== 'ok')
+        .forEach(r => arquivosParaAtualizar.push(r.id));
+    }
+    
+    // Processar arquivos deletados
+    for (let i = 0; i < arquivosDeletados.length; i += BATCH_SIZE) {
+      const batch = arquivosDeletados.slice(i, i + BATCH_SIZE);
+      
+      const resultados = await Promise.all(batch.map(async arquivoDeletado => {
+        const deletedFilePath = path.join(arquivoDeletado.volume, 
+                                          arquivoDeletado.nome_arquivo + arquivoDeletado.extensao);
+        
+        try {
+          // Verificar se o arquivo existe
+          await fs.access(deletedFilePath);
+          
+          // Verificar se está associado a um arquivo existente
+          const existingArquivo = await t.oneOrNone(`
+            SELECT a.id 
+            FROM acervo.arquivo a
+            JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
+            WHERE concat(v.volume, a.nome_arquivo, a.extensao) = $1
+          `, [deletedFilePath]);
+          
+          return {
+            id: arquivoDeletado.id,
+            status: !existingArquivo ? 'unexpected' : 'ok'
+          };
+        } catch (error) {
+          // Arquivo não existe, o que é esperado para arquivos deletados
+          return {
+            id: arquivoDeletado.id,
+            status: 'ok'
+          };
+        }
+      }));
+      
+      // Adicionar apenas os arquivos com problema
+      resultados
+        .filter(r => r.status !== 'ok')
+        .forEach(r => arquivosDeletadosParaAtualizar.push(r.id));
     }
 
-    // Check deleted files
-    for (const arquivoDeletado of arquivosDeletados) {
-      const deletedFilePath = path.join(arquivoDeletado.volume, arquivoDeletado.nome_arquivo + arquivoDeletado.extensao);
-
-      try {
-        await fs.access(deletedFilePath);
-        // File exists, check if it's associated with an existing arquivo
-        const existingArquivo = await t.oneOrNone(`
-          SELECT a.id 
-          FROM acervo.arquivo a
-          JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-          WHERE concat(v.volume, a.nome_arquivo, a.extensao) = $1
-        `, [deletedFilePath]);
-
-        if (!existingArquivo) {
-          arquivosDeletadosParaAtualizar.push(arquivoDeletado.id);
-        }
-      } catch (error) {
-        // File doesn't exist, which is expected for deleted files
-      }
-    }
-
+    // Atualizar status de arquivos com problemas
     if (arquivosParaAtualizar.length > 0) {
       await t.none(`
         UPDATE acervo.arquivo
@@ -219,6 +277,7 @@ controller.verificarConsistencia = async () => {
       `, [arquivosParaAtualizar]);
     }
 
+    // Atualizar status de arquivos deletados com problemas
     if (arquivosDeletadosParaAtualizar.length > 0) {
       await t.none(`
         UPDATE acervo.arquivo_deletado
@@ -234,7 +293,7 @@ controller.verificarConsistencia = async () => {
       SET tipo_status_id = 1
       WHERE tipo_status_id = 2
       AND id NOT IN (SELECT unnest($1::bigint[]))
-    `, [arquivosParaAtualizar]);
+    `, [arquivosParaAtualizar.length > 0 ? arquivosParaAtualizar : [-1]]);
 
     // Verificar e atualizar arquivos deletados classificados incorretamente como incorretos
     await t.none(`
@@ -242,7 +301,7 @@ controller.verificarConsistencia = async () => {
       SET tipo_status_id = 3
       WHERE tipo_status_id = 4
       AND id NOT IN (SELECT unnest($1::bigint[]))
-    `, [arquivosDeletadosParaAtualizar]);
+    `, [arquivosDeletadosParaAtualizar.length > 0 ? arquivosDeletadosParaAtualizar : [-1]]);
 
     return {
       arquivos_atualizados: arquivosParaAtualizar.length,

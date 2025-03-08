@@ -1,3 +1,4 @@
+// Path: utils\error_handler.js
 'use strict'
 
 const { serializeError } = require('serialize-error')

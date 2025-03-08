@@ -1,3 +1,4 @@
+// Path: database\db.js
 'use strict'
 
 const { errorHandler } = require('../utils')

@@ -1,3 +1,4 @@
+// Path: arquivo\arquivo_ctrl.js
 "use strict";
 const fs = require('fs').promises;
 const path = require('path');
@@ -44,7 +45,7 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
          RETURNING id`,
         [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, productId,
         versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
@@ -108,7 +109,7 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
          RETURNING id`,
         [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, produto_id,
         versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,
@@ -121,7 +122,7 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
         `SELECT volume_armazenamento_id 
          FROM acervo.volume_tipo_produto 
          WHERE tipo_produto_id = $1 AND primario = TRUE`,
-        [product.tipo_produto_id]
+        [produto_id]
       );
 
       if (!volumeTipoProduto) {
@@ -249,9 +250,11 @@ controller.bulkSistematicCreateVersionWithFiles = async (versoes, usuarioUuid) =
 
       // Obter o volume_armazenamento_id apropriado
       const volumeTipoProduto = await t.oneOrNone(
-        `SELECT volume_armazenamento_id 
-         FROM acervo.volume_tipo_produto 
-         WHERE tipo_produto_id = $1 AND primario = TRUE`,
+        `SELECT vtp.volume_armazenamento_id, va.volume
+         FROM acervo.volume_armazenamento AS va
+         INNER JOIN acervo.volume_tipo_produto AS vtp
+         ON va.id = vtp.volume_armazenamento_id
+         WHERE vtp.tipo_produto_id = $1 AND vtp.primario = TRUE`,
         [produto.tipo_produto_id]
       );
 
@@ -287,7 +290,7 @@ controller.bulkSistematicCreateVersionWithFiles = async (versoes, usuarioUuid) =
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, lote_id, metadado, descricao,
           data_criacao, data_edicao, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
          RETURNING id`,
         [versao.uuid_versao, versao.versao, versao.nome, versao.tipo_versao_id, versao.subtipo_produto_id, produto.id,
          versao.lote_id, versao.metadado, versao.descricao, versao.data_criacao,

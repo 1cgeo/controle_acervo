@@ -1,3 +1,4 @@
+// Path: main.js
 'use strict'
 
 const { errorHandler } = require('./utils')

@@ -1,3 +1,4 @@
+// Path: authentication\index.js
 'use strict'
 
 module.exports = {

@@ -1,3 +1,4 @@
+// Path: gerencia\gerencia_route.js
 'use strict'
 
 const express = require('express')

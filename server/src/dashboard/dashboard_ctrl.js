@@ -1,3 +1,4 @@
+// Path: dashboard\dashboard_ctrl.js
 'use strict'
 
 const { db } = require('../database')

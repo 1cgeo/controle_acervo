@@ -1,3 +1,4 @@
+// Path: produto\produto_ctrl.js
 "use strict";
 
 const { db, refreshViews } = require("../database");
@@ -31,7 +32,7 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     versao.usuario_modificacao_uuid = usuarioUuid;
 
     const colunasVersao = [
-      'versao', 'uuid_versao','descricao', 'metadata', 'lote_id',
+      'versao', 'uuid_versao','descricao', 'metadado', 'lote_id',
       'data_criacao', 'data_edicao',
       'data_modificacao', 'usuario_modificacao_uuid'
     ];
@@ -80,10 +81,10 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
         // Move associated files to arquivo_deletado table
         const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
         for (let arquivo of arquivos) {
-          const arquivoDeletadoId = await t.one(
+          const { id: arquivoDeletadoId } = await t.one(
             `INSERT INTO acervo.arquivo_deletado (
               uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-              volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
+              volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
               tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
               data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
               usuario_modificacao_uuid, data_delete, usuario_delete_uuid
@@ -101,7 +102,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
               arquivo.extensao, 
               arquivo.tamanho_mb, 
               arquivo.checksum, 
-              arquivo.metadata, 
+              arquivo.metadado, 
               4, //Em exclusão
               arquivo.situacao_bdgex_id, 
               arquivo.orgao_produtor, 
@@ -114,19 +115,19 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
               usuario_delete_uuid
             ]
           );
+          
+          // Move related downloads to download_deletado table for THIS file
+          await t.none(
+            `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+             SELECT $1, d.usuario_uuid, d.data_download
+             FROM acervo.download d
+             WHERE d.arquivo_id = $2`,
+            [arquivoDeletadoId, arquivo.id]
+          );
+
+          // Delete related downloads from the original download table
+          await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
         }
-
-        // Move related downloads to download_deletado table using the new arquivo_deletado_id
-        await t.none(
-          `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
-           SELECT $1, d.usuario_uuid, d.data_download
-           FROM acervo.download d
-           WHERE d.arquivo_id = $2`,
-          [arquivoDeletadoId.id, arquivo.id]
-        );
-
-        // Delete related downloads from the original download table
-       await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
         // Delete files from the original arquivo table
         await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
@@ -137,9 +138,9 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
 
       // Finally, delete the product itself from the produto table
       await t.none('DELETE FROM acervo.produto WHERE id = $1', [id]);
-
     }
-    await refreshViews.atualizarViewsPorProdutos(t, produtoIds)
+    
+    await refreshViews.atualizarViewsPorProdutos(t, produtoIds);
   });
 };
 
@@ -155,10 +156,10 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       // Move associated files to arquivo_deletado table
       const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
       for (let arquivo of arquivos) {
-        const arquivoDeletadoId = await t.one(
+        const { id: arquivoDeletadoId } = await t.one(
           `INSERT INTO acervo.arquivo_deletado (
             uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
+            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
             tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
             data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
             usuario_modificacao_uuid, data_delete, usuario_delete_uuid
@@ -176,7 +177,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             arquivo.extensao, 
             arquivo.tamanho_mb, 
             arquivo.checksum, 
-            arquivo.metadata, 
+            arquivo.metadado, 
             4, //Em exclusão
             arquivo.situacao_bdgex_id, 
             arquivo.orgao_produtor, 
@@ -189,19 +190,19 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             usuario_delete_uuid
           ]
         );
+        
+        // Move related downloads to download_deletado table for THIS file
+        await t.none(
+          `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+           SELECT $1, d.usuario_uuid, d.data_download
+           FROM acervo.download d
+           WHERE d.arquivo_id = $2`,
+          [arquivoDeletadoId, arquivo.id]
+        );
+
+        // Delete related downloads from the original download table
+        await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
       }
-
-       // Move related downloads to download_deletado table using the new arquivo_deletado_id
-       await t.none(
-        `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
-         SELECT $1, d.usuario_uuid, d.data_download
-         FROM acervo.download d
-         WHERE d.arquivo_id = $2`,
-        [arquivoDeletadoId.id, arquivo.id]
-      );
-
-      // Delete related downloads from the original download table
-      await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
       // Delete files from the original arquivo table
       await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
@@ -210,7 +211,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       await t.none('DELETE FROM acervo.versao WHERE id = $1', [versao.id]);
     }
 
-    await refreshViews.atualizarViewsPorVersoes(t, versaoIds)
+    await refreshViews.atualizarViewsPorVersoes(t, versaoIds);
   });
 };
 
@@ -224,10 +225,10 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
       if (!arquivo) continue;
 
       // Move the file to arquivo_deletado table
-      const arquivoDeletadoId = await t.one(
+      const { id: arquivoDeletadoId } = await t.one(
         `INSERT INTO acervo.arquivo_deletado (
           uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadata, 
+          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
           tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
           data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
           usuario_modificacao_uuid, data_delete, usuario_delete_uuid
@@ -245,7 +246,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
           arquivo.extensao, 
           arquivo.tamanho_mb, 
           arquivo.checksum, 
-          arquivo.metadata, 
+          arquivo.metadado, 
           4, //Em exclusão
           arquivo.situacao_bdgex_id, 
           arquivo.orgao_produtor, 
@@ -259,23 +260,23 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         ]
       );
 
-      // Move related downloads to download_deletado table using the new arquivo_deletado_id
+      // Move related downloads to download_deletado table for THIS file
       await t.none(
         `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
          SELECT $1, d.usuario_uuid, d.data_download
          FROM acervo.download d
          WHERE d.arquivo_id = $2`,
-        [arquivoDeletadoId.id, arquivo.id]
+        [arquivoDeletadoId, arquivo.id]
       );
 
       // Delete related downloads from the original download table
       await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
 
       // Finally, delete the file itself from the arquivo table
-      await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [id]);
+      await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [arquivo.id]);
     }
 
-    await refreshViews.atualizarViewsPorArquivos(t, arquivoIds)
+    await refreshViews.atualizarViewsPorArquivos(t, arquivoIds);
   });
 };
 

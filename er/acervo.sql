@@ -93,7 +93,7 @@ CREATE TABLE acervo.versao(
     CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao)
 );
 
-CREATE INDEX idx_versao_metadata ON acervo.versao USING GIN (metadado);
+CREATE INDEX idx_versao_metadato ON acervo.versao USING GIN (metadado);
 
 CREATE OR REPLACE FUNCTION acervo.validate_version()
 RETURNS TRIGGER AS $$
@@ -185,7 +185,7 @@ CREATE TABLE acervo.arquivo(
         (tipo_arquivo_id = 9 AND checksum IS NULL)
     )
 );
-CREATE INDEX idx_arquivo_metadata ON acervo.arquivo USING GIN (metadado);
+CREATE INDEX idx_arquivo_metadato ON acervo.arquivo USING GIN (metadado);
 CREATE INDEX idx_arquivo_tipo_arquivo ON acervo.arquivo(tipo_arquivo_id);
 
 CREATE TABLE acervo.arquivo_deletado(
@@ -200,7 +200,7 @@ CREATE TABLE acervo.arquivo_deletado(
 	extensao VARCHAR(255),
 	tamanho_mb REAL,
     checksum VARCHAR(64),
-	metadata JSONB,
+	metadado JSONB,
 	tipo_status_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_arquivo (code),
 	situacao_bdgex_id SMALLINT NOT NULL REFERENCES dominio.situacao_bdgex (code),
 	orgao_produtor VARCHAR(255),

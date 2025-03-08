@@ -1,3 +1,4 @@
+// Path: produto\produto_schema.js
 "use strict";
 
 const Joi = require("joi");

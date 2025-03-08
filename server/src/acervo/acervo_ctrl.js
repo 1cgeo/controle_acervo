@@ -1,3 +1,4 @@
+// Path: acervo\acervo_ctrl.js
 "use strict";
 const fs = require('fs').promises;
 const path = require('path');
@@ -110,7 +111,7 @@ controller.getProdutoById = async produtoId => {
       )
       SELECT 
         p.id AS produto_id, p.nome AS nome_produto, p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial, p.descricao AS descricao_produto,
-        p.geom, tp.nome AS tipo_produto
+        p.geom, tp.nome AS tipo_produto,
         p.data_cadastramento, u1.nome AS usuario_cadastramento,
         p.data_modificacao, u2.nome AS usuario_modificacao,
         nv.versao_id, nv.versao, nv.nome_versao, nv.tipo_versao, nv.metadado, nv.descricao_versao, nv.data_criacao, nv.data_edicao,
@@ -155,66 +156,8 @@ controller.getProdutoById = async produtoId => {
 
 controller.getProdutoDetailedById = async produtoId => {
   return db.conn.task(async t => {
-    const result = await t.one(`
-      WITH versoes AS (
-        SELECT 
-          v.id AS versao_id,
-          v.uuid_versao,
-          v.versao,
-          v.nome as nome_versao,
-          v.tipo_versao_id,
-          v.subtipo_produto_id,
-          v.lote_id,
-          v.metadado AS versao_metadado,
-          v.descricao AS versao_descricao,
-          v.data_criacao AS versao_data_criacao,
-          v.data_edicao AS versao_data_edicao,
-          v.data_cadastramento AS versao_data_cadastramento,
-          v.usuario_cadastramento_uuid AS versao_usuario_cadastramento_uuid,
-          v.data_modificacao AS versao_data_modificacao,
-          v.usuario_modificacao_uuid AS versao_usuario_modificacao_uuid,
-          l.nome AS lote_nome,
-          l.pit AS lote_pit,
-          pr.nome AS projeto_nome,
-          ARRAY_AGG(DISTINCT 
-            jsonb_build_object(
-              'versao_relacionada_id', CASE WHEN vr.versao_id_1 = v.id THEN vr.versao_id_2 ELSE vr.versao_id_1 END,
-              'tipo_relacionamento', tr.nome
-            )
-          ) as relacionamentos,
-          ARRAY_AGG(DISTINCT 
-            jsonb_build_object(
-              'id', a.id,
-              'uuid_arquivo', a.uuid_arquivo,
-              'nome', a.nome,
-              'nome_arquivo', a.nome_arquivo,
-              'tipo_arquivo_id', a.tipo_arquivo_id,
-              'volume_armazenamento_id', a.volume_armazenamento_id,
-              'extensao', a.extensao,
-              'tamanho_mb', a.tamanho_mb,
-              'checksum', a.checksum,
-              'metadado', a.metadado,
-              'tipo_status_id', a.tipo_status_id,
-              'situacao_bdgex_id', a.situacao_bdgex_id,
-              'orgao_produtor', a.orgao_produtor,
-              'descricao', a.descricao,
-              'data_cadastramento', a.data_cadastramento,
-              'usuario_cadastramento_uuid', a.usuario_cadastramento_uuid,
-              'data_modificacao', a.data_modificacao,
-              'usuario_modificacao_uuid', a.usuario_modificacao_uuid,
-              'tipo_arquivo', ta.nome
-            )
-          ) AS arquivos
-        FROM acervo.versao v
-        LEFT JOIN acervo.lote l ON v.lote_id = l.id
-        LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
-        LEFT JOIN acervo.versao_relacionamento vr ON v.id = vr.versao_id_1 OR v.id = vr.versao_id_2
-        LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
-        LEFT JOIN acervo.arquivo a ON v.id = a.versao_id
-        LEFT JOIN dominio.tipo_arquivo ta ON a.tipo_arquivo_id = ta.code
-        WHERE v.produto_id = $1
-        GROUP BY v.id, l.id, pr.id
-      )
+    // Primeiro, obter informações básicas do produto
+    const produto = await t.one(`
       SELECT 
         p.id,
         p.nome,
@@ -224,21 +167,91 @@ controller.getProdutoDetailedById = async produtoId => {
         p.denominador_escala_especial,
         p.tipo_produto_id,
         p.descricao,
-        p.data_cadastramento, u1.nome AS usuario_cadastramento
-        p.data_modificacao, u2.nome AS usuario_modificacao,
-        p.geom,
-        (SELECT json_agg(v.*) FROM versoes v) as versoes
+        p.data_cadastramento, 
+        u1.nome AS usuario_cadastramento,
+        p.data_modificacao, 
+        u2.nome AS usuario_modificacao,
+        p.geom
       FROM acervo.produto p
       INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
       INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
       INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
-      INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
       WHERE p.id = $1
     `, [produtoId]);
 
-    return result;
+    // Obter todas as versões do produto com seus relacionamentos e arquivos
+    const versoes = await t.any(`
+      SELECT 
+        v.id AS versao_id,
+        v.uuid_versao,
+        v.versao,
+        v.nome as nome_versao,
+        v.tipo_versao_id,
+        v.subtipo_produto_id,
+        v.lote_id,
+        v.metadado AS versao_metadado,
+        v.descricao AS versao_descricao,
+        v.data_criacao AS versao_data_criacao,
+        v.data_edicao AS versao_data_edicao,
+        v.data_cadastramento AS versao_data_cadastramento,
+        v.usuario_cadastramento_uuid AS versao_usuario_cadastramento_uuid,
+        v.data_modificacao AS versao_data_modificacao,
+        v.usuario_modificacao_uuid AS versao_usuario_modificacao_uuid,
+        l.nome AS lote_nome,
+        l.pit AS lote_pit,
+        pr.nome AS projeto_nome
+      FROM acervo.versao v
+      LEFT JOIN acervo.lote l ON v.lote_id = l.id
+      LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
+      WHERE v.produto_id = $1
+    `, [produtoId]);
+
+    // Para cada versão, obter seus relacionamentos e arquivos
+    for (const versao of versoes) {
+      // Obter relacionamentos
+      versao.relacionamentos = await t.any(`
+        SELECT 
+          CASE WHEN vr.versao_id_1 = $1 THEN vr.versao_id_2 ELSE vr.versao_id_1 END AS versao_relacionada_id,
+          tr.nome AS tipo_relacionamento
+        FROM acervo.versao_relacionamento vr
+        LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
+        WHERE vr.versao_id_1 = $1 OR vr.versao_id_2 = $1
+      `, [versao.versao_id]);
+
+      // Obter arquivos
+      versao.arquivos = await t.any(`
+        SELECT 
+          a.id,
+          a.uuid_arquivo,
+          a.nome,
+          a.nome_arquivo,
+          a.tipo_arquivo_id,
+          a.volume_armazenamento_id,
+          a.extensao,
+          a.tamanho_mb,
+          a.checksum,
+          a.metadado,
+          a.tipo_status_id,
+          a.situacao_bdgex_id,
+          a.orgao_produtor,
+          a.descricao,
+          a.data_cadastramento,
+          a.usuario_cadastramento_uuid,
+          a.data_modificacao,
+          a.usuario_modificacao_uuid,
+          ta.nome AS tipo_arquivo
+        FROM acervo.arquivo a
+        LEFT JOIN dominio.tipo_arquivo ta ON a.tipo_arquivo_id = ta.code
+        WHERE a.versao_id = $1
+      `, [versao.versao_id]);
+    }
+
+    // Combinar os resultados
+    produto.versoes = versoes;
+
+    return produto;
   });
-}
+};
 
 controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
   const cs = new db.pgp.helpers.ColumnSet([
@@ -247,7 +260,7 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
     { name: "data_download", mod: ":raw", init: () => "NOW()" }
   ]);
 
-  const usuario = db.oneOrNone(
+  const usuario = await db.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<uuid>",
     { usuarioUuid }
   );
@@ -293,8 +306,8 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
   );
 
   return filePaths.map(file => ({
-    arquivo_id: arquivo.arquivo_id,
-    download_path: arquivo.file_path
+    arquivo_id: file.arquivo_id,
+    download_path: file.file_path
   }));
 };
 
