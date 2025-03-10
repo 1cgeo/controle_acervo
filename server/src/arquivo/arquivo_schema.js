@@ -25,7 +25,7 @@ const fileSchema = Joi.object().keys({
     otherwise: Joi.string().required()
   }),
   metadado: Joi.object().allow(null).required(),
-  situacao_bdgex_id: Joi.number().integer().required(),
+  situacao_carregamento_id: Joi.number().integer().required(),
   orgao_produtor: Joi.string().required(),
   descricao: Joi.string().allow(null).required()
 });

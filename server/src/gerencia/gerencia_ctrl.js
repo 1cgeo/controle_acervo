@@ -38,7 +38,7 @@ controller.getTipoProduto = async () => {
 controller.getSituacaoBDGEx = async () => {
   return db.conn.any(`
     SELECT code, nome
-    FROM dominio.situacao_bdgex
+    FROM dominio.situacao_carregamento
     `);
 };
 
@@ -108,8 +108,8 @@ controller.getArquivosDeletados = async () => {
       ad.metadado, 
       ad.tipo_status_id, 
       ts.nome AS tipo_status_nome, 
-      ad.situacao_bdgex_id, 
-      sb.nome AS situacao_bdgex_nome, 
+      ad.situacao_carregamento_id, 
+      sb.nome AS situacao_carregamento_nome, 
       ad.orgao_produtor, 
       ad.descricao, 
       ad.data_cadastramento, 
@@ -140,7 +140,7 @@ controller.getArquivosDeletados = async () => {
     LEFT JOIN 
       dominio.tipo_status_arquivo ts ON ad.tipo_status_id = ts.code
     LEFT JOIN 
-      dominio.situacao_bdgex sb ON ad.situacao_bdgex_id = sb.code
+      dominio.situacao_carregamento sb ON ad.situacao_carregamento_id = sb.code
     LEFT JOIN 
       dgeo.usuario u ON ad.usuario_cadastramento_uuid = u.uuid
     LEFT JOIN 

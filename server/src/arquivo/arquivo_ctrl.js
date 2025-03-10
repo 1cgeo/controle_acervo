@@ -72,13 +72,13 @@ controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usua
           `INSERT INTO acervo.arquivo(
             uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao,
+            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
           [arquivo.nome, arquivo.nome_arquivo, versionId, arquivo.tipo_arquivo_id,
             volume_armazenamento_id, arquivo.extensao, arquivo.tamanho_mb,
           arquivo.checksum, arquivo.metadado, 1, // tipo_status_id is always 1
-          arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
+          arquivo.situacao_carregamento_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
     }
@@ -137,13 +137,13 @@ controller.bulkCreateVersionWithFiles = async (versoes, usuarioUuid) => {
           `INSERT INTO acervo.arquivo(
             uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao,
+            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
           [arquivo.nome, arquivo.nome_arquivo, versionId, arquivo.tipo_arquivo_id,
             volume_armazenamento_id, arquivo.extensao, arquivo.tamanho_mb,
           arquivo.checksum, arquivo.metadado, 1, // tipo_status_id is always 1
-          arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
+          arquivo.situacao_carregamento_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
     }
@@ -304,13 +304,13 @@ controller.bulkSistematicCreateVersionWithFiles = async (versoes, usuarioUuid) =
           `INSERT INTO acervo.arquivo(
             uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao,
+            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
           [arquivo.nome, arquivo.nome_arquivo, versionId, arquivo.tipo_arquivo_id,
            volume_armazenamento_id, arquivo.extensao, arquivo.tamanho_mb,
            arquivo.checksum, arquivo.metadado, 1, // tipo_status_id is always 1
-           arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
+           arquivo.situacao_carregamento_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
     }
@@ -352,13 +352,13 @@ controller.bulkAddFilesToVersion = async (arquivos_por_versao, usuarioUuid) => {
           `INSERT INTO acervo.arquivo(
             uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao,
+            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
           [arquivo.nome, arquivo.nome_arquivo, versao_id, arquivo.tipo_arquivo_id,
             volume_armazenamento_id, arquivo.extensao, arquivo.tamanho_mb,
           arquivo.checksum, arquivo.metadado, 1, // tipo_status_id is always 1
-          arquivo.situacao_bdgex_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
+          arquivo.situacao_carregamento_id, arquivo.orgao_produtor, arquivo.descricao, usuarioUuid]
         );
       }
     }

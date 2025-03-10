@@ -33,7 +33,7 @@ models.arquivoAtualizacao = Joi.object().keys({
   tipo_arquivo_id: Joi.number().integer().strict().required(),
   volume_armazenamento_id: Joi.number().integer().strict().required(),
   metadado: Joi.object().required(),
-  situacao_bdgex_id: Joi.number().integer().strict().required(),
+  situacao_carregamento_id: Joi.number().integer().strict().required(),
   orgao_produtor: Joi.string().required(),
   descricao: Joi.string().allow('').required()
 });

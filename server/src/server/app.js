@@ -4,7 +4,6 @@
 const express = require('express')
 const path = require('path')
 const fs = require('fs')
-//const bodyParser = require('body-parser')
 const cors = require('cors')
 const hpp = require('hpp')
 const rateLimit = require('express-rate-limit')

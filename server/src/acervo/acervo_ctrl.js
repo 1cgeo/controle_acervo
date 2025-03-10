@@ -232,7 +232,7 @@ controller.getProdutoDetailedById = async produtoId => {
           a.checksum,
           a.metadado,
           a.tipo_status_id,
-          a.situacao_bdgex_id,
+          a.situacao_carregamento_id,
           a.orgao_produtor,
           a.descricao,
           a.data_cadastramento,

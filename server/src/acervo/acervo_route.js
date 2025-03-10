@@ -24,7 +24,7 @@ router.get(
 );
 
 router.get(
-  '/produto/id/:produto_id',
+  '/produto/:produto_id',
   verifyLogin,
   schemaValidation({ 
     params: acervoSchema.produtoByIdParams
@@ -41,7 +41,7 @@ router.get(
 );
 
 router.get(
-  '/produto/detalhado/id/:produto_id',
+  '/produto/detalhado/:produto_id',
   verifyLogin,
   schemaValidation({ 
     params: acervoSchema.produtoByIdParams

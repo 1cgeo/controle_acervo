@@ -41,15 +41,17 @@ INSERT INTO dominio.tipo_escala (code, nome) VALUES
 (4, '1:250.000'),
 (5, 'Escala personalizada');
 
-CREATE TABLE dominio.situacao_bdgex(
+CREATE TABLE dominio.situacao_carregamento(
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL
 );
 
-INSERT INTO dominio.situacao_bdgex (code, nome) VALUES
+INSERT INTO dominio.situacao_carregamento (code, nome) VALUES
 (1, 'Não carregado'),
 (2, 'Carregado BDGEx Ostensivo'),
-(3, 'Carregado BDGEx Operações');
+(3, 'Carregado BDGEx Operações'),
+(4, 'Carregado IGW'),
+(5, 'Carregado GEDW');
 
 CREATE TABLE dominio.tipo_arquivo(
 	code SMALLINT NOT NULL PRIMARY KEY,

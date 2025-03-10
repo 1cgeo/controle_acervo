@@ -53,7 +53,7 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
 
     const colunasArquivo = [
       'nome', 'tipo_arquivo_id',
-      'metadado', 'situacao_bdgex_id', 'orgao_produtor', 'descricao', 
+      'metadado', 'situacao_carregamento_id', 'orgao_produtor', 'descricao', 
       'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
@@ -85,7 +85,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
             `INSERT INTO acervo.arquivo_deletado (
               uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
               volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-              tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
+              tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
               data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
               usuario_modificacao_uuid, data_delete, usuario_delete_uuid
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
@@ -104,7 +104,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
               arquivo.checksum, 
               arquivo.metadado, 
               4, //Em exclusão
-              arquivo.situacao_bdgex_id, 
+              arquivo.situacao_carregamento_id, 
               arquivo.orgao_produtor, 
               arquivo.descricao, 
               arquivo.data_cadastramento, 
@@ -160,7 +160,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
           `INSERT INTO acervo.arquivo_deletado (
             uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-            tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
+            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
             data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
             usuario_modificacao_uuid, data_delete, usuario_delete_uuid
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
@@ -179,7 +179,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             arquivo.checksum, 
             arquivo.metadado, 
             4, //Em exclusão
-            arquivo.situacao_bdgex_id, 
+            arquivo.situacao_carregamento_id, 
             arquivo.orgao_produtor, 
             arquivo.descricao, 
             arquivo.data_cadastramento, 
@@ -229,7 +229,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         `INSERT INTO acervo.arquivo_deletado (
           uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
           volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-          tipo_status_id, situacao_bdgex_id, orgao_produtor, descricao, 
+          tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
           data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
           usuario_modificacao_uuid, data_delete, usuario_delete_uuid
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
@@ -248,7 +248,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
           arquivo.checksum, 
           arquivo.metadado, 
           4, //Em exclusão
-          arquivo.situacao_bdgex_id, 
+          arquivo.situacao_carregamento_id, 
           arquivo.orgao_produtor, 
           arquivo.descricao, 
           arquivo.data_cadastramento, 

@@ -36,7 +36,7 @@ router.get(
 )
 
 router.get(
-  '/dominio/situacao_bdgex',
+  '/dominio/situacao_carregamento',
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getSituacaoBDGEx()
 

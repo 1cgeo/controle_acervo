@@ -7,7 +7,7 @@ const { AppError, httpCode } = require('../utils')
 
 const { AUTH_SERVER } = require('../config')
 
-const getUsuarios = async (usuario, senha, cliente) => {
+const getUsuarios = async () => {
   const server = `${AUTH_SERVER}/api/usuarios`
   try {
     const response = await axios.get(server)
