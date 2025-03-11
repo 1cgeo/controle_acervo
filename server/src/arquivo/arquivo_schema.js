@@ -111,4 +111,25 @@ models.multiplosArquivos = Joi.object().keys({
   ).min(1).required()
 })
 
+models.arquivoAtualizacao = Joi.object().keys({
+  id: Joi.number().integer().strict().required(),
+  nome: Joi.string().required(),
+  tipo_arquivo_id: Joi.number().integer().strict().required(),
+  volume_armazenamento_id: Joi.number().integer().strict().required(),
+  metadado: Joi.object().required(),
+  tipo_status_id: Joi.number().integer().strict().required(),
+  situacao_carregamento_id: Joi.number().integer().strict().required(),
+  orgao_produtor: Joi.string().required(),
+  descricao: Joi.string().allow('').required()
+});
+
+models.arquivoIds = Joi.object().keys({
+  arquivo_ids: Joi.array()
+    .items(Joi.number().integer().strict().required())
+    .unique()
+    .required()
+    .min(1),
+  motivo_exclusao: Joi.string().required()
+});
+
 module.exports = models

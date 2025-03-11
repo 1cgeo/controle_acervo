@@ -35,7 +35,7 @@ controller.getTipoProduto = async () => {
     `);
 };
 
-controller.getSituacaoBDGEx = async () => {
+controller.getSituacaoCarregamento = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.situacao_carregamento
@@ -74,6 +74,21 @@ controller.getTipoStatusExecucao = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_status_execucao
+    `);
+};
+
+controller.getTipoEscala = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM dominio.tipo_escala
+    `);
+};
+
+controller.getSubtipoProduto = async () => {
+  return db.conn.any(`
+    SELECT sp.code, sp.nome, sp.tipo_id, tp.nome AS tipo_produto
+    FROM dominio.subtipo_produto AS sp
+    INNER JOIN dominio.tipo_produto AS tp ON tp.code = sp.tipo_id
     `);
 };
 
@@ -313,16 +328,24 @@ controller.verificarConsistencia = async () => {
 controller.getArquivosIncorretos = async () => {
   return db.conn.task(async t => {
     const arquivosIncorretos = await t.any(`
-      SELECT a.id, a.nome, a.nome_arquivo, a.extensao, v.volume, 'Arquivo com erro' as tipo
+      SELECT 
+        a.id, a.nome, a.nome_arquivo, a.extensao, a.tipo_status_id, 
+        a.data_cadastramento, a.data_modificacao, v.volume, va.nome AS volume_nome,
+        'Arquivo com erro' as tipo
       FROM acervo.arquivo AS a
       INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
+      INNER JOIN acervo.versao AS va ON a.versao_id = va.id
       WHERE a.tipo_status_id = 2
     `);
 
     const arquivosDeletadosIncorretos = await t.any(`
-      SELECT ad.id, ad.nome, ad.nome_arquivo, ad.extensao, v.volume, 'Arquivo deletado com erro' as tipo
+      SELECT 
+        ad.id, ad.nome, ad.nome_arquivo, ad.extensao, ad.tipo_status_id,
+        ad.data_cadastramento, ad.data_delete, v.volume, va.nome AS volume_nome,
+        'Arquivo deletado com erro' as tipo
       FROM acervo.arquivo_deletado AS ad
       INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
+      LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
       WHERE ad.tipo_status_id = 4
     `);
 

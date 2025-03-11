@@ -40,20 +40,6 @@ router.put(
   })
 )
 
-router.put(
-  '/arquivo',
-  verifyAdmin,
-  schemaValidation({
-    body: produtoSchema.arquivoAtualizacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    await produtoCtrl.atualizaArquivo(req.body, req.usuarioUuid);
-
-    const msg = 'Arquivo atualizado com sucesso';
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
-  })
-);
-
 router.delete(
   '/produto',
   verifyAdmin,
@@ -80,16 +66,48 @@ router.delete(
   })
 );
 
-router.delete(
-  '/arquivo',
+router.post(
+  '/versao_historica',
   verifyAdmin,
   schemaValidation({
-    body: produtoSchema.arquivoIds
+    body: produtoSchema.versoesHistoricas
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deleteArquivos(req.body.arquivo_ids, req.body.motivo_exclusao, req.usuarioUuid);
-    const msg = 'Arquivos deletados com sucesso';
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    await produtoCtrl.criaVersaoHistorica(req.body, req.usuarioUuid);
+
+    const msg = 'Versões históricas criadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
+router.post(
+  '/produto_versao_historica',
+  verifyAdmin,
+  schemaValidation({
+    body: produtoSchema.produtosVersoesHistoricas
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.criaProdutoVersoesHistoricas(req.body, req.usuarioUuid);
+
+    const msg = 'Produtos com versões históricas criados com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
+router.post(
+  '/produtos',
+  verifyLogin,
+  schemaValidation({
+    body: produtoSchema.produtos
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.bulkCreateProducts(req.body.produtos, req.usuarioUuid);
+
+    const msg = 'Produtos criados com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
   })
 );
 

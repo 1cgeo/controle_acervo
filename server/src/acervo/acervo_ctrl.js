@@ -128,7 +128,12 @@ controller.getProdutoById = async produtoId => {
           SELECT jsonb_build_object(
             'id', a.id,
             'nome', a.nome,
+            'nome_arquivo', a.nome_arquivo,
+            'extensao', a.extensao,
+            'volume_armazenamento_id', a.volume_armazenamento_id,
             'tamanho_mb', a.tamanho_mb,
+            'checksum', a.checksum,
+            'situacao_carregamento_id', a.situacao_carregamento_id,
             'tipo_arquivo', ta.nome
           )
           FROM acervo.arquivo a
@@ -374,98 +379,6 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
   }));
 
   return filePaths;
-};
-
-controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
-  const data_cadastramento = new Date();
-
-  const versoesPreparadas = versoes.map(versao => {
-    return {
-      ...versao,
-      uuid_versao: versao.uuid_versao || uuidv4(),
-      data_cadastramento: data_cadastramento,
-      usuario_cadastramento_uuid: usuarioUuid,
-      tipo_versao: 2, // Registro Histórico
-    };
-  });
-
-  const versoesId = versoes.map(versao => versao.id)
-
-  return db.conn.tx(async t => {
-    const cs = new db.pgp.helpers.ColumnSet([
-      'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
-      'data_criacao', 'data_edicao', 'tipo_versao', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
-    ], { table: 'versao', schema: 'acervo' });
-
-    const query = db.pgp.helpers.insert(versoesPreparadas, cs);
-
-    await t.none(query);
-
-    await refreshViews.atualizarViewsPorVersoes(t, versoesId);
-  });
-};
-
-controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
-  const data_cadastramento = new Date();
-
-  return db.conn.tx(async t => {
-    const produtosIds = []
-
-    for (const produto of produtos) {
-      // Inserir o produto
-      const [novoProduto] = await t.any(`
-        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
-        VALUES($1, $2, $3, $4, $5, $6, ST_GeomFromGeoJSON($7), $8, $9)
-        RETURNING id
-      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
-
-      produtosIds.push(novoProduto.id)
-
-      // Preparar e inserir as versões
-      const versoesPreparadas = produto.versoes.map(versao => ({
-        ...versao,
-        uuid_versao: versao.uuid_versao || uuidv4(),
-        produto_id: novoProduto.id,
-        data_cadastramento: data_cadastramento,
-        usuario_cadastramento_uuid: usuarioUuid,
-        tipo_versao_id: 2 // Registro Histórico
-      }));
-
-      const cs = new db.pgp.helpers.ColumnSet([
-        'uuid_versao', 'versao', 'produto_id', 'lote_id', 'metadado', 'descricao',
-        'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
-      ], { table: 'versao', schema: 'acervo' });
-
-      const query = db.pgp.helpers.insert(versoesPreparadas, cs);
-      await t.none(query);
-    }
-
-    await refreshViews.atualizarViewsPorProdutos(t, produtosIds);
-  });
-};
-
-controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
-  produtos.forEach(produto => {
-    produto.data_cadastramento = new Date();
-    produto.usuario_cadastramento_uuid = usuarioUuid;
-    produto.geom = `ST_GeomFromEWKT('${produto.geom}')`;
-  });
-
-  return db.conn.tx(async t => {
-    const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial', 'tipo_produto_id', 'descricao',
-      'usuario_cadastramento_uuid',
-      {name: 'data_cadastramento', cast: 'date'},
-      {name: 'geom', mod: ':raw'}
-    ]);
-
-    const query = db.pgp.helpers.insert(produtos, cs, {
-      table: 'produto',
-      schema: 'acervo'
-    });
-
-    await t.none(query);
-  });
 };
 
 module.exports = controller;

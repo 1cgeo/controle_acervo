@@ -67,29 +67,45 @@ controller.getGbPorVolume = async () => {
 
 controller.getUltimosCarregamentos = async () => {
   return db.conn.any(`
-    SELECT * FROM acervo.arquivo 
+    SELECT 
+      id, uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+      volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+      tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
+      data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+      usuario_modificacao_uuid 
+    FROM acervo.arquivo 
     ORDER BY data_cadastramento DESC 
     LIMIT 10`);
-}
+};
 
 controller.getUltimasModificacoes = async () => {
   return db.conn.any(`
-    SELECT * 
+    SELECT 
+      id, uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+      volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+      tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
+      data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+      usuario_modificacao_uuid
     FROM acervo.arquivo 
     WHERE data_modificacao IS NOT NULL 
     ORDER BY data_modificacao DESC 
     LIMIT 10`
   );
-}
+};
 
 controller.getUltimosDeletes = async () => {
   return db.conn.any(`
-    SELECT * 
+    SELECT 
+      id, uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, 
+      tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
+      checksum, metadado, tipo_status_id, situacao_carregamento_id, 
+      orgao_produtor, descricao, data_cadastramento, usuario_cadastramento_uuid, 
+      data_modificacao, usuario_modificacao_uuid, data_delete, usuario_delete_uuid
     FROM acervo.arquivo_deletado 
     ORDER BY data_delete DESC 
     LIMIT 10`
   );
-}
+};
 
 controller.getDownload = async () => {
   return db.conn.any(

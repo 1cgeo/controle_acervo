@@ -12,6 +12,34 @@ const arquivoSchema = require('./arquivo_schema')
 
 const router = express.Router()
 
+router.put(
+  '/arquivo',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.arquivoAtualizacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await arquivoCtrl.atualizaArquivo(req.body, req.usuarioUuid);
+
+    const msg = 'Arquivo atualizado com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
+
+router.delete(
+  '/arquivo',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.arquivoIds
+  }),
+  asyncHandler(async (req, res, next) => {
+    await arquivoCtrl.deleteArquivos(req.body.arquivo_ids, req.body.motivo_exclusao, req.usuarioUuid);
+    const msg = 'Arquivos deletados com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
 router.post(
   '/produtos_multiplos_arquivos',
   verifyLogin,

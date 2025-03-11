@@ -89,49 +89,4 @@ router.post(
   })
 )
 
-router.post(
-  '/versao_historica',
-  verifyAdmin,
-  schemaValidation({
-    body: acervoSchema.versoesHistoricas
-  }),
-  asyncHandler(async (req, res, next) => {
-    await acervoCtrl.criaVersaoHistorica(req.body, req.usuarioUuid);
-
-    const msg = 'Versões históricas criadas com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
-router.post(
-  '/produto_versao_historica',
-  verifyAdmin,
-  schemaValidation({
-    body: acervoSchema.produtosVersoesHistoricas
-  }),
-  asyncHandler(async (req, res, next) => {
-    await acervoCtrl.criaProdutoVersoesHistoricas(req.body, req.usuarioUuid);
-
-    const msg = 'Produtos com versões históricas criados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
-router.post(
-  '/produtos',
-  verifyLogin,
-  schemaValidation({
-    body: acervoSchema.produtos
-  }),
-  asyncHandler(async (req, res, next) => {
-    await acervoCtrl.bulkCreateProducts(req.body.produtos, req.usuarioUuid);
-
-    const msg = 'Produtos criados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
 module.exports = router

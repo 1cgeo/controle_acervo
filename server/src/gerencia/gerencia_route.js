@@ -36,11 +36,33 @@ router.get(
 )
 
 router.get(
+  '/dominio/tipo_escala',
+  asyncHandler(async (req, res, next) => {
+    const dados = await gerenciaCtrl.getTipoEscala()
+
+    const msg = 'Domínio Tipo Escala retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/subtipo_produto',
+  asyncHandler(async (req, res, next) => {
+    const dados = await gerenciaCtrl.getSubtipoProduto()
+
+    const msg = 'Domínio Subtipo de Produto retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
   '/dominio/situacao_carregamento',
   asyncHandler(async (req, res, next) => {
-    const dados = await gerenciaCtrl.getSituacaoBDGEx()
+    const dados = await gerenciaCtrl.getSituacaoCarregamento()
 
-    const msg = 'Domínio Situação no BDGEx retornado com sucesso'
+    const msg = 'Domínio Situação de carregamento retornado com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

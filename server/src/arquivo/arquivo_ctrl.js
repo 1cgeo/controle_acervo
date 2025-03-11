@@ -18,6 +18,102 @@ const {
 
 const controller = {};
 
+controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    arquivo.data_modificacao = new Date();
+    arquivo.usuario_modificacao_uuid = usuarioUuid;
+
+    const colunasArquivo = [
+      'nome', 'tipo_arquivo_id', 'volume_armazenamento_id',
+      'metadado', 'tipo_status_id', 'situacao_carregamento_id', 'orgao_produtor', 'descricao', 
+      'data_modificacao', 'usuario_modificacao_uuid'
+    ];
+
+    const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' });
+    const query = db.pgp.helpers.update(arquivo, cs) + ` WHERE id = ${arquivo.id}`;
+
+    await t.none(query);
+
+    await refreshViews.atualizarViewsPorArquivos(t, [arquivo.id])
+  });
+};
+
+controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => {
+  const data_delete = new Date();
+  const usuario_delete_uuid = usuarioUuid;
+
+  return db.conn.tx(async t => {
+    // Verificar se todos os IDs de arquivo existem
+    const existingFiles = await t.any(
+      `SELECT id FROM acervo.arquivo WHERE id IN ($1:csv)`,
+      [arquivoIds]
+    );
+
+    if (existingFiles.length !== arquivoIds.length) {
+      const existingIds = existingFiles.map(f => f.id);
+      const missingIds = arquivoIds.filter(id => !existingIds.includes(parseInt(id)));
+      throw new AppError(`Os seguintes arquivos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    for (let id of arquivoIds) {
+      const arquivo = await t.one('SELECT * FROM acervo.arquivo WHERE id = $1', [id]);
+
+      // Move the file to arquivo_deletado table
+      const { id: arquivoDeletadoId } = await t.one(
+        `INSERT INTO acervo.arquivo_deletado (
+          uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
+          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
+          tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
+          data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
+          usuario_modificacao_uuid, data_delete, usuario_delete_uuid
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
+                  $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        RETURNING id`,
+        [
+          arquivo.uuid_arquivo, 
+          arquivo.nome, 
+          arquivo.nome_arquivo, 
+          motivo_exclusao, 
+          arquivo.versao_id, 
+          arquivo.tipo_arquivo_id, 
+          arquivo.volume_armazenamento_id, 
+          arquivo.extensao, 
+          arquivo.tamanho_mb, 
+          arquivo.checksum, 
+          arquivo.metadado, 
+          4, //Em exclusão
+          arquivo.situacao_carregamento_id, 
+          arquivo.orgao_produtor, 
+          arquivo.descricao, 
+          arquivo.data_cadastramento, 
+          arquivo.usuario_cadastramento_uuid, 
+          arquivo.data_modificacao, 
+          arquivo.usuario_modificacao_uuid, 
+          data_delete, 
+          usuario_delete_uuid
+        ]
+      );
+
+      // Move related downloads to download_deletado table for THIS file
+      await t.none(
+        `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+         SELECT $1, d.usuario_uuid, d.data_download
+         FROM acervo.download d
+         WHERE d.arquivo_id = $2`,
+        [arquivoDeletadoId, arquivo.id]
+      );
+
+      // Delete related downloads from the original download table
+      await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
+
+      // Finally, delete the file itself from the arquivo table
+      await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [arquivo.id]);
+    }
+
+    await refreshViews.atualizarViewsPorArquivos(t, arquivoIds);
+  });
+};
+
 controller.bulkCreateProductsWithVersionAndMultipleFiles = async (produtos, usuarioUuid) => {
   return db.conn.tx(async t => {
     const produtosId = []

@@ -20,22 +20,14 @@ models.versaoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
   uuid_versao: Joi.string().uuid().required(),
   versao: Joi.string().required(),
+  nome: Joi.string().allow(null).required(),
+  tipo_versao_id: Joi.number().integer().strict().required(),
+  subtipo_produto_id: Joi.number().integer().strict().required(),
   descricao: Joi.string().allow('').required(),
   metadado: Joi.object().required(),
-  lote_id: Joi.number().integer().strict().required(),
+  lote_id: Joi.number().integer().strict().allow(null).required(),
   data_criacao: Joi.date().required(),
   data_edicao: Joi.date().required()
-});
-
-models.arquivoAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().strict().required(),
-  nome: Joi.string().required(),
-  tipo_arquivo_id: Joi.number().integer().strict().required(),
-  volume_armazenamento_id: Joi.number().integer().strict().required(),
-  metadado: Joi.object().required(),
-  situacao_carregamento_id: Joi.number().integer().strict().required(),
-  orgao_produtor: Joi.string().required(),
-  descricao: Joi.string().allow('').required()
 });
 
 models.produtoIds = Joi.object().keys({
@@ -49,15 +41,6 @@ models.produtoIds = Joi.object().keys({
 
 models.versaoIds = Joi.object().keys({
   versao_ids: Joi.array()
-    .items(Joi.number().integer().strict().required())
-    .unique()
-    .required()
-    .min(1),
-  motivo_exclusao: Joi.string().required()
-});
-
-models.arquivoIds = Joi.object().keys({
-  arquivo_ids: Joi.array()
     .items(Joi.number().integer().strict().required())
     .unique()
     .required()
@@ -99,5 +82,61 @@ models.versaoRelacionamentoIds = Joi.object().keys({
     .required()
     .min(1)
 });
+
+models.versoesHistoricas = Joi.array().items(
+  Joi.object().keys({
+    uuid_versao: Joi.string().uuid().allow(null).required(),
+    versao: Joi.string().required(),
+    nome: Joi.string().allow(null).required(),  
+    produto_id: Joi.number().integer().strict().required(),
+    lote_id: Joi.number().integer().strict().allow(null).required(),
+    metadado: Joi.object().required(),
+    descricao: Joi.string().allow('').required(),
+    data_criacao: Joi.date().required(),
+    data_edicao: Joi.date().required()
+  })
+  .required()
+  .min(1)
+)
+
+models.produtosVersoesHistoricas = Joi.array().items(
+  Joi.object().keys({
+    nome: Joi.string().allow(null).required(),
+    mi: Joi.string().allow(null),
+    inom: Joi.string().allow(null),
+    tipo_escala_id: Joi.number().integer().strict().required(),
+    denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+    tipo_produto_id: Joi.number().integer().strict().required(),
+    descricao: Joi.string().allow('').required(),
+    geom: Joi.string().required(),
+    versoes: Joi.array().items(
+      Joi.object().keys({
+        uuid_versao: Joi.string().uuid().allow(null).required(),
+        versao: Joi.string().required(),
+        nome: Joi.string().allow(null).required(),
+        lote_id: Joi.number().integer().strict().allow(null).required(),
+        metadado: Joi.object().required(),
+        descricao: Joi.string().allow('').required(),
+        data_criacao: Joi.date().required(),
+        data_edicao: Joi.date().required()
+      })
+    ).min(1).required()
+  })
+).required().min(1);
+
+models.produtos = Joi.object().keys({
+  produtos: Joi.array().items(
+    Joi.object().keys({
+      nome: Joi.string().allow(null).required(),
+      mi: Joi.string().allow(null).required(),
+      inom: Joi.string().allow(null).required(),
+      tipo_escala_id: Joi.number().integer().strict().required(),
+      denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+      tipo_produto_id: Joi.number().integer().required(),
+      descricao: Joi.string().allow(null).required(),
+      geom: Joi.string().required()
+    })
+  ).min(1).required()
+})
 
 module.exports = models;

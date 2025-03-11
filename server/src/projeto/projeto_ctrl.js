@@ -69,8 +69,8 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
   });
 };
 
-controller.deleteProjetos = async projetoIds => {
-  return db.conn.task(async t => {
+controller.deleteProjetos = async (projetoIds) => {
+  return db.conn.tx(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.projeto
       WHERE id in ($<projetoIds:csv>)`,
@@ -79,7 +79,7 @@ controller.deleteProjetos = async projetoIds => {
 
     if (exists && exists.length < projetoIds.length) {
       throw new AppError(
-        'O id informado não corresponde a uma entrada do projeto',
+        'Um ou mais IDs informados não correspondem a entradas de projeto',
         httpCode.BadRequest
       );
     }
@@ -92,8 +92,9 @@ controller.deleteProjetos = async projetoIds => {
     );
 
     if (associatedLotes.length > 0) {
+      const projetosComLotes = associatedLotes.map(l => l.projeto_id);
       throw new AppError(
-        'Não é possível deletar o projeto pois há lotes associados',
+        `Não é possível deletar os projetos com IDs: ${projetosComLotes.join(', ')} pois há lotes associados`,
         httpCode.BadRequest
       );
     }
@@ -172,8 +173,8 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   });
 };
 
-controller.deleteLotes = async loteIds => {
-  return db.conn.task(async t => {
+controller.deleteLotes = async (loteIds, usuarioUuid) => {
+  return db.conn.tx(async t => {
     const exists = await t.any(
       `SELECT id FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,
@@ -182,7 +183,7 @@ controller.deleteLotes = async loteIds => {
 
     if (exists && exists.length < loteIds.length) {
       throw new AppError(
-        'O id informado não corresponde a uma entrada do lote',
+        'Um ou mais IDs informados não correspondem a entradas de lote',
         httpCode.BadRequest
       );
     }
@@ -195,11 +196,30 @@ controller.deleteLotes = async loteIds => {
     );
 
     if (associatedVersoes.length > 0) {
+      const lotesComVersoes = associatedVersoes.map(v => v.lote_id);
       throw new AppError(
-        'Não é possível deletar o lote pois há versões associadas',
+        `Não é possível deletar os lotes com IDs: ${lotesComVersoes.join(', ')} pois há versões associadas`,
         httpCode.BadRequest
       );
     }
+    
+    // Opcional: Coletar informações para histórico ou log
+    const lotesDetalhes = await t.any(
+      `SELECT * FROM acervo.lote
+      WHERE id IN ($<loteIds:csv>)`,
+      { loteIds }
+    );
+    
+    // Registrar exclusão (exemplo de implementação)
+    const logInfo = lotesDetalhes.map(lote => ({
+      id: lote.id,
+      nome: lote.nome,
+      projeto_id: lote.projeto_id,
+      data_exclusao: new Date(),
+      usuario_exclusao_uuid: usuarioUuid
+    }));
+    
+    // console.log('Lotes excluídos:', logInfo);
 
     // If no dependencies, proceed with deletion
     return t.any(
