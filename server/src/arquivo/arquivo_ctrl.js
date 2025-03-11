@@ -30,9 +30,9 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' });
-    const query = db.pgp.helpers.update(arquivo, cs) + ` WHERE id = ${arquivo.id}`;
+    const query = db.pgp.helpers.update(arquivo, cs) + ' WHERE id = $1';
 
-    await t.none(query);
+    await t.none(query, [arquivo.id]);
 
     await refreshViews.atualizarViewsPorArquivos(t, [arquivo.id])
   });

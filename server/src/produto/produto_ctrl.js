@@ -3,6 +3,7 @@
 
 const { db, refreshViews } = require("../database");
 const { AppError, httpCode } = require("../utils");
+const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
 
@@ -18,9 +19,9 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
     ]
 
     const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
-    const query = db.pgp.helpers.update(produto, cs) + `WHERE id = ${produto.id}`
+    const query = db.pgp.helpers.update(produto, cs) + ' WHERE id = $1'
 
-    await t.none(query)
+    await t.none(query, [produto.id])
 
     await refreshViews.atualizarViewsPorProdutos(t, [produto.id])
   })
@@ -39,9 +40,9 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: 'versao', schema: 'acervo' });
-    const query = db.pgp.helpers.update(versao, cs) + ` WHERE id = ${versao.id}`;
+    const query = db.pgp.helpers.update(versao, cs) + ' WHERE id = $1';
 
-    await t.none(query);
+    await t.none(query, [versao.id]);
 
     await refreshViews.atualizarViewsPorVersoes(t, [versao.id])
   });
@@ -188,7 +189,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
             usuario_modificacao_uuid, data_delete, usuario_delete_uuid
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
           RETURNING id`,
           [
             arquivo.uuid_arquivo, 

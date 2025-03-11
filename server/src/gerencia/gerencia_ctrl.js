@@ -92,81 +92,107 @@ controller.getSubtipoProduto = async () => {
     `);
 };
 
-controller.getArquivosDeletados = async () => {
-  return db.conn.any(
-    `
-    SELECT 
-      ad.id, 
-      ad.uuid_arquivo, 
-      ad.nome, 
-      ad.nome_arquivo, 
-      ad.motivo_exclusao, 
-      ad.versao_id, 
-      v.versao AS versao, 
-      v.nome AS versao_nome,
-      p.nome AS produto,
-      p.mi,
-      p.inom,
-      te.nome AS escala,
-      p.denominador_escala_especial,
-      l.nome AS lote,
-      l.pit,
-      proj.nome AS projeto,
-      ad.tipo_arquivo_id, 
-      ta.nome AS tipo_arquivo_nome, 
-      ad.volume_armazenamento_id, 
-      va.nome AS volume_armazenamento_nome, 
-      va.volume AS volume_armazenamento, 
-      ad.extensao, 
-      ad.tamanho_mb, 
-      ad.checksum, 
-      ad.metadado, 
-      ad.tipo_status_id, 
-      ts.nome AS tipo_status_nome, 
-      ad.situacao_carregamento_id, 
-      sb.nome AS situacao_carregamento_nome, 
-      ad.orgao_produtor, 
-      ad.descricao, 
-      ad.data_cadastramento, 
-      ad.usuario_cadastramento_uuid, 
-      u.nome AS usuario_cadastramento_nome, 
-      ad.data_modificacao, 
-      ad.usuario_modificacao_uuid, 
-      um.nome AS usuario_modificacao_nome, 
-      ad.data_delete, 
-      ad.usuario_delete_uuid, 
-      ud.nome AS usuario_delete_nome 
-    FROM 
-      acervo.arquivo_deletado ad
-    LEFT JOIN 
-      acervo.versao v ON ad.versao_id = v.id
-    LEFT JOIN 
-      acervo.produto p ON v.produto_id = p.id
-    LEFT JOIN
-      dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-    LEFT JOIN 
-      acervo.lote l ON v.lote_id = l.id
-    LEFT JOIN 
-      acervo.projeto proj ON l.projeto_id = proj.id
-    LEFT JOIN 
-      dominio.tipo_arquivo ta ON ad.tipo_arquivo_id = ta.code
-    LEFT JOIN 
-      acervo.volume_armazenamento va ON ad.volume_armazenamento_id = va.id
-    LEFT JOIN 
-      dominio.tipo_status_arquivo ts ON ad.tipo_status_id = ts.code
-    LEFT JOIN 
-      dominio.situacao_carregamento sb ON ad.situacao_carregamento_id = sb.code
-    LEFT JOIN 
-      dgeo.usuario u ON ad.usuario_cadastramento_uuid = u.uuid
-    LEFT JOIN 
-      dgeo.usuario um ON ad.usuario_modificacao_uuid = um.uuid
-    LEFT JOIN 
-      dgeo.usuario ud ON ad.usuario_delete_uuid = ud.uuid
-    ORDER BY 
-      ad.data_delete DESC
-    LIMIT 50;
-    `
-  );
+controller.getArquivosDeletados = async (page = 1, limit = 20) => {
+  return db.conn.task(async t => {
+    // Calculate offset based on page and limit
+    const offset = (page - 1) * limit;
+    
+    // Get total count for pagination metadata
+    const totalCount = await t.one(
+      `SELECT COUNT(*) AS total FROM acervo.arquivo_deletado`
+    );
+    
+    // Get paginated data
+    const arquivosDeletados = await t.any(
+      `
+      SELECT 
+        ad.id, 
+        ad.uuid_arquivo, 
+        ad.nome, 
+        ad.nome_arquivo, 
+        ad.motivo_exclusao, 
+        ad.versao_id, 
+        v.versao AS versao, 
+        v.nome AS versao_nome,
+        p.nome AS produto,
+        p.mi,
+        p.inom,
+        te.nome AS escala,
+        p.denominador_escala_especial,
+        l.nome AS lote,
+        l.pit,
+        proj.nome AS projeto,
+        ad.tipo_arquivo_id, 
+        ta.nome AS tipo_arquivo_nome, 
+        ad.volume_armazenamento_id, 
+        va.nome AS volume_armazenamento_nome, 
+        va.volume AS volume_armazenamento, 
+        ad.extensao, 
+        ad.tamanho_mb, 
+        ad.checksum, 
+        ad.metadado, 
+        ad.tipo_status_id, 
+        ts.nome AS tipo_status_nome, 
+        ad.situacao_carregamento_id, 
+        sb.nome AS situacao_carregamento_nome, 
+        ad.orgao_produtor, 
+        ad.descricao, 
+        ad.data_cadastramento, 
+        ad.usuario_cadastramento_uuid, 
+        u.nome AS usuario_cadastramento_nome, 
+        ad.data_modificacao, 
+        ad.usuario_modificacao_uuid, 
+        um.nome AS usuario_modificacao_nome, 
+        ad.data_delete, 
+        ad.usuario_delete_uuid, 
+        ud.nome AS usuario_delete_nome 
+      FROM 
+        acervo.arquivo_deletado ad
+      LEFT JOIN 
+        acervo.versao v ON ad.versao_id = v.id
+      LEFT JOIN 
+        acervo.produto p ON v.produto_id = p.id
+      LEFT JOIN
+        dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
+      LEFT JOIN 
+        acervo.lote l ON v.lote_id = l.id
+      LEFT JOIN 
+        acervo.projeto proj ON l.projeto_id = proj.id
+      LEFT JOIN 
+        dominio.tipo_arquivo ta ON ad.tipo_arquivo_id = ta.code
+      LEFT JOIN 
+        acervo.volume_armazenamento va ON ad.volume_armazenamento_id = va.id
+      LEFT JOIN 
+        dominio.tipo_status_arquivo ts ON ad.tipo_status_id = ts.code
+      LEFT JOIN 
+        dominio.situacao_carregamento sb ON ad.situacao_carregamento_id = sb.code
+      LEFT JOIN 
+        dgeo.usuario u ON ad.usuario_cadastramento_uuid = u.uuid
+      LEFT JOIN 
+        dgeo.usuario um ON ad.usuario_modificacao_uuid = um.uuid
+      LEFT JOIN 
+        dgeo.usuario ud ON ad.usuario_delete_uuid = ud.uuid
+      ORDER BY 
+        ad.data_delete DESC
+      LIMIT $1 OFFSET $2;
+      `,
+      [limit, offset]
+    );
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalCount.total / limit);
+
+    // Return data with pagination metadata
+    return {
+      data: arquivosDeletados,
+      pagination: {
+        totalItems: parseInt(totalCount.total),
+        totalPages,
+        currentPage: page,
+        pageSize: limit
+      }
+    };
+  });
 };
 
 controller.verificarConsistencia = async () => {
@@ -325,8 +351,29 @@ controller.verificarConsistencia = async () => {
   });
 };
 
-controller.getArquivosIncorretos = async () => {
+controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
   return db.conn.task(async t => {
+    // Calculate offset based on page and limit
+    const offset = (page - 1) * limit;
+    
+    // Get count of incorrect files for pagination metadata
+    const countArquivos = await t.one(`
+      SELECT COUNT(*) AS total 
+      FROM acervo.arquivo AS a
+      WHERE a.tipo_status_id = 2
+    `);
+    
+    const countArquivosDeletados = await t.one(`
+      SELECT COUNT(*) AS total 
+      FROM acervo.arquivo_deletado AS ad
+      WHERE ad.tipo_status_id = 4
+    `);
+    
+    const totalCount = parseInt(countArquivos.total) + parseInt(countArquivosDeletados.total);
+    
+    // To correctly implement pagination across two result sets, we need to handle them separately
+    // and then merge them with proper pagination
+    
     const arquivosIncorretos = await t.any(`
       SELECT 
         a.id, a.nome, a.nome_arquivo, a.extensao, a.tipo_status_id, 
@@ -336,20 +383,49 @@ controller.getArquivosIncorretos = async () => {
       INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
       INNER JOIN acervo.versao AS va ON a.versao_id = va.id
       WHERE a.tipo_status_id = 2
-    `);
-
-    const arquivosDeletadosIncorretos = await t.any(`
-      SELECT 
-        ad.id, ad.nome, ad.nome_arquivo, ad.extensao, ad.tipo_status_id,
-        ad.data_cadastramento, ad.data_delete, v.volume, va.nome AS volume_nome,
-        'Arquivo deletado com erro' as tipo
-      FROM acervo.arquivo_deletado AS ad
-      INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
-      LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
-      WHERE ad.tipo_status_id = 4
-    `);
-
-    return [...arquivosIncorretos, ...arquivosDeletadosIncorretos];
+      ORDER BY a.data_modificacao DESC NULLS LAST, a.data_cadastramento DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+    
+    let arquivosDeletadosIncorretos = [];
+    const remainingItems = limit - arquivosIncorretos.length;
+    
+    // Only query deleted files if we haven't filled our page from the first query
+    // and if we have offset through all regular files
+    if (remainingItems > 0 && parseInt(countArquivos.total) <= offset + arquivosIncorretos.length) {
+      // Adjust offset for the second query
+      const deletedOffset = Math.max(0, offset - parseInt(countArquivos.total));
+      
+      arquivosDeletadosIncorretos = await t.any(`
+        SELECT 
+          ad.id, ad.nome, ad.nome_arquivo, ad.extensao, ad.tipo_status_id,
+          ad.data_cadastramento, ad.data_delete, v.volume, va.nome AS volume_nome,
+          'Arquivo deletado com erro' as tipo
+        FROM acervo.arquivo_deletado AS ad
+        INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
+        LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
+        WHERE ad.tipo_status_id = 4
+        ORDER BY ad.data_delete DESC NULLS LAST, ad.data_cadastramento DESC
+        LIMIT $1 OFFSET $2
+      `, [remainingItems, deletedOffset]);
+    }
+    
+    // Combine the results
+    const combinedResults = [...arquivosIncorretos, ...arquivosDeletadosIncorretos];
+    
+    // Calculate total pages
+    const totalPages = Math.ceil(totalCount / limit);
+    
+    // Return data with pagination metadata
+    return {
+      data: combinedResults,
+      pagination: {
+        totalItems: totalCount,
+        totalPages,
+        currentPage: page,
+        pageSize: limit
+      }
+    };
   });
 };
 

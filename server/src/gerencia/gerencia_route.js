@@ -126,12 +126,20 @@ router.get(
 router.get(
   '/arquivos_deletados',
   verifyAdmin,
+  schemaValidation({
+    query: gerenciaSchema.paginationParams
+  }),
   asyncHandler(async (req, res, next) => {
-    const dados = await gerenciaCtrl.getArquivosDeletados()
+    const page = parseInt(req.query.page || 1);
+    const limit = parseInt(req.query.limit || 20);
+    
+    const resultado = await gerenciaCtrl.getArquivosDeletados(page, limit);
 
-    const msg = 'Arquivos deletados retornados com sucesso'
+    const msg = 'Arquivos deletados retornados com sucesso';
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+    return res.sendJsonAndLog(true, msg, httpCode.OK, resultado.data, null, {
+      pagination: resultado.pagination
+    });
   })
 )
 
@@ -150,12 +158,20 @@ router.post(
 router.get(
   '/arquivos_incorretos',
   verifyAdmin,
+  schemaValidation({
+    query: gerenciaSchema.paginationParams
+  }),
   asyncHandler(async (req, res, next) => {
-    const arquivosIncorretos = await gerenciaCtrl.getArquivosIncorretos()
+    const page = parseInt(req.query.page || 1);
+    const limit = parseInt(req.query.limit || 20);
+    
+    const resultado = await gerenciaCtrl.getArquivosIncorretos(page, limit);
 
-    const msg = 'Arquivos incorretos recuperados com sucesso'
+    const msg = 'Arquivos incorretos recuperados com sucesso';
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK, arquivosIncorretos)
+    return res.sendJsonAndLog(true, msg, httpCode.OK, resultado.data, null, {
+      pagination: resultado.pagination
+    });
   })
 )
 
