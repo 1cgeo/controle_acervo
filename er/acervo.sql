@@ -217,8 +217,24 @@ CREATE TABLE acervo.download(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	arquivo_id BIGINT NOT NULL REFERENCES acervo.arquivo (id),
 	usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    download_token UUID NOT NULL DEFAULT uuid_generate_v4(),
+    expiration_time TIMESTAMP WITH TIME ZONE,
     data_download TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_download_token ON acervo.download(download_token);
+
+-- Create a function to clean up expired download records
+CREATE OR REPLACE FUNCTION acervo.cleanup_expired_downloads() RETURNS void AS $$
+BEGIN
+    -- Mark expired pending downloads as failed
+    UPDATE acervo.download 
+    SET status = 'failed'
+    WHERE status = 'pending' 
+    AND (expiration_time IS NOT NULL AND expiration_time < NOW());
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE TABLE acervo.download_deletado(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
@@ -235,5 +251,101 @@ CREATE TABLE acervo.versao_relacionamento(
     data_relacionamento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_relacionamento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
+
+-- Main upload session table
+CREATE TABLE acervo.upload_session (
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    uuid_session UUID UNIQUE NOT NULL DEFAULT uuid_generate_v4(),
+    operation_type VARCHAR(20) NOT NULL, -- 'add_files', 'add_version', 'add_product'
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiration_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '24 hours',
+    completed_at TIMESTAMP WITH TIME ZONE,
+    usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
+);
+
+-- Temporary product metadata
+CREATE TABLE acervo.upload_produto_temp (
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
+    nome VARCHAR(255),
+    mi VARCHAR(255),
+    inom VARCHAR(255),
+    tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
+    denominador_escala_especial INTEGER,
+    tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
+    descricao TEXT,
+    geom TEXT NOT NULL -- Store as text to avoid geometry validation during prep
+);
+
+-- Temporary version metadata
+CREATE TABLE acervo.upload_versao_temp (
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
+    uuid_versao UUID NOT NULL,
+    versao VARCHAR(255) NOT NULL,
+    nome VARCHAR(255),
+    tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
+    subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
+    lote_id BIGINT REFERENCES acervo.lote (id),
+    metadado JSONB,
+    descricao TEXT,
+    data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
+    data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
+    produto_id INTEGER, -- Used for add_version scenario
+    produto_temp_id BIGINT REFERENCES acervo.upload_produto_temp (id) ON DELETE CASCADE -- Used for add_product scenario
+);
+
+-- Temporary file metadata
+CREATE TABLE acervo.upload_arquivo_temp (
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
+    nome VARCHAR(255) NOT NULL,
+    nome_arquivo TEXT NOT NULL,
+    destination_path TEXT NOT NULL,
+    tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code),
+    volume_armazenamento_id INTEGER,
+    extensao VARCHAR(255),
+    tamanho_mb REAL,
+    expected_checksum VARCHAR(64),
+    metadado JSONB,
+    situacao_carregamento_id SMALLINT NOT NULL REFERENCES dominio.situacao_carregamento (code),
+    orgao_produtor VARCHAR(255),
+    descricao TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    versao_id INTEGER, -- Used for add_files scenario
+    versao_temp_id BIGINT REFERENCES acervo.upload_versao_temp (id) ON DELETE CASCADE -- Used for add_version and add_product scenarios
+);
+
+-- Create indexes
+CREATE INDEX idx_upload_session_status ON acervo.upload_session(status);
+CREATE INDEX idx_upload_session_expiration ON acervo.upload_session(expiration_time) WHERE status = 'pending';
+CREATE INDEX idx_upload_arquivo_temp_session ON acervo.upload_arquivo_temp(session_id);
+CREATE INDEX idx_upload_versao_temp_session ON acervo.upload_versao_temp(session_id);
+
+-- Create cleanup function
+CREATE OR REPLACE FUNCTION acervo.cleanup_expired_uploads() RETURNS void AS $$
+BEGIN
+    -- Mark expired pending uploads as failed
+    UPDATE acervo.upload_session 
+    SET status = 'failed', 
+        error_message = 'Upload expired - client never confirmed completion'
+    WHERE status = 'pending' 
+    AND expiration_time < NOW();
+    
+    -- Also update file statuses
+    UPDATE acervo.upload_arquivo_temp
+    SET status = 'failed',
+        error_message = 'Upload session expired'
+    WHERE status = 'pending'
+    AND session_id IN (
+        SELECT id FROM acervo.upload_session 
+        WHERE status = 'failed' 
+        AND error_message = 'Upload expired - client never confirmed completion'
+    );
+END;
+$$ LANGUAGE plpgsql;
 
 COMMIT;

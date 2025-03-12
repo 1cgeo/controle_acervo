@@ -258,16 +258,19 @@ controller.getProdutoDetailedById = async produtoId => {
   });
 };
 
-controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
+controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
   const cs = new db.pgp.helpers.ColumnSet([
     "arquivo_id",
     "usuario_uuid",
-    { name: "data_download", mod: ":raw", init: () => "NOW()" }
+    { name: "data_download", mod: ":raw", init: () => "NOW()" },
+    { name: "status", init: () => "pending" },
+    { name: "download_token", mod: ":raw", init: () => "uuid_generate_v4()" },
+    { name: "expiration_time", mod: ":raw", init: () => "NOW() + INTERVAL '24 hours'" }
   ]);
 
   const usuario = await db.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<uuid>",
-    { usuarioUuid }
+    { uuid: usuarioUuid }
   );
 
   if (!usuario) {
@@ -276,14 +279,15 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
 
   // Check if all arquivoIds exist in the database
   const existingArquivos = await db.conn.any(
-    `SELECT id FROM acervo.arquivo WHERE id IN ($<arquivoIds:csv>)`,
-    { arquivoIds }
+    `SELECT id, nome, nome_arquivo, extensao, checksum FROM acervo.arquivo WHERE id IN ($<arquivosIds:csv>)`,
+    { arquivosIds }
   );
 
-  if (existingArquivos.length !== arquivoIds.length) {
+  if (existingArquivos.length !== arquivosIds.length) {
     throw new AppError("Um ou mais IDs de arquivo não existem", httpCode.NotFound);
   }
 
+  // Create download records with pending status
   const downloads = arquivosIds.map(id => ({
     arquivo_id: id,
     usuario_uuid: usuario.uuid
@@ -294,29 +298,88 @@ controller.downloadInfo = async (arquivosIds, usuarioUuid) => {
     schema: "acervo"
   });
 
-  await db.conn.none(query);
+  const result = await db.conn.query(query + " RETURNING download_token");
+  
+  // Get the download tokens from the result
+  const downloadTokens = result.map(row => row.download_token);
 
   const filePaths = await db.conn.any(
     `
     SELECT
       a.id AS arquivo_id,
-      CONCAT(v.volume, '/', a.nome_arquivo, '.', a.extensao) AS file_path
+      a.nome,
+      a.nome_arquivo,
+      a.extensao,
+      a.checksum,
+      CONCAT(v.volume, '/', a.nome_arquivo, '.', a.extensao) AS file_path,
+      d.download_token
     FROM
       acervo.arquivo AS a
       INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
+      INNER JOIN acervo.download AS d ON a.id = d.arquivo_id
     WHERE
       a.id IN ($<arquivosIds:csv>)
+      AND d.download_token IN ($<downloadTokens:csv>)
     `,
-    { arquivosIds }
+    { arquivosIds, downloadTokens }
   );
 
   return filePaths.map(file => ({
     arquivo_id: file.arquivo_id,
-    download_path: file.file_path
+    nome: file.nome,
+    download_path: file.file_path,
+    checksum: file.checksum,
+    download_token: file.download_token
   }));
 };
 
-controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
+controller.confirmDownload = async (downloadConfirmations) => {
+  return db.conn.tx(async t => {
+    const results = [];
+
+    for (const confirmation of downloadConfirmations) {
+      const { download_token, success, error_message } = confirmation;
+      
+      // Find the download record
+      const download = await t.oneOrNone(
+        `SELECT d.id, d.arquivo_id, a.nome 
+         FROM acervo.download d 
+         JOIN acervo.arquivo a ON d.arquivo_id = a.id
+         WHERE d.download_token = $1 AND d.status = 'pending'`,
+        [download_token]
+      );
+      
+      if (!download) {
+        results.push({
+          download_token,
+          status: 'error',
+          message: 'Download record not found or already processed'
+        });
+        continue;
+      }
+      
+      // Update the download status
+      await t.none(
+        `UPDATE acervo.download 
+         SET status = $1, 
+             error_message = $2
+         WHERE download_token = $3`,
+        [success ? 'completed' : 'failed', error_message || null, download_token]
+      );
+      
+      results.push({
+        download_token,
+        arquivo_id: download.arquivo_id,
+        nome: download.nome,
+        status: success ? 'completed' : 'failed'
+      });
+    }
+    
+    return results;
+  });
+};
+
+controller.prepareDownloadByProdutos = async (produtosIds, usuarioUuid) => {
   const usuario = await db.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
     { usuarioUuid }
@@ -339,7 +402,7 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
         GROUP BY produto_id
       ) latest ON v.produto_id = latest.produto_id AND v.data_edicao = latest.max_data_edicao
     )
-    SELECT a.id AS arquivo_id, a.nome_arquivo, a.extensao, va.volume
+    SELECT a.id AS arquivo_id, a.nome, a.nome_arquivo, a.extensao, a.checksum, va.volume
     FROM newest_versions nv
     JOIN acervo.arquivo a ON a.versao_id = nv.versao_id
     JOIN acervo.volume_armazenamento va ON a.volume_armazenamento_id = va.id
@@ -356,7 +419,10 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
   const cs = new db.pgp.helpers.ColumnSet([
     "arquivo_id",
     "usuario_uuid",
-    { name: "data_download", mod: ":raw", init: () => "NOW()" }
+    { name: "data_download", mod: ":raw", init: () => "NOW()" },
+    { name: "status", init: () => "pending" },
+    { name: "download_token", mod: ":raw", init: () => "uuid_generate_v4()" },
+    { name: "expiration_time", mod: ":raw", init: () => "NOW() + INTERVAL '24 hours'" }
   ]);
 
   const downloads = newestVersionsWithFiles.map(file => ({
@@ -370,15 +436,29 @@ controller.downloadInfoByProdutos = async (produtosIds, usuarioUuid) => {
     schema: "acervo"
   });
 
-  await db.conn.none(query);
+  const result = await db.conn.query(query + " RETURNING arquivo_id, download_token");
+  
+  // Map the download tokens to files
+  const tokenMap = {};
+  result.forEach(row => {
+    tokenMap[row.arquivo_id] = row.download_token;
+  });
 
   // Prepare file paths for response
   const filePaths = newestVersionsWithFiles.map(file => ({
     arquivo_id: file.arquivo_id,
-    download_path: `${file.volume}/${file.nome_arquivo}.${file.extensao}`
+    nome: file.nome,
+    download_path: `${file.volume}/${file.nome_arquivo}.${file.extensao}`,
+    checksum: file.checksum,
+    download_token: tokenMap[file.arquivo_id]
   }));
 
   return filePaths;
+};
+
+// Cleanup function that can be called by a scheduled job
+controller.cleanupExpiredDownloads = async () => {
+  return db.conn.none(`SELECT acervo.cleanup_expired_downloads()`);
 };
 
 module.exports = controller;

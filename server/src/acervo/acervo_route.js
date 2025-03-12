@@ -58,34 +58,61 @@ router.get(
 );
 
 router.post(
-  '/download/arquivos',
+  '/prepare-download/arquivos',
   verifyLogin,
   schemaValidation({ body: acervoSchema.arquivosIds }),
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.downloadInfo(
+    const dados = await acervoCtrl.prepareDownload(
       req.body.arquivos_ids,
       req.usuarioUuid
     )
 
-    const msg = 'Informação de download cadastrada com sucesso'
+    const msg = 'Download preparado com sucesso. Utilize confirm-download para confirmar a conclusão da transferência.'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 
 router.post(
-  '/download/produtos',
+  '/prepare-download/produtos',
   verifyLogin,
   schemaValidation({ body: acervoSchema.produtosIds }),
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.downloadInfoByProdutos(
+    const dados = await acervoCtrl.prepareDownloadByProdutos(
       req.body.produtos_ids,
       req.usuarioUuid
     )
 
-    const msg = 'Informação de download dos produtos cadastrada com sucesso'
+    const msg = 'Download preparado com sucesso. Utilize confirm-download para confirmar a conclusão da transferência.'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/confirm-download',
+  verifyLogin,
+  schemaValidation({ body: acervoSchema.downloadConfirmations }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.confirmDownload(
+      req.body.confirmations
+    )
+
+    const msg = 'Status de download atualizado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/cleanup-expired-downloads',
+  verifyAdmin, // Only admin users can access this endpoint
+  asyncHandler(async (req, res, next) => {
+    await acervoCtrl.cleanupExpiredDownloads()
+
+    const msg = 'Limpeza de downloads expirados realizada com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
 

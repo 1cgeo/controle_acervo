@@ -26,7 +26,6 @@ router.put(
   })
 );
 
-
 router.delete(
   '/arquivo',
   verifyAdmin,
@@ -41,76 +40,71 @@ router.delete(
 );
 
 router.post(
-  '/produtos_multiplos_arquivos',
+  '/prepare-upload/files',
   verifyLogin,
   schemaValidation({
-    body: arquivoSchema.produtosMultiplosArquivos
+    body: arquivoSchema.prepareAddFiles
   }),
   asyncHandler(async (req, res, next) => {
-    await arquivoCtrl.bulkCreateProductsWithVersionAndMultipleFiles(req.body.produtos, req.usuarioUuid);
-
-    const msg = 'Produtos com versões e múltiplos arquivos criados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
-  })
-);
-
-router.post(
-  '/verifica_sistematico_versoes_multiplos_arquivos',
-  verifyLogin,
-  schemaValidation({
-    body: arquivoSchema.sistematicoVersoesMultiplosArquivos
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.verifica_sistematico_versoes_multiplos_arquivos(req.body.versoes);
-    const msg = 'Verificação de carregamento sistemático concluída com sucesso';
+    const dados = await arquivoCtrl.prepareAddFiles(req.body, req.usuarioUuid);
+    const msg = 'Upload de arquivos preparado com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.';
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 
 router.post(
-  '/sistematico_versoes_multiplos_arquivos',
+  '/prepare-upload/version',
   verifyLogin,
   schemaValidation({
-    body: arquivoSchema.sistematicoVersoesMultiplosArquivos
+    body: arquivoSchema.prepareAddVersion
   }),
   asyncHandler(async (req, res, next) => {
-    const results = await arquivoCtrl.bulkSistematicCreateVersionWithFiles(req.body.versoes, req.usuarioUuid);
-
-    const msg = 'Versões de produtos sistemáticos com múltiplos arquivos criadas com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
+    const dados = await arquivoCtrl.prepareAddVersion(req.body, req.usuarioUuid);
+    const msg = 'Upload de versão preparado com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 
 router.post(
-  '/versoes_multiplos_arquivos',
+  '/prepare-upload/product',
   verifyLogin,
   schemaValidation({
-    body: arquivoSchema.versoesMultiplosArquivos
+    body: arquivoSchema.prepareAddProduct
   }),
   asyncHandler(async (req, res, next) => {
-    const results = await arquivoCtrl.bulkCreateVersionWithFiles(req.body.versoes, req.usuarioUuid);
-
-    const msg = 'Versões com múltiplos arquivos criadas com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
+    const dados = await arquivoCtrl.prepareAddProduct(req.body, req.usuarioUuid);
+    const msg = 'Upload de produto preparado com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 
 router.post(
-  '/multiplos_arquivos',
+  '/confirm-upload',
   verifyLogin,
   schemaValidation({
-    body: arquivoSchema.multiplosArquivos
+    body: arquivoSchema.confirmUpload
   }),
   asyncHandler(async (req, res, next) => {
-    const results = await arquivoCtrl.bulkAddFilesToVersion(req.body.arquivos_por_versao, req.usuarioUuid);
-
-    const msg = 'Múltiplos arquivos adicionados às versões com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created, results);
+    const dados = await arquivoCtrl.confirmUpload(req.body.session_uuid, req.usuarioUuid);
+    
+    let msg = 'Validação de upload concluída com sucesso';
+    if (dados.status === 'failed') {
+      msg = 'Upload falhou na validação: ' + dados.error_message;
+    }
+    
+    return res.sendJsonAndLog(dados.status === 'completed', msg, httpCode.OK, dados);
   })
 );
+
+router.get(
+  '/problem-uploads',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.getProblemUploads();
+    const msg = 'Uploads com problemas recuperados com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 
 module.exports = router
