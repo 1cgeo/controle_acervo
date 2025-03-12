@@ -24,7 +24,9 @@ controller.getProdutosLayer = async () => {
       SELECT 
           mv.matviewname,
           tp.nome AS tipo_produto,
-          te.nome AS tipo_escala
+          tp.code AS tipo_produto_id,
+          te.nome AS tipo_escala,
+          te.code AS tipo_escala_id
       FROM pg_matviews mv
       JOIN dominio.tipo_produto tp 
           ON SUBSTRING(mv.matviewname FROM 'mv_produto_(\\d+)_') = tp.code::text
@@ -42,7 +44,8 @@ controller.getProdutosLayer = async () => {
       servidor: DB_SERVER,
       porta: DB_PORT,
       login: DB_USER,
-      senha: DB_PASSWORD
+      senha: DB_PASSWORD,
+      schema: 'acervo'
     };
 
     const resultWithCounts = await Promise.all(views.map(async view => {
@@ -55,107 +58,15 @@ controller.getProdutosLayer = async () => {
       return {
         matviewname: view.matviewname,
         tipo_produto: view.tipo_produto,
+        tipo_produto_id: view.tipo_produto_id,
         tipo_escala: view.tipo_escala,
+        tipo_escala_id: view.tipo_escala_id,
         quantidade_produtos: parseInt(countResult.quantidade_produtos),
         banco_dados: banco_dados
       };
     }));
 
     return resultWithCounts;
-  });
-};
-
-controller.getProdutoById = async produtoId => {
-  return db.conn.task(async t => {
-    const result = await t.one(`
-      WITH newest_version AS (
-        SELECT v.id AS versao_id, v.versao, v.nome AS nome_versao, tv.nome AS tipo_versao, sp.nome AS subtipo_produto, v.metadado, v.descricao AS descricao_versao, v.data_criacao, v.data_edicao
-        FROM acervo.versao v
-        INNER JOIN dominio.tipo_versao AS tv ON tv.code = v.tipo_versao_id
-        INNER JOIN dominio.subtipo_produto AS sp ON sp.code = v.subtipo_produto_id
-        WHERE v.produto_id = $1
-        ORDER BY v.data_edicao DESC
-        LIMIT 1
-      ),
-      all_versions AS (
-        SELECT COUNT(*) as num_versoes
-        FROM acervo.versao
-        WHERE produto_id = $1
-      ),
-      all_files AS (
-        SELECT 
-          COUNT(*) as total_num_files,
-          COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS total_size_gb
-        FROM acervo.arquivo a
-        JOIN acervo.versao v ON a.versao_id = v.id
-        WHERE v.produto_id = $1
-      ),
-      newest_version_files AS (
-        SELECT 
-          COUNT(*) as newest_num_files,
-          COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS newest_size_gb
-        FROM acervo.arquivo a
-        JOIN newest_version nv ON a.versao_id = nv.id
-      ),
-      relacionamentos AS (
-        SELECT 
-          ARRAY_AGG(DISTINCT 
-            jsonb_build_object(
-              'versao_relacionada_id', CASE WHEN vr.versao_id_1 = nv.id THEN vr.versao_id_2 ELSE vr.versao_id_1 END,
-              'tipo_relacionamento', tr.nome
-            )
-          ) as relacionamentos
-        FROM newest_version nv
-        LEFT JOIN acervo.versao_relacionamento vr ON nv.id = vr.versao_id_1 OR nv.id = vr.versao_id_2
-        LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
-      )
-      SELECT 
-        p.id AS produto_id, p.nome AS nome_produto, p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial, p.descricao AS descricao_produto,
-        p.geom, tp.nome AS tipo_produto,
-        p.data_cadastramento, u1.nome AS usuario_cadastramento,
-        p.data_modificacao, u2.nome AS usuario_modificacao,
-        nv.versao_id, nv.versao, nv.nome_versao, nv.tipo_versao, nv.metadado, nv.descricao_versao, nv.data_criacao, nv.data_edicao,
-        l.nome AS lote_nome,
-        l.pit AS lote_pit,
-        pr.nome AS projeto_nome,
-        av.num_versoes,
-        af.total_num_files,
-        af.total_size_gb,
-        nvf.newest_num_files,
-        nvf.newest_size_gb,
-        r.relacionamentos,
-        ARRAY(
-          SELECT jsonb_build_object(
-            'id', a.id,
-            'nome', a.nome,
-            'nome_arquivo', a.nome_arquivo,
-            'extensao', a.extensao,
-            'volume_armazenamento_id', a.volume_armazenamento_id,
-            'tamanho_mb', a.tamanho_mb,
-            'checksum', a.checksum,
-            'situacao_carregamento_id', a.situacao_carregamento_id,
-            'tipo_arquivo', ta.nome
-          )
-          FROM acervo.arquivo a
-          JOIN dominio.tipo_arquivo ta ON a.tipo_arquivo_id = ta.code
-          WHERE a.versao_id = nv.id
-        ) AS arquivos
-      FROM acervo.produto p
-      INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-      INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
-      INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
-      INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
-      INNER JOIN newest_version nv ON p.id = nv.produto_id
-      LEFT JOIN acervo.lote l ON nv.lote_id = l.id
-      LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
-      CROSS JOIN all_versions av
-      CROSS JOIN all_files af
-      CROSS JOIN newest_version_files nvf
-      CROSS JOIN relacionamentos r
-      WHERE p.id = $1
-    `, [produtoId]);
-
-    return result;
   });
 };
 
@@ -459,6 +370,30 @@ controller.prepareDownloadByProdutos = async (produtosIds, usuarioUuid) => {
 // Cleanup function that can be called by a scheduled job
 controller.cleanupExpiredDownloads = async () => {
   return db.conn.none(`SELECT acervo.cleanup_expired_downloads()`);
+};
+
+controller.refreshAllMaterializedViews = async () => {
+  return db.conn.task(async t => {
+    try {
+      await t.none(`SELECT acervo.refresh_all_materialized_views()`);
+      return { 
+        success: true, 
+        message: 'Todas as views materializadas foram atualizadas com sucesso'
+      };
+    } catch (error) {
+      throw new AppError(`Erro ao atualizar views materializadas: ${error.message}`, httpCode.InternalError, error);
+    }
+  });
+};
+
+controller.createMaterializedViews = async () => {
+  return db.conn.task(async t => {
+    try {
+      await t.none(`SELECT acervo.criar_views_materializadas()`);
+    } catch (error) {
+      throw new AppError(`Erro ao criar views materializadas: ${error.message}`, httpCode.InternalError, error);
+    }
+  });
 };
 
 module.exports = controller;

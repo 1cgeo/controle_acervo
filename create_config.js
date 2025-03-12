@@ -161,6 +161,21 @@ const insertAdminUser = async (authUserData, connection) => {
   );
 };
 
+const createMaterializedViews = async (dbUser, dbPassword, dbPort, dbServer, dbName) => {
+  const connectionString = `postgres://${dbUser}:${dbPassword}@${dbServer}:${dbPort}/${dbName}`;
+  const db = pgp(connectionString);
+  
+  console.log("Criando views materializadas...".blue);
+  
+  try {
+    await db.none(`SELECT acervo.criar_views_materializadas()`);
+    console.log("Views materializadas criadas com sucesso!".green);
+  } catch (error) {
+    console.log(`Aviso: Erro ao criar views materializadas: ${error.message}`.yellow);
+    console.log("As views podem ser criadas posteriormente via API".yellow);
+  }
+};
+
 const createDatabase = async (
   dbUser,
   dbPassword,
@@ -190,6 +205,8 @@ const createDatabase = async (
     await givePermission({ dbUser, connection: t });
     await insertAdminUser(authUserData, t);
   });
+
+  await createMaterializedViews(dbUser, dbPassword, dbPort, dbServer, dbName);
 };
 
 const handleError = error => {

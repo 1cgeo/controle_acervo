@@ -14,27 +14,11 @@ const router = express.Router()
 
 router.get(
   '/camadas_produto',
+  verifyLogin,
   asyncHandler(async (req, res, next) => {
   
     const dados = await acervoCtrl.getProdutosLayer();
     const msg = 'Camadas de Produtos retornados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
-  })
-);
-
-router.get(
-  '/produto/:produto_id',
-  verifyLogin,
-  schemaValidation({ 
-    params: acervoSchema.produtoByIdParams
-  }),
-  asyncHandler(async (req, res, next) => {
-    const { produto_id } = req.params;
-    
-    const dados = await acervoCtrl.getProdutoById(produto_id);
-
-    const msg = 'Informações do produto retornadas com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
@@ -115,5 +99,27 @@ router.post(
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
+
+router.post(
+  '/refresh_materialized_views',
+  verifyAdmin,  // Apenas administradores podem executar esta operação
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.refreshAllMaterializedViews();
+    const msg = 'Atualização de views materializadas concluída com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.post(
+  '/create_materialized_views',
+  verifyAdmin,  // Apenas administradores podem executar esta operação
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.createMaterializedViews();
+    const msg = 'Criação de views materializadas concluída com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
 
 module.exports = router
