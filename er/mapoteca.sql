@@ -33,28 +33,19 @@ INSERT INTO mapoteca.situacao_pedido (code, nome) VALUES
 (5, 'Concluído'),
 (6, 'Cancelado');
 
-CREATE TABLE mapoteca.tipo_disponibilizacao(
+CREATE TABLE mapoteca.tipo_midia(
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL
 );
 
-INSERT INTO mapoteca.tipo_disponibilizacao (code, nome) VALUES
-(1, 'Impresso'),
-(2, 'Digital'),
-(3, 'Impresso e Digital');
-
-CREATE TABLE mapoteca.tipo_papel(
-	code SMALLINT NOT NULL PRIMARY KEY,
-	nome VARCHAR(255) NOT NULL
-);
-
-INSERT INTO mapoteca.tipo_papel (code, nome) VALUES
+INSERT INTO mapoteca.tipo_midia (code, nome) VALUES
 (1, 'Banner (tecido)'),
 (2, 'Glossy'),
 (3, 'Couchê'),
 (4, 'Vergê'),
 (5, 'Sulfite 90g'),
-(6, 'Sulfite 120g');
+(6, 'Sulfite 120g'),
+(7, 'Digital');
 
 CREATE TABLE mapoteca.tipo_localizacao(
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -89,7 +80,9 @@ CREATE TABLE mapoteca.pedido(
     operacao TEXT,
     prazo DATE,
     observacao TEXT,
+    observacao_envio TEXT,
     localizador_envio TEXT,
+    localizador_pedido VARCHAR(14) UNIQUE,
     motivo_cancelamento TEXT,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -101,9 +94,8 @@ CREATE TABLE mapoteca.produto_pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
     uuid_versao UUID NOT NULL REFERENCES acervo.versao (uuid_versao),
 	pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id),
-    tipo_disponibilizacao_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_disponibilizacao (code),
     quantidade INTEGER NOT NULL,
-    tipo_papel_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_papel (code),
+    tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
     producao_especifica BOOLEAN NOT NULL DEFAULT FALSE,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -115,7 +107,9 @@ CREATE TABLE mapoteca.plotter(
 	id SERIAL NOT NULL PRIMARY KEY,
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
 	nr_serie VARCHAR(255) NOT NULL,
-    modelo VARCHAR(255) NOT NULL
+    modelo VARCHAR(255) NOT NULL,
+    data_aquisicao DATE,
+    vida_util INTEGER;
 );
 
 CREATE TABLE mapoteca.manutencao_plotter (
