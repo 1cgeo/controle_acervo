@@ -60,10 +60,11 @@ router.post(
 router.post(
   '/prepare-download/produtos',
   verifyLogin,
-  schemaValidation({ body: acervoSchema.produtosIds }),
+  schemaValidation({ body: acervoSchema.produtosIdsComTipos }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.prepareDownloadByProdutos(
       req.body.produtos_ids,
+      req.body.tipos_arquivo,
       req.usuarioUuid
     )
 

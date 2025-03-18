@@ -290,7 +290,7 @@ controller.confirmDownload = async (downloadConfirmations) => {
   });
 };
 
-controller.prepareDownloadByProdutos = async (produtosIds, usuarioUuid) => {
+controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuarioUuid) => {
   const usuario = await db.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
     { usuarioUuid }
@@ -300,7 +300,6 @@ controller.prepareDownloadByProdutos = async (produtosIds, usuarioUuid) => {
     throw new AppError("Usuário não encontrado", httpCode.NotFound);
   }
 
-  // Get the newest versao for each produto and its associated arquivos
   const newestVersionsWithFiles = await db.conn.any(
     `
     WITH newest_versions AS (
@@ -317,13 +316,13 @@ controller.prepareDownloadByProdutos = async (produtosIds, usuarioUuid) => {
     FROM newest_versions nv
     JOIN acervo.arquivo a ON a.versao_id = nv.versao_id
     JOIN acervo.volume_armazenamento va ON a.volume_armazenamento_id = va.id
-    WHERE a.tipo_arquivo_id = 1
+    WHERE a.tipo_arquivo_id IN ($<tiposArquivo:csv>)
     `,
-    { produtosIds }
+    { produtosIds, tiposArquivo }
   );
 
   if (newestVersionsWithFiles.length === 0) {
-    throw new AppError("Nenhum arquivo encontrado para os produtos especificados", httpCode.NotFound);
+    throw new AppError("Nenhum arquivo encontrado para os produtos e tipos especificados", httpCode.NotFound);
   }
 
   // Prepare download entries
