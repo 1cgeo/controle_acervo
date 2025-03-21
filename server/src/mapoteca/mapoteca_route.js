@@ -349,7 +349,7 @@ router.get(
   '/tipo_material',
   verifyLogin,
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaEstoqueCtrl.getTiposMaterial()
+    const dados = await mapotecaCtrl.getTiposMaterial()
     const msg = 'Tipos de material retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -360,7 +360,7 @@ router.get(
   verifyLogin,
   asyncHandler(async (req, res, next) => {
     const { id } = req.params
-    const dados = await mapotecaEstoqueCtrl.getTipoMaterialById(id)
+    const dados = await mapotecaCtrl.getTipoMaterialById(id)
     const msg = 'Detalhes do tipo de material retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -370,10 +370,10 @@ router.post(
   '/tipo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.tipoMaterial
+    body: mapotecaSchema.tipoMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaEstoqueCtrl.criaTipoMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaTipoMaterial(req.body, req.usuarioUuid)
     const msg = 'Tipo de material criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -383,10 +383,10 @@ router.put(
   '/tipo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.tipoMaterialAtualizacao
+    body: mapotecaSchema.tipoMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.atualizaTipoMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaTipoMaterial(req.body, req.usuarioUuid)
     const msg = 'Tipo de material atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -396,10 +396,10 @@ router.delete(
   '/tipo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.tipoMaterialIds
+    body: mapotecaSchema.tipoMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.deleteTiposMaterial(req.body.tipo_material_ids)
+    await mapotecaCtrl.deleteTiposMaterial(req.body.tipo_material_ids)
     const msg = 'Tipos de material deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -410,7 +410,7 @@ router.get(
   '/estoque_material',
   verifyLogin,
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaEstoqueCtrl.getEstoqueMaterial()
+    const dados = await mapotecaCtrl.getEstoqueMaterial()
     const msg = 'Estoque de material retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -420,7 +420,7 @@ router.get(
   '/estoque_por_localizacao',
   verifyLogin,
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaEstoqueCtrl.getEstoquePorLocalizacao()
+    const dados = await mapotecaCtrl.getEstoquePorLocalizacao()
     const msg = 'Estoque por localização retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -430,10 +430,10 @@ router.post(
   '/estoque_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.estoqueMaterial
+    body: mapotecaSchema.estoqueMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaEstoqueCtrl.criaEstoqueMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaEstoqueMaterial(req.body, req.usuarioUuid)
     const msg = 'Estoque de material criado/atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -443,10 +443,10 @@ router.put(
   '/estoque_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.estoqueMaterialAtualizacao
+    body: mapotecaSchema.estoqueMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.atualizaEstoqueMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaEstoqueMaterial(req.body, req.usuarioUuid)
     const msg = 'Estoque de material atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -456,10 +456,10 @@ router.delete(
   '/estoque_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.estoqueMaterialIds
+    body: mapotecaSchema.estoqueMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.deleteEstoqueMaterial(req.body.estoque_material_ids)
+    await mapotecaCtrl.deleteEstoqueMaterial(req.body.estoque_material_ids)
     const msg = 'Registros de estoque deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -470,7 +470,7 @@ router.get(
   '/consumo_material',
   verifyLogin,
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaEstoqueCtrl.getConsumoMaterial(req.query)
+    const dados = await mapotecaCtrl.getConsumoMaterial(req.query)
     const msg = 'Registros de consumo retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -481,7 +481,7 @@ router.get(
   verifyLogin,
   asyncHandler(async (req, res, next) => {
     const ano = req.query.ano ? parseInt(req.query.ano) : new Date().getFullYear()
-    const dados = await mapotecaEstoqueCtrl.getConsumoMensalPorTipo(ano)
+    const dados = await mapotecaCtrl.getConsumoMensalPorTipo(ano)
     const msg = 'Consumo mensal por tipo de material retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -491,10 +491,10 @@ router.post(
   '/consumo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.consumoMaterial
+    body: mapotecaSchema.consumoMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaEstoqueCtrl.criaConsumoMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaConsumoMaterial(req.body, req.usuarioUuid)
     const msg = 'Registro de consumo criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -504,10 +504,10 @@ router.put(
   '/consumo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.consumoMaterialAtualizacao
+    body: mapotecaSchema.consumoMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.atualizaConsumoMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaConsumoMaterial(req.body, req.usuarioUuid)
     const msg = 'Registro de consumo atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -517,10 +517,10 @@ router.delete(
   '/consumo_material',
   verifyAdmin,
   schemaValidation({
-    body: mapotecaEstoqueSchema.consumoMaterialIds
+    body: mapotecaSchema.consumoMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaEstoqueCtrl.deleteConsumoMaterial(req.body.consumo_material_ids)
+    await mapotecaCtrl.deleteConsumoMaterial(req.body.consumo_material_ids)
     const msg = 'Registros de consumo deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })

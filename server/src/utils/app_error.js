@@ -1,7 +1,10 @@
 // Path: utils\app_error.js
 'use strict'
 
-const { serializeError } = require('serialize-error')
+let serializeError;
+import('serialize-error').then(module => {
+  serializeError = module.serializeError;
+});
 
 const httpCode = require('./http_code')
 

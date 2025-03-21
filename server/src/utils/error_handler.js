@@ -1,7 +1,10 @@
 // Path: utils\error_handler.js
 'use strict'
 
-const { serializeError } = require('serialize-error')
+let serializeError;
+import('serialize-error').then(module => {
+  serializeError = module.serializeError;
+});
 
 const logger = require('./logger')
 const httpCode = require('./http_code')
