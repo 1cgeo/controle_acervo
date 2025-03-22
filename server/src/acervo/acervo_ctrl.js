@@ -113,6 +113,8 @@ controller.getProdutoDetailedById = async produtoId => {
         v.usuario_cadastramento_uuid AS versao_usuario_cadastramento_uuid,
         v.data_modificacao AS versao_data_modificacao,
         v.usuario_modificacao_uuid AS versao_usuario_modificacao_uuid,
+        v.orgao_produtor,
+        v.palavras_chave,
         l.nome AS lote_nome,
         l.pit AS lote_pit,
         pr.nome AS projeto_nome
@@ -149,8 +151,8 @@ controller.getProdutoDetailedById = async produtoId => {
           a.metadado,
           a.tipo_status_id,
           a.situacao_carregamento_id,
-          a.orgao_produtor,
           a.descricao,
+          a.crs_original,
           a.data_cadastramento,
           a.usuario_cadastramento_uuid,
           a.data_modificacao,

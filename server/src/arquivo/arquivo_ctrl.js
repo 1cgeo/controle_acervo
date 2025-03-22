@@ -25,8 +25,8 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
 
     const colunasArquivo = [
       'nome', 'tipo_arquivo_id', 'volume_armazenamento_id',
-      'metadado', 'tipo_status_id', 'situacao_carregamento_id', 'orgao_produtor', 'descricao', 
-      'data_modificacao', 'usuario_modificacao_uuid'
+      'metadado', 'tipo_status_id', 'situacao_carregamento_id', 'descricao', 
+      'crs_original', 'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' });
@@ -63,7 +63,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         `INSERT INTO acervo.arquivo_deletado (
           uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
           volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-          tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
+          tipo_status_id, situacao_carregamento_id, descricao, crs_original,
           data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
           usuario_modificacao_uuid, data_delete, usuario_delete_uuid
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
@@ -83,8 +83,8 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
           arquivo.metadado, 
           4, //Em exclusão
           arquivo.situacao_carregamento_id, 
-          arquivo.orgao_produtor, 
           arquivo.descricao, 
+          arquivo.crs_original, // Adicionado crs_original
           arquivo.data_cadastramento, 
           arquivo.usuario_cadastramento_uuid, 
           arquivo.data_modificacao, 
@@ -122,7 +122,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
     const versao_ids = [...new Set(arquivos.map(a => a.versao_id))];
     
     const versoes = await t.any(
-      `SELECT v.id, v.produto_id, p.tipo_produto_id 
+      `SELECT v.id, v.produto_id, p.tipo_produto_id
        FROM acervo.versao v
        JOIN acervo.produto p ON v.produto_id = p.id
        WHERE v.id IN ($1:csv)`,
@@ -134,6 +134,12 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       const missingIds = versao_ids.filter(id => !foundIds.includes(id));
       throw new AppError(`Versões não encontradas com IDs: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
+    
+    // Criar mapeamento de versões
+    const versaoMap = {};
+    versoes.forEach(v => {
+      versaoMap[v.id] = v;
+    });
     
     // Get volumes for all product types
     const productTypes = [...new Set(versoes.map(v => v.tipo_produto_id))];
@@ -221,7 +227,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           session_id, nome, nome_arquivo, destination_path, 
           tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
           expected_checksum, metadado, situacao_carregamento_id, 
-          orgao_produtor, descricao, versao_id
+          descricao, crs_original, versao_id
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           sessionId, 
@@ -235,8 +241,8 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           arquivo.checksum, 
           arquivo.metadado || {}, 
           arquivo.situacao_carregamento_id || 1,
-          arquivo.orgao_produtor || 'N/A', 
           arquivo.descricao || '',
+          arquivo.crs_original || null,
           arquivo.versao_id
         ]
       );
@@ -368,8 +374,8 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         `INSERT INTO acervo.upload_versao_temp(
           session_id, uuid_versao, versao, nome, tipo_versao_id, 
           subtipo_produto_id, lote_id, metadado, descricao, 
-          data_criacao, data_edicao, produto_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          data_criacao, data_edicao, produto_id, orgao_produtor, palavras_chave
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING id`,
         [
           sessionId,
@@ -383,7 +389,9 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           item.versao.descricao || '',
           item.versao.data_criacao,
           item.versao.data_edicao,
-          item.produto_id
+          item.produto_id,
+          item.versao.orgao_produtor,
+          item.versao.palavras_chave || []
         ]
       );
       
@@ -399,7 +407,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
             session_id, nome, nome_arquivo, destination_path, 
             tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
             expected_checksum, metadado, situacao_carregamento_id, 
-            orgao_produtor, descricao, versao_temp_id
+            descricao, crs_original, versao_temp_id
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             sessionId, 
@@ -413,8 +421,8 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
             arquivo.checksum, 
             arquivo.metadado || {}, 
             arquivo.situacao_carregamento_id || 1,
-            arquivo.orgao_produtor || 'N/A', 
             arquivo.descricao || '',
+            arquivo.crs_original || null,
             versaoTempId
           ]
         );
@@ -566,8 +574,8 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           `INSERT INTO acervo.upload_versao_temp(
             session_id, uuid_versao, versao, nome, tipo_versao_id, 
             subtipo_produto_id, lote_id, metadado, descricao, 
-            data_criacao, data_edicao, produto_temp_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            data_criacao, data_edicao, produto_temp_id, orgao_produtor, palavras_chave
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           RETURNING id`,
           [
             sessionId,
@@ -581,7 +589,9 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
             versao.descricao || '',
             versao.data_criacao,
             versao.data_edicao,
-            produtoTempId
+            produtoTempId,
+            versao.orgao_produtor,
+            versao.palavras_chave || []
           ]
         );
         
@@ -597,7 +607,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
               session_id, nome, nome_arquivo, destination_path, 
               tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
               expected_checksum, metadado, situacao_carregamento_id, 
-              orgao_produtor, descricao, versao_temp_id
+              descricao, crs_original, versao_temp_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [
               sessionId, 
@@ -611,8 +621,8 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
               arquivo.checksum, 
               arquivo.metadado || {}, 
               arquivo.situacao_carregamento_id || 1,
-              arquivo.orgao_produtor || 'N/A', 
               arquivo.descricao || '',
+              arquivo.crs_original || null,
               versaoTempId
             ]
           );
@@ -1028,13 +1038,16 @@ async function processAddFiles(t, session) {
     [session.id]
   );
   
+  // Get the versao_ids
+  const versaoIds = [...new Set(arquivos.map(a => a.versao_id))];
+  
   // Insert each file into the main arquivo table
   for (const arquivo of arquivos) {
     await t.none(
       `INSERT INTO acervo.arquivo(
         uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
         volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-        tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
+        tipo_status_id, situacao_carregamento_id, descricao, crs_original,
         usuario_cadastramento_uuid, data_cadastramento
       ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
       [
@@ -1049,15 +1062,12 @@ async function processAddFiles(t, session) {
         arquivo.metadado, 
         1, // tipo_status_id - Carregado
         arquivo.situacao_carregamento_id,
-        arquivo.orgao_produtor, 
         arquivo.descricao,
+        arquivo.crs_original,
         session.usuario_uuid
       ]
     );
   }
-  
-  // Get all affected versions for view refresh
-  const versaoIds = [...new Set(arquivos.map(a => a.versao_id))];
   
   // Refresh views
   if (versaoIds.length > 0) {
@@ -1085,9 +1095,9 @@ async function processAddVersion(t, session) {
     const { id: versaoId } = await t.one(
       `INSERT INTO acervo.versao(
         uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
-        lote_id, metadado, descricao, data_criacao, data_edicao, 
+        lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao, 
         usuario_cadastramento_uuid, data_cadastramento
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
       RETURNING id`,
       [
         versaoTemp.uuid_versao,
@@ -1099,6 +1109,8 @@ async function processAddVersion(t, session) {
         versaoTemp.lote_id,
         versaoTemp.metadado,
         versaoTemp.descricao,
+        versaoTemp.orgao_produtor,
+        versaoTemp.palavras_chave || [],
         versaoTemp.data_criacao,
         versaoTemp.data_edicao,
         session.usuario_uuid
@@ -1120,7 +1132,7 @@ async function processAddVersion(t, session) {
         `INSERT INTO acervo.arquivo(
           uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
           volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-          tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
+          tipo_status_id, situacao_carregamento_id, descricao, crs_original,
           usuario_cadastramento_uuid, data_cadastramento
         ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
         [
@@ -1135,8 +1147,8 @@ async function processAddVersion(t, session) {
           arquivo.metadado, 
           1, // tipo_status_id - Carregado
           arquivo.situacao_carregamento_id,
-          arquivo.orgao_produtor, 
           arquivo.descricao,
+          arquivo.crs_original,
           session.usuario_uuid
         ]
       );
@@ -1198,9 +1210,9 @@ async function processAddProduct(t, session) {
       const { id: versaoId } = await t.one(
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
-          lote_id, metadado, descricao, data_criacao, data_edicao, 
+          lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao, 
           usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
         RETURNING id`,
         [
           versaoTemp.uuid_versao,
@@ -1212,6 +1224,8 @@ async function processAddProduct(t, session) {
           versaoTemp.lote_id,
           versaoTemp.metadado,
           versaoTemp.descricao,
+          versaoTemp.orgao_produtor,
+          versaoTemp.palavras_chave || [],
           versaoTemp.data_criacao,
           versaoTemp.data_edicao,
           session.usuario_uuid
@@ -1231,7 +1245,7 @@ async function processAddProduct(t, session) {
           `INSERT INTO acervo.arquivo(
             uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
+            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
           [
@@ -1246,8 +1260,8 @@ async function processAddProduct(t, session) {
             arquivo.metadado, 
             1, // tipo_status_id - Carregado
             arquivo.situacao_carregamento_id,
-            arquivo.orgao_produtor, 
             arquivo.descricao,
+            arquivo.crs_original,
             session.usuario_uuid
           ]
         );

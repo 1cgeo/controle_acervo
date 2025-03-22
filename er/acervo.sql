@@ -205,8 +205,8 @@ CREATE TABLE acervo.arquivo_deletado(
 	metadado JSONB,
 	tipo_status_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_arquivo (code),
 	situacao_carregamento_id SMALLINT NOT NULL REFERENCES dominio.situacao_carregamento (code),
-	orgao_produtor VARCHAR(255),
 	descricao TEXT,
+    crs_original VARCHAR(10),
 	data_cadastramento timestamp with time zone,
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
@@ -293,6 +293,8 @@ CREATE TABLE acervo.upload_versao_temp (
     lote_id BIGINT REFERENCES acervo.lote (id),
     metadado JSONB,
     descricao TEXT,
+    orgao_produtor VARCHAR(255) NOT NULL,
+    palavras_chave TEXT[],
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
     data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
     produto_id INTEGER, -- Used for add_version scenario
@@ -313,8 +315,8 @@ CREATE TABLE acervo.upload_arquivo_temp (
     expected_checksum VARCHAR(64),
     metadado JSONB,
     situacao_carregamento_id SMALLINT NOT NULL REFERENCES dominio.situacao_carregamento (code),
-    orgao_produtor VARCHAR(255),
     descricao TEXT,
+    crs_original VARCHAR(10),
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     error_message TEXT,
     versao_id INTEGER, -- Used for add_files scenario

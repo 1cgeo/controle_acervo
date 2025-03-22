@@ -27,8 +27,8 @@ const fileSchema = Joi.object().keys({
   }),
   metadado: Joi.object().allow(null),
   situacao_carregamento_id: Joi.number().integer(),
-  orgao_produtor: Joi.string(),
   descricao: Joi.string().allow(null, ''),
+  crs_original: Joi.string().max(10).allow(null, ''),
   versao_id: Joi.number().integer().required() // Required versao_id for each file
 });
 
@@ -40,8 +40,8 @@ models.arquivoAtualizacao = Joi.object().keys({
   metadado: Joi.object().required(),
   tipo_status_id: Joi.number().integer().strict().required(),
   situacao_carregamento_id: Joi.number().integer().strict().required(),
-  orgao_produtor: Joi.string().required(),
-  descricao: Joi.string().allow('').required()
+  descricao: Joi.string().allow('').required(),
+  crs_original: Joi.string().max(10).allow(null, '')
 });
 
 models.arquivoIds = Joi.object().keys({
@@ -70,6 +70,8 @@ models.prepareAddVersion = Joi.object().keys({
         lote_id: Joi.number().integer().allow(null),
         metadado: Joi.object().allow(null),
         descricao: Joi.string().allow(null, ''),
+        orgao_produtor: Joi.string().required(),
+        palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
         data_criacao: Joi.date().iso().required(),
         data_edicao: Joi.date().iso().required()
       }).required(),
@@ -96,8 +98,8 @@ models.prepareAddVersion = Joi.object().keys({
           }),
           metadado: Joi.object().allow(null),
           situacao_carregamento_id: Joi.number().integer(),
-          orgao_produtor: Joi.string(),
-          descricao: Joi.string().allow(null, '')
+          descricao: Joi.string().allow(null, ''),
+          crs_original: Joi.string().max(10).allow(null, '')
         })
       ).min(1).required()
     })
@@ -127,6 +129,8 @@ models.prepareAddProduct = Joi.object().keys({
           lote_id: Joi.number().integer().allow(null),
           metadado: Joi.object().allow(null),
           descricao: Joi.string().allow(null, ''),
+          orgao_produtor: Joi.string().required(),
+          palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
           data_criacao: Joi.date().iso().required(),
           data_edicao: Joi.date().iso().required(),
           arquivos: Joi.array().items(
@@ -152,8 +156,8 @@ models.prepareAddProduct = Joi.object().keys({
               }),
               metadado: Joi.object().allow(null),
               situacao_carregamento_id: Joi.number().integer(),
-              orgao_produtor: Joi.string(),
-              descricao: Joi.string().allow(null, '')
+              descricao: Joi.string().allow(null, ''),
+              crs_original: Joi.string().max(10).allow(null, '')
             })
           ).min(1).required()
         })

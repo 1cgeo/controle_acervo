@@ -26,6 +26,8 @@ models.versaoAtualizacao = Joi.object().keys({
   descricao: Joi.string().allow('').required(),
   metadado: Joi.object().required(),
   lote_id: Joi.number().integer().strict().allow(null).required(),
+  orgao_produtor: Joi.string().required(),
+  palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
   data_criacao: Joi.date().required(),
   data_edicao: Joi.date().required()
 });
@@ -92,6 +94,8 @@ models.versoesHistoricas = Joi.array().items(
     lote_id: Joi.number().integer().strict().allow(null).required(),
     metadado: Joi.object().required(),
     descricao: Joi.string().allow('').required(),
+    orgao_produtor: Joi.string().required(),
+    palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
     data_criacao: Joi.date().required(),
     data_edicao: Joi.date().required()
   })
@@ -117,6 +121,8 @@ models.produtosVersoesHistoricas = Joi.array().items(
         lote_id: Joi.number().integer().strict().allow(null).required(),
         metadado: Joi.object().required(),
         descricao: Joi.string().allow('').required(),
+        orgao_produtor: Joi.string().required(),
+        palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
         data_criacao: Joi.date().required(),
         data_edicao: Joi.date().required()
       })

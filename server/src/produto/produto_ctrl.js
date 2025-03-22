@@ -35,6 +35,7 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     const colunasVersao = [
       'versao', 'nome', 'tipo_versao_id', 'subtipo_produto_id',
       'descricao', 'metadado', 'lote_id',
+      'orgao_produtor', 'palavras_chave',
       'data_criacao', 'data_edicao',
       'data_modificacao', 'usuario_modificacao_uuid'
     ];
@@ -47,7 +48,6 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     await refreshViews.atualizarViewsPorVersoes(t, [versao.id])
   });
 };
-
 
 controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
@@ -79,37 +79,37 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
             `INSERT INTO acervo.arquivo_deletado (
               uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
               volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-              tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
+              tipo_status_id, situacao_carregamento_id, descricao, crs_original,
               data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
               usuario_modificacao_uuid, data_delete, usuario_delete_uuid
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
                       $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
               RETURNING id`,
             [
-              arquivo.uuid_arquivo, 
-              arquivo.nome, 
-              arquivo.nome_arquivo, 
-              motivo_exclusao, 
-              arquivo.versao_id, 
-              arquivo.tipo_arquivo_id, 
-              arquivo.volume_armazenamento_id, 
-              arquivo.extensao, 
-              arquivo.tamanho_mb, 
-              arquivo.checksum, 
-              arquivo.metadado, 
+              arquivo.uuid_arquivo,
+              arquivo.nome,
+              arquivo.nome_arquivo,
+              motivo_exclusao,
+              arquivo.versao_id,
+              arquivo.tipo_arquivo_id,
+              arquivo.volume_armazenamento_id,
+              arquivo.extensao,
+              arquivo.tamanho_mb,
+              arquivo.checksum,
+              arquivo.metadado,
               4, //Em exclusão
-              arquivo.situacao_carregamento_id, 
-              arquivo.orgao_produtor, 
-              arquivo.descricao, 
-              arquivo.data_cadastramento, 
-              arquivo.usuario_cadastramento_uuid, 
-              arquivo.data_modificacao, 
-              arquivo.usuario_modificacao_uuid, 
-              data_delete, 
+              arquivo.situacao_carregamento_id,
+              arquivo.descricao,
+              arquivo.crs_original, // Adicionado crs_original
+              arquivo.data_cadastramento,
+              arquivo.usuario_cadastramento_uuid,
+              arquivo.data_modificacao,
+              arquivo.usuario_modificacao_uuid,
+              data_delete,
               usuario_delete_uuid
             ]
           );
-          
+
           // Move related downloads to download_deletado table for THIS file
           await t.none(
             `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
@@ -125,11 +125,11 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
 
         // Delete files from the original arquivo table
         await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-        
+
         // Check for versao_relacionamento and delete
         await t.none(`
           DELETE FROM acervo.versao_relacionamento 
-          WHERE versao_id_1 = $1 OR versao_id_2 = $1`, 
+          WHERE versao_id_1 = $1 OR versao_id_2 = $1`,
           [versao.id]
         );
       }
@@ -140,7 +140,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
       // Finally, delete the product itself from the produto table
       await t.none('DELETE FROM acervo.produto WHERE id = $1', [id]);
     }
-    
+
     await refreshViews.atualizarViewsPorProdutos(t, produtoIds);
   });
 };
@@ -170,10 +170,10 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
         `SELECT COUNT(*) as count FROM acervo.versao WHERE produto_id = $1`,
         [versao.produto_id]
       );
-      
+
       if (parseInt(countVersions.count) === 1) {
         throw new AppError(
-          `Não é possível excluir a versão ${versao.versao} pois é a única versão do produto. Delete o produto inteiro.`, 
+          `Não é possível excluir a versão ${versao.versao} pois é a única versão do produto. Delete o produto inteiro.`,
           httpCode.BadRequest
         );
       }
@@ -185,37 +185,37 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
           `INSERT INTO acervo.arquivo_deletado (
             uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
             volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-            tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao, 
+            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
             data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
             usuario_modificacao_uuid, data_delete, usuario_delete_uuid
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
                     $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
           RETURNING id`,
           [
-            arquivo.uuid_arquivo, 
-            arquivo.nome, 
-            arquivo.nome_arquivo, 
-            motivo_exclusao, 
-            arquivo.versao_id, 
-            arquivo.tipo_arquivo_id, 
-            arquivo.volume_armazenamento_id, 
-            arquivo.extensao, 
-            arquivo.tamanho_mb, 
-            arquivo.checksum, 
-            arquivo.metadado, 
+            arquivo.uuid_arquivo,
+            arquivo.nome,
+            arquivo.nome_arquivo,
+            motivo_exclusao,
+            arquivo.versao_id,
+            arquivo.tipo_arquivo_id,
+            arquivo.volume_armazenamento_id,
+            arquivo.extensao,
+            arquivo.tamanho_mb,
+            arquivo.checksum,
+            arquivo.metadado,
             4, //Em exclusão
-            arquivo.situacao_carregamento_id, 
-            arquivo.orgao_produtor, 
-            arquivo.descricao, 
-            arquivo.data_cadastramento, 
-            arquivo.usuario_cadastramento_uuid, 
-            arquivo.data_modificacao, 
-            arquivo.usuario_modificacao_uuid, 
-            data_delete, 
+            arquivo.situacao_carregamento_id,
+            arquivo.descricao,
+            arquivo.crs_original, // Adicionado crs_original
+            arquivo.data_cadastramento,
+            arquivo.usuario_cadastramento_uuid,
+            arquivo.data_modificacao,
+            arquivo.usuario_modificacao_uuid,
+            data_delete,
             usuario_delete_uuid
           ]
         );
-        
+
         // Move related downloads to download_deletado table for THIS file
         await t.none(
           `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
@@ -231,11 +231,11 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
 
       // Delete files from the original arquivo table
       await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-      
+
       // Delete related versao_relacionamento entries
       await t.none(`
         DELETE FROM acervo.versao_relacionamento 
-        WHERE versao_id_1 = $1 OR versao_id_2 = $1`, 
+        WHERE versao_id_1 = $1 OR versao_id_2 = $1`,
         [versao.id]
       );
 
@@ -291,7 +291,7 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamento, usuarioUu
       'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
     ]);
 
-    const query = 
+    const query =
       db.pgp.helpers.update(
         versaoRelacionamento,
         cs,
@@ -347,7 +347,9 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
-      'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
+      'orgao_produtor', 'palavras_chave',
+      'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
+      'data_cadastramento', 'usuario_cadastramento_uuid'
     ], { table: 'versao', schema: 'acervo' });
 
     const query = db.pgp.helpers.insert(versoesPreparadas, cs);
@@ -386,7 +388,9 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
 
       const cs = new db.pgp.helpers.ColumnSet([
         'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
-        'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id', 'data_cadastramento', 'usuario_cadastramento_uuid'
+        'orgao_produtor', 'palavras_chave',
+        'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
+        'data_cadastramento', 'usuario_cadastramento_uuid'
       ], { table: 'versao', schema: 'acervo' });
 
       const query = db.pgp.helpers.insert(versoesPreparadas, cs);
@@ -408,8 +412,8 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial', 'tipo_produto_id', 'descricao',
       'usuario_cadastramento_uuid',
-      {name: 'data_cadastramento', cast: 'date'},
-      {name: 'geom', mod: ':raw'}
+      { name: 'data_cadastramento', cast: 'date' },
+      { name: 'geom', mod: ':raw' }
     ]);
 
     const query = db.pgp.helpers.insert(produtos, cs, {
