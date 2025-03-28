@@ -1,12 +1,9 @@
 // Path: acervo\acervo_ctrl.js
 "use strict";
-const fs = require('fs').promises;
-const path = require('path');
-const crypto = require('crypto');
-const { db, refreshViews } = require("../database");
+const archiver = require('archiver');
+const { Readable } = require('stream');
+const { db } = require("../database");
 const { AppError, httpCode } = require("../utils");
-const { v4: uuidv4 } = require('uuid');
-const { version } = require('os');
 
 const {
   DB_USER,
@@ -396,5 +393,138 @@ controller.createMaterializedViews = async () => {
     }
   });
 };
+
+controller.getSituacaoGeralJSON = async () => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Create a zip archive in memory
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      const chunks = [];
+      
+      // Collect data in memory chunks
+      archive.on('data', (chunk) => chunks.push(chunk));
+      archive.on('end', () => resolve(Buffer.concat(chunks)));
+      archive.on('error', (err) => reject(err));
+      
+      // Get data for each scale
+      const scales = [
+        { id: 1, name: '25k', description: '1:25.000' },
+        { id: 2, name: '50k', description: '1:50.000' },
+        { id: 3, name: '100k', description: '1:100.000' },
+        { id: 4, name: '250k', description: '1:250.000' }
+      ];
+      
+      for (const scale of scales) {
+        const data = await generateGeoJSONForScale(scale.id);
+        const jsonString = JSON.stringify(data, null, 2);
+        
+        // Create a readable stream from the JSON string
+        const jsonStream = Readable.from(jsonString);
+        
+        // Add the stream to the archive
+        archive.append(jsonStream, { name: `situacao-geral-ct-${scale.name}.geojson` });
+      }
+      
+      // Finalize the archive
+      archive.finalize();
+      
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+// Helper function to generate GeoJSON for a specific scale
+async function generateGeoJSONForScale(scaleId) {
+  const products = await db.conn.any(`
+    WITH versoes_topo AS (
+      SELECT 
+        p.id AS produto_id,
+        p.mi AS identificadorMI,
+        p.inom AS identificadorINOM,
+        ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS edicoes_topo
+      FROM acervo.produto p
+      JOIN acervo.versao v ON p.id = v.produto_id
+      WHERE p.tipo_escala_id = $1
+      AND v.subtipo_produto_id IN (2, 12, 24) -- Tipos de carta topográfica
+      GROUP BY p.id
+    ),
+    versoes_orto AS (
+      SELECT 
+        p.id AS produto_id,
+        ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS edicoes_orto
+      FROM acervo.produto p
+      JOIN acervo.versao v ON p.id = v.produto_id
+      WHERE p.tipo_escala_id = $1
+      AND v.subtipo_produto_id IN (3, 19) -- Tipos de carta ortoimagem
+      GROUP BY p.id
+    )
+    SELECT 
+      p.id,
+      p.mi AS "identificadorMI",
+      p.inom AS "identificadorINOM",
+      p.geom,
+      CASE 
+        WHEN vt.edicoes_topo IS NULL THEN 'Não mapeado'
+        WHEN ARRAY_LENGTH(vt.edicoes_topo, 1) = 1 THEN 'Concluído'
+        ELSE 'Múltiplas edições'
+      END AS "situacao_topo",
+      COALESCE(vt.edicoes_topo, ARRAY[]::int[]) AS "edicoes_topo",
+      CASE 
+        WHEN vo.edicoes_orto IS NULL THEN 'Não mapeado'
+        WHEN ARRAY_LENGTH(vo.edicoes_orto, 1) = 1 THEN 'Concluído'
+        ELSE 'Múltiplas edições'
+      END AS "situacao_orto",
+      COALESCE(vo.edicoes_orto, ARRAY[]::int[]) AS "edicoes_orto"
+    FROM acervo.produto p
+    LEFT JOIN versoes_topo vt ON p.id = vt.produto_id
+    LEFT JOIN versoes_orto vo ON p.id = vo.produto_id
+    WHERE p.tipo_escala_id = $1
+    ORDER BY p.mi
+  `, [scaleId]);
+  
+  // Convert PostgreSQL geometry to GeoJSON
+  const productsWithGeojson = await db.conn.any(`
+    SELECT 
+      p.id,
+      ST_AsGeoJSON(p.geom)::json AS geometry
+    FROM acervo.produto p
+    WHERE p.tipo_escala_id = $1
+  `, [scaleId]);
+  
+  // Create geometry lookup
+  const geometryLookup = {};
+  productsWithGeojson.forEach(p => {
+    geometryLookup[p.id] = p.geometry;
+  });
+  
+  // Construct GeoJSON features
+  const features = products.map((product, index) => {
+    // Convert editions from numeric arrays to string arrays for consistency with sample
+    const edicoes_topo = product.edicoes_topo.map(year => year.toString());
+    const edicoes_orto = product.edicoes_orto.map(year => year.toString());
+    
+    return {
+      type: "Feature",
+      properties: {
+        id: index.toString(), // Use sequential index as id like in the sample
+        identificadorMI: product.identificadorMI,
+        situacao_topo: product.situacao_topo,
+        edicoes_topo: edicoes_topo,
+        situacao_orto: product.situacao_orto,
+        edicoes_orto: edicoes_orto,
+        identificadorINOM: product.identificadorINOM
+      },
+      geometry: geometryLookup[product.id]
+    };
+  });
+  
+  // Create the GeoJSON structure
+  return {
+    type: "FeatureCollection",
+    name: `situacao-geral-ct-${scaleId === 1 ? '25k' : scaleId === 2 ? '50k' : scaleId === 3 ? '100k' : '250k'}`,
+    features: features
+  };
+}
 
 module.exports = controller;

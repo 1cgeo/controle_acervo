@@ -123,4 +123,22 @@ router.post(
   })
 );
 
+router.get(
+  '/situacao-geral',
+  verifyLogin,
+  asyncHandler(async (req, res, next) => {
+    const zipData = await acervoCtrl.getSituacaoGeralJSON();
+    
+    // Set appropriate headers for ZIP file download
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': 'attachment; filename="situacao-geral.zip"',
+      'Content-Length': zipData.length
+    });
+    
+    // Send the ZIP file directly
+    return res.send(zipData);
+  })
+);
+
 module.exports = router
