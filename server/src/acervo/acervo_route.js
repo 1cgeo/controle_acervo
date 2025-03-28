@@ -123,11 +123,28 @@ router.post(
   })
 );
 
+
 router.get(
   '/situacao-geral',
   verifyLogin,
+  schemaValidation({
+    query: acervoSchema.situacaoGeralQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    const zipData = await acervoCtrl.getSituacaoGeralJSON();
+    // Extract scale parameters from query
+    const scales = {
+      '25k': req.query.scale25k === 'true',
+      '50k': req.query.scale50k === 'true',
+      '100k': req.query.scale100k === 'true',
+      '250k': req.query.scale250k === 'true'
+    };
+    
+    // If no scales are selected, use all scales
+    if (!scales['25k'] && !scales['50k'] && !scales['100k'] && !scales['250k']) {
+      scales['25k'] = scales['50k'] = scales['100k'] = scales['250k'] = true;
+    }
+    
+    const zipData = await acervoCtrl.getSituacaoGeralJSON(scales);
     
     // Set appropriate headers for ZIP file download
     res.set({

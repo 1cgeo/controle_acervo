@@ -394,7 +394,7 @@ controller.createMaterializedViews = async () => {
   });
 };
 
-controller.getSituacaoGeralJSON = async () => {
+controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
   return new Promise(async (resolve, reject) => {
     try {
       // Create a zip archive in memory
@@ -406,15 +406,23 @@ controller.getSituacaoGeralJSON = async () => {
       archive.on('end', () => resolve(Buffer.concat(chunks)));
       archive.on('error', (err) => reject(err));
       
-      // Get data for each scale
-      const scales = [
+      // Define all available scales
+      const allScales = [
         { id: 1, name: '25k', description: '1:25.000' },
         { id: 2, name: '50k', description: '1:50.000' },
         { id: 3, name: '100k', description: '1:100.000' },
         { id: 4, name: '250k', description: '1:250.000' }
       ];
       
-      for (const scale of scales) {
+      // Filter scales based on user selection
+      const selectedScales = allScales.filter(scale => 
+        scaleOptions[scale.name] === true
+      );
+      
+      // If no scales selected, use all scales
+      const scalesToUse = selectedScales.length > 0 ? selectedScales : allScales;
+      
+      for (const scale of scalesToUse) {
         const data = await generateGeoJSONForScale(scale.id);
         const jsonString = JSON.stringify(data, null, 2);
         

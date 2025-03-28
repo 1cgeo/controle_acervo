@@ -58,4 +58,11 @@ models.downloadConfirmations = Joi.object().keys({
     .min(1)
 });
 
+models.situacaoGeralQuery = Joi.object().keys({
+  scale25k: Joi.boolean().default(false),
+  scale50k: Joi.boolean().default(false),
+  scale100k: Joi.boolean().default(false),
+  scale250k: Joi.boolean().default(false)
+});
+
 module.exports = models
