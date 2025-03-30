@@ -17,4 +17,21 @@ models.totalMaxQuery = Joi.object().keys({
     .integer()
 })
 
+// New schemas for dashboard extensions
+models.timelineParams = Joi.object().keys({
+  months: Joi.number()
+    .integer()
+    .min(1)
+    .max(60)
+    .default(12)
+})
+
+models.limitParam = Joi.object().keys({
+  limit: Joi.number()
+    .integer()
+    .min(1)
+    .max(100)
+    .default(10)
+})
+
 module.exports = models

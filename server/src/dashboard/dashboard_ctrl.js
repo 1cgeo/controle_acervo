@@ -6,7 +6,7 @@ const { db } = require('../database')
 const controller = {}
 
 controller.getTotalProdutos = async () => {
-  return db.conn.one('SELECT COUNT(*) AS total_oprodutos FROM acervo.produto');
+  return db.conn.one('SELECT COUNT(*) AS total_produtos FROM acervo.produto');
 }
 
 controller.getTotalArquivosGb = async () => {
@@ -130,6 +130,196 @@ controller.getDownload = async () => {
     LIMIT 50
     `
   );
+}
+
+// NEW DASHBOARD FUNCTIONS
+
+// Get product activity by month
+controller.getProdutoActivityTimeline = async (months = 12) => {
+  return db.conn.any(`
+    SELECT 
+      TO_CHAR(date_trunc('month', data_cadastramento), 'YYYY-MM') AS month,
+      COUNT(*) AS new_products,
+      0 AS modified_products
+    FROM acervo.produto
+    WHERE data_cadastramento > NOW() - INTERVAL '${months} months'
+    GROUP BY month
+    UNION ALL
+    SELECT 
+      TO_CHAR(date_trunc('month', data_modificacao), 'YYYY-MM') AS month,
+      0 AS new_products,
+      COUNT(*) AS modified_products
+    FROM acervo.produto
+    WHERE 
+      data_modificacao IS NOT NULL AND
+      data_modificacao > NOW() - INTERVAL '${months} months'
+    GROUP BY month
+    ORDER BY month DESC
+  `);
+}
+
+// Get version statistics
+controller.getVersionStatistics = async () => {
+  return db.conn.task(async t => {
+    // Get basic version stats
+    const versionStats = await t.one(`
+      SELECT 
+        COUNT(*) AS total_versions,
+        COUNT(DISTINCT produto_id) AS products_with_versions,
+        ROUND(AVG(versions_per_product), 2) AS avg_versions_per_product,
+        MAX(versions_per_product) AS max_versions_per_product
+      FROM (
+        SELECT produto_id, COUNT(*) AS versions_per_product
+        FROM acervo.versao
+        GROUP BY produto_id
+      ) subquery
+    `);
+    
+    // Get version count distribution
+    const versionDistribution = await t.any(`
+      SELECT 
+        versions_per_product,
+        COUNT(*) AS product_count
+      FROM (
+        SELECT produto_id, COUNT(*) AS versions_per_product
+        FROM acervo.versao
+        GROUP BY produto_id
+      ) subquery
+      GROUP BY versions_per_product
+      ORDER BY versions_per_product
+    `);
+    
+    // Get version type distribution
+    const versionTypeDistribution = await t.any(`
+      SELECT 
+        tv.nome AS version_type,
+        COUNT(*) AS version_count
+      FROM acervo.versao v
+      JOIN dominio.tipo_versao tv ON v.tipo_versao_id = tv.code
+      GROUP BY tv.nome
+    `);
+    
+    return {
+      stats: versionStats,
+      distribution: versionDistribution,
+      type_distribution: versionTypeDistribution
+    };
+  });
+}
+
+// Get storage growth trends
+controller.getStorageGrowthTrends = async (months = 12) => {
+  return db.conn.any(`
+    WITH monthly_data AS (
+      SELECT 
+        date_trunc('month', data_cadastramento) AS month,
+        SUM(tamanho_mb) / 1024 AS gb_added
+      FROM acervo.arquivo
+      WHERE data_cadastramento > NOW() - INTERVAL '${months} months'
+      GROUP BY month
+    ),
+    months_series AS (
+      SELECT generate_series(
+        date_trunc('month', NOW() - INTERVAL '${months-1} months'),
+        date_trunc('month', NOW()),
+        '1 month'::interval
+      ) AS month
+    )
+    SELECT 
+      TO_CHAR(ms.month, 'YYYY-MM') AS month,
+      COALESCE(md.gb_added, 0) AS gb_added,
+      SUM(COALESCE(md.gb_added, 0)) OVER (ORDER BY ms.month) AS cumulative_gb
+    FROM months_series ms
+    LEFT JOIN monthly_data md ON ms.month = md.month
+    ORDER BY ms.month
+  `);
+}
+
+// Get project status summary
+controller.getProjectStatusSummary = async () => {
+  return db.conn.task(async t => {
+    // Project status summary
+    const projectStatus = await t.any(`
+      SELECT 
+        tse.nome AS status,
+        COUNT(DISTINCT p.id) AS project_count
+      FROM acervo.projeto p
+      JOIN dominio.tipo_status_execucao tse ON p.status_execucao_id = tse.code
+      GROUP BY tse.nome, tse.code
+      ORDER BY tse.code
+    `);
+    
+    // Lot status summary
+    const lotStatus = await t.any(`
+      SELECT 
+        tse.nome AS status,
+        COUNT(DISTINCT l.id) AS lot_count
+      FROM acervo.lote l
+      JOIN dominio.tipo_status_execucao tse ON l.status_execucao_id = tse.code
+      GROUP BY tse.nome, tse.code
+      ORDER BY tse.code
+    `);
+    
+    // Projects without lots
+    const projectsWithoutLots = await t.one(`
+      SELECT 
+        COUNT(*) AS count
+      FROM acervo.projeto p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM acervo.lote l WHERE l.projeto_id = p.id
+      )
+    `);
+    
+    return {
+      project_status: projectStatus,
+      lot_status: lotStatus,
+      projects_without_lots: parseInt(projectsWithoutLots.count)
+    };
+  });
+}
+
+// Get user activity metrics
+controller.getUserActivityMetrics = async (limit = 10) => {
+  return db.conn.any(`
+    WITH user_uploads AS (
+      SELECT 
+        usuario_cadastramento_uuid,
+        COUNT(*) AS upload_count
+      FROM acervo.arquivo
+      GROUP BY usuario_cadastramento_uuid
+    ),
+    user_modifications AS (
+      SELECT 
+        usuario_modificacao_uuid,
+        COUNT(*) AS modification_count
+      FROM acervo.arquivo
+      WHERE usuario_modificacao_uuid IS NOT NULL
+      GROUP BY usuario_modificacao_uuid
+    ),
+    user_downloads AS (
+      SELECT 
+        usuario_uuid,
+        COUNT(*) AS download_count
+      FROM acervo.download
+      GROUP BY usuario_uuid
+    )
+    SELECT 
+      u.nome AS usuario_nome,
+      u.login AS usuario_login,
+      COALESCE(up.upload_count, 0) AS uploads,
+      COALESCE(um.modification_count, 0) AS modifications,
+      COALESCE(ud.download_count, 0) AS downloads,
+      COALESCE(up.upload_count, 0) + 
+      COALESCE(um.modification_count, 0) + 
+      COALESCE(ud.download_count, 0) AS total_activity
+    FROM dgeo.usuario u
+    LEFT JOIN user_uploads up ON u.uuid = up.usuario_cadastramento_uuid
+    LEFT JOIN user_modifications um ON u.uuid = um.usuario_modificacao_uuid
+    LEFT JOIN user_downloads ud ON u.uuid = ud.usuario_uuid
+    WHERE u.ativo = true
+    ORDER BY total_activity DESC
+    LIMIT $1
+  `, [limit]);
 }
 
 module.exports = controller

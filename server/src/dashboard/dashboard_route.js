@@ -120,4 +120,59 @@ router.get(
   })
 )
 
+// NEW DASHBOARD ROUTES
+
+// Get product activity timeline
+router.get(
+  '/produto_activity_timeline',
+  asyncHandler(async (req, res, next) => {
+    const months = req.query.months ? parseInt(req.query.months) : 12;
+    const dados = await dashboardCtrl.getProdutoActivityTimeline(months);
+    const msg = 'Timeline de atividade de produtos retornada com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Get version statistics
+router.get(
+  '/version_statistics',
+  asyncHandler(async (req, res, next) => {
+    const dados = await dashboardCtrl.getVersionStatistics();
+    const msg = 'Estatísticas de versões retornadas com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Get storage growth trends
+router.get(
+  '/storage_growth_trends',
+  asyncHandler(async (req, res, next) => {
+    const months = req.query.months ? parseInt(req.query.months) : 12;
+    const dados = await dashboardCtrl.getStorageGrowthTrends(months);
+    const msg = 'Tendências de crescimento de armazenamento retornadas com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Get project status summary
+router.get(
+  '/project_status_summary',
+  asyncHandler(async (req, res, next) => {
+    const dados = await dashboardCtrl.getProjectStatusSummary();
+    const msg = 'Resumo de status de projetos retornado com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Get user activity metrics
+router.get(
+  '/user_activity_metrics',
+  asyncHandler(async (req, res, next) => {
+    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+    const dados = await dashboardCtrl.getUserActivityMetrics(limit);
+    const msg = 'Métricas de atividade de usuários retornadas com sucesso';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 module.exports = router
