@@ -9,5 +9,6 @@ module.exports = {
   asyncHandlerWithQueue: require('./async_handler_with_queue'),
   errorHandler: require('./error_handler'),
   AppError: require('./app_error'),
-  httpCode: require('./http_code')
+  httpCode: require('./http_code'),
+  generateLocalizador: require('./generate_localizador')
 }

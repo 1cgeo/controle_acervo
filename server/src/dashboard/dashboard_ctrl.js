@@ -68,27 +68,31 @@ controller.getGbPorVolume = async () => {
 controller.getUltimosCarregamentos = async () => {
   return db.conn.any(`
     SELECT 
-      id, uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-      volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-      tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
-      data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
-      usuario_modificacao_uuid 
-    FROM acervo.arquivo 
-    ORDER BY data_cadastramento DESC 
+      a.id, a.uuid_arquivo, a.nome, a.nome_arquivo, a.versao_id, a.tipo_arquivo_id,
+      a.volume_armazenamento_id, a.extensao, a.tamanho_mb, a.checksum, a.metadado,
+      a.tipo_status_id, a.situacao_carregamento_id, a.crs_original, a.descricao,
+      a.data_cadastramento, a.usuario_cadastramento_uuid, a.data_modificacao, 
+      a.usuario_modificacao_uuid,
+      v.orgao_produtor
+    FROM acervo.arquivo a
+    LEFT JOIN acervo.versao v ON a.versao_id = v.id
+    ORDER BY a.data_cadastramento DESC 
     LIMIT 10`);
 };
 
 controller.getUltimasModificacoes = async () => {
   return db.conn.any(`
     SELECT 
-      id, uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-      volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-      tipo_status_id, situacao_carregamento_id, orgao_produtor, descricao,
-      data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
-      usuario_modificacao_uuid
-    FROM acervo.arquivo 
-    WHERE data_modificacao IS NOT NULL 
-    ORDER BY data_modificacao DESC 
+      a.id, a.uuid_arquivo, a.nome, a.nome_arquivo, a.versao_id, a.tipo_arquivo_id,
+      a.volume_armazenamento_id, a.extensao, a.tamanho_mb, a.checksum, a.metadado,
+      a.tipo_status_id, a.situacao_carregamento_id, a.crs_original, a.descricao,
+      a.data_cadastramento, a.usuario_cadastramento_uuid, a.data_modificacao, 
+      a.usuario_modificacao_uuid,
+      v.orgao_produtor
+    FROM acervo.arquivo a
+    LEFT JOIN acervo.versao v ON a.versao_id = v.id
+    WHERE a.data_modificacao IS NOT NULL 
+    ORDER BY a.data_modificacao DESC 
     LIMIT 10`
   );
 };
@@ -99,7 +103,7 @@ controller.getUltimosDeletes = async () => {
       id, uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, 
       tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
       checksum, metadado, tipo_status_id, situacao_carregamento_id, 
-      orgao_produtor, descricao, data_cadastramento, usuario_cadastramento_uuid, 
+      crs_original, descricao, data_cadastramento, usuario_cadastramento_uuid, 
       data_modificacao, usuario_modificacao_uuid, data_delete, usuario_delete_uuid
     FROM acervo.arquivo_deletado 
     ORDER BY data_delete DESC 

@@ -36,9 +36,15 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
     const query = db.pgp.helpers.insert(projeto, cs, {
       table: 'projeto',
       schema: 'acervo'
-    });
+    }) + ' RETURNING id, nome';
 
-    await t.none(query);
+    const result = await t.one(query);
+    
+    return {
+      id: result.id,
+      nome: result.nome,
+      message: `Projeto "${result.nome}" criado com sucesso`
+    };
   });
 };
 
@@ -64,15 +70,22 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id';
-    await t.none(query);
+      ) + ' WHERE Y.id = X.id RETURNING X.nome';
+      
+    const result = await t.one(query);
+    
+    return {
+      id: projeto.id,
+      nome: result.nome,
+      message: `Projeto "${result.nome}" atualizado com sucesso`
+    };
   });
 };
 
 controller.deleteProjetos = async (projetoIds) => {
   return db.conn.tx(async t => {
     const exists = await t.any(
-      `SELECT id FROM acervo.projeto
+      `SELECT id, nome FROM acervo.projeto
       WHERE id in ($<projetoIds:csv>)`,
       { projetoIds }
     );
@@ -100,11 +113,19 @@ controller.deleteProjetos = async (projetoIds) => {
     }
 
     // If no dependencies, proceed with deletion
-    return t.any(
+    await t.any(
       `DELETE FROM acervo.projeto
       WHERE id in ($<projetoIds:csv>)`,
       { projetoIds }
     );
+    
+    const deletedNames = exists.map(p => p.nome);
+    
+    return {
+      count: exists.length,
+      projetos: deletedNames,
+      message: `${exists.length} projeto(s) deletado(s) com sucesso`
+    };
   });
 };
 
@@ -138,9 +159,16 @@ controller.criaLote = async (lote, usuarioUuid) => {
     const query = db.pgp.helpers.insert(lote, cs, {
       table: 'lote',
       schema: 'acervo'
-    });
+    }) + ' RETURNING id, nome, pit';
 
-    await t.none(query);
+    const result = await t.one(query);
+    
+    return {
+      id: result.id,
+      nome: result.nome,
+      pit: result.pit,
+      message: `Lote "${result.nome}" (PIT: ${result.pit}) criado com sucesso`
+    };
   });
 };
 
@@ -167,16 +195,23 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id';
+      ) + ' WHERE Y.id = X.id RETURNING X.nome, X.pit';
 
-    await t.none(query);
+    const result = await t.one(query);
+    
+    return {
+      id: lote.id,
+      nome: result.nome,
+      pit: result.pit,
+      message: `Lote "${result.nome}" (PIT: ${result.pit}) atualizado com sucesso`
+    };
   });
 };
 
 controller.deleteLotes = async (loteIds, usuarioUuid) => {
   return db.conn.tx(async t => {
     const exists = await t.any(
-      `SELECT id FROM acervo.lote
+      `SELECT id, nome, pit FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,
       { loteIds }
     );
@@ -203,30 +238,20 @@ controller.deleteLotes = async (loteIds, usuarioUuid) => {
       );
     }
     
-    // Opcional: Coletar informações para histórico ou log
-    const lotesDetalhes = await t.any(
-      `SELECT * FROM acervo.lote
-      WHERE id IN ($<loteIds:csv>)`,
-      { loteIds }
-    );
-    
-    // Registrar exclusão (exemplo de implementação)
-    const logInfo = lotesDetalhes.map(lote => ({
-      id: lote.id,
-      nome: lote.nome,
-      projeto_id: lote.projeto_id,
-      data_exclusao: new Date(),
-      usuario_exclusao_uuid: usuarioUuid
-    }));
-    
-    // console.log('Lotes excluídos:', logInfo);
-
     // If no dependencies, proceed with deletion
-    return t.any(
+    await t.any(
       `DELETE FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,
       { loteIds }
     );
+    
+    const deletedInfo = exists.map(l => `${l.nome} (PIT: ${l.pit})`);
+    
+    return {
+      count: exists.length,
+      lotes: deletedInfo,
+      message: `${exists.length} lote(s) deletado(s) com sucesso`
+    };
   });
 };
 

@@ -3,6 +3,7 @@
 
 const { db } = require("../database");
 const { AppError, httpCode } = require("../utils");
+const generateLocalizador = require("../utils/generate_localizador");
 
 const controller = {};
 

@@ -135,7 +135,7 @@ controller.getArquivosDeletados = async (page = 1, limit = 20) => {
         ts.nome AS tipo_status_nome, 
         ad.situacao_carregamento_id, 
         sb.nome AS situacao_carregamento_nome, 
-        ad.orgao_produtor, 
+        ad.crs_original,
         ad.descricao, 
         ad.data_cadastramento, 
         ad.usuario_cadastramento_uuid, 
@@ -219,21 +219,15 @@ controller.verificarConsistencia = async () => {
     
     // Função auxiliar para cálculo de checksum com streams
     async function calculaChecksumStream(filePath) {
-      return new Promise(async (resolve, reject) => {
+      return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256');
-        const readStream = fs.createReadStream(filePath);
+        const stream = require('fs').createReadStream(filePath);
         
-        try {
-          // pipeline garante que todos os streams sejam limpos
-          await pipelineAsync(
-            readStream,
-            // Transform stream (opcional se quiser processar em chunks)
-            hash
-          );
-          resolve(hash.digest('hex'));
-        } catch (error) {
-          reject(error);
-        }
+        stream.on('error', (error) => reject(error));
+        
+        stream.on('data', (data) => hash.update(data));
+        
+        stream.on('end', () => resolve(hash.digest('hex')));
       });
     }
     
@@ -356,71 +350,61 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
     // Calculate offset based on page and limit
     const offset = (page - 1) * limit;
     
-    // Get count of incorrect files for pagination metadata
-    const countArquivos = await t.one(`
-      SELECT COUNT(*) AS total 
-      FROM acervo.arquivo AS a
-      WHERE a.tipo_status_id = 2
-    `);
-    
-    const countArquivosDeletados = await t.one(`
-      SELECT COUNT(*) AS total 
-      FROM acervo.arquivo_deletado AS ad
-      WHERE ad.tipo_status_id = 4
-    `);
-    
-    const totalCount = parseInt(countArquivos.total) + parseInt(countArquivosDeletados.total);
-    
-    // To correctly implement pagination across two result sets, we need to handle them separately
-    // and then merge them with proper pagination
-    
+    // Use UNION ALL with proper pagination using ROW_NUMBER
     const arquivosIncorretos = await t.any(`
-      SELECT 
-        a.id, a.nome, a.nome_arquivo, a.extensao, a.tipo_status_id, 
-        a.data_cadastramento, a.data_modificacao, v.volume, va.nome AS volume_nome,
-        'Arquivo com erro' as tipo
-      FROM acervo.arquivo AS a
-      INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
-      INNER JOIN acervo.versao AS va ON a.versao_id = va.id
-      WHERE a.tipo_status_id = 2
-      ORDER BY a.data_modificacao DESC NULLS LAST, a.data_cadastramento DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
-    
-    let arquivosDeletadosIncorretos = [];
-    const remainingItems = limit - arquivosIncorretos.length;
-    
-    // Only query deleted files if we haven't filled our page from the first query
-    // and if we have offset through all regular files
-    if (remainingItems > 0 && parseInt(countArquivos.total) <= offset + arquivosIncorretos.length) {
-      // Adjust offset for the second query
-      const deletedOffset = Math.max(0, offset - parseInt(countArquivos.total));
-      
-      arquivosDeletadosIncorretos = await t.any(`
+      WITH arquivos_combined AS (
         SELECT 
+          'arquivo' as origem,
+          a.id, a.nome, a.nome_arquivo, a.extensao, a.tipo_status_id, 
+          a.data_cadastramento, a.data_modificacao, v.volume, va.nome AS volume_nome,
+          'Arquivo com erro' as tipo,
+          COALESCE(a.data_modificacao, a.data_cadastramento) as ordem_data
+        FROM acervo.arquivo AS a
+        INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
+        INNER JOIN acervo.versao AS va ON a.versao_id = va.id
+        WHERE a.tipo_status_id = 2
+        
+        UNION ALL
+        
+        SELECT 
+          'arquivo_deletado' as origem,
           ad.id, ad.nome, ad.nome_arquivo, ad.extensao, ad.tipo_status_id,
-          ad.data_cadastramento, ad.data_delete, v.volume, va.nome AS volume_nome,
-          'Arquivo deletado com erro' as tipo
+          ad.data_cadastramento, ad.data_delete as data_modificacao, v.volume, 
+          COALESCE(va.nome, 'Versão removida') AS volume_nome,
+          'Arquivo deletado com erro' as tipo,
+          ad.data_delete as ordem_data
         FROM acervo.arquivo_deletado AS ad
         INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
         LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
         WHERE ad.tipo_status_id = 4
-        ORDER BY ad.data_delete DESC NULLS LAST, ad.data_cadastramento DESC
-        LIMIT $1 OFFSET $2
-      `, [remainingItems, deletedOffset]);
-    }
+      ),
+      arquivos_numerados AS (
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ordem_data DESC NULLS LAST) as row_num
+        FROM arquivos_combined
+      )
+      SELECT 
+        id, nome, nome_arquivo, extensao, tipo_status_id,
+        data_cadastramento, data_modificacao, volume, volume_nome, tipo
+      FROM arquivos_numerados
+      WHERE row_num > $1 AND row_num <= $2
+      ORDER BY row_num
+    `, [offset, offset + limit]);
     
-    // Combine the results
-    const combinedResults = [...arquivosIncorretos, ...arquivosDeletadosIncorretos];
+    // Get total count
+    const totalCount = await t.one(`
+      SELECT 
+        (SELECT COUNT(*) FROM acervo.arquivo WHERE tipo_status_id = 2) +
+        (SELECT COUNT(*) FROM acervo.arquivo_deletado WHERE tipo_status_id = 4) AS total
+    `);
     
     // Calculate total pages
-    const totalPages = Math.ceil(totalCount / limit);
+    const totalPages = Math.ceil(totalCount.total / limit);
     
     // Return data with pagination metadata
     return {
-      data: combinedResults,
+      data: arquivosIncorretos,
       pagination: {
-        totalItems: totalCount,
+        totalItems: parseInt(totalCount.total),
         totalPages,
         currentPage: page,
         pageSize: limit

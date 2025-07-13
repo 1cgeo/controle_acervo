@@ -30,11 +30,9 @@ router.post(
     body: projetoSchema.projeto
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.criaProjeto(req.body, req.usuarioUuid);
+    const result = await projetoCtrl.criaProjeto(req.body, req.usuarioUuid);
 
-    const msg = 'Projeto criado com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
+    return res.sendJsonAndLog(true, result.message, httpCode.Created, result);
   })
 );
 
@@ -45,11 +43,9 @@ router.put(
     body: projetoSchema.projetoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.atualizaProjeto(req.body, req.usuarioUuid);
+    const result = await projetoCtrl.atualizaProjeto(req.body, req.usuarioUuid);
 
-    const msg = 'Projeto atualizado com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, result.message, httpCode.OK, result);
   })
 );
 
@@ -60,11 +56,9 @@ router.delete(
     body: projetoSchema.projetoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.deleteProjetos(req.body.projeto_ids);
+    const result = await projetoCtrl.deleteProjetos(req.body.projeto_ids);
 
-    const msg = 'Projetos deletados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, result.message, httpCode.OK, result);
   })
 );
 
@@ -86,11 +80,9 @@ router.post(
     body: projetoSchema.lote
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.criaLote(req.body, req.usuarioUuid);
+    const result = await projetoCtrl.criaLote(req.body, req.usuarioUuid);
 
-    const msg = 'Lote criado com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.Created);
+    return res.sendJsonAndLog(true, result.message, httpCode.Created, result);
   })
 );
 
@@ -101,11 +93,9 @@ router.put(
     body: projetoSchema.loteAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.atualizaLote(req.body, req.usuarioUuid);
+    const result = await projetoCtrl.atualizaLote(req.body, req.usuarioUuid);
 
-    const msg = 'Lote atualizado com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, result.message, httpCode.OK, result);
   })
 );
 
@@ -116,11 +106,9 @@ router.delete(
     body: projetoSchema.loteIds
   }),
   asyncHandler(async (req, res, next) => {
-    await projetoCtrl.deleteLotes(req.body.lote_ids);
+    const result = await projetoCtrl.deleteLotes(req.body.lote_ids);
 
-    const msg = 'Lotes deletados com sucesso';
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK);
+    return res.sendJsonAndLog(true, result.message, httpCode.OK, result);
   })
 );
 
