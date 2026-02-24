@@ -17,7 +17,7 @@ const createBuild = async () => {
     console.log('Build criada com sucesso!')
     console.log('Copiando arquivos')
     try {
-      await fs.copy(path.join(__dirname, 'client', 'build'), path.join(__dirname, 'server', 'src', 'build'))
+      await fs.copy(path.join(__dirname, 'client', 'dist'), path.join(__dirname, 'server', 'src', 'build'))
       console.log('Arquivos copiados com sucesso!'.blue)
     } catch (error) {
       console.log(error.message.red)

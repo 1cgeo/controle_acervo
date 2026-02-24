@@ -1,1386 +1,1773 @@
-# Sistema de Controle do Acervo (SCA) - API Documentation
+# Sistema de Controle do Acervo (SCA) - Documentacao da API
 
-## Overview
+## Visao Geral
 
-The SCA API is a RESTful service for managing geospatial data collections. All endpoints return JSON responses with the following structure:
+A API do SCA e um servico RESTful para gestao de acervos de dados geoespaciais, desenvolvido pelo Servico Geografico do Exercito Brasileiro (DSG/1CGEO). A API gerencia produtos geograficos versionados (cartas, ortoimagens, modelos digitais de elevacao etc.), seus arquivos, volumes de armazenamento e uma mapoteca fisica para atendimento de pedidos.
+
+**URL Base**: Todos os endpoints sao prefixados com `/api`
+
+**Documentacao Swagger**: Disponivel em `GET /api/api_docs` quando o servidor esta em execucao.
+
+## Formato Padrao de Resposta
+
+Todas as respostas seguem esta estrutura JSON:
 
 ```json
 {
   "version": "1.0.0",
-  "success": true|false,
-  "message": "Response message",
-  "dados": {}, // Response data (null on error)
-  // Additional metadata fields may be included
+  "success": true,
+  "message": "Mensagem descritiva",
+  "dados": {},
+  "error": null
 }
 ```
 
-## Authentication
+- `success`: `true` para sucesso, `false` para erro
+- `dados`: Dados da resposta (objeto, array ou `null`)
+- `error`: Detalhes do erro quando `success` e `false`
+- Campos adicionais de metadados (ex: `pagination`) podem ser incluidos
 
-Most endpoints require JWT authentication. After login, include the token in the Authorization header:
+## Autenticacao
+
+A maioria dos endpoints requer autenticacao JWT. Apos o login, inclua o token no header Authorization:
 
 ```
 Authorization: Bearer <jwt_token>
 ```
 
-## Base URL
+**Niveis de acesso:**
 
-All endpoints are prefixed with `/api`
+| Middleware | Descricao |
+|---|---|
+| Nenhum | Endpoint publico, sem autenticacao necessaria |
+| `verifyLogin` | Requer JWT valido. Extrai `req.usuarioUuid`, `req.usuarioId`, `req.administrador` |
+| `verifyAdmin` | Requer JWT valido + re-verifica status de administrador no banco de dados |
 
-## Endpoints
+Tokens JWT expiram apos **1 hora**.
 
-### 1. Authentication
+## Rate Limiting
 
-#### POST `/api/login`
-**Description**: Authenticate user and receive JWT token  
-**Auth Required**: No  
-**Body**:
+- **200 requisicoes por 60 segundos** por IP
+
+---
+
+## 1. Health Check
+
+### GET `/api/`
+
+Verifica se o sistema esta operacional.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+| **Resposta** | `{ database_version: "x.y" }` |
+
+---
+
+## 2. Autenticacao (Login)
+
+### POST `/api/login`
+
+Autentica usuario via servidor de autenticacao externo e retorna token JWT.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+
+**Body:**
 ```json
 {
-  "usuario": "username",
-  "senha": "password",
-  "cliente": "sca_qgis|sca_web"
+  "usuario": "string (obrigatorio)",
+  "senha": "string (obrigatorio)",
+  "cliente": "sca_qgis | sca_web (obrigatorio)"
 }
 ```
-**Response Example**: 
+
+**Resposta:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Usuário autenticado com sucesso",
   "dados": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token": "eyJhbGciOi...",
     "administrador": true,
     "uuid": "123e4567-e89b-12d3-a456-426614174000"
   }
 }
 ```
 
-### 2. Collection (Acervo) Management
+---
 
-#### GET `/api/acervo/camadas_produto`
-**Description**: Get all product layers with database connection info  
-**Auth Required**: Yes  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Camadas de Produtos retornados com sucesso",
-  "dados": [
-    {
-      "matviewname": "mv_produto_1_1",
-      "tipo_produto": "CDGV",
-      "tipo_produto_id": 1,
-      "tipo_escala": "1:25.000",
-      "tipo_escala_id": 1,
-      "quantidade_produtos": 150,
-      "banco_dados": {
-        "nome_db": "sca_db",
-        "servidor": "localhost",
-        "porta": 5432,
-        "login": "sca_user",
-        "senha": "sca_pass",
-        "schema": "acervo"
-      }
-    }
-  ]
-}
-```
+## 3. Acervo (Colecao)
 
-#### GET `/api/acervo/produto/detalhado/:produto_id`
-**Description**: Get detailed product information including all versions and files  
-**Auth Required**: Yes  
-**Params**: `produto_id` (integer)  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Informações detalhadas do produto retornadas com sucesso",
-  "dados": {
-    "id": 123,
-    "nome": "Carta Topográfica Brasília",
-    "mi": "SD-23-Y-C-IV-4",
-    "inom": "Brasília",
-    "escala": "1:25.000",
-    "denominador_escala_especial": null,
-    "tipo_produto_id": 2,
-    "descricao": "Carta topográfica da região de Brasília",
-    "data_cadastramento": "2024-01-15T10:30:00.000Z",
-    "usuario_cadastramento": "João Silva",
-    "data_modificacao": "2024-03-20T14:45:00.000Z",
-    "usuario_modificacao": "Maria Santos",
-    "geom": "POLYGON((-47.9 -15.8, -47.8 -15.8, -47.8 -15.7, -47.9 -15.7, -47.9 -15.8))",
-    "versoes": [
-      {
-        "versao_id": 456,
-        "uuid_versao": "789e0123-e89b-12d3-a456-426614174000",
-        "versao": "1-DSG",
-        "nome_versao": "Primeira Edição",
-        "tipo_versao_id": 1,
-        "subtipo_produto_id": 2,
-        "lote_id": 10,
-        "versao_metadado": {
-          "origem": "Levantamento aerofotogramétrico",
-          "precisao": "Classe A"
-        },
-        "versao_descricao": "Versão inicial da carta",
-        "versao_data_criacao": "2023-06-15T00:00:00.000Z",
-        "versao_data_edicao": "2024-01-10T00:00:00.000Z",
-        "orgao_produtor": "1º Centro de Geoinformação",
-        "palavras_chave": ["topografia", "brasília", "planalto central"],
-        "lote_nome": "Lote Brasília 2023",
-        "lote_pit": "PIT-2023-045",
-        "projeto_nome": "Mapeamento DF",
-        "relacionamentos": [
-          {
-            "versao_relacionada_id": 789,
-            "tipo_relacionamento": "Insumo"
-          }
-        ],
-        "arquivos": [
-          {
-            "id": 1234,
-            "uuid_arquivo": "abc12345-e89b-12d3-a456-426614174000",
-            "nome": "Carta Topográfica Brasília",
-            "nome_arquivo": "SD-23-Y-C-IV-4_v1",
-            "tipo_arquivo_id": 1,
-            "volume_armazenamento_id": 1,
-            "extensao": "tif",
-            "tamanho_mb": 2500.5,
-            "checksum": "a1b2c3d4e5f6...",
-            "metadado": {
-              "resolucao": "1m",
-              "datum": "SIRGAS2000"
-            },
-            "tipo_status_id": 1,
-            "situacao_carregamento_id": 2,
-            "descricao": "Arquivo principal da carta",
-            "crs_original": "EPSG:31983",
-            "tipo_arquivo": "Arquivo principal"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+### GET `/api/acervo/camadas_produto`
 
-#### POST `/api/acervo/prepare-download/arquivos`
-**Description**: Prepare specific files for download  
-**Auth Required**: Yes  
-**Body**:
+Retorna informacoes de camadas de todos os produtos a partir das views materializadas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Resposta:** Array com `matviewname`, `tipo_produto`, `tipo_escala`, `quantidade_produtos` e informacoes de conexao ao banco (`banco_dados`).
+
+---
+
+### GET `/api/acervo/produto/detalhado/:produto_id`
+
+Retorna informacoes completas de um produto incluindo todas as versoes, relacionamentos e arquivos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `produto_id` - integer (obrigatorio) |
+
+**Resposta:** Objeto do produto com array aninhado de versoes, cada versao contendo relacionamentos e arquivos.
+
+---
+
+### POST `/api/acervo/prepare-download/arquivos`
+
+Prepara arquivos especificos para download, criando tokens de download validos por 24 horas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
   "arquivos_ids": [1234, 5678]
 }
 ```
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Download preparado com sucesso. Utilize confirm-download para confirmar a conclusão da transferência.",
-  "dados": [
-    {
-      "arquivo_id": 1234,
-      "nome": "Carta Topográfica Brasília",
-      "download_path": "/mnt/storage/volume1/SD-23-Y-C-IV-4_v1.tif",
-      "checksum": "a1b2c3d4e5f6...",
-      "download_token": "def45678-e89b-12d3-a456-426614174000"
-    },
-    {
-      "arquivo_id": 5678,
-      "nome": "Ortoimagem Brasília",
-      "download_path": "/mnt/storage/volume2/ortho_bsb_2024.tif",
-      "checksum": "f6e5d4c3b2a1...",
-      "download_token": "ghi78901-e89b-12d3-a456-426614174000"
-    }
-  ]
-}
-```
+- `arquivos_ids`: array de inteiros (min 1, valores unicos, obrigatorio)
 
-#### POST `/api/acervo/prepare-download/produtos`
-**Description**: Prepare files from products (latest versions) for download  
-**Auth Required**: Yes  
-**Body**:
+**Resposta:** Array com `arquivo_id`, `nome`, `download_path`, `checksum`, `download_token`.
+
+---
+
+### POST `/api/acervo/prepare-download/produtos`
+
+Prepara download das versoes mais recentes dos produtos especificados, filtrados por tipos de arquivo.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
   "produtos_ids": [123, 124],
   "tipos_arquivo": [1, 2]
 }
 ```
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Download preparado com sucesso. Utilize confirm-download para confirmar a conclusão da transferência.",
-  "dados": [
-    {
-      "arquivo_id": 1234,
-      "nome": "Carta Topográfica Brasília",
-      "download_path": "/mnt/storage/volume1/SD-23-Y-C-IV-4_v2.tif",
-      "checksum": "a1b2c3d4e5f6...",
-      "download_token": "jkl01234-e89b-12d3-a456-426614174000"
-    },
-    {
-      "arquivo_id": 5679,
-      "nome": "Formato alternativo - GeoTIFF",
-      "download_path": "/mnt/storage/volume1/SD-23-Y-C-IV-4_v2_alt.tif",
-      "checksum": "z9y8x7w6v5u4...",
-      "download_token": "mno34567-e89b-12d3-a456-426614174000"
-    }
-  ]
-}
-```
+- `produtos_ids`: array de inteiros (min 1, valores unicos, obrigatorio)
+- `tipos_arquivo`: array de inteiros (min 1, valores unicos, obrigatorio)
 
-#### POST `/api/acervo/confirm-download`
-**Description**: Confirm download completion  
-**Auth Required**: Yes  
-**Body**:
+**Resposta:** Array com informacoes de download e tokens.
+
+---
+
+### POST `/api/acervo/confirm-download`
+
+Confirma o status de downloads realizados.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
   "confirmations": [
     {
-      "download_token": "def45678-e89b-12d3-a456-426614174000",
+      "download_token": "uuid (obrigatorio)",
       "success": true,
-      "error_message": null
-    },
-    {
-      "download_token": "ghi78901-e89b-12d3-a456-426614174000",
-      "success": false,
-      "error_message": "Checksum mismatch"
+      "error_message": "string (opcional)"
     }
   ]
 }
 ```
-**Response Example**:
+
+**Resposta:** Array com status de confirmacao por token.
+
+---
+
+### POST `/api/acervo/cleanup-expired-downloads`
+
+Executa limpeza de sessoes de download expiradas (mais de 24 horas).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### POST `/api/acervo/refresh_materialized_views`
+
+Atualiza todas as views materializadas. Chama `acervo.refresh_all_materialized_views()`.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### POST `/api/acervo/create_materialized_views`
+
+Cria novas views materializadas. Chama `acervo.criar_views_materializadas()`.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### GET `/api/acervo/situacao-geral`
+
+Gera e retorna um arquivo ZIP contendo GeoJSONs com a situacao dos produtos para as escalas selecionadas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `scale25k` | boolean | false | Incluir escala 1:25.000 |
+| `scale50k` | boolean | false | Incluir escala 1:50.000 |
+| `scale100k` | boolean | false | Incluir escala 1:100.000 |
+| `scale250k` | boolean | false | Incluir escala 1:250.000 |
+
+Se nenhuma escala for selecionada, retorna todas. Resposta: arquivo ZIP (`application/zip`) com arquivos `situacao-geral-ct-{escala}.geojson`.
+
+---
+
+## 4. Gerenciamento de Arquivos
+
+### PUT `/api/arquivo/arquivo`
+
+Atualiza metadados e informacoes de armazenamento de um arquivo.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Status de download atualizado com sucesso",
-  "dados": [
-    {
-      "download_token": "def45678-e89b-12d3-a456-426614174000",
-      "arquivo_id": 1234,
-      "nome": "Carta Topográfica Brasília",
-      "status": "completed"
-    },
-    {
-      "download_token": "ghi78901-e89b-12d3-a456-426614174000",
-      "arquivo_id": 5678,
-      "nome": "Ortoimagem Brasília",
-      "status": "failed"
-    }
-  ]
+  "id": 1234,
+  "nome": "string (obrigatorio)",
+  "tipo_arquivo_id": 1,
+  "volume_armazenamento_id": 1,
+  "metadado": {},
+  "tipo_status_id": 1,
+  "situacao_carregamento_id": 2,
+  "descricao": "string (obrigatorio, permite vazio)",
+  "crs_original": "EPSG:31983 (opcional, max 10 chars)"
 }
 ```
 
-#### GET `/api/acervo/situacao-geral`
-**Description**: Get general situation as GeoJSON for cartographic products  
-**Auth Required**: Yes  
-**Query Params**: `scale25k=true&scale50k=true`  
-**Response**: ZIP file containing GeoJSON files (binary response)
+---
 
-### 3. File Management
+### DELETE `/api/arquivo/arquivo`
 
-#### POST `/api/arquivo/prepare-upload/files`
-**Description**: Prepare to add files to existing versions  
-**Auth Required**: Yes  
-**Body**:
+Move arquivos para tabela `arquivo_deletado` com motivo de exclusao. Tambem move downloads associados.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "arquivo_ids": [1234, 5678],
+  "motivo_exclusao": "string (obrigatorio)"
+}
+```
+
+---
+
+### POST `/api/arquivo/prepare-upload/files`
+
+Prepara sessao de upload para adicionar arquivos a versoes existentes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
   "arquivos": [
     {
-      "nome": "Carta Topográfica Atualizada",
-      "nome_arquivo": "SD-23-Y-C-IV-4_v2",
       "versao_id": 456,
+      "nome": "string (obrigatorio)",
+      "nome_arquivo": "string (obrigatorio)",
       "tipo_arquivo_id": 1,
-      "extensao": "tif",
-      "tamanho_mb": 2800.5,
-      "checksum": "b2c3d4e5f6a7...",
-      "metadado": {
-        "resolucao": "0.5m",
-        "processamento": "ortorretificado"
-      },
-      "situacao_carregamento_id": 1,
-      "descricao": "Versão atualizada com novos dados",
-      "crs_original": "EPSG:31983"
+      "extensao": "tif (obrigatorio exceto tipo 9)",
+      "tamanho_mb": 2500.5,
+      "checksum": "string (obrigatorio exceto tipo 9)",
+      "metadado": {},
+      "situacao_carregamento_id": 2,
+      "descricao": "string (opcional)",
+      "crs_original": "string (opcional)"
     }
   ]
 }
 ```
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Upload de arquivos preparado com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.",
-  "dados": {
-    "session_uuid": "pqr45678-e89b-12d3-a456-426614174000",
-    "operation_type": "add_files",
-    "arquivos": [
-      {
-        "nome": "Carta Topográfica Atualizada",
-        "nome_arquivo": "SD-23-Y-C-IV-4_v2",
-        "versao_id": 456,
-        "destination_path": "/mnt/storage/volume1/SD-23-Y-C-IV-4_v2.tif",
-        "checksum": "b2c3d4e5f6a7..."
-      }
-    ]
-  }
-}
-```
 
-#### POST `/api/arquivo/prepare-upload/version`
-**Description**: Prepare to add new versions with files to existing products  
-**Auth Required**: Yes  
-**Body**:
+**Resposta:** `{ session_uuid, operation_type: "add_files", arquivos: [...] }` com caminhos de destino.
+
+---
+
+### POST `/api/arquivo/prepare-upload/version`
+
+Prepara sessao de upload para adicionar novas versoes com arquivos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
   "versoes": [
     {
       "produto_id": 123,
       "versao": {
-        "uuid_versao": null,
         "versao": "2-DSG",
-        "nome": "Segunda Edição",
+        "nome": "Segunda Edicao",
         "tipo_versao_id": 1,
         "subtipo_produto_id": 2,
-        "lote_id": 15,
-        "metadado": {
-          "atualizacao": "2024",
-          "fonte": "Imagens de satélite"
-        },
-        "descricao": "Atualização completa da carta",
-        "orgao_produtor": "1º Centro de Geoinformação",
-        "palavras_chave": ["topografia", "brasília", "atualizada"],
-        "data_criacao": "2024-01-01T00:00:00.000Z",
-        "data_edicao": "2024-03-15T00:00:00.000Z"
+        "lote_id": 10,
+        "metadado": {},
+        "descricao": "string",
+        "orgao_produtor": "string",
+        "palavras_chave": ["string"],
+        "data_criacao": "2024-01-15",
+        "data_edicao": "2024-03-20"
       },
       "arquivos": [
+        { "...mesma estrutura de prepare-upload/files" }
+      ]
+    }
+  ]
+}
+```
+
+**Resposta:** `{ session_uuid, operation_type: "add_version", versoes: [...] }`
+
+---
+
+### POST `/api/arquivo/prepare-upload/product`
+
+Prepara sessao de upload para criar produtos completos com versoes e arquivos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
+```json
+{
+  "produtos": [
+    {
+      "produto": {
+        "nome": "string",
+        "mi": "string",
+        "inom": "string",
+        "tipo_escala_id": 1,
+        "tipo_produto_id": 2,
+        "geom": "SRID=4674;POLYGON((...)) (WKT)"
+      },
+      "versoes": [
         {
-          "nome": "Carta Topográfica Brasília v2",
-          "nome_arquivo": "SD-23-Y-C-IV-4_v2",
-          "tipo_arquivo_id": 1,
-          "extensao": "tif",
-          "tamanho_mb": 3000.0,
-          "checksum": "c3d4e5f6a7b8...",
-          "metadado": {},
-          "situacao_carregamento_id": 1,
-          "descricao": "Arquivo principal segunda edição",
-          "crs_original": "EPSG:31983"
+          "versao": { "...estrutura de versao" },
+          "arquivos": [ "...estrutura de arquivo" ]
         }
       ]
     }
   ]
 }
 ```
-**Response Example**:
+
+**Resposta:** `{ session_uuid, operation_type: "add_product", produtos: [...] }`
+
+---
+
+### POST `/api/arquivo/confirm-upload`
+
+Confirma conclusao de upload. Valida existencia dos arquivos e checksums. Se valido, processa a sessao conforme tipo de operacao e move registros temporarios para tabelas definitivas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Upload de versão preparado com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.",
-  "dados": {
-    "session_uuid": "stu67890-e89b-12d3-a456-426614174000",
-    "operation_type": "add_version",
-    "versoes": [
-      {
-        "produto_id": 123,
-        "versao_info": {
-          "versao": "2-DSG",
-          "nome": "Segunda Edição"
-        },
-        "arquivos": [
-          {
-            "nome": "Carta Topográfica Brasília v2",
-            "nome_arquivo": "SD-23-Y-C-IV-4_v2",
-            "destination_path": "/mnt/storage/volume1/SD-23-Y-C-IV-4_v2.tif",
-            "checksum": "c3d4e5f6a7b8..."
-          }
-        ]
-      }
-    ]
-  }
+  "session_uuid": "uuid (obrigatorio)"
 }
 ```
 
-#### POST `/api/arquivo/confirm-upload`
-**Description**: Confirm file upload completion and validate checksums  
-**Auth Required**: Yes  
-**Body**:
-```json
-{
-  "session_uuid": "pqr45678-e89b-12d3-a456-426614174000"
-}
-```
-**Response Example (Success)**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Validação de upload concluída com sucesso",
-  "dados": {
-    "session_uuid": "pqr45678-e89b-12d3-a456-426614174000",
-    "operation_type": "add_files",
-    "status": "completed",
-    "versoes": [
-      {
-        "versao_id": 456,
-        "files": [
-          {
-            "nome": "Carta Topográfica Atualizada",
-            "nome_arquivo": "SD-23-Y-C-IV-4_v2",
-            "status": "completed",
-            "error_message": null
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+**Resposta:** `{ session_uuid, operation_type, status: "completed|failed", ... }` com detalhes por arquivo/versao/produto.
 
-**Response Example (Failure)**:
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Upload falhou na validação: Um ou mais arquivos falharam na validação",
-  "dados": {
-    "session_uuid": "pqr45678-e89b-12d3-a456-426614174000",
-    "operation_type": "add_files",
-    "status": "failed",
-    "error_message": "Um ou mais arquivos falharam na validação",
-    "detalhes": [
-      {
-        "versao_id": 456,
-        "files": [
-          {
-            "nome": "Carta Topográfica Atualizada",
-            "nome_arquivo": "SD-23-Y-C-IV-4_v2",
-            "status": "failed",
-            "error_message": "Falha na validação do checksum"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+---
 
-### 4. Product Management
+### GET `/api/arquivo/problem-uploads`
 
-#### PUT `/api/produtos/produto`
-**Description**: Update product information  
-**Auth Required**: Admin  
-**Body**:
+Retorna as ultimas 50 sessoes de upload com falha, com detalhes dos problemas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+## 5. Produtos
+
+### PUT `/api/produtos/produto`
+
+Atualiza metadados de um produto.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
   "id": 123,
-  "nome": "Carta Topográfica Brasília - Atualizada",
-  "mi": "SD-23-Y-C-IV-4",
-  "inom": "Brasília",
+  "nome": "string (obrigatorio)",
+  "mi": "string (obrigatorio)",
+  "inom": "string (obrigatorio)",
   "tipo_escala_id": 1,
   "denominador_escala_especial": null,
   "tipo_produto_id": 2,
-  "descricao": "Carta topográfica atualizada da região de Brasília"
-}
-```
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Produto atualizado com sucesso",
-  "dados": null
+  "descricao": "string (obrigatorio, permite vazio)"
 }
 ```
 
-#### DELETE `/api/produtos/produto`
-**Description**: Delete products and all associated data  
-**Auth Required**: Admin  
-**Body**:
+---
+
+### PUT `/api/produtos/versao`
+
+Atualiza metadados de uma versao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "id": 456,
+  "uuid_versao": "uuid (obrigatorio)",
+  "versao": "string (obrigatorio)",
+  "nome": "string (permite null)",
+  "tipo_versao_id": 1,
+  "subtipo_produto_id": 2,
+  "descricao": "string (obrigatorio)",
+  "metadado": {},
+  "lote_id": 10,
+  "orgao_produtor": "string (obrigatorio)",
+  "palavras_chave": ["string"],
+  "data_criacao": "date (obrigatorio)",
+  "data_edicao": "date (obrigatorio)"
+}
+```
+
+---
+
+### DELETE `/api/produtos/produto`
+
+Deleta produtos e cascata para todas as versoes, arquivos e downloads associados.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
   "produto_ids": [123, 124],
-  "motivo_exclusao": "Produtos obsoletos - substituídos por nova edição"
-}
-```
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Produtos deletados com sucesso",
-  "dados": null
+  "motivo_exclusao": "string (obrigatorio)"
 }
 ```
 
-#### GET `/api/produtos/versao_relacionamento`
-**Description**: Get all version relationships  
-**Auth Required**: No  
-**Response Example**:
+---
+
+### DELETE `/api/produtos/versao`
+
+Deleta versoes. Nao permite deletar a unica versao de um produto.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Versão Relacionamento retornada com sucesso",
-  "dados": [
+  "versao_ids": [456, 457],
+  "motivo_exclusao": "string (obrigatorio)"
+}
+```
+
+---
+
+### POST `/api/produtos/versao_historica`
+
+Cria versoes historicas em lote (`tipo_versao_id = 2`) para produtos existentes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:** Array de objetos de versao com `uuid_versao`, `versao`, `nome`, `produto_id`, `lote_id`, `metadado`, `descricao`, `orgao_produtor`, `palavras_chave`, `data_criacao`, `data_edicao`.
+
+---
+
+### POST `/api/produtos/produto_versao_historica`
+
+Cria produtos com versoes historicas em lote, numa unica operacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:** Array de objetos de produto com metadados do produto + array aninhado de `versoes`.
+
+---
+
+### POST `/api/produtos/produtos`
+
+Cria produtos em lote (sem versoes).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
+```json
+{
+  "produtos": [
     {
-      "id": 1,
+      "nome": "string (obrigatorio)",
+      "mi": "string (permite null)",
+      "inom": "string (permite null)",
+      "tipo_escala_id": 1,
+      "denominador_escala_especial": null,
+      "tipo_produto_id": 2,
+      "descricao": "string (permite null)",
+      "geom": "SRID=4674;POLYGON((...)) (WKT, obrigatorio)"
+    }
+  ]
+}
+```
+
+---
+
+### GET `/api/produtos/versao_relacionamento`
+
+Retorna todos os relacionamentos entre versoes com detalhes completos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma (publico) |
+
+**Resposta:** Array com IDs de relacionamento, versoes relacionadas, tipos de relacionamento e metadados de produto/versao.
+
+---
+
+### POST `/api/produtos/versao_relacionamento`
+
+Cria relacionamentos entre versoes. Valida existencia das versoes, impede auto-relacionamentos, duplicatas e ciclos para tipo "Insumo" (tipo 1).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
+```json
+{
+  "versao_relacionamento": [
+    {
       "versao_id_1": 456,
       "versao_id_2": 789,
-      "tipo_relacionamento_id": 1,
-      "tipo_relacionamento_nome": "Insumo",
-      "data_relacionamento": "2024-02-15T10:30:00.000Z",
-      "usuario_relacionamento_uuid": "123e4567-e89b-12d3-a456-426614174000",
-      "versao_1_nome": "1-DSG",
-      "produto_id_1": 123,
-      "produto_nome_1": "Carta Topográfica Brasília",
-      "mi_1": "SD-23-Y-C-IV-4",
-      "inom_1": "Brasília",
-      "versao_2_nome": "1-DSG",
-      "produto_id_2": 125,
-      "produto_nome_2": "Ortoimagem Brasília",
-      "mi_2": "SD-23-Y-C-IV-4-NO",
-      "inom_2": "Brasília Norte"
+      "tipo_relacionamento_id": 1
     }
   ]
 }
 ```
 
-### 5. Project and Lot Management
+---
 
-#### GET `/api/projetos/projeto`
-**Description**: Get all projects  
-**Auth Required**: No  
-**Response Example**:
+### PUT `/api/produtos/versao_relacionamento`
+
+Atualiza relacionamentos existentes. Mesmas validacoes da criacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional em cada relacionamento.
+
+---
+
+### DELETE `/api/produtos/versao_relacionamento`
+
+Deleta relacionamentos entre versoes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Projetos retornados com sucesso",
-  "dados": [
-    {
-      "id": 1,
-      "nome": "Mapeamento Distrito Federal 2024",
-      "descricao": "Projeto de atualização cartográfica do DF",
-      "data_inicio": "2024-01-01",
-      "data_fim": "2024-12-31",
-      "status_execucao_id": 2,
-      "status_execucao": "Em execução",
-      "data_cadastramento": "2023-12-15T10:00:00.000Z",
-      "usuario_cadastramento_uuid": "123e4567-e89b-12d3-a456-426614174000",
-      "data_modificacao": null,
-      "usuario_modificacao_uuid": null
-    }
-  ]
+  "versao_relacionamento_ids": [1, 2, 3]
 }
 ```
 
-#### POST `/api/projetos/projeto`
-**Description**: Create new project  
-**Auth Required**: Admin  
-**Body**:
+---
+
+## 6. Projetos e Lotes
+
+### GET `/api/projetos/projeto`
+
+Retorna todos os projetos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+
+---
+
+### POST `/api/projetos/projeto`
+
+Cria um novo projeto.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
 ```json
 {
-  "nome": "Mapeamento Região Norte 2025",
-  "descricao": "Novo projeto de mapeamento",
-  "data_inicio": "2025-01-01",
-  "data_fim": "2025-12-31",
+  "nome": "string (obrigatorio)",
+  "descricao": "string (obrigatorio, permite vazio)",
+  "data_inicio": "date (obrigatorio)",
+  "data_fim": "date (permite null)",
   "status_execucao_id": 1
 }
 ```
-**Response Example**:
+
+---
+
+### PUT `/api/projetos/projeto`
+
+Atualiza um projeto existente.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional (integer, obrigatorio).
+
+---
+
+### DELETE `/api/projetos/projeto`
+
+Deleta projetos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Projeto \"Mapeamento Região Norte 2025\" criado com sucesso",
-  "dados": {
-    "id": 2,
-    "nome": "Mapeamento Região Norte 2025",
-    "message": "Projeto \"Mapeamento Região Norte 2025\" criado com sucesso"
-  }
+  "projeto_ids": [1, 2]
 }
 ```
 
-#### GET `/api/projetos/lote`
-**Description**: Get all lots  
-**Auth Required**: No  
-**Response Example**:
+---
+
+### GET `/api/projetos/lote`
+
+Retorna todos os lotes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+
+---
+
+### POST `/api/projetos/lote`
+
+Cria um novo lote vinculado a um projeto.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Lotes retornados com sucesso",
-  "dados": [
+  "projeto_id": 1,
+  "pit": "string (obrigatorio)",
+  "nome": "string (obrigatorio)",
+  "descricao": "string (permite vazio, opcional)",
+  "data_inicio": "date (obrigatorio)",
+  "data_fim": "date (permite null)",
+  "status_execucao_id": 1
+}
+```
+
+---
+
+### PUT `/api/projetos/lote`
+
+Atualiza um lote existente.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/projetos/lote`
+
+Deleta lotes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "lote_ids": [1, 2]
+}
+```
+
+---
+
+## 7. Volumes de Armazenamento
+
+### GET `/api/volumes/volume_armazenamento`
+
+Retorna todos os volumes de armazenamento.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### POST `/api/volumes/volume_armazenamento`
+
+Cria volumes de armazenamento.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
+```json
+{
+  "volume_armazenamento": [
     {
-      "id": 10,
-      "projeto_id": 1,
-      "pit": "PIT-2024-001",
-      "nome": "Lote Brasília Central",
-      "descricao": "Mapeamento da região central de Brasília",
-      "data_inicio": "2024-01-15",
-      "data_fim": "2024-03-30",
-      "status_execucao_id": 3,
-      "status_execucao": "Concluído",
-      "projeto": "Mapeamento Distrito Federal 2024",
-      "data_cadastramento": "2024-01-10T09:00:00.000Z",
-      "usuario_cadastramento_uuid": "123e4567-e89b-12d3-a456-426614174000",
-      "data_modificacao": "2024-03-30T16:00:00.000Z",
-      "usuario_modificacao_uuid": "456e7890-e89b-12d3-a456-426614174000"
+      "nome": "string (obrigatorio)",
+      "volume": "string (obrigatorio - caminho do volume)",
+      "capacidade_gb": 1000.0
     }
   ]
 }
 ```
 
-### 6. User Management
+---
 
-#### GET `/api/usuarios`
-**Description**: Get all system users  
-**Auth Required**: Admin  
-**Response Example**:
+### PUT `/api/volumes/volume_armazenamento`
+
+Atualiza volumes de armazenamento.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Usuários retornados",
-  "dados": [
+  "volume_armazenamento": [
     {
-      "uuid": "123e4567-e89b-12d3-a456-426614174000",
-      "login": "joao.silva",
-      "nome": "João Pedro da Silva",
-      "tipo_posto_grad_id": 13,
-      "tipo_posto_grad": "Cap",
-      "nome_guerra": "Silva",
+      "id": 1,
+      "nome": "string (obrigatorio)",
+      "volume": "string (obrigatorio)",
+      "capacidade_gb": 2000.0
+    }
+  ]
+}
+```
+
+---
+
+### DELETE `/api/volumes/volume_armazenamento`
+
+Deleta volumes de armazenamento.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "volume_armazenamento_ids": [1, 2]
+}
+```
+
+---
+
+### GET `/api/volumes/volume_tipo_produto`
+
+Retorna mapeamento entre tipos de produto e volumes de armazenamento.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### POST `/api/volumes/volume_tipo_produto`
+
+Cria associacoes entre tipos de produto e volumes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+| **HTTP Status** | 201 Created |
+
+**Body:**
+```json
+{
+  "volume_tipo_produto": [
+    {
+      "tipo_produto_id": 1,
+      "volume_armazenamento_id": 1,
+      "primario": true
+    }
+  ]
+}
+```
+
+---
+
+### PUT `/api/volumes/volume_tipo_produto`
+
+Atualiza associacoes entre tipos de produto e volumes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional em cada objeto.
+
+---
+
+### DELETE `/api/volumes/volume_tipo_produto`
+
+Deleta associacoes entre tipos de produto e volumes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "volume_tipo_produto_ids": [1, 2]
+}
+```
+
+---
+
+## 8. Usuarios
+
+Todos os endpoints de usuario requerem `verifyAdmin`.
+
+### GET `/api/usuarios/`
+
+Retorna lista de todos os usuarios do sistema.
+
+---
+
+### POST `/api/usuarios/`
+
+Cria usuarios a partir de UUIDs do servidor de autenticacao.
+
+**Body:**
+```json
+{
+  "usuarios": ["uuid-1", "uuid-2"]
+}
+```
+- `usuarios`: array de UUIDs v4 (min 1, valores unicos, obrigatorio)
+
+---
+
+### PUT `/api/usuarios/`
+
+Atualiza multiplos usuarios em lote.
+
+**Body:**
+```json
+{
+  "usuarios": [
+    {
+      "uuid": "uuid-v4 (obrigatorio)",
       "administrador": true,
       "ativo": true
-    },
-    {
-      "uuid": "456e7890-e89b-12d3-a456-426614174000",
-      "login": "maria.santos",
-      "nome": "Maria dos Santos",
-      "tipo_posto_grad_id": 1,
-      "tipo_posto_grad": "Civ",
-      "nome_guerra": "Santos",
-      "administrador": false,
-      "ativo": true
     }
   ]
 }
 ```
 
-#### PUT `/api/usuarios/:uuid`
-**Description**: Update user permissions  
-**Auth Required**: Admin  
-**Params**: `uuid` = "123e4567-e89b-12d3-a456-426614174000"  
-**Body**:
+---
+
+### PUT `/api/usuarios/:uuid`
+
+Atualiza um usuario especifico.
+
+**Params:** `uuid` - UUID v4 (obrigatorio)
+
+**Body:**
 ```json
 {
   "administrador": true,
   "ativo": true
 }
 ```
-**Response Example**:
+
+---
+
+### PUT `/api/usuarios/sincronizar`
+
+Sincroniza a lista de usuarios com o servidor de autenticacao externo.
+
+---
+
+### GET `/api/usuarios/servico_autenticacao`
+
+Retorna a lista de usuarios do servidor de autenticacao externo.
+
+---
+
+## 9. Gerencia (Dominios e Administracao)
+
+### Endpoints de Dominio (Publicos)
+
+Todos os endpoints de dominio sao `GET`, nao requerem autenticacao e retornam arrays de registros `{ code, nome }`:
+
+| Endpoint | Descricao |
+|---|---|
+| `GET /api/gerencia/dominio/tipo_posto_grad` | Postos e graduacoes |
+| `GET /api/gerencia/dominio/tipo_produto` | Tipos de produto |
+| `GET /api/gerencia/dominio/tipo_escala` | Tipos de escala |
+| `GET /api/gerencia/dominio/subtipo_produto` | Subtipos de produto |
+| `GET /api/gerencia/dominio/situacao_carregamento` | Situacoes de carregamento |
+| `GET /api/gerencia/dominio/tipo_arquivo` | Tipos de arquivo |
+| `GET /api/gerencia/dominio/tipo_relacionamento` | Tipos de relacionamento |
+| `GET /api/gerencia/dominio/tipo_status_arquivo` | Status de arquivo |
+| `GET /api/gerencia/dominio/tipo_versao` | Tipos de versao |
+| `GET /api/gerencia/dominio/tipo_status_execucao` | Status de execucao |
+
+### Endpoints Administrativos
+
+### GET `/api/gerencia/arquivos_deletados`
+
+Retorna arquivos deletados com paginacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `page` | integer | 1 | Numero da pagina (min 1) |
+| `limit` | integer | 20 | Registros por pagina (min 1, max 100) |
+
+**Resposta:** Dados paginados com campo `pagination` adicional.
+
+---
+
+### POST `/api/gerencia/verificar_inconsistencias`
+
+Executa verificacao de consistencia do acervo.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+---
+
+### GET `/api/gerencia/arquivos_incorretos`
+
+Retorna arquivos com problemas de integridade, com paginacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Query Params:** Mesmos de `arquivos_deletados` (`page`, `limit`).
+
+---
+
+## 10. Mapoteca - Dominios
+
+Endpoints de dominio da mapoteca, todos publicos (`GET`, sem autenticacao):
+
+| Endpoint | Descricao |
+|---|---|
+| `GET /api/mapoteca/dominio/tipo_cliente` | Tipos de cliente |
+| `GET /api/mapoteca/dominio/situacao_pedido` | Situacoes de pedido |
+| `GET /api/mapoteca/dominio/tipo_midia` | Tipos de midia |
+| `GET /api/mapoteca/dominio/tipo_localizacao` | Tipos de localizacao |
+
+---
+
+## 11. Mapoteca - Clientes
+
+### GET `/api/mapoteca/cliente`
+
+Retorna todos os clientes com estatisticas de pedidos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### GET `/api/mapoteca/cliente/:id`
+
+Retorna informacoes detalhadas de um cliente com historico de pedidos e estatisticas.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
+### POST `/api/mapoteca/cliente`
+
+Cria um novo cliente.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Usuário atualizado com sucesso",
-  "dados": null
+  "nome": "string (obrigatorio)",
+  "ponto_contato_principal": "string (permite null)",
+  "endereco_entrega_principal": "string (permite null)",
+  "tipo_cliente_id": 1
 }
 ```
 
-### 7. Volume Management
+---
 
-#### GET `/api/volumes/volume_armazenamento`
-**Description**: Get storage volumes  
-**Auth Required**: Admin  
-**Response Example**:
+### PUT `/api/mapoteca/cliente`
+
+Atualiza um cliente existente.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/cliente`
+
+Deleta clientes. Falha se o cliente possuir pedidos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Volume de armazenamento retornada com sucesso",
-  "dados": [
-    {
-      "id": 1,
-      "volume": "/mnt/storage/volume1",
-      "nome": "Volume Principal",
-      "capacidade_gb": 10000
-    },
-    {
-      "id": 2,
-      "volume": "/mnt/storage/volume2",
-      "nome": "Volume Secundário",
-      "capacidade_gb": 5000
-    }
-  ]
+  "cliente_ids": [1, 2]
 }
 ```
 
-#### GET `/api/volumes/volume_tipo_produto`
-**Description**: Get volume-product type associations  
-**Auth Required**: Admin  
-**Response Example**:
+---
+
+## 12. Mapoteca - Pedidos
+
+### GET `/api/mapoteca/pedido`
+
+Retorna todos os pedidos com informacoes do cliente e contagem de produtos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### GET `/api/mapoteca/pedido/:id`
+
+Retorna detalhes completos de um pedido com todos os produtos e trilha de auditoria.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
+### GET `/api/mapoteca/pedido/localizador/:localizador`
+
+Consulta pedido por codigo de rastreamento. Endpoint publico.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+| **Params** | `localizador` - string, formato `^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$` |
+
+---
+
+### POST `/api/mapoteca/pedido`
+
+Cria um novo pedido. O `localizador_pedido` e gerado automaticamente.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Volume Tipo Produto retornada com sucesso",
-  "dados": [
-    {
-      "id": 1,
-      "tipo_produto_id": 2,
-      "volume_armazenamento_id": 1,
-      "primario": true,
-      "tipo_produto": "Carta Topográfica",
-      "volume": "/mnt/storage/volume1",
-      "nome_volume": "Volume Principal",
-      "volume_capacidade_gb": 10000
-    },
-    {
-      "id": 2,
-      "tipo_produto_id": 4,
-      "volume_armazenamento_id": 2,
-      "primario": true,
-      "tipo_produto": "Ortoimagem",
-      "volume": "/mnt/storage/volume2",
-      "nome_volume": "Volume Secundário",
-      "volume_capacidade_gb": 5000
-    }
-  ]
+  "data_pedido": "date (obrigatorio)",
+  "data_atendimento": "date (permite null)",
+  "cliente_id": 1,
+  "situacao_pedido_id": 1,
+  "ponto_contato": "string (permite null)",
+  "documento_solicitacao": "string (permite null)",
+  "documento_solicitacao_nup": "string (permite null)",
+  "endereco_entrega": "string (permite null)",
+  "palavras_chave": ["string"],
+  "operacao": "string (permite null)",
+  "prazo": "date (permite null)",
+  "observacao": "string (permite null)",
+  "localizador_envio": "string (permite null)",
+  "observacao_envio": "string (permite null)",
+  "motivo_cancelamento": "string (permite null)"
 }
 ```
 
-### 8. Domain Data
+**Resposta:** `{ id, localizador_pedido }`
 
-#### GET `/api/gerencia/dominio/tipo_produto`
-**Description**: Get product types  
-**Auth Required**: No  
-**Response Example**:
+---
+
+### PUT `/api/mapoteca/pedido`
+
+Atualiza um pedido existente. O `localizador_pedido` nao pode ser modificado.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/pedido`
+
+Deleta pedidos e todos os produtos associados.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Domínio Tipos de produto retornados com sucesso",
-  "dados": [
-    {
-      "code": 1,
-      "nome": "CDGV"
-    },
-    {
-      "code": 2,
-      "nome": "Carta Topográfica"
-    },
-    {
-      "code": 3,
-      "nome": "Carta Ortoimagem"
-    },
-    {
-      "code": 4,
-      "nome": "Ortoimagem"
-    },
-    {
-      "code": 5,
-      "nome": "Modelo Digital de Superfície"
-    }
-  ]
+  "pedido_ids": [1, 2]
 }
 ```
 
-#### GET `/api/gerencia/dominio/tipo_escala`
-**Description**: Get scale types  
-**Auth Required**: No  
-**Response Example**:
+---
+
+## 13. Mapoteca - Produtos do Pedido
+
+### POST `/api/mapoteca/produto_pedido`
+
+Adiciona um produto a um pedido.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Domínio Tipo Escala retornado com sucesso",
-  "dados": [
-    {
-      "code": 1,
-      "nome": "1:25.000"
-    },
-    {
-      "code": 2,
-      "nome": "1:50.000"
-    },
-    {
-      "code": 3,
-      "nome": "1:100.000"
-    },
-    {
-      "code": 4,
-      "nome": "1:250.000"
-    },
-    {
-      "code": 5,
-      "nome": "Escala personalizada"
-    }
-  ]
+  "uuid_versao": "uuid (obrigatorio)",
+  "pedido_id": 1,
+  "quantidade": 1,
+  "tipo_midia_id": 1,
+  "producao_especifica": false
 }
 ```
 
-#### GET `/api/gerencia/dominio/subtipo_produto`
-**Description**: Get product subtypes  
-**Auth Required**: No  
-**Response Example**:
+---
+
+### PUT `/api/mapoteca/produto_pedido`
+
+Atualiza um produto de pedido.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/produto_pedido`
+
+Remove produtos de um pedido.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Domínio Subtipo de Produto retornado com sucesso",
-  "dados": [
-    {
-      "code": 1,
-      "nome": "Conjunto de dados geoespaciais vetoriais - ET-EDGV 2.1.3",
-      "tipo_id": 1,
-      "tipo_produto": "CDGV"
-    },
-    {
-      "code": 2,
-      "nome": "Carta Topográfica - T34-700",
-      "tipo_id": 2,
-      "tipo_produto": "Carta Topográfica"
-    },
-    {
-      "code": 3,
-      "nome": "Carta Ortoimagem",
-      "tipo_id": 3,
-      "tipo_produto": "Carta Ortoimagem"
-    }
-  ]
+  "produto_pedido_ids": [1, 2]
 }
 ```
 
-#### GET `/api/gerencia/dominio/tipo_arquivo`
-**Description**: Get file types  
-**Auth Required**: No  
-**Response Example**:
+---
+
+## 14. Mapoteca - Plotters
+
+### GET `/api/mapoteca/plotter`
+
+Retorna todos os plotters com data da ultima manutencao e contagem de manutencoes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### GET `/api/mapoteca/plotter/:id`
+
+Retorna detalhes do plotter com historico de manutencoes, estatisticas de custo e media de tempo entre manutencoes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
+### POST `/api/mapoteca/plotter`
+
+Cria um novo plotter.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Domínio Tipo de Arquivos retornado com sucesso",
-  "dados": [
-    {
-      "code": 1,
-      "nome": "Arquivo principal"
-    },
-    {
-      "code": 2,
-      "nome": "Formato alternativo"
-    },
-    {
-      "code": 3,
-      "nome": "Insumo"
-    },
-    {
-      "code": 4,
-      "nome": "Metadados"
-    },
-    {
-      "code": 5,
-      "nome": "JSON Edição"
-    },
-    {
-      "code": 6,
-      "nome": "Documentos"
-    },
-    {
-      "code": 7,
-      "nome": "Projeto QGIS"
-    },
-    {
-      "code": 8,
-      "nome": "Arquivos complementares"
-    },
-    {
-      "code": 9,
-      "nome": "Tileserver"
-    }
-  ]
+  "ativo": true,
+  "nr_serie": "string (obrigatorio)",
+  "modelo": "string (obrigatorio)",
+  "data_aquisicao": "date (permite null)",
+  "vida_util": 60
+}
+```
+- `vida_util`: integer em meses (permite null)
+
+---
+
+### PUT `/api/mapoteca/plotter`
+
+Atualiza um plotter.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campos `id` e `ativo` obrigatorios.
+
+---
+
+### DELETE `/api/mapoteca/plotter`
+
+Deleta plotters. Falha se houver registros de manutencao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "plotter_ids": [1, 2]
 }
 ```
 
-#### GET `/api/gerencia/dominio/situacao_carregamento`
-**Description**: Get loading situations  
-**Auth Required**: No  
-**Response Example**:
+---
+
+## 15. Mapoteca - Manutencao de Plotters
+
+### GET `/api/mapoteca/manutencao_plotter`
+
+Retorna todos os registros de manutencao com detalhes dos plotters.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### POST `/api/mapoteca/manutencao_plotter`
+
+Registra uma manutencao de plotter.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Domínio Situação de carregamento retornado com sucesso",
-  "dados": [
-    {
-      "code": 1,
-      "nome": "Não carregado"
-    },
-    {
-      "code": 2,
-      "nome": "Carregado BDGEx Ostensivo"
-    },
-    {
-      "code": 3,
-      "nome": "Carregado BDGEx Operações"
-    },
-    {
-      "code": 4,
-      "nome": "Carregado IGW"
-    },
-    {
-      "code": 5,
-      "nome": "Carregado GEDW"
-    }
-  ]
+  "plotter_id": 1,
+  "data_manutencao": "date (obrigatorio)",
+  "valor": 1500.50,
+  "descricao": "string (permite null)"
+}
+```
+- `valor`: decimal positivo com 2 casas
+
+---
+
+### PUT `/api/mapoteca/manutencao_plotter`
+
+Atualiza registro de manutencao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/manutencao_plotter`
+
+Deleta registros de manutencao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "manutencao_ids": [1, 2]
 }
 ```
 
-### 9. Dashboard Endpoints
+---
 
-#### GET `/api/dashboard/produtos_total`
-**Description**: Get total product count  
-**Auth Required**: No  
-**Response Example**:
+## 16. Mapoteca - Tipos de Material
+
+### GET `/api/mapoteca/tipo_material`
+
+Retorna todos os tipos de material com estoque total e contagem de localizacoes.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### GET `/api/mapoteca/tipo_material/:id`
+
+Retorna tipo de material com estoque por localizacao, estatisticas de consumo e historico recente (ultimos 10 registros).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
+### POST `/api/mapoteca/tipo_material`
+
+Cria um tipo de material.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Total de produtos retornado com sucesso",
-  "dados": {
-    "total_produtos": "1247"
-  }
+  "nome": "string (obrigatorio)",
+  "descricao": "string (permite null)"
 }
 ```
 
-#### GET `/api/dashboard/arquivos_total_gb`
-**Description**: Get total file storage in GB  
-**Auth Required**: No  
-**Response Example**:
+**Resposta:** `{ id }`
+
+---
+
+### PUT `/api/mapoteca/tipo_material`
+
+Atualiza tipo de material.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/tipo_material`
+
+Deleta tipos de material. Falha se houver registros de estoque ou consumo associados.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Total de gb retornado com sucesso",
-  "dados": {
-    "total_gb": "4567.89"
-  }
+  "tipo_material_ids": [1, 2]
 }
 ```
 
-#### GET `/api/dashboard/produtos_tipo`
-**Description**: Get product count by type  
-**Auth Required**: No  
-**Response Example**:
+---
+
+## 17. Mapoteca - Estoque de Material
+
+### GET `/api/mapoteca/estoque_material`
+
+Retorna todo o estoque com tipo de material, localizacao e trilha de auditoria.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### GET `/api/mapoteca/estoque_por_localizacao`
+
+Retorna estoque agregado por localizacao com contagem de tipos de material.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+---
+
+### POST `/api/mapoteca/estoque_material`
+
+Cria ou atualiza registro de estoque (upsert na chave composta material+localizacao).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Total de produtos por tipo com sucesso",
-  "dados": [
-    {
-      "tipo_produto_id": 2,
-      "tipo_produto": "Carta Topográfica",
-      "quantidade": "534"
-    },
-    {
-      "tipo_produto_id": 4,
-      "tipo_produto": "Ortoimagem",
-      "quantidade": "321"
-    },
-    {
-      "tipo_produto_id": 1,
-      "tipo_produto": "CDGV",
-      "quantidade": "289"
-    }
-  ]
+  "tipo_material_id": 1,
+  "quantidade": 100.50,
+  "localizacao_id": 1
+}
+```
+- `quantidade`: decimal positivo com 2 casas
+
+**Resposta:** `{ id }`
+
+---
+
+### PUT `/api/mapoteca/estoque_material`
+
+Atualiza registro de estoque.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/estoque_material`
+
+Deleta registros de estoque.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "estoque_material_ids": [1, 2]
 }
 ```
 
-#### GET `/api/dashboard/gb_tipo_produto`
-**Description**: Get storage GB by product type  
-**Auth Required**: No  
-**Response Example**:
+---
+
+## 18. Mapoteca - Consumo de Material
+
+### GET `/api/mapoteca/consumo_material`
+
+Retorna registros de consumo com filtros opcionais.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Query Params (todos opcionais):**
+| Parametro | Tipo | Descricao |
+|---|---|---|
+| `data_inicio` | date | Data de inicio do filtro |
+| `data_fim` | date | Data de fim do filtro |
+| `tipo_material_id` | integer | Filtrar por tipo de material |
+
+---
+
+### GET `/api/mapoteca/consumo_mensal`
+
+Retorna consumo mensal por tipo de material para um ano especificado.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `ano` | integer | ano atual | Ano para consulta |
+
+---
+
+### POST `/api/mapoteca/consumo_material`
+
+Registra consumo de material.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
 ```json
 {
-  "version": "1.0.0",
-  "success": true,
-  "message": "Gb por tipo de produto retornado com sucesso",
-  "dados": [
-    {
-      "tipo_produto_id": 4,
-      "tipo_produto": "Ortoimagem",
-      "total_gb": "2345.67"
-    },
-    {
-      "tipo_produto_id": 2,
-      "tipo_produto": "Carta Topográfica",
-      "total_gb": "1234.56"
-    },
-    {
-      "tipo_produto_id": 5,
-      "tipo_produto": "Modelo Digital de Superfície",
-      "total_gb": "987.66"
-    }
-  ]
+  "tipo_material_id": 1,
+  "quantidade": 25.00,
+  "data_consumo": "2024-03-15"
+}
+```
+- `quantidade`: decimal positivo com 2 casas
+
+**Resposta:** `{ id }`
+
+---
+
+### PUT `/api/mapoteca/consumo_material`
+
+Atualiza registro de consumo.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** Mesma estrutura do POST com campo `id` adicional.
+
+---
+
+### DELETE `/api/mapoteca/consumo_material`
+
+Deleta registros de consumo.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "consumo_material_ids": [1, 2]
 }
 ```
 
-#### GET `/api/dashboard/arquivos_dia`
-**Description**: Get files uploaded per day (last 30 days)  
-**Auth Required**: No  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Arquivos carregados por dia retornadas com sucesso",
-  "dados": [
-    {
-      "dia": "2024-03-20",
-      "quantidade": "15"
-    },
-    {
-      "dia": "2024-03-19",
-      "quantidade": "23"
-    },
-    {
-      "dia": "2024-03-18",
-      "quantidade": "8"
-    }
-  ]
-}
-```
+---
 
-#### GET `/api/dashboard/gb_volume`
-**Description**: Get storage distribution by volume  
-**Auth Required**: No  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Gb por volume retornados com sucesso",
-  "dados": [
-    {
-      "volume_armazenamento_id": 1,
-      "nome_volume": "Volume Principal",
-      "volume": "/mnt/storage/volume1",
-      "capacidade_gb_volume": 10000,
-      "total_gb": "3456.78"
-    },
-    {
-      "volume_armazenamento_id": 2,
-      "nome_volume": "Volume Secundário",
-      "volume": "/mnt/storage/volume2",
-      "capacidade_gb_volume": 5000,
-      "total_gb": "1111.11"
-    }
-  ]
-}
-```
+## 19. Dashboard da Mapoteca
 
-#### GET `/api/dashboard/ultimos_carregamentos`
-**Description**: Get last 10 file uploads  
-**Auth Required**: No  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Ultimos carregamentos de arquivo retornados com sucesso",
-  "dados": [
-    {
-      "id": 5678,
-      "uuid_arquivo": "xyz98765-e89b-12d3-a456-426614174000",
-      "nome": "Carta Topográfica São Paulo",
-      "nome_arquivo": "SF-23-Y-C-VI-2_v1",
-      "versao_id": 890,
-      "tipo_arquivo_id": 1,
-      "volume_armazenamento_id": 1,
-      "extensao": "tif",
-      "tamanho_mb": 3200.5,
-      "checksum": "d4e5f6a7b8c9...",
-      "metadado": {},
-      "tipo_status_id": 1,
-      "situacao_carregamento_id": 2,
-      "crs_original": "EPSG:31983",
-      "descricao": "Carta topográfica região metropolitana SP",
-      "data_cadastramento": "2024-03-20T14:30:00.000Z",
-      "usuario_cadastramento_uuid": "789e0123-e89b-12d3-a456-426614174000",
-      "data_modificacao": null,
-      "usuario_modificacao_uuid": null,
-      "orgao_produtor": "1º Centro de Geoinformação"
-    }
-  ]
-}
-```
+Todos os endpoints sao `GET` e requerem `verifyLogin`. Prefixo: `/api/mapoteca/dashboard`.
 
-### 10. Management Endpoints
+### GET `/api/mapoteca/dashboard/order_status`
 
-#### GET `/api/gerencia/arquivos_deletados`
-**Description**: Get deleted files history  
-**Auth Required**: Admin  
-**Query Params**: `page=1&limit=20`  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Arquivos deletados retornados com sucesso",
-  "dados": [
-    {
-      "id": 1,
-      "uuid_arquivo": "abc12345-e89b-12d3-a456-426614174000",
-      "nome": "Carta Antiga",
-      "nome_arquivo": "carta_antiga_v1",
-      "motivo_exclusao": "Substituída por versão atualizada",
-      "versao_id": null,
-      "versao": null,
-      "versao_nome": null,
-      "produto": "Carta Topográfica Teste",
-      "mi": "NA-20-X-D-VI",
-      "inom": "Teste",
-      "escala": "1:50.000",
-      "tipo_arquivo_id": 1,
-      "tipo_arquivo_nome": "Arquivo principal",
-      "volume_armazenamento_id": 1,
-      "volume_armazenamento_nome": "Volume Principal",
-      "volume_armazenamento": "/mnt/storage/volume1",
-      "extensao": "tif",
-      "tamanho_mb": 1500.5,
-      "checksum": "old123...",
-      "data_delete": "2024-03-15T10:00:00.000Z",
-      "usuario_delete_nome": "Admin Silva"
-    }
-  ],
-  "pagination": {
-    "totalItems": 42,
-    "totalPages": 3,
-    "currentPage": 1,
-    "pageSize": 20
-  }
-}
-```
+Retorna distribuicao de pedidos por status: total, em andamento, concluidos, pendentes e detalhamento.
 
-#### POST `/api/gerencia/verificar_inconsistencias`
-**Description**: Check file consistency in storage  
-**Auth Required**: Admin  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Verificação de consistência concluída com sucesso",
-  "dados": {
-    "arquivos_atualizados": 3,
-    "arquivos_deletados_atualizados": 1
-  }
-}
-```
+---
 
-### 11. Mapoteca Module
+### GET `/api/mapoteca/dashboard/orders_timeline`
 
-#### GET `/api/mapoteca/cliente`
-**Description**: List all clients with order statistics  
-**Auth Required**: Yes  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Clientes retornados com sucesso",
-  "dados": [
-    {
-      "id": 1,
-      "nome": "1º Batalhão de Infantaria",
-      "ponto_contato_principal": "Cap Silva - (61) 3234-5678",
-      "endereco_entrega_principal": "SGAN 902 - Brasília/DF",
-      "tipo_cliente_id": 1,
-      "tipo_cliente_nome": "OM EB",
-      "total_pedidos": 15,
-      "data_ultimo_pedido": "2024-03-15T10:00:00.000Z",
-      "pedidos_em_andamento": 2,
-      "pedidos_concluidos": 12,
-      "total_produtos": 45
-    }
-  ]
-}
-```
+Retorna contagem semanal de pedidos ao longo dos ultimos N meses.
 
-#### GET `/api/mapoteca/pedido`
-**Description**: List all orders  
-**Auth Required**: Yes  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Pedidos retornados com sucesso",
-  "dados": [
-    {
-      "id": 123,
-      "data_pedido": "2024-03-20T09:00:00.000Z",
-      "data_atendimento": null,
-      "cliente_id": 1,
-      "cliente_nome": "1º Batalhão de Infantaria",
-      "situacao_pedido_id": 3,
-      "situacao_pedido_nome": "Em andamento",
-      "documento_solicitacao": "DIEx nº 045-S3",
-      "documento_solicitacao_nup": "64123.001234/2024-15",
-      "prazo": "2024-04-20",
-      "localizador_pedido": "AB3C-D5F7-H9K2",
-      "localizador_envio": null,
-      "observacao_envio": null,
-      "usuario_criacao_nome": "Sgt Santos",
-      "data_criacao": "2024-03-20T09:00:00.000Z",
-      "quantidade_produtos": 5
-    }
-  ]
-}
-```
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `meses` | integer | 6 | Numero de meses retroativos |
 
-#### GET `/api/mapoteca/pedido/localizador/AB3C-D5F7-H9K2`
-**Description**: Get order by tracking code (public access)  
-**Auth Required**: No  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Pedido encontrado com sucesso",
-  "dados": {
-    "id": 123,
-    "localizador_pedido": "AB3C-D5F7-H9K2",
-    "data_pedido": "2024-03-20T09:00:00.000Z",
-    "situacao_pedido_id": 5,
-    "situacao_pedido_nome": "Concluído",
-    "cliente_id": 1,
-    "cliente_nome": "1º Batalhão de Infantaria",
-    "prazo": "2024-04-20",
-    "localizador_envio": "SEDEX123456789BR",
-    "observacao_envio": "Enviado via SEDEX",
-    "motivo_cancelamento": null
-  }
-}
-```
+**Resposta:** Array com `semana_inicio`, `semana_fim`, `total_pedidos`, `total_produtos`.
 
-#### GET `/api/mapoteca/dashboard/order_status`
-**Description**: Get order status distribution  
-**Auth Required**: Yes  
-**Response Example**:
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Distribuição de status de pedidos retornada com sucesso",
-  "dados": {
-    "total": 150,
-    "em_andamento": 25,
-    "concluidos": 110,
-    "pendentes": 35,
-    "distribuicao": [
-      {
-        "id": 1,
-        "nome": "Pré cadastramento do pedido realizado",
-        "quantidade": 10
-      },
-      {
-        "id": 2,
-        "nome": "DIEx/Ofício do pedido recebido",
-        "quantidade": 15
-      },
-      {
-        "id": 3,
-        "nome": "Em andamento",
-        "quantidade": 25
-      },
-      {
-        "id": 4,
-        "nome": "Remetido",
-        "quantidade": 5
-      },
-      {
-        "id": 5,
-        "nome": "Concluído",
-        "quantidade": 110
-      },
-      {
-        "id": 6,
-        "nome": "Cancelado",
-        "quantidade": 5
-      }
-    ]
-  }
-}
-```
+---
 
-## Error Response Examples
+### GET `/api/mapoteca/dashboard/avg_fulfillment_time`
 
-### Validation Error (400)
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Erro de validação dos Dados. Mensagem de erro: \"usuario\" is required",
-  "dados": null
-}
-```
+Retorna tempo medio de atendimento geral, por tipo de cliente e tendencia mensal.
 
-### Unauthorized Error (401)
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Falha ao autenticar token",
-  "dados": null
-}
-```
+**Resposta:** `{ media_geral, por_tipo_cliente: [...], mensal: [...] }`
 
-### Forbidden Error (403)
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Usuário necessita ser um administrador",
-  "dados": null
-}
-```
+---
 
-### Not Found Error (404)
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Produto não encontrado",
-  "dados": null
-}
-```
+### GET `/api/mapoteca/dashboard/client_activity`
 
-### Internal Server Error (500)
-```json
-{
-  "version": "1.0.0",
-  "success": false,
-  "message": "Erro no servidor",
-  "dados": null
-}
-```
+Retorna os N clientes mais ativos por contagem de pedidos com estatisticas de conclusao.
 
-## Important Notes
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `limite` | integer | 10 | Numero maximo de clientes |
 
-1. **Authentication**: All endpoints except login and some domain endpoints require authentication
-2. **Admin Routes**: Endpoints marked as "Admin" require administrator privileges
-3. **File Operations**: The system uses a two-phase commit for file operations to ensure consistency
-4. **Pagination**: Some endpoints support pagination via `page` and `limit` query parameters
-5. **Timestamps**: All dates/times are in ISO 8601 format with timezone
-6. **Checksums**: SHA256 checksums are required for file integrity
-7. **Null Values**: Many fields can be null, especially for optional data like `denominador_escala_especial`, `data_fim`, etc.
+---
+
+### GET `/api/mapoteca/dashboard/pending_orders`
+
+Retorna pedidos incompletos/nao cancelados, ordenados por prazo, com indicadores de atraso.
+
+---
+
+### GET `/api/mapoteca/dashboard/stock_by_location`
+
+Retorna estoque de materiais agregado por localizacao (dados para grafico de pizza).
+
+---
+
+### GET `/api/mapoteca/dashboard/material_consumption`
+
+Retorna consumo mensal total, top 5 materiais mais consumidos e consumo detalhado por material por mes.
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `meses` | integer | 12 | Numero de meses retroativos |
+
+---
+
+### GET `/api/mapoteca/dashboard/plotter_status`
+
+Retorna resumo de status dos plotters (total, ativos, inativos) e lista com data da ultima manutencao e indicador de fim de vida util.
+
+---
+
+## 20. Dashboard do Acervo (Nao Montado)
+
+> **Nota**: Estes endpoints estao definidos em `server/src/dashboard/` mas **nao estao montados** em `routes.js`. Para ativa-los, e necessario importar e registrar o modulo no arquivo de rotas.
+
+Os seguintes endpoints estao definidos como `GET`, sem middleware de autenticacao:
+
+| Endpoint | Descricao |
+|---|---|
+| `/produtos_total` | Total de produtos no acervo |
+| `/arquivos_total_gb` | Total de armazenamento em GB |
+| `/produtos_tipo` | Produtos agrupados por tipo |
+| `/gb_tipo_produto` | GB agrupados por tipo de produto |
+| `/usuarios_total` | Total de usuarios |
+| `/arquivos_dia` | Arquivos carregados por dia |
+| `/downloads_dia` | Downloads por dia |
+| `/gb_volume` | GB por volume de armazenamento |
+| `/ultimos_carregamentos` | Ultimos arquivos carregados |
+| `/ultimas_modificacoes` | Ultimas modificacoes de arquivo |
+| `/ultimos_deletes` | Ultimos arquivos deletados |
+| `/download` | Informacoes gerais de download |
+| `/produto_activity_timeline` | Timeline de atividade de produtos (`?months=12`) |
+| `/version_statistics` | Estatisticas de versoes |
+| `/storage_growth_trends` | Tendencias de crescimento de armazenamento (`?months=12`) |
+| `/project_status_summary` | Resumo de status de projetos |
+| `/user_activity_metrics` | Metricas de atividade de usuarios (`?limit=10`) |
+
+---
+
+## Endpoints Auxiliares
+
+### GET `/logs`
+
+Retorna os logs combinados dos ultimos 3 dias em texto plano. Nao e prefixado com `/api`.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | Nenhuma |
+| **Content-Type** | `text/plain` |
+
+### GET `/api/api_docs`
+
+Interface Swagger UI com documentacao interativa da API.
+
+---
+
+## Resumo de Endpoints por Modulo
+
+| Modulo | Prefixo | Total | Auth Padrao |
+|---|---|---|---|
+| Health Check | `/api/` | 1 | Nenhuma |
+| Login | `/api/login` | 1 | Nenhuma |
+| Acervo | `/api/acervo` | 9 | verifyLogin / verifyAdmin |
+| Arquivo | `/api/arquivo` | 7 | verifyLogin / verifyAdmin |
+| Produtos | `/api/produtos` | 11 | verifyAdmin (maioria) |
+| Projetos | `/api/projetos` | 8 | verifyAdmin (escrita) |
+| Volumes | `/api/volumes` | 8 | verifyAdmin |
+| Usuarios | `/api/usuarios` | 6 | verifyAdmin |
+| Gerencia | `/api/gerencia` | 13 | Nenhuma (dominios) / verifyAdmin |
+| Mapoteca - Dominios | `/api/mapoteca/dominio` | 4 | Nenhuma |
+| Mapoteca - Clientes | `/api/mapoteca/cliente` | 5 | verifyLogin / verifyAdmin |
+| Mapoteca - Pedidos | `/api/mapoteca/pedido` | 6 | verifyLogin / verifyAdmin |
+| Mapoteca - Prod. Pedido | `/api/mapoteca/produto_pedido` | 3 | verifyAdmin |
+| Mapoteca - Plotters | `/api/mapoteca/plotter` | 5 | verifyLogin / verifyAdmin |
+| Mapoteca - Manutencao | `/api/mapoteca/manutencao_plotter` | 4 | verifyLogin / verifyAdmin |
+| Mapoteca - Tipo Material | `/api/mapoteca/tipo_material` | 5 | verifyLogin / verifyAdmin |
+| Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 5 | verifyLogin / verifyAdmin |
+| Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 5 | verifyLogin / verifyAdmin |
+| Dashboard Mapoteca | `/api/mapoteca/dashboard` | 8 | verifyLogin |
+| Dashboard Acervo | *(nao montado)* | 17 | - |
+| **Total (montados)** | | **101** | |

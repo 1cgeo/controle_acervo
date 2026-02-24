@@ -1,2 +1,74 @@
-node_modules
+# Dependencies
+node_modules/
 package-lock.json
+
+# Build outputs
+client/dist/
+client/build/
+client_admin_mapoteca/build/
+client_admin_mapoteca/dist/
+server/src/build/
+
+# Environment and config
+server/config.env
+.env
+.env.*
+!.env.example
+
+# Logs
+server/src/logs/
+*.log
+npm-debug.log*
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Runtime and temp files
+*.pid
+*.seed
+*.pid.lock
+.cache/
+tmp/
+temp/
+
+# PM2
+ecosystem.config.js
+.pm2/
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+vite.config.ts.timestamp-*
+
+# Coverage and testing
+coverage/
+.nyc_output/
+
+# QGIS Plugin
+ferramentas_acervo/__pycache__/
+ferramentas_acervo/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.csr
+
+# Bundle analysis
+stats.html
