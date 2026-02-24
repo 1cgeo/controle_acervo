@@ -9,6 +9,10 @@ models.produtoByIdParams = Joi.object().keys({
   produto_id: Joi.number().integer().strict().required()
 });
 
+models.versaoByIdParams = Joi.object().keys({
+  versao_id: Joi.number().integer().strict().required()
+});
+
 models.arquivosIds = Joi.object().keys({
   arquivos_ids: Joi.array()
     .items(

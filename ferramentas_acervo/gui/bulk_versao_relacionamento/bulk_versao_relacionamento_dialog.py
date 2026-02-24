@@ -74,15 +74,15 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
             # Enviar dados para o servidor
             response = self.api_client.post('produtos/versao_relacionamento', relationships_data)
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 self.statusLabel.setText("Relacionamentos criados com sucesso!")
                 self.setCursor(Qt.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", f"Todos os {len(relationships_data['versao_relacionamento'])} relacionamentos foram criados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
                 error_message = "Falha ao criar relacionamentos"
-                if response and 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
                 self.setCursor(Qt.ArrowCursor)

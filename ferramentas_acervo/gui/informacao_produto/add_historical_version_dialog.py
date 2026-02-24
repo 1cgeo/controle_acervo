@@ -132,13 +132,13 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
             # Enviar requisição
             response = self.api_client.post('produtos/produto_versao_historica', [versao_historica])
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 QMessageBox.information(self, "Sucesso", "Versão histórica adicionada com sucesso!")
                 self.accept()
             else:
                 error_message = "Falha ao adicionar versão histórica"
-                if 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 raise Exception(error_message)
                 
         except Exception as e:

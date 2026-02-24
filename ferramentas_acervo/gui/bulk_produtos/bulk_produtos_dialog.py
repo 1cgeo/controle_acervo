@@ -73,17 +73,17 @@ class BulkCreateProductsDialog(QDialog, FORM_CLASS):
             self.setCursor(Qt.WaitCursor)
             
             # Enviar dados para o servidor
-            response = self.api_client.post('produtos/produto', produtos_data)
+            response = self.api_client.post('produtos/produtos', produtos_data)
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 self.statusLabel.setText("Produtos criados com sucesso!")
                 self.setCursor(Qt.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", f"Todos os {len(produtos_data['produtos'])} produtos foram criados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
                 error_message = "Falha ao criar produtos"
-                if response and 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
                 self.setCursor(Qt.ArrowCursor)

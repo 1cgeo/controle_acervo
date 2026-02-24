@@ -76,15 +76,15 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
             # Enviar dados para o servidor
             response = self.api_client.post('produtos/produto_versao_historica', produtos_versoes_historicas)
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 self.statusLabel.setText("Produtos com versões históricas adicionados com sucesso!")
                 self.setCursor(Qt.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", "Todos os produtos com versões históricas foram adicionados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
                 error_message = "Falha ao adicionar produtos com versões históricas"
-                if response and 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
                 self.setCursor(Qt.ArrowCursor)

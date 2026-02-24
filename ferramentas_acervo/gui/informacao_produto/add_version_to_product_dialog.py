@@ -325,6 +325,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                 # Iniciar threads de transferência
                 self.transfer_threads = []
                 self.arquivos_transferidos = 0
+                self.arquivos_com_falha = 0
                 
                 for arquivo_info in arquivos_info:
                     # Encontrar o arquivo local correspondente
@@ -366,11 +367,25 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
     def file_transfer_complete(self, success, file_path, identifier):
         """Manipula conclusão da transferência de um arquivo."""
         self.arquivos_transferidos += 1
+        if not success:
+            self.arquivos_com_falha += 1
         self.progressBar.setValue(self.arquivos_transferidos)
-        
-        # Se todos os arquivos foram transferidos, confirmar o upload
+
+        # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
         if self.arquivos_transferidos == len(self.transfer_threads):
-            self.confirm_upload()
+            if self.arquivos_com_falha > 0:
+                QMessageBox.critical(
+                    self, "Erro de Transferência",
+                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência. "
+                    "O upload não será confirmado."
+                )
+                self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
+                self.uploadButton.setEnabled(True)
+                self.addFileButton.setEnabled(True)
+                self.removeFileButton.setEnabled(True)
+                self.setCursor(Qt.ArrowCursor)
+            else:
+                self.confirm_upload()
     
     def confirm_upload(self):
         """Confirma o upload após transferência dos arquivos."""
@@ -380,15 +395,15 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             # Enviar confirmação
             response = self.api_client.post('arquivo/confirm-upload', {'session_uuid': self.current_session_uuid})
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 self.statusLabel.setText("Upload concluído com sucesso!")
                 self.setCursor(Qt.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", "Nova versão e arquivos carregados com sucesso!")
                 self.accept()
             else:
                 error_message = "Falha na confirmação do upload"
-                if 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 raise Exception(error_message)
                 
         except Exception as e:

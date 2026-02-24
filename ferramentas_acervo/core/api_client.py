@@ -71,8 +71,8 @@ class APIClient:
             # Tentar extrair mensagem de erro do servidor se disponível
             try:
                 response_json = e.response.json()
-                if "mensagem" in response_json:
-                    error_msg = response_json["mensagem"]
+                if "message" in response_json:
+                    error_msg = response_json["message"]
             except:
                 pass
             self.show_error("Requisição Inválida", f"{error_msg} Verifique as informações e tente novamente.")
@@ -117,3 +117,32 @@ class APIClient:
     def delete(self, endpoint, data=None, params=None):
         """Realiza uma requisição DELETE."""
         return self._make_request('DELETE', endpoint, data=data, params=params)
+
+    def download_file(self, endpoint, dest_path, params=None):
+        """Baixa um arquivo binário do servidor."""
+        if not self.base_url:
+            self.show_error("Erro de Configuração", "URL do servidor não configurada.")
+            return False
+
+        url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+
+        try:
+            response = requests.get(url, headers=headers, params=params, stream=True)
+            response.raise_for_status()
+
+            with open(dest_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+
+        except ConnectionError:
+            self.show_error("Falha na Conexão", "Não foi possível conectar ao servidor.")
+        except Timeout:
+            self.show_error("Tempo Esgotado", "O servidor demorou muito para responder.")
+        except HTTPError as e:
+            self._handle_http_error(e, 'GET')
+        except Exception as e:
+            self.show_error("Erro Inesperado", f"Ocorreu um erro inesperado: {str(e)}")
+
+        return False

@@ -330,6 +330,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         """Inicia a transferência dos arquivos"""
         self.transfer_threads = []
         self.arquivos_transferidos = 0
+        self.arquivos_com_falha = 0
         self.current_session_uuid = session_uuid
         
         layer = self.layerComboBox.currentData()
@@ -378,15 +379,27 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
     def file_transfer_complete(self, success, file_path, checksum):
         """Manipula a conclusão da transferência de um arquivo"""
         self.arquivos_transferidos += 1
+        if not success:
+            self.arquivos_com_falha += 1
         self.progressBar.setValue(self.arquivos_transferidos)
-        
+
         if not success:
             self.statusLabel.setText(f"Erro na transferência de {os.path.basename(file_path)}")
-        
-        # Se todos os arquivos foram transferidos, confirmar o upload
+
+        # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
         if self.arquivos_transferidos == len(self.transfer_threads):
-            self.statusLabel.setText("Todos os arquivos transferidos. Confirmando upload...")
-            self.confirm_upload()
+            if self.arquivos_com_falha > 0:
+                QMessageBox.critical(
+                    self, "Erro de Transferência",
+                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência. "
+                    "O upload não será confirmado."
+                )
+                self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
+                self.setCursor(Qt.ArrowCursor)
+                self.loadButton.setEnabled(True)
+            else:
+                self.statusLabel.setText("Todos os arquivos transferidos. Confirmando upload...")
+                self.confirm_upload()
 
     def confirm_upload(self):
         """Confirma o upload após a transferência de todos os arquivos"""
@@ -394,15 +407,15 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             # Fase 2: Confirmar o upload
             response = self.api_client.post('arquivo/confirm-upload', {'session_uuid': self.current_session_uuid})
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 self.statusLabel.setText("Upload concluído com sucesso!")
                 self.setCursor(Qt.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", "Todos os produtos, versões e arquivos foram carregados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
                 error_message = "Falha na confirmação do upload"
-                if response and 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
                 self.setCursor(Qt.ArrowCursor)
