@@ -1,6 +1,7 @@
 {
   "name": "controle-acervo-server",
   "version": "1.0.0",
+  "description": "API REST do Sistema de Controle do Acervo",
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
@@ -19,27 +20,19 @@
     "axios": "^1.8.2",
     "better-queue": "^3.8.12",
     "bluebird": "^3.7.2",
-    "body-parser": "^1.20.3",
-    "colors": "^1.4.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
-    "documentation": "^14.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "hpp": "^0.2.3",
-    "inquirer": "^12.4.3",
     "joi": "^17.13.3",
-    "jsdoc": "^4.0.4",
     "jsonwebtoken": "^9.0.2",
     "minimist": "^1.2.8",
     "nocache": "^4.0.0",
     "node-cron": "^3.0.3",
-    "nodemon": "^3.1.9",
-    "nunjucks": "^3.2.4",
     "pg-promise": "^11.10.2",
-    "pgtools": "^1.0.1",
     "pm2": "^5.4.3",
     "semver": "^7.7.1",
     "serialize-error": "12.0.0",
@@ -49,6 +42,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
+    "nodemon": "^3.1.9",
     "standard": "^17.1.2"
   }
 }
