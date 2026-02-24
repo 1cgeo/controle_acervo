@@ -72,7 +72,7 @@ PANEL_MAPPING = {
         "admin_only": True
     },
     "Carregar Arquivos Sistemáticos": {
-        "class": LoadSystematicFilesDialog,
+        "class": BulkLoadFilesDialog,
         "category": "Funções de Administrador",
         "admin_only": True
     },

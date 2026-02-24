@@ -59,7 +59,8 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
                 'scale250k': str(self.scale250kCheckBox.isChecked()).lower()
             }
 
-            self.progressBar.setValue(30)
+            self.progressBar.setValue(0)
+            self.progressBar.setMaximum(100)
             self.statusLabel.setText("Baixando arquivos...")
 
             # Criar arquivo temporário para salvar o ZIP
@@ -67,17 +68,23 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             temp_file_path = temp_file.name
             temp_file.close()
 
+            # Callback de progresso do download
+            def on_download_progress(downloaded, total):
+                percent = int((downloaded / total) * 90)  # 0-90% para download
+                self.progressBar.setValue(percent)
+
             # Baixar o arquivo usando o api_client
             success = self.api_client.download_file(
                 'acervo/situacao-geral',
                 temp_file_path,
-                params=params
+                params=params,
+                progress_callback=on_download_progress
             )
 
             if not success:
                 raise Exception("Falha no download do arquivo")
 
-            self.progressBar.setValue(70)
+            self.progressBar.setValue(90)
             self.statusLabel.setText("Extraindo arquivos...")
 
             # Extrair os arquivos
