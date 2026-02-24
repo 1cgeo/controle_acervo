@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Path: gui\arquivos_incorretos\manage_incorrect_files_dialog.ui -->
+<ui version="4.0">
+ <class>ManageIncorrectFilesDialog</class>
+ <widget class="QDialog" name="ManageIncorrectFilesDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Gerenciar Arquivos com Problemas</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="titleLabel">
+     <property name="font">
+      <font>
+       <pointsize>10</pointsize>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>Arquivos com Problemas de Validação</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string>Esta tela exibe todos os arquivos que apresentam problemas de validação no sistema. Isso inclui arquivos com checksum incorreto, arquivos não encontrados no volume de armazenamento, ou outros problemas de consistência.</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignJustify|Qt::AlignVCenter</set>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="filesTable"/>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="paginationLayout">
+     <item>
+      <widget class="QLabel" name="pageSizeLabel">
+       <property name="text">
+        <string>Itens por página:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="pageSizeComboBox"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="firstPageButton">
+       <property name="text">
+        <string>&lt;&lt;</string>
+       </property>
+       <property name="toolTip">
+        <string>Primeira página</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="prevPageButton">
+       <property name="text">
+        <string>&lt;</string>
+       </property>
+       <property name="toolTip">
+        <string>Página anterior</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="pageInfoLabel">
+       <property name="text">
+        <string>Página 1 de 1</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="nextPageButton">
+       <property name="text">
+        <string>&gt;</string>
+       </property>
+       <property name="toolTip">
+        <string>Próxima página</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="lastPageButton">
+       <property name="text">
+        <string>&gt;&gt;</string>
+       </property>
+       <property name="toolTip">
+        <string>Última página</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="refreshButton">
+       <property name="text">
+        <string>Atualizar</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="exportCSVButton">
+       <property name="text">
+        <string>Exportar CSV</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="closeButton">
+       <property name="text">
+        <string>Fechar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

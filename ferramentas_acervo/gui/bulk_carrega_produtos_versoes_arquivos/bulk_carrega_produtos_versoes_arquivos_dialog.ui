@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Path: gui\bulk_carrega_produtos_versoes_arquivos\bulk_carrega_produtos_versoes_arquivos_dialog.ui -->
+<ui version="4.0">
+ <class>LoadProductsDialog</class>
+ <widget class="QDialog" name="LoadProductsDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>700</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Adicionar Produtos Completos</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Adicionar Produtos Completos (Produto + Versões + Arquivos)&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="label_2">
+     <property name="text">
+      <string>Esta ferramenta permite criar produtos completos com várias versões e arquivos. Você deve selecionar uma camada tabular contendo os dados necessários.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox">
+     <property name="title">
+      <string>Seleção de Camada</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QLabel" name="label_3">
+        <property name="text">
+         <string>Camada:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="layerComboBox">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="createModelLayerButton">
+        <property name="text">
+         <string>Criar Camada Modelo</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_2">
+     <property name="title">
+      <string>Requisitos da Camada</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <widget class="QLabel" name="label_4">
+        <property name="text">
+         <string>A camada deve ser uma tabela com os seguintes campos:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string>• produto_grupo_id: Identificador para agrupar versões de um mesmo produto
+• produto_nome: Nome do produto
+• mi: MI do produto (opcional)
+• inom: INOM do produto (opcional)
+• tipo_escala_id: Tipo de escala do produto
+• denominador_escala_especial: Denominador para escala especial (opcional)
+• tipo_produto_id: Tipo de produto
+• descricao_produto: Descrição do produto (opcional)
+• geom: Geometria WKT do produto</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_6">
+        <property name="text">
+         <string>• versao_grupo_id: Identificador para agrupar arquivos de uma mesma versão
+• versao: Número da versão
+• nome_versao: Nome da versão
+• tipo_versao_id: ID do tipo de versão
+• subtipo_produto_id: ID do subtipo de produto
+• lote_id: ID do lote (opcional)
+• descricao_versao: Descrição da versão (opcional)
+• orgao_produtor: Órgão produtor da versão
+• palavras_chave: Lista separada por vírgulas (opcional)
+• data_criacao: Data de criação da versão (formato ISO)
+• data_edicao: Data de edição da versão (formato ISO)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_7">
+        <property name="text">
+         <string>• nome: Nome do arquivo
+• nome_arquivo: Nome do arquivo físico (sem extensão)
+• tipo_arquivo_id: Tipo do arquivo
+• extensao: Extensão do arquivo (obrigatório exceto para tipo 9)
+• path: Caminho completo para o arquivo local
+• situacao_carregamento_id: Status (geralmente 1)
+• descricao_arquivo: Descrição do arquivo (opcional)
+• metadado: Metadados em JSON (opcional)
+• crs_original: CRS original do arquivo (opcional)</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string>Selecione uma camada e clique em Carregar para iniciar o processo.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="loadButton">
+       <property name="minimumSize">
+        <size>
+         <width>120</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Carregar</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="closeButton">
+       <property name="minimumSize">
+        <size>
+         <width>120</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Fechar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>closeButton</sender>
+   <signal>clicked()</signal>
+   <receiver>LoadProductsDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>567</x>
+     <y>399</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>319</x>
+     <y>209</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

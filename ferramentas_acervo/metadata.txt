@@ -1,0 +1,9 @@
+[general]
+name=Ferramentas de Controle do Acervo
+author=Brazilian Army Geographic Service
+qgisMinimumVersion=3.0
+description=Plugin para uso do Sistema de Controle do Acervo
+version=0.9.0
+icon=icons/icon.png
+tags=EDGV, PostGIS, Spatialite, Brazilian, Army, Exército, Brasileiro, DSG, Diretoria, Serviço, Geográfico, BDGEx, Database, Spatial, INDE, Script
+; end of mandatory metadata
