@@ -240,22 +240,23 @@ Estes endpoints existem no backend mas nao sao chamados pelo plugin. Muitos sao 
 
 | Endpoint | Modulo | Usado por |
 |---|---|---|
-| `GET /api/gerencia/dominio/tipo_posto_grad` | Gerencia | Apenas client web |
-| `GET /api/produtos/versao_relacionamento` | Produtos | Apenas client web |
-| `PUT /api/produtos/versao_relacionamento` | Produtos | Apenas client web |
-| `PUT /api/usuarios/:uuid` | Usuarios | Apenas client web |
+| `GET /api/gerencia/dominio/tipo_posto_grad` | Gerencia | Apenas client web, verificar para adicionar no plugin se for o caso |
+| `GET /api/produtos/versao_relacionamento` | Produtos | Apenas client web, verificar para adicionar no plugin se for o caso |
+| `PUT /api/produtos/versao_relacionamento` | Produtos | Apenas client web, verificar para adicionar no plugin se for o caso |
+| `PUT /api/usuarios/:uuid` | Usuarios | Apenas client web, verificar para adicionar no plugin se for o cas |
+
 
 ### 4.2 Dashboard do Acervo (17 endpoints - nao montados)
 
-O modulo `server/src/dashboard/` contem 17 endpoints de dashboard mas **nao estao montados** em `routes.js`. Nao sao utilizados por nenhum cliente.
+O modulo `server/src/dashboard/` contem 17 endpoints de dashboard mas **nao estao montados** em `routes.js`. Nao sao utilizados por nenhum cliente. Não há previsão de adicionar no plugin.
 
 ### 4.3 Mapoteca (42 endpoints)
 
-Todos os endpoints da mapoteca (`/api/mapoteca/*`) sao utilizados exclusivamente pelo `client_admin_mapoteca/` (React). O plugin QGIS nao interage com a mapoteca.
+Todos os endpoints da mapoteca (`/api/mapoteca/*`) sao utilizados exclusivamente pelo `client_admin_mapoteca/` (React). O plugin QGIS nao interage com a mapoteca. Não há previsão de adicionar no plugin.
 
 ### 4.4 Dashboard da Mapoteca (8 endpoints)
 
-Todos os endpoints em `/api/mapoteca/dashboard/*` sao exclusivos do `client_admin_mapoteca/`.
+Todos os endpoints em `/api/mapoteca/dashboard/*` sao exclusivos do `client_admin_mapoteca/`. Não há previsão de adicionar no plugin.
 
 ---
 
@@ -288,13 +289,3 @@ Todos os endpoints em `/api/mapoteca/dashboard/*` sao exclusivos do `client_admi
 | 11 | Atualizacao individual de usuario (PUT /usuarios/:uuid) | Plugin usa atualizacao em lote |
 
 ---
-
-## 6. Estatisticas
-
-| Metrica | Valor |
-|---|---|
-| Total de chamadas unicas do plugin | ~45 |
-| Chamadas com match correto no backend | 40 |
-| Bugs criticos de integracao | 5 |
-| Endpoints do backend usados pelo plugin | ~40 de 101 montados |
-| Endpoints exclusivos dos clientes web | ~61 |

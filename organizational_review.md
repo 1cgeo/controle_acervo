@@ -196,41 +196,9 @@ Os subdiretorios sob `gui/` podem precisar de `__init__.py` para imports relativ
 
 Separacao clara por dominio (`acervo.sql`, `mapoteca.sql`, `dominio.sql`, `dgeo.sql`) com ordem de execucao documentada.
 
-### 6.2 Sem Sistema de Migracoes
-
-Os arquivos em `er/` sao schemas iniciais. Nao ha:
-- Numeracao de migracoes (001_initial.sql, 002_add_field.sql)
-- Tabela de controle de migracoes aplicadas
-- Scripts de rollback
-- Ferramenta de migracao (db-migrate, flyway, knex migrations)
-
-Para um sistema em producao, alteracoes de schema sao feitas manualmente, sem rastreabilidade.
-
 ---
 
-## 7. Documentacao
-
-### 7.1 O que Existe
-
-| Documento | Conteudo | Qualidade |
-|---|---|---|
-| `CLAUDE.md` | Guia tecnico completo (400+ linhas) | Excelente |
-| `api_documentation.md` | Documentacao de todos os endpoints (35 KB) | Excelente |
-| `README.md` | 11 linhas, apenas nome e dependencias | Insuficiente |
-| Swagger (`/api/api_docs`) | Documentacao interativa da API | Bom |
-
-### 7.2 O que Falta
-
-- **README.md** substancial (o conteudo de CLAUDE.md deveria alimentar o README)
-- Guia de deploy/operacoes (PM2, nginx, SSL, backup)
-- Guia do usuario para o plugin QGIS
-- Guia de contribuicao
-- Diagrama de arquitetura mostrando como os 4 componentes se conectam
-- Documentacao de migracao de schema
-
----
-
-## 8. Recomendacoes Priorizadas
+## 7. Recomendacoes Priorizadas
 
 ### Prioridade Alta (bugs e riscos)
 
