@@ -170,4 +170,8 @@ models.confirmUpload = Joi.object().keys({
   session_uuid: Joi.string().uuid().required()
 });
 
+models.cancelUpload = Joi.object().keys({
+  session_uuid: Joi.string().uuid().required()
+});
+
 module.exports = models

@@ -10,7 +10,9 @@ const {
   DB_PASSWORD,
   DB_SERVER,
   DB_PORT,
-  DB_NAME
+  DB_NAME,
+  DB_USER_READONLY,
+  DB_PASSWORD_READONLY
 } = require('../config')
 
 const controller = {};
@@ -40,8 +42,8 @@ controller.getProdutosLayer = async () => {
       nome_db: DB_NAME,
       servidor: DB_SERVER,
       porta: DB_PORT,
-      login: DB_USER,
-      senha: DB_PASSWORD,
+      login: DB_USER_READONLY || DB_USER,
+      senha: DB_PASSWORD_READONLY || DB_PASSWORD,
       schema: 'acervo'
     };
 
@@ -126,8 +128,8 @@ controller.getProdutoDetailedById = async produtoId => {
         p.geom
       FROM acervo.produto p
       INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-      INNER JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
-      INNER JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
+      LEFT JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
+      LEFT JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
       WHERE p.id = $1
     `, [produtoId]);
 
@@ -217,7 +219,7 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
     { name: "expiration_time", mod: ":raw", init: () => "NOW() + INTERVAL '24 hours'" }
   ]);
 
-  const usuario = await db.oneOrNone(
+  const usuario = await db.conn.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<uuid>",
     { uuid: usuarioUuid }
   );
@@ -329,7 +331,7 @@ controller.confirmDownload = async (downloadConfirmations) => {
 };
 
 controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuarioUuid) => {
-  const usuario = await db.oneOrNone(
+  const usuario = await db.conn.oneOrNone(
     "SELECT uuid FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
     { usuarioUuid }
   );
@@ -573,5 +575,73 @@ async function generateGeoJSONForScale(scaleId) {
     features: features
   };
 }
+
+controller.buscaProdutos = async (termo, tipoProdutoId, tipoEscalaId, projetoId, loteId, page, limit) => {
+  return db.conn.task(async t => {
+    const conditions = [];
+    const params = {};
+
+    if (termo) {
+      conditions.push(`(p.nome ILIKE $<termo> OR p.mi ILIKE $<termo> OR p.inom ILIKE $<termo>)`);
+      params.termo = `%${termo}%`;
+    }
+    if (tipoProdutoId) {
+      conditions.push(`p.tipo_produto_id = $<tipoProdutoId>`);
+      params.tipoProdutoId = tipoProdutoId;
+    }
+    if (tipoEscalaId) {
+      conditions.push(`p.tipo_escala_id = $<tipoEscalaId>`);
+      params.tipoEscalaId = tipoEscalaId;
+    }
+    if (projetoId || loteId) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM acervo.versao v2
+        LEFT JOIN acervo.lote l2 ON v2.lote_id = l2.id
+        WHERE v2.produto_id = p.id
+        ${projetoId ? 'AND l2.projeto_id = $<projetoId>' : ''}
+        ${loteId ? 'AND v2.lote_id = $<loteId>' : ''}
+      )`);
+      if (projetoId) params.projetoId = projetoId;
+      if (loteId) params.loteId = loteId;
+    }
+
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const offset = (page - 1) * limit;
+    params.limit = limit;
+    params.offset = offset;
+
+    const countResult = await t.one(
+      `SELECT COUNT(*) FROM acervo.produto p ${whereClause}`,
+      params
+    );
+
+    const produtos = await t.any(
+      `SELECT
+        p.id, p.nome, p.mi, p.inom,
+        te.nome AS escala, p.tipo_escala_id,
+        tp.nome AS tipo_produto, p.tipo_produto_id,
+        p.denominador_escala_especial, p.descricao,
+        p.data_cadastramento, p.data_modificacao,
+        COUNT(DISTINCT v.id) AS num_versoes
+      FROM acervo.produto p
+      INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+      INNER JOIN dominio.tipo_produto tp ON tp.code = p.tipo_produto_id
+      LEFT JOIN acervo.versao v ON v.produto_id = p.id
+      ${whereClause}
+      GROUP BY p.id, te.nome, tp.nome
+      ORDER BY p.nome, p.mi
+      LIMIT $<limit> OFFSET $<offset>`,
+      params
+    );
+
+    return {
+      total: parseInt(countResult.count),
+      page,
+      limit,
+      dados: produtos
+    };
+  });
+};
 
 module.exports = controller;

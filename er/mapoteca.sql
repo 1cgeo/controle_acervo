@@ -109,7 +109,7 @@ CREATE TABLE mapoteca.plotter(
 	nr_serie VARCHAR(255) NOT NULL,
     modelo VARCHAR(255) NOT NULL,
     data_aquisicao DATE,
-    vida_util INTEGER;
+    vida_util INTEGER
 );
 
 CREATE TABLE mapoteca.manutencao_plotter (

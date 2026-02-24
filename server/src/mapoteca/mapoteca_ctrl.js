@@ -1277,4 +1277,48 @@ controller.deleteConsumoMaterial = async (consumoMaterialIds) => {
   });
 };
 
+controller.getManutencaoPlotterById = async (id) => {
+  return db.conn.one(
+    `SELECT mp.id, mp.plotter_id, mp.data_manutencao, mp.valor, mp.descricao,
+      mp.data_cadastramento, mp.usuario_cadastramento_id,
+      p.modelo AS plotter_modelo, p.nr_serie AS plotter_nr_serie,
+      u.nome AS usuario_nome
+    FROM mapoteca.manutencao_plotter mp
+    INNER JOIN mapoteca.plotter p ON p.id = mp.plotter_id
+    LEFT JOIN dgeo.usuario u ON u.id = mp.usuario_cadastramento_id
+    WHERE mp.id = $1`,
+    [id]
+  );
+};
+
+controller.getConsumoMaterialById = async (id) => {
+  return db.conn.one(
+    `SELECT cm.id, cm.tipo_material_id, cm.quantidade, cm.data_consumo,
+      cm.data_cadastramento, cm.usuario_cadastramento_id,
+      tm.nome AS tipo_material_nome,
+      u.nome AS usuario_nome
+    FROM mapoteca.consumo_material cm
+    INNER JOIN mapoteca.tipo_material tm ON tm.id = cm.tipo_material_id
+    LEFT JOIN dgeo.usuario u ON u.id = cm.usuario_cadastramento_id
+    WHERE cm.id = $1`,
+    [id]
+  );
+};
+
+controller.getEstoqueMaterialById = async (id) => {
+  return db.conn.one(
+    `SELECT em.id, em.tipo_material_id, em.quantidade, em.localizacao_id,
+      em.data_cadastramento, em.usuario_cadastramento_id,
+      tm.nome AS tipo_material_nome,
+      tl.nome AS localizacao_nome,
+      u.nome AS usuario_nome
+    FROM mapoteca.estoque_material em
+    INNER JOIN mapoteca.tipo_material tm ON tm.id = em.tipo_material_id
+    INNER JOIN mapoteca.tipo_localizacao tl ON tl.code = em.localizacao_id
+    LEFT JOIN dgeo.usuario u ON u.id = em.usuario_cadastramento_id
+    WHERE em.id = $1`,
+    [id]
+  );
+};
+
 module.exports = controller;

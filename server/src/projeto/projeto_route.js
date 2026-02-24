@@ -5,7 +5,7 @@ const express = require("express");
 
 const { schemaValidation, asyncHandler, httpCode } = require("../utils");
 
-const { verifyAdmin } = require("../login");
+const { verifyLogin, verifyAdmin } = require("../login");
 
 const projetoCtrl = require("./projeto_ctrl");
 const projetoSchema = require("./projeto_schema");
@@ -14,6 +14,7 @@ const router = express.Router();
 
 router.get(
   '/projeto',
+  verifyLogin,
   asyncHandler(async (req, res, next) => {
     const dados = await projetoCtrl.getProjetos();
 
@@ -64,6 +65,7 @@ router.delete(
 
 router.get(
   '/lote',
+  verifyLogin,
   asyncHandler(async (req, res, next) => {
     const dados = await projetoCtrl.getLotes();
 

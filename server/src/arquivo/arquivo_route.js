@@ -107,4 +107,31 @@ router.get(
 );
 
 
+router.get(
+  '/upload-sessions',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.getUploadSessions();
+
+    const msg = 'Sessões de upload retornadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.post(
+  '/cancel-upload',
+  verifyLogin,
+  schemaValidation({
+    body: arquivoSchema.cancelUpload
+  }),
+  asyncHandler(async (req, res, next) => {
+    await arquivoCtrl.cancelUpload(req.body.session_uuid, req.usuarioUuid);
+
+    const msg = 'Sessão de upload cancelada com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
 module.exports = router

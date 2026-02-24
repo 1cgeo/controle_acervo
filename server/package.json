@@ -7,7 +7,12 @@
     "dev": "nodemon src/index.js",
     "dev-https": "nodemon src/index.js --https",
     "production": "pm2 start src/index.js --name controle-acervo",
-    "production-https": "pm2 start src/index.js --name controle-acervo-https -- --https"
+    "production-https": "pm2 start src/index.js --name controle-acervo-https -- --https",
+    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:unit": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=unit",
+    "test:integration": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=integration --runInBand",
+    "test:routes": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=routes --runInBand",
+    "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --coverage"
   },
   "nodemonConfig": {
     "ignore": [
@@ -17,32 +22,36 @@
   "license": "MIT",
   "dependencies": {
     "archiver": "^7.0.1",
-    "axios": "^1.8.2",
+    "axios": "^1.13.5",
     "better-queue": "^3.8.12",
     "bluebird": "^3.7.2",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "date-fns": "^4.1.0",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
-    "helmet": "^8.0.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "hpp": "^0.2.3",
-    "joi": "^17.13.3",
-    "jsonwebtoken": "^9.0.2",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3",
     "minimist": "^1.2.8",
     "nocache": "^4.0.0",
-    "node-cron": "^3.0.3",
-    "pg-promise": "^11.10.2",
-    "pm2": "^5.4.3",
-    "semver": "^7.7.1",
-    "serialize-error": "12.0.0",
+    "node-cron": "^4.2.1",
+    "pg-promise": "^12.6.1",
+    "pm2": "^6.0.14",
+    "semver": "^7.7.4",
+    "serialize-error": "13.0.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "winston": "^3.17.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9",
-    "standard": "^17.1.2"
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.14",
+    "standard": "^17.1.2",
+    "supertest": "^7.2.2"
   }
 }

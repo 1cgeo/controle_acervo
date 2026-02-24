@@ -113,6 +113,7 @@ router.post(
 
 router.get(
   '/versao_relacionamento',
+  verifyLogin,
   asyncHandler(async (req, res, next) => {
     const dados = await produtoCtrl.getVersaoRelacionamento();
 

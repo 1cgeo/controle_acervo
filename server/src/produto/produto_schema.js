@@ -13,7 +13,8 @@ models.produtoAtualizacao = Joi.object().keys({
   tipo_escala_id: Joi.number().integer().strict().required(),
   denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
   tipo_produto_id: Joi.number().integer().strict().required(),
-  descricao: Joi.string().allow('').required()
+  descricao: Joi.string().allow('').required(),
+  geom: Joi.string().allow(null)
 })
 
 models.versaoAtualizacao = Joi.object().keys({
@@ -91,6 +92,7 @@ models.versoesHistoricas = Joi.array().items(
     versao: Joi.string().required(),
     nome: Joi.string().allow(null).required(),  
     produto_id: Joi.number().integer().strict().required(),
+    subtipo_produto_id: Joi.number().integer().strict().required(),
     lote_id: Joi.number().integer().strict().allow(null).required(),
     metadado: Joi.object().required(),
     descricao: Joi.string().allow('').required(),
@@ -118,6 +120,7 @@ models.produtosVersoesHistoricas = Joi.array().items(
         uuid_versao: Joi.string().uuid().allow(null).required(),
         versao: Joi.string().required(),
         nome: Joi.string().allow(null).required(),
+        subtipo_produto_id: Joi.number().integer().strict().required(),
         lote_id: Joi.number().integer().strict().allow(null).required(),
         metadado: Joi.object().required(),
         descricao: Joi.string().allow('').required(),

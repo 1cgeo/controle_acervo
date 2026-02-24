@@ -222,6 +222,7 @@ CREATE TABLE acervo.download(
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     download_token UUID NOT NULL DEFAULT uuid_generate_v4(),
     expiration_time TIMESTAMP WITH TIME ZONE,
+    error_message TEXT,
     data_download TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

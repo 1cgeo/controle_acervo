@@ -18,7 +18,7 @@ const verifyLogin = asyncHandler(async (req, res, next) => {
   req.administrador = decoded.administrador || false;
   
   // Verificação de segurança expandida - verifica em params, body e query
-  const requestedUuid = req.params.usuario_uuid || req.body.usuario_uuid || req.query.usuario_uuid;
+  const requestedUuid = (req.params && req.params.usuario_uuid) || (req.body && req.body.usuario_uuid) || (req.query && req.query.usuario_uuid);
   
   if (requestedUuid && decoded.uuid !== requestedUuid && !decoded.administrador) {
     throw new AppError(

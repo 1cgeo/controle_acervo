@@ -175,4 +175,22 @@ router.get(
   })
 )
 
+router.get(
+  '/downloads_deletados',
+  verifyAdmin,
+  schemaValidation({
+    query: gerenciaSchema.paginationParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await gerenciaCtrl.getDownloadsDeletados(
+      req.query.page || 1,
+      req.query.limit || 20
+    );
+
+    const msg = 'Downloads deletados retornados com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 module.exports = router

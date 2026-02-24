@@ -305,6 +305,19 @@ router.get(
   })
 )
 
+router.get(
+  '/manutencao_plotter/:id',
+  verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.manutencaoPlotterId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getManutencaoPlotterById(req.params.id)
+    const msg = 'Manutenção de plotter retornada com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.post(
   '/manutencao_plotter',
   verifyAdmin,
@@ -426,6 +439,19 @@ router.get(
   })
 )
 
+router.get(
+  '/estoque_material/:id',
+  verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.estoqueMaterialId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getEstoqueMaterialById(req.params.id)
+    const msg = 'Estoque de material retornado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.post(
   '/estoque_material',
   verifyAdmin,
@@ -469,6 +495,9 @@ router.delete(
 router.get(
   '/consumo_material',
   verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.consumoMaterialFiltro
+  }),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getConsumoMaterial(req.query)
     const msg = 'Registros de consumo retornados com sucesso'
@@ -483,6 +512,19 @@ router.get(
     const ano = req.query.ano ? parseInt(req.query.ano) : new Date().getFullYear()
     const dados = await mapotecaCtrl.getConsumoMensalPorTipo(ano)
     const msg = 'Consumo mensal por tipo de material retornado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/consumo_material/:id',
+  verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.consumoMaterialId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getConsumoMaterialById(req.params.id)
+    const msg = 'Consumo de material retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )

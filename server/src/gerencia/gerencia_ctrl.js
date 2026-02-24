@@ -413,4 +413,36 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
   });
 };
 
+controller.getDownloadsDeletados = async (page, limit) => {
+  return db.conn.task(async t => {
+    const offset = (page - 1) * limit;
+
+    const countResult = await t.one(
+      `SELECT COUNT(*) FROM acervo.download_deletado`
+    );
+
+    const downloads = await t.any(
+      `SELECT
+        dd.id, dd.arquivo_deletado_id, dd.usuario_uuid,
+        dd.data_download,
+        u.nome AS usuario_nome,
+        ad.nome AS arquivo_nome, ad.nome_arquivo,
+        ad.motivo_exclusao, ad.data_delete
+      FROM acervo.download_deletado dd
+      LEFT JOIN dgeo.usuario u ON u.uuid = dd.usuario_uuid
+      LEFT JOIN acervo.arquivo_deletado ad ON ad.id = dd.arquivo_deletado_id
+      ORDER BY dd.data_download DESC
+      LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    return {
+      total: parseInt(countResult.count),
+      page,
+      limit,
+      dados: downloads
+    };
+  });
+};
+
 module.exports = controller;

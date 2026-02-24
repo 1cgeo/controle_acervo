@@ -12,16 +12,29 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
     produto.data_modificacao = new Date()
     produto.usuario_modificacao_uuid = usuarioUuid
 
-    const colunasProduto = [
-      'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial',
-      'tipo_produto_id', 'descricao',
-      'data_modificacao', 'usuario_modificacao_uuid'
-    ]
+    if (produto.geom) {
+      // Atualizar com geometria usando query parametrizada
+      await t.none(`
+        UPDATE acervo.produto SET
+          nome = $2, mi = $3, inom = $4, tipo_escala_id = $5,
+          denominador_escala_especial = $6, tipo_produto_id = $7, descricao = $8,
+          geom = ST_GeomFromEWKT($9), data_modificacao = $10, usuario_modificacao_uuid = $11
+        WHERE id = $1
+      `, [produto.id, produto.nome, produto.mi, produto.inom, produto.tipo_escala_id,
+          produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao,
+          produto.geom, produto.data_modificacao, produto.usuario_modificacao_uuid])
+    } else {
+      const colunasProduto = [
+        'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial',
+        'tipo_produto_id', 'descricao',
+        'data_modificacao', 'usuario_modificacao_uuid'
+      ]
 
-    const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
-    const query = db.pgp.helpers.update(produto, cs) + ' WHERE id = $1'
+      const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
+      const query = db.pgp.helpers.update(produto, cs) + ' WHERE id = $1'
 
-    await t.none(query, [produto.id])
+      await t.none(query, [produto.id])
+    }
 
     await refreshViews.atualizarViewsPorProdutos(t, [produto.id])
   })
@@ -160,6 +173,33 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       const existingIds = existingVersions.map(v => v.id);
       const missingIds = versaoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`As seguintes versões não foram encontradas: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    // Verificar se alguma versão possui versões posteriores que dependem dela (formato X-SIGLA)
+    for (let id of versaoIds) {
+      const versao = await t.one('SELECT * FROM acervo.versao WHERE id = $1', [id]);
+
+      // Verificar formato novo "X-SIGLA"
+      const match = versao.versao.match(/^(\d+)-([A-Z]{1,5})$/);
+      if (match) {
+        const versionNumber = parseInt(match[1]);
+        const acronym = match[2];
+        const nextVersion = `${versionNumber + 1}-${acronym}`;
+
+        // Verificar se existe versão posterior que depende desta
+        const dependente = await t.oneOrNone(
+          `SELECT id FROM acervo.versao
+           WHERE produto_id = $1 AND versao = $2 AND id NOT IN ($3:csv)`,
+          [versao.produto_id, nextVersion, versaoIds]
+        );
+
+        if (dependente) {
+          throw new AppError(
+            `Não é possível excluir a versão "${versao.versao}" pois a versão "${nextVersion}" depende dela. Exclua as versões posteriores primeiro.`,
+            httpCode.BadRequest
+          );
+        }
+      }
     }
 
     for (let id of versaoIds) {
@@ -311,182 +351,160 @@ async function verificaCicloRelacionamento(t, versaoId1, versaoId2, tipoRelacion
   return await dfs(versaoId2);
 }
 
-controller.criaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
-  versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
-
+controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid) => {
   return db.conn.tx(async t => {
-    // Verificar se as versões existem
-    const versao1 = await t.oneOrNone(
-      'SELECT id, produto_id FROM acervo.versao WHERE id = $1',
-      [versaoRelacionamento.versao_id_1]
-    );
-    
-    const versao2 = await t.oneOrNone(
-      'SELECT id, produto_id FROM acervo.versao WHERE id = $1',
-      [versaoRelacionamento.versao_id_2]
-    );
-    
-    if (!versao1 || !versao2) {
-      throw new AppError('Uma ou ambas as versões não foram encontradas', httpCode.NotFound);
-    }
-    
-    // Verificar se o relacionamento já existe
-    const relacionamentoExistente = await t.oneOrNone(
-      `SELECT id FROM acervo.versao_relacionamento 
-       WHERE ((versao_id_1 = $1 AND versao_id_2 = $2) OR (versao_id_1 = $2 AND versao_id_2 = $1))
-       AND tipo_relacionamento_id = $3`,
-      [versaoRelacionamento.versao_id_1, versaoRelacionamento.versao_id_2, versaoRelacionamento.tipo_relacionamento_id]
-    );
-    
-    if (relacionamentoExistente) {
-      throw new AppError('Este relacionamento já existe entre estas versões', httpCode.Conflict);
-    }
-    
-    // Verificar auto-relacionamento
-    if (versaoRelacionamento.versao_id_1 === versaoRelacionamento.versao_id_2) {
-      throw new AppError('Uma versão não pode ter relacionamento consigo mesma', httpCode.BadRequest);
-    }
-    
-    // Verificar ciclos para relacionamentos do tipo "Insumo" (tipo 1)
-    if (versaoRelacionamento.tipo_relacionamento_id === 1) {
-      const temCiclo = await verificaCicloRelacionamento(
-        t, 
-        versaoRelacionamento.versao_id_1, 
-        versaoRelacionamento.versao_id_2,
-        versaoRelacionamento.tipo_relacionamento_id
-      );
-      
-      if (temCiclo) {
-        throw new AppError(
-          'Este relacionamento criaria um ciclo de dependências', 
-          httpCode.BadRequest
-        );
-      }
-    }
-    
-    const cs = new db.pgp.helpers.ColumnSet([
-      'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
-    ]);
+    for (const item of versaoRelacionamentos) {
+      item.usuario_relacionamento_uuid = usuarioUuid;
 
-    const query = db.pgp.helpers.insert(versaoRelacionamento, cs, {
-      table: 'versao_relacionamento',
-      schema: 'acervo'
-    });
-
-    await t.none(query);
-  });
-};
-
-controller.atualizaVersaoRelacionamento = async (versaoRelacionamento, usuarioUuid) => {
-  versaoRelacionamento.usuario_relacionamento_uuid = usuarioUuid;
-
-  return db.conn.tx(async t => {
-    // Verificar se o relacionamento existe
-    const relacionamentoAtual = await t.oneOrNone(
-      'SELECT * FROM acervo.versao_relacionamento WHERE id = $1',
-      [versaoRelacionamento.id]
-    );
-    
-    if (!relacionamentoAtual) {
-      throw new AppError('Relacionamento não encontrado', httpCode.NotFound);
-    }
-    
-    // Se estiver mudando as versões ou tipo, fazer as mesmas validações
-    if (relacionamentoAtual.versao_id_1 !== versaoRelacionamento.versao_id_1 ||
-        relacionamentoAtual.versao_id_2 !== versaoRelacionamento.versao_id_2 ||
-        relacionamentoAtual.tipo_relacionamento_id !== versaoRelacionamento.tipo_relacionamento_id) {
-      
       // Verificar se as versões existem
       const versao1 = await t.oneOrNone(
-        'SELECT id FROM acervo.versao WHERE id = $1',
-        [versaoRelacionamento.versao_id_1]
+        'SELECT id, produto_id FROM acervo.versao WHERE id = $1',
+        [item.versao_id_1]
       );
-      
+
       const versao2 = await t.oneOrNone(
-        'SELECT id FROM acervo.versao WHERE id = $1',
-        [versaoRelacionamento.versao_id_2]
+        'SELECT id, produto_id FROM acervo.versao WHERE id = $1',
+        [item.versao_id_2]
       );
-      
+
       if (!versao1 || !versao2) {
         throw new AppError('Uma ou ambas as versões não foram encontradas', httpCode.NotFound);
       }
-      
-      // Verificar se o novo relacionamento já existe
+
+      // Verificar se o relacionamento já existe
       const relacionamentoExistente = await t.oneOrNone(
-        `SELECT id FROM acervo.versao_relacionamento 
+        `SELECT id FROM acervo.versao_relacionamento
          WHERE ((versao_id_1 = $1 AND versao_id_2 = $2) OR (versao_id_1 = $2 AND versao_id_2 = $1))
-         AND tipo_relacionamento_id = $3
-         AND id != $4`,
-        [versaoRelacionamento.versao_id_1, versaoRelacionamento.versao_id_2, 
-         versaoRelacionamento.tipo_relacionamento_id, versaoRelacionamento.id]
+         AND tipo_relacionamento_id = $3`,
+        [item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id]
       );
-      
+
       if (relacionamentoExistente) {
-        throw new AppError('Este relacionamento já existe entre estas versões', httpCode.Conflict);
+        throw new AppError(`Relacionamento já existe entre as versões ${item.versao_id_1} e ${item.versao_id_2}`, httpCode.Conflict);
       }
-      
+
       // Verificar auto-relacionamento
-      if (versaoRelacionamento.versao_id_1 === versaoRelacionamento.versao_id_2) {
+      if (item.versao_id_1 === item.versao_id_2) {
         throw new AppError('Uma versão não pode ter relacionamento consigo mesma', httpCode.BadRequest);
       }
-      
+
       // Verificar ciclos para relacionamentos do tipo "Insumo" (tipo 1)
-      if (versaoRelacionamento.tipo_relacionamento_id === 1) {
-        // Temporariamente remover o relacionamento atual para verificar ciclos
-        await t.none('DELETE FROM acervo.versao_relacionamento WHERE id = $1', [versaoRelacionamento.id]);
-        
+      if (item.tipo_relacionamento_id === 1) {
         const temCiclo = await verificaCicloRelacionamento(
-          t, 
-          versaoRelacionamento.versao_id_1, 
-          versaoRelacionamento.versao_id_2,
-          versaoRelacionamento.tipo_relacionamento_id
+          t, item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id
         );
-        
-        // Restaurar o relacionamento se houver ciclo
+
         if (temCiclo) {
+          throw new AppError('Este relacionamento criaria um ciclo de dependências', httpCode.BadRequest);
+        }
+      }
+
+      const cs = new db.pgp.helpers.ColumnSet([
+        'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
+      ]);
+
+      const query = db.pgp.helpers.insert(item, cs, {
+        table: 'versao_relacionamento',
+        schema: 'acervo'
+      });
+
+      await t.none(query);
+    }
+  });
+};
+
+controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    for (const item of versaoRelacionamentos) {
+      item.usuario_relacionamento_uuid = usuarioUuid;
+
+      // Verificar se o relacionamento existe
+      const relacionamentoAtual = await t.oneOrNone(
+        'SELECT * FROM acervo.versao_relacionamento WHERE id = $1',
+        [item.id]
+      );
+
+      if (!relacionamentoAtual) {
+        throw new AppError(`Relacionamento ${item.id} não encontrado`, httpCode.NotFound);
+      }
+
+      // Se estiver mudando as versões ou tipo, fazer as mesmas validações
+      if (relacionamentoAtual.versao_id_1 !== item.versao_id_1 ||
+          relacionamentoAtual.versao_id_2 !== item.versao_id_2 ||
+          relacionamentoAtual.tipo_relacionamento_id !== item.tipo_relacionamento_id) {
+
+        // Verificar se as versões existem
+        const versao1 = await t.oneOrNone(
+          'SELECT id FROM acervo.versao WHERE id = $1',
+          [item.versao_id_1]
+        );
+
+        const versao2 = await t.oneOrNone(
+          'SELECT id FROM acervo.versao WHERE id = $1',
+          [item.versao_id_2]
+        );
+
+        if (!versao1 || !versao2) {
+          throw new AppError('Uma ou ambas as versões não foram encontradas', httpCode.NotFound);
+        }
+
+        // Verificar se o novo relacionamento já existe
+        const relacionamentoExistente = await t.oneOrNone(
+          `SELECT id FROM acervo.versao_relacionamento
+           WHERE ((versao_id_1 = $1 AND versao_id_2 = $2) OR (versao_id_1 = $2 AND versao_id_2 = $1))
+           AND tipo_relacionamento_id = $3
+           AND id != $4`,
+          [item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id, item.id]
+        );
+
+        if (relacionamentoExistente) {
+          throw new AppError(`Relacionamento já existe entre as versões ${item.versao_id_1} e ${item.versao_id_2}`, httpCode.Conflict);
+        }
+
+        // Verificar auto-relacionamento
+        if (item.versao_id_1 === item.versao_id_2) {
+          throw new AppError('Uma versão não pode ter relacionamento consigo mesma', httpCode.BadRequest);
+        }
+
+        // Verificar ciclos para relacionamentos do tipo "Insumo" (tipo 1)
+        if (item.tipo_relacionamento_id === 1) {
+          // Temporariamente remover o relacionamento atual para verificar ciclos
+          await t.none('DELETE FROM acervo.versao_relacionamento WHERE id = $1', [item.id]);
+
+          const temCiclo = await verificaCicloRelacionamento(
+            t, item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id
+          );
+
+          // Restaurar o relacionamento
           await t.none(
-            `INSERT INTO acervo.versao_relacionamento 
+            `INSERT INTO acervo.versao_relacionamento
              (id, versao_id_1, versao_id_2, tipo_relacionamento_id, usuario_relacionamento_uuid, data_relacionamento)
              VALUES ($1, $2, $3, $4, $5, $6)`,
             [relacionamentoAtual.id, relacionamentoAtual.versao_id_1, relacionamentoAtual.versao_id_2,
              relacionamentoAtual.tipo_relacionamento_id, relacionamentoAtual.usuario_relacionamento_uuid,
              relacionamentoAtual.data_relacionamento]
           );
-          
-          throw new AppError(
-            'Este relacionamento criaria um ciclo de dependências', 
-            httpCode.BadRequest
-          );
+
+          if (temCiclo) {
+            throw new AppError('Este relacionamento criaria um ciclo de dependências', httpCode.BadRequest);
+          }
         }
-        
-        // Restaurar o relacionamento para ser atualizado
-        await t.none(
-          `INSERT INTO acervo.versao_relacionamento 
-           (id, versao_id_1, versao_id_2, tipo_relacionamento_id, usuario_relacionamento_uuid, data_relacionamento)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [relacionamentoAtual.id, relacionamentoAtual.versao_id_1, relacionamentoAtual.versao_id_2,
-           relacionamentoAtual.tipo_relacionamento_id, relacionamentoAtual.usuario_relacionamento_uuid,
-           relacionamentoAtual.data_relacionamento]
-        );
       }
+
+      const cs = new db.pgp.helpers.ColumnSet([
+        'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
+      ]);
+
+      const query =
+        db.pgp.helpers.update(
+          item,
+          cs,
+          { table: 'versao_relacionamento', schema: 'acervo' },
+          { tableAlias: 'X', valueAlias: 'Y' }
+        ) + ' WHERE Y.id = X.id';
+
+      await t.none(query);
     }
-    
-    const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
-    ]);
-
-    const query =
-      db.pgp.helpers.update(
-        versaoRelacionamento,
-        cs,
-        { table: 'versao_relacionamento', schema: 'acervo' },
-        {
-          tableAlias: 'X',
-          valueAlias: 'Y'
-        }
-      ) + ' WHERE Y.id = X.id';
-
-    await t.none(query);
   });
 };
 
@@ -526,8 +544,6 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
     };
   });
 
-  const versoesId = versoes.map(versao => versao.id)
-
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
@@ -536,11 +552,14 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
       'data_cadastramento', 'usuario_cadastramento_uuid'
     ], { table: 'versao', schema: 'acervo' });
 
-    const query = db.pgp.helpers.insert(versoesPreparadas, cs);
+    const query = db.pgp.helpers.insert(versoesPreparadas, cs) + ' RETURNING id';
 
-    await t.none(query);
+    const insertedVersoes = await t.any(query);
+    const versoesIds = insertedVersoes.map(v => v.id);
 
-    await refreshViews.atualizarViewsPorVersoes(t, versoesId);
+    if (versoesIds.length > 0) {
+      await refreshViews.atualizarViewsPorVersoes(t, versoesIds);
+    }
   });
 };
 
@@ -586,26 +605,22 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
 };
 
 controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
-  produtos.forEach(produto => {
-    produto.data_cadastramento = new Date();
-    produto.usuario_cadastramento_uuid = usuarioUuid;
-    produto.geom = `ST_GeomFromEWKT('${produto.geom}')`;
-  });
+  const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
-    const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial', 'tipo_produto_id', 'descricao',
-      'usuario_cadastramento_uuid',
-      { name: 'data_cadastramento', cast: 'date' },
-      { name: 'geom', mod: ':raw' }
-    ]);
+    const produtosIds = [];
 
-    const query = db.pgp.helpers.insert(produtos, cs, {
-      table: 'produto',
-      schema: 'acervo'
-    });
+    for (const produto of produtos) {
+      const [novoProduto] = await t.any(`
+        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
+        VALUES($1, $2, $3, $4, $5, $6, $7, ST_GeomFromEWKT($8), $9, $10)
+        RETURNING id
+      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
-    await t.none(query);
+      produtosIds.push(novoProduto.id);
+    }
+
+    await refreshViews.atualizarViewsPorProdutos(t, produtosIds);
   });
 };
 

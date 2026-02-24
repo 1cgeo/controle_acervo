@@ -11,11 +11,13 @@ server/src/build/
 
 # Environment and config
 server/config.env
+server/config_testing.env
 .env
 .env.*
 !.env.example
 
 # Logs
+server/logs/
 server/src/logs/
 *.log
 npm-debug.log*

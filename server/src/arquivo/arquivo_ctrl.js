@@ -1338,4 +1338,55 @@ async function processAddProduct(t, session) {
   }
 }
 
+controller.getUploadSessions = async () => {
+  return db.conn.any(
+    `SELECT us.id, us.uuid_session, us.operation_type, us.status,
+            us.error_message, us.created_at, us.expiration_time, us.completed_at,
+            u.nome AS usuario_nome
+     FROM acervo.upload_session us
+     JOIN dgeo.usuario u ON us.usuario_uuid = u.uuid
+     ORDER BY us.created_at DESC
+     LIMIT 100`
+  );
+};
+
+controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const session = await t.oneOrNone(
+      `SELECT * FROM acervo.upload_session WHERE uuid_session = $1 AND status = 'pending'`,
+      [sessionUuid]
+    );
+
+    if (!session) {
+      throw new AppError('Sessão de upload não encontrada ou já processada', httpCode.NotFound);
+    }
+
+    // Verificar se o usuário é o dono da sessão ou admin
+    if (session.usuario_uuid !== usuarioUuid) {
+      // Verificar se é admin
+      const usuario = await t.oneOrNone(
+        'SELECT administrador FROM dgeo.usuario WHERE uuid = $1',
+        [usuarioUuid]
+      );
+      if (!usuario || !usuario.administrador) {
+        throw new AppError('Apenas o criador da sessão ou um administrador pode cancelá-la', httpCode.Forbidden);
+      }
+    }
+
+    await t.none(
+      `UPDATE acervo.upload_session
+       SET status = 'cancelled', error_message = 'Cancelado pelo usuário', completed_at = NOW()
+       WHERE id = $1`,
+      [session.id]
+    );
+
+    await t.none(
+      `UPDATE acervo.upload_arquivo_temp
+       SET status = 'cancelled', error_message = 'Sessão cancelada pelo usuário'
+       WHERE session_id = $1 AND status = 'pending'`,
+      [session.id]
+    );
+  });
+};
+
 module.exports = controller;

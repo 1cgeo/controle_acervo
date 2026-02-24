@@ -192,4 +192,27 @@ router.get(
   })
 );
 
+router.get(
+  '/busca',
+  verifyLogin,
+  schemaValidation({
+    query: acervoSchema.buscaProdutos
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.buscaProdutos(
+      req.query.termo,
+      req.query.tipo_produto_id,
+      req.query.tipo_escala_id,
+      req.query.projeto_id,
+      req.query.lote_id,
+      req.query.page || 1,
+      req.query.limit || 20
+    );
+
+    const msg = 'Busca de produtos realizada com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 module.exports = router

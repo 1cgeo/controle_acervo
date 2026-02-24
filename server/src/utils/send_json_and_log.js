@@ -5,6 +5,7 @@ const logger = require('./logger')
 const { VERSION } = require('../config')
 
 const truncate = dados => {
+  if (!dados || typeof dados !== 'object') return dados
   if ('senha' in dados) {
     dados.senha = '*'
   }

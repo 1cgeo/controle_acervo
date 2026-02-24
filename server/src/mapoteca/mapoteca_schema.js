@@ -223,11 +223,24 @@ models.consumoMaterialAtualizacao = Joi.object().keys({
   data_consumo: Joi.date().required()
 })
 
+// Esquemas para GET by ID
+models.manutencaoPlotterId = Joi.object().keys({
+  id: Joi.number().integer().strict().required()
+})
+
+models.consumoMaterialId = Joi.object().keys({
+  id: Joi.number().integer().strict().required()
+})
+
+models.estoqueMaterialId = Joi.object().keys({
+  id: Joi.number().integer().strict().required()
+})
+
 // Esquemas para filtragem de consumo
 models.consumoMaterialFiltro = Joi.object().keys({
   data_inicio: Joi.date(),
   data_fim: Joi.date(),
   tipo_material_id: Joi.number().integer()
-}).min(1)
+})
 
 module.exports = models

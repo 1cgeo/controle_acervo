@@ -69,4 +69,14 @@ models.situacaoGeralQuery = Joi.object().keys({
   scale250k: Joi.boolean().default(false)
 });
 
+models.buscaProdutos = Joi.object().keys({
+  termo: Joi.string().allow(''),
+  tipo_produto_id: Joi.number().integer().strict(),
+  tipo_escala_id: Joi.number().integer().strict(),
+  projeto_id: Joi.number().integer().strict(),
+  lote_id: Joi.number().integer().strict(),
+  page: Joi.number().integer().strict().min(1).default(1),
+  limit: Joi.number().integer().strict().min(1).max(100).default(20)
+});
+
 module.exports = models

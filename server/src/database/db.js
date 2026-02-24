@@ -5,13 +5,9 @@ const { errorHandler } = require('../utils')
 
 const { DB_USER, DB_PASSWORD, DB_SERVER, DB_PORT, DB_NAME } = require('../config')
 
-const promise = require('bluebird')
-
 const db = {}
 
-db.pgp = require('pg-promise')({
-  promiseLib: promise
-})
+db.pgp = require('pg-promise')()
 
 db.createConn = async () => {
   const cn = {
