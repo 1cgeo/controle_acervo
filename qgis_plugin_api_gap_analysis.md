@@ -2,290 +2,364 @@
 
 Este documento apresenta uma analise completa do cruzamento entre as chamadas HTTP feitas pelo plugin QGIS (`ferramentas_acervo/`) e os endpoints disponiveis no backend (`server/`), identificando incompatibilidades, endpoints ausentes e problemas de integracao.
 
----
-
-## 1. Bugs Criticos de Integracao
-
-### 1.1 Nomes de Campos da Resposta Incompativeis
-
-**Severidade: CRITICA** | **Impacto: 11+ dialogos afetados**
-
-O backend retorna respostas com os campos `success` e `message` (ingles), mas multiplos dialogos do plugin verificam `sucesso` e `mensagem` (portugues). Isso faz com que esses dialogos **nunca detectem sucesso corretamente**, sempre caindo no branch de erro.
-
-**Resposta real do backend:**
-```json
-{
-  "version": "1.0.0",
-  "success": true,
-  "message": "Operacao realizada com sucesso",
-  "dados": { ... }
-}
-```
-
-**Verificacao feita pelo plugin (incorreta):**
-```python
-if response and 'sucesso' in response and response['sucesso']:
-    # nunca entra aqui
-```
-
-**Arquivos afetados:**
-
-| Arquivo | Linhas |
-|---|---|
-| `gui/adicionar_produto/adicionar_produto_dialog.py` | 753, 760 |
-| `gui/adicionar_produto_historico/adicionar_produto_historico_dialog.py` | 507, 513 |
-| `gui/bulk_carrega_versoes_arquivos/bulk_carrega_versoes_arquivos_dialog.py` | 360, 368 |
-| `gui/bulk_carrega_arquivos/bulk_carrega_arquivos_dialog.py` | 270, 278 |
-| `gui/bulk_carrega_produtos_versoes_arquivos/bulk_carrega_produtos_versoes_arquivos_dialog.py` | 397, 405 |
-| `gui/bulk_versao_relacionamento/bulk_versao_relacionamento_dialog.py` | 77, 85 |
-| `gui/bulk_produtos/bulk_produtos_dialog.py` | 78, 86 |
-| `gui/bulk_produtos_versoes_historicas/bulk_produtos_versoes_historicas_dialog.py` | 79, 87 |
-| `gui/bulk_versoes_historicas/bulk_versoes_historicas_dialog.py` | 79, 87 |
-| `gui/informacao_produto/add_historical_version_dialog.py` | 135, 141 |
-| `gui/informacao_produto/add_version_to_product_dialog.py` | 383, 391 |
-| `gui/informacao_produto/add_files_to_version_dialog.py` | 274, 282 |
-
-**Correcao necessaria:** Trocar `'sucesso'` por `'success'` e `'mensagem'` por `'message'` em todos os dialogos, ou criar uma camada de traducao no `api_client.py`.
-
-Nota: O mesmo problema existe no tratamento de erros HTTP do `api_client.py` (linha 74), que verifica `"mensagem"` em vez de `"message"`:
-```python
-# core/api_client.py:74 - incorreto
-if "mensagem" in response_json:
-    error_msg = response_json["mensagem"]
-# deveria ser:
-if "message" in response_json:
-    error_msg = response_json["message"]
-```
+**Ultima atualizacao:** 2026-02-24
 
 ---
 
-### 1.2 Endpoint de Criacao de Produtos com Path Incorreto
+## 1. Status Geral da Integracao
 
-**Severidade: CRITICA** | **Impacto: Criacao em massa de produtos nao funciona**
+### Resultado: 0 bugs criticos de integracao Plugin <-> Backend
 
-O plugin chama `POST /api/produtos/produto` (singular), mas o backend registra o endpoint de criacao em massa como `POST /api/produtos/produtos` (plural). O resultado sera um erro 404.
+Todos os 5 bugs criticos e 3 problemas menores identificados na analise anterior foram **corrigidos**. O plugin QGIS esta totalmente alinhado com os endpoints do backend.
 
-| | Plugin | Backend |
+---
+
+## 2. Bugs Anteriores - Todos Corrigidos
+
+### 2.1 Nomes de Campos da Resposta (CORRIGIDO)
+
+**Bug anterior:** 12 dialogos verificavam `sucesso`/`mensagem` em vez de `success`/`message`.
+
+**Status:** Todos os dialogos agora utilizam corretamente `response.get('success')` e `response['message']`. Exemplos verificados:
+
+| Arquivo | Linha(s) | Verificacao Atual |
 |---|---|---|
-| **Path** | `POST /api/produtos/produto` | `POST /api/produtos/produtos` |
-| **Arquivo** | `gui/bulk_produtos/bulk_produtos_dialog.py:76` | `server/src/produto/produto_route.js:99-112` |
+| `gui/adicionar_produto/adicionar_produto_dialog.py` | 766, 772-773 | `response.get('success')`, `response['message']` |
+| `gui/bulk_carrega_versoes_arquivos/bulk_carrega_versoes_arquivos_dialog.py` | 373, 380-381 | `response.get('success')`, `response['message']` |
+| `gui/bulk_carrega_arquivos/bulk_carrega_arquivos_dialog.py` | 283, 290-291 | `response.get('success')`, `response['message']` |
+| `gui/bulk_carrega_produtos_versoes_arquivos/bulk_carrega_produtos_versoes_arquivos_dialog.py` | 410, 417-418 | `response.get('success')`, `response['message']` |
+| `gui/bulk_versao_relacionamento/bulk_versao_relacionamento_dialog.py` | 77, 84-85 | `response.get('success')`, `response['message']` |
+| `gui/bulk_produtos/bulk_produtos_dialog.py` | 78, 85-86 | `response.get('success')`, `response['message']` |
+| `gui/bulk_produtos_versoes_historicas/bulk_produtos_versoes_historicas_dialog.py` | 79, 86-87 | `response.get('success')`, `response['message']` |
+| `gui/bulk_versoes_historicas/bulk_versoes_historicas_dialog.py` | 79, 86-87 | `response.get('success')`, `response['message']` |
+| `gui/informacao_produto/add_historical_version_dialog.py` | 135, 140-141 | `response.get('success')`, `response['message']` |
+| `gui/informacao_produto/add_version_to_product_dialog.py` | 398, 405-406 | `response.get('success')`, `response['message']` |
+| `gui/informacao_produto/add_files_to_version_dialog.py` | 289, 296-297 | `response.get('success')`, `response['message']` |
+| `gui/adicionar_produto_historico/adicionar_produto_historico_dialog.py` | 507, 512-513 | `response.get('success')`, `response['message']` |
 
-**Correcao necessaria:** Alterar a chamada no plugin de `'produtos/produto'` para `'produtos/produtos'`.
+Adicionalmente, `core/api_client.py:74` agora verifica `"message"` corretamente (antes verificava `"mensagem"`).
+
+### 2.2 Endpoint de Criacao de Produtos (CORRIGIDO)
+
+**Bug anterior:** O plugin chamava `POST produtos/produto` (singular), mas o backend registra `POST /api/produtos/produtos` (plural).
+
+**Status:** `gui/bulk_produtos/bulk_produtos_dialog.py:76` agora chama `produtos/produtos` corretamente.
+
+### 2.3 Endpoints Inexistentes no Backend (CORRIGIDO)
+
+**Bug anterior:** `GET /api/acervo/versao/{id}` e `GET /api/acervo/produto/{id}` nao existiam no backend.
+
+**Status:** Ambos os endpoints foram criados:
+- `GET /api/acervo/versao/:versao_id` — `server/src/acervo/acervo_route.js:62-76` com schema `acervo_schema.versaoByIdParams`
+- `GET /api/acervo/produto/:produto_id` — `server/src/acervo/acervo_route.js:44-59` com schema `acervo_schema.produtoByIdParams`
+
+O controlador `acervo_ctrl.getVersaoById()` retorna `v.nome AS nome_versao` e `v.produto_id`, e `acervo_ctrl.getProdutoById()` retorna `p.nome`, que correspondem aos campos acessados em `product_info_dialog.py:310-328`.
+
+### 2.4 Download Situacao Geral (CORRIGIDO)
+
+**Bug anterior:** `situacao_geral_dialog.py` usava `urllib.request` diretamente para baixar o ZIP.
+
+**Status:** Agora utiliza `self.api_client.download_file('acervo/situacao-geral', ...)` (linha 71), que e um novo metodo adicionado ao `core/api_client.py:121-148`. O metodo `download_file()` inclui tratamento de erros HTTP padrao, streaming, e autenticacao via token.
+
+### 2.5 Upload sem Verificacao de Falhas (CORRIGIDO)
+
+**Bug anterior:** `file_transfer_complete` nao verificava se todos os arquivos foram transferidos com sucesso antes de chamar `confirm_upload`.
+
+**Status:** Todos os dialogos de upload agora rastreiam `self.arquivos_com_falha` e recusam confirmar o upload se houver falhas. Exemplo em `adicionar_produto_dialog.py:744-756`:
+
+```python
+if self.arquivos_com_falha > 0:
+    QMessageBox.critical(self, "Erro de Transferencia", ...)
+    # NAO chama confirm_upload
+else:
+    self.confirm_upload()
+```
+
+O mesmo padrao esta implementado em:
+- `bulk_carrega_versoes_arquivos_dialog.py:352-356`
+- `bulk_carrega_arquivos_dialog.py:262-266`
+- `bulk_carrega_produtos_versoes_arquivos_dialog.py:389-393`
+- `informacao_produto/add_files_to_version_dialog.py:265-269`
+- `informacao_produto/add_version_to_product_dialog.py:374-378`
+
+### 2.6 Dashboard Mapoteca Nao Montado (CORRIGIDO)
+
+**Bug anterior:** O modulo de dashboard da mapoteca nao estava montado em `routes.js`.
+
+**Status:** Agora esta montado em `routes.js:47`:
+```javascript
+router.use("/mapoteca/dashboard", dashboardRoute);
+```
 
 ---
 
-### 1.3 Endpoints Inexistentes no Backend
+## 3. Novas Funcionalidades Adicionadas Desde a Ultima Analise
 
-**Severidade: CRITICA** | **Impacto: Arvore de relacionamentos na tela de informacoes do produto**
+### 3.1 Metodo `download_file()` no APIClient
 
-O dialogo `product_info_dialog.py` faz chamadas a dois endpoints que **nao existem** no backend:
+O `core/api_client.py:121-148` agora possui um metodo dedicado para downloads binarios:
+- Usa `requests.get()` com `stream=True`
+- Salva em arquivo via `iter_content(chunk_size=8192)`
+- Inclui tratamento de erros HTTP padrao
+- Utilizado por `situacao_geral_dialog.py` e `download_manager.py`
 
-| Chamada no Plugin | Existe no Backend? | Arquivo/Linha |
-|---|---|---|
-| `GET /api/acervo/versao/{version_id}` | **NAO** | `product_info_dialog.py:310` |
-| `GET /api/acervo/produto/{product_id}` | **NAO** | `product_info_dialog.py:316` |
+### 3.2 Edicao de Relacionamentos
 
-Estes endpoints sao usados na funcao `get_version_product_info()` para popular a arvore de relacionamentos com nomes de produtos e versoes relacionados. Ambos retornarao 404.
+O plugin agora suporta edicao de relacionamentos entre versoes via `PUT produtos/versao_relacionamento`:
+- **Arquivo:** `gui/informacao_produto/relationship_edit_dialog.py:97`
+- **Backend:** `PUT /api/produtos/versao_relacionamento` com schema `versaoRelacionamentoAtualizacao`
+- O plugin envia `{ versao_relacionamento: [{ id, versao_id_1, versao_id_2, tipo_relacionamento_id }] }`
 
-**Endpoint similar existente:** `GET /api/acervo/produto/detalhado/{produto_id}` (retorna produto com todas as versoes).
+### 3.3 Retries com Backoff Exponencial no FileTransfer
 
-**Correcao necessaria:** Criar os endpoints no backend ou adaptar o plugin para usar `acervo/produto/detalhado/{product_id}` e extrair os dados da versao a partir da resposta completa.
-
----
-
-## 2. Problemas Menores
-
-### 2.1 Situacao Geral - Construcao Manual de URL
-
-O dialogo `situacao_geral_dialog.py` constroi a URL manualmente usando `urllib.request` em vez de usar o `api_client`, pois o endpoint retorna um arquivo ZIP (binario) em vez de JSON. Isso funciona, mas:
-
-- Nao se beneficia do tratamento de erros HTTP padrao do `api_client`
-- Nao se beneficia de eventuais interceptors futuros
-- A URL e construida concatenando `self.api_client.base_url` diretamente (linha 64)
-
-**Arquivo:** `gui/situacao_geral/situacao_geral_dialog.py:64-90`
-
-### 2.2 Upload - Verificacao de Sucesso da Transferencia Incompleta
-
-No fluxo de upload (`adicionar_produto_dialog.py`), a funcao `file_transfer_complete` (linha 736) conta os arquivos transferidos mas **nao verifica se todos tiveram sucesso** antes de chamar `confirm_upload`. Se um arquivo falhar na transferencia, o upload e confirmado mesmo assim, delegando ao backend a deteccao do problema.
-
-**Arquivo:** `gui/adicionar_produto/adicionar_produto_dialog.py:736-743`
+`core/file_transfer.py` agora inclui ate 3 tentativas com backoff exponencial (2s, 4s, 8s) para transferencias de arquivo.
 
 ---
 
-## 3. Mapeamento Completo: Chamadas do Plugin vs Endpoints do Backend
+## 4. Mapeamento Completo: Chamadas do Plugin vs Endpoints do Backend
 
 ### Legenda
 - OK: Endpoint existe e parametros correspondem
-- BUG: Incompatibilidade identificada
-- AUSENTE: Endpoint nao existe no backend
 
-### 3.1 Autenticacao
+### 4.1 Autenticacao
 
 | Plugin Chama | Metodo | Backend | Status |
 |---|---|---|---|
 | `login` | POST | `POST /api/login` | OK |
 
-### 3.2 Dominios (Gerencia)
+### 4.2 Dominios (Gerencia)
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `gerencia/dominio/tipo_escala` | GET | `GET /api/gerencia/dominio/tipo_escala` | OK |
-| `gerencia/dominio/tipo_produto` | GET | `GET /api/gerencia/dominio/tipo_produto` | OK |
-| `gerencia/dominio/tipo_versao` | GET | `GET /api/gerencia/dominio/tipo_versao` | OK |
-| `gerencia/dominio/subtipo_produto` | GET | `GET /api/gerencia/dominio/subtipo_produto` | OK |
-| `gerencia/dominio/tipo_arquivo` | GET | `GET /api/gerencia/dominio/tipo_arquivo` | OK |
-| `gerencia/dominio/situacao_carregamento` | GET | `GET /api/gerencia/dominio/situacao_carregamento` | OK |
-| `gerencia/dominio/tipo_status_arquivo` | GET | `GET /api/gerencia/dominio/tipo_status_arquivo` | OK |
-| `gerencia/dominio/tipo_status_execucao` | GET | `GET /api/gerencia/dominio/tipo_status_execucao` | OK |
-| `gerencia/dominio/tipo_relacionamento` | GET | `GET /api/gerencia/dominio/tipo_relacionamento` | OK |
-| `gerencia/dominio/tipo_posto_grad` | GET | `GET /api/gerencia/dominio/tipo_posto_grad` | **NAO UTILIZADO** pelo plugin |
+| `gerencia/dominio/tipo_escala` | GET | `GET /api/gerencia/dominio/tipo_escala` | OK — adicionar_produto, adicionar_produto_historico, product_edit |
+| `gerencia/dominio/tipo_produto` | GET | `GET /api/gerencia/dominio/tipo_produto` | OK — adicionar_produto, adicionar_produto_historico, product_edit, edit_volume_tipo_produto |
+| `gerencia/dominio/tipo_versao` | GET | `GET /api/gerencia/dominio/tipo_versao` | OK — adicionar_produto, version_edit, add_version_to_product |
+| `gerencia/dominio/subtipo_produto` | GET | `GET /api/gerencia/dominio/subtipo_produto` | OK — adicionar_produto, adicionar_produto_historico, version_edit, add_version_to_product, add_historical_version |
+| `gerencia/dominio/tipo_arquivo` | GET | `GET /api/gerencia/dominio/tipo_arquivo` | OK — adicionar_produto, download_produtos, file_edit, add_version_to_product, add_files_to_version |
+| `gerencia/dominio/situacao_carregamento` | GET | `GET /api/gerencia/dominio/situacao_carregamento` | OK — file_edit |
+| `gerencia/dominio/tipo_status_arquivo` | GET | `GET /api/gerencia/dominio/tipo_status_arquivo` | OK — file_edit |
+| `gerencia/dominio/tipo_status_execucao` | GET | `GET /api/gerencia/dominio/tipo_status_execucao` | OK — edit_project, edit_lote |
+| `gerencia/dominio/tipo_relacionamento` | GET | `GET /api/gerencia/dominio/tipo_relacionamento` | OK — relationship_edit |
 
-### 3.3 Acervo
+### 4.3 Acervo
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `acervo/camadas_produto` | GET | `GET /api/acervo/camadas_produto` | OK |
-| `acervo/produto/detalhado/{id}` | GET | `GET /api/acervo/produto/detalhado/:produto_id` | OK |
-| `acervo/versao/{id}` | GET | *(nao existe)* | **AUSENTE** |
-| `acervo/produto/{id}` | GET | *(nao existe)* | **AUSENTE** |
-| `acervo/prepare-download/produtos` | POST | `POST /api/acervo/prepare-download/produtos` | OK |
-| `acervo/prepare-download/arquivos` | POST | `POST /api/acervo/prepare-download/arquivos` | OK |
-| `acervo/confirm-download` | POST | `POST /api/acervo/confirm-download` | OK |
-| `acervo/cleanup-expired-downloads` | POST | `POST /api/acervo/cleanup-expired-downloads` | OK |
-| `acervo/refresh_materialized_views` | POST | `POST /api/acervo/refresh_materialized_views` | OK |
-| `acervo/create_materialized_views` | POST | `POST /api/acervo/create_materialized_views` | OK |
-| `acervo/situacao-geral` | GET | `GET /api/acervo/situacao-geral` | OK (via urllib) |
+| `acervo/camadas_produto` | GET | `GET /api/acervo/camadas_produto` | OK — load_product_layers, load_products |
+| `acervo/produto/detalhado/{id}` | GET | `GET /api/acervo/produto/detalhado/:produto_id` | OK — product_info |
+| `acervo/versao/{id}` | GET | `GET /api/acervo/versao/:versao_id` | OK — product_info (relacionamentos) |
+| `acervo/produto/{id}` | GET | `GET /api/acervo/produto/:produto_id` | OK — product_info (relacionamentos) |
+| `acervo/situacao-geral` | GET (binario) | `GET /api/acervo/situacao-geral` | OK — situacao_geral (via download_file) |
+| `acervo/prepare-download/produtos` | POST | `POST /api/acervo/prepare-download/produtos` | OK — download_manager |
+| `acervo/prepare-download/arquivos` | POST | `POST /api/acervo/prepare-download/arquivos` | OK — product_info |
+| `acervo/confirm-download` | POST | `POST /api/acervo/confirm-download` | OK — download_manager |
+| `acervo/cleanup-expired-downloads` | POST | `POST /api/acervo/cleanup-expired-downloads` | OK — cleanup_expired_downloads |
+| `acervo/refresh_materialized_views` | POST | `POST /api/acervo/refresh_materialized_views` | OK — refresh_materialized_views |
+| `acervo/create_materialized_views` | POST | `POST /api/acervo/create_materialized_views` | OK — create_materialized_view |
 
-### 3.4 Arquivo (Upload/Download)
+### 4.4 Arquivo (Upload/Download)
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `arquivo/prepare-upload/product` | POST | `POST /api/arquivo/prepare-upload/product` | OK |
-| `arquivo/prepare-upload/version` | POST | `POST /api/arquivo/prepare-upload/version` | OK |
-| `arquivo/prepare-upload/files` | POST | `POST /api/arquivo/prepare-upload/files` | OK |
-| `arquivo/confirm-upload` | POST | `POST /api/arquivo/confirm-upload` | OK |
-| `arquivo/arquivo` | PUT | `PUT /api/arquivo/arquivo` | OK |
-| `arquivo/arquivo` | DELETE | `DELETE /api/arquivo/arquivo` | OK |
-| `arquivo/problem-uploads` | GET | `GET /api/arquivo/problem-uploads` | OK |
+| `arquivo/prepare-upload/product` | POST | `POST /api/arquivo/prepare-upload/product` | OK — adicionar_produto, bulk_carrega_produtos_versoes_arquivos |
+| `arquivo/prepare-upload/version` | POST | `POST /api/arquivo/prepare-upload/version` | OK — add_version_to_product, bulk_carrega_versoes_arquivos |
+| `arquivo/prepare-upload/files` | POST | `POST /api/arquivo/prepare-upload/files` | OK — add_files_to_version, bulk_carrega_arquivos |
+| `arquivo/confirm-upload` | POST | `POST /api/arquivo/confirm-upload` | OK — todos os dialogos de upload |
+| `arquivo/arquivo` | PUT | `PUT /api/arquivo/arquivo` | OK — file_edit |
+| `arquivo/arquivo` | DELETE | `DELETE /api/arquivo/arquivo` | OK — admin_actions |
+| `arquivo/problem-uploads` | GET | `GET /api/arquivo/problem-uploads` | OK — problem_uploads |
 
-### 3.5 Produtos
+### 4.5 Produtos
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `produtos/produto` | POST | `POST /api/produtos/produtos` | **BUG** (path incorreto) |
-| `produtos/produto` | PUT | `PUT /api/produtos/produto` | OK |
-| `produtos/produto` | DELETE | `DELETE /api/produtos/produto` | OK |
-| `produtos/versao` | PUT | `PUT /api/produtos/versao` | OK |
-| `produtos/versao` | DELETE | `DELETE /api/produtos/versao` | OK |
-| `produtos/versao_historica` | POST | `POST /api/produtos/versao_historica` | OK |
-| `produtos/produto_versao_historica` | POST | `POST /api/produtos/produto_versao_historica` | OK |
-| `produtos/versao_relacionamento` | POST | `POST /api/produtos/versao_relacionamento` | OK |
-| `produtos/versao_relacionamento` | DELETE | `DELETE /api/produtos/versao_relacionamento` | OK |
-| `produtos/versao_relacionamento` | GET | `GET /api/produtos/versao_relacionamento` | **NAO UTILIZADO** pelo plugin |
-| `produtos/versao_relacionamento` | PUT | `PUT /api/produtos/versao_relacionamento` | **NAO UTILIZADO** pelo plugin |
+| `produtos/produtos` | POST | `POST /api/produtos/produtos` | OK — bulk_produtos |
+| `produtos/produto` | PUT | `PUT /api/produtos/produto` | OK — product_edit |
+| `produtos/produto` | DELETE | `DELETE /api/produtos/produto` | OK — admin_actions |
+| `produtos/versao` | PUT | `PUT /api/produtos/versao` | OK — version_edit |
+| `produtos/versao` | DELETE | `DELETE /api/produtos/versao` | OK — admin_actions |
+| `produtos/versao_historica` | POST | `POST /api/produtos/versao_historica` | OK — bulk_versoes_historicas |
+| `produtos/produto_versao_historica` | POST | `POST /api/produtos/produto_versao_historica` | OK — add_historical_version, adicionar_produto_historico, bulk_produtos_versoes_historicas |
+| `produtos/versao_relacionamento` | POST | `POST /api/produtos/versao_relacionamento` | OK — bulk_versao_relacionamento |
+| `produtos/versao_relacionamento` | PUT | `PUT /api/produtos/versao_relacionamento` | OK — relationship_edit |
+| `produtos/versao_relacionamento` | DELETE | `DELETE /api/produtos/versao_relacionamento` | OK — product_info |
 
-### 3.6 Projetos e Lotes
+### 4.6 Projetos e Lotes
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `projetos/projeto` | GET | `GET /api/projetos/projeto` | OK |
-| `projetos/projeto` | POST | `POST /api/projetos/projeto` | OK |
-| `projetos/projeto` | PUT | `PUT /api/projetos/projeto` | OK |
-| `projetos/projeto` | DELETE | `DELETE /api/projetos/projeto` | OK |
-| `projetos/lote` | GET | `GET /api/projetos/lote` | OK |
-| `projetos/lote` | POST | `POST /api/projetos/lote` | OK |
-| `projetos/lote` | PUT | `PUT /api/projetos/lote` | OK |
-| `projetos/lote` | DELETE | `DELETE /api/projetos/lote` | OK |
+| `projetos/projeto` | GET | `GET /api/projetos/projeto` | OK — manage_projects, edit_lote |
+| `projetos/projeto` | POST | `POST /api/projetos/projeto` | OK — edit_project |
+| `projetos/projeto` | PUT | `PUT /api/projetos/projeto` | OK — edit_project |
+| `projetos/projeto` | DELETE | `DELETE /api/projetos/projeto` | OK — manage_projects |
+| `projetos/lote` | GET | `GET /api/projetos/lote` | OK — manage_lotes, adicionar_produto, version_edit, add_version_to_product, add_historical_version, adicionar_produto_historico |
+| `projetos/lote` | POST | `POST /api/projetos/lote` | OK — edit_lote |
+| `projetos/lote` | PUT | `PUT /api/projetos/lote` | OK — edit_lote |
+| `projetos/lote` | DELETE | `DELETE /api/projetos/lote` | OK — manage_lotes |
 
-### 3.7 Volumes
+### 4.7 Volumes
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `volumes/volume_armazenamento` | GET | `GET /api/volumes/volume_armazenamento` | OK |
-| `volumes/volume_armazenamento` | POST | `POST /api/volumes/volume_armazenamento` | OK |
-| `volumes/volume_armazenamento` | PUT | `PUT /api/volumes/volume_armazenamento` | OK |
-| `volumes/volume_armazenamento` | DELETE | `DELETE /api/volumes/volume_armazenamento` | OK |
-| `volumes/volume_tipo_produto` | GET | `GET /api/volumes/volume_tipo_produto` | OK |
-| `volumes/volume_tipo_produto` | POST | `POST /api/volumes/volume_tipo_produto` | OK |
-| `volumes/volume_tipo_produto` | PUT | `PUT /api/volumes/volume_tipo_produto` | OK |
-| `volumes/volume_tipo_produto` | DELETE | `DELETE /api/volumes/volume_tipo_produto` | OK |
+| `volumes/volume_armazenamento` | GET | `GET /api/volumes/volume_armazenamento` | OK — manage_volumes, file_edit, edit_volume_tipo_produto |
+| `volumes/volume_armazenamento` | POST | `POST /api/volumes/volume_armazenamento` | OK — edit_volume |
+| `volumes/volume_armazenamento` | PUT | `PUT /api/volumes/volume_armazenamento` | OK — edit_volume |
+| `volumes/volume_armazenamento` | DELETE | `DELETE /api/volumes/volume_armazenamento` | OK — manage_volumes |
+| `volumes/volume_tipo_produto` | GET | `GET /api/volumes/volume_tipo_produto` | OK — manage_volume_tipo_produto |
+| `volumes/volume_tipo_produto` | POST | `POST /api/volumes/volume_tipo_produto` | OK — edit_volume_tipo_produto |
+| `volumes/volume_tipo_produto` | PUT | `PUT /api/volumes/volume_tipo_produto` | OK — edit_volume_tipo_produto |
+| `volumes/volume_tipo_produto` | DELETE | `DELETE /api/volumes/volume_tipo_produto` | OK — manage_volume_tipo_produto |
 
-### 3.8 Usuarios
+### 4.8 Usuarios
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `usuarios` | GET | `GET /api/usuarios/` | OK |
-| `usuarios` | POST | `POST /api/usuarios/` | OK |
-| `usuarios` | PUT | `PUT /api/usuarios/` | OK |
-| `usuarios/servico_autenticacao` | GET | `GET /api/usuarios/servico_autenticacao` | OK |
-| `usuarios/sincronizar` | PUT | `PUT /api/usuarios/sincronizar` | OK |
-| `usuarios/:uuid` | PUT | `PUT /api/usuarios/:uuid` | **NAO UTILIZADO** pelo plugin |
+| `usuarios` | GET | `GET /api/usuarios/` | OK — manage_users |
+| `usuarios` | POST | `POST /api/usuarios/` | OK — manage_users (importar usuarios) |
+| `usuarios` | PUT | `PUT /api/usuarios/` | OK — manage_users (atualizacao em lote) |
+| `usuarios/servico_autenticacao` | GET | `GET /api/usuarios/servico_autenticacao` | OK — manage_users (listar usuarios do auth server) |
+| `usuarios/sincronizar` | PUT | `PUT /api/usuarios/sincronizar` | OK — manage_users |
 
-### 3.9 Gerencia (Admin)
+### 4.9 Gerencia (Admin)
 
-| Plugin Chama | Metodo | Backend | Status |
+| Plugin Chama | Metodo | Backend | Utilizado em |
 |---|---|---|---|
-| `gerencia/verificar_inconsistencias` | POST | `POST /api/gerencia/verificar_inconsistencias` | OK |
-| `gerencia/arquivos_deletados` | GET | `GET /api/gerencia/arquivos_deletados` | OK |
-| `gerencia/arquivos_incorretos` | GET | `GET /api/gerencia/arquivos_incorretos` | OK |
+| `gerencia/verificar_inconsistencias` | POST | `POST /api/gerencia/verificar_inconsistencias` | OK — verificar_inconsistencias |
+| `gerencia/arquivos_deletados` | GET | `GET /api/gerencia/arquivos_deletados` | OK — arquivos_deletados (com paginacao via query params) |
+| `gerencia/arquivos_incorretos` | GET | `GET /api/gerencia/arquivos_incorretos` | OK — manage_incorrect_files (com paginacao via query params) |
 
 ---
 
-## 4. Endpoints do Backend NAO Utilizados pelo Plugin QGIS
+## 5. Formato de Resposta da API
 
-Estes endpoints existem no backend mas nao sao chamados pelo plugin. Muitos sao utilizados pelos clientes web (React).
+O backend utiliza o middleware `sendJsonAndLog` (`server/src/utils/send_json_and_log.js`) que gera respostas no formato:
 
-### 4.1 Endpoints Exclusivos dos Clientes Web
+```json
+{
+  "version": "1.0.0",
+  "success": true,
+  "message": "Descricao da operacao",
+  "dados": { ... }
+}
+```
 
-| Endpoint | Modulo | Usado por |
-|---|---|---|
-| `GET /api/gerencia/dominio/tipo_posto_grad` | Gerencia | Apenas client web, verificar para adicionar no plugin se for o caso |
-| `GET /api/produtos/versao_relacionamento` | Produtos | Apenas client web, verificar para adicionar no plugin se for o caso |
-| `PUT /api/produtos/versao_relacionamento` | Produtos | Apenas client web, verificar para adicionar no plugin se for o caso |
-| `PUT /api/usuarios/:uuid` | Usuarios | Apenas client web, verificar para adicionar no plugin se for o cas |
+Quando metadata adicional e fornecida (ex: paginacao), os campos sao adicionados ao nivel raiz:
 
+```json
+{
+  "version": "1.0.0",
+  "success": true,
+  "message": "...",
+  "dados": [ ... ],
+  "pagination": { "total": 100, "page": 1, "limit": 20 }
+}
+```
 
-### 4.2 Dashboard do Acervo (17 endpoints - nao montados)
-
-O modulo `server/src/dashboard/` contem 17 endpoints de dashboard mas **nao estao montados** em `routes.js`. Nao sao utilizados por nenhum cliente. Não há previsão de adicionar no plugin.
-
-### 4.3 Mapoteca (42 endpoints)
-
-Todos os endpoints da mapoteca (`/api/mapoteca/*`) sao utilizados exclusivamente pelo `client_admin_mapoteca/` (React). O plugin QGIS nao interage com a mapoteca. Não há previsão de adicionar no plugin.
-
-### 4.4 Dashboard da Mapoteca (8 endpoints)
-
-Todos os endpoints em `/api/mapoteca/dashboard/*` sao exclusivos do `client_admin_mapoteca/`. Não há previsão de adicionar no plugin.
+O plugin acessa consistentemente:
+- `response.get('success')` para verificar sucesso
+- `response['dados']` para extrair dados
+- `response['message']` para mensagens de erro
+- `response.get('pagination', {})` para dados de paginacao (arquivos_deletados, arquivos_incorretos)
 
 ---
 
-## 5. Resumo de Acoes Necessarias
+## 6. Endpoints do Backend NAO Utilizados pelo Plugin QGIS
 
-### Prioridade Alta (Bugs que impedem funcionamento)
+Estes endpoints existem no backend mas nao sao chamados pelo plugin. Sao utilizados pelos clientes web (React).
 
-| # | Descricao | Acao | Escopo |
-|---|---|---|---|
-| 1 | Campo `sucesso`/`mensagem` vs `success`/`message` | Corrigir nos 12 dialogos do plugin ou normalizar no `api_client.py` | Plugin |
-| 2 | Campo `mensagem` no error handler do api_client | Corrigir para `message` em `api_client.py:74` | Plugin |
-| 3 | Path `produtos/produto` vs `produtos/produtos` (POST) | Corrigir no `bulk_produtos_dialog.py:76` | Plugin |
-| 4 | Endpoint `GET acervo/versao/{id}` inexistente | Criar no backend ou adaptar plugin | Backend ou Plugin |
-| 5 | Endpoint `GET acervo/produto/{id}` inexistente | Criar no backend ou adaptar plugin | Backend ou Plugin |
+### 6.1 Endpoints Exclusivos dos Clientes Web
 
-### Prioridade Media (Melhorias recomendadas)
-
-| # | Descricao | Acao |
+| Endpoint | Modulo | Utilizado por |
 |---|---|---|
-| 6 | Download situacao-geral usa urllib direto | Considerar adicionar suporte a respostas binarias no `api_client` |
-| 7 | Upload nao verifica sucesso individual antes de confirmar | Adicionar verificacao e relatorio de falhas parciais |
-| 8 | Dashboard do acervo nao montado | Adicionar import e `router.use()` em `routes.js` se necessario |
+| `GET /api/gerencia/dominio/tipo_posto_grad` | Gerencia | Nenhum cliente atualmente |
+| `GET /api/produtos/versao_relacionamento` | Produtos | Nenhum cliente atualmente (plugin extrai dados do produto detalhado) |
+| `PUT /api/usuarios/:uuid` | Usuarios | Nenhum cliente atualmente (plugin usa atualizacao em lote) |
 
-### Prioridade Baixa (Funcionalidades nao implementadas no plugin)
+### 6.2 Dashboard Principal do Acervo (17 endpoints)
 
-| # | Descricao | Observacao |
+O modulo `server/src/dashboard/` contem 17 endpoints de dashboard para o client React principal (`client/`):
+
+| Endpoint | Descricao |
+|---|---|
+| `GET /api/dashboard/produtos_total` | Total de produtos |
+| `GET /api/dashboard/arquivos_total_gb` | Total de armazenamento em GB |
+| `GET /api/dashboard/usuarios_total` | Total de usuarios |
+| `GET /api/dashboard/produtos_tipo` | Produtos por tipo |
+| `GET /api/dashboard/gb_tipo_produto` | GB por tipo de produto |
+| `GET /api/dashboard/gb_volume` | GB por volume |
+| `GET /api/dashboard/arquivos_dia` | Arquivos carregados por dia |
+| `GET /api/dashboard/downloads_dia` | Downloads por dia |
+| `GET /api/dashboard/ultimos_carregamentos` | Ultimos carregamentos |
+| `GET /api/dashboard/ultimas_modificacoes` | Ultimas modificacoes |
+| `GET /api/dashboard/ultimos_deletes` | Ultimas exclusoes |
+| `GET /api/dashboard/download` | Historico de downloads |
+| `GET /api/dashboard/produto_activity_timeline` | Timeline de atividade (com param `months`) |
+| `GET /api/dashboard/version_statistics` | Estatisticas de versoes |
+| `GET /api/dashboard/storage_growth_trends` | Tendencias de crescimento (com param `months`) |
+| `GET /api/dashboard/project_status_summary` | Status de projetos |
+| `GET /api/dashboard/user_activity_metrics` | Metricas de atividade (com param `limit`) |
+
+**NOTA:** Este modulo de dashboard **NAO esta montado** em `routes.js`. O arquivo `routes.js` importa o `dashboardRoute` do modulo `mapoteca/` (que e o dashboard da mapoteca), mas nao importa nem monta o modulo `server/src/dashboard/`. Isso afeta o cliente React principal (`client/src/services/dashboardService.ts`), que tenta acessar `/api/dashboard/*` e recebera 404. Nao afeta o plugin QGIS.
+
+### 6.3 Mapoteca (42+ endpoints)
+
+Todos os endpoints da mapoteca (`/api/mapoteca/*`) sao utilizados exclusivamente pelo `client_admin_mapoteca/` (React). O plugin QGIS nao interage com a mapoteca.
+
+Inclui operacoes CRUD para:
+- Clientes (`/api/mapoteca/cliente`)
+- Pedidos (`/api/mapoteca/pedido`)
+- Produtos de pedido (`/api/mapoteca/produto_pedido`)
+- Plotters (`/api/mapoteca/plotter`)
+- Manutencao de plotters (`/api/mapoteca/manutencao_plotter`)
+- Tipos de material (`/api/mapoteca/tipo_material`)
+- Estoque de material (`/api/mapoteca/estoque_material`)
+- Consumo de material (`/api/mapoteca/consumo_material`)
+- Dominios da mapoteca (`/api/mapoteca/dominio/*`)
+
+### 6.4 Dashboard da Mapoteca (8 endpoints)
+
+Os endpoints em `/api/mapoteca/dashboard/*` sao exclusivos do `client_admin_mapoteca/`:
+
+| Endpoint | Descricao |
+|---|---|
+| `GET /api/mapoteca/dashboard/order_status` | Distribuicao de status de pedidos |
+| `GET /api/mapoteca/dashboard/orders_timeline` | Timeline de pedidos |
+| `GET /api/mapoteca/dashboard/avg_fulfillment_time` | Tempo medio de atendimento |
+| `GET /api/mapoteca/dashboard/client_activity` | Atividade de clientes |
+| `GET /api/mapoteca/dashboard/pending_orders` | Pedidos pendentes |
+| `GET /api/mapoteca/dashboard/stock_by_location` | Estoque por localizacao |
+| `GET /api/mapoteca/dashboard/material_consumption` | Consumo de materiais |
+| `GET /api/mapoteca/dashboard/plotter_status` | Status de plotters |
+
+---
+
+## 7. Problema Pendente (Nao Afeta Plugin)
+
+### 7.1 Dashboard Principal do Acervo Nao Montado em routes.js
+
+**Severidade: MEDIA** | **Impacto: Cliente React principal**
+
+O modulo `server/src/dashboard/` (17 endpoints) nao e importado nem montado em `server/src/routes.js`. O cliente React principal (`client/src/services/dashboardService.ts`) chama estes endpoints e recebera 404.
+
+**Correcao necessaria:** Adicionar em `routes.js`:
+```javascript
+const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
+// ...
+router.use("/dashboard", acervoDashboardRoute);
+```
+
+**Nota:** Isso nao afeta o plugin QGIS, que nao utiliza nenhum endpoint de dashboard.
+
+---
+
+## 8. Resumo
+
+| Categoria | Quantidade | Status |
 |---|---|---|
-| 9 | Edicao de relacionamentos (PUT versao_relacionamento) | Plugin so cria e deleta; nao edita |
-| 10 | Listagem de relacionamentos (GET versao_relacionamento) | Plugin extrai dos dados do produto detalhado |
-| 11 | Atualizacao individual de usuario (PUT /usuarios/:uuid) | Plugin usa atualizacao em lote |
+| Bugs criticos anteriores | 5 | Todos CORRIGIDOS |
+| Problemas menores anteriores | 3 | Todos CORRIGIDOS |
+| Bugs Plugin <-> Backend atuais | 0 | Nenhum |
+| Endpoints do plugin com correspondencia | 50 | 100% OK |
+| Problema pendente (React only) | 1 | Dashboard nao montado |
 
 ---

@@ -27,15 +27,49 @@ router.get(
 router.get(
   '/produto/detalhado/:produto_id',
   verifyLogin,
-  schemaValidation({ 
+  schemaValidation({
     params: acervoSchema.produtoByIdParams
   }),
   asyncHandler(async (req, res, next) => {
     const { produto_id } = req.params;
-    
+
     const dados = await acervoCtrl.getProdutoDetailedById(produto_id);
 
     const msg = 'Informações detalhadas do produto retornadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.get(
+  '/produto/:produto_id',
+  verifyLogin,
+  schemaValidation({
+    params: acervoSchema.produtoByIdParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { produto_id } = req.params;
+
+    const dados = await acervoCtrl.getProdutoById(produto_id);
+
+    const msg = 'Informações do produto retornadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.get(
+  '/versao/:versao_id',
+  verifyLogin,
+  schemaValidation({
+    params: acervoSchema.versaoByIdParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { versao_id } = req.params;
+
+    const dados = await acervoCtrl.getVersaoById(versao_id);
+
+    const msg = 'Informações da versão retornadas com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })

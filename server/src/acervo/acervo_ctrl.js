@@ -67,6 +67,45 @@ controller.getProdutosLayer = async () => {
   });
 };
 
+controller.getVersaoById = async (versaoId) => {
+  return db.conn.one(`
+    SELECT
+      v.id,
+      v.uuid_versao,
+      v.versao,
+      v.nome AS nome_versao,
+      v.tipo_versao_id,
+      v.subtipo_produto_id,
+      v.produto_id,
+      v.lote_id,
+      v.metadado,
+      v.descricao,
+      v.orgao_produtor,
+      v.palavras_chave,
+      v.data_criacao,
+      v.data_edicao
+    FROM acervo.versao v
+    WHERE v.id = $1
+  `, [versaoId]);
+};
+
+controller.getProdutoById = async (produtoId) => {
+  return db.conn.one(`
+    SELECT
+      p.id,
+      p.nome,
+      p.mi,
+      p.inom,
+      p.tipo_escala_id,
+      p.denominador_escala_especial,
+      p.tipo_produto_id,
+      p.descricao,
+      p.geom
+    FROM acervo.produto p
+    WHERE p.id = $1
+  `, [produtoId]);
+};
+
 controller.getProdutoDetailedById = async produtoId => {
   return db.conn.task(async t => {
     // Primeiro, obter informações básicas do produto

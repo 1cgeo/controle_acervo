@@ -504,13 +504,13 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
             
             response = self.api_client.post('produtos/produto_versao_historica', [produto_versoes_data])
             
-            if response and 'sucesso' in response and response['sucesso']:
+            if response and response.get('success'):
                 QMessageBox.information(self, "Sucesso", "Produto com versões históricas criado com sucesso!")
                 self.accept()
             else:
                 error_message = "Erro desconhecido"
-                if 'mensagem' in response:
-                    error_message = response['mensagem']
+                if response and 'message' in response:
+                    error_message = response['message']
                 raise Exception(error_message)
                 
         except Exception as e:
