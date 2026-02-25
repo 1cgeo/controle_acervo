@@ -25,7 +25,7 @@ dbVersion.load = async () => {
 
     if (!dbv) {
       throw new AppError(
-        'O banco de dados não não é compatível com a versão do serviço.'
+        'O banco de dados não é compatível com a versão do serviço.'
       )
     }
     validate(dbv.nome)

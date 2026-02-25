@@ -84,7 +84,7 @@ controle_acervo/
 
 ### Server
 - **Runtime**: Node.js >= 16.15 (CommonJS modules)
-- **Framework**: Express 4
+- **Framework**: Express 5
 - **Database**: PostgreSQL with PostGIS (via pg-promise)
 - **Auth**: JWT (jsonwebtoken), external auth server integration
 - **Validation**: Joi

@@ -15,7 +15,7 @@ CREATE TABLE acervo.volume_armazenamento(
 CREATE TABLE acervo.volume_tipo_produto(
 	id SERIAL NOT NULL PRIMARY KEY,
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
-	volume_armazenamento_id SMALLINT NOT NULL REFERENCES acervo.volume_armazenamento (id),
+	volume_armazenamento_id INTEGER NOT NULL REFERENCES acervo.volume_armazenamento (id),
 	primario BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -36,7 +36,7 @@ CREATE TABLE acervo.projeto (
 
 CREATE TABLE acervo.lote (
     id BIGSERIAL NOT NULL PRIMARY KEY,
-	projeto_id INTEGER NOT NULL REFERENCES acervo.projeto (id),
+	projeto_id BIGINT NOT NULL REFERENCES acervo.projeto (id),
 	pit VARCHAR(255) NOT NULL,
     nome VARCHAR(255) NOT NULL,
     descricao TEXT,
