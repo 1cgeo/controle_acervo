@@ -62,9 +62,9 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
             )
             if response and 'dados' in response:
                 dados = response['dados']
-                total = dados.get('total', 0)
-                page = dados.get('page', 1)
-                limit = dados.get('limit', self.page_size)
+                total = int(dados.get('total', 0))
+                page = int(dados.get('page', 1))
+                limit = int(dados.get('limit', self.page_size))
                 downloads = dados.get('dados', [])
                 self.total_items = total
                 self.total_pages = max(1, -(-total // limit))

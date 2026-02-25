@@ -78,15 +78,6 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         self.buttonBox.accepted.connect(self.load_selected_layers)
         self.buttonBox.rejected.connect(self.reject)
 
-        self.select_all_check.stateChanged.connect(self.toggle_select_all_products)
-
-    def toggle_select_all_products(self, state):
-        """Seleciona ou desseleciona todos os produtos disponíveis."""
-        for row in range(self.productsTable.rowCount()):
-            item = self.productsTable.item(row, 0)  # Coluna do checkbox
-            if item:
-                item.setCheckState(Qt.Checked if state else Qt.Unchecked)
-
     def load_layers(self):
         try:
             response = self.api_client.get('acervo/camadas_produto')
