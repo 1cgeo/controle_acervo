@@ -125,7 +125,14 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
             
             # Preparar dados completos para API
             versao_historica = {
-                **self.produto_data,  # Incluir dados do produto
+                "nome": self.produto_data.get('nome'),
+                "mi": self.produto_data.get('mi'),
+                "inom": self.produto_data.get('inom'),
+                "tipo_escala_id": self.produto_data.get('tipo_escala_id'),
+                "denominador_escala_especial": self.produto_data.get('denominador_escala_especial'),
+                "tipo_produto_id": self.produto_data.get('tipo_produto_id'),
+                "descricao": self.produto_data.get('descricao', ''),
+                "geom": self.produto_data.get('geom', ''),
                 "versoes": [versao_data]
             }
             

@@ -180,12 +180,12 @@ class AddFilesToVersionDialog(QDialog, FORM_CLASS):
             
             # Preparar dados para a API
             prepared_data = {
-                "versao_id": self.versao_data['versao_id'],
                 "arquivos": []
             }
-            
+
             for arquivo in self.arquivos:
                 arquivo_data = {
+                    "versao_id": self.versao_data['versao_id'],
                     "nome": arquivo['nome'],
                     "nome_arquivo": arquivo['nome_arquivo'],
                     "tipo_arquivo_id": arquivo['tipo_arquivo_id'],

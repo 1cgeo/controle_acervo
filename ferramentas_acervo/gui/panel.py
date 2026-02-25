@@ -26,6 +26,10 @@ from .bulk_produtos.bulk_produtos_dialog import BulkCreateProductsDialog
 from .bulk_produtos_versoes_historicas.bulk_produtos_versoes_historicas_dialog import LoadHistoricalProductsDialog
 from .bulk_versao_relacionamento.bulk_versao_relacionamento_dialog import BulkCreateVersionRelationshipsDialog
 from .bulk_versoes_historicas.bulk_versoes_historicas_dialog import LoadHistoricalVersionsDialog
+from .busca_produtos.busca_produtos_dialog import BuscaProdutosDialog
+from .upload_sessions.upload_sessions_dialog import UploadSessionsDialog
+from .versao_relacionamento.versao_relacionamento_dialog import VersaoRelacionamentoDialog
+from .downloads_deletados.downloads_deletados_dialog import DownloadsDeletadosDialog
 
 PANEL_MAPPING = {
     # Funções Gerais (acessíveis a todos os usuários)
@@ -49,12 +53,22 @@ PANEL_MAPPING = {
         "category": "Funções Gerais",
         "admin_only": False
     },
+    "Buscar Produtos": {
+        "class": BuscaProdutosDialog,
+        "category": "Funções Gerais",
+        "admin_only": False
+    },
+    "Visualizar Relacionamentos entre Versões": {
+        "class": VersaoRelacionamentoDialog,
+        "category": "Funções Gerais",
+        "admin_only": False
+    },
     "Configurações": {
         "class": ConfiguracoesDialog,
         "category": "Funções Gerais",
         "admin_only": False
     },
-    
+
     # Funções de Administrador
     "Adicionar Produto": {
         "class": AddProductDialog,
@@ -140,7 +154,17 @@ PANEL_MAPPING = {
         "category": "Diagnóstico e Manutenção",
         "admin_only": True
     },
-    
+    "Gerenciar Sessões de Upload": {
+        "class": UploadSessionsDialog,
+        "category": "Diagnóstico e Manutenção",
+        "admin_only": True
+    },
+    "Gerenciar Downloads Excluídos": {
+        "class": DownloadsDeletadosDialog,
+        "category": "Diagnóstico e Manutenção",
+        "admin_only": True
+    },
+
     # Operações em Lote
     "Adicionar Arquivos em Lote": {
         "class": BulkLoadFilesDialog,

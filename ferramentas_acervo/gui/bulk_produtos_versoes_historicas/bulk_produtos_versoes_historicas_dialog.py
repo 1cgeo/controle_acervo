@@ -100,8 +100,8 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
         """Valida se a camada tem a estrutura necessária"""
         required_fields = [
             'produto_grupo_id', 'produto_nome', 'tipo_escala_id', 'tipo_produto_id', 'geom',
-            'versao_grupo_id', 'versao', 'nome_versao', 'orgao_produtor', 
-            'data_criacao', 'data_edicao'
+            'versao_grupo_id', 'versao', 'nome_versao', 'subtipo_produto_id',
+            'orgao_produtor', 'data_criacao', 'data_edicao'
         ]
         
         field_names = [field.name() for field in layer.fields()]
@@ -125,8 +125,8 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
             # Verificação de campos não nulos obrigatórios
             non_null_fields = [
                 'produto_grupo_id', 'produto_nome', 'tipo_escala_id', 'tipo_produto_id', 'geom',
-                'versao_grupo_id', 'versao', 'nome_versao', 'orgao_produtor', 
-                'data_criacao', 'data_edicao'
+                'versao_grupo_id', 'versao', 'nome_versao', 'subtipo_produto_id',
+                'orgao_produtor', 'data_criacao', 'data_edicao'
             ]
             null_fields = [field for field in non_null_fields if feature[field] == NULL]
             
@@ -185,6 +185,7 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
                     "uuid_versao": null_to_none(feature['uuid_versao']) if 'uuid_versao' in field_names else None,
                     "versao": feature['versao'],
                     "nome": feature['nome_versao'],
+                    "subtipo_produto_id": feature['subtipo_produto_id'],
                     "lote_id": null_to_none(feature['lote_id']) if 'lote_id' in field_names else None,
                     "metadado": metadado_versao,
                     "descricao": null_to_none(feature['descricao_versao']) if 'descricao_versao' in field_names else "",
@@ -258,6 +259,7 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
                "&field=versao_grupo_id:integer"
                "&field=versao:string"
                "&field=nome_versao:string"
+               "&field=subtipo_produto_id:integer"
                "&field=lote_id:integer"
                "&field=descricao_versao:string"
                "&field=orgao_produtor:string"

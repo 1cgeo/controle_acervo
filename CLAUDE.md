@@ -1,5 +1,9 @@
 # CLAUDE.md - Controle do Acervo
 
+## Git Rules
+
+- **NEVER create commits automatically.** The user will always review changes and commit manually. Do not run `git add`, `git commit`, or `git push` unless the user explicitly asks for it in that specific message.
+
 ## Project Overview
 
 **Controle do Acervo (SCA)** is a geospatial data collection management system built by the Brazilian Army Geographic Service (DSG/1CGEO). It manages versioned geographic products (maps, orthophotos, digital elevation models, etc.), their files, storage volumes, and a physical map library (mapoteca) for order fulfillment.

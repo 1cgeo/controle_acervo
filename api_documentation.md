@@ -123,6 +123,116 @@ Retorna informacoes completas de um produto incluindo todas as versoes, relacion
 
 ---
 
+### GET `/api/acervo/produto/:produto_id`
+
+Retorna informacoes basicas de um produto (sem versoes/arquivos).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `produto_id` - integer (obrigatorio) |
+
+**Resposta:**
+```json
+{
+  "dados": {
+    "id": 123,
+    "nome": "string",
+    "mi": "string",
+    "inom": "string",
+    "tipo_escala_id": 1,
+    "denominador_escala_especial": null,
+    "tipo_produto_id": 2,
+    "descricao": "string",
+    "geom": "geometry"
+  }
+}
+```
+
+---
+
+### GET `/api/acervo/versao/:versao_id`
+
+Retorna informacoes de uma versao especifica.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `versao_id` - integer (obrigatorio) |
+
+**Resposta:**
+```json
+{
+  "dados": {
+    "id": 456,
+    "uuid_versao": "uuid",
+    "versao": "string",
+    "nome_versao": "string",
+    "tipo_versao_id": 1,
+    "subtipo_produto_id": 2,
+    "produto_id": 123,
+    "lote_id": 10,
+    "metadado": {},
+    "descricao": "string",
+    "orgao_produtor": "string",
+    "palavras_chave": ["string"],
+    "data_criacao": "date",
+    "data_edicao": "date"
+  }
+}
+```
+
+---
+
+### GET `/api/acervo/busca`
+
+Busca produtos com filtros e paginacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `termo` | string | - | Termo de busca (filtra por nome, MI ou INOM via ILIKE) |
+| `tipo_produto_id` | integer | - | Filtrar por tipo de produto |
+| `tipo_escala_id` | integer | - | Filtrar por tipo de escala |
+| `projeto_id` | integer | - | Filtrar por projeto |
+| `lote_id` | integer | - | Filtrar por lote |
+| `page` | integer | 1 | Numero da pagina (min 1) |
+| `limit` | integer | 20 | Registros por pagina (min 1, max 100) |
+
+**Resposta:**
+```json
+{
+  "dados": {
+    "total": 150,
+    "page": 1,
+    "limit": 20,
+    "dados": [
+      {
+        "id": 123,
+        "nome": "string",
+        "mi": "string",
+        "inom": "string",
+        "escala": "string",
+        "tipo_escala_id": 1,
+        "tipo_produto": "string",
+        "tipo_produto_id": 2,
+        "denominador_escala_especial": null,
+        "descricao": "string",
+        "data_cadastramento": "date",
+        "data_modificacao": "date",
+        "num_versoes": 3
+      }
+    ]
+  }
+}
+```
+
+---
+
 ### POST `/api/acervo/prepare-download/arquivos`
 
 Prepara arquivos especificos para download, criando tokens de download validos por 24 horas.
@@ -419,6 +529,56 @@ Retorna as ultimas 50 sessoes de upload com falha, com detalhes dos problemas.
 | Campo | Valor |
 |---|---|
 | **Auth** | `verifyAdmin` |
+
+---
+
+### GET `/api/arquivo/upload-sessions`
+
+Retorna as ultimas 100 sessoes de upload (todas as situacoes), ordenadas por data de criacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Resposta:** Array com objetos contendo:
+```json
+{
+  "dados": [
+    {
+      "id": 1,
+      "uuid_session": "uuid",
+      "operation_type": "add_files | add_version | add_product",
+      "status": "pending | completed | failed | cancelled",
+      "error_message": "string | null",
+      "created_at": "datetime",
+      "expiration_time": "datetime",
+      "completed_at": "datetime | null",
+      "usuario_nome": "string"
+    }
+  ]
+}
+```
+
+---
+
+### POST `/api/arquivo/cancel-upload`
+
+Cancela uma sessao de upload pendente. O criador da sessao ou um administrador pode cancelar.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
+```json
+{
+  "session_uuid": "uuid (obrigatorio)"
+}
+```
+
+**Erros possiveis:**
+- `404` - Sessao nao encontrada ou ja processada
+- `403` - Usuario nao autorizado (nao e o criador nem administrador)
 
 ---
 
@@ -1028,6 +1188,46 @@ Retorna arquivos com problemas de integridade, com paginacao.
 | **Auth** | `verifyAdmin` |
 
 **Query Params:** Mesmos de `arquivos_deletados` (`page`, `limit`).
+
+---
+
+### GET `/api/gerencia/downloads_deletados`
+
+Retorna downloads de arquivos que foram deletados, com paginacao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `page` | integer | 1 | Numero da pagina (min 1) |
+| `limit` | integer | 20 | Registros por pagina (min 1, max 100) |
+
+**Resposta:**
+```json
+{
+  "dados": {
+    "total": 50,
+    "page": 1,
+    "limit": 20,
+    "dados": [
+      {
+        "id": 1,
+        "arquivo_deletado_id": 10,
+        "usuario_uuid": "uuid",
+        "data_download": "datetime",
+        "usuario_nome": "string",
+        "arquivo_nome": "string",
+        "nome_arquivo": "string",
+        "motivo_exclusao": "string",
+        "data_delete": "datetime"
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -1752,13 +1952,13 @@ Interface Swagger UI com documentacao interativa da API.
 |---|---|---|---|
 | Health Check | `/api/` | 1 | Nenhuma |
 | Login | `/api/login` | 1 | Nenhuma |
-| Acervo | `/api/acervo` | 9 | verifyLogin / verifyAdmin |
-| Arquivo | `/api/arquivo` | 7 | verifyLogin / verifyAdmin |
+| Acervo | `/api/acervo` | 12 | verifyLogin / verifyAdmin |
+| Arquivo | `/api/arquivo` | 9 | verifyLogin / verifyAdmin |
 | Produtos | `/api/produtos` | 11 | verifyAdmin (maioria) |
 | Projetos | `/api/projetos` | 8 | verifyAdmin (escrita) |
 | Volumes | `/api/volumes` | 8 | verifyAdmin |
 | Usuarios | `/api/usuarios` | 6 | verifyAdmin |
-| Gerencia | `/api/gerencia` | 13 | Nenhuma (dominios) / verifyAdmin |
+| Gerencia | `/api/gerencia` | 14 | Nenhuma (dominios) / verifyAdmin |
 | Mapoteca - Dominios | `/api/mapoteca/dominio` | 4 | Nenhuma |
 | Mapoteca - Clientes | `/api/mapoteca/cliente` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Pedidos | `/api/mapoteca/pedido` | 6 | verifyLogin / verifyAdmin |
@@ -1770,4 +1970,4 @@ Interface Swagger UI com documentacao interativa da API.
 | Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 5 | verifyLogin / verifyAdmin |
 | Dashboard Mapoteca | `/api/mapoteca/dashboard` | 8 | verifyLogin |
 | Dashboard Acervo | *(nao montado)* | 17 | - |
-| **Total (montados)** | | **101** | |
+| **Total (montados)** | | **107** | |

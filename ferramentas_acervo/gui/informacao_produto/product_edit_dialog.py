@@ -132,7 +132,8 @@ class ProductEditDialog(QDialog, FORM_CLASS):
                 'tipo_escala_id': self.tipoEscalaComboBox.currentData(),
                 'denominador_escala_especial': self.denominadorSpinBox.value() if self.tipoEscalaComboBox.currentData() == 5 else None,
                 'tipo_produto_id': self.tipoProdutoComboBox.currentData(),
-                'descricao': self.descricaoTextEdit.toPlainText()
+                'descricao': self.descricaoTextEdit.toPlainText(),
+                'geom': self.produto_data.get('geom')
             }
             
             # Enviar para API

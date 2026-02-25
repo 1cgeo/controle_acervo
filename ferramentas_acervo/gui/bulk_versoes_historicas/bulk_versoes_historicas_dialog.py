@@ -99,8 +99,8 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
     def validate_layer_structure(self, layer):
         """Valida se a camada tem a estrutura necessária"""
         required_fields = [
-            'produto_id', 'versao', 'nome', 'orgao_produtor', 
-            'data_criacao', 'data_edicao'
+            'produto_id', 'versao', 'nome', 'subtipo_produto_id',
+            'orgao_produtor', 'data_criacao', 'data_edicao'
         ]
         
         field_names = [field.name() for field in layer.fields()]
@@ -120,7 +120,7 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
         
         for feature in layer.getFeatures():
             # Verificação de campos não nulos obrigatórios
-            non_null_fields = ['produto_id', 'versao', 'nome', 'orgao_produtor', 'data_criacao', 'data_edicao']
+            non_null_fields = ['produto_id', 'versao', 'nome', 'subtipo_produto_id', 'orgao_produtor', 'data_criacao', 'data_edicao']
             null_fields = [field for field in non_null_fields if feature[field] == NULL]
             
             if null_fields:
@@ -158,6 +158,7 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
                 "versao": feature['versao'],
                 "nome": feature['nome'],
                 "produto_id": feature['produto_id'],
+                "subtipo_produto_id": feature['subtipo_produto_id'],
                 "lote_id": null_to_none(feature['lote_id']) if 'lote_id' in field_names else None,
                 "metadado": metadado,
                 "descricao": null_to_none(feature['descricao']) if 'descricao' in field_names else "",
@@ -207,6 +208,7 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
                "&field=produto_id:integer"
                "&field=versao:string"
                "&field=nome:string"
+               "&field=subtipo_produto_id:integer"
                "&field=lote_id:integer"
                "&field=descricao:string"
                "&field=orgao_produtor:string"

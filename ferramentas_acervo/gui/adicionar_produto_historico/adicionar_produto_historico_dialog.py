@@ -472,7 +472,7 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
                 'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
                 'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
                 'descricao': self.descricaoTextEdit.toPlainText(),
-                'geom': self.current_geometry.asJson()
+                'geom': self.current_geometry.asWkt()
             }
             
             # Preparar versões

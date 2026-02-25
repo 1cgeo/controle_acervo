@@ -303,9 +303,11 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             
             # Preparar dados completos para API
             prepared_data = {
-                "produto_id": self.produto_data['id'],
-                "versao": versao_data,
-                "arquivos": arquivos_data
+                "versoes": [{
+                    "produto_id": self.produto_data['id'],
+                    "versao": versao_data,
+                    "arquivos": arquivos_data
+                }]
             }
             
             # Enviar requisição de preparação

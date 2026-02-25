@@ -42,9 +42,9 @@ class EditProjectDialog(QDialog, FORM_CLASS):
     def load_status_types(self):
         response = self.api_client.get('gerencia/dominio/tipo_status_execucao')
         if response and 'dados' in response:
-            self.status_types = {item['nome']: item['code'] for item in response['dados']}
             self.statusComboBox.clear()
-            self.statusComboBox.addItems(self.status_types.keys())
+            for item in response['dados']:
+                self.statusComboBox.addItem(item['nome'], item['code'])
         else:
             QMessageBox.warning(self, "Erro", "Não foi possível carregar os tipos de status.")
 
@@ -64,7 +64,9 @@ class EditProjectDialog(QDialog, FORM_CLASS):
         else:
             self.endDateCheckBox.setChecked(True)
             self.endDateEdit.setEnabled(False)
-        self.statusComboBox.setCurrentIndex(self.project_data['status_execucao_id'] - 1)
+        status_index = self.statusComboBox.findData(self.project_data['status_execucao_id'])
+        if status_index >= 0:
+            self.statusComboBox.setCurrentIndex(status_index)
 
     def set_default_dates(self):
         today = QDate.currentDate()
@@ -97,7 +99,7 @@ class EditProjectDialog(QDialog, FORM_CLASS):
             'descricao': self.descriptionTextEdit.toPlainText(),
             'data_inicio': self.startDateEdit.date().toString(Qt.ISODate),
             'data_fim': None if self.endDateCheckBox.isChecked() else self.endDateEdit.date().toString(Qt.ISODate),
-            'status_execucao_id': self.statusComboBox.currentIndex() + 1
+            'status_execucao_id': self.statusComboBox.currentData()
         }
 
         try:

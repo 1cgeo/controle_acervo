@@ -28,7 +28,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'product_info_dialog.ui'))
 
 class ProductInfoDialog(QDialog, FORM_CLASS):
-    def __init__(self, iface, api_client, parent=None):
+    def __init__(self, iface, api_client, parent=None, product_id=None):
         super(ProductInfoDialog, self).__init__(parent)
         self.setupUi(self)
         self.iface = iface
@@ -38,14 +38,19 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         self.current_version = None
         self.is_admin = api_client.is_admin
         self.download_manager = DownloadManager(api_client)
-        
+
         self.setup_ui()
         self.loadButton.clicked.connect(self.load_product_info)
-        
+
         # Connect download manager signals
         self.download_manager.prepare_complete.connect(self.handle_download_prepare)
         self.download_manager.download_complete.connect(self.handle_download_complete)
         self.download_manager.download_error.connect(self.handle_download_error)
+
+        # Se product_id foi fornecido, carregar diretamente
+        if product_id is not None:
+            self.product_id = product_id
+            self.load_product_by_id()
 
     def setup_ui(self):
         """Configura a interface de usuário."""
@@ -173,6 +178,28 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             
         self.relationships_tab.navigate_btn.clicked.connect(self.navigate_to_related_product)
         
+    def load_product_by_id(self):
+        """Carrega as informações do produto diretamente pelo ID."""
+        try:
+            self.setCursor(Qt.WaitCursor)
+            self.statusLabel.setText("Carregando informações do produto...")
+
+            response = self.api_client.get(f'acervo/produto/detalhado/{self.product_id}')
+
+            if response and 'dados' in response:
+                self.product_data = response['dados']
+                self.display_product_info()
+                self.statusLabel.setText("Informações carregadas com sucesso")
+            else:
+                self.statusLabel.setText("Não foi possível carregar as informações detalhadas do produto")
+                QMessageBox.warning(self, "Erro", "Não foi possível carregar as informações do produto")
+
+        except Exception as e:
+            self.statusLabel.setText(f"Erro: {str(e)}")
+            QMessageBox.critical(self, "Erro", f"Erro ao carregar informações do produto: {str(e)}")
+        finally:
+            self.setCursor(Qt.ArrowCursor)
+
     def load_product_info(self):
         """Carrega as informações do produto selecionado."""
         # Obter a camada ativa
@@ -527,7 +554,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     def reload_product_info(self):
         """Recarrega as informações do produto após alterações."""
         if self.product_id:
-            self.load_product_info()
+            self.load_product_by_id()
     
     # Métodos para adicionar arquivos, versões e versões históricas
     def add_files_to_version(self, version_data):
