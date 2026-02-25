@@ -8,7 +8,7 @@ from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes, Qgis, NULL
 from ...core.file_transfer import FileTransferThread
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'load_systematic_files_dialog.ui'))
+    os.path.dirname(__file__), 'bulk_carrega_arquivos_dialog.ui'))
 
 def null_to_none(value):
     return None if value == NULL else value

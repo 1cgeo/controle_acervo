@@ -6,7 +6,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes, Qgis, NULL
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'bulk_create_version_relationships_dialog.ui'))
+    os.path.dirname(__file__), 'bulk_versao_relacionamento_dialog.ui'))
 
 def null_to_none(value):
     return None if value == NULL else value

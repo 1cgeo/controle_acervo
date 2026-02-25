@@ -8,7 +8,7 @@ from qgis.PyQt.QtCore import Qt, QDate
 from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes, Qgis, NULL
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'load_historical_products_dialog.ui'))
+    os.path.dirname(__file__), 'bulk_produtos_versoes_historicas_dialog.ui'))
 
 def null_to_none(value):
     return None if value == NULL else value
