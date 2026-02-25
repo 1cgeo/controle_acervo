@@ -43,7 +43,7 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + 'WHERE Y.id = X.id'
+      ) + ' WHERE Y.id = X.id'
 
     await t.none(query)
   })
@@ -154,7 +154,7 @@ controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + 'WHERE Y.id = X.id'
+      ) + ' WHERE Y.id = X.id'
 
     await t.none(query)
   })

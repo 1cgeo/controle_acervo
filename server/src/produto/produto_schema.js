@@ -137,12 +137,12 @@ models.produtos = Joi.object().keys({
   produtos: Joi.array().items(
     Joi.object().keys({
       nome: Joi.string().allow(null).required(),
-      mi: Joi.string().allow(null).required(),
-      inom: Joi.string().allow(null).required(),
+      mi: Joi.string().allow(null, '').required(),
+      inom: Joi.string().allow(null, '').required(),
       tipo_escala_id: Joi.number().integer().strict().required(),
       denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
       tipo_produto_id: Joi.number().integer().required(),
-      descricao: Joi.string().allow(null).required(),
+      descricao: Joi.string().allow(null, '').required(),
       geom: Joi.string().required()
     })
   ).min(1).required()

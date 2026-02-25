@@ -44,7 +44,7 @@ controller.atualizaUsuarioLista = async usuarios => {
         tableAlias: "X",
         valueAlias: "Y"
       }
-    ) + "WHERE Y.uuid::uuid = X.uuid";
+    ) + " WHERE Y.uuid::uuid = X.uuid";
 
   return db.conn.none(query);
 };
@@ -79,7 +79,7 @@ controller.atualizaListaUsuarios = async () => {
         tableAlias: "X",
         valueAlias: "Y"
       }
-    ) + "WHERE Y.uuid::uuid = X.uuid";
+    ) + " WHERE Y.uuid::uuid = X.uuid";
 
   return db.conn.none(query);
 };

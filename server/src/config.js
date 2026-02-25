@@ -62,7 +62,7 @@ const config = {
   DB_PASSWORD_READONLY: process.env.DB_PASSWORD_READONLY || '',
   JWT_SECRET: process.env.JWT_SECRET,
   AUTH_SERVER: process.env.AUTH_SERVER,
-  USE_PROXY: process.env.USE_PROXY !== 'false',
+  USE_PROXY: process.env.USE_PROXY === 'true',
   VERSION,
   MIN_DATABASE_VERSION
 }

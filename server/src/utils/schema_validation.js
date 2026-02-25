@@ -38,29 +38,32 @@ const middleware = ({
 }) => {
   return (req, res, next) => {
     if (querySchema) {
-      const { error } = querySchema.validate(req.query, {
+      const { error, value } = querySchema.validate(req.query, {
         abortEarly: false
       })
       if (error) {
         return next(validationError(error, 'Query'))
       }
+      req.query = value
     }
     if (paramsSchema) {
-      const { error } = paramsSchema.validate(req.params, {
+      const { error, value } = paramsSchema.validate(req.params, {
         abortEarly: false
       })
       if (error) {
         return next(validationError(error, 'Parâmetros'))
       }
+      req.params = value
     }
     if (bodySchema) {
-      const { error } = bodySchema.validate(req.body, {
+      const { error, value } = bodySchema.validate(req.body, {
         stripUnknown: true,
         abortEarly: false
       })
       if (error) {
         return next(validationError(error, 'Dados'))
       }
+      req.body = value
     }
 
     return next()

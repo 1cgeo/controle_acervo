@@ -202,18 +202,22 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                 "crs_original": null_to_none(feature['crs_original']) if 'crs_original' in field_names else ""
             }
             
+            # Garantir que a geometria tenha o prefixo SRID
+            geom_text = feature['geom']
+            geom_ewkt = geom_text if geom_text.startswith('SRID=') else f"SRID=4674;{geom_text}"
+
             # Adicionar produto se ainda não existe no dicionário
             if produto_key not in produtos_por_grupo:
                 produtos_por_grupo[produto_key] = {
                     "produto": {
                         "nome": feature['produto_nome'],
-                        "mi": null_to_none(feature['mi']) or "",
-                        "inom": null_to_none(feature['inom']) or "",
+                        "mi": null_to_none(feature['mi']) or None,
+                        "inom": null_to_none(feature['inom']) or None,
                         "tipo_escala_id": feature['tipo_escala_id'],
                         "denominador_escala_especial": null_to_none(feature['denominador_escala_especial']),
                         "tipo_produto_id": feature['tipo_produto_id'],
-                        "descricao": null_to_none(feature['descricao_produto']) if 'descricao_produto' in field_names else "",
-                        "geom": feature['geom']
+                        "descricao": null_to_none(feature['descricao_produto']) if 'descricao_produto' in field_names else None,
+                        "geom": geom_ewkt
                     },
                     "versoes": {}
                 }

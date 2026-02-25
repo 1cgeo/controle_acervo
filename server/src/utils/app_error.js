@@ -13,7 +13,9 @@ class AppError extends Error {
     super(message)
     this.statusCode = status
     this.errorTrace =
-      errorTrace instanceof Error ? serializeError(errorTrace) : errorTrace
+      errorTrace instanceof Error
+        ? (serializeError ? serializeError(errorTrace) : { message: errorTrace.message, stack: errorTrace.stack })
+        : errorTrace
   }
 }
 

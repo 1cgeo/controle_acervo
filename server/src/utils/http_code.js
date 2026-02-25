@@ -13,6 +13,7 @@
  * @property {number} Unauthorized - 401
  * @property {number} Forbidden - 403
  * @property {number} NotFound - 404
+ * @property {number} Conflict - 409
  * @property {number} InternalError - 500
  */
 const httpCode = {
@@ -23,6 +24,7 @@ const httpCode = {
   Unauthorized: 401,
   Forbidden: 403,
   NotFound: 404,
+  Conflict: 409,
   InternalError: 500
 }
 

@@ -98,7 +98,7 @@ router.post(
 
 router.post(
   '/produtos',
-  verifyLogin,
+  verifyAdmin,
   schemaValidation({
     body: produtoSchema.produtos
   }),
