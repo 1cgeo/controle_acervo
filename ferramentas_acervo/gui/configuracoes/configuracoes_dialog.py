@@ -1,21 +1,16 @@
 # Path: gui\configuracoes\configuracoes_dialog.py
-import os
-from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QVBoxLayout, QLabel, QLineEdit, QPushButton, QGroupBox
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QGroupBox
 from qgis.PyQt.QtCore import Qt
 from ...core.settings import Settings
 
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'configuracoes_dialog.ui'))
-
-class ConfiguracoesDialog(QDialog, FORM_CLASS):
+class ConfiguracoesDialog(QDialog):
     def __init__(self, iface, api_client, parent=None):
         super(ConfiguracoesDialog, self).__init__(parent)
-        self.setupUi(self)
         self.iface = iface
         self.api_client = api_client
         self.settings = Settings()
-        
+
+        self.mainLayout = QVBoxLayout(self)
         self.setup_ui()
         self.load_settings()
         
