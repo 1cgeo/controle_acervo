@@ -246,9 +246,14 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
 
     def update_file_progress(self, current, total):
         """Atualiza o progresso da transferência de um arquivo individual"""
-        # Esta função poderia ser expandida para mostrar o progresso de cada arquivo
-        # mas por ora apenas monitoramos o número total de arquivos transferidos
-        pass
+        if total > 0:
+            current_mb = current / (1024 * 1024)
+            total_mb = total / (1024 * 1024)
+            idx = self.arquivos_transferidos + 1
+            total_files = self.progressBar.maximum()
+            self.statusLabel.setText(
+                f"Transferindo arquivo {idx}/{total_files} - {current_mb:.1f} / {total_mb:.1f} MB"
+            )
 
     def file_transfer_complete(self, success, file_path, checksum):
         """Manipula a conclusão da transferência de um arquivo"""

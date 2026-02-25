@@ -65,7 +65,7 @@ class FileTransferThread(QThread):
     def transfer_file_windows(self):
         source_path = self.source_path.replace("/", "\\")
         dest_path = self.destination_path.replace("/", "\\")
-        
+
         # Certificar que o diretório de destino existe
         dest_dir = os.path.dirname(dest_path)
         if not os.path.exists(dest_dir):
@@ -74,19 +74,13 @@ class FileTransferThread(QThread):
             except Exception as e:
                 logging.error(f"Erro ao criar diretório de destino: {dest_dir}, {str(e)}")
                 return False
-        
-        # Para arquivos pequenos, usar o método Python direto
-        if os.path.exists(source_path) and os.path.getsize(source_path) < 10 * 1024 * 1024:  # 10MB
-            try:
-                self._copy_file_with_progress(source_path, dest_path)
-                return True
-            except Exception as e:
-                logging.error(f"Erro ao copiar arquivo usando Python: {str(e)}")
-                # Fallback para comando do sistema
-        
-        # Usar comando copy para arquivos maiores
-        command = f'copy "{source_path}" "{dest_path}"'
-        return self.run_system_command(command)
+
+        # Usar cópia Python com progresso para todos os tamanhos de arquivo
+        try:
+            return self._copy_file_with_progress(source_path, dest_path)
+        except Exception as e:
+            logging.error(f"Erro ao copiar arquivo: {str(e)}")
+            return False
 
     def transfer_file_linux(self):
         """Transfere arquivo no Linux usando SMB"""
@@ -136,20 +130,29 @@ class FileTransferThread(QThread):
     def _copy_file_with_progress(self, source_path, dest_path):
         """Copia arquivo com atualização de progresso"""
         file_size = os.path.getsize(source_path)
+
+        if file_size == 0:
+            logging.warning(f"Arquivo de origem vazio (0 bytes): {source_path}")
+            # Criar arquivo vazio no destino e emitir progresso completo
+            with open(dest_path, 'wb'):
+                pass
+            self.progress_update.emit(1, 1)
+            return True
+
         bytes_copied = 0
-        
+
         with open(source_path, 'rb') as src:
             with open(dest_path, 'wb') as dst:
                 buffer_size = 8192  # 8KB por vez
                 buffer = src.read(buffer_size)
-                
+
                 while buffer and not self.cancelled:
                     dst.write(buffer)
                     bytes_copied += len(buffer)
                     # Emitir progresso
                     self.progress_update.emit(bytes_copied, file_size)
                     buffer = src.read(buffer_size)
-                    
+
         return not self.cancelled
 
     def run_system_command(self, command):

@@ -37,7 +37,14 @@ class AddProductDialog(QDialog, FORM_CLASS):
         self.tipos_versao = {}
         self.subtipos_produto = {}
         self.tipos_arquivo = {}
-        
+
+        # Dados brutos para popular combos (preenchidos por load_domain_data)
+        self._subtipos_data = []
+        self._lotes_data = []
+
+        # Dicionário para armazenar widgets de cada aba de versão por índice
+        self._version_widgets = {}
+
         # Inicializar a interface
         self.setup_ui()
         
@@ -127,157 +134,184 @@ class AddProductDialog(QDialog, FORM_CLASS):
         # Nome
         nome_layout = QVBoxLayout()
         nome_label = QLabel("Nome da Versão:")
-        self.version_name_edit = QLineEdit()
+        version_name_edit = QLineEdit()
         nome_layout.addWidget(nome_label)
-        nome_layout.addWidget(self.version_name_edit)
+        nome_layout.addWidget(version_name_edit)
         row1_layout.addLayout(nome_layout)
-        
+
         # Número da versão
         versao_layout = QVBoxLayout()
         versao_label = QLabel("Número da Versão:")
-        self.version_number_edit = QLineEdit()
-        self.version_number_edit.setPlaceholderText("Ex: 1-DSGEO ou 2ª Edição")
+        version_number_edit = QLineEdit()
+        version_number_edit.setPlaceholderText("Ex: 1-DSGEO ou 2ª Edição")
         versao_layout.addWidget(versao_label)
-        versao_layout.addWidget(self.version_number_edit)
+        versao_layout.addWidget(version_number_edit)
         row1_layout.addLayout(versao_layout)
-        
+
         # Tipo da versão
         tipo_versao_layout = QVBoxLayout()
         tipo_versao_label = QLabel("Tipo de Versão:")
-        self.version_type_combo = QComboBox()
+        version_type_combo = QComboBox()
+        for code, nome in self.tipos_versao.items():
+            version_type_combo.addItem(nome, code)
         tipo_versao_layout.addWidget(tipo_versao_label)
-        tipo_versao_layout.addWidget(self.version_type_combo)
+        tipo_versao_layout.addWidget(version_type_combo)
         row2_layout.addLayout(tipo_versao_layout)
-        
+
         # Subtipo de produto
         subtipo_layout = QVBoxLayout()
         subtipo_label = QLabel("Subtipo de Produto:")
-        self.subtype_combo = QComboBox()
+        subtype_combo = QComboBox()
         subtipo_layout.addWidget(subtipo_label)
-        subtipo_layout.addWidget(self.subtype_combo)
+        subtipo_layout.addWidget(subtype_combo)
         row2_layout.addLayout(subtipo_layout)
-        
+
         # Lote
         lote_layout = QVBoxLayout()
         lote_label = QLabel("Lote (opcional):")
-        self.lot_combo = QComboBox()
-        self.lot_combo.setEditable(False)
+        lot_combo = QComboBox()
+        lot_combo.setEditable(False)
+        lot_combo.addItem("Nenhum", None)
         lote_layout.addWidget(lote_label)
-        lote_layout.addWidget(self.lot_combo)
+        lote_layout.addWidget(lot_combo)
         row3_layout.addLayout(lote_layout)
-        
+
         # Órgão produtor
         orgao_layout = QVBoxLayout()
         orgao_label = QLabel("Órgão Produtor:")
-        self.producer_edit = QLineEdit()
-        self.producer_edit.setText("DSG")
+        producer_edit = QLineEdit()
+        producer_edit.setText("DSG")
         orgao_layout.addWidget(orgao_label)
-        orgao_layout.addWidget(self.producer_edit)
+        orgao_layout.addWidget(producer_edit)
         row3_layout.addLayout(orgao_layout)
-        
+
         # Palavras-chave
         keywords_layout = QVBoxLayout()
         keywords_label = QLabel("Palavras-chave (separadas por vírgula):")
-        self.keywords_edit = QLineEdit()
+        keywords_edit = QLineEdit()
         keywords_layout.addWidget(keywords_label)
-        keywords_layout.addWidget(self.keywords_edit)
+        keywords_layout.addWidget(keywords_edit)
         row4_layout.addLayout(keywords_layout)
-        
+
         # Datas
         dates_layout = QHBoxLayout()
-        
+
         creation_date_layout = QVBoxLayout()
         creation_date_label = QLabel("Data de Criação:")
-        self.creation_date_edit = QDateEdit()
-        self.creation_date_edit.setCalendarPopup(True)
-        self.creation_date_edit.setDate(QDate.currentDate())
+        creation_date_edit = QDateEdit()
+        creation_date_edit.setCalendarPopup(True)
+        creation_date_edit.setDate(QDate.currentDate())
         creation_date_layout.addWidget(creation_date_label)
-        creation_date_layout.addWidget(self.creation_date_edit)
+        creation_date_layout.addWidget(creation_date_edit)
         dates_layout.addLayout(creation_date_layout)
-        
+
         edit_date_layout = QVBoxLayout()
         edit_date_label = QLabel("Data de Edição:")
-        self.edit_date_edit = QDateEdit()
-        self.edit_date_edit.setCalendarPopup(True)
-        self.edit_date_edit.setDate(QDate.currentDate())
+        edit_date_edit = QDateEdit()
+        edit_date_edit.setCalendarPopup(True)
+        edit_date_edit.setDate(QDate.currentDate())
         edit_date_layout.addWidget(edit_date_label)
-        edit_date_layout.addWidget(self.edit_date_edit)
+        edit_date_layout.addWidget(edit_date_edit)
         dates_layout.addLayout(edit_date_layout)
-        
+
         row4_layout.addLayout(dates_layout)
-        
+
         # Descrição
         descricao_label = QLabel("Descrição:")
-        self.description_edit = QTextEdit()
-        self.description_edit.setMaximumHeight(100)
-        
+        description_edit = QTextEdit()
+        description_edit.setMaximumHeight(100)
+
+        # Metadados (JSON)
+        metadados_label = QLabel("Metadados (JSON):")
+        metadados_edit = QTextEdit()
+        metadados_edit.setMaximumHeight(100)
+        metadados_edit.setText("{}")
+
         # Adicionar todos os layouts ao formulário
         form_layout.addLayout(row1_layout)
         form_layout.addLayout(row2_layout)
         form_layout.addLayout(row3_layout)
         form_layout.addLayout(row4_layout)
         form_layout.addWidget(descricao_label)
-        form_layout.addWidget(self.description_edit)
-        
+        form_layout.addWidget(description_edit)
+        form_layout.addWidget(metadados_label)
+        form_layout.addWidget(metadados_edit)
+
         form_group.setLayout(form_layout)
         version_layout.addWidget(form_group)
-        
+
         # Seção de arquivos
         files_group = QGroupBox("Arquivos")
         files_layout = QVBoxLayout()
-        
+
         # Botões para gerenciar arquivos
         buttons_layout = QHBoxLayout()
-        self.add_file_button = QPushButton("Adicionar Arquivo")
-        self.add_file_button.clicked.connect(lambda: self.add_file(version_index))
-        self.remove_file_button = QPushButton("Remover Arquivo Selecionado")
-        self.remove_file_button.clicked.connect(lambda: self.remove_file(version_index))
-        buttons_layout.addWidget(self.add_file_button)
-        buttons_layout.addWidget(self.remove_file_button)
-        
+        add_file_button = QPushButton("Adicionar Arquivo")
+        add_file_button.clicked.connect(lambda: self.add_file(version_index))
+        remove_file_button = QPushButton("Remover Arquivo Selecionado")
+        remove_file_button.clicked.connect(lambda: self.remove_file(version_index))
+        buttons_layout.addWidget(add_file_button)
+        buttons_layout.addWidget(remove_file_button)
+
         files_layout.addLayout(buttons_layout)
-        
+
         # Tabela de arquivos
-        self.files_table = QTableWidget()
-        self.files_table.setColumnCount(5)
-        self.files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
-        self.files_table.setSelectionBehavior(self.files_table.SelectRows)
-        self.files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
-        
-        files_layout.addWidget(self.files_table)
-        
+        files_table = QTableWidget()
+        files_table.setColumnCount(5)
+        files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
+        files_table.setSelectionBehavior(files_table.SelectRows)
+        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+
+        files_layout.addWidget(files_table)
+
         files_group.setLayout(files_layout)
         version_layout.addWidget(files_group)
-        
+
         # Botão para remover esta versão
         remove_version_layout = QHBoxLayout()
         remove_version_layout.addStretch(1)
-        self.remove_version_button = QPushButton("Remover esta Versão")
-        self.remove_version_button.setStyleSheet("background-color: #CF222E; color: white;")
-        self.remove_version_button.clicked.connect(lambda: self.remove_version(version_index))
-        self.remove_version_button.setEnabled(len(self.versoes) > 1)  # Desabilitar se for a única versão
-        remove_version_layout.addWidget(self.remove_version_button)
-        
+        remove_version_button = QPushButton("Remover esta Versão")
+        remove_version_button.setStyleSheet("background-color: #CF222E; color: white;")
+        remove_version_button.clicked.connect(lambda: self.remove_version(version_index))
+        remove_version_button.setEnabled(len(self.versoes) > 1)
+        remove_version_layout.addWidget(remove_version_button)
+
         version_layout.addLayout(remove_version_layout)
-        
+
         # Adicionar a aba ao widget de abas
         self.versionsTabWidget.addTab(version_tab, f"Versão {len(self.versoes)}")
         self.versionsTabWidget.setCurrentIndex(version_index)
-        
+
+        # Armazenar referências de widgets desta versão
+        self._version_widgets[version_index] = {
+            'subtype_combo': subtype_combo,
+            'version_type_combo': version_type_combo,
+            'lot_combo': lot_combo,
+            'files_table': files_table,
+            'remove_button': remove_version_button,
+        }
+
+        # Popupar subtipos filtrados para esta versão
+        self._populate_subtype_combo(subtype_combo)
+
+        # Popular combo de lotes para esta versão
+        self._populate_lot_combo(lot_combo)
+
         # Conectar os campos desta versão
-        self.version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
-        self.version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
-        self.version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', self.get_combo_value(self.version_type_combo)))
-        self.subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', self.get_combo_value(self.subtype_combo)))
-        self.lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', self.get_combo_value(self.lot_combo)))
-        self.producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
-        self.keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',')]))
-        self.creation_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_criacao', date))
-        self.edit_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_edicao', date))
-        self.description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', self.description_edit.toPlainText()))
-    
+        version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
+        version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
+        version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', version_type_combo.itemData(version_type_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
+        producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
+        keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
+        creation_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_criacao', date))
+        edit_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_edicao', date))
+        description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', description_edit.toPlainText()))
+        metadados_edit.textChanged.connect(lambda: self._update_version_metadata(version_index, metadados_edit))
+
     def update_version_data(self, version_index, field, value):
         """Atualizar dados da versão."""
         if version_index < len(self.versoes):
@@ -301,7 +335,8 @@ class AddProductDialog(QDialog, FORM_CLASS):
             
             # Recriar todas as abas de versão
             self.versionsTabWidget.clear()
-            
+            self._version_widgets = {}
+
             # Recriar as abas para cada versão
             for i in range(len(self.versoes)):
                 # Atualizar UI com os valores existentes
@@ -311,15 +346,270 @@ class AddProductDialog(QDialog, FORM_CLASS):
             self.update_remove_buttons()
     
     def add_version_tab(self, version_index):
-        """Adicionar uma aba de versão com dados existentes."""
-        # A implementar se necessário para recriar abas após a remoção
-        pass
+        """Adicionar uma aba de versão recriando a UI com dados existentes."""
+        versao_data = self.versoes[version_index]
+
+        # Criar a aba de versão
+        version_tab = QWidget()
+        version_layout = QVBoxLayout(version_tab)
+
+        # Criar formulário para a versão
+        form_group = QGroupBox("Informações da Versão")
+        form_layout = QVBoxLayout()
+
+        row1_layout = QHBoxLayout()
+        row2_layout = QHBoxLayout()
+        row3_layout = QHBoxLayout()
+        row4_layout = QHBoxLayout()
+
+        # Nome
+        nome_layout = QVBoxLayout()
+        nome_label = QLabel("Nome da Versão:")
+        version_name_edit = QLineEdit()
+        version_name_edit.setText(versao_data.get('nome', ''))
+        nome_layout.addWidget(nome_label)
+        nome_layout.addWidget(version_name_edit)
+        row1_layout.addLayout(nome_layout)
+
+        # Número da versão
+        versao_layout = QVBoxLayout()
+        versao_label = QLabel("Número da Versão:")
+        version_number_edit = QLineEdit()
+        version_number_edit.setPlaceholderText("Ex: 1-DSGEO ou 2ª Edição")
+        version_number_edit.setText(versao_data.get('versao', ''))
+        versao_layout.addWidget(versao_label)
+        versao_layout.addWidget(version_number_edit)
+        row1_layout.addLayout(versao_layout)
+
+        # Tipo da versão
+        tipo_versao_layout = QVBoxLayout()
+        tipo_versao_label = QLabel("Tipo de Versão:")
+        version_type_combo = QComboBox()
+        for code, nome in self.tipos_versao.items():
+            version_type_combo.addItem(nome, code)
+        # Selecionar o valor existente
+        if versao_data.get('tipo_versao_id') is not None:
+            idx = version_type_combo.findData(versao_data['tipo_versao_id'])
+            if idx >= 0:
+                version_type_combo.setCurrentIndex(idx)
+        tipo_versao_layout.addWidget(tipo_versao_label)
+        tipo_versao_layout.addWidget(version_type_combo)
+        row2_layout.addLayout(tipo_versao_layout)
+
+        # Subtipo de produto
+        subtipo_layout = QVBoxLayout()
+        subtipo_label = QLabel("Subtipo de Produto:")
+        subtype_combo = QComboBox()
+        for code, nome in self.subtipos_produto.items():
+            subtype_combo.addItem(nome, code)
+        if versao_data.get('subtipo_produto_id') is not None:
+            idx = subtype_combo.findData(versao_data['subtipo_produto_id'])
+            if idx >= 0:
+                subtype_combo.setCurrentIndex(idx)
+        subtipo_layout.addWidget(subtipo_label)
+        subtipo_layout.addWidget(subtype_combo)
+        row2_layout.addLayout(subtipo_layout)
+
+        # Lote
+        lote_layout = QVBoxLayout()
+        lote_label = QLabel("Lote (opcional):")
+        lot_combo = QComboBox()
+        lot_combo.setEditable(False)
+        lot_combo.addItem("Nenhum", None)
+        try:
+            response = self.api_client.get('projetos/lote')
+            if response and 'dados' in response:
+                for item in response['dados']:
+                    lot_combo.addItem(f"{item['nome']} ({item['pit']})", item['id'])
+        except Exception:
+            pass
+        if versao_data.get('lote_id') is not None:
+            idx = lot_combo.findData(versao_data['lote_id'])
+            if idx >= 0:
+                lot_combo.setCurrentIndex(idx)
+        lote_layout.addWidget(lote_label)
+        lote_layout.addWidget(lot_combo)
+        row3_layout.addLayout(lote_layout)
+
+        # Órgão produtor
+        orgao_layout = QVBoxLayout()
+        orgao_label = QLabel("Órgão Produtor:")
+        producer_edit = QLineEdit()
+        producer_edit.setText(versao_data.get('orgao_produtor', 'DSG'))
+        orgao_layout.addWidget(orgao_label)
+        orgao_layout.addWidget(producer_edit)
+        row3_layout.addLayout(orgao_layout)
+
+        # Palavras-chave
+        keywords_layout = QVBoxLayout()
+        keywords_label = QLabel("Palavras-chave (separadas por vírgula):")
+        keywords_edit = QLineEdit()
+        palavras = versao_data.get('palavras_chave', [])
+        keywords_edit.setText(', '.join(palavras) if isinstance(palavras, list) else str(palavras))
+        keywords_layout.addWidget(keywords_label)
+        keywords_layout.addWidget(keywords_edit)
+        row4_layout.addLayout(keywords_layout)
+
+        # Datas
+        dates_layout = QHBoxLayout()
+
+        creation_date_layout = QVBoxLayout()
+        creation_date_label = QLabel("Data de Criação:")
+        creation_date_edit = QDateEdit()
+        creation_date_edit.setCalendarPopup(True)
+        creation_date_edit.setDate(versao_data.get('data_criacao', QDate.currentDate()))
+        creation_date_layout.addWidget(creation_date_label)
+        creation_date_layout.addWidget(creation_date_edit)
+        dates_layout.addLayout(creation_date_layout)
+
+        edit_date_layout = QVBoxLayout()
+        edit_date_label = QLabel("Data de Edição:")
+        edit_date_edit = QDateEdit()
+        edit_date_edit.setCalendarPopup(True)
+        edit_date_edit.setDate(versao_data.get('data_edicao', QDate.currentDate()))
+        edit_date_layout.addWidget(edit_date_label)
+        edit_date_layout.addWidget(edit_date_edit)
+        dates_layout.addLayout(edit_date_layout)
+
+        row4_layout.addLayout(dates_layout)
+
+        # Descrição
+        descricao_label = QLabel("Descrição:")
+        description_edit = QTextEdit()
+        description_edit.setMaximumHeight(100)
+        description_edit.setText(versao_data.get('descricao', ''))
+
+        # Metadados (JSON)
+        metadados_label = QLabel("Metadados (JSON):")
+        metadados_edit = QTextEdit()
+        metadados_edit.setMaximumHeight(100)
+        metadado = versao_data.get('metadado', {})
+        metadados_edit.setText(json.dumps(metadado, indent=2) if metadado else '{}')
+
+        # Adicionar todos os layouts ao formulário
+        form_layout.addLayout(row1_layout)
+        form_layout.addLayout(row2_layout)
+        form_layout.addLayout(row3_layout)
+        form_layout.addLayout(row4_layout)
+        form_layout.addWidget(descricao_label)
+        form_layout.addWidget(description_edit)
+        form_layout.addWidget(metadados_label)
+        form_layout.addWidget(metadados_edit)
+
+        form_group.setLayout(form_layout)
+        version_layout.addWidget(form_group)
+
+        # Seção de arquivos
+        files_group = QGroupBox("Arquivos")
+        files_layout = QVBoxLayout()
+
+        buttons_layout = QHBoxLayout()
+        add_file_button = QPushButton("Adicionar Arquivo")
+        add_file_button.clicked.connect(lambda: self.add_file(version_index))
+        remove_file_button = QPushButton("Remover Arquivo Selecionado")
+        remove_file_button.clicked.connect(lambda: self.remove_file(version_index))
+        buttons_layout.addWidget(add_file_button)
+        buttons_layout.addWidget(remove_file_button)
+
+        files_layout.addLayout(buttons_layout)
+
+        files_table = QTableWidget()
+        files_table.setColumnCount(5)
+        files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
+        files_table.setSelectionBehavior(files_table.SelectRows)
+        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+
+        # Preencher tabela com arquivos existentes
+        arquivos = versao_data.get('arquivos', [])
+        files_table.setRowCount(len(arquivos))
+        for row, file_info in enumerate(arquivos):
+            files_table.setItem(row, 0, QTableWidgetItem(file_info.get('nome', '')))
+            file_name_ext = f"{file_info.get('nome_arquivo', '')}.{file_info.get('extensao', '')}"
+            files_table.setItem(row, 1, QTableWidgetItem(file_name_ext))
+            tipo_arquivo = self.tipos_arquivo.get(file_info.get('tipo_arquivo_id'), "Desconhecido")
+            files_table.setItem(row, 2, QTableWidgetItem(tipo_arquivo))
+            files_table.setItem(row, 3, QTableWidgetItem(f"{file_info.get('tamanho_mb', 0):.2f}"))
+            files_table.setItem(row, 4, QTableWidgetItem(file_info.get('path', '')))
+
+        files_layout.addWidget(files_table)
+
+        files_group.setLayout(files_layout)
+        version_layout.addWidget(files_group)
+
+        # Botão para remover esta versão
+        remove_version_layout = QHBoxLayout()
+        remove_version_layout.addStretch(1)
+        remove_version_button = QPushButton("Remover esta Versão")
+        remove_version_button.setStyleSheet("background-color: #CF222E; color: white;")
+        remove_version_button.clicked.connect(lambda: self.remove_version(version_index))
+        remove_version_button.setEnabled(len(self.versoes) > 1)
+        remove_version_layout.addWidget(remove_version_button)
+
+        version_layout.addLayout(remove_version_layout)
+
+        # Adicionar a aba ao widget de abas
+        self.versionsTabWidget.addTab(version_tab, f"Versão {version_index + 1}")
+
+        # Armazenar referências de widgets desta versão
+        self._version_widgets[version_index] = {
+            'subtype_combo': subtype_combo,
+            'version_type_combo': version_type_combo,
+            'lot_combo': lot_combo,
+            'files_table': files_table,
+            'remove_button': remove_version_button,
+        }
+
+        # Conectar os campos desta versão
+        version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
+        version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
+        version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', version_type_combo.itemData(version_type_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
+        producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
+        keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
+        creation_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_criacao', date))
+        edit_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_edicao', date))
+        description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', description_edit.toPlainText()))
+        metadados_edit.textChanged.connect(lambda: self._update_version_metadata(version_index, metadados_edit))
+
+    def _populate_subtype_combo(self, combo):
+        """Popular combo de subtipo filtrado pelo tipo de produto selecionado."""
+        combo.clear()
+        tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
+        if not tipo_produto_id:
+            return
+        for item in self._subtipos_data:
+            if item.get('tipo_id') == tipo_produto_id:
+                combo.addItem(item['nome'], item['code'])
+
+    def _populate_lot_combo(self, combo):
+        """Popular combo de lote."""
+        combo.clear()
+        combo.addItem("Nenhum", None)
+        for item in self._lotes_data:
+            combo.addItem(f"{item['nome']} ({item['pit']})", item['id'])
+
+    def _update_version_metadata(self, version_index, metadados_edit):
+        """Atualizar metadados da versão (validando JSON)."""
+        if version_index < len(self.versoes):
+            text = metadados_edit.toPlainText()
+            try:
+                if text.strip():
+                    metadata = json.loads(text)
+                    self.versoes[version_index]['metadado'] = metadata
+                    metadados_edit.setStyleSheet("")
+                else:
+                    self.versoes[version_index]['metadado'] = {}
+                    metadados_edit.setStyleSheet("")
+            except json.JSONDecodeError:
+                metadados_edit.setStyleSheet("background-color: #FFDDDD;")
     
     def update_remove_buttons(self):
         """Atualizar estado dos botões de remoção de versão."""
-        for i in range(self.versionsTabWidget.count()):
-            tab = self.versionsTabWidget.widget(i)
-            remove_button = tab.findChild(QPushButton, 'remove_version_button')
+        for idx, widgets in self._version_widgets.items():
+            remove_button = widgets.get('remove_button')
             if remove_button:
                 remove_button.setEnabled(len(self.versoes) > 1)
     
@@ -358,43 +648,51 @@ class AddProductDialog(QDialog, FORM_CLASS):
     
     def remove_file(self, version_index):
         """Remover o arquivo selecionado da versão."""
-        selected_rows = self.files_table.selectionModel().selectedRows()
+        widgets = self._version_widgets.get(version_index)
+        if not widgets:
+            return
+        files_table = widgets['files_table']
+        selected_rows = files_table.selectionModel().selectedRows()
         if not selected_rows:
             QMessageBox.warning(self, "Aviso", "Selecione um arquivo para remover.")
             return
-        
+
         # Remover arquivo da lista (em ordem reversa para evitar problemas com índices)
         for row in sorted([index.row() for index in selected_rows], reverse=True):
             if row < len(self.versoes[version_index]['arquivos']):
                 del self.versoes[version_index]['arquivos'][row]
-        
+
         # Atualizar a tabela de arquivos
         self.update_files_table(version_index)
     
     def update_files_table(self, version_index):
         """Atualizar a tabela de arquivos para a versão."""
-        self.files_table.setRowCount(len(self.versoes[version_index]['arquivos']))
-        
+        widgets = self._version_widgets.get(version_index)
+        if not widgets:
+            return
+        files_table = widgets['files_table']
+        files_table.setRowCount(len(self.versoes[version_index]['arquivos']))
+
         for row, file_info in enumerate(self.versoes[version_index]['arquivos']):
             # Nome
-            self.files_table.setItem(row, 0, QTableWidgetItem(file_info['nome']))
-            
+            files_table.setItem(row, 0, QTableWidgetItem(file_info['nome']))
+
             # Nome do arquivo com extensão
             file_name_ext = f"{file_info['nome_arquivo']}.{file_info['extensao']}"
-            self.files_table.setItem(row, 1, QTableWidgetItem(file_name_ext))
-            
+            files_table.setItem(row, 1, QTableWidgetItem(file_name_ext))
+
             # Tipo de arquivo
             tipo_arquivo = "Desconhecido"
             if file_info['tipo_arquivo_id'] in self.tipos_arquivo:
                 tipo_arquivo = self.tipos_arquivo[file_info['tipo_arquivo_id']]
-            self.files_table.setItem(row, 2, QTableWidgetItem(tipo_arquivo))
-            
+            files_table.setItem(row, 2, QTableWidgetItem(tipo_arquivo))
+
             # Tamanho
             tamanho = f"{file_info['tamanho_mb']:.2f}"
-            self.files_table.setItem(row, 3, QTableWidgetItem(tamanho))
-            
+            files_table.setItem(row, 3, QTableWidgetItem(tamanho))
+
             # Caminho
-            self.files_table.setItem(row, 4, QTableWidgetItem(file_info['path']))
+            files_table.setItem(row, 4, QTableWidgetItem(file_info['path']))
     
     def calculate_checksum(self, file_path):
         """Calcular o checksum SHA-256 de um arquivo."""
@@ -431,23 +729,28 @@ class AddProductDialog(QDialog, FORM_CLASS):
             response = self.api_client.get('gerencia/dominio/tipo_versao')
             if response and 'dados' in response:
                 self.tipos_versao = {item['code']: item['nome'] for item in response['dados']}
-                for item in response['dados']:
-                    self.version_type_combo.addItem(item['nome'], item['code'])
-            
+                # Popular combo de tipo de versão em todas as abas existentes
+                for idx, widgets in self._version_widgets.items():
+                    combo = widgets['version_type_combo']
+                    combo.clear()
+                    for item in response['dados']:
+                        combo.addItem(item['nome'], item['code'])
+
             # Carregar subtipos de produto
             response = self.api_client.get('gerencia/dominio/subtipo_produto')
             if response and 'dados' in response:
+                self._subtipos_data = response['dados']
                 self.subtipos_produto = {item['code']: item['nome'] for item in response['dados']}
                 # Filtrar subtipos com base no tipo de produto selecionado
                 self.filterSubtypes()
-            
+
             # Carregar lotes
             response = self.api_client.get('projetos/lote')
             if response and 'dados' in response:
-                self.lot_combo.clear()
-                self.lot_combo.addItem("Nenhum", None)
-                for item in response['dados']:
-                    self.lot_combo.addItem(f"{item['nome']} ({item['pit']})", item['id'])
+                self._lotes_data = response['dados']
+                # Popular combo de lote em todas as abas existentes
+                for idx, widgets in self._version_widgets.items():
+                    self._populate_lot_combo(widgets['lot_combo'])
             
             # Carregar tipos de arquivo
             response = self.api_client.get('gerencia/dominio/tipo_arquivo')
@@ -462,16 +765,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
         tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
         if not tipo_produto_id:
             return
-        
-        try:
-            response = self.api_client.get('gerencia/dominio/subtipo_produto')
-            if response and 'dados' in response:
-                self.subtype_combo.clear()
-                filtered_subtypes = [item for item in response['dados'] if item['tipo_id'] == tipo_produto_id]
-                for item in filtered_subtypes:
-                    self.subtype_combo.addItem(item['nome'], item['code'])
-        except Exception as e:
-            QMessageBox.warning(self, "Aviso", f"Erro ao filtrar subtipos: {str(e)}")
+
+        # Atualizar combo de subtipo em TODAS as abas de versão
+        for idx, widgets in self._version_widgets.items():
+            self._populate_subtype_combo(widgets['subtype_combo'])
     
     def connectSignals(self):
         """Conectar sinais aos slots."""
@@ -598,9 +895,9 @@ class AddProductDialog(QDialog, FORM_CLASS):
             'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
             'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
             'descricao': self.descricaoTextEdit.toPlainText(),
-            'geom': self.current_geometry.asWkt()
+            'geom': f"SRID=4674;{self.current_geometry.asWkt()}"
         }
-        
+
         # Preparar dados para upload
         upload_data = {
             'produtos': [{
@@ -629,8 +926,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
             
             # Adicionar cada arquivo à versão
             for arquivo in versao['arquivos']:
+                arquivo_uuid = str(uuid.uuid4())
+                arquivo['_uuid_arquivo'] = arquivo_uuid
                 arquivo_data = {
-                    'uuid_arquivo': str(uuid.uuid4()),
+                    'uuid_arquivo': arquivo_uuid,
                     'nome': arquivo['nome'],
                     'nome_arquivo': arquivo['nome_arquivo'],
                     'tipo_arquivo_id': arquivo['tipo_arquivo_id'],
@@ -672,19 +971,19 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 # Estruturar arquivos para upload
                 arquivos_para_upload = []
                 
+                # Construir mapa uuid_arquivo -> arquivo local para match preciso
+                uuid_to_local = {}
+                for v in self.versoes:
+                    for a in v['arquivos']:
+                        if '_uuid_arquivo' in a:
+                            uuid_to_local[a['_uuid_arquivo']] = a
+
                 for produto in produtos:
                     for versao in produto['versoes']:
                         for arquivo in versao['arquivos']:
-                            # Encontrar o arquivo local correspondente
-                            arquivo_local = None
-                            for v in self.versoes:
-                                for a in v['arquivos']:
-                                    if a['nome'] == arquivo['nome']:
-                                        arquivo_local = a
-                                        break
-                                if arquivo_local:
-                                    break
-                            
+                            # Encontrar o arquivo local por uuid_arquivo
+                            arquivo_local = uuid_to_local.get(arquivo.get('uuid_arquivo'))
+
                             if arquivo_local:
                                 arquivos_para_upload.append({
                                     'nome': arquivo['nome'],
@@ -697,28 +996,18 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 total_arquivos = len(arquivos_para_upload)
                 self.progressBar.setMaximum(total_arquivos)
                 
-                # Fase 2: Transferência
+                # Fase 2: Transferência sequencial
                 self.statusLabel.setText(f"Iniciando transferência de {total_arquivos} arquivos...")
-                
-                # Iniciar threads de transferência
-                self.transfer_threads = []
+
+                # Configurar estado para upload sequencial
+                self._upload_queue = list(arquivos_para_upload)
                 self.arquivos_transferidos = 0
                 self.arquivos_com_falha = 0
                 self.failed_transfers = []
-                
-                for arquivo in arquivos_para_upload:
-                    thread = FileTransferThread(
-                        arquivo['source_path'],
-                        arquivo['destination_path'],
-                        arquivo['checksum']
-                    )
-                    thread.progress_update.connect(self.update_file_progress)
-                    thread.file_transferred.connect(self.file_transfer_complete)
-                    self.transfer_threads.append(thread)
-                    thread.start()
-                
-                # Armazenar UUID da sessão para confirmação após transferência
                 self.current_session_uuid = session_uuid
+
+                # Iniciar o primeiro upload
+                self._upload_next_file()
             else:
                 raise Exception("Resposta inválida do servidor")
                 
@@ -729,29 +1018,11 @@ class AddProductDialog(QDialog, FORM_CLASS):
             self.cancelButton.setEnabled(True)
             QMessageBox.critical(self, "Erro", f"Falha na preparação do upload: {str(e)}")
     
-    def update_file_progress(self, current_bytes, total_bytes):
-        """Atualizar o progresso de transferência de um arquivo."""
-        # Este método pode ser usado para mostrar o progresso de um arquivo específico
-        # Nesta implementação, estamos apenas contando arquivos completos
-        pass
-    
-    def file_transfer_complete(self, success, file_path, checksum):
-        """Manipular conclusão da transferência de um arquivo."""
-        self.arquivos_transferidos += 1
-        if not success:
-            self.arquivos_com_falha += 1
-            for thread in self.transfer_threads:
-                if thread.destination_path == file_path:
-                    self.failed_transfers.append({
-                        'source_path': thread.source_path,
-                        'destination_path': thread.destination_path,
-                        'identifier': thread.identifier
-                    })
-                    break
-        self.progressBar.setValue(self.arquivos_transferidos)
-
-        # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
-        if self.arquivos_transferidos == len(self.transfer_threads):
+    def _upload_next_file(self):
+        """Inicia o upload do proximo arquivo na fila (sequencial)."""
+        if not self._upload_queue:
+            # Todos os arquivos processados
+            total = self.arquivos_transferidos
             if self.arquivos_com_falha > 0:
                 reply = QMessageBox.question(
                     self, "Falha na Transferência",
@@ -767,12 +1038,58 @@ class AddProductDialog(QDialog, FORM_CLASS):
                     self.cancelButton.setEnabled(True)
             else:
                 self.confirm_upload()
+            return
+
+        arquivo = self._upload_queue[0]
+        self.statusLabel.setText(f"Transferindo: {arquivo['nome']} ({self.arquivos_transferidos + 1}/{self.progressBar.maximum()})...")
+
+        thread = FileTransferThread(
+            arquivo['source_path'],
+            arquivo['destination_path'],
+            arquivo['checksum']
+        )
+        thread.progress_update.connect(self.update_file_progress)
+        thread.file_transferred.connect(self._handle_upload_file_complete)
+        self._current_upload_thread = thread
+        thread.start()
+
+    def update_file_progress(self, current_bytes, total_bytes):
+        """Atualizar o progresso de transferência de um arquivo."""
+        if total_bytes > 0 and self._upload_queue:
+            nome = self._upload_queue[0].get('nome', '')
+            current_mb = current_bytes / (1024 * 1024)
+            total_mb = total_bytes / (1024 * 1024)
+            idx = self.arquivos_transferidos + 1
+            total_files = self.progressBar.maximum()
+            self.statusLabel.setText(
+                f"Transferindo: {nome} ({idx}/{total_files}) - {current_mb:.1f} / {total_mb:.1f} MB"
+            )
+
+    def _handle_upload_file_complete(self, success, file_path, identifier):
+        """Manipular conclusão da transferência de um arquivo (sequencial)."""
+        # Remover da fila
+        if self._upload_queue:
+            arquivo_info = self._upload_queue.pop(0)
+        else:
+            return
+
+        self.arquivos_transferidos += 1
+        if not success:
+            self.arquivos_com_falha += 1
+            self.failed_transfers.append({
+                'source_path': arquivo_info['source_path'],
+                'destination_path': arquivo_info['destination_path'],
+                'identifier': identifier
+            })
+        self.progressBar.setValue(self.arquivos_transferidos)
+
+        # Continuar com o proximo arquivo
+        self._upload_next_file()
 
     def _retry_failed_transfers(self):
         """Retenta apenas os arquivos que falharam na transferência."""
         failed = self.failed_transfers[:]
         self.failed_transfers = []
-        self.transfer_threads = []
         self.arquivos_transferidos = 0
         self.arquivos_com_falha = 0
 
@@ -780,16 +1097,17 @@ class AddProductDialog(QDialog, FORM_CLASS):
         self.progressBar.setValue(0)
         self.statusLabel.setText(f"Retentando {len(failed)} arquivo(s)...")
 
-        for info in failed:
-            thread = FileTransferThread(
-                info['source_path'],
-                info['destination_path'],
-                info['identifier']
-            )
-            thread.progress_update.connect(self.update_file_progress)
-            thread.file_transferred.connect(self.file_transfer_complete)
-            self.transfer_threads.append(thread)
-            thread.start()
+        # Reusar a fila sequencial
+        self._upload_queue = [
+            {
+                'nome': os.path.basename(info['source_path']),
+                'source_path': info['source_path'],
+                'destination_path': info['destination_path'],
+                'checksum': info['identifier']
+            }
+            for info in failed
+        ]
+        self._upload_next_file()
     
     def confirm_upload(self):
         """Confirmar o upload após transferência dos arquivos."""

@@ -84,7 +84,7 @@ class LoadProductLayersDialog(QDialog, FORM_CLASS):
                 "",
                 'id'
             )
-            uri.setSrid('4326')
+            uri.setSrid('4674')
 
             vector_layer = QgsVectorLayer(uri.uri(), f"{layer['tipo_produto']} - {layer['tipo_escala']}", "postgres")
             

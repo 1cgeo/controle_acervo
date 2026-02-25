@@ -11,8 +11,8 @@
 The system consists of four components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
-2. **Client Dashboard** (`client/`) - React/TypeScript SPA for the main archive dashboard
-3. **Mapoteca Admin Client** (`client_admin_mapoteca/`) - React/TypeScript SPA for map library administration
+2. **~~Client Dashboard~~** (`client/` → `client_deprecated/`) - **DEPRECATED.** Former React/TypeScript SPA for the main archive dashboard. Will be rebuilt without React or TypeScript.
+3. **~~Mapoteca Admin Client~~** (`client_admin_mapoteca/` → `client_admin_mapoteca_deprecated/`) - **DEPRECATED.** Former React/TypeScript SPA for map library administration. Will be rebuilt without React or TypeScript.
 4. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 3 desktop integration
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.

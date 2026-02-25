@@ -1,30 +1,42 @@
-const fs = require('fs-extra')
-const npmRun = require('npm-run')
-const path = require('path')
-const colors = require('colors')
+import { cpSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import chalk from 'chalk';
 
-colors.enable()
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const createBuild = async () => {
-  console.log('Criando build do frontend'.blue)
-  console.log('Esta operação pode demorar alguns minutos')
+const createBuild = () => {
+  console.log(chalk.blue('Criando build do frontend'));
+  console.log('Esta operação pode demorar alguns minutos');
 
-  npmRun.exec('npm run build', { cwd: path.join(__dirname, 'client') }, async (err, stdout, stderr) => {
-    if (err) {
-      console.log('Erro ao criar build!'.red)
-      process.exit(0)
-    }
-    console.log('Build criada com sucesso!')
-    console.log('Copiando arquivos')
-    try {
-      await fs.copy(path.join(__dirname, 'client', 'dist'), path.join(__dirname, 'server', 'src', 'build'))
-      console.log('Arquivos copiados com sucesso!'.blue)
-    } catch (error) {
-      console.log(error.message.red)
-      console.log('-------------------------------------------------')
-      console.log(error)
-    }
-  })
-}
+  try {
+    execSync('npm run build', {
+      cwd: join(__dirname, 'client'),
+      stdio: 'inherit'
+    });
+  } catch {
+    console.log(chalk.red('Erro ao criar build!'));
+    process.exit(1);
+  }
 
-createBuild()
+  console.log('Build criada com sucesso!');
+  console.log('Copiando arquivos');
+
+  try {
+    cpSync(
+      join(__dirname, 'client', 'dist'),
+      join(__dirname, 'server', 'src', 'build'),
+      { recursive: true }
+    );
+    console.log(chalk.blue('Arquivos copiados com sucesso!'));
+  } catch (error) {
+    console.log(chalk.red(error.message));
+    console.log('-------------------------------------------------');
+    console.log(error);
+    process.exit(1);
+  }
+};
+
+createBuild();

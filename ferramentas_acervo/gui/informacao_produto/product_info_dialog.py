@@ -6,11 +6,12 @@ Diálogo principal para visualização e edição de informações detalhadas de
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
-    QDialog, QMessageBox, QVBoxLayout, QWidget, QHeaderView, 
-    QPushButton, QHBoxLayout, QLabel, QFileDialog
+    QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout, QWidget, QHeaderView,
+    QPushButton, QHBoxLayout, QLabel, QFileDialog, QScrollArea
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsMapLayerType, Qgis
+from qgis.gui import QgsCollapsibleGroupBox
 
 from .overview_tab import OverviewTab
 from .versions_tab import VersionsTab

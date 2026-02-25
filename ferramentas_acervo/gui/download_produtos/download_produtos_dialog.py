@@ -177,55 +177,53 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
     def handle_prepare_complete(self, file_infos):
         """Handle completion of download preparation."""
         self.file_infos = file_infos
-        
-        # Enable download button if we have files and destination
-        self.downloadButton.setEnabled(len(file_infos) > 0 and bool(self.destinationLineEdit.text()))
-        
-        # Update file summary
-        self.update_file_summary()
-        
+
+        # Atualizar labels de resumo diretamente (sem chamar update_file_summary
+        # para evitar loop infinito prepare→complete→summary→prepare)
+        self._refresh_file_summary_ui()
+
         # Update status
         if file_infos:
             self.statusLabel.setText("Pronto para download. Selecione os tipos de arquivo desejados.")
         else:
             self.statusLabel.setText("Nenhum arquivo disponível para os produtos selecionados.")
-            
+
+    def _refresh_file_summary_ui(self):
+        """Atualiza os labels de resumo e estado do botão de download sem re-preparar."""
+        self.fileCountValueLabel.setText(str(len(self.file_infos)))
+
+        total_size_mb = self.download_manager.get_total_size_mb(self.file_infos)
+        if total_size_mb > 1024:
+            size_text = f"{total_size_mb / 1024:.2f} GB"
+        else:
+            size_text = f"{total_size_mb:.2f} MB"
+        self.totalSizeValueLabel.setText(size_text)
+
+        has_destination = bool(self.destinationLineEdit.text())
+        has_files = len(self.file_infos) > 0
+        self.downloadButton.setEnabled(has_destination and has_files and not self.download_in_progress)
+
     def update_file_summary(self):
-        """Update file count and size summary based on selected file types."""
+        """Update file count and size summary based on selected file types.
+        Chamado quando checkboxes de tipo de arquivo mudam."""
         # Get selected file types
-        selected_types = [int(type_id) for type_id, checkbox in self.file_type_checkboxes.items() 
+        selected_types = [int(type_id) for type_id, checkbox in self.file_type_checkboxes.items()
                           if checkbox.isChecked()]
-        
+
         if not selected_types:
             self.fileCountValueLabel.setText("0")
             self.totalSizeValueLabel.setText("0 MB")
             self.downloadButton.setEnabled(False)
             return
-        
-        # If types changed, need to re-prepare download
+
+        # Re-preparar download com os novos tipos selecionados
         if self.products:
             self.statusLabel.setText("Atualizando lista de arquivos...")
             self.download_manager.prepare_download(self.products, selected_types)
             return
-        
-        # Update UI based on file_infos we already have
-        self.fileCountValueLabel.setText(str(len(self.file_infos)))
-        
-        # Get total size (this would be more accurate in a real implementation)
-        total_size_mb = self.download_manager.get_total_size_mb(self.file_infos)
-        size_text = f"{total_size_mb:.2f} MB"
-        
-        # Format for GB if size is large
-        if total_size_mb > 1024:
-            total_size_gb = total_size_mb / 1024
-            size_text = f"{total_size_gb:.2f} GB"
-            
-        self.totalSizeValueLabel.setText(size_text)
-        
-        # Enable/disable download button
-        has_destination = bool(self.destinationLineEdit.text())
-        has_files = len(self.file_infos) > 0
-        self.downloadButton.setEnabled(has_destination and has_files and not self.download_in_progress)
+
+        # Sem produtos carregados, apenas atualizar UI
+        self._refresh_file_summary_ui()
         
     def browse_destination(self):
         """Open file dialog to select destination directory."""

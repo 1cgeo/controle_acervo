@@ -1,6 +1,7 @@
 // Path: arquivo\arquivo_ctrl.js
 "use strict";
 const fs = require('fs').promises;
+const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db, refreshViews } = require("../database");
@@ -10,6 +11,29 @@ const { version } = require('os');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
+
+/**
+ * Calcula checksum SHA-256 via streaming, sem carregar o arquivo inteiro em memória.
+ * Retorna { checksum, fileSizeMB }.
+ */
+function calculateChecksumStream(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    let fileSize = 0;
+    const stream = fsClassic.createReadStream(filePath);
+    stream.on('data', (chunk) => {
+      hash.update(chunk);
+      fileSize += chunk.length;
+    });
+    stream.on('end', () => {
+      resolve({
+        checksum: hash.digest('hex'),
+        fileSizeMB: fileSize / (1024 * 1024)
+      });
+    });
+    stream.on('error', reject);
+  });
+}
 
 const {
   DB_USER,
@@ -901,20 +925,18 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         try {
           // Check if file exists
           await fs.access(filePath);
-          
-          // Validate checksum
-          const fileBuffer = await fs.readFile(filePath);
-          const calculatedChecksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-          
+
+          // Validate checksum via streaming (sem carregar arquivo inteiro em memória)
+          const { checksum: calculatedChecksum, fileSizeMB } = await calculateChecksumStream(filePath);
+
           if (calculatedChecksum !== arquivo.expected_checksum) {
             fileValid = false;
             errorMessage = `Falha na validação do checksum para ${arquivo.nome}`;
             allValid = false;
           }
-          
+
           // Update real file size
           if (fileValid) {
-            const fileSizeMB = fileBuffer.length / (1024 * 1024);
             await t.none(
               `UPDATE acervo.upload_arquivo_temp SET tamanho_mb = $1, status = 'completed' WHERE id = $2`,
               [fileSizeMB, arquivo.id]
@@ -929,7 +951,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           fileValid = false;
           errorMessage = `Arquivo não encontrado: ${filePath}`;
           allValid = false;
-          
+
           await t.none(
             `UPDATE acervo.upload_arquivo_temp SET status = 'failed', error_message = $1 WHERE id = $2`,
             [errorMessage, arquivo.id]

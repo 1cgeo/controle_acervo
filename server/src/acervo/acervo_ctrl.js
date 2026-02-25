@@ -343,14 +343,10 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
   const newestVersionsWithFiles = await db.conn.any(
     `
     WITH newest_versions AS (
-      SELECT v.produto_id, v.id AS versao_id
+      SELECT DISTINCT ON (v.produto_id) v.produto_id, v.id AS versao_id
       FROM acervo.versao v
-      INNER JOIN (
-        SELECT produto_id, MAX(data_edicao) AS max_data_edicao
-        FROM acervo.versao
-        WHERE produto_id IN ($<produtosIds:csv>)
-        GROUP BY produto_id
-      ) latest ON v.produto_id = latest.produto_id AND v.data_edicao = latest.max_data_edicao
+      WHERE v.produto_id IN ($<produtosIds:csv>)
+      ORDER BY v.produto_id, v.data_edicao DESC, v.id DESC
     )
     SELECT a.id AS arquivo_id, a.nome, a.nome_arquivo, a.extensao, a.checksum, va.volume
     FROM newest_versions nv

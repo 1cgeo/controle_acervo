@@ -6,7 +6,9 @@
       "Bash(npm install:*)",
       "Bash(npx cross-env:*)",
       "Bash(grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(xargs wc -l)",
+      "Bash(node create_config.js --help)"
     ]
   }
 }
