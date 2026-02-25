@@ -16,6 +16,25 @@ class APIClient:
         self.is_admin = False
         self._username = None
         self._password = None
+        self.session = requests.Session()
+        self._configure_proxy()
+
+    def _configure_proxy(self):
+        """Configura o proxy da sessão HTTP.
+
+        Se a opção 'ignore_proxy' estiver ativa (padrão), ignora qualquer
+        proxy do sistema e conecta diretamente ao servidor.
+        """
+        ignore = self.settings.get("ignore_proxy", "true")
+        if ignore == "true" or ignore is True:
+            self.session.trust_env = False
+            self.session.proxies = {
+                'http': None,
+                'https': None,
+            }
+        else:
+            self.session.trust_env = True
+            self.session.proxies = {}
 
     def show_error(self, title, message):
         """Exibe uma mensagem de erro para o usuário."""
@@ -27,7 +46,7 @@ class APIClient:
             return False
         try:
             url = urljoin(self.base_url.rstrip('/') + '/', "api/login")
-            response = requests.post(
+            response = self.session.post(
                 url,
                 json={"usuario": self._username, "senha": self._password, "cliente": "sca_qgis"},
                 timeout=self.REQUEST_TIMEOUT
@@ -55,17 +74,17 @@ class APIClient:
 
         try:
             if method == 'GET':
-                response = requests.get(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.get(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
             elif method == 'POST':
-                response = requests.post(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.post(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
             elif method == 'PUT':
-                response = requests.put(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.put(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
             elif method == 'DELETE':
                 # Corrigir o uso de params e data
                 if data:
-                    response = requests.delete(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
+                    response = self.session.delete(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
                 else:
-                    response = requests.delete(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
+                    response = self.session.delete(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
             else:
                 raise ValueError(f"Método HTTP não suportado: {method}")
 
@@ -166,11 +185,11 @@ class APIClient:
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
 
         try:
-            response = requests.get(url, headers=headers, params=params, stream=True, timeout=self.DOWNLOAD_TIMEOUT)
+            response = self.session.get(url, headers=headers, params=params, stream=True, timeout=self.DOWNLOAD_TIMEOUT)
 
             if response.status_code == 401 and self._try_relogin():
                 headers = {"Authorization": f"Bearer {self.token}"}
-                response = requests.get(url, headers=headers, params=params, stream=True, timeout=self.DOWNLOAD_TIMEOUT)
+                response = self.session.get(url, headers=headers, params=params, stream=True, timeout=self.DOWNLOAD_TIMEOUT)
 
             response.raise_for_status()
 
