@@ -6,11 +6,11 @@ const Joi = require('joi')
 const models = {}
 
 models.produtoByIdParams = Joi.object().keys({
-  produto_id: Joi.number().integer().strict().required()
+  produto_id: Joi.number().integer().required()
 });
 
 models.versaoByIdParams = Joi.object().keys({
-  versao_id: Joi.number().integer().strict().required()
+  versao_id: Joi.number().integer().required()
 });
 
 models.arquivosIds = Joi.object().keys({

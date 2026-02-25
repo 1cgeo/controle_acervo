@@ -2,7 +2,7 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
-from qgis.PyQt.QtCore import QDate, Qt
+from qgis.PyQt.QtCore import QDate, QDateTime, Qt
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'edit_lote_dialog.ui'))
@@ -70,9 +70,9 @@ class EditLoteDialog(QDialog, FORM_CLASS):
         self.pitLineEdit.setText(self.lote_data['pit'])
         self.descriptionTextEdit.setPlainText(self.lote_data['descricao'])
 
-        self.startDateEdit.setDate(QDate.fromString(self.lote_data['data_inicio'], Qt.ISODate))
+        self.startDateEdit.setDate(QDateTime.fromString(self.lote_data['data_inicio'], Qt.ISODate).date())
         if self.lote_data['data_fim']:
-            self.endDateEdit.setDate(QDate.fromString(self.lote_data['data_fim'], Qt.ISODate))
+            self.endDateEdit.setDate(QDateTime.fromString(self.lote_data['data_fim'], Qt.ISODate).date())
             self.endDateCheckBox.setChecked(False)
         else:
             self.endDateCheckBox.setChecked(True)

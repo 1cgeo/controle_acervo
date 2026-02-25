@@ -137,8 +137,8 @@ BEGIN
         FROM acervo.produto 
         WHERE id = ANY(produto_ids)
     LOOP
-        view_name := 'acervo.mv_produto_' || tipo_id || '_' || escala_id;
-        EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY %I', view_name);
+        view_name := 'mv_produto_' || tipo_id || '_' || escala_id;
+        EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY acervo.%I', view_name);
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;

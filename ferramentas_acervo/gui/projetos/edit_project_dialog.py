@@ -2,7 +2,7 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QCheckBox
-from qgis.PyQt.QtCore import QDate, Qt
+from qgis.PyQt.QtCore import QDate, QDateTime, Qt
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'edit_project_dialog.ui'))
@@ -57,9 +57,9 @@ class EditProjectDialog(QDialog, FORM_CLASS):
     def load_project(self):
         self.nameLineEdit.setText(self.project_data['nome'])
         self.descriptionTextEdit.setPlainText(self.project_data['descricao'])
-        self.startDateEdit.setDate(QDate.fromString(self.project_data['data_inicio'], Qt.ISODate))
+        self.startDateEdit.setDate(QDateTime.fromString(self.project_data['data_inicio'], Qt.ISODate).date())
         if self.project_data['data_fim']:
-            self.endDateEdit.setDate(QDate.fromString(self.project_data['data_fim'], Qt.ISODate))
+            self.endDateEdit.setDate(QDateTime.fromString(self.project_data['data_fim'], Qt.ISODate).date())
             self.endDateCheckBox.setChecked(False)
         else:
             self.endDateCheckBox.setChecked(True)

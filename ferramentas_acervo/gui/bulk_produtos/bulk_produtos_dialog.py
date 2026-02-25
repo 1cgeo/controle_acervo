@@ -127,20 +127,23 @@ class BulkCreateProductsDialog(QDialog, FORM_CLASS):
             
             # Verificar se a geometria é válida
             geom_text = feature['geom']
-            if not geom_text or not (geom_text.startswith('POLYGON') or geom_text.startswith('MULTIPOLYGON')):
-                invalid_features.append((feature.id(), "Geometria deve ser um POLYGON ou MULTIPOLYGON válido em formato WKT"))
+            if not geom_text or not (geom_text.startswith('SRID=') or geom_text.startswith('POLYGON') or geom_text.startswith('MULTIPOLYGON')):
+                invalid_features.append((feature.id(), "Geometria deve ser um POLYGON ou MULTIPOLYGON válido em formato WKT ou EWKT"))
                 continue
-            
+
+            # Garantir que a geometria tenha o prefixo SRID
+            geom_ewkt = geom_text if geom_text.startswith('SRID=') else f"SRID=4674;{geom_text}"
+
             # Criar objeto de produto
             produto = {
                 "nome": feature['nome'],
-                "mi": null_to_none(feature['mi']) if 'mi' in field_names else "",
-                "inom": null_to_none(feature['inom']) if 'inom' in field_names else "",
+                "mi": null_to_none(feature['mi']) if 'mi' in field_names else None,
+                "inom": null_to_none(feature['inom']) if 'inom' in field_names else None,
                 "tipo_escala_id": feature['tipo_escala_id'],
                 "denominador_escala_especial": null_to_none(feature['denominador_escala_especial']) if 'denominador_escala_especial' in field_names else None,
                 "tipo_produto_id": feature['tipo_produto_id'],
-                "descricao": null_to_none(feature['descricao']) if 'descricao' in field_names else "",
-                "geom": feature['geom']
+                "descricao": null_to_none(feature['descricao']) if 'descricao' in field_names else None,
+                "geom": geom_ewkt
             }
             
             produtos.append(produto)

@@ -111,6 +111,7 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
                 metadado = json.loads(self.metadadoTextEdit.toPlainText())
                 
             versao_data = {
+                "uuid_versao": None,
                 "versao": self.versaoLineEdit.text(),
                 "nome": self.nomeVersaoLineEdit.text(),
                 "subtipo_produto_id": self.subtipoProdutoComboBox.currentData(),
