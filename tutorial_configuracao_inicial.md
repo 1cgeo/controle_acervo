@@ -100,35 +100,107 @@ Lotes são subdivisões de um projeto. Versões de produtos podem ser vinculadas
 
 ## Passo 7 — Cadastrar Produtos
 
-Com volumes configurados e a estrutura organizacional pronta, é hora de cadastrar os produtos geográficos.
+Com volumes configurados e a estrutura organizacional pronta, é hora de cadastrar os produtos geográficos. A forma mais prática para carga inicial é a operação em lote descrita abaixo.
 
-### Opção A — Produto individual (com versão e arquivos)
+> Para cadastrar um único produto manualmente, use **Funções de Administrador → Adicionar Produto**. Para criar apenas os produtos sem versões/arquivos, use **Operações em Lote → Criar Produtos em Lote**.
 
-1. Vá em **Funções de Administrador → Adicionar Produto**
-2. Preencha os dados do produto:
-   - **Nome**, **MI**, **INOM** (se aplicável)
-   - **Tipo de produto** (ex: Carta Topográfica)
-   - **Escala** (ex: 1:50.000)
-   - **Geometria** — desenhe o polígono no mapa
-3. Na aba de versão, informe:
-   - **Número da versão** (formato: `1-DSGEO` ou equivalente)
-   - **Subtipo do produto**
-   - **Lote** (opcional)
-   - **Órgão produtor**, **palavras-chave**, **metadados**
-4. Selecione os **arquivos** a serem enviados (o plugin calcula checksums automaticamente)
-5. Confirme para iniciar o envio dos arquivos ao volume
+### Adicionar Produtos Completos em Lote (recomendado)
 
-### Opção B — Produtos em lote
+Esta operação cria produtos, versões e arquivos de uma só vez a partir de uma camada tabular no QGIS.
 
-1. Vá em **Operações em Lote → Criar Produtos em Lote**
-2. Carregue os produtos a partir de uma camada do QGIS ou CSV
-3. Revise e confirme a criação
-
-### Opção C — Produtos completos em lote (produto + versão + arquivos)
+#### 7.1 — Criar a camada modelo
 
 1. Vá em **Operações em Lote → Adicionar Produtos Completos em Lote**
-2. Configure a origem dos dados e os arquivos correspondentes
-3. Confirme para enviar tudo de uma vez
+2. Clique em **Criar Camada Modelo** — o plugin cria uma camada tabular (sem geometria) no QGIS com todos os campos necessários
+3. Feche o diálogo temporariamente para preencher a camada
+
+#### 7.2 — Preencher a camada
+
+Abra a tabela de atributos da camada modelo e adicione uma linha para cada **arquivo**. A estrutura hierárquica é controlada por IDs de agrupamento:
+
+```
+Produto (produto_grupo_id = 1)
+  └─ Versão (versao_grupo_id = 1)
+      ├─ Arquivo 1  ← linha 1
+      └─ Arquivo 2  ← linha 2
+Produto (produto_grupo_id = 2)
+  └─ Versão (versao_grupo_id = 2)
+      ├─ Arquivo 1  ← linha 3
+      └─ Arquivo 2  ← linha 4
+```
+
+- Linhas com o mesmo `produto_grupo_id` pertencem ao **mesmo produto**
+- Linhas com o mesmo `versao_grupo_id` pertencem à **mesma versão**
+- Cada linha representa um **arquivo** individual
+
+**Campos obrigatórios do produto** (repetir os mesmos valores para todas as linhas do mesmo produto):
+
+| Campo | Descrição | Exemplo |
+|-------|-----------|---------|
+| `produto_grupo_id` | ID de agrupamento do produto | `1` |
+| `produto_nome` | Nome do produto | `Carta Brasília` |
+| `tipo_produto_id` | ID do tipo de produto (domínio) | `2` |
+| `tipo_escala_id` | ID da escala (domínio) | `3` (1:100.000) |
+| `geom` | Geometria em WKT (polígono) | `POLYGON((-47.9 -15.7, ...))` |
+
+Campos opcionais do produto: `mi`, `inom`, `denominador_escala_especial`, `descricao_produto`.
+
+**Campos obrigatórios da versão** (repetir os mesmos valores para todas as linhas da mesma versão):
+
+| Campo | Descrição | Exemplo |
+|-------|-----------|---------|
+| `versao_grupo_id` | ID de agrupamento da versão | `1` |
+| `versao` | Número da versão | `1-DSGEO` |
+| `nome_versao` | Nome de exibição | `Versão 1` |
+| `tipo_versao_id` | Tipo da versão (domínio) | `1` (Regular) |
+| `subtipo_produto_id` | Subtipo do produto (domínio) | `3` |
+| `orgao_produtor` | Órgão produtor | `DSG/1CGEO` |
+| `data_criacao` | Data de criação (ISO) | `2025-06-15` |
+| `data_edicao` | Data de edição (ISO) | `2025-06-15` |
+
+Campos opcionais da versão: `lote_id`, `descricao_versao`, `palavras_chave` (separadas por vírgula), `metadado_versao` (JSON).
+
+**Campos obrigatórios do arquivo** (um por linha):
+
+| Campo | Descrição | Exemplo |
+|-------|-----------|---------|
+| `nome` | Nome de exibição do arquivo | `Ortofoto RGB` |
+| `nome_arquivo` | Nome físico (sem extensão) | `ortofoto_brasilia_rgb` |
+| `tipo_arquivo_id` | Tipo do arquivo (domínio) | `1` (Principal) |
+| `extensao` | Extensão do arquivo | `tif` |
+| `path` | Caminho completo do arquivo local | `/dados/originais/ortofoto.tif` |
+| `situacao_carregamento_id` | Situação de carregamento | `1` |
+
+Campos opcionais do arquivo: `descricao_arquivo`, `uuid_arquivo`, `uuid_versao`, `crs_original`, `metadado` (JSON).
+
+> **Tipos de arquivo** — 1: Principal, 2: Formato alternativo, 3: Insumo, 4: Metadado, 5: Edição JSON, 6: Documentos, 7: Projeto QGIS, 8: Complementar, 9: Tileserver (URL, não precisa de arquivo físico nem extensão).
+
+#### 7.3 — Executar a carga
+
+1. Reabra **Operações em Lote → Adicionar Produtos Completos em Lote**
+2. Selecione a camada preenchida no dropdown
+3. Clique em **Carregar**
+
+O plugin executa automaticamente:
+
+1. **Validação** — verifica campos obrigatórios, existência dos arquivos no disco e formatos
+2. **Cálculo de checksums** — gera hash SHA-256 de cada arquivo
+3. **Envio dos metadados ao servidor** — o servidor valida INOMs duplicados, verifica espaço nos volumes e cria uma sessão de upload
+4. **Transferência dos arquivos** — copia os arquivos em paralelo para os volumes de destino (barra de progresso exibida)
+5. **Confirmação** — o servidor valida os checksums dos arquivos recebidos e insere tudo no banco (produtos, versões e arquivos)
+
+Ao final, uma mensagem confirma o sucesso ou lista os erros encontrados. Se algum arquivo falhar na transferência, o plugin oferece a opção de retentar apenas os que falharam.
+
+#### Exemplo prático
+
+Para cadastrar 2 cartas topográficas, cada uma com 1 versão e 2 arquivos (principal + metadado):
+
+| produto_grupo_id | versao_grupo_id | produto_nome | tipo_produto_id | tipo_escala_id | geom | versao | nome_versao | tipo_versao_id | subtipo_produto_id | orgao_produtor | data_criacao | data_edicao | nome | nome_arquivo | tipo_arquivo_id | extensao | path | situacao_carregamento_id |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | Carta Brasília | 2 | 3 | POLYGON((...)) | 1-DSGEO | Versão 1 | 1 | 3 | DSG/1CGEO | 2025-06-15 | 2025-06-15 | Carta Principal | carta_brasilia | 1 | tif | /dados/carta_bsb.tif | 1 |
+| 1 | 1 | Carta Brasília | 2 | 3 | POLYGON((...)) | 1-DSGEO | Versão 1 | 1 | 3 | DSG/1CGEO | 2025-06-15 | 2025-06-15 | Metadado XML | carta_brasilia_meta | 4 | xml | /dados/carta_bsb.xml | 1 |
+| 2 | 2 | Carta Goiânia | 2 | 3 | POLYGON((...)) | 1-DSGEO | Versão 1 | 1 | 3 | DSG/1CGEO | 2025-06-15 | 2025-06-15 | Carta Principal | carta_goiania | 1 | tif | /dados/carta_gyn.tif | 1 |
+| 2 | 2 | Carta Goiânia | 2 | 3 | POLYGON((...)) | 1-DSGEO | Versão 1 | 1 | 3 | DSG/1CGEO | 2025-06-15 | 2025-06-15 | Metadado XML | carta_goiania_meta | 4 | xml | /dados/carta_gyn.xml | 1 |
 
 ---
 
