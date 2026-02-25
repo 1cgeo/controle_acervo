@@ -23,8 +23,9 @@ class LoginDialog(QDialog, FORM_CLASS):
         self.submitBtn.clicked.connect(self.attempt_login)
         self.cancelBtn.clicked.connect(self.reject)
 
-        # Load saved credentials if they exist
+        # Load saved credentials and proxy setting
         self.load_credentials()
+        self.load_proxy_setting()
 
     def load_credentials(self):
         saved_server = self.settings.get("saved_server")
@@ -56,10 +57,22 @@ class LoginDialog(QDialog, FORM_CLASS):
             self.settings.remove("saved_password")
             self.settings.remove("remember_me")
 
+    def load_proxy_setting(self):
+        ignore_proxy = self.settings.get("ignore_proxy", "true")
+        self.ignore_proxy.setChecked(ignore_proxy == "true" or ignore_proxy is True)
+
+    def save_proxy_setting(self):
+        self.settings.set("ignore_proxy", "true" if self.ignore_proxy.isChecked() else "false")
+        self.settings.sync()
+        self.api_client._configure_proxy()
+
     def attempt_login(self):
         server = self.server.text()
         username = self.user.text()
         password = self.password.text()
+
+        # Aplicar configuração de proxy antes de tentar login
+        self.save_proxy_setting()
 
         # Update server URL in api_client
         self.api_client.base_url = server

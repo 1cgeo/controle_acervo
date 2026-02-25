@@ -8,7 +8,7 @@
                 <x>0</x>
                 <y>0</y>
                 <width>351</width>
-                <height>230</height>
+                <height>260</height>
             </rect>
         </property>
         <property name="windowTitle">
@@ -95,6 +95,20 @@
                                 </property>
                             </widget>
                         </item>
+                        <item>
+                            <widget class="QCheckBox" name="ignore_proxy">
+                                <property name="text">
+                                    <string>Ignorar proxy do sistema</string>
+                                </property>
+                                <property name="toolTip">
+                                    <string>Quando marcado, conecta diretamente ao servidor ignorando o proxy do sistema.
+Útil para evitar erros 407 (Proxy Authentication Required).</string>
+                                </property>
+                                <property name="checked">
+                                    <bool>true</bool>
+                                </property>
+                            </widget>
+                        </item>
                     </layout>
                 </widget>
             </item>
@@ -130,6 +144,7 @@
         <tabstop>user</tabstop>
         <tabstop>password</tabstop>
         <tabstop>remember_me</tabstop>
+        <tabstop>ignore_proxy</tabstop>
         <tabstop>submitBtn</tabstop>
         <tabstop>cancelBtn</tabstop>
     </tabstops>

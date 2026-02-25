@@ -384,9 +384,5 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
             self.accept()
             
     def showEvent(self, event):
-        """Handle show event to load products when dialog is shown."""
+        """Handle show event."""
         super().showEvent(event)
-        
-        # If no products are loaded, try to load them
-        if not self.products:
-            self.load_selected_products()

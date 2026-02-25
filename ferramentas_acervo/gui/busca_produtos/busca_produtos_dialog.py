@@ -153,9 +153,9 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             if response and 'dados' in response:
                 dados = response['dados']
                 # This endpoint returns {total, page, limit, dados: [...]}
-                total = dados.get('total', 0)
-                page = dados.get('page', 1)
-                limit = dados.get('limit', self.page_size)
+                total = int(dados.get('total', 0))
+                page = int(dados.get('page', 1))
+                limit = int(dados.get('limit', self.page_size))
                 produtos = dados.get('dados', [])
 
                 self.total_items = total
