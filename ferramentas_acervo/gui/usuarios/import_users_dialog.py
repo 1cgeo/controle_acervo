@@ -56,8 +56,9 @@ class ImportUsersDialog(QDialog):
 
     def filter_users(self):
         search_text = self.searchField.text().lower()
-        filtered_users = [user for user in self.users if search_text in user['nome'].lower()]
-        self.populate_table(filtered_users)
+        for row in range(self.usersTable.rowCount()):
+            nome = self.usersTable.item(row, 2).text().lower()
+            self.usersTable.setRowHidden(row, search_text not in nome)
 
     def get_selected_uuids(self):
         selected_uuids = []

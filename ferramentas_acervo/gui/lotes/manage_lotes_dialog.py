@@ -66,6 +66,8 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
             data_fim = lote.get('data_fim', '')
             if data_fim:
                 data_fim = QDate.fromString(data_fim, Qt.ISODate).toString('yyyy-MM-dd')
+            else:
+                data_fim = 'Não definida'
             self.lotesTable.setItem(row, 6, QTableWidgetItem(data_fim))
 
             self.lotesTable.setItem(row, 7, QTableWidgetItem(str(lote.get('status_execucao', ''))))

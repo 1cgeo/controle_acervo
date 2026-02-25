@@ -8,12 +8,12 @@
 
 **Controle do Acervo (SCA)** is a geospatial data collection management system built by the Brazilian Army Geographic Service (DSG/1CGEO). It manages versioned geographic products (maps, orthophotos, digital elevation models, etc.), their files, storage volumes, and a physical map library (mapoteca) for order fulfillment.
 
-The system consists of four components:
+The system consists of two active components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
-2. **~~Client Dashboard~~** (`client/` → `client_deprecated/`) - **DEPRECATED.** Former React/TypeScript SPA for the main archive dashboard. Will be rebuilt without React or TypeScript.
-3. **~~Mapoteca Admin Client~~** (`client_admin_mapoteca/` → `client_admin_mapoteca_deprecated/`) - **DEPRECATED.** Former React/TypeScript SPA for map library administration. Will be rebuilt without React or TypeScript.
-4. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 3 desktop integration
+2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 3 desktop integration
+
+> `client_deprecated/` and `client_admin_mapoteca_deprecated/` contain former React/TypeScript SPAs. They are fully deprecated and should not be modified. New web clients will be built from scratch.
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.
 
@@ -42,30 +42,49 @@ controle_acervo/
 │   │   ├── dashboard/              # Main dashboard endpoints
 │   │   └── utils/                  # Shared utilities
 │   └── package.json
-├── client/                         # Main dashboard (React 18, Vite, TypeScript)
-│   └── src/
-│       ├── components/             # Shared UI components
-│       ├── features/               # Feature modules (auth, dashboard)
-│       ├── hooks/                  # Custom React hooks
-│       ├── lib/                    # Axios client, React Query, MUI theme
-│       ├── routes/                 # Route definitions
-│       ├── services/               # API service functions
-│       ├── stores/                 # Zustand state stores
-│       └── types/                  # TypeScript type definitions
-├── client_admin_mapoteca/          # Mapoteca admin (React 19, Vite, TypeScript)
-│   └── src/
-│       ├── components/             # Shared UI components
-│       ├── features/               # Feature modules (auth, clients, orders, materials, plotters, dashboard)
-│       ├── hooks/                  # Custom React hooks
-│       ├── lib/                    # Axios client, React Query, MUI theme
-│       ├── routes/                 # Route definitions
-│       ├── services/               # API service functions
-│       ├── stores/                 # Zustand state stores
-│       └── types/                  # TypeScript type definitions
 ├── ferramentas_acervo/             # QGIS 3 Plugin (Python/PyQt)
 │   ├── main.py                     # Plugin entry point
-│   ├── core/                       # API client, settings, file transfer
+│   ├── config.py                   # Plugin name and version
+│   ├── core/                       # Core modules
+│   │   ├── api_client.py           # HTTP client (requests + auto-relogin)
+│   │   ├── settings.py             # QgsSettings wrapper
+│   │   ├── file_transfer.py        # Threaded file copy (Windows) / SMB (Linux)
+│   │   ├── authSMB.py              # SMB auth dialog for Linux
+│   │   └── getFileBySMB.py         # SMB file retrieval script
 │   └── gui/                        # Dialog windows (one folder per feature)
+│       ├── panel.py                # PANEL_MAPPING — menu categories and dialog registry
+│       ├── dockable_panel.py       # Main dockable panel with collapsible menu
+│       ├── login_dialog.py         # Login dialog with saved credentials
+│       ├── configuracoes/          # Plugin settings dialog
+│       ├── usuarios/               # User management (import, sync, admin/ativo flags)
+│       ├── volumes/                # Storage volume CRUD
+│       ├── volume_tipo_produto/    # Volume ↔ Product Type association
+│       ├── projetos/               # Project CRUD
+│       ├── lotes/                  # Batch (lote) CRUD
+│       ├── carregar_camadas_produto/ # Load product layers into QGIS
+│       ├── carregar_produtos/      # Load products into QGIS
+│       ├── informacao_produto/     # Product info viewer
+│       ├── download_produtos/      # Product file download
+│       ├── situacao_geral/         # General status download
+│       ├── busca_produtos/         # Product search
+│       ├── versao_relacionamento/  # Version relationship viewer
+│       ├── adicionar_produto/      # Add single product
+│       ├── adicionar_produto_historico/ # Add product with historical version
+│       ├── bulk_carrega_arquivos/  # Batch: add files to existing versions
+│       ├── bulk_carrega_produtos_versoes_arquivos/ # Batch: add complete products
+│       ├── bulk_carrega_versoes_arquivos/ # Batch: add versions to products
+│       ├── bulk_produtos/          # Batch: create products (no files)
+│       ├── bulk_produtos_versoes_historicas/ # Batch: add historical products
+│       ├── bulk_versoes_historicas/ # Batch: add historical versions
+│       ├── bulk_versao_relacionamento/ # Batch: create version relationships
+│       ├── materialized_views/     # Create/refresh materialized views
+│       ├── verificar_inconsistencias/ # Consistency checks
+│       ├── arquivos_incorretos/    # Manage incorrect files
+│       ├── arquivos_deletados/     # Manage deleted files
+│       ├── downloads_deletados/    # Manage deleted downloads
+│       ├── limpeza_downloads/      # Cleanup expired downloads
+│       ├── problem_uploads/        # View problem uploads
+│       └── upload_sessions/        # Manage upload sessions
 ├── er/                             # Database SQL schema definitions
 │   ├── versao.sql                  # DB version tracking
 │   ├── dominio.sql                 # Domain/lookup tables
@@ -75,7 +94,7 @@ controle_acervo/
 │   ├── acompanhamento.sql          # Materialized views
 │   └── permissao.sql               # DB permissions
 ├── create_config.js                # Interactive setup (DB creation, config.env generation)
-├── create_build.js                 # Client build script (builds client/ → server/src/build/)
+├── create_build.js                 # Client build script (currently no active client)
 ├── package.json                    # Root package with install/config/build/start scripts
 └── api_documentation.md            # API documentation
 ```
@@ -84,7 +103,7 @@ controle_acervo/
 
 ### Server
 - **Runtime**: Node.js >= 16.15 (CommonJS modules)
-- **Framework**: Express 4
+- **Framework**: Express 5
 - **Database**: PostgreSQL with PostGIS (via pg-promise)
 - **Auth**: JWT (jsonwebtoken), external auth server integration
 - **Validation**: Joi
@@ -96,30 +115,20 @@ controle_acervo/
 - **Dev Server**: Nodemon
 - **Linting**: StandardJS (devDependency)
 
-### Client Apps
-- **Framework**: React (client: v18, mapoteca: v19)
-- **Language**: TypeScript (strict mode)
-- **Build Tool**: Vite
-- **UI Library**: MUI (Material UI) with Emotion
-- **State Management**: Zustand (persisted auth store)
-- **Server State**: TanStack React Query
-- **Forms**: React Hook Form + Zod validation
-- **HTTP Client**: Axios with interceptors
-- **Routing**: React Router DOM
-- **Charts**: Recharts
-
 ### QGIS Plugin
 - **Language**: Python 3
 - **UI Framework**: PyQt (via QGIS)
+- **HTTP Client**: requests (with auto-relogin on 401)
+- **File Transfer**: Native copy (Windows), SMB via subprocess (Linux)
+- **Settings**: QgsSettings (persisted per QGIS profile)
 - **Min QGIS Version**: 3.0
 
 ## Common Commands
 
 ### Root Level
 ```bash
-npm run install-all    # Install root + server + client dependencies
+npm run install-all    # Install root + server dependencies
 npm run config         # Interactive setup: create DB + config.env
-npm run build          # Build client and copy to server/src/build/
 npm start              # Start production server via PM2
 npm run start-dev      # Start dev server (server only, via nodemon)
 ```
@@ -130,16 +139,6 @@ npm run dev            # Start with nodemon (HTTP)
 npm run dev-https      # Start with nodemon (HTTPS)
 npm run production     # Start via PM2 (HTTP)
 npm run production-https  # Start via PM2 (HTTPS)
-```
-
-### Client Apps (`client/` or `client_admin_mapoteca/`)
-```bash
-npm run dev            # Vite dev server on port 3000
-npm run build          # TypeScript check + Vite production build
-npm run type-check     # TypeScript type checking only (tsc --noEmit)
-npm run lint           # ESLint with auto-fix
-npm run format         # Prettier formatting
-npm run preview        # Preview production build
 ```
 
 ## Configuration
@@ -160,11 +159,6 @@ Run `npm run config` to create this file interactively, or use CLI flags:
 ```bash
 node create_config.js --db-server localhost --db-port 5432 --db-user postgres ...
 ```
-
-### Vite Proxy
-Both client apps proxy `/api` requests to the backend:
-- `client/`: proxies to `VITE_API_URL` or `http://localhost:3013`
-- `client_admin_mapoteca/`: proxies to `VITE_API_URL` or `http://localhost:3010`
 
 ## Architecture Patterns
 
@@ -208,7 +202,7 @@ All API responses use `res.sendJsonAndLog()`:
 2. Returns JWT token (1-hour expiry) with `administrador` flag and `uuid`
 3. Protected routes use `verifyLogin` middleware (extracts `req.usuarioUuid`, `req.usuarioId`, `req.administrador`)
 4. Admin routes use `verifyAdmin` middleware (re-checks admin status in DB)
-5. Client stores token in localStorage with Zustand persisted store
+5. Plugin stores token in memory; re-authenticates silently on 401 using saved credentials
 
 ### Error Handling
 - `AppError(message, statusCode, errorTrace)` for application errors
@@ -216,13 +210,22 @@ All API responses use `res.sendJsonAndLog()`:
 - Global error middleware logs errors and returns standardized JSON
 - `errorHandler.critical()` logs and exits process on startup failures
 
-### Client App Architecture
-Both React clients follow identical patterns:
-- **Feature-based structure**: `features/{name}/routes/` for pages, `features/{name}/components/` for feature-specific components
-- **Zustand stores** in `stores/` for auth state (persisted to localStorage)
-- **React Query hooks** in `hooks/` for server data
-- **Service layer** in `services/` wraps axios API calls
-- **Path aliases**: `@/` maps to `src/` (mapoteca client has additional granular aliases like `@components`, `@features`, etc.)
+### Plugin Architecture
+- **Entry point**: `main.py` → creates `Settings`, `APIClient`, toolbar action
+- **Login**: `LoginDialog` authenticates user, sets `api_client.base_url` and token
+- **Main panel**: `DockablePanel` renders collapsible menu categories from `PANEL_MAPPING`
+- **Dialogs**: Each feature has its own folder under `gui/` with a `.py` dialog and a `.ui` Qt Designer file
+- **File transfer**: `FileTransferThread` (QThread) handles file copy with retry, progress signals, and cancellation
+- **Settings persistence**: Uses `QgsSettings` under the group `"Controle do Acervo"` (keys: `saved_server`, `saved_user`, `remember_me`, `ignore_proxy`)
+
+### Plugin Menu Categories
+| Category | Access | Features |
+|---|---|---|
+| Funções Gerais | All users | Load layers, product info, download, search, settings |
+| Funções de Administrador | Admin | Add product, load products, load systematic files |
+| Administração Avançada | Admin | Manage volumes, volume-type associations, projects, batches, users |
+| Operações em Lote | Admin | Batch create/load products, versions, files, relationships |
+| Diagnóstico e Manutenção | Admin | Consistency checks, materialized views, cleanup, problem uploads |
 
 ## Database
 
@@ -284,20 +287,20 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - Module exports via `module.exports` pattern
 - Each module has an `index.js` that re-exports
 
-### Client (TypeScript)
-- Strict TypeScript with `noUnusedLocals` and `noUnusedParameters`
-- Functional components only
-- Hooks for all state and side effects
-- Zod schemas for form validation
-- MUI components for all UI elements
-- Feature-based directory organization
-- Import paths use `@/` alias
+### Plugin (Python)
+- Each GUI feature lives in its own folder under `gui/` with a dialog `.py` and a `.ui` file
+- Dialogs inherit from `QDialog` and use `uic.loadUiType()` to load the `.ui` form
+- API calls go through `self.api_client.get/post/put/delete(endpoint, data)`
+- Settings are accessed via `self.settings.get(key)` / `self.settings.set(key, value)`
+- File transfer is handled by `FileTransferThread` (QThread with progress signals)
+- All user-facing strings are in Portuguese (pt-BR)
 
 ### General
 - All user-facing strings are in **Portuguese (pt-BR)**
 - Database column names use **snake_case** in Portuguese
-- JavaScript/TypeScript variables use **camelCase**
-- File names use **snake_case** (server) or **PascalCase** for components (client)
+- JavaScript variables use **camelCase**
+- Python variables use **snake_case**
+- File names use **snake_case** (server and plugin)
 - No test suite exists in the project currently
 - No Docker configuration exists; deployment uses PM2 directly
 - No CI/CD pipeline is configured
@@ -308,14 +311,7 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 2. Set up PostgreSQL with PostGIS extension
 3. Run config: `npm run config` (creates DB and `server/config.env`)
 4. Start dev server: `npm run start-dev` (server on configured PORT)
-5. Start client dev: `cd client && npm run dev` (Vite on port 3000)
-6. Start mapoteca client dev: `cd client_admin_mapoteca && npm run dev` (Vite on port 3000)
-
-## Production Build
-
-1. Build client: `npm run build` (builds `client/` and copies output to `server/src/build/`)
-2. Start server: `npm start` (PM2 serves both API and static client files)
-3. The Express app serves the built client files via `express.static` with SPA fallback to `index.html`
+5. Install plugin in QGIS: symlink or copy `ferramentas_acervo/` to QGIS plugin directory
 
 ## Important Notes
 
@@ -327,4 +323,5 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - Upload sessions expire after **24 hours** (cleaned hourly by cron)
 - Download tokens also expire and are cleaned hourly
 - Logging output goes to `server/src/logs/` with 14-day retention
-- The `create_build.js` script only builds the main `client/`, not `client_admin_mapoteca/`
+- The plugin saves credentials in QgsSettings under keys `saved_server`, `saved_user`
+- File transfer on Linux requires SMB access configured with valid domain credentials

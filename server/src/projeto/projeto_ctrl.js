@@ -208,7 +208,7 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   });
 };
 
-controller.deleteLotes = async (loteIds, usuarioUuid) => {
+controller.deleteLotes = async (loteIds) => {
   return db.conn.tx(async t => {
     const exists = await t.any(
       `SELECT id, nome, pit FROM acervo.lote

@@ -10,7 +10,7 @@ class APIClient:
 
     def __init__(self, settings):
         self.settings = settings
-        self.base_url = self.settings.get("server_url", "")
+        self.base_url = self.settings.get("saved_server", "")
         self.token = None
         self.user_uuid = None
         self.is_admin = False

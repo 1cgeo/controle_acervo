@@ -65,8 +65,9 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
 
     def filter_users(self):
         search_text = self.searchField.text().lower()
-        filtered_users = [user for user in self.users if search_text in user['nome'].lower()]
-        self.populate_table(filtered_users)
+        for row in range(self.usersTable.rowCount()):
+            nome = self.usersTable.item(row, 1).text().lower()
+            self.usersTable.setRowHidden(row, search_text not in nome)
 
     def update_users(self):
         updated_users = []
@@ -76,13 +77,13 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
             if user:
                 admin_checkbox = self.usersTable.cellWidget(row, 3)
                 active_checkbox = self.usersTable.cellWidget(row, 4)
-                
+
                 updated_users.append({
                     'uuid': user['uuid'],
                     'administrador': admin_checkbox.isChecked(),
                     'ativo': active_checkbox.isChecked()
                 })
-        
+
         success = self.api_client.put('usuarios', {'usuarios': updated_users})
         if success:
             QMessageBox.information(self, "Sucesso", "Usuários atualizados com sucesso.")

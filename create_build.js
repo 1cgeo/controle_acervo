@@ -1,4 +1,4 @@
-import { cpSync } from 'node:fs';
+import { cpSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -8,12 +8,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const createBuild = () => {
+  const clientDir = join(__dirname, 'client');
+
+  if (!existsSync(clientDir)) {
+    console.log(chalk.red('Diretório client/ não encontrado.'));
+    console.log('O cliente antigo foi deprecado (client_deprecated/). Um novo cliente ainda não foi criado.');
+    process.exit(1);
+  }
+
   console.log(chalk.blue('Criando build do frontend'));
   console.log('Esta operação pode demorar alguns minutos');
 
   try {
     execSync('npm run build', {
-      cwd: join(__dirname, 'client'),
+      cwd: clientDir,
       stdio: 'inherit'
     });
   } catch {
@@ -26,7 +34,7 @@ const createBuild = () => {
 
   try {
     cpSync(
-      join(__dirname, 'client', 'dist'),
+      join(clientDir, 'dist'),
       join(__dirname, 'server', 'src', 'build'),
       { recursive: true }
     );
