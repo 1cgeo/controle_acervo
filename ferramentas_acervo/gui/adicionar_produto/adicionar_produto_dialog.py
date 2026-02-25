@@ -13,11 +13,11 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, QDate, pyqtSignal, QThread, QObject, QSize, QSortFilterProxyModel
 from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis
 from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
-from ..core.file_transfer import FileTransferThread
-from ..config import Config
+from ...core.file_transfer import FileTransferThread
+from ...config import Config
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'add_product_dialog.ui'))
+    os.path.dirname(__file__), 'adicionar_produto_dialog.ui'))
 
 class AddProductDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):

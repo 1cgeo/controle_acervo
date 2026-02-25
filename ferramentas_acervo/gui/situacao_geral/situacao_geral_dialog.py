@@ -8,7 +8,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import Qgis
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'download_situacao_geral_dialog.ui'))
+    os.path.dirname(__file__), 'situacao_geral_dialog.ui'))
 
 class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):

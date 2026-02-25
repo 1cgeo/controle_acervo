@@ -10,5 +10,6 @@ module.exports = {
   errorHandler: require('./error_handler'),
   AppError: require('./app_error'),
   httpCode: require('./http_code'),
-  generateLocalizador: require('./generate_localizador')
+  generateLocalizador: require('./generate_localizador'),
+  httpClient: require('./http_client.js'),
 }

@@ -1,16 +1,14 @@
 // Path: authentication\authenticate_user.js
 'use strict'
 
-const axios = require('axios')
-
-const { AppError, httpCode } = require('../utils')
+const { AppError, httpCode, httpClient } = require('../utils')
 
 const { AUTH_SERVER } = require('../config')
 
 const authorization = async (usuario, senha, aplicacao) => {
   const server = `${AUTH_SERVER}/api/login`
   try {
-    const response = await axios.post(server, {
+    const response = await httpClient.post(server, {
       usuario,
       senha,
       aplicacao

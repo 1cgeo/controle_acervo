@@ -22,12 +22,20 @@ const verifyDotEnv = () => {
   return existsSync(join(__dirname, 'server', 'config.env'));
 };
 
-const verifyAuthServer = async (authServer) => {
+const getAxiosConfig = (useProxy, extraConfig = {}) => {
+  const config = { ...extraConfig };
+  if (!useProxy) {
+    config.proxy = false;
+  }
+  return config;
+};
+
+const verifyAuthServer = async (authServer, useProxy) => {
   if (!authServer.startsWith('http://') && !authServer.startsWith('https://')) {
     throw new Error('Servidor deve iniciar com http:// ou https://');
   }
   try {
-    const response = await axios.get(`${authServer}/api`);
+    const response = await axios.get(`${authServer}/api`, getAxiosConfig(useProxy));
     const wrongServer =
       !response ||
       response.status !== 200 ||
@@ -37,21 +45,22 @@ const verifyAuthServer = async (authServer) => {
     if (wrongServer) {
       throw new Error();
     }
-  } catch {
+  } catch(e) {
+    console.log(e)
     throw new Error('Erro ao se comunicar com o servidor de autenticação');
   }
 };
 
-const getAuthUserData = async (servidor, token, uuid) => {
+const getAuthUserData = async (servidor, token, uuid, useProxy) => {
   const server = `${servidor}/api/usuarios/${uuid}`;
 
   try {
-    const config = {
+    const config = getAxiosConfig(useProxy, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       }
-    };
+    });
     const response = await axios.get(server, config);
 
     if (
@@ -68,7 +77,7 @@ const getAuthUserData = async (servidor, token, uuid) => {
   }
 };
 
-const verifyLoginAuthServer = async (servidor, usuario, senha) => {
+const verifyLoginAuthServer = async (servidor, usuario, senha, useProxy) => {
   const server = `${servidor}/api/login`;
 
   try {
@@ -76,7 +85,7 @@ const verifyLoginAuthServer = async (servidor, usuario, senha) => {
       usuario,
       senha,
       aplicacao: 'sca_web'
-    });
+    }, getAxiosConfig(useProxy));
     if (
       !response ||
       !('status' in response) ||
@@ -94,14 +103,14 @@ const verifyLoginAuthServer = async (servidor, usuario, senha) => {
     const authUserUUID = response.data.dados.uuid;
     const token = response.data.dados.token;
 
-    const authUserData = await getAuthUserData(servidor, token, authUserUUID);
+    const authUserData = await getAuthUserData(servidor, token, authUserUUID, useProxy);
     return { authenticated, authUserData };
   } catch {
     throw new Error('Erro ao se comunicar com o servidor de autenticação');
   }
 };
 
-const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer) => {
+const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy) => {
   const secret = randomBytes(64).toString('hex');
 
   const env = `PORT=${port}
@@ -111,7 +120,8 @@ DB_NAME=${dbName}
 DB_USER=${dbUser}
 DB_PASSWORD=${dbPassword}
 JWT_SECRET=${secret}
-AUTH_SERVER=${authServer}`;
+AUTH_SERVER=${authServer}
+USE_PROXY=${useProxy}`;
 
   writeFileSync(join(__dirname, 'server', 'config.env'), env);
 };
@@ -140,21 +150,6 @@ const insertAdminUser = async (authUserData, connection) => {
   );
 };
 
-const createMaterializedViews = async (dbUser, dbPassword, dbPort, dbServer, dbName) => {
-  const connectionString = `postgres://${dbUser}:${dbPassword}@${dbServer}:${dbPort}/${dbName}`;
-  const db = pgp(connectionString);
-
-  console.log(chalk.blue('Criando views materializadas...'));
-
-  try {
-    await db.none('SELECT acervo.criar_views_materializadas()');
-    console.log(chalk.green('Views materializadas criadas com sucesso!'));
-  } catch (error) {
-    console.log(chalk.yellow(`Aviso: Erro ao criar views materializadas: ${error.message}`));
-    console.log(chalk.yellow('As views podem ser criadas posteriormente via API'));
-  }
-};
-
 const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, authUserData) => {
   const maintenanceDb = pgp(`postgres://${dbUser}:${dbPassword}@${dbServer}:${dbPort}/postgres`);
   await maintenanceDb.none('CREATE DATABASE $1:name', [dbName]);
@@ -172,8 +167,6 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     await givePermission({ dbUser, connection: t });
     await insertAdminUser(authUserData, t);
   });
-
-  await createMaterializedViews(dbUser, dbPassword, dbPort, dbServer, dbName);
 };
 
 const handleError = (error) => {
@@ -276,6 +269,14 @@ const getConfigFromUser = (options) => {
       message: 'Qual a URL do serviço de autenticação (iniciar com http:// ou https://)?'
     });
   }
+  if (options.useProxy === undefined) {
+    questions.push({
+      type: 'confirm',
+      name: 'useProxy',
+      message: 'Deseja utilizar proxy para as conexões HTTP?',
+      default: false
+    });
+  }
   if (!options.authUser) {
     questions.push({
       type: 'input',
@@ -321,6 +322,7 @@ const createConfig = async (options) => {
       dbPassword,
       dbCreate,
       authServerRaw,
+      useProxy,
       authUser,
       authPassword
     } = { ...options, ...(await inquirer.prompt(questions)) };
@@ -329,12 +331,13 @@ const createConfig = async (options) => {
       ? authServerRaw.slice(0, -1)
       : authServerRaw;
 
-    await verifyAuthServer(authServer);
+    await verifyAuthServer(authServer, useProxy);
 
     const { authenticated, authUserData } = await verifyLoginAuthServer(
       authServer,
       authUser,
-      authPassword
+      authPassword,
+      useProxy
     );
 
     if (!authenticated) {
@@ -353,7 +356,7 @@ const createConfig = async (options) => {
       console.log(chalk.blue(`Permissão ao usuário ${dbUser} adicionada com sucesso`));
     }
 
-    createDotEnv(port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer);
+    createDotEnv(port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy);
 
     console.log(chalk.blue('Arquivo de configuração (config.env) criado com sucesso!'));
   } catch (e) {
@@ -375,6 +378,8 @@ program
   .option('--db-create', 'Criar banco de dados do SCA')
   .option('--no-db-create', 'Não criar banco de dados do SCA')
   .option('--auth-server-raw <value>', 'URL do serviço de autenticação (iniciar com http:// ou https://)')
+  .option('--use-proxy', 'Utilizar proxy para conexões HTTP')
+  .option('--no-use-proxy', 'Não utilizar proxy para conexões HTTP')
   .option('--auth-user <value>', 'Usuário administrador do Serviço de Autenticação')
   .option('--auth-password <value>', 'Senha do usuário administrador do Serviço de Autenticação')
   .option('--overwrite-env', 'Sobrescrever arquivo de configuração');

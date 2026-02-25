@@ -15,7 +15,7 @@ from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'add_historical_product_dialog.ui'))
+    os.path.dirname(__file__), 'adicionar_produto_historico_dialog.ui'))
 
 class AddHistoricalProductDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):

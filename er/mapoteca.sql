@@ -1,7 +1,5 @@
 BEGIN;
 
-CREATE EXTENSION IF NOT EXISTS postgis;
-
 CREATE SCHEMA mapoteca;
 
 CREATE TABLE mapoteca.tipo_cliente(

@@ -9,11 +9,11 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsVectorLayer, QgsProject, QgsDataSourceUri
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'load_product_layers_dialog.ui'))
+    os.path.dirname(__file__), 'load_products_dialog.ui'))
 
-class LoadProductLayersDialog(QDialog, FORM_CLASS):
+class LoadProductsDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):
-        super(LoadProductLayersDialog, self).__init__(parent)
+        super(LoadProductsDialog, self).__init__(parent)
         self.setupUi(self)
         self.iface = iface
         self.api_client = api_client

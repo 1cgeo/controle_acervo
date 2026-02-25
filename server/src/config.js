@@ -46,6 +46,7 @@ const configSchema = Joi.object().keys({
     .required(),
   DB_USER_READONLY: Joi.string().allow('').default(''),
   DB_PASSWORD_READONLY: Joi.string().allow('').default(''),
+  USE_PROXY: Joi.boolean().default(false),
   VERSION: Joi.string().required(),
   MIN_DATABASE_VERSION: Joi.string().required()
 })
@@ -61,6 +62,7 @@ const config = {
   DB_PASSWORD_READONLY: process.env.DB_PASSWORD_READONLY || '',
   JWT_SECRET: process.env.JWT_SECRET,
   AUTH_SERVER: process.env.AUTH_SERVER,
+  USE_PROXY: process.env.USE_PROXY !== 'false',
   VERSION,
   MIN_DATABASE_VERSION
 }
