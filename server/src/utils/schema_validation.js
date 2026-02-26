@@ -44,7 +44,8 @@ const middleware = ({
       if (error) {
         return next(validationError(error, 'Query'))
       }
-      req.query = value
+      // Express 5: req.query is a getter-only property, override with defineProperty
+      Object.defineProperty(req, 'query', { value, configurable: true })
     }
     if (paramsSchema) {
       const { error, value } = paramsSchema.validate(req.params, {
@@ -53,7 +54,8 @@ const middleware = ({
       if (error) {
         return next(validationError(error, 'Parâmetros'))
       }
-      req.params = value
+      // Express 5: req.params is a getter-only property, override with defineProperty
+      Object.defineProperty(req, 'params', { value, configurable: true })
     }
     if (bodySchema) {
       const { error, value } = bodySchema.validate(req.body, {
