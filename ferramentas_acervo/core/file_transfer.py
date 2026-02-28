@@ -12,6 +12,9 @@ class FileTransferThread(QThread):
     progress_update = pyqtSignal(int, int)
     file_transferred = pyqtSignal(bool, str, str)
 
+    # Cache de credenciais SMB por sessão (compartilhado entre instâncias)
+    _cached_smb_credentials = None
+
     def __init__(self, source_path, destination_path, identifier, credentials=None):
         QThread.__init__(self)
         self.source_path = source_path
@@ -22,6 +25,11 @@ class FileTransferThread(QThread):
         self.max_retries = 3
         self.retry_delay = 2  # segundos iniciais
         self.cancelled = False
+
+    @classmethod
+    def clear_cached_credentials(cls):
+        """Limpa as credenciais SMB cacheadas."""
+        cls._cached_smb_credentials = None
 
     def run(self):
         for attempt in range(1, self.max_retries + 1):
@@ -84,19 +92,21 @@ class FileTransferThread(QThread):
 
     def transfer_file_linux(self):
         """Transfere arquivo no Linux usando SMB"""
-        # Se já temos credenciais, usar direto
+        # Prioridade: credenciais explícitas > cache de classe > diálogo
         user, passwd, domain = None, None, None
-        
+
         if self.credentials:
             user, passwd, domain = self.credentials
+        elif FileTransferThread._cached_smb_credentials:
+            user, passwd, domain = FileTransferThread._cached_smb_credentials
         else:
             # Solicitar credenciais apenas se necessário
             from qgis.PyQt.QtCore import QMetaObject, Qt, Q_ARG
             from qgis.PyQt.QtWidgets import QApplication
-            
+
             # Executar o diálogo na thread principal
             result = [None, None, None]
-            
+
             def show_dialog():
                 nonlocal result
                 auth_smb = AuthSMB(utils.iface.mainWindow())
@@ -104,15 +114,18 @@ class FileTransferThread(QThread):
                     result[0] = auth_smb.user
                     result[1] = auth_smb.passwd
                     result[2] = auth_smb.domain
-            
+
             # Invocar na thread principal
-            QMetaObject.invokeMethod(QApplication.instance(), show_dialog, 
+            QMetaObject.invokeMethod(QApplication.instance(), show_dialog,
                                     Qt.BlockingQueuedConnection)
-            
+
             user, passwd, domain = result
-            
+
             if not user or not passwd or not domain:
                 return False
+
+            # Cachear credenciais para próximas transferências na sessão
+            FileTransferThread._cached_smb_credentials = (user, passwd, domain)
 
         source_path = self.source_path.replace("\\", "/")
         script_path = os.path.join(os.path.dirname(__file__), 'getFileBySMB.py')

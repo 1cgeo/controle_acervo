@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { db, refreshViews } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
 const { pipeline } = require('stream');
@@ -202,14 +202,14 @@ controller.verificarConsistencia = async () => {
       SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume, a.tipo_arquivo_id
       FROM acervo.arquivo a
       JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-      WHERE a.tipo_arquivo_id != 9
+      WHERE a.tipo_arquivo_id != ${TIPO_ARQUIVO.TILESERVER}
     `);
 
     const arquivosDeletados = await t.any(`
       SELECT ad.id, ad.nome_arquivo, ad.extensao, v.volume
       FROM acervo.arquivo_deletado ad
       JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
-      WHERE ad.tipo_arquivo_id != 9
+      WHERE ad.tipo_arquivo_id != ${TIPO_ARQUIVO.TILESERVER}
     `);
 
     // 2. Processar em lotes menores para evitar sobrecarga de memória
@@ -306,9 +306,9 @@ controller.verificarConsistencia = async () => {
     if (arquivosParaAtualizar.length > 0) {
       await t.none(`
         UPDATE acervo.arquivo
-        SET tipo_status_id = 2
+        SET tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
         WHERE id = ANY($1)
-        AND tipo_status_id = 1
+        AND tipo_status_id = ${STATUS_ARQUIVO.CARREGADO}
       `, [arquivosParaAtualizar]);
     }
 
@@ -316,25 +316,25 @@ controller.verificarConsistencia = async () => {
     if (arquivosDeletadosParaAtualizar.length > 0) {
       await t.none(`
         UPDATE acervo.arquivo_deletado
-        SET tipo_status_id = 4
+        SET tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
         WHERE id = ANY($1)
-        AND tipo_status_id = 3
+        AND tipo_status_id = ${STATUS_ARQUIVO.EXCLUIDO}
       `, [arquivosDeletadosParaAtualizar]);
     }
 
     // Verificar e atualizar arquivos classificados incorretamente como incorretos
     await t.none(`
       UPDATE acervo.arquivo
-      SET tipo_status_id = 1
-      WHERE tipo_status_id = 2
+      SET tipo_status_id = ${STATUS_ARQUIVO.CARREGADO}
+      WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
       AND id NOT IN (SELECT unnest($1::bigint[]))
     `, [arquivosParaAtualizar.length > 0 ? arquivosParaAtualizar : [-1]]);
 
     // Verificar e atualizar arquivos deletados classificados incorretamente como incorretos
     await t.none(`
       UPDATE acervo.arquivo_deletado
-      SET tipo_status_id = 3
-      WHERE tipo_status_id = 4
+      SET tipo_status_id = ${STATUS_ARQUIVO.EXCLUIDO}
+      WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
       AND id NOT IN (SELECT unnest($1::bigint[]))
     `, [arquivosDeletadosParaAtualizar.length > 0 ? arquivosDeletadosParaAtualizar : [-1]]);
 
@@ -362,8 +362,8 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
         FROM acervo.arquivo AS a
         INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
         INNER JOIN acervo.versao AS va ON a.versao_id = va.id
-        WHERE a.tipo_status_id = 2
-        
+        WHERE a.tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
+
         UNION ALL
         
         SELECT 
@@ -376,7 +376,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
         FROM acervo.arquivo_deletado AS ad
         INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
         LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
-        WHERE ad.tipo_status_id = 4
+        WHERE ad.tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
       ),
       arquivos_numerados AS (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ordem_data DESC NULLS LAST) as row_num
@@ -393,8 +393,8 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
     // Get total count
     const totalCount = await t.one(`
       SELECT 
-        (SELECT COUNT(*) FROM acervo.arquivo WHERE tipo_status_id = 2) +
-        (SELECT COUNT(*) FROM acervo.arquivo_deletado WHERE tipo_status_id = 4) AS total
+        (SELECT COUNT(*) FROM acervo.arquivo WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}) +
+        (SELECT COUNT(*) FROM acervo.arquivo_deletado WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}) AS total
     `);
     
     // Calculate total pages

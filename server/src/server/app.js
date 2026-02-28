@@ -82,19 +82,20 @@ app.use('/logs', (req, res) => {
 // Serve SwaggerDoc
 app.use('/api/api_docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
 
-// Serve Client
-app.use(express.static(path.join(__dirname, "..", "build")));
-
-app.get("/{*path}", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "build", "index.html"));
-});
-
-app.use((req, res, next) => {
+// JSON 404 for API routes — must come before static/SPA fallback
+app.use('/api', (req, res, next) => {
   const err = new AppError(
     `URL não encontrada para o método ${req.method}`,
     httpCode.NotFound
   )
   return next(err)
+})
+
+// Serve Client
+app.use(express.static(path.join(__dirname, "..", "build")));
+
+app.get("/{*path}", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "build", "index.html"));
 })
 
 // Error handling

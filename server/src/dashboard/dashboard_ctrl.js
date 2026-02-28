@@ -2,6 +2,7 @@
 'use strict'
 
 const { db } = require('../database')
+const { domainConstants: { STATUS_ARQUIVO } } = require('../utils')
 
 const controller = {}
 
@@ -324,6 +325,146 @@ controller.getUserActivityMetrics = async (limit = 10) => {
     ORDER BY total_activity DESC
     LIMIT $1
   `, [limit]);
+}
+
+// System health summary
+controller.getSystemHealth = async () => {
+  return db.conn.task(async t => {
+    const volumeAlerts = await t.any(`
+      SELECT va.id, va.nome, va.capacidade_gb,
+        COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS usado_gb,
+        CASE WHEN va.capacidade_gb > 0 THEN
+          ROUND((COALESCE(SUM(a.tamanho_mb) / 1024, 0) / va.capacidade_gb * 100)::numeric, 1)
+        ELSE 0 END AS percentual_uso
+      FROM acervo.volume_armazenamento va
+      LEFT JOIN acervo.arquivo a ON a.volume_armazenamento_id = va.id
+      GROUP BY va.id, va.nome, va.capacidade_gb
+      HAVING va.capacidade_gb > 0
+        AND (COALESCE(SUM(a.tamanho_mb) / 1024, 0) / va.capacidade_gb) > 0.8
+      ORDER BY percentual_uso DESC
+    `)
+
+    const fileErrors = await t.one(`
+      SELECT
+        COUNT(*) FILTER (WHERE tipo_status_id = $1) AS erros_carregamento,
+        COUNT(*) FILTER (WHERE tipo_status_id = $2) AS erros_exclusao
+      FROM acervo.arquivo
+    `, [STATUS_ARQUIVO.ERRO_CARREGAMENTO, STATUS_ARQUIVO.ERRO_EXCLUSAO])
+
+    const activeSessions = await t.one(
+      `SELECT COUNT(*) AS sessoes_ativas FROM acervo.upload_session WHERE status = 'active'`
+    )
+
+    const totals = await t.one(`
+      SELECT
+        (SELECT COUNT(*) FROM acervo.versao) AS total_versoes,
+        (SELECT COUNT(*) FROM acervo.projeto) AS total_projetos,
+        (SELECT COUNT(*) FROM acervo.download WHERE data_download > NOW() - INTERVAL '24 hours') AS downloads_24h
+    `)
+
+    return {
+      volumes_alertas: volumeAlerts,
+      erros_arquivo: {
+        erros_carregamento: parseInt(fileErrors.erros_carregamento),
+        erros_exclusao: parseInt(fileErrors.erros_exclusao)
+      },
+      sessoes_upload_ativas: parseInt(activeSessions.sessoes_ativas),
+      total_versoes: parseInt(totals.total_versoes),
+      total_projetos: parseInt(totals.total_projetos),
+      downloads_24h: parseInt(totals.downloads_24h)
+    }
+  })
+}
+
+// Products by scale distribution
+controller.getProdutosPorEscala = async () => {
+  return db.conn.any(`
+    SELECT te.nome AS tipo_escala, COUNT(*) AS quantidade
+    FROM acervo.produto p
+    JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+    GROUP BY te.nome, te.code
+    ORDER BY te.code
+  `)
+}
+
+// Files by file type with storage
+controller.getArquivosPorTipoArquivo = async () => {
+  return db.conn.any(`
+    SELECT ta.nome AS tipo_arquivo, COUNT(*) AS quantidade,
+      COALESCE(SUM(a.tamanho_mb) / 1024, 0) AS total_gb
+    FROM acervo.arquivo a
+    JOIN dominio.tipo_arquivo ta ON ta.code = a.tipo_arquivo_id
+    GROUP BY ta.nome, ta.code
+    ORDER BY total_gb DESC
+  `)
+}
+
+// Loading situation distribution
+controller.getSituacaoCarregamento = async () => {
+  return db.conn.any(`
+    SELECT sc.nome AS situacao, COUNT(*) AS quantidade
+    FROM acervo.arquivo a
+    JOIN dominio.situacao_carregamento sc ON sc.code = a.situacao_carregamento_id
+    GROUP BY sc.nome, sc.code
+    ORDER BY sc.code
+  `)
+}
+
+// Version activity timeline
+controller.getVersaoActivityTimeline = async (months = 12) => {
+  return db.conn.any(`
+    WITH monthly AS (
+      SELECT
+        TO_CHAR(date_trunc('month', data_criacao), 'YYYY-MM') AS month,
+        COUNT(*) AS novas_versoes
+      FROM acervo.versao
+      WHERE data_criacao > NOW() - INTERVAL '${months} months'
+      GROUP BY month
+    ),
+    months_series AS (
+      SELECT TO_CHAR(generate_series(
+        date_trunc('month', NOW() - INTERVAL '${months - 1} months'),
+        date_trunc('month', NOW()),
+        '1 month'::interval
+      ), 'YYYY-MM') AS month
+    )
+    SELECT ms.month,
+      COALESCE(m.novas_versoes, 0) AS novas_versoes,
+      SUM(COALESCE(m.novas_versoes, 0)) OVER (ORDER BY ms.month) AS acumulado
+    FROM months_series ms
+    LEFT JOIN monthly m ON ms.month = m.month
+    ORDER BY ms.month
+  `)
+}
+
+// Last 20 registered products
+controller.getUltimosProdutos = async () => {
+  return db.conn.any(`
+    SELECT p.id, p.nome, p.mi, p.inom,
+      tp.nome AS tipo_produto, te.nome AS tipo_escala,
+      p.data_cadastramento,
+      (SELECT COUNT(*) FROM acervo.versao v WHERE v.produto_id = p.id) AS total_versoes
+    FROM acervo.produto p
+    JOIN dominio.tipo_produto tp ON tp.code = p.tipo_produto_id
+    JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+    ORDER BY p.data_cadastramento DESC
+    LIMIT 20
+  `)
+}
+
+// Last 20 registered versions
+controller.getUltimasVersoes = async () => {
+  return db.conn.any(`
+    SELECT v.id, v.versao, v.data_criacao, v.orgao_produtor,
+      tv.nome AS tipo_versao,
+      p.nome AS produto_nome, p.mi,
+      (SELECT COUNT(*) FROM acervo.arquivo a WHERE a.versao_id = v.id) AS total_arquivos
+    FROM acervo.versao v
+    JOIN acervo.produto p ON p.id = v.produto_id
+    JOIN dominio.tipo_versao tv ON tv.code = v.tipo_versao_id
+    ORDER BY v.data_criacao DESC
+    LIMIT 20
+  `)
 }
 
 module.exports = controller

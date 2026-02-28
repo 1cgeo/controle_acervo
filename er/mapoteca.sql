@@ -85,7 +85,8 @@ CREATE TABLE mapoteca.pedido(
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_atualizacao TIMESTAMP WITH TIME ZONE
+    data_atualizacao TIMESTAMP WITH TIME ZONE,
+    CHECK (data_atendimento IS NULL OR data_atendimento >= data_pedido)
 );
 
 CREATE TABLE mapoteca.produto_pedido(
@@ -131,7 +132,7 @@ CREATE TABLE mapoteca.tipo_material (
 CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
-    quantidade DECIMAL(10, 2) NOT NULL,
+    quantidade DECIMAL(10, 2) NOT NULL CHECK (quantidade > 0),
     data_consumo DATE NOT NULL,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -142,12 +143,161 @@ CREATE TABLE mapoteca.consumo_material (
 CREATE TABLE mapoteca.estoque_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
-    quantidade DECIMAL(10, 2) NOT NULL,
+    quantidade DECIMAL(10, 2) NOT NULL CHECK (quantidade >= 0),
     localizacao_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_localizacao (code),
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_atualizacao TIMESTAMP WITH TIME ZONE
+    data_atualizacao TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT unique_material_por_localizacao UNIQUE (tipo_material_id, localizacao_id)
 );
+
+-- Indexes para mapoteca
+CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
+CREATE INDEX idx_pedido_cliente ON mapoteca.pedido(cliente_id);
+CREATE INDEX idx_produto_pedido_pedido ON mapoteca.produto_pedido(pedido_id);
+CREATE INDEX idx_consumo_material_tipo ON mapoteca.consumo_material(tipo_material_id);
+CREATE INDEX idx_consumo_material_data ON mapoteca.consumo_material(data_consumo);
+CREATE INDEX idx_estoque_material_tipo ON mapoteca.estoque_material(tipo_material_id);
+CREATE INDEX idx_estoque_material_localizacao ON mapoteca.estoque_material(localizacao_id);
+
+-- Trigger: consumo de material só pode ocorrer a partir do estoque na Seção (localizacao_id = 1)
+-- Na inserção, decrementa o estoque da Seção; na deleção, restaura.
+CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_insert()
+RETURNS TRIGGER AS $$
+DECLARE
+    estoque_atual DECIMAL(10, 2);
+BEGIN
+    -- Verificar se existe estoque na Seção para este tipo de material
+    SELECT quantidade INTO estoque_atual
+    FROM mapoteca.estoque_material
+    WHERE tipo_material_id = NEW.tipo_material_id
+      AND localizacao_id = 1  -- 1 = Seção
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Não há estoque na Seção para o material informado. O material deve primeiro ser transferido para a Seção antes de ser consumido.';
+    END IF;
+
+    IF estoque_atual < NEW.quantidade THEN
+        RAISE EXCEPTION 'Estoque insuficiente na Seção. Disponível: %, Solicitado: %', estoque_atual, NEW.quantidade;
+    END IF;
+
+    -- Decrementar estoque na Seção
+    UPDATE mapoteca.estoque_material
+    SET quantidade = quantidade - NEW.quantidade,
+        data_atualizacao = CURRENT_TIMESTAMP
+    WHERE tipo_material_id = NEW.tipo_material_id
+      AND localizacao_id = 1;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Restaurar o estoque na Seção ao deletar um registro de consumo
+    UPDATE mapoteca.estoque_material
+    SET quantidade = quantidade + OLD.quantidade,
+        data_atualizacao = CURRENT_TIMESTAMP
+    WHERE tipo_material_id = OLD.tipo_material_id
+      AND localizacao_id = 1;
+
+    -- Se não existir registro na Seção (caso raro), criar um
+    IF NOT FOUND THEN
+        INSERT INTO mapoteca.estoque_material (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
+        VALUES (OLD.tipo_material_id, OLD.quantidade, 1, OLD.usuario_criacao_id, OLD.usuario_criacao_id);
+    END IF;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    estoque_atual DECIMAL(10, 2);
+    diferenca DECIMAL(10, 2);
+BEGIN
+    -- Calcular a diferença (positiva = consumiu mais, negativa = consumiu menos)
+    diferenca := NEW.quantidade - OLD.quantidade;
+
+    -- Se a quantidade não mudou ou o tipo de material não mudou, verificar se precisa atualizar
+    IF OLD.tipo_material_id = NEW.tipo_material_id THEN
+        IF diferenca > 0 THEN
+            -- Consumiu mais: verificar se há estoque suficiente na Seção
+            SELECT quantidade INTO estoque_atual
+            FROM mapoteca.estoque_material
+            WHERE tipo_material_id = NEW.tipo_material_id
+              AND localizacao_id = 1
+            FOR UPDATE;
+
+            IF NOT FOUND OR estoque_atual < diferenca THEN
+                RAISE EXCEPTION 'Estoque insuficiente na Seção para atualizar o consumo. Disponível: %, Necessário adicionalmente: %', COALESCE(estoque_atual, 0), diferenca;
+            END IF;
+
+            UPDATE mapoteca.estoque_material
+            SET quantidade = quantidade - diferenca,
+                data_atualizacao = CURRENT_TIMESTAMP
+            WHERE tipo_material_id = NEW.tipo_material_id
+              AND localizacao_id = 1;
+        ELSIF diferenca < 0 THEN
+            -- Consumiu menos: devolver a diferença ao estoque da Seção
+            UPDATE mapoteca.estoque_material
+            SET quantidade = quantidade + ABS(diferenca),
+                data_atualizacao = CURRENT_TIMESTAMP
+            WHERE tipo_material_id = NEW.tipo_material_id
+              AND localizacao_id = 1;
+        END IF;
+    ELSE
+        -- Tipo de material mudou: devolver o antigo e consumir o novo
+        -- Devolver estoque do material antigo
+        UPDATE mapoteca.estoque_material
+        SET quantidade = quantidade + OLD.quantidade,
+            data_atualizacao = CURRENT_TIMESTAMP
+        WHERE tipo_material_id = OLD.tipo_material_id
+          AND localizacao_id = 1;
+
+        -- Verificar e consumir do novo material
+        SELECT quantidade INTO estoque_atual
+        FROM mapoteca.estoque_material
+        WHERE tipo_material_id = NEW.tipo_material_id
+          AND localizacao_id = 1
+        FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Não há estoque na Seção para o novo material informado.';
+        END IF;
+
+        IF estoque_atual < NEW.quantidade THEN
+            RAISE EXCEPTION 'Estoque insuficiente na Seção para o novo material. Disponível: %, Solicitado: %', estoque_atual, NEW.quantidade;
+        END IF;
+
+        UPDATE mapoteca.estoque_material
+        SET quantidade = quantidade - NEW.quantidade,
+            data_atualizacao = CURRENT_TIMESTAMP
+        WHERE tipo_material_id = NEW.tipo_material_id
+          AND localizacao_id = 1;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_consumo_material_insert
+BEFORE INSERT ON mapoteca.consumo_material
+FOR EACH ROW
+EXECUTE FUNCTION mapoteca.trg_consumo_material_insert();
+
+CREATE TRIGGER trg_consumo_material_update
+BEFORE UPDATE ON mapoteca.consumo_material
+FOR EACH ROW
+EXECUTE FUNCTION mapoteca.trg_consumo_material_update();
+
+CREATE TRIGGER trg_consumo_material_delete
+AFTER DELETE ON mapoteca.consumo_material
+FOR EACH ROW
+EXECUTE FUNCTION mapoteca.trg_consumo_material_delete();
 
 COMMIT;

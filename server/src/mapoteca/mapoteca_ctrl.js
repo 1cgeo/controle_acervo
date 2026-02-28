@@ -2,7 +2,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
 
 const controller = {};
@@ -44,8 +44,8 @@ controller.getClientes = async () => {
         cliente_id,
         COUNT(*) AS total_pedidos,
         MAX(data_pedido) AS data_ultimo_pedido,
-        SUM(CASE WHEN situacao_pedido_id = 3 THEN 1 ELSE 0 END) AS pedidos_em_andamento,
-        SUM(CASE WHEN situacao_pedido_id = 5 THEN 1 ELSE 0 END) AS pedidos_concluidos
+        SUM(CASE WHEN situacao_pedido_id = ${SITUACAO_PEDIDO.EM_ANDAMENTO} THEN 1 ELSE 0 END) AS pedidos_em_andamento,
+        SUM(CASE WHEN situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} THEN 1 ELSE 0 END) AS pedidos_concluidos
       FROM mapoteca.pedido
       GROUP BY cliente_id
     ),
@@ -103,8 +103,8 @@ controller.getClienteById = async (clienteId) => {
         COUNT(*) AS total_pedidos,
         MAX(data_pedido) AS data_ultimo_pedido,
         MIN(data_pedido) AS data_primeiro_pedido,
-        SUM(CASE WHEN situacao_pedido_id = 3 THEN 1 ELSE 0 END) AS pedidos_em_andamento,
-        SUM(CASE WHEN situacao_pedido_id = 5 THEN 1 ELSE 0 END) AS pedidos_concluidos
+        SUM(CASE WHEN situacao_pedido_id = ${SITUACAO_PEDIDO.EM_ANDAMENTO} THEN 1 ELSE 0 END) AS pedidos_em_andamento,
+        SUM(CASE WHEN situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} THEN 1 ELSE 0 END) AS pedidos_concluidos
       FROM mapoteca.pedido
       WHERE cliente_id = $1
     `, [clienteId]);
@@ -1213,6 +1213,28 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
+    // Verificar se há estoque suficiente na Seção (localizacao_id = 1)
+    // O consumo só pode ocorrer a partir do estoque da Seção
+    const estoqueSecao = await t.oneOrNone(
+      `SELECT quantidade FROM mapoteca.estoque_material
+       WHERE tipo_material_id = $1 AND localizacao_id = 1`,
+      [consumoMaterial.tipo_material_id]
+    );
+
+    if (!estoqueSecao) {
+      throw new AppError(
+        'Não há estoque na Seção para o material informado. O material deve primeiro ser transferido para a Seção antes de ser consumido.',
+        httpCode.BadRequest
+      );
+    }
+
+    if (parseFloat(estoqueSecao.quantidade) < parseFloat(consumoMaterial.quantidade)) {
+      throw new AppError(
+        `Estoque insuficiente na Seção. Disponível: ${estoqueSecao.quantidade}, Solicitado: ${consumoMaterial.quantidade}`,
+        httpCode.BadRequest
+      );
+    }
+
     consumoMaterial.usuario_criacao_id = usuarioInfo.id;
     consumoMaterial.usuario_atualizacao_id = usuarioInfo.id;
 
@@ -1221,6 +1243,7 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
+    // O trigger trg_consumo_material_insert decrementa automaticamente o estoque na Seção
     const query = db.pgp.helpers.insert(consumoMaterial, cs, {
       table: 'consumo_material',
       schema: 'mapoteca'
@@ -1250,6 +1273,7 @@ controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       'usuario_atualizacao_id', 'data_atualizacao'
     ], { table: 'consumo_material', schema: 'mapoteca' });
 
+    // O trigger trg_consumo_material_update ajusta automaticamente o estoque na Seção
     const query = db.pgp.helpers.update(consumoMaterial, cs) + ' WHERE id = $1';
 
     await t.none(query, [consumoMaterial.id]);
@@ -1270,6 +1294,7 @@ controller.deleteConsumoMaterial = async (consumoMaterialIds) => {
       throw new AppError(`Os seguintes registros de consumo não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
 
+    // O trigger trg_consumo_material_delete restaura automaticamente o estoque na Seção
     return t.any(
       `DELETE FROM mapoteca.consumo_material WHERE id IN ($1:csv)`,
       [consumoMaterialIds]

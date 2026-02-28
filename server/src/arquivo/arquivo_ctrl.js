@@ -5,7 +5,7 @@ const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db, refreshViews } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
 const { pipeline } = require('stream');
@@ -113,7 +113,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
             arquivo.tamanho_mb, 
             arquivo.checksum, 
             arquivo.metadado, 
-            4, //Em exclusão
+            STATUS_ARQUIVO.ERRO_EXCLUSAO,
             arquivo.situacao_carregamento_id, 
             arquivo.descricao, 
             arquivo.crs_original,
@@ -288,7 +288,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
             arquivo.tamanho_mb,
             arquivo.checksum, 
             arquivo.metadado || {}, 
-            arquivo.situacao_carregamento_id || 1,
+            arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
             arquivo.descricao || '',
             arquivo.crs_original || null,
             arquivo.versao_id
@@ -475,7 +475,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
               arquivo.tamanho_mb,
               arquivo.checksum, 
               arquivo.metadado || {}, 
-              arquivo.situacao_carregamento_id || 1,
+              arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
               arquivo.descricao || '',
               arquivo.crs_original || null,
               versaoTempId
@@ -682,7 +682,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
                 arquivo.tamanho_mb,
                 arquivo.checksum, 
                 arquivo.metadado || {}, 
-                arquivo.situacao_carregamento_id || 1,
+                arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
                 arquivo.descricao || '',
                 arquivo.crs_original || null,
                 versaoTempId

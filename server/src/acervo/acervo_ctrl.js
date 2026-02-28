@@ -3,7 +3,7 @@
 const archiver = require('archiver');
 const { Readable } = require('stream');
 const { db } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA } } = require("../utils");
 
 const {
   DB_USER,
@@ -491,7 +491,7 @@ async function generateGeoJSONForScale(scaleId) {
       FROM acervo.produto p
       JOIN acervo.versao v ON p.id = v.produto_id
       WHERE p.tipo_escala_id = $1
-      AND v.subtipo_produto_id IN (2, 12, 24) -- Tipos de carta topográfica
+      AND v.subtipo_produto_id IN (${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_T34_700}, ${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_ET_RDG}, ${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_MILITAR})
       GROUP BY p.id
     ),
     versoes_orto AS (
@@ -501,7 +501,7 @@ async function generateGeoJSONForScale(scaleId) {
       FROM acervo.produto p
       JOIN acervo.versao v ON p.id = v.produto_id
       WHERE p.tipo_escala_id = $1
-      AND v.subtipo_produto_id IN (3, 19) -- Tipos de carta ortoimagem
+      AND v.subtipo_produto_id IN (${SUBTIPO_PRODUTO.CARTA_ORTOIMAGEM}, ${SUBTIPO_PRODUTO.CARTA_ORTOIMAGEM_OM})
       GROUP BY p.id
     )
     SELECT 
@@ -567,7 +567,7 @@ async function generateGeoJSONForScale(scaleId) {
   // Create the GeoJSON structure
   return {
     type: "FeatureCollection",
-    name: `situacao-geral-ct-${scaleId === 1 ? '25k' : scaleId === 2 ? '50k' : scaleId === 3 ? '100k' : '250k'}`,
+    name: `situacao-geral-ct-${scaleId === TIPO_ESCALA.ESCALA_25K ? '25k' : scaleId === TIPO_ESCALA.ESCALA_50K ? '50k' : scaleId === TIPO_ESCALA.ESCALA_100K ? '100k' : '250k'}`,
     features: features
   };
 }

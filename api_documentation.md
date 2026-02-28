@@ -409,6 +409,7 @@ Prepara sessao de upload para adicionar arquivos a versoes existentes.
   "arquivos": [
     {
       "versao_id": 456,
+      "uuid_arquivo": "uuid (opcional, permite null)",
       "nome": "string (obrigatorio)",
       "nome_arquivo": "string (obrigatorio)",
       "tipo_arquivo_id": 1,
@@ -443,6 +444,7 @@ Prepara sessao de upload para adicionar novas versoes com arquivos.
     {
       "produto_id": 123,
       "versao": {
+        "uuid_versao": "uuid (opcional, permite null)",
         "versao": "2-DSG",
         "nome": "Segunda Edicao",
         "tipo_versao_id": 1,
@@ -456,7 +458,7 @@ Prepara sessao de upload para adicionar novas versoes com arquivos.
         "data_edicao": "2024-03-20"
       },
       "arquivos": [
-        { "...mesma estrutura de prepare-upload/files" }
+        { "...mesma estrutura de prepare-upload/files, exceto sem versao_id" }
       ]
     }
   ]
@@ -485,19 +487,35 @@ Prepara sessao de upload para criar produtos completos com versoes e arquivos.
         "mi": "string",
         "inom": "string",
         "tipo_escala_id": 1,
+        "denominador_escala_especial": null,
         "tipo_produto_id": 2,
-        "geom": "SRID=4674;POLYGON((...)) (WKT)"
+        "descricao": "string (opcional)",
+        "geom": "SRID=4674;POLYGON((...)) (WKT, obrigatorio)"
       },
       "versoes": [
         {
-          "versao": { "...estrutura de versao" },
-          "arquivos": [ "...estrutura de arquivo" ]
+          "uuid_versao": "uuid (opcional, permite null)",
+          "versao": "1-DSG",
+          "nome": "Primeira Edicao",
+          "tipo_versao_id": 1,
+          "subtipo_produto_id": 2,
+          "lote_id": 10,
+          "metadado": {},
+          "descricao": "string",
+          "orgao_produtor": "string",
+          "palavras_chave": ["string"],
+          "data_criacao": "2024-01-15",
+          "data_edicao": "2024-03-20",
+          "arquivos": [
+            { "...mesma estrutura de prepare-upload/files, exceto sem versao_id" }
+          ]
         }
       ]
     }
   ]
 }
 ```
+> **Nota**: Diferente de `prepare-upload/version`, aqui os campos da versao ficam no nivel raiz do item do array (junto com `arquivos`), e nao dentro de uma chave `versao` aninhada.
 
 **Resposta:** `{ session_uuid, operation_type: "add_product", produtos: [...] }`
 
@@ -602,7 +620,8 @@ Atualiza metadados de um produto.
   "tipo_escala_id": 1,
   "denominador_escala_especial": null,
   "tipo_produto_id": 2,
-  "descricao": "string (obrigatorio, permite vazio)"
+  "descricao": "string (obrigatorio, permite vazio)",
+  "geom": "SRID=4674;POLYGON((...)) (WKT, permite null)"
 }
 ```
 
@@ -682,7 +701,7 @@ Cria versoes historicas em lote (`tipo_versao_id = 2`) para produtos existentes.
 | **Auth** | `verifyAdmin` |
 | **HTTP Status** | 201 Created |
 
-**Body:** Array de objetos de versao com `uuid_versao`, `versao`, `nome`, `produto_id`, `lote_id`, `metadado`, `descricao`, `orgao_produtor`, `palavras_chave`, `data_criacao`, `data_edicao`.
+**Body:** Array de objetos de versao com `uuid_versao`, `versao`, `nome`, `produto_id`, `subtipo_produto_id`, `lote_id`, `metadado`, `descricao`, `orgao_produtor`, `palavras_chave`, `data_criacao`, `data_edicao`.
 
 ---
 
@@ -705,7 +724,7 @@ Cria produtos em lote (sem versoes).
 
 | Campo | Valor |
 |---|---|
-| **Auth** | `verifyLogin` |
+| **Auth** | `verifyAdmin` |
 | **HTTP Status** | 201 Created |
 
 **Body:**
@@ -734,7 +753,7 @@ Retorna todos os relacionamentos entre versoes com detalhes completos.
 
 | Campo | Valor |
 |---|---|
-| **Auth** | Nenhuma (publico) |
+| **Auth** | `verifyLogin` |
 
 **Resposta:** Array com IDs de relacionamento, versoes relacionadas, tipos de relacionamento e metadados de produto/versao.
 
@@ -801,7 +820,7 @@ Retorna todos os projetos.
 
 | Campo | Valor |
 |---|---|
-| **Auth** | Nenhuma |
+| **Auth** | `verifyLogin` |
 
 ---
 
@@ -862,7 +881,7 @@ Retorna todos os lotes.
 
 | Campo | Valor |
 |---|---|
-| **Auth** | Nenhuma |
+| **Auth** | `verifyLogin` |
 
 ---
 
@@ -1550,6 +1569,17 @@ Retorna todos os registros de manutencao com detalhes dos plotters.
 
 ---
 
+### GET `/api/mapoteca/manutencao_plotter/:id`
+
+Retorna detalhes de um registro de manutencao especifico.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
 ### POST `/api/mapoteca/manutencao_plotter`
 
 Registra uma manutencao de plotter.
@@ -1694,6 +1724,17 @@ Retorna estoque agregado por localizacao com contagem de tipos de material.
 
 ---
 
+### GET `/api/mapoteca/estoque_material/:id`
+
+Retorna detalhes de um registro de estoque especifico.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+---
+
 ### POST `/api/mapoteca/estoque_material`
 
 Cria ou atualiza registro de estoque (upsert na chave composta material+localizacao).
@@ -1776,6 +1817,17 @@ Retorna consumo mensal por tipo de material para um ano especificado.
 | Parametro | Tipo | Padrao | Descricao |
 |---|---|---|---|
 | `ano` | integer | ano atual | Ano para consulta |
+
+---
+
+### GET `/api/mapoteca/consumo_material/:id`
+
+Retorna detalhes de um registro de consumo especifico.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
 
 ---
 
@@ -1901,31 +1953,29 @@ Retorna resumo de status dos plotters (total, ativos, inativos) e lista com data
 
 ---
 
-## 20. Dashboard do Acervo (Nao Montado)
+## 20. Dashboard do Acervo
 
-> **Nota**: Estes endpoints estao definidos em `server/src/dashboard/` mas **nao estao montados** em `routes.js`. Para ativa-los, e necessario importar e registrar o modulo no arquivo de rotas.
+Todos os endpoints sao `GET` e requerem **verifyLogin**. Prefixo: `/api/dashboard`.
 
-Os seguintes endpoints estao definidos como `GET`, sem middleware de autenticacao:
-
-| Endpoint | Descricao |
-|---|---|
-| `/produtos_total` | Total de produtos no acervo |
-| `/arquivos_total_gb` | Total de armazenamento em GB |
-| `/produtos_tipo` | Produtos agrupados por tipo |
-| `/gb_tipo_produto` | GB agrupados por tipo de produto |
-| `/usuarios_total` | Total de usuarios |
-| `/arquivos_dia` | Arquivos carregados por dia |
-| `/downloads_dia` | Downloads por dia |
-| `/gb_volume` | GB por volume de armazenamento |
-| `/ultimos_carregamentos` | Ultimos arquivos carregados |
-| `/ultimas_modificacoes` | Ultimas modificacoes de arquivo |
-| `/ultimos_deletes` | Ultimos arquivos deletados |
-| `/download` | Informacoes gerais de download |
-| `/produto_activity_timeline` | Timeline de atividade de produtos (`?months=12`) |
-| `/version_statistics` | Estatisticas de versoes |
-| `/storage_growth_trends` | Tendencias de crescimento de armazenamento (`?months=12`) |
-| `/project_status_summary` | Resumo de status de projetos |
-| `/user_activity_metrics` | Metricas de atividade de usuarios (`?limit=10`) |
+| Endpoint | Descricao | Query Params |
+|---|---|---|
+| `GET /api/dashboard/produtos_total` | Total de produtos no acervo | - |
+| `GET /api/dashboard/arquivos_total_gb` | Total de armazenamento em GB | - |
+| `GET /api/dashboard/produtos_tipo` | Produtos agrupados por tipo | - |
+| `GET /api/dashboard/gb_tipo_produto` | GB agrupados por tipo de produto | - |
+| `GET /api/dashboard/usuarios_total` | Total de usuarios | - |
+| `GET /api/dashboard/arquivos_dia` | Arquivos carregados por dia | - |
+| `GET /api/dashboard/downloads_dia` | Downloads por dia | - |
+| `GET /api/dashboard/gb_volume` | GB por volume de armazenamento | - |
+| `GET /api/dashboard/ultimos_carregamentos` | Ultimos arquivos carregados | - |
+| `GET /api/dashboard/ultimas_modificacoes` | Ultimas modificacoes de arquivo | - |
+| `GET /api/dashboard/ultimos_deletes` | Ultimos arquivos deletados | - |
+| `GET /api/dashboard/download` | Informacoes gerais de download | - |
+| `GET /api/dashboard/produto_activity_timeline` | Timeline de atividade de produtos | `months` (int, default 12) |
+| `GET /api/dashboard/version_statistics` | Estatisticas de versoes | - |
+| `GET /api/dashboard/storage_growth_trends` | Tendencias de crescimento de armazenamento | `months` (int, default 12) |
+| `GET /api/dashboard/project_status_summary` | Resumo de status de projetos | - |
+| `GET /api/dashboard/user_activity_metrics` | Metricas de atividade de usuarios | `limit` (int, default 10) |
 
 ---
 
@@ -1955,7 +2005,7 @@ Interface Swagger UI com documentacao interativa da API.
 | Acervo | `/api/acervo` | 12 | verifyLogin / verifyAdmin |
 | Arquivo | `/api/arquivo` | 9 | verifyLogin / verifyAdmin |
 | Produtos | `/api/produtos` | 11 | verifyAdmin (maioria) |
-| Projetos | `/api/projetos` | 8 | verifyAdmin (escrita) |
+| Projetos | `/api/projetos` | 8 | verifyLogin (leitura) / verifyAdmin (escrita) |
 | Volumes | `/api/volumes` | 8 | verifyAdmin |
 | Usuarios | `/api/usuarios` | 6 | verifyAdmin |
 | Gerencia | `/api/gerencia` | 14 | Nenhuma (dominios) / verifyAdmin |
@@ -1964,10 +2014,10 @@ Interface Swagger UI com documentacao interativa da API.
 | Mapoteca - Pedidos | `/api/mapoteca/pedido` | 6 | verifyLogin / verifyAdmin |
 | Mapoteca - Prod. Pedido | `/api/mapoteca/produto_pedido` | 3 | verifyAdmin |
 | Mapoteca - Plotters | `/api/mapoteca/plotter` | 5 | verifyLogin / verifyAdmin |
-| Mapoteca - Manutencao | `/api/mapoteca/manutencao_plotter` | 4 | verifyLogin / verifyAdmin |
+| Mapoteca - Manutencao | `/api/mapoteca/manutencao_plotter` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Tipo Material | `/api/mapoteca/tipo_material` | 5 | verifyLogin / verifyAdmin |
-| Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 5 | verifyLogin / verifyAdmin |
-| Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 5 | verifyLogin / verifyAdmin |
+| Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 6 | verifyLogin / verifyAdmin |
+| Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 6 | verifyLogin / verifyAdmin |
 | Dashboard Mapoteca | `/api/mapoteca/dashboard` | 8 | verifyLogin |
-| Dashboard Acervo | *(nao montado)* | 17 | - |
-| **Total (montados)** | | **107** | |
+| Dashboard Acervo | `/api/dashboard` | 17 | verifyLogin |
+| **Total** | | **140** | |

@@ -12,4 +12,6 @@ module.exports = {
   httpCode: require('./http_code'),
   generateLocalizador: require('./generate_localizador'),
   httpClient: require('./http_client.js'),
+  serializeErrorLoader: require('./serialize_error_loader'),
+  domainConstants: require('./domain_constants'),
 }

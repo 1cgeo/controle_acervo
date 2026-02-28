@@ -8,7 +8,7 @@ CREATE SCHEMA acervo;
 CREATE TABLE acervo.volume_armazenamento(
 	id SERIAL NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
-	volume VARCHAR(255) NOT NULL,
+	volume VARCHAR(255) NOT NULL UNIQUE,
 	capacidade_gb FLOAT NOT NULL
 );
 
@@ -31,7 +31,8 @@ CREATE TABLE acervo.projeto (
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
-    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+    CHECK (data_fim IS NULL OR data_fim >= data_inicio)
 );
 
 CREATE TABLE acervo.lote (
@@ -46,7 +47,9 @@ CREATE TABLE acervo.lote (
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
-    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+    CHECK (data_fim IS NULL OR data_fim >= data_inicio),
+    CONSTRAINT unique_pit_per_project UNIQUE (projeto_id, pit)
 );
 
 CREATE TABLE acervo.produto(
@@ -190,6 +193,9 @@ CREATE TABLE acervo.arquivo(
 );
 CREATE INDEX idx_arquivo_metadato ON acervo.arquivo USING GIN (metadado);
 CREATE INDEX idx_arquivo_tipo_arquivo ON acervo.arquivo(tipo_arquivo_id);
+CREATE INDEX idx_arquivo_versao ON acervo.arquivo(versao_id);
+CREATE INDEX idx_lote_projeto ON acervo.lote(projeto_id);
+CREATE INDEX idx_versao_lote ON acervo.versao(lote_id);
 
 CREATE TABLE acervo.arquivo_deletado(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
@@ -253,7 +259,9 @@ CREATE TABLE acervo.versao_relacionamento(
     versao_id_2 BIGINT NOT NULL REFERENCES acervo.versao (id),
     tipo_relacionamento_id SMALLINT NOT NULL REFERENCES dominio.tipo_relacionamento (code),
     data_relacionamento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_relacionamento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
+    usuario_relacionamento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+    CHECK (versao_id_1 != versao_id_2),
+    CONSTRAINT unique_versao_relacionamento UNIQUE (versao_id_1, versao_id_2, tipo_relacionamento_id)
 );
 
 -- Main upload session table

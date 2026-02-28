@@ -1,11 +1,7 @@
 // Path: utils\app_error.js
 'use strict'
 
-let serializeError;
-import('serialize-error').then(module => {
-  serializeError = module.serializeError;
-});
-
+const { serialize } = require('./serialize_error_loader')
 const httpCode = require('./http_code')
 
 class AppError extends Error {
@@ -14,7 +10,7 @@ class AppError extends Error {
     this.statusCode = status
     this.errorTrace =
       errorTrace instanceof Error
-        ? (serializeError ? serializeError(errorTrace) : { message: errorTrace.message, stack: errorTrace.stack })
+        ? serialize(errorTrace)
         : errorTrace
   }
 }

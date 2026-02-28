@@ -8,7 +8,7 @@
     "url": "git://github.com/1cgeo/controle_acervo"
   },
   "scripts": {
-    "install-all": "npm install && cd server && npm install",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "config": "node create_config.js",
     "build": "node create_build.js",
     "start": "pm2 start server/src/index.js --name controle-acervo",

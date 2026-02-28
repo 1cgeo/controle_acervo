@@ -174,13 +174,204 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION acervo.refresh_all_materialized_views() RETURNS void AS $$
 DECLARE
     view_name TEXT;
-BEGIN    
-    FOR view_name IN 
-        SELECT matviewname 
-        FROM pg_matviews 
+BEGIN
+    FOR view_name IN
+        SELECT matviewname
+        FROM pg_matviews
         WHERE schemaname = 'acervo' AND matviewname LIKE 'mv_produto_%'
     LOOP
         EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY acervo.%I', view_name);
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ===== Triggers para auto-refresh de views materializadas =====
+-- Utilizam FOR EACH STATEMENT com transition tables para processar em lote.
+-- Cada refresh é protegido por exception handler para não bloquear a operação principal.
+
+-- Helper: refresh por tipo_produto_id/tipo_escala_id diretamente (para casos de DELETE onde o registro já foi removido)
+CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_tipo_escala(p_tipo_ids integer[], p_escala_ids integer[]) RETURNS void AS $$
+DECLARE
+    view_name TEXT;
+    i integer;
+BEGIN
+    FOR i IN 1..array_length(p_tipo_ids, 1) LOOP
+        view_name := 'mv_produto_' || p_tipo_ids[i] || '_' || p_escala_ids[i];
+        IF EXISTS (SELECT 1 FROM pg_matviews WHERE schemaname = 'acervo' AND matviewname = view_name) THEN
+            EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY acervo.%I', view_name);
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===== ARQUIVO triggers =====
+
+-- Arquivo INSERT/UPDATE: registros existem na tabela, usar atualizar_mv_por_arquivos
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_arquivo_upsert()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_ids bigint[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT id) INTO affected_ids FROM new_table;
+    IF affected_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_arquivos(affected_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após % em arquivo: %', TG_OP, SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Arquivo DELETE: registros já foram removidos, usar versao_ids da old_table
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_arquivo_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_versao_ids bigint[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT versao_id) INTO affected_versao_ids FROM old_table;
+    IF affected_versao_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_versoes(affected_versao_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após DELETE em arquivo: %', SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_refresh_mv_arquivo_insert
+AFTER INSERT ON acervo.arquivo
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_upsert();
+
+CREATE TRIGGER trg_refresh_mv_arquivo_update
+AFTER UPDATE ON acervo.arquivo
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_upsert();
+
+CREATE TRIGGER trg_refresh_mv_arquivo_delete
+AFTER DELETE ON acervo.arquivo
+REFERENCING OLD TABLE AS old_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_delete();
+
+-- ===== VERSAO triggers =====
+
+-- Versão INSERT/UPDATE: registros existem na tabela, usar atualizar_mv_por_versoes
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_versao_upsert()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_ids bigint[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT id) INTO affected_ids FROM new_table;
+    IF affected_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_versoes(affected_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após % em versao: %', TG_OP, SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Versão DELETE: registros já foram removidos, extrair produto_ids da old_table
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_versao_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_produto_ids integer[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT produto_id::integer) INTO affected_produto_ids FROM old_table;
+    IF affected_produto_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_produtos(affected_produto_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após DELETE em versao: %', SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_refresh_mv_versao_insert
+AFTER INSERT ON acervo.versao
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_versao_upsert();
+
+CREATE TRIGGER trg_refresh_mv_versao_update
+AFTER UPDATE ON acervo.versao
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_versao_upsert();
+
+CREATE TRIGGER trg_refresh_mv_versao_delete
+AFTER DELETE ON acervo.versao
+REFERENCING OLD TABLE AS old_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_versao_delete();
+
+-- ===== PRODUTO triggers =====
+
+-- Produto INSERT/UPDATE: registros existem na tabela, usar atualizar_mv_por_produtos
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_produto_upsert()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_ids integer[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT id::integer) INTO affected_ids FROM new_table;
+    IF affected_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_produtos(affected_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após % em produto: %', TG_OP, SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Produto DELETE: registros já foram removidos, extrair tipo/escala da old_table para refresh direto
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_produto_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    tipo_ids integer[];
+    escala_ids integer[];
+BEGIN
+    SELECT ARRAY_AGG(tipo_produto_id::integer), ARRAY_AGG(tipo_escala_id::integer)
+    INTO tipo_ids, escala_ids
+    FROM (SELECT DISTINCT tipo_produto_id, tipo_escala_id FROM old_table) sub;
+
+    IF tipo_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_tipo_escala(tipo_ids, escala_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após DELETE em produto: %', SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_refresh_mv_produto_insert
+AFTER INSERT ON acervo.produto
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_produto_upsert();
+
+CREATE TRIGGER trg_refresh_mv_produto_update
+AFTER UPDATE ON acervo.produto
+REFERENCING NEW TABLE AS new_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_produto_upsert();
+
+CREATE TRIGGER trg_refresh_mv_produto_delete
+AFTER DELETE ON acervo.produto
+REFERENCING OLD TABLE AS old_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION acervo.trg_refresh_mv_produto_delete();

@@ -114,6 +114,7 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
                 "uuid_versao": None,
                 "versao": self.versaoLineEdit.text(),
                 "nome": self.nomeVersaoLineEdit.text(),
+                "produto_id": self.produto_data['id'],
                 "subtipo_produto_id": self.subtipoProdutoComboBox.currentData(),
                 "lote_id": self.loteComboBox.currentData(),
                 "metadado": metadado,
@@ -123,22 +124,9 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
                 "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.ISODate),
                 "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.ISODate)
             }
-            
-            # Preparar dados completos para API
-            versao_historica = {
-                "nome": self.produto_data.get('nome'),
-                "mi": self.produto_data.get('mi'),
-                "inom": self.produto_data.get('inom'),
-                "tipo_escala_id": self.produto_data.get('tipo_escala_id'),
-                "denominador_escala_especial": self.produto_data.get('denominador_escala_especial'),
-                "tipo_produto_id": self.produto_data.get('tipo_produto_id'),
-                "descricao": self.produto_data.get('descricao', ''),
-                "geom": self.produto_data.get('geom', ''),
-                "versoes": [versao_data]
-            }
-            
-            # Enviar requisição
-            response = self.api_client.post('produtos/produto_versao_historica', [versao_historica])
+
+            # Enviar requisição para adicionar versão histórica ao produto existente
+            response = self.api_client.post('produtos/versao_historica', [versao_data])
             
             if response and response.get('success'):
                 QMessageBox.information(self, "Sucesso", "Versão histórica adicionada com sucesso!")

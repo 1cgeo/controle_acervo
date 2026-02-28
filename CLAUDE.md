@@ -3,17 +3,33 @@
 ## Git Rules
 
 - **NEVER create commits automatically.** The user will always review changes and commit manually. Do not run `git add`, `git commit`, or `git push` unless the user explicitly asks for it in that specific message.
+- **NEVER commit changes** unless the user explicitly asks in that specific message. Always let the user review first.
+
+## Intentional Design Decisions
+
+- **`/logs` endpoint has no authentication** — This is intentional. The system runs on an internal local network (intranet), so unauthenticated log access is acceptable.
+- **CORS allows all origins** — This is intentional. The system runs on an internal local network, so open CORS is acceptable.
+- **DB credentials in QGIS layer URIs** — This is intentional. The plugin connects directly to PostgreSQL to load layers, exposing credentials in the layer URI. Acceptable for an internal network application.
+- **Mapoteca uses `usuario_id` (INTEGER) while Acervo uses `usuario_uuid` (UUID)** — This is intentional. The `dgeo.usuario` table has both `id` (INTEGER PK) and `uuid` (UUID UNIQUE). The `mapoteca` schema references `usuario.id` and the `acervo` schema references `usuario.uuid`. Both are valid foreign key references to the same user. New tables should follow the `acervo` convention (UUID) for consistency.
+- **Client web (`client/`) nao inclui dados de Mapoteca** — A Mapoteca tera seu proprio cliente web separado. O dashboard em `client/` exibe apenas dados do acervo (produtos, versoes, arquivos, projetos, volumes, usuarios).
+
+## Business Rules
+
+### Mapoteca - Material Consumption
+- **Consumo de material** can only occur from the **Seção** location (`tipo_localizacao` code=1). Materials must first be transferred to Seção before they can be consumed.
+- Location types: 1=Seção, 2=Almoxarifado, 3=Aquisição realizada, 4=Saldo no empenho.
 
 ## Project Overview
 
 **Controle do Acervo (SCA)** is a geospatial data collection management system built by the Brazilian Army Geographic Service (DSG/1CGEO). It manages versioned geographic products (maps, orthophotos, digital elevation models, etc.), their files, storage volumes, and a physical map library (mapoteca) for order fulfillment.
 
-The system consists of two active components:
+The system consists of three active components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
 2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 3 desktop integration
+3. **Client** (`client/`) - Vanilla JS SPA with Vite (admin dashboard)
 
-> `client_deprecated/` and `client_admin_mapoteca_deprecated/` contain former React/TypeScript SPAs. They are fully deprecated and should not be modified. New web clients will be built from scratch.
+> `client_admin_mapoteca_deprecated/` contains a former React/TypeScript SPA. It is fully deprecated and should not be modified.
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.
 
@@ -40,7 +56,7 @@ controle_acervo/
 │   │   ├── gerencia/               # Domain data & admin operations
 │   │   ├── mapoteca/               # Map library CRUD & dashboard
 │   │   ├── dashboard/              # Main dashboard endpoints
-│   │   └── utils/                  # Shared utilities
+│   │   └── utils/                  # Shared utilities (domain_constants, error handling, logging)
 │   └── package.json
 ├── ferramentas_acervo/             # QGIS 3 Plugin (Python/PyQt)
 │   ├── main.py                     # Plugin entry point
@@ -85,18 +101,43 @@ controle_acervo/
 │       ├── limpeza_downloads/      # Cleanup expired downloads
 │       ├── problem_uploads/        # View problem uploads
 │       └── upload_sessions/        # Manage upload sessions
-├── er/                             # Database SQL schema definitions
-│   ├── versao.sql                  # DB version tracking
-│   ├── dominio.sql                 # Domain/lookup tables
-│   ├── dgeo.sql                    # User schema
-│   ├── acervo.sql                  # Main archive schema
-│   ├── mapoteca.sql                # Map library schema
-│   ├── acompanhamento.sql          # Materialized views
-│   └── permissao.sql               # DB permissions
-├── create_config.js                # Interactive setup (DB creation, config.env generation)
-├── create_build.js                 # Client build script (currently no active client)
-├── package.json                    # Root package with install/config/build/start scripts
-└── api_documentation.md            # API documentation
+├── client/                          # Dashboard SPA (Vanilla JS + Vite)
+│   ├── index.html                   # Entry point
+│   ├── vite.config.js               # Vite config (aliases, proxy, code splitting)
+│   ├── package.json                 # Dependencies: chart.js, vite
+│   ├── public/backgrounds/          # Login page background SVGs
+│   └── src/
+│       ├── css/                     # Modular CSS with design tokens
+│       │   ├── style.css            # Main entry (imports all CSS)
+│       │   ├── design-tokens.css    # CSS variables (light + dark theme)
+│       │   ├── base.css             # Reset, typography, utilities
+│       │   ├── login.css            # Login page
+│       │   ├── layout.css           # Navbar, sidebar
+│       │   ├── dashboard.css        # Dashboard cards, tabs, grids
+│       │   ├── charts.css           # Chart containers
+│       │   ├── tables.css           # Data tables, pagination
+│       │   └── error-pages.css      # 403/404 pages
+│       └── js/
+│           ├── index.js             # App entry point (theme, router, layout)
+│           ├── router.js            # Hash-based router with auth guards
+│           ├── store/auth-store.js  # Auth state via localStorage
+│           ├── services/            # API client, cache, dashboard service
+│           ├── utils/               # DOM helpers, formatting, theme, toast
+│           ├── pages/               # Login, dashboard, unauthorized, not-found
+│           ├── components/          # Reusable: layout, charts, tabs, tables, cards
+│           └── features/dashboard/  # 4 dashboard tabs (overview, distribution, activity, advanced)
+├── er/                              # Database SQL schema definitions
+│   ├── versao.sql                   # DB version tracking
+│   ├── dominio.sql                  # Domain/lookup tables
+│   ├── dgeo.sql                     # User schema
+│   ├── acervo.sql                   # Main archive schema
+│   ├── mapoteca.sql                 # Map library schema
+│   ├── acompanhamento.sql           # Materialized views
+│   └── permissao.sql                # DB permissions
+├── create_config.js                 # Interactive setup (DB creation, config.env generation)
+├── create_build.js                  # Client build script
+├── package.json                     # Root package with install/config/build/start scripts
+└── api_documentation.md             # API documentation
 ```
 
 ## Tech Stack
@@ -115,6 +156,17 @@ controle_acervo/
 - **Dev Server**: Nodemon
 - **Linting**: StandardJS (devDependency)
 
+### Client (Dashboard SPA)
+- **Language**: Vanilla JavaScript (ES modules, no TypeScript)
+- **Build Tool**: Vite 6
+- **Charts**: Chart.js 4
+- **Routing**: Hash-based custom router (#/login, #/dashboard)
+- **State**: localStorage (auth tokens, theme preference)
+- **Data Caching**: Custom TTL cache (1-minute stale time)
+- **Styling**: Modular CSS with design tokens, BEM naming, dark/light theme via CSS variables
+- **Icons**: Inline SVG (Material Design paths)
+- **Auth**: JWT in localStorage, auto-logout on 401/403
+
 ### QGIS Plugin
 - **Language**: Python 3
 - **UI Framework**: PyQt (via QGIS)
@@ -127,7 +179,7 @@ controle_acervo/
 
 ### Root Level
 ```bash
-npm run install-all    # Install root + server dependencies
+npm run install-all    # Install root + server + client dependencies
 npm run config         # Interactive setup: create DB + config.env
 npm start              # Start production server via PM2
 npm run start-dev      # Start dev server (server only, via nodemon)
@@ -139,6 +191,13 @@ npm run dev            # Start with nodemon (HTTP)
 npm run dev-https      # Start with nodemon (HTTPS)
 npm run production     # Start via PM2 (HTTP)
 npm run production-https  # Start via PM2 (HTTPS)
+```
+
+### Client (`client/`)
+```bash
+npm run dev            # Start Vite dev server (port 3000, proxies /api to server)
+npm run build          # Production build to dist/
+npm run preview        # Preview production build
 ```
 
 ## Configuration
@@ -204,11 +263,15 @@ All API responses use `res.sendJsonAndLog()`:
 4. Admin routes use `verifyAdmin` middleware (re-checks admin status in DB)
 5. Plugin stores token in memory; re-authenticates silently on 401 using saved credentials
 
+### Domain Constants
+Server uses `server/src/utils/domain_constants.js` to centralize all domain table code values (STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, TIPO_ESCALA, SITUACAO_CARREGAMENTO, SUBTIPO_PRODUTO, SITUACAO_PEDIDO, TIPO_RELACIONAMENTO). Always use these constants instead of magic numbers in SQL queries. Values mirror `er/dominio.sql` and `er/mapoteca.sql` seed data.
+
 ### Error Handling
 - `AppError(message, statusCode, errorTrace)` for application errors
 - `asyncHandler` wraps all async route handlers to catch rejections
 - Global error middleware logs errors and returns standardized JSON
 - `errorHandler.critical()` logs and exits process on startup failures
+- `serialize-error` v13 is ESM-only; loaded via `serialize_error_loader.js` with sync fallback
 
 ### Plugin Architecture
 - **Entry point**: `main.py` → creates `Settings`, `APIClient`, toolbar action
@@ -221,11 +284,11 @@ All API responses use `res.sendJsonAndLog()`:
 ### Plugin Menu Categories
 | Category | Access | Features |
 |---|---|---|
-| Funções Gerais | All users | Load layers, product info, download, search, settings |
-| Funções de Administrador | Admin | Add product, load products, load systematic files |
+| Funções Gerais | All users | Load layers, product info, download, search, version relationships, settings |
+| Funções de Administrador | Admin | Add product, add historical product, load products |
 | Administração Avançada | Admin | Manage volumes, volume-type associations, projects, batches, users |
-| Operações em Lote | Admin | Batch create/load products, versions, files, relationships |
-| Diagnóstico e Manutenção | Admin | Consistency checks, materialized views, cleanup, problem uploads |
+| Operações em Lote | Admin | Batch add files/products/versions, create products, historical versions, version relationships |
+| Diagnóstico e Manutenção | Admin | Consistency checks, materialized views, cleanup, incorrect/deleted files, problem uploads, upload sessions, deleted downloads |
 
 ## Database
 
@@ -248,8 +311,15 @@ projeto (1) → (N) lote → (N) versao → (N) arquivo
 - **arquivo**: Physical files with checksums, storage volume references, and loading status
 - **download/upload**: Token-based transfer management with auto-expiring sessions
 
+### Database Constraints and Triggers
+- **Temporal validations**: `projeto.data_fim >= data_inicio`, `lote.data_fim >= data_inicio`, `pedido.data_atendimento >= data_pedido`
+- **Uniqueness**: `lote(projeto_id, pit)`, `volume_armazenamento.volume`, `estoque_material(tipo_material_id, localizacao_id)`, `versao_relacionamento(versao_id_1, versao_id_2, tipo_relacionamento_id)`
+- **Self-reference prevention**: `versao_relacionamento.versao_id_1 != versao_id_2`
+- **Inventory constraints**: `estoque_material.quantidade >= 0`, `consumo_material.quantidade > 0`
+- **Consumo triggers**: INSERT/UPDATE/DELETE on `consumo_material` automatically synchronize `estoque_material` quantities in Seção (localizacao_id=1). The trigger enforces that consumption can only occur when there is sufficient stock in Seção.
+
 ### Materialized Views
-Dynamically created views `mv_produto_{type}_{scale}` aggregate product/version/file data. Refreshed via:
+Dynamically created views `mv_produto_{type}_{scale}` aggregate product/version/file data. Refreshed automatically via triggers on `produto`, `versao`, and `arquivo` tables (uses `FOR EACH STATEMENT` with transition tables for batch efficiency). Manual refresh also available via:
 - `POST /api/acervo/refresh_materialized_views` (admin)
 - `POST /api/acervo/create_materialized_views` (admin)
 
@@ -287,6 +357,22 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - Module exports via `module.exports` pattern
 - Each module has an `index.js` that re-exports
 
+### Client (JavaScript - ESM)
+- Vanilla JS with ES modules (`import`/`export`), no framework
+- DOM manipulation via `el()` helper from `utils/dom.js`
+- BEM CSS naming (`.block__element--modifier`)
+- CSS variables for theming (light/dark via `[data-theme]` attribute)
+- Design tokens in `design-tokens.css` for all colors, spacing, shadows
+- Hash-based routing (`#/login`, `#/dashboard`)
+- Auth state in `localStorage` (token, expiry, role, uuid)
+- API calls via `fetch` wrapper in `services/api-client.js` (auto-logout on 401/403)
+- Data caching via `services/cache.js` (TTL-based Map)
+- Chart.js wrappers in `components/charts/` (bar-chart.js, pie-chart.js)
+- Components expose `.update()` method for reactive updates
+- Components expose `._cleanup()` method for resource disposal (chart instances, event listeners)
+- Each page function receives a container element and optionally returns a cleanup function
+- Vite aliases: `@js/`, `@css/`, `@utils/`, `@components/`, `@pages/`, `@services/`, `@store/`, `@features/`
+
 ### Plugin (Python)
 - Each GUI feature lives in its own folder under `gui/` with a dialog `.py` and a `.ui` file
 - Dialogs inherit from `QDialog` and use `uic.loadUiType()` to load the `.ui` form
@@ -305,13 +391,20 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - No Docker configuration exists; deployment uses PM2 directly
 - No CI/CD pipeline is configured
 
+## Documentation
+
+- `tutorial_configuracao_inicial.md` — Step-by-step initial setup guide (plugin, volumes, products)
+- `tutorial_client_dashboard.md` — Web dashboard usage guide (login, tabs, charts, theme)
+- `api_documentation.md` — API endpoint documentation
+
 ## Development Setup
 
 1. Install dependencies: `npm run install-all`
 2. Set up PostgreSQL with PostGIS extension
 3. Run config: `npm run config` (creates DB and `server/config.env`)
 4. Start dev server: `npm run start-dev` (server on configured PORT)
-5. Install plugin in QGIS: symlink or copy `ferramentas_acervo/` to QGIS plugin directory
+5. Start client dev server: `cd client && npm run dev` (port 3000, proxies /api to server)
+6. Install plugin in QGIS: symlink or copy `ferramentas_acervo/` to QGIS plugin directory
 
 ## Important Notes
 

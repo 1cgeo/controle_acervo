@@ -13,7 +13,8 @@ const { produtoRoute } = require("./produto");
 const { projetoRoute } = require("./projeto");
 const { gerenciaRoute } = require("./gerencia");
 const { arquivoRoute } = require("./arquivo");
-const { mapotecaRoute, dashboardRoute } = require("./mapoteca");
+const { mapotecaRoute, dashboardRoute: mapotecaDashboardRoute } = require("./mapoteca");
+const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
 
 const router = express.Router();
 
@@ -44,7 +45,9 @@ router.use("/gerencia", gerenciaRoute);
 
 router.use("/arquivo", arquivoRoute);
 
-router.use("/mapoteca/dashboard", dashboardRoute);
+router.use("/dashboard", acervoDashboardRoute);
+
+router.use("/mapoteca/dashboard", mapotecaDashboardRoute);
 
 router.use("/mapoteca", mapotecaRoute);
 

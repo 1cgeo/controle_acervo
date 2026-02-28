@@ -2,7 +2,7 @@
 "use strict";
 
 const { db, refreshViews } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
@@ -110,7 +110,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
               arquivo.tamanho_mb,
               arquivo.checksum,
               arquivo.metadado,
-              4, //Em exclusão
+              STATUS_ARQUIVO.ERRO_EXCLUSAO,
               arquivo.situacao_carregamento_id,
               arquivo.descricao,
               arquivo.crs_original, // Adicionado crs_original
@@ -243,7 +243,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             arquivo.tamanho_mb,
             arquivo.checksum,
             arquivo.metadado,
-            4, //Em exclusão
+            STATUS_ARQUIVO.ERRO_EXCLUSAO,
             arquivo.situacao_carregamento_id,
             arquivo.descricao,
             arquivo.crs_original, // Adicionado crs_original
@@ -389,7 +389,7 @@ controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid)
       }
 
       // Verificar ciclos para relacionamentos do tipo "Insumo" (tipo 1)
-      if (item.tipo_relacionamento_id === 1) {
+      if (item.tipo_relacionamento_id === TIPO_RELACIONAMENTO.INSUMO) {
         const temCiclo = await verificaCicloRelacionamento(
           t, item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id
         );
@@ -467,7 +467,7 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioU
         }
 
         // Verificar ciclos para relacionamentos do tipo "Insumo" (tipo 1)
-        if (item.tipo_relacionamento_id === 1) {
+        if (item.tipo_relacionamento_id === TIPO_RELACIONAMENTO.INSUMO) {
           // Temporariamente remover o relacionamento atual para verificar ciclos
           await t.none('DELETE FROM acervo.versao_relacionamento WHERE id = $1', [item.id]);
 
@@ -540,7 +540,7 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
       uuid_versao: versao.uuid_versao || uuidv4(),
       data_cadastramento: data_cadastramento,
       usuario_cadastramento_uuid: usuarioUuid,
-      tipo_versao_id: 2, // Registro Histórico
+      tipo_versao_id: TIPO_VERSAO.REGISTRO_HISTORICO,
     };
   });
 
@@ -586,7 +586,7 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
         produto_id: novoProduto.id,
         data_cadastramento: data_cadastramento,
         usuario_cadastramento_uuid: usuarioUuid,
-        tipo_versao_id: 2 // Registro Histórico
+        tipo_versao_id: TIPO_VERSAO.REGISTRO_HISTORICO
       }));
 
       const cs = new db.pgp.helpers.ColumnSet([

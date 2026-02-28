@@ -85,12 +85,6 @@ PANEL_MAPPING = {
         "category": "Funções de Administrador",
         "admin_only": True
     },
-    "Carregar Arquivos Sistemáticos": {
-        "class": BulkLoadFilesDialog,
-        "category": "Funções de Administrador",
-        "admin_only": True
-    },
-    
     # Funções de Administração Avançada
     "Gerenciar Volumes": {
         "class": ManageVolumesDialog,

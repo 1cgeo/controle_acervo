@@ -1,4 +1,5 @@
 # Path: core\api_client.py
+import logging
 import requests
 from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
 from qgis.PyQt.QtWidgets import QMessageBox
@@ -58,8 +59,8 @@ class APIClient:
                 self.user_uuid = result["dados"]["uuid"]
                 self.is_admin = result["dados"]["administrador"]
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Falha na re-autenticação automática: {e}")
         return False
 
     def _make_request(self, method, endpoint, data=None, params=None, _retry=True):

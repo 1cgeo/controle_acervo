@@ -2,7 +2,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO } } = require("../utils");
 
 const controller = {};
 
@@ -26,15 +26,12 @@ controller.getOrderStatusDistribution = async () => {
       SELECT COUNT(*) AS total FROM mapoteca.pedido
     `);
 
-    // Get orders in progress (status 3)
-    const inProgressOrders = statusCounts.find(s => s.situacao_pedido_id === 3) || { quantidade: 0 };
-    
-    // Get completed orders (status 5)
-    const completedOrders = statusCounts.find(s => s.situacao_pedido_id === 5) || { quantidade: 0 };
-    
-    // Get pending orders (status 1, 2, 3)
+    const inProgressOrders = statusCounts.find(s => s.situacao_pedido_id === SITUACAO_PEDIDO.EM_ANDAMENTO) || { quantidade: 0 };
+
+    const completedOrders = statusCounts.find(s => s.situacao_pedido_id === SITUACAO_PEDIDO.CONCLUIDO) || { quantidade: 0 };
+
     const pendingOrders = statusCounts
-      .filter(s => [1, 2, 3].includes(s.situacao_pedido_id))
+      .filter(s => [SITUACAO_PEDIDO.PRE_CADASTRAMENTO, SITUACAO_PEDIDO.DOCUMENTO_RECEBIDO, SITUACAO_PEDIDO.EM_ANDAMENTO].includes(s.situacao_pedido_id))
       .reduce((sum, curr) => sum + parseInt(curr.quantidade), 0);
 
     return {
@@ -93,7 +90,7 @@ controller.getAverageFulfillmentTime = async () => {
         AVG(EXTRACT(EPOCH FROM (data_atendimento - data_pedido)) / 86400) AS media_dias
       FROM mapoteca.pedido
       WHERE 
-        situacao_pedido_id = 5 
+        situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
         AND data_atendimento IS NOT NULL
     `);
 
@@ -107,8 +104,8 @@ controller.getAverageFulfillmentTime = async () => {
       FROM mapoteca.pedido p
       JOIN mapoteca.cliente c ON p.cliente_id = c.id
       JOIN mapoteca.tipo_cliente tc ON c.tipo_cliente_id = tc.code
-      WHERE 
-        p.situacao_pedido_id = 5 
+      WHERE
+        p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
         AND p.data_atendimento IS NOT NULL
       GROUP BY c.tipo_cliente_id, tc.nome
       ORDER BY media_dias
@@ -130,7 +127,7 @@ controller.getAverageFulfillmentTime = async () => {
       FROM meses m
       LEFT JOIN mapoteca.pedido p ON 
         date_trunc('month', p.data_pedido) = m.mes AND
-        p.situacao_pedido_id = 5 AND
+        p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} AND
         p.data_atendimento IS NOT NULL
       GROUP BY m.mes
       ORDER BY m.mes
@@ -162,7 +159,7 @@ controller.getClientActivity = async (limite = 10) => {
       c.tipo_cliente_id,
       tc.nome AS tipo_cliente,
       COUNT(p.id) AS total_pedidos,
-      SUM(CASE WHEN p.situacao_pedido_id = 5 THEN 1 ELSE 0 END) AS pedidos_concluidos,
+      SUM(CASE WHEN p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} THEN 1 ELSE 0 END) AS pedidos_concluidos,
       SUM((SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id)) AS total_produtos,
       MAX(p.data_pedido) AS ultimo_pedido
     FROM mapoteca.cliente c
@@ -199,7 +196,7 @@ controller.getPendingOrders = async () => {
     FROM mapoteca.pedido p
     JOIN mapoteca.cliente c ON p.cliente_id = c.id
     JOIN mapoteca.situacao_pedido sp ON p.situacao_pedido_id = sp.code
-    WHERE p.situacao_pedido_id NOT IN (5, 6) -- not completed and not canceled
+    WHERE p.situacao_pedido_id NOT IN (${SITUACAO_PEDIDO.CONCLUIDO}, ${SITUACAO_PEDIDO.CANCELADO})
     ORDER BY 
       CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, -- nulls last
       p.prazo,

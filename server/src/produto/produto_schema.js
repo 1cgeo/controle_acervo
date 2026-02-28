@@ -8,8 +8,8 @@ const models = {};
 models.produtoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().strict().required(),
   nome: Joi.string().required(),
-  mi: Joi.string(),
-  inom: Joi.string(),
+  mi: Joi.string().allow(null, ''),
+  inom: Joi.string().allow(null, ''),
   tipo_escala_id: Joi.number().integer().strict().required(),
   denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
   tipo_produto_id: Joi.number().integer().strict().required(),
