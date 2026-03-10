@@ -26,7 +26,7 @@ class VersionsTab(QWidget):
         layout = QVBoxLayout(self)
         
         # Splitter para dividir lista de versões e detalhes
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(self.splitter)
         
         # Painel esquerdo: lista de versões
@@ -124,10 +124,10 @@ class VersionsTab(QWidget):
             headers.append("Ações")
         self.files_table.setHorizontalHeaderLabels(headers)
         self.files_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         if self.is_admin:
-            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
+            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.files_table)
         
         return widget
@@ -138,7 +138,7 @@ class VersionsTab(QWidget):
             return
             
         # Obter dados da versão selecionada
-        self.selected_version = current.data(Qt.UserRole)
+        self.selected_version = current.data(Qt.ItemDataRole.UserRole)
         self.populate_version_info(self.selected_version)
     
     def populate_versions_list(self, versions):
@@ -148,7 +148,7 @@ class VersionsTab(QWidget):
         # Adicionar as versões à lista
         for version in versions:
             item = QListWidgetItem(f"{version['versao']} - {version['nome_versao'] or 'Sem nome'}")
-            item.setData(Qt.UserRole, version)
+            item.setData(Qt.ItemDataRole.UserRole, version)
             self.versions_list.addItem(item)
         
         # Selecionar a primeira versão (se existir)
@@ -190,8 +190,8 @@ class VersionsTab(QWidget):
             
             # Checkbox para seleção
             checkbox = QTableWidgetItem()
-            checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            checkbox.setCheckState(Qt.Unchecked)
+            checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            checkbox.setCheckState(Qt.CheckState.Unchecked)
             self.files_table.setItem(row, 0, checkbox)
             
             # Informações básicas do arquivo
@@ -201,7 +201,7 @@ class VersionsTab(QWidget):
             size_item = QTableWidgetItem()
             if file['tamanho_mb']:
                 size_item.setText(f"{file['tamanho_mb']:.2f}")
-                size_item.setData(Qt.UserRole, float(file['tamanho_mb']))
+                size_item.setData(Qt.ItemDataRole.UserRole, float(file['tamanho_mb']))
             else:
                 size_item.setText("N/A")
             self.files_table.setItem(row, 3, size_item)
@@ -216,7 +216,7 @@ class VersionsTab(QWidget):
             
             # Armazenar o ID do arquivo para download posterior
             self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.item(row, 1).setData(Qt.UserRole, file['id'])
+            self.files_table.item(row, 1).setData(Qt.ItemDataRole.UserRole, file['id'])
             
             # Botões de ação para administradores - verificar se callback existe
             if self.is_admin and create_actions_callback is not None:
@@ -237,4 +237,4 @@ class VersionsTab(QWidget):
                     self.files_table.setCellWidget(row, 7, error_widget)
         
         self.files_table.resizeColumnsToContents()
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)

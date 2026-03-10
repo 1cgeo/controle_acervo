@@ -50,9 +50,9 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         # Configurar tabela de arquivos
         self.filesTable.setColumnCount(5)
         self.filesTable.setHorizontalHeaderLabels(['Nome', 'Arquivo', 'Tipo', 'Tamanho (MB)', 'Caminho'])
-        self.filesTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.filesTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.filesTable.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.filesTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.filesTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.filesTable.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         
         # Configurar órgão produtor padrão
         self.orgaoProdutorLineEdit.setText("DSG")
@@ -258,7 +258,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             self.uploadButton.setEnabled(False)
             self.addFileButton.setEnabled(False)
             self.removeFileButton.setEnabled(False)
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             # Preparar dados da versão
             palavras_chave = []
@@ -279,8 +279,8 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                 "descricao": self.descricaoVersaoTextEdit.toPlainText(),
                 "orgao_produtor": self.orgaoProdutorLineEdit.text(),
                 "palavras_chave": palavras_chave,
-                "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.ISODate),
-                "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.ISODate)
+                "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.DateFormat.ISODate),
+                "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.DateFormat.ISODate)
             }
             
             # Preparar dados dos arquivos
@@ -359,7 +359,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             self.uploadButton.setEnabled(True)
             self.addFileButton.setEnabled(True)
             self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", f"Falha na preparação do upload: {str(e)}")
     
     def update_file_progress(self, current_bytes, total_bytes):
@@ -389,16 +389,16 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                     self, "Falha na Transferência",
                     f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.Yes | QMessageBox.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     self._retry_failed_transfers()
                 else:
                     self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
                     self.uploadButton.setEnabled(True)
                     self.addFileButton.setEnabled(True)
                     self.removeFileButton.setEnabled(True)
-                    self.setCursor(Qt.ArrowCursor)
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
             else:
                 self.confirm_upload()
 
@@ -435,7 +435,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             
             if response and response.get('success'):
                 self.statusLabel.setText("Upload concluído com sucesso!")
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", "Nova versão e arquivos carregados com sucesso!")
                 self.accept()
             else:
@@ -449,5 +449,5 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             self.uploadButton.setEnabled(True)
             self.addFileButton.setEnabled(True)
             self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {str(e)}")

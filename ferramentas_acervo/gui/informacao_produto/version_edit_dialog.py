@@ -99,11 +99,11 @@ class VersionEditDialog(QDialog, FORM_CLASS):
             
         # Datas
         if self.versao_data.get('versao_data_criacao'):
-            date = QDateTime.fromString(self.versao_data['versao_data_criacao'], Qt.ISODate)
+            date = QDateTime.fromString(self.versao_data['versao_data_criacao'], Qt.DateFormat.ISODate)
             self.dataCriacaoDateEdit.setDate(date.date())
             
         if self.versao_data.get('versao_data_edicao'):
-            date = QDateTime.fromString(self.versao_data['versao_data_edicao'], Qt.ISODate)
+            date = QDateTime.fromString(self.versao_data['versao_data_edicao'], Qt.DateFormat.ISODate)
             self.dataEdicaoDateEdit.setDate(date.date())
             
         # Descrição
@@ -167,8 +167,8 @@ class VersionEditDialog(QDialog, FORM_CLASS):
                 'lote_id': self.loteComboBox.currentData(),
                 'orgao_produtor': self.orgaoProdutorLineEdit.text(),
                 'palavras_chave': palavras_chave,
-                'data_criacao': self.dataCriacaoDateEdit.date().toString(Qt.ISODate),
-                'data_edicao': self.dataEdicaoDateEdit.date().toString(Qt.ISODate),
+                'data_criacao': self.dataCriacaoDateEdit.date().toString(Qt.DateFormat.ISODate),
+                'data_edicao': self.dataEdicaoDateEdit.date().toString(Qt.DateFormat.ISODate),
                 'descricao': self.descricaoTextEdit.toPlainText(),
                 'metadado': metadado
             }

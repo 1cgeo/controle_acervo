@@ -56,13 +56,13 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
             self.projectsTable.setItem(row, 2, QTableWidgetItem(project.get('descricao', '')))
             
             # Formatando a data de início
-            data_inicio = QDate.fromString(project.get('data_inicio', ''), Qt.ISODate)
+            data_inicio = QDate.fromString(project.get('data_inicio', ''), Qt.DateFormat.ISODate)
             self.projectsTable.setItem(row, 3, QTableWidgetItem(data_inicio.toString('yyyy-MM-dd')))
             
             # Formatando a data de fim (se existir)
             data_fim = project.get('data_fim', '')
             if data_fim:
-                data_fim = QDate.fromString(data_fim, Qt.ISODate).toString('yyyy-MM-dd')
+                data_fim = QDate.fromString(data_fim, Qt.DateFormat.ISODate).toString('yyyy-MM-dd')
             else:
                 data_fim = 'Não definida'
             self.projectsTable.setItem(row, 4, QTableWidgetItem(data_fim))
@@ -80,7 +80,7 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
 
     def add_project(self):
         dialog = EditProjectDialog(self.api_client)
-        if dialog.exec_():
+        if dialog.exec():
             self.load_projects()
 
     def edit_project(self):
@@ -91,7 +91,7 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
             
             if project_data:
                 dialog = EditProjectDialog(self.api_client, project_data)
-                if dialog.exec_():
+                if dialog.exec():
                     self.load_projects()
             else:
                 QMessageBox.warning(self, "Erro", "Não foi possível encontrar os dados do projeto selecionado.")
@@ -104,8 +104,8 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
             project_id = int(self.projectsTable.item(selected_rows[0].row(), 0).text())
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
                                          'Tem certeza que deseja excluir este projeto?',
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('projetos/projeto', {'projeto_ids': [project_id]})
                 if success:
                     self.load_projects()

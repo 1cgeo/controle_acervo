@@ -153,7 +153,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
 
     def show_no_layers_message(self):
         message_label = QLabel("Não há camadas de produtos disponíveis no momento.")
-        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mainLayout.addWidget(message_label)
         self.buttonBox.button(self.buttonBox.Ok).setEnabled(False)
 
@@ -187,7 +187,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         
         if not filtered_layers:
             message_label = QLabel("Nenhuma camada corresponde aos filtros selecionados.")
-            message_label.setAlignment(Qt.AlignCenter)
+            message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.availableLayersLayout.addWidget(message_label)
             return
         

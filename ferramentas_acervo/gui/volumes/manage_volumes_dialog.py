@@ -50,7 +50,7 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
 
     def add_volume(self):
         dialog = EditVolumeDialog(self.api_client)
-        if dialog.exec_():
+        if dialog.exec():
             self.load_volumes()
 
     def edit_volume(self):
@@ -62,7 +62,7 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
 
             if volume_data:
                 dialog = EditVolumeDialog(self.api_client, volume_data)
-                if dialog.exec_():
+                if dialog.exec():
                     self.load_volumes()
             else:
                 QMessageBox.warning(self, "Erro", "Não foi possível encontrar os dados do volume selecionado.")
@@ -75,8 +75,8 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
             volume_id = int(self.volumesTable.item(selected_rows[0].row(), 0).text())
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
                                          'Tem certeza que deseja excluir este volume?',
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('volumes/volume_armazenamento', {'volume_armazenamento_ids': [volume_id]})
                 if success:
                     self.load_volumes()

@@ -29,11 +29,11 @@ class CreateMaterializedViewDialog(QDialog, FORM_CLASS):
             self,
             'Confirmar Criação',
             'Tem certeza que deseja criar ou recriar todas as visões materializadas? Esta operação pode levar algum tempo e irá sobrescrever visões existentes.',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
             
         try:
@@ -41,7 +41,7 @@ class CreateMaterializedViewDialog(QDialog, FORM_CLASS):
             self.iface.messageBar().pushMessage(
                 "Informação",
                 "Criando visões materializadas. Por favor, aguarde...",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
             
             response = self.api_client.post('acervo/create_materialized_views')

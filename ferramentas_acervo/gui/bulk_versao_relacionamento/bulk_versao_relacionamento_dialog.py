@@ -69,14 +69,14 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
             self.progressBar.setMaximum(len(relationships_data['versao_relacionamento']))
             self.progressBar.setValue(0)
             self.statusLabel.setText(f"Criando {len(relationships_data['versao_relacionamento'])} relacionamentos...")
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             # Enviar dados para o servidor
             response = self.api_client.post('produtos/versao_relacionamento', relationships_data)
             
             if response and response.get('success'):
                 self.statusLabel.setText("Relacionamentos criados com sucesso!")
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", f"Todos os {len(relationships_data['versao_relacionamento'])} relacionamentos foram criados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
@@ -85,12 +85,12 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
                     error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 QMessageBox.critical(self, "Erro", f"Falha ao criar relacionamentos: {error_message}")
                 
         except Exception as e:
             self.statusLabel.setText(f"Erro: {str(e)}")
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", f"Erro ao criar relacionamentos: {str(e)}")
             self.progressBar.setVisible(False)
 
@@ -184,7 +184,7 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
         self.iface.messageBar().pushMessage(
             "Sucesso", 
             "Camada modelo criada com sucesso. Agora você deve adicionar registros a esta camada.",
-            level=Qgis.Success
+            level=Qgis.MessageLevel.Success
         )
         
         # Instruções detalhadas

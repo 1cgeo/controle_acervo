@@ -71,14 +71,14 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         # Iniciar o processo de upload de duas fases
         try:
             self.statusLabel.setText("Enviando dados para o servidor...")
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             # Fase 1: Preparar o upload
             response = self.api_client.post('arquivo/prepare-upload/product', prepared_data)
             self.process_prepare_response(response)
             
         except Exception as e:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", f"Erro ao iniciar o processo de carregamento: {str(e)}")
             self.statusLabel.setText(f"Erro: {str(e)}")
 
@@ -274,13 +274,13 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
     def format_date_to_iso(self, date_value):
         """Converte uma data em formato QDate ou string para ISO 8601"""
         if isinstance(date_value, QDate):
-            return date_value.toString(Qt.ISODate)
+            return date_value.toString(Qt.DateFormat.ISODate)
         elif isinstance(date_value, datetime.date):
             return date_value.isoformat()
         elif isinstance(date_value, str):
             # Tentar interpretar a string como data
             try:
-                return QDate.fromString(date_value, Qt.ISODate).toString(Qt.ISODate)
+                return QDate.fromString(date_value, Qt.DateFormat.ISODate).toString(Qt.DateFormat.ISODate)
             except:
                 # Formato diferente, tentando outros padrões comuns
                 try:
@@ -302,7 +302,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
     def process_prepare_response(self, response):
         """Processa a resposta da API de preparação e inicia a transferência de arquivos"""
         if not response or 'dados' not in response:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", "Resposta inválida do servidor")
             return
         
@@ -311,7 +311,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         produtos = session_data.get('produtos', [])
         
         if not session_uuid or not produtos:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", "Dados incompletos na resposta do servidor")
             return
         
@@ -411,13 +411,13 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                     self, "Falha na Transferência",
                     f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.Yes | QMessageBox.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     self._retry_failed_transfers()
                 else:
                     self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
-                    self.setCursor(Qt.ArrowCursor)
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
                     self.loadButton.setEnabled(True)
             else:
                 self.statusLabel.setText("Todos os arquivos transferidos. Confirmando upload...")
@@ -454,7 +454,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             
             if response and response.get('success'):
                 self.statusLabel.setText("Upload concluído com sucesso!")
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 QMessageBox.information(self, "Sucesso", "Todos os produtos, versões e arquivos foram carregados com sucesso.")
                 self.progressBar.setVisible(False)
             else:
@@ -463,11 +463,11 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                     error_message = response['message']
                 
                 self.statusLabel.setText(f"Erro: {error_message}")
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {error_message}")
         except Exception as e:
             self.statusLabel.setText(f"Erro na confirmação: {str(e)}")
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             QMessageBox.critical(self, "Erro", f"Erro ao confirmar upload: {str(e)}")
 
     def create_model_layer(self):
@@ -529,7 +529,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         self.iface.messageBar().pushMessage(
             "Sucesso", 
             "Camada modelo criada com sucesso. Agora você deve adicionar registros a esta camada.",
-            level=Qgis.Success
+            level=Qgis.MessageLevel.Success
         )
         
         # Instruções detalhadas

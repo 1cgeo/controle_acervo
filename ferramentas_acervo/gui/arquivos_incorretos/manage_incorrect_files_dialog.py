@@ -37,14 +37,14 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
         
         # Set column widths
         header = self.filesTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ID
-        header.setSectionResizeMode(1, QHeaderView.Stretch)           # Nome
-        header.setSectionResizeMode(2, QHeaderView.Stretch)           # Nome do Arquivo
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Extensão
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Volume
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Tipo de Status
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Data
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Tipo
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # ID
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)           # Nome
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)           # Nome do Arquivo
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Extensão
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Volume
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Tipo de Status
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Data
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Tipo
         
         # Connect buttons
         self.firstPageButton.clicked.connect(self.go_to_first_page)
@@ -63,7 +63,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
     def load_incorrect_files(self):
         """Load incorrect files from the API with pagination."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             response = self.api_client.get(
                 f'gerencia/arquivos_incorretos?page={self.current_page}&limit={self.page_size}'
@@ -86,7 +86,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
                 f"Erro ao carregar arquivos com problemas: {str(e)}"
             )
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             
     def update_pagination_info(self, pagination):
         """Update pagination controls and info."""
@@ -129,7 +129,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             # Use the most recent date available
             date = file.get('data_modificacao') or file.get('data_delete') or file.get('data_cadastramento', '')
             if date:
-                date_dt = QDateTime.fromString(date, Qt.ISODate)
+                date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
             else:
                 date_formatted = "Sem data"

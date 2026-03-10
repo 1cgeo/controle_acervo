@@ -110,14 +110,14 @@ class FileTransferThread(QThread):
             def show_dialog():
                 nonlocal result
                 auth_smb = AuthSMB(utils.iface.mainWindow())
-                if auth_smb.exec_():
+                if auth_smb.exec():
                     result[0] = auth_smb.user
                     result[1] = auth_smb.passwd
                     result[2] = auth_smb.domain
 
             # Invocar na thread principal
             QMetaObject.invokeMethod(QApplication.instance(), show_dialog,
-                                    Qt.BlockingQueuedConnection)
+                                    Qt.ConnectionType.BlockingQueuedConnection)
 
             user, passwd, domain = result
 

@@ -121,8 +121,8 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
                 "descricao": self.descricaoTextEdit.toPlainText(),
                 "orgao_produtor": self.orgaoProdutorLineEdit.text(),
                 "palavras_chave": palavras_chave,
-                "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.ISODate),
-                "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.ISODate)
+                "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.DateFormat.ISODate),
+                "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.DateFormat.ISODate)
             }
 
             # Enviar requisição para adicionar versão histórica ao produto existente

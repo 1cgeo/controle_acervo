@@ -182,7 +182,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     def load_product_by_id(self):
         """Carrega as informações do produto diretamente pelo ID."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             self.statusLabel.setText("Carregando informações do produto...")
 
             response = self.api_client.get(f'acervo/produto/detalhado/{self.product_id}')
@@ -199,25 +199,25 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.statusLabel.setText(f"Erro: {str(e)}")
             QMessageBox.critical(self, "Erro", f"Erro ao carregar informações do produto: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def load_product_info(self):
         """Carrega as informações do produto selecionado."""
         # Obter a camada ativa
         active_layer = self.iface.activeLayer()
         if not active_layer or active_layer.type() != QgsMapLayerType.VectorLayer:
-            self.iface.messageBar().pushMessage("Erro", "Selecione uma camada de produto válida", level=Qgis.Warning)
+            self.iface.messageBar().pushMessage("Erro", "Selecione uma camada de produto válida", level=Qgis.MessageLevel.Warning)
             return
 
         # Verificar se a camada é uma view materializada de produto
         if not active_layer.name().startswith('mv_produto_'):
-            self.iface.messageBar().pushMessage("Erro", "A camada selecionada não é uma camada de produto válida", level=Qgis.Warning)
+            self.iface.messageBar().pushMessage("Erro", "A camada selecionada não é uma camada de produto válida", level=Qgis.MessageLevel.Warning)
             return
 
         # Obter as feições selecionadas
         selected_features = active_layer.selectedFeatures()
         if len(selected_features) != 1:
-            self.iface.messageBar().pushMessage("Erro", "Selecione exatamente uma feição", level=Qgis.Warning)
+            self.iface.messageBar().pushMessage("Erro", "Selecione exatamente uma feição", level=Qgis.MessageLevel.Warning)
             return
 
         # Obter o ID do produto
@@ -225,7 +225,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
 
         try:
             # Mostrar mensagem de carregamento
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             self.statusLabel.setText("Carregando informações do produto...")
             
             # Obter informações detalhadas do produto
@@ -243,7 +243,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.statusLabel.setText(f"Erro: {str(e)}")
             QMessageBox.critical(self, "Erro", f"Erro ao carregar informações do produto: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def display_product_info(self):
         """Exibe as informações do produto na interface."""
@@ -350,11 +350,11 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
                     tree_item.setText(2, product_data['nome'])
                     
                     # Atualizar os dados do relacionamento
-                    relationship = tree_item.data(0, Qt.UserRole)
+                    relationship = tree_item.data(0, Qt.ItemDataRole.UserRole)
                     if relationship:
                         relationship['target_product_name'] = product_data['nome']
                         relationship['target_version_name'] = f"{version_data['versao']} - {version_data['nome_versao'] or 'Sem nome'}"
-                        tree_item.setData(0, Qt.UserRole, relationship)
+                        tree_item.setData(0, Qt.ItemDataRole.UserRole, relationship)
                 else:
                     tree_item.setText(2, "Produto não encontrado")
             else:
@@ -363,13 +363,13 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.iface.messageBar().pushMessage(
                 "Erro", 
                 f"Erro ao obter informações do produto: {str(e)}", 
-                level=Qgis.Critical
+                level=Qgis.MessageLevel.Critical
             )
             tree_item.setText(2, "Erro ao carregar informações")
 
     def get_file_from_table(self, table, row):
         """Obtém dados de um arquivo da tabela pelo índice da linha."""
-        file_id = table.item(row, 1).data(Qt.UserRole)
+        file_id = table.item(row, 1).data(Qt.ItemDataRole.UserRole)
         if not file_id:
             return None
             
@@ -455,7 +455,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         button_box.accepted.connect(dialog.accept)
         layout.addWidget(button_box)
         
-        dialog.exec_()
+        dialog.exec()
 
     # Métodos para ações administrativas - refatorados para usar AdminActions
     def edit_product(self):
@@ -506,7 +506,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             return
             
         edit_dialog = RelationshipEditDialog(self.api_client, relationship)
-        result = edit_dialog.exec_()
+        result = edit_dialog.exec()
         
         if result:
             self.reload_product_info()
@@ -522,9 +522,9 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             "relacionamento", 
             f"{relationship['source_version_name']} - {relationship['relationship_type']}"
         )
-        result = confirm_dialog.exec_()
+        result = confirm_dialog.exec()
         
-        if result == QMessageBox.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             try:
                 response = self.api_client.delete('produtos/versao_relacionamento', {
                     'versao_relacionamento_ids': [relationship['id']]
@@ -561,7 +561,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     def add_files_to_version(self, version_data):
         """Abre o diálogo para adicionar arquivos a uma versão."""
         dialog = AddFilesToVersionDialog(self.api_client, version_data)
-        if dialog.exec_():
+        if dialog.exec():
             self.reload_product_info()
 
     def add_files_to_selected_version(self):
@@ -575,13 +575,13 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     def add_version_to_product(self):
         """Abre o diálogo para adicionar uma nova versão ao produto atual."""
         dialog = AddVersionToProductDialog(self.api_client, self.product_data)
-        if dialog.exec_():
+        if dialog.exec():
             self.reload_product_info()
 
     def add_historical_version(self):
         """Abre o diálogo para adicionar uma versão histórica ao produto atual."""
         dialog = AddHistoricalVersionDialog(self.api_client, self.product_data)
-        if dialog.exec_():
+        if dialog.exec():
             self.reload_product_info()
     
     # Métodos para controle de seleção e download de arquivos
@@ -590,14 +590,14 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         for row in range(self.overview_tab.files_table.rowCount()):
             item = self.overview_tab.files_table.item(row, 0)
             if item:
-                item.setCheckState(Qt.Checked if state else Qt.Unchecked)
+                item.setCheckState(Qt.CheckState.Checked if state else Qt.CheckState.Unchecked)
     
     def toggle_select_all_version_files(self, state):
         """Seleciona ou desseleciona todos os arquivos na tabela de versão."""
         for row in range(self.versions_tab.files_table.rowCount()):
             item = self.versions_tab.files_table.item(row, 0)
             if item:
-                item.setCheckState(Qt.Checked if state else Qt.Unchecked)
+                item.setCheckState(Qt.CheckState.Checked if state else Qt.CheckState.Unchecked)
     
     def download_selected_files(self, source_tab):
         """Inicia o download dos arquivos selecionados."""
@@ -612,8 +612,8 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         # Coletar IDs dos arquivos selecionados
         selected_file_ids = []
         for row in range(table.rowCount()):
-            if table.item(row, 0).checkState() == Qt.Checked:
-                file_id = table.item(row, 1).data(Qt.UserRole)
+            if table.item(row, 0).checkState() == Qt.CheckState.Checked:
+                file_id = table.item(row, 1).data(Qt.ItemDataRole.UserRole)
                 if file_id:
                     selected_file_ids.append(file_id)
         
@@ -626,7 +626,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self, 
             "Selecione o Diretório de Destino", 
             "", 
-            QFileDialog.ShowDirsOnly
+            QFileDialog.Option.ShowDirsOnly
         )
         
         if not destination_dir:
@@ -634,7 +634,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         
         # Iniciar o processo de download
         self.statusLabel.setText(f"Preparando download de {len(selected_file_ids)} arquivo(s)...")
-        self.setCursor(Qt.WaitCursor)
+        self.setCursor(Qt.CursorShape.WaitCursor)
         
         # Método para preparar download de arquivos específicos
         self.prepare_download_arquivos(selected_file_ids, destination_dir)
@@ -666,7 +666,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
 
     def handle_download_complete(self, results):
         """Manipula o evento de download concluído."""
-        self.setCursor(Qt.ArrowCursor)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         
         # Contar sucessos e falhas
         successes = sum(1 for r in results if r['success'])
@@ -696,7 +696,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
 
     def handle_download_error(self, error_message):
         """Manipula o erro de download."""
-        self.setCursor(Qt.ArrowCursor)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         self.statusLabel.setText(f"Erro no download: {error_message}")
         
         QMessageBox.critical(

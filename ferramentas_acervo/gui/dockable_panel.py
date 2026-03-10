@@ -17,7 +17,7 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         self.iface = iface
         self.api_client = api_client
 
-        self.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setWindowTitle(Config.NAME)
 
         self.setup_ui()
@@ -53,15 +53,15 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         if panel_info:
             try:
                 dialog = panel_info["class"](self.iface, self.api_client)
-                dialog.exec_()
+                dialog.exec()
             except Exception as e:
                 self.iface.messageBar().pushMessage(
                     "Erro",
                     f"Não foi possível abrir '{panel_name}': {e}",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
         else:
-            self.iface.messageBar().pushMessage("Erro", f"Painel '{panel_name}' não implementado", level=Qgis.Warning)
+            self.iface.messageBar().pushMessage("Erro", f"Painel '{panel_name}' não implementado", level=Qgis.MessageLevel.Warning)
 
     def update_content(self):
         self.populate_tree()

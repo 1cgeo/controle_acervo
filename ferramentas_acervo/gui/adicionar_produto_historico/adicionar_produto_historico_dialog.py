@@ -288,10 +288,10 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         reply = QMessageBox.question(
             self, 'Confirmar exclusão',
             'Tem certeza que deseja remover esta versão?',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
         )
         
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             # Remover da lista de versões
             del self.versoes[version_index]
 
@@ -573,7 +573,7 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         self.iface.messageBar().pushMessage(
             "Informação", 
             "Clique no mapa para adicionar pontos ao polígono. Clique com o botão direito para finalizar.",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
     
     def set_geometry(self, geometry):
@@ -678,8 +678,8 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
                     'descricao': versao['descricao'],
                     'orgao_produtor': versao['orgao_produtor'],
                     'palavras_chave': versao['palavras_chave'],
-                    'data_criacao': versao['data_criacao'].toString(Qt.ISODate),
-                    'data_edicao': versao['data_edicao'].toString(Qt.ISODate)
+                    'data_criacao': versao['data_criacao'].toString(Qt.DateFormat.ISODate),
+                    'data_edicao': versao['data_edicao'].toString(Qt.DateFormat.ISODate)
                 }
                 versoes_data.append(versao_data)
             

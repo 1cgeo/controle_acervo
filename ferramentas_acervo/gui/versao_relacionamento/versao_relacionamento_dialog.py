@@ -32,17 +32,17 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
         self.relationshipsTable.setEditTriggers(self.relationshipsTable.NoEditTriggers)
 
         header = self.relationshipsTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.Stretch)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.ResizeToContents)
 
         self.refreshButton.clicked.connect(self.refresh_data)
         self.exportCSVButton.clicked.connect(self.export_csv)
@@ -50,7 +50,7 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
 
     def load_relacionamentos(self):
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             response = self.api_client.get('produtos/versao_relacionamento')
             if response and 'dados' in response:
                 self.populate_table(response['dados'])
@@ -59,7 +59,7 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao carregar relacionamentos: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def populate_table(self, relacionamentos):
         self.relationshipsTable.setRowCount(len(relacionamentos))
@@ -76,7 +76,7 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
             self.relationshipsTable.setItem(row, 9, QTableWidgetItem(rel.get('versao_2_nome', '')))
             date = rel.get('data_relacionamento', '')
             if date:
-                date_dt = QDateTime.fromString(date, Qt.ISODate)
+                date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
             else:
                 date_formatted = ""

@@ -25,7 +25,7 @@ class OverviewTab(QWidget):
         
         # Splitter para dividir informações e arquivos
         from qgis.PyQt.QtWidgets import QSplitter
-        self.splitter = QSplitter(Qt.Vertical)
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
         layout.addWidget(self.splitter)
         
         # Área de informações do produto
@@ -129,10 +129,10 @@ class OverviewTab(QWidget):
             headers.append("Ações")
         self.files_table.setHorizontalHeaderLabels(headers)
         self.files_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         if self.is_admin:
-            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
+            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.files_table)
         
         return widget
@@ -210,8 +210,8 @@ class OverviewTab(QWidget):
             
             # Checkbox para seleção
             checkbox = QTableWidgetItem()
-            checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            checkbox.setCheckState(Qt.Unchecked)
+            checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            checkbox.setCheckState(Qt.CheckState.Unchecked)
             self.files_table.setItem(row, 0, checkbox)
             
             # Informações básicas do arquivo
@@ -221,7 +221,7 @@ class OverviewTab(QWidget):
             size_item = QTableWidgetItem()
             if file['tamanho_mb']:
                 size_item.setText(f"{file['tamanho_mb']:.2f}")
-                size_item.setData(Qt.UserRole, float(file['tamanho_mb']))
+                size_item.setData(Qt.ItemDataRole.UserRole, float(file['tamanho_mb']))
             else:
                 size_item.setText("N/A")
             self.files_table.setItem(row, 3, size_item)
@@ -236,7 +236,7 @@ class OverviewTab(QWidget):
             
             # Armazenar o ID do arquivo para download posterior
             self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.item(row, 1).setData(Qt.UserRole, file['id'])
+            self.files_table.item(row, 1).setData(Qt.ItemDataRole.UserRole, file['id'])
             
             # Botões de ação para administradores
             if self.is_admin and create_actions_callback:
@@ -244,4 +244,4 @@ class OverviewTab(QWidget):
                 self.files_table.setCellWidget(row, 7, actions_widget)
         
         self.files_table.resizeColumnsToContents()
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)

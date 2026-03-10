@@ -12,7 +12,7 @@ def format_date(date_str):
         return "N/A"
             
     try:
-        date_dt = QDateTime.fromString(date_str, Qt.ISODate)
+        date_dt = QDateTime.fromString(date_str, Qt.DateFormat.ISODate)
         return date_dt.toString('dd/MM/yyyy HH:mm:ss')
     except:
         return date_str

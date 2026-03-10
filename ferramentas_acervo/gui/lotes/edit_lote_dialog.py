@@ -70,9 +70,9 @@ class EditLoteDialog(QDialog, FORM_CLASS):
         self.pitLineEdit.setText(self.lote_data['pit'])
         self.descriptionTextEdit.setPlainText(self.lote_data['descricao'])
 
-        self.startDateEdit.setDate(QDateTime.fromString(self.lote_data['data_inicio'], Qt.ISODate).date())
+        self.startDateEdit.setDate(QDateTime.fromString(self.lote_data['data_inicio'], Qt.DateFormat.ISODate).date())
         if self.lote_data['data_fim']:
-            self.endDateEdit.setDate(QDateTime.fromString(self.lote_data['data_fim'], Qt.ISODate).date())
+            self.endDateEdit.setDate(QDateTime.fromString(self.lote_data['data_fim'], Qt.DateFormat.ISODate).date())
             self.endDateCheckBox.setChecked(False)
         else:
             self.endDateCheckBox.setChecked(True)
@@ -100,8 +100,8 @@ class EditLoteDialog(QDialog, FORM_CLASS):
             'nome': self.nameLineEdit.text(),
             'pit': self.pitLineEdit.text(),
             'descricao': self.descriptionTextEdit.toPlainText(),
-            'data_inicio': self.startDateEdit.date().toString(Qt.ISODate),
-            'data_fim': None if self.endDateCheckBox.isChecked() else self.endDateEdit.date().toString(Qt.ISODate),
+            'data_inicio': self.startDateEdit.date().toString(Qt.DateFormat.ISODate),
+            'data_fim': None if self.endDateCheckBox.isChecked() else self.endDateEdit.date().toString(Qt.DateFormat.ISODate),
             'status_execucao_id': self.statusComboBox.currentData(),
             'projeto_id': int(self.projectComboBox.currentData())
         }

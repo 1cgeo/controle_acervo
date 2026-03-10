@@ -4,7 +4,7 @@ Funcionalidades administrativas para o diálogo de informações do produto.
 """
 
 from qgis.PyQt.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QMessageBox
+    QDialog, QWidget, QHBoxLayout, QPushButton, QMessageBox
 )
 from .deletion_confirmation_dialog import DeletionConfirmationDialog
 from .product_edit_dialog import ProductEditDialog
@@ -38,7 +38,7 @@ class AdminActions:
     def edit_product(dialog, api_client, product_data, refresh_callback=None):
         """Abre o diálogo de edição do produto."""
         edit_dialog = ProductEditDialog(api_client, product_data)
-        result = edit_dialog.exec_()
+        result = edit_dialog.exec()
         
         if result and refresh_callback:
             refresh_callback()
@@ -47,9 +47,9 @@ class AdminActions:
     def delete_product(dialog, api_client, product_data, close_callback=None):
         """Abre o diálogo de confirmação de exclusão do produto."""
         confirm_dialog = DeletionConfirmationDialog("produto", product_data['nome'])
-        result = confirm_dialog.exec_()
+        result = confirm_dialog.exec()
         
-        if result == QMessageBox.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             motivo = confirm_dialog.get_motivo()
             
             try:
@@ -71,7 +71,7 @@ class AdminActions:
     def edit_version(dialog, api_client, version_data, refresh_callback=None):
         """Abre o diálogo de edição da versão."""
         edit_dialog = VersionEditDialog(api_client, version_data)
-        result = edit_dialog.exec_()
+        result = edit_dialog.exec()
         
         if result and refresh_callback:
             refresh_callback()
@@ -81,9 +81,9 @@ class AdminActions:
         """Abre o diálogo de confirmação de exclusão da versão."""
         version_name = f"{version_data['versao']} - {version_data['nome_versao']}"
         confirm_dialog = DeletionConfirmationDialog("versão", version_name)
-        result = confirm_dialog.exec_()
+        result = confirm_dialog.exec()
         
-        if result == QMessageBox.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             motivo = confirm_dialog.get_motivo()
             
             try:
@@ -105,7 +105,7 @@ class AdminActions:
     def edit_file(dialog, api_client, file_data, refresh_callback=None):
         """Abre o diálogo de edição do arquivo."""
         edit_dialog = FileEditDialog(api_client, file_data)
-        result = edit_dialog.exec_()
+        result = edit_dialog.exec()
         
         if result and refresh_callback:
             refresh_callback()
@@ -114,9 +114,9 @@ class AdminActions:
     def delete_file(dialog, api_client, file_data, refresh_callback=None):
         """Abre o diálogo de confirmação de exclusão do arquivo."""
         confirm_dialog = DeletionConfirmationDialog("arquivo", file_data['nome'])
-        result = confirm_dialog.exec_()
+        result = confirm_dialog.exec()
         
-        if result == QMessageBox.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             motivo = confirm_dialog.get_motivo()
             
             try:

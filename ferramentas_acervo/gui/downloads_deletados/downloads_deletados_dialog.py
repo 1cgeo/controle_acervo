@@ -34,13 +34,13 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
         self.downloadsTable.setEditTriggers(self.downloadsTable.NoEditTriggers)
 
         header = self.downloadsTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.Stretch)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
         self.firstPageButton.clicked.connect(self.go_to_first_page)
         self.prevPageButton.clicked.connect(self.go_to_prev_page)
@@ -56,7 +56,7 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
 
     def load_downloads_deletados(self):
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             response = self.api_client.get(
                 f'gerencia/downloads_deletados?page={self.current_page}&limit={self.page_size}'
             )
@@ -76,7 +76,7 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao carregar downloads excluídos: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def update_pagination_info(self):
         self.pageInfoLabel.setText(
@@ -97,7 +97,7 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
             for col, field in [(4, 'data_download'), (6, 'data_delete')]:
                 date = download.get(field, '')
                 if date:
-                    date_dt = QDateTime.fromString(date, Qt.ISODate)
+                    date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                     date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
                 else:
                     date_formatted = ""

@@ -28,11 +28,11 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
             self,
             'Confirmar Limpeza',
             'Tem certeza que deseja limpar todos os downloads expirados?',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
             
         try:
@@ -47,7 +47,7 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
                 self.iface.messageBar().pushMessage(
                     "Sucesso",
                     "Downloads expirados foram limpos com sucesso.",
-                    level=Qgis.Success
+                    level=Qgis.MessageLevel.Success
                 )
                 self.accept()
             else:

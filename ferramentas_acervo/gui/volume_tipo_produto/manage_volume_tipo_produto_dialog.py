@@ -51,7 +51,7 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
 
     def add_volume_tipo_produto(self):
         dialog = EditVolumeTipoProdutoDialog(self.api_client)
-        if dialog.exec_():
+        if dialog.exec():
             self.load_volume_tipo_produto()
 
     def edit_volume_tipo_produto(self):
@@ -62,7 +62,7 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
             item_data = next((item for item in self.volume_tipo_produto if str(item['id']) == str(id)), None)
             if item_data:
                 dialog = EditVolumeTipoProdutoDialog(self.api_client, item_data)
-                if dialog.exec_():
+                if dialog.exec():
                     self.load_volume_tipo_produto()
             else:
                 QMessageBox.warning(self, "Erro", "Não foi possível encontrar os dados do volume/tipo de produto selecionado.")
@@ -75,8 +75,8 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
             id = int(self.volumeTipoProdutoTable.item(selected_rows[0].row(), 0).text())
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
                                          'Tem certeza que deseja excluir este relacionamento?',
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('volumes/volume_tipo_produto', {'volume_tipo_produto_ids': [id]})
                 if success:
                     self.load_volume_tipo_produto()

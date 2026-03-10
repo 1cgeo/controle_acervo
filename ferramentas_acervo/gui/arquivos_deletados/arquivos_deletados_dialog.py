@@ -38,20 +38,20 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
         
         # Set column widths
         header = self.filesTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ID
-        header.setSectionResizeMode(1, QHeaderView.Stretch)           # Nome
-        header.setSectionResizeMode(2, QHeaderView.Stretch)           # Nome do Arquivo
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Extensão
-        header.setSectionResizeMode(4, QHeaderView.Stretch)           # Produto
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # MI
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # INOM
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Lote
-        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)  # PIT
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)  # Versão
-        header.setSectionResizeMode(10, QHeaderView.ResizeToContents) # Volume
-        header.setSectionResizeMode(11, QHeaderView.ResizeToContents) # Tamanho
-        header.setSectionResizeMode(12, QHeaderView.ResizeToContents) # Data de Exclusão
-        header.setSectionResizeMode(13, QHeaderView.Stretch)          # Motivo de Exclusão
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # ID
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)           # Nome
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)           # Nome do Arquivo
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Extensão
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)           # Produto
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # MI
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # INOM
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Lote
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # PIT
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)  # Versão
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.ResizeToContents) # Volume
+        header.setSectionResizeMode(11, QHeaderView.ResizeMode.ResizeToContents) # Tamanho
+        header.setSectionResizeMode(12, QHeaderView.ResizeMode.ResizeToContents) # Data de Exclusão
+        header.setSectionResizeMode(13, QHeaderView.ResizeMode.Stretch)          # Motivo de Exclusão
         
         # Connect buttons
         self.firstPageButton.clicked.connect(self.go_to_first_page)
@@ -70,7 +70,7 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
     def load_arquivos_deletados(self):
         """Load deleted files from the API with pagination."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             response = self.api_client.get(
                 f'gerencia/arquivos_deletados?page={self.current_page}&limit={self.page_size}'
@@ -93,7 +93,7 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
                 f"Erro ao carregar arquivos deletados: {str(e)}"
             )
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             
     def update_pagination_info(self, pagination):
         """Update pagination controls and info."""
@@ -139,7 +139,7 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
             # Format the date
             date = file.get('data_delete', '')
             if date:
-                date_dt = QDateTime.fromString(date, Qt.ISODate)
+                date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
             else:
                 date_formatted = "Sem data"

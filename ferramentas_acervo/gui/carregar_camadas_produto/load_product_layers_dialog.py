@@ -52,7 +52,7 @@ class LoadProductLayersDialog(QDialog, FORM_CLASS):
 
     def show_no_layers_message(self):
         message_label = QLabel("Não há camadas de produtos disponíveis no momento.")
-        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(message_label)
         self.selectAllButton.setEnabled(False)
         self.buttonBox.button(self.buttonBox.Ok).setEnabled(False)

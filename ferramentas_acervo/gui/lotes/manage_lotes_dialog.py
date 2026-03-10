@@ -60,12 +60,12 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
             self.lotesTable.setItem(row, 3, QTableWidgetItem(str(lote.get('projeto', ''))))
             self.lotesTable.setItem(row, 4, QTableWidgetItem(lote.get('descricao', '')))
 
-            data_inicio = QDate.fromString(lote.get('data_inicio', ''), Qt.ISODate)
+            data_inicio = QDate.fromString(lote.get('data_inicio', ''), Qt.DateFormat.ISODate)
             self.lotesTable.setItem(row, 5, QTableWidgetItem(data_inicio.toString('yyyy-MM-dd')))
            
             data_fim = lote.get('data_fim', '')
             if data_fim:
-                data_fim = QDate.fromString(data_fim, Qt.ISODate).toString('yyyy-MM-dd')
+                data_fim = QDate.fromString(data_fim, Qt.DateFormat.ISODate).toString('yyyy-MM-dd')
             else:
                 data_fim = 'Não definida'
             self.lotesTable.setItem(row, 6, QTableWidgetItem(data_fim))
@@ -85,7 +85,7 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
 
     def add_lote(self):
         dialog = EditLoteDialog(self.api_client)
-        if dialog.exec_():
+        if dialog.exec():
             self.load_lotes()
 
     def edit_lote(self):
@@ -97,7 +97,7 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
 
             if lote_data:
                 dialog = EditLoteDialog(self.api_client, lote_data)
-                if dialog.exec_():
+                if dialog.exec():
                     self.load_lotes()
             else:
                 QMessageBox.warning(self, "Erro", "Não foi possível encontrar os dados do lote selecionado.")
@@ -110,8 +110,8 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
             lote_id = int(self.lotesTable.item(selected_rows[0].row(), 0).text())
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
                                          'Tem certeza que deseja excluir este lote?',
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('projetos/lote', {'lote_ids': [lote_id]})
                 if success:
                     self.load_lotes()

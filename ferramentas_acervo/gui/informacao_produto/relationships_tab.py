@@ -67,7 +67,7 @@ class RelationshipsTab(QWidget):
                 relationship['relationship_type'],
                 relationship['target_product_name'] or "Carregando..."
             ])
-            item.setData(0, Qt.UserRole, relationship)
+            item.setData(0, Qt.ItemDataRole.UserRole, relationship)
             self.relationships_tree.addTopLevelItem(item)
             
             # Se houver callback para obter info do produto, executar
@@ -83,4 +83,4 @@ class RelationshipsTab(QWidget):
         if not selected_items:
             return None
             
-        return selected_items[0].data(0, Qt.UserRole)
+        return selected_items[0].data(0, Qt.ItemDataRole.UserRole)

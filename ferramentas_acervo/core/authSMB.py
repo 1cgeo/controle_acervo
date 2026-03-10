@@ -72,7 +72,7 @@ class AuthSMB(QtWidgets.QDialog):
     @staticmethod
     def getCredentials(parent=None):
         dialog = AuthSMB(parent)
-        result = dialog.exec_()
-        if result == QtWidgets.QDialog.Accepted:
+        result = dialog.exec()
+        if result == QtWidgets.QDialog.DialogCode.Accepted:
             return dialog.user, dialog.passwd, dialog.domain
         return None, None, None

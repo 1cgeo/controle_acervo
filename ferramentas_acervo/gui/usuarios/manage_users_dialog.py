@@ -106,7 +106,7 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
             return
 
         import_dialog = ImportUsersDialog(new_users, self)
-        if import_dialog.exec_():
+        if import_dialog.exec():
             selected_uuids = import_dialog.get_selected_uuids()
             if selected_uuids:
                 success = self.api_client.post('usuarios', {'usuarios': selected_uuids})
@@ -121,8 +121,8 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
     def sync_users(self):
         reply = QMessageBox.question(self, 'Confirmar Sincronização',
                                      'Tem certeza que deseja sincronizar os usuários com o serviço de autenticação?',
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             success = self.api_client.put('usuarios/sincronizar')
             if success:
                 QMessageBox.information(self, "Sucesso", "Usuários sincronizados com sucesso.")

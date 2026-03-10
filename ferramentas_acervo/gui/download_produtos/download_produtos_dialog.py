@@ -239,7 +239,7 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
             self,
             "Selecione a Pasta de Destino",
             start_dir,
-            QFileDialog.ShowDirsOnly
+            QFileDialog.Option.ShowDirsOnly
         )
         
         if directory:
@@ -289,11 +289,11 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
             self,
             "Confirmar Cancelamento",
             "Tem certeza que deseja cancelar os downloads em andamento?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self.statusLabel.setText("Cancelando downloads...")
             self.download_manager.cancel_downloads()
             
@@ -373,11 +373,11 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
                 self,
                 "Confirmar Fechamento",
                 "Há downloads em andamento. Tem certeza que deseja fechar?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
             
-            if reply == QMessageBox.Yes:
+            if reply == QMessageBox.StandardButton.Yes:
                 self.download_manager.cancel_downloads()
                 self.reject()
         else:

@@ -260,9 +260,9 @@ class AddProductDialog(QDialog, FORM_CLASS):
         files_table.setColumnCount(5)
         files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
         files_table.setSelectionBehavior(files_table.SelectRows)
-        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
         files_layout.addWidget(files_table)
 
@@ -326,10 +326,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
         reply = QMessageBox.question(
             self, 'Confirmar exclusão',
             'Tem certeza que deseja remover esta versão?',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
         )
         
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             # Remover da lista de versões
             del self.versoes[version_index]
             
@@ -517,9 +517,9 @@ class AddProductDialog(QDialog, FORM_CLASS):
         files_table.setColumnCount(5)
         files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
         files_table.setSelectionBehavior(files_table.SelectRows)
-        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
         # Preencher tabela com arquivos existentes
         arquivos = versao_data.get('arquivos', [])
@@ -800,7 +800,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         self.iface.messageBar().pushMessage(
             "Informação", 
             "Clique no mapa para adicionar pontos ao polígono. Clique com o botão direito para finalizar.",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
     
     def set_geometry(self, geometry):
@@ -919,8 +919,8 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 'descricao': versao['descricao'],
                 'orgao_produtor': versao['orgao_produtor'],
                 'palavras_chave': versao['palavras_chave'],
-                'data_criacao': versao['data_criacao'].toString(Qt.ISODate),
-                'data_edicao': versao['data_edicao'].toString(Qt.ISODate),
+                'data_criacao': versao['data_criacao'].toString(Qt.DateFormat.ISODate),
+                'data_edicao': versao['data_edicao'].toString(Qt.DateFormat.ISODate),
                 'arquivos': []
             }
             
@@ -1028,9 +1028,9 @@ class AddProductDialog(QDialog, FORM_CLASS):
                     self, "Falha na Transferência",
                     f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.Yes | QMessageBox.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     self._retry_failed_transfers()
                 else:
                     self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")

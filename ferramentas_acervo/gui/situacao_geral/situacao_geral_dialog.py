@@ -38,7 +38,7 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
                 self,
                 "Selecione a Pasta de Destino",
                 "",
-                QFileDialog.ShowDirsOnly
+                QFileDialog.Option.ShowDirsOnly
             )
 
             if not dest_dir:
@@ -49,7 +49,7 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(10)
             self.statusLabel.setText("Iniciando download...")
             self.downloadButton.setEnabled(False)
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
 
             # Obter estados dos checkboxes
             # Nota: servidor compara req.query.scaleXk === 'true' (string lowercase),
@@ -115,4 +115,4 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             )
         finally:
             self.downloadButton.setEnabled(True)
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)

@@ -29,14 +29,14 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         self.sessionsTable.setEditTriggers(self.sessionsTable.NoEditTriggers)
 
         header = self.sessionsTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
 
         self.sessionsTable.itemSelectionChanged.connect(self.on_selection_changed)
         self.cancelSessionButton.clicked.connect(self.cancel_session)
@@ -45,7 +45,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
 
     def load_upload_sessions(self):
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             response = self.api_client.get('arquivo/upload-sessions')
             if response and 'dados' in response:
                 self.current_data = response['dados']
@@ -55,7 +55,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao carregar sessões de upload: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def populate_sessions_table(self, sessions):
         self.sessionsTable.setRowCount(len(sessions))
@@ -72,7 +72,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         }
         for row, session in enumerate(sessions):
             uuid_item = QTableWidgetItem(session.get('uuid_session', ''))
-            uuid_item.setData(Qt.UserRole, session.get('status', ''))
+            uuid_item.setData(Qt.ItemDataRole.UserRole, session.get('status', ''))
             self.sessionsTable.setItem(row, 0, uuid_item)
             operation_type = session.get('operation_type', '')
             self.sessionsTable.setItem(row, 1, QTableWidgetItem(operation_type_map.get(operation_type, operation_type)))
@@ -82,7 +82,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
             for col, field in [(4, 'created_at'), (5, 'expiration_time'), (6, 'completed_at')]:
                 date = session.get(field, '')
                 if date:
-                    date_dt = QDateTime.fromString(date, Qt.ISODate)
+                    date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                     date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
                 else:
                     date_formatted = ""
@@ -94,7 +94,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         selected_rows = self.sessionsTable.selectionModel().selectedRows()
         if selected_rows:
             row = selected_rows[0].row()
-            status = self.sessionsTable.item(row, 0).data(Qt.UserRole)
+            status = self.sessionsTable.item(row, 0).data(Qt.ItemDataRole.UserRole)
             self.cancelSessionButton.setEnabled(status == 'pending')
         else:
             self.cancelSessionButton.setEnabled(False)
@@ -108,12 +108,12 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         reply = QMessageBox.question(
             self, "Confirmar Cancelamento",
             f"Deseja cancelar a sessão de upload?\n\nUUID: {session_uuid}",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
         )
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             response = self.api_client.post('arquivo/cancel-upload', {'session_uuid': session_uuid})
             if response and response.get('success'):
                 QMessageBox.information(self, "Sucesso", "Sessão de upload cancelada com sucesso.")
@@ -124,7 +124,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao cancelar sessão: {str(e)}")
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def refresh_data(self):
         self.load_upload_sessions()

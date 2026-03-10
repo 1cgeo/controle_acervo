@@ -1,7 +1,6 @@
 # Path: main.py
 import os
-from qgis.PyQt.QtWidgets import QAction
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import QIcon, QAction
 from qgis.PyQt.QtCore import QObject, Qt
 from .core.settings import Settings
 from .core.api_client import APIClient
@@ -34,14 +33,14 @@ class Main(QObject):
 
     def startPlugin(self):
         login_dialog = LoginDialog(self.api_client, self.settings, Config.VERSION)
-        result = login_dialog.exec_()
+        result = login_dialog.exec()
         if result:
             self.loadDockablePanel()
 
     def loadDockablePanel(self):
         if self.dockable_panel is None:
             self.dockable_panel = DockablePanel(self.iface, self.api_client)
-            self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockable_panel)
+            self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockable_panel)
         else:
             self.dockable_panel.update_content()
             if self.dockable_panel.isHidden():

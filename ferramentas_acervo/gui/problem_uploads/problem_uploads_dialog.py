@@ -31,11 +31,11 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
         
         # Set column widths
         header = self.sessionsTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # UUID
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Operação
-        header.setSectionResizeMode(2, QHeaderView.Stretch)           # Erro
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Data
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Usuário
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # UUID
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Operação
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)           # Erro
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Data
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Usuário
         
         # Connect signals
         self.sessionsTable.itemSelectionChanged.connect(self.on_session_selected)
@@ -49,7 +49,7 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
     def load_problem_uploads(self):
         """Load problem uploads from the API."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             
             response = self.api_client.get('arquivo/problem-uploads')
             
@@ -70,7 +70,7 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
                 f"Erro ao carregar uploads com problemas: {str(e)}"
             )
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
     
     def populate_sessions_table(self, sessions):
         """Populate the table with problem upload sessions."""
@@ -93,7 +93,7 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
             # Format the date
             date = session.get('created_at', '')
             if date:
-                date_dt = QDateTime.fromString(date, Qt.ISODate)
+                date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
             else:
                 date_formatted = "Sem data"

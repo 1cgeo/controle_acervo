@@ -37,16 +37,16 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         # Set column widths
         header = self.resultsTable.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ID
-        header.setSectionResizeMode(1, QHeaderView.Stretch)            # Nome
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)   # MI
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)   # INOM
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)   # Escala
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)   # Tipo Produto
-        header.setSectionResizeMode(6, QHeaderView.Stretch)            # Descrição
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)   # Data Cadastramento
-        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)   # Data Modificação
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)   # Nº Versões
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)   # ID
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)            # Nome
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)   # MI
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)   # INOM
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)   # Escala
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)   # Tipo Produto
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)            # Descrição
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)   # Data Cadastramento
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)   # Data Modificação
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)   # Nº Versões
 
         # Connect buttons
         self.searchButton.clicked.connect(self.search_produtos)
@@ -72,7 +72,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
     def load_filters(self):
         """Load filter combo box options from domain endpoints."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
 
             # Tipo Produto
             self.tipoProdutoComboBox.clear()
@@ -113,7 +113,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
                 f"Erro ao carregar filtros: {str(e)}"
             )
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def search_produtos(self):
         """Execute product search with current filters."""
@@ -123,7 +123,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
     def load_results(self):
         """Load search results from the API with pagination."""
         try:
-            self.setCursor(Qt.WaitCursor)
+            self.setCursor(Qt.CursorShape.WaitCursor)
 
             # Build query parameters
             params = f'page={self.current_page}&limit={self.page_size}'
@@ -178,7 +178,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
                 f"Erro ao buscar produtos: {str(e)}"
             )
         finally:
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def update_pagination_info(self):
         """Update pagination controls and info."""
@@ -197,7 +197,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         for row, produto in enumerate(produtos):
             id_item = QTableWidgetItem(str(produto.get('id', '')))
-            id_item.setData(Qt.UserRole, produto.get('id'))
+            id_item.setData(Qt.ItemDataRole.UserRole, produto.get('id'))
             self.resultsTable.setItem(row, 0, id_item)
 
             self.resultsTable.setItem(row, 1, QTableWidgetItem(produto.get('nome', '')))
@@ -211,7 +211,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             for col, field in [(7, 'data_cadastramento'), (8, 'data_modificacao')]:
                 date = produto.get(field, '')
                 if date:
-                    date_dt = QDateTime.fromString(date, Qt.ISODate)
+                    date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                     date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
                 else:
                     date_formatted = ""
@@ -234,12 +234,12 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             return
 
         row = selected_rows[0].row()
-        product_id = self.resultsTable.item(row, 0).data(Qt.UserRole)
+        product_id = self.resultsTable.item(row, 0).data(Qt.ItemDataRole.UserRole)
 
         if product_id is not None:
             from ..informacao_produto.product_info_dialog import ProductInfoDialog
             dialog = ProductInfoDialog(self.iface, self.api_client, product_id=product_id)
-            dialog.exec_()
+            dialog.exec()
 
     def go_to_first_page(self):
         if self.current_page > 1:
