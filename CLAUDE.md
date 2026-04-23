@@ -26,10 +26,10 @@
 The system consists of three active components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
-2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 3 desktop integration
+2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 4 desktop integration (Qt6)
 3. **Client** (`client/`) - Vanilla JS SPA with Vite (admin dashboard)
 
-> `client_admin_mapoteca_deprecated/` contains a former React/TypeScript SPA. It is fully deprecated and should not be modified.
+> A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca will eventually get its own dedicated web client; do not recreate the old one.
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.
 
@@ -54,20 +54,25 @@ controle_acervo/
 │   │   ├── volume/                 # Storage volume management
 │   │   ├── usuario/                # User management
 │   │   ├── gerencia/               # Domain data & admin operations
-│   │   ├── mapoteca/               # Map library CRUD & dashboard
-│   │   ├── dashboard/              # Main dashboard endpoints
-│   │   └── utils/                  # Shared utilities (domain_constants, error handling, logging)
+│   │   ├── mapoteca/               # Map library CRUD + dedicated dashboard sub-route
+│   │   ├── dashboard/              # Main (acervo) dashboard endpoints
+│   │   ├── utils/                  # Shared utilities (domain_constants, error handling, logging, cleanup jobs, generate_localizador, http_client, schema_validation, send_json_and_log, serialize_error_loader, async_handler, async_handler_with_queue)
+│   │   └── __tests__/              # Jest test suite (unit, integration, routes) + helpers
 │   └── package.json
-├── ferramentas_acervo/             # QGIS 3 Plugin (Python/PyQt)
+├── ferramentas_acervo/             # QGIS 4 Plugin (Python/PyQt, Qt6)
 │   ├── main.py                     # Plugin entry point
 │   ├── config.py                   # Plugin name and version
+│   ├── metadata.txt                # QGIS plugin manifest (qgisMinimumVersion=4.0, supportsQt6=True)
+│   ├── icons/                      # Plugin icons (icon.png, config.png, DSG.svg)
 │   ├── core/                       # Core modules
 │   │   ├── api_client.py           # HTTP client (requests + auto-relogin)
 │   │   ├── settings.py             # QgsSettings wrapper
 │   │   ├── file_transfer.py        # Threaded file copy (Windows) / SMB (Linux)
 │   │   ├── authSMB.py              # SMB auth dialog for Linux
-│   │   └── getFileBySMB.py         # SMB file retrieval script
+│   │   ├── getFileBySMB.py         # SMB file retrieval script
+│   │   └── ui/                     # Qt Designer forms for core dialogs (authSMB.ui)
 │   └── gui/                        # Dialog windows (one folder per feature)
+│       ├── ui/                     # Shared Qt Designer forms (dockable_panel.ui, login.ui)
 │       ├── panel.py                # PANEL_MAPPING — menu categories and dialog registry
 │       ├── dockable_panel.py       # Main dockable panel with collapsible menu
 │       ├── login_dialog.py         # Login dialog with saved credentials
@@ -169,11 +174,11 @@ controle_acervo/
 
 ### QGIS Plugin
 - **Language**: Python 3
-- **UI Framework**: PyQt (via QGIS)
-- **HTTP Client**: requests (with auto-relogin on 401)
+- **UI Framework**: PyQt6 (via QGIS 4)
+- **HTTP Client**: requests (with auto-relogin on 401, optional system-proxy bypass)
 - **File Transfer**: Native copy (Windows), SMB via subprocess (Linux)
 - **Settings**: QgsSettings (persisted per QGIS profile)
-- **Min QGIS Version**: 3.0
+- **Min QGIS Version**: 4.0 (Qt6) — declared in `metadata.txt` (`qgisMinimumVersion=4.0`, `supportsQt6=True`). The `qgis4` branch is the active migration from the legacy Qt5/QGIS 3 baseline.
 
 ## Common Commands
 
@@ -187,10 +192,15 @@ npm run start-dev      # Start dev server (server only, via nodemon)
 
 ### Server (`server/`)
 ```bash
-npm run dev            # Start with nodemon (HTTP)
-npm run dev-https      # Start with nodemon (HTTPS)
-npm run production     # Start via PM2 (HTTP)
-npm run production-https  # Start via PM2 (HTTPS)
+npm run dev                 # Start with nodemon (HTTP)
+npm run dev-https           # Start with nodemon (HTTPS)
+npm run production          # Start via PM2 (HTTP)
+npm run production-https    # Start via PM2 (HTTPS)
+npm test                    # Run full Jest suite (--runInBand)
+npm run test:unit           # Unit tests only (schemas, utils)
+npm run test:integration    # Integration tests (require a running/test DB)
+npm run test:routes         # Route-level tests (supertest)
+npm run test:coverage       # Full suite with coverage report
 ```
 
 ### Client (`client/`)
@@ -341,8 +351,11 @@ All endpoints are under `/api/`. Domain endpoints (`GET /api/gerencia/dominio/*`
 | `/api/volumes` | volume | Storage volume configuration |
 | `/api/usuarios` | usuario | User management (admin) |
 | `/api/gerencia` | gerencia | Domain data, deleted files, inconsistency checks |
+| `/api/dashboard` | dashboard | Acervo dashboard analytics (consumed by `client/`) |
 | `/api/mapoteca` | mapoteca | Map library: clients, orders, plotters, materials |
-| `/api/mapoteca/dashboard` | dashboard | Map library dashboard analytics |
+| `/api/mapoteca/dashboard` | mapoteca/dashboard | Map library dashboard analytics |
+
+Note: `/api/mapoteca/dashboard` is mounted before `/api/mapoteca` in `routes.js` so Express matches the more specific prefix first. Preserve that ordering when adding new routes.
 
 Swagger docs available at `GET /api/api_docs` when server is running.
 
@@ -387,7 +400,7 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - JavaScript variables use **camelCase**
 - Python variables use **snake_case**
 - File names use **snake_case** (server and plugin)
-- No test suite exists in the project currently
+- Server has a Jest test suite at `server/src/__tests__/` (unit + integration + routes, plus shared helpers). No tests exist for the QGIS plugin or the web client.
 - No Docker configuration exists; deployment uses PM2 directly
 - No CI/CD pipeline is configured
 
