@@ -413,7 +413,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
   });
 };
 
-controller.getDownloadsDeletados = async (page, limit) => {
+controller.getDownloadsDeletados = async (page = 1, limit = 20) => {
   return db.conn.task(async t => {
     const offset = (page - 1) * limit;
 
@@ -436,11 +436,15 @@ controller.getDownloadsDeletados = async (page, limit) => {
       [limit, offset]
     );
 
+    const totalItems = parseInt(countResult.count);
     return {
-      total: parseInt(countResult.count),
-      page,
-      limit,
-      dados: downloads
+      data: downloads,
+      pagination: {
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        currentPage: page,
+        pageSize: limit
+      }
     };
   });
 };

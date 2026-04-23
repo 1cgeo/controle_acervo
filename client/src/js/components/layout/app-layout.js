@@ -34,7 +34,6 @@ export function createAppLayout() {
   const onHashChange = () => {
     const hash = location.hash.slice(1) || '/dashboard';
     if (hash.startsWith('/dashboard')) sidebarCtrl.setActive('dashboard');
-    else if (hash.startsWith('/volumes')) sidebarCtrl.setActive('volumes');
   };
   window.addEventListener('hashchange', onHashChange);
 

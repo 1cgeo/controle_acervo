@@ -107,28 +107,39 @@ class APIClient:
 
         return None
 
+    def _extract_server_message(self, response):
+        """Extrai a mensagem de erro padronizada ({success:false, message}) da resposta, se houver."""
+        try:
+            body = response.json()
+            msg = body.get("message") if isinstance(body, dict) else None
+            if isinstance(msg, str) and msg.strip():
+                return msg
+        except Exception:
+            pass
+        return None
+
     def _handle_http_error(self, e, method):
         """Método interno para lidar com erros HTTP."""
+        server_msg = self._extract_server_message(e.response)
         if e.response.status_code == 401:
             self.show_error("Não Autorizado", "Sua sessão expirou e não foi possível reconectar. Feche o plugin e faça login novamente.")
         elif e.response.status_code == 403:
             self.show_error("Acesso Negado", "Você não tem permissão para realizar esta ação.")
         elif e.response.status_code == 404:
-            self.show_error("Não Encontrado", "O recurso solicitado não foi encontrado no servidor.")
+            if server_msg:
+                self.show_error("Não Encontrado", server_msg)
+            else:
+                self.show_error("Não Encontrado", "O recurso solicitado não foi encontrado no servidor.")
         elif e.response.status_code == 400:
-            error_msg = "Os dados enviados são inválidos."
-            # Tentar extrair mensagem de erro do servidor se disponível
-            try:
-                response_json = e.response.json()
-                if "message" in response_json:
-                    error_msg = response_json["message"]
-            except Exception:
-                pass
+            error_msg = server_msg or "Os dados enviados são inválidos."
             self.show_error("Requisição Inválida", f"{error_msg} Verifique as informações e tente novamente.")
         elif e.response.status_code >= 500:
             self.show_error("Erro do Servidor", "O servidor encontrou um erro interno. Tente novamente mais tarde.")
         else:
-            self.show_error("Erro de HTTP", f"Ocorreu um erro durante a requisição {method}: {e.response.status_code} - {e.response.reason}")
+            detail = f"{e.response.status_code} - {e.response.reason}"
+            if server_msg:
+                detail = f"{detail}: {server_msg}"
+            self.show_error("Erro de HTTP", f"Ocorreu um erro durante a requisição {method}: {detail}")
 
     def login(self, username, password):
         """Realiza o login do usuário."""

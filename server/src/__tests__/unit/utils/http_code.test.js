@@ -11,10 +11,11 @@ describe('httpCode', () => {
     expect(httpCode.Unauthorized).toBe(401)
     expect(httpCode.Forbidden).toBe(403)
     expect(httpCode.NotFound).toBe(404)
+    expect(httpCode.Conflict).toBe(409)
     expect(httpCode.InternalError).toBe(500)
   })
 
-  it('should have exactly 8 codes', () => {
-    expect(Object.keys(httpCode)).toHaveLength(8)
+  it('should have exactly 9 codes', () => {
+    expect(Object.keys(httpCode)).toHaveLength(9)
   })
 })

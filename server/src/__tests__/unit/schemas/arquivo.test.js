@@ -67,6 +67,27 @@ describe('Arquivo Schemas', () => {
       })
       expect(error).toBeDefined()
     })
+
+    it('should require volume_armazenamento_id to be null for tileserver (tipo=9)', () => {
+      const { error } = arquivoSchema.arquivoAtualizacao.validate({
+        ...valid, tipo_arquivo_id: 9, volume_armazenamento_id: null
+      })
+      expect(error).toBeUndefined()
+    })
+
+    it('should reject non-null volume_armazenamento_id for tileserver (tipo=9)', () => {
+      const { error } = arquivoSchema.arquivoAtualizacao.validate({
+        ...valid, tipo_arquivo_id: 9, volume_armazenamento_id: 1
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('should reject null volume_armazenamento_id for non-tileserver files', () => {
+      const { error } = arquivoSchema.arquivoAtualizacao.validate({
+        ...valid, tipo_arquivo_id: 1, volume_armazenamento_id: null
+      })
+      expect(error).toBeDefined()
+    })
   })
 
   describe('arquivoIds', () => {

@@ -182,14 +182,16 @@ router.get(
     query: gerenciaSchema.paginationParams
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await gerenciaCtrl.getDownloadsDeletados(
-      req.query.page || 1,
-      req.query.limit || 20
-    );
+    const page = parseInt(req.query.page || 1);
+    const limit = parseInt(req.query.limit || 20);
+
+    const resultado = await gerenciaCtrl.getDownloadsDeletados(page, limit);
 
     const msg = 'Downloads deletados retornados com sucesso';
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+    return res.sendJsonAndLog(true, msg, httpCode.OK, resultado.data, null, {
+      pagination: resultado.pagination
+    });
   })
 );
 

@@ -1,8 +1,8 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
+import { isAdmin } from '@store/auth-store.js';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
-  { id: 'volumes', label: 'Volumes', icon: ICONS.storage, path: '/volumes', adminOnly: true },
 ];
 
 /**
@@ -26,9 +26,10 @@ export function createSidebar({ collapsed = false }) {
     onClick: () => setMobileOpen(false),
   });
 
-  // Render menu items
+  // Render menu items (filter admin-only entries for non-admins)
+  const visibleItems = MENU_ITEMS.filter(item => !item.adminOnly || isAdmin());
   const itemElements = {};
-  for (const item of MENU_ITEMS) {
+  for (const item of visibleItems) {
     const icon = el('span', { className: 'sidebar__item-icon' }, [svgIcon(item.icon, 24)]);
     const label = el('span', { className: 'sidebar__item-label', textContent: item.label });
 
@@ -69,7 +70,7 @@ export function createSidebar({ collapsed = false }) {
 
   // Set initial active based on hash
   const currentPath = location.hash.slice(1) || '/dashboard';
-  const activeItem = MENU_ITEMS.find(i => currentPath.startsWith(i.path));
+  const activeItem = visibleItems.find(i => currentPath.startsWith(i.path));
   if (activeItem) setActive(activeItem.id);
 
   return { sidebar, overlay, setActive, toggle, setMobileOpen, isCurrentlyCollapsed };

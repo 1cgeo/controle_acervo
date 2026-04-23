@@ -125,7 +125,7 @@ export async function renderActivityTab(container) {
             tables.uploads.update({
               data: (Array.isArray(data) ? data : []).map(d => ({
                 ...d,
-                data: d.data_cadastramento || d.data_carregamento,
+                data: d.data_cadastramento,
               })),
               loading: false,
             });

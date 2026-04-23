@@ -61,14 +61,11 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
                 f'gerencia/downloads_deletados?page={self.current_page}&limit={self.page_size}'
             )
             if response and 'dados' in response:
-                dados = response['dados']
-                total = int(dados.get('total', 0))
-                page = int(dados.get('page', 1))
-                limit = int(dados.get('limit', self.page_size))
-                downloads = dados.get('dados', [])
-                self.total_items = total
-                self.total_pages = max(1, -(-total // limit))
-                self.current_page = page
+                downloads = response.get('dados') or []
+                pagination = response.get('pagination') or {}
+                self.total_items = int(pagination.get('totalItems', len(downloads)))
+                self.total_pages = int(pagination.get('totalPages', 1)) or 1
+                self.current_page = int(pagination.get('currentPage', self.current_page))
                 self.update_pagination_info()
                 self.populate_downloads_table(downloads)
             else:

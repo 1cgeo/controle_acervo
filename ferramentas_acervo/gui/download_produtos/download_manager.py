@@ -215,10 +215,26 @@ class DownloadManager(QObject):
         try:
             response = self.api_client.post('acervo/confirm-download', {'confirmations': confirmations})
 
-            if response:
-                self.download_complete.emit(self.download_results)
-            else:
+            if not response:
                 self.download_error.emit("Falha ao confirmar os downloads com o servidor.")
+                return
+
+            # Detectar tokens que o servidor recusou (ex: expirados/limpos pelo cron após 24h)
+            results = response.get('dados') if isinstance(response, dict) else None
+            expired = []
+            if isinstance(results, list):
+                for r in results:
+                    if isinstance(r, dict) and r.get('status') == 'error':
+                        expired.append(r.get('download_token'))
+
+            if expired:
+                self.download_error.emit(
+                    f"{len(expired)} token(s) de download expiraram ou já foram processados pelo servidor. "
+                    "Downloads com mais de 24h precisam ser reiniciados."
+                )
+                return
+
+            self.download_complete.emit(self.download_results)
         except Exception as e:
             self.download_error.emit(f"Erro ao confirmar downloads: {str(e)}")
 

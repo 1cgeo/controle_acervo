@@ -36,7 +36,11 @@ models.arquivoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
   nome: Joi.string().required(),
   tipo_arquivo_id: Joi.number().integer().strict().required(),
-  volume_armazenamento_id: Joi.number().integer().strict().required(),
+  volume_armazenamento_id: Joi.alternatives().conditional('tipo_arquivo_id', {
+    is: 9,
+    then: Joi.valid(null).required(),
+    otherwise: Joi.number().integer().strict().required()
+  }),
   metadado: Joi.object().required(),
   tipo_status_id: Joi.number().integer().strict().required(),
   situacao_carregamento_id: Joi.number().integer().strict().required(),

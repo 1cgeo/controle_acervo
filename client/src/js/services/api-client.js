@@ -42,7 +42,12 @@ async function apiRequest(method, endpoint, body = undefined) {
     throw new Error('Sessao expirada');
   }
 
-  const json = await response.json();
+  let json;
+  try {
+    json = await response.json();
+  } catch {
+    throw new Error(`Resposta invalida do servidor (HTTP ${response.status})`);
+  }
 
   if (!json.success) {
     throw new Error(json.message || 'Erro na requisicao');

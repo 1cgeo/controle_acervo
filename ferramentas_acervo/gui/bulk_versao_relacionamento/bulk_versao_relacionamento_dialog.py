@@ -113,43 +113,61 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
         """Prepara os dados da camada para o formato esperado pela API"""
         relationships = []
         invalid_features = []
-        
+        # Dedupe no cliente: a constraint UNIQUE (versao_id_1, versao_id_2, tipo_relacionamento_id)
+        # faria toda a transação falhar no servidor se houvesse duplicatas no lote.
+        seen_tuples = set()
+        duplicate_count = 0
+
         for feature in layer.getFeatures():
             # Verificação de campos não nulos obrigatórios
             non_null_fields = ['versao_id_1', 'versao_id_2', 'tipo_relacionamento_id']
             null_fields = [field for field in non_null_fields if feature[field] == NULL]
-            
+
             if null_fields:
                 invalid_features.append((feature.id(), f"Campos não podem ser nulos: {', '.join(null_fields)}"))
                 continue
-            
+
             # Verificar se não está relacionando uma versão com ela mesma
             if feature['versao_id_1'] == feature['versao_id_2']:
                 invalid_features.append((feature.id(), "Uma versão não pode ser relacionada a ela mesma"))
                 continue
-            
+
+            key = (feature['versao_id_1'], feature['versao_id_2'], feature['tipo_relacionamento_id'])
+            if key in seen_tuples:
+                duplicate_count += 1
+                continue
+            seen_tuples.add(key)
+
             # Criar objeto de relacionamento
             relationship = {
                 "versao_id_1": feature['versao_id_1'],
                 "versao_id_2": feature['versao_id_2'],
                 "tipo_relacionamento_id": feature['tipo_relacionamento_id']
             }
-            
+
             relationships.append(relationship)
-            
+
             # Atualizar barra de progresso
             self.progressBar.setValue(len(relationships))
-        
+
         # Informar sobre features inválidas
         if invalid_features:
             error_msg = "As seguintes features têm problemas:\n"
             for id, reason in invalid_features:
                 error_msg += f"ID {id}: {reason}\n"
             QMessageBox.warning(self, "Problemas encontrados", error_msg)
-        
+
+        if duplicate_count:
+            QMessageBox.information(
+                self,
+                "Duplicatas removidas",
+                f"{duplicate_count} relacionamento(s) duplicado(s) foram ignorados "
+                "(mesma tupla versao_id_1, versao_id_2, tipo_relacionamento_id)."
+            )
+
         if not relationships:
             return None
-            
+
         return {"versao_relacionamento": relationships}
 
     def create_model_layer(self):

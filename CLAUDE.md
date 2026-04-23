@@ -11,7 +11,7 @@
 - **CORS allows all origins** — This is intentional. The system runs on an internal local network, so open CORS is acceptable.
 - **DB credentials in QGIS layer URIs** — This is intentional. The plugin connects directly to PostgreSQL to load layers, exposing credentials in the layer URI. Acceptable for an internal network application.
 - **Mapoteca uses `usuario_id` (INTEGER) while Acervo uses `usuario_uuid` (UUID)** — This is intentional. The `dgeo.usuario` table has both `id` (INTEGER PK) and `uuid` (UUID UNIQUE). The `mapoteca` schema references `usuario.id` and the `acervo` schema references `usuario.uuid`. Both are valid foreign key references to the same user. New tables should follow the `acervo` convention (UUID) for consistency.
-- **Client web (`client/`) nao inclui dados de Mapoteca** — A Mapoteca tera seu proprio cliente web separado. O dashboard em `client/` exibe apenas dados do acervo (produtos, versoes, arquivos, projetos, volumes, usuarios).
+- **Client web (`client/`) nao inclui dados de Mapoteca** — A Mapoteca tera seu proprio cliente web separado em `mapoteca/client/` (vanilla JS + Vite, porta dev 3001). O dashboard em `client/` exibe apenas dados do acervo (produtos, versoes, arquivos, projetos, volumes, usuarios). Documentacao, planilhas de referencia e plano de implementacao da mapoteca vivem em `mapoteca/` — ver `mapoteca/CLAUDE.md`, `mapoteca/requisitos.md` e `mapoteca/PLANO_IMPLEMENTACAO.md`.
 
 ## Business Rules
 
@@ -29,7 +29,7 @@ The system consists of three active components:
 2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 4 desktop integration (Qt6)
 3. **Client** (`client/`) - Vanilla JS SPA with Vite (admin dashboard)
 
-> A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca will eventually get its own dedicated web client; do not recreate the old one.
+> A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca's new dedicated web client will live in `mapoteca/client/` as a vanilla JS + Vite SPA (sibling to the main `client/` dashboard). Do not recreate the React one. See `mapoteca/PLANO_IMPLEMENTACAO.md` for the implementation plan.
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.
 
@@ -139,6 +139,12 @@ controle_acervo/
 │   ├── mapoteca.sql                 # Map library schema
 │   ├── acompanhamento.sql           # Materialized views
 │   └── permissao.sql                # DB permissions
+├── mapoteca/                        # Mapoteca subproject (docs + dedicated frontend)
+│   ├── docs/                        # Reference spreadsheets (fonte das regras de relatorio)
+│   ├── CLAUDE.md                    # Subproject conventions (complement to this file)
+│   ├── requisitos.md                # Mapoteca requirements (RFs, RNFs, business rules)
+│   ├── PLANO_IMPLEMENTACAO.md       # 3-part plan: ER / backend / frontend
+│   └── client/                      # (TO BE CREATED) Vanilla JS + Vite SPA for mapoteca
 ├── create_config.js                 # Interactive setup (DB creation, config.env generation)
 ├── create_build.js                  # Client build script
 ├── package.json                     # Root package with install/config/build/start scripts
@@ -209,6 +215,15 @@ npm run dev            # Start Vite dev server (port 3000, proxies /api to serve
 npm run build          # Production build to dist/
 npm run preview        # Preview production build
 ```
+
+### Mapoteca Client (`mapoteca/client/`) — when implemented
+```bash
+npm run dev            # Start Vite dev server (port 3001, proxies /api to server)
+npm run build          # Production build to dist/
+npm run preview        # Preview production build
+npm run lint           # ESLint (--max-warnings 0)
+```
+See `mapoteca/PLANO_IMPLEMENTACAO.md` for the implementation roadmap and `mapoteca/CLAUDE.md` for conventions specific to this SPA (localStorage prefix `@mapoteca-*`, distinct from the acervo client).
 
 ## Configuration
 
@@ -409,6 +424,10 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - `tutorial_configuracao_inicial.md` — Step-by-step initial setup guide (plugin, volumes, products)
 - `tutorial_client_dashboard.md` — Web dashboard usage guide (login, tabs, charts, theme)
 - `api_documentation.md` — API endpoint documentation
+- `especificacao_client_mapoteca.md` — Full spec for the mapoteca web client (routes, endpoints, wireframes)
+- `mapoteca/requisitos.md` — Mapoteca-specific requirements (adjustments/extensions to the spec above)
+- `mapoteca/PLANO_IMPLEMENTACAO.md` — Detailed 3-part plan to extend ER, backend and build the mapoteca SPA
+- `mapoteca/CLAUDE.md` — Conventions for the mapoteca subproject (complement to this file)
 
 ## Development Setup
 
