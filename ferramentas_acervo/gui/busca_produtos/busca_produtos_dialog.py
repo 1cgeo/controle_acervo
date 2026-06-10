@@ -125,30 +125,31 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
         try:
             self.setCursor(Qt.CursorShape.WaitCursor)
 
-            # Build query parameters
-            params = f'page={self.current_page}&limit={self.page_size}'
+            # Build query parameters (params= cuida do URL-encoding —
+            # caracteres como & ou # no termo não corrompem a query)
+            params = {'page': self.current_page, 'limit': self.page_size}
 
             termo = self.termoLineEdit.text().strip()
             if termo:
-                params += f'&termo={termo}'
+                params['termo'] = termo
 
             tipo_produto_id = self.tipoProdutoComboBox.currentData()
             if tipo_produto_id is not None:
-                params += f'&tipo_produto_id={tipo_produto_id}'
+                params['tipo_produto_id'] = tipo_produto_id
 
             tipo_escala_id = self.tipoEscalaComboBox.currentData()
             if tipo_escala_id is not None:
-                params += f'&tipo_escala_id={tipo_escala_id}'
+                params['tipo_escala_id'] = tipo_escala_id
 
             projeto_id = self.projetoComboBox.currentData()
             if projeto_id is not None:
-                params += f'&projeto_id={projeto_id}'
+                params['projeto_id'] = projeto_id
 
             lote_id = self.loteComboBox.currentData()
             if lote_id is not None:
-                params += f'&lote_id={lote_id}'
+                params['lote_id'] = lote_id
 
-            response = self.api_client.get(f'acervo/busca?{params}')
+            response = self.api_client.get('acervo/busca', params=params)
 
             if response and 'dados' in response:
                 dados = response['dados']
@@ -200,12 +201,13 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             id_item.setData(Qt.ItemDataRole.UserRole, produto.get('id'))
             self.resultsTable.setItem(row, 0, id_item)
 
-            self.resultsTable.setItem(row, 1, QTableWidgetItem(produto.get('nome', '')))
-            self.resultsTable.setItem(row, 2, QTableWidgetItem(produto.get('mi', '')))
-            self.resultsTable.setItem(row, 3, QTableWidgetItem(produto.get('inom', '')))
-            self.resultsTable.setItem(row, 4, QTableWidgetItem(produto.get('escala', '')))
-            self.resultsTable.setItem(row, 5, QTableWidgetItem(produto.get('tipo_produto', '')))
-            self.resultsTable.setItem(row, 6, QTableWidgetItem(produto.get('descricao', '') or ''))
+            # `or ''` cobre colunas nuláveis que chegam como None do servidor
+            self.resultsTable.setItem(row, 1, QTableWidgetItem(produto.get('nome') or ''))
+            self.resultsTable.setItem(row, 2, QTableWidgetItem(produto.get('mi') or ''))
+            self.resultsTable.setItem(row, 3, QTableWidgetItem(produto.get('inom') or ''))
+            self.resultsTable.setItem(row, 4, QTableWidgetItem(produto.get('escala') or ''))
+            self.resultsTable.setItem(row, 5, QTableWidgetItem(produto.get('tipo_produto') or ''))
+            self.resultsTable.setItem(row, 6, QTableWidgetItem(produto.get('descricao') or ''))
 
             # Format dates
             for col, field in [(7, 'data_cadastramento'), (8, 'data_modificacao')]:

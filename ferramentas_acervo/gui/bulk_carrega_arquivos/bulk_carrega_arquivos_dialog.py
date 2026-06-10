@@ -100,7 +100,16 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
         """Prepara os dados da camada para o formato esperado pela API"""
         arquivos = []
         invalid_features = []
-        
+
+        # Campos opcionais podem não existir em camadas montadas pelo usuário
+        field_names = [field.name() for field in layer.fields()]
+
+        def valor(feature, campo):
+            """Valor do campo se ele existir na camada; None caso contrário."""
+            if campo not in field_names:
+                return None
+            return null_to_none(feature[campo])
+
         for feature in layer.getFeatures():
             # Verificação de campos não nulos obrigatórios
             non_null_fields = ['versao_id', 'nome', 'nome_arquivo', 'tipo_arquivo_id', 'path', 'situacao_carregamento_id']
@@ -113,10 +122,14 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
             # Verificar tipo de arquivo 9 (Tileserver) - regras especiais
             tipo_arquivo_id = feature['tipo_arquivo_id']
             extensao = null_to_none(feature['extensao'])
-            
+
             if tipo_arquivo_id != 9 and not extensao:
                 invalid_features.append((feature.id(), "Extensão é obrigatória para este tipo de arquivo"))
                 continue
+
+            # Para tileserver o servidor exige extensão nula
+            if tipo_arquivo_id == 9:
+                extensao = None
             
             # Verificar se o arquivo existe no caminho especificado
             file_path = feature['path']
@@ -137,7 +150,7 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
                     continue
             
             # Verificar metadado JSON (se existir)
-            metadado = null_to_none(feature['metadado'])
+            metadado = valor(feature, 'metadado')
             if metadado:
                 try:
                     if isinstance(metadado, str):
@@ -158,8 +171,8 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
                 "checksum": checksum,
                 "metadado": metadado or {},
                 "situacao_carregamento_id": feature['situacao_carregamento_id'],
-                "descricao": null_to_none(feature['descricao']) or "",
-                "crs_original": null_to_none(feature['crs_original']) or ""
+                "descricao": valor(feature, 'descricao') or "",
+                "crs_original": valor(feature, 'crs_original') or ""
             }
             
             arquivos.append(arquivo)
@@ -213,29 +226,37 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
         self.arquivos_com_falha = 0
         self.failed_transfers = []
         self.current_session_uuid = session_uuid
-        
+
+        # Mapa (versao_id, nome_arquivo) -> caminho de origem; nome fica como
+        # fallback (nomes podem colidir entre versões)
+        layer = self.layerComboBox.currentData()
+        files_map = {}
+        fallback_map = {}
+        for feature in layer.getFeatures():
+            files_map[(feature['versao_id'], feature['nome_arquivo'])] = feature['path']
+            fallback_map[feature['nome_arquivo']] = feature['path']
+            fallback_map[feature['nome']] = feature['path']
+
+        nao_encontrados = []
         for arquivo_info in arquivos_info:
-            # Obter caminho de origem a partir do nome do arquivo
-            source_path = None
-            destination_path = arquivo_info.get('destination_path')
-            
-            # Precisamos encontrar o path original na camada
-            layer = self.layerComboBox.currentData()
-            for feature in layer.getFeatures():
-                nome_arquivo = feature['nome_arquivo']
-                nome = feature['nome']
-                if (nome_arquivo == arquivo_info.get('nome_arquivo') or 
-                    nome == arquivo_info.get('nome')):
-                    source_path = feature['path']
-                    break
-            
-            if not source_path:
-                self.statusLabel.setText(f"Erro: Não foi possível encontrar o arquivo de origem para {arquivo_info.get('nome')}")
+            # Tileserver é uma URL — sem arquivo físico para transferir
+            if arquivo_info.get('tipo_arquivo_id') == 9:
                 continue
-            
+
+            destination_path = arquivo_info.get('destination_path')
+            nome_arquivo = arquivo_info.get('nome_arquivo', '')
+            chave = (arquivo_info.get('versao_id'), nome_arquivo)
+            source_path = (files_map.get(chave) or
+                           fallback_map.get(nome_arquivo) or
+                           fallback_map.get(arquivo_info.get('nome', '')))
+
+            if not source_path:
+                nao_encontrados.append(nome_arquivo or arquivo_info.get('nome', ''))
+                continue
+
             # Iniciar thread de transferência
             thread = FileTransferThread(
-                source_path, 
+                source_path,
                 destination_path,
                 arquivo_info.get('checksum')
             )
@@ -243,6 +264,22 @@ class LoadSystematicFilesDialog(QDialog, FORM_CLASS):
             thread.file_transferred.connect(self.file_transfer_complete)
             self.transfer_threads.append(thread)
             thread.start()
+
+        if nao_encontrados:
+            QMessageBox.warning(
+                self, "Arquivos não encontrados",
+                "Não foi possível localizar o arquivo de origem para:\n" + "\n".join(nao_encontrados)
+            )
+
+        if not self.transfer_threads:
+            if not nao_encontrados:
+                # Somente entradas tileserver: nada a transferir
+                self.statusLabel.setText("Nenhum arquivo físico a transferir. Confirmando upload...")
+                self.confirm_upload()
+            else:
+                self.statusLabel.setText("Erro: nenhum arquivo pôde ser transferido")
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self.loadButton.setEnabled(True)
 
     def update_file_progress(self, current, total):
         """Atualiza o progresso da transferência de um arquivo individual"""

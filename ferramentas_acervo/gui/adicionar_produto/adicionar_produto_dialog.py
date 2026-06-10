@@ -11,7 +11,8 @@ from qgis.PyQt.QtWidgets import (
     QHeaderView, QCheckBox, QTabWidget, QScrollArea, QSpinBox
 )
 from qgis.PyQt.QtCore import Qt, QDate, pyqtSignal, QThread, QObject, QSize, QSortFilterProxyModel
-from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis
+from qgis.PyQt.QtGui import QColor
+from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis, QgsWkbTypes, QgsPointXY
 from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
 from ...core.file_transfer import FileTransferThread
 from ...config import Config
@@ -143,7 +144,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         versao_layout = QVBoxLayout()
         versao_label = QLabel("Número da Versão:")
         version_number_edit = QLineEdit()
-        version_number_edit.setPlaceholderText("Ex: 1-DSGEO ou 2ª Edição")
+        version_number_edit.setPlaceholderText("Ex: 1-DSG ('Xª Edição' só para registro histórico)")
         versao_layout.addWidget(versao_label)
         versao_layout.addWidget(version_number_edit)
         row1_layout.addLayout(versao_layout)
@@ -259,7 +260,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         files_table = QTableWidget()
         files_table.setColumnCount(5)
         files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
-        files_table.setSelectionBehavior(files_table.SelectRows)
+        files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
@@ -375,7 +376,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         versao_layout = QVBoxLayout()
         versao_label = QLabel("Número da Versão:")
         version_number_edit = QLineEdit()
-        version_number_edit.setPlaceholderText("Ex: 1-DSGEO ou 2ª Edição")
+        version_number_edit.setPlaceholderText("Ex: 1-DSG ('Xª Edição' só para registro histórico)")
         version_number_edit.setText(versao_data.get('versao', ''))
         versao_layout.addWidget(versao_label)
         versao_layout.addWidget(version_number_edit)
@@ -516,7 +517,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         files_table = QTableWidget()
         files_table.setColumnCount(5)
         files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
-        files_table.setSelectionBehavior(files_table.SelectRows)
+        files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
@@ -889,8 +890,9 @@ class AddProductDialog(QDialog, FORM_CLASS):
         # Preparar dados do produto
         produto_data = {
             'nome': self.nomeLineEdit.text(),
-            'mi': self.miLineEdit.text(),
-            'inom': self.inomLineEdit.text(),
+            # Server aceita null, mas não string vazia
+            'mi': self.miLineEdit.text() or None,
+            'inom': self.inomLineEdit.text() or None,
             'tipo_escala_id': self.get_combo_value(self.tipoEscalaComboBox),
             'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
             'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
@@ -911,7 +913,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
             versao_data = {
                 'uuid_versao': versao['uuid_versao'],
                 'versao': versao['versao'],
-                'nome': versao['nome'],
+                'nome': versao['nome'] or None,
                 'tipo_versao_id': versao['tipo_versao_id'],
                 'subtipo_produto_id': versao['subtipo_produto_id'],
                 'lote_id': versao['lote_id'],
@@ -981,6 +983,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 for produto in produtos:
                     for versao in produto['versoes']:
                         for arquivo in versao['arquivos']:
+                            # Tileserver é uma URL — sem arquivo físico para transferir
+                            if arquivo.get('tipo_arquivo_id') == 9:
+                                continue
+
                             # Encontrar o arquivo local por uuid_arquivo
                             arquivo_local = uuid_to_local.get(arquivo.get('uuid_arquivo'))
 
@@ -1033,6 +1039,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 if reply == QMessageBox.StandardButton.Yes:
                     self._retry_failed_transfers()
                 else:
+                    self._cancel_upload_session()
                     self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
                     self.saveButton.setEnabled(True)
                     self.cancelButton.setEnabled(True)
@@ -1133,6 +1140,14 @@ class AddProductDialog(QDialog, FORM_CLASS):
             self.cancelButton.setEnabled(True)
             QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {str(e)}")
 
+    def _cancel_upload_session(self):
+        """Cancela a sessão de upload no servidor (best effort)."""
+        try:
+            if getattr(self, 'current_session_uuid', None):
+                self.api_client.post('arquivo/cancel-upload', {'session_uuid': self.current_session_uuid})
+        except Exception:
+            pass
+
 class PolygonMapTool(QgsMapToolEmitPoint):
     """Ferramenta de mapa para desenhar polígonos."""
     def __init__(self, iface, parent):
@@ -1148,18 +1163,18 @@ class PolygonMapTool(QgsMapToolEmitPoint):
         self.rubber_band.setWidth(2)
     
     def canvasReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Adicionar ponto
             point = self.toMapCoordinates(event.pos())
             self.points.append(point)
-            
+
             # Atualizar rubber band
             self.rubber_band.reset(QgsWkbTypes.PolygonGeometry)
             points = [QgsPointXY(p) for p in self.points]
             if len(points) > 1:
                 self.rubber_band.setToGeometry(QgsGeometry.fromPolygonXY([points]), None)
-                
-        elif event.button() == Qt.RightButton and len(self.points) >= 3:
+
+        elif event.button() == Qt.MouseButton.RightButton and len(self.points) >= 3:
             # Finalizar polígono
             points = [QgsPointXY(p) for p in self.points]
             geometry = QgsGeometry.fromPolygonXY([points])
@@ -1171,7 +1186,7 @@ class PolygonMapTool(QgsMapToolEmitPoint):
             self.points = []
             self.rubber_band.reset()
             self.canvas.unsetMapTool(self)
-            self.canvas.setMapTool(self.iface.actionPan())
+            self.iface.actionPan().trigger()
     
     def reset(self):
         self.points = []

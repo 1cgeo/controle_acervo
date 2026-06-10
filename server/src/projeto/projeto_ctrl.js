@@ -147,6 +147,18 @@ controller.criaLote = async (lote, usuarioUuid) => {
   lote.data_cadastramento = new Date();
   lote.usuario_cadastramento_uuid = usuarioUuid;
   return db.conn.tx(async t => {
+    // Espelha a UNIQUE unique_pit_per_project com erro amigável
+    const pitExistente = await t.oneOrNone(
+      `SELECT id FROM acervo.lote WHERE projeto_id = $1 AND pit = $2`,
+      [lote.projeto_id, lote.pit]
+    );
+    if (pitExistente) {
+      throw new AppError(
+        `Já existe lote com o PIT "${lote.pit}" neste projeto`,
+        httpCode.Conflict
+      );
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
       'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},
@@ -177,6 +189,18 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   lote.usuario_modificacao_uuid = usuarioUuid;
 
   return db.conn.tx(async t => {
+    // Espelha a UNIQUE unique_pit_per_project com erro amigável
+    const pitExistente = await t.oneOrNone(
+      `SELECT id FROM acervo.lote WHERE projeto_id = $1 AND pit = $2 AND id != $3`,
+      [lote.projeto_id, lote.pit, lote.id]
+    );
+    if (pitExistente) {
+      throw new AppError(
+        `Já existe outro lote com o PIT "${lote.pit}" neste projeto`,
+        httpCode.Conflict
+      );
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},

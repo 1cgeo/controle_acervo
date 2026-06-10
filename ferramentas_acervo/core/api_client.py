@@ -63,7 +63,7 @@ class APIClient:
             logging.warning(f"Falha na re-autenticação automática: {e}")
         return False
 
-    def _make_request(self, method, endpoint, data=None, params=None, _retry=True):
+    def _make_request(self, method, endpoint, data=None, params=None, timeout=None, _retry=True):
         """Método interno para fazer requisições HTTP."""
         if not self.base_url:
             self.show_error("Erro de Configuração", "URL do servidor não configurada.")
@@ -72,20 +72,17 @@ class APIClient:
         # Corrigir a concatenação de URLs
         url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        timeout = timeout or self.REQUEST_TIMEOUT
 
         try:
             if method == 'GET':
-                response = self.session.get(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.get(url, headers=headers, params=params, timeout=timeout)
             elif method == 'POST':
-                response = self.session.post(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.post(url, headers=headers, json=data, timeout=timeout)
             elif method == 'PUT':
-                response = self.session.put(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.put(url, headers=headers, json=data, timeout=timeout)
             elif method == 'DELETE':
-                # Corrigir o uso de params e data
-                if data:
-                    response = self.session.delete(url, headers=headers, json=data, timeout=self.REQUEST_TIMEOUT)
-                else:
-                    response = self.session.delete(url, headers=headers, params=params, timeout=self.REQUEST_TIMEOUT)
+                response = self.session.delete(url, headers=headers, json=data, params=params, timeout=timeout)
             else:
                 raise ValueError(f"Método HTTP não suportado: {method}")
 
@@ -98,7 +95,7 @@ class APIClient:
             self.show_error("Tempo Esgotado", "O servidor demorou muito para responder. Tente novamente mais tarde.")
         except HTTPError as e:
             if e.response.status_code == 401 and _retry and self._try_relogin():
-                return self._make_request(method, endpoint, data=data, params=params, _retry=False)
+                return self._make_request(method, endpoint, data=data, params=params, timeout=timeout, _retry=False)
             self._handle_http_error(e, method)
         except ValueError as e:
             self.show_error("Resposta Inválida", f"O servidor retornou uma resposta inválida: {str(e)}")
@@ -164,21 +161,21 @@ class APIClient:
             self.show_error("Falha no Login", f"Não foi possível fazer login: {str(e)}")
         return False
 
-    def get(self, endpoint, params=None):
+    def get(self, endpoint, params=None, timeout=None):
         """Realiza uma requisição GET."""
-        return self._make_request('GET', endpoint, params=params)
+        return self._make_request('GET', endpoint, params=params, timeout=timeout)
 
-    def post(self, endpoint, data=None):
+    def post(self, endpoint, data=None, timeout=None):
         """Realiza uma requisição POST."""
-        return self._make_request('POST', endpoint, data=data)
+        return self._make_request('POST', endpoint, data=data, timeout=timeout)
 
-    def put(self, endpoint, data=None):
+    def put(self, endpoint, data=None, timeout=None):
         """Realiza uma requisição PUT."""
-        return self._make_request('PUT', endpoint, data=data)
+        return self._make_request('PUT', endpoint, data=data, timeout=timeout)
 
-    def delete(self, endpoint, data=None, params=None):
+    def delete(self, endpoint, data=None, params=None, timeout=None):
         """Realiza uma requisição DELETE."""
-        return self._make_request('DELETE', endpoint, data=data, params=params)
+        return self._make_request('DELETE', endpoint, data=data, params=params, timeout=timeout)
 
     def download_file(self, endpoint, dest_path, params=None, progress_callback=None):
         """Baixa um arquivo binário do servidor.

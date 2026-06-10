@@ -124,20 +124,21 @@ controller.getProdutoDetailedById = async produtoId => {
   return db.conn.task(async t => {
     // Primeiro, obter informações básicas do produto
     const produto = await t.oneOrNone(`
-      SELECT 
+      SELECT
         p.id,
         p.nome,
         p.mi,
         p.inom,
+        p.tipo_escala_id,
         te.nome AS escala,
         p.denominador_escala_especial,
         p.tipo_produto_id,
         p.descricao,
-        p.data_cadastramento, 
+        p.data_cadastramento,
         u1.nome AS usuario_cadastramento,
-        p.data_modificacao, 
+        p.data_modificacao,
         u2.nome AS usuario_modificacao,
-        p.geom
+        ST_AsEWKT(p.geom) AS geom
       FROM acervo.produto p
       INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
       LEFT JOIN dgeo.usuario AS u1 ON u1.uuid = p.usuario_cadastramento_uuid
@@ -151,8 +152,9 @@ controller.getProdutoDetailedById = async produtoId => {
 
     // Obter todas as versões do produto com seus relacionamentos e arquivos
     const versoes = await t.any(`
-      SELECT 
+      SELECT
         v.id AS versao_id,
+        v.produto_id,
         v.uuid_versao,
         v.versao,
         v.nome as nome_versao,
@@ -182,8 +184,10 @@ controller.getProdutoDetailedById = async produtoId => {
     for (const versao of versoes) {
       // Obter relacionamentos
       versao.relacionamentos = await t.any(`
-        SELECT 
+        SELECT
+          vr.id,
           CASE WHEN vr.versao_id_1 = $1 THEN vr.versao_id_2 ELSE vr.versao_id_1 END AS versao_relacionada_id,
+          vr.tipo_relacionamento_id,
           tr.nome AS tipo_relacionamento
         FROM acervo.versao_relacionamento vr
         LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
@@ -297,6 +301,7 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
       a.nome_arquivo,
       a.extensao,
       a.checksum,
+      a.tamanho_mb,
       CONCAT(v.volume, '/', a.nome_arquivo, '.', a.extensao) AS file_path,
       d.download_token
     FROM
@@ -315,6 +320,7 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
     nome: file.nome,
     download_path: file.file_path,
     checksum: file.checksum,
+    tamanho_mb: file.tamanho_mb,
     download_token: file.download_token
   }));
 };
@@ -383,7 +389,7 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
       WHERE v.produto_id IN ($<produtosIds:csv>)
       ORDER BY v.produto_id, v.data_edicao DESC, v.id DESC
     )
-    SELECT a.id AS arquivo_id, a.nome, a.nome_arquivo, a.extensao, a.checksum, va.volume
+    SELECT a.id AS arquivo_id, a.nome, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb, va.volume
     FROM newest_versions nv
     JOIN acervo.arquivo a ON a.versao_id = nv.versao_id
     JOIN acervo.volume_armazenamento va ON a.volume_armazenamento_id = va.id
@@ -432,6 +438,7 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
     nome: file.nome,
     download_path: `${file.volume}/${file.nome_arquivo}.${file.extensao}`,
     checksum: file.checksum,
+    tamanho_mb: file.tamanho_mb,
     download_token: tokenMap[file.arquivo_id]
   }));
 

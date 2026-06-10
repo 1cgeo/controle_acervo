@@ -40,11 +40,16 @@ class FileEditDialog(QDialog, FORM_CLASS):
     def load_combos(self):
         """Carrega os dados nas caixas de combinação (combos)."""
         try:
-            # Carregar tipos de arquivo
+            # Carregar tipos de arquivo. O servidor não permite alterar um
+            # arquivo de/para Tileserver (os CHECKs do banco tornariam o
+            # UPDATE impossível), então o combo só oferece tipos compatíveis
+            era_tileserver = self.arquivo_data.get('tipo_arquivo_id') == 9
             tipo_arquivo_response = self.api_client.get('gerencia/dominio/tipo_arquivo')
             if tipo_arquivo_response and 'dados' in tipo_arquivo_response:
                 self.tipoArquivoComboBox.clear()
                 for tipo in tipo_arquivo_response['dados']:
+                    if (tipo['code'] == 9) != era_tileserver:
+                        continue
                     self.tipoArquivoComboBox.addItem(tipo['nome'], tipo['code'])
             
             # Carregar situações de carregamento
@@ -76,10 +81,14 @@ class FileEditDialog(QDialog, FORM_CLASS):
         if not self.arquivo_data:
             return
             
-        self.idLineEdit.setText(str(self.arquivo_data.get('id', '')))
-        self.nomeLineEdit.setText(self.arquivo_data.get('nome', ''))
-        self.nomeArquivoLineEdit.setText(self.arquivo_data.get('nome_arquivo', ''))
-        self.crsLineEdit.setText(self.arquivo_data.get('crs_original', ''))
+        # `or ''` cobre colunas nuláveis que chegam como None do servidor
+        self.idLineEdit.setText(str(self.arquivo_data.get('id') or ''))
+        self.nomeLineEdit.setText(self.arquivo_data.get('nome') or '')
+        # O endpoint de atualização não aceita alterar nome_arquivo
+        # (renomearia o arquivo físico) — exibição apenas
+        self.nomeArquivoLineEdit.setText(self.arquivo_data.get('nome_arquivo') or '')
+        self.nomeArquivoLineEdit.setReadOnly(True)
+        self.crsLineEdit.setText(self.arquivo_data.get('crs_original') or '')
         
         # Selecionar tipo de arquivo
         tipo_arquivo_id = self.arquivo_data.get('tipo_arquivo_id')
@@ -106,7 +115,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
             self.statusComboBox.setCurrentIndex(index)
             
         # Descrição
-        self.descricaoTextEdit.setPlainText(self.arquivo_data.get('descricao', ''))
+        self.descricaoTextEdit.setPlainText(self.arquivo_data.get('descricao') or '')
         
         # Metadados
         if self.arquivo_data.get('metadado'):
@@ -142,19 +151,8 @@ class FileEditDialog(QDialog, FORM_CLASS):
             QMessageBox.warning(self, "Validação", "O nome do arquivo é obrigatório.")
             return False
             
-        if not self.nomeArquivoLineEdit.text().strip():
-            QMessageBox.warning(self, "Validação", "O nome do arquivo físico é obrigatório.")
-            return False
-            
-        # Validar URL para tileserver
-        is_tileserver = self.tipoArquivoComboBox.currentData() == 9
-        if is_tileserver:
-            nome_arquivo = self.nomeArquivoLineEdit.text().strip()
-            if not nome_arquivo.startswith(('http://', 'https://')):
-                QMessageBox.warning(self, "Validação", "Para arquivos do tipo Tileserver, o nome do arquivo deve ser uma URL (começando com http:// ou https://).")
-                return False
-                
         # Volume é obrigatório para arquivos não-tileserver
+        is_tileserver = self.tipoArquivoComboBox.currentData() == 9
         if not is_tileserver and self.volumeComboBox.currentIndex() < 0:
             QMessageBox.warning(self, "Validação", "O volume de armazenamento é obrigatório.")
             return False

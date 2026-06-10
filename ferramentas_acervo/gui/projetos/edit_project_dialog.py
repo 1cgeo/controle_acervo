@@ -55,8 +55,9 @@ class EditProjectDialog(QDialog, FORM_CLASS):
         self.endDateEdit.setEnabled(not state)
 
     def load_project(self):
-        self.nameLineEdit.setText(self.project_data['nome'])
-        self.descriptionTextEdit.setPlainText(self.project_data['descricao'])
+        self.nameLineEdit.setText(self.project_data.get('nome') or '')
+        # `or ''` cobre descricao nula (coluna nulável no banco)
+        self.descriptionTextEdit.setPlainText(self.project_data.get('descricao') or '')
         self.startDateEdit.setDate(QDateTime.fromString(self.project_data['data_inicio'], Qt.DateFormat.ISODate).date())
         if self.project_data['data_fim']:
             self.endDateEdit.setDate(QDateTime.fromString(self.project_data['data_fim'], Qt.DateFormat.ISODate).date())

@@ -656,8 +656,9 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
             # Preparar dados do produto
             produto_data = {
                 'nome': self.nomeLineEdit.text(),
-                'mi': self.miLineEdit.text(),
-                'inom': self.inomLineEdit.text(),
+                # Server aceita null, mas não string vazia
+                'mi': self.miLineEdit.text() or None,
+                'inom': self.inomLineEdit.text() or None,
                 'tipo_escala_id': self.get_combo_value(self.tipoEscalaComboBox),
                 'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
                 'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
@@ -671,7 +672,7 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
                 versao_data = {
                     'uuid_versao': versao['uuid_versao'],
                     'versao': versao['versao'],
-                    'nome': versao['nome'],
+                    'nome': versao['nome'] or None,
                     'subtipo_produto_id': versao['subtipo_produto_id'],
                     'lote_id': versao['lote_id'],
                     'metadado': versao['metadado'],

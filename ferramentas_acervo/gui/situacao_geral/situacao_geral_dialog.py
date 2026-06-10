@@ -52,9 +52,9 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             self.setCursor(Qt.CursorShape.WaitCursor)
 
             # Obter estados dos checkboxes
-            # Nota: servidor compara req.query.scaleXk === 'true' (string lowercase),
-            # e requests serializa Python True como 'True' (maiusculo), entao enviamos
-            # explicitamente como string lowercase.
+            # Nota: o Joi do servidor converte a query para boolean; enviamos
+            # 'true'/'false' lowercase porque requests serializaria Python True
+            # como 'True', que o Joi.boolean() não aceita.
             params = {
                 'scale25k': str(self.scale25kCheckBox.isChecked()).lower(),
                 'scale50k': str(self.scale50kCheckBox.isChecked()).lower(),

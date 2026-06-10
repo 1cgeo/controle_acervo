@@ -66,9 +66,10 @@ class EditLoteDialog(QDialog, FORM_CLASS):
         self.endDateEdit.setEnabled(not state)
 
     def load_lote(self):
-        self.nameLineEdit.setText(self.lote_data['nome'])
-        self.pitLineEdit.setText(self.lote_data['pit'])
-        self.descriptionTextEdit.setPlainText(self.lote_data['descricao'])
+        self.nameLineEdit.setText(self.lote_data.get('nome') or '')
+        self.pitLineEdit.setText(self.lote_data.get('pit') or '')
+        # `or ''` cobre descricao nula (coluna nulável no banco)
+        self.descriptionTextEdit.setPlainText(self.lote_data.get('descricao') or '')
 
         self.startDateEdit.setDate(QDateTime.fromString(self.lote_data['data_inicio'], Qt.DateFormat.ISODate).date())
         if self.lote_data['data_fim']:

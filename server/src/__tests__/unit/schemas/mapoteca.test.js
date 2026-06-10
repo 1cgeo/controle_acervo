@@ -337,13 +337,13 @@ describe('Mapoteca Schemas', () => {
       expect(error).toBeDefined()
     })
 
-    it('should reject zero quantidade', () => {
+    it('should accept zero quantidade (CHECK do banco é >= 0)', () => {
       const { error } = mapotecaSchema.estoqueMaterial.validate({
         tipo_material_id: 1,
         quantidade: 0,
         localizacao_id: 1
       })
-      expect(error).toBeDefined()
+      expect(error).toBeUndefined()
     })
 
     it('should require tipo_material_id', () => {

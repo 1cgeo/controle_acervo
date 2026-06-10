@@ -54,16 +54,17 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         for row, lote in enumerate(lotes):
             if not isinstance(lote, dict):
                 continue
-            self.lotesTable.setItem(row, 0, QTableWidgetItem(str(lote.get('id', ''))))
-            self.lotesTable.setItem(row, 1, QTableWidgetItem(lote.get('nome', '')))
-            self.lotesTable.setItem(row, 2, QTableWidgetItem(lote.get('pit', '')))
-            self.lotesTable.setItem(row, 3, QTableWidgetItem(str(lote.get('projeto', ''))))
-            self.lotesTable.setItem(row, 4, QTableWidgetItem(lote.get('descricao', '')))
+            self.lotesTable.setItem(row, 0, QTableWidgetItem(str(lote.get('id') or '')))
+            self.lotesTable.setItem(row, 1, QTableWidgetItem(lote.get('nome') or ''))
+            self.lotesTable.setItem(row, 2, QTableWidgetItem(lote.get('pit') or ''))
+            self.lotesTable.setItem(row, 3, QTableWidgetItem(str(lote.get('projeto') or '')))
+            # `or ''` cobre descricao nula (coluna nulável no banco)
+            self.lotesTable.setItem(row, 4, QTableWidgetItem(lote.get('descricao') or ''))
 
-            data_inicio = QDate.fromString(lote.get('data_inicio', ''), Qt.DateFormat.ISODate)
+            data_inicio = QDate.fromString(lote.get('data_inicio') or '', Qt.DateFormat.ISODate)
             self.lotesTable.setItem(row, 5, QTableWidgetItem(data_inicio.toString('yyyy-MM-dd')))
-           
-            data_fim = lote.get('data_fim', '')
+
+            data_fim = lote.get('data_fim') or ''
             if data_fim:
                 data_fim = QDate.fromString(data_fim, Qt.DateFormat.ISODate).toString('yyyy-MM-dd')
             else:
@@ -77,9 +78,9 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         search_text = self.searchLineEdit.text().lower()
         filtered_lotes = [
             lote for lote in self.lotes
-            if search_text in lote.get('nome', '').lower() or 
-               search_text in lote.get('pit', '').lower() or 
-               search_text in lote.get('descricao', '').lower()
+            if search_text in (lote.get('nome') or '').lower() or
+               search_text in (lote.get('pit') or '').lower() or
+               search_text in (lote.get('descricao') or '').lower()
         ]
         self.display_lotes(filtered_lotes)
 

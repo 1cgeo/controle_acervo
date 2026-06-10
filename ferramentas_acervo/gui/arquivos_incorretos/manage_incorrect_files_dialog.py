@@ -108,13 +108,17 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
         self.filesTable.setRowCount(len(files))
         
         for row, file in enumerate(files):
-            # Add file information
-            self.filesTable.setItem(row, 0, QTableWidgetItem(str(file.get('id', ''))))
-            self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome', '')))
-            self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo', '')))
-            self.filesTable.setItem(row, 3, QTableWidgetItem(file.get('extensao', '')))
-            
-            volume_info = f"{file.get('volume_nome', '')} ({file.get('volume', '')})"
+            # `or ''` cobre colunas nuláveis/LEFT JOINs que chegam como None
+            self.filesTable.setItem(row, 0, QTableWidgetItem(str(file.get('id') or '')))
+            self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome') or ''))
+            self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo') or ''))
+            self.filesTable.setItem(row, 3, QTableWidgetItem(file.get('extensao') or ''))
+
+            # Tileserver e registros com volume removido não têm volume
+            if file.get('volume_nome') or file.get('volume'):
+                volume_info = f"{file.get('volume_nome') or ''} ({file.get('volume') or ''})"
+            else:
+                volume_info = "—"
             self.filesTable.setItem(row, 4, QTableWidgetItem(volume_info))
             
             # Get status type based on tipo_status_id
@@ -127,7 +131,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             self.filesTable.setItem(row, 5, QTableWidgetItem(status_type))
             
             # Use the most recent date available
-            date = file.get('data_modificacao') or file.get('data_delete') or file.get('data_cadastramento', '')
+            date = file.get('data_modificacao') or file.get('data_delete') or file.get('data_cadastramento') or ''
             if date:
                 date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')

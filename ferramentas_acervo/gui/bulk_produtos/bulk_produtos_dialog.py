@@ -134,13 +134,22 @@ class BulkCreateProductsDialog(QDialog, FORM_CLASS):
             # Garantir que a geometria tenha o prefixo SRID
             geom_ewkt = geom_text if geom_text.startswith('SRID=') else f"SRID=4674;{geom_text}"
 
+            # Espelha o CHECK do produto: denominador obrigatório apenas
+            # para escala personalizada (tipo 5), nulo nos demais
+            denominador = null_to_none(feature['denominador_escala_especial']) if 'denominador_escala_especial' in field_names else None
+            if feature['tipo_escala_id'] == 5 and denominador is None:
+                invalid_features.append((feature.id(), "denominador_escala_especial é obrigatório para escala personalizada (tipo 5)"))
+                continue
+            if feature['tipo_escala_id'] != 5:
+                denominador = None
+
             # Criar objeto de produto
             produto = {
                 "nome": feature['nome'],
                 "mi": null_to_none(feature['mi']) if 'mi' in field_names else None,
                 "inom": null_to_none(feature['inom']) if 'inom' in field_names else None,
                 "tipo_escala_id": feature['tipo_escala_id'],
-                "denominador_escala_especial": null_to_none(feature['denominador_escala_especial']) if 'denominador_escala_especial' in field_names else None,
+                "denominador_escala_especial": denominador,
                 "tipo_produto_id": feature['tipo_produto_id'],
                 "descricao": null_to_none(feature['descricao']) if 'descricao' in field_names else None,
                 "geom": geom_ewkt

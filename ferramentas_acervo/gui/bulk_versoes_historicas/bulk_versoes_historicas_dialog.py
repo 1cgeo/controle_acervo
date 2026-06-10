@@ -161,7 +161,8 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
                 "subtipo_produto_id": feature['subtipo_produto_id'],
                 "lote_id": null_to_none(feature['lote_id']) if 'lote_id' in field_names else None,
                 "metadado": metadado,
-                "descricao": null_to_none(feature['descricao']) if 'descricao' in field_names else "",
+                # O servidor aceita string vazia, mas não null
+                "descricao": (null_to_none(feature['descricao']) or "") if 'descricao' in field_names else "",
                 "orgao_produtor": feature['orgao_produtor'],
                 "palavras_chave": palavras_chave,
                 "data_criacao": data_criacao,
@@ -249,7 +250,7 @@ class LoadHistoricalVersionsDialog(QDialog, FORM_CLASS):
             "Uma nova camada modelo foi criada com a estrutura necessária.\n\n"
             "Instruções de preenchimento:\n\n"
             "1. O campo 'produto_id' deve conter o ID de um produto existente no sistema\n"
-            "2. O campo 'versao' deve conter o número da versão (Ex: 1.0, 2ª Edição)\n"
+            "2. O campo 'versao' deve usar o formato 'X-SIGLA' (Ex: 1-DSG) ou o formato antigo 'Xª Edição'\n"
             "3. O campo 'nome' deve conter um nome descritivo da versão\n"
             "4. O campo 'lote_id' é opcional e deve conter o ID de um lote existente\n"
             "5. O campo 'descricao' é opcional e pode conter uma descrição detalhada\n"

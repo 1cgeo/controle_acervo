@@ -69,11 +69,13 @@ class VersionEditDialog(QDialog, FORM_CLASS):
         if not self.versao_data:
             return
             
-        self.idLineEdit.setText(str(self.versao_data.get('versao_id', '')))
-        self.uuidLineEdit.setText(self.versao_data.get('uuid_versao', ''))
-        self.versaoLineEdit.setText(self.versao_data.get('versao', ''))
-        self.nomeLineEdit.setText(self.versao_data.get('nome_versao', ''))
-        self.orgaoProdutorLineEdit.setText(self.versao_data.get('orgao_produtor', ''))
+        # `get(chave, '')` não cobre valor None vindo do servidor (colunas
+        # nuláveis) — usar `or ''` para não passar None ao Qt
+        self.idLineEdit.setText(str(self.versao_data.get('versao_id') or ''))
+        self.uuidLineEdit.setText(self.versao_data.get('uuid_versao') or '')
+        self.versaoLineEdit.setText(self.versao_data.get('versao') or '')
+        self.nomeLineEdit.setText(self.versao_data.get('nome_versao') or '')
+        self.orgaoProdutorLineEdit.setText(self.versao_data.get('orgao_produtor') or '')
         
         # Palavras-chave
         if self.versao_data.get('palavras_chave'):
@@ -107,7 +109,7 @@ class VersionEditDialog(QDialog, FORM_CLASS):
             self.dataEdicaoDateEdit.setDate(date.date())
             
         # Descrição
-        self.descricaoTextEdit.setPlainText(self.versao_data.get('versao_descricao', ''))
+        self.descricaoTextEdit.setPlainText(self.versao_data.get('versao_descricao') or '')
         
         # Metadados
         if self.versao_data.get('versao_metadado'):
@@ -161,7 +163,8 @@ class VersionEditDialog(QDialog, FORM_CLASS):
                 'id': int(self.idLineEdit.text()),
                 'uuid_versao': self.uuidLineEdit.text(),
                 'versao': self.versaoLineEdit.text(),
-                'nome': self.nomeLineEdit.text(),
+                # Server aceita null, mas não string vazia
+                'nome': self.nomeLineEdit.text() or None,
                 'tipo_versao_id': self.tipoVersaoComboBox.currentData(),
                 'subtipo_produto_id': self.subtipoComboBox.currentData(),
                 'lote_id': self.loteComboBox.currentData(),

@@ -6,12 +6,12 @@ const Joi = require('joi')
 const models = {}
 
 models.uuidParams = Joi.object().keys({
-  uuid: Joi.string().guid({ version: 'uuidv4' }).required()
+  uuid: Joi.string().guid().required()
 })
 
 models.listaUsuario = Joi.object().keys({
   usuarios: Joi.array()
-    .items(Joi.string().guid({ version: 'uuidv4' }).required())
+    .items(Joi.string().guid().required())
     .unique()
     .required()
     .min(1)
@@ -26,7 +26,7 @@ models.updateUsuarioLista = Joi.object().keys({
   usuarios: Joi.array()
     .items(
       Joi.object().keys({
-        uuid: Joi.string().guid({ version: 'uuidv4' }).required(),
+        uuid: Joi.string().guid().required(),
         administrador: Joi.boolean().strict().required(),
         ativo: Joi.boolean().strict().required()
       })

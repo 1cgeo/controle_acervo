@@ -291,7 +291,7 @@ describe('Arquivo Schemas', () => {
         produto_id: 1,
         versao: {
           uuid_versao: null,
-          versao: '1.0.0',
+          versao: '1-DSG',
           nome: 'Versao teste',
           tipo_versao_id: 1,
           subtipo_produto_id: 1,
@@ -324,6 +324,28 @@ describe('Arquivo Schemas', () => {
       expect(error).toBeDefined()
     })
 
+    it('should reject version format not accepted by the DB trigger', () => {
+      const invalid = JSON.parse(JSON.stringify(validVersion))
+      invalid.versoes[0].versao.versao = '1.0.0'
+      const { error } = arquivoSchema.prepareAddVersion.validate(invalid)
+      expect(error).toBeDefined()
+    })
+
+    it('should accept legacy format for historical versions', () => {
+      const historica = JSON.parse(JSON.stringify(validVersion))
+      historica.versoes[0].versao.tipo_versao_id = 2
+      historica.versoes[0].versao.versao = '2ª Edição'
+      const { error } = arquivoSchema.prepareAddVersion.validate(historica)
+      expect(error).toBeUndefined()
+    })
+
+    it('should reject legacy format for regular versions', () => {
+      const invalid = JSON.parse(JSON.stringify(validVersion))
+      invalid.versoes[0].versao.versao = '2ª Edição'
+      const { error } = arquivoSchema.prepareAddVersion.validate(invalid)
+      expect(error).toBeDefined()
+    })
+
     it('should require produto_id', () => {
       const { error } = arquivoSchema.prepareAddVersion.validate({
         versoes: [{
@@ -350,7 +372,7 @@ describe('Arquivo Schemas', () => {
         },
         versoes: [{
           uuid_versao: null,
-          versao: '1.0.0',
+          versao: '1-DSG',
           nome: 'Versao 1',
           tipo_versao_id: 1,
           subtipo_produto_id: 1,

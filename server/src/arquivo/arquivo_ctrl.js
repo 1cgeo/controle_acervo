@@ -5,7 +5,7 @@ const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, SITUACAO_CARREGAMENTO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
 const { pipeline } = require('stream');
@@ -51,6 +51,28 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
       arquivo.data_modificacao = new Date();
       arquivo.usuario_modificacao_uuid = usuarioUuid;
 
+      const arquivoAtual = await t.oneOrNone(
+        `SELECT tipo_arquivo_id FROM acervo.arquivo WHERE id = $1`,
+        [arquivo.id]
+      );
+
+      if (!arquivoAtual) {
+        throw new AppError('Arquivo não encontrado', httpCode.NotFound);
+      }
+
+      // Os CHECKs de acervo.arquivo exigem nome_arquivo URL e
+      // extensao/tamanho_mb/checksum NULL para Tileserver (e o inverso para os
+      // demais tipos); como este UPDATE não altera esses campos, cruzar a
+      // fronteira do tipo Tileserver sempre violaria um CHECK
+      const eraTileserver = Number(arquivoAtual.tipo_arquivo_id) === TIPO_ARQUIVO.TILESERVER;
+      const seraTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+      if (eraTileserver !== seraTileserver) {
+        throw new AppError(
+          'Não é possível alterar o tipo de um arquivo de/para Tileserver. Exclua o arquivo e cadastre novamente com o tipo correto.',
+          httpCode.BadRequest
+        );
+      }
+
       const colunasArquivo = [
         'nome', 'tipo_arquivo_id', 'volume_armazenamento_id',
         'metadado', 'tipo_status_id', 'situacao_carregamento_id', 'descricao', 
@@ -88,7 +110,8 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
       );
 
       if (existingFiles.length !== arquivoIds.length) {
-        const existingIds = existingFiles.map(f => f.id);
+        // BIGSERIAL retorna como string no driver — normalizar para número
+        const existingIds = existingFiles.map(f => Number(f.id));
         const missingIds = arquivoIds.filter(id => !existingIds.includes(parseInt(id)));
         throw new AppError(`Os seguintes arquivos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
@@ -183,7 +206,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       );
       
       if (versoes.length !== versao_ids.length) {
-        const foundIds = versoes.map(v => v.id);
+        const foundIds = versoes.map(v => Number(v.id));
         const missingIds = versao_ids.filter(id => !foundIds.includes(id));
         throw new AppError(`Versões não encontradas com IDs: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
@@ -219,16 +242,38 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       // Check if any file already exists for its version
       for (const arquivo of arquivos) {
         const arquivoExistente = await t.oneOrNone(
-          `SELECT id FROM acervo.arquivo 
+          `SELECT id FROM acervo.arquivo
            WHERE nome_arquivo = $1 AND versao_id = $2`,
           [arquivo.nome_arquivo, arquivo.versao_id]
         );
-        
+
         if (arquivoExistente) {
           throw new AppError(`Arquivo ${arquivo.nome_arquivo} já existe para a versão ${arquivo.versao_id}`, httpCode.Conflict);
         }
+
+        // Espelha a UNIQUE unique_file_per_version (checksum, versao_id):
+        // sem este check a duplicata só estouraria no confirm, após a
+        // transferência dos arquivos
+        if (arquivo.checksum) {
+          const checksumExistente = await t.oneOrNone(
+            `SELECT id FROM acervo.arquivo
+             WHERE checksum = $1 AND versao_id = $2`,
+            [arquivo.checksum, arquivo.versao_id]
+          );
+
+          if (checksumExistente) {
+            throw new AppError(`Já existe arquivo com o mesmo checksum para a versão ${arquivo.versao_id} (${arquivo.nome_arquivo})`, httpCode.Conflict);
+          }
+        }
       }
-      
+
+      // Duplicatas de checksum dentro do próprio payload
+      const chavesChecksum = arquivos.filter(a => a.checksum).map(a => `${a.checksum}|${a.versao_id}`);
+      const checksumDuplicado = chavesChecksum.filter((c, i) => chavesChecksum.indexOf(c) !== i);
+      if (checksumDuplicado.length > 0) {
+        throw new AppError('A requisição contém arquivos com checksum duplicado para a mesma versão', httpCode.BadRequest);
+      }
+
       // Calculate required space per volume
       const spaceNeededByVolume = {};
       for (const arquivo of arquivos) {
@@ -308,6 +353,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           uuid_arquivo: arquivo.uuid_arquivo || null,
           nome: arquivo.nome,
           nome_arquivo: arquivo.nome_arquivo,
+          tipo_arquivo_id: arquivo.tipo_arquivo_id,
           versao_id: arquivo.versao_id,
           destination_path: destinationPath,
           checksum: arquivo.checksum
@@ -342,7 +388,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
       );
       
       if (produtos.length !== produto_ids.length) {
-        const foundIds = produtos.map(p => p.id);
+        const foundIds = produtos.map(p => Number(p.id));
         const missingIds = produto_ids.filter(id => !foundIds.includes(parseInt(id)));
         throw new AppError(`Produtos não encontrados com IDs: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
@@ -359,12 +405,43 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2',
           [item.produto_id, item.versao.versao]
         );
-        
+
         if (versaoExistente) {
           throw new AppError(`Já existe uma versão com o nome "${item.versao.versao}" para o produto ${item.produto_id}`, httpCode.Conflict);
         }
       }
-      
+
+      // Espelha o trigger acervo.validate_version: versão "N-SIGLA" com N > 1
+      // exige a versão anterior (exceto registros históricos). Sem este check a
+      // falha só estouraria no confirm, após a transferência dos arquivos
+      for (const item of versoes) {
+        const match = /^([0-9]+)-([A-Z]{1,5})$/.exec(item.versao.versao);
+        if (!match || item.versao.tipo_versao_id === TIPO_VERSAO.REGISTRO_HISTORICO) {
+          continue;
+        }
+
+        const numero = parseInt(match[1], 10);
+        if (numero <= 1) {
+          continue;
+        }
+
+        const versaoAnterior = `${numero - 1}-${match[2]}`;
+        const anteriorNoPayload = versoes.some(v =>
+          v.produto_id === item.produto_id && v.versao.versao === versaoAnterior
+        );
+
+        if (!anteriorNoPayload) {
+          const anterior = await t.oneOrNone(
+            'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2',
+            [item.produto_id, versaoAnterior]
+          );
+
+          if (!anterior) {
+            throw new AppError(`Não existe a versão anterior ${versaoAnterior} para o produto ${item.produto_id}`, httpCode.BadRequest);
+          }
+        }
+      }
+
       // Get volumes for all product types
       const productTypes = [...new Set(produtos.map(p => p.tipo_produto_id))];
       const volumeTypes = await t.any(
@@ -497,13 +574,15 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           );
           
           arquivosInfo.push({
+            uuid_arquivo: arquivo.uuid_arquivo || null,
             nome: arquivo.nome,
             nome_arquivo: arquivo.nome_arquivo,
+            tipo_arquivo_id: arquivo.tipo_arquivo_id,
             destination_path: destinationPath,
             checksum: arquivo.checksum
           });
         }
-        
+
         result.push({
           produto_id: item.produto_id,
           versao_info: item.versao,
@@ -545,13 +624,41 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
             'SELECT id FROM acervo.produto WHERE inom = $1',
             [item.produto.inom]
           );
-          
+
           if (existingProduct) {
             throw new AppError(`Já existe um produto com o INOM ${item.produto.inom}`, httpCode.Conflict);
           }
         }
       }
-      
+
+      // Espelha o trigger acervo.validate_version: como os produtos são novos,
+      // versão "N-SIGLA" com N > 1 exige a versão anterior dentro do próprio
+      // payload (exceto registros históricos). Também valida duplicatas
+      for (const item of produtos) {
+        const versoesProduto = item.versoes.map(v => v.versao);
+        const versaoDuplicada = versoesProduto.filter((v, i) => versoesProduto.indexOf(v) !== i);
+        if (versaoDuplicada.length > 0) {
+          throw new AppError(`O produto ${item.produto.inom || item.produto.nome} contém versões duplicadas: ${[...new Set(versaoDuplicada)].join(', ')}`, httpCode.BadRequest);
+        }
+
+        for (const versao of item.versoes) {
+          const match = /^([0-9]+)-([A-Z]{1,5})$/.exec(versao.versao);
+          if (!match || versao.tipo_versao_id === TIPO_VERSAO.REGISTRO_HISTORICO) {
+            continue;
+          }
+
+          const numero = parseInt(match[1], 10);
+          if (numero <= 1) {
+            continue;
+          }
+
+          const versaoAnterior = `${numero - 1}-${match[2]}`;
+          if (!versoesProduto.includes(versaoAnterior)) {
+            throw new AppError(`Não existe a versão anterior ${versaoAnterior} para o produto ${item.produto.inom || item.produto.nome} na solicitação`, httpCode.BadRequest);
+          }
+        }
+      }
+
       // Get volumes for all product types
       const productTypes = [...new Set(produtos.map(p => p.produto.tipo_produto_id))];
       const volumeTypes = await t.any(
@@ -708,13 +815,15 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
             );
             
             arquivosInfo.push({
+              uuid_arquivo: arquivo.uuid_arquivo || null,
               nome: arquivo.nome,
               nome_arquivo: arquivo.nome_arquivo,
+              tipo_arquivo_id: arquivo.tipo_arquivo_id,
               destination_path: destinationPath,
               checksum: arquivo.checksum
             });
           }
-          
+
           versoesInfo.push({
             versao_info: versao,
             arquivos: arquivosInfo
@@ -887,6 +996,10 @@ controller.getProblemUploads = async () => {
 };
 
 controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
+  // Falha de processamento precisa ser persistida fora da transação:
+  // o rollback desfaria um UPDATE de status feito dentro dela
+  let processingFailure = null;
+
   return db.conn.tx(async t => {
     try {
       // Find the upload session
@@ -1101,13 +1214,8 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           
           return result;
         } catch (error) {
-          await t.none(
-            `UPDATE acervo.upload_session 
-             SET status = 'failed', error_message = $1, completed_at = NOW() 
-             WHERE id = $2`,
-            [error.message, session.id]
-          );
-          
+          processingFailure = { sessionId: session.id, message: error.message };
+
           throw error;
         }
       } else {
@@ -1133,6 +1241,17 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
       }
       throw error;
     }
+  }).catch(async error => {
+    if (processingFailure) {
+      await db.conn.none(
+        `UPDATE acervo.upload_session
+         SET status = 'failed', error_message = $1, completed_at = NOW()
+         WHERE id = $2`,
+        [processingFailure.message, processingFailure.sessionId]
+      ).catch(() => {});
+    }
+
+    throw error;
   });
 };
 
@@ -1283,10 +1402,9 @@ async function processAddProduct(t, session) {
       // Insert product into the main produto table
       const { id: produtoId } = await t.one(
         `INSERT INTO acervo.produto(
-          nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, 
-          descricao, data_cadastramento, usuario_cadastramento_uuid, 
-          data_modificacao, usuario_modificacao_uuid, geom
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, $8, CURRENT_TIMESTAMP, $8, ST_GeomFromEWKT($9))
+          nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
+          descricao, data_cadastramento, usuario_cadastramento_uuid, geom
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, $8, ST_GeomFromEWKT($9))
         RETURNING id`,
         [
           produtoTemp.nome,

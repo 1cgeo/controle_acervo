@@ -3,7 +3,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -23,7 +23,7 @@ models.cliente = Joi.object().keys({
   nome: Joi.string().max(255).required(),
   ponto_contato_principal: Joi.string().max(255).allow(null, ''),
   endereco_entrega_principal: Joi.string().max(255).allow(null, ''),
-  tipo_cliente_id: Joi.number().integer().required()
+  tipo_cliente_id: Joi.number().integer().valid(...Object.values(TIPO_CLIENTE)).required()
 })
 
 models.clienteAtualizacao = Joi.object().keys({
@@ -31,7 +31,7 @@ models.clienteAtualizacao = Joi.object().keys({
   nome: Joi.string().max(255).required(),
   ponto_contato_principal: Joi.string().max(255).allow(null, ''),
   endereco_entrega_principal: Joi.string().max(255).allow(null, ''),
-  tipo_cliente_id: Joi.number().integer().required()
+  tipo_cliente_id: Joi.number().integer().valid(...Object.values(TIPO_CLIENTE)).required()
 })
 
 // Esquemas para Pedido
@@ -58,7 +58,7 @@ const pedidoBase = {
     otherwise: Joi.date().raw().min(Joi.ref('data_pedido')).allow(null)
   }),
   cliente_id: Joi.number().integer().required(),
-  situacao_pedido_id: Joi.number().integer().required(),
+  situacao_pedido_id: Joi.number().integer().valid(...Object.values(SITUACAO_PEDIDO)).required(),
   ponto_contato: Joi.string().max(255).allow(null, ''),
   documento_solicitacao: Joi.string().max(255).allow(null, ''),
   documento_solicitacao_nup: Joi.string().max(255).allow(null, ''),
@@ -104,9 +104,9 @@ const produtoPedidoBase = {
   pedido_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().min(1).required(),
   quantidade_fornecida: Joi.number().integer().min(0).allow(null),
-  tipo_midia_id: Joi.number().integer().required(),
-  tipo_midia_fornecida_id: Joi.number().integer().allow(null),
-  forma_entrega_id: Joi.number().integer().allow(null),
+  tipo_midia_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).required(),
+  tipo_midia_fornecida_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).allow(null),
+  forma_entrega_id: Joi.number().integer().valid(...Object.values(FORMA_ENTREGA)).allow(null),
   // raw(): preserva a string da data para evitar shift de fuso na coluna DATE
   data_entrega: Joi.date().raw().allow(null),
   observacao: Joi.string().allow(null, ''),
@@ -228,17 +228,19 @@ models.estoqueMaterialIds = Joi.object().keys({
     .required()
 })
 
+// quantidade aceita 0 (CHECK do banco é >= 0; consumo/transferência podem
+// zerar o estoque e correções manuais precisam poder registrar zero)
 models.estoqueMaterial = Joi.object().keys({
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).positive().required(),
-  localizacao_id: Joi.number().integer().required()
+  quantidade: Joi.number().precision(2).min(0).required(),
+  localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
 })
 
 models.estoqueMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).positive().required(),
-  localizacao_id: Joi.number().integer().required()
+  quantidade: Joi.number().precision(2).min(0).required(),
+  localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
 })
 
 // Esquemas para Consumo de Material

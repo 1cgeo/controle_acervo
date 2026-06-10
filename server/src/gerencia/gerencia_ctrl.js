@@ -276,12 +276,14 @@ controller.verificarConsistencia = async () => {
           await fs.access(deletedFilePath);
           
           // Verificar se está associado a um arquivo existente
+          // (comparação por componentes — concatenar caminhos divergiria do
+          // path.join do Node, que usa backslash no Windows)
           const existingArquivo = await db.conn.oneOrNone(`
-            SELECT a.id 
+            SELECT a.id
             FROM acervo.arquivo a
             JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-            WHERE CONCAT(v.volume, '/', a.nome_arquivo, '.', a.extensao) = $1
-          `, [deletedFilePath]);
+            WHERE v.volume = $1 AND a.nome_arquivo = $2 AND a.extensao = $3
+          `, [arquivoDeletado.volume, arquivoDeletado.nome_arquivo, arquivoDeletado.extensao]);
           
           return {
             id: arquivoDeletado.id,
@@ -325,18 +327,24 @@ controller.verificarConsistencia = async () => {
     }
 
     // Verificar e atualizar arquivos classificados incorretamente como incorretos
+    // (restrito ao universo verificado acima — tileserver não é verificado,
+    // então seu status não pode ser resetado aqui)
     await t.none(`
       UPDATE acervo.arquivo
       SET tipo_status_id = ${STATUS_ARQUIVO.CARREGADO}
       WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
+      AND tipo_arquivo_id != ${TIPO_ARQUIVO.TILESERVER}
       AND id NOT IN (SELECT unnest($1::bigint[]))
     `, [arquivosParaAtualizar.length > 0 ? arquivosParaAtualizar : [-1]]);
 
     // Verificar e atualizar arquivos deletados classificados incorretamente como incorretos
+    // (idem: tileserver e registros sem volume ficam fora da verificação)
     await t.none(`
       UPDATE acervo.arquivo_deletado
       SET tipo_status_id = ${STATUS_ARQUIVO.EXCLUIDO}
       WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
+      AND tipo_arquivo_id != ${TIPO_ARQUIVO.TILESERVER}
+      AND volume_armazenamento_id IS NOT NULL
       AND id NOT IN (SELECT unnest($1::bigint[]))
     `, [arquivosDeletadosParaAtualizar.length > 0 ? arquivosDeletadosParaAtualizar : [-1]]);
 
@@ -362,7 +370,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
           'Arquivo com erro' as tipo,
           COALESCE(a.data_modificacao, a.data_cadastramento) as ordem_data
         FROM acervo.arquivo AS a
-        INNER JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
+        LEFT JOIN acervo.volume_armazenamento AS v ON a.volume_armazenamento_id = v.id
         INNER JOIN acervo.versao AS va ON a.versao_id = va.id
         WHERE a.tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
 
@@ -376,7 +384,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
           'Arquivo deletado com erro' as tipo,
           ad.data_delete as ordem_data
         FROM acervo.arquivo_deletado AS ad
-        INNER JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
+        LEFT JOIN acervo.volume_armazenamento AS v ON ad.volume_armazenamento_id = v.id
         LEFT JOIN acervo.versao AS va ON ad.versao_id = va.id
         WHERE ad.tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
       ),

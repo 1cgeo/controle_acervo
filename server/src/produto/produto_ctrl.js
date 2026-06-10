@@ -48,6 +48,20 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     versao.data_modificacao = new Date();
     versao.usuario_modificacao_uuid = usuarioUuid;
 
+    // Espelha a UNIQUE unique_version_per_product com erro amigável
+    const versaoExistente = await t.oneOrNone(
+      `SELECT id FROM acervo.versao
+       WHERE produto_id = (SELECT produto_id FROM acervo.versao WHERE id = $1)
+       AND versao = $2 AND id != $1`,
+      [versao.id, versao.versao]
+    );
+    if (versaoExistente) {
+      throw new AppError(
+        `Já existe a versão "${versao.versao}" para este produto`,
+        httpCode.Conflict
+      );
+    }
+
     const colunasVersao = [
       'versao', 'nome', 'tipo_versao_id', 'subtipo_produto_id',
       'descricao', 'metadado', 'lote_id',
@@ -76,7 +90,8 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
     );
 
     if (existingProducts.length !== produtoIds.length) {
-      const existingIds = existingProducts.map(p => p.id);
+      // BIGSERIAL retorna como string no driver — normalizar para número
+      const existingIds = existingProducts.map(p => Number(p.id));
       const missingIds = produtoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes produtos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
@@ -190,7 +205,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
     );
 
     if (existingVersions.length !== versaoIds.length) {
-      const existingIds = existingVersions.map(v => v.id);
+      const existingIds = existingVersions.map(v => Number(v.id));
       const missingIds = versaoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`As seguintes versões não foram encontradas: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
@@ -468,9 +483,10 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioU
       }
 
       // Se estiver mudando as versões ou tipo, fazer as mesmas validações
-      if (relacionamentoAtual.versao_id_1 !== item.versao_id_1 ||
-          relacionamentoAtual.versao_id_2 !== item.versao_id_2 ||
-          relacionamentoAtual.tipo_relacionamento_id !== item.tipo_relacionamento_id) {
+      // (BIGINT retorna como string no driver — comparar como número)
+      if (Number(relacionamentoAtual.versao_id_1) !== Number(item.versao_id_1) ||
+          Number(relacionamentoAtual.versao_id_2) !== Number(item.versao_id_2) ||
+          Number(relacionamentoAtual.tipo_relacionamento_id) !== Number(item.tipo_relacionamento_id)) {
 
         // Verificar se as versões existem
         const versao1 = await t.oneOrNone(
@@ -582,6 +598,30 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
   });
 
   return db.conn.tx(async t => {
+    // Espelha a UNIQUE unique_version_per_product com erro amigável
+    // (duplicatas dentro do payload e contra o banco)
+    const chaves = versoesPreparadas.map(v => `${v.produto_id}|${v.versao}`);
+    const duplicadas = chaves.filter((c, i) => chaves.indexOf(c) !== i);
+    if (duplicadas.length > 0) {
+      throw new AppError(
+        `A requisição contém versões duplicadas para o mesmo produto: ${[...new Set(duplicadas)].join(', ')}`,
+        httpCode.BadRequest
+      );
+    }
+
+    for (const v of versoesPreparadas) {
+      const versaoExistente = await t.oneOrNone(
+        `SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2`,
+        [v.produto_id, v.versao]
+      );
+      if (versaoExistente) {
+        throw new AppError(
+          `Já existe a versão "${v.versao}" para o produto ${v.produto_id}`,
+          httpCode.Conflict
+        );
+      }
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
       'orgao_produtor', 'palavras_chave',

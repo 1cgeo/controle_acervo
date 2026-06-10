@@ -104,11 +104,17 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
     def prepare_data_from_layer(self, layer):
         """Prepara os dados da camada para o formato esperado pela API"""
         field_names = [field.name() for field in layer.fields()]
-        
+
+        def valor(feature, campo):
+            """Valor do campo se ele existir na camada; None caso contrário."""
+            if campo not in field_names:
+                return None
+            return null_to_none(feature[campo])
+
         # Dictionary para agrupar dados por produto, versão e arquivo
         produtos_por_grupo = {}
         invalid_features = []
-        
+
         for feature in layer.getFeatures():
             # Verificação de campos não nulos obrigatórios
             non_null_fields = [
@@ -125,11 +131,24 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             
             # Verificar tipo de arquivo 9 (Tileserver) - regras especiais
             tipo_arquivo_id = feature['tipo_arquivo_id']
-            extensao = null_to_none(feature['extensao'])
-            
+            extensao = valor(feature, 'extensao')
+
             if tipo_arquivo_id != 9 and not extensao:
                 invalid_features.append((feature.id(), "Extensão é obrigatória para este tipo de arquivo"))
                 continue
+
+            # Para tileserver o servidor exige extensão nula
+            if tipo_arquivo_id == 9:
+                extensao = None
+
+            # Espelha o CHECK do produto: denominador obrigatório apenas
+            # para escala personalizada (tipo 5), nulo nos demais
+            denominador = valor(feature, 'denominador_escala_especial')
+            if feature['tipo_escala_id'] == 5 and denominador is None:
+                invalid_features.append((feature.id(), "denominador_escala_especial é obrigatório para escala personalizada (tipo 5)"))
+                continue
+            if feature['tipo_escala_id'] != 5:
+                denominador = None
             
             # Verificar se o arquivo existe no caminho especificado
             file_path = feature['path']
@@ -150,7 +169,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                     continue
             
             # Verificar metadado JSON (se existir)
-            metadado = null_to_none(feature['metadado'])
+            metadado = valor(feature, 'metadado')
             if metadado:
                 try:
                     if isinstance(metadado, str):
@@ -158,8 +177,8 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                 except Exception:
                     invalid_features.append((feature.id(), "Metadado não é um JSON válido"))
                     continue
-                    
-            metadado_versao = null_to_none(feature['metadado_versao']) if 'metadado_versao' in field_names else None
+
+            metadado_versao = valor(feature, 'metadado_versao')
             if metadado_versao:
                 try:
                     if isinstance(metadado_versao, str):
@@ -170,8 +189,9 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             
             # Formatar palavras-chave
             palavras_chave = []
-            if null_to_none(feature['palavras_chave']):
-                palavras_chave = [palavra.strip() for palavra in feature['palavras_chave'].split(',')]
+            palavras_chave_raw = valor(feature, 'palavras_chave')
+            if palavras_chave_raw:
+                palavras_chave = [palavra.strip() for palavra in palavras_chave_raw.split(',')]
             
             # Formatar datas para ISO
             try:
@@ -189,7 +209,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             
             # Criar objeto de arquivo para API
             arquivo = {
-                "uuid_arquivo": null_to_none(feature['uuid_arquivo']) if 'uuid_arquivo' in field_names else None,
+                "uuid_arquivo": valor(feature, 'uuid_arquivo'),
                 "nome": feature['nome'],
                 "nome_arquivo": feature['nome_arquivo'],
                 "tipo_arquivo_id": tipo_arquivo_id,
@@ -198,8 +218,8 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                 "checksum": checksum,
                 "metadado": metadado or {},
                 "situacao_carregamento_id": feature['situacao_carregamento_id'],
-                "descricao": null_to_none(feature['descricao_arquivo']) if 'descricao_arquivo' in field_names else "",
-                "crs_original": null_to_none(feature['crs_original']) if 'crs_original' in field_names else ""
+                "descricao": valor(feature, 'descricao_arquivo') or "",
+                "crs_original": valor(feature, 'crs_original') or ""
             }
             
             # Garantir que a geometria tenha o prefixo SRID
@@ -211,28 +231,28 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                 produtos_por_grupo[produto_key] = {
                     "produto": {
                         "nome": feature['produto_nome'],
-                        "mi": null_to_none(feature['mi']) or None,
-                        "inom": null_to_none(feature['inom']) or None,
+                        "mi": valor(feature, 'mi'),
+                        "inom": valor(feature, 'inom'),
                         "tipo_escala_id": feature['tipo_escala_id'],
-                        "denominador_escala_especial": null_to_none(feature['denominador_escala_especial']),
+                        "denominador_escala_especial": denominador,
                         "tipo_produto_id": feature['tipo_produto_id'],
-                        "descricao": null_to_none(feature['descricao_produto']) if 'descricao_produto' in field_names else None,
+                        "descricao": valor(feature, 'descricao_produto'),
                         "geom": geom_ewkt
                     },
                     "versoes": {}
                 }
-            
+
             # Adicionar versão se ainda não existe no dicionário do produto
             if versao_key not in produtos_por_grupo[produto_key]["versoes"]:
                 produtos_por_grupo[produto_key]["versoes"][versao_key] = {
-                    "uuid_versao": null_to_none(feature['uuid_versao']) if 'uuid_versao' in field_names else None,
+                    "uuid_versao": valor(feature, 'uuid_versao'),
                     "versao": feature['versao'],
                     "nome": feature['nome_versao'],
                     "tipo_versao_id": feature['tipo_versao_id'],
                     "subtipo_produto_id": feature['subtipo_produto_id'],
-                    "lote_id": null_to_none(feature['lote_id']),
+                    "lote_id": valor(feature, 'lote_id'),
                     "metadado": metadado_versao or {},
-                    "descricao": null_to_none(feature['descricao_versao']) if 'descricao_versao' in field_names else "",
+                    "descricao": valor(feature, 'descricao_versao') or "",
                     "orgao_produtor": feature['orgao_produtor'],
                     "palavras_chave": palavras_chave,
                     "data_criacao": data_criacao,
@@ -315,17 +335,35 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             QMessageBox.critical(self, "Erro", "Dados incompletos na resposta do servidor")
             return
         
-        # Extrair todos os arquivos para transferência de todos os produtos e versões
+        # Extrair os arquivos para transferência, preservando o contexto de
+        # produto/versão para o match com a camada de origem (nomes podem se
+        # repetir entre versões). Tileserver é URL — sem arquivo físico
         transfer_files = []
         for produto in produtos:
+            produto_info = produto.get('produto_info') or {}
             for versao in produto.get('versoes', []):
-                transfer_files.extend(versao.get('arquivos', []))
-        
+                versao_info = versao.get('versao_info') or {}
+                for arquivo in versao.get('arquivos', []):
+                    if arquivo.get('tipo_arquivo_id') == 9:
+                        continue
+                    transfer_files.append({
+                        **arquivo,
+                        '_produto_nome': produto_info.get('nome'),
+                        '_versao': versao_info.get('versao')
+                    })
+
+        if not transfer_files:
+            # Somente entradas tileserver: nada a transferir
+            self.statusLabel.setText("Nenhum arquivo físico a transferir. Confirmando upload...")
+            self.current_session_uuid = session_uuid
+            self.confirm_upload()
+            return
+
         # Configurar barra de progresso
         self.progressBar.setVisible(True)
         self.progressBar.setRange(0, len(transfer_files))
         self.progressBar.setValue(0)
-        
+
         # Iniciar a transferência de arquivos
         self.statusLabel.setText(f"Transferindo {len(transfer_files)} arquivos...")
         self.transfer_files(session_uuid, transfer_files)
@@ -339,36 +377,33 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         self.current_session_uuid = session_uuid
 
         layer = self.layerComboBox.currentData()
-        field_names = [field.name() for field in layer.fields()]
+
+        # Mapa principal (produto, versão, nome_arquivo) -> caminho de origem;
+        # mapa por nome fica como fallback (nomes podem colidir entre versões)
         files_map = {}
-        
-        # Primeiro, criar um mapa de nomes de arquivos para caminhos de origem
+        fallback_map = {}
         for feature in layer.getFeatures():
-            nome_arquivo = feature['nome_arquivo']
-            nome = feature['nome']
-            path = feature['path']
-            files_map[nome_arquivo] = path
-            files_map[nome] = path  # Usar também o nome como chave alternativa
-        
+            chave = (feature['produto_nome'], feature['versao'], feature['nome_arquivo'])
+            files_map[chave] = feature['path']
+            fallback_map[feature['nome_arquivo']] = feature['path']
+            fallback_map[feature['nome']] = feature['path']
+
+        nao_encontrados = []
         for file_info in files_info:
-            # Obter caminho de origem do mapa
-            source_path = None
             destination_path = file_info.get('destination_path')
             nome_arquivo = file_info.get('nome_arquivo', '')
             nome = file_info.get('nome', '')
-            
-            if nome_arquivo in files_map:
-                source_path = files_map[nome_arquivo]
-            elif nome in files_map:
-                source_path = files_map[nome]
-            
-            if not source_path or (file_info.get('tipo_arquivo_id') != 9 and not os.path.exists(source_path)):
-                self.statusLabel.setText(f"Erro: Não foi possível encontrar o arquivo de origem para {nome_arquivo or nome}")
+
+            chave = (file_info.get('_produto_nome'), file_info.get('_versao'), nome_arquivo)
+            source_path = files_map.get(chave) or fallback_map.get(nome_arquivo) or fallback_map.get(nome)
+
+            if not source_path or not os.path.exists(source_path):
+                nao_encontrados.append(nome_arquivo or nome)
                 continue
-            
+
             # Iniciar thread de transferência
             thread = FileTransferThread(
-                source_path, 
+                source_path,
                 destination_path,
                 file_info.get('checksum')
             )
@@ -376,6 +411,17 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             thread.file_transferred.connect(self.file_transfer_complete)
             self.transfer_threads.append(thread)
             thread.start()
+
+        if nao_encontrados:
+            QMessageBox.warning(
+                self, "Arquivos não encontrados",
+                "Não foi possível localizar o arquivo de origem para:\n" + "\n".join(nao_encontrados)
+            )
+
+        if not self.transfer_threads:
+            self.statusLabel.setText("Erro: nenhum arquivo pôde ser transferido")
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.loadButton.setEnabled(True)
 
     def update_file_progress(self, current, total):
         """Atualiza o progresso da transferência de um arquivo individual"""

@@ -50,9 +50,11 @@ class ImportUsersDialog(QDialog):
         for row, user in enumerate(users):
             checkbox = QCheckBox()
             self.usersTable.setCellWidget(row, 0, checkbox)
-            self.usersTable.setItem(row, 1, QTableWidgetItem(user['tipo_posto_grad']))
-            self.usersTable.setItem(row, 2, QTableWidgetItem(user['nome']))
-            self.usersTable.setItem(row, 3, QTableWidgetItem(user['login']))
+            # O payload vem do servidor de autenticação externo — não assumir
+            # que todas as chaves existem/têm valor
+            self.usersTable.setItem(row, 1, QTableWidgetItem(str(user.get('tipo_posto_grad') or user.get('tipo_posto_grad_id') or '')))
+            self.usersTable.setItem(row, 2, QTableWidgetItem(user.get('nome') or ''))
+            self.usersTable.setItem(row, 3, QTableWidgetItem(user.get('login') or ''))
 
     def filter_users(self):
         search_text = self.searchField.text().lower()

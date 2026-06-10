@@ -3,7 +3,21 @@
 
 const Joi = require("joi");
 
+const { TIPO_ESCALA } = require("../utils/domain_constants");
+
 const models = {};
+
+// Registros históricos aceitam o formato novo "X-YYYYY" ou o antigo "Xª Edição"
+// (espelha o trigger acervo.validate_version)
+const VERSAO_HISTORICA_REGEX = /^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$/;
+
+// Espelha o CHECK de acervo.produto: denominador obrigatório apenas para
+// escala personalizada (tipo 5), NULL nos demais
+const denominadorEscalaEspecial = Joi.alternatives().conditional('tipo_escala_id', {
+  is: TIPO_ESCALA.ESCALA_PERSONALIZADA,
+  then: Joi.number().integer().strict().required(),
+  otherwise: Joi.valid(null).required()
+});
 
 models.produtoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
@@ -11,7 +25,7 @@ models.produtoAtualizacao = Joi.object().keys({
   mi: Joi.string().allow(null, ''),
   inom: Joi.string().allow(null, ''),
   tipo_escala_id: Joi.number().integer().strict().required(),
-  denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+  denominador_escala_especial: denominadorEscalaEspecial,
   tipo_produto_id: Joi.number().integer().strict().required(),
   descricao: Joi.string().allow('').required(),
   geom: Joi.string().allow(null)
@@ -30,7 +44,8 @@ models.versaoAtualizacao = Joi.object().keys({
   orgao_produtor: Joi.string().required(),
   palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
   data_criacao: Joi.date().required(),
-  data_edicao: Joi.date().required()
+  // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
+  data_edicao: Joi.date().min(Joi.ref('data_criacao')).required()
 });
 
 models.produtoIds = Joi.object().keys({
@@ -91,7 +106,7 @@ models.versaoRelacionamentoIds = Joi.object().keys({
 models.versoesHistoricas = Joi.array().items(
   Joi.object().keys({
     uuid_versao: Joi.string().uuid().allow(null).required(),
-    versao: Joi.string().required(),
+    versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
     nome: Joi.string().allow(null).required(),
     produto_id: Joi.number().integer().strict().required(),
     subtipo_produto_id: Joi.number().integer().strict().required(),
@@ -101,7 +116,7 @@ models.versoesHistoricas = Joi.array().items(
     orgao_produtor: Joi.string().required(),
     palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
     data_criacao: Joi.date().required(),
-    data_edicao: Joi.date().required()
+    data_edicao: Joi.date().min(Joi.ref('data_criacao')).required()
   })
 ).required().min(1)
 
@@ -111,14 +126,14 @@ models.produtosVersoesHistoricas = Joi.array().items(
     mi: Joi.string().allow(null),
     inom: Joi.string().allow(null),
     tipo_escala_id: Joi.number().integer().strict().required(),
-    denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+    denominador_escala_especial: denominadorEscalaEspecial,
     tipo_produto_id: Joi.number().integer().strict().required(),
     descricao: Joi.string().allow('').required(),
     geom: Joi.string().required(),
     versoes: Joi.array().items(
       Joi.object().keys({
         uuid_versao: Joi.string().uuid().allow(null).required(),
-        versao: Joi.string().required(),
+        versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
         nome: Joi.string().allow(null).required(),
         subtipo_produto_id: Joi.number().integer().strict().required(),
         lote_id: Joi.number().integer().strict().allow(null).required(),
@@ -127,7 +142,7 @@ models.produtosVersoesHistoricas = Joi.array().items(
         orgao_produtor: Joi.string().required(),
         palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
         data_criacao: Joi.date().required(),
-        data_edicao: Joi.date().required()
+        data_edicao: Joi.date().min(Joi.ref('data_criacao')).required()
       })
     ).min(1).required()
   })
@@ -140,7 +155,7 @@ models.produtos = Joi.object().keys({
       mi: Joi.string().allow(null, '').required(),
       inom: Joi.string().allow(null, '').required(),
       tipo_escala_id: Joi.number().integer().strict().required(),
-      denominador_escala_especial: Joi.number().integer().strict().allow(null).required(),
+      denominador_escala_especial: denominadorEscalaEspecial,
       tipo_produto_id: Joi.number().integer().required(),
       descricao: Joi.string().allow(null, '').required(),
       geom: Joi.string().required()

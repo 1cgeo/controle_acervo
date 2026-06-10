@@ -9,7 +9,8 @@ models.projeto = Joi.object().keys({
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').required(),
   data_inicio: Joi.date().required(),
-  data_fim: Joi.date().allow(null).required(),
+  // Espelha o CHECK data_fim >= data_inicio do banco
+  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -18,7 +19,8 @@ models.projetoAtualizacao = Joi.object().keys({
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').required(),
   data_inicio: Joi.date().required(),
-  data_fim: Joi.date().allow(null).required(),
+  // Espelha o CHECK data_fim >= data_inicio do banco
+  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -36,7 +38,8 @@ models.lote = Joi.object().keys({
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').optional(),
   data_inicio: Joi.date().required(),
-  data_fim: Joi.date().allow(null).required(),
+  // Espelha o CHECK data_fim >= data_inicio do banco
+  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -47,7 +50,8 @@ models.loteAtualizacao = Joi.object().keys({
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').optional(),
   data_inicio: Joi.date().required(),
-  data_fim: Joi.date().allow(null).required(),
+  // Espelha o CHECK data_fim >= data_inicio do banco
+  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 

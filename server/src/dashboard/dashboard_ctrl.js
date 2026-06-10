@@ -174,9 +174,9 @@ controller.getVersionStatistics = async () => {
   return db.conn.task(async t => {
     // Get basic version stats
     const versionStats = await t.one(`
-      SELECT 
-        COUNT(*) AS total_versions,
-        COUNT(DISTINCT produto_id) AS products_with_versions,
+      SELECT
+        COALESCE(SUM(versions_per_product), 0) AS total_versions,
+        COUNT(*) AS products_with_versions,
         ROUND(AVG(versions_per_product), 2) AS avg_versions_per_product,
         MAX(versions_per_product) AS max_versions_per_product
       FROM (

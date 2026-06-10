@@ -164,21 +164,36 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
             versao_grupo_id = feature['versao_grupo_id']
             produto_key = str(produto_grupo_id)
             versao_key = f"{produto_grupo_id}_{versao_grupo_id}"
-            
+
+            # Espelha o CHECK do produto: denominador obrigatório apenas
+            # para escala personalizada (tipo 5), nulo nos demais
+            denominador = null_to_none(feature['denominador_escala_especial']) if 'denominador_escala_especial' in field_names else None
+            if feature['tipo_escala_id'] == 5 and denominador is None:
+                invalid_features.append((feature.id(), "denominador_escala_especial é obrigatório para escala personalizada (tipo 5)"))
+                continue
+            if feature['tipo_escala_id'] != 5:
+                denominador = None
+
+            # O banco exige geometria com SRID 4674 — aceitar WKT puro e prefixar
+            geom_text = feature['geom']
+            geom_ewkt = geom_text if str(geom_text).startswith('SRID=') else f"SRID=4674;{geom_text}"
+
             # Adicionar produto se ainda não existe no dicionário
+            # (mi/inom: o servidor aceita null, mas não string vazia;
+            #  descricao: o servidor aceita string vazia, mas não null)
             if produto_key not in produtos_por_grupo:
                 produtos_por_grupo[produto_key] = {
                     "nome": feature['produto_nome'],
-                    "mi": null_to_none(feature['mi']) if 'mi' in field_names else "",
-                    "inom": null_to_none(feature['inom']) if 'inom' in field_names else "",
+                    "mi": (null_to_none(feature['mi']) or None) if 'mi' in field_names else None,
+                    "inom": (null_to_none(feature['inom']) or None) if 'inom' in field_names else None,
                     "tipo_escala_id": feature['tipo_escala_id'],
-                    "denominador_escala_especial": null_to_none(feature['denominador_escala_especial']) if 'denominador_escala_especial' in field_names else None,
+                    "denominador_escala_especial": denominador,
                     "tipo_produto_id": feature['tipo_produto_id'],
-                    "descricao": null_to_none(feature['descricao_produto']) if 'descricao_produto' in field_names else "",
-                    "geom": feature['geom'],
+                    "descricao": (null_to_none(feature['descricao_produto']) or "") if 'descricao_produto' in field_names else "",
+                    "geom": geom_ewkt,
                     "versoes_por_grupo": {}
                 }
-            
+
             # Adicionar versão se ainda não existe no dicionário do produto
             if versao_key not in produtos_por_grupo[produto_key]["versoes_por_grupo"]:
                 produtos_por_grupo[produto_key]["versoes_por_grupo"][versao_key] = {
@@ -188,7 +203,7 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
                     "subtipo_produto_id": feature['subtipo_produto_id'],
                     "lote_id": null_to_none(feature['lote_id']) if 'lote_id' in field_names else None,
                     "metadado": metadado_versao,
-                    "descricao": null_to_none(feature['descricao_versao']) if 'descricao_versao' in field_names else "",
+                    "descricao": (null_to_none(feature['descricao_versao']) or "") if 'descricao_versao' in field_names else "",
                     "orgao_produtor": feature['orgao_produtor'],
                     "palavras_chave": palavras_chave,
                     "data_criacao": data_criacao,
@@ -303,10 +318,11 @@ class LoadHistoricalProductsDialog(QDialog, FORM_CLASS):
             "2. Para cada versão, atribua um identificador único no campo 'versao_grupo_id'\n"
             "3. Todos os registros de um mesmo produto devem ter o mesmo 'produto_grupo_id'\n"
             "4. Todos os registros de uma mesma versão devem ter o mesmo 'versao_grupo_id'\n"
-            "5. O campo 'geom' deve conter a geometria em formato WKT (ex: POLYGON((...)))\n"
+            "5. O campo 'geom' deve conter a geometria POLYGON em WKT, SRID 4674 (ex: POLYGON((...)))\n"
             "6. Datas devem estar no formato ISO (aaaa-mm-dd)\n"
             "7. O campo 'palavras_chave' deve conter valores separados por vírgula\n"
-            "8. O campo 'metadado_versao' deve conter JSON válido\n\n"
+            "8. O campo 'metadado_versao' deve conter JSON válido\n"
+            "9. O campo 'versao' deve usar o formato 'X-SIGLA' (ex: 1-DSG) ou o formato antigo 'Xª Edição'\n\n"
             "Produtos com versões históricas são registros de produtos e versões passados\n"
             "dos quais temos conhecimento, mas não possuímos os arquivos."
         )

@@ -271,7 +271,8 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                 
             versao_data = {
                 "versao": self.versaoLineEdit.text(),
-                "nome": self.nomeVersaoLineEdit.text(),
+                # Server aceita null, mas não string vazia
+                "nome": self.nomeVersaoLineEdit.text() or None,
                 "tipo_versao_id": self.tipoVersaoComboBox.currentData(),
                 "subtipo_produto_id": self.subtipoProdutoComboBox.currentData(),
                 "lote_id": self.loteComboBox.currentData(),
@@ -314,29 +315,39 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             response = self.api_client.post('arquivo/prepare-upload/version', prepared_data)
             
             if response and 'dados' in response:
-                # Extrair dados de resposta
+                # Extrair dados de resposta (o prepare de versão agrupa os
+                # arquivos dentro de dados.versoes; enviamos uma única versão)
                 session_uuid = response['dados']['session_uuid']
-                arquivos_info = response['dados']['arquivos']
-                
+                versoes_info = response['dados'].get('versoes') or []
+                arquivos_info = versoes_info[0].get('arquivos', []) if versoes_info else []
+
+                # Tileserver é uma URL — não há arquivo físico para transferir
+                arquivos_transferiveis = [
+                    a for a in arquivos_info if a.get('tipo_arquivo_id') != 9
+                ]
+
+                # Armazenar UUID da sessão para confirmação após transferência
+                self.current_session_uuid = session_uuid
+
                 # Configurar barra de progresso
-                self.progressBar.setMaximum(len(arquivos_info))
-                
+                self.progressBar.setMaximum(max(len(arquivos_transferiveis), 1))
+
                 # Fase 2: Transferência
-                self.statusLabel.setText(f"Iniciando transferência de {len(arquivos_info)} arquivos...")
-                
+                self.statusLabel.setText(f"Iniciando transferência de {len(arquivos_transferiveis)} arquivos...")
+
                 # Iniciar threads de transferência
                 self.transfer_threads = []
                 self.arquivos_transferidos = 0
                 self.arquivos_com_falha = 0
                 self.failed_transfers = []
-                
-                for arquivo_info in arquivos_info:
+
+                for arquivo_info in arquivos_transferiveis:
                     # Encontrar o arquivo local correspondente
                     arquivo_local = next(
-                        (a for a in self.arquivos if a['nome'] == arquivo_info['nome']), 
+                        (a for a in self.arquivos if a['nome'] == arquivo_info['nome']),
                         None
                     )
-                    
+
                     if arquivo_local:
                         thread = FileTransferThread(
                             arquivo_local['path'],
@@ -347,9 +358,10 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                         thread.file_transferred.connect(self.file_transfer_complete)
                         self.transfer_threads.append(thread)
                         thread.start()
-                
-                # Armazenar UUID da sessão para confirmação após transferência
-                self.current_session_uuid = session_uuid
+
+                # Sem arquivos físicos (ex.: somente tileserver): confirmar direto
+                if not self.transfer_threads:
+                    self.confirm_upload()
             else:
                 raise Exception("Resposta inválida do servidor")
                 
@@ -394,6 +406,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                 if reply == QMessageBox.StandardButton.Yes:
                     self._retry_failed_transfers()
                 else:
+                    self._cancel_upload_session()
                     self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
                     self.uploadButton.setEnabled(True)
                     self.addFileButton.setEnabled(True)
@@ -425,6 +438,14 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
             self.transfer_threads.append(thread)
             thread.start()
     
+    def _cancel_upload_session(self):
+        """Cancela a sessão de upload no servidor (best effort)."""
+        try:
+            if getattr(self, 'current_session_uuid', None):
+                self.api_client.post('arquivo/cancel-upload', {'session_uuid': self.current_session_uuid})
+        except Exception:
+            pass
+
     def confirm_upload(self):
         """Confirma o upload após transferência dos arquivos."""
         try:

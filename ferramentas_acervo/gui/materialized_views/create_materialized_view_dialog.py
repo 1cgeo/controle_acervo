@@ -44,7 +44,8 @@ class CreateMaterializedViewDialog(QDialog, FORM_CLASS):
                 level=Qgis.MessageLevel.Info
             )
             
-            response = self.api_client.post('acervo/create_materialized_views')
+            # Criar todas as MVs pode demorar mais que o timeout padrão de 30s
+            response = self.api_client.post('acervo/create_materialized_views', timeout=600)
             
             if response:
                 QMessageBox.information(

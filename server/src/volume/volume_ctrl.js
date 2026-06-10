@@ -15,6 +15,28 @@ controller.getVolumeArmazenamento = async () => {
 
 controller.criaVolumeArmazenamento = async volumeArmazenamento => {
   return db.conn.tx(async t => {
+    // Espelha a UNIQUE de acervo.volume_armazenamento(volume) com erro amigável
+    const volumes = volumeArmazenamento.map(v => v.volume)
+    const duplicados = volumes.filter((v, i) => volumes.indexOf(v) !== i)
+    if (duplicados.length > 0) {
+      throw new AppError(
+        `Volumes duplicados na requisição: ${[...new Set(duplicados)].join(', ')}`,
+        httpCode.BadRequest
+      )
+    }
+
+    const existentes = await t.any(
+      `SELECT volume FROM acervo.volume_armazenamento
+      WHERE volume in ($<volumes:csv>)`,
+      { volumes }
+    )
+    if (existentes.length > 0) {
+      throw new AppError(
+        `Já existe volume de armazenamento com o caminho: ${existentes.map(e => e.volume).join(', ')}`,
+        httpCode.Conflict
+      )
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
       'nome', 'volume', 'capacidade_gb'
     ])
@@ -30,6 +52,29 @@ controller.criaVolumeArmazenamento = async volumeArmazenamento => {
 
 controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
   return db.conn.tx(async t => {
+    // Espelha a UNIQUE de acervo.volume_armazenamento(volume) com erro amigável
+    const volumes = volumeArmazenamento.map(v => v.volume)
+    const ids = volumeArmazenamento.map(v => v.id)
+    const duplicados = volumes.filter((v, i) => volumes.indexOf(v) !== i)
+    if (duplicados.length > 0) {
+      throw new AppError(
+        `Volumes duplicados na requisição: ${[...new Set(duplicados)].join(', ')}`,
+        httpCode.BadRequest
+      )
+    }
+
+    const existentes = await t.any(
+      `SELECT volume FROM acervo.volume_armazenamento
+      WHERE volume in ($<volumes:csv>) AND id not in ($<ids:csv>)`,
+      { volumes, ids }
+    )
+    if (existentes.length > 0) {
+      throw new AppError(
+        `Já existe outro volume de armazenamento com o caminho: ${existentes.map(e => e.volume).join(', ')}`,
+        httpCode.Conflict
+      )
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'nome', 'volume', 'capacidade_gb'
     ])
@@ -131,8 +176,43 @@ controller.getVolumeTipoProduto = async () => {
   )
 }
 
+// Espelha o índice único parcial idx_unique_primario (um volume primário por
+// tipo de produto) com erro amigável. excludeIds: ids da própria atualização.
+async function verificaPrimarioUnico (t, volumeTipoProduto, excludeIds = null) {
+  const tiposPrimarios = volumeTipoProduto
+    .filter(v => v.primario)
+    .map(v => v.tipo_produto_id)
+
+  const duplicados = tiposPrimarios.filter((v, i) => tiposPrimarios.indexOf(v) !== i)
+  if (duplicados.length > 0) {
+    throw new AppError(
+      `A requisição contém mais de um volume primário para o(s) tipo(s) de produto: ${[...new Set(duplicados)].join(', ')}`,
+      httpCode.BadRequest
+    )
+  }
+
+  if (tiposPrimarios.length === 0) {
+    return
+  }
+
+  const existentes = await t.any(
+    `SELECT tipo_produto_id FROM acervo.volume_tipo_produto
+    WHERE primario = TRUE AND tipo_produto_id in ($<tiposPrimarios:csv>)
+    ${excludeIds ? 'AND id not in ($<excludeIds:csv>)' : ''}`,
+    { tiposPrimarios, excludeIds }
+  )
+  if (existentes.length > 0) {
+    throw new AppError(
+      `Já existe volume primário para o(s) tipo(s) de produto: ${existentes.map(e => e.tipo_produto_id).join(', ')}`,
+      httpCode.Conflict
+    )
+  }
+}
+
 controller.criaVolumeTipoProduto = async volumeTipoProduto => {
   return db.conn.tx(async t => {
+    await verificaPrimarioUnico(t, volumeTipoProduto)
+
     const cs = new db.pgp.helpers.ColumnSet([
       'tipo_produto_id', 'volume_armazenamento_id', 'primario'
     ])
@@ -148,6 +228,8 @@ controller.criaVolumeTipoProduto = async volumeTipoProduto => {
 
 controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
   return db.conn.tx(async t => {
+    await verificaPrimarioUnico(t, volumeTipoProduto, volumeTipoProduto.map(v => v.id))
+
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'tipo_produto_id', 'volume_armazenamento_id', 'primario'
     ])

@@ -51,16 +51,17 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         for row, project in enumerate(projects):
             if not isinstance(project, dict):
                 continue
-            self.projectsTable.setItem(row, 0, QTableWidgetItem(str(project.get('id', ''))))
-            self.projectsTable.setItem(row, 1, QTableWidgetItem(project.get('nome', '')))
-            self.projectsTable.setItem(row, 2, QTableWidgetItem(project.get('descricao', '')))
-            
+            self.projectsTable.setItem(row, 0, QTableWidgetItem(str(project.get('id') or '')))
+            self.projectsTable.setItem(row, 1, QTableWidgetItem(project.get('nome') or ''))
+            # `or ''` cobre descricao nula (coluna nulável no banco)
+            self.projectsTable.setItem(row, 2, QTableWidgetItem(project.get('descricao') or ''))
+
             # Formatando a data de início
-            data_inicio = QDate.fromString(project.get('data_inicio', ''), Qt.DateFormat.ISODate)
+            data_inicio = QDate.fromString(project.get('data_inicio') or '', Qt.DateFormat.ISODate)
             self.projectsTable.setItem(row, 3, QTableWidgetItem(data_inicio.toString('yyyy-MM-dd')))
-            
+
             # Formatando a data de fim (se existir)
-            data_fim = project.get('data_fim', '')
+            data_fim = project.get('data_fim') or ''
             if data_fim:
                 data_fim = QDate.fromString(data_fim, Qt.DateFormat.ISODate).toString('yyyy-MM-dd')
             else:
@@ -74,7 +75,7 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         search_text = self.searchLineEdit.text().lower()
         filtered_projects = [
             project for project in self.projects
-            if search_text in project.get('nome', '').lower() or search_text in project.get('descricao', '').lower()
+            if search_text in (project.get('nome') or '').lower() or search_text in (project.get('descricao') or '').lower()
         ]
         self.display_projects(filtered_projects)
 

@@ -14,7 +14,7 @@ const {
 const controller = {};
 
 // Situações que contam como entrega efetuada
-const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.ENVIADO, SITUACAO_PEDIDO.CONCLUIDO];
+const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO];
 
 // Filtro "entregue no ano": pedido remetido/concluído cuja data efetiva de
 // entrega (item com fallback no fechamento do pedido) cai no ano consultado.

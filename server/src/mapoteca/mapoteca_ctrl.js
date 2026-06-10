@@ -212,7 +212,10 @@ controller.criaCliente = async (cliente, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'ponto_contato_principal', 'endereco_entrega_principal', 'tipo_cliente_id'
+      'nome',
+      { name: 'ponto_contato_principal', def: null },
+      { name: 'endereco_entrega_principal', def: null },
+      'tipo_cliente_id'
     ]);
 
     const query = db.pgp.helpers.insert(cliente, cs, {
@@ -229,7 +232,10 @@ controller.atualizaCliente = async (cliente, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'ponto_contato_principal', 'endereco_entrega_principal', 'tipo_cliente_id'
+      'nome',
+      { name: 'ponto_contato_principal', def: null },
+      { name: 'endereco_entrega_principal', def: null },
+      'tipo_cliente_id'
     ], { table: { table: 'cliente', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(cliente, cs) + ' WHERE id = $1';
@@ -251,7 +257,8 @@ controller.deleteClientes = async (clienteIds) => {
     );
 
     if (existingClients.length !== clienteIds.length) {
-      const existingIds = existingClients.map(c => c.id);
+      // BIGSERIAL retorna como string no driver — normalizar para número
+      const existingIds = existingClients.map(c => Number(c.id));
       const missingIds = clienteIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes clientes não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
@@ -495,7 +502,7 @@ controller.deletePedidos = async (pedidoIds) => {
     );
 
     if (existingOrders.length !== pedidoIds.length) {
-      const existingIds = existingOrders.map(o => o.id);
+      const existingIds = existingOrders.map(o => Number(o.id));
       const missingIds = pedidoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes pedidos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
@@ -587,7 +594,7 @@ controller.deleteProdutosPedido = async (produtoPedidoIds) => {
     );
 
     if (existingProducts.length !== produtoPedidoIds.length) {
-      const existingIds = existingProducts.map(p => p.id);
+      const existingIds = existingProducts.map(p => Number(p.id));
       const missingIds = produtoPedidoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes produtos de pedido não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
@@ -721,7 +728,7 @@ controller.registrarImpressao = async (registros, usuarioUuid) => {
     );
 
     if (existentes.length !== ids.length) {
-      const encontrados = existentes.map(e => e.id);
+      const encontrados = existentes.map(e => Number(e.id));
       const faltantes = ids.filter(id => !encontrados.includes(id));
       throw new AppError(
         `Os seguintes itens de pedido não foram encontrados: ${faltantes.join(', ')}`,
@@ -791,7 +798,7 @@ controller.deleteImpressoes = async (impressaoIds) => {
     );
 
     if (existentes.length !== impressaoIds.length) {
-      const encontrados = existentes.map(e => e.id);
+      const encontrados = existentes.map(e => Number(e.id));
       const faltantes = impressaoIds.filter(id => !encontrados.includes(parseInt(id)));
       throw new AppError(
         `Os seguintes registros de impressão não foram encontrados: ${faltantes.join(', ')}`,
@@ -905,7 +912,9 @@ controller.getPlotterById = async (plotterId) => {
 controller.criaPlotter = async (plotter, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'ativo', 'nr_serie', 'modelo', 'data_aquisicao', 'vida_util'
+      'ativo', 'nr_serie', 'modelo',
+      { name: 'data_aquisicao', def: null },
+      { name: 'vida_util', def: null }
     ]);
 
     const query = db.pgp.helpers.insert(plotter, cs, {
@@ -920,7 +929,9 @@ controller.criaPlotter = async (plotter, usuarioUuid) => {
 controller.atualizaPlotter = async (plotter, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'ativo', 'nr_serie', 'modelo', 'data_aquisicao', 'vida_util'
+      'ativo', 'nr_serie', 'modelo',
+      { name: 'data_aquisicao', def: null },
+      { name: 'vida_util', def: null }
     ], { table: { table: 'plotter', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(plotter, cs) + ' WHERE id = $1';
@@ -1005,7 +1016,8 @@ controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
     manutencao.usuario_atualizacao_id = usuarioId;
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'plotter_id', 'data_manutencao', 'valor', 'descricao',
+      'plotter_id', 'data_manutencao', 'valor',
+      { name: 'descricao', def: null },
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
@@ -1026,7 +1038,8 @@ controller.atualizaManutencaoPlotter = async (manutencao, usuarioUuid) => {
     manutencao.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'plotter_id', 'data_manutencao', 'valor', 'descricao',
+      'plotter_id', 'data_manutencao', 'valor',
+      { name: 'descricao', def: null },
       'usuario_atualizacao_id', 'data_atualizacao'
     ], { table: { table: 'manutencao_plotter', schema: 'mapoteca' } });
 

@@ -61,10 +61,11 @@ class ProductEditDialog(QDialog, FORM_CLASS):
         if not self.produto_data:
             return
             
-        self.idLineEdit.setText(str(self.produto_data.get('id', '')))
-        self.nomeLineEdit.setText(self.produto_data.get('nome', ''))
-        self.miLineEdit.setText(self.produto_data.get('mi', ''))
-        self.inomLineEdit.setText(self.produto_data.get('inom', ''))
+        # `or ''` cobre colunas nuláveis que chegam como None do servidor
+        self.idLineEdit.setText(str(self.produto_data.get('id') or ''))
+        self.nomeLineEdit.setText(self.produto_data.get('nome') or '')
+        self.miLineEdit.setText(self.produto_data.get('mi') or '')
+        self.inomLineEdit.setText(self.produto_data.get('inom') or '')
         
         # Definir tipo de escala
         tipo_escala_id = self.produto_data.get('tipo_escala_id')
@@ -84,7 +85,7 @@ class ProductEditDialog(QDialog, FORM_CLASS):
             self.tipoProdutoComboBox.setCurrentIndex(index)
             
         # Descrição
-        self.descricaoTextEdit.setPlainText(self.produto_data.get('descricao', ''))
+        self.descricaoTextEdit.setPlainText(self.produto_data.get('descricao') or '')
         
         # Atualizar visibilidade do campo de denominador
         self.toggle_denominador_field()

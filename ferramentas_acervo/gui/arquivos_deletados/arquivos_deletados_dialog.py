@@ -115,37 +115,38 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
         self.filesTable.setRowCount(len(files))
         
         for row, file in enumerate(files):
-            # Add file information
-            self.filesTable.setItem(row, 0, QTableWidgetItem(str(file.get('id', ''))))
-            self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome', '')))
-            self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo', '')))
-            self.filesTable.setItem(row, 3, QTableWidgetItem(file.get('extensao', '')))
-            self.filesTable.setItem(row, 4, QTableWidgetItem(file.get('produto', '')))
-            self.filesTable.setItem(row, 5, QTableWidgetItem(file.get('mi', '')))
-            self.filesTable.setItem(row, 6, QTableWidgetItem(file.get('inom', '')))
-            self.filesTable.setItem(row, 7, QTableWidgetItem(file.get('lote', '')))
-            self.filesTable.setItem(row, 8, QTableWidgetItem(file.get('pit', '')))
-            
-            versao_info = f"{file.get('versao_nome', '')} ({file.get('versao', '')})"
+            # `get(chave, '')` não cobre valor None vindo do servidor (colunas
+            # nuláveis e LEFT JOINs) — usar `or ''` para não passar None ao Qt
+            self.filesTable.setItem(row, 0, QTableWidgetItem(str(file.get('id') or '')))
+            self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome') or ''))
+            self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo') or ''))
+            self.filesTable.setItem(row, 3, QTableWidgetItem(file.get('extensao') or ''))
+            self.filesTable.setItem(row, 4, QTableWidgetItem(file.get('produto') or ''))
+            self.filesTable.setItem(row, 5, QTableWidgetItem(file.get('mi') or ''))
+            self.filesTable.setItem(row, 6, QTableWidgetItem(file.get('inom') or ''))
+            self.filesTable.setItem(row, 7, QTableWidgetItem(file.get('lote') or ''))
+            self.filesTable.setItem(row, 8, QTableWidgetItem(file.get('pit') or ''))
+
+            versao_info = f"{file.get('versao_nome') or ''} ({file.get('versao') or ''})"
             self.filesTable.setItem(row, 9, QTableWidgetItem(versao_info))
-            
-            volume_info = f"{file.get('volume_armazenamento_nome', '')} ({file.get('volume_armazenamento', '')})"
+
+            volume_info = f"{file.get('volume_armazenamento_nome') or ''} ({file.get('volume_armazenamento') or ''})"
             self.filesTable.setItem(row, 10, QTableWidgetItem(volume_info))
-            
+
             tamanho = file.get('tamanho_mb', 0)
             tamanho_formatado = f"{tamanho:.2f}" if tamanho else ""
             self.filesTable.setItem(row, 11, QTableWidgetItem(tamanho_formatado))
-            
+
             # Format the date
-            date = file.get('data_delete', '')
+            date = file.get('data_delete') or ''
             if date:
                 date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
             else:
                 date_formatted = "Sem data"
             self.filesTable.setItem(row, 12, QTableWidgetItem(date_formatted))
-            
-            self.filesTable.setItem(row, 13, QTableWidgetItem(file.get('motivo_exclusao', '')))
+
+            self.filesTable.setItem(row, 13, QTableWidgetItem(file.get('motivo_exclusao') or ''))
             
     def go_to_first_page(self):
         """Navigate to the first page."""
