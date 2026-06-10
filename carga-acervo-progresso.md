@@ -25,3 +25,9 @@ Carga em massa do acervo SCA a partir de `Y:\Produtos_AAAA\`, pasta a pasta, da 
 
 ## Regra de produtos especiais (sem MI)
 `nome_arquivo` inclui a escala — `nomeArquivoPadrao` em `carga/nome_arquivo.cjs` recebe `escalaCode` e gera, por exemplo, `CT_ILHA-DE-SANTA-CATARINA_25k_1dsg` e `CO_CIMH_50k_1dsg`. Para produtos com MI o identificador já codifica a escala, então ela não entra no nome.
+
+## Convenção de `tipo_versao` (decisão 2026-06-10)
+- **Registro Histórico** (`tipo_versao=2`) é reservado para edições que sabemos terem existido (por documento) mas **sem arquivo digital** — criadas pelos endpoints `POST /produtos/versao_historica` e `/produto_versao_historica`, que inserem apenas metadados (sem `arquivo`, sem upload).
+- **Toda edição com arquivo** — inclusive as antigas **T34-700** ("Nª Edição") — é **Regular** (`tipo_versao=1`).
+- As **538** versões que estavam como Registro Histórico (todas com arquivo) foram **reclassificadas para Regular**; hoje não há nenhum registro histórico no acervo. A reclassificação alterou só `tipo_versao_id` (o trigger `validate_version` pula a checagem quando `versao` não muda).
+- **Atenção:** o trigger ainda rejeita *INSERT* de "Nª Edição" como Regular a partir de 2024. Para cadastrar uma nova T34-700 com arquivo no futuro, será preciso reavaliar o trigger.
