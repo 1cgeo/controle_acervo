@@ -11,7 +11,7 @@
 - **CORS allows all origins** — This is intentional. The system runs on an internal local network, so open CORS is acceptable.
 - **DB credentials in QGIS layer URIs** — This is intentional. The plugin connects directly to PostgreSQL to load layers, exposing credentials in the layer URI. Acceptable for an internal network application.
 - **Mapoteca uses `usuario_id` (INTEGER) while Acervo uses `usuario_uuid` (UUID)** — This is intentional. The `dgeo.usuario` table has both `id` (INTEGER PK) and `uuid` (UUID UNIQUE). The `mapoteca` schema references `usuario.id` and the `acervo` schema references `usuario.uuid`. Both are valid foreign key references to the same user. New tables should follow the `acervo` convention (UUID) for consistency.
-- **Client web (`client/`) nao inclui dados de Mapoteca** — A Mapoteca tem seu proprio cliente web separado em `mapoteca/client/` (vanilla JS + Vite, porta dev 3001). O dashboard em `client/` exibe apenas dados do acervo (produtos, versoes, arquivos, projetos, volumes, usuarios). A documentacao consolidada da mapoteca vive em `mapoteca/CLAUDE.md`.
+- **Client web (`acervo_client/`) nao inclui dados de Mapoteca** — A Mapoteca tem seu proprio cliente web separado em `mapoteca_client/` (vanilla JS + Vite, porta dev 3001). O dashboard em `acervo_client/` exibe apenas dados do acervo (produtos, versoes, arquivos, projetos, volumes, usuarios).
 
 ## Business Rules
 
@@ -27,11 +27,11 @@ The system consists of five active components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
 2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 4 desktop integration (Qt6)
-3. **Client** (`client/`) - Vanilla JS SPA with Vite (admin dashboard)
+3. **Acervo Client** (`acervo_client/`) - Vanilla JS SPA with Vite (admin dashboard)
 4. **Mapoteca QGIS Plugin** (`ferramentas_mapoteca/`) - Python/PyQt plugin for QGIS 4 (Qt6): active orders, PDF download for printing, and per-item print quantity tracking (`mapoteca.impressao_item` history — multiple operators can resume work)
-5. **Mapoteca Client** (`mapoteca/client/`) - Vanilla JS SPA with Vite (port 3001): mapoteca dashboard (operational + annual with CSV export), clients, orders (4-step wizard with acervo catalog search), materials/stock/consumption, plotters, and public order lookup by localizador
+5. **Mapoteca Client** (`mapoteca_client/`) - Vanilla JS SPA with Vite (port 3001): mapoteca dashboard (operational + annual with CSV export), clients, orders (4-step wizard with acervo catalog search), materials/stock/consumption, plotters, and public order lookup by localizador
 
-> A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca's dedicated web client lives in `mapoteca/client/` as a vanilla JS + Vite SPA (sibling to the main `client/` dashboard). Do not recreate the React one. See `mapoteca/CLAUDE.md` for the consolidated documentation.
+> A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca's dedicated web client lives in `mapoteca_client/` as a vanilla JS + Vite SPA (sibling to the `acervo_client/` dashboard). Do not recreate the React one.
 
 External dependency: [Auth Server](https://github.com/1cgeo/auth_server) for user authentication.
 
@@ -152,7 +152,8 @@ controle_acervo/
 │   ├── acervo.sql                   # Main archive schema
 │   ├── mapoteca.sql                 # Map library schema
 │   ├── acompanhamento.sql           # Materialized views
-│   └── permissao.sql                # DB permissions
+│   ├── permissao.sql                # DB permissions (main service user)
+│   └── permissao_readonly.sql       # Read-only user grants (QGIS layer URIs)
 ├── mapoteca_client/                 # Vanilla JS + Vite SPA da mapoteca (porta 3001; localStorage @mapoteca-*)
 ├── create_config.js                 # Interactive setup (DB creation, config.env generation)
 ├── create_build.js                  # Client build script
@@ -176,7 +177,7 @@ controle_acervo/
 - **Dev Server**: Nodemon
 - **Linting**: StandardJS (devDependency)
 
-### Client (Dashboard SPA)
+### Acervo Client (Dashboard SPA)
 - **Language**: Vanilla JavaScript (ES modules, no TypeScript)
 - **Build Tool**: Vite 6
 - **Charts**: Chart.js 4
@@ -199,11 +200,11 @@ controle_acervo/
 
 ### Root Level
 ```bash
-npm run install-all       # Install root + server + client + mapoteca/client dependencies
-npm run install-mapoteca  # Install mapoteca/client dependencies only
+npm run install-all       # Install root + server + acervo_client + mapoteca_client dependencies
+npm run install-mapoteca  # Install mapoteca_client dependencies only
 npm run config            # Interactive setup: create DB + config.env
-npm run build             # Build client/ and copy to server/src/build
-npm run build-mapoteca    # Build mapoteca/client/
+npm run build             # Build acervo_client/ and copy to server/src/build
+npm run build-mapoteca    # Build mapoteca_client/
 npm run dev-mapoteca      # Start mapoteca client dev server (port 3001)
 npm start                 # Start production server via PM2
 npm run start-dev         # Start dev server (server only, via nodemon)
@@ -222,21 +223,21 @@ npm run test:routes         # Route-level tests (supertest)
 npm run test:coverage       # Full suite with coverage report
 ```
 
-### Client (`client/`)
+### Acervo Client (`acervo_client/`)
 ```bash
 npm run dev            # Start Vite dev server (port 3000, proxies /api to server)
 npm run build          # Production build to dist/
 npm run preview        # Preview production build
 ```
 
-### Mapoteca Client (`mapoteca/client/`)
+### Mapoteca Client (`mapoteca_client/`)
 ```bash
 npm run dev            # Start Vite dev server (port 3001, proxies /api to server)
 npm run build          # Production build to dist/
 npm run preview        # Preview production build
 npm run lint           # ESLint (--max-warnings 0)
 ```
-See `mapoteca/CLAUDE.md` for the implementation roadmap and conventions specific to this SPA (localStorage prefix `@mapoteca-*`, distinct from the acervo client).
+Conventions specific to this SPA: localStorage prefix `@mapoteca-*` (distinct from the acervo client), same page/component contract as `acervo_client/`.
 
 ## Configuration
 
@@ -248,14 +249,19 @@ DB_PORT=5432           # PostgreSQL port
 DB_NAME=sca            # Database name
 DB_USER=postgres       # Database user
 DB_PASSWORD=***        # Database password
+DB_USER_READONLY=***   # Read-only DB user for QGIS layer URIs (optional; falls back to DB_USER)
+DB_PASSWORD_READONLY=*** # Read-only DB user password (optional)
 JWT_SECRET=***         # JWT signing secret (auto-generated by config script)
 AUTH_SERVER=https://... # External auth server URL
+USE_PROXY=false        # Use system proxy for HTTP connections
 ```
 
 Run `npm run config` to create this file interactively, or use CLI flags:
 ```bash
 node create_config.js --db-server localhost --db-port 5432 --db-user postgres ...
 ```
+
+The config script can also create a read-only PostgreSQL user (`--db-user-readonly` / `--db-password-readonly`, or interactively). Its grants live in `er/permissao_readonly.sql` (SELECT on `acervo`, `dominio` and `public` only — no `dgeo`/`mapoteca`; default privileges cover materialized views created at runtime). The server embeds these credentials in QGIS layer URIs instead of the main `DB_USER`.
 
 ## Architecture Patterns
 
@@ -363,7 +369,7 @@ Dynamically created views `mv_produto_{type}_{scale}` aggregate product/version/
 
 ### Schema Changes
 SQL schema files are in `er/`. Execution order for fresh install:
-1. `versao.sql` → 2. `dominio.sql` → 3. `dgeo.sql` → 4. `acervo.sql` → 5. `acompanhamento.sql` → 6. `mapoteca.sql` → 7. `permissao.sql`
+1. `versao.sql` → 2. `dominio.sql` → 3. `dgeo.sql` → 4. `acervo.sql` → 5. `acompanhamento.sql` → 6. `mapoteca.sql` → 7. `permissao.sql` (→ 8. `permissao_readonly.sql`, opcional, se o usuário somente leitura for configurado)
 
 ## API Endpoints Summary
 
@@ -379,7 +385,7 @@ All endpoints are under `/api/`. Domain endpoints (`GET /api/gerencia/dominio/*`
 | `/api/volumes` | volume | Storage volume configuration |
 | `/api/usuarios` | usuario | User management (admin) |
 | `/api/gerencia` | gerencia | Domain data, deleted files, inconsistency checks |
-| `/api/dashboard` | dashboard | Acervo dashboard analytics (consumed by `client/`) |
+| `/api/dashboard` | dashboard | Acervo dashboard analytics (consumed by `acervo_client/`) |
 | `/api/mapoteca` | mapoteca | Map library: clients, orders, plotters, materials, relatórios anuais (CSV) e controle de impressão (plugin QGIS) |
 | `/api/mapoteca/dashboard` | mapoteca/dashboard | Map library dashboard analytics |
 
@@ -438,7 +444,6 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 - `tutorial_client_dashboard.md` — Web dashboard usage guide (login, tabs, charts, theme)
 - `fluxos_usuario_plugin.md` — User flows of the QGIS plugin dialogs
 - `api_documentation.md` — API endpoint documentation
-- `mapoteca/CLAUDE.md` — Documento consolidado da mapoteca: requisitos, decisões, schema, endpoints e guia do client web
 
 ## Development Setup
 
@@ -446,7 +451,7 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 2. Set up PostgreSQL with PostGIS extension
 3. Run config: `npm run config` (creates DB and `server/config.env`)
 4. Start dev server: `npm run start-dev` (server on configured PORT)
-5. Start client dev server: `cd client && npm run dev` (port 3000, proxies /api to server). Atenção: o proxy do `client/vite.config.js` aponta para `http://localhost:3013`; a porta default gerada pelo `npm run config` é 3015 — ajuste o `target` do proxy se necessário
+5. Start client dev server: `cd acervo_client && npm run dev` (port 3000, proxies /api to server). Atenção: o proxy do `acervo_client/vite.config.js` aponta para `http://localhost:3013`; a porta default gerada pelo `npm run config` é 3015 — ajuste o `target` do proxy se necessário
 6. Install plugin in QGIS: symlink or copy `ferramentas_acervo/` to QGIS plugin directory
 
 ## Important Notes
