@@ -102,6 +102,7 @@ Todos os endpoints são servidos sob `/api`. Documentação Swagger disponível 
 | `/api/dashboard` | dashboard | Analytics do acervo (consumido pelo `client/`) |
 | `/api/mapoteca` | mapoteca | CRUD da mapoteca, relatórios anuais (CSV) e controle de impressão |
 | `/api/mapoteca/dashboard` | mapoteca/dashboard | Analytics da mapoteca |
+| `/api/integracao` | integracao | Rotas públicas (read-only) para o vault da DGEO: cobertura do acervo, produtos finalizados no mês e atendimentos da mapoteca (RPCMTec) |
 
 **Formato padrão de resposta:**
 

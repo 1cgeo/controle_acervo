@@ -77,6 +77,7 @@ ferramentas_mapoteca/**/__pycache__/
 # Bundle analysis
 stats.html
 
-# Dados de carga de produtos (gerados pelos scripts de carga; mantidos só localmente)
-# Os scripts/loaders (carga/*.py, carga/*.cjs) permanecem versionados.
-carga/*.json
+# Carga de produtos: operação pontual de povoamento do acervo (scripts e dados
+# gerados). Mantida só localmente. A metodologia está documentada em
+# regras_carga_produtos.md (versionado).
+carga/

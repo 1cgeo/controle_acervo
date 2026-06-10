@@ -15,6 +15,7 @@ const { gerenciaRoute } = require("./gerencia");
 const { arquivoRoute } = require("./arquivo");
 const { mapotecaRoute, dashboardRoute: mapotecaDashboardRoute } = require("./mapoteca");
 const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
+const { integracaoRoute } = require("./integracao");
 
 const router = express.Router();
 
@@ -50,5 +51,8 @@ router.use("/dashboard", acervoDashboardRoute);
 router.use("/mapoteca/dashboard", mapotecaDashboardRoute);
 
 router.use("/mapoteca", mapotecaRoute);
+
+// Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
+router.use("/integracao", integracaoRoute);
 
 module.exports = router;

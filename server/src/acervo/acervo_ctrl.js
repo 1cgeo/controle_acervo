@@ -527,11 +527,38 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
   });
 };
 
-// Helper function to generate GeoJSON for a specific scale
-// Formato idêntico ao consumido pelo site de produtos (1cgeo/produtos):
-// uma feature por célula da grade (MI), mesclando os produtos de Carta
-// Topográfica e Carta Ortoimagem da mesma MI (no SCA são produtos distintos)
-async function generateGeoJSONForScale(scaleId) {
+// Escalas da carta topográfica sistemática e o sufixo usado nos arquivos do
+// site de produtos. Exportado para a rota pública de integração mapear o nome
+// de escala (ex.: '50k') para o code do domínio.
+const SITUACAO_GERAL_ESCALAS = [
+  { id: TIPO_ESCALA.ESCALA_25K, name: '25k' },
+  { id: TIPO_ESCALA.ESCALA_50K, name: '50k' },
+  { id: TIPO_ESCALA.ESCALA_100K, name: '100k' },
+  { id: TIPO_ESCALA.ESCALA_250K, name: '250k' }
+];
+controller.SITUACAO_GERAL_ESCALAS = SITUACAO_GERAL_ESCALAS;
+
+// Normaliza um identificador (MI/INOM) para comparação tolerante a espaços/caixa
+const normIdentificador = (s) =>
+  s == null ? '' : String(s).trim().toUpperCase().replace(/\s+/g, '');
+
+const situacaoEdicoes = (edicoes) => {
+  if (edicoes.length === 0) return 'Não mapeado';
+  if (edicoes.length === 1) return 'Concluído';
+  return 'Múltiplas edições';
+};
+
+// Núcleo reutilizável da situação geral, usado pela rota ZIP (GET
+// /api/acervo/situacao-geral) e pela rota pública de integração (GET
+// /api/integracao/acervo/situacao_geral). Devolve, por escala, uma feature
+// GeoJSON por célula da grade (MI), mesclando Carta Topográfica e Carta
+// Ortoimagem da mesma MI (no SCA são produtos distintos). Formato de
+// propriedades idêntico aos arquivos do site de produtos (1cgeo/produtos),
+// com os anos de edição vindos de v.data_edicao (finalização).
+//   - incluirGeom: inclui a geometria (cara); a rota pública omite por padrão.
+//   - filtroIds: Set de MI/INOM normalizados; quando presente, limita às folhas
+//     pedidas (modo por identificador da skill consultar-produtos).
+controller.getSituacaoGeralCells = async (scaleId, { incluirGeom = true, filtroIds = null } = {}) => {
   const celulas = await db.conn.any(`
     WITH produtos_escala AS (
       SELECT p.id, p.mi, p.inom, p.geom, p.tipo_produto_id
@@ -555,7 +582,7 @@ async function generateGeoJSONForScale(scaleId) {
     SELECT
       g.mi AS "identificadorMI",
       g.inom AS "identificadorINOM",
-      ST_AsGeoJSON(g.geom)::json AS geometry,
+      ${incluirGeom ? 'ST_AsGeoJSON(g.geom)::json AS geometry,' : ''}
       COALESCE(t.anos, ARRAY[]::int[]) AS "edicoes_topo",
       COALESCE(o.anos, ARRAY[]::int[]) AS "edicoes_orto"
     FROM grade g
@@ -564,37 +591,45 @@ async function generateGeoJSONForScale(scaleId) {
     ORDER BY g.mi
   `, [scaleId]);
 
-  const situacao = (edicoes) => {
-    if (edicoes.length === 0) return 'Não mapeado';
-    if (edicoes.length === 1) return 'Concluído';
-    return 'Múltiplas edições';
-  };
-
   // Construct GeoJSON features (chaves e tipos idênticos aos arquivos do site:
   // id sequencial como string, anos como strings em ordem decrescente)
-  const features = celulas.map((celula, index) => {
-    const edicoesTopo = celula.edicoes_topo.map(ano => ano.toString());
-    const edicoesOrto = celula.edicoes_orto.map(ano => ano.toString());
+  return celulas
+    .filter(c => !filtroIds ||
+      filtroIds.has(normIdentificador(c.identificadorMI)) ||
+      filtroIds.has(normIdentificador(c.identificadorINOM)))
+    .map((celula, index) => {
+      const edicoesTopo = celula.edicoes_topo.map(ano => ano.toString());
+      const edicoesOrto = celula.edicoes_orto.map(ano => ano.toString());
 
-    return {
-      type: "Feature",
-      properties: {
-        id: index.toString(),
-        identificadorMI: celula.identificadorMI,
-        situacao_topo: situacao(edicoesTopo),
-        edicoes_topo: edicoesTopo,
-        situacao_orto: situacao(edicoesOrto),
-        edicoes_orto: edicoesOrto,
-        identificadorINOM: celula.identificadorINOM
-      },
-      geometry: celula.geometry
-    };
-  });
+      const feature = {
+        type: "Feature",
+        properties: {
+          id: index.toString(),
+          identificadorMI: celula.identificadorMI,
+          situacao_topo: situacaoEdicoes(edicoesTopo),
+          edicoes_topo: edicoesTopo,
+          situacao_orto: situacaoEdicoes(edicoesOrto),
+          edicoes_orto: edicoesOrto,
+          identificadorINOM: celula.identificadorINOM
+        }
+      };
+      if (incluirGeom) feature.geometry = celula.geometry;
+      return feature;
+    });
+};
+
+// Helper function to generate GeoJSON for a specific scale
+// Formato idêntico ao consumido pelo site de produtos (1cgeo/produtos):
+// uma feature por célula da grade (MI), mesclando os produtos de Carta
+// Topográfica e Carta Ortoimagem da mesma MI (no SCA são produtos distintos)
+async function generateGeoJSONForScale(scaleId) {
+  const features = await controller.getSituacaoGeralCells(scaleId, { incluirGeom: true });
+  const escala = SITUACAO_GERAL_ESCALAS.find(s => s.id === scaleId);
 
   // Create the GeoJSON structure
   return {
     type: "FeatureCollection",
-    name: `situacao-geral-ct-${scaleId === TIPO_ESCALA.ESCALA_25K ? '25k' : scaleId === TIPO_ESCALA.ESCALA_50K ? '50k' : scaleId === TIPO_ESCALA.ESCALA_100K ? '100k' : '250k'}`,
+    name: `situacao-geral-ct-${escala ? escala.name : scaleId}`,
     features: features
   };
 }

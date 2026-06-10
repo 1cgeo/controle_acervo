@@ -7,6 +7,7 @@
 
 ## Intentional Design Decisions
 
+- **`/api/integracao/*` routes have no authentication** — This is intentional. They are public, read-only GET endpoints created so the DGEO chief's vault (demand routing + RPCMTec generation) can consume the SCA over HTTP without credentials, consistent with the intranet posture. They expose only acervo coverage, products finalized in a month (by `acervo.versao.data_edicao`, not registration date), and the mapoteca aggregate strictly required by the RPCMTec (no client address/contact/print observations). See `server/src/integracao/` and `api_documentation.md` section 21.
 - **`/logs` endpoint has no authentication** — This is intentional. The system runs on an internal local network (intranet), so unauthenticated log access is acceptable.
 - **CORS allows all origins** — This is intentional. The system runs on an internal local network, so open CORS is acceptable.
 - **DB credentials in QGIS layer URIs** — This is intentional. The plugin connects directly to PostgreSQL to load layers, exposing credentials in the layer URI. Acceptable for an internal network application.
@@ -58,6 +59,7 @@ controle_acervo/
 │   │   ├── gerencia/               # Domain data & admin operations
 │   │   ├── mapoteca/               # Map library: CRUD, dashboard, relatórios CSV (query_fragments/relatorio_ctrl) e controle de impressão
 │   │   ├── dashboard/              # Main (acervo) dashboard endpoints
+│   │   ├── integracao/             # Public read-only routes for the DGEO vault (acervo coverage + RPCMTec)
 │   │   ├── utils/                  # Shared utilities (domain_constants, csv_export, error handling, logging, cleanup jobs, generate_localizador, http_client, schema_validation, send_json_and_log, serialize_error_loader, async_handler, async_handler_with_queue)
 │   │   └── __tests__/              # Jest test suite (unit, integration, routes) + helpers
 │   └── package.json
@@ -388,6 +390,7 @@ All endpoints are under `/api/`. Domain endpoints (`GET /api/gerencia/dominio/*`
 | `/api/dashboard` | dashboard | Acervo dashboard analytics (consumed by `acervo_client/`) |
 | `/api/mapoteca` | mapoteca | Map library: clients, orders, plotters, materials, relatórios anuais (CSV) e controle de impressão (plugin QGIS) |
 | `/api/mapoteca/dashboard` | mapoteca/dashboard | Map library dashboard analytics |
+| `/api/integracao` | integracao | Public read-only routes for the DGEO vault: acervo coverage, products finalized in a month (by `data_edicao`), mapoteca deliveries (RPCMTec). No auth (intranet) |
 
 Note: `/api/mapoteca/dashboard` is mounted before `/api/mapoteca` in `routes.js` so Express matches the more specific prefix first. Preserve that ordering when adding new routes.
 

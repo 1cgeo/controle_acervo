@@ -2169,6 +2169,54 @@ Todos os endpoints sao `GET` e requerem **verifyLogin**. Prefixo: `/api/dashboar
 
 ---
 
+## 21. Integracao (rotas publicas para o vault da DGEO)
+
+Rotas **publicas (sem autenticacao), somente leitura**, criadas para a integracao com o vault do Chefe da DGEO (roteamento de demanda e geracao do RPCMTec). A ausencia de `verifyLogin` e intencional e segue a mesma postura do projeto (intranet confiavel; ver `CLAUDE.md`, "Intentional Design Decisions"). Prefixo: `/api/integracao`.
+
+### GET `/api/integracao/acervo/situacao_geral`
+
+Cobertura do acervo folha a folha (substitui o site de produtos `1cgeo/produtos` no roteamento de demanda). Reusa o nucleo da situacao geral do acervo; os anos vem de `acervo.versao.data_edicao`.
+
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `escala` | `25k` \| `50k` \| `100k` \| `250k` | todas | Escala da carta topografica sistematica |
+| `geom` | boolean | `false` | Inclui a geometria (Polygon) de cada folha |
+| `mi` | string (csv) | - | Filtra as folhas por MI (ex.: `2753-1,2754-2`) |
+| `inom` | string (csv) | - | Filtra as folhas por INOM |
+
+**Resposta:** `{ "25k": [...], "50k": [...] }` (uma chave por escala consultada). Cada item e uma Feature GeoJSON com `properties` no mesmo formato dos arquivos do site (`identificadorMI`, `identificadorINOM`, `situacao_topo`, `edicoes_topo[]`, `situacao_orto`, `edicoes_orto[]`) e, quando `geom=true`, `geometry`.
+
+### GET `/api/integracao/acervo/produtos_finalizados`
+
+Produtos finalizados no periodo (RPCMTec 2.2). Criterio = `acervo.versao.data_edicao` (data de finalizacao / informacoes marginais), **nao** `data_cadastramento` (registro no SCA).
+
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `ano` | integer | ano atual | Ano de referencia |
+| `mes` | integer (1-12) | mes atual | Mes de referencia |
+| `cumulativo` | boolean | `true` | `true` = acumulado de janeiro ate o mes (RPCMTec e cumulativo); `false` = apenas o mes |
+| `tipo_produto_id` | integer | - | Filtra por tipo de produto |
+| `tipo_escala_id` | integer | - | Filtra por escala |
+
+**Resposta:** `{ ano, mes, cumulativo, total, resumo: [{ tipo_produto, escala, quantidade }], produtos: [...] }`. Cada produto traz `uuid_versao`, `nome`, `versao`, `mi`, `inom`, `tipo_produto`, `escala`, `subtipo_produto`, `orgao_produtor`, `data_criacao`, `data_edicao`, `data_cadastramento` (apenas referencia), `lote`, `pit`, `projeto` e `situacao_carregamento[]` (situacoes de carregamento distintas dos arquivos da versao, ex.: "Carregado BDGEx Ostensivo").
+
+### GET `/api/integracao/mapoteca/atendimentos`
+
+Atendimentos da mapoteca no periodo (RPCMTec 2.4 militar e 2.7 civil/LAI). Enxuto as colunas do RPCMTec: **nao** retorna endereco, ponto de contato nem observacoes de envio. Considera pedidos entregues (situacao Remetido/Concluido) cuja data efetiva de atendimento (fechamento do pedido, com fallback na maior data de entrega de item) cai no periodo.
+
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `ano` | integer | ano atual | Ano de referencia |
+| `mes` | integer (1-12) | mes atual | Mes de referencia |
+| `cumulativo` | boolean | `true` | `true` = acumulado ate o mes; `false` = apenas o mes |
+
+**Resposta:** `{ ano, mes, cumulativo, militar: [...], civil: [...], resumo: {...} }`.
+- `militar` (2.4): `solicitante` (OM), `documento_solicitacao`, `previsto_pit`, `operacao`, `quantidade`, `situacao`, `data_atendimento`.
+- `civil` (2.7): `solicitante`, `tipo_cliente`, `documento`, `nup`, `quantidade`, `situacao`, `data_atendimento`.
+- `resumo`: `total_pedidos`, `total_produtos`, `pedidos_militares`, `pedidos_civis`.
+
+---
+
 ## Endpoints Auxiliares
 
 ### GET `/logs`
@@ -2212,4 +2260,5 @@ Interface Swagger UI com documentacao interativa da API.
 | Mapoteca - Relatorios | `/api/mapoteca/relatorio` | 4 | verifyLogin |
 | Dashboard Mapoteca | `/api/mapoteca/dashboard` | 13 | verifyLogin |
 | Dashboard Acervo | `/api/dashboard` | 24 | verifyLogin |
-| **Total** | | **162** | |
+| Integracao (vault DGEO) | `/api/integracao` | 3 | Nenhuma (publica, read-only) |
+| **Total** | | **165** | |

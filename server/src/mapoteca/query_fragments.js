@@ -34,10 +34,25 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
 const filtroAno = (coluna) =>
   `${coluna} >= make_date($<ano>, 1, 1) AND ${coluna} < make_date($<ano> + 1, 1, 1)`;
 
+// Filtro sargável por mês de um ano, com modo cumulativo (acumulado no ano até
+// o mês, como exige o RPCMTec). Requer os parâmetros $<ano> e $<mes>.
+//  - cumulativo = false: apenas o mês $<mes> (>= 1º dia, < 1º dia do mês seguinte).
+//  - cumulativo = true:  de 1º de janeiro até o fim do mês $<mes> (inclusive).
+// O limite superior é sempre o início do mês seguinte ($<mes> + 1 via interval),
+// que o Postgres normaliza quando $<mes> = 12 (vira janeiro do ano seguinte).
+const filtroPeriodoMes = (coluna, { cumulativo = false } = {}) => {
+  const inicio = cumulativo
+    ? "make_date($<ano>, 1, 1)"
+    : "make_date($<ano>, $<mes>, 1)";
+  const fim = "(make_date($<ano>, $<mes>, 1) + interval '1 month')";
+  return `${coluna} >= ${inicio} AND ${coluna} < ${fim}`;
+};
+
 module.exports = {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
   dataEntregaEfetiva,
   ESCALA_DISPLAY,
-  filtroAno
+  filtroAno,
+  filtroPeriodoMes
 };
