@@ -418,7 +418,24 @@ class PedidosDialog(QDialog, FORM_CLASS):
                 QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                self.impressao_manager.cancel_downloads()
+                # shutdown() espera as threads terminarem antes de fechar,
+                # evitando QThread viva sem referência (crash nativo)
+                self.impressao_manager.shutdown()
                 self.reject()
         else:
             self.accept()
+
+    def closeEvent(self, event):
+        """Fechar pelo X da barra de título também precisa parar as threads."""
+        if self.download_in_progress:
+            reply = QMessageBox.question(
+                self, "Confirmar Fechamento",
+                "Há downloads em andamento. Tem certeza que deseja fechar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+        self.impressao_manager.shutdown()
+        event.accept()

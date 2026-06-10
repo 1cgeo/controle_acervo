@@ -22,8 +22,8 @@ MESES = {
 }
 
 ETAPAS = [
-    'Imageamento', 'Apoio de Campo', 'Aerotriangulação', 'Restituição',
-    'Reambulação', 'Validação', 'Edição'
+    'Imageamento', 'Aquisição Vetorial', 'Apoio de Campo', 'Aerotriangulação',
+    'Restituição', 'Reambulação', 'Validação', 'Edição'
 ]
 
 
@@ -42,7 +42,8 @@ def extrai(path):
     m = re.search(r'MI[:\s]+(\d{1,4}(?:-\d)?(?:-[NS][EO])?)', flat)
     dados['mi'] = m.group(1) if m else None
 
-    m = re.search(r'Última edição em (\d{1,2}) de (\w+) de (\d{4})', flat)
+    # leiaute 2017: "em 29 de junho de 2017"; leiaute 2020: "em 16 abril de 2020"
+    m = re.search(r'Última edição em (\d{1,2}) (?:de )?(\w+) de (\d{4})', flat)
     if m:
         dia, mes, ano = int(m.group(1)), MESES.get(m.group(2).lower()), int(m.group(3))
         dados['data_edicao'] = f'{ano:04d}-{mes:02d}-{dia:02d}' if mes else str(ano)
@@ -51,7 +52,8 @@ def extrai(path):
 
     etapas = {}
     for etapa in ETAPAS:
-        m = re.search(re.escape(etapa) + r'\s+(.*?)\s+((?:19|20)\d{2})(?=\s|$)', flat)
+        # (?=\D|$): o pypdf às vezes cola o ano à palavra seguinte ("2017Aquisição")
+        m = re.search(re.escape(etapa) + r'\s+(.*?)\s+((?:19|20)\d{2})(?=\D|$)', flat)
         if m:
             etapas[etapa.lower().replace(' ', '_')] = {
                 'executor': m.group(1).strip(' -'),
@@ -59,9 +61,9 @@ def extrai(path):
             }
     dados['etapas_producao'] = etapas
 
-    m = re.search(r'Datum Horizontal\s+([A-Za-z0-9 ]+?)\s+(?:ETAPAS|Datum|$)', flat)
+    m = re.search(r'Datum Horizontal\s+([A-Za-z0-9 ]+?)\s+(?:ETAPAS|Datum|Modelo|$)', flat)
     dados['datum_horizontal'] = m.group(1).strip() if m else None
-    m = re.search(r'Datum Vertical\s+(.+?)(?:\s+[A-Z]{2,}|$)', flat)
+    m = re.search(r'Datum Vertical\s+(.+?)(?:\s+(?:Datum|[A-Z]{2,})|$)', flat)
     dados['datum_vertical'] = m.group(1).strip() if m else None
 
     # data_criacao = último insumo: reambulação > outro campo > imagem

@@ -29,7 +29,7 @@ The system consists of five active components:
 2. **QGIS Plugin** (`ferramentas_acervo/`) - Python/PyQt plugin for QGIS 4 desktop integration (Qt6)
 3. **Acervo Client** (`acervo_client/`) - Vanilla JS SPA with Vite (admin dashboard)
 4. **Mapoteca QGIS Plugin** (`ferramentas_mapoteca/`) - Python/PyQt plugin for QGIS 4 (Qt6): active orders, PDF download for printing, and per-item print quantity tracking (`mapoteca.impressao_item` history — multiple operators can resume work)
-5. **Mapoteca Client** (`mapoteca_client/`) - Vanilla JS SPA with Vite (port 3001): mapoteca dashboard (operational + annual with CSV export), clients, orders (4-step wizard with acervo catalog search), materials/stock/consumption, plotters, and public order lookup by localizador
+5. **Mapoteca Client** (`mapoteca_client/`) - Vanilla JS SPA with Vite (port 3001): mapoteca dashboard (operational — incl. tempo de atendimento, clientes mais ativos, consumo de material e status dos plotters — + annual with CSV export), clients, orders (4-step wizard with acervo catalog search; print-record corrections via histórico de impressão), materials/stock/consumption, plotters, annual reports page (`#/relatorios` — abas Mil/Detalhado/Civ/Temáticos with CSV export), and public order lookup by localizador
 
 > A former React/TypeScript SPA (`client_admin_mapoteca_deprecated/`) existed for Mapoteca administration and has been **fully removed** from the repo. The Mapoteca's dedicated web client lives in `mapoteca_client/` as a vanilla JS + Vite SPA (sibling to the `acervo_client/` dashboard). Do not recreate the React one.
 
@@ -451,7 +451,7 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 2. Set up PostgreSQL with PostGIS extension
 3. Run config: `npm run config` (creates DB and `server/config.env`)
 4. Start dev server: `npm run start-dev` (server on configured PORT)
-5. Start client dev server: `cd acervo_client && npm run dev` (port 3000, proxies /api to server). Atenção: o proxy do `acervo_client/vite.config.js` aponta para `http://localhost:3013`; a porta default gerada pelo `npm run config` é 3015 — ajuste o `target` do proxy se necessário
+5. Start client dev server: `cd acervo_client && npm run dev` (port 3000, proxies /api to server on port 3015 — same default as `npm run config`; adjust the proxy `target` if the server uses another port)
 6. Install plugin in QGIS: symlink or copy `ferramentas_acervo/` to QGIS plugin directory
 
 ## Important Notes

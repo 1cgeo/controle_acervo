@@ -2,7 +2,7 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDockWidget, QTreeWidgetItem, QLabel
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.core import Qgis
 from ..config import Config
 from .panel import PANEL_MAPPING
@@ -16,6 +16,7 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         self.setupUi(self)
         self.iface = iface
         self.api_client = api_client
+        self.open_dialogs = {}
 
         self.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
         self.setWindowTitle(Config.NAME)
@@ -52,8 +53,29 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         panel_info = PANEL_MAPPING.get(panel_name)
         if panel_info:
             try:
-                dialog = panel_info["class"](self.iface, self.api_client)
-                dialog.exec()
+                if panel_info.get("modal"):
+                    # Diálogos marcados como modais (ex: Configurações) mantêm o fluxo bloqueante
+                    dialog = panel_info["class"](self.iface, self.api_client, parent=self.iface.mainWindow())
+                    dialog.exec()
+                    return
+
+                # Estratégia: fecha a instância antiga (se existir) e abre uma nova,
+                # evitando janelas com dados desatualizados
+                existing = self.open_dialogs.pop(panel_name, None)
+                if existing is not None:
+                    existing.close()
+
+                dialog = panel_info["class"](self.iface, self.api_client, parent=self.iface.mainWindow())
+                dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+                dialog.destroyed.connect(
+                    lambda _=None, name=panel_name, ref=dialog: self.remove_dialog_reference(name, ref)
+                )
+                self.open_dialogs[panel_name] = dialog
+                dialog.show()
+                # Trazer para frente e dar foco APÓS o event loop processar o
+                # show() e o clique no painel — senão o foco volta ao QGIS e o
+                # usuário precisa clicar na janela para ativá-la
+                QTimer.singleShot(0, lambda d=dialog: (d.raise_(), d.activateWindow()))
             except Exception as e:
                 self.iface.messageBar().pushMessage(
                     "Erro",
@@ -62,6 +84,12 @@ class DockablePanel(QDockWidget, FORM_CLASS):
                 )
         else:
             self.iface.messageBar().pushMessage("Erro", f"Painel '{panel_name}' não implementado", level=Qgis.MessageLevel.Warning)
+
+    def remove_dialog_reference(self, panel_name, dialog):
+        # Remove a referência apenas se ainda apontar para o diálogo destruído,
+        # para não remover uma instância mais recente aberta com o mesmo nome
+        if self.open_dialogs.get(panel_name) is dialog:
+            del self.open_dialogs[panel_name]
 
     def update_content(self):
         self.populate_tree()

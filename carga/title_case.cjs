@@ -6,8 +6,9 @@
  *  - Primeira letra de cada palavra em maiúscula, demais minúsculas;
  *  - Partículas ficam minúsculas (de, da, do, e, em...), exceto se forem a
  *    primeira palavra;
- *  - Sufixos direcionais (N, S, L, O, NE, NO, SE, SO) e numerais romanos
- *    permanecem em maiúsculas;
+ *  - Sufixos direcionais (N, S, L, E, O, NE, NO, SE, SO) e numerais romanos
+ *    permanecem em maiúsculas ("E" só como sufixo de hífen, ex.: "GUAÍRA-E";
+ *    como palavra isolada continua sendo a conjunção "e");
  *  - Segmentos separados por hífen são tratados individualmente
  *    (ex.: "ROSÁRIO DO SUL-N" -> "Rosário do Sul-N").
  */
@@ -15,12 +16,12 @@
 const PARTICULAS = new Set([
   'a', 'as', 'à', 'às', 'o', 'os', 'ao', 'aos',
   'de', 'da', 'das', 'do', 'dos', 'd',
-  'e', 'em', 'na', 'nas', 'no', 'nos', 'num', 'numa',
+  'e', 'ou', 'em', 'na', 'nas', 'no', 'nos', 'num', 'numa',
   'com', 'para', 'por', 'pela', 'pelas', 'pelo', 'pelos',
   'sem', 'sob', 'sobre', 'entre', 'até', 'desde'
 ])
 
-const DIRECIONAIS = new Set(['N', 'S', 'L', 'O', 'NE', 'NO', 'SE', 'SO'])
+const DIRECIONAIS = new Set(['N', 'S', 'L', 'E', 'O', 'NE', 'NO', 'SE', 'SO'])
 
 const ROMANO = /^[IVXLCDM]+$/
 

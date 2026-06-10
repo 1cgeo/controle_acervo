@@ -206,6 +206,11 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
     def update_file_summary(self):
         """Update file count and size summary based on selected file types.
         Chamado quando checkboxes de tipo de arquivo mudam."""
+        # Não re-preparar a lista durante um download em andamento: isso
+        # substituiria file_infos/tokens no meio do processo
+        if self.download_in_progress:
+            return
+
         # Get selected file types
         selected_types = [int(type_id) for type_id, checkbox in self.file_type_checkboxes.items()
                           if checkbox.isChecked()]
@@ -367,7 +372,20 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         )
         
     def handle_close(self):
-        """Handle close button click."""
+        """Handle close button click.
+
+        Apenas dispara o fechamento — a confirmação e a parada segura das
+        threads acontecem em closeEvent, que também cobre o X da janela.
+        """
+        self.close()
+
+    def closeEvent(self, event):
+        """Garante o encerramento seguro das threads antes de destruir o diálogo.
+
+        O diálogo é criado com WA_DeleteOnClose: fechá-lo com threads de
+        transferência ativas permitia que o GC destruísse um QThread em
+        execução, derrubando o QGIS (crash nativo, sem traceback).
+        """
         if self.download_in_progress:
             reply = QMessageBox.question(
                 self,
@@ -376,13 +394,18 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                self.download_manager.cancel_downloads()
-                self.reject()
-        else:
-            self.accept()
-            
+
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+
+            self.download_in_progress = False
+
+        # Cancela e aguarda as threads de transferência finalizarem (também
+        # cobre threads que ainda estão encerrando após o último arquivo)
+        self.download_manager.shutdown()
+        super().closeEvent(event)
+
     def showEvent(self, event):
         """Handle show event."""
         super().showEvent(event)

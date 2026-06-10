@@ -1,6 +1,7 @@
 import { el } from '@utils/dom.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createPieChart } from '@components/charts/pie-chart.js';
+import { createDataTable } from '@components/data-table.js';
 import { createTabs } from '@components/tabs.js';
 import { formatNumber, formatMonth } from '@utils/format.js';
 import * as dashboardService from '@services/dashboard-service.js';
@@ -8,9 +9,10 @@ import * as dashboardService from '@services/dashboard-service.js';
 /**
  * Render the "Análises Avançadas" tab.
  * @param {HTMLElement} container
- * @returns {Function} cleanup
+ * @returns {{cleanup: Function, refresh: Function}}
  */
 export async function renderAdvancedTab(container) {
+  let disposed = false;
   const cleanups = [];
 
   // --- Product Activity Timeline ---
@@ -39,16 +41,18 @@ export async function renderAdvancedTab(container) {
   timelineChart.querySelector('.chart-card__title')?.remove();
   timelineChart.prepend(timelineHeader);
 
-  async function loadTimeline(months) {
-    timelineChart.update({ loading: true });
+  async function loadTimeline(months, silent = false) {
+    if (!silent) timelineChart.update({ loading: true });
     try {
       const data = await dashboardService.getProdutoActivityTimeline(months);
+      if (disposed) return;
       const formatted = (Array.isArray(data) ? data : []).map(d => ({
         ...d,
         month_label: formatMonth(d.month),
       }));
       timelineChart.update({ data: formatted, loading: false });
     } catch {
+      if (disposed) return;
       timelineChart.update({ data: [], loading: false });
     }
   }
@@ -81,10 +85,11 @@ export async function renderAdvancedTab(container) {
   versionTimelineChart.querySelector('.chart-card__title')?.remove();
   versionTimelineChart.prepend(versionTimelineHeader);
 
-  async function loadVersionTimeline(months) {
-    versionTimelineChart.update({ loading: true });
+  async function loadVersionTimeline(months, silent = false) {
+    if (!silent) versionTimelineChart.update({ loading: true });
     try {
       const data = await dashboardService.getVersaoActivityTimeline(months);
+      if (disposed) return;
       const formatted = (Array.isArray(data) ? data : []).map(d => ({
         ...d,
         month_label: formatMonth(d.month),
@@ -93,6 +98,7 @@ export async function renderAdvancedTab(container) {
       }));
       versionTimelineChart.update({ data: formatted, loading: false });
     } catch {
+      if (disposed) return;
       versionTimelineChart.update({ data: [], loading: false });
     }
   }
@@ -121,11 +127,23 @@ export async function renderAdvancedTab(container) {
 
   container.appendChild(subTabs.element);
 
-  return () => cleanups.forEach(fn => fn());
+  return {
+    cleanup: () => {
+      disposed = true;
+      cleanups.forEach(fn => fn());
+    },
+    refresh: async () => {
+      await Promise.all([
+        loadTimeline(parseInt(timelineSelect.value), true),
+        loadVersionTimeline(parseInt(versionTimelineSelect.value), true),
+        subTabs.refreshActive(),
+      ]);
+    },
+  };
 }
 
 async function renderVersionStats(container) {
-  const cleanups = [];
+  let disposed = false;
 
   // Summary cards placeholder
   const summaryGrid = el('div', { className: 'summary-cards' });
@@ -134,67 +152,79 @@ async function renderVersionStats(container) {
   // Pie charts
   const distPie = createPieChart({ title: 'Distribuição de Versões por Produto', loading: true });
   const typePie = createPieChart({ title: 'Tipos de Versão', loading: true });
-  cleanups.push(() => { if (distPie._cleanup) distPie._cleanup(); });
-  cleanups.push(() => { if (typePie._cleanup) typePie._cleanup(); });
 
   const chartsGrid = el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [distPie, typePie]);
   container.appendChild(chartsGrid);
 
-  try {
-    const data = await dashboardService.getVersionStatistics();
-    const stats = data?.stats || {};
+  async function loadData() {
+    try {
+      const data = await dashboardService.getVersionStatistics();
+      if (disposed) return;
+      const stats = data?.stats || {};
 
-    const cards = [
-      { label: 'Total de Versões', value: formatNumber(stats.total_versions) },
-      { label: 'Produtos com Versões', value: formatNumber(stats.products_with_versions) },
-      { label: 'Média por Produto', value: Number(stats.avg_versions_per_product || 0).toFixed(1) },
-      { label: 'Máximo por Produto', value: formatNumber(stats.max_versions_per_product) },
-    ];
+      const cards = [
+        { label: 'Total de Versões', value: formatNumber(stats.total_versions) },
+        { label: 'Produtos com Versões', value: formatNumber(stats.products_with_versions) },
+        { label: 'Média por Produto', value: Number(stats.avg_versions_per_product || 0).toFixed(1) },
+        { label: 'Máximo por Produto', value: formatNumber(stats.max_versions_per_product) },
+      ];
 
-    for (const card of cards) {
-      summaryGrid.appendChild(
-        el('div', { className: 'summary-card' }, [
-          el('div', { className: 'summary-card__value', textContent: card.value }),
-          el('div', { className: 'summary-card__label', textContent: card.label }),
-        ])
-      );
-    }
+      summaryGrid.innerHTML = '';
+      for (const card of cards) {
+        summaryGrid.appendChild(
+          el('div', { className: 'summary-card' }, [
+            el('div', { className: 'summary-card__value', textContent: card.value }),
+            el('div', { className: 'summary-card__label', textContent: card.label }),
+          ])
+        );
+      }
 
-    // Version distribution pie
-    if (Array.isArray(data?.distribution)) {
-      distPie.update({
-        data: data.distribution.map(d => ({
-          label: `${d.versions_per_product} versões`,
-          value: Number(d.product_count),
-        })),
-        loading: false,
-      });
-    } else {
+      // Version distribution pie
+      if (Array.isArray(data?.distribution)) {
+        distPie.update({
+          data: data.distribution.map(d => ({
+            label: `${d.versions_per_product} versões`,
+            value: Number(d.product_count),
+          })),
+          loading: false,
+        });
+      } else {
+        distPie.update({ data: [], loading: false });
+      }
+
+      // Version type pie
+      if (Array.isArray(data?.type_distribution)) {
+        typePie.update({
+          data: data.type_distribution.map(d => ({
+            label: d.version_type || 'N/A',
+            value: Number(d.version_count),
+          })),
+          loading: false,
+        });
+      } else {
+        typePie.update({ data: [], loading: false });
+      }
+    } catch {
+      if (disposed) return;
       distPie.update({ data: [], loading: false });
-    }
-
-    // Version type pie
-    if (Array.isArray(data?.type_distribution)) {
-      typePie.update({
-        data: data.type_distribution.map(d => ({
-          label: d.version_type || 'N/A',
-          value: Number(d.version_count),
-        })),
-        loading: false,
-      });
-    } else {
       typePie.update({ data: [], loading: false });
     }
-  } catch {
-    distPie.update({ data: [], loading: false });
-    typePie.update({ data: [], loading: false });
   }
 
-  return () => cleanups.forEach(fn => fn());
+  await loadData();
+
+  return {
+    cleanup: () => {
+      disposed = true;
+      if (distPie._cleanup) distPie._cleanup();
+      if (typePie._cleanup) typePie._cleanup();
+    },
+    refresh: loadData,
+  };
 }
 
 async function renderStorageTrends(container) {
-  const cleanups = [];
+  let disposed = false;
 
   const periodSelect = el('select', { className: 'chart-card__select' }, [
     el('option', { value: '6', textContent: '6 meses' }),
@@ -211,7 +241,6 @@ async function renderStorageTrends(container) {
     ],
     loading: true,
   });
-  cleanups.push(() => { if (chart._cleanup) chart._cleanup(); });
 
   const header = el('div', { className: 'chart-card__header' }, [
     el('div', { className: 'chart-card__title', textContent: 'Tendências de Armazenamento' }),
@@ -220,10 +249,11 @@ async function renderStorageTrends(container) {
   chart.querySelector('.chart-card__title')?.remove();
   chart.prepend(header);
 
-  async function loadData(months) {
-    chart.update({ loading: true });
+  async function loadData(months, silent = false) {
+    if (!silent) chart.update({ loading: true });
     try {
       const data = await dashboardService.getStorageGrowthTrends(months);
+      if (disposed) return;
       const formatted = (Array.isArray(data) ? data : []).map(d => ({
         ...d,
         month_label: formatMonth(d.month),
@@ -232,6 +262,7 @@ async function renderStorageTrends(container) {
       }));
       chart.update({ data: formatted, loading: false });
     } catch {
+      if (disposed) return;
       chart.update({ data: [], loading: false });
     }
   }
@@ -241,109 +272,119 @@ async function renderStorageTrends(container) {
 
   container.appendChild(chart);
 
-  return () => cleanups.forEach(fn => fn());
+  return {
+    cleanup: () => {
+      disposed = true;
+      if (chart._cleanup) chart._cleanup();
+    },
+    refresh: () => loadData(parseInt(periodSelect.value), true),
+  };
 }
 
 async function renderProjectStatus(container) {
-  const cleanups = [];
+  let disposed = false;
 
   const summaryGrid = el('div', { className: 'summary-cards' });
   container.appendChild(summaryGrid);
 
   const projectPie = createPieChart({ title: 'Status dos Projetos', loading: true });
   const lotPie = createPieChart({ title: 'Status dos Lotes', loading: true });
-  cleanups.push(() => { if (projectPie._cleanup) projectPie._cleanup(); });
-  cleanups.push(() => { if (lotPie._cleanup) lotPie._cleanup(); });
 
   const chartsGrid = el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [projectPie, lotPie]);
   container.appendChild(chartsGrid);
 
-  try {
-    const data = await dashboardService.getProjectStatusSummary();
+  async function loadData() {
+    try {
+      const data = await dashboardService.getProjectStatusSummary();
+      if (disposed) return;
 
-    // Projects without lots card
-    summaryGrid.appendChild(
-      el('div', { className: 'summary-card' }, [
-        el('div', { className: 'summary-card__value', textContent: formatNumber(data?.projects_without_lots ?? 0) }),
-        el('div', { className: 'summary-card__label', textContent: 'Projetos sem Lotes' }),
-      ])
-    );
+      // Projects without lots card
+      summaryGrid.innerHTML = '';
+      summaryGrid.appendChild(
+        el('div', { className: 'summary-card' }, [
+          el('div', { className: 'summary-card__value', textContent: formatNumber(data?.projects_without_lots ?? 0) }),
+          el('div', { className: 'summary-card__label', textContent: 'Projetos sem Lotes' }),
+        ])
+      );
 
-    // Project status pie
-    if (Array.isArray(data?.project_status)) {
-      projectPie.update({
-        data: data.project_status.map(d => ({
-          label: d.status,
-          value: Number(d.project_count),
-        })),
-        loading: false,
-      });
-    } else {
+      // Project status pie
+      if (Array.isArray(data?.project_status)) {
+        projectPie.update({
+          data: data.project_status.map(d => ({
+            label: d.status,
+            value: Number(d.project_count),
+          })),
+          loading: false,
+        });
+      } else {
+        projectPie.update({ data: [], loading: false });
+      }
+
+      // Lot status pie
+      if (Array.isArray(data?.lot_status)) {
+        lotPie.update({
+          data: data.lot_status.map(d => ({
+            label: d.status,
+            value: Number(d.lot_count),
+          })),
+          loading: false,
+        });
+      } else {
+        lotPie.update({ data: [], loading: false });
+      }
+    } catch {
+      if (disposed) return;
       projectPie.update({ data: [], loading: false });
-    }
-
-    // Lot status pie
-    if (Array.isArray(data?.lot_status)) {
-      lotPie.update({
-        data: data.lot_status.map(d => ({
-          label: d.status,
-          value: Number(d.lot_count),
-        })),
-        loading: false,
-      });
-    } else {
       lotPie.update({ data: [], loading: false });
     }
-  } catch {
-    projectPie.update({ data: [], loading: false });
-    lotPie.update({ data: [], loading: false });
   }
 
-  return () => cleanups.forEach(fn => fn());
+  await loadData();
+
+  return {
+    cleanup: () => {
+      disposed = true;
+      if (projectPie._cleanup) projectPie._cleanup();
+      if (lotPie._cleanup) lotPie._cleanup();
+    },
+    refresh: loadData,
+  };
 }
 
 async function renderUserActivity(container) {
-  try {
-    const data = await dashboardService.getUserActivityMetrics(10);
-    const rows = Array.isArray(data) ? data : [];
+  container.appendChild(el('div', {
+    className: 'data-table-wrapper__title',
+    style: { marginBottom: 'var(--space-sm)' },
+    textContent: 'Top 10 Usuários Mais Ativos',
+  }));
 
-    // Simple HTML table
-    const thead = el('thead', {}, [
-      el('tr', {}, [
-        el('th', { textContent: 'Usuário' }),
-        el('th', { textContent: 'Uploads' }),
-        el('th', { textContent: 'Modificações' }),
-        el('th', { textContent: 'Downloads' }),
-        el('th', { textContent: 'Total' }),
-      ]),
-    ]);
+  const table = createDataTable({
+    columns: [
+      { key: 'usuario', label: 'Usuário', sortable: true, className: 'data-table__cell--truncate' },
+      { key: 'uploads', label: 'Uploads', sortable: true, format: (v) => formatNumber(v) },
+      { key: 'modifications', label: 'Modificações', sortable: true, format: (v) => formatNumber(v) },
+      { key: 'downloads', label: 'Downloads', sortable: true, format: (v) => formatNumber(v) },
+      { key: 'total_activity', label: 'Total', sortable: true, format: (v) => formatNumber(v) },
+    ],
+    loading: true,
+    pageSize: 10,
+    searchable: true,
+  });
+  container.appendChild(table);
 
-    const tbody = el('tbody', {}, rows.map(row =>
-      el('tr', {}, [
-        el('td', { textContent: row.usuario_nome || row.usuario_login || '-' }),
-        el('td', { textContent: formatNumber(row.uploads) }),
-        el('td', { textContent: formatNumber(row.modifications) }),
-        el('td', { textContent: formatNumber(row.downloads) }),
-        el('td', { textContent: formatNumber(row.total_activity) }),
-      ])
-    ));
-
-    const table = el('table', { className: 'data-table' }, [thead, tbody]);
-    const wrapper = el('div', { className: 'data-table-wrapper' }, [
-      el('div', { className: 'data-table-wrapper__header' }, [
-        el('div', { className: 'data-table-wrapper__title', textContent: 'Top 10 Usuários Mais Ativos' }),
-      ]),
-      el('div', { className: 'data-table-scroll' }, [table]),
-    ]);
-
-    container.appendChild(wrapper);
-
-    if (!rows.length) {
-      const emptyMsg = el('div', { className: 'data-table__empty', textContent: 'Sem dados disponíveis' });
-      wrapper.querySelector('.data-table-scroll').innerHTML = '';
-      wrapper.querySelector('.data-table-scroll').appendChild(emptyMsg);
+  const load = async () => {
+    try {
+      const data = await dashboardService.getUserActivityMetrics(10);
+      const rows = (Array.isArray(data) ? data : []).map(row => ({
+        ...row,
+        usuario: row.usuario_nome || row.usuario_login || '-',
+      }));
+      table.update({ data: rows, loading: false });
+    } catch {
+      table.update({ data: [], loading: false });
     }
-  } catch {
-    container.appendChild(el('div', { className: 'data-table__empty', textContent: 'Erro ao carregar dados' }));
-  }
+  };
+
+  await load();
+  return { refresh: load };
 }

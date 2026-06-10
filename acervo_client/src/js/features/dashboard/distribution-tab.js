@@ -6,9 +6,10 @@ import * as dashboardService from '@services/dashboard-service.js';
 /**
  * Render the "Distribuição" tab.
  * @param {HTMLElement} container
- * @returns {Function|void} cleanup
+ * @returns {{cleanup: Function, refresh: Function}}
  */
 export async function renderDistributionTab(container) {
+  let disposed = false;
   const style = getComputedStyle(document.documentElement);
 
   // Create all charts with loading state
@@ -58,83 +59,92 @@ export async function renderDistributionTab(container) {
   container.appendChild(row2);
   container.appendChild(volumeChart);
 
-  // Fetch all data in parallel
-  const [tipoResult, escalaResult, gbTipoResult, fileTypeResult, gbVolumeResult] = await Promise.allSettled([
-    dashboardService.getProdutosTipo(),
-    dashboardService.getProdutosEscala(),
-    dashboardService.getGbTipoProduto(),
-    dashboardService.getArquivosTipoArquivo(),
-    dashboardService.getGbVolume(),
-  ]);
+  async function loadData() {
+    // Fetch all data in parallel
+    const [tipoResult, escalaResult, gbTipoResult, fileTypeResult, gbVolumeResult] = await Promise.allSettled([
+      dashboardService.getProdutosTipo(),
+      dashboardService.getProdutosEscala(),
+      dashboardService.getGbTipoProduto(),
+      dashboardService.getArquivosTipoArquivo(),
+      dashboardService.getGbVolume(),
+    ]);
+    if (disposed) return;
 
-  // Products by type (pie)
-  if (tipoResult.status === 'fulfilled' && Array.isArray(tipoResult.value)) {
-    pieByType.update({
-      data: tipoResult.value.map(d => ({
-        label: d.tipo_produto,
-        value: Number(d.quantidade),
-      })),
-      loading: false,
-    });
-  } else {
-    pieByType.update({ data: [], loading: false });
-  }
+    // Products by type (pie)
+    if (tipoResult.status === 'fulfilled' && Array.isArray(tipoResult.value)) {
+      pieByType.update({
+        data: tipoResult.value.map(d => ({
+          label: d.tipo_produto,
+          value: Number(d.quantidade),
+        })),
+        loading: false,
+      });
+    } else {
+      pieByType.update({ data: [], loading: false });
+    }
 
-  // Products by scale (pie)
-  if (escalaResult.status === 'fulfilled' && Array.isArray(escalaResult.value)) {
-    pieByScale.update({
-      data: escalaResult.value.map(d => ({
-        label: d.tipo_escala,
-        value: Number(d.quantidade),
-      })),
-      loading: false,
-    });
-  } else {
-    pieByScale.update({ data: [], loading: false });
-  }
+    // Products by scale (pie)
+    if (escalaResult.status === 'fulfilled' && Array.isArray(escalaResult.value)) {
+      pieByScale.update({
+        data: escalaResult.value.map(d => ({
+          label: d.tipo_escala,
+          value: Number(d.quantidade),
+        })),
+        loading: false,
+      });
+    } else {
+      pieByScale.update({ data: [], loading: false });
+    }
 
-  // Storage by product type (bar)
-  if (gbTipoResult.status === 'fulfilled' && Array.isArray(gbTipoResult.value)) {
-    barStorageByType.update({
-      data: gbTipoResult.value,
-      loading: false,
-    });
-  } else {
-    barStorageByType.update({ data: [], loading: false });
-  }
+    // Storage by product type (bar)
+    if (gbTipoResult.status === 'fulfilled' && Array.isArray(gbTipoResult.value)) {
+      barStorageByType.update({
+        data: gbTipoResult.value,
+        loading: false,
+      });
+    } else {
+      barStorageByType.update({ data: [], loading: false });
+    }
 
-  // Files by file type (bar)
-  if (fileTypeResult.status === 'fulfilled' && Array.isArray(fileTypeResult.value)) {
-    barFilesByType.update({
-      data: fileTypeResult.value.map(d => ({
+    // Files by file type (bar)
+    if (fileTypeResult.status === 'fulfilled' && Array.isArray(fileTypeResult.value)) {
+      barFilesByType.update({
+        data: fileTypeResult.value.map(d => ({
+          ...d,
+          total_gb: Number(d.total_gb),
+          quantidade: Number(d.quantidade),
+        })),
+        loading: false,
+      });
+    } else {
+      barFilesByType.update({ data: [], loading: false });
+    }
+
+    // Storage by volume (stacked bar)
+    if (gbVolumeResult.status === 'fulfilled' && Array.isArray(gbVolumeResult.value)) {
+      const volumeData = gbVolumeResult.value.map(d => ({
         ...d,
+        nome_volume: d.nome_volume || d.volume,
         total_gb: Number(d.total_gb),
-        quantidade: Number(d.quantidade),
-      })),
-      loading: false,
-    });
-  } else {
-    barFilesByType.update({ data: [], loading: false });
+        available_gb: Math.max(0, Number(d.capacidade_gb_volume || 0) - Number(d.total_gb)),
+      }));
+      volumeChart.update({ data: volumeData, loading: false });
+    } else {
+      volumeChart.update({ data: [], loading: false });
+    }
   }
 
-  // Storage by volume (stacked bar)
-  if (gbVolumeResult.status === 'fulfilled' && Array.isArray(gbVolumeResult.value)) {
-    const volumeData = gbVolumeResult.value.map(d => ({
-      ...d,
-      nome_volume: d.nome_volume || d.volume,
-      total_gb: Number(d.total_gb),
-      available_gb: Math.max(0, Number(d.capacidade_gb_volume || 0) - Number(d.total_gb)),
-    }));
-    volumeChart.update({ data: volumeData, loading: false });
-  } else {
-    volumeChart.update({ data: [], loading: false });
-  }
+  await loadData();
 
-  return () => {
-    if (pieByType._cleanup) pieByType._cleanup();
-    if (pieByScale._cleanup) pieByScale._cleanup();
-    if (barStorageByType._cleanup) barStorageByType._cleanup();
-    if (barFilesByType._cleanup) barFilesByType._cleanup();
-    if (volumeChart._cleanup) volumeChart._cleanup();
+  return {
+    cleanup: () => {
+      disposed = true;
+      if (pieByType._cleanup) pieByType._cleanup();
+      if (pieByScale._cleanup) pieByScale._cleanup();
+      if (barStorageByType._cleanup) barStorageByType._cleanup();
+      if (barFilesByType._cleanup) barFilesByType._cleanup();
+      if (volumeChart._cleanup) volumeChart._cleanup();
+    },
+    refresh: loadData,
   };
 }

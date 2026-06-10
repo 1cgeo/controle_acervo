@@ -7,11 +7,37 @@ import { formatDateTime, formatNumber } from '@utils/format.js';
 import * as dashboardService from '@services/dashboard-service.js';
 
 /**
+ * Build a sub-tab render function for a data table fed by a service call.
+ * Returns { refresh } so the dashboard auto-refresh can re-fetch in place.
+ */
+function tableTab({ tables, key, columns, getData, mapData = null }) {
+  return async (content) => {
+    tables[key] = createDataTable({ columns, loading: true, pageSize: 5, searchable: true });
+    content.appendChild(tables[key]);
+
+    const load = async () => {
+      try {
+        const data = await getData();
+        const rows = Array.isArray(data) ? data : [];
+        tables[key].update({ data: mapData ? rows.map(mapData) : rows, loading: false });
+      } catch {
+        tables[key].update({ data: [], loading: false });
+      }
+    };
+
+    await load();
+    return { refresh: load };
+  };
+}
+
+/**
  * Render the "Atividade" tab.
  * @param {HTMLElement} container
- * @returns {Function} cleanup
+ * @returns {{cleanup: Function, refresh: Function}}
  */
 export async function renderActivityTab(container) {
+  let disposed = false;
+
   // Daily activity chart
   const dailyChart = createBarChart({
     title: 'Atividade Diária (Últimos 30 Dias)',
@@ -27,17 +53,17 @@ export async function renderActivityTab(container) {
 
   // Column definitions
   const fileColumns = [
-    { key: 'nome', label: 'Nome', className: 'data-table__cell--truncate' },
-    { key: 'tamanho_mb', label: 'Tamanho (MB)', format: (v) => v != null ? Number(v).toFixed(2) : '-' },
+    { key: 'nome', label: 'Nome', sortable: true, className: 'data-table__cell--truncate' },
+    { key: 'tamanho_mb', label: 'Tamanho (MB)', sortable: true, format: (v) => v != null ? Number(v).toFixed(2) : '-' },
     { key: 'extensao', label: 'Tipo', format: (v) => v ? v.toUpperCase() : '-' },
-    { key: 'data', label: 'Data', format: (v) => formatDateTime(v) },
+    { key: 'data', label: 'Data', sortable: true, format: (v) => formatDateTime(v) },
   ];
 
   const deleteColumns = [
-    { key: 'nome', label: 'Nome', className: 'data-table__cell--truncate' },
-    { key: 'tamanho_mb', label: 'Tamanho (MB)', format: (v) => v != null ? Number(v).toFixed(2) : '-' },
+    { key: 'nome', label: 'Nome', sortable: true, className: 'data-table__cell--truncate' },
+    { key: 'tamanho_mb', label: 'Tamanho (MB)', sortable: true, format: (v) => v != null ? Number(v).toFixed(2) : '-' },
     { key: 'extensao', label: 'Tipo', format: (v) => v ? v.toUpperCase() : '-' },
-    { key: 'data_delete', label: 'Data', format: (v) => formatDateTime(v) },
+    { key: 'data_delete', label: 'Data', sortable: true, format: (v) => formatDateTime(v) },
     {
       key: 'motivo_exclusao', label: 'Motivo',
       className: 'data-table__cell--truncate',
@@ -46,9 +72,9 @@ export async function renderActivityTab(container) {
   ];
 
   const downloadColumns = [
-    { key: 'id', label: 'ID' },
+    { key: 'id', label: 'ID', sortable: true },
     { key: 'arquivo_id', label: 'Arquivo ID' },
-    { key: 'data_download', label: 'Data Download', format: (v) => formatDateTime(v) },
+    { key: 'data_download', label: 'Data Download', sortable: true, format: (v) => formatDateTime(v) },
     {
       key: 'apagado', label: 'Status',
       format: (v, row) => {
@@ -62,22 +88,22 @@ export async function renderActivityTab(container) {
   ];
 
   const productColumns = [
-    { key: 'nome', label: 'Nome', className: 'data-table__cell--truncate' },
-    { key: 'mi', label: 'MI' },
+    { key: 'nome', label: 'Nome', sortable: true, className: 'data-table__cell--truncate' },
+    { key: 'mi', label: 'MI', sortable: true },
     { key: 'tipo_produto', label: 'Tipo' },
     { key: 'tipo_escala', label: 'Escala' },
-    { key: 'total_versoes', label: 'Versões', format: (v) => formatNumber(v) },
-    { key: 'data_cadastramento', label: 'Data Cadastro', format: (v) => formatDateTime(v) },
+    { key: 'total_versoes', label: 'Versões', sortable: true, format: (v) => formatNumber(v) },
+    { key: 'data_cadastramento', label: 'Data Cadastro', sortable: true, format: (v) => formatDateTime(v) },
   ];
 
   const versionColumns = [
-    { key: 'versao', label: 'Versão' },
-    { key: 'produto_nome', label: 'Produto', className: 'data-table__cell--truncate' },
+    { key: 'versao', label: 'Versão', sortable: true },
+    { key: 'produto_nome', label: 'Produto', sortable: true, className: 'data-table__cell--truncate' },
     { key: 'mi', label: 'MI' },
     { key: 'tipo_versao', label: 'Tipo' },
     { key: 'orgao_produtor', label: 'Órgão Produtor', className: 'data-table__cell--truncate' },
-    { key: 'total_arquivos', label: 'Arquivos', format: (v) => formatNumber(v) },
-    { key: 'data_criacao', label: 'Data Criação', format: (v) => formatDateTime(v) },
+    { key: 'total_arquivos', label: 'Arquivos', sortable: true, format: (v) => formatNumber(v) },
+    { key: 'data_criacao', label: 'Data Criação', sortable: true, format: (v) => formatDateTime(v) },
   ];
 
   // Tables state
@@ -89,98 +115,64 @@ export async function renderActivityTab(container) {
       {
         id: 'produtos',
         label: 'Produtos Recentes',
-        render: async (content) => {
-          tables.produtos = createDataTable({ columns: productColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.produtos);
-          try {
-            const data = await dashboardService.getUltimosProdutos();
-            tables.produtos.update({ data: Array.isArray(data) ? data : [], loading: false });
-          } catch {
-            tables.produtos.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'produtos',
+          columns: productColumns,
+          getData: () => dashboardService.getUltimosProdutos(),
+        }),
       },
       {
         id: 'versoes',
         label: 'Versões Recentes',
-        render: async (content) => {
-          tables.versoes = createDataTable({ columns: versionColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.versoes);
-          try {
-            const data = await dashboardService.getUltimasVersoes();
-            tables.versoes.update({ data: Array.isArray(data) ? data : [], loading: false });
-          } catch {
-            tables.versoes.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'versoes',
+          columns: versionColumns,
+          getData: () => dashboardService.getUltimasVersoes(),
+        }),
       },
       {
         id: 'uploads',
         label: 'Uploads Recentes',
-        render: async (content) => {
-          tables.uploads = createDataTable({ columns: fileColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.uploads);
-          try {
-            const data = await dashboardService.getUltimosCarregamentos();
-            tables.uploads.update({
-              data: (Array.isArray(data) ? data : []).map(d => ({
-                ...d,
-                data: d.data_cadastramento,
-              })),
-              loading: false,
-            });
-          } catch {
-            tables.uploads.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'uploads',
+          columns: fileColumns,
+          getData: () => dashboardService.getUltimosCarregamentos(),
+          mapData: (d) => ({ ...d, data: d.data_cadastramento }),
+        }),
       },
       {
         id: 'modificacoes',
         label: 'Modificações Recentes',
-        render: async (content) => {
-          tables.modificacoes = createDataTable({ columns: fileColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.modificacoes);
-          try {
-            const data = await dashboardService.getUltimasModificacoes();
-            tables.modificacoes.update({
-              data: (Array.isArray(data) ? data : []).map(d => ({
-                ...d,
-                data: d.data_modificacao || d.data_cadastramento,
-              })),
-              loading: false,
-            });
-          } catch {
-            tables.modificacoes.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'modificacoes',
+          columns: fileColumns,
+          getData: () => dashboardService.getUltimasModificacoes(),
+          mapData: (d) => ({ ...d, data: d.data_modificacao || d.data_cadastramento }),
+        }),
       },
       {
         id: 'exclusoes',
         label: 'Exclusões Recentes',
-        render: async (content) => {
-          tables.exclusoes = createDataTable({ columns: deleteColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.exclusoes);
-          try {
-            const data = await dashboardService.getUltimosDeletes();
-            tables.exclusoes.update({ data: Array.isArray(data) ? data : [], loading: false });
-          } catch {
-            tables.exclusoes.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'exclusoes',
+          columns: deleteColumns,
+          getData: () => dashboardService.getUltimosDeletes(),
+        }),
       },
       {
         id: 'downloads',
         label: 'Histórico de Downloads',
-        render: async (content) => {
-          tables.downloads = createDataTable({ columns: downloadColumns, loading: true, pageSize: 5 });
-          content.appendChild(tables.downloads);
-          try {
-            const data = await dashboardService.getDownloads();
-            tables.downloads.update({ data: Array.isArray(data) ? data : [], loading: false });
-          } catch {
-            tables.downloads.update({ data: [], loading: false });
-          }
-        },
+        render: tableTab({
+          tables,
+          key: 'downloads',
+          columns: downloadColumns,
+          getData: () => dashboardService.getDownloads(),
+        }),
       },
       {
         id: 'carregamento',
@@ -188,19 +180,27 @@ export async function renderActivityTab(container) {
         render: async (content) => {
           const chart = createPieChart({ title: 'Distribuição por Situação de Carregamento', loading: true });
           content.appendChild(chart);
-          try {
-            const data = await dashboardService.getSituacaoCarregamento();
-            chart.update({
-              data: (Array.isArray(data) ? data : []).map(d => ({
-                label: d.situacao,
-                value: Number(d.quantidade),
-              })),
-              loading: false,
-            });
-          } catch {
-            chart.update({ data: [], loading: false });
-          }
-          return () => { if (chart._cleanup) chart._cleanup(); };
+
+          const load = async () => {
+            try {
+              const data = await dashboardService.getSituacaoCarregamento();
+              chart.update({
+                data: (Array.isArray(data) ? data : []).map(d => ({
+                  label: d.situacao,
+                  value: Number(d.quantidade),
+                })),
+                loading: false,
+              });
+            } catch {
+              chart.update({ data: [], loading: false });
+            }
+          };
+
+          await load();
+          return {
+            cleanup: () => { if (chart._cleanup) chart._cleanup(); },
+            refresh: load,
+          };
         },
       },
     ],
@@ -208,40 +208,51 @@ export async function renderActivityTab(container) {
 
   container.appendChild(tabsComponent.element);
 
-  // Fetch daily activity data
-  const [arquivosResult, downloadsResult] = await Promise.allSettled([
-    dashboardService.getArquivosDia(),
-    dashboardService.getDownloadsDia(),
-  ]);
+  async function loadDaily() {
+    // Fetch daily activity data
+    const [arquivosResult, downloadsResult] = await Promise.allSettled([
+      dashboardService.getArquivosDia(),
+      dashboardService.getDownloadsDia(),
+    ]);
+    if (disposed) return;
 
-  // Build 30-day map
-  const dailyMap = {};
-  const today = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    dailyMap[key] = { dia: key.slice(5), uploads: 0, downloads: 0 };
-  }
-
-  if (arquivosResult.status === 'fulfilled' && Array.isArray(arquivosResult.value)) {
-    for (const item of arquivosResult.value) {
-      const key = item.dia?.split('T')[0];
-      if (key && dailyMap[key]) dailyMap[key].uploads = Number(item.quantidade);
+    // Build 30-day map
+    const dailyMap = {};
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      dailyMap[key] = { dia: key.slice(5), uploads: 0, downloads: 0 };
     }
-  }
 
-  if (downloadsResult.status === 'fulfilled' && Array.isArray(downloadsResult.value)) {
-    for (const item of downloadsResult.value) {
-      const key = item.dia?.split('T')[0];
-      if (key && dailyMap[key]) dailyMap[key].downloads = Number(item.quantidade);
+    if (arquivosResult.status === 'fulfilled' && Array.isArray(arquivosResult.value)) {
+      for (const item of arquivosResult.value) {
+        const key = item.dia?.split('T')[0];
+        if (key && dailyMap[key]) dailyMap[key].uploads = Number(item.quantidade);
+      }
     }
+
+    if (downloadsResult.status === 'fulfilled' && Array.isArray(downloadsResult.value)) {
+      for (const item of downloadsResult.value) {
+        const key = item.dia?.split('T')[0];
+        if (key && dailyMap[key]) dailyMap[key].downloads = Number(item.quantidade);
+      }
+    }
+
+    dailyChart.update({ data: Object.values(dailyMap), loading: false });
   }
 
-  dailyChart.update({ data: Object.values(dailyMap), loading: false });
+  await loadDaily();
 
-  return () => {
-    if (dailyChart._cleanup) dailyChart._cleanup();
-    if (tabsComponent.element._cleanup) tabsComponent.element._cleanup();
+  return {
+    cleanup: () => {
+      disposed = true;
+      if (dailyChart._cleanup) dailyChart._cleanup();
+      if (tabsComponent.element._cleanup) tabsComponent.element._cleanup();
+    },
+    refresh: async () => {
+      await Promise.all([loadDaily(), tabsComponent.refreshActive()]);
+    },
   };
 }

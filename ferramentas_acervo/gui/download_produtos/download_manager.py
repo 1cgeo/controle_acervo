@@ -2,9 +2,17 @@
 import os
 import hashlib
 import logging
+import platform
 import time
-from qgis.PyQt.QtCore import QObject, pyqtSignal, QThread, QTimer
+from qgis.PyQt.QtCore import QObject, pyqtSignal, QTimer
 from ...core.file_transfer import FileTransferThread
+
+# Managers cujo shutdown() expirou com threads ainda em execução são retidos
+# aqui até as threads finalizarem. Sem isso, o GC do Python destruiria um
+# QThread em execução (junto com o manager), o que aborta o QGIS inteiro
+# ("QThread: Destroyed while thread is still running" — crash nativo).
+_orphaned_managers = set()
+
 
 class DownloadManager(QObject):
     """
@@ -36,6 +44,15 @@ class DownloadManager(QObject):
         self._destination_dir = ''
         self._total_files = 0
         self._completed_count = 0
+        # True após shutdown(): callbacks atrasados (sinais enfileirados,
+        # QTimer de retentativa) não devem mais confirmar com o servidor nem
+        # emitir sinais — o diálogo dono provavelmente já foi destruído
+        self._shutdown = False
+        # Referências fortes a TODAS as threads de transferência até que cada
+        # uma termine de fato (sinal finished). Se a única referência for
+        # descartada com a thread ainda rodando, o GC destrói o QThread em
+        # execução e o QGIS sofre crash nativo (sem traceback Python).
+        self._active_threads = []
 
     def prepare_download(self, product_ids, file_types):
         """Prepare download by sending product IDs and file type IDs to server."""
@@ -54,7 +71,16 @@ class DownloadManager(QObject):
 
     def start_download(self, file_infos, destination_dir):
         """Start downloading files sequentially to the specified destination directory."""
+        # No Linux, obter as credenciais SMB AQUI (thread principal), antes de
+        # iniciar as threads: diálogos não podem ser criados em threads de
+        # trabalho (crash nativo do Qt)
+        if platform.system() != 'Windows':
+            if not FileTransferThread.ensure_smb_credentials():
+                self.download_error.emit("Credenciais SMB não informadas. Download cancelado.")
+                return
+
         self.is_cancelled = False
+        self._shutdown = False
         self.download_results = []
         self._destination_dir = destination_dir
         self._total_files = len(file_infos)
@@ -62,7 +88,11 @@ class DownloadManager(QObject):
 
         # Create destination directory if it doesn't exist
         if not os.path.exists(destination_dir):
-            os.makedirs(destination_dir)
+            try:
+                os.makedirs(destination_dir, exist_ok=True)
+            except OSError as e:
+                self.download_error.emit(f"Não foi possível criar a pasta de destino: {e}")
+                return
 
         # Preparar fila de arquivos pendentes
         self._pending_files = []
@@ -81,6 +111,24 @@ class DownloadManager(QObject):
 
     def _download_next_file(self):
         """Download the next file in the queue sequentially."""
+        if self._shutdown:
+            return
+
+        # Descartar entradas sem caminho de origem (ex: registro sem volume no
+        # servidor) sem iniciar thread — laço (e não recursão) para não estourar
+        # a pilha se houver muitas entradas inválidas
+        while self._pending_files and not self._pending_files[0].get('download_path'):
+            bad_info = self._pending_files.pop(0)
+            self.download_results.append({
+                'download_token': bad_info['download_token'],
+                'success': False,
+                'error_message': 'Caminho de origem do arquivo não informado pelo servidor',
+                'file_path': '',
+                'nome': bad_info['nome']
+            })
+            self._completed_count += 1
+            self.file_complete.emit(bad_info['nome'], False)
+
         if self.is_cancelled or not self._pending_files:
             # Fila vazia ou cancelado: confirmar downloads
             self.confirm_downloads()
@@ -106,6 +154,12 @@ class DownloadManager(QObject):
         )
         transfer_thread.file_transferred.connect(self._handle_file_transfer_complete)
 
+        # Manter referência forte até a thread terminar de fato. O slot
+        # _cleanup_finished_threads (método de QObject) é entregue de forma
+        # enfileirada na thread principal, após o término real da thread.
+        self._active_threads.append(transfer_thread)
+        transfer_thread.finished.connect(self._cleanup_finished_threads)
+
         self.current_transfer = {
             'thread': transfer_thread,
             'file_info': file_info
@@ -113,12 +167,28 @@ class DownloadManager(QObject):
 
         transfer_thread.start()
 
+    def _cleanup_finished_threads(self):
+        """Libera as threads de transferência que já finalizaram.
+
+        Executa na thread principal (conexão enfileirada do sinal finished).
+        Só remove a referência depois que isFinished() é verdadeiro — destruir
+        um QThread ainda em execução aborta o processo do QGIS.
+        """
+        for thread in list(self._active_threads):
+            if thread.isFinished():
+                self._active_threads.remove(thread)
+                thread.deleteLater()
+        if not self._active_threads:
+            _orphaned_managers.discard(self)
+
     def _handle_file_transfer_complete(self, success, file_path, identifier):
         """Handle completion of a file transfer with checksum retry logic."""
-        if not self.current_transfer:
+        if self._shutdown or not self.current_transfer:
             return
 
         file_info = self.current_transfer['file_info']
+        # Seguro descartar aqui: a thread continua referenciada em
+        # _active_threads até o sinal finished (ver _cleanup_finished_threads)
         self.current_transfer = None
 
         if success:
@@ -247,12 +317,56 @@ class DownloadManager(QObject):
             thread = self.current_transfer['thread']
             if thread.isRunning():
                 thread.cancel()
+            # A referência da thread permanece em _active_threads até finished:
+            # descartá-la aqui (como era feito) permitia que o GC destruísse o
+            # QThread ainda em execução — crash nativo do QGIS
             self.current_transfer = None
 
         # Sempre concluir: cancelar antes do primeiro arquivo terminar deixava
         # a UI travada aguardando download_complete (confirm_downloads emite
         # download_complete([]) quando não há resultados)
         self.confirm_downloads()
+
+    def has_active_threads(self):
+        """Indica se ainda há threads de transferência vivas."""
+        return any(thread.isRunning() for thread in self._active_threads)
+
+    def shutdown(self, wait_ms=10000):
+        """Cancela tudo e aguarda as threads de transferência terminarem.
+
+        Deve ser chamado antes de destruir o diálogo dono deste manager (os
+        diálogos são criados com WA_DeleteOnClose). Não emite sinais nem
+        confirma com o servidor — apenas garante o encerramento seguro.
+
+        Retorna True se todas as threads finalizaram dentro do tempo limite.
+        Caso contrário o manager é retido em _orphaned_managers (impedindo o
+        GC de destruir um QThread em execução) e liberado automaticamente
+        quando a última thread finalizar.
+        """
+        self._shutdown = True
+        self.is_cancelled = True
+        self._pending_files = []
+        self.current_transfer = None
+
+        for thread in list(self._active_threads):
+            thread.cancel()
+
+        deadline = time.monotonic() + (wait_ms / 1000.0)
+        for thread in list(self._active_threads):
+            if thread.isRunning():
+                remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+                thread.wait(remaining_ms)
+
+        self._cleanup_finished_threads()
+
+        if self._active_threads:
+            logging.warning(
+                "Threads de transferência ainda em execução após o shutdown; "
+                "manager retido até a finalização para evitar crash do QGIS"
+            )
+            _orphaned_managers.add(self)
+            return False
+        return True
 
     @staticmethod
     def calculate_checksum(file_path):

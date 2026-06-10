@@ -1,15 +1,18 @@
 'use strict'
 /**
- * Carga do piloto Saicã 2017 (Y:\Produtos_2017\2017_SAICA_25K) no SCA.
+ * Carga do lote 2020_SISFRON_PR_25k (Y:\Produtos_2020\2020_SISFRON_PR_25k) no SCA.
  *
- * Regras em regras_carga_produtos.md:
+ * Modelado em carga_saica_2017.cjs; regras em regras_carga_produtos.md:
  *  - Ordinal da edição: posição do ano entre as edições pré-ET-RDG (< 2022)
- *    listadas no site de produtos (situacao-geral) -> "Nª Edição".
+ *    listadas no site de produtos (situacao-geral) -> "Nª Edição"
+ *    (validado contra Cont_Edicao da planilha ASC).
  *  - data_criacao = data do último insumo (reambulação > outro campo > imagem).
  *  - data_edicao  = data exata das informações marginais da carta.
- *  - TIF (EPSG:4674) = Arquivo Principal; PDF = Formato Alternativo.
+ *  - Lote só tem PDF -> PDF = Arquivo Principal (regras, seção 2.3).
+ *  - Geometria: moldura da grade do site (cross-validada com DsgTools),
+ *    pré-processada em sisfron_2020_geometria.json.
  *
- * Uso: node carga_saica_2017.js
+ * Uso: node carga_2020_sisfron.cjs
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -20,32 +23,18 @@ const API = 'http://localhost:3015/api'
 const USUARIO = 'claude'
 const SENHA = 'claude'
 
-const FONTE = 'Y:/Produtos_2017/2017_SAICA_25K'
-const VOLUME_PATH = '\\\\10.25.163.8\\sca\\sca_acervo'
-const GRADE = 'D:/desenvolvimento/produtos/data/situacao-geral-ct-25k.geojson'
-const MARGINAIS = path.join(__dirname, 'saica_2017_marginais.json')
-
-const CORTE_ET_RDG = 2022 // edições a partir deste ano são ET-RDG (N-DSG)
-
-// Nomes e EPSG original da edição 2017, conforme planilha ASC (grafia com acentos)
-const PLANILHA = {
-  '2962-4-NE': { nome: 'CERRO DA GLÓRIA', epsg: '31981' },
-  '2962-4-SE': { nome: 'ARROIO SAICÃ', epsg: '31981' },
-  '2963-3-NO': { nome: 'CERRO PELADO', epsg: '31981' },
-  '2963-3-SO': { nome: 'SÃO SIMÃO', epsg: '31981' },
-  '2979-2-NE': { nome: 'CAPELA DO SAICÃ', epsg: '31981' },
-  '2979-2-SE': { nome: 'CORTE', epsg: '31981' },
-  '2980-1-NO': { nome: 'RIO SANTA MARIA', epsg: '31981' },
-  '2980-1-SO': { nome: 'ROSÁRIO DO SUL-N', epsg: '31981' }
-}
+const FONTE = 'Y:/Produtos_2020/2020_SISFRON_PR_25k'
+const VOLUME_HOST = '10.25.163.8' // volume já existente — apenas localizar
+const GEOMETRIA = path.join(__dirname, 'sisfron_2020_geometria.json')
+const MARGINAIS = path.join(__dirname, 'sisfron_2020_marginais.json')
+const PLANILHA_JSON = path.join(__dirname, 'sisfron_2020_planilha_raw.json')
 
 // Domínios (er/dominio.sql)
 const TIPO_PRODUTO_CT = 2
 const TIPO_ESCALA_25K = 1
-const SUBTIPO_T34_700 = 2
+const SUBTIPO_T34_700 = 2 // edição 2020 < 2022 -> T34-700
 const TIPO_VERSAO_HISTORICO = 2
-const TIPO_ARQUIVO_PRINCIPAL = 1
-const TIPO_ARQUIVO_FORMATO_ALTERNATIVO = 2
+const TIPO_ARQUIVO_PRINCIPAL = 1 // versão só com PDF -> PDF é o principal
 const SITUACAO_NAO_CARREGADO_BDGEX = 1
 const STATUS_EXECUCAO_CONCLUIDO = 3
 
@@ -92,127 +81,121 @@ function diaLocal (yyyymmdd) {
   return `${yyyymmdd}T12:00:00-03:00`
 }
 
-function ordinalEdicao (edicoesTopo, ano) {
-  const anos = [...new Set(edicoesTopo.filter(a => /^\d{4}$/.test(a)).map(Number))]
-    .filter(a => a < CORTE_ET_RDG)
-    .sort((a, b) => a - b)
-  const pos = anos.indexOf(ano)
-  if (pos === -1) {
-    throw new Error(`Ano ${ano} não consta nas edições pré-ET-RDG: ${anos.join(', ')}`)
-  }
-  return `${pos + 1}ª Edição`
-}
-
 async function main () {
   // --- Login ---
   const login = await api('POST', 'login', { usuario: USUARIO, senha: SENHA, cliente: 'sca_qgis' })
   token = login.dados.token
   console.log('Login OK (admin:', login.dados.administrador + ')')
 
-  // --- Fontes ---
-  const grade = JSON.parse(fs.readFileSync(GRADE, 'utf8'))
-  const porMI = new Map(grade.features.map(f => [f.properties.identificadorMI, f]))
+  // --- Fontes pré-processadas ---
+  const geometria = JSON.parse(fs.readFileSync(GEOMETRIA, 'utf8'))
   const marginais = new Map(
     JSON.parse(fs.readFileSync(MARGINAIS, 'utf8')).map(m => [m.mi, m])
   )
+  const planilhaRaw = JSON.parse(fs.readFileSync(PLANILHA_JSON, 'utf8'))
 
-  // --- Volume de armazenamento ---
-  fs.mkdirSync(VOLUME_PATH, { recursive: true })
-  let volumes = (await api('GET', 'volumes/volume_armazenamento')).dados || []
-  let volume = volumes.find(v => v.volume === VOLUME_PATH)
-  if (!volume) {
-    await api('POST', 'volumes/volume_armazenamento', {
-      volume_armazenamento: [{ nome: 'Acervo W', volume: VOLUME_PATH, capacidade_gb: 37000 }]
-    })
-    volumes = (await api('GET', 'volumes/volume_armazenamento')).dados
-    volume = volumes.find(v => v.volume === VOLUME_PATH)
-    console.log(`Volume criado: id=${volume.id} ${VOLUME_PATH}`)
-  } else {
-    console.log(`Volume já existia: id=${volume.id}`)
-  }
+  const mis = Object.keys(geometria).sort()
+  if (mis.length !== 44) throw new Error(`Esperava 44 MIs na geometria, achei ${mis.length}`)
+
+  // --- Volume de armazenamento (já existe — apenas localizar, nunca criar) ---
+  const volumes = (await api('GET', 'volumes/volume_armazenamento')).dados || []
+  const volume = volumes.find(v => (v.volume || '').includes(VOLUME_HOST))
+  if (!volume) throw new Error(`Volume contendo "${VOLUME_HOST}" não encontrado — abortando`)
+  console.log(`Volume: id=${volume.id} ${volume.volume}`)
 
   const assocs = (await api('GET', 'volumes/volume_tipo_produto')).dados || []
   if (!assocs.some(a => a.tipo_produto_id === TIPO_PRODUTO_CT && a.primario)) {
-    await api('POST', 'volumes/volume_tipo_produto', {
-      volume_tipo_produto: [{
-        tipo_produto_id: TIPO_PRODUTO_CT,
-        volume_armazenamento_id: volume.id,
-        primario: true
-      }]
-    })
-    console.log('Associação primária CT -> Acervo W criada')
-  } else {
-    console.log('Associação primária CT já existia')
+    throw new Error('Associação primária CT -> volume não existe — abortando')
   }
+  console.log('Associação primária CT OK')
 
   // --- Projeto e lote ---
   let projetos = (await api('GET', 'projetos/projeto')).dados || []
-  let projeto = projetos.find(p => p.nome === 'Saicã')
+  let projeto = projetos.find(p => p.nome === 'SISFRON')
   if (!projeto) {
     await api('POST', 'projetos/projeto', {
-      nome: 'Saicã',
-      descricao: 'Atualização cartográfica do CI Barão de São Borja - CIBSB (Saicã)',
-      data_inicio: '2017-01-01',
-      data_fim: '2017-12-31',
+      nome: 'SISFRON',
+      descricao: 'Sistema Integrado de Monitoramento de Fronteiras',
+      data_inicio: '2020-01-01',
+      data_fim: '2020-12-31',
       status_execucao_id: STATUS_EXECUCAO_CONCLUIDO
     })
     projetos = (await api('GET', 'projetos/projeto')).dados
-    projeto = projetos.find(p => p.nome === 'Saicã')
-    console.log(`Projeto criado: id=${projeto.id} Saicã`)
+    projeto = projetos.find(p => p.nome === 'SISFRON')
+    console.log(`Projeto criado: id=${projeto.id} SISFRON`)
   } else {
     console.log(`Projeto já existia: id=${projeto.id}`)
   }
 
   let lotes = (await api('GET', 'projetos/lote')).dados || []
-  let lote = lotes.find(l => Number(l.projeto_id) === Number(projeto.id) && l.pit === '2017')
+  let lote = lotes.find(l => Number(l.projeto_id) === Number(projeto.id) && l.pit === '2020')
   if (!lote) {
     await api('POST', 'projetos/lote', {
       projeto_id: Number(projeto.id),
-      pit: '2017',
-      nome: '2017_SAICA_25K',
-      descricao: 'Cartas topográficas 1:25.000 do Saicã, edição 2017',
-      data_inicio: '2017-01-01',
-      data_fim: '2017-12-31',
+      pit: '2020',
+      nome: '2020_SISFRON_PR_25k',
+      descricao: 'Cartas topográficas 1:25.000 do SISFRON no Paraná, edição 2020',
+      data_inicio: '2020-01-01',
+      data_fim: '2020-12-31',
       status_execucao_id: STATUS_EXECUCAO_CONCLUIDO
     })
     lotes = (await api('GET', 'projetos/lote')).dados
-    lote = lotes.find(l => Number(l.projeto_id) === Number(projeto.id) && l.pit === '2017')
-    console.log(`Lote criado: id=${lote.id} 2017_SAICA_25K`)
+    lote = lotes.find(l => Number(l.projeto_id) === Number(projeto.id) && l.pit === '2020')
+    console.log(`Lote criado: id=${lote.id} 2020_SISFRON_PR_25k`)
   } else {
     console.log(`Lote já existia: id=${lote.id}`)
   }
 
   // --- Montagem do payload ---
   const produtos = []
-  for (const mi of Object.keys(PLANILHA)) {
-    const celula = porMI.get(mi)
-    if (!celula) throw new Error(`MI ${mi} não encontrada na grade do site`)
+  for (const mi of mis) {
+    const geo = geometria[mi]
     const marginal = marginais.get(mi)
     if (!marginal) throw new Error(`MI ${mi} sem informações marginais extraídas`)
-
-    const tif = `${FONTE}/tif/${mi}_4674_2017.tif`
-    const pdf = `${FONTE}/pdf/${mi}_2017.pdf`
-    for (const f of [tif, pdf]) {
-      if (!fs.existsSync(f)) throw new Error(`Arquivo não encontrado: ${f}`)
+    if (marginal.mi !== mi) throw new Error(`MI impresso (${marginal.mi}) != MI do arquivo (${mi})`)
+    if (!marginal.data_edicao || !/^\d{4}-\d{2}-\d{2}$/.test(marginal.data_edicao)) {
+      throw new Error(`MI ${mi} sem data exata de edição nas informações marginais`)
     }
 
-    const versaoNome = ordinalEdicao(celula.properties.edicoes_topo || [], 2017)
-    const anoInsumo = marginal.ano_ultimo_insumo || 2017
-    // Títulos em title case pt-BR (regras_carga_produtos.md, seção 2.4)
-    const nomeCarta = titleCasePt(PLANILHA[mi].nome)
+    // Linha da planilha ASC com Ano_Edicao = 2020 (autoritativa p/ nome/órgão/EPSG)
+    const linhas = (planilhaRaw[mi] || []).filter(r => r.Ano_Edicao === '2020')
+    if (linhas.length !== 1) {
+      throw new Error(`MI ${mi}: esperava 1 linha 2020 na planilha T25, achei ${linhas.length}`)
+    }
+    const plan = linhas[0]
+    if (plan.INOM !== geo.inom) {
+      throw new Error(`MI ${mi}: INOM planilha (${plan.INOM}) != INOM grade/DsgTools (${geo.inom})`)
+    }
 
-    console.log(`  ${mi}: "${nomeCarta}" -> ${versaoNome} | edicao=${marginal.data_edicao} | insumo=${anoInsumo}`)
+    // Ordinal: grade do site (pré-ET-RDG), validado contra Cont_Edicao da planilha
+    const ordinal = geo.ordinal_2020
+    if (!ordinal) throw new Error(`MI ${mi} sem ordinal 2020 calculado`)
+    if (String(ordinal) !== String(plan.Cont_Edicao)) {
+      throw new Error(`MI ${mi}: ordinal grade (${ordinal}) != Cont_Edicao planilha (${plan.Cont_Edicao})`)
+    }
+    const versaoNome = `${ordinal}ª Edição`
+
+    const pdf = `${FONTE}/${mi.toLowerCase().replace(/-/g, '')}.pdf`
+    if (!fs.existsSync(pdf)) throw new Error(`Arquivo não encontrado: ${pdf}`)
+    const nomeArquivo = path.basename(pdf, '.pdf')
+
+    const anoInsumo = marginal.ano_ultimo_insumo || 2020
+    const epsg = /^\d+$/.test(plan.EPSG) ? plan.EPSG : null
+    // Títulos em title case pt-BR (regras_carga_produtos.md, seção 2.4)
+    const nomeCarta = titleCasePt(plan.Nome)
+
+    console.log(`  ${mi}: "${nomeCarta}" -> ${versaoNome} | edicao=${marginal.data_edicao} | insumo=${anoInsumo} | epsg=${epsg}`)
 
     produtos.push({
       produto: {
         nome: nomeCarta,
         mi,
-        inom: celula.properties.identificadorINOM,
+        inom: geo.inom,
         tipo_escala_id: TIPO_ESCALA_25K,
         denominador_escala_especial: null,
         tipo_produto_id: TIPO_PRODUTO_CT,
         descricao: '',
-        geom: ringParaEwkt(celula.geometry.coordinates[0])
+        geom: ringParaEwkt(geo.ring)
       },
       versoes: [{
         uuid_versao: null,
@@ -228,37 +211,23 @@ async function main () {
           etapas_producao: marginal.etapas_producao
         },
         descricao: '',
-        orgao_produtor: '1º CGEO',
-        palavras_chave: ['Saicã', 'CIBSB'],
+        orgao_produtor: plan.Orgao_Produtor || '1º CGEO',
+        palavras_chave: ['SISFRON', 'Paraná'],
         data_criacao: diaLocal(`${anoInsumo}-01-01`),
         data_edicao: diaLocal(marginal.data_edicao),
         arquivos: [
           {
             uuid_arquivo: null,
-            nome: `${mi} GeoTIFF 2017`,
-            nome_arquivo: `${mi}_4674_2017`,
+            nome: `${mi} PDF 2020`,
+            nome_arquivo: nomeArquivo,
             tipo_arquivo_id: TIPO_ARQUIVO_PRINCIPAL,
-            extensao: 'tif',
-            tamanho_mb: fs.statSync(tif).size / (1024 * 1024),
-            checksum: sha256(tif),
-            metadado: {},
-            situacao_carregamento_id: SITUACAO_NAO_CARREGADO_BDGEX,
-            descricao: '',
-            crs_original: '4674',
-            _origem: tif
-          },
-          {
-            uuid_arquivo: null,
-            nome: `${mi} PDF 2017`,
-            nome_arquivo: `${mi}_2017`,
-            tipo_arquivo_id: TIPO_ARQUIVO_FORMATO_ALTERNATIVO,
             extensao: 'pdf',
             tamanho_mb: fs.statSync(pdf).size / (1024 * 1024),
             checksum: sha256(pdf),
             metadado: {},
             situacao_carregamento_id: SITUACAO_NAO_CARREGADO_BDGEX,
             descricao: '',
-            crs_original: PLANILHA[mi].epsg,
+            crs_original: epsg,
             _origem: pdf
           }
         ]
@@ -305,9 +274,9 @@ async function main () {
   console.log(`Confirmação: ${conf.message} | status: ${conf.dados?.status}`)
 
   // --- Views materializadas ---
-  console.log('\nCriando views materializadas...')
-  await api('POST', 'acervo/create_materialized_views')
-  console.log('Views materializadas criadas')
+  console.log('\nAtualizando views materializadas...')
+  await api('POST', 'acervo/refresh_materialized_views')
+  console.log('Views materializadas atualizadas')
 
   // --- Validação ---
   const total = (await api('GET', 'dashboard/produtos_total')).dados

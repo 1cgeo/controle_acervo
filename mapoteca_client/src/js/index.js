@@ -19,6 +19,7 @@ import { renderEstoqueList } from '@pages/estoque/list.js';
 import { renderConsumoList } from '@pages/consumo/list.js';
 import { renderPlottersList } from '@pages/plotters/list.js';
 import { renderPlotterDetails } from '@pages/plotters/details.js';
+import { renderRelatorios } from '@pages/relatorios/index.js';
 
 // Initialize theme (light/dark via data-theme, persisted in mapoteca-theme-mode)
 initTheme();
@@ -87,6 +88,7 @@ router.add('/estoque', withLayout(renderEstoqueList), { guard: adminLoader });
 router.add('/consumo', withLayout(renderConsumoList), { guard: adminLoader });
 router.add('/plotters', withLayout(renderPlottersList), { guard: adminLoader });
 router.add('/plotters/:id', withLayout(renderPlotterDetails), { guard: adminLoader });
+router.add('/relatorios', withLayout(renderRelatorios), { guard: adminLoader });
 
 // Public: order tracking by localizador (RN04)
 router.add('/consultar/:localizador', standalone(renderConsultarPedido));

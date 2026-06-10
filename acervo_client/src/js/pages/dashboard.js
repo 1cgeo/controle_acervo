@@ -1,12 +1,15 @@
 import { el } from '@utils/dom.js';
 import { createTabs } from '@components/tabs.js';
+import { clearCache } from '@services/cache.js';
 import { renderOverviewTab } from '@features/dashboard/overview-tab.js';
 import { renderDistributionTab } from '@features/dashboard/distribution-tab.js';
 import { renderActivityTab } from '@features/dashboard/activity-tab.js';
 import { renderAdvancedTab } from '@features/dashboard/advanced-tab.js';
 
+const REFRESH_INTERVAL_MS = 60 * 1000;
+
 /**
- * Render the Dashboard page.
+ * Render the Dashboard page (auto-refetch of the active tab every 60s).
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */
@@ -25,7 +28,15 @@ export async function renderDashboard(container) {
   const page = el('div', { className: 'dashboard' }, [title, tabs.element]);
   container.appendChild(page);
 
+  // Auto-refetch the active tab every 60s (drop the cache first so the
+  // service layer hits the API instead of returning stale entries)
+  const intervalId = setInterval(() => {
+    clearCache();
+    tabs.refreshActive();
+  }, REFRESH_INTERVAL_MS);
+
   return () => {
+    clearInterval(intervalId);
     if (tabs.element._cleanup) tabs.element._cleanup();
   };
 }

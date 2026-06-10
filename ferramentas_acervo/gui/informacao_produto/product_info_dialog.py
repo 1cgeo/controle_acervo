@@ -10,7 +10,7 @@ from qgis.PyQt.QtWidgets import (
     QPushButton, QHBoxLayout, QLabel, QFileDialog, QScrollArea
 )
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject, QgsMapLayerType, Qgis
+from qgis.core import QgsProject, QgsMapLayerType, Qgis, QgsDataSourceUri
 from qgis.gui import QgsCollapsibleGroupBox
 
 from .overview_tab import OverviewTab
@@ -209,8 +209,11 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.iface.messageBar().pushMessage("Erro", "Selecione uma camada de produto válida", level=Qgis.MessageLevel.Warning)
             return
 
-        # Verificar se a camada é uma view materializada de produto
-        if not active_layer.name().startswith('mv_produto_'):
+        # Verificar se a camada é uma view materializada de produto.
+        # A validação olha a FONTE de dados (tabela mv_produto_*), não o nome
+        # de exibição — o carregador usa nomes amigáveis ("Carta Topográfica - 1:25.000")
+        table_name = QgsDataSourceUri(active_layer.source()).table()
+        if not table_name.startswith('mv_produto_'):
             self.iface.messageBar().pushMessage("Erro", "A camada selecionada não é uma camada de produto válida", level=Qgis.MessageLevel.Warning)
             return
 
@@ -698,9 +701,32 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         """Manipula o erro de download."""
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.statusLabel.setText(f"Erro no download: {error_message}")
-        
+
         QMessageBox.critical(
             self,
             "Erro de Download",
             f"Ocorreu um erro durante o download: {error_message}"
         )
+
+    def closeEvent(self, event):
+        """Encerra as threads de download antes de destruir o diálogo.
+
+        O diálogo é criado com WA_DeleteOnClose: fechá-lo com threads de
+        transferência ativas permitia que o GC destruísse um QThread em
+        execução, derrubando o QGIS (crash nativo, sem traceback).
+        """
+        if self.download_manager.has_active_threads():
+            reply = QMessageBox.question(
+                self,
+                "Confirmar Fechamento",
+                "Há downloads em andamento. Tem certeza que deseja fechar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if reply != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+
+        self.download_manager.shutdown()
+        super().closeEvent(event)

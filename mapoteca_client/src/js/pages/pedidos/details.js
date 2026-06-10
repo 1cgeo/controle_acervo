@@ -11,6 +11,7 @@ import {
   updateProdutoPedido,
   deleteProdutosPedido,
   getImpressaoItem,
+  deleteImpressoes,
   getClientes,
   getDominioSituacaoPedido,
 } from '@services/mapoteca-service.js';
@@ -204,47 +205,86 @@ export async function renderPedidoDetails(container, { params }) {
       return;
     }
 
-    const registrosTable = createDataTable({
-      columns: [
-        {
-          key: 'data_impressao',
-          label: 'Data',
-          sortable: true,
-          render: (registro) => formatDateTime(registro.data_impressao),
-        },
-        { key: 'usuario_nome', label: 'Usuário' },
-        {
-          key: 'quantidade',
-          label: 'Cópias',
-          sortable: true,
-          render: (registro) => formatNumber(registro.quantidade),
-        },
-        { key: 'observacao', label: 'Observação' },
-      ],
-      rows: historico.registros || [],
-      pageSize: 5,
-      emptyMessage: 'Nenhuma sessão de impressão registrada',
-    });
+    const content = el('div');
+    let registrosTable = null;
+    let mutated = false;
 
-    const content = el('div', {}, [
-      el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
+    async function excluirRegistro(registro) {
+      const confirmado = await confirmDialog({
+        title: 'Excluir registro de impressão',
+        message: `Excluir o registro de ${formatNumber(registro.quantidade)} cópia(s) de ${formatDateTime(registro.data_impressao)}? As quantidades impressas do item serão recalculadas.`,
+        confirmLabel: 'Excluir',
+        danger: true,
+      });
+      if (!confirmado) return;
+
+      try {
+        await deleteImpressoes([registro.id]);
+        showSuccess('Registro de impressão excluído com sucesso');
+        mutated = true;
+        renderHistorico(await getImpressaoItem(row.id));
+      } catch (err) {
+        showError(err.message || 'Erro ao excluir o registro de impressão');
+      }
+    }
+
+    function renderHistorico(dados) {
+      if (registrosTable) registrosTable._cleanup();
+
+      registrosTable = createDataTable({
+        columns: [
+          {
+            key: 'data_impressao',
+            label: 'Data',
+            sortable: true,
+            render: (registro) => formatDateTime(registro.data_impressao),
+          },
+          { key: 'usuario_nome', label: 'Usuário' },
+          {
+            key: 'quantidade',
+            label: 'Cópias',
+            sortable: true,
+            render: (registro) => formatNumber(registro.quantidade),
+          },
+          { key: 'observacao', label: 'Observação' },
+        ],
+        rows: dados.registros || [],
+        pageSize: 5,
+        emptyMessage: 'Nenhuma sessão de impressão registrada',
+        actions: [
+          {
+            icon: ICONS.delete,
+            title: 'Excluir registro',
+            variant: 'danger',
+            onClick: (registro) => excluirRegistro(registro),
+          },
+        ],
+      });
+
+      clearChildren(content);
+      content.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
         el('div', { className: 'detail-card__title', textContent: 'Resumo' }),
-        infoRow('Quantidade pedida', formatNumber(historico.quantidade)),
-        infoRow('Quantidade impressa', formatNumber(historico.quantidade_impressa)),
-        infoRow('Restante', formatNumber(historico.quantidade_restante)),
-        infoRow('Situação', historico.impressao_concluida
+        infoRow('Quantidade pedida', formatNumber(dados.quantidade)),
+        infoRow('Quantidade impressa', formatNumber(dados.quantidade_impressa)),
+        infoRow('Restante', formatNumber(dados.quantidade_restante)),
+        infoRow('Situação', dados.impressao_concluida
           ? chip('Concluída', 'success')
           : chip('Pendente', 'warning')),
-      ]),
-      registrosTable.element,
-    ]);
+      ]));
+      content.appendChild(registrosTable.element);
+    }
+
+    renderHistorico(historico);
 
     openModal({
       title: `Histórico de impressão — ${row.produto_nome || 'Item'}`,
       content,
       width: '720px',
       actions: [{ label: 'Fechar', variant: 'secondary', onClick: ({ close }) => close() }],
-      onClose: () => registrosTable._cleanup(),
+      onClose: () => {
+        if (registrosTable) registrosTable._cleanup();
+        if (mutated) load();
+      },
     });
   }
 

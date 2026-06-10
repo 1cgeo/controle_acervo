@@ -3,7 +3,7 @@
 const archiver = require('archiver');
 const { Readable } = require('stream');
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, STATUS_ARQUIVO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, STATUS_ARQUIVO } } = require("../utils");
 
 const {
   DB_USER,
@@ -528,90 +528,69 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
 };
 
 // Helper function to generate GeoJSON for a specific scale
+// Formato idêntico ao consumido pelo site de produtos (1cgeo/produtos):
+// uma feature por célula da grade (MI), mesclando os produtos de Carta
+// Topográfica e Carta Ortoimagem da mesma MI (no SCA são produtos distintos)
 async function generateGeoJSONForScale(scaleId) {
-  const products = await db.conn.any(`
-    WITH versoes_topo AS (
-      SELECT 
-        p.id AS produto_id,
-        p.mi AS identificadorMI,
-        p.inom AS identificadorINOM,
-        ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS edicoes_topo
+  const celulas = await db.conn.any(`
+    WITH produtos_escala AS (
+      SELECT p.id, p.mi, p.inom, p.geom, p.tipo_produto_id
       FROM acervo.produto p
-      JOIN acervo.versao v ON p.id = v.produto_id
-      WHERE p.tipo_escala_id = $1
-      AND v.subtipo_produto_id IN (${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_T34_700}, ${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_ET_RDG}, ${SUBTIPO_PRODUTO.CARTA_TOPOGRAFICA_MILITAR})
-      GROUP BY p.id
+      WHERE p.tipo_escala_id = $1 AND p.mi IS NOT NULL
     ),
-    versoes_orto AS (
-      SELECT 
-        p.id AS produto_id,
-        ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS edicoes_orto
-      FROM acervo.produto p
-      JOIN acervo.versao v ON p.id = v.produto_id
-      WHERE p.tipo_escala_id = $1
-      AND v.subtipo_produto_id IN (${SUBTIPO_PRODUTO.CARTA_ORTOIMAGEM}, ${SUBTIPO_PRODUTO.CARTA_ORTOIMAGEM_OM})
-      GROUP BY p.id
+    edicoes AS (
+      SELECT pe.mi,
+             pe.tipo_produto_id,
+             ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int
+                       ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS anos
+      FROM produtos_escala pe
+      JOIN acervo.versao v ON v.produto_id = pe.id
+      GROUP BY pe.mi, pe.tipo_produto_id
+    ),
+    grade AS (
+      SELECT DISTINCT ON (mi) mi, inom, geom
+      FROM produtos_escala
+      ORDER BY mi, id
     )
-    SELECT 
-      p.id,
-      p.mi AS "identificadorMI",
-      p.inom AS "identificadorINOM",
-      p.geom,
-      CASE 
-        WHEN vt.edicoes_topo IS NULL THEN 'Não mapeado'
-        WHEN ARRAY_LENGTH(vt.edicoes_topo, 1) = 1 THEN 'Concluído'
-        ELSE 'Múltiplas edições'
-      END AS "situacao_topo",
-      COALESCE(vt.edicoes_topo, ARRAY[]::int[]) AS "edicoes_topo",
-      CASE 
-        WHEN vo.edicoes_orto IS NULL THEN 'Não mapeado'
-        WHEN ARRAY_LENGTH(vo.edicoes_orto, 1) = 1 THEN 'Concluído'
-        ELSE 'Múltiplas edições'
-      END AS "situacao_orto",
-      COALESCE(vo.edicoes_orto, ARRAY[]::int[]) AS "edicoes_orto"
-    FROM acervo.produto p
-    LEFT JOIN versoes_topo vt ON p.id = vt.produto_id
-    LEFT JOIN versoes_orto vo ON p.id = vo.produto_id
-    WHERE p.tipo_escala_id = $1
-    ORDER BY p.mi
+    SELECT
+      g.mi AS "identificadorMI",
+      g.inom AS "identificadorINOM",
+      ST_AsGeoJSON(g.geom)::json AS geometry,
+      COALESCE(t.anos, ARRAY[]::int[]) AS "edicoes_topo",
+      COALESCE(o.anos, ARRAY[]::int[]) AS "edicoes_orto"
+    FROM grade g
+    LEFT JOIN edicoes t ON t.mi = g.mi AND t.tipo_produto_id = ${TIPO_PRODUTO.CARTA_TOPOGRAFICA}
+    LEFT JOIN edicoes o ON o.mi = g.mi AND o.tipo_produto_id = ${TIPO_PRODUTO.CARTA_ORTOIMAGEM}
+    ORDER BY g.mi
   `, [scaleId]);
-  
-  // Convert PostgreSQL geometry to GeoJSON
-  const productsWithGeojson = await db.conn.any(`
-    SELECT 
-      p.id,
-      ST_AsGeoJSON(p.geom)::json AS geometry
-    FROM acervo.produto p
-    WHERE p.tipo_escala_id = $1
-  `, [scaleId]);
-  
-  // Create geometry lookup
-  const geometryLookup = {};
-  productsWithGeojson.forEach(p => {
-    geometryLookup[p.id] = p.geometry;
-  });
-  
-  // Construct GeoJSON features
-  const features = products.map((product, index) => {
-    // Convert editions from numeric arrays to string arrays for consistency with sample
-    const edicoes_topo = product.edicoes_topo.map(year => year.toString());
-    const edicoes_orto = product.edicoes_orto.map(year => year.toString());
-    
+
+  const situacao = (edicoes) => {
+    if (edicoes.length === 0) return 'Não mapeado';
+    if (edicoes.length === 1) return 'Concluído';
+    return 'Múltiplas edições';
+  };
+
+  // Construct GeoJSON features (chaves e tipos idênticos aos arquivos do site:
+  // id sequencial como string, anos como strings em ordem decrescente)
+  const features = celulas.map((celula, index) => {
+    const edicoesTopo = celula.edicoes_topo.map(ano => ano.toString());
+    const edicoesOrto = celula.edicoes_orto.map(ano => ano.toString());
+
     return {
       type: "Feature",
       properties: {
-        id: index.toString(), // Use sequential index as id like in the sample
-        identificadorMI: product.identificadorMI,
-        situacao_topo: product.situacao_topo,
-        edicoes_topo: edicoes_topo,
-        situacao_orto: product.situacao_orto,
-        edicoes_orto: edicoes_orto,
-        identificadorINOM: product.identificadorINOM
+        id: index.toString(),
+        identificadorMI: celula.identificadorMI,
+        situacao_topo: situacao(edicoesTopo),
+        edicoes_topo: edicoesTopo,
+        situacao_orto: situacao(edicoesOrto),
+        edicoes_orto: edicoesOrto,
+        identificadorINOM: celula.identificadorINOM
       },
-      geometry: geometryLookup[product.id]
+      geometry: celula.geometry
     };
   });
-  
+
   // Create the GeoJSON structure
   return {
     type: "FeatureCollection",

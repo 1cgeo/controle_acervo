@@ -35,6 +35,50 @@ function calculateChecksumStream(filePath) {
   });
 }
 
+/**
+ * Garante que o nome físico (volume + nome_arquivo + extensao) ainda está
+ * livre. O caminho de download é reconstruído como
+ *   <volume>/<nome_arquivo>.<extensao>
+ * portanto dois arquivos com o mesmo trio sobrescreveriam um ao outro no
+ * volume. Recusar aqui (no prepare) evita corrupção silenciosa do acervo.
+ *
+ * @param {object} t            tarefa/transação pg-promise
+ * @param {number} volumeId     volume_armazenamento_id (null para Tileserver — ignorado)
+ * @param {string} nomeArquivo  nome físico sem extensão
+ * @param {string} extensao     extensão sem o ponto
+ * @param {Set<string>} usados  chaves já reservadas neste mesmo lote
+ */
+async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados) {
+  // Tileserver não tem arquivo físico em volume
+  if (volumeId === null || volumeId === undefined) return;
+
+  const chave = `${volumeId}/${nomeArquivo}.${extensao}`;
+
+  if (usados && usados.has(chave)) {
+    throw new AppError(
+      `Dois arquivos deste envio resolvem para o mesmo nome físico "${nomeArquivo}.${extensao}" no volume ${volumeId}. ` +
+      `Os nomes físicos devem ser únicos no volume.`,
+      httpCode.Conflict
+    );
+  }
+
+  const existente = await t.oneOrNone(
+    `SELECT id FROM acervo.arquivo
+     WHERE volume_armazenamento_id = $1 AND nome_arquivo = $2 AND extensao = $3
+     LIMIT 1`,
+    [volumeId, nomeArquivo, extensao]
+  );
+  if (existente) {
+    throw new AppError(
+      `Já existe um arquivo com o nome físico "${nomeArquivo}.${extensao}" no volume ${volumeId} ` +
+      `(arquivo id ${existente.id}). Os nomes físicos devem ser únicos para não sobrescrever o acervo.`,
+      httpCode.Conflict
+    );
+  }
+
+  if (usados) usados.add(chave);
+}
+
 const {
   DB_USER,
   DB_PASSWORD,
@@ -313,7 +357,8 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       
       // Process files
       const arquivosInfo = [];
-      
+      const nomesFisicosUsados = new Set();
+
       for (const arquivo of arquivos) {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
@@ -322,7 +367,14 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
             : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
-        
+
+        // Impede colisão de nome físico no volume (sobrescrita silenciosa)
+        await assertNomeFisicoLivre(
+          t,
+          isTileserver ? null : volume.volume_armazenamento_id,
+          arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
+        );
+
         // Register file in the temporary table
         await t.none(
           `INSERT INTO acervo.upload_arquivo_temp(
@@ -506,7 +558,8 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
       
       // Process each version and its files
       const result = [];
-      
+      const nomesFisicosUsados = new Set();
+
       for (const item of versoes) {
         const produto = produtoMap[item.produto_id];
         const volume = volumeByProductType[produto.tipo_produto_id];
@@ -546,13 +599,20 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
             : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
-          
+
+          // Impede colisão de nome físico no volume (sobrescrita silenciosa)
+          await assertNomeFisicoLivre(
+            t,
+            isTileserver ? null : volume.volume_armazenamento_id,
+            arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
+          );
+
           // Register file in the temporary table
           await t.none(
             `INSERT INTO acervo.upload_arquivo_temp(
-              session_id, nome, nome_arquivo, destination_path, 
-              tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
-              expected_checksum, metadado, situacao_carregamento_id, 
+              session_id, nome, nome_arquivo, destination_path,
+              tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
+              expected_checksum, metadado, situacao_carregamento_id,
               descricao, crs_original, versao_temp_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [
@@ -609,24 +669,30 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
     try {
       const { produtos } = requestData;
       
-      // Check for duplicate INOMs
-      const inoms = produtos.map(p => p.produto.inom).filter(inom => inom !== null && inom !== '');
-      const uniqueInoms = [...new Set(inoms)];
-      
-      if (inoms.length !== uniqueInoms.length) {
-        throw new AppError('Existem produtos com INOMs duplicados na solicitação', httpCode.BadRequest);
+      // Check for duplicate INOMs.
+      // A mesma MI/INOM pode gerar produtos distintos por TIPO (ex.: Carta
+      // Topográfica e o CDGV de mesma folha são produtos separados — ver
+      // regras_carga_produtos.md 2.4). Logo a unicidade é por
+      // (INOM, tipo_produto_id), não global. O INOM já codifica a escala.
+      const inomKeys = produtos
+        .filter(p => p.produto.inom !== null && p.produto.inom !== '')
+        .map(p => `${p.produto.inom}|${p.produto.tipo_produto_id}`);
+      const uniqueInomKeys = [...new Set(inomKeys)];
+
+      if (inomKeys.length !== uniqueInomKeys.length) {
+        throw new AppError('Existem produtos com mesmo INOM e tipo de produto duplicados na solicitação', httpCode.BadRequest);
       }
-      
-      // Check if any INOM already exists in the database
+
+      // Check if any (INOM, tipo_produto) already exists in the database
       for (const item of produtos) {
         if (item.produto.inom) {
           const existingProduct = await t.oneOrNone(
-            'SELECT id FROM acervo.produto WHERE inom = $1',
-            [item.produto.inom]
+            'SELECT id FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = $2',
+            [item.produto.inom, item.produto.tipo_produto_id]
           );
 
           if (existingProduct) {
-            throw new AppError(`Já existe um produto com o INOM ${item.produto.inom}`, httpCode.Conflict);
+            throw new AppError(`Já existe um produto do mesmo tipo com o INOM ${item.produto.inom}`, httpCode.Conflict);
           }
         }
       }
@@ -724,7 +790,8 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
       
       // Process each product and its versions
       const result = [];
-      
+      const nomesFisicosUsados = new Set();
+
       for (const item of produtos) {
         const volume = volumeByProductType[item.produto.tipo_produto_id];
         
@@ -787,7 +854,14 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
             : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
-            
+
+            // Impede colisão de nome físico no volume (sobrescrita silenciosa)
+            await assertNomeFisicoLivre(
+              t,
+              isTileserver ? null : volume.volume_armazenamento_id,
+              arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
+            );
+
             // Register file in the temporary table
             await t.none(
               `INSERT INTO acervo.upload_arquivo_temp(

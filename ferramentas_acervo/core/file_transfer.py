@@ -32,17 +32,28 @@ class FileTransferThread(QThread):
         cls._cached_smb_credentials = None
 
     def run(self):
+        # IMPORTANTE: este método executa na thread de trabalho. Nunca criar
+        # widgets/diálogos ou tocar na GUI aqui — apenas emitir sinais.
+
+        # Falha imediata (sem retentativas) para origens que não são caminhos de
+        # arquivo copiáveis: vazio/None ou URL (ex: volume do tipo tileserver)
+        source = (self.source_path or '').strip()
+        if not source or source.lower().startswith(('http://', 'https://')):
+            logging.error(f"Caminho de origem inválido para cópia de arquivo: {self.source_path!r}")
+            self.file_transferred.emit(False, self.destination_path, self.identifier)
+            return
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 if self.cancelled:
                     self.file_transferred.emit(False, self.destination_path, self.identifier)
                     return
-                    
+
                 if platform.system() == 'Windows':
                     success = self.transfer_file_windows()
                 else:
                     success = self.transfer_file_linux()
-                
+
                 if success:
                     self.file_transferred.emit(True, self.destination_path, self.identifier)
                     return  # Transferência bem-sucedida, retornar
@@ -55,16 +66,27 @@ class FileTransferThread(QThread):
             except Exception as e:
                 logging.error(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {str(e)}")
                 self.progress_update.emit(0, 100)
-                
+
             # Se chegou aqui, houve falha. Verificar se deve tentar novamente
             if attempt < self.max_retries and not self.cancelled:
                 logging.info(f"Aguardando {self.retry_delay}s antes de nova tentativa de transferência")
-                time.sleep(self.retry_delay)
+                self._interruptible_sleep(self.retry_delay)
                 self.retry_delay *= 2  # Backoff exponencial
             else:
-                # Todas as tentativas falharam
+                # Todas as tentativas falharam (ou a transferência foi cancelada)
                 logging.error(f"Todas as tentativas de transferência falharam para {self.source_path}")
                 self.file_transferred.emit(False, self.destination_path, self.identifier)
+                return  # Sem este return o laço continuava e emitia file_transferred em duplicidade
+
+    def _interruptible_sleep(self, seconds):
+        """Aguarda em pequenos incrementos, abortando rapidamente se cancelado.
+
+        Evita que cancel()/wait() fiquem bloqueados durante o backoff entre
+        retentativas (time.sleep não é interrompível).
+        """
+        deadline = time.monotonic() + seconds
+        while not self.cancelled and time.monotonic() < deadline:
+            time.sleep(0.1)
 
     def cancel(self):
         """Cancela a transferência"""
@@ -90,42 +112,50 @@ class FileTransferThread(QThread):
             logging.error(f"Erro ao copiar arquivo: {str(e)}")
             return False
 
+    @classmethod
+    def ensure_smb_credentials(cls, parent=None):
+        """Garante que existam credenciais SMB para transferências no Linux.
+
+        DEVE ser chamado na THREAD PRINCIPAL, antes de iniciar as threads de
+        transferência. Criar diálogos a partir de uma thread de trabalho causa
+        crash nativo do QGIS, por isso o run() nunca solicita credenciais.
+
+        Retorna True se há credenciais disponíveis (cacheadas ou informadas
+        pelo usuário); False se o usuário cancelou o diálogo.
+        """
+        if platform.system() == 'Windows':
+            return True
+        if cls._cached_smb_credentials:
+            return True
+
+        if parent is None and utils.iface is not None:
+            parent = utils.iface.mainWindow()
+
+        auth_smb = AuthSMB(parent)
+        if auth_smb.exec():
+            if auth_smb.user and auth_smb.passwd and auth_smb.domain:
+                cls._cached_smb_credentials = (auth_smb.user, auth_smb.passwd, auth_smb.domain)
+                return True
+        return False
+
     def transfer_file_linux(self):
         """Transfere arquivo no Linux usando SMB"""
-        # Prioridade: credenciais explícitas > cache de classe > diálogo
-        user, passwd, domain = None, None, None
-
+        # Prioridade: credenciais explícitas > cache de classe
         if self.credentials:
             user, passwd, domain = self.credentials
         elif FileTransferThread._cached_smb_credentials:
             user, passwd, domain = FileTransferThread._cached_smb_credentials
         else:
-            # Solicitar credenciais apenas se necessário
-            from qgis.PyQt.QtCore import QMetaObject, Qt, Q_ARG
-            from qgis.PyQt.QtWidgets import QApplication
-
-            # Executar o diálogo na thread principal
-            result = [None, None, None]
-
-            def show_dialog():
-                nonlocal result
-                auth_smb = AuthSMB(utils.iface.mainWindow())
-                if auth_smb.exec():
-                    result[0] = auth_smb.user
-                    result[1] = auth_smb.passwd
-                    result[2] = auth_smb.domain
-
-            # Invocar na thread principal
-            QMetaObject.invokeMethod(QApplication.instance(), show_dialog,
-                                    Qt.ConnectionType.BlockingQueuedConnection)
-
-            user, passwd, domain = result
-
-            if not user or not passwd or not domain:
-                return False
-
-            # Cachear credenciais para próximas transferências na sessão
-            FileTransferThread._cached_smb_credentials = (user, passwd, domain)
+            # NUNCA abrir diálogo aqui: este método roda na thread de trabalho
+            # e criar GUI fora da thread principal derruba o QGIS. As credenciais
+            # devem ser obtidas antes, via ensure_smb_credentials() na thread
+            # principal.
+            logging.error(
+                "Credenciais SMB não disponíveis na thread de transferência. "
+                "Chame FileTransferThread.ensure_smb_credentials() na thread "
+                "principal antes de iniciar a transferência."
+            )
+            return False
 
         source_path = self.source_path.replace("\\", "/")
         script_path = os.path.join(os.path.dirname(__file__), 'getFileBySMB.py')
@@ -156,13 +186,17 @@ class FileTransferThread(QThread):
 
         with open(source_path, 'rb') as src:
             with open(dest_path, 'wb') as dst:
-                buffer_size = 8192  # 8KB por vez
+                # Chunks de 1MB: menos overhead de I/O e, principalmente, menos
+                # sinais emitidos. Emitir progresso a cada 8KB inundava a fila de
+                # eventos da thread principal (centenas de milhares de eventos
+                # enfileirados em arquivos grandes travavam a interface do QGIS).
+                buffer_size = 1024 * 1024
                 buffer = src.read(buffer_size)
 
                 while buffer and not self.cancelled:
                     dst.write(buffer)
                     bytes_copied += len(buffer)
-                    # Emitir progresso
+                    # Emitir progresso (no máximo uma vez por chunk de 1MB)
                     self.progress_update.emit(bytes_copied, file_size)
                     buffer = src.read(buffer_size)
 

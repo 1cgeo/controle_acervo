@@ -40,6 +40,13 @@ function summaryCard(label) {
   return card;
 }
 
+/** Short month label ('Jan/26') for a date-only/ISO string, without TZ shifts. */
+function mesLabel(mesIso) {
+  const [ano, mes] = String(mesIso).slice(0, 10).split('-');
+  if (!ano || !mes) return String(mesIso);
+  return `${monthName(Number(mes)).slice(0, 3)}/${ano.slice(2)}`;
+}
+
 /** Pivot entregas_por_tipo_produto rows into stacked-bar data + series. */
 function pivotEntregasPorTipo(rows) {
   const tipos = [...new Set(rows.map(r => r.tipo_produto))];
@@ -82,9 +89,12 @@ export async function renderDashboard(container) {
   const cardPendentes = createStatsCard({
     title: 'Pendentes', value: '-', icon: svgIcon(ICONS.warning, 24), color: 'warning', loading: true,
   });
+  const cardTempoMedio = createStatsCard({
+    title: 'Tempo Médio de Atendimento', value: '-', icon: svgIcon(ICONS.localShipping, 24), color: 'info', loading: true, suffix: 'dias',
+  });
 
   const statsGrid = el('div', { className: 'stats-grid' }, [
-    cardTotal, cardEmAndamento, cardConcluidos, cardPendentes,
+    cardTotal, cardEmAndamento, cardConcluidos, cardPendentes, cardTempoMedio,
   ]);
 
   // -------------------------------------------------------------------------
@@ -108,6 +118,145 @@ export async function renderDashboard(container) {
     ],
     loading: true,
   });
+
+  // -------------------------------------------------------------------------
+  // Tempo de atendimento (média mensal + por tipo de cliente)
+  // -------------------------------------------------------------------------
+  const fulfillmentLine = createLineChart({
+    title: 'Tempo médio de atendimento por mês (dias)',
+    data: [],
+    xKey: 'mes_nome',
+    series: [{ dataKey: 'media_dias', label: 'Dias', fill: true }],
+    loading: true,
+  });
+  const fulfillmentTipoBar = createBarChart({
+    title: 'Tempo médio por tipo de cliente (dias)',
+    data: [],
+    xKey: 'tipo_cliente',
+    series: [{ dataKey: 'media_dias', label: 'Dias' }],
+    loading: true,
+  });
+
+  const atendimentoSection = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Tempo de Atendimento' }),
+    ]),
+    el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [fulfillmentLine, fulfillmentTipoBar]),
+  ]);
+
+  // -------------------------------------------------------------------------
+  // Clientes mais ativos
+  // -------------------------------------------------------------------------
+  const clientesAtivosTable = createDataTable({
+    columns: [
+      {
+        key: 'nome',
+        label: 'Cliente',
+        sortable: true,
+        render: (row) => el('a', { href: `#/clientes/${row.id}`, textContent: row.nome || '-' }),
+      },
+      { key: 'tipo_cliente', label: 'Tipo' },
+      { key: 'total_pedidos', label: 'Pedidos', sortable: true, render: (row) => formatNumber(row.total_pedidos) },
+      { key: 'pedidos_concluidos', label: 'Concluídos', render: (row) => formatNumber(row.pedidos_concluidos) },
+      { key: 'total_produtos', label: 'Produtos', render: (row) => formatNumber(row.total_produtos) },
+      { key: 'ultimo_pedido', label: 'Último pedido', sortable: true, render: (row) => formatDate(row.ultimo_pedido) },
+    ],
+    rows: [],
+    pageSize: 10,
+    loading: true,
+    emptyMessage: 'Nenhum cliente com pedidos',
+  });
+
+  const clientesAtivosSection = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Clientes Mais Ativos (Top 10)' }),
+    ]),
+    clientesAtivosTable.element,
+  ]);
+
+  // -------------------------------------------------------------------------
+  // Consumo de material (12 meses)
+  // -------------------------------------------------------------------------
+  const consumoLine = createLineChart({
+    title: 'Consumo total por mês',
+    data: [],
+    xKey: 'mes_nome',
+    series: [{ dataKey: 'quantidade_total', label: 'Quantidade', fill: true }],
+    loading: true,
+  });
+  const topMateriaisBar = createBarChart({
+    title: 'Materiais mais consumidos (Top 5)',
+    data: [],
+    xKey: 'nome',
+    series: [{ dataKey: 'quantidade_total', label: 'Quantidade' }],
+    horizontal: true,
+    loading: true,
+  });
+
+  const consumoSection = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Consumo de Material (últimos 12 meses)' }),
+    ]),
+    el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [consumoLine, topMateriaisBar]),
+  ]);
+
+  // -------------------------------------------------------------------------
+  // Situação dos plotters
+  // -------------------------------------------------------------------------
+  const plotterCards = {
+    total: summaryCard('Total de plotters'),
+    ativos: summaryCard('Ativos'),
+    inativos: summaryCard('Inativos'),
+  };
+
+  const plotterTable = createDataTable({
+    columns: [
+      {
+        key: 'modelo',
+        label: 'Modelo',
+        sortable: true,
+        render: (row) => el('a', { href: `#/plotters/${row.id}`, textContent: row.modelo || '-' }),
+      },
+      { key: 'nr_serie', label: 'Número de série' },
+      {
+        key: 'ativo',
+        label: 'Status',
+        render: (row) => row.ativo ? chip('Ativo', 'success') : chip('Inativo', 'default'),
+      },
+      {
+        key: 'data_ultima_manutencao',
+        label: 'Última manutenção',
+        sortable: true,
+        render: (row) => formatDate(row.data_ultima_manutencao),
+      },
+      {
+        key: 'custo_total_manutencao',
+        label: 'Custo de manutenção',
+        render: (row) => formatCurrency(row.custo_total_manutencao),
+      },
+      {
+        key: 'fim_vida_util',
+        label: 'Vida útil',
+        render: (row) => {
+          if (row.fim_vida_util === true) return chip('Expirada', 'error');
+          if (row.fim_vida_util === false) return chip('Vigente', 'success');
+          return el('span', { textContent: '-' });
+        },
+      },
+    ],
+    rows: [],
+    pageSize: 5,
+    loading: true,
+    emptyMessage: 'Nenhum plotter cadastrado',
+  });
+
+  const plottersSection = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Plotters' }),
+    ]),
+    el('div', { className: 'summary-cards' }, Object.values(plotterCards)),
+    plotterTable.element,
+  ]);
 
   // -------------------------------------------------------------------------
   // Pending orders table
@@ -262,6 +411,10 @@ export async function renderDashboard(container) {
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [statusPie, stockBar]),
     timelineLine,
     pendingSection,
+    atendimentoSection,
+    clientesAtivosSection,
+    consumoSection,
+    plottersSection,
     annualSection,
   ]);
   container.appendChild(page);
@@ -275,10 +428,14 @@ export async function renderDashboard(container) {
       mapotecaService.getStockByLocation(),
       mapotecaService.getOrdersTimeline(6),
       mapotecaService.getPendingOrders(),
+      mapotecaService.getAvgFulfillmentTime(),
+      mapotecaService.getClientActivity(10),
+      mapotecaService.getMaterialConsumption(12),
+      mapotecaService.getPlotterStatus(),
     ]);
     if (disposed) return;
 
-    const [statusRes, stockRes, timelineRes, pendingRes] = results;
+    const [statusRes, stockRes, timelineRes, pendingRes, avgRes, clientesRes, consumoRes, plotterRes] = results;
 
     if (statusRes.status === 'fulfilled') {
       const status = statusRes.value;
@@ -319,6 +476,70 @@ export async function renderDashboard(container) {
 
     if (pendingRes.status === 'fulfilled') {
       pendingTable.update({ rows: pendingRes.value, loading: false });
+    }
+
+    if (avgRes.status === 'fulfilled') {
+      const avg = avgRes.value;
+      cardTempoMedio.update({
+        value: avg.media_geral != null ? formatNumber(avg.media_geral) : '-',
+        loading: false,
+        suffix: avg.media_geral != null ? 'dias' : '',
+      });
+      fulfillmentLine.update({
+        data: (avg.mensal || []).map(m => ({
+          mes_nome: mesLabel(m.mes),
+          media_dias: Number(m.media_dias),
+        })),
+        loading: false,
+      });
+      fulfillmentTipoBar.update({
+        data: (avg.por_tipo_cliente || []).map(t => ({
+          tipo_cliente: t.tipo_cliente,
+          media_dias: Number(t.media_dias),
+        })),
+        loading: false,
+      });
+    } else {
+      cardTempoMedio.update({ value: '-', loading: false, suffix: '' });
+      fulfillmentLine.update({ data: [], loading: false });
+      fulfillmentTipoBar.update({ data: [], loading: false });
+    }
+
+    if (clientesRes.status === 'fulfilled') {
+      clientesAtivosTable.update({ rows: clientesRes.value || [], loading: false });
+    } else {
+      clientesAtivosTable.update({ rows: [], loading: false });
+    }
+
+    if (consumoRes.status === 'fulfilled') {
+      const consumo = consumoRes.value;
+      consumoLine.update({
+        data: (consumo.consumo_mensal_total || []).map(m => ({
+          mes_nome: mesLabel(m.mes),
+          quantidade_total: Number(m.quantidade_total),
+        })),
+        loading: false,
+      });
+      topMateriaisBar.update({
+        data: (consumo.materiais_mais_consumidos || []).map(m => ({
+          nome: m.nome,
+          quantidade_total: Number(m.quantidade_total),
+        })),
+        loading: false,
+      });
+    } else {
+      consumoLine.update({ data: [], loading: false });
+      topMateriaisBar.update({ data: [], loading: false });
+    }
+
+    if (plotterRes.status === 'fulfilled') {
+      const { sumario = {}, plotters = [] } = plotterRes.value || {};
+      plotterCards.total.setValue(formatNumber(sumario.total ?? 0));
+      plotterCards.ativos.setValue(formatNumber(sumario.ativos ?? 0));
+      plotterCards.inativos.setValue(formatNumber(sumario.inativos ?? 0));
+      plotterTable.update({ rows: plotters, loading: false });
+    } else {
+      plotterTable.update({ rows: [], loading: false });
     }
   }
 
@@ -411,10 +632,16 @@ export async function renderDashboard(container) {
     statusPie._cleanup();
     stockBar._cleanup();
     timelineLine._cleanup();
+    fulfillmentLine._cleanup();
+    fulfillmentTipoBar._cleanup();
+    consumoLine._cleanup();
+    topMateriaisBar._cleanup();
     entregasTipoChart._cleanup();
     entregasMidiaChart._cleanup();
     operacoesChart._cleanup();
     pendingTable._cleanup();
+    clientesAtivosTable._cleanup();
+    plotterTable._cleanup();
     entregasMesTable._cleanup();
   };
 }

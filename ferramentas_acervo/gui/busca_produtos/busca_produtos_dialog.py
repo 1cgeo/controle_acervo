@@ -240,8 +240,13 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         if product_id is not None:
             from ..informacao_produto.product_info_dialog import ProductInfoDialog
-            dialog = ProductInfoDialog(self.iface, self.api_client, product_id=product_id)
-            dialog.exec()
+            # Não-modal: permite continuar usando o QGIS e a busca com a janela aberta.
+            # O parent (este diálogo) mantém a referência e fecha os detalhes junto com a busca
+            dialog = ProductInfoDialog(self.iface, self.api_client, parent=self, product_id=product_id)
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
 
     def go_to_first_page(self):
         if self.current_page > 1:

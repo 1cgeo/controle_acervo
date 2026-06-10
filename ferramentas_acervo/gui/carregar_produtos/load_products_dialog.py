@@ -31,10 +31,14 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         self.setWindowTitle("Carregar Camadas de Produtos")
         
         # Clear existing layout in scrollAreaWidgetContents
-        if self.scrollAreaWidgetContents.layout():
-            while self.scrollAreaWidgetContents.layout().count():
-                item = self.scrollAreaWidgetContents.layout().takeAt(0)
-                if item.widget():
+        # Nota: não usar truthiness aqui — no PyQt6, QLayout implementa __len__
+        # (= count()), então um layout vazio é avaliado como False.
+        existing_layout = self.scrollAreaWidgetContents.layout()
+        if existing_layout is not None:
+            self.mainLayout = existing_layout
+            while self.mainLayout.count():
+                item = self.mainLayout.takeAt(0)
+                if item.widget() is not None:
                     item.widget().deleteLater()
         else:
             self.mainLayout = QVBoxLayout(self.scrollAreaWidgetContents)

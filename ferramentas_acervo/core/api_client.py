@@ -2,7 +2,8 @@
 import logging
 import requests
 from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
-from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtCore import QThread
+from qgis.PyQt.QtWidgets import QApplication, QMessageBox
 from urllib.parse import urljoin
 
 class APIClient:
@@ -38,7 +39,16 @@ class APIClient:
             self.session.proxies = {}
 
     def show_error(self, title, message):
-        """Exibe uma mensagem de erro para o usuário."""
+        """Exibe uma mensagem de erro para o usuário.
+
+        Se for chamado fora da thread principal (ex: API usada dentro de uma
+        QThread), apenas registra no log: criar QMessageBox em thread de
+        trabalho causa crash nativo do QGIS.
+        """
+        app = QApplication.instance()
+        if app is None or QThread.currentThread() is not app.thread():
+            logging.error(f"{title}: {message}")
+            return
         QMessageBox.critical(None, title, message)
 
     def _try_relogin(self):

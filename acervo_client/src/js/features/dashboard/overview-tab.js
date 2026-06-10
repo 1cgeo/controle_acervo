@@ -86,9 +86,10 @@ function createAlertPanel(healthData) {
 /**
  * Render the "Visão Geral" tab.
  * @param {HTMLElement} container
- * @returns {Function|void} cleanup
+ * @returns {{cleanup: Function, refresh: Function}}
  */
 export async function renderOverviewTab(container) {
+  let disposed = false;
   const cards = [
     createStatsCard({
       title: 'Total de Produtos',
@@ -142,50 +143,61 @@ export async function renderOverviewTab(container) {
   const alertContainer = el('div');
   container.appendChild(alertContainer);
 
-  // Fetch data in parallel
-  const [produtosResult, armazenamentoResult, usuariosResult, healthResult] = await Promise.allSettled([
-    dashboardService.getProdutosTotal(),
-    dashboardService.getArquivosTotalGb(),
-    dashboardService.getUsuariosTotal(),
-    dashboardService.getSystemHealth(),
-  ]);
+  async function loadData() {
+    // Fetch data in parallel
+    const [produtosResult, armazenamentoResult, usuariosResult, healthResult] = await Promise.allSettled([
+      dashboardService.getProdutosTotal(),
+      dashboardService.getArquivosTotalGb(),
+      dashboardService.getUsuariosTotal(),
+      dashboardService.getSystemHealth(),
+    ]);
+    if (disposed) return;
 
-  if (produtosResult.status === 'fulfilled') {
-    const data = produtosResult.value;
-    cards[0].update({ value: formatNumber(data?.total_produtos ?? 0), loading: false });
-  } else {
-    cards[0].update({ value: 'Erro', loading: false });
+    if (produtosResult.status === 'fulfilled') {
+      const data = produtosResult.value;
+      cards[0].update({ value: formatNumber(data?.total_produtos ?? 0), loading: false });
+    } else {
+      cards[0].update({ value: 'Erro', loading: false });
+    }
+
+    if (armazenamentoResult.status === 'fulfilled') {
+      const data = armazenamentoResult.value;
+      cards[1].update({
+        value: Number(data?.total_gb ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        loading: false,
+        suffix: 'GB',
+      });
+    } else {
+      cards[1].update({ value: 'Erro', loading: false });
+    }
+
+    if (usuariosResult.status === 'fulfilled') {
+      const data = usuariosResult.value;
+      cards[2].update({ value: formatNumber(data?.total_usuarios ?? 0), loading: false });
+    } else {
+      cards[2].update({ value: 'Erro', loading: false });
+    }
+
+    if (healthResult.status === 'fulfilled') {
+      const health = healthResult.value;
+      cards[3].update({ value: formatNumber(health?.total_projetos ?? 0), loading: false });
+      cards[4].update({ value: formatNumber(health?.total_versoes ?? 0), loading: false });
+      cards[5].update({ value: formatNumber(health?.downloads_24h ?? 0), loading: false });
+
+      // Render alert panel
+      alertContainer.innerHTML = '';
+      alertContainer.appendChild(createAlertPanel(health));
+    } else {
+      cards[3].update({ value: 'Erro', loading: false });
+      cards[4].update({ value: 'Erro', loading: false });
+      cards[5].update({ value: 'Erro', loading: false });
+    }
   }
 
-  if (armazenamentoResult.status === 'fulfilled') {
-    const data = armazenamentoResult.value;
-    cards[1].update({
-      value: Number(data?.total_gb ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      loading: false,
-      suffix: 'GB',
-    });
-  } else {
-    cards[1].update({ value: 'Erro', loading: false });
-  }
+  await loadData();
 
-  if (usuariosResult.status === 'fulfilled') {
-    const data = usuariosResult.value;
-    cards[2].update({ value: formatNumber(data?.total_usuarios ?? 0), loading: false });
-  } else {
-    cards[2].update({ value: 'Erro', loading: false });
-  }
-
-  if (healthResult.status === 'fulfilled') {
-    const health = healthResult.value;
-    cards[3].update({ value: formatNumber(health?.total_projetos ?? 0), loading: false });
-    cards[4].update({ value: formatNumber(health?.total_versoes ?? 0), loading: false });
-    cards[5].update({ value: formatNumber(health?.downloads_24h ?? 0), loading: false });
-
-    // Render alert panel
-    alertContainer.appendChild(createAlertPanel(health));
-  } else {
-    cards[3].update({ value: 'Erro', loading: false });
-    cards[4].update({ value: 'Erro', loading: false });
-    cards[5].update({ value: 'Erro', loading: false });
-  }
+  return {
+    cleanup: () => { disposed = true; },
+    refresh: loadData,
+  };
 }

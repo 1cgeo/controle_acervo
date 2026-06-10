@@ -66,7 +66,8 @@ PANEL_MAPPING = {
     "Configurações": {
         "class": ConfiguracoesDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "admin_only": False,
+        "modal": True  # Formulário de configurações permanece modal
     },
 
     # Funções de Administrador

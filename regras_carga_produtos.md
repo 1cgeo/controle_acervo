@@ -99,12 +99,39 @@ enriquecimento (data exata, etapas no metadado).
   `crs_original = 4674`.
 - PDF de impressão = **Formato Alternativo** (`tipo_arquivo_id = 2`),
   `crs_original` = EPSG original da planilha (quando houver).
-- `nome_arquivo` segue o nome físico sem extensão (ex.: `2962-4-NE_4674_2017`).
+- **Quando a versão possui apenas o PDF, o PDF é o Arquivo Principal**
+  (`tipo_arquivo_id = 1`), com `crs_original` = EPSG original da planilha.
+
+#### Nome físico padronizado (chave única no volume)
+
+O servidor reconstrói o caminho de download como `<volume>/<nome_arquivo>.<extensao>`
+(`server/src/acervo/acervo_ctrl.js`) — **não há coluna de caminho físico**. Portanto
+`nome_arquivo` é a chave física do arquivo no volume e **precisa ser globalmente único**,
+ou edições/anos/escalas diferentes com o mesmo nome base se sobrescrevem silenciosamente.
+
+- **Padrão**: `{TIPOPROD}_{MI|slug}_{EDICAO}` (sem extensão).
+  - `TIPOPROD`: `CT` (topográfica), `CO` (ortoimagem), `CTM` (militar), `TEM` (temática),
+    `CDGV`, ... (ver `carga/nome_arquivo.cjs`, `TIPO_PROD_SLUG`).
+  - `MI`: o identificador **já codifica a escala** pelo número de componentes —
+    `2753` → 1:100.000, `2753-1` → 1:50.000, `2753-1-NE` → 1:25.000 (1:250.000 usa
+    INOM/MIR, de formato distinto). Logo **a escala não entra no nome**. Sem MI
+    (especiais), usar o slug do nome do produto.
+  - `EDICAO`: T34-700 → `edN` (N = `Cont_Edicao`); ET-RDG → `Ndsg`.
+  - Ex.: `CT_2962-4-NE_ed4`, `CT_2753_ed1`, `CT_2753-1_1dsg`, `CO_2962-4-NE_ed1`.
+- O **TIF (principal) e o PDF (alternativo) de uma versão compartilham o mesmo nome base**
+  e diferem só pela extensão — sem colisão, pois a chave física é `(nome_arquivo, extensao)`.
+- Implementação de referência: `carga/nome_arquivo.cjs` (`nomeArquivoPadrao`).
+- **Trava no servidor**: o `prepare-upload` recusa (HTTP 409) se o trio
+  `(volume, nome_arquivo, extensao)` já existir no acervo ou se repetir dentro do mesmo
+  envio — impede sobrescrita silenciosa (`assertNomeFisicoLivre` em `arquivo_ctrl.js`).
 
 ### 2.4 Produtos
 
-- Mesma MI pode gerar **produtos distintos por tipo**: CT, CO e Temática são produtos
-  separados (ex.: 2980-1-SO tem cartas temáticas de 1980 além da topográfica).
+- Mesma MI pode gerar **produtos distintos por tipo**: CT, CO, CDGV e Temática são
+  produtos separados (ex.: 2980-1-SO tem cartas temáticas de 1980 além da topográfica;
+  cada CT 1:100.000 do SISFRON tem o CDGV de mesma folha). A unicidade de INOM é por
+  **(INOM, tipo_produto)** — o servidor recusa duplicado só dentro do mesmo tipo
+  (`arquivo_ctrl.js`, prepare-upload/product). O INOM já codifica a escala.
 - Geometria: moldura `Polygon` da situacao-geral, EWKT com `SRID=4674;`.
 - **Atenção a acentos nos nomes** — usar a grafia correta da planilha
   (ex.: **"Saicã"**, não "SAICA"). Nomes de pasta/arquivo não são fonte de
@@ -115,6 +142,34 @@ enriquecimento (data exata, etapas no metadado).
   maiúsculas. Ex.: "CERRO DA GLÓRIA" → **"Cerro da Glória"**;
   "ROSÁRIO DO SUL-N" → **"Rosário do Sul-N"**.
   Implementação de referência: `carga/title_case.cjs` (`titleCasePt`).
+
+### 2.5 Datas (`data_criacao` / `data_edicao`)
+
+`acervo.versao.data_criacao` e `data_edicao` são `timestamp with time zone` e o
+servidor roda em `America/Sao_Paulo` (-03). Enviar só `"YYYY-MM-DD"` é interpretado
+como 00:00 **UTC** e, em horário local, cai no **dia anterior** (errando inclusive o
+ano em `EXTRACT(YEAR ...)`, base dos anos das views materializadas). **Enviar sempre
+ao meio-dia local**: `"YYYY-MM-DDT12:00:00-03:00"` (helper `diaLocal` nos loaders).
+
+- `data_criacao` = data do último insumo (reambulação > apoio de campo > imagem).
+- `data_edicao` = data exata das informações marginais.
+
+### 2.6 CDGV (Conjunto de Dados Geoespaciais Vetoriais)
+
+Quando a pasta de produção traz, ao lado da carta, o **CDGV** (`CDGV/{MI}.zip`):
+
+- É um **produto à parte** (`tipo_produto_id = 1`, CDGV), com a **mesma MI/INOM/
+  geometria/escala** da carta correspondente.
+- **Subtipo** = a especificação ET-EDGV usada (ex.: ET-EDGV 2.1.3 = `subtipo 1`,
+  ET-EDGV 3.0 = `subtipo 7`). Confirmar a versão da especificação por produção.
+- O **arquivo é o próprio `.zip`** (camadas SHP dentro) = **Arquivo Principal**
+  (`tipo_arquivo_id = 1`), `crs_original` lido dos `.prj` (ex.: 4674).
+- **Relacionamento com a carta**: a versão da CT tem o CDGV como **Insumo**
+  (`versao_relacionamento`: `versao_id_1 = versão da CT`, `versao_id_2 = versão do
+  CDGV`, `tipo_relacionamento_id = 1`). A direção (id_1 → id_2) significa "id_1 tem
+  id_2 como insumo"; o tipo Insumo é checado contra ciclos no servidor.
+- O `tipo_produto` CDGV precisa de associação em `volume_tipo_produto` (criada na
+  carga se ausente). Referência: `carga/carga_2021_sisfron_100k_cdgv.cjs`.
 
 ## 3. Ordem de carga (regra de ouro)
 
@@ -130,9 +185,10 @@ enriquecimento (data exata, etapas no metadado).
 
 ## 4. Infraestrutura
 
-- **Volume de armazenamento**: `W:` (37 TB livres). Cadastrado no SCA como
-  `W:/sca_acervo` (subpasta obrigatória — caminho "W:" puro quebra a montagem
-  de caminhos no servidor).
+- **Volume de armazenamento**: `\\10.25.163.8\sca\sca_acervo` (37 TB livres).
+  Usar sempre o **caminho UNC**, nunca mapeamentos de unidade (`W:` etc.) —
+  mapeamentos são locais de cada máquina e os caminhos gravados no SCA
+  precisam funcionar para qualquer cliente da rede.
 - Volume primário por tipo de produto em `volume_tipo_produto`.
 - Projetos/lotes do SCA espelham os projetos de produção
   (ex.: projeto "Saicã", lote "2017_SAICA_25K" PIT 2017).

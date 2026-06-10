@@ -38,6 +38,11 @@ class ImpressaoManager(QObject):
         self._total_files = 0
         self._completed_count = 0
         self._file_infos = []
+        # Mantém referência a cada FileTransferThread até o sinal finished.
+        # Sem isso, zerar current_transfer deixaria a única referência Python
+        # cair e o GC destruiria a QThread ainda em execução -> crash nativo.
+        self._active_threads = []
+        self._shutdown = False
 
     def prepare_download(self, pedido_id):
         """Prepara o download dos PDFs do pedido no servidor (gera tokens)."""
@@ -53,7 +58,14 @@ class ImpressaoManager(QObject):
 
     def start_download(self, file_infos, destination_dir):
         """Inicia o download sequencial dos arquivos para a pasta de destino."""
+        # No Linux, obter credenciais SMB na thread principal ANTES de iniciar
+        # as threads (criar diálogo dentro do worker derruba o QGIS)
+        if not FileTransferThread.ensure_smb_credentials():
+            self.download_error.emit("Credenciais de rede (SMB) não informadas.")
+            return
+
         self.is_cancelled = False
+        self._shutdown = False
         self.download_results = []
         self._destination_dir = destination_dir
         self._total_files = len(file_infos)
@@ -108,6 +120,10 @@ class ImpressaoManager(QObject):
             lambda current, total, file=file_info['nome']: self.file_progress.emit(current, total, file)
         )
         transfer_thread.file_transferred.connect(self._handle_file_transfer_complete)
+        # Mantém a thread referenciada até finished, removendo-a só quando o
+        # C++ realmente terminou (evita destruir QThread em execução)
+        transfer_thread.finished.connect(self._cleanup_finished_threads)
+        self._active_threads.append(transfer_thread)
 
         self.current_transfer = {
             'thread': transfer_thread,
@@ -116,9 +132,21 @@ class ImpressaoManager(QObject):
 
         transfer_thread.start()
 
+    def _cleanup_finished_threads(self):
+        """Remove (e agenda deleção de) as threads que já terminaram de fato."""
+        ainda_ativas = []
+        for thread in self._active_threads:
+            if thread.isFinished():
+                thread.deleteLater()
+            else:
+                ainda_ativas.append(thread)
+        self._active_threads = ainda_ativas
+
     def _handle_file_transfer_complete(self, success, file_path, identifier):
         """Trata a conclusão de uma transferência, com retentativa de checksum."""
-        if not self.current_transfer:
+        # Após shutdown/cancelamento não processar (a UI pode estar fechando).
+        # A thread continua referenciada em _active_threads até finished.
+        if self._shutdown or not self.current_transfer:
             return
 
         file_info = self.current_transfer['file_info']
@@ -135,7 +163,7 @@ class ImpressaoManager(QObject):
                     file_info['checksum_retries'] += 1
                     retry_count = file_info['checksum_retries']
 
-                    if retry_count < self.MAX_CHECKSUM_RETRIES:
+                    if retry_count < self.MAX_CHECKSUM_RETRIES and not self.is_cancelled:
                         delay = self.CHECKSUM_RETRY_BASE_DELAY * (2 ** (retry_count - 1))
                         logging.warning(
                             f"Checksum falhou para '{file_info['nome']}' "
@@ -148,7 +176,12 @@ class ImpressaoManager(QObject):
                         except OSError:
                             pass
 
-                        QTimer.singleShot(int(delay * 1000), self._download_next_file)
+                        # Guarda no callback: se a janela fechar durante o delay,
+                        # _shutdown bloqueia o reagendamento
+                        QTimer.singleShot(
+                            int(delay * 1000),
+                            lambda: None if self._shutdown else self._download_next_file()
+                        )
                         return
                     else:
                         success = False
@@ -183,6 +216,10 @@ class ImpressaoManager(QObject):
 
     def confirm_downloads(self):
         """Confirma os downloads com o servidor e grava o manifesto."""
+        # Em shutdown (janela fechando) não confirmar nem emitir para a UI
+        if self._shutdown:
+            return
+
         if not self.download_results:
             self.download_complete.emit([], '')
             return
@@ -250,20 +287,45 @@ class ImpressaoManager(QObject):
             return ''
 
     def cancel_downloads(self):
-        """Cancela os downloads em andamento."""
+        """Cancela os downloads em andamento (mantém a UI viva)."""
         self.is_cancelled = True
         self._pending_files = []
 
-        if self.current_transfer:
-            thread = self.current_transfer['thread']
+        # Sinaliza cancelamento a TODAS as threads ativas (não só a atual);
+        # a referência é mantida em _active_threads até finished
+        for thread in self._active_threads:
             if thread.isRunning():
                 thread.cancel()
-            self.current_transfer = None
+        self.current_transfer = None
 
         # Sempre concluir: cancelar antes do primeiro arquivo terminar deixava
         # a UI travada aguardando download_complete (confirm_downloads emite
         # download_complete([], '') quando não há resultados)
         self.confirm_downloads()
+
+    def shutdown(self, wait_ms=10000):
+        """Encerramento seguro ao fechar a janela: cancela e ESPERA as threads.
+
+        Garante que nenhuma QThread continue viva sem referência após o
+        ImpressaoManager/diálogo serem destruídos (causa de crash nativo).
+        """
+        self._shutdown = True
+        self.is_cancelled = True
+        self._pending_files = []
+
+        for thread in self._active_threads:
+            if thread.isRunning():
+                thread.cancel()
+        for thread in self._active_threads:
+            if thread.isRunning():
+                thread.wait(wait_ms)
+
+        self._cleanup_finished_threads()
+        self.current_transfer = None
+
+    def has_active_threads(self):
+        """True se ainda há threads de transferência em execução."""
+        return any(t.isRunning() for t in self._active_threads)
 
     @staticmethod
     def calculate_checksum(file_path):

@@ -32,6 +32,7 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
 
     def download_situacao(self):
         """Baixa os arquivos GeoJSON da situação geral."""
+        temp_file_path = None
         try:
             # Obter diretório de destino
             dest_dir = QFileDialog.getExistingDirectory(
@@ -97,9 +98,6 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             self.progressBar.setValue(100)
             self.statusLabel.setText("Download concluído com sucesso!")
 
-            # Remover arquivo temporário
-            os.unlink(temp_file_path)
-
             QMessageBox.information(
                 self,
                 "Sucesso",
@@ -114,5 +112,11 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
                 f"Erro ao baixar os arquivos: {str(e)}"
             )
         finally:
+            # Remover arquivo temporário também em caso de falha
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except OSError:
+                    pass
             self.downloadButton.setEnabled(True)
             self.setCursor(Qt.CursorShape.ArrowCursor)
