@@ -30,7 +30,7 @@ class DownloadManager(QObject):
     download_complete = pyqtSignal(list)  # results
     download_error = pyqtSignal(str)  # error_message
 
-    # Configuracao de retentativas para checksum
+    # Configuração de retentativas para checksum
     MAX_CHECKSUM_RETRIES = 3
     CHECKSUM_RETRY_BASE_DELAY = 2  # segundos
 
@@ -147,7 +147,7 @@ class DownloadManager(QObject):
         # Emitir progresso geral
         self.download_progress.emit(self._completed_count, self._total_files)
 
-        # Criar e iniciar thread de transferencia
+        # Criar e iniciar thread de transferência
         transfer_thread = FileTransferThread(file_path, dest_file_path, download_token)
         transfer_thread.progress_update.connect(
             lambda current, total, file=nome_arquivo: self.file_progress.emit(current, total, file)

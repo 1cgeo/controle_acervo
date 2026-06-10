@@ -3,6 +3,7 @@ import { getPedidoPorLocalizador } from '@services/mapoteca-service.js';
 import { chipSituacaoPedido } from '@components/status-chip.js';
 import { formatDate } from '@utils/format.js';
 import { isValidLocalizador, normalizeLocalizador } from '@utils/localizador.js';
+import { randomBackground } from '@utils/backgrounds.js';
 
 function infoRow(label, value) {
   return el('div', { className: 'consulta-info__row' }, [
@@ -63,7 +64,10 @@ export async function renderConsultarPedido(container, { params }) {
   ]);
 
   const page = el('div', { className: 'consulta-page' }, [
-    el('div', { className: 'login-page__background' }),
+    el('div', {
+      className: 'login-page__background',
+      style: { backgroundImage: `url(${randomBackground()})` },
+    }),
     card,
   ]);
   container.appendChild(page);

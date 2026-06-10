@@ -32,7 +32,7 @@ export function el(tag, attrs = {}, children = []) {
     if (child === null || child === undefined) continue;
     if (typeof child === 'string' || typeof child === 'number') {
       element.appendChild(document.createTextNode(String(child)));
-    } else if (child instanceof HTMLElement) {
+    } else if (child instanceof Node) {
       element.appendChild(child);
     }
   }

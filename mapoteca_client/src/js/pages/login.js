@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { apiPost } from '@services/api-client.js';
 import { saveAuth } from '@store/auth-store.js';
 import { showError } from '@utils/toast.js';
+import { randomBackground } from '@utils/backgrounds.js';
 
 /**
  * Render the login page (public, no layout).
@@ -13,7 +14,10 @@ export async function renderLogin(container) {
   let passwordVisible = false;
   let isSubmitting = false;
 
-  const background = el('div', { className: 'login-page__background' });
+  const background = el('div', {
+    className: 'login-page__background',
+    style: { backgroundImage: `url(${randomBackground()})` },
+  });
 
   const usuarioInput = el('input', {
     className: 'form-field__input',
