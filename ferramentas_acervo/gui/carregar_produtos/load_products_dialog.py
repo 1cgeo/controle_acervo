@@ -3,7 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QMessageBox, QLabel,
-    QGroupBox, QGridLayout, QTableWidget, QTableWidgetItem, QHeaderView
+    QGroupBox, QGridLayout, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsVectorLayer, QgsProject, QgsDataSourceUri
@@ -155,7 +155,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         message_label = QLabel("Não há camadas de produtos disponíveis no momento.")
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mainLayout.addWidget(message_label)
-        self.buttonBox.button(self.buttonBox.Ok).setEnabled(False)
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
 
     def update_available_layers(self):
         # Clear previous layer checkboxes

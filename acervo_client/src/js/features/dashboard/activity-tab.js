@@ -14,7 +14,7 @@ import * as dashboardService from '@services/dashboard-service.js';
 export async function renderActivityTab(container) {
   // Daily activity chart
   const dailyChart = createBarChart({
-    title: 'Atividade Diaria (Ultimos 30 Dias)',
+    title: 'Atividade Diária (Últimos 30 Dias)',
     xKey: 'dia',
     series: [
       { dataKey: 'uploads', label: 'Uploads', color: '#4caf50' },
@@ -55,7 +55,7 @@ export async function renderActivityTab(container) {
         const isAvailable = !row.apagado;
         return el('span', {
           className: `chip chip--${isAvailable ? 'success' : 'error'}`,
-          textContent: isAvailable ? 'Disponivel' : 'Arquivo Excluido',
+          textContent: isAvailable ? 'Disponível' : 'Arquivo Excluído',
         });
       },
     },
@@ -66,18 +66,18 @@ export async function renderActivityTab(container) {
     { key: 'mi', label: 'MI' },
     { key: 'tipo_produto', label: 'Tipo' },
     { key: 'tipo_escala', label: 'Escala' },
-    { key: 'total_versoes', label: 'Versoes', format: (v) => formatNumber(v) },
+    { key: 'total_versoes', label: 'Versões', format: (v) => formatNumber(v) },
     { key: 'data_cadastramento', label: 'Data Cadastro', format: (v) => formatDateTime(v) },
   ];
 
   const versionColumns = [
-    { key: 'versao', label: 'Versao' },
+    { key: 'versao', label: 'Versão' },
     { key: 'produto_nome', label: 'Produto', className: 'data-table__cell--truncate' },
     { key: 'mi', label: 'MI' },
     { key: 'tipo_versao', label: 'Tipo' },
-    { key: 'orgao_produtor', label: 'Orgao Produtor', className: 'data-table__cell--truncate' },
+    { key: 'orgao_produtor', label: 'Órgão Produtor', className: 'data-table__cell--truncate' },
     { key: 'total_arquivos', label: 'Arquivos', format: (v) => formatNumber(v) },
-    { key: 'data_criacao', label: 'Data Criacao', format: (v) => formatDateTime(v) },
+    { key: 'data_criacao', label: 'Data Criação', format: (v) => formatDateTime(v) },
   ];
 
   // Tables state
@@ -102,7 +102,7 @@ export async function renderActivityTab(container) {
       },
       {
         id: 'versoes',
-        label: 'Versoes Recentes',
+        label: 'Versões Recentes',
         render: async (content) => {
           tables.versoes = createDataTable({ columns: versionColumns, loading: true, pageSize: 5 });
           content.appendChild(tables.versoes);
@@ -136,7 +136,7 @@ export async function renderActivityTab(container) {
       },
       {
         id: 'modificacoes',
-        label: 'Modificacoes Recentes',
+        label: 'Modificações Recentes',
         render: async (content) => {
           tables.modificacoes = createDataTable({ columns: fileColumns, loading: true, pageSize: 5 });
           content.appendChild(tables.modificacoes);
@@ -156,7 +156,7 @@ export async function renderActivityTab(container) {
       },
       {
         id: 'exclusoes',
-        label: 'Exclusoes Recentes',
+        label: 'Exclusões Recentes',
         render: async (content) => {
           tables.exclusoes = createDataTable({ columns: deleteColumns, loading: true, pageSize: 5 });
           content.appendChild(tables.exclusoes);
@@ -170,7 +170,7 @@ export async function renderActivityTab(container) {
       },
       {
         id: 'downloads',
-        label: 'Historico de Downloads',
+        label: 'Histórico de Downloads',
         render: async (content) => {
           tables.downloads = createDataTable({ columns: downloadColumns, loading: true, pageSize: 5 });
           content.appendChild(tables.downloads);
@@ -184,9 +184,9 @@ export async function renderActivityTab(container) {
       },
       {
         id: 'carregamento',
-        label: 'Situacao de Carregamento',
+        label: 'Situação de Carregamento',
         render: async (content) => {
-          const chart = createPieChart({ title: 'Distribuicao por Situacao de Carregamento', loading: true });
+          const chart = createPieChart({ title: 'Distribuição por Situação de Carregamento', loading: true });
           content.appendChild(chart);
           try {
             const data = await dashboardService.getSituacaoCarregamento();

@@ -29,7 +29,7 @@ export function createPieChart({
   const loadingEl = el('div', { className: 'chart-card__loading' }, [
     el('div', { className: 'spinner' }),
   ]);
-  const emptyEl = el('div', { className: 'chart-card__empty', textContent: 'Sem dados disponiveis' });
+  const emptyEl = el('div', { className: 'chart-card__empty', textContent: 'Sem dados disponíveis' });
 
   const titleEl = el('div', { className: 'chart-card__title', textContent: title });
   const card = el('div', { className: 'chart-card' }, [titleEl, chartBody]);

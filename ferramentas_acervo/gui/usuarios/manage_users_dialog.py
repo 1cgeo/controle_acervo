@@ -30,8 +30,8 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
         # Configurar a tabela de usuários
         self.usersTable.setColumnCount(5)
         self.usersTable.setHorizontalHeaderLabels(['Posto/Grad', 'Nome', 'Login', 'Administrador', 'Ativo'])
-        self.usersTable.setSelectionBehavior(QTableWidget.SelectRows)
-        self.usersTable.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.usersTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.usersTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Conectar botões
         self.updateButton.clicked.connect(self.update_users)

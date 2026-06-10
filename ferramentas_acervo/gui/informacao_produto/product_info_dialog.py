@@ -424,7 +424,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         
         basic_label = QLabel(basic_info)
         basic_label.setWordWrap(True)
-        basic_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        basic_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         basic_layout.addWidget(basic_label)
         basic_group.setLayout(basic_layout)
         content_layout.addWidget(basic_group)
@@ -442,7 +442,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
                 
             metadata_label = QLabel(metadata_text)
             metadata_label.setWordWrap(True)
-            metadata_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            metadata_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             metadata_layout.addWidget(metadata_label)
             metadata_group.setLayout(metadata_layout)
             content_layout.addWidget(metadata_group)
@@ -451,7 +451,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         layout.addWidget(scroll_area)
         
         # Botões de ação
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(dialog.accept)
         layout.addWidget(button_box)
         

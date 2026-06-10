@@ -1,7 +1,7 @@
 # Path: gui\busca_produtos\busca_produtos_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
 import csv
 
@@ -32,8 +32,8 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             'Tipo Produto', 'Descrição', 'Data Cadastramento',
             'Data Modificação', 'Nº Versões'
         ])
-        self.resultsTable.setSelectionBehavior(self.resultsTable.SelectRows)
-        self.resultsTable.setEditTriggers(self.resultsTable.NoEditTriggers)
+        self.resultsTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.resultsTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Set column widths
         header = self.resultsTable.horizontalHeader()

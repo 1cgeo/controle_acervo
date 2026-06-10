@@ -1,7 +1,7 @@
 # Path: gui\downloads_deletados\downloads_deletados_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
 import csv
 
@@ -30,8 +30,8 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
             'ID', 'Arquivo', 'Nome do Arquivo', 'Usuário',
             'Data Download', 'Motivo Exclusão', 'Data Exclusão'
         ])
-        self.downloadsTable.setSelectionBehavior(self.downloadsTable.SelectRows)
-        self.downloadsTable.setEditTriggers(self.downloadsTable.NoEditTriggers)
+        self.downloadsTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.downloadsTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         header = self.downloadsTable.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)

@@ -51,7 +51,7 @@ class OverviewTab(QWidget):
         product_layout = QVBoxLayout()
         self.product_info_label = QLabel()
         self.product_info_label.setWordWrap(True)
-        self.product_info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.product_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         product_layout.addWidget(self.product_info_label)
         self.product_info_group.setLayout(product_layout)
         content_layout.addWidget(self.product_info_group)
@@ -60,7 +60,7 @@ class OverviewTab(QWidget):
         version_layout = QVBoxLayout()
         self.version_info_label = QLabel()
         self.version_info_label.setWordWrap(True)
-        self.version_info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.version_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         version_layout.addWidget(self.version_info_label)
         
         # Botões de administrador para versão
@@ -88,7 +88,7 @@ class OverviewTab(QWidget):
         stats_layout = QVBoxLayout()
         self.stats_label = QLabel()
         self.stats_label.setWordWrap(True)
-        self.stats_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.stats_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         stats_layout.addWidget(self.stats_label)
         self.stats_group.setLayout(stats_layout)
         content_layout.addWidget(self.stats_group)
@@ -128,7 +128,7 @@ class OverviewTab(QWidget):
         if self.is_admin:
             headers.append("Ações")
         self.files_table.setHorizontalHeaderLabels(headers)
-        self.files_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         if self.is_admin:

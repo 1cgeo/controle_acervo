@@ -723,7 +723,7 @@ class PolygonMapTool(QgsMapToolEmitPoint):
         self.rubber_band.setWidth(2)
     
     def canvasReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Adicionar ponto
             point = self.toMapCoordinates(event.pos())
             self.points.append(point)
@@ -734,7 +734,7 @@ class PolygonMapTool(QgsMapToolEmitPoint):
             if len(points) > 1:
                 self.rubber_band.setToGeometry(QgsGeometry.fromPolygonXY([points]), None)
                 
-        elif event.button() == Qt.RightButton and len(self.points) >= 3:
+        elif event.button() == Qt.MouseButton.RightButton and len(self.points) >= 3:
             # Finalizar polígono
             points = [point for point in self.points]
             geometry = QgsGeometry.fromPolygonXY([points])

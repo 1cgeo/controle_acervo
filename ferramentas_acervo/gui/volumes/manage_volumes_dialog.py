@@ -24,8 +24,8 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
         # Configurar a tabela de volumes
         self.volumesTable.setColumnCount(4)
         self.volumesTable.setHorizontalHeaderLabels(['Id', 'Nome', 'Volume', 'Capacidade (GB)'])
-        self.volumesTable.setSelectionBehavior(QTableWidget.SelectRows)
-        self.volumesTable.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.volumesTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.volumesTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Conectar botões
         self.addButton.clicked.connect(self.add_volume)

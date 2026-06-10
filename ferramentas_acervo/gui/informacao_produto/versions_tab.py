@@ -72,7 +72,7 @@ class VersionsTab(QWidget):
         self.version_info_layout = QVBoxLayout()
         self.version_info_label = QLabel()
         self.version_info_label.setWordWrap(True)
-        self.version_info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.version_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.version_info_layout.addWidget(self.version_info_label)
         
         # Botões de administrador para versão
@@ -123,7 +123,7 @@ class VersionsTab(QWidget):
         if self.is_admin:
             headers.append("Ações")
         self.files_table.setHorizontalHeaderLabels(headers)
-        self.files_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         if self.is_admin:

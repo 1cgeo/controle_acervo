@@ -25,8 +25,8 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         # Configurar a tabela de lotes
         self.lotesTable.setColumnCount(8)
         self.lotesTable.setHorizontalHeaderLabels(['Id', 'Nome', 'PIT', 'Projeto', 'Descrição', 'Data Início', 'Data Fim', 'Status'])
-        self.lotesTable.setSelectionBehavior(QTableWidget.SelectRows)
-        self.lotesTable.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.lotesTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.lotesTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Conectar botões
         self.addButton.clicked.connect(self.add_lote)

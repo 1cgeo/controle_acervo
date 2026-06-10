@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ferramentas de Controle do Acervo: mapa dobrado arquivado em gaveta do acervo -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- caixa/gaveta do acervo -->
+  <rect x="7" y="37" width="50" height="20" rx="3" fill="#3e5226"/>
+  <rect x="7" y="37" width="50" height="5" fill="#2c3b1b"/>
+  <rect x="25" y="46" width="14" height="5" rx="2.5" fill="#a8b98a"/>
+
+  <!-- mapa dobrado (zigue-zague) -->
+  <polygon points="13,13 27,9 27,37 13,41" fill="#f2ecd9"/>
+  <polygon points="27,9 41,13 41,41 27,37" fill="#e3dabf"/>
+  <polygon points="41,13 55,9 55,37 41,41" fill="#f2ecd9"/>
+
+  <!-- curvas de nível -->
+  <path d="M16 31c4-6 8-4 8-10" stroke="#7c9457" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <path d="M16 35c5-4 8-7 8-7" stroke="#7c9457" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+  <path d="M44 30c4-5 8-3 8-9" stroke="#7c9457" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <path d="M44 34c5-3 8-6 8-6" stroke="#7c9457" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+
+  <!-- contorno do mapa -->
+  <polygon points="13,13 27,9 41,13 55,9 55,37 41,41 27,37 13,41"
+           fill="none" stroke="#3e5226" stroke-width="2.4" stroke-linejoin="round"/>
+  <line x1="27" y1="9" x2="27" y2="37" stroke="#3e5226" stroke-width="1.2"/>
+  <line x1="41" y1="13" x2="41" y2="41" stroke="#3e5226" stroke-width="1.2"/>
+
+  <!-- marcador de localização no painel central -->
+  <path d="M34 16a5 5 0 0 1 5 5c0 3.7-5 9-5 9s-5-5.3-5-9a5 5 0 0 1 5-5z" fill="#b23a36"/>
+  <circle cx="34" cy="21" r="2" fill="#f2ecd9"/>
+</svg>

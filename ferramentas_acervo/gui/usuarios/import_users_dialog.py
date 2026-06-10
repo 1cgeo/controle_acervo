@@ -24,7 +24,7 @@ class ImportUsersDialog(QDialog):
         self.usersTable = QTableWidget(self)
         self.usersTable.setColumnCount(4)
         self.usersTable.setHorizontalHeaderLabels(['', 'Posto/Grad', 'Nome', 'Login'])
-        self.usersTable.setSelectionBehavior(QTableWidget.SelectRows)
+        self.usersTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 
         # Ajusta o tamanho das colunas
         self.usersTable.setColumnWidth(0, 30)  # Coluna do checkbox

@@ -1,7 +1,7 @@
 # Path: gui\versao_relacionamento\versao_relacionamento_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
 import csv
 
@@ -28,8 +28,8 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
             'Produto 2', 'MI 2', 'INOM 2', 'Versão 2',
             'Data'
         ])
-        self.relationshipsTable.setSelectionBehavior(self.relationshipsTable.SelectRows)
-        self.relationshipsTable.setEditTriggers(self.relationshipsTable.NoEditTriggers)
+        self.relationshipsTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.relationshipsTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         header = self.relationshipsTable.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)

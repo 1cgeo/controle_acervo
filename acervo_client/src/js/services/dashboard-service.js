@@ -3,7 +3,7 @@ import { cachedFetch } from './cache.js';
 
 const TTL = 60 * 1000; // 1 minute
 
-// Tab 1 - Visao Geral
+// Tab 1 - Visão Geral
 export function getProdutosTotal() {
   return cachedFetch('produtos_total', () => apiGet('/dashboard/produtos_total'), TTL);
 }
@@ -16,7 +16,7 @@ export function getUsuariosTotal() {
   return cachedFetch('usuarios_total', () => apiGet('/dashboard/usuarios_total'), TTL);
 }
 
-// Tab 2 - Distribuicao
+// Tab 2 - Distribuição
 export function getProdutosTipo() {
   return cachedFetch('produtos_tipo', () => apiGet('/dashboard/produtos_tipo'), TTL);
 }
@@ -54,7 +54,7 @@ export function getDownloads() {
   return cachedFetch('downloads', () => apiGet('/dashboard/download'), TTL);
 }
 
-// Tab 4 - Analises Avancadas
+// Tab 4 - Análises Avançadas
 export function getProdutoActivityTimeline(months = 6) {
   return cachedFetch(`produto_timeline_${months}`, () => apiGet(`/dashboard/produto_activity_timeline?months=${months}`), TTL);
 }

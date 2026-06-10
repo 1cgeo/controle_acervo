@@ -39,18 +39,18 @@ async function apiRequest(method, endpoint, body = undefined) {
 
   if (response.status === 401 || response.status === 403) {
     logout();
-    throw new Error('Sessao expirada');
+    throw new Error('Sessão expirada');
   }
 
   let json;
   try {
     json = await response.json();
   } catch {
-    throw new Error(`Resposta invalida do servidor (HTTP ${response.status})`);
+    throw new Error(`Resposta inválida do servidor (HTTP ${response.status})`);
   }
 
   if (!json.success) {
-    throw new Error(json.message || 'Erro na requisicao');
+    throw new Error(json.message || 'Erro na requisição');
   }
 
   return json.dados;

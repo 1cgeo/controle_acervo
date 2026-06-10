@@ -1,7 +1,7 @@
 # Path: gui\upload_sessions\upload_sessions_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'upload_sessions_dialog.ui'))
@@ -25,8 +25,8 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
             'UUID', 'Tipo de Operação', 'Status', 'Erro',
             'Data de Criação', 'Expiração', 'Conclusão', 'Usuário'
         ])
-        self.sessionsTable.setSelectionBehavior(self.sessionsTable.SelectRows)
-        self.sessionsTable.setEditTriggers(self.sessionsTable.NoEditTriggers)
+        self.sessionsTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.sessionsTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         header = self.sessionsTable.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)

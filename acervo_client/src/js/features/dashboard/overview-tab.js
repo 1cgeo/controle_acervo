@@ -40,7 +40,7 @@ function createAlertPanel(healthData) {
     let desc = `${totalErros} arquivo(s) com erro`;
     const parts = [];
     if (erros.erros_carregamento > 0) parts.push(`${erros.erros_carregamento} de carregamento`);
-    if (erros.erros_exclusao > 0) parts.push(`${erros.erros_exclusao} de exclusao`);
+    if (erros.erros_exclusao > 0) parts.push(`${erros.erros_exclusao} de exclusão`);
     if (parts.length) desc += ` (${parts.join(', ')})`;
 
     alerts.push(
@@ -58,7 +58,7 @@ function createAlertPanel(healthData) {
         svgIcon(ICONS.warning, 18),
         el('span', {
           className: 'alert-panel__item-text',
-          textContent: `${healthData.sessoes_upload_ativas} sessao(oes) de upload ativa(s)`,
+          textContent: `${healthData.sessoes_upload_ativas} sessão(ões) de upload ativa(s)`,
         }),
       ])
     );
@@ -69,7 +69,7 @@ function createAlertPanel(healthData) {
     alerts.push(
       el('div', { className: 'alert-panel__item alert-panel__item--success' }, [
         svgIcon(ICONS.checkCircle, 18),
-        el('span', { className: 'alert-panel__item-text', textContent: 'Nenhum alerta - sistema saudavel' }),
+        el('span', { className: 'alert-panel__item-text', textContent: 'Nenhum alerta - sistema saudável' }),
       ])
     );
   }
@@ -84,7 +84,7 @@ function createAlertPanel(healthData) {
 }
 
 /**
- * Render the "Visao Geral" tab.
+ * Render the "Visão Geral" tab.
  * @param {HTMLElement} container
  * @returns {Function|void} cleanup
  */
@@ -106,7 +106,7 @@ export async function renderOverviewTab(container) {
       suffix: 'GB',
     }),
     createStatsCard({
-      title: 'Total de Usuarios',
+      title: 'Total de Usuários',
       value: '-',
       icon: svgIcon(ICONS.people, 24),
       color: 'success',
@@ -120,7 +120,7 @@ export async function renderOverviewTab(container) {
       loading: true,
     }),
     createStatsCard({
-      title: 'Total de Versoes',
+      title: 'Total de Versões',
       value: '-',
       icon: svgIcon(ICONS.layers, 24),
       color: 'info',

@@ -1,7 +1,7 @@
 # Path: gui\arquivos_incorretos\manage_incorrect_files_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
 from qgis.core import Qgis
 import csv
@@ -32,8 +32,8 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             'ID', 'Nome', 'Nome do Arquivo', 'Extensão', 
             'Volume', 'Tipo de Problema', 'Data', 'Tipo'
         ])
-        self.filesTable.setSelectionBehavior(self.filesTable.SelectRows)
-        self.filesTable.setEditTriggers(self.filesTable.NoEditTriggers)
+        self.filesTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.filesTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         
         # Set column widths
         header = self.filesTable.horizontalHeader()

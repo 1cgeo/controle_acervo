@@ -24,8 +24,8 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         # Configurar a tabela de projetos
         self.projectsTable.setColumnCount(6)
         self.projectsTable.setHorizontalHeaderLabels(['Id', 'Nome', 'Descrição', 'Data Início', 'Data Fim', 'Status'])
-        self.projectsTable.setSelectionBehavior(QTableWidget.SelectRows)
-        self.projectsTable.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.projectsTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.projectsTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Conectar botões
         self.addButton.clicked.connect(self.add_project)

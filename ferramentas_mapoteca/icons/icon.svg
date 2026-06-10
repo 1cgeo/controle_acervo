@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ferramentas da Mapoteca: armário de mapoteca com mapa enrolado -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- corpo do armário -->
+  <rect x="7" y="21" width="50" height="36" rx="3" fill="#41505c"/>
+
+  <!-- gavetas largas -->
+  <rect x="11" y="26" width="42" height="8" rx="1.5" fill="#5a6c7a"/>
+  <rect x="11" y="36" width="42" height="8" rx="1.5" fill="#5a6c7a"/>
+  <rect x="11" y="46" width="42" height="8" rx="1.5" fill="#5a6c7a"/>
+
+  <!-- folha saindo da primeira gaveta -->
+  <polygon points="14,26 50,26 48,23 16,23" fill="#f2ecd9"/>
+
+  <!-- puxadores -->
+  <rect x="26" y="28.5" width="12" height="3" rx="1.5" fill="#2b343c"/>
+  <rect x="26" y="38.5" width="12" height="3" rx="1.5" fill="#2b343c"/>
+  <rect x="26" y="48.5" width="12" height="3" rx="1.5" fill="#2b343c"/>
+
+  <!-- tampo -->
+  <rect x="5" y="17" width="54" height="5" rx="2.5" fill="#2b343c"/>
+
+  <!-- mapa enrolado sobre o tampo -->
+  <rect x="11" y="6" width="36" height="11" rx="5.5" fill="#f2ecd9" stroke="#b8ab8a" stroke-width="1.2"/>
+  <rect x="19" y="6" width="6" height="11" fill="#b23a36"/>
+  <circle cx="47" cy="11.5" r="5.5" fill="#e3dabf" stroke="#b8ab8a" stroke-width="1.2"/>
+  <circle cx="47" cy="11.5" r="2.2" fill="#c9bc9c"/>
+</svg>

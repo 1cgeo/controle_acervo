@@ -4,7 +4,7 @@ import { createBarChart } from '@components/charts/bar-chart.js';
 import * as dashboardService from '@services/dashboard-service.js';
 
 /**
- * Render the "Distribuicao" tab.
+ * Render the "Distribuição" tab.
  * @param {HTMLElement} container
  * @returns {Function|void} cleanup
  */
@@ -44,7 +44,7 @@ export async function renderDistributionTab(container) {
     xKey: 'nome_volume',
     series: [
       { dataKey: 'total_gb', label: 'Usado (GB)', color: style.getPropertyValue('--chart-1').trim() },
-      { dataKey: 'available_gb', label: 'Disponivel (GB)', color: style.getPropertyValue('--chart-2').trim() },
+      { dataKey: 'available_gb', label: 'Disponível (GB)', color: style.getPropertyValue('--chart-2').trim() },
     ],
     stacked: true,
     loading: true,

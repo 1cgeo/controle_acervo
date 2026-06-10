@@ -6,7 +6,7 @@ import { formatNumber, formatMonth } from '@utils/format.js';
 import * as dashboardService from '@services/dashboard-service.js';
 
 /**
- * Render the "Analises Avancadas" tab.
+ * Render the "Análises Avançadas" tab.
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */
@@ -67,7 +67,7 @@ export async function renderAdvancedTab(container) {
     title: '',
     xKey: 'month_label',
     series: [
-      { dataKey: 'novas_versoes', label: 'Novas Versoes', color: '#4caf50' },
+      { dataKey: 'novas_versoes', label: 'Novas Versões', color: '#4caf50' },
       { dataKey: 'acumulado', label: 'Acumulado', color: '#2196f3' },
     ],
     loading: true,
@@ -75,7 +75,7 @@ export async function renderAdvancedTab(container) {
   cleanups.push(() => { if (versionTimelineChart._cleanup) versionTimelineChart._cleanup(); });
 
   const versionTimelineHeader = el('div', { className: 'chart-card__header' }, [
-    el('div', { className: 'chart-card__title', textContent: 'Timeline de Versoes Cadastradas' }),
+    el('div', { className: 'chart-card__title', textContent: 'Timeline de Versões Cadastradas' }),
     versionTimelineSelect,
   ]);
   versionTimelineChart.querySelector('.chart-card__title')?.remove();
@@ -111,10 +111,10 @@ export async function renderAdvancedTab(container) {
   const subTabs = createTabs({
     className: 'sub-tabs',
     tabs: [
-      { id: 'versions', label: 'Estatisticas de Versoes', render: renderVersionStats },
-      { id: 'storage', label: 'Tendencias de Armazenamento', render: renderStorageTrends },
+      { id: 'versions', label: 'Estatísticas de Versões', render: renderVersionStats },
+      { id: 'storage', label: 'Tendências de Armazenamento', render: renderStorageTrends },
       { id: 'projects', label: 'Status de Projetos', render: renderProjectStatus },
-      { id: 'users', label: 'Atividade de Usuarios', render: renderUserActivity },
+      { id: 'users', label: 'Atividade de Usuários', render: renderUserActivity },
     ],
   });
   cleanups.push(() => { if (subTabs.element._cleanup) subTabs.element._cleanup(); });
@@ -132,8 +132,8 @@ async function renderVersionStats(container) {
   container.appendChild(summaryGrid);
 
   // Pie charts
-  const distPie = createPieChart({ title: 'Distribuicao de Versoes por Produto', loading: true });
-  const typePie = createPieChart({ title: 'Tipos de Versao', loading: true });
+  const distPie = createPieChart({ title: 'Distribuição de Versões por Produto', loading: true });
+  const typePie = createPieChart({ title: 'Tipos de Versão', loading: true });
   cleanups.push(() => { if (distPie._cleanup) distPie._cleanup(); });
   cleanups.push(() => { if (typePie._cleanup) typePie._cleanup(); });
 
@@ -145,10 +145,10 @@ async function renderVersionStats(container) {
     const stats = data?.stats || {};
 
     const cards = [
-      { label: 'Total de Versoes', value: formatNumber(stats.total_versions) },
-      { label: 'Produtos com Versoes', value: formatNumber(stats.products_with_versions) },
-      { label: 'Media por Produto', value: Number(stats.avg_versions_per_product || 0).toFixed(1) },
-      { label: 'Maximo por Produto', value: formatNumber(stats.max_versions_per_product) },
+      { label: 'Total de Versões', value: formatNumber(stats.total_versions) },
+      { label: 'Produtos com Versões', value: formatNumber(stats.products_with_versions) },
+      { label: 'Média por Produto', value: Number(stats.avg_versions_per_product || 0).toFixed(1) },
+      { label: 'Máximo por Produto', value: formatNumber(stats.max_versions_per_product) },
     ];
 
     for (const card of cards) {
@@ -164,7 +164,7 @@ async function renderVersionStats(container) {
     if (Array.isArray(data?.distribution)) {
       distPie.update({
         data: data.distribution.map(d => ({
-          label: `${d.versions_per_product} versoes`,
+          label: `${d.versions_per_product} versões`,
           value: Number(d.product_count),
         })),
         loading: false,
@@ -214,7 +214,7 @@ async function renderStorageTrends(container) {
   cleanups.push(() => { if (chart._cleanup) chart._cleanup(); });
 
   const header = el('div', { className: 'chart-card__header' }, [
-    el('div', { className: 'chart-card__title', textContent: 'Tendencias de Armazenamento' }),
+    el('div', { className: 'chart-card__title', textContent: 'Tendências de Armazenamento' }),
     periodSelect,
   ]);
   chart.querySelector('.chart-card__title')?.remove();
@@ -310,9 +310,9 @@ async function renderUserActivity(container) {
     // Simple HTML table
     const thead = el('thead', {}, [
       el('tr', {}, [
-        el('th', { textContent: 'Usuario' }),
+        el('th', { textContent: 'Usuário' }),
         el('th', { textContent: 'Uploads' }),
-        el('th', { textContent: 'Modificacoes' }),
+        el('th', { textContent: 'Modificações' }),
         el('th', { textContent: 'Downloads' }),
         el('th', { textContent: 'Total' }),
       ]),
@@ -331,7 +331,7 @@ async function renderUserActivity(container) {
     const table = el('table', { className: 'data-table' }, [thead, tbody]);
     const wrapper = el('div', { className: 'data-table-wrapper' }, [
       el('div', { className: 'data-table-wrapper__header' }, [
-        el('div', { className: 'data-table-wrapper__title', textContent: 'Top 10 Usuarios Mais Ativos' }),
+        el('div', { className: 'data-table-wrapper__title', textContent: 'Top 10 Usuários Mais Ativos' }),
       ]),
       el('div', { className: 'data-table-scroll' }, [table]),
     ]);
@@ -339,7 +339,7 @@ async function renderUserActivity(container) {
     container.appendChild(wrapper);
 
     if (!rows.length) {
-      const emptyMsg = el('div', { className: 'data-table__empty', textContent: 'Sem dados disponiveis' });
+      const emptyMsg = el('div', { className: 'data-table__empty', textContent: 'Sem dados disponíveis' });
       wrapper.querySelector('.data-table-scroll').innerHTML = '';
       wrapper.querySelector('.data-table-scroll').appendChild(emptyMsg);
     }

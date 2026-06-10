@@ -1,7 +1,7 @@
 # Path: gui\carregar_camadas_produto\load_product_layers_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QPushButton, QMessageBox, QLabel
+from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QPushButton, QMessageBox, QLabel, QDialogButtonBox
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsVectorLayer, QgsProject, QgsDataSourceUri
 
@@ -28,7 +28,7 @@ class LoadProductLayersDialog(QDialog, FORM_CLASS):
 
         self.selectAllButton = QPushButton("Selecionar Todos")
         self.selectAllButton.clicked.connect(self.toggle_all)
-        self.buttonBox.addButton(self.selectAllButton, self.buttonBox.ActionRole)
+        self.buttonBox.addButton(self.selectAllButton, QDialogButtonBox.ButtonRole.ActionRole)
 
         self.buttonBox.accepted.connect(self.load_selected_layers)
         self.buttonBox.rejected.connect(self.reject)
@@ -55,7 +55,7 @@ class LoadProductLayersDialog(QDialog, FORM_CLASS):
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(message_label)
         self.selectAllButton.setEnabled(False)
-        self.buttonBox.button(self.buttonBox.Ok).setEnabled(False)
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
 
     def toggle_all(self):
         check_all = any(not cb.isChecked() for cb in self.checkboxes)

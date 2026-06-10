@@ -14,7 +14,7 @@ export function createDataTable({
   columns,
   data = [],
   loading = false,
-  emptyMessage = 'Sem dados disponiveis',
+  emptyMessage = 'Sem dados disponíveis',
   pageSize = 10,
 }) {
   let currentPage = 0;
@@ -119,7 +119,7 @@ export function createDataTable({
     }, [5, 10, 25].map(size =>
       el('option', {
         value: String(size),
-        textContent: `${size} por pagina`,
+        textContent: `${size} por página`,
         ...(size === currentPageSize ? { selected: 'selected' } : {}),
       })
     ));
@@ -135,14 +135,14 @@ export function createDataTable({
     const prevBtn = el('button', {
       className: 'pagination__btn',
       disabled: currentPage === 0 ? 'disabled' : undefined,
-      'aria-label': 'Pagina anterior',
+      'aria-label': 'Página anterior',
       onClick: () => { if (currentPage > 0) { currentPage--; render(); } },
     }, [svgIcon(ICONS.chevronLeft, 18)]);
 
     const nextBtn = el('button', {
       className: 'pagination__btn',
       disabled: currentPage >= totalPages - 1 ? 'disabled' : undefined,
-      'aria-label': 'Proxima pagina',
+      'aria-label': 'Próxima página',
       onClick: () => { if (currentPage < totalPages - 1) { currentPage++; render(); } },
     }, [svgIcon(ICONS.chevronRight, 18)]);
 

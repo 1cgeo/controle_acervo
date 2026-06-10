@@ -24,8 +24,8 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
         # Configurar a tabela
         self.volumeTipoProdutoTable.setColumnCount(6)
         self.volumeTipoProdutoTable.setHorizontalHeaderLabels(['Id', 'Tipo Produto', 'Volume Armazenamento', 'Nome Volume', 'Capacidade GB', 'Primário'])
-        self.volumeTipoProdutoTable.setSelectionBehavior(QTableWidget.SelectRows)
-        self.volumeTipoProdutoTable.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.volumeTipoProdutoTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.volumeTipoProdutoTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         # Conectar botões
         self.addButton.clicked.connect(self.add_volume_tipo_produto)

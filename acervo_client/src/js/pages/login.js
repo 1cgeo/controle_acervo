@@ -28,7 +28,7 @@ export async function renderLogin(container) {
     className: 'form-field__input',
     type: 'text',
     id: 'usuario',
-    placeholder: 'Digite seu usuario',
+    placeholder: 'Digite seu usuário',
     autocomplete: 'username',
   });
 
@@ -63,7 +63,7 @@ export async function renderLogin(container) {
   // Form
   const form = el('form', { className: 'login-form' }, [
     el('div', { className: 'form-field' }, [
-      el('label', { className: 'form-field__label', for: 'usuario', textContent: 'Usuario' }),
+      el('label', { className: 'form-field__label', for: 'usuario', textContent: 'Usuário' }),
       usuarioInput,
     ]),
     el('div', { className: 'form-field' }, [

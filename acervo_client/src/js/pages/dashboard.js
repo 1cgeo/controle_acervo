@@ -15,10 +15,10 @@ export async function renderDashboard(container) {
 
   const tabs = createTabs({
     tabs: [
-      { id: 'overview', label: 'Visao Geral', render: renderOverviewTab },
-      { id: 'distribution', label: 'Distribuicao', render: renderDistributionTab },
+      { id: 'overview', label: 'Visão Geral', render: renderOverviewTab },
+      { id: 'distribution', label: 'Distribuição', render: renderDistributionTab },
       { id: 'activity', label: 'Atividade', render: renderActivityTab },
-      { id: 'advanced', label: 'Analises Avancadas', render: renderAdvancedTab },
+      { id: 'advanced', label: 'Análises Avançadas', render: renderAdvancedTab },
     ],
   });
 

@@ -36,11 +36,11 @@ class DeletionConfirmationDialog(QDialog, FORM_CLASS):
         # Conectar eventos
         self.nameLineEdit.textChanged.connect(self.validate_form)
         self.motivoTextEdit.textChanged.connect(self.validate_form)
-        self.buttonBox.button(QDialogButtonBox.Ok).setText("Excluir")
-        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(False)
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText("Excluir")
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
         
         # Estilizar o botão de exclusão
-        delete_button = self.buttonBox.button(QDialogButtonBox.Ok)
+        delete_button = self.buttonBox.button(QDialogButtonBox.StandardButton.Ok)
         delete_button.setStyleSheet("background-color: #CF222E; color: white;")
 
     def validate_form(self):
@@ -48,7 +48,7 @@ class DeletionConfirmationDialog(QDialog, FORM_CLASS):
         name_valid = self.nameLineEdit.text() == self.item_name
         motivo_valid = len(self.motivoTextEdit.toPlainText().strip()) > 0
         
-        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(name_valid and motivo_valid)
+        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setEnabled(name_valid and motivo_valid)
         
     def get_motivo(self):
         """Retorna o motivo fornecido para a exclusão."""
