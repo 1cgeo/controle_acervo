@@ -47,15 +47,21 @@ function trataSegmento (segmento, ehPrimeiraPalavra, ehSufixoHifen) {
 function titleCasePt (texto) {
   if (!texto) return texto
 
-  return texto
-    .trim()
-    .split(/\s+/)
-    .map((palavra, idxPalavra) =>
-      palavra
+  const palavras = texto.trim().split(/\s+/)
+  return palavras
+    .map((palavra, idxPalavra) => {
+      // Sufixo direcional isolado após hífen com espaços ("CAÇADOR - E" ->
+      // "Caçador - E"): um "E"/"O"/"N"/"S"/"L" sozinho logo após um "-" é
+      // designador de folha, não a conjunção/artigo.
+      const anterior = idxPalavra > 0 ? palavras[idxPalavra - 1] : null
+      if (anterior === '-' && DIRECIONAIS.has(palavra.toUpperCase())) {
+        return palavra.toUpperCase()
+      }
+      return palavra
         .split('-')
         .map((seg, idxSeg) => trataSegmento(seg, idxPalavra === 0 && idxSeg === 0, idxSeg > 0))
         .join('-')
-    )
+    })
     .join(' ')
 }
 

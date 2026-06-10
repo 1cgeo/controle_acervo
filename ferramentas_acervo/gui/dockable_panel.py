@@ -22,10 +22,15 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         self.setWindowTitle(Config.NAME)
 
         self.setup_ui()
-        self.treeWidget.itemClicked.connect(self.on_item_clicked)
+        # A abertura de uma função exige duplo clique. O clique simples continua
+        # apenas selecionando o item e expandindo/colapsando as categorias
+        # (comportamento nativo do QTreeWidget).
+        self.treeWidget.itemDoubleClicked.connect(self.on_item_double_clicked)
 
     def setup_ui(self):
         self.versionLabel.setText(f"v{Config.VERSION}")
+        # Informa ao usuário que a abertura de uma função exige duplo clique
+        self.treeWidget.setToolTip("Dê um duplo clique em uma função para abri-la")
         self.populate_tree()
         self.searchLineEdit.textChanged.connect(self.filter_tree)
 
@@ -45,8 +50,10 @@ class DockablePanel(QDockWidget, FORM_CLASS):
 
         self.treeWidget.expandAll()
 
-    def on_item_clicked(self, item, column):
-        if item.parent() is not None:  # Apenas itens filhos são clicáveis
+    def on_item_double_clicked(self, item, column):
+        # Apenas itens filhos (funções) abrem diálogos. O duplo clique em uma
+        # categoria mantém o comportamento nativo de expandir/colapsar.
+        if item.parent() is not None:
             self.open_panel(item.text(0))
 
     def open_panel(self, panel_name):

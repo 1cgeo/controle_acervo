@@ -160,16 +160,64 @@ Quando a pasta de produção traz, ao lado da carta, o **CDGV** (`CDGV/{MI}.zip`
 
 - É um **produto à parte** (`tipo_produto_id = 1`, CDGV), com a **mesma MI/INOM/
   geometria/escala** da carta correspondente.
-- **Subtipo** = a especificação ET-EDGV usada (ex.: ET-EDGV 2.1.3 = `subtipo 1`,
-  ET-EDGV 3.0 = `subtipo 7`). Confirmar a versão da especificação por produção.
+- **Subtipo** = a especificação ET-EDGV usada (ET-EDGV 2.1.3 = `subtipo 1`,
+  ET-EDGV 3.0 = `subtipo 7`). **Confirmar inspecionando os nomes das classes (.shp)
+  dentro do zip**: classes `ADM_`, `ASB_`, `ECO_`… (CamelCase) = **2.1.3**;
+  classes `CBGE_` = **3.0**. A versão varia por lote — ex.: as generalizações
+  100k/50k (SISFRON, SC, RS) são 2.1.3; o Conv RS 25k (`Versao_DSG`) é 3.0.
 - O **arquivo é o próprio `.zip`** (camadas SHP dentro) = **Arquivo Principal**
   (`tipo_arquivo_id = 1`), `crs_original` lido dos `.prj` (ex.: 4674).
+- **A edição do CDGV é a mesma da carta correspondente** (foi produzido na mesma
+  edição). Ex.: se a CT 2799 é "4ª Edição", o CDGV 2799 também é "4ª Edição"
+  (e `nome_arquivo` = `CDGV_2799_ed4`), ainda que seja o primeiro CDGV daquela folha.
 - **Relacionamento com a carta**: a versão da CT tem o CDGV como **Insumo**
   (`versao_relacionamento`: `versao_id_1 = versão da CT`, `versao_id_2 = versão do
   CDGV`, `tipo_relacionamento_id = 1`). A direção (id_1 → id_2) significa "id_1 tem
   id_2 como insumo"; o tipo Insumo é checado contra ciclos no servidor.
 - O `tipo_produto` CDGV precisa de associação em `volume_tipo_produto` (criada na
   carga se ausente). Referência: `carga/carga_2021_sisfron_100k_cdgv.cjs`.
+
+### 2.7 Metadados (XML ISO 19115)
+
+Quando a pasta traz um `.xml` por carta (ex.: `CT/{MI}.xml`, padrão `MD_Metadata`
+ISO 19115), ele é carregado como arquivo **Metadados** (`tipo_arquivo_id = 4`) na
+versão da carta, mesmo `nome_arquivo` base (difere só pela extensão `.xml`),
+`crs_original = null`. Referência: `carga/carga_rs_2021_100k.cjs`.
+
+### 2.8 Projetos (taxonomia)
+
+- **Programas/convênios nomeados** têm projeto próprio: ex.: `SISFRON`,
+  `Mapeamento de Santa Catarina`, `Mapeamento do Rio Grande do Sul`, Uraricoera.
+- **Mapeamento genérico** (a maioria) vai para o projeto anual
+  **`Mapeamento de Interesse da Força {ANO}`** (ex.: o Saicã 2017 está em
+  `Mapeamento de Interesse da Força 2017`).
+- O **lote** mantém o nome da pasta de produção (ex.: `2017_SAICA_25K`,
+  `2021_RS_GovRS_Generalizacao_100k`) e o PIT (ano da pasta).
+
+### 2.9 Acervo 2022 em diante (ET-RDG / EDGV 3.0)
+
+A partir de 2022 a produção é **ET-RDG** (CT) e **ET-EDGV 3.0** (CDGV):
+
+- **CT**: versão **"N-DSG"** (subtipo 12), `tipo_versao_id = 1` (Regular — é produção
+  atual, não histórico). 2022 = primeira edição ET-RDG → **"1-DSG"**. O trigger
+  `validate_version` aceita "1-DSG" Regular (formato N-SIGLA, N=1 sem exigir anterior).
+- **CDGV**: ET-EDGV 3.0 (subtipo 7), **mesma versão da CT** ("1-DSG").
+- **PDFs sem camada de texto** — os metadados vêm do **JSON de edição** por carta
+  (`Json/{MI}_NNNdpi.json`, BOM utf-8-sig): `nome`, `inom`, `fases` (datas de
+  produção → `data_criacao` = reambulação; `data_edicao` = fase Edição, MM/AAAA → dia 01),
+  `info_tecnica.datum_vertical`. Geometria pela grade do site; zona UTM do PDF pelo INOM.
+  Extrator: `carga/extrai_json_2022.py`. Loader de referência: `carga/carga_2022_uruguaiana.cjs`.
+- O **JSON de edição** é carregado como arquivo **"JSON Edição"** (`tipo_arquivo_id = 5`) na CT.
+- **NÃO são cadastrados**: MDE/MDT (modelos de elevação) e a **ortoimagem bruta**
+  (apenas a **Carta Ortoimagem**, quando houver) — decisão do usuário.
+- **Carta Ortoimagem** (ex.: lote Itaipu): `tipo_produto = 3`, `subtipo = 3`
+  ("Carta Ortoimagem"), versão "N-DSG", **sem CDGV**. O raster da carta está em
+  `Geotiff/orthoMap_{MI}.tif`. Como ortoimagem não tem reambulação, `data_criacao`
+  = imageamento. Loader: `carga/carga_2022_itaipu.cjs`.
+- **Geometria fora da grade do site**: cartas ausentes da `situacao-geral-*`
+  (ex.: 16 folhas de Itaipu, Roraima) têm a moldura calculada pelo INOM via
+  **DsgTools** (`carga/gera_frames_itaipu.py`, QGIS 4 + `map_index`). O
+  `extrai_json_2022.py` aceita um arquivo de molduras como fallback (4º argumento).
 
 ## 3. Ordem de carga (regra de ouro)
 
