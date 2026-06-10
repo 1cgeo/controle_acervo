@@ -8,7 +8,7 @@ Guia passo a passo para configurar o sistema **Controle do Acervo (SCA)** do zer
 
 - Servidor do SCA rodando e acessível na rede
 - Servidor de autenticação externo rodando e acessível
-- QGIS 3 com o plugin **Ferramentas de Controle do Acervo** instalado
+- QGIS 4 com o plugin **Ferramentas de Controle do Acervo** instalado
 - Conta de administrador cadastrada no servidor de autenticação
 
 ---
@@ -173,7 +173,7 @@ Campos opcionais da versão: `lote_id`, `descricao_versao`, `palavras_chave` (se
 
 Campos opcionais do arquivo: `descricao_arquivo`, `uuid_arquivo`, `uuid_versao`, `crs_original`, `metadado` (JSON).
 
-> **Tipos de arquivo** — 1: Principal, 2: Formato alternativo, 3: Insumo, 4: Metadado, 5: Edição JSON, 6: Documentos, 7: Projeto QGIS, 8: Complementar, 9: Tileserver (URL, não precisa de arquivo físico nem extensão).
+> **Tipos de arquivo** — 1: Arquivo principal, 2: Formato alternativo, 3: Insumo, 4: Metadados, 5: JSON Edição, 6: Documentos, 7: Projeto QGIS, 8: Arquivos complementares, 9: Tileserver (URL, não precisa de arquivo físico nem extensão).
 
 #### 7.3 — Executar a carga
 

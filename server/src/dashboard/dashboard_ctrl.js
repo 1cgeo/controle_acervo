@@ -41,18 +41,18 @@ controller.getTotalUsuarios = async () => {
 controller.getArquivosPorDia = async () => {
   return db.conn.any(`
     SELECT DATE(data_cadastramento) AS dia, COUNT(*) AS quantidade
-    FROM acervo.arquivo 
-    GROUP BY dia ORDER BY dia
-    LIMIT 30`
+    FROM acervo.arquivo
+    WHERE data_cadastramento > NOW() - INTERVAL '30 days'
+    GROUP BY dia ORDER BY dia`
   );
 }
 
 controller.getDownloadsPorDia = async () => {
   return db.conn.any(`
-    SELECT DATE(data_download) AS dia, COUNT(*) AS quantidade 
-    FROM acervo.download 
-    GROUP BY dia ORDER BY dia
-    LIMIT 30`
+    SELECT DATE(data_download) AS dia, COUNT(*) AS quantidade
+    FROM acervo.download
+    WHERE data_download > NOW() - INTERVAL '30 days'
+    GROUP BY dia ORDER BY dia`
   );
 }
 
@@ -141,26 +141,32 @@ controller.getDownload = async () => {
 
 // Get product activity by month
 controller.getProdutoActivityTimeline = async (months = 12) => {
+  // Agregar o UNION por mês (antes saíam 2 linhas/mês em ordem DESC,
+  // duplicando meses no gráfico do client)
   return db.conn.any(`
-    SELECT 
-      TO_CHAR(date_trunc('month', data_cadastramento), 'YYYY-MM') AS month,
-      COUNT(*) AS new_products,
-      0 AS modified_products
-    FROM acervo.produto
-    WHERE data_cadastramento > NOW() - INTERVAL '${months} months'
+    SELECT month, SUM(new_products)::int AS new_products, SUM(modified_products)::int AS modified_products
+    FROM (
+      SELECT
+        TO_CHAR(date_trunc('month', data_cadastramento), 'YYYY-MM') AS month,
+        COUNT(*) AS new_products,
+        0 AS modified_products
+      FROM acervo.produto
+      WHERE data_cadastramento > NOW() - ($1 * INTERVAL '1 month')
+      GROUP BY month
+      UNION ALL
+      SELECT
+        TO_CHAR(date_trunc('month', data_modificacao), 'YYYY-MM') AS month,
+        0 AS new_products,
+        COUNT(*) AS modified_products
+      FROM acervo.produto
+      WHERE
+        data_modificacao IS NOT NULL AND
+        data_modificacao > NOW() - ($1 * INTERVAL '1 month')
+      GROUP BY month
+    ) sub
     GROUP BY month
-    UNION ALL
-    SELECT 
-      TO_CHAR(date_trunc('month', data_modificacao), 'YYYY-MM') AS month,
-      0 AS new_products,
-      COUNT(*) AS modified_products
-    FROM acervo.produto
-    WHERE 
-      data_modificacao IS NOT NULL AND
-      data_modificacao > NOW() - INTERVAL '${months} months'
-    GROUP BY month
-    ORDER BY month DESC
-  `);
+    ORDER BY month
+  `, [months]);
 }
 
 // Get version statistics
@@ -346,13 +352,13 @@ controller.getSystemHealth = async () => {
 
     const fileErrors = await t.one(`
       SELECT
-        COUNT(*) FILTER (WHERE tipo_status_id = $1) AS erros_carregamento,
-        COUNT(*) FILTER (WHERE tipo_status_id = $2) AS erros_exclusao
-      FROM acervo.arquivo
+        (SELECT COUNT(*) FROM acervo.arquivo WHERE tipo_status_id = $1) AS erros_carregamento,
+        (SELECT COUNT(*) FROM acervo.arquivo_deletado WHERE tipo_status_id = $2) AS erros_exclusao
     `, [STATUS_ARQUIVO.ERRO_CARREGAMENTO, STATUS_ARQUIVO.ERRO_EXCLUSAO])
 
+    // Sessões em andamento têm status 'pending' (não existe status 'active')
     const activeSessions = await t.one(
-      `SELECT COUNT(*) AS sessoes_ativas FROM acervo.upload_session WHERE status = 'active'`
+      `SELECT COUNT(*) AS sessoes_ativas FROM acervo.upload_session WHERE status = 'pending'`
     )
 
     const totals = await t.one(`

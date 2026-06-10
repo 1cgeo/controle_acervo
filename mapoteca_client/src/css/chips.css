@@ -1,0 +1,119 @@
+/* Status chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+/* 1 - Pré-cadastramento */
+.chip--default {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .chip--default {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+/* 2 - DIEx/Ofício recebido */
+.chip--info {
+  background: rgba(2, 136, 209, 0.12);
+  color: var(--color-info);
+}
+
+[data-theme="dark"] .chip--info {
+  background: rgba(79, 195, 247, 0.15);
+}
+
+/* 3 - Em andamento */
+.chip--primary {
+  background: rgba(25, 118, 210, 0.12);
+  color: var(--color-primary);
+}
+
+[data-theme="dark"] .chip--primary {
+  background: rgba(118, 176, 241, 0.15);
+}
+
+/* 4 - Remetido */
+.chip--secondary {
+  background: rgba(156, 39, 176, 0.12);
+  color: var(--color-secondary);
+}
+
+[data-theme="dark"] .chip--secondary {
+  background: rgba(206, 147, 216, 0.15);
+}
+
+/* 5 - Concluído */
+.chip--success {
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--color-success);
+}
+
+[data-theme="dark"] .chip--success {
+  background: rgba(102, 187, 106, 0.15);
+}
+
+/* 6 - Cancelado */
+.chip--error {
+  background: rgba(211, 47, 47, 0.12);
+  color: var(--color-error);
+}
+
+[data-theme="dark"] .chip--error {
+  background: rgba(229, 115, 115, 0.15);
+}
+
+/* 7 - Aguardando produção */
+.chip--warning {
+  background: rgba(237, 108, 2, 0.12);
+  color: var(--color-warning);
+}
+
+[data-theme="dark"] .chip--warning {
+  background: rgba(255, 167, 38, 0.15);
+}
+
+/* Solid badge (e.g. "Abaixo do mínimo") */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.badge--error {
+  background: var(--color-error);
+}
+
+[data-theme="dark"] .badge--error {
+  color: #1a1a1a;
+}
+
+.badge--warning {
+  background: var(--color-warning);
+}
+
+[data-theme="dark"] .badge--warning {
+  color: #1a1a1a;
+}
+
+.badge--success {
+  background: var(--color-success);
+}
+
+[data-theme="dark"] .badge--success {
+  color: #1a1a1a;
+}

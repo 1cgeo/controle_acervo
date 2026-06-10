@@ -110,7 +110,7 @@ const verifyLoginAuthServer = async (servidor, usuario, senha, useProxy) => {
   }
 };
 
-const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy) => {
+const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy, dbUserReadonly, dbPasswordReadonly) => {
   const secret = randomBytes(64).toString('hex');
 
   const env = `PORT=${port}
@@ -119,6 +119,8 @@ DB_PORT=${dbPort}
 DB_NAME=${dbName}
 DB_USER=${dbUser}
 DB_PASSWORD=${dbPassword}
+DB_USER_READONLY=${dbUserReadonly || ''}
+DB_PASSWORD_READONLY=${dbPasswordReadonly || ''}
 JWT_SECRET=${secret}
 AUTH_SERVER=${authServer}
 USE_PROXY=${useProxy}`;
@@ -132,6 +134,24 @@ const givePermission = async ({ dbUser, dbPassword, dbPort, dbServer, dbName, co
     connection = pgp(connectionString);
   }
   await connection.none(readSqlFile('./er/permissao.sql'), [dbUser]);
+};
+
+// Cria (se necessário) o usuário somente leitura usado nas URIs de camada do
+// QGIS e aplica os grants de leitura (er/permissao_readonly.sql)
+const giveReadonlyPermission = async ({ dbUser, dbPassword, dbPort, dbServer, dbName, roUser, roPassword }) => {
+  const connectionString = `postgres://${dbUser}:${dbPassword}@${dbServer}:${dbPort}/${dbName}`;
+  const connection = pgp(connectionString);
+
+  const exists = await connection.oneOrNone('SELECT 1 FROM pg_roles WHERE rolname = $1', [roUser]);
+  if (!exists) {
+    await connection.none('CREATE ROLE $1:name LOGIN PASSWORD $2', [roUser, roPassword]);
+  } else {
+    console.log(
+      chalk.yellow(`O usuário ${roUser} já existe no PostgreSQL. A senha atual foi mantida — garanta que a senha informada corresponde à do usuário.`)
+    );
+  }
+
+  await connection.none(readSqlFile('./er/permissao_readonly.sql'), [roUser, dbUser]);
 };
 
 const insertAdminUser = async (authUserData, connection) => {
@@ -254,12 +274,50 @@ const getConfigFromUser = (options) => {
       filter: Number
     });
   }
-  if (!options.dbCreate) {
+  // === undefined: com --no-db-create o commander entrega false, e !false
+  // re-perguntaria interativamente, ignorando o flag explícito
+  if (options.dbCreate === undefined) {
     questions.push({
       type: 'confirm',
       name: 'dbCreate',
       message: 'Deseja criar o banco de dados do SCA?',
       default: true
+    });
+  }
+  // Habilitado se: usuário readonly passado por flag, ou --db-readonly,
+  // ou resposta afirmativa na pergunta interativa
+  const readonlyEnabled = (answers) => {
+    if (options.dbUserReadonly) return true;
+    if (options.dbReadonly !== undefined) return options.dbReadonly;
+    return answers.dbReadonly;
+  };
+
+  if (options.dbReadonly === undefined && !options.dbUserReadonly) {
+    questions.push({
+      type: 'confirm',
+      name: 'dbReadonly',
+      message:
+        'Deseja configurar um usuário do PostgreSQL somente leitura para as camadas do QGIS (recomendado: evita expor a credencial principal nas URIs das camadas)?',
+      default: true
+    });
+  }
+  if (!options.dbUserReadonly) {
+    questions.push({
+      type: 'input',
+      name: 'dbUserReadonly',
+      message: 'Qual o nome do usuário somente leitura (será criado caso não exista)?',
+      default: 'sca_readonly',
+      when: readonlyEnabled
+    });
+  }
+  if (!options.dbPasswordReadonly) {
+    questions.push({
+      type: 'password',
+      name: 'dbPasswordReadonly',
+      mask: '*',
+      message: 'Qual a senha do usuário somente leitura?',
+      validate: (value) => (value ? true : 'Informe uma senha'),
+      when: readonlyEnabled
     });
   }
   if (!options.authServerRaw) {
@@ -321,11 +379,15 @@ const createConfig = async (options) => {
       dbUser,
       dbPassword,
       dbCreate,
+      dbUserReadonly,
+      dbPasswordReadonly,
       authServerRaw,
       useProxy,
       authUser,
       authPassword
     } = { ...options, ...(await inquirer.prompt(questions)) };
+
+    const readonlyConfigured = Boolean(dbUserReadonly && dbPasswordReadonly);
 
     const authServer = authServerRaw.endsWith('/')
       ? authServerRaw.slice(0, -1)
@@ -356,7 +418,34 @@ const createConfig = async (options) => {
       console.log(chalk.blue(`Permissão ao usuário ${dbUser} adicionada com sucesso`));
     }
 
-    createDotEnv(port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy);
+    if (readonlyConfigured) {
+      await giveReadonlyPermission({
+        dbUser,
+        dbPassword,
+        dbPort,
+        dbServer,
+        dbName,
+        roUser: dbUserReadonly,
+        roPassword: dbPasswordReadonly
+      });
+
+      console.log(
+        chalk.blue(`Usuário somente leitura ${dbUserReadonly} configurado com sucesso (camadas QGIS)`)
+      );
+    }
+
+    createDotEnv(
+      port,
+      dbServer,
+      dbPort,
+      dbName,
+      dbUser,
+      dbPassword,
+      authServer,
+      useProxy,
+      readonlyConfigured ? dbUserReadonly : '',
+      readonlyConfigured ? dbPasswordReadonly : ''
+    );
 
     console.log(chalk.blue('Arquivo de configuração (config.env) criado com sucesso!'));
   } catch (e) {
@@ -377,6 +466,10 @@ program
   .option('--port <value>', 'Porta do servidor do SCA')
   .option('--db-create', 'Criar banco de dados do SCA')
   .option('--no-db-create', 'Não criar banco de dados do SCA')
+  .option('--db-readonly', 'Configurar usuário somente leitura para as camadas QGIS')
+  .option('--no-db-readonly', 'Não configurar usuário somente leitura')
+  .option('--db-user-readonly <value>', 'Usuário do PostgreSQL somente leitura (criado caso não exista)')
+  .option('--db-password-readonly <value>', 'Senha do usuário somente leitura')
   .option('--auth-server-raw <value>', 'URL do serviço de autenticação (iniciar com http:// ou https://)')
   .option('--use-proxy', 'Utilizar proxy para conexões HTTP')
   .option('--no-use-proxy', 'Não utilizar proxy para conexões HTTP')

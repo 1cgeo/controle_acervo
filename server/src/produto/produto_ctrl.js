@@ -1,7 +1,7 @@
 // Path: produto\produto_ctrl.js
 "use strict";
 
-const { db, refreshViews } = require("../database");
+const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 
@@ -24,19 +24,22 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
           produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao,
           produto.geom, produto.data_modificacao, produto.usuario_modificacao_uuid])
     } else {
+      // mi/inom são opcionais no Joi — def evita "Property doesn't exist" do pgp
       const colunasProduto = [
-        'nome', 'mi', 'inom', 'tipo_escala_id', 'denominador_escala_especial',
+        'nome',
+        { name: 'mi', def: null },
+        { name: 'inom', def: null },
+        'tipo_escala_id', 'denominador_escala_especial',
         'tipo_produto_id', 'descricao',
         'data_modificacao', 'usuario_modificacao_uuid'
       ]
 
-      const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: 'produto', schema: 'acervo' })
+      const cs = new db.pgp.helpers.ColumnSet(colunasProduto, { table: { table: 'produto', schema: 'acervo' } })
       const query = db.pgp.helpers.update(produto, cs) + ' WHERE id = $1'
 
       await t.none(query, [produto.id])
     }
 
-    await refreshViews.atualizarViewsPorProdutos(t, [produto.id])
   })
 }
 
@@ -53,12 +56,11 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
       'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
-    const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: 'versao', schema: 'acervo' });
+    const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: { table: 'versao', schema: 'acervo' } });
     const query = db.pgp.helpers.update(versao, cs) + ' WHERE id = $1';
 
     await t.none(query, [versao.id]);
 
-    await refreshViews.atualizarViewsPorVersoes(t, [versao.id])
   });
 };
 
@@ -77,6 +79,25 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
       const existingIds = existingProducts.map(p => p.id);
       const missingIds = produtoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes produtos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    // Versões referenciadas por pedidos da mapoteca bloqueiam a exclusão (FK).
+    // Checar antes para devolver mensagem orientativa em vez de erro de FK.
+    const pedidosVinculados = await t.any(
+      `SELECT DISTINCT COALESCE(ped.localizador_pedido, ped.id::text) AS pedido
+       FROM mapoteca.produto_pedido pp
+       JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+       JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+       WHERE v.produto_id IN ($1:csv)`,
+      [produtoIds]
+    );
+
+    if (pedidosVinculados.length > 0) {
+      const pedidos = pedidosVinculados.map(p => p.pedido).join(', ');
+      throw new AppError(
+        `Não é possível excluir: há versões vinculadas a pedidos da mapoteca (${pedidos}). Remova antes os itens desses pedidos.`,
+        httpCode.BadRequest
+      );
     }
 
     for (let id of produtoIds) {
@@ -154,7 +175,6 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
       await t.none('DELETE FROM acervo.produto WHERE id = $1', [id]);
     }
 
-    await refreshViews.atualizarViewsPorProdutos(t, produtoIds);
   });
 };
 
@@ -173,6 +193,25 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       const existingIds = existingVersions.map(v => v.id);
       const missingIds = versaoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`As seguintes versões não foram encontradas: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    // Versões referenciadas por pedidos da mapoteca bloqueiam a exclusão (FK).
+    // Checar antes para devolver mensagem orientativa em vez de erro de FK.
+    const pedidosVinculados = await t.any(
+      `SELECT DISTINCT COALESCE(ped.localizador_pedido, ped.id::text) AS pedido
+       FROM mapoteca.produto_pedido pp
+       JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+       JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+       WHERE v.id IN ($1:csv)`,
+      [versaoIds]
+    );
+
+    if (pedidosVinculados.length > 0) {
+      const pedidos = pedidosVinculados.map(p => p.pedido).join(', ');
+      throw new AppError(
+        `Não é possível excluir: as versões estão vinculadas a pedidos da mapoteca (${pedidos}). Remova antes os itens desses pedidos.`,
+        httpCode.BadRequest
+      );
     }
 
     // Verificar se alguma versão possui versões posteriores que dependem dela (formato X-SIGLA)
@@ -283,7 +322,6 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       await t.none('DELETE FROM acervo.versao WHERE id = $1', [versao.id]);
     }
 
-    await refreshViews.atualizarViewsPorVersoes(t, versaoIds);
   });
 };
 
@@ -324,10 +362,11 @@ async function verificaCicloRelacionamento(t, versaoId1, versaoId2, tipoRelacion
     );
     
     for (const rel of relacionamentos) {
-      const vizinho = rel.versao_id_2;
-      
+      // BIGINT chega como string do driver — normalizar para comparar
+      const vizinho = Number(rel.versao_id_2);
+
       // Se encontramos a versão que queremos adicionar, há um ciclo
-      if (vizinho === versaoId1) {
+      if (vizinho === Number(versaoId1)) {
         return true;
       }
       
@@ -347,8 +386,8 @@ async function verificaCicloRelacionamento(t, versaoId1, versaoId2, tipoRelacion
     return false;
   }
   
-  // Começar DFS da versaoId2
-  return await dfs(versaoId2);
+  // Começar DFS da versaoId2 (normalizado: vizinhos do DFS são Number)
+  return await dfs(Number(versaoId2));
 }
 
 controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid) => {
@@ -491,19 +530,17 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioU
         }
       }
 
-      const cs = new db.pgp.helpers.ColumnSet([
-        'id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id', 'usuario_relacionamento_uuid'
-      ]);
-
-      const query =
-        db.pgp.helpers.update(
-          item,
-          cs,
-          { table: 'versao_relacionamento', schema: 'acervo' },
-          { tableAlias: 'X', valueAlias: 'Y' }
-        ) + ' WHERE Y.id = X.id';
-
-      await t.none(query);
+      // UPDATE parametrizado simples: helpers.update com objeto único ignora
+      // os aliases e gerava SQL inválido (WHERE Y.id = X.id sem FROM)
+      await t.none(
+        `UPDATE acervo.versao_relacionamento
+         SET versao_id_1 = $2,
+             versao_id_2 = $3,
+             tipo_relacionamento_id = $4,
+             usuario_relacionamento_uuid = $5
+         WHERE id = $1`,
+        [item.id, item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id, usuarioUuid]
+      );
     }
   });
 };
@@ -550,16 +587,11 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
       'orgao_produtor', 'palavras_chave',
       'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
       'data_cadastramento', 'usuario_cadastramento_uuid'
-    ], { table: 'versao', schema: 'acervo' });
+    ], { table: { table: 'versao', schema: 'acervo' } });
 
-    const query = db.pgp.helpers.insert(versoesPreparadas, cs) + ' RETURNING id';
+    const query = db.pgp.helpers.insert(versoesPreparadas, cs);
 
-    const insertedVersoes = await t.any(query);
-    const versoesIds = insertedVersoes.map(v => v.id);
-
-    if (versoesIds.length > 0) {
-      await refreshViews.atualizarViewsPorVersoes(t, versoesIds);
-    }
+    await t.none(query);
   });
 };
 
@@ -594,13 +626,12 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
         'orgao_produtor', 'palavras_chave',
         'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
         'data_cadastramento', 'usuario_cadastramento_uuid'
-      ], { table: 'versao', schema: 'acervo' });
+      ], { table: { table: 'versao', schema: 'acervo' } });
 
       const query = db.pgp.helpers.insert(versoesPreparadas, cs);
       await t.none(query);
     }
 
-    await refreshViews.atualizarViewsPorProdutos(t, produtosIds);
   });
 };
 
@@ -620,7 +651,6 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
       produtosIds.push(novoProduto.id);
     }
 
-    await refreshViews.atualizarViewsPorProdutos(t, produtosIds);
   });
 };
 

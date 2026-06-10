@@ -3,10 +3,10 @@ node_modules/
 package-lock.json
 
 # Build outputs
-client/dist/
-client/build/
-client_admin_mapoteca/build/
-client_admin_mapoteca/dist/
+acervo_client/dist/
+acervo_client/build/
+mapoteca_client/dist/
+mapoteca_client/build/
 server/src/build/
 
 # Environment and config
@@ -62,6 +62,8 @@ coverage/
 # QGIS Plugin
 ferramentas_acervo/__pycache__/
 ferramentas_acervo/**/__pycache__/
+ferramentas_mapoteca/__pycache__/
+ferramentas_mapoteca/**/__pycache__/
 *.pyc
 *.pyo
 *.pyd

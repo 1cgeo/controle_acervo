@@ -4,6 +4,8 @@
 
 O plugin **Ferramentas de Controle do Acervo** permite que operadores e administradores do Servico Geografico do Exercito gerenciem o acervo cartografico (mapas, ortoimagens, MDE, etc.) diretamente do QGIS. Ele e a principal interface de trabalho para cadastro, consulta, download e manutencao dos produtos geograficos.
 
+> **Escopo:** Este documento cobre o plugin do **Acervo** (`ferramentas_acervo`). O plugin da **Mapoteca** (`ferramentas_mapoteca`) e um plugin separado, com fluxos proprios: login, consulta de pedidos ativos, download dos PDFs das cartas para impressao com manifesto de quantitativos, e registro e historico de impressao por item.
+
 ---
 
 ## 1. Acesso ao Sistema
@@ -15,7 +17,7 @@ O plugin **Ferramentas de Controle do Acervo** permite que operadores e administ
 **Passo a passo:**
 1. Usuario clica no icone do plugin na barra de ferramentas do QGIS
 2. Informa: URL do servidor, login e senha
-3. Opcionalmente marca "Lembrar credenciais" para salvar localmente (via QSettings do SO)
+3. Opcionalmente marca "Lembrar credenciais" para salvar localmente (via QgsSettings, persistido por perfil do QGIS)
 4. Credenciais sao validadas contra o servidor de autenticacao externo
 5. Token JWT (validade 1h) e armazenado em memoria
 6. Painel lateral (dock) abre no lado direito do QGIS com o menu de operacoes
@@ -75,7 +77,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 3. Visualiza em 3 abas:
    - **Visao Geral:** Nome, MI, INOM, escala, tipo de produto, descricao, datas
    - **Versoes:** Lista de versoes (ex: v1.0, v2.0) com data de criacao, tipo, status, lote, orgao produtor; cada versao lista seus arquivos (nome, tipo, extensao, tamanho, checksum)
-   - **Relacionamentos:** Vinculos entre versoes (predecessora, sucessora, alternativa)
+   - **Relacionamentos:** Vinculos entre versoes (Insumo, Complementar, Conjunto)
 
 **Acoes de admin (visiveis apenas para administradores):**
 - Editar metadados do produto (nome, descricao, escala, tipo)
@@ -195,7 +197,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 3. Pode atualizar a tabela com o botao "Atualizar"
 4. Pode exportar todos os dados como CSV
 
-**Resultado:** Visao geral de todas as dependencias e linhagens entre versoes de produtos (predecessora, sucessora, alternativa, derivada, etc.).
+**Resultado:** Visao geral de todas as dependencias e linhagens entre versoes de produtos (Insumo, Complementar, Conjunto).
 
 ---
 
@@ -205,6 +207,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 **Opcoes disponiveis:**
 - **Dominio SMB padrao:** Define o dominio de rede Windows para transferencia de arquivos via SMB (padrao: "1CGEO"). Usado nas operacoes de download e upload que acessam compartilhamentos de rede.
+- **Ignorar proxy do sistema:** Checkbox que, quando marcado, faz as requisicoes do plugin conectarem diretamente ao servidor, ignorando qualquer proxy configurado no sistema ou no QGIS. Util para evitar erros 407 (Proxy Authentication Required). Ativado por padrao.
 
 **Nota:** URL do servidor e credenciais sao configuradas na tela de login (fluxo 1.1), nao aqui.
 
@@ -217,8 +220,8 @@ Itens de admin ficam ocultos para usuarios comuns.
 **O que faz:** Registra um novo produto no acervo com suas versoes e arquivos.
 
 **Pre-condicoes:**
-- Projeto e lote devem existir (fluxos 3.5 e 3.6) se for atribuir a versao a um lote
-- Volume de armazenamento deve estar configurado para o tipo de produto (fluxos 3.7 e 3.8)
+- Projeto e lote devem existir (fluxos 3.4 e 3.5) se for atribuir a versao a um lote
+- Volume de armazenamento deve estar configurado para o tipo de produto (fluxos 3.6 e 3.7)
 
 **Passo a passo:**
 1. Abre "Adicionar Produto"
@@ -282,40 +285,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ---
 
-### 3.4 Carregar Arquivos Sistematicos
-
-**O que faz:** Faz upload em lote de arquivos para versoes ja existentes a partir de uma camada QGIS com os mapeamentos de arquivo.
-
-**Pre-condicoes:**
-- Versoes de destino devem existir no banco
-- Camada (sem geometria) deve conter os campos obrigatorios
-
-**Passo a passo:**
-1. Abre "Carregar Arquivos Sistematicos"
-2. Seleciona uma camada nao-espacial no QGIS (ou cria uma camada modelo com o botao "Criar Camada Modelo")
-3. Campos obrigatorios na camada:
-   - `versao_id` -- ID da versao de destino
-   - `nome` -- nome de exibicao do arquivo
-   - `nome_arquivo` -- nome fisico do arquivo
-   - `tipo_arquivo_id` -- tipo (principal, alternativo, metadados, etc.)
-   - `extensao` -- extensao do arquivo
-   - `path` -- caminho completo do arquivo no disco/rede
-   - `situacao_carregamento_id` -- situacao de carregamento
-4. Campos opcionais: `descricao`, `crs_original`, `metadado` (JSON)
-5. Clica "Carregar"
-6. Plugin valida estrutura da camada e existencia dos arquivos
-7. Calcula checksums SHA-256 e tamanhos
-8. Prepara sessao de upload no servidor
-9. Transfere cada arquivo com barra de progresso
-10. Confirma upload no servidor
-
-**Retentativas:** Em caso de falha, oferece opcao de retentar apenas os arquivos que falharam.
-
-**Resultado:** Arquivos vinculados as versoes existentes com integridade verificada.
-
----
-
-### 3.5 Gerenciar Projetos
+### 3.4 Gerenciar Projetos
 
 **O que faz:** Administra a estrutura organizacional de projetos.
 
@@ -334,7 +304,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ---
 
-### 3.6 Gerenciar Lotes
+### 3.5 Gerenciar Lotes
 
 **O que faz:** Administra lotes dentro dos projetos. Lotes agrupam versoes de produtos.
 
@@ -353,7 +323,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ---
 
-### 3.7 Gerenciar Volumes de Armazenamento
+### 3.6 Gerenciar Volumes de Armazenamento
 
 **O que faz:** Configura os volumes (discos/compartilhamentos) onde os arquivos sao armazenados fisicamente.
 
@@ -366,11 +336,11 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ---
 
-### 3.8 Gerenciar Associacao Volume x Tipo de Produto
+### 3.7 Gerenciar Associacao Volume x Tipo de Produto
 
 **O que faz:** Define em qual volume cada tipo de produto deve ser armazenado.
 
-**Pre-condicoes:** Volumes devem estar cadastrados (fluxo 3.7).
+**Pre-condicoes:** Volumes devem estar cadastrados (fluxo 3.6).
 
 **Passo a passo:**
 1. Abre "Gerenciar Relacionamento Volume e Tipo de Produto"
@@ -381,7 +351,7 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ---
 
-### 3.9 Gerenciar Usuarios
+### 3.8 Gerenciar Usuarios
 
 **O que faz:** Controla quem pode acessar o sistema e com quais permissoes.
 
@@ -529,7 +499,9 @@ Itens de admin ficam ocultos para usuarios comuns.
 **O que faz:** Cadastra multiplos produtos (sem versoes/arquivos) a partir de uma camada QGIS.
 
 **Passo a passo:**
-1. Prepara camada nao-espacial com colunas: `nome`, `mi`, `inom`, `escala_denominador`, `tipo_produto_id`, `tipo_escala_id`, `descricao`, `geom_wkt`
+1. Prepara camada nao-espacial com colunas: `nome`, `mi`, `inom`, `tipo_escala_id`, `denominador_escala_especial`, `tipo_produto_id`, `descricao`, `geom`
+   - Obrigatorios: `nome`, `tipo_escala_id`, `tipo_produto_id`, `geom` (WKT POLYGON ou MULTIPOLYGON, SIRGAS 2000 - EPSG:4674)
+   - Opcionais: `mi`, `inom`, `descricao`; `denominador_escala_especial` apenas para escala especial (tipo 5)
 2. Carrega a camada no QGIS (ou usa "Criar Camada Modelo" para gerar template)
 3. Abre "Criar Produtos em Lote"
 4. Seleciona a camada
@@ -544,10 +516,12 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 **O que faz:** Cadastra produtos + versoes + arquivos de uma so vez a partir de uma camada.
 
-**Campos esperados na camada:**
-- Produto: `produto_nome`, `produto_mi`, `produto_inom`, `escala_denominador`, `tipo_produto_id`, `tipo_escala_id`
-- Versao: `versao_nome`, `versao_numero`, `tipo_versao_id`, `subtipo_produto_id`, `lote_id`
-- Arquivo: `arquivo_nome`, `arquivo_nome_arquivo`, `tipo_arquivo_id`, `arquivo_path`
+**Campos esperados na camada** (use "Criar Camada Modelo" para gerar o template):
+- Produto: `produto_grupo_id` (agrupa registros do mesmo produto), `produto_nome`, `mi`, `inom`, `tipo_escala_id`, `denominador_escala_especial`, `tipo_produto_id`, `descricao_produto`, `geom` (WKT)
+- Versao: `versao_grupo_id` (agrupa registros da mesma versao), `versao`, `nome_versao`, `tipo_versao_id`, `subtipo_produto_id`, `lote_id`, `descricao_versao`, `orgao_produtor`, `palavras_chave`, `data_criacao`, `data_edicao`, `metadado_versao` (JSON)
+- Arquivo: `nome`, `nome_arquivo`, `tipo_arquivo_id`, `extensao`, `path`, `situacao_carregamento_id`, `descricao_arquivo`, `metadado` (JSON), `crs_original`
+
+**Campos obrigatorios:** `produto_grupo_id`, `produto_nome`, `tipo_escala_id`, `tipo_produto_id`, `geom`, `versao_grupo_id`, `versao`, `nome_versao`, `tipo_versao_id`, `subtipo_produto_id`, `orgao_produtor`, `data_criacao`, `data_edicao`, `nome`, `nome_arquivo`, `tipo_arquivo_id`, `path`, `situacao_carregamento_id`. A `extensao` e obrigatoria, exceto para arquivos do tipo Tileserver.
 
 **Resultado:** Cadastro completo em massa com transferencia de todos os arquivos.
 
@@ -557,7 +531,9 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 **O que faz:** Adiciona novas versoes (com arquivos) a produtos ja existentes.
 
-**Campos esperados:** `produto_id`, `versao_nome`, `versao_numero`, `arquivo_path`, etc.
+**Campos obrigatorios:** `produto_id` (produto existente), `versao_grupo_id` (agrupa registros da mesma versao), `versao`, `nome_versao`, `tipo_versao_id`, `subtipo_produto_id`, `orgao_produtor`, `data_criacao`, `data_edicao`, `nome`, `nome_arquivo`, `tipo_arquivo_id`, `path`, `situacao_carregamento_id`. A `extensao` e obrigatoria, exceto para arquivos do tipo Tileserver.
+
+**Campos opcionais:** `lote_id`, `descricao_versao`, `palavras_chave`, `metadado_versao` (JSON), `descricao_arquivo`, `metadado` (JSON), `crs_original`
 
 ---
 
@@ -623,11 +599,11 @@ Itens de admin ficam ocultos para usuarios comuns.
 
 ### 5.7 Criar Relacionamentos entre Versoes em Lote
 
-**O que faz:** Define relacionamentos (predecessora, sucessora, alternativa) entre versoes em massa.
+**O que faz:** Define relacionamentos (Insumo, Complementar, Conjunto) entre versoes em massa.
 
-**Campos esperados:** `versao_origem_id`, `versao_destino_id`, `tipo_relacionamento_id`
+**Campos esperados:** `versao_id_1`, `versao_id_2`, `tipo_relacionamento_id`
 
-**Validacoes:** Sem ciclos, sem duplicatas, sem auto-relacionamento.
+**Validacoes:** Sem duplicatas (mesma tupla `versao_id_1`, `versao_id_2`, `tipo_relacionamento_id`), sem auto-relacionamento (`versao_id_1` deve ser diferente de `versao_id_2`). A checagem de ciclos e feita pelo servidor e se aplica apenas aos relacionamentos do tipo "Insumo".
 
 ---
 
@@ -646,10 +622,10 @@ Itens de admin ficam ocultos para usuarios comuns.
 ## 7. Fluxo Completo Tipico: Do Cadastro ao Download
 
 ```
-1. Admin configura Volumes de armazenamento (3.7)
-   e associa Tipo de Produto -> Volume (3.8)
+1. Admin configura Volumes de armazenamento (3.6)
+   e associa Tipo de Produto -> Volume (3.7)
                                     |
-2. Admin cria Projeto (3.5) -> Admin cria Lotes (3.6)
+2. Admin cria Projeto (3.4) -> Admin cria Lotes (3.5)
                                     |
 3. Admin cadastra Produtos (3.1 individual ou 5.1/5.2 em lote)
    -> Define geometria, tipo, escala, metadados

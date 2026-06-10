@@ -8,11 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const createBuild = () => {
-  const clientDir = join(__dirname, 'client');
+  const clientDir = join(__dirname, 'acervo_client');
 
   if (!existsSync(clientDir)) {
-    console.log(chalk.red('Diretório client/ não encontrado.'));
-    console.log('O cliente antigo foi deprecado (client_deprecated/). Um novo cliente ainda não foi criado.');
+    console.log(chalk.red('Diretório acervo_client/ não encontrado.'));
     process.exit(1);
   }
 

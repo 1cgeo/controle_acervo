@@ -18,17 +18,23 @@ afterEach(async () => {
 
 describe('Acervo Routes', () => {
   describe('GET /api/acervo/produto/:produto_id', () => {
-    it('should return 400 due to strict param validation on string URL params', async () => {
-      // The schema uses Joi.number().integer().strict() for produto_id param,
-      // but Express URL params are always strings. The .strict() flag prevents
-      // coercion from string to number, so this route always returns 400.
+    it('should return produto by id', async () => {
       const chain = await createFullProduct()
 
       const res = await request(app)
         .get(`/api/acervo/produto/${chain.produto.id}`)
         .set('Authorization', generateUserToken())
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(200)
+      expect(res.body.dados.id).toBe(chain.produto.id)
+    })
+
+    it('should return 404 for missing produto', async () => {
+      const res = await request(app)
+        .get('/api/acervo/produto/99999')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(404)
     })
 
     it('should reject invalid produto_id param', async () => {
@@ -41,28 +47,29 @@ describe('Acervo Routes', () => {
   })
 
   describe('GET /api/acervo/versao/:versao_id', () => {
-    it('should return 400 due to strict param validation on string URL params', async () => {
-      // Same issue as produto: .strict() prevents string-to-number coercion on params.
+    it('should return versao by id', async () => {
       const chain = await createFullProduct()
 
       const res = await request(app)
         .get(`/api/acervo/versao/${chain.versao.id}`)
         .set('Authorization', generateUserToken())
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(200)
+      expect(res.body.dados.id).toBe(chain.versao.id)
     })
   })
 
   describe('GET /api/acervo/produto/detalhado/:produto_id', () => {
-    it('should return 400 due to strict param validation on string URL params', async () => {
-      // Same issue: .strict() on params prevents coercion of string URL params.
+    it('should return detailed produto with versions and files', async () => {
       const chain = await createFullProduct()
 
       const res = await request(app)
         .get(`/api/acervo/produto/detalhado/${chain.produto.id}`)
         .set('Authorization', generateUserToken())
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(200)
+      expect(res.body.dados.id).toBe(chain.produto.id)
+      expect(res.body.dados.versoes).toHaveLength(1)
     })
   })
 
@@ -146,15 +153,12 @@ describe('Acervo Routes', () => {
       expect(res.status).toBe(403)
     })
 
-    it('should return 500 due to db.conn.none vs SELECT returning a row', async () => {
-      // The controller uses db.conn.none() to call the cleanup function,
-      // but SELECT acervo.cleanup_expired_downloads() returns one row
-      // (the void result), causing pg-promise to throw QueryResultError.
+    it('should cleanup expired downloads (admin)', async () => {
       const res = await request(app)
         .post('/api/acervo/cleanup-expired-downloads')
         .set('Authorization', generateAdminToken())
 
-      expect(res.status).toBe(500)
+      expect(res.status).toBe(200)
     })
   })
 })

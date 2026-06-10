@@ -45,7 +45,14 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
         }
       ) + ' WHERE Y.id = X.id'
 
-    await t.none(query)
+    const result = await t.result(query)
+
+    if (result.rowCount !== volumeArmazenamento.length) {
+      throw new AppError(
+        'Um ou mais volumes não foram encontrados',
+        httpCode.NotFound
+      )
+    }
   })
 }
 
@@ -156,7 +163,14 @@ controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
         }
       ) + ' WHERE Y.id = X.id'
 
-    await t.none(query)
+    const result = await t.result(query)
+
+    if (result.rowCount !== volumeTipoProduto.length) {
+      throw new AppError(
+        'Uma ou mais associações Volume Tipo Produto não foram encontradas',
+        httpCode.NotFound
+      )
+    }
   })
 }
 

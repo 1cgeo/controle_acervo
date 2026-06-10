@@ -17,36 +17,93 @@ controller.getUsuarios = async () => {
   `);
 };
 
-controller.atualizaUsuario = async (uuid, administrador, ativo) => {
-  const result = await db.conn.result(
-    "UPDATE dgeo.usuario SET administrador = $<administrador>, ativo = $<ativo> WHERE uuid = $<uuid>",
-    {
-      uuid,
-      administrador,
-      ativo
-    }
+// Garante que a alteração não deixa o sistema sem nenhum administrador ativo
+// (lockout operacional — só recuperável via SQL direto no banco)
+const verificaUltimoAdmin = async (t, uuidsAlterados) => {
+  const adminsRestantes = await t.one(
+    `SELECT COUNT(*) AS n FROM dgeo.usuario
+     WHERE administrador IS TRUE AND ativo IS TRUE
+       AND uuid NOT IN ($<uuidsAlterados:csv>)`,
+    { uuidsAlterados }
   );
+  return parseInt(adminsRestantes.n, 10);
+};
 
-  if (!result.rowCount || result.rowCount !== 1) {
-    throw new AppError("Usuário não encontrado", httpCode.BadRequest);
-  }
+controller.atualizaUsuario = async (uuid, administrador, ativo) => {
+  return db.conn.tx(async t => {
+    if (!administrador || !ativo) {
+      const outrosAdmins = await verificaUltimoAdmin(t, [uuid]);
+      const alvo = await t.oneOrNone(
+        `SELECT administrador, ativo FROM dgeo.usuario WHERE uuid = $<uuid>`,
+        { uuid }
+      );
+      if (alvo && alvo.administrador && alvo.ativo && outrosAdmins === 0) {
+        throw new AppError(
+          "Operação bloqueada: este é o último administrador ativo do sistema",
+          httpCode.BadRequest
+        );
+      }
+    }
+
+    const result = await t.result(
+      "UPDATE dgeo.usuario SET administrador = $<administrador>, ativo = $<ativo> WHERE uuid = $<uuid>",
+      {
+        uuid,
+        administrador,
+        ativo
+      }
+    );
+
+    if (!result.rowCount || result.rowCount !== 1) {
+      throw new AppError("Usuário não encontrado", httpCode.BadRequest);
+    }
+  });
 };
 
 controller.atualizaUsuarioLista = async usuarios => {
-  const cs = new db.pgp.helpers.ColumnSet(["?uuid", "ativo", "administrador"]);
+  return db.conn.tx(async t => {
+    // Verificar se todos os uuids existem (antes: inexistentes eram ignorados em silêncio)
+    const existentes = await t.any(
+      `SELECT uuid FROM dgeo.usuario WHERE uuid IN ($<uuids:csv>)`,
+      { uuids: usuarios.map(u => u.uuid) }
+    );
 
-  const query =
-    db.pgp.helpers.update(
-      usuarios,
-      cs,
-      { table: "usuario", schema: "dgeo" },
-      {
-        tableAlias: "X",
-        valueAlias: "Y"
+    if (existentes.length !== usuarios.length) {
+      const achados = existentes.map(e => e.uuid);
+      const faltantes = usuarios.map(u => u.uuid).filter(u => !achados.includes(u));
+      throw new AppError(
+        `Usuários não encontrados: ${faltantes.join(", ")}`,
+        httpCode.BadRequest
+      );
+    }
+
+    // Bloquear se a lista desativar/rebaixar todos os admins ativos restantes
+    const manteraAdmin = usuarios.some(u => u.administrador && u.ativo);
+    if (!manteraAdmin) {
+      const outrosAdmins = await verificaUltimoAdmin(t, usuarios.map(u => u.uuid));
+      if (outrosAdmins === 0) {
+        throw new AppError(
+          "Operação bloqueada: a alteração deixaria o sistema sem administradores ativos",
+          httpCode.BadRequest
+        );
       }
-    ) + " WHERE Y.uuid::uuid = X.uuid";
+    }
 
-  return db.conn.none(query);
+    const cs = new db.pgp.helpers.ColumnSet(["?uuid", "ativo", "administrador"]);
+
+    const query =
+      db.pgp.helpers.update(
+        usuarios,
+        cs,
+        { table: "usuario", schema: "dgeo" },
+        {
+          tableAlias: "X",
+          valueAlias: "Y"
+        }
+      ) + " WHERE Y.uuid::uuid = X.uuid";
+
+    return t.none(query);
+  });
 };
 
 controller.getUsuariosAuthServer = async () => {
@@ -90,6 +147,25 @@ controller.criaListaUsuarios = async usuarios => {
   const usuariosFiltrados = usuariosAuth.filter(f => {
     return usuarios.indexOf(f.uuid) !== -1;
   });
+
+  if (usuariosFiltrados.length === 0) {
+    throw new AppError(
+      "Nenhum dos usuários informados foi encontrado no servidor de autenticação",
+      httpCode.BadRequest
+    );
+  }
+
+  const jaImportados = await db.conn.any(
+    `SELECT uuid FROM dgeo.usuario WHERE uuid IN ($<uuids:csv>)`,
+    { uuids: usuariosFiltrados.map(u => u.uuid) }
+  );
+
+  if (jaImportados.length > 0) {
+    throw new AppError(
+      `Os seguintes usuários já estão importados: ${jaImportados.map(u => u.uuid).join(", ")}`,
+      httpCode.BadRequest
+    );
+  }
 
   const cs = new db.pgp.helpers.ColumnSet([
     "uuid",

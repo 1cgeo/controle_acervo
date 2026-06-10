@@ -60,6 +60,26 @@ const SUBTIPO_PRODUTO = {
   CARTA_TOPOGRAFICA_MILITAR: 24
 }
 
+// dominio.tipo_produto (subconjuntos usados em relatórios da mapoteca)
+const TIPO_PRODUTO = {
+  CARTA_TOPOGRAFICA: 2,
+  CARTA_ORTOIMAGEM: 3,
+  CARTA_TEMATICA: 7
+}
+
+// mapoteca.tipo_cliente
+const TIPO_CLIENTE = {
+  OM_EB: 1,
+  OM_AERONAUTICA: 2,
+  OM_MARINHA: 3,
+  ORGAO_PUBLICO_FEDERAL: 4,
+  ORGAO_PUBLICO_ESTADUAL: 5,
+  ORGAO_PUBLICO_MUNICIPAL: 6,
+  PESSOA_JURIDICA: 7,
+  PESSOA_FISICA: 8,
+  LAI: 9
+}
+
 // mapoteca.situacao_pedido
 const SITUACAO_PEDIDO = {
   PRE_CADASTRAMENTO: 1,
@@ -67,7 +87,37 @@ const SITUACAO_PEDIDO = {
   EM_ANDAMENTO: 3,
   ENVIADO: 4,
   CONCLUIDO: 5,
-  CANCELADO: 6
+  CANCELADO: 6,
+  AGUARDANDO_PRODUCAO: 7
+}
+
+// mapoteca.tipo_midia
+const TIPO_MIDIA = {
+  BANNER: 1,
+  GLOSSY: 2,
+  COUCHE: 3,
+  VERGE: 4,
+  SULFITE_90G: 5,
+  SULFITE_120G: 6,
+  DIGITAL: 7,
+  TYVEK: 8
+}
+
+// mapoteca.forma_entrega
+const FORMA_ENTREGA = {
+  CORREIOS: 1,
+  ENTREGA_EM_MAOS: 2,
+  RETIRADO_NO_CGEO: 3,
+  EMAIL: 4,
+  OUTROS: 5
+}
+
+// mapoteca.tipo_localizacao
+const TIPO_LOCALIZACAO = {
+  SECAO: 1,
+  ALMOXARIFADO: 2,
+  AQUISICAO_REALIZADA: 3,
+  SALDO_NO_EMPENHO: 4
 }
 
 // dominio.tipo_relacionamento
@@ -84,6 +134,11 @@ module.exports = {
   TIPO_ESCALA,
   SITUACAO_CARREGAMENTO,
   SUBTIPO_PRODUTO,
+  TIPO_PRODUTO,
+  TIPO_CLIENTE,
   SITUACAO_PEDIDO,
+  TIPO_MIDIA,
+  FORMA_ENTREGA,
+  TIPO_LOCALIZACAO,
   TIPO_RELACIONAMENTO
 }

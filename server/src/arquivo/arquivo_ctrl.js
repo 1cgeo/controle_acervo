@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { db, refreshViews } = require("../database");
+const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
@@ -54,16 +54,22 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
       const colunasArquivo = [
         'nome', 'tipo_arquivo_id', 'volume_armazenamento_id',
         'metadado', 'tipo_status_id', 'situacao_carregamento_id', 'descricao', 
-        'crs_original', 'data_modificacao', 'usuario_modificacao_uuid'
+        { name: 'crs_original', def: null }, 'data_modificacao', 'usuario_modificacao_uuid'
       ];
 
-      const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: 'arquivo', schema: 'acervo' });
+      const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: { table: 'arquivo', schema: 'acervo' } });
       const query = db.pgp.helpers.update(arquivo, cs) + ' WHERE id = $1';
 
-      await t.none(query, [arquivo.id]);
+      const result = await t.result(query, [arquivo.id]);
 
-      await refreshViews.atualizarViewsPorArquivos(t, [arquivo.id]);
+      if (result.rowCount === 0) {
+        throw new AppError('Arquivo não encontrado', httpCode.NotFound);
+      }
+
     } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
       throw new AppError(`Erro ao atualizar arquivo: ${error.message}`, httpCode.InternalError, error);
     }
   });
@@ -150,7 +156,6 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [arquivo.id]);
       }
 
-      await refreshViews.atualizarViewsPorArquivos(t, arquivoIds);
     } catch (error) {
       // Se não for um AppError, cria um
       if (!(error instanceof AppError)) {
@@ -227,13 +232,13 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       // Calculate required space per volume
       const spaceNeededByVolume = {};
       for (const arquivo of arquivos) {
-        const versao = versoes.find(v => v.id === arquivo.versao_id);
+        const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
         
         if (!spaceNeededByVolume[volume.volume_armazenamento_id]) {
           spaceNeededByVolume[volume.volume_armazenamento_id] = 0;
         }
-        spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb;
+        spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb || 0;
       }
       
       // Check space availability for each volume
@@ -265,9 +270,13 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       const arquivosInfo = [];
       
       for (const arquivo of arquivos) {
-        const versao = versoes.find(v => v.id === arquivo.versao_id);
+        const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
-        const destinationPath = path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+        const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
+          const destinationPath = isTileserver
+            ? arquivo.nome_arquivo
+            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
         
         // Register file in the temporary table
         await t.none(
@@ -283,7 +292,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
             arquivo.nome_arquivo, 
             destinationPath, 
             arquivo.tipo_arquivo_id,
-            volume.volume_armazenamento_id,
+            isTileserver ? null : volume.volume_armazenamento_id,
             arquivo.extensao, 
             arquivo.tamanho_mb,
             arquivo.checksum, 
@@ -296,6 +305,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         );
         
         arquivosInfo.push({
+          uuid_arquivo: arquivo.uuid_arquivo || null,
           nome: arquivo.nome,
           nome_arquivo: arquivo.nome_arquivo,
           versao_id: arquivo.versao_id,
@@ -388,7 +398,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         }
         
         for (const arquivo of item.arquivos) {
-          spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb;
+          spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb || 0;
         }
       }
       
@@ -454,7 +464,11 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         const arquivosInfo = [];
         
         for (const arquivo of item.arquivos) {
-          const destinationPath = path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+          const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
+          const destinationPath = isTileserver
+            ? arquivo.nome_arquivo
+            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
           
           // Register file in the temporary table
           await t.none(
@@ -470,7 +484,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
               arquivo.nome_arquivo, 
               destinationPath, 
               arquivo.tipo_arquivo_id,
-              volume.volume_armazenamento_id,
+              isTileserver ? null : volume.volume_armazenamento_id,
               arquivo.extensao, 
               arquivo.tamanho_mb,
               arquivo.checksum, 
@@ -571,7 +585,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         
         for (const versao of item.versoes) {
           for (const arquivo of versao.arquivos) {
-            spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb;
+            spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb || 0;
           }
         }
       }
@@ -661,7 +675,11 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           const arquivosInfo = [];
           
           for (const arquivo of versao.arquivos) {
-            const destinationPath = path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+            const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
+          const destinationPath = isTileserver
+            ? arquivo.nome_arquivo
+            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
             
             // Register file in the temporary table
             await t.none(
@@ -677,7 +695,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
                 arquivo.nome_arquivo, 
                 destinationPath, 
                 arquivo.tipo_arquivo_id,
-                volume.volume_armazenamento_id,
+                isTileserver ? null : volume.volume_armazenamento_id,
                 arquivo.extensao, 
                 arquivo.tamanho_mb,
                 arquivo.checksum, 
@@ -902,6 +920,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
       
       for (const arquivo of arquivos) {
         const filePath = arquivo.destination_path;
+        const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
         let fileValid = true;
         let errorMessage = null;
         
@@ -923,6 +942,21 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         }
         
         try {
+          if (isTileserver) {
+            // Tileserver é uma URL — não há arquivo físico para validar
+            await t.none(
+              `UPDATE acervo.upload_arquivo_temp SET status = 'completed' WHERE id = $1`,
+              [arquivo.id]
+            );
+            fileResults[arquivo.versao_id ? `versao_${arquivo.versao_id}` : `versao_temp_${arquivo.versao_temp_id}`].files.push({
+              nome: arquivo.nome,
+              nome_arquivo: arquivo.nome_arquivo,
+              status: 'completed',
+              error_message: null
+            });
+            continue;
+          }
+
           // Check if file exists
           await fs.access(filePath);
 
@@ -1134,18 +1168,13 @@ async function processAddFiles(t, session) {
           arquivo.tamanho_mb,
           arquivo.expected_checksum, 
           arquivo.metadado, 
-          1, // tipo_status_id - Carregado
+          STATUS_ARQUIVO.CARREGADO, // tipo_status_id
           arquivo.situacao_carregamento_id,
           arquivo.descricao,
           arquivo.crs_original,
           session.usuario_uuid
         ]
       );
-    }
-    
-    // Refresh views
-    if (versaoIds.length > 0) {
-      await refreshViews.atualizarViewsPorVersoes(t, versaoIds);
     }
   } catch (error) {
     throw new AppError(`Erro ao processar arquivos: ${error.message}`, httpCode.InternalError, error);
@@ -1223,7 +1252,7 @@ async function processAddVersion(t, session) {
             arquivo.tamanho_mb,
             arquivo.expected_checksum, 
             arquivo.metadado, 
-            1, // tipo_status_id - Carregado
+            STATUS_ARQUIVO.CARREGADO, // tipo_status_id
             arquivo.situacao_carregamento_id,
             arquivo.descricao,
             arquivo.crs_original,
@@ -1231,11 +1260,6 @@ async function processAddVersion(t, session) {
           ]
         );
       }
-    }
-    
-    // Refresh views
-    if (produtoIds.length > 0) {
-      await refreshViews.atualizarViewsPorProdutos(t, produtoIds);
     }
   } catch (error) {
     throw new AppError(`Erro ao processar versões: ${error.message}`, httpCode.InternalError, error);
@@ -1340,7 +1364,7 @@ async function processAddProduct(t, session) {
               arquivo.tamanho_mb,
               arquivo.expected_checksum, 
               arquivo.metadado, 
-              1, // tipo_status_id - Carregado
+              STATUS_ARQUIVO.CARREGADO, // tipo_status_id
               arquivo.situacao_carregamento_id,
               arquivo.descricao,
               arquivo.crs_original,
@@ -1349,11 +1373,6 @@ async function processAddProduct(t, session) {
           );
         }
       }
-    }
-    
-    // Refresh views
-    if (produtoIds.length > 0) {
-      await refreshViews.atualizarViewsPorProdutos(t, produtoIds);
     }
   } catch (error) {
     throw new AppError(`Erro ao processar produtos: ${error.message}`, httpCode.InternalError, error);

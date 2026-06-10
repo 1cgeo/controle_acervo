@@ -14,4 +14,5 @@ module.exports = {
   httpClient: require('./http_client.js'),
   serializeErrorLoader: require('./serialize_error_loader'),
   domainConstants: require('./domain_constants'),
+  csvExport: require('./csv_export'),
 }

@@ -3,11 +3,12 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, csvExport } = require('../utils')
 
 const { verifyLogin, verifyAdmin } = require('../login')
 
 const mapotecaCtrl = require('./mapoteca_ctrl')
+const relatorioCtrl = require('./relatorio_ctrl')
 const mapotecaSchema = require('./mapoteca_schema')
 
 const router = express.Router()
@@ -45,6 +46,15 @@ router.get(
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTipoLocalizacao()
     const msg = 'Tipos de localização retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/forma_entrega',
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getFormaEntrega()
+    const msg = 'Formas de entrega retornadas com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
@@ -158,9 +168,9 @@ router.post(
     body: mapotecaSchema.pedido
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaPedido(req.body, req.usuarioUuid)
+    const result = await mapotecaCtrl.criaPedido(req.body, req.usuarioUuid)
     const msg = 'Pedido criado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
+    return res.sendJsonAndLog(true, msg, httpCode.Created, result)
   })
 )
 
@@ -186,6 +196,65 @@ router.delete(
   asyncHandler(async (req, res, next) => {
     await mapotecaCtrl.deletePedidos(req.body.pedido_ids)
     const msg = 'Pedidos deletados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
+// Rotas para Impressão de Pedidos (plugin QGIS da mapoteca)
+
+// Prepara o download dos PDFs das cartas do pedido para impressão.
+// Cria tokens em acervo.download; o plugin confirma via /api/acervo/confirm-download.
+router.post(
+  '/pedido/:id/download_impressao',
+  verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.pedidoId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.prepareDownloadImpressao(req.params.id, req.usuarioUuid)
+    const msg = 'Download para impressão preparado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Registra sessões de impressão (log operacional — qualquer usuário logado)
+router.post(
+  '/impressao',
+  verifyLogin,
+  schemaValidation({
+    body: mapotecaSchema.registroImpressao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await mapotecaCtrl.registrarImpressao(req.body.registros, req.usuarioUuid)
+    const msg = 'Impressão registrada com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.Created)
+  })
+)
+
+// Histórico de impressão de um item do pedido
+router.get(
+  '/produto_pedido/:id/impressao',
+  verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.produtoPedidoId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getImpressoesItem(req.params.id)
+    const msg = 'Histórico de impressão retornado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Remove registros de impressão (correções)
+router.delete(
+  '/impressao',
+  verifyAdmin,
+  schemaValidation({
+    body: mapotecaSchema.impressaoIds
+  }),
+  asyncHandler(async (req, res, next) => {
+    await mapotecaCtrl.deleteImpressoes(req.body.impressao_ids)
+    const msg = 'Registros de impressão deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
@@ -371,6 +440,9 @@ router.get(
 router.get(
   '/tipo_material/:id',
   verifyLogin,
+  schemaValidation({
+    params: mapotecaSchema.tipoMaterialId
+  }),
   asyncHandler(async (req, res, next) => {
     const { id } = req.params
     const dados = await mapotecaCtrl.getTipoMaterialById(id)
@@ -436,6 +508,19 @@ router.get(
     const dados = await mapotecaCtrl.getEstoquePorLocalizacao()
     const msg = 'Estoque por localização retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/estoque_material/transferir',
+  verifyAdmin,
+  schemaValidation({
+    body: mapotecaSchema.transferenciaEstoque
+  }),
+  asyncHandler(async (req, res, next) => {
+    await mapotecaCtrl.transferirMaterial(req.body, req.usuarioUuid)
+    const msg = 'Transferência realizada com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
 
@@ -508,9 +593,11 @@ router.get(
 router.get(
   '/consumo_mensal',
   verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.anoQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    const ano = req.query.ano ? parseInt(req.query.ano) : new Date().getFullYear()
-    const dados = await mapotecaCtrl.getConsumoMensalPorTipo(ano)
+    const dados = await mapotecaCtrl.getConsumoMensalPorTipo(req.query.ano)
     const msg = 'Consumo mensal por tipo de material retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -565,6 +652,76 @@ router.delete(
     await mapotecaCtrl.deleteConsumoMaterial(req.body.consumo_material_ids)
     const msg = 'Registros de consumo deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
+// Rotas de relatórios anuais (reproduzem as abas da planilha de controle).
+// Aceitam ?ano= (default ano corrente) e ?formato=csv para download.
+router.get(
+  '/relatorio/pedidos_mil',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosMil(ano)
+    const msg = 'Relatório de pedidos militares retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `pedidos_mil_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_MIL
+    })
+  })
+)
+
+router.get(
+  '/relatorio/pedidos_detalhado',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosDetalhado(ano)
+    const msg = 'Relatório detalhado de pedidos retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `pedidos_detalhado_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_DETALHADO
+    })
+  })
+)
+
+router.get(
+  '/relatorio/pedidos_civ',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosCiv(ano)
+    const msg = 'Relatório de pedidos civis retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `pedidos_civ_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_CIV
+    })
+  })
+)
+
+router.get(
+  '/relatorio/tematicos',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioTematicos(ano)
+    const msg = 'Relatório de produção temática retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `tematicos_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_TEMATICOS
+    })
   })
 )
 

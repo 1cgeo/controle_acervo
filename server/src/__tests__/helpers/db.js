@@ -22,6 +22,7 @@ const conn = pgp({
 const cleanTestData = async () => {
   await conn.tx(async t => {
     // Mapoteca tables
+    await t.none('TRUNCATE mapoteca.impressao_item CASCADE')
     await t.none('TRUNCATE mapoteca.consumo_material CASCADE')
     await t.none('TRUNCATE mapoteca.estoque_material CASCADE')
     await t.none('TRUNCATE mapoteca.manutencao_plotter CASCADE')

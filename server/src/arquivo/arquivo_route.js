@@ -41,7 +41,7 @@ router.delete(
 
 router.post(
   '/prepare-upload/files',
-  verifyLogin,
+  verifyAdmin,
   schemaValidation({
     body: arquivoSchema.prepareAddFiles
   }),
@@ -54,7 +54,7 @@ router.post(
 
 router.post(
   '/prepare-upload/version',
-  verifyLogin,
+  verifyAdmin,
   schemaValidation({
     body: arquivoSchema.prepareAddVersion
   }),
@@ -67,7 +67,7 @@ router.post(
 
 router.post(
   '/prepare-upload/product',
-  verifyLogin,
+  verifyAdmin,
   schemaValidation({
     body: arquivoSchema.prepareAddProduct
   }),
@@ -80,7 +80,7 @@ router.post(
 
 router.post(
   '/confirm-upload',
-  verifyLogin,
+  verifyAdmin,
   schemaValidation({
     body: arquivoSchema.confirmUpload
   }),

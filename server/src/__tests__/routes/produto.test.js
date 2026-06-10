@@ -18,14 +18,10 @@ afterEach(async () => {
 
 describe('Produto Routes', () => {
   describe('POST /api/produtos/produtos (bulk create)', () => {
-    it('should return 500 due to internal type mismatch in materialized view refresh', async () => {
-      // The controller inserts products successfully but then calls
-      // refreshViews.atualizarViewsPorProdutos with BIGSERIAL IDs (strings),
-      // which pg-promise formats as text[] instead of integer[], causing a
-      // PostgreSQL function signature mismatch (text[] vs integer[]).
+    it('should create products in bulk (admin)', async () => {
       const res = await request(app)
         .post('/api/produtos/produtos')
-        .set('Authorization', generateUserToken())
+        .set('Authorization', generateAdminToken())
         .send({
           produtos: [{
             nome: 'Carta Rota',
@@ -39,13 +35,18 @@ describe('Produto Routes', () => {
           }]
         })
 
-      expect(res.status).toBe(500)
+      expect(res.status).toBe(201)
+
+      const criado = await conn.oneOrNone(
+        `SELECT id FROM acervo.produto WHERE nome = 'Carta Rota'`
+      )
+      expect(criado).not.toBeNull()
     })
 
     it('should reject with invalid body', async () => {
       const res = await request(app)
         .post('/api/produtos/produtos')
-        .set('Authorization', generateUserToken())
+        .set('Authorization', generateAdminToken())
         .send({ produtos: [] })
 
       expect(res.status).toBe(400)
@@ -77,12 +78,7 @@ describe('Produto Routes', () => {
       expect(res.status).toBe(403)
     })
 
-    it('should return 500 due to materialized view refresh bug in update path', async () => {
-      // Even with valid data (geom path avoids ColumnSet schema bug),
-      // the refreshViews.atualizarViewsPorProdutos function has a bug where
-      // the view_name includes the schema prefix ('acervo.mv_produto_...'),
-      // and format('%I', ...) quotes it as a single identifier, causing
-      // "relation does not exist" error during REFRESH MATERIALIZED VIEW.
+    it('should update produto (admin)', async () => {
       const chain = await createFullProduct()
 
       const res = await request(app)
@@ -100,16 +96,17 @@ describe('Produto Routes', () => {
           geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))'
         })
 
-      expect(res.status).toBe(500)
+      expect(res.status).toBe(200)
+
+      const atualizado = await conn.one(
+        `SELECT nome FROM acervo.produto WHERE id = $1`, [chain.produto.id]
+      )
+      expect(atualizado.nome).toBe('Atualizado Via Rota')
     })
   })
 
   describe('DELETE /api/produtos/produto', () => {
-    it('should return 500 due to materialized view refresh bug in delete path', async () => {
-      // The delete controller moves files to arquivo_deletado, removes versions,
-      // then calls refreshViews.atualizarViewsPorProdutos which fails because
-      // the atualizar_mv_por_produtos DB function has a bug where the view_name
-      // includes the schema prefix and format('%I',...) quotes it incorrectly.
+    it('should delete produto moving files to arquivo_deletado', async () => {
       const chain = await createFullProduct()
 
       const res = await request(app)
@@ -120,7 +117,18 @@ describe('Produto Routes', () => {
           motivo_exclusao: 'Teste de exclusão'
         })
 
-      expect(res.status).toBe(500)
+      expect(res.status).toBe(200)
+
+      const restante = await conn.oneOrNone(
+        `SELECT id FROM acervo.produto WHERE id = $1`, [chain.produto.id]
+      )
+      expect(restante).toBeNull()
+
+      const deletado = await conn.one(
+        `SELECT COUNT(*)::int AS n FROM acervo.arquivo_deletado WHERE versao_id IS NULL OR versao_id = $1`,
+        [chain.versao.id]
+      )
+      expect(deletado.n).toBe(1)
     })
 
     it('should return 404 for non-existent product', async () => {

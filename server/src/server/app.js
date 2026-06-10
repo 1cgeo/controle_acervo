@@ -5,6 +5,7 @@ const express = require('express')
 const path = require('path')
 const fs = require('fs')
 const cors = require('cors')
+const helmet = require('helmet')
 const hpp = require('hpp')
 const rateLimit = require('express-rate-limit')
 const swaggerUi = require('swagger-ui-express')
@@ -29,22 +30,24 @@ const app = express()
 // Add sendJsonAndLog to res object
 app.use(sendJsonAndLogMiddleware)
 
-app.use(express.json({ limit: '50mb' })) // parsear POST em JSON
-app.use(hpp()) // protection against parameter polution
-
-// CORS middleware
+// CORS antes do rate limit: respostas 429 também precisam dos headers CORS
 app.use(cors())
-
-// Helmet Protection
-app.use(noCache())
 
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
   max: 200
 })
 
-// apply limit all requests
+// Rate limit antes do body parser: requisição acima do limite não paga o parse de 50mb
 app.use(limiter)
+
+app.use(express.json({ limit: '50mb' })) // parsear POST em JSON
+app.use(hpp()) // protection against parameter polution
+
+// Helmet Protection (CSP desabilitado: o Express serve o client SPA e o Swagger UI,
+// que usam scripts/estilos inline; aplicação de intranet)
+app.use(helmet({ contentSecurityPolicy: false }))
+app.use(noCache())
 
 app.use((req, res, next) => {
   const url = req.protocol + '://' + req.get('host') + req.originalUrl
@@ -60,14 +63,23 @@ app.use((req, res, next) => {
 app.use('/api', appRoutes)
 
 app.use('/logs', (req, res) => {
-  const logDir = path.join(__dirname, '..', '..', 'logs/combined.log')
+  const logFile = path.join(__dirname, '..', '..', 'logs/combined.log')
   const daysToShow = 3
-  const cutofftimestamp = new Date(Date.now() - daysToShow * 24 * 60 * 60 * 1000);
+  const cutofftimestamp = new Date(Date.now() - daysToShow * 24 * 60 * 60 * 1000)
+  // Ler apenas o fim do arquivo (5 MB) em vez do arquivo inteiro em memória
+  const maxBytes = 5 * 1024 * 1024
 
-  fs.readFile(logDir, 'utf8', (err, data) => {
-    if(err) {
-      res.status(500).send('Error reading log file')
-    } else {
+  fs.stat(logFile, (statErr, stats) => {
+    if (statErr) {
+      return res.status(500).send('Error reading log file')
+    }
+
+    const start = Math.max(0, stats.size - maxBytes)
+    const stream = fs.createReadStream(logFile, { start, encoding: 'utf8' })
+    let data = ''
+    stream.on('data', chunk => { data += chunk })
+    stream.on('error', () => res.status(500).send('Error reading log file'))
+    stream.on('end', () => {
       const logData = data.split('\n').filter(entry => {
         const logDate = new Date(entry.split('|')[0])
         return logDate > cutofftimestamp
@@ -75,7 +87,7 @@ app.use('/logs', (req, res) => {
 
       res.setHeader('Content-Type', 'text/plain')
       res.send(logData)
-    }
+    })
   })
 })
 
@@ -100,6 +112,10 @@ app.get("/{*path}", (req, res) => {
 
 // Error handling
 app.use((err, req, res, next) => {
+  // Resposta já iniciada (ex: streaming): delega ao handler default do Express
+  if (res.headersSent) {
+    return next(err)
+  }
   return errorHandler.log(err, res)
 })
 

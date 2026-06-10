@@ -26,7 +26,11 @@ const combinedTransport = new transports.File({
     const date = new Date(Date.now())
     return `${date}|${info.message}|${JSON.stringify(info)}`
 }),
-  filename: path.join(logDir, 'combined.log')
+  filename: path.join(logDir, 'combined.log'),
+  // Sem limite o combined.log cresce para sempre (e /logs o carrega em memória)
+  maxsize: 20 * 1024 * 1024,
+  maxFiles: 3,
+  tailable: true
 })
 
 const consoleTransport = new transports.Console({

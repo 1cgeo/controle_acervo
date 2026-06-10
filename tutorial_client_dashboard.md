@@ -25,6 +25,8 @@ npm run dev
 
 O Vite inicia o servidor de desenvolvimento na porta **3000**. As requisições para `/api` são automaticamente redirecionadas ao servidor SCA (padrão: `http://localhost:3013`).
 
+> **Nota:** a porta padrão do servidor gerada pelo `npm run config` é **3015**. Se o servidor SCA não estiver rodando na porta 3013, ajuste o `target` do proxy em `client/vite.config.js`.
+
 ### Produção
 
 ```bash
@@ -67,7 +69,6 @@ Após autenticação bem-sucedida, o sistema redireciona para o Dashboard. O tok
 | Item | Descrição |
 |------|-----------|
 | Dashboard | Página principal com gráficos e métricas |
-| Volumes | Placeholder para futura gestão de volumes |
 
 No desktop, a sidebar pode ser colapsada clicando no hambúrguer (ícones ficam visíveis). No celular, ela abre como um drawer temporário sobre o conteúdo.
 
@@ -75,13 +76,26 @@ No desktop, a sidebar pode ser colapsada clicando no hambúrguer (ícones ficam 
 
 ## Passo 4 — Dashboard: Visão Geral
 
-A primeira aba do dashboard exibe **3 cards de estatísticas** com dados gerais do acervo:
+A primeira aba do dashboard exibe **6 cards de estatísticas** com dados gerais do acervo:
 
 | Card | O que mostra | Exemplo |
 |------|-------------|---------|
 | Total de Produtos | Quantidade de produtos geográficos cadastrados | `1.234` |
 | Armazenamento Total | Espaço total utilizado em GB | `456,78 GB` |
 | Total de Usuários | Quantidade de usuários no sistema | `42` |
+| Total de Projetos | Quantidade de projetos cadastrados | `15` |
+| Total de Versões | Quantidade de versões de produtos | `2.567` |
+| Downloads (24h) | Downloads realizados nas últimas 24 horas | `38` |
+
+### Alertas do Sistema
+
+Abaixo dos cards, o painel **Alertas do Sistema** destaca condições que exigem atenção:
+
+- **Volumes próximos da capacidade** — volumes de armazenamento com mais de **80%** de uso aparecem com barra de progresso (alerta amarelo acima de 80%, vermelho acima de 90%)
+- **Arquivos com erro** — total de arquivos com erro de carregamento ou de exclusão
+- **Sessões de upload ativas** — quantidade de sessões de upload em andamento
+
+Quando não há nenhuma condição de alerta, o painel exibe a mensagem "Nenhum alerta - sistema saudável".
 
 Os dados são carregados automaticamente ao acessar a aba. Um indicador de carregamento (skeleton) é exibido enquanto os dados são buscados.
 
@@ -89,15 +103,23 @@ Os dados são carregados automaticamente ao acessar a aba. Um indicador de carre
 
 ## Passo 5 — Dashboard: Distribuição
 
-A segunda aba apresenta **3 gráficos** sobre a distribuição de produtos e armazenamento:
+A segunda aba apresenta **5 gráficos** sobre a distribuição de produtos e armazenamento:
 
 ### Produtos por Tipo (gráfico de pizza)
 
 Mostra a proporção de cada tipo de produto (Carta Topográfica, Ortoimagem, MDE, etc.) no acervo. Passe o mouse sobre uma fatia para ver o total e a porcentagem.
 
+### Produtos por Escala (gráfico de pizza)
+
+Mostra a proporção de produtos por tipo de escala (1:25.000, 1:50.000, 1:100.000, 1:250.000, etc.).
+
 ### Armazenamento por Tipo de Produto (gráfico de barras)
 
 Mostra quantos GB cada tipo de produto ocupa. Útil para identificar quais tipos consomem mais espaço.
+
+### Arquivos por Tipo de Arquivo (gráfico de barras)
+
+Para cada tipo de arquivo (principal, formato alternativo, metadados, etc.), mostra duas séries: o total em **GB** e a **quantidade** de arquivos.
 
 ### Armazenamento por Volume (gráfico de barras empilhadas)
 
@@ -115,14 +137,17 @@ A terceira aba mostra a **atividade recente** do sistema.
 
 Barras agrupadas mostrando o total de **uploads** e **downloads** por dia nos últimos 30 dias. Dias sem atividade aparecem com valor zero.
 
-### Tabelas de Atividade (4 sub-abas)
+### Tabelas de Atividade (7 sub-abas)
 
 | Sub-aba | O que mostra | Colunas |
 |---------|-------------|---------|
+| Produtos Recentes | 20 últimos produtos cadastrados | Nome, MI, Tipo, Escala, Versões, Data Cadastro |
+| Versões Recentes | 20 últimas versões criadas | Versão, Produto, MI, Tipo, Órgão Produtor, Arquivos, Data Criação |
 | Uploads Recentes | 10 últimos arquivos carregados | Nome, Tamanho (MB), Tipo, Data |
 | Modificações Recentes | 10 últimos arquivos modificados | Nome, Tamanho (MB), Tipo, Data |
 | Exclusões Recentes | 10 últimos arquivos excluídos | Nome, Tamanho (MB), Tipo, Data, Motivo |
 | Histórico de Downloads | 50 últimos downloads | ID, Arquivo ID, Data, Status |
+| Situação de Carregamento | Gráfico de pizza com a distribuição dos arquivos por situação de carregamento | — |
 
 Na tabela de downloads, o **Status** indica se o arquivo original ainda existe:
 - **Disponível** (verde) — arquivo pode ser baixado
@@ -139,6 +164,10 @@ A quarta aba oferece **análises mais aprofundadas** com gráficos interativos.
 ### Timeline de Atividade de Produtos
 
 Gráfico de barras mostrando a criação de **novos produtos** e **produtos modificados** ao longo do tempo. Use o seletor de período para escolher entre **6, 12 ou 24 meses**.
+
+### Timeline de Versões Cadastradas
+
+Exibida ao lado da timeline de produtos, mostra em gráfico de barras as **Novas Versões** cadastradas por mês e o total **Acumulado** ao longo do tempo. Também possui seletor de período (**6, 12 ou 24 meses**).
 
 ### Sub-abas de Análise
 

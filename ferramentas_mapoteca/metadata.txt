@@ -1,0 +1,11 @@
+[general]
+name=Ferramentas da Mapoteca
+author=Brazilian Army Geographic Service
+qgisMinimumVersion=4.0
+supportsQt6=True
+qgisMaximumVersion=4.99
+description=Plugin da Mapoteca do Sistema de Controle do Acervo: consulta de pedidos ativos, download dos PDFs das cartas para impressao e controle dos quantitativos impressos
+version=1.0.0
+icon=icons/icon.png
+tags=Mapoteca, DSG, Exercito, Brasileiro, Acervo, Impressao, Cartas, BDGEx
+; end of mandatory metadata

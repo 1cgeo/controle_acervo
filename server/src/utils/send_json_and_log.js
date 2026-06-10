@@ -38,6 +38,7 @@ const sendJsonAndLogMiddleware = (req, res, next) => {
       success: success,
       message: userMessage,
       dados,
+      error: error ? (error.message || String(error)) : null,
       ...metadata
     }
 

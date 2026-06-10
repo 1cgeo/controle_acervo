@@ -58,11 +58,18 @@ const httpConfig = () => {
 
 const startServer = () => {
   const argv = require('minimist')(process.argv.slice(2))
-  if ('https' in argv && argv.https) {
-    return httpsConfig()
-  }
+  const server = ('https' in argv && argv.https) ? httpsConfig() : httpConfig()
 
-  return httpConfig()
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      logger.error(`A porta ${PORT} já está em uso. Encerre o processo que a ocupa ou altere PORT no config.env`, { error: err })
+    } else {
+      logger.error('Erro ao iniciar o servidor', { error: err })
+    }
+    process.exit(1)
+  })
+
+  return server
 }
 
 module.exports = startServer

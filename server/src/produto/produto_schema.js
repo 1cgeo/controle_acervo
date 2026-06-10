@@ -6,7 +6,7 @@ const Joi = require("joi");
 const models = {};
 
 models.produtoAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().strict().strict().required(),
+  id: Joi.number().integer().strict().required(),
   nome: Joi.string().required(),
   mi: Joi.string().allow(null, ''),
   inom: Joi.string().allow(null, ''),
@@ -19,7 +19,7 @@ models.produtoAtualizacao = Joi.object().keys({
 
 models.versaoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
-  uuid_versao: Joi.string().uuid().required(),
+  uuid_versao: Joi.string().uuid(),
   versao: Joi.string().required(),
   nome: Joi.string().allow(null).required(),
   tipo_versao_id: Joi.number().integer().strict().required(),
@@ -86,11 +86,13 @@ models.versaoRelacionamentoIds = Joi.object().keys({
     .min(1)
 });
 
+// .required().min(1) no ARRAY (no objeto-item, min(1) validaria número de chaves
+// e um array vazio passaria, quebrando depois no insert)
 models.versoesHistoricas = Joi.array().items(
   Joi.object().keys({
     uuid_versao: Joi.string().uuid().allow(null).required(),
     versao: Joi.string().required(),
-    nome: Joi.string().allow(null).required(),  
+    nome: Joi.string().allow(null).required(),
     produto_id: Joi.number().integer().strict().required(),
     subtipo_produto_id: Joi.number().integer().strict().required(),
     lote_id: Joi.number().integer().strict().allow(null).required(),
@@ -101,9 +103,7 @@ models.versoesHistoricas = Joi.array().items(
     data_criacao: Joi.date().required(),
     data_edicao: Joi.date().required()
   })
-  .required()
-  .min(1)
-)
+).required().min(1)
 
 models.produtosVersoesHistoricas = Joi.array().items(
   Joi.object().keys({

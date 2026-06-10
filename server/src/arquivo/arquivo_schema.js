@@ -3,6 +3,8 @@
 
 const Joi = require('joi')
 
+const { TIPO_ARQUIVO } = require('../utils/domain_constants')
+
 const models = {}
 
 const fileSchema = Joi.object().keys({
@@ -11,17 +13,17 @@ const fileSchema = Joi.object().keys({
   nome_arquivo: Joi.string().required(),
   tipo_arquivo_id: Joi.number().integer().required(),
   extensao: Joi.alternatives().conditional('tipo_arquivo_id', {
-    is: 9,
+    is: TIPO_ARQUIVO.TILESERVER,
     then: Joi.string().allow(null),
     otherwise: Joi.string().required()
   }),
   tamanho_mb: Joi.alternatives().conditional('tipo_arquivo_id', {
-    is: 9,
+    is: TIPO_ARQUIVO.TILESERVER,
     then: Joi.number().allow(null),
     otherwise: Joi.number().required()
   }),
   checksum: Joi.alternatives().conditional('tipo_arquivo_id', {
-    is: 9,
+    is: TIPO_ARQUIVO.TILESERVER,
     then: Joi.string().allow(null),
     otherwise: Joi.string().required()
   }),
@@ -37,7 +39,7 @@ models.arquivoAtualizacao = Joi.object().keys({
   nome: Joi.string().required(),
   tipo_arquivo_id: Joi.number().integer().strict().required(),
   volume_armazenamento_id: Joi.alternatives().conditional('tipo_arquivo_id', {
-    is: 9,
+    is: TIPO_ARQUIVO.TILESERVER,
     then: Joi.valid(null).required(),
     otherwise: Joi.number().integer().strict().required()
   }),
@@ -86,17 +88,17 @@ models.prepareAddVersion = Joi.object().keys({
           nome_arquivo: Joi.string().required(),
           tipo_arquivo_id: Joi.number().integer().required(),
           extensao: Joi.alternatives().conditional('tipo_arquivo_id', {
-            is: 9,
+            is: TIPO_ARQUIVO.TILESERVER,
             then: Joi.string().allow(null),
             otherwise: Joi.string().required()
           }),
           tamanho_mb: Joi.alternatives().conditional('tipo_arquivo_id', {
-            is: 9,
+            is: TIPO_ARQUIVO.TILESERVER,
             then: Joi.number().allow(null),
             otherwise: Joi.number().required()
           }),
           checksum: Joi.alternatives().conditional('tipo_arquivo_id', {
-            is: 9,
+            is: TIPO_ARQUIVO.TILESERVER,
             then: Joi.string().allow(null),
             otherwise: Joi.string().required()
           }),
@@ -144,17 +146,17 @@ models.prepareAddProduct = Joi.object().keys({
               nome_arquivo: Joi.string().required(),
               tipo_arquivo_id: Joi.number().integer().required(),
               extensao: Joi.alternatives().conditional('tipo_arquivo_id', {
-                is: 9,
+                is: TIPO_ARQUIVO.TILESERVER,
                 then: Joi.string().allow(null),
                 otherwise: Joi.string().required()
               }),
               tamanho_mb: Joi.alternatives().conditional('tipo_arquivo_id', {
-                is: 9,
+                is: TIPO_ARQUIVO.TILESERVER,
                 then: Joi.number().allow(null),
                 otherwise: Joi.number().required()
               }),
               checksum: Joi.alternatives().conditional('tipo_arquivo_id', {
-                is: 9,
+                is: TIPO_ARQUIVO.TILESERVER,
                 then: Joi.string().allow(null),
                 otherwise: Joi.string().required()
               }),

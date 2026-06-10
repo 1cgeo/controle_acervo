@@ -106,11 +106,35 @@ describe('Mapoteca Integration', () => {
         INSERT INTO mapoteca.tipo_material (nome) VALUES ('Tinta') RETURNING id
       `)
 
+      // RN01: consumo exige estoque na Seção (localizacao_id = 1)
+      await conn.none(`
+        INSERT INTO mapoteca.estoque_material (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
+        VALUES ($1, 50, 1, 1, 1)
+      `, [tipo.id])
+
       const consumo = await conn.one(`
         INSERT INTO mapoteca.consumo_material (tipo_material_id, quantidade, data_consumo, usuario_criacao_id, usuario_atualizacao_id)
         VALUES ($1, 10, NOW(), 1, 1) RETURNING id
       `, [tipo.id])
       expect(consumo.id).toBeDefined()
+
+      // O trigger decrementa o estoque da Seção automaticamente
+      const estoque = await conn.one(`
+        SELECT quantidade FROM mapoteca.estoque_material
+        WHERE tipo_material_id = $1 AND localizacao_id = 1
+      `, [tipo.id])
+      expect(parseFloat(estoque.quantidade)).toBe(40)
+    })
+
+    it('should reject consumption without stock in Seção (RN01)', async () => {
+      const tipo = await conn.one(`
+        INSERT INTO mapoteca.tipo_material (nome) VALUES ('Tinta sem estoque') RETURNING id
+      `)
+
+      await expect(conn.one(`
+        INSERT INTO mapoteca.consumo_material (tipo_material_id, quantidade, data_consumo, usuario_criacao_id, usuario_atualizacao_id)
+        VALUES ($1, 10, NOW(), 1, 1) RETURNING id
+      `, [tipo.id])).rejects.toThrow(/Não há estoque na Seção/)
     })
   })
 })

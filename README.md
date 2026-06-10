@@ -9,9 +9,10 @@ Para sua utilização é necessária a utilização do [Serviço de Autenticaç�
 | Componente | Diretório | Tecnologia | Descrição |
 |---|---|---|---|
 | **Server** | `server/` | Node.js / Express 5 | API REST com PostgreSQL/PostGIS |
-| **Plugin QGIS** | `ferramentas_acervo/` | Python / PyQt | Plugin para QGIS 3 |
-| **Client Dashboard** | `client/` | React / TypeScript | SPA do painel principal |
-| **Mapoteca Admin** | `client_admin_mapoteca/` | React / TypeScript | SPA de administração da mapoteca |
+| **Plugin QGIS** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Plugin para QGIS 4 |
+| **Plugin QGIS Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Plugin para QGIS 4: pedidos ativos, download de PDFs para impressão e controle de quantitativos impressos |
+| **Client Dashboard** | `client/` | Vanilla JS / Vite | SPA do dashboard administrativo |
+| **Client Mapoteca** | `mapoteca/client/` | Vanilla JS / Vite | SPA da mapoteca: dashboard, pedidos, estoque, consumo e plotters (porta dev 3001) |
 
 ---
 
@@ -33,7 +34,7 @@ npm run install-all
 npm run config
 
 # Ou via flags de linha de comando
-node create_config.js --db-server localhost --db-port 5432 --db-user postgres --db-password <senha> --db-name sca --auth-server https://<auth_server_url>
+node create_config.js --db-server localhost --db-port 5432 --db-user postgres --db-password <senha> --db-name sca --port 3015 --db-create --auth-server-raw https://<auth_server_url> --auth-user <admin> --auth-password <senha>
 ```
 
 ### Execução
@@ -82,6 +83,7 @@ Arquivo: `server/config.env` (gerado pelo `npm run config`)
 | `DB_PASSWORD_READONLY` | string | Não | Senha do usuário somente leitura |
 | `JWT_SECRET` | string | Sim | Segredo para assinatura JWT |
 | `AUTH_SERVER` | URI | Sim | URL do servidor de autenticação |
+| `USE_PROXY` | boolean | Não | Usar proxy do sistema nas chamadas ao auth server (default: `false`) |
 
 ### Endpoints da API
 
@@ -97,8 +99,9 @@ Todos os endpoints são servidos sob `/api`. Documentação Swagger disponível 
 | `/api/volumes` | volume | Configuração de volumes de armazenamento |
 | `/api/usuarios` | usuario | Gerenciamento de usuários (admin) |
 | `/api/gerencia` | gerencia | Dados de domínio, verificação de inconsistências |
-| `/api/mapoteca` | mapoteca | CRUD da mapoteca |
-| `/api/mapoteca/dashboard` | dashboard | Analytics da mapoteca |
+| `/api/dashboard` | dashboard | Analytics do acervo (consumido pelo `client/`) |
+| `/api/mapoteca` | mapoteca | CRUD da mapoteca, relatórios anuais (CSV) e controle de impressão |
+| `/api/mapoteca/dashboard` | mapoteca/dashboard | Analytics da mapoteca |
 
 **Formato padrão de resposta:**
 
@@ -114,6 +117,7 @@ Todos os endpoints são servidos sob `/api`. Documentação Swagger disponível 
 
 ### Segurança
 
+- Helmet (headers de segurança HTTP; CSP desabilitado para servir o SPA e o Swagger UI)
 - Rate limiting: 200 requisições por 60 segundos por IP
 - Proteção contra HTTP Parameter Pollution (HPP)
 - CORS habilitado
@@ -145,8 +149,8 @@ server/src/
 ├── volume/               # Volumes de armazenamento
 ├── usuario/              # Gerenciamento de usuários
 ├── gerencia/             # Dados de domínio e operações admin
-├── mapoteca/             # CRUD da mapoteca
-├── dashboard/            # Dashboard da mapoteca
+├── mapoteca/             # CRUD da mapoteca + dashboard + relatórios CSV + impressão
+├── dashboard/            # Dashboard do acervo
 └── utils/                # Utilitários compartilhados
 ```
 
@@ -190,7 +194,7 @@ projeto (1) → (N) lote → (N) versao → (N) arquivo
 
 ### Requisitos
 
-- QGIS >= 3.0
+- QGIS >= 4.0 (Qt6)
 - Servidor SCA em execução
 
 ### Instalação
@@ -199,9 +203,9 @@ Copie a pasta `ferramentas_acervo/` para o diretório de plugins do QGIS:
 
 | SO | Diretório |
 |---|---|
-| Windows | `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\` |
-| Linux | `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/` |
-| macOS | `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/` |
+| Windows | `%APPDATA%\QGIS\QGIS4\profiles\default\python\plugins\` |
+| Linux | `~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/` |
+| macOS | `~/Library/Application Support/QGIS/QGIS4/profiles/default/python/plugins/` |
 
 ### Desenvolvimento
 
@@ -248,8 +252,7 @@ O plugin organiza suas funcionalidades em categorias no painel lateral:
 |---|---|
 | Adicionar Produto | Cria um novo produto geográfico |
 | Adicionar Produto com Versão Histórica | Cria produto com versão histórica associada |
-| Carregar Produtos | Carrega produtos a partir de camada tabular do QGIS |
-| Carregar Arquivos Sistemáticos | Carregamento sistemático de arquivos em lote |
+| Carregar Produtos | Carrega camadas de produtos no QGIS (acesso pelo menu de administrador) |
 
 #### Administração Avançada
 
@@ -314,7 +317,10 @@ ferramentas_acervo/
 ├── core/
 │   ├── api_client.py     # Cliente HTTP (requests + JWT)
 │   ├── settings.py       # Wrapper QgsSettings
-│   └── file_transfer.py  # Thread de transferência (QThread)
+│   ├── file_transfer.py  # Thread de transferência (QThread)
+│   ├── authSMB.py        # Diálogo de credenciais SMB (Linux)
+│   ├── getFileBySMB.py   # Script de cópia via SMB (Linux)
+│   └── ui/               # Forms Qt Designer do core
 └── gui/
     ├── panel.py           # Registro central de funcionalidades
     ├── dockable_panel.py  # Painel dockable principal
@@ -324,14 +330,28 @@ ferramentas_acervo/
 
 ---
 
+## Plugin QGIS da Mapoteca
+
+Plugin separado (`ferramentas_mapoteca/`, QGIS >= 4.0/Qt6, mesma instalação do plugin do acervo) voltado à operação de impressão da mapoteca:
+
+1. **Login** com o mesmo servidor/autenticação do plugin do acervo (re-login automático em 401)
+2. **Pedidos ativos** com status de impressão por pedido (`x/y itens impressos`)
+3. **Download dos PDFs** das cartas de um pedido para impressão (sequencial, com verificação SHA-256), gravando um manifesto `quantitativos_impressao.csv` com o quanto falta imprimir de cada arquivo
+4. **Registro de impressão** por item (quem imprimiu, quando, quantas cópias) com histórico — operadores diferentes podem continuar o trabalho em dias distintos
+
+---
+
 ## Build do Cliente Web
 
 ```bash
-# Builda o client/ e copia para server/src/build/
+# Builda o client/ (dashboard do acervo) e copia para server/src/build/
 npm run build
+
+# Builda o mapoteca/client/ (gera mapoteca/client/dist/)
+npm run build-mapoteca
 ```
 
-O Express serve os arquivos estáticos buildados com fallback SPA para `index.html`.
+O Express serve os arquivos estáticos buildados do dashboard do acervo com fallback SPA para `index.html`. O build do client da mapoteca (`mapoteca/client/dist/`) ainda não é servido pelo Express — sirva-o com um servidor de estáticos próprio (ex: nginx) ou via `npm run preview` em `mapoteca/client/`.
 
 ---
 

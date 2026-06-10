@@ -615,8 +615,8 @@ Atualiza metadados de um produto.
 {
   "id": 123,
   "nome": "string (obrigatorio)",
-  "mi": "string (obrigatorio)",
-  "inom": "string (obrigatorio)",
+  "mi": "string (opcional, permite null ou vazio)",
+  "inom": "string (opcional, permite null ou vazio)",
   "tipo_escala_id": 1,
   "denominador_escala_especial": null,
   "tipo_produto_id": 2,
@@ -1153,7 +1153,7 @@ Retorna a lista de usuarios do servidor de autenticacao externo.
 
 ### Endpoints de Dominio (Publicos)
 
-Todos os endpoints de dominio sao `GET`, nao requerem autenticacao e retornam arrays de registros `{ code, nome }`:
+Todos os endpoints de dominio sao `GET`, nao requerem autenticacao e retornam arrays de registros `{ code, nome }` (tipo_posto_grad inclui tambem `nome_abrev`):
 
 | Endpoint | Descricao |
 |---|---|
@@ -1257,9 +1257,10 @@ Endpoints de dominio da mapoteca, todos publicos (`GET`, sem autenticacao):
 | Endpoint | Descricao |
 |---|---|
 | `GET /api/mapoteca/dominio/tipo_cliente` | Tipos de cliente |
-| `GET /api/mapoteca/dominio/situacao_pedido` | Situacoes de pedido |
-| `GET /api/mapoteca/dominio/tipo_midia` | Tipos de midia |
+| `GET /api/mapoteca/dominio/situacao_pedido` | Situacoes de pedido (inclui 7 - Aguardando producao) |
+| `GET /api/mapoteca/dominio/tipo_midia` | Tipos de midia (inclui 8 - Tyvek) |
 | `GET /api/mapoteca/dominio/tipo_localizacao` | Tipos de localizacao |
+| `GET /api/mapoteca/dominio/forma_entrega` | Formas de entrega: 1-Correios, 2-Entrega em maos, 3-Retirado no CGEO, 4-E-mail, 5-Outros |
 
 ---
 
@@ -1391,12 +1392,19 @@ Cria um novo pedido. O `localizador_pedido` e gerado automaticamente.
   "palavras_chave": ["string"],
   "operacao": "string (permite null)",
   "prazo": "date (permite null)",
+  "demandante": "string (permite null, max 255) - quem encaminhou o pedido (ex: CMS)",
+  "omds": "string (permite null, max 255) - OM responsavel pelo atendimento (ex: 1 CGEO)",
+  "previsto_pit": "boolean (default false) - PIT vs Extra-PIT",
   "observacao": "string (permite null)",
   "localizador_envio": "string (permite null)",
   "observacao_envio": "string (permite null)",
   "motivo_cancelamento": "string (permite null)"
 }
 ```
+
+**Regras condicionais (Joi + CHECK no banco):**
+- `situacao_pedido_id = 5` (Concluido) exige `data_atendimento`.
+- `situacao_pedido_id = 6` (Cancelado) exige `motivo_cancelamento`.
 
 **Resposta:** `{ id, localizador_pedido }`
 
@@ -1444,10 +1452,15 @@ Adiciona um produto a um pedido.
 **Body:**
 ```json
 {
-  "uuid_versao": "uuid (obrigatorio)",
+  "uuid_versao": "uuid (obrigatorio - todo item referencia acervo.versao, RN08)",
   "pedido_id": 1,
   "quantidade": 1,
+  "quantidade_fornecida": "integer >= 0 (permite null) - quantidade efetivamente entregue",
   "tipo_midia_id": 1,
+  "tipo_midia_fornecida_id": "integer (permite null) - midia efetivamente usada",
+  "forma_entrega_id": "integer (permite null) - FK mapoteca.forma_entrega",
+  "data_entrega": "date (permite null) - entrega efetiva por item (entregas parciais)",
+  "observacao": "string (permite null)",
   "producao_especifica": false
 }
 ```
@@ -1480,6 +1493,74 @@ Remove produtos de um pedido.
   "produto_pedido_ids": [1, 2]
 }
 ```
+
+---
+
+## 13a. Mapoteca - Impressao de Pedidos (plugin QGIS)
+
+Fluxo do plugin QGIS da mapoteca (`ferramentas_mapoteca/`): baixar os PDFs das cartas de um pedido para impressao e registrar os quantitativos impressos. O historico de impressao por item (`mapoteca.impressao_item`) permite que operadores diferentes continuem o trabalho em dias distintos.
+
+### POST `/api/mapoteca/pedido/:id/download_impressao`
+
+Prepara o download dos PDFs das cartas do pedido. Para cada item retorna o arquivo PDF da versao no acervo (token em `acervo.download`, confirmado depois via `POST /api/acervo/confirm-download`) e os quantitativos (pedido, ja impresso, restante). Itens sem PDF carregado vao em `itens_sem_pdf`.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+**Resposta:** `{ pedido_id, localizador_pedido, arquivos: [{ produto_pedido_id, produto_nome, mi, escala, versao, tipo_midia_nome, quantidade, quantidade_impressa, quantidade_restante, arquivo_id, nome, download_path, checksum, tamanho_mb, download_token }], itens_sem_pdf: [...] }`
+
+---
+
+### POST `/api/mapoteca/impressao`
+
+Registra sessoes de impressao (log operacional — qualquer usuario logado). O total impresso por item e a soma dos registros.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Body:**
+```json
+{
+  "registros": [
+    { "produto_pedido_id": 1, "quantidade": 3, "observacao": "string (permite null)" }
+  ]
+}
+```
+
+---
+
+### GET `/api/mapoteca/produto_pedido/:id/impressao`
+
+Historico de impressao de um item, com resumo dos quantitativos.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+| **Params** | `id` - integer (obrigatorio) |
+
+**Resposta:** `{ produto_pedido_id, quantidade, quantidade_impressa, quantidade_restante, impressao_concluida, registros: [{ id, quantidade, observacao, data_impressao, usuario_nome }] }`
+
+---
+
+### DELETE `/api/mapoteca/impressao`
+
+Remove registros de impressao (correcoes).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "impressao_ids": [1, 2]
+}
+```
+
+**Observacao:** `GET /api/mapoteca/pedido` retorna `itens_impressos` por pedido e `GET /api/mapoteca/pedido/:id` retorna, por item, `quantidade_impressa`, `quantidade_restante` e `impressao_concluida`, alem do resumo `impressao: { total_itens, itens_concluidos, concluida }`.
 
 ---
 
@@ -1634,7 +1715,7 @@ Deleta registros de manutencao.
 
 ### GET `/api/mapoteca/tipo_material`
 
-Retorna todos os tipos de material com estoque total e contagem de localizacoes.
+Retorna todos os tipos de material com estoque total, contagem de localizacoes e o indicador `abaixo_minimo` (true quando `estoque_minimo` esta definido e o estoque total e menor que ele — usado para badge na UI).
 
 | Campo | Valor |
 |---|---|
@@ -1665,7 +1746,10 @@ Cria um tipo de material.
 ```json
 {
   "nome": "string (obrigatorio)",
-  "descricao": "string (permite null)"
+  "descricao": "string (permite null)",
+  "estoque_minimo": "decimal >= 0 (permite null) - limiar para badge de estoque baixo",
+  "meta_anual": "decimal >= 0 (permite null) - consumo anual previsto",
+  "ativo": "boolean (default true)"
 }
 ```
 
@@ -1754,6 +1838,28 @@ Cria ou atualiza registro de estoque (upsert na chave composta material+localiza
 - `quantidade`: decimal positivo com 2 casas
 
 **Resposta:** `{ id }`
+
+---
+
+### POST `/api/mapoteca/estoque_material/transferir`
+
+Transfere material entre localizacoes em transacao unica (lock `FOR UPDATE` na origem; upsert no destino).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "tipo_material_id": 1,
+  "origem_id": 2,
+  "destino_id": 1,
+  "quantidade": 10.00
+}
+```
+- `origem_id` / `destino_id`: codes de `tipo_localizacao` (1-Secao, 2-Almoxarifado, 3-Aquisicao realizada, 4-Saldo no empenho); devem ser diferentes.
+- `quantidade`: decimal positivo; falha com 400 se a origem nao tiver saldo suficiente.
 
 ---
 
@@ -1953,6 +2059,83 @@ Retorna resumo de status dos plotters (total, ativos, inativos) e lista com data
 
 ---
 
+### GET `/api/mapoteca/dashboard/entregas_por_tipo_produto`
+
+Entregas do ano agrupadas por tipo de produto e escala (via catalogo do acervo). Considera pedidos com situacao 4 (Remetido) ou 5 (Concluido); a data de referencia e `produto_pedido.data_entrega` com fallback em `pedido.data_atendimento`.
+
+**Query Params:** `ano` (int, default ano atual), `formato` (`json` | `csv`, default `json`).
+
+**Resposta:** Array com `tipo_produto`, `escala`, `total_pedidos`, `total_produtos`.
+
+---
+
+### GET `/api/mapoteca/dashboard/entregas_por_midia`
+
+Entregas do ano agrupadas por tipo de midia (midia fornecida com fallback na prevista).
+
+**Query Params:** `ano`, `formato` (`json` | `csv`).
+
+**Resposta:** Array com `tipo_midia`, `total_produtos`.
+
+---
+
+### GET `/api/mapoteca/dashboard/operacoes_apoiadas`
+
+Operacoes apoiadas no ano (campo livre `pedido.operacao`), com total de pedidos e produtos.
+
+**Query Params:** `ano`, `formato` (`json` | `csv`).
+
+**Resposta:** Array com `operacao`, `total_pedidos`, `total_produtos`.
+
+---
+
+### GET `/api/mapoteca/dashboard/resumo_anual`
+
+Resumo anual consolidado.
+
+**Query Params:** `ano` (int, default ano atual).
+
+**Resposta:** `{ ano, total_pedidos, total_entregas, oms_distintas_count, operacoes_distintas_count, custo_manutencao_total }`
+
+---
+
+### GET `/api/mapoteca/dashboard/entregas_por_mes`
+
+Entregas por mes do ano (reproduz a tabela-resumo mensal da planilha: Carta Topo x Carta Orto x Outros). Sempre retorna 12 meses.
+
+**Query Params:** `ano`, `formato` (`json` | `csv`).
+
+**Resposta:** Array com `mes` (1-12), `carta_topo`, `carta_orto`, `outros`, `total`.
+
+---
+
+## 19a. Mapoteca - Relatorios
+
+Endpoints que reproduzem as abas da antiga planilha de controle de pedidos (ver `mapoteca/CLAUDE.md`, secao 7). Todos `GET` com `verifyLogin`, prefixo `/api/mapoteca/relatorio`, e os query params:
+
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `ano` | integer | ano atual | Ano de referencia (`data_pedido`) |
+| `formato` | `json` \| `csv` | `json` | `csv` retorna `text/csv` (separador `;`, BOM UTF-8, datas DD/MM/YYYY) como download (`Content-Disposition: attachment`) |
+
+### GET `/api/mapoteca/relatorio/pedidos_mil`
+
+Reproduz a aba **Mil**: uma linha por pedido militar (cliente OM EB/Aeronautica/Marinha) com pivo de quantidades por escala (25k/50k/100k/250k) x tipo (Carta Topografica / Carta Ortoimagem), alem de `outros_produtos` (tipos nao Topo/Orto ou escala personalizada), `produtos_digitais` (midia Digital) e `total`. Colunas `off_*` saem sempre 0 (mapoteca nao fornece mais estoque offset). Inclui `possui_detalhamento` (Det.?), `tempo_atendimento_dias`, rastreio e operacao. Quantidades usam `COALESCE(quantidade_fornecida, quantidade)`.
+
+### GET `/api/mapoteca/relatorio/pedidos_detalhado`
+
+Reproduz a aba **Detalhado**: uma linha por item de pedido com `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta` (prazo), produto/MI/escala do catalogo (escala personalizada formatada como `1:<denominador>`), quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega`, `observacao` e `mes` da entrega.
+
+### GET `/api/mapoteca/relatorio/pedidos_civ`
+
+Reproduz a aba **Civ**: uma linha por pedido civil (demais tipos de cliente) com solicitante, oficio, NUP LAI, resumo (observacao do pedido), data de envio, situacao e observacao de envio.
+
+### GET `/api/mapoteca/relatorio/tematicos`
+
+Reproduz a aba **Mapas Tematicos**: itens com `producao_especifica = TRUE` (RN07 — producao sob demanda). Retorna `nome_projeto` (versao/produto do acervo), `demandante`, descricoes do pedido e do produto, `data_entrega`, `secao_responsavel` (`acervo.versao.orgao_produtor`), `militar_responsavel` (`acervo.versao.metadado->>'responsavel'`) e `tamanho_mb` (soma dos arquivos carregados da versao).
+
+---
+
 ## 20. Dashboard do Acervo
 
 Todos os endpoints sao `GET` e requerem **verifyLogin**. Prefixo: `/api/dashboard`.
@@ -1976,6 +2159,13 @@ Todos os endpoints sao `GET` e requerem **verifyLogin**. Prefixo: `/api/dashboar
 | `GET /api/dashboard/storage_growth_trends` | Tendencias de crescimento de armazenamento | `months` (int, default 12) |
 | `GET /api/dashboard/project_status_summary` | Resumo de status de projetos | - |
 | `GET /api/dashboard/user_activity_metrics` | Metricas de atividade de usuarios | `limit` (int, default 10) |
+| `GET /api/dashboard/system_health` | Indicadores de saude do sistema (volumes, erros, sessoes) | - |
+| `GET /api/dashboard/produtos_escala` | Produtos agrupados por escala | - |
+| `GET /api/dashboard/arquivos_tipo_arquivo` | Arquivos agrupados por tipo de arquivo | - |
+| `GET /api/dashboard/situacao_carregamento` | Distribuicao por situacao de carregamento | - |
+| `GET /api/dashboard/versao_activity_timeline` | Timeline de atividade de versoes | `months` (int, default 12) |
+| `GET /api/dashboard/ultimos_produtos` | Ultimos produtos cadastrados | - |
+| `GET /api/dashboard/ultimas_versoes` | Ultimas versoes cadastradas | - |
 
 ---
 
@@ -2009,15 +2199,17 @@ Interface Swagger UI com documentacao interativa da API.
 | Volumes | `/api/volumes` | 8 | verifyAdmin |
 | Usuarios | `/api/usuarios` | 6 | verifyAdmin |
 | Gerencia | `/api/gerencia` | 14 | Nenhuma (dominios) / verifyAdmin |
-| Mapoteca - Dominios | `/api/mapoteca/dominio` | 4 | Nenhuma |
+| Mapoteca - Dominios | `/api/mapoteca/dominio` | 5 | Nenhuma |
 | Mapoteca - Clientes | `/api/mapoteca/cliente` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Pedidos | `/api/mapoteca/pedido` | 6 | verifyLogin / verifyAdmin |
 | Mapoteca - Prod. Pedido | `/api/mapoteca/produto_pedido` | 3 | verifyAdmin |
+| Mapoteca - Impressao | `/api/mapoteca/impressao` + pedido/produto_pedido | 4 | verifyLogin / verifyAdmin |
 | Mapoteca - Plotters | `/api/mapoteca/plotter` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Manutencao | `/api/mapoteca/manutencao_plotter` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Tipo Material | `/api/mapoteca/tipo_material` | 5 | verifyLogin / verifyAdmin |
-| Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 6 | verifyLogin / verifyAdmin |
+| Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 7 | verifyLogin / verifyAdmin |
 | Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 6 | verifyLogin / verifyAdmin |
-| Dashboard Mapoteca | `/api/mapoteca/dashboard` | 8 | verifyLogin |
-| Dashboard Acervo | `/api/dashboard` | 17 | verifyLogin |
-| **Total** | | **140** | |
+| Mapoteca - Relatorios | `/api/mapoteca/relatorio` | 4 | verifyLogin |
+| Dashboard Mapoteca | `/api/mapoteca/dashboard` | 13 | verifyLogin |
+| Dashboard Acervo | `/api/dashboard` | 24 | verifyLogin |
+| **Total** | | **162** | |

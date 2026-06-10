@@ -3,11 +3,12 @@
 
 const express = require('express')
 
-const { asyncHandler, httpCode } = require('../utils')
+const { asyncHandler, httpCode, schemaValidation } = require('../utils')
 
 const { verifyLogin } = require('../login')
 
 const dashboardCtrl = require('./dashboard_ctrl')
+const dashboardSchema = require('./dashboard_schema')
 
 const router = express.Router()
 
@@ -136,9 +137,9 @@ router.get(
 router.get(
   '/produto_activity_timeline',
   verifyLogin,
+  schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
-    const months = req.query.months ? parseInt(req.query.months) : 12;
-    const dados = await dashboardCtrl.getProdutoActivityTimeline(months);
+    const dados = await dashboardCtrl.getProdutoActivityTimeline(req.query.months);
     const msg = 'Timeline de atividade de produtos retornada com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
@@ -157,9 +158,9 @@ router.get(
 router.get(
   '/storage_growth_trends',
   verifyLogin,
+  schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
-    const months = req.query.months ? parseInt(req.query.months) : 12;
-    const dados = await dashboardCtrl.getStorageGrowthTrends(months);
+    const dados = await dashboardCtrl.getStorageGrowthTrends(req.query.months);
     const msg = 'Tendências de crescimento de armazenamento retornadas com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
@@ -178,9 +179,9 @@ router.get(
 router.get(
   '/user_activity_metrics',
   verifyLogin,
+  schemaValidation({ query: dashboardSchema.limitParam }),
   asyncHandler(async (req, res, next) => {
-    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-    const dados = await dashboardCtrl.getUserActivityMetrics(limit);
+    const dados = await dashboardCtrl.getUserActivityMetrics(req.query.limit);
     const msg = 'Métricas de atividade de usuários retornadas com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
@@ -229,9 +230,9 @@ router.get(
 router.get(
   '/versao_activity_timeline',
   verifyLogin,
+  schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
-    const months = req.query.months ? parseInt(req.query.months) : 12
-    const dados = await dashboardCtrl.getVersaoActivityTimeline(months)
+    const dados = await dashboardCtrl.getVersaoActivityTimeline(req.query.months)
     const msg = 'Timeline de atividade de versoes retornada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

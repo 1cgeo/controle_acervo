@@ -2,10 +2,58 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
+const { ESCALA_DISPLAY } = require("./query_fragments");
 
 const controller = {};
+
+// Resolve o id inteiro do usuário a partir do uuid presente no token
+const getUsuarioId = async (usuarioUuid) => {
+  const usuarioInfo = await db.conn.oneOrNone(
+    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
+    { usuarioUuid }
+  );
+
+  if (!usuarioInfo) {
+    throw new AppError("Usuário não encontrado", httpCode.BadRequest);
+  }
+
+  return usuarioInfo.id;
+};
+
+// Colunas de pedido/produto_pedido compartilhadas entre criação e atualização
+// (pgp ColumnSet). `def` permite que o cliente omita campos opcionais.
+const PEDIDO_COLS = [
+  'data_pedido',
+  { name: 'data_atendimento', def: null },
+  'cliente_id', 'situacao_pedido_id',
+  { name: 'ponto_contato', def: null },
+  { name: 'documento_solicitacao', def: null },
+  { name: 'documento_solicitacao_nup', def: null },
+  { name: 'endereco_entrega', def: null },
+  'palavras_chave',
+  { name: 'operacao', def: null },
+  { name: 'prazo', def: null },
+  { name: 'demandante', def: null },
+  { name: 'omds', def: null },
+  { name: 'previsto_pit', def: false },
+  { name: 'observacao', def: null },
+  { name: 'localizador_envio', def: null },
+  { name: 'observacao_envio', def: null },
+  { name: 'motivo_cancelamento', def: null }
+];
+
+const PRODUTO_PEDIDO_COLS = [
+  'uuid_versao', 'pedido_id', 'quantidade',
+  { name: 'quantidade_fornecida', def: null },
+  'tipo_midia_id',
+  { name: 'tipo_midia_fornecida_id', def: null },
+  { name: 'forma_entrega_id', def: null },
+  { name: 'data_entrega', def: null },
+  { name: 'observacao', def: null },
+  'producao_especifica'
+];
 
 // Funções para Domínios
 controller.getTipoCliente = async () => {
@@ -33,6 +81,14 @@ controller.getTipoLocalizacao = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM mapoteca.tipo_localizacao
+  `);
+};
+
+controller.getFormaEntrega = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM mapoteca.forma_entrega
+    ORDER BY code
   `);
 };
 
@@ -152,14 +208,7 @@ controller.getClienteById = async (clienteId) => {
 };
 
 controller.criaCliente = async (cliente, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
@@ -176,23 +225,20 @@ controller.criaCliente = async (cliente, usuarioUuid) => {
 };
 
 controller.atualizaCliente = async (cliente, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome', 'ponto_contato_principal', 'endereco_entrega_principal', 'tipo_cliente_id'
-    ], { table: 'cliente', schema: 'mapoteca' });
+    ], { table: { table: 'cliente', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(cliente, cs) + ' WHERE id = $1';
 
-    await t.none(query, [cliente.id]);
+    const result = await t.result(query, [cliente.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Cliente não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -241,10 +287,15 @@ controller.getPedidos = async () => {
            p.cliente_id, c.nome AS cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
-           p.prazo, p.localizador_pedido, p.localizador_envio, p.observacao_envio,
+           p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
+           p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            u.nome AS usuario_criacao_nome,
            p.data_criacao,
-           (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos
+           (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos,
+           (SELECT COUNT(*) FROM mapoteca.produto_pedido pp
+            WHERE pp.pedido_id = p.id
+              AND COALESCE((SELECT SUM(ii.quantidade) FROM mapoteca.impressao_item ii WHERE ii.produto_pedido_id = pp.id), 0) >= pp.quantidade
+           ) AS itens_impressos
     FROM mapoteca.pedido AS p
     LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
@@ -262,6 +313,7 @@ controller.getPedidoById = async (pedidoId) => {
              p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
              p.ponto_contato, p.documento_solicitacao, p.documento_solicitacao_nup,
              p.endereco_entrega, p.palavras_chave, p.operacao, p.prazo,
+             p.demandante, p.omds, p.previsto_pit,
              p.observacao, p.localizador_envio, p.observacao_envio, p.motivo_cancelamento,
              p.localizador_pedido,
              p.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
@@ -281,18 +333,33 @@ controller.getPedidoById = async (pedidoId) => {
     }
 
     const produtos = await t.any(`
-      SELECT pp.id, pp.uuid_versao, pp.quantidade, pp.tipo_midia_id, 
-             tm.nome AS tipo_midia_nome, pp.producao_especifica,
-             v.versao, v.produto_id, p.nome AS produto_nome, 
-             p.mi, p.inom, te.nome AS escala,
+      SELECT pp.id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
+             pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
+             pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
+             pp.forma_entrega_id, fe.nome AS forma_entrega_nome,
+             pp.data_entrega, pp.observacao, pp.producao_especifica,
+             v.versao, v.produto_id, p.nome AS produto_nome,
+             p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial,
+             p.tipo_produto_id, tp.nome AS tipo_produto_nome,
+             COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
+             GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
+             (COALESCE(imp.quantidade_impressa, 0) >= pp.quantidade) AS impressao_concluida,
              pp.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
-             pp.data_criacao, pp.usuario_atualizacao_id, 
+             pp.data_criacao, pp.usuario_atualizacao_id,
              ua.nome AS usuario_atualizacao_nome, pp.data_atualizacao
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
+      LEFT JOIN mapoteca.tipo_midia AS tmf ON tmf.code = pp.tipo_midia_fornecida_id
+      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = pp.forma_entrega_id
       LEFT JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
       LEFT JOIN acervo.produto AS p ON p.id = v.produto_id
       LEFT JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
+      LEFT JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(ii.quantidade) AS quantidade_impressa
+        FROM mapoteca.impressao_item ii
+        WHERE ii.produto_pedido_id = pp.id
+      ) imp ON TRUE
       LEFT JOIN dgeo.usuario AS uc ON uc.id = pp.usuario_criacao_id
       LEFT JOIN dgeo.usuario AS ua ON ua.id = pp.usuario_atualizacao_id
       WHERE pp.pedido_id = $1
@@ -301,22 +368,30 @@ controller.getPedidoById = async (pedidoId) => {
 
     // Combinar os resultados
     pedido.produtos = produtos;
+    pedido.impressao = {
+      total_itens: produtos.length,
+      itens_concluidos: produtos.filter(p => p.impressao_concluida).length,
+      concluida: produtos.length > 0 && produtos.every(p => p.impressao_concluida)
+    };
 
     return pedido;
   });
 };
 
 controller.criaPedido = async (pedido, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    // Checagem amigável da FK de cliente (evita 500 cru do Postgres)
+    const clienteExiste = await t.oneOrNone(
+      `SELECT id FROM mapoteca.cliente WHERE id = $1`,
+      [pedido.cliente_id]
+    );
+
+    if (!clienteExiste) {
+      throw new AppError('Cliente não encontrado', httpCode.NotFound);
+    }
+
     // Gerar localizador único
     let localizador;
     let isUnique = false;
@@ -334,15 +409,12 @@ controller.criaPedido = async (pedido, usuarioUuid) => {
     }
     
     pedido.localizador_pedido = localizador;
-    pedido.usuario_criacao_id = usuarioInfo.id;
-    pedido.usuario_atualizacao_id = usuarioInfo.id;
+    pedido.usuario_criacao_id = usuarioId;
+    pedido.usuario_atualizacao_id = usuarioId;
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'data_pedido', 'data_atendimento', 'cliente_id', 'situacao_pedido_id',
-      'ponto_contato', 'documento_solicitacao', 'documento_solicitacao_nup',
-      'endereco_entrega', 'palavras_chave', 'operacao', 'prazo',
-      'observacao', 'localizador_envio', 'motivo_cancelamento',
-      'localizador_pedido', 'observacao_envio',
+      ...PEDIDO_COLS,
+      'localizador_pedido',
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
@@ -357,14 +429,7 @@ controller.criaPedido = async (pedido, usuarioUuid) => {
 };
 
 controller.atualizaPedido = async (pedido, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     // Verificar se o pedido existe e obter seu localizador atual
@@ -380,16 +445,13 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
     // Não permitir modificar o localizador_pedido
     delete pedido.localizador_pedido;
     
-    pedido.usuario_atualizacao_id = usuarioInfo.id;
+    pedido.usuario_atualizacao_id = usuarioId;
     pedido.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'data_pedido', 'data_atendimento', 'cliente_id', 'situacao_pedido_id',
-      'ponto_contato', 'documento_solicitacao', 'documento_solicitacao_nup',
-      'endereco_entrega', 'palavras_chave', 'operacao', 'prazo',
-      'observacao', 'localizador_envio', 'observacao_envio', 'motivo_cancelamento',
+      ...PEDIDO_COLS,
       'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: 'pedido', schema: 'mapoteca' });
+    ], { table: { table: 'pedido', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(pedido, cs) + ' WHERE id = $1';
 
@@ -400,13 +462,11 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
 controller.getPedidoByLocalizador = async (localizador) => {
   return db.conn.task(async t => {
     const pedido = await t.oneOrNone(`
-      SELECT 
-        p.id,
+      SELECT
         p.localizador_pedido,
         p.data_pedido,
         p.situacao_pedido_id,
         sp.nome AS situacao_pedido_nome,
-        p.cliente_id,
         c.nome AS cliente_nome,
         p.prazo,
         p.localizador_envio,
@@ -456,14 +516,7 @@ controller.deletePedidos = async (pedidoIds) => {
 
 // Funções para Produto do Pedido
 controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     // Verificar se a versão existe
@@ -486,11 +539,11 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
       throw new AppError('Pedido não encontrado', httpCode.NotFound);
     }
 
-    produtoPedido.usuario_criacao_id = usuarioInfo.id;
-    produtoPedido.usuario_atualizacao_id = usuarioInfo.id;
+    produtoPedido.usuario_criacao_id = usuarioId;
+    produtoPedido.usuario_atualizacao_id = usuarioId;
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'uuid_versao', 'pedido_id', 'quantidade', 'tipo_midia_id', 'producao_especifica',
+      ...PRODUTO_PEDIDO_COLS,
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
@@ -504,27 +557,24 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
 };
 
 controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    produtoPedido.usuario_atualizacao_id = usuarioInfo.id;
+    produtoPedido.usuario_atualizacao_id = usuarioId;
     produtoPedido.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'uuid_versao', 'pedido_id', 'quantidade', 'tipo_midia_id', 'producao_especifica',
+      ...PRODUTO_PEDIDO_COLS,
       'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: 'produto_pedido', schema: 'mapoteca' });
+    ], { table: { table: 'produto_pedido', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(produtoPedido, cs) + ' WHERE id = $1';
 
-    await t.none(query, [produtoPedido.id]);
+    const result = await t.result(query, [produtoPedido.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Produto do pedido não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -545,6 +595,213 @@ controller.deleteProdutosPedido = async (produtoPedidoIds) => {
     return t.any(
       `DELETE FROM mapoteca.produto_pedido WHERE id IN ($1:csv)`,
       [produtoPedidoIds]
+    );
+  });
+};
+
+// Funções para Impressão de Pedidos (plugin QGIS da mapoteca)
+
+/**
+ * Prepara o download dos PDFs das cartas de um pedido para impressão.
+ * Para cada item retorna o arquivo PDF da versão no acervo (com token de
+ * download em acervo.download, confirmado depois via /api/acervo/confirm-download)
+ * e os quantitativos: pedido, já impresso e restante.
+ * Itens cuja versão não possui PDF carregado são listados em itens_sem_pdf.
+ */
+controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const pedido = await t.oneOrNone(
+      `SELECT id, localizador_pedido FROM mapoteca.pedido WHERE id = $<pedidoId>`,
+      { pedidoId }
+    );
+
+    if (!pedido) {
+      throw new AppError('Pedido não encontrado', httpCode.NotFound);
+    }
+
+    const itens = await t.any(
+      `
+      SELECT pp.id AS produto_pedido_id,
+             pp.quantidade,
+             COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
+             GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
+             tm.nome AS tipo_midia_nome,
+             prod.nome AS produto_nome,
+             prod.mi,
+             ${ESCALA_DISPLAY} AS escala,
+             v.versao,
+             a.id AS arquivo_id,
+             a.nome,
+             a.checksum,
+             a.tamanho_mb,
+             CONCAT(vol.volume, '/', a.nome_arquivo, '.', a.extensao) AS download_path
+      FROM mapoteca.produto_pedido pp
+      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.produto prod ON prod.id = v.produto_id
+      JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+      JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(ii.quantidade) AS quantidade_impressa
+        FROM mapoteca.impressao_item ii
+        WHERE ii.produto_pedido_id = pp.id
+      ) imp ON TRUE
+      LEFT JOIN acervo.arquivo a ON a.versao_id = v.id
+        AND LOWER(a.extensao) = 'pdf'
+        AND a.tipo_status_id = $<statusCarregado>
+        AND a.tipo_arquivo_id IN ($<tiposImprimiveis:csv>)
+      LEFT JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
+      WHERE pp.pedido_id = $<pedidoId>
+      ORDER BY pp.id, a.id
+      `,
+      {
+        pedidoId,
+        statusCarregado: STATUS_ARQUIVO.CARREGADO,
+        // Só o produto cartográfico em si (evita PDFs de metadados/documentos)
+        tiposImprimiveis: [TIPO_ARQUIVO.ARQUIVO_PRINCIPAL, TIPO_ARQUIVO.FORMATO_ALTERNATIVO]
+      }
+    );
+
+    const arquivos = itens.filter(i => i.arquivo_id);
+    const itensSemPdf = itens
+      .filter(i => !i.arquivo_id)
+      .map(i => ({
+        produto_pedido_id: i.produto_pedido_id,
+        produto_nome: i.produto_nome,
+        mi: i.mi,
+        escala: i.escala,
+        quantidade: i.quantidade,
+        quantidade_restante: i.quantidade_restante
+      }));
+
+    if (arquivos.length > 0) {
+      // expiration_time: tokens pendentes expiram e são limpos pelo cron (como no acervo)
+      const cs = new db.pgp.helpers.ColumnSet([
+        'arquivo_id',
+        'usuario_uuid',
+        { name: 'expiration_time', mod: ':raw', init: () => "NOW() + INTERVAL '24 hours'" }
+      ]);
+      const downloads = arquivos.map(a => ({
+        arquivo_id: a.arquivo_id,
+        usuario_uuid: usuarioUuid
+      }));
+
+      const query = db.pgp.helpers.insert(downloads, cs, {
+        table: 'download',
+        schema: 'acervo'
+      }) + ' RETURNING download_token';
+
+      // INSERT ... RETURNING preserva a ordem dos VALUES
+      const tokens = await t.any(query);
+      arquivos.forEach((a, idx) => {
+        a.download_token = tokens[idx].download_token;
+      });
+    }
+
+    return {
+      pedido_id: pedido.id,
+      localizador_pedido: pedido.localizador_pedido,
+      arquivos,
+      itens_sem_pdf: itensSemPdf
+    };
+  });
+};
+
+/**
+ * Registra sessões de impressão (uma por item, com a quantidade impressa).
+ * Qualquer usuário logado pode registrar — é log operacional, não gestão de
+ * catálogo. O total impresso por item é a soma dos registros.
+ */
+controller.registrarImpressao = async (registros, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const ids = [...new Set(registros.map(r => r.produto_pedido_id))];
+
+    const existentes = await t.any(
+      `SELECT id FROM mapoteca.produto_pedido WHERE id IN ($<ids:csv>)`,
+      { ids }
+    );
+
+    if (existentes.length !== ids.length) {
+      const encontrados = existentes.map(e => e.id);
+      const faltantes = ids.filter(id => !encontrados.includes(id));
+      throw new AppError(
+        `Os seguintes itens de pedido não foram encontrados: ${faltantes.join(', ')}`,
+        httpCode.NotFound
+      );
+    }
+
+    const cs = new db.pgp.helpers.ColumnSet([
+      'produto_pedido_id', 'quantidade',
+      { name: 'observacao', def: null },
+      'usuario_uuid'
+    ]);
+
+    const query = db.pgp.helpers.insert(
+      registros.map(r => ({ ...r, usuario_uuid: usuarioUuid })),
+      cs,
+      { table: 'impressao_item', schema: 'mapoteca' }
+    );
+
+    await t.none(query);
+  });
+};
+
+// Histórico de impressão de um item de pedido, com resumo dos quantitativos
+controller.getImpressoesItem = async (produtoPedidoId) => {
+  return db.conn.task(async t => {
+    const item = await t.oneOrNone(
+      `SELECT pp.id, pp.quantidade
+       FROM mapoteca.produto_pedido pp
+       WHERE pp.id = $<produtoPedidoId>`,
+      { produtoPedidoId }
+    );
+
+    if (!item) {
+      throw new AppError('Item de pedido não encontrado', httpCode.NotFound);
+    }
+
+    const registros = await t.any(
+      `SELECT ii.id, ii.quantidade, ii.observacao, ii.data_impressao,
+              u.nome AS usuario_nome, u.nome_guerra AS usuario_nome_guerra
+       FROM mapoteca.impressao_item ii
+       JOIN dgeo.usuario u ON u.uuid = ii.usuario_uuid
+       WHERE ii.produto_pedido_id = $<produtoPedidoId>
+       ORDER BY ii.data_impressao DESC`,
+      { produtoPedidoId }
+    );
+
+    const quantidadeImpressa = registros.reduce((sum, r) => sum + r.quantidade, 0);
+
+    return {
+      produto_pedido_id: item.id,
+      quantidade: item.quantidade,
+      quantidade_impressa: quantidadeImpressa,
+      quantidade_restante: Math.max(item.quantidade - quantidadeImpressa, 0),
+      impressao_concluida: quantidadeImpressa >= item.quantidade,
+      registros
+    };
+  });
+};
+
+// Remove registros de impressão (correções — somente admin)
+controller.deleteImpressoes = async (impressaoIds) => {
+  return db.conn.tx(async t => {
+    const existentes = await t.any(
+      `SELECT id FROM mapoteca.impressao_item WHERE id IN ($<impressaoIds:csv>)`,
+      { impressaoIds }
+    );
+
+    if (existentes.length !== impressaoIds.length) {
+      const encontrados = existentes.map(e => e.id);
+      const faltantes = impressaoIds.filter(id => !encontrados.includes(parseInt(id)));
+      throw new AppError(
+        `Os seguintes registros de impressão não foram encontrados: ${faltantes.join(', ')}`,
+        httpCode.NotFound
+      );
+    }
+
+    return t.any(
+      `DELETE FROM mapoteca.impressao_item WHERE id IN ($<impressaoIds:csv>)`,
+      { impressaoIds }
     );
   });
 };
@@ -622,7 +879,7 @@ controller.getPlotterById = async (plotterId) => {
           WHERE plotter_id = $1
           ORDER BY data_manutencao
         )
-        SELECT AVG(EXTRACT(DAY FROM (data_manutencao - manutencao_anterior))) AS media_dias
+        SELECT AVG(data_manutencao - manutencao_anterior) AS media_dias
         FROM manutencoes_ordenadas
         WHERE manutencao_anterior IS NOT NULL
       `, [plotterId]);
@@ -664,11 +921,15 @@ controller.atualizaPlotter = async (plotter, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'ativo', 'nr_serie', 'modelo', 'data_aquisicao', 'vida_util'
-    ], { table: 'plotter', schema: 'mapoteca' });
+    ], { table: { table: 'plotter', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(plotter, cs) + ' WHERE id = $1';
 
-    await t.none(query, [plotter.id]);
+    const result = await t.result(query, [plotter.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Plotter não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -727,14 +988,7 @@ controller.getManutencoesPlotter = async () => {
 };
 
 controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     // Verificar se o plotter existe
@@ -747,8 +1001,8 @@ controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
       throw new AppError('Plotter não encontrado', httpCode.NotFound);
     }
 
-    manutencao.usuario_criacao_id = usuarioInfo.id;
-    manutencao.usuario_atualizacao_id = usuarioInfo.id;
+    manutencao.usuario_criacao_id = usuarioId;
+    manutencao.usuario_atualizacao_id = usuarioId;
 
     const cs = new db.pgp.helpers.ColumnSet([
       'plotter_id', 'data_manutencao', 'valor', 'descricao',
@@ -765,27 +1019,24 @@ controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
 };
 
 controller.atualizaManutencaoPlotter = async (manutencao, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    manutencao.usuario_atualizacao_id = usuarioInfo.id;
+    manutencao.usuario_atualizacao_id = usuarioId;
     manutencao.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
       'plotter_id', 'data_manutencao', 'valor', 'descricao',
       'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: 'manutencao_plotter', schema: 'mapoteca' });
+    ], { table: { table: 'manutencao_plotter', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(manutencao, cs) + ' WHERE id = $1';
 
-    await t.none(query, [manutencao.id]);
+    const result = await t.result(query, [manutencao.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Manutenção de plotter não encontrada', httpCode.NotFound);
+    }
   });
 };
 
@@ -814,9 +1065,21 @@ controller.deleteManutencoesPlotter = async (manutencaoIds) => {
 controller.getTiposMaterial = async () => {
   return db.conn.any(`
     SELECT tm.id, tm.nome, tm.descricao,
-           COALESCE((SELECT SUM(quantidade) FROM mapoteca.estoque_material WHERE tipo_material_id = tm.id), 0) AS estoque_total,
-           COALESCE((SELECT COUNT(DISTINCT localizacao_id) FROM mapoteca.estoque_material WHERE tipo_material_id = tm.id), 0) AS localizacoes_armazenadas
+           tm.estoque_minimo, tm.meta_anual, tm.ativo,
+           COALESCE(est.estoque_total, 0) AS estoque_total,
+           COALESCE(est.localizacoes_armazenadas, 0) AS localizacoes_armazenadas,
+           (
+             tm.estoque_minimo IS NOT NULL AND
+             COALESCE(est.estoque_total, 0) < tm.estoque_minimo
+           ) AS abaixo_minimo
     FROM mapoteca.tipo_material AS tm
+    LEFT JOIN (
+      SELECT tipo_material_id,
+             SUM(quantidade) AS estoque_total,
+             COUNT(DISTINCT localizacao_id)::int AS localizacoes_armazenadas
+      FROM mapoteca.estoque_material
+      GROUP BY tipo_material_id
+    ) est ON est.tipo_material_id = tm.id
     ORDER BY tm.nome
   `);
 };
@@ -825,7 +1088,8 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
   return db.conn.task(async t => {
     // Buscar informações do tipo de material
     const tipoMaterial = await t.oneOrNone(`
-      SELECT tm.id, tm.nome, tm.descricao
+      SELECT tm.id, tm.nome, tm.descricao,
+             tm.estoque_minimo, tm.meta_anual, tm.ativo
       FROM mapoteca.tipo_material AS tm
       WHERE tm.id = $1
     `, [tipoMaterialId]);
@@ -895,7 +1159,11 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
 controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'descricao'
+      'nome',
+      { name: 'descricao', def: null },
+      { name: 'estoque_minimo', def: null },
+      { name: 'meta_anual', def: null },
+      { name: 'ativo', def: true }
     ]);
 
     const query = db.pgp.helpers.insert(tipoMaterial, cs, {
@@ -911,12 +1179,20 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
 controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'descricao'
-    ], { table: 'tipo_material', schema: 'mapoteca' });
+      'nome',
+      { name: 'descricao', def: null },
+      { name: 'estoque_minimo', def: null },
+      { name: 'meta_anual', def: null },
+      { name: 'ativo', def: true }
+    ], { table: { table: 'tipo_material', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(tipoMaterial, cs) + ' WHERE id = $1';
 
-    await t.none(query, [tipoMaterial.id]);
+    const result = await t.result(query, [tipoMaterial.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -1004,14 +1280,7 @@ controller.getEstoquePorLocalizacao = async () => {
 };
 
 controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     // Verificar se o tipo de material existe
@@ -1034,68 +1303,52 @@ controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
       throw new AppError('Localização não encontrada', httpCode.NotFound);
     }
 
-    // Verificar se já existe registro para este material nesta localização
-    const estoqueExistente = await t.oneOrNone(
-      `SELECT id, quantidade FROM mapoteca.estoque_material 
-       WHERE tipo_material_id = $1 AND localizacao_id = $2`,
-      [estoqueMaterial.tipo_material_id, estoqueMaterial.localizacao_id]
+    // Upsert atômico (check-then-insert tinha corrida com a UNIQUE
+    // tipo_material/localizacao). Semântica preservada: define o nível
+    // de estoque (substitui a quantidade existente).
+    const result = await t.one(
+      `INSERT INTO mapoteca.estoque_material
+         (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
+       VALUES ($1, $2, $3, $4, $4)
+       ON CONFLICT (tipo_material_id, localizacao_id)
+       DO UPDATE SET quantidade = EXCLUDED.quantidade,
+                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id,
+                     data_atualizacao = CURRENT_TIMESTAMP
+       RETURNING id`,
+      [estoqueMaterial.tipo_material_id, estoqueMaterial.quantidade, estoqueMaterial.localizacao_id, usuarioId]
     );
-
-    // Se já existe, atualizar o registro existente
-    if (estoqueExistente) {
-      await t.none(
-        `UPDATE mapoteca.estoque_material 
-         SET quantidade = $1, 
-             usuario_atualizacao_id = $2,
-             data_atualizacao = CURRENT_TIMESTAMP
-         WHERE id = $3`,
-        [estoqueMaterial.quantidade, usuarioInfo.id, estoqueExistente.id]
-      );
-      return estoqueExistente.id;
-    } 
-    // Caso contrário, criar um novo registro
-    else {
-      estoqueMaterial.usuario_criacao_id = usuarioInfo.id;
-      estoqueMaterial.usuario_atualizacao_id = usuarioInfo.id;
-
-      const cs = new db.pgp.helpers.ColumnSet([
-        'tipo_material_id', 'quantidade', 'localizacao_id',
-        'usuario_criacao_id', 'usuario_atualizacao_id'
-      ]);
-
-      const query = db.pgp.helpers.insert(estoqueMaterial, cs, {
-        table: 'estoque_material',
-        schema: 'mapoteca'
-      }) + ' RETURNING id';
-
-      const result = await t.one(query);
-      return result.id;
-    }
+    return result.id;
   });
 };
 
 controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    estoqueMaterial.usuario_atualizacao_id = usuarioInfo.id;
+    estoqueMaterial.usuario_atualizacao_id = usuarioId;
     estoqueMaterial.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
       'tipo_material_id', 'quantidade', 'localizacao_id',
       'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: 'estoque_material', schema: 'mapoteca' });
+    ], { table: { table: 'estoque_material', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(estoqueMaterial, cs) + ' WHERE id = $1';
 
-    await t.none(query, [estoqueMaterial.id]);
+    let result;
+    try {
+      result = await t.result(query, [estoqueMaterial.id]);
+    } catch (error) {
+      // 23505: mover o registro para material+localização que já existem
+      if (error.code === '23505') {
+        throw new AppError('Já existe registro de estoque para este material nesta localização', httpCode.BadRequest, error);
+      }
+      throw error;
+    }
+
+    if (result.rowCount === 0) {
+      throw new AppError('Registro de estoque não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -1116,6 +1369,74 @@ controller.deleteEstoqueMaterial = async (estoqueMaterialIds) => {
     return t.any(
       `DELETE FROM mapoteca.estoque_material WHERE id IN ($1:csv)`,
       [estoqueMaterialIds]
+    );
+  });
+};
+
+// Transferência de material entre localizações
+// FOR UPDATE na origem serializa transferências simultâneas do mesmo material;
+// upsert no destino usa o UNIQUE (tipo_material_id, localizacao_id)
+controller.transferirMaterial = async (data, usuarioUuid) => {
+  const usuarioId = await getUsuarioId(usuarioUuid);
+
+  const { tipo_material_id: tipoMaterialId, origem_id: origemId, destino_id: destinoId, quantidade } = data;
+
+  return db.conn.tx(async t => {
+    const tipoMaterialExiste = await t.oneOrNone(
+      `SELECT id FROM mapoteca.tipo_material WHERE id = $<tipoMaterialId>`,
+      { tipoMaterialId }
+    );
+
+    if (!tipoMaterialExiste) {
+      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
+    }
+
+    // Travar origem e destino em ordem determinística de localizacao_id —
+    // transferências opostas simultâneas (A→B e B→A) não deadlockam
+    const estoques = await t.any(
+      `SELECT id, localizacao_id, quantidade
+       FROM mapoteca.estoque_material
+       WHERE tipo_material_id = $<tipoMaterialId>
+         AND localizacao_id IN ($<origemId>, $<destinoId>)
+       ORDER BY localizacao_id
+       FOR UPDATE`,
+      { tipoMaterialId, origemId, destinoId }
+    );
+
+    const origem = estoques.find(e => e.localizacao_id === origemId);
+
+    if (!origem) {
+      throw new AppError(
+        'Não há estoque na localização de origem para este material',
+        httpCode.BadRequest
+      );
+    }
+
+    if (parseFloat(origem.quantidade) < quantidade) {
+      throw new AppError(
+        `Quantidade insuficiente na origem. Disponível: ${origem.quantidade}, solicitado: ${quantidade}`,
+        httpCode.BadRequest
+      );
+    }
+
+    await t.none(
+      `UPDATE mapoteca.estoque_material
+       SET quantidade = quantidade - $<quantidade>,
+           data_atualizacao = CURRENT_TIMESTAMP,
+           usuario_atualizacao_id = $<usuarioId>
+       WHERE id = $<id>`,
+      { id: origem.id, quantidade, usuarioId }
+    );
+
+    await t.none(
+      `INSERT INTO mapoteca.estoque_material
+         (tipo_material_id, localizacao_id, quantidade, usuario_criacao_id, usuario_atualizacao_id)
+       VALUES ($<tipoMaterialId>, $<destinoId>, $<quantidade>, $<usuarioId>, $<usuarioId>)
+       ON CONFLICT (tipo_material_id, localizacao_id)
+       DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
+                     data_atualizacao = CURRENT_TIMESTAMP,
+                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id`,
+      { tipoMaterialId, destinoId, quantidade, usuarioId }
     );
   });
 };
@@ -1193,14 +1514,7 @@ controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
 };
 
 controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     // Verificar se o tipo de material existe
@@ -1213,12 +1527,12 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
-    // Verificar se há estoque suficiente na Seção (localizacao_id = 1)
-    // O consumo só pode ocorrer a partir do estoque da Seção
+    // Verificar se há estoque suficiente na Seção
+    // O consumo só pode ocorrer a partir do estoque da Seção (RN01)
     const estoqueSecao = await t.oneOrNone(
       `SELECT quantidade FROM mapoteca.estoque_material
-       WHERE tipo_material_id = $1 AND localizacao_id = 1`,
-      [consumoMaterial.tipo_material_id]
+       WHERE tipo_material_id = $1 AND localizacao_id = $2`,
+      [consumoMaterial.tipo_material_id, TIPO_LOCALIZACAO.SECAO]
     );
 
     if (!estoqueSecao) {
@@ -1235,8 +1549,8 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       );
     }
 
-    consumoMaterial.usuario_criacao_id = usuarioInfo.id;
-    consumoMaterial.usuario_atualizacao_id = usuarioInfo.id;
+    consumoMaterial.usuario_criacao_id = usuarioId;
+    consumoMaterial.usuario_atualizacao_id = usuarioId;
 
     const cs = new db.pgp.helpers.ColumnSet([
       'tipo_material_id', 'quantidade', 'data_consumo',
@@ -1249,34 +1563,49 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       schema: 'mapoteca'
     }) + ' RETURNING id';
 
-    const result = await t.one(query);
+    let result;
+    try {
+      result = await t.one(query);
+    } catch (error) {
+      // Sob corrida, a pré-verificação pode passar e o trigger rejeitar — 400 amigável
+      if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
+        throw new AppError(error.message, httpCode.BadRequest, error);
+      }
+      throw error;
+    }
     return result.id;
   });
 };
 
 controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
-  const usuarioInfo = await db.oneOrNone(
-    "SELECT id FROM dgeo.usuario WHERE uuid = $<usuarioUuid>",
-    { usuarioUuid }
-  );
-  
-  if (!usuarioInfo) {
-    throw new AppError('Usuário não encontrado', httpCode.BadRequest);
-  }
+  const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    consumoMaterial.usuario_atualizacao_id = usuarioInfo.id;
+    consumoMaterial.usuario_atualizacao_id = usuarioId;
     consumoMaterial.data_atualizacao = new Date();
 
     const cs = new db.pgp.helpers.ColumnSet([
       'tipo_material_id', 'quantidade', 'data_consumo',
       'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: 'consumo_material', schema: 'mapoteca' });
+    ], { table: { table: 'consumo_material', schema: 'mapoteca' } });
 
     // O trigger trg_consumo_material_update ajusta automaticamente o estoque na Seção
     const query = db.pgp.helpers.update(consumoMaterial, cs) + ' WHERE id = $1';
 
-    await t.none(query, [consumoMaterial.id]);
+    let result;
+    try {
+      result = await t.result(query, [consumoMaterial.id]);
+    } catch (error) {
+      // Exceções de regra de negócio dos triggers viram 400 com a mensagem original
+      if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
+        throw new AppError(error.message, httpCode.BadRequest, error);
+      }
+      throw error;
+    }
+
+    if (result.rowCount === 0) {
+      throw new AppError('Registro de consumo não encontrado', httpCode.NotFound);
+    }
   });
 };
 
@@ -1303,47 +1632,68 @@ controller.deleteConsumoMaterial = async (consumoMaterialIds) => {
 };
 
 controller.getManutencaoPlotterById = async (id) => {
-  return db.conn.one(
+  const manutencao = await db.conn.oneOrNone(
     `SELECT mp.id, mp.plotter_id, mp.data_manutencao, mp.valor, mp.descricao,
-      mp.data_cadastramento, mp.usuario_cadastramento_id,
+      mp.data_criacao, mp.usuario_criacao_id,
+      mp.data_atualizacao, mp.usuario_atualizacao_id,
       p.modelo AS plotter_modelo, p.nr_serie AS plotter_nr_serie,
       u.nome AS usuario_nome
     FROM mapoteca.manutencao_plotter mp
     INNER JOIN mapoteca.plotter p ON p.id = mp.plotter_id
-    LEFT JOIN dgeo.usuario u ON u.id = mp.usuario_cadastramento_id
+    LEFT JOIN dgeo.usuario u ON u.id = mp.usuario_criacao_id
     WHERE mp.id = $1`,
     [id]
   );
+
+  if (!manutencao) {
+    throw new AppError('Manutenção de plotter não encontrada', httpCode.NotFound);
+  }
+
+  return manutencao;
 };
 
 controller.getConsumoMaterialById = async (id) => {
-  return db.conn.one(
+  const consumo = await db.conn.oneOrNone(
     `SELECT cm.id, cm.tipo_material_id, cm.quantidade, cm.data_consumo,
-      cm.data_cadastramento, cm.usuario_cadastramento_id,
+      cm.data_criacao, cm.usuario_criacao_id,
+      cm.data_atualizacao, cm.usuario_atualizacao_id,
       tm.nome AS tipo_material_nome,
       u.nome AS usuario_nome
     FROM mapoteca.consumo_material cm
     INNER JOIN mapoteca.tipo_material tm ON tm.id = cm.tipo_material_id
-    LEFT JOIN dgeo.usuario u ON u.id = cm.usuario_cadastramento_id
+    LEFT JOIN dgeo.usuario u ON u.id = cm.usuario_criacao_id
     WHERE cm.id = $1`,
     [id]
   );
+
+  if (!consumo) {
+    throw new AppError('Registro de consumo não encontrado', httpCode.NotFound);
+  }
+
+  return consumo;
 };
 
 controller.getEstoqueMaterialById = async (id) => {
-  return db.conn.one(
+  const estoque = await db.conn.oneOrNone(
     `SELECT em.id, em.tipo_material_id, em.quantidade, em.localizacao_id,
-      em.data_cadastramento, em.usuario_cadastramento_id,
+      em.data_criacao, em.usuario_criacao_id,
+      em.data_atualizacao, em.usuario_atualizacao_id,
       tm.nome AS tipo_material_nome,
       tl.nome AS localizacao_nome,
       u.nome AS usuario_nome
     FROM mapoteca.estoque_material em
     INNER JOIN mapoteca.tipo_material tm ON tm.id = em.tipo_material_id
     INNER JOIN mapoteca.tipo_localizacao tl ON tl.code = em.localizacao_id
-    LEFT JOIN dgeo.usuario u ON u.id = em.usuario_cadastramento_id
+    LEFT JOIN dgeo.usuario u ON u.id = em.usuario_criacao_id
     WHERE em.id = $1`,
     [id]
   );
+
+  if (!estoque) {
+    throw new AppError('Registro de estoque não encontrado', httpCode.NotFound);
+  }
+
+  return estoque;
 };
 
 module.exports = controller;

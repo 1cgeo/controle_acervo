@@ -126,19 +126,24 @@ $$ LANGUAGE plpgsql;
 SELECT acervo.criar_views_materializadas();
 
 -- Função para atualizar com base em uma lista de produtos
-CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_produtos(produto_ids integer[]) RETURNS void AS $$
+-- produto.id é BIGSERIAL: o parâmetro precisa ser bigint[].
+-- Views inexistentes (ex: code novo de tipo/escala sem criar_views_materializadas)
+-- são ignoradas — mesmo comportamento de atualizar_mv_por_tipo_escala.
+CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_produtos(produto_ids bigint[]) RETURNS void AS $$
 DECLARE
     tipo_id integer;
     escala_id integer;
     view_name TEXT;
 BEGIN
-    FOR tipo_id, escala_id IN 
+    FOR tipo_id, escala_id IN
         SELECT DISTINCT tipo_produto_id, tipo_escala_id
-        FROM acervo.produto 
+        FROM acervo.produto
         WHERE id = ANY(produto_ids)
     LOOP
         view_name := 'mv_produto_' || tipo_id || '_' || escala_id;
-        EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY acervo.%I', view_name);
+        IF EXISTS (SELECT 1 FROM pg_matviews WHERE schemaname = 'acervo' AND matviewname = view_name) THEN
+            EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY acervo.%I', view_name);
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
@@ -146,12 +151,12 @@ $$ LANGUAGE plpgsql;
 -- Função para atualizar com base em uma lista de versões
 CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_versoes(versao_ids bigint[]) RETURNS void AS $$
 DECLARE
-    produto_ids integer[];
+    produto_ids bigint[];
 BEGIN
     SELECT ARRAY_AGG(DISTINCT produto_id) INTO produto_ids
     FROM acervo.versao
     WHERE id = ANY(versao_ids);
-    
+
     PERFORM acervo.atualizar_mv_por_produtos(produto_ids);
 END;
 $$ LANGUAGE plpgsql;
@@ -159,14 +164,14 @@ $$ LANGUAGE plpgsql;
 -- Função para atualizar com base em uma lista de arquivos
 CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_arquivos(arquivo_ids bigint[]) RETURNS void AS $$
 DECLARE
-    produto_ids integer[];
+    produto_ids bigint[];
 BEGIN
     SELECT ARRAY_AGG(DISTINCT p.id) INTO produto_ids
     FROM acervo.arquivo a
     JOIN acervo.versao v ON v.id = a.versao_id
     JOIN acervo.produto p ON p.id = v.produto_id
     WHERE a.id = ANY(arquivo_ids);
-    
+
     PERFORM acervo.atualizar_mv_por_produtos(produto_ids);
 END;
 $$ LANGUAGE plpgsql;
@@ -248,11 +253,34 @@ REFERENCING NEW TABLE AS new_table
 FOR EACH STATEMENT
 EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_upsert();
 
+-- Arquivo UPDATE: considerar versões antigas E novas (cobre re-parent de versao_id)
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_arquivo_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_versao_ids bigint[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT versao_id) INTO affected_versao_ids
+    FROM (
+        SELECT versao_id FROM new_table
+        UNION
+        SELECT versao_id FROM old_table
+    ) sub;
+    IF affected_versao_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_versoes(affected_versao_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após UPDATE em arquivo: %', SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER trg_refresh_mv_arquivo_update
 AFTER UPDATE ON acervo.arquivo
-REFERENCING NEW TABLE AS new_table
+REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
 FOR EACH STATEMENT
-EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_upsert();
+EXECUTE FUNCTION acervo.trg_refresh_mv_arquivo_update();
 
 CREATE TRIGGER trg_refresh_mv_arquivo_delete
 AFTER DELETE ON acervo.arquivo
@@ -284,9 +312,9 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_versao_delete()
 RETURNS TRIGGER AS $$
 DECLARE
-    affected_produto_ids integer[];
+    affected_produto_ids bigint[];
 BEGIN
-    SELECT ARRAY_AGG(DISTINCT produto_id::integer) INTO affected_produto_ids FROM old_table;
+    SELECT ARRAY_AGG(DISTINCT produto_id) INTO affected_produto_ids FROM old_table;
     IF affected_produto_ids IS NOT NULL THEN
         BEGIN
             PERFORM acervo.atualizar_mv_por_produtos(affected_produto_ids);
@@ -304,11 +332,34 @@ REFERENCING NEW TABLE AS new_table
 FOR EACH STATEMENT
 EXECUTE FUNCTION acervo.trg_refresh_mv_versao_upsert();
 
+-- Versão UPDATE: considerar produtos antigos E novos (cobre re-parent de produto_id)
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_versao_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_produto_ids bigint[];
+BEGIN
+    SELECT ARRAY_AGG(DISTINCT produto_id) INTO affected_produto_ids
+    FROM (
+        SELECT produto_id FROM new_table
+        UNION
+        SELECT produto_id FROM old_table
+    ) sub;
+    IF affected_produto_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_produtos(affected_produto_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após UPDATE em versao: %', SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER trg_refresh_mv_versao_update
 AFTER UPDATE ON acervo.versao
-REFERENCING NEW TABLE AS new_table
+REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
 FOR EACH STATEMENT
-EXECUTE FUNCTION acervo.trg_refresh_mv_versao_upsert();
+EXECUTE FUNCTION acervo.trg_refresh_mv_versao_update();
 
 CREATE TRIGGER trg_refresh_mv_versao_delete
 AFTER DELETE ON acervo.versao
@@ -318,18 +369,46 @@ EXECUTE FUNCTION acervo.trg_refresh_mv_versao_delete();
 
 -- ===== PRODUTO triggers =====
 
--- Produto INSERT/UPDATE: registros existem na tabela, usar atualizar_mv_por_produtos
+-- Produto INSERT: registros existem na tabela, usar atualizar_mv_por_produtos
 CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_produto_upsert()
 RETURNS TRIGGER AS $$
 DECLARE
-    affected_ids integer[];
+    affected_ids bigint[];
 BEGIN
-    SELECT ARRAY_AGG(DISTINCT id::integer) INTO affected_ids FROM new_table;
+    SELECT ARRAY_AGG(DISTINCT id) INTO affected_ids FROM new_table;
     IF affected_ids IS NOT NULL THEN
         BEGIN
             PERFORM acervo.atualizar_mv_por_produtos(affected_ids);
         EXCEPTION WHEN OTHERS THEN
             RAISE WARNING 'Falha ao atualizar views materializadas após % em produto: %', TG_OP, SQLERRM;
+        END;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Produto UPDATE: considerar combos tipo/escala antigos E novos (um UPDATE que
+-- muda tipo_produto_id/tipo_escala_id precisa atualizar também a MV antiga,
+-- senão o produto fica "fantasma" nela)
+CREATE OR REPLACE FUNCTION acervo.trg_refresh_mv_produto_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    tipo_ids integer[];
+    escala_ids integer[];
+BEGIN
+    SELECT ARRAY_AGG(tipo_produto_id::integer), ARRAY_AGG(tipo_escala_id::integer)
+    INTO tipo_ids, escala_ids
+    FROM (
+        SELECT DISTINCT tipo_produto_id, tipo_escala_id FROM new_table
+        UNION
+        SELECT DISTINCT tipo_produto_id, tipo_escala_id FROM old_table
+    ) sub;
+
+    IF tipo_ids IS NOT NULL THEN
+        BEGIN
+            PERFORM acervo.atualizar_mv_por_tipo_escala(tipo_ids, escala_ids);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Falha ao atualizar views materializadas após UPDATE em produto: %', SQLERRM;
         END;
     END IF;
     RETURN NULL;
@@ -366,9 +445,9 @@ EXECUTE FUNCTION acervo.trg_refresh_mv_produto_upsert();
 
 CREATE TRIGGER trg_refresh_mv_produto_update
 AFTER UPDATE ON acervo.produto
-REFERENCING NEW TABLE AS new_table
+REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
 FOR EACH STATEMENT
-EXECUTE FUNCTION acervo.trg_refresh_mv_produto_upsert();
+EXECUTE FUNCTION acervo.trg_refresh_mv_produto_update();
 
 CREATE TRIGGER trg_refresh_mv_produto_delete
 AFTER DELETE ON acervo.produto

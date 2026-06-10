@@ -165,12 +165,12 @@ router.get(
     query: acervoSchema.situacaoGeralQuery
   }),
   asyncHandler(async (req, res, next) => {
-    // Extract scale parameters from query
+    // schemaValidation já converteu os params para boolean (Joi.boolean)
     const scales = {
-      '25k': req.query.scale25k === 'true',
-      '50k': req.query.scale50k === 'true',
-      '100k': req.query.scale100k === 'true',
-      '250k': req.query.scale250k === 'true'
+      '25k': req.query.scale25k === true,
+      '50k': req.query.scale50k === true,
+      '100k': req.query.scale100k === true,
+      '250k': req.query.scale250k === true
     };
     
     // If no scales are selected, use all scales

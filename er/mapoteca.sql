@@ -29,7 +29,8 @@ INSERT INTO mapoteca.situacao_pedido (code, nome) VALUES
 (3, 'Em andamento'),
 (4, 'Remetido'),
 (5, 'Concluído'),
-(6, 'Cancelado');
+(6, 'Cancelado'),
+(7, 'Aguardando produção');
 
 CREATE TABLE mapoteca.tipo_midia(
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -43,7 +44,20 @@ INSERT INTO mapoteca.tipo_midia (code, nome) VALUES
 (4, 'Vergê'),
 (5, 'Sulfite 90g'),
 (6, 'Sulfite 120g'),
-(7, 'Digital');
+(7, 'Digital'),
+(8, 'Tyvek');
+
+CREATE TABLE mapoteca.forma_entrega(
+	code SMALLINT NOT NULL PRIMARY KEY,
+	nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO mapoteca.forma_entrega (code, nome) VALUES
+(1, 'Correios'),
+(2, 'Entrega em mãos'),
+(3, 'Retirado no CGEO'),
+(4, 'E-mail'),
+(5, 'Outros');
 
 CREATE TABLE mapoteca.tipo_localizacao(
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -77,30 +91,95 @@ CREATE TABLE mapoteca.pedido(
     palavras_chave VARCHAR[] NOT NULL DEFAULT '{}',
     operacao TEXT,
     prazo DATE,
+    demandante VARCHAR(255),
+    omds VARCHAR(255),
+    previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
     observacao TEXT,
     observacao_envio TEXT,
     localizador_envio TEXT,
-    localizador_pedido VARCHAR(14) UNIQUE,
+    localizador_pedido VARCHAR(14) UNIQUE
+        CHECK (localizador_pedido IS NULL OR localizador_pedido ~ '^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'),
     motivo_cancelamento TEXT,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     data_atualizacao TIMESTAMP WITH TIME ZONE,
-    CHECK (data_atendimento IS NULL OR data_atendimento >= data_pedido)
+    CHECK (data_atendimento IS NULL OR data_atendimento >= data_pedido),
+    CONSTRAINT check_pedido_cancelamento
+        CHECK (situacao_pedido_id <> 6 OR motivo_cancelamento IS NOT NULL),
+    CONSTRAINT check_pedido_conclusao
+        CHECK (situacao_pedido_id <> 5 OR data_atendimento IS NOT NULL)
 );
 
+COMMENT ON COLUMN mapoteca.pedido.demandante IS
+    'Quem encaminhou o pedido (ex: CMS encaminhando pedido do 18º BI Mtz).';
+COMMENT ON COLUMN mapoteca.pedido.omds IS
+    'OM Diretamente Subordinada responsável pelo atendimento (ex: 1º CGEO).';
+COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
+    'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
+
+-- RN04: localizador_pedido é imutável após definido
+CREATE OR REPLACE FUNCTION mapoteca.trg_localizador_imutavel()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.localizador_pedido IS NOT NULL
+       AND NEW.localizador_pedido IS DISTINCT FROM OLD.localizador_pedido THEN
+        RAISE EXCEPTION 'O localizador do pedido é imutável';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_localizador_imutavel
+BEFORE UPDATE ON mapoteca.pedido
+FOR EACH ROW
+EXECUTE FUNCTION mapoteca.trg_localizador_imutavel();
+
+-- Todo item de pedido referencia uma versão do acervo (RN08): a mapoteca só
+-- entrega produtos previstos no controle do acervo. Cartas especiais, mapas
+-- temáticos e imagens devem ser cadastrados no acervo antes do pedido.
 CREATE TABLE mapoteca.produto_pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
     uuid_versao UUID NOT NULL REFERENCES acervo.versao (uuid_versao),
 	pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id),
-    quantidade INTEGER NOT NULL,
+    quantidade INTEGER NOT NULL CHECK (quantidade > 0),
+    quantidade_fornecida INTEGER
+        CHECK (quantidade_fornecida IS NULL OR quantidade_fornecida >= 0),
     tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
+    tipo_midia_fornecida_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
+    forma_entrega_id SMALLINT REFERENCES mapoteca.forma_entrega (code),
+    data_entrega DATE,
+    observacao TEXT,
     producao_especifica BOOLEAN NOT NULL DEFAULT FALSE,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     data_atualizacao TIMESTAMP WITH TIME ZONE
 );
+
+COMMENT ON COLUMN mapoteca.produto_pedido.quantidade_fornecida IS
+    'Quantidade efetivamente entregue, quando diverge da prevista.';
+COMMENT ON COLUMN mapoteca.produto_pedido.tipo_midia_fornecida_id IS
+    'Mídia efetivamente usada, quando diverge da prevista.';
+COMMENT ON COLUMN mapoteca.produto_pedido.data_entrega IS
+    'Entrega efetiva por item — um mesmo pedido pode ter remessas em datas distintas.';
+
+-- Histórico de impressão por item de pedido: cada registro é uma sessão de
+-- impressão (quem imprimiu, quando e quantas cópias). O total impresso e o
+-- restante são derivados por soma; o item está concluído quando a soma
+-- atinge a quantidade pedida. Permite que operadores diferentes continuem
+-- a impressão de um pedido em dias distintos.
+-- Segue a convenção do acervo para tabelas novas: usuario por UUID.
+CREATE TABLE mapoteca.impressao_item(
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    produto_pedido_id BIGINT NOT NULL REFERENCES mapoteca.produto_pedido (id) ON DELETE CASCADE,
+    quantidade INTEGER NOT NULL CHECK (quantidade > 0),
+    observacao TEXT,
+    usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+    data_impressao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_impressao_item_produto_pedido ON mapoteca.impressao_item(produto_pedido_id);
 
 CREATE TABLE mapoteca.plotter(
 	id SERIAL NOT NULL PRIMARY KEY,
@@ -123,11 +202,57 @@ CREATE TABLE mapoteca.manutencao_plotter (
     data_atualizacao TIMESTAMP WITH TIME ZONE
 );
 
+CREATE INDEX idx_manutencao_plotter_plotter ON mapoteca.manutencao_plotter(plotter_id);
+
 CREATE TABLE mapoteca.tipo_material (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
-    descricao TEXT
+    descricao TEXT,
+    estoque_minimo DECIMAL(10, 2),
+    meta_anual DECIMAL(10, 2),
+    ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+COMMENT ON COLUMN mapoteca.tipo_material.estoque_minimo IS
+    'Limiar para alertar estoque baixo na UI (badge). NULL = sem alerta.';
+COMMENT ON COLUMN mapoteca.tipo_material.meta_anual IS
+    'Consumo anual previsto. Usado em relatório Consumo × Necessário × Pendente.';
+
+-- Seed do controle de material de impressão (referência: planilha "Controle de
+-- Material de Impressão" da Seção; dados de implantação no CLAUDE.md raiz)
+
+-- Cartuchos Plotter T730
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cartucho CY - T730',         'Cartucho Ciano para plotter HP T730 (P2V62A)'),
+('Cartucho MG - T730',         'Cartucho Magenta para plotter HP T730 (P2V63A)'),
+('Cartucho Y - T730',          'Cartucho Yellow para plotter HP T730 (P2V64A)'),
+('Cartucho MK - T730',         'Cartucho Matte Black 130ml para plotter HP T730 (P2V65A)'),
+('Cartucho MK - T730 300ml',   'Cartucho Matte Black 300ml para plotter HP T730'),
+('Cartucho GR - T730',         'Cartucho Gray para plotter HP T730 (P2V66A)'),
+('Cartucho GR - T730 300ml',   'Cartucho Gray 300ml para plotter HP T730'),
+('Cartucho PK - T730',         'Cartucho Photo Black para plotter HP T730 (P2V67A)');
+
+-- Cartuchos HP M470
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cartucho Black - HP M470',   'Cartucho Black para impressora HP M470 (W2020XC)'),
+('Cartucho Ciano - HP M470',   'Cartucho Ciano para impressora HP M470 (W2021XC)'),
+('Cartucho Magenta - HP M470', 'Cartucho Magenta para impressora HP M470 (W2023XC)'),
+('Cartucho Yellow - HP M470',  'Cartucho Yellow para impressora HP M470 (W2022XC)');
+
+-- Cabeçotes
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cabeçote Universal',   'Cabeçote Universal novo (P2V27A, ficha C2982)'),
+('Cabeçote MK/Y usado',  'Cabeçote MK/Y reutilizado'),
+('Cabeçote CY/MG usado', 'Cabeçote CY/MG reutilizado'),
+('Cabeçote G/PK usado',  'Cabeçote G/PK reutilizado');
+
+-- Papéis
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter'),
+('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter'),
+('Papel Glossy',        'Papel glossy para plotter'),
+('Banner (tecido)',     'Banner em tecido'),
+('Tyvek',               'Papel sintético Tyvek para plotter');
 
 CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,
@@ -155,7 +280,13 @@ CREATE TABLE mapoteca.estoque_material (
 -- Indexes para mapoteca
 CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
 CREATE INDEX idx_pedido_cliente ON mapoteca.pedido(cliente_id);
+CREATE INDEX idx_pedido_data_pedido ON mapoteca.pedido(data_pedido);
+CREATE INDEX idx_pedido_data_atendimento ON mapoteca.pedido(data_atendimento);
+CREATE INDEX idx_pedido_operacao ON mapoteca.pedido(operacao) WHERE operacao IS NOT NULL;
+CREATE INDEX idx_pedido_palavras_chave ON mapoteca.pedido USING GIN (palavras_chave);
 CREATE INDEX idx_produto_pedido_pedido ON mapoteca.produto_pedido(pedido_id);
+CREATE INDEX idx_produto_pedido_uuid_versao ON mapoteca.produto_pedido(uuid_versao);
+CREATE INDEX idx_produto_pedido_data_entrega ON mapoteca.produto_pedido(data_entrega);
 CREATE INDEX idx_consumo_material_tipo ON mapoteca.consumo_material(tipo_material_id);
 CREATE INDEX idx_consumo_material_data ON mapoteca.consumo_material(data_consumo);
 CREATE INDEX idx_estoque_material_tipo ON mapoteca.estoque_material(tipo_material_id);
@@ -194,22 +325,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Helper: devolve quantidade ao estoque da Seção, criando a linha se não
+-- existir (upsert atômico — sem o check-then-insert que perdia estoque ou
+-- violava a UNIQUE sob concorrência)
+CREATE OR REPLACE FUNCTION mapoteca.devolver_estoque_secao(
+    p_tipo_material_id INTEGER,
+    p_quantidade DECIMAL(10, 2),
+    p_usuario_id INTEGER
+) RETURNS void AS $$
+BEGIN
+    INSERT INTO mapoteca.estoque_material
+        (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
+    VALUES (p_tipo_material_id, p_quantidade, 1, p_usuario_id, p_usuario_id)
+    ON CONFLICT (tipo_material_id, localizacao_id)
+    DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
+                  data_atualizacao = CURRENT_TIMESTAMP;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_delete()
 RETURNS TRIGGER AS $$
 BEGIN
     -- Restaurar o estoque na Seção ao deletar um registro de consumo
-    UPDATE mapoteca.estoque_material
-    SET quantidade = quantidade + OLD.quantidade,
-        data_atualizacao = CURRENT_TIMESTAMP
-    WHERE tipo_material_id = OLD.tipo_material_id
-      AND localizacao_id = 1;
-
-    -- Se não existir registro na Seção (caso raro), criar um
-    IF NOT FOUND THEN
-        INSERT INTO mapoteca.estoque_material (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES (OLD.tipo_material_id, OLD.quantidade, 1, OLD.usuario_criacao_id, OLD.usuario_criacao_id);
-    END IF;
-
+    PERFORM mapoteca.devolver_estoque_secao(OLD.tipo_material_id, OLD.quantidade, OLD.usuario_criacao_id);
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -244,20 +382,13 @@ BEGIN
               AND localizacao_id = 1;
         ELSIF diferenca < 0 THEN
             -- Consumiu menos: devolver a diferença ao estoque da Seção
-            UPDATE mapoteca.estoque_material
-            SET quantidade = quantidade + ABS(diferenca),
-                data_atualizacao = CURRENT_TIMESTAMP
-            WHERE tipo_material_id = NEW.tipo_material_id
-              AND localizacao_id = 1;
+            -- (upsert: cria a linha se não existir, senão a devolução se perderia)
+            PERFORM mapoteca.devolver_estoque_secao(NEW.tipo_material_id, ABS(diferenca), NEW.usuario_atualizacao_id);
         END IF;
     ELSE
         -- Tipo de material mudou: devolver o antigo e consumir o novo
-        -- Devolver estoque do material antigo
-        UPDATE mapoteca.estoque_material
-        SET quantidade = quantidade + OLD.quantidade,
-            data_atualizacao = CURRENT_TIMESTAMP
-        WHERE tipo_material_id = OLD.tipo_material_id
-          AND localizacao_id = 1;
+        -- Devolver estoque do material antigo (upsert — idem acima)
+        PERFORM mapoteca.devolver_estoque_secao(OLD.tipo_material_id, OLD.quantidade, NEW.usuario_atualizacao_id);
 
         -- Verificar e consumir do novo material
         SELECT quantidade INTO estoque_atual

@@ -25,11 +25,11 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'descricao', 
+      'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
       'status_execucao_id', 
-      {name: 'data_cadastramento', cast: 'date'},
+      'data_cadastramento',
       'usuario_cadastramento_uuid'
     ]);
 
@@ -53,11 +53,11 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
   projeto.usuario_modificacao_uuid = usuarioUuid;
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'nome', 'descricao', 
+      'id', 'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
       'status_execucao_id', 
-      {name: 'data_modificacao', cast: 'date'},
+      {name: 'data_modificacao', cast: 'timestamptz'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
 
@@ -148,11 +148,11 @@ controller.criaLote = async (lote, usuarioUuid) => {
   lote.usuario_cadastramento_uuid = usuarioUuid;
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'projeto_id', 'pit', 'nome', 'descricao', 
+      'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
       'status_execucao_id', 
-      {name: 'data_cadastramento', cast: 'date'},
+      'data_cadastramento',
       'usuario_cadastramento_uuid'
     ]);
 
@@ -178,11 +178,11 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'projeto_id', 'pit', 'nome', 'descricao', 
+      'id', 'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
       'status_execucao_id',
-      {name: 'data_modificacao', cast: 'date'},
+      {name: 'data_modificacao', cast: 'timestamptz'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
 

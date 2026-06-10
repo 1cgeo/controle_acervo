@@ -11,7 +11,7 @@ const decodeJwt = (token, secret) => {
   return new Promise((resolve, reject) => {
     jwt.verify(token, secret, (err, decoded) => {
       if (err) {
-        reject(
+        return reject(
           new AppError('Falha ao autenticar token', httpCode.Unauthorized, err)
         )
       }

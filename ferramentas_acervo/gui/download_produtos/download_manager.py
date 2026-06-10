@@ -249,9 +249,10 @@ class DownloadManager(QObject):
                 thread.cancel()
             self.current_transfer = None
 
-        # Confirm any completed downloads
-        if self.download_results:
-            self.confirm_downloads()
+        # Sempre concluir: cancelar antes do primeiro arquivo terminar deixava
+        # a UI travada aguardando download_complete (confirm_downloads emite
+        # download_complete([]) quando não há resultados)
+        self.confirm_downloads()
 
     @staticmethod
     def calculate_checksum(file_path):

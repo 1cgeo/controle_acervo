@@ -8,8 +8,8 @@ models.volumeArmazenamento = Joi.object().keys({
   volume_armazenamento: Joi.array()
     .items(
       Joi.object().keys({
-        nome: Joi.string().required(),
-        volume: Joi.string().required(),
+        nome: Joi.string().max(255).required(),
+        volume: Joi.string().max(255).required(),
         capacidade_gb: Joi.number().strict().required()
       })
     )
@@ -22,8 +22,8 @@ models.volumeArmazenamentoAtualizacao = Joi.object().keys({
     .items(
       Joi.object().keys({
         id: Joi.number().integer().strict().required(),
-        nome: Joi.string().required(),
-        volume: Joi.string().required(),
+        nome: Joi.string().max(255).required(),
+        volume: Joi.string().max(255).required(),
         capacidade_gb: Joi.number().strict().required()
       })
     )

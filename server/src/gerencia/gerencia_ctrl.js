@@ -3,7 +3,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
-const { db, refreshViews } = require("../database");
+const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
@@ -23,7 +23,7 @@ const controller = {};
 
 controller.getTipoPostoGrad = async () => {
   return db.conn.any(`
-    SELECT code, nome, nome_brev
+    SELECT code, nome, nome_abrev
     FROM dominio.tipo_posto_grad
     `);
 };
@@ -196,16 +196,17 @@ controller.getArquivosDeletados = async (page = 1, limit = 20) => {
 };
 
 controller.verificarConsistencia = async () => {
-  return db.conn.tx(async t => {
+    // Leitura e checksums fora de transação: o cálculo pode levar horas em
+    // acervos grandes e seguraria uma conexão/transação aberta o tempo todo.
     // 1. Obter todos os arquivos e suas informações em uma consulta
-    const arquivos = await t.any(`
+    const arquivos = await db.conn.any(`
       SELECT a.id, a.nome_arquivo, a.checksum, a.extensao, v.volume, a.tipo_arquivo_id
       FROM acervo.arquivo a
       JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
       WHERE a.tipo_arquivo_id != ${TIPO_ARQUIVO.TILESERVER}
     `);
 
-    const arquivosDeletados = await t.any(`
+    const arquivosDeletados = await db.conn.any(`
       SELECT ad.id, ad.nome_arquivo, ad.extensao, v.volume
       FROM acervo.arquivo_deletado ad
       JOIN acervo.volume_armazenamento v ON ad.volume_armazenamento_id = v.id
@@ -237,7 +238,7 @@ controller.verificarConsistencia = async () => {
       
       // Usar Promise.all para processamento paralelo dentro do lote
       const resultados = await Promise.all(batch.map(async arquivo => {
-        const filePath = path.join(arquivo.volume, arquivo.nome_arquivo + arquivo.extensao);
+        const filePath = path.join(arquivo.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
         
         try {
           // Verificar existência do arquivo antes de ler
@@ -268,19 +269,18 @@ controller.verificarConsistencia = async () => {
       const batch = arquivosDeletados.slice(i, i + BATCH_SIZE);
       
       const resultados = await Promise.all(batch.map(async arquivoDeletado => {
-        const deletedFilePath = path.join(arquivoDeletado.volume, 
-                                          arquivoDeletado.nome_arquivo + arquivoDeletado.extensao);
+        const deletedFilePath = path.join(arquivoDeletado.volume, `${arquivoDeletado.nome_arquivo}.${arquivoDeletado.extensao}`);
         
         try {
           // Verificar se o arquivo existe
           await fs.access(deletedFilePath);
           
           // Verificar se está associado a um arquivo existente
-          const existingArquivo = await t.oneOrNone(`
+          const existingArquivo = await db.conn.oneOrNone(`
             SELECT a.id 
             FROM acervo.arquivo a
             JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
-            WHERE concat(v.volume, a.nome_arquivo, a.extensao) = $1
+            WHERE CONCAT(v.volume, '/', a.nome_arquivo, '.', a.extensao) = $1
           `, [deletedFilePath]);
           
           return {
@@ -302,6 +302,8 @@ controller.verificarConsistencia = async () => {
         .forEach(r => arquivosDeletadosParaAtualizar.push(r.id));
     }
 
+    // Apenas os UPDATEs finais em transação curta
+    return db.conn.tx(async t => {
     // Atualizar status de arquivos com problemas
     if (arquivosParaAtualizar.length > 0) {
       await t.none(`
@@ -342,7 +344,7 @@ controller.verificarConsistencia = async () => {
       arquivos_atualizados: arquivosParaAtualizar.length,
       arquivos_deletados_atualizados: arquivosDeletadosParaAtualizar.length
     };
-  });
+    });
 };
 
 controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
@@ -356,7 +358,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
         SELECT 
           'arquivo' as origem,
           a.id, a.nome, a.nome_arquivo, a.extensao, a.tipo_status_id, 
-          a.data_cadastramento, a.data_modificacao, v.volume, va.nome AS volume_nome,
+          a.data_cadastramento, a.data_modificacao, v.volume, v.nome AS volume_nome, va.nome AS versao_nome,
           'Arquivo com erro' as tipo,
           COALESCE(a.data_modificacao, a.data_cadastramento) as ordem_data
         FROM acervo.arquivo AS a
@@ -369,8 +371,8 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
         SELECT 
           'arquivo_deletado' as origem,
           ad.id, ad.nome, ad.nome_arquivo, ad.extensao, ad.tipo_status_id,
-          ad.data_cadastramento, ad.data_delete as data_modificacao, v.volume, 
-          COALESCE(va.nome, 'Versão removida') AS volume_nome,
+          ad.data_cadastramento, ad.data_delete as data_modificacao, v.volume,
+          v.nome AS volume_nome, COALESCE(va.nome, 'Versão removida') AS versao_nome,
           'Arquivo deletado com erro' as tipo,
           ad.data_delete as ordem_data
         FROM acervo.arquivo_deletado AS ad
@@ -384,7 +386,7 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
       )
       SELECT 
         id, nome, nome_arquivo, extensao, tipo_status_id,
-        data_cadastramento, data_modificacao, volume, volume_nome, tipo
+        data_cadastramento, data_modificacao, volume, volume_nome, versao_nome, tipo
       FROM arquivos_numerados
       WHERE row_num > $1 AND row_num <= $2
       ORDER BY row_num

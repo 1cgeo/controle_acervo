@@ -2,9 +2,25 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO } } = require("../utils");
+const {
+  QTD_EFETIVA,
+  MIDIA_EFETIVA,
+  dataEntregaEfetiva,
+  ESCALA_DISPLAY,
+  filtroAno
+} = require("./query_fragments");
 
 const controller = {};
+
+// Situações que contam como entrega efetuada
+const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.ENVIADO, SITUACAO_PEDIDO.CONCLUIDO];
+
+// Filtro "entregue no ano": pedido remetido/concluído cuja data efetiva de
+// entrega (item com fallback no fechamento do pedido) cai no ano consultado.
+// Requer aliases pp/ped e os parâmetros $<situacoesEntregue:csv> e $<ano>.
+const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>)
+      AND EXTRACT(YEAR FROM ${dataEntregaEfetiva()}) = $<ano>`;
 
 // Order Status Distribution - numerical cards
 controller.getOrderStatusDistribution = async () => {
@@ -56,8 +72,8 @@ controller.getOrdersTimeline = async (meses = 6) => {
         date_trunc('week', dd)::date AS semana_inicio,
         (date_trunc('week', dd) + interval '6 days')::date AS semana_fim
       FROM generate_series(
-        current_date - interval '${meses} months', 
-        current_date, 
+        date_trunc('week', current_date - interval '${meses} months'),
+        date_trunc('week', current_date),
         interval '1 week'
       ) AS dd
     ),
@@ -123,7 +139,7 @@ controller.getAverageFulfillmentTime = async () => {
       SELECT 
         m.mes,
         COALESCE(AVG(EXTRACT(EPOCH FROM (p.data_atendimento - p.data_pedido)) / 86400), 0) AS media_dias,
-        COUNT(*) AS quantidade_pedidos
+        COUNT(p.id) AS quantidade_pedidos
       FROM meses m
       LEFT JOIN mapoteca.pedido p ON 
         date_trunc('month', p.data_pedido) = m.mes AND
@@ -134,7 +150,9 @@ controller.getAverageFulfillmentTime = async () => {
     `);
 
     return {
-      media_geral: overallAvg ? parseFloat(overallAvg.media_dias).toFixed(1) : null,
+      media_geral: (overallAvg && overallAvg.media_dias !== null)
+        ? parseFloat(overallAvg.media_dias).toFixed(1)
+        : null,
       por_tipo_cliente: byClientType.map(item => ({
         tipo_cliente_id: item.tipo_cliente_id,
         tipo_cliente: item.tipo_cliente,
@@ -256,6 +274,17 @@ controller.getMaterialConsumptionTrends = async (meses = 12) => {
 
     // Consumption by material type for each month (for top 5 materials)
     const materialIds = topMaterials.map(m => m.id);
+
+    // Sem consumo no período não há materiais para detalhar
+    // (unnest de array vazio quebraria a query)
+    if (materialIds.length === 0) {
+      return {
+        consumo_mensal_total: monthlyConsumption,
+        materiais_mais_consumidos: [],
+        consumo_por_material: []
+      };
+    }
+
     const consumptionByMaterial = await t.any(`
       WITH meses AS (
         SELECT generate_series(
@@ -297,8 +326,8 @@ controller.getPlotterStatus = async () => {
     const statusSummary = await t.one(`
       SELECT 
         COUNT(*) AS total,
-        SUM(CASE WHEN ativo THEN 1 ELSE 0 END) AS ativos,
-        SUM(CASE WHEN NOT ativo THEN 1 ELSE 0 END) AS inativos
+        COALESCE(SUM(CASE WHEN ativo THEN 1 ELSE 0 END), 0) AS ativos,
+        COALESCE(SUM(CASE WHEN NOT ativo THEN 1 ELSE 0 END), 0) AS inativos
       FROM mapoteca.plotter
     `);
 
@@ -344,5 +373,166 @@ controller.getPlotterStatus = async () => {
     };
   });
 };
+
+// Entregas por tipo de produto × escala no ano
+controller.getEntregasPorTipoProduto = async (ano) => {
+  return db.conn.any(
+    `
+    SELECT
+      tp.nome AS tipo_produto,
+      ${ESCALA_DISPLAY} AS escala,
+      COUNT(DISTINCT ped.id)::int AS total_pedidos,
+      COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos
+    FROM mapoteca.produto_pedido pp
+    JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+    JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+    JOIN acervo.produto prod ON prod.id = v.produto_id
+    JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+    JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+    WHERE ${FILTRO_ENTREGUE_ANO}
+    GROUP BY 1, 2
+    ORDER BY 1, 2
+    `,
+    { ano, situacoesEntregue: SITUACOES_ENTREGUE }
+  );
+};
+
+// Entregas por tipo de mídia no ano (mídia fornecida com fallback na prevista)
+controller.getEntregasPorMidia = async (ano) => {
+  return db.conn.any(
+    `
+    SELECT
+      tm.nome AS tipo_midia,
+      COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos
+    FROM mapoteca.produto_pedido pp
+    JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+    LEFT JOIN mapoteca.tipo_midia tm ON tm.code = ${MIDIA_EFETIVA}
+    WHERE ${FILTRO_ENTREGUE_ANO}
+    GROUP BY tm.nome
+    ORDER BY total_produtos DESC
+    `,
+    { ano, situacoesEntregue: SITUACOES_ENTREGUE }
+  );
+};
+
+// Operações apoiadas no ano (campo livre pedido.operacao)
+controller.getOperacoesApoiadas = async (ano) => {
+  return db.conn.any(
+    `
+    SELECT
+      ped.operacao,
+      COUNT(DISTINCT ped.id)::int AS total_pedidos,
+      COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos
+    FROM mapoteca.pedido ped
+    LEFT JOIN mapoteca.produto_pedido pp ON pp.pedido_id = ped.id
+    WHERE ped.operacao IS NOT NULL AND ped.operacao <> ''
+      AND ${filtroAno("ped.data_pedido")}
+    GROUP BY ped.operacao
+    ORDER BY total_pedidos DESC
+    `,
+    { ano }
+  );
+};
+
+// Resumo anual: totais de pedidos, entregas, OMs, operações e custo de manutenção
+controller.getResumoAnual = async (ano) => {
+  const row = await db.conn.one(
+    `
+    SELECT p.total_pedidos, p.oms_distintas_count, p.operacoes_distintas_count,
+           e.total_entregas, m.custo_manutencao_total
+    FROM (
+      SELECT
+        COUNT(*)::int AS total_pedidos,
+        COUNT(DISTINCT cliente_id)::int AS oms_distintas_count,
+        (COUNT(DISTINCT operacao) FILTER (WHERE operacao IS NOT NULL AND operacao <> ''))::int AS operacoes_distintas_count
+      FROM mapoteca.pedido
+      WHERE ${filtroAno("data_pedido")}
+    ) p
+    CROSS JOIN (
+      SELECT COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_entregas
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+    ) e
+    CROSS JOIN (
+      SELECT COALESCE(SUM(valor), 0)::float8 AS custo_manutencao_total
+      FROM mapoteca.manutencao_plotter
+      WHERE ${filtroAno("data_manutencao")}
+    ) m
+    `,
+    { ano, situacoesEntregue: SITUACOES_ENTREGUE }
+  );
+
+  return { ano, ...row };
+};
+
+// Entregas por mês (reproduz a tabela-resumo mensal da aba Detalhado:
+// Carta Topo × Carta Orto × Outros por mês).
+// Classifica apenas por tipo de produto, como a planilha; difere de propósito
+// do relatório Mil (relatorio_ctrl), que separa mídia digital e trata escalas
+// não padrão como "outros".
+controller.getEntregasPorMes = async (ano) => {
+  return db.conn.any(
+    `
+    WITH meses AS (
+      SELECT generate_series(1, 12) AS mes
+    ),
+    itens AS (
+      SELECT
+        EXTRACT(MONTH FROM ${dataEntregaEfetiva()})::int AS mes,
+        ${QTD_EFETIVA} AS qtd,
+        prod.tipo_produto_id
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.produto prod ON prod.id = v.produto_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+    )
+    SELECT
+      m.mes,
+      COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id = $<tipoTopo>), 0)::int AS carta_topo,
+      COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id = $<tipoOrto>), 0)::int AS carta_orto,
+      COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id NOT IN ($<tipoTopo>, $<tipoOrto>)), 0)::int AS outros,
+      COALESCE(SUM(i.qtd), 0)::int AS total
+    FROM meses m
+    LEFT JOIN itens i ON i.mes = m.mes
+    GROUP BY m.mes
+    ORDER BY m.mes
+    `,
+    {
+      ano,
+      situacoesEntregue: SITUACOES_ENTREGUE,
+      tipoTopo: TIPO_PRODUTO.CARTA_TOPOGRAFICA,
+      tipoOrto: TIPO_PRODUTO.CARTA_ORTOIMAGEM
+    }
+  );
+};
+
+// Colunas para exportação CSV dos dashboards anuais
+controller.COLUNAS_ENTREGAS_MES = [
+  { key: "mes", label: "Mês" },
+  { key: "carta_topo", label: "Carta Topo" },
+  { key: "carta_orto", label: "Carta Orto" },
+  { key: "outros", label: "Outros" },
+  { key: "total", label: "Total" }
+];
+
+controller.COLUNAS_ENTREGAS_TIPO_PRODUTO = [
+  { key: "tipo_produto", label: "Tipo de Produto" },
+  { key: "escala", label: "Escala" },
+  { key: "total_pedidos", label: "Total de Pedidos" },
+  { key: "total_produtos", label: "Total de Produtos" }
+];
+
+controller.COLUNAS_ENTREGAS_MIDIA = [
+  { key: "tipo_midia", label: "Tipo de Mídia" },
+  { key: "total_produtos", label: "Total de Produtos" }
+];
+
+controller.COLUNAS_OPERACOES = [
+  { key: "operacao", label: "Operação" },
+  { key: "total_pedidos", label: "Total de Pedidos" },
+  { key: "total_produtos", label: "Total de Produtos" }
+];
 
 module.exports = controller;

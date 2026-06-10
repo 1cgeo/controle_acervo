@@ -96,7 +96,8 @@ CREATE TABLE acervo.versao(
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
 	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-    CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao)
+    CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao),
+    CHECK (data_edicao >= data_criacao)
 );
 
 CREATE INDEX idx_versao_metadato ON acervo.versao USING GIN (metadado);
@@ -109,6 +110,12 @@ DECLARE
     previous_version TEXT;
     current_year INTEGER;
 BEGIN
+    -- Em UPDATE, validar apenas quando o campo versao mudou — senão registros
+    -- legados ("Xª Edição") ficam imutáveis após 2024 (qualquer UPDATE falharia)
+    IF TG_OP = 'UPDATE' AND NEW.versao IS NOT DISTINCT FROM OLD.versao THEN
+        RETURN NEW;
+    END IF;
+
     -- Get the current year
     current_year := EXTRACT(YEAR FROM CURRENT_DATE);
 
@@ -160,7 +167,7 @@ CREATE TABLE acervo.arquivo(
     ),
     versao_id BIGINT NOT NULL REFERENCES acervo.versao (id),
     tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code),
-    volume_armazenamento_id SMALLINT REFERENCES acervo.volume_armazenamento (id),
+    volume_armazenamento_id INTEGER REFERENCES acervo.volume_armazenamento (id),
     extensao VARCHAR(255),
     tamanho_mb REAL,
     checksum VARCHAR(64),
@@ -205,7 +212,7 @@ CREATE TABLE acervo.arquivo_deletado(
 	motivo_exclusao TEXT,
 	versao_id BIGINT REFERENCES acervo.versao (id) ON DELETE SET NULL,
 	tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code),
-	volume_armazenamento_id SMALLINT REFERENCES acervo.volume_armazenamento (id) ON DELETE SET NULL,
+	volume_armazenamento_id INTEGER REFERENCES acervo.volume_armazenamento (id) ON DELETE SET NULL,
 	extensao VARCHAR(255),
 	tamanho_mb REAL,
     checksum VARCHAR(64),
@@ -222,11 +229,14 @@ CREATE TABLE acervo.arquivo_deletado(
 	usuario_delete_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
+-- FK alvo de ON DELETE SET NULL em deleções de versão
+CREATE INDEX idx_arquivo_deletado_versao ON acervo.arquivo_deletado(versao_id);
+
 CREATE TABLE acervo.download(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	arquivo_id BIGINT NOT NULL REFERENCES acervo.arquivo (id),
 	usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
     download_token UUID NOT NULL DEFAULT uuid_generate_v4(),
     expiration_time TIMESTAMP WITH TIME ZONE,
     error_message TEXT,
@@ -234,6 +244,7 @@ CREATE TABLE acervo.download(
 );
 
 CREATE INDEX idx_download_token ON acervo.download(download_token);
+CREATE INDEX idx_download_arquivo ON acervo.download(arquivo_id);
 
 -- Create a function to clean up expired download records
 CREATE OR REPLACE FUNCTION acervo.cleanup_expired_downloads() RETURNS void AS $$
@@ -253,6 +264,8 @@ CREATE TABLE acervo.download_deletado(
     data_download TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_download_deletado_arquivo ON acervo.download_deletado(arquivo_deletado_id);
+
 CREATE TABLE acervo.versao_relacionamento(
     id BIGSERIAL NOT NULL PRIMARY KEY,
     versao_id_1 BIGINT NOT NULL REFERENCES acervo.versao (id),
@@ -264,12 +277,16 @@ CREATE TABLE acervo.versao_relacionamento(
     CONSTRAINT unique_versao_relacionamento UNIQUE (versao_id_1, versao_id_2, tipo_relacionamento_id)
 );
 
+-- versao_id_1 é coberto pela UNIQUE acima; versao_id_2 precisa de índice próprio
+-- para os DELETEs por versão (WHERE versao_id_1 = X OR versao_id_2 = X)
+CREATE INDEX idx_versao_relacionamento_versao2 ON acervo.versao_relacionamento(versao_id_2);
+
 -- Main upload session table
 CREATE TABLE acervo.upload_session (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     uuid_session UUID UNIQUE NOT NULL DEFAULT uuid_generate_v4(),
-    operation_type VARCHAR(20) NOT NULL, -- 'add_files', 'add_version', 'add_product'
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('add_files', 'add_version', 'add_product')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expiration_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '24 hours',
@@ -300,16 +317,18 @@ CREATE TABLE acervo.upload_versao_temp (
     nome VARCHAR(255),
     tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
     subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
-    lote_id BIGINT REFERENCES acervo.lote (id),
+    lote_id BIGINT REFERENCES acervo.lote (id) ON DELETE SET NULL,
     metadado JSONB,
     descricao TEXT,
     orgao_produtor VARCHAR(255) NOT NULL,
     palavras_chave TEXT[],
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
     data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
-    produto_id INTEGER, -- Used for add_version scenario
+    produto_id BIGINT, -- Used for add_version scenario (acervo.produto.id é BIGSERIAL)
     produto_temp_id BIGINT REFERENCES acervo.upload_produto_temp (id) ON DELETE CASCADE -- Used for add_product scenario
 );
+
+CREATE INDEX idx_upload_versao_temp_produto_temp ON acervo.upload_versao_temp(produto_temp_id);
 
 -- Temporary file metadata
 CREATE TABLE acervo.upload_arquivo_temp (
@@ -327,11 +346,13 @@ CREATE TABLE acervo.upload_arquivo_temp (
     situacao_carregamento_id SMALLINT NOT NULL REFERENCES dominio.situacao_carregamento (code),
     descricao TEXT,
     crs_original VARCHAR(10),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
     error_message TEXT,
-    versao_id INTEGER, -- Used for add_files scenario
+    versao_id BIGINT, -- Used for add_files scenario (acervo.versao.id é BIGSERIAL)
     versao_temp_id BIGINT REFERENCES acervo.upload_versao_temp (id) ON DELETE CASCADE -- Used for add_version and add_product scenarios
 );
+
+CREATE INDEX idx_upload_arquivo_temp_versao_temp ON acervo.upload_arquivo_temp(versao_temp_id);
 
 -- Create indexes
 CREATE INDEX idx_upload_session_status ON acervo.upload_session(status);

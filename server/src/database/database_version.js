@@ -21,7 +21,7 @@ const validate = dbv => {
 
 dbVersion.load = async () => {
   if (!('nome' in dbVersion)) {
-    const dbv = await db.conn.oneOrNone('SELECT nome FROM public.versao')
+    const dbv = await db.conn.oneOrNone('SELECT nome FROM public.versao LIMIT 1')
 
     if (!dbv) {
       throw new AppError(

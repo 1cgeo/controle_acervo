@@ -3,7 +3,7 @@
 const archiver = require('archiver');
 const { Readable } = require('stream');
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, STATUS_ARQUIVO } } = require("../utils");
 
 const {
   DB_USER,
@@ -70,7 +70,7 @@ controller.getProdutosLayer = async () => {
 };
 
 controller.getVersaoById = async (versaoId) => {
-  return db.conn.one(`
+  const versao = await db.conn.oneOrNone(`
     SELECT
       v.id,
       v.uuid_versao,
@@ -89,10 +89,16 @@ controller.getVersaoById = async (versaoId) => {
     FROM acervo.versao v
     WHERE v.id = $1
   `, [versaoId]);
+
+  if (!versao) {
+    throw new AppError('Versão não encontrada', httpCode.NotFound);
+  }
+
+  return versao;
 };
 
 controller.getProdutoById = async (produtoId) => {
-  return db.conn.one(`
+  const produto = await db.conn.oneOrNone(`
     SELECT
       p.id,
       p.nome,
@@ -106,12 +112,18 @@ controller.getProdutoById = async (produtoId) => {
     FROM acervo.produto p
     WHERE p.id = $1
   `, [produtoId]);
+
+  if (!produto) {
+    throw new AppError('Produto não encontrado', httpCode.NotFound);
+  }
+
+  return produto;
 };
 
 controller.getProdutoDetailedById = async produtoId => {
   return db.conn.task(async t => {
     // Primeiro, obter informações básicas do produto
-    const produto = await t.one(`
+    const produto = await t.oneOrNone(`
       SELECT 
         p.id,
         p.nome,
@@ -132,6 +144,10 @@ controller.getProdutoDetailedById = async produtoId => {
       LEFT JOIN dgeo.usuario AS u2 ON u2.uuid = p.usuario_modificacao_uuid
       WHERE p.id = $1
     `, [produtoId]);
+
+    if (!produto) {
+      throw new AppError('Produto não encontrado', httpCode.NotFound);
+    }
 
     // Obter todas as versões do produto com seus relacionamentos e arquivos
     const versoes = await t.any(`
@@ -230,12 +246,31 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
 
   // Check if all arquivoIds exist in the database
   const existingArquivos = await db.conn.any(
-    `SELECT id, nome, nome_arquivo, extensao, checksum FROM acervo.arquivo WHERE id IN ($<arquivosIds:csv>)`,
+    `SELECT id, nome, nome_arquivo, extensao, checksum, tipo_arquivo_id, tipo_status_id FROM acervo.arquivo WHERE id IN ($<arquivosIds:csv>)`,
     { arquivosIds }
   );
 
   if (existingArquivos.length !== arquivosIds.length) {
     throw new AppError("Um ou mais IDs de arquivo não existem", httpCode.NotFound);
+  }
+
+  // Arquivos com erro de carregamento/exclusão não são baixáveis
+  const comErro = existingArquivos.filter(a => a.tipo_status_id !== STATUS_ARQUIVO.CARREGADO);
+  if (comErro.length > 0) {
+    throw new AppError(
+      `Os seguintes arquivos estão com status de erro e não podem ser baixados: ${comErro.map(a => a.nome).join(', ')}`,
+      httpCode.BadRequest
+    );
+  }
+
+  // Tileserver (tipo 9) é uma URL, sem arquivo físico em volume — não é baixável.
+  // Sem esta checagem seriam criados registros de download órfãos (sem token retornado).
+  const tileserver = existingArquivos.filter(a => a.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER);
+  if (tileserver.length > 0) {
+    throw new AppError(
+      `Os seguintes arquivos são do tipo Tileserver (URL) e não possuem arquivo físico para download: ${tileserver.map(a => a.nome).join(', ')}`,
+      httpCode.BadRequest
+    );
   }
 
   // Create download records with pending status
@@ -353,8 +388,9 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
     JOIN acervo.arquivo a ON a.versao_id = nv.versao_id
     JOIN acervo.volume_armazenamento va ON a.volume_armazenamento_id = va.id
     WHERE a.tipo_arquivo_id IN ($<tiposArquivo:csv>)
+      AND a.tipo_status_id = $<statusCarregado>
     `,
-    { produtosIds, tiposArquivo }
+    { produtosIds, tiposArquivo, statusCarregado: STATUS_ARQUIVO.CARREGADO }
   );
 
   if (newestVersionsWithFiles.length === 0) {
@@ -403,16 +439,17 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
 };
 
 // Cleanup function that can be called by a scheduled job
+// SELECT de função retorna 1 linha — usar .any(), nunca .none()
 controller.cleanupExpiredDownloads = async () => {
-  return db.conn.none(`SELECT acervo.cleanup_expired_downloads()`);
+  return db.conn.any(`SELECT acervo.cleanup_expired_downloads()`);
 };
 
 controller.refreshAllMaterializedViews = async () => {
   return db.conn.task(async t => {
     try {
-      await t.none(`SELECT acervo.refresh_all_materialized_views()`);
-      return { 
-        success: true, 
+      await t.any(`SELECT acervo.refresh_all_materialized_views()`);
+      return {
+        success: true,
         message: 'Todas as views materializadas foram atualizadas com sucesso'
       };
     } catch (error) {
@@ -424,7 +461,11 @@ controller.refreshAllMaterializedViews = async () => {
 controller.createMaterializedViews = async () => {
   return db.conn.task(async t => {
     try {
-      await t.none(`SELECT acervo.criar_views_materializadas()`);
+      await t.any(`SELECT acervo.criar_views_materializadas()`);
+      return {
+        success: true,
+        message: 'Views materializadas criadas com sucesso'
+      };
     } catch (error) {
       throw new AppError(`Erro ao criar views materializadas: ${error.message}`, httpCode.InternalError, error);
     }
@@ -445,10 +486,10 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
       
       // Define all available scales
       const allScales = [
-        { id: 1, name: '25k', description: '1:25.000' },
-        { id: 2, name: '50k', description: '1:50.000' },
-        { id: 3, name: '100k', description: '1:100.000' },
-        { id: 4, name: '250k', description: '1:250.000' }
+        { id: TIPO_ESCALA.ESCALA_25K, name: '25k', description: '1:25.000' },
+        { id: TIPO_ESCALA.ESCALA_50K, name: '50k', description: '1:50.000' },
+        { id: TIPO_ESCALA.ESCALA_100K, name: '100k', description: '1:100.000' },
+        { id: TIPO_ESCALA.ESCALA_250K, name: '250k', description: '1:250.000' }
       ];
       
       // Filter scales based on user selection
