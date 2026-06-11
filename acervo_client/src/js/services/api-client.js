@@ -55,3 +55,38 @@ async function apiRequest(method, endpoint, body = undefined) {
 
   return json.dados;
 }
+
+/**
+ * Download a binary file (e.g. a ZIP export) from the API with auth and
+ * trigger a browser download. Throws on error.
+ * @param {string} endpoint - e.g. '/acervo/export-planilha-csv'
+ * @param {string} filename - suggested download filename
+ */
+export async function downloadFile(endpoint, filename) {
+  const token = getToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`/api${endpoint}`, { method: 'GET', headers });
+
+  if (response.status === 401 || response.status === 403) {
+    logout();
+    throw new Error('Sessão expirada');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Falha na exportação (HTTP ${response.status})`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}

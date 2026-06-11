@@ -1,5 +1,6 @@
 import { el } from '@utils/dom.js';
 import { createTabs } from '@components/tabs.js';
+import { createExportBar } from '@components/export-bar.js';
 import { clearCache } from '@services/cache.js';
 import { renderOverviewTab } from '@features/dashboard/overview-tab.js';
 import { renderDistributionTab } from '@features/dashboard/distribution-tab.js';
@@ -14,7 +15,10 @@ const REFRESH_INTERVAL_MS = 60 * 1000;
  * @returns {Function} cleanup
  */
 export async function renderDashboard(container) {
-  const title = el('h1', { className: 'dashboard__title', textContent: 'Dashboard' });
+  const header = el('div', { className: 'dashboard__header' }, [
+    el('h1', { className: 'dashboard__title', textContent: 'Dashboard' }),
+    createExportBar(),
+  ]);
 
   const tabs = createTabs({
     tabs: [
@@ -25,7 +29,7 @@ export async function renderDashboard(container) {
     ],
   });
 
-  const page = el('div', { className: 'dashboard' }, [title, tabs.element]);
+  const page = el('div', { className: 'dashboard' }, [header, tabs.element]);
   container.appendChild(page);
 
   // Auto-refetch the active tab every 60s (drop the cache first so the

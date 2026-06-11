@@ -11,6 +11,50 @@
   color: var(--text-primary);
 }
 
+/* Header (title + export actions) */
+.dashboard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.dashboard__header .dashboard__title {
+  margin-bottom: 0;
+}
+
+/* Export buttons */
+.export-bar {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-on-primary);
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.export-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Tabs */
 .tabs {
   display: flex;

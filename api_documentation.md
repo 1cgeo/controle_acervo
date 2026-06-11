@@ -2154,6 +2154,14 @@ Reproduz a aba **Civ**: uma linha por pedido civil (demais tipos de cliente) com
 
 Reproduz a aba **Mapas Tematicos**: itens com `producao_especifica = TRUE` (RN07 — producao sob demanda). Retorna `nome_projeto` (versao/produto do acervo), `demandante`, descricoes do pedido e do produto, `data_entrega`, `secao_responsavel` (`acervo.versao.orgao_produtor`), `militar_responsavel` (`acervo.versao.metadado->>'responsavel'`) e `tamanho_mb` (soma dos arquivos carregados da versao).
 
+### GET `/api/mapoteca/relatorio/impressao_detalhada`
+
+Variante enxuta do **Detalhado** (mesma query/dados), recortada nas 15 colunas da planilha de impressao: `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta` (prazo), `produto`, `mi`, `escala`, quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega` e `observacao`. Sem nome do produto, mes ou localizador. Filtra por `data_pedido`.
+
+### GET `/api/mapoteca/relatorio/pedidos_resumo`
+
+Resumo por pedido (uma linha por pedido, **todos os clientes** — nao so OM militares): `numero_pedido` (`pedido.id`), `unidade` (cliente), `documento` (DIEx), `status` (situacao), `data_envio` (`data_atendimento`), `informacoes_envio` (`localizador_envio`) e o consolidado de produtos entregues por tipo x escala (`topo_25k`..`topo_250k`/`total_topo`, `orto_25k`..`orto_250k`/`total_orto`, `outros_produtos`, `produtos_digitais`, `total`). Quantidade entregue = `COALESCE(quantidade_fornecida, quantidade)`. Filtra por `data_pedido`.
+
 ---
 
 ## 20. Dashboard do Acervo

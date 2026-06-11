@@ -563,6 +563,60 @@ describe('Mapoteca Routes', () => {
       expect(item.mes).toBe(3)
     })
 
+    it('GET /relatorio/impressao_detalhada?formato=csv should return the 15-column CSV', async () => {
+      await setupPedidoMilitar()
+
+      const res = await request(app)
+        .get('/api/mapoteca/relatorio/impressao_detalhada?ano=2026&formato=csv')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('text/csv')
+      expect(res.headers['content-disposition']).toContain('impressao_detalhada_2026.csv')
+      expect(res.text.charCodeAt(0)).toBe(0xFEFF)
+      const [header, primeiraLinha] = res.text.slice(1).split('\r\n')
+      const colunas = header.split(';')
+      expect(colunas).toHaveLength(15)
+      expect(colunas[0]).toBe('OMDS')
+      // o recorte enxuto não traz as colunas extras do Detalhado
+      expect(header).not.toContain('Nome do Produto')
+      expect(header).not.toContain('Localizador')
+      expect(primeiraLinha).toContain('3º RCC')
+    })
+
+    it('GET /relatorio/pedidos_resumo should summarize one row per order with type/scale pivot', async () => {
+      const { pedido } = await setupPedidoMilitar()
+
+      const res = await request(app)
+        .get('/api/mapoteca/relatorio/pedidos_resumo?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados).toHaveLength(1)
+      const linha = res.body.dados[0]
+      expect(Number(linha.numero_pedido)).toBe(Number(pedido.id))
+      expect(linha.unidade).toBe('3º RCC')
+      expect(linha.topo_50k).toBe(10)
+      expect(linha.total_topo).toBe(10)
+      expect(linha.total_orto).toBe(0)
+      expect(linha.total).toBe(10)
+    })
+
+    it('GET /relatorio/pedidos_resumo should include civilian orders too', async () => {
+      const clienteLai = await criaCliente({ nome: 'Solicitante LAI', tipo_cliente_id: 9 })
+      await criaPedido(clienteLai, {
+        documento_solicitacao_nup: '60143.000014/2026-78',
+        observacao: 'Fotos aéreas do município de Caçapava'
+      })
+
+      const res = await request(app)
+        .get('/api/mapoteca/relatorio/pedidos_resumo?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.map(l => l.unidade)).toContain('Solicitante LAI')
+    })
+
     it('GET /relatorio/pedidos_civ should include only civilian orders', async () => {
       await setupPedidoMilitar()
       const clienteLai = await criaCliente({ nome: 'Solicitante LAI', tipo_cliente_id: 9 })

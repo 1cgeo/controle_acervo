@@ -409,11 +409,11 @@ export function deleteConsumoMaterial(ids) {
 // Relatórios (abas da antiga planilha)
 // ---------------------------------------------------------------------------
 
-const RELATORIOS = ['pedidos_mil', 'pedidos_detalhado', 'pedidos_civ', 'tematicos'];
+const RELATORIOS = ['pedidos_mil', 'pedidos_detalhado', 'impressao_detalhada', 'pedidos_resumo', 'pedidos_civ', 'tematicos'];
 
 /**
  * Report data as JSON.
- * @param {'pedidos_mil'|'pedidos_detalhado'|'pedidos_civ'|'tematicos'} nome
+ * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
  * @param {number} [ano]
  */
 export function getRelatorio(nome, ano) {
@@ -430,7 +430,7 @@ export function getRelatorio(nome, ano) {
 
 /**
  * URL (relative to /api) for the CSV version of a report.
- * @param {'pedidos_mil'|'pedidos_detalhado'|'pedidos_civ'|'tematicos'} nome
+ * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
  * @param {number} [ano]
  * @returns {string}
  */
@@ -441,7 +441,7 @@ export function relatorioCsvUrl(nome, ano) {
 
 /**
  * Download a report as CSV (fetch blob with token + browser download).
- * @param {'pedidos_mil'|'pedidos_detalhado'|'pedidos_civ'|'tematicos'} nome
+ * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
  * @param {number} [ano]
  */
 export function downloadRelatorioCsv(nome, ano) {

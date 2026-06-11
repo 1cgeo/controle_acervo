@@ -256,6 +256,89 @@ controller.getRelatorioTematicos = async (ano) => {
   );
 };
 
+/**
+ * Relatório-resumo anual por pedido (uma linha por pedido), com dados de
+ * identificação/envio e o consolidado de produtos entregues por tipo e escala.
+ * Diferente do "Mil", abrange TODOS os clientes (não só OM militares) e expõe
+ * apenas as colunas de envio + o pivô (sem endereço, remessa detalhada etc.).
+ * Quantidade entregue = QTD_EFETIVA (fornecida com fallback na prevista).
+ */
+controller.getRelatorioPedidosResumo = async (ano) => {
+  return db.conn.any(
+    `
+    WITH itens AS (
+      SELECT pp.pedido_id,
+             ${QTD_EFETIVA} AS qtd,
+             prod.tipo_produto_id,
+             prod.tipo_escala_id,
+             (${MIDIA_EFETIVA} = $<midiaDigital>) AS digital
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido p ON p.id = pp.pedido_id
+      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.produto prod ON prod.id = v.produto_id
+      WHERE ${filtroAno("p.data_pedido")}
+    ),
+    agregado AS (
+      SELECT pedido_id,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala25k>) AS topo_25k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala50k>) AS topo_50k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala100k>) AS topo_100k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala250k>) AS topo_250k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id IN ($<escalasPadrao:csv>)) AS total_topo,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala25k>) AS orto_25k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala50k>) AS orto_50k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala100k>) AS orto_100k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala250k>) AS orto_250k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id IN ($<escalasPadrao:csv>)) AS total_orto,
+        SUM(qtd) FILTER (WHERE NOT digital AND NOT (tipo_produto_id IN ($<tipoTopo>, $<tipoOrto>) AND tipo_escala_id IN ($<escalasPadrao:csv>))) AS outros_produtos,
+        SUM(qtd) FILTER (WHERE digital) AS produtos_digitais,
+        SUM(qtd) AS total
+      FROM itens
+      GROUP BY pedido_id
+    )
+    SELECT
+      p.id AS numero_pedido,
+      c.nome AS unidade,
+      p.documento_solicitacao AS documento,
+      sp.nome AS status,
+      p.data_atendimento AS data_envio,
+      p.localizador_envio AS informacoes_envio,
+      COALESCE(a.topo_25k, 0)::int AS topo_25k,
+      COALESCE(a.topo_50k, 0)::int AS topo_50k,
+      COALESCE(a.topo_100k, 0)::int AS topo_100k,
+      COALESCE(a.topo_250k, 0)::int AS topo_250k,
+      COALESCE(a.total_topo, 0)::int AS total_topo,
+      COALESCE(a.orto_25k, 0)::int AS orto_25k,
+      COALESCE(a.orto_50k, 0)::int AS orto_50k,
+      COALESCE(a.orto_100k, 0)::int AS orto_100k,
+      COALESCE(a.orto_250k, 0)::int AS orto_250k,
+      COALESCE(a.total_orto, 0)::int AS total_orto,
+      COALESCE(a.outros_produtos, 0)::int AS outros_produtos,
+      COALESCE(a.produtos_digitais, 0)::int AS produtos_digitais,
+      COALESCE(a.total, 0)::int AS total,
+      p.id AS pedido_id,
+      p.localizador_pedido
+    FROM mapoteca.pedido p
+    JOIN mapoteca.cliente c ON c.id = p.cliente_id
+    JOIN mapoteca.situacao_pedido sp ON sp.code = p.situacao_pedido_id
+    LEFT JOIN agregado a ON a.pedido_id = p.id
+    WHERE ${filtroAno("p.data_pedido")}
+    ORDER BY p.data_pedido, p.id
+    `,
+    {
+      ano,
+      midiaDigital: TIPO_MIDIA.DIGITAL,
+      tipoTopo: TIPO_PRODUTO.CARTA_TOPOGRAFICA,
+      tipoOrto: TIPO_PRODUTO.CARTA_ORTOIMAGEM,
+      escala25k: TIPO_ESCALA.ESCALA_25K,
+      escala50k: TIPO_ESCALA.ESCALA_50K,
+      escala100k: TIPO_ESCALA.ESCALA_100K,
+      escala250k: TIPO_ESCALA.ESCALA_250K,
+      escalasPadrao: ESCALAS_PADRAO
+    }
+  );
+};
+
 // Colunas para exportação CSV (rótulos espelham os cabeçalhos da planilha)
 controller.COLUNAS_MIL = [
   { key: "numero", label: "Nº" },
@@ -311,6 +394,51 @@ controller.COLUNAS_DETALHADO = [
   { key: "observacao", label: "Observações" },
   { key: "mes", label: "Mês" },
   { key: "localizador_pedido", label: "Localizador" }
+];
+
+// Exportação "Impressão Detalhada": recorte enxuto do relatório Detalhado com
+// exatamente as 15 colunas da planilha impressao_detalhada (sem nome do produto,
+// mês ou localizador). Reaproveita a query getRelatorioPedidosDetalhado.
+controller.COLUNAS_IMPRESSAO_DETALHADA = [
+  { key: "omds", label: "OMDS" },
+  { key: "demandante", label: "Demandante" },
+  { key: "om_destino", label: "OM Destino" },
+  { key: "previsto_pit", label: "Previsto no PIT" },
+  { key: "meta", label: "Meta" },
+  { key: "produto", label: "Produto" },
+  { key: "mi", label: "MI" },
+  { key: "escala", label: "Escala" },
+  { key: "quantidade_prevista", label: "Qnt Prevista" },
+  { key: "material_previsto", label: "Material Previsto" },
+  { key: "quantidade_fornecida", label: "Qnt Fornecida" },
+  { key: "material_fornecido", label: "Material Fornecido" },
+  { key: "data_entrega", label: "Data da Entrega" },
+  { key: "forma_entrega", label: "Forma da Entrega" },
+  { key: "observacao", label: "Observações" }
+];
+
+// Exportação "Resumo de Pedidos": uma linha por pedido (todos os clientes) com
+// dados de envio + consolidado de produtos entregues por tipo e escala.
+controller.COLUNAS_PEDIDOS_RESUMO = [
+  { key: "numero_pedido", label: "Número do Pedido" },
+  { key: "unidade", label: "Unidade" },
+  { key: "documento", label: "Documento (DIEx)" },
+  { key: "status", label: "Status" },
+  { key: "data_envio", label: "Data de Envio" },
+  { key: "informacoes_envio", label: "Informações de Envio" },
+  { key: "topo_25k", label: "Topo 25k" },
+  { key: "topo_50k", label: "Topo 50k" },
+  { key: "topo_100k", label: "Topo 100k" },
+  { key: "topo_250k", label: "Topo 250k" },
+  { key: "total_topo", label: "Total Topo" },
+  { key: "orto_25k", label: "Orto 25k" },
+  { key: "orto_50k", label: "Orto 50k" },
+  { key: "orto_100k", label: "Orto 100k" },
+  { key: "orto_250k", label: "Orto 250k" },
+  { key: "total_orto", label: "Total Orto" },
+  { key: "outros_produtos", label: "Outros Produtos" },
+  { key: "produtos_digitais", label: "Produtos Digitais" },
+  { key: "total", label: "Total Entregue" }
 ];
 
 controller.COLUNAS_CIV = [

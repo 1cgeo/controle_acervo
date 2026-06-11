@@ -725,4 +725,42 @@ router.get(
   })
 )
 
+// Impressão detalhada: mesmos dados do relatório Detalhado, recortados nas 15
+// colunas da planilha de impressão.
+router.get(
+  '/relatorio/impressao_detalhada',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosDetalhado(ano)
+    const msg = 'Relatório de impressão detalhada retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `impressao_detalhada_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_IMPRESSAO_DETALHADA
+    })
+  })
+)
+
+// Resumo de pedidos: uma linha por pedido (todos os clientes) com dados de envio
+// e o consolidado de produtos entregues por tipo e escala.
+router.get(
+  '/relatorio/pedidos_resumo',
+  verifyLogin,
+  schemaValidation({
+    query: mapotecaSchema.relatorioQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, formato } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosResumo(ano)
+    const msg = 'Relatório-resumo de pedidos retornado com sucesso'
+    return csvExport.sendReport(res, formato, msg, dados, {
+      filename: `pedidos_resumo_${ano}.csv`,
+      columns: relatorioCtrl.COLUNAS_PEDIDOS_RESUMO
+    })
+  })
+)
+
 module.exports = router
