@@ -28,8 +28,8 @@ gap_real,Topo,50k,2879-3,2879-3,5,MI ausente do acervo
 gap_real,Topo,50k,2879-4,2879-4,5,MI ausente do acervo
 gap_real,Topo,100k,2295,2295,1,MI ausente do acervo
 gap_real,Topo,100k,299,299,1,MI suspeito (verificar digitacao)
-provavel_gap_topo,Topo,25k,2964-4-NE,2964-4-NE,1,so existe como Orto/25k
-provavel_gap_topo,Topo,25k,2981-3-NE,2981-3/NE,1,so existe como Orto/25k
-provavel_gap_topo,Topo,50k,2867-3,2867-3,8,so existe como Orto/50k
-provavel_gap_topo,Topo,50k,2867-4,2867-4,8,so existe como Orto/50k
-provavel_gap_topo,Topo,50k,2891-2,2891-2,1,so existe como Orto/50k
+provavel_gap,Topo,25k,2964-4-NE,2964-4-NE,1,so existe como Orto/25k
+provavel_gap,Topo,25k,2981-3-NE,2981-3/NE,1,so existe como Orto/25k
+provavel_gap,Topo,50k,2867-3,2867-3,8,so existe como Orto/50k
+provavel_gap,Topo,50k,2867-4,2867-4,8,so existe como Orto/50k
+provavel_gap,Topo,50k,2891-2,2891-2,1,so existe como Orto/50k
