@@ -17,7 +17,7 @@ Controle manual da Seção de Acervo. **Fonte autoritativa para os detalhes de c
 
 | Coluna | Campo SCA | Observação |
 |---|---|---|
-| `Cont_Edicao` | número da edição | Base do nome da versão ("Nª Edição") |
+| `Cont_Edicao` | número da edição | Base do nome da versão ("Nª Edição"). **No legado (`Y:\_250` etc.) a planilha às vezes colide ou inverte** o número entre edições da mesma folha (ex.: 521/522 numeraram 2003 como ed1 e 1981 como ed2). Quando inconsistente, **reordenar cronologicamente por `Ano_Edicao`** (ver seção 2.10) |
 | `MI` / `INOM` | `produto.mi` / `produto.inom` | |
 | `Tipo_Produto` | `produto.tipo_produto_id` | `C. Topo`=2, `C. Orto`=3, `C. Temática`=7 |
 | `Nome` | `versao.nome` | **O nome muda entre edições** (ex.: 2962-4-NE: "ITAPEVI - NE" em 1980, "CERRO DA GLÓRIA" a partir de 2007). `produto.nome` = nome da edição mais recente carregada |
@@ -78,9 +78,12 @@ enriquecimento (data exata, etapas no metadado).
 
 ### 2.1 Nome da versão (edição)
 
-- **T34-700** (cartas até ~2021): versão = **"Nª Edição"** com N = `Cont_Edicao` da planilha,
-  cadastrada como **registro histórico** (`tipo_versao_id = 2`).
-  Ex.: a edição 2017 da MI 2962-4-NE é a **"4ª Edição"**.
+- **T34-700** (cartas até ~2021): versão = **"Nª Edição"** com N = `Cont_Edicao` da planilha.
+  **`tipo_versao_id` depende de haver arquivo digital** (decisão 2026-06-10, ver seção 2.10):
+  edição **com** TIF/PDF → **Regular** (`tipo_versao_id = 1`); edição apenas **documentada,
+  sem arquivo digital** → **Registro Histórico** (`tipo_versao_id = 2`, via endpoints
+  `/produtos/produto_versao_historica` ou `/versao_historica`).
+  Ex.: a edição 2017 da MI 2962-4-NE (com arquivo) é a **"4ª Edição" Regular**.
 - **ET-RDG** (produção nova): versão = **"N-DSG"**.
   Ex.: a edição 2024 da MI 2962-4-NE será **"1-DSG"** (primeira edição na ET-RDG).
 - A numeração "N-SIGLA" reinicia na transição para a ET-RDG; os dois formatos convivem no
@@ -193,6 +196,8 @@ versão da carta, mesmo `nome_arquivo` base (difere só pela extensão `.xml`),
   `Mapeamento de Interesse da Força 2017`).
 - O **lote** mantém o nome da pasta de produção (ex.: `2017_SAICA_25K`,
   `2021_RS_GovRS_Generalizacao_100k`) e o PIT (ano da pasta).
+- **Acervo legado** (cartas antigas de `Y:\_250/_100/_50/_25`): projeto único
+  **`Mapeamento Sistemático`**, lote por escala (`250k`, `100k`, `50k`, `25k`). Ver seção 2.10.
 
 ### 2.9 Acervo 2022 em diante (ET-RDG / EDGV 3.0)
 
@@ -218,6 +223,72 @@ A partir de 2022 a produção é **ET-RDG** (CT) e **ET-EDGV 3.0** (CDGV):
   (ex.: 16 folhas de Itaipu, Roraima) têm a moldura calculada pelo INOM via
   **DsgTools** (`carga/gera_frames_itaipu.py`, QGIS 4 + `map_index`). O
   `extrai_json_2022.py` aceita um arquivo de molduras como fallback (4º argumento).
+
+### 2.10 Acervo legado — cartas antigas (projeto "Mapeamento Sistemático")
+
+Carga das cartas topográficas antigas (T34-700) de `Y:\_250`, `Y:\_100`, `Y:\_50`, `Y:\_25`.
+Tudo num **projeto único "Mapeamento Sistemático"**, **um lote por escala** (`250k`, `100k`,
+`50k`, `25k`). Resolver **toda uma escala** (regular + histórico + variantes) **antes** da
+próxima, com **sanity check ao fim de cada escala** (planilha + site de produtos + imagem nos
+dúbios). Sequência: 250k → 100k → 50k → 25k. Loaders de referência (pasta `carga/`, gitignored):
+`plano_250.py` (gera `carga_250.json`), `gera_frames_mir.py` (molduras), `carga_ms_250.cjs`
+(`--fase1` regulares / `--fase2` históricas; idempotente — pula versão já existente; lê
+`mi_id_250.json` gerado via psql entre fases, pois o `prepare-upload` não devolve o id do
+produto criado).
+
+**Por que a planilha é indispensável aqui:** os nomes de arquivo do legado são insuficientes —
+o ano às vezes é `XXXX`, a edição não aparece, e o ano do TIF difere do PDF. A planilha ASC
+(abas `T250`/`T100`/`T50`/`T25`) é a fonte da edição, ano, INOM, nome e órgão. A própria carta
+**raramente** traz o número ordinal da edição, então a planilha vence (mas ver a ressalva de
+colisão na seção 1.1). A caixa "EXECUÇÃO DAS FASES" do PDF é legível e serve de conferência nos
+casos dúbios (Compilação/Atualização/Edição/Impressão por ano).
+
+**Pastas em cada `Y:\_NNN`:**
+- **Usar**: `4674/` (GeoTIFF EPSG:4674 — principal), `PDF/` (no 250k) ou `PDF_CONF/` (demais),
+  `HISTORICO`/`HISTORICA` (edições mais antigas, só PDF — úteis).
+- **Ignorar**: `DATUM_ORIGINAL`, `RECORTADA`/`RECORTADO` (recorte), `compare`, `_old`,
+  `GRID_*` (grade local — usar DsgTools), e sufixo de arquivo `_recortada`.
+
+**Nomes de arquivo do legado** (a ordem dos campos varia, parsear por valor):
+- TIF: `MI_4674_ano[_variante].tif` (ex.: `538_250k_4674_2002.tif`, `2753-1_4674_2016.tif`).
+- PDF: `MI_escala_ano_epsg[_variante].pdf` (ex.: `538_250k_29191_2001.pdf`).
+- **TIF usa `Ano_Edicao`; PDF usa `Ano_Dados`** → casar arquivo↔edição por
+  (MI, ano ∈ {`Ano_Edicao`, `Ano_Dados`}), com tolerância de ±2 anos para órfãos.
+
+**Geometria** (não usar a grade local nem `Enquad_Especial` para folhas com MI): o número da
+folha **é o MI** (no 250k chama-se **MIR**). DsgTools converte direto:
+`getINomenFromMIR(mir)` (250k) / `getINomenFromMI(mi)` (100k/50k/25k) →
+`getQgsPolygonFrame(inom, 1, 1)` → EWKT `SRID=4674;POLYGON(...)`.
+Script: `carga/gera_frames_mir.py` (Python do QGIS 4, `map_index` em
+`D:\desenvolvimento\DsgTools\...\FrameTools`). O INOM gerado bate com o da planilha (cross-check).
+
+**Edições com / sem arquivo:**
+- Edição **com** TIF/PDF → **Regular** ("Nª Edição", subtipo 2 T34-700). TIF principal (4674) +
+  PDF alternativo; se só PDF, PDF principal.
+- Edição **documentada sem raster** (linhas "Catálogo 84" / "Carta Física" sem flag de arquivo)
+  → **Registro Histórico** (`tipo_versao_id = 2`, metadata-only). É o uso legítimo do Registro
+  Histórico (não há nenhum no acervo atual fora desses).
+- Produto **find-or-create por (mi, tipo_produto, escala)** — ex.: a folha 539 (São Gabriel) já
+  existia; as edições antigas entram como versões adicionais no mesmo produto.
+
+**Variantes (sufixos no nome do arquivo):**
+- **`especial`** = **edição separada** (ex.: `522_..._2003_especial.pdf` = Erechim 2003, uma
+  edição a mais) → carregar como "Nª Edição" Regular adicional, **renumerada cronologicamente**.
+- **`encartada` / `estendida`** = **a edição padrão**, mas **um único arquivo cobre 2 MIs
+  distintos** (impressos juntos para economizar; ex.: `536_536A_..._estendida.tif`). **São duas
+  folhas** — cada MI vira seu produto/versão e **recebe o raster** (o mesmo físico é cadastrado
+  nas duas, cada uma com seu `nome_arquivo`).
+
+### 2.11 Validação de versão: "Nª Edição" como Regular (alteração 2026-06-10)
+
+Para o legado ser cadastrado como Regular, foram relaxadas **duas camadas** de validação
+(antes só aceitavam "Nª Edição" para `tipo_versao_id = 2`):
+- **Trigger `acervo.validate_version`** (`er/acervo.sql`): o formato "Xª Edição" passou a ser
+  aceito como Regular sem restrição de ano e sem exigir a edição anterior (carga parcial).
+- **Schema Joi `versaoSchema`** (`server/src/arquivo/arquivo_schema.js`): ambos os tipos
+  aceitam agora "X-YYYYY" **ou** "Xª Edição". O check sequencial só se aplica a "X-YYYYY".
+- Strings de versão **customizadas** ("2ª Edição Especial" etc.) **não passam** na validação —
+  por isso variantes são modeladas como edição/produto e não como sufixo na string da versão.
 
 ## 3. Ordem de carga (regra de ouro)
 

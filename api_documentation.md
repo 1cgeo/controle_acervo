@@ -350,6 +350,26 @@ Se nenhuma escala for selecionada, retorna todas. Resposta: arquivo ZIP (`applic
 
 ---
 
+### GET `/api/acervo/export-planilha-csv`
+
+Exporta o acervo no mesmo padrao da planilha de referencia (`Controle do Acervo - ASC 1º CGEO`): um arquivo CSV por escala e tipo de produto, com uma linha por versao. Util para conferencia cruzada com a planilha.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyLogin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `scale25k` | boolean | false | Incluir escala 1:25.000 |
+| `scale50k` | boolean | false | Incluir escala 1:50.000 |
+| `scale100k` | boolean | false | Incluir escala 1:100.000 |
+| `scale250k` | boolean | false | Incluir escala 1:250.000 |
+
+Se nenhuma escala for selecionada, retorna todas. Resposta: arquivo ZIP (`application/zip`) com arquivos `{T|O}{escala}.csv` (`T`=Carta Topografica, `O`=Carta Ortoimagem), ex.: `T250k.csv`, `O50k.csv`. Cada CSV (UTF-8 com BOM, CRLF) tem as colunas: `Cont_Edicao`, `MI`, `INOM`, `Tipo_Produto`, `Subtipo`, `Nome`, `Orgao_Produtor`, `EPSG`, `Ano_Dados`, `Ano_Edicao`, `Versao`, `Lote`, `Tem_Arquivo`. `Tem_Arquivo`=0 indica Registro Historico (sem arquivo).
+
+---
+
 ## 4. Gerenciamento de Arquivos
 
 ### PUT `/api/arquivo/arquivo`

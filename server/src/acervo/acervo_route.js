@@ -193,6 +193,38 @@ router.get(
 );
 
 router.get(
+  '/export-planilha-csv',
+  verifyLogin,
+  schemaValidation({
+    query: acervoSchema.situacaoGeralQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    // Mesmo padrão da planilha de referência (vários CSV, um por escala+tipo)
+    const scales = {
+      '25k': req.query.scale25k === true,
+      '50k': req.query.scale50k === true,
+      '100k': req.query.scale100k === true,
+      '250k': req.query.scale250k === true
+    };
+
+    // Se nenhuma escala for selecionada, exporta todas
+    if (!scales['25k'] && !scales['50k'] && !scales['100k'] && !scales['250k']) {
+      scales['25k'] = scales['50k'] = scales['100k'] = scales['250k'] = true;
+    }
+
+    const zipData = await acervoCtrl.getPlanilhaCSV(scales);
+
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': 'attachment; filename="planilha-acervo.zip"',
+      'Content-Length': zipData.length
+    });
+
+    return res.send(zipData);
+  })
+);
+
+router.get(
   '/busca',
   verifyLogin,
   schemaValidation({

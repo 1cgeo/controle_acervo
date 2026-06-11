@@ -7,15 +7,16 @@ const { TIPO_ARQUIVO, TIPO_ESCALA, TIPO_VERSAO } = require('../utils/domain_cons
 
 const models = {}
 
-// Espelha o trigger acervo.validate_version: formato "X-YYYYY" para versões
-// regulares; registros históricos também aceitam o formato antigo "Xª Edição"
-const VERSAO_REGEX = /^[0-9]+-[A-Z]{1,5}$/
+// Espelha o trigger acervo.validate_version: aceita o formato moderno "X-YYYYY"
+// e o legado "Xª Edição". As cartas antigas (acervo legado) são cadastradas como
+// versões regulares usando "Xª Edição", portanto ambos os tipos aceitam os dois
+// formatos (o trigger no banco aplica as regras mais profundas de sequência).
 const VERSAO_HISTORICA_REGEX = /^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$/
 
 const versaoSchema = Joi.alternatives().conditional('tipo_versao_id', {
   is: TIPO_VERSAO.REGISTRO_HISTORICO,
   then: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-  otherwise: Joi.string().pattern(VERSAO_REGEX).required()
+  otherwise: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required()
 })
 
 // Campos comuns de arquivo, espelhando os CHECKs de acervo.arquivo:

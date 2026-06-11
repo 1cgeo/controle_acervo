@@ -527,6 +527,79 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
   });
 };
 
+// Exporta um ZIP de CSVs no mesmo padrão da planilha de referência da ASC
+// (uma "aba" por escala+tipo: T250/O250/T100/O100/T50/O50/T25/O25), uma linha
+// por versão (edição). Permite comparar o acervo com a planilha no mesmo formato.
+controller.getPlanilhaCSV = async (scaleOptions = {}) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      const chunks = [];
+      archive.on('data', (c) => chunks.push(c));
+      archive.on('end', () => resolve(Buffer.concat(chunks)));
+      archive.on('error', (e) => reject(e));
+
+      const todasEscalas = [
+        { id: TIPO_ESCALA.ESCALA_250K, name: '250k' },
+        { id: TIPO_ESCALA.ESCALA_100K, name: '100k' },
+        { id: TIPO_ESCALA.ESCALA_50K, name: '50k' },
+        { id: TIPO_ESCALA.ESCALA_25K, name: '25k' }
+      ];
+      const selecionadas = todasEscalas.filter(e => scaleOptions[e.name] === true);
+      const escalas = selecionadas.length > 0 ? selecionadas : todasEscalas;
+      const tipos = [
+        { id: TIPO_PRODUTO.CARTA_TOPOGRAFICA, prefix: 'T', label: 'C. Topo' },
+        { id: TIPO_PRODUTO.CARTA_ORTOIMAGEM, prefix: 'O', label: 'C. Orto' }
+      ];
+      const COLS = ['Cont_Edicao', 'MI', 'INOM', 'Tipo_Produto', 'Subtipo', 'Nome', 'Orgao_Produtor', 'EPSG', 'Ano_Dados', 'Ano_Edicao', 'Versao', 'Lote', 'Tem_Arquivo'];
+      const esc = (s) => {
+        if (s == null) return '';
+        const v = String(s);
+        return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      };
+
+      for (const e of escalas) {
+        for (const t of tipos) {
+          const rows = await db.conn.any(`
+            SELECT
+              substring(v.versao from '^([0-9]+)') AS cont_edicao,
+              p.mi, p.inom,
+              $<label> AS tipo_produto,
+              sp.nome AS subtipo,
+              v.nome,
+              v.orgao_produtor,
+              (SELECT a.crs_original FROM acervo.arquivo a
+                 WHERE a.versao_id = v.id AND a.tipo_arquivo_id = 1 LIMIT 1) AS epsg,
+              EXTRACT(YEAR FROM v.data_criacao)::int AS ano_dados,
+              EXTRACT(YEAR FROM v.data_edicao)::int AS ano_edicao,
+              v.versao,
+              l.nome AS lote,
+              (SELECT count(*) FROM acervo.arquivo a WHERE a.versao_id = v.id) AS tem_arquivo
+            FROM acervo.versao v
+            JOIN acervo.produto p ON p.id = v.produto_id
+            JOIN dominio.subtipo_produto sp ON sp.code = v.subtipo_produto_id
+            LEFT JOIN acervo.lote l ON l.id = v.lote_id
+            WHERE p.tipo_escala_id = $<escId> AND p.tipo_produto_id = $<tipoId>
+            ORDER BY p.mi, p.inom, EXTRACT(YEAR FROM v.data_edicao)
+          `, { escId: e.id, tipoId: t.id, label: t.label });
+
+          const linhas = [COLS.join(',')];
+          for (const r of rows) {
+            linhas.push([r.cont_edicao, r.mi, r.inom, r.tipo_produto, r.subtipo, r.nome,
+              r.orgao_produtor, r.epsg, r.ano_dados, r.ano_edicao, r.versao, r.lote, r.tem_arquivo]
+              .map(esc).join(','));
+          }
+          const csv = '﻿' + linhas.join('\r\n'); // BOM para abrir certo no Excel
+          archive.append(Readable.from(csv), { name: `${t.prefix}${e.name}.csv` });
+        }
+      }
+      archive.finalize();
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
 // Escalas da carta topográfica sistemática e o sufixo usado nos arquivos do
 // site de produtos. Exportado para a rota pública de integração mapear o nome
 // de escala (ex.: '50k') para o code do domínio.

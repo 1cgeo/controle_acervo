@@ -96,7 +96,9 @@ CREATE TABLE acervo.versao(
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
 	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-    CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao),
+    -- Inclui subtipo: a mesma folha/edição pode existir como Carta Topográfica padrão
+    -- (subtipo 2/12) e como Carta Topográfica Militar (subtipo 24) — "1ª Edição" em ambos.
+    CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao, subtipo_produto_id),
     CHECK (data_edicao >= data_criacao)
 );
 
@@ -131,10 +133,9 @@ BEGIN
 
     -- Check for old standard: "Xª Edição"
     IF NEW.versao ~ '^[0-9]+ª Edição$' THEN
-        -- Only allow old standard for years before 2024
-        IF current_year >= 2024 THEN
-            RAISE EXCEPTION 'A partir de 2024 versões devem utilizar o formato "X-YYYYY"';
-        END IF;
+        -- Acervo legado: cartas antigas usam "Xª Edição" e são cadastradas como
+        -- versões Regular (tipo_versao_id = 1). A carga pode ser parcial, então
+        -- não se exige a edição sequencial anterior nem há restrição de ano.
         RETURN NEW;
     -- Check for new standard: "X-YYYYY" where X is a number and YYYYY is 1-5 uppercase letters
     ELSIF NEW.versao ~ '^[0-9]+-[A-Z]{1,5}$' THEN

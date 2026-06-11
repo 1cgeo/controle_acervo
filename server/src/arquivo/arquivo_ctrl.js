@@ -454,12 +454,12 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
       // Check if any version name already exists for its product
       for (const item of versoes) {
         const versaoExistente = await t.oneOrNone(
-          'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2',
-          [item.produto_id, item.versao.versao]
+          'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2 AND subtipo_produto_id = $3',
+          [item.produto_id, item.versao.versao, item.versao.subtipo_produto_id]
         );
 
         if (versaoExistente) {
-          throw new AppError(`Já existe uma versão com o nome "${item.versao.versao}" para o produto ${item.produto_id}`, httpCode.Conflict);
+          throw new AppError(`Já existe uma versão com o nome "${item.versao.versao}" (subtipo ${item.versao.subtipo_produto_id}) para o produto ${item.produto_id}`, httpCode.Conflict);
         }
       }
 
