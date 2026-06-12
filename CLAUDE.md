@@ -443,6 +443,7 @@ Swagger docs available at `GET /api/api_docs` when server is running.
 
 ## Documentation
 
+- `levantar_servico.md` — How to bring up the full dev environment (Auth Server → SCA Server → web clients): startup order, ports, smoke tests, troubleshooting. The SCA server aborts boot if the Auth Server (port 3010) is not operational.
 - `tutorial_configuracao_inicial.md` — Step-by-step initial setup guide (plugin, volumes, products)
 - `tutorial_client_dashboard.md` — Web dashboard usage guide (login, tabs, charts, theme)
 - `fluxos_usuario_plugin.md` — User flows of the QGIS plugin dialogs

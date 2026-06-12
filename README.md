@@ -39,6 +39,8 @@ node create_config.js --db-server localhost --db-port 5432 --db-user postgres --
 
 ### Execução
 
+> Para subir o ambiente completo de desenvolvimento (Auth Server → SCA Server → clients web), com a ordem de inicialização, smoke tests e troubleshooting, veja **[`levantar_servico.md`](levantar_servico.md)**. O SCA Server **não inicia** se o Serviço de Autenticação não estiver operacional.
+
 ```bash
 # Desenvolvimento (HTTP, com hot-reload via nodemon)
 cd server && npm run dev
