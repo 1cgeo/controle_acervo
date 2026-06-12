@@ -1381,12 +1381,46 @@ Retorna detalhes completos de um pedido com todos os produtos e trilha de audito
 
 ### GET `/api/mapoteca/pedido/localizador/:localizador`
 
-Consulta pedido por codigo de rastreamento. Endpoint publico.
+Consulta pedido por codigo de rastreamento. Endpoint publico (acompanhamento do cliente).
 
 | Campo | Valor |
 |---|---|
 | **Auth** | Nenhuma |
 | **Params** | `localizador` - string, formato `^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$` |
+
+Retorna apenas campos seguros para exposicao publica: situacao, datas, cliente, prazo,
+`observacao` do pedido, rastreio/observacao de envio, motivo de cancelamento e a lista
+`produtos` (o que foi pedido). Nao expoe o `id` interno nem dados de usuarios.
+
+**Resposta (`dados`):**
+```json
+{
+  "localizador_pedido": "ABCD-2345-WXYZ",
+  "data_pedido": "2026-03-10T10:00:00Z",
+  "situacao_pedido_id": 4,
+  "situacao_pedido_nome": "Em andamento",
+  "cliente_nome": "1º CGEO",
+  "prazo": "2026-04-01",
+  "observacao": "Pedido urgente para exercício",
+  "localizador_envio": "QN048384596BR",
+  "observacao_envio": null,
+  "motivo_cancelamento": null,
+  "produtos": [
+    {
+      "quantidade": 4,
+      "tipo_midia_nome": "Papel",
+      "forma_entrega_nome": "Correios",
+      "observacao": "Plotagem em papel A0",
+      "versao": "1",
+      "produto_nome": "Carta Topográfica X",
+      "mi": "2965-2",
+      "inom": "SF-22-Y-D-II-2",
+      "escala": "1:50.000",
+      "tipo_produto_nome": "Carta Topográfica"
+    }
+  ]
+}
+```
 
 ---
 
