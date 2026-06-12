@@ -251,6 +251,53 @@ describe('Mapoteca Routes', () => {
       })
       expect(pedido.id).toBeDefined()
     })
+
+    it('GET /api/mapoteca/pedido/localizador/:localizador (público) returns status, observação e itens', async () => {
+      const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
+      const versao = await createVersao(produto.id)
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, {
+        observacao: 'Pedido urgente para exercício'
+      })
+
+      await criaProdutoPedido({
+        uuid_versao: versao.uuid_versao,
+        pedido_id: pedido.id,
+        quantidade: 4,
+        tipo_midia_id: 5,
+        forma_entrega_id: 1,
+        observacao: 'Plotagem em papel A0'
+      })
+
+      // Sem autenticação — rota pública de acompanhamento (RN04)
+      const res = await request(app)
+        .get(`/api/mapoteca/pedido/localizador/${pedido.localizador_pedido}`)
+
+      expect(res.status).toBe(200)
+      const dados = res.body.dados
+      expect(dados.localizador_pedido).toBe(pedido.localizador_pedido)
+      expect(dados.situacao_pedido_nome).toBeDefined()
+      expect(dados.observacao).toBe('Pedido urgente para exercício')
+      // Não deve expor o id interno do pedido
+      expect(dados.id).toBeUndefined()
+
+      expect(Array.isArray(dados.produtos)).toBe(true)
+      expect(dados.produtos).toHaveLength(1)
+      const item = dados.produtos[0]
+      expect(item.quantidade).toBe(4)
+      expect(item.tipo_midia_nome).toBeDefined()
+      expect(item.forma_entrega_nome).toBe('Correios')
+      expect(item.observacao).toBe('Plotagem em papel A0')
+      expect(item.produto_nome).toBeDefined()
+      expect(item.tipo_produto_nome).toBe('Carta Topográfica')
+    })
+
+    it('GET /api/mapoteca/pedido/localizador/:localizador inexistente returns 404', async () => {
+      const res = await request(app)
+        .get('/api/mapoteca/pedido/localizador/AAAA-BBBB-CCCC')
+
+      expect(res.status).toBe(404)
+    })
   })
 
   describe('Produto do Pedido', () => {

@@ -470,12 +470,14 @@ controller.getPedidoByLocalizador = async (localizador) => {
   return db.conn.task(async t => {
     const pedido = await t.oneOrNone(`
       SELECT
+        p.id,
         p.localizador_pedido,
         p.data_pedido,
         p.situacao_pedido_id,
         sp.nome AS situacao_pedido_nome,
         c.nome AS cliente_nome,
         p.prazo,
+        p.observacao,
         p.localizador_envio,
         p.observacao_envio,
         p.motivo_cancelamento
@@ -488,6 +490,33 @@ controller.getPedidoByLocalizador = async (localizador) => {
     if (!pedido) {
       throw new AppError('Pedido não encontrado', httpCode.NotFound);
     }
+
+    // Itens do pedido — apenas campos seguros para consulta pública
+    // (o que foi pedido + observação do item; sem dados internos/usuários).
+    const produtos = await t.any(`
+      SELECT
+        pp.quantidade,
+        tm.nome AS tipo_midia_nome,
+        fe.nome AS forma_entrega_nome,
+        pp.observacao,
+        v.versao,
+        p.nome AS produto_nome,
+        p.mi, p.inom,
+        te.nome AS escala,
+        tp.nome AS tipo_produto_nome
+      FROM mapoteca.produto_pedido AS pp
+      LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
+      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = pp.forma_entrega_id
+      LEFT JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
+      LEFT JOIN acervo.produto AS p ON p.id = v.produto_id
+      LEFT JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
+      LEFT JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+      WHERE pp.pedido_id = $1
+      ORDER BY pp.data_criacao
+    `, [pedido.id]);
+
+    delete pedido.id;
+    pedido.produtos = produtos;
 
     return pedido;
   });

@@ -90,6 +90,9 @@ export async function renderConsultarPedido(container, { params }) {
       infoRow('Prazo', formatDate(pedido.prazo)),
     ];
 
+    if (pedido.observacao) {
+      rows.push(infoRow('Observação', pedido.observacao));
+    }
     if (pedido.localizador_envio) {
       rows.push(infoRow('Rastreio do envio', pedido.localizador_envio));
     }
@@ -101,6 +104,61 @@ export async function renderConsultarPedido(container, { params }) {
     }
 
     resultArea.appendChild(el('div', { className: 'consulta-info' }, rows));
+
+    showItens(pedido.produtos || []);
+  }
+
+  function itemMeta(label, value) {
+    if (value == null || value === '') return null;
+    return el('span', { className: 'consulta-item__meta' }, [
+      el('span', { className: 'consulta-item__meta-label', textContent: `${label}: ` }),
+      el('span', { className: 'consulta-item__meta-value', textContent: String(value) }),
+    ]);
+  }
+
+  function showItens(produtos) {
+    resultArea.appendChild(el('div', {
+      className: 'consulta-info__label',
+      style: { marginTop: 'var(--space-md)' },
+      textContent: 'O que foi pedido:',
+    }));
+
+    if (!produtos.length) {
+      resultArea.appendChild(el('div', { className: 'consulta-card__message' }, [
+        el('p', { textContent: 'Nenhum item registrado para este pedido.' }),
+      ]));
+      return;
+    }
+
+    const itens = produtos.map((p) => {
+      const titulo = p.produto_nome || p.inom || p.mi || 'Produto';
+      const meta = [
+        itemMeta('Escala', p.escala),
+        itemMeta('Tipo', p.tipo_produto_nome),
+        itemMeta('MI', p.mi),
+        itemMeta('INOM', p.inom),
+        itemMeta('Versão', p.versao),
+        itemMeta('Quantidade', p.quantidade),
+        itemMeta('Mídia', p.tipo_midia_nome),
+        itemMeta('Entrega', p.forma_entrega_nome),
+      ].filter(Boolean);
+
+      const children = [
+        el('div', { className: 'consulta-item__title' }, [
+          svgIcon(ICONS.description, 18),
+          el('span', { textContent: titulo }),
+        ]),
+        el('div', { className: 'consulta-item__metas' }, meta),
+      ];
+
+      if (p.observacao) {
+        children.push(el('div', { className: 'consulta-item__obs', textContent: p.observacao }));
+      }
+
+      return el('div', { className: 'consulta-item' }, children);
+    });
+
+    resultArea.appendChild(el('div', { className: 'consulta-itens' }, itens));
   }
 
   if (!isValidLocalizador(localizador)) {
