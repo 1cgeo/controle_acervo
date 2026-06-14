@@ -94,8 +94,11 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
         self.total_pages = pagination.get('totalPages', 1)
         self.current_page = pagination.get('currentPage', 1)
         
-        # Update pagination controls
-        self.pageInfoLabel.setText(f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)")
+        # Update pagination controls (vazio = boa notícia: acervo sem arquivos problemáticos)
+        if self.total_items == 0:
+            self.pageInfoLabel.setText("Nenhum arquivo com problema encontrado.")
+        else:
+            self.pageInfoLabel.setText(f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)")
         
         # Enable/disable navigation buttons
         self.firstPageButton.setEnabled(self.current_page > 1)
@@ -122,12 +125,16 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             self.filesTable.setItem(row, 4, QTableWidgetItem(volume_info))
             
             # Get status type based on tipo_status_id
-            status_type = ""
-            if file.get('tipo_status_id') == 2:
-                status_type = "Erro na validação"
-            elif file.get('tipo_status_id') == 4:
-                status_type = "Erro em arquivo deletado"
-            
+            tipo_status_id = file.get('tipo_status_id')
+            status_map = {2: "Erro na validação", 4: "Erro em arquivo deletado"}
+            # Fallback explícito evita célula em branco para códigos não mapeados
+            if tipo_status_id in status_map:
+                status_type = status_map[tipo_status_id]
+            elif tipo_status_id is not None:
+                status_type = f"Outro (código {tipo_status_id})"
+            else:
+                status_type = "—"
+
             self.filesTable.setItem(row, 5, QTableWidgetItem(status_type))
             
             # Use the most recent date available

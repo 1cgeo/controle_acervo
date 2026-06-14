@@ -1,8 +1,9 @@
 # Path: gui\verificar_inconsistencias\verificar_inconsistencias_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QApplication
 from qgis.PyQt.QtCore import Qt
+from qgis.core import Qgis
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'verificar_inconsistencias_dialog.ui'))
@@ -33,6 +34,16 @@ class VerificarInconsistenciasDialog(QDialog, FORM_CLASS):
             self.executarVerificacaoButton.setEnabled(False)
             self.setCursor(Qt.CursorShape.WaitCursor)
 
+            # Define a expectativa antes da chamada bloqueante (que roda na
+            # thread da UI): processEvents força a mensagem a pintar antes
+            self.iface.messageBar().pushMessage(
+                "Verificação em andamento",
+                "Calculando os checksums do acervo. Isto pode levar vários minutos "
+                "e o QGIS pode ficar sem resposta durante o processo.",
+                level=Qgis.MessageLevel.Info
+            )
+            QApplication.processEvents()
+
             response = self.api_client.post(
                 'gerencia/verificar_inconsistencias',
                 timeout=VERIFICACAO_TIMEOUT
@@ -49,7 +60,7 @@ class VerificarInconsistenciasDialog(QDialog, FORM_CLASS):
                         "Verificação concluída.\n\n"
                         f"Arquivos marcados com erro de carregamento: {arquivos}\n"
                         f"Arquivos deletados marcados com erro de exclusão: {deletados}\n\n"
-                        "Use o diálogo 'Gerenciar Arquivos Incorretos' para ver os detalhes."
+                        "Use o diálogo 'Gerenciar Arquivos com Problemas' para ver os detalhes."
                     )
                 else:
                     QMessageBox.information(self, "Resultado", "Não foram encontradas inconsistências.")

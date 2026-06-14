@@ -15,6 +15,7 @@ from qgis.PyQt.QtGui import QColor
 from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis, QgsWkbTypes, QgsPointXY
 from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
 from ...core.file_transfer import FileTransferThread
+from ..ui_utils import format_failure_causes
 from ...config import Config
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -627,9 +628,12 @@ class AddProductDialog(QDialog, FORM_CLASS):
         checksum = self.calculate_checksum(file_path)
         
         # Obter informações do arquivo
+        # splitext preserva pontos internos do nome (ex.: "Carta_1.50.000.tif"
+        # -> nome "Carta_1.50.000", extensao "tif"); split('.')[0] truncava no 1º ponto
+        nome_base = os.path.splitext(os.path.basename(file_path))[0]
         file_info = {
-            'nome': os.path.basename(file_path).split('.')[0],
-            'nome_arquivo': os.path.basename(file_path).split('.')[0],
+            'nome': nome_base,
+            'nome_arquivo': nome_base,
             'extensao': os.path.splitext(file_path)[1][1:],
             'tipo_arquivo_id': 1,  # Arquivo principal por padrão
             'tamanho_mb': os.path.getsize(file_path) / (1024 * 1024),
@@ -1030,9 +1034,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
             # Todos os arquivos processados
             total = self.arquivos_transferidos
             if self.arquivos_com_falha > 0:
+                detalhe = format_failure_causes(self.failed_transfers)
                 reply = QMessageBox.question(
                     self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
+                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
@@ -1072,7 +1077,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
                 f"Transferindo: {nome} ({idx}/{total_files}) - {current_mb:.1f} / {total_mb:.1f} MB"
             )
 
-    def _handle_upload_file_complete(self, success, file_path, identifier):
+    def _handle_upload_file_complete(self, success, file_path, identifier, error_msg=None):
         """Manipular conclusão da transferência de um arquivo (sequencial)."""
         # Remover da fila
         if self._upload_queue:
@@ -1086,7 +1091,8 @@ class AddProductDialog(QDialog, FORM_CLASS):
             self.failed_transfers.append({
                 'source_path': arquivo_info['source_path'],
                 'destination_path': arquivo_info['destination_path'],
-                'identifier': identifier
+                'identifier': identifier,
+                'error': error_msg
             })
         self.progressBar.setValue(self.arquivos_transferidos)
 

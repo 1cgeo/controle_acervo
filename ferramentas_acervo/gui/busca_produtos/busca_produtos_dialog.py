@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
+from ..ui_utils import sortable_item, sortable_int_item
 import csv
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -50,6 +51,8 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         # Connect buttons
         self.searchButton.clicked.connect(self.search_produtos)
+        # Botão padrão: Enter dispara a busca a partir de qualquer filtro
+        self.searchButton.setDefault(True)
         self.firstPageButton.clicked.connect(self.go_to_first_page)
         self.prevPageButton.clicked.connect(self.go_to_prev_page)
         self.nextPageButton.clicked.connect(self.go_to_next_page)
@@ -183,9 +186,13 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
     def update_pagination_info(self):
         """Update pagination controls and info."""
-        self.pageInfoLabel.setText(
-            f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)"
-        )
+        if self.total_items == 0:
+            # Estado vazio explícito: distingue "sem resultados" de "falha ao buscar"
+            self.pageInfoLabel.setText("Nenhum produto encontrado para os filtros informados.")
+        else:
+            self.pageInfoLabel.setText(
+                f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)"
+            )
 
         self.firstPageButton.setEnabled(self.current_page > 1)
         self.prevPageButton.setEnabled(self.current_page > 1)
@@ -194,11 +201,16 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
     def populate_results_table(self, produtos):
         """Populate the table with search results."""
+        # Desliga a ordenação durante o preenchimento: com sorting ativo, cada
+        # setItem reordena as linhas e embaralha as células de uma mesma linha
+        self.resultsTable.setSortingEnabled(False)
         self.resultsTable.setRowCount(len(produtos))
 
         for row, produto in enumerate(produtos):
-            id_item = QTableWidgetItem(str(produto.get('id', '')))
-            id_item.setData(Qt.ItemDataRole.UserRole, produto.get('id'))
+            # ID ordena numericamente (EditRole inteiro), não como texto
+            id_value = produto.get('id')
+            id_item = sortable_int_item(id_value)
+            id_item.setData(Qt.ItemDataRole.UserRole, id_value)
             self.resultsTable.setItem(row, 0, id_item)
 
             # `or ''` cobre colunas nuláveis que chegam como None do servidor
@@ -209,19 +221,20 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             self.resultsTable.setItem(row, 5, QTableWidgetItem(produto.get('tipo_produto') or ''))
             self.resultsTable.setItem(row, 6, QTableWidgetItem(produto.get('descricao') or ''))
 
-            # Format dates
+            # Datas: exibe dd/MM/yyyy mas ordena pela chave ISO (cronológica)
             for col, field in [(7, 'data_cadastramento'), (8, 'data_modificacao')]:
                 date = produto.get(field, '')
                 if date:
                     date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                     date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
+                    self.resultsTable.setItem(row, col, sortable_item(date_formatted, date))
                 else:
-                    date_formatted = ""
-                self.resultsTable.setItem(row, col, QTableWidgetItem(date_formatted))
+                    self.resultsTable.setItem(row, col, sortable_item("", ""))
 
             num_versoes = produto.get('num_versoes', 0)
-            self.resultsTable.setItem(row, 9, QTableWidgetItem(str(num_versoes)))
+            self.resultsTable.setItem(row, 9, sortable_item(str(num_versoes), int(num_versoes or 0)))
 
+        self.resultsTable.setSortingEnabled(True)
         self.detailsButton.setEnabled(False)
 
     def on_selection_changed(self):

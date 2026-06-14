@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QPushButton, QMessageBox, QTableWidgetItem
 from qgis.PyQt.QtCore import Qt
+from ..ui_utils import wire_single_selection_buttons
 from .edit_volume_tipo_produto_dialog import EditVolumeTipoProdutoDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -15,15 +16,15 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
         self.iface = iface
         self.api_client = api_client
 
+        # O carregamento ocorre no showEvent (evita carga dupla ao abrir)
         self.setup_ui()
-        self.load_volume_tipo_produto()
 
     def setup_ui(self):
         self.setWindowTitle("Gerenciar Relacionamento Volume e Tipo de Produto")
-        
+
         # Configurar a tabela
         self.volumeTipoProdutoTable.setColumnCount(6)
-        self.volumeTipoProdutoTable.setHorizontalHeaderLabels(['Id', 'Tipo Produto', 'Volume Armazenamento', 'Nome Volume', 'Capacidade GB', 'Primário'])
+        self.volumeTipoProdutoTable.setHorizontalHeaderLabels(['Id', 'Tipo Produto', 'Volume Armazenamento', 'Nome Volume', 'Capacidade (GB)', 'Primário'])
         self.volumeTipoProdutoTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.volumeTipoProdutoTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
@@ -31,6 +32,9 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
         self.addButton.clicked.connect(self.add_volume_tipo_produto)
         self.editButton.clicked.connect(self.edit_volume_tipo_produto)
         self.deleteButton.clicked.connect(self.delete_volume_tipo_produto)
+
+        # Editar/Excluir só fazem sentido com uma linha selecionada
+        wire_single_selection_buttons(self.volumeTipoProdutoTable, self.editButton, self.deleteButton)
 
     def load_volume_tipo_produto(self):
         response = self.api_client.get('volumes/volume_tipo_produto')
@@ -72,9 +76,13 @@ class ManageVolumeTipoProdutoDialog(QDialog, FORM_CLASS):
     def delete_volume_tipo_produto(self):
         selected_rows = self.volumeTipoProdutoTable.selectionModel().selectedRows()
         if len(selected_rows) == 1:
-            id = int(self.volumeTipoProdutoTable.item(selected_rows[0].row(), 0).text())
+            row = selected_rows[0].row()
+            id = int(self.volumeTipoProdutoTable.item(row, 0).text())
+            tipo = self.volumeTipoProdutoTable.item(row, 1).text()
+            vol = self.volumeTipoProdutoTable.item(row, 3).text() or self.volumeTipoProdutoTable.item(row, 2).text()
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
-                                         'Tem certeza que deseja excluir este relacionamento?',
+                                         f"Tem certeza que deseja excluir o relacionamento entre o tipo "
+                                         f"de produto '{tipo}' e o volume '{vol}'?\n\nEsta ação não pode ser desfeita.",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('volumes/volume_tipo_produto', {'volume_tipo_produto_ids': [id]})

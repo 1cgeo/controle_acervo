@@ -69,6 +69,9 @@ class PedidosDialog(QDialog, FORM_CLASS):
             table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
 
+        self.browseButton.setToolTip("Selecionar a pasta de destino dos PDFs")
+        self.destinationLineEdit.setToolTip("Pasta onde os PDFs e o manifesto de impressão serão salvos")
+
         self.progressGroupBox.setVisible(False)
         self.cancelButton.setEnabled(False)
         self._atualizar_botoes()
@@ -94,8 +97,14 @@ class PedidosDialog(QDialog, FORM_CLASS):
 
     def load_pedidos(self):
         """Carrega os pedidos ativos (não concluídos/cancelados) do servidor."""
-        response = self.api_client.get('mapoteca/pedido')
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            response = self.api_client.get('mapoteca/pedido')
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
         if not response or 'dados' not in response:
+            self.statusLabel.setText("Não foi possível carregar os pedidos.")
             return
 
         self.pedidos = [
@@ -131,7 +140,10 @@ class PedidosDialog(QDialog, FORM_CLASS):
         self.itensTable.setRowCount(0)
         self.itens = []
         self.pedido_selecionado = None
-        self.statusLabel.setText(f"{len(self.pedidos)} pedido(s) ativo(s).")
+        if self.pedidos:
+            self.statusLabel.setText(f"{len(self.pedidos)} pedido(s) ativo(s).")
+        else:
+            self.statusLabel.setText("Nenhum pedido ativo no momento.")
         self._atualizar_botoes()
 
     def handle_pedido_selecionado(self):
@@ -146,8 +158,14 @@ class PedidosDialog(QDialog, FORM_CLASS):
         if not self.pedido_selecionado:
             return
 
-        response = self.api_client.get(f"mapoteca/pedido/{self.pedido_selecionado['id']}")
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            response = self.api_client.get(f"mapoteca/pedido/{self.pedido_selecionado['id']}")
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
         if not response or 'dados' not in response:
+            self.statusLabel.setText("Não foi possível carregar os itens do pedido.")
             return
 
         self.itens = response['dados'].get('produtos', [])

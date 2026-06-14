@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QTableWidget, QTableWidgetItem, QMessageBox
 from qgis.PyQt.QtCore import Qt, QDate
+from ..ui_utils import wire_single_selection_buttons
 from .edit_lote_dialog import EditLoteDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -16,8 +17,8 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         self.api_client = api_client
         self.lotes = []
 
+        # O carregamento ocorre no showEvent (evita carga dupla ao abrir)
         self.setup_ui()
-        self.load_lotes()
 
     def setup_ui(self):
         self.setWindowTitle("Gerenciar Lotes")
@@ -32,6 +33,9 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         self.addButton.clicked.connect(self.add_lote)
         self.editButton.clicked.connect(self.edit_lote)
         self.deleteButton.clicked.connect(self.delete_lote)
+
+        # Editar/Excluir só fazem sentido com uma linha selecionada
+        wire_single_selection_buttons(self.lotesTable, self.editButton, self.deleteButton)
 
         # Conectar campo de busca
         self.searchLineEdit.textChanged.connect(self.filter_lotes)
@@ -109,8 +113,11 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         selected_rows = self.lotesTable.selectionModel().selectedRows()
         if len(selected_rows) == 1:
             lote_id = int(self.lotesTable.item(selected_rows[0].row(), 0).text())
+            nome = self.lotesTable.item(selected_rows[0].row(), 1).text()
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
-                                         'Tem certeza que deseja excluir este lote?',
+                                         f"Tem certeza que deseja excluir o lote '{nome}'?\n\n"
+                                         "As versões vinculadas a este lote também podem ser afetadas. "
+                                         "Esta ação não pode ser desfeita.",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('projetos/lote', {'lote_ids': [lote_id]})

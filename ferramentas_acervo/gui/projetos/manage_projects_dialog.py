@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QPushButton, QMessageBox, QTableWidgetItem
 from qgis.PyQt.QtCore import Qt, QDate
+from ..ui_utils import wire_single_selection_buttons
 from .edit_project_dialog import EditProjectDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -15,8 +16,8 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         self.iface = iface
         self.api_client = api_client
 
+        # O carregamento ocorre no showEvent (evita carga dupla ao abrir)
         self.setup_ui()
-        self.load_projects()
 
     def setup_ui(self):
         self.setWindowTitle("Gerenciar Projetos")
@@ -31,6 +32,9 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         self.addButton.clicked.connect(self.add_project)
         self.editButton.clicked.connect(self.edit_project)
         self.deleteButton.clicked.connect(self.delete_project)
+
+        # Editar/Excluir só fazem sentido com uma linha selecionada
+        wire_single_selection_buttons(self.projectsTable, self.editButton, self.deleteButton)
 
         self.searchLineEdit.textChanged.connect(self.filter_projects)
 
@@ -103,8 +107,11 @@ class ManageProjectsDialog(QDialog, FORM_CLASS):
         selected_rows = self.projectsTable.selectionModel().selectedRows()
         if len(selected_rows) == 1:
             project_id = int(self.projectsTable.item(selected_rows[0].row(), 0).text())
+            nome = self.projectsTable.item(selected_rows[0].row(), 1).text()
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
-                                         'Tem certeza que deseja excluir este projeto?',
+                                         f"Tem certeza que deseja excluir o projeto '{nome}'?\n\n"
+                                         "Os lotes e versões vinculados a este projeto também podem "
+                                         "ser afetados. Esta ação não pode ser desfeita.",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('projetos/projeto', {'projeto_ids': [project_id]})

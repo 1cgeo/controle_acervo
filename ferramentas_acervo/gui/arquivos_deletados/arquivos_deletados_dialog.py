@@ -4,6 +4,7 @@ from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
 from qgis.core import Qgis
+from ..ui_utils import sortable_item, sortable_int_item
 import csv
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -102,7 +103,10 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
         self.current_page = pagination.get('currentPage', 1)
         
         # Update pagination controls
-        self.pageInfoLabel.setText(f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)")
+        if self.total_items == 0:
+            self.pageInfoLabel.setText("Nenhum arquivo deletado registrado.")
+        else:
+            self.pageInfoLabel.setText(f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)")
         
         # Enable/disable navigation buttons
         self.firstPageButton.setEnabled(self.current_page > 1)
@@ -112,12 +116,15 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
     
     def populate_files_table(self, files):
         """Populate the table with deleted files data."""
+        # Desliga a ordenação durante o preenchimento: com sorting ativo, popular
+        # por índice embaralha as células de uma mesma linha
+        self.filesTable.setSortingEnabled(False)
         self.filesTable.setRowCount(len(files))
-        
+
         for row, file in enumerate(files):
             # `get(chave, '')` não cobre valor None vindo do servidor (colunas
             # nuláveis e LEFT JOINs) — usar `or ''` para não passar None ao Qt
-            self.filesTable.setItem(row, 0, QTableWidgetItem(str(file.get('id') or '')))
+            self.filesTable.setItem(row, 0, sortable_int_item(file.get('id')))
             self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome') or ''))
             self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo') or ''))
             self.filesTable.setItem(row, 3, QTableWidgetItem(file.get('extensao') or ''))
@@ -135,18 +142,20 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
 
             tamanho = file.get('tamanho_mb', 0)
             tamanho_formatado = f"{tamanho:.2f}" if tamanho else ""
-            self.filesTable.setItem(row, 11, QTableWidgetItem(tamanho_formatado))
+            self.filesTable.setItem(row, 11, sortable_item(tamanho_formatado, float(tamanho or 0)))
 
-            # Format the date
+            # Format the date (ordena pela chave ISO, exibe dd/MM/yyyy)
             date = file.get('data_delete') or ''
             if date:
                 date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
+                self.filesTable.setItem(row, 12, sortable_item(date_formatted, date))
             else:
-                date_formatted = "Sem data"
-            self.filesTable.setItem(row, 12, QTableWidgetItem(date_formatted))
+                self.filesTable.setItem(row, 12, sortable_item("Sem data", ""))
 
             self.filesTable.setItem(row, 13, QTableWidgetItem(file.get('motivo_exclusao') or ''))
+
+        self.filesTable.setSortingEnabled(True)
             
     def go_to_first_page(self):
         """Navigate to the first page."""

@@ -47,6 +47,9 @@
                                                 <height>32</height>
                                             </size>
                                         </property>
+                                        <property name="placeholderText">
+                                            <string>http://servidor:porta</string>
+                                        </property>
                                     </widget>
                                 </item>
                                 <item row="1" column="0">
@@ -132,6 +135,9 @@
                         <widget class="QPushButton" name="submitBtn">
                             <property name="text">
                                 <string>&amp;Confirmar</string>
+                            </property>
+                            <property name="default">
+                                <bool>true</bool>
                             </property>
                         </widget>
                     </item>

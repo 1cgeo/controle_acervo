@@ -181,7 +181,7 @@ class DownloadManager(QObject):
         if not self._active_threads:
             _orphaned_managers.discard(self)
 
-    def _handle_file_transfer_complete(self, success, file_path, identifier):
+    def _handle_file_transfer_complete(self, success, file_path, identifier, error_msg=None):
         """Handle completion of a file transfer with checksum retry logic."""
         if self._shutdown or not self.current_transfer:
             return
@@ -244,7 +244,7 @@ class DownloadManager(QObject):
                 # Sem checksum esperado (ex: tileserver) - aceitar como sucesso
                 error_message = None
         else:
-            error_message = "Falha na transferência do arquivo"
+            error_message = error_msg or "Falha na transferência do arquivo"
 
         # Remover da fila de pendentes
         if file_info in self._pending_files:

@@ -25,9 +25,13 @@
      <property name="sortingEnabled">
       <bool>true</bool>
      </property>
-     <attribute name="horizontalHeaderStretchLastSection">
-      <bool>true</bool>
-     </attribute>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string/>
+     </property>
     </widget>
    </item>
    <item>

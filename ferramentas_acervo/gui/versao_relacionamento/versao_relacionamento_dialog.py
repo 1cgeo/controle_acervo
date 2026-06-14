@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
+from ..ui_utils import sortable_item, sortable_int_item
 import csv
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -62,9 +63,11 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def populate_table(self, relacionamentos):
+        # Desliga a ordenação durante o preenchimento para não embaralhar células
+        self.relationshipsTable.setSortingEnabled(False)
         self.relationshipsTable.setRowCount(len(relacionamentos))
         for row, rel in enumerate(relacionamentos):
-            self.relationshipsTable.setItem(row, 0, QTableWidgetItem(str(rel.get('id', ''))))
+            self.relationshipsTable.setItem(row, 0, sortable_int_item(rel.get('id')))
             self.relationshipsTable.setItem(row, 1, QTableWidgetItem(rel.get('tipo_relacionamento_nome', '')))
             self.relationshipsTable.setItem(row, 2, QTableWidgetItem(rel.get('produto_nome_1', '')))
             self.relationshipsTable.setItem(row, 3, QTableWidgetItem(rel.get('mi_1', '') or ''))
@@ -78,9 +81,16 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
             if date:
                 date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                 date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
+                self.relationshipsTable.setItem(row, 10, sortable_item(date_formatted, date))
             else:
-                date_formatted = ""
-            self.relationshipsTable.setItem(row, 10, QTableWidgetItem(date_formatted))
+                self.relationshipsTable.setItem(row, 10, sortable_item("", ""))
+        self.relationshipsTable.setSortingEnabled(True)
+
+        # Estado vazio / contagem
+        if not relacionamentos:
+            self.infoLabel.setText("Nenhum relacionamento entre versões cadastrado.")
+        else:
+            self.infoLabel.setText(f"{len(relacionamentos)} relacionamento(s).")
 
     def refresh_data(self):
         self.load_relacionamentos()

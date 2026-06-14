@@ -1,7 +1,7 @@
 # Path: gui\informacao_produto\deletion_confirmation_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QMessageBox
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QStyle
 from qgis.PyQt.QtCore import Qt
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -27,11 +27,16 @@ class DeletionConfirmationDialog(QDialog, FORM_CLASS):
         self.item_type = item_type
         self.item_name = item_name
         
+        # Ícone de aviso a partir do tema atual (o pixmap do .ui apontava para
+        # um arquivo inexistente; usar o ícone padrão evita um label vazio)
+        warning_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        self.warningIconLabel.setPixmap(warning_icon.pixmap(48, 48))
+
         # Configurar strings específicas
         self.setWindowTitle(f"Confirmar Exclusão de {item_type.title()}")
         self.warningLabel.setText(f"Você está prestes a excluir o {item_type} <b>{item_name}</b>. Esta ação não pode ser desfeita.")
         self.confirmLabel.setText(f"Digite o nome do {item_type} para confirmar:")
-        self.nameLineEdit.setPlaceholder(f"Digite '{item_name}' para confirmar")
+        self.nameLineEdit.setPlaceholderText(f"Digite '{item_name}' para confirmar")
         
         # Conectar eventos
         self.nameLineEdit.textChanged.connect(self.validate_form)

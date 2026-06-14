@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QTableWidget, QTableWidgetItem, QMessageBox
 from qgis.PyQt.QtCore import Qt
+from ..ui_utils import wire_single_selection_buttons
 from .edit_volume_dialog import EditVolumeDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -15,8 +16,8 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
         self.iface = iface
         self.api_client = api_client
 
+        # O carregamento ocorre no showEvent (evita carga dupla ao abrir)
         self.setup_ui()
-        self.load_volumes()
 
     def setup_ui(self):
         self.setWindowTitle("Gerenciar Volumes de Armazenamento")
@@ -31,6 +32,9 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
         self.addButton.clicked.connect(self.add_volume)
         self.editButton.clicked.connect(self.edit_volume)
         self.deleteButton.clicked.connect(self.delete_volume)
+
+        # Editar/Excluir só fazem sentido com uma linha selecionada
+        wire_single_selection_buttons(self.volumesTable, self.editButton, self.deleteButton)
 
     def load_volumes(self):
         response = self.api_client.get('volumes/volume_armazenamento')
@@ -73,8 +77,11 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
         selected_rows = self.volumesTable.selectionModel().selectedRows()
         if len(selected_rows) == 1:
             volume_id = int(self.volumesTable.item(selected_rows[0].row(), 0).text())
+            nome = self.volumesTable.item(selected_rows[0].row(), 1).text()
             reply = QMessageBox.question(self, 'Confirmar Exclusão',
-                                         'Tem certeza que deseja excluir este volume?',
+                                         f"Tem certeza que deseja excluir o volume '{nome}'?\n\n"
+                                         "Arquivos ou associações que dependam deste volume podem "
+                                         "impedir a exclusão. Esta ação não pode ser desfeita.",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 success = self.api_client.delete('volumes/volume_armazenamento', {'volume_armazenamento_ids': [volume_id]})

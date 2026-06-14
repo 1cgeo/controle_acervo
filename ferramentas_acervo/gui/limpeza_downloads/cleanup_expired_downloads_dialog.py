@@ -2,6 +2,7 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QPushButton
+from qgis.PyQt.QtCore import Qt
 from qgis.core import Qgis
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -27,17 +28,21 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
         reply = QMessageBox.question(
             self,
             'Confirmar Limpeza',
-            'Tem certeza que deseja limpar todos os downloads expirados?',
+            'Tem certeza que deseja remover permanentemente todos os downloads expirados?\n\n'
+            'Esta ação não pode ser desfeita.',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
-        
+
         if reply != QMessageBox.StandardButton.Yes:
             return
-            
+
         try:
+            # Operação síncrona: indica progresso e impede cliques repetidos
+            self.cleanupButton.setEnabled(False)
+            self.setCursor(Qt.CursorShape.WaitCursor)
             response = self.api_client.post('acervo/cleanup-expired-downloads')
-            
+
             if response:
                 QMessageBox.information(
                     self,
@@ -62,3 +67,6 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
                 "Erro",
                 f"Erro ao limpar downloads expirados: {str(e)}"
             )
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.cleanupButton.setEnabled(True)

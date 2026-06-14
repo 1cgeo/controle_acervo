@@ -8,6 +8,7 @@ from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QProgressBar, QVBoxLayout
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QDate
 from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes, Qgis, NULL
 from ...core.file_transfer import FileTransferThread
+from ..ui_utils import format_failure_causes, transfer_error_text
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'bulk_carrega_produtos_versoes_arquivos_dialog.ui'))
@@ -434,7 +435,7 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                 f"Transferindo arquivo {idx}/{total_files} - {current_mb:.1f} / {total_mb:.1f} MB"
             )
 
-    def file_transfer_complete(self, success, file_path, checksum):
+    def file_transfer_complete(self, success, file_path, checksum, error_msg=None):
         """Manipula a conclusão da transferência de um arquivo"""
         self.arquivos_transferidos += 1
         if not success:
@@ -444,18 +445,20 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
                     self.failed_transfers.append({
                         'source_path': thread.source_path,
                         'destination_path': thread.destination_path,
-                        'identifier': thread.identifier
+                        'identifier': thread.identifier,
+                        'error': error_msg
                     })
                     break
-            self.statusLabel.setText(f"Erro na transferência de {os.path.basename(file_path)}")
+            self.statusLabel.setText(transfer_error_text(os.path.basename(file_path), error_msg))
         self.progressBar.setValue(self.arquivos_transferidos)
 
         # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
         if self.arquivos_transferidos == len(self.transfer_threads):
             if self.arquivos_com_falha > 0:
+                detalhe = format_failure_causes(self.failed_transfers)
                 reply = QMessageBox.question(
                     self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
+                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )

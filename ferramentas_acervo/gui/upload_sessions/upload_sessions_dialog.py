@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
+from ..ui_utils import sortable_item
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'upload_sessions_dialog.ui'))
 
@@ -38,6 +39,8 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
 
+        self.cancelSessionButton.setToolTip("Somente sessões pendentes podem ser canceladas.")
+
         self.sessionsTable.itemSelectionChanged.connect(self.on_selection_changed)
         self.cancelSessionButton.clicked.connect(self.cancel_session)
         self.refreshButton.clicked.connect(self.refresh_data)
@@ -58,6 +61,8 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def populate_sessions_table(self, sessions):
+        # Desliga a ordenação durante o preenchimento para não embaralhar células
+        self.sessionsTable.setSortingEnabled(False)
         self.sessionsTable.setRowCount(len(sessions))
         operation_type_map = {
             'add_files': 'Adicionar Arquivos',
@@ -83,12 +88,20 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
                 date = session.get(field, '')
                 if date:
                     date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
-                    date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
+                    # ordena cronologicamente pela chave ISO
+                    item = sortable_item(date_dt.toString('dd/MM/yyyy HH:mm:ss'), date)
                 else:
-                    date_formatted = ""
-                self.sessionsTable.setItem(row, col, QTableWidgetItem(date_formatted))
+                    item = sortable_item("—", "")
+                self.sessionsTable.setItem(row, col, item)
             self.sessionsTable.setItem(row, 7, QTableWidgetItem(session.get('usuario_nome', '')))
+        self.sessionsTable.setSortingEnabled(True)
         self.cancelSessionButton.setEnabled(False)
+
+        # Estado vazio / contagem
+        if not sessions:
+            self.infoLabel.setText("Nenhuma sessão de upload registrada.")
+        else:
+            self.infoLabel.setText(f"{len(sessions)} sessão(ões) de upload.")
 
     def on_selection_changed(self):
         selected_rows = self.sessionsTable.selectionModel().selectedRows()

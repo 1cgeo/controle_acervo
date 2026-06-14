@@ -1,7 +1,8 @@
 # Path: gui\materialized_views\create_materialized_view_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QApplication
+from qgis.PyQt.QtCore import Qt
 from qgis.core import Qgis
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -43,7 +44,10 @@ class CreateMaterializedViewDialog(QDialog, FORM_CLASS):
                 "Criando visões materializadas. Por favor, aguarde...",
                 level=Qgis.MessageLevel.Info
             )
-            
+            # Força a pintura do estado desabilitado/mensagem antes da chamada bloqueante
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            QApplication.processEvents()
+
             # Criar todas as MVs pode demorar mais que o timeout padrão de 30s
             response = self.api_client.post('acervo/create_materialized_views', timeout=600)
             
@@ -67,4 +71,5 @@ class CreateMaterializedViewDialog(QDialog, FORM_CLASS):
                 f"Erro ao criar visões materializadas: {str(e)}"
             )
         finally:
+            QApplication.restoreOverrideCursor()
             self.setEnabled(True)

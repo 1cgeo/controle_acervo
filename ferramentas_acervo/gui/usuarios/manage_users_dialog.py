@@ -33,6 +33,11 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
         self.usersTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.usersTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
+        # "Atualizar" era ambíguo (sugeria recarregar); a ação salva as
+        # alterações feitas nos checkboxes da tabela
+        self.updateButton.setText("Salvar Alterações")
+        self.updateButton.setToolTip("Salva as alterações de Administrador/Ativo feitas na tabela.")
+
         # Conectar botões
         self.updateButton.clicked.connect(self.update_users)
         self.importButton.clicked.connect(self.import_users)
@@ -71,18 +76,54 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
 
     def update_users(self):
         updated_users = []
+        changes = 0
+        self_lockout = False
+        current_uuid = getattr(self.api_client, 'user_uuid', None)
+
         for row in range(self.usersTable.rowCount()):
             login = self.usersTable.item(row, 2).text()
             user = next((u for u in self.users if u['login'] == login), None)
             if user:
                 admin_checkbox = self.usersTable.cellWidget(row, 3)
                 active_checkbox = self.usersTable.cellWidget(row, 4)
+                new_admin = admin_checkbox.isChecked()
+                new_active = active_checkbox.isChecked()
+
+                if bool(user.get('administrador')) != new_admin or bool(user.get('ativo')) != new_active:
+                    changes += 1
+
+                # Proteção contra auto-bloqueio: o admin logado não pode remover
+                # o próprio privilégio nem desativar a própria conta
+                if current_uuid and user.get('uuid') == current_uuid and (not new_admin or not new_active):
+                    self_lockout = True
 
                 updated_users.append({
                     'uuid': user['uuid'],
-                    'administrador': admin_checkbox.isChecked(),
-                    'ativo': active_checkbox.isChecked()
+                    'administrador': new_admin,
+                    'ativo': new_active
                 })
+
+        if self_lockout:
+            QMessageBox.warning(
+                self, "Ação bloqueada",
+                "Você não pode remover seu próprio privilégio de administrador nem "
+                "desativar a sua própria conta — isso o impediria de acessar esta tela.\n\n"
+                "Desfaça a alteração na sua conta antes de salvar."
+            )
+            return
+
+        if changes == 0:
+            QMessageBox.information(self, "Informação", "Nenhuma alteração a salvar.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirmar Alterações",
+            f"{changes} usuário(s) terão privilégios/estado alterados. Deseja salvar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
         success = self.api_client.put('usuarios', {'usuarios': updated_users})
         if success:

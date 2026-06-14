@@ -3,6 +3,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDateTime
+from ..ui_utils import sortable_item, sortable_int_item
 import csv
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -76,18 +77,23 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def update_pagination_info(self):
-        self.pageInfoLabel.setText(
-            f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)"
-        )
+        if self.total_items == 0:
+            self.pageInfoLabel.setText("Nenhum download excluído registrado.")
+        else:
+            self.pageInfoLabel.setText(
+                f"Página {self.current_page} de {self.total_pages} (Total: {self.total_items} itens)"
+            )
         self.firstPageButton.setEnabled(self.current_page > 1)
         self.prevPageButton.setEnabled(self.current_page > 1)
         self.nextPageButton.setEnabled(self.current_page < self.total_pages)
         self.lastPageButton.setEnabled(self.current_page < self.total_pages)
 
     def populate_downloads_table(self, downloads):
+        # Desliga a ordenação durante o preenchimento para não embaralhar células
+        self.downloadsTable.setSortingEnabled(False)
         self.downloadsTable.setRowCount(len(downloads))
         for row, download in enumerate(downloads):
-            self.downloadsTable.setItem(row, 0, QTableWidgetItem(str(download.get('id', ''))))
+            self.downloadsTable.setItem(row, 0, sortable_int_item(download.get('id')))
             self.downloadsTable.setItem(row, 1, QTableWidgetItem(download.get('arquivo_nome', '') or ''))
             self.downloadsTable.setItem(row, 2, QTableWidgetItem(download.get('nome_arquivo', '') or ''))
             self.downloadsTable.setItem(row, 3, QTableWidgetItem(download.get('usuario_nome', '') or ''))
@@ -96,10 +102,11 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
                 if date:
                     date_dt = QDateTime.fromString(date, Qt.DateFormat.ISODate)
                     date_formatted = date_dt.toString('dd/MM/yyyy HH:mm:ss')
+                    self.downloadsTable.setItem(row, col, sortable_item(date_formatted, date))
                 else:
-                    date_formatted = ""
-                self.downloadsTable.setItem(row, col, QTableWidgetItem(date_formatted))
+                    self.downloadsTable.setItem(row, col, sortable_item("", ""))
             self.downloadsTable.setItem(row, 5, QTableWidgetItem(download.get('motivo_exclusao', '') or ''))
+        self.downloadsTable.setSortingEnabled(True)
 
     def go_to_first_page(self):
         if self.current_page > 1:

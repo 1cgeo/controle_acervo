@@ -142,7 +142,7 @@ class ImpressaoManager(QObject):
                 ainda_ativas.append(thread)
         self._active_threads = ainda_ativas
 
-    def _handle_file_transfer_complete(self, success, file_path, identifier):
+    def _handle_file_transfer_complete(self, success, file_path, identifier, error_msg=None):
         """Trata a conclusão de uma transferência, com retentativa de checksum."""
         # Após shutdown/cancelamento não processar (a UI pode estar fechando).
         # A thread continua referenciada em _active_threads até finished.
@@ -195,7 +195,7 @@ class ImpressaoManager(QObject):
                         except OSError:
                             pass
         else:
-            error_message = "Falha na transferência do arquivo"
+            error_message = error_msg or "Falha na transferência do arquivo"
 
         if file_info in self._pending_files:
             self._pending_files.remove(file_info)

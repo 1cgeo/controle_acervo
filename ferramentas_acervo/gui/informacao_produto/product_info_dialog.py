@@ -327,6 +327,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
                     'target_version_id': rel['versao_relacionada_id'],
                     'target_version_name': "Carregando...",
                     'target_product_name': "Carregando...",
+                    'target_product_id': None,
                     'relationship_type': rel['tipo_relacionamento'],
                     'relationship_type_id': rel.get('tipo_relacionamento_id', 0)
                 }
@@ -356,6 +357,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
                     relationship = tree_item.data(0, Qt.ItemDataRole.UserRole)
                     if relationship:
                         relationship['target_product_name'] = product_data['nome']
+                        relationship['target_product_id'] = version_data['produto_id']
                         relationship['target_version_name'] = f"{version_data['versao']} - {version_data['nome_versao'] or 'Sem nome'}"
                         tree_item.setData(0, Qt.ItemDataRole.UserRole, relationship)
                 else:
@@ -542,18 +544,30 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
                 QMessageBox.critical(self, "Erro", f"Erro ao excluir relacionamento: {str(e)}")
     
     def navigate_to_related_product(self):
-        """Navega para o produto relacionado selecionado."""
+        """Navega para o produto relacionado selecionado, recarregando o diálogo
+        com os dados do produto de destino."""
         relationship = self.relationships_tab.get_selected_relationship()
         if not relationship:
             QMessageBox.warning(self, "Aviso", "Selecione um relacionamento para navegar.")
             return
-            
-        # Em uma implementação real, você buscaria o produto e carregaria seus detalhes
-        QMessageBox.information(
-            self, 
-            "Navegação", 
-            f"Navegação para o produto relacionado: {relationship['target_product_name']}"
-        )
+
+        target_product_id = relationship.get('target_product_id')
+        if not target_product_id:
+            QMessageBox.information(
+                self,
+                "Aguarde",
+                "As informações do produto relacionado ainda estão sendo carregadas. "
+                "Tente novamente em instantes."
+            )
+            return
+
+        if target_product_id == self.product_id:
+            QMessageBox.information(self, "Navegação", "Este já é o produto exibido atualmente.")
+            return
+
+        # Reaproveita o carregamento por ID, que recarrega todas as abas
+        self.product_id = target_product_id
+        self.load_product_by_id()
     
     def reload_product_info(self):
         """Recarrega as informações do produto após alterações."""

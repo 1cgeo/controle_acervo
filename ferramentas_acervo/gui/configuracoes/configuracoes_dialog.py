@@ -25,6 +25,11 @@ class ConfiguracoesDialog(QDialog):
         # Domínio padrão
         smbLabel = QLabel("Domínio SMB padrão:")
         self.smbDomainLineEdit = QLineEdit()
+        self.smbDomainLineEdit.setPlaceholderText("Ex.: 1CGEO")
+        self.smbDomainLineEdit.setToolTip(
+            "Usado apenas em transferências de arquivos via SMB (Linux).\n"
+            "No Windows este campo não tem efeito."
+        )
         smbLayout.addWidget(smbLabel)
         smbLayout.addWidget(self.smbDomainLineEdit)
         
@@ -39,7 +44,8 @@ class ConfiguracoesDialog(QDialog):
         self.ignoreProxyCheckBox.setToolTip(
             "Quando marcado, as requisições do plugin conectam diretamente ao servidor,\n"
             "ignorando qualquer proxy configurado no sistema ou no QGIS.\n"
-            "Útil para evitar erros 407 (Proxy Authentication Required)."
+            "Útil para evitar erros 407 (Proxy Authentication Required).\n"
+            "Esta mesma opção também está disponível na tela de login."
         )
         networkLayout.addWidget(self.ignoreProxyCheckBox)
 
@@ -49,14 +55,18 @@ class ConfiguracoesDialog(QDialog):
         # Botões
         self.saveButton = QPushButton("Salvar")
         self.saveButton.clicked.connect(self.save_settings)
+        self.saveButton.setDefault(True)  # Enter confirma
         self.cancelButton = QPushButton("Cancelar")
         self.cancelButton.clicked.connect(self.reject)
-        
+
+        self.mainLayout.addStretch()
         buttonLayout = QHBoxLayout()
+        buttonLayout.addStretch()  # empurra os botões para a direita
         buttonLayout.addWidget(self.saveButton)
         buttonLayout.addWidget(self.cancelButton)
-        
+
         self.mainLayout.addLayout(buttonLayout)
+        self.setMinimumWidth(360)
         
     def load_settings(self):
         """Carregar configurações salvas."""
@@ -74,6 +84,7 @@ class ConfiguracoesDialog(QDialog):
         smb_domain = self.smbDomainLineEdit.text().strip()
         if not smb_domain:
             QMessageBox.warning(self, "Aviso", "O domínio SMB não pode ser vazio.")
+            self.smbDomainLineEdit.setFocus()
             return
             
         self.settings.set("smb_default_domain", smb_domain)

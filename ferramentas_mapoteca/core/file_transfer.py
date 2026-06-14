@@ -10,7 +10,10 @@ from .authSMB import AuthSMB
 
 class FileTransferThread(QThread):
     progress_update = pyqtSignal(int, int)
-    file_transferred = pyqtSignal(bool, str, str)
+    # bool sucesso, str caminho_destino, str identificador, str mensagem_erro
+    # (mensagem_erro vazia em caso de sucesso). Slots que aceitam só 3 args
+    # continuam funcionando — PyQt descarta o argumento extra.
+    file_transferred = pyqtSignal(bool, str, str, str)
 
     # Cache de credenciais SMB por sessão (compartilhado entre instâncias)
     _cached_smb_credentials = None
@@ -40,32 +43,37 @@ class FileTransferThread(QThread):
         source = (self.source_path or '').strip()
         if not source or source.lower().startswith(('http://', 'https://')):
             logging.error(f"Caminho de origem inválido para cópia de arquivo: {self.source_path!r}")
-            self.file_transferred.emit(False, self.destination_path, self.identifier)
+            self.file_transferred.emit(False, self.destination_path, self.identifier,
+                                       "Caminho de origem inválido (vazio ou URL não copiável).")
             return
 
+        last_error = "Falha na transferência do arquivo."
         for attempt in range(1, self.max_retries + 1):
             try:
                 if self.cancelled:
-                    self.file_transferred.emit(False, self.destination_path, self.identifier)
+                    self.file_transferred.emit(False, self.destination_path, self.identifier,
+                                               "Transferência cancelada.")
                     return
 
                 if platform.system() == 'Windows':
-                    success = self.transfer_file_windows()
+                    success, error = self.transfer_file_windows()
                 else:
-                    success = self.transfer_file_linux()
+                    success, error = self.transfer_file_linux()
 
                 if success:
-                    self.file_transferred.emit(True, self.destination_path, self.identifier)
+                    self.file_transferred.emit(True, self.destination_path, self.identifier, "")
                     return  # Transferência bem-sucedida, retornar
                 else:
-                    # Transferência falhou, mas sem exceção
-                    logging.warning(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo (retorno falso)")
-                    # Emitir progresso para informar falha na tentativa
-                    self.progress_update.emit(0, 100)
+                    # Transferência falhou, mas sem exceção. Não emitir
+                    # progress_update(0, 100) aqui: zerar a barra a cada tentativa
+                    # faz o progresso "recuar" e parece travamento. A causa é
+                    # guardada e enviada no emit final.
+                    last_error = error or last_error
+                    logging.warning(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {last_error}")
 
             except Exception as e:
-                logging.error(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {str(e)}")
-                self.progress_update.emit(0, 100)
+                last_error = str(e)
+                logging.error(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {last_error}")
 
             # Se chegou aqui, houve falha. Verificar se deve tentar novamente
             if attempt < self.max_retries and not self.cancelled:
@@ -75,7 +83,9 @@ class FileTransferThread(QThread):
             else:
                 # Todas as tentativas falharam (ou a transferência foi cancelada)
                 logging.error(f"Todas as tentativas de transferência falharam para {self.source_path}")
-                self.file_transferred.emit(False, self.destination_path, self.identifier)
+                if self.cancelled:
+                    last_error = "Transferência cancelada."
+                self.file_transferred.emit(False, self.destination_path, self.identifier, last_error)
                 return  # Sem este return o laço continuava e emitia file_transferred em duplicidade
 
     def _interruptible_sleep(self, seconds):
@@ -93,6 +103,7 @@ class FileTransferThread(QThread):
         self.cancelled = True
 
     def transfer_file_windows(self):
+        """Retorna (sucesso, mensagem_erro|None)."""
         source_path = self.source_path.replace("/", "\\")
         dest_path = self.destination_path.replace("/", "\\")
 
@@ -102,15 +113,22 @@ class FileTransferThread(QThread):
             try:
                 os.makedirs(dest_dir, exist_ok=True)
             except Exception as e:
-                logging.error(f"Erro ao criar diretório de destino: {dest_dir}, {str(e)}")
-                return False
+                msg = f"Não foi possível criar a pasta de destino: {e}"
+                logging.error(msg)
+                return False, msg
+
+        if not os.path.exists(source_path):
+            msg = f"Arquivo de origem inacessível: {source_path}"
+            logging.error(msg)
+            return False, msg
 
         # Usar cópia Python com progresso para todos os tamanhos de arquivo
         try:
             return self._copy_file_with_progress(source_path, dest_path)
         except Exception as e:
-            logging.error(f"Erro ao copiar arquivo: {str(e)}")
-            return False
+            msg = f"Erro ao copiar o arquivo: {e}"
+            logging.error(msg)
+            return False, msg
 
     @classmethod
     def ensure_smb_credentials(cls, parent=None):
@@ -150,12 +168,10 @@ class FileTransferThread(QThread):
             # e criar GUI fora da thread principal derruba o QGIS. As credenciais
             # devem ser obtidas antes, via ensure_smb_credentials() na thread
             # principal.
-            logging.error(
-                "Credenciais SMB não disponíveis na thread de transferência. "
-                "Chame FileTransferThread.ensure_smb_credentials() na thread "
-                "principal antes de iniciar a transferência."
-            )
-            return False
+            msg = ("Credenciais de rede (SMB) não disponíveis na thread de "
+                   "transferência. Informe as credenciais antes de iniciar.")
+            logging.error(msg)
+            return False, msg
 
         source_path = self.source_path.replace("\\", "/")
         script_path = os.path.join(os.path.dirname(__file__), 'getFileBySMB.py')
@@ -180,7 +196,7 @@ class FileTransferThread(QThread):
             with open(dest_path, 'wb'):
                 pass
             self.progress_update.emit(1, 1)
-            return True
+            return True, None
 
         bytes_copied = 0
 
@@ -200,27 +216,36 @@ class FileTransferThread(QThread):
                     self.progress_update.emit(bytes_copied, file_size)
                     buffer = src.read(buffer_size)
 
-        return not self.cancelled
+        if self.cancelled:
+            return False, "Transferência cancelada."
+        return True, None
 
     def run_system_command(self, command):
+        """Executa o comando de cópia SMB. Retorna (sucesso, mensagem_erro|None)."""
         try:
             if isinstance(command, list):
                 result = subprocess.run(command, check=True, capture_output=True, text=True)
             else:
                 result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-            
+
             if result.returncode == 0:
                 logging.info(f"Comando executado com sucesso: {command if isinstance(command, str) else ' '.join(command)}")
                 # Emitir progresso 100% para indicar sucesso
                 self.progress_update.emit(100, 100)
-                return True
+                return True, None
             else:
+                msg = (result.stderr or '').strip() or f"Comando falhou (código {result.returncode})"
                 logging.error(f"Comando falhou com código de retorno {result.returncode}: {result.stderr}")
-                return False
-                
+                return False, msg
+
         except subprocess.CalledProcessError as e:
+            # getFileBySMB.py escreve mensagens claras em stderr (biblioteca
+            # ausente, credenciais incompletas, erro de transferência) —
+            # propagá-las à UI em vez do genérico "Falha na transferência"
+            msg = (e.stderr or '').strip() or str(e)
             logging.error(f"Erro ao executar comando: {str(e)}, saída: {e.stderr}")
-            return False
+            return False, msg
         except Exception as e:
-            logging.error(f"Exceção ao executar comando: {str(e)}")
-            return False
+            msg = str(e)
+            logging.error(f"Exceção ao executar comando: {msg}")
+            return False, msg

@@ -9,6 +9,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtCore import Qt, QDate
 from ...core.file_transfer import FileTransferThread
+from ..ui_utils import format_failure_causes
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'add_version_to_product_dialog.ui'))
@@ -379,7 +380,7 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         # Este método pode ser usado para mostrar o progresso de um arquivo específico
         pass
     
-    def file_transfer_complete(self, success, file_path, identifier):
+    def file_transfer_complete(self, success, file_path, identifier, error_msg=None):
         """Manipula conclusão da transferência de um arquivo."""
         self.arquivos_transferidos += 1
         if not success:
@@ -389,7 +390,8 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
                     self.failed_transfers.append({
                         'source_path': thread.source_path,
                         'destination_path': thread.destination_path,
-                        'identifier': thread.identifier
+                        'identifier': thread.identifier,
+                        'error': error_msg
                     })
                     break
         self.progressBar.setValue(self.arquivos_transferidos)
@@ -397,9 +399,10 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
         if self.arquivos_transferidos == len(self.transfer_threads):
             if self.arquivos_com_falha > 0:
+                detalhe = format_failure_causes(self.failed_transfers)
                 reply = QMessageBox.question(
                     self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.\n"
+                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
                     "Deseja tentar novamente apenas os arquivos que falharam?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
