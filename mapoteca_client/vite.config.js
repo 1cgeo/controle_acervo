@@ -4,6 +4,7 @@ import { resolve } from 'path';
 export default defineConfig({
   root: '.',
   publicDir: 'public',
+  base: '/mapoteca/',
   server: {
     port: 3001,
     proxy: {

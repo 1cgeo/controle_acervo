@@ -15,6 +15,7 @@
     "config": "node create_config.js",
     "build": "node create_build.js",
     "start": "pm2 start server/src/index.js --name controle-acervo",
+    "deploy": "npm run build && pm2 startOrReload ecosystem.config.cjs && pm2 save",
     "start-dev": "concurrently \"cd server && npm run dev\""
   },
   "keywords": [

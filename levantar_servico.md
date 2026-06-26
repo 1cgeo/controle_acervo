@@ -1,99 +1,50 @@
-# Levantar o Controle do Acervo (ambiente de desenvolvimento)
+# Levantar o Controle do Acervo (SCA)
 
-Guia para subir o sistema completo localmente. A ordem importa: o **SCA server aborta o boot** se o Auth Server não estiver operacional (`main.js`: `db → verifyAuthServer → cron → startServer`).
+O SCA server **aborta o boot se o Auth Server nao estiver operacional** (`main.js`: `db -> verifyAuthServer -> cron -> startServer`). Suba o auth antes.
 
 ## Componentes e portas
 
-| Componente | Diretório | Porta | Como subir |
-|---|---|---|---|
-| PostgreSQL + PostGIS | (serviço do SO) | 5432 | precisa estar rodando antes de tudo |
-| Auth Server (dependência externa) | `D:\desenvolvimento\servico_autenticacao\server` | 3010 | `node dist/index.js` |
-| SCA Server (API REST) | `server` | 3015 | `npm run dev` |
-| Acervo Client (dashboard) | `acervo_client` | 3000 | `npm run dev` |
-| Mapoteca Client | `mapoteca_client` | 3001 | `npm run dev` |
+| Componente | Porta | Observacao |
+|---|---|---|
+| PostgreSQL + PostGIS | 5432 (dev) / 5434 (prod) | banco `sca` |
+| Auth Server | 3010 (dev) / 4000 (prod) | dependencia; subir primeiro |
+| SCA server | 3015 | API REST + dashboard do acervo (`/`) + client da mapoteca (`/mapoteca`) |
 
-Bancos: SCA usa `sca`; Auth Server usa `servico_autenticacao` — ambos em `localhost:5432`.
+Em **producao** o server serve os dois clients (mesma origem, sem proxy nem porta extra): `npm run build` builda o `acervo_client` para `server/src/build` (servido em `/`) e o `mapoteca_client` para `server/src/build/mapoteca` (servido em `/mapoteca`, com `base: '/mapoteca/'` no vite.config). As chamadas de API dos dois sao `/api/...` na mesma origem.
 
-## Pré-checagem
+## Producao (rede da DGEO)
 
+Banco `sca` em `10.25.163.12:5434`; auth em `http://10.25.163.7:4000`; clientes `sca_web`/`sca_qgis`. Arquivos no share `\\10.25.163.8\sca\sca_acervo` (referenciado em `acervo.volume_armazenamento`, no banco).
+
+1. `server/config.env`: `DB_*` do banco de producao, `DB_USER_READONLY=sca_readonly`, `AUTH_SERVER=http://10.25.163.7:4000`, `USE_PROXY=false`. (Role `sca_readonly` precisa existir no banco.)
+2. Deploy (build dos dois clients + PM2, idempotente):
+   ```bash
+   npm run deploy   # = npm run build (acervo + mapoteca) + pm2 startOrReload ecosystem.config.cjs + pm2 save
+   ```
+   Sobe um processo PM2: `controle-acervo` (3015). Dashboard em `/`, mapoteca em `/mapoteca`.
+3. Auto-start no boot: `pm2 startup` (uma vez, como admin) + `pm2 save`.
+
+## Desenvolvimento (local)
+
+Banco `sca` e auth em `localhost`. Os clients rodam em servidores Vite separados (com proxy `/api` -> 3015):
 ```bash
-# Config e dependências existem?
-ls server/config.env                      # precisa existir (gerar com: npm run config)
-ls server/node_modules acervo_client/node_modules mapoteca_client/node_modules
-
-# Portas livres / dependências de pé? (Windows)
-netstat -ano -p TCP | grep LISTENING | grep -E ":(3000|3001|3010|3015|5432) "
+cd /d/desenvolvimento/servico_autenticacao/server && node dist/index.js   # auth 3010
+cd /d/desenvolvimento/controle_acervo/server && npm run dev               # SCA 3015
+cd ../acervo_client && npm run dev      # dashboard 3000
+cd ../mapoteca_client && npm run dev    # mapoteca 3001
 ```
 
-- `5432` deve estar **LISTENING** (PostgreSQL).
-- `3010/3015/3000/3001` devem estar **livres** antes de subir.
-- Se a porta `3000` estiver ocupada por outro projeto, o Vite do acervo_client escolhe outra porta automaticamente. Para forçar a 3000, libere-a primeiro:
-  ```bash
-  PID=$(netstat -ano -p TCP | grep LISTENING | grep ":3000 " | awk '{print $NF}' | head -1)
-  taskkill //PID $PID //F //T
-  ```
-
-## Sequência de subida
-
-### 1. Auth Server (porta 3010) — primeiro, sempre
-
+## Smoke tests
 ```bash
-cd /d/desenvolvimento/servico_autenticacao/server
-node dist/index.js        # usa o build em dist/; para hot-reload: npm run dev (nodemon)
+curl -s http://localhost:3010/api | grep operacional                            # auth (4000 em prod)
+curl -s http://localhost:3015/api | grep operacional                            # SCA
+curl -s http://localhost:3015/api/gerencia/dominio/tipo_produto | head -c 120   # SCA + banco
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3015/                 # dashboard acervo
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3015/mapoteca/        # mapoteca (prod)
 ```
-
-Confirmar que está operacional **antes** de subir o SCA:
-
-```bash
-curl -s http://localhost:3010/api
-# Esperado: {"success":true,"message":"Serviço de autenticação operacional", ...}
-```
-
-### 2. SCA Server (porta 3015)
-
-```bash
-cd /d/desenvolvimento/controle_acervo/server
-npm run dev               # nodemon (HTTP). HTTPS: npm run dev-https
-```
-
-Log de sucesso: `Servidor HTTP do Serviço iniciado ... "port":"3015"`.
-
-### 3. Clients web (portas 3000 e 3001)
-
-```bash
-cd /d/desenvolvimento/controle_acervo/acervo_client   && npm run dev   # 3000
-cd /d/desenvolvimento/controle_acervo/mapoteca_client && npm run dev   # 3001
-```
-
-Ambos os Vite fazem proxy de `/api` para o server na 3015.
-
-## Verificação final (smoke tests)
-
-```bash
-# Auth Server
-curl -s http://localhost:3010/api | grep operacional
-
-# SCA Server + banco (rota de domínio pública, não exige auth)
-curl -s http://localhost:3015/api/gerencia/dominio/tipo_produto | head -c 200
-
-# Clients (devem responder 200)
-curl -s -o /dev/null -w "acervo  %{http_code}\n" http://localhost:3000/
-curl -s -o /dev/null -w "mapoteca %{http_code}\n" http://localhost:3001/
-```
-
-URLs úteis:
-- Dashboard do acervo: <http://localhost:3000>
-- Client da mapoteca: <http://localhost:3001>
-- Swagger da API: <http://localhost:3015/api/api_docs>
+URLs (prod): dashboard <http://HOST:3015>; mapoteca <http://HOST:3015/mapoteca>; Swagger <http://HOST:3015/api/api_docs>.
 
 ## Troubleshooting
-
-- **SCA server sobe e cai na hora** → quase sempre é o Auth Server fora do ar (3010). O boot chama `verifyAuthServer` e, se falhar, `errorHandler.critical` encerra o processo. Suba a 3010 primeiro e confirme com o `curl` acima.
-- **Erro de conexão com banco** → PostgreSQL parado ou credenciais erradas em `server/config.env` (`DB_*`). Verifique `5432` LISTENING.
-- **Porta ocupada** → identifique e libere com `netstat`/`taskkill` (ver pré-checagem).
-- **Auth Server sem `dist/`** → buildar com `npm run build` (tsc) no diretório do auth server, ou rodar `npm run dev`.
-
-## Produção (referência)
-
-- SCA: `npm start` na raiz (PM2: `controle-acervo`) — serve a build estática do acervo_client de `server/src/build` (gerar com `npm run build`).
-- Auth Server: `npm start` (PM2: `auth-server`).
+- **SCA sobe e cai na hora** -> quase sempre o Auth Server fora do ar; confirme o `curl` do auth (3010 dev / 4000 prod).
+- **Erro de conexao com banco** -> PostgreSQL parado ou `DB_*` errado no `config.env`.
+- **mapoteca em branco / 404 nos assets** -> faltou `base: '/mapoteca/'` no `mapoteca_client/vite.config.js` ou o `build/mapoteca` nao foi gerado (`npm run build`); o mount `/mapoteca` no `app.js` vem antes do static do acervo.

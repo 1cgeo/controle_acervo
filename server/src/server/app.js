@@ -103,7 +103,14 @@ app.use('/api', (req, res, next) => {
   return next(err)
 })
 
-// Serve Client
+// Serve Mapoteca Client (build em build/mapoteca, base /mapoteca/) - antes do acervo
+app.use("/mapoteca", express.static(path.join(__dirname, "..", "build", "mapoteca")));
+
+app.get("/mapoteca/{*path}", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "build", "mapoteca", "index.html"));
+})
+
+// Serve Client (acervo)
 app.use(express.static(path.join(__dirname, "..", "build")));
 
 app.get("/{*path}", (req, res) => {

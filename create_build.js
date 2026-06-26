@@ -7,43 +7,36 @@ import chalk from 'chalk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const createBuild = () => {
-  const clientDir = join(__dirname, 'acervo_client');
+// Builda um client Vite e copia o dist para o diretorio servido pelo Express
+// (server/src/build). destSubdir != '' serve o client num subpath (ex.: /mapoteca).
+const buildClient = (clientName, destSubdir = '') => {
+  const clientDir = join(__dirname, clientName);
 
   if (!existsSync(clientDir)) {
-    console.log(chalk.red('Diretório acervo_client/ não encontrado.'));
+    console.log(chalk.red(`Diretório ${clientName}/ não encontrado.`));
     process.exit(1);
   }
 
-  console.log(chalk.blue('Criando build do frontend'));
-  console.log('Esta operação pode demorar alguns minutos');
+  console.log(chalk.blue(`Criando build de ${clientName}`));
 
   try {
-    execSync('npm run build', {
-      cwd: clientDir,
-      stdio: 'inherit'
-    });
+    execSync('npm run build', { cwd: clientDir, stdio: 'inherit' });
   } catch {
-    console.log(chalk.red('Erro ao criar build!'));
+    console.log(chalk.red(`Erro ao criar build de ${clientName}!`));
     process.exit(1);
   }
 
-  console.log('Build criada com sucesso!');
-  console.log('Copiando arquivos');
-
+  const dest = join(__dirname, 'server', 'src', 'build', destSubdir);
   try {
-    cpSync(
-      join(clientDir, 'dist'),
-      join(__dirname, 'server', 'src', 'build'),
-      { recursive: true }
-    );
-    console.log(chalk.blue('Arquivos copiados com sucesso!'));
+    cpSync(join(clientDir, 'dist'), dest, { recursive: true });
+    console.log(chalk.blue(`Build de ${clientName} copiada para ${dest}`));
   } catch (error) {
     console.log(chalk.red(error.message));
-    console.log('-------------------------------------------------');
-    console.log(error);
     process.exit(1);
   }
 };
 
-createBuild();
+// acervo_client -> build/ (servido em /); mapoteca_client -> build/mapoteca (servido em /mapoteca)
+buildClient('acervo_client');
+buildClient('mapoteca_client', 'mapoteca');
+console.log(chalk.green('Builds dos dois clients prontas.'));
