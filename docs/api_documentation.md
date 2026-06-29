@@ -752,6 +752,26 @@ Cria produtos com versoes historicas em lote, numa unica operacao.
 
 ---
 
+### POST `/api/produtos/mover-arquivos`
+
+Move arquivos de uma versao para outra do MESMO produto, sem novo upload fisico (apenas reaponta `versao_id` no banco). Usado para separar registros que bundlam duas edicoes: o arquivo da edicao errada (ex.: um `.tif` antigo) vai para a versao, em geral historica, daquela edicao.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "arquivo_ids": [7659],
+  "versao_id_destino": 2495
+}
+```
+
+Validacoes (transacao unica): a versao de destino existe; todos os `arquivo_ids` existem; nenhum ja esta no destino; origem e destino sao do mesmo produto; a versao de origem nao fica sem arquivos (para esvaziar, use o delete de versao); respeita `unique_file_per_version (checksum, versao_id)`. Seta `data_modificacao`/`usuario_modificacao_uuid`.
+
+---
+
 ### POST `/api/produtos/produtos`
 
 Cria produtos em lote (sem versoes).

@@ -340,6 +340,90 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
   });
 };
 
+controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    // Versao de destino existe?
+    const destino = await t.oneOrNone(
+      'SELECT id, produto_id FROM acervo.versao WHERE id = $1',
+      [versaoIdDestino]
+    );
+    if (!destino) {
+      throw new AppError(`Versão de destino ${versaoIdDestino} não encontrada`, httpCode.NotFound);
+    }
+
+    // Todos os arquivos existem?
+    const arquivos = await t.any(
+      'SELECT id, versao_id, checksum FROM acervo.arquivo WHERE id IN ($1:csv)',
+      [arquivoIds]
+    );
+    if (arquivos.length !== arquivoIds.length) {
+      const achados = arquivos.map(a => Number(a.id));
+      const faltando = arquivoIds.filter(id => !achados.includes(parseInt(id)));
+      throw new AppError(`Arquivos não encontrados: ${faltando.join(', ')}`, httpCode.NotFound);
+    }
+
+    // Algum ja esta no destino?
+    const jaNoDestino = arquivos.filter(a => Number(a.versao_id) === Number(versaoIdDestino));
+    if (jaNoDestino.length > 0) {
+      throw new AppError(
+        `Arquivo(s) já pertencem à versão de destino: ${jaNoDestino.map(a => a.id).join(', ')}`,
+        httpCode.BadRequest
+      );
+    }
+
+    // So entre versoes do MESMO produto (nao mover arquivo entre produtos)
+    const origemVersaoIds = [...new Set(arquivos.map(a => Number(a.versao_id)))];
+    const produtos = await t.any(
+      'SELECT DISTINCT produto_id FROM acervo.versao WHERE id IN ($1:csv)',
+      [origemVersaoIds]
+    );
+    if (produtos.length !== 1 || Number(produtos[0].produto_id) !== Number(destino.produto_id)) {
+      throw new AppError(
+        'Só é possível mover arquivos entre versões do mesmo produto',
+        httpCode.BadRequest
+      );
+    }
+
+    // Nao deixar a versao de origem sem nenhum arquivo (para esvaziar, use o delete de versao)
+    for (const ov of origemVersaoIds) {
+      const total = await t.one(
+        'SELECT COUNT(*)::int AS n FROM acervo.arquivo WHERE versao_id = $1',
+        [ov]
+      );
+      const movidosDessa = arquivos.filter(a => Number(a.versao_id) === ov).length;
+      if (total.n - movidosDessa < 1) {
+        throw new AppError(
+          `A operação deixaria a versão ${ov} sem arquivos. Para remover a versão, use o delete de versão.`,
+          httpCode.BadRequest
+        );
+      }
+    }
+
+    // Respeitar unique_file_per_version (checksum, versao_id) no destino
+    for (const a of arquivos) {
+      const colide = await t.oneOrNone(
+        'SELECT id FROM acervo.arquivo WHERE versao_id = $1 AND checksum = $2',
+        [versaoIdDestino, a.checksum]
+      );
+      if (colide) {
+        throw new AppError(
+          `A versão de destino já possui um arquivo com o mesmo checksum (arquivo ${colide.id})`,
+          httpCode.Conflict
+        );
+      }
+    }
+
+    // Mover
+    const data_modificacao = new Date();
+    await t.none(
+      `UPDATE acervo.arquivo
+       SET versao_id = $1, data_modificacao = $2, usuario_modificacao_uuid = $3
+       WHERE id IN ($4:csv)`,
+      [versaoIdDestino, data_modificacao, usuarioUuid, arquivoIds]
+    );
+  });
+};
+
 controller.getVersaoRelacionamento = async () => {
   return db.conn.any(
     `SELECT 

@@ -97,6 +97,21 @@ router.post(
 );
 
 router.post(
+  '/mover-arquivos',
+  verifyAdmin,
+  schemaValidation({
+    body: produtoSchema.moverArquivos
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.moverArquivos(req.body.arquivo_ids, req.body.versao_id_destino, req.usuarioUuid);
+
+    const msg = 'Arquivos movidos de versão com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
+router.post(
   '/produtos',
   verifyAdmin,
   schemaValidation({

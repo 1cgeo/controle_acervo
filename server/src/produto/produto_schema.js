@@ -66,6 +66,18 @@ models.versaoIds = Joi.object().keys({
   motivo_exclusao: Joi.string().required()
 });
 
+// Mover arquivos de uma versao para outra (mesmo produto), sem novo upload fisico.
+// Usado para separar registros que bundlam duas edicoes: o arquivo da edicao
+// errada vai para a versao (em geral historica) daquela edicao.
+models.moverArquivos = Joi.object().keys({
+  arquivo_ids: Joi.array()
+    .items(Joi.number().integer().strict().required())
+    .unique()
+    .required()
+    .min(1),
+  versao_id_destino: Joi.number().integer().strict().required()
+});
+
 models.versaoRelacionamento = Joi.object().keys({
   versao_relacionamento: Joi.array()
     .items(
