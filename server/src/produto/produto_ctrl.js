@@ -146,7 +146,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
               arquivo.tamanho_mb,
               arquivo.checksum,
               arquivo.metadado,
-              STATUS_ARQUIVO.ERRO_EXCLUSAO,
+              STATUS_ARQUIVO.EXCLUIDO,
               arquivo.situacao_carregamento_id,
               arquivo.descricao,
               arquivo.crs_original, // Adicionado crs_original
@@ -297,7 +297,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
             arquivo.tamanho_mb,
             arquivo.checksum,
             arquivo.metadado,
-            STATUS_ARQUIVO.ERRO_EXCLUSAO,
+            STATUS_ARQUIVO.EXCLUIDO,
             arquivo.situacao_carregamento_id,
             arquivo.descricao,
             arquivo.crs_original, // Adicionado crs_original

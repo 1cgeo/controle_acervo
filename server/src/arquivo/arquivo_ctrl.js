@@ -186,7 +186,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
             arquivo.tamanho_mb, 
             arquivo.checksum, 
             arquivo.metadado, 
-            STATUS_ARQUIVO.ERRO_EXCLUSAO,
+            STATUS_ARQUIVO.EXCLUIDO,
             arquivo.situacao_carregamento_id, 
             arquivo.descricao, 
             arquivo.crs_original,
@@ -1549,7 +1549,7 @@ async function processReplaceFiles(t, session) {
           [
             atual.uuid_arquivo, atual.nome, atual.nome_arquivo, motivo, atual.versao_id, atual.tipo_arquivo_id,
             atual.volume_armazenamento_id, atual.extensao, atual.tamanho_mb, atual.checksum, atual.metadado,
-            STATUS_ARQUIVO.ERRO_EXCLUSAO, atual.situacao_carregamento_id, atual.descricao, atual.crs_original,
+            STATUS_ARQUIVO.EXCLUIDO, atual.situacao_carregamento_id, atual.descricao, atual.crs_original,
             atual.data_cadastramento, atual.usuario_cadastramento_uuid, atual.data_modificacao,
             atual.usuario_modificacao_uuid, new Date(), session.usuario_uuid
           ]
