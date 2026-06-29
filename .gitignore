@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json versionado (build reproduzivel + alertas precisos do Dependabot)
 
 # Build outputs
 acervo_client/dist/

@@ -22,7 +22,7 @@
   "license": "MIT",
   "dependencies": {
     "archiver": "^7.0.1",
-    "axios": "^1.13.5",
+    "axios": "^1.18.1",
     "better-queue": "^3.8.12",
     "bluebird": "^3.7.2",
     "cors": "^2.8.6",
