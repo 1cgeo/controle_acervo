@@ -86,6 +86,14 @@ models.prepareAddFiles = Joi.object().keys({
   arquivos: Joi.array().items(fileSchema).min(1).required()
 });
 
+// Substituicao de conteudo de arquivos de versoes EXISTENTES, sem criar nova
+// versao: mesmo corpo do add-files (cada arquivo com versao_id), mas a semantica
+// e "upsert por slot" -- substitui (soft-delete + insert atomico no confirm) o
+// arquivo que ocupa o slot (versao_id, nome_arquivo, extensao), ou insere se vazio.
+models.prepareReplaceFiles = Joi.object().keys({
+  arquivos: Joi.array().items(fileSchema).min(1).required()
+});
+
 models.prepareAddVersion = Joi.object().keys({
   versoes: Joi.array().items(
     Joi.object().keys({

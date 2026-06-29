@@ -296,7 +296,7 @@ CREATE INDEX idx_versao_relacionamento_versao2 ON acervo.versao_relacionamento(v
 CREATE TABLE acervo.upload_session (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     uuid_session UUID UNIQUE NOT NULL DEFAULT uuid_generate_v4(),
-    operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('add_files', 'add_version', 'add_product')),
+    operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('add_files', 'add_version', 'add_product', 'replace_files')),
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,

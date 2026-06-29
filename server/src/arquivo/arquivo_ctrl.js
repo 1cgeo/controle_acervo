@@ -285,14 +285,18 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       
       // Check if any file already exists for its version
       for (const arquivo of arquivos) {
+        // A chave fisica e (volume, nome_arquivo, extensao); arquivos irmaos de uma
+        // mesma versao (ex.: .tif principal + .pdf + .json de edicao) compartilham
+        // nome_arquivo e so diferem na extensao. Por isso o check inclui extensao
+        // (IS NOT DISTINCT FROM trata o NULL do Tileserver como igualdade).
         const arquivoExistente = await t.oneOrNone(
           `SELECT id FROM acervo.arquivo
-           WHERE nome_arquivo = $1 AND versao_id = $2`,
-          [arquivo.nome_arquivo, arquivo.versao_id]
+           WHERE nome_arquivo = $1 AND extensao IS NOT DISTINCT FROM $2 AND versao_id = $3`,
+          [arquivo.nome_arquivo, arquivo.extensao, arquivo.versao_id]
         );
 
         if (arquivoExistente) {
-          throw new AppError(`Arquivo ${arquivo.nome_arquivo} já existe para a versão ${arquivo.versao_id}`, httpCode.Conflict);
+          throw new AppError(`Arquivo ${arquivo.nome_arquivo}.${arquivo.extensao} já existe para a versão ${arquivo.versao_id}`, httpCode.Conflict);
         }
 
         // Espelha a UNIQUE unique_file_per_version (checksum, versao_id):
@@ -420,6 +424,137 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
     } catch (error) {
       if (!(error instanceof AppError)) {
         throw new AppError(`Erro ao preparar upload de arquivos: ${error.message}`, httpCode.InternalError, error);
+      }
+      throw error;
+    }
+  });
+};
+
+/**
+ * Prepara a SUBSTITUICAO de conteudo de arquivos em versoes EXISTENTES, sem criar
+ * nova versao. Difere do prepareAddFiles em dois pontos: (1) NAO aplica os checks
+ * de colisao contra o acervo -- substituir o arquivo que ja ocupa o slot
+ * (versao_id, nome_arquivo, extensao) e justamente o objetivo, e um irmao de mesmo
+ * nome_arquivo (ex.: o .json) deve coexistir; (2) o destination_path e o mesmo do
+ * arquivo atual, entao a transferencia sobrescreve o fisico no lugar (sem orfao).
+ * A troca em si (soft-delete do antigo + insert do novo) acontece atomicamente no
+ * confirm-upload (processReplaceFiles). A unicidade (checksum, versao_id) segue
+ * garantida pela constraint do banco no INSERT do confirm.
+ */
+controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    try {
+      const { arquivos } = requestData;
+
+      // Verifica se todas as versoes existem e pega o tipo de produto de cada
+      const versao_ids = [...new Set(arquivos.map(a => a.versao_id))];
+      const versoes = await t.any(
+        `SELECT v.id, v.produto_id, p.tipo_produto_id
+         FROM acervo.versao v
+         JOIN acervo.produto p ON v.produto_id = p.id
+         WHERE v.id IN ($1:csv)`,
+        [versao_ids]
+      );
+      if (versoes.length !== versao_ids.length) {
+        const foundIds = versoes.map(v => Number(v.id));
+        const missingIds = versao_ids.filter(id => !foundIds.includes(id));
+        throw new AppError(`Versões não encontradas com IDs: ${missingIds.join(', ')}`, httpCode.NotFound);
+      }
+
+      // Volume primario por tipo de produto
+      const productTypes = [...new Set(versoes.map(v => v.tipo_produto_id))];
+      const volumeTypes = await t.any(
+        `SELECT vtp.tipo_produto_id, vtp.volume_armazenamento_id, va.volume, va.capacidade_gb
+         FROM acervo.volume_tipo_produto vtp
+         JOIN acervo.volume_armazenamento va ON va.id = vtp.volume_armazenamento_id
+         WHERE vtp.tipo_produto_id IN ($1:csv) AND vtp.primario = TRUE`,
+        [productTypes]
+      );
+      const volumeByProductType = {};
+      volumeTypes.forEach(vt => { volumeByProductType[vt.tipo_produto_id] = vt; });
+      for (const pt of productTypes) {
+        if (!volumeByProductType[pt]) {
+          throw new AppError(`Não existe volume primário cadastrado para o tipo de produto ${pt}`, httpCode.BadRequest);
+        }
+      }
+
+      // Duplicatas de checksum dentro do proprio payload (mesma versao)
+      const chavesChecksum = arquivos.filter(a => a.checksum).map(a => `${a.checksum}|${a.versao_id}`);
+      if (chavesChecksum.some((c, i) => chavesChecksum.indexOf(c) !== i)) {
+        throw new AppError('A requisição contém arquivos com checksum duplicado para a mesma versão', httpCode.BadRequest);
+      }
+
+      // Cria a sessao de upload
+      const { id: sessionId, uuid_session } = await t.one(
+        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type)
+         VALUES ($1, $2) RETURNING id, uuid_session`,
+        [usuarioUuid, 'replace_files']
+      );
+
+      const arquivosInfo = [];
+      const nomesFisicosUsados = new Set();
+      for (const arquivo of arquivos) {
+        const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
+        const volume = volumeByProductType[versao.tipo_produto_id];
+        const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+        const destinationPath = isTileserver
+          ? arquivo.nome_arquivo
+          : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+
+        // So impede que DOIS arquivos DESTE envio resolvam para o mesmo nome fisico.
+        // (Nao checamos o acervo: substituir o slot existente e o objetivo.)
+        if (!isTileserver) {
+          const chave = `${volume.volume_armazenamento_id}/${arquivo.nome_arquivo}.${arquivo.extensao}`;
+          if (nomesFisicosUsados.has(chave)) {
+            throw new AppError(`Dois arquivos deste envio resolvem para o mesmo nome físico "${arquivo.nome_arquivo}.${arquivo.extensao}" no volume ${volume.volume_armazenamento_id}.`, httpCode.Conflict);
+          }
+          nomesFisicosUsados.add(chave);
+        }
+
+        await t.none(
+          `INSERT INTO acervo.upload_arquivo_temp(
+            session_id, nome, nome_arquivo, destination_path,
+            tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
+            expected_checksum, metadado, situacao_carregamento_id,
+            descricao, crs_original, versao_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            sessionId,
+            arquivo.nome,
+            arquivo.nome_arquivo,
+            destinationPath,
+            arquivo.tipo_arquivo_id,
+            isTileserver ? null : volume.volume_armazenamento_id,
+            arquivo.extensao,
+            arquivo.tamanho_mb,
+            arquivo.checksum,
+            arquivo.metadado || {},
+            arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
+            arquivo.descricao || '',
+            arquivo.crs_original || null,
+            arquivo.versao_id
+          ]
+        );
+
+        arquivosInfo.push({
+          uuid_arquivo: arquivo.uuid_arquivo || null,
+          nome: arquivo.nome,
+          nome_arquivo: arquivo.nome_arquivo,
+          tipo_arquivo_id: arquivo.tipo_arquivo_id,
+          versao_id: arquivo.versao_id,
+          destination_path: destinationPath,
+          checksum: arquivo.checksum
+        });
+      }
+
+      return {
+        session_uuid: uuid_session,
+        operation_type: 'replace_files',
+        arquivos: arquivosInfo
+      };
+    } catch (error) {
+      if (!(error instanceof AppError)) {
+        throw new AppError(`Erro ao preparar substituição de arquivos: ${error.message}`, httpCode.InternalError, error);
       }
       throw error;
     }
@@ -1201,6 +1336,9 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
             case 'add_files':
               await processAddFiles(t, session);
               break;
+            case 'replace_files':
+              await processReplaceFiles(t, session);
+              break;
             case 'add_version':
               await processAddVersion(t, session);
               break;
@@ -1219,6 +1357,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           // Organize files by operation type
           let result;
           switch (session.operation_type) {
+            case 'replace_files':
             case 'add_files':
               result = {
                 session_uuid: sessionUuid,
@@ -1371,6 +1510,88 @@ async function processAddFiles(t, session) {
     }
   } catch (error) {
     throw new AppError(`Erro ao processar arquivos: ${error.message}`, httpCode.InternalError, error);
+  }
+}
+
+// Processa replace_files: para cada arquivo do envio, dentro da MESMA transacao do
+// confirm, faz soft-delete do arquivo que ocupa o slot (versao_id, nome_arquivo,
+// extensao) -- se houver -- e insere o novo. Atomico: sem meio-termo entre apagar
+// e recadastrar. Se o slot estiver vazio (upsert), apenas insere.
+async function processReplaceFiles(t, session) {
+  try {
+    const arquivos = await t.any(
+      `SELECT * FROM acervo.upload_arquivo_temp
+       WHERE session_id = $1 AND versao_id IS NOT NULL`,
+      [session.id]
+    );
+
+    const motivo = 'Substituído por nova versão do mesmo arquivo (replace-files)';
+
+    for (const arquivo of arquivos) {
+      // Arquivo que ocupa o slot atualmente (se houver)
+      const atual = await t.oneOrNone(
+        `SELECT * FROM acervo.arquivo
+         WHERE versao_id = $1 AND nome_arquivo = $2 AND extensao = $3`,
+        [arquivo.versao_id, arquivo.nome_arquivo, arquivo.extensao]
+      );
+
+      if (atual) {
+        // Move o antigo para arquivo_deletado (auditoria), espelhando deleteArquivos
+        const { id: arquivoDeletadoId } = await t.one(
+          `INSERT INTO acervo.arquivo_deletado (
+            uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id,
+            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
+            data_cadastramento, usuario_cadastramento_uuid, data_modificacao,
+            usuario_modificacao_uuid, data_delete, usuario_delete_uuid
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+          RETURNING id`,
+          [
+            atual.uuid_arquivo, atual.nome, atual.nome_arquivo, motivo, atual.versao_id, atual.tipo_arquivo_id,
+            atual.volume_armazenamento_id, atual.extensao, atual.tamanho_mb, atual.checksum, atual.metadado,
+            STATUS_ARQUIVO.ERRO_EXCLUSAO, atual.situacao_carregamento_id, atual.descricao, atual.crs_original,
+            atual.data_cadastramento, atual.usuario_cadastramento_uuid, atual.data_modificacao,
+            atual.usuario_modificacao_uuid, new Date(), session.usuario_uuid
+          ]
+        );
+        await t.none(
+          `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
+           SELECT $1, d.usuario_uuid, d.data_download
+           FROM acervo.download d WHERE d.arquivo_id = $2`,
+          [arquivoDeletadoId, atual.id]
+        );
+        await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [atual.id]);
+        await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [atual.id]);
+      }
+
+      // Insere o novo arquivo no mesmo slot
+      await t.none(
+        `INSERT INTO acervo.arquivo(
+          uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+          tipo_status_id, situacao_carregamento_id, descricao, crs_original,
+          usuario_cadastramento_uuid, data_cadastramento
+        ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+        [
+          arquivo.nome,
+          arquivo.nome_arquivo,
+          arquivo.versao_id,
+          arquivo.tipo_arquivo_id,
+          arquivo.volume_armazenamento_id,
+          arquivo.extensao,
+          arquivo.tamanho_mb,
+          arquivo.expected_checksum,
+          arquivo.metadado,
+          STATUS_ARQUIVO.CARREGADO,
+          arquivo.situacao_carregamento_id,
+          arquivo.descricao,
+          arquivo.crs_original,
+          session.usuario_uuid
+        ]
+      );
+    }
+  } catch (error) {
+    throw new AppError(`Erro ao substituir arquivos: ${error.message}`, httpCode.InternalError, error);
   }
 }
 

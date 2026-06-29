@@ -79,6 +79,19 @@ router.post(
 );
 
 router.post(
+  '/prepare-upload/replace-files',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.prepareReplaceFiles
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.prepareReplaceFiles(req.body, req.usuarioUuid);
+    const msg = 'Substituição de arquivos preparada com sucesso. Transfira os arquivos e utilize confirm-upload para confirmar.';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.post(
   '/confirm-upload',
   verifyAdmin,
   schemaValidation({

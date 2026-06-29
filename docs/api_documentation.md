@@ -449,6 +449,20 @@ Prepara sessao de upload para adicionar arquivos a versoes existentes.
 
 ---
 
+### POST `/api/arquivo/prepare-upload/replace-files`
+
+Prepara sessao para SUBSTITUIR o conteudo de arquivos em versoes existentes, sem criar nova versao (corrigir um PDF/GeoTIFF de uma edicao ja cadastrada). Mesmo corpo do `prepare-upload/files`. Semantica de **upsert por slot**: para cada arquivo, no `confirm-upload`, o que ocupa o slot `(versao_id, nome_arquivo, extensao)` e movido para `acervo.arquivo_deletado` e o novo e inserido, **atomicamente na mesma transacao**; se o slot estiver vazio, apenas insere. O `destination_path` e o mesmo do arquivo atual, entao a transferencia sobrescreve o fisico no lugar (sem orfao). Diferente do `prepare-upload/files`, **nao** rejeita por colisao de `(nome_arquivo, versao_id)`: arquivos irmaos de mesmo `nome_arquivo` (ex.: o `.json` de edicao) coexistem e ficam intocados ao substituir so o `.tif`/`.pdf`.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:** identico ao `prepare-upload/files` (array `arquivos`, cada um com `versao_id`).
+
+**Resposta:** `{ session_uuid, operation_type: "replace_files", arquivos: [...] }` com caminhos de destino.
+
+---
+
 ### POST `/api/arquivo/prepare-upload/version`
 
 Prepara sessao de upload para adicionar novas versoes com arquivos.
@@ -585,7 +599,7 @@ Retorna as ultimas 100 sessoes de upload (todas as situacoes), ordenadas por dat
     {
       "id": 1,
       "uuid_session": "uuid",
-      "operation_type": "add_files | add_version | add_product",
+      "operation_type": "add_files | replace_files | add_version | add_product",
       "status": "pending | completed | failed | cancelled",
       "error_message": "string | null",
       "created_at": "datetime",
