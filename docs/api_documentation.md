@@ -754,7 +754,7 @@ Cria produtos com versoes historicas em lote, numa unica operacao.
 
 ### POST `/api/produtos/mover-arquivos`
 
-Move arquivos de uma versao para outra do MESMO produto, sem novo upload fisico (apenas reaponta `versao_id` no banco). Usado para separar registros que bundlam duas edicoes: o arquivo da edicao errada (ex.: um `.tif` antigo) vai para a versao, em geral historica, daquela edicao.
+Move arquivos de uma versao para outra, sem novo upload fisico (apenas reaponta `versao_id` no banco). Usado para separar registros que bundlam duas edicoes: o arquivo da edicao errada (ex.: um `.tif` antigo) vai para a versao, em geral historica, daquela edicao. Tambem usado para corrigir arquivo carregado no produto/tipo errado (ex.: uma carta tematica carregada por engano como Carta Topografica).
 
 | Campo | Valor |
 |---|---|
@@ -764,11 +764,17 @@ Move arquivos de uma versao para outra do MESMO produto, sem novo upload fisico 
 ```json
 {
   "arquivo_ids": [7659],
-  "versao_id_destino": 2495
+  "versao_id_destino": 2495,
+  "permitir_entre_produtos": false,
+  "permitir_esvaziar_origem": false
 }
 ```
 
-Validacoes (transacao unica): a versao de destino existe; todos os `arquivo_ids` existem; nenhum ja esta no destino; origem e destino sao do mesmo produto; a versao de origem nao fica sem arquivos (para esvaziar, use o delete de versao); respeita `unique_file_per_version (checksum, versao_id)`. Seta `data_modificacao`/`usuario_modificacao_uuid`.
+`permitir_entre_produtos` (opcional, default `false`): por padrao a origem e o destino tem que ser versoes do MESMO produto. Envie `true` para mover entre produtos diferentes (ex.: tirar um arquivo de uma Carta Topografica e por num produto Carta Tematica).
+
+`permitir_esvaziar_origem` (opcional, default `false`): por padrao a operacao e recusada se deixar a versao de origem sem nenhum arquivo. Envie `true` quando a versao/produto de origem sera deletado logo em seguida (ex.: produto carregado so com conteudo do tipo errado, sem nenhum arquivo genuino a manter) -- mova primeiro com esta flag, depois delete a versao/produto vazio pela rota de delete.
+
+Validacoes (transacao unica): a versao de destino existe; todos os `arquivo_ids` existem; nenhum ja esta no destino; origem e destino sao do mesmo produto (salvo `permitir_entre_produtos=true`); a versao de origem nao fica sem arquivos (salvo `permitir_esvaziar_origem=true`); respeita `unique_file_per_version (checksum, versao_id)`. Seta `data_modificacao`/`usuario_modificacao_uuid`.
 
 ---
 

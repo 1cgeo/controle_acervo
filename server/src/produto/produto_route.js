@@ -103,7 +103,7 @@ router.post(
     body: produtoSchema.moverArquivos
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.moverArquivos(req.body.arquivo_ids, req.body.versao_id_destino, req.usuarioUuid);
+    await produtoCtrl.moverArquivos(req.body.arquivo_ids, req.body.versao_id_destino, req.usuarioUuid, req.body.permitir_entre_produtos, req.body.permitir_esvaziar_origem);
 
     const msg = 'Arquivos movidos de versão com sucesso';
 

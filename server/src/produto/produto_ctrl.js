@@ -340,7 +340,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
   });
 };
 
-controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid) => {
+controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, permitirEntreProdutos = false, permitirEsvaziarOrigem = false) => {
   return db.conn.tx(async t => {
     // Versao de destino existe?
     const destino = await t.oneOrNone(
@@ -371,31 +371,37 @@ controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid) => {
       );
     }
 
-    // So entre versoes do MESMO produto (nao mover arquivo entre produtos)
+    // Por padrao, so entre versoes do MESMO produto. Cross-produto exige opt-in explicito
+    // (correcao de arquivo carregado no produto/tipo errado, ex.: tematica carregada como topo).
     const origemVersaoIds = [...new Set(arquivos.map(a => Number(a.versao_id)))];
     const produtos = await t.any(
       'SELECT DISTINCT produto_id FROM acervo.versao WHERE id IN ($1:csv)',
       [origemVersaoIds]
     );
-    if (produtos.length !== 1 || Number(produtos[0].produto_id) !== Number(destino.produto_id)) {
+    const mesmoProduto = produtos.length === 1 && Number(produtos[0].produto_id) === Number(destino.produto_id);
+    if (!mesmoProduto && !permitirEntreProdutos) {
       throw new AppError(
-        'Só é possível mover arquivos entre versões do mesmo produto',
+        'Só é possível mover arquivos entre versões do mesmo produto (envie permitir_entre_produtos=true para mover entre produtos diferentes)',
         httpCode.BadRequest
       );
     }
 
-    // Nao deixar a versao de origem sem nenhum arquivo (para esvaziar, use o delete de versao)
-    for (const ov of origemVersaoIds) {
-      const total = await t.one(
-        'SELECT COUNT(*)::int AS n FROM acervo.arquivo WHERE versao_id = $1',
-        [ov]
-      );
-      const movidosDessa = arquivos.filter(a => Number(a.versao_id) === ov).length;
-      if (total.n - movidosDessa < 1) {
-        throw new AppError(
-          `A operação deixaria a versão ${ov} sem arquivos. Para remover a versão, use o delete de versão.`,
-          httpCode.BadRequest
+    // Nao deixar a versao de origem sem nenhum arquivo, salvo opt-in explicito
+    // (uso: a origem vai ser deletada em seguida, ex.: produto carregado so com
+    // conteudo do tipo errado, sem nenhum arquivo genuino a manter).
+    if (!permitirEsvaziarOrigem) {
+      for (const ov of origemVersaoIds) {
+        const total = await t.one(
+          'SELECT COUNT(*)::int AS n FROM acervo.arquivo WHERE versao_id = $1',
+          [ov]
         );
+        const movidosDessa = arquivos.filter(a => Number(a.versao_id) === ov).length;
+        if (total.n - movidosDessa < 1) {
+          throw new AppError(
+            `A operação deixaria a versão ${ov} sem arquivos. Para remover a versão, use o delete de versão, ou envie permitir_esvaziar_origem=true se a versão/produto de origem será deletado a seguir.`,
+            httpCode.BadRequest
+          );
+        }
       }
     }
 
