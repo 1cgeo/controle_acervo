@@ -25,6 +25,46 @@
   gap: var(--space-sm);
 }
 
+/* Cabeçalho de página em coluna (título acima da barra de ferramentas) */
+.page__header--column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+}
+
+/* Barra de ferramentas do RPCMTec (mês, ano, baixar DOCX) */
+.rpcm-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-md);
+  background-color: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.rpcm-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.rpcm-toolbar__label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.rpcm-toolbar__field .form-field__select {
+  min-width: 160px;
+}
+
+.rpcm-toolbar__spacer {
+  flex: 1 1 auto;
+}
+
 /* Dashboard page */
 .dashboard {
   max-width: var(--content-max-width);

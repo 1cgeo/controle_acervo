@@ -20,6 +20,7 @@ const MENU = [
   },
   { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
   { id: 'relatorios', label: 'Relatórios', icon: ICONS.description, path: '/relatorios' },
+  { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec' },
 ];
 
 /**
@@ -136,6 +137,6 @@ export function createSidebar({ collapsed = false } = {}) {
 export function activeIdFromPath(path) {
   const segment = String(path || '').split('?')[0].split('/').filter(Boolean)[0];
   if (!segment) return 'dashboard';
-  const known = ['dashboard', 'clientes', 'pedidos', 'materiais', 'estoque', 'consumo', 'plotters', 'relatorios'];
+  const known = ['dashboard', 'clientes', 'pedidos', 'materiais', 'estoque', 'consumo', 'plotters', 'relatorios', 'rpcmtec'];
   return known.includes(segment) ? segment : null;
 }

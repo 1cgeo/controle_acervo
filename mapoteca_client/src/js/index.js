@@ -20,6 +20,7 @@ import { renderConsumoList } from '@pages/consumo/list.js';
 import { renderPlottersList } from '@pages/plotters/list.js';
 import { renderPlotterDetails } from '@pages/plotters/details.js';
 import { renderRelatorios } from '@pages/relatorios/index.js';
+import { renderRpcMtec } from '@pages/rpcmtec/index.js';
 
 // Initialize theme (light/dark via data-theme, persisted in mapoteca-theme-mode)
 initTheme();
@@ -89,6 +90,7 @@ router.add('/consumo', withLayout(renderConsumoList), { guard: adminLoader });
 router.add('/plotters', withLayout(renderPlottersList), { guard: adminLoader });
 router.add('/plotters/:id', withLayout(renderPlotterDetails), { guard: adminLoader });
 router.add('/relatorios', withLayout(renderRelatorios), { guard: adminLoader });
+router.add('/rpcmtec', withLayout(renderRpcMtec), { guard: adminLoader });
 
 // Public: order tracking by localizador (RN04)
 router.add('/consultar/:localizador', standalone(renderConsultarPedido));

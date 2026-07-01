@@ -450,6 +450,31 @@ export function downloadRelatorioCsv(nome, ano) {
 }
 
 // ---------------------------------------------------------------------------
+// RPCMTec (seção acervo) - rota /api/relatorio, fora do namespace /mapoteca
+// ---------------------------------------------------------------------------
+
+/**
+ * Preview em tela do RPCMTec (seção acervo): mesmos dados do DOCX, no
+ * envelope JSON (estadoAcervo, produtosPorTipo, mapotecaLinhas, insumos,
+ * laiLinhas, totaisConsolidados).
+ * @param {{ano:number, mes:number}} params
+ */
+export function getRpcmtecAcervo({ ano, mes }) {
+  return apiGet(`/relatorio/rpcmtec?ano=${ano}&mes=${mes}`);
+}
+
+/**
+ * Download do DOCX do RPCMTec (seção acervo: estado do acervo, produtos
+ * entregues, mapoteca + insumos de impressão, LAI/órgãos públicos e totais
+ * consolidados do mês e do ano).
+ * @param {{ano:number, mes:number}} params
+ */
+export function downloadRpcmtecDocx({ ano, mes }) {
+  const nome = `RPCMTec-acervo-${ano}-${String(mes).padStart(2, '0')}.docx`;
+  return apiDownload(`/relatorio/rpcmtec/docx?ano=${ano}&mes=${mes}`, nome);
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard (cache 1 min)
 // ---------------------------------------------------------------------------
 

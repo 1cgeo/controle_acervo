@@ -16,6 +16,7 @@ const { arquivoRoute } = require("./arquivo");
 const { mapotecaRoute, dashboardRoute: mapotecaDashboardRoute } = require("./mapoteca");
 const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
 const { integracaoRoute } = require("./integracao");
+const { relatorioRoute } = require("./relatorio");
 
 const router = express.Router();
 
@@ -54,5 +55,8 @@ router.use("/mapoteca", mapotecaRoute);
 
 // Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
 router.use("/integracao", integracaoRoute);
+
+// Geração do RPCMTec (seção acervo): admin-only
+router.use("/relatorio", relatorioRoute);
 
 module.exports = router;
