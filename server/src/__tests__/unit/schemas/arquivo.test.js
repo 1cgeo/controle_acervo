@@ -339,11 +339,14 @@ describe('Arquivo Schemas', () => {
       expect(error).toBeUndefined()
     })
 
-    it('should reject legacy format for regular versions', () => {
-      const invalid = JSON.parse(JSON.stringify(validVersion))
-      invalid.versoes[0].versao.versao = '2ª Edição'
-      const { error } = arquivoSchema.prepareAddVersion.validate(invalid)
-      expect(error).toBeDefined()
+    it('should accept legacy format for regular versions (acervo legado)', () => {
+      // O trigger acervo.validate_version aceita "Xª Edição" em versoes Regular
+      // (tipo_versao_id = 1): as cartas antigas do acervo legado sao cadastradas
+      // como versao Regular usando esse formato. O schema espelha o trigger.
+      const legado = JSON.parse(JSON.stringify(validVersion))
+      legado.versoes[0].versao.versao = '2ª Edição'
+      const { error } = arquivoSchema.prepareAddVersion.validate(legado)
+      expect(error).toBeUndefined()
     })
 
     it('should require produto_id', () => {
