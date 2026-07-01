@@ -39,7 +39,7 @@
     "nocache": "^4.0.0",
     "node-cron": "^4.2.1",
     "pg-promise": "^12.6.1",
-    "pm2": "^6.0.14",
+    "pm2": "^7.0.3",
     "semver": "^7.7.4",
     "serialize-error": "13.0.1",
     "swagger-jsdoc": "^6.2.8",
