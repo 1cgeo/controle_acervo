@@ -163,6 +163,8 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (23, 'Conjunto de dados geoespaciais vetoriais para Trafegabilidade', 8),
 (24, 'Carta Topográfica Militar', 2),
 (25, 'Modelo 3D Tiles', 9),
-(26, 'Modelo 3D', 9);
+(26, 'Modelo 3D', 9),
+(27, 'Carta Ortoimagem Especial', 3),
+(28, 'Carta Topográfica Não-SCN', 2);
 
 COMMIT;
