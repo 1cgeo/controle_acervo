@@ -81,6 +81,20 @@ models.moverArquivos = Joi.object().keys({
   permitir_esvaziar_origem: Joi.boolean().default(false)
 });
 
+// Abre espaco de rotulo para uma edicao recem-descoberta que fica ANTES (ou entre)
+// as edicoes ja cadastradas de um produto/subtipo. O rotulo ordinal impresso na carta
+// (ou o numero de uma serie "N-SIGLA") nao e confiavel: a data_edicao e que prova que
+// duas cartas sao edicoes diferentes, o rotulo e so uma etiqueta a acertar depois.
+// A familia "EDICAO" desloca "Nª Edição"; qualquer outra string desloca "N-<familia>"
+// (ex. familia="DSG" desloca "1-DSG"/"2-DSG"). As duas familias convivem no mesmo
+// produto/subtipo sem interferir uma na outra (cada uma tem sua propria contagem).
+models.renumeraVersoes = Joi.object().keys({
+  produto_id: Joi.number().integer().strict().required(),
+  subtipo_produto_id: Joi.number().integer().strict().required(),
+  familia: Joi.string().pattern(/^([A-Z]{1,5}|EDICAO)$/).required(),
+  nova_data_edicao: Joi.date().iso().required()
+});
+
 models.versaoRelacionamento = Joi.object().keys({
   versao_relacionamento: Joi.array()
     .items(

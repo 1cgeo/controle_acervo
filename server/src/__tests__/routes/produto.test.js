@@ -4,7 +4,7 @@ const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
 const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
-const { createFullProduct } = require('../helpers/fixtures')
+const { createFullProduct, createProduto, createVersao } = require('../helpers/fixtures')
 
 let app
 
@@ -141,6 +141,64 @@ describe('Produto Routes', () => {
         })
 
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('POST /api/produtos/renumerar-versoes', () => {
+    it('should shift existing editions to open a slot for an older one', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '2001-01-01', data_edicao: '2001-01-01' })
+
+      const res = await request(app)
+        .post('/api/produtos/renumerar-versoes')
+        .set('Authorization', generateAdminToken())
+        .send({
+          produto_id: Number(produto.id),
+          subtipo_produto_id: 2,
+          familia: 'EDICAO',
+          nova_data_edicao: '1957-01-01'
+        })
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.rotulo_livre).toBe('1ª Edição')
+      expect(res.body.dados.versoes_deslocadas).toHaveLength(1)
+
+      const versao = await conn.one(
+        `SELECT versao FROM acervo.versao WHERE produto_id = $1`, [produto.id]
+      )
+      expect(versao.versao).toBe('2ª Edição')
+    })
+
+    it('should reject without admin auth', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/renumerar-versoes')
+        .set('Authorization', generateUserToken())
+        .send({
+          produto_id: Number(produto.id),
+          subtipo_produto_id: 2,
+          familia: 'EDICAO',
+          nova_data_edicao: '1957-01-01'
+        })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject invalid familia format', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/renumerar-versoes')
+        .set('Authorization', generateAdminToken())
+        .send({
+          produto_id: Number(produto.id),
+          subtipo_produto_id: 2,
+          familia: 'demasiado-longa',
+          nova_data_edicao: '1957-01-01'
+        })
+
+      expect(res.status).toBe(400)
     })
   })
 

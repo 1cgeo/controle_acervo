@@ -778,6 +778,44 @@ Validacoes (transacao unica): a versao de destino existe; todos os `arquivo_ids`
 
 ---
 
+### POST `/api/produtos/renumerar-versoes`
+
+Abre espaco de rotulo para uma edicao recem-descoberta que fica antes (ou entre) as edicoes ja cadastradas de um produto/subtipo. O rotulo ordinal impresso na carta (ou o numero de uma serie `N-SIGLA`) nao e confiavel: uma carta pode se autodenominar "2ª Edicao" sem que exista nenhuma "1ª Edicao" catalogada (contagem interna do orgao produtor), e uma edicao mais antiga descoberta depois desloca toda a numeracao. A `data_edicao` e que prova que duas cartas sao edicoes diferentes; o rotulo e so uma etiqueta a acertar depois, casando pelo ano.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyAdmin` |
+
+**Body:**
+```json
+{
+  "produto_id": 720,
+  "subtipo_produto_id": 2,
+  "familia": "EDICAO",
+  "nova_data_edicao": "1957-01-01"
+}
+```
+
+`familia`: `"EDICAO"` desloca a serie legada `"Nª Edição"`; qualquer sigla de 1 a 5 letras maiusculas (ex. `"DSG"`) desloca a serie `"N-<SIGLA>"` correspondente (ex. `"1-DSG"`/`"2-DSG"`). As duas familias convivem no mesmo produto/subtipo sem interferir uma na outra (cada uma tem sua propria contagem, casando com `unique_version_per_product (produto_id, versao, subtipo_produto_id)`).
+
+Comportamento: busca todas as versoes do produto/subtipo que pertencem a familia informada, ordena pela `data_edicao` (nunca pelo numero atual do rotulo, que pode ja estar errado) e calcula a posicao de insercao da `nova_data_edicao`. Desloca (renomeia) as versoes que ficam na frente, sempre da MAIOR pra MENOR numeracao, para nunca colidir com `unique_version_per_product` em transito. Nao cria a versao nova -- so libera o rotulo; o proximo passo e criar a versao propriamente (via `versao_historica`, `produto_versao_historica` ou `prepare-upload/version`) usando o `rotulo_livre` devolvido.
+
+**Resposta (`dados`):**
+```json
+{
+  "familia": "EDICAO",
+  "rotulo_livre": "1ª Edição",
+  "versoes_deslocadas": [
+    { "id": 2561, "rotulo_antigo": "1ª Edição", "rotulo_novo": "2ª Edição" },
+    { "id": 2649, "rotulo_antigo": "2ª Edição", "rotulo_novo": "3ª Edição" }
+  ]
+}
+```
+
+Se a familia ainda nao tem nenhuma versao no produto/subtipo, devolve `rotulo_livre` = `"1ª Edição"` (ou `"1-<SIGLA>"`) com `versoes_deslocadas` vazio, sem erro.
+
+---
+
 ### POST `/api/produtos/produtos`
 
 Cria produtos em lote (sem versoes).

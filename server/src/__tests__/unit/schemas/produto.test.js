@@ -139,4 +139,53 @@ describe('Produto Schemas', () => {
       expect(error).toBeDefined()
     })
   })
+
+  describe('renumeraVersoes', () => {
+    const valido = {
+      produto_id: 1,
+      subtipo_produto_id: 2,
+      familia: 'EDICAO',
+      nova_data_edicao: '1957-01-01'
+    }
+
+    it('should validate correct request with familia EDICAO', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate(valido)
+      expect(error).toBeUndefined()
+    })
+
+    it('should validate correct request with familia sigla (ex. DSG)', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate({
+        ...valido, familia: 'DSG'
+      })
+      expect(error).toBeUndefined()
+    })
+
+    it('should reject lowercase familia', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate({
+        ...valido, familia: 'dsg'
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('should reject familia longer than 5 letters', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate({
+        ...valido, familia: 'ABCDEF'
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('should require produto_id', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate({
+        ...valido, produto_id: undefined
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('should require nova_data_edicao as a valid ISO date', () => {
+      const { error } = produtoSchema.renumeraVersoes.validate({
+        ...valido, nova_data_edicao: 'nao e uma data'
+      })
+      expect(error).toBeDefined()
+    })
+  })
 })

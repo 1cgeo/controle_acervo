@@ -112,6 +112,24 @@ router.post(
 );
 
 router.post(
+  '/renumerar-versoes',
+  verifyAdmin,
+  schemaValidation({
+    body: produtoSchema.renumeraVersoes
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await produtoCtrl.renumeraVersoes(
+      req.body.produto_id, req.body.subtipo_produto_id, req.body.familia,
+      req.body.nova_data_edicao, req.usuarioUuid
+    );
+
+    const msg = 'Versões renumeradas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.post(
   '/produtos',
   verifyAdmin,
   schemaValidation({

@@ -430,6 +430,74 @@ controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, perm
   });
 };
 
+// Regex e sufixo de rotulo para cada familia de numeracao de versao (espelha
+// acervo.validate_version: "Nª Edição" legado, ou "N-SIGLA" produzido por orgao).
+function familiaVersao(familia) {
+  if (familia === 'EDICAO') {
+    return { regex: /^([0-9]+)ª Edição$/, sufixo: 'ª Edição' };
+  }
+  return { regex: new RegExp(`^([0-9]+)-${familia}$`), sufixo: `-${familia}` };
+}
+
+controller.renumeraVersoes = async (produtoId, subtipoProdutoId, familia, novaDataEdicao, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const produto = await t.oneOrNone('SELECT id FROM acervo.produto WHERE id = $1', [produtoId]);
+    if (!produto) {
+      throw new AppError(`Produto ${produtoId} não encontrado`, httpCode.NotFound);
+    }
+
+    const versoes = await t.any(
+      `SELECT id, versao, data_edicao FROM acervo.versao
+       WHERE produto_id = $1 AND subtipo_produto_id = $2`,
+      [produtoId, subtipoProdutoId]
+    );
+
+    const { regex, sufixo } = familiaVersao(familia);
+    const daFamilia = versoes
+      .map(v => {
+        const m = regex.exec(v.versao);
+        return m ? { id: v.id, numero: parseInt(m[1], 10), data_edicao: v.data_edicao } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.numero - b.numero);
+
+    // Posicao de insercao pela DATA (nunca pelo numero atual, que pode ja estar
+    // errado): conta quantas versoes da familia sao mais antigas que a nova.
+    const novaData = new Date(novaDataEdicao);
+    let numeroNovaEdicao = 1;
+    for (const v of daFamilia) {
+      if (new Date(v.data_edicao) < novaData) {
+        numeroNovaEdicao++;
+      } else {
+        break;
+      }
+    }
+
+    // Desloca as que ficam na frente (numero >= numeroNovaEdicao), da MAIOR
+    // pra MENOR, pra nunca colidir com unique_version_per_product em transito.
+    const aDeslocar = daFamilia
+      .filter(v => v.numero >= numeroNovaEdicao)
+      .sort((a, b) => b.numero - a.numero);
+
+    const data_modificacao = new Date();
+    const deslocadas = [];
+    for (const v of aDeslocar) {
+      const rotuloNovo = `${v.numero + 1}${sufixo}`;
+      await t.none(
+        `UPDATE acervo.versao SET versao = $1, data_modificacao = $2, usuario_modificacao_uuid = $3 WHERE id = $4`,
+        [rotuloNovo, data_modificacao, usuarioUuid, v.id]
+      );
+      deslocadas.push({ id: v.id, rotulo_antigo: `${v.numero}${sufixo}`, rotulo_novo: rotuloNovo });
+    }
+
+    return {
+      familia,
+      rotulo_livre: `${numeroNovaEdicao}${sufixo}`,
+      versoes_deslocadas: deslocadas
+    };
+  });
+};
+
 controller.getVersaoRelacionamento = async () => {
   return db.conn.any(
     `SELECT 

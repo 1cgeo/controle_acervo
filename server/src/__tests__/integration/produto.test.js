@@ -3,6 +3,15 @@
 const { conn, cleanTestData, closeConnection } = require('../helpers/db')
 const { createProduto, createVersao, createFullProduct } = require('../helpers/fixtures')
 const { ADMIN_UUID } = require('../helpers/auth')
+const { getApp } = require('../helpers/app')
+const produtoCtrl = require('../../produto/produto_ctrl')
+
+// renumeraVersoes chama produtoCtrl direto (nao via rota), entao precisa que
+// database/db.js esteja inicializado (db.conn) -- getApp() faz isso como efeito
+// colateral, mesmo sem usarmos o app retornado.
+beforeAll(async () => {
+  await getApp()
+})
 
 afterEach(async () => {
   await cleanTestData()
@@ -68,6 +77,103 @@ describe('Produto Integration', () => {
       const produto = await createProduto()
       await createVersao(produto.id, { versao: '1-DSG' })
       await expect(createVersao(produto.id, { versao: '1-DSG' }))
+        .rejects.toThrow()
+    })
+  })
+
+  describe('Renumerar versoes (abrir espaco pra edicao mais antiga)', () => {
+    it('should shift existing editions and free up "1ª Edição" when the new one is older than all', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '2001-01-01', data_edicao: '2001-01-01' })
+      await createVersao(produto.id, { versao: '2ª Edição', subtipo_produto_id: 2, data_criacao: '2001-06-01', data_edicao: '2001-06-01' })
+
+      const resultado = await produtoCtrl.renumeraVersoes(
+        produto.id, 2, 'EDICAO', '1957-01-01', ADMIN_UUID
+      )
+
+      expect(resultado.rotulo_livre).toBe('1ª Edição')
+      expect(resultado.versoes_deslocadas).toHaveLength(2)
+
+      const versoes = await conn.any(
+        'SELECT versao, data_edicao FROM acervo.versao WHERE produto_id = $1 ORDER BY data_edicao', [produto.id]
+      )
+      expect(versoes.map(v => v.versao)).toEqual(['2ª Edição', '3ª Edição'])
+    })
+
+    it('should insert in the middle when the new edition falls between two existing ones', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '1960-01-01', data_edicao: '1960-01-01' })
+      await createVersao(produto.id, { versao: '2ª Edição', subtipo_produto_id: 2, data_criacao: '2001-01-01', data_edicao: '2001-01-01' })
+
+      const resultado = await produtoCtrl.renumeraVersoes(
+        produto.id, 2, 'EDICAO', '1980-01-01', ADMIN_UUID
+      )
+
+      expect(resultado.rotulo_livre).toBe('2ª Edição')
+      expect(resultado.versoes_deslocadas).toHaveLength(1)
+
+      const versoes = await conn.any(
+        'SELECT versao FROM acervo.versao WHERE produto_id = $1 ORDER BY data_edicao', [produto.id]
+      )
+      expect(versoes.map(v => v.versao)).toEqual(['1ª Edição', '3ª Edição'])
+    })
+
+    it('should not shift anything when the new edition is the most recent', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '1960-01-01', data_edicao: '1960-01-01' })
+
+      const resultado = await produtoCtrl.renumeraVersoes(
+        produto.id, 2, 'EDICAO', '2020-01-01', ADMIN_UUID
+      )
+
+      expect(resultado.rotulo_livre).toBe('2ª Edição')
+      expect(resultado.versoes_deslocadas).toHaveLength(0)
+    })
+
+    it('should return "1ª Edição" free with no shifts when the family has no versions yet', async () => {
+      const produto = await createProduto()
+
+      const resultado = await produtoCtrl.renumeraVersoes(
+        produto.id, 2, 'EDICAO', '1957-01-01', ADMIN_UUID
+      )
+
+      expect(resultado.rotulo_livre).toBe('1ª Edição')
+      expect(resultado.versoes_deslocadas).toHaveLength(0)
+    })
+
+    it('should keep families "EDICAO" and a sigla (ex. DSG) independent within the same produto/subtipo', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '1960-01-01', data_edicao: '1960-01-01' })
+      await createVersao(produto.id, { versao: '1-DSG', subtipo_produto_id: 2, data_criacao: '2023-01-01', data_edicao: '2023-01-01' })
+
+      const resultado = await produtoCtrl.renumeraVersoes(
+        produto.id, 2, 'EDICAO', '1940-01-01', ADMIN_UUID
+      )
+
+      expect(resultado.rotulo_livre).toBe('1ª Edição')
+      expect(resultado.versoes_deslocadas).toHaveLength(1)
+
+      const dsg = await conn.one(
+        `SELECT versao FROM acervo.versao WHERE produto_id = $1 AND versao = '1-DSG'`, [produto.id]
+      )
+      expect(dsg.versao).toBe('1-DSG')
+    })
+
+    it('should not touch versions of a different subtipo_produto_id', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '1960-01-01', data_edicao: '1960-01-01' })
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 24, data_criacao: '1980-01-01', data_edicao: '1980-01-01' })
+
+      await produtoCtrl.renumeraVersoes(produto.id, 2, 'EDICAO', '1940-01-01', ADMIN_UUID)
+
+      const militar = await conn.one(
+        `SELECT versao FROM acervo.versao WHERE produto_id = $1 AND subtipo_produto_id = 24`, [produto.id]
+      )
+      expect(militar.versao).toBe('1ª Edição')
+    })
+
+    it('should reject an unknown produto_id', async () => {
+      await expect(produtoCtrl.renumeraVersoes(999999, 2, 'EDICAO', '1957-01-01', ADMIN_UUID))
         .rejects.toThrow()
     })
   })
