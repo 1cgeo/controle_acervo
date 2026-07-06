@@ -933,9 +933,9 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         // Create temporary product
         const { id: produtoTempId } = await t.one(
           `INSERT INTO acervo.upload_produto_temp(
-            session_id, nome, mi, inom, tipo_escala_id, 
-            denominador_escala_especial, tipo_produto_id, descricao, geom
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            session_id, nome, mi, inom, tipo_escala_id,
+            denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING id`,
           [
             sessionId,
@@ -945,6 +945,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
             item.produto.tipo_escala_id,
             item.produto.denominador_escala_especial,
             item.produto.tipo_produto_id,
+            item.produto.subtipo_produto_id ?? null,
             item.produto.descricao || '',
             item.produto.geom
           ]
@@ -1698,8 +1699,8 @@ async function processAddProduct(t, session) {
       const { id: produtoId } = await t.one(
         `INSERT INTO acervo.produto(
           nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
-          descricao, data_cadastramento, usuario_cadastramento_uuid, geom
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, $8, ST_GeomFromEWKT($9))
+          subtipo_produto_id, descricao, data_cadastramento, usuario_cadastramento_uuid, geom
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9, ST_GeomFromEWKT($10))
         RETURNING id`,
         [
           produtoTemp.nome,
@@ -1708,6 +1709,7 @@ async function processAddProduct(t, session) {
           produtoTemp.tipo_escala_id,
           produtoTemp.denominador_escala_especial,
           produtoTemp.tipo_produto_id,
+          produtoTemp.subtipo_produto_id ?? null,
           produtoTemp.descricao,
           session.usuario_uuid,
           produtoTemp.geom

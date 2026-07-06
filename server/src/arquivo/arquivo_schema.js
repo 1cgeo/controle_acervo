@@ -136,6 +136,9 @@ models.prepareAddProduct = Joi.object().keys({
           otherwise: Joi.valid(null)
         }),
         tipo_produto_id: Joi.number().integer().required(),
+        // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+        // Militar); NULL = produto comum, identidade so por (mi, escala, tipo).
+        subtipo_produto_id: Joi.number().integer().allow(null).default(null),
         descricao: Joi.string().allow(null, ''),
         geom: Joi.string().required()
       }).required(),

@@ -343,6 +343,9 @@ CREATE TABLE acervo.upload_produto_temp (
     tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
     denominador_escala_especial INTEGER,
     tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
+    -- Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+    -- Militar); NULL = produto comum. Espelha acervo.produto.subtipo_produto_id.
+    subtipo_produto_id SMALLINT REFERENCES dominio.subtipo_produto (code),
     descricao TEXT,
     geom TEXT NOT NULL -- Store as text to avoid geometry validation during prep
 );

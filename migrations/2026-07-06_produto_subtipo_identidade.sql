@@ -122,3 +122,8 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Follow-up (mesmo dia): plumbar o subtipo no fluxo de upload de produto
+-- (prepare-upload/add_product), para criar Carta Militar por esse caminho tambem.
+ALTER TABLE acervo.upload_produto_temp
+  ADD COLUMN IF NOT EXISTS subtipo_produto_id SMALLINT REFERENCES dominio.subtipo_produto (code);
