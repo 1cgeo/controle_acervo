@@ -16,6 +16,7 @@ const createProduto = async (overrides = {}) => {
     tipo_escala_id: 1,
     denominador_escala_especial: null,
     tipo_produto_id: 1,
+    subtipo_produto_id: null,
     descricao: 'Produto criado para testes',
     usuario_cadastramento_uuid: ADMIN_UUID,
     geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))'
@@ -24,9 +25,9 @@ const createProduto = async (overrides = {}) => {
 
   return conn.one(`
     INSERT INTO acervo.produto
-      (nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, usuario_cadastramento_uuid, geom)
+      (nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, usuario_cadastramento_uuid, geom)
     VALUES
-      ($<nome>, $<mi>, $<inom>, $<tipo_escala_id>, $<denominador_escala_especial>, $<tipo_produto_id>, $<descricao>, $<usuario_cadastramento_uuid>, ST_GeomFromEWKT($<geom>))
+      ($<nome>, $<mi>, $<inom>, $<tipo_escala_id>, $<denominador_escala_especial>, $<tipo_produto_id>, $<subtipo_produto_id>, $<descricao>, $<usuario_cadastramento_uuid>, ST_GeomFromEWKT($<geom>))
     RETURNING *
   `, data)
 }

@@ -134,7 +134,12 @@ INSERT INTO dominio.tipo_produto (code, nome) VALUES
 CREATE TABLE dominio.subtipo_produto (
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL UNIQUE,
-	tipo_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto(code)
+	tipo_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto(code),
+	-- Marca os subtipos que DEFINEM a identidade de um produto proprio (ex.: Carta
+	-- Topografica Militar). Um subtipo assim so pode existir como produto proprio
+	-- (acervo.produto.subtipo_produto_id), nunca como versao de um produto de outro
+	-- subtipo. Ver acervo.validate_version e DECISIONS 2026-07-06.
+	define_produto BOOLEAN NOT NULL DEFAULT false
 );
 
 INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
@@ -166,5 +171,9 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (26, 'Modelo 3D', 9),
 (27, 'Carta Ortoimagem Especial', 3),
 (28, 'Carta Topográfica Não-SCN', 2);
+
+-- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
+-- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).
+UPDATE dominio.subtipo_produto SET define_produto = true WHERE code = 24;
 
 COMMIT;

@@ -81,6 +81,28 @@ describe('Produto Integration', () => {
     })
   })
 
+  describe('Identidade do produto pelo subtipo (militar = produto proprio)', () => {
+    // Modelo desde 2026-07-06 (chefe): a Carta Topografica Militar (subtipo 24) e um
+    // produto DISTINTO do civil no mesmo MI; a chave de identidade e o subtipo, nao o tipo.
+    it('rejeita versao militar (subtipo 24) num produto civil (subtipo NULL)', async () => {
+      const civil = await createProduto({ tipo_produto_id: 2 })
+      await expect(createVersao(civil.id, { versao: '1ª Edição', subtipo_produto_id: 24, tipo_versao_id: 2 }))
+        .rejects.toThrow()
+    })
+
+    it('aceita versao militar num produto militar (subtipo 24)', async () => {
+      const militar = await createProduto({ tipo_produto_id: 2, subtipo_produto_id: 24 })
+      const v = await createVersao(militar.id, { versao: '1ª Edição', subtipo_produto_id: 24, tipo_versao_id: 2 })
+      expect(v.id).toBeDefined()
+    })
+
+    it('rejeita versao de outro subtipo num produto militar (subtipo 24)', async () => {
+      const militar = await createProduto({ tipo_produto_id: 2, subtipo_produto_id: 24 })
+      await expect(createVersao(militar.id, { versao: '1ª Edição', subtipo_produto_id: 2, tipo_versao_id: 2 }))
+        .rejects.toThrow()
+    })
+  })
+
   describe('Renumerar versoes (abrir espaco pra edicao mais antiga)', () => {
     it('should shift existing editions and free up "1ª Edição" when the new one is older than all', async () => {
       const produto = await createProduto()
@@ -160,16 +182,19 @@ describe('Produto Integration', () => {
     })
 
     it('should not touch versions of a different subtipo_produto_id', async () => {
+      // Dois subtipos civis coexistem no mesmo produto (T34-700=2, ET-RDG=12); renumerar
+      // um nao mexe no outro. (Militar=24 NAO pode coexistir: e produto proprio desde
+      // 2026-07-06, ver acervo.validate_version.)
       const produto = await createProduto()
       await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 2, data_criacao: '1960-01-01', data_edicao: '1960-01-01' })
-      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 24, data_criacao: '1980-01-01', data_edicao: '1980-01-01' })
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 12, data_criacao: '1980-01-01', data_edicao: '1980-01-01' })
 
       await produtoCtrl.renumeraVersoes(produto.id, 2, 'EDICAO', '1940-01-01', ADMIN_UUID)
 
-      const militar = await conn.one(
-        `SELECT versao FROM acervo.versao WHERE produto_id = $1 AND subtipo_produto_id = 24`, [produto.id]
+      const outroSubtipo = await conn.one(
+        `SELECT versao FROM acervo.versao WHERE produto_id = $1 AND subtipo_produto_id = 12`, [produto.id]
       )
-      expect(militar.versao).toBe('1ª Edição')
+      expect(outroSubtipo.versao).toBe('1ª Edição')
     })
 
     it('should reject an unknown produto_id', async () => {

@@ -802,10 +802,10 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
     for (const produto of produtos) {
       // Inserir o produto
       const [novoProduto] = await t.any(`
-        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
-        VALUES($1, $2, $3, $4, $5, $6, $7, ST_GeomFromEWKT($8), $9, $10)
+        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
+        VALUES($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), $10, $11)
         RETURNING id
-      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
+      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
       produtosIds.push(novoProduto.id)
 
@@ -841,10 +841,10 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
 
     for (const produto of produtos) {
       const [novoProduto] = await t.any(`
-        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
-        VALUES($1, $2, $3, $4, $5, $6, $7, ST_GeomFromEWKT($8), $9, $10)
+        INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
+        VALUES($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), $10, $11)
         RETURNING id
-      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
+      `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
       produtosIds.push(novoProduto.id);
     }

@@ -60,6 +60,11 @@ CREATE TABLE acervo.produto(
     tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
 	denominador_escala_especial INTEGER,
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
+	-- Refina a identidade do produto pelo SUBTIPO (chefe 2026-07-06). NULL = identidade
+	-- so por (mi, escala, tipo): e o caso do produto civil, que abrange subtipos 2
+	-- (T34-700) e 12 (ET-RDG) nas versoes. Preenchido quando o subtipo define o produto
+	-- (ex.: 24 = Carta Topografica Militar), tornando-o distinto do civil no mesmo MI.
+	subtipo_produto_id SMALLINT REFERENCES dominio.subtipo_produto (code),
 	descricao TEXT,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
@@ -76,6 +81,14 @@ CREATE INDEX produto_geom
     ON acervo.produto USING gist
     (geom)
     TABLESPACE pg_default;
+
+-- Identidade do produto: (mi, escala, tipo, subtipo). COALESCE(...,0) mantem o produto
+-- civil (subtipo NULL) unico e deixa o militar (subtipo 24) coexistir no mesmo MI.
+-- Parcial WHERE mi IS NOT NULL: especiais/campos de instrucao (mi NULL, bbox propria)
+-- ficam de fora, como ja era.
+CREATE UNIQUE INDEX unique_produto_identidade
+    ON acervo.produto (mi, tipo_escala_id, tipo_produto_id, COALESCE(subtipo_produto_id, 0))
+    WHERE mi IS NOT NULL;
 
 CREATE TABLE acervo.versao(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
@@ -96,8 +109,9 @@ CREATE TABLE acervo.versao(
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
 	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-    -- Inclui subtipo: a mesma folha/edição pode existir como Carta Topográfica padrão
-    -- (subtipo 2/12) e como Carta Topográfica Militar (subtipo 24) — "1ª Edição" em ambos.
+    -- Inclui subtipo por robustez historica. Desde 2026-07-06 a Carta Topografica Militar
+    -- (subtipo 24) vive num PRODUTO proprio (acervo.produto.subtipo_produto_id = 24), entao
+    -- o cenario "1ª Edição civil e militar" ocorre entre DOIS produtos, nao dentro de um.
     CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao, subtipo_produto_id),
     CHECK (data_edicao >= data_criacao)
 );
@@ -111,9 +125,23 @@ DECLARE
     acronym TEXT;
     previous_version TEXT;
     current_year INTEGER;
+    prod_subtipo SMALLINT;
+    subtipo_exige_proprio BOOLEAN;
 BEGIN
-    -- Em UPDATE, validar apenas quando o campo versao mudou — senão registros
-    -- legados ("Xª Edição") ficam imutáveis após 2024 (qualquer UPDATE falharia)
+    -- Coerencia produto<->subtipo (identidade do produto pelo subtipo, chefe 2026-07-06).
+    -- Antes do early-return para valer inclusive quando so muda produto_id (mover versao).
+    SELECT subtipo_produto_id INTO prod_subtipo FROM acervo.produto WHERE id = NEW.produto_id;
+    SELECT define_produto INTO subtipo_exige_proprio FROM dominio.subtipo_produto WHERE code = NEW.subtipo_produto_id;
+
+    IF prod_subtipo IS NOT NULL AND NEW.subtipo_produto_id <> prod_subtipo THEN
+        RAISE EXCEPTION 'Versao (subtipo %) incompativel com o produto, que e do subtipo %', NEW.subtipo_produto_id, prod_subtipo;
+    END IF;
+    IF subtipo_exige_proprio AND (prod_subtipo IS NULL OR prod_subtipo <> NEW.subtipo_produto_id) THEN
+        RAISE EXCEPTION 'Subtipo % exige produto proprio (produto.subtipo_produto_id = %); nao pode ser versao de um produto de outro subtipo', NEW.subtipo_produto_id, NEW.subtipo_produto_id;
+    END IF;
+
+    -- Em UPDATE, validar o formato da versao apenas quando o campo versao mudou — senão
+    -- registros legados ("Xª Edição") ficam imutáveis após 2024 (qualquer UPDATE falharia)
     IF TG_OP = 'UPDATE' AND NEW.versao IS NOT DISTINCT FROM OLD.versao THEN
         RETURN NEW;
     END IF;

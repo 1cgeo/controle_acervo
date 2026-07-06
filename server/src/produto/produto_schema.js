@@ -157,6 +157,9 @@ models.produtosVersoesHistoricas = Joi.array().items(
     tipo_escala_id: Joi.number().integer().strict().required(),
     denominador_escala_especial: denominadorEscalaEspecial,
     tipo_produto_id: Joi.number().integer().strict().required(),
+    // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+    // Militar). NULL = produto comum, identidade so por (mi, escala, tipo).
+    subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
     descricao: Joi.string().allow('').required(),
     geom: Joi.string().required(),
     versoes: Joi.array().items(
@@ -186,6 +189,7 @@ models.produtos = Joi.object().keys({
       tipo_escala_id: Joi.number().integer().strict().required(),
       denominador_escala_especial: denominadorEscalaEspecial,
       tipo_produto_id: Joi.number().integer().required(),
+      subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
       descricao: Joi.string().allow(null, '').required(),
       geom: Joi.string().required()
     })
