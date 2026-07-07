@@ -170,7 +170,8 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (25, 'Modelo 3D Tiles', 9),
 (26, 'Modelo 3D', 9),
 (27, 'Carta Ortoimagem Especial', 3),
-(28, 'Carta Topográfica Não-SCN', 2);
+(28, 'Carta Topográfica Não-SCN', 2),
+(29, 'Carta Aeronáutica', 7);
 
 -- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).

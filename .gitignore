@@ -16,6 +16,10 @@ server/config_testing.env
 .env.*
 !.env.example
 
+# Boot local operacional (server/src/main.js sem initCleanupJobs, para tarefas
+# admin pontuais). Nao e o entrypoint de deploy, mantido so localmente.
+server/boot_no_cron.js
+
 # Logs
 server/logs/
 server/src/logs/
