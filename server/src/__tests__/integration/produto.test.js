@@ -101,6 +101,17 @@ describe('Produto Integration', () => {
       await expect(createVersao(militar.id, { versao: '1ª Edição', subtipo_produto_id: 2, tipo_versao_id: 2 }))
         .rejects.toThrow()
     })
+
+    it('a Carta Militar (24) e a civil (NULL) coexistem como produtos separados na mesma folha', async () => {
+      // A unicidade de produto passou a considerar o subtipo (INOM, tipo, subtipo)
+      // quando ele exige produto proprio, espelhando o prepare-upload/product.
+      const inom = 'SG-99-Z-Z-I-1-NE'
+      const civil = await createProduto({ inom, tipo_produto_id: 2, subtipo_produto_id: null })
+      const militar = await createProduto({ inom, tipo_produto_id: 2, subtipo_produto_id: 24 })
+      expect(civil.id).not.toBe(militar.id)
+      const n = await conn.one('SELECT count(*)::int AS c FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = 2', [inom])
+      expect(n.c).toBe(2)
+    })
   })
 
   describe('Renumerar versoes (abrir espaco pra edicao mais antiga)', () => {

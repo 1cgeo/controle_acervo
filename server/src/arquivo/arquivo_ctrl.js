@@ -807,27 +807,30 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
       // Check for duplicate INOMs.
       // A mesma MI/INOM pode gerar produtos distintos por TIPO (ex.: Carta
       // Topográfica e o CDGV de mesma folha são produtos separados — ver
-      // regras_carga_produtos.md 2.4). Logo a unicidade é por
-      // (INOM, tipo_produto_id), não global. O INOM já codifica a escala.
+      // regras_carga_produtos.md 2.4). Desde 2026-07-06 a identidade também
+      // considera o SUBTIPO quando ele exige produto próprio (define_produto),
+      // p.ex. a Carta Topográfica Militar (24) coexiste com a civil na mesma
+      // folha como produto separado (ver acervo.validate_version). Logo a
+      // unicidade é por (INOM, tipo_produto_id, subtipo_produto_id).
       const inomKeys = produtos
         .filter(p => p.produto.inom !== null && p.produto.inom !== '')
-        .map(p => `${p.produto.inom}|${p.produto.tipo_produto_id}`);
+        .map(p => `${p.produto.inom}|${p.produto.tipo_produto_id}|${p.produto.subtipo_produto_id ?? ''}`);
       const uniqueInomKeys = [...new Set(inomKeys)];
 
       if (inomKeys.length !== uniqueInomKeys.length) {
-        throw new AppError('Existem produtos com mesmo INOM e tipo de produto duplicados na solicitação', httpCode.BadRequest);
+        throw new AppError('Existem produtos com mesmo INOM, tipo e subtipo duplicados na solicitação', httpCode.BadRequest);
       }
 
-      // Check if any (INOM, tipo_produto) already exists in the database
+      // Check if any (INOM, tipo_produto, subtipo_produto) already exists in the database
       for (const item of produtos) {
         if (item.produto.inom) {
           const existingProduct = await t.oneOrNone(
-            'SELECT id FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = $2',
-            [item.produto.inom, item.produto.tipo_produto_id]
+            'SELECT id FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = $2 AND subtipo_produto_id IS NOT DISTINCT FROM $3',
+            [item.produto.inom, item.produto.tipo_produto_id, item.produto.subtipo_produto_id ?? null]
           );
 
           if (existingProduct) {
-            throw new AppError(`Já existe um produto do mesmo tipo com o INOM ${item.produto.inom}`, httpCode.Conflict);
+            throw new AppError(`Já existe um produto do mesmo tipo e subtipo com o INOM ${item.produto.inom}`, httpCode.Conflict);
           }
         }
       }
