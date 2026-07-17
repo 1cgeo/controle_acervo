@@ -12,17 +12,39 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
     produto.data_modificacao = new Date()
     produto.usuario_modificacao_uuid = usuarioUuid
 
+    // O trigger acervo.validate_version recusa versão cujo subtipo divirja do subtipo do
+    // produto. Fixar o produto num subtipo conflitante não falha aqui: falha na próxima
+    // carga, longe da causa. Por isso valida-se contra as versões que já existem.
+    // Passar null (despinar) é sempre permitido: é o estado da maioria dos produtos e é o
+    // que permite guardar mais de uma geração no mesmo produto (ex.: EDGV 2.1.3 e 3.0).
+    if (produto.subtipo_produto_id !== null && produto.subtipo_produto_id !== undefined) {
+      const conflito = await t.oneOrNone(`
+        SELECT string_agg(DISTINCT v.subtipo_produto_id::text, ', ') AS subtipos
+        FROM acervo.versao v
+        WHERE v.produto_id = $1 AND v.subtipo_produto_id <> $2
+      `, [produto.id, produto.subtipo_produto_id])
+
+      if (conflito && conflito.subtipos) {
+        throw new AppError(
+          `Produto tem versões de subtipo ${conflito.subtipos}; não pode ser fixado no subtipo ${produto.subtipo_produto_id}`,
+          httpCode.BadRequest
+        )
+      }
+    }
+
     if (produto.geom) {
       // Atualizar com geometria usando query parametrizada
       await t.none(`
         UPDATE acervo.produto SET
           nome = $2, mi = $3, inom = $4, tipo_escala_id = $5,
           denominador_escala_especial = $6, tipo_produto_id = $7, descricao = $8,
-          geom = ST_GeomFromEWKT($9), data_modificacao = $10, usuario_modificacao_uuid = $11
+          geom = ST_GeomFromEWKT($9), data_modificacao = $10, usuario_modificacao_uuid = $11,
+          subtipo_produto_id = $12
         WHERE id = $1
       `, [produto.id, produto.nome, produto.mi, produto.inom, produto.tipo_escala_id,
           produto.denominador_escala_especial, produto.tipo_produto_id, produto.descricao,
-          produto.geom, produto.data_modificacao, produto.usuario_modificacao_uuid])
+          produto.geom, produto.data_modificacao, produto.usuario_modificacao_uuid,
+          produto.subtipo_produto_id === undefined ? null : produto.subtipo_produto_id])
     } else {
       // mi/inom são opcionais no Joi — def evita "Property doesn't exist" do pgp
       const colunasProduto = [
@@ -31,6 +53,7 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
         { name: 'inom', def: null },
         'tipo_escala_id', 'denominador_escala_especial',
         'tipo_produto_id', 'descricao',
+        { name: 'subtipo_produto_id', def: null },
         'data_modificacao', 'usuario_modificacao_uuid'
       ]
 

@@ -27,6 +27,7 @@ models.produtoAtualizacao = Joi.object().keys({
   tipo_escala_id: Joi.number().integer().strict().required(),
   denominador_escala_especial: denominadorEscalaEspecial,
   tipo_produto_id: Joi.number().integer().strict().required(),
+  subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
   descricao: Joi.string().allow('').required(),
   geom: Joi.string().allow(null)
 })

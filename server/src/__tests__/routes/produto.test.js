@@ -103,6 +103,86 @@ describe('Produto Routes', () => {
       )
       expect(atualizado.nome).toBe('Atualizado Via Rota')
     })
+
+    const corpoProduto = (id, extra = {}) => ({
+      id: Number(id),
+      nome: 'Produto Teste',
+      mi: 'MI-2345',
+      inom: 'INOM-TEST',
+      tipo_escala_id: 1,
+      denominador_escala_especial: null,
+      tipo_produto_id: 1,
+      descricao: '',
+      ...extra
+    })
+
+    it('should unpin subtipo_produto_id (null), allowing versions of mixed subtipos', async () => {
+      const produto = await createProduto({ subtipo_produto_id: 7 })
+      await createVersao(produto.id, { subtipo_produto_id: 7 })
+
+      const res = await request(app)
+        .put('/api/produtos/produto')
+        .set('Authorization', generateAdminToken())
+        .send(corpoProduto(produto.id, { subtipo_produto_id: null }))
+
+      expect(res.status).toBe(200)
+
+      const atualizado = await conn.one(
+        `SELECT subtipo_produto_id FROM acervo.produto WHERE id = $1`, [produto.id]
+      )
+      expect(atualizado.subtipo_produto_id).toBeNull()
+    })
+
+    it('should pin subtipo_produto_id when versions do not conflict', async () => {
+      const produto = await createProduto({ subtipo_produto_id: null })
+      await createVersao(produto.id, { subtipo_produto_id: 1 })
+
+      const res = await request(app)
+        .put('/api/produtos/produto')
+        .set('Authorization', generateAdminToken())
+        .send(corpoProduto(produto.id, { subtipo_produto_id: 1 }))
+
+      expect(res.status).toBe(200)
+
+      const atualizado = await conn.one(
+        `SELECT subtipo_produto_id FROM acervo.produto WHERE id = $1`, [produto.id]
+      )
+      expect(Number(atualizado.subtipo_produto_id)).toBe(1)
+    })
+
+    it('should refuse to pin a subtipo that existing versions contradict', async () => {
+      const produto = await createProduto({ subtipo_produto_id: null })
+      await createVersao(produto.id, { subtipo_produto_id: 1 })
+
+      const res = await request(app)
+        .put('/api/produtos/produto')
+        .set('Authorization', generateAdminToken())
+        .send(corpoProduto(produto.id, { subtipo_produto_id: 7 }))
+
+      expect(res.status).toBe(400)
+
+      const inalterado = await conn.one(
+        `SELECT subtipo_produto_id FROM acervo.produto WHERE id = $1`, [produto.id]
+      )
+      expect(inalterado.subtipo_produto_id).toBeNull()
+    })
+
+    it('should keep subtipo_produto_id untouched when the field is omitted', async () => {
+      const produto = await createProduto({ subtipo_produto_id: null })
+
+      const res = await request(app)
+        .put('/api/produtos/produto')
+        .set('Authorization', generateAdminToken())
+        .send(corpoProduto(produto.id, { nome: 'Sem subtipo no corpo' }))
+
+      expect(res.status).toBe(200)
+
+      const atualizado = await conn.one(
+        `SELECT nome, subtipo_produto_id FROM acervo.produto WHERE id = $1`, [produto.id]
+      )
+      expect(atualizado.nome).toBe('Sem subtipo no corpo')
+      expect(atualizado.subtipo_produto_id).toBeNull()
+    })
   })
 
   describe('DELETE /api/produtos/produto', () => {
