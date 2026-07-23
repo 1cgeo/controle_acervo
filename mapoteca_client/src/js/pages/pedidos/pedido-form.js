@@ -1,6 +1,7 @@
 import { el } from '@utils/dom.js';
 import {
   createTextField,
+  createNumberField,
   createSelectField,
   createDateField,
   createTextareaField,
@@ -147,9 +148,10 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       value: (pedido && pedido.municipio) || '',
       maxLength: 255,
     }),
-    qtd_imagens: createTextField({
+    qtd_imagens: createNumberField({
       label: 'Nº de imagens entregues (civil)',
-      value: pedido && pedido.qtd_imagens != null ? String(pedido.qtd_imagens) : '',
+      value: pedido && pedido.qtd_imagens != null ? pedido.qtd_imagens : null,
+      min: 0,
       helpText: 'Contagem de imagens/produtos entregues (LAI não usa folha MI).',
     }),
   };
@@ -268,7 +270,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       motivo_cancelamento: orNull(fields.motivo_cancelamento.getValue()),
       canal_recebimento_id: fields.canal_recebimento_id.getValue(),
       municipio: orNull(fields.municipio.getValue()),
-      qtd_imagens: fields.qtd_imagens.getValue() === '' ? null : Number(fields.qtd_imagens.getValue()),
+      qtd_imagens: fields.qtd_imagens.getValue(),
     };
   }
 

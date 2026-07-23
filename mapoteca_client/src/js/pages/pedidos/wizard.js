@@ -107,45 +107,39 @@ export async function renderPedidoWizard(container, _ctx) {
   // ---------------------------------------------------------------------------
   // Step 1 — Básico (with the LAI shortcut, RN06)
   // ---------------------------------------------------------------------------
-  const laiBtn = el('button', {
-    className: 'btn btn--secondary btn--sm',
-    type: 'button',
-    onClick: () => {
-      form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
-      const clienteLai = clientes.find(c => c.tipo_cliente_id === TIPO_CLIENTE_LAI);
-      if (clienteLai) {
-        form.fields.cliente_id.setValue(clienteLai.id);
-        showInfo(`Pedido LAI: situação "Em andamento" e cliente "${clienteLai.nome}" pré-selecionados.`);
-      } else {
-        showWarning('Nenhum cliente do tipo LAI cadastrado. Situação pré-selecionada; selecione ou cadastre o cliente manualmente.');
-      }
-    },
-  }, [svgIcon(ICONS.add, 14), 'Novo pedido LAI']);
-
-  // Atalho para pedido de CIVIL (LAI/órgão/empresa/pessoa): pré-seleciona
-  // "Em andamento" e lembra que o passo Produtos é opcional (civil entrega
-  // imagem por área, não folha MI do acervo). Os campos civis ficam no passo
-  // Adicional (canal, município, nº de imagens).
-  const civilBtn = el('button', {
-    className: 'btn btn--secondary btn--sm',
-    type: 'button',
-    onClick: () => {
-      form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
-      showInfo('Pedido de civil: selecione um cliente civil (órgão, empresa, pessoa ou LAI), preencha o canal/município/nº de imagens em "Adicional". O passo Produtos é opcional.');
-    },
-  }, [svgIcon(ICONS.add, 14), 'Novo pedido de Civil']);
+  // Escolha inicial: Militar ou Civil. Define os clientes ofertados e quais
+  // campos aparecem (civil = LAI/órgão/empresa/pessoa, com canal/município/nº
+  // imagens; militar = OM, com produtos do acervo).
+  const MILITAR_TIPOS = [1, 2, 3]; // OM EB, Aeronáutica, Marinha
+  const btnMil = el('button', {
+    className: 'btn btn--secondary', type: 'button', onClick: () => setModo('militar'),
+  }, 'Pedido Militar');
+  const btnCiv = el('button', {
+    className: 'btn btn--secondary', type: 'button', onClick: () => setModo('civil'),
+  }, 'Pedido de Civil');
+  const modoHint = el('div', { className: 'form-field__help' });
 
   const stepBasico = el('div', {}, [
-    el('div', { className: 'flex flex-between gap-sm', style: { marginBottom: 'var(--space-md)' } }, [
-      el('div', { className: 'detail-card__title', textContent: 'Dados básicos' }),
-      el('div', { className: 'flex gap-sm' }, [laiBtn, civilBtn]),
-    ]),
+    el('div', { className: 'detail-card__title', style: { marginBottom: 'var(--space-sm)' }, textContent: 'Tipo de pedido' }),
+    el('div', { className: 'flex gap-sm', style: { marginBottom: 'var(--space-xs)' } }, [btnMil, btnCiv]),
+    modoHint,
+    el('div', { className: 'detail-card__title', style: { margin: 'var(--space-md) 0' }, textContent: 'Dados básicos' }),
     form.basicoElement,
   ]);
 
   // ---------------------------------------------------------------------------
   // Step 2 — Adicional
   // ---------------------------------------------------------------------------
+  // Seção civil (canal/município/nº imagens) — visível só no modo Civil.
+  const civilSection = el('div', { className: 'hidden' }, [
+    el('div', {
+      className: 'detail-card__title',
+      style: { margin: 'var(--space-md) 0' },
+      textContent: 'Dados do pedido de civil',
+    }),
+    form.civilElement,
+  ]);
+
   const stepAdicional = el('div', { className: 'hidden' }, [
     el('div', {
       className: 'detail-card__title',
@@ -153,12 +147,7 @@ export async function renderPedidoWizard(container, _ctx) {
       textContent: 'Dados adicionais',
     }),
     form.adicionalElement,
-    el('div', {
-      className: 'detail-card__title',
-      style: { margin: 'var(--space-md) 0' },
-      textContent: 'Pedido de civil (opcional)',
-    }),
-    form.civilElement,
+    civilSection,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -232,6 +221,12 @@ export async function renderPedidoWizard(container, _ctx) {
     showSuccess('Item removido da lista do pedido');
   }
 
+  const produtosNote = el('p', {
+    className: 'form-field__help',
+    textContent: 'Todos os itens referenciam uma versão do catálogo do acervo (RN08). ' +
+      'Caso o produto não exista no acervo, cadastre-o primeiro pelo plugin QGIS.',
+  });
+
   const stepProdutos = el('div', { className: 'hidden' }, [
     el('div', { className: 'flex flex-between gap-sm', style: { marginBottom: 'var(--space-md)' } }, [
       el('div', { className: 'detail-card__title', textContent: 'Produtos do pedido' }),
@@ -241,11 +236,7 @@ export async function renderPedidoWizard(container, _ctx) {
         onClick: adicionarItem,
       }, [svgIcon(ICONS.add, 14), 'Adicionar produto']),
     ]),
-    el('p', {
-      className: 'form-field__help',
-      textContent: 'Todos os itens referenciam uma versão do catálogo do acervo (RN08). ' +
-        'Caso o produto não exista no acervo, cadastre-o primeiro pelo plugin QGIS.',
-    }),
+    produtosNote,
     itensTable.element,
   ]);
 
@@ -439,6 +430,31 @@ export async function renderPedidoWizard(container, _ctx) {
     renderSucesso(criado, falhas);
   }
 
+  // Aplica o modo (Militar/Civil): filtra clientes, mostra/esconde campos.
+  function setModo(modo) {
+    const civil = modo === 'civil';
+    btnMil.className = `btn ${civil ? 'btn--secondary' : 'btn--primary'}`;
+    btnCiv.className = `btn ${civil ? 'btn--primary' : 'btn--secondary'}`;
+    modoHint.textContent = civil
+      ? 'Cliente civil (LAI/órgão/empresa/pessoa). NUP ou ofício opcionais; produtos do acervo opcionais (civil entrega imagem por área).'
+      : 'Cliente OM, com DIEx e produtos do catálogo do acervo.';
+    const opts = clientes
+      .filter(c => civil ? !MILITAR_TIPOS.includes(c.tipo_cliente_id) : MILITAR_TIPOS.includes(c.tipo_cliente_id))
+      .map(c => ({ value: c.id, label: c.nome }));
+    form.fields.cliente_id.setOptions(opts);
+    form.fields.cliente_id.setValue(null);
+    civilSection.classList.toggle('hidden', !civil);
+    form.fields.omds.element.classList.toggle('hidden', civil);
+    form.fields.previsto_pit.element.classList.toggle('hidden', civil);
+    form.fields.demandante.element.classList.toggle('hidden', civil);
+    if (civil) form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
+    produtosNote.textContent = civil
+      ? 'Pedidos de civil geralmente NÃO têm produtos do acervo (entregam imagem por área). Deixe vazio se for o caso.'
+      : 'Todos os itens referenciam uma versão do catálogo do acervo (RN08). ' +
+        'Caso o produto não exista no acervo, cadastre-o primeiro pelo plugin QGIS.';
+  }
+
+  setModo('militar');
   goTo(0);
 
   return () => {
