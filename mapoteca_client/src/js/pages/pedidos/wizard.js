@@ -18,6 +18,7 @@ import {
   TIPO_CLIENTE_LAI,
 } from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
+import { openClienteDialog } from '../clientes/dialog-cliente.js';
 
 const STEPS = ['Básico', 'Adicional', 'Produtos', 'Confirmação'];
 
@@ -86,6 +87,7 @@ export async function renderPedidoWizard(container, _ctx) {
   // Lookups
   // ---------------------------------------------------------------------------
   let clientes, situacoes, canais;
+  let modoAtual = 'militar';
   try {
     [clientes, situacoes, canais] = await Promise.all([
       getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
@@ -119,11 +121,30 @@ export async function renderPedidoWizard(container, _ctx) {
   }, 'Pedido de Civil');
   const modoHint = el('div', { className: 'form-field__help' });
 
+  // Criar um cliente sem sair do fluxo do pedido (melhora a UX do civil, onde o
+  // solicitante muda a cada pedido). Após salvar, recarrega a lista, reaplica o
+  // filtro do modo atual e seleciona o cliente recém-criado.
+  const btnNovoCliente = el('button', {
+    className: 'btn btn--secondary btn--sm', type: 'button',
+    onClick: () => {
+      openClienteDialog({ onSaved: async () => {
+        const antes = new Set(clientes.map(c => c.id));
+        try { clientes = await getClientes(); } catch { return; }
+        setModo(modoAtual);
+        const novo = clientes.find(c => !antes.has(c.id));
+        if (novo) form.fields.cliente_id.setValue(novo.id);
+      } });
+    },
+  }, [svgIcon(ICONS.add, 14), 'Novo cliente']);
+
   const stepBasico = el('div', {}, [
     el('div', { className: 'detail-card__title', style: { marginBottom: 'var(--space-sm)' }, textContent: 'Tipo de pedido' }),
     el('div', { className: 'flex gap-sm', style: { marginBottom: 'var(--space-xs)' } }, [btnMil, btnCiv]),
     modoHint,
-    el('div', { className: 'detail-card__title', style: { margin: 'var(--space-md) 0' }, textContent: 'Dados básicos' }),
+    el('div', { className: 'flex flex-between gap-sm', style: { margin: 'var(--space-md) 0' } }, [
+      el('div', { className: 'detail-card__title', textContent: 'Dados básicos' }),
+      btnNovoCliente,
+    ]),
     form.basicoElement,
   ]);
 
@@ -432,6 +453,7 @@ export async function renderPedidoWizard(container, _ctx) {
 
   // Aplica o modo (Militar/Civil): filtra clientes, mostra/esconde campos.
   function setModo(modo) {
+    modoAtual = modo;
     const civil = modo === 'civil';
     btnMil.className = `btn ${civil ? 'btn--secondary' : 'btn--primary'}`;
     btnCiv.className = `btn ${civil ? 'btn--primary' : 'btn--secondary'}`;

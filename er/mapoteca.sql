@@ -90,6 +90,12 @@ CREATE TABLE mapoteca.cliente(
 	tipo_cliente_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_cliente (code)
 );
 
+-- Cliente padrão para demanda de civil anônima / LAI de cidadão: distingue-se
+-- pelo NUP, sem gravar dado pessoal do requerente (LGPD). Demanda de órgão/
+-- empresa deve ter cliente nomeado próprio.
+INSERT INTO mapoteca.cliente (nome, tipo_cliente_id) VALUES
+('Cidadão (LAI)', 9);
+
 CREATE TABLE mapoteca.pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	data_pedido TIMESTAMP WITH TIME ZONE NOT NULL,
