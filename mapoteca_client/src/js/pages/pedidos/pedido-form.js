@@ -38,7 +38,7 @@ function orNull(value) {
  * @returns {{fields:Object, basicoElement:HTMLElement, adicionalElement:HTMLElement,
  *   validateBasico:()=>boolean, validateAdicional:()=>boolean, getValues:()=>Object}}
  */
-export function createPedidoFormFields({ pedido = null, clientes = [], situacoes = [] }) {
+export function createPedidoFormFields({ pedido = null, clientes = [], situacoes = [], canais = [] }) {
   const fields = {
     // Etapa 1 — Básico
     cliente_id: createSelectField({
@@ -133,6 +133,25 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       rows: 2,
       helpText: 'Obrigatório quando a situação é Cancelado (RN03)',
     }),
+
+    // Dados de pedido de CIVIL (LAI/órgão/empresa/pessoa) — opcionais; deixe
+    // em branco para pedido de OM.
+    canal_recebimento_id: createSelectField({
+      label: 'Canal de recebimento (civil)',
+      options: canais.map(c => ({ value: c.code, label: c.nome })),
+      value: pedido ? pedido.canal_recebimento_id : undefined,
+      helpText: 'Como a demanda de civil chegou (Ouvidoria/LAI, e-mail, ofício).',
+    }),
+    municipio: createTextField({
+      label: 'Município/Área (civil)',
+      value: (pedido && pedido.municipio) || '',
+      maxLength: 255,
+    }),
+    qtd_imagens: createTextField({
+      label: 'Nº de imagens entregues (civil)',
+      value: pedido && pedido.qtd_imagens != null ? String(pedido.qtd_imagens) : '',
+      helpText: 'Contagem de imagens/produtos entregues (LAI não usa folha MI).',
+    }),
   };
 
   fields.cliente_id.element.classList.add('form-grid__full');
@@ -164,6 +183,12 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     fields.observacao_envio.element,
     fields.observacao.element,
     fields.motivo_cancelamento.element,
+  ]);
+
+  const civilElement = el('div', { className: 'form-grid' }, [
+    fields.canal_recebimento_id.element,
+    fields.municipio.element,
+    fields.qtd_imagens.element,
   ]);
 
   /**
@@ -241,8 +266,11 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       localizador_envio: orNull(fields.localizador_envio.getValue()),
       observacao_envio: orNull(fields.observacao_envio.getValue()),
       motivo_cancelamento: orNull(fields.motivo_cancelamento.getValue()),
+      canal_recebimento_id: fields.canal_recebimento_id.getValue(),
+      municipio: orNull(fields.municipio.getValue()),
+      qtd_imagens: fields.qtd_imagens.getValue() === '' ? null : Number(fields.qtd_imagens.getValue()),
     };
   }
 
-  return { fields, basicoElement, adicionalElement, validateBasico, validateAdicional, getValues };
+  return { fields, basicoElement, adicionalElement, civilElement, validateBasico, validateAdicional, getValues };
 }

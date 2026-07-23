@@ -3,7 +3,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -69,6 +69,10 @@ const pedidoBase = {
   demandante: Joi.string().max(255).allow(null, ''),
   omds: Joi.string().max(255).allow(null, ''),
   previsto_pit: Joi.boolean().default(false),
+  // Campos de pedido de CIVIL (opcionais; NULL para OM)
+  canal_recebimento_id: Joi.number().integer().valid(...Object.values(CANAL_RECEBIMENTO)).allow(null),
+  municipio: Joi.string().max(255).allow(null, ''),
+  qtd_imagens: Joi.number().integer().min(0).allow(null),
   observacao: Joi.string().allow(null, ''),
   localizador_envio: Joi.string().allow(null, ''),
   observacao_envio: Joi.string().allow(null, ''),

@@ -14,6 +14,7 @@ import {
   deleteImpressoes,
   getClientes,
   getDominioSituacaoPedido,
+  getDominioCanalRecebimento,
   getAnexosPedido,
   uploadAnexoPedido,
   downloadAnexoPedido,
@@ -104,15 +105,17 @@ export async function renderPedidoDetails(container, { params }) {
   // Edit / delete pedido
   // ---------------------------------------------------------------------------
   async function editarPedido(pedido) {
-    let clientes, situacoes;
+    let clientes, situacoes, canais;
     try {
-      [clientes, situacoes] = await Promise.all([getClientes(), getDominioSituacaoPedido()]);
+      [clientes, situacoes, canais] = await Promise.all([
+        getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
+      ]);
     } catch (err) {
       showError(err.message || 'Erro ao carregar os dados do formulário');
       return;
     }
 
-    const form = createPedidoFormFields({ pedido, clientes, situacoes });
+    const form = createPedidoFormFields({ pedido, clientes, situacoes, canais });
 
     const content = el('div', {}, [
       el('div', { className: 'detail-card__title', textContent: 'Dados básicos' }),
@@ -123,6 +126,12 @@ export async function renderPedidoDetails(container, { params }) {
         textContent: 'Dados adicionais',
       }),
       form.adicionalElement,
+      el('div', {
+        className: 'detail-card__title',
+        style: { marginTop: 'var(--space-md)' },
+        textContent: 'Pedido de civil (opcional)',
+      }),
+      form.civilElement,
     ]);
 
     let submitting = false;
@@ -529,20 +538,52 @@ export async function renderPedidoDetails(container, { params }) {
       ]),
     ];
 
+    const nItens = (pedido.produtos || []).length;
+    const nExemplares = (pedido.produtos || []).reduce(
+      (soma, r) => soma + (Number(r.quantidade) || 0), 0);
+
+    // Resumo rápido (sempre visível), incluindo a observação
+    const resumoRows = [
+      el('div', { className: 'detail-card__title', textContent: 'Resumo' }),
+      infoRow('Cliente', pedido.cliente_nome),
+      infoRow('Documento', `${pedido.documento_solicitacao || '-'}${
+        pedido.documento_solicitacao_nup ? ` · ${pedido.documento_solicitacao_nup}` : ''}`),
+      infoRow('Itens', `${nItens} carta(s) · ${nExemplares} exemplar(es)`),
+      infoRow('Data do pedido', formatDate(pedido.data_pedido)),
+      infoRow('Prazo', formatDate(pedido.prazo)),
+    ];
+    if (pedido.observacao) {
+      resumoRows.push(infoRow('Observação', pedido.observacao));
+    }
+    root.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, resumoRows));
+
+    // Pedido de civil (visível quando houver dado civil)
+    if (pedido.canal_recebimento_nome || pedido.municipio || pedido.qtd_imagens != null) {
+      root.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
+        el('div', { className: 'detail-card__title', textContent: 'Pedido de civil' }),
+        infoRow('Canal', pedido.canal_recebimento_nome),
+        infoRow('Município/Área', pedido.municipio),
+        infoRow('Nº de imagens', pedido.qtd_imagens != null ? String(pedido.qtd_imagens) : '-'),
+      ]));
+    }
+
+    // Motivo do cancelamento (visível quando houver)
     if (pedido.motivo_cancelamento) {
-      cards.push(el('div', { className: 'detail-card', style: { gridColumn: '1 / -1' } }, [
+      root.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
         el('div', { className: 'detail-card__title', textContent: 'Motivo do cancelamento' }),
         el('div', { className: 'detail-card__value', textContent: pedido.motivo_cancelamento }),
       ]));
     }
-    if (pedido.observacao) {
-      cards.push(el('div', { className: 'detail-card', style: { gridColumn: '1 / -1' } }, [
-        el('div', { className: 'detail-card__title', textContent: 'Observação' }),
-        el('div', { className: 'detail-card__value', textContent: pedido.observacao }),
-      ]));
-    }
 
-    root.appendChild(el('div', { className: 'detail-cards' }, cards));
+    // Detalhes completos (colapsado por padrão): os campos administrativos
+    root.appendChild(el('details', { className: 'detail-collapse', style: { marginBottom: 'var(--space-md)' } }, [
+      el('summary', {
+        className: 'detail-collapse__summary',
+        textContent: 'Detalhes do pedido',
+        style: { cursor: 'pointer', padding: 'var(--space-sm) 0', fontWeight: '600' },
+      }),
+      el('div', { className: 'detail-cards', style: { marginTop: 'var(--space-sm)' } }, cards),
+    ]));
 
     // Items table
     const produtosTable = createDataTable({
@@ -556,6 +597,15 @@ export async function renderPedidoDetails(container, { params }) {
         { key: 'mi', label: 'MI', sortable: true },
         { key: 'inom', label: 'INOM' },
         { key: 'escala', label: 'Escala' },
+        {
+          key: 'data_edicao',
+          label: 'Edição',
+          sortable: true,
+          render: (row) => {
+            const data = row.data_edicao ? formatDate(row.data_edicao) : '-';
+            return row.versao ? `${data} (${row.versao})` : data;
+          },
+        },
         { key: 'tipo_midia_nome', label: 'Mídia' },
         {
           key: 'quantidade',

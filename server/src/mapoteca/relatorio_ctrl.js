@@ -194,9 +194,12 @@ controller.getRelatorioPedidosCiv = async (ano) => {
       p.data_pedido,
       c.nome AS solicitante,
       tc.nome AS tipo_cliente,
+      cr.nome AS canal,
       p.documento_solicitacao AS numero_oficio,
       p.documento_solicitacao_nup AS nup_lai,
+      p.municipio,
       p.observacao AS resumo_pedido,
+      p.qtd_imagens,
       p.data_atendimento AS data_envio,
       sp.nome AS situacao,
       p.observacao_envio AS observacao,
@@ -206,6 +209,7 @@ controller.getRelatorioPedidosCiv = async (ano) => {
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
     JOIN mapoteca.tipo_cliente tc ON tc.code = c.tipo_cliente_id
     JOIN mapoteca.situacao_pedido sp ON sp.code = p.situacao_pedido_id
+    LEFT JOIN mapoteca.canal_recebimento cr ON cr.code = p.canal_recebimento_id
     WHERE c.tipo_cliente_id NOT IN ($<tiposMilitar:csv>)
       AND ${filtroAno("p.data_pedido")}
     ORDER BY p.data_pedido, p.id
@@ -446,9 +450,12 @@ controller.COLUNAS_CIV = [
   { key: "data_pedido", label: "Data Pedido" },
   { key: "solicitante", label: "Solicitante" },
   { key: "tipo_cliente", label: "Tipo de Cliente" },
+  { key: "canal", label: "Canal" },
   { key: "numero_oficio", label: "Número do Ofício" },
   { key: "nup_lai", label: "NUP LAI" },
+  { key: "municipio", label: "Município/Área" },
   { key: "resumo_pedido", label: "Resumo do Pedido" },
+  { key: "qtd_imagens", label: "Nº de Imagens" },
   { key: "data_envio", label: "Data Envio/Retirada" },
   { key: "situacao", label: "Status" },
   { key: "observacao", label: "Observação" },

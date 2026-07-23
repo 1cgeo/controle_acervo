@@ -70,6 +70,18 @@ INSERT INTO mapoteca.tipo_localizacao (code, nome) VALUES
 (3, 'Aquisição realizada'),
 (4, 'Saldo no empenho');
 
+-- Canal por onde a demanda de CIVIL chega (LAI/ouvidoria, e-mail, ofício).
+CREATE TABLE mapoteca.canal_recebimento(
+	code SMALLINT NOT NULL PRIMARY KEY,
+	nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO mapoteca.canal_recebimento (code, nome) VALUES
+(1, 'Ouvidoria (Fala.BR) - LAI'),
+(2, 'E-mail'),
+(3, 'Ofício'),
+(4, 'Outro');
+
 CREATE TABLE mapoteca.cliente(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
@@ -94,6 +106,10 @@ CREATE TABLE mapoteca.pedido(
     demandante VARCHAR(255),
     omds VARCHAR(255),
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
+    canal_recebimento_id SMALLINT REFERENCES mapoteca.canal_recebimento (code),
+    municipio VARCHAR(255),
+    qtd_imagens INTEGER CHECK (qtd_imagens IS NULL OR qtd_imagens >= 0),
     observacao TEXT,
     observacao_envio TEXT,
     localizador_envio TEXT,

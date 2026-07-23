@@ -135,6 +135,14 @@ const TIPO_ANEXO_PEDIDO = {
   OUTROS: 4
 }
 
+// mapoteca.canal_recebimento (por onde a demanda de civil chega)
+const CANAL_RECEBIMENTO = {
+  OUVIDORIA_LAI: 1,
+  EMAIL: 2,
+  OFICIO: 3,
+  OUTRO: 4
+}
+
 module.exports = {
   STATUS_ARQUIVO,
   TIPO_ARQUIVO,
@@ -149,5 +157,6 @@ module.exports = {
   FORMA_ENTREGA,
   TIPO_LOCALIZACAO,
   TIPO_RELACIONAMENTO,
-  TIPO_ANEXO_PEDIDO
+  TIPO_ANEXO_PEDIDO,
+  CANAL_RECEBIMENTO
 }

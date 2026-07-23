@@ -38,6 +38,9 @@ const PEDIDO_COLS = [
   { name: 'demandante', def: null },
   { name: 'omds', def: null },
   { name: 'previsto_pit', def: false },
+  { name: 'canal_recebimento_id', def: null },
+  { name: 'municipio', def: null },
+  { name: 'qtd_imagens', def: null },
   { name: 'observacao', def: null },
   { name: 'localizador_envio', def: null },
   { name: 'observacao_envio', def: null },
@@ -74,6 +77,13 @@ controller.getTipoMidia = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM mapoteca.tipo_midia
+  `);
+};
+
+controller.getCanalRecebimento = async () => {
+  return db.conn.any(`
+    SELECT code, nome
+    FROM mapoteca.canal_recebimento
   `);
 };
 
@@ -321,6 +331,8 @@ controller.getPedidoById = async (pedidoId) => {
              p.ponto_contato, p.documento_solicitacao, p.documento_solicitacao_nup,
              p.endereco_entrega, p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit,
+             p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
+             p.municipio, p.qtd_imagens,
              p.observacao, p.localizador_envio, p.observacao_envio, p.motivo_cancelamento,
              p.localizador_pedido,
              p.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
@@ -330,6 +342,7 @@ controller.getPedidoById = async (pedidoId) => {
       LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
       LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
       LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
+      LEFT JOIN mapoteca.canal_recebimento AS cr ON cr.code = p.canal_recebimento_id
       LEFT JOIN dgeo.usuario AS uc ON uc.id = p.usuario_criacao_id
       LEFT JOIN dgeo.usuario AS ua ON ua.id = p.usuario_atualizacao_id
       WHERE p.id = $1
@@ -345,7 +358,7 @@ controller.getPedidoById = async (pedidoId) => {
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
              pp.forma_entrega_id, fe.nome AS forma_entrega_nome,
              pp.data_entrega, pp.observacao, pp.producao_especifica,
-             v.versao, v.produto_id, p.nome AS produto_nome,
+             v.versao, v.data_edicao, v.produto_id, p.nome AS produto_nome,
              p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial,
              p.tipo_produto_id, tp.nome AS tipo_produto_nome,
              COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
@@ -500,6 +513,7 @@ controller.getPedidoByLocalizador = async (localizador) => {
         fe.nome AS forma_entrega_nome,
         pp.observacao,
         v.versao,
+        v.data_edicao,
         p.nome AS produto_nome,
         p.mi, p.inom,
         te.nome AS escala,

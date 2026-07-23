@@ -83,13 +83,13 @@ export async function renderConsultarPedido(container, { params }) {
   function showPedido(pedido) {
     clearChildren(resultArea);
 
+    // Resumo + informações do pedido (sempre visíveis, incluindo a observação)
     const rows = [
       infoRow('Situação', chipSituacaoPedido(pedido.situacao_pedido_id, pedido.situacao_pedido_nome)),
-      infoRow('Data do pedido', formatDate(pedido.data_pedido)),
       infoRow('Cliente', pedido.cliente_nome),
+      infoRow('Data do pedido', formatDate(pedido.data_pedido)),
       infoRow('Prazo', formatDate(pedido.prazo)),
     ];
-
     if (pedido.observacao) {
       rows.push(infoRow('Observação', pedido.observacao));
     }
@@ -102,9 +102,9 @@ export async function renderConsultarPedido(container, { params }) {
     if (pedido.motivo_cancelamento) {
       rows.push(infoRow('Motivo do cancelamento', pedido.motivo_cancelamento));
     }
-
     resultArea.appendChild(el('div', { className: 'consulta-info' }, rows));
 
+    // "O que foi pedido" (os itens) é o bloco colapsável
     showItens(pedido.produtos || []);
   }
 
@@ -117,14 +117,25 @@ export async function renderConsultarPedido(container, { params }) {
   }
 
   function showItens(produtos) {
-    resultArea.appendChild(el('div', {
-      className: 'consulta-info__label',
+    const nExemplares = produtos.reduce((soma, r) => soma + (Number(r.quantidade) || 0), 0);
+    const resumoItens = produtos.length
+      ? `O que foi pedido — ${produtos.length} carta(s) · ${nExemplares} exemplar(es)`
+      : 'O que foi pedido';
+
+    const bloco = el('details', {
+      className: 'consulta-collapse',
       style: { marginTop: 'var(--space-md)' },
-      textContent: 'O que foi pedido:',
-    }));
+    }, [
+      el('summary', {
+        className: 'consulta-collapse__summary consulta-info__label',
+        textContent: resumoItens,
+        style: { cursor: 'pointer', padding: 'var(--space-sm) 0' },
+      }),
+    ]);
+    resultArea.appendChild(bloco);
 
     if (!produtos.length) {
-      resultArea.appendChild(el('div', { className: 'consulta-card__message' }, [
+      bloco.appendChild(el('div', { className: 'consulta-card__message' }, [
         el('p', { textContent: 'Nenhum item registrado para este pedido.' }),
       ]));
       return;
@@ -138,6 +149,7 @@ export async function renderConsultarPedido(container, { params }) {
         itemMeta('MI', p.mi),
         itemMeta('INOM', p.inom),
         itemMeta('Versão', p.versao),
+        itemMeta('Edição', p.data_edicao ? formatDate(p.data_edicao) : null),
         itemMeta('Quantidade', p.quantidade),
         itemMeta('Mídia', p.tipo_midia_nome),
         itemMeta('Entrega', p.forma_entrega_nome),
@@ -158,7 +170,7 @@ export async function renderConsultarPedido(container, { params }) {
       return el('div', { className: 'consulta-item' }, children);
     });
 
-    resultArea.appendChild(el('div', { className: 'consulta-itens' }, itens));
+    bloco.appendChild(el('div', { className: 'consulta-itens' }, itens));
   }
 
   if (!isValidLocalizador(localizador)) {

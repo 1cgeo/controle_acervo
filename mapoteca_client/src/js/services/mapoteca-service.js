@@ -24,6 +24,10 @@ export function getDominioSituacaoPedido() {
 }
 
 /** @returns {Promise<Array<{code:number, nome:string}>>} */
+export function getDominioCanalRecebimento() {
+  return cachedFetch('dominio:canal_recebimento', () => apiGet(`${BASE}/dominio/canal_recebimento`), TTL_DOMINIO);
+}
+
 export function getDominioTipoMidia() {
   return cachedFetch('dominio:tipo_midia', () => apiGet(`${BASE}/dominio/tipo_midia`), TTL_DOMINIO);
 }

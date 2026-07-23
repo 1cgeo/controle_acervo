@@ -46,6 +46,15 @@ router.get(
 )
 
 router.get(
+  '/dominio/canal_recebimento',
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getCanalRecebimento()
+    const msg = 'Canais de recebimento retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
   '/dominio/tipo_localizacao',
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTipoLocalizacao()

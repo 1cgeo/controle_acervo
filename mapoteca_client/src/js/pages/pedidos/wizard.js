@@ -6,6 +6,7 @@ import { chipSituacaoPedido } from '@components/status-chip.js';
 import {
   getClientes,
   getDominioSituacaoPedido,
+  getDominioCanalRecebimento,
   createPedido,
   createProdutoPedido,
 } from '@services/mapoteca-service.js';
@@ -84,9 +85,11 @@ export async function renderPedidoWizard(container, _ctx) {
   // ---------------------------------------------------------------------------
   // Lookups
   // ---------------------------------------------------------------------------
-  let clientes, situacoes;
+  let clientes, situacoes, canais;
   try {
-    [clientes, situacoes] = await Promise.all([getClientes(), getDominioSituacaoPedido()]);
+    [clientes, situacoes, canais] = await Promise.all([
+      getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
+    ]);
   } catch (err) {
     if (disposed) return;
     showError(err.message || 'Erro ao carregar os dados do formulário');
@@ -98,7 +101,7 @@ export async function renderPedidoWizard(container, _ctx) {
   }
   if (disposed) return () => {};
 
-  const form = createPedidoFormFields({ clientes, situacoes });
+  const form = createPedidoFormFields({ clientes, situacoes, canais });
   const itens = []; // each: { payload, display }
 
   // ---------------------------------------------------------------------------
@@ -119,10 +122,23 @@ export async function renderPedidoWizard(container, _ctx) {
     },
   }, [svgIcon(ICONS.add, 14), 'Novo pedido LAI']);
 
+  // Atalho para pedido de CIVIL (LAI/órgão/empresa/pessoa): pré-seleciona
+  // "Em andamento" e lembra que o passo Produtos é opcional (civil entrega
+  // imagem por área, não folha MI do acervo). Os campos civis ficam no passo
+  // Adicional (canal, município, nº de imagens).
+  const civilBtn = el('button', {
+    className: 'btn btn--secondary btn--sm',
+    type: 'button',
+    onClick: () => {
+      form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
+      showInfo('Pedido de civil: selecione um cliente civil (órgão, empresa, pessoa ou LAI), preencha o canal/município/nº de imagens em "Adicional". O passo Produtos é opcional.');
+    },
+  }, [svgIcon(ICONS.add, 14), 'Novo pedido de Civil']);
+
   const stepBasico = el('div', {}, [
     el('div', { className: 'flex flex-between gap-sm', style: { marginBottom: 'var(--space-md)' } }, [
       el('div', { className: 'detail-card__title', textContent: 'Dados básicos' }),
-      laiBtn,
+      el('div', { className: 'flex gap-sm' }, [laiBtn, civilBtn]),
     ]),
     form.basicoElement,
   ]);
@@ -137,6 +153,12 @@ export async function renderPedidoWizard(container, _ctx) {
       textContent: 'Dados adicionais',
     }),
     form.adicionalElement,
+    el('div', {
+      className: 'detail-card__title',
+      style: { margin: 'var(--space-md) 0' },
+      textContent: 'Pedido de civil (opcional)',
+    }),
+    form.civilElement,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -263,6 +285,9 @@ export async function renderPedidoWizard(container, _ctx) {
       infoRow('Observação de envio', valores.observacao_envio),
       infoRow('Observação', valores.observacao),
       infoRow('Motivo do cancelamento', valores.motivo_cancelamento),
+      infoRow('Canal (civil)', (canais.find(c => c.code === valores.canal_recebimento_id) || {}).nome),
+      infoRow('Município/Área (civil)', valores.municipio),
+      infoRow('Nº de imagens (civil)', valores.qtd_imagens != null ? String(valores.qtd_imagens) : '-'),
     ]);
 
     stepConfirmacao.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
