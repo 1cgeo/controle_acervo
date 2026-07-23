@@ -150,3 +150,42 @@ export async function apiDownload(endpoint, fallbackFilename) {
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Multipart upload (FormData) with the Bearer token. Do NOT set Content-Type:
+ * the browser adds the multipart boundary. Returns the `dados` payload.
+ * @param {string} endpoint
+ * @param {FormData} formData - must include the file under the field the API expects
+ * @returns {Promise<any>}
+ */
+export async function apiUpload(endpoint, formData) {
+  const token = getToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`/api${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if ((response.status === 401 || response.status === 403) && endpoint !== '/login') {
+    handleAuthError();
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+
+  let json;
+  try {
+    json = await response.json();
+  } catch {
+    throw new Error(`Resposta inválida do servidor (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || !json.success) {
+    throw new Error(json.message || 'Erro no upload do arquivo');
+  }
+
+  return json.dados;
+}

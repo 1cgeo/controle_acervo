@@ -14,6 +14,10 @@ import {
   deleteImpressoes,
   getClientes,
   getDominioSituacaoPedido,
+  getAnexosPedido,
+  uploadAnexoPedido,
+  downloadAnexoPedido,
+  deleteAnexoPedido,
 } from '@services/mapoteca-service.js';
 import { formatDate, formatDateTime, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
@@ -27,6 +31,24 @@ function infoRow(label, value) {
       ? el('span', { className: 'detail-card__value' }, [value])
       : el('span', { className: 'detail-card__value', textContent: value || '-' }),
   ]);
+}
+
+// Domínio mapoteca.tipo_anexo_pedido (estável; espelha o seed do banco).
+const TIPOS_ANEXO = [
+  { code: 1, nome: 'Documento de solicitação (DIEx/Ofício)' },
+  { code: 2, nome: 'Anexo do documento de solicitação' },
+  { code: 3, nome: 'Comprovante de entrega/remessa' },
+  { code: 4, nome: 'Outros' },
+];
+
+function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 /**
@@ -289,6 +311,156 @@ export async function renderPedidoDetails(container, { params }) {
   }
 
   // ---------------------------------------------------------------------------
+  // Anexos do pedido (documento de solicitação + arquivos, guardados no banco)
+  // ---------------------------------------------------------------------------
+  function adicionarAnexo(onDone) {
+    const fileInput = el('input', { type: 'file', className: 'form-field__input' });
+    const tipoSelect = el('select', { className: 'form-field__input' },
+      TIPOS_ANEXO.map((t) => el('option', { value: String(t.code), textContent: t.nome })));
+    tipoSelect.value = '1';
+    const descInput = el('input', { type: 'text', className: 'form-field__input', maxLength: '1000' });
+
+    const content = el('div', { className: 'form-grid' }, [
+      el('div', { className: 'form-field' }, [
+        el('label', { className: 'form-field__label', textContent: 'Arquivo' }),
+        fileInput,
+      ]),
+      el('div', { className: 'form-field' }, [
+        el('label', { className: 'form-field__label', textContent: 'Tipo do anexo' }),
+        tipoSelect,
+      ]),
+      el('div', { className: 'form-field' }, [
+        el('label', { className: 'form-field__label', textContent: 'Descrição (opcional)' }),
+        descInput,
+      ]),
+    ]);
+
+    let submitting = false;
+    openModal({
+      title: 'Anexar documento',
+      content,
+      width: '520px',
+      actions: [
+        { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+        {
+          label: 'Anexar',
+          variant: 'primary',
+          onClick: async ({ close }) => {
+            if (submitting) return;
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) { showError('Selecione um arquivo'); return; }
+            submitting = true;
+            try {
+              await uploadAnexoPedido(pedidoId, file, {
+                tipo_anexo_id: Number(tipoSelect.value),
+                descricao: descInput.value.trim() || undefined,
+              });
+              showSuccess('Anexo cadastrado com sucesso');
+              close();
+              onDone();
+            } catch (err) {
+              submitting = false;
+              showError(err.message || 'Erro ao anexar o arquivo');
+            }
+          },
+        },
+      ],
+    });
+  }
+
+  async function excluirAnexo(anexo, onDone) {
+    const confirmado = await confirmDialog({
+      title: 'Excluir anexo',
+      message: `Excluir o anexo "${anexo.nome_original}"? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!confirmado) return;
+    try {
+      await deleteAnexoPedido(anexo.id);
+      showSuccess('Anexo excluído com sucesso');
+      onDone();
+    } catch (err) {
+      showError(err.message || 'Erro ao excluir o anexo');
+    }
+  }
+
+  function renderAnexosSection() {
+    const body = el('div', { className: 'data-table__empty', textContent: 'Carregando anexos...' });
+    let anexosTable = null;
+
+    async function loadAnexos() {
+      let anexos;
+      try {
+        anexos = await getAnexosPedido(pedidoId);
+      } catch (err) {
+        if (disposed) return;
+        clearChildren(body);
+        body.className = 'data-table__empty';
+        body.textContent = err.message || 'Erro ao carregar anexos';
+        return;
+      }
+      if (disposed) return;
+      if (anexosTable) anexosTable._cleanup();
+
+      anexosTable = createDataTable({
+        columns: [
+          { key: 'nome_original', label: 'Arquivo', sortable: true },
+          { key: 'tipo_anexo_nome', label: 'Tipo' },
+          { key: 'descricao', label: 'Descrição', render: (r) => r.descricao || '-' },
+          { key: 'tamanho_bytes', label: 'Tamanho', render: (r) => formatBytes(r.tamanho_bytes) },
+          {
+            key: 'data_cadastramento',
+            label: 'Cadastrado em',
+            sortable: true,
+            render: (r) => formatDateTime(r.data_cadastramento),
+          },
+          { key: 'usuario_cadastramento_nome', label: 'Por', render: (r) => r.usuario_cadastramento_nome || '-' },
+        ],
+        rows: anexos || [],
+        pageSize: 5,
+        emptyMessage: 'Nenhum anexo neste pedido',
+        actions: [
+          {
+            icon: ICONS.download,
+            title: 'Baixar',
+            onClick: (r) => downloadAnexoPedido(r.id, r.nome_original)
+              .catch((err) => showError(err.message || 'Erro ao baixar o anexo')),
+          },
+          {
+            icon: ICONS.delete,
+            title: 'Excluir anexo',
+            variant: 'danger',
+            onClick: (r) => excluirAnexo(r, loadAnexos),
+          },
+        ],
+      });
+      cleanups.push(() => anexosTable._cleanup());
+
+      clearChildren(body);
+      body.className = '';
+      body.appendChild(anexosTable.element);
+    }
+
+    const section = el('div', { className: 'dashboard-section' }, [
+      el('div', { className: 'dashboard-section__header' }, [
+        el('h2', { className: 'dashboard-section__title', textContent: 'Anexos do pedido' }),
+        el('div', { className: 'dashboard-section__controls' }, [
+          el('button', {
+            className: 'btn btn--primary btn--sm',
+            type: 'button',
+            onClick: () => adicionarAnexo(loadAnexos),
+          }, [svgIcon(ICONS.add, 14), 'Anexar documento']),
+        ]),
+      ]),
+      body,
+    ]);
+
+    root.appendChild(section);
+    loadAnexos();
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   function renderPedido(pedido) {
@@ -463,6 +635,9 @@ export async function renderPedidoDetails(container, { params }) {
       ]),
       produtosTable.element,
     ]));
+
+    // Anexos do pedido (documento de solicitação + arquivos)
+    renderAnexosSection();
   }
 
   await load();

@@ -10,6 +10,10 @@ const { verifyLogin, verifyAdmin } = require('../login')
 const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
 const mapotecaSchema = require('./mapoteca_schema')
+const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
+const uploadAnexoPedido = require('./anexo_pedido_upload')
+
+const { AppError } = require('../utils')
 
 const router = express.Router()
 
@@ -760,6 +764,87 @@ router.get(
       filename: `pedidos_resumo_${ano}.csv`,
       columns: relatorioCtrl.COLUNAS_PEDIDOS_RESUMO
     })
+  })
+)
+
+// --- Anexos do pedido (documento de solicitação + arquivos) -----------------
+
+// Lista os anexos (só metadados) de um pedido.
+router.get(
+  '/pedido/:id/anexos',
+  verifyLogin,
+  schemaValidation({ params: mapotecaSchema.anexoPedidoParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await anexoPedidoCtrl.listarPorPedido(req.params.id)
+
+    const msg = 'Anexos do pedido retornados com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Anexa um arquivo a um pedido. O arquivo vem no campo multipart "arquivo";
+// tipo_anexo_id e descricao (opcionais) vêm no corpo. Ordem: auth -> valida
+// params -> multer -> valida corpo -> handler.
+router.post(
+  '/pedido/:id/anexos',
+  verifyAdmin,
+  schemaValidation({ params: mapotecaSchema.anexoPedidoParams }),
+  uploadAnexoPedido,
+  schemaValidation({ body: mapotecaSchema.anexoUploadBody }),
+  asyncHandler(async (req, res, next) => {
+    if (!req.file) {
+      throw new AppError(
+        'Nenhum arquivo enviado (campo "arquivo")',
+        httpCode.BadRequest
+      )
+    }
+
+    const dados = await anexoPedidoCtrl.criar(
+      req.params.id,
+      req.file,
+      req.body,
+      req.usuarioUuid
+    )
+
+    const msg = 'Anexo do pedido cadastrado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created, dados)
+  })
+)
+
+// Baixa o arquivo de um anexo (bytes do banco) com o nome original.
+router.get(
+  '/pedido/anexo/:anexoId/download',
+  verifyLogin,
+  schemaValidation({ params: mapotecaSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const arquivo = await anexoPedidoCtrl.getParaDownload(req.params.anexoId)
+
+    res.setHeader(
+      'Content-Type',
+      arquivo.mimetype || 'application/octet-stream'
+    )
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(arquivo.nome_original)}`
+    )
+
+    return res.send(arquivo.conteudo)
+  })
+)
+
+// Remove um anexo do pedido.
+router.delete(
+  '/pedido/anexo/:anexoId',
+  verifyAdmin,
+  schemaValidation({ params: mapotecaSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    await anexoPedidoCtrl.deletar(req.params.anexoId)
+
+    const msg = 'Anexo do pedido excluído com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
 

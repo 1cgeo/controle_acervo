@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete, apiDownload } from './api-client.js';
+import { apiGet, apiPost, apiPut, apiDelete, apiDownload, apiUpload } from './api-client.js';
 import { cachedFetch, invalidate, TTL_DOMINIO, TTL_LISTA, TTL_DASHBOARD } from './cache.js';
 
 /**
@@ -573,4 +573,37 @@ export function downloadDashboardCsv(nome, ano) {
 /** Drop all dashboard cache entries (used by the 60s auto-refetch). */
 export function invalidateDashboardCache() {
   invalidate('dashboard');
+}
+
+// ---------------------------------------------------------------------------
+// Anexos do pedido (documento de solicitação + arquivos, guardados no banco)
+// ---------------------------------------------------------------------------
+
+/** Lista os anexos (só metadados) de um pedido. */
+export function getAnexosPedido(pedidoId) {
+  return apiGet(`${BASE}/pedido/${pedidoId}/anexos`);
+}
+
+/**
+ * Anexa um arquivo a um pedido. Devolve a lista atualizada de anexos.
+ * @param {number} pedidoId
+ * @param {File} file - o arquivo escolhido pelo usuário
+ * @param {{ tipo_anexo_id?: number, descricao?: string }} [meta]
+ */
+export function uploadAnexoPedido(pedidoId, file, meta = {}) {
+  const fd = new FormData();
+  fd.append('arquivo', file);
+  if (meta.tipo_anexo_id != null) fd.append('tipo_anexo_id', String(meta.tipo_anexo_id));
+  if (meta.descricao) fd.append('descricao', meta.descricao);
+  return apiUpload(`${BASE}/pedido/${pedidoId}/anexos`, fd);
+}
+
+/** Baixa o arquivo de um anexo (dispara o download no navegador). */
+export function downloadAnexoPedido(anexoId, nomeFallback) {
+  return apiDownload(`${BASE}/pedido/anexo/${anexoId}/download`, nomeFallback || `anexo_${anexoId}`);
+}
+
+/** Remove um anexo do pedido. */
+export function deleteAnexoPedido(anexoId) {
+  return apiDelete(`${BASE}/pedido/anexo/${anexoId}`);
 }

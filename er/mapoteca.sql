@@ -277,6 +277,40 @@ CREATE TABLE mapoteca.estoque_material (
     CONSTRAINT unique_material_por_localizacao UNIQUE (tipo_material_id, localizacao_id)
 );
 
+-- Anexos de arquivo do pedido: guarda o DOCUMENTO que originou a demanda
+-- (DIEx/Ofício) e seus arquivos. Os bytes ficam no PRÓPRIO banco (coluna
+-- conteudo BYTEA), seguindo o padrão do controle orçamentário (orcamento.arquivo);
+-- a listagem devolve só os metadados, os bytes saem apenas no download. Um pedido
+-- admite vários anexos. Usuario por UUID (convenção do acervo para tabelas novas).
+CREATE TABLE mapoteca.tipo_anexo_pedido(
+    code SMALLINT NOT NULL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO mapoteca.tipo_anexo_pedido (code, nome) VALUES
+(1, 'Documento de solicitação (DIEx/Ofício)'),
+(2, 'Anexo do documento de solicitação'),
+(3, 'Comprovante de entrega/remessa'),
+(4, 'Outros');
+
+CREATE TABLE mapoteca.anexo_pedido(
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id) ON DELETE CASCADE,
+    tipo_anexo_id SMALLINT NOT NULL DEFAULT 4 REFERENCES mapoteca.tipo_anexo_pedido (code),
+    nome_original VARCHAR(255) NOT NULL,
+    extensao VARCHAR(20) NOT NULL,
+    mimetype VARCHAR(150),
+    tamanho_bytes BIGINT,
+    conteudo BYTEA NOT NULL,
+    descricao TEXT,
+    data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+    data_modificacao TIMESTAMP WITH TIME ZONE,
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+);
+
+CREATE INDEX idx_anexo_pedido_pedido ON mapoteca.anexo_pedido(pedido_id);
+
 -- Indexes para mapoteca
 CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
 CREATE INDEX idx_pedido_cliente ON mapoteca.pedido(cliente_id);

@@ -3,7 +3,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -332,6 +332,28 @@ models.anoQuery = Joi.object().keys({
 // formato=csv retorna text/csv para download
 models.relatorioQuery = models.anoQuery.keys({
   formato: Joi.string().valid('json', 'csv').default('json')
+})
+
+// --- Anexos do pedido -------------------------------------------------------
+
+// Parâmetro de rota do pedido (id) para listar/anexar anexos.
+models.anexoPedidoParams = Joi.object().keys({
+  id: Joi.number().integer().required()
+})
+
+// Parâmetro de rota do próprio anexo (download/remoção).
+models.anexoIdParams = Joi.object().keys({
+  anexoId: Joi.number().integer().required()
+})
+
+// Campos de texto do multipart no upload (validados após o multer). O arquivo
+// vem no campo "arquivo"; aqui só os metadados opcionais.
+models.anexoUploadBody = Joi.object().keys({
+  tipo_anexo_id: Joi.number()
+    .integer()
+    .valid(...Object.values(TIPO_ANEXO_PEDIDO))
+    .default(TIPO_ANEXO_PEDIDO.OUTROS),
+  descricao: Joi.string().max(1000).allow(null, '')
 })
 
 module.exports = models
