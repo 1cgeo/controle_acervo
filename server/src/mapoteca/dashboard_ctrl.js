@@ -13,6 +13,13 @@ const {
 
 const controller = {};
 
+// As métricas de PEDIDO do dashboard são a visão de produção (OM). O civil
+// (LAI/órgão/empresa) tem o relatório Civ próprio; incluí-lo aqui distorce
+// clientes, tempo médio e pendentes. Este predicado limita o pedido a cliente
+// MILITAR (OM EB/Aeronáutica/Marinha). Usa subconsulta -> vale com qualquer alias.
+const PEDIDO_MILITAR = (colId) =>
+  `${colId} IN (SELECT id FROM mapoteca.cliente WHERE tipo_cliente_id IN (1, 2, 3))`;
+
 // Situações que contam como entrega efetuada
 const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO];
 
@@ -33,13 +40,14 @@ controller.getOrderStatusDistribution = async () => {
         COUNT(*) AS quantidade
       FROM mapoteca.pedido p
       JOIN mapoteca.situacao_pedido sp ON p.situacao_pedido_id = sp.code
+      WHERE ${PEDIDO_MILITAR('p.cliente_id')}
       GROUP BY situacao_pedido_id, sp.nome
       ORDER BY situacao_pedido_id
     `);
 
     // Get total orders
     const totalOrders = await t.one(`
-      SELECT COUNT(*) AS total FROM mapoteca.pedido
+      SELECT COUNT(*) AS total FROM mapoteca.pedido p WHERE ${PEDIDO_MILITAR('p.cliente_id')}
     `);
 
     const inProgressOrders = statusCounts.find(s => s.situacao_pedido_id === SITUACAO_PEDIDO.EM_ANDAMENTO) || { quantidade: 0 };
@@ -84,6 +92,7 @@ controller.getOrdersTimeline = async (meses = 6) => {
         SUM((SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id)) AS total_produtos
       FROM mapoteca.pedido p
       WHERE data_pedido >= current_date - interval '${meses} months'
+        AND ${PEDIDO_MILITAR('p.cliente_id')}
       GROUP BY semana
     )
     SELECT 
@@ -104,10 +113,11 @@ controller.getAverageFulfillmentTime = async () => {
     const overallAvg = await t.oneOrNone(`
       SELECT 
         AVG(EXTRACT(EPOCH FROM (data_atendimento - data_pedido)) / 86400) AS media_dias
-      FROM mapoteca.pedido
-      WHERE 
+      FROM mapoteca.pedido p
+      WHERE
         situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
         AND data_atendimento IS NOT NULL
+        AND ${PEDIDO_MILITAR('p.cliente_id')}
     `);
 
     // By client type
@@ -141,10 +151,11 @@ controller.getAverageFulfillmentTime = async () => {
         COALESCE(AVG(EXTRACT(EPOCH FROM (p.data_atendimento - p.data_pedido)) / 86400), 0) AS media_dias,
         COUNT(p.id) AS quantidade_pedidos
       FROM meses m
-      LEFT JOIN mapoteca.pedido p ON 
+      LEFT JOIN mapoteca.pedido p ON
         date_trunc('month', p.data_pedido) = m.mes AND
         p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} AND
-        p.data_atendimento IS NOT NULL
+        p.data_atendimento IS NOT NULL AND
+        ${PEDIDO_MILITAR('p.cliente_id')}
       GROUP BY m.mes
       ORDER BY m.mes
     `);
@@ -183,6 +194,7 @@ controller.getClientActivity = async (limite = 10) => {
     FROM mapoteca.cliente c
     JOIN mapoteca.pedido p ON c.id = p.cliente_id
     JOIN mapoteca.tipo_cliente tc ON c.tipo_cliente_id = tc.code
+    WHERE c.tipo_cliente_id IN (1, 2, 3)
     GROUP BY c.id, c.nome, c.tipo_cliente_id, tc.nome
     ORDER BY total_pedidos DESC
     LIMIT ${limite}
@@ -215,7 +227,8 @@ controller.getPendingOrders = async () => {
     JOIN mapoteca.cliente c ON p.cliente_id = c.id
     JOIN mapoteca.situacao_pedido sp ON p.situacao_pedido_id = sp.code
     WHERE p.situacao_pedido_id NOT IN (${SITUACAO_PEDIDO.CONCLUIDO}, ${SITUACAO_PEDIDO.CANCELADO})
-    ORDER BY 
+      AND ${PEDIDO_MILITAR('p.cliente_id')}
+    ORDER BY
       CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, -- nulls last
       p.prazo,
       p.data_pedido
