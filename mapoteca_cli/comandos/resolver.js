@@ -1,0 +1,317 @@
+// Path: comandos\resolver.js
+'use strict'
+
+// Os dois verbos de RESOLUCAO, que colapsam o passo mais caro do dia a dia da
+// mapoteca: transformar o que o documento escreveu no identificador que a API
+// exige.
+//
+//   mapoteca resolver 2962-4-NE 2963-1 ...   folha do documento -> uuid_versao
+//   mapoteca cliente resolver "6 RCB"        sigla do documento -> cliente_id
+//
+// Por que existem:
+//
+// Casar UMA folha com o acervo sao duas chamadas (busca por semelhanca, depois
+// o detalhe do produto para escolher a versao) mais um filtro exato e uma regra
+// de escolha de versao. Num pedido de trinta folhas isso e sessenta chamadas
+// sequenciais e sessenta respostas grandes no contexto do agente. Aqui vira uma
+// invocacao e uma tabela de trinta linhas.
+//
+// O lado do cliente e pior: a API nao tem busca de cliente. A unica opcao e
+// baixar a lista inteira e casar do lado de ca, e e por nao fazer isso direito
+// que a mesma OM entra duas vezes na base e o historico dela racha em dois.
+//
+// Nenhum dos dois DECIDE por conta propria em caso de duvida: ambiguidade vira
+// aviso e nenhuma escolha. Um chute silencioso aqui vira folha errada impressa.
+
+const http = require('../lib/http')
+const saida = require('../lib/saida')
+const argsLib = require('../lib/args')
+const mi = require('../lib/mi')
+const plano = require('../lib/plano')
+
+// Carta Topografica. E o que a mapoteca distribui em quase todo pedido; quem
+// quiser ortoimagem (3) ou tematica (7) passa --tipo-produto.
+const TIPO_PRODUTO_PADRAO = 2
+
+const COLUNAS_RESOLUCAO = [
+  'mi', 'situacao', 'produto_id', 'produto_nome', 'escala',
+  'uuid_versao', 'versao', 'data_edicao', 'arquivos'
+]
+
+/**
+ * Escolhe a versao que serve para atender um pedido.
+ *
+ * Regra do dominio: vale a mais recente por data de edicao QUE TENHA ARQUIVO.
+ * Versao sem arquivo e registro historico (uma folha 25k costuma ter as quatro
+ * edicoes antigas cadastradas sem nenhum arquivo) e escolhe-la produziria um
+ * item que a mapoteca nunca consegue imprimir.
+ */
+function escolherVersao (versoes) {
+  const todas = Array.isArray(versoes) ? versoes : []
+  const comArquivo = todas.filter(v => Array.isArray(v.arquivos) && v.arquivos.length)
+
+  const candidatas = comArquivo.length ? comArquivo : todas
+  if (!candidatas.length) return { versao: null, motivo: 'produto sem nenhuma versao cadastrada' }
+
+  const ordenadas = [...candidatas].sort((a, b) => {
+    const da = String(a.versao_data_edicao || '')
+    const db = String(b.versao_data_edicao || '')
+    return db.localeCompare(da)
+  })
+
+  return {
+    versao: ordenadas[0],
+    motivo: comArquivo.length
+      ? null
+      : 'NENHUMA versao deste produto tem arquivo: e registro historico e nao serve para imprimir'
+  }
+}
+
+async function resolverUmMi (cfg, bruto, filtros) {
+  const canonico = mi.normalizar(bruto)
+  const linha = { mi: canonico || String(bruto), situacao: 'ok' }
+
+  if (!canonico) {
+    linha.situacao = 'MI ilegivel'
+    return { linha, aviso: `"${bruto}" nao tem forma de MI (esperado 2962, 2962-4 ou 2962-4-NE).` }
+  }
+
+  const busca = await http.autenticada(cfg, 'GET', '/acervo/busca' + http.query({
+    termo: canonico,
+    tipo_produto_id: filtros.tipoProduto,
+    tipo_escala_id: filtros.escala,
+    limit: 50
+  }))
+
+  // A busca do servidor e por semelhanca (ILIKE '%termo%'): ela devolve tudo que
+  // CONTEM o MI, inclusive o MI de outra folha que o contenha como prefixo. O
+  // casamento exato e responsabilidade de quem chama.
+  const candidatos = (busca.dados && busca.dados.dados ? busca.dados.dados : [])
+    .filter(p => mi.iguais(p.mi, canonico))
+
+  if (!candidatos.length) {
+    linha.situacao = 'ausente do acervo'
+    return {
+      linha,
+      aviso: `${canonico}: nenhum produto com este MI no acervo. A folha nao pode virar item ` +
+        '(todo item aponta uma versao). Nomeie-a na observacao do pedido.'
+    }
+  }
+
+  if (candidatos.length > 1) {
+    linha.situacao = `AMBIGUO (${candidatos.map(c => c.id).join(', ')})`
+    return {
+      linha,
+      aviso: `${canonico}: ${candidatos.length} produtos com o mesmo MI (ids ` +
+        `${candidatos.map(c => c.id).join(', ')}). Nao escolhi nenhum. Recorte com ` +
+        '--tipo-produto ou --escala, ou fixe o uuid_versao a mao no plano.'
+    }
+  }
+
+  const produto = candidatos[0]
+  linha.produto_id = produto.id
+  linha.produto_nome = produto.nome
+  linha.escala = produto.escala
+
+  await http.pausa()
+  const detalhe = await http.autenticada(
+    cfg, 'GET', `/acervo/produto/detalhado/${produto.id}`
+  )
+  const dados = detalhe.dados || {}
+  const { versao, motivo } = escolherVersao(dados.versoes)
+
+  if (!versao) {
+    linha.situacao = 'sem versao'
+    return { linha, aviso: `${canonico}: ${motivo}.` }
+  }
+
+  linha.uuid_versao = versao.uuid_versao
+  linha.versao = versao.versao
+  linha.data_edicao = versao.versao_data_edicao
+  linha.arquivos = Array.isArray(versao.arquivos) ? versao.arquivos.length : 0
+  linha.total_versoes = Array.isArray(dados.versoes) ? dados.versoes.length : 0
+
+  const avisos = []
+  if (motivo) {
+    linha.situacao = 'sem arquivo'
+    avisos.push(`${canonico}: ${motivo}.`)
+  }
+  // O nome que o documento escreveu, quando informado, e conferido contra o do
+  // acervo. Quando os dois brigam, o MI manda (ele e verificavel; o nome so
+  // revela a intencao de quem digitou), mas a divergencia precisa aparecer.
+  if (filtros.nomes && filtros.nomes[canonico]) {
+    const doDocumento = String(filtros.nomes[canonico]).trim().toLowerCase()
+    const doAcervo = String(produto.nome || '').trim().toLowerCase()
+    if (doDocumento && doAcervo && doDocumento !== doAcervo) {
+      linha.divergencia_nome = `documento diz "${filtros.nomes[canonico]}", acervo diz "${produto.nome}"`
+      avisos.push(
+        `${canonico}: DIVERGENCIA DE NOME. ${linha.divergencia_nome}. ` +
+        'Prevalece o MI; registre a divergencia na observacao do item.'
+      )
+    }
+  }
+
+  return { linha, avisos }
+}
+
+async function resolverMis (args, cfg) {
+  const flags = args.flags
+  const nomes = {}
+  let brutos = args._.slice(1)
+
+  // Tambem aceita ler os MIs de um plano: e o caminho normal, porque o plano ja
+  // traz o MI E o nome como o documento escreveu, que e o que permite detectar a
+  // divergencia de nome.
+  const caminhoPlano = argsLib.texto(flags, 'plano')
+  if (caminhoPlano) {
+    const p = plano.ler(caminhoPlano)
+    const itens = Array.isArray(p.itens) ? p.itens : []
+    brutos = [...brutos, ...itens.map(i => i.mi).filter(Boolean)]
+    for (const item of itens) {
+      const canonico = mi.normalizar(item.mi)
+      if (canonico && item.nome) nomes[canonico] = item.nome
+    }
+  }
+
+  if (!brutos.length) {
+    throw new Error(
+      'Informe pelo menos um MI: mapoteca resolver 2962-4-NE 2963-1\n' +
+      'ou aponte um plano: mapoteca resolver --plano pedido.json'
+    )
+  }
+
+  const filtros = {
+    tipoProduto: argsLib.numero(flags, 'tipo-produto', TIPO_PRODUTO_PADRAO),
+    escala: argsLib.numero(flags, 'escala', null),
+    nomes
+  }
+
+  const linhas = []
+  const avisos = []
+  for (const [i, bruto] of brutos.entries()) {
+    // Pausa entre folhas: o SCA corta em 200 requisicoes por minuto e cada folha
+    // gasta duas. Sem isso, um pedido grande leva 429 no meio e deixa o trabalho
+    // pela metade.
+    if (i > 0) await http.pausa()
+    const r = await resolverUmMi(cfg, bruto, filtros)
+    linhas.push(r.linha)
+    if (r.aviso) avisos.push(r.aviso)
+    if (r.avisos) avisos.push(...r.avisos)
+  }
+
+  const out = saida.lista(linhas, {
+    formato: flags.json ? 'json' : (flags.formato || 'tsv'),
+    campos: argsLib.lista(flags.campos),
+    padrao: COLUNAS_RESOLUCAO
+  })
+
+  const resolvidos = linhas.filter(l => l.uuid_versao).length
+  const rodape = `\n${resolvidos} de ${linhas.length} folha(s) casadas com uma versao do acervo.` +
+    (resolvidos < linhas.length
+      ? ' As demais NAO podem virar item: nomeie-as na observacao do pedido.'
+      : '')
+
+  return { texto: out.texto + rodape, avisos: [...out.avisos, ...avisos] }
+}
+
+// ---------------------------------------------------------------------------
+// Cliente
+// ---------------------------------------------------------------------------
+
+/** Normaliza para comparar: sem acento, sem pontuacao, minusculo. */
+function chave (texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(new RegExp('[\u005Cu0300-\u005Cu036f]', 'g'), '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/**
+ * Casa um termo contra a lista de clientes. A base guarda o nome POR EXTENSO
+ * ("6o Regimento de Cavalaria Blindado") e o documento assina a sigla ("6o RCB"),
+ * entao alem do nome inteiro procura-se por PALAVRA: quem digitou "Cavalaria
+ * Blindado Alegrete" precisa achar a mesma OM.
+ */
+function casarClientes (clientes, termo) {
+  const alvo = chave(termo)
+  if (!alvo) return []
+  const palavras = alvo.split(' ').filter(p => p.length > 2)
+
+  return clientes
+    .map(c => {
+      const nome = chave(c.nome)
+      let pontos = 0
+      if (nome === alvo) pontos = 1000
+      else if (nome.includes(alvo)) pontos = 500
+      else if (alvo.includes(nome)) pontos = 400
+      const casadas = palavras.filter(p => nome.includes(p))
+      pontos += casadas.length * 10
+      return { cliente: c, pontos, palavras_casadas: casadas.length }
+    })
+    .filter(r => r.pontos > 0)
+    .sort((a, b) => b.pontos - a.pontos)
+}
+
+async function resolverCliente (args, cfg) {
+  const flags = args.flags
+  const termo = args._.slice(2).join(' ').trim()
+  if (!termo) {
+    throw new Error('Informe o nome ou a sigla: mapoteca cliente resolver "6 RCB"')
+  }
+
+  const r = await http.autenticada(cfg, 'GET', '/mapoteca/cliente')
+  const clientes = Array.isArray(r.dados) ? r.dados : []
+  const casados = casarClientes(clientes, termo)
+
+  if (!casados.length) {
+    return {
+      texto: `Nenhum cliente casa com "${termo}" entre os ${clientes.length} cadastrados.`,
+      avisos: [
+        'Antes de criar um cliente novo, tente pela palavra-chave do nome por extenso ' +
+        '(a base guarda "6o Regimento de Cavalaria Blindado", nao "6o RCB"), ou pela ' +
+        'cidade. Criar duplicata racha o historico da OM em dois.'
+      ]
+    }
+  }
+
+  const linhas = casados.slice(0, argsLib.numero(flags, 'limite', 10)).map(c => ({
+    id: c.cliente.id,
+    nome: c.cliente.nome,
+    tipo_cliente_nome: c.cliente.tipo_cliente_nome,
+    total_pedidos: c.cliente.total_pedidos,
+    data_ultimo_pedido: c.cliente.data_ultimo_pedido,
+    ponto_contato_principal: c.cliente.ponto_contato_principal,
+    palavras_casadas: c.palavras_casadas
+  }))
+
+  const out = saida.lista(linhas, {
+    formato: flags.json ? 'json' : (flags.formato || 'tsv'),
+    campos: argsLib.lista(flags.campos),
+    padrao: ['id', 'nome', 'tipo_cliente_nome', 'total_pedidos', 'data_ultimo_pedido', 'palavras_casadas']
+  })
+
+  const avisos = []
+  if (casados.length > 1 && casados[0].pontos === casados[1].pontos) {
+    avisos.push(
+      'Os dois primeiros casam igualmente bem: escolha o cliente_id a mao, nao pelo topo da lista.'
+    )
+  }
+
+  return { texto: out.texto, avisos: [...out.avisos, ...avisos] }
+}
+
+async function executar (args, cfg) {
+  if (args._[0] === 'cliente') return resolverCliente(args, cfg)
+  return resolverMis(args, cfg)
+}
+
+module.exports = {
+  executar,
+  precisaServidor: true,
+  escolherVersao,
+  casarClientes,
+  chave,
+  TIPO_PRODUTO_PADRAO
+}
