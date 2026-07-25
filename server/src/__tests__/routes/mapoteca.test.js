@@ -101,30 +101,41 @@ const getEstoque = async (tipoMaterialId, localizacaoId) => {
 // --- Testes -----------------------------------------------------------------
 
 describe('Mapoteca Routes', () => {
-  describe('Domain endpoints (no auth)', () => {
-    it('GET /api/mapoteca/dominio/tipo_cliente should return without auth', async () => {
-      const res = await request(app).get('/api/mapoteca/dominio/tipo_cliente')
+  describe('Domain endpoints (perfil consulta na mapoteca)', () => {
+    it('GET /api/mapoteca/dominio/tipo_cliente exige perfil (antes era publico)', async () => {
+      const semPerfil = await request(app).get('/api/mapoteca/dominio/tipo_cliente')
+      expect(semPerfil.status).toBe(401)
+
+      const res = await request(app)
+        .get('/api/mapoteca/dominio/tipo_cliente')
+        .set('Authorization', generateUserToken())
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
       expect(Array.isArray(res.body.dados)).toBe(true)
     })
 
     it('GET /api/mapoteca/dominio/situacao_pedido should include Aguardando produção (7)', async () => {
-      const res = await request(app).get('/api/mapoteca/dominio/situacao_pedido')
+      const res = await request(app)
+        .get('/api/mapoteca/dominio/situacao_pedido')
+        .set('Authorization', generateUserToken())
       expect(res.status).toBe(200)
       const codes = res.body.dados.map(d => d.code)
       expect(codes).toContain(7)
     })
 
     it('GET /api/mapoteca/dominio/tipo_midia should include Tyvek (8)', async () => {
-      const res = await request(app).get('/api/mapoteca/dominio/tipo_midia')
+      const res = await request(app)
+        .get('/api/mapoteca/dominio/tipo_midia')
+        .set('Authorization', generateUserToken())
       expect(res.status).toBe(200)
       const nomes = res.body.dados.map(d => d.nome)
       expect(nomes).toContain('Tyvek')
     })
 
     it('GET /api/mapoteca/dominio/forma_entrega should return 5 values', async () => {
-      const res = await request(app).get('/api/mapoteca/dominio/forma_entrega')
+      const res = await request(app)
+        .get('/api/mapoteca/dominio/forma_entrega')
+        .set('Authorization', generateUserToken())
       expect(res.status).toBe(200)
       expect(res.body.dados).toHaveLength(5)
       const nomes = res.body.dados.map(d => d.nome)
@@ -484,7 +495,7 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(400)
     })
 
-    it('should require admin', async () => {
+    it('aceita o operador da mapoteca (dar baixa e transferir e rotina de quem imprime)', async () => {
       const res = await request(app)
         .post('/api/mapoteca/estoque_material/transferir')
         .set('Authorization', generateUserToken())
@@ -495,7 +506,10 @@ describe('Mapoteca Routes', () => {
           quantidade: 1
         })
 
-      expect(res.status).toBe(403)
+      // O que se afirma aqui e a AUTORIZACAO: o operador nao e barrado por
+      // perfil. O resultado de negocio depende do estoque semeado, entao a
+      // asserção é sobre nao levar 403.
+      expect(res.status).not.toBe(403)
     })
   })
 

@@ -10,11 +10,61 @@ const { getUsuariosAuth } = require("../authentication");
 const controller = {};
 
 controller.getUsuarios = async () => {
+  // `perfis` vem como mapa modulo -> nivel ({ acervo: 1, mapoteca: 2 }), e nao
+  // como coluna por modulo, para a tela nao mudar quando surgir outro modulo.
   return db.conn.any(`
-  SELECT u.uuid, u.login, u.nome, u.tipo_posto_grad_id, tpg.nome_abrev AS tipo_posto_grad, u.nome_guerra, u.administrador, u.ativo 
+  SELECT u.uuid, u.login, u.nome, u.tipo_posto_grad_id, tpg.nome_abrev AS tipo_posto_grad, u.nome_guerra, u.administrador, u.ativo,
+    COALESCE((
+      SELECT json_object_agg(m.nome_abrev, up.perfil_id)
+      FROM dgeo.usuario_perfil AS up
+      INNER JOIN dominio.modulo AS m ON m.code = up.modulo_id
+      WHERE up.usuario_id = u.id
+    ), '{}'::json) AS perfis
   FROM dgeo.usuario AS u
   INNER JOIN dominio.tipo_posto_grad AS tpg ON tpg.code = u.tipo_posto_grad_id
   `);
+};
+
+controller.getModulos = async () => {
+  return db.conn.any(
+    "SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code"
+  );
+};
+
+controller.getPerfis = async () => {
+  return db.conn.any(
+    "SELECT code, nome FROM dominio.tipo_perfil ORDER BY code"
+  );
+};
+
+// Grava o perfil do usuario em cada modulo informado. Nivel nulo REMOVE a linha,
+// que e como se tira o acesso da pessoa aquele modulo (sem linha, sem acesso).
+const gravaPerfis = async (t, usuarioId, perfis) => {
+  if (!perfis) return;
+
+  const modulos = await t.any("SELECT code, nome_abrev FROM dominio.modulo");
+  const porNome = {};
+  modulos.forEach(m => { porNome[m.nome_abrev] = m.code; });
+
+  for (const [nomeModulo, nivel] of Object.entries(perfis)) {
+    const moduloId = porNome[nomeModulo];
+    if (!moduloId) {
+      throw new AppError(`Módulo desconhecido: ${nomeModulo}`, httpCode.BadRequest);
+    }
+    if (nivel === null) {
+      await t.none(
+        "DELETE FROM dgeo.usuario_perfil WHERE usuario_id = $<usuarioId> AND modulo_id = $<moduloId>",
+        { usuarioId, moduloId }
+      );
+    } else {
+      await t.none(
+        `INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+         VALUES ($<usuarioId>, $<moduloId>, $<nivel>)
+         ON CONFLICT (usuario_id, modulo_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id`,
+        { usuarioId, moduloId, nivel }
+      );
+    }
+  }
 };
 
 // Garante que a alteração não deixa o sistema sem nenhum administrador ativo
@@ -29,7 +79,7 @@ const verificaUltimoAdmin = async (t, uuidsAlterados) => {
   return parseInt(adminsRestantes.n, 10);
 };
 
-controller.atualizaUsuario = async (uuid, administrador, ativo) => {
+controller.atualizaUsuario = async (uuid, administrador, ativo, perfis) => {
   return db.conn.tx(async t => {
     if (!administrador || !ativo) {
       const outrosAdmins = await verificaUltimoAdmin(t, [uuid]);
@@ -56,6 +106,11 @@ controller.atualizaUsuario = async (uuid, administrador, ativo) => {
 
     if (!result.rowCount || result.rowCount !== 1) {
       throw new AppError("Usuário não encontrado", httpCode.BadRequest);
+    }
+
+    if (perfis) {
+      const { id } = await t.one("SELECT id FROM dgeo.usuario WHERE uuid = $<uuid>", { uuid });
+      await gravaPerfis(t, id, perfis);
     }
   });
 };
@@ -93,7 +148,7 @@ controller.atualizaUsuarioLista = async usuarios => {
 
     const query =
       db.pgp.helpers.update(
-        usuarios,
+        usuarios.map(u => ({ uuid: u.uuid, ativo: u.ativo, administrador: u.administrador })),
         cs,
         { table: "usuario", schema: "dgeo" },
         {
@@ -102,7 +157,13 @@ controller.atualizaUsuarioLista = async usuarios => {
         }
       ) + " WHERE Y.uuid::uuid = X.uuid";
 
-    return t.none(query);
+    await t.none(query);
+
+    // Perfil por modulo de quem veio com ele no corpo (o resto fica como esta)
+    for (const u of usuarios.filter(x => x.perfis)) {
+      const { id } = await t.one("SELECT id FROM dgeo.usuario WHERE uuid = $<uuid>", { uuid: u.uuid });
+      await gravaPerfis(t, id, u.perfis);
+    }
   });
 };
 

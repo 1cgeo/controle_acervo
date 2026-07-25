@@ -8,7 +8,7 @@
 const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
-const { verifyAdmin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const relatorioCtrl = require('./relatorio_ctrl')
 const relatorioSchema = require('./relatorio_schema')
@@ -18,7 +18,7 @@ const router = express.Router()
 // Preview em tela: mesmos dados do DOCX, no envelope JSON padrão.
 router.get(
   '/rpcmtec',
-  verifyAdmin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: relatorioSchema.rpcmtecQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await relatorioCtrl.gerarRelatorioAcervo(req.query)
@@ -29,7 +29,7 @@ router.get(
 
 router.get(
   '/rpcmtec/docx',
-  verifyAdmin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: relatorioSchema.rpcmtecQuery }),
   asyncHandler(async (req, res, next) => {
     const { ano, mes } = req.query

@@ -56,25 +56,43 @@ async function executar (args, cfg) {
   }
 
   // login
-  const { token, administrador } = await http.autenticar(cfg)
+  const { token, administrador, perfis } = await http.autenticar(cfg)
   http.gravarSessao(cfg, token)
   const exp = http.expiracaoDoToken(token)
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
+  // Desde 2026-07-25 o acesso e por PERFIL no modulo mapoteca: consulta ve,
+  // operador imprime e da baixa no material, gerente cadastra pedido e exclui.
+  // Administrador e global e passa em tudo. Dizer isso agora e mais barato que
+  // descobrir no 403 depois de montar um plano inteiro.
+  const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }
+  const nivel = NIVEL[perfis.mapoteca] || null
+  const quem = administrador
+    ? 'administrador (passa em qualquer modulo)'
+    : nivel
+      ? `perfil ${nivel} no modulo mapoteca`
+      : 'SEM perfil no modulo mapoteca'
+
   const avisos = []
-  if (!administrador) {
-    // O SCA deixa qualquer usuario logado LER a mapoteca, mas toda escrita exige
-    // administrador. Dizer isso agora e mais barato que descobrir no 403 depois
-    // de montar um plano inteiro.
+  if (!administrador && !nivel) {
     avisos.push(
-      'Usuario autenticado, porem NAO e administrador: leitura funciona, ' +
-      'mas cadastrar, atualizar e excluir vao voltar 403.'
+      'Autenticado, porem sem perfil no modulo mapoteca: as rotas vao voltar 403. ' +
+      'Peca ao administrador para conceder o perfil.'
+    )
+  } else if (!administrador && perfis.mapoteca === 1) {
+    avisos.push(
+      'Perfil de consulta: leitura funciona, mas imprimir exige operador e ' +
+      'cadastrar pedido, cliente ou anexo exige gerente.'
+    )
+  } else if (!administrador && perfis.mapoteca === 2) {
+    avisos.push(
+      'Perfil de operador: imprimir e dar baixa em material funcionam, mas ' +
+      'cadastrar pedido, cliente ou anexo exige gerente.'
     )
   }
 
   return {
-    texto: `Autenticado em ${cfg.server} como ${cfg.usuario}` +
-      `${administrador ? ' (admin)' : ''}. ` +
+    texto: `Autenticado em ${cfg.server} como ${cfg.usuario}, ${quem}. ` +
       `Sessao em cache por ~${minutos} min; os proximos comandos nao pedem senha.`,
     avisos
   }

@@ -91,7 +91,7 @@ FLAGS GLOBAIS
   --sem-cache     nao le nem grava o token em cache
 
 Sem login: /api (health), /api/integracao/* e os GET de /api/gerencia/dominio/*.
-Leitura de acervo exige login; TODA escrita exige administrador.`
+Leitura exige perfil de consulta no modulo acervo; catalogar exige operador; excluir exige gerente. O administrador passa em tudo.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

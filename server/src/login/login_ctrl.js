@@ -50,9 +50,26 @@ controller.login = async (login, senha, aplicacao) => {
 
   const { id, uuid, administrador } = usuarioDb
 
+  // Perfil por modulo (acervo, mapoteca), para o client saber o que exibir. O
+  // token NAO carrega isso de proposito: quem decide o que a pessoa pode e o
+  // verifyPerfil, lendo o banco a cada requisicao, senao rebaixar perfil so
+  // valeria quando o token expirasse.
+  const perfisDb = await db.conn.any(
+    `SELECT m.nome_abrev AS modulo, up.perfil_id
+     FROM dgeo.usuario_perfil AS up
+     INNER JOIN dominio.modulo AS m ON m.code = up.modulo_id
+     WHERE up.usuario_id = $<id>`,
+    { id }
+  )
+
+  const perfis = {}
+  perfisDb.forEach(p => {
+    perfis[p.modulo] = p.perfil_id
+  })
+
   const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
 
-  return { token, administrador, uuid }
+  return { token, administrador, uuid, perfis }
 }
 
 module.exports = controller

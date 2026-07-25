@@ -177,4 +177,31 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).
 UPDATE dominio.subtipo_produto SET define_produto = true WHERE code = 24;
 
+-- Nivel de acesso DENTRO de um modulo, hierarquico (perfil_id >= minimo).
+-- O administrador NAO e um nivel daqui: e a coluna dgeo.usuario.administrador,
+-- global, acima de todo modulo e unica na plataforma.
+CREATE TABLE dominio.tipo_perfil(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_perfil (code, nome) VALUES
+(1, 'Consulta'),
+(2, 'Operador'),
+(3, 'Gerente');
+
+-- Modulo funcional. E tabela, e nao CHECK na coluna, porque a plataforma vai
+-- absorver outros modulos (orcamento, producao): acrescentar um passa a ser
+-- INSERT, nao migracao de constraint. Acervo e mapoteca sao modulos distintos
+-- de proposito: quem atende a mapoteca nao cataloga o acervo.
+CREATE TABLE dominio.modulo(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  nome_abrev VARCHAR(255) UNIQUE NOT NULL
+);
+
+INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
+(1, 'Controle do Acervo', 'acervo'),
+(2, 'Mapoteca', 'mapoteca');
+
 COMMIT;

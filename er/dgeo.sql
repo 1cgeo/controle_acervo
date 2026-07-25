@@ -13,4 +13,15 @@ CREATE TABLE dgeo.usuario(
   uuid UUID NOT NULL UNIQUE
 );
 
+-- Perfil da pessoa POR MODULO (acervo e mapoteca sao separados). Quem e
+-- administrador nao precisa de linha aqui: a flag global ja o autoriza em
+-- qualquer modulo. Usuario sem linha para um modulo nao acessa aquele modulo.
+CREATE TABLE dgeo.usuario_perfil(
+  id SERIAL NOT NULL PRIMARY KEY,
+  usuario_id INTEGER NOT NULL REFERENCES dgeo.usuario (id),
+  modulo_id SMALLINT NOT NULL REFERENCES dominio.modulo (code),
+  perfil_id SMALLINT NOT NULL REFERENCES dominio.tipo_perfil (code),
+  UNIQUE (usuario_id, modulo_id)
+);
+
 COMMIT;

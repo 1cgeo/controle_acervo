@@ -1,10 +1,11 @@
 import '@css/style.css';
 import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
-import Router, { authGuard, adminGuard } from './router.js';
+import Router, { authGuard, adminGuard, perfilGuard } from './router.js';
 import { createAppLayout } from '@components/layout/app-layout.js';
 import { renderLogin } from '@pages/login.js';
 import { renderDashboard } from '@pages/dashboard.js';
+import { renderUsuarios } from '@pages/usuarios.js';
 import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 
@@ -48,11 +49,18 @@ router.add('/login', async (container) => {
   },
 });
 
-// Dashboard (with layout, admin only)
+// Dashboard: ver o acervo e de quem tem perfil de consulta (nao mais admin)
 router.add('/dashboard', async () => {
   const contentArea = getContentArea();
   contentArea.innerHTML = '';
   return await renderDashboard(contentArea);
+}, { guard: perfilGuard('consulta') });
+
+// Usuarios e perfis sao da plataforma, nao do modulo: so o administrador global.
+router.add('/usuarios', async () => {
+  const contentArea = getContentArea();
+  contentArea.innerHTML = '';
+  return await renderUsuarios(contentArea);
 }, { guard: adminGuard });
 
 // Error pages (with layout if authenticated, otherwise standalone)

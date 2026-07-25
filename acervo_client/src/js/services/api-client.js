@@ -19,6 +19,10 @@ export async function apiPost(endpoint, body = {}) {
   return apiRequest('POST', endpoint, body);
 }
 
+export async function apiPut(endpoint, body = {}) {
+  return apiRequest('PUT', endpoint, body);
+}
+
 async function apiRequest(method, endpoint, body = undefined) {
   const token = getToken();
   const headers = {

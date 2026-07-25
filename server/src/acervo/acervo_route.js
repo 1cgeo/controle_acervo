@@ -5,7 +5,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
-const { verifyLogin, verifyAdmin } = require('../login')
+const { verifyAdmin, verifyPerfil } = require('../login')
 
 const acervoCtrl = require('./acervo_ctrl')
 const acervoSchema = require('./acervo_schema')
@@ -14,7 +14,7 @@ const router = express.Router()
 
 router.get(
   '/camadas_produto',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   
     const dados = await acervoCtrl.getProdutosLayer();
@@ -26,7 +26,7 @@ router.get(
 
 router.get(
   '/produto/detalhado/:produto_id',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     params: acervoSchema.produtoByIdParams
   }),
@@ -43,7 +43,7 @@ router.get(
 
 router.get(
   '/produto/:produto_id',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     params: acervoSchema.produtoByIdParams
   }),
@@ -60,7 +60,7 @@ router.get(
 
 router.get(
   '/versao/:versao_id',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     params: acervoSchema.versaoByIdParams
   }),
@@ -77,7 +77,7 @@ router.get(
 
 router.post(
   '/prepare-download/arquivos',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ body: acervoSchema.arquivosIds }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.prepareDownload(
@@ -93,7 +93,7 @@ router.post(
 
 router.post(
   '/prepare-download/produtos',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ body: acervoSchema.produtosIdsComTipos }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.prepareDownloadByProdutos(
@@ -110,7 +110,7 @@ router.post(
 
 router.post(
   '/confirm-download',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ body: acervoSchema.downloadConfirmations }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.confirmDownload(
@@ -125,6 +125,7 @@ router.post(
 
 router.post(
   '/cleanup-expired-downloads',
+  verifyAdmin,
   verifyAdmin, // Only admin users can access this endpoint
   asyncHandler(async (req, res, next) => {
     await acervoCtrl.cleanupExpiredDownloads()
@@ -137,6 +138,7 @@ router.post(
 
 router.post(
   '/refresh_materialized_views',
+  verifyAdmin,
   verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.refreshAllMaterializedViews();
@@ -148,6 +150,7 @@ router.post(
 
 router.post(
   '/create_materialized_views',
+  verifyAdmin,
   verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.createMaterializedViews();
@@ -160,7 +163,7 @@ router.post(
 
 router.get(
   '/situacao-geral',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     query: acervoSchema.situacaoGeralQuery
   }),
@@ -194,7 +197,7 @@ router.get(
 
 router.get(
   '/export-planilha-csv',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     query: acervoSchema.situacaoGeralQuery
   }),
@@ -226,7 +229,7 @@ router.get(
 
 router.get(
   '/busca',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({
     query: acervoSchema.buscaProdutos
   }),
@@ -259,7 +262,7 @@ router.get(
 // regra, e o teste acusa quando não corrige.
 router.get(
   '/auditoria',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({ query: acervoSchema.auditoriaQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.getAuditoria({

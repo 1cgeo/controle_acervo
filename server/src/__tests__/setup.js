@@ -73,6 +73,18 @@ module.exports = async () => {
     VALUES ('test_user', 'Test User', 'User', 1, FALSE, TRUE, 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22')
   `)
 
+  // Perfil do usuario comum, reproduzindo o que ele podia ANTES do controle por
+  // perfil: lia o acervo (consulta) e, na mapoteca, tambem imprimia (operador).
+  // O admin nao ganha linha: a flag global ja o autoriza em qualquer modulo.
+  await testClient.query(`
+    INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+    SELECT id, 1, 1 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
+  `)
+  await testClient.query(`
+    INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+    SELECT id, 2, 2 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
+  `)
+
   await testClient.query(`
     INSERT INTO acervo.volume_armazenamento (nome, volume, capacidade_gb)
     VALUES ('Volume Teste', '/data/test', 1000)

@@ -5,7 +5,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
-const { verifyLogin, verifyAdmin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const gerenciaCtrl = require('./gerencia_ctrl')
 const gerenciaSchema = require('./gerencia_schema')
@@ -15,6 +15,7 @@ const router = express.Router()
 
 router.get(
   '/dominio/tipo_posto_grad',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoPostoGrad()
 
@@ -26,6 +27,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_produto',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoProduto()
 
@@ -37,6 +39,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_escala',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoEscala()
 
@@ -48,6 +51,7 @@ router.get(
 
 router.get(
   '/dominio/subtipo_produto',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getSubtipoProduto()
 
@@ -59,6 +63,7 @@ router.get(
 
 router.get(
   '/dominio/situacao_carregamento',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getSituacaoCarregamento()
 
@@ -70,6 +75,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_arquivo',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoArquivo()
 
@@ -81,6 +87,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_relacionamento',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoRelacionamento()
 
@@ -92,6 +99,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_status_arquivo',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoStatusArquivo()
 
@@ -103,6 +111,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_versao',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoVersao()
 
@@ -114,6 +123,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_status_execucao',
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await gerenciaCtrl.getTipoStatusExecucao()
 
@@ -125,7 +135,7 @@ router.get(
 
 router.get(
   '/arquivos_deletados',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),
@@ -145,7 +155,7 @@ router.get(
 
 router.post(
   '/verificar_inconsistencias',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   asyncHandler(async (req, res, next) => {
     const resultados = await gerenciaCtrl.verificarConsistencia()
 
@@ -157,7 +167,7 @@ router.post(
 
 router.get(
   '/arquivos_incorretos',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),
@@ -177,7 +187,7 @@ router.get(
 
 router.get(
   '/downloads_deletados',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),

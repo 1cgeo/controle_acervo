@@ -1,4 +1,4 @@
-import { isAuthenticated, isAdmin } from '@store/auth-store.js';
+import { isAuthenticated, isAdmin, temPerfil } from '@store/auth-store.js';
 
 /**
  * Hash-based router with path params (:id), query strings and per-page cleanup.
@@ -136,6 +136,21 @@ export function adminLoader() {
     return '/unauthorized';
   }
   return true;
+}
+
+/**
+ * Guard: exige sessao valida e um perfil MINIMO no modulo ('mapoteca').
+ * O administrador global passa em qualquer nivel.
+ * @param {'consulta'|'operador'|'gerente'} minimo
+ * @returns {Function}
+ */
+export function perfilLoader(minimo) {
+  return () => {
+    const auth = authLoader();
+    if (auth !== true) return auth;
+    if (!temPerfil(minimo)) return '/unauthorized';
+    return true;
+  };
 }
 
 export default Router;

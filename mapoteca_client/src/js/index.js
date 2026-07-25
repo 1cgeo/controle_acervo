@@ -1,7 +1,7 @@
 import '@css/style.css';
 import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
-import Router, { adminLoader } from './router.js';
+import Router, { adminLoader, perfilLoader } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { renderLogin } from '@pages/login.js';
 import { renderUnauthorized } from '@pages/unauthorized.js';
@@ -21,6 +21,7 @@ import { renderPlottersList } from '@pages/plotters/list.js';
 import { renderPlotterDetails } from '@pages/plotters/details.js';
 import { renderRelatorios } from '@pages/relatorios/index.js';
 import { renderRpcMtec } from '@pages/rpcmtec/index.js';
+import { renderUsuariosList } from '@pages/usuarios/list.js';
 
 // Initialize theme (light/dark via data-theme, persisted in mapoteca-theme-mode)
 initTheme();
@@ -77,20 +78,22 @@ router.add('/login', standalone(renderLogin), {
 });
 
 // Protected (admin) pages — section 5.3 routes
-router.add('/dashboard', withLayout(renderDashboard), { guard: adminLoader });
-router.add('/clientes', withLayout(renderClientesList), { guard: adminLoader });
-router.add('/clientes/:id', withLayout(renderClienteDetails), { guard: adminLoader });
-router.add('/pedidos', withLayout(renderPedidosList), { guard: adminLoader });
-router.add('/pedidos/novo', withLayout(renderPedidoWizard), { guard: adminLoader });
-router.add('/pedidos/:id', withLayout(renderPedidoDetails), { guard: adminLoader });
-router.add('/materiais', withLayout(renderMateriaisList), { guard: adminLoader });
-router.add('/materiais/:id', withLayout(renderMaterialDetails), { guard: adminLoader });
-router.add('/estoque', withLayout(renderEstoqueList), { guard: adminLoader });
-router.add('/consumo', withLayout(renderConsumoList), { guard: adminLoader });
-router.add('/plotters', withLayout(renderPlottersList), { guard: adminLoader });
-router.add('/plotters/:id', withLayout(renderPlotterDetails), { guard: adminLoader });
-router.add('/relatorios', withLayout(renderRelatorios), { guard: adminLoader });
-router.add('/rpcmtec', withLayout(renderRpcMtec), { guard: adminLoader });
+router.add('/dashboard', withLayout(renderDashboard), { guard: perfilLoader('consulta') });
+router.add('/clientes', withLayout(renderClientesList), { guard: perfilLoader('consulta') });
+router.add('/clientes/:id', withLayout(renderClienteDetails), { guard: perfilLoader('consulta') });
+router.add('/pedidos', withLayout(renderPedidosList), { guard: perfilLoader('consulta') });
+router.add('/pedidos/novo', withLayout(renderPedidoWizard), { guard: perfilLoader('consulta') });
+router.add('/pedidos/:id', withLayout(renderPedidoDetails), { guard: perfilLoader('consulta') });
+router.add('/materiais', withLayout(renderMateriaisList), { guard: perfilLoader('consulta') });
+router.add('/materiais/:id', withLayout(renderMaterialDetails), { guard: perfilLoader('consulta') });
+router.add('/estoque', withLayout(renderEstoqueList), { guard: perfilLoader('consulta') });
+router.add('/consumo', withLayout(renderConsumoList), { guard: perfilLoader('consulta') });
+router.add('/plotters', withLayout(renderPlottersList), { guard: perfilLoader('consulta') });
+router.add('/plotters/:id', withLayout(renderPlotterDetails), { guard: perfilLoader('consulta') });
+router.add('/relatorios', withLayout(renderRelatorios), { guard: perfilLoader('consulta') });
+router.add('/rpcmtec', withLayout(renderRpcMtec), { guard: perfilLoader('consulta') });
+// Usuarios e perfis sao da plataforma, nao do modulo: so o administrador global.
+router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 
 // Public: order tracking by localizador (RN04)
 router.add('/consultar/:localizador', standalone(renderConsultarPedido));

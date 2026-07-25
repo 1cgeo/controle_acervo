@@ -5,7 +5,7 @@ const express = require("express");
 
 const { schemaValidation, asyncHandler, httpCode } = require("../utils");
 
-const { verifyAdmin } = require("../login");
+const { verifyPerfil } = require("../login");
 
 const volumeCtrl = require("./volume_ctrl");
 const volumeSchema = require("./volume_schema");
@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.get(
   '/volume_tipo_produto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
     const dados = await volumeCtrl.getVolumeTipoProduto()
 
@@ -26,7 +26,7 @@ router.get(
 
 router.delete(
   '/volume_tipo_produto',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: volumeSchema.volumeTipoProdutoIds
   }),
@@ -41,7 +41,7 @@ router.delete(
 
 router.post(
   '/volume_tipo_produto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: volumeSchema.volumeTipoProduto
   }),
@@ -56,7 +56,7 @@ router.post(
 
 router.put(
   '/volume_tipo_produto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: volumeSchema.volumeTipoProdutoAtualizacao
   }),
@@ -71,7 +71,7 @@ router.put(
 
 router.get(
   '/volume_armazenamento',
-  verifyAdmin,
+  verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
     const dados = await volumeCtrl.getVolumeArmazenamento()
 
@@ -83,7 +83,7 @@ router.get(
 
 router.delete(
   '/volume_armazenamento',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: volumeSchema.volumeArmazenamentoIds
   }),
@@ -98,7 +98,7 @@ router.delete(
 
 router.post(
   '/volume_armazenamento',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: volumeSchema.volumeArmazenamento
   }),
@@ -113,7 +113,7 @@ router.post(
 
 router.put(
   '/volume_armazenamento',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: volumeSchema.volumeArmazenamentoAtualizacao
   }),

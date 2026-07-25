@@ -5,7 +5,7 @@ const express = require('express')
 
 const { asyncHandler, httpCode, schemaValidation } = require('../utils')
 
-const { verifyLogin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const dashboardCtrl = require('./dashboard_ctrl')
 const dashboardSchema = require('./dashboard_schema')
@@ -14,7 +14,7 @@ const router = express.Router()
 
 router.get(
   '/produtos_total',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getTotalProdutos();
   const msg = 'Total de produtos retornado com sucesso'
@@ -24,7 +24,7 @@ router.get(
 
 router.get(
   '/arquivos_total_gb',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getTotalArquivosGb();
   const msg = 'Total de gb retornado com sucesso'
@@ -34,7 +34,7 @@ router.get(
 
 router.get(
   '/produtos_tipo',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getProdutosPorTipo();
   const msg = 'Total de produtos por tipo com sucesso'
@@ -44,7 +44,7 @@ router.get(
 
 router.get(
   '/gb_tipo_produto',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getGbPorTipoProduto();
   const msg = 'Gb por tipo de produto retornado com sucesso'
@@ -54,7 +54,7 @@ router.get(
 
 router.get(
   '/usuarios_total',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getTotalUsuarios();
   const msg = 'Total de usuários retornados com sucesso'
@@ -64,7 +64,7 @@ router.get(
 
 router.get(
   '/arquivos_dia',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getArquivosPorDia();
   const msg = 'Arquivos carregados por dia retornadas com sucesso'
@@ -74,7 +74,7 @@ router.get(
 
 router.get(
   '/downloads_dia',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getDownloadsPorDia();
   const msg = 'Download por dia retornados com sucesso'
@@ -84,7 +84,7 @@ router.get(
 
 router.get(
   '/gb_volume',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getGbPorVolume();
   const msg = 'Gb por volume retornados com sucesso'
@@ -94,7 +94,7 @@ router.get(
 
 router.get(
   '/ultimos_carregamentos',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getUltimosCarregamentos();
   const msg = 'Ultimos carregamentos de arquivo retornados com sucesso'
@@ -104,7 +104,7 @@ router.get(
 
 router.get(
   '/ultimas_modificacoes',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getUltimasModificacoes();
   const msg = 'Ultimas modificações de arquivo retornadas com sucesso'
@@ -114,7 +114,7 @@ router.get(
 
 router.get(
   '/ultimos_deletes',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
   const dados = await dashboardCtrl.getUltimosDeletes();
   const msg = 'Ultimos delete de arquivo retornados com sucesso'
@@ -124,7 +124,7 @@ router.get(
 
 router.get(
   '/download',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getDownload()
 
@@ -136,7 +136,7 @@ router.get(
 
 router.get(
   '/produto_activity_timeline',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getProdutoActivityTimeline(req.query.months);
@@ -147,7 +147,7 @@ router.get(
 
 router.get(
   '/version_statistics',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getVersionStatistics();
     const msg = 'Estatísticas de versões retornadas com sucesso';
@@ -157,7 +157,7 @@ router.get(
 
 router.get(
   '/storage_growth_trends',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getStorageGrowthTrends(req.query.months);
@@ -168,7 +168,7 @@ router.get(
 
 router.get(
   '/project_status_summary',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getProjectStatusSummary();
     const msg = 'Resumo de status de projetos retornado com sucesso';
@@ -178,7 +178,7 @@ router.get(
 
 router.get(
   '/user_activity_metrics',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: dashboardSchema.limitParam }),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getUserActivityMetrics(req.query.limit);
@@ -189,7 +189,7 @@ router.get(
 
 router.get(
   '/system_health',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getSystemHealth()
     const msg = 'Resumo de saude do sistema retornado com sucesso'
@@ -199,7 +199,7 @@ router.get(
 
 router.get(
   '/produtos_escala',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getProdutosPorEscala()
     const msg = 'Produtos por escala retornados com sucesso'
@@ -209,7 +209,7 @@ router.get(
 
 router.get(
   '/arquivos_tipo_arquivo',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getArquivosPorTipoArquivo()
     const msg = 'Arquivos por tipo retornados com sucesso'
@@ -219,7 +219,7 @@ router.get(
 
 router.get(
   '/situacao_carregamento',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getSituacaoCarregamento()
     const msg = 'Situacao de carregamento retornada com sucesso'
@@ -229,7 +229,7 @@ router.get(
 
 router.get(
   '/versao_activity_timeline',
-  verifyLogin,
+  verifyPerfil('consulta'),
   schemaValidation({ query: dashboardSchema.timelineParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getVersaoActivityTimeline(req.query.months)
@@ -240,7 +240,7 @@ router.get(
 
 router.get(
   '/ultimos_produtos',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getUltimosProdutos()
     const msg = 'Ultimos produtos retornados com sucesso'
@@ -250,7 +250,7 @@ router.get(
 
 router.get(
   '/ultimas_versoes',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getUltimasVersoes()
     const msg = 'Ultimas versoes retornadas com sucesso'

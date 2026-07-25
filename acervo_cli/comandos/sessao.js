@@ -60,21 +60,37 @@ async function executar (args, cfg) {
   }
 
   // login
-  const { token, administrador } = await http.autenticar(cfg)
+  const { token, administrador, perfis } = await http.autenticar(cfg)
   http.gravarSessao(cfg, token)
   const exp = http.expiracaoDoToken(token)
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
-  const avisos = administrador
-    ? []
-    : [
-        'Usuario autenticado, porem NAO e administrador. Toda escrita no SCA ' +
-        '(editar, excluir, mover, carga) vai voltar 403; a leitura de acervo funciona.'
-      ]
+  // Desde 2026-07-25 o acesso e por PERFIL no modulo (consulta le, operador
+  // cataloga, gerente apaga). Administrador e global e passa em tudo.
+  const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }
+  const nivel = NIVEL[perfis.acervo] || null
+  const quem = administrador
+    ? 'administrador (passa em qualquer modulo)'
+    : nivel
+      ? `perfil ${nivel} no modulo acervo`
+      : 'SEM perfil no modulo acervo'
+
+  const avisos = []
+  if (!administrador && !nivel) {
+    avisos.push(
+      'Autenticado, porem sem perfil no modulo acervo: as rotas vao voltar 403. ' +
+      'Peca ao administrador para conceder o perfil.'
+    )
+  } else if (!administrador && perfis.acervo === 1) {
+    avisos.push(
+      'Perfil de consulta: leitura e download funcionam, mas catalogar (criar, ' +
+      'editar, mover, carga) exige operador e excluir exige gerente.'
+    )
+  }
 
   return {
-    texto: `Autenticado em ${cfg.server} como ${cfg.usuario}` +
-      `${administrador ? ' (admin)' : ' (nao-admin)'}, cliente ${cfg.cliente}. ` +
+    texto: `Autenticado em ${cfg.server} como ${cfg.usuario}, ${quem}, ` +
+      `cliente ${cfg.cliente}. ` +
       `Sessao em cache por ~${minutos} min; os proximos comandos nao pedem senha.`,
     avisos
   }

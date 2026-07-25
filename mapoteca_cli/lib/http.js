@@ -214,7 +214,11 @@ async function autenticar (cfg) {
   if (!dados.token) {
     throw new Error('O login respondeu sem token.')
   }
-  return { token: dados.token, administrador: !!dados.administrador }
+  return {
+    token: dados.token,
+    administrador: !!dados.administrador,
+    perfis: dados.perfis || {}
+  }
 }
 
 /**

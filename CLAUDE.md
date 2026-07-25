@@ -281,7 +281,8 @@ module_name/
 ```javascript
 router.post(
   '/endpoint',
-  verifyAdmin,                          // Auth middleware
+  verifyPerfil('operador'),             // Auth middleware (module defaults to 'acervo';
+                                        // mapoteca routes pass verifyPerfil(x, 'mapoteca'))
   schemaValidation({ body: schema }),   // Joi validation
   asyncHandler(async (req, res, next) => {
     const result = await ctrl.someMethod(req.body)
@@ -304,10 +305,17 @@ All API responses use `res.sendJsonAndLog()`:
 
 ### Authentication Flow
 1. `POST /api/login` validates credentials against external auth server
-2. Returns JWT token (1-hour expiry) with `administrador` flag and `uuid`
-3. Protected routes use `verifyLogin` middleware (extracts `req.usuarioUuid`, `req.usuarioId`, `req.administrador`)
-4. Admin routes use `verifyAdmin` middleware (re-checks admin status in DB)
+2. Returns JWT token (1-hour expiry) with `administrador` flag and `uuid`, plus `perfis` (profile per module, outside the token on purpose)
+3. Routes use `verifyPerfil(minimo, modulo)` — hierarchical (`perfil_id >= minimo`), reading the DB on every request so deactivating a user or lowering a profile takes effect immediately
+4. `verifyAdmin` is now reserved for platform-level routes (users, materialized views, download cleanup); `verifyLogin` remains only for what has not migrated
 5. Plugin stores token in memory; re-authenticates silently on 401 using saved credentials
+
+### Authorization Model (since 2026-07-25)
+- `dominio.tipo_perfil`: three hierarchical levels **inside a module** — 1 `consulta`, 2 `operador`, 3 `gerente`
+- `dominio.modulo`: a table, not a CHECK — 1 `acervo`, 2 `mapoteca` (so absorbing another system is an INSERT)
+- `dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)`: the person's level per module
+- `dgeo.usuario.administrador`: the single **global** administrator flag, above every module, short-circuiting the check. There is no per-module administrator
+- A user with no row for a module has **no access at all** to that module. Granting is an explicit act, never a migration side effect
 
 ### Domain Constants
 Server uses `server/src/utils/domain_constants.js` to centralize all domain table code values (STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, TIPO_ESCALA, SITUACAO_CARREGAMENTO, SUBTIPO_PRODUTO, TIPO_PRODUTO, TIPO_CLIENTE, SITUACAO_PEDIDO, TIPO_MIDIA, FORMA_ENTREGA, TIPO_LOCALIZACAO, TIPO_RELACIONAMENTO). Always use these constants instead of magic numbers in SQL queries. Values mirror `er/dominio.sql` and `er/mapoteca.sql` seed data.
@@ -375,7 +383,7 @@ SQL schema files are in `er/`. Execution order for fresh install:
 
 ## API Endpoints Summary
 
-All endpoints are under `/api/`. Domain endpoints (`GET /api/gerencia/dominio/*`) require no auth. Most other endpoints require `verifyLogin`. Admin-only endpoints require `verifyAdmin`.
+All endpoints are under `/api/`. Since 2026-07-25 every endpoint requires a profile in its module via `verifyPerfil(minimo, modulo)` — including the domain endpoints (`GET /api/gerencia/dominio/*`), which used to be unauthenticated. Platform-level endpoints (users, materialized views, download cleanup) still require `verifyAdmin`. The only routes left without authentication are `/api/integracao/*`, deliberately public and read-only.
 
 | Route Prefix | Module | Description |
 |---|---|---|

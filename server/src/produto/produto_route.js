@@ -5,7 +5,7 @@ const express = require("express");
 
 const { schemaValidation, asyncHandler, httpCode } = require("../utils");
 
-const { verifyLogin, verifyAdmin } = require("../login");
+const { verifyPerfil } = require("../login");
 
 const produtoCtrl = require("./produto_ctrl");
 const produtoSchema = require("./produto_schema");
@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.put(
   '/produto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.produtoAtualizacao
   }),
@@ -28,7 +28,7 @@ router.put(
 
 router.put(
   '/versao',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.versaoAtualizacao
   }),
@@ -42,7 +42,7 @@ router.put(
 
 router.delete(
   '/produto',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: produtoSchema.produtoIds
   }),
@@ -55,7 +55,7 @@ router.delete(
 
 router.delete(
   '/versao',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: produtoSchema.versaoIds
   }),
@@ -68,7 +68,7 @@ router.delete(
 
 router.post(
   '/versao_historica',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.versoesHistoricas
   }),
@@ -83,7 +83,7 @@ router.post(
 
 router.post(
   '/produto_versao_historica',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.produtosVersoesHistoricas
   }),
@@ -98,7 +98,7 @@ router.post(
 
 router.post(
   '/mover-arquivos',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.moverArquivos
   }),
@@ -113,7 +113,7 @@ router.post(
 
 router.post(
   '/renumerar-versoes',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.renumeraVersoes
   }),
@@ -131,7 +131,7 @@ router.post(
 
 router.post(
   '/produtos',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.produtos
   }),
@@ -146,7 +146,7 @@ router.post(
 
 router.get(
   '/versao_relacionamento',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await produtoCtrl.getVersaoRelacionamento();
 
@@ -158,7 +158,7 @@ router.get(
 
 router.post(
   '/versao_relacionamento',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.versaoRelacionamento
   }),
@@ -173,7 +173,7 @@ router.post(
 
 router.put(
   '/versao_relacionamento',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: produtoSchema.versaoRelacionamentoAtualizacao
   }),
@@ -188,7 +188,7 @@ router.put(
 
 router.delete(
   '/versao_relacionamento',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: produtoSchema.versaoRelacionamentoIds
   }),

@@ -5,7 +5,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode, csvExport } = require('../utils')
 
-const { verifyLogin, verifyAdmin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
@@ -20,6 +20,7 @@ const router = express.Router()
 // Rotas para Domínios
 router.get(
   '/dominio/tipo_cliente',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTipoCliente()
     const msg = 'Tipos de cliente retornados com sucesso'
@@ -29,6 +30,7 @@ router.get(
 
 router.get(
   '/dominio/situacao_pedido',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getSituacaoPedido()
     const msg = 'Situações de pedido retornadas com sucesso'
@@ -38,6 +40,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_midia',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTipoMidia()
     const msg = 'Tipos de mídia retornados com sucesso'
@@ -47,6 +50,7 @@ router.get(
 
 router.get(
   '/dominio/canal_recebimento',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getCanalRecebimento()
     const msg = 'Canais de recebimento retornados com sucesso'
@@ -56,6 +60,7 @@ router.get(
 
 router.get(
   '/dominio/tipo_localizacao',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTipoLocalizacao()
     const msg = 'Tipos de localização retornados com sucesso'
@@ -65,6 +70,7 @@ router.get(
 
 router.get(
   '/dominio/forma_entrega',
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getFormaEntrega()
     const msg = 'Formas de entrega retornadas com sucesso'
@@ -75,7 +81,7 @@ router.get(
 // Rotas para Cliente
 router.get(
   '/cliente',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getClientes()
     const msg = 'Clientes retornados com sucesso'
@@ -85,7 +91,7 @@ router.get(
 
 router.get(
   '/cliente/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.clienteId
   }),
@@ -99,7 +105,7 @@ router.get(
 
 router.post(
   '/cliente',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.cliente
   }),
@@ -112,7 +118,7 @@ router.post(
 
 router.put(
   '/cliente',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.clienteAtualizacao
   }),
@@ -125,7 +131,7 @@ router.put(
 
 router.delete(
   '/cliente',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.clienteIds
   }),
@@ -139,7 +145,7 @@ router.delete(
 // Rotas para Pedido
 router.get(
   '/pedido',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getPedidos()
     const msg = 'Pedidos retornados com sucesso'
@@ -147,6 +153,9 @@ router.get(
   })
 )
 
+// PUBLICA de proposito (sem guarda): e o acompanhamento que o proprio cliente
+// faz do pedido dele pelo localizador, sem ter conta no sistema. So devolve
+// situacao, observacao e itens daquele pedido, e o localizador e o segredo.
 router.get(
   '/pedido/localizador/:localizador',
   schemaValidation({
@@ -162,7 +171,7 @@ router.get(
 
 router.get(
   '/pedido/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.pedidoId
   }),
@@ -176,7 +185,7 @@ router.get(
 
 router.post(
   '/pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.pedido
   }),
@@ -189,7 +198,7 @@ router.post(
 
 router.put(
   '/pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.pedidoAtualizacao
   }),
@@ -202,7 +211,7 @@ router.put(
 
 router.delete(
   '/pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.pedidoIds
   }),
@@ -219,7 +228,7 @@ router.delete(
 // Cria tokens em acervo.download; o plugin confirma via /api/acervo/confirm-download.
 router.post(
   '/pedido/:id/download_impressao',
-  verifyLogin,
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.pedidoId
   }),
@@ -233,7 +242,7 @@ router.post(
 // Registra sessões de impressão (log operacional — qualquer usuário logado)
 router.post(
   '/impressao',
-  verifyLogin,
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.registroImpressao
   }),
@@ -247,7 +256,7 @@ router.post(
 // Histórico de impressão de um item do pedido
 router.get(
   '/produto_pedido/:id/impressao',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.produtoPedidoId
   }),
@@ -261,7 +270,7 @@ router.get(
 // Remove registros de impressão (correções)
 router.delete(
   '/impressao',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.impressaoIds
   }),
@@ -275,7 +284,7 @@ router.delete(
 // Rotas para Produto do Pedido
 router.post(
   '/produto_pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.produtoPedido
   }),
@@ -288,7 +297,7 @@ router.post(
 
 router.put(
   '/produto_pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.produtoPedidoAtualizacao
   }),
@@ -301,7 +310,7 @@ router.put(
 
 router.delete(
   '/produto_pedido',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.produtoPedidoIds
   }),
@@ -315,7 +324,7 @@ router.delete(
 // Rotas para Plotter
 router.get(
   '/plotter',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getPlotters()
     const msg = 'Plotters retornados com sucesso'
@@ -325,7 +334,7 @@ router.get(
 
 router.get(
   '/plotter/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.plotterId
   }),
@@ -339,7 +348,7 @@ router.get(
 
 router.post(
   '/plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.plotter
   }),
@@ -352,7 +361,7 @@ router.post(
 
 router.put(
   '/plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.plotterAtualizacao
   }),
@@ -365,7 +374,7 @@ router.put(
 
 router.delete(
   '/plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.plotterIds
   }),
@@ -379,7 +388,7 @@ router.delete(
 // Rotas para Manutenção de Plotter
 router.get(
   '/manutencao_plotter',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getManutencoesPlotter()
     const msg = 'Manutenções de plotter retornadas com sucesso'
@@ -389,7 +398,7 @@ router.get(
 
 router.get(
   '/manutencao_plotter/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.manutencaoPlotterId
   }),
@@ -402,7 +411,7 @@ router.get(
 
 router.post(
   '/manutencao_plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.manutencaoPlotter
   }),
@@ -415,7 +424,7 @@ router.post(
 
 router.put(
   '/manutencao_plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.manutencaoPlotterAtualizacao
   }),
@@ -428,7 +437,7 @@ router.put(
 
 router.delete(
   '/manutencao_plotter',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.manutencaoPlotterIds
   }),
@@ -442,7 +451,7 @@ router.delete(
 // Rotas para Tipo de Material
 router.get(
   '/tipo_material',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getTiposMaterial()
     const msg = 'Tipos de material retornados com sucesso'
@@ -452,7 +461,7 @@ router.get(
 
 router.get(
   '/tipo_material/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.tipoMaterialId
   }),
@@ -466,7 +475,7 @@ router.get(
 
 router.post(
   '/tipo_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterial
   }),
@@ -479,7 +488,7 @@ router.post(
 
 router.put(
   '/tipo_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterialAtualizacao
   }),
@@ -492,7 +501,7 @@ router.put(
 
 router.delete(
   '/tipo_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterialIds
   }),
@@ -506,7 +515,7 @@ router.delete(
 // Rotas para Estoque de Material
 router.get(
   '/estoque_material',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getEstoqueMaterial()
     const msg = 'Estoque de material retornado com sucesso'
@@ -516,7 +525,7 @@ router.get(
 
 router.get(
   '/estoque_por_localizacao',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.getEstoquePorLocalizacao()
     const msg = 'Estoque por localização retornado com sucesso'
@@ -526,7 +535,7 @@ router.get(
 
 router.post(
   '/estoque_material/transferir',
-  verifyAdmin,
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.transferenciaEstoque
   }),
@@ -539,7 +548,7 @@ router.post(
 
 router.get(
   '/estoque_material/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.estoqueMaterialId
   }),
@@ -552,7 +561,7 @@ router.get(
 
 router.post(
   '/estoque_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.estoqueMaterial
   }),
@@ -565,7 +574,7 @@ router.post(
 
 router.put(
   '/estoque_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.estoqueMaterialAtualizacao
   }),
@@ -578,7 +587,7 @@ router.put(
 
 router.delete(
   '/estoque_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.estoqueMaterialIds
   }),
@@ -592,7 +601,7 @@ router.delete(
 // Rotas para Consumo de Material
 router.get(
   '/consumo_material',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.consumoMaterialFiltro
   }),
@@ -605,7 +614,7 @@ router.get(
 
 router.get(
   '/consumo_mensal',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.anoQuery
   }),
@@ -618,7 +627,7 @@ router.get(
 
 router.get(
   '/consumo_material/:id',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.consumoMaterialId
   }),
@@ -631,7 +640,7 @@ router.get(
 
 router.post(
   '/consumo_material',
-  verifyAdmin,
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.consumoMaterial
   }),
@@ -644,7 +653,7 @@ router.post(
 
 router.put(
   '/consumo_material',
-  verifyAdmin,
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.consumoMaterialAtualizacao
   }),
@@ -657,7 +666,7 @@ router.put(
 
 router.delete(
   '/consumo_material',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.consumoMaterialIds
   }),
@@ -672,7 +681,7 @@ router.delete(
 // Aceitam ?ano= (default ano corrente) e ?formato=csv para download.
 router.get(
   '/relatorio/pedidos_mil',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -689,7 +698,7 @@ router.get(
 
 router.get(
   '/relatorio/pedidos_detalhado',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -706,7 +715,7 @@ router.get(
 
 router.get(
   '/relatorio/pedidos_civ',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -723,7 +732,7 @@ router.get(
 
 router.get(
   '/relatorio/tematicos',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -742,7 +751,7 @@ router.get(
 // colunas da planilha de impressão.
 router.get(
   '/relatorio/impressao_detalhada',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -761,7 +770,7 @@ router.get(
 // e o consolidado de produtos entregues por tipo e escala.
 router.get(
   '/relatorio/pedidos_resumo',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -781,7 +790,7 @@ router.get(
 // Lista os anexos (só metadados) de um pedido.
 router.get(
   '/pedido/:id/anexos',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.anexoPedidoParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await anexoPedidoCtrl.listarPorPedido(req.params.id)
@@ -797,7 +806,7 @@ router.get(
 // params -> multer -> valida corpo -> handler.
 router.post(
   '/pedido/:id/anexos',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.anexoPedidoParams }),
   uploadAnexoPedido,
   schemaValidation({ body: mapotecaSchema.anexoUploadBody }),
@@ -825,7 +834,7 @@ router.post(
 // Baixa o arquivo de um anexo (bytes do banco) com o nome original.
 router.get(
   '/pedido/anexo/:anexoId/download',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.anexoIdParams }),
   asyncHandler(async (req, res, next) => {
     const arquivo = await anexoPedidoCtrl.getParaDownload(req.params.anexoId)
@@ -846,7 +855,7 @@ router.get(
 // Remove um anexo do pedido.
 router.delete(
   '/pedido/anexo/:anexoId',
-  verifyAdmin,
+  verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.anexoIdParams }),
   asyncHandler(async (req, res, next) => {
     await anexoPedidoCtrl.deletar(req.params.anexoId)

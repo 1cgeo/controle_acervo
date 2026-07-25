@@ -39,7 +39,7 @@ class DockablePanel(QDockWidget, FORM_CLASS):
         categories = {}
 
         for panel_name, panel_info in PANEL_MAPPING.items():
-            if panel_info["admin_only"] and not self.api_client.is_admin:
+            if not self.api_client.pode(panel_info["perfil_minimo"]):
                 continue
 
             category = panel_info["category"]

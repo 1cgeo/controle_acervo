@@ -1,4 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
+import { isAdmin } from '@store/auth-store.js';
 
 /**
  * Sidebar menu structure: plain items + the collapsible "Materiais" group.
@@ -21,6 +22,8 @@ const MENU = [
   { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
   { id: 'relatorios', label: 'Relatórios', icon: ICONS.description, path: '/relatorios' },
   { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec' },
+  // Só o administrador global concede perfil, então só ele vê o item
+  { id: 'usuarios', label: 'Usuários', icon: ICONS.lock, path: '/usuarios', adminOnly: true },
 ];
 
 /**
@@ -64,6 +67,9 @@ export function createSidebar({ collapsed = false } = {}) {
   }
 
   for (const item of MENU) {
+    // Item de plataforma (usuários e perfis) só aparece para o administrador
+    if (item.adminOnly && !isAdmin()) continue;
+
     if (item.children) {
       const childIds = item.children.map(c => c.id);
       const itemsContainer = el('div', { className: 'sidebar__group-items' },

@@ -3,6 +3,8 @@ import { isAdmin } from '@store/auth-store.js';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
+  // Conceder perfil e ato do administrador global, entao so ele ve o item
+  { id: 'usuarios', label: 'Usuários', icon: ICONS.lock || ICONS.dashboard, path: '/usuarios', adminOnly: true },
 ];
 
 /**

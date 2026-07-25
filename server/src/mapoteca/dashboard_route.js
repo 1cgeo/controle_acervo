@@ -5,7 +5,7 @@ const express = require('express')
 
 const { asyncHandler, httpCode, schemaValidation, csvExport } = require('../utils')
 
-const { verifyLogin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const dashboardCtrl = require('./dashboard_ctrl')
 const mapotecaSchema = require('./mapoteca_schema')
@@ -15,7 +15,7 @@ const router = express.Router()
 // Order Status Distribution
 router.get(
   '/order_status',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getOrderStatusDistribution()
     const msg = 'Distribuição de status de pedidos retornada com sucesso'
@@ -26,7 +26,7 @@ router.get(
 // Orders Timeline
 router.get(
   '/orders_timeline',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.mesesQuery
   }),
@@ -41,7 +41,7 @@ router.get(
 // Average Fulfillment Time
 router.get(
   '/avg_fulfillment_time',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getAverageFulfillmentTime()
     const msg = 'Tempo médio de atendimento retornado com sucesso'
@@ -52,7 +52,7 @@ router.get(
 // Client Activity
 router.get(
   '/client_activity',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.limiteQuery
   }),
@@ -67,7 +67,7 @@ router.get(
 // Pending Orders
 router.get(
   '/pending_orders',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getPendingOrders()
     const msg = 'Pedidos pendentes retornados com sucesso'
@@ -78,7 +78,7 @@ router.get(
 // Stock by Location
 router.get(
   '/stock_by_location',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getStockByLocation()
     const msg = 'Estoque por localização retornado com sucesso'
@@ -89,7 +89,7 @@ router.get(
 // Material Consumption Trends
 router.get(
   '/material_consumption',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.mesesQuery
   }),
@@ -104,7 +104,7 @@ router.get(
 // Plotter Status
 router.get(
   '/plotter_status',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   asyncHandler(async (req, res, next) => {
     const dados = await dashboardCtrl.getPlotterStatus()
     const msg = 'Status de plotters retornado com sucesso'
@@ -115,7 +115,7 @@ router.get(
 // Entregas por tipo de produto × escala no ano
 router.get(
   '/entregas_por_tipo_produto',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -133,7 +133,7 @@ router.get(
 // Entregas por tipo de mídia no ano
 router.get(
   '/entregas_por_midia',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -151,7 +151,7 @@ router.get(
 // Operações apoiadas no ano
 router.get(
   '/operacoes_apoiadas',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),
@@ -169,7 +169,7 @@ router.get(
 // Resumo anual (totais de pedidos, entregas, OMs, operações e custo de manutenção)
 router.get(
   '/resumo_anual',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.anoQuery
   }),
@@ -183,7 +183,7 @@ router.get(
 // Entregas por mês (tabela-resumo mensal Carta Topo × Carta Orto × Outros)
 router.get(
   '/entregas_por_mes',
-  verifyLogin,
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.relatorioQuery
   }),

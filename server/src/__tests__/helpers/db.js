@@ -53,7 +53,13 @@ const cleanTestData = async () => {
     // Reset volume_armazenamento to only seed row
     await t.none('DELETE FROM acervo.volume_armazenamento WHERE id > 1')
 
-    // Reset users to only seed rows
+    // Reset users to only seed rows (o perfil sai antes: FK para dgeo.usuario)
+    await t.none(`DELETE FROM dgeo.usuario_perfil WHERE usuario_id IN (
+      SELECT id FROM dgeo.usuario WHERE uuid NOT IN (
+        'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
+      )
+    )`)
     await t.none(`DELETE FROM dgeo.usuario WHERE uuid NOT IN (
       'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'

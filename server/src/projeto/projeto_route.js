@@ -5,7 +5,7 @@ const express = require("express");
 
 const { schemaValidation, asyncHandler, httpCode } = require("../utils");
 
-const { verifyLogin, verifyAdmin } = require("../login");
+const { verifyPerfil } = require("../login");
 
 const projetoCtrl = require("./projeto_ctrl");
 const projetoSchema = require("./projeto_schema");
@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.get(
   '/projeto',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await projetoCtrl.getProjetos();
 
@@ -26,7 +26,7 @@ router.get(
 
 router.post(
   '/projeto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: projetoSchema.projeto
   }),
@@ -39,7 +39,7 @@ router.post(
 
 router.put(
   '/projeto',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: projetoSchema.projetoAtualizacao
   }),
@@ -52,7 +52,7 @@ router.put(
 
 router.delete(
   '/projeto',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: projetoSchema.projetoIds
   }),
@@ -65,7 +65,7 @@ router.delete(
 
 router.get(
   '/lote',
-  verifyLogin,
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await projetoCtrl.getLotes();
 
@@ -77,7 +77,7 @@ router.get(
 
 router.post(
   '/lote',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: projetoSchema.lote
   }),
@@ -90,7 +90,7 @@ router.post(
 
 router.put(
   '/lote',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: projetoSchema.loteAtualizacao
   }),
@@ -103,7 +103,7 @@ router.put(
 
 router.delete(
   '/lote',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: projetoSchema.loteIds
   }),

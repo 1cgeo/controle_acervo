@@ -37,7 +37,10 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         self.product_id = None
         self.product_data = None
         self.current_version = None
-        self.is_admin = api_client.is_admin
+        # Editar produto, versao e relacionamento e do OPERADOR do acervo (o
+        # administrador global tambem passa). O nome do atributo fica como
+        # esta para nao espalhar a mudanca pelas abas.
+        self.is_admin = api_client.pode('operador')
         self.download_manager = DownloadManager(api_client)
 
         self.setup_ui()

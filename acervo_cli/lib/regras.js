@@ -25,7 +25,7 @@ const GERAL = [
   '',
   'Acesso: publico (sem login) sao /api (health) e /api/integracao/*; as rotas de',
   'dominio em /api/gerencia/dominio/* tambem nao exigem login. Leitura de acervo',
-  'exige login; TODA escrita exige administrador.',
+  'exige perfil no modulo acervo: consulta le, operador cataloga, gerente exclui.',
   '',
   'Todo PUT do SCA e sobrescrita do OBJETO INTEIRO, nunca patch parcial: o',
   'controller monta um UPDATE com a lista fixa de colunas. Campo que voce nao',

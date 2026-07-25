@@ -1,4 +1,4 @@
-import { isAuthenticated, isAdmin } from '@store/auth-store.js';
+import { isAuthenticated, isAdmin, temPerfil } from '@store/auth-store.js';
 
 class Router {
   #routes = [];
@@ -81,6 +81,21 @@ export function adminGuard() {
     return '/unauthorized';
   }
   return true;
+}
+
+/**
+ * Guard: exige sessao valida e um perfil MINIMO no modulo ('acervo').
+ * O administrador global passa em qualquer nivel.
+ * @param {'consulta'|'operador'|'gerente'} minimo
+ * @returns {Function}
+ */
+export function perfilGuard(minimo) {
+  return () => {
+    const auth = authGuard();
+    if (auth !== true) return auth;
+    if (!temPerfil(minimo)) return '/unauthorized';
+    return true;
+  };
 }
 
 export default Router;

@@ -13,6 +13,26 @@ const usuarioSchema = require('./usuario_schema')
 
 const router = express.Router()
 
+// Catalogo para a tela de usuarios montar os selects de perfil por modulo, em
+// vez de decorar os codigos do dominio.
+router.get(
+  '/dominio/modulo',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await usuarioCtrl.getModulos()
+    return res.sendJsonAndLog(true, 'Módulos retornados', httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/dominio/tipo_perfil',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await usuarioCtrl.getPerfis()
+    return res.sendJsonAndLog(true, 'Perfis retornados', httpCode.OK, dados)
+  })
+)
+
 router.get(
   '/servico_autenticacao',
   verifyAdmin,
@@ -47,7 +67,8 @@ router.put(
     await usuarioCtrl.atualizaUsuario(
       req.params.uuid,
       req.body.administrador,
-      req.body.ativo
+      req.body.ativo,
+      req.body.perfis
     )
     const msg = 'Usuário atualizado com sucesso'
 

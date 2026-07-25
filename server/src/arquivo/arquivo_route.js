@@ -5,7 +5,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
-const { verifyLogin, verifyAdmin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const arquivoCtrl = require('./arquivo_ctrl')
 const arquivoSchema = require('./arquivo_schema')
@@ -14,7 +14,7 @@ const router = express.Router()
 
 router.put(
   '/arquivo',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.arquivoAtualizacao
   }),
@@ -28,7 +28,7 @@ router.put(
 
 router.delete(
   '/arquivo',
-  verifyAdmin,
+  verifyPerfil('gerente'),
   schemaValidation({
     body: arquivoSchema.arquivoIds
   }),
@@ -41,7 +41,7 @@ router.delete(
 
 router.post(
   '/prepare-upload/files',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.prepareAddFiles
   }),
@@ -54,7 +54,7 @@ router.post(
 
 router.post(
   '/prepare-upload/version',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.prepareAddVersion
   }),
@@ -67,7 +67,7 @@ router.post(
 
 router.post(
   '/prepare-upload/product',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.prepareAddProduct
   }),
@@ -80,7 +80,7 @@ router.post(
 
 router.post(
   '/prepare-upload/replace-files',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.prepareReplaceFiles
   }),
@@ -93,7 +93,7 @@ router.post(
 
 router.post(
   '/confirm-upload',
-  verifyAdmin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.confirmUpload
   }),
@@ -111,7 +111,7 @@ router.post(
 
 router.get(
   '/problem-uploads',
-  verifyAdmin,
+  verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
     const dados = await arquivoCtrl.getProblemUploads();
     const msg = 'Uploads com problemas recuperados com sucesso';
@@ -122,7 +122,7 @@ router.get(
 
 router.get(
   '/upload-sessions',
-  verifyAdmin,
+  verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
     const dados = await arquivoCtrl.getUploadSessions();
 
@@ -134,7 +134,7 @@ router.get(
 
 router.post(
   '/cancel-upload',
-  verifyLogin,
+  verifyPerfil('operador'),
   schemaValidation({
     body: arquivoSchema.cancelUpload
   }),

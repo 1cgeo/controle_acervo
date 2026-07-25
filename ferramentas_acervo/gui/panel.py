@@ -36,37 +36,37 @@ PANEL_MAPPING = {
     "Carregar Camadas de Produtos": {
         "class": LoadProductLayersDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Informações do Produto": {
         "class": ProductInfoDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Download de Produtos": {
         "class": DownloadProdutosDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Download da Situação Geral": {
         "class": DownloadSituacaoGeralDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Buscar Produtos": {
         "class": BuscaProdutosDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Visualizar Relacionamentos entre Versões": {
         "class": VersaoRelacionamentoDialog,
         "category": "Funções Gerais",
-        "admin_only": False
+        "perfil_minimo": 'consulta'
     },
     "Configurações": {
         "class": ConfiguracoesDialog,
         "category": "Funções Gerais",
-        "admin_only": False,
+        "perfil_minimo": 'consulta',
         "modal": True  # Formulário de configurações permanece modal
     },
 
@@ -74,126 +74,126 @@ PANEL_MAPPING = {
     "Adicionar Produto": {
         "class": AddProductDialog,
         "category": "Funções de Administrador",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Adicionar Produto com Versão Histórica": {
         "class": AddHistoricalProductDialog,
         "category": "Funções de Administrador",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Carregar Produtos": {
         "class": LoadProductsDialog,
         "category": "Funções de Administrador",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     # Funções de Administração Avançada
     "Gerenciar Volumes": {
         "class": ManageVolumesDialog,
         "category": "Administração Avançada",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Relacionamento Volume e Tipo de Produto": {
         "class": ManageVolumeTipoProdutoDialog,
         "category": "Administração Avançada",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Projetos": {
         "class": ManageProjectsDialog,
         "category": "Administração Avançada",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Lotes": {
         "class": ManageLotesDialog,
         "category": "Administração Avançada",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Usuários": {
         "class": ManageUsersDialog,
         "category": "Administração Avançada",
-        "admin_only": True
+        "perfil_minimo": 'admin'
     },
     
     # Ferramentas de Diagnóstico e Manutenção
     "Verificar Inconsistências": {
         "class": VerificarInconsistenciasDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'gerente'
     },
     "Limpar Downloads Expirados": {
         "class": CleanupExpiredDownloadsDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'admin'
     },
     "Atualizar Visões Materializadas": {
         "class": RefreshMaterializedViewsDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'admin'
     },
     "Criar Visão Materializada": {
         "class": CreateMaterializedViewDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'admin'
     },
     "Gerenciar Arquivos com Problemas": {
         "class": ManageIncorrectFilesDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'gerente'
     },
     "Gerenciar Arquivos Excluídos": {
         "class": ArquivosDeletedDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'gerente'
     },
     "Visualizar Uploads com Problemas": {
         "class": ProblemUploadsDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Sessões de Upload": {
         "class": UploadSessionsDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Gerenciar Downloads Excluídos": {
         "class": DownloadsDeletadosDialog,
         "category": "Diagnóstico e Manutenção",
-        "admin_only": True
+        "perfil_minimo": 'gerente'
     },
 
     # Operações em Lote
     "Adicionar Arquivos em Lote": {
         "class": BulkLoadFilesDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Adicionar Produtos Completos em Lote": {
         "class": BulkLoadProductsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Adicionar Versões a Produtos em Lote": {
         "class": LoadVersionToProductsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Criar Produtos em Lote": {
         "class": BulkCreateProductsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Adicionar Produtos com Versões Históricas em Lote": {
         "class": LoadHistoricalProductsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Criar Relacionamentos entre Versões em Lote": {
         "class": BulkCreateVersionRelationshipsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     },
     "Adicionar Versões Históricas em Lote": {
         "class": LoadHistoricalVersionsDialog,
         "category": "Operações em Lote",
-        "admin_only": True
+        "perfil_minimo": 'operador'
     }
 }

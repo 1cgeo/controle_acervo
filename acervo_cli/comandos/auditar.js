@@ -36,7 +36,7 @@ O que cada severidade quer dizer:
   REVISAR  lente larga, para triagem humana. Achado NAO e necessariamente erro.
   INFO     estatistica de cobertura; nunca e erro.
 
-Exige administrador. E leitura pura (transacao READ ONLY no servidor).`
+Exige perfil de gerente no modulo acervo. E leitura pura (transacao READ ONLY no servidor).`
 
 async function executar (args, cfg) {
   const flags = args.flags

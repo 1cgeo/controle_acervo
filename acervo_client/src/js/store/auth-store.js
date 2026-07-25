@@ -1,6 +1,7 @@
 const AUTH_KEYS = {
   TOKEN: '@sca_dashboard-Token',
   EXPIRY: '@sca_dashboard-Token-Expiry',
+  PERFIS: '@perfis-por-modulo',
   AUTHORIZATION: '@sca_dashboard-User-Authorization',
   UUID: '@sca_dashboard-User-uuid',
   USERNAME: '@sca_dashboard-User-username',
@@ -25,8 +26,28 @@ export function isAuthenticated() {
   return new Date(expiry) > new Date();
 }
 
+// Administrador e GLOBAL: vale em qualquer modulo, e nao ha administrador de
+// modulo. Os niveis abaixo (consulta, operador, gerente) sao por modulo.
 export function isAdmin() {
   return localStorage.getItem(AUTH_KEYS.AUTHORIZATION) === 'ADMIN';
+}
+
+export const NIVEL = { consulta: 1, operador: 2, gerente: 3 };
+
+/** Perfil do usuario num modulo (0 quando nao tem nenhum). */
+export function getPerfil(modulo = 'acervo') {
+  try {
+    const perfis = JSON.parse(localStorage.getItem(AUTH_KEYS.PERFIS) || '{}');
+    return perfis[modulo] || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Hierarquico: gerente satisfaz operador e consulta. Admin satisfaz tudo. */
+export function temPerfil(minimo, modulo = 'acervo') {
+  if (isAdmin()) return true;
+  return getPerfil(modulo) >= (NIVEL[minimo] || 0);
 }
 
 // Decode the exp claim from a JWT. Returns a Date or null when absent/invalid.
@@ -46,7 +67,7 @@ function decodeJwtExpiry(token) {
 
 /**
  * Save auth data after successful login.
- * @param {Object} data - { token, administrador, uuid }
+ * @param {Object} data - { token, administrador, uuid, perfis }
  * @param {string} username
  */
 export function saveAuth(data, username) {
@@ -59,6 +80,7 @@ export function saveAuth(data, username) {
   localStorage.setItem(AUTH_KEYS.TOKEN, data.token);
   localStorage.setItem(AUTH_KEYS.EXPIRY, expiry.toISOString());
   localStorage.setItem(AUTH_KEYS.AUTHORIZATION, data.administrador ? 'ADMIN' : 'USER');
+  localStorage.setItem(AUTH_KEYS.PERFIS, JSON.stringify(data.perfis || {}));
   localStorage.setItem(AUTH_KEYS.UUID, data.uuid);
   localStorage.setItem(AUTH_KEYS.USERNAME, username);
 }

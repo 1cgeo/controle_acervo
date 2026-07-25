@@ -16,10 +16,29 @@ class APIClient:
         self.token = None
         self.user_uuid = None
         self.is_admin = False
+        self.perfis = {}
         self._username = None
         self._password = None
         self.session = requests.Session()
         self._configure_proxy()
+
+    # Niveis por modulo (dominio.tipo_perfil no servidor). O administrador e
+    # GLOBAL: passa em qualquer modulo e qualquer nivel, e nao existe
+    # administrador de modulo.
+    NIVEIS = {"consulta": 1, "operador": 2, "gerente": 3}
+
+    def pode(self, nivel_minimo, modulo="acervo"):
+        """Diz se o usuario satisfaz o nivel minimo naquele modulo.
+
+        'admin' pede o administrador global; os demais sao hierarquicos
+        (gerente satisfaz operador e consulta). O servidor decide de verdade;
+        isto so evita oferecer na tela o que voltaria 403.
+        """
+        if self.is_admin:
+            return True
+        if nivel_minimo == "admin":
+            return False
+        return self.perfis.get(modulo, 0) >= self.NIVEIS.get(nivel_minimo, 0)
 
     def _configure_proxy(self):
         """Configura o proxy da sessão HTTP.
@@ -68,6 +87,7 @@ class APIClient:
                 self.token = result["dados"]["token"]
                 self.user_uuid = result["dados"]["uuid"]
                 self.is_admin = result["dados"]["administrador"]
+                self.perfis = result["dados"].get("perfis", {})
                 return True
         except Exception as e:
             logging.warning(f"Falha na re-autenticação automática: {e}")
@@ -164,6 +184,7 @@ class APIClient:
                 self.token = response["dados"]["token"]
                 self.user_uuid = response["dados"]["uuid"]
                 self.is_admin = response["dados"]["administrador"]
+                self.perfis = response["dados"].get("perfis", {})
                 self._username = username
                 self._password = password
                 return True
