@@ -5,7 +5,7 @@ const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
 const { pipeline } = require('stream');
@@ -116,6 +116,16 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
           httpCode.BadRequest
         );
       }
+
+      // crs_original é o único campo opcional deste PUT e o def:null abaixo
+      // apagava o CRS gravado de quem simplesmente não mandou a chave. Ausente
+      // agora preserva; null explícito ainda limpa.
+      await preserveOmitted(t, {
+        table: 'arquivo',
+        id: arquivo.id,
+        fields: ['crs_original'],
+        body: arquivo
+      });
 
       const colunasArquivo = [
         'nome', 'tipo_arquivo_id', 'volume_armazenamento_id',

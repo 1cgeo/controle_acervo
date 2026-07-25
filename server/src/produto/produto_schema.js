@@ -27,7 +27,11 @@ models.produtoAtualizacao = Joi.object().keys({
   tipo_escala_id: Joi.number().integer().strict().required(),
   denominador_escala_especial: denominadorEscalaEspecial,
   tipo_produto_id: Joi.number().integer().strict().required(),
-  subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
+  // SEM .default(null): numa atualização, default silencioso apaga a identidade
+  // do produto (subtipo 24 = Carta Topográfica Militar). Chave ausente agora
+  // significa "não mexe" (o controller preserva o valor gravado); enviar null
+  // explicitamente continua sendo a forma de despinar o produto.
+  subtipo_produto_id: Joi.number().integer().strict().allow(null),
   descricao: Joi.string().allow('').required(),
   geom: Joi.string().allow(null)
 })
@@ -43,7 +47,9 @@ models.versaoAtualizacao = Joi.object().keys({
   metadado: Joi.object().required(),
   lote_id: Joi.number().integer().strict().allow(null).required(),
   orgao_produtor: Joi.string().required(),
-  palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+  // SEM .default([]): na atualização isso zerava as palavras-chave gravadas de
+  // quem apenas omitiu a chave. Ausente = preserva (ver o controller).
+  palavras_chave: Joi.array().items(Joi.string()).allow(null),
   data_criacao: Joi.date().required(),
   // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
   data_edicao: Joi.date().min(Joi.ref('data_criacao')).required()

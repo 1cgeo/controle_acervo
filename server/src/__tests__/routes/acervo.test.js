@@ -26,7 +26,9 @@ describe('Acervo Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
-      expect(res.body.dados.id).toBe(chain.produto.id)
+      // id vem como número (cast ::integer no SELECT) para o corpo desta leitura
+      // servir de corpo do PUT, que exige número estrito
+      expect(res.body.dados.id).toBe(Number(chain.produto.id))
     })
 
     it('should return 404 for missing produto', async () => {
@@ -55,7 +57,8 @@ describe('Acervo Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
-      expect(res.body.dados.id).toBe(chain.versao.id)
+      // idem ao GET de produto: número, para casar com o schema do PUT
+      expect(res.body.dados.id).toBe(Number(chain.versao.id))
     })
   })
 

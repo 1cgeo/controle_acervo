@@ -2,7 +2,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
 const { ESCALA_DISPLAY } = require("./query_fragments");
 
@@ -55,7 +55,11 @@ const PRODUTO_PEDIDO_COLS = [
   { name: 'forma_entrega_id', def: null },
   { name: 'data_entrega', def: null },
   { name: 'observacao', def: null },
-  'producao_especifica'
+  // O def aqui é só rede de segurança para id inexistente: no caminho normal o
+  // preserveOmitted já preencheu a chave com o valor gravado (na criação o
+  // default do Joi é que responde). Sem ele, atualizar um id que não existe
+  // omitindo a chave viraria erro do pgp em vez do 404 do controller.
+  { name: 'producao_especifica', def: false }
 ];
 
 // Funções para Domínios
@@ -353,7 +357,9 @@ controller.getPedidoById = async (pedidoId) => {
     }
 
     const produtos = await t.any(`
-      SELECT pp.id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
+      -- pedido_id vai junto porque o PUT /mapoteca/produto_pedido o exige:
+      -- sem ele, o item que esta leitura devolve não serve de corpo de escrita
+      SELECT pp.id, pp.pedido_id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
              pp.forma_entrega_id, fe.nome AS forma_entrega_nome,
@@ -464,7 +470,18 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
     
     // Não permitir modificar o localizador_pedido
     delete pedido.localizador_pedido;
-    
+
+    // Chave ausente = "não mexe". Antes, quem editava um pedido a partir da
+    // LISTA (que não devolve palavras_chave) zerava as palavras-chave e
+    // desmarcava previsto_pit sem erro nenhum.
+    await preserveOmitted(t, {
+      schema: 'mapoteca',
+      table: 'pedido',
+      id: pedido.id,
+      fields: ['palavras_chave', 'previsto_pit'],
+      body: pedido
+    });
+
     pedido.usuario_atualizacao_id = usuarioId;
     pedido.data_atualizacao = new Date();
 
@@ -610,6 +627,15 @@ controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    // Chave ausente = "não mexe": omitir producao_especifica desmarcava a flag
+    await preserveOmitted(t, {
+      schema: 'mapoteca',
+      table: 'produto_pedido',
+      id: produtoPedido.id,
+      fields: ['producao_especifica'],
+      body: produtoPedido
+    });
+
     produtoPedido.usuario_atualizacao_id = usuarioId;
     produtoPedido.data_atualizacao = new Date();
 
@@ -895,7 +921,8 @@ controller.getPlotterById = async (plotterId) => {
     // Buscar manutenções do plotter
     const manutencoes = await t.any(`
       SELECT 
-        mp.id, mp.data_manutencao, mp.valor, mp.descricao,
+        -- plotter_id é exigido pelo PUT /mapoteca/manutencao_plotter
+        mp.id, mp.plotter_id, mp.data_manutencao, mp.valor, mp.descricao,
         mp.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
         mp.data_criacao, mp.usuario_atualizacao_id, 
         ua.nome AS usuario_atualizacao_nome, mp.data_atualizacao
@@ -1157,7 +1184,8 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
     // Buscar informações de estoque
     const estoqueInfo = await t.any(`
       SELECT 
-        em.id, em.quantidade, em.localizacao_id, tl.nome AS localizacao_nome,
+        -- tipo_material_id é exigido pelo PUT /mapoteca/estoque_material
+        em.id, em.tipo_material_id, em.quantidade, em.localizacao_id, tl.nome AS localizacao_nome,
         em.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
         em.data_criacao, em.usuario_atualizacao_id, 
         ua.nome AS usuario_atualizacao_nome, em.data_atualizacao
@@ -1172,7 +1200,8 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
     // Buscar histórico de consumo recente
     const consumoRecente = await t.any(`
       SELECT 
-        cm.id, cm.quantidade, cm.data_consumo,
+        -- tipo_material_id é exigido pelo PUT /mapoteca/consumo_material
+        cm.id, cm.tipo_material_id, cm.quantidade, cm.data_consumo,
         cm.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
         cm.data_criacao
       FROM mapoteca.consumo_material AS cm
@@ -1234,6 +1263,15 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
 
 controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
   return db.conn.tx(async t => {
+    // Chave ausente = "não mexe": omitir ativo ressuscitava material desativado
+    await preserveOmitted(t, {
+      schema: 'mapoteca',
+      table: 'tipo_material',
+      id: tipoMaterial.id,
+      fields: ['ativo'],
+      body: tipoMaterial
+    });
+
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },

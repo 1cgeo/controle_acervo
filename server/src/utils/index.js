@@ -15,4 +15,5 @@ module.exports = {
   serializeErrorLoader: require('./serialize_error_loader'),
   domainConstants: require('./domain_constants'),
   csvExport: require('./csv_export'),
+  preserveOmitted: require('./preserve_omitted'),
 }

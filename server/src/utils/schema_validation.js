@@ -3,6 +3,55 @@
 
 const AppError = require('./app_error')
 const httpCode = require('./http_code')
+const logger = require('./logger')
+
+const ehObjetoSimples = valor =>
+  valor !== null &&
+  typeof valor === 'object' &&
+  !Array.isArray(valor) &&
+  !(valor instanceof Date)
+
+/**
+ * Compara o corpo ORIGINAL com o corpo já validado e devolve os caminhos das
+ * chaves que o Joi descartou (stripUnknown).
+ *
+ * O PORQUÊ: uma chave com nome errado hoje some sem erro nenhum. Quem escreveu
+ * "subtipo_produto" em vez de "subtipo_produto_id" recebe 200 e acredita ter
+ * gravado. Esta função é o que permite avisar em vez de calar.
+ *
+ * Anda em profundidade (objetos aninhados e itens de array) porque a maioria dos
+ * corpos do SCA é aninhada (produtos[].versoes[].arquivos[]).
+ *
+ * @param {*} original - Corpo como chegou na requisição
+ * @param {*} validado - Corpo devolvido pelo Joi
+ * @param {string} [prefixo] - Caminho acumulado, para a mensagem
+ * @returns {string[]} Caminhos descartados (ex.: 'produtos[0].escala')
+ */
+const chavesDescartadas = (original, validado, prefixo = '') => {
+  if (Array.isArray(original) && Array.isArray(validado)) {
+    const achados = []
+    const limite = Math.min(original.length, validado.length)
+    for (let i = 0; i < limite; i++) {
+      achados.push(...chavesDescartadas(original[i], validado[i], `${prefixo}[${i}]`))
+    }
+    return achados
+  }
+
+  if (!ehObjetoSimples(original) || !ehObjetoSimples(validado)) {
+    return []
+  }
+
+  const achados = []
+  for (const chave of Object.keys(original)) {
+    const caminho = prefixo ? `${prefixo}.${chave}` : chave
+    if (!(chave in validado)) {
+      achados.push(caminho)
+      continue
+    }
+    achados.push(...chavesDescartadas(original[chave], validado[chave], caminho))
+  }
+  return achados
+}
 
 /**
  * Retorna objeto de erro da validação realizada pelo middleware do Joi
@@ -58,13 +107,31 @@ const middleware = ({
       Object.defineProperty(req, 'params', { value, configurable: true })
     }
     if (bodySchema) {
-      const { error, value } = bodySchema.validate(req.body, {
+      const corpoOriginal = req.body
+
+      const { error, value } = bodySchema.validate(corpoOriginal, {
         stripUnknown: true,
         abortEarly: false
       })
       if (error) {
         return next(validationError(error, 'Dados'))
       }
+
+      // Chave desconhecida some pelo stripUnknown. Manter o strip (recusar
+      // quebraria os carregadores em massa da carga, que não são versionados
+      // neste repo e fazem PUT em lote), mas NUNCA em silêncio: o descarte vai
+      // para o log do servidor e volta em "avisos" no envelope da resposta,
+      // para o cliente saber que o campo que ele mandou não foi gravado.
+      const descartados = chavesDescartadas(corpoOriginal, value)
+      if (descartados.length > 0) {
+        req.camposDescartados = descartados
+        logger.warn('Campos desconhecidos descartados do corpo da requisição', {
+          url: req.originalUrl,
+          metodo: req.method,
+          campos: descartados
+        })
+      }
+
       req.body = value
     }
 

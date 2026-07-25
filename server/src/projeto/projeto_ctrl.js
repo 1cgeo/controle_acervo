@@ -3,7 +3,7 @@
 
 const { db } = require("../database");
 
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, preserveOmitted } = require("../utils");
 
 const controller = {};
 
@@ -189,6 +189,16 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   lote.usuario_modificacao_uuid = usuarioUuid;
 
   return db.conn.tx(async t => {
+    // descricao é o único campo optional deste PUT e o def:null do ColumnSet
+    // apagava a descrição gravada de quem omitiu a chave. Ausente agora
+    // preserva; null explícito ainda limpa.
+    await preserveOmitted(t, {
+      table: 'lote',
+      id: lote.id,
+      fields: ['descricao'],
+      body: lote
+    });
+
     // Espelha a UNIQUE unique_pit_per_project com erro amigável
     const pitExistente = await t.oneOrNone(
       `SELECT id FROM acervo.lote WHERE projeto_id = $1 AND pit = $2 AND id != $3`,

@@ -188,4 +188,61 @@ describe('Produto Schemas', () => {
       expect(error).toBeDefined()
     })
   })
+
+  // Numa atualização, default silencioso é perda de dado: a chave ausente passa
+  // a valer o default e sobrescreve o que está gravado. A ausência tem que
+  // chegar ao controller como ausência, para ele preservar o valor atual.
+  describe('atualização sem default silencioso', () => {
+    it('produtoAtualizacao não inventa subtipo_produto_id quando a chave falta', () => {
+      const { error, value } = produtoSchema.produtoAtualizacao.validate({
+        id: 1,
+        nome: 'Carta',
+        mi: 'MI-001',
+        inom: 'SF-22',
+        tipo_escala_id: 2,
+        denominador_escala_especial: null,
+        tipo_produto_id: 1,
+        descricao: ''
+      })
+
+      expect(error).toBeUndefined()
+      expect('subtipo_produto_id' in value).toBe(false)
+    })
+
+    it('produtoAtualizacao continua aceitando subtipo_produto_id null explícito', () => {
+      const { error, value } = produtoSchema.produtoAtualizacao.validate({
+        id: 1,
+        nome: 'Carta',
+        mi: 'MI-001',
+        inom: 'SF-22',
+        tipo_escala_id: 2,
+        denominador_escala_especial: null,
+        tipo_produto_id: 1,
+        subtipo_produto_id: null,
+        descricao: ''
+      })
+
+      expect(error).toBeUndefined()
+      expect(value.subtipo_produto_id).toBeNull()
+    })
+
+    it('versaoAtualizacao não zera palavras_chave quando a chave falta', () => {
+      const { error, value } = produtoSchema.versaoAtualizacao.validate({
+        id: 1,
+        versao: '1-DSG',
+        nome: 'Folha',
+        tipo_versao_id: 1,
+        subtipo_produto_id: 2,
+        descricao: '',
+        metadado: {},
+        lote_id: null,
+        orgao_produtor: 'DSG',
+        data_criacao: '2024-01-01',
+        data_edicao: '2024-01-02'
+      })
+
+      expect(error).toBeUndefined()
+      expect('palavras_chave' in value).toBe(false)
+    })
+  })
 })

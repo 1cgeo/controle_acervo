@@ -42,6 +42,16 @@ const sendJsonAndLogMiddleware = (req, res, next) => {
       ...metadata
     }
 
+    // Campo com nome errado é descartado pelo schemaValidation (stripUnknown).
+    // Sem este aviso o cliente recebe 200 e acredita ter gravado algo que o
+    // servidor nunca viu. O aviso só aparece quando houve descarte, então não
+    // muda o envelope de nenhuma resposta correta.
+    if (req.camposDescartados && req.camposDescartados.length > 0) {
+      jsonData.avisos = [
+        `Campos ignorados por não existirem no contrato desta rota: ${req.camposDescartados.join(', ')}. Esses valores NÃO foram gravados; confira o nome do campo.`
+      ]
+    }
+
     return res.status(status).json(jsonData)
   }
 

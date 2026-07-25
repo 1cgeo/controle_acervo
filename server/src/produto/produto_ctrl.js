@@ -2,7 +2,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
@@ -11,6 +11,17 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
   return db.conn.tx(async t => {
     produto.data_modificacao = new Date()
     produto.usuario_modificacao_uuid = usuarioUuid
+
+    // Chave ausente = "não mexe neste campo". Antes, omitir subtipo_produto_id
+    // apagava a identidade do produto em silêncio (Joi .default(null) + def:null
+    // no ColumnSet), e bastava reenviar o que o GET devolvia para uma Carta
+    // Militar deixar de ser militar. Enviar null explícito ainda despina.
+    await preserveOmitted(t, {
+      table: 'produto',
+      id: produto.id,
+      fields: ['subtipo_produto_id'],
+      body: produto
+    })
 
     // O trigger acervo.validate_version recusa versão cujo subtipo divirja do subtipo do
     // produto. Fixar o produto num subtipo conflitante não falha aqui: falha na próxima
@@ -70,6 +81,35 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
   return db.conn.tx(async t => {
     versao.data_modificacao = new Date();
     versao.usuario_modificacao_uuid = usuarioUuid;
+
+    const versaoAtual = await t.oneOrNone(
+      'SELECT uuid_versao FROM acervo.versao WHERE id = $1',
+      [versao.id]
+    );
+
+    if (!versaoAtual) {
+      throw new AppError('Versão não encontrada', httpCode.NotFound);
+    }
+
+    // uuid_versao é aceito pelo schema mas NÃO está no ColumnSet abaixo: é
+    // imutável (o pedido da mapoteca referencia a versão por ele). Antes, mandar
+    // um uuid_versao diferente devolvia 200 sem gravar nada, ou seja, o cliente
+    // achava que tinha corrigido o identificador. Reenviar o mesmo valor que o
+    // GET devolveu continua válido; divergir é erro explícito.
+    if (versao.uuid_versao !== undefined && versao.uuid_versao !== versaoAtual.uuid_versao) {
+      throw new AppError(
+        'uuid_versao é imutável e não pode ser alterado por esta rota',
+        httpCode.BadRequest
+      );
+    }
+
+    // Chave ausente = "não mexe": omitir palavras_chave zerava as gravadas
+    await preserveOmitted(t, {
+      table: 'versao',
+      id: versao.id,
+      fields: ['palavras_chave'],
+      body: versao
+    });
 
     // Espelha a UNIQUE unique_version_per_product com erro amigável
     const versaoExistente = await t.oneOrNone(

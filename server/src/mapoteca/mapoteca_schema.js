@@ -85,9 +85,15 @@ const pedidoBase = {
 
 models.pedido = Joi.object().keys(pedidoBase)
 
+// Na CRIAÇÃO o default é legítimo (não existe valor anterior). Na ATUALIZAÇÃO
+// ele é perda silenciosa: a chave ausente passa a valer o default e sobrescreve
+// o que estava gravado. Por isso os campos com .default() são redeclarados sem
+// default aqui, e o controller preserva o valor atual quando a chave não vem.
 models.pedidoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
-  ...pedidoBase
+  ...pedidoBase,
+  palavras_chave: Joi.array().items(Joi.string()),
+  previsto_pit: Joi.boolean()
 })
 
 models.pedidoLocalizador = Joi.object().keys({
@@ -119,9 +125,11 @@ const produtoPedidoBase = {
 
 models.produtoPedido = Joi.object().keys(produtoPedidoBase)
 
+// Sem .default() na atualização: ver o comentário em pedidoAtualizacao
 models.produtoPedidoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
-  ...produtoPedidoBase
+  ...produtoPedidoBase,
+  producao_especifica: Joi.boolean()
 })
 
 models.produtoPedidoId = Joi.object().keys({
@@ -219,9 +227,12 @@ const tipoMaterialBase = {
 
 models.tipoMaterial = Joi.object().keys(tipoMaterialBase)
 
+// Sem .default(true) no ativo: omitir a chave ressuscitava material desativado.
+// Ver o comentário em pedidoAtualizacao.
 models.tipoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
-  ...tipoMaterialBase
+  ...tipoMaterialBase,
+  ativo: Joi.boolean()
 })
 
 // Esquemas para Estoque de Material

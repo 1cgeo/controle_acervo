@@ -72,13 +72,23 @@ controller.getProdutosLayer = async () => {
 controller.getVersaoById = async (versaoId) => {
   const versao = await db.conn.oneOrNone(`
     SELECT
-      v.id,
+      -- BIGINT chega como STRING no driver, e o PUT /produtos/versao exige
+      -- número estrito: sem o cast, reenviar o que esta leitura devolve tomava
+      -- 400 em "id". O cast estoura (alto e claro) se o id passar de int4, o que
+      -- não acontece na ordem de grandeza do acervo.
+      v.id::integer AS id,
       v.uuid_versao,
       v.versao,
+      -- nome é a chave que o PUT /produtos/versao exige. Antes esta leitura só
+      -- devolvia o apelido nome_versao, então quem lia e reenviava perdia o
+      -- campo (o nome_versao era descartado pelo stripUnknown e o nome chegava
+      -- ausente). O apelido continua sendo devolvido porque consumidores antigos
+      -- leem por ele; o canônico é nome.
+      v.nome,
       v.nome AS nome_versao,
       v.tipo_versao_id,
       v.subtipo_produto_id,
-      v.produto_id,
+      v.produto_id::integer AS produto_id,
       v.lote_id,
       v.metadado,
       v.descricao,
@@ -100,15 +110,23 @@ controller.getVersaoById = async (versaoId) => {
 controller.getProdutoById = async (produtoId) => {
   const produto = await db.conn.oneOrNone(`
     SELECT
-      p.id,
+      -- Mesma razão do GET de versão: BIGINT vira string no driver e o PUT
+      -- /produtos/produto exige número estrito
+      p.id::integer AS id,
       p.nome,
       p.mi,
       p.inom,
       p.tipo_escala_id,
       p.denominador_escala_especial,
       p.tipo_produto_id,
+      -- Identidade do produto (24 = Carta Topográfica Militar, NULL = civil).
+      -- Ficava de fora desta leitura enquanto o PUT /produtos/produto a aceitava:
+      -- reenviar o que o GET devolvia apagava a identidade sem erro nenhum.
+      p.subtipo_produto_id,
       p.descricao,
-      p.geom
+      -- EWKT, e não a coluna crua: o PUT reescreve com ST_GeomFromEWKT, que não
+      -- aceita o hex EWKB que o driver devolveria para a coluna crua
+      ST_AsEWKT(p.geom) AS geom
     FROM acervo.produto p
     WHERE p.id = $1
   `, [produtoId]);
@@ -133,6 +151,8 @@ controller.getProdutoDetailedById = async produtoId => {
         te.nome AS escala,
         p.denominador_escala_especial,
         p.tipo_produto_id,
+        -- Identidade do produto pelo subtipo: mesma razão do GET simples acima
+        p.subtipo_produto_id,
         p.descricao,
         p.data_cadastramento,
         u1.nome AS usuario_cadastramento,
@@ -157,6 +177,9 @@ controller.getProdutoDetailedById = async produtoId => {
         v.produto_id,
         v.uuid_versao,
         v.versao,
+        -- nome é a chave que o PUT /produtos/versao exige; nome_versao fica
+        -- por compatibilidade com quem já lê esta tela detalhada
+        v.nome,
         v.nome as nome_versao,
         v.tipo_versao_id,
         v.subtipo_produto_id,
