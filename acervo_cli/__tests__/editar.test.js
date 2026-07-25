@@ -69,9 +69,15 @@ test('a leitura de versao cobre todos os campos com default do PUT', () => {
   assert.deepStrictEqual(esquema.defaultsAusentes(ALVOS.versao.schema(), base), [])
 })
 
-test('a leitura de produto NAO cobre o subtipo, e o guardrail tem que acusar', () => {
+// Este teste ja exigiu o contrario, e estava certo enquanto o bug existia: o
+// GET de produto nao trazia subtipo_produto_id e o PUT o gravava como null,
+// entao QUALQUER edicao despinava a Carta Militar com 200. O conserto de
+// 2026-07-25 atacou os dois lados (o GET passou a devolver o campo, o PUT
+// perdeu o default), e aqui o guardrail deixou de ter o que acusar. Se ele
+// voltar a acusar, o servidor regrediu.
+test('a leitura de produto passou a cobrir o subtipo, e o guardrail se cala', () => {
   const base = {
-    // exatamente o SELECT de acervo_ctrl.getProdutoById
+    // exatamente o SELECT de acervo_ctrl.getProdutoById, ja com o subtipo
     id: 4211,
     nome: 'Serra Azul',
     mi: '2965-2',
@@ -79,13 +85,13 @@ test('a leitura de produto NAO cobre o subtipo, e o guardrail tem que acusar', (
     tipo_escala_id: 2,
     denominador_escala_especial: null,
     tipo_produto_id: 2,
+    subtipo_produto_id: 24,
     descricao: '',
     geom: 'SRID=4674;POLYGON((0 0,1 0,1 1,0 0))'
   }
-  const ausentes = esquema.defaultsAusentes(ALVOS.produto.schema(), base)
   assert.deepStrictEqual(
-    ausentes.map(a => a.campo), ['subtipo_produto_id'],
-    'o editar precisa recusar aqui: gravar o default apagaria a identidade do produto'
+    esquema.defaultsAusentes(ALVOS.produto.schema(), base), [],
+    'com o campo lido e sem default no PUT, nao ha default silencioso a acusar'
   )
 })
 

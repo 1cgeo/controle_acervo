@@ -36,6 +36,11 @@ DIA A DIA
   acervo cobertura --mi 2965-2,2965-4 --escala 50k --anos 10
                                    ja temos essa carta? (rota publica)
   acervo cobertura --escala 250k --so-faltantes
+  acervo cobertura --area moldura.geojson --escala 50k [--limiar 0.01]
+                                   que folhas esta AREA toca (recorte no
+                                   PostGIS; --limiar e a fracao da folha
+                                   coberta). GeoJSON; para GPKG/shapefile,
+                                   ogr2ogr -f GeoJSON antes
   acervo produto 2965-2            as versoes/edicoes da folha
   acervo produto --id 4211 --arquivos --caminho
                                    os arquivos, com o caminho no volume

@@ -108,6 +108,113 @@ describe('Integracao Routes (públicas)', () => {
     })
   })
 
+  describe('POST /api/integracao/acervo/situacao_geral (recorte espacial)', () => {
+    // A folha do fixture cobre o quadrado (-50,-15) a (-49,-14). "dentro" cai
+    // no meio dela; "fora" fica um grau a leste, sem encostar.
+    const dentro = {
+      type: 'Polygon',
+      coordinates: [[[-49.8, -14.8], [-49.2, -14.8], [-49.2, -14.2], [-49.8, -14.2], [-49.8, -14.8]]]
+    }
+    const fora = {
+      type: 'Polygon',
+      coordinates: [[[-48.8, -14.8], [-48.2, -14.8], [-48.2, -14.2], [-48.8, -14.2], [-48.8, -14.8]]]
+    }
+
+    const criaFolha = async (mi) => {
+      const p = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi })
+      await createVersao(p.id, {
+        data_criacao: '2026-05-01T12:00:00-03:00',
+        data_edicao: '2026-06-15T12:00:00-03:00'
+      })
+      return p
+    }
+
+    it('should return the sheet whose area intersects, without auth', async () => {
+      await criaFolha('2753-1')
+
+      const res = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [dentro] })
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      const mis = res.body.dados['50k'].map(f => f.properties.identificadorMI)
+      expect(mis).toContain('2753-1')
+    })
+
+    it('should exclude the sheet when the area does not touch it', async () => {
+      await criaFolha('2753-1')
+
+      const res = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [fora] })
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados['50k']).toHaveLength(0)
+    })
+
+    // O limiar é a fração da FOLHA coberta. A área "dentro" cobre 0.36 de um
+    // grau quadrado, ou 36% da folha: passa em 0.01 e reprova em 0.5.
+    it('should honour limiar as the fraction of the SHEET covered', async () => {
+      await criaFolha('2753-1')
+
+      const passa = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [dentro], limiar: 0.01 })
+      expect(passa.body.dados['50k']).toHaveLength(1)
+
+      const reprova = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [dentro], limiar: 0.5 })
+      expect(reprova.body.dados['50k']).toHaveLength(0)
+    })
+
+    // Duas metades sobrepostas da mesma folha: se a união não dissolvesse a
+    // sobreposição, a fração passaria de 1 e o limiar viraria letra morta.
+    it('should dissolve overlapping input geometries before measuring', async () => {
+      await criaFolha('2753-1')
+
+      const metadeA = {
+        type: 'Polygon',
+        coordinates: [[[-50, -15], [-49.4, -15], [-49.4, -14], [-50, -14], [-50, -15]]]
+      }
+      const metadeB = {
+        type: 'Polygon',
+        coordinates: [[[-49.6, -15], [-49, -15], [-49, -14], [-49.6, -14], [-49.6, -15]]]
+      }
+
+      const res = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [metadeA, metadeB], limiar: 0.99 })
+
+      // União = a folha inteira (fração 1.0), então 0.99 passa. Com dupla
+      // contagem a fração seria 1.2 e o teste passaria por engano; por isso o
+      // par abaixo, que só a união correta satisfaz.
+      expect(res.body.dados['50k']).toHaveLength(1)
+
+      const semSobra = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [metadeA], limiar: 0.7 })
+      expect(semSobra.body.dados['50k']).toHaveLength(0)
+    })
+
+    it('should reject a geometry type that has no area', async () => {
+      const res = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k', intersecta: [{ type: 'Point', coordinates: [-49.5, -14.5] }] })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('should require intersecta', async () => {
+      const res = await request(app)
+        .post('/api/integracao/acervo/situacao_geral')
+        .send({ escala: '50k' })
+
+      expect(res.status).toBe(400)
+    })
+  })
+
   describe('GET /api/integracao/acervo/produtos_finalizados', () => {
     // Dois produtos finalizados em meses diferentes; ambos cadastrados agora
     // (data_cadastramento = hoje). O filtro deve usar data_edicao, não cadastro.

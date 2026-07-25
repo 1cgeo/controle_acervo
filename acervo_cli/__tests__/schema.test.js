@@ -11,7 +11,7 @@ const { test } = require('node:test')
 const assert = require('node:assert')
 
 const esquema = require('../lib/schema')
-const { RECURSOS, obter } = require('../lib/recursos')
+const { RECURSOS, obter, RAIZ_SERVER } = require('../lib/recursos')
 
 const schemaProduto = obter('produtos').schema()
 const schemaArquivo = obter('arquivo').schema()
@@ -36,11 +36,33 @@ test('anota o .strict(), que recusa "1" onde se espera 1', () => {
   assert.ok(id.notas.some(n => n.includes('strict')))
 })
 
-test('marca o campo com default, que e o que o PUT grava em silencio', () => {
+// REGRESSAO, na direcao contraria a que este teste teve ate 2026-07-25: o
+// `.default(null)` do subtipo era o bug (o PUT apagava a identidade do produto
+// em silencio) e foi REMOVIDO do servidor. Se voltar, o guardrail do editar
+// volta a ter trabalho e a Carta Militar volta a ser despinada pela tela.
+test('o subtipo do produto NAO pode ter default no PUT', () => {
   const campos = esquema.camposDe(schemaProduto.produtoAtualizacao)
   const subtipo = campos.find(c => c.nome === 'subtipo_produto_id')
-  assert.ok(subtipo.notas.some(n => n === 'default null'),
-    'sem esta marca, o guardrail do editar nao existe')
+  assert.ok(subtipo, 'o campo tem que continuar existindo no PUT')
+  assert.ok(
+    !subtipo.notas.some(n => String(n).startsWith('default')),
+    'default aqui apaga a identidade do produto: chave ausente significa "nao mexe"'
+  )
+})
+
+// O mecanismo em si continua valendo: ainda ha rota com default (a carga em
+// lote de arquivo). Aqui ele e exercitado sobre um schema Joi montado na hora,
+// porque o alvo do teste e a FUNCAO, nao o contrato de nenhuma rota.
+test('marca o campo com default, que e o que um PUT gravaria em silencio', () => {
+  // O mesmo joi que o server usa; o CLI nao tem dependencia propria.
+  const Joi = require(require('path').join(RAIZ_SERVER, '..', 'node_modules', 'joi'))
+  const comDefault = Joi.object().keys({
+    id: Joi.number().required(),
+    rotulo: Joi.string().allow(null).default(null)
+  })
+  const ausentes = esquema.defaultsAusentes(comDefault, { id: 1 })
+  assert.deepStrictEqual(ausentes.map(a => a.campo), ['rotulo'])
+  assert.strictEqual(ausentes[0].padrao, 'null')
 })
 
 test('renderiza o min por referencia entre datas', () => {
@@ -161,11 +183,31 @@ test('o .strict() dos ids barra numero em string', () => {
   assert.strictEqual(r.ok, false)
 })
 
-test('defaultsAusentes pega o subtipo que o GET de produto nao devolve', () => {
-  // Este e o guardrail do editar: o GET /acervo/produto/:id NAO traz
-  // subtipo_produto_id, e o PUT o gravaria como null, apagando a identidade do
-  // produto (uma Carta Militar deixaria de ser militar).
+// Ate 2026-07-25 este teste exigia o CONTRARIO, e estava certo na epoca: o
+// PUT de produto tinha default null no subtipo e o GET nao devolvia o campo,
+// entao editar qualquer coisa despinava a Carta Militar com 200. O servidor
+// consertou os dois lados (default removido, GET passou a trazer o campo), e o
+// guardrail perdeu o alvo aqui. Manter a exigencia antiga seria pedir de volta
+// o bug.
+test('a leitura de produto agora satisfaz o PUT, e o guardrail fica quieto', () => {
   const base = {
+    id: 4211,
+    nome: 'Serra Azul',
+    mi: '2965-2',
+    inom: 'SF-23-Y-C-II-1',
+    tipo_escala_id: 2,
+    denominador_escala_especial: null,
+    tipo_produto_id: 2,
+    subtipo_produto_id: 24,
+    descricao: '',
+    geom: 'SRID=4674;POLYGON((0 0,1 0,1 1,0 0))'
+  }
+  assert.deepStrictEqual(esquema.defaultsAusentes(schemaProduto.produtoAtualizacao, base), [])
+})
+
+// E o caso que importa de verdade: omitir o subtipo nao pode mais silenciar.
+test('omitir o subtipo nao inventa valor, porque nao ha mais default', () => {
+  const semSubtipo = {
     id: 4211,
     nome: 'Serra Azul',
     mi: '2965-2',
@@ -176,9 +218,10 @@ test('defaultsAusentes pega o subtipo que o GET de produto nao devolve', () => {
     descricao: '',
     geom: 'SRID=4674;POLYGON((0 0,1 0,1 1,0 0))'
   }
-  const ausentes = esquema.defaultsAusentes(schemaProduto.produtoAtualizacao, base)
-  assert.deepStrictEqual(ausentes.map(a => a.campo), ['subtipo_produto_id'])
-  assert.strictEqual(ausentes[0].padrao, 'null')
+  assert.deepStrictEqual(esquema.defaultsAusentes(schemaProduto.produtoAtualizacao, semSubtipo), [])
+  const { valor } = esquema.validarCorpo(schemaProduto.produtoAtualizacao, semSubtipo)
+  assert.ok(!('subtipo_produto_id' in valor),
+    'o Joi nao pode injetar o campo: chave ausente significa "nao mexe" e quem preserva e o controller')
 })
 
 test('defaultsAusentes fica quieto quando a leitura traz tudo', () => {

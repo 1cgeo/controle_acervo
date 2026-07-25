@@ -39,7 +39,14 @@ const parseCsv = (s) =>
 // 1) Cobertura por folha (substitui o site de produtos para a skill
 // consultar-produtos). Devolve { escala: [Feature, ...] } no mesmo formato de
 // propriedades dos arquivos do site (identificadorMI, edicoes_topo, etc.).
-controller.getSituacaoGeral = async ({ escala, geom = false, mi, inom } = {}) => {
+controller.getSituacaoGeral = async ({
+  escala,
+  geom = false,
+  mi,
+  inom,
+  intersecta = null,
+  limiar = 0.01
+} = {}) => {
   const escalas = escala
     ? acervoCtrl.SITUACAO_GERAL_ESCALAS.filter(e => e.name === escala)
     : acervoCtrl.SITUACAO_GERAL_ESCALAS
@@ -51,7 +58,9 @@ controller.getSituacaoGeral = async ({ escala, geom = false, mi, inom } = {}) =>
   for (const e of escalas) {
     dados[e.name] = await acervoCtrl.getSituacaoGeralCells(e.id, {
       incluirGeom: geom === true,
-      filtroIds
+      filtroIds,
+      intersecta,
+      limiar
     })
   }
   return dados

@@ -654,12 +654,49 @@ const situacaoEdicoes = (edicoes) => {
 //   - incluirGeom: inclui a geometria (cara); a rota pública omite por padrão.
 //   - filtroIds: Set de MI/INOM normalizados; quando presente, limita às folhas
 //     pedidas (modo por identificador da skill consultar-produtos).
-controller.getSituacaoGeralCells = async (scaleId, { incluirGeom = true, filtroIds = null } = {}) => {
+//   - intersecta: lista de geometrias GeoJSON (EPSG:4326) da área de interesse.
+//     Quando presente, só entram as folhas cuja fração coberta pela área supera
+//     `limiar`. O recorte roda no PostGIS, onde a grade já está indexada: antes
+//     disso o vault baixava a grade inteira e cruzava com geopandas, o que além
+//     de lento punha uma segunda implementação do predicado espacial fora do
+//     sistema, livre para divergir dele.
+controller.getSituacaoGeralCells = async (
+  scaleId,
+  { incluirGeom = true, filtroIds = null, intersecta = null, limiar = 0.01 } = {}
+) => {
+  const temArea = Array.isArray(intersecta) && intersecta.length > 0
+
+  // ST_Collect + ST_UnaryUnion dissolve as partes sobrepostas da área: sem isso
+  // a interseção contaria a mesma faixa duas vezes e inflaria a fração.
+  //
+  // GeoJSON é WGS84 por especificação (RFC 7946) e `acervo.produto.geom` é
+  // SIRGAS 2000 (4674). A diferença é centimétrica aqui, mas SRID misturado o
+  // PostGIS RECUSA com erro, então a transformação é obrigatória, não zelo.
+  const alvoCte = temArea
+    ? `alvo AS (
+      SELECT ST_UnaryUnion(ST_Collect(
+        ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(g::text), 4326), 4674)
+      )) AS geom
+      FROM jsonb_array_elements($<intersecta:json>::jsonb) AS g
+    ),`
+    : ''
+
+  const filtroArea = temArea
+    ? `AND EXISTS (
+        SELECT 1 FROM alvo a
+        WHERE ST_Intersects(p.geom, a.geom)
+          AND ST_Area(ST_Intersection(p.geom, a.geom))
+              / NULLIF(ST_Area(p.geom), 0) > $<limiar>
+      )`
+    : ''
+
   const celulas = await db.conn.any(`
-    WITH produtos_escala AS (
+    WITH ${alvoCte}
+    produtos_escala AS (
       SELECT p.id, p.mi, p.inom, p.geom, p.tipo_produto_id
       FROM acervo.produto p
-      WHERE p.tipo_escala_id = $1 AND p.mi IS NOT NULL
+      WHERE p.tipo_escala_id = $<scaleId> AND p.mi IS NOT NULL
+      ${filtroArea}
     ),
     edicoes AS (
       SELECT pe.mi,
@@ -685,7 +722,7 @@ controller.getSituacaoGeralCells = async (scaleId, { incluirGeom = true, filtroI
     LEFT JOIN edicoes t ON t.mi = g.mi AND t.tipo_produto_id = ${TIPO_PRODUTO.CARTA_TOPOGRAFICA}
     LEFT JOIN edicoes o ON o.mi = g.mi AND o.tipo_produto_id = ${TIPO_PRODUTO.CARTA_ORTOIMAGEM}
     ORDER BY g.mi
-  `, [scaleId]);
+  `, { scaleId, intersecta, limiar });
 
   // Construct GeoJSON features (chaves e tipos idênticos aos arquivos do site:
   // id sequencial como string, anos como strings em ordem decrescente)

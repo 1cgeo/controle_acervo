@@ -21,11 +21,69 @@
 //
 // E publica: nao gasta login nem token.
 
+const fs = require('fs')
 const http = require('../lib/http')
 const saida = require('../lib/saida')
 const argsLib = require('../lib/args')
 
 const ESCALAS = ['25k', '50k', '100k', '250k']
+
+// Tipos que tem area. Ponto e linha dariam intersecao zero e NENHUMA folha
+// passaria o limiar, o que pareceria "acervo vazio" em vez de "voce mandou a
+// geometria errada". Recusar aqui e mais barato que depurar um zero mentiroso.
+const TIPOS_COM_AREA = new Set(['Polygon', 'MultiPolygon'])
+
+/**
+ * Extrai as geometrias de area de um GeoJSON (Feature, FeatureCollection,
+ * GeometryCollection ou geometria solta). So GeoJSON: ler GPKG ou shapefile
+ * exigiria dependencia, e este CLI nao tem nenhuma de proposito. A conversao
+ * e uma linha de ogr2ogr, e a mensagem de erro diz qual.
+ */
+function geometriasDe (raiz) {
+  const achadas = []
+  const visitar = (no) => {
+    if (!no || typeof no !== 'object') return
+    if (no.type === 'FeatureCollection') return (no.features || []).forEach(visitar)
+    if (no.type === 'Feature') return visitar(no.geometry)
+    if (no.type === 'GeometryCollection') return (no.geometries || []).forEach(visitar)
+    if (TIPOS_COM_AREA.has(no.type)) achadas.push({ type: no.type, coordinates: no.coordinates })
+  }
+  visitar(raiz)
+  return achadas
+}
+
+function lerArea (caminho) {
+  let bruto
+  try {
+    bruto = fs.readFileSync(caminho, 'utf8')
+  } catch (err) {
+    throw new Error(
+      `Nao consegui ler "${caminho}": ${err.message}. ` +
+      'O --area aceita GeoJSON. Para GPKG ou shapefile, converta antes: ' +
+      'ogr2ogr -f GeoJSON area.geojson area.gpkg'
+    )
+  }
+
+  let json
+  try {
+    json = JSON.parse(bruto)
+  } catch (err) {
+    throw new Error(
+      `"${caminho}" nao e JSON valido (${err.message}). O --area aceita GeoJSON; ` +
+      'converta GPKG ou shapefile com: ogr2ogr -f GeoJSON area.geojson area.gpkg'
+    )
+  }
+
+  const geoms = geometriasDe(json)
+  if (!geoms.length) {
+    throw new Error(
+      `"${caminho}" nao tem nenhuma geometria de AREA (Polygon ou MultiPolygon). ` +
+      'Ponto e linha nao servem de area de interesse: a intersecao seria zero e ' +
+      'nenhuma folha entraria, o que pareceria acervo vazio.'
+    )
+  }
+  return geoms
+}
 
 /** Mesma normalizacao do servidor, para o --mi casar apesar de espaco e caixa. */
 function norm (s) {
@@ -55,7 +113,25 @@ async function executar (args, cfg) {
   if (inom) params.inom = inom.join(',')
   if (flags.geom) params.geom = true
 
-  const r = await http.requisitar(cfg, 'GET', '/integracao/acervo/situacao_geral' + http.query(params))
+  const area = flags.area && flags.area !== true ? String(flags.area) : null
+  if (flags.limiar !== undefined && !area) {
+    throw new Error('--limiar so faz sentido junto com --area (e a fracao da folha coberta pela area).')
+  }
+
+  // Com area, o recorte espacial roda no PostGIS, onde a grade ja esta
+  // indexada. Vai por POST porque uma moldura de projeto passa facil do limite
+  // de query string, e URL truncada daria resposta errada calada.
+  let r
+  if (area) {
+    const corpo = { intersecta: lerArea(area), limiar: argsLib.numero(flags, 'limiar', 0.01) }
+    if (escala) corpo.escala = escala
+    if (mi) corpo.mi = mi.join(',')
+    if (inom) corpo.inom = inom.join(',')
+    if (flags.geom) corpo.geom = true
+    r = await http.requisitar(cfg, 'POST', '/integracao/acervo/situacao_geral', { corpo })
+  } else {
+    r = await http.requisitar(cfg, 'GET', '/integracao/acervo/situacao_geral' + http.query(params))
+  }
   const porEscala = r.dados || {}
 
   if (flags.json) {
@@ -130,4 +206,4 @@ async function executar (args, cfg) {
   return { texto: out.texto + rodape, avisos: [...avisos, ...out.avisos] }
 }
 
-module.exports = { executar, precisaServidor: true }
+module.exports = { executar, precisaServidor: true, geometriasDe, lerArea }

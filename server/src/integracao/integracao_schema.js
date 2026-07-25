@@ -14,6 +14,33 @@ models.situacaoGeralQuery = Joi.object().keys({
   inom: Joi.string()
 })
 
+// Geometria GeoJSON aceita no recorte espacial. Só os tipos que fazem sentido
+// como ÁREA de interesse: ponto e linha dariam interseção de área zero e
+// nenhuma folha passaria o limiar, o que pareceria "acervo vazio" em vez de
+// "você mandou a geometria errada".
+const geometriaGeoJson = Joi.object().keys({
+  type: Joi.string().valid('Polygon', 'MultiPolygon').required(),
+  coordinates: Joi.array().min(1).required(),
+  crs: Joi.any().strip(),
+  bbox: Joi.any().strip()
+})
+
+// Recorte espacial da situação geral. Vai por POST porque a área de interesse
+// é uma geometria inteira: uma moldura de projeto passa fácil do limite de
+// query string, e truncar URL daria resposta errada em silêncio.
+//
+// `limiar` é a fração MÍNIMA da FOLHA coberta pela área (não o inverso): 0.01
+// pega quem encosta, 0.5 só quem está majoritariamente dentro. Mantém a
+// semântica do script que esta rota aposenta.
+models.situacaoGeralEspacialBody = Joi.object().keys({
+  escala: Joi.string().valid('25k', '50k', '100k', '250k'),
+  geom: Joi.boolean().default(false),
+  mi: Joi.string(),
+  inom: Joi.string(),
+  intersecta: Joi.array().items(geometriaGeoJson).min(1).required(),
+  limiar: Joi.number().min(0).max(1).default(0.01)
+})
+
 // Período mensal de um ano, com modo cumulativo (acumulado até o mês).
 // ano/mes default: data corrente. cumulativo default: true (RPCMTec é cumulativo).
 const periodoBase = {

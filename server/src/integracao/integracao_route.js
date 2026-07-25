@@ -32,6 +32,22 @@ router.get(
   })
 )
 
+// Mesma cobertura, recortada por uma ÁREA de interesse (moldura de projeto,
+// polígono de demanda). POST por causa do tamanho da geometria, não por mutar
+// estado: continua leitura pública e não escreve nada.
+// Corpo: { intersecta: [<geometria GeoJSON>], limiar, escala, geom, mi, inom }.
+router.post(
+  '/acervo/situacao_geral',
+  schemaValidation({
+    body: integracaoSchema.situacaoGeralEspacialBody
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await integracaoCtrl.getSituacaoGeral(req.body)
+    const msg = 'Situação geral do acervo retornada com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 // Produtos finalizados no mês (RPCMTec 2.2). Critério = data_edicao
 // (finalização), não data de cadastro. ?ano= &mes= &cumulativo= (default true)
 // &tipo_produto_id= &tipo_escala_id=.
