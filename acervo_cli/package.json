@@ -1,0 +1,20 @@
+{
+  "name": "acervo-cli",
+  "version": "1.0.0",
+  "description": "Interface de linha de comando do SCA, desenhada para agentes (agent-first). Irma do acervo_client: o client web serve humanos, o CLI serve agentes.",
+  "type": "commonjs",
+  "main": "acervo.js",
+  "bin": {
+    "acervo": "./acervo.js"
+  },
+  "scripts": {
+    "test": "node --test \"__tests__/*.test.js\""
+  },
+  "keywords": [
+    "Controle do Acervo",
+    "CLI",
+    "agent-first"
+  ],
+  "author": "DSG/1CGEO",
+  "license": "MIT"
+}
