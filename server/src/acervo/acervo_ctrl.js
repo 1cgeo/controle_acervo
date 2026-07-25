@@ -3,6 +3,7 @@
 const archiver = require('archiver');
 const { Readable } = require('stream');
 const { db } = require("../database");
+const invariantes = require("./invariantes");
 const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, STATUS_ARQUIVO } } = require("../utils");
 
 const {
@@ -834,5 +835,53 @@ controller.buscaProdutos = async (termo, tipoProdutoId, tipoEscalaId, projetoId,
     };
   });
 };
+
+// Roda os invariantes lógicos e devolve, por invariante, o TOTAL e uma amostra.
+//
+// Cada um roda numa consulta própria porque são independentes: um que estoure
+// (tabela grande, geometria inválida) não pode derrubar o relatório inteiro, e
+// por isso o erro vira campo do resultado em vez de exceção. Auditoria que
+// morre no meio esconde justamente o que veio depois.
+//
+// Executa em transação READ ONLY: são todos SELECT por construção, e a trava
+// no banco é o que garante isso mesmo se alguém escrever um invariante errado.
+controller.getAuditoria = async ({ severidade, codigos, amostra = 10 } = {}) => {
+  let alvos = invariantes.INVARIANTES
+  if (severidade) alvos = alvos.filter(i => i.severidade === severidade)
+  if (codigos && codigos.length) {
+    const pedidos = new Set(codigos)
+    alvos = alvos.filter(i => pedidos.has(i.codigo))
+    const desconhecidos = codigos.filter(c => !invariantes.INVARIANTES.some(i => i.codigo === c))
+    if (desconhecidos.length) {
+      throw new AppError(
+        `Invariante(s) desconhecido(s): ${desconhecidos.join(', ')}.`,
+        httpCode.BadRequest
+      )
+    }
+  }
+
+  return db.conn.tx(async t => {
+    await t.none('SET TRANSACTION READ ONLY')
+
+    const resultados = []
+    for (const inv of alvos) {
+      const base = { codigo: inv.codigo, severidade: inv.severidade, titulo: inv.titulo }
+      try {
+        const linhas = await t.any(inv.sql)
+        resultados.push({
+          ...base,
+          total: linhas.length,
+          amostra: amostra > 0 ? linhas.slice(0, amostra) : [],
+          truncada: linhas.length > amostra
+        })
+      } catch (err) {
+        // Não relança: o invariante que quebrou é informação, e os outros 32
+        // continuam valendo.
+        resultados.push({ ...base, total: null, amostra: [], erro: err.message })
+      }
+    }
+    return resultados
+  })
+}
 
 module.exports = controller;

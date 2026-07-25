@@ -41,6 +41,9 @@ DIA A DIA
                                    PostGIS; --limiar e a fracao da folha
                                    coberta). GeoJSON; para GPKG/shapefile,
                                    ogr2ogr -f GeoJSON antes
+  acervo auditar                   os invariantes logicos do acervo (admin)
+  acervo auditar --severidade DEFECT   so o que TEM de dar zero
+  acervo auditar --check 2a --amostra 50   as linhas de um invariante
   acervo produto 2965-2            as versoes/edicoes da folha
   acervo produto --id 4211 --arquivos --caminho
                                    os arquivos, com o caminho no volume
@@ -95,6 +98,7 @@ const ROTEADOR = {
   cobertura: './comandos/cobertura',
   produto: './comandos/produto',
   editar: './comandos/editar',
+  auditar: './comandos/auditar',
   finalizados: './comandos/relatorio',
   rpcmtec: './comandos/relatorio',
   dominio: './comandos/dominio',
@@ -107,13 +111,26 @@ async function principal () {
   const args = argsLib.parse(process.argv.slice(2))
   const comando = args._[0]
 
-  if (!comando || args.flags.ajuda || args.flags.help) {
+  const pediuAjuda = args.flags.ajuda || args.flags.help
+
+  if (!comando) {
     process.stdout.write(AJUDA + '\n')
     return 0
   }
 
   let modulo = ROTEADOR[comando]
   if (!modulo && RECURSOS[comando]) modulo = './comandos/api'
+
+  // Comando que traz ajuda PROPRIA responde por ela; os outros caem no mapa
+  // geral, como sempre. Sem isto, `acervo auditar --ajuda` imprimia o mapa
+  // geral e a ajuda especifica ficava inalcancavel, escrita e morta.
+  if (pediuAjuda) {
+    const proprio = modulo && require(modulo).ajudaPropria
+    if (!proprio) {
+      process.stdout.write(AJUDA + '\n')
+      return 0
+    }
+  }
 
   if (!modulo) {
     process.stderr.write(

@@ -79,4 +79,15 @@ models.buscaProdutos = Joi.object().keys({
   limit: Joi.number().integer().min(1).max(100).default(20)
 });
 
+// Auditoria de invariantes lógicos do acervo.
+models.auditoriaQuery = Joi.object().keys({
+  severidade: Joi.string().valid('DEFECT', 'REVISAR', 'INFO'),
+  // csv de códigos (ex.: 1a,2c,4b). Sem isso, roda todos.
+  codigos: Joi.string().pattern(/^[0-9a-z_]+(,[0-9a-z_]+)*$/),
+  // Quantas linhas de AMOSTRA por invariante. O total vem sempre inteiro; a
+  // amostra é o que se lê. Teto baixo de propósito: quem precisa da lista toda
+  // vai atrás dos ids, não de um dump pela API.
+  amostra: Joi.number().integer().min(0).max(100).default(10)
+})
+
 module.exports = models

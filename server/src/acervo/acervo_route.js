@@ -247,4 +247,31 @@ router.get(
   })
 );
 
+// Auditoria dos invariantes lógicos do acervo (as regras que o schema não
+// consegue exprimir). Leitura pura, em transação READ ONLY, mas exige admin:
+// a saída expõe o formato do acervo inteiro e serve de mapa para quem for
+// escrever nele.
+//
+// Nasceu como script no vault do Chefe da DGEO, que abria conexão direta ao
+// banco de produção com um usuário read-only. Trazer para cá tira a credencial
+// de banco de fora do sistema e, mais importante, põe os invariantes ao lado do
+// schema que eles descrevem: o mesmo commit que muda um domínio pode corrigir a
+// regra, e o teste acusa quando não corrige.
+router.get(
+  '/auditoria',
+  verifyAdmin,
+  schemaValidation({ query: acervoSchema.auditoriaQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.getAuditoria({
+      severidade: req.query.severidade,
+      codigos: req.query.codigos ? req.query.codigos.split(',') : null,
+      amostra: req.query.amostra
+    })
+
+    const msg = 'Auditoria de invariantes do acervo realizada com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 module.exports = router
