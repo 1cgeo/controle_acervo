@@ -98,8 +98,14 @@ INSERT INTO mapoteca.cliente (nome, tipo_cliente_id) VALUES
 
 CREATE TABLE mapoteca.pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
-	data_pedido TIMESTAMP WITH TIME ZONE NOT NULL,
-    data_atendimento TIMESTAMP WITH TIME ZONE,
+	-- Datas de CALENDARIO, nao instantes: o formulario so oferece o dia, e
+	-- todo consumidor so exibe o dia. Em TIMESTAMPTZ elas atravessavam o fuso
+	-- da sessao do banco (D-1 na tela) e decidiam o ano do relatorio pelo
+	-- fuso. Instalacao nova ja nasce em DATE; banco existente chega la pela
+	-- migracao 2026-07-26_pedido_datas_calendario.sql. Os dois caminhos TEM
+	-- de terminar no mesmo tipo, senao instalacao nova diverge de migrada.
+	data_pedido DATE NOT NULL,
+    data_atendimento DATE,
 	cliente_id BIGINT NOT NULL REFERENCES mapoteca.cliente (id),
 	situacao_pedido_id SMALLINT NOT NULL REFERENCES mapoteca.situacao_pedido (code),
     ponto_contato VARCHAR(255),

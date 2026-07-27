@@ -112,7 +112,14 @@ controller.getAverageFulfillmentTime = async () => {
     // Overall average
     const overallAvg = await t.oneOrNone(`
       SELECT 
-        AVG(EXTRACT(EPOCH FROM (data_atendimento - data_pedido)) / 86400) AS media_dias
+        -- Diferenca em DIAS INTEIROS, sem passar por epoch.
+        -- O ::date e o que faz esta conta valer ANTES e DEPOIS da migracao
+        -- 2026-07-26_pedido_datas_calendario.sql, que passa as duas colunas de
+        -- TIMESTAMPTZ para DATE. Sem ele, uma versao quebraria a outra, porque
+        -- EXTRACT(EPOCH FROM (date - date)) nao existe: date menos date ja e
+        -- um inteiro. Assim a ordem entre migrar e implantar deixa de importar.
+        -- (Sem crase aqui: a consulta e um template literal.)
+        AVG(data_atendimento::date - data_pedido::date) AS media_dias
       FROM mapoteca.pedido p
       WHERE
         situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
@@ -125,7 +132,7 @@ controller.getAverageFulfillmentTime = async () => {
       SELECT 
         c.tipo_cliente_id,
         tc.nome AS tipo_cliente,
-        AVG(EXTRACT(EPOCH FROM (p.data_atendimento - p.data_pedido)) / 86400) AS media_dias,
+        AVG(p.data_atendimento::date - p.data_pedido::date) AS media_dias,
         COUNT(*) AS quantidade_pedidos
       FROM mapoteca.pedido p
       JOIN mapoteca.cliente c ON p.cliente_id = c.id
@@ -133,6 +140,10 @@ controller.getAverageFulfillmentTime = async () => {
       WHERE
         p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
         AND p.data_atendimento IS NOT NULL
+        -- Sem este filtro a quebra por tipo somava o CIVIL, enquanto a media
+        -- geral e a mensal, no mesmo cartao, ja contavam so o militar. As tres
+        -- linhas nao fechavam entre si.
+        AND ${PEDIDO_MILITAR('p.cliente_id')}
       GROUP BY c.tipo_cliente_id, tc.nome
       ORDER BY media_dias
     `);
@@ -148,7 +159,7 @@ controller.getAverageFulfillmentTime = async () => {
       )
       SELECT 
         m.mes,
-        COALESCE(AVG(EXTRACT(EPOCH FROM (p.data_atendimento - p.data_pedido)) / 86400), 0) AS media_dias,
+        COALESCE(AVG(p.data_atendimento::date - p.data_pedido::date), 0) AS media_dias,
         COUNT(p.id) AS quantidade_pedidos
       FROM meses m
       LEFT JOIN mapoteca.pedido p ON

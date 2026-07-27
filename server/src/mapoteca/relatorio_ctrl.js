@@ -97,7 +97,9 @@ controller.getRelatorioPedidosMil = async (ano) => {
       COALESCE(p.endereco_entrega, p.endereco_entrega_principal) AS endereco,
       p.data_atendimento AS data_envio,
       CASE WHEN p.data_atendimento IS NOT NULL
-           THEN EXTRACT(DAY FROM (p.data_atendimento - p.data_pedido))::int
+           -- Dias inteiros. O ::date vale para TIMESTAMPTZ e para DATE,
+           -- entao a migracao das colunas nao quebra esta conta.
+           THEN (p.data_atendimento::date - p.data_pedido::date)
       END AS tempo_atendimento_dias,
       p.localizador_envio AS informacoes_remessa,
       p.observacao,

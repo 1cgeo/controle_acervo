@@ -50,7 +50,9 @@ models.pedidoIds = Joi.object().keys({
 // RN02: pedido concluído exige data_atendimento.
 // RN03: pedido cancelado exige motivo_cancelamento.
 const pedidoBase = {
-  // raw(): 'YYYY-MM-DD' interpretado no fuso local pelo Postgres (sem shift D-1)
+  // raw(): preserva a string 'AAAA-MM-DD' que o formulario manda. As colunas
+  // sao DATE, entao nenhum fuso entra no caminho (nem o do Node, nem o da
+  // sessao do banco). Sem raw(), o Joi converteria para Date e o D-1 voltaria.
   data_pedido: Joi.date().raw().required(),
   data_atendimento: Joi.when('situacao_pedido_id', {
     is: SITUACAO_PEDIDO.CONCLUIDO,
