@@ -1,5 +1,10 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// O jsdom devolve null em canvas.getContext('2d'), e o Chart real estoura no
+// primeiro update com dado. Com o dublê os gráficos passam a receber dado de
+// verdade no teste, em vez de ficarem vazios de propósito.
+vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
+
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockMapotecaService();
