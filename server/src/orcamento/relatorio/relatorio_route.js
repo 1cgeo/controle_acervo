@@ -71,7 +71,9 @@ router.get(
 
 // ---------------------------------------------------------------------------
 // A) CRUD da edicao mensal orcamento.relatorio_rpcmtec.
-// Sistema admin-only: todas as rotas exigem administrador (verifyAdmin).
+// Perfil POR MODULO: ler e gerar sao 'consulta', salvar e 'operador', apagar e
+// 'gerente'. O comentario antigo aqui dizia "admin-only, tudo com verifyAdmin",
+// que ficou falso em 2026-07-25 e sobreviveu a fusao.
 // ---------------------------------------------------------------------------
 
 router.get(

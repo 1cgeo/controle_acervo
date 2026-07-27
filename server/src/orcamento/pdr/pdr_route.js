@@ -3,7 +3,9 @@
 
 // O PDR e o conjunto dos seus itens (amarrados no ano). Esta feature e um CRUD
 // de itens do PDR; os totais (solicitado/autorizado por GND) sao calculados a
-// partir deles no client. Sistema admin-only.
+// partir deles no client. Perfil por modulo: ler e 'consulta', escrever e
+// apagar e 'gerente', porque o PDR e o planejamento aprovado do ano e nao
+// lancamento de rotina.
 
 const express = require('express')
 
