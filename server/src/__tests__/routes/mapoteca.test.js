@@ -357,8 +357,40 @@ describe('Mapoteca Routes', () => {
       expect(item.tipo_midia_fornecida_nome).toBe('Tyvek')
       expect(item.forma_entrega_nome).toBe('Correios')
       expect(item.observacao).toBe('Entrega parcial')
-      expect(item.data_entrega).toContain('2026-03-20')
+      // toBe, e nao toContain: o toContain passaria tambem com um timestamp em
+      // UTC ('2026-03-20T00:00:00.000Z'), que e justamente o que produz o D-1 na
+      // tela. A igualdade exata exige que a data volte sem hora e sem fuso.
+      expect(item.data_entrega).toBe('2026-03-20')
       expect(item.tipo_produto_nome).toBe('Carta Topográfica')
+    })
+
+    // Guarda do D-1. O formulario manda data PURA ('AAAA-MM-DD'), porque o campo
+    // do client e um <input type="date">. Ela tem que voltar no mesmo dia de
+    // calendario, sem depender do fuso do processo nem da sessao do banco.
+    it('data pura do formulario volta no mesmo dia, no detalhe e na lista', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, {
+        data_pedido: '2026-03-10',
+        data_atendimento: '2026-03-20',
+        prazo: '2026-03-15'
+      })
+
+      const res = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}`)
+        .set('Authorization', generateAdminToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.data_pedido).toBe('2026-03-10')
+      expect(res.body.dados.data_atendimento).toBe('2026-03-20')
+      expect(res.body.dados.prazo).toBe('2026-03-15')
+
+      // A lista le as mesmas datas por OUTRA consulta, entao ela tem guarda propria.
+      const lista = await request(app)
+        .get('/api/mapoteca/pedido')
+        .set('Authorization', generateAdminToken())
+      const naLista = lista.body.dados.find(p => p.id === pedido.id)
+      expect(naLista.data_pedido).toBe('2026-03-10')
+      expect(naLista.data_atendimento).toBe('2026-03-20')
     })
   })
 
@@ -974,6 +1006,33 @@ describe('Mapoteca Routes', () => {
         data_entrega: '2026-03-20'
       })
     }
+
+    // O dashboard de pedido e a visao de PRODUCAO (OM); o civil tem o relatorio
+    // Civ proprio. As tres linhas do cartao de tempo medio (geral, por tipo de
+    // cliente e mensal) precisam contar a MESMA populacao, senao o painel se
+    // contradiz na propria tela. Ate 2026-07-27 a quebra por tipo somava o civil
+    // e as outras duas nao.
+    it('GET /dashboard/avg_fulfillment_time conta so militar nas tres linhas', async () => {
+      const militarId = await criaCliente({ nome: 'OM Militar Dash', tipo_cliente_id: 1 })
+      const civilId = await criaCliente({ nome: 'Prefeitura Dash', tipo_cliente_id: 6 })
+
+      // Militar leva 10 dias; civil leva 100. Se o civil vazar, a media muda.
+      await criaPedido(militarId, {
+        situacao_pedido_id: 5, data_pedido: '2026-03-01', data_atendimento: '2026-03-11'
+      })
+      await criaPedido(civilId, {
+        situacao_pedido_id: 5, data_pedido: '2026-03-01', data_atendimento: '2026-06-09'
+      })
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/avg_fulfillment_time')
+        .set('Authorization', generateAdminToken())
+
+      expect(res.status).toBe(200)
+      const tipos = res.body.dados.por_tipo_cliente.map(t => t.tipo_cliente_id)
+      expect(tipos).not.toContain(6)          // nenhum civil na quebra por tipo
+      expect(tipos.every(id => [1, 2, 3].includes(id))).toBe(true)
+    })
 
     it('GET /dashboard/resumo_anual should return totals', async () => {
       await setupEntrega()
