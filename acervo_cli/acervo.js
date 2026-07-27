@@ -30,7 +30,7 @@ CONTRATO (nao gasta rede, leia isto antes de montar um corpo)
   acervo schema                    lista os recursos e suas operacoes
   acervo schema produtos           campos, tipos, obrigatorios e regras da escrita
   acervo dominio                   os ids de dominio e os apelidos aceitos
-  acervo dominio tipo_escala       a tabela viva (GET publico, sem login)
+  acervo dominio tipo_escala       a tabela viva (exige perfil consulta)
 
 DIA A DIA
   acervo cobertura --mi 2965-2,2965-4 --escala 50k --anos 10

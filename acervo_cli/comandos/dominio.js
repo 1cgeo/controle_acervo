@@ -12,8 +12,12 @@
 // errada. Onde o CLI aceita apelido (--escala 50k), este comando e o dicionario;
 // onde nao aceita, e a fonte do numero.
 //
-// Os GET de dominio sao PUBLICOS (servem para popular os selects do client web),
-// entao a listagem nao gasta login.
+// Os GET de dominio JA FORAM publicos, e nao sao mais: desde 2026-07-25 eles
+// exigem perfil `consulta` no modulo acervo (verifyPerfil em
+// server/src/gerencia/gerencia_route.js). Eram anonimos por omissao, nao por
+// escolha, e a reforma de perfil fechou isso. Este comentario dizia o contrario
+// e a listagem chamava sem token, o que dava 401 em vez de dado.
+// O indice OFFLINE (`acervo dominio` sem tabela) segue sem rede e sem login.
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')
@@ -64,7 +68,7 @@ async function executar (args, cfg) {
   if (!tabela) {
     return {
       texto: [
-        'Tabelas de dominio do SCA (GET publico, sem login):',
+        'Tabelas de dominio do SCA (a tabela viva exige perfil consulta):',
         ...ROTAS.map(r => '  ' + r),
         '',
         'Listar uma: acervo dominio tipo_escala',
@@ -85,7 +89,7 @@ async function executar (args, cfg) {
     )
   }
 
-  const r = await http.requisitar(cfg, 'GET', `/gerencia/dominio/${tabela}`)
+  const r = await http.autenticada(cfg, 'GET', `/gerencia/dominio/${tabela}`)
   const out = saida.lista(r.dados, {
     formato: flags.json ? 'json' : (flags.formato || 'tsv'),
     campos: argsLib.lista(flags.campos),

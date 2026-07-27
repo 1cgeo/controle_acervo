@@ -23,7 +23,7 @@ async function executar (args, cfg) {
   if (!sub) {
     return {
       texto: [
-        'Dominios da mapoteca (GET publico, sem login):',
+        'Dominios da mapoteca (a tabela viva exige perfil consulta):',
         ...DOMINIOS.map(s => '  ' + s),
         '',
         'Listar um: mapoteca dominio situacao_pedido',
@@ -48,7 +48,7 @@ async function executar (args, cfg) {
   }
 
   // GET de dominio e publico: nao gasta login nem token.
-  const r = await http.requisitar(cfg, 'GET', `/mapoteca/dominio/${sub}`)
+  const r = await http.autenticada(cfg, 'GET', `/mapoteca/dominio/${sub}`)
   const out = saida.lista(r.dados, opcoesSaida)
   return { texto: out.texto, avisos: out.avisos }
 }
