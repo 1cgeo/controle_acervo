@@ -80,10 +80,14 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     }),
 
     // Etapa 2 — Adicional
+    // Contato DESTE pedido, que costuma vir no DIEx. E diferente do contato
+    // geral da OM (mapoteca.cliente.ponto_contato_principal), que fica no
+    // cadastro do cliente e vale para todos os pedidos dela.
     ponto_contato: createTextField({
-      label: 'Ponto de contato',
+      label: 'Ponto de contato do pedido',
       value: (pedido && pedido.ponto_contato) || '',
       maxLength: 255,
+      helpText: 'Contato específico deste pedido. Em branco, vale o contato geral da OM.',
     }),
     demandante: createTextField({
       label: 'Demandante',

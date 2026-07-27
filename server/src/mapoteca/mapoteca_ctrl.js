@@ -306,6 +306,9 @@ controller.getPedidos = async () => {
   return db.conn.any(`
     SELECT p.id, p.data_pedido, p.data_atendimento,
            p.cliente_id, c.nome AS cliente_nome,
+           -- tipo_cliente_id sustenta o filtro militar/civil da lista. Militar
+           -- e 1 a 3 (OM EB, Aeronautica, Marinha); civil e 4 a 9.
+           c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
            p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
@@ -319,6 +322,7 @@ controller.getPedidos = async () => {
            ) AS itens_impressos
     FROM mapoteca.pedido AS p
     LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
+    LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
     ORDER BY p.data_pedido DESC
@@ -332,7 +336,12 @@ controller.getPedidoById = async (pedidoId) => {
       SELECT p.id, p.data_pedido, p.data_atendimento,
              p.cliente_id, c.nome AS cliente_nome, c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
              p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
-             p.ponto_contato, p.documento_solicitacao, p.documento_solicitacao_nup,
+             -- DOIS contatos, de proposito. p.ponto_contato e o contato DESTE
+             -- pedido, que costuma vir no DIEx. c.ponto_contato_principal e o
+             -- contato geral da OM, que serve quando o pedido nao traz um.
+             -- (Sem crase nestes comentarios: a consulta e um template literal.)
+             p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
+             p.documento_solicitacao, p.documento_solicitacao_nup,
              p.endereco_entrega, p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,

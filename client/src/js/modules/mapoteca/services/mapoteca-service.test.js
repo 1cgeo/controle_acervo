@@ -148,23 +148,7 @@ describe('mapoteca-service: material, estoque e consumo', () => {
 });
 
 describe('mapoteca-service: relatorios', () => {
-  test('getRelatorio monta nome + ano', async () => {
-    await svc.getRelatorio('pedidos_mil', 2026);
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/relatorio/pedidos_mil?ano=2026');
-  });
 
-  test('relatorio desconhecido e recusado antes da rede', async () => {
-    await expect(svc.getRelatorio('inventado', 2026)).rejects.toThrow(/Relatório desconhecido/);
-    expect(apiGet).not.toHaveBeenCalled();
-  });
-
-  test('downloadRelatorioCsv pede o formato csv e nomeia o arquivo', async () => {
-    await svc.downloadRelatorioCsv('pedidos_civ', 2026);
-    expect(apiDownload).toHaveBeenCalledWith(
-      '/mapoteca/relatorio/pedidos_civ?ano=2026&formato=csv',
-      'pedidos_civ_2026.csv'
-    );
-  });
 
   test('o RPCMTec fica FORA de /mapoteca: e a rota do acervo', async () => {
     await svc.getRpcmtecAcervo({ ano: 2026, mes: 6 });

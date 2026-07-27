@@ -13,18 +13,43 @@ import { showSuccess, showError } from '@utils/toast.js';
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
+// Militar e OM EB, OM Aeronautica e OM Marinha (tipo_cliente 1 a 3). Civil e o
+// resto: orgao publico federal, estadual e municipal, pessoa juridica, pessoa
+// fisica e LAI. O mesmo corte que o dashboard usa para "pedido militar".
+const TIPOS_MILITARES = [1, 2, 3];
+
+const FILTROS = [
+  { id: 'todos', label: 'Todos', casa: () => true },
+  { id: 'militar', label: 'Militar', casa: (p) => TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
+  { id: 'civil', label: 'Civil', casa: (p) => !TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
+];
+
 export async function renderPedidosList(container, _ctx) {
   let disposed = false;
+  let todosPedidos = [];
+  let filtroAtual = 'todos';
+
+  function aplicarFiltro() {
+    const filtro = FILTROS.find(f => f.id === filtroAtual) || FILTROS[0];
+    const linhas = todosPedidos.filter(filtro.casa);
+    table.update({ rows: linhas, loading: false });
+    contador.textContent = filtroAtual === 'todos'
+      ? `${linhas.length} pedido(s)`
+      : `${linhas.length} de ${todosPedidos.length} pedido(s)`;
+  }
 
   async function load() {
     table.update({ loading: true });
     try {
       const pedidos = await getPedidos();
       if (disposed) return;
-      table.update({ rows: pedidos, loading: false });
+      todosPedidos = pedidos;
+      aplicarFiltro();
     } catch (err) {
       if (disposed) return;
+      todosPedidos = [];
       table.update({ rows: [], loading: false });
+      contador.textContent = '';
       showError(err.message || 'Erro ao carregar os pedidos');
     }
   }
@@ -47,9 +72,28 @@ export async function renderPedidosList(container, _ctx) {
     }
   }
 
+  const contador = el('span', { className: 'page__meta', textContent: '' });
+
+  const botoesFiltro = FILTROS.map(f => el('button', {
+    className: `btn btn--sm ${f.id === filtroAtual ? 'btn--primary' : 'btn--secondary'}`,
+    type: 'button',
+    textContent: f.label,
+    onClick: () => {
+      filtroAtual = f.id;
+      for (const b of botoesFiltro) {
+        const ativo = b.dataset.filtro === filtroAtual;
+        b.classList.toggle('btn--primary', ativo);
+        b.classList.toggle('btn--secondary', !ativo);
+      }
+      aplicarFiltro();
+    },
+  }));
+  botoesFiltro.forEach((b, i) => { b.dataset.filtro = FILTROS[i].id; });
+
   const table = createDataTable({
     columns: [
-      { key: 'id', label: 'ID', sortable: true },
+      // Sem coluna de ID: e chave interna. O pedido se identifica pelo
+      // localizador e pelo documento, e o id segue na URL do detalhe.
       {
         key: 'data_pedido',
         label: 'Data',
@@ -57,6 +101,7 @@ export async function renderPedidosList(container, _ctx) {
         render: (row) => formatDate(row.data_pedido),
       },
       { key: 'cliente_nome', label: 'Cliente', sortable: true },
+      { key: 'tipo_cliente_nome', label: 'Tipo', sortable: true },
       { key: 'documento_solicitacao', label: 'Documento' },
       {
         key: 'situacao_pedido_nome',
@@ -106,6 +151,10 @@ export async function renderPedidosList(container, _ctx) {
           onClick: () => { location.hash = '/mapoteca/pedidos/novo'; },
         }, [svgIcon(ICONS.add, 16), 'Novo pedido']),
       ]),
+    ]),
+    el('div', { className: 'filtro-barra' }, [
+      el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar por tipo de cliente' }, botoesFiltro),
+      contador,
     ]),
     table.element,
   ]));

@@ -16,8 +16,8 @@ describe('manifesto do modulo mapoteca', () => {
     expect(modulosPortados().map(m => m.id)).toContain('mapoteca');
   });
 
-  test('as 14 telas estao registradas, cada uma com render e perfil', () => {
-    expect(mapoteca.rotas).toHaveLength(14);
+  test('as 13 telas estao registradas, cada uma com render e perfil', () => {
+    expect(mapoteca.rotas).toHaveLength(13);  // 14 ate 2026-07-27, quando a tela Relatorios saiu
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
       expect(typeof rota.render).toBe('function');

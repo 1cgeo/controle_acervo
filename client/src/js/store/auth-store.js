@@ -126,9 +126,35 @@ export function temAcessoModulo(modulo) {
  * @param {Object} data - { token, administrador, uuid, perfis, modulos }
  * @param {string} username
  */
+/**
+ * Momento em que o token expira, LIDO DO PROPRIO TOKEN (claim `exp`).
+ *
+ * Ate 2026-07-27 isto era `agora + 1 hora`, fixo no codigo, duplicando um valor
+ * que so o servidor conhece. Quando a duracao do servidor virou 8h (chave
+ * JWT_EXPIRACAO), o client continuaria deslogando em 1h: o conserto pela metade
+ * pareceria pronto e a pessoa seguiria caindo fora no meio do trabalho.
+ *
+ * Lendo o `exp`, os dois lados nunca mais divergem. Se o token nao trouxer
+ * `exp`, cai em 1 hora, que e o comportamento antigo e conservador.
+ * @param {string} token
+ * @returns {Date}
+ */
+function expiracaoDoToken(token) {
+  try {
+    const payload = String(token).split('.')[1];
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = JSON.parse(json).exp;
+    if (typeof exp === 'number') return new Date(exp * 1000);
+  } catch {
+    // Token ilegivel: cai no padrao abaixo.
+  }
+  const padrao = new Date();
+  padrao.setHours(padrao.getHours() + 1);
+  return padrao;
+}
+
 export function saveAuth(data, username) {
-  const expiry = new Date();
-  expiry.setHours(expiry.getHours() + 1);
+  const expiry = expiracaoDoToken(data.token);
 
   localStorage.setItem(AUTH_KEYS.TOKEN, data.token);
   localStorage.setItem(AUTH_KEYS.EXPIRY, expiry.toISOString());

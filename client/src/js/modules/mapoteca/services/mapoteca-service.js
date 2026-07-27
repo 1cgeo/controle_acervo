@@ -418,50 +418,6 @@ export function deleteConsumoMaterial(ids) {
 }
 
 // ---------------------------------------------------------------------------
-// Relatórios (abas da antiga planilha)
-// ---------------------------------------------------------------------------
-
-const RELATORIOS = ['pedidos_mil', 'pedidos_detalhado', 'impressao_detalhada', 'pedidos_resumo', 'pedidos_civ', 'tematicos'];
-
-/**
- * Report data as JSON.
- * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
- * @param {number} [ano]
- */
-export function getRelatorio(nome, ano) {
-  if (!RELATORIOS.includes(nome)) {
-    return Promise.reject(new Error(`Relatório desconhecido: ${nome}`));
-  }
-  const anoParam = ano || new Date().getFullYear();
-  return cachedFetch(
-    `relatorio:${nome}:${anoParam}`,
-    () => apiGet(`${BASE}/relatorio/${nome}?ano=${anoParam}`),
-    TTL_LISTA
-  );
-}
-
-/**
- * URL (relative to /api) for the CSV version of a report.
- * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
- * @param {number} [ano]
- * @returns {string}
- */
-export function relatorioCsvUrl(nome, ano) {
-  const anoParam = ano || new Date().getFullYear();
-  return `${BASE}/relatorio/${nome}?ano=${anoParam}&formato=csv`;
-}
-
-/**
- * Download a report as CSV (fetch blob with token + browser download).
- * @param {'pedidos_mil'|'pedidos_detalhado'|'impressao_detalhada'|'pedidos_resumo'|'pedidos_civ'|'tematicos'} nome
- * @param {number} [ano]
- */
-export function downloadRelatorioCsv(nome, ano) {
-  const anoParam = ano || new Date().getFullYear();
-  return apiDownload(relatorioCsvUrl(nome, anoParam), `${nome}_${anoParam}.csv`);
-}
-
-// ---------------------------------------------------------------------------
 // RPCMTec (seção acervo) - rota /api/relatorio, fora do namespace /mapoteca
 // ---------------------------------------------------------------------------
 

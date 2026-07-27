@@ -25,12 +25,36 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createPedidoFormFields } from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 
+// Acima deste tamanho, o valor nao cabe na mesma linha do rotulo dentro de um
+// card de meia largura, e passa a ser empilhado.
+const LIMITE_VALOR_CURTO = 45;
+
+/**
+ * Linha "rotulo ... valor" de um card de detalhe.
+ *
+ * Valor CURTO fica na mesma linha do rotulo, alinhado a direita. Valor LONGO
+ * (observacao, endereco) empilha: rotulo em cima e texto a esquerda, porque
+ * alinhado a direita um paragrafo fica com a margem esquerda irregular e a
+ * leitura trava a cada quebra.
+ *
+ * A decisao e AUTOMATICA, pelo tamanho do texto, e nao marcada campo a campo.
+ * Marcar a mao errava nos dois sentidos: o campo vazio ficava empilhado gastando
+ * duas linhas para mostrar um traco, e o campo nao marcado com texto longo
+ * seguia espremido. Medido na tela em 2026-07-27.
+ * @param {string} label
+ * @param {string|Node} value
+ */
 function infoRow(label, value) {
-  return el('div', { className: 'detail-card__row' }, [
+  const texto = value instanceof Node ? null : (value || '-');
+  const longo = typeof texto === 'string' && texto.length > LIMITE_VALOR_CURTO;
+
+  return el('div', {
+    className: longo ? 'detail-card__row detail-card__row--longo' : 'detail-card__row',
+  }, [
     el('span', { className: 'detail-card__label', textContent: label }),
     value instanceof Node
       ? el('span', { className: 'detail-card__value' }, [value])
-      : el('span', { className: 'detail-card__value', textContent: value || '-' }),
+      : el('span', { className: 'detail-card__value', textContent: texto }),
   ]);
 }
 
@@ -502,22 +526,35 @@ export async function renderPedidoDetails(container, { params }) {
     ]));
 
     // Info cards
+    const nItens = (pedido.produtos || []).length;
+    const nExemplares = (pedido.produtos || []).reduce(
+      (soma, r) => soma + (Number(r.quantidade) || 0), 0);
+
+    // Quatro cards, SEMPRE visiveis. Antes havia um card "Resumo" fixo mais um
+    // bloco "Detalhes do pedido" colapsado, e os dois repetiam cliente, DIEx,
+    // NUP, data e prazo. Cada dado aparece UMA vez, e nada fica escondido atras
+    // de um clique (chefe, 2026-07-27).
     const cards = [
       el('div', { className: 'detail-card' }, [
-        el('div', { className: 'detail-card__title', textContent: 'Datas' }),
-        infoRow('Pedido', formatDate(pedido.data_pedido)),
-        infoRow('Atendimento', formatDate(pedido.data_atendimento)),
+        el('div', { className: 'detail-card__title', textContent: 'Pedido' }),
+        infoRow('Data do pedido', formatDate(pedido.data_pedido)),
         infoRow('Prazo', formatDate(pedido.prazo)),
+        infoRow('Atendimento', formatDate(pedido.data_atendimento)),
+        infoRow('Itens', `${nItens} carta(s) · ${nExemplares} exemplar(es)`),
+        infoRow('Observação', pedido.observacao),
       ]),
       el('div', { className: 'detail-card' }, [
-        el('div', { className: 'detail-card__title', textContent: 'Cliente' }),
+        el('div', { className: 'detail-card__title', textContent: 'Cliente e contato' }),
         infoRow('Nome', el('a', {
           href: `#/mapoteca/clientes/${pedido.cliente_id}`,
           textContent: pedido.cliente_nome || '-',
         })),
         infoRow('Tipo', pedido.tipo_cliente_nome),
-        infoRow('Contato', pedido.ponto_contato),
-        infoRow('Endereço', pedido.endereco_entrega),
+        // DOIS contatos, de proposito. O do pedido costuma vir no DIEx e vale
+        // so para ele; o da OM e o geral, usado quando o pedido nao traz um.
+        infoRow('Contato do pedido', pedido.ponto_contato),
+        infoRow('Contato geral da OM', pedido.cliente_ponto_contato),
+        infoRow('Endereço de entrega', pedido.endereco_entrega),
       ]),
       el('div', { className: 'detail-card' }, [
         el('div', { className: 'detail-card__title', textContent: 'Documento' }),
@@ -537,25 +574,7 @@ export async function renderPedidoDetails(container, { params }) {
         infoRow('Operação', pedido.operacao),
       ]),
     ];
-
-    const nItens = (pedido.produtos || []).length;
-    const nExemplares = (pedido.produtos || []).reduce(
-      (soma, r) => soma + (Number(r.quantidade) || 0), 0);
-
-    // Resumo rápido (sempre visível), incluindo a observação
-    const resumoRows = [
-      el('div', { className: 'detail-card__title', textContent: 'Resumo' }),
-      infoRow('Cliente', pedido.cliente_nome),
-      infoRow('Documento', `${pedido.documento_solicitacao || '-'}${
-        pedido.documento_solicitacao_nup ? ` · ${pedido.documento_solicitacao_nup}` : ''}`),
-      infoRow('Itens', `${nItens} carta(s) · ${nExemplares} exemplar(es)`),
-      infoRow('Data do pedido', formatDate(pedido.data_pedido)),
-      infoRow('Prazo', formatDate(pedido.prazo)),
-    ];
-    if (pedido.observacao) {
-      resumoRows.push(infoRow('Observação', pedido.observacao));
-    }
-    root.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, resumoRows));
+    root.appendChild(el('div', { className: 'detail-cards', style: { marginBottom: 'var(--space-md)' } }, cards));
 
     // Pedido de civil (visível quando houver dado civil)
     if (pedido.canal_recebimento_nome || pedido.municipio || pedido.qtd_imagens != null) {
@@ -574,16 +593,6 @@ export async function renderPedidoDetails(container, { params }) {
         el('div', { className: 'detail-card__value', textContent: pedido.motivo_cancelamento }),
       ]));
     }
-
-    // Detalhes completos (colapsado por padrão): os campos administrativos
-    root.appendChild(el('details', { className: 'detail-collapse', style: { marginBottom: 'var(--space-md)' } }, [
-      el('summary', {
-        className: 'detail-collapse__summary',
-        textContent: 'Detalhes do pedido',
-        style: { cursor: 'pointer', padding: 'var(--space-sm) 0', fontWeight: '600' },
-      }),
-      el('div', { className: 'detail-cards', style: { marginTop: 'var(--space-sm)' } }, cards),
-    ]));
 
     // Items table
     const produtosTable = createDataTable({

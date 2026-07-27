@@ -55,6 +55,91 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
+/* ---------------------------------------------------------------------------
+ * Porta de entrada com DOIS caminhos (2026-07-27): entrar no sistema e
+ * acompanhar um pedido pela chave. Os dois ficam visiveis ao mesmo tempo, cada
+ * um dizendo para quem serve, para ninguem precisar adivinhar onde se encaixa.
+ * ------------------------------------------------------------------------- */
+.login-card--duplo {
+  max-width: 780px;
+  padding: var(--space-lg) var(--space-xl);
+}
+
+.login-card__topo {
+  margin-bottom: var(--space-lg);
+}
+
+.login-card--duplo .login-card__subtitle {
+  margin-bottom: 0;
+}
+
+.login-card__caminhos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-xl);
+}
+
+/* A linha entre os dois marca que sao caminhos alternativos, nao um formulario
+ * de duas colunas que se preenche inteiro. */
+.login-card__caminhos > .login-caminho + .login-caminho {
+  border-left: 1px solid var(--border-color);
+  padding-left: var(--space-xl);
+}
+
+.login-caminho__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.login-caminho__icone {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--bg-selected);
+  color: var(--color-primary);
+}
+
+.login-caminho__titulo {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.login-caminho__para-quem {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.login-caminho__rodape {
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .login-card__caminhos {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg);
+  }
+
+  .login-card__caminhos > .login-caminho + .login-caminho {
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding-left: 0;
+    padding-top: var(--space-lg);
+  }
+}
+
 .login-card__avatar {
   display: flex;
   align-items: center;
@@ -116,6 +201,25 @@
 
 [data-theme="dark"] .login-form__submit:hover:not(:disabled) {
   box-shadow: 0 0 16px rgba(118, 176, 241, 0.5);
+}
+
+/* O botao de acompanhar e a acao SECUNDARIA: mesma forma, menos peso, para o
+ * caminho do dia a dia continuar sendo o login.
+ *
+ * Este bloco vem DEPOIS das regras de .login-form__submit, inclusive as de
+ * [data-theme="dark"], de proposito. Colocado antes, ele perdia no desempate
+ * por ordem e o botao saia preenchido, identico ao "Entrar". */
+.login-form__submit--secundario,
+[data-theme="dark"] .login-form__submit--secundario {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  box-shadow: none;
+}
+
+.login-form__submit--secundario:hover:not(:disabled),
+[data-theme="dark"] .login-form__submit--secundario:hover:not(:disabled) {
+  background: var(--bg-selected);
 }
 
 .login-form__error {

@@ -36,6 +36,29 @@
   gap: var(--space-md);
 }
 
+/* Barra de filtro acima de uma tabela (ex.: pedidos por tipo de cliente).
+ * O contador vai para a direita e diz quanto o filtro escondeu, para o numero
+ * na tela nunca ser confundido com o total. */
+.filtro-barra {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.filtro-barra__grupo {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.page__meta {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 /* Barra de ferramentas do RPCMTec (mes, cumulativo, baixar DOCX) */
 .rpcm-toolbar {
   display: flex;

@@ -1,6 +1,9 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 
-const PAGE_SIZE_OPTIONS = [5, 10, 25];
+// O primeiro valor tambem e o piso que esconde a paginacao (lista menor que
+// ele cabe inteira na tela). O 100 entrou em 2026-07-27, para varrer os pedidos
+// do ano sem virar pagina.
+const PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100];
 
 const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g');
 

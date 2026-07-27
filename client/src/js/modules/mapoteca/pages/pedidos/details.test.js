@@ -103,4 +103,42 @@ describe('renderPedidoDetails', () => {
 
     if (typeof cleanup === 'function') cleanup();
   });
+
+  // Antes havia um card "Resumo" fixo mais um bloco "Detalhes do pedido"
+  // colapsado, e os dois repetiam cliente, DIEx, NUP, data e prazo.
+  test('nao ha bloco colapsavel: tudo fica visivel de uma vez', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.querySelector('details.detail-collapse')).toBeNull();
+    expect(container.textContent).not.toContain('Detalhes do pedido');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('cada rotulo aparece uma vez so, sem o par Resumo mais Detalhes', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    const rotulos = [...container.querySelectorAll('.detail-card .detail-row__label, .detail-card__label')]
+      .map(e => e.textContent.trim());
+    const repetidos = rotulos.filter((r, i) => rotulos.indexOf(r) !== i);
+    expect(repetidos).toEqual([]);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('mostra o contato DO PEDIDO e o geral da OM, separados', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Contato do pedido');
+    expect(container.textContent).toContain('Contato geral da OM');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
 });

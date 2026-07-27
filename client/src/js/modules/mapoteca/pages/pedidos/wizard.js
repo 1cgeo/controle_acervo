@@ -286,7 +286,7 @@ export async function renderPedidoWizard(container, _ctx) {
 
     const cardAdicional = el('div', { className: 'detail-card' }, [
       el('div', { className: 'detail-card__title', textContent: 'Dados adicionais' }),
-      infoRow('Ponto de contato', valores.ponto_contato),
+      infoRow('Ponto de contato do pedido', valores.ponto_contato),
       infoRow('Demandante', valores.demandante),
       infoRow('OM responsável (OMDS)', valores.omds),
       infoRow('Previsto no PIT', valores.previsto_pit ? 'Sim' : 'Não'),

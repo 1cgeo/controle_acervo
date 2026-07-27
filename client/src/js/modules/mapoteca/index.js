@@ -28,7 +28,6 @@ import { renderEstoqueList } from './pages/estoque/list.js';
 import { renderConsumoList } from './pages/consumo/list.js';
 import { renderPlottersList } from './pages/plotters/list.js';
 import { renderPlotterDetails } from './pages/plotters/details.js';
-import { renderRelatorios } from './pages/relatorios/index.js';
 import { renderRpcMtec } from './pages/rpcmtec/index.js';
 
 export default {
@@ -51,7 +50,6 @@ export default {
       ],
     },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
-    { id: 'relatorios', label: 'Relatórios', icon: ICONS.description, path: '/relatorios' },
     { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec' },
   ],
 
@@ -70,7 +68,6 @@ export default {
     { path: '/consumo', render: renderConsumoList, perfil: 'consulta' },
     { path: '/plotters', render: renderPlottersList, perfil: 'consulta' },
     { path: '/plotters/:id', render: renderPlotterDetails, perfil: 'consulta' },
-    { path: '/relatorios', render: renderRelatorios, perfil: 'consulta' },
     { path: '/rpcmtec', render: renderRpcMtec, perfil: 'consulta' },
   ],
 };

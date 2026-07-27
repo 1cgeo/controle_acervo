@@ -21,6 +21,37 @@ describe('auth-store: sessao', () => {
     expect(isAdmin()).toBe(true);
   });
 
+  // REGRESSAO 2026-07-27: a duracao da sessao estava escrita DUAS vezes, no
+  // servidor (expiresIn) e aqui (agora + 1 hora, fixo). Quando o servidor passou
+  // para 8h, o client continuaria deslogando em 1h, e o conserto pareceria
+  // pronto enquanto a pessoa seguia caindo fora no meio do trabalho. Agora a
+  // expiracao sai do claim `exp` do proprio token, e os dois lados nao divergem.
+  test('a expiracao vem do claim exp do token, nao de um valor fixo', () => {
+    const emOitoHoras = Math.floor(Date.now() / 1000) + 8 * 3600;
+    const payload = btoa(JSON.stringify({ exp: emOitoHoras }));
+    saveAuth({ token: `cabecalho.${payload}.assinatura`, administrador: false }, 'fulano');
+
+    const guardado = new Date(localStorage.getItem('@sca-Token-Expiry')).getTime();
+    const esperado = emOitoHoras * 1000;
+    expect(Math.abs(guardado - esperado)).toBeLessThan(2000);
+
+    // Sete horas a frente a sessao AINDA vale. Com o valor fixo de 1h, nao valeria.
+    const seteHoras = Date.now() + 7 * 3600 * 1000;
+    expect(guardado).toBeGreaterThan(seteHoras);
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  test('token sem exp legivel cai no padrao conservador de 1 hora', () => {
+    // Fixture curta de proposito: o guard anti-vazamento trata `token: <valor>`
+    // com 12 caracteres ou mais como possivel credencial de verdade.
+    saveAuth({ token: 'nao-jwt', administrador: false }, 'fulano');
+    const guardado = new Date(localStorage.getItem('@sca-Token-Expiry')).getTime();
+
+    expect(isAuthenticated()).toBe(true);
+    expect(guardado).toBeGreaterThan(Date.now() + 55 * 60 * 1000);
+    expect(guardado).toBeLessThan(Date.now() + 65 * 60 * 1000);
+  });
+
   test('usuario comum nao e admin', () => {
     saveAuth({ token: 'jwt-xyz', administrador: false, uuid: 'u-2' }, 'beltrano');
     expect(isAdmin()).toBe(false);

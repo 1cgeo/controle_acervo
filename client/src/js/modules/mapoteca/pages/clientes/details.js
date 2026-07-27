@@ -108,7 +108,9 @@ export async function renderClienteDetails(container, { params }) {
       el('div', { className: 'detail-card' }, [
         el('div', { className: 'detail-card__title', textContent: 'Informações de contato' }),
         infoRow('Tipo de cliente', cliente.tipo_cliente_nome),
-        infoRow('Ponto de contato principal', cliente.ponto_contato_principal),
+        // "Geral" e o que o distingue do contato de UM pedido, que mora em
+        // mapoteca.pedido.ponto_contato e aparece no detalhe do pedido.
+        infoRow('Contato geral da OM', cliente.ponto_contato_principal),
         infoRow('Endereço de entrega principal', cliente.endereco_entrega_principal),
       ]),
     ]));

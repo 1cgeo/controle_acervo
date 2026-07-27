@@ -24,7 +24,7 @@ const LISTAS = [
   'getDominioTipoMidia', 'getDominioTipoLocalizacao', 'getDominioFormaEntrega',
   'getClientes', 'getPedidos', 'getPlotters', 'getManutencoes', 'getTiposMaterial',
   'getEstoqueMaterial', 'getEstoquePorLocalizacao', 'getConsumoMaterial',
-  'getConsumoMensal', 'getRelatorio', 'getOrdersTimeline', 'getClientActivity',
+  'getConsumoMensal', 'getOrdersTimeline', 'getClientActivity',
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
   'getAnexosPedido', 'uploadAnexoPedido',
@@ -50,7 +50,7 @@ const ACOES = [
   'createEstoqueMaterial', 'updateEstoqueMaterial', 'deleteEstoqueMaterial',
   'transferirEstoque',
   'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
-  'downloadRelatorioCsv', 'downloadRpcmtecDocx', 'downloadDashboardCsv',
+  'downloadRpcmtecDocx', 'downloadDashboardCsv',
   'downloadAnexoPedido', 'deleteAnexoPedido',
 ];
 
@@ -71,7 +71,6 @@ export function mockMapotecaService() {
   preencher(mock, OBJETOS, () => ({}));
   preencher(mock, ACOES, null);
   // Sincronas: nao devolvem promessa.
-  mock.relatorioCsvUrl = vi.fn((nome, ano) => `/mapoteca/relatorio/${nome}?ano=${ano}&formato=csv`);
   mock.invalidateDashboardCache = vi.fn();
   return mock;
 }

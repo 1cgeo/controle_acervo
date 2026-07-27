@@ -313,10 +313,20 @@
   margin-top: var(--space-xs);
 }
 
-/* Detail cards (e.g. pedido details) */
+/* Detail cards (ex.: detalhes do pedido)
+ *
+ * DUAS colunas, nao quatro (chefe, 2026-07-27). Em quatro, cada card ficava com
+ * cerca de 330px e as linhas "rotulo ... valor" quebravam quase todas: nome de
+ * OM, endereco e NUP nao cabem nessa largura. Os cards tambem tem alturas bem
+ * diferentes (3 a 6 linhas), e quatro lado a lado deixavam a base irregular.
+ *
+ * Em duas colunas o valor fica na mesma linha do rotulo, e o par de cards de
+ * cada faixa tem altura parecida. `align-items: start` impede o card curto de
+ * esticar para acompanhar o alto. */
 .detail-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: var(--space-md);
   margin-bottom: var(--space-lg);
 }
@@ -326,6 +336,33 @@
   background: var(--bg-paper);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+}
+
+/* Linha divisoria entre os campos, para o olho seguir cada par sem contar linha */
+.detail-card__row + .detail-card__row {
+  border-top: 1px solid var(--border-color);
+}
+
+/* Campo de texto LONGO (observacao, endereco, palavras-chave): rotulo em cima e
+ * valor a esquerda. Alinhado a direita, um paragrafo de tres linhas fica com a
+ * margem esquerda irregular e a leitura trava a cada quebra. */
+.detail-card__row--longo {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.detail-card__row--longo .detail-card__value {
+  text-align: left;
+  font-weight: var(--font-weight-normal);
+  line-height: 1.45;
+}
+
+/* Valor longo (endereco, observacao, nome de OM) quebra em vez de espremer o
+ * rotulo ou vazar do card. */
+.detail-card__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .detail-card__title {
@@ -363,8 +400,12 @@
     grid-template-columns: repeat(3, 1fr);
   }
 
+  /* .detail-cards ja e 2 colunas em qualquer largura; abaixo de 900px vira 1. */
+}
+
+@media (max-width: 900px) {
   .detail-cards {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 
