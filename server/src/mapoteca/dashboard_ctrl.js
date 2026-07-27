@@ -190,6 +190,14 @@ controller.getClientActivity = async (limite = 10) => {
       COUNT(p.id) AS total_pedidos,
       SUM(CASE WHEN p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} THEN 1 ELSE 0 END) AS pedidos_concluidos,
       SUM((SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id)) AS total_produtos,
+      -- Folhas realmente impressas, e não o que foi pedido. A quantidade vem de
+      -- mapoteca.impressao_item, que registra cada sessão de impressão, então um
+      -- item impresso em dois dias soma as duas. Ligação:
+      -- impressao_item -> produto_pedido -> pedido -> cliente.
+      SUM((SELECT COALESCE(SUM(ii.quantidade), 0)
+             FROM mapoteca.impressao_item ii
+             JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
+            WHERE pp.pedido_id = p.id)) AS total_impressoes,
       MAX(p.data_pedido) AS ultimo_pedido
     FROM mapoteca.cliente c
     JOIN mapoteca.pedido p ON c.id = p.cliente_id

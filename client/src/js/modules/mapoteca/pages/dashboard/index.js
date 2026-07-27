@@ -6,7 +6,6 @@ import { createPieChart } from '@components/charts/pie-chart.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
-import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -77,11 +76,13 @@ export async function renderDashboard(container) {
   // -------------------------------------------------------------------------
   // Status cards
   // -------------------------------------------------------------------------
+  // "Em Andamento" saiu em 2026-07-27. Ele nao era so redundante com "Pendentes":
+  // era CONTIDO nele. O servidor conta pendentes como pre-cadastramento +
+  // documento recebido + em andamento, entao somar os cards contava o mesmo
+  // pedido duas vezes. Hoje os dois mostravam 31, porque as outras duas
+  // situacoes estao zeradas.
   const cardTotal = createStatsCard({
     title: 'Total de Pedidos', value: '-', icon: svgIcon(ICONS.assignment, 24), color: 'primary', loading: true,
-  });
-  const cardEmAndamento = createStatsCard({
-    title: 'Em Andamento', value: '-', icon: svgIcon(ICONS.schedule, 24), color: 'info', loading: true,
   });
   const cardConcluidos = createStatsCard({
     title: 'Concluídos', value: '-', icon: svgIcon(ICONS.checkCircle, 24), color: 'success', loading: true,
@@ -94,7 +95,7 @@ export async function renderDashboard(container) {
   });
 
   const statsGrid = el('div', { className: 'stats-grid' }, [
-    cardTotal, cardEmAndamento, cardConcluidos, cardPendentes, cardTempoMedio,
+    cardTotal, cardConcluidos, cardPendentes, cardTempoMedio,
   ]);
 
   // -------------------------------------------------------------------------
@@ -159,17 +160,25 @@ export async function renderDashboard(container) {
       { key: 'total_pedidos', label: 'Pedidos', sortable: true, render: (row) => formatNumber(row.total_pedidos) },
       { key: 'pedidos_concluidos', label: 'Concluídos', render: (row) => formatNumber(row.pedidos_concluidos) },
       { key: 'total_produtos', label: 'Produtos', render: (row) => formatNumber(row.total_produtos) },
+      // Folhas efetivamente impressas, que e diferente de produtos pedidos: um
+      // produto pode ser impresso em varias copias, e em dias distintos.
+      { key: 'total_impressoes', label: 'Impressões', sortable: true, render: (row) => formatNumber(row.total_impressoes) },
       { key: 'ultimo_pedido', label: 'Último pedido', sortable: true, render: (row) => formatDate(row.ultimo_pedido) },
     ],
     rows: [],
-    pageSize: 10,
+    // A consulta ja devolve so 10 linhas. Paginar um Top 10 em paginas de 5
+    // esconde metade de uma lista que cabe inteira na tela.
+    paginated: false,
     loading: true,
     emptyMessage: 'Nenhum cliente com pedidos',
   });
 
+  const clientesAtivosTotal = el('span', { className: 'dashboard-section__meta', textContent: '' });
+
   const clientesAtivosSection = el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [
       el('h2', { className: 'dashboard-section__title', textContent: 'Clientes Mais Ativos (Top 10)' }),
+      clientesAtivosTotal,
     ]),
     clientesAtivosTable.element,
   ]);
@@ -198,111 +207,6 @@ export async function renderDashboard(container) {
       el('h2', { className: 'dashboard-section__title', textContent: 'Consumo de Material (últimos 12 meses)' }),
     ]),
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [consumoLine, topMateriaisBar]),
-  ]);
-
-  // -------------------------------------------------------------------------
-  // Situação dos plotters
-  // -------------------------------------------------------------------------
-  const plotterCards = {
-    total: summaryCard('Total de plotters'),
-    ativos: summaryCard('Ativos'),
-    inativos: summaryCard('Inativos'),
-  };
-
-  const plotterTable = createDataTable({
-    columns: [
-      {
-        key: 'modelo',
-        label: 'Modelo',
-        sortable: true,
-        render: (row) => el('a', { href: `#/mapoteca/plotters/${row.id}`, textContent: row.modelo || '-' }),
-      },
-      { key: 'nr_serie', label: 'Número de série' },
-      {
-        key: 'ativo',
-        label: 'Status',
-        render: (row) => row.ativo ? chip('Ativo', 'success') : chip('Inativo', 'default'),
-      },
-      {
-        key: 'data_ultima_manutencao',
-        label: 'Última manutenção',
-        sortable: true,
-        render: (row) => formatDate(row.data_ultima_manutencao),
-      },
-      {
-        key: 'custo_total_manutencao',
-        label: 'Custo de manutenção',
-        render: (row) => formatCurrency(row.custo_total_manutencao),
-      },
-      {
-        key: 'fim_vida_util',
-        label: 'Vida útil',
-        render: (row) => {
-          if (row.fim_vida_util === true) return chip('Expirada', 'error');
-          if (row.fim_vida_util === false) return chip('Vigente', 'success');
-          return el('span', { textContent: '-' });
-        },
-      },
-    ],
-    rows: [],
-    pageSize: 5,
-    loading: true,
-    emptyMessage: 'Nenhum plotter cadastrado',
-  });
-
-  const plottersSection = el('div', { className: 'dashboard-section' }, [
-    el('div', { className: 'dashboard-section__header' }, [
-      el('h2', { className: 'dashboard-section__title', textContent: 'Plotters' }),
-    ]),
-    el('div', { className: 'summary-cards' }, Object.values(plotterCards)),
-    plotterTable.element,
-  ]);
-
-  // -------------------------------------------------------------------------
-  // Pending orders table
-  // -------------------------------------------------------------------------
-  const pendingTable = createDataTable({
-    columns: [
-      { key: 'id', label: 'ID', sortable: true },
-      { key: 'data_pedido', label: 'Data do Pedido', sortable: true, render: (row) => formatDate(row.data_pedido) },
-      { key: 'cliente_nome', label: 'Cliente', sortable: true },
-      { key: 'prazo', label: 'Prazo', sortable: true, render: (row) => formatDate(row.prazo) },
-      {
-        key: 'dias_ate_prazo',
-        label: 'Dias até o Prazo',
-        sortable: true,
-        render: (row) => (row.dias_ate_prazo === null || row.dias_ate_prazo === undefined)
-          ? '-'
-          : formatNumber(row.dias_ate_prazo),
-      },
-      {
-        key: 'situacao_nome',
-        label: 'Situação',
-        render: (row) => chipSituacaoPedido(row.situacao_pedido_id, row.situacao_nome),
-      },
-      { key: 'quantidade_produtos', label: 'Produtos', sortable: true },
-      {
-        key: 'atrasado',
-        label: 'Atraso',
-        render: (row) => {
-          if (row.atrasado === true) return chip('Atrasado', 'error');
-          if (row.atrasado === false) return chip('Em dia', 'success');
-          return el('span', { textContent: '-' });
-        },
-      },
-    ],
-    rows: [],
-    searchable: true,
-    pageSize: 10,
-    loading: true,
-    emptyMessage: 'Nenhum pedido pendente',
-  });
-
-  const pendingSection = el('div', { className: 'dashboard-section' }, [
-    el('div', { className: 'dashboard-section__header' }, [
-      el('h2', { className: 'dashboard-section__title', textContent: 'Pedidos Pendentes' }),
-    ]),
-    pendingTable.element,
   ]);
 
   // -------------------------------------------------------------------------
@@ -341,14 +245,6 @@ export async function renderDashboard(container) {
     loading: true,
   });
 
-  const entregasMidiaChart = createBarChart({
-    title: 'Entregas por Tipo de Mídia',
-    data: [],
-    xKey: 'tipo_midia',
-    series: [{ dataKey: 'total_produtos', label: 'Produtos' }],
-    loading: true,
-  });
-
   const operacoesChart = createBarChart({
     title: 'Operações Apoiadas',
     data: [],
@@ -359,20 +255,6 @@ export async function renderDashboard(container) {
     ],
     horizontal: true,
     loading: true,
-  });
-
-  const entregasMesTable = createDataTable({
-    columns: [
-      { key: 'mes_nome', label: 'Mês' },
-      { key: 'carta_topo', label: 'Carta Topo', render: (row) => formatNumber(row.carta_topo) },
-      { key: 'carta_orto', label: 'Carta Orto', render: (row) => formatNumber(row.carta_orto) },
-      { key: 'outros', label: 'Outros', render: (row) => formatNumber(row.outros) },
-      { key: 'total', label: 'Total', render: (row) => formatNumber(row.total) },
-    ],
-    rows: [],
-    pageSize: 25,
-    loading: true,
-    emptyMessage: 'Sem entregas no ano selecionado',
   });
 
   const getAno = () => selectedYear;
@@ -386,36 +268,33 @@ export async function renderDashboard(container) {
       ]),
     ]),
     summaryGrid,
-    el('div', { className: 'export-bar' }, [exportButton('entregas_por_tipo_produto', getAno)]),
-    entregasTipoChart,
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
       el('div', {}, [
-        el('div', { className: 'export-bar' }, [exportButton('entregas_por_midia', getAno)]),
-        entregasMidiaChart,
+        el('div', { className: 'export-bar' }, [exportButton('entregas_por_tipo_produto', getAno)]),
+        entregasTipoChart,
       ]),
       el('div', {}, [
         el('div', { className: 'export-bar' }, [exportButton('operacoes_apoiadas', getAno)]),
         operacoesChart,
       ]),
     ]),
-    el('div', { className: 'export-bar' }, [exportButton('entregas_por_mes', getAno)]),
-    entregasMesTable.element,
   ]);
 
   // -------------------------------------------------------------------------
   // Page assembly
+  //
+  // O Resumo Anual abre a pagina (chefe, 2026-07-27). E o numero que a DGEO
+  // presta contas, entao ele vem antes do movimento do dia a dia.
   // -------------------------------------------------------------------------
   const page = el('div', { className: 'dashboard' }, [
     el('h1', { className: 'dashboard__title', textContent: 'Dashboard' }),
+    annualSection,
     statsGrid,
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [statusPie, stockBar]),
     timelineLine,
-    pendingSection,
     atendimentoSection,
     clientesAtivosSection,
     consumoSection,
-    plottersSection,
-    annualSection,
   ]);
   container.appendChild(page);
 
@@ -427,20 +306,17 @@ export async function renderDashboard(container) {
       mapotecaService.getOrderStatus(),
       mapotecaService.getStockByLocation(),
       mapotecaService.getOrdersTimeline(6),
-      mapotecaService.getPendingOrders(),
       mapotecaService.getAvgFulfillmentTime(),
       mapotecaService.getClientActivity(10),
       mapotecaService.getMaterialConsumption(12),
-      mapotecaService.getPlotterStatus(),
     ]);
     if (disposed) return;
 
-    const [statusRes, stockRes, timelineRes, pendingRes, avgRes, clientesRes, consumoRes, plotterRes] = results;
+    const [statusRes, stockRes, timelineRes, avgRes, clientesRes, consumoRes] = results;
 
     if (statusRes.status === 'fulfilled') {
       const status = statusRes.value;
       cardTotal.update({ value: formatNumber(status.total), loading: false });
-      cardEmAndamento.update({ value: formatNumber(status.em_andamento), loading: false });
       cardConcluidos.update({ value: formatNumber(status.concluidos), loading: false });
       cardPendentes.update({ value: formatNumber(status.pendentes), loading: false });
 
@@ -474,10 +350,6 @@ export async function renderDashboard(container) {
       });
     }
 
-    if (pendingRes.status === 'fulfilled') {
-      pendingTable.update({ rows: pendingRes.value, loading: false });
-    }
-
     if (avgRes.status === 'fulfilled') {
       const avg = avgRes.value;
       cardTempoMedio.update({
@@ -506,9 +378,15 @@ export async function renderDashboard(container) {
     }
 
     if (clientesRes.status === 'fulfilled') {
-      clientesAtivosTable.update({ rows: clientesRes.value || [], loading: false });
+      const clientes = clientesRes.value || [];
+      clientesAtivosTable.update({ rows: clientes, loading: false });
+      const totalImpressoes = clientes.reduce((soma, c) => soma + Number(c.total_impressoes || 0), 0);
+      clientesAtivosTotal.textContent = clientes.length
+        ? `${formatNumber(totalImpressoes)} impressões no Top 10`
+        : '';
     } else {
       clientesAtivosTable.update({ rows: [], loading: false });
+      clientesAtivosTotal.textContent = '';
     }
 
     if (consumoRes.status === 'fulfilled') {
@@ -531,35 +409,21 @@ export async function renderDashboard(container) {
       consumoLine.update({ data: [], loading: false });
       topMateriaisBar.update({ data: [], loading: false });
     }
-
-    if (plotterRes.status === 'fulfilled') {
-      const { sumario = {}, plotters = [] } = plotterRes.value || {};
-      plotterCards.total.setValue(formatNumber(sumario.total ?? 0));
-      plotterCards.ativos.setValue(formatNumber(sumario.ativos ?? 0));
-      plotterCards.inativos.setValue(formatNumber(sumario.inativos ?? 0));
-      plotterTable.update({ rows: plotters, loading: false });
-    } else {
-      plotterTable.update({ rows: [], loading: false });
-    }
   }
 
   async function loadAnnual() {
     const ano = selectedYear;
     entregasTipoChart.update({ loading: true });
-    entregasMidiaChart.update({ loading: true });
     operacoesChart.update({ loading: true });
-    entregasMesTable.update({ loading: true });
 
     const results = await Promise.allSettled([
       mapotecaService.getResumoAnual(ano),
       mapotecaService.getEntregasPorTipoProduto(ano),
-      mapotecaService.getEntregasPorMidia(ano),
       mapotecaService.getOperacoesApoiadas(ano),
-      mapotecaService.getEntregasPorMes(ano),
     ]);
     if (disposed || ano !== selectedYear) return;
 
-    const [resumoRes, tipoRes, midiaRes, operacoesRes, mesRes] = results;
+    const [resumoRes, tipoRes, operacoesRes] = results;
 
     if (resumoRes.status === 'fulfilled') {
       const resumo = resumoRes.value;
@@ -579,18 +443,6 @@ export async function renderDashboard(container) {
       entregasTipoChart.update({ data: [], loading: false });
     }
 
-    if (midiaRes.status === 'fulfilled') {
-      entregasMidiaChart.update({
-        data: midiaRes.value.map(m => ({
-          tipo_midia: m.tipo_midia || 'Não informado',
-          total_produtos: Number(m.total_produtos),
-        })),
-        loading: false,
-      });
-    } else {
-      entregasMidiaChart.update({ data: [], loading: false });
-    }
-
     if (operacoesRes.status === 'fulfilled') {
       operacoesChart.update({
         data: operacoesRes.value.map(o => ({
@@ -602,15 +454,6 @@ export async function renderDashboard(container) {
       });
     } else {
       operacoesChart.update({ data: [], loading: false });
-    }
-
-    if (mesRes.status === 'fulfilled') {
-      entregasMesTable.update({
-        rows: mesRes.value.map(m => ({ ...m, mes_nome: monthName(m.mes) })),
-        loading: false,
-      });
-    } else {
-      entregasMesTable.update({ rows: [], loading: false });
     }
   }
 
@@ -637,11 +480,7 @@ export async function renderDashboard(container) {
     consumoLine._cleanup();
     topMateriaisBar._cleanup();
     entregasTipoChart._cleanup();
-    entregasMidiaChart._cleanup();
     operacoesChart._cleanup();
-    pendingTable._cleanup();
     clientesAtivosTable._cleanup();
-    plotterTable._cleanup();
-    entregasMesTable._cleanup();
   };
 }

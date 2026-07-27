@@ -60,6 +60,15 @@
   color: var(--text-primary);
 }
 
+/* Numero de apoio ao lado do titulo da secao (ex.: o total de impressoes do
+ * Top 10). Fica discreto: e contexto do titulo, nao um card. */
+.dashboard-section__meta {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .dashboard-section__controls {
   display: flex;
   align-items: center;

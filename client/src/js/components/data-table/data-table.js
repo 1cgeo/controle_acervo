@@ -22,6 +22,10 @@ function normalizeText(value) {
  * @param {Array<Object>} [options.rows]
  * @param {boolean} [options.searchable] - shows the client-side search input
  * @param {number} [options.pageSize] - 5 | 10 | 25 (default 10)
+ * @param {boolean} [options.paginated] - false mostra TODAS as linhas e some com o
+ *        rodapé de paginação. Use quando a própria consulta já limita o conjunto
+ *        (um "Top 10", por exemplo): paginar 10 linhas em páginas de 5 só esconde
+ *        metade de uma lista que cabe inteira na tela.
  * @param {Array<{label?:string, icon?:string, onClick:(row:Object)=>void, title?:string, variant?:'default'|'danger'}>} [options.actions]
  *        - per-row action buttons ('icon' is an SVG path string from ICONS)
  * @param {boolean} [options.selectable] - adds a checkbox column (bulk operations)
@@ -35,6 +39,7 @@ export function createDataTable({
   rows = [],
   searchable = false,
   pageSize = 10,
+  paginated = true,
   actions = [],
   selectable = false,
   onSelectionChange = null,
@@ -333,11 +338,13 @@ export function createDataTable({
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(filtered.length / currentPageSize));
-    if (currentPage >= totalPages) currentPage = totalPages - 1;
-
-    const startIdx = currentPage * currentPageSize;
-    const pageRows = filtered.slice(startIdx, startIdx + currentPageSize);
+    let pageRows = filtered;
+    if (paginated) {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / currentPageSize));
+      if (currentPage >= totalPages) currentPage = totalPages - 1;
+      const startIdx = currentPage * currentPageSize;
+      pageRows = filtered.slice(startIdx, startIdx + currentPageSize);
+    }
 
     const table = el('table', { className: 'data-table' }, [
       buildHeader(pageRows),
@@ -345,7 +352,7 @@ export function createDataTable({
     ]);
     tableScroll.appendChild(table);
 
-    renderPagination(filtered.length);
+    if (paginated) renderPagination(filtered.length);
   }
 
   /**

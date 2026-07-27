@@ -43,6 +43,12 @@ const configSchema = Joi.object().keys({
   DB_USER: Joi.string().required(),
   DB_PASSWORD: Joi.string().required(),
   JWT_SECRET: Joi.string().required(),
+  // Duração da sessão, no formato do jsonwebtoken ('8h', '30m', '1d'). Não há
+  // renovação de token: quando ele expira, a próxima requisição volta 401 e o
+  // client desloga no meio do trabalho. Era '1h' fixo até 2026-07-27.
+  JWT_EXPIRACAO: Joi.string()
+    .pattern(/^\d+[smhd]$/)
+    .default('8h'),
   AUTH_SERVER: Joi.string()
     .uri()
     .required(),
@@ -63,6 +69,7 @@ const config = {
   DB_USER_READONLY: process.env.DB_USER_READONLY || '',
   DB_PASSWORD_READONLY: process.env.DB_PASSWORD_READONLY || '',
   JWT_SECRET: process.env.JWT_SECRET,
+  JWT_EXPIRACAO: process.env.JWT_EXPIRACAO || '8h',
   AUTH_SERVER: process.env.AUTH_SERVER,
   USE_PROXY: process.env.USE_PROXY === 'true',
   VERSION,

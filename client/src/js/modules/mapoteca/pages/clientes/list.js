@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { chip } from '@components/status-chip.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { getClientes, deleteClientes } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
@@ -86,7 +87,8 @@ export async function renderClientesList(container, _ctx) {
 
   const table = createDataTable({
     columns: [
-      { key: 'id', label: 'ID', sortable: true },
+      // Sem coluna de ID: o id e chave interna, e quem opera identifica o
+      // cliente pelo nome. Ele continua na URL do detalhe, para quem precisar.
       { key: 'nome', label: 'Nome', sortable: true },
       { key: 'tipo_cliente_nome', label: 'Tipo', sortable: true },
       { key: 'ponto_contato_principal', label: 'Contato' },
@@ -103,10 +105,15 @@ export async function renderClientesList(container, _ctx) {
         render: (row) => formatDate(row.data_ultimo_pedido),
       },
       {
+        // A coluna responde "tem pedido em andamento?", que e a pergunta de quem
+        // varre a lista. A CONTAGEM exata continua no detalhe do cliente, no card
+        // "Em andamento", porque um punhado de clientes tem mais de um.
         key: 'pedidos_em_andamento',
         label: 'Em andamento',
         sortable: true,
-        render: (row) => formatNumber(row.pedidos_em_andamento),
+        render: (row) => Number(row.pedidos_em_andamento) > 0
+          ? chip('Sim', 'info')
+          : chip('Não', 'default'),
       },
     ],
     rows: [],

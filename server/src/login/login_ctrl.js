@@ -7,7 +7,7 @@ const { db } = require('../database')
 
 const { AppError, httpCode } = require('../utils')
 
-const { JWT_SECRET } = require('../config')
+const { JWT_SECRET, JWT_EXPIRACAO } = require('../config')
 
 const { authenticateUser } = require('../authentication')
 
@@ -19,7 +19,7 @@ const signJWT = (data, secret) => {
       data,
       secret,
       {
-        expiresIn: '1h'
+        expiresIn: JWT_EXPIRACAO
       },
       (err, token) => {
         if (err) {
