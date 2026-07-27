@@ -1,0 +1,22 @@
+{
+  "name": "sca-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Interface web unica do SCA: modulos acervo, mapoteca e orcamento",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.7"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.5"
+  }
+}

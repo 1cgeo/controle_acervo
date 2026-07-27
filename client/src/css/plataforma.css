@@ -1,0 +1,61 @@
+/* ---------------------------------------------------------------------------
+ * Interface unica do SCA: o que so existe por haver mais de um modulo.
+ * Tudo que e de um modulo so continua no CSS daquele modulo.
+ * ------------------------------------------------------------------------- */
+
+/* Seletor de modulo na navbar (ao lado do titulo) */
+.navbar__modulo {
+  height: 32px;
+  max-width: 220px;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.navbar__modulo:hover {
+  border-color: var(--color-primary);
+}
+
+.navbar__modulo:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--bg-selected);
+}
+
+/* Um modulo so: o controle vira rotulo, sem cara de coisa clicavel */
+.navbar__modulo--unico {
+  cursor: default;
+  opacity: 1;
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Area dos extras do modulo ativo (ex.: o seletor de ano do orcamento) */
+.navbar__extras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.navbar__extras:empty {
+  display: none;
+}
+
+/* Separa o menu do modulo da secao de plataforma (Usuarios) */
+.sidebar__separator {
+  height: 1px;
+  margin: var(--space-sm) var(--space-md);
+  background: var(--border-color);
+}
+
+@media (max-width: 600px) {
+  .navbar__modulo {
+    max-width: 130px;
+  }
+}

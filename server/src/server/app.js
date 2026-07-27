@@ -103,14 +103,11 @@ app.use('/api', (req, res, next) => {
   return next(err)
 })
 
-// Serve Mapoteca Client (build em build/mapoteca, base /mapoteca/) - antes do acervo
-app.use("/mapoteca", express.static(path.join(__dirname, "..", "build", "mapoteca")));
-
-app.get("/mapoteca/{*path}", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "build", "mapoteca", "index.html"));
-})
-
-// Serve Client (acervo)
+// Interface UNICA do SCA, com os tres modulos (acervo, mapoteca e orcamento)
+// dentro dela. Um build so, em build/, servido na raiz. A troca de modulo e
+// troca de rota (#/acervo/..., #/mapoteca/..., #/orcamento/...), sem recarregar
+// e sem novo login. Os mounts /app e /mapoteca sairam em 2026-07-27, junto com
+// os clients antigos.
 app.use(express.static(path.join(__dirname, "..", "build")));
 
 app.get("/{*path}", (req, res) => {

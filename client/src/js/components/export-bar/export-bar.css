@@ -1,0 +1,33 @@
+/* Barra de exportacao (componente de plataforma).
+   O bloco .export-bar ja tem alinhamento em css/dashboard.css; aqui entram so
+   o espacamento entre botoes, a quebra de linha e o estilo do botao. */
+
+.export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.export-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-on-primary);
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.export-bar__btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.export-bar__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
