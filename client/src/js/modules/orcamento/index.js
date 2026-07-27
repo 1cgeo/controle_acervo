@@ -24,6 +24,7 @@ import { criarSeletorAno } from './components/seletor-ano.js';
 
 export default {
   id: 'orcamento',
+  icon: ICONS.dataUsage,
   home: '/dashboard',
 
   menu: [

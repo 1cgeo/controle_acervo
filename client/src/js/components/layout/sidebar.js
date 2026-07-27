@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { isAdmin } from '@store/auth-store.js';
-import { getModulo } from '@modules/registry.js';
+import { isAdmin, nomeModulo } from '@store/auth-store.js';
+import { getModulo, modulosAcessiveis, rotaInicial } from '@modules/registry.js';
 
 /**
  * Itens de PLATAFORMA, fora de qualquer modulo: valem nos tres.
@@ -10,9 +10,20 @@ const MENU_PLATAFORMA = [
   { id: 'usuarios', label: 'Usuários', icon: ICONS.people, path: '/usuarios', admin: true },
 ];
 
+/** Icone de cada modulo, quando o manifesto nao declara um. */
+const ICONE_PADRAO_MODULO = ICONS.layers;
+
 /**
- * Sidebar da interface unica. O menu e o do MODULO ATIVO, mais a secao de
- * plataforma. Trocar de modulo remonta a lista sem recarregar a pagina.
+ * Sidebar da interface unica.
+ *
+ * A sidebar lista TODOS os modulos que a pessoa acessa, cada um como uma seção
+ * colapsavel, mais a seção de plataforma no fim. Ela e montada UMA vez e nunca
+ * se desmonta: navegar para uma rota de plataforma (ex.: #/usuarios) abre a
+ * tela sem apagar os modulos, que era o defeito do desenho anterior, onde
+ * `setModulo(null)` limpava o menu inteiro.
+ *
+ * Trocar de modulo tambem se faz por aqui: cada cabecalho de modulo e um link
+ * para a home daquele modulo. O seletor da navbar deixou de existir.
  *
  * @param {Object} options
  * @param {boolean} [options.collapsed]
@@ -21,9 +32,6 @@ const MENU_PLATAFORMA = [
 export function createSidebar({ collapsed = false, modulo = null } = {}) {
   let isCollapsed = collapsed;
   let isMobileOpen = false;
-  // Sentinela: `null` e um valor VALIDO de modulo (rota de plataforma), entao a
-  // primeira montagem nao pode ser confundida com "ja esta neste modulo".
-  let moduloAtual;
 
   const nav = el('nav', { className: 'sidebar__nav', 'aria-label': 'Menu principal' });
 
@@ -36,27 +44,32 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
     onClick: () => setMobileOpen(false),
   });
 
-  let itemElements = {};
-  let groupElements = [];
-  let idsConhecidos = [];
+  // Chave dos itens: `<modulo>:<item>` nos modulos e `<item>` na plataforma.
+  // Sem o prefixo, o `dashboard` dos tres modulos colidiria num mapa so.
+  const itemElements = {};
+  // Grupos DENTRO de um modulo (ex.: "Materiais" na mapoteca).
+  const groupElements = [];
+  // Uma entrada por modulo, para abrir e fechar a seção.
+  const moduleSections = [];
 
-  function buildItem(item, prefixo, isSubitem = false) {
+  function buildItem(item, prefixo, chavePrefixo, isSubitem = false) {
     const icon = el('span', { className: 'sidebar__item-icon' }, [svgIcon(item.icon, isSubitem ? 20 : 24)]);
     const label = el('span', { className: 'sidebar__item-label', textContent: item.label });
+
+    const chave = chavePrefixo ? `${chavePrefixo}:${item.id}` : item.id;
 
     const menuItem = el('a', {
       className: `sidebar__item${isSubitem ? ' sidebar__subitem' : ''}`,
       href: `#${prefixo}${item.path}`,
-      dataset: { id: item.id },
+      dataset: { id: chave },
       onClick: () => setMobileOpen(false),
     }, [icon, label]);
 
-    itemElements[item.id] = menuItem;
-    idsConhecidos.push(item.id);
+    itemElements[chave] = menuItem;
     return menuItem;
   }
 
-  function buildMenu(itens, prefixo) {
+  function buildMenu(itens, prefixo, chavePrefixo, destino) {
     for (const item of itens) {
       if (item.admin && !isAdmin()) continue;
 
@@ -64,9 +77,9 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
         const filhos = item.children.filter(c => !c.admin || isAdmin());
         if (!filhos.length) continue;
 
-        const childIds = filhos.map(c => c.id);
+        const childIds = filhos.map(c => (chavePrefixo ? `${chavePrefixo}:${c.id}` : c.id));
         const itemsContainer = el('div', { className: 'sidebar__group-items' },
-          filhos.map(child => buildItem(child, prefixo, true))
+          filhos.map(child => buildItem(child, prefixo, chavePrefixo, true))
         );
 
         const header = el('button', {
@@ -85,29 +98,54 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
         const group = el('div', { className: 'sidebar__group' }, [header, itemsContainer]);
         groupElements.push({ group, header, childIds });
-        nav.appendChild(group);
+        destino.appendChild(group);
       } else {
-        nav.appendChild(buildItem(item, prefixo));
+        destino.appendChild(buildItem(item, prefixo, chavePrefixo));
       }
     }
   }
 
   /**
-   * Remonta o menu para um modulo. Chamar com o mesmo id nao faz nada.
-   * @param {string|null} moduloId
+   * Uma seção colapsavel por modulo. O cabecalho e um LINK para a home do
+   * modulo, entao clicar nele ja troca de modulo; o chevron ao lado abre e
+   * fecha a lista sem navegar.
    */
-  function setModulo(moduloId) {
-    if (moduloId === moduloAtual) return;
-    moduloAtual = moduloId;
+  function buildModuleSection(mod) {
+    const itensContainer = el('div', { className: 'sidebar__module-items' });
+    buildMenu(mod.menu || [], `/${mod.id}`, mod.id, itensContainer);
 
-    nav.innerHTML = '';
-    itemElements = {};
-    groupElements = [];
-    idsConhecidos = [];
+    const chevron = el('button', {
+      className: 'sidebar__module-chevron',
+      type: 'button',
+      'aria-label': `Abrir ou fechar ${nomeModulo(mod.id)}`,
+      onClick: (e) => {
+        // Sem isto o clique subiria para o link e navegaria junto.
+        e.preventDefault();
+        e.stopPropagation();
+        const open = section.classList.toggle('sidebar__module--open');
+        chevron.setAttribute('aria-expanded', String(open));
+      },
+    }, [svgIcon(ICONS.expandMore, 18)]);
 
-    const mod = moduloId ? getModulo(moduloId) : null;
-    if (mod && Array.isArray(mod.menu)) {
-      buildMenu(mod.menu, `/${mod.id}`);
+    const header = el('a', {
+      className: 'sidebar__module-header',
+      href: `#${rotaInicial(mod)}`,
+      title: nomeModulo(mod.id),
+      onClick: () => setMobileOpen(false),
+    }, [
+      el('span', { className: 'sidebar__item-icon' }, [svgIcon(mod.icon || ICONE_PADRAO_MODULO, 24)]),
+      el('span', { className: 'sidebar__item-label', textContent: nomeModulo(mod.id) }),
+      chevron,
+    ]);
+
+    const section = el('div', { className: 'sidebar__module' }, [header, itensContainer]);
+    moduleSections.push({ id: mod.id, section, header, chevron });
+    nav.appendChild(section);
+  }
+
+  function build() {
+    for (const mod of modulosAcessiveis()) {
+      buildModuleSection(mod);
     }
 
     const plataforma = MENU_PLATAFORMA.filter(i => !i.admin || isAdmin());
@@ -115,14 +153,29 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
       if (nav.childElementCount) {
         nav.appendChild(el('div', { className: 'sidebar__separator' }));
       }
-      buildMenu(plataforma, '');
+      buildMenu(plataforma, '', '', nav);
     }
   }
 
-  /** Marca o item ativo pelo id (ver activeIdFromPath). */
+  /**
+   * Abre a seção do modulo ativo e fecha as demais. Com `null` (rota de
+   * plataforma) NADA e fechado: a pessoa continua vendo onde estava.
+   * @param {string|null} moduloId
+   */
+  function setModulo(moduloId) {
+    for (const { id, section, header, chevron } of moduleSections) {
+      const ativo = id === moduloId;
+      header.classList.toggle('sidebar__module-header--active', ativo);
+      if (!moduloId) continue;
+      section.classList.toggle('sidebar__module--open', ativo);
+      chevron.setAttribute('aria-expanded', String(ativo));
+    }
+  }
+
+  /** Marca o item ativo pela chave qualificada (ver activeIdFromPath). */
   function setActive(activeId) {
-    for (const [id, itemEl] of Object.entries(itemElements)) {
-      itemEl.classList.toggle('sidebar__item--active', id === activeId);
+    for (const [chave, itemEl] of Object.entries(itemElements)) {
+      itemEl.classList.toggle('sidebar__item--active', chave === activeId);
     }
     for (const { group, header, childIds } of groupElements) {
       const hasActiveChild = childIds.includes(activeId);
@@ -150,14 +203,18 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
     return isCollapsed;
   }
 
+  build();
   setModulo(modulo);
 
   return { sidebar, overlay, setModulo, setActive, toggle, setMobileOpen, isCurrentlyCollapsed };
 }
 
 /**
- * Resolve o id do item da sidebar a partir de uma rota COMPLETA
- * ('/orcamento/notas_empenho/3' -> 'notas_empenho'; '/usuarios' -> 'usuarios').
+ * Resolve a chave do item da sidebar a partir de uma rota COMPLETA.
+ * A chave carrega o modulo porque `dashboard` existe nos tres:
+ *   '/orcamento/notas_empenho/3' -> 'orcamento:notas_empenho'
+ *   '/acervo/dashboard'          -> 'acervo:dashboard'
+ *   '/usuarios'                  -> 'usuarios'
  * @param {string} path
  * @returns {string|null}
  */
@@ -165,9 +222,10 @@ export function activeIdFromPath(path) {
   const partes = String(path || '').split('?')[0].split('/').filter(Boolean);
   if (!partes.length) return null;
 
-  // Rota de modulo: o primeiro segmento e o modulo, o segundo e o item.
+  // Rota de modulo: o primeiro segmento e o modulo, o segundo e o item. Usa
+  // getModulo, e nao modulosAcessiveis, para a funcao nao depender da sessao.
   if (getModulo(partes[0])) {
-    return partes[1] || null;
+    return partes[1] ? `${partes[0]}:${partes[1]}` : null;
   }
   // Rota de plataforma (ex.: '/usuarios').
   return partes[0];

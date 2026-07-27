@@ -3,11 +3,14 @@ import { toggleTheme, getTheme } from '@utils/theme.js';
 import { getUsername, logout } from '@store/auth-store.js';
 import { clearCache } from '@services/cache.js';
 import { getModulo } from '@modules/registry.js';
-import { createModuleSelector } from './module-selector.js';
 
 /**
- * Navbar da interface unica: hamburger, titulo, seletor de MODULO, area de
- * extras do modulo ativo, tema, usuario e sair.
+ * Navbar da interface unica: hamburger, titulo, area de extras do modulo
+ * ativo, tema, usuario e sair.
+ *
+ * A troca de modulo NAO fica aqui. Ela vive na sidebar, onde cada modulo e uma
+ * seção colapsavel e o cabecalho leva para a home dele. O seletor em dropdown
+ * que existia aqui foi removido em 2026-07-27, a pedido do chefe.
  *
  * @param {Object} options
  * @param {Function} options.onToggleSidebar
@@ -25,13 +28,11 @@ export function createNavbar({ onToggleSidebar }) {
     onClick: () => onToggleSidebar(),
   }, [el('span', { className: 'navbar__toggle-icon' })]);
 
-  // Titulo da plataforma. O nome do modulo fica no seletor ao lado, nao aqui.
+  // Titulo da plataforma. O nome do modulo ativo aparece na sidebar, nao aqui.
   const title = el('span', {
     className: 'navbar__title',
     textContent: 'SCA',
   });
-
-  const moduleSelector = createModuleSelector();
 
   // Slot dos extras do modulo ativo (ex.: o seletor de ano do orcamento).
   const extrasSlot = el('div', { className: 'navbar__extras' });
@@ -45,7 +46,6 @@ export function createNavbar({ onToggleSidebar }) {
    * @param {string|null} moduloId
    */
   function setModulo(moduloId) {
-    moduleSelector.setModulo(moduloId);
     if (moduloId === moduloAtual) return;
     moduloAtual = moduloId;
 
@@ -114,7 +114,7 @@ export function createNavbar({ onToggleSidebar }) {
   document.addEventListener('click', closeDropdown);
 
   const navbar = el('nav', { className: 'navbar' }, [
-    el('div', { className: 'navbar__left' }, [toggleBtn, title, moduleSelector.element]),
+    el('div', { className: 'navbar__left' }, [toggleBtn, title]),
     el('div', { className: 'navbar__right' }, [extrasSlot, themeBtn, userBtn]),
   ]);
 

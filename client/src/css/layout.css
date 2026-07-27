@@ -362,3 +362,95 @@
     padding: var(--space-md);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Seção de MODULO na sidebar (acervo, mapoteca, orcamento).
+ *
+ * A sidebar lista os tres modulos ao mesmo tempo, cada um colapsavel, e nunca
+ * se desmonta. Foi o que substituiu o seletor em dropdown da navbar, e o que
+ * fez o menu parar de sumir ao entrar numa rota de plataforma.
+ * ------------------------------------------------------------------------- */
+.sidebar__module {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sidebar__module-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar__module-header:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar__module-header--active {
+  color: var(--color-primary);
+  background: var(--bg-selected);
+}
+
+.sidebar__module-chevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.sidebar__module-chevron:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar__module--open .sidebar__module-chevron {
+  transform: rotate(180deg);
+}
+
+.sidebar__module-items {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sidebar__module--open .sidebar__module-items {
+  display: flex;
+}
+
+/* Dentro de um modulo tudo recua um nivel, para a hierarquia se ler de relance */
+.sidebar__module-items > .sidebar__item,
+.sidebar__module-items > .sidebar__group > .sidebar__group-header {
+  padding-left: calc(var(--space-md) + var(--space-lg));
+}
+
+.sidebar__module-items .sidebar__subitem {
+  padding-left: calc(var(--space-md) + var(--space-lg) + 24px + var(--space-md));
+}
+
+/* Recolhida, a sidebar mostra so os icones: recuo e chevron atrapalhariam */
+.sidebar--collapsed .sidebar__module-chevron {
+  opacity: 0;
+  width: 0;
+}
+
+.sidebar--collapsed .sidebar__module-items {
+  display: flex;
+}
+
+.sidebar--collapsed .sidebar__module-items > .sidebar__item,
+.sidebar--collapsed .sidebar__module-items > .sidebar__group > .sidebar__group-header,
+.sidebar--collapsed .sidebar__module-items .sidebar__subitem {
+  padding-left: var(--space-md);
+}

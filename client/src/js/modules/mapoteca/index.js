@@ -33,6 +33,7 @@ import { renderRpcMtec } from './pages/rpcmtec/index.js';
 
 export default {
   id: 'mapoteca',
+  icon: ICONS.print,
   home: '/dashboard',
 
   menu: [

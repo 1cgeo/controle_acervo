@@ -19,6 +19,7 @@ import { renderDashboard } from './pages/dashboard/index.js';
 
 export default {
   id: 'acervo',
+  icon: ICONS.layers,
   home: '/dashboard',
 
   menu: [
