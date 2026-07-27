@@ -30,14 +30,20 @@ function caminhoSessao (server) {
  *
  * Chaves de ambiente (catalogo em env-guia.md do vault):
  *   SCA_URL    URL do backend do SCA, ex.: http://IP:porta
- *              (MAPOTECA_SERVER e aceito como sinonimo, para quem separa as
- *              instancias; SCA_URL e a chave que o vault ja usa)
+ *              (SCA_SERVER e alias aceito, igual nos tres CLIs irmaos;
+ *              MAPOTECA_SERVER continua aceito como legado)
  *   SCA_USER   login de admin no servico de autenticacao
  *   SCA_SENHA  senha (preferir esta a passar --senha na linha de comando)
  *   SCA_TOKEN  JWT pronto (pula o login)
  */
 function resolver (flags, exigirServidor = true) {
-  const server = flags.server || process.env.MAPOTECA_SERVER || process.env.SCA_URL
+  // A ordem e a mesma dos CLIs irmaos (acervo_cli e orcamento_cli): sem isso o
+  // mesmo ambiente serve dois CLIs e falha no terceiro, que foi o que
+  // aconteceu em 2026-07-27 com SCA_SERVER exportado.
+  const server = flags.server ||
+    process.env.SCA_URL ||
+    process.env.SCA_SERVER ||
+    process.env.MAPOTECA_SERVER
 
   // Com --dry-run nada sai da maquina: a validacao local contra o Joi roda sem
   // servidor, sem credencial e sem rede. Exigir URL ai seria pedir configuracao

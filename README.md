@@ -361,7 +361,7 @@ Um por módulo, todos com dependência zero (sem `node_modules` próprio, para r
 node acervo_cli/acervo.js --help
 node mapoteca_cli/mapoteca.js --help
 node orcamento_cli/orcamento.js --help
-node orcamento_cli/orcamento.js schema nota_credito   # contrato formatado, do Joi vivo
+node orcamento_cli/orcamento.js schema nc             # contrato formatado, do Joi vivo
 ```
 
 Os três compartilham o cache de sessão em `~/.sca`: um login serve os três. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
