@@ -95,13 +95,45 @@ describe('renderUsuariosList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('administrador aparece como tal em todas as colunas de modulo', async () => {
+  // O administrador e GLOBAL e unico: e propriedade da PESSOA, nao de cada
+  // modulo. Antes a palavra "Administrador" se repetia numa coluna por modulo
+  // MAIS uma coluna propria, dando quatro colunas com a mesma informacao.
+  test('administrador vira uma marca ao lado do nome, e nao uma coluna por modulo', async () => {
     getUsuarios.mockResolvedValue([{ ...USUARIO, administrador: true, perfis: {} }]);
     const { container, cleanup } = await montar();
 
     const linha = container.querySelector('tbody tr');
     const celulas = [...linha.querySelectorAll('td')].map(td => td.textContent.trim());
-    expect(celulas.filter(c => c === 'Administrador')).toHaveLength(MODULOS.length);
+
+    expect(linha.querySelectorAll('.usuarios__chip-admin')).toHaveLength(1);
+    expect(celulas.filter(c => c === 'Administrador')).toHaveLength(0);
+    expect(celulas.filter(c => c === 'Sim')).toHaveLength(1); // so a coluna Ativo
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a coluna de cada modulo diz que o admin passa, sem repetir a palavra', async () => {
+    getUsuarios.mockResolvedValue([{ ...USUARIO, administrador: true, perfis: {} }]);
+    const { container, cleanup } = await montar();
+
+    const linha = container.querySelector('tbody tr');
+    expect(linha.querySelectorAll('.usuarios__acesso-total')).toHaveLength(MODULOS.length);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('quem nao e admin mostra o perfil concedido em cada modulo', async () => {
+    getUsuarios.mockResolvedValue([
+      { ...USUARIO, administrador: false, perfis: { orcamento: 3 } },
+    ]);
+    const { container, cleanup } = await montar();
+
+    const linha = container.querySelector('tbody tr');
+    const celulas = [...linha.querySelectorAll('td')].map(td => td.textContent.trim());
+
+    expect(linha.querySelectorAll('.usuarios__chip-admin')).toHaveLength(0);
+    expect(linha.querySelectorAll('.usuarios__acesso-total')).toHaveLength(0);
+    expect(celulas.filter(c => c === 'Sem acesso').length).toBe(MODULOS.length - 1);
 
     if (typeof cleanup === 'function') cleanup();
   });

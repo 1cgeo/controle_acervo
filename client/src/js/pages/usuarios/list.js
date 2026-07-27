@@ -86,21 +86,42 @@ export async function renderUsuariosList(container, _ctx) {
   // ---------------------------------------------------------------------------
   // Tabela: uma coluna por modulo
   // ---------------------------------------------------------------------------
+  // O administrador e GLOBAL e unico: nao existe administrador por modulo. Por
+  // isso ele nao vira uma coluna, e sim uma marca ao lado do nome. Antes a
+  // palavra "Administrador" se repetia numa coluna por modulo MAIS uma coluna
+  // propria, o que dava quatro colunas dizendo a mesma coisa.
   const colunasModulo = modulos.map(m => ({
     key: `modulo_${m.nome_abrev}`,
     label: m.nome,
     render: (row) => (row.administrador
-      ? 'Administrador'
+      ? el('span', {
+        className: 'usuarios__acesso-total',
+        title: 'Administrador global: passa neste e em qualquer módulo, independente do perfil',
+        textContent: 'Acesso total',
+      })
       : rotuloPerfil((row.perfis || {})[m.nome_abrev], tiposPerfil)),
   }));
 
   const table = createDataTable({
     columns: [
-      { key: 'nome', label: 'Nome', sortable: true, render: (row) => nomeExibicao(row) },
+      {
+        key: 'nome',
+        label: 'Nome',
+        sortable: true,
+        render: (row) => (row.administrador
+          ? el('span', { className: 'usuarios__nome' }, [
+            nomeExibicao(row),
+            el('span', {
+              className: 'usuarios__chip-admin',
+              title: 'Administrador global da plataforma',
+              textContent: 'Admin',
+            }),
+          ])
+          : nomeExibicao(row)),
+      },
       { key: 'login', label: 'Login', sortable: true, render: (row) => row.login || '-' },
       { key: 'tipo_posto_grad', label: 'Posto/Grad', render: (row) => row.tipo_posto_grad || '-' },
       ...colunasModulo,
-      { key: 'administrador', label: 'Administrador', render: (row) => (row.administrador ? 'Sim' : 'Não') },
       { key: 'ativo', label: 'Ativo', render: (row) => (row.ativo ? 'Sim' : 'Não') },
     ],
     rows: [],
