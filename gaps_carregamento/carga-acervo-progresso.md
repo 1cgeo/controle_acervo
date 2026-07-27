@@ -1,6 +1,6 @@
 # Carga do Acervo — Progresso
 
-Carga em massa do acervo SCA a partir de `Y:\Produtos_AAAA\`, pasta a pasta, da menor para a maior. Loader genérico: `carga/carga_2023_generico.cjs` (config `cXX_*.json` + dados `tmpXX_*.json`). Toda a pasta `carga/` está no `.gitignore` (dados e scripts), então os helpers não são versionados — restaurar via `git show <commit>:carga/X` se necessário.
+Carga em massa do acervo SCA a partir de `$ACERVO_FONTE_PRODUCAO/Produtos_AAAA` (chave do `.env`, catálogo em `.env.example`), pasta a pasta, da menor para a maior. Loader genérico: `carga/carga_2023_generico.cjs` (config `cXX_*.json` + dados `tmpXX_*.json`). Toda a pasta `carga/` está no `.gitignore` (dados e scripts), então os helpers não são versionados — restaurar via `git show <commit>:carga/X` se necessário.
 
 **Anos 2017–2026 carregados. Total do acervo: ~2113 produtos.**
 
@@ -26,7 +26,7 @@ Carga em massa do acervo SCA a partir de `Y:\Produtos_AAAA\`, pasta a pasta, da 
 ## Regra de produtos especiais (sem MI)
 `nome_arquivo` inclui a escala — `nomeArquivoPadrao` em `carga/nome_arquivo.cjs` recebe `escalaCode` e gera, por exemplo, `CT_ILHA-DE-SANTA-CATARINA_25k_1dsg` e `CO_CIMH_50k_1dsg`. Para produtos com MI o identificador já codifica a escala, então ela não entra no nome.
 
-## Mapeamento Sistemático — cartas antigas (legado `Y:\_250/_100/_50/_25`)
+## Mapeamento Sistemático — cartas antigas (legado `$ACERVO_FONTE_LEGADO`, subpastas `_250`, `_100`, `_50`, `_25`)
 Projeto único **"Mapeamento Sistemático"**, lote por escala. Sequência 250k→100k→50k→25k, resolvendo tudo de uma escala (regular+histórico+variantes) + **sanity check** antes da próxima. Fontes: planilha ASC (`T250`… edição/ano/INOM) + arquivos reais (`4674/`, `PDF(_CONF)/`, `HISTORICO`) + DsgTools (MIR/MI→INOM) + imagem nos dúbios. Detalhes em `regras_carga_produtos.md` §2.10/2.11 e memória [[cartas-antigas-mapeamento-sistematico]]. Scripts em `carga/`: `plano_250.py`, `gera_frames_mir.py`, `carga_ms_250.cjs`, `recompoe_250v.py`, `aplica_250v.cjs`, `sanity_250.py`.
 
 - **250k — COMPLETO + sanity OK:** 49 folhas (495–550 + 536A), **97 versões** (73 Regular + 24 Registro Histórico), 250k em `tipo_escala_id=4`. Edições renumeradas cronologicamente (planilha colidia/invertia em 510/521/522…); variantes **especial** = edição separada, **encartada/estendida** = edição padrão com 1 arquivo cobrindo 2 folhas (ambas cadastradas, ex. 536/536A). Documentadas-sem-raster = Registro Histórico. Trigger + Joi schema alterados p/ aceitar "Nª Edição" Regular.

@@ -1,0 +1,28 @@
+#!/bin/sh
+# Guard anti-vazamento do SCA, fail-closed.
+#
+# Este repositorio e PUBLICO. O hook barra o commit se achar caminho de maquina,
+# UNC, IP interno ou segredo com valor em arquivo versionado.
+#
+# Ativacao numa maquina nova (o git NAO versiona .git/hooks, so esta pasta):
+#     git config core.hooksPath .githooks
+#
+# Escape de emergencia: git commit --no-verify. Use so quando souber por que.
+
+# Sem Python, o hook FALHA em vez de deixar passar em silencio. Guard que se
+# desliga sozinho quando falta dependencia nao e guard.
+for py in python python3 py; do
+  if command -v "$py" >/dev/null 2>&1; then
+    "$py" scripts/check_vazamento.py || {
+      echo ""
+      echo "COMMIT ABORTADO pelo guard anti-vazamento."
+      echo "Troque o valor pela CHAVE do config.env (catalogo em .env.example)."
+      exit 1
+    }
+    exit 0
+  fi
+done
+
+echo "COMMIT ABORTADO: nao achei Python para rodar scripts/check_vazamento.py."
+echo "Instale o Python ou rode com --no-verify sabendo o que faz."
+exit 1

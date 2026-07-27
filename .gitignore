@@ -3,10 +3,9 @@ node_modules/
 # package-lock.json versionado (build reproduzivel + alertas precisos do Dependabot)
 
 # Build outputs
-acervo_client/dist/
-acervo_client/build/
-mapoteca_client/dist/
-mapoteca_client/build/
+# (acervo_client e mapoteca_client foram apagados em 2026-07-27: interface unica em client/)
+client/dist/
+client/build/
 server/src/build/
 
 # Environment and config

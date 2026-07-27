@@ -8,6 +8,17 @@ Este arquivo guarda só o que muda uma DECISÃO de quem escreve código aqui. A 
 - **NEVER create commits automatically.** The user will always review changes and commit manually. Do not run `git add`, `git commit`, or `git push` unless the user explicitly asks for it in that specific message.
 - **NEVER commit changes** unless the user explicitly asks in that specific message. Always let the user review first.
 
+## Este repositório é PÚBLICO
+
+Nunca escreva em arquivo versionado: endereço de servidor, IP interno, porta acoplada a host,
+pasta de rede, caminho de máquina (letra de unidade, UNC) nem segredo com valor. Cite a **CHAVE**
+do `server/config.env`, que é gitignored e nunca foi commitado. O catálogo comentado, sem valor
+nenhum, está em `.env.example`.
+
+O guard `scripts/check_vazamento.py` faz a regra cumprir no pre-commit (`.githooks/pre-commit`,
+fail-closed). Numa máquina nova ele só liga com `git config core.hooksPath .githooks`. Ele checa
+só o que vaza, nunca estilo: guard que bloqueia todo commit ensina `--no-verify`.
+
 ## O que o sistema é, em um parágrafo
 
 O **SCA** gerencia o acervo geoespacial do 1º CGEO: produtos versionados (cartas, ortoimagens, modelos

@@ -17,9 +17,11 @@ Em **producao** o server serve a interface na mesma origem, sem proxy nem porta 
 
 ## Producao (rede da DGEO)
 
-Banco `sca` em `10.25.163.12:5434`; auth em `http://10.25.163.7:4000`; clientes `sca_web`/`sca_qgis`. Arquivos no share `\\10.25.163.8\sca\sca_acervo` (referenciado em `acervo.volume_armazenamento`, no banco).
+Este repositorio e PUBLICO. Endereco de servidor, porta acoplada a host, pasta de rede e credencial vivem so no `server/config.env`, que e gitignored. Aqui se cita a CHAVE; o catalogo comentado esta em `.env.example`.
 
-1. `server/config.env`: `DB_*` do banco de producao, `DB_USER_READONLY=sca_readonly`, `AUTH_SERVER=http://10.25.163.7:4000`, `USE_PROXY=false`. (Role `sca_readonly` precisa existir no banco.)
+Banco `sca` e auth ficam na rede interna, cada um no seu host: veja `DB_SERVER`, `DB_PORT` e `AUTH_SERVER`. Clientes de login: `sca_web` (interface) e `sca_qgis` (plugin). Os arquivos do acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, no proprio banco, que e a fonte canonica do caminho.
+
+1. `server/config.env`: `DB_*` do banco de producao, `DB_USER_READONLY` e `DB_PASSWORD_READONLY`, `AUTH_SERVER` e `USE_PROXY=false`. (A role de leitura precisa existir no banco antes do deploy.)
 2. Deploy (build da interface + PM2, idempotente):
    ```bash
    npm run deploy   # = npm run build + pm2 startOrReload ecosystem.config.cjs + pm2 save
@@ -61,8 +63,17 @@ Depois de logar, o corpo da resposta de `POST /api/login` traz `perfis` (nivel p
 
 URLs (prod): interface <http://HOST:3015>; Swagger <http://HOST:3015/api/api_docs>.
 
+## Guard anti-vazamento (rode uma vez por clone)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Sem isso o `.githooks/pre-commit` nao roda, porque o git nao versiona `.git/hooks`. O guard e o `scripts/check_vazamento.py`: ele barra o commit que leve IP interno, pasta de rede, caminho de maquina ou segredo com valor para este repositorio, que e PUBLICO.
+
 ## Troubleshooting
 - **SCA sobe e cai na hora** -> quase sempre o Auth Server fora do ar; confirme o `curl` do auth (3010 dev / 4000 prod).
+- **`confirm-upload` responde "Arquivo nao encontrado" para todo arquivo, em servidor Linux** -> a coluna `acervo.volume_armazenamento.volume` guarda caminho UNC do Windows. Em Linux a contrabarra e caractere comum de nome, e o `path.join` junta com barra normal, produzindo caminho relativo inexistente. Monte o compartilhamento por CIFS e grave o PONTO DE MONTAGEM na coluna. As duas coisas sao a MESMA mudanca: separadas, o cadastro para de validar checksum. Medido no banco de producao em 2026-07-27.
 - **Erro de conexao com banco** -> PostgreSQL parado ou `DB_*` errado no `config.env`.
 - **Boot recusado por versao** -> banco abaixo de `MIN_DATABASE_VERSION`; falta aplicar migracao de `migrations/`.
 - **Interface em branco / 404 nos assets** -> `base` no `client/vite.config.js` tem que ser `'/'`, e o `build/` precisa ter sido gerado (`npm run build`).

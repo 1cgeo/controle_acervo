@@ -17,7 +17,7 @@ Controle manual da Seção de Acervo. **Fonte autoritativa para os detalhes de c
 
 | Coluna | Campo SCA | Observação |
 |---|---|---|
-| `Cont_Edicao` | número da edição | Base do nome da versão ("Nª Edição"). **No legado (`Y:\_250` etc.) a planilha às vezes colide ou inverte** o número entre edições da mesma folha (ex.: 521/522 numeraram 2003 como ed1 e 1981 como ed2). Quando inconsistente, **reordenar cronologicamente por `Ano_Edicao`** (ver seção 2.10) |
+| `Cont_Edicao` | número da edição | Base do nome da versão ("Nª Edição"). **No legado (`$ACERVO_FONTE_LEGADO/_250` etc.) a planilha às vezes colide ou inverte** o número entre edições da mesma folha (ex.: 521/522 numeraram 2003 como ed1 e 1981 como ed2). Quando inconsistente, **reordenar cronologicamente por `Ano_Edicao`** (ver seção 2.10) |
 | `MI` / `INOM` | `produto.mi` / `produto.inom` | |
 | `Tipo_Produto` | `produto.tipo_produto_id` | `C. Topo`=2, `C. Orto`=3, `C. Temática`=7 |
 | `Nome` | `versao.nome` | **O nome muda entre edições** (ex.: 2962-4-NE: "ITAPEVI - NE" em 1980, "CERRO DA GLÓRIA" a partir de 2007). `produto.nome` = nome da edição mais recente carregada |
@@ -27,7 +27,7 @@ Controle manual da Seção de Acervo. **Fonte autoritativa para os detalhes de c
 | `Ano_Edicao` | `versao.data_edicao` | Preferir a **data exata das informações marginais** da carta quando o PDF existir (seção 1.3) |
 | `PDF` / `Geotiff` / `Acervo` | — | Flags de existência de arquivo digital / acervo físico |
 
-### 1.2 Site de produtos (`D:\desenvolvimento\produtos\data\`)
+### 1.2 Site de produtos (`$ACERVO_FONTE_SITE_PRODUTOS`)
 
 GeoJSONs do site público de produtos concluídos do 1º CGEO.
 
@@ -63,14 +63,20 @@ enriquecimento (data exata, etapas no metadado).
 
 ### 1.4 Arquivos reais
 
-- **`Y:\` — fonte primária dos produtos digitais do 1º CGEO**:
-  - `Y:\Produtos_AAAA\<PROJETO>_<ESCALA>\{pdf,tif}` — produção por ano/projeto
-    (ex.: `Y:\Produtos_2017\2017_SAICA_25K`). TIF georreferenciado em EPSG:4674
+Este repositório é público, então as pastas aparecem aqui pela **chave do `.env`**, nunca
+pelo caminho. O catálogo comentado está em `.env.example`; os valores, no `.env` local de
+cada máquina. Letra de unidade mapeada é local de cada estação, então ela nem descreveria a
+mesma pasta para quem lê.
+
+- **`$ACERVO_FONTE_PRODUCAO` — fonte primária dos produtos digitais do 1º CGEO**:
+  - `$ACERVO_FONTE_PRODUCAO/Produtos_AAAA/<PROJETO>_<ESCALA>/{pdf,tif}` — produção por
+    ano/projeto (ex.: `Produtos_2017/2017_SAICA_25K`). TIF georreferenciado em EPSG:4674
     (`MI_4674_AAAA.tif`) e PDF de impressão (`MI_AAAA.pdf`).
-  - `Y:\_25`, `_50`, `_100`, `_250` — acervo legado por escala (subpastas `4674`,
-    `DATUM_ORIGINAL`, `HISTORICA`, `PDF_CONF`, `RECORTADO`).
-  - `Y:\_Especiais` — produtos especiais (COVID, Copa do Mundo, trafegabilidade...).
-- **`D:\ftp_dsg\FTP\`** — espelho do FTP da DSG, PDFs nomeados `MI ESCALA cgeo.pdf`
+  - `$ACERVO_FONTE_LEGADO/_25`, `_50`, `_100`, `_250` — acervo legado por escala (subpastas
+    `4674`, `DATUM_ORIGINAL`, `HISTORICA`, `PDF_CONF`, `RECORTADO`).
+  - `$ACERVO_FONTE_LEGADO/_Especiais` — produtos especiais (COVID, Copa do Mundo,
+    trafegabilidade...).
+- **`$ACERVO_FONTE_FTP_DSG`** — espelho do FTP da DSG, PDFs nomeados `MI ESCALA cgeo.pdf`
   (~1.965 PDFs, inclui 2º–5º CGEO; `CARTAS SEM MI` = campos de instrução sem MI).
   Fonte complementar.
 
@@ -196,7 +202,7 @@ versão da carta, mesmo `nome_arquivo` base (difere só pela extensão `.xml`),
   `Mapeamento de Interesse da Força 2017`).
 - O **lote** mantém o nome da pasta de produção (ex.: `2017_SAICA_25K`,
   `2021_RS_GovRS_Generalizacao_100k`) e o PIT (ano da pasta).
-- **Acervo legado** (cartas antigas de `Y:\_250/_100/_50/_25`): projeto único
+- **Acervo legado** (cartas antigas de `$ACERVO_FONTE_LEGADO/_250`, `_100`, `_50` e `_25`): projeto único
   **`Mapeamento Sistemático`**, lote por escala (`250k`, `100k`, `50k`, `25k`). Ver seção 2.10.
 
 ### 2.9 Acervo 2022 em diante (ET-RDG / EDGV 3.0)
@@ -226,7 +232,7 @@ A partir de 2022 a produção é **ET-RDG** (CT) e **ET-EDGV 3.0** (CDGV):
 
 ### 2.10 Acervo legado — cartas antigas (projeto "Mapeamento Sistemático")
 
-Carga das cartas topográficas antigas (T34-700) de `Y:\_250`, `Y:\_100`, `Y:\_50`, `Y:\_25`.
+Carga das cartas topográficas antigas (T34-700) de `$ACERVO_FONTE_LEGADO`, subpastas `_250`, `_100`, `_50` e `_25`.
 Tudo num **projeto único "Mapeamento Sistemático"**, **um lote por escala** (`250k`, `100k`,
 `50k`, `25k`). Resolver **toda uma escala** (regular + histórico + variantes) **antes** da
 próxima, com **sanity check ao fim de cada escala** (planilha + site de produtos + imagem nos
@@ -243,7 +249,7 @@ o ano às vezes é `XXXX`, a edição não aparece, e o ano do TIF difere do PDF
 colisão na seção 1.1). A caixa "EXECUÇÃO DAS FASES" do PDF é legível e serve de conferência nos
 casos dúbios (Compilação/Atualização/Edição/Impressão por ano).
 
-**Pastas em cada `Y:\_NNN`:**
+**Pastas em cada `$ACERVO_FONTE_LEGADO/_NNN`:**
 - **Usar**: `4674/` (GeoTIFF EPSG:4674 — principal), `PDF/` (no 250k) ou `PDF_CONF/` (demais),
   `HISTORICO`/`HISTORICA` (edições mais antigas, só PDF — úteis).
 - **Ignorar**: `DATUM_ORIGINAL`, `RECORTADA`/`RECORTADO` (recorte), `compare`, `_old`,
@@ -260,7 +266,7 @@ folha **é o MI** (no 250k chama-se **MIR**). DsgTools converte direto:
 `getINomenFromMIR(mir)` (250k) / `getINomenFromMI(mi)` (100k/50k/25k) →
 `getQgsPolygonFrame(inom, 1, 1)` → EWKT `SRID=4674;POLYGON(...)`.
 Script: `carga/gera_frames_mir.py` (Python do QGIS 4, `map_index` em
-`D:\desenvolvimento\DsgTools\...\FrameTools`). O INOM gerado bate com o da planilha (cross-check).
+`map_index` do DsgTools, em `core/GeometricTools/FrameTools`). O INOM gerado bate com o da planilha (cross-check).
 
 **Edições com / sem arquivo:**
 - Edição **com** TIF/PDF → **Regular** ("Nª Edição", subtipo 2 T34-700). TIF principal (4674) +
@@ -293,8 +299,9 @@ Para o legado ser cadastrado como Regular, foram relaxadas **duas camadas** de v
 ## 3. Ordem de carga (regra de ouro)
 
 1. **Carregar primeiro tudo que tem arquivo real** (produto + versão + arquivos juntos,
-   via fluxo de upload com checksum). Fontes: `Y:\Produtos_AAAA`, depois legado
-   `Y:\_25/_50/_100/_250`, `Y:\_Especiais` e `ftp_dsg`.
+   via fluxo de upload com checksum). Fontes: `$ACERVO_FONTE_PRODUCAO/Produtos_AAAA`, depois o
+   legado `$ACERVO_FONTE_LEGADO` (`_25`, `_50`, `_100`, `_250`, `_Especiais`) e por fim
+   `$ACERVO_FONTE_FTP_DSG`.
 2. **Só depois** de esgotada a carga de produtos reais, registrar as **versões históricas
    sem arquivo** (edições que constam na planilha/site mas não têm digital), via
    `POST /api/produtos/produto_versao_historica` ou `versao_historica`.
@@ -304,19 +311,30 @@ Para o legado ser cadastrado como Regular, foram relaxadas **duas camadas** de v
 
 ## 4. Infraestrutura
 
-- **Volume de armazenamento**: `\\10.25.163.8\sca\sca_acervo` (37 TB livres).
-  Usar sempre o **caminho UNC**, nunca mapeamentos de unidade (`W:` etc.) —
-  mapeamentos são locais de cada máquina e os caminhos gravados no SCA
-  precisam funcionar para qualquer cliente da rede.
+- **Volume de armazenamento**: compartilhamento de rede com 37 TB, citado pela chave
+  `$ACERVO_VOLUME`. O valor **canônico** não está aqui nem no `.env`: está na coluna
+  `acervo.volume_armazenamento.volume`, no banco, porque é dela que o servidor monta o
+  caminho com `path.join(volume, nome_arquivo + '.' + extensao)`.
+  Nunca gravar mapeamento de unidade (`W:` etc.) nessa coluna: mapeamento é local de cada
+  máquina, e o caminho gravado no SCA precisa funcionar para qualquer cliente da rede.
+- **Armadilha do servidor Linux (medida em 2026-07-27, no banco de produção).** Caminho UNC
+  do Windows (`\\servidor\share`) **não resolve em Linux**: lá a contrabarra é caractere
+  comum de nome de pasta, e o `path.join` junta com barra normal, produzindo um caminho
+  relativo que não existe. A prova está em `acervo.upload_arquivo_temp`: das 17.155 linhas,
+  as 15.506 concluídas foram gravadas por processo **Windows** (separador `\`), e as únicas
+  4 de processo **Linux** (separador `/`) terminaram em `failed` ou `cancelled`, com
+  "Arquivo não encontrado". Em servidor Linux, monte o compartilhamento por CIFS e grave o
+  **ponto de montagem** naquela coluna. Montar e atualizar a coluna são a **mesma** mudança:
+  separadas, o `confirm-upload` para de validar checksum.
 - Volume primário por tipo de produto em `volume_tipo_produto`.
 - Projetos/lotes do SCA espelham os projetos de produção
   (ex.: projeto "Saicã", lote "2017_SAICA_25K" PIT 2017).
 
 ## 5. Piloto
 
-`Y:\Produtos_2017\2017_SAICA_25K` — 8 cartas CT 25k (TIF+PDF, ~0,73 GB):
+`$ACERVO_FONTE_PRODUCAO/Produtos_2017/2017_SAICA_25K` — 8 cartas CT 25k (TIF+PDF, ~0,73 GB):
 
-1. Criar volume `W:/sca_acervo` + associação primária para CT.
+1. Criar volume (valor em `$ACERVO_VOLUME`) + associação primária para CT.
 2. Criar projeto "Saicã" + lote 2017.
 3. Para cada carta: produto (MI/INOM/geometria/subtipo T34-700) + versão
    **"4ª Edição"** ("5ª" para 2962-4-SE e 2980-1-SO, conforme `Cont_Edicao` da planilha),
@@ -324,7 +342,7 @@ Para o legado ser cadastrado como Regular, foram relaxadas **duas camadas** de v
    marginais), etapas de produção no `metadado` + TIF (principal) + PDF (alternativo)
    via `prepare-upload/product` → cópia → `confirm-upload`.
 4. Criar views materializadas e validar (dashboard, plugin QGIS, download).
-5. A edição **2024 (1-DSG)** dessas cartas será carregada com `Y:\Produtos_2024`.
+5. A edição **2024 (1-DSG)** dessas cartas será carregada de `$ACERVO_FONTE_PRODUCAO/Produtos_2024`.
 6. As edições antigas (1ª–3ª) ficam para a fase de versões históricas (regra da seção 3).
 
 ## 6. Pendências conhecidas
