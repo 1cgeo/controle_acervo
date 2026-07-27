@@ -1,0 +1,53 @@
+/* ---------------------------------------------------------------------------
+ * Interface unica do SCA: o que so existe por haver mais de um modulo.
+ * Tudo que e de um modulo so continua no CSS daquele modulo.
+ * ------------------------------------------------------------------------- */
+
+/* Area dos extras do modulo ativo (ex.: o seletor de ano do orcamento) */
+.navbar__extras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.navbar__extras:empty {
+  display: none;
+}
+
+/* Separa o menu do modulo da secao de plataforma (Usuarios) */
+.sidebar__separator {
+  height: 1px;
+  margin: var(--space-sm) var(--space-md);
+  background: var(--border-color);
+}
+
+/* ---------------------------------------------------------------------------
+ * Tela de usuarios: a marca de administrador GLOBAL.
+ *
+ * O administrador e um so, acima de qualquer modulo. Ele e uma propriedade da
+ * PESSOA, e por isso vive ao lado do nome, e nao numa coluna por modulo.
+ * ------------------------------------------------------------------------- */
+.usuarios__nome {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.usuarios__chip-admin {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-selected);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.usuarios__acesso-total {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+}

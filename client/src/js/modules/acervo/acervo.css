@@ -1,0 +1,95 @@
+/* Estilos exclusivos do modulo ACERVO (painel de alertas do dashboard). */
+
+.alert-panel {
+  background: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.alert-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-md);
+}
+
+.alert-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.alert-panel__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+.alert-panel__item-text {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.alert-panel__item--error {
+  background: rgba(211, 47, 47, 0.08);
+  color: var(--color-error);
+}
+
+.alert-panel__item--warning {
+  background: rgba(237, 108, 2, 0.08);
+  color: var(--color-warning);
+}
+
+.alert-panel__item--success {
+  background: rgba(46, 125, 50, 0.08);
+  color: var(--color-success);
+}
+
+[data-theme="dark"] .alert-panel__item--error {
+  background: rgba(229, 115, 115, 0.12);
+}
+
+[data-theme="dark"] .alert-panel__item--warning {
+  background: rgba(255, 167, 38, 0.12);
+}
+
+[data-theme="dark"] .alert-panel__item--success {
+  background: rgba(102, 187, 106, 0.12);
+}
+
+/* Barra de uso de um volume de armazenamento */
+.progress-bar {
+  width: 80px;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-normal);
+}
+
+.progress-bar__fill--success {
+  background: var(--color-success);
+}
+
+.progress-bar__fill--warning {
+  background: var(--color-warning);
+}
+
+.progress-bar__fill--error {
+  background: var(--color-error);
+}

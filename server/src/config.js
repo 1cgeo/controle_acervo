@@ -26,8 +26,10 @@ dotenv.config({
   path: configPath
 })
 
-const VERSION = '1.1.0'
-const MIN_DATABASE_VERSION = '1.1.0'
+// 1.5.0 e a versao unica da plataforma depois da fusao com o SCO (2026-07-27):
+// o banco passa a carregar o schema orcamento e o modulo 3.
+const VERSION = '1.5.0'
+const MIN_DATABASE_VERSION = '1.5.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

@@ -1,0 +1,21 @@
+{
+  "name": "orcamento-cli",
+  "version": "1.0.0",
+  "description": "Interface de linha de comando do modulo orcamento do SCA, desenhada para agentes (agent-first). Irma do acervo_cli e do mapoteca_cli.",
+  "type": "commonjs",
+  "main": "orcamento.js",
+  "bin": {
+    "orcamento": "./orcamento.js"
+  },
+  "scripts": {
+    "test": "node --test \"__tests__/*.test.js\""
+  },
+  "keywords": [
+    "Controle do Acervo",
+    "Orcamento",
+    "CLI",
+    "agent-first"
+  ],
+  "author": "DSG/1CGEO",
+  "license": "MIT"
+}

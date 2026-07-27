@@ -11,7 +11,8 @@ const SCHEMA_ORDER = [
   'dgeo.sql',
   'acervo.sql',
   'acompanhamento.sql',
-  'mapoteca.sql'
+  'mapoteca.sql',
+  'orcamento.sql'
 ]
 
 module.exports = async () => {

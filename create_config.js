@@ -184,6 +184,7 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     await t.none(readSqlFile('./er/acervo.sql'));
     await t.none(readSqlFile('./er/acompanhamento.sql'));
     await t.none(readSqlFile('./er/mapoteca.sql'));
+    await t.none(readSqlFile('./er/orcamento.sql'));
     await givePermission({ dbUser, connection: t });
     await insertAdminUser(authUserData, t);
   });

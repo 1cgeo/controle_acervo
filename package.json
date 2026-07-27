@@ -8,10 +8,11 @@
     "url": "git://github.com/1cgeo/controle_acervo"
   },
   "scripts": {
-    "install-all": "npm install && cd server && npm install && cd ../acervo_client && npm install && cd ../mapoteca_client && npm install",
-    "install-mapoteca": "cd mapoteca_client && npm install",
-    "dev-mapoteca": "cd mapoteca_client && npm run dev",
-    "build-mapoteca": "cd mapoteca_client && npm run build",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "install-client": "cd client && npm install",
+    "dev-client": "cd client && npm run dev",
+    "build-client": "cd client && npm run build",
+    "test-client": "cd client && npm test",
     "config": "node create_config.js",
     "build": "node create_build.js",
     "start": "pm2 start server/src/index.js --name controle-acervo",

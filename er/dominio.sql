@@ -177,6 +177,100 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).
 UPDATE dominio.subtipo_produto SET define_produto = true WHERE code = 24;
 
+-- ---------------------------------------------------------------------------
+-- Dominios do modulo orcamento (absorvidos do SCO em 2026-07-27). Ficam aqui,
+-- e nao em orcamento.sql, porque o schema dominio e unico na plataforma.
+-- tipo_posto_grad, tipo_perfil e modulo NAO foram duplicados: ja existiam aqui,
+-- identicos.
+-- ---------------------------------------------------------------------------
+
+-- Natureza de Despesa (ND). code = ND sem pontos (ex.: 339015). gnd: 3 custeio, 4 capital.
+CREATE TABLE dominio.natureza_despesa(
+  code VARCHAR(6) NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  gnd SMALLINT NOT NULL,
+  grupo VARCHAR(20) NOT NULL
+);
+
+INSERT INTO dominio.natureza_despesa (code, nome, gnd, grupo) VALUES
+('339014', 'Diárias - pessoal civil', 3, 'custeio'),
+('339015', 'Diárias - pessoal militar', 3, 'custeio'),
+('339030', 'Material de consumo', 3, 'custeio'),
+('339033', 'Passagens e despesas com locomoção', 3, 'custeio'),
+('339039', 'Serviços de terceiros - pessoa jurídica', 3, 'custeio'),
+('339040', 'Serviços de TIC - pessoa jurídica', 3, 'custeio'),
+('339047', 'Obrigações tributárias e contributivas', 3, 'custeio'),
+('339139', 'Publicações oficiais', 3, 'custeio'),
+('449040', 'Serviços de TIC (capital)', 4, 'capital'),
+('449052', 'Equipamentos e material permanente', 4, 'capital');
+
+-- Plano Interno (PI)
+CREATE TABLE dominio.plano_interno(
+  code VARCHAR(20) NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  alinea CHAR(1)
+);
+
+INSERT INTO dominio.plano_interno (code, nome, alinea) VALUES
+('K4CAIFGDIAR', 'Diárias', 'a'),
+('K4CAIFGPASS', 'Passagens', 'b'),
+('K4CAIFGPRCA', 'Serviços, materiais e capital', 'c');
+
+-- Unidade Gestora emitente da NC (default DSG)
+CREATE TABLE dominio.ug(
+  code VARCHAR(10) NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.ug (code, nome) VALUES
+('160035', 'Departamento de Ciencia e Tecnologia'),
+('167035', 'Departamento de Ciencia e Tecnologia - Gestor'),
+('160089', 'DSG - Diretoria de Serviço Geográfico'),
+('160382', '1 CGEO - Primeiro Centro de Geoinformação'),
+('160507', 'EME - Estado-Maior do Exército');
+
+-- Tipo de licitacao (3.4 GCALC DSG / 3.5 propria)
+CREATE TABLE dominio.tipo_licitacao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_licitacao (code, nome) VALUES
+(1, 'GCALC DSG'),
+(2, 'Própria'),
+(3, 'Participante');
+
+-- Classificacao da NC (3.2 PDR / 3.7 Extra-PDR)
+CREATE TABLE dominio.classificacao_nc(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.classificacao_nc (code, nome) VALUES
+(1, 'PDR'),
+(2, 'Extra-PDR');
+
+-- Tipo de item do DFD (material / servico)
+CREATE TABLE dominio.tipo_item_dfd(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_item_dfd (code, nome) VALUES
+(1, 'Material'),
+(2, 'Serviço');
+
+-- Grau de prioridade do DFD
+CREATE TABLE dominio.grau_prioridade(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.grau_prioridade (code, nome) VALUES
+(1, 'Alta'),
+(2, 'Normal'),
+(3, 'Baixa');
+
 -- Nivel de acesso DENTRO de um modulo, hierarquico (perfil_id >= minimo).
 -- O administrador NAO e um nivel daqui: e a coluna dgeo.usuario.administrador,
 -- global, acima de todo modulo e unica na plataforma.
@@ -191,9 +285,11 @@ INSERT INTO dominio.tipo_perfil (code, nome) VALUES
 (3, 'Gerente');
 
 -- Modulo funcional. E tabela, e nao CHECK na coluna, porque a plataforma vai
--- absorver outros modulos (orcamento, producao): acrescentar um passa a ser
--- INSERT, nao migracao de constraint. Acervo e mapoteca sao modulos distintos
--- de proposito: quem atende a mapoteca nao cataloga o acervo.
+-- absorver outros modulos (producao): acrescentar um passa a ser INSERT, nao
+-- migracao de constraint. Acervo, mapoteca e orcamento sao modulos distintos de
+-- proposito: quem atende a mapoteca nao cataloga o acervo, e quem lanca empenho
+-- nao precisa de nenhum dos dois. O codigo 3 e o SCO absorvido em 2026-07-27
+-- (no repo de origem ele era o codigo 1).
 CREATE TABLE dominio.modulo(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL,
@@ -202,6 +298,7 @@ CREATE TABLE dominio.modulo(
 
 INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (1, 'Controle do Acervo', 'acervo'),
-(2, 'Mapoteca', 'mapoteca');
+(2, 'Mapoteca', 'mapoteca'),
+(3, 'Controle Orçamentário', 'orcamento');
 
 COMMIT;

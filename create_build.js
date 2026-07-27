@@ -7,8 +7,8 @@ import chalk from 'chalk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Builda um client Vite e copia o dist para o diretorio servido pelo Express
-// (server/src/build). destSubdir != '' serve o client num subpath (ex.: /mapoteca).
+// Builda o client Vite e copia o dist para o diretorio servido pelo Express
+// (server/src/build).
 const buildClient = (clientName, destSubdir = '') => {
   const clientDir = join(__dirname, clientName);
 
@@ -36,7 +36,7 @@ const buildClient = (clientName, destSubdir = '') => {
   }
 };
 
-// acervo_client -> build/ (servido em /); mapoteca_client -> build/mapoteca (servido em /mapoteca)
-buildClient('acervo_client');
-buildClient('mapoteca_client', 'mapoteca');
-console.log(chalk.green('Builds dos dois clients prontas.'));
+// Uma interface so: client -> build/, servida na raiz. Os tres modulos (acervo,
+// mapoteca e orcamento) vivem dentro dela, com rota por modulo e sessao unica.
+buildClient('client');
+console.log(chalk.green('Build da interface pronta.'));

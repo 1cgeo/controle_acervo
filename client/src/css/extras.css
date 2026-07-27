@@ -1,0 +1,226 @@
+/* Ajustes do refactor: seletor de ano no navbar e barra do RPCMTec. */
+
+/* Seletor de ano no navbar (segue o tema claro/escuro pelos tokens) */
+.navbar__year {
+  height: 32px;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.navbar__year:hover {
+  border-color: var(--color-primary);
+}
+
+.navbar__year:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--bg-selected);
+}
+
+/* Faz os selects nativos (popup e seta) seguirem o tema no modo escuro */
+[data-theme="dark"] select {
+  color-scheme: dark;
+}
+
+/* Cabecalho de pagina em coluna (titulo acima da barra de ferramentas) */
+.page__header--column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+}
+
+/* Barra de ferramentas do RPCMTec (mes, cumulativo, baixar DOCX) */
+.rpcm-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-md);
+  background-color: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.rpcm-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.rpcm-toolbar__label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.rpcm-toolbar__field .form-field__select {
+  min-width: 160px;
+}
+
+.rpcm-toolbar__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  padding-bottom: 6px;
+}
+
+.rpcm-toolbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* Pagina de Configuracao: divisor e secoes de dominios editaveis */
+.config-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: var(--space-xl) 0 var(--space-lg);
+}
+
+.config-section {
+  margin-bottom: var(--space-xl);
+}
+
+.config-section__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* ---- Itens do DFD (tabela compacta + editor inline) ---- */
+.dfd-itens-section {
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--space-md);
+}
+
+.dfd-itens-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.dfd-itens-section__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.dfd-itens-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.dfd-itens-table th,
+.dfd-itens-table td {
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.dfd-itens-table th {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.dfd-itens-table__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dfd-itens-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dfd-itens-table__empty {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: var(--space-md);
+}
+
+.dfd-item-editor {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.dfd-item-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+/* Anexos de arquivos (componente file-attachment, usado em NC, DFD e PDR) */
+.file-attach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-attach__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.file-attach__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-attach__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.file-attach__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.file-attach__row-actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.file-attach__empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.file-attach__actions {
+  display: flex;
+}

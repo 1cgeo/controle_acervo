@@ -1,0 +1,379 @@
+// Path: lib\schema.js
+'use strict'
+
+// Le o contrato direto dos schemas Joi do server/ e o imprime em forma compacta,
+// alem de validar o corpo LOCALMENTE antes de gastar uma requisicao.
+//
+// O ponto do arquivo: nao existe copia do contrato em lugar nenhum. O texto que
+// o agente le e derivado, em tempo de execucao, do mesmo objeto Joi que o
+// Express usa para validar. Se o schema mudar, o texto muda no mesmo commit;
+// nao ha artefato gerado para apodrecer nem documentacao para desatualizar.
+//
+// Limite conhecido e deliberado: joi.describe() nao enxerga os COMENTARIOS do
+// arquivo de schema, e e neles que mora boa parte da regra de negocio (por que
+// valor_nc nunca muda por devolucao, por exemplo). Por isso o comando `schema`
+// tambem imprime o bloco curado de regras.js. A FORMA vem do Joi vivo; o PORQUE
+// vem da prosa curta ao lado.
+
+const { REGRAS } = require('./regras')
+
+// Mesmas opcoes do middleware do servidor (utils/schema_validation.js).
+// Divergir aqui produziria um CLI que aceita o que o servidor recusa, ou o
+// contrario, que e pior que nao validar.
+//
+// Em 2026-07-25 o servidor DEIXOU de usar stripUnknown no corpo: chave
+// desconhecida virou 400 em vez de sumir calada. Este objeto acompanhou no
+// mesmo gesto. Se um dia voltarem a divergir, o sintoma sera o pior possivel: o
+// `--dry-run` aprova e o envio real leva 400, ou o inverso.
+const OPCOES_CORPO = { abortEarly: false }
+const OPCOES_QUERY = { abortEarly: false }
+
+// ---------------------------------------------------------------------------
+// Formatacao do contrato
+// ---------------------------------------------------------------------------
+
+function regraPor (desc, nome) {
+  return (desc.rules || []).find(r => r.name === nome)
+}
+
+/** Renderiza o tipo de um campo em notacao curta: string(<=20), int, number>0. */
+function tipoDe (desc) {
+  if (!desc || !desc.type) return 'any'
+
+  switch (desc.type) {
+    case 'string': {
+      const max = regraPor(desc, 'max')
+      const min = regraPor(desc, 'min')
+      if (max && max.args) return `string(<=${max.args.limit})`
+      if (min && min.args) return `string(>=${min.args.limit})`
+      return 'string'
+    }
+    case 'number': {
+      const base = regraPor(desc, 'integer') ? 'int' : 'number'
+      const sinal = regraPor(desc, 'sign')
+      if (sinal && sinal.args && sinal.args.sign === 'positive') return `${base}>0`
+      if (sinal && sinal.args && sinal.args.sign === 'negative') return `${base}<0`
+      const min = regraPor(desc, 'min')
+      const max = regraPor(desc, 'max')
+      if (min && max && min.args && max.args) return `${base} ${min.args.limit}..${max.args.limit}`
+      if (min && min.args) return `${base}>=${min.args.limit}`
+      if (max && max.args) return `${base}<=${max.args.limit}`
+      return base
+    }
+    case 'boolean': return 'bool'
+    case 'date': return 'date'
+    case 'array': return 'array'
+    case 'object': return 'object'
+    case 'binary': return 'binary'
+    case 'alternatives': return 'condicional'
+    default: return desc.type
+  }
+}
+
+function formatarValor (v) {
+  if (v === null) return 'null'
+  if (v === '') return "''"
+  return JSON.stringify(v)
+}
+
+// O Joi injeta o sentinela { override: true } no inicio de um allow que
+// SUBSTITUI a lista anterior (e o que .valid() faz). Ele e detalhe interno do
+// describe, nunca um valor aceito: se vazar para a saida, o agente le
+// `classificacao_id={"override":true}|1` e conclui que ha dois valores validos.
+function semSentinela (allow) {
+  return (allow || []).filter(
+    v => !(v && typeof v === 'object' && 'override' in v)
+  )
+}
+
+/** Sufixo de valores aceitos: " =1|2" para .valid(), " |null|''" para .allow(). */
+function sufixoValores (desc) {
+  if (!desc || !Array.isArray(desc.allow)) return ''
+  const aceitos = semSentinela(desc.allow)
+  if (!aceitos.length) return ''
+  const valores = aceitos.map(formatarValor).join('|')
+  // flags.only significa .valid(): a lista e exaustiva, nao aditiva.
+  if (desc.flags && desc.flags.only) return ' =' + valores
+  return ' |' + valores
+}
+
+/** Anotacoes extras: default, e o .raw() das datas (que muda o significado). */
+function anotacoes (desc, nomeCampo) {
+  const notas = []
+  const flags = (desc && desc.flags) || {}
+
+  if ('default' in flags) {
+    notas.push(`default ${formatarValor(flags.default)}`)
+  }
+  // .raw() nas datas preserva a string 'YYYY-MM-DD' em vez de converter para
+  // Date UTC. Sem isso o Postgres (sessao em UTC-3) gravaria o dia anterior.
+  // E a diferenca entre gravar 2026-06-12 e 2026-06-11: vale dizer.
+  // No describe o .raw() aparece como flags.result === 'raw'.
+  if (desc && desc.type === 'date' && flags.result === 'raw') {
+    notas.push("'YYYY-MM-DD' literal")
+  }
+  if (nomeCampo && /_id$/.test(nomeCampo)) {
+    notas.push('FK')
+  }
+  return notas
+}
+
+/**
+ * Renderiza o campo `alternatives().conditional()`, que e como o modulo expressa
+ * invariante entre campos irmaos (o pdr_item_id da NC so existe quando a
+ * classificacao e PDR). Sem tratamento proprio isso sairia como "condicional"
+ * e o agente perderia exatamente a regra que mais erra.
+ */
+function renderCondicional (desc) {
+  const casos = []
+  for (const m of desc.matches || []) {
+    const refPath = m.ref && m.ref.path ? m.ref.path.join('.') : 'condicao'
+    const aceitos = m.is && Array.isArray(m.is.allow) ? semSentinela(m.is.allow) : []
+    const alvo = aceitos.length ? aceitos.map(formatarValor).join('|') : '?'
+
+    if (m.then) {
+      casos.push(`${refPath}=${alvo}: ${tipoDe(m.then)}${sufixoValores(m.then)}` +
+        (anotacoes(m.then).length ? ` (${anotacoes(m.then).join(', ')})` : ''))
+    }
+    if (m.otherwise) {
+      const desc2 = m.otherwise
+      // .strip() no otherwise = o campo e descartado silenciosamente.
+      const descartado = desc2.flags && desc2.flags.result === 'strip'
+      casos.push(`senao: ${descartado ? 'DESCARTADO' : tipoDe(desc2) + sufixoValores(desc2)}`)
+    }
+  }
+  return casos
+}
+
+/** Um campo vira { nome, obrigatorio, tipo, notas[] }. */
+function descreverCampo (nome, desc) {
+  const obrigatorio = !!(desc.flags && desc.flags.presence === 'required')
+
+  if (desc.type === 'alternatives') {
+    return {
+      nome,
+      obrigatorio,
+      tipo: 'condicional',
+      notas: renderCondicional(desc)
+    }
+  }
+
+  return {
+    nome,
+    obrigatorio,
+    tipo: tipoDe(desc) + sufixoValores(desc),
+    notas: anotacoes(desc, nome)
+  }
+}
+
+/** Lista de campos de um schema de objeto Joi, ja descritos. */
+function camposDe (schemaJoi) {
+  if (!schemaJoi || typeof schemaJoi.describe !== 'function') return []
+  const desc = schemaJoi.describe()
+  if (!desc.keys) return []
+  return Object.entries(desc.keys).map(([nome, d]) => descreverCampo(nome, d))
+}
+
+/**
+ * Dependencias declaradas no nivel do objeto: `.or('a','b')` (pelo menos um),
+ * `.xor` (exatamente um), `.and`, `.nand`, `.with`, `.without`. O modulo usa `.or`
+ * no rpnp (nota_empenho_id OU empenho_label) e no arquivo (o vinculo
+ * polimorfico). Sem renderizar isso, o agente monta um corpo com todos os
+ * campos "opcionais" preenchidos corretamente e ainda assim leva 400.
+ */
+function dependenciasDe (schemaJoi) {
+  if (!schemaJoi || typeof schemaJoi.describe !== 'function') return []
+  const desc = schemaJoi.describe()
+  if (!Array.isArray(desc.dependencies)) return []
+
+  const rotulo = {
+    or: 'pelo menos um de',
+    xor: 'exatamente um de',
+    oxor: 'no maximo um de',
+    and: 'todos ou nenhum de',
+    nand: 'nunca juntos'
+  }
+
+  return desc.dependencies.map(dep => {
+    const pares = (dep.peers || []).map(p =>
+      typeof p === 'string' ? p : (p.path ? p.path.join('.') : String(p))
+    )
+    const texto = rotulo[dep.rel] || dep.rel
+    return `${texto}: ${pares.join(', ')}`
+  })
+}
+
+/** Nomes dos filtros aceitos numa listagem, lidos do listarQuery do proprio schema. */
+function filtrosDe (modulo) {
+  if (!modulo || !modulo.listarQuery) return []
+  return camposDe(modulo.listarQuery).map(c => ({
+    nome: c.nome,
+    tipo: c.tipo
+  }))
+}
+
+function alinhar (campos) {
+  const larguraNome = Math.max(...campos.map(c => c.nome.length + (c.obrigatorio ? 1 : 0)), 4)
+  const larguraTipo = Math.max(...campos.map(c => c.tipo.length), 4)
+  return campos.map(c => {
+    const nome = (c.nome + (c.obrigatorio ? '*' : '')).padEnd(larguraNome)
+    const tipo = c.notas.length ? c.tipo.padEnd(larguraTipo) : c.tipo
+    const cauda = c.notas.length ? '  ' + c.notas.join('; ') : ''
+    return `  ${nome}  ${tipo}${cauda}`
+  })
+}
+
+/**
+ * Texto completo do contrato de um recurso: rotas, filtros de listagem, campos
+ * de criacao/atualizacao e o bloco de regras curado.
+ */
+function contrato (chave, recurso) {
+  const modulo = recurso.schema()
+  const linhas = []
+  const base = '/api' + recurso.caminho
+
+  linhas.push(`${chave}  -  ${recurso.nome}`)
+  linhas.push('')
+
+  // Rotas. O acesso e por perfil no modulo orcamento: consulta le, operador
+  // cria e atualiza, gerente deleta. O CRUD de dominio exige administrador.
+  linhas.push('rotas')
+  if (recurso.singleton) {
+    linhas.push(`  GET    ${base}`)
+    linhas.push(`  PUT    ${base}                 (singleton, sem id)`)
+  } else if (chave === 'dominio') {
+    linhas.push(`  GET    ${base}/<sub>            perfil consulta`)
+    linhas.push(`  POST   ${base}/<sub>`)
+    linhas.push(`  PUT    ${base}/<sub>/<code>`)
+    linhas.push(`  DELETE ${base}/<sub>/<code>`)
+    linhas.push(`  escrita so em: ${recurso.subEscrita.join(', ')}`)
+    linhas.push(`  leitura em:    ${recurso.subLeitura.join(', ')}`)
+  } else {
+    const filtros = filtrosDe(modulo)
+    const sufixoFiltro = filtros.length
+      ? `   filtros: ${filtros.map(f => `${f.nome} (${f.tipo})`).join(', ')}`
+      : ''
+    linhas.push(`  GET    ${base}${sufixoFiltro}`)
+    linhas.push(`  GET    ${base}/:id`)
+    linhas.push(`  POST   ${base}`)
+    linhas.push(`  PUT    ${base}/:id`)
+    linhas.push(`  DELETE ${base}/:id`)
+  }
+  linhas.push('')
+
+  const schemaCorpo = modulo.criar || modulo.atualizar
+  const campos = camposDe(schemaCorpo)
+  if (campos.length) {
+    linhas.push('campos do corpo  (* = obrigatorio)')
+    linhas.push(...alinhar(campos))
+    linhas.push('')
+
+    const deps = dependenciasDe(schemaCorpo)
+    if (deps.length) {
+      linhas.push('  regras entre campos')
+      linhas.push(...deps.map(d => '    ' + d))
+      linhas.push('')
+    }
+
+    // Ate 2026-07-25 o servidor descartava chave desconhecida em silencio
+    // (stripUnknown), e campo com nome errado simplesmente nao gravava. Agora
+    // ele RECUSA com 400 nomeando a chave, e o CLI pega isso antes, local.
+    linhas.push('  campo fora desta lista e RECUSADO pelo servidor (400).')
+    linhas.push('  O CLI pega isso na validacao local, antes de enviar.')
+    linhas.push('')
+  }
+
+  const regras = REGRAS[chave]
+  if (regras && regras.length) {
+    linhas.push('regras de negocio')
+    linhas.push(...regras.map(r => '  ' + r))
+    linhas.push('')
+  }
+
+  return linhas.join('\n')
+}
+
+/** Indice curto de todos os recursos, para o `orcamento schema` sem argumento. */
+function indice (RECURSOS) {
+  const chaves = Object.keys(RECURSOS)
+  const largura = Math.max(...chaves.map(c => c.length))
+  return chaves
+    .map(c => `  ${c.padEnd(largura)}  ${RECURSOS[c].nome}`)
+    .join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// Validacao local
+// ---------------------------------------------------------------------------
+
+/**
+ * Valida o corpo contra o schema Joi ANTES de enviar. Devolve
+ * { ok, valor, erros[], descartados[] }.
+ *
+ * `descartados` sao as chaves que o proprio SCHEMA remove de proposito, com
+ * .strip(), e nao chave desconhecida (essa agora vira erro, desde que o servidor
+ * parou de usar stripUnknown em 2026-07-25). O caso vivo e o pdr_item_id de uma
+ * NC Extra-PDR: ele EXISTE no schema, e legitimo mandar, e mesmo assim e
+ * descartado pela regra condicional. Sem este aviso o agente acha que gravou.
+ */
+function validarCorpo (schemaJoi, corpo) {
+  if (!schemaJoi || typeof schemaJoi.validate !== 'function') {
+    return { ok: true, valor: corpo, erros: [], descartados: [] }
+  }
+
+  const { error, value } = schemaJoi.validate(corpo, OPCOES_CORPO)
+
+  const enviadas = Object.keys(corpo && typeof corpo === 'object' ? corpo : {})
+  const mantidas = new Set(Object.keys(value && typeof value === 'object' ? value : {}))
+  const descartados = enviadas.filter(k => !mantidas.has(k))
+
+  if (!error) {
+    return { ok: true, valor: value, erros: [], descartados }
+  }
+
+  const erros = error.details.map(d => ({
+    campo: d.path.join('.') || '(corpo)',
+    mensagem: d.message
+  }))
+  return { ok: false, valor: value, erros, descartados }
+}
+
+/**
+ * Mensagem de erro que ENSINA: alem do que falhou, imprime a linha de contrato
+ * exatamente dos campos que falharam. Evita que o agente tenha que reler o
+ * contrato inteiro (ou pior, o catalogo de rotas do vault) para consertar.
+ */
+function explicarErro (schemaJoi, erros) {
+  const linhas = ['Corpo invalido (validado localmente, nada foi enviado):', '']
+  for (const e of erros) linhas.push(`  ${e.mensagem}`)
+
+  const campos = camposDe(schemaJoi)
+  const falhos = new Set(erros.map(e => e.campo.split('.')[0]))
+  const relevantes = campos.filter(c => falhos.has(c.nome))
+
+  if (relevantes.length) {
+    linhas.push('')
+    linhas.push('contrato dos campos citados:')
+    linhas.push(...alinhar(relevantes))
+  }
+
+  linhas.push('')
+  linhas.push('contrato completo: orcamento schema <recurso>')
+  return linhas.join('\n')
+}
+
+module.exports = {
+  contrato,
+  indice,
+  camposDe,
+  filtrosDe,
+  dependenciasDe,
+  descreverCampo,
+  tipoDe,
+  sufixoValores,
+  alinhar,
+  validarCorpo,
+  explicarErro,
+  OPCOES_CORPO,
+  OPCOES_QUERY
+}

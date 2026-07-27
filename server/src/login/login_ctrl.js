@@ -50,7 +50,8 @@ controller.login = async (login, senha, aplicacao) => {
 
   const { id, uuid, administrador } = usuarioDb
 
-  // Perfil por modulo (acervo, mapoteca), para o client saber o que exibir. O
+  // Perfil por modulo (acervo, mapoteca, orcamento), para o client saber o que
+  // exibir. A lista sai de dominio.modulo, entao modulo novo entra sozinho. O
   // token NAO carrega isso de proposito: quem decide o que a pessoa pode e o
   // verifyPerfil, lendo o banco a cada requisicao, senao rebaixar perfil so
   // valeria quando o token expirasse.
@@ -67,9 +68,17 @@ controller.login = async (login, senha, aplicacao) => {
     perfis[p.modulo] = p.perfil_id
   })
 
+  // Catalogo dos modulos, para o client montar o seletor com o NOME de cada um
+  // em vez de decorar codigo ou rotulo. Vai aqui, e nao numa rota propria,
+  // porque GET /usuarios/dominio/modulo e verifyAdmin: quem so tem perfil de
+  // consulta tambem precisa saber como o modulo se chama.
+  const modulos = await db.conn.any(
+    'SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code'
+  )
+
   const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
 
-  return { token, administrador, uuid, perfis }
+  return { token, administrador, uuid, perfis, modulos }
 }
 
 module.exports = controller
