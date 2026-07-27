@@ -1,18 +1,20 @@
 'use strict'
 
-// Perfil POR MODULO: prova, contra o banco real e as rotas reais, que acervo e
-// mapoteca sao compartimentos separados. E o teste que justifica a tabela
-// dgeo.usuario_perfil existir em vez de uma coluna unica no usuario.
+// Perfil POR MODULO: prova, contra o banco real e as rotas reais, que acervo,
+// mapoteca e orcamento sao compartimentos separados. E o teste que justifica a
+// tabela dgeo.usuario_perfil existir em vez de uma coluna unica no usuario.
 //
 // O usuario semeado (test_user) e consulta no acervo e operador na mapoteca,
-// que e exatamente o que ele podia antes do controle por perfil.
+// que e exatamente o que ele podia antes do controle por perfil. No orcamento
+// ele nasce SEM linha, que e como o modulo absorvido em 2026-07-27 entra: sem
+// acesso ate alguem conceder.
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn } = require('../helpers/db')
 const { generateAdminToken, generateUserToken, USER_UUID } = require('../helpers/auth')
 
-const MODULO = { acervo: 1, mapoteca: 2 }
+const MODULO = { acervo: 1, mapoteca: 2, orcamento: 3 }
 const NIVEL = { consulta: 1, operador: 2, gerente: 3 }
 
 let app
@@ -25,6 +27,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await definePerfil(MODULO.acervo, NIVEL.consulta)
   await definePerfil(MODULO.mapoteca, NIVEL.operador)
+  await removePerfil(MODULO.orcamento)
   await conn.none('UPDATE dgeo.usuario SET ativo = TRUE WHERE uuid = $1', [USER_UUID])
 })
 
@@ -45,7 +48,7 @@ const removePerfil = async moduloId => {
   )
 }
 
-describe('Perfil por modulo: acervo e mapoteca sao compartimentos', () => {
+describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', () => {
   it('operador da mapoteca NAO escreve no acervo', async () => {
     await definePerfil(MODULO.mapoteca, NIVEL.operador)
     await definePerfil(MODULO.acervo, NIVEL.consulta)
@@ -87,7 +90,10 @@ describe('Perfil por modulo: acervo e mapoteca sao compartimentos', () => {
     expect(leituraMapoteca.status).toBe(200)
   })
 
-  it('administrador passa nos dois modulos sem ter linha de perfil', async () => {
+  // Requisito da fusao: o administrador global vale nos TRES modulos, e sem
+  // nenhuma linha em dgeo.usuario_perfil. Se um dia alguem trocar a flag global
+  // por perfil por modulo, este teste cai primeiro.
+  it('administrador passa nos tres modulos sem ter linha de perfil', async () => {
     const linhas = await conn.any(
       `SELECT up.id FROM dgeo.usuario_perfil AS up
        INNER JOIN dgeo.usuario AS u ON u.id = up.usuario_id
@@ -104,6 +110,20 @@ describe('Perfil por modulo: acervo e mapoteca sao compartimentos', () => {
       .get('/api/mapoteca/cliente')
       .set('Authorization', generateAdminToken())
     expect(mapoteca.status).toBe(200)
+
+    // Leitura do orcamento
+    const orcamentoLeitura = await request(app)
+      .get('/api/orcamento/metas?ano=2026')
+      .set('Authorization', generateAdminToken())
+    expect(orcamentoLeitura.status).toBe(200)
+
+    // E escrita, para nao provar so o nivel mais baixo
+    const orcamentoEscrita = await request(app)
+      .post('/api/orcamento/metas')
+      .set('Authorization', generateAdminToken())
+      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta do admin' })
+    expect(orcamentoEscrita.status).toBe(201)
+    await conn.none('DELETE FROM orcamento.meta_pit WHERE ano = 2026')
   })
 
   it('desativar o usuario derruba o acesso na hora, com o mesmo token', async () => {
@@ -115,6 +135,63 @@ describe('Perfil por modulo: acervo e mapoteca sao compartimentos', () => {
 
     expect(res.status).toBe(403)
     expect(res.body.message).toMatch(/inativo/i)
+  })
+
+  // Requisito da fusao: quem entrou pelo modulo absorvido nao herda nada dos
+  // modulos que ja existiam. O risco concreto era esquecer o 2o argumento de
+  // verifyPerfil numa rota do orcamento: o default do middleware e 'acervo',
+  // entao a rota passaria a cobrar perfil no modulo errado, e o operador do
+  // orcamento passaria a escrever onde nao devia.
+  it('operador do orcamento NAO escreve no acervo nem na mapoteca', async () => {
+    await definePerfil(MODULO.orcamento, NIVEL.operador)
+    await removePerfil(MODULO.acervo)
+    await removePerfil(MODULO.mapoteca)
+
+    // Escreve no proprio modulo: e o controle positivo, sem o qual um 403 em
+    // toda parte passaria por aprovacao.
+    const proprio = await request(app)
+      .post('/api/orcamento/metas')
+      .set('Authorization', generateUserToken())
+      .send({ ano: 2026, numero_meta: 9, descricao: 'Meta do operador' })
+    expect(proprio.status).toBe(201)
+    await conn.none('DELETE FROM orcamento.meta_pit WHERE ano = 2026')
+
+    const escritaAcervo = await request(app)
+      .post('/api/projetos/projeto')
+      .set('Authorization', generateUserToken())
+      .send({ projetos: [{ nome: 'Projeto Indevido', descricao: 'x', status_id: 1 }] })
+    expect(escritaAcervo.status).toBe(403)
+    expect(escritaAcervo.body.message).toMatch(/módulo acervo/i)
+
+    const escritaMapoteca = await request(app)
+      .post('/api/mapoteca/pedido')
+      .set('Authorization', generateUserToken())
+      .send({ cliente_id: 1, situacao_pedido_id: 1 })
+    expect(escritaMapoteca.status).toBe(403)
+    expect(escritaMapoteca.body.message).toMatch(/módulo mapoteca/i)
+
+    // Nem a leitura dos outros dois, ja que sem linha nao ha acesso nenhum
+    const leituraAcervo = await request(app)
+      .get('/api/acervo/busca?termo=teste')
+      .set('Authorization', generateUserToken())
+    expect(leituraAcervo.status).toBe(403)
+
+    const leituraMapoteca = await request(app)
+      .get('/api/mapoteca/cliente')
+      .set('Authorization', generateUserToken())
+    expect(leituraMapoteca.status).toBe(403)
+  })
+
+  it('sem linha no orcamento, nem o gerente do acervo le o orcamento', async () => {
+    await definePerfil(MODULO.acervo, NIVEL.gerente)
+    await removePerfil(MODULO.orcamento)
+
+    const res = await request(app)
+      .get('/api/orcamento/metas?ano=2026')
+      .set('Authorization', generateUserToken())
+
+    expect(res.status).toBe(403)
+    expect(res.body.message).toMatch(/módulo orcamento/i)
   })
 
   it('a consulta pelo localizador continua publica (cliente sem conta)', async () => {
@@ -197,7 +274,11 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .get('/api/usuarios/dominio/modulo')
       .set('Authorization', generateAdminToken())
     expect(modulos.status).toBe(200)
-    expect(modulos.body.dados.map(m => m.nome_abrev)).toEqual(['acervo', 'mapoteca'])
+    expect(modulos.body.dados.map(m => m.nome_abrev)).toEqual([
+      'acervo',
+      'mapoteca',
+      'orcamento'
+    ])
 
     const perfis = await request(app)
       .get('/api/usuarios/dominio/tipo_perfil')

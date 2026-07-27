@@ -21,6 +21,22 @@ const conn = pgp({
  */
 const cleanTestData = async () => {
   await conn.tx(async t => {
+    // Orcamento tables (modulo absorvido do SCO). A configuracao e singleton
+    // (linha id=1 criada pelo er/orcamento.sql), entao NAO entra no truncate.
+    await t.none('TRUNCATE orcamento.arquivo CASCADE')
+    await t.none('TRUNCATE orcamento.relatorio_rpcmtec CASCADE')
+    await t.none('TRUNCATE orcamento.rpnp CASCADE')
+    await t.none('TRUNCATE orcamento.recebimento_material CASCADE')
+    await t.none('TRUNCATE orcamento.liquidacao CASCADE')
+    await t.none('TRUNCATE orcamento.nota_empenho_nota_credito CASCADE')
+    await t.none('TRUNCATE orcamento.nota_empenho CASCADE')
+    await t.none('TRUNCATE orcamento.nota_credito CASCADE')
+    await t.none('TRUNCATE orcamento.pdr_item CASCADE')
+    await t.none('TRUNCATE orcamento.licitacao CASCADE')
+    await t.none('TRUNCATE orcamento.dfd_item CASCADE')
+    await t.none('TRUNCATE orcamento.dfd CASCADE')
+    await t.none('TRUNCATE orcamento.meta_pit CASCADE')
+
     // Mapoteca tables
     await t.none('TRUNCATE mapoteca.impressao_item CASCADE')
     await t.none('TRUNCATE mapoteca.consumo_material CASCADE')

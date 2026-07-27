@@ -16,15 +16,19 @@ const PERFIL = {
   gerente: 3
 };
 
-// Espelha dominio.modulo. Acervo e mapoteca sao modulos distintos de proposito:
-// quem atende a mapoteca nao precisa catalogar o acervo.
+// Espelha dominio.modulo. Acervo, mapoteca e orcamento sao modulos distintos de
+// proposito: quem atende a mapoteca nao precisa catalogar o acervo, e quem
+// lanca empenho nao precisa de nenhum dos dois.
 const MODULO = {
   acervo: 1,
-  mapoteca: 2
+  mapoteca: 2,
+  orcamento: 3
 };
 
 // Uso: verifyPerfil('operador') no acervo, verifyPerfil('gerente', 'mapoteca')
-// na mapoteca. Nome errado falha no carregamento do modulo, nao em runtime.
+// na mapoteca, verifyPerfil('operador', 'orcamento') no orcamento. O default e
+// 'acervo', entao rota de outro modulo TEM de passar o modulo explicitamente.
+// Nome errado falha no carregamento do modulo, nao em runtime.
 const verifyPerfil = (minimo, modulo = "acervo") => {
   if (!(minimo in PERFIL)) {
     throw new Error(`Perfil mínimo desconhecido: ${minimo}`);

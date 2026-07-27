@@ -18,6 +18,24 @@ const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
 const { integracaoRoute } = require("./integracao");
 const { relatorioRoute } = require("./relatorio");
 
+// Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
+// relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
+const {
+  dominioRoute: orcamentoDominioRoute,
+  configuracaoRoute: orcamentoConfiguracaoRoute,
+  metaRoute: orcamentoMetaRoute,
+  dfdRoute: orcamentoDfdRoute,
+  pdrRoute: orcamentoPdrRoute,
+  notaCreditoRoute: orcamentoNotaCreditoRoute,
+  notaEmpenhoRoute: orcamentoNotaEmpenhoRoute,
+  liquidacaoRoute: orcamentoLiquidacaoRoute,
+  recebimentoRoute: orcamentoRecebimentoRoute,
+  licitacaoRoute: orcamentoLicitacaoRoute,
+  rpnpRoute: orcamentoRpnpRoute,
+  relatorioRoute: orcamentoRelatorioRoute,
+  arquivoRoute: orcamentoArquivoRoute
+} = require("./orcamento");
+
 const router = express.Router();
 
 router.get("/", (req, res, next) => {
@@ -58,5 +76,34 @@ router.use("/integracao", integracaoRoute);
 
 // Geração do RPCMTec (seção acervo): admin-only
 router.use("/relatorio", relatorioRoute);
+
+// Módulo orçamento (antigo SCO). Todas as features do sistema absorvido ficam
+// sob /api/orcamento/, o que resolve as colisões de nome com o acervo
+// (/dominio, /relatorio, /arquivo) sem renomear nada dentro do módulo.
+router.use("/orcamento/dominio", orcamentoDominioRoute);
+
+router.use("/orcamento/configuracao", orcamentoConfiguracaoRoute);
+
+router.use("/orcamento/metas", orcamentoMetaRoute);
+
+router.use("/orcamento/dfd", orcamentoDfdRoute);
+
+router.use("/orcamento/pdr", orcamentoPdrRoute);
+
+router.use("/orcamento/notas_credito", orcamentoNotaCreditoRoute);
+
+router.use("/orcamento/notas_empenho", orcamentoNotaEmpenhoRoute);
+
+router.use("/orcamento/liquidacoes", orcamentoLiquidacaoRoute);
+
+router.use("/orcamento/recebimentos", orcamentoRecebimentoRoute);
+
+router.use("/orcamento/licitacoes", orcamentoLicitacaoRoute);
+
+router.use("/orcamento/rpnp", orcamentoRpnpRoute);
+
+router.use("/orcamento/relatorio", orcamentoRelatorioRoute);
+
+router.use("/orcamento/arquivo", orcamentoArquivoRoute);
 
 module.exports = router;

@@ -24,6 +24,8 @@
 
 **Controle do Acervo (SCA)** is a geospatial data collection management system built by the Brazilian Army Geographic Service (DSG/1CGEO). It manages versioned geographic products (maps, orthophotos, digital elevation models, etc.), their files, storage volumes, and a physical map library (mapoteca) for order fulfillment.
 
+Desde 2026-07-27 o servidor também hospeda o **módulo orçamento** (o antigo SCO, Sistema de Controle Orçamentário), absorvido como subárvore em `server/src/orcamento/` e montado sob `/api/orcamento/`. São três módulos de autorização no mesmo servidor: `acervo`, `mapoteca` e `orcamento`. Da fusão veio só o servidor: o client web e o CLI do SCO continuam no repositório de origem.
+
 The system consists of five active components:
 
 1. **Server** (`server/`) - Node.js/Express REST API with PostgreSQL/PostGIS
@@ -60,8 +62,21 @@ controle_acervo/
 │   │   ├── mapoteca/               # Map library: CRUD, dashboard, relatórios CSV (query_fragments/relatorio_ctrl) e controle de impressão
 │   │   ├── dashboard/              # Main (acervo) dashboard endpoints
 │   │   ├── integracao/             # Public read-only routes for the DGEO vault (acervo coverage + RPCMTec)
-│   │   ├── utils/                  # Shared utilities (domain_constants, csv_export, error handling, logging, cleanup jobs, generate_localizador, http_client, schema_validation, send_json_and_log, serialize_error_loader, async_handler, async_handler_with_queue)
-│   │   └── __tests__/              # Jest test suite (unit, integration, routes) + helpers
+│   │   ├── relatorio/              # Geração do RPCMTec (seção acervo), rota `/api/relatorio`
+│   │   ├── orcamento/              # Módulo orçamento (SCO absorvido em 2026-07-27), subárvore própria
+│   │   │   ├── dominio/            #   Domínios do orçamento (ND, PI, UG, tipo de licitação...) com CRUD admin
+│   │   │   ├── configuracao/       #   Singleton `orcamento.configuracao` (UASG, CODOM, ano de referência)
+│   │   │   ├── meta/               #   Metas do PIT que o crédito financia
+│   │   │   ├── dfd/                #   DFD e itens de DFD (o PCA do ano é o conjunto de DFDs)
+│   │   │   ├── pdr/                #   Itens do PDR do ano (não há tabela de cabeçalho)
+│   │   │   ├── nota_credito/       #   NC (crédito recebido)
+│   │   │   ├── nota_empenho/       #   NE + liquidação + recebimento de material
+│   │   │   ├── licitacao/          #   Licitação + RPNP
+│   │   │   ├── relatorio/          #   RPCMTec seção 3 (execução do PDR), tabelas 3.1 a 3.7
+│   │   │   ├── arquivo/            #   Anexos em BYTEA no banco (NC, DFD, PDR do ano)
+│   │   │   └── utils/              #   Só o que diverge do `utils/` do SCA (schema_validation estrito)
+│   │   ├── utils/                  # Shared utilities (domain_constants, csv_export, error handling, logging, cleanup jobs, generate_localizador, http_client, schema_validation, send_json_and_log, serialize_error_loader, preserve_omitted, async_handler, async_handler_with_queue)
+│   │   └── __tests__/              # Jest test suite (unit, integration, routes) + helpers (subpastas `orcamento/` para o módulo absorvido)
 │   └── package.json
 ├── ferramentas_acervo/             # QGIS 4 Plugin (Python/PyQt, Qt6)
 │   ├── main.py                     # Plugin entry point
@@ -153,10 +168,29 @@ controle_acervo/
 │   ├── dgeo.sql                     # User schema
 │   ├── acervo.sql                   # Main archive schema
 │   ├── mapoteca.sql                 # Map library schema
+│   ├── orcamento.sql                # Budget schema (14 tables; módulo absorvido do SCO)
 │   ├── acompanhamento.sql           # Materialized views
 │   ├── permissao.sql                # DB permissions (main service user)
 │   └── permissao_readonly.sql       # Read-only user grants (QGIS layer URIs)
 ├── mapoteca_client/                 # Vanilla JS + Vite SPA da mapoteca (porta 3001; localStorage @mapoteca-*)
+├── client/                          # Interface UNICA do SCA (Vanilla JS + Vite, porta 3003)
+│   ├── index.html                   # Entry point (base /app/)
+│   ├── vite.config.js               # Aliases (inclui @modules), proxy, base '/app/'
+│   ├── vitest.config.js             # Vitest + jsdom
+│   └── src/
+│       ├── css/                     # Mesmo design system dos clients antigos + plataforma.css
+│       └── js/
+│           ├── index.js             # Registra as rotas de plataforma e as de cada modulo
+│           ├── router.js            # Roteador hash com guardas por MODULO (perfilLoader)
+│           ├── store/auth-store.js  # Sessao unica (@sca-*), perfil por modulo, catalogo de modulos
+│           ├── services/            # api-client, cache, plataforma-service (/login, /usuarios)
+│           ├── components/layout/   # navbar (seletor de modulo), sidebar, main-layout
+│           ├── pages/               # login, 403, 404, usuarios (tela unica, 1 coluna por modulo)
+│           └── modules/
+│               ├── registry.js      # Contrato do manifesto de modulo (leia antes de portar)
+│               ├── acervo/          # ESQUELETO (a portar)
+│               ├── mapoteca/        # ESQUELETO (a portar)
+│               └── orcamento/       # PORTADO: pages/, services/, store/, components/
 ├── create_config.js                 # Interactive setup (DB creation, config.env generation)
 ├── create_build.js                  # Client build script
 ├── package.json                     # Root package with install/config/build/start scripts
@@ -202,12 +236,16 @@ controle_acervo/
 
 ### Root Level
 ```bash
-npm run install-all       # Install root + server + acervo_client + mapoteca_client dependencies
+npm run install-all       # Install root + server + acervo_client + mapoteca_client + client dependencies
 npm run install-mapoteca  # Install mapoteca_client dependencies only
+npm run install-client    # Install client/ (interface unica) dependencies only
 npm run config            # Interactive setup: create DB + config.env
-npm run build             # Build acervo_client/ and copy to server/src/build
+npm run build             # Build dos tres clients (acervo -> /, mapoteca -> /mapoteca, client -> /app)
 npm run build-mapoteca    # Build mapoteca_client/
+npm run build-client      # Build client/ (interface unica)
 npm run dev-mapoteca      # Start mapoteca client dev server (port 3001)
+npm run dev-client        # Start client dev server (port 3003, proxies /api to 3015)
+npm run test-client       # Suite vitest + jsdom do client/
 npm start                 # Start production server via PM2
 npm run start-dev         # Start dev server (server only, via nodemon)
 ```
@@ -240,6 +278,21 @@ npm run preview        # Preview production build
 npm run lint           # ESLint (--max-warnings 0)
 ```
 Conventions specific to this SPA: localStorage prefix `@mapoteca-*` (distinct from the acervo client), same page/component contract as `acervo_client/`.
+
+### Client unico (`client/`) — desde 2026-07-27
+```bash
+npm run dev            # Vite dev server (porta 3003, proxy /api para 3015)
+npm run build          # Build de producao para dist/ (base /app/)
+npm test               # Vitest + jsdom
+```
+Interface unica dos tres modulos (acervo, mapoteca, orcamento). Estado atual do porte: **orcamento portado; acervo e mapoteca sao esqueletos**.
+
+- **Rota**: `#/<modulo>/<pagina>` (ex.: `#/orcamento/dfd`). `#/` manda para o primeiro modulo em que a pessoa tem acesso. Rotas de plataforma (`#/login`, `#/usuarios`, `#/404`, `#/unauthorized`) nao levam prefixo.
+- **Sessao unica**: prefixo `@sca-*` no localStorage, uma tela de login para os tres modulos. Nao recrie prefixo por modulo.
+- **Seletor de modulo**: navbar. Mostra so os modulos em que a pessoa tem perfil; administrador global ve todos. O NOME vem do catalogo `dominio.modulo`, devolvido pelo `POST /api/login` no campo `modulos`.
+- **Contrato de modulo**: o manifesto (`id`, `home`, `menu`, `rotas`, `navbarExtras`) esta documentado em `client/src/js/modules/registry.js`. Portar um modulo e preencher `menu` e `rotas` no seu `index.js`; `index.js` da raiz registra as rotas sozinho.
+- **Servico**: cada modulo tem o seu (`modules/<id>/services/`). O caminho ja nasce com o prefixo do servidor (`/orcamento/dfd`). `/login` e `/usuarios` sao de plataforma e vivem em `services/plataforma-service.js`, sem prefixo.
+- **Servido em `/app`** (provisorio). A raiz `/` continua com `acervo_client` e `/mapoteca` com `mapoteca_client`, senao esses dois ficariam sem interface. Quando os tres modulos estiverem portados: `base: '/'` no `client/vite.config.js`, `buildClient('client')` sem subdiretorio em `create_build.js`, e o mount de `/app` vira a raiz em `server/src/server/app.js`.
 
 ## Configuration
 
@@ -282,7 +335,8 @@ module_name/
 router.post(
   '/endpoint',
   verifyPerfil('operador'),             // Auth middleware (module defaults to 'acervo';
-                                        // mapoteca routes pass verifyPerfil(x, 'mapoteca'))
+                                        // mapoteca routes pass verifyPerfil(x, 'mapoteca'),
+                                        // orcamento routes pass verifyPerfil(x, 'orcamento'))
   schemaValidation({ body: schema }),   // Joi validation
   asyncHandler(async (req, res, next) => {
     const result = await ctrl.someMethod(req.body)
@@ -305,14 +359,14 @@ All API responses use `res.sendJsonAndLog()`:
 
 ### Authentication Flow
 1. `POST /api/login` validates credentials against external auth server
-2. Returns JWT token (1-hour expiry) with `administrador` flag and `uuid`, plus `perfis` (profile per module, outside the token on purpose)
+2. Returns JWT token (1-hour expiry) with `administrador` flag and `uuid`, plus `perfis` (profile per module, outside the token on purpose) and `modulos` (the `dominio.modulo` catalog, so the client shows module NAMES without hardcoding codes; `GET /usuarios/dominio/modulo` is admin-only, so a consulta-level user could not read it)
 3. Routes use `verifyPerfil(minimo, modulo)` — hierarchical (`perfil_id >= minimo`), reading the DB on every request so deactivating a user or lowering a profile takes effect immediately
 4. `verifyAdmin` is now reserved for platform-level routes (users, materialized views, download cleanup); `verifyLogin` remains only for what has not migrated
 5. Plugin stores token in memory; re-authenticates silently on 401 using saved credentials
 
 ### Authorization Model (since 2026-07-25)
 - `dominio.tipo_perfil`: three hierarchical levels **inside a module** — 1 `consulta`, 2 `operador`, 3 `gerente`
-- `dominio.modulo`: a table, not a CHECK — 1 `acervo`, 2 `mapoteca` (so absorbing another system is an INSERT)
+- `dominio.modulo`: a table, not a CHECK — 1 `acervo`, 2 `mapoteca`, 3 `orcamento` (so absorbing another system is an INSERT; `orcamento` entrou assim em 2026-07-27, e no repo de origem ele era o código 1)
 - `dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)`: the person's level per module
 - `dgeo.usuario.administrador`: the single **global** administrator flag, above every module, short-circuiting the check. There is no per-module administrator
 - A user with no row for a module has **no access at all** to that module. Granting is an explicit act, never a migration side effect
@@ -351,6 +405,7 @@ Server uses `server/src/utils/domain_constants.js` to centralize all domain tabl
 - **dominio**: Lookup/reference tables (tipo_produto, tipo_escala, tipo_arquivo, etc.)
 - **dgeo**: User management (usuario table)
 - **mapoteca**: Map library (cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material, etc.)
+- **orcamento**: Budget control, 14 tables (configuracao, meta_pit, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, relatorio_rpcmtec, arquivo). Sem PostGIS: o orçamento não tem dado espacial. Liga o usuário só por `uuid` (nunca por `id`), seguindo a convenção do acervo
 - **public**: DB version tracking and QGIS layer styles
 
 ### Key Tables and Relationships
@@ -379,7 +434,11 @@ Dynamically created views `mv_produto_{type}_{scale}` aggregate product/version/
 
 ### Schema Changes
 SQL schema files are in `er/`. Execution order for fresh install:
-1. `versao.sql` → 2. `dominio.sql` → 3. `dgeo.sql` → 4. `acervo.sql` → 5. `acompanhamento.sql` → 6. `mapoteca.sql` → 7. `permissao.sql` (→ 8. `permissao_readonly.sql`, opcional, se o usuário somente leitura for configurado)
+1. `versao.sql` → 2. `dominio.sql` → 3. `dgeo.sql` → 4. `acervo.sql` → 5. `acompanhamento.sql` → 6. `mapoteca.sql` → 7. `orcamento.sql` → 8. `permissao.sql` (→ 9. `permissao_readonly.sql`, opcional, se o usuário somente leitura for configurado)
+
+`create_config.js` e o `globalSetup` do Jest (`server/src/__tests__/setup.js`) seguem essa mesma ordem. Ao acrescentar um arquivo em `er/`, atualize os dois.
+
+A versão do schema é **1.5.0** (`er/versao.sql`), casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. Foi a versão única decidida na fusão com o SCO em 2026-07-27. O caminho de atualização de banco existente vive em `migrations/`, não aqui: `er/` só descreve a instalação nova.
 
 ## API Endpoints Summary
 
@@ -399,8 +458,24 @@ All endpoints are under `/api/`. Since 2026-07-25 every endpoint requires a prof
 | `/api/mapoteca` | mapoteca | Map library: clients, orders, plotters, materials, relatórios anuais (CSV) e controle de impressão (plugin QGIS) |
 | `/api/mapoteca/dashboard` | mapoteca/dashboard | Map library dashboard analytics |
 | `/api/integracao` | integracao | Public read-only routes for the DGEO vault: acervo coverage, products finalized in a month (by `data_edicao`), mapoteca deliveries (RPCMTec). No auth (intranet) |
+| `/api/relatorio` | relatorio | Geração do RPCMTec, seção do acervo |
+| `/api/orcamento/dominio` | orcamento/dominio | Domínios do orçamento (ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade). Leitura por perfil; CRUD de ND/PI/UG por `verifyAdmin` |
+| `/api/orcamento/configuracao` | orcamento/configuracao | Singleton `orcamento.configuracao`: UASG, CODOM, ano de referência |
+| `/api/orcamento/metas` | orcamento/meta | Metas do PIT que o crédito financia |
+| `/api/orcamento/dfd` | orcamento/dfd | DFD e itens (o PCA do ano é o conjunto de DFDs daquele ano) |
+| `/api/orcamento/pdr` | orcamento/pdr | Itens do PDR do ano |
+| `/api/orcamento/notas_credito` | orcamento/nota_credito | Notas de crédito (NC) |
+| `/api/orcamento/notas_empenho` | orcamento/nota_empenho | Notas de empenho (NE) |
+| `/api/orcamento/liquidacoes` | orcamento/nota_empenho | Liquidações de NE |
+| `/api/orcamento/recebimentos` | orcamento/nota_empenho | Recebimento de material por NE |
+| `/api/orcamento/licitacoes` | orcamento/licitacao | Licitações (GCALC DSG, própria, participante) |
+| `/api/orcamento/rpnp` | orcamento/licitacao | Restos a pagar não processados |
+| `/api/orcamento/relatorio` | orcamento/relatorio | RPCMTec seção 3 (execução do PDR), tabelas 3.1 a 3.7 |
+| `/api/orcamento/arquivo` | orcamento/arquivo | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
 
 Note: `/api/mapoteca/dashboard` is mounted before `/api/mapoteca` in `routes.js` so Express matches the more specific prefix first. Preserve that ordering when adding new routes.
+
+Note: as rotas do módulo orçamento vieram do SCO em 2026-07-27 e ganharam o prefixo `/api/orcamento/`, o que resolve as colisões de nome com o acervo (`/dominio`, `/relatorio`, `/arquivo`). `/api/login` e `/api/usuarios` do SCA passaram a servir os três módulos. **Toda rota do orçamento chama `verifyPerfil(nivel, 'orcamento')` com o módulo explícito**: o default do middleware é `'acervo'`, então omitir o segundo argumento cobraria perfil no módulo errado, sem erro visível. O teste `__tests__/routes/orcamento/modulo_em_toda_rota.test.js` faz cumprir.
 
 Swagger docs available at `GET /api/api_docs` when server is running.
 
