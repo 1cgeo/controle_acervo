@@ -439,18 +439,15 @@
   padding-left: calc(var(--space-md) + var(--space-lg) + 24px + var(--space-md));
 }
 
-/* Recolhida, a sidebar mostra so os icones: recuo e chevron atrapalhariam */
+/* Recolhida, a sidebar mostra SO o icone de cada modulo, mais os de plataforma.
+ * Deixar os itens de dentro visiveis derrota o proposito de recolher: seriam
+ * mais de vinte icones sem rotulo, indistinguiveis entre si. Recolhida, ela e
+ * um seletor de modulo; aberta, e o menu. */
 .sidebar--collapsed .sidebar__module-chevron {
   opacity: 0;
   width: 0;
 }
 
 .sidebar--collapsed .sidebar__module-items {
-  display: flex;
-}
-
-.sidebar--collapsed .sidebar__module-items > .sidebar__item,
-.sidebar--collapsed .sidebar__module-items > .sidebar__group > .sidebar__group-header,
-.sidebar--collapsed .sidebar__module-items .sidebar__subitem {
-  padding-left: var(--space-md);
+  display: none;
 }

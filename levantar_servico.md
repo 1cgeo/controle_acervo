@@ -41,11 +41,19 @@ cd /d/desenvolvimento/controle_acervo && npm run dev-client               # inte
 Para trabalhar contra o banco e o auth de **producao** a partir da maquina local, aponte `DB_*` e `AUTH_SERVER` do `config.env` para producao. Vale para ler e depurar; escrever assim mexe em dado real.
 
 ## Smoke tests
+
+**Depois de todo deploy, rode a fumaça inteira.** Ela exercita os tres modulos de ponta a ponta, so com leitura, e sai com codigo 1 se algo falhar (serve de portao num script de deploy):
+
+```bash
+SCA_URL=http://localhost:3015 SCA_USER=<login> SCA_SENHA=<senha> python scripts/fumaca.py
+```
+
+Sao 31 checagens: interface na raiz, login com o catalogo dos tres modulos, dominios e leituras de cada modulo, a consulta publica por localizador (com um pedido REAL, porque com codigo inventado ela mede o 404 e nao a rota), a secao 3 do RPCMTec, os anexos em BYTEA, e as duas colisoes de nome (`/relatorio` e `/arquivo`) que so o prefixo `/api/orcamento/` faz conviver.
+
+Conferencia rapida, sem credencial:
 ```bash
 curl -s http://localhost:3010/api | grep operacional                            # auth (4000 em prod)
 curl -s http://localhost:3015/api | grep operacional                            # SCA
-curl -s http://localhost:3015/api/gerencia/dominio/tipo_produto | head -c 120   # acervo + banco
-curl -s http://localhost:3015/api/orcamento/dominio/natureza_despesa | head -c 120  # orcamento
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3015/                 # interface
 ```
 
