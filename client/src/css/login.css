@@ -379,6 +379,24 @@
   font-size: var(--font-size-sm);
 }
 
+/* Saida discreta para a porta de entrada. Sutil de proposito: a acao principal
+ * desta tela e consultar o pedido, nao entrar no sistema. */
+.consulta-card__voltar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.consulta-card__voltar:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
 @media (max-width: 600px) {
   .login-card,
   .consulta-card {

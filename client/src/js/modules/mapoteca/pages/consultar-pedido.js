@@ -66,6 +66,15 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       textContent: localizador ? 'Consultar outro localizador:' : 'Informe o localizador do pedido:',
     }),
     otherForm,
+    // Saida discreta de volta para a porta de entrada. Quem cai aqui por engano,
+    // ou quem e da DGEO e chegou pelo link do comprovante, nao fica sem caminho:
+    // a consulta e uma rota publica, e sem isto o unico jeito de voltar e editar
+    // a URL. Fica no rodape e em peso leve de proposito, porque a acao principal
+    // desta tela e consultar, nao entrar.
+    el('a', {
+      className: 'consulta-card__voltar',
+      href: '#/login',
+    }, [svgIcon(ICONS.arrowBack, 14), 'Voltar para a tela de entrada']),
   ]);
 
   const page = el('div', { className: 'consulta-page' }, [

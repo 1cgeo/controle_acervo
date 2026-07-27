@@ -88,4 +88,20 @@ describe('renderConsultarPedido', () => {
 
     expect(container.textContent).toContain('Pedido não encontrado');
   });
+
+  // Esta e uma rota PUBLICA: quem chega aqui pode nao ter conta, e quem chegou
+  // por engano ficava sem caminho de volta a nao ser editando a URL.
+  test('tem saida de volta para a tela de entrada, com ou sem localizador', async () => {
+    for (const params of [{ localizador: 'AB12-CD34-EF56' }, {}]) {
+      const container = document.createElement('div');
+      await renderConsultarPedido(container, { params, query: new URLSearchParams() });
+      await flush();
+
+      const voltar = container.querySelector('.consulta-card__voltar');
+      expect(voltar).toBeTruthy();
+      expect(voltar.getAttribute('href')).toBe('#/login');
+      expect(voltar.textContent).toContain('Voltar');
+    }
+  });
+
 });
