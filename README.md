@@ -1,18 +1,26 @@
 # Controle do Acervo (SCA)
 
-Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográfico do Exército Brasileiro (DSG/1CGEO). Gerencia produtos geográficos versionados (cartas, ortoimagens, modelos digitais de elevação, etc.), seus arquivos, volumes de armazenamento e uma mapoteca física para atendimento de pedidos.
+Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográfico do Exército Brasileiro (DSG/1CGEO). Gerencia produtos geográficos versionados (cartas, ortoimagens, modelos digitais de elevação), seus arquivos, volumes de armazenamento, a mapoteca física e o controle orçamentário da divisão.
 
-Para sua utilização é necessária a utilização do [Serviço de Autenticação](https://github.com/1cgeo/auth_server).
+Desde 2026-07-27 o SCA absorveu o antigo SCO (Sistema de Controle Orçamentário). São **três módulos na mesma plataforma**: `acervo`, `mapoteca` e `orcamento`, com um servidor, um banco e uma interface web.
+
+Para sua utilização é necessário o [Serviço de Autenticação](https://github.com/1cgeo/auth_server), que valida a senha e é a fonte dos usuários.
+
+> Regras de projeto, decisões de design deliberadas e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. Este arquivo é a referência: estrutura, stack, comandos, rotas, banco e instalação.
 
 ## Componentes
 
 | Componente | Diretório | Tecnologia | Descrição |
 |---|---|---|---|
 | **Server** | `server/` | Node.js / Express 5 | API REST com PostgreSQL/PostGIS |
-| **Plugin QGIS** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Plugin para QGIS 4 |
-| **Plugin QGIS Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Plugin para QGIS 4: pedidos ativos, download de PDFs para impressão e controle de quantitativos impressos |
-| **Client Dashboard** | `client/` | Vanilla JS / Vite | SPA do dashboard administrativo |
-| **Client Mapoteca** | `mapoteca/client/` | Vanilla JS / Vite | SPA da mapoteca: dashboard, pedidos, estoque, consumo e plotters (porta dev 3001) |
+| **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os três módulos |
+| **Plugin QGIS do Acervo** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Catalogação, carga e diagnóstico |
+| **Plugin QGIS da Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Pedidos ativos, download de PDF e quantitativo impresso |
+| **CLI do Acervo** | `acervo_cli/` | Node (dependência zero) | Interface de agente do módulo acervo |
+| **CLI da Mapoteca** | `mapoteca_cli/` | Node (dependência zero) | Interface de agente do módulo mapoteca |
+| **CLI do Orçamento** | `orcamento_cli/` | Node (dependência zero) | Interface de agente do módulo orçamento |
+
+Os três CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
 
 ---
 
@@ -27,7 +35,7 @@ Para sua utilização é necessária a utilização do [Serviço de Autenticaç�
 ### Instalação
 
 ```bash
-# Instalar dependências de todos os componentes
+# Instalar dependências do servidor e da interface
 npm run install-all
 
 # Configuração interativa (cria banco de dados e config.env)
@@ -39,39 +47,31 @@ node create_config.js --db-server localhost --db-port 5432 --db-user postgres --
 
 ### Execução
 
-> Para subir o ambiente completo de desenvolvimento (Auth Server → SCA Server → clients web), com a ordem de inicialização, smoke tests e troubleshooting, veja **[`levantar_servico.md`](levantar_servico.md)**. O SCA Server **não inicia** se o Serviço de Autenticação não estiver operacional.
+> Para subir o ambiente completo (Auth Server, servidor, interface), com ordem de inicialização, smoke tests e troubleshooting, veja **[`levantar_servico.md`](levantar_servico.md)**. O servidor **não inicia** se o Serviço de Autenticação não estiver operacional.
 
 ```bash
-# Desenvolvimento (HTTP, com hot-reload via nodemon)
-cd server && npm run dev
-
-# Desenvolvimento (HTTPS)
-cd server && npm run dev-https
-
-# Produção (HTTP, via PM2)
-npm start
-
-# Produção (HTTPS, via PM2)
-cd server && npm run production-https
+cd server && npm run dev        # Desenvolvimento (HTTP, hot-reload por nodemon)
+cd server && npm run dev-https  # Desenvolvimento (HTTPS)
+npm start                       # Produção (HTTP, via PM2)
+npm run deploy                  # Build da interface + PM2 startOrReload + pm2 save
 ```
 
 ### Testes
 
 ```bash
 cd server
-
-npm test              # Suite completa
-npm run test:unit     # Testes unitários
-npm run test:integration  # Testes de integração
-npm run test:routes   # Testes de rotas
-npm run test:coverage # Relatório de cobertura
+npm test                  # Suite completa
+npm run test:unit         # Unitários
+npm run test:integration  # Integração (exige PostgreSQL)
+npm run test:routes       # Rotas
+npm run test:coverage     # Cobertura
 ```
 
-Os testes utilizam `config_testing.env` como arquivo de configuração.
+Os testes usam `config_testing.env`. O `globalSetup` (`server/src/__tests__/setup.js`) cria o banco de teste aplicando `er/*.sql` na mesma ordem do `create_config.js`.
 
-### Variáveis de Ambiente
+### Variáveis de ambiente
 
-Arquivo: `server/config.env` (gerado pelo `npm run config`)
+Arquivo `server/config.env`, gerado pelo `npm run config`.
 
 | Variável | Tipo | Obrigatória | Descrição |
 |---|---|---|---|
@@ -81,36 +81,54 @@ Arquivo: `server/config.env` (gerado pelo `npm run config`)
 | `DB_NAME` | string | Sim | Nome do banco de dados |
 | `DB_USER` | string | Sim | Usuário de escrita do banco |
 | `DB_PASSWORD` | string | Sim | Senha do usuário de escrita |
-| `DB_USER_READONLY` | string | Não | Usuário somente leitura |
+| `DB_USER_READONLY` | string | Não | Usuário somente leitura (URI de camada do QGIS) |
 | `DB_PASSWORD_READONLY` | string | Não | Senha do usuário somente leitura |
 | `JWT_SECRET` | string | Sim | Segredo para assinatura JWT |
-| `AUTH_SERVER` | URI | Sim | URL do servidor de autenticação |
-| `USE_PROXY` | boolean | Não | Usar proxy do sistema nas chamadas ao auth server (default: `false`) |
+| `AUTH_SERVER` | URI | Sim | URL do serviço de autenticação |
+| `USE_PROXY` | boolean | Não | Usar proxy do sistema nas chamadas ao auth (default `false`) |
 
 ### Endpoints da API
 
-Todos os endpoints são servidos sob `/api`. Documentação Swagger disponível em `GET /api/api_docs`.
+Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
+
+Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio, que antes eram anônimos. Endpoints de plataforma (usuários, views materializadas, limpeza de download) exigem `verifyAdmin`. As únicas rotas sem autenticação são `/api/integracao/*` e a consulta de pedido por localizador, as duas por decisão registrada no `CLAUDE.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
-| `/api/login` | login | Autenticação (JWT, expiração: 1h) |
+| `/api/login` | plataforma | Autenticação (JWT, expiração 1h). Devolve `perfis` e `modulos` |
+| `/api/usuarios` | plataforma | Gerenciamento de usuários e concessão de perfil por módulo (admin) |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
-| `/api/arquivo` | arquivo | Gerenciamento de upload/download de arquivos |
-| `/api/produtos` | produto | CRUD de produtos e versões |
-| `/api/projetos` | projeto | Gerenciamento de projetos e lotes |
-| `/api/volumes` | volume | Configuração de volumes de armazenamento |
-| `/api/usuarios` | usuario | Gerenciamento de usuários (admin) |
-| `/api/gerencia` | gerencia | Dados de domínio, verificação de inconsistências |
-| `/api/dashboard` | dashboard | Analytics do acervo (consumido pelo `client/`) |
-| `/api/mapoteca` | mapoteca | CRUD da mapoteca, relatórios anuais (CSV) e controle de impressão |
-| `/api/mapoteca/dashboard` | mapoteca/dashboard | Analytics da mapoteca |
-| `/api/integracao` | integracao | Rotas públicas (read-only) para o vault da DGEO: cobertura do acervo, produtos finalizados no mês e atendimentos da mapoteca (RPCMTec) |
+| `/api/arquivo` | acervo | Upload e download de arquivos |
+| `/api/produtos` | acervo | CRUD de produtos e versões |
+| `/api/projetos` | acervo | Projetos e lotes |
+| `/api/volumes` | acervo | Volumes de armazenamento |
+| `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
+| `/api/dashboard` | acervo | Analytics do acervo |
+| `/api/relatorio` | acervo | RPCMTec, seção do acervo |
+| `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
+| `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
+| `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
+| `/api/orcamento/configuracao` | orcamento | Singleton: UASG, CODOM, ano de referência |
+| `/api/orcamento/metas` | orcamento | Metas do PIT que o crédito financia |
+| `/api/orcamento/dfd` | orcamento | DFD e itens (o PCA do ano é o conjunto de DFDs do ano) |
+| `/api/orcamento/pdr` | orcamento | Itens do PDR do ano |
+| `/api/orcamento/notas_credito` | orcamento | Notas de crédito (NC) |
+| `/api/orcamento/notas_empenho` | orcamento | Notas de empenho (NE) |
+| `/api/orcamento/liquidacoes` | orcamento | Liquidações de NE |
+| `/api/orcamento/recebimentos` | orcamento | Recebimento de material por NE |
+| `/api/orcamento/licitacoes` | orcamento | Licitações (GCALC DSG, própria, participante) |
+| `/api/orcamento/rpnp` | orcamento | Restos a pagar não processados |
+| `/api/orcamento/relatorio` | orcamento | RPCMTec seção 3 (execução do PDR), tabelas 3.1 a 3.7 |
+| `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
+| `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet) |
+
+`/api/mapoteca/dashboard` é montada ANTES de `/api/mapoteca` em `routes.js`, para o Express casar o prefixo mais específico primeiro. Preserve essa ordem ao acrescentar rota.
 
 **Formato padrão de resposta:**
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.5.0",
   "success": true,
   "message": "Mensagem descritiva",
   "dados": { },
@@ -120,66 +138,115 @@ Todos os endpoints são servidos sob `/api`. Documentação Swagger disponível 
 
 ### Segurança
 
-- Helmet (headers de segurança HTTP; CSP desabilitado para servir o SPA e o Swagger UI)
-- Rate limiting: 200 requisições por 60 segundos por IP
+- Helmet (CSP desabilitado para servir o SPA e o Swagger UI)
+- Limite de 200 requisições por 60 segundos por IP
 - Proteção contra HTTP Parameter Pollution (HPP)
-- CORS habilitado
-- Cache desabilitado (no-cache)
-- Tokens JWT com expiração de 1 hora
+- CORS habilitado, cache desabilitado
+- JWT com expiração de 1 hora, e o perfil relido do banco a cada requisição
 
-### Jobs Agendados
+### Jobs agendados
 
-Um cron job roda a cada hora para:
-- Limpar tokens de download expirados
-- Limpar sessões de upload expiradas
+Um cron de hora em hora limpa tokens de download e sessões de upload expiradas.
 
-### Estrutura do Servidor
+### Estrutura do servidor
 
 ```
 server/src/
 ├── index.js              # Entry point (verifica versão do Node.js)
-├── main.js               # Sequência de boot: DB → auth → cron → start
-├── config.js             # Configuração com validação Joi
+├── main.js               # Boot: DB -> auth -> cron -> start
+├── config.js             # Configuração com validação Joi (VERSION, MIN_DATABASE_VERSION)
 ├── routes.js             # Agregador de rotas
 ├── server/               # App Express, Swagger
-├── database/             # Conexão pg-promise, verificação de versão
-├── authentication/       # Integração com servidor de autenticação
-├── login/                # Middleware JWT
+├── database/             # Conexão pg-promise, checagem de versão, refresh de views
+├── authentication/       # Integração com o serviço de autenticação
+├── login/                # JWT, validate_token, verify_perfil, verify_admin
 ├── acervo/               # Endpoints do acervo
-├── arquivo/              # Upload/download de arquivos
+├── arquivo/              # Upload e download de arquivos
 ├── produto/              # CRUD de produtos
 ├── projeto/              # Projetos e lotes
 ├── volume/               # Volumes de armazenamento
-├── usuario/              # Gerenciamento de usuários
-├── gerencia/             # Dados de domínio e operações admin
-├── mapoteca/             # CRUD da mapoteca + dashboard + relatórios CSV + impressão
+├── usuario/              # Usuários e perfis (plataforma)
+├── gerencia/             # Domínios e operações de manutenção
 ├── dashboard/            # Dashboard do acervo
+├── relatorio/            # RPCMTec, seção do acervo
+├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
+├── integracao/           # Rotas públicas para o vault da DGEO
+├── orcamento/            # Módulo orçamento (13 features + utils próprio)
 └── utils/                # Utilitários compartilhados
 ```
 
-Cada módulo segue o padrão de 4 arquivos:
+Cada feature segue o padrão de 4 arquivos (`index.js`, `*_ctrl.js`, `*_route.js`, `*_schema.js`).
+
+---
+
+## Interface web
+
+Uma SPA só, em `client/`, servida na raiz pelo Express. Trocar de módulo é trocar de rota (`#/acervo/...`, `#/mapoteca/...`, `#/orcamento/...`), sem recarregar e sem novo login. O seletor mostra só os módulos em que a pessoa tem perfil; quem é administrador global vê os três.
 
 ```
-modulo/
-├── index.js              # Re-exporta a rota
-├── modulo_ctrl.js        # Controller: lógica de negócio, queries SQL
-├── modulo_route.js       # Definições de rotas com middleware
-└── modulo_schema.js      # Schemas de validação Joi
+client/src/js/
+├── index.js          # Tema, roteador, layout, rotas de plataforma
+├── router.js         # Roteador hash com guardas
+├── store/            # auth-store: sessão única, prefixo @sca-*
+├── services/         # api-client, cache, plataforma-service (login e usuários)
+├── utils/            # dom, formatação, tema, toast
+├── components/       # layout, data-table, modal, form-fields, charts, tabs, export-bar, wizard
+├── pages/            # login, usuarios, 404, não autorizado
+└── modules/
+    ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
+    ├── acervo/       # Dashboard com 4 abas
+    ├── mapoteca/     # Clientes, pedidos, materiais, estoque, consumo, plotters, relatórios
+    └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, relatório, configuração
 ```
 
-### Banco de Dados
+Para acrescentar página, leia `client/src/js/modules/registry.js`: um manifesto por módulo declara menu, rotas e perfil mínimo, e o roteador não precisa ser tocado.
 
-Schemas SQL em `er/`, executados nesta ordem para instalação limpa:
+```bash
+npm run dev-client    # Vite na porta 3003, com proxy /api para 3015
+npm run build         # Builda client/ e copia para server/src/build/
+npm run test-client   # vitest + jsdom
+```
 
-1. `versao.sql` — Versionamento do banco
-2. `dominio.sql` — Tabelas de domínio/lookup
-3. `dgeo.sql` — Schema de usuários
-4. `acervo.sql` — Schema principal do acervo
-5. `acompanhamento.sql` — Visões materializadas
-6. `mapoteca.sql` — Schema da mapoteca
-7. `permissao.sql` — Permissões do banco
+Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e escuro por `[data-theme]`, gráficos com Chart.js em chunk separado. Em teste, o `chart.js` é substituído pelo dublê em `components/charts/chart-stub.js`, porque o jsdom não implementa canvas.
 
-**Modelo de dados principal:**
+---
+
+## Banco de dados
+
+### Schemas
+
+| Schema | Conteúdo |
+|---|---|
+| `acervo` | projeto, lote, produto, versao, arquivo, download, sessões de upload |
+| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
+| `orcamento` | 14 tabelas: configuracao, meta_pit, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, relatorio_rpcmtec, arquivo |
+| `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
+| `dgeo` | `usuario` e `usuario_perfil` |
+| `public` | Versão do banco e estilos de camada do QGIS |
+
+### Instalação nova
+
+Arquivos em `er/`, nesta ordem:
+
+1. `versao.sql`: versão do banco
+2. `dominio.sql`: domínios dos três módulos
+3. `dgeo.sql`: usuários e perfis
+4. `acervo.sql`: schema principal
+5. `acompanhamento.sql`: visões materializadas
+6. `mapoteca.sql`: mapoteca
+7. `orcamento.sql`: orçamento
+8. `permissao.sql`: permissões
+9. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
+
+`create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois.
+
+A versão do schema é **1.5.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+
+### Atualização de banco existente
+
+`er/` descreve só a instalação nova. O caminho de atualização vive em `migrations/`, um arquivo por mudança, nomeado por data e aplicado em ordem. As migrações são aditivas e idempotentes.
+
+### Modelo principal
 
 ```
 projeto (1) → (N) lote → (N) versao → (N) arquivo
@@ -187,9 +254,16 @@ projeto (1) → (N) lote → (N) versao → (N) arquivo
                           produto (1)
 ```
 
-- **produto**: produto geográfico com geometria PostGIS (POLYGON, EPSG:4674)
-- **versao**: edição versionada de um produto (metadados JSONB)
-- **arquivo**: arquivos físicos com checksums e referência a volumes
+- **produto**: geometria PostGIS (POLYGON, EPSG:4674)
+- **versao**: edição versionada, metadado em JSONB, formato validado por trigger
+- **arquivo**: arquivo físico com checksum, volume e situação de carregamento
+- **download e upload**: transferência por token, com expiração automática
+
+O schema `orcamento` não tem geometria, e liga usuário só por `uuid`.
+
+### Visões materializadas
+
+`acervo.mv_produto_<tipo>_<escala>` agregam produto, versão e arquivo. São atualizadas por trigger em `produto`, `versao` e `arquivo` (`FOR EACH STATEMENT` com tabela de transição). Atualização manual por `POST /api/acervo/refresh_materialized_views` e criação por `POST /api/acervo/create_materialized_views`, as duas de administrador.
 
 ---
 
@@ -215,146 +289,96 @@ Copie a pasta `ferramentas_acervo/` para o diretório de plugins do QGIS:
 Scripts de setup criam symlinks para desenvolvimento live:
 
 ```bash
-# Windows (executar como administrador)
-ferramentas_acervo/.dev/setup_dev_windows.bat
-
-# Linux
-ferramentas_acervo/.dev/setup_dev_linux.sh
-
-# macOS
-ferramentas_acervo/.dev/setup_dev_macos.sh
+ferramentas_acervo/.dev/setup_dev_windows.bat   # Windows (como administrador)
+ferramentas_acervo/.dev/setup_dev_linux.sh      # Linux
+ferramentas_acervo/.dev/setup_dev_macos.sh      # macOS
 ```
 
 ### Autenticação
 
-1. Ao abrir o plugin, o diálogo de login solicita: URL do servidor, usuário e senha
-2. O plugin envia `POST /api/login` com as credenciais
-3. Recebe um token JWT que é usado em todas as requisições subsequentes
-4. Em caso de expiração (HTTP 401), re-autenticação automática é tentada silenciosamente
-5. Opção "Lembrar-me" persiste credenciais no QgsSettings
+1. O diálogo de login pede URL do servidor, usuário e senha
+2. O plugin envia `POST /api/login` e recebe um JWT
+3. Em 401, tenta re-autenticar em silêncio com as credenciais salvas
+4. "Lembrar-me" persiste as credenciais no `QgsSettings`
 
 ### Funcionalidades
 
-O plugin organiza suas funcionalidades em categorias no painel lateral:
-
-#### Funções Gerais (todos os usuários)
-
-| Funcionalidade | Descrição |
+| Categoria | Funcionalidades |
 |---|---|
-| Carregar Camadas de Produtos | Carrega visões materializadas (`mv_produto_*`) como camadas vetoriais no QGIS |
-| Informações do Produto | Visualização detalhada: 3 abas (Visão Geral, Histórico de Versões, Relacionamentos) com download e ações de edição |
-| Download de Produtos | Seleciona feições da camada ativa e faz download dos arquivos com verificação SHA-256 |
-| Download da Situação Geral | Baixa snapshot GeoJSON da situação geral do acervo |
-| Buscar Produtos | Busca de produtos com filtros (tipo, escala, projeto, lote) e paginação |
-| Visualizar Relacionamentos entre Versões | Listagem de relacionamentos entre versões com exportação CSV |
-| Configurações | Configurações do plugin |
+| Funções Gerais | Carregar camadas de produtos, informações do produto, download, situação geral, busca, relacionamentos entre versões, configurações |
+| Funções de Administrador | Adicionar produto, adicionar produto com versão histórica, carregar produtos |
+| Administração Avançada | Volumes, relacionamento volume e tipo de produto, projetos, lotes, usuários |
+| Operações em Lote | Arquivos, produtos completos (prepare, transfer, confirm), versões, criação de produtos, versões históricas, relacionamentos |
+| Diagnóstico e Manutenção | Inconsistências, limpeza de downloads, visões materializadas, arquivos com problema, arquivos e downloads excluídos, sessões de upload |
 
-#### Funções de Administrador
+### Transferência de arquivos
 
-| Funcionalidade | Descrição |
-|---|---|
-| Adicionar Produto | Cria um novo produto geográfico |
-| Adicionar Produto com Versão Histórica | Cria produto com versão histórica associada |
-| Carregar Produtos | Carrega camadas de produtos no QGIS (acesso pelo menu de administrador) |
+**Download:** prepara pela API (recebe token e caminho), `FileTransferThread` copia (cópia direta no Windows, `smbclient` no Linux), 3 tentativas com espera exponencial (2s, 4s, 8s), confere o SHA-256 e confirma pela API.
 
-#### Administração Avançada
+**Upload:** valida a camada tabular no QGIS, calcula SHA-256 e tamanho, prepara pela API (recebe `session_uuid` e destino), copia e confirma.
 
-| Funcionalidade | Descrição |
-|---|---|
-| Gerenciar Volumes | CRUD de volumes de armazenamento |
-| Gerenciar Relacionamento Volume e Tipo de Produto | Associações volume/tipo de produto |
-| Gerenciar Projetos | CRUD de projetos |
-| Gerenciar Lotes | CRUD de lotes dentro de projetos |
-| Gerenciar Usuários | Visualização/edição de usuários, importação do servidor de autenticação |
-
-#### Diagnóstico e Manutenção
-
-| Funcionalidade | Descrição |
-|---|---|
-| Verificar Inconsistências | Executa verificação de inconsistências no servidor |
-| Limpar Downloads Expirados | Remove tokens de download expirados |
-| Atualizar Visões Materializadas | Atualiza visões materializadas do banco |
-| Criar Visão Materializada | Cria novas visões materializadas |
-| Gerenciar Arquivos com Problemas | Gerencia arquivos com problemas reportados |
-| Gerenciar Arquivos Excluídos | Revisão de arquivos excluídos |
-| Visualizar Uploads com Problemas | Sessões de upload com falha |
-| Gerenciar Sessões de Upload | Visualiza e cancela sessões de upload ativas |
-| Gerenciar Downloads Excluídos | Revisão de downloads excluídos com paginação |
-
-#### Operações em Lote
-
-| Funcionalidade | Descrição |
-|---|---|
-| Adicionar Arquivos em Lote | Carregamento de arquivos em lote |
-| Adicionar Produtos Completos em Lote | Upload em 2 fases (prepare → transfer → confirm) a partir de camada tabular |
-| Adicionar Versões a Produtos em Lote | Adiciona versões a produtos existentes em lote |
-| Criar Produtos em Lote | Criação de produtos em lote |
-| Adicionar Produtos com Versões Históricas em Lote | Produtos com versões históricas em lote |
-| Criar Relacionamentos entre Versões em Lote | Criação de relacionamentos em lote |
-| Adicionar Versões Históricas em Lote | Versões históricas em lote |
-
-### Transferência de Arquivos
-
-**Download:**
-1. Prepara download via API (recebe tokens e caminhos)
-2. `FileTransferThread` copia o arquivo (Windows: cópia direta/shell; Linux: `smbclient`)
-3. 3 tentativas com backoff exponencial (2s, 4s, 8s)
-4. Verificação de checksum SHA-256 após transferência
-5. Confirmação de download via API
-
-**Upload:**
-1. Validação da estrutura da camada tabular no QGIS
-2. Cálculo de checksum SHA-256 e tamanho por arquivo
-3. Prepara upload via API (recebe `session_uuid` e caminhos de destino)
-4. Copia arquivos para os caminhos designados
-5. Confirmação de upload via API
-
-### Estrutura do Plugin
+### Estrutura do plugin
 
 ```
 ferramentas_acervo/
-├── __init__.py           # classFactory() - entry point QGIS
-├── main.py               # Classe principal do plugin
-├── config.py             # Nome e versão do plugin
-├── metadata.txt          # Metadados QGIS
+├── __init__.py           # classFactory(), entry point do QGIS
+├── main.py               # Classe principal
+├── config.py             # Nome e versão
+├── metadata.txt          # Manifesto do QGIS
 ├── core/
-│   ├── api_client.py     # Cliente HTTP (requests + JWT)
-│   ├── settings.py       # Wrapper QgsSettings
-│   ├── file_transfer.py  # Thread de transferência (QThread)
-│   ├── authSMB.py        # Diálogo de credenciais SMB (Linux)
-│   ├── getFileBySMB.py   # Script de cópia via SMB (Linux)
-│   └── ui/               # Forms Qt Designer do core
+│   ├── api_client.py     # Cliente HTTP (requests + JWT, re-login em 401)
+│   ├── settings.py       # Wrapper de QgsSettings
+│   ├── file_transfer.py  # Thread de transferência
+│   ├── authSMB.py        # Diálogo de credencial SMB (Linux)
+│   └── getFileBySMB.py   # Cópia via SMB (Linux)
 └── gui/
-    ├── panel.py           # Registro central de funcionalidades
-    ├── dockable_panel.py  # Painel dockable principal
-    ├── login_dialog.py    # Diálogo de login
-    └── [pastas de diálogos]/  # Uma pasta por funcionalidade (.py + .ui)
+    ├── panel.py          # PANEL_MAPPING, registro das funcionalidades
+    ├── dockable_panel.py # Painel principal
+    ├── login_dialog.py   # Login
+    └── [uma pasta por funcionalidade]/   # .py + .ui
 ```
 
 ---
 
 ## Plugin QGIS da Mapoteca
 
-Plugin separado (`ferramentas_mapoteca/`, QGIS >= 4.0/Qt6, mesma instalação do plugin do acervo) voltado à operação de impressão da mapoteca:
+Plugin separado (`ferramentas_mapoteca/`, QGIS >= 4.0/Qt6, mesma instalação), voltado à operação de impressão:
 
-1. **Login** com o mesmo servidor/autenticação do plugin do acervo (re-login automático em 401)
-2. **Pedidos ativos** com status de impressão por pedido (`x/y itens impressos`)
-3. **Download dos PDFs** das cartas de um pedido para impressão (sequencial, com verificação SHA-256), gravando um manifesto `quantitativos_impressao.csv` com o quanto falta imprimir de cada arquivo
-4. **Registro de impressão** por item (quem imprimiu, quando, quantas cópias) com histórico — operadores diferentes podem continuar o trabalho em dias distintos
+1. **Login** no mesmo servidor, com re-login automático em 401
+2. **Pedidos ativos**, com status de impressão por pedido
+3. **Download dos PDFs** das cartas de um pedido, sequencial e com verificação SHA-256, gravando o manifesto `quantitativos_impressao.csv` com o que falta imprimir de cada arquivo
+4. **Registro de impressão** por item (quem, quando, quantas cópias), com histórico, para que operadores diferentes continuem o trabalho em dias distintos
+
+Ele usa grupo próprio de `QgsSettings` (`"Mapoteca - Controle do Acervo"`), com as mesmas chaves do plugin do acervo.
 
 ---
 
-## Build do Cliente Web
+## CLIs de agente
+
+Um por módulo, todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
 
 ```bash
-# Builda o client/ (dashboard do acervo) e copia para server/src/build/
-npm run build
-
-# Builda o mapoteca/client/ (gera mapoteca/client/dist/)
-npm run build-mapoteca
+node acervo_cli/acervo.js --help
+node mapoteca_cli/mapoteca.js --help
+node orcamento_cli/orcamento.js --help
+node orcamento_cli/orcamento.js schema nota_credito   # contrato formatado, do Joi vivo
 ```
 
-O Express serve os arquivos estáticos buildados do dashboard do acervo com fallback SPA para `index.html`. O build do client da mapoteca (`mapoteca/client/dist/`) ainda não é servido pelo Express — sirva-o com um servidor de estáticos próprio (ex: nginx) ou via `npm run preview` em `mapoteca/client/`.
+Os três compartilham o cache de sessão em `~/.sca`: um login serve os três. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
+
+---
+
+## Documentação
+
+| Arquivo | Conteúdo |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Regras do projeto, decisões deliberadas, modelo de autorização, padrões de código |
+| [`levantar_servico.md`](levantar_servico.md) | Subir o ambiente, portas, smoke tests, troubleshooting |
+| `docs/api_documentation.md` | Documentação dos endpoints |
+| `docs/tutorial_configuracao_inicial.md` | Configuração inicial passo a passo |
+| `docs/tutorial_client_dashboard.md` | Uso do dashboard web |
+| `docs/fluxos_usuario_plugin.md` | Fluxos de usuário do plugin |
+| `docs/regras_carga_produtos.md` | Regras de carga de produtos |
 
 ---
 
