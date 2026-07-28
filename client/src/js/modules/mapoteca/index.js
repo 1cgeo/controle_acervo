@@ -60,7 +60,10 @@ export default {
     { path: '/clientes', render: renderClientesList, perfil: 'consulta' },
     { path: '/clientes/:id', render: renderClienteDetails, perfil: 'consulta' },
     { path: '/pedidos', render: renderPedidosList, perfil: 'consulta' },
-    { path: '/pedidos/novo', render: renderPedidoWizard, perfil: 'consulta' },
+    // O wizard existe SO para criar, e POST /pedido e gerente. Com 'consulta'
+    // aqui, quem nao pode criar percorria as tres etapas e so descobria no
+    // botao de confirmar, perdendo tudo o que digitou.
+    { path: '/pedidos/novo', render: renderPedidoWizard, perfil: 'gerente' },
     { path: '/pedidos/:id', render: renderPedidoDetails, perfil: 'consulta' },
     { path: '/materiais', render: renderMateriaisList, perfil: 'consulta' },
     { path: '/materiais/:id', render: renderMaterialDetails, perfil: 'consulta' },

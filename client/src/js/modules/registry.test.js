@@ -3,6 +3,7 @@ import { saveAuth } from '@store/auth-store.js';
 import {
   MODULOS, getModulo, modulosPortados, modulosAcessiveis,
   moduloDaRota, rotaInicial, primeiroModuloAcessivel,
+  getRota, podeAbrirRota,
 } from './registry.js';
 
 const CATALOGO = [
@@ -92,5 +93,42 @@ describe('registry: rotas', () => {
   test('a raiz aponta para o primeiro modulo acessivel', () => {
     logar({ perfis: { orcamento: 2 } });
     expect(rotaInicial(primeiroModuloAcessivel())).toBe('/orcamento/dashboard');
+  });
+});
+
+describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
+  test('rota admin so abre para o administrador global', () => {
+    logar({ perfis: { orcamento: 3 } });
+    expect(podeAbrirRota('orcamento', '/configuracao')).toBe(false);
+
+    logar({ administrador: true });
+    expect(podeAbrirRota('orcamento', '/configuracao')).toBe(true);
+  });
+
+  test('rota de consulta abre para qualquer nivel do modulo', () => {
+    logar({ perfis: { orcamento: 1 } });
+    expect(podeAbrirRota('orcamento', '/dfd')).toBe(true);
+  });
+
+  test('rota com nivel minimo respeita a hierarquia dentro do modulo', () => {
+    // O wizard de pedido e gerente porque POST /pedido e gerente: quem nao pode
+    // criar nao percorre as tres etapas para perder tudo no fim.
+    logar({ perfis: { mapoteca: 2 } });
+    expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(true);
+    expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(false);
+
+    logar({ perfis: { mapoteca: 3 } });
+    expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(true);
+  });
+
+  test('perfil em OUTRO modulo nao abre a rota deste', () => {
+    logar({ perfis: { acervo: 3 } });
+    expect(podeAbrirRota('orcamento', '/dfd')).toBe(false);
+  });
+
+  test('caminho que nao e rota registrada fica para o guarda decidir', () => {
+    logar({ perfis: { orcamento: 1 } });
+    expect(getRota('orcamento', '/nao-existe')).toBeNull();
+    expect(podeAbrirRota('orcamento', '/nao-existe')).toBe(true);
   });
 });

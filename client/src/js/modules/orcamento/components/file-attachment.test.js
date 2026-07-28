@@ -15,6 +15,7 @@ vi.mock('@utils/toast.js', () => ({
 }));
 
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
+import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -35,6 +36,9 @@ describe('createFileAttachment', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     vi.clearAllMocks();
+    // Anexar e operador e remover e gerente. Os testes abaixo exercitam os
+    // dois, entao entram como gerente; o gate em si tem teste proprio no fim.
+    logarComo({ orcamento: GERENTE });
   });
 
   test('multi (PDR): upload imediato adiciona o arquivo a lista', async () => {
@@ -96,5 +100,69 @@ describe('createFileAttachment', () => {
 
     expect(svc.deleteArquivo).toHaveBeenCalledWith(9);
     expect(names(w.element)).toEqual([]);
+  });
+});
+
+// O widget e usado em NC, DFD e PDR, entao o gate mora nele e vale nos tres de
+// uma vez. Baixar e consulta e nunca some; anexar e operador; remover e gerente.
+describe('createFileAttachment: o que cada perfil ve', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  test('consulta ve a lista e o botao de baixar, sem anexar nem remover', async () => {
+    logarComo({ orcamento: CONSULTA });
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'nc.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 5 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    expect(names(w.element)).toEqual(['nc.pdf']);
+    expect(fileInputOf(w.element)).toBeNull();
+    // Sobra apenas o botao de baixar na linha do arquivo.
+    expect(w.element.querySelectorAll('.file-attach__row-actions button')).toHaveLength(1);
+  });
+
+  test('operador anexa, mas nao remove o que ja esta salvo', async () => {
+    logarComo({ orcamento: OPERADOR });
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'nc.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 5 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    expect(fileInputOf(w.element)).not.toBeNull();
+    expect(w.element.querySelectorAll('.file-attach__row-actions button')).toHaveLength(1);
+  });
+
+  test('gerente anexa e remove', async () => {
+    logarComo({ orcamento: GERENTE });
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'nc.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 5 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    expect(fileInputOf(w.element)).not.toBeNull();
+    // Baixar + remover.
+    expect(w.element.querySelectorAll('.file-attach__row-actions button')).toHaveLength(2);
+  });
+
+  // Arquivo ainda na mao, antes de existir o registro pai: tirar da lista nao
+  // chama rota nenhuma, entao nao depende de gerente.
+  test('operador retira o arquivo que ainda nao foi enviado', async () => {
+    logarComo({ orcamento: OPERADOR });
+
+    const w = createFileAttachment({ mode: 'single', vinculo: null });
+    document.body.appendChild(w.element);
+    await flush();
+
+    setFile(fileInputOf(w.element), new File(['x'], 'novo.pdf'));
+    await flush();
+
+    expect(names(w.element)).toEqual(['novo.pdf']);
+    expect(w.element.querySelectorAll('.file-attach__row-actions button')).toHaveLength(1);
   });
 });

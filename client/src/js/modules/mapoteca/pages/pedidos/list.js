@@ -5,10 +5,14 @@ import { chipSituacaoPedido } from '@components/status-chip.js';
 import { getPedidos, deletePedidos } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 
 /**
  * Pedidos list page (#/pedidos): table with search, status chips, printing
  * progress, link to details, delete with confirmation and "Novo pedido".
+ *
+ * Criar e excluir pedido sao gerente no servidor, entao quem tem consulta ou
+ * operador ve a lista e o detalhe, e nada mais.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -28,6 +32,7 @@ export async function renderPedidosList(container, _ctx) {
   let disposed = false;
   let todosPedidos = [];
   let filtroAtual = 'todos';
+  const pode = permissoes('mapoteca');
 
   function aplicarFiltro() {
     const filtro = FILTROS.find(f => f.id === filtroAtual) || FILTROS[0];
@@ -132,25 +137,25 @@ export async function renderPedidosList(container, _ctx) {
         title: 'Ver detalhes',
         onClick: (row) => { location.hash = `/mapoteca/pedidos/${row.id}`; },
       },
-      {
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => excluirPedido(row),
-      },
+      }] : []),
     ],
   });
 
   container.appendChild(el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Pedidos' }),
-      el('div', { className: 'page__actions' }, [
+      el('div', { className: 'page__actions' }, pode.gerente ? [
         el('button', {
           className: 'btn btn--primary',
           type: 'button',
           onClick: () => { location.hash = '/mapoteca/pedidos/novo'; },
         }, [svgIcon(ICONS.add, 16), 'Novo pedido']),
-      ]),
+      ] : []),
     ]),
     el('div', { className: 'filtro-barra' }, [
       el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar por tipo de cliente' }, botoesFiltro),

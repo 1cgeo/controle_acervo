@@ -6,6 +6,7 @@ import {
   deleteArquivo,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { showError, showSuccess } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 
 const ACCEPT_PDF = '.pdf';
 const ACCEPT_PDR = '.pdf,.xlsx,.xls,.csv,.ods';
@@ -26,6 +27,11 @@ const ACCEPT_PDR = '.pdf,.xlsx,.xls,.csv,.ods';
  * @param {string} [opts.label]
  * @param {string} [opts.buttonLabel] - texto do botao quando vazio (ex.: 'Selecionar PDF')
  * @returns {{ element: HTMLElement, flush: (vinculo:Object)=>Promise<any>, hasPending: ()=>boolean }}
+ *
+ * PERFIL: o widget e usado em NC, DFD e PDR, entao o gate mora AQUI, uma vez,
+ * em vez de em cada tela que o chama. Anexar e POST /orcamento/arquivos
+ * (operador) e remover e DELETE (gerente); baixar e consulta e nunca some.
+ * Quem so consulta ve a lista de anexos e o botao de baixar, nada mais.
  */
 export function createFileAttachment({
   mode = 'single',
@@ -37,6 +43,7 @@ export function createFileAttachment({
   const isMulti = mode === 'multi';
   const acceptAttr = accept || (isMulti ? ACCEPT_PDR : ACCEPT_PDF);
   const hasVinculo = !!(vinculo && Object.values(vinculo).some((v) => v != null));
+  const pode = permissoes('orcamento');
 
   let arquivos = [];
   let pendingFile = null;
@@ -63,7 +70,7 @@ export function createFileAttachment({
     label ? el('div', { className: 'file-attach__title', textContent: label }) : null,
     listEl,
     emptyEl,
-    el('div', { className: 'file-attach__actions' }, [pickBtn, fileInput]),
+    el('div', { className: 'file-attach__actions' }, pode.operador ? [pickBtn, fileInput] : []),
   ]);
 
   function actionBtn(icon, title, onClick, danger = false) {
@@ -79,13 +86,20 @@ export function createFileAttachment({
     );
   }
 
-  function fileRow(name, { onDownload, onRemove }) {
+  /**
+   * @param {string} name
+   * @param {{onDownload:Function|null, onRemove:Function, podeRemover?:boolean}} acoes
+   *   podeRemover: o arquivo ainda NAO enviado (pendingFile) sempre pode sair,
+   *   porque tirar da mao nao chama rota nenhuma. Ja o anexo salvo depende de
+   *   DELETE, que e gerente.
+   */
+  function fileRow(name, { onDownload, onRemove, podeRemover = true }) {
     return el('div', { className: 'file-attach__item' }, [
       svgIcon(ICONS.description, 18),
       el('span', { className: 'file-attach__name', textContent: name, title: name }),
       el('span', { className: 'file-attach__row-actions' }, [
         onDownload ? actionBtn(ICONS.download, 'Baixar', onDownload) : null,
-        actionBtn(ICONS.delete, 'Remover', onRemove, true),
+        podeRemover ? actionBtn(ICONS.delete, 'Remover', onRemove, true) : null,
       ]),
     ]);
   }
@@ -109,6 +123,7 @@ export function createFileAttachment({
                 showError(e.message || 'Erro ao baixar arquivo')
               ),
             onRemove: () => onRemoveExisting(a),
+            podeRemover: pode.gerente,
           })
         );
       }

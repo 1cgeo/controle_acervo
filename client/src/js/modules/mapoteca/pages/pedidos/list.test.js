@@ -7,6 +7,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderPedidosList } from '@modules/mapoteca/pages/pedidos/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -49,6 +50,8 @@ const clicarFiltro = (container, rotulo) => {
 
 describe('renderPedidosList', () => {
   beforeEach(() => {
+    // A tela esconde escrita por perfil: sem sessao nao ha botao para testar.
+    logarComo({ mapoteca: GERENTE });
     svc.getPedidos.mockResolvedValue(PEDIDOS);
   });
 

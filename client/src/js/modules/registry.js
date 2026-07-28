@@ -24,7 +24,7 @@
 // Modulo sem rota nenhuma (`rotas: []`) e um esqueleto: nao aparece no seletor
 // nem registra rota, mesmo que a pessoa tenha perfil nele.
 
-import { temAcessoModulo } from '@store/auth-store.js';
+import { temAcessoModulo, temPerfil, isAdmin } from '@store/auth-store.js';
 
 import acervo from './acervo/index.js';
 import mapoteca from './mapoteca/index.js';
@@ -54,6 +54,43 @@ export function modulosPortados() {
  */
 export function modulosAcessiveis() {
   return modulosPortados().filter(m => temAcessoModulo(m.id));
+}
+
+/**
+ * A rota declarada no manifesto, pelo caminho INTERNO ao modulo ('/dfd').
+ * @param {string} moduloId
+ * @param {string} path
+ * @returns {Object|null}
+ */
+export function getRota(moduloId, path) {
+  const mod = getModulo(moduloId);
+  if (!mod) return null;
+  const semQuery = String(path || '').split('?')[0];
+  return (mod.rotas || []).find(r => r.path === semQuery) || null;
+}
+
+/**
+ * A pessoa consegue ABRIR esta rota? Responde exatamente o que o guarda de
+ * index.js decidiria, lendo o MESMO campo do manifesto (`admin` ou `perfil`).
+ *
+ * Existe para o menu nunca oferecer uma tela que o guarda vai recusar. Antes
+ * cada item de menu repetia a restricao da rota na mao, e o item "Configuração"
+ * do orcamento ficou sem o `admin: true` que a rota dele tinha: aparecia para
+ * todo mundo e o clique caia no 403. Derivando da rota, esse desencontro deixa
+ * de ser possivel.
+ *
+ * Caminho que nao e rota registrada (link externo, por exemplo) devolve `true`:
+ * quem decide continua sendo o guarda.
+ *
+ * @param {string} moduloId
+ * @param {string} path - caminho interno ao modulo ('/configuracao')
+ * @returns {boolean}
+ */
+export function podeAbrirRota(moduloId, path) {
+  const rota = getRota(moduloId, path);
+  if (!rota) return true;
+  if (rota.admin) return isAdmin();
+  return temPerfil(rota.perfil || 'consulta', moduloId);
 }
 
 /**

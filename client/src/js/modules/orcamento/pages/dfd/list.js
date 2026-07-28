@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import * as svc from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openDfdDialog } from './dfd-dialog.js';
 
 const MAX_OBJETO = 80;
@@ -24,6 +25,9 @@ function truncar(texto, limite) {
  */
 export async function renderDfdList(container, _ctx) {
   let disposed = false;
+  // Criar e editar DFD sao operador; excluir e gerente. Baixar o anexo e
+  // consulta e fica para todo mundo.
+  const pode = permissoes('orcamento');
   // Dominios e selects compartilhados pelos dialogs (carregados uma vez).
   let dominios = {
     grauPrioridade: [],
@@ -74,17 +78,17 @@ export async function renderDfdList(container, _ctx) {
         onClick: (row) => svc.downloadArquivo(row.arquivo_id, row.arquivo_nome)
           .catch((err) => showError(err.message || 'Erro ao baixar anexo')),
       },
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => handleEdit(row),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
@@ -94,7 +98,7 @@ export async function renderDfdList(container, _ctx) {
         el('h1', { className: 'page__title', textContent: 'DFD' }),
         resumo,
       ]),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     table.element,
   ]);

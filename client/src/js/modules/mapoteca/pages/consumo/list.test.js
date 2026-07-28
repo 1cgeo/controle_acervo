@@ -7,6 +7,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderConsumoList } from '@modules/mapoteca/pages/consumo/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -20,6 +21,8 @@ const CONSUMO = [
 
 describe('renderConsumoList', () => {
   beforeEach(() => {
+    // A tela esconde escrita por perfil: sem sessao nao ha botao para testar.
+    logarComo({ mapoteca: GERENTE });
     svc.getConsumoMaterial.mockResolvedValue(CONSUMO);
     svc.getConsumoMensal.mockResolvedValue([]);
     svc.getTiposMaterial.mockResolvedValue([{ id: 1, nome: 'Papel A0' }]);

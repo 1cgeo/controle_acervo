@@ -7,6 +7,7 @@ import { openModal } from '@components/modal/modal-base.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { getPdrItens, deletePdrItem } from '@modules/orcamento/services/orcamento-service.js';
+import { permissoes } from '@store/auth-store.js';
 import { openPdrItemDialog } from './item-dialog.js';
 
 /**
@@ -20,6 +21,7 @@ import { openPdrItemDialog } from './item-dialog.js';
  */
 export async function renderPdrList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('orcamento');
 
   const title = el('h1', { className: 'page__title', textContent: `PDR ${getAno()}` });
 
@@ -150,7 +152,10 @@ export async function renderPdrList(container, _ctx) {
     pageSize: 25,
     loading: true,
     emptyMessage: 'Nenhum item de PDR cadastrado',
-    actions: [
+    // O PDR e a EXCECAO do orcamento: aqui criar e editar tambem sao gerente,
+    // e nao operador como no resto do modulo. Um operador via os botoes, era
+    // recusado pelo servidor e (antes de 2026-07-28) ainda levava logout.
+    actions: pode.gerente ? [
       {
         icon: ICONS.edit,
         title: 'Editar',
@@ -162,13 +167,18 @@ export async function renderPdrList(container, _ctx) {
         variant: 'danger',
         onClick: (row) => handleDelete(row),
       },
-    ],
+    ] : [],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       title,
-      el('div', { className: 'page__actions' }, [anexosBtn, newBtn]),
+      // Os anexos do PDR tem gate proprio dentro do widget: quem consulta abre
+      // o modal e baixa, sem anexar nem remover.
+      el('div', { className: 'page__actions' }, [
+        anexosBtn,
+        ...(pode.gerente ? [newBtn] : []),
+      ]),
     ]),
     summaryCard,
     table.element,

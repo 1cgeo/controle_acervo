@@ -10,6 +10,7 @@ import {
   getTipoLicitacao,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openLicitacaoDialog } from './licitacao-dialog.js';
 
 // As licitacoes alimentam o RPCMTec: o tipo 1 (GCALC DSG) corresponde a tabela
@@ -31,6 +32,7 @@ function truncar(texto) {
 export async function renderLicitacoesList(container, _ctx) {
   let disposed = false;
   let filtroTipo = null;
+  const pode = permissoes('orcamento');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -87,24 +89,24 @@ export async function renderLicitacoesList(container, _ctx) {
     loading: true,
     emptyMessage: 'Nenhuma licitação cadastrada',
     actions: [
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openLicitacaoDialog({ licId: row.id, onSaved: load }),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Licitações' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     el('div', {
       className: 'page__filters',

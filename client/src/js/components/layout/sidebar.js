@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { isAdmin, nomeModulo } from '@store/auth-store.js';
-import { getModulo, modulosAcessiveis, rotaInicial } from '@modules/registry.js';
+import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modules/registry.js';
 
 /**
  * Itens de PLATAFORMA, fora de qualquer modulo: valem nos tres.
@@ -69,12 +69,27 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
     return menuItem;
   }
 
+  /**
+   * O item aparece? Num modulo a resposta sai da ROTA que ele aponta, entao
+   * restringir uma tela restringe o menu junto, sem ninguem lembrar de repetir
+   * a regra aqui. `admin: true` no proprio item continua valendo para o que nao
+   * tem rota de modulo, que hoje e so o menu de plataforma.
+   * @param {Object} item
+   * @param {string} moduloId - '' nos itens de plataforma
+   * @returns {boolean}
+   */
+  function itemVisivel(item, moduloId) {
+    if (item.admin && !isAdmin()) return false;
+    if (!moduloId || !item.path) return true;
+    return podeAbrirRota(moduloId, item.path);
+  }
+
   function buildMenu(itens, prefixo, chavePrefixo, destino) {
     for (const item of itens) {
-      if (item.admin && !isAdmin()) continue;
+      if (!itemVisivel(item, chavePrefixo)) continue;
 
       if (item.children) {
-        const filhos = item.children.filter(c => !c.admin || isAdmin());
+        const filhos = item.children.filter(c => itemVisivel(c, chavePrefixo));
         if (!filhos.length) continue;
 
         const childIds = filhos.map(c => (chavePrefixo ? `${chavePrefixo}:${c.id}` : c.id));

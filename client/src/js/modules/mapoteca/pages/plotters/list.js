@@ -5,16 +5,20 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { chip } from '@components/status-chip.js';
 import { getPlotters, deletePlotters } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 import { openPlotterDialog } from './plotter-dialog.js';
 
 /**
  * Plotters list page (#/plotters).
+ *
+ * Cadastro de plotter e gerente no servidor, criar, editar e excluir.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderPlottersList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('mapoteca');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -74,24 +78,26 @@ export async function renderPlottersList(container, _ctx) {
         title: 'Ver detalhes',
         onClick: (row) => { location.hash = `/mapoteca/plotters/${row.id}`; },
       },
-      {
-        icon: ICONS.edit,
-        title: 'Editar',
-        onClick: (row) => openPlotterDialog({ plotter: row, onSaved: load }),
-      },
-      {
-        icon: ICONS.delete,
-        title: 'Excluir',
-        variant: 'danger',
-        onClick: (row) => handleDelete(row),
-      },
+      ...(pode.gerente ? [
+        {
+          icon: ICONS.edit,
+          title: 'Editar',
+          onClick: (row) => openPlotterDialog({ plotter: row, onSaved: load }),
+        },
+        {
+          icon: ICONS.delete,
+          title: 'Excluir',
+          variant: 'danger',
+          onClick: (row) => handleDelete(row),
+        },
+      ] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Plotters' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.gerente ? [newBtn] : []),
     ]),
     table.element,
   ]);

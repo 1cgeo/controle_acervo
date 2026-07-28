@@ -2,7 +2,7 @@
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
-const { generateAdminToken, generateUserToken, generateExpiredToken, USER_UUID } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, generateExpiredToken, generateToken, USER_UUID } = require('../helpers/auth')
 
 let app
 
@@ -79,6 +79,57 @@ describe('Auth Routes', () => {
         .set('Authorization', generateAdminToken())
       // May succeed or fail for DB reason, but not 403
       expect(res.status).not.toBe(403)
+    })
+  })
+
+  // O client guarda `perfis` desde o login. Quem foi rebaixado no meio do
+  // expediente continuava vendo botao que o servidor ja recusava, ate sair e
+  // entrar de novo. Esta rota deixa o client reconferir a foto sem novo login.
+  describe('GET /api/login/sessao', () => {
+    it('should reject requests without token', async () => {
+      const res = await request(app).get('/api/login/sessao')
+      expect(res.status).toBe(401)
+    })
+
+    it('should reject expired tokens', async () => {
+      const res = await request(app)
+        .get('/api/login/sessao')
+        .set('Authorization', generateExpiredToken())
+      expect(res.status).toBe(401)
+    })
+
+    // Nao exige perfil em modulo nenhum de proposito: quem perdeu todo o acesso
+    // tambem precisa da resposta, senao a tela nunca para de oferecer o que ele
+    // nao pode mais.
+    it('should answer a valid token with perfis and modulos', async () => {
+      const res = await request(app)
+        .get('/api/login/sessao')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.dados).toHaveProperty('perfis')
+      expect(res.body.dados).toHaveProperty('modulos')
+      expect(res.body.dados).toHaveProperty('administrador')
+      // Nao devolve token: a sessao continua sendo a mesma.
+      expect(res.body.dados).not.toHaveProperty('token')
+    })
+
+    // O `administrador` do token e do momento do login e envelhece igual ao
+    // perfil, entao a resposta sai do BANCO, nunca do proprio token.
+    it('should read administrador from the database, not from the token', async () => {
+      const tokenMentiroso = generateToken({
+        id: 2,
+        uuid: USER_UUID,
+        administrador: true
+      })
+
+      const res = await request(app)
+        .get('/api/login/sessao')
+        .set('Authorization', tokenMentiroso)
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.administrador).toBe(false)
     })
   })
 

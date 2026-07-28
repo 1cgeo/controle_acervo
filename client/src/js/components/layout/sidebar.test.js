@@ -1,9 +1,20 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { saveAuth } from '@store/auth-store.js';
+import { MODULOS, podeAbrirRota } from '@modules/registry.js';
 import { createSidebar, activeIdFromPath } from './sidebar.js';
 
 function logar({ administrador = false, perfis = {} } = {}) {
   saveAuth({ token: 't', administrador, uuid: 'u', perfis, modulos: [] }, 'x');
+}
+
+/** Acha um item de menu pelo id, entrando nos grupos colapsaveis. */
+function acharItem(itens, id) {
+  for (const item of itens || []) {
+    if (item.id === id) return item;
+    const achado = acharItem(item.children, id);
+    if (achado) return achado;
+  }
+  return null;
 }
 
 const ids = (raiz) => [...raiz.querySelectorAll('[data-id]')].map(e => e.dataset.id);
@@ -74,6 +85,56 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     expect(modulosNaTela(sidebar)).toEqual(['#/orcamento/dashboard']);
     expect(ids(sidebar)).not.toContain('usuarios');
     expect(ids(sidebar)).toContain('orcamento:dfd');
+  });
+});
+
+describe('sidebar: o menu nunca oferece tela que o guarda recusa', () => {
+  // O item "Configuração" do orcamento aponta para uma rota `admin: true` e
+  // NAO repetia a marca no proprio item: aparecia para gerente e o clique caia
+  // direto no 403. Agora a visibilidade sai da rota, entao os dois nao tem como
+  // divergir de novo.
+  test('gerente do orcamento nao ve Configuração, que e rota de administrador', () => {
+    logar({ perfis: { orcamento: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'orcamento' });
+
+    expect(ids(sidebar)).toContain('orcamento:dfd');
+    expect(ids(sidebar)).not.toContain('orcamento:configuracao');
+  });
+
+  test('administrador continua vendo Configuração', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: 'orcamento' });
+
+    expect(ids(sidebar)).toContain('orcamento:configuracao');
+  });
+
+  // Invariante geral, e nao um caso: para CADA item de menu de CADA modulo, o
+  // item so pode estar na tela se podeAbrirRota() aprovar. Item novo apontando
+  // para rota restrita quebra este teste, sem ninguem precisar lembrar.
+  test('todo item visivel passa pelo guarda da propria rota, em todo perfil', () => {
+    const cenarios = [
+      { nome: 'consulta em tudo', auth: { perfis: { acervo: 1, mapoteca: 1, orcamento: 1 } } },
+      { nome: 'operador em tudo', auth: { perfis: { acervo: 2, mapoteca: 2, orcamento: 2 } } },
+      { nome: 'gerente em tudo', auth: { perfis: { acervo: 3, mapoteca: 3, orcamento: 3 } } },
+      { nome: 'administrador', auth: { administrador: true } },
+    ];
+
+    for (const cenario of cenarios) {
+      localStorage.clear();
+      logar(cenario.auth);
+      const { sidebar } = createSidebar({ modulo: null });
+
+      for (const chave of ids(sidebar)) {
+        const [moduloId, itemId] = chave.split(':');
+        if (!itemId) continue; // item de plataforma, sem rota de modulo
+        const modulo = MODULOS.find(m => m.id === moduloId);
+        const item = acharItem(modulo.menu, itemId);
+        expect(
+          podeAbrirRota(moduloId, item.path),
+          `${cenario.nome}: o menu mostra ${chave}, que o guarda recusaria`
+        ).toBe(true);
+      }
+    }
   });
 
   test('o item de plataforma nao leva prefixo de modulo', () => {

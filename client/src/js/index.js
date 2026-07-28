@@ -1,6 +1,7 @@
 import '@css/style.css';
 import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
+import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
 import Router, { adminLoader, perfilLoader, rotaRaiz } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
@@ -102,3 +103,13 @@ router.add('/unauthorized', errorPage(renderUnauthorized));
 router.add('/404', errorPage(renderNotFound));
 
 router.start();
+
+// Perfil mudou no servidor enquanto a pessoa estava logada. A sidebar e os
+// botoes sao montados uma vez, entao trocar o localStorage nao basta: recarrega
+// para a tela inteira voltar a bater com o que o servidor aceita. Acontece so
+// quando algo MUDOU de fato, e o proximo boot ja encontra tudo igual.
+window.addEventListener(EVENTO_SESSAO_MUDOU, () => location.reload());
+
+// Reconfere a foto do login. Roda DEPOIS do start para nao atrasar a primeira
+// tela: no caso comum nada mudou e ninguem percebe.
+sincronizarSessao();

@@ -5,17 +5,23 @@ import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { getClientes, deleteClientes } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 import { openClienteDialog } from './dialog-cliente.js';
 
 /**
  * Clientes list page (#/clientes): table with search, edit/delete row actions,
  * multi-selection for bulk delete and the "Novo cliente" dialog.
+ *
+ * Criar, editar e excluir cliente sao gerente no servidor
+ * (verifyPerfil('gerente', 'mapoteca')), entao quem tem consulta ou operador ve
+ * a lista sem botao nenhum de escrita, em vez de descobrir no clique.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderClientesList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('mapoteca');
 
   async function load() {
     table.update({ loading: true });
@@ -118,7 +124,9 @@ export async function renderClientesList(container, _ctx) {
     ],
     rows: [],
     searchable: true,
-    selectable: true,
+    // Sem exclusao a coluna de selecao nao serve para nada: ela existe SO para
+    // a exclusao em lote.
+    selectable: pode.gerente,
     loading: true,
     emptyMessage: 'Nenhum cliente cadastrado',
     onSelectionChange: (selecionados) => {
@@ -135,24 +143,26 @@ export async function renderClientesList(container, _ctx) {
         title: 'Ver detalhes',
         onClick: (row) => { location.hash = `/mapoteca/clientes/${row.id}`; },
       },
-      {
-        icon: ICONS.edit,
-        title: 'Editar',
-        onClick: (row) => abrirDialog(row),
-      },
-      {
-        icon: ICONS.delete,
-        title: 'Excluir',
-        variant: 'danger',
-        onClick: (row) => excluirCliente(row),
-      },
+      ...(pode.gerente ? [
+        {
+          icon: ICONS.edit,
+          title: 'Editar',
+          onClick: (row) => abrirDialog(row),
+        },
+        {
+          icon: ICONS.delete,
+          title: 'Excluir',
+          variant: 'danger',
+          onClick: (row) => excluirCliente(row),
+        },
+      ] : []),
     ],
   });
 
   container.appendChild(el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Clientes' }),
-      el('div', { className: 'page__actions' }, [deleteSelectedBtn, novoBtn]),
+      el('div', { className: 'page__actions' }, pode.gerente ? [deleteSelectedBtn, novoBtn] : []),
     ]),
     table.element,
   ]));

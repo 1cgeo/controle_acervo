@@ -7,6 +7,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderClientesList } from '@modules/mapoteca/pages/clientes/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -24,6 +25,8 @@ const CLIENTES = [
 
 describe('renderClientesList', () => {
   beforeEach(() => {
+    // A tela esconde escrita por perfil: sem sessao nao ha botao para testar.
+    logarComo({ mapoteca: GERENTE });
     svc.getClientes.mockResolvedValue(CLIENTES);
   });
 
@@ -61,5 +64,67 @@ describe('renderClientesList', () => {
     expect(container.textContent).toContain('Nenhum cliente cadastrado');
 
     if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// Criar, editar e excluir cliente sao gerente no servidor. Antes a tela
+// mostrava os tres para qualquer perfil, e o clique levava 403 (que ate
+// 2026-07-28 ainda deslogava a pessoa).
+describe('renderClientesList: o que cada perfil ve', () => {
+  beforeEach(() => {
+    svc.getClientes.mockResolvedValue(CLIENTES);
+  });
+
+  test('consulta ve a lista, sem "Novo cliente", sem selecao e sem acao de escrita', async () => {
+    logarComo({ mapoteca: CONSULTA });
+    const container = document.createElement('div');
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('1º CGEO');
+    expect(container.textContent).not.toContain('Novo cliente');
+    expect(container.textContent).not.toContain('Excluir selecionados');
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    // Sobra so o "Ver detalhes" na coluna de acoes.
+    expect(container.querySelectorAll('.data-table__action-btn')).toHaveLength(CLIENTES.length);
+    expect(container.querySelector('.data-table__action-btn--danger')).toBeNull();
+
+    cleanup();
+  });
+
+  test('operador tambem nao escreve aqui: o nivel exigido e gerente', async () => {
+    logarComo({ mapoteca: OPERADOR });
+    const container = document.createElement('div');
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).not.toContain('Novo cliente');
+    expect(container.querySelector('.data-table__action-btn--danger')).toBeNull();
+
+    cleanup();
+  });
+
+  test('gerente ve criar, editar e excluir', async () => {
+    logarComo({ mapoteca: GERENTE });
+    const container = document.createElement('div');
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Novo cliente');
+    expect(container.querySelector('input[type="checkbox"]')).not.toBeNull();
+    expect(container.querySelector('.data-table__action-btn--danger')).not.toBeNull();
+
+    cleanup();
+  });
+
+  test('administrador global escreve mesmo sem perfil na mapoteca', async () => {
+    logarComo({}, { administrador: true });
+    const container = document.createElement('div');
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Novo cliente');
+
+    cleanup();
   });
 });

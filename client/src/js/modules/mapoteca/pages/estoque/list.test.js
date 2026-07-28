@@ -7,6 +7,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderEstoqueList } from '@modules/mapoteca/pages/estoque/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -23,6 +24,8 @@ const POR_LOCALIZACAO = [
 
 describe('renderEstoqueList', () => {
   beforeEach(() => {
+    // A tela esconde escrita por perfil: sem sessao nao ha botao para testar.
+    logarComo({ mapoteca: GERENTE });
     svc.getEstoqueMaterial.mockResolvedValue(ESTOQUE);
     svc.getEstoquePorLocalizacao.mockResolvedValue(POR_LOCALIZACAO);
     svc.getTiposMaterial.mockResolvedValue([{ id: 1, nome: 'Papel A0' }]);
@@ -94,5 +97,62 @@ describe('renderEstoqueList', () => {
     expect(container.textContent).toContain('Nenhum registro de estoque');
 
     if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// A tela de estoque separa os DOIS niveis: transferir e operador (mover
+// material entre localizacoes e trabalho do dia), mexer no saldo na mao e
+// gerente. E o caso que mais mostra por que esconder por perfil vale a pena.
+describe('renderEstoqueList: o que cada perfil ve', () => {
+  beforeEach(() => {
+    svc.getEstoqueMaterial.mockResolvedValue(ESTOQUE);
+    svc.getEstoquePorLocalizacao.mockResolvedValue(POR_LOCALIZACAO);
+    svc.getTiposMaterial.mockResolvedValue([{ id: 1, nome: 'Papel A0' }]);
+    svc.getDominioTipoLocalizacao.mockResolvedValue([
+      { code: 1, nome: 'Seção' }, { code: 2, nome: 'Depósito' },
+    ]);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  test('consulta nao ve transferir nem adicionar, e nao tem acao de linha', async () => {
+    logarComo({ mapoteca: CONSULTA });
+    const container = document.createElement('div');
+    const cleanup = await renderEstoqueList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).not.toContain('Transferir');
+    expect(container.textContent).not.toContain('Adicionar estoque');
+    expect(container.querySelectorAll('.data-table__action-btn')).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('operador transfere, mas nao adiciona nem edita saldo', async () => {
+    logarComo({ mapoteca: OPERADOR });
+    const container = document.createElement('div');
+    const cleanup = await renderEstoqueList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Transferir');
+    expect(container.textContent).not.toContain('Adicionar estoque');
+    expect(container.querySelectorAll('.data-table__action-btn')).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('gerente ve tudo', async () => {
+    logarComo({ mapoteca: GERENTE });
+    const container = document.createElement('div');
+    const cleanup = await renderEstoqueList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Transferir');
+    expect(container.textContent).toContain('Adicionar estoque');
+    expect(container.querySelector('.data-table__action-btn--danger')).not.toBeNull();
+
+    cleanup();
   });
 });

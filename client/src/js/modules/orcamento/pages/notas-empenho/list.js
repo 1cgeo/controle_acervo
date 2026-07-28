@@ -10,6 +10,7 @@ import {
   getNotasCredito,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openNotaEmpenhoDialog } from './nota-empenho-dialog.js';
 
 /**
@@ -23,6 +24,7 @@ import { openNotaEmpenhoDialog } from './nota-empenho-dialog.js';
 export async function renderNotasEmpenhoList(container, _ctx) {
   let disposed = false;
   let filtroNotaCredito = null;
+  const pode = permissoes('orcamento');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -84,24 +86,24 @@ export async function renderNotasEmpenhoList(container, _ctx) {
         title: 'Detalhes e lançamento de liquidações',
         onClick: (row) => { location.hash = `/orcamento/notas_empenho/${row.id}`; },
       },
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openNotaEmpenhoDialog({ neId: row.id, onSaved: load }),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Notas de Empenho' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     el('div', {
       className: 'page__filters',

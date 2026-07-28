@@ -2,15 +2,15 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Testa o comportamento real do wrapper api-client contra um global.fetch
 // mockado. Usa o auth-store REAL (saveAuth/getToken/clearAuth) para exercitar
-// o cabecalho Authorization e a limpeza de sessao no 401/403. Verifica:
+// o cabecalho Authorization e a limpeza de sessao. Verifica:
 //  (a) sucesso -> devolve dados;
 //  (b) !success -> lanca Error com a message do servidor;
 //  (c) 401 -> limpa a sessao e manda para #/login (e lanca);
-//  (d) 403 -> idem;
+//  (d) 403 -> MANTEM a sessao e so lanca a mensagem do servidor;
 //  (e) apiPost -> method POST, Authorization Bearer (quando ha token) e JSON.
 
 import { apiGet, apiPost } from './api-client.js';
-import { saveAuth, getToken } from '@store/auth-store.js';
+import { saveAuth, getToken, getPerfil } from '@store/auth-store.js';
 
 // Helper: monta uma Response falsa (status + corpo JSON) para o fetch mockado.
 function fakeResponse({ status = 200, body = {} } = {}) {
@@ -83,7 +83,7 @@ describe('api-client: erro do servidor', () => {
   });
 });
 
-describe('api-client: 401/403 limpam a sessao e redirecionam', () => {
+describe('api-client: 401 encerra a sessao, 403 nao', () => {
   test('(c) 401 -> limpa a sessao (localStorage) e ajusta location.hash para /login (e lanca)', async () => {
     saveAuth({ token: 'jwt-abc', administrador: true, uuid: 'u-1' }, 'fulano');
     expect(getToken()).toBe('jwt-abc');
@@ -102,18 +102,77 @@ describe('api-client: 401/403 limpam a sessao e redirecionam', () => {
     expect(location.hash).toContain('from=');
   });
 
-  test('(d) 403 -> limpa a sessao e redireciona para /login (e lanca)', async () => {
-    saveAuth({ token: 'jwt-xyz', administrador: false, uuid: 'u-2' }, 'beltrano');
-    location.hash = '#/pdr';
+  // 403 NAO e sessao expirada: e a pessoa sem perfil para AQUELA acao. Ate
+  // 2026-07-28 os dois casos deslogavam, e clicar num botao que a tela nao
+  // devia ter mostrado expulsava a pessoa do sistema no meio do trabalho.
+  test('(d) 403 -> MANTEM a sessao, nao redireciona, e lanca a mensagem do servidor', async () => {
+    saveAuth(
+      { token: 'jwt-xyz', administrador: false, uuid: 'u-2', perfis: { orcamento: 1 } },
+      'beltrano'
+    );
+    location.hash = '#/orcamento/pdr';
 
-    fetch.mockResolvedValueOnce(
-      fakeResponse({ status: 403, body: { message: 'Acesso negado' } })
+    fetch
+      // a acao recusada
+      .mockResolvedValueOnce(
+        fakeResponse({
+          status: 403,
+          body: { message: 'Usuário necessita do perfil gerente no módulo orcamento' },
+        })
+      )
+      // a reconferencia de perfil que o 403 dispara, devolvendo o MESMO perfil
+      .mockResolvedValueOnce(
+        fakeResponse({
+          body: {
+            success: true,
+            dados: { administrador: false, perfis: { orcamento: 1 }, modulos: [] },
+          },
+        })
+      );
+
+    await expect(apiGet('/orcamento/pdr')).rejects.toThrow(
+      'Usuário necessita do perfil gerente no módulo orcamento'
     );
 
-    await expect(apiGet('/pdr')).rejects.toThrow('Acesso negado');
+    expect(getToken()).toBe('jwt-xyz');
+    expect(location.hash).toBe('#/orcamento/pdr');
+  });
 
-    expect(getToken()).toBeNull();
-    expect(location.hash).toContain('/login');
+  test('403 reconfere o perfil no servidor e guarda o que voltou', async () => {
+    saveAuth(
+      { token: 'jwt-xyz', administrador: false, uuid: 'u-2', perfis: { orcamento: 3 } },
+      'beltrano'
+    );
+    expect(getPerfil('orcamento')).toBe(3);
+
+    fetch
+      .mockResolvedValueOnce(fakeResponse({ status: 403, body: { message: 'Sem perfil' } }))
+      // Foi rebaixado de gerente para consulta enquanto estava logado.
+      .mockResolvedValueOnce(
+        fakeResponse({
+          body: {
+            success: true,
+            dados: { administrador: false, perfis: { orcamento: 1 }, modulos: [] },
+          },
+        })
+      );
+
+    await expect(apiGet('/orcamento/pdr')).rejects.toThrow('Sem perfil');
+
+    // A foto do login foi corrigida, e a sessao continua de pe.
+    expect(getPerfil('orcamento')).toBe(1);
+    expect(getToken()).toBe('jwt-xyz');
+  });
+
+  test('403 com a reconferencia falhando nao derruba a sessao', async () => {
+    saveAuth({ token: 'jwt-xyz', administrador: false, uuid: 'u-2' }, 'beltrano');
+
+    fetch
+      .mockResolvedValueOnce(fakeResponse({ status: 403, body: { message: 'Sem perfil' } }))
+      .mockRejectedValueOnce(new Error('rede caiu'));
+
+    await expect(apiGet('/orcamento/pdr')).rejects.toThrow('Sem perfil');
+    expect(getToken()).toBe('jwt-xyz');
   });
 
   test('401 sem corpo JSON -> usa a mensagem padrao e ainda limpa a sessao', async () => {

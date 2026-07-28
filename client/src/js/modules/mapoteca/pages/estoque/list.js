@@ -16,6 +16,7 @@ import {
   getTiposMaterial,
   getDominioTipoLocalizacao,
 } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 
 async function getSelectOptions() {
   const [materiais, localizacoes] = await Promise.all([
@@ -30,12 +31,19 @@ async function getSelectOptions() {
 
 /**
  * Estoque de material page (#/estoque).
+ *
+ * Aqui os dois niveis de escrita convivem, e cada botao segue a SUA rota:
+ *   POST/PUT/DELETE /estoque_material  -> gerente (mexer no saldo na mao)
+ *   POST /estoque_material/transferir  -> operador (mover material entre
+ *                                         localizacoes e trabalho do dia)
+ * Um operador ve "Transferir" e mais nada, que e exatamente o que ele pode.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderEstoqueList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('mapoteca');
 
   // -------------------------------------------------------------------------
   // Location cards
@@ -84,7 +92,7 @@ export async function renderEstoqueList(container, _ctx) {
     pageSize: 25,
     loading: true,
     emptyMessage: 'Nenhum registro de estoque',
-    actions: [
+    actions: pode.gerente ? [
       {
         icon: ICONS.edit,
         title: 'Editar quantidade',
@@ -96,7 +104,7 @@ export async function renderEstoqueList(container, _ctx) {
         variant: 'danger',
         onClick: (row) => handleDelete(row),
       },
-    ],
+    ] : [],
   });
 
   // -------------------------------------------------------------------------
@@ -407,7 +415,10 @@ export async function renderEstoqueList(container, _ctx) {
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Estoque de Material' }),
-      el('div', { className: 'page__actions' }, [transferBtn, addBtn]),
+      el('div', { className: 'page__actions' }, [
+        ...(pode.operador ? [transferBtn] : []),
+        ...(pode.gerente ? [addBtn] : []),
+      ]),
     ]),
     cardsGrid,
     table.element,

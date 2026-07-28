@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { getRpnps, deleteRpnp } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openRpnpDialog } from './rpnp-dialog.js';
 
 // O RPNP (Restos a Pagar Não Processados) alimenta a tabela 3.3 do RPCMTec.
@@ -24,6 +25,7 @@ function truncar(texto) {
  */
 export async function renderRpnpList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('orcamento');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -63,24 +65,24 @@ export async function renderRpnpList(container, _ctx) {
     loading: true,
     emptyMessage: 'Nenhum RPNP cadastrado',
     actions: [
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openRpnpDialog({ rpnpId: row.id, onSaved: load }),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'RPNP' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     table.element,
   ]);

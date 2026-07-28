@@ -14,17 +14,22 @@ import {
   deleteConsumoMaterial,
   getTiposMaterial,
 } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 
 /**
  * Consumo de material page (#/consumo).
  * Trigger errors (e.g. "Estoque insuficiente na Seção...") are shown verbatim
  * in the error toast — they guide the operator to transfer stock first.
+ *
+ * Consumo e o lancamento do dia a dia: registrar e editar sao OPERADOR. Só
+ * EXCLUIR e gerente, porque apagar consumo devolve saldo ao estoque.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderConsumoList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('mapoteca');
   let materialOptions = [];
   let selectedYear = new Date().getFullYear();
 
@@ -101,17 +106,17 @@ export async function renderConsumoList(container, _ctx) {
     loading: true,
     emptyMessage: 'Nenhum registro de consumo',
     actions: [
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openConsumoDialog(row),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
@@ -335,7 +340,7 @@ export async function renderConsumoList(container, _ctx) {
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Consumo de Material' }),
-      el('div', { className: 'page__actions' }, [registerBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [registerBtn] : []),
     ]),
     filtersBar,
     table.element,

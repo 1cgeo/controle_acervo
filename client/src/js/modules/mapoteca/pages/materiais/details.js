@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { chip, badgeAbaixoMinimo } from '@components/status-chip.js';
 import { getTipoMaterial, getConsumoMensal } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 import { openMaterialDialog } from './material-dialog.js';
 
 function summaryCard(label, value, extra = null) {
@@ -183,7 +184,8 @@ export async function renderMaterialDetails(container, { params }) {
     container.appendChild(el('div', { className: 'page' }, [
       el('div', { className: 'page__header' }, [
         titleArea,
-        el('div', { className: 'page__actions' }, [editBtn]),
+        // PUT /tipo_material e gerente.
+        el('div', { className: 'page__actions' }, permissoes('mapoteca').gerente ? [editBtn] : []),
       ]),
       material.descricao
         ? el('p', {

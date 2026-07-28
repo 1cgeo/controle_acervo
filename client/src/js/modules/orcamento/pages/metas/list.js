@@ -4,16 +4,20 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { getMetas, deleteMeta } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openMetaDialog } from './meta-dialog.js';
 
 /**
  * Lista de metas do PIT (#/metas). Filtra pelo ano de contexto global (navbar).
+ *
+ * Corte padrao do orcamento: criar e editar sao OPERADOR, excluir e GERENTE.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderMetasList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('orcamento');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -34,24 +38,24 @@ export async function renderMetasList(container, _ctx) {
     loading: true,
     emptyMessage: 'Nenhuma meta cadastrada',
     actions: [
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openMetaDialog({ meta: row, onSaved: load }),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Metas do PIT' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     table.element,
   ]);

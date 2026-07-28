@@ -5,6 +5,12 @@
 // `perfil` (nivel minimo NO MODULO) ou de `admin: true` (administrador global).
 // Escrever continua barrado no BACKEND por verifyPerfil(nivel, 'orcamento'):
 // o guarda de client so evita a pessoa abrir uma tela que nao vai poder usar.
+//
+// O MENU NAO REPETE A RESTRICAO DA ROTA. A sidebar deriva a visibilidade de
+// cada item da rota que ele aponta (registry.podeAbrirRota), entao 'Configuração'
+// some para quem nao e administrador so por causa do `admin: true` da rota. Foi
+// justamente esse par que ficou fora de sincronia: o item nao tinha a marca que
+// a rota tinha, aparecia para todo mundo e o clique caia no 403.
 
 import { ICONS } from '@utils/dom.js';
 

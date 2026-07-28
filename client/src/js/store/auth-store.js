@@ -121,6 +121,30 @@ export function temAcessoModulo(modulo) {
 }
 
 /**
+ * O que a pessoa pode NESTE modulo, num objeto so, para a tela decidir o que
+ * mostrar sem repetir o nome do modulo em cada botao:
+ *
+ *   const pode = permissoes('mapoteca')
+ *   if (pode.gerente) cabecalho.appendChild(novoClienteBtn)
+ *
+ * O nome do campo e o MESMO nivel que o `verifyPerfil` da rota exige no
+ * servidor, entao o gate da tela se le ao lado do gate real: escrever
+ * `pode.gerente` onde o servidor pede `verifyPerfil('gerente', 'mapoteca')`.
+ * Esconder botao e ERGONOMIA, nunca seguranca: quem barra e o servidor.
+ *
+ * @param {string} modulo - nome_abrev do modulo
+ * @returns {{consulta:boolean, operador:boolean, gerente:boolean, admin:boolean}}
+ */
+export function permissoes(modulo) {
+  return {
+    consulta: temPerfil('consulta', modulo),
+    operador: temPerfil('operador', modulo),
+    gerente: temPerfil('gerente', modulo),
+    admin: isAdmin(),
+  };
+}
+
+/**
  * Save auth data after a successful login.
  * Token expiry is stored as now + 1h (JWT lifetime).
  * @param {Object} data - { token, administrador, uuid, perfis, modulos }
@@ -163,6 +187,34 @@ export function saveAuth(data, username) {
   localStorage.setItem(AUTH_KEYS.MODULOS, JSON.stringify(data.modulos || []));
   localStorage.setItem(AUTH_KEYS.UUID, data.uuid || '');
   localStorage.setItem(AUTH_KEYS.USERNAME, username);
+}
+
+/**
+ * Reescreve SO a autorizacao (administrador, perfis e catalogo de modulos) a
+ * partir do GET /api/login/sessao, sem tocar em token, validade nem login.
+ *
+ * O login e um retrato: quem foi rebaixado no meio do expediente continuava
+ * vendo botao que o servidor ja recusava. Isto atualiza o retrato sem obrigar
+ * a pessoa a sair e entrar de novo.
+ *
+ * @param {Object} data - { administrador, perfis, modulos }
+ * @returns {boolean} - true quando algo de fato mudou
+ */
+export function atualizarSessao(data) {
+  const autorizacaoNova = data.administrador ? 'ADMIN' : 'USER';
+  const perfisNovos = JSON.stringify(data.perfis || {});
+  const modulosNovos = JSON.stringify(data.modulos || []);
+
+  const mudou =
+    localStorage.getItem(AUTH_KEYS.AUTHORIZATION) !== autorizacaoNova ||
+    localStorage.getItem(AUTH_KEYS.PERFIS) !== perfisNovos ||
+    localStorage.getItem(AUTH_KEYS.MODULOS) !== modulosNovos;
+
+  localStorage.setItem(AUTH_KEYS.AUTHORIZATION, autorizacaoNova);
+  localStorage.setItem(AUTH_KEYS.PERFIS, perfisNovos);
+  localStorage.setItem(AUTH_KEYS.MODULOS, modulosNovos);
+
+  return mudou;
 }
 
 /**

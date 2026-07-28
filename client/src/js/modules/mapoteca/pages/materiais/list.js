@@ -5,16 +5,22 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { badgeAbaixoMinimo } from '@components/status-chip.js';
 import { getTiposMaterial, deleteTiposMaterial } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 import { openMaterialDialog } from './material-dialog.js';
 
 /**
  * Tipos de material list page (#/materiais).
+ *
+ * Tipo de material e cadastro estruturante: criar, editar e excluir sao gerente
+ * no servidor. Quem tem operador lanca CONSUMO (outra tela), nao mexe no
+ * catalogo.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
 export async function renderMateriaisList(container, _ctx) {
   let disposed = false;
+  const pode = permissoes('mapoteca');
 
   const bulkDeleteBtn = el('button', {
     className: 'btn btn--danger',
@@ -75,7 +81,8 @@ export async function renderMateriaisList(container, _ctx) {
     ],
     rows: [],
     searchable: true,
-    selectable: true,
+    // A selecao existe SO para a exclusao em lote.
+    selectable: pode.gerente,
     pageSize: 25,
     loading: true,
     emptyMessage: 'Nenhum tipo de material cadastrado',
@@ -91,24 +98,26 @@ export async function renderMateriaisList(container, _ctx) {
         title: 'Ver detalhes',
         onClick: (row) => { location.hash = `/mapoteca/materiais/${row.id}`; },
       },
-      {
-        icon: ICONS.edit,
-        title: 'Editar',
-        onClick: (row) => openMaterialDialog({ material: row, onSaved: load }),
-      },
-      {
-        icon: ICONS.delete,
-        title: 'Excluir',
-        variant: 'danger',
-        onClick: (row) => handleDelete([row]),
-      },
+      ...(pode.gerente ? [
+        {
+          icon: ICONS.edit,
+          title: 'Editar',
+          onClick: (row) => openMaterialDialog({ material: row, onSaved: load }),
+        },
+        {
+          icon: ICONS.delete,
+          title: 'Excluir',
+          variant: 'danger',
+          onClick: (row) => handleDelete([row]),
+        },
+      ] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Tipos de Material' }),
-      el('div', { className: 'page__actions' }, [bulkDeleteBtn, newBtn]),
+      el('div', { className: 'page__actions' }, pode.gerente ? [bulkDeleteBtn, newBtn] : []),
     ]),
     table.element,
   ]);

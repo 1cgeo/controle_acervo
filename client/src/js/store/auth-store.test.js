@@ -3,6 +3,7 @@ import {
   saveAuth, getToken, getUsername, getUserUuid,
   isAuthenticated, isAdmin, clearAuth,
   getPerfil, temPerfil, temAcessoModulo, getCatalogoModulos, nomeModulo,
+  permissoes, atualizarSessao,
 } from './auth-store.js';
 
 const CATALOGO = [
@@ -132,5 +133,81 @@ describe('auth-store: catalogo de modulos do servidor', () => {
     saveAuth({ token: 't', administrador: true, uuid: 'u' }, 'x');
     expect(getCatalogoModulos()).toEqual([]);
     expect(nomeModulo('orcamento')).toBe('orcamento');
+  });
+});
+
+describe('auth-store: permissoes por modulo', () => {
+  test('devolve os tres niveis do modulo, hierarquicos', () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u', perfis: { mapoteca: 2 } }, 'x');
+
+    const pode = permissoes('mapoteca');
+    expect(pode.consulta).toBe(true);
+    expect(pode.operador).toBe(true);
+    expect(pode.gerente).toBe(false);
+    expect(pode.admin).toBe(false);
+  });
+
+  test('modulo sem perfil nao libera nem consulta', () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u', perfis: { mapoteca: 3 } }, 'x');
+
+    const pode = permissoes('orcamento');
+    expect(pode.consulta).toBe(false);
+    expect(pode.operador).toBe(false);
+    expect(pode.gerente).toBe(false);
+  });
+
+  test('administrador global satisfaz tudo, em qualquer modulo', () => {
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {} }, 'x');
+
+    for (const modulo of ['acervo', 'mapoteca', 'orcamento']) {
+      const pode = permissoes(modulo);
+      expect(pode.gerente).toBe(true);
+      expect(pode.admin).toBe(true);
+    }
+  });
+});
+
+describe('auth-store: atualizarSessao', () => {
+  test('reescreve o perfil sem derrubar a sessao', () => {
+    saveAuth(
+      { token: 'jwt', administrador: false, uuid: 'u', perfis: { orcamento: 3 }, modulos: CATALOGO },
+      'fulano'
+    );
+
+    const mudou = atualizarSessao({
+      administrador: false,
+      perfis: { orcamento: 1 },
+      modulos: CATALOGO,
+    });
+
+    expect(mudou).toBe(true);
+    expect(getPerfil('orcamento')).toBe(1);
+    // O que identifica a sessao continua intacto: so a autorizacao foi refeita.
+    expect(getToken()).toBe('jwt');
+    expect(getUsername()).toBe('fulano');
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  test('sem mudanca nenhuma devolve false, para nao recarregar a tela a toa', () => {
+    saveAuth(
+      { token: 'jwt', administrador: false, uuid: 'u', perfis: { orcamento: 2 }, modulos: CATALOGO },
+      'x'
+    );
+
+    const mudou = atualizarSessao({
+      administrador: false,
+      perfis: { orcamento: 2 },
+      modulos: CATALOGO,
+    });
+
+    expect(mudou).toBe(false);
+    expect(getPerfil('orcamento')).toBe(2);
+  });
+
+  test('promover a administrador tambem conta como mudanca', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+
+    expect(atualizarSessao({ administrador: true, perfis: {}, modulos: [] })).toBe(true);
+    expect(isAdmin()).toBe(true);
   });
 });

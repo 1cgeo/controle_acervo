@@ -12,6 +12,7 @@ import {
   updateManutencao,
   deleteManutencoes,
 } from '@modules/mapoteca/services/mapoteca-service.js';
+import { permissoes } from '@store/auth-store.js';
 import { openPlotterDialog } from './plotter-dialog.js';
 
 function summaryCard(label, value) {
@@ -131,6 +132,7 @@ export async function renderPlotterDetails(container, { params }) {
   const id = Number(params.id);
   let disposed = false;
   let cleanups = [];
+  const pode = permissoes('mapoteca');
 
   function dispose() {
     for (const fn of cleanups) {
@@ -238,7 +240,8 @@ export async function renderPlotterDetails(container, { params }) {
       rows: plotter.manutencoes || [],
       pageSize: 10,
       emptyMessage: 'Nenhuma manutenção registrada',
-      actions: [
+      // Manutencao de plotter e gerente, criar, editar e excluir.
+      actions: pode.gerente ? [
         {
           icon: ICONS.edit,
           title: 'Editar manutenção',
@@ -250,7 +253,7 @@ export async function renderPlotterDetails(container, { params }) {
           variant: 'danger',
           onClick: (row) => handleDeleteManutencao(row),
         },
-      ],
+      ] : [],
     });
     cleanups.push(() => manutencoesTable._cleanup());
 
@@ -283,13 +286,13 @@ export async function renderPlotterDetails(container, { params }) {
     container.appendChild(el('div', { className: 'page' }, [
       el('div', { className: 'page__header' }, [
         titleArea,
-        el('div', { className: 'page__actions' }, [editBtn]),
+        el('div', { className: 'page__actions' }, pode.gerente ? [editBtn] : []),
       ]),
       summaryGrid,
       el('div', { className: 'dashboard-section' }, [
         el('div', { className: 'dashboard-section__header' }, [
           el('h2', { className: 'dashboard-section__title', textContent: 'Manutenções' }),
-          el('div', { className: 'dashboard-section__controls' }, [addManutencaoBtn]),
+          el('div', { className: 'dashboard-section__controls' }, pode.gerente ? [addManutencaoBtn] : []),
         ]),
         manutencoesTable.element,
       ]),

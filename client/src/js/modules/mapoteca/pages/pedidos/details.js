@@ -22,6 +22,7 @@ import {
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatDateTime, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 import { createPedidoFormFields } from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 
@@ -88,6 +89,14 @@ export async function renderPedidoDetails(container, { params }) {
   const pedidoId = Number(params.id);
   let disposed = false;
   const cleanups = [];
+
+  // Toda escrita DESTA tela e gerente no servidor: editar e excluir o pedido,
+  // os itens, os anexos e o registro de impressao. Baixar anexo e ver o
+  // historico sao consulta, entao continuam para todo mundo.
+  //
+  // O que e operador na mapoteca (registrar impressao, transferir estoque,
+  // lancar consumo) mora nas telas de estoque e consumo, nao aqui.
+  const pode = permissoes('mapoteca');
 
   const root = el('div', { className: 'page' });
   container.appendChild(root);
@@ -306,14 +315,16 @@ export async function renderPedidoDetails(container, { params }) {
         rows: dados.registros || [],
         pageSize: 5,
         emptyMessage: 'Nenhuma sessão de impressão registrada',
-        actions: [
+        // DELETE /impressao e gerente, embora REGISTRAR impressao seja operador:
+        // o operador lanca o que imprimiu e nao desfaz o historico.
+        actions: pode.gerente ? [
           {
             icon: ICONS.delete,
             title: 'Excluir registro',
             variant: 'danger',
             onClick: (registro) => excluirRegistro(registro),
           },
-        ],
+        ] : [],
       });
 
       clearChildren(content);
@@ -454,18 +465,19 @@ export async function renderPedidoDetails(container, { params }) {
         pageSize: 5,
         emptyMessage: 'Nenhum anexo neste pedido',
         actions: [
+          // Baixar anexo e consulta: quem le o pedido le os documentos dele.
           {
             icon: ICONS.download,
             title: 'Baixar',
             onClick: (r) => downloadAnexoPedido(r.id, r.nome_original)
               .catch((err) => showError(err.message || 'Erro ao baixar o anexo')),
           },
-          {
+          ...(pode.gerente ? [{
             icon: ICONS.delete,
             title: 'Excluir anexo',
             variant: 'danger',
             onClick: (r) => excluirAnexo(r, loadAnexos),
-          },
+          }] : []),
         ],
       });
       cleanups.push(() => anexosTable._cleanup());
@@ -478,13 +490,14 @@ export async function renderPedidoDetails(container, { params }) {
     const section = el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Anexos do pedido' }),
-        el('div', { className: 'dashboard-section__controls' }, [
+        // POST /pedido/:id/anexos e gerente.
+        el('div', { className: 'dashboard-section__controls' }, pode.gerente ? [
           el('button', {
             className: 'btn btn--primary btn--sm',
             type: 'button',
             onClick: () => adicionarAnexo(loadAnexos),
           }, [svgIcon(ICONS.add, 14), 'Anexar documento']),
-        ]),
+        ] : []),
       ]),
       body,
     ]);
@@ -511,7 +524,8 @@ export async function renderPedidoDetails(container, { params }) {
           chip(pedido.localizador_pedido || '-', 'secondary'),
         ]),
       ]),
-      el('div', { className: 'page__actions' }, [
+      // PUT e DELETE /pedido sao gerente.
+      el('div', { className: 'page__actions' }, pode.gerente ? [
         el('button', {
           className: 'btn btn--secondary',
           type: 'button',
@@ -522,7 +536,7 @@ export async function renderPedidoDetails(container, { params }) {
           type: 'button',
           onClick: () => excluirPedido(pedido),
         }, [svgIcon(ICONS.delete, 16), 'Excluir']),
-      ]),
+      ] : []),
     ]));
 
     // Info cards
@@ -654,17 +668,19 @@ export async function renderPedidoDetails(container, { params }) {
           title: 'Histórico de impressão',
           onClick: (row) => verHistoricoImpressao(row),
         },
-        {
-          icon: ICONS.edit,
-          title: 'Editar item',
-          onClick: (row) => editarItem(row),
-        },
-        {
-          icon: ICONS.delete,
-          title: 'Excluir item',
-          variant: 'danger',
-          onClick: (row) => excluirItem(row),
-        },
+        ...(pode.gerente ? [
+          {
+            icon: ICONS.edit,
+            title: 'Editar item',
+            onClick: (row) => editarItem(row),
+          },
+          {
+            icon: ICONS.delete,
+            title: 'Excluir item',
+            variant: 'danger',
+            onClick: (row) => excluirItem(row),
+          },
+        ] : []),
       ],
     });
     cleanups.push(() => produtosTable._cleanup());
@@ -683,13 +699,17 @@ export async function renderPedidoDetails(container, { params }) {
     root.appendChild(el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Produtos do pedido' }),
+        // O resumo de impressao e leitura e fica para todos; POST
+        // /produto_pedido e gerente.
         el('div', { className: 'dashboard-section__controls' }, [
           resumoImpressao,
-          el('button', {
-            className: 'btn btn--primary btn--sm',
-            type: 'button',
-            onClick: adicionarItem,
-          }, [svgIcon(ICONS.add, 14), 'Adicionar item']),
+          ...(pode.gerente ? [
+            el('button', {
+              className: 'btn btn--primary btn--sm',
+              type: 'button',
+              onClick: adicionarItem,
+            }, [svgIcon(ICONS.add, 14), 'Adicionar item']),
+          ] : []),
         ]),
       ]),
       produtosTable.element,

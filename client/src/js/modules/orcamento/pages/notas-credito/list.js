@@ -11,6 +11,7 @@ import {
   downloadArquivo,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { permissoes } from '@store/auth-store.js';
 import { openNotaCreditoDialog } from './nota-credito-dialog.js';
 
 /**
@@ -23,6 +24,7 @@ import { openNotaCreditoDialog } from './nota-credito-dialog.js';
 export async function renderNotasCreditoList(container, _ctx) {
   let disposed = false;
   let filtroClassificacao = null;
+  const pode = permissoes('orcamento');
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -81,24 +83,24 @@ export async function renderNotasCreditoList(container, _ctx) {
         onClick: (row) => downloadArquivo(row.arquivo_id, row.arquivo_nome)
           .catch((err) => showError(err.message || 'Erro ao baixar anexo')),
       },
-      {
+      ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
         onClick: (row) => openNotaCreditoDialog({ ncId: row.id, onSaved: load }),
-      },
-      {
+      }] : []),
+      ...(pode.gerente ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (row) => handleDelete(row),
-      },
+      }] : []),
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Notas de Crédito' }),
-      el('div', { className: 'page__actions' }, [newBtn]),
+      el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
     el('div', {
       className: 'page__filters',

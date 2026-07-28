@@ -4,6 +4,7 @@ import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import { getCliente } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 import { openClienteDialog } from './dialog-cliente.js';
 
 function summaryCard(label, value) {
@@ -84,13 +85,14 @@ export async function renderClienteDetails(container, { params }) {
           chip(cliente.tipo_cliente_nome || '-', 'info'),
         ]),
       ]),
-      el('div', { className: 'page__actions' }, [
+      // PUT /cliente e gerente: sem isso o botao aparecia para quem so le.
+      el('div', { className: 'page__actions' }, permissoes('mapoteca').gerente ? [
         el('button', {
           className: 'btn btn--secondary',
           type: 'button',
           onClick: () => openClienteDialog({ cliente, onSaved: load }),
         }, [svgIcon(ICONS.edit, 16), 'Editar']),
-      ]),
+      ] : []),
     ]));
 
     // Statistics cards

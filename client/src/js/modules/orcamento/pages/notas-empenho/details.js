@@ -21,6 +21,7 @@ import {
   updateRecebimento,
   deleteRecebimento,
 } from '@modules/orcamento/services/orcamento-service.js';
+import { permissoes } from '@store/auth-store.js';
 
 function infoRow(label, value) {
   return el('div', { className: 'detail-card__row' }, [
@@ -44,6 +45,9 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   let disposed = false;
   let liquidacoesTable = null;
   let recebimentosTable = null;
+  // Liquidacao e recebimento seguem o corte do modulo: lancar e editar sao
+  // operador, excluir e gerente. Quem so consulta ve as duas tabelas cheias.
+  const pode = permissoes('orcamento');
 
   const root = el('div', { className: 'page' });
   container.appendChild(root);
@@ -334,30 +338,30 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       pageSize: 10,
       emptyMessage: 'Nenhuma liquidação registrada',
       actions: [
-        {
+        ...(pode.operador ? [{
           icon: ICONS.edit,
           title: 'Editar liquidação',
           onClick: (row) => editarLiquidacao(row),
-        },
-        {
+        }] : []),
+        ...(pode.gerente ? [{
           icon: ICONS.delete,
           title: 'Excluir liquidação',
           variant: 'danger',
           onClick: (row) => excluirLiquidacao(row),
-        },
+        }] : []),
       ],
     });
 
     root.appendChild(el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Liquidações' }),
-        el('div', { className: 'dashboard-section__controls' }, [
+        el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
           el('button', {
             className: 'btn btn--primary btn--sm',
             type: 'button',
             onClick: novaLiquidacao,
           }, [svgIcon(ICONS.add, 14), 'Nova liquidação']),
-        ]),
+        ] : []),
       ]),
       liquidacoesTable.element,
     ]));
@@ -385,30 +389,30 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       pageSize: 10,
       emptyMessage: 'Nenhum recebimento de material registrado',
       actions: [
-        {
+        ...(pode.operador ? [{
           icon: ICONS.edit,
           title: 'Editar recebimento',
           onClick: (row) => editarRecebimento(row),
-        },
-        {
+        }] : []),
+        ...(pode.gerente ? [{
           icon: ICONS.delete,
           title: 'Excluir recebimento',
           variant: 'danger',
           onClick: (row) => excluirRecebimento(row),
-        },
+        }] : []),
       ],
     });
 
     root.appendChild(el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Recebimentos de material' }),
-        el('div', { className: 'dashboard-section__controls' }, [
+        el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
           el('button', {
             className: 'btn btn--primary btn--sm',
             type: 'button',
             onClick: novoRecebimento,
           }, [svgIcon(ICONS.add, 14), 'Novo recebimento']),
-        ]),
+        ] : []),
       ]),
       recebimentosTable.element,
     ]));
