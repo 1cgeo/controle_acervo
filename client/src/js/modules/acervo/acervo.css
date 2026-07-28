@@ -132,14 +132,6 @@
   gap: var(--space-sm);
 }
 
-.busca__cabecalho {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
 .busca__titulo {
   margin: 0;
   font-size: var(--font-size-2xl);
@@ -802,7 +794,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Cabecalho: identidade a esquerda, acoes a direita. */
+/* Titulo e contador, lado a lado, na primeira linha. */
 .busca__identidade {
   display: flex;
   align-items: baseline;
@@ -810,9 +802,18 @@
   flex-wrap: wrap;
 }
 
+/* Limpar e exportar, no fim da LINHA DOS FILTROS (chefe, 2026-07-28). O que se
+ * exporta e o resultado dos filtros que estao ali do lado, entao a acao
+ * pertence a essa linha; e uma faixa a menos no topo e altura a mais para a
+ * lista e o mapa, que e onde esta o conteudo.
+ *
+ * `flex: none` para o grupo nao ser espremido quando os nomes dos filtros
+ * crescem: quem cede espaco e o espacador antes dele. */
 .busca__acoes {
   display: flex;
+  align-items: center;
   gap: var(--space-xs);
+  flex: none;
   flex-wrap: wrap;
 }
 

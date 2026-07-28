@@ -1015,6 +1015,21 @@ describe('busca do acervo: exportar CSV', () => {
   const botaoPorTexto = (c, texto) => [...c.querySelectorAll('.busca__acoes button')]
     .find(b => b.textContent.includes(texto));
 
+  // Pedido do chefe em 2026-07-28. O que se exporta e o resultado dos filtros,
+  // entao a acao pertence a linha deles; e o topo perde uma faixa, que vira
+  // altura para a lista e o mapa.
+  test('as acoes ficam na mesma linha dos filtros, e nao num cabecalho proprio', async () => {
+    const { container, cleanup } = await montar();
+
+    const acoes = container.querySelector('.busca__acoes');
+    expect(acoes.closest('.busca-filtros')).not.toBeNull();
+    // "Limpar filtros" desceu junto: as duas sao acoes sobre o mesmo recorte.
+    expect([...acoes.querySelectorAll('button')].map(b => b.textContent))
+      .toEqual(['Limpar filtros', 'Exportar selecionados', 'Exportar CSV']);
+
+    cleanup();
+  });
+
   test('exporta o resultado inteiro com os filtros da busca', async () => {
     const { container, cleanup } = await montar({ query: 'termo=porto&tipo_escala_id=2' });
 

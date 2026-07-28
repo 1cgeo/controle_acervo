@@ -173,7 +173,14 @@ export async function renderBusca(container, ctx) {
     onClick: (e) => exportarCsv(true, e.currentTarget),
   }, [svgIcon(ICONS.download, 16), 'Exportar selecionados']);
 
-  const acoesTopo = el('div', { className: 'busca__acoes' }, [exportarSelecaoBtn, exportarTudoBtn]);
+  // Exportar fica na MESMA linha dos filtros, depois do espacador, e nao num
+  // cabecalho separado (chefe, 2026-07-28). O que se exporta e o resultado dos
+  // filtros que estao ali do lado, entao a acao pertence a essa linha; alem
+  // disso, uma faixa a menos no topo e altura a mais para a lista e o mapa, que
+  // e onde esta o conteudo.
+  const acoesTopo = el('div', { className: 'busca__acoes' }, [
+    limparBtn, exportarSelecaoBtn, exportarTudoBtn,
+  ]);
 
   const filtros = el('div', { className: 'busca-filtros' }, [
     tipoSelect,
@@ -186,7 +193,7 @@ export async function renderBusca(container, ctx) {
     ]),
     chipArea,
     el('span', { className: 'busca-filtros__espaco' }),
-    limparBtn,
+    acoesTopo,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -263,12 +270,10 @@ export async function renderBusca(container, ctx) {
 
   const page = el('div', { className: 'busca' }, [
     el('div', { className: 'busca__topo' }, [
-      el('div', { className: 'busca__cabecalho' }, [
-        el('div', { className: 'busca__identidade' }, [
-          el('h1', { className: 'busca__titulo', textContent: 'Busca no Acervo' }),
-          contador,
-        ]),
-        acoesTopo,
+      // Só a identidade: as ações desceram para a linha dos filtros.
+      el('div', { className: 'busca__identidade' }, [
+        el('h1', { className: 'busca__titulo', textContent: 'Busca no Acervo' }),
+        contador,
       ]),
       campoBusca,
       filtros,
