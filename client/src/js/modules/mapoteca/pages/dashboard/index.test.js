@@ -18,9 +18,19 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 // 1200 + 689 dos dois clientes do mock, formatado como o Intl pt-BR faz.
 const SOMA_IMPRESSOES = new Intl.NumberFormat('pt-BR').format(1889);
 
-// O jsdom nao implementa canvas, entao o Chart.js nao desenha aqui. Os graficos
-// ficam SEM dado de proposito (eles caem no estado "Sem dados disponiveis") e o
-// teste afere o caminho dos dados nos cards e nas tabelas, nao o desenho.
+const abas = (container) =>
+  Array.from(container.querySelectorAll('.tabs > .tabs__item'));
+
+const rotulosAbas = (container) => abas(container).map(b => b.textContent);
+
+/** Abre uma aba pelo rotulo e espera a montagem. */
+async function abrirAba(container, rotulo) {
+  const botao = abas(container).find(b => b.textContent === rotulo);
+  botao.click();
+  await flush();
+  return botao;
+}
+
 describe('renderDashboard da mapoteca', () => {
   beforeEach(() => {
     svc.getOrderStatus.mockResolvedValue({
@@ -52,59 +62,107 @@ describe('renderDashboard da mapoteca', () => {
     vi.useRealTimers();
   });
 
-  test('monta o titulo e chama todos os paineis do dashboard', async () => {
+  test('monta o titulo e as quatro abas', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(container.querySelector('.dashboard__title').textContent).toBe('Dashboard');
+    expect(container.querySelector('.dashboard__title').textContent).toBe('Dashboard da Mapoteca');
+    expect(rotulosAbas(container)).toEqual([
+      'Resumo Anual', 'Pedidos', 'Atendimento', 'Materiais',
+    ]);
+
+    cleanup();
+  });
+
+  // O Resumo Anual abre a pagina (chefe, 2026-07-27): e o numero de que a DGEO
+  // presta contas. Virou a PRIMEIRA aba, e nao a primeira secao, mas a ordem
+  // continua sendo uma decisao, e nao acaso.
+  test('abre no Resumo Anual, e so ele busca dado', async () => {
+    const ano = new Date().getFullYear();
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(svc.getResumoAnual).toHaveBeenCalledWith(ano);
+    expect(svc.getEntregasPorTipoProduto).toHaveBeenCalledWith(ano);
+    expect(svc.getOperacoesApoiadas).toHaveBeenCalledWith(ano);
+    expect(container.textContent).toContain('Resumo Anual');
+
+    // As outras tres abas ainda nao existem no DOM: nada delas foi buscado.
+    expect(svc.getOrderStatus).not.toHaveBeenCalled();
+    expect(svc.getAvgFulfillmentTime).not.toHaveBeenCalled();
+    expect(svc.getStockByLocation).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  test('cada aba busca o seu proprio grupo de endpoints', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await abrirAba(container, 'Pedidos');
     expect(svc.getOrderStatus).toHaveBeenCalled();
-    expect(svc.getStockByLocation).toHaveBeenCalled();
     expect(svc.getOrdersTimeline).toHaveBeenCalledWith(6);
+
+    await abrirAba(container, 'Atendimento');
     expect(svc.getAvgFulfillmentTime).toHaveBeenCalled();
     expect(svc.getClientActivity).toHaveBeenCalledWith(10);
+
+    await abrirAba(container, 'Materiais');
+    expect(svc.getStockByLocation).toHaveBeenCalled();
     expect(svc.getMaterialConsumption).toHaveBeenCalledWith(12);
 
-    if (typeof cleanup === 'function') cleanup();
+    cleanup();
   });
 
   // As quatro secoes que o chefe mandou sair em 2026-07-27. O teste guarda a
   // AUSENCIA, senao elas voltam em silencio numa refatoracao futura. Vale para a
   // tela e para a requisicao: painel removido nao pode seguir pedindo dado.
-  test('nao monta os paineis removidos, nem pede o dado deles', async () => {
+  test('nao monta os paineis removidos, nem pede o dado deles, em aba nenhuma', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(container.textContent).not.toContain('Pedidos Pendentes');
-    expect(container.textContent).not.toContain('Plotters');
-    expect(container.textContent).not.toContain('Tipo de Mídia');
+    for (const rotulo of ['Pedidos', 'Atendimento', 'Materiais']) {
+      await abrirAba(container, rotulo);
+      expect(container.textContent).not.toContain('Pedidos Pendentes');
+      expect(container.textContent).not.toContain('Tipo de Mídia');
+    }
+
     expect(svc.getPendingOrders).not.toHaveBeenCalled();
     expect(svc.getPlotterStatus).not.toHaveBeenCalled();
     expect(svc.getEntregasPorMidia).not.toHaveBeenCalled();
     expect(svc.getEntregasPorMes).not.toHaveBeenCalled();
 
-    if (typeof cleanup === 'function') cleanup();
+    cleanup();
   });
 
   // "Em Andamento" era subconjunto de "Pendentes" no servidor, entao os dois
   // cards somados contavam o mesmo pedido duas vezes.
-  test('o card Em Andamento saiu, e Pendentes ficou', async () => {
+  test('na aba de pedidos, o card Em Andamento saiu e Pendentes ficou', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    const cards = container.querySelector('.stats-grid').textContent;
+    await abrirAba(container, 'Pedidos');
+
+    const cards = container.querySelector('.tabs__content .stats-grid').textContent;
     expect(cards).not.toContain('Em Andamento');
     expect(cards).toContain('Pendentes');
+    expect(cards).toContain('68');
+    expect(cards).toContain('Total de Pedidos');
 
-    if (typeof cleanup === 'function') cleanup();
+    cleanup();
   });
 
   test('o Top 10 de clientes nao pagina e soma as impressoes', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
+
+    await abrirAba(container, 'Atendimento');
 
     const secao = [...container.querySelectorAll('.dashboard-section')]
       .find(s => s.textContent.includes('Clientes Mais Ativos'));
@@ -116,50 +174,25 @@ describe('renderDashboard da mapoteca', () => {
     expect(secao.textContent).toContain('OM 8');
     expect(secao.textContent).toContain('Impressões');
     expect(secao.textContent).toContain(SOMA_IMPRESSOES);
+    expect(secao.textContent).toContain('1º CGEO');
 
-    if (typeof cleanup === 'function') cleanup();
+    cleanup();
   });
 
-  test('o Resumo Anual abre a pagina, antes dos cards de situacao', async () => {
+  test('o auto-refresh de 60 s derruba o cache e recarrega so a aba ativa', async () => {
+    vi.useFakeTimers();
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
-    await flush();
 
-    const filhos = [...container.querySelector('.dashboard').children];
-    const idxAnual = filhos.findIndex(f => f.textContent.includes('Resumo Anual'));
-    const idxCards = filhos.findIndex(f => f.classList.contains('stats-grid'));
-    expect(idxAnual).toBeGreaterThan(-1);
-    expect(idxAnual).toBeLessThan(idxCards);
+    const antes = svc.getResumoAnual.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60 * 1000);
 
-    if (typeof cleanup === 'function') cleanup();
-  });
+    expect(svc.invalidateDashboardCache).toHaveBeenCalledTimes(1);
+    expect(svc.getResumoAnual.mock.calls.length).toBe(antes + 1);
+    // A aba inativa continua sem ser buscada.
+    expect(svc.getOrderStatus).not.toHaveBeenCalled();
 
-  test('preenche os cards de situacao com o que o service devolveu', async () => {
-    const container = document.createElement('div');
-    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
-    await flush();
-
-    const cards = container.querySelector('.stats-grid').textContent;
-    expect(cards).toContain('68');
-    expect(cards).toContain('Total de Pedidos');
-    expect(cards).toContain('Tempo Médio de Atendimento');
-
-    if (typeof cleanup === 'function') cleanup();
-  });
-
-  test('a secao anual usa o ano corrente', async () => {
-    const ano = new Date().getFullYear();
-    const container = document.createElement('div');
-    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
-    await flush();
-
-    expect(svc.getResumoAnual).toHaveBeenCalledWith(ano);
-    expect(svc.getEntregasPorTipoProduto).toHaveBeenCalledWith(ano);
-    expect(svc.getOperacoesApoiadas).toHaveBeenCalledWith(ano);
-    expect(container.textContent).toContain('Resumo Anual');
-    expect(container.textContent).toContain('1º CGEO');
-
-    if (typeof cleanup === 'function') cleanup();
+    cleanup();
   });
 
   test('o cleanup para o refetch de 60s', async () => {
@@ -167,9 +200,9 @@ describe('renderDashboard da mapoteca', () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     cleanup();
-    svc.getOrderStatus.mockClear();
+    svc.getResumoAnual.mockClear();
 
-    vi.advanceTimersByTime(120 * 1000);
-    expect(svc.getOrderStatus).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(120 * 1000);
+    expect(svc.getResumoAnual).not.toHaveBeenCalled();
   });
 });

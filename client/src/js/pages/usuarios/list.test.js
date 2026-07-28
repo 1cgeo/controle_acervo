@@ -43,6 +43,10 @@ const USUARIO = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // O modal vive no document.body, fora do container da pagina. Um teste que
+  // falha no meio deixa o dele aberto, e o proximo passa a inspecionar o modal
+  // ERRADO: as falhas viram cascata e escondem a causa real.
+  document.body.innerHTML = '';
   getUsuarios.mockResolvedValue([]);
   getModulos.mockResolvedValue(MODULOS);
   getTiposPerfil.mockResolvedValue(PERFIS);
@@ -145,16 +149,77 @@ describe('renderUsuariosList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('o modal de perfis traz um select por modulo, com o nivel atual', async () => {
+  // O <select> por modulo virou um controle segmentado: os quatro niveis a
+  // vista, na ordem da hierarquia, em vez de escondidos atras de um clique.
+  const linhasPerfil = () => [...document.querySelectorAll('.modal .perfil-linha')];
+  const nivelAtivo = (linha) => linha.querySelector('.seletor-nivel__item--ativo').textContent;
+  const escolherNivel = (linha, rotulo) => {
+    [...linha.querySelectorAll('.seletor-nivel__item')]
+      .find(b => b.textContent === rotulo)
+      .click();
+  };
+  const botaoSalvar = () => [...document.querySelectorAll('.modal__footer button')]
+    .find(b => b.textContent.startsWith('Salvar'));
+
+  test('o modal de perfis traz um seletor por modulo, marcando o nivel atual', async () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { container, cleanup } = await montar();
 
     container.querySelector('.data-table__action-btn').click();
     await flush();
 
-    const selects = [...document.querySelectorAll('.modal select')];
-    expect(selects).toHaveLength(MODULOS.length);
-    expect(selects.map(s => s.value)).toEqual(['1', '0', '2']);
+    const linhas = linhasPerfil();
+    expect(linhas).toHaveLength(MODULOS.length);
+    expect(linhas.map(nivelAtivo)).toEqual(['Consulta', 'Sem acesso', 'Operador']);
+    // Os quatro niveis ficam a vista em cada modulo, e nao atras de um dropdown.
+    expect(linhas[0].querySelectorAll('.seletor-nivel__item')).toHaveLength(4);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  // Salvar sem mudanca nenhuma so fechava o modal, o que era indistinguivel de
+  // ter salvado. Agora o botao fica desativado ate existir o que salvar.
+  test('o botao de salvar conta as alteracoes e nasce desativado', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    container.querySelector('.data-table__action-btn').click();
+    await flush();
+
+    expect(botaoSalvar().disabled).toBe(true);
+    expect(botaoSalvar().textContent).toBe('Salvar');
+
+    escolherNivel(linhasPerfil()[0], 'Gerente');
+    expect(botaoSalvar().disabled).toBe(false);
+    expect(botaoSalvar().textContent).toBe('Salvar 1 alteração');
+
+    escolherNivel(linhasPerfil()[1], 'Consulta');
+    expect(botaoSalvar().textContent).toBe('Salvar 2 alterações');
+
+    // Voltar ao nivel original desfaz a contagem: nao ha o que mandar.
+    escolherNivel(linhasPerfil()[0], 'Consulta');
+    escolherNivel(linhasPerfil()[1], 'Sem acesso');
+    expect(botaoSalvar().disabled).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  test('a linha que muda se marca com o "de X para Y"', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    container.querySelector('.data-table__action-btn').click();
+    await flush();
+
+    const linha = linhasPerfil()[0]; // acervo, hoje Consulta
+    expect(linha.classList.contains('perfil-linha--alterada')).toBe(false);
+
+    escolherNivel(linha, 'Gerente');
+    expect(linha.classList.contains('perfil-linha--alterada')).toBe(true);
+    expect(linha.querySelector('.perfil-linha__marca').textContent)
+      .toBe('Consulta para Gerente');
 
     if (typeof cleanup === 'function') cleanup();
     document.body.innerHTML = '';
@@ -167,14 +232,12 @@ describe('renderUsuariosList', () => {
     container.querySelector('.data-table__action-btn').click();
     await flush();
 
-    const selects = [...document.querySelectorAll('.modal select')];
-    selects[0].value = '0'; // acervo: revoga
-    selects[2].value = '3'; // orcamento: 2 -> 3
+    const linhas = linhasPerfil();
+    escolherNivel(linhas[0], 'Sem acesso'); // acervo: revoga
+    escolherNivel(linhas[2], 'Gerente');    // orcamento: 2 -> 3
     // mapoteca fica como esta (0), entao nao pode ir no corpo
 
-    const salvar = [...document.querySelectorAll('.modal button')]
-      .find(b => b.textContent.trim() === 'Salvar');
-    salvar.click();
+    botaoSalvar().click();
     await flush();
 
     expect(atualizarUsuario).toHaveBeenCalledWith('u-1', {

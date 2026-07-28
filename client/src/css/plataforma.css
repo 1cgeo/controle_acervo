@@ -51,3 +51,232 @@
   color: var(--color-primary);
   font-weight: var(--font-weight-medium);
 }
+
+/* ---------------------------------------------------------------------------
+ * Modal de perfis por modulo.
+ *
+ * E a tela que libera o sistema, entao ela precisa responder duas perguntas de
+ * relance: o que a pessoa tem HOJE e o que vai passar a ter. Por isso os niveis
+ * ficam a vista num controle segmentado, e a linha que mudou se marca sozinha.
+ * ------------------------------------------------------------------------- */
+.perfis-dialog__identidade {
+  margin: 0 0 var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.perfis-dialog__aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+.perfis-dialog__aviso svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-primary);
+}
+
+.perfis-dialog__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.perfil-linha {
+  padding: var(--space-md);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.perfil-linha--alterada {
+  border-left-color: var(--color-warning);
+  background: var(--bg-hover);
+}
+
+.perfil-linha__cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.perfil-linha__modulo {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* So aparece quando a linha muda: e o "de X para Y" da alteracao pendente.
+ * Contorno, e nao preenchimento: o laranja do tema escuro e claro demais para
+ * carregar texto branco em cima. */
+.perfil-linha__marca {
+  display: none;
+  padding: 1px 8px;
+  border: 1px solid var(--color-warning);
+  border-radius: 999px;
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.perfil-linha--alterada .perfil-linha__marca {
+  display: inline-flex;
+}
+
+.perfil-linha__ajuda {
+  margin: var(--space-sm) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+  /* Duas linhas reservadas: sem isto a troca de nivel sacode a lista inteira. */
+  min-height: 2.6em;
+}
+
+/* Controle segmentado: os quatro niveis lado a lado, na ordem da hierarquia. */
+.seletor-nivel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.seletor-nivel__item {
+  flex: 1 1 0;
+  min-width: 88px;
+  padding: 6px var(--space-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.seletor-nivel__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.seletor-nivel__item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.seletor-nivel__item--ativo {
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* A cor do nivel ativo carrega o peso do acesso: sem acesso e neutro, gerente
+ * e o mais forte. Ajuda a varrer a lista sem ler rotulo por rotulo. */
+.seletor-nivel__item--n0.seletor-nivel__item--ativo { color: var(--text-secondary); }
+.seletor-nivel__item--n1.seletor-nivel__item--ativo { color: var(--color-info); }
+.seletor-nivel__item--n2.seletor-nivel__item--ativo { color: var(--color-primary); }
+.seletor-nivel__item--n3.seletor-nivel__item--ativo { color: var(--color-warning); }
+
+/* ---------------------------------------------------------------------------
+ * Modal de importacao do Auth Server.
+ *
+ * A lista chega com a DGEO inteira, entao busca, contador e selecao em massa
+ * nao sao enfeite: sem eles, achar uma pessoa e rolar a lista com o olho.
+ * ------------------------------------------------------------------------- */
+.importar-dialog__barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.importar-dialog__contador {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.importar-dialog__barra-acoes {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.importar-dialog__lista {
+  display: flex;
+  flex-direction: column;
+  max-height: 45vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.importar-dialog__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.importar-dialog__item:last-child {
+  border-bottom: none;
+}
+
+.importar-dialog__item:hover {
+  background: var(--bg-hover);
+}
+
+.importar-dialog__item--marcada {
+  background: var(--bg-selected);
+}
+
+.importar-dialog__pessoa {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.importar-dialog__nome {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.importar-dialog__secundario {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.importar-dialog__vazio {
+  margin: 0;
+  padding: var(--space-lg);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.importar-dialog__nota {
+  margin: var(--space-md) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}

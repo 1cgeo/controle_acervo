@@ -64,3 +64,87 @@ describe('renderDashboard', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+describe('renderDashboard: as tres abas', () => {
+  const abas = (container) => Array.from(container.querySelectorAll('.tabs > .tabs__item'));
+
+  async function abrirAba(container, rotulo) {
+    abas(container).find(b => b.textContent === rotulo).click();
+    await flush();
+  }
+
+  beforeEach(() => {
+    localStorage.setItem('@sca-orcamento-ano', '2026');
+    instanciasChart.length = 0;
+  });
+
+  test('monta as tres abas e abre na visao geral', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(abas(container).map(b => b.textContent)).toEqual([
+      'Visão Geral', 'PDR (3.2)', 'Extra-PDR (3.7)',
+    ]);
+    // A visao geral e a unica montada: as tabelas ainda nao existem no DOM.
+    expect(container.querySelector('.tabs__content .stats-grid')).not.toBeNull();
+    expect(container.querySelector('.tabs__content tbody')).toBeNull();
+
+    cleanup();
+  });
+
+  // As tres abas saem da MESMA consulta. Sem a memoizacao do store, cada clique
+  // de aba pagaria um round-trip para reexibir dado que ja estava na mao.
+  test('trocar de aba NAO refaz a consulta da secao 3', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(getSecao3).toHaveBeenCalledTimes(1);
+
+    await abrirAba(container, 'PDR (3.2)');
+    await abrirAba(container, 'Extra-PDR (3.7)');
+    await abrirAba(container, 'Visão Geral');
+
+    expect(getSecao3).toHaveBeenCalledTimes(1);
+
+    cleanup();
+  });
+
+  test('cada aba de ND mostra as colunas do seu recorte', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await abrirAba(container, 'PDR (3.2)');
+    const cabecalhoPdr = container.querySelector('.tabs__content thead').textContent;
+    // O previsto so existe no PDR.
+    expect(cabecalhoPdr).toContain('Previsto');
+    expect(container.querySelector('.tabs__content tbody').textContent).toContain('339030');
+
+    await abrirAba(container, 'Extra-PDR (3.7)');
+    const cabecalhoExtra = container.querySelector('.tabs__content thead').textContent;
+    expect(cabecalhoExtra).not.toContain('Previsto');
+    expect(cabecalhoExtra).toContain('Empenhado');
+
+    cleanup();
+  });
+
+  test('trocar o mes invalida a secao 3 e recarrega a aba ativa', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(getSecao3).toHaveBeenCalledTimes(1);
+
+    const select = container.querySelector('.chart-card__select');
+    select.value = '3';
+    select.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(getSecao3).toHaveBeenCalledTimes(2);
+    expect(getSecao3).toHaveBeenLastCalledWith({ ano: 2026, mes: 3, cumulativo: true });
+
+    cleanup();
+  });
+});
