@@ -87,6 +87,23 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   **filtra o que já aconteceu**, e um ano sem movimento só entregaria telas em branco. Na mapoteca o
   contexto vale para as telas por ano (resumo anual, mapa das entregas, consumo, RPCMTec, detalhe do
   material) e **não** para pedidos e clientes, que são operacionais e têm filtro próprio.
+- **Pacote ESM puro entra no servidor por `require()`, e no Jest por dublê mapeado.** O servidor é
+  CommonJS, e `serialize-error` (usado por `utils/app_error.js`, ou seja, por quase tudo) é ESM puro
+  desde a versão 9. Ele era carregado por `import()` dinâmico, e isso **impedia a suíte inteira do
+  servidor de rodar**: dentro do contexto de VM do Jest o `import()` exige
+  `NODE_OPTIONS=--experimental-vm-modules`, e com essa flag o Jest 30 no Node 24 quebra antes, em
+  `ERR_VM_MODULE_NOT_MODULE`. Sem saída pelos dois lados, todo arquivo de teste morria no primeiro
+  `require`. Hoje `utils/serialize_error_loader.js` tenta `require()` primeiro (o Node aceita
+  `require()` de ESM sem flag desde a 22.12; o pacote não tem top-level await) e só cai no
+  `import()` se der `ERR_REQUIRE_ESM`, para Node mais antigo. No Jest, `moduleNameMapper` aponta
+  para um dublê CJS em `__tests__/helpers/`, como já era feito com o `uuid`. **Não devolva a flag
+  aos scripts de teste**: ela é a causa, não a cura. Ao acrescentar dependência ESM pura, siga este
+  par (require primeiro, dublê mapeado no Jest).
+- **O rate limit é desligado sob `NODE_ENV=test`.** São 200 requisições por minuto, e a suíte passa
+  disso no meio do arquivo de rotas da mapoteca. O efeito ruim não era falhar, era fazer falhar um
+  teste **que não mudou**, só porque um teste novo entrou antes dele no mesmo minuto: a suíte
+  passava a depender de ordem e de relógio. O limite protege contra abuso vindo da rede, que não é o
+  que a suíte imita.
 - **`archiver` fica na 7, e os `overrides` do `server/package.json` são o que zera a auditoria.** NUNCA rode `npm audit fix --force` aqui. Ele sobe o `archiver` para 8, que é **ESM puro e não exporta mais função chamável**: as classes `Archiver`/`ZipArchive` substituíram `archiver('zip', ...)`, e as duas exportações em ZIP quebram no boot. Medido em 2026-07-27. As 7 vulnerabilidades da subárvore vinham todas de `brace-expansion`, então os `overrides` corrigem a raiz sem tocar na API. O `readdir-glob` precisa de override próprio (`minimatch` ^10.2.5) porque o `minimatch` 5 faz `require('brace-expansion')` esperando a função direta, e a versão 5 exporta `{ expand }` nomeado: sem esse segundo override, o `npm audit` diz "0 vulnerabilities" com o `archive.glob()` quebrado. Quem cobre isso é `server/src/__tests__/unit/acervo_zip_ctrl.test.js`, que abre o ZIP e descomprime, em vez de conferir o tipo do retorno.
 
 ## Modelo de autorização

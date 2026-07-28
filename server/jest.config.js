@@ -15,12 +15,18 @@ module.exports = {
     '!index.js'
   ],
   testTimeout: 30000,
-  // Map ESM-only packages to CJS shims for Jest compatibility
+  // Pacote ESM puro nao entra no runtime CommonJS do Jest, entao cada um deles
+  // aponta para um duble CJS. Em producao valem os pacotes de verdade.
+  //
+  // O `serialize-error` foi o que impedia a suite INTEIRA de rodar: pelo
+  // `import()` dinamico ele exige NODE_OPTIONS=--experimental-vm-modules, e com
+  // a flag o Jest 30 no Node 24 quebra antes, em ERR_VM_MODULE_NOT_MODULE.
+  // Como utils/app_error.js o alcanca, todo teste morria no primeiro require.
   moduleNameMapper: {
-    '^uuid$': '<rootDir>/__tests__/helpers/uuid-shim.js'
-  },
-  // Transform ESM-only packages (serialize-error) to CJS for Jest
-  transformIgnorePatterns: [
-    'node_modules/(?!(serialize-error)/)'
-  ]
+    '^uuid$': '<rootDir>/__tests__/helpers/uuid-shim.js',
+    '^serialize-error$': '<rootDir>/__tests__/helpers/serialize-error-shim.js'
+  }
+  // Sem `transformIgnorePatterns` para o serialize-error: ele so teria efeito
+  // com um transform de ESM para CJS configurado, e este projeto nao tem babel.
+  // Ficava dando a impressao de resolver o problema sem resolver nada.
 }

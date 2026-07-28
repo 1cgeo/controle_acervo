@@ -8,11 +8,11 @@
     "dev-https": "nodemon src/index.js --https",
     "production": "pm2 start src/index.js --name controle-acervo",
     "production-https": "pm2 start src/index.js --name controle-acervo-https -- --https",
-    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
-    "test:unit": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=unit",
-    "test:integration": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=integration --runInBand",
-    "test:routes": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --testPathPatterns=routes --runInBand",
-    "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --coverage"
+    "test": "cross-env NODE_ENV=test jest --runInBand",
+    "test:unit": "cross-env NODE_ENV=test jest --testPathPatterns=unit",
+    "test:integration": "cross-env NODE_ENV=test jest --testPathPatterns=integration --runInBand",
+    "test:routes": "cross-env NODE_ENV=test jest --testPathPatterns=routes --runInBand",
+    "test:coverage": "cross-env NODE_ENV=test jest --runInBand --coverage"
   },
   "nodemonConfig": {
     "ignore": [

@@ -35,7 +35,18 @@ app.use(cors())
 
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
-  max: 200
+  max: 200,
+  // Desligado sob NODE_ENV=test. A suite faz centenas de requisicoes em poucos
+  // segundos, contra o mesmo processo, e passava de 200 no meio do arquivo de
+  // rotas da mapoteca: dali em diante tudo virava 429. O efeito pior nao era
+  // falhar, era falhar em teste QUE NAO MUDOU, so porque um teste novo entrou
+  // antes dele no mesmo minuto. Isso torna a suite dependente de ordem e de
+  // relogio, e o resultado deixa de significar alguma coisa.
+  //
+  // O limite protege contra abuso vindo da rede, que nao e o que a suite
+  // imita. Nenhum teste cobre o 429 hoje; se um dia cobrir, ele monta o proprio
+  // limitador em vez de depender deste.
+  skip: () => process.env.NODE_ENV === 'test'
 })
 
 // Rate limit antes do body parser: requisição acima do limite não paga o parse de 50mb

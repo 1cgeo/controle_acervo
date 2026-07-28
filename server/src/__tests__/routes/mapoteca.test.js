@@ -993,6 +993,14 @@ describe('Mapoteca Routes', () => {
   })
 
   describe('Dashboard novo', () => {
+    // Payload do mapa das entregas.
+    //
+    // O envelope de resposta põe TUDO em `dados`, e o payload deste endpoint
+    // também tem um `dados` (as feições). Ou seja, `res.body.dados` parece o
+    // array de feições e é o objeto inteiro; as feições estão um nível abaixo.
+    // Errar isso fez os sete testes deste bloco falharem de uma vez.
+    const mapaDe = (res) => res.body.dados
+
     const setupEntrega = async () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
       const versao = await createVersao(produto.id)
@@ -1118,24 +1126,25 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(geo.status).toBe(200)
-      expect(geo.body.dados).toHaveLength(1)
-      expect(geo.body.dados[0].total_produtos).toBe(7)
-      expect(geo.body.dados[0].total_pedidos).toBe(1)
-      expect(geo.body.dados[0].total_clientes).toBe(1)
-      expect(geo.body.dados[0].geom.type).toBe('Polygon')
+      const payload = mapaDe(geo)
+      expect(payload.dados).toHaveLength(1)
+      expect(payload.dados[0].total_produtos).toBe(7)
+      expect(payload.dados[0].total_pedidos).toBe(1)
+      expect(payload.dados[0].total_clientes).toBe(1)
+      expect(payload.dados[0].geom.type).toBe('Polygon')
       // Ponto de rótulo próprio: rotulando o polígono, a folha que cruza a
       // borda de um ladrilho do MapLibre ganha um rótulo de cada lado, e a
       // mesma carta aparece duas vezes no mapa.
-      expect(geo.body.dados[0].ponto.type).toBe('Point')
-      expect(geo.body.dados[0].area).toBeGreaterThan(0)
+      expect(payload.dados[0].ponto.type).toBe('Point')
+      expect(payload.dados[0].area).toBeGreaterThan(0)
       // Sem o membro `crs`, que a RFC 7946 removeu e o MapLibre ignora: eram
       // 65 bytes por geometria, quase um terço do corpo da resposta.
-      expect(geo.body.dados[0].geom.crs).toBeUndefined()
+      expect(payload.dados[0].geom.crs).toBeUndefined()
       // O id sai NÚMERO: o mapa usa o id como identificador de feição, e '1'
       // nunca casaria com 1 na hora de realçar.
-      expect(typeof geo.body.dados[0].id).toBe('number')
-      expect(geo.body.total_produtos).toBe(resumo.body.dados.total_entregas)
-      expect(geo.body.sem_geometria).toBe(0)
+      expect(typeof payload.dados[0].id).toBe('number')
+      expect(payload.total_produtos).toBe(resumo.body.dados.total_entregas)
+      expect(payload.sem_geometria).toBe(0)
     })
 
     it('GET /dashboard/entregas_geo filtra por tipo de produto, escala e cliente', async () => {
@@ -1146,12 +1155,12 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(casa.status).toBe(200)
-      expect(casa.body.dados).toHaveLength(1)
-      expect(casa.body.filtrado).toBe(true)
-      expect(casa.body.total_produtos).toBe(7)
+      expect(mapaDe(casa).dados).toHaveLength(1)
+      expect(mapaDe(casa).filtrado).toBe(true)
+      expect(mapaDe(casa).total_produtos).toBe(7)
       // O total do ano IGNORA os filtros: é ele que dá a noção de tamanho do
       // recorte ("7 de 7"). Sem ele, filtrar deixaria o número sem referência.
-      expect(casa.body.total_ano).toBe(7)
+      expect(mapaDe(casa).total_ano).toBe(7)
 
       // Escala que não é a do produto: o recorte esvazia, mas o total do ano fica.
       const naoCasa = await request(app)
@@ -1159,9 +1168,9 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(naoCasa.status).toBe(200)
-      expect(naoCasa.body.dados).toEqual([])
-      expect(naoCasa.body.total_produtos).toBe(0)
-      expect(naoCasa.body.total_ano).toBe(7)
+      expect(mapaDe(naoCasa).dados).toEqual([])
+      expect(mapaDe(naoCasa).total_produtos).toBe(0)
+      expect(mapaDe(naoCasa).total_ano).toBe(7)
     })
 
     it('GET /dashboard/entregas_geo filtra por cliente', async () => {
@@ -1173,7 +1182,7 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(semNada.status).toBe(200)
-      expect(semNada.body.dados).toEqual([])
+      expect(mapaDe(semNada).dados).toEqual([])
     })
 
     // As escalas PARTICIONAM as entregas do ano: cada produto tem uma só. Se a
@@ -1194,14 +1203,14 @@ describe('Mapoteca Routes', () => {
         const res = await request(app)
           .get(`/api/mapoteca/dashboard/entregas_geo?ano=2026&escala=${encodeURIComponent(e.escala)}`)
           .set('Authorization', generateUserToken())
-        soma += res.body.total_produtos
+        soma += mapaDe(res).total_produtos
       }
 
       const total = await request(app)
         .get('/api/mapoteca/dashboard/entregas_geo?ano=2026')
         .set('Authorization', generateUserToken())
 
-      expect(soma).toBe(total.body.total_ano)
+      expect(soma).toBe(mapaDe(total).total_ano)
     })
 
     // Só o que TEM entrega no ano entra nas listas: oferecer os tipos inteiros do
@@ -1298,8 +1307,8 @@ describe('Mapoteca Routes', () => {
         .get('/api/mapoteca/dashboard/entregas_geo?ano=2026')
         .set('Authorization', generateUserToken())
 
-      expect(res.body.dados.map(d => d.mi)).toEqual(['MI-GRANDE', 'MI-PEQUENA'])
-      expect(res.body.dados[0].area).toBeGreaterThan(res.body.dados[1].area)
+      expect(mapaDe(res).dados.map(d => d.mi)).toEqual(['MI-GRANDE', 'MI-PEQUENA'])
+      expect(mapaDe(res).dados[0].area).toBeGreaterThan(mapaDe(res).dados[1].area)
     })
 
     // A contagem ao lado da opção tem de ser exatamente o que o mapa desenha ao
@@ -1315,7 +1324,7 @@ describe('Mapoteca Routes', () => {
         const mapa = await request(app)
           .get(`/api/mapoteca/dashboard/entregas_geo?ano=2026&escala=${encodeURIComponent(e.escala)}`)
           .set('Authorization', generateUserToken())
-        expect(mapa.body.dados).toHaveLength(e.produtos)
+        expect(mapaDe(mapa).dados).toHaveLength(e.produtos)
       }
     })
 
@@ -1340,8 +1349,8 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
-      expect(res.body.dados).toEqual([])
-      expect(res.body.total_produtos).toBe(0)
+      expect(mapaDe(res).dados).toEqual([])
+      expect(mapaDe(res).total_produtos).toBe(0)
     })
 
     // O ano do pedido e o ano da entrega nem sempre coincidem: pedido de
