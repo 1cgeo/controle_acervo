@@ -934,3 +934,21 @@ describe('busca do acervo: carregamento', () => {
     cleanup();
   });
 });
+
+describe('busca do acervo: altura da tela', () => {
+  // A barra de rolagem só deve existir quando o conteúdo de fato não cabe. A
+  // altura mora na área de conteúdo, que já conhece a navbar e o próprio
+  // padding; a página só declara que precisa dela.
+  test('marca a área de conteúdo como altura fixa, e desfaz ao sair', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderBusca(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.classList.contains('main-content--altura-fixa')).toBe(true);
+
+    cleanup();
+
+    // Sem isto, a próxima rota herdaria a altura travada e perderia o rolamento.
+    expect(container.classList.contains('main-content--altura-fixa')).toBe(false);
+  });
+});

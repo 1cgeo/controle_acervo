@@ -18,8 +18,12 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* `min-height`, e nao `height`: com altura fixa em 100%, qualquer descendente
+ * um pixel mais alto (arredondamento de fracao, borda, fonte que mede
+ * diferente) transborda e acende a barra de rolagem numa pagina que caberia.
+ * Com minimo, a pagina ocupa a tela toda e cresce quando de fato precisar. */
 #app {
-  height: 100%;
+  min-height: 100%;
   width: 100%;
 }
 

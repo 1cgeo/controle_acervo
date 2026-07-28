@@ -329,6 +329,22 @@
   margin-left: var(--sidebar-collapsed-width);
 }
 
+/* Pagina que ocupa a tela e rola POR DENTRO (hoje, a busca do acervo, que tem
+ * um mapa e precisa de altura propria).
+ *
+ * A altura fica AQUI, no elemento que ja conhece a barra de navegacao e o
+ * proprio padding, e nao na pagina. Quando a pagina fazia a conta sozinha
+ * (`100vh` menos a navbar menos duas vezes o padding), bastava um dos tres
+ * valores mudar para sobrar ou faltar pixel e nascer uma barra de rolagem
+ * desnecessaria. Com `box-sizing: border-box`, esta unica linha ja desconta o
+ * padding sem ninguem repetir a conta. */
+.main-content--altura-fixa {
+  height: calc(100vh - var(--navbar-height));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Mobile */
 @media (max-width: 900px) {
   .navbar__username {
@@ -360,6 +376,13 @@
 
   .main-content {
     padding: var(--space-md);
+  }
+
+  /* Em tela estreita a pagina volta a rolar normalmente: travar a altura num
+   * celular espremeria lista e mapa em duas metades inutilizaveis. */
+  .main-content--altura-fixa {
+    height: auto;
+    overflow: visible;
   }
 }
 

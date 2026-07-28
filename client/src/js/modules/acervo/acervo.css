@@ -115,9 +115,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  /* O padding do .main-content e --space-lg em cima e embaixo. */
-  height: calc(100vh - var(--navbar-height) - (2 * var(--space-lg)));
-  min-height: 520px;
+  /* A altura vem do pai (.main-content--altura-fixa), e nao de uma conta com
+   * 100vh feita aqui. Repetir a aritmetica da navbar e do padding era o que
+   * fazia sobrar pixel e acender barra de rolagem sem necessidade. */
+  flex: 1;
+  min-height: 0;
 }
 
 /* ---- Barra de busca, no topo e em toda a largura ----
@@ -586,7 +588,9 @@
  * lado num celular daria duas metades inutilizaveis. */
 @media (max-width: 900px) {
   .busca {
-    height: auto;
+    /* Sem altura travada: aqui a pagina rola inteira, e as duas metades ganham
+     * altura propria logo abaixo. */
+    flex: none;
   }
 
   .busca__corpo {

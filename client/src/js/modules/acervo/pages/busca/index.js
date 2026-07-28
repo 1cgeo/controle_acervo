@@ -280,6 +280,13 @@ export async function renderBusca(container, ctx) {
     ]),
     el('div', { className: 'busca__corpo' }, [painel, mapa.element]),
   ]);
+  // Esta tela ocupa a altura da janela e rola POR DENTRO (a lista de um lado, o
+  // mapa do outro). Quem sabe descontar a barra de navegacao e o proprio padding
+  // e a area de conteudo, entao a marca vai nela; a pagina so declara que
+  // precisa. O cleanup desfaz, senao a proxima rota herda a altura travada e
+  // perde o rolamento normal.
+  container.classList.add('main-content--altura-fixa');
+
   container.appendChild(page);
 
   // Esqueleto ANTES de qualquer espera.
@@ -686,6 +693,7 @@ export async function renderBusca(container, ctx) {
 
   return () => {
     disposed = true;
+    container.classList.remove('main-content--altura-fixa');
     document.removeEventListener('keydown', aoTeclar);
     buscarComEspera.cancelar();
     buscarPorMapa.cancelar();
