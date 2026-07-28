@@ -132,52 +132,67 @@
   color: var(--color-warning);
 }
 
-/* Popup: o balao do MapLibre e branco fixo, entao o conteudo declara as
- * proprias cores para nao sumir no tema escuro. */
-.mapa-entregas__popup .maplibregl-popup-content {
+/* Painel de informacao, FIXO no canto superior direito do mapa.
+ *
+ * Substituiu o balao do MapLibre em 2026-07-28. O balao e ancorado na
+ * coordenada apontada, entao perto da borda do quadro ele saia da area visivel
+ * -- e a carta perto da borda e justamente a que se aponta quando se esta
+ * olhando uma regiao. Num lugar fixo, a informacao troca e a moldura fica.
+ *
+ * O `max-height` para antes do rodape de proposito: e o que deixa livre a barra
+ * de escala, que este mapa poe embaixo a direita. A legenda fica no canto
+ * oposto, entao as tres coisas nao disputam espaco. */
+.mapa-entregas__painel {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 2;
+  width: 250px;
+  max-width: calc(100% - 2 * var(--space-sm));
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
   padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-paper);
   color: var(--text-primary);
-  box-shadow: var(--shadow-lg);
   font-size: var(--font-size-sm);
-  /* Com varios produtos empilhados no mesmo ponto, o balao passaria da altura
-   * do mapa; ver o comentario de `produtosSob`. */
-  max-height: 320px;
-  overflow-y: auto;
+  box-shadow: var(--shadow-md);
 }
 
-.mapa-entregas__popup .maplibregl-popup-tip {
-  border-top-color: var(--bg-paper);
-  border-bottom-color: var(--bg-paper);
+.mapa-entregas__painel-convite {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
 }
 
-.mapa-entregas__popup-mi {
+.mapa-entregas__painel-mi {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
-.mapa-entregas__popup-corpo {
+.mapa-entregas__painel-corpo {
   margin-top: var(--space-xs);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.mapa-entregas__popup-linha {
+.mapa-entregas__painel-linha {
   display: flex;
   justify-content: space-between;
   gap: var(--space-md);
 }
 
-.mapa-entregas__popup-rotulo {
+.mapa-entregas__painel-rotulo {
   color: var(--text-secondary);
 }
 
 /* Sobreposicao: o mapeamento e aninhado por escala, entao o mesmo ponto costuma
- * ter mais de um produto. O balao lista todos, e a linha divisoria e o que
+ * ter mais de um produto. O painel lista todos, e a linha divisoria e o que
  * separa um do outro sem virar parede de texto. */
-.mapa-entregas__popup-aviso {
+.mapa-entregas__painel-aviso {
   margin-bottom: var(--space-xs);
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border-color);
@@ -185,8 +200,25 @@
   font-size: var(--font-size-xs);
 }
 
-.mapa-entregas__popup-produto + .mapa-entregas__popup-produto {
+.mapa-entregas__painel-produto + .mapa-entregas__painel-produto {
   margin-top: var(--space-sm);
   padding-top: var(--space-sm);
   border-top: 1px dashed var(--border-color);
+}
+
+/* Em tela estreita o painel cobriria metade do mapa. Ali ele vai para o rodape,
+ * em faixa, onde atrapalha menos do que uma coluna. */
+@media (max-width: 700px) {
+  .mapa-entregas__painel {
+    top: auto;
+    bottom: var(--space-sm);
+    left: var(--space-sm);
+    right: var(--space-sm);
+    width: auto;
+    max-height: 40%;
+  }
+
+  .mapa-entregas__legenda {
+    display: none;
+  }
 }

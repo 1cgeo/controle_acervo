@@ -54,7 +54,6 @@ export function criarMapaEntregas() {
   let pronto = false;
   let destruido = false;
   let observador = null;
-  let popup = null;
   let apontado = null;
   let colecao = { type: 'FeatureCollection', features: [] };
   let rotulos = { type: 'FeatureCollection', features: [] };
@@ -62,6 +61,19 @@ export function criarMapaEntregas() {
 
   const container = el('div', { className: 'mapa-entregas__canvas' });
   const aviso = el('div', { className: 'mapa-entregas__aviso hidden' });
+
+  /**
+   * Painel FIXO no canto do mapa, em vez do balao que seguia o ponteiro.
+   *
+   * O balao do MapLibre e ancorado na coordenada, entao perto da borda ele saia
+   * da area visivel e ficava ilegivel (chefe, 2026-07-28) -- e a carta perto da
+   * borda e justamente a que se aponta quando se esta olhando uma regiao. Um
+   * lugar fixo nao tem esse problema: a informacao troca, a moldura fica.
+   *
+   * Ele nunca esvazia. Aparecer e sumir a cada movimento do mouse e o que faz
+   * um painel piscar; sem carta sob o ponteiro ele volta a dizer o que fazer.
+   */
+  const painel = el('div', { className: 'mapa-entregas__painel' });
 
   const legenda = el('div', { className: 'mapa-entregas__legenda hidden' }, [
     el('span', { className: 'mapa-entregas__legenda-titulo', textContent: 'Exemplares entregues' }),
@@ -74,7 +86,11 @@ export function criarMapaEntregas() {
     ])),
   ]);
 
-  const element = el('div', { className: 'mapa-entregas' }, [container, legenda, aviso]);
+  const element = el('div', { className: 'mapa-entregas' }, [container, painel, legenda, aviso]);
+
+  // Nasce com o convite, e nao vazio: uma moldura em branco no canto do mapa
+  // nao diz para que serve.
+  mostrarNoPainel(null);
 
   function falhar(mensagem) {
     aviso.replaceChildren(svgIcon(ICONS.warning, 18), el('span', { textContent: mensagem }));
@@ -118,14 +134,14 @@ export function criarMapaEntregas() {
     });
 
     mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-    mapa.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }));
-
-    popup = new maplibregl.Popup({
-      closeButton: false,
-      closeOnClick: false,
-      maxWidth: '280px',
-      className: 'mapa-entregas__popup',
-    });
+    // A escala vai para a DIREITA, explicitamente. O padrao do MapLibre e baixo
+    // a esquerda, que e onde mora a legenda: medido em 2026-07-28, a barra
+    // ficava inteira ATRAS dela (legenda 318-455 x 586-724, escala 320-433 x
+    // 700-722) e nunca se via. Defeito antigo, so visivel quando se foi conferir
+    // se o painel novo atrapalhava algo. A direita ela empilha com a atribuicao,
+    // e o painel para de crescer antes de chegar la (ver o `max-height` de
+    // .mapa-entregas__painel).
+    mapa.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
 
     mapa.on('load', () => {
       mapa.addSource(FONTE, { type: 'geojson', data: colecao });
@@ -207,14 +223,14 @@ export function criarMapaEntregas() {
         marcar(apontado, true);
       }
       mapa.getCanvas().style.cursor = 'pointer';
-      popup.setLngLat(e.lngLat).setDOMContent(conteudoPopup(sob)).addTo(mapa);
+      mostrarNoPainel(sob);
     });
 
     mapa.on('mouseleave', 'entregas-preenchimento', () => {
       marcar(apontado, false);
       apontado = null;
       mapa.getCanvas().style.cursor = '';
-      popup.remove();
+      mostrarNoPainel(null);
     });
   }
 
@@ -249,16 +265,28 @@ export function criarMapaEntregas() {
     return [...porId.values()].sort((a, b) => (a.area || 0) - (b.area || 0));
   }
 
-  function conteudoPopup(lista) {
-    const linha = (rotulo, valor) => el('div', { className: 'mapa-entregas__popup-linha' }, [
-      el('span', { className: 'mapa-entregas__popup-rotulo', textContent: rotulo }),
+  /**
+   * Repinta o painel. `null` volta ao texto de convite, em vez de esvaziar.
+   * @param {Array<Object>|null} lista
+   */
+  function mostrarNoPainel(lista) {
+    if (!lista || !lista.length) {
+      painel.replaceChildren(el('p', {
+        className: 'mapa-entregas__painel-convite',
+        textContent: 'Passe o mouse sobre uma carta para ver o que foi entregue nela.',
+      }));
+      return;
+    }
+
+    const linha = (rotulo, valor) => el('div', { className: 'mapa-entregas__painel-linha' }, [
+      el('span', { className: 'mapa-entregas__painel-rotulo', textContent: rotulo }),
       el('span', { textContent: valor }),
     ]);
 
-    const bloco = (props) => el('div', { className: 'mapa-entregas__popup-produto' }, [
+    const bloco = (props) => el('div', { className: 'mapa-entregas__painel-produto' }, [
       el('strong', { textContent: props.nome || 'Produto sem nome' }),
-      props.mi ? el('div', { className: 'mapa-entregas__popup-mi', textContent: props.mi }) : null,
-      el('div', { className: 'mapa-entregas__popup-corpo' }, [
+      props.mi ? el('div', { className: 'mapa-entregas__painel-mi', textContent: props.mi }) : null,
+      el('div', { className: 'mapa-entregas__painel-corpo' }, [
         linha('Exemplares', formatNumber(props.total_produtos)),
         linha('Pedidos', formatNumber(props.total_pedidos)),
         linha('OMs atendidas', formatNumber(props.total_clientes)),
@@ -267,12 +295,12 @@ export function criarMapaEntregas() {
       ]),
     ].filter(Boolean));
 
-    return el('div', {}, [
+    painel.replaceChildren(...[
       // Com um produto so, o cabecalho seria ruido; com mais de um, ele e o que
       // responde "por que este pedaco esta mais escuro".
       lista.length > 1
         ? el('div', {
-          className: 'mapa-entregas__popup-aviso',
+          className: 'mapa-entregas__painel-aviso',
           textContent: `${lista.length} produtos se sobrepõem aqui`,
         })
         : null,
@@ -352,7 +380,6 @@ export function criarMapaEntregas() {
   function _cleanup() {
     destruido = true;
     if (observador) { observador.disconnect(); observador = null; }
-    if (popup) { popup.remove(); popup = null; }
     if (mapa) { mapa.remove(); mapa = null; pronto = false; }
   }
 

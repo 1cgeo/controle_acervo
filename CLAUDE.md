@@ -78,6 +78,13 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   contorno idêntico (8 pares em 2026, de 317 geometrias distintas em 325 feições). Por isso o balão
   lista TODOS os produtos sob o ponteiro, e não só o de cima: mostrar um só era o que fazia a tela
   parecer errada, porque a cor ali é a soma dos preenchimentos e não pertence ao produto exibido.
+- **A informação do mapa da mapoteca sai num painel FIXO, não num balão que segue o ponteiro.** O
+  balão do MapLibre é ancorado na coordenada apontada, então perto da borda do quadro ele saía da
+  área visível (chefe, 2026-07-28) — e a carta perto da borda é justamente a que se aponta quando se
+  está olhando uma região. O painel fica no canto superior direito, a informação troca e a moldura
+  fica. Ele nunca esvazia: sem carta sob o ponteiro volta ao texto de convite, porque aparecer e
+  sumir a cada movimento do mouse é o que faz um painel piscar. O `max-height` para antes do rodapé
+  de propósito, para não cobrir a barra de escala; a legenda está no canto oposto.
 - **As opções de filtro do mapa são FACETADAS: cada lista aplica os outros filtros, nunca o
   próprio.** Pedido do chefe em 2026-07-28 ("um filtro deve filtrar o quantitativo do outro"):
   escolher uma OM passa a mostrar quantos produtos daquela OM existem em cada escala. Aplicar também
