@@ -1,7 +1,9 @@
 import { el } from '@utils/dom.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { invalidateDashboardCache } from '@modules/mapoteca/services/mapoteca-service.js';
+import { onAnoChange } from '@modules/mapoteca/store/year-store.js';
 import { renderResumoAnualTab } from './resumo-anual-tab.js';
+import { renderMapaTab } from './mapa-tab.js';
 import { renderPedidosTab } from './pedidos-tab.js';
 import { renderAtendimentoTab } from './atendimento-tab.js';
 import { renderMateriaisTab } from './materiais-tab.js';
@@ -10,7 +12,7 @@ import { renderMateriaisTab } from './materiais-tab.js';
 const REFRESH_MS = 60 * 1000;
 
 /**
- * Dashboard da mapoteca (#/mapoteca/dashboard): quatro abas.
+ * Dashboard da mapoteca (#/mapoteca/dashboard): cinco abas.
  *
  * Era uma pagina unica com nove graficos, uma tabela e quatro secoes empilhadas:
  * toda visita buscava OS NOVE endpoints e rolava por metros de tela para chegar
@@ -20,7 +22,12 @@ const REFRESH_MS = 60 * 1000;
  *
  * A ordem das abas nao e cosmetica. O Resumo Anual abre a pagina (chefe,
  * 2026-07-27), porque e o numero que a DGEO presta contas; o movimento do dia a
- * dia vem depois.
+ * dia vem depois. O Mapa (2026-07-28) fica logo em seguida: e a leitura
+ * espacial do MESMO numero do resumo, e nao um assunto novo.
+ *
+ * Resumo e Mapa sao por ANO, e o ano vem do contexto do modulo (seletor da
+ * navbar). Trocar o ano recarrega a aba aberta; as demais buscam sozinhas
+ * quando forem montadas.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} [_ctx]
@@ -31,6 +38,7 @@ export async function renderDashboard(container, _ctx) {
     ariaLabel: 'Painéis da mapoteca',
     tabs: [
       { id: 'resumo', label: 'Resumo Anual', render: renderResumoAnualTab },
+      { id: 'mapa', label: 'Mapa', render: renderMapaTab },
       { id: 'pedidos', label: 'Pedidos', render: renderPedidosTab },
       { id: 'atendimento', label: 'Atendimento', render: renderAtendimentoTab },
       { id: 'materiais', label: 'Materiais', render: renderMateriaisTab },
@@ -54,8 +62,14 @@ export async function renderDashboard(container, _ctx) {
     abas.refreshActive();
   }, REFRESH_MS);
 
+  // Trocar o ano de contexto recarrega a aba aberta. Sem derrubar o cache: as
+  // respostas sao guardadas POR ANO, entao voltar ao ano anterior nao paga a
+  // busca de novo.
+  const offAno = onAnoChange(() => abas.refreshActive());
+
   return () => {
     clearInterval(intervalo);
+    offAno();
     abas._cleanup();
   };
 }

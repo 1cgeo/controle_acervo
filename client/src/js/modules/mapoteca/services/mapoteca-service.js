@@ -518,6 +518,61 @@ export function getEntregasPorMes(ano) {
   return cachedFetch(`dashboard:entregas_por_mes:${anoParam}`, () => apiGet(`${DASH}/entregas_por_mes?ano=${anoParam}`), TTL_DASHBOARD);
 }
 
+/** Chaves de filtro do mapa, na ordem em que entram na URL e na chave de cache. */
+const FILTROS_MAPA = ['tipo_produto_id', 'escala', 'cliente_id'];
+
+/**
+ * Entregas do ano com geometria, para o mapa do dashboard. Uma feição por
+ * produto do acervo, com o total entregue.
+ *
+ * Os filtros entram na chave de cache, e não só na URL: sem isso, trocar de
+ * cliente devolveria por um minuto o recorte do cliente anterior.
+ *
+ * @param {number} ano
+ * @param {{tipo_produto_id?:number, escala?:string, cliente_id?:number}} [filtros]
+ * @returns {Promise<{ano:number, filtrado:boolean, total_produtos:number, total_ano:number, sem_geometria:number, dados:Array<{id:number, nome:string, mi:string|null, tipo_produto:string, escala:string, total_pedidos:number, total_clientes:number, total_produtos:number, geom:Object}>}>}
+ */
+export function getEntregasGeo(ano, filtros = {}) {
+  return buscarComFiltros('entregas_geo', ano, filtros);
+}
+
+/**
+ * Opções dos filtros do mapa: só o que TEM entrega, com o quantitativo de cada
+ * uma já CRUZADO pelos outros filtros ativos. Cada lista ignora o próprio
+ * filtro, então escolher uma OM não deixa a lista de OMs com uma opção só.
+ * @param {number} ano
+ * @param {{tipo_produto_id?:number, escala?:string, cliente_id?:number}} [filtros]
+ * @returns {Promise<{ano:number, tipos_produto:Array<{code:number, nome:string, produtos:number}>, escalas:Array<{escala:string, produtos:number}>, clientes:Array<{id:number, nome:string, produtos:number}>}>}
+ */
+export function getEntregasFiltros(ano, filtros = {}) {
+  return buscarComFiltros('entregas_filtros', ano, filtros);
+}
+
+/** Monta query e chave de cache das duas rotas do mapa, que têm os mesmos filtros. */
+function buscarComFiltros(rota, ano, filtros) {
+  const anoParam = ano || new Date().getFullYear();
+  const params = new URLSearchParams({ ano: String(anoParam) });
+  const partes = [];
+  for (const chave of FILTROS_MAPA) {
+    const valor = filtros[chave];
+    if (valor === null || valor === undefined || valor === '') continue;
+    params.set(chave, String(valor));
+    partes.push(`${chave}=${valor}`);
+  }
+  const chaveCache = `dashboard:${rota}:${anoParam}${partes.length ? `:${partes.join('&')}` : ''}`;
+  return cachedFetch(chaveCache, () => apiGet(`${DASH}/${rota}?${params}`), TTL_DASHBOARD);
+}
+
+/**
+ * Anos com dado na mapoteca, do mais recente para o mais antigo. Alimenta o
+ * seletor de ano da navbar. Cache de DOMINIO (30 min): a lista só muda quando
+ * nasce o primeiro pedido de um ano.
+ * @returns {Promise<Array<number>>}
+ */
+export function getAnosMapoteca() {
+  return cachedFetch('dominio:anos_mapoteca', () => apiGet(`${DASH}/anos`), TTL_DOMINIO);
+}
+
 const DASHBOARD_CSV_ENDPOINTS = [
   'entregas_por_tipo_produto',
   'entregas_por_midia',

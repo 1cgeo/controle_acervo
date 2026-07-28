@@ -1104,6 +1104,275 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados[0].total_produtos).toBe(7)
     })
 
+    // O mapa das entregas tem de mostrar a MESMA população do cartão "Produtos
+    // entregues" do resumo anual, só que agregada por produto. Se os dois
+    // números divergirem na tela, o mapa deixa de valer como leitura do painel.
+    it('GET /dashboard/entregas_geo devolve geometria e fecha com o resumo anual', async () => {
+      await setupEntrega()
+
+      const geo = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2026')
+        .set('Authorization', generateUserToken())
+      const resumo = await request(app)
+        .get('/api/mapoteca/dashboard/resumo_anual?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(geo.status).toBe(200)
+      expect(geo.body.dados).toHaveLength(1)
+      expect(geo.body.dados[0].total_produtos).toBe(7)
+      expect(geo.body.dados[0].total_pedidos).toBe(1)
+      expect(geo.body.dados[0].total_clientes).toBe(1)
+      expect(geo.body.dados[0].geom.type).toBe('Polygon')
+      // Ponto de rótulo próprio: rotulando o polígono, a folha que cruza a
+      // borda de um ladrilho do MapLibre ganha um rótulo de cada lado, e a
+      // mesma carta aparece duas vezes no mapa.
+      expect(geo.body.dados[0].ponto.type).toBe('Point')
+      expect(geo.body.dados[0].area).toBeGreaterThan(0)
+      // Sem o membro `crs`, que a RFC 7946 removeu e o MapLibre ignora: eram
+      // 65 bytes por geometria, quase um terço do corpo da resposta.
+      expect(geo.body.dados[0].geom.crs).toBeUndefined()
+      // O id sai NÚMERO: o mapa usa o id como identificador de feição, e '1'
+      // nunca casaria com 1 na hora de realçar.
+      expect(typeof geo.body.dados[0].id).toBe('number')
+      expect(geo.body.total_produtos).toBe(resumo.body.dados.total_entregas)
+      expect(geo.body.sem_geometria).toBe(0)
+    })
+
+    it('GET /dashboard/entregas_geo filtra por tipo de produto, escala e cliente', async () => {
+      await setupEntrega()
+
+      const casa = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2026&tipo_produto_id=2&escala=1%3A50.000')
+        .set('Authorization', generateUserToken())
+
+      expect(casa.status).toBe(200)
+      expect(casa.body.dados).toHaveLength(1)
+      expect(casa.body.filtrado).toBe(true)
+      expect(casa.body.total_produtos).toBe(7)
+      // O total do ano IGNORA os filtros: é ele que dá a noção de tamanho do
+      // recorte ("7 de 7"). Sem ele, filtrar deixaria o número sem referência.
+      expect(casa.body.total_ano).toBe(7)
+
+      // Escala que não é a do produto: o recorte esvazia, mas o total do ano fica.
+      const naoCasa = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2026&escala=1%3A25.000')
+        .set('Authorization', generateUserToken())
+
+      expect(naoCasa.status).toBe(200)
+      expect(naoCasa.body.dados).toEqual([])
+      expect(naoCasa.body.total_produtos).toBe(0)
+      expect(naoCasa.body.total_ano).toBe(7)
+    })
+
+    it('GET /dashboard/entregas_geo filtra por cliente', async () => {
+      await setupEntrega()
+      const outroId = await criaCliente({ nome: 'OM Sem Entrega' })
+
+      const semNada = await request(app)
+        .get(`/api/mapoteca/dashboard/entregas_geo?ano=2026&cliente_id=${outroId}`)
+        .set('Authorization', generateUserToken())
+
+      expect(semNada.status).toBe(200)
+      expect(semNada.body.dados).toEqual([])
+    })
+
+    // As escalas PARTICIONAM as entregas do ano: cada produto tem uma só. Se a
+    // soma dos recortes não fechar com o total, algum filtro está perdendo ou
+    // duplicando linha. Medido também contra produção em 2026-07-28 (3119).
+    it('GET /dashboard/entregas_geo: a soma por escala fecha com o total do ano', async () => {
+      await setupEntrega()
+
+      const filtros = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(filtros.status).toBe(200)
+      expect(filtros.body.dados.escalas.length).toBeGreaterThan(0)
+
+      let soma = 0
+      for (const e of filtros.body.dados.escalas) {
+        const res = await request(app)
+          .get(`/api/mapoteca/dashboard/entregas_geo?ano=2026&escala=${encodeURIComponent(e.escala)}`)
+          .set('Authorization', generateUserToken())
+        soma += res.body.total_produtos
+      }
+
+      const total = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(soma).toBe(total.body.total_ano)
+    })
+
+    // Só o que TEM entrega no ano entra nas listas: oferecer os tipos inteiros do
+    // domínio faria a pessoa procurar num menu onde quase tudo devolve tela vazia.
+    it('GET /dashboard/entregas_filtros lista so o que tem entrega no ano', async () => {
+      await setupEntrega()
+      await criaCliente({ nome: 'OM Sem Entrega' })
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.tipos_produto).toHaveLength(1)
+      expect(res.body.dados.tipos_produto[0].nome).toBe('Carta Topográfica')
+      expect(res.body.dados.escalas).toEqual([{ escala: '1:50.000', produtos: 1 }])
+      expect(res.body.dados.clientes).toHaveLength(1)
+      expect(res.body.dados.clientes[0].nome).toBe('OM Teste')
+      expect(typeof res.body.dados.clientes[0].id).toBe('number')
+    })
+
+    // Um filtro filtra o QUANTITATIVO do outro, mas nunca o próprio: a lista de
+    // OMs aplica tipo e escala e ignora a OM escolhida, senão ela ficaria com
+    // uma opção só e trocar de OM exigiria limpar o filtro antes.
+    it('GET /dashboard/entregas_filtros cruza os quantitativos entre os filtros', async () => {
+      // Duas entregas bem diferentes: topográfica 1:50.000 para uma OM,
+      // ortoimagem 1:25.000 para outra.
+      const topo = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: 'MI-TOPO' })
+      const orto = await createProduto({ tipo_produto_id: 3, tipo_escala_id: 1, mi: 'MI-ORTO' })
+      const versaoTopo = await createVersao(topo.id)
+      const versaoOrto = await createVersao(orto.id)
+      const omTopo = await criaCliente({ nome: 'OM da Topo' })
+      const omOrto = await criaCliente({ nome: 'OM da Orto' })
+      const pedidoTopo = await criaPedido(omTopo)
+      const pedidoOrto = await criaPedido(omOrto)
+      await criaProdutoPedido({
+        uuid_versao: versaoTopo.uuid_versao, pedido_id: pedidoTopo.id,
+        quantidade: 3, tipo_midia_id: 5, data_entrega: '2026-03-20'
+      })
+      await criaProdutoPedido({
+        uuid_versao: versaoOrto.uuid_versao, pedido_id: pedidoOrto.id,
+        quantidade: 4, tipo_midia_id: 5, data_entrega: '2026-03-20'
+      })
+
+      const semFiltro = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2026')
+        .set('Authorization', generateUserToken())
+      expect(semFiltro.body.dados.escalas).toHaveLength(2)
+      expect(semFiltro.body.dados.clientes).toHaveLength(2)
+
+      // Filtrando pela OM da topográfica, as OUTRAS listas encolhem...
+      const porOm = await request(app)
+        .get(`/api/mapoteca/dashboard/entregas_filtros?ano=2026&cliente_id=${omTopo}`)
+        .set('Authorization', generateUserToken())
+      expect(porOm.body.dados.escalas).toEqual([{ escala: '1:50.000', produtos: 1 }])
+      expect(porOm.body.dados.tipos_produto.map(t => t.nome)).toEqual(['Carta Topográfica'])
+      // ...e a lista do PRÓPRIO filtro continua inteira.
+      expect(porOm.body.dados.clientes).toHaveLength(2)
+
+      // O mesmo no outro sentido: pela escala, sobra só a OM daquela escala.
+      const porEscala = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2026&escala=1%3A25.000')
+        .set('Authorization', generateUserToken())
+      expect(porEscala.body.dados.clientes.map(c => c.nome)).toEqual(['OM da Orto'])
+      expect(porEscala.body.dados.escalas).toHaveLength(2)
+    })
+
+    // Da MAIOR para a menor. O mapeamento é aninhado por escala, e a tela usa
+    // essa ordem para pôr a folha pequena por cima da grande.
+    it('GET /dashboard/entregas_geo ordena da maior area para a menor', async () => {
+      const grande = await createProduto({
+        tipo_produto_id: 2,
+        tipo_escala_id: 3,
+        mi: 'MI-GRANDE',
+        geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))'
+      })
+      const pequena = await createProduto({
+        tipo_produto_id: 2,
+        tipo_escala_id: 1,
+        mi: 'MI-PEQUENA',
+        geom: 'SRID=4674;POLYGON((-49.9 -14.9, -49.8 -14.9, -49.8 -14.8, -49.9 -14.8, -49.9 -14.9))'
+      })
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      for (const produto of [grande, pequena]) {
+        const versao = await createVersao(produto.id)
+        await criaProdutoPedido({
+          uuid_versao: versao.uuid_versao, pedido_id: pedido.id,
+          quantidade: 1, tipo_midia_id: 5, data_entrega: '2026-03-20'
+        })
+      }
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      expect(res.body.dados.map(d => d.mi)).toEqual(['MI-GRANDE', 'MI-PEQUENA'])
+      expect(res.body.dados[0].area).toBeGreaterThan(res.body.dados[1].area)
+    })
+
+    // A contagem ao lado da opção tem de ser exatamente o que o mapa desenha ao
+    // escolhê-la. Se divergir, o menu promete um recorte e entrega outro.
+    it('GET /dashboard/entregas_filtros: a contagem da opcao e o que o mapa desenha', async () => {
+      await setupEntrega()
+
+      const filtros = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2026')
+        .set('Authorization', generateUserToken())
+
+      for (const e of filtros.body.dados.escalas) {
+        const mapa = await request(app)
+          .get(`/api/mapoteca/dashboard/entregas_geo?ano=2026&escala=${encodeURIComponent(e.escala)}`)
+          .set('Authorization', generateUserToken())
+        expect(mapa.body.dados).toHaveLength(e.produtos)
+      }
+    })
+
+    it('GET /dashboard/entregas_filtros em ano sem entrega devolve listas vazias', async () => {
+      await setupEntrega()
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_filtros?ano=2019')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.tipos_produto).toEqual([])
+      expect(res.body.dados.escalas).toEqual([])
+      expect(res.body.dados.clientes).toEqual([])
+    })
+
+    it('GET /dashboard/entregas_geo em ano sem entrega devolve lista vazia', async () => {
+      await setupEntrega()
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_geo?ano=2019')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados).toEqual([])
+      expect(res.body.total_produtos).toBe(0)
+    })
+
+    // O ano do pedido e o ano da entrega nem sempre coincidem: pedido de
+    // dezembro entregue em janeiro tem de aparecer nos dois, senão um dos dois
+    // some do seletor de ano da navbar.
+    it('GET /dashboard/anos lista o ano do pedido E o ano da entrega', async () => {
+      const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
+      const versao = await createVersao(produto.id)
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, {
+        data_pedido: '2025-12-20T10:00:00Z',
+        data_atendimento: '2026-01-15T10:00:00Z'
+      })
+      await criaProdutoPedido({
+        uuid_versao: versao.uuid_versao,
+        pedido_id: pedido.id,
+        quantidade: 2,
+        tipo_midia_id: 5,
+        data_entrega: '2026-01-15'
+      })
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/anos')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados).toEqual(expect.arrayContaining([2026, 2025]))
+      // Do mais recente para o mais antigo, que e a ordem do seletor.
+      expect(res.body.dados).toEqual([...res.body.dados].sort((a, b) => b - a))
+    })
+
     it('GET /dashboard/operacoes_apoiadas should list operations', async () => {
       await setupEntrega()
 

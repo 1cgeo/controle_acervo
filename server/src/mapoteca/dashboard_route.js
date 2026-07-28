@@ -198,4 +198,47 @@ router.get(
   })
 )
 
+// Entregas do ano com geometria (mapa do dashboard), com filtros opcionais de
+// tipo de produto, escala e cliente
+router.get(
+  '/entregas_geo',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.entregasGeoQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, ...filtros } = req.query
+    const dados = await dashboardCtrl.getEntregasGeo(ano, filtros)
+    const msg = 'Entregas com geometria retornadas com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Opções dos filtros do mapa, com o quantitativo de cada uma já cruzado pelos
+// outros filtros ativos
+router.get(
+  '/entregas_filtros',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.entregasGeoQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, ...filtros } = req.query
+    const dados = await dashboardCtrl.getEntregasFiltros(ano, filtros)
+    const msg = 'Opções de filtro do mapa retornadas com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Anos com dado na mapoteca (alimenta o seletor de ano da navbar)
+router.get(
+  '/anos',
+  verifyPerfil('consulta', 'mapoteca'),
+  asyncHandler(async (req, res, next) => {
+    const dados = await dashboardCtrl.getAnosComDados()
+    const msg = 'Anos com dado retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 module.exports = router

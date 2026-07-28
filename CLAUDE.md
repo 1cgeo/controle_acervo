@@ -41,12 +41,52 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
 - **A troca de módulo mora na SIDEBAR, não num dropdown na navbar.** Cada módulo é uma seção colapsável, e o cabeçalho dela leva para a home do módulo. O dropdown existiu por algumas horas em 2026-07-27 e foi recusado pelo chefe. Junto veio a regra que o desenho anterior violava: a sidebar é montada uma vez e **nunca se desmonta**, senão entrar numa rota de plataforma (`#/usuarios`) apaga o menu do módulo.
 - **O administrador global não é coluna da tabela de usuários.** Ele é propriedade da pessoa, então aparece como marca ao lado do nome. Repetir "Administrador" numa coluna por módulo sugere que existe administrador de módulo, que é justamente o que o modelo não tem.
 - **`maplibre-gl` é a única dependência de mapa, e entra por `import()` dinâmico.** Decisão do chefe
-  em 2026-07-25 (portal do acervo). Ela pesa cerca de 1 MB minificada, contra 260 KB de todo o resto
-  da interface: num `import` de topo, quem abre o dashboard da mapoteca baixaria o mapa junto. Por
-  isso `modules/acervo/pages/busca/mapa.js` a carrega sob demanda, e ela vira um pedaço próprio no
-  build. O CSS dela continua estático, que são poucos KB e evita o mapa nascer sem controles. O fundo
-  é OSM (rede interna, mas com internet): sem internet os polígonos continuam aparecendo, porque vêm
-  da nossa API; o que falta é só a imagem de fundo.
+  em 2026-07-25 (portal do acervo). Ela pesa cerca de 1 MB minificada, contra 290 KB de todo o resto
+  da interface: num `import` de topo, quem abre a tela de pedidos baixaria o mapa junto. Por isso
+  `components/mapa/base.js` a carrega sob demanda (`carregarMapLibre()`), e ela vira um pedaço
+  próprio no build. Esse arquivo é onde moram o estilo de fundo, as fontes e o enquadramento
+  inicial, e é dele que saem os dois mapas que existem: a busca do acervo
+  (`modules/acervo/pages/busca/mapa.js`, com desenho de área e seleção) e as entregas da mapoteca
+  (`modules/mapoteca/pages/dashboard/mapa-entregas.js`, coroplético por quantidade). O CSS dela
+  continua estático, que são poucos KB e evita o mapa nascer sem controles. O fundo é OSM (rede
+  interna, mas com internet): sem internet os polígonos continuam aparecendo, porque vêm da nossa
+  API; o que falta é só a imagem de fundo. Em teste, `@components/mapa/maplibre-stub.js` faz o papel
+  da biblioteca, porque o jsdom não tem WebGL.
+- **Os filtros do mapa da mapoteca são do SERVIDOR, e a escala entra pelo rótulo.** O cliente não
+  existe na feição (ela traz a CONTAGEM de OMs atendidas, não a lista), então filtrar tipo e escala
+  na tela e o cliente no servidor faria as três contas seguirem regras diferentes, e o número do
+  resumo pararia de fechar com o mapa. A escala vai como `'1:50.000'`, e não como código de domínio,
+  porque a escala personalizada tem um código só para todos os denominadores: por código,
+  1:30.000 e 1:75.000 virariam uma opção chamada "personalizada".
+- **No mapa da mapoteca o rótulo sai de uma fonte de PONTOS, e o preenchimento é ordenado por
+  área.** Rotulando o polígono, a mesma carta aparecia duas vezes (chefe, 2026-07-28): o MapLibre
+  corta o GeoJSON em ladrilhos e ancora o texto por pedaço, então a folha que cruza a borda de um
+  ladrilho ganha um rótulo de cada lado, e a deduplicação entre ladrilhos não pega porque as duas
+  âncoras ficam longe. O ponto vem do servidor por `ST_PointOnSurface` (e não `ST_Centroid`, que cai
+  fora de uma folha em L). A ordenação existe porque o mapeamento é **aninhado por escala**: a folha
+  1:25.000 fica dentro da 1:100.000, que fica dentro da 1:250.000. Sem `fill-sort-key` pela área
+  negativa, a folha grande cai por cima da pequena e a engole, inclusive para o clique. O tom de
+  azul mais escuro nessas áreas é a soma dos preenchimentos translúcidos empilhados, e não um erro
+  de classificação: para ler a quantidade sem empilhamento, filtre por uma escala.
+- **As opções de filtro do mapa são FACETADAS: cada lista aplica os outros filtros, nunca o
+  próprio.** Pedido do chefe em 2026-07-28 ("um filtro deve filtrar o quantitativo do outro"):
+  escolher uma OM passa a mostrar quantos produtos daquela OM existem em cada escala. Aplicar também
+  o próprio filtro deixaria cada lista com uma opção só, a que já está escolhida, e trocar de escala
+  exigiria limpar antes. Elas ficam em endpoint próprio (`/dashboard/entregas_filtros`), e não junto
+  das feições, porque o cache é por combinação e a tela pede as duas coisas em paralelo. A contagem
+  ao lado da opção é, por construção, o número de produtos que o mapa desenha ao escolhê-la; há
+  teste de rota e prova contra produção guardando essa igualdade. Quando o cruzamento zera a escolha
+  atual, a tela a MANTÉM na lista com "(0)" em vez de descartá-la: descartar desfaria em silêncio o
+  que a pessoa pediu. A exceção é a troca de ano, onde a opção some porque não existe mesmo.
+- **O ano de referência é contexto de MÓDULO, e mora na navbar.** Vale para o orçamento
+  (2026-07-25) e para a mapoteca (2026-07-28), pela fábrica `@store/year-store.js`: chave de
+  `localStorage` e evento são namespaced por módulo (`@sca-mapoteca-ano`, `anochange:mapoteca`),
+  senão escolher 2025 num módulo mudaria o outro sob os pés de quem troca pela sidebar. O seletor é
+  o mesmo componente (`@components/seletor-ano.js`); a diferença é de política: no orçamento o ano
+  também decide **onde se cadastra**, e por isso ele oferece "+ Outro ano…"; na mapoteca o ano só
+  **filtra o que já aconteceu**, e um ano sem movimento só entregaria telas em branco. Na mapoteca o
+  contexto vale para as telas por ano (resumo anual, mapa das entregas, consumo, RPCMTec, detalhe do
+  material) e **não** para pedidos e clientes, que são operacionais e têm filtro próprio.
 - **`archiver` fica na 7, e os `overrides` do `server/package.json` são o que zera a auditoria.** NUNCA rode `npm audit fix --force` aqui. Ele sobe o `archiver` para 8, que é **ESM puro e não exporta mais função chamável**: as classes `Archiver`/`ZipArchive` substituíram `archiver('zip', ...)`, e as duas exportações em ZIP quebram no boot. Medido em 2026-07-27. As 7 vulnerabilidades da subárvore vinham todas de `brace-expansion`, então os `overrides` corrigem a raiz sem tocar na API. O `readdir-glob` precisa de override próprio (`minimatch` ^10.2.5) porque o `minimatch` 5 faz `require('brace-expansion')` esperando a função direta, e a versão 5 exporta `{ expand }` nomeado: sem esse segundo override, o `npm audit` diz "0 vulnerabilities" com o `archive.glob()` quebrado. Quem cobre isso é `server/src/__tests__/unit/acervo_zip_ctrl.test.js`, que abre o ZIP e descomprime, em vez de conferir o tipo do retorno.
 
 ## Modelo de autorização

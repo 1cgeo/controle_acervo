@@ -8,6 +8,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderConsumoList } from '@modules/mapoteca/pages/consumo/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
+import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -42,6 +43,26 @@ describe('renderConsumoList', () => {
     expect(container.querySelector('.page__title').textContent).toBe('Consumo de Material');
     expect(container.textContent).toContain('Data de início');
     expect(container.textContent).toContain('Papel A0');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A tendencia anual segue o ano de contexto do modulo. O seletor local saiu:
+  // era o quarto seletor de ano da mapoteca, e todos nasciam no ano corrente.
+  test('a tendencia anual segue o ano de contexto', async () => {
+    setAno(2026);
+    const container = document.createElement('div');
+    const cleanup = await renderConsumoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(svc.getConsumoMensal).toHaveBeenCalledWith(2026);
+    expect(container.querySelector('.dashboard-section__ano').textContent).toBe('2026');
+
+    setAno(2025);
+    await flush();
+
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(2025);
+    expect(container.querySelector('.dashboard-section__ano').textContent).toBe('2025');
 
     if (typeof cleanup === 'function') cleanup();
   });

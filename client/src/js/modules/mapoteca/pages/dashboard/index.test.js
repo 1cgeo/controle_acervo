@@ -12,6 +12,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderDashboard } from '@modules/mapoteca/pages/dashboard/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -62,14 +63,16 @@ describe('renderDashboard da mapoteca', () => {
     vi.useRealTimers();
   });
 
-  test('monta o titulo e as quatro abas', async () => {
+  test('monta o titulo e as cinco abas', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
     expect(container.querySelector('.dashboard__title').textContent).toBe('Dashboard da Mapoteca');
+    // O Mapa vem logo depois do Resumo Anual: e a leitura espacial do MESMO
+    // numero, e nao um assunto novo.
     expect(rotulosAbas(container)).toEqual([
-      'Resumo Anual', 'Pedidos', 'Atendimento', 'Materiais',
+      'Resumo Anual', 'Mapa', 'Pedidos', 'Atendimento', 'Materiais',
     ]);
 
     cleanup();
@@ -193,6 +196,39 @@ describe('renderDashboard da mapoteca', () => {
     expect(svc.getOrderStatus).not.toHaveBeenCalled();
 
     cleanup();
+  });
+
+  // O ano vem do contexto do modulo (seletor da navbar). Antes cada painel por
+  // ano tinha o proprio seletor, e todos nasciam no ano corrente: a escolha se
+  // perdia a cada troca de tela.
+  test('trocar o ano de contexto recarrega a aba aberta com o novo ano', async () => {
+    setAno(2026);
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    setAno(2025);
+    await flush();
+
+    expect(svc.getResumoAnual).toHaveBeenLastCalledWith(2025);
+    // Sem derrubar o cache: as respostas sao guardadas por ano, entao voltar ao
+    // ano anterior nao paga a busca de novo.
+    expect(svc.invalidateDashboardCache).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  test('o cleanup para de ouvir a troca de ano', async () => {
+    setAno(2026);
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    cleanup();
+    svc.getResumoAnual.mockClear();
+
+    setAno(2024);
+    await flush();
+    expect(svc.getResumoAnual).not.toHaveBeenCalled();
   });
 
   test('o cleanup para o refetch de 60s', async () => {

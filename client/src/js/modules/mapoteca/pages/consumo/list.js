@@ -15,6 +15,7 @@ import {
   getTiposMaterial,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 /**
  * Consumo de material page (#/consumo).
@@ -31,7 +32,10 @@ export async function renderConsumoList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('mapoteca');
   let materialOptions = [];
-  let selectedYear = new Date().getFullYear();
+  // O ano vem do contexto do modulo (seletor da navbar), e nao de um seletor
+  // local: era o quarto seletor de ano da mapoteca, e todos nasciam no ano
+  // corrente, entao a escolha se perdia a cada troca de tela.
+  let selectedYear = getAno();
 
   // -------------------------------------------------------------------------
   // Filters
@@ -131,19 +135,17 @@ export async function renderConsumoList(container, _ctx) {
     loading: true,
   });
 
-  const currentYear = new Date().getFullYear();
-  const yearSelect = el('select', {
-    className: 'chart-card__select',
-    'aria-label': 'Selecionar ano',
-    onChange: (e) => {
-      selectedYear = parseInt(e.target.value, 10);
-      loadChart();
-    },
-  }, Array.from({ length: 6 }, (_, i) => {
-    const year = currentYear - i;
-    return el('option', { value: String(year), textContent: String(year) });
-  }));
-  yearSelect.value = String(currentYear);
+  // Rotulo do ano em uso, para o grafico nao ficar sem dizer de que ano ele e.
+  const anoLabel = el('span', {
+    className: 'dashboard-section__ano',
+    textContent: String(selectedYear),
+  });
+
+  const offAno = onAnoChange(() => {
+    selectedYear = getAno();
+    anoLabel.textContent = String(selectedYear);
+    loadChart();
+  });
 
   // -------------------------------------------------------------------------
   // Data loading
@@ -349,7 +351,7 @@ export async function renderConsumoList(container, _ctx) {
         el('h2', { className: 'dashboard-section__title', textContent: 'Tendência anual' }),
         el('div', { className: 'dashboard-section__controls' }, [
           el('span', { textContent: 'Ano:' }),
-          yearSelect,
+          anoLabel,
         ]),
       ]),
       consumoChart,
@@ -361,6 +363,7 @@ export async function renderConsumoList(container, _ctx) {
 
   return () => {
     disposed = true;
+    offAno();
     table._cleanup();
     consumoChart._cleanup();
   };

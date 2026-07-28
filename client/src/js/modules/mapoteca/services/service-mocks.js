@@ -27,7 +27,7 @@ const LISTAS = [
   'getConsumoMensal', 'getOrdersTimeline', 'getClientActivity',
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
-  'getAnexosPedido', 'uploadAnexoPedido',
+  'getAnexosPedido', 'uploadAnexoPedido', 'getAnosMapoteca',
 ];
 
 /** Leituras que devolvem objeto. O default e `{}`. */
@@ -70,6 +70,22 @@ export function mockMapotecaService() {
   preencher(mock, LISTAS, () => []);
   preencher(mock, OBJETOS, () => ({}));
   preencher(mock, ACOES, null);
+  // Envelope proprio: o mapa das entregas le `dados` e os totais, e um `{}` ou
+  // um `[]` fariam a aba quebrar no primeiro acesso em vez de nascer vazia.
+  mock.getEntregasGeo = vi.fn(() => Promise.resolve({
+    ano: new Date().getFullYear(),
+    filtrado: false,
+    total_produtos: 0,
+    total_ano: 0,
+    sem_geometria: 0,
+    dados: [],
+  }));
+  mock.getEntregasFiltros = vi.fn(() => Promise.resolve({
+    ano: new Date().getFullYear(),
+    tipos_produto: [],
+    escalas: [],
+    clientes: [],
+  }));
   // Sincronas: nao devolvem promessa.
   mock.invalidateDashboardCache = vi.fn();
   return mock;

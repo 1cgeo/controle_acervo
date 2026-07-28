@@ -3,6 +3,7 @@ import { formatNumber, formatCurrency } from '@utils/format.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
+import { getAno } from '@modules/mapoteca/store/year-store.js';
 
 /** Card simples de numero, sem icone: aqui o que importa e o valor. */
 function summaryCard(label) {
@@ -15,7 +16,9 @@ function summaryCard(label) {
   return card;
 }
 
-function exportButton(nome, getAno) {
+// O ano chega como FUNÇÃO, e não como valor: o botão é montado uma vez e o ano
+// de contexto muda depois. Com o valor, todo CSV sairia do ano da montagem.
+function exportButton(nome, anoDoPainel) {
   return el('button', {
     className: 'btn btn--secondary btn--sm',
     type: 'button',
@@ -23,7 +26,7 @@ function exportButton(nome, getAno) {
       const btn = e.currentTarget;
       btn.disabled = true;
       try {
-        await mapotecaService.downloadDashboardCsv(nome, getAno());
+        await mapotecaService.downloadDashboardCsv(nome, anoDoPainel());
         showSuccess('Exportação CSV iniciada');
       } catch (err) {
         showError(err.message || 'Erro ao exportar CSV');
@@ -58,32 +61,24 @@ function pivotEntregasPorTipo(rows) {
  * Abre o dashboard (chefe, 2026-07-27), e por isso e a PRIMEIRA aba: e o que se
  * quer ver ao entrar, antes do movimento do dia a dia.
  *
- * O ano e local desta aba, e nao da pagina: nenhum outro painel da mapoteca e
- * por ano, entao um seletor no cabecalho da pagina ficaria sem efeito em tres
- * das quatro abas.
+ * O ano vem do CONTEXTO do modulo (seletor da navbar, 2026-07-28). Era local
+ * desta aba, quando ela era o unico painel por ano da mapoteca; hoje o mapa das
+ * entregas, o consumo e o RPCMTec tambem sao, e quatro seletores independentes
+ * faziam a mesma escolha ter de ser refeita quatro vezes.
  *
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
 export async function renderResumoAnualTab(container) {
   let disposed = false;
-  const anoAtual = new Date().getFullYear();
-  let anoSelecionado = anoAtual;
+  let anoSelecionado = getAno();
 
-  const getAno = () => anoSelecionado;
+  const anoDoPainel = () => anoSelecionado;
 
-  const yearSelect = el('select', {
-    className: 'chart-card__select',
-    'aria-label': 'Selecionar ano',
-    onChange: (e) => {
-      anoSelecionado = parseInt(e.target.value, 10);
-      load();
-    },
-  }, Array.from({ length: 6 }, (_, i) => {
-    const year = anoAtual - i;
-    return el('option', { value: String(year), textContent: String(year) });
-  }));
-  yearSelect.value = String(anoAtual);
+  const anoLabel = el('span', {
+    className: 'dashboard-section__ano',
+    textContent: String(anoSelecionado),
+  });
 
   const cards = {
     totalPedidos: summaryCard('Pedidos no ano'),
@@ -119,23 +114,27 @@ export async function renderResumoAnualTab(container) {
       el('h2', { className: 'dashboard-section__title', textContent: 'Resumo Anual' }),
       el('div', { className: 'dashboard-section__controls' }, [
         el('span', { textContent: 'Ano:' }),
-        yearSelect,
+        anoLabel,
       ]),
     ]),
     el('div', { className: 'summary-cards' }, Object.values(cards)),
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
       el('div', {}, [
-        el('div', { className: 'export-bar' }, [exportButton('entregas_por_tipo_produto', getAno)]),
+        el('div', { className: 'export-bar' }, [exportButton('entregas_por_tipo_produto', anoDoPainel)]),
         entregasTipoChart,
       ]),
       el('div', {}, [
-        el('div', { className: 'export-bar' }, [exportButton('operacoes_apoiadas', getAno)]),
+        el('div', { className: 'export-bar' }, [exportButton('operacoes_apoiadas', anoDoPainel)]),
         operacoesChart,
       ]),
     ]),
   ]));
 
   async function load() {
+    // Reler o contexto a cada carga cobre os dois caminhos: o refresh de 60 s
+    // da aba e a troca de ano na navbar, que o dashboard repassa como refresh.
+    anoSelecionado = getAno();
+    anoLabel.textContent = String(anoSelecionado);
     const ano = anoSelecionado;
     entregasTipoChart.update({ loading: true });
     operacoesChart.update({ loading: true });

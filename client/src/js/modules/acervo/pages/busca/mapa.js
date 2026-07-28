@@ -1,10 +1,5 @@
-// O CSS entra estatico (poucos KB) para o mapa nascer ja com os controles no
-// lugar. O JS, nao: a biblioteca passa de meio megabyte, e um import de topo a
-// colocaria no pacote de TODA a interface, inclusive do dashboard e da mapoteca,
-// que nao tem mapa nenhum. Com o import() dinamico ela vira um pedaco proprio,
-// buscado quando alguem abre a busca.
-import 'maplibre-gl/dist/maplibre-gl.css';
 import { el, svgIcon, ICONS } from '@utils/dom.js';
+import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDe } from '@components/mapa/base.js';
 import { criarModeloDesenho, colecaoDoDesenho } from './poligono.js';
 
 /**
@@ -19,27 +14,6 @@ import { criarModeloDesenho, colecaoDoDesenho } from './poligono.js';
  * internet os poligonos continuam aparecendo: eles vem da nossa API, e o que
  * falta e so a imagem de fundo.
  */
-
-const ESTILO_OSM = {
-  version: 8,
-  // Sem `glyphs` o MapLibre nao desenha TEXTO: camada de simbolo com
-  // text-field simplesmente nao aparece, sem erro nenhum. O estilo OSM e so
-  // raster e nao traz fonte, entao ela vem deste servidor publico de glifos, o
-  // mesmo caminho da internet que ja serve os tiles.
-  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-};
-
-/** Brasil inteiro: o enquadramento de partida, antes da primeira busca. */
-const BRASIL = [[-74, -34], [-34, 6]];
 
 const FONTE = 'produtos';
 const DESENHO = 'desenho';
@@ -155,15 +129,12 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   async function iniciar() {
     if (mapa || destruido) return;
 
-    let modulo;
-    try {
-      modulo = await import('maplibre-gl');
-    } catch {
+    maplibregl = await carregarMapLibre();
+    if (!maplibregl) {
       falhar('Não foi possível carregar o mapa. A lista de resultados continua funcionando.');
       return;
     }
     if (destruido) return;
-    maplibregl = modulo.default || modulo;
 
     // O MapLibre le o tamanho do contêiner UMA vez, na construcao, e nao volta a
     // conferir sozinho. Contêiner ainda sem layout produz canvas 0x0 permanente.
@@ -568,22 +539,6 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
     marcar(apontado, 'apontado', false);
     apontado = id;
     marcar(apontado, 'apontado', true);
-  }
-
-  /** Caixa envolvente de um GeoJSON Polygon. */
-  function caixaDe(geometria) {
-    if (!geometria || !Array.isArray(geometria.coordinates)) return null;
-    let minLon = Infinity; let minLat = Infinity;
-    let maxLon = -Infinity; let maxLat = -Infinity;
-    for (const anel of geometria.coordinates) {
-      for (const [lon, lat] of anel) {
-        if (lon < minLon) minLon = lon;
-        if (lat < minLat) minLat = lat;
-        if (lon > maxLon) maxLon = lon;
-        if (lat > maxLat) maxLat = lat;
-      }
-    }
-    return Number.isFinite(minLon) ? [minLon, minLat, maxLon, maxLat] : null;
   }
 
   /**

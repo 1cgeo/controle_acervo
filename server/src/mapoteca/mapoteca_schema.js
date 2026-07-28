@@ -345,6 +345,16 @@ models.anoQuery = Joi.object().keys({
     .default(() => new Date().getFullYear())
 })
 
+// Esquema de query do mapa das entregas: o ano, mais os três filtros opcionais.
+// A escala entra pelo RÓTULO ('1:50.000'), e não pelo código do domínio, porque
+// a escala personalizada tem um código só para todos os denominadores; ver o
+// comentário em dashboard_ctrl.getEntregasGeo.
+models.entregasGeoQuery = models.anoQuery.keys({
+  tipo_produto_id: Joi.number().integer().min(1),
+  escala: Joi.string().max(50),
+  cliente_id: Joi.number().integer().min(1)
+})
+
 // Esquema de query para relatórios e dashboards anuais com export
 // formato=csv retorna text/csv para download
 models.relatorioQuery = models.anoQuery.keys({

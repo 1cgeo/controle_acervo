@@ -180,6 +180,39 @@ describe('mapoteca-service: dashboard', () => {
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/entregas_por_mes?ano=2026');
   });
 
+  test('o mapa das entregas leva os filtros na query, e omite os vazios', async () => {
+    await svc.getEntregasGeo(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/entregas_geo?ano=2026');
+
+    await svc.getEntregasGeo(2026, { cliente_id: 38 });
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/entregas_geo?ano=2026&cliente_id=38');
+
+    await svc.getEntregasGeo(2026, { tipo_produto_id: 2, escala: '1:50.000', cliente_id: null });
+    expect(apiGet).toHaveBeenCalledWith(
+      '/mapoteca/dashboard/entregas_geo?ano=2026&tipo_produto_id=2&escala=1%3A50.000'
+    );
+
+    await svc.getEntregasFiltros(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/entregas_filtros?ano=2026');
+
+    // As opcoes tambem levam os filtros: e o servidor que cruza o quantitativo
+    // de cada uma pelos OUTROS filtros ativos.
+    await svc.getEntregasFiltros(2026, { cliente_id: 38 });
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/entregas_filtros?ano=2026&cliente_id=38');
+  });
+
+  // Sem os filtros na CHAVE do cache, trocar de OM devolveria por um minuto o
+  // recorte da OM anterior, com o mapa parado e o resumo mentindo.
+  test('os filtros entram na chave de cache, e nao so na URL', async () => {
+    await svc.getEntregasGeo(2026, { cliente_id: 38 });
+    await svc.getEntregasGeo(2026, { cliente_id: 5 });
+    expect(apiGet).toHaveBeenCalledTimes(2);
+
+    // A mesma combinação, essa sim, sai do cache.
+    await svc.getEntregasGeo(2026, { cliente_id: 5 });
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+
   test('downloadDashboardCsv recusa um dataset sem CSV', async () => {
     await expect(svc.downloadDashboardCsv('order_status', 2026)).rejects.toThrow(/Exportação CSV indisponível/);
     expect(apiDownload).not.toHaveBeenCalled();

@@ -7,6 +7,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderRpcMtec } from '@modules/mapoteca/pages/rpcmtec/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -67,6 +68,28 @@ describe('renderRpcMtec', () => {
     await flush();
 
     expect(svc.getRpcmtecAcervo).toHaveBeenCalledWith(expect.objectContaining({ mes: 3 }));
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O ANO vem do contexto do modulo (seletor da navbar); o MÊS continua sendo
+  // desta tela, porque o RPCMTec e sempre de um mes especifico.
+  test('trocar o ano de contexto gera de novo, e o mes escolhido nao se perde', async () => {
+    setAno(2026);
+    const container = document.createElement('div');
+    const cleanup = await renderRpcMtec(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const mes = container.querySelector('#rpcmtec-mes');
+    mes.value = '3';
+    mes.dispatchEvent(new Event('change'));
+    await flush();
+    svc.getRpcmtecAcervo.mockClear();
+
+    setAno(2025);
+    await flush();
+
+    expect(svc.getRpcmtecAcervo).toHaveBeenCalledWith({ ano: 2025, mes: 3 });
 
     if (typeof cleanup === 'function') cleanup();
   });

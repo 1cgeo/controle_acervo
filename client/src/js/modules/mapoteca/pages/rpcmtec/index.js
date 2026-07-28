@@ -3,6 +3,7 @@ import { monthName, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { getRpcmtecAcervo, downloadRpcmtecDocx } from '@modules/mapoteca/services/mapoteca-service.js';
+import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 const num = (key) => (row) => formatNumber(row[key] ?? 0);
 const txt = (key) => (row) => row[key] ?? '-';
@@ -105,16 +106,17 @@ export async function renderRpcMtec(container) {
   }));
   mesSelect.value = String(hoje.getMonth() + 1);
 
-  const anoSelect = el('select', {
-    className: 'form-field__select',
-    id: 'rpcmtec-ano',
-    'aria-label': 'Selecionar ano',
-    onChange: () => gerar(),
-  }, Array.from({ length: 6 }, (_, i) => {
-    const year = hoje.getFullYear() - i;
-    return el('option', { value: String(year), textContent: String(year) });
-  }));
-  anoSelect.value = String(hoje.getFullYear());
+  // O ano vem do contexto do modulo (seletor da navbar). O MÊS continua aqui:
+  // ele e desta tela, e o RPCMTec e sempre de um mes especifico.
+  const anoLabel = el('span', {
+    className: 'dashboard-section__ano',
+    textContent: String(getAno()),
+  });
+
+  const offAno = onAnoChange(() => {
+    anoLabel.textContent = String(getAno());
+    gerar();
+  });
 
   const baixarBtn = el('button', {
     className: 'btn btn--primary',
@@ -128,8 +130,8 @@ export async function renderRpcMtec(container) {
       mesSelect,
     ]),
     el('div', { className: 'rpcm-toolbar__field' }, [
-      el('label', { className: 'rpcm-toolbar__label', for: 'rpcmtec-ano', textContent: 'Ano' }),
-      anoSelect,
+      el('span', { className: 'rpcm-toolbar__label', textContent: 'Ano' }),
+      anoLabel,
     ]),
     el('div', { className: 'rpcm-toolbar__spacer' }),
     baixarBtn,
@@ -162,7 +164,7 @@ export async function renderRpcMtec(container) {
 
   function getParams() {
     return {
-      ano: parseInt(anoSelect.value, 10),
+      ano: getAno(),
       mes: parseInt(mesSelect.value, 10),
     };
   }
@@ -198,6 +200,7 @@ export async function renderRpcMtec(container) {
 
   return () => {
     disposed = true;
+    offAno();
     for (const def of SECOES) tables[def.chave]._cleanup();
   };
 }

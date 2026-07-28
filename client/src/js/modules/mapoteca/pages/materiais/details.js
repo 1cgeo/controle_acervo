@@ -6,6 +6,7 @@ import { createBarChart } from '@components/charts/bar-chart.js';
 import { chip, badgeAbaixoMinimo } from '@components/status-chip.js';
 import { getTipoMaterial, getConsumoMensal } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 import { openMaterialDialog } from './material-dialog.js';
 
 function summaryCard(label, value, extra = null) {
@@ -47,7 +48,10 @@ export async function renderMaterialDetails(container, { params }) {
     dispose();
     container.innerHTML = '';
 
-    const ano = new Date().getFullYear();
+    // O grafico de consumo mensal segue o ano de contexto do modulo, como as
+    // demais telas por ano. Estava preso ao ano corrente, e nao havia como olhar
+    // o consumo do ano passado por aqui.
+    const ano = getAno();
     let material;
     let consumoMensal = [];
     try {
@@ -212,8 +216,13 @@ export async function renderMaterialDetails(container, { params }) {
 
   await load();
 
+  // A pagina inteira se remonta em `load`, entao trocar o ano so precisa
+  // chama-la de novo.
+  const offAno = onAnoChange(() => load());
+
   return () => {
     disposed = true;
+    offAno();
     dispose();
   };
 }

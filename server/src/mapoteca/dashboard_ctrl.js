@@ -540,6 +540,292 @@ controller.getEntregasPorMes = async (ano) => {
   );
 };
 
+// Os três filtros do mapa, cada um com a condição SQL que o realiza. Ficam
+// juntos para que o mapa e as listas de opção nunca apliquem o mesmo filtro de
+// dois jeitos: é essa coincidência que faz o total do mapa fechar com a soma
+// das opções.
+const FILTROS_MAPA = {
+  tipo_produto_id: { sql: 'prod.tipo_produto_id = $<tipoProdutoId>', param: 'tipoProdutoId' },
+  escala: { sql: `${ESCALA_DISPLAY} = $<escala>`, param: 'escala' },
+  cliente_id: { sql: 'ped.cliente_id = $<clienteId>', param: 'clienteId' }
+};
+
+/**
+ * Trecho `AND ...` com os filtros preenchidos, podendo PULAR um deles.
+ *
+ * O pulo é o que faz a lista de opções ser faceted: a lista de escalas aplica
+ * tipo e cliente, mas não a escala escolhida. Se aplicasse, ela devolveria só a
+ * própria escolha e não haveria como trocar de escala sem antes limpar.
+ *
+ * @param {Object} filtros
+ * @param {string} [exceto] - chave a ignorar
+ */
+const condicoesDeFiltro = (filtros = {}, exceto = null) => {
+  const partes = Object.entries(FILTROS_MAPA)
+    .filter(([chave]) => chave !== exceto && filtros[chave])
+    .map(([, def]) => def.sql);
+  return partes.length ? `AND ${partes.join(' AND ')}` : '';
+};
+
+/** Parâmetros nomeados das consultas do mapa. Nulo é valor válido: a condição
+ * correspondente simplesmente não entra no SQL. */
+const paramsDeFiltro = (ano, filtros = {}) => ({
+  ano,
+  situacoesEntregue: SITUACOES_ENTREGUE,
+  tipoProdutoId: filtros.tipo_produto_id || null,
+  escala: filtros.escala || null,
+  clienteId: filtros.cliente_id || null
+});
+
+// Entregas do ano com GEOMETRIA, para o mapa do dashboard.
+//
+// Uma linha por PRODUTO do acervo, com o quanto dele saiu no ano. É a mesma
+// população do cartão "Produtos entregues" do resumo anual (mesmo filtro de
+// situação e mesma data efetiva), agregada por produto em vez de somada: em
+// 2026-07-28, contra o banco de produção, o total das feições fechou exatamente
+// com o cartão (3119 exemplares em 325 produtos).
+//
+// `sem_geometria` sai junto de propósito. O produto do acervo sempre tem
+// geometria hoje, mas se um dia não tiver, o mapa mostraria menos entregas do
+// que o cartão sem explicar por quê. Com o número, a tela pode dizer.
+//
+// FILTROS (tipo de produto, escala e cliente) são opcionais e se combinam por E.
+// Ficam no SERVIDOR, e não na tela, porque `cliente_id` não existe na feição:
+// ela traz a CONTAGEM de OMs atendidas, não a lista. Filtrar tipo e escala no
+// cliente e o cliente no servidor deixaria as três contas com regras
+// diferentes, e o número do resumo pararia de fechar com o mapa.
+//
+// A escala entra pelo RÓTULO, e não pelo código do domínio: a escala
+// personalizada tem um código só para todos os denominadores, e filtrar por ele
+// juntaria 1:30.000 com 1:75.000 numa opção só chamada "personalizada". O
+// rótulo sai do mesmo ESCALA_DISPLAY que alimenta a lista de opções, então os
+// dois lados nunca divergem. O custo é comparar texto sem índice, sobre pouco
+// mais de mil linhas por ano.
+controller.getEntregasGeo = async (ano, filtros = {}) => {
+  const filtroSql = condicoesDeFiltro(filtros);
+
+  return db.conn.task(async t => {
+    const params = paramsDeFiltro(ano, filtros);
+
+    const linhas = await t.any(
+      `
+      SELECT
+        prod.id,
+        prod.nome,
+        prod.mi,
+        tp.nome AS tipo_produto,
+        ${ESCALA_DISPLAY} AS escala,
+        COUNT(DISTINCT ped.id)::int AS total_pedidos,
+        COUNT(DISTINCT ped.cliente_id)::int AS total_clientes,
+        COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos,
+        -- O terceiro argumento zera o membro crs, que este PostGIS (3.4.3)
+        -- emite por padrão. Ele é resquício de uma versão antiga do GeoJSON, a
+        -- RFC 7946 o removeu, o MapLibre o ignora, e ele custava cerca de 65
+        -- bytes por geometria: quase um terço do corpo da resposta.
+        -- (Sem crase aqui: a consulta é um template literal.)
+        ST_AsGeoJSON(prod.geom, 9, 0) AS geom,
+        -- Ponto de rótulo, calculado aqui e não no navegador.
+        --
+        -- Rotular o POLÍGONO faz a mesma carta aparecer duas vezes no mapa: o
+        -- MapLibre corta o GeoJSON em ladrilhos e escolhe a âncora do texto por
+        -- pedaço, então a folha que cruza a borda de um ladrilho ganha um
+        -- rótulo de cada lado. Um ponto cabe num ladrilho só, e resolve.
+        --
+        -- PointOnSurface, e não Centroid: o centroide de uma folha em L cai
+        -- fora dela, e o rótulo apareceria sobre a carta vizinha.
+        ST_AsGeoJSON(ST_PointOnSurface(prod.geom), 9, 0) AS ponto,
+        -- Área só para ordenar o desenho; ver o comentário do ORDER BY.
+        ST_Area(prod.geom)::float8 AS area
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.produto prod ON prod.id = v.produto_id
+      JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+      JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+        AND prod.geom IS NOT NULL
+        ${filtroSql}
+      GROUP BY prod.id, prod.nome, prod.mi, tp.nome, prod.tipo_escala_id,
+               prod.denominador_escala_especial, te.nome, prod.geom
+      -- Da MAIOR para a menor. O mapeamento é aninhado por escala (a folha
+      -- 1:25.000 fica dentro da 1:100.000, que fica dentro da 1:250.000), e o
+      -- preenchimento é translúcido: sem ordem, a folha grande podia cair por
+      -- cima da pequena e escondê-la. Assim a menor fica sempre por cima, que é
+      -- a que a pessoa quer clicar.
+      ORDER BY area DESC, prod.nome
+      `,
+      params
+    );
+
+    const semGeometria = await t.one(
+      `
+      SELECT COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      LEFT JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      LEFT JOIN acervo.produto prod ON prod.id = v.produto_id
+      -- LEFT, e não JOIN: o item sem produto nenhum é justamente um dos que
+      -- esta conta existe para achar, e um JOIN interno o descartaria em
+      -- silêncio. Com filtro de escala ativo ele sai pela comparação com NULL,
+      -- que é o certo: item sem produto não pertence a escala nenhuma.
+      LEFT JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+        AND prod.geom IS NULL
+        ${filtroSql}
+      `,
+      params
+    );
+
+    // Total do ano SEM filtro, para a tela poder dizer "1.234 de 3.119". Sem
+    // ele, filtrar deixaria a pessoa sem noção do tamanho do recorte.
+    const totalAno = await t.one(
+      `
+      SELECT COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+      `,
+      { ano, situacoesEntregue: SITUACOES_ENTREGUE }
+    );
+
+    return {
+      ano,
+      filtrado: filtroSql !== '',
+      total_produtos: linhas.reduce((soma, l) => soma + l.total_produtos, 0),
+      total_ano: totalAno.total,
+      sem_geometria: semGeometria.total,
+      dados: linhas.map(l => ({
+        // BIGINT chega como string do pg-promise, e o mapa usa o id como
+        // identificador de feição (feature-state). Número aqui evita que a
+        // lista e o mapa comparem '880' com 880 e nunca se encontrem.
+        id: Number(l.id),
+        nome: l.nome,
+        mi: l.mi,
+        tipo_produto: l.tipo_produto,
+        escala: l.escala,
+        total_pedidos: l.total_pedidos,
+        total_clientes: l.total_clientes,
+        total_produtos: l.total_produtos,
+        area: l.area,
+        geom: JSON.parse(l.geom),
+        ponto: JSON.parse(l.ponto)
+      }))
+    };
+  });
+};
+
+// Opções dos filtros do mapa, com os quantitativos CRUZADOS entre eles.
+//
+// Cada lista aplica os OUTROS dois filtros, e nunca o próprio: escolher uma OM
+// passa a mostrar quantos produtos daquela OM existem em cada escala e em cada
+// tipo, mas a lista de escalas continua inteira, para haver como trocar de
+// escala sem antes limpar. Aplicar também o próprio filtro deixaria cada lista
+// com uma opção só, a que já está escolhida.
+//
+// Só entra o que TEM entrega: oferecer os 40 tipos do domínio quando dois
+// aparecem faria a pessoa procurar num menu onde quase tudo devolve tela vazia.
+// A contrapartida é que a opção pode chegar a zero e sumir; a tela mantém a
+// escolha atual visível com "(0)" em vez de descartá-la em silêncio.
+//
+// @param {number} ano
+// @param {{tipo_produto_id?:number, escala?:string, cliente_id?:number}} [filtros]
+controller.getEntregasFiltros = async (ano, filtros = {}) => {
+  // Alias que cada lista precisa. Ficam em TODAS as consultas, e não só onde a
+  // coluna aparece no SELECT, porque qualquer uma delas pode ganhar a condição
+  // de outro filtro (a escala usa `te`, o cliente usa `ped.cliente_id`).
+  const DE = `
+    FROM mapoteca.produto_pedido pp
+    JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+    JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+    JOIN acervo.produto prod ON prod.id = v.produto_id
+    JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+    JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+  `;
+
+  return db.conn.task(async t => {
+    const params = paramsDeFiltro(ano, filtros);
+
+    // As três listas saem da MESMA população que o mapa desenha: entrega do
+    // ano, com produto e com geometria. Opção fora disso levaria a mapa vazio,
+    // que é o oposto do que um menu de filtro deve fazer.
+    const tiposProduto = await t.any(
+      `
+      SELECT tp.code, tp.nome, COUNT(DISTINCT prod.id)::int AS produtos
+      ${DE}
+      WHERE ${FILTRO_ENTREGUE_ANO}
+        AND prod.geom IS NOT NULL
+        ${condicoesDeFiltro(filtros, 'tipo_produto_id')}
+      GROUP BY tp.code, tp.nome
+      ORDER BY tp.nome
+      `,
+      params
+    );
+
+    const escalas = await t.any(
+      `
+      SELECT ${ESCALA_DISPLAY} AS escala, COUNT(DISTINCT prod.id)::int AS produtos
+      ${DE}
+      WHERE ${FILTRO_ENTREGUE_ANO}
+        AND prod.geom IS NOT NULL
+        ${condicoesDeFiltro(filtros, 'escala')}
+      GROUP BY 1
+      -- Pelo CÓDIGO do domínio, e depois pelo denominador da personalizada. Em
+      -- ordem alfabética o rótulo '1:100.000' viria antes de '1:25.000', e a
+      -- lista sairia fora de ordem de escala.
+      ORDER BY MIN(prod.tipo_escala_id),
+               MIN(prod.denominador_escala_especial) NULLS FIRST
+      `,
+      params
+    );
+
+    const clientes = await t.any(
+      `
+      SELECT c.id, c.nome, COUNT(DISTINCT prod.id)::int AS produtos
+      ${DE}
+      JOIN mapoteca.cliente c ON c.id = ped.cliente_id
+      WHERE ${FILTRO_ENTREGUE_ANO}
+        AND prod.geom IS NOT NULL
+        ${condicoesDeFiltro(filtros, 'cliente_id')}
+      GROUP BY c.id, c.nome
+      ORDER BY c.nome
+      `,
+      params
+    );
+
+    return {
+      ano,
+      tipos_produto: tiposProduto,
+      escalas,
+      clientes: clientes.map(c => ({ ...c, id: Number(c.id) }))
+    };
+  });
+};
+
+// Anos que têm dado na mapoteca, para o seletor de ano da navbar.
+//
+// Considera a data do PEDIDO e a data efetiva de entrega, que não caem
+// necessariamente no mesmo ano: pedido de dezembro entregue em janeiro tem de
+// aparecer nos dois, senão um dos dois anos some do seletor.
+controller.getAnosComDados = async () => {
+  const linhas = await db.conn.any(
+    `
+    SELECT DISTINCT ano FROM (
+      SELECT EXTRACT(YEAR FROM data_pedido)::int AS ano
+      FROM mapoteca.pedido
+      WHERE data_pedido IS NOT NULL
+      UNION
+      SELECT EXTRACT(YEAR FROM ${dataEntregaEfetiva()})::int AS ano
+      FROM mapoteca.produto_pedido pp
+      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      WHERE COALESCE(pp.data_entrega, ped.data_atendimento::date) IS NOT NULL
+    ) t
+    WHERE ano IS NOT NULL
+    ORDER BY ano DESC
+    `
+  );
+  return linhas.map(l => l.ano);
+};
+
 // Colunas para exportação CSV dos dashboards anuais
 controller.COLUNAS_ENTREGAS_MES = [
   { key: "mes", label: "Mês" },

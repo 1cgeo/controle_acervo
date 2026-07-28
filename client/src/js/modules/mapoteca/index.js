@@ -11,9 +11,11 @@
 //    nao tem sessao, e rota de PLATAFORMA em src/js/index.js;
 //  - a tela de usuarios, que e unica da plataforma e cobre os tres modulos.
 
-// CSS: o modulo nao traz arquivo proprio. Toda classe que as telas da mapoteca
-// usam ja existe no CSS de plataforma (layout, tables, forms, modal, wizard,
-// chips, dashboard e extras, este ultimo com .rpcm-toolbar e .page__header--column).
+// CSS: quase tudo vem do CSS de plataforma (layout, tables, forms, modal,
+// wizard, chips, dashboard e extras, este ultimo com .rpcm-toolbar e
+// .page__header--column). A unica excecao e o mapa das entregas, que traz o
+// proprio arquivo ao lado do componente (pages/dashboard/mapa-entregas.css),
+// como fazem os componentes de plataforma que tem CSS colado.
 import { ICONS } from '@utils/dom.js';
 
 import { renderDashboard } from './pages/dashboard/index.js';
@@ -29,6 +31,8 @@ import { renderConsumoList } from './pages/consumo/list.js';
 import { renderPlottersList } from './pages/plotters/list.js';
 import { renderPlotterDetails } from './pages/plotters/details.js';
 import { renderRpcMtec } from './pages/rpcmtec/index.js';
+
+import { criarSeletorAno } from './components/seletor-ano.js';
 
 export default {
   id: 'mapoteca',
@@ -73,4 +77,13 @@ export default {
     { path: '/plotters/:id', render: renderPlotterDetails, perfil: 'consulta' },
     { path: '/rpcmtec', render: renderRpcMtec, perfil: 'consulta' },
   ],
+
+  // O ano de referencia e contexto das telas POR ANO da mapoteca (resumo anual,
+  // mapa das entregas, consumo, RPCMTec), entao o seletor mora na navbar, como
+  // no orcamento. Some quando a pessoa troca de modulo.
+  //
+  // O que ele NAO filtra, de proposito: a lista de pedidos e a de clientes, que
+  // sao operacionais e tem filtro proprio. Esconder o pedido do ano passado de
+  // quem esta atendendo o cliente seria perder trabalho, nao ganhar contexto.
+  navbarExtras: criarSeletorAno,
 };

@@ -15,9 +15,9 @@ describe('year-store', () => {
     expect(getAno()).toBe(2026);
   });
 
-  test('setAno persiste e dispara o evento anochange', () => {
+  test('setAno persiste e dispara o evento anochange do modulo', () => {
     const handler = vi.fn();
-    window.addEventListener('anochange', handler);
+    window.addEventListener('anochange:orcamento', handler);
 
     setAno(2027);
 
@@ -26,7 +26,22 @@ describe('year-store', () => {
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler.mock.calls[0][0].detail).toEqual({ ano: 2027 });
 
-    window.removeEventListener('anochange', handler);
+    window.removeEventListener('anochange:orcamento', handler);
+  });
+
+  // O ano do orcamento e o da mapoteca sao contextos SEPARADOS. Com uma chave
+  // so, escolher 2025 no orcamento mudaria o dashboard da mapoteca sob os pes
+  // de quem trocasse de modulo pela sidebar.
+  test('nao vaza para o contexto de outro modulo', async () => {
+    const mapoteca = await import('@modules/mapoteca/store/year-store.js');
+    const handlerMapoteca = vi.fn();
+    const off = mapoteca.onAnoChange(handlerMapoteca);
+
+    setAno(2024);
+
+    expect(localStorage.getItem('@sca-mapoteca-ano')).toBeNull();
+    expect(handlerMapoteca).not.toHaveBeenCalled();
+    off();
   });
 
   test('setAno ignora valores nao inteiros', () => {

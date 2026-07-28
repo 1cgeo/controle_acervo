@@ -75,6 +75,14 @@
   gap: var(--space-sm);
 }
 
+/* Ano de contexto exibido no cabecalho de uma secao. Nao e campo: quem troca o
+ * ano e o seletor da navbar, que vale para o modulo inteiro. Aqui ele so diz de
+ * que ano e o que esta na tela. */
+.dashboard-section__ano {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
 /* Export bar above a chart/table */
 .export-bar {
   display: flex;
