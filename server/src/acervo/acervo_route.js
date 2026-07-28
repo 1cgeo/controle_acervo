@@ -268,6 +268,28 @@ router.get(
   })
 );
 
+// Opcoes dos filtros da busca, com o quantitativo de produtos de cada uma.
+//
+// Rota separada das feicoes de proposito: a tela pede as duas em paralelo, e
+// juntar faria a lista de opcoes esperar a busca inteira para aparecer.
+router.get(
+  '/busca/facetas',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    query: acervoSchema.buscaFacetas
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.buscaFacetas(req.query);
+
+    return res.sendJsonAndLog(
+      true,
+      'Opções dos filtros da busca retornadas com sucesso',
+      httpCode.OK,
+      dados
+    );
+  })
+);
+
 // CSV do resultado da busca, ou so dos produtos selecionados (`ids`).
 //
 // Sai como arquivo, e nao como JSON: o destino e a planilha de quem pediu, e o

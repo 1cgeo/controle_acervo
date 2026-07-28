@@ -210,9 +210,86 @@
 }
 
 .busca-filtros__palavra {
+  width: 100%;
+  padding-right: 28px; /* espaco do botao de limpar */
+}
+
+/* ---- Palavra-chave: sugestao PROPRIA, nao `<datalist>` ----
+ * A lista nativa escolhia sozinha quantas linhas mostrar, sem CSS que a
+ * alcance, e com vinte etiquetas abria cobrindo boa parte da tela. Aqui a
+ * altura e nossa: oito linhas, e o resto rola por dentro. */
+.busca-palavras-campo {
+  position: relative;
   flex: 1 1 180px;
   min-width: 150px;
   max-width: 260px;
+}
+
+.busca-palavras__limpar {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.busca-palavras__limpar:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.busca-palavras {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  /* Oito linhas de 32px. Passando disso, rola por dentro em vez de crescer. */
+  max-height: 256px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-md);
+}
+
+.busca-palavras__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 6px var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.busca-palavras__item--ativo {
+  background: var(--bg-hover);
+}
+
+.busca-palavras__texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.busca-palavras__usos {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .busca-filtros__area {

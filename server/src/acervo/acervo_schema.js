@@ -195,6 +195,13 @@ models.buscaCsv = Joi.object().keys({
   })
 });
 
+// Opcoes dos filtros da busca, com o quantitativo de cada uma. Os MESMOS
+// filtros, porque cada lista aplica os outros e nunca o proprio: sem receber o
+// conjunto inteiro nao ha como cruzar.
+models.buscaFacetas = Joi.object().keys({
+  ...filtrosBusca
+});
+
 models.palavrasChave = Joi.object().keys({
   termo: Joi.string().allow(''),
   limit: Joi.number().integer().min(1).max(50).default(20)

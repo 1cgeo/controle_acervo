@@ -3,12 +3,13 @@ import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { chip } from '@components/status-chip.js';
 import {
-  buscarProdutos, buscarGeometrias, baixarBuscaCsv, getPalavrasChave,
+  buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
   getTiposProduto, getTiposEscala, getSubtiposProduto,
 } from '@modules/acervo/services/acervo-service.js';
 import { criarMapa } from './mapa.js';
 import { abrirProdutoDialog, plural } from './produto-dialog.js';
 import { criarSelecao } from './selecao.js';
+import { criarCampoPalavraChave } from './palavra-chave.js';
 
 /** Espera antes de disparar a busca enquanto a pessoa ainda digita. */
 const ESPERA_DIGITACAO = 350;
@@ -103,18 +104,13 @@ export async function renderBusca(container, ctx) {
     onChange: () => buscar({ reiniciarPagina: true }),
   }, [el('option', { value: '', textContent: 'Todas as escalas' })]);
 
-  const palavraInput = el('input', {
-    className: 'busca-filtros__palavra',
-    type: 'text',
-    placeholder: 'Palavra-chave',
-    'aria-label': 'Palavra-chave',
-    autocomplete: 'off',
-    list: 'busca-palavras-chave',
-    value: query.get('palavra_chave') || '',
-    onChange: () => buscar({ reiniciarPagina: true }),
+  // Sugestao propria em vez de `<datalist>`: a lista nativa escolhia sozinha
+  // quantas linhas mostrar, sem CSS que a alcance, e abria cobrindo boa parte da
+  // tela. Ver o comentario de palavra-chave.js.
+  const campoPalavra = criarCampoPalavraChave({
+    valorInicial: query.get('palavra_chave') || '',
+    onEscolher: () => buscar({ reiniciarPagina: true }),
   });
-
-  const palavrasDatalist = el('datalist', { id: 'busca-palavras-chave' });
 
   const areaCheck = el('input', {
     className: 'form-field__checkbox',
@@ -183,8 +179,7 @@ export async function renderBusca(container, ctx) {
     tipoSelect,
     subtipoSelect,
     escalaSelect,
-    palavraInput,
-    palavrasDatalist,
+    campoPalavra.element,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
       el('span', { textContent: 'Só na área do mapa' }),
@@ -358,7 +353,7 @@ export async function renderBusca(container, ctx) {
       tipo_produto_id: tipoSelect.value,
       subtipo_produto_id: subtipoSelect.value,
       tipo_escala_id: escalaSelect.value,
-      palavra_chave: palavraInput.value.trim(),
+      palavra_chave: campoPalavra.valor(),
       geometria: recorte.geometria,
       bbox: recorte.bbox,
     };
@@ -403,16 +398,20 @@ export async function renderBusca(container, ctx) {
     mostrarEsqueleto();
 
     try {
-      // A lista e o mapa saem juntos: sao a MESMA pergunta, e esperar uma para
-      // pedir a outra dobraria o tempo ate a tela ficar pronta.
-      const [resposta, camada] = await Promise.all([
+      // A lista, o mapa e as opcoes dos filtros saem juntos: sao a MESMA
+      // pergunta, e esperar uma para pedir a outra multiplicaria o tempo ate a
+      // tela ficar pronta. As facetas nao derrubam a busca se falharem: os
+      // filtros so ficam sem quantitativo.
+      const [resposta, camada, facetas] = await Promise.all([
         buscarProdutos({ ...f, com_geometria: false, page: pagina, limit: POR_PAGINA }),
         recarregarMapa ? buscarGeometrias(f) : Promise.resolve(null),
+        getBuscaFacetas(f).catch(() => null),
       ]);
       if (disposed || meuToken !== requisicao) return;
 
       renderResultados(resposta.dados || []);
       atualizarContador(resposta, camada);
+      if (facetas) aplicarFacetas(facetas);
 
       if (camada) {
         geometriasPorId.clear();
@@ -516,7 +515,16 @@ export async function renderBusca(container, ctx) {
         chip(p.escala || '-', 'info'),
       ]),
       identificacao ? el('p', { className: 'busca-cartao__id', textContent: identificacao }) : null,
-      el('p', { className: 'busca-cartao__id', textContent: p.tipo_produto || '-' }),
+      // O subtipo entra quando ele DEFINE o produto. Sem ele, a mesma folha
+      // aparecia duas vezes com cartoes identicos (a carta padrao e a Carta
+      // Topografica Militar sao produtos distintos no SCA), e a lista parecia
+      // estar mostrando versoes em vez de produtos.
+      el('p', {
+        className: 'busca-cartao__id',
+        textContent: p.subtipo_produto
+          ? `${p.tipo_produto || '-'} · ${p.subtipo_produto}`
+          : (p.tipo_produto || '-'),
+      }),
       palavras.length
         ? el('div', { className: 'busca-chips' }, palavras.map(t => chip(t, 'secondary')))
         : null,
@@ -603,7 +611,7 @@ export async function renderBusca(container, ctx) {
     subtipoSelect.value = '';
     atualizarSubtipos();
     escalaSelect.value = '';
-    palavraInput.value = '';
+    campoPalavra.limpar();
     areaCheck.checked = false;
     modoArea = 'nenhum';
     areaDesenhada = null;
@@ -615,14 +623,90 @@ export async function renderBusca(container, ctx) {
   // ---------------------------------------------------------------------------
   // Carga inicial
   // ---------------------------------------------------------------------------
-  function preencherSelect(select, itens, rotuloTodos) {
-    select.replaceChildren(
-      el('option', { value: '', textContent: rotuloTodos }),
-      ...itens.map(i => el('option', { value: String(i.code), textContent: i.nome }))
-    );
+  /**
+   * Preenche um `<select>` de dominio, com o quantitativo de cada opcao quando
+   * ele ja chegou.
+   *
+   * O numero ao lado da opcao e o total que a busca devolveria ao escolhe-la, e
+   * ele vem do servidor CRUZADO pelos outros filtros: escolher "Carta
+   * Topografica" muda o numero ao lado de cada escala. A regra que faz isso
+   * funcionar e a lista nunca aplicar o proprio filtro (`exceto`, no servidor).
+   *
+   * Opcao com zero sai da lista, que e o que "filtrar as demais" significa. A
+   * excecao e a opcao ESCOLHIDA: se o cruzamento a zerou, ela fica com "(0)" em
+   * vez de sumir, senao a tela desfaria em silencio o que a pessoa pediu e ela
+   * veria o resultado mudar sem entender por que.
+   *
+   * @param {HTMLSelectElement} select
+   * @param {Array<{code:number, nome:string}>} itens
+   * @param {string} rotuloTodos
+   * @param {Map<string, number>|null} contagem - null antes da primeira resposta
+   * @param {string} [desejado] - valor a manter. Sem isto, o que ja esta no
+   *   campo. Existe por causa da carga inicial e da troca de tipo: atribuir a um
+   *   `<select>` AINDA SEM as opcoes nao guarda nada, o navegador descarta em
+   *   silencio, e o valor que veio no link se perdia.
+   */
+  function preencherSelect(select, itens, rotuloTodos, contagem = null, desejado = null) {
+    const atual = desejado === null ? select.value : desejado;
+    const rotuloAtual = select.selectedOptions[0]?.dataset.rotulo || '';
+
+    select.replaceChildren(el('option', { value: '', textContent: rotuloTodos }));
+    let presente = false;
+
+    for (const i of itens) {
+      const chave = String(i.code);
+      const total = contagem ? (contagem.get(chave) || 0) : null;
+      if (contagem && total === 0 && chave !== atual) continue;
+      if (chave === atual) presente = true;
+      const option = el('option', {
+        value: chave,
+        textContent: total === null ? i.nome : `${i.nome} (${formatNumber(total)})`,
+      });
+      option.dataset.rotulo = i.nome;
+      select.appendChild(option);
+    }
+
+    // Escolha que sumiu ate da lista de dominio (nao so do cruzamento): pode
+    // acontecer com subtipo quando o tipo muda. Ai o rotulo guardado e a unica
+    // forma de a opcao continuar legivel.
+    if (!presente && atual && rotuloAtual) {
+      const option = el('option', { value: atual, textContent: `${rotuloAtual} (0)` });
+      option.dataset.rotulo = rotuloAtual;
+      select.appendChild(option);
+      presente = true;
+    }
+
+    select.value = presente ? atual : '';
+  }
+
+  /** code -> produtos, para a lista de opcoes. */
+  function mapaDeContagem(linhas) {
+    return new Map((linhas || []).map(l => [String(l.code), l.produtos]));
   }
 
   let todosSubtipos = [];
+  let tiposDominio = [];
+  let escalasDominio = [];
+  /** Ultimo quantitativo por opcao. Null ate a primeira resposta chegar. */
+  let contagens = { tipos: null, escalas: null, subtipos: null };
+
+  /**
+   * Repinta os tres filtros com o quantitativo cruzado.
+   *
+   * Nao dispara busca nenhuma, e nao pode: nenhuma escolha muda aqui (a que
+   * zerou fica com "(0)"), entao repintar e so informacao nova sobre o mesmo
+   * recorte. Se mudasse a escolha, cada busca provocaria outra.
+   */
+  function aplicarFacetas(f) {
+    contagens = {
+      tipos: mapaDeContagem(f.tipos_produto),
+      escalas: mapaDeContagem(f.tipos_escala),
+      subtipos: mapaDeContagem(f.subtipos_produto),
+    };
+    preencherSelect(tipoSelect, tiposDominio, 'Todos os tipos', contagens.tipos);
+    preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', contagens.escalas);
+    atualizarSubtipos();
+  }
 
   /**
    * @param {string} [preferido] - subtipo a manter. Sem isto, o valor que ja
@@ -636,37 +720,36 @@ export async function renderBusca(container, ctx) {
       ? todosSubtipos.filter(s => String(s.tipo_id) === String(tipo))
       : todosSubtipos;
 
-    preencherSelect(subtipoSelect, visiveis, 'Todos os subtipos');
-    subtipoSelect.value = visiveis.some(s => String(s.code) === preferido) ? preferido : '';
+    // Subtipo que nao pertence ao tipo novo e DESCARTADO, e nao mantido com
+    // "(0)": ele nao cruzou a zero, ele deixou de fazer sentido. Manter deixaria
+    // a busca com dois filtros que nunca se cruzam, devolvendo zero sem dizer
+    // por que. Vale so aqui; nas outras listas o cruzamento manda.
+    const manter = visiveis.some(s => String(s.code) === preferido) ? preferido : '';
+    preencherSelect(subtipoSelect, visiveis, 'Todos os subtipos', contagens.subtipos, manter);
     subtipoSelect.classList.toggle('hidden', visiveis.length === 0);
   }
 
   // Os dominios nao bloqueiam a busca: se um deles falhar, o filtro fica so com
-  // "Todos", e procurar por texto continua funcionando.
-  const [tipos, escalas, palavras, subtipos] = await Promise.allSettled([
-    getTiposProduto(), getTiposEscala(), getPalavrasChave(), getSubtiposProduto(),
+  // "Todos", e procurar por texto continua funcionando. Eles dao o CONJUNTO de
+  // opcoes; o quantitativo de cada uma vem depois, com a primeira busca.
+  const [tipos, escalas, subtipos] = await Promise.allSettled([
+    getTiposProduto(), getTiposEscala(), getSubtiposProduto(),
   ]);
   if (disposed) return () => {};
 
   if (tipos.status === 'fulfilled') {
-    preencherSelect(tipoSelect, tipos.value || [], 'Todos os tipos');
-    tipoSelect.value = query.get('tipo_produto_id') || '';
+    tiposDominio = tipos.value || [];
+    preencherSelect(tipoSelect, tiposDominio, 'Todos os tipos', null,
+      query.get('tipo_produto_id') || '');
   }
   if (subtipos.status === 'fulfilled') {
     todosSubtipos = subtipos.value || [];
     atualizarSubtipos(query.get('subtipo_produto_id') || '');
   }
   if (escalas.status === 'fulfilled') {
-    preencherSelect(escalaSelect, escalas.value || [], 'Todas as escalas');
-    escalaSelect.value = query.get('tipo_escala_id') || '';
-  }
-  if (palavras.status === 'fulfilled') {
-    palavrasDatalist.replaceChildren(
-      ...(palavras.value || []).map(p => el('option', {
-        value: p.palavra,
-        label: `${p.palavra} (${formatNumber(p.usos)})`,
-      }))
-    );
+    escalasDominio = escalas.value || [];
+    preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', null,
+      query.get('tipo_escala_id') || '');
   }
 
   // Area que veio na URL: e DESENHADA no mapa, para a pessoa ver o recorte que
@@ -697,6 +780,7 @@ export async function renderBusca(container, ctx) {
     document.removeEventListener('keydown', aoTeclar);
     buscarComEspera.cancelar();
     buscarPorMapa.cancelar();
+    campoPalavra._cleanup();
     mapa._cleanup();
   };
 }

@@ -88,6 +88,26 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   teste de rota e prova contra produção guardando essa igualdade. Quando o cruzamento zera a escolha
   atual, a tela a MANTÉM na lista com "(0)" em vez de descartá-la: descartar desfaria em silêncio o
   que a pessoa pediu. A exceção é a troca de ano, onde a opção some porque não existe mesmo.
+  A **busca do acervo segue a mesma regra** desde 2026-07-28 (`/acervo/busca/facetas`, mesmo pedido
+  do chefe), com uma exceção própria: o subtipo que não pertence ao tipo recém-escolhido é
+  DESCARTADO, e não mantido com "(0)". Ele não cruzou a zero, ele deixou de fazer sentido, e manter
+  deixaria a busca com dois filtros que nunca se cruzam devolvendo zero sem dizer por quê. As três
+  contagens saem do MESMO `montarFiltrosBusca` da lista e da camada do mapa, então nenhuma pode
+  divergir do resultado; provado contra produção em 2026-07-28 (soma dos tipos = 5.741 = acervo
+  inteiro, e cada opção bate exatamente com o total da busca ao escolhê-la).
+- **A sugestão de palavra-chave da busca é um popover NOSSO, não `<datalist>`.** O nativo escolhe
+  sozinho quantas linhas mostrar, sem CSS que o alcance, e com as vinte etiquetas que a rota devolve
+  abria cobrindo boa parte da tela (chefe, 2026-07-28). Junto vieram três coisas que o datalist não
+  dava: a contagem de usos como texto de verdade (nele ia no atributo `label`, que só o Firefox
+  mostra), setas e Enter iguais em todo navegador, e a lista refeita a cada tecla contra o servidor.
+  Enter com o campo digitado aplica o texto como está, de propósito: a sugestão vem limitada a 20 e o
+  acervo tem mais etiquetas do que isso. Ver `modules/acervo/pages/busca/palavra-chave.js`.
+- **A busca do acervo lista PRODUTOS, e a ficha lista as versões da mais nova para a mais antiga.**
+  O cartão anuncia a última edição (`ORDER BY v.data_edicao DESC LIMIT 1`) e a contagem de versões;
+  a ficha (`/produto/detalhado/:id`) traz todas, ordenadas no SERVIDOR por `data_edicao DESC NULLS
+  LAST, id DESC`, com a primeira marcada como "Mais recente". Ordenar na tela não serviria: quem lê
+  essa rota inclui o plugin. `NULLS LAST` porque versão sem data de edição é registro incompleto, e
+  não a mais nova.
 - **O ano de referência é contexto de MÓDULO, e mora na navbar.** Vale para o orçamento
   (2026-07-25) e para a mapoteca (2026-07-28), pela fábrica `@store/year-store.js`: chave de
   `localStorage` e evento são namespaced por módulo (`@sca-mapoteca-ano`, `anochange:mapoteca`),

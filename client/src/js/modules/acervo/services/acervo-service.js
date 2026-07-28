@@ -135,6 +135,20 @@ export const buscarGeometrias = (filtros = {}) =>
   apiGet(`/acervo/busca/geometrias${queryString(filtros)}`);
 
 /**
+ * Opcoes dos filtros da busca, com o quantitativo de PRODUTOS de cada uma.
+ *
+ * Recebe os MESMOS filtros da busca, porque cada lista aplica os OUTROS e nunca
+ * o proprio: escolher um tipo passa a mostrar quantos produtos daquele tipo
+ * existem em cada escala, e trocar de escala continua possivel sem limpar nada
+ * antes. Sem cache, pela mesma razao da busca: e sempre uma combinacao nova.
+ *
+ * @param {Object} filtros - os MESMOS da busca (sem page/limit)
+ * @returns {Promise<{tipos_produto:Array, tipos_escala:Array, subtipos_produto:Array}>}
+ */
+export const getBuscaFacetas = (filtros = {}) =>
+  apiGet(`/acervo/busca/facetas${queryString(filtros)}`);
+
+/**
  * Baixa o resultado da busca em CSV.
  *
  * Exporta o conjunto INTEIRO, e nao a pagina na tela. Com `ids` preenchido sai

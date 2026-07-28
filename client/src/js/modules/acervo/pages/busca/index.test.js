@@ -63,11 +63,28 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     { code: 3, nome: 'Carta Ortoimagem', tipo_id: 9 },
   ])),
   getProdutoDetalhado: vi.fn(() => Promise.resolve({ versoes: [] })),
+  // Quantitativo de cada opcao, ja cruzado pelos OUTROS filtros. Os numeros
+  // batem com PRODUTOS abaixo de proposito: e o contrato da rota (a contagem da
+  // opcao e o total que a busca devolve ao escolhe-la).
+  getBuscaFacetas: vi.fn(() => Promise.resolve({
+    tipos_produto: [
+      { code: 1, nome: 'Carta Topográfica', produtos: 2 },
+      { code: 9, nome: 'Carta Ortoimagem', produtos: 1 },
+    ],
+    tipos_escala: [
+      { code: 2, nome: '1:50.000', produtos: 2 },
+      { code: 3, nome: '1:25.000', produtos: 1 },
+    ],
+    subtipos_produto: [
+      { code: 2, nome: 'Carta Topográfica - T34-700', tipo_id: 1, produtos: 2 },
+      { code: 3, nome: 'Carta Ortoimagem', tipo_id: 9, produtos: 1 },
+    ],
+  })),
 }));
 
 import { renderBusca } from '@modules/acervo/pages/busca/index.js';
 import {
-  buscarProdutos, buscarGeometrias, baixarBuscaCsv,
+  buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
 } from '@modules/acervo/services/acervo-service.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -166,11 +183,9 @@ describe('busca do acervo: montagem', () => {
 
     const opcoesTipo = [...container.querySelectorAll('select')][0].options;
     expect(opcoesTipo[0].textContent).toBe('Todos os tipos');
-    expect([...opcoesTipo].map(o => o.textContent)).toContain('Carta Ortoimagem');
-
-    // As palavras-chave viram sugestao, e nao um campo em branco para adivinhar.
-    const sugestoes = [...container.querySelectorAll('datalist option')].map(o => o.value);
-    expect(sugestoes).toContain('Mapeamento Sistemático');
+    // Com o quantitativo ao lado: o numero e o total que a busca devolveria ao
+    // escolher aquela opcao.
+    expect([...opcoesTipo].map(o => o.textContent)).toContain('Carta Ortoimagem (1)');
 
     cleanup();
   });
@@ -255,6 +270,28 @@ describe('busca do acervo: resultados', () => {
     expect(primeiro).toContain('SH-22-V-C-IV-1');
     expect(primeiro).toContain('2ª Edição');
     expect(primeiro).toContain('Mapeamento Sistemático');
+
+    cleanup();
+  });
+
+  // A mesma folha existe como carta padrao E como Carta Topografica Militar, e
+  // no SCA sao PRODUTOS distintos. Sem o subtipo no cartao, os dois saem
+  // identicos e a lista parece estar mostrando versoes.
+  test('o subtipo que define o produto aparece no cartao', async () => {
+    buscarProdutos.mockImplementation(() => resposta({
+      dados: [
+        { ...PRODUTOS[0], id: 20, subtipo_produto: null },
+        { ...PRODUTOS[0], id: 21, subtipo_produto: 'Carta Topográfica Militar' },
+      ],
+      total: 2,
+    }));
+    const { container, cleanup } = await montar();
+
+    const [semSubtipo, comSubtipo] = cartoes(container).map(c => c.textContent);
+    expect(comSubtipo).toContain('Carta Topográfica · Carta Topográfica Militar');
+    // Sem subtipo, o cartao nao ganha separador pendurado.
+    expect(semSubtipo).not.toContain('·  ');
+    expect(semSubtipo).toContain('Carta Topográfica');
 
     cleanup();
   });
@@ -389,14 +426,17 @@ describe('busca do acervo: filtros', () => {
     const { container, cleanup } = await montar();
 
     const [tipo, subtipo] = [...container.querySelectorAll('select')];
-    expect(subtipo.options).toHaveLength(4); // "Todos" + os tres
+    // "Todos" mais os subtipos COM produto. O terceiro do dominio (Carta
+    // Topografica Militar) nao voltou nas facetas, ou seja, tem zero, e por isso
+    // nao aparece: e o que "uma opcao preenchida filtra as demais" significa.
+    expect(subtipo.options).toHaveLength(3);
 
     tipo.value = '9'; // Carta Ortoimagem
     tipo.dispatchEvent(new Event('change'));
     await flush();
 
     const rotulos = [...subtipo.options].map(o => o.textContent);
-    expect(rotulos).toEqual(['Todos os subtipos', 'Carta Ortoimagem']);
+    expect(rotulos).toEqual(['Todos os subtipos', 'Carta Ortoimagem (1)']);
 
     cleanup();
   });
@@ -443,6 +483,157 @@ describe('busca do acervo: filtros', () => {
     expect(ultimaBusca().termo).toBe('');
     expect(ultimaBusca().geometria).toBeNull();
     expect(mapaFalso.area).toBeNull();
+
+    cleanup();
+  });
+});
+
+// Pedido do chefe em 2026-07-28: "mostrar a quantidade de produtos em cada
+// escolha, e uma opcao preenchida deve filtrar as demais". O quantitativo vem
+// do servidor ja cruzado; a tela so pinta e decide o que fazer com a escolha
+// que zerou.
+describe('busca do acervo: quantitativo nos filtros', () => {
+  test('as opcoes mostram quantos produtos cada uma tem', async () => {
+    const { container, cleanup } = await montar();
+
+    const [tipo, , escala] = [...container.querySelectorAll('select')];
+    expect([...tipo.options].map(o => o.textContent)).toEqual([
+      'Todos os tipos', 'Carta Topográfica (2)', 'Carta Ortoimagem (1)',
+    ]);
+    expect([...escala.options].map(o => o.textContent)).toEqual([
+      'Todas as escalas', '1:50.000 (2)', '1:25.000 (1)',
+    ]);
+
+    cleanup();
+  });
+
+  test('as facetas saem com os MESMOS filtros da busca, e junto com ela', async () => {
+    const { container, cleanup } = await montar();
+
+    const [tipo] = [...container.querySelectorAll('select')];
+    tipo.value = '1';
+    tipo.dispatchEvent(new Event('change'));
+    await flush();
+
+    const facetas = getBuscaFacetas.mock.calls[getBuscaFacetas.mock.calls.length - 1][0];
+    expect(facetas.tipo_produto_id).toBe('1');
+    expect(facetas.termo).toBe(ultimaBusca().termo);
+    // Uma ida por busca, e nao duas: as tres chamadas saem no mesmo Promise.all.
+    expect(getBuscaFacetas).toHaveBeenCalledTimes(buscarProdutos.mock.calls.length);
+
+    cleanup();
+  });
+
+  // Descartar em silencio a escolha que zerou faria a tela desfazer o que a
+  // pessoa pediu, e ela veria o resultado mudar sem entender por que.
+  test('a escolha que o cruzamento zerou FICA na lista, com (0)', async () => {
+    const { container, cleanup } = await montar();
+
+    const [tipo] = [...container.querySelectorAll('select')];
+    tipo.value = '9';
+    tipo.dispatchEvent(new Event('change'));
+    await flush();
+
+    getBuscaFacetas.mockResolvedValueOnce({
+      tipos_produto: [{ code: 1, nome: 'Carta Topográfica', produtos: 2 }],
+      tipos_escala: [],
+      subtipos_produto: [],
+    });
+    // Qualquer busca nova basta para trazer o cruzamento novo.
+    container.querySelector('input[type="search"]').value = 'nada';
+    tipo.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(tipo.value).toBe('9');
+    expect([...tipo.options].map(o => o.textContent)).toContain('Carta Ortoimagem (0)');
+    // E continua valendo como filtro: a tela nao mexeu na busca por conta propria.
+    expect(ultimaBusca().tipo_produto_id).toBe('9');
+
+    cleanup();
+  });
+
+  test('faceta que falha nao derruba a busca', async () => {
+    getBuscaFacetas.mockRejectedValueOnce(new Error('sem rede'));
+    const { container, cleanup } = await montar();
+
+    expect(cartoes(container)).toHaveLength(2);
+    // Sem quantitativo, as opcoes ficam so com o nome.
+    const [tipo] = [...container.querySelectorAll('select')];
+    expect([...tipo.options].map(o => o.textContent)).toContain('Carta Ortoimagem');
+
+    cleanup();
+  });
+});
+
+// A sugestao de palavra-chave era um `<datalist>`, e o navegador escolhia
+// sozinho a altura: com vinte etiquetas ela abria cobrindo boa parte da tela
+// (chefe, 2026-07-28). Agora e um popover nosso, com altura no CSS.
+describe('busca do acervo: palavra-chave', () => {
+  const campo = (c) => c.querySelector('.busca-palavras-campo input');
+  const itens = (c) => [...c.querySelectorAll('.busca-palavras__item')];
+
+  test('nao usa mais datalist, e a lista nasce fechada', async () => {
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('datalist')).toBeNull();
+    expect(container.querySelector('.busca-palavras').classList.contains('hidden')).toBe(true);
+
+    cleanup();
+  });
+
+  test('focar abre a sugestao com a etiqueta e quantos usos ela tem', async () => {
+    const { container, cleanup } = await montar();
+    // O relogio falso entra DEPOIS da montagem: `montar` espera por um
+    // setTimeout de verdade, e com ele congelado a tela nunca ficaria pronta.
+    vi.useFakeTimers();
+
+    campo(container).dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const lista = container.querySelector('.busca-palavras');
+    expect(lista.classList.contains('hidden')).toBe(false);
+    expect(itens(container).map(i => i.textContent)).toEqual([
+      'Mapeamento Sistemático2.275', 'CDGV1.558',
+    ]);
+
+    cleanup();
+  });
+
+  test('escolher uma sugestao vira filtro da busca', async () => {
+    const { container, cleanup } = await montar();
+    vi.useFakeTimers();
+
+    campo(container).dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(300);
+    itens(container)[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(campo(container).value).toBe('CDGV');
+    expect(ultimaBusca().palavra_chave).toBe('CDGV');
+    expect(container.querySelector('.busca-palavras').classList.contains('hidden')).toBe(true);
+
+    cleanup();
+  });
+
+  // A sugestao vem limitada a 20 etiquetas, e o acervo tem mais: exigir a
+  // escolha na lista impediria buscar a que ficou de fora.
+  test('Enter aplica o que foi digitado, mesmo fora da sugestao', async () => {
+    const { container, cleanup } = await montar();
+
+    campo(container).value = 'Etiqueta Rara';
+    campo(container).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await flush();
+
+    expect(ultimaBusca().palavra_chave).toBe('Etiqueta Rara');
+
+    cleanup();
+  });
+
+  test('a palavra-chave da URL nasce no campo', async () => {
+    const { container, cleanup } = await montar({ query: 'palavra_chave=CDGV' });
+
+    expect(campo(container).value).toBe('CDGV');
+    expect(ultimaBusca().palavra_chave).toBe('CDGV');
 
     cleanup();
   });

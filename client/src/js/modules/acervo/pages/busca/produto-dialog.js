@@ -35,15 +35,20 @@ export function plural(n, singular, plural_) {
  * digital" e informacao, e e o caso da versao historica (chefe, 2026-07-25).
  * Esconder faria a ficha mentir sobre quantas versoes existem.
  */
-function blocoVersao(v) {
+function blocoVersao(v, maisRecente) {
   const arquivos = v.arquivos || [];
 
   const cabecalho = el('div', { className: 'versao-bloco__cabecalho' }, [
     el('span', { className: 'versao-bloco__titulo', textContent: v.versao || v.nome_versao || 'Versão' }),
+    // A busca lista PRODUTOS e mostra no cartao a ultima edicao. Quem abre a
+    // ficha vem atras das anteriores, e precisa saber num relance qual das
+    // linhas e aquela que o cartao anunciou. A ordem (mais nova primeiro) vem do
+    // servidor; a marca e o que a torna legivel sem contar datas.
+    maisRecente ? chip('Mais recente', 'success') : null,
     arquivos.length
       ? chip(plural(arquivos.length, 'arquivo', 'arquivos'), 'info')
       : chip('Sem arquivo digital', 'default'),
-  ]);
+  ].filter(Boolean));
 
   const meta = el('div', { className: 'versao-bloco__meta' }, [
     linha('Edição', formatDate(v.versao_data_edicao)),
@@ -152,10 +157,12 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
       ]),
       el('h3', {
         className: 'produto-ficha__secao',
-        textContent: plural(versoes.length, 'versão', 'versões'),
+        textContent: versoes.length > 1
+          ? `${plural(versoes.length, 'versão', 'versões')}, da mais recente para a mais antiga`
+          : plural(versoes.length, 'versão', 'versões'),
       }),
       ...(versoes.length
-        ? versoes.map(blocoVersao)
+        ? versoes.map((v, i) => blocoVersao(v, versoes.length > 1 && i === 0))
         : [el('p', {
           className: 'produto-ficha__vazio',
           textContent: 'Este produto ainda não tem versão cadastrada.',

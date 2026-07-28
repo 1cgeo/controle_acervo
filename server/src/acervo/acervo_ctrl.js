@@ -202,6 +202,14 @@ controller.getProdutoDetailedById = async produtoId => {
       LEFT JOIN acervo.lote l ON v.lote_id = l.id
       LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
       WHERE v.produto_id = $1
+      -- Da MAIS RECENTE para a mais antiga. Sem ordem, a ficha devolvia as
+      -- versões na ordem física da tabela, e a busca já promete o contrário: o
+      -- cartão mostra a última edição, e quem abre a ficha espera encontrá-la no
+      -- topo, com as anteriores abaixo. Ordenar aqui, e não na tela, é o que faz
+      -- valer para todo mundo que lê esta rota (inclusive o plugin).
+      -- NULLS LAST porque versão sem data de edição é registro incompleto, e não
+      -- a mais nova; o desempate por id mantém estável quando a data empata.
+      ORDER BY v.data_edicao DESC NULLS LAST, v.id DESC
     `, [produtoId]);
 
     // Para cada versão, obter seus relacionamentos e arquivos
@@ -786,9 +794,16 @@ async function generateGeoJSONForScale(scaleId) {
 //    só é preenchido quando o subtipo DEFINE o produto (367 de 5.741 em
 //    2026-07-28); o subtipo do dia a dia (T34-700, ET-RDG, EDGV) vive na versão,
 //    e sozinho o T34-700 responde por 1.765 produtos.
-function montarFiltrosBusca(f) {
+//
+// `exceto` PULA um filtro. É o que faz as listas de opção serem facetadas: a
+// lista de escalas aplica tipo, subtipo, termo e recorte, mas nunca a própria
+// escala escolhida. Aplicando também a própria, cada lista voltaria com uma
+// opção só (a que já está escolhida), e trocar de escala exigiria limpar antes.
+// Mesma regra do mapa da mapoteca (mapoteca/dashboard_ctrl.js).
+function montarFiltrosBusca(f, exceto = null) {
   const conditions = [];
   const params = {};
+  const usa = (chave) => chave !== exceto && f[chave];
 
   if (f.termo) {
     conditions.push(`(
@@ -818,12 +833,12 @@ function montarFiltrosBusca(f) {
     params.palavraChave = f.palavra_chave;
   }
 
-  if (f.tipo_produto_id) {
+  if (usa('tipo_produto_id')) {
     conditions.push(`p.tipo_produto_id = $<tipoProdutoId>`);
     params.tipoProdutoId = f.tipo_produto_id;
   }
 
-  if (f.subtipo_produto_id) {
+  if (usa('subtipo_produto_id')) {
     conditions.push(`(
       p.subtipo_produto_id = $<subtipoProdutoId>
       OR EXISTS (
@@ -834,7 +849,7 @@ function montarFiltrosBusca(f) {
     params.subtipoProdutoId = f.subtipo_produto_id;
   }
 
-  if (f.tipo_escala_id) {
+  if (usa('tipo_escala_id')) {
     conditions.push(`p.tipo_escala_id = $<tipoEscalaId>`);
     params.tipoEscalaId = f.tipo_escala_id;
   }
@@ -924,7 +939,7 @@ controller.buscaProdutos = async (filtros = {}) => {
     const produtos = await t.any(
       `WITH pagina AS (
         SELECT p.id, p.nome, p.mi, p.inom,
-               p.tipo_escala_id, p.tipo_produto_id,
+               p.tipo_escala_id, p.tipo_produto_id, p.subtipo_produto_id,
                p.denominador_escala_especial, p.descricao,
                p.data_cadastramento, p.data_modificacao
                ${comGeometria ? ', ST_AsGeoJSON(p.geom) AS geom' : ''}
@@ -937,6 +952,13 @@ controller.buscaProdutos = async (filtros = {}) => {
         pg.*,
         te.nome AS escala,
         tp.nome AS tipo_produto,
+        -- Subtipo QUE DEFINE O PRODUTO, e não o da versão. Ele é o que separa
+        -- dois produtos que, sem ele, saem idênticos na lista: a mesma folha
+        -- tem a carta padrão e a Carta Topográfica Militar como produtos
+        -- distintos (51 pares em 2026-07-28, dos 52 que repetem MI+tipo+escala).
+        -- Sem esta coluna, os dois cartões ficavam indistinguíveis, e a lista
+        -- parecia estar mostrando versões do mesmo produto.
+        sp.nome AS subtipo_produto,
         COALESCE(vc.num_versoes, 0) AS num_versoes,
         ultima.versao AS ultima_versao,
         ultima.data_edicao AS ultima_data_edicao,
@@ -945,6 +967,7 @@ controller.buscaProdutos = async (filtros = {}) => {
       FROM pagina pg
       INNER JOIN dominio.tipo_escala te ON te.code = pg.tipo_escala_id
       INNER JOIN dominio.tipo_produto tp ON tp.code = pg.tipo_produto_id
+      LEFT JOIN dominio.subtipo_produto sp ON sp.code = pg.subtipo_produto_id
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS num_versoes FROM acervo.versao v WHERE v.produto_id = pg.id
       ) vc ON TRUE
@@ -1023,6 +1046,73 @@ controller.buscaGeometrias = async (filtros = {}) => {
         geom: JSON.parse(l.geom)
       }))
     };
+  });
+};
+
+// Opções dos três filtros da busca, com o quantitativo de PRODUTOS de cada uma.
+//
+// Duas propriedades que o desenho garante, e que são o ponto da rota:
+//
+// 1. O número ao lado de uma opção é, por construção, o total que a busca
+//    devolveria ao escolhê-la. Ele sai do MESMO `montarFiltrosBusca` da lista e
+//    da camada do mapa, então os três não têm como divergir.
+// 2. Cada lista aplica os OUTROS filtros e nunca o próprio (ver `exceto`).
+//    Escolher "Carta Topográfica" passa a mostrar quantas cartas topográficas
+//    existem em cada escala, e trocar de escala continua possível sem limpar
+//    nada antes.
+//
+// São três consultas, e não uma com GROUPING SETS: cada uma tem um WHERE
+// diferente (justamente por causa do `exceto`), então não há conjunto comum para
+// agrupar. Elas rodam na mesma task, sobre 5.741 produtos.
+controller.buscaFacetas = async (filtros = {}) => {
+  return db.conn.task(async t => {
+    const porTipo = montarFiltrosBusca(filtros, 'tipo_produto_id');
+    const porEscala = montarFiltrosBusca(filtros, 'tipo_escala_id');
+    const porSubtipo = montarFiltrosBusca(filtros, 'subtipo_produto_id');
+
+    const tipos = await t.any(
+      `SELECT tp.code, tp.nome, COUNT(p.id)::int AS produtos
+       FROM acervo.produto p
+       INNER JOIN dominio.tipo_produto tp ON tp.code = p.tipo_produto_id
+       ${porTipo.whereClause}
+       GROUP BY tp.code, tp.nome
+       ORDER BY tp.nome`,
+      porTipo.params
+    );
+
+    const escalas = await t.any(
+      `SELECT te.code, te.nome, COUNT(p.id)::int AS produtos
+       FROM acervo.produto p
+       INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+       ${porEscala.whereClause}
+       GROUP BY te.code, te.nome
+       ORDER BY te.code`,
+      porEscala.params
+    );
+
+    // O subtipo mora em DOIS lugares, e o filtro casa nos dois (ver o
+    // comentário de `montarFiltrosBusca`): `produto.subtipo_produto_id` quando o
+    // subtipo define o produto, e `versao.subtipo_produto_id` no dia a dia. O
+    // LATERAL junta as duas origens numa lista de subtipos por produto, e o
+    // COUNT(DISTINCT) impede que o produto com três versões do mesmo subtipo
+    // seja contado três vezes.
+    const subtipos = await t.any(
+      `SELECT sp.code, sp.nome, sp.tipo_id, COUNT(DISTINCT p.id)::int AS produtos
+       FROM acervo.produto p
+       JOIN LATERAL (
+         SELECT p.subtipo_produto_id AS code WHERE p.subtipo_produto_id IS NOT NULL
+         UNION
+         SELECT v.subtipo_produto_id FROM acervo.versao v
+         WHERE v.produto_id = p.id AND v.subtipo_produto_id IS NOT NULL
+       ) origem ON TRUE
+       INNER JOIN dominio.subtipo_produto sp ON sp.code = origem.code
+       ${porSubtipo.whereClause}
+       GROUP BY sp.code, sp.nome, sp.tipo_id
+       ORDER BY sp.nome`,
+      porSubtipo.params
+    );
+
+    return { tipos_produto: tipos, tipos_escala: escalas, subtipos_produto: subtipos };
   });
 };
 

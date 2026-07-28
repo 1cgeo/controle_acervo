@@ -195,13 +195,21 @@ Busca produtos com filtros e paginacao.
 **Query Params:**
 | Parametro | Tipo | Padrao | Descricao |
 |---|---|---|---|
-| `termo` | string | - | Termo de busca (filtra por nome, MI ou INOM via ILIKE) |
+| `termo` | string | - | Termo de busca (nome, MI, INOM e palavras-chave das versoes, via ILIKE) |
 | `tipo_produto_id` | integer | - | Filtrar por tipo de produto |
+| `subtipo_produto_id` | integer | - | Filtrar por subtipo (casa no produto E em qualquer versao) |
 | `tipo_escala_id` | integer | - | Filtrar por tipo de escala |
+| `palavra_chave` | string | - | Etiqueta EXATA de `versao.palavras_chave` |
 | `projeto_id` | integer | - | Filtrar por projeto |
 | `lote_id` | integer | - | Filtrar por lote |
+| `bbox` | string | - | Recorte espacial pela caixa `minLon,minLat,maxLon,maxLat` |
+| `geometria` | string | - | Recorte espacial por poligono GeoJSON |
 | `page` | integer | 1 | Numero da pagina (min 1) |
 | `limit` | integer | 20 | Registros por pagina (min 1, max 100) |
+
+Uma linha por PRODUTO, com a ultima edicao (`ultima_versao`, por `data_edicao DESC`) e a
+contagem de versoes. As edicoes anteriores ficam em `GET /api/acervo/produto/detalhado/:id`,
+que as devolve da mais recente para a mais antiga.
 
 **Resposta:**
 ```json
@@ -220,16 +228,57 @@ Busca produtos com filtros e paginacao.
         "tipo_escala_id": 1,
         "tipo_produto": "string",
         "tipo_produto_id": 2,
+        "subtipo_produto": "string|null",
         "denominador_escala_especial": null,
         "descricao": "string",
         "data_cadastramento": "date",
         "data_modificacao": "date",
-        "num_versoes": 3
+        "num_versoes": 3,
+        "ultima_versao": "string|null",
+        "ultima_data_edicao": "date|null"
       }
     ]
   }
 }
 ```
+
+`subtipo_produto` so vem preenchido quando o subtipo DEFINE o produto. E ele que separa
+dois produtos que sairiam identicos na lista: a mesma folha tem a carta padrao e a Carta
+Topografica Militar como produtos distintos.
+
+---
+
+### GET `/api/acervo/busca/facetas`
+
+Opcoes dos filtros da busca, com o quantitativo de produtos de cada uma.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyPerfil('consulta')` |
+
+**Query Params:** os MESMOS de `GET /api/acervo/busca` (sem `page` e `limit`).
+
+Duas garantias, e sao o ponto da rota:
+
+1. A contagem de uma opcao e exatamente o total que a busca devolve ao escolhe-la (as duas
+   partem do mesmo montador de filtros).
+2. Cada lista aplica os OUTROS filtros e nunca o proprio. Escolher um tipo passa a mostrar
+   quantos produtos daquele tipo existem em cada escala, e trocar de escala continua
+   possivel sem limpar o filtro antes.
+
+**Resposta:**
+```json
+{
+  "dados": {
+    "tipos_produto":    [{ "code": 2, "nome": "string", "produtos": 2378 }],
+    "tipos_escala":     [{ "code": 1, "nome": "string", "produtos": 2765 }],
+    "subtipos_produto": [{ "code": 2, "nome": "string", "tipo_id": 2, "produtos": 1765 }]
+  }
+}
+```
+
+Opcao com zero nao aparece. O subtipo e contado tanto pelo `produto.subtipo_produto_id`
+quanto pelo das versoes, com `COUNT(DISTINCT produto.id)`.
 
 ---
 
