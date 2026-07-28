@@ -1,7 +1,22 @@
+/* A altura vem do VIEWPORT, e nao de porcentagem do pai.
+ *
+ * Estas duas telas (login e consulta de pedido) sao `standalone`: montam
+ * direto no `#app`, sem o layout. E o `#app` tem `min-height: 100%`, e nao
+ * `height` (de proposito, senao um pixel de arredondamento acende a barra de
+ * rolagem numa pagina que caberia). Altura minima nao torna a altura definida:
+ * a do `#app` continua sendo `auto`, e porcentagem de altura contra pai `auto`
+ * resolve para `auto` tambem. Foi o que quebrou a foto de fundo em 2026-07-28:
+ * a pagina encolhia ate a altura do cartao, e o fundo, que e absoluto dentro
+ * dela, encolhia junto e aparecia so atras do cartao.
+ *
+ * `min-height`, e nao `height`, para o cartao alto (o duplo, em tela baixa)
+ * fazer a pagina crescer em vez de ser cortado pelo `overflow: hidden`.
+ * `dvh` DEPOIS de `vh`: quem nao conhece a unidade nova fica com a antiga. */
 .login-page {
   position: relative;
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -232,10 +247,13 @@
 }
 
 /* Public order tracking page (consultar pedido) */
+/* Mesma foto de fundo, mesmo motivo da `.login-page` acima: viewport, e nao
+ * porcentagem do `#app`. */
 .consulta-page {
   position: relative;
   width: 100%;
-  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
