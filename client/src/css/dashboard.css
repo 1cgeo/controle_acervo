@@ -4,6 +4,16 @@
   margin: 0 auto;
 }
 
+/* A margem de baixo do ULTIMO bloco da pagina nao serve para nada: quem separa
+ * o conteudo da borda inferior e o padding do `.main-content`. Somadas, davam
+ * 48 px de espaco morto no rodape, e como a margem colapsa para fora da
+ * `.page`, os 24 px extras contavam na altura da pagina: em telas justas eram
+ * suficientes para acender a barra de rolagem sozinhos (medido em 2026-07-28
+ * na lista de clientes, 14 px de excesso numa janela de 781). */
+.page > :last-child {
+  margin-bottom: 0;
+}
+
 .page__header {
   display: flex;
   align-items: center;

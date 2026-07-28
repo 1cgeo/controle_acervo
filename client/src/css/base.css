@@ -21,10 +21,27 @@ html, body {
 /* `min-height`, e nao `height`: com altura fixa em 100%, qualquer descendente
  * um pixel mais alto (arredondamento de fracao, borda, fonte que mede
  * diferente) transborda e acende a barra de rolagem numa pagina que caberia.
- * Com minimo, a pagina ocupa a tela toda e cresce quando de fato precisar. */
+ * Com minimo, a pagina ocupa a tela toda e cresce quando de fato precisar.
+ *
+ * `display: flow-root` guarda as margens dos filhos DENTRO do #app, e sem ele
+ * toda rota com layout tinha 56 px de barra de rolagem sobrando. A navbar e
+ * `position: fixed`, e quem desvia dela e a `margin-top: var(--navbar-height)`
+ * do `.main-content`. Essa margem COLAPSAVA para fora: como nem o `.app-layout`
+ * nem o `#app` tinham padding, borda ou contexto proprio, ela saia do #app e
+ * empurrava o proprio #app 56 px para baixo, em vez de deslocar o conteudo por
+ * dentro dele. O #app continuava com uma tela inteira de altura minima, entao o
+ * documento ficava com 56 + 781 = 837 numa janela de 781.
+ *
+ * Medido em 2026-07-28: com `height: 100%` (como era antes de o `min-height`
+ * entrar) o excesso era exatamente o mesmo, ou seja, isto nunca dependeu
+ * daquela troca, e tambem nao veio da correcao da tela de login, que nem monta
+ * o `.app-layout`. Era uma segunda fonte de barra, que sobreviveu a primeira
+ * limpeza. `flow-root` e a forma de dizer "contenha as margens dos meus
+ * filhos" sem os efeitos colaterais de `overflow: hidden`. */
 #app {
   min-height: 100%;
   width: 100%;
+  display: flow-root;
 }
 
 a {
