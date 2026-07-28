@@ -234,19 +234,82 @@ router.get(
     query: acervoSchema.buscaProdutos
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.buscaProdutos(
-      req.query.termo,
-      req.query.tipo_produto_id,
-      req.query.tipo_escala_id,
-      req.query.projeto_id,
-      req.query.lote_id,
-      req.query.page || 1,
-      req.query.limit || 20
-    );
+    // O Joi ja validou e normalizou tudo; passar o objeto inteiro evita a fila
+    // de argumentos posicionais que ja custou um 500 quando um filtro novo
+    // entrou no meio dela.
+    const dados = await acervoCtrl.buscaProdutos(req.query);
 
     const msg = 'Busca de produtos realizada com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Camada do mapa: os MESMOS filtros da busca, sem paginacao.
+//
+// Rota separada de proposito. A lista pagina porque ninguem le 800 cartoes; o
+// mapa NAO pode paginar, porque 20 poligonos numa tela de 800 resultados
+// afirmam visualmente que o acervo tem 20 cartas ali.
+router.get(
+  '/busca/geometrias',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    query: acervoSchema.buscaGeometrias
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.buscaGeometrias(req.query);
+
+    return res.sendJsonAndLog(
+      true,
+      'Geometrias da busca retornadas com sucesso',
+      httpCode.OK,
+      dados
+    );
+  })
+);
+
+// CSV do resultado da busca, ou so dos produtos selecionados (`ids`).
+//
+// Sai como arquivo, e nao como JSON: o destino e a planilha de quem pediu, e o
+// navegador ja sabe salvar `text/csv` com Content-Disposition.
+router.get(
+  '/busca/csv',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    query: acervoSchema.buscaCsv
+  }),
+  asyncHandler(async (req, res, next) => {
+    const csv = await acervoCtrl.buscaCsv(req.query);
+
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="busca-acervo.csv"'
+    });
+
+    return res.send(csv);
+  })
+);
+
+// Sugestao de palavras-chave para a busca. Consulta, como o resto da leitura do
+// acervo: quem pode buscar pode saber por quais etiquetas buscar.
+router.get(
+  '/palavras_chave',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    query: acervoSchema.palavrasChave
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.palavrasChave(
+      req.query.termo,
+      req.query.limit || 20
+    );
+
+    return res.sendJsonAndLog(
+      true,
+      'Palavras-chave retornadas com sucesso',
+      httpCode.OK,
+      dados
+    );
   })
 );
 

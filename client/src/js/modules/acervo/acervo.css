@@ -93,3 +93,651 @@
 .progress-bar__fill--error {
   background: var(--color-error);
 }
+
+/* ---------------------------------------------------------------------------
+ * Busca do acervo: lista e mapa lado a lado.
+ *
+ * A pergunta e uma so ("o que existe, e onde?"), entao as duas metades dividem
+ * a tela em vez de virarem duas telas.
+ *
+ * ALTURA, QUE E ONDE ISTO JA QUEBROU. O mapa precisa de altura PROPRIA, e nao
+ * herdada do conteudo: contêiner de mapa com altura zero faz o MapLibre criar um
+ * canvas 0x0 que nunca volta ao tamanho certo sozinho.
+ *
+ * O erro que causou isso: o grid ficou sem `grid-template-rows`. A linha
+ * implicita e `auto`, e linha `auto` se dimensiona pelo MAX-CONTENT do item mais
+ * alto, que aqui e o painel com os cartoes todos. O `overflow: hidden` do painel
+ * NAO limita essa contribuicao. A linha virava milhares de pixels e esticava o
+ * mapa junto, para fora da tela. Por isso a linha e `minmax(0, 1fr)`: altura
+ * vinda do contêiner, e o que passar disso rola por dentro.
+ * ------------------------------------------------------------------------- */
+.busca {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  /* O padding do .main-content e --space-lg em cima e embaixo. */
+  height: calc(100vh - var(--navbar-height) - (2 * var(--space-lg)));
+  min-height: 520px;
+}
+
+/* ---- Barra de busca, no topo e em toda a largura ----
+ * O campo de texto e a acao principal da tela, entao ele nao divide espaco com
+ * a lista: fica acima das duas colunas, onde o olho cai primeiro. */
+.busca__topo {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.busca__cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.busca__titulo {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.busca-resultados__contador {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.busca-campo {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.busca-campo__icone {
+  position: absolute;
+  left: var(--space-md);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.busca-campo__input {
+  width: 100%;
+  padding: 12px var(--space-md) 12px 44px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-md);
+}
+
+.busca-campo__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--bg-selected);
+}
+
+/* ---- Filtros: uma FAIXA, nao uma coluna ----
+ * Empilhados numa coluna, eles comiam a altura que a lista de resultados
+ * precisa. Em faixa, cabem numa linha e sobra tela para o que importa. */
+.busca-filtros {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.busca-filtros__select,
+.busca-filtros__palavra {
+  padding: 8px var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.busca-filtros__select {
+  max-width: 220px;
+}
+
+.busca-filtros__palavra {
+  flex: 1 1 180px;
+  min-width: 150px;
+  max-width: 260px;
+}
+
+.busca-filtros__area {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 6px var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.busca-filtros__area:hover {
+  background: var(--bg-hover);
+}
+
+.busca-filtros__espaco {
+  flex: 1;
+}
+
+.busca-area-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 5px var(--space-sm);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  color: var(--color-warning);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.busca-area-chip__remover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.busca-area-chip__remover:hover {
+  background: var(--bg-hover);
+}
+
+/* ---- As duas colunas ---- */
+.busca__corpo {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) 1fr;
+  /* A LINHA DEFINIDA e o que segura o mapa. Ver o comentario do topo. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-md);
+  flex: 1;
+  min-height: 0;
+}
+
+.busca-painel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  overflow: hidden;
+}
+
+/* ---- Lista ---- */
+.busca-lista {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.busca-lista__vazio {
+  margin: auto;
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.busca-lista__dica {
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+/* Esqueleto de carregamento: a lista mantem a forma enquanto a busca volta, em
+ * vez de piscar vazia e empurrar tudo quando o resultado chega. */
+.busca-esqueleto {
+  flex-shrink: 0;
+  height: 104px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-hover) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: busca-pulsar 1.2s ease-in-out infinite;
+}
+
+@keyframes busca-pulsar {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busca-esqueleto { animation: none; }
+}
+
+.busca-cartao {
+  flex-shrink: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.busca-cartao:hover {
+  background: var(--bg-hover);
+}
+
+.busca-cartao:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* O mesmo laranja do realce no mapa: apontar num lado se reconhece no outro. */
+.busca-cartao--selecionado {
+  border-left-color: var(--color-warning);
+  background: var(--bg-selected);
+}
+
+.busca-cartao__topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.busca-cartao__nome {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.busca-cartao__id {
+  margin: var(--space-xs) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.busca-cartao__rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.busca-cartao__ficha {
+  padding: 2px var(--space-sm);
+  white-space: nowrap;
+}
+
+.busca-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.busca-paginacao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.busca-paginacao__info {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Mapa ---- */
+.busca-mapa {
+  position: relative;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+/* O contêiner do mapa ocupa o quadro por LARGURA E ALTURA, e nao por
+ * `position: absolute; inset: 0`.
+ *
+ * O motivo e cascata, e custou uma sessao inteira de depuracao: o CSS da
+ * biblioteca traz `.maplibregl-map { position: relative }`, com a MESMA
+ * especificidade de `.busca-mapa__canvas` (uma classe cada). Como o
+ * maplibre-gl.css entra depois no pacote, ele vencia o empate, o `position:
+ * absolute` virava `relative`, os deslocamentos `inset: 0` deixavam de valer e
+ * a div encolhia para altura zero. O canvas interno do MapLibre e absoluto, e
+ * por isso nao devolvia altura nenhuma ao pai.
+ *
+ * `width`/`height` nao disputam propriedade nenhuma com a biblioteca, entao o
+ * quadro se preenche seja qual for o `position` que ela imponha. */
+.busca-mapa__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.busca-mapa__controles {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 2;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.busca-mapa__btn {
+  box-shadow: var(--shadow-md);
+}
+
+.busca-mapa__dica,
+.busca-mapa__aviso {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-lg);
+  max-width: 90%;
+}
+
+.busca-mapa__dica {
+  bottom: var(--space-lg);
+}
+
+/* Falha ao carregar o mapa nao pode virar um retangulo cinza mudo. */
+.busca-mapa__aviso {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+  text-align: center;
+}
+
+/* Legenda: sem ela, o laranja no mapa nao se liga ao cartao selecionado. */
+.busca-mapa__legenda {
+  position: absolute;
+  left: var(--space-sm);
+  bottom: var(--space-sm);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.busca-mapa__legenda-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.busca-mapa__amostra {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--color-primary);
+  background: rgba(25, 118, 210, 0.2);
+}
+
+.busca-mapa__amostra--selecionado {
+  border-color: var(--color-warning);
+  background: rgba(237, 108, 2, 0.35);
+}
+
+/* ---- Ficha do produto ---- */
+.produto-ficha__secao {
+  margin: var(--space-lg) 0 var(--space-sm);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.produto-ficha__carregando,
+.produto-ficha__vazio {
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.versao-bloco {
+  padding: var(--space-md);
+  margin-bottom: var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.versao-bloco__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.versao-bloco__titulo {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.versao-bloco__arquivos {
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.versao-bloco__arquivos li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.versao-bloco__tamanho {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Tela estreita: o mapa vai para baixo da lista, com altura propria. Lado a
+ * lado num celular daria duas metades inutilizaveis. */
+@media (max-width: 900px) {
+  .busca {
+    height: auto;
+  }
+
+  .busca__corpo {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .busca-lista {
+    max-height: 55vh;
+  }
+
+  .busca-mapa {
+    height: 55vh;
+  }
+}
+
+/* ---- Selecao de produtos e controles do desenho ---- */
+.busca-selecao {
+  flex-shrink: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-selected);
+}
+
+.busca-selecao__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.busca-selecao__contador {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.busca-selecao__acoes {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.busca-selecao__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  max-height: 88px;
+  overflow-y: auto;
+}
+
+.busca-selecao__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px var(--space-xs) 2px var(--space-sm);
+  border: 1px solid var(--color-warning);
+  border-radius: 999px;
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+
+.busca-selecao__chip-nome {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.busca-selecao__chip-remover {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.busca-selecao__chip-remover:hover {
+  color: var(--color-error);
+}
+
+/* Controles do desenho, no rodape do mapa. Mesmo formato do fotos_aereas:
+ * estado em texto, desfazer, concluir e cancelar. */
+.desenho-controles {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-lg);
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-lg);
+  max-width: 90%;
+}
+
+.desenho-controles__estado {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.desenho-controles__botoes {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-xs);
+}
+
+/* Navegacao entre as fichas dos produtos selecionados. */
+.produto-ficha__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.produto-ficha__posicao {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cabecalho: identidade a esquerda, acoes a direita. */
+.busca__identidade {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.busca__acoes {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+/* Realce vindo do MAPA: o mouse esta sobre o poligono, e o cartao acende.
+ * Sutil de proposito, para nao competir com o laranja da selecao. */
+.busca-cartao--apontado {
+  border-color: var(--color-primary);
+  background: var(--bg-hover);
+}

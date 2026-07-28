@@ -26,15 +26,15 @@ describe('manifesto do modulo acervo', () => {
     expect(rotaInicial('acervo')).toBe('/acervo/dashboard');
   });
 
-  test('registra a rota do dashboard com render assincrono', () => {
-    expect(acervo.rotas).toHaveLength(1);
-    const dashboard = acervo.rotas.find(r => r.path === '/dashboard');
-    expect(dashboard).toBeDefined();
-    expect(typeof dashboard.render).toBe('function');
+  test('registra o dashboard e a busca, com render assincrono', () => {
+    expect(acervo.rotas.map(r => r.path)).toEqual(['/dashboard', '/busca']);
+    for (const rota of acervo.rotas) {
+      expect(typeof rota.render).toBe('function');
+    }
   });
 
-  test('o menu leva ao dashboard e nao repete a tela de usuarios da plataforma', () => {
-    expect(acervo.menu.map(i => i.path)).toEqual(['/dashboard']);
+  test('o menu leva ao dashboard e a busca, sem repetir a tela de usuarios da plataforma', () => {
+    expect(acervo.menu.map(i => i.path)).toEqual(['/dashboard', '/busca']);
     expect(acervo.menu.some(i => i.path === '/usuarios')).toBe(false);
   });
 

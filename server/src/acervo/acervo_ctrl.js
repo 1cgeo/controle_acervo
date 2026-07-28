@@ -768,72 +768,353 @@ async function generateGeoJSONForScale(scaleId) {
   };
 }
 
-controller.buscaProdutos = async (termo, tipoProdutoId, tipoEscalaId, projetoId, loteId, page, limit) => {
+// Filtros da busca do acervo, compartilhados pela LISTA e pela CAMADA DO MAPA.
+//
+// As duas rotas respondem a mesma pergunta e precisam do mesmo WHERE. Montá-lo
+// em um lugar só é o que impede o mapa de mostrar um conjunto e a lista outro.
+//
+// Decisões que valem registro:
+//
+// 1. O `termo` procura em nome, mi e inom, e TAMBÉM nas palavras-chave da
+//    versão. Quem cataloga escreve a etiqueta ali, então ignorá-la fazia a
+//    busca parecer vazia para quem procurava pelo assunto, não pelo código.
+// 2. O recorte espacial usa `&&` ANTES do ST_Intersects. O `&&` compara caixas
+//    envolventes e é o que o índice GiST (produto_geom) atende; o ST_Intersects
+//    refina o que sobrou. Só o ST_Intersects também funciona, mas paga
+//    geometria exata em linha que a caixa já teria descartado.
+// 3. O subtipo casa no PRODUTO ou em QUALQUER VERSÃO. `produto.subtipo_produto_id`
+//    só é preenchido quando o subtipo DEFINE o produto (367 de 5.741 em
+//    2026-07-28); o subtipo do dia a dia (T34-700, ET-RDG, EDGV) vive na versão,
+//    e sozinho o T34-700 responde por 1.765 produtos.
+function montarFiltrosBusca(f) {
+  const conditions = [];
+  const params = {};
+
+  if (f.termo) {
+    conditions.push(`(
+      p.nome ILIKE $<termo> OR p.mi ILIKE $<termo> OR p.inom ILIKE $<termo>
+      OR EXISTS (
+        SELECT 1 FROM acervo.versao vt
+        WHERE vt.produto_id = p.id
+          AND EXISTS (
+            SELECT 1 FROM unnest(vt.palavras_chave) AS pk WHERE pk ILIKE $<termo>
+          )
+      )
+    )`);
+    params.termo = `%${f.termo}%`;
+  }
+
+  if (f.palavra_chave) {
+    // Etiqueta EXATA (sem diferenciar maiúscula), que é como uma lista de
+    // sugestão a devolve. Diferente do `termo`, aqui não há substring.
+    conditions.push(`EXISTS (
+      SELECT 1 FROM acervo.versao vp
+      WHERE vp.produto_id = p.id
+        AND EXISTS (
+          SELECT 1 FROM unnest(vp.palavras_chave) AS pk
+          WHERE lower(pk) = lower($<palavraChave>)
+        )
+    )`);
+    params.palavraChave = f.palavra_chave;
+  }
+
+  if (f.tipo_produto_id) {
+    conditions.push(`p.tipo_produto_id = $<tipoProdutoId>`);
+    params.tipoProdutoId = f.tipo_produto_id;
+  }
+
+  if (f.subtipo_produto_id) {
+    conditions.push(`(
+      p.subtipo_produto_id = $<subtipoProdutoId>
+      OR EXISTS (
+        SELECT 1 FROM acervo.versao vs
+        WHERE vs.produto_id = p.id AND vs.subtipo_produto_id = $<subtipoProdutoId>
+      )
+    )`);
+    params.subtipoProdutoId = f.subtipo_produto_id;
+  }
+
+  if (f.tipo_escala_id) {
+    conditions.push(`p.tipo_escala_id = $<tipoEscalaId>`);
+    params.tipoEscalaId = f.tipo_escala_id;
+  }
+
+  if (f.bbox) {
+    const [minLon, minLat, maxLon, maxLat] = f.bbox;
+    conditions.push(`(
+      p.geom && ST_MakeEnvelope($<minLon>, $<minLat>, $<maxLon>, $<maxLat>, 4674)
+      AND ST_Intersects(p.geom, ST_MakeEnvelope($<minLon>, $<minLat>, $<maxLon>, $<maxLat>, 4674))
+    )`);
+    Object.assign(params, { minLon, minLat, maxLon, maxLat });
+  }
+
+  if (f.geometria) {
+    // ST_GeomFromGeoJSON nasce sem SRID; sem o ST_SetSRID o PostGIS recusa
+    // comparar com p.geom (4674). O ST_MakeValid é cinto de segurança: o
+    // desenho do mapa já barra auto-interseção, mas geometria inválida vinda
+    // por URL derrubaria a consulta inteira em vez de devolver zero.
+    conditions.push(`(
+      p.geom && ST_SetSRID(ST_GeomFromGeoJSON($<geometria>), 4674)
+      AND ST_Intersects(p.geom, ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($<geometria>), 4674)))
+    )`);
+    params.geometria = f.geometria;
+  }
+
+  // Lista explicita de produtos: e o "exportar so os selecionados". Os demais
+  // filtros continuam valendo, entao o CSV nunca traz algo que a busca corrente
+  // nao traria.
+  if (f.ids) {
+    const ids = String(f.ids).split(',').map(n => parseInt(n, 10)).filter(Number.isFinite);
+    if (ids.length) {
+      conditions.push(`p.id IN ($<ids:csv>)`);
+      params.ids = ids;
+    }
+  }
+
+  if (f.projeto_id || f.lote_id) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM acervo.versao v2
+      LEFT JOIN acervo.lote l2 ON v2.lote_id = l2.id
+      WHERE v2.produto_id = p.id
+      ${f.projeto_id ? 'AND l2.projeto_id = $<projetoId>' : ''}
+      ${f.lote_id ? 'AND v2.lote_id = $<loteId>' : ''}
+    )`);
+    if (f.projeto_id) params.projetoId = f.projeto_id;
+    if (f.lote_id) params.loteId = f.lote_id;
+  }
+
+  return {
+    whereClause: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+    params
+  };
+}
+
+// Busca paginada de produtos (fase 3 do portal do acervo, chefe 2026-07-25).
+//
+// Recebe UM objeto, e não uma fila de argumentos posicionais. Eram onze, e a
+// ordem já custou um 500 em produção quando um parâmetro novo entrou no meio:
+// com objeto, acrescentar filtro não desloca nada.
+//
+// O `extent` devolvido é a caixa de TODO o resultado, não a da página: é o que
+// deixa o mapa enquadrar a busca inteira, mesmo listando 20 de 800.
+controller.buscaProdutos = async (filtros = {}) => {
+  const { page = 1, limit = 20, com_geometria: comGeometria = false } = filtros;
+
   return db.conn.task(async t => {
-    const conditions = [];
-    const params = {};
-
-    if (termo) {
-      conditions.push(`(p.nome ILIKE $<termo> OR p.mi ILIKE $<termo> OR p.inom ILIKE $<termo>)`);
-      params.termo = `%${termo}%`;
-    }
-    if (tipoProdutoId) {
-      conditions.push(`p.tipo_produto_id = $<tipoProdutoId>`);
-      params.tipoProdutoId = tipoProdutoId;
-    }
-    if (tipoEscalaId) {
-      conditions.push(`p.tipo_escala_id = $<tipoEscalaId>`);
-      params.tipoEscalaId = tipoEscalaId;
-    }
-    if (projetoId || loteId) {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM acervo.versao v2
-        LEFT JOIN acervo.lote l2 ON v2.lote_id = l2.id
-        WHERE v2.produto_id = p.id
-        ${projetoId ? 'AND l2.projeto_id = $<projetoId>' : ''}
-        ${loteId ? 'AND v2.lote_id = $<loteId>' : ''}
-      )`);
-      if (projetoId) params.projetoId = projetoId;
-      if (loteId) params.loteId = loteId;
-    }
-
-    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-
-    const offset = (page - 1) * limit;
+    const { whereClause, params } = montarFiltrosBusca(filtros);
     params.limit = limit;
-    params.offset = offset;
+    params.offset = (page - 1) * limit;
 
-    const countResult = await t.one(
-      `SELECT COUNT(*) FROM acervo.produto p ${whereClause}`,
+    // Total e extensão numa consulta só: as duas varrem o MESMO conjunto, e
+    // separá-las dobraria o trabalho do filtro espacial.
+    const resumo = await t.one(
+      `SELECT
+        COUNT(*) AS total,
+        ST_XMin(ST_Extent(p.geom)) AS min_lon,
+        ST_YMin(ST_Extent(p.geom)) AS min_lat,
+        ST_XMax(ST_Extent(p.geom)) AS max_lon,
+        ST_YMax(ST_Extent(p.geom)) AS max_lat
+      FROM acervo.produto p ${whereClause}`,
       params
     );
 
+    // A página sai primeiro, e só depois se busca a última versão de cada
+    // produto. Ao contrário, o LATERAL rodaria para o conjunto inteiro (que
+    // pode ser o acervo todo) para descartar tudo menos 20 linhas.
     const produtos = await t.any(
-      `SELECT
-        p.id, p.nome, p.mi, p.inom,
-        te.nome AS escala, p.tipo_escala_id,
-        tp.nome AS tipo_produto, p.tipo_produto_id,
-        p.denominador_escala_especial, p.descricao,
-        p.data_cadastramento, p.data_modificacao,
-        COUNT(DISTINCT v.id) AS num_versoes
-      FROM acervo.produto p
-      INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
-      INNER JOIN dominio.tipo_produto tp ON tp.code = p.tipo_produto_id
-      LEFT JOIN acervo.versao v ON v.produto_id = p.id
-      ${whereClause}
-      GROUP BY p.id, te.nome, tp.nome
-      ORDER BY p.nome, p.mi
-      LIMIT $<limit> OFFSET $<offset>`,
+      `WITH pagina AS (
+        SELECT p.id, p.nome, p.mi, p.inom,
+               p.tipo_escala_id, p.tipo_produto_id,
+               p.denominador_escala_especial, p.descricao,
+               p.data_cadastramento, p.data_modificacao
+               ${comGeometria ? ', ST_AsGeoJSON(p.geom) AS geom' : ''}
+        FROM acervo.produto p
+        ${whereClause}
+        ORDER BY p.nome, p.mi
+        LIMIT $<limit> OFFSET $<offset>
+      )
+      SELECT
+        pg.*,
+        te.nome AS escala,
+        tp.nome AS tipo_produto,
+        COALESCE(vc.num_versoes, 0) AS num_versoes,
+        ultima.versao AS ultima_versao,
+        ultima.data_edicao AS ultima_data_edicao,
+        ultima.palavras_chave,
+        ultima.orgao_produtor
+      FROM pagina pg
+      INNER JOIN dominio.tipo_escala te ON te.code = pg.tipo_escala_id
+      INNER JOIN dominio.tipo_produto tp ON tp.code = pg.tipo_produto_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS num_versoes FROM acervo.versao v WHERE v.produto_id = pg.id
+      ) vc ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT v.versao, v.data_edicao, v.palavras_chave, v.orgao_produtor
+        FROM acervo.versao v
+        WHERE v.produto_id = pg.id
+        ORDER BY v.data_edicao DESC
+        LIMIT 1
+      ) ultima ON TRUE
+      ORDER BY pg.nome, pg.mi`,
+      params
+    );
+
+    // Sem resultado não há extensão: ST_Extent de conjunto vazio é NULL, e
+    // devolver [null,null,null,null] faria o mapa tentar enquadrar o nada.
+    const extent = resumo.min_lon === null ? null : [
+      Number(resumo.min_lon), Number(resumo.min_lat),
+      Number(resumo.max_lon), Number(resumo.max_lat)
+    ];
+
+    return {
+      total: parseInt(resumo.total),
+      page,
+      limit,
+      extent,
+      dados: produtos.map(p => (
+        comGeometria && p.geom ? { ...p, geom: JSON.parse(p.geom) } : p
+      ))
+    };
+  });
+};
+
+// Camada do mapa: a geometria de TODOS os produtos que casam com os filtros.
+//
+// Existe porque paginar o mapa é um erro de leitura. Com 20 polígonos na tela
+// de 800 resultados, o mapa afirma visualmente que o acervo tem 20 cartas ali,
+// e quem olha não tem como saber que está vendo uma fatia.
+//
+// Devolve o mínimo por produto (id, nome, mi, escala) e a geometria. Nada de
+// versão, contagem ou palavra-chave: isso é assunto do cartão, e o cartão vem
+// da rota paginada.
+//
+// `truncado` avisa quando o teto cortou o conjunto. Truncar em silêncio seria
+// repetir, em escala maior, o mesmo defeito que esta rota veio corrigir.
+controller.buscaGeometrias = async (filtros = {}) => {
+  const limit = filtros.limit || 5000;
+
+  return db.conn.task(async t => {
+    const { whereClause, params } = montarFiltrosBusca(filtros);
+    params.limit = limit;
+
+    const total = await t.one(
+      `SELECT COUNT(*) AS total FROM acervo.produto p ${whereClause}`,
+      params
+    );
+
+    const linhas = await t.any(
+      `SELECT p.id, p.nome, p.mi, te.nome AS escala, ST_AsGeoJSON(p.geom) AS geom
+       FROM acervo.produto p
+       INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+       ${whereClause}
+       ORDER BY p.id
+       LIMIT $<limit>`,
       params
     );
 
     return {
-      total: parseInt(countResult.count),
-      page,
-      limit,
-      dados: produtos
+      total: parseInt(total.total),
+      truncado: parseInt(total.total) > linhas.length,
+      dados: linhas.map(l => ({
+        id: l.id,
+        nome: l.nome,
+        mi: l.mi,
+        escala: l.escala,
+        geom: JSON.parse(l.geom)
+      }))
     };
   });
+};
+
+// CSV do resultado da busca.
+//
+// Exporta o conjunto INTEIRO (ou só os selecionados, via `ids`), e não a página
+// que está na tela: exportar 20 de 800 seria a mesma armadilha que o mapa
+// paginado era.
+//
+// Uma linha por PRODUTO, com a última versão, que é a granularidade da busca. A
+// planilha completa por versão já existe em /acervo/export-planilha-csv.
+controller.buscaCsv = async (filtros = {}) => {
+  const { whereClause, params } = montarFiltrosBusca(filtros);
+
+  const linhas = await db.conn.any(
+    `SELECT
+      p.nome, p.mi, p.inom,
+      tp.nome AS tipo_produto,
+      te.nome AS escala,
+      p.denominador_escala_especial,
+      COALESCE(vc.num_versoes, 0) AS num_versoes,
+      ultima.versao AS ultima_versao,
+      ultima.data_edicao AS ultima_data_edicao,
+      ultima.orgao_produtor,
+      ultima.palavras_chave
+    FROM acervo.produto p
+    INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
+    INNER JOIN dominio.tipo_produto tp ON tp.code = p.tipo_produto_id
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*) AS num_versoes FROM acervo.versao v WHERE v.produto_id = p.id
+    ) vc ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT v.versao, v.data_edicao, v.orgao_produtor, v.palavras_chave
+      FROM acervo.versao v
+      WHERE v.produto_id = p.id
+      ORDER BY v.data_edicao DESC
+      LIMIT 1
+    ) ultima ON TRUE
+    ${whereClause}
+    ORDER BY p.nome, p.mi`,
+    params
+  );
+
+  const COLS = ['Nome', 'MI', 'INOM', 'Tipo_Produto', 'Escala', 'Versoes',
+    'Ultima_Versao', 'Data_Edicao', 'Orgao_Produtor', 'Palavras_Chave'];
+
+  // Mesmo escape do export de planilha: aspas dobradas, e o campo entre aspas
+  // quando houver vírgula, aspas ou quebra de linha.
+  const esc = (v) => {
+    if (v == null) return '';
+    const texto = String(v);
+    return /[",\n\r]/.test(texto) ? '"' + texto.replace(/"/g, '""') + '"' : texto;
+  };
+
+  // A data sai em ISO (AAAA-MM-DD), cortando o timestamp por string: passar por
+  // Date aqui reintroduziria o deslize de fuso que já mordeu a mapoteca.
+  const soData = (d) => (d ? String(d.toISOString ? d.toISOString() : d).slice(0, 10) : '');
+
+  const corpo = linhas.map(l => [
+    l.nome,
+    l.mi,
+    l.inom,
+    l.tipo_produto,
+    l.denominador_escala_especial ? `1:${l.denominador_escala_especial}` : l.escala,
+    l.num_versoes,
+    l.ultima_versao,
+    soData(l.ultima_data_edicao),
+    l.orgao_produtor,
+    (l.palavras_chave || []).join('; ')
+  ].map(esc).join(','));
+
+  // BOM para o Excel abrir com a acentuação certa, e CRLF pelo mesmo motivo.
+  return '﻿' + [COLS.join(','), ...corpo].join('\r\n');
+};
+
+// Palavras-chave em uso no acervo, para a busca sugerir em vez de exigir que a
+// pessoa adivinhe a etiqueta.
+//
+// `palavras_chave` e TEXT[] em acervo.versao, entao o unnest e inevitavel. O
+// teto de 20 e o filtro por prefixo mantem a consulta barata mesmo com o acervo
+// inteiro: e uma caixa de sugestao, nao um relatorio.
+controller.palavrasChave = async (termo, limit) => {
+  return db.conn.any(
+    `SELECT pk AS palavra, COUNT(*) AS usos
+     FROM acervo.versao v, unnest(v.palavras_chave) AS pk
+     WHERE pk IS NOT NULL AND pk <> ''
+       ${termo ? 'AND pk ILIKE $<termo>' : ''}
+     GROUP BY pk
+     ORDER BY COUNT(*) DESC, pk
+     LIMIT $<limit>`,
+    { termo: `%${termo || ''}%`, limit }
+  );
 };
 
 // Roda os invariantes lógicos e devolve, por invariante, o TOTAL e uma amostra.
