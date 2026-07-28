@@ -122,8 +122,22 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   o mesmo componente (`@components/seletor-ano.js`); a diferença é de política: no orçamento o ano
   também decide **onde se cadastra**, e por isso ele oferece "+ Outro ano…"; na mapoteca o ano só
   **filtra o que já aconteceu**, e um ano sem movimento só entregaria telas em branco. Na mapoteca o
-  contexto vale para as telas por ano (resumo anual, mapa das entregas, consumo, RPCMTec, detalhe do
-  material) e **não** para pedidos e clientes, que são operacionais e têm filtro próprio.
+  contexto vale para o **dashboard inteiro** (as cinco abas), para a lista de **pedidos**, e para
+  consumo, RPCMTec e detalhe do material. Fica de fora só a lista de **clientes**, que é cadastro e
+  não movimento. Pedidos esteve fora por algumas horas em 2026-07-28, com o argumento de que é tela
+  operacional; o chefe reverteu no mesmo dia. O que a reversão custa, e é deliberado: o pedido de
+  dezembro concluído em janeiro só aparece trocando o ano na navbar.
+- **No dashboard da mapoteca existem DOIS recortes anuais, e cada aba diz na tela qual é o dela.**
+  Resumo Anual e Mapa contam por data de **entrega** efetiva (`FILTRO_ENTREGUE_ANO`); Pedidos e
+  Atendimento contam por data do **pedido** (`FILTRO_ANO_PEDIDO`). O pedido de dezembro de 2025
+  entregue em janeiro de 2026 cai em anos diferentes nos dois, e os dois estão certos: são perguntas
+  distintas ("o que entregamos" e "o que entrou"). Sem a linha de escopo na tela (`.dashboard__escopo`)
+  os números de duas abas do mesmo ano pareceriam se contradizer. A aba Materiais é meio a meio, e
+  também avisa: o consumo é do ano, mas o **estoque é o saldo de hoje** e ignora o seletor, porque
+  "estoque de 2025" não existe; a rota dele é a única do dashboard que não aceita `ano`.
+  As janelas deslizantes ("últimos 6 meses", "últimos 12 meses") saíram junto, porque não têm como
+  respeitar um ano escolhido: em 2025 elas continuariam terminando hoje. Viraram os doze meses do
+  ano, que é a granularidade que o resto do dashboard já usava.
 - **Pacote ESM puro entra no servidor por `require()`, e no Jest por dublê mapeado.** O servidor é
   CommonJS, e `serialize-error` (usado por `utils/app_error.js`, ou seja, por quase tudo) é ESM puro
   desde a versão 9. Ele era carregado por `import()` dinâmico, e isso **impedia a suíte inteira do

@@ -345,6 +345,11 @@ models.anoQuery = Joi.object().keys({
     .default(() => new Date().getFullYear())
 })
 
+// Top N de clientes do ano: o limite, mais o ano de contexto.
+models.limiteAnoQuery = models.anoQuery.keys({
+  limite: Joi.number().integer().min(1).max(100)
+})
+
 // Esquema de query do mapa das entregas: o ano, mais os três filtros opcionais.
 // A escala entra pelo RÓTULO ('1:50.000'), e não pelo código do domínio, porque
 // a escala personalizada tem um código só para todos os denominadores; ver o

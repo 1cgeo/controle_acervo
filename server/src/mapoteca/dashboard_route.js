@@ -12,12 +12,20 @@ const mapotecaSchema = require('./mapoteca_schema')
 
 const router = express.Router()
 
+// As métricas de PEDIDO (situação, entrada mensal, tempo de atendimento e Top
+// de clientes) são do ANO consultado, pela data do pedido. É um recorte
+// diferente do Resumo Anual e do Mapa, que são por data de ENTREGA; ver
+// FILTRO_ANO_PEDIDO em dashboard_ctrl.js.
+//
 // Order Status Distribution
 router.get(
   '/order_status',
   verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.anoQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getOrderStatusDistribution()
+    const dados = await dashboardCtrl.getOrderStatusDistribution(req.query.ano)
     const msg = 'Distribuição de status de pedidos retornada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -28,11 +36,10 @@ router.get(
   '/orders_timeline',
   verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    query: mapotecaSchema.mesesQuery
+    query: mapotecaSchema.anoQuery
   }),
   asyncHandler(async (req, res, next) => {
-    const meses = req.query.meses || 6
-    const dados = await dashboardCtrl.getOrdersTimeline(meses)
+    const dados = await dashboardCtrl.getOrdersTimeline(req.query.ano)
     const msg = 'Timeline de pedidos retornada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -42,8 +49,11 @@ router.get(
 router.get(
   '/avg_fulfillment_time',
   verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.anoQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getAverageFulfillmentTime()
+    const dados = await dashboardCtrl.getAverageFulfillmentTime(req.query.ano)
     const msg = 'Tempo médio de atendimento retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -54,11 +64,11 @@ router.get(
   '/client_activity',
   verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    query: mapotecaSchema.limiteQuery
+    query: mapotecaSchema.limiteAnoQuery
   }),
   asyncHandler(async (req, res, next) => {
     const limite = req.query.limite || 10
-    const dados = await dashboardCtrl.getClientActivity(limite)
+    const dados = await dashboardCtrl.getClientActivity(limite, req.query.ano)
     const msg = 'Atividade de clientes retornada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -76,6 +86,10 @@ router.get(
 )
 
 // Stock by Location
+//
+// SEM ano, e de propósito: estoque é o saldo de HOJE, não um acumulado de
+// período. "Estoque de 2025" não existe, e aceitar o parâmetro sugeriria que
+// sim. A tela avisa que este painel é o único da aba que ignora o ano.
 router.get(
   '/stock_by_location',
   verifyPerfil('consulta', 'mapoteca'),
@@ -91,11 +105,10 @@ router.get(
   '/material_consumption',
   verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    query: mapotecaSchema.mesesQuery
+    query: mapotecaSchema.anoQuery
   }),
   asyncHandler(async (req, res, next) => {
-    const meses = req.query.meses || 12
-    const dados = await dashboardCtrl.getMaterialConsumptionTrends(meses)
+    const dados = await dashboardCtrl.getMaterialConsumptionTrends(req.query.ano)
     const msg = 'Tendências de consumo de material retornadas com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

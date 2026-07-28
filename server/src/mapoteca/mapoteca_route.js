@@ -143,11 +143,16 @@ router.delete(
 )
 
 // Rotas para Pedido
+// Do ANO consultado, pela data do pedido. O ano vem do contexto do módulo
+// (seletor da navbar) e cai no ano corrente quando não vem na query.
 router.get(
   '/pedido',
   verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.anoQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getPedidos()
+    const dados = await mapotecaCtrl.getPedidos(req.query.ano)
     const msg = 'Pedidos retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

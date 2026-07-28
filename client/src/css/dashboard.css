@@ -48,6 +48,18 @@
   color: var(--text-primary);
 }
 
+/* Linha de ESCOPO da aba: de que ano sao os numeros, e contados por qual data.
+ *
+ * Existe porque o dashboard da mapoteca tem DOIS recortes anuais legitimos e
+ * diferentes: Resumo Anual e Mapa contam por data de ENTREGA, Pedidos e
+ * Atendimento contam por data do PEDIDO. Sem dizer qual esta na tela, os
+ * numeros de duas abas do mesmo ano pareceriam se contradizer. */
+.dashboard__escopo {
+  margin: calc(-1 * var(--space-sm)) 0 var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
 /* Dashboard section (e.g. annual analytics) */
 .dashboard-section {
   margin-bottom: var(--space-lg);

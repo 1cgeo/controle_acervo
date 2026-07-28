@@ -2,6 +2,7 @@ import { el } from '@utils/dom.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
+import { getAno } from '@modules/mapoteca/store/year-store.js';
 import { mesLabel } from './utils.js';
 
 /**
@@ -12,11 +13,17 @@ import { mesLabel } from './utils.js';
  * Lembrando que consumo so sai da Seção (RN), entao o grafico por localizacao
  * e o que diz se falta transferir material para la.
  *
+ * A unica aba do dashboard em que o ano vale SO PARA METADE. O consumo e do ano
+ * de contexto; o estoque e o saldo de HOJE, e nao existe "estoque de 2025".
+ * Silenciar essa diferenca seria pior do que ela: quem trocasse o ano veria um
+ * grafico mudar e o outro nao, sem explicacao.
+ *
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
 export async function renderMateriaisTab(container) {
   let disposed = false;
+  let ano = getAno();
 
   const stockBar = createBarChart({
     title: 'Estoque por Localização',
@@ -43,21 +50,26 @@ export async function renderMateriaisTab(container) {
     loading: true,
   });
 
+  const escopoEstoque = el('p', {
+    className: 'dashboard__escopo',
+    textContent: 'O estoque é o saldo de hoje, e não acompanha o ano de referência.',
+  });
+  const tituloConsumo = el('h2', { className: 'dashboard-section__title' });
+
+  container.appendChild(escopoEstoque);
   container.appendChild(stockBar);
   container.appendChild(el('div', { className: 'dashboard-section' }, [
-    el('div', { className: 'dashboard-section__header' }, [
-      el('h2', {
-        className: 'dashboard-section__title',
-        textContent: 'Consumo de Material (últimos 12 meses)',
-      }),
-    ]),
+    el('div', { className: 'dashboard-section__header' }, [tituloConsumo]),
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [consumoLine, topMateriaisBar]),
   ]));
 
   async function load() {
+    ano = getAno();
+    tituloConsumo.textContent = `Consumo de Material em ${ano}`;
+
     const [stockRes, consumoRes] = await Promise.allSettled([
       mapotecaService.getStockByLocation(),
-      mapotecaService.getMaterialConsumption(12),
+      mapotecaService.getMaterialConsumption(ano),
     ]);
     if (disposed) return;
 

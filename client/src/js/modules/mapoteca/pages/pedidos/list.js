@@ -6,6 +6,7 @@ import { getPedidos, deletePedidos } from '@modules/mapoteca/services/mapoteca-s
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
+import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 /**
  * Pedidos list page (#/pedidos): table with search, status chips, printing
@@ -32,6 +33,7 @@ export async function renderPedidosList(container, _ctx) {
   let disposed = false;
   let todosPedidos = [];
   let filtroAtual = 'todos';
+  let ano = getAno();
   const pode = permissoes('mapoteca');
 
   function aplicarFiltro() {
@@ -39,14 +41,15 @@ export async function renderPedidosList(container, _ctx) {
     const linhas = todosPedidos.filter(filtro.casa);
     table.update({ rows: linhas, loading: false });
     contador.textContent = filtroAtual === 'todos'
-      ? `${linhas.length} pedido(s)`
-      : `${linhas.length} de ${todosPedidos.length} pedido(s)`;
+      ? `${linhas.length} pedido(s) em ${ano}`
+      : `${linhas.length} de ${todosPedidos.length} pedido(s) em ${ano}`;
   }
 
   async function load() {
+    ano = getAno();
     table.update({ loading: true });
     try {
-      const pedidos = await getPedidos();
+      const pedidos = await getPedidos(ano);
       if (disposed) return;
       todosPedidos = pedidos;
       aplicarFiltro();
@@ -130,7 +133,10 @@ export async function renderPedidosList(container, _ctx) {
     rows: [],
     searchable: true,
     loading: true,
-    emptyMessage: 'Nenhum pedido cadastrado',
+    // Sem o ano no texto, de proposito: a mensagem e montada uma vez e o ano
+    // muda pela navbar. Quem diz de que ano e a lista e o contador ao lado dos
+    // filtros, que se repinta a cada carga.
+    emptyMessage: 'Nenhum pedido neste ano. Troque o ano na barra do topo para ver outro.',
     actions: [
       {
         icon: ICONS.visibility,
@@ -166,8 +172,13 @@ export async function renderPedidosList(container, _ctx) {
 
   await load();
 
+  // Trocar o ano na navbar recarrega a lista. Sem isto, a tela ficaria no ano
+  // antigo enquanto o resto do modulo ja teria mudado.
+  const offAno = onAnoChange(() => load());
+
   return () => {
     disposed = true;
+    offAno();
     table._cleanup();
   };
 }

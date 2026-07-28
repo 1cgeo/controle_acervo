@@ -204,6 +204,29 @@ describe('Mapoteca Routes', () => {
   })
 
   describe('Pedidos', () => {
+    // A lista era do acervo inteiro e passou a respeitar o ano de contexto em
+    // 2026-07-28 (decisao do chefe, revertendo a de horas antes). O custo, que
+    // e deliberado: o pedido de dezembro concluido em janeiro so aparece
+    // trocando o ano na navbar.
+    it('GET /api/mapoteca/pedido devolve so os pedidos do ano', async () => {
+      const clienteId = await criaCliente({ nome: 'OM Lista Ano' })
+      await criaPedido(clienteId, { data_pedido: '2025-12-20', data_atendimento: null, situacao_pedido_id: 1 })
+      await criaPedido(clienteId, { data_pedido: '2026-02-05', data_atendimento: null, situacao_pedido_id: 1 })
+
+      const r2026 = await request(app)
+        .get('/api/mapoteca/pedido?ano=2026')
+        .set('Authorization', generateUserToken())
+      const r2025 = await request(app)
+        .get('/api/mapoteca/pedido?ano=2025')
+        .set('Authorization', generateUserToken())
+
+      expect(r2026.status).toBe(200)
+      expect(r2026.body.dados).toHaveLength(1)
+      expect(r2025.body.dados).toHaveLength(1)
+      expect(r2026.body.dados[0].data_pedido).toContain('2026-02-05')
+      expect(r2025.body.dados[0].data_pedido).toContain('2025-12-20')
+    })
+
     it('POST /api/mapoteca/pedido should create with demandante/omds/previsto_pit', async () => {
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId, {
@@ -1014,6 +1037,82 @@ describe('Mapoteca Routes', () => {
         data_entrega: '2026-03-20'
       })
     }
+
+    // O ano de contexto passou a valer para as metricas de PEDIDO em
+    // 2026-07-28, contadas pela data do pedido. E um recorte diferente do
+    // resumo anual e do mapa, que contam por data de ENTREGA.
+    describe('o ano de contexto vale para as metricas de pedido', () => {
+      const doisAnos = async () => {
+        const clienteId = await criaCliente({ nome: 'OM Ano', tipo_cliente_id: 1 })
+        await criaPedido(clienteId, {
+          data_pedido: '2025-11-10', data_atendimento: '2025-11-20', situacao_pedido_id: 5
+        })
+        await criaPedido(clienteId, {
+          data_pedido: '2026-03-10', data_atendimento: '2026-03-20', situacao_pedido_id: 5
+        })
+        await criaPedido(clienteId, {
+          data_pedido: '2026-04-10', data_atendimento: '2026-04-20', situacao_pedido_id: 5
+        })
+      }
+
+      it('GET /dashboard/order_status conta so os pedidos do ano', async () => {
+        await doisAnos()
+
+        const r2026 = await request(app)
+          .get('/api/mapoteca/dashboard/order_status?ano=2026')
+          .set('Authorization', generateUserToken())
+        const r2025 = await request(app)
+          .get('/api/mapoteca/dashboard/order_status?ano=2025')
+          .set('Authorization', generateUserToken())
+
+        expect(r2026.status).toBe(200)
+        expect(r2026.body.dados.total).toBe(2)
+        expect(r2025.body.dados.total).toBe(1)
+      })
+
+      // Doze meses SEMPRE, mesmo vazios: sem eles, um ano com movimento em
+      // marco e outubro desenharia uma reta entre os dois, sugerindo movimento
+      // que nao houve. E a soma tem de fechar com o cartao, senao o grafico e o
+      // numero acima dele contam populacoes diferentes.
+      it('GET /dashboard/orders_timeline devolve os 12 meses do ano, e fecha com o cartao', async () => {
+        await doisAnos()
+
+        const res = await request(app)
+          .get('/api/mapoteca/dashboard/orders_timeline?ano=2026')
+          .set('Authorization', generateUserToken())
+
+        expect(res.status).toBe(200)
+        expect(res.body.dados).toHaveLength(12)
+        const soma = res.body.dados.reduce((a, m) => a + Number(m.total_pedidos), 0)
+        expect(soma).toBe(2)
+        // Marco e abril, um cada.
+        expect(Number(res.body.dados[2].total_pedidos)).toBe(1)
+        expect(Number(res.body.dados[3].total_pedidos)).toBe(1)
+      })
+
+      it('GET /dashboard/client_activity conta so os pedidos do ano', async () => {
+        await doisAnos()
+
+        const res = await request(app)
+          .get('/api/mapoteca/dashboard/client_activity?limite=10&ano=2026')
+          .set('Authorization', generateUserToken())
+
+        expect(res.status).toBe(200)
+        expect(Number(res.body.dados[0].total_pedidos)).toBe(2)
+      })
+
+      // Estoque e o saldo de HOJE, nao um acumulado de periodo: mandar ano para
+      // ele sugeriria que existe "estoque de 2025".
+      it('GET /dashboard/stock_by_location recusa o parametro ano', async () => {
+        const res = await request(app)
+          .get('/api/mapoteca/dashboard/stock_by_location?ano=2025')
+          .set('Authorization', generateUserToken())
+
+        // O schema_validation do SCA descarta chave desconhecida em silencio,
+        // entao o que se guarda aqui e que a rota responde sem o ano mudar nada.
+        expect(res.status).toBe(200)
+      })
+    })
 
     // O dashboard de pedido e a visao de PRODUCAO (OM); o civil tem o relatorio
     // Civ proprio. As tres linhas do cartao de tempo medio (geral, por tipo de

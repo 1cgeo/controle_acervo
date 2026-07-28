@@ -88,9 +88,15 @@ export function deleteClientes(ids) {
 // Pedidos
 // ---------------------------------------------------------------------------
 
-/** All orders with client info, product count and `itens_impressos`. */
-export function getPedidos() {
-  return cachedFetch('pedidos:list', () => apiGet(`${BASE}/pedido`), TTL_LISTA);
+/**
+ * Pedidos do ANO, com cliente, contagem de produtos e `itens_impressos`.
+ * @param {number} ano
+ */
+export function getPedidos(ano) {
+  // Por ANO, e a chave de cache junto: voltar ao ano anterior nao paga a busca
+  // de novo, e `invalidate('pedidos')` continua limpando todos, porque a
+  // invalidacao e por prefixo.
+  return cachedFetch(`pedidos:list:${ano}`, () => apiGet(`${BASE}/pedido?ano=${ano}`), TTL_LISTA);
 }
 
 /**
@@ -449,23 +455,37 @@ export function downloadRpcmtecDocx({ ano, mes }) {
 const DASH = `${BASE}/dashboard`;
 
 /** @returns {Promise<{total:number, em_andamento:number, concluidos:number, pendentes:number, distribuicao:Array<{id:number, nome:string, quantidade:number}>}>} */
-export function getOrderStatus() {
-  return cachedFetch('dashboard:order_status', () => apiGet(`${DASH}/order_status`), TTL_DASHBOARD);
+// As quatro metricas de PEDIDO sao do ANO, pela data do pedido. E um recorte
+// diferente do resumo anual e do mapa, que sao por data de ENTREGA: o pedido de
+// dezembro entregue em janeiro conta em anos diferentes nos dois, e os dois
+// estao certos. Cada aba diz na tela qual dos dois esta mostrando.
+
+/** @param {number} ano */
+export function getOrderStatus(ano) {
+  return cachedFetch(`dashboard:order_status:${ano}`, () => apiGet(`${DASH}/order_status?ano=${ano}`), TTL_DASHBOARD);
 }
 
-/** Weekly order counts. @returns {Promise<Array<{semana_inicio:string, semana_fim:string, total_pedidos:number, total_produtos:number}>>} */
-export function getOrdersTimeline(meses = 6) {
-  return cachedFetch(`dashboard:orders_timeline:${meses}`, () => apiGet(`${DASH}/orders_timeline?meses=${meses}`), TTL_DASHBOARD);
+/**
+ * Entrada de pedidos mes a mes no ano.
+ * @param {number} ano
+ * @returns {Promise<Array<{mes:string, mes_numero:number, total_pedidos:number, total_produtos:number}>>}
+ */
+export function getOrdersTimeline(ano) {
+  return cachedFetch(`dashboard:orders_timeline:${ano}`, () => apiGet(`${DASH}/orders_timeline?ano=${ano}`), TTL_DASHBOARD);
 }
 
-/** @returns {Promise<{media_geral:string|null, por_tipo_cliente:Array, mensal:Array}>} */
-export function getAvgFulfillmentTime() {
-  return cachedFetch('dashboard:avg_fulfillment_time', () => apiGet(`${DASH}/avg_fulfillment_time`), TTL_DASHBOARD);
+/** @param {number} ano @returns {Promise<{ano:number, media_geral:string|null, por_tipo_cliente:Array, mensal:Array}>} */
+export function getAvgFulfillmentTime(ano) {
+  return cachedFetch(`dashboard:avg_fulfillment_time:${ano}`, () => apiGet(`${DASH}/avg_fulfillment_time?ano=${ano}`), TTL_DASHBOARD);
 }
 
-/** Most active clients. */
-export function getClientActivity(limite = 10) {
-  return cachedFetch(`dashboard:client_activity:${limite}`, () => apiGet(`${DASH}/client_activity?limite=${limite}`), TTL_DASHBOARD);
+/** Clientes que mais pediram NO ANO. @param {number} limite @param {number} ano */
+export function getClientActivity(limite = 10, ano) {
+  return cachedFetch(
+    `dashboard:client_activity:${limite}:${ano}`,
+    () => apiGet(`${DASH}/client_activity?limite=${limite}&ano=${ano}`),
+    TTL_DASHBOARD
+  );
 }
 
 /** Pending (not completed/cancelled) orders with `atrasado` and `dias_ate_prazo`. */
@@ -474,13 +494,17 @@ export function getPendingOrders() {
 }
 
 /** Stock aggregated per location. @returns {Promise<Array<{localizacao_id:number, localizacao:string, quantidade_total:string|number}>>} */
+/**
+ * Saldo de estoque por localizacao. SEM ano, de proposito: e o saldo de HOJE,
+ * nao um acumulado de periodo. "Estoque de 2025" nao existe.
+ */
 export function getStockByLocation() {
   return cachedFetch('dashboard:stock_by_location', () => apiGet(`${DASH}/stock_by_location`), TTL_DASHBOARD);
 }
 
-/** Monthly consumption + top 5 materials. */
-export function getMaterialConsumption(meses = 12) {
-  return cachedFetch(`dashboard:material_consumption:${meses}`, () => apiGet(`${DASH}/material_consumption?meses=${meses}`), TTL_DASHBOARD);
+/** Consumo mes a mes do ANO, mais o Top 5 de materiais. @param {number} ano */
+export function getMaterialConsumption(ano) {
+  return cachedFetch(`dashboard:material_consumption:${ano}`, () => apiGet(`${DASH}/material_consumption?ano=${ano}`), TTL_DASHBOARD);
 }
 
 /** Plotter status summary + list. */

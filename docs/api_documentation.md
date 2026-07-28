@@ -1487,11 +1487,19 @@ Deleta clientes. Falha se o cliente possuir pedidos.
 
 ### GET `/api/mapoteca/pedido`
 
-Retorna todos os pedidos com informacoes do cliente e contagem de produtos.
+Retorna os pedidos do ANO com informacoes do cliente e contagem de produtos.
 
 | Campo | Valor |
 |---|---|
 | **Auth** | `verifyLogin` |
+
+**Query Params:**
+| Parametro | Tipo | Padrao | Descricao |
+|---|---|---|---|
+| `ano` | integer | ano corrente | Ano do pedido (`data_pedido`) |
+
+O recorte e pela DATA DO PEDIDO, ou seja, quando o pedido entrou. E diferente do
+recorte por data de ENTREGA usado no resumo anual e no mapa das entregas.
 
 ---
 
@@ -2173,41 +2181,58 @@ Deleta registros de consumo.
 
 Todos os endpoints sao `GET` e requerem `verifyLogin`. Prefixo: `/api/mapoteca/dashboard`.
 
+**DOIS recortes anuais convivem aqui, e nao sao intercambiaveis.** As metricas de
+PEDIDO abaixo (`order_status`, `orders_timeline`, `avg_fulfillment_time`,
+`client_activity`) contam pela DATA DO PEDIDO, ou seja, o que ENTROU no ano. Ja
+`resumo_anual`, `entregas_*` e o mapa contam pela data de ENTREGA efetiva, ou
+seja, o que SAIU no ano. O pedido de dezembro de 2025 entregue em janeiro de 2026
+cai em anos diferentes nos dois, e os dois estao certos.
+
+Todas aceitam `ano` (integer, padrao: ano corrente). A unica excecao e
+`stock_by_location`, que e saldo de hoje.
+
 ### GET `/api/mapoteca/dashboard/order_status`
 
-Retorna distribuicao de pedidos por status: total, em andamento, concluidos, pendentes e detalhamento.
+Retorna distribuicao de pedidos do ANO por status: total, em andamento, concluidos, pendentes e detalhamento.
+
+**Query Params:** `ano` (integer, padrao: ano corrente).
+
+**Resposta:** `{ ano, total, em_andamento, concluidos, pendentes, distribuicao: [...] }`
 
 ---
 
 ### GET `/api/mapoteca/dashboard/orders_timeline`
 
-Retorna contagem semanal de pedidos ao longo dos ultimos N meses.
+Retorna a entrada de pedidos MES A MES no ano.
 
-**Query Params:**
-| Parametro | Tipo | Padrao | Descricao |
-|---|---|---|---|
-| `meses` | integer | 6 | Numero de meses retroativos |
+**Query Params:** `ano` (integer, padrao: ano corrente).
 
-**Resposta:** Array com `semana_inicio`, `semana_fim`, `total_pedidos`, `total_produtos`.
+**Resposta:** Array com os 12 meses do ano (`mes`, `total_pedidos`, `total_produtos`).
+Os doze saem sempre, mesmo vazios: sem eles, um ano com movimento so em marco e
+outubro desenharia uma reta entre os dois. A soma fecha com o `total` de
+`order_status` do mesmo ano.
 
 ---
 
 ### GET `/api/mapoteca/dashboard/avg_fulfillment_time`
 
-Retorna tempo medio de atendimento geral, por tipo de cliente e tendencia mensal.
+Retorna tempo medio de atendimento do ANO, geral, por tipo de cliente e mes a mes.
 
-**Resposta:** `{ media_geral, por_tipo_cliente: [...], mensal: [...] }`
+**Query Params:** `ano` (integer, padrao: ano corrente).
+
+**Resposta:** `{ ano, media_geral, por_tipo_cliente: [...], mensal: [...] }`
 
 ---
 
 ### GET `/api/mapoteca/dashboard/client_activity`
 
-Retorna os N clientes mais ativos por contagem de pedidos com estatisticas de conclusao.
+Retorna os N clientes que mais pediram NO ANO, com estatisticas de conclusao.
 
 **Query Params:**
 | Parametro | Tipo | Padrao | Descricao |
 |---|---|---|---|
 | `limite` | integer | 10 | Numero maximo de clientes |
+| `ano` | integer | ano corrente | Ano do pedido (`data_pedido`) |
 
 ---
 
@@ -2219,18 +2244,22 @@ Retorna pedidos incompletos/nao cancelados, ordenados por prazo, com indicadores
 
 ### GET `/api/mapoteca/dashboard/stock_by_location`
 
-Retorna estoque de materiais agregado por localizacao (dados para grafico de pizza).
+Retorna estoque de materiais agregado por localizacao.
+
+**SEM `ano`, de proposito:** e o saldo de HOJE, nao um acumulado de periodo.
+"Estoque de 2025" nao existe, e aceitar o parametro sugeriria que sim. E a unica
+rota do dashboard que ignora o ano de contexto, e a tela avisa.
 
 ---
 
 ### GET `/api/mapoteca/dashboard/material_consumption`
 
-Retorna consumo mensal total, top 5 materiais mais consumidos e consumo detalhado por material por mes.
+Retorna o consumo mes a mes do ANO, o top 5 de materiais mais consumidos e o
+consumo detalhado por material por mes.
 
-**Query Params:**
-| Parametro | Tipo | Padrao | Descricao |
-|---|---|---|---|
-| `meses` | integer | 12 | Numero de meses retroativos |
+**Query Params:** `ano` (integer, padrao: ano corrente).
+
+**Resposta:** `{ ano, consumo_mensal_total: [...12 meses...], materiais_mais_consumidos: [...], consumo_por_material: [...] }`
 
 ---
 

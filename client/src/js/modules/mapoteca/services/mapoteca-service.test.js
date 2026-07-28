@@ -71,8 +71,9 @@ describe('mapoteca-service: clientes e pedidos', () => {
   });
 
   test('getPedidos, getPedido e deletePedidos', async () => {
-    await svc.getPedidos();
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido');
+    // Do ANO: a lista passou a respeitar o contexto do modulo em 2026-07-28.
+    await svc.getPedidos(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido?ano=2026');
 
     await svc.getPedido(9);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido/9');
@@ -164,14 +165,27 @@ describe('mapoteca-service: relatorios', () => {
 
 describe('mapoteca-service: dashboard', () => {
   test('cada painel bate em /mapoteca/dashboard', async () => {
-    await svc.getOrderStatus();
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/order_status');
+    // As metricas de PEDIDO passaram a ser por ano em 2026-07-28, contadas pela
+    // data do pedido. A janela deslizante ("ultimos 6 meses") saiu junto: ela
+    // nao tem como respeitar um ano de contexto.
+    await svc.getOrderStatus(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/order_status?ano=2026');
 
-    await svc.getOrdersTimeline(6);
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/orders_timeline?meses=6');
+    await svc.getOrdersTimeline(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/orders_timeline?ano=2026');
 
-    await svc.getClientActivity(10);
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/client_activity?limite=10');
+    await svc.getAvgFulfillmentTime(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/avg_fulfillment_time?ano=2026');
+
+    await svc.getClientActivity(10, 2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/client_activity?limite=10&ano=2026');
+
+    await svc.getMaterialConsumption(2026);
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/material_consumption?ano=2026');
+
+    // O estoque e o unico que NAO leva ano: e o saldo de hoje.
+    await svc.getStockByLocation();
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/stock_by_location');
 
     await svc.getResumoAnual(2026);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/resumo_anual?ano=2026');

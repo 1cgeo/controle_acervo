@@ -4,7 +4,7 @@
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
-const { ESCALA_DISPLAY } = require("./query_fragments");
+const { ESCALA_DISPLAY, filtroAno } = require("./query_fragments");
 
 const controller = {};
 
@@ -302,7 +302,15 @@ controller.deleteClientes = async (clienteIds) => {
 };
 
 // Funções para Pedido
-controller.getPedidos = async () => {
+// Pedidos do ANO consultado, pela data do pedido.
+//
+// A lista era do acervo inteiro, e o ano de contexto do módulo não valia aqui
+// (decisão de 2026-07-28, revista pelo chefe no mesmo dia). O que ela custa, e
+// vale saber: um pedido de dezembro que só se conclui em janeiro deixa de
+// aparecer quando vira o ano, e é preciso trocar o ano na navbar para achá-lo.
+// Em troca, a lista para de crescer indefinidamente e passa a casar com o
+// Dashboard, que conta pedido pelo mesmo critério.
+controller.getPedidos = async (ano) => {
   return db.conn.any(`
     SELECT p.id, p.data_pedido, p.data_atendimento,
            p.cliente_id, c.nome AS cliente_nome,
@@ -325,8 +333,9 @@ controller.getPedidos = async () => {
     LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
+    WHERE ${filtroAno('p.data_pedido')}
     ORDER BY p.data_pedido DESC
-  `);
+  `, { ano });
 };
 
 controller.getPedidoById = async (pedidoId) => {

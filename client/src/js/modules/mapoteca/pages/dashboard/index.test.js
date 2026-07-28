@@ -101,21 +101,31 @@ describe('renderDashboard da mapoteca', () => {
   });
 
   test('cada aba busca o seu proprio grupo de endpoints', async () => {
+    // Ano FIXADO: o contexto vive em localStorage e sobrevive entre testes,
+    // entao sem isto a assercao dependeria da ordem de execucao.
+    const ANO = 2026;
+    setAno(ANO);
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
+    // Todas as abas passaram a levar o ANO de contexto (2026-07-28). As janelas
+    // deslizantes ("ultimos 6 meses", "ultimos 12 meses") sairam junto: elas nao
+    // tinham como respeitar um ano escolhido, porque continuariam terminando
+    // hoje.
     await abrirAba(container, 'Pedidos');
-    expect(svc.getOrderStatus).toHaveBeenCalled();
-    expect(svc.getOrdersTimeline).toHaveBeenCalledWith(6);
+    expect(svc.getOrderStatus).toHaveBeenCalledWith(ANO);
+    expect(svc.getOrdersTimeline).toHaveBeenCalledWith(ANO);
 
     await abrirAba(container, 'Atendimento');
-    expect(svc.getAvgFulfillmentTime).toHaveBeenCalled();
-    expect(svc.getClientActivity).toHaveBeenCalledWith(10);
+    expect(svc.getAvgFulfillmentTime).toHaveBeenCalledWith(ANO);
+    expect(svc.getClientActivity).toHaveBeenCalledWith(10, ANO);
 
     await abrirAba(container, 'Materiais');
-    expect(svc.getStockByLocation).toHaveBeenCalled();
-    expect(svc.getMaterialConsumption).toHaveBeenCalledWith(12);
+    expect(svc.getMaterialConsumption).toHaveBeenCalledWith(ANO);
+    // O estoque e o UNICO painel do dashboard sem ano: e o saldo de hoje, e
+    // "estoque de 2025" nao existe.
+    expect(svc.getStockByLocation).toHaveBeenCalledWith();
 
     cleanup();
   });

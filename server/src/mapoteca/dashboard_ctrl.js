@@ -29,26 +29,53 @@ const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>)
       AND EXTRACT(YEAR FROM ${dataEntregaEfetiva()}) = $<ano>`;
 
+// Filtro "pedido do ano": pedido cuja DATA DE PEDIDO cai no ano consultado.
+//
+// É um ano DIFERENTE do de cima, e a diferença não é detalhe. FILTRO_ENTREGUE_ANO
+// responde "o que a mapoteca ENTREGOU em 2026", e alimenta o Resumo Anual e o
+// Mapa; este responde "o que ENTROU em 2026", e alimenta Pedidos e Atendimento.
+// Um pedido de dezembro de 2025 entregue em janeiro de 2026 conta no primeiro
+// como 2026 e no segundo como 2025, e os dois estão certos: são perguntas
+// distintas. Por isso cada aba diz na tela qual das duas está mostrando, senão
+// os números pareceriam se contradizer.
+//
+// Sargável (usa o índice btree de data_pedido), ao contrário de
+// EXTRACT(YEAR FROM col) = ano. Requer o parâmetro $<ano>.
+const FILTRO_ANO_PEDIDO = (alias = 'p') => filtroAno(`${alias}.data_pedido`);
+
+// Os doze meses do ano consultado, para os gráficos mensais. Substituiu a
+// janela deslizante ("últimos 6/12 meses"), que não tinha como respeitar um ano
+// de contexto: em 2025, "últimos 12 meses" continuaria terminando hoje.
+const MESES_DO_ANO = `SELECT generate_series(
+        make_date($<ano>, 1, 1),
+        make_date($<ano>, 12, 1),
+        interval '1 month'
+      )::date AS mes`;
+
 // Order Status Distribution - numerical cards
-controller.getOrderStatusDistribution = async () => {
+// Escopo: pedidos ABERTOS no ano (data_pedido). Ver FILTRO_ANO_PEDIDO.
+controller.getOrderStatusDistribution = async (ano) => {
   return db.conn.task(async t => {
     // Get counts for different statuses
     const statusCounts = await t.any(`
-      SELECT 
+      SELECT
         situacao_pedido_id,
         sp.nome AS situacao_nome,
         COUNT(*) AS quantidade
       FROM mapoteca.pedido p
       JOIN mapoteca.situacao_pedido sp ON p.situacao_pedido_id = sp.code
       WHERE ${PEDIDO_MILITAR('p.cliente_id')}
+        AND ${FILTRO_ANO_PEDIDO()}
       GROUP BY situacao_pedido_id, sp.nome
       ORDER BY situacao_pedido_id
-    `);
+    `, { ano });
 
     // Get total orders
     const totalOrders = await t.one(`
-      SELECT COUNT(*) AS total FROM mapoteca.pedido p WHERE ${PEDIDO_MILITAR('p.cliente_id')}
-    `);
+      SELECT COUNT(*) AS total FROM mapoteca.pedido p
+      WHERE ${PEDIDO_MILITAR('p.cliente_id')}
+        AND ${FILTRO_ANO_PEDIDO()}
+    `, { ano });
 
     const inProgressOrders = statusCounts.find(s => s.situacao_pedido_id === SITUACAO_PEDIDO.EM_ANDAMENTO) || { quantidade: 0 };
 
@@ -59,6 +86,7 @@ controller.getOrderStatusDistribution = async () => {
       .reduce((sum, curr) => sum + parseInt(curr.quantidade), 0);
 
     return {
+      ano,
       total: parseInt(totalOrders.total),
       em_andamento: parseInt(inProgressOrders.quantidade),
       concluidos: parseInt(completedOrders.quantidade),
@@ -72,42 +100,47 @@ controller.getOrderStatusDistribution = async () => {
   });
 };
 
-// Orders Timeline - bar chart by week
-controller.getOrdersTimeline = async (meses = 6) => {
+// Entrada de pedidos MÊS A MÊS no ano consultado.
+//
+// Era por SEMANA, numa janela de "últimos 6 meses". A janela deslizante não tem
+// como respeitar um ano de contexto: em 2025 ela continuaria terminando hoje, e
+// mostraria 2026. Fechada no ano, a semana daria 52 pontos numa linha só; o mês
+// dá 12, e é a granularidade que o resto do dashboard já usa (tempo médio
+// mensal, consumo mensal), então os gráficos passam a ser comparáveis entre si.
+//
+// Os doze meses saem sempre, mesmo vazios: sem eles, um ano com movimento só em
+// março e outubro desenharia uma reta entre os dois, sugerindo movimento que
+// não houve.
+controller.getOrdersTimeline = async (ano) => {
   return db.conn.any(`
-    WITH semanas AS (
-      SELECT 
-        date_trunc('week', dd)::date AS semana_inicio,
-        (date_trunc('week', dd) + interval '6 days')::date AS semana_fim
-      FROM generate_series(
-        date_trunc('week', current_date - interval '${meses} months'),
-        date_trunc('week', current_date),
-        interval '1 week'
-      ) AS dd
+    WITH meses AS (
+      ${MESES_DO_ANO}
     ),
-    pedidos_por_semana AS (
-      SELECT 
-        date_trunc('week', data_pedido)::date AS semana,
+    pedidos_por_mes AS (
+      SELECT
+        date_trunc('month', p.data_pedido)::date AS mes,
         COUNT(*) AS total_pedidos,
         SUM((SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id)) AS total_produtos
       FROM mapoteca.pedido p
-      WHERE data_pedido >= current_date - interval '${meses} months'
+      WHERE ${FILTRO_ANO_PEDIDO()}
         AND ${PEDIDO_MILITAR('p.cliente_id')}
-      GROUP BY semana
+      GROUP BY mes
     )
-    SELECT 
-      s.semana_inicio,
-      s.semana_fim,
-      COALESCE(p.total_pedidos, 0) AS total_pedidos,
-      COALESCE(p.total_produtos, 0) AS total_produtos
-    FROM semanas s
-    LEFT JOIN pedidos_por_semana p ON s.semana_inicio = p.semana
-    ORDER BY s.semana_inicio
-  `);
+    SELECT
+      m.mes,
+      COALESCE(pm.total_pedidos, 0) AS total_pedidos,
+      COALESCE(pm.total_produtos, 0) AS total_produtos
+    FROM meses m
+    LEFT JOIN pedidos_por_mes pm ON pm.mes = m.mes
+    ORDER BY m.mes
+  `, { ano });
 };
 
 // Average Fulfillment Time
-controller.getAverageFulfillmentTime = async () => {
+// Escopo: pedidos ABERTOS no ano (data_pedido), igual à aba Pedidos. A média
+// mensal já agrupava por data_pedido, então usar a mesma data nas três consultas
+// é o que faz o cartão, a linha e a barra fecharem entre si.
+controller.getAverageFulfillmentTime = async (ano) => {
   return db.conn.task(async t => {
     // Overall average
     const overallAvg = await t.oneOrNone(`
@@ -125,7 +158,8 @@ controller.getAverageFulfillmentTime = async () => {
         situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO}
         AND data_atendimento IS NOT NULL
         AND ${PEDIDO_MILITAR('p.cliente_id')}
-    `);
+        AND ${FILTRO_ANO_PEDIDO()}
+    `, { ano });
 
     // By client type
     const byClientType = await t.any(`
@@ -144,34 +178,32 @@ controller.getAverageFulfillmentTime = async () => {
         -- geral e a mensal, no mesmo cartao, ja contavam so o militar. As tres
         -- linhas nao fechavam entre si.
         AND ${PEDIDO_MILITAR('p.cliente_id')}
+        AND ${FILTRO_ANO_PEDIDO()}
       GROUP BY c.tipo_cliente_id, tc.nome
       ORDER BY media_dias
-    `);
+    `, { ano });
 
     // Monthly average
     const monthlyAvg = await t.any(`
       WITH meses AS (
-        SELECT generate_series(
-          date_trunc('month', current_date - interval '11 months'),
-          date_trunc('month', current_date),
-          interval '1 month'
-        )::date AS mes
+        ${MESES_DO_ANO}
       )
-      SELECT 
+      SELECT
         m.mes,
         COALESCE(AVG(p.data_atendimento::date - p.data_pedido::date), 0) AS media_dias,
         COUNT(p.id) AS quantidade_pedidos
       FROM meses m
       LEFT JOIN mapoteca.pedido p ON
-        date_trunc('month', p.data_pedido) = m.mes AND
+        date_trunc('month', p.data_pedido)::date = m.mes AND
         p.situacao_pedido_id = ${SITUACAO_PEDIDO.CONCLUIDO} AND
         p.data_atendimento IS NOT NULL AND
         ${PEDIDO_MILITAR('p.cliente_id')}
       GROUP BY m.mes
       ORDER BY m.mes
-    `);
+    `, { ano });
 
     return {
+      ano,
       media_geral: (overallAvg && overallAvg.media_dias !== null)
         ? parseFloat(overallAvg.media_dias).toFixed(1)
         : null,
@@ -191,7 +223,10 @@ controller.getAverageFulfillmentTime = async () => {
 };
 
 // Client Activity
-controller.getClientActivity = async (limite = 10) => {
+// Escopo: pedidos ABERTOS no ano, igual às outras métricas de pedido. O Top 10
+// passa a ser "quem mais pediu NAQUELE ano", e não o acumulado histórico, que
+// era uma lista praticamente imóvel.
+controller.getClientActivity = async (limite = 10, ano) => {
   return db.conn.any(`
     SELECT 
       c.id, 
@@ -214,10 +249,11 @@ controller.getClientActivity = async (limite = 10) => {
     JOIN mapoteca.pedido p ON c.id = p.cliente_id
     JOIN mapoteca.tipo_cliente tc ON c.tipo_cliente_id = tc.code
     WHERE c.tipo_cliente_id IN (1, 2, 3)
+      AND ${FILTRO_ANO_PEDIDO()}
     GROUP BY c.id, c.nome, c.tipo_cliente_id, tc.nome
     ORDER BY total_pedidos DESC
     LIMIT ${limite}
-  `);
+  `, { ano });
 };
 
 // Pending Orders (not completed and not canceled)
@@ -269,40 +305,41 @@ controller.getStockByLocation = async () => {
 };
 
 // Material Consumption Trends
-controller.getMaterialConsumptionTrends = async (meses = 12) => {
+//
+// Escopo: os doze meses do ANO consultado. Era uma janela deslizante de doze
+// meses, que não tem como respeitar um ano de contexto (em 2025 ela continuaria
+// terminando hoje). A tela de consumo (#/mapoteca/consumo) já é por ano, então
+// os dois passam a contar a mesma coisa.
+controller.getMaterialConsumptionTrends = async (ano) => {
   return db.conn.task(async t => {
     // Monthly consumption for all materials
     const monthlyConsumption = await t.any(`
       WITH meses AS (
-        SELECT generate_series(
-          date_trunc('month', current_date - interval '${meses-1} months'),
-          date_trunc('month', current_date),
-          interval '1 month'
-        )::date AS mes
+        ${MESES_DO_ANO}
       )
-      SELECT 
+      SELECT
         m.mes,
         COALESCE(SUM(cm.quantidade), 0) AS quantidade_total
       FROM meses m
-      LEFT JOIN mapoteca.consumo_material cm ON 
-        date_trunc('month', cm.data_consumo) = m.mes
+      LEFT JOIN mapoteca.consumo_material cm ON
+        date_trunc('month', cm.data_consumo)::date = m.mes
       GROUP BY m.mes
       ORDER BY m.mes
-    `);
+    `, { ano });
 
     // Top 5 most consumed materials
     const topMaterials = await t.any(`
-      SELECT 
+      SELECT
         tm.id,
         tm.nome,
         SUM(cm.quantidade) AS quantidade_total
       FROM mapoteca.consumo_material cm
       JOIN mapoteca.tipo_material tm ON cm.tipo_material_id = tm.id
-      WHERE cm.data_consumo >= current_date - interval '${meses} months'
+      WHERE ${filtroAno('cm.data_consumo')}
       GROUP BY tm.id, tm.nome
       ORDER BY quantidade_total DESC
       LIMIT 5
-    `);
+    `, { ano });
 
     // Consumption by material type for each month (for top 5 materials)
     const materialIds = topMaterials.map(m => m.id);
@@ -311,6 +348,7 @@ controller.getMaterialConsumptionTrends = async (meses = 12) => {
     // (unnest de array vazio quebraria a query)
     if (materialIds.length === 0) {
       return {
+        ano,
         consumo_mensal_total: monthlyConsumption,
         materiais_mais_consumidos: [],
         consumo_por_material: []
@@ -319,16 +357,12 @@ controller.getMaterialConsumptionTrends = async (meses = 12) => {
 
     const consumptionByMaterial = await t.any(`
       WITH meses AS (
-        SELECT generate_series(
-          date_trunc('month', current_date - interval '${meses-1} months'),
-          date_trunc('month', current_date),
-          interval '1 month'
-        )::date AS mes
+        ${MESES_DO_ANO}
       ),
       material_ids AS (
         SELECT unnest(ARRAY[${materialIds.join(',')}]) AS material_id
       )
-      SELECT 
+      SELECT
         m.mes,
         mi.material_id,
         tm.nome AS material_nome,
@@ -336,14 +370,15 @@ controller.getMaterialConsumptionTrends = async (meses = 12) => {
       FROM meses m
       CROSS JOIN material_ids mi
       JOIN mapoteca.tipo_material tm ON mi.material_id = tm.id
-      LEFT JOIN mapoteca.consumo_material cm ON 
-        date_trunc('month', cm.data_consumo) = m.mes AND
+      LEFT JOIN mapoteca.consumo_material cm ON
+        date_trunc('month', cm.data_consumo)::date = m.mes AND
         cm.tipo_material_id = mi.material_id
       GROUP BY m.mes, mi.material_id, tm.nome
       ORDER BY m.mes, mi.material_id
-    `);
+    `, { ano });
 
     return {
+      ano,
       consumo_mensal_total: monthlyConsumption,
       materiais_mais_consumidos: topMaterials,
       consumo_por_material: consumptionByMaterial
