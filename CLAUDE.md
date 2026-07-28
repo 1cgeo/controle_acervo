@@ -68,6 +68,16 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   negativa, a folha grande cai por cima da pequena e a engole, inclusive para o clique. O tom de
   azul mais escuro nessas áreas é a soma dos preenchimentos translúcidos empilhados, e não um erro
   de classificação: para ler a quantidade sem empilhamento, filtre por uma escala.
+- **Polígono empilhado no mapa da mapoteca é PRODUTO diferente, nunca versão.** A pergunta voltou em
+  2026-07-28 ("talvez esteja mostrando versões"), então fica a medição, contra produção: em 2026 são
+  325 feições para 325 `produto.id` distintos, e a consulta agrega por `prod.id`; a versão só
+  aparece no caminho `produto_pedido -> versao -> produto`, e nunca no resultado. O empilhamento tem
+  duas origens legítimas. A primeira é o aninhamento por escala: a 2952-1-SO (1:25.000) está
+  100% contida na 2952 (1:100.000) e na 535 (1:250.000), e as três saíram no ano. A segunda são
+  Carta Topográfica e Carta Ortoimagem da MESMA folha, que no SCA são produtos distintos com
+  contorno idêntico (8 pares em 2026, de 317 geometrias distintas em 325 feições). Por isso o balão
+  lista TODOS os produtos sob o ponteiro, e não só o de cima: mostrar um só era o que fazia a tela
+  parecer errada, porque a cor ali é a soma dos preenchimentos e não pertence ao produto exibido.
 - **As opções de filtro do mapa são FACETADAS: cada lista aplica os outros filtros, nunca o
   próprio.** Pedido do chefe em 2026-07-28 ("um filtro deve filtrar o quantitativo do outro"):
   escolher uma OM passa a mostrar quantos produtos daquela OM existem em cada escala. Aplicar também

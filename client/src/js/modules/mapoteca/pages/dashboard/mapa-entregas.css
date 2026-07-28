@@ -141,6 +141,10 @@
   color: var(--text-primary);
   box-shadow: var(--shadow-lg);
   font-size: var(--font-size-sm);
+  /* Com varios produtos empilhados no mesmo ponto, o balao passaria da altura
+   * do mapa; ver o comentario de `produtosSob`. */
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .mapa-entregas__popup .maplibregl-popup-tip {
@@ -168,4 +172,21 @@
 
 .mapa-entregas__popup-rotulo {
   color: var(--text-secondary);
+}
+
+/* Sobreposicao: o mapeamento e aninhado por escala, entao o mesmo ponto costuma
+ * ter mais de um produto. O balao lista todos, e a linha divisoria e o que
+ * separa um do outro sem virar parede de texto. */
+.mapa-entregas__popup-aviso {
+  margin-bottom: var(--space-xs);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.mapa-entregas__popup-produto + .mapa-entregas__popup-produto {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-color);
 }

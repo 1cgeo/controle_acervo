@@ -199,14 +199,15 @@ export function criarMapaEntregas() {
   function ligarInteracoes() {
     mapa.on('mousemove', 'entregas-preenchimento', (e) => {
       if (!e.features.length) return;
-      const feature = e.features[0];
-      if (apontado !== feature.id) {
+      const sob = produtosSob(e.features);
+      const topo = sob[0];
+      if (apontado !== topo.id) {
         marcar(apontado, false);
-        apontado = feature.id;
+        apontado = topo.id;
         marcar(apontado, true);
       }
       mapa.getCanvas().style.cursor = 'pointer';
-      popup.setLngLat(e.lngLat).setDOMContent(conteudoPopup(feature.properties)).addTo(mapa);
+      popup.setLngLat(e.lngLat).setDOMContent(conteudoPopup(sob)).addTo(mapa);
     });
 
     mapa.on('mouseleave', 'entregas-preenchimento', () => {
@@ -222,13 +223,39 @@ export function criarMapaEntregas() {
     mapa.setFeatureState({ source: FONTE, id }, { apontado: valor });
   }
 
-  function conteudoPopup(props) {
+  /**
+   * Os produtos que estao sob o ponteiro, do que esta por CIMA para o que esta
+   * por baixo.
+   *
+   * Sao varios porque o mapeamento e aninhado: a folha 1:25.000 fica dentro da
+   * 1:100.000, que fica dentro da 1:250.000, e as tres podem ter saido no ano.
+   * Havia ainda o par Carta Topografica e Carta Ortoimagem da MESMA folha, que
+   * no SCA sao produtos distintos e tem o contorno identico (oito pares em 2026).
+   *
+   * Mostrar so o primeiro era o que fazia a tela parecer errada: a pessoa via um
+   * produto no balao e um tom de azul que nao correspondia a ele, porque a cor
+   * ali e a soma dos preenchimentos translucidos empilhados. Listando todos, o
+   * tom passa a ter explicacao na propria tela.
+   *
+   * A ordem vem do `fill-sort-key` (menor area por cima), e nao do MapLibre:
+   * `e.features` nao promete ordem de desenho. Dedupe por id porque a feicao que
+   * cruza a borda de um ladrilho volta uma vez por pedaco.
+   */
+  function produtosSob(features) {
+    const porId = new Map();
+    for (const f of features) {
+      if (!porId.has(f.properties.id)) porId.set(f.properties.id, f.properties);
+    }
+    return [...porId.values()].sort((a, b) => (a.area || 0) - (b.area || 0));
+  }
+
+  function conteudoPopup(lista) {
     const linha = (rotulo, valor) => el('div', { className: 'mapa-entregas__popup-linha' }, [
       el('span', { className: 'mapa-entregas__popup-rotulo', textContent: rotulo }),
       el('span', { textContent: valor }),
     ]);
 
-    return el('div', {}, [
+    const bloco = (props) => el('div', { className: 'mapa-entregas__popup-produto' }, [
       el('strong', { textContent: props.nome || 'Produto sem nome' }),
       props.mi ? el('div', { className: 'mapa-entregas__popup-mi', textContent: props.mi }) : null,
       el('div', { className: 'mapa-entregas__popup-corpo' }, [
@@ -238,6 +265,18 @@ export function criarMapaEntregas() {
         linha('Tipo', props.tipo_produto || '-'),
         linha('Escala', props.escala || '-'),
       ]),
+    ].filter(Boolean));
+
+    return el('div', {}, [
+      // Com um produto so, o cabecalho seria ruido; com mais de um, ele e o que
+      // responde "por que este pedaco esta mais escuro".
+      lista.length > 1
+        ? el('div', {
+          className: 'mapa-entregas__popup-aviso',
+          textContent: `${lista.length} produtos se sobrepõem aqui`,
+        })
+        : null,
+      ...lista.map(bloco),
     ].filter(Boolean));
   }
 
