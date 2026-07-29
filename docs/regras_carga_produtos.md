@@ -118,21 +118,44 @@ O servidor reconstrói o caminho de download como `<volume>/<nome_arquivo>.<exte
 `nome_arquivo` é a chave física do arquivo no volume e **precisa ser globalmente único**,
 ou edições/anos/escalas diferentes com o mesmo nome base se sobrescrevem silenciosamente.
 
-- **Padrão**: `{TIPOPROD}_{MI|slug}_{EDICAO}` (sem extensão).
-  - `TIPOPROD`: `CT` (topográfica), `CO` (ortoimagem), `CTM` (militar), `TEM` (temática),
-    `CDGV`, ... (ver `carga/nome_arquivo.cjs`, `TIPO_PROD_SLUG`).
-  - `MI`: o identificador **já codifica a escala** pelo número de componentes —
-    `2753` → 1:100.000, `2753-1` → 1:50.000, `2753-1-NE` → 1:25.000 (1:250.000 usa
-    INOM/MIR, de formato distinto). Logo **a escala não entra no nome**. Sem MI
-    (especiais), usar o slug do nome do produto.
-  - `EDICAO`: T34-700 → `edN` (N = `Cont_Edicao`); ET-RDG → `Ndsg`.
-  - Ex.: `CT_2962-4-NE_ed4`, `CT_2753_ed1`, `CT_2753-1_1dsg`, `CO_2962-4-NE_ed1`.
+- **Padrão** (desde 2026-07-29, com o SUBTIPO no nome):
+
+  ```
+  {TIPOPROD}_s{NN}_{MI ou INOM}_{EDICAO}
+  {TIPOPROD}_s{NN}_{SLUG-DO-NOME}_{ESCALA}_{EDICAO}   sem MI e sem INOM
+  ```
+
+  - `TIPOPROD`: `CT` (topográfica), `CO` (ortoimagem), `CDGV`, `TEM` (temática), ...
+    Vem de `tipo_produto_id`.
+  - `sNN`: o `subtipo_produto_id` com dois dígitos. **Numérico e não mnemônico de
+    propósito**: sai do domínio, então subtipo novo nunca exige inventar sigla nem
+    lembrar de atualizar uma tabela. É ele que separa a Carta Militar (`s24`) da civil
+    (`s02`, `s12`) na mesma folha e com o mesmo rótulo de edição.
+  - Identificador: `COALESCE(mi, inom)`. O MI **já codifica a escala** pelo número de
+    componentes — `2753` → 1:100.000, `2753-1` → 1:50.000, `2753-1-NE` → 1:25.000.
+    Logo a escala só entra no nome quando não há MI nem INOM.
+  - `EDICAO`: só as duas formas que o trigger `acervo.validate_version` admite.
+    `Nª Edição` → `edN`; `N-SIGLA` → `Nsigla` (minúsculo). Rótulo fora delas **aborta**,
+    porque nome improvisado colide em silêncio.
+  - Ex.: `CT_s02_2962-4-NE_ed4`, `CT_s24_2823-1-SE_1dsg`, `CDGV_s07_2952-4-SE_ed1`,
+    `CO_s27_ESTRELA-2_e2800_ed1`, `TEM_s15_2979_ed1`.
 - O **TIF (principal) e o PDF (alternativo) de uma versão compartilham o mesmo nome base**
   e diferem só pela extensão — sem colisão, pois a chave física é `(nome_arquivo, extensao)`.
-- Implementação de referência: `carga/nome_arquivo.cjs` (`nomeArquivoPadrao`).
-- **Trava no servidor**: o `prepare-upload` recusa (HTTP 409) se o trio
-  `(volume, nome_arquivo, extensao)` já existir no acervo ou se repetir dentro do mesmo
-  envio — impede sobrescrita silenciosa (`assertNomeFisicoLivre` em `arquivo_ctrl.js`).
+- **Fonte ÚNICA da regra**: a função `acervo.nome_arquivo_padrao` no banco
+  (`migrations/2026-07-29_nome_arquivo_padrao.sql`), usada tanto por quem ESCREVE quanto
+  pelo invariante que AUDITA (`7a`). Duas implementações da mesma regra divergem com o
+  tempo, e a divergência entre auditor e escritor é justo o defeito que o `7a` existe
+  para pegar.
+- **Travas no banco** (`migrations/2026-07-29_nome_fisico_unico.sql`): índices únicos
+  parciais sobre `(volume, nome_arquivo, extensao)` e sobre a versão em `lower()`,
+  excluindo Tileserver. O segundo não é redundância: o Postgres distingue caixa e o SMB
+  do volume não, então dois registros que só diferem por caixa disputariam um arquivo.
+- **Trava na aplicação**: o `prepare-upload` recusa (HTTP 409) se o trio já existir ou se
+  repetir dentro do mesmo envio (`assertNomeFisicoLivre` em `arquivo_ctrl.js`). Ela NÃO
+  cobre UPDATE direto, e foi por isso que os índices acima passaram a existir.
+- **Renomear em massa**: `POST /api/arquivo/renomear-padrao` (admin). O cliente não manda
+  nome; o servidor o deriva da função. Existe em vez do `prepare-upload` porque aquele
+  caminho transfere BYTES e renomear não move byte nenhum.
 
 ### 2.4 Produtos
 

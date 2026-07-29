@@ -165,8 +165,16 @@ const INVARIANTES = [
   {
     codigo: '3f',
     severidade: 'DEFECT',
-    titulo: 'colisao: 2+ versoes REGULARES com mesmo rotulo no produto',
-    sql: 'select produto_id,versao,count(*) n,array_agg(id) ids from acervo.versao where tipo_versao_id=1 group by 1,2 having count(*)>1'
+    titulo: 'colisao: 2+ versoes REGULARES com mesmo rotulo E mesmo subtipo no produto',
+    // O subtipo entra no GROUP BY porque entrou na IDENTIDADE em 2026-07-06
+    // (migration 2026-07-06_produto_subtipo_identidade.sql). A restricao do banco
+    // e unique_version_per_product sobre (produto_id, versao, subtipo_produto_id):
+    // a Carta Ortoimagem (3) e a Ortoimagem Especial (27) da mesma folha podem
+    // ambas ser "1ª Edição" porque sao produtos distintos dentro do mesmo registro.
+    // Sem o subtipo aqui, o invariante afirmava uma unicidade que o banco nao exige
+    // e acusava 18 falsos DEFECT. Um invariante DEFECT tem de dar zero: se ele mede
+    // regra diferente da que o schema aplica, envenena a auditoria inteira.
+    sql: 'select produto_id,versao,subtipo_produto_id,count(*) n,array_agg(id) ids from acervo.versao where tipo_versao_id=1 group by 1,2,3 having count(*)>1'
   },
   {
     codigo: '3h',
