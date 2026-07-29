@@ -20,6 +20,10 @@ const filtros = {
   lote_id: Joi.number().integer(),
   projeto_id: Joi.number().integer(),
   tipo_situacao: Joi.number().integer(),
+  // Recorte por LUGAR: codigo do IBGE, 2 digitos no estado e 7 no municipio.
+  // Valida a FORMA, e nao a faixa que existe hoje (ver acervo_schema.js).
+  estado_id: Joi.number().integer().min(10).max(99),
+  municipio_id: Joi.number().integer().min(1000000).max(9999999),
   // Recorte espacial da tela: minx,miny,maxx,maxy em 4674.
   bbox: Joi.string().pattern(/^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$/),
   // Busca por parte do codigo, para a caixa de texto.
@@ -32,6 +36,15 @@ models.downloadParams = Joi.object().keys({
   cod_ponto: Joi.string().pattern(COD_PONTO).required(),
   tipo: Joi.string().valid('pacote', 'monografia').required()
 })
+
+// Códigos disponíveis. `uf` e `tipo` andam JUNTOS: pedir a UF sem o tipo
+// devolveria a lacuna de HV misturada com a de BASE, que são numerações
+// distintas. Sem os dois, a resposta é o resumo por grupo.
+models.codigosQuery = Joi.object().keys({
+  uf: Joi.string().length(2).uppercase(),
+  tipo: Joi.string().valid('HV', 'BASE'),
+  quantidade: Joi.number().integer().min(1).max(500).default(50)
+}).and('uf', 'tipo')
 
 models.facetasQuery = Joi.object().keys({ ...filtros })
 

@@ -152,6 +152,15 @@ const filtrosBusca = {
   tipo_escala_id: Joi.number().integer(),
   projeto_id: Joi.number().integer(),
   lote_id: Joi.number().integer(),
+  // Recorte por LUGAR: codigo do IBGE, 2 digitos no estado e 7 no municipio.
+  // E recorte espacial como o bbox, e nao um campo do produto.
+  //
+  // Valida a FORMA (quantos digitos), e nao a faixa de codigos que existe hoje:
+  // municipio se cria e se funde, e um schema preso a tabela do IBGE de 2022
+  // recusaria um codigo legitimo amanha. Codigo que nao existe nao acha nada, o
+  // que e a resposta certa e nao um erro de validacao.
+  estado_id: Joi.number().integer().min(10).max(99),
+  municipio_id: Joi.number().integer().min(1000000).max(9999999),
   // Recorte espacial: a caixa (navegacao do mapa) ou o poligono (desenho).
   bbox: bboxSchema,
   geometria: geometriaSchema,

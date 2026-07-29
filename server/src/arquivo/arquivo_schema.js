@@ -186,4 +186,25 @@ models.atualizarChecksum = Joi.object().keys({
   motivo: Joi.string().min(5).required()
 });
 
+// Renomeia o arquivo fisico para o padrao derivado dos metadados.
+//
+// O cliente NAO manda nome nenhum: o nome sai de acervo.nome_arquivo_padrao, a
+// mesma funcao que o invariante 7a usa para auditar. Mandar o nome de fora foi o
+// que permitiu, ate 2026-07-29, que o acervo acumulasse sufixo improvisado por
+// carga (_mil, _1-esp, _st27_<hash>).
+//
+// `arquivo_ids` e opcional. Sem ele, a rota pega os divergentes por ordem de id,
+// ate `limite`. E para chamar em laco ate `restantes` zerar: uma passada inteira
+// numa requisicao so seguraria a conexao por dezenas de minutos.
+models.renomearPadrao = Joi.object().keys({
+  arquivo_ids: Joi.array()
+    .items(Joi.number().integer().strict().positive().required())
+    .unique()
+    .min(1)
+    .max(5000),
+  limite: Joi.number().integer().min(1).max(5000).default(500),
+  dry_run: Joi.boolean().default(true),
+  motivo: Joi.string().min(5).required()
+});
+
 module.exports = models

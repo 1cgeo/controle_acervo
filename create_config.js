@@ -181,6 +181,9 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     await t.none(readSqlFile('./er/versao.sql'));
     await t.none(readSqlFile('./er/dominio.sql'));
     await t.none(readSqlFile('./er/dgeo.sql'));
+    // Antes de acervo: o `limites` nao referencia ninguem, e o filtro por
+    // municipio do acervo e do ponto de controle o consulta.
+    await t.none(readSqlFile('./er/limites.sql'));
     await t.none(readSqlFile('./er/acervo.sql'));
     // Depois de acervo: o ponto_controle referencia acervo.lote e
     // acervo.volume_armazenamento, e acrescenta um CHECK em acervo.produto.

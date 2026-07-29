@@ -1105,3 +1105,60 @@
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
+
+/* Códigos de ponto disponíveis (diálogo). Era o P14 do plugin. */
+.pc-codigos__resumo {
+  margin: 12px 0 4px;
+  color: var(--text-secondary);
+}
+
+.pc-codigos__bloco {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.pc-codigos__cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pc-codigos__cabecalho h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.pc-codigos__explicacao {
+  margin: 2px 0 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* A lista rola dentro do próprio bloco: com 627 buracos, deixá-la crescer
+   empurraria o segundo bloco para fora da tela. */
+.pc-codigos__lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.pc-codigos__item {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  white-space: nowrap;
+}
+
+.pc-codigos__vazio {
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}

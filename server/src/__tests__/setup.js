@@ -4,19 +4,33 @@ const path = require('path')
 const fs = require('fs')
 const { Client } = require('pg')
 
-const SCHEMAS_DIR = path.resolve(__dirname, '..', '..', '..', 'er')
-const SCHEMA_ORDER = [
-  'versao.sql',
-  'dominio.sql',
-  'dgeo.sql',
-  'acervo.sql',
-  // Depois de acervo.sql: ponto_controle referencia acervo.lote e
-  // acervo.volume_armazenamento, e restringe acervo.produto por CHECK.
-  'ponto_controle.sql',
-  'acompanhamento.sql',
-  'mapoteca.sql',
-  'orcamento.sql'
-]
+const RAIZ = path.resolve(__dirname, '..', '..', '..')
+const SCHEMAS_DIR = path.join(RAIZ, 'er')
+
+/**
+ * A ordem dos `er/` como o create_config.js a executa.
+ *
+ * LIDA do arquivo, e nao copiada. Esta lista ja foi copia, e a copia apodreceu:
+ * ao entrar o `er/limites.sql` em 2026-07-29, a instalacao nova o criava e o
+ * banco de TESTE nao, entao tres testes de faceta morriam com 500 e a mensagem
+ * falava de uma relacao que nao existe, sem dizer que a lista daqui e que estava
+ * velha. Mesmo remedio que o ensaiar_migracao.cjs ja usava.
+ */
+const lerOrdemDoCreateConfig = () => {
+  const fonte = fs.readFileSync(path.join(RAIZ, 'create_config.js'), 'utf8')
+  const achados = [...fonte.matchAll(/readSqlFile\('\.\/er\/([\w.]+\.sql)'\)/g)]
+    .map(m => m[1])
+    // permissao*.sql recebe o nome do role por parametro e nao roda aqui.
+    .filter(a => !a.startsWith('permissao'))
+  if (achados.length === 0) {
+    throw new Error(
+      'setup de teste: nao achei nenhum er/*.sql em create_config.js. O formato mudou?'
+    )
+  }
+  return [...new Set(achados)]
+}
+
+const SCHEMA_ORDER = lerOrdemDoCreateConfig()
 
 module.exports = async () => {
   const dbName = process.env.DB_NAME || 'sca_test'

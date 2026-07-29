@@ -12,6 +12,10 @@
   GRANT USAGE ON SCHEMA acervo TO $1:name;
   GRANT SELECT ON ALL TABLES IN SCHEMA acervo TO $1:name;
 
+  -- Limite politico-administrativo: publico por natureza, do IBGE.
+  GRANT USAGE ON SCHEMA limites TO $1:name;
+  GRANT SELECT ON ALL TABLES IN SCHEMA limites TO $1:name;
+
   -- ponto_controle NÃO entra: a tabela ponto guarda cpf_engenheiro_responsavel,
   -- e este usuário aparece na URI de camada de projetos QGIS compartilhados.
   -- Para expor o ponto no QGIS, crie uma view sem as colunas pessoais e conceda

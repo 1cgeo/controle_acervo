@@ -193,6 +193,38 @@ const CONSULTAS = {
     WHERE schemaname IN (${lista})
     ORDER BY 1`,
 
+  // Funcao e trigger dos schemas em exame, com a ASSINATURA e o CORPO.
+  //
+  // Entrou em 2026-07-29, depois de um caso real: a `acervo.nome_arquivo_padrao`
+  // existia so na migration e nunca foi para o `er/`, entao o banco atualizado a
+  // tinha e a INSTALACAO NOVA nao. O ensaio aprovou assim mesmo, porque olhava
+  // coluna, restricao e indice, e funcao nao e nenhuma das tres. Quem pegou foi
+  // o teste da auditoria, por acaso e tarde.
+  //
+  // Compara o corpo, e nao so o nome: funcao que existe dos dois lados com regra
+  // diferente e pior do que funcao ausente, porque nada acusa.
+  FUNCOES: `
+    SELECT n.nspname || '.' || p.proname || '(' ||
+           pg_get_function_identity_arguments(p.oid) || ') => ' ||
+           -- Sem tirar o CR o corpo diverge por FIM DE LINHA. Com --er-de, o
+           -- git show entrega LF e a copia de trabalho no Windows tem CRLF;
+           -- sem normalizar, as 21 funcoes divergiam TODAS e o ensaio acusaria
+           -- defeito onde so ha fim de linha.
+           md5(replace(pg_get_functiondef(p.oid), chr(13), '')) AS linha
+    FROM pg_proc AS p
+    INNER JOIN pg_namespace AS n ON n.oid = p.pronamespace
+    WHERE n.nspname IN (${lista})
+    ORDER BY 1`,
+
+  GATILHOS: `
+    SELECT event_object_schema || '.' || event_object_table || '.' ||
+           trigger_name || ' ' || action_timing || ' ' || event_manipulation ||
+           ' => ' || replace(action_statement, E'
+', '') AS linha
+    FROM information_schema.triggers
+    WHERE event_object_schema IN (${lista})
+    ORDER BY 1`,
+
   // Toda tabela de código dos schemas em exame, linha a linha. Descobre as
   // tabelas pela FORMA (tem `code` e um rótulo), em vez de listá-las aqui.
   DOMINIOS: `
@@ -214,7 +246,7 @@ const CONSULTAS = {
 
 const radiografia = async cliente => {
   const partes = {}
-  for (const chave of ['COLUNAS', 'RESTRICOES', 'INDICES']) {
+  for (const chave of ['COLUNAS', 'RESTRICOES', 'INDICES', 'FUNCOES', 'GATILHOS']) {
     const r = await cliente.query(CONSULTAS[chave])
     partes[chave] = r.rows.map(x => x.linha)
   }
@@ -297,6 +329,8 @@ const comparar = (a, b) => {
 
   console.log('')
   console.log(`colunas conferidas:        ${radA.COLUNAS.length}`)
+  console.log(`funcoes conferidas:        ${radA.FUNCOES.length}`)
+  console.log(`gatilhos conferidos:       ${radA.GATILHOS.length}`)
   console.log(`restrições conferidas:     ${radA.RESTRICOES.length}`)
   console.log(`índices conferidos:        ${radA.INDICES.length}`)
   console.log(`códigos de domínio:        ${radA.DOMINIOS.length}`)

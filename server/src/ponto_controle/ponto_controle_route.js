@@ -85,6 +85,19 @@ router.get(
   })
 )
 
+// Códigos ainda livres. Vem ANTES de `/:cod_ponto`, como todas as rotas de nome
+// fixo: aquela casa com qualquer segmento.
+router.get(
+  '/codigos_disponiveis',
+  verifyPerfil('consulta', 'acervo'),
+  schemaValidation({ query: pontoControleSchema.codigosQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await pontoControleCtrl.getCodigosDisponiveis(req.query)
+    const msg = 'Códigos disponíveis retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.get(
   '/',
   verifyPerfil('consulta', 'acervo'),

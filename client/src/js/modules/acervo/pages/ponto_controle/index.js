@@ -7,6 +7,7 @@ import {
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { criarSelecao } from '@modules/acervo/pages/busca/selecao.js';
 import { criarMapaPontos } from './mapa.js';
+import { abrirCodigosDisponiveis } from './codigos-dialog.js';
 import { abrirPontoDialog } from './ponto-dialog.js';
 
 /** Espera antes de disparar a consulta enquanto a pessoa ainda digita. */
@@ -131,6 +132,25 @@ export async function renderPontoControle(container, ctx) {
     onChange: () => reiniciar(),
   });
 
+  // Lugar. O município depende do ESTADO: sem estado escolhido o servidor
+  // devolve lista vazia, porque um combo com os municípios de todo o país não
+  // ajuda a escolher. Trocar de estado zera o município, senão a consulta
+  // levaria um município que não pertence ao estado da tela.
+  const estadoSelect = el('select', {
+    className: 'busca-filtros__select',
+    'aria-label': 'Estado',
+    onChange: () => {
+      municipioSelect.value = '';
+      reiniciar();
+    },
+  });
+
+  const municipioSelect = el('select', {
+    className: 'busca-filtros__select',
+    'aria-label': 'Município',
+    onChange: () => reiniciar(),
+  });
+
   const areaCheck = el('input', {
     type: 'checkbox',
     id: 'pc-seguir-mapa',
@@ -145,6 +165,15 @@ export async function renderPontoControle(container, ctx) {
     type: 'button',
     onClick: () => limparTudo(),
   }, [svgIcon(ICONS.close, 16), 'Limpar filtros']);
+
+  // Era o P14 do plugin, e virou tela porque a resposta certa exige o acervo
+  // INTEIRO: a camada da missão aberta no QGIS declarava livre o código que
+  // outra missão já tinha usado.
+  const codigosBtn = el('button', {
+    className: 'btn btn--text btn--sm',
+    type: 'button',
+    onClick: () => abrirCodigosDisponiveis(),
+  }, [svgIcon(ICONS.add, 16), 'Códigos disponíveis']);
 
   async function exportarCsv(soSelecionados, botao) {
     const ids = soSelecionados ? [...selecao.ids()] : [];
@@ -178,13 +207,15 @@ export async function renderPontoControle(container, ctx) {
   }, [svgIcon(ICONS.download, 16), 'Exportar selecionados']);
 
   const acoesTopo = el('div', { className: 'busca__acoes' }, [
-    limparBtn, exportarSelecaoBtn, exportarTudoBtn,
+    limparBtn, codigosBtn, exportarSelecaoBtn, exportarTudoBtn,
   ]);
 
   const filtros = el('div', { className: 'busca-filtros' }, [
     projetoSelect,
     loteSelect,
     situacaoSelect,
+    estadoSelect,
+    municipioSelect,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
       el('span', { textContent: 'Só na área do mapa' }),
@@ -260,6 +291,8 @@ export async function renderPontoControle(container, ctx) {
       projeto_id: projetoSelect.value,
       lote_id: loteSelect.value,
       tipo_situacao: situacaoSelect.value,
+      estado_id: estadoSelect.value,
+      municipio_id: municipioSelect.value,
       bbox: seguirMapa ? mapa.caixaVisivel() : '',
     };
   }
@@ -320,6 +353,8 @@ export async function renderPontoControle(container, ctx) {
     projetoSelect.value = '';
     loteSelect.value = '';
     situacaoSelect.value = '';
+    estadoSelect.value = '';
+    municipioSelect.value = '';
     areaCheck.checked = false;
     seguirMapa = false;
     selecao.limpar();
@@ -341,6 +376,19 @@ export async function renderPontoControle(container, ctx) {
       'Todos os lotes'
     );
     preencherFaceta(situacaoSelect, facetas.situacoes || [], 'Todas as situações');
+
+    // O estado mostra a SIGLA junto do nome: "Rio Grande do Sul (RS)" é o que
+    // quem opera reconhece de imediato numa lista de 27.
+    preencherFaceta(
+      estadoSelect,
+      (facetas.estados || []).map(e => ({ ...e, nome: `${e.nome} (${e.sigla})` })),
+      'Todos os estados'
+    );
+    preencherFaceta(
+      municipioSelect,
+      facetas.municipios || [],
+      estadoSelect.value ? 'Todos os municípios' : 'Escolha o estado'
+    );
   }
 
   function cartaoPonto(p) {
@@ -512,6 +560,8 @@ export async function renderPontoControle(container, ctx) {
     ['projeto_id', projetoSelect],
     ['lote_id', loteSelect],
     ['tipo_situacao', situacaoSelect],
+    ['estado_id', estadoSelect],
+    ['municipio_id', municipioSelect],
   ]) {
     const valor = query.get(campo);
     if (!valor) continue;

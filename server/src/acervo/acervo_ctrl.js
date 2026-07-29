@@ -886,6 +886,31 @@ function montarFiltrosBusca(f, exceto = null) {
     }
   }
 
+  // Filtro por LUGAR (chefe, 2026-07-29). O recorte e espacial e nao um campo
+  // do produto: nenhum produto guarda municipio, e guardar seria duplicar o que
+  // a geometria ja diz. Medido em producao com os 5.743 produtos: 6 ms por
+  // municipio e 11 ms por estado, com o indice GIST de `limites`. Por isso NAO
+  // ha tabela de associacao materializada: ela custaria manutencao para poupar
+  // milissegundos.
+  //
+  // Produto que cruza a divisa aparece nos DOIS municipios, de proposito: a
+  // pergunta e "o que existe em X", e a folha que cobre metade de X existe la.
+  if (usa('municipio_id')) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM limites.municipio m
+      WHERE m.id = $<municipioId> AND ST_Intersects(p.geom, m.geom)
+    )`);
+    params.municipioId = f.municipio_id;
+  }
+
+  if (usa('estado_id')) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM limites.estado e
+      WHERE e.id = $<estadoId> AND ST_Intersects(p.geom, e.geom)
+    )`);
+    params.estadoId = f.estado_id;
+  }
+
   if (f.projeto_id || f.lote_id) {
     conditions.push(`EXISTS (
       SELECT 1 FROM acervo.versao v2
@@ -1112,7 +1137,45 @@ controller.buscaFacetas = async (filtros = {}) => {
       porSubtipo.params
     );
 
-    return { tipos_produto: tipos, tipos_escala: escalas, subtipos_produto: subtipos };
+    // Lugar: SO o que tem produto, com o quantitativo, e cada lista aplicando os
+    // OUTROS filtros e nunca o proprio. Um combo com os 5.572 municipios do
+    // Brasil, dos quais 300 tem produto, faz procurar agulha.
+    const porEstado = montarFiltrosBusca(filtros, 'estado_id');
+    const porMunicipio = montarFiltrosBusca(filtros, 'municipio_id');
+
+    const estados = await t.any(
+      `SELECT e.id, e.sigla, e.nome, COUNT(DISTINCT p.id)::int AS produtos
+       FROM acervo.produto p
+       INNER JOIN limites.estado e ON ST_Intersects(p.geom, e.geom)
+       ${porEstado.whereClause}
+       GROUP BY e.id, e.sigla, e.nome
+       ORDER BY e.nome`,
+      porEstado.params
+    );
+
+    // O municipio so entra na lista quando ha ESTADO escolhido. Sem isso a
+    // resposta traria centenas de municipios de todo o Brasil, e a lista deixa
+    // de ajudar a escolher.
+    const municipios = filtros.estado_id
+      ? await t.any(
+        `SELECT m.id, m.nome, COUNT(DISTINCT p.id)::int AS produtos
+         FROM acervo.produto p
+         INNER JOIN limites.municipio m ON ST_Intersects(p.geom, m.geom)
+         ${porMunicipio.whereClause}
+           ${porMunicipio.whereClause ? 'AND' : 'WHERE'} m.estado_id = $<estadoDaLista>
+         GROUP BY m.id, m.nome
+         ORDER BY m.nome`,
+        { ...porMunicipio.params, estadoDaLista: filtros.estado_id }
+      )
+      : [];
+
+    return {
+      tipos_produto: tipos,
+      tipos_escala: escalas,
+      subtipos_produto: subtipos,
+      estados,
+      municipios
+    };
   });
 };
 

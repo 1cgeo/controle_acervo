@@ -1972,4 +1972,160 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
   });
 };
 
+/**
+ * Renomeia o arquivo físico para o padrão derivado dos metadados.
+ *
+ * O nome NÃO vem do cliente: sai de `acervo.nome_arquivo_padrao`, a mesma função
+ * que o invariante 7a usa para auditar. Auditor e escritor são a mesma regra.
+ *
+ * Ordem por arquivo, e ela importa. O UPDATE vai ANTES do disco, dentro da
+ * transação: os índices únicos `unique_nome_fisico_por_volume{,_ci}` recusam a
+ * colisão ali, com o disco ainda intacto. Só depois de o banco aceitar é que o
+ * byte se move. Falhando o rename, o ROLLBACK desfaz tudo e nada mudou.
+ *
+ * `fs.rename` do Node sobrescreve em silêncio no Windows (libuv usa MoveFileEx com
+ * MOVEFILE_REPLACE_EXISTING). Por isso o destino é conferido antes: sobrescrever é
+ * o único modo de falha irreversível desta operação, e nenhuma auditoria posterior
+ * o detecta.
+ *
+ * Idempotente. Reexecutar é seguro: cada arquivo é reclassificado pelo estado real
+ * (o que está no banco e o que está no disco), nunca por um log da execução
+ * anterior. Interrupção no meio não deixa estado que a próxima chamada não resolva.
+ */
+controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUuid) => {
+  // Sessão de upload aberta congela um destination_path e a transferência
+  // sobrescreve o físico no lugar. Renomear por baixo dela perde bytes.
+  const abertas = await db.conn.one(
+    `SELECT count(*)::int AS n FROM acervo.upload_session
+     WHERE status NOT IN ('completed', 'failed', 'cancelled')`
+  );
+  if (abertas.n > 0 && !dryRun) {
+    throw new AppError(
+      `Há ${abertas.n} sessão(ões) de upload aberta(s). Renomear agora sobrescreveria os bytes que elas vão gravar. Espere fechar ou cancele.`,
+      httpCode.Conflict
+    );
+  }
+
+  const filtro = arquivoIds && arquivoIds.length ? 'AND a.id IN ($<ids:csv>)' : '';
+  const divergentes = await db.conn.any(`
+    SELECT a.id, a.nome_arquivo, a.extensao, vol.volume,
+           acervo.nome_arquivo_padrao(p.tipo_produto_id, v.subtipo_produto_id, p.mi,
+             p.inom, p.nome, p.tipo_escala_id, p.denominador_escala_especial,
+             v.versao) AS esperado
+    FROM acervo.arquivo a
+    JOIN acervo.versao v ON v.id = a.versao_id
+    JOIN acervo.produto p ON p.id = v.produto_id
+    JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
+    WHERE a.tipo_arquivo_id <> ${TIPO_ARQUIVO.TILESERVER}
+      AND a.nome_arquivo IS DISTINCT FROM acervo.nome_arquivo_padrao(
+        p.tipo_produto_id, v.subtipo_produto_id, p.mi, p.inom, p.nome,
+        p.tipo_escala_id, p.denominador_escala_especial, v.versao)
+      ${filtro}
+    ORDER BY a.id`, { ids: arquivoIds });
+
+  // Nome não computável é defeito de metadado, não de arquivo. Renomear para NULL
+  // destruiria a única pista de onde o byte está. Aborta e nomeia os culpados: o
+  // invariante 7b lista todos.
+  const semNome = divergentes.filter(d => d.esperado === null);
+  if (semNome.length > 0) {
+    throw new AppError(
+      `${semNome.length} arquivo(s) sem nome padrão computável (rótulo de versão ou nome de produto fora do padrão). Conserte os metadados primeiro; veja o invariante 7b. Ids: ${semNome.slice(0, 20).map(d => d.id).join(', ')}`,
+      httpCode.BadRequest
+    );
+  }
+
+  const lote = divergentes.slice(0, limite);
+  const resultado = {
+    dry_run: dryRun,
+    divergentes_total: divergentes.length,
+    nesta_chamada: lote.length,
+    restantes: Math.max(0, divergentes.length - lote.length),
+    renomeados: 0,
+    so_banco: 0,
+    falhas: 0,
+    detalhe: []
+  };
+
+  if (dryRun) {
+    resultado.amostra = lote.slice(0, 20).map(d => ({
+      id: d.id,
+      de: `${d.nome_arquivo}.${d.extensao}`,
+      para: `${d.esperado}.${d.extensao}`
+    }));
+    return resultado;
+  }
+
+  for (const d of lote) {
+    const atual = path.join(d.volume, `${d.nome_arquivo}.${d.extensao}`);
+    const alvo = path.join(d.volume, `${d.esperado}.${d.extensao}`);
+    let renomeou = false;
+    try {
+      const temAtual = await fs.access(atual).then(() => true).catch(() => false);
+      const temAlvo = await fs.access(alvo).then(() => true).catch(() => false);
+
+      if (!temAtual && !temAlvo) {
+        throw new Error('nem o nome atual nem o alvo existem no volume');
+      }
+      if (temAtual && temAlvo) {
+        // Os dois existem: renomear apagaria um. Nunca decide sozinho.
+        throw new Error('o nome alvo JÁ EXISTE no volume e é outro arquivo');
+      }
+
+      await db.conn.tx(async t => {
+        // O banco decide primeiro. Colisão estoura aqui, com o disco intacto.
+        const upd = await t.result(
+          `UPDATE acervo.arquivo
+           SET nome_arquivo = $<esperado>, data_modificacao = NOW(),
+               usuario_modificacao_uuid = $<usuarioUuid>
+           WHERE id = $<id> AND nome_arquivo = $<atual>`,
+          { esperado: d.esperado, usuarioUuid, id: d.id, atual: d.nome_arquivo }
+        );
+        if (upd.rowCount !== 1) {
+          throw new Error(`UPDATE afetou ${upd.rowCount} linha(s); outro processo mexeu neste arquivo`);
+        }
+        if (temAtual) {
+          await fs.rename(atual, alvo);
+          renomeou = true;
+        }
+      });
+
+      resultado.renomeados++;
+      if (!renomeou) resultado.so_banco++;
+    } catch (erro) {
+      // A transação já reverteu o banco. Falta desfazer o disco, se moveu.
+      if (renomeou) {
+        try {
+          await fs.rename(alvo, atual);
+        } catch (e2) {
+          logger.error('Renome revertido no banco mas NAO no disco', {
+            arquivo_id: d.id, de: atual, para: alvo, erro: e2.message
+          });
+        }
+      }
+      resultado.falhas++;
+      resultado.detalhe.push({
+        id: d.id,
+        de: `${d.nome_arquivo}.${d.extensao}`,
+        para: `${d.esperado}.${d.extensao}`,
+        erro: erro.message
+      });
+      // Falha em série é sinal de causa comum (volume caiu, permissão): parar cedo
+      // vale mais que insistir 5.000 vezes no mesmo erro.
+      if (resultado.falhas >= 20) {
+        resultado.interrompido = 'teto de 20 falhas atingido';
+        break;
+      }
+    }
+  }
+
+  logger.info('Renome para o nome padrão', {
+    usuarioUuid, motivo,
+    divergentes: divergentes.length,
+    renomeados: resultado.renomeados,
+    falhas: resultado.falhas
+  });
+
+  return resultado;
+};
+
 module.exports = controller;

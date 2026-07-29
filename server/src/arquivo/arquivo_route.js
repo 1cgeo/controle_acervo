@@ -171,4 +171,39 @@ router.post(
   })
 );
 
+// Renome do arquivo fisico para o padrao derivado dos metadados
+// ({TIPOPROD}_s{NN}_{MI|slug}_{EDICAO}).
+//
+// Rota propria, e nao o par prepare-upload/confirm-upload, porque aquele caminho
+// existe para TRANSFERIR bytes: sessao, checksum declarado, copia e revalidacao.
+// Renomear nao move byte nenhum, e so metadado de diretorio. Passar 15 mil
+// arquivos pelo caminho de upload custaria horas de releitura para nao mudar
+// nenhum pixel.
+//
+// O cliente nao manda nome: o servidor o deriva de acervo.nome_arquivo_padrao, a
+// MESMA funcao do invariante 7a. Chamar em laco ate `restantes` zerar.
+// Comeca em dry_run=true de proposito.
+router.post(
+  '/renomear-padrao',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.renomearPadrao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.renomearPadrao(
+      req.body.arquivo_ids,
+      req.body.limite,
+      req.body.dry_run,
+      req.body.motivo,
+      req.usuarioUuid
+    );
+
+    const msg = dados.dry_run
+      ? 'Plano de renome calculado (nada foi alterado)'
+      : `Renome aplicado: ${dados.renomeados} arquivo(s), ${dados.falhas} falha(s), ${dados.restantes} restante(s)`;
+
+    return res.sendJsonAndLog(dados.falhas === 0, msg, httpCode.OK, dados);
+  })
+);
+
 module.exports = router

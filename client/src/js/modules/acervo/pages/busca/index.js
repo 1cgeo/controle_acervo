@@ -104,6 +104,25 @@ export async function renderBusca(container, ctx) {
     onChange: () => buscar({ reiniciarPagina: true }),
   }, [el('option', { value: '', textContent: 'Todas as escalas' })]);
 
+  // Lugar (chefe, 2026-07-29). O municipio depende do ESTADO: sem estado
+  // escolhido o servidor devolve lista vazia, porque um combo com os 5.572
+  // municipios do pais nao ajuda a escolher. Trocar de estado zera o municipio,
+  // senao a busca levaria um municipio de outro estado.
+  const estadoSelect = el('select', {
+    className: 'busca-filtros__select',
+    'aria-label': 'Estado',
+    onChange: () => {
+      municipioSelect.value = '';
+      buscar({ reiniciarPagina: true });
+    },
+  }, [el('option', { value: '', textContent: 'Todos os estados' })]);
+
+  const municipioSelect = el('select', {
+    className: 'busca-filtros__select',
+    'aria-label': 'Município',
+    onChange: () => buscar({ reiniciarPagina: true }),
+  }, [el('option', { value: '', textContent: 'Escolha o estado' })]);
+
   // Sugestao propria em vez de `<datalist>`: a lista nativa escolhia sozinha
   // quantas linhas mostrar, sem CSS que a alcance, e abria cobrindo boa parte da
   // tela. Ver o comentario de palavra-chave.js.
@@ -186,6 +205,8 @@ export async function renderBusca(container, ctx) {
     tipoSelect,
     subtipoSelect,
     escalaSelect,
+    estadoSelect,
+    municipioSelect,
     campoPalavra.element,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
@@ -358,6 +379,8 @@ export async function renderBusca(container, ctx) {
       tipo_produto_id: tipoSelect.value,
       subtipo_produto_id: subtipoSelect.value,
       tipo_escala_id: escalaSelect.value,
+      estado_id: estadoSelect.value,
+      municipio_id: municipioSelect.value,
       palavra_chave: campoPalavra.valor(),
       geometria: recorte.geometria,
       bbox: recorte.bbox,
@@ -375,6 +398,8 @@ export async function renderBusca(container, ctx) {
     if (f.termo) params.set('termo', f.termo);
     if (f.tipo_produto_id) params.set('tipo_produto_id', f.tipo_produto_id);
     if (f.subtipo_produto_id) params.set('subtipo_produto_id', f.subtipo_produto_id);
+    if (f.estado_id) params.set('estado_id', f.estado_id);
+    if (f.municipio_id) params.set('municipio_id', f.municipio_id);
     if (f.tipo_escala_id) params.set('tipo_escala_id', f.tipo_escala_id);
     if (f.palavra_chave) params.set('palavra_chave', f.palavra_chave);
     if (f.geometria) params.set('geometria', f.geometria);
@@ -613,6 +638,8 @@ export async function renderBusca(container, ctx) {
   function limparTudo() {
     termoInput.value = '';
     tipoSelect.value = '';
+    estadoSelect.value = '';
+    municipioSelect.value = '';
     subtipoSelect.value = '';
     atualizarSubtipos();
     escalaSelect.value = '';
@@ -710,6 +737,22 @@ export async function renderBusca(container, ctx) {
     };
     preencherSelect(tipoSelect, tiposDominio, 'Todos os tipos', contagens.tipos);
     preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', contagens.escalas);
+
+    // Estado e municipio vem PRONTOS do servidor, com a contagem, e nao de um
+    // dominio local: sao 5.572 municipios, e mandar a lista inteira ao
+    // navegador para filtrar aqui seria pagar 25 MB por combo.
+    const comCodigo = itens => (itens || []).map(i => ({ ...i, code: i.id }));
+    preencherSelect(
+      estadoSelect,
+      comCodigo(f.estados).map(e => ({ ...e, nome: `${e.nome} (${e.sigla})` })),
+      'Todos os estados'
+    );
+    preencherSelect(
+      municipioSelect,
+      comCodigo(f.municipios),
+      estadoSelect.value ? 'Todos os municípios' : 'Escolha o estado'
+    );
+
     atualizarSubtipos();
   }
 
@@ -755,6 +798,20 @@ export async function renderBusca(container, ctx) {
     escalasDominio = escalas.value || [];
     preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', null,
       query.get('tipo_escala_id') || '');
+  }
+
+  // Estado e municipio do link: o <select> nasce com o valor para que a PRIMEIRA
+  // busca ja o aplique. As opcoes chegam com as facetas, e o `preencherSelect`
+  // preserva a escolha. Sem esta semente o valor se perderia, porque atribuir a
+  // um <select> sem opcoes nao guarda nada, e o navegador descarta calado.
+  for (const [campo, elemento] of [
+    ['estado_id', estadoSelect],
+    ['municipio_id', municipioSelect],
+  ]) {
+    const valor = query.get(campo);
+    if (!valor) continue;
+    elemento.replaceChildren(el('option', { value: valor, textContent: valor }));
+    elemento.value = valor;
   }
 
   // Area que veio na URL: e DESENHADA no mapa, para a pessoa ver o recorte que

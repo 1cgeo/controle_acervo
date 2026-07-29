@@ -340,6 +340,54 @@ const INVARIANTES = [
     sql: `select count(*) n from acervo.produto p where p.tipo_produto_id=2 and p.inom is not null
        and not exists(select 1 from acervo.produto q where q.tipo_produto_id=1
                       and upper(q.inom)=upper(p.inom) and q.tipo_escala_id=p.tipo_escala_id)`
+  },
+
+  // ---- P7: nome fisico x metadados ----
+  //
+  // O nome fisico e DERIVADO (tipo, subtipo, MI/INOM, escala, edicao). Derivado
+  // envelhece: renumerar uma edicao ou corrigir um subtipo muda o nome esperado e
+  // NAO mexe no arquivo. Sem estes tres, a divergencia so apareceria no dia em que
+  // alguem fosse baixar. A regra vive em acervo.nome_arquivo_padrao (migration
+  // 2026-07-29_nome_arquivo_padrao.sql), a MESMA que a rota de renome usa: auditor
+  // e escritor nao podem divergir porque sao a mesma funcao.
+  {
+    codigo: '7a',
+    severidade: 'DEFECT',
+    titulo: 'nome fisico divergente do padrao derivado dos metadados',
+    sql: `select a.id,a.nome_arquivo,a.extensao,
+            acervo.nome_arquivo_padrao(p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,
+              p.nome,p.tipo_escala_id,p.denominador_escala_especial,v.versao) as esperado,
+            v.id versao_id,v.versao,p.id produto_id,p.nome produto
+          from acervo.arquivo a
+          join acervo.versao v on v.id=a.versao_id
+          join acervo.produto p on p.id=v.produto_id
+          where a.tipo_arquivo_id<>9
+            and a.nome_arquivo is distinct from acervo.nome_arquivo_padrao(
+              p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,p.nome,
+              p.tipo_escala_id,p.denominador_escala_especial,v.versao)`
+  },
+  {
+    codigo: '7b',
+    severidade: 'DEFECT',
+    titulo: 'nome fisico NAO computavel (rotulo de versao ou nome de produto fora do padrao)',
+    sql: `select a.id,a.nome_arquivo,v.versao,p.nome produto,p.mi,p.inom
+          from acervo.arquivo a
+          join acervo.versao v on v.id=a.versao_id
+          join acervo.produto p on p.id=v.produto_id
+          where a.tipo_arquivo_id<>9
+            and acervo.nome_arquivo_padrao(p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,
+              p.nome,p.tipo_escala_id,p.denominador_escala_especial,v.versao) is null`
+  },
+  {
+    codigo: '7c',
+    severidade: 'REVISAR',
+    titulo: 'arquivo VIVO com o mesmo nome fisico de um arquivo DELETADO (lapide aponta para byte existente)',
+    sql: `select d.id deletado_id,d.nome_arquivo,d.extensao,a.id vivo_id,a.versao_id
+          from acervo.arquivo_deletado d
+          join acervo.arquivo a
+            on a.volume_armazenamento_id=d.volume_armazenamento_id
+           and lower(a.nome_arquivo)=lower(d.nome_arquivo)
+           and lower(a.extensao)=lower(d.extensao)`
   }
 ]
 

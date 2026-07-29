@@ -30,6 +30,11 @@
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA orcamento TO $1:name;
   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA orcamento TO $1:name;
 
+  -- `limites` e dado de REFERENCIA: so leitura, nem para o usuario da aplicacao.
+  -- A malha do IBGE se troca por carga, e nao por UPDATE de tela.
+  GRANT USAGE ON SCHEMA limites TO $1:name;
+  GRANT SELECT ON ALL TABLES IN SCHEMA limites TO $1:name;
+
   GRANT USAGE ON SCHEMA ponto_controle TO $1:name;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ponto_controle TO $1:name;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ponto_controle TO $1:name;

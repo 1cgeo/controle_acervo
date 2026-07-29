@@ -97,6 +97,24 @@ const montarFiltros = (filtros, exceto) => {
     condicoes.push('p.id IN ($<ids:csv>)')
     valores.ids = filtros.ids
   }
+  // Filtro por LUGAR (chefe, 2026-07-29). Recorte espacial contra `limites`, e
+  // nao coluna do ponto: o ponto tem geometria, e guardar o municipio nela seria
+  // duas versoes da mesma verdade, que divergem quando a malha muda. Medido em
+  // producao com os 3.490 pontos: 19 ms por municipio e 11 ms por estado.
+  if (usar('municipio_id')) {
+    condicoes.push(`EXISTS (
+      SELECT 1 FROM limites.municipio AS mu
+      WHERE mu.id = $<municipio_id> AND ST_Intersects(p.geom, mu.geom)
+    )`)
+    valores.municipio_id = filtros.municipio_id
+  }
+  if (usar('estado_id')) {
+    condicoes.push(`EXISTS (
+      SELECT 1 FROM limites.estado AS es
+      WHERE es.id = $<estado_id> AND ST_Intersects(p.geom, es.geom)
+    )`)
+    valores.estado_id = filtros.estado_id
+  }
 
   return {
     where: condicoes.length > 0 ? `WHERE ${condicoes.join(' AND ')}` : '',
@@ -159,7 +177,38 @@ controller.getFacetas = async (filtros = {}) => {
       porSituacao.valores
     )
 
-    return { projetos, lotes, situacoes }
+    // Lugar. Mesma regra das outras listas: so quem TEM ponto, com o
+    // quantitativo, e cada uma aplicando os outros filtros e nunca o proprio.
+    const porEstado = montarFiltros(filtros, 'estado_id')
+    const porMunicipio = montarFiltros(filtros, 'municipio_id')
+
+    const estados = await t.any(
+      `SELECT es.id AS code, es.sigla, es.nome, COUNT(p.id)::int AS pontos
+       ${DE}
+       INNER JOIN limites.estado AS es ON ST_Intersects(p.geom, es.geom)
+       ${porEstado.where}
+       GROUP BY es.id, es.sigla, es.nome
+       ORDER BY es.nome`,
+      porEstado.valores
+    )
+
+    // O municipio so vem quando ha ESTADO escolhido: sem isso a lista traria os
+    // 204 municipios com ponto espalhados pelo pais, e escolher fica pior do que
+    // digitar.
+    const municipios = filtros.estado_id
+      ? await t.any(
+        `SELECT mu.id AS code, mu.nome, COUNT(p.id)::int AS pontos
+         ${DE}
+         INNER JOIN limites.municipio AS mu ON ST_Intersects(p.geom, mu.geom)
+         ${porMunicipio.where}
+           ${porMunicipio.where ? 'AND' : 'WHERE'} mu.estado_id = $<estado_da_lista>
+         GROUP BY mu.id, mu.nome
+         ORDER BY mu.nome`,
+        { ...porMunicipio.valores, estado_da_lista: filtros.estado_id }
+      )
+      : []
+
+    return { projetos, lotes, situacoes, estados, municipios }
   })
 }
 
@@ -373,6 +422,81 @@ controller.getArquivoParaDownload = async (codPonto, tipoArquivoId) => {
     tamanho_mb: arquivo.tamanho_mb,
     checksum: arquivo.checksum,
     tipo_arquivo: arquivo.tipo_arquivo
+  }
+}
+
+/** Teto do código: o padrão do SCA aceita até quatro dígitos. */
+const MAIOR_NUMERO = 9999
+
+/**
+ * Códigos de ponto ainda livres, por UF e tipo.
+ *
+ * Era o P14 do plugin (`verificarcodigos`), e mudou de lado em 2026-07-29 por um
+ * motivo de CORRETUDE, não de conveniência: lá a resposta saía da camada da
+ * missão ABERTA no QGIS, que conhece só os pontos daquela missão. Ela declarava
+ * livre o código que outra missão já tinha usado, e o erro só aparecia na
+ * importação, depois da medição em campo. Aqui a base é o acervo INTEIRO.
+ *
+ * Devolve duas listas, e a diferença importa:
+ *  - `buracos`: números que ficaram para trás, abaixo do maior já usado. São os
+ *    que fecham lacuna, e por isso vêm primeiro.
+ *  - `proximos`: a sequência depois do maior. É de onde sai a numeração de uma
+ *    missão nova.
+ *
+ * Sem `uf`, devolve o RESUMO por grupo, que é o mapa de onde há folga.
+ */
+controller.getCodigosDisponiveis = async ({ uf, tipo, quantidade = 50 }) => {
+  const grupos = await db.conn.any(
+    `SELECT split_part(cod_ponto, '-', 1) AS uf,
+            split_part(cod_ponto, '-', 2) AS tipo,
+            COUNT(*)::int AS usados,
+            MAX(split_part(cod_ponto, '-', 3)::int) AS maior_usado
+       FROM ponto_controle.ponto
+      GROUP BY 1, 2
+      ORDER BY 1, 2`
+  )
+
+  if (!uf) return { grupos }
+
+  const grupo = grupos.find(g => g.uf === uf && g.tipo === tipo)
+  const maiorUsado = grupo ? grupo.maior_usado : 0
+
+  // A lacuna sai por diferença de conjunto contra a série inteira, e não
+  // varrendo em JavaScript: o maior grupo tem 4.019 números e o Postgres resolve
+  // isso num passo. `quantidade` limita a RESPOSTA, nunca a busca, senão a lista
+  // deixaria de fora justamente os menores.
+  const buracos = maiorUsado > 0
+    ? await db.conn.any(
+      `SELECT n FROM generate_series(1, $<maiorUsado>) AS n
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ponto_controle.ponto
+           WHERE split_part(cod_ponto, '-', 1) = $<uf>
+             AND split_part(cod_ponto, '-', 2) = $<tipo>
+             AND split_part(cod_ponto, '-', 3)::int = n
+        )
+        ORDER BY n
+        LIMIT $<quantidade>`,
+      { maiorUsado, uf, tipo, quantidade }
+    )
+    : []
+
+  const proximos = []
+  for (let n = maiorUsado + 1; n <= MAIOR_NUMERO && proximos.length < quantidade; n += 1) {
+    proximos.push(n)
+  }
+
+  const codigo = n => `${uf}-${tipo}-${n}`
+  return {
+    uf,
+    tipo,
+    usados: grupo ? grupo.usados : 0,
+    maior_usado: maiorUsado,
+    // O total de lacunas, e não quantas couberam na resposta: é o número que
+    // diz se vale a pena preencher antes de seguir adiante.
+    total_buracos: maiorUsado - (grupo ? grupo.usados : 0),
+    buracos: buracos.map(b => codigo(b.n)),
+    proximos: proximos.map(codigo),
+    grupos
   }
 }
 
