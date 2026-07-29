@@ -1,0 +1,469 @@
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+// O jsdom nao tem WebGL, entao o MapLibre real nao sobe. O duble registra o que
+// a pagina PEDE ao mapa (quais pontos, o que esta selecionado, o que foi
+// enquadrado, qual a area visivel), que e o contrato de verdade entre os dois.
+// O desenho em si nao e o que estes testes protegem.
+const mapaFalso = vi.hoisted(() => ({
+  pontos: null,
+  selecionados: null,
+  apontado: undefined,
+  enquadrado: null,
+  enquadradoPonto: null,
+  caixaVisivel: '-53,-31,-50,-29',
+  onAlternarSelecao: null,
+  onApontar: null,
+  onMover: null,
+  iniciado: false,
+  destruido: false,
+}));
+
+vi.mock('@modules/acervo/pages/ponto_controle/mapa.js', () => ({
+  criarMapaPontos: ({ onAlternarSelecao, onApontar, onMover }) => {
+    mapaFalso.onAlternarSelecao = onAlternarSelecao;
+    mapaFalso.onApontar = onApontar;
+    mapaFalso.onMover = onMover;
+    return {
+      elemento: document.createElement('div'),
+      iniciar: () => { mapaFalso.iniciado = true; return Promise.resolve(); },
+      mostrar: (p) => { mapaFalso.pontos = p; },
+      setSelecionados: (ids) => { mapaFalso.selecionados = [...ids]; },
+      setApontado: (id) => { mapaFalso.apontado = id; },
+      enquadrar: (c) => { mapaFalso.enquadrado = c; },
+      enquadrarPonto: (id) => { mapaFalso.enquadradoPonto = id; return true; },
+      caixaVisivel: () => mapaFalso.caixaVisivel,
+      aviso: () => {},
+      destruir: () => { mapaFalso.destruido = true; },
+    };
+  },
+}));
+
+vi.mock('@modules/acervo/pages/ponto_controle/ponto-dialog.js', () => ({
+  abrirPontoDialog: vi.fn(),
+}));
+
+vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
+  buscarPontos: vi.fn(),
+  buscarPosicoes: vi.fn(),
+  getFacetas: vi.fn(),
+  baixarPontosCsv: vi.fn(() => Promise.resolve()),
+}));
+
+import { renderPontoControle } from '@modules/acervo/pages/ponto_controle/index.js';
+import {
+  buscarPontos, buscarPosicoes, getFacetas, baixarPontosCsv,
+} from '@modules/acervo/services/ponto-controle-service.js';
+import { abrirPontoDialog } from '@modules/acervo/pages/ponto_controle/ponto-dialog.js';
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+const PONTOS = [
+  {
+    id: 1, cod_ponto: 'RS-HV-1', lote_id: 70, lote: 'Missão 1', pit: 'PIT-01',
+    projeto_id: 7, projeto: 'Copa Verde', data_rastreio: '2026-05-12',
+    tipo_situacao: 3, tipo_situacao_nome: 'Aprovado', medidor: '3º Sgt Silva',
+    altitude_ortometrica: 1024.35, longitude: -51.2, latitude: -30.1,
+    total_arquivos: 3, total_mb: 42.5,
+  },
+  {
+    id: 2, cod_ponto: 'RS-HV-2', lote_id: 70, lote: 'Missão 1', pit: 'PIT-01',
+    projeto_id: 7, projeto: 'Copa Verde', data_rastreio: '2026-05-13',
+    tipo_situacao: 2, tipo_situacao_nome: 'Aguardando revisão', medidor: 'Cb Souza',
+    altitude_ortometrica: null, longitude: -50.4, latitude: -29.3,
+    total_arquivos: 1, total_mb: 3.2,
+  },
+];
+
+// As facetas trazem o quantitativo, e trazem tambem opcao com ZERO: e o que
+// permite provar que a tela nao a mostra.
+const FACETAS = {
+  projetos: [
+    { code: 7, nome: 'Copa Verde', pontos: 2 },
+    { code: 8, nome: 'Fronteira Oeste', pontos: 0 },
+  ],
+  lotes: [
+    { code: 70, nome: 'Missão 1', pit: 'PIT-01', projeto_id: 7, pontos: 2 },
+    { code: 71, nome: 'Missão 2', pit: 'PIT-02', projeto_id: 7, pontos: 0 },
+  ],
+  situacoes: [
+    { code: 2, nome: 'Aguardando revisão', pontos: 1 },
+    { code: 3, nome: 'Aprovado', pontos: 1 },
+    { code: 4, nome: 'Reprovado', pontos: 0 },
+  ],
+};
+
+const resposta = ({ pontos = PONTOS, total = 2, pagina = 1 } = {}) =>
+  Promise.resolve({ total, pagina, pontos });
+
+const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
+const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
+const selects = (c) => [...c.querySelectorAll('.busca-filtros__select')];
+const ultimaBusca = () => buscarPontos.mock.calls[buscarPontos.mock.calls.length - 1][0];
+const opcoes = (sel) => [...sel.options].map(o => o.textContent);
+
+async function montar(ctx = {}) {
+  const container = document.createElement('div');
+  const cleanup = await renderPontoControle(container, {
+    params: {},
+    query: new URLSearchParams(ctx.query || ''),
+  });
+  await flush();
+  return { container, cleanup };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  location.hash = '';
+  buscarPontos.mockImplementation(() => resposta());
+  buscarPosicoes.mockImplementation(() =>
+    Promise.resolve({ total: PONTOS.length, pontos: PONTOS }));
+  getFacetas.mockImplementation(() => Promise.resolve(FACETAS));
+  Object.assign(mapaFalso, {
+    pontos: null, selecionados: null, apontado: undefined,
+    enquadrado: null, enquadradoPonto: null,
+    caixaVisivel: '-53,-31,-50,-29', iniciado: false, destruido: false,
+  });
+});
+
+describe('tela de ponto de controle: lista e mapa', () => {
+  test('lista os pontos e resume o total', async () => {
+    const { container } = await montar();
+
+    expect(cartoes(container)).toHaveLength(2);
+    expect(contador(container)).toBe('2 pontos');
+    expect(container.textContent).toContain('RS-HV-1');
+    expect(container.textContent).toContain('Aprovado');
+    expect(container.textContent).toContain('3 arquivos');
+    // Um arquivo so nao vira "1 arquivos".
+    expect(container.textContent).toContain('1 arquivo');
+  });
+
+  test('o mapa recebe o resultado INTEIRO, e nao a pagina', async () => {
+    buscarPontos.mockImplementation(() => resposta({ pontos: [PONTOS[0]], total: 40 }));
+    buscarPosicoes.mockImplementation(() => Promise.resolve({
+      total: 40,
+      pontos: Array.from({ length: 40 }, (_, i) => ({
+        id: i + 1, cod_ponto: `RS-HV-${i + 1}`, tipo_situacao: 3,
+        longitude: -51 + i * 0.01, latitude: -30,
+      })),
+    }));
+
+    const { container } = await montar();
+    expect(cartoes(container)).toHaveLength(1);
+    // Quarenta pontos no mapa contra um cartao na lista: e o ponto da rota
+    // separada. Mostrar so a pagina afirmaria que a missao tem um ponto ali.
+    expect(mapaFalso.pontos).toHaveLength(40);
+  });
+
+  test('clicar no cartao seleciona E leva o mapa ate o ponto', async () => {
+    const { container } = await montar();
+    cartoes(container)[1].click();
+
+    expect(mapaFalso.selecionados).toEqual([2]);
+    expect(mapaFalso.enquadradoPonto).toBe(2);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(true);
+  });
+
+  test('clicar de novo desmarca', async () => {
+    const { container } = await montar();
+    cartoes(container)[0].click();
+    cartoes(container)[0].click();
+
+    expect(mapaFalso.selecionados).toEqual([]);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
+  });
+
+  test('o clique no MAPA seleciona o mesmo ponto', async () => {
+    const { container } = await montar();
+    mapaFalso.onAlternarSelecao(1);
+    await flush();
+
+    expect(mapaFalso.selecionados).toEqual([1]);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
+  });
+
+  test('apontar no mapa acende o cartao, e apontar no cartao acende o ponto', async () => {
+    const { container } = await montar();
+
+    mapaFalso.onApontar(2);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--apontado')).toBe(true);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--apontado')).toBe(false);
+
+    cartoes(container)[0].dispatchEvent(new Event('mouseenter'));
+    expect(mapaFalso.apontado).toBe(1);
+  });
+
+  test('a barra de selecao aparece com chip por ponto, e o chip usa o CÓDIGO', async () => {
+    const { container } = await montar();
+    expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
+
+    cartoes(container)[0].click();
+    const barra = container.querySelector('.busca-selecao');
+    expect(barra.classList.contains('hidden')).toBe(false);
+    expect(barra.textContent).toContain('1 ponto selecionado');
+    // Sem o rotulo proprio, o chip diria "Produto 1".
+    expect(container.querySelector('.busca-selecao__chip-nome').textContent).toBe('RS-HV-1');
+  });
+
+  test('"Ver fichas" abre a ficha dos selecionados, na ordem', async () => {
+    const { container } = await montar();
+    cartoes(container)[1].click();
+    cartoes(container)[0].click();
+
+    container.querySelector('.busca-selecao__acoes .btn--primary').click();
+    expect(abrirPontoDialog).toHaveBeenCalledWith(['RS-HV-2', 'RS-HV-1'], 0);
+  });
+
+  test('o botao Ficha do cartao nao altera a selecao', async () => {
+    const { container } = await montar();
+    cartoes(container)[0].querySelector('.busca-cartao__ficha').click();
+
+    expect(abrirPontoDialog).toHaveBeenCalledWith(['RS-HV-1'], 0);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
+  });
+});
+
+describe('tela de ponto de controle: facetas', () => {
+  test('o combo mostra o quantitativo entre parenteses', async () => {
+    const { container } = await montar();
+    const [projeto, lote, situacao] = selects(container);
+
+    expect(opcoes(projeto)).toContain('Copa Verde (2)');
+    expect(opcoes(lote)).toContain('Missão 1 (PIT-01) (2)');
+    expect(opcoes(situacao)).toContain('Aprovado (1)');
+  });
+
+  test('opcao SEM ponto nao aparece', async () => {
+    const { container } = await montar();
+    const [projeto, lote, situacao] = selects(container);
+
+    // Um combo com os 86 lotes do acervo, dos quais dois tem ponto, faz a
+    // pessoa procurar agulha.
+    expect(opcoes(projeto).join()).not.toContain('Fronteira Oeste');
+    expect(opcoes(lote).join()).not.toContain('Missão 2');
+    expect(opcoes(situacao).join()).not.toContain('Reprovado');
+  });
+
+  test('a opcao ESCOLHIDA sobrevive mesmo caindo a zero', async () => {
+    // O servidor devolve a faceta com o proprio filtro aplicado zerado quando
+    // ele nao casa com mais nada. Some-la tiraria da tela o filtro que produziu
+    // o vazio, e a pessoa nao teria o que desfazer.
+    getFacetas.mockImplementation(() => Promise.resolve({
+      ...FACETAS,
+      lotes: [{ code: 71, nome: 'Missão 2', pit: 'PIT-02', projeto_id: 7, pontos: 0 }],
+    }));
+    const { container } = await montar({ query: 'lote_id=71' });
+    const lote = selects(container)[1];
+
+    expect(opcoes(lote).join()).toContain('Missão 2 (PIT-02) (0)');
+    expect(lote.value).toBe('71');
+  });
+
+  test('as facetas recebem os MESMOS filtros da lista', async () => {
+    await montar({ query: 'projeto_id=7' });
+    const chamada = getFacetas.mock.calls[getFacetas.mock.calls.length - 1][0];
+    expect(chamada.projeto_id).toBe('7');
+  });
+
+  test('escolher um projeto reconsulta, e o combo de lote se estreita', async () => {
+    const { container } = await montar();
+    const [projeto, lote] = selects(container);
+
+    getFacetas.mockImplementation(() => Promise.resolve({
+      ...FACETAS,
+      lotes: [{ code: 70, nome: 'Missão 1', pit: 'PIT-01', projeto_id: 7, pontos: 2 }],
+    }));
+
+    projeto.value = '7';
+    projeto.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(ultimaBusca().projeto_id).toBe('7');
+    expect(opcoes(lote)).toEqual(['Todos os lotes (2)', 'Missão 1 (PIT-01) (2)']);
+  });
+
+  test('combo sem nenhuma opcao fica desabilitado', async () => {
+    getFacetas.mockImplementation(() => Promise.resolve({
+      projetos: [], lotes: [], situacoes: [],
+    }));
+    const { container } = await montar();
+    expect(selects(container).every(s => s.disabled)).toBe(true);
+  });
+});
+
+describe('tela de ponto de controle: filtros, área e exportação', () => {
+  test('o filtro que veio no link e aplicado ja na PRIMEIRA consulta', async () => {
+    await montar({ query: 'projeto_id=7&lote_id=70&tipo_situacao=3&cod_ponto=HV' });
+
+    // A primeira chamada, e nao a ultima: os selects nascem com o valor da URL
+    // justamente para que a consulta inicial ja o aplique.
+    const primeira = buscarPontos.mock.calls[0][0];
+    expect(primeira.projeto_id).toBe('7');
+    expect(primeira.lote_id).toBe('70');
+    expect(primeira.tipo_situacao).toBe('3');
+    expect(primeira.cod_ponto).toBe('HV');
+
+    expect(location.hash).toContain('projeto_id=7');
+  });
+
+  test('"só na área do mapa" manda a bbox e para de reenquadrar', async () => {
+    const { container } = await montar();
+    mapaFalso.enquadrado = null;
+
+    const seguir = container.querySelector('#pc-seguir-mapa');
+    seguir.checked = true;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(ultimaBusca().bbox).toBe('-53,-31,-50,-29');
+    // Reenquadrar aqui mudaria a area, que mudaria o resultado: o laco nao
+    // fecharia nunca.
+    expect(mapaFalso.enquadrado).toBeNull();
+  });
+
+  test('mover o mapa so reconsulta quando a consulta segue o mapa', async () => {
+    const { container } = await montar();
+    const antes = buscarPontos.mock.calls.length;
+
+    mapaFalso.onMover();
+    await new Promise(r => setTimeout(r, 600));
+    expect(buscarPontos.mock.calls.length).toBe(antes);
+
+    const seguir = container.querySelector('#pc-seguir-mapa');
+    seguir.checked = true;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+
+    const depois = buscarPontos.mock.calls.length;
+    mapaFalso.onMover();
+    await new Promise(r => setTimeout(r, 600));
+    expect(buscarPontos.mock.calls.length).toBeGreaterThan(depois);
+  });
+
+  test('sem seguir o mapa, a camera vai para a caixa de TODOS os pontos', async () => {
+    await montar();
+    expect(mapaFalso.enquadrado).toEqual([-51.2, -30.1, -50.4, -29.3]);
+  });
+
+  test('"Limpar filtros" zera tudo, inclusive a selecao', async () => {
+    const { container } = await montar({ query: 'projeto_id=7&cod_ponto=HV' });
+    cartoes(container)[0].click();
+
+    container.querySelector('.busca__acoes .btn--text').click();
+    await flush();
+
+    const filtros = ultimaBusca();
+    expect(filtros.projeto_id).toBe('');
+    expect(filtros.cod_ponto).toBe('');
+    expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
+  });
+
+  test('exportar CSV leva os filtros e NAO a pagina', async () => {
+    const { container } = await montar({ query: 'projeto_id=7' });
+    const botoes = [...container.querySelectorAll('.busca__acoes button')];
+    botoes[botoes.length - 1].click();
+    await flush();
+
+    const [filtros, nome] = baixarPontosCsv.mock.calls[0];
+    expect(filtros.projeto_id).toBe('7');
+    expect(filtros.pagina).toBeUndefined();
+    expect(filtros.ids).toBeNull();
+    expect(nome).toBe('pontos-de-controle.csv');
+  });
+
+  test('o botao de exportar selecionados so aparece com selecao, e leva os ids', async () => {
+    const { container } = await montar();
+    const selecionadosBtn = [...container.querySelectorAll('.busca__acoes button')]
+      .find(b => b.textContent.includes('selecionado'));
+    expect(selecionadosBtn.classList.contains('hidden')).toBe(true);
+
+    cartoes(container)[0].click();
+    cartoes(container)[1].click();
+    expect(selecionadosBtn.classList.contains('hidden')).toBe(false);
+    expect(selecionadosBtn.textContent).toContain('2 selecionados');
+
+    selecionadosBtn.click();
+    await flush();
+    const [filtros, nome] = baixarPontosCsv.mock.calls[0];
+    expect(filtros.ids).toBe('1,2');
+    expect(nome).toBe('pontos-selecionados.csv');
+  });
+});
+
+describe('tela de ponto de controle: robustez', () => {
+  test('a paginacao aparece so quando ha mais de uma pagina', async () => {
+    const { container } = await montar();
+    expect(container.querySelector('.busca-paginacao').children.length).toBe(0);
+
+    buscarPontos.mockImplementation(() => resposta({ total: 50 }));
+    const outra = await montar();
+    expect(outra.container.textContent).toContain('Página 1 de 3');
+
+    const [anterior, proxima] = outra.container.querySelectorAll('.busca-paginacao button');
+    // `disabled: false` passado ao el() vira `disabled="false"` no HTML, que
+    // desabilita o botao. Isto ja pegou um bug real.
+    expect(anterior.disabled).toBe(true);
+    expect(proxima.disabled).toBe(false);
+
+    buscarPontos.mockImplementation(() => resposta({ total: 50, pagina: 2 }));
+    proxima.click();
+    await flush();
+    expect(ultimaBusca().pagina).toBe(2);
+  });
+
+  test('lista vazia nao deixa o resumo em branco', async () => {
+    buscarPontos.mockImplementation(() => resposta({ pontos: [], total: 0 }));
+    buscarPosicoes.mockImplementation(() => Promise.resolve({ total: 0, pontos: [] }));
+    const { container } = await montar();
+
+    expect(contador(container)).toBe('Nenhum ponto de controle encontrado.');
+    expect(cartoes(container)).toHaveLength(0);
+    expect(container.textContent).toContain('Nenhum ponto de controle com esses filtros.');
+    expect(mapaFalso.pontos).toEqual([]);
+  });
+
+  test('consulta que falha avisa, em vez de deixar a tela mentindo o resultado antigo', async () => {
+    const { container } = await montar();
+    expect(cartoes(container)).toHaveLength(2);
+
+    buscarPontos.mockImplementation(() => Promise.reject(new Error('sem rede')));
+    container.querySelector('#pc-seguir-mapa').dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(contador(container)).toBe('A consulta falhou.');
+    expect(cartoes(container)).toHaveLength(0);
+  });
+
+  test('resposta atrasada de uma consulta antiga nao pinta sobre a nova', async () => {
+    const { container } = await montar();
+
+    let liberarAntiga;
+    buscarPontos.mockImplementationOnce(() => new Promise(r => { liberarAntiga = r; }));
+    const codigo = container.querySelector('.busca-campo__input');
+    codigo.value = 'RS';
+    codigo.dispatchEvent(new Event('input'));
+    await new Promise(r => setTimeout(r, 400));
+
+    buscarPontos.mockImplementation(() => resposta({ pontos: [PONTOS[0]], total: 1 }));
+    codigo.value = 'RS-HV-1';
+    codigo.dispatchEvent(new Event('input'));
+    await new Promise(r => setTimeout(r, 400));
+
+    // A antiga so responde AGORA, depois de a nova ja ter pintado.
+    liberarAntiga({ total: 999, pagina: 1, pontos: PONTOS });
+    await flush();
+
+    expect(contador(container)).toBe('1 ponto');
+    expect(cartoes(container)).toHaveLength(1);
+  });
+
+  test('o cleanup solta o mapa e a altura fixa', async () => {
+    const { container, cleanup } = await montar();
+    expect(container.classList.contains('main-content--altura-fixa')).toBe(true);
+
+    cleanup();
+
+    expect(mapaFalso.destruido).toBe(true);
+    expect(container.classList.contains('main-content--altura-fixa')).toBe(false);
+  });
+});

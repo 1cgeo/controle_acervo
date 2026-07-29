@@ -10,6 +10,9 @@ const SCHEMA_ORDER = [
   'dominio.sql',
   'dgeo.sql',
   'acervo.sql',
+  // Depois de acervo.sql: ponto_controle referencia acervo.lote e
+  // acervo.volume_armazenamento, e restringe acervo.produto por CHECK.
+  'ponto_controle.sql',
   'acompanhamento.sql',
   'mapoteca.sql',
   'orcamento.sql'

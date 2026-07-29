@@ -61,10 +61,16 @@ const SUBTIPO_PRODUTO = {
 }
 
 // dominio.tipo_produto (subconjuntos usados em relatórios da mapoteca)
+//
+// PONTO_CONTROLE não é um produto do acervo: um CHECK em acervo.produto barra o
+// tipo 10 (ver er/ponto_controle.sql). Ele fica aqui porque o schema
+// ponto_controle usa a MESMA infraestrutura de volume, e
+// acervo.volume_tipo_produto chaveia por tipo_produto_id.
 const TIPO_PRODUTO = {
   CARTA_TOPOGRAFICA: 2,
   CARTA_ORTOIMAGEM: 3,
-  CARTA_TEMATICA: 7
+  CARTA_TEMATICA: 7,
+  PONTO_CONTROLE: 10
 }
 
 // mapoteca.tipo_cliente

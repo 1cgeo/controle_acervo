@@ -12,11 +12,22 @@ import { formatNumber } from '@utils/format.js';
  * selecionados podem estar em paginas que ja sairam da tela, e sem os dados
  * guardados a barra nao teria como listar o que a pessoa escolheu.
  *
+ * O `rotulo` e o `substantivo` existem porque a tela de PONTO DE CONTROLE usa
+ * esta mesma selecao, e la o item nao tem `nome`: tem `cod_ponto`. Sem eles, os
+ * chips diriam "Produto 12" para um ponto de controle.
+ *
  * @param {Object} opts
  * @param {(ids:Set<number>)=>void} opts.onMudou
- * @param {(produtos:Array<Object>, indice:number)=>void} opts.onVerFichas
+ * @param {(itens:Array<Object>, indice:number)=>void} opts.onVerFichas
+ * @param {(item:Object)=>string} [opts.rotulo] - como o item se chama na tela
+ * @param {[string,string]} [opts.substantivo] - singular e plural do contador
  */
-export function criarSelecao({ onMudou, onVerFichas }) {
+export function criarSelecao({
+  onMudou,
+  onVerFichas,
+  rotulo = p => p.nome || `Produto ${p.id}`,
+  substantivo = ['produto selecionado', 'produtos selecionados'],
+}) {
   /** @type {Map<number, Object>} id -> produto */
   const escolhidos = new Map();
 
@@ -52,23 +63,23 @@ export function criarSelecao({ onMudou, onVerFichas }) {
     const total = escolhidos.size;
     element.classList.toggle('hidden', total === 0);
     contador.textContent = total === 1
-      ? '1 produto selecionado'
-      : `${formatNumber(total)} produtos selecionados`;
+      ? `1 ${substantivo[0]}`
+      : `${formatNumber(total)} ${substantivo[1]}`;
 
     // Os chips sao a unica forma de saber O QUE esta selecionado quando os
     // produtos estao em paginas diferentes. Cada um remove a si mesmo.
     listaChips.replaceChildren(...[...escolhidos.values()].map(p => el('span', {
       className: 'busca-selecao__chip',
-      title: p.nome || `Produto ${p.id}`,
+      title: rotulo(p),
     }, [
       el('span', {
         className: 'busca-selecao__chip-nome',
-        textContent: p.nome || `Produto ${p.id}`,
+        textContent: rotulo(p),
       }),
       el('button', {
         className: 'busca-selecao__chip-remover',
         type: 'button',
-        'aria-label': `Remover ${p.nome || p.id} da seleção`,
+        'aria-label': `Remover ${rotulo(p)} da seleção`,
         textContent: '×',
         onClick: () => alternar(p),
       }),
@@ -76,10 +87,10 @@ export function criarSelecao({ onMudou, onVerFichas }) {
   }
 
   /** Alterna: selecionado sai, nao selecionado entra. */
-  function alternar(produto) {
-    const id = Number(produto.id);
+  function alternar(item) {
+    const id = Number(item.id);
     if (escolhidos.has(id)) escolhidos.delete(id);
-    else escolhidos.set(id, produto);
+    else escolhidos.set(id, item);
     pintar();
     onMudou(new Set(escolhidos.keys()));
   }

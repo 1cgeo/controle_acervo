@@ -128,7 +128,7 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 
 ```json
 {
-  "version": "1.5.0",
+  "version": "1.6.0",
   "success": true,
   "message": "Mensagem descritiva",
   "dados": { },
@@ -240,7 +240,7 @@ Arquivos em `er/`, nesta ordem:
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois.
 
-A versão do schema é **1.5.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+A versão do schema é **1.6.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
 
 ### Atualização de banco existente
 

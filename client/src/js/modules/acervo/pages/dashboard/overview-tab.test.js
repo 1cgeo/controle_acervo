@@ -3,7 +3,6 @@ import { describe, test, expect, vi } from 'vitest';
 vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getProdutosTotal: vi.fn(() => Promise.resolve({ total_produtos: '5741' })),
   getArquivosTotalGb: vi.fn(() => Promise.resolve({ total_gb: '1234.5678' })),
-  getUsuariosTotal: vi.fn(() => Promise.resolve({ total_usuarios: '42' })),
   getSystemHealth: vi.fn(() => Promise.resolve({
     volumes_alertas: [],
     erros_arquivo: { erros_carregamento: 0, erros_exclusao: 0 },
@@ -11,6 +10,8 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     total_versoes: 7023,
     total_projetos: 12,
     downloads_24h: 5,
+    total_pontos_controle: 314,
+    versoes_carregadas_mes: 27,
   })),
 }));
 
@@ -34,10 +35,15 @@ describe('renderOverviewTab', () => {
     const valores = textos(container, '.stats-card__value');
     expect(valores).toContain('5.741');       // total de produtos
     expect(valores).toContain('1.234,57 GB'); // armazenamento com o sufixo
-    expect(valores).toContain('42');          // usuarios
+    expect(valores).toContain('314');         // pontos de controle
+    expect(valores).toContain('27');          // carregamento do mes, em versoes
     expect(valores).toContain('7.023');       // versoes
-    expect(valores).toContain('12');          // projetos
     expect(valores).toContain('5');           // downloads em 24h
+
+    // Saiu de proposito (chefe, 2026-07-29): a contagem de usuarios nao e
+    // acervo, e o total de projetos deu lugar ao que ENTROU no mes.
+    expect(valores).not.toContain('42');
+    expect(valores).not.toContain('12');
 
     aba.cleanup();
   });
@@ -62,12 +68,12 @@ describe('renderOverviewTab', () => {
 
     const valores = textos(container, '.stats-card__value');
     expect(valores).toContain('Erro');
-    expect(valores).toContain('42');
+    expect(valores).toContain('314');
 
     aba.cleanup();
   });
 
-  test('refresh chama os quatro endpoints de novo', async () => {
+  test('refresh chama os endpoints de novo', async () => {
     const container = document.createElement('div');
     const aba = await renderOverviewTab(container);
     const antes = acervoService.getSystemHealth.mock.calls.length;

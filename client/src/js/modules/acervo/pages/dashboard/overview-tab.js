@@ -88,7 +88,7 @@ export function createAlertPanel(health) {
 }
 
 /**
- * Aba "Visão Geral": seis cards de total e o painel de alertas.
+ * Aba "Visão Geral": seis cards e o painel de alertas.
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
@@ -108,12 +108,19 @@ export async function renderOverviewTab(container) {
     loading: true,
     suffix: 'GB',
   });
-  const cardUsuarios = mkCard('Total de Usuários', ICONS.people, 'success');
-  const cardProjetos = mkCard('Total de Projetos', ICONS.assignment, 'info');
+  // Saiu "Total de Usuários" e entrou "Pontos de Controle"; saiu "Total de
+  // Projetos" e entrou "Carregamento no mês" (chefe, 2026-07-29). A visão geral
+  // do acervo responde o que existe e o que ENTROU, e a contagem de usuários
+  // não é acervo: ela vive na tela de usuários da plataforma.
+  const cardPontosControle = mkCard('Pontos de Controle', ICONS.place, 'success');
+  const cardCarregamentoMes = mkCard('Carregamento no mês', ICONS.assignment, 'info');
   const cardVersoes = mkCard('Total de Versões', ICONS.layers, 'info');
   const cardDownloads = mkCard('Downloads (24h)', ICONS.download, 'info');
 
-  const cards = [cardProdutos, cardArmazenamento, cardUsuarios, cardProjetos, cardVersoes, cardDownloads];
+  const cards = [
+    cardProdutos, cardArmazenamento, cardPontosControle,
+    cardCarregamentoMes, cardVersoes, cardDownloads,
+  ];
   container.appendChild(el('div', { className: 'stats-grid' }, cards));
 
   const alertContainer = el('div');
@@ -121,10 +128,9 @@ export async function renderOverviewTab(container) {
 
   async function load() {
     // Promise.allSettled: um endpoint fora do ar nao derruba a aba inteira.
-    const [produtos, armazenamento, usuarios, health] = await Promise.allSettled([
+    const [produtos, armazenamento, health] = await Promise.allSettled([
       acervoService.getProdutosTotal(),
       acervoService.getArquivosTotalGb(),
-      acervoService.getUsuariosTotal(),
       acervoService.getSystemHealth(),
     ]);
     if (disposed) return;
@@ -146,22 +152,25 @@ export async function renderOverviewTab(container) {
       cardArmazenamento.update({ value: 'Erro', loading: false });
     }
 
-    if (usuarios.status === 'fulfilled') {
-      cardUsuarios.update({ value: formatNumber(usuarios.value?.total_usuarios ?? 0), loading: false });
-    } else {
-      cardUsuarios.update({ value: 'Erro', loading: false });
-    }
-
     if (health.status === 'fulfilled') {
       const dados = health.value;
-      cardProjetos.update({ value: formatNumber(dados?.total_projetos ?? 0), loading: false });
+      cardPontosControle.update({
+        value: formatNumber(dados?.total_pontos_controle ?? 0), loading: false,
+      });
+      // Contado em VERSÕES: é a versão que carrega os arquivos, e é ela que o
+      // operador cadastra. Contar produtos responderia outra pergunta (quantas
+      // folhas novas), e produto antigo que ganha edição nova não apareceria.
+      cardCarregamentoMes.update({
+        value: formatNumber(dados?.versoes_carregadas_mes ?? 0), loading: false,
+      });
       cardVersoes.update({ value: formatNumber(dados?.total_versoes ?? 0), loading: false });
       cardDownloads.update({ value: formatNumber(dados?.downloads_24h ?? 0), loading: false });
 
       alertContainer.innerHTML = '';
       alertContainer.appendChild(createAlertPanel(dados));
     } else {
-      cardProjetos.update({ value: 'Erro', loading: false });
+      cardPontosControle.update({ value: 'Erro', loading: false });
+      cardCarregamentoMes.update({ value: 'Erro', loading: false });
       cardVersoes.update({ value: 'Erro', loading: false });
       cardDownloads.update({ value: 'Erro', loading: false });
     }

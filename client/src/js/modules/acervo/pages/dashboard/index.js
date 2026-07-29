@@ -6,12 +6,13 @@ import { renderOverviewTab } from './overview-tab.js';
 import { renderDistributionTab } from './distribution-tab.js';
 import { renderActivityTab } from './activity-tab.js';
 import { renderAdvancedTab } from './advanced-tab.js';
+import { renderPontoControleTab } from './ponto-controle-tab.js';
 
 /** Intervalo do auto-refresh da aba ativa. */
 const REFRESH_MS = 60 * 1000;
 
 /**
- * Dashboard do acervo (#/acervo/dashboard): quatro abas e a barra de exportacao.
+ * Dashboard do acervo (#/acervo/dashboard): cinco abas e a barra de exportacao.
  *
  * A aba ativa se recarrega sozinha a cada 60 s. O cache do dashboard cai antes,
  * senao o `refresh` devolveria a mesma resposta guardada. So o prefixo
@@ -29,6 +30,10 @@ export async function renderDashboard(container, _ctx) {
       { id: 'distribution', label: 'Distribuição', render: renderDistributionTab },
       { id: 'activity', label: 'Atividade', render: renderActivityTab },
       { id: 'advanced', label: 'Análises Avançadas', render: renderAdvancedTab },
+      // Ponto de controle e assunto do ACERVO, e por isso e uma aba daqui, e
+      // nao um dashboard proprio: quem abre o painel do acervo ve o acervo
+      // inteiro, inclusive o apoio de campo que o sustenta.
+      { id: 'ponto_controle', label: 'Ponto de Controle', render: renderPontoControleTab },
     ],
   });
 

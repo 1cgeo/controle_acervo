@@ -823,3 +823,252 @@
   border-color: var(--color-primary);
   background: var(--bg-hover);
 }
+
+/* ===========================================================================
+ * PONTO DE CONTROLE (#/acervo/ponto_controle)
+ *
+ * A tela REPLICA a busca do acervo, e por isso reusa as classes dela
+ * (`.busca-filtros`, `.busca-campo`, `.busca-cartao`, `.busca-selecao`,
+ * `.busca-paginacao`): mesma aparencia, mesmo comportamento, um lugar so para
+ * mexer. Aqui ficam apenas as regras que a busca nao tem, e que vem da
+ * diferenca de DADO: o mapa e de pontos, com legenda de situacao, e a ficha tem
+ * 56 campos em blocos.
+ *
+ * A ARMADILHA DA ALTURA e a MESMA da busca, e vale repetir: a linha do grid
+ * precisa ser `minmax(0, 1fr)`. Linha `auto` se dimensiona pelo max-content do
+ * painel de cartoes, e o mapa esticaria junto, para fora da tela.
+ * ------------------------------------------------------------------------- */
+.pc-pagina {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  /* Altura vinda do pai (.main-content--altura-fixa), como na busca. */
+  flex: 1;
+  min-height: 0;
+}
+
+.pc-topo {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pc-titulo {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.pc-conteudo {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.4fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-md);
+  flex: 1;
+  min-height: 0;
+}
+
+.pc-painel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  overflow: hidden;
+}
+
+.pc-painel > .busca-resultados__contador {
+  padding: var(--space-sm) var(--space-md) 0;
+}
+
+.pc-lista {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+}
+
+/* A linha de meta do cartao (data, medidor, altitude). O resto do cartao vem
+ * das classes da busca. */
+.pc-cartao__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Mapa dos pontos ---- */
+.pc-mapa {
+  position: relative;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+/* Largura e altura, e NAO `position: absolute; inset: 0`. A razao esta na nota
+ * do .busca-mapa__canvas: o CSS do MapLibre vence o empate de especificidade e
+ * derruba o `position`, e o quadro colapsa para altura zero. */
+.pc-mapa__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.pc-mapa__legenda {
+  position: absolute;
+  left: var(--space-sm);
+  bottom: var(--space-sm);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.pc-mapa__legenda-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pc-mapa__legenda-cor {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+}
+
+.pc-mapa__aviso {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  max-width: 80%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* ---- Ficha do ponto (modal) ---- */
+.pc-ficha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.pc-ficha__cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+/* O interruptor dos campos vazios fica GRUDADO no topo da ficha: com 56 campos,
+ * quem o procura ja rolou a tela, e a barra some junto. */
+.pc-ficha__vazios-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0 var(--space-sm);
+  background: var(--bg-paper);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pc-ficha__bloco-titulo {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.pc-ficha__observacao {
+  margin: 0;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.pc-ficha__grupo-titulo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.pc-ficha__lista {
+  list-style: none;
+  margin: 0 0 var(--space-sm);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pc-ficha__lista li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pc-ficha__arquivo-nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.pc-ficha__arquivo-tamanho {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pc-ficha__vazio,
+.pc-ficha__carregando {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Numa tela estreita a divisao lado a lado nao cabe: o mapa vai para cima, com
+ * altura fixa, e a lista rola abaixo dele. */
+@media (max-width: 900px) {
+  .pc-conteudo {
+    grid-template-columns: 1fr;
+    grid-template-rows: 320px minmax(0, 1fr);
+  }
+
+  .pc-mapa {
+    order: -1;
+  }
+}

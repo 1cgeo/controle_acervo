@@ -29,7 +29,7 @@ Banco `sca` e auth ficam na rede interna, cada um no seu host: veja `DB_SERVER`,
    Sobe um processo PM2: `controle-acervo` (3015). A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) + `pm2 save`.
 
-O banco precisa estar na versao **1.5.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
+O banco precisa estar na versao **1.6.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
 
 ## Desenvolvimento (local)
 

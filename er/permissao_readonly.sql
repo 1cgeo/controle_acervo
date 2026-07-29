@@ -12,6 +12,11 @@
   GRANT USAGE ON SCHEMA acervo TO $1:name;
   GRANT SELECT ON ALL TABLES IN SCHEMA acervo TO $1:name;
 
+  -- ponto_controle NÃO entra: a tabela ponto guarda cpf_engenheiro_responsavel,
+  -- e este usuário aparece na URI de camada de projetos QGIS compartilhados.
+  -- Para expor o ponto no QGIS, crie uma view sem as colunas pessoais e conceda
+  -- SELECT só nela.
+
   -- MVs criadas em runtime por acervo.criar_views_materializadas() (owner = $2)
   ALTER DEFAULT PRIVILEGES FOR ROLE $2:name IN SCHEMA acervo GRANT SELECT ON TABLES TO $1:name;
   ALTER DEFAULT PRIVILEGES FOR ROLE $2:name IN SCHEMA public GRANT SELECT ON TABLES TO $1:name;

@@ -48,6 +48,14 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE mapoteca.cliente CASCADE')
     await t.none('TRUNCATE mapoteca.tipo_material CASCADE')
 
+    // Ponto de controle. Entra ANTES do acervo: ponto.lote_id referencia
+    // acervo.lote, e o TRUNCATE do lote arrastaria os pontos por CASCADE.
+    await t.none('TRUNCATE ponto_controle.upload_arquivo_temp CASCADE')
+    await t.none('TRUNCATE ponto_controle.upload_ponto_temp CASCADE')
+    await t.none('TRUNCATE ponto_controle.upload_session CASCADE')
+    await t.none('TRUNCATE ponto_controle.arquivo CASCADE')
+    await t.none('TRUNCATE ponto_controle.ponto CASCADE')
+
     // Acervo upload temp tables
     await t.none('TRUNCATE acervo.upload_arquivo_temp CASCADE')
     await t.none('TRUNCATE acervo.upload_versao_temp CASCADE')

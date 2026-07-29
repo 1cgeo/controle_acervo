@@ -17,6 +17,7 @@ import './acervo.css';
 
 import { renderDashboard } from './pages/dashboard/index.js';
 import { renderBusca } from './pages/busca/index.js';
+import { renderPontoControle } from './pages/ponto_controle/index.js';
 
 export default {
   id: 'acervo',
@@ -26,11 +27,17 @@ export default {
   menu: [
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'busca', label: 'Busca', icon: ICONS.search, path: '/busca' },
+    { id: 'ponto_controle', label: 'Ponto de controle', icon: ICONS.place, path: '/ponto_controle' },
   ],
 
   rotas: [
     { path: '/dashboard', render: renderDashboard, perfil: 'consulta' },
     // Busca e LEITURA do acervo: consulta basta, igual ao resto do modulo.
     { path: '/busca', render: renderBusca, perfil: 'consulta' },
+    // Ponto de controle e uma tela do ACERVO, ainda que o schema no banco seja
+    // proprio (`ponto_controle.*`) e a rota da API seja '/ponto_controle'. Quem
+    // consulta o acervo consulta os pontos. IMPORTAR exige gerente, e o guarda
+    // disso e o backend: a tela e so de leitura, nao ha upload aqui.
+    { path: '/ponto_controle', render: renderPontoControle, perfil: 'consulta' },
   ],
 };

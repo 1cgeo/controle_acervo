@@ -2,10 +2,20 @@ import { describe, test, expect, vi, afterEach } from 'vitest';
 
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
-// Mock unico do servico: a pagina monta as quatro abas e cada uma bate em um
+// Mock unico do servico: a pagina monta as cinco abas e cada uma bate em um
 // grupo de endpoints. O invalidarDashboard e o gatilho do auto-refresh.
 // A fabrica do vi.mock sobe para o topo do arquivo, entao o `vazio` nasce
 // DENTRO dela: variavel de fora ainda nao existe na hora em que ela roda.
+// A aba de ponto de controle bate num servico proprio (schema proprio no banco,
+// rota propria). Sem este mock ela tentaria rede no jsdom.
+vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
+  getDashboardPontoControle: vi.fn(() => Promise.resolve({
+    total_pontos: 0, total_arquivos: 0, total_gb: 0, total_missoes: 0,
+    sessoes_abertas: 0, por_situacao: [], por_tipo_arquivo: [],
+    por_missao: [], por_mes: [], ultimas_importacoes: [],
+  })),
+}));
+
 vi.mock('@modules/acervo/services/acervo-service.js', () => {
   const vazio = () => Promise.resolve([]);
   return {
@@ -57,13 +67,14 @@ afterEach(() => {
 });
 
 describe('renderDashboard do acervo', () => {
-  test('monta o titulo, a barra de exportacao e as quatro abas', async () => {
+  test('monta o titulo, a barra de exportacao e as cinco abas', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
 
     expect(container.querySelector('.dashboard__title').textContent).toBe('Dashboard do Acervo');
     expect(rotulosAbas(container)).toEqual([
       'Visão Geral', 'Distribuição', 'Atividade', 'Análises Avançadas',
+      'Ponto de Controle',
     ]);
 
     const botoesExport = container.querySelectorAll('.export-bar__btn');

@@ -182,6 +182,9 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     await t.none(readSqlFile('./er/dominio.sql'));
     await t.none(readSqlFile('./er/dgeo.sql'));
     await t.none(readSqlFile('./er/acervo.sql'));
+    // Depois de acervo: o ponto_controle referencia acervo.lote e
+    // acervo.volume_armazenamento, e acrescenta um CHECK em acervo.produto.
+    await t.none(readSqlFile('./er/ponto_controle.sql'));
     await t.none(readSqlFile('./er/acompanhamento.sql'));
     await t.none(readSqlFile('./er/mapoteca.sql'));
     await t.none(readSqlFile('./er/orcamento.sql'));

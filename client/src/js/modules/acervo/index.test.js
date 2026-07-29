@@ -26,16 +26,30 @@ describe('manifesto do modulo acervo', () => {
     expect(rotaInicial('acervo')).toBe('/acervo/dashboard');
   });
 
-  test('registra o dashboard e a busca, com render assincrono', () => {
-    expect(acervo.rotas.map(r => r.path)).toEqual(['/dashboard', '/busca']);
+  test('registra o dashboard, a busca e o ponto de controle, com render assincrono', () => {
+    expect(acervo.rotas.map(r => r.path)).toEqual(['/dashboard', '/busca', '/ponto_controle']);
     for (const rota of acervo.rotas) {
       expect(typeof rota.render).toBe('function');
     }
   });
 
-  test('o menu leva ao dashboard e a busca, sem repetir a tela de usuarios da plataforma', () => {
-    expect(acervo.menu.map(i => i.path)).toEqual(['/dashboard', '/busca']);
+  test('o menu leva as tres telas, sem repetir a tela de usuarios da plataforma', () => {
+    expect(acervo.menu.map(i => i.path)).toEqual(['/dashboard', '/busca', '/ponto_controle']);
     expect(acervo.menu.some(i => i.path === '/usuarios')).toBe(false);
+  });
+
+  test('todo item de menu tem icone, senao a barra lateral mostra um buraco', () => {
+    for (const item of acervo.menu) {
+      expect(typeof item.icon).toBe('string');
+      expect(item.icon.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('cada item de menu aponta para uma rota que existe', () => {
+    const rotas = new Set(acervo.rotas.map(r => r.path));
+    for (const item of acervo.menu) {
+      expect(rotas.has(item.path)).toBe(true);
+    }
   });
 
   test('o registry passa a contar o acervo como portado', () => {
