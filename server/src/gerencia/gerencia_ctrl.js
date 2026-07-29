@@ -307,11 +307,15 @@ controller.verificarConsistencia = async () => {
     // Apenas os UPDATEs finais em transação curta
     return db.conn.tx(async t => {
     // Atualizar status de arquivos com problemas
+    // O cast ::bigint[] e obrigatorio: o driver devolve bigint como STRING, e
+    // sem ele o array vai como text[], entao o Postgres recusa com
+    // "operator does not exist: bigint = text" e a transacao inteira reverte.
+    // Os dois UPDATEs de baixo ja nasceram com o cast; estes dois nao tinham.
     if (arquivosParaAtualizar.length > 0) {
       await t.none(`
         UPDATE acervo.arquivo
         SET tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}
-        WHERE id = ANY($1)
+        WHERE id = ANY($1::bigint[])
         AND tipo_status_id = ${STATUS_ARQUIVO.CARREGADO}
       `, [arquivosParaAtualizar]);
     }
@@ -321,7 +325,7 @@ controller.verificarConsistencia = async () => {
       await t.none(`
         UPDATE acervo.arquivo_deletado
         SET tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}
-        WHERE id = ANY($1)
+        WHERE id = ANY($1::bigint[])
         AND tipo_status_id = ${STATUS_ARQUIVO.EXCLUIDO}
       `, [arquivosDeletadosParaAtualizar]);
     }
