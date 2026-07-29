@@ -5,7 +5,7 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
 
-const { verifyPerfil } = require('../login')
+const { verifyPerfil, verifyAdmin } = require('../login')
 
 const arquivoCtrl = require('./arquivo_ctrl')
 const arquivoSchema = require('./arquivo_schema')
@@ -144,6 +144,30 @@ router.post(
     const msg = 'Sessão de upload cancelada com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
+// Recompressao sem perda do acervo: o GeoTIFF e reescrito com COMPRESS=DEFLATE,
+// o pixel continua identico, mas o SHA-256 do arquivo muda. Esta rota manda o
+// servidor RELER o arquivo no volume e gravar o que ele mesmo mediu. O cliente
+// nao declara checksum nem tamanho. Preserva id, uuid_arquivo e historico de
+// download (ao contrario de prepare-upload/replace-files, que troca o arquivo).
+router.post(
+  '/atualizar-checksum',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.atualizarChecksum
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.atualizarChecksum(
+      req.body.arquivo_ids,
+      req.body.motivo,
+      req.usuarioUuid
+    );
+
+    const msg = 'Checksum e tamanho atualizados por releitura do volume';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 

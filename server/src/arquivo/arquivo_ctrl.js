@@ -5,7 +5,7 @@ const fsClassic = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { db } = require("../database");
-const { AppError, httpCode, preserveOmitted, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 const { version } = require('os');
 const { pipeline } = require('stream');
@@ -149,6 +149,120 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
       throw new AppError(`Erro ao atualizar arquivo: ${error.message}`, httpCode.InternalError, error);
     }
   });
+};
+
+/**
+ * Recalcula checksum e tamanho a partir do arquivo que ESTÁ no volume, e grava.
+ *
+ * Existe para a recompressão sem perda do acervo: o GeoTIFF é reescrito com
+ * COMPRESS=DEFLATE, o pixel continua idêntico, mas o SHA-256 do arquivo muda.
+ * Sem isto o plugin recusa o download (valida checksum depois de copiar) e
+ * gerencia.verificarConsistencia marca ERRO_CARREGAMENTO.
+ *
+ * O cliente NÃO declara checksum nem tamanho. Ele só aponta quais ids releu.
+ * Quem mede é o servidor, lendo o byte no volume. É a diferença entre esta rota
+ * e um UPDATE manual no banco.
+ *
+ * Não substitui prepareReplaceFiles: aquele troca o ARQUIVO (id e uuid novos,
+ * linha antiga para arquivo_deletado). Este preserva id, uuid e histórico de
+ * download, porque o arquivo é o mesmo, só mudou o empacotamento.
+ */
+controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
+  const arquivos = await db.conn.any(`
+    SELECT a.id, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb,
+           a.tipo_arquivo_id, v.volume
+    FROM acervo.arquivo a
+    JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
+    WHERE a.id IN ($<ids:csv>)
+  `, { ids: arquivoIds });
+
+  if (arquivos.length !== arquivoIds.length) {
+    const achados = new Set(arquivos.map(a => Number(a.id)));
+    throw new AppError(
+      `Arquivos não encontrados ou sem volume: ${arquivoIds.filter(i => !achados.has(Number(i))).join(', ')}`,
+      httpCode.NotFound
+    );
+  }
+
+  const tileserver = arquivos.filter(a => Number(a.tipo_arquivo_id) === TIPO_ARQUIVO.TILESERVER);
+  if (tileserver.length > 0) {
+    throw new AppError(
+      `Arquivo Tileserver não tem arquivo físico no volume: ${tileserver.map(a => a.id).join(', ')}`,
+      httpCode.BadRequest
+    );
+  }
+
+  // Leitura e hash FORA da transação: o cálculo é longo e seguraria a conexão
+  // aberta o tempo todo. Mesmo motivo de gerencia_ctrl.verificarConsistencia.
+  // Qualquer arquivo ausente aborta ANTES de gravar qualquer linha.
+  const medidos = [];
+  for (const a of arquivos) {
+    const filePath = path.join(a.volume, `${a.nome_arquivo}.${a.extensao}`);
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      throw new AppError(
+        `Arquivo ${a.id} (${a.nome_arquivo}.${a.extensao}) não existe no volume. Nada foi alterado.`,
+        httpCode.BadRequest
+      );
+    }
+    const { checksum, fileSizeMB } = await calculateChecksumStream(filePath);
+    medidos.push({
+      id: a.id,
+      nome_arquivo: a.nome_arquivo,
+      extensao: a.extensao,
+      checksum_anterior: a.checksum,
+      checksum_novo: checksum,
+      tamanho_mb_anterior: Number(a.tamanho_mb),
+      tamanho_mb_novo: fileSizeMB,
+      alterado: checksum !== a.checksum
+    });
+  }
+
+  const alterados = medidos.filter(m => m.alterado);
+
+  if (alterados.length > 0) {
+    const data_modificacao = new Date();
+    await db.conn.tx(async t => {
+      for (const m of alterados) {
+        await t.none(`
+          UPDATE acervo.arquivo
+          SET checksum = $<checksum>, tamanho_mb = $<tamanho_mb>,
+              data_modificacao = $<data_modificacao>,
+              usuario_modificacao_uuid = $<usuarioUuid>
+          WHERE id = $<id>
+        `, {
+          checksum: m.checksum_novo,
+          tamanho_mb: m.tamanho_mb_novo,
+          data_modificacao,
+          usuarioUuid,
+          id: m.id
+        });
+      }
+    });
+  }
+
+  logger.info('Checksum de arquivo atualizado por releitura do volume', {
+    usuarioUuid,
+    motivo,
+    solicitados: arquivoIds.length,
+    alterados: alterados.length,
+    detalhe: alterados.map(m => ({
+      id: m.id,
+      de: m.checksum_anterior,
+      para: m.checksum_novo,
+      mb_de: m.tamanho_mb_anterior,
+      mb_para: m.tamanho_mb_novo
+    }))
+  });
+
+  return {
+    solicitados: arquivoIds.length,
+    alterados: alterados.length,
+    inalterados: medidos.length - alterados.length,
+    economia_mb: alterados.reduce((s, m) => s + (m.tamanho_mb_anterior - m.tamanho_mb_novo), 0),
+    arquivos: medidos
+  };
 };
 
 controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => {

@@ -173,4 +173,17 @@ models.cancelUpload = Joi.object().keys({
   session_uuid: Joi.string().uuid().required()
 });
 
+// Recompressao sem perda: o arquivo no volume muda de bytes (compressao), mas
+// nao de pixel. So a lista de ids viaja. O checksum e o tamanho NAO vem do
+// cliente: o servidor rele o arquivo no volume e mede. Ver arquivo_ctrl.
+models.atualizarChecksum = Joi.object().keys({
+  arquivo_ids: Joi.array()
+    .items(Joi.number().integer().strict().positive().required())
+    .unique()
+    .min(1)
+    .max(500)
+    .required(),
+  motivo: Joi.string().min(5).required()
+});
+
 module.exports = models
