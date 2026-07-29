@@ -226,7 +226,61 @@ versão da carta, mesmo `nome_arquivo` base (difere só pela extensão `.xml`),
 - O **lote** mantém o nome da pasta de produção (ex.: `2017_SAICA_25K`,
   `2021_RS_GovRS_Generalizacao_100k`) e o PIT (ano da pasta).
 - **Acervo legado** (cartas antigas de `$ACERVO_FONTE_LEGADO/_250`, `_100`, `_50` e `_25`): projeto único
-  **`Mapeamento Sistemático`**, lote por escala (`250k`, `100k`, `50k`, `25k`). Ver seção 2.10.
+  **`Mapeamento Sistemático`**, lote por escala (`SCN 1:250.000`, `SCN 1:100.000`,
+  `SCN 1:50.000`, `SCN 1:25.000`). Ver seção 2.10.
+
+#### O nome descreve o DADO, nunca a campanha de carga (2026-07-29)
+
+Projeto e lote são **taxonomia do acervo**, não diário de operação. Um projeto
+chamado `Backfill BDGEx` diz de onde o dado veio, e isso não ajuda quem procura
+carta. Em 2026-07-29 três projetos assim foram dissolvidos, com 1.938 versões
+redistribuídas por família.
+
+- **Projeto** = o programa que produziu ou adquiriu o dado (`SISFRON`, `PDDMT 2023`,
+  `AMAN`, `Mapeamento de Interesse da Força 2026`), ou a família, quando não há
+  programa que o explique (`Mapeamento Sistemático`, `Cartas Militares`,
+  `Cartas Especiais e Temáticas`).
+- **Lote** = o recorte dentro do projeto: `{ano}_{item do PIT}_{tipo}_{área}_{escala}`
+  na produção corrente (`2026_1b_CT_Tubarao_25k`), ou a família e a escala no legado
+  (`SCN 1:50.000`, `Carta Aeronáutica`, `Carta Militar 1:25.000`).
+- **Produto com programa fica no programa.** A Carta Militar do SISFRON pertence ao
+  SISFRON, não a `Cartas Militares`. Só vai para o projeto de família o que não tem
+  programa que o explique.
+- **Datas de projeto e lote derivam das edições** que eles de fato guardam, nunca de
+  um valor fixo no carregador. O `carga_2026_novos.cjs` tinha 2023 embutido e o
+  propagou para 45 lotes e 9 projetos.
+
+#### CUIDADO: projeto e lote são COMPARTILHADOS entre os módulos
+
+Desde a convergência dos sistemas, `acervo.lote.id` é referenciado por **quatro
+tabelas em dois schemas**: `acervo.versao`, `acervo.upload_versao_temp`,
+`ponto_controle.ponto` e `ponto_controle.upload_session`.
+
+Um lote **sem nenhuma versão no acervo** pode guardar centenas de pontos de
+controle. Em 2026-07-29, quatro projetos que pareciam vazios tinham 3.490 pontos,
+e o `GOV-RS SDP Nr 8155-BR` sozinho tinha 3.222 em cinco lotes.
+
+Antes de apagar projeto ou lote, **consulte o schema** por quem referencia a
+entidade, em vez de olhar só a tabela do assunto em que se está trabalhando:
+
+```sql
+SELECT table_schema, table_name FROM information_schema.columns
+WHERE column_name = 'lote_id' AND table_schema NOT IN ('information_schema','pg_catalog');
+```
+
+`ponto_controle` é bloqueio duro. `upload_versao_temp` não bloqueia: a chave
+estrangeira é `ON DELETE SET NULL` e são linhas de rascunho de sessões concluídas.
+
+#### Palavras-chave: só o que NENHUMA coluna carrega
+
+O campo `versao.palavras_chave` foi **esvaziado em 2026-07-29**, por decisão do
+chefe. Eram 1.805 termos distintos em 19.648 ocorrências, e **94% das distintas
+duplicavam uma coluna**: 1.705 eram código de folha (que `mi` e `inom` já indexam),
+23 eram tipo ou subtipo, 6 eram escala.
+
+Etiqueta que repete coluna é pior que nada: é texto livre, não tem índice e mente
+quando o dado muda. Se o campo voltar a ser usado, que carregue só o que nenhuma
+coluna carrega (programa, área, tema, cliente) e como vocabulário controlado.
 
 ### 2.9 Acervo 2022 em diante (ET-RDG / EDGV 3.0)
 
