@@ -6,12 +6,24 @@ const { domainConstants: { STATUS_ARQUIVO } } = require('../utils')
 
 const controller = {}
 
+// O acervo guarda arquivo em DUAS tabelas: `acervo.arquivo`, do produto, e
+// `ponto_controle.arquivo`, do ponto de controle. As duas gravam no MESMO volume
+// físico e disputam a MESMA capacidade, então tudo que fala de espaço ocupado
+// tem de somar as duas. Contar só a primeira faria o volume do ponto de controle
+// aparecer vazio com 77 GB dentro, e o alerta de 80% nunca dispararia.
+const ARQUIVOS_DO_ACERVO = `
+  SELECT volume_armazenamento_id, tamanho_mb FROM acervo.arquivo
+  UNION ALL
+  SELECT volume_armazenamento_id, tamanho_mb FROM ponto_controle.arquivo`
+
 controller.getTotalProdutos = async () => {
   return db.conn.one('SELECT COUNT(*) AS total_produtos FROM acervo.produto');
 }
 
 controller.getTotalArquivosGb = async () => {
-  return db.conn.one('SELECT SUM(tamanho_mb) / 1024 AS total_gb FROM acervo.arquivo');
+  return db.conn.one(
+    `SELECT SUM(tamanho_mb) / 1024 AS total_gb FROM (${ARQUIVOS_DO_ACERVO}) AS a`
+  );
 }
 
 controller.getProdutosPorTipo = async () => {
@@ -58,9 +70,9 @@ controller.getDownloadsPorDia = async () => {
 
 controller.getGbPorVolume = async () => {
   return db.conn.any(`
-    SELECT a.volume_armazenamento_id, va.nome AS nome_volume, va.volume, 
-    va.capacidade_gb AS capacidade_gb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb 
-    FROM acervo.arquivo AS a
+    SELECT a.volume_armazenamento_id, va.nome AS nome_volume, va.volume,
+    va.capacidade_gb AS capacidade_gb_volume, SUM(a.tamanho_mb) / 1024 AS total_gb
+    FROM (${ARQUIVOS_DO_ACERVO}) AS a
     INNER JOIN acervo.volume_armazenamento AS va ON va.id = a.volume_armazenamento_id
     GROUP BY a.volume_armazenamento_id, va.nome, va.volume, va.capacidade_gb`
   );
@@ -343,7 +355,7 @@ controller.getSystemHealth = async () => {
           ROUND((COALESCE(SUM(a.tamanho_mb) / 1024, 0) / va.capacidade_gb * 100)::numeric, 1)
         ELSE 0 END AS percentual_uso
       FROM acervo.volume_armazenamento va
-      LEFT JOIN acervo.arquivo a ON a.volume_armazenamento_id = va.id
+      LEFT JOIN (${ARQUIVOS_DO_ACERVO}) a ON a.volume_armazenamento_id = va.id
       GROUP BY va.id, va.nome, va.capacidade_gb
       HAVING va.capacidade_gb > 0
         AND (COALESCE(SUM(a.tamanho_mb) / 1024, 0) / va.capacidade_gb) > 0.8

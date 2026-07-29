@@ -221,7 +221,12 @@ describe('Ponto de controle - consulta', () => {
 
     // A rota /dominios tem de ganhar de /:cod_ponto, senão cairia no detalhe.
     expect(res.body.dados.tipo_situacao.length).toBeGreaterThan(0)
-    expect(res.body.dados.tipo_arquivo.length).toBe(9)
+    // DOIS tipos desde 2026-07-29: o pacote e a monografia. Sao os dois
+    // unicos downloads que a tela oferece.
+    expect(res.body.dados.tipo_arquivo).toEqual([
+      { code: 1, nome: 'Pacote do ponto' },
+      { code: 2, nome: 'Monografia' }
+    ])
     for (const dominio of Object.values(res.body.dados)) {
       for (const item of dominio) {
         expect(typeof item.code).toBe('number')

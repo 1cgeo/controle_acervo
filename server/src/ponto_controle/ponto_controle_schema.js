@@ -26,6 +26,13 @@ const filtros = {
   cod_ponto: Joi.string().max(255)
 }
 
+// O tipo do download entra como PALAVRA, e so essas duas: e o dominio de dois
+// codigos virado rota legivel.
+models.downloadParams = Joi.object().keys({
+  cod_ponto: Joi.string().pattern(COD_PONTO).required(),
+  tipo: Joi.string().valid('pacote', 'monografia').required()
+})
+
 models.facetasQuery = Joi.object().keys({ ...filtros })
 
 models.posicoesQuery = Joi.object().keys({ ...filtros })

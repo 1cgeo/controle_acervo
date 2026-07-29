@@ -102,6 +102,23 @@ export const getDominiosPontoControle = () =>
   cachedFetch('ponto_controle:dominios', () => apiGet('/ponto_controle/dominios'), TTL_DOMINIO);
 
 /**
+ * Baixa um dos DOIS arquivos do ponto.
+ *
+ * O servidor entrega os BYTES, e nao um caminho de rede como o acervo faz: o
+ * acervo pode devolver caminho porque quem baixa e o plugin QGIS, que enxerga o
+ * share, e a tela do navegador nao enxerga.
+ *
+ * @param {string} codPonto
+ * @param {'pacote'|'monografia'} tipo
+ * @param {string} nomeArquivo
+ */
+export const baixarArquivoDoPonto = (codPonto, tipo, nomeArquivo) =>
+  apiDownload(
+    `/ponto_controle/${encodeURIComponent(codPonto)}/download/${tipo}`,
+    nomeArquivo
+  );
+
+/**
  * Numeros da aba de ponto de controle do dashboard.
  *
  * Uma chamada so, e nao sete: a aba pinta tudo de uma vez, e o assunto e um so.

@@ -54,8 +54,9 @@ const sha256 = conteudo => crypto.createHash('sha256').update(conteudo).digest('
 const CONTEUDO_RINEX = Buffer.from('RINEX 3.04 OBSERVATION DATA\nfim\n')
 const CONTEUDO_FOTO = Buffer.from('\xff\xd8\xff\xe0 jpeg de mentira')
 
+// tipo 1 = Pacote do ponto, tipo 2 = Monografia. Sao os dois unicos.
 const arquivoDe = (conteudo, overrides = {}) => ({
-  tipo_arquivo_id: 6,
+  tipo_arquivo_id: 1,
   nome_arquivo: 'rastreio',
   extensao: 'zip',
   tamanho_mb: conteudo.length / (1024 * 1024),
@@ -168,19 +169,20 @@ describe('Ponto de controle - preparar a importação', () => {
   it('faz valer o maximo_por_ponto do domínio', async () => {
     const lote = await criaLote()
 
-    // Croqui manual (3) tem maximo_por_ponto = 1.
+    // Com dois tipos, o maximo_por_ponto = 1 deixa de ser teto e vira regra
+    // exata: um pacote e uma monografia, nunca dois de cada.
     const res = await preparar({
       lote_id: lote.id,
       pontos: [
         pontoDe('RJ-HV-1', [
-          arquivoDe(CONTEUDO_FOTO, { tipo_arquivo_id: 3, nome_arquivo: 'croqui_a', extensao: 'jpg' }),
-          arquivoDe(CONTEUDO_RINEX, { tipo_arquivo_id: 3, nome_arquivo: 'croqui_b', extensao: 'jpg' })
+          arquivoDe(CONTEUDO_FOTO, { nome_arquivo: 'pacote_a', extensao: 'zip' }),
+          arquivoDe(CONTEUDO_RINEX, { nome_arquivo: 'pacote_b', extensao: 'zip' })
         ])
       ]
     })
 
     expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/Croqui manual.*máximo é 1/i)
+    expect(res.body.message).toMatch(/Pacote do ponto.*máximo é 1/i)
     expect(await contarPontos()).toBe(0)
   })
 
@@ -200,8 +202,8 @@ describe('Ponto de controle - preparar a importação', () => {
       lote_id: lote.id,
       pontos: [
         pontoDe('RJ-HV-1', [
-          arquivoDe(CONTEUDO_RINEX, { tipo_arquivo_id: 6 }),
-          arquivoDe(CONTEUDO_FOTO, { tipo_arquivo_id: 7 })
+          arquivoDe(CONTEUDO_RINEX),
+          arquivoDe(CONTEUDO_FOTO, { tipo_arquivo_id: 2 })
         ])
       ]
     })
@@ -240,7 +242,7 @@ describe('Ponto de controle - confirmar a importação', () => {
         pontoDe('RJ-HV-1', [
           arquivoDe(CONTEUDO_RINEX),
           arquivoDe(CONTEUDO_FOTO, {
-            tipo_arquivo_id: 1, nome_arquivo: 'foto_norte', extensao: 'jpg'
+            tipo_arquivo_id: 2, nome_arquivo: 'monografia', extensao: 'pdf'
           })
         ])
       ]
@@ -249,7 +251,7 @@ describe('Ponto de controle - confirmar a importação', () => {
     for (const arquivo of prep.body.dados.arquivos) {
       transferir(
         arquivo.destination_path,
-        arquivo.extensao === 'jpg' ? CONTEUDO_FOTO : CONTEUDO_RINEX
+        arquivo.extensao === 'pdf' ? CONTEUDO_FOTO : CONTEUDO_RINEX
       )
     }
 
@@ -284,6 +286,40 @@ describe('Ponto de controle - confirmar a importação', () => {
       'SELECT status FROM ponto_controle.upload_session'
     )
     expect(sessao.status).toBe('completed')
+  })
+
+  it('a GEOMETRIA fica com a posição de dupla precisão, e não com a do atributo', async () => {
+    const lote = await criaLote()
+    // O plugin manda a posição DUAS vezes: no topo, com a precisão da
+    // geometria, e dentro de `atributos`, nas colunas REAL dele. O canário de
+    // 2026-07-29 mostrou que o espalhamento de `atributos` sobrescrevia a
+    // primeira, e a geometria nascia com 12 cm de erro.
+    const prep = await preparar({
+      lote_id: lote.id,
+      pontos: [{
+        cod_ponto: 'RJ-HV-1',
+        latitude: -28.63516511111111,
+        longitude: -53.61403358333334,
+        atributos: {
+          data_rastreio: '2026-05-12',
+          // O que a coluna REAL do plugin guarda: a mesma posição, truncada.
+          latitude: -28.635164,
+          longitude: -53.614033
+        },
+        arquivos: []
+      }]
+    })
+    await confirmar(prep.body.dados.session_uuid)
+
+    const p = await conn.one(
+      `SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon, latitude, longitude
+       FROM ponto_controle.ponto WHERE cod_ponto = 'RJ-HV-1'`
+    )
+    // A geometria é a posição autoritativa e guarda double precision.
+    expect(Number(p.lat)).toBeCloseTo(-28.63516511111111, 12)
+    expect(Number(p.lon)).toBeCloseTo(-53.61403358333334, 12)
+    // As colunas REAL do plugin sobrevivem, com a precisão que float4 permite.
+    expect(Number(p.latitude)).toBeCloseTo(-28.635164, 5)
   })
 
   it('o tamanho MEDIDO vence o tamanho declarado', async () => {
@@ -450,6 +486,163 @@ describe('Ponto de controle - confirmar a importação', () => {
     expect(ponto.medidor).toBe('Outro medidor')
     expect(ponto.data_modificacao).not.toBeNull()
     expect(await contarPontos()).toBe(1)
+  })
+
+  it('substituir=true troca os ARQUIVOS, e não acumula a linha velha', async () => {
+    // O caso real: refazer a monografia e reenviar o mesmo ponto. O caminho no
+    // volume sai do NOME do arquivo, então o novo conteúdo sobrescreve o antigo
+    // no disco. Se a linha velha ficasse no banco, o checksum dela passaria a
+    // descrever bytes que não existem mais, e o ponto ficaria com dois arquivos
+    // de um tipo cujo máximo é um.
+    const lote = await criaLote()
+    const primeira = await preparar({
+      lote_id: lote.id,
+      pontos: [
+        pontoDe('RJ-HV-1', [
+          arquivoDe(CONTEUDO_RINEX, { nome_arquivo: 'RJ-HV-1_pacote', extensao: 'zip' })
+        ])
+      ]
+    })
+    for (const a of primeira.body.dados.arquivos) {
+      transferir(a.destination_path, CONTEUDO_RINEX)
+    }
+    await confirmar(primeira.body.dados.session_uuid)
+
+    const CORRIGIDO = Buffer.from('RINEX 3.04 OBSERVATION DATA\ncorrigido\n')
+    const segunda = await preparar({
+      lote_id: lote.id,
+      substituir: true,
+      pontos: [
+        pontoDe('RJ-HV-1', [
+          arquivoDe(CORRIGIDO, { nome_arquivo: 'RJ-HV-1_pacote', extensao: 'zip' })
+        ])
+      ]
+    })
+    for (const a of segunda.body.dados.arquivos) {
+      transferir(a.destination_path, CORRIGIDO)
+    }
+    const res = await confirmar(segunda.body.dados.session_uuid)
+    expect(res.body.success).toBe(true)
+
+    const arquivos = await conn.any(
+      `SELECT a.checksum, a.nome_arquivo FROM ponto_controle.arquivo AS a
+       INNER JOIN ponto_controle.ponto AS p ON p.id = a.ponto_id
+       WHERE p.cod_ponto = 'RJ-HV-1'`
+    )
+    expect(arquivos).toHaveLength(1)
+    expect(arquivos[0].checksum).toBe(sha256(CORRIGIDO))
+    // O nome não mudou, então o arquivo novo ocupou o mesmo caminho: sem órfão.
+    expect(res.body.dados.arquivos_orfaos).toEqual([])
+  })
+
+  it('substituir com OUTRO nome de arquivo denuncia o órfão no volume', async () => {
+    const lote = await criaLote()
+    const primeira = await preparar({
+      lote_id: lote.id,
+      pontos: [
+        pontoDe('RJ-HV-1', [
+          arquivoDe(CONTEUDO_RINEX, { nome_arquivo: 'nome_velho', extensao: 'zip' })
+        ])
+      ]
+    })
+    for (const a of primeira.body.dados.arquivos) {
+      transferir(a.destination_path, CONTEUDO_RINEX)
+    }
+    await confirmar(primeira.body.dados.session_uuid)
+
+    const OUTRO = Buffer.from('outro conteudo\n')
+    const segunda = await preparar({
+      lote_id: lote.id,
+      substituir: true,
+      pontos: [
+        pontoDe('RJ-HV-1', [
+          arquivoDe(OUTRO, { nome_arquivo: 'nome_novo', extensao: 'zip' })
+        ])
+      ]
+    })
+    for (const a of segunda.body.dados.arquivos) {
+      transferir(a.destination_path, OUTRO)
+    }
+    const res = await confirmar(segunda.body.dados.session_uuid)
+
+    expect(res.body.dados.arquivos_orfaos).toHaveLength(1)
+    expect(res.body.dados.arquivos_orfaos[0]).toContain('nome_velho.zip')
+    expect(fs.existsSync(res.body.dados.arquivos_orfaos[0])).toBe(true)
+  })
+})
+
+// --- Download ----------------------------------------------------------------
+
+describe('Ponto de controle - download dos dois arquivos', () => {
+  const importaComOsDois = async () => {
+    const lote = await criaLote()
+    const prep = await preparar({
+      lote_id: lote.id,
+      pontos: [
+        pontoDe('RJ-HV-1', [
+          arquivoDe(CONTEUDO_RINEX, { nome_arquivo: 'RJ-HV-1_pacote', extensao: 'zip' }),
+          arquivoDe(CONTEUDO_FOTO, {
+            tipo_arquivo_id: 2, nome_arquivo: 'RJ-HV-1', extensao: 'pdf'
+          })
+        ])
+      ]
+    })
+    for (const a of prep.body.dados.arquivos) {
+      transferir(a.destination_path, a.extensao === 'pdf' ? CONTEUDO_FOTO : CONTEUDO_RINEX)
+    }
+    await confirmar(prep.body.dados.session_uuid)
+  }
+
+  const baixar = (cod, tipo, token = generateAdminToken()) =>
+    request(app)
+      .get(`/api/ponto_controle/${cod}/download/${tipo}`)
+      .set('Authorization', token)
+
+  it('entrega os BYTES do pacote e da monografia', async () => {
+    await importaComOsDois()
+
+    const pacote = await baixar('RJ-HV-1', 'pacote')
+    expect(pacote.status).toBe(200)
+    // O corpo é o arquivo, e não um caminho de rede: a tela do navegador não
+    // enxerga o share, ao contrário do plugin QGIS que baixa o acervo.
+    expect(Buffer.from(pacote.body)).toEqual(CONTEUDO_RINEX)
+    expect(pacote.headers['content-disposition']).toContain('RJ-HV-1_pacote.zip')
+    expect(pacote.headers['x-checksum-sha256']).toBe(sha256(CONTEUDO_RINEX))
+
+    const mono = await baixar('RJ-HV-1', 'monografia')
+    expect(mono.status).toBe(200)
+    expect(Buffer.from(mono.body)).toEqual(CONTEUDO_FOTO)
+    expect(mono.headers['content-disposition']).toContain('RJ-HV-1.pdf')
+  })
+
+  it('recusa tipo que não existe', async () => {
+    await importaComOsDois()
+    const res = await baixar('RJ-HV-1', 'croqui')
+    expect(res.status).toBe(400)
+  })
+
+  it('404 quando o ponto não tem aquele arquivo', async () => {
+    const lote = await criaLote()
+    const prep = await preparar({ lote_id: lote.id, pontos: [pontoDe('RJ-HV-9', [])] })
+    await confirmar(prep.body.dados.session_uuid)
+
+    const res = await baixar('RJ-HV-9', 'monografia')
+    expect(res.status).toBe(404)
+  })
+
+  it('registrado mas AUSENTE no volume dá 404, e não um download truncado', async () => {
+    await importaComOsDois()
+    // Alguém apagou o arquivo do volume por fora.
+    fs.rmSync(path.join(volumeDir, 'RJ-HV-1', 'RJ-HV-1_pacote.zip'))
+
+    const res = await baixar('RJ-HV-1', 'pacote')
+    expect(res.status).toBe(404)
+    expect(res.body.message).toMatch(/não foi encontrado no volume/i)
+  })
+
+  it('exige token', async () => {
+    const res = await request(app).get('/api/ponto_controle/RJ-HV-1/download/pacote')
+    expect(res.status).toBe(401)
   })
 })
 

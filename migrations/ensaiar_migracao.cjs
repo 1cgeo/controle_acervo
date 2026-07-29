@@ -46,6 +46,7 @@
 
 const path = require('path')
 const fs = require('fs')
+const { execSync } = require('child_process')
 const { Client } = require('pg')
 
 const RAIZ = path.resolve(__dirname, '..')
@@ -63,6 +64,10 @@ const NOVOS = (argumentos.novos || '').split(',').filter(Boolean)
 const VERSAO_ANTERIOR = argumentos['versao-anterior']
 const VERSAO_ESPERADA = argumentos['versao-esperada']
 const SCHEMAS = (argumentos.schemas || 'acervo').split(',').filter(Boolean)
+// Revisao do git de onde sai o er/ do banco ANTERIOR. Sem ela, o banco
+// "anterior" nasce com o er/ de hoje, e migracao que muda CONTEUDO (dominio,
+// default, codigo) passa sem ser exercitada.
+const ER_DE = argumentos['er-de']
 
 if (!MIGRACAO) {
   console.error('Falta --migracao <arquivo>. Veja o cabeçalho deste arquivo.')
@@ -118,14 +123,40 @@ const recriar = async nome => {
   return c
 }
 
-const rodarEr = async (cliente, ordem) => {
-  for (const arquivo of ordem) {
+/**
+ * Le um er/*.sql, opcionalmente de uma REVISAO do git.
+ *
+ * O `--er-de` existe por um erro real (2026-07-29): a migracao trocava o
+ * dominio de nove codigos para dois, e o ensaio montou o banco "anterior" com o
+ * er/ de HOJE, que ja tinha os dois. A migracao virou no-op e o ensaio aprovou
+ * sem exercitar nada. Versao o script ja forcava; o CONTEUDO, nao.
+ *
+ * A bancada do "antes" tem de ser o estado anterior DE VERDADE.
+ */
+const lerEr = (arquivo, revisao) => {
+  if (!revisao) {
     const caminho = path.join(RAIZ, 'er', arquivo)
-    if (!fs.existsSync(caminho)) continue
+    return fs.existsSync(caminho) ? fs.readFileSync(caminho, 'utf8') : null
+  }
+  try {
+    return execSync(`git show ${revisao}:er/${arquivo}`, {
+      cwd: RAIZ, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024
+    })
+  } catch {
+    // Arquivo que ainda nao existia naquela revisao: e o caso normal do
+    // schema recem-criado, e o banco "anterior" deve mesmo ficar sem ele.
+    return null
+  }
+}
+
+const rodarEr = async (cliente, ordem, revisao) => {
+  for (const arquivo of ordem) {
+    const sql = lerEr(arquivo, revisao)
+    if (!sql) continue
     try {
-      await cliente.query(fs.readFileSync(caminho, 'utf8'))
+      await cliente.query(sql)
     } catch (e) {
-      throw new Error(`er/${arquivo}: ${e.message}`)
+      throw new Error(`er/${arquivo}${revisao ? ' @' + revisao : ''}: ${e.message}`)
     }
   }
 }
@@ -221,12 +252,13 @@ const comparar = (a, b) => {
 
   console.log(`migração: ${MIGRACAO}`)
   console.log(`er/ do banco anterior: ${ordemAnterior.join(', ')}`)
+  console.log(`er/ vindo de: ${ER_DE || 'working tree (ATENCAO: so serve se a migracao nao mudar CONTEUDO do er/)'}`)
   console.log(`schemas comparados: ${SCHEMAS.join(', ')}`)
   console.log('')
 
   console.log('A) banco na versão ANTERIOR')
   const a = await recriar('sca_ensaio_migrado')
-  await rodarEr(a, ordemAnterior)
+  await rodarEr(a, ordemAnterior, ER_DE)
 
   // O er/versao.sql do repo JÁ está na versão de destino, então o banco
   // "anterior" nasceria com ela e o UPDATE da migração seria um no-op

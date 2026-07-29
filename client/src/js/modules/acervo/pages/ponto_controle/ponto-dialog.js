@@ -3,7 +3,9 @@ import { openModal } from '@components/modal/modal-base.js';
 import { formatDate, formatDateTime } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
 import { showError } from '@utils/toast.js';
-import { getPonto } from '@modules/acervo/services/ponto-controle-service.js';
+import {
+  getPonto, baixarArquivoDoPonto,
+} from '@modules/acervo/services/ponto-controle-service.js';
 
 // Cor do chip por situacao. Mesmos codigos e mesma leitura do mapa:
 // 1 Nao medido, 2 Aguardando revisao, 3 APROVADO, 4 REPROVADO.
@@ -84,50 +86,73 @@ function bloco(titulo, campos, mostrarVazios) {
 }
 
 /**
- * Os arquivos do ponto, agrupados por tipo.
+ * Os DOIS arquivos do ponto, cada um com seu botao de baixar.
  *
- * O SCA registra o arquivo (nome, tipo, tamanho, checksum) e nao o guarda em
- * BYTEA: o RINEX e as fotos de um ponto passam de centenas de MB.
+ * Desde 2026-07-29 o acervo guarda dois por ponto (decisao do chefe): o PACOTE,
+ * com tudo o que so se le junto, e a MONOGRAFIA, que e o documento que alguem
+ * busca sozinho. Nao ha mais agrupamento por tipo porque nao ha mais nove tipos.
  *
- * O CAMINHO no volume NAO aparece, e o servidor nem o envia: e infraestrutura,
- * nao informacao do ponto, e quem consulta nao tem o que fazer com ele.
+ * O CAMINHO no volume nao aparece, e o servidor nem o envia: e infraestrutura,
+ * nao informacao do ponto.
  */
-function blocoArquivos(arquivos) {
-  if (!arquivos || arquivos.length === 0) {
+const TIPO_DO_CODIGO = { 1: 'pacote', 2: 'monografia' };
+
+function blocoArquivos(p) {
+  const arquivos = p.arquivos || [];
+  if (arquivos.length === 0) {
     return el('p', {
       className: 'pc-ficha__vazio',
       textContent: 'Nenhum arquivo registrado para este ponto.',
     });
   }
 
-  const porTipo = new Map();
-  for (const a of arquivos) {
-    const chave = a.tipo_arquivo || `Tipo ${a.tipo_arquivo_id}`;
-    if (!porTipo.has(chave)) porTipo.set(chave, []);
-    porTipo.get(chave).push(a);
-  }
+  return el('div', { className: 'pc-ficha__downloads' }, arquivos.map(a => {
+    const nome = a.extensao ? `${a.nome_arquivo}.${a.extensao}` : a.nome_arquivo;
+    const tipo = TIPO_DO_CODIGO[a.tipo_arquivo_id];
 
-  return el('div', { className: 'pc-ficha__arquivos' }, [...porTipo.entries()].map(([tipo, itens]) =>
-    el('div', { className: 'pc-ficha__grupo' }, [
-      el('div', { className: 'pc-ficha__grupo-titulo' }, [
-        el('span', { textContent: tipo }),
-        chip(String(itens.length), 'secondary'),
-      ]),
-      el('ul', { className: 'pc-ficha__lista' }, itens.map(a => el('li', {}, [
-        svgIcon(ICONS.description, 14),
+    const botao = el('button', {
+      className: 'btn btn--primary btn--sm',
+      type: 'button',
+    }, [svgIcon(ICONS.download, 16), 'Baixar']);
+
+    // Tipo que a tela nao conhece nao vira botao morto por acidente: ele fica
+    // visivel como registro, desabilitado, sem prometer um download que a rota
+    // nao atende.
+    if (!tipo) {
+      botao.disabled = true;
+    } else {
+      botao.addEventListener('click', async () => {
+        // A referencia vem do FECHAMENTO, e nao de `e.currentTarget`: depois do
+        // primeiro await o evento ja terminou e `currentTarget` e null, entao o
+        // botao ficava travado para sempre depois de uma falha.
+        botao.disabled = true;
+        try {
+          await baixarArquivoDoPonto(p.cod_ponto, tipo, nome);
+        } catch (erro) {
+          showError(erro.message || 'Não foi possível baixar o arquivo');
+        } finally {
+          botao.disabled = false;
+        }
+      });
+    }
+
+    return el('div', { className: 'pc-ficha__download' }, [
+      el('div', { className: 'pc-ficha__download-info' }, [
         el('span', {
-          className: 'pc-ficha__arquivo-nome',
-          textContent: a.extensao ? `${a.nome_arquivo}.${a.extensao}` : a.nome_arquivo,
+          className: 'pc-ficha__download-tipo',
+          textContent: a.tipo_arquivo || `Tipo ${a.tipo_arquivo_id}`,
         }),
+        el('span', { className: 'pc-ficha__arquivo-nome', textContent: nome }),
         a.tamanho_mb != null
           ? el('span', {
             className: 'pc-ficha__arquivo-tamanho',
             textContent: numero(a.tamanho_mb, 1, ' MB') || '',
           })
           : null,
-      ].filter(Boolean)))),
-    ])
-  ));
+      ].filter(Boolean)),
+      botao,
+    ]);
+  }));
 }
 
 /**
@@ -253,7 +278,7 @@ function corpo(p, mostrarVazios) {
 
     el('section', { className: 'pc-ficha__bloco' }, [
       el('h3', { className: 'pc-ficha__bloco-titulo', textContent: 'Arquivos' }),
-      blocoArquivos(p.arquivos),
+      blocoArquivos(p),
     ]),
   ].filter(Boolean));
 }

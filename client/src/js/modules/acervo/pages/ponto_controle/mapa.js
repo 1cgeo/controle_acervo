@@ -17,8 +17,28 @@ import { ESTILO_OSM, BRASIL, carregarMapLibre } from '@components/mapa/base.js';
  */
 
 const FONTE = 'pontos';
+/**
+ * Fonte separada, com o ponto SELECIONADO e o APONTADO.
+ *
+ * O realce saiu do `feature-state` quando a fonte principal virou clusterizada.
+ * O supercluster refaz as feicoes a cada mudanca de zoom, e o estado preso ao id
+ * nao sobrevive a isso. Com uma fonte propria o realce e DADO, e nao estado: ela
+ * tem no maximo algumas dezenas de feicoes, entao redesenha-la a cada clique ou
+ * a cada passagem do mouse custa nada.
+ */
+const FONTE_REALCE = 'pontos-realce';
 /** Zoom ao enquadrar UM ponto. Perto o bastante para ver o entorno do marco. */
 const ZOOM_DO_PONTO = 15;
+/**
+ * Agrupamento. Acima de `CLUSTER_ZOOM_MAX` cada ponto aparece sozinho.
+ *
+ * O acervo tem mais de tres mil pontos, e boa parte deles a poucos quilometros
+ * um do outro. Sem agrupar, o Rio Grande do Sul vira uma mancha unica em que
+ * nao se distingue ponto nenhum, e o navegador desenha tres mil circulos a cada
+ * quadro.
+ */
+const CLUSTER_RAIO = 45;
+const CLUSTER_ZOOM_MAX = 13;
 
 /**
  * Cor por situacao.
@@ -108,27 +128,61 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
       if (destruido) return;
       pronto = true;
 
-      mapa.addSource(FONTE, { type: 'geojson', data: ultimaColecao });
+      mapa.addSource(FONTE, {
+        type: 'geojson',
+        data: ultimaColecao,
+        cluster: true,
+        clusterRadius: CLUSTER_RAIO,
+        clusterMaxZoom: CLUSTER_ZOOM_MAX,
+        // Quantos APROVADOS o grupo tem. Serve ao rotulo do grupo, que assim
+        // diz algo sobre o dado, e nao so quantos pontos ha ali.
+        clusterProperties: {
+          aprovados: ['+', ['case', ['==', ['get', 'tipo_situacao'], 3], 1, 0]],
+        },
+      });
+      mapa.addSource(FONTE_REALCE, { type: 'geojson', data: colecaoRealce() });
+
+      mapa.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: FONTE,
+        filter: ['has', 'point_count'],
+        paint: {
+          // O raio cresce por degrau, e nao continuamente: degrau se compara a
+          // olho, rampa continua nao.
+          'circle-radius': ['step', ['get', 'point_count'], 16, 25, 22, 100, 28, 500, 34],
+          'circle-color': '#0f766e',
+          'circle-opacity': 0.85,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      mapa.addLayer({
+        id: 'clusters-contagem',
+        type: 'symbol',
+        source: FONTE,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 13,
+          'text-allow-overlap': true,
+        },
+        paint: { 'text-color': '#ffffff' },
+      });
 
       // O halo e uma camada propria, e nao um `circle-stroke` do ponto: e ele
       // que engorda no selecionado e no apontado, e mexer no stroke do circulo
-      // faria a cor da situacao mudar de tamanho junto.
+      // faria a cor da situacao mudar de tamanho junto. Vem ANTES da camada de
+      // pontos para ficar por baixo dela.
       mapa.addLayer({
         id: 'pontos-halo',
         type: 'circle',
-        source: FONTE,
+        source: FONTE_REALCE,
         paint: {
-          'circle-radius': [
-            'case',
-            ['boolean', ['feature-state', 'selecionado'], false], 14,
-            ['boolean', ['feature-state', 'apontado'], false], 12,
-            9,
-          ],
-          'circle-color': [
-            'case',
-            ['boolean', ['feature-state', 'selecionado'], false], '#f97316',
-            '#ffffff',
-          ],
+          'circle-radius': ['case', ['get', 'selecionado'], 14, 12],
+          'circle-color': ['case', ['get', 'selecionado'], '#f97316', '#ffffff'],
           'circle-opacity': 0.9,
         },
       });
@@ -137,6 +191,7 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
         id: 'pontos',
         type: 'circle',
         source: FONTE,
+        filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': 6,
           'circle-color': COR_SITUACAO,
@@ -144,6 +199,20 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
           'circle-stroke-color': '#1f2937',
         },
       });
+
+      // Clique no grupo abre o grupo, e nao seleciona nada: e o gesto que todo
+      // mapa agrupado tem, e sem ele o grupo seria um obstaculo.
+      mapa.on('click', 'clusters', (evento) => {
+        const feicao = evento.features && evento.features[0];
+        if (!feicao) return;
+        const fonte = mapa.getSource(FONTE);
+        fonte.getClusterExpansionZoom(feicao.properties.cluster_id).then((zoom) => {
+          movimentoProgramatico = true;
+          mapa.easeTo({ center: feicao.geometry.coordinates, zoom, duration: 400 });
+        }).catch(() => {});
+      });
+      mapa.on('mouseenter', 'clusters', () => { mapa.getCanvas().style.cursor = 'pointer'; });
+      mapa.on('mouseleave', 'clusters', () => { mapa.getCanvas().style.cursor = ''; });
 
       mapa.on('click', 'pontos', (evento) => {
         const feicao = evento.features && evento.features[0];
@@ -176,7 +245,7 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
       }
 
       aplicarColecao();
-      aplicarEstados();
+      aplicarRealce();
       if (enquadramentoPendente) {
         enquadrar(enquadramentoPendente);
         enquadramentoPendente = null;
@@ -190,15 +259,28 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
     if (fonte) fonte.setData(ultimaColecao);
   }
 
-  /** Reaplica selecao e realce por `feature-state`, que e barato e nao repinta. */
-  function aplicarEstados() {
-    if (!pronto || !mapa) return;
-    for (const id of porId.keys()) {
-      mapa.setFeatureState({ source: FONTE, id }, {
-        selecionado: selecionados.has(id),
-        apontado: apontado === id,
+  /** O selecionado e o apontado, como colecao propria. */
+  function colecaoRealce() {
+    const feicoes = [];
+    const marcar = (id, selecionado) => {
+      const coord = porId.get(id);
+      if (!coord) return;
+      feicoes.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: coord },
+        properties: { selecionado },
       });
-    }
+    };
+    for (const id of selecionados) marcar(id, true);
+    if (apontado !== null && !selecionados.has(apontado)) marcar(apontado, false);
+    return { type: 'FeatureCollection', features: feicoes };
+  }
+
+  /** Redesenha so a fonte de realce, que tem poucas feicoes. */
+  function aplicarRealce() {
+    if (!pronto || !mapa) return;
+    const fonte = mapa.getSource(FONTE_REALCE);
+    if (fonte) fonte.setData(colecaoRealce());
   }
 
   function enquadrar(caixa) {
@@ -232,17 +314,17 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
       }
       ultimaColecao = { type: 'FeatureCollection', features: feicoes };
       aplicarColecao();
-      aplicarEstados();
+      aplicarRealce();
     },
 
     setSelecionados(ids) {
       selecionados = new Set([...ids].map(Number));
-      aplicarEstados();
+      aplicarRealce();
     },
 
     setApontado(id) {
       apontado = id === null || id === undefined ? null : Number(id);
-      aplicarEstados();
+      aplicarRealce();
     },
 
     /**

@@ -29,8 +29,8 @@ dotenv.config({
 // 1.6.0 acrescenta o schema `ponto_controle` (2026-07-28), que a plataforma
 // passa a exigir: sem ele as rotas de /ponto_controle quebram em runtime.
 // A 1.5.0 foi a versao unica depois da fusao com o SCO (2026-07-27).
-const VERSION = '1.6.0'
-const MIN_DATABASE_VERSION = '1.6.0'
+const VERSION = '1.7.0'
+const MIN_DATABASE_VERSION = '1.7.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

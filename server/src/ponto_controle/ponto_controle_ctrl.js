@@ -1,6 +1,8 @@
 // Path: ponto_controle\ponto_controle_ctrl.js
 'use strict'
 
+const path = require('path')
+
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 
@@ -319,6 +321,59 @@ controller.getCsv = async (filtros = {}) => {
       valores
     )
   })
+}
+
+/**
+ * O arquivo de um ponto, para DOWNLOAD.
+ *
+ * Devolve o caminho no volume e o nome com que ele deve chegar a quem baixa. A
+ * rota é que faz o streaming; aqui fica a regra.
+ *
+ * São dois por ponto (`ponto_controle.tipo_arquivo`): o PACOTE e a MONOGRAFIA.
+ * O tipo entra pelo código, e não por texto livre, porque quem chama é a tela e
+ * o contrato é o domínio.
+ *
+ * Diferente do acervo, isto ENTREGA OS BYTES em vez de devolver um caminho de
+ * rede. O acervo pode devolver caminho porque quem baixa é o plugin QGIS, que
+ * enxerga o share; a tela do navegador não enxerga, e um caminho `\host\...`
+ * numa página web não serve para nada.
+ *
+ * @param {string} codPonto
+ * @param {number} tipoArquivoId
+ */
+controller.getArquivoParaDownload = async (codPonto, tipoArquivoId) => {
+  const arquivo = await db.conn.oneOrNone(
+    `SELECT a.nome_arquivo, a.extensao, a.tamanho_mb, a.checksum,
+            tp.nome AS tipo_arquivo,
+            v.volume, p.cod_ponto
+     FROM ponto_controle.arquivo AS a
+     INNER JOIN ponto_controle.ponto AS p ON p.id = a.ponto_id
+     INNER JOIN ponto_controle.tipo_arquivo AS tp ON tp.code = a.tipo_arquivo_id
+     INNER JOIN acervo.volume_armazenamento AS v
+       ON v.id = a.volume_armazenamento_id
+     WHERE p.cod_ponto = $<codPonto> AND a.tipo_arquivo_id = $<tipoArquivoId>`,
+    { codPonto, tipoArquivoId }
+  )
+
+  if (!arquivo) {
+    throw new AppError(
+      `O ponto ${codPonto} não tem arquivo do tipo ${tipoArquivoId}`,
+      httpCode.NotFound
+    )
+  }
+
+  const nome = arquivo.extensao
+    ? `${arquivo.nome_arquivo}.${arquivo.extensao}`
+    : arquivo.nome_arquivo
+
+  return {
+    // O caminho é montado como o upload o montou: volume + cod_ponto + nome.
+    caminho: path.join(arquivo.volume, arquivo.cod_ponto, nome),
+    nome,
+    tamanho_mb: arquivo.tamanho_mb,
+    checksum: arquivo.checksum,
+    tipo_arquivo: arquivo.tipo_arquivo
+  }
 }
 
 module.exports = controller

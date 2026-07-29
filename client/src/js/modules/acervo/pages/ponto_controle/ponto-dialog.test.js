@@ -2,6 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   getPonto: vi.fn(),
+  baixarArquivoDoPonto: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@utils/toast.js', () => ({
@@ -13,7 +14,9 @@ vi.mock('@utils/toast.js', () => ({
 }));
 
 import { abrirPontoDialog } from '@modules/acervo/pages/ponto_controle/ponto-dialog.js';
-import { getPonto } from '@modules/acervo/services/ponto-controle-service.js';
+import {
+  getPonto, baixarArquivoDoPonto,
+} from '@modules/acervo/services/ponto-controle-service.js';
 import { showError } from '@utils/toast.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -56,18 +59,15 @@ const PONTO = {
   orbita_nome: 'A SER PREENCHIDO',
   situacao_marco: 9999,
   situacao_marco_nome: 'A SER PREENCHIDO',
+  // DOIS arquivos por ponto desde 2026-07-29: o pacote e a monografia.
   arquivos: [
     {
-      id: 1, tipo_arquivo_id: 6, tipo_arquivo: 'RINEX', nome_arquivo: 'RS-HV-1',
-      extensao: 'zip', tamanho_mb: 12.5,
+      id: 1, tipo_arquivo_id: 1, tipo_arquivo: 'Pacote do ponto',
+      nome_arquivo: 'RS-HV-1_pacote', extensao: 'zip', tamanho_mb: 21.4,
     },
     {
-      id: 2, tipo_arquivo_id: 1, tipo_arquivo: 'Foto de rastreio',
-      nome_arquivo: 'RS-HV-1_n', extensao: 'jpg', tamanho_mb: 3.2,
-    },
-    {
-      id: 3, tipo_arquivo_id: 1, tipo_arquivo: 'Foto de rastreio',
-      nome_arquivo: 'RS-HV-1_s', extensao: 'jpg', tamanho_mb: 3.1,
+      id: 2, tipo_arquivo_id: 2, tipo_arquivo: 'Monografia',
+      nome_arquivo: 'RS-HV-1', extensao: 'pdf', tamanho_mb: 1.8,
     },
   ],
 };
@@ -207,18 +207,65 @@ describe('ficha do ponto: campos', () => {
   });
 });
 
-describe('ficha do ponto: arquivos', () => {
-  test('agrupa por tipo, conta cada grupo e mostra o nome com a extensão', async () => {
+describe('ficha do ponto: os dois downloads', () => {
+  test('mostra os dois arquivos, cada um com seu botão', async () => {
     getPonto.mockResolvedValue(PONTO);
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    const grupos = [...document.querySelectorAll('.pc-ficha__grupo-titulo')]
-      .map(g => g.textContent);
-    expect(grupos).toEqual(['RINEX1', 'Foto de rastreio2']);
-    expect(document.querySelectorAll('.pc-ficha__lista li')).toHaveLength(3);
-    expect(texto()).toContain('RS-HV-1.zip');
-    expect(texto()).toContain('12,5 MB');
+    const linhas = [...document.querySelectorAll('.pc-ficha__download')];
+    expect(linhas).toHaveLength(2);
+    expect(texto()).toContain('Pacote do ponto');
+    expect(texto()).toContain('RS-HV-1_pacote.zip');
+    expect(texto()).toContain('21,4 MB');
+    expect(texto()).toContain('Monografia');
+    expect(texto()).toContain('RS-HV-1.pdf');
+    expect(linhas.every(l => l.querySelector('button'))).toBe(true);
+  });
+
+  test('o botão baixa pelo TIPO, e não pelo id do arquivo', async () => {
+    getPonto.mockResolvedValue(PONTO);
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const [pacote, mono] = [...document.querySelectorAll('.pc-ficha__download button')];
+    pacote.click();
+    await flush();
+    expect(baixarArquivoDoPonto).toHaveBeenCalledWith(
+      'RS-HV-1', 'pacote', 'RS-HV-1_pacote.zip'
+    );
+
+    mono.click();
+    await flush();
+    expect(baixarArquivoDoPonto).toHaveBeenCalledWith(
+      'RS-HV-1', 'monografia', 'RS-HV-1.pdf'
+    );
+  });
+
+  test('falha no download avisa, e o botão volta a funcionar', async () => {
+    getPonto.mockResolvedValue(PONTO);
+    baixarArquivoDoPonto.mockRejectedValueOnce(new Error('sem rede'));
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const botao = document.querySelector('.pc-ficha__download button');
+    botao.click();
+    await flush();
+
+    expect(showError).toHaveBeenCalledWith('sem rede');
+    expect(botao.disabled).toBe(false);
+  });
+
+  test('tipo que a tela não conhece aparece, mas sem prometer download', async () => {
+    getPonto.mockResolvedValue({
+      ...PONTO,
+      arquivos: [{ id: 9, tipo_arquivo_id: 7, tipo_arquivo: 'Tipo novo', nome_arquivo: 'x', extensao: 'bin' }],
+    });
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    expect(texto()).toContain('Tipo novo');
+    expect(document.querySelector('.pc-ficha__download button').disabled).toBe(true);
   });
 
   test('o CAMINHO do arquivo no volume NÃO aparece', async () => {
@@ -227,7 +274,7 @@ describe('ficha do ponto: arquivos', () => {
     getPonto.mockResolvedValue({
       ...PONTO,
       arquivos: PONTO.arquivos.map(a => ({
-        ...a, volume: '/data/pc', destination_path: '/data/pc/RS-HV-1/x.zip',
+        ...a, volume: '/data/pc', caminho: '/data/pc/RS-HV-1/x.zip',
       })),
     });
     abrirPontoDialog('RS-HV-1');

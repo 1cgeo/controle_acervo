@@ -108,7 +108,20 @@ export async function renderPontoControleTab(container) {
     emptyMessage: 'Nenhuma missão importada ainda.',
     loading: true,
   });
-  container.appendChild(tabelaMissoes);
+  // Duas coisas aqui, e as duas foram defeito na primeira versão desta aba:
+  //
+  // 1. entra `.element`, e não o objeto. O createDataTable devolve
+  //    { element, update, ... }, ao contrário do stats-card e dos gráficos, que
+  //    devolvem o próprio nó. Passar o objeto ao appendChild derrubava a aba
+  //    inteira com "parameter 1 is not of type 'Node'".
+  // 2. o TÍTULO vem daqui. O createDataTable aceita `title` e não o desenha,
+  //    então as duas tabelas apareciam empilhadas sem dizer qual era qual.
+  const comTitulo = (texto, tabela) => el('div', { className: 'chart-card' }, [
+    el('div', { className: 'chart-card__title', textContent: texto }),
+    tabela.element,
+  ]);
+
+  container.appendChild(comTitulo('Missões com ponto de controle', tabelaMissoes));
 
   const tabelaImportacoes = createDataTable({
     title: 'Últimas importações',
@@ -136,7 +149,7 @@ export async function renderPontoControleTab(container) {
     emptyMessage: 'Nenhuma importação registrada.',
     loading: true,
   });
-  container.appendChild(tabelaImportacoes);
+  container.appendChild(comTitulo('Últimas importações', tabelaImportacoes));
 
   async function load() {
     let dados;

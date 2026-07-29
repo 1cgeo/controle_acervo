@@ -1072,3 +1072,36 @@
     order: -1;
   }
 }
+
+/* Os DOIS downloads da ficha do ponto (pacote e monografia). Substituiram a
+ * lista agrupada por tipo quando o acervo passou a guardar dois arquivos por
+ * ponto, em 2026-07-29. */
+.pc-ficha__downloads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.pc-ficha__download {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.pc-ficha__download-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pc-ficha__download-tipo {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}

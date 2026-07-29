@@ -492,8 +492,19 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
         inseridos: [],
         substituidos: [],
         arquivos_novos: 0,
-        arquivos_repetidos: 0
+        arquivos_repetidos: 0,
+        // Caminho que ficou no volume sem linha no banco depois de uma
+        // substituição. Quem opera decide se apaga; o servidor não apaga byte
+        // sozinho.
+        arquivos_orfaos: []
       }
+
+      // id do volume -> pasta raiz. Serve para reconstruir o caminho do arquivo
+      // que sai do banco numa substituição.
+      const volumes = new Map(
+        (await t.any('SELECT id, volume FROM acervo.volume_armazenamento'))
+          .map(v => [String(v.id), v.volume])
+      )
 
       for (const pontoTemp of pontosTemp) {
         const aceitos = pontoTemp.atributos || {}
@@ -501,10 +512,16 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
         const valores = {
           codPonto: pontoTemp.cod_ponto,
           loteId: sessao.lote_id,
-          latitude: pontoTemp.latitude,
-          longitude: pontoTemp.longitude,
           usuarioUuid,
-          ...aceitos
+          ...aceitos,
+          // A posicao vem DEPOIS do espalhamento, e nunca antes. O `atributos`
+          // costuma trazer as colunas `latitude` e `longitude` do plugin, que
+          // sao REAL; se elas vierem por ultimo, a GEOMETRIA nasce com o valor
+          // de float4. Medido no canario de 2026-07-29: a latitude entrou com
+          // -28.63516511111111 e a geometria ficou -28.635164, 12 cm de erro
+          // num ponto de apoio de campo.
+          latitude: pontoTemp.latitude,
+          longitude: pontoTemp.longitude
         }
 
         // Reconfere a existência AGORA, e não o que o prepare viu: entre as duas
@@ -535,6 +552,35 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
           )
           pontoId = existente.id
           relatorio.substituidos.push(pontoTemp.cod_ponto)
+
+          // Substituir o ponto substitui TAMBÉM os arquivos dele. Sem isto a
+          // linha velha e a nova conviveriam apontando para o MESMO caminho no
+          // volume, porque o caminho sai do nome do arquivo. O checksum antigo
+          // viraria mentira: descreveria bytes que já foram sobrescritos.
+          // Também estouraria o `maximo_por_ponto`, que só conta o que vem no
+          // manifesto.
+          const antigos = await t.any(
+            `DELETE FROM ponto_controle.arquivo
+             WHERE ponto_id = $<pontoId>
+             RETURNING nome_arquivo, extensao, volume_armazenamento_id`,
+            { pontoId }
+          )
+          const novosCaminhos = new Set(
+            arquivosTemp
+              .filter(a => String(a.ponto_temp_id) === String(pontoTemp.id))
+              .map(a => a.destination_path)
+          )
+          for (const antigo of antigos) {
+            const volume = volumes.get(String(antigo.volume_armazenamento_id))
+            if (!volume) continue
+            const nomeFisico = antigo.extensao
+              ? `${antigo.nome_arquivo}.${antigo.extensao}`
+              : antigo.nome_arquivo
+            const caminho = path.join(volume, pontoTemp.cod_ponto, nomeFisico)
+            // O arquivo que mantém o nome é sobrescrito pelo novo, e continua
+            // válido. Só sobra órfão quando o nome mudou.
+            if (!novosCaminhos.has(caminho)) relatorio.arquivos_orfaos.push(caminho)
+          }
         } else {
           const nomes = [
             'cod_ponto',

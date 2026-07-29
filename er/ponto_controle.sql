@@ -226,16 +226,16 @@ CREATE TABLE ponto_controle.tipo_arquivo (
     maximo_por_ponto SMALLINT
 );
 
+-- DOIS tipos, e nao nove (decisao do chefe, 2026-07-29). O acervo guarda a
+-- missao em dois arquivos por ponto: um pacote com tudo o que so se le junto, e
+-- a monografia, que e o documento que se busca sozinho. Sao tambem os dois
+-- unicos downloads que a tela oferece.
+--
+-- O `maximo_por_ponto` = 1 nos dois deixa de ser teto e passa a ser regra
+-- exata: um pacote e uma monografia, nunca dois de cada.
 INSERT INTO ponto_controle.tipo_arquivo (code, nome, maximo_por_ponto) VALUES
-(1, 'Foto de rastreio', 4),
-(2, 'Foto aerea', 1),
-(3, 'Croqui manual', 1),
-(4, 'Croqui digital', 1),
-(5, 'Monografia', 1),
-(6, 'RINEX', NULL),
-(7, 'Arquivo bruto da coletora', NULL),
-(8, 'Relatorio de processamento', NULL),
-(9, 'Foto auxiliar', NULL);
+(1, 'Pacote do ponto', 1),
+(2, 'Monografia', 1);
 
 CREATE TABLE ponto_controle.ponto (
     id BIGSERIAL NOT NULL PRIMARY KEY,
@@ -315,7 +315,9 @@ CREATE TABLE ponto_controle.arquivo (
     tipo_arquivo_id SMALLINT NOT NULL REFERENCES ponto_controle.tipo_arquivo (code),
     nome_arquivo TEXT NOT NULL,
     extensao VARCHAR(20),
-    tamanho_mb REAL,
+    -- DOUBLE PRECISION e nao REAL: o pacote de um ponto passa de 20 MB, e o
+    -- somatorio do dashboard sobre milhares deles perde precisao em float4.
+    tamanho_mb DOUBLE PRECISION,
     checksum VARCHAR(64) NOT NULL,
     volume_armazenamento_id INTEGER NOT NULL REFERENCES acervo.volume_armazenamento (id),
     metadado JSONB,

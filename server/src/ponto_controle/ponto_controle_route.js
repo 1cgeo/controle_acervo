@@ -2,9 +2,11 @@
 'use strict'
 
 const express = require('express')
+const fs = require('fs').promises
+const fsClassic = require('fs')
 
 const {
-  asyncHandler, httpCode, schemaValidation, csvExport
+  AppError, asyncHandler, httpCode, schemaValidation, csvExport
 } = require('../utils')
 
 const { verifyPerfil } = require('../login')
@@ -165,6 +167,54 @@ router.post(
     await uploadCtrl.cancelarSessao(req.body.session_uuid, req.usuarioUuid)
     const msg = 'Sessão de importação cancelada'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
+// Download dos DOIS arquivos do ponto: o pacote e a monografia.
+//
+// Entrega os BYTES, e não um caminho de rede como o acervo faz. O acervo pode
+// devolver caminho porque quem baixa é o plugin QGIS, que enxerga o share; a
+// tela do navegador não enxerga.
+//
+// O tipo vai na URL como PALAVRA, e não como código: '/pacote' e '/monografia'
+// se leem no log e num link mandado por DIEx. A tradução para o código do
+// domínio fica aqui, num lugar só.
+const TIPO_POR_NOME = { pacote: 1, monografia: 2 }
+
+router.get(
+  '/:cod_ponto/download/:tipo',
+  verifyPerfil('consulta', 'acervo'),
+  schemaValidation({ params: pontoControleSchema.downloadParams }),
+  asyncHandler(async (req, res, next) => {
+    const tipoId = TIPO_POR_NOME[req.params.tipo]
+    const arquivo = await pontoControleCtrl.getArquivoParaDownload(
+      req.params.cod_ponto,
+      tipoId
+    )
+
+    // O registro diz que o arquivo existe; o VOLUME é que decide. Sem esta
+    // conferência o streaming falharia no meio, com cabeçalho já enviado e
+    // um download truncado que parece completo.
+    try {
+      await fs.access(arquivo.caminho)
+    } catch {
+      throw new AppError(
+        `O arquivo está registrado mas não foi encontrado no volume: ${arquivo.nome}`,
+        httpCode.NotFound
+      )
+    }
+
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${arquivo.nome}"`
+    )
+    // O checksum vai no cabeçalho para quem baixa poder conferir o que chegou.
+    res.setHeader('X-Checksum-SHA256', arquivo.checksum)
+
+    const fluxo = fsClassic.createReadStream(arquivo.caminho)
+    fluxo.on('error', () => res.destroy())
+    fluxo.pipe(res)
   })
 )
 
