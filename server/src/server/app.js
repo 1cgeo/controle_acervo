@@ -57,7 +57,18 @@ app.use(hpp()) // protection against parameter polution
 
 // Helmet Protection (CSP desabilitado: o Express serve o client SPA e o Swagger UI,
 // que usam scripts/estilos inline; aplicação de intranet)
-app.use(helmet({ contentSecurityPolicy: false }))
+//
+// COOP e Origin-Agent-Cluster saem em 2026-07-29. O serviço responde em http
+// por IP, em dev e em produção (`http://HOST:3015`), e o navegador só respeita
+// os dois em origem confiável (https ou localhost). Fora dela ele IGNORA os
+// headers e escreve dois avisos no console a cada carga da página. O custo era
+// só ruído: o console do client fica sujo na depuração do mapa, e nada é
+// protegido em troca. Se o serviço um dia ficar atrás de https, reative os dois.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: false,
+  originAgentCluster: false
+}))
 app.use(noCache())
 
 app.use((req, res, next) => {
