@@ -44,6 +44,7 @@ const PEDIDO_COLS = [
   { name: 'observacao', def: null },
   { name: 'localizador_envio', def: null },
   { name: 'observacao_envio', def: null },
+  { name: 'observacao_interna', def: null },
   { name: 'motivo_cancelamento', def: null }
 ];
 
@@ -351,11 +352,17 @@ controller.getPedidoById = async (pedidoId) => {
              -- (Sem crase nestes comentarios: a consulta e um template literal.)
              p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
              p.documento_solicitacao, p.documento_solicitacao_nup,
-             p.endereco_entrega, p.palavras_chave, p.operacao, p.prazo,
+             -- Os DOIS enderecos, pela mesma razao dos dois contatos: o do
+             -- pedido manda, e o cadastro da OM serve de reserva. A etiqueta de
+             -- envio da tela de detalhe cai no segundo quando o pedido nao traz
+             -- endereco nenhum.
+             p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
+             p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
              p.municipio, p.qtd_imagens,
-             p.observacao, p.localizador_envio, p.observacao_envio, p.motivo_cancelamento,
+             p.observacao, p.localizador_envio, p.observacao_envio,
+             p.observacao_interna, p.motivo_cancelamento,
              p.localizador_pedido,
              p.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
              p.usuario_atualizacao_id, ua.nome AS usuario_atualizacao_nome,
@@ -516,6 +523,14 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
 
 controller.getPedidoByLocalizador = async (localizador) => {
   return db.conn.task(async t => {
+    // Rota PUBLICA (sem autenticacao). A lista de colunas e explicita, e nunca
+    // vira SELECT *, porque e ela que decide o que o cliente ve. p.observacao e
+    // p.observacao_envio SAEM de proposito; p.observacao_interna NAO sai, e e
+    // justamente para isso que aquela coluna existe. Coberto por teste de rota.
+    //
+    // p.data_atendimento entra desde 2026-07-29: e o dia em que o material
+    // saiu, e a tela a mostra como "data de envio/entrega". Nao existe coluna
+    // de data de envio (ver a migracao 2026-07-29_pedido_observacao_interna).
     const pedido = await t.oneOrNone(`
       SELECT
         p.id,
@@ -526,6 +541,7 @@ controller.getPedidoByLocalizador = async (localizador) => {
         c.nome AS cliente_nome,
         p.prazo,
         p.observacao,
+        p.data_atendimento,
         p.localizador_envio,
         p.observacao_envio,
         p.motivo_cancelamento

@@ -105,6 +105,12 @@ CREATE TABLE mapoteca.pedido(
 	-- migracao 2026-07-26_pedido_datas_calendario.sql. Os dois caminhos TEM
 	-- de terminar no mesmo tipo, senao instalacao nova diverge de migrada.
 	data_pedido DATE NOT NULL,
+    -- Dia em que o pedido FECHOU, e na pratica o dia em que o material saiu
+    -- daqui: em 51 de 52 pedidos concluidos com item datado ela e igual a maior
+    -- data_entrega dos itens (medido na producao em 2026-07-29). Por isso NAO
+    -- existe coluna "data_envio", e a consulta publica mostra esta data como
+    -- "envio/entrega". Coluna separada nasceria duplicada, porque a mapoteca
+    -- fecha o pedido no dia da postagem e nunca usa a situacao 4 (Remetido).
     data_atendimento DATE,
 	cliente_id BIGINT NOT NULL REFERENCES mapoteca.cliente (id),
 	situacao_pedido_id SMALLINT NOT NULL REFERENCES mapoteca.situacao_pedido (code),
@@ -124,6 +130,10 @@ CREATE TABLE mapoteca.pedido(
     qtd_imagens INTEGER CHECK (qtd_imagens IS NULL OR qtd_imagens >= 0),
     observacao TEXT,
     observacao_envio TEXT,
+    -- Anotacao da equipe, que NAO sai na consulta publica por localizador
+    -- (quem levou aos Correios, com quem esta o cartao de envio). As outras
+    -- duas observacoes SAEM naquela rota, e por isso esta existe.
+    observacao_interna TEXT,
     localizador_envio TEXT,
     localizador_pedido VARCHAR(14) UNIQUE
         CHECK (localizador_pedido IS NULL OR localizador_pedido ~ '^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'),
@@ -145,6 +155,8 @@ COMMENT ON COLUMN mapoteca.pedido.omds IS
     'OM Diretamente Subordinada responsável pelo atendimento (ex: 1º CGEO).';
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
+COMMENT ON COLUMN mapoteca.pedido.observacao_interna IS
+    'Anotação da equipe. NUNCA sai na consulta pública por localizador; ao contrário de observacao e observacao_envio, que saem.';
 
 -- RN04: localizador_pedido é imutável após definido
 CREATE OR REPLACE FUNCTION mapoteca.trg_localizador_imutavel()

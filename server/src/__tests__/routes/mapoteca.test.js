@@ -326,6 +326,56 @@ describe('Mapoteca Routes', () => {
       expect(item.tipo_produto_nome).toBe('Carta Topográfica')
     })
 
+    // A observacao interna existe para NAO aparecer aqui. A rota e publica (sem
+    // autenticacao), e observacao e observacao_envio saem nela; se a interna
+    // saisse tambem, a coluna nao teria razao de existir. Este teste e o que faz
+    // a promessa cumprir: a lista de colunas do controller e explicita, e um
+    // SELECT * futuro derruba este teste.
+    it('GET /api/mapoteca/pedido/localizador/:localizador NAO expõe a observação interna', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, {
+        observacao: 'Entregar na S3',
+        observacao_envio: 'Enviado por PAC',
+        observacao_interna: 'Sd Silva levou aos Correios; cartão devolvido ao Ten'
+      })
+
+      const detalhe = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}`)
+        .set('Authorization', generateAdminToken())
+      expect(detalhe.status).toBe(200)
+      // Quem tem perfil na mapoteca LE o campo: a separação é de consulta
+      // pública, não de permissão.
+      expect(detalhe.body.dados.observacao_interna)
+        .toBe('Sd Silva levou aos Correios; cartão devolvido ao Ten')
+
+      const publico = await request(app)
+        .get(`/api/mapoteca/pedido/localizador/${pedido.localizador_pedido}`)
+      expect(publico.status).toBe(200)
+      const dados = publico.body.dados
+      expect(dados.observacao).toBe('Entregar na S3')
+      expect(dados.observacao_envio).toBe('Enviado por PAC')
+      expect(dados.observacao_interna).toBeUndefined()
+      expect(JSON.stringify(dados)).not.toContain('Sd Silva')
+    })
+
+    // A tela de acompanhamento mostra esta data como "envio/entrega": é o dia em
+    // que o material saiu. Não existe coluna data_envio, de propósito.
+    it('GET /api/mapoteca/pedido/localizador/:localizador devolve a data de atendimento', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, {
+        situacao_pedido_id: 5,
+        data_pedido: '2026-03-10',
+        data_atendimento: '2026-03-20'
+      })
+
+      const res = await request(app)
+        .get(`/api/mapoteca/pedido/localizador/${pedido.localizador_pedido}`)
+
+      expect(res.status).toBe(200)
+      // DATE volta como string crua ('AAAA-MM-DD'), sem fuso no caminho.
+      expect(res.body.dados.data_atendimento).toBe('2026-03-20')
+    })
+
     it('GET /api/mapoteca/pedido/localizador/:localizador inexistente returns 404', async () => {
       const res = await request(app)
         .get('/api/mapoteca/pedido/localizador/AAAA-BBBB-CCCC')

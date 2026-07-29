@@ -25,6 +25,7 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
 import { createPedidoFormFields } from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
+import { openEtiquetaEnvioDialog } from './etiqueta-envio.js';
 
 // Acima deste tamanho, o valor nao cabe na mesma linha do rotulo dentro de um
 // card de meia largura, e passa a ser empilhado.
@@ -524,8 +525,15 @@ export async function renderPedidoDetails(container, { params }) {
           chip(pedido.localizador_pedido || '-', 'secondary'),
         ]),
       ]),
-      // PUT e DELETE /pedido sao gerente.
-      el('div', { className: 'page__actions' }, pode.gerente ? [
+      // PUT e DELETE /pedido sao gerente. A etiqueta NAO: ela nao escreve nada,
+      // e quem embala o pacote e quem precisa imprimi-la.
+      el('div', { className: 'page__actions' }, [
+        el('button', {
+          className: 'btn btn--secondary',
+          type: 'button',
+          onClick: () => openEtiquetaEnvioDialog(pedido),
+        }, [svgIcon(ICONS.print, 16), 'Etiqueta de envio']),
+        ...(pode.gerente ? [
         el('button', {
           className: 'btn btn--secondary',
           type: 'button',
@@ -536,7 +544,8 @@ export async function renderPedidoDetails(container, { params }) {
           type: 'button',
           onClick: () => excluirPedido(pedido),
         }, [svgIcon(ICONS.delete, 16), 'Excluir']),
-      ] : []),
+        ] : []),
+      ]),
     ]));
 
     // Info cards
@@ -553,7 +562,9 @@ export async function renderPedidoDetails(container, { params }) {
         el('div', { className: 'detail-card__title', textContent: 'Pedido' }),
         infoRow('Data do pedido', formatDate(pedido.data_pedido)),
         infoRow('Prazo', formatDate(pedido.prazo)),
-        infoRow('Atendimento', formatDate(pedido.data_atendimento)),
+        // Esta e a data que a consulta publica mostra ao cliente, com o rotulo
+        // dele ("envio/entrega"): o pedido fecha no dia em que o material sai.
+        infoRow('Atendimento (envio/entrega)', formatDate(pedido.data_atendimento)),
         infoRow('Itens', `${nItens} carta(s) · ${nExemplares} exemplar(es)`),
         infoRow('Observação', pedido.observacao),
       ]),
@@ -597,6 +608,20 @@ export async function renderPedidoDetails(container, { params }) {
         infoRow('Canal', pedido.canal_recebimento_nome),
         infoRow('Município/Área', pedido.municipio),
         infoRow('Nº de imagens', pedido.qtd_imagens != null ? String(pedido.qtd_imagens) : '-'),
+      ]));
+    }
+
+    // Observação interna (visível quando houver). Fica FORA dos quatro cards,
+    // em bloco próprio e com o aviso na frente, porque a diferença entre ela e
+    // as outras duas observações não é de assunto, é de quem lê: a observação e
+    // a observação de envio saem na consulta pública do cliente, esta não sai.
+    if (pedido.observacao_interna) {
+      root.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
+        el('div', { className: 'detail-card__title flex gap-sm' }, [
+          el('span', { textContent: 'Observação interna' }),
+          chip('não aparece na consulta do cliente', 'secondary'),
+        ]),
+        el('div', { className: 'detail-card__value', textContent: pedido.observacao_interna }),
       ]));
     }
 

@@ -141,4 +141,45 @@ describe('renderPedidoDetails', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
+  // A etiqueta nao escreve nada, e quem embala o pacote e quem a imprime: por
+  // isso ela NAO fica atras do perfil de gerente, ao contrario de editar e
+  // excluir.
+  test('oferece a etiqueta de envio', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    const botao = [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Etiqueta de envio'));
+    expect(botao).toBeTruthy();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a observacao interna aparece com o aviso de que o cliente nao a ve', async () => {
+    svc.getPedido.mockResolvedValue({
+      ...PEDIDO,
+      observacao_interna: 'Sd Silva levou aos Correios em 29/07',
+    });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Observação interna');
+    expect(container.textContent).toContain('Sd Silva levou aos Correios');
+    expect(container.textContent).toContain('não aparece na consulta do cliente');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('pedido sem observacao interna nao mostra o bloco', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).not.toContain('Observação interna');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
 });

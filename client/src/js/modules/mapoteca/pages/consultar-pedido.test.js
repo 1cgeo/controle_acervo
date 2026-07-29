@@ -89,6 +89,48 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).toContain('Pedido não encontrado');
   });
 
+  // O que o cliente chama de "data do envio" e a data_atendimento: o pedido
+  // fecha no dia em que o material sai. Nao existe coluna data_envio.
+  test('mostra a data de envio/entrega quando o pedido ja foi atendido', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO,
+      situacao_pedido_id: 5,
+      situacao_pedido_nome: 'Concluído',
+      data_atendimento: '2026-06-25',
+      localizador_envio: 'QN048384596BR',
+    });
+    const container = await montar('AB12-CD34-EF56');
+
+    expect(container.textContent).toContain('Data de envio/entrega');
+    expect(container.textContent).toContain('25/06/2026');
+    expect(container.textContent).toContain('QN048384596BR');
+  });
+
+  test('pedido ainda nao atendido nao mostra a linha de envio', async () => {
+    const container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).not.toContain('Data de envio/entrega');
+  });
+
+  // Colapsavel vazio era um convite a clicar para nao achar nada. No
+  // pre-cadastramento e no pedido de LAI (que nao usa folha MI), pedido sem item
+  // e o normal, nao cadastro pela metade.
+  test('pedido sem item nao mostra o bloco colapsavel', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({ ...PEDIDO, produtos: [] });
+    const container = await montar('AB12-CD34-EF56');
+
+    expect(container.querySelector('.consulta-collapse')).toBeNull();
+    expect(container.textContent).not.toContain('O que foi pedido');
+    // O cartao com a situacao continua, que e o que a pessoa veio ver.
+    expect(container.textContent).toContain('Em andamento');
+  });
+
+  test('pedido com item mostra o colapsavel com a contagem no titulo', async () => {
+    const container = await montar('AB12-CD34-EF56');
+
+    expect(container.querySelector('.consulta-collapse')).not.toBeNull();
+    expect(container.textContent).toContain('O que foi pedido');
+  });
+
   // Esta e uma rota PUBLICA: quem chega aqui pode nao ter conta, e quem chegou
   // por engano ficava sem caminho de volta a nao ser editando a URL.
   test('tem saida de volta para a tela de entrada, com ou sem localizador', async () => {

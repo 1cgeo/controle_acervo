@@ -107,6 +107,15 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     if (pedido.observacao) {
       rows.push(infoRow('Observação', pedido.observacao));
     }
+    // A data que o cliente quer ver e a do envio, e ela e a data_atendimento:
+    // o pedido fecha no dia em que o material sai (51 de 52 pedidos concluidos
+    // com item datado, medido na producao em 2026-07-29). Nao existe coluna
+    // "data_envio" de proposito. O rotulo aqui e o do CLIENTE ("envio/
+    // entrega"), e nao o interno ("atendimento"), porque quem le esta tela nao
+    // fala a lingua do nosso cadastro.
+    if (pedido.data_atendimento) {
+      rows.push(infoRow('Data de envio/entrega', formatDate(pedido.data_atendimento)));
+    }
     if (pedido.localizador_envio) {
       rows.push(infoRow('Rastreio do envio', pedido.localizador_envio));
     }
@@ -131,10 +140,14 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   }
 
   function showItens(produtos) {
+    // Pedido SEM item cadastrado nao mostra bloco nenhum (chefe, 2026-07-29).
+    // O colapsavel vazio era um convite a clicar para nao achar nada, e no
+    // pre-cadastramento (situacao 1) e no pedido de LAI, que nao usa folha MI,
+    // essa e a situacao NORMAL, nao um cadastro pela metade.
+    if (!produtos.length) return;
+
     const nExemplares = produtos.reduce((soma, r) => soma + (Number(r.quantidade) || 0), 0);
-    const resumoItens = produtos.length
-      ? `O que foi pedido — ${produtos.length} carta(s) · ${nExemplares} exemplar(es)`
-      : 'O que foi pedido';
+    const resumoItens = `O que foi pedido — ${produtos.length} carta(s) · ${nExemplares} exemplar(es)`;
 
     const bloco = el('details', {
       className: 'consulta-collapse',
@@ -147,13 +160,6 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       }),
     ]);
     resultArea.appendChild(bloco);
-
-    if (!produtos.length) {
-      bloco.appendChild(el('div', { className: 'consulta-card__message' }, [
-        el('p', { textContent: 'Nenhum item registrado para este pedido.' }),
-      ]));
-      return;
-    }
 
     const itens = produtos.map((p) => {
       const titulo = p.produto_nome || p.inom || p.mi || 'Produto';

@@ -78,6 +78,9 @@ const pedidoBase = {
   observacao: Joi.string().allow(null, ''),
   localizador_envio: Joi.string().allow(null, ''),
   observacao_envio: Joi.string().allow(null, ''),
+  // Anotação da equipe. observacao e observacao_envio SAEM na consulta pública
+  // por localizador; esta não sai, e é onde vai o que é só nosso.
+  observacao_interna: Joi.string().allow(null, ''),
   motivo_cancelamento: Joi.when('situacao_pedido_id', {
     is: SITUACAO_PEDIDO.CANCELADO,
     then: Joi.string().required(),

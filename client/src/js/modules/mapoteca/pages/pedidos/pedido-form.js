@@ -59,10 +59,15 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       required: true,
       value: pedido ? isoDateOrEmpty(pedido.data_pedido) : toIsoDate(new Date()),
     }),
+    // Esta data e a que o cliente ve na consulta publica, como "data de
+    // envio/entrega": na pratica o pedido fecha no dia em que o material sai
+    // (medido em 2026-07-29: 51 de 52 pedidos com item datado tem esta data
+    // igual a maior data de entrega dos itens). Por isso NAO existe um campo
+    // separado de data de envio.
     data_atendimento: createDateField({
-      label: 'Data de atendimento',
+      label: 'Data de atendimento (envio/entrega)',
       value: isoDateOrEmpty(pedido && pedido.data_atendimento),
-      helpText: 'Obrigatória quando a situação é Concluído (RN02)',
+      helpText: 'Dia em que o material saiu. Obrigatória quando a situação é Concluído (RN02). O cliente a vê como "envio/entrega".',
     }),
     prazo: createDateField({
       label: 'Prazo',
@@ -132,6 +137,17 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       value: (pedido && pedido.observacao) || '',
       rows: 2,
     }),
+    // A observacao e a observacao de envio APARECEM na consulta publica do
+    // cliente (rota por localizador, sem sessao). Esta nao aparece: e onde vai
+    // quem levou aos Correios, com quem esta o cartao de envio, o que
+    // reimprimir. O aviso no campo existe porque, sem ele, a diferenca entre os
+    // tres campos de texto e invisivel na hora de escrever.
+    observacao_interna: createTextareaField({
+      label: 'Observação interna',
+      value: (pedido && pedido.observacao_interna) || '',
+      rows: 2,
+      helpText: 'Só para a equipe. NÃO aparece na consulta do cliente.',
+    }),
     motivo_cancelamento: createTextareaField({
       label: 'Motivo do cancelamento',
       value: (pedido && pedido.motivo_cancelamento) || '',
@@ -165,6 +181,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
   fields.palavras_chave.element.classList.add('form-grid__full');
   fields.observacao_envio.element.classList.add('form-grid__full');
   fields.observacao.element.classList.add('form-grid__full');
+  fields.observacao_interna.element.classList.add('form-grid__full');
   fields.motivo_cancelamento.element.classList.add('form-grid__full');
 
   const basicoElement = el('div', { className: 'form-grid' }, [
@@ -188,6 +205,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     fields.palavras_chave.element,
     fields.observacao_envio.element,
     fields.observacao.element,
+    fields.observacao_interna.element,
     fields.motivo_cancelamento.element,
   ]);
 
@@ -271,6 +289,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       observacao: orNull(fields.observacao.getValue()),
       localizador_envio: orNull(fields.localizador_envio.getValue()),
       observacao_envio: orNull(fields.observacao_envio.getValue()),
+      observacao_interna: orNull(fields.observacao_interna.getValue()),
       motivo_cancelamento: orNull(fields.motivo_cancelamento.getValue()),
       canal_recebimento_id: fields.canal_recebimento_id.getValue(),
       municipio: orNull(fields.municipio.getValue()),
