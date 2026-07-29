@@ -527,8 +527,27 @@
   gap: var(--space-xs);
 }
 
+/* O botao flutua SOBRE o mapa, entao ele precisa de fundo proprio: o
+   `btn--secondary` nasce translucido, e sobre telhado, mata e rio o rotulo
+   ficava ilegivel. Fundo opaco do tema, borda e sombra, como a dica e o aviso
+   que ja flutuam ali. */
 .busca-mapa__btn {
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   box-shadow: var(--shadow-md);
+}
+
+/* O seletor carrega `.btn--secondary` de proposito, para VENCER a regra
+   `.btn--secondary:hover:not(:disabled)` de forms.css. Aquela pinta o fundo com
+   `--bg-selected`, que e um azul de 8% de alfa: num botao dentro de um painel
+   isso e um realce discreto, mas este botao flutua sobre o MAPA, e no hover ele
+   ficava translucido, com o texto sobre a imagem (chefe, 2026-07-29). Empatar a
+   especificidade nao bastaria: o desempate por ordem depende de qual folha o
+   bundler escreve por ultimo. */
+.busca-mapa__btn.btn--secondary:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  border-color: var(--color-primary);
 }
 
 .busca-mapa__dica,

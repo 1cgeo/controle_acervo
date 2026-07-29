@@ -18,6 +18,7 @@ const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
 const { integracaoRoute } = require("./integracao");
 const { relatorioRoute } = require("./relatorio");
 const { pontoControleRoute } = require("./ponto_controle");
+const { limitesRoute } = require("./limites");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
@@ -71,6 +72,10 @@ router.use("/dashboard", acervoDashboardRoute);
 // Ponto de controle. Schema próprio, mas módulo de perfil do ACERVO: é uma tela
 // do acervo, e não um sistema à parte.
 router.use("/ponto_controle", pontoControleRoute);
+
+// Limite político-administrativo (schema `limites`). Rota própria porque é dado
+// de REFERÊNCIA: o acervo e o ponto de controle consultam, nenhum é dono.
+router.use("/limites", limitesRoute);
 
 router.use("/mapoteca/dashboard", mapotecaDashboardRoute);
 

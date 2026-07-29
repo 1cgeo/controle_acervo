@@ -78,10 +78,6 @@ const montarFiltros = (filtros, exceto) => {
     condicoes.push('l.projeto_id = $<projeto_id>')
     valores.projeto_id = filtros.projeto_id
   }
-  if (usar('tipo_situacao')) {
-    condicoes.push('p.tipo_situacao = $<tipo_situacao>')
-    valores.tipo_situacao = filtros.tipo_situacao
-  }
   if (usar('cod_ponto')) {
     condicoes.push('p.cod_ponto ILIKE $<cod_ponto>')
     valores.cod_ponto = `%${filtros.cod_ponto}%`
@@ -92,6 +88,18 @@ const montarFiltros = (filtros, exceto) => {
       'p.geom && ST_MakeEnvelope($<minx>, $<miny>, $<maxx>, $<maxy>, 4674)'
     )
     Object.assign(valores, { minx, miny, maxx, maxy })
+  }
+  // Área DESENHADA no mapa (chefe, 2026-07-29). O `&&` usa o índice GIST e o
+  // `ST_Intersects` decide de verdade; sozinho, o `&&` compararia retângulos
+  // envolventes e traria ponto de fora do desenho. O `ST_MakeValid` é cinto de
+  // segurança: o desenho da tela já barra autointerseção, mas geometria inválida
+  // vinda por URL derrubaria a consulta inteira em vez de devolver zero.
+  if (usar('geometria')) {
+    condicoes.push(`(
+      p.geom && ST_SetSRID(ST_GeomFromGeoJSON($<geometria>), 4674)
+      AND ST_Intersects(p.geom, ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON($<geometria>), 4674)))
+    )`)
+    valores.geometria = filtros.geometria
   }
   if (usar('ids')) {
     condicoes.push('p.id IN ($<ids:csv>)')
@@ -148,7 +156,6 @@ controller.getFacetas = async (filtros = {}) => {
   return db.conn.task(async t => {
     const porProjeto = montarFiltros(filtros, 'projeto_id')
     const porLote = montarFiltros(filtros, 'lote_id')
-    const porSituacao = montarFiltros(filtros, 'tipo_situacao')
 
     const projetos = await t.any(
       `SELECT pr.id AS code, pr.nome, COUNT(p.id)::int AS pontos
@@ -165,16 +172,6 @@ controller.getFacetas = async (filtros = {}) => {
        GROUP BY l.id, l.nome, l.pit, l.projeto_id
        ORDER BY l.nome`,
       porLote.valores
-    )
-
-    const situacoes = await t.any(
-      `SELECT s.code, s.nome, COUNT(p.id)::int AS pontos
-       ${DE}
-       INNER JOIN ponto_controle.tipo_situacao AS s ON s.code = p.tipo_situacao
-       ${porSituacao.where}
-       GROUP BY s.code, s.nome
-       ORDER BY s.code`,
-      porSituacao.valores
     )
 
     // Lugar. Mesma regra das outras listas: so quem TEM ponto, com o
@@ -208,7 +205,7 @@ controller.getFacetas = async (filtros = {}) => {
       )
       : []
 
-    return { projetos, lotes, situacoes, estados, municipios }
+    return { projetos, lotes, estados, municipios }
   })
 }
 

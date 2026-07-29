@@ -11,7 +11,7 @@ vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js')
 vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   getDashboardPontoControle: vi.fn(() => Promise.resolve({
     total_pontos: 0, total_arquivos: 0, total_gb: 0, total_missoes: 0,
-    sessoes_abertas: 0, por_situacao: [], por_tipo_arquivo: [],
+    sessoes_abertas: 0, por_tipo_arquivo: [],
     por_missao: [], por_mes: [], ultimas_importacoes: [],
   })),
 }));

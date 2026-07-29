@@ -1,5 +1,7 @@
 import { el } from '@utils/dom.js';
 import { ESTILO_OSM, BRASIL, carregarMapLibre } from '@components/mapa/base.js';
+import { criarDesenhoDeArea } from '@components/mapa/desenho-area.js';
+import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 
 /**
  * Mapa dos pontos de controle, sobre a base comum do SCA
@@ -12,8 +14,11 @@ import { ESTILO_OSM, BRASIL, carregarMapLibre } from '@components/mapa/base.js';
  * busca pinta poligono, aqui se pinta circulo, e o "enquadrar" vira um zoom com
  * nivel fixo, porque um ponto nao tem extensao para caber na tela.
  *
- * Nao ha desenho de area: o recorte do ponto de controle e a area VISIVEL do
- * mapa, porque a pergunta de campo e "que pontos existem nesta regiao".
+ * O desenho de area chegou em 2026-07-29 (chefe), pelo mesmo modulo da busca
+ * (@components/mapa/desenho-area.js). Antes so havia o recorte pela area
+ * VISIVEL, que e um retangulo. A pergunta de campo raramente e retangular: e
+ * "que pontos existem NESTE vale", "nesta faixa de fronteira", "nesta area de
+ * trabalho". O retangulo continua, para quem so quer o que esta na tela.
  */
 
 const FONTE = 'pontos';
@@ -41,36 +46,29 @@ const CLUSTER_RAIO = 45;
 const CLUSTER_ZOOM_MAX = 13;
 
 /**
- * Cor por situacao.
+ * Cor do ponto: UMA so, e nao uma por situacao.
  *
- * Os codigos e os nomes sao os de ponto_controle.tipo_situacao, copiados do
- * er/ponto_controle.sql. NAO invente a ordem: o 3 e APROVADO e o 4 e REPROVADO,
- * e nao o contrario. Trocar os dois pinta o mapa mentindo, e e o unico erro
- * desta tela que ninguem percebe olhando.
+ * Desde 2026-07-29 so ponto APROVADO entra no acervo (o `prepare-upload` recusa
+ * o resto). Pintar por `tipo_situacao` daria um mapa de uma cor so com uma
+ * legenda de cinco, ou seja, a tela prometeria uma distincao que o dado nao tem.
  *
- * O verde e o ponto APROVADO, e nao apenas o medido: e a informacao que decide
- * se o dado serve ao ajuste. Situacao desconhecida (9999) fica cinza, e nao
- * invisivel, porque ponto que existe e nao se sabe o estado ainda e um ponto
- * para conferir.
+ * O verde e o mesmo que ja significava aprovado, entao quem conhece a tela nao
+ * reaprende nada.
  */
-const COR_SITUACAO = [
-  'match',
-  ['get', 'tipo_situacao'],
-  1, '#f59e0b', // Nao medido
-  2, '#3b82f6', // Aguardando revisao
-  3, '#22c55e', // Aprovado
-  4, '#ef4444', // Reprovado
-  '#94a3b8', // 9999 (A SER PREENCHIDO) e qualquer codigo novo
-];
+const COR_PONTO = '#22c55e';
 
 /**
  * @param {Object} opts
  * @param {(id:number)=>void} opts.onAlternarSelecao - clique num ponto
  * @param {(id:number|null)=>void} [opts.onApontar] - mouse sobre o ponto
  * @param {()=>void} [opts.onMover] - fim de um movimento feito pela PESSOA
+ * @param {(geometria:Object)=>void} [opts.onAreaDesenhada] - poligono concluido
+ * @param {()=>void} [opts.onAreaCancelada] - area removida
  * @returns {Object} controle do mapa
  */
-export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
+export function criarMapaPontos({
+  onAlternarSelecao, onApontar, onMover, onAreaDesenhada, onAreaCancelada,
+}) {
   let maplibregl = null;
   let mapa = null;
   let pronto = false;
@@ -86,21 +84,38 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
   // busca nova: o resultado mudaria sob os pes de quem esta lendo a tela.
   let movimentoProgramatico = false;
 
+  const desenho = criarDesenhoDeArea({ onAreaDesenhada, onAreaCancelada });
+  // Contorno do estado ou do municipio filtrado, o mesmo modulo da busca.
+  const limite = criarDestaqueDeLimite();
+
   const container = el('div', { className: 'pc-mapa__canvas' });
   const aviso = el('div', { className: 'pc-mapa__aviso hidden' });
 
-  const legenda = el('div', { className: 'pc-mapa__legenda' }, [
-    { cor: '#f59e0b', texto: 'Não medido' },
-    { cor: '#3b82f6', texto: 'Aguardando revisão' },
-    { cor: '#22c55e', texto: 'Aprovado' },
-    { cor: '#ef4444', texto: 'Reprovado' },
-    { cor: '#94a3b8', texto: 'Outra' },
-  ].map(({ cor, texto }) => el('span', { className: 'pc-mapa__legenda-item' }, [
-    el('span', { className: 'pc-mapa__legenda-cor', style: `background:${cor}` }),
-    el('span', { textContent: texto }),
-  ])));
+  // Sem legenda: com uma cor so ela nao explicaria nada, e uma legenda de cinco
+  // estados sobre um mapa de um estado so seria pior do que legenda nenhuma.
+  //
+  // As classes do desenho sao as mesmas da busca (`busca-mapa__controles`,
+  // `desenho-controles`): mesmo gesto, mesma aparencia, uma folha de estilo so.
+  const raiz = el('div', { className: 'pc-mapa' }, [
+    container,
+    el('div', { className: 'busca-mapa__controles' }, [desenho.botao]),
+    desenho.controles,
+    aviso,
+  ]);
 
-  const raiz = el('div', { className: 'pc-mapa' }, [container, legenda, aviso]);
+  /**
+   * O id do ponto, venha ele no topo da feicao ou nas propriedades.
+   *
+   * Le os DOIS porque a fonte e clusterizada: o supercluster refaz as feicoes e
+   * o id de topo depende do `promoteId` estar ligado. Ler so o topo ja custou um
+   * defeito: o clique chamava a selecao com NaN e nao selecionava nada.
+   */
+  function idDaFeicao(feicao) {
+    if (!feicao) return null;
+    const bruto = feicao.id != null ? feicao.id : (feicao.properties || {}).id;
+    const id = Number(bruto);
+    return Number.isFinite(id) ? id : null;
+  }
 
   function mostrarAviso(texto) {
     aviso.textContent = texto || '';
@@ -112,6 +127,7 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
     if (destruido) return;
     if (!maplibregl) {
       mostrarAviso('Não foi possível carregar o mapa. A lista continua funcionando.');
+      desenho.desabilitar();
       return;
     }
 
@@ -122,7 +138,9 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
       fitBoundsOptions: { padding: 24 },
       attributionControl: true,
     });
-    mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // A navegacao vai para a ESQUERDA, como na busca: o canto direito de cima e
+    // do botao "Desenhar area", e os dois no mesmo canto se sobreporiam.
+    mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
     mapa.on('load', () => {
       if (destruido) return;
@@ -134,11 +152,11 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
         cluster: true,
         clusterRadius: CLUSTER_RAIO,
         clusterMaxZoom: CLUSTER_ZOOM_MAX,
-        // Quantos APROVADOS o grupo tem. Serve ao rotulo do grupo, que assim
-        // diz algo sobre o dado, e nao so quantos pontos ha ali.
-        clusterProperties: {
-          aprovados: ['+', ['case', ['==', ['get', 'tipo_situacao'], 3], 1, 0]],
-        },
+        // O id vem das PROPRIEDADES, e nao do topo da feicao. Com `cluster`
+        // ligado o supercluster refaz as feicoes e o id de topo se PERDE:
+        // `feature.id` chegava indefinido no clique, e selecionar um ponto no
+        // mapa nao selecionava nada. O `promoteId` devolve o id a feicao.
+        promoteId: 'id',
       });
       mapa.addSource(FONTE_REALCE, { type: 'geojson', data: colecaoRealce() });
 
@@ -174,7 +192,7 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
 
       // O halo e uma camada propria, e nao um `circle-stroke` do ponto: e ele
       // que engorda no selecionado e no apontado, e mexer no stroke do circulo
-      // faria a cor da situacao mudar de tamanho junto. Vem ANTES da camada de
+      // faria a cor do ponto mudar de tamanho junto. Vem ANTES da camada de
       // pontos para ficar por baixo dela.
       mapa.addLayer({
         id: 'pontos-halo',
@@ -194,15 +212,22 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
         filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': 6,
-          'circle-color': COR_SITUACAO,
+          'circle-color': COR_PONTO,
           'circle-stroke-width': 1,
           'circle-stroke-color': '#1f2937',
         },
       });
 
+      // Ordem das camadas = ordem de insercao. O contorno do lugar entra sobre
+      // os pontos e os grupos, e o desenho por ULTIMO, porque e o gesto em
+      // curso e nada pode cobri-lo.
+      limite.montar(mapa);
+      desenho.montar(mapa);
+
       // Clique no grupo abre o grupo, e nao seleciona nada: e o gesto que todo
       // mapa agrupado tem, e sem ele o grupo seria um obstaculo.
       mapa.on('click', 'clusters', (evento) => {
+        if (desenho.ocupado()) return;
         const feicao = evento.features && evento.features[0];
         if (!feicao) return;
         const fonte = mapa.getSource(FONTE);
@@ -211,20 +236,28 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
           mapa.easeTo({ center: feicao.geometry.coordinates, zoom, duration: 400 });
         }).catch(() => {});
       });
-      mapa.on('mouseenter', 'clusters', () => { mapa.getCanvas().style.cursor = 'pointer'; });
-      mapa.on('mouseleave', 'clusters', () => { mapa.getCanvas().style.cursor = ''; });
+      mapa.on('mouseenter', 'clusters', () => {
+        if (!desenho.ocupado()) mapa.getCanvas().style.cursor = 'pointer';
+      });
+      mapa.on('mouseleave', 'clusters', () => {
+        if (!desenho.ocupado()) mapa.getCanvas().style.cursor = '';
+      });
 
+      // Durante o desenho, o clique marca VERTICE: selecionar o ponto que ficou
+      // debaixo do cursor faria dois gestos ao mesmo tempo.
       mapa.on('click', 'pontos', (evento) => {
-        const feicao = evento.features && evento.features[0];
-        if (feicao && onAlternarSelecao) onAlternarSelecao(Number(feicao.id));
+        if (desenho.ocupado()) return;
+        const id = idDaFeicao(evento.features && evento.features[0]);
+        if (id !== null && onAlternarSelecao) onAlternarSelecao(id);
       });
       mapa.on('mousemove', 'pontos', (evento) => {
+        if (desenho.ocupado()) return;
         mapa.getCanvas().style.cursor = 'pointer';
-        const feicao = evento.features && evento.features[0];
-        if (feicao && onApontar) onApontar(Number(feicao.id));
+        const id = idDaFeicao(evento.features && evento.features[0]);
+        if (id !== null && onApontar) onApontar(id);
       });
       mapa.on('mouseleave', 'pontos', () => {
-        mapa.getCanvas().style.cursor = '';
+        if (!desenho.ocupado()) mapa.getCanvas().style.cursor = '';
         if (onApontar) onApontar(null);
       });
 
@@ -233,6 +266,9 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
           movimentoProgramatico = false;
           return;
         }
+        // Desenhar nao e navegar: o arrasto de vertice move o mapa e dispararia
+        // uma consulta que ninguem pediu.
+        if (desenho.ocupado()) return;
         if (onMover) onMover();
       });
 
@@ -305,11 +341,16 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
         porId.set(id, [Number(p.longitude), Number(p.latitude)]);
         feicoes.push({
           type: 'Feature',
-          // O id vai no TOPO da feicao, e nao so nas propriedades: o
-          // `setFeatureState` do MapLibre so acha a feicao por ele.
+          // O id vai NAS DUAS partes: no topo, para quem le a colecao crua, e
+          // nas propriedades, porque e de la que o `promoteId` da fonte
+          // clusterizada o recupera depois que o supercluster refaz a feicao.
           id,
           geometry: { type: 'Point', coordinates: [Number(p.longitude), Number(p.latitude)] },
-          properties: { cod_ponto: p.cod_ponto, tipo_situacao: Number(p.tipo_situacao) },
+          properties: {
+            id,
+            cod_ponto: p.cod_ponto,
+            tipo_situacao: Number(p.tipo_situacao),
+          },
         });
       }
       ultimaColecao = { type: 'FeatureCollection', features: feicoes };
@@ -372,8 +413,25 @@ export function criarMapaPontos({ onAlternarSelecao, onApontar, onMover }) {
 
     aviso: mostrarAviso,
 
+    /** Desenho de área: a página repassa o teclado e restaura o que veio na URL. */
+    tratarTecla: desenho.tratarTecla,
+    mostrarArea: desenho.mostrarArea,
+    limparArea: desenho.limparArea,
+
+    /**
+     * Destaque do lugar filtrado.
+     *
+     * O enquadramento NÃO é marcado como programático de propósito: no modo
+     * "só na área do mapa" a câmera define o recorte, então o `moveend` tem de
+     * disparar a consulta. Suprimi-lo deixaria a lista falando de uma área que
+     * não é mais a que está na tela.
+     */
+    destacarLimite: limite.mostrar,
+    limparLimite: limite.limpar,
+
     destruir() {
       destruido = true;
+      desenho.destruir();
       if (observador) observador.disconnect();
       if (mapa) mapa.remove();
       mapa = null;

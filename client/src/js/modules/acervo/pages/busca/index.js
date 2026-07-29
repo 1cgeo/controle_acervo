@@ -6,6 +6,7 @@ import {
   buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
   getTiposProduto, getTiposEscala, getSubtiposProduto,
 } from '@modules/acervo/services/acervo-service.js';
+import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { criarMapa } from './mapa.js';
 import { abrirProdutoDialog, plural } from './produto-dialog.js';
 import { criarSelecao } from './selecao.js';
@@ -59,6 +60,13 @@ export async function renderBusca(container, ctx) {
   // 'nenhum' | 'mapa' | 'desenho'
   let modoArea = 'nenhum';
   let areaDesenhada = null;
+  // Lugar destacado no mapa, como 'estado:43' ou 'municipio:4314902'. Guarda a
+  // CHAVE, e nao a geometria: serve para saber quando o destaque mudou e para
+  // descartar a resposta de um pedido que ja ficou velho.
+  let chaveLugar = '';
+  // Verdadeiro quando o destaque do lugar levou a camera. E ele que substitui o
+  // enquadramento automatico no `extent` do resultado.
+  let lugarComandaCamera = false;
 
   const query = ctx && ctx.query ? ctx.query : new URLSearchParams();
 
@@ -113,6 +121,7 @@ export async function renderBusca(container, ctx) {
     'aria-label': 'Estado',
     onChange: () => {
       municipioSelect.value = '';
+      destacarLugar();
       buscar({ reiniciarPagina: true });
     },
   }, [el('option', { value: '', textContent: 'Todos os estados' })]);
@@ -120,7 +129,7 @@ export async function renderBusca(container, ctx) {
   const municipioSelect = el('select', {
     className: 'busca-filtros__select',
     'aria-label': 'Município',
-    onChange: () => buscar({ reiniciarPagina: true }),
+    onChange: () => { destacarLugar(); buscar({ reiniciarPagina: true }); },
   }, [el('option', { value: '', textContent: 'Escolha o estado' })]);
 
   // Sugestao propria em vez de `<datalist>`: a lista nativa escolhia sozinha
@@ -288,6 +297,57 @@ export async function renderBusca(container, ctx) {
       buscar({ reiniciarPagina: true });
     },
   });
+
+  /**
+   * Pinta no mapa o contorno do lugar filtrado e leva a camera ate ele.
+   *
+   * O municipio ganha do estado quando os dois estao escolhidos: e o recorte
+   * mais estreito, e e o que a busca esta aplicando.
+   *
+   * Substitui o enquadramento no `extent` do resultado, e isto conserta um
+   * problema antigo: existem produtos de cobertura NACIONAL no acervo, e eles
+   * intersectam qualquer recorte, entao o extent de uma busca por um municipio
+   * podia ser o Brasil inteiro. O contorno do lugar nao tem esse defeito.
+   *
+   * Falha em silencio de proposito: o destaque e apoio visual, o filtro funciona
+   * sem ele, e um alerta a cada troca de estado seria pior do que a borda
+   * faltando.
+   *
+   * @param {Object} [opcoes]
+   * @param {boolean} [opcoes.enquadrar=true]
+   */
+  async function destacarLugar({ enquadrar = true } = {}) {
+    const chave = municipioSelect.value
+      ? `municipio:${municipioSelect.value}`
+      : (estadoSelect.value ? `estado:${estadoSelect.value}` : '');
+    if (chave === chaveLugar) return;
+    chaveLugar = chave;
+
+    if (!chave) {
+      lugarComandaCamera = false;
+      mapa.limparLimite();
+      return;
+    }
+
+    // Marcado ANTES da espera, e nao depois: quem chama nao aguarda esta funcao,
+    // e a busca que vem logo em seguida pinta o resultado antes de a geometria
+    // chegar. Marcando depois, essa pintura enquadraria no `extent` e a camera
+    // saltaria duas vezes, para dois lugares diferentes.
+    lugarComandaCamera = enquadrar;
+
+    const [tipo, id] = chave.split(':');
+    try {
+      const limite = await getLimite(tipo, id);
+      // Trocar de lugar duas vezes seguidas: a primeira resposta pode chegar
+      // depois da segunda, e pintaria o estado que a pessoa ja abandonou.
+      if (disposed || chaveLugar !== chave) return;
+      mapa.destacarLimite(limite, { enquadrar });
+    } catch {
+      if (chaveLugar !== chave) return;
+      chaveLugar = '';
+      lugarComandaCamera = false;
+    }
+  }
 
   const page = el('div', { className: 'busca' }, [
     el('div', { className: 'busca__topo' }, [
@@ -457,7 +517,9 @@ export async function renderBusca(container, ctx) {
       // NACIONAL no acervo, e eles intersectam qualquer recorte. O `extent` de
       // 22 produtos achados num quadrado de 15 km no RS vinha sendo o Brasil
       // inteiro (medido em 2026-07-28).
-      if (enquadrar && modoArea === 'nenhum' && resposta.extent) {
+      // Com lugar destacado, quem manda na camera e o contorno dele: o extent
+      // por cima tiraria a borda vermelha da vista logo depois de ela aparecer.
+      if (enquadrar && modoArea === 'nenhum' && !lugarComandaCamera && resposta.extent) {
         mapa.enquadrar(resposta.extent);
       }
     } catch (err) {
@@ -640,6 +702,7 @@ export async function renderBusca(container, ctx) {
     tipoSelect.value = '';
     estadoSelect.value = '';
     municipioSelect.value = '';
+    destacarLugar();
     subtipoSelect.value = '';
     atualizarSubtipos();
     escalaSelect.value = '';
@@ -830,6 +893,11 @@ export async function renderBusca(container, ctx) {
       // Geometria ilegivel no link: a busca segue sem recorte.
     }
   }
+
+  // Lugar que veio no link. So enquadra quando o link NAO trouxe recorte
+  // proprio: quem mandou um link com area desenhada ou com "so na area do mapa"
+  // ja escolheu onde a camera devia parar, e o zoom no estado a tiraria de la.
+  destacarLugar({ enquadrar: modoArea === 'nenhum' });
 
   const paginaUrl = parseInt(query.get('page'), 10);
   if (Number.isFinite(paginaUrl) && paginaUrl > 1) pagina = paginaUrl;

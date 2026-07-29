@@ -15,6 +15,14 @@ const {
 
 const controller = {}
 
+/**
+ * `tipo_situacao` 3 = Aprovado, e o valor sai do DDL, nunca do nome do campo.
+ * Ver `er/ponto_controle.sql`: 1 Nao medido, 2 Aguardando revisao, 3 Aprovado,
+ * 4 Reprovado. Trocar 3 por 4 aqui deixaria entrar exatamente o oposto, e sem
+ * erro nenhum.
+ */
+const SITUACAO_APROVADO = 3
+
 const OPERACAO = 'importar_missao'
 
 // Colunas que a importação NUNCA aceita do cliente. O id é a chave local, o
@@ -183,6 +191,24 @@ controller.prepararMissao = async (
           continue
         }
         aceitos[chave] = valor
+      }
+
+      // SÓ PONTO APROVADO ENTRA NO ACERVO (chefe, 2026-07-29).
+      //
+      // O acervo é o que a tropa consulta para AJUSTAR trabalho, e ponto não
+      // revisado ali é pior do que ponto nenhum: quem consulta não distingue
+      // "medido" de "conferido" e usa mesmo assim. A revisão é do fluxo de
+      // campo, e acontece antes, no plugin.
+      //
+      // Recusa o PONTO e segue, em vez de derrubar a missão: missão com mistura
+      // é caso normal, e a parte aprovada dela é acervo legítimo. O motivo volta
+      // em `recusados`, que é como quem importa fica sabendo.
+      if (Number(aceitos.tipo_situacao) !== SITUACAO_APROVADO) {
+        relatorio.recusados.push({
+          cod_ponto: codPonto,
+          motivo: 'só ponto APROVADO entra no acervo; revise antes de importar'
+        })
+        continue
       }
 
       const existente = await t.oneOrNone(

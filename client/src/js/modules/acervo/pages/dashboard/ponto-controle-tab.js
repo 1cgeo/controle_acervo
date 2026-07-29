@@ -1,19 +1,10 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber, formatDate, formatDateTime } from '@utils/format.js';
 import { createStatsCard } from '@components/stats-card.js';
-import { createPieChart } from '@components/charts/pie-chart.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { chip } from '@components/status-chip.js';
 import { getDashboardPontoControle } from '@modules/acervo/services/ponto-controle-service.js';
-
-/** Cores por situação, as MESMAS do mapa e dos chips da tela de ponto. */
-const COR_SITUACAO = {
-  1: '#f59e0b', // Não medido
-  2: '#3b82f6', // Aguardando revisão
-  3: '#22c55e', // Aprovado
-  4: '#ef4444', // Reprovado
-};
 
 const VARIANTE_SESSAO = {
   completed: 'success',
@@ -59,8 +50,6 @@ export async function renderPontoControleTab(container) {
     cardPontos, cardMissoes, cardArquivos, cardGb,
   ]));
 
-  const pieSituacao = createPieChart({ title: 'Pontos por Situação', loading: true });
-
   const barTipoArquivo = createBarChart({
     title: 'Arquivos por Tipo',
     xKey: 'nome',
@@ -71,9 +60,9 @@ export async function renderPontoControleTab(container) {
     loading: true,
   });
 
-  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
-    pieSituacao, barTipoArquivo,
-  ]));
+  // Sem o gráfico de SITUAÇÃO: desde 2026-07-29 só ponto aprovado entra no
+  // acervo, então ele seria uma pizza de uma fatia só.
+  container.appendChild(barTipoArquivo);
 
   const barMes = createBarChart({
     title: 'Pontos por mês de rastreio (12 meses)',
@@ -160,7 +149,6 @@ export async function renderPontoControleTab(container) {
       for (const c of [cardPontos, cardMissoes, cardArquivos, cardGb]) {
         c.update({ value: 'Erro', loading: false });
       }
-      pieSituacao.update({ data: [], loading: false });
       barTipoArquivo.update({ data: [], loading: false });
       barMes.update({ data: [], loading: false });
       tabelaMissoes.update({ rows: [], loading: false });
@@ -178,17 +166,6 @@ export async function renderPontoControleTab(container) {
       }),
       loading: false,
       suffix: 'GB',
-    });
-
-    // Situação com ZERO entra no gráfico: omitir "Reprovado" quando não há
-    // reprovado nenhum faz parecer que a categoria não existe.
-    pieSituacao.update({
-      data: (dados.por_situacao || []).map(s => ({
-        label: s.nome,
-        value: Number(s.pontos),
-        color: COR_SITUACAO[s.code],
-      })),
-      loading: false,
     });
 
     barTipoArquivo.update({

@@ -26,17 +26,6 @@ controller.getResumo = async () => {
           WHERE status = 'pending') AS sessoes_abertas
     `)
 
-    // Por situação, com TODAS as situações do domínio, inclusive as de contagem
-    // zero. Um gráfico que omite "Reprovado" quando não há reprovado nenhum faz
-    // parecer que a categoria não existe.
-    const porSituacao = await t.any(`
-      SELECT s.code, s.nome, COUNT(p.id)::int AS pontos
-      FROM ponto_controle.tipo_situacao AS s
-      LEFT JOIN ponto_controle.ponto AS p ON p.tipo_situacao = s.code
-      GROUP BY s.code, s.nome
-      ORDER BY s.code
-    `)
-
     const porTipoArquivo = await t.any(`
       SELECT tp.nome, COUNT(a.id)::int AS arquivos,
              COALESCE(ROUND(SUM(a.tamanho_mb)::numeric, 1), 0) AS mb
@@ -89,7 +78,6 @@ controller.getResumo = async () => {
     return {
       ...totais,
       total_gb: Number(totais.total_gb),
-      por_situacao: porSituacao,
       por_tipo_arquivo: porTipoArquivo,
       por_missao: porMissao,
       por_mes: porMes,

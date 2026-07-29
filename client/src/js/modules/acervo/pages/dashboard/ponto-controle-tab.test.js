@@ -7,10 +7,6 @@ const DADOS = {
   total_missoes: 8,
   total_arquivos: 6980,
   total_gb: 76.72,
-  por_situacao: [
-    { code: 3, nome: 'Aprovado', pontos: '3200' },
-    { code: 4, nome: 'Reprovado', pontos: '0' },
-  ],
   por_tipo_arquivo: [
     { nome: 'Pacote do ponto', arquivos: '3490', mb: '75000' },
     { nome: 'Monografia', arquivos: '3490', mb: '5500' },

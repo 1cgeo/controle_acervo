@@ -14,15 +14,28 @@ const mapaFalso = vi.hoisted(() => ({
   onAlternarSelecao: null,
   onApontar: null,
   onMover: null,
+  onAreaDesenhada: null,
+  onAreaCancelada: null,
+  areaMostrada: null,
+  areaLimpa: 0,
+  // Destaque do lugar filtrado: guarda o ULTIMO limite pintado e se ele
+  // enquadrou, mais quantas vezes o destaque foi apagado.
+  limiteDestacado: null,
+  limiteEnquadrou: null,
+  limiteLimpo: 0,
   iniciado: false,
   destruido: false,
 }));
 
 vi.mock('@modules/acervo/pages/ponto_controle/mapa.js', () => ({
-  criarMapaPontos: ({ onAlternarSelecao, onApontar, onMover }) => {
+  criarMapaPontos: ({
+    onAlternarSelecao, onApontar, onMover, onAreaDesenhada, onAreaCancelada,
+  }) => {
     mapaFalso.onAlternarSelecao = onAlternarSelecao;
     mapaFalso.onApontar = onApontar;
     mapaFalso.onMover = onMover;
+    mapaFalso.onAreaDesenhada = onAreaDesenhada;
+    mapaFalso.onAreaCancelada = onAreaCancelada;
     return {
       elemento: document.createElement('div'),
       iniciar: () => { mapaFalso.iniciado = true; return Promise.resolve(); },
@@ -33,6 +46,14 @@ vi.mock('@modules/acervo/pages/ponto_controle/mapa.js', () => ({
       enquadrarPonto: (id) => { mapaFalso.enquadradoPonto = id; return true; },
       caixaVisivel: () => mapaFalso.caixaVisivel,
       aviso: () => {},
+      tratarTecla: () => false,
+      mostrarArea: (g) => { mapaFalso.areaMostrada = g; },
+      limparArea: () => { mapaFalso.areaLimpa += 1; },
+      destacarLimite: (limite, opcoes) => {
+        mapaFalso.limiteDestacado = limite;
+        mapaFalso.limiteEnquadrou = !opcoes || opcoes.enquadrar !== false;
+      },
+      limparLimite: () => { mapaFalso.limiteLimpo += 1; },
       destruir: () => { mapaFalso.destruido = true; },
     };
   },
@@ -49,10 +70,15 @@ vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   baixarPontosCsv: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('@modules/acervo/services/limites-service.js', () => ({
+  getLimite: vi.fn(),
+}));
+
 import { renderPontoControle } from '@modules/acervo/pages/ponto_controle/index.js';
 import {
   buscarPontos, buscarPosicoes, getFacetas, baixarPontosCsv,
 } from '@modules/acervo/services/ponto-controle-service.js';
+import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { abrirPontoDialog } from '@modules/acervo/pages/ponto_controle/ponto-dialog.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -85,10 +111,15 @@ const FACETAS = {
     { code: 70, nome: 'Missão 1', pit: 'PIT-01', projeto_id: 7, pontos: 2 },
     { code: 71, nome: 'Missão 2', pit: 'PIT-02', projeto_id: 7, pontos: 0 },
   ],
-  situacoes: [
-    { code: 2, nome: 'Aguardando revisão', pontos: 1 },
-    { code: 3, nome: 'Aprovado', pontos: 1 },
-    { code: 4, nome: 'Reprovado', pontos: 0 },
+  // `code`, e nao `id`: e o nome que o servidor devolve em TODA faceta
+  // (`SELECT es.id AS code`), e e por ele que o preencherFaceta monta o value da
+  // opcao. Com `id`, a opcao nascia com value "undefined" e escolher um estado
+  // na tela nao filtrava nada.
+  estados: [
+    { code: 43, sigla: 'RS', nome: 'Rio Grande do Sul', pontos: 2 },
+  ],
+  municipios: [
+    { code: 4314902, nome: 'Porto Alegre', pontos: 2 },
   ],
 };
 
@@ -118,10 +149,20 @@ beforeEach(() => {
   buscarPosicoes.mockImplementation(() =>
     Promise.resolve({ total: PONTOS.length, pontos: PONTOS }));
   getFacetas.mockImplementation(() => Promise.resolve(FACETAS));
+  getLimite.mockImplementation((tipo, id) => Promise.resolve({
+    tipo, id: Number(id), nome: 'Rio Grande do Sul', sigla: 'RS',
+    bbox: [-57.6, -33.7, -49.6, -27.0],
+    geometria: {
+      type: 'Polygon',
+      coordinates: [[[-57.6, -33.7], [-49.6, -33.7], [-49.6, -27], [-57.6, -27], [-57.6, -33.7]]],
+    },
+  }));
   Object.assign(mapaFalso, {
     pontos: null, selecionados: null, apontado: undefined,
     enquadrado: null, enquadradoPonto: null,
     caixaVisivel: '-53,-31,-50,-29', iniciado: false, destruido: false,
+    areaMostrada: null, areaLimpa: 0,
+    limiteDestacado: null, limiteEnquadrou: null, limiteLimpo: 0,
   });
 });
 
@@ -182,6 +223,37 @@ describe('tela de ponto de controle: lista e mapa', () => {
     expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
   });
 
+  test('o clique no mapa seleciona ponto que NAO esta na pagina da lista', async () => {
+    // O mapa mostra o resultado inteiro e a lista pagina de 20 em 20. Com 3.490
+    // pontos no acervo, quase todo ponto clicavel esta fora da pagina: a tela
+    // ficava sem responder ao clique, e parecia defeito do agrupamento.
+    buscarPontos.mockImplementation(() => resposta({ pontos: [PONTOS[0]], total: 2 }));
+    const { container } = await montar();
+    expect(cartoes(container)).toHaveLength(1);
+
+    mapaFalso.onAlternarSelecao(2);
+    await flush();
+
+    expect(mapaFalso.selecionados).toEqual([2]);
+    // O chip usa o CODIGO, que vem das posicoes e nao do cartao.
+    expect(container.textContent).toContain('RS-HV-2');
+  });
+
+  test('clicar de novo desmarca, mesmo fora da pagina', async () => {
+    buscarPontos.mockImplementation(() => resposta({ pontos: [PONTOS[0]], total: 2 }));
+    await montar();
+
+    mapaFalso.onAlternarSelecao(2);
+    await flush();
+    // Sem este passo a prova passaria com o defeito presente: a selecao nasce
+    // vazia, e "continuar vazia" nao distingue desmarcar de nunca ter marcado.
+    expect(mapaFalso.selecionados).toEqual([2]);
+
+    mapaFalso.onAlternarSelecao(2);
+    await flush();
+    expect(mapaFalso.selecionados).toEqual([]);
+  });
+
   test('apontar no mapa acende o cartao, e apontar no cartao acende o ponto', async () => {
     const { container } = await montar();
 
@@ -226,22 +298,23 @@ describe('tela de ponto de controle: lista e mapa', () => {
 describe('tela de ponto de controle: facetas', () => {
   test('o combo mostra o quantitativo entre parenteses', async () => {
     const { container } = await montar();
-    const [projeto, lote, situacao] = selects(container);
+    // Nao ha combo de SITUACAO desde 2026-07-29: so ponto aprovado entra no
+    // acervo, entao a coluna e constante e o filtro nao discriminava nada.
+    const [projeto, lote, estado] = selects(container);
 
     expect(opcoes(projeto)).toContain('Copa Verde (2)');
     expect(opcoes(lote)).toContain('Missão 1 (PIT-01) (2)');
-    expect(opcoes(situacao)).toContain('Aprovado (1)');
+    expect(estado.getAttribute('aria-label')).toBe('Estado');
   });
 
   test('opcao SEM ponto nao aparece', async () => {
     const { container } = await montar();
-    const [projeto, lote, situacao] = selects(container);
+    const [projeto, lote] = selects(container);
 
     // Um combo com os 86 lotes do acervo, dos quais dois tem ponto, faz a
     // pessoa procurar agulha.
     expect(opcoes(projeto).join()).not.toContain('Fronteira Oeste');
     expect(opcoes(lote).join()).not.toContain('Missão 2');
-    expect(opcoes(situacao).join()).not.toContain('Reprovado');
   });
 
   test('a opcao ESCOLHIDA sobrevive mesmo caindo a zero', async () => {
@@ -284,23 +357,40 @@ describe('tela de ponto de controle: facetas', () => {
 
   test('combo sem nenhuma opcao fica desabilitado', async () => {
     getFacetas.mockImplementation(() => Promise.resolve({
-      projetos: [], lotes: [], situacoes: [],
+      projetos: [], lotes: [],
     }));
     const { container } = await montar();
     expect(selects(container).every(s => s.disabled)).toBe(true);
   });
 });
 
+/** Um quadrado qualquer: o que importa é o caminho, não a forma. */
+const AREA = {
+  type: 'Polygon',
+  coordinates: [[[-53, -31], [-50, -31], [-50, -29], [-53, -29], [-53, -31]]],
+};
+
+/**
+ * O chip esta A VISTA?
+ *
+ * Pelo `hidden`, e nao pelo texto: o jsdom nao aplica CSS, entao o chip
+ * escondido continua no `textContent` e a prova passaria com o chip na tela.
+ */
+const chipVisivel = (container) => {
+  const chip = container.querySelector('.busca-area-chip');
+  return !!chip && !chip.classList.contains('hidden');
+};
+
 describe('tela de ponto de controle: filtros, área e exportação', () => {
   test('o filtro que veio no link e aplicado ja na PRIMEIRA consulta', async () => {
-    await montar({ query: 'projeto_id=7&lote_id=70&tipo_situacao=3&cod_ponto=HV' });
+    await montar({ query: 'projeto_id=7&lote_id=70&estado_id=43&cod_ponto=HV' });
 
     // A primeira chamada, e nao a ultima: os selects nascem com o valor da URL
     // justamente para que a consulta inicial ja o aplique.
     const primeira = buscarPontos.mock.calls[0][0];
     expect(primeira.projeto_id).toBe('7');
     expect(primeira.lote_id).toBe('70');
-    expect(primeira.tipo_situacao).toBe('3');
+    expect(primeira.estado_id).toBe('43');
     expect(primeira.cod_ponto).toBe('HV');
 
     expect(location.hash).toContain('projeto_id=7');
@@ -356,6 +446,93 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
     expect(filtros.projeto_id).toBe('');
     expect(filtros.cod_ponto).toBe('');
     expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
+  });
+
+  test('a area desenhada vira o filtro `geometria`, e aparece no link', async () => {
+    const { container } = await montar();
+
+    mapaFalso.onAreaDesenhada(AREA);
+    await flush();
+
+    expect(ultimaBusca().geometria).toBe(JSON.stringify(AREA));
+    expect(chipVisivel(container)).toBe(true);
+    expect(container.querySelector('.busca-area-chip').textContent)
+      .toContain('Área desenhada no mapa');
+    expect(decodeURIComponent(location.hash)).toContain('"type":"Polygon"');
+  });
+
+  test('desenhar DESLIGA o "so na area do mapa": o recorte e um so', async () => {
+    const { container } = await montar();
+    const seguir = container.querySelector('#pc-seguir-mapa');
+    seguir.checked = true;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+    expect(ultimaBusca().bbox).toBe('-53,-31,-50,-29');
+
+    mapaFalso.onAreaDesenhada(AREA);
+    await flush();
+
+    // Os dois juntos pediriam a interseção do retângulo com o polígono, que
+    // ninguém desenhou e ninguém consegue ler na tela.
+    expect(ultimaBusca().bbox).toBe('');
+    expect(seguir.checked).toBe(false);
+  });
+
+  test('remarcar "so na area do mapa" apaga o desenho DO MAPA, e nao so o filtro', async () => {
+    const { container } = await montar();
+    mapaFalso.onAreaDesenhada(AREA);
+    await flush();
+
+    const seguir = container.querySelector('#pc-seguir-mapa');
+    seguir.checked = true;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(ultimaBusca().geometria).toBe('');
+    // Sem isto o polígono continuaria pintado no mapa afirmando um recorte que
+    // a consulta não usa mais.
+    expect(mapaFalso.areaLimpa).toBeGreaterThan(0);
+    expect(chipVisivel(container)).toBe(false);
+  });
+
+  test('o × do chip tira a area e reconsulta', async () => {
+    const { container } = await montar();
+    mapaFalso.onAreaDesenhada(AREA);
+    await flush();
+
+    container.querySelector('.busca-area-chip__remover').click();
+    await flush();
+
+    expect(ultimaBusca().geometria).toBe('');
+    expect(mapaFalso.areaLimpa).toBeGreaterThan(0);
+  });
+
+  test('a area que veio no LINK e restaurada no mapa e na consulta', async () => {
+    await montar({ query: `geometria=${encodeURIComponent(JSON.stringify(AREA))}` });
+
+    expect(buscarPontos.mock.calls[0][0].geometria).toBe(JSON.stringify(AREA));
+    // Restaurar só o filtro deixaria a consulta recortada sem nada no mapa que
+    // dissesse por quê.
+    expect(mapaFalso.areaMostrada).toEqual(AREA);
+  });
+
+  test('geometria quebrada no link nao derruba a tela', async () => {
+    const { container } = await montar({ query: 'geometria=%7Bnao-e-json' });
+
+    expect(cartoes(container)).toHaveLength(2);
+    expect(buscarPontos.mock.calls[0][0].geometria).toBe('');
+  });
+
+  test('"Limpar filtros" tira tambem a area desenhada', async () => {
+    const { container } = await montar();
+    mapaFalso.onAreaDesenhada(AREA);
+    await flush();
+
+    container.querySelector('.busca__acoes .btn--text').click();
+    await flush();
+
+    expect(ultimaBusca().geometria).toBe('');
+    expect(chipVisivel(container)).toBe(false);
   });
 
   test('exportar CSV leva os filtros e NAO a pagina', async () => {
@@ -455,6 +632,106 @@ describe('tela de ponto de controle: robustez', () => {
 
     expect(contador(container)).toBe('1 ponto');
     expect(cartoes(container)).toHaveLength(1);
+  });
+
+  // --- Destaque do lugar filtrado (chefe, 2026-07-29) ------------------------
+  //
+  // O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista
+  // e deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
+
+  test('escolher o estado pinta o contorno e leva a camera ate ele', async () => {
+    const { container } = await montar();
+    const estado = selects(container)[2];
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(getLimite).toHaveBeenCalledWith('estado', '43');
+    expect(mapaFalso.limiteDestacado.bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
+    expect(mapaFalso.limiteEnquadrou).toBe(true);
+  });
+
+  test('o MUNICIPIO ganha do estado: e o recorte que a consulta aplica', async () => {
+    const { container } = await montar();
+    const estado = selects(container)[2];
+    const municipio = selects(container)[3];
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    municipio.value = '4314902';
+    municipio.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(getLimite).toHaveBeenLastCalledWith('municipio', '4314902');
+  });
+
+  test('tirar o lugar apaga o contorno, sem mexer na camera', async () => {
+    const { container } = await montar();
+    const estado = selects(container)[2];
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+    expect(mapaFalso.limiteLimpo).toBe(0);
+
+    estado.value = '';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(mapaFalso.limiteLimpo).toBe(1);
+  });
+
+  test('com lugar destacado, o resultado NAO reenquadra o mapa por cima', async () => {
+    const { container } = await montar();
+    // Sem lugar, a consulta enquadra nos pontos, como sempre fez.
+    expect(mapaFalso.enquadrado).not.toBeNull();
+
+    const estado = selects(container)[2];
+    mapaFalso.enquadrado = null;
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    // Enquadrar nos pontos aqui tiraria a borda vermelha da vista logo depois
+    // de ela aparecer, e o destaque perderia a razao de existir.
+    expect(mapaFalso.enquadrado).toBeNull();
+  });
+
+  test('o lugar que veio no LINK aparece destacado', async () => {
+    await montar({ query: 'estado_id=43' });
+
+    expect(getLimite).toHaveBeenCalledWith('estado', '43');
+    expect(mapaFalso.limiteDestacado).not.toBeNull();
+    expect(mapaFalso.limiteEnquadrou).toBe(true);
+  });
+
+  test('link com area desenhada destaca o lugar SEM mover a camera', async () => {
+    await montar({
+      query: `estado_id=43&geometria=${encodeURIComponent(JSON.stringify(AREA))}`,
+    });
+
+    // Quem mandou o link ja escolheu onde a camera devia parar. O zoom no
+    // estado jogaria a area desenhada para fora da tela.
+    expect(mapaFalso.limiteDestacado).not.toBeNull();
+    expect(mapaFalso.limiteEnquadrou).toBe(false);
+  });
+
+  test('o contorno que falha nao derruba a consulta', async () => {
+    getLimite.mockImplementation(() => Promise.reject(new Error('sem rede')));
+    const { container } = await montar();
+    const estado = selects(container)[2];
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    // O destaque e apoio visual. Sem ele a tela perde a borda, e nao a lista.
+    expect(mapaFalso.limiteDestacado).toBeNull();
+    expect(cartoes(container)).toHaveLength(2);
+    expect(ultimaBusca().estado_id).toBe('43');
   });
 
   test('o cleanup solta o mapa e a altura fixa', async () => {

@@ -1,6 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDe } from '@components/mapa/base.js';
-import { criarModeloDesenho, colecaoDoDesenho } from './poligono.js';
+import { criarDesenhoDeArea } from '@components/mapa/desenho-area.js';
+import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 
 /**
  * Mapa da busca do acervo, sobre MapLibre GL (chefe, 2026-07-25).
@@ -10,15 +11,16 @@ import { criarModeloDesenho, colecaoDoDesenho } from './poligono.js';
  * area". Trocar de biblioteca, ou testar a pagina sem mapa nenhum, nao deveria
  * exigir mexer na busca.
  *
+ * O desenho da area vive em @components/mapa/desenho-area.js desde 2026-07-29,
+ * compartilhado com a tela de ponto de controle. Aqui fica so o que e do
+ * ACERVO: os poligonos dos produtos, o realce e o enquadramento.
+ *
  * Fundo OSM porque a rede e interna mas TEM internet (chefe, 2026-07-25). Sem
  * internet os poligonos continuam aparecendo: eles vem da nossa API, e o que
  * falta e so a imagem de fundo.
  */
 
 const FONTE = 'produtos';
-const DESENHO = 'desenho';
-/** Distancia em pixels para o clique "fechar no primeiro vertice". */
-const RAIO_FECHAMENTO = 12;
 
 /**
  * @param {Object} opts
@@ -35,11 +37,12 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   let destruido = false;
   let observador = null;
 
-  const modelo = criarModeloDesenho();
-  let desenhando = false;
-  let previa = null;
-  let quadro = null;
-  let verticeArrastado = null;
+  // O desenho de area e um modulo a parte, compartilhado com a tela de ponto de
+  // controle: o gesto e o mesmo nas duas, e a pessoa o aprende UMA vez.
+  const desenho = criarDesenhoDeArea({ onAreaDesenhada, onAreaCancelada });
+  // Contorno do estado ou do municipio filtrado, tambem compartilhado com a
+  // tela de ponto de controle.
+  const limite = criarDestaqueDeLimite();
 
   let ultimoResultado = { type: 'FeatureCollection', features: [] };
   let selecionados = new Set();
@@ -55,49 +58,6 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
 
   const aviso = el('div', { className: 'busca-mapa__aviso hidden' });
 
-  const botaoDesenhar = el('button', {
-    className: 'btn btn--secondary btn--sm busca-mapa__btn',
-    type: 'button',
-    title: 'Desenhar uma área para filtrar a busca',
-    onClick: () => (desenhando ? cancelarDesenho() : ativarDesenho()),
-  }, [svgIcon(ICONS.layers, 16), 'Desenhar área']);
-
-  // ---------------------------------------------------------------------------
-  // Controles do desenho, no mesmo formato do fotos_aereas: estado em texto,
-  // desfazer, concluir e cancelar. O texto e `aria-live` porque a validacao
-  // ("as bordas nao podem se cruzar") precisa chegar a quem usa leitor de tela.
-  // ---------------------------------------------------------------------------
-  const estadoDesenho = el('p', {
-    className: 'desenho-controles__estado',
-    'aria-live': 'polite',
-  });
-
-  const btnDesfazer = el('button', {
-    className: 'btn btn--secondary btn--sm',
-    type: 'button',
-    onClick: () => { modelo.desfazer(); previa = null; pintarDesenho(); },
-  }, ['Desfazer vértice']);
-
-  const btnConcluir = el('button', {
-    className: 'btn btn--primary btn--sm',
-    type: 'button',
-    onClick: () => concluirDesenho(),
-  }, ['Concluir área']);
-
-  const btnCancelar = el('button', {
-    className: 'btn btn--text btn--sm',
-    type: 'button',
-    onClick: () => cancelarDesenho(),
-  }, ['Cancelar']);
-
-  const controlesDesenho = el('div', {
-    className: 'desenho-controles hidden',
-    role: 'group',
-    'aria-label': 'Controles do desenho de área',
-  }, [estadoDesenho, el('div', { className: 'desenho-controles__botoes' }, [
-    btnDesfazer, btnConcluir, btnCancelar,
-  ])]);
-
   const legenda = el('div', { className: 'busca-mapa__legenda hidden' }, [
     el('div', { className: 'busca-mapa__legenda-item' }, [
       el('span', { className: 'busca-mapa__amostra' }),
@@ -111,9 +71,9 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
 
   const element = el('div', { className: 'busca-mapa' }, [
     container,
-    el('div', { className: 'busca-mapa__controles' }, [botaoDesenhar]),
+    el('div', { className: 'busca-mapa__controles' }, [desenho.botao]),
     legenda,
-    controlesDesenho,
+    desenho.controles,
     aviso,
   ]);
 
@@ -123,7 +83,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   function falhar(mensagem) {
     aviso.replaceChildren(svgIcon(ICONS.warning, 18), el('span', { textContent: mensagem }));
     aviso.classList.remove('hidden');
-    botaoDesenhar.disabled = true;
+    desenho.desabilitar();
   }
 
   async function iniciar() {
@@ -235,35 +195,11 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
         },
       });
 
-      mapa.addSource(DESENHO, { type: 'geojson', data: colecaoDoDesenho([]) });
-      mapa.addLayer({
-        id: 'desenho-area',
-        type: 'fill',
-        source: DESENHO,
-        filter: ['==', ['get', 'kind'], 'area'],
-        paint: { 'fill-color': '#ed6c02', 'fill-opacity': 0.12 },
-      });
-      mapa.addLayer({
-        id: 'desenho-linha',
-        type: 'line',
-        source: DESENHO,
-        filter: ['in', ['get', 'kind'], ['literal', ['area', 'linha']]],
-        paint: { 'line-color': '#ed6c02', 'line-width': 2, 'line-dasharray': [2, 1] },
-      });
-      mapa.addLayer({
-        id: 'desenho-vertices',
-        type: 'circle',
-        source: DESENHO,
-        filter: ['==', ['get', 'kind'], 'vertice'],
-        paint: {
-          // O primeiro vertice e maior e colorido: e o alvo de "clique aqui
-          // para fechar a area", e precisa se distinguir dos demais.
-          'circle-radius': ['case', ['get', 'primeiro'], 7, 5],
-          'circle-color': ['case', ['get', 'primeiro'], '#d32f2f', '#ffffff'],
-          'circle-stroke-color': '#ed6c02',
-          'circle-stroke-width': 2,
-        },
-      });
+      // Ordem das camadas = ordem de insercao. O contorno do lugar entra sobre
+      // os produtos, para nao sumir debaixo de uma carta, e o desenho por
+      // ULTIMO, porque e o gesto em curso e nada pode cobri-lo.
+      limite.montar(mapa);
+      desenho.montar(mapa);
 
       pronto = true;
       legenda.classList.remove('hidden');
@@ -293,7 +229,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
 
   function ligarInteracoes() {
     mapa.on('mousemove', 'produtos-preenchimento', (e) => {
-      if (desenhando || !e.features.length) return;
+      if (desenho.ocupado() || !e.features.length) return;
       const id = e.features[0].id;
       if (apontado === id) return;
       marcar(apontado, 'apontado', false);
@@ -307,198 +243,16 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
     mapa.on('mouseleave', 'produtos-preenchimento', () => {
       marcar(apontado, 'apontado', false);
       apontado = null;
-      mapa.getCanvas().style.cursor = desenhando ? 'crosshair' : '';
+      mapa.getCanvas().style.cursor = desenho.ocupado() ? 'crosshair' : '';
       if (onApontar) onApontar(null);
     });
 
     // O clique no produto ALTERNA a selecao: clicar de novo tira. Sem isso nao
     // havia como desmarcar o que se marcou por engano.
     mapa.on('click', 'produtos-preenchimento', (e) => {
-      if (desenhando || !e.features.length) return;
+      if (desenho.ocupado() || !e.features.length) return;
       if (onAlternarSelecao) onAlternarSelecao(e.features[0].id);
     });
-
-    mapa.on('click', (e) => { if (desenhando) cliqueDesenho(e); });
-    mapa.on('mousemove', (e) => moverDesenho(e));
-    mapa.on('mouseup', () => soltarVertice());
-    mapa.on('mousedown', 'desenho-vertices', (e) => pegarVertice(e));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Desenho da area
-  // ---------------------------------------------------------------------------
-  function coordenadaDe(evento) {
-    const { lng, lat } = evento.lngLat || {};
-    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
-  }
-
-  function pintarDesenho(mensagem = '') {
-    const concluido = modelo.estado === 'concluido' || modelo.estado === 'editando';
-    if (pronto) {
-      mapa.getSource(DESENHO).setData(colecaoDoDesenho(modelo.vertices, previa, concluido));
-    }
-
-    const total = modelo.vertices.length;
-    btnDesfazer.disabled = modelo.estado !== 'desenhando' || total === 0;
-    btnConcluir.disabled = modelo.estado !== 'desenhando' || total < 3;
-    btnDesfazer.classList.toggle('hidden', concluido);
-    btnConcluir.classList.toggle('hidden', concluido);
-    btnCancelar.textContent = concluido ? 'Remover área' : 'Cancelar';
-
-    estadoDesenho.textContent = mensagem || (concluido
-      ? 'Área concluída. Arraste os vértices para ajustar.'
-      : total === 0
-        ? 'Clique no mapa para marcar o primeiro vértice.'
-        : `${total} vértice(s). Clique no primeiro para fechar, ou tecle Enter.`);
-  }
-
-  function ativarDesenho() {
-    desenhando = true;
-    modelo.limpar();
-    previa = null;
-    botaoDesenhar.classList.replace('btn--secondary', 'btn--primary');
-    controlesDesenho.classList.remove('hidden');
-    if (mapa) {
-      mapa.getCanvas().style.cursor = 'crosshair';
-      if (mapa.doubleClickZoom.isEnabled()) mapa.doubleClickZoom.disable();
-    }
-    pintarDesenho();
-  }
-
-  function desativarDesenho() {
-    desenhando = false;
-    previa = null;
-    botaoDesenhar.classList.replace('btn--primary', 'btn--secondary');
-    controlesDesenho.classList.add('hidden');
-    if (mapa) {
-      mapa.getCanvas().style.cursor = '';
-      mapa.doubleClickZoom.enable();
-    }
-  }
-
-  function cancelarDesenho() {
-    const tinhaArea = modelo.estado === 'concluido';
-    modelo.limpar();
-    desativarDesenho();
-    pintarDesenho();
-    // So avisa a pagina quando havia area VALENDO: cancelar um desenho pela
-    // metade nao deve refazer a busca.
-    if (tinhaArea && onAreaCancelada) onAreaCancelada();
-  }
-
-  function concluirDesenho() {
-    const r = modelo.concluir();
-    if (!r.valid) {
-      pintarDesenho(r.message);
-      return false;
-    }
-    previa = null;
-    desativarDesenho();
-    // Os controles seguem visiveis com a area concluida, para dar o "Remover".
-    controlesDesenho.classList.remove('hidden');
-    pintarDesenho();
-    if (onAreaDesenhada) onAreaDesenhada(r.geometria);
-    return true;
-  }
-
-  function cliqueDesenho(evento) {
-    if (modelo.estado === 'editando') return;
-    const coordenada = coordenadaDe(evento);
-    if (!coordenada) return;
-
-    // Area ja concluida: o clique comeca OUTRA, em vez de nao fazer nada.
-    if (modelo.estado === 'concluido') {
-      modelo.limpar();
-      modelo.acrescentar(coordenada);
-      previa = null;
-      pintarDesenho();
-      return;
-    }
-
-    // Perto do primeiro vertice: fecha. E o gesto do fotos_aereas.
-    if (modelo.vertices.length >= 3) {
-      const primeiro = mapa.project(modelo.vertices[0]);
-      const distancia = Math.hypot(evento.point.x - primeiro.x, evento.point.y - primeiro.y);
-      if (distancia <= RAIO_FECHAMENTO) {
-        concluirDesenho();
-        return;
-      }
-    }
-
-    const r = modelo.acrescentar(coordenada);
-    previa = null;
-    pintarDesenho(r.valid ? '' : r.message);
-  }
-
-  function moverDesenho(evento) {
-    if (verticeArrastado !== null) {
-      const coordenada = coordenadaDe(evento);
-      if (coordenada) {
-        modelo.moverVertice(verticeArrastado, coordenada);
-        pintarDesenho('Solte para validar a nova área.');
-      }
-      return;
-    }
-    if (!desenhando || modelo.estado !== 'desenhando') return;
-    previa = coordenadaDe(evento);
-    // Uma repintura por quadro: sem isto o mousemove redesenha a fonte dezenas
-    // de vezes por segundo e o mapa engasga.
-    if (quadro !== null) return;
-    quadro = requestAnimationFrame(() => { quadro = null; pintarDesenho(); });
-  }
-
-  function pegarVertice(evento) {
-    const indice = Number(evento.features?.[0]?.properties?.indice);
-    if (!Number.isInteger(indice) || !modelo.vertices[indice]) return;
-    evento.preventDefault();
-    if (!modelo.iniciarEdicao()) return;
-    verticeArrastado = indice;
-    mapa.dragPan.disable();
-    mapa.getCanvas().style.cursor = 'grabbing';
-  }
-
-  function soltarVertice() {
-    if (verticeArrastado === null) return;
-    const r = modelo.confirmarEdicao();
-    verticeArrastado = null;
-    mapa.dragPan.enable();
-    mapa.getCanvas().style.cursor = '';
-    if (r.valid) {
-      pintarDesenho();
-      if (onAreaDesenhada) onAreaDesenhada(r.geometria);
-    } else {
-      pintarDesenho(`${r.message} A alteração foi desfeita.`);
-    }
-  }
-
-  /** Teclado do desenho. A pagina repassa o keydown do documento. */
-  function tratarTecla(evento) {
-    if (!desenhando && modelo.estado !== 'editando') return false;
-    if (evento.key === 'Backspace' && modelo.estado === 'desenhando') {
-      evento.preventDefault();
-      modelo.desfazer();
-      previa = null;
-      pintarDesenho();
-      return true;
-    }
-    if (evento.key === 'Enter' && modelo.estado === 'desenhando') {
-      evento.preventDefault();
-      concluirDesenho();
-      return true;
-    }
-    if (evento.key === 'Escape') {
-      evento.preventDefault();
-      if (modelo.estado === 'editando') {
-        modelo.cancelarEdicao();
-        verticeArrastado = null;
-        if (mapa) mapa.dragPan.enable();
-        pintarDesenho('Edição cancelada.');
-      } else {
-        cancelarDesenho();
-      }
-      return true;
-    }
-    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -581,7 +335,9 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
         movimentoProgramatico = false;
         return;
       }
-      if (desenhando || verticeArrastado !== null) return;
+      // Desenhar nao e navegar: o `moveend` do arrasto de vertice dispararia
+      // uma busca que ninguem pediu.
+      if (desenho.ocupado()) return;
       callback(areaVisivel());
     });
   }
@@ -591,32 +347,13 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
     else aoMoverPendente = callback;
   }
 
-  /** Restaura uma area que veio pela URL, para ela ficar visivel no mapa. */
-  function mostrarArea(geometria) {
-    if (!geometria || !geometria.coordinates) return;
-    const anel = geometria.coordinates[0] || [];
-    // Sem o ultimo ponto: o modelo fecha o anel sozinho.
-    const vertices = anel.slice(0, -1);
-    modelo.limpar();
-    for (const v of vertices) modelo.acrescentar(v);
-    modelo.concluir();
-    controlesDesenho.classList.remove('hidden');
-    pintarDesenho();
-  }
-
-  function limparArea() {
-    modelo.limpar();
-    desativarDesenho();
-    pintarDesenho();
-  }
-
   function redimensionar() {
     if (mapa) mapa.resize();
   }
 
   function _cleanup() {
     destruido = true;
-    if (quadro !== null) cancelAnimationFrame(quadro);
+    desenho.destruir();
     if (observador) { observador.disconnect(); observador = null; }
     if (mapa) { mapa.remove(); mapa = null; pronto = false; }
   }
@@ -631,9 +368,20 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
     enquadrar,
     areaVisivel,
     aoMover,
-    mostrarArea,
-    limparArea,
-    tratarTecla,
+    mostrarArea: desenho.mostrarArea,
+    limparArea: desenho.limparArea,
+    tratarTecla: desenho.tratarTecla,
+
+    /**
+     * Destaque do lugar filtrado.
+     *
+     * O enquadramento aqui NAO e marcado como programatico de proposito. No
+     * modo "so na area do mapa" a camera define o recorte, entao o `moveend`
+     * tem de disparar a busca: suprimi-lo deixaria a lista falando de uma area
+     * que nao e mais a que esta na tela.
+     */
+    destacarLimite: limite.mostrar,
+    limparLimite: limite.limpar,
     redimensionar,
     _cleanup,
   };

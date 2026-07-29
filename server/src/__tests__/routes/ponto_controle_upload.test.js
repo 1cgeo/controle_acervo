@@ -302,6 +302,8 @@ describe('Ponto de controle - confirmar a importação', () => {
         longitude: -53.61403358333334,
         atributos: {
           data_rastreio: '2026-05-12',
+          // Aprovado, porque desde 2026-07-29 e a unica situacao que entra.
+          tipo_situacao: 3,
           // O que a coluna REAL do plugin guarda: a mesma posição, truncada.
           latitude: -28.635164,
           longitude: -53.614033
@@ -696,5 +698,62 @@ describe('Ponto de controle - sessões de importação', () => {
       .set('Authorization', generateAdminToken())
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body.dados)).toBe(true)
+  })
+})
+
+// --- Só ponto aprovado entra no acervo ---------------------------------------
+
+describe('Ponto de controle - só o APROVADO entra', () => {
+  // O acervo é o que a tropa consulta para ajustar trabalho, e ponto não
+  // revisado ali é pior do que ponto nenhum. Regra do chefe, 2026-07-29.
+  const comSituacao = (cod, situacao) =>
+    pontoDe(cod, [], { tipo_situacao: situacao })
+
+  it('recusa o ponto que não está aprovado, e diz por quê', async () => {
+    const lote = await criaLote()
+    const res = await preparar({
+      lote_id: lote.id,
+      pontos: [
+        comSituacao('RJ-HV-1', 1),   // Não medido
+        comSituacao('RJ-HV-2', 2),   // Aguardando revisão
+        comSituacao('RJ-HV-3', 4),   // Reprovado
+      ]
+    })
+
+    expect(res.status).toBe(201)
+    expect(res.body.dados.pontos_novos).toEqual([])
+    expect(res.body.dados.recusados.map(r => r.cod_ponto).sort())
+      .toEqual(['RJ-HV-1', 'RJ-HV-2', 'RJ-HV-3'])
+    expect(res.body.dados.recusados[0].motivo).toMatch(/APROVADO/)
+  })
+
+  it('a missão MISTURADA importa a parte aprovada, e não é derrubada', async () => {
+    // Missão com mistura é caso normal em campo. Derrubar tudo obrigaria a
+    // separar a mão o que o acervo sabe separar sozinho.
+    const lote = await criaLote()
+    const res = await preparar({
+      lote_id: lote.id,
+      pontos: [comSituacao('RJ-HV-1', 3), comSituacao('RJ-HV-2', 2)]
+    })
+
+    expect(res.status).toBe(201)
+    expect(res.body.dados.pontos_novos).toEqual(['RJ-HV-1'])
+    expect(res.body.dados.recusados.map(r => r.cod_ponto)).toEqual(['RJ-HV-2'])
+
+    const confirmado = await confirmar(res.body.dados.session_uuid)
+    expect(confirmado.body.dados.inseridos).toEqual(['RJ-HV-1'])
+    expect(await contarPontos()).toBe(1)
+  })
+
+  it('ponto SEM situação nenhuma não entra', async () => {
+    // O 9999 do modelo do plugin é "a ser preenchido", e ausente é o mesmo
+    // caso: não se sabe se foi conferido, então não é acervo.
+    const lote = await criaLote()
+    const semSituacao = pontoDe('RJ-HV-1', [])
+    delete semSituacao.atributos.tipo_situacao
+
+    const res = await preparar({ lote_id: lote.id, pontos: [semSituacao] })
+    expect(res.body.dados.pontos_novos).toEqual([])
+    expect(res.body.dados.recusados).toHaveLength(1)
   })
 })

@@ -5,6 +5,7 @@ import { chip } from '@components/status-chip.js';
 import {
   buscarPontos, buscarPosicoes, getFacetas, baixarPontosCsv,
 } from '@modules/acervo/services/ponto-controle-service.js';
+import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { criarSelecao } from '@modules/acervo/pages/busca/selecao.js';
 import { criarMapaPontos } from './mapa.js';
 import { abrirCodigosDisponiveis } from './codigos-dialog.js';
@@ -90,11 +91,33 @@ export async function renderPontoControle(container, ctx) {
   // Respostas voltam fora de ordem; so a mais recente pode pintar a tela.
   let requisicao = 0;
   let seguirMapa = false;
+  // Recorte por área DESENHADA. Exclui o "só na área do mapa": os dois são
+  // recortes espaciais, e cruzá-los devolveria a interseção de um retângulo com
+  // um polígono, que ninguém pediu e ninguém consegue ler na tela.
+  let areaDesenhada = null;
+  // Lugar destacado no mapa, como 'estado:43' ou 'municipio:4314902'. Guarda a
+  // CHAVE, e não a geometria: serve para saber quando o destaque mudou e para
+  // descartar a resposta de um pedido que já ficou velho.
+  let chaveLugar = '';
+  // Verdadeiro quando o destaque do lugar levou a câmera. É ele, e não a chave,
+  // que impede o enquadramento automático nos pontos: um link que já trouxe
+  // recorte próprio destaca o lugar SEM mexer na câmera, e ali o enquadramento
+  // nos pontos continua sendo o certo.
+  let lugarComandaCamera = false;
 
   const query = ctx && ctx.query ? ctx.query : new URLSearchParams();
 
   /** @type {Map<number, HTMLElement>} id -> cartao, para o realce cruzado. */
   const cartoesPorId = new Map();
+  /**
+   * id -> ponto, para TODOS os pontos do resultado.
+   *
+   * Distinto do `cartoesPorId`, que tem só a página da lista. O mapa mostra o
+   * resultado inteiro, então o ponto clicado quase nunca está na página: com
+   * 3.490 pontos e 20 por página, 99% dos cliques caem fora dela.
+   * @type {Map<number, Object>}
+   */
+  const posicoesPorId = new Map();
 
   // ---------------------------------------------------------------------------
   // Filtros
@@ -126,12 +149,6 @@ export async function renderPontoControle(container, ctx) {
     onChange: () => reiniciar(),
   });
 
-  const situacaoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Situação do ponto',
-    onChange: () => reiniciar(),
-  });
-
   // Lugar. O município depende do ESTADO: sem estado escolhido o servidor
   // devolve lista vazia, porque um combo com os municípios de todo o país não
   // ajuda a escolher. Trocar de estado zera o município, senão a consulta
@@ -141,6 +158,7 @@ export async function renderPontoControle(container, ctx) {
     'aria-label': 'Estado',
     onChange: () => {
       municipioSelect.value = '';
+      destacarLugar();
       reiniciar();
     },
   });
@@ -148,7 +166,7 @@ export async function renderPontoControle(container, ctx) {
   const municipioSelect = el('select', {
     className: 'busca-filtros__select',
     'aria-label': 'Município',
-    onChange: () => reiniciar(),
+    onChange: () => { destacarLugar(); reiniciar(); },
   });
 
   const areaCheck = el('input', {
@@ -156,9 +174,17 @@ export async function renderPontoControle(container, ctx) {
     id: 'pc-seguir-mapa',
     onChange: () => {
       seguirMapa = areaCheck.checked;
+      // Marcar "só na área do mapa" tira a área desenhada: são dois recortes
+      // espaciais, e o último gesto é o que vale.
+      if (seguirMapa && areaDesenhada) removerArea();
       reiniciar();
     },
   });
+
+  // Chip da área desenhada, no mesmo lugar dos outros filtros: sem ele o único
+  // sinal de que a consulta está recortada seria o polígono no mapa, que sai da
+  // vista assim que a pessoa navega para outro canto.
+  const chipArea = el('div', { className: 'busca-area-chip hidden' });
 
   const limparBtn = el('button', {
     className: 'btn btn--text btn--sm',
@@ -213,13 +239,13 @@ export async function renderPontoControle(container, ctx) {
   const filtros = el('div', { className: 'busca-filtros' }, [
     projetoSelect,
     loteSelect,
-    situacaoSelect,
     estadoSelect,
     municipioSelect,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
       el('span', { textContent: 'Só na área do mapa' }),
     ]),
+    chipArea,
     el('span', { className: 'busca-filtros__espaco' }),
     acoesTopo,
   ]);
@@ -254,16 +280,105 @@ export async function renderPontoControle(container, ctx) {
   const paginacao = el('div', { className: 'busca-paginacao' });
 
   const mapa = criarMapaPontos({
+    // O ponto clicado no mapa quase nunca está na página atual da lista: o mapa
+    // recebe o resultado INTEIRO e a lista pagina de 20 em 20. Antes só o cartão
+    // servia de fonte, e o clique nos outros 99% dos pontos não fazia nada. A
+    // camada de posições guarda o id e o código, que é tudo o que a barra de
+    // seleção e a ficha precisam. Mesma solução da busca do acervo.
     onAlternarSelecao: (id) => {
-      const cartao = cartoesPorId.get(Number(id));
-      if (cartao && cartao._dados) {
-        selecao.alternar(cartao._dados);
-        mapa.setSelecionados(selecao.ids());
-      }
+      const ponto = posicoesPorId.get(Number(id))
+        || (cartoesPorId.get(Number(id)) || {})._dados;
+      if (!ponto) return;
+      selecao.alternar(ponto);
+      mapa.setSelecionados(selecao.ids());
     },
     onApontar: (id) => apontarCartao(id),
     onMover: () => { if (seguirMapa) buscarPorMapa(); },
+    onAreaDesenhada: (geometria) => {
+      areaDesenhada = geometria;
+      seguirMapa = false;
+      areaCheck.checked = false;
+      atualizarChipArea();
+      reiniciar();
+    },
+    onAreaCancelada: () => {
+      areaDesenhada = null;
+      atualizarChipArea();
+      reiniciar();
+    },
   });
+
+  /**
+   * Pinta no mapa o contorno do lugar filtrado e leva a câmera até ele.
+   *
+   * O município ganha do estado quando os dois estão escolhidos: é o recorte
+   * mais estreito, e é o que a consulta está aplicando.
+   *
+   * Falha em silêncio de propósito. O destaque é um apoio visual; o filtro
+   * funciona sem ele, e um alerta a cada troca de estado seria pior do que a
+   * borda faltando.
+   *
+   * @param {Object} [opcoes]
+   * @param {boolean} [opcoes.enquadrar=true]
+   */
+  async function destacarLugar({ enquadrar = true } = {}) {
+    const chave = municipioSelect.value
+      ? `municipio:${municipioSelect.value}`
+      : (estadoSelect.value ? `estado:${estadoSelect.value}` : '');
+    if (chave === chaveLugar) return;
+    chaveLugar = chave;
+
+    if (!chave) {
+      lugarComandaCamera = false;
+      mapa.limparLimite();
+      return;
+    }
+
+    // Marcado ANTES da espera, e não depois: quem chama não aguarda esta função,
+    // e a consulta que vem logo em seguida pinta o resultado antes de a
+    // geometria chegar. Marcando depois, essa pintura enquadraria nos pontos e a
+    // câmera saltaria duas vezes, para dois lugares diferentes.
+    lugarComandaCamera = enquadrar;
+
+    const [tipo, id] = chave.split(':');
+    try {
+      const limite = await getLimite(tipo, id);
+      // Trocar de lugar duas vezes seguidas: a primeira resposta pode chegar
+      // depois da segunda, e pintaria o estado que a pessoa já abandonou.
+      if (disposed || chaveLugar !== chave) return;
+      mapa.destacarLimite(limite, { enquadrar });
+    } catch {
+      if (chaveLugar !== chave) return;
+      chaveLugar = '';
+      lugarComandaCamera = false;
+    }
+  }
+
+  /** Tira a área e avisa o mapa, que apaga o polígono. */
+  function removerArea() {
+    areaDesenhada = null;
+    mapa.limparArea();
+    atualizarChipArea();
+  }
+
+  function atualizarChipArea() {
+    if (!areaDesenhada) {
+      chipArea.classList.add('hidden');
+      return;
+    }
+    chipArea.replaceChildren(
+      svgIcon(ICONS.layers, 16),
+      el('span', { textContent: 'Área desenhada no mapa' }),
+      el('button', {
+        className: 'busca-area-chip__remover',
+        type: 'button',
+        'aria-label': 'Remover a área desenhada',
+        textContent: '×',
+        onClick: () => { removerArea(); reiniciar(); },
+      })
+    );
+    chipArea.classList.remove('hidden');
+  }
 
   const painel = el('div', { className: 'pc-painel' }, [
     contador, selecao.element, lista, paginacao,
@@ -290,10 +405,12 @@ export async function renderPontoControle(container, ctx) {
       cod_ponto: codigoInput.value.trim(),
       projeto_id: projetoSelect.value,
       lote_id: loteSelect.value,
-      tipo_situacao: situacaoSelect.value,
       estado_id: estadoSelect.value,
       municipio_id: municipioSelect.value,
-      bbox: seguirMapa ? mapa.caixaVisivel() : '',
+      // O desenho VENCE a área visível: quem desenhou pediu aquele recorte, e
+      // mandar os dois traria a interseção dos dois.
+      bbox: !areaDesenhada && seguirMapa ? mapa.caixaVisivel() : '',
+      geometria: areaDesenhada ? JSON.stringify(areaDesenhada) : '',
     };
   }
 
@@ -352,11 +469,12 @@ export async function renderPontoControle(container, ctx) {
     codigoInput.value = '';
     projetoSelect.value = '';
     loteSelect.value = '';
-    situacaoSelect.value = '';
     estadoSelect.value = '';
     municipioSelect.value = '';
+    destacarLugar();
     areaCheck.checked = false;
     seguirMapa = false;
+    removerArea();
     selecao.limpar();
     reiniciar();
   }
@@ -375,8 +493,6 @@ export async function renderPontoControle(container, ctx) {
       })),
       'Todos os lotes'
     );
-    preencherFaceta(situacaoSelect, facetas.situacoes || [], 'Todas as situações');
-
     // O estado mostra a SIGLA junto do nome: "Rio Grande do Sul (RS)" é o que
     // quem opera reconhece de imediato numa lista de 27.
     preencherFaceta(
@@ -487,6 +603,9 @@ export async function renderPontoControle(container, ctx) {
       ? 'Nenhum ponto de controle encontrado.'
       : `${formatNumber(total)} ${total === 1 ? 'ponto' : 'pontos'}`;
 
+    posicoesPorId.clear();
+    for (const p of posicoes.pontos || []) posicoesPorId.set(Number(p.id), p);
+
     cartoesPorId.clear();
     if (pontos.length === 0) {
       lista.replaceChildren(el('div', { className: 'busca-lista__vazio' }, [
@@ -509,7 +628,11 @@ export async function renderPontoControle(container, ctx) {
     // Enquadrar so quando a consulta NAO segue o mapa: no modo "so na area do
     // mapa", mover a camera mudaria a area, que mudaria o resultado. O laco
     // nao fecharia.
-    if (!seguirMapa) {
+    //
+    // Com lugar destacado, quem manda na camera e o contorno dele: enquadrar os
+    // pontos por cima faria a borda vermelha sair da vista logo depois de
+    // aparecer, e o destaque perderia a razao de existir.
+    if (!seguirMapa && !lugarComandaCamera) {
       const caixa = caixaDos(posicoes.pontos);
       if (caixa) mapa.enquadrar(caixa);
     }
@@ -559,7 +682,6 @@ export async function renderPontoControle(container, ctx) {
   for (const [campo, elemento] of [
     ['projeto_id', projetoSelect],
     ['lote_id', loteSelect],
-    ['tipo_situacao', situacaoSelect],
     ['estado_id', estadoSelect],
     ['municipio_id', municipioSelect],
   ]) {
@@ -573,6 +695,37 @@ export async function renderPontoControle(container, ctx) {
     areaCheck.checked = true;
   }
 
+  // Área que veio no link. GeoJSON quebrado no endereço não pode derrubar a
+  // tela: a consulta segue sem o recorte, que é o pior caso aceitável.
+  const geometriaUrl = query.get('geometria');
+  if (geometriaUrl) {
+    try {
+      const geo = JSON.parse(geometriaUrl);
+      if (geo && geo.type === 'Polygon' && Array.isArray(geo.coordinates)) {
+        areaDesenhada = geo;
+        seguirMapa = false;
+        areaCheck.checked = false;
+        mapa.mostrarArea(geo);
+        atualizarChipArea();
+      }
+    } catch {
+      showError('A área do link não pôde ser lida. A consulta seguiu sem ela.');
+    }
+  }
+
+  // Lugar que veio no link. Só enquadra quando o link NÃO trouxe recorte
+  // próprio: quem mandou um link com área desenhada ou com "só na área do mapa"
+  // já escolheu onde a câmera devia parar, e o zoom no estado a tiraria de lá.
+  destacarLugar({ enquadrar: !areaDesenhada && !seguirMapa });
+
+  // Enter, Backspace e Escape do desenho. No documento, e não no mapa: o foco
+  // costuma estar num campo de filtro quando a pessoa desenha.
+  const aoTeclar = (e) => {
+    if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    mapa.tratarTecla(e);
+  };
+  document.addEventListener('keydown', aoTeclar);
+
   const paginaUrl = parseInt(query.get('pagina'), 10);
   if (Number.isFinite(paginaUrl) && paginaUrl > 1) pagina = paginaUrl;
 
@@ -581,6 +734,7 @@ export async function renderPontoControle(container, ctx) {
   return () => {
     disposed = true;
     container.classList.remove('main-content--altura-fixa');
+    document.removeEventListener('keydown', aoTeclar);
     buscarComEspera.cancelar();
     buscarPorMapa.cancelar();
     mapa.destruir();

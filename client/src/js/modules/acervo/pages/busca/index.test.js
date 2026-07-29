@@ -12,6 +12,11 @@ const mapaFalso = vi.hoisted(() => ({
   apontado: undefined,
   enquadradoProduto: null,
   aoMoverCallback: null,
+  // Destaque do lugar filtrado: o ULTIMO limite pintado, se ele enquadrou, e
+  // quantas vezes o destaque foi apagado.
+  limiteDestacado: null,
+  limiteEnquadrou: null,
+  limiteLimpo: 0,
   iniciado: false,
   limpo: false,
 }));
@@ -34,6 +39,11 @@ vi.mock('@modules/acervo/pages/busca/mapa.js', () => ({
       aoMover: (cb) => { mapaFalso.aoMoverCallback = cb; },
       mostrarArea: (g) => { mapaFalso.area = g; },
       limparArea: () => { mapaFalso.area = null; },
+      destacarLimite: (limite, opcoes) => {
+        mapaFalso.limiteDestacado = limite;
+        mapaFalso.limiteEnquadrou = !opcoes || opcoes.enquadrar !== false;
+      },
+      limparLimite: () => { mapaFalso.limiteLimpo += 1; },
       tratarTecla: () => false,
       redimensionar: () => {},
       _cleanup: () => { mapaFalso.limpo = true; },
@@ -79,13 +89,26 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
       { code: 2, nome: 'Carta Topográfica - T34-700', tipo_id: 1, produtos: 2 },
       { code: 3, nome: 'Carta Ortoimagem', tipo_id: 9, produtos: 1 },
     ],
+    // Lugar vem com `id`, e nao com `code` como as demais facetas: e o que a
+    // rota do acervo devolve (`SELECT e.id, ...`), e a pagina o traduz.
+    estados: [
+      { id: 43, sigla: 'RS', nome: 'Rio Grande do Sul', produtos: 2 },
+    ],
+    municipios: [
+      { id: 4314902, nome: 'Porto Alegre', produtos: 2 },
+    ],
   })),
+}));
+
+vi.mock('@modules/acervo/services/limites-service.js', () => ({
+  getLimite: vi.fn(),
 }));
 
 import { renderBusca } from '@modules/acervo/pages/busca/index.js';
 import {
   buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
 } from '@modules/acervo/services/acervo-service.js';
+import { getLimite } from '@modules/acervo/services/limites-service.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -137,9 +160,18 @@ beforeEach(() => {
   buscarGeometrias.mockImplementation(() => Promise.resolve({
     total: PRODUTOS.length, truncado: false, dados: PRODUTOS,
   }));
+  getLimite.mockImplementation((tipo, id) => Promise.resolve({
+    tipo, id: Number(id), nome: 'Rio Grande do Sul', sigla: 'RS',
+    bbox: [-57.6, -33.7, -49.6, -27.0],
+    geometria: {
+      type: 'Polygon',
+      coordinates: [[[-57.6, -33.7], [-49.6, -33.7], [-49.6, -27], [-57.6, -27], [-57.6, -33.7]]],
+    },
+  }));
   Object.assign(mapaFalso, {
     produtos: null, selecionados: null, extent: null, area: null,
     aoMoverCallback: null, iniciado: false, limpo: false,
+    limiteDestacado: null, limiteEnquadrou: null, limiteLimpo: 0,
   });
   document.body.innerHTML = '';
   location.hash = '#/acervo/busca';
@@ -1156,5 +1188,122 @@ describe('busca do acervo: altura da tela', () => {
 
     // Sem isto, a próxima rota herdaria a altura travada e perderia o rolamento.
     expect(container.classList.contains('main-content--altura-fixa')).toBe(false);
+  });
+});
+
+// --- Destaque do lugar filtrado (chefe, 2026-07-29) --------------------------
+//
+// O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista e
+// deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
+describe('busca do acervo: destaque do lugar', () => {
+  const selectPorRotulo = (c, rotulo) =>
+    c.querySelector(`select[aria-label="${rotulo}"]`);
+
+  test('escolher o estado pinta o contorno e leva a camera ate ele', async () => {
+    const { container } = await montar();
+    const estado = selectPorRotulo(container, 'Estado');
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(getLimite).toHaveBeenCalledWith('estado', '43');
+    expect(mapaFalso.limiteDestacado.bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
+    expect(mapaFalso.limiteEnquadrou).toBe(true);
+  });
+
+  test('o MUNICIPIO ganha do estado: e o recorte mais estreito', async () => {
+    const { container } = await montar();
+    const estado = selectPorRotulo(container, 'Estado');
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    const municipio = selectPorRotulo(container, 'Município');
+    municipio.value = '4314902';
+    municipio.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(getLimite).toHaveBeenLastCalledWith('municipio', '4314902');
+  });
+
+  test('tirar o lugar apaga o contorno', async () => {
+    const { container } = await montar();
+    const estado = selectPorRotulo(container, 'Estado');
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+    expect(mapaFalso.limiteLimpo).toBe(0);
+
+    estado.value = '';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(mapaFalso.limiteLimpo).toBe(1);
+  });
+
+  test('com lugar destacado, o `extent` do resultado NAO reenquadra por cima', async () => {
+    const { container } = await montar();
+    // Sem lugar, a busca enquadra no extent, como sempre fez.
+    expect(mapaFalso.extent).not.toBeNull();
+
+    mapaFalso.extent = null;
+    const estado = selectPorRotulo(container, 'Estado');
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    // Aqui o extent e ainda pior do que na tela de ponto: existem produtos de
+    // cobertura NACIONAL, e eles intersectam qualquer recorte, entao o extent de
+    // uma busca por um municipio podia ser o Brasil inteiro.
+    expect(mapaFalso.extent).toBeNull();
+  });
+
+  test('"Limpar filtros" tira tambem o contorno do lugar', async () => {
+    const { container } = await montar();
+    const estado = selectPorRotulo(container, 'Estado');
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Limpar filtros')).click();
+    await flush();
+
+    expect(mapaFalso.limiteLimpo).toBe(1);
+  });
+
+  test('o lugar que veio no LINK aparece destacado', async () => {
+    await montar({ query: 'estado_id=43' });
+
+    expect(getLimite).toHaveBeenCalledWith('estado', '43');
+    expect(mapaFalso.limiteEnquadrou).toBe(true);
+  });
+
+  test('link com area desenhada destaca o lugar SEM mover a camera', async () => {
+    await montar({
+      query: `estado_id=43&geometria=${encodeURIComponent(JSON.stringify(TRIANGULO))}`,
+    });
+
+    // Quem mandou o link ja escolheu onde a camera devia parar. O zoom no
+    // estado jogaria a area desenhada para fora da tela.
+    expect(mapaFalso.limiteDestacado).not.toBeNull();
+    expect(mapaFalso.limiteEnquadrou).toBe(false);
+  });
+
+  test('o contorno que falha nao derruba a busca', async () => {
+    getLimite.mockImplementation(() => Promise.reject(new Error('sem rede')));
+    const { container } = await montar();
+    const estado = selectPorRotulo(container, 'Estado');
+
+    estado.value = '43';
+    estado.dispatchEvent(new Event('change'));
+    await flush();
+
+    // O destaque e apoio visual. Sem ele a tela perde a borda, e nao a lista.
+    expect(mapaFalso.limiteDestacado).toBeNull();
+    expect(cartoes(container)).toHaveLength(2);
+    expect(ultimaBusca().estado_id).toBe('43');
   });
 });

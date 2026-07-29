@@ -32,7 +32,7 @@ const pontoDeTeste = (codPonto, extras = {}) => ({
   longitude: -47.9,
   atributos: {
     data_rastreio: '2026-05-12',
-    tipo_situacao: 2,
+    tipo_situacao: 3,
     medidor: '3º Sgt Silva',
     altitude_ortometrica: 1024.35,
     altura_antena: 1.62,
@@ -77,7 +77,7 @@ describe('Ponto de controle - consulta', () => {
       lote_id: lote.id,
       pontos: [
         pontoDeTeste('RJ-HV-1'),
-        pontoDeTeste('RJ-HV-2', { tipo_situacao: 4 })
+        pontoDeTeste('RJ-HV-2')
       ]
     })
     await importa({
@@ -110,12 +110,15 @@ describe('Ponto de controle - consulta', () => {
       .set('Authorization', generateAdminToken())
     expect(porProjeto.body.dados.total).toBe(2)
 
-    const porSituacao = await request(app)
+    // O filtro por SITUACAO nao existe mais (2026-07-29): so ponto aprovado
+    // entra no acervo, entao a coluna e constante e o filtro nao discriminava.
+    // Quem mandar o parametro antigo leva 400, e nao um resultado calado: link
+    // guardado com o filtro velho AVISA em vez de devolver o acervo inteiro
+    // como se estivesse filtrado.
+    const comFiltroMorto = await request(app)
       .get('/api/ponto_controle?tipo_situacao=4')
       .set('Authorization', generateAdminToken())
-    expect(porSituacao.body.dados.total).toBe(1)
-    expect(porSituacao.body.dados.pontos[0].cod_ponto).toBe('RJ-HV-2')
-    expect(porSituacao.body.dados.pontos[0].tipo_situacao_nome).toBe('Reprovado')
+    expect(comFiltroMorto.status).toBe(400)
 
     const porCodigo = await request(app)
       .get('/api/ponto_controle?cod_ponto=BASE')
@@ -175,8 +178,8 @@ describe('Ponto de controle - consulta', () => {
     // O dominio resolvido sai como `<dominio>_nome` em TODA rota, e nao com um
     // apelido por consulta: a lista chamava de `situacao` e a ficha de outra
     // coisa, e a divergencia morderia o client.
-    expect(res.body.dados.tipo_situacao).toBe(2)
-    expect(res.body.dados.tipo_situacao_nome).toBe('Aguardando revisão')
+    expect(res.body.dados.tipo_situacao).toBe(3)
+    expect(res.body.dados.tipo_situacao_nome).toBe('Aprovado')
     expect(res.body.dados.geom).toBeUndefined()
 
     // A posição sai da GEOMETRIA com nome próprio. Chamá-la de `latitude`

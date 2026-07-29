@@ -29,8 +29,8 @@ function queryString(filtros) {
  * Sem cache, pela mesma razao da busca do acervo: cada combinacao de filtro e
  * uma pergunta nova, e guardar combinacao so gastaria memoria.
  *
- * @param {Object} filtros - { lote_id, projeto_id, tipo_situacao, bbox,
- *   cod_ponto, pagina, por_pagina }
+ * @param {Object} filtros - { lote_id, projeto_id, estado_id, municipio_id,
+ *   bbox, geometria, cod_ponto, pagina, por_pagina }
  * @returns {Promise<{total:number, pagina:number, pontos:Array<Object>}>}
  */
 export const buscarPontos = (filtros = {}) =>
@@ -58,7 +58,7 @@ export const buscarPosicoes = (filtros = {}) =>
  * antes. Sem cache, pela mesma razao da lista.
  *
  * @param {Object} filtros
- * @returns {Promise<{projetos:Array, lotes:Array, situacoes:Array}>}
+ * @returns {Promise<{projetos:Array, lotes:Array, estados:Array, municipios:Array}>}
  */
 export const getFacetas = (filtros = {}) =>
   apiGet(`/ponto_controle/facetas${queryString(filtros)}`);

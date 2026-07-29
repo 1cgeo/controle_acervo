@@ -3,6 +3,8 @@
 
 const Joi = require('joi')
 
+const { geometriaSchema } = require('../utils/geometria_schema')
+
 const models = {}
 
 // O codigo do ponto e a identidade global, como o MI/INOM e do produto:
@@ -19,13 +21,19 @@ models.codPontoParams = Joi.object().keys({
 const filtros = {
   lote_id: Joi.number().integer(),
   projeto_id: Joi.number().integer(),
-  tipo_situacao: Joi.number().integer(),
+  // O filtro por situacao saiu em 2026-07-29: so ponto APROVADO entra no
+  // acervo, entao a coluna e constante e o filtro nao discriminava nada. Ela
+  // continua na ficha, como registro da decisao de campo.
   // Recorte por LUGAR: codigo do IBGE, 2 digitos no estado e 7 no municipio.
   // Valida a FORMA, e nao a faixa que existe hoje (ver acervo_schema.js).
   estado_id: Joi.number().integer().min(10).max(99),
   municipio_id: Joi.number().integer().min(1000000).max(9999999),
   // Recorte espacial da tela: minx,miny,maxx,maxy em 4674.
   bbox: Joi.string().pattern(/^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$/),
+  // Area DESENHADA no mapa, como GeoJSON em texto (chefe, 2026-07-29). Mesmo
+  // validador da busca do acervo: o recorte que uma tela aceita e a outra
+  // recusa seria diferenca sem razao para quem usa as duas.
+  geometria: geometriaSchema,
   // Busca por parte do codigo, para a caixa de texto.
   cod_ponto: Joi.string().max(255)
 }
