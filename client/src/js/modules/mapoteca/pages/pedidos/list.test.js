@@ -7,7 +7,8 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderPedidosList } from '@modules/mapoteca/pages/pedidos/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
+import { logarComo, GERENTE, CONSULTA } from '@/__tests__/helpers/sessao.js';
+import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -128,6 +129,30 @@ describe('renderPedidosList', () => {
     // Com filtro, o total aparece junto: o numero na tela nunca se confunde
     // com o total de pedidos do sistema.
     expect(meta()).toContain('1 de 3');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A planilha do RTM sai desta tela, e nao da do RPCMTec (chefe, 2026-07-29).
+  // Baixar e LEITURA, entao o botao vale para todo perfil, ao contrario de "Novo
+  // pedido"; e o recorte e o ANO da lista, para o arquivo bater com a tela.
+  test('a planilha do RTM baixa pelo ano da lista, e aparece sem perfil de gerente', async () => {
+    logarComo({ mapoteca: CONSULTA });
+    setAno(2026);
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const botao = [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Planilha do RTM'));
+    expect(botao).toBeTruthy();
+    // Quem só consulta não vê "Novo pedido", e continua vendo a planilha.
+    expect([...container.querySelectorAll('button')]
+      .some(b => b.textContent.includes('Novo pedido'))).toBe(false);
+
+    botao.click();
+    await flush();
+    expect(svc.downloadMeta4Ods).toHaveBeenCalledWith(2026);
 
     if (typeof cleanup === 'function') cleanup();
   });

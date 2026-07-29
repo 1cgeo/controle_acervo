@@ -3,7 +3,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode, csvExport } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, csvExport, odsExport } = require('../utils')
 
 const { verifyPerfil } = require('../login')
 
@@ -767,6 +767,32 @@ router.get(
     return csvExport.sendReport(res, formato, msg, dados, {
       filename: `impressao_detalhada_${ano}.csv`,
       columns: relatorioCtrl.COLUNAS_IMPRESSAO_DETALHADA
+    })
+  })
+)
+
+// Impressão detalhada em .ods, na FORMA da aba META4_DETALHADA do RTM.
+//
+// Rota SEPARADA da de cima, e não um ?formato=ods nela, de propósito: as duas
+// não devolvem o mesmo conteúdo. O CSV traz o dado cru do banco ('Sulfite 90g',
+// booleano); o .ods traz o vocabulário da aba ('sulfite', 'sim'/'não'), a data
+// como DATA, a quantidade como NÚMERO e a ordem cronológica de entrega. Servir
+// as duas coisas pelo mesmo endereço esconderia essa diferença.
+//
+// Sempre baixa (não tem ?formato=json): o corpo é um arquivo binário.
+router.get(
+  '/relatorio/impressao_detalhada_ods',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({
+    query: mapotecaSchema.anoQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { ano } = req.query
+    const dados = await relatorioCtrl.getRelatorioPedidosDetalhado(ano)
+    return odsExport.sendOds(res, `META4_DETALHADA_${ano}.ods`, {
+      aba: 'META4_DETALHADA',
+      colunas: relatorioCtrl.COLUNAS_META4_ODS,
+      linhas: relatorioCtrl.paraAbaMeta4(dados)
     })
   })
 )

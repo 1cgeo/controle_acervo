@@ -654,7 +654,11 @@ describe('Mapoteca Routes', () => {
         demandante: 'CMS',
         omds: '1º CGEO',
         previsto_pit: true,
-        operacao: 'Operação Teste'
+        operacao: 'Operação Teste',
+        // O prazo existe no cenário de propósito: até 2026-07-29 ele saía na
+        // coluna "Meta" do relatório, e um teste do .ods guarda essa correção.
+        prazo: '2026-04-10',
+        documento_solicitacao: 'DIEx 123-S3/3º RCC'
       })
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
@@ -748,6 +752,96 @@ describe('Mapoteca Routes', () => {
       expect(header).not.toContain('Nome do Produto')
       expect(header).not.toContain('Localizador')
       expect(primeiraLinha).toContain('3º RCC')
+    })
+
+    // O .ods é rota PRÓPRIA, e não ?formato=ods da rota acima: ele não devolve o
+    // mesmo conteúdo. Aqui se prova o que muda, porque é isso que faz a planilha
+    // colar na aba META4_DETALHADA do RTM sem retrabalho.
+    describe('Impressão detalhada em .ods (aba META4_DETALHADA do RTM)', () => {
+      const lerZip = (buffer) => {
+        const zlib = require('zlib')
+        const entradas = {}
+        let i = 0
+        while (i + 4 <= buffer.length && buffer.readUInt32LE(i) === 0x04034b50) {
+          const metodo = buffer.readUInt16LE(i + 8)
+          const comprimido = buffer.readUInt32LE(i + 18)
+          const tamNome = buffer.readUInt16LE(i + 26)
+          const tamExtra = buffer.readUInt16LE(i + 28)
+          const nome = buffer.slice(i + 30, i + 30 + tamNome).toString('utf8')
+          const inicio = i + 30 + tamNome + tamExtra
+          const dados = buffer.slice(inicio, inicio + comprimido)
+          entradas[nome] = metodo === 0 ? dados : zlib.inflateRawSync(dados)
+          i = inicio + comprimido
+        }
+        return entradas
+      }
+
+      const baixar = async () => {
+        const res = await request(app)
+          .get('/api/mapoteca/relatorio/impressao_detalhada_ods?ano=2026')
+          .set('Authorization', generateUserToken())
+          .buffer()
+          .parse((res, cb) => {
+            const partes = []
+            res.on('data', (p) => partes.push(p))
+            res.on('end', () => cb(null, Buffer.concat(partes)))
+          })
+        return res
+      }
+
+      it('baixa um .ods de verdade, com a aba do RTM', async () => {
+        await setupPedidoMilitar()
+
+        const res = await baixar()
+
+        expect(res.status).toBe(200)
+        expect(res.headers['content-type']).toContain('application/vnd.oasis.opendocument.spreadsheet')
+        expect(res.headers['content-disposition']).toContain('META4_DETALHADA_2026.ods')
+
+        const entradas = lerZip(res.body)
+        expect(entradas.mimetype.toString()).toBe('application/vnd.oasis.opendocument.spreadsheet')
+        const content = entradas['content.xml'].toString('utf8')
+        expect(content).toContain('table:name="META4_DETALHADA"')
+      })
+
+      it('traduz para o vocabulário da aba: sim/não, material minúsculo, data como DATA', async () => {
+        await setupPedidoMilitar()
+
+        const content = lerZip((await baixar()).body)['content.xml'].toString('utf8')
+
+        // previsto_pit = true no cenário
+        expect(content).toContain('<text:p>sim</text:p>')
+        // 'Sulfite 90g' no banco vira 'sulfite' na aba (que nunca teve gramatura)
+        expect(content).toContain('<text:p>sulfite</text:p>')
+        expect(content).not.toContain('Sulfite 90g')
+        // data_entrega 2026-03-20: célula DATE, e não texto
+        expect(content).toContain('office:date-value="2026-03-20"')
+        expect(content).toContain('<text:p>20/03/26</text:p>')
+        // quantidade como número
+        expect(content).toContain('office:value="10"')
+      })
+
+      it('as 15 colunas saem na ordem da aba, e "Meta" não traz mais o prazo', async () => {
+        await setupPedidoMilitar()
+
+        const content = lerZip((await baixar()).body)['content.xml'].toString('utf8')
+        const rotulos = [...content.matchAll(/table:style-name="ceCab"[^>]*>(.*?)<\/table:table-cell>/g)]
+          .map(m => m[1].replace(/<[^>]+>/g, ' ').trim())
+
+        expect(rotulos).toEqual([
+          'OMDS', 'Demandante', 'OM Destino', 'Previsto no PIT', 'Meta', 'Produto',
+          'MI', 'Escala', 'Qnt Prevista', 'Mat  Previsto', 'Qnt Fornecida',
+          'Material Fornecido', 'Data da Entrega', 'Forma da Entrega', 'Observações'
+        ])
+        // O pedido do cenário tem prazo; ele NÃO pode aparecer sob "Meta".
+        expect(content).not.toContain('office:date-value="2026-04-10"')
+      })
+
+      it('exige perfil na mapoteca', async () => {
+        const res = await request(app)
+          .get('/api/mapoteca/relatorio/impressao_detalhada_ods?ano=2026')
+        expect(res.status).toBe(401)
+      })
     })
 
     it('GET /relatorio/pedidos_resumo should summarize one row per order with type/scale pivot', async () => {

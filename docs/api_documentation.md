@@ -2334,7 +2334,9 @@ Reproduz a aba **Mil**: uma linha por pedido militar (cliente OM EB/Aeronautica/
 
 ### GET `/api/mapoteca/relatorio/pedidos_detalhado`
 
-Reproduz a aba **Detalhado**: uma linha por item de pedido com `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta` (prazo), produto/MI/escala do catalogo (escala personalizada formatada como `1:<denominador>`), quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega`, `observacao` e `mes` da entrega.
+Reproduz a aba **Detalhado**: uma linha por item de pedido com `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta`, `documento_solicitacao`, produto/MI/escala do catalogo (escala personalizada formatada como `1:<denominador>`), quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega`, `observacao` e `mes` da entrega.
+
+`meta` sai sempre **NULL**: na planilha essa coluna guarda o codigo da meta do PIT (`4.1`, `4.2`) e o SCA nao tem esse codigo, so o booleano `previsto_pit`. Ate 2026-07-29 ela trazia `pedido.prazo`, ou seja, uma DATA sob o rotulo "Meta".
 
 ### GET `/api/mapoteca/relatorio/pedidos_civ`
 
@@ -2346,7 +2348,28 @@ Reproduz a aba **Mapas Tematicos**: itens com `producao_especifica = TRUE` (RN07
 
 ### GET `/api/mapoteca/relatorio/impressao_detalhada`
 
-Variante enxuta do **Detalhado** (mesma query/dados), recortada nas 15 colunas da planilha de impressao: `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta` (prazo), `produto`, `mi`, `escala`, quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega` e `observacao`. Sem nome do produto, mes ou localizador. Filtra por `data_pedido`.
+Variante enxuta do **Detalhado** (mesma query/dados), recortada nas 15 colunas da planilha de impressao: `omds`, `demandante`, `om_destino`, `previsto_pit`, `meta`, `produto`, `mi`, `escala`, quantidade e material previstos x fornecidos, `data_entrega`, `forma_entrega` e `observacao`. Sem nome do produto, mes ou localizador. Filtra por `data_pedido`. Aceita `?formato=csv`.
+
+**Esta e a rota para agente e CLI**, que querem o dado cru do banco (`Sulfite 90g`, booleano em `previsto_pit`). A interface nao a oferece em botao: quem esta na tela baixa o `.ods` da rota abaixo.
+
+### GET `/api/mapoteca/relatorio/impressao_detalhada_ods`
+
+Os MESMOS itens da rota acima, ja na forma da aba **META4_DETALHADA** do RTM mensal do 1o CGEO. Responde sempre com o arquivo (`application/vnd.oasis.opendocument.spreadsheet`, `META4_DETALHADA_<ano>.ods`), nao tem `?formato=json`, e aceita so `?ano=`.
+
+Rota separada, e nao um `?formato=ods` na de cima, porque o CONTEUDO difere:
+
+| | `impressao_detalhada` (CSV) | `impressao_detalhada_ods` |
+|---|---|---|
+| `previsto_pit` | `Sim`/`Nao` do booleano | `sim`/`nao`, como a aba escreve |
+| material | nome do dominio (`Sulfite 90g`) | vocabulario da aba (`sulfite`, sem gramatura) |
+| `mi` / material fornecido vazios | vazio | `-`, como a aba escreve |
+| `data_entrega` | texto `DD/MM/AAAA` | celula de DATA (`DD/MM/AA` na tela) |
+| quantidade | texto | celula numerica |
+| `observacao` | so a observacao do item | DIEx do pedido + observacao do item |
+| ordem | data do pedido | data da ENTREGA (a da aba) |
+| formatacao | nenhuma | cabecalho, borda, largura de coluna e filtro da aba |
+
+A coluna `Meta` sai em branco no item previsto no PIT e `-` no restante: o codigo (`4.1`) nao existe no SCA e e preenchido a mao. O gerador do arquivo e `server/src/utils/ods_export.js`, sem dependencia externa.
 
 ### GET `/api/mapoteca/relatorio/pedidos_resumo`
 

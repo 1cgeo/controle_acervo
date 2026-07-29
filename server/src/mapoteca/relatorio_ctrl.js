@@ -150,7 +150,16 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       p.demandante,
       c.nome AS om_destino,
       p.previsto_pit,
-      p.prazo AS meta,
+      -- A coluna "Meta" da aba guarda o CODIGO da meta do PIT ('4.1', '4.2'), e
+      -- so vem preenchida no item coberto pelo PIT: na aba de junho de 2026 sao
+      -- 86 linhas com 4.1/4.2, exatamente as 86 com "Previsto no PIT = sim".
+      -- O SCA nao tem esse codigo (pedido so tem o booleano previsto_pit), entao
+      -- aqui sai NULL e quem exporta preenche. Ate 2026-07-29 esta coluna
+      -- trazia p.prazo, ou seja, uma DATA sob o rotulo "Meta".
+      NULL::text AS meta,
+      -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
+      -- planilha do chefe traz quase sempre o número do documento.
+      p.documento_solicitacao,
       tp.nome AS produto,
       prod.nome AS produto_nome,
       prod.mi,
@@ -422,6 +431,101 @@ controller.COLUNAS_IMPRESSAO_DETALHADA = [
   { key: "forma_entrega", label: "Forma da Entrega" },
   { key: "observacao", label: "Observações" }
 ];
+
+// ---------------------------------------------------------------------------
+// META4_DETALHADA: a mesma "Impressão Detalhada", na FORMA da aba do RTM
+// ---------------------------------------------------------------------------
+//
+// O destino é a aba META4_DETALHADA do RTM mensal do 1º CGEO, que se preenche
+// colando linhas. O CSV serve para conferir e para quem quer os dados crus; o
+// .ods sai formatado igual à aba, com data como DATA e quantidade como NÚMERO.
+//
+// As larguras e os rótulos saíram do próprio arquivo do chefe
+// (1_CGEO_RTM_JUN_26_preenchido.ods, lido em 2026-07-29). "Mat\nPrevisto" tem a
+// quebra de linha da célula original, e a ordem das 15 colunas é a da aba: colar
+// no lugar errado é o erro que este formato existe para evitar.
+controller.COLUNAS_META4_ODS = [
+  { key: "omds", label: "OMDS", largura: "2.115cm" },
+  { key: "demandante", label: "Demandante", largura: "3.431cm" },
+  { key: "om_destino", label: "OM Destino", largura: "2.805cm" },
+  { key: "previsto_pit", label: "Previsto no PIT", largura: "2.115cm" },
+  { key: "meta", label: "Meta", largura: "2.115cm" },
+  { key: "produto", label: "Produto", largura: "5.509cm" },
+  { key: "mi", label: "MI", largura: "2.115cm" },
+  { key: "escala", label: "Escala", largura: "2.115cm" },
+  { key: "quantidade_prevista", label: "Qnt Prevista", largura: "2.115cm", tipo: "numero" },
+  { key: "material_previsto", label: "Mat\nPrevisto", largura: "2.429cm" },
+  { key: "quantidade_fornecida", label: "Qnt Fornecida", largura: "2.45cm", tipo: "numero" },
+  { key: "material_fornecido", label: "Material Fornecido", largura: "2.639cm" },
+  { key: "data_entrega", label: "Data da Entrega", largura: "2.115cm", tipo: "data" },
+  { key: "forma_entrega", label: "Forma da Entrega", largura: "2.387cm" },
+  { key: "observacao", label: "Observações", largura: "2.778cm" }
+];
+
+// A aba escreve o material em minúscula e sem a gramatura ('sulfite', e não
+// 'Sulfite 90g'), porque ela nunca distinguiu 90g de 120g. Quem precisa da
+// gramatura tem o CSV, que traz o nome do domínio como está no banco.
+const materialDaAba = (nome) => {
+  if (!nome) return null;
+  return String(nome)
+    .toLowerCase()
+    .replace(/\s*\d+\s*g$/, "")
+    .replace(/\s*\(tecido\)$/, "")
+    .trim();
+};
+
+/**
+ * Traduz as linhas do relatório Detalhado para o vocabulário da aba.
+ *
+ * O que muda em relação ao CSV, e por quê:
+ *  - previsto_pit: booleano -> 'sim'/'não' minúsculo, como na aba;
+ *  - material: 'Sulfite 90g' -> 'sulfite' (ver materialDaAba);
+ *  - MI e material fornecido ausentes -> '-', que é o que a aba escreve na
+ *    Carta Especial (sem folha MI) e no item sem mídia registrada;
+ *  - Meta: '-' quando o item não é do PIT. Quando é, fica VAZIA de propósito,
+ *    porque o código ('4.1') não existe no SCA e a célula em branco é o que faz
+ *    quem preenche notar que falta;
+ *  - Observações: o DIEx do pedido, que é o que a aba costuma trazer nessa
+ *    coluna, mais a observação do item quando houver.
+ *
+ * @param {Array<Object>} linhas - saída de getRelatorioPedidosDetalhado
+ * @returns {Array<Object>}
+ */
+controller.paraAbaMeta4 = (linhas) =>
+  // Ordem CRONOLÓGICA pela entrega, que é a da aba, e não a do CSV (por data do
+  // pedido). Quem cola no RTM cola em ordem de entrega; item sem data de entrega
+  // vai para o fim, porque ainda não aconteceu.
+  [...linhas]
+    .sort((a, b) => {
+      const da = a.data_entrega ? String(a.data_entrega) : "9999-12-31";
+      const dbb = b.data_entrega ? String(b.data_entrega) : "9999-12-31";
+      if (da !== dbb) return da < dbb ? -1 : 1;
+      if (a.pedido_id !== b.pedido_id) return Number(a.pedido_id) - Number(b.pedido_id);
+      return 0;
+    })
+    .map((l) => {
+      const observacoes = [l.documento_solicitacao, l.observacao]
+        .map((t) => (t == null ? "" : String(t).trim()))
+        .filter(Boolean);
+
+      return {
+        omds: l.omds || null,
+        demandante: l.demandante || null,
+        om_destino: l.om_destino || null,
+        previsto_pit: l.previsto_pit ? "sim" : "não",
+        meta: l.previsto_pit ? null : "-",
+        produto: l.produto || null,
+        mi: l.mi || "-",
+        escala: l.escala || null,
+        quantidade_prevista: l.quantidade_prevista,
+        material_previsto: materialDaAba(l.material_previsto),
+        quantidade_fornecida: l.quantidade_fornecida,
+        material_fornecido: materialDaAba(l.material_fornecido) || "-",
+        data_entrega: l.data_entrega || null,
+        forma_entrega: l.forma_entrega || null,
+        observacao: observacoes.join(" - ") || null
+      };
+    });
 
 // Exportação "Resumo de Pedidos": uma linha por pedido (todos os clientes) com
 // dados de envio + consolidado de produtos entregues por tipo e escala.

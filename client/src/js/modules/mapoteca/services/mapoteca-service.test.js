@@ -161,6 +161,17 @@ describe('mapoteca-service: relatorios', () => {
       'RPCMTec-acervo-2026-06.docx'
     );
   });
+
+  // A aba META4_DETALHADA do RTM: a interface baixa SO o .ods. O CSV da mesma
+  // leitura existe na API, para agente e CLI, e nao tem funcao aqui de proposito.
+  test('a aba META4 do RTM sai em .ods, pelo ano', async () => {
+    await svc.downloadMeta4Ods(2026);
+    expect(apiDownload).toHaveBeenCalledWith(
+      '/mapoteca/relatorio/impressao_detalhada_ods?ano=2026',
+      'META4_DETALHADA_2026.ods'
+    );
+    expect(svc.downloadMeta4Csv).toBeUndefined();
+  });
 });
 
 describe('mapoteca-service: dashboard', () => {
