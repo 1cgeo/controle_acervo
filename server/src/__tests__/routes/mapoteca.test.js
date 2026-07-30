@@ -65,6 +65,19 @@ const criaProdutoPedido = async (body) => {
   return res
 }
 
+const criaProdutoAvulso = async (overrides = {}) => {
+  const res = await request(app)
+    .post('/api/mapoteca/produto_avulso')
+    .set('Authorization', generateAdminToken())
+    .send({
+      nome: 'Papel quadriculado',
+      descricao: '80 x 68 cm, quadrícula de 4 x 4 cm',
+      ...overrides
+    })
+  expect(res.status).toBe(201)
+  return res.body.dados.id
+}
+
 const criaTipoMaterial = async (overrides = {}) => {
   const res = await request(app)
     .post('/api/mapoteca/tipo_material')
@@ -200,6 +213,139 @@ describe('Mapoteca Routes', () => {
         })
 
       expect(res.status).toBe(403)
+    })
+  })
+
+  // O produto avulso e o que a mapoteca imprime sem ser do acervo: papel
+  // quadriculado, carta de outro CGEO. Os testes abaixo guardam a RN08 na sua
+  // forma nova ("todo item aponta EXATAMENTE UM produto identificado") e, mais
+  // importante, guardam as SOMAS: o modo de falhar deste recurso nao e erro, e
+  // numero menor, porque um JOIN interno esquecido apaga o avulso calado.
+  describe('Produto avulso', () => {
+    it('cria avulso e o usa como item do pedido', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      const avulsoId = await criaProdutoAvulso()
+
+      await criaProdutoPedido({
+        produto_avulso_id: avulsoId,
+        pedido_id: pedido.id,
+        quantidade: 100,
+        tipo_midia_id: 6
+      })
+
+      const res = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}`)
+        .set('Authorization', generateAdminToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.produtos).toHaveLength(1)
+      expect(res.body.dados.produtos[0].quantidade).toBe(100)
+      expect(res.body.dados.produtos[0].uuid_versao).toBeNull()
+    })
+
+    it('item sem destino nenhum should return 400', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      const res = await request(app)
+        .post('/api/mapoteca/produto_pedido')
+        .set('Authorization', generateAdminToken())
+        .send({ pedido_id: pedido.id, quantidade: 1, tipo_midia_id: 6 })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('item com os DOIS destinos should return 400', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      const avulsoId = await criaProdutoAvulso({ nome: 'Outro' })
+      const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2965-1' })
+      const versao = await createVersao(produto.id)
+
+      const res = await request(app)
+        .post('/api/mapoteca/produto_pedido')
+        .set('Authorization', generateAdminToken())
+        .send({
+          pedido_id: pedido.id,
+          uuid_versao: versao.uuid_versao,
+          produto_avulso_id: avulsoId,
+          quantidade: 1,
+          tipo_midia_id: 6
+        })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('avulso inexistente should return 404', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      const res = await request(app)
+        .post('/api/mapoteca/produto_pedido')
+        .set('Authorization', generateAdminToken())
+        .send({ produto_avulso_id: 99999, pedido_id: pedido.id, quantidade: 1, tipo_midia_id: 6 })
+
+      expect(res.status).toBe(404)
+    })
+
+    it('NAO deixa apagar avulso que ja esta em item de pedido', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      const avulsoId = await criaProdutoAvulso({ nome: 'Em uso' })
+      await criaProdutoPedido({
+        produto_avulso_id: avulsoId, pedido_id: pedido.id, quantidade: 5, tipo_midia_id: 6
+      })
+
+      const res = await request(app)
+        .delete('/api/mapoteca/produto_avulso')
+        .set('Authorization', generateAdminToken())
+        .send({ produto_avulso_ids: [avulsoId] })
+
+      // Apagar apagaria o registro do que foi impresso. Quem quer tirar de
+      // circulacao usa ativo = false.
+      expect(res.status).toBe(400)
+    })
+
+    it('a reconciliacao acha o avulso cujo MI ja existe no acervo', async () => {
+      await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2758-3-NE' })
+      await criaProdutoAvulso({ nome: 'Carta de outro CGEO', mi: '2758-3-NE' })
+
+      const res = await request(app)
+        .get('/api/mapoteca/produto_avulso/reconciliacao')
+        .set('Authorization', generateAdminToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.some(r => r.mi === '2758-3-NE')).toBe(true)
+    })
+
+    it('o avulso ENTRA nas somas do dashboard, e as parcelas fecham o total', async () => {
+      // O modo de falhar aqui e silencioso: com JOIN interno o avulso sumiria, e
+      // com "NULL NOT IN (...)" ele entraria no total e ficaria fora de outros.
+      const clienteId = await criaCliente({ nome: 'OM Avulso', tipo_cliente_id: 1 })
+      const pedido = await criaPedido(clienteId, {
+        situacao_pedido_id: 5,
+        data_atendimento: '2026-03-20'
+      })
+      const avulsoId = await criaProdutoAvulso({ nome: 'Papel quadriculado do teste' })
+      await criaProdutoPedido({
+        produto_avulso_id: avulsoId,
+        pedido_id: pedido.id,
+        quantidade: 100,
+        quantidade_fornecida: 100,
+        tipo_midia_id: 6,
+        data_entrega: '2026-03-20'
+      })
+
+      const res = await request(app)
+        .get('/api/mapoteca/dashboard/entregas_por_mes?ano=2026')
+        .set('Authorization', generateAdminToken())
+
+      expect(res.status).toBe(200)
+      const marco = res.body.dados.find(m => m.mes === 3)
+      expect(marco.total).toBeGreaterThanOrEqual(100)
+      // A conta que o "IS NULL OR" existe para manter de pe.
+      for (const mes of res.body.dados) {
+        expect(mes.carta_topo + mes.carta_orto + mes.outros).toBe(mes.total)
+      }
     })
   })
 

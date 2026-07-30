@@ -3,7 +3,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO, TIPO_ESCALA, TIPO_PRODUTO } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -135,9 +135,48 @@ models.produtoPedidoIds = Joi.object().keys({
     .required()
 })
 
-// RN08: todo item de pedido referencia uma versão do acervo (uuid_versao obrigatório)
+// O que a mapoteca imprime SEM ser produto do acervo: papel quadriculado, carta
+// de outro CGEO, impresso de ocasião. O corte é de POSSE, não de formato, e por
+// isso tudo aqui é opcional menos o nome:
+//  - mi existe na carta de outro CGEO e não existe no papel quadriculado;
+//  - tipo_produto do domínio tem só Topográfica, Ortoimagem, CDGV e temática, e
+//    papel quadriculado não é nenhum dos quatro;
+//  - escala idem: o próprio DIEx do CPOR escreveu "-" no lugar dela.
+// A dimensão física ("80 x 68 cm, quadrícula 4 x 4 cm") vai na descrição.
+const produtoAvulsoBase = {
+  nome: Joi.string().max(255).required(),
+  mi: Joi.string().max(255).allow(null, ''),
+  descricao: Joi.string().allow(null, ''),
+  tipo_produto_id: Joi.number().integer().allow(null),
+  tipo_escala_id: Joi.number().integer().valid(...Object.values(TIPO_ESCALA)).allow(null),
+  denominador_escala_especial: Joi.number().integer().min(1).allow(null),
+  ativo: Joi.boolean().default(true)
+}
+
+models.produtoAvulso = Joi.object().keys(produtoAvulsoBase)
+
+models.produtoAvulsoAtualizacao = Joi.object().keys({
+  id: Joi.number().integer().required(),
+  ...produtoAvulsoBase,
+  ativo: Joi.boolean()
+})
+
+models.produtoAvulsoIds = Joi.object().keys({
+  produto_avulso_ids: Joi.array()
+    .items(Joi.number().integer().required())
+    .min(1)
+    .required()
+})
+
+// RN08: todo item de pedido referencia EXATAMENTE UM produto identificado.
+//
+// Até 2026-07-30 isso queria dizer "uma versão do acervo", e uuid_versao era
+// obrigatório. Hoje o destino pode ser o acervo OU um produto avulso, e o
+// .xor() abaixo é o que garante o "exatamente um": sem ele passaria item sem
+// destino nenhum, e o CHECK do banco viraria erro 500 em vez de 400 limpo.
 const produtoPedidoBase = {
-  uuid_versao: Joi.string().guid().required(),
+  uuid_versao: Joi.string().guid().allow(null),
+  produto_avulso_id: Joi.number().integer().allow(null),
   pedido_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().min(1).required(),
   quantidade_fornecida: Joi.number().integer().min(0).allow(null),
@@ -150,14 +189,20 @@ const produtoPedidoBase = {
   producao_especifica: Joi.boolean().default(false)
 }
 
-models.produtoPedido = Joi.object().keys(produtoPedidoBase)
+// .xor: um e só um dos dois destinos. É a RN08 dita em Joi, e devolve 400 com
+// mensagem em vez de deixar o CHECK do banco estourar 500.
+models.produtoPedido = Joi.object()
+  .keys(produtoPedidoBase)
+  .xor('uuid_versao', 'produto_avulso_id')
 
 // Sem .default() na atualização: ver o comentário em pedidoAtualizacao
-models.produtoPedidoAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().required(),
-  ...produtoPedidoBase,
-  producao_especifica: Joi.boolean()
-})
+models.produtoPedidoAtualizacao = Joi.object()
+  .keys({
+    id: Joi.number().integer().required(),
+    ...produtoPedidoBase,
+    producao_especifica: Joi.boolean()
+  })
+  .xor('uuid_versao', 'produto_avulso_id')
 
 models.produtoPedidoId = Joi.object().keys({
   id: Joi.number().integer().required()

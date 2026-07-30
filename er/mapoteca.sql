@@ -191,9 +191,47 @@ EXECUTE FUNCTION mapoteca.trg_localizador_imutavel();
 -- Todo item de pedido referencia uma versão do acervo (RN08): a mapoteca só
 -- entrega produtos previstos no controle do acervo. Cartas especiais, mapas
 -- temáticos e imagens devem ser cadastrados no acervo antes do pedido.
+-- O que a mapoteca imprime SEM ser produto do acervo. O corte e de POSSE, nao
+-- de formato: o acervo guarda o que e NOSSO, com versao e arquivo; aqui fica o
+-- que so passou pela impressora. Dois casos reais de 2026: papel quadriculado
+-- (100 folhas de 80 x 68 cm, quadricula 4 x 4 cm, para Central de Tiro) e carta
+-- de OUTRO CGEO, que a mapoteca distribui e nao cataloga.
+--
+-- Por isso mi, tipo_produto e tipo_escala sao todos OPCIONAIS: a carta de outra
+-- area tem MI legitimo, o papel quadriculado nao tem MI, nem escala, nem cabe em
+-- nenhum dos quatro tipos do dominio. Nao ha CHECK proibindo MI: proibir
+-- bloquearia justamente o caso da carta de outro CGEO. O que impede isto de
+-- virar deposito e o fluxo (a tela procura no acervo primeiro) mais o relatorio
+-- que lista avulso cujo MI ja existe no acervo.
+CREATE TABLE mapoteca.produto_avulso (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    mi VARCHAR(255),
+    descricao TEXT,
+    tipo_produto_id SMALLINT REFERENCES dominio.tipo_produto (code),
+    tipo_escala_id SMALLINT REFERENCES dominio.tipo_escala (code),
+    denominador_escala_especial INTEGER
+        CHECK (denominador_escala_especial IS NULL OR denominador_escala_especial > 0),
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
+    usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
+    data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    data_atualizacao TIMESTAMP WITH TIME ZONE
+);
+
+COMMENT ON TABLE mapoteca.produto_avulso IS
+    'O que a mapoteca imprime sem ser produto do acervo: papel quadriculado, carta de outro CGEO, impresso de ocasião. O corte é de POSSE, não de formato.';
+COMMENT ON COLUMN mapoteca.produto_avulso.mi IS
+    'MI quando o impresso é carta (tipicamente de outro CGEO). NULL no que não é carta.';
+
 CREATE TABLE mapoteca.produto_pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
-    uuid_versao UUID NOT NULL REFERENCES acervo.versao (uuid_versao),
+    -- RN08: todo item aponta EXATAMENTE UM produto identificado. Ate 2026-07-30
+    -- isso queria dizer "uma versao do acervo", e uuid_versao era NOT NULL; hoje
+    -- o destino pode ser o acervo ou um produto avulso, e quem garante o "um" e
+    -- o CHECK produto_pedido_um_destino, no fim desta tabela.
+    uuid_versao UUID REFERENCES acervo.versao (uuid_versao),
+    produto_avulso_id INTEGER REFERENCES mapoteca.produto_avulso (id),
 	pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id),
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
     quantidade_fornecida INTEGER
@@ -207,8 +245,15 @@ CREATE TABLE mapoteca.produto_pedido(
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_atualizacao TIMESTAMP WITH TIME ZONE
+    data_atualizacao TIMESTAMP WITH TIME ZONE,
+    -- O nome e o mesmo da migracao 2026-07-30_produto_avulso.sql, senao
+    -- instalacao nova divergiria da migrada e o ensaiar_migracao reprovaria.
+    CONSTRAINT produto_pedido_um_destino
+        CHECK ((uuid_versao IS NOT NULL) <> (produto_avulso_id IS NOT NULL))
 );
+
+CREATE INDEX produto_pedido_produto_avulso_id_idx
+    ON mapoteca.produto_pedido (produto_avulso_id);
 
 COMMENT ON COLUMN mapoteca.produto_pedido.quantidade_fornecida IS
     'Quantidade efetivamente entregue, quando diverge da prevista.';

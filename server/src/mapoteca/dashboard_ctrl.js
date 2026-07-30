@@ -8,6 +8,9 @@ const {
   MIDIA_EFETIVA,
   dataEntregaEfetiva,
   ESCALA_DISPLAY,
+  ESCALA_DISPLAY_ITEM,
+  JOIN_PRODUTO_ITEM,
+  PRODUTO_TIPO_ID,
   filtroAno
 } = require("./query_fragments");
 
@@ -446,16 +449,16 @@ controller.getEntregasPorTipoProduto = async (ano) => {
   return db.conn.any(
     `
     SELECT
-      tp.nome AS tipo_produto,
-      ${ESCALA_DISPLAY} AS escala,
+      -- O avulso nao tem tipo no dominio, e cai num balde unico e explicito.
+      -- Usar o nome do proprio avulso criaria uma fatia por impresso e tornaria
+      -- o grafico ilegivel.
+      COALESCE(tp.nome, 'Impressão avulsa') AS tipo_produto,
+      ${ESCALA_DISPLAY_ITEM} AS escala,
       COUNT(DISTINCT ped.id)::int AS total_pedidos,
       COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
-    JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-    JOIN acervo.produto prod ON prod.id = v.produto_id
-    JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
-    JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+    ${JOIN_PRODUTO_ITEM}
     WHERE ${FILTRO_ENTREGUE_ANO}
     GROUP BY 1, 2
     ORDER BY 1, 2
@@ -548,18 +551,22 @@ controller.getEntregasPorMes = async (ano) => {
       SELECT
         EXTRACT(MONTH FROM ${dataEntregaEfetiva()})::int AS mes,
         ${QTD_EFETIVA} AS qtd,
-        prod.tipo_produto_id
+        ${PRODUTO_TIPO_ID} AS tipo_produto_id
       FROM mapoteca.produto_pedido pp
       JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
-      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-      JOIN acervo.produto prod ON prod.id = v.produto_id
+      ${JOIN_PRODUTO_ITEM}
       WHERE ${FILTRO_ENTREGUE_ANO}
     )
     SELECT
       m.mes,
       COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id = $<tipoTopo>), 0)::int AS carta_topo,
       COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id = $<tipoOrto>), 0)::int AS carta_orto,
-      COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id NOT IN ($<tipoTopo>, $<tipoOrto>)), 0)::int AS outros,
+      -- O "IS NULL OR" nao e enfeite: o item avulso tem tipo_produto_id NULO, e
+      -- em SQL "NULL NOT IN (2,3)" da NULL, nao verdadeiro. Sem ele o avulso
+      -- ficaria de fora de "outros" e DENTRO do total, e as tres colunas
+      -- deixariam de somar o total, sem ninguem ver.
+      COALESCE(SUM(i.qtd) FILTER (WHERE i.tipo_produto_id IS NULL
+                                     OR i.tipo_produto_id NOT IN ($<tipoTopo>, $<tipoOrto>)), 0)::int AS outros,
       COALESCE(SUM(i.qtd), 0)::int AS total
     FROM meses m
     LEFT JOIN itens i ON i.mes = m.mes
@@ -673,6 +680,10 @@ controller.getEntregasGeo = async (ano, filtros = {}) => {
         ST_Area(prod.geom)::float8 AS area
       FROM mapoteca.produto_pedido pp
       JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
+      -- INNER de proposito: isto desenha o MAPA, e so entra o que tem geometria
+      -- (repare no prod.geom IS NOT NULL logo abaixo). O item avulso nao tem
+      -- produto no acervo, logo nao tem geometria, e ja seria descartado por
+      -- aquele filtro. Ele e contado no "semGeometria", logo adiante.
       JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
       JOIN acervo.produto prod ON prod.id = v.produto_id
       JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id

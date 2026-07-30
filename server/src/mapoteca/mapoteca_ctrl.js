@@ -8,6 +8,11 @@ const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO,
 const generateLocalizador = require("../utils/generate_localizador");
 const {
   ESCALA_DISPLAY,
+  ESCALA_DISPLAY_ITEM,
+  JOIN_PRODUTO_ITEM,
+  PRODUTO_NOME,
+  PRODUTO_MI,
+  ITEM_E_AVULSO,
   filtroAno,
   SITUACOES_EM_ABERTO,
   JOIN_ARQUIVO_IMPRIMIVEL
@@ -56,8 +61,24 @@ const PEDIDO_COLS = [
   { name: 'motivo_cancelamento', def: null }
 ];
 
+const PRODUTO_AVULSO_COLS = [
+  'nome',
+  { name: 'mi', def: null },
+  { name: 'descricao', def: null },
+  { name: 'tipo_produto_id', def: null },
+  { name: 'tipo_escala_id', def: null },
+  { name: 'denominador_escala_especial', def: null },
+  { name: 'ativo', def: true }
+];
+
 const PRODUTO_PEDIDO_COLS = [
-  'uuid_versao', 'pedido_id', 'quantidade',
+  // Um dos dois vem nulo, SEMPRE: o CHECK produto_pedido_um_destino garante que
+  // exatamente um esteja preenchido. Os dois precisam de def, porque o item de
+  // acervo omite produto_avulso_id e o item avulso omite uuid_versao; sem o def
+  // o pgp quebra antes de a linha chegar ao banco.
+  { name: 'uuid_versao', def: null },
+  { name: 'produto_avulso_id', def: null },
+  'pedido_id', 'quantidade',
   { name: 'quantidade_fornecida', def: null },
   'tipo_midia_id',
   { name: 'tipo_midia_fornecida_id', def: null },
@@ -434,9 +455,11 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
              fe.nome AS forma_entrega_nome,
              pp.observacao,
-             prod.nome AS produto_nome, prod.mi, prod.inom,
-             ${ESCALA_DISPLAY} AS escala,
-             tp.nome AS tipo_produto_nome,
+             ${PRODUTO_NOME} AS produto_nome, ${PRODUTO_MI} AS mi, prod.inom,
+             ${ESCALA_DISPLAY_ITEM} AS escala,
+             COALESCE(tp.nome, pa.nome) AS tipo_produto_nome,
+             ${ITEM_E_AVULSO} AS item_avulso,
+             pa.descricao AS avulso_descricao,
              v.versao, v.data_edicao,
              a.uuid_arquivo, a.nome AS arquivo_nome, a.tamanho_mb,
              CASE WHEN a.uuid_arquivo IS NULL THEN NULL
@@ -444,10 +467,11 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
                   ELSE a.nome_arquivo || '.' || a.extensao
              END AS arquivo_nome_fisico
       FROM mapoteca.produto_pedido pp
-      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-      JOIN acervo.produto prod ON prod.id = v.produto_id
-      JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
-      LEFT JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+      -- LEFT: esta e a FILA DE TRABALHO de quem imprime. O item avulso (papel
+      -- quadriculado, carta de outro CGEO) nao tem PDF no acervo, e sai aqui com
+      -- as colunas de arquivo nulas, mas TEM de aparecer: sem ele o operador nao
+      -- ve o que imprimir nem consegue registrar a impressao.
+      ${JOIN_PRODUTO_ITEM}
       LEFT JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN mapoteca.forma_entrega fe ON fe.code = pp.forma_entrega_id
       LEFT JOIN LATERAL (
@@ -457,7 +481,7 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
       ) imp ON TRUE
       ${JOIN_ARQUIVO_IMPRIMIVEL}
       WHERE pp.pedido_id = $<pedidoId>
-      ORDER BY prod.mi NULLS LAST, pp.id
+      ORDER BY ${PRODUTO_MI} NULLS LAST, pp.id
     `, {
       pedidoId,
       statusCarregado: STATUS_ARQUIVO.CARREGADO,
@@ -499,6 +523,9 @@ controller.getArquivoDeImpressao = async (pedidoId, uuidArquivo) => {
   const arquivo = await db.conn.oneOrNone(`
     SELECT a.nome, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb, vol.volume
     FROM mapoteca.produto_pedido pp
+    -- INNER de proposito: isto e a checagem de que o arquivo pedido pertence a
+    -- um item DESTE pedido. Item avulso nao tem arquivo no acervo, entao nunca
+    -- casaria de qualquer forma, e o INNER deixa a intencao explicita.
     JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
     ${JOIN_ARQUIVO_IMPRIMIVEL}
     WHERE pp.pedido_id = $<pedidoId>
@@ -829,14 +856,30 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    // Verificar se a versão existe
-    const versaoExiste = await t.oneOrNone(
-      `SELECT uuid_versao FROM acervo.versao WHERE uuid_versao = $1`,
-      [produtoPedido.uuid_versao]
-    );
-
-    if (!versaoExiste) {
-      throw new AppError('Versão não encontrada', httpCode.NotFound);
+    // O destino é um dos dois, e o Joi (.xor) já garantiu que veio exatamente
+    // um. Aqui só se confere que o que veio EXISTE, cada um na sua tabela.
+    if (produtoPedido.uuid_versao) {
+      const versaoExiste = await t.oneOrNone(
+        `SELECT uuid_versao FROM acervo.versao WHERE uuid_versao = $1`,
+        [produtoPedido.uuid_versao]
+      );
+      if (!versaoExiste) {
+        throw new AppError('Versão não encontrada', httpCode.NotFound);
+      }
+    } else {
+      const avulsoExiste = await t.oneOrNone(
+        `SELECT id, ativo FROM mapoteca.produto_avulso WHERE id = $1`,
+        [produtoPedido.produto_avulso_id]
+      );
+      if (!avulsoExiste) {
+        throw new AppError('Produto avulso não encontrado', httpCode.NotFound);
+      }
+      if (!avulsoExiste.ativo) {
+        throw new AppError(
+          'Produto avulso está inativo e não pode entrar em pedido novo',
+          httpCode.BadRequest
+        );
+      }
     }
 
     // Verificar se o pedido existe
@@ -945,9 +988,9 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
              COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
              GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
              tm.nome AS tipo_midia_nome,
-             prod.nome AS produto_nome,
-             prod.mi,
-             ${ESCALA_DISPLAY} AS escala,
+             ${PRODUTO_NOME} AS produto_nome,
+             ${PRODUTO_MI} AS mi,
+             ${ESCALA_DISPLAY_ITEM} AS escala,
              v.versao,
              a.id AS arquivo_id,
              a.nome,
@@ -955,9 +998,11 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
              a.tamanho_mb,
              CONCAT(vol.volume, '/', a.nome_arquivo, '.', a.extensao) AS download_path
       FROM mapoteca.produto_pedido pp
-      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-      JOIN acervo.produto prod ON prod.id = v.produto_id
-      JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+      -- LEFT: o resultado alimenta DUAS listas, os arquivos a baixar e o
+      -- itensSemPdf. O item avulso nao tem PDF e cai na segunda, que e
+      -- justamente o aviso de "isto aqui nao vem por download". Com INNER ele
+      -- sumia das duas, e quem imprime nunca saberia que existe.
+      ${JOIN_PRODUTO_ITEM}
       JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN LATERAL (
         SELECT SUM(ii.quantidade) AS quantidade_impressa
@@ -1579,6 +1624,143 @@ controller.deleteTiposMaterial = async (tipoMaterialIds) => {
     return t.any(
       `DELETE FROM mapoteca.tipo_material WHERE id IN ($1:csv)`,
       [tipoMaterialIds]
+    );
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Produto avulso: o que a mapoteca imprime sem ser produto do acervo
+// ---------------------------------------------------------------------------
+
+controller.getProdutoAvulso = async () => {
+  return db.conn.any(`
+    SELECT pa.id, pa.nome, pa.mi, pa.descricao,
+           pa.tipo_produto_id, tp.nome AS tipo_produto_nome,
+           pa.tipo_escala_id, te.nome AS tipo_escala_nome,
+           pa.denominador_escala_especial, pa.ativo,
+           -- Quantas vezes ja foi impresso. E o sinal de que um avulso talvez
+           -- devesse estar no acervo: o que se imprime toda semana e produto.
+           (SELECT COUNT(*) FROM mapoteca.produto_pedido pp WHERE pp.produto_avulso_id = pa.id)::int AS vezes_pedido,
+           pa.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
+           pa.data_criacao, pa.usuario_atualizacao_id,
+           ua.nome AS usuario_atualizacao_nome, pa.data_atualizacao
+    FROM mapoteca.produto_avulso AS pa
+    LEFT JOIN dominio.tipo_produto AS tp ON tp.code = pa.tipo_produto_id
+    LEFT JOIN dominio.tipo_escala AS te ON te.code = pa.tipo_escala_id
+    LEFT JOIN dgeo.usuario AS uc ON uc.id = pa.usuario_criacao_id
+    LEFT JOIN dgeo.usuario AS ua ON ua.id = pa.usuario_atualizacao_id
+    ORDER BY pa.ativo DESC, pa.nome
+  `);
+};
+
+/**
+ * Avulsos cujo MI JÁ EXISTE no acervo.
+ *
+ * É a reconciliação que substitui o guardrail que não dá para ter no banco: o
+ * avulso aceita MI de propósito (a carta de outro CGEO tem MI legítimo), então
+ * nenhum CHECK pode impedir que alguém registre como avulso o que devia estar
+ * catalogado. O que impede é olhar esta lista de vez em quando.
+ */
+controller.getProdutoAvulsoReconciliacao = async () => {
+  return db.conn.any(`
+    SELECT pa.id, pa.nome, pa.mi,
+           (SELECT COUNT(*) FROM mapoteca.produto_pedido pp WHERE pp.produto_avulso_id = pa.id)::int AS vezes_pedido,
+           prod.id AS produto_acervo_id, prod.nome AS produto_acervo_nome,
+           tp.nome AS produto_acervo_tipo
+    FROM mapoteca.produto_avulso pa
+    JOIN acervo.produto prod ON prod.mi = pa.mi
+    LEFT JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+    WHERE pa.mi IS NOT NULL AND pa.ativo
+    ORDER BY pa.nome, prod.nome
+  `);
+};
+
+controller.criaProdutoAvulso = async (produtoAvulso, usuarioUuid) => {
+  const usuarioId = await getUsuarioId(usuarioUuid);
+
+  return db.conn.tx(async t => {
+    produtoAvulso.usuario_criacao_id = usuarioId;
+    produtoAvulso.usuario_atualizacao_id = usuarioId;
+
+    const cs = new db.pgp.helpers.ColumnSet([
+      ...PRODUTO_AVULSO_COLS,
+      'usuario_criacao_id', 'usuario_atualizacao_id'
+    ]);
+
+    const query = db.pgp.helpers.insert(produtoAvulso, cs, {
+      table: 'produto_avulso',
+      schema: 'mapoteca'
+    }) + ' RETURNING id';
+
+    const result = await t.one(query);
+    return result.id;
+  });
+};
+
+controller.atualizaProdutoAvulso = async (produtoAvulso, usuarioUuid) => {
+  const usuarioId = await getUsuarioId(usuarioUuid);
+
+  return db.conn.tx(async t => {
+    // Chave ausente = "não mexe", pela mesma razão do tipo_material: omitir
+    // ativo ressuscitaria um avulso desativado.
+    await preserveOmitted(t, {
+      schema: 'mapoteca',
+      table: 'produto_avulso',
+      id: produtoAvulso.id,
+      fields: ['ativo'],
+      body: produtoAvulso
+    });
+
+    produtoAvulso.usuario_atualizacao_id = usuarioId;
+    produtoAvulso.data_atualizacao = new Date();
+
+    const cs = new db.pgp.helpers.ColumnSet([
+      ...PRODUTO_AVULSO_COLS,
+      'usuario_atualizacao_id', 'data_atualizacao'
+    ], { table: { table: 'produto_avulso', schema: 'mapoteca' } });
+
+    const query = db.pgp.helpers.update(produtoAvulso, cs) + ' WHERE id = $1';
+    const result = await t.result(query, [produtoAvulso.id]);
+
+    if (result.rowCount === 0) {
+      throw new AppError('Produto avulso não encontrado', httpCode.NotFound);
+    }
+  });
+};
+
+controller.deleteProdutosAvulsos = async (produtoAvulsoIds) => {
+  return db.conn.tx(async t => {
+    const existentes = await t.any(
+      `SELECT id FROM mapoteca.produto_avulso WHERE id IN ($1:csv)`,
+      [produtoAvulsoIds]
+    );
+    if (existentes.length !== produtoAvulsoIds.length) {
+      const achados = existentes.map(x => x.id);
+      const faltando = produtoAvulsoIds.filter(id => !achados.includes(parseInt(id)));
+      throw new AppError(
+        `Os seguintes produtos avulsos não foram encontrados: ${faltando.join(', ')}`,
+        httpCode.NotFound
+      );
+    }
+
+    // Apagar um avulso usado apagaria o registro do que foi impresso. Quem quer
+    // tirá-lo de circulação usa ativo = false, que a listagem já respeita.
+    const emUso = await t.any(
+      `SELECT DISTINCT produto_avulso_id AS id FROM mapoteca.produto_pedido
+       WHERE produto_avulso_id IN ($1:csv)`,
+      [produtoAvulsoIds]
+    );
+    if (emUso.length > 0) {
+      throw new AppError(
+        `Estes produtos avulsos estão em itens de pedido e não podem ser apagados: ` +
+        `${emUso.map(x => x.id).join(', ')}. Marque como inativo (ativo = false).`,
+        httpCode.BadRequest
+      );
+    }
+
+    await t.none(
+      `DELETE FROM mapoteca.produto_avulso WHERE id IN ($1:csv)`,
+      [produtoAvulsoIds]
     );
   });
 };

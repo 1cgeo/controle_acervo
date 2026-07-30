@@ -16,6 +16,13 @@ const {
   MIDIA_EFETIVA,
   dataEntregaEfetiva,
   ESCALA_DISPLAY,
+  ESCALA_DISPLAY_ITEM,
+  JOIN_PRODUTO_ITEM,
+  PRODUTO_NOME,
+  PRODUTO_MI,
+  PRODUTO_TIPO_ID,
+  PRODUTO_ESCALA_ID,
+  ITEM_E_AVULSO,
   filtroAno
 } = require("./query_fragments");
 
@@ -58,13 +65,15 @@ controller.getRelatorioPedidosMil = async (ano) => {
     itens AS (
       SELECT pp.pedido_id,
              ${QTD_EFETIVA} AS qtd,
-             prod.tipo_produto_id,
-             prod.tipo_escala_id,
+             ${PRODUTO_TIPO_ID} AS tipo_produto_id,
+             ${PRODUTO_ESCALA_ID} AS tipo_escala_id,
              (${MIDIA_EFETIVA} = $<midiaDigital>) AS digital
       FROM mapoteca.produto_pedido pp
       JOIN pedidos_mil pm ON pm.id = pp.pedido_id
-      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-      JOIN acervo.produto prod ON prod.id = v.produto_id
+      -- LEFT, e nao INNER: o item avulso nao tem versao, e um INNER o apagaria
+      -- da coluna Total da aba Mil. Sem tipo nem escala do dominio, ele cai no
+      -- FILTER de "outros_produtos", que e exatamente onde a aba o espera.
+      ${JOIN_PRODUTO_ITEM}
     ),
     agregado AS (
       SELECT pedido_id,
@@ -161,10 +170,14 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
       p.documento_solicitacao,
-      tp.nome AS produto,
-      prod.nome AS produto_nome,
-      prod.mi,
-      ${ESCALA_DISPLAY} AS escala,
+      -- O item avulso (papel quadriculado, carta de outro CGEO) não tem tipo de
+      -- produto no domínio, e sai com o nome do avulso na coluna Produto: é o
+      -- que a aba precisa mostrar para não ficar uma linha em branco.
+      COALESCE(tp.nome, pa.nome) AS produto,
+      ${PRODUTO_NOME} AS produto_nome,
+      ${PRODUTO_MI} AS mi,
+      ${ESCALA_DISPLAY_ITEM} AS escala,
+      ${ITEM_E_AVULSO} AS item_avulso,
       pp.quantidade AS quantidade_prevista,
       tm.nome AS material_previsto,
       pp.quantidade_fornecida,
@@ -180,10 +193,10 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido p ON p.id = pp.pedido_id
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
-    JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-    JOIN acervo.produto prod ON prod.id = v.produto_id
-    JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
-    JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+    -- LEFT, e não INNER: decisão do chefe de 2026-07-30 é que impressão avulsa
+    -- conta na Meta 4 como qualquer outra. Um INNER aqui apagaria da aba, sem
+    -- avisar, as 200 folhas de papel quadriculado de 2026.
+    ${JOIN_PRODUTO_ITEM}
     JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
     LEFT JOIN mapoteca.tipo_midia tmf ON tmf.code = pp.tipo_midia_fornecida_id
     LEFT JOIN mapoteca.forma_entrega fe ON fe.code = pp.forma_entrega_id
@@ -255,6 +268,11 @@ controller.getRelatorioTematicos = async (ano) => {
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido p ON p.id = pp.pedido_id
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
+    -- INNER de PROPOSITO, e nao esquecimento do produto avulso: esta aba e
+    -- sobre PRODUCAO, e tudo que ela mostra so existe na versao do acervo
+    -- (orgao produtor, militar responsavel, MB de arquivo carregado). Um item
+    -- avulso entraria como linha de nulos. Ele conta na Meta 4 (impressao), que
+    -- e outra aba, e la o JOIN_PRODUTO_ITEM ja o inclui.
     JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
     JOIN acervo.produto prod ON prod.id = v.produto_id
     JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
@@ -285,13 +303,14 @@ controller.getRelatorioPedidosResumo = async (ano) => {
     WITH itens AS (
       SELECT pp.pedido_id,
              ${QTD_EFETIVA} AS qtd,
-             prod.tipo_produto_id,
-             prod.tipo_escala_id,
+             ${PRODUTO_TIPO_ID} AS tipo_produto_id,
+             ${PRODUTO_ESCALA_ID} AS tipo_escala_id,
              (${MIDIA_EFETIVA} = $<midiaDigital>) AS digital
       FROM mapoteca.produto_pedido pp
       JOIN mapoteca.pedido p ON p.id = pp.pedido_id
-      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
-      JOIN acervo.produto prod ON prod.id = v.produto_id
+      -- Mesmo motivo da aba Mil: o item avulso conta como produto entregue, e
+      -- um INNER em acervo.versao o apagaria do total deste resumo.
+      ${JOIN_PRODUTO_ITEM}
       WHERE ${filtroAno("p.data_pedido")}
     ),
     agregado AS (

@@ -23,9 +23,57 @@ const MIDIA_EFETIVA = "COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)";
 const dataEntregaEfetiva = (pedidoAlias = "ped") =>
   `COALESCE(pp.data_entrega, ${pedidoAlias}.data_atendimento::date)`;
 
-// Exibição de escala: personalizada vira '1:<denominador>', senão o nome do domínio
+// ---------------------------------------------------------------------------
+// A identidade do item do pedido
+// ---------------------------------------------------------------------------
+//
+// Desde 2026-07-30 o item aponta o acervo OU um produto avulso, nunca os dois
+// (CHECK produto_pedido_um_destino). Avulso é o que a mapoteca imprime sem ser
+// nosso: papel quadriculado, carta de outro CGEO, impresso de ocasião.
+//
+// ATENÇÃO, e é a razão de estes fragmentos existirem: `JOIN acervo.versao` é
+// INNER, e num item avulso `pp.uuid_versao` é NULO. Todo INNER JOIN daquele
+// tipo APAGA da consulta, calado, cada item avulso. Não dá erro, não dá aviso:
+// dá número menor. Quem soma item do pedido usa JOIN_PRODUTO_ITEM e os campos
+// abaixo, e não precisa saber que existem dois destinos.
+//
+// Aliases que estes fragmentos criam e esperam: pp = mapoteca.produto_pedido,
+// v = acervo.versao, prod = acervo.produto, pa = mapoteca.produto_avulso,
+// tp = dominio.tipo_produto, te = dominio.tipo_escala.
+const JOIN_PRODUTO_ITEM = `
+      LEFT JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      LEFT JOIN acervo.produto prod ON prod.id = v.produto_id
+      LEFT JOIN mapoteca.produto_avulso pa ON pa.id = pp.produto_avulso_id
+      LEFT JOIN dominio.tipo_produto tp ON tp.code = COALESCE(prod.tipo_produto_id, pa.tipo_produto_id)
+      LEFT JOIN dominio.tipo_escala te ON te.code = COALESCE(prod.tipo_escala_id, pa.tipo_escala_id)`;
+
+// O produto do item, venha de onde vier.
+const PRODUTO_NOME = "COALESCE(prod.nome, pa.nome)";
+const PRODUTO_MI = "COALESCE(prod.mi, pa.mi)";
+const PRODUTO_INOM = "prod.inom"; // avulso não tem INOM
+const PRODUTO_TIPO_ID = "COALESCE(prod.tipo_produto_id, pa.tipo_produto_id)";
+const PRODUTO_ESCALA_ID = "COALESCE(prod.tipo_escala_id, pa.tipo_escala_id)";
+const ITEM_E_AVULSO = "(pp.produto_avulso_id IS NOT NULL)";
+
+// Exibição de escala do PRODUTO DO ACERVO: personalizada vira '1:<denominador>',
+// senão o nome do domínio. Exige só os aliases prod e te.
+//
+// Use este nas consultas que partem do acervo (mapa, integração, catálogo). Nas
+// que partem do ITEM do pedido use ESCALA_DISPLAY_ITEM, abaixo: aquele também lê
+// o produto avulso, e por isso exige o alias pa. Trocar um pelo outro numa
+// consulta sem pa dá "missing FROM-entry for table pa" na primeira execução.
 const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PERSONALIZADA} AND prod.denominador_escala_especial IS NOT NULL
            THEN '1:' || prod.denominador_escala_especial
+           ELSE te.nome
+      END`;
+
+// Idem, para consultas que partem do ITEM do pedido: lê dos dois destinos,
+// porque o avulso também pode ter escala (a carta de outro CGEO tem; o papel
+// quadriculado não tem nenhuma, e aí sai nulo). Exige os aliases prod, pa e te,
+// todos criados por JOIN_PRODUTO_ITEM.
+const ESCALA_DISPLAY_ITEM = `CASE WHEN COALESCE(prod.tipo_escala_id, pa.tipo_escala_id) = ${TIPO_ESCALA.ESCALA_PERSONALIZADA}
+            AND COALESCE(prod.denominador_escala_especial, pa.denominador_escala_especial) IS NOT NULL
+           THEN '1:' || COALESCE(prod.denominador_escala_especial, pa.denominador_escala_especial)
            ELSE te.nome
       END`;
 
@@ -79,6 +127,14 @@ module.exports = {
   MIDIA_EFETIVA,
   dataEntregaEfetiva,
   ESCALA_DISPLAY,
+  ESCALA_DISPLAY_ITEM,
+  JOIN_PRODUTO_ITEM,
+  PRODUTO_NOME,
+  PRODUTO_MI,
+  PRODUTO_INOM,
+  PRODUTO_TIPO_ID,
+  PRODUTO_ESCALA_ID,
+  ITEM_E_AVULSO,
   SITUACOES_EM_ABERTO,
   JOIN_ARQUIVO_IMPRIMIVEL,
   filtroAno,
