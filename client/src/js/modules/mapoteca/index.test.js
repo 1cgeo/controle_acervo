@@ -16,11 +16,11 @@ describe('manifesto do modulo mapoteca', () => {
     expect(modulosPortados().map(m => m.id)).toContain('mapoteca');
   });
 
-  test('as 15 telas estao registradas, cada uma com render e perfil', () => {
+  test('as 14 telas estao registradas, cada uma com render e perfil', () => {
     // 13 ate 2026-07-30, quando entrou a tela de atendimento (a fila de pedidos);
     // 15 no mesmo dia, com a tela de produtos avulsos (o que a mapoteca imprime
     // sem ser do acervo).
-    expect(mapoteca.rotas).toHaveLength(15);
+    expect(mapoteca.rotas).toHaveLength(14);
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
       expect(typeof rota.render).toBe('function');
@@ -47,7 +47,7 @@ describe('manifesto do modulo mapoteca', () => {
     // E o operador NAO entra em mais nada: o resto do modulo e leitura, e o
     // conjunto (em vez de nivel minimo) e o que faz isso valer.
     const semOperador = mapoteca.rotas.filter(r => !(r.perfis || []).includes('operador'));
-    expect(semOperador).toHaveLength(13);
+    expect(semOperador).toHaveLength(12);
     for (const rota of semOperador) {
       expect(rota.perfis).not.toContain('operador');
     }
@@ -91,6 +91,19 @@ describe('manifesto do modulo mapoteca', () => {
     const topo = mapoteca.menu.map(i => i.id);
     expect(topo.slice(0, 2)).toEqual(['dashboard', 'atendimento']);
     expect(topo).not.toContain('consumo');
+    // Produtos avulsos nao e categoria de pedido: mora DENTRO de Pedidos.
+    expect(topo).not.toContain('avulsos');
+  });
+
+  // NAO existe "pedido avulso", nem tela de produto avulso. O que existe e um
+  // ITEM cujo produto nao vem do acervo, descrito no proprio item, dentro da
+  // tela do pedido (chefe, 2026-07-30). Pedidos e item solto, sem grupo.
+  test('Pedidos e item solto: nao ha grupo nem tela de produto avulso', () => {
+    expect(mapoteca.menu.find(i => i.id === 'pedidos-group')).toBeUndefined();
+    const pedidos = mapoteca.menu.find(i => i.id === 'pedidos');
+    expect(pedidos.path).toBe('/pedidos');
+    expect(pedidos.children).toBeUndefined();
+    expect(mapoteca.rotas.some(r => r.path.includes('avulso'))).toBe(false);
   });
 
   test('Consumo de material mora dentro de Materiais, com catalogo e estoque', () => {

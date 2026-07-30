@@ -28,7 +28,6 @@ const LISTAS = [
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
   'getAnexosPedido', 'uploadAnexoPedido', 'getAnosMapoteca',
-  'getProdutosAvulsos', 'getReconciliacaoAvulsos',
 ];
 
 /** Leituras que devolvem objeto. O default e `{}`. */
@@ -47,7 +46,6 @@ const ACOES = [
   'prepararDownloadImpressao', 'registrarImpressao', 'deleteImpressoes',
   'createPlotter', 'updatePlotter', 'deletePlotters',
   'createManutencao', 'updateManutencao', 'deleteManutencoes',
-  'createProdutoAvulso', 'updateProdutoAvulso', 'deleteProdutosAvulsos',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',
   'createEstoqueMaterial', 'updateEstoqueMaterial', 'deleteEstoqueMaterial',
   'transferirEstoque',

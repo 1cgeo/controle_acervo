@@ -25,7 +25,6 @@ import { renderPedidosList } from './pages/pedidos/list.js';
 import { renderAtendimento } from './pages/atendimento/index.js';
 import { renderPedidoWizard } from './pages/pedidos/wizard.js';
 import { renderPedidoDetails } from './pages/pedidos/details.js';
-import { renderAvulsosList } from './pages/avulsos/list.js';
 import { renderMateriaisList } from './pages/materiais/list.js';
 import { renderMaterialDetails } from './pages/materiais/details.js';
 import { renderEstoqueList } from './pages/estoque/list.js';
@@ -52,18 +51,13 @@ export default {
   icon: ICONS.print,
   home: '/dashboard',
 
-  // As DUAS telas do operador vem PRIMEIRO, e de primeiro nivel, sem grupo. Quem
-  // tem operador ve exatamente estes dois itens (chefe, 2026-07-30), e um grupo
-  // colapsado com um filho dentro obrigaria a pessoa a clicar para achar metade
-  // do trabalho dela. Consumo saiu do grupo Materiais por isso; la ficaram o
-  // cadastro (tipos) e o saldo (estoque), que sao leitura.
+  // Ordem e agrupamento decididos pelo chefe em 2026-07-30: Dashboard abre o
+  // modulo, Atender pedidos vem logo depois, e Consumo de material mora dentro
+  // de Materiais, junto do catalogo e do estoque.
   //
   // Nenhum item repete a restricao: o sidebar pergunta ao registry, que le
   // `perfis`/`perfil` da ROTA (podeAbrirRota). Repetir a mao foi o que fez o item
   // Configuracao do orcamento aparecer para todo mundo e cair no 403.
-  // Ordem e agrupamento decididos pelo chefe em 2026-07-30: Dashboard abre o
-  // modulo, Atender pedidos vem logo depois, e Consumo de material passa a
-  // morar dentro de Materiais, junto do catalogo e do estoque.
   //
   // O QUE ISSO FAZ COM O OPERADOR, que e quem usa Consumo todo dia: ele nao tem
   // leitura no modulo, entao dos tres filhos de Materiais so Consumo aparece
@@ -76,8 +70,11 @@ export default {
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'atendimento', label: 'Atender pedidos', icon: ICONS.localShipping, path: '/atendimento' },
     { id: 'clientes', label: 'Clientes', icon: ICONS.people, path: '/clientes' },
+    // NAO existe "pedido avulso", nem tela de produto avulso. O que existe e um
+    // ITEM cujo produto nao vem do acervo, descrito no proprio item, na tela do
+    // pedido. Um pedido pode misturar item de acervo e item avulso a vontade
+    // (chefe, 2026-07-30).
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
-    { id: 'avulsos', label: 'Produtos avulsos', icon: ICONS.description, path: '/avulsos' },
     {
       id: 'materiais-group',
       label: 'Materiais',
@@ -110,7 +107,6 @@ export default {
     // confirmar, perdendo tudo o que digitou.
     { path: '/pedidos/novo', render: renderPedidoWizard, perfis: ['gerente'] },
     { path: '/pedidos/:id', render: renderPedidoDetails, perfis: LEITURA },
-    { path: '/avulsos', render: renderAvulsosList, perfis: LEITURA },
     { path: '/materiais', render: renderMateriaisList, perfis: LEITURA },
     { path: '/materiais/:id', render: renderMaterialDetails, perfis: LEITURA },
     { path: '/estoque', render: renderEstoqueList, perfis: LEITURA },

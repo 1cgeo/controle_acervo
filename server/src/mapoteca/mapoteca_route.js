@@ -513,69 +513,6 @@ router.delete(
   })
 )
 
-// Rotas para Produto Avulso: o que a mapoteca imprime sem ser do acervo
-// (papel quadriculado, carta de outro CGEO, impresso de ocasião).
-router.get(
-  '/produto_avulso',
-  verifyPerfil('consulta', 'mapoteca'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getProdutoAvulso()
-    const msg = 'Produtos avulsos retornados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-// Avulsos cujo MI já existe no acervo: a lista que substitui o guardrail que
-// não cabe num CHECK, porque o avulso aceita MI de propósito.
-router.get(
-  '/produto_avulso/reconciliacao',
-  verifyPerfil('consulta', 'mapoteca'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getProdutoAvulsoReconciliacao()
-    const msg = 'Reconciliação de produtos avulsos com o acervo'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.post(
-  '/produto_avulso',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.produtoAvulso
-  }),
-  asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaProdutoAvulso(req.body, req.usuarioUuid)
-    const msg = 'Produto avulso criado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
-  })
-)
-
-router.put(
-  '/produto_avulso',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.produtoAvulsoAtualizacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaProdutoAvulso(req.body, req.usuarioUuid)
-    const msg = 'Produto avulso atualizado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-router.delete(
-  '/produto_avulso',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.produtoAvulsoIds
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteProdutosAvulsos(req.body.produto_avulso_ids)
-    const msg = 'Produtos avulsos deletados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
 // Rotas para Tipo de Material
 router.get(
   '/tipo_material',

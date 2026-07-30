@@ -170,10 +170,10 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
       p.documento_solicitacao,
-      -- O item avulso (papel quadriculado, carta de outro CGEO) não tem tipo de
-      -- produto no domínio, e sai com o nome do avulso na coluna Produto: é o
-      -- que a aba precisa mostrar para não ficar uma linha em branco.
-      COALESCE(tp.nome, pa.nome) AS produto,
+      -- O item avulso não tem tipo de produto no domínio, e sai com o próprio
+      -- nome na coluna Produto: é o que a aba precisa mostrar para não ficar uma
+      -- linha em branco.
+      COALESCE(tp.nome, pp.nome_avulso) AS produto,
       ${PRODUTO_NOME} AS produto_nome,
       ${PRODUTO_MI} AS mi,
       ${ESCALA_DISPLAY_ITEM} AS escala,

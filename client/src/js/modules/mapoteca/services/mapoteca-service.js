@@ -315,48 +315,6 @@ export function deleteManutencoes(ids) {
 }
 
 // ---------------------------------------------------------------------------
-// Produto avulso: o que a mapoteca imprime sem ser produto do acervo
-// ---------------------------------------------------------------------------
-//
-// O corte é de POSSE, não de formato: o acervo guarda o que é nosso, com versão
-// e arquivo; o avulso guarda o que só passou pela impressora (papel
-// quadriculado, carta de outro CGEO, impresso de ocasião).
-
-/** Todos os avulsos, com `vezes_pedido` (quantas vezes já foi impresso). */
-export function getProdutosAvulsos() {
-  return cachedFetch('avulsos:list', () => apiGet(`${BASE}/produto_avulso`), TTL_LISTA);
-}
-
-/**
- * Avulsos cujo MI JÁ existe no acervo.
- *
- * O avulso aceita MI de propósito (a carta de outro CGEO tem MI legítimo), então
- * nenhuma trava de banco impede registrar como avulso o que deveria estar
- * catalogado. Esta lista é o que ocupa o lugar daquela trava.
- */
-export function getReconciliacaoAvulsos() {
-  return cachedFetch('avulsos:reconciliacao', () => apiGet(`${BASE}/produto_avulso/reconciliacao`), TTL_LISTA);
-}
-
-/** @param {{nome:string, mi?:string, descricao?:string, tipo_produto_id?:number, tipo_escala_id?:number, denominador_escala_especial?:number, ativo?:boolean}} avulso */
-export function createProdutoAvulso(avulso) {
-  invalidate('avulsos');
-  return apiPost(`${BASE}/produto_avulso`, avulso);
-}
-
-/** Mesmo corpo do create, mais `id`. */
-export function updateProdutoAvulso(avulso) {
-  invalidate('avulsos');
-  return apiPut(`${BASE}/produto_avulso`, avulso);
-}
-
-/** @param {number[]} ids */
-export function deleteProdutosAvulsos(ids) {
-  invalidate('avulsos');
-  return apiDelete(`${BASE}/produto_avulso`, { produto_avulso_ids: ids });
-}
-
-// ---------------------------------------------------------------------------
 // Tipos de material
 // ---------------------------------------------------------------------------
 

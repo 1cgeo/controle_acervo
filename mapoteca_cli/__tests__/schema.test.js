@@ -82,7 +82,7 @@ test('reconhece guid, pattern e array com minimo', () => {
   // Anulavel desde 2026-07-30: o item aponta o acervo OU um produto avulso, e
   // quem garante o "exatamente um" e o .xor() do schema, nao o required.
   assert.strictEqual(item.uuid_versao.tipo, 'uuid |null')
-  assert.ok(item.produto_avulso_id, 'o item precisa oferecer o destino avulso')
+  assert.strictEqual(item.nome_avulso.tipo, "string(<=255) |null|''")
 
   const loc = esquema.camposDe(models.pedidoLocalizador)[0]
   assert.ok(loc.tipo.includes('[A-Z0-9]{4}'))

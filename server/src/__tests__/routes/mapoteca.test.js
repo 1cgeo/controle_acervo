@@ -65,18 +65,8 @@ const criaProdutoPedido = async (body) => {
   return res
 }
 
-const criaProdutoAvulso = async (overrides = {}) => {
-  const res = await request(app)
-    .post('/api/mapoteca/produto_avulso')
-    .set('Authorization', generateAdminToken())
-    .send({
-      nome: 'Papel quadriculado',
-      descricao: '80 x 68 cm, quadrícula de 4 x 4 cm',
-      ...overrides
-    })
-  expect(res.status).toBe(201)
-  return res.body.dados.id
-}
+// O avulso NAO tem cadastro proprio: ele e descrito no proprio item, junto do
+// pedido. Nao ha helper de criacao porque nao ha o que criar antes.
 
 const criaTipoMaterial = async (overrides = {}) => {
   const res = await request(app)
@@ -221,14 +211,13 @@ describe('Mapoteca Routes', () => {
   // forma nova ("todo item aponta EXATAMENTE UM produto identificado") e, mais
   // importante, guardam as SOMAS: o modo de falhar deste recurso nao e erro, e
   // numero menor, porque um JOIN interno esquecido apaga o avulso calado.
-  describe('Produto avulso', () => {
+  describe('Item avulso', () => {
     it('cria avulso e o usa como item do pedido', async () => {
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId)
-      const avulsoId = await criaProdutoAvulso()
-
       await criaProdutoPedido({
-        produto_avulso_id: avulsoId,
+        nome_avulso: 'Papel quadriculado',
+        descricao_avulso: '80 x 68 cm, quadrícula de 4 x 4 cm',
         pedido_id: pedido.id,
         quantidade: 100,
         tipo_midia_id: 6
@@ -242,6 +231,7 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.produtos).toHaveLength(1)
       expect(res.body.dados.produtos[0].quantidade).toBe(100)
       expect(res.body.dados.produtos[0].uuid_versao).toBeNull()
+      expect(res.body.dados.produtos[0].produto_nome).toBe('Papel quadriculado')
     })
 
     it('item sem destino nenhum should return 400', async () => {
@@ -258,7 +248,6 @@ describe('Mapoteca Routes', () => {
     it('item com os DOIS destinos should return 400', async () => {
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId)
-      const avulsoId = await criaProdutoAvulso({ nome: 'Outro' })
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2965-1' })
       const versao = await createVersao(produto.id)
 
@@ -268,7 +257,7 @@ describe('Mapoteca Routes', () => {
         .send({
           pedido_id: pedido.id,
           uuid_versao: versao.uuid_versao,
-          produto_avulso_id: avulsoId,
+          nome_avulso: 'Outro',
           quantidade: 1,
           tipo_midia_id: 6
         })
@@ -276,58 +265,15 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(400)
     })
 
-    it('avulso inexistente should return 404', async () => {
-      const clienteId = await criaCliente()
-      const pedido = await criaPedido(clienteId)
-      const res = await request(app)
-        .post('/api/mapoteca/produto_pedido')
-        .set('Authorization', generateAdminToken())
-        .send({ produto_avulso_id: 99999, pedido_id: pedido.id, quantidade: 1, tipo_midia_id: 6 })
-
-      expect(res.status).toBe(404)
-    })
-
-    it('NAO deixa apagar avulso que ja esta em item de pedido', async () => {
-      const clienteId = await criaCliente()
-      const pedido = await criaPedido(clienteId)
-      const avulsoId = await criaProdutoAvulso({ nome: 'Em uso' })
-      await criaProdutoPedido({
-        produto_avulso_id: avulsoId, pedido_id: pedido.id, quantidade: 5, tipo_midia_id: 6
-      })
-
-      const res = await request(app)
-        .delete('/api/mapoteca/produto_avulso')
-        .set('Authorization', generateAdminToken())
-        .send({ produto_avulso_ids: [avulsoId] })
-
-      // Apagar apagaria o registro do que foi impresso. Quem quer tirar de
-      // circulacao usa ativo = false.
-      expect(res.status).toBe(400)
-    })
-
-    it('a reconciliacao acha o avulso cujo MI ja existe no acervo', async () => {
-      await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2758-3-NE' })
-      await criaProdutoAvulso({ nome: 'Carta de outro CGEO', mi: '2758-3-NE' })
-
-      const res = await request(app)
-        .get('/api/mapoteca/produto_avulso/reconciliacao')
-        .set('Authorization', generateAdminToken())
-
-      expect(res.status).toBe(200)
-      expect(res.body.dados.some(r => r.mi === '2758-3-NE')).toBe(true)
-    })
-
     it('o avulso aparece IDENTIFICADO na consulta publica por localizador', async () => {
       const clienteId = await criaCliente({ nome: 'OM Publica' })
       const pedido = await criaPedido(clienteId, {
         observacao_interna: 'anotacao da equipe que nao pode vazar'
       })
-      const avulsoId = await criaProdutoAvulso({
-        nome: 'Papel quadriculado A0',
-        descricao: '80 x 68 cm, quadricula de 4 x 4 cm'
-      })
       await criaProdutoPedido({
-        produto_avulso_id: avulsoId, pedido_id: pedido.id, quantidade: 100, tipo_midia_id: 6
+        nome_avulso: 'Papel quadriculado A0',
+        descricao_avulso: '80 x 68 cm, quadricula de 4 x 4 cm',
+        pedido_id: pedido.id, quantidade: 100, tipo_midia_id: 6
       })
 
       // Rota PUBLICA: sem Authorization de proposito.
@@ -346,6 +292,44 @@ describe('Mapoteca Routes', () => {
       expect(JSON.stringify(res.body)).not.toContain('anotacao da equipe')
     })
 
+    it('pedido com item avulso e um pedido NORMAL: entra na fila e conta igual', async () => {
+      // NAO existe "pedido avulso". O que muda e o produto do ITEM; o pedido
+      // segue o mesmo fluxo. Este teste guarda isso na fila de atendimento, que
+      // e onde a diferenca apareceria primeiro para quem imprime.
+      const clienteId = await criaCliente({ nome: 'OM Fila', tipo_cliente_id: 1 })
+      const pedido = await criaPedido(clienteId, { situacao_pedido_id: 3 })
+      await criaProdutoPedido({
+        nome_avulso: 'Papel quadriculado da fila',
+        pedido_id: pedido.id, quantidade: 40, tipo_midia_id: 6
+      })
+
+      const fila = await request(app)
+        .get('/api/mapoteca/pedido/em_aberto')
+        .set('Authorization', generateAdminToken())
+
+      expect(fila.status).toBe(200)
+      const nafila = fila.body.dados.find(p => p.id === pedido.id)
+      // Se este undefined aparecer, o pedido com item avulso sumiu da fila.
+      expect(nafila).toBeDefined()
+      // Conta igual: um item, 40 copias, nada impresso ainda.
+      expect(nafila.total_itens).toBe(1)
+      expect(nafila.quantidade_pedida).toBe(40)
+      expect(nafila.itens_impressos).toBe(0)
+
+      // E a tela de quem imprime mostra o item, com o nome do avulso e sem
+      // arquivo para baixar (nao existe PDF no acervo para papel quadriculado).
+      const impressao = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}/impressao`)
+        .set('Authorization', generateAdminToken())
+
+      expect(impressao.status).toBe(200)
+      const itens = impressao.body.dados.itens || impressao.body.dados
+      expect(itens).toHaveLength(1)
+      expect(itens[0].produto_nome).toBe('Papel quadriculado da fila')
+      expect(itens[0].item_avulso).toBe(true)
+      expect(itens[0].uuid_arquivo == null).toBe(true)
+    })
+
     it('o avulso ENTRA nas somas do dashboard, e as parcelas fecham o total', async () => {
       // O modo de falhar aqui e silencioso: com JOIN interno o avulso sumiria, e
       // com "NULL NOT IN (...)" ele entraria no total e ficaria fora de outros.
@@ -354,9 +338,8 @@ describe('Mapoteca Routes', () => {
         situacao_pedido_id: 5,
         data_atendimento: '2026-03-20'
       })
-      const avulsoId = await criaProdutoAvulso({ nome: 'Papel quadriculado do teste' })
       await criaProdutoPedido({
-        produto_avulso_id: avulsoId,
+        nome_avulso: 'Papel quadriculado do teste',
         pedido_id: pedido.id,
         quantidade: 100,
         quantidade_fornecida: 100,

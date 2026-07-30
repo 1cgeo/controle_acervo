@@ -9,7 +9,7 @@ import {
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
 import { buscarProdutos, getProdutoDetalhado, getTiposProduto, getTiposEscala } from '@modules/mapoteca/services/acervo-service.js';
-import { getDominioTipoMidia, getDominioFormaEntrega, getProdutosAvulsos } from '@modules/mapoteca/services/mapoteca-service.js';
+import { getDominioTipoMidia, getDominioFormaEntrega } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate } from '@utils/format.js';
 import { showError, showWarning } from '@utils/toast.js';
 
@@ -369,25 +369,37 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
       { value: 'acervo', label: 'Do acervo (catálogo)' },
       { value: 'avulso', label: 'Avulso (não é produto do acervo)' },
     ],
-    value: item && item.produto_avulso_id ? 'avulso' : 'acervo',
+    value: item && item.nome_avulso ? 'avulso' : 'acervo',
   });
 
-  const avulsoField = createSelectField({
-    label: 'Produto avulso',
-    options: [],
-    value: item ? item.produto_avulso_id : undefined,
+  // O avulso e descrito AQUI, no proprio item. Nao ha catalogo de produto
+  // avulso, e nao deve haver: avulso e impresso de OCASIAO, e o que merecer
+  // cadastro estavel merece estar no acervo.
+  const nomeAvulsoField = createTextField({
+    label: 'O que vai ser impresso',
+    required: true,
+    value: (item && item.nome_avulso) || '',
+    placeholder: 'ex.: Papel quadriculado',
+  });
+
+  const descricaoAvulsoField = createTextareaField({
+    label: 'Descrição',
+    value: (item && item.descricao_avulso) || '',
+    rows: 2,
+    placeholder: 'ex.: 80 x 68 cm, quadrícula de 4 x 4 cm',
   });
 
   const avulsoHint = el('p', {
     className: 'form-hint',
     textContent:
-      'Use só para o que NÃO é produto do acervo: papel quadriculado, carta de outro ' +
-      'CGEO, impresso de ocasião. Folha nossa ainda não catalogada não entra aqui: ' +
-      'ela vira item quando entrar no acervo.',
+      'Use só para o que NÃO é produto do acervo: papel quadriculado, impresso de ' +
+      'ocasião. Folha nossa ainda não catalogada não entra aqui: ela vira item quando ' +
+      'entrar no acervo. A descrição aparece na consulta pública do cliente.',
   });
 
   const avulsoSection = el('div', { className: 'hidden' }, [
-    avulsoField.element,
+    nomeAvulsoField.element,
+    descricaoAvulsoField.element,
     avulsoHint,
   ]);
 
@@ -397,33 +409,10 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
     selectedSection,
   ]);
 
-  let avulsosCarregados = false;
-  async function carregarAvulsos() {
-    if (avulsosCarregados) return;
-    try {
-      const lista = await getProdutosAvulsos();
-      avulsoField.setOptions(
-        (lista || [])
-          // Inativo só aparece se já for o do item que se está editando: senão
-          // some da tela e a edição perderia o vínculo em silêncio.
-          .filter(a => a.ativo || (item && item.produto_avulso_id === a.id))
-          .map(a => ({
-            value: a.id,
-            label: a.mi ? `${a.nome} (MI ${a.mi})` : a.nome,
-          }))
-      );
-      if (item && item.produto_avulso_id) avulsoField.setValue(item.produto_avulso_id);
-      avulsosCarregados = true;
-    } catch (err) {
-      showError(err.message || 'Erro ao carregar os produtos avulsos');
-    }
-  }
-
   function aplicarOrigem() {
     const avulso = origemField.getValue() === 'avulso';
     acervoSection.classList.toggle('hidden', avulso);
     avulsoSection.classList.toggle('hidden', !avulso);
-    if (avulso) carregarAvulsos();
   }
   origemField.element.addEventListener('change', aplicarOrigem);
 
@@ -438,7 +427,7 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
 
   // Edit mode: pre-select the current product/version and load the other
   // versions in background so the user can switch.
-  if (item && !item.produto_avulso_id) {
+  if (item && !item.nome_avulso) {
     produtoSelecionado = {
       id: item.produto_id,
       nome: item.produto_nome,
@@ -488,17 +477,16 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
           quantidadeField.setError(null);
           qtdFornecidaField.setError(null);
 
-          avulsoField.setError(null);
+          nomeAvulsoField.setError(null);
 
           let ok = true;
           const avulso = origemField.getValue() === 'avulso';
           const uuidVersao = avulso ? null : versaoField.getValue();
-          const produtoAvulsoId = avulso ? avulsoField.getValue() : null;
+          const nomeAvulso = avulso ? nomeAvulsoField.getValue() : null;
 
           if (avulso) {
-            if (!produtoAvulsoId) {
-              avulsoField.setError('Selecione o produto avulso');
-              showWarning('Selecione o produto avulso, ou cadastre um em Produtos avulsos.');
+            if (!nomeAvulso) {
+              nomeAvulsoField.setError('Diga o que vai ser impresso');
               ok = false;
             }
           } else if (!produtoSelecionado || !uuidVersao) {
@@ -526,7 +514,9 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
           // banco) se vierem os dois ou nenhum, entao mandar a chave com null
           // seria erro: manda-se so a que vale.
           const payload = {
-            ...(avulso ? { produto_avulso_id: produtoAvulsoId } : { uuid_versao: uuidVersao }),
+            ...(avulso
+              ? { nome_avulso: nomeAvulso, descricao_avulso: descricaoAvulsoField.getValue() || null }
+              : { uuid_versao: uuidVersao }),
             quantidade,
             quantidade_fornecida: qtdFornecida,
             tipo_midia_id: midiaField.getValue(),
@@ -540,12 +530,9 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
           const tipoMidiaSel = tiposMidia.find(t => t.code === payload.tipo_midia_id);
           let display;
           if (avulso) {
-            const opt = avulsoField.getOptions
-              ? avulsoField.getOptions().find(o => o.value === produtoAvulsoId)
-              : null;
             display = {
-              produto_avulso_id: produtoAvulsoId,
-              produto_nome: opt ? opt.label : 'Produto avulso',
+              nome_avulso: nomeAvulso,
+              produto_nome: nomeAvulso,
               mi: null,
               inom: null,
               escala: null,

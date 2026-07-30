@@ -38,22 +38,23 @@ const dataEntregaEfetiva = (pedidoAlias = "ped") =>
 // abaixo, e não precisa saber que existem dois destinos.
 //
 // Aliases que estes fragmentos criam e esperam: pp = mapoteca.produto_pedido,
-// v = acervo.versao, prod = acervo.produto, pa = mapoteca.produto_avulso,
-// tp = dominio.tipo_produto, te = dominio.tipo_escala.
+// v = acervo.versao, prod = acervo.produto, tp = dominio.tipo_produto,
+// te = dominio.tipo_escala. O avulso nao tem tabela: mora em pp.nome_avulso.
 const JOIN_PRODUTO_ITEM = `
       LEFT JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
       LEFT JOIN acervo.produto prod ON prod.id = v.produto_id
-      LEFT JOIN mapoteca.produto_avulso pa ON pa.id = pp.produto_avulso_id
-      LEFT JOIN dominio.tipo_produto tp ON tp.code = COALESCE(prod.tipo_produto_id, pa.tipo_produto_id)
-      LEFT JOIN dominio.tipo_escala te ON te.code = COALESCE(prod.tipo_escala_id, pa.tipo_escala_id)`;
+      LEFT JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+      LEFT JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id`;
 
-// O produto do item, venha de onde vier.
-const PRODUTO_NOME = "COALESCE(prod.nome, pa.nome)";
-const PRODUTO_MI = "COALESCE(prod.mi, pa.mi)";
-const PRODUTO_INOM = "prod.inom"; // avulso não tem INOM
-const PRODUTO_TIPO_ID = "COALESCE(prod.tipo_produto_id, pa.tipo_produto_id)";
-const PRODUTO_ESCALA_ID = "COALESCE(prod.tipo_escala_id, pa.tipo_escala_id)";
-const ITEM_E_AVULSO = "(pp.produto_avulso_id IS NOT NULL)";
+// O produto do item, venha de onde vier. O avulso é descrito no próprio item
+// (nome_avulso), e não num catálogo: ele é impresso de ocasião, e o que merecer
+// cadastro estável merece estar no acervo.
+const PRODUTO_NOME = "COALESCE(prod.nome, pp.nome_avulso)";
+const PRODUTO_MI = "prod.mi";        // avulso não tem MI
+const PRODUTO_INOM = "prod.inom";    // nem INOM
+const PRODUTO_TIPO_ID = "prod.tipo_produto_id";
+const PRODUTO_ESCALA_ID = "prod.tipo_escala_id";
+const ITEM_E_AVULSO = "(pp.nome_avulso IS NOT NULL)";
 
 // Exibição de escala do PRODUTO DO ACERVO: personalizada vira '1:<denominador>',
 // senão o nome do domínio. Exige só os aliases prod e te.
@@ -67,15 +68,11 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
            ELSE te.nome
       END`;
 
-// Idem, para consultas que partem do ITEM do pedido: lê dos dois destinos,
-// porque o avulso também pode ter escala (a carta de outro CGEO tem; o papel
-// quadriculado não tem nenhuma, e aí sai nulo). Exige os aliases prod, pa e te,
-// todos criados por JOIN_PRODUTO_ITEM.
-const ESCALA_DISPLAY_ITEM = `CASE WHEN COALESCE(prod.tipo_escala_id, pa.tipo_escala_id) = ${TIPO_ESCALA.ESCALA_PERSONALIZADA}
-            AND COALESCE(prod.denominador_escala_especial, pa.denominador_escala_especial) IS NOT NULL
-           THEN '1:' || COALESCE(prod.denominador_escala_especial, pa.denominador_escala_especial)
-           ELSE te.nome
-      END`;
+// Idem, para consultas que partem do ITEM do pedido. Hoje e identico ao de
+// cima, porque o item avulso nao tem escala: ele e impresso de ocasiao, e o que
+// houver de dimensao vai na descricao. Fica separado de proposito, para que uma
+// consulta de item nao passe a depender de um fragmento pensado para o acervo.
+const ESCALA_DISPLAY_ITEM = ESCALA_DISPLAY;
 
 // Situações que contam como pedido EM ABERTO: todas menos Concluído (5) e
 // Cancelado (6). É a fila de trabalho da tela de atendimento.
