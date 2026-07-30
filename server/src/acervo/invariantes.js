@@ -90,6 +90,47 @@ const INVARIANTES = [
     titulo: 'MI e INOM inconsistentes (um presente, outro ausente)',
     sql: 'select id,nome,mi,inom,tipo_produto_id from acervo.produto where (mi is null) <> (inom is null)'
   },
+  {
+    codigo: '1h',
+    severidade: 'DEFECT',
+    titulo: 'MI preenchido com INOM',
+    // Achado em 2026-07-30, ao atualizar o site de produtos: 29 produtos tinham
+    // no `mi` uma COPIA literal do `inom` (`mi` = `inom`, string por string).
+    // O 1g nao pega, porque os dois campos estao preenchidos.
+    //
+    // Nenhum invariante que compare produto com produto pega, tampouco: cada um
+    // desses 29 e o UNICO produto da sua folha, entao nao ha vizinho com o MI
+    // certo para divergir. Foi preciso uma grade externa para achar. Este teste
+    // e de FORMA, e por isso independe de vizinho.
+    //
+    // Custa caro em duas frentes: a folha aparece duas vezes no mapa de
+    // cobertura (uma na celula da grade, outra como celula solta), e o nome
+    // fisico do arquivo, que e DERIVADO por coalesce(mi, inom), sai com o INOM
+    // no lugar do MI. Corrigir o `mi` arrasta renome (invariante 7a).
+    sql: "select id,nome,mi,inom,tipo_escala_id,tipo_produto_id from acervo.produto where upper(btrim(mi)) ~ '^[A-Z]{2}-'"
+  },
+  {
+    codigo: '1i',
+    severidade: 'DEFECT',
+    titulo: 'MI fora da forma da escala',
+    // A forma do MI e composicional: 250k e 100k so o numero da folha, 50k com
+    // o quadrante (1..4), 25k com o quadrante e o rumo (NE/NO/SE/SO).
+    //
+    // O sufixo de LETRA no numero e legitimo e tem de passar (`2882A`, `536A`,
+    // e as folhas `2882A-4` e `2882A-4-SE` que descem dele). Um teste sem essa
+    // folga acusa 8 falsos DEFECT no acervo de 07/2026, e invariante DEFECT que
+    // nao da zero envenena a auditoria inteira (ver a nota do 3f).
+    //
+    // Escala personalizada (5) fica fora: folha nao-SCN nao tem MI, e o 1c ja
+    // trata o INOM nesse caso.
+    sql: `select id,nome,mi,inom,tipo_escala_id from acervo.produto
+       where mi is not null and tipo_escala_id between 1 and 4
+         and upper(btrim(mi)) !~ '^[A-Z]{2}-'
+         and btrim(mi) !~ case tipo_escala_id
+               when 1 then '^[0-9]+[A-Z]?-[1-4]-(NE|NO|SE|SO)$'
+               when 2 then '^[0-9]+[A-Z]?-[1-4]$'
+               else '^[0-9]+[A-Z]?$' end`
+  },
 
   // ---- P2: identidade e unicidade ----
   {
