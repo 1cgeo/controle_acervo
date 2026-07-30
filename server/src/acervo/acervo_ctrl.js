@@ -4,7 +4,7 @@ const archiver = require('archiver');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
-const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, STATUS_ARQUIVO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, TIPO_VERSAO, STATUS_ARQUIVO } } = require("../utils");
 
 const {
   DB_USER,
@@ -660,6 +660,13 @@ const situacaoEdicoes = (edicoes) => {
 // Ortoimagem da mesma MI (no SCA são produtos distintos). Formato de
 // propriedades idêntico aos arquivos do site de produtos (1cgeo/produtos),
 // com os anos de edição vindos de v.data_edicao (finalização).
+//
+// Só entra versão REGULAR. O Registro Histórico (tipo_versao_id = 2) documenta
+// que uma edição existiu, e por definição não tem arquivo: em 2026-07-30 eram
+// 408 no acervo, todas Carta Topográfica e todas sem nenhum arquivo. Contá-lo
+// pintava de "Concluído" folha que o acervo não entrega, e respondia "já temos"
+// no roteamento de demanda para carta que ninguém pode baixar nem imprimir.
+// Por isso o corte fica aqui, no núcleo, e vale para as duas rotas.
 //   - incluirGeom: inclui a geometria (cara); a rota pública omite por padrão.
 //   - filtroIds: Set de MI/INOM normalizados; quando presente, limita às folhas
 //     pedidas (modo por identificador da skill consultar-produtos).
@@ -711,9 +718,14 @@ controller.getSituacaoGeralCells = async (
       SELECT pe.mi,
              pe.tipo_produto_id,
              ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM v.data_edicao)::int
-                       ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS anos
+                       ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC) AS anos,
+             JSONB_AGG(JSONB_BUILD_OBJECT(
+                         'versao', v.versao,
+                         'ano', EXTRACT(YEAR FROM v.data_edicao)::int::text)
+                       ORDER BY EXTRACT(YEAR FROM v.data_edicao)::int DESC, v.versao) AS versoes
       FROM produtos_escala pe
       JOIN acervo.versao v ON v.produto_id = pe.id
+        AND v.tipo_versao_id = ${TIPO_VERSAO.REGULAR}
       GROUP BY pe.mi, pe.tipo_produto_id
     ),
     grade AS (
@@ -726,7 +738,9 @@ controller.getSituacaoGeralCells = async (
       g.inom AS "identificadorINOM",
       ${incluirGeom ? 'ST_AsGeoJSON(g.geom)::json AS geometry,' : ''}
       COALESCE(t.anos, ARRAY[]::int[]) AS "edicoes_topo",
-      COALESCE(o.anos, ARRAY[]::int[]) AS "edicoes_orto"
+      COALESCE(o.anos, ARRAY[]::int[]) AS "edicoes_orto",
+      COALESCE(t.versoes, '[]'::jsonb) AS "versoes_topo",
+      COALESCE(o.versoes, '[]'::jsonb) AS "versoes_orto"
     FROM grade g
     LEFT JOIN edicoes t ON t.mi = g.mi AND t.tipo_produto_id = ${TIPO_PRODUTO.CARTA_TOPOGRAFICA}
     LEFT JOIN edicoes o ON o.mi = g.mi AND o.tipo_produto_id = ${TIPO_PRODUTO.CARTA_ORTOIMAGEM}
@@ -735,6 +749,15 @@ controller.getSituacaoGeralCells = async (
 
   // Construct GeoJSON features (chaves e tipos idênticos aos arquivos do site:
   // id sequencial como string, anos como strings em ordem decrescente)
+  //
+  // `edicoes_*` é o ano DISTINTO, e é o que o filtro de período e a legenda do
+  // site contam. `versoes_*` é uma entrada por VERSÃO, com o rótulo do SCA
+  // ("1ª Edição", "1-DSG") e o ano dela. Os dois convivem porque o rótulo não
+  // se deduz da posição na lista: a folha 2823-1-SE pode ter "1-DSG" em 2021 e
+  // "3ª Edição" em 1996, e contar de trás para frente inventaria "2" e "1".
+  // Uma folha pode ter duas versões no MESMO ano quando a carta civil e a
+  // militar coexistem (10 casos em 07/2026), e por isso `versoes_*` pode ser
+  // mais longa que `edicoes_*`.
   return celulas
     .filter(c => !filtroIds ||
       filtroIds.has(normIdentificador(c.identificadorMI)) ||
@@ -750,8 +773,10 @@ controller.getSituacaoGeralCells = async (
           identificadorMI: celula.identificadorMI,
           situacao_topo: situacaoEdicoes(edicoesTopo),
           edicoes_topo: edicoesTopo,
+          versoes_topo: celula.versoes_topo,
           situacao_orto: situacaoEdicoes(edicoesOrto),
           edicoes_orto: edicoesOrto,
+          versoes_orto: celula.versoes_orto,
           identificadorINOM: celula.identificadorINOM
         }
       };
