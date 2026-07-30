@@ -183,6 +183,27 @@ export const getPalavrasChave = (termo = '') =>
 export const getProdutoDetalhado = (produtoId) =>
   apiGet(`/acervo/produto/detalhado/${produtoId}`);
 
+/**
+ * Baixa UM arquivo do acervo pelo navegador.
+ *
+ * O servidor le o volume e faz stream: o navegador nunca ve caminho de rede, e
+ * nenhum volume precisa de servidor HTTP. E diferente do par
+ * prepare/confirm-download, que devolve o CAMINHO do volume e existe para o
+ * plugin do QGIS, que roda em maquina que monta o share.
+ *
+ * Identifica pelo uuid_arquivo, e nao pelo id: a URL vira historico do navegador
+ * e linha de log, e o inteiro sequencial convidaria a varrer o acervo trocando o
+ * numero.
+ *
+ * @param {string} uuidArquivo
+ * @param {string} nomeArquivo - nome fisico, usado como nome do arquivo salvo
+ */
+export const baixarArquivoDoAcervo = (uuidArquivo, nomeArquivo) =>
+  apiDownload(
+    `/acervo/arquivo/${encodeURIComponent(uuidArquivo)}/download`,
+    nomeArquivo
+  );
+
 // Dominios dos filtros da busca. TTL de dominio: sao tabelas que quase nao mudam.
 export const getTiposProduto = () =>
   cachedFetch('acervo:dominio:tipo_produto', () => apiGet('/gerencia/dominio/tipo_produto'), TTL_DOMINIO);

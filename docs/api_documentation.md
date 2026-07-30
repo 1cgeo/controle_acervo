@@ -282,6 +282,28 @@ quanto pelo das versoes, com `COUNT(DISTINCT produto.id)`.
 
 ---
 
+### GET `/api/acervo/arquivo/:uuid_arquivo/download`
+
+Baixa UM arquivo do acervo pelo navegador. O servidor le o volume e faz stream do byte na resposta; nada e copiado para pasta temporaria e **nenhum volume precisa de servidor HTTP**, porque volume e caminho de sistema de arquivos (UNC no Windows, ponto de montagem no Linux).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyPerfil('consulta')` no modulo acervo |
+| **Param** | `uuid_arquivo` (UUID). Nao usa o `id` sequencial: a URL vira historico do navegador e linha de log, e o inteiro convidaria a varrer o acervo trocando o numero |
+| **Resposta** | o arquivo (`application/octet-stream`), nome fisico no `Content-Disposition` |
+
+Cabecalhos da resposta: `Content-Length`, `Accept-Ranges: bytes` e `X-Checksum-SHA256` (o SHA-256 do arquivo INTEIRO, para quem baixa conferir sem abrir). Aceita `Range` de UMA faixa e responde `206` com `Content-Range`, o que faz o navegador retomar em vez de recomecar; na resposta parcial o `X-Checksum-SHA256` NAO vai, porque ele nao descreve a fatia.
+
+Recusa, com mensagem propria: arquivo inexistente (404), arquivo registrado mas **ausente no volume** (404, conferido ANTES do primeiro cabecalho para nao entregar download truncado), Tileserver (400, e uma URL de servico sem byte em volume), arquivo com `tipo_status_id` diferente de 1 (400, carregamento ou exclusao falhou e o byte pode estar pela metade) e faixa de bytes fora do arquivo (416).
+
+Cada entrega vira uma linha em `acervo.download`, escrita **depois** que o ultimo byte saiu, com o desfecho real (`completed` ou `failed`). Requisicao recusada antes de comecar nao gera linha: nao houve download. Retomada gera uma linha por pedaco entregue.
+
+E o caminho do NAVEGADOR, e conviver com o `prepare-download` abaixo e deliberado: aquele devolve o CAMINHO do volume para o **plugin do QGIS** copiar do share, o que so funciona em maquina que monta o share. A rota irma para ponto de controle e `GET /api/ponto_controle/:cod_ponto/download/:tipo`, e as duas usam o mesmo `utils/enviar_arquivo.js`.
+
+Pacote de VARIOS arquivos ainda nao existe: um arquivo do acervo tem mediana de 6 a 11 MB e maximo de 500 MB (medido na producao em 2026-07-29), entao stream direto resolve o caso de um. Juntar N arquivos leva tempo que nao cabe numa requisicao, e ai sim pede preparo assincrono com expiracao.
+
+---
+
 ### POST `/api/acervo/prepare-download/arquivos`
 
 Prepara arquivos especificos para download, criando tokens de download validos por 24 horas.
@@ -1514,6 +1536,43 @@ Retorna detalhes completos de um pedido com todos os produtos e trilha de audito
 
 ---
 
+### GET `/api/mapoteca/pedido/em_aberto`
+
+A FILA de atendimento: pedidos em aberto, do mais urgente para o menos. Alimenta a tela "Atender pedidos".
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyPerfil('operador', 'mapoteca')` |
+| **Query** | nenhuma |
+
+Duas decisoes que a diferenciam de `GET /pedido`:
+
+- **Em aberto** e toda situacao MENOS Concluido (5) e Cancelado (6). Remetido (4) fica DENTRO: o pedido saiu, mas ainda falta fechar, e tira-lo faria o pedido desaparecer da fila no meio do caminho.
+- **NAO filtra por ano.** O pedido de dezembro ainda nao atendido continua sendo trabalho em janeiro. `GET /pedido` e do ano consultado; esta rota e a fila.
+
+Ordena por `prazo` (sem prazo no fim), depois por `data_pedido`. Traz `dias_para_prazo` calculado no BANCO (`prazo - CURRENT_DATE`), para a tela nao fazer conta de data; negativo = atrasado. Traz tambem a contagem de itens e copias (`total_itens`, `itens_impressos`, `quantidade_pedida`, `quantidade_impressa`) e o endereco/contato, porque a etiqueta de envio sai dessa tela sem segunda requisicao.
+
+---
+
+### GET `/api/mapoteca/pedido/:id/impressao`
+
+O que IMPRIMIR de um pedido: um item por linha, com a carta e o que falta.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyPerfil('operador', 'mapoteca')` |
+| **Params** | `id` - integer (obrigatorio) |
+
+Cada item traz `quantidade`, `quantidade_impressa`, `quantidade_restante`, `impressao_concluida` e o arquivo imprimivel: `uuid_arquivo`, `arquivo_nome_fisico` e `tamanho_mb`. O navegador baixa com `GET /api/acervo/arquivo/:uuid_arquivo/download`.
+
+A escolha do arquivo e a MESMA do `POST /pedido/:id/download_impressao` (fragmento `JOIN_ARQUIVO_IMPRIMIVEL`): o PDF do produto em si, tipo 1 ou 2 e status Carregado. Com regras separadas, a tela mandaria imprimir um PDF e o plugin baixaria outro.
+
+Duas diferencas em relacao ao `download_impressao`, e as duas sao o motivo desta rota existir: aqui **nao se cria token** de download e **nao se devolve caminho de volume**. Token criado numa leitura viraria linha pendente em `acervo.download` que ninguem confirma, e o cron a marcaria como falha.
+
+Item sem PDF vem com `uuid_arquivo` nulo e e contado em `impressao.itens_sem_arquivo`, em vez de sair da lista: quem atende precisa saber que aquela carta nao tem arquivo antes de ir plotar.
+
+---
+
 ### GET `/api/mapoteca/pedido/localizador/:localizador`
 
 Consulta pedido por codigo de rastreamento. Endpoint publico (acompanhamento do cliente).
@@ -2089,7 +2148,9 @@ Retorna registros de consumo com filtros opcionais.
 
 | Campo | Valor |
 |---|---|
-| **Auth** | `verifyLogin` |
+| **Auth** | `verifyPerfil('operador', 'mapoteca')` |
+
+**OPERADOR desde 2026-07-30** (chefe): consumo de material e a segunda tela do perfil de operador da mapoteca, junto de "Atender pedidos". A LISTA de lancamentos e trabalho de quem opera. Quem so consulta continua vendo o AGREGADO, por `GET /consumo_mensal` e pelo `dashboard/material_consumption`.
 
 **Query Params (todos opcionais):**
 | Parametro | Tipo | Descricao |
@@ -2121,7 +2182,7 @@ Retorna detalhes de um registro de consumo especifico.
 
 | Campo | Valor |
 |---|---|
-| **Auth** | `verifyLogin` |
+| **Auth** | `verifyPerfil('operador', 'mapoteca')` |
 | **Params** | `id` - integer (obrigatorio) |
 
 ---

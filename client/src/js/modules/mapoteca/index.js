@@ -22,6 +22,7 @@ import { renderDashboard } from './pages/dashboard/index.js';
 import { renderClientesList } from './pages/clientes/list.js';
 import { renderClienteDetails } from './pages/clientes/details.js';
 import { renderPedidosList } from './pages/pedidos/list.js';
+import { renderAtendimento } from './pages/atendimento/index.js';
 import { renderPedidoWizard } from './pages/pedidos/wizard.js';
 import { renderPedidoDetails } from './pages/pedidos/details.js';
 import { renderMateriaisList } from './pages/materiais/list.js';
@@ -34,12 +35,34 @@ import { renderRpcMtec } from './pages/rpcmtec/index.js';
 
 import { criarSeletorAno } from './components/seletor-ano.js';
 
+// Os dois conjuntos de tela da mapoteca. Sao LISTAS de perfil, e nao nivel
+// minimo, porque o operador daqui nao e consulta com mais poder:
+//
+//  - EXECUCAO: as duas telas de quem trabalha o pedido. O operador ve SO estas.
+//  - LEITURA:  o resto do modulo, que e gestao e cadastro. O operador NAO ve.
+//
+// O gerente aparece nas duas listas: ele executa e gerencia. O administrador
+// global passa em qualquer lista, sem precisar de linha de perfil.
+const EXECUCAO = ['operador', 'gerente'];
+const LEITURA = ['consulta', 'gerente'];
+
 export default {
   id: 'mapoteca',
   icon: ICONS.print,
   home: '/dashboard',
 
+  // As DUAS telas do operador vem PRIMEIRO, e de primeiro nivel, sem grupo. Quem
+  // tem operador ve exatamente estes dois itens (chefe, 2026-07-30), e um grupo
+  // colapsado com um filho dentro obrigaria a pessoa a clicar para achar metade
+  // do trabalho dela. Consumo saiu do grupo Materiais por isso; la ficaram o
+  // cadastro (tipos) e o saldo (estoque), que sao leitura.
+  //
+  // Nenhum item repete a restricao: o sidebar pergunta ao registry, que le
+  // `perfis`/`perfil` da ROTA (podeAbrirRota). Repetir a mao foi o que fez o item
+  // Configuracao do orcamento aparecer para todo mundo e cair no 403.
   menu: [
+    { id: 'atendimento', label: 'Atender pedidos', icon: ICONS.localShipping, path: '/atendimento' },
+    { id: 'consumo', label: 'Consumo de material', icon: ICONS.dataUsage, path: '/consumo' },
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'clientes', label: 'Clientes', icon: ICONS.people, path: '/clientes' },
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
@@ -50,7 +73,6 @@ export default {
       children: [
         { id: 'materiais', label: 'Tipos de Material', icon: ICONS.category, path: '/materiais' },
         { id: 'estoque', label: 'Estoque', icon: ICONS.storage, path: '/estoque' },
-        { id: 'consumo', label: 'Consumo', icon: ICONS.dataUsage, path: '/consumo' },
       ],
     },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
@@ -59,23 +81,29 @@ export default {
 
   // Rota estatica ANTES da rota com ':id' ('/pedidos/novo' antes de
   // '/pedidos/:id'), senao o wizard cai no detalhe do pedido 'novo'.
+  //
+  // O perfil aqui e LISTA (`perfis`), e nao nivel minimo (`perfil`): na mapoteca o
+  // OPERADOR nao e "consulta com mais poder", e um papel com duas telas proprias
+  // (chefe, 2026-07-30). Com nivel minimo ele veria dashboard, clientes, pedidos e
+  // o resto, porque operador e um nivel acima de consulta.
   rotas: [
-    { path: '/dashboard', render: renderDashboard, perfil: 'consulta' },
-    { path: '/clientes', render: renderClientesList, perfil: 'consulta' },
-    { path: '/clientes/:id', render: renderClienteDetails, perfil: 'consulta' },
-    { path: '/pedidos', render: renderPedidosList, perfil: 'consulta' },
-    // O wizard existe SO para criar, e POST /pedido e gerente. Com 'consulta'
-    // aqui, quem nao pode criar percorria as tres etapas e so descobria no
-    // botao de confirmar, perdendo tudo o que digitou.
-    { path: '/pedidos/novo', render: renderPedidoWizard, perfil: 'gerente' },
-    { path: '/pedidos/:id', render: renderPedidoDetails, perfil: 'consulta' },
-    { path: '/materiais', render: renderMateriaisList, perfil: 'consulta' },
-    { path: '/materiais/:id', render: renderMaterialDetails, perfil: 'consulta' },
-    { path: '/estoque', render: renderEstoqueList, perfil: 'consulta' },
-    { path: '/consumo', render: renderConsumoList, perfil: 'consulta' },
-    { path: '/plotters', render: renderPlottersList, perfil: 'consulta' },
-    { path: '/plotters/:id', render: renderPlotterDetails, perfil: 'consulta' },
-    { path: '/rpcmtec', render: renderRpcMtec, perfil: 'consulta' },
+    { path: '/dashboard', render: renderDashboard, perfis: LEITURA },
+    { path: '/clientes', render: renderClientesList, perfis: LEITURA },
+    { path: '/clientes/:id', render: renderClienteDetails, perfis: LEITURA },
+    { path: '/pedidos', render: renderPedidosList, perfis: LEITURA },
+    { path: '/atendimento', render: renderAtendimento, perfis: EXECUCAO },
+    // O wizard existe SO para criar, e POST /pedido e gerente. Com leitura aqui,
+    // quem nao pode criar percorria as tres etapas e so descobria no botao de
+    // confirmar, perdendo tudo o que digitou.
+    { path: '/pedidos/novo', render: renderPedidoWizard, perfis: ['gerente'] },
+    { path: '/pedidos/:id', render: renderPedidoDetails, perfis: LEITURA },
+    { path: '/materiais', render: renderMateriaisList, perfis: LEITURA },
+    { path: '/materiais/:id', render: renderMaterialDetails, perfis: LEITURA },
+    { path: '/estoque', render: renderEstoqueList, perfis: LEITURA },
+    { path: '/consumo', render: renderConsumoList, perfis: EXECUCAO },
+    { path: '/plotters', render: renderPlottersList, perfis: LEITURA },
+    { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
+    { path: '/rpcmtec', render: renderRpcMtec, perfis: LEITURA },
   ],
 
   // O ano de referencia e contexto das telas POR ANO da mapoteca (resumo anual,

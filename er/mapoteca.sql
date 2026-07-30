@@ -124,6 +124,11 @@ CREATE TABLE mapoteca.pedido(
     demandante VARCHAR(255),
     omds VARCHAR(255),
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Codigo do item da meta do PIT que o pedido atende (ex.: '4.1'). NAO se
+    -- deriva do material: em 2026 a correlacao (4.1 sulfite, 4.2 tyvek, 4.3
+    -- glossy) valeu sem excecao, mas o PIT e reescrito todo ano e a numeracao
+    -- muda com ele. Ver migrations/2026-07-30_pedido_meta_pit.sql.
+    meta_pit VARCHAR(10),
     -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
     canal_recebimento_id SMALLINT REFERENCES mapoteca.canal_recebimento (code),
     municipio VARCHAR(255),
@@ -146,7 +151,13 @@ CREATE TABLE mapoteca.pedido(
     CONSTRAINT check_pedido_cancelamento
         CHECK (situacao_pedido_id <> 6 OR motivo_cancelamento IS NOT NULL),
     CONSTRAINT check_pedido_conclusao
-        CHECK (situacao_pedido_id <> 5 OR data_atendimento IS NOT NULL)
+        CHECK (situacao_pedido_id <> 5 OR data_atendimento IS NOT NULL),
+    -- Previsto no PIT exige dizer QUAL meta. A regra tambem vive no Joi (erro
+    -- 400 limpo); o CHECK garante que nenhuma outra porta grave a combinacao
+    -- invalida. O nome e o mesmo da migracao, senao instalacao nova divergiria
+    -- da migrada e o ensaiar_migracao.cjs reprovaria.
+    CONSTRAINT pedido_meta_pit_exige_previsto
+        CHECK (NOT previsto_pit OR meta_pit IS NOT NULL)
 );
 
 COMMENT ON COLUMN mapoteca.pedido.demandante IS
@@ -155,6 +166,8 @@ COMMENT ON COLUMN mapoteca.pedido.omds IS
     'OM Diretamente Subordinada responsável pelo atendimento (ex: 1º CGEO).';
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
+COMMENT ON COLUMN mapoteca.pedido.meta_pit IS
+    'Código do item da meta do PIT que o pedido atende (ex.: 4.1). Obrigatório quando previsto_pit é verdadeiro, nulo caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
 COMMENT ON COLUMN mapoteca.pedido.observacao_interna IS
     'Anotação da equipe. NUNCA sai na consulta pública por localizador; ao contrário de observacao e observacao_envio, que saem.';
 
@@ -248,8 +261,10 @@ CREATE TABLE mapoteca.tipo_material (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
     descricao TEXT,
-    estoque_minimo DECIMAL(10, 2),
-    meta_anual DECIMAL(10, 2),
+    -- INTEIROS: sao quantidades do MESMO material contado em unidade, entao
+    -- seguem a regra do estoque e do consumo (chefe, 2026-07-30).
+    estoque_minimo INTEGER,
+    meta_anual INTEGER,
     ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -297,7 +312,11 @@ INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
 CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
-    quantidade DECIMAL(10, 2) NOT NULL CHECK (quantidade > 0),
+    -- INTEGER de proposito: material da mapoteca conta-se em UNIDADE (folha,
+    -- cartucho, rolo), e meia folha nao existe. Era DECIMAL(10,2) ate
+    -- 2026-07-30, o que exibia "150,00" onde a pessoa escreveu 150 e deixava
+    -- saldo de 0,01 que nunca fecha.
+    quantidade INTEGER NOT NULL CHECK (quantidade > 0),
     data_consumo DATE NOT NULL,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -308,7 +327,8 @@ CREATE TABLE mapoteca.consumo_material (
 CREATE TABLE mapoteca.estoque_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
-    quantidade DECIMAL(10, 2) NOT NULL CHECK (quantidade >= 0),
+    -- INTEGER pela mesma razao do consumo. Aceita zero: o estoque pode zerar.
+    quantidade INTEGER NOT NULL CHECK (quantidade >= 0),
     localizacao_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_localizacao (code),
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),

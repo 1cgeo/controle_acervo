@@ -1,4 +1,4 @@
-import { isAuthenticated, isAdmin, temPerfil, temAcessoModulo } from '@store/auth-store.js';
+import { isAuthenticated, isAdmin, temPerfil, ehDeAlgumPerfil, temAcessoModulo } from '@store/auth-store.js';
 import { primeiroModuloAcessivel, rotaInicial } from '@modules/registry.js';
 
 /**
@@ -169,6 +169,15 @@ export function perfilLoader(modulo, minimo = 'consulta') {
     const auth = authLoader();
     if (auth !== true) return auth;
     if (!temAcessoModulo(modulo)) return '/unauthorized';
+    // LISTA de perfis: a tela vale so para quem tem um daqueles perfis, e nao
+    // "aquele nivel ou acima". Na mapoteca o operador tem telas proprias e nao ve
+    // as de leitura, mesmo sendo um nivel acima de consulta (chefe, 2026-07-30).
+    // O menu decide pelo MESMO campo, em registry.podeAbrirRota: sem isso, a
+    // pessoa nao veria o item e ainda assim abriria a tela pela URL.
+    if (Array.isArray(minimo)) {
+      if (!ehDeAlgumPerfil(minimo, modulo)) return '/unauthorized';
+      return true;
+    }
     if (!temPerfil(minimo, modulo)) return '/unauthorized';
     return true;
   };

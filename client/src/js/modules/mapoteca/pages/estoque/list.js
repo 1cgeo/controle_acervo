@@ -138,8 +138,8 @@ export async function renderEstoqueList(container, _ctx) {
     const quantidadeField = createNumberField({
       label: 'Quantidade',
       required: true,
-      min: 0.01,
-      step: 0.01,
+      min: 1,
+      step: 1,
       value: Number(row.quantidade),
     });
 
@@ -205,8 +205,8 @@ export async function renderEstoqueList(container, _ctx) {
     const quantidadeField = createNumberField({
       label: 'Quantidade',
       required: true,
-      min: 0.01,
-      step: 0.01,
+      min: 1,
+      step: 1,
     });
 
     const content = el('div', { className: 'form-grid' }, [
@@ -302,8 +302,8 @@ export async function renderEstoqueList(container, _ctx) {
     const quantidadeField = createNumberField({
       label: 'Quantidade',
       required: true,
-      min: 0.01,
-      step: 0.01,
+      min: 1,
+      step: 1,
     });
 
     const content = el('div', { className: 'form-grid' }, [

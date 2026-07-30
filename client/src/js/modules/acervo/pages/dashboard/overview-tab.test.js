@@ -9,7 +9,7 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     sessoes_upload_ativas: 0,
     total_versoes: 7023,
     total_projetos: 12,
-    downloads_24h: 5,
+    downloads_30d: 5,
     total_pontos_controle: 314,
     versoes_carregadas_mes: 27,
   })),

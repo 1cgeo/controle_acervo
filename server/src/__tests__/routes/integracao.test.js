@@ -278,7 +278,7 @@ describe('Integracao Routes (públicas)', () => {
 
       // Militar: OM EB, remetido em junho, 10 cartas
       const omId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
-      const pedidoMil = await criaPedido(omId, { previsto_pit: true, operacao: 'Operação Junho' })
+      const pedidoMil = await criaPedido(omId, { previsto_pit: true, meta_pit: '4.1', operacao: 'Operação Junho' })
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
         pedido_id: pedidoMil.id,

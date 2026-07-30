@@ -110,6 +110,29 @@ export function temPerfil(minimo, modulo) {
 }
 
 /**
+ * O perfil da pessoa neste modulo esta na LISTA? Nao e hierarquico.
+ *
+ * Existe porque nivel minimo nao descreve a mapoteca (chefe, 2026-07-30): la o
+ * OPERADOR tem duas telas proprias (atender pedidos e consumo de material) e NAO
+ * ve as telas de leitura, embora seja um nivel acima de consulta. Com
+ * `temPerfil('consulta')` ele veria o dashboard, os clientes e os pedidos, que e
+ * exatamente o que se quer evitar.
+ *
+ * Onde o minimo continua servindo (acervo, orcamento), nada muda: a rota declara
+ * `perfil` e ninguem precisa listar nivel.
+ *
+ * Admin satisfaz qualquer lista.
+ * @param {Array<'consulta'|'operador'|'gerente'>} perfis
+ * @param {string} modulo - nome_abrev do modulo
+ * @returns {boolean}
+ */
+export function ehDeAlgumPerfil(perfis, modulo) {
+  if (isAdmin()) return true;
+  const meu = getPerfil(modulo);
+  return (perfis || []).some(p => NIVEL[p] === meu);
+}
+
+/**
  * A pessoa entra neste modulo? Administrador global entra em todos, mesmo sem
  * nenhuma linha de perfil.
  * @param {string} modulo - nome_abrev do modulo

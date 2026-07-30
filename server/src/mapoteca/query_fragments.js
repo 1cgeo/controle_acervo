@@ -29,6 +29,32 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
            ELSE te.nome
       END`;
 
+// Situações que contam como pedido EM ABERTO: todas menos Concluído (5) e
+// Cancelado (6). É a fila de trabalho da tela de atendimento.
+//
+// Remetido (4) fica DENTRO de propósito: o pedido saiu, mas ainda falta fechar.
+// Tirá-lo faria o pedido desaparecer da fila no meio do caminho, sem ninguém ter
+// marcado nada como concluído.
+const SITUACOES_EM_ABERTO = [1, 2, 3, 4, 7];
+
+// O arquivo IMPRIMÍVEL de uma versão: o PDF do produto cartográfico em si.
+//
+// A regra é uma só, usada pelo download do plugin (prepareDownloadImpressao) e
+// pela tela de atendimento (getImpressaoDoPedido). Ela mora aqui porque as duas
+// TÊM de escolher o mesmo arquivo: com regras separadas, a tela mandaria imprimir
+// um PDF e o plugin baixaria outro.
+//
+// Só tipo 1 (arquivo principal) e 2 (formato alternativo): sem isso entram os
+// PDFs de metadado e de documento, que não são a carta. Aliases esperados:
+// `v` = acervo.versao, `a` = acervo.arquivo, `vol` = volume. Requer os
+// parâmetros $<statusCarregado> e $<tiposImprimiveis:csv>.
+const JOIN_ARQUIVO_IMPRIMIVEL = `
+      LEFT JOIN acervo.arquivo a ON a.versao_id = v.id
+        AND LOWER(a.extensao) = 'pdf'
+        AND a.tipo_status_id = $<statusCarregado>
+        AND a.tipo_arquivo_id IN ($<tiposImprimiveis:csv>)
+      LEFT JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id`;
+
 // Filtro sargável de ano sobre uma coluna de data/timestamp (usa índice btree,
 // ao contrário de EXTRACT(YEAR FROM col) = ano). Requer parâmetro $<ano>.
 const filtroAno = (coluna) =>
@@ -53,6 +79,8 @@ module.exports = {
   MIDIA_EFETIVA,
   dataEntregaEfetiva,
   ESCALA_DISPLAY,
+  SITUACOES_EM_ABERTO,
+  JOIN_ARQUIVO_IMPRIMIVEL,
   filtroAno,
   filtroPeriodoMes
 };

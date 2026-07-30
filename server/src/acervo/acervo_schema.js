@@ -11,6 +11,12 @@ models.produtoByIdParams = Joi.object().keys({
   produto_id: Joi.number().integer().required()
 });
 
+// Download de arquivo pelo navegador: identifica pelo uuid_arquivo, e não pelo
+// id sequencial, porque a URL vira histórico, log e link colado em documento.
+models.arquivoDownloadParams = Joi.object().keys({
+  uuid_arquivo: Joi.string().guid().required()
+});
+
 models.versaoByIdParams = Joi.object().keys({
   versao_id: Joi.number().integer().required()
 });

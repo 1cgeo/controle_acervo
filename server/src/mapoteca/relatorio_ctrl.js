@@ -153,10 +153,11 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       -- A coluna "Meta" da aba guarda o CODIGO da meta do PIT ('4.1', '4.2'), e
       -- so vem preenchida no item coberto pelo PIT: na aba de junho de 2026 sao
       -- 86 linhas com 4.1/4.2, exatamente as 86 com "Previsto no PIT = sim".
-      -- O SCA nao tem esse codigo (pedido so tem o booleano previsto_pit), entao
-      -- aqui sai NULL e quem exporta preenche. Ate 2026-07-29 esta coluna
-      -- trazia p.prazo, ou seja, uma DATA sob o rotulo "Meta".
-      NULL::text AS meta,
+      -- Desde 2026-07-30 o codigo mora em mapoteca.pedido.meta_pit e sai daqui
+      -- pronto. Nao se deriva do material (a correlacao 4.1 sulfite / 4.2 tyvek
+      -- / 4.3 glossy valeu so em 2026): ver a migracao do campo.
+      -- Ate 2026-07-29 esta coluna trazia p.prazo, uma DATA sob o rotulo "Meta".
+      p.meta_pit AS meta,
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
       p.documento_solicitacao,
@@ -482,9 +483,9 @@ const materialDaAba = (nome) => {
  *  - material: 'Sulfite 90g' -> 'sulfite' (ver materialDaAba);
  *  - MI e material fornecido ausentes -> '-', que é o que a aba escreve na
  *    Carta Especial (sem folha MI) e no item sem mídia registrada;
- *  - Meta: '-' quando o item não é do PIT. Quando é, fica VAZIA de propósito,
- *    porque o código ('4.1') não existe no SCA e a célula em branco é o que faz
- *    quem preenche notar que falta;
+ *  - Meta: '-' quando o item não é do PIT. Quando é, sai o código gravado em
+ *    pedido.meta_pit ('4.1'). Fica VAZIA só no pedido marcado como previsto sem
+ *    meta gravada, o que o CHECK do banco não deixa acontecer em linha nova;
  *  - Observações: o DIEx do pedido, que é o que a aba costuma trazer nessa
  *    coluna, mais a observação do item quando houver.
  *
@@ -513,7 +514,7 @@ controller.paraAbaMeta4 = (linhas) =>
         demandante: l.demandante || null,
         om_destino: l.om_destino || null,
         previsto_pit: l.previsto_pit ? "sim" : "não",
-        meta: l.previsto_pit ? null : "-",
+        meta: l.previsto_pit ? (l.meta || null) : "-",
         produto: l.produto || null,
         mi: l.mi || "-",
         escala: l.escala || null,

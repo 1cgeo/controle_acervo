@@ -14,6 +14,10 @@
 //       { path: '/dfd', render: renderDfdList, perfil: 'consulta' },
 //       { path: '/notas_empenho/:id', render: renderDetails, perfil: 'consulta' },
 //       { path: '/configuracao', render: renderConfig, admin: true },
+//       // LISTA de perfis, em vez de nivel minimo: a tela vale SO para quem tem
+//       // um desses perfis. Na mapoteca o operador tem telas proprias e nao ve as
+//       // de leitura, embora seja um nivel acima de consulta (chefe, 2026-07-30).
+//       { path: '/atendimento', render: renderFila, perfis: ['operador', 'gerente'] },
 //     ],
 //     navbarExtras: () => ({ elements: [el], cleanup: () => {} }), // opcional
 //   }
@@ -24,7 +28,7 @@
 // Modulo sem rota nenhuma (`rotas: []`) e um esqueleto: nao aparece no seletor
 // nem registra rota, mesmo que a pessoa tenha perfil nele.
 
-import { temAcessoModulo, temPerfil, isAdmin } from '@store/auth-store.js';
+import { temAcessoModulo, temPerfil, ehDeAlgumPerfil, isAdmin } from '@store/auth-store.js';
 
 import acervo from './acervo/index.js';
 import mapoteca from './mapoteca/index.js';
@@ -90,6 +94,11 @@ export function podeAbrirRota(moduloId, path) {
   const rota = getRota(moduloId, path);
   if (!rota) return true;
   if (rota.admin) return isAdmin();
+  // `perfis` (LISTA) tem precedencia sobre `perfil` (nivel MINIMO). A lista existe
+  // porque na mapoteca o operador tem telas PROPRIAS e nao ve as de leitura, mesmo
+  // sendo um nivel acima de consulta (chefe, 2026-07-30). Onde o minimo descreve a
+  // realidade (acervo, orcamento), a rota segue declarando `perfil`.
+  if (Array.isArray(rota.perfis)) return ehDeAlgumPerfil(rota.perfis, moduloId);
   return temPerfil(rota.perfil || 'consulta', moduloId);
 }
 
@@ -112,7 +121,20 @@ export function moduloDaRota(path) {
 export function rotaInicial(modulo) {
   const mod = typeof modulo === 'string' ? getModulo(modulo) : modulo;
   if (!mod) return '/404';
-  return `/${mod.id}${mod.home || '/dashboard'}`;
+
+  const home = mod.home || '/dashboard';
+  // A home do modulo pode nao ser da pessoa. O operador da mapoteca nao ve o
+  // dashboard (chefe, 2026-07-30), e entrar no modulo o jogava em /unauthorized:
+  // o guarda estava certo e a porta estava errada. Sem perfil nenhum a lista sai
+  // vazia e a home volta como estava, que e o que os testes de rota esperam.
+  if (podeAbrirRota(mod.id, home)) return `/${mod.id}${home}`;
+
+  const primeira = (mod.rotas || [])
+    // Rota com parametro nao serve de porta de entrada: '/pedidos/:id' sem id.
+    .filter(r => !r.path.includes(':'))
+    .find(r => podeAbrirRota(mod.id, r.path));
+
+  return primeira ? `/${mod.id}${primeira.path}` : `/${mod.id}${home}`;
 }
 
 /**

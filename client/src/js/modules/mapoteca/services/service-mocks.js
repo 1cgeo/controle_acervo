@@ -52,6 +52,7 @@ const ACOES = [
   'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
   'downloadRpcmtecDocx', 'downloadDashboardCsv',
   'downloadMeta4Ods',
+  'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',
 ];
 

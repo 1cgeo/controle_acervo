@@ -322,10 +322,22 @@ describe('Mapoteca Schemas', () => {
     it('should validate stock entry', () => {
       const { error } = mapotecaSchema.estoqueMaterial.validate({
         tipo_material_id: 1,
-        quantidade: 100.5,
+        quantidade: 100,
         localizacao_id: 1
       })
       expect(error).toBeUndefined()
+    })
+
+    // INTEIRA desde 2026-07-30 (chefe): material da mapoteca conta-se em UNIDADE,
+    // e as colunas do banco viraram INTEGER. Aceitar 100,5 aqui produziria um erro
+    // mais adiante, ou um arredondamento silencioso.
+    it('recusa quantidade fracionaria', () => {
+      const { error } = mapotecaSchema.estoqueMaterial.validate({
+        tipo_material_id: 1,
+        quantidade: 100.5,
+        localizacao_id: 1
+      })
+      expect(error).toBeDefined()
     })
 
     it('should require positive quantidade', () => {
@@ -486,10 +498,19 @@ describe('Mapoteca Schemas', () => {
     it('should validate correct consumption entry', () => {
       const { error } = mapotecaSchema.consumoMaterial.validate({
         tipo_material_id: 1,
-        quantidade: 10.5,
+        quantidade: 10,
         data_consumo: new Date()
       })
       expect(error).toBeUndefined()
+    })
+
+    it('recusa consumo fracionario: meia folha nao existe', () => {
+      const { error } = mapotecaSchema.consumoMaterial.validate({
+        tipo_material_id: 1,
+        quantidade: 10.5,
+        data_consumo: new Date()
+      })
+      expect(error).toBeDefined()
     })
 
     it('should require positive quantidade', () => {

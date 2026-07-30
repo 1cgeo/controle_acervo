@@ -16,13 +16,45 @@ describe('manifesto do modulo mapoteca', () => {
     expect(modulosPortados().map(m => m.id)).toContain('mapoteca');
   });
 
-  test('as 13 telas estao registradas, cada uma com render e perfil', () => {
-    expect(mapoteca.rotas).toHaveLength(13);  // 14 ate 2026-07-27, quando a tela Relatorios saiu
+  test('as 14 telas estao registradas, cada uma com render e perfil', () => {
+    // 13 ate 2026-07-30, quando entrou a tela de atendimento (a fila de pedidos).
+    expect(mapoteca.rotas).toHaveLength(14);
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
       expect(typeof rota.render).toBe('function');
-      expect(rota.perfil || (rota.admin ? 'admin' : null)).toBeTruthy();
+      // Toda rota diz quem entra: conjunto (`perfis`), nivel minimo (`perfil`) ou
+      // `admin`. Rota sem nenhum dos tres cairia no default 'consulta' sem que
+      // ninguem tivesse decidido isso.
+      const quemEntra = rota.perfis || rota.perfil || (rota.admin ? 'admin' : null);
+      expect(quemEntra).toBeTruthy();
     }
+  });
+
+  // O perfil de OPERADOR da mapoteca tem DUAS telas (chefe, 2026-07-30): atender
+  // pedidos e consumo de material. As duas sao execucao; o resto do modulo e
+  // consulta (ou gerente, no caso do wizard). O perfil na rota tambem decide o
+  // menu, pelo registry.podeAbrirRota, entao este campo e o que esconde o item de
+  // quem so consulta.
+  test('as telas de operador sao exatamente atendimento e consumo', () => {
+    const deOperador = mapoteca.rotas
+      .filter(r => (r.perfis || []).includes('operador'))
+      .map(r => r.path)
+      .sort();
+    expect(deOperador).toEqual(['/atendimento', '/consumo']);
+
+    // E o operador NAO entra em mais nada: o resto do modulo e leitura, e o
+    // conjunto (em vez de nivel minimo) e o que faz isso valer.
+    const semOperador = mapoteca.rotas.filter(r => !(r.perfis || []).includes('operador'));
+    expect(semOperador).toHaveLength(12);
+    for (const rota of semOperador) {
+      expect(rota.perfis).not.toContain('operador');
+    }
+
+    const menu = mapoteca.menu.find(i => i.path === '/atendimento');
+    expect(menu.label).toBe('Atender pedidos');
+    // A restricao NAO se repete no item de menu: repetir a mao foi o que deixou o
+    // item "Configuracao" do orcamento visivel para todo mundo.
+    expect(menu.perfil).toBeUndefined();
   });
 
   test('a rota estatica /pedidos/novo vem ANTES de /pedidos/:id', () => {

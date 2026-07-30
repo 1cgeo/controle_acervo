@@ -39,6 +39,14 @@ models.pedidoId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
+// Download da carta de um item: o pedido mais o uuid do arquivo. O par e conferido
+// no banco (o uuid tem de ser a carta de um item DAQUELE pedido), senao a rota
+// viraria download do acervo inteiro com perfil de mapoteca.
+models.arquivoImpressaoParams = Joi.object().keys({
+  id: Joi.number().integer().required(),
+  uuid_arquivo: Joi.string().guid().required()
+})
+
 models.pedidoIds = Joi.object().keys({
   pedido_ids: Joi.array()
     .items(Joi.number().integer().required())
@@ -71,6 +79,15 @@ const pedidoBase = {
   demandante: Joi.string().max(255).allow(null, ''),
   omds: Joi.string().max(255).allow(null, ''),
   previsto_pit: Joi.boolean().default(false),
+  // Código do item da meta do PIT (ex.: '4.1'). NÃO se deriva do material: em
+  // 2026 a Meta 4 é impressão e os sub-itens são o material (4.1 sulfite, 4.2
+  // tyvek, 4.3 glossy), mas o PIT é reescrito todo ano e a numeração muda com
+  // ele. Ver migrations/2026-07-30_pedido_meta_pit.sql.
+  meta_pit: Joi.when('previsto_pit', {
+    is: true,
+    then: Joi.string().max(10).required(),
+    otherwise: Joi.string().max(10).allow(null, '')
+  }),
   // Campos de pedido de CIVIL (opcionais; NULL para OM)
   canal_recebimento_id: Joi.number().integer().valid(...Object.values(CANAL_RECEBIMENTO)).allow(null),
   municipio: Joi.string().max(255).allow(null, ''),
@@ -98,7 +115,12 @@ models.pedidoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   ...pedidoBase,
   palavras_chave: Joi.array().items(Joi.string()),
-  previsto_pit: Joi.boolean()
+  previsto_pit: Joi.boolean(),
+  // Solto aqui pela mesma razão de previsto_pit: quem edita a partir da LISTA
+  // não recebe meta_pit de volta, e a condicional do pedidoBase reprovaria o
+  // corpo que só omite a chave. O controller preserva o valor atual (ver
+  // preserveOmitted) e reprova a combinação inválida depois de mesclar.
+  meta_pit: Joi.string().max(10).allow(null, '')
 })
 
 models.pedidoLocalizador = Joi.object().keys({
@@ -225,8 +247,9 @@ models.tipoMaterialIds = Joi.object().keys({
 const tipoMaterialBase = {
   nome: Joi.string().max(100).required(),
   descricao: Joi.string().allow(null, ''),
-  estoque_minimo: Joi.number().min(0).allow(null),
-  meta_anual: Joi.number().min(0).allow(null),
+  // Inteiros: contam o MESMO material que o estoque e o consumo, em unidade.
+  estoque_minimo: Joi.number().integer().min(0).allow(null),
+  meta_anual: Joi.number().integer().min(0).allow(null),
   ativo: Joi.boolean().default(true)
 }
 
@@ -249,17 +272,21 @@ models.estoqueMaterialIds = Joi.object().keys({
 })
 
 // quantidade aceita 0 (CHECK do banco é >= 0; consumo/transferência podem
-// zerar o estoque e correções manuais precisam poder registrar zero)
+// zerar o estoque e correções manuais precisam poder registrar zero).
+//
+// INTEIRA desde 2026-07-30 (chefe): material conta-se em UNIDADE, e meia folha
+// não existe. As colunas do banco também são INTEGER, então aceitar 1,5 aqui só
+// produziria um 400 mais adiante, ou um arredondamento silencioso.
 models.estoqueMaterial = Joi.object().keys({
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).min(0).required(),
+  quantidade: Joi.number().integer().min(0).required(),
   localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
 })
 
 models.estoqueMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).min(0).required(),
+  quantidade: Joi.number().integer().min(0).required(),
   localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
 })
 
@@ -273,14 +300,14 @@ models.consumoMaterialIds = Joi.object().keys({
 
 models.consumoMaterial = Joi.object().keys({
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).positive().required(),
+  quantidade: Joi.number().integer().positive().required(),
   data_consumo: Joi.date().raw().required()
 })
 
 models.consumoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().precision(2).positive().required(),
+  quantidade: Joi.number().integer().positive().required(),
   data_consumo: Joi.date().raw().required()
 })
 
@@ -321,7 +348,8 @@ models.transferenciaEstoque = Joi.object()
       .integer()
       .valid(...Object.values(TIPO_LOCALIZACAO))
       .required(),
-    quantidade: Joi.number().positive().required()
+    // Inteira, como o estoque: transferir 1,5 folha nao existe.
+    quantidade: Joi.number().integer().positive().required()
   })
   .custom((value, helpers) => {
     if (value.origem_id === value.destino_id) {

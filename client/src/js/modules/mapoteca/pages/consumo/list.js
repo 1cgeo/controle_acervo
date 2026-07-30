@@ -229,8 +229,8 @@ export async function renderConsumoList(container, _ctx) {
     const quantidadeField = createNumberField({
       label: 'Quantidade',
       required: true,
-      min: 0.01,
-      step: 0.01,
+      min: 1,
+      step: 1,
       value: consumo ? Number(consumo.quantidade) : undefined,
     });
     const dataConsumoField = createDateField({

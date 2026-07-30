@@ -77,9 +77,11 @@ router.add('/consultar-pedido/:localizador', standalone(renderConsultarPedido));
 // ---------------------------------------------------------------------------
 for (const modulo of modulosPortados()) {
   for (const rota of modulo.rotas) {
+    // `perfis` (lista) antes de `perfil` (minimo): e o mesmo campo, na mesma
+    // ordem, que registry.podeAbrirRota le para decidir o MENU.
     const guard = rota.admin
       ? adminLoader
-      : perfilLoader(modulo.id, rota.perfil || 'consulta');
+      : perfilLoader(modulo.id, rota.perfis || rota.perfil || 'consulta');
     router.add(`/${modulo.id}${rota.path}`, withLayout(rota.render), { guard });
   }
 }

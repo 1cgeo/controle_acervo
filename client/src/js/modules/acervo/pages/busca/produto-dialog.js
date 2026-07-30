@@ -3,7 +3,7 @@ import { openModal } from '@components/modal/modal-base.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
 import { showError } from '@utils/toast.js';
-import { getProdutoDetalhado } from '@modules/acervo/services/acervo-service.js';
+import { getProdutoDetalhado, baixarArquivoDoAcervo } from '@modules/acervo/services/acervo-service.js';
 
 function linha(rotulo, valor) {
   return el('div', { className: 'detail-card__row' }, [
@@ -26,6 +26,59 @@ function linha(rotulo, valor) {
 export function plural(n, singular, plural_) {
   const total = Number(n) || 0;
   return `${formatNumber(total)} ${total === 1 ? singular : plural_}`;
+}
+
+// Tileserver e uma URL de servico, sem byte em volume nenhum; status diferente de
+// 'Carregado' (1) significa que o carregamento ou a exclusao falhou, e o byte no
+// volume pode estar pela metade. O servidor recusa os dois casos, e a tela
+// desabilita o botao para nao prometer um download que vai dar erro.
+const TIPO_ARQUIVO_TILESERVER = 9;
+const STATUS_ARQUIVO_CARREGADO = 1;
+
+function podeBaixar(a) {
+  return Boolean(a.uuid_arquivo)
+    && a.tipo_arquivo_id !== TIPO_ARQUIVO_TILESERVER
+    && (a.tipo_status_id == null || a.tipo_status_id === STATUS_ARQUIVO_CARREGADO);
+}
+
+/**
+ * Botao de baixar UM arquivo do acervo.
+ *
+ * O servidor le o volume e faz stream, entao o navegador nunca ve caminho de
+ * rede. O nome do arquivo baixado e o nome FISICO (nome_arquivo.extensao), que e
+ * derivado do cadastro: e o mesmo nome que o plugin do QGIS recebe, e o que a
+ * pessoa espera encontrar no disco.
+ * @param {Object} a - arquivo da ficha
+ */
+function botaoBaixar(a) {
+  const nome = a.extensao ? `${a.nome_arquivo}.${a.extensao}` : a.nome_arquivo;
+
+  const botao = el('button', {
+    className: 'btn btn--text btn--sm versao-bloco__baixar',
+    type: 'button',
+    title: podeBaixar(a) ? `Baixar ${nome}` : 'Este arquivo não tem download',
+  }, [svgIcon(ICONS.download, 14), 'Baixar']);
+
+  if (!podeBaixar(a)) {
+    botao.disabled = true;
+    return botao;
+  }
+
+  botao.addEventListener('click', async () => {
+    // A referencia vem do FECHAMENTO, e nao de `e.currentTarget`: depois do
+    // primeiro await o evento terminou e `currentTarget` e null, entao o botao
+    // ficaria travado para sempre depois de uma falha.
+    botao.disabled = true;
+    try {
+      await baixarArquivoDoAcervo(a.uuid_arquivo, nome);
+    } catch (erro) {
+      showError(erro.message || 'Não foi possível baixar o arquivo');
+    } finally {
+      botao.disabled = false;
+    }
+  });
+
+  return botao;
 }
 
 /**
@@ -62,8 +115,6 @@ function blocoVersao(v, maisRecente) {
     ? el('div', { className: 'busca-chips' }, v.palavras_chave.map(p => chip(p, 'secondary')))
     : null;
 
-  // Nome e tamanho bastam: a lista de arquivos aqui e para saber o que existe,
-  // e baixar ainda nao entrou em cena (fase 1 do portal, nao feita).
   const listaArquivos = arquivos.length
     ? el('ul', { className: 'versao-bloco__arquivos' }, arquivos.map(a => el('li', {}, [
       svgIcon(ICONS.description, 14),
@@ -74,6 +125,7 @@ function blocoVersao(v, maisRecente) {
           textContent: `${formatNumber(Number(a.tamanho_mb).toFixed(1))} MB`,
         })
         : null,
+      botaoBaixar(a),
     ])))
     : null;
 

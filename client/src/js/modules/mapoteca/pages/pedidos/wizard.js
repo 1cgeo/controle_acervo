@@ -290,6 +290,7 @@ export async function renderPedidoWizard(container, _ctx) {
       infoRow('Demandante', valores.demandante),
       infoRow('OM responsável (OMDS)', valores.omds),
       infoRow('Previsto no PIT', valores.previsto_pit ? 'Sim' : 'Não'),
+      infoRow('Meta do PIT', valores.meta_pit),
       infoRow('Endereço de entrega', valores.endereco_entrega),
       infoRow('Palavras-chave', valores.palavras_chave.length ? valores.palavras_chave.join(', ') : '-'),
       infoRow('Operação', valores.operacao),
@@ -468,6 +469,7 @@ export async function renderPedidoWizard(container, _ctx) {
     civilSection.classList.toggle('hidden', !civil);
     form.fields.omds.element.classList.toggle('hidden', civil);
     form.fields.previsto_pit.element.classList.toggle('hidden', civil);
+    form.fields.meta_pit.element.classList.toggle('hidden', civil);
     form.fields.demandante.element.classList.toggle('hidden', civil);
     if (civil) form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
     produtosNote.textContent = civil

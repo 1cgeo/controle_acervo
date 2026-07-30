@@ -1,6 +1,7 @@
 // Path: acervo\acervo_ctrl.js
 "use strict";
 const archiver = require('archiver');
+const path = require('path');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
@@ -259,6 +260,106 @@ controller.getProdutoDetailedById = async produtoId => {
 
     return produto;
   });
+};
+
+/**
+ * Um arquivo do acervo, pronto para stream pelo navegador.
+ *
+ * Este é o caminho WEB, e é diferente do par prepare/confirm-download que o
+ * plugin do QGIS usa. Lá o servidor devolve o CAMINHO do volume e o plugin copia
+ * do share por conta, o que só funciona em máquina que monta o share. Aqui o
+ * servidor lê o volume e faz stream: o navegador nunca vê caminho de rede.
+ *
+ * Identifica pelo uuid_arquivo, e não pelo id: a URL do download aparece no log,
+ * no histórico do navegador e em link colado num DIEx, e o inteiro sequencial
+ * convida a varrer o acervo trocando o número.
+ *
+ * @param {string} uuidArquivo
+ * @returns {Promise<{arquivo_id:number, caminho:string, nome:string, checksum:string, tamanho_mb:number}>}
+ */
+controller.getArquivoParaDownload = async (uuidArquivo) => {
+  const arquivo = await db.conn.oneOrNone(
+    `SELECT a.id, a.nome, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb,
+            a.tipo_arquivo_id, a.tipo_status_id, ta.nome AS tipo_arquivo,
+            v.volume
+     FROM acervo.arquivo AS a
+     LEFT JOIN dominio.tipo_arquivo AS ta ON ta.code = a.tipo_arquivo_id
+     LEFT JOIN acervo.volume_armazenamento AS v ON v.id = a.volume_armazenamento_id
+     WHERE a.uuid_arquivo = $<uuidArquivo>`,
+    { uuidArquivo }
+  );
+
+  if (!arquivo) {
+    throw new AppError("Arquivo não encontrado", httpCode.NotFound);
+  }
+
+  // Tileserver (tipo 9) é uma URL de serviço, sem byte em volume nenhum.
+  if (arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER) {
+    throw new AppError(
+      `O arquivo "${arquivo.nome}" é do tipo Tileserver (uma URL de serviço) e não tem arquivo físico para baixar`,
+      httpCode.BadRequest
+    );
+  }
+
+  // Status de erro significa que o carregamento ou a exclusão falhou, então o
+  // byte no volume pode estar truncado. Entregar isso é pior que recusar: o
+  // arquivo chega com o nome certo e o conteúdo pela metade. Mesma regra do
+  // prepareDownload do plugin.
+  if (arquivo.tipo_status_id !== STATUS_ARQUIVO.CARREGADO) {
+    throw new AppError(
+      `O arquivo "${arquivo.nome}" está com status de erro e não pode ser baixado`,
+      httpCode.BadRequest
+    );
+  }
+
+  if (!arquivo.volume) {
+    throw new AppError(
+      `O arquivo "${arquivo.nome}" não tem volume de armazenamento registrado`,
+      httpCode.BadRequest
+    );
+  }
+
+  // O nome físico é DERIVADO do cadastro: <volume>/<nome_arquivo>.<extensao>. É
+  // a mesma montagem do prepareDownload e do confirm-upload, e a razão pela qual
+  // o trio (volume, nome_arquivo, extensao) tem índice único no banco.
+  const nome = arquivo.extensao
+    ? `${arquivo.nome_arquivo}.${arquivo.extensao}`
+    : arquivo.nome_arquivo;
+
+  return {
+    arquivo_id: Number(arquivo.id),
+    caminho: path.join(arquivo.volume, nome),
+    nome,
+    checksum: arquivo.checksum,
+    tamanho_mb: arquivo.tamanho_mb
+  };
+};
+
+/**
+ * Registra no banco o desfecho REAL de um download pelo navegador.
+ *
+ * Uma linha por entrega, escrita DEPOIS que o último byte saiu, e não antes: a
+ * intenção de baixar não é download, e a tabela acervo.download é o que responde
+ * "quem levou o quê" (a pergunta da LAI e da auditoria).
+ *
+ * Retomada gera duas linhas, uma por pedaço entregue. É deliberado: cada linha
+ * conta uma transferência que de fato aconteceu.
+ *
+ * @param {number} arquivoId
+ * @param {string} usuarioUuid
+ * @param {{sucesso:boolean, erro?:string}} desfecho
+ */
+controller.registrarDownloadWeb = async (arquivoId, usuarioUuid, { sucesso, erro }) => {
+  return db.conn.none(
+    `INSERT INTO acervo.download (arquivo_id, usuario_uuid, status, error_message)
+     VALUES ($<arquivoId>, $<usuarioUuid>, $<status>, $<erro>)`,
+    {
+      arquivoId,
+      usuarioUuid,
+      status: sucesso ? "completed" : "failed",
+      erro: erro || null
+    }
+  );
 };
 
 controller.prepareDownload = async (arquivosIds, usuarioUuid) => {

@@ -3,7 +3,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, USER_UUID } = require('../helpers/auth')
 const { createProduto, createVersao, createArquivo } = require('../helpers/fixtures')
 
 let app
@@ -232,7 +232,8 @@ describe('Mapoteca Routes', () => {
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
         omds: '1º CGEO',
-        previsto_pit: true
+        previsto_pit: true,
+        meta_pit: '4.1'
       })
 
       expect(pedido.id).toBeDefined()
@@ -246,6 +247,69 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.demandante).toBe('CMS')
       expect(res.body.dados.omds).toBe('1º CGEO')
       expect(res.body.dados.previsto_pit).toBe(true)
+      expect(res.body.dados.meta_pit).toBe('4.1')
+    })
+
+    it('POST /api/mapoteca/pedido previsto no PIT sem meta_pit should return 400', async () => {
+      const clienteId = await criaCliente()
+      const res = await request(app)
+        .post('/api/mapoteca/pedido')
+        .set('Authorization', generateAdminToken())
+        .send({
+          data_pedido: '2026-01-15',
+          cliente_id: clienteId,
+          situacao_pedido_id: 3,
+          previsto_pit: true
+        })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('PUT /api/mapoteca/pedido preserva meta_pit quando a chave é omitida', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId, { previsto_pit: true, meta_pit: '4.2' })
+
+      // Corpo sem previsto_pit e sem meta_pit: é o que a edição a partir da
+      // LISTA manda. Nenhum dos dois pode ser zerado em silêncio.
+      const res = await request(app)
+        .put('/api/mapoteca/pedido')
+        .set('Authorization', generateAdminToken())
+        .send({
+          id: pedido.id,
+          data_pedido: '2026-01-15',
+          cliente_id: clienteId,
+          situacao_pedido_id: 3,
+          demandante: 'CMS'
+        })
+
+      expect(res.status).toBe(200)
+
+      const depois = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}`)
+        .set('Authorization', generateAdminToken())
+
+      expect(depois.body.dados.previsto_pit).toBe(true)
+      expect(depois.body.dados.meta_pit).toBe('4.2')
+      expect(depois.body.dados.demandante).toBe('CMS')
+    })
+
+    it('PUT /api/mapoteca/pedido marcando previsto_pit sem meta_pit should return 400', async () => {
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+
+      const res = await request(app)
+        .put('/api/mapoteca/pedido')
+        .set('Authorization', generateAdminToken())
+        .send({
+          id: pedido.id,
+          data_pedido: '2026-01-15',
+          cliente_id: clienteId,
+          situacao_pedido_id: 3,
+          previsto_pit: true,
+          meta_pit: null
+        })
+
+      expect(res.status).toBe(400)
     })
 
     it('POST /api/mapoteca/pedido cancelado sem motivo_cancelamento should return 400', async () => {
@@ -374,6 +438,291 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(200)
       // DATE volta como string crua ('AAAA-MM-DD'), sem fuso no caminho.
       expect(res.body.dados.data_atendimento).toBe('2026-03-20')
+    })
+
+    // A FILA da tela de atendimento. Ela existe separada da lista de pedidos por
+    // duas decisões, e as duas são testadas aqui: só o que está em aberto, e sem
+    // recorte de ano.
+    describe('GET /api/mapoteca/pedido/em_aberto (fila de atendimento)', () => {
+      const emAberto = (token = generateAdminToken()) => request(app)
+        .get('/api/mapoteca/pedido/em_aberto')
+        .set('Authorization', token)
+
+      it('traz o pedido em aberto e deixa de fora concluído e cancelado', async () => {
+        const clienteId = await criaCliente()
+        const aberto = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null })
+        const concluido = await criaPedido(clienteId, {
+          situacao_pedido_id: 5, data_atendimento: '2026-03-20'
+        })
+        const cancelado = await criaPedido(clienteId, {
+          situacao_pedido_id: 6, data_atendimento: null, motivo_cancelamento: 'desistência'
+        })
+
+        const res = await emAberto()
+
+        expect(res.status).toBe(200)
+        const ids = res.body.dados.map(p => Number(p.id))
+        expect(ids).toContain(Number(aberto.id))
+        expect(ids).not.toContain(Number(concluido.id))
+        expect(ids).not.toContain(Number(cancelado.id))
+      })
+
+      // Remetido (4) FICA na fila: o pedido saiu, mas ainda falta fechar. Tirá-lo
+      // faria o pedido desaparecer no meio do caminho, sem ninguém concluir nada.
+      it('mantém o pedido Remetido na fila', async () => {
+        const clienteId = await criaCliente()
+        const remetido = await criaPedido(clienteId, { situacao_pedido_id: 4 })
+
+        const res = await emAberto()
+
+        expect(res.body.dados.map(p => Number(p.id))).toContain(Number(remetido.id))
+      })
+
+      // O pedido de dezembro ainda não atendido é trabalho em janeiro.
+      it('NÃO filtra por ano, ao contrário da lista de pedidos', async () => {
+        const clienteId = await criaCliente()
+        const antigo = await criaPedido(clienteId, {
+          data_pedido: '2025-12-20', situacao_pedido_id: 3, data_atendimento: null
+        })
+
+        const fila = await emAberto()
+        expect(fila.body.dados.map(p => Number(p.id))).toContain(Number(antigo.id))
+
+        // A lista de pedidos, por contraste, é do ano consultado.
+        const lista = await request(app)
+          .get('/api/mapoteca/pedido?ano=2026')
+          .set('Authorization', generateAdminToken())
+        expect(lista.body.dados.map(p => Number(p.id))).not.toContain(Number(antigo.id))
+      })
+
+      it('ordena por prazo, com o pedido sem prazo no fim', async () => {
+        const clienteId = await criaCliente()
+        const semPrazo = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null, prazo: null })
+        const tarde = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null, prazo: '2026-12-01' })
+        const cedo = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null, prazo: '2026-01-05' })
+
+        const res = await emAberto()
+        const ids = res.body.dados.map(p => Number(p.id))
+
+        expect(ids.indexOf(Number(cedo.id))).toBeLessThan(ids.indexOf(Number(tarde.id)))
+        expect(ids.indexOf(Number(tarde.id))).toBeLessThan(ids.indexOf(Number(semPrazo.id)))
+      })
+
+      it('conta os itens e as cópias já impressas, e diz quantos dias faltam', async () => {
+        const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
+        const versao = await createVersao(produto.id)
+        const clienteId = await criaCliente()
+        const pedido = await criaPedido(clienteId, {
+          situacao_pedido_id: 3, data_atendimento: null, prazo: '2026-01-05'
+        })
+        await criaProdutoPedido({
+          uuid_versao: versao.uuid_versao, pedido_id: pedido.id, quantidade: 10, tipo_midia_id: 5
+        })
+        // POST /produto_pedido nao devolve o id do item: ele sai do banco.
+        const item = await conn.one(
+          'SELECT id FROM mapoteca.produto_pedido WHERE pedido_id = $1', [pedido.id]
+        )
+        await request(app)
+          .post('/api/mapoteca/impressao')
+          .set('Authorization', generateAdminToken())
+          .send({ registros: [{ produto_pedido_id: item.id, quantidade: 4 }] })
+
+        const res = await emAberto()
+        const linha = res.body.dados.find(p => Number(p.id) === Number(pedido.id))
+
+        expect(linha.total_itens).toBe(1)
+        expect(linha.quantidade_pedida).toBe(10)
+        expect(linha.quantidade_impressa).toBe(4)
+        expect(linha.itens_impressos).toBe(0)
+        // Calculado no BANCO (prazo - CURRENT_DATE), para a tela não fazer conta
+        // de data e não errar por fuso. Prazo no passado dá negativo.
+        expect(typeof linha.dias_para_prazo).toBe('number')
+        expect(linha.dias_para_prazo).toBeLessThan(0)
+        // O endereço vem junto porque a etiqueta de envio sai desta tela.
+        expect(linha).toHaveProperty('endereco_entrega')
+        expect(linha).toHaveProperty('cliente_endereco_entrega')
+      })
+
+      // O usuario comum dos testes JA e operador na mapoteca (setup.js), entao
+      // provar a restricao exige rebaixa-lo a consulta e devolver depois. Sem
+      // isso o teste passaria sem exercitar nada.
+      it('exige perfil OPERADOR: quem só consulta não vê a fila', async () => {
+        expect((await request(app).get('/api/mapoteca/pedido/em_aberto')).status).toBe(401)
+        expect((await emAberto(generateUserToken())).status).toBe(200)
+
+        await conn.none(
+          `UPDATE dgeo.usuario_perfil SET perfil_id = 1
+           WHERE modulo_id = 2 AND usuario_id = (
+             SELECT id FROM dgeo.usuario WHERE uuid = $1)`,
+          [USER_UUID]
+        )
+        try {
+          expect((await emAberto(generateUserToken())).status).toBe(403)
+        } finally {
+          await conn.none(
+            `UPDATE dgeo.usuario_perfil SET perfil_id = 2
+             WHERE modulo_id = 2 AND usuario_id = (
+               SELECT id FROM dgeo.usuario WHERE uuid = $1)`,
+            [USER_UUID]
+          )
+        }
+      })
+    })
+
+    describe('GET /api/mapoteca/pedido/:id/impressao (o que imprimir)', () => {
+      const montaPedidoComPdf = async () => {
+        const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2965-2' })
+        const versao = await createVersao(produto.id)
+        // O PDF do produto: é ele que a tela manda imprimir.
+        const pdf = await createArquivo(versao.id, {
+          nome: 'Carta 2965-2', nome_arquivo: 'ct_2965-2_ed1', extensao: 'pdf',
+          tipo_arquivo_id: 1, tipo_status_id: 1
+        })
+        // Um XML de metadado na MESMA versão, que não pode ser escolhido.
+        await createArquivo(versao.id, {
+          nome: 'Metadado', nome_arquivo: 'ct_2965-2_ed1_meta', extensao: 'xml',
+          tipo_arquivo_id: 4, tipo_status_id: 1
+        })
+        const clienteId = await criaCliente()
+        const pedido = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null })
+        await criaProdutoPedido({
+          uuid_versao: versao.uuid_versao, pedido_id: pedido.id, quantidade: 5, tipo_midia_id: 5
+        })
+        const item = await conn.one(
+          'SELECT id FROM mapoteca.produto_pedido WHERE pedido_id = $1', [pedido.id]
+        )
+        return { pedido, item, pdf, versao }
+      }
+
+      it('devolve o uuid do PDF da carta, e não o do metadado', async () => {
+        const { pedido, pdf } = await montaPedidoComPdf()
+
+        const res = await request(app)
+          .get(`/api/mapoteca/pedido/${pedido.id}/impressao`)
+          .set('Authorization', generateAdminToken())
+
+        expect(res.status).toBe(200)
+        expect(res.body.dados.itens).toHaveLength(1)
+        const item = res.body.dados.itens[0]
+        // É pelo uuid que o navegador chama /acervo/arquivo/:uuid/download.
+        expect(item.uuid_arquivo).toBe(pdf.uuid_arquivo)
+        expect(item.arquivo_nome_fisico).toBe('ct_2965-2_ed1.pdf')
+        expect(item.quantidade).toBe(5)
+        expect(item.quantidade_restante).toBe(5)
+        expect(item.impressao_concluida).toBe(false)
+      })
+
+      it('desconta o que já foi impresso', async () => {
+        const { pedido, item } = await montaPedidoComPdf()
+        await request(app)
+          .post('/api/mapoteca/impressao')
+          .set('Authorization', generateAdminToken())
+          .send({ registros: [{ produto_pedido_id: item.id, quantidade: 5 }] })
+
+        const res = await request(app)
+          .get(`/api/mapoteca/pedido/${pedido.id}/impressao`)
+          .set('Authorization', generateAdminToken())
+
+        const linha = res.body.dados.itens[0]
+        expect(linha.quantidade_impressa).toBe(5)
+        expect(linha.quantidade_restante).toBe(0)
+        expect(linha.impressao_concluida).toBe(true)
+        expect(res.body.dados.impressao.concluida).toBe(true)
+      })
+
+      // Item sem PDF aparece com uuid nulo, e não desaparece: quem atende precisa
+      // saber que aquela carta não tem arquivo, e não descobrir na hora de plotar.
+      it('item sem PDF vem com uuid nulo e é contado', async () => {
+        const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
+        const versao = await createVersao(produto.id)
+        const clienteId = await criaCliente()
+        const pedido = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null })
+        await criaProdutoPedido({
+          uuid_versao: versao.uuid_versao, pedido_id: pedido.id, quantidade: 2, tipo_midia_id: 5
+        })
+
+        const res = await request(app)
+          .get(`/api/mapoteca/pedido/${pedido.id}/impressao`)
+          .set('Authorization', generateAdminToken())
+
+        expect(res.body.dados.itens).toHaveLength(1)
+        expect(res.body.dados.itens[0].uuid_arquivo).toBeNull()
+        expect(res.body.dados.impressao.itens_sem_arquivo).toBe(1)
+      })
+
+      // A rota é LEITURA: ao contrário de /download_impressao, ela não cria token.
+      // Token criado aqui viraria linha pendente em acervo.download que ninguém
+      // confirma, e o cron a marcaria como falha.
+      it('não cria registro de download', async () => {
+        const { pedido, pdf } = await montaPedidoComPdf()
+
+        await request(app)
+          .get(`/api/mapoteca/pedido/${pedido.id}/impressao`)
+          .set('Authorization', generateAdminToken())
+
+        const downloads = await conn.any(
+          'SELECT id FROM acervo.download WHERE arquivo_id = $1', [pdf.id]
+        )
+        expect(downloads).toHaveLength(0)
+      })
+
+      // Rota IRMA, e nao a do acervo, por causa da permissao: quem atende tem
+      // operador na MAPOTECA e pode nao ter perfil nenhum no acervo. E ela confere
+      // o par (pedido, arquivo), senao viraria download do acervo inteiro com
+      // perfil de mapoteca, bastando trocar o uuid.
+      it('baixa a carta do item pela rota do pedido', async () => {
+        const { pedido, pdf } = await montaPedidoComPdf()
+        // O byte no volume: o volume de teste e /data/test, semeado no setup.
+        const fs = require('fs')
+        const path = require('path')
+        const volume = await conn.one('SELECT volume FROM acervo.volume_armazenamento WHERE id = 1')
+        const destino = path.join(volume.volume, `${pdf.nome_arquivo}.${pdf.extensao}`)
+        fs.mkdirSync(path.dirname(destino), { recursive: true })
+        fs.writeFileSync(destino, Buffer.from('%PDF-1.4 carta de teste'))
+
+        try {
+          const res = await request(app)
+            .get(`/api/mapoteca/pedido/${pedido.id}/arquivo/${pdf.uuid_arquivo}/download`)
+            .set('Authorization', generateAdminToken())
+            .buffer()
+            .parse((res, cb) => {
+              const partes = []
+              res.on('data', (p) => partes.push(p))
+              res.on('end', () => cb(null, Buffer.concat(partes)))
+            })
+
+          expect(res.status).toBe(200)
+          expect(res.headers['content-disposition']).toContain('ct_2965-2_ed1.pdf')
+          expect(Buffer.from(res.body).toString()).toContain('carta de teste')
+        } finally {
+          fs.rmSync(destino, { force: true })
+        }
+      })
+
+      it('recusa arquivo que não é carta de item DESTE pedido', async () => {
+        const { pdf } = await montaPedidoComPdf()
+        // Outro pedido, sem nenhum item: o mesmo uuid nao vale aqui.
+        const outro = await criaPedido(await criaCliente({ nome: 'Outra OM' }), {
+          situacao_pedido_id: 3, data_atendimento: null
+        })
+
+        const res = await request(app)
+          .get(`/api/mapoteca/pedido/${outro.id}/arquivo/${pdf.uuid_arquivo}/download`)
+          .set('Authorization', generateAdminToken())
+
+        expect(res.status).toBe(404)
+        expect(res.body.message).toMatch(/não é a carta de nenhum item/i)
+      })
+
+      it('pedido inexistente dá 404, e sem token dá 401', async () => {
+        const semToken = await request(app).get('/api/mapoteca/pedido/999999/impressao')
+        expect(semToken.status).toBe(401)
+
+        const admin = await request(app)
+          .get('/api/mapoteca/pedido/999999/impressao')
+          .set('Authorization', generateAdminToken())
+        expect(admin.status).toBe(404)
+      })
     })
 
     it('GET /api/mapoteca/pedido/localizador/:localizador inexistente returns 404', async () => {
@@ -654,6 +1003,7 @@ describe('Mapoteca Routes', () => {
         demandante: 'CMS',
         omds: '1º CGEO',
         previsto_pit: true,
+        meta_pit: '4.1',
         operacao: 'Operação Teste',
         // O prazo existe no cenário de propósito: até 2026-07-29 ele saía na
         // coluna "Meta" do relatório, e um teste do .ods guarda essa correção.
@@ -811,6 +1161,11 @@ describe('Mapoteca Routes', () => {
 
         // previsto_pit = true no cenário
         expect(content).toContain('<text:p>sim</text:p>')
+        // A coluna "Meta" traz o código gravado em pedido.meta_pit, como TEXTO.
+        // Ate 2026-07-29 ela trazia p.prazo (uma DATA sob o rótulo "Meta"), e o
+        // prazo 2026-04-10 continua no cenário justamente para guardar isso.
+        expect(content).toContain('<text:p>4.1</text:p>')
+        expect(content).not.toContain('office:date-value="2026-04-10"')
         // 'Sulfite 90g' no banco vira 'sulfite' na aba (que nunca teve gramatura)
         expect(content).toContain('<text:p>sulfite</text:p>')
         expect(content).not.toContain('Sulfite 90g')

@@ -667,9 +667,24 @@
   font-size: var(--font-size-sm);
 }
 
-.versao-bloco__tamanho {
-  margin-left: auto;
+/* O NOME ocupa a sobra da linha, e o que vem depois (tamanho e botao de baixar)
+ * fica encostado a direita. Antes o empurrao vinha de um margin-left:auto no
+ * tamanho, e com o botao ao lado o arquivo SEM tamanho (o Tileserver, que por
+ * DDL tem tamanho nulo) deixava o botao no meio da linha. */
+.versao-bloco__arquivos li > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.versao-bloco__tamanho {
+  white-space: nowrap;
+}
+
+.versao-bloco__baixar {
+  flex-shrink: 0;
 }
 
 /* Tela estreita: o mapa vai para baixo da lista, com altura propria. Lado a

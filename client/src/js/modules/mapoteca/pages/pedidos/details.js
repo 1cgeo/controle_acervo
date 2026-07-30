@@ -591,6 +591,7 @@ export async function renderPedidoDetails(container, { params }) {
         infoRow('Demandante', pedido.demandante),
         infoRow('OM responsável', pedido.omds),
         infoRow('Previsto no PIT', pedido.previsto_pit ? 'Sim' : 'Não'),
+        infoRow('Meta do PIT', pedido.meta_pit),
       ]),
       el('div', { className: 'detail-card' }, [
         el('div', { className: 'detail-card__title', textContent: 'Entrega' }),

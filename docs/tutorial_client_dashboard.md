@@ -82,10 +82,10 @@ A primeira aba do dashboard exibe **6 cards de estatísticas** com dados gerais 
 |------|-------------|---------|
 | Total de Produtos | Quantidade de produtos geográficos cadastrados | `1.234` |
 | Armazenamento Total | Espaço total utilizado em GB | `456,78 GB` |
-| Total de Usuários | Quantidade de usuários no sistema | `42` |
-| Total de Projetos | Quantidade de projetos cadastrados | `15` |
+| Pontos de Controle | Quantidade de pontos cadastrados | `3.490` |
+| Carregamento no mês | Versões cadastradas no mês corrente | `28` |
 | Total de Versões | Quantidade de versões de produtos | `2.567` |
-| Downloads (24h) | Downloads realizados nas últimas 24 horas | `38` |
+| Downloads (30d) | Downloads realizados nos últimos 30 dias | `38` |
 
 ### Alertas do Sistema
 

@@ -29,7 +29,7 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => {
   getUsuariosTotal: vi.fn(() => Promise.resolve({ total_usuarios: 10 })),
   getSystemHealth: vi.fn(() => Promise.resolve({
     volumes_alertas: [], erros_arquivo: {}, sessoes_upload_ativas: 0,
-    total_versoes: 7023, total_projetos: 12, downloads_24h: 5,
+    total_versoes: 7023, total_projetos: 12, downloads_30d: 5,
   })),
   getProdutosTipo: vi.fn(vazio),
   getProdutosEscala: vi.fn(vazio),

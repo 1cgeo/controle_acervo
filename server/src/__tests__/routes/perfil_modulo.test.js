@@ -62,6 +62,35 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     expect(res.body.message).toMatch(/perfil operador no módulo acervo/i)
   })
 
+  // As DUAS telas do perfil de OPERADOR da mapoteca (chefe, 2026-07-30): atender
+  // pedidos e consumo de material. Este teste guarda a fronteira nos dois
+  // sentidos, porque esconder o item no menu nao barra nada: o perfil do client e
+  // ergonomia, e quem barra leitura e o verifyPerfil.
+  it('operador da mapoteca tem atendimento e consumo de material; consulta nao tem', async () => {
+    const AS_DUAS = [
+      '/api/mapoteca/pedido/em_aberto',
+      '/api/mapoteca/consumo_material'
+    ]
+    const ler = rota => request(app).get(rota).set('Authorization', generateUserToken())
+
+    await definePerfil(MODULO.mapoteca, NIVEL.consulta)
+    for (const rota of AS_DUAS) {
+      const res = await ler(rota)
+      expect(res.status).toBe(403)
+      expect(res.body.message).toMatch(/perfil operador no módulo mapoteca/i)
+    }
+    // O AGREGADO do consumo fica em consulta de propósito: o total do mês é
+    // informação de gestão, a lista de lançamentos é trabalho de quem opera.
+    expect((await ler('/api/mapoteca/consumo_mensal?ano=2026')).status).toBe(200)
+    // E a lista de pedidos também: quem consulta vê o pedido, não a fila.
+    expect((await ler('/api/mapoteca/pedido?ano=2026')).status).toBe(200)
+
+    await definePerfil(MODULO.mapoteca, NIVEL.operador)
+    for (const rota of AS_DUAS) {
+      expect((await ler(rota)).status).toBe(200)
+    }
+  })
+
   it('gerente do acervo NAO cadastra pedido na mapoteca', async () => {
     await definePerfil(MODULO.acervo, NIVEL.gerente)
     await definePerfil(MODULO.mapoteca, NIVEL.consulta)

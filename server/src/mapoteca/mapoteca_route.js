@@ -3,7 +3,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode, csvExport, odsExport } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, csvExport, odsExport, enviarArquivo } = require('../utils')
 
 const { verifyPerfil } = require('../login')
 
@@ -174,6 +174,24 @@ router.get(
   })
 )
 
+// A FILA de atendimento: pedidos em aberto, do mais urgente para o menos.
+//
+// ANTES de '/pedido/:id', e não junto das outras: '/pedido/em_aberto' casaria com
+// ':id' e o erro apareceria como "id de pedido inválido", que não diz nada a quem
+// chamou. Mesma disciplina de '/pedido/localizador/:localizador' acima.
+//
+// Perfil OPERADOR, e não consulta: esta é a tela de quem executa o atendimento
+// (imprimir, etiquetar, registrar). Quem só consulta usa a lista de pedidos.
+router.get(
+  '/pedido/em_aberto',
+  verifyPerfil('operador', 'mapoteca'),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getPedidosEmAberto()
+    const msg = 'Pedidos em aberto retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.get(
   '/pedido/:id',
   verifyPerfil('consulta', 'mapoteca'),
@@ -185,6 +203,48 @@ router.get(
     const dados = await mapotecaCtrl.getPedidoById(id)
     const msg = 'Detalhes do pedido retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// O que IMPRIMIR de um pedido, com a carta de cada item.
+//
+// Leitura pura, ao contrário de '/pedido/:id/download_impressao', que cria token e
+// devolve caminho de volume para o plugin do QGIS. Aqui vem o uuid_arquivo, e o
+// navegador baixa por GET /acervo/arquivo/:uuid/download.
+router.get(
+  '/pedido/:id/impressao',
+  verifyPerfil('operador', 'mapoteca'),
+  schemaValidation({
+    params: mapotecaSchema.pedidoId
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getImpressaoDoPedido(req.params.id)
+    const msg = 'Itens para impressão retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Baixa a CARTA de um item do pedido, pelo navegador.
+//
+// Existe apesar de '/acervo/arquivo/:uuid/download' fazer o mesmo stream, e a
+// razão é a permissão: quem atende pedido tem operador na MAPOTECA e pode não ter
+// perfil nenhum no acervo. Pela rota do acervo ele levava 403 no meio da tela
+// feita para ele. A permissão segue o MÓDULO do trabalho, não o do dado.
+//
+// O par (pedido, arquivo) é conferido no banco: sem isso, esta rota viraria um
+// download do acervo inteiro com perfil de mapoteca, bastando trocar o uuid.
+router.get(
+  '/pedido/:id/arquivo/:uuid_arquivo/download',
+  verifyPerfil('operador', 'mapoteca'),
+  schemaValidation({
+    params: mapotecaSchema.arquivoImpressaoParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const arquivo = await mapotecaCtrl.getArquivoDeImpressao(
+      req.params.id,
+      req.params.uuid_arquivo
+    )
+    await enviarArquivo.enviarArquivoDoVolume(req, res, arquivo)
   })
 )
 
@@ -604,9 +664,18 @@ router.delete(
 )
 
 // Rotas para Consumo de Material
+//
+// A LISTA de lancamentos e OPERADOR desde 2026-07-30 (chefe): consumo de material
+// e a segunda tela do perfil de operador da mapoteca, junto do atendimento. Nao
+// bastava esconder o item no menu, porque o perfil do client e so ergonomia: quem
+// barra leitura e este verifyPerfil.
+//
+// O que fica em CONSULTA de proposito: '/consumo_mensal' (abaixo) e o
+// '/dashboard/material_consumption', que sao o AGREGADO. O total do mes e
+// informacao de gestao; a lista de lancamentos e trabalho de quem opera.
 router.get(
   '/consumo_material',
-  verifyPerfil('consulta', 'mapoteca'),
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     query: mapotecaSchema.consumoMaterialFiltro
   }),
@@ -632,7 +701,7 @@ router.get(
 
 router.get(
   '/consumo_material/:id',
-  verifyPerfil('consulta', 'mapoteca'),
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     params: mapotecaSchema.consumoMaterialId
   }),

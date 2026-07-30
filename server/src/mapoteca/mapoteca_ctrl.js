@@ -1,10 +1,17 @@
 // Path: mapoteca\mapoteca_ctrl.js
 "use strict";
 
+const path = require("path");
+
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
-const { ESCALA_DISPLAY, filtroAno } = require("./query_fragments");
+const {
+  ESCALA_DISPLAY,
+  filtroAno,
+  SITUACOES_EM_ABERTO,
+  JOIN_ARQUIVO_IMPRIMIVEL
+} = require("./query_fragments");
 
 const controller = {};
 
@@ -38,6 +45,7 @@ const PEDIDO_COLS = [
   { name: 'demandante', def: null },
   { name: 'omds', def: null },
   { name: 'previsto_pit', def: false },
+  { name: 'meta_pit', def: null },
   { name: 'canal_recebimento_id', def: null },
   { name: 'municipio', def: null },
   { name: 'qtd_imagens', def: null },
@@ -320,7 +328,7 @@ controller.getPedidos = async (ano) => {
            c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
-           p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
+           p.prazo, p.demandante, p.omds, p.previsto_pit, p.meta_pit, p.operacao,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            u.nome AS usuario_criacao_nome,
            p.data_criacao,
@@ -337,6 +345,196 @@ controller.getPedidos = async (ano) => {
     WHERE ${filtroAno('p.data_pedido')}
     ORDER BY p.data_pedido DESC
   `, { ano });
+};
+
+/**
+ * A FILA de atendimento: pedidos em aberto, do mais urgente para o menos.
+ *
+ * NÃO filtra por ano, ao contrário da lista de pedidos. É deliberado: o pedido de
+ * dezembro que ainda não foi atendido continua sendo trabalho em janeiro, e uma
+ * fila que esconde o atrasado é pior que fila nenhuma. Em aberto é toda situação
+ * menos Concluído e Cancelado (ver SITUACOES_EM_ABERTO).
+ *
+ * A ordem é por PRAZO, com o pedido sem prazo no fim: o que tem data marcada
+ * decide o dia de quem atende. O `dias_para_prazo` vem calculado no banco, então
+ * a tela não precisa fazer conta de data (e não erra por fuso).
+ *
+ * Traz o endereço e o contato porque a etiqueta de envio sai desta tela: sem eles
+ * seria uma segunda requisição por pedido só para imprimir um endereço.
+ */
+controller.getPedidosEmAberto = async () => {
+  return db.conn.any(`
+    SELECT p.id, p.localizador_pedido, p.data_pedido, p.prazo,
+           (p.prazo - CURRENT_DATE)::int AS dias_para_prazo,
+           p.cliente_id, c.nome AS cliente_nome,
+           c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
+           p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
+           p.documento_solicitacao, p.documento_solicitacao_nup,
+           p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
+           p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
+           p.observacao, p.observacao_interna, p.localizador_envio, p.operacao,
+           COALESCE(i.total_itens, 0)::int AS total_itens,
+           COALESCE(i.itens_impressos, 0)::int AS itens_impressos,
+           COALESCE(i.quantidade_pedida, 0)::int AS quantidade_pedida,
+           COALESCE(i.quantidade_impressa, 0)::int AS quantidade_impressa
+    FROM mapoteca.pedido AS p
+    LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
+    LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
+    LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
+    LEFT JOIN LATERAL (
+      SELECT count(*)::int AS total_itens,
+             SUM(pp.quantidade)::int AS quantidade_pedida,
+             SUM(LEAST(COALESCE(imp.impressa, 0), pp.quantidade))::int AS quantidade_impressa,
+             count(*) FILTER (WHERE COALESCE(imp.impressa, 0) >= pp.quantidade)::int AS itens_impressos
+      FROM mapoteca.produto_pedido pp
+      LEFT JOIN LATERAL (
+        SELECT SUM(ii.quantidade) AS impressa
+        FROM mapoteca.impressao_item ii
+        WHERE ii.produto_pedido_id = pp.id
+      ) imp ON TRUE
+      WHERE pp.pedido_id = p.id
+    ) i ON TRUE
+    WHERE p.situacao_pedido_id IN ($<situacoes:csv>)
+    ORDER BY p.prazo ASC NULLS LAST, p.data_pedido ASC, p.id ASC
+  `, { situacoes: SITUACOES_EM_ABERTO });
+};
+
+/**
+ * O que IMPRIMIR de um pedido: um item por linha, com a carta e o que falta.
+ *
+ * Difere do prepareDownloadImpressao (o caminho do plugin) em duas coisas, e as
+ * duas são o motivo de existir: aqui NÃO se cria token de download nem se devolve
+ * caminho de volume. Devolve o `uuid_arquivo`, que é com o que o navegador chama
+ * GET /acervo/arquivo/:uuid/download. Criar token aqui encheria acervo.download de
+ * linhas pendentes que ninguém confirma, e o cron as marcaria como falhas.
+ *
+ * A escolha do arquivo é a MESMA do plugin (JOIN_ARQUIVO_IMPRIMIVEL): o PDF do
+ * produto em si. Item sem PDF vem com uuid_arquivo nulo, e a tela diz por quê em
+ * vez de esconder a linha: quem atende precisa saber que aquela carta não tem
+ * arquivo para imprimir.
+ */
+controller.getImpressaoDoPedido = async (pedidoId) => {
+  return db.conn.task(async t => {
+    const pedido = await t.oneOrNone(
+      `SELECT id, localizador_pedido, situacao_pedido_id
+       FROM mapoteca.pedido WHERE id = $<pedidoId>`,
+      { pedidoId }
+    );
+
+    if (!pedido) {
+      throw new AppError('Pedido não encontrado', httpCode.NotFound);
+    }
+
+    const itens = await t.any(`
+      SELECT pp.id AS produto_pedido_id,
+             pp.quantidade,
+             COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
+             GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
+             (COALESCE(imp.quantidade_impressa, 0) >= pp.quantidade) AS impressao_concluida,
+             pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
+             fe.nome AS forma_entrega_nome,
+             pp.observacao,
+             prod.nome AS produto_nome, prod.mi, prod.inom,
+             ${ESCALA_DISPLAY} AS escala,
+             tp.nome AS tipo_produto_nome,
+             v.versao, v.data_edicao,
+             a.uuid_arquivo, a.nome AS arquivo_nome, a.tamanho_mb,
+             CASE WHEN a.uuid_arquivo IS NULL THEN NULL
+                  WHEN a.extensao IS NULL THEN a.nome_arquivo
+                  ELSE a.nome_arquivo || '.' || a.extensao
+             END AS arquivo_nome_fisico
+      FROM mapoteca.produto_pedido pp
+      JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.produto prod ON prod.id = v.produto_id
+      JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+      LEFT JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+      LEFT JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
+      LEFT JOIN mapoteca.forma_entrega fe ON fe.code = pp.forma_entrega_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(ii.quantidade) AS quantidade_impressa
+        FROM mapoteca.impressao_item ii
+        WHERE ii.produto_pedido_id = pp.id
+      ) imp ON TRUE
+      ${JOIN_ARQUIVO_IMPRIMIVEL}
+      WHERE pp.pedido_id = $<pedidoId>
+      ORDER BY prod.mi NULLS LAST, pp.id
+    `, {
+      pedidoId,
+      statusCarregado: STATUS_ARQUIVO.CARREGADO,
+      tiposImprimiveis: [TIPO_ARQUIVO.ARQUIVO_PRINCIPAL, TIPO_ARQUIVO.FORMATO_ALTERNATIVO]
+    });
+
+    return {
+      pedido_id: Number(pedido.id),
+      localizador_pedido: pedido.localizador_pedido,
+      situacao_pedido_id: pedido.situacao_pedido_id,
+      itens,
+      impressao: {
+        total_itens: itens.length,
+        itens_concluidos: itens.filter(i => i.impressao_concluida).length,
+        concluida: itens.length > 0 && itens.every(i => i.impressao_concluida),
+        itens_sem_arquivo: itens.filter(i => !i.uuid_arquivo).length
+      }
+    };
+  });
+};
+
+/**
+ * O arquivo imprimível de um item DESTE pedido, pronto para stream.
+ *
+ * Existe porque a permissão segue o MÓDULO do trabalho, e não o do dado: quem
+ * atende pedido tem operador na MAPOTECA e pode não ter perfil nenhum no acervo.
+ * Pela rota do acervo (`/acervo/arquivo/:uuid/download`) ele levava 403 no meio da
+ * tela feita para ele (medido em 2026-07-30, quando o operador passou a ver só as
+ * duas telas dele).
+ *
+ * O par (pedido, arquivo) é conferido no banco: o uuid tem de ser o PDF imprimível
+ * de um item daquele pedido. Sem isso, esta rota viraria um download de acervo
+ * inteiro com perfil de mapoteca, bastando trocar o uuid.
+ *
+ * @param {number} pedidoId
+ * @param {string} uuidArquivo
+ */
+controller.getArquivoDeImpressao = async (pedidoId, uuidArquivo) => {
+  const arquivo = await db.conn.oneOrNone(`
+    SELECT a.nome, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb, vol.volume
+    FROM mapoteca.produto_pedido pp
+    JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
+    ${JOIN_ARQUIVO_IMPRIMIVEL}
+    WHERE pp.pedido_id = $<pedidoId>
+      AND a.uuid_arquivo = $<uuidArquivo>
+    LIMIT 1
+  `, {
+    pedidoId,
+    uuidArquivo,
+    statusCarregado: STATUS_ARQUIVO.CARREGADO,
+    tiposImprimiveis: [TIPO_ARQUIVO.ARQUIVO_PRINCIPAL, TIPO_ARQUIVO.FORMATO_ALTERNATIVO]
+  });
+
+  if (!arquivo) {
+    throw new AppError(
+      'Este arquivo não é a carta de nenhum item deste pedido',
+      httpCode.NotFound
+    );
+  }
+
+  if (!arquivo.volume) {
+    throw new AppError(
+      `O arquivo "${arquivo.nome}" não tem volume de armazenamento registrado`,
+      httpCode.BadRequest
+    );
+  }
+
+  const nome = arquivo.extensao
+    ? `${arquivo.nome_arquivo}.${arquivo.extensao}`
+    : arquivo.nome_arquivo;
+
+  return {
+    caminho: path.join(arquivo.volume, nome),
+    nome,
+    checksum: arquivo.checksum,
+    tamanho_mb: arquivo.tamanho_mb
+  };
 };
 
 controller.getPedidoById = async (pedidoId) => {
@@ -358,7 +556,7 @@ controller.getPedidoById = async (pedidoId) => {
              -- endereco nenhum.
              p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
              p.palavras_chave, p.operacao, p.prazo,
-             p.demandante, p.omds, p.previsto_pit,
+             p.demandante, p.omds, p.previsto_pit, p.meta_pit,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
              p.municipio, p.qtd_imagens,
              p.observacao, p.localizador_envio, p.observacao_envio,
@@ -503,9 +701,20 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
       schema: 'mapoteca',
       table: 'pedido',
       id: pedido.id,
-      fields: ['palavras_chave', 'previsto_pit'],
+      fields: ['palavras_chave', 'previsto_pit', 'meta_pit'],
       body: pedido
     });
+
+    // A condicional "PIT exige meta" mora no Joi só na CRIAÇÃO: na atualização
+    // o corpo pode omitir meta_pit de propósito, e quem resolve o valor final é
+    // o preserveOmitted acima. Por isso a regra se confere aqui, depois da
+    // mescla, e devolve 400 em vez de deixar o CHECK do banco virar 500.
+    if (pedido.previsto_pit && !pedido.meta_pit) {
+      throw new AppError(
+        'Pedido previsto no PIT exige o código da meta (meta_pit).',
+        httpCode.BadRequest
+      );
+    }
 
     pedido.usuario_atualizacao_id = usuarioId;
     pedido.data_atualizacao = new Date();
@@ -755,11 +964,7 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
         FROM mapoteca.impressao_item ii
         WHERE ii.produto_pedido_id = pp.id
       ) imp ON TRUE
-      LEFT JOIN acervo.arquivo a ON a.versao_id = v.id
-        AND LOWER(a.extensao) = 'pdf'
-        AND a.tipo_status_id = $<statusCarregado>
-        AND a.tipo_arquivo_id IN ($<tiposImprimiveis:csv>)
-      LEFT JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
+      ${JOIN_ARQUIVO_IMPRIMIVEL}
       WHERE pp.pedido_id = $<pedidoId>
       ORDER BY pp.id, a.id
       `,

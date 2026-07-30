@@ -28,17 +28,18 @@ export function openMaterialDialog({ material = null, onSaved = null } = {}) {
     label: 'Descrição',
     value: material?.descricao || '',
   });
+  // Inteiros: contam unidade de material, como o estoque e o consumo.
   const estoqueMinimoField = createNumberField({
     label: 'Estoque mínimo',
     min: 0,
-    step: 0.01,
+    step: 1,
     value: material?.estoque_minimo ?? undefined,
     helpText: 'Limiar do alerta "Abaixo do mínimo" (vazio = sem alerta)',
   });
   const metaAnualField = createNumberField({
     label: 'Meta anual',
     min: 0,
-    step: 0.01,
+    step: 1,
     value: material?.meta_anual ?? undefined,
     helpText: 'Consumo anual previsto',
   });

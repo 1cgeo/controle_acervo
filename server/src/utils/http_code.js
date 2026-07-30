@@ -14,6 +14,7 @@
  * @property {number} Forbidden - 403
  * @property {number} NotFound - 404
  * @property {number} Conflict - 409
+ * @property {number} RangeNotSatisfiable - 416
  * @property {number} InternalError - 500
  */
 const httpCode = {
@@ -25,6 +26,9 @@ const httpCode = {
   Forbidden: 403,
   NotFound: 404,
   Conflict: 409,
+  // Retomada de download que pede faixa de bytes fora do arquivo. Existe desde
+  // 2026-07-29, com o download de arquivo pelo navegador.
+  RangeNotSatisfiable: 416,
   InternalError: 500
 }
 

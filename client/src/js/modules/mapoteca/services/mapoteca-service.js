@@ -177,6 +177,49 @@ export function deleteProdutosPedido(ids) {
 // ---------------------------------------------------------------------------
 
 /** Prepare PDFs download for printing an order (creates download tokens). */
+/**
+ * A FILA de atendimento: pedidos em aberto (nem concluídos, nem cancelados).
+ *
+ * SEM ano, ao contrário de getPedidos: o pedido de dezembro ainda não atendido é
+ * trabalho em janeiro, e uma fila que esconde o atrasado não serve de fila.
+ * Sem cache: é a tela de quem está trabalhando, e o número tem de bater com o que
+ * a pessoa acabou de registrar.
+ */
+export function getPedidosEmAberto() {
+  return apiGet(`${BASE}/pedido/em_aberto`);
+}
+
+/**
+ * O que imprimir de um pedido: um item por linha, com a carta (uuid_arquivo) e o
+ * que falta imprimir.
+ *
+ * Leitura pura. Não confundir com prepararDownloadImpressao, que cria token de
+ * download e devolve caminho de volume para o plugin do QGIS.
+ * @param {number} pedidoId
+ */
+export function getImpressaoDoPedido(pedidoId) {
+  return apiGet(`${BASE}/pedido/${pedidoId}/impressao`);
+}
+
+/**
+ * Baixa a CARTA de um item do pedido, para imprimir.
+ *
+ * Vai pela rota da MAPOTECA, e nao pela do acervo, por causa da permissao: quem
+ * atende pedido tem operador na mapoteca e pode nao ter perfil nenhum no acervo.
+ * Pelo `/acervo/arquivo/:uuid/download` ele levaria 403 no meio da tela feita
+ * para ele. O servidor confere que o arquivo e a carta de um item DAQUELE pedido.
+ *
+ * @param {number} pedidoId
+ * @param {string} uuidArquivo
+ * @param {string} nomeArquivo - nome fisico, usado como nome do arquivo salvo
+ */
+export function baixarCartaDoPedido(pedidoId, uuidArquivo, nomeArquivo) {
+  return apiDownload(
+    `${BASE}/pedido/${pedidoId}/arquivo/${encodeURIComponent(uuidArquivo)}/download`,
+    nomeArquivo
+  );
+}
+
 export function prepararDownloadImpressao(pedidoId) {
   return apiPost(`${BASE}/pedido/${pedidoId}/download_impressao`);
 }

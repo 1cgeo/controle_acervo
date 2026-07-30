@@ -377,7 +377,11 @@ controller.getSystemHealth = async () => {
       SELECT
         (SELECT COUNT(*) FROM acervo.versao) AS total_versoes,
         (SELECT COUNT(*) FROM acervo.projeto) AS total_projetos,
-        (SELECT COUNT(*) FROM acervo.download WHERE data_download > NOW() - INTERVAL '24 hours') AS downloads_24h,
+        -- Janela de 30 DIAS, e não de 24 horas (chefe, 2026-07-30). Em 24 horas o
+        -- cartão passava a maior parte do tempo em zero: download de acervo aqui
+        -- é evento de dias, não de hora. O nome do campo acompanha a janela, para
+        -- a tela não poder mostrar "30 dias" sobre um número de 24 horas.
+        (SELECT COUNT(*) FROM acervo.download WHERE data_download > NOW() - INTERVAL '30 days') AS downloads_30d,
         (SELECT COUNT(*) FROM ponto_controle.ponto) AS total_pontos_controle,
         -- Carregamento do MÊS corrente, contado em VERSÕES: é a versão que
         -- carrega os arquivos, e é ela que o operador cadastra. Contar produtos
@@ -396,7 +400,7 @@ controller.getSystemHealth = async () => {
       sessoes_upload_ativas: parseInt(activeSessions.sessoes_ativas),
       total_versoes: parseInt(totals.total_versoes),
       total_projetos: parseInt(totals.total_projetos),
-      downloads_24h: parseInt(totals.downloads_24h),
+      downloads_30d: parseInt(totals.downloads_30d),
       total_pontos_controle: parseInt(totals.total_pontos_controle),
       versoes_carregadas_mes: parseInt(totals.versoes_carregadas_mes)
     }

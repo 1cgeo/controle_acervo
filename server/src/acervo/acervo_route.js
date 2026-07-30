@@ -3,7 +3,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, logger, enviarArquivo } = require('../utils')
 
 const { verifyAdmin, verifyPerfil } = require('../login')
 
@@ -72,6 +72,59 @@ router.get(
     const msg = 'Informações da versão retornadas com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Download de UM arquivo pelo navegador.
+//
+// É o caminho WEB, e conviver com o par prepare/confirm-download abaixo é
+// deliberado: aquele devolve o CAMINHO do volume para o plugin do QGIS copiar do
+// share, o que só funciona em máquina que monta o share. Aqui o servidor lê o
+// volume e faz stream, e o navegador nunca vê caminho de rede. Nenhum volume
+// precisa de servidor HTTP: volume é caminho de sistema de arquivos.
+//
+// Não há pasta temporária no caminho: um arquivo do acervo tem mediana de 6 a
+// 11 MB e máximo de 500 MB (medido na produção em 2026-07-29), então copiar para
+// servir dobraria I/O e criaria lixo para limpar. Pacote de VÁRIOS arquivos é
+// outro problema, e aí sim pede preparo assíncrono.
+router.get(
+  '/arquivo/:uuid_arquivo/download',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    params: acervoSchema.arquivoDownloadParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const arquivo = await acervoCtrl.getArquivoParaDownload(req.params.uuid_arquivo)
+
+    // A auditoria é escrita DEPOIS da entrega, e falhar nela não pode estragar um
+    // arquivo que já chegou: neste ponto a resposta acabou, e lançar aqui faria o
+    // Express tentar responder erro sobre uma resposta encerrada.
+    const registrar = async (desfecho) => {
+      try {
+        await acervoCtrl.registrarDownloadWeb(arquivo.arquivo_id, req.usuarioUuid, desfecho)
+      } catch (erroRegistro) {
+        logger.error('Falha ao registrar o download na auditoria', {
+          information: { arquivo: arquivo.nome, erro: erroRegistro.message }
+        })
+      }
+    }
+
+    try {
+      const { bytes, parcial } = await enviarArquivo.enviarArquivoDoVolume(req, res, arquivo)
+      await registrar({ sucesso: true })
+      logger.info('Download de arquivo do acervo', {
+        information: { arquivo: arquivo.nome, bytes, parcial }
+      })
+    } catch (erro) {
+      // Registra falha SÓ se a transferência começou de verdade (cabeçalho já
+      // enviado). Pedido recusado antes disso, como faixa de bytes inválida, não
+      // é download falhado: é requisição inválida, e virar linha na auditoria
+      // encheria a tabela de coisa que nunca saiu do servidor.
+      if (res.headersSent) {
+        await registrar({ sucesso: false, erro: erro.message })
+      }
+      throw erro
+    }
   })
 );
 

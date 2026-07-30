@@ -110,15 +110,43 @@ describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
     expect(podeAbrirRota('orcamento', '/dfd')).toBe(true);
   });
 
+  // Nivel MINIMO (`perfil`) e o modelo do acervo e do orcamento: gerente satisfaz
+  // operador, que satisfaz consulta.
   test('rota com nivel minimo respeita a hierarquia dentro do modulo', () => {
-    // O wizard de pedido e gerente porque POST /pedido e gerente: quem nao pode
-    // criar nao percorre as tres etapas para perder tudo no fim.
-    logar({ perfis: { mapoteca: 2 } });
-    expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(true);
+    logar({ perfis: { orcamento: 1 } });
+    expect(podeAbrirRota('orcamento', '/dfd')).toBe(true);
+
+    logar({ perfis: { orcamento: 3 } });
+    expect(podeAbrirRota('orcamento', '/dfd')).toBe(true);
+  });
+
+  // CONJUNTO de perfis (`perfis`) e o modelo da MAPOTECA desde 2026-07-30: la o
+  // operador nao e "consulta com mais poder", e um papel com duas telas proprias.
+  // Com nivel minimo ele veria dashboard, clientes e pedidos, que e o que o chefe
+  // recusou.
+  test('rota com CONJUNTO de perfis nao e hierarquica', () => {
+    logar({ perfis: { mapoteca: 2 } });  // operador
+    expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(true);
+    expect(podeAbrirRota('mapoteca', '/consumo')).toBe(true);
+    expect(podeAbrirRota('mapoteca', '/dashboard')).toBe(false);
+    expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(false);
 
-    logar({ perfis: { mapoteca: 3 } });
-    expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(true);
+    logar({ perfis: { mapoteca: 1 } });  // consulta
+    expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(true);
+    expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(false);
+    expect(podeAbrirRota('mapoteca', '/consumo')).toBe(false);
+
+    logar({ perfis: { mapoteca: 3 } });  // gerente: executa E gerencia
+    for (const rota of ['/dashboard', '/pedidos', '/pedidos/novo', '/atendimento', '/consumo']) {
+      expect(podeAbrirRota('mapoteca', rota)).toBe(true);
+    }
+  });
+
+  test('administrador global abre rota de conjunto sem ter linha de perfil', () => {
+    logar({ perfis: {}, administrador: true });
+    expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(true);
+    expect(podeAbrirRota('mapoteca', '/dashboard')).toBe(true);
   });
 
   test('perfil em OUTRO modulo nao abre a rota deste', () => {

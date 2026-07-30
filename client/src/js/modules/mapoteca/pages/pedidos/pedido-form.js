@@ -118,6 +118,13 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       label: 'Previsto no PIT',
       checked: Boolean(pedido && pedido.previsto_pit),
     }),
+    // O código sai do PIT do ano, não do material do item: a correlação
+    // 4.1 sulfite / 4.2 tyvek / 4.3 glossy valeu só em 2026.
+    meta_pit: createTextField({
+      label: 'Meta do PIT',
+      value: (pedido && pedido.meta_pit) || '',
+      placeholder: 'ex.: 4.1',
+    }),
     endereco_entrega: createTextareaField({
       label: 'Endereço de entrega',
       value: (pedido && pedido.endereco_entrega) || '',
@@ -201,6 +208,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     fields.operacao.element,
     fields.localizador_envio.element,
     fields.previsto_pit.element,
+    fields.meta_pit.element,
     fields.endereco_entrega.element,
     fields.palavras_chave.element,
     fields.observacao_envio.element,
@@ -258,9 +266,16 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
    */
   function validateAdicional() {
     fields.motivo_cancelamento.setError(null);
+    fields.meta_pit.setError(null);
     const situacao = fields.situacao_pedido_id.getValue();
     if (situacao === SITUACAO_PEDIDO_CANCELADO && !fields.motivo_cancelamento.getValue()) {
       fields.motivo_cancelamento.setError('Pedido Cancelado exige o motivo do cancelamento (RN03)');
+      return false;
+    }
+    // Mesma regra do Joi e do CHECK do banco: previsto no PIT exige a meta.
+    // Aqui ela existe só para o erro aparecer no campo, e não como 400 seco.
+    if (fields.previsto_pit.getValue() && !fields.meta_pit.getValue()) {
+      fields.meta_pit.setError('Pedido previsto no PIT exige o código da meta (ex.: 4.1)');
       return false;
     }
     return true;
@@ -286,6 +301,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       demandante: orNull(fields.demandante.getValue()),
       omds: orNull(fields.omds.getValue()),
       previsto_pit: fields.previsto_pit.getValue(),
+      meta_pit: orNull(fields.meta_pit.getValue()),
       observacao: orNull(fields.observacao.getValue()),
       localizador_envio: orNull(fields.localizador_envio.getValue()),
       observacao_envio: orNull(fields.observacao_envio.getValue()),

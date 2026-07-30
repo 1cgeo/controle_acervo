@@ -115,7 +115,7 @@ export async function renderOverviewTab(container) {
   const cardPontosControle = mkCard('Pontos de Controle', ICONS.place, 'success');
   const cardCarregamentoMes = mkCard('Carregamento no mês', ICONS.assignment, 'info');
   const cardVersoes = mkCard('Total de Versões', ICONS.layers, 'info');
-  const cardDownloads = mkCard('Downloads (24h)', ICONS.download, 'info');
+  const cardDownloads = mkCard('Downloads (30d)', ICONS.download, 'info');
 
   const cards = [
     cardProdutos, cardArmazenamento, cardPontosControle,
@@ -164,7 +164,7 @@ export async function renderOverviewTab(container) {
         value: formatNumber(dados?.versoes_carregadas_mes ?? 0), loading: false,
       });
       cardVersoes.update({ value: formatNumber(dados?.total_versoes ?? 0), loading: false });
-      cardDownloads.update({ value: formatNumber(dados?.downloads_24h ?? 0), loading: false });
+      cardDownloads.update({ value: formatNumber(dados?.downloads_30d ?? 0), loading: false });
 
       alertContainer.innerHTML = '';
       alertContainer.appendChild(createAlertPanel(dados));
