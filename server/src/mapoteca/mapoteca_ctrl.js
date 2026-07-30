@@ -3,6 +3,7 @@
 
 const path = require("path");
 
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
@@ -548,7 +549,7 @@ controller.getArquivoDeImpressao = async (pedidoId, uuidArquivo) => {
     : arquivo.nome_arquivo;
 
   return {
-    caminho: path.join(arquivo.volume, nome),
+    caminho: caminhoNoVolume(arquivo.volume, nome),
     nome,
     checksum: arquivo.checksum,
     tamanho_mb: arquivo.tamanho_mb

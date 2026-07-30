@@ -3,6 +3,7 @@
 
 const path = require('path')
 
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 
@@ -414,7 +415,7 @@ controller.getArquivoParaDownload = async (codPonto, tipoArquivoId) => {
 
   return {
     // O caminho é montado como o upload o montou: volume + cod_ponto + nome.
-    caminho: path.join(arquivo.volume, arquivo.cod_ponto, nome),
+    caminho: caminhoNoVolume(arquivo.volume, arquivo.cod_ponto, nome),
     nome,
     tamanho_mb: arquivo.tamanho_mb,
     checksum: arquivo.checksum,

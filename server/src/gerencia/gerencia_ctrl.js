@@ -2,6 +2,7 @@
 "use strict";
 const fs = require('fs').promises;
 const path = require('path');
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
@@ -238,7 +239,7 @@ controller.verificarConsistencia = async () => {
       
       // Usar Promise.all para processamento paralelo dentro do lote
       const resultados = await Promise.all(batch.map(async arquivo => {
-        const filePath = path.join(arquivo.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+        const filePath = caminhoNoVolume(arquivo.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
         
         try {
           // Verificar existência do arquivo antes de ler
@@ -269,7 +270,7 @@ controller.verificarConsistencia = async () => {
       const batch = arquivosDeletados.slice(i, i + BATCH_SIZE);
       
       const resultados = await Promise.all(batch.map(async arquivoDeletado => {
-        const deletedFilePath = path.join(arquivoDeletado.volume, `${arquivoDeletado.nome_arquivo}.${arquivoDeletado.extensao}`);
+        const deletedFilePath = caminhoNoVolume(arquivoDeletado.volume, `${arquivoDeletado.nome_arquivo}.${arquivoDeletado.extensao}`);
         
         try {
           // Verificar se o arquivo existe

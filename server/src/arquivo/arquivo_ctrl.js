@@ -3,6 +3,7 @@
 const fs = require('fs').promises;
 const fsClassic = require('fs');
 const path = require('path');
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -197,7 +198,7 @@ controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
   // Qualquer arquivo ausente aborta ANTES de gravar qualquer linha.
   const medidos = [];
   for (const a of arquivos) {
-    const filePath = path.join(a.volume, `${a.nome_arquivo}.${a.extensao}`);
+    const filePath = caminhoNoVolume(a.volume, `${a.nome_arquivo}.${a.extensao}`);
     try {
       await fs.access(filePath);
     } catch (error) {
@@ -494,7 +495,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
-            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+            : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
 
         // Impede colisão de nome físico no volume (sobrescrita silenciosa)
         await assertNomeFisicoLivre(
@@ -623,7 +624,7 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
         const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
         const destinationPath = isTileserver
           ? arquivo.nome_arquivo
-          : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+          : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
 
         // So impede que DOIS arquivos DESTE envio resolvam para o mesmo nome fisico.
         // (Nao checamos o acervo: substituir o slot existente e o objetivo.)
@@ -857,7 +858,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
-            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+            : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
 
           // Impede colisão de nome físico no volume (sobrescrita silenciosa)
           await assertNomeFisicoLivre(
@@ -1116,7 +1117,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
-            : path.join(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+            : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
 
             // Impede colisão de nome físico no volume (sobrescrita silenciosa)
             await assertNomeFisicoLivre(
@@ -2056,8 +2057,8 @@ controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUu
   }
 
   for (const d of lote) {
-    const atual = path.join(d.volume, `${d.nome_arquivo}.${d.extensao}`);
-    const alvo = path.join(d.volume, `${d.esperado}.${d.extensao}`);
+    const atual = caminhoNoVolume(d.volume, `${d.nome_arquivo}.${d.extensao}`);
+    const alvo = caminhoNoVolume(d.volume, `${d.esperado}.${d.extensao}`);
     let renomeou = false;
     try {
       const temAtual = await fs.access(atual).then(() => true).catch(() => false);

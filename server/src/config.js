@@ -56,6 +56,13 @@ const configSchema = Joi.object().keys({
   DB_USER_READONLY: Joi.string().allow('').default(''),
   DB_PASSWORD_READONLY: Joi.string().allow('').default(''),
   USE_PROXY: Joi.boolean().default(false),
+  // Onde os shares do acervo estao MONTADOS nesta maquina. So importa fora do
+  // Windows: acervo.volume_armazenamento.volume guarda caminho UNC do Windows,
+  // que no Linux nao existe em forma nenhuma. Com VOLUMES_RAIZ=/mnt, o share
+  // "acervo_sca" da UNC passa a ser lido em /mnt/acervo_sca. Para o share que
+  // fugir da convencao, VOLUME_<SHARE>_CAMINHO manda (utils/caminho_volume.js).
+  // Vazio no Windows; no Linux, sem isso TODO download responde 404.
+  VOLUMES_RAIZ: Joi.string().allow('').default(''),
   VERSION: Joi.string().required(),
   MIN_DATABASE_VERSION: Joi.string().required()
 })
@@ -73,6 +80,7 @@ const config = {
   JWT_EXPIRACAO: process.env.JWT_EXPIRACAO || '8h',
   AUTH_SERVER: process.env.AUTH_SERVER,
   USE_PROXY: process.env.USE_PROXY === 'true',
+  VOLUMES_RAIZ: process.env.VOLUMES_RAIZ || '',
   VERSION,
   MIN_DATABASE_VERSION
 }

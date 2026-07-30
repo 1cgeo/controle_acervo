@@ -2,6 +2,7 @@
 "use strict";
 const archiver = require('archiver');
 const path = require('path');
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
@@ -328,7 +329,7 @@ controller.getArquivoParaDownload = async (uuidArquivo) => {
 
   return {
     arquivo_id: Number(arquivo.id),
-    caminho: path.join(arquivo.volume, nome),
+    caminho: caminhoNoVolume(arquivo.volume, nome),
     nome,
     checksum: arquivo.checksum,
     tamanho_mb: arquivo.tamanho_mb

@@ -4,6 +4,7 @@
 const fs = require('fs').promises
 const fsClassic = require('fs')
 const path = require('path')
+const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto')
 
 const { db } = require('../database')
@@ -279,7 +280,7 @@ controller.prepararMissao = async (
         const nomeFisico = arquivo.extensao
           ? `${arquivo.nome_arquivo}.${arquivo.extensao}`
           : arquivo.nome_arquivo
-        const destino = path.join(volume.volume, codPonto, nomeFisico)
+        const destino = caminhoNoVolume(volume.volume, codPonto, nomeFisico)
 
         if (caminhosUsados.has(destino)) {
           throw new AppError(
@@ -602,7 +603,7 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
             const nomeFisico = antigo.extensao
               ? `${antigo.nome_arquivo}.${antigo.extensao}`
               : antigo.nome_arquivo
-            const caminho = path.join(volume, pontoTemp.cod_ponto, nomeFisico)
+            const caminho = caminhoNoVolume(volume, pontoTemp.cod_ponto, nomeFisico)
             // O arquivo que mantém o nome é sobrescrito pelo novo, e continua
             // válido. Só sobra órfão quando o nome mudou.
             if (!novosCaminhos.has(caminho)) relatorio.arquivos_orfaos.push(caminho)
