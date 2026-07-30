@@ -27,7 +27,7 @@ const { resolver } = require('./lib/config')
 const { RECURSOS, DOMINIOS, RELATORIOS, listarChaves } = require('./lib/recursos')
 
 // Subcomandos de `pedido` que sao verbo de intencao, e nao o CRUD generico.
-const VERBOS_PEDIDO = new Set(['cadastrar', 'itens', 'situacao', 'anexar', 'anexos'])
+const VERBOS_PEDIDO = new Set(['cadastrar', 'itens', 'situacao', 'corrigir', 'anexar', 'anexos'])
 
 const AJUDA = `mapoteca - CLI da Mapoteca do SCA (pedidos de cartas), para agentes
 
@@ -50,6 +50,13 @@ PEDIDO (verbos de intencao)
   mapoteca pedido situacao --id 42 --situacao 5 --data-atendimento 2026-07-24
       le o pedido, troca so o que muda e reenvia o corpo completo (o PUT da
       mapoteca SUBSTITUI a linha: mandar so um campo apaga o resto)
+  mapoteca pedido corrigir --id 29 documento_solicitacao="PIT 07" previsto_pit=true
+      mesma leitura-altera-reenvia do situacao, para QUALQUER campo. Os pares
+      campo=valor vao posicionais (flag repetida sobrescreveria a anterior).
+      Aceita null, true e false literais. --dry-run mostra o diff campo a campo.
+  mapoteca item mover --de 43 --para 56 [--ids 449,462]
+      troca o pedido_id do item, sem apagar e recriar: preserva quantidade
+      fornecida, data de entrega e observacao. Sem --ids, move todos.
   mapoteca pedido anexar   --id 42 --file DIEx_123_6RCB.pdf [--tipo-anexo 1]
   mapoteca pedido anexos   --id 42
   mapoteca imprimir --item 88 --qtd 5       registra a impressao de um item
@@ -115,6 +122,9 @@ const ROTEADOR = {
  */
 function escolherModulo (comando, sub) {
   if (comando === 'pedido' && VERBOS_PEDIDO.has(sub)) return './comandos/pedido'
+  // `item mover` mexe em item, mas so faz sentido entre dois PEDIDOS, e por
+  // isso mora no modulo do pedido, junto do resto que remonta corpo completo.
+  if (comando === 'item' && sub === 'mover') return './comandos/pedido'
   if (comando === 'cliente' && sub === 'resolver') return './comandos/resolver'
   if (ROTEADOR[comando]) return ROTEADOR[comando]
   if (RECURSOS[comando]) return './comandos/crud'

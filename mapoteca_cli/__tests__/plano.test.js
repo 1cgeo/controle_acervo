@@ -289,4 +289,21 @@ test('o roteador manda o verbo de intencao para o modulo certo', () => {
   assert.strictEqual(escolherModulo('cliente', 'listar'), './comandos/crud')
   assert.strictEqual(escolherModulo('imprimir', undefined), './comandos/pedido')
   assert.strictEqual(escolherModulo('inexistente', undefined), null)
+  // corrigir e mover remontam o corpo completo antes do PUT, entao moram no
+  // modulo do pedido. Cair no CRUD generico faria o PUT apagar a linha.
+  assert.strictEqual(escolherModulo('pedido', 'corrigir'), './comandos/pedido')
+  assert.strictEqual(escolherModulo('item', 'mover'), './comandos/pedido')
+  assert.strictEqual(escolherModulo('item', 'listar'), './comandos/crud')
+})
+
+test('corrigir converte null, true e false literais; o resto fica string', () => {
+  // Numero NAO se adivinha de proposito: o unico campo numerico editavel e
+  // cliente_id, e converter calado gravaria o pedido na OM errada.
+  const { valorDoSet } = require('../comandos/pedido')
+  assert.strictEqual(valorDoSet('null'), null)
+  assert.strictEqual(valorDoSet('true'), true)
+  assert.strictEqual(valorDoSet('false'), false)
+  assert.strictEqual(valorDoSet('4.1'), '4.1')
+  assert.strictEqual(valorDoSet('PIT 07'), 'PIT 07')
+  assert.strictEqual(valorDoSet(''), '')
 })

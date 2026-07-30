@@ -570,8 +570,280 @@ async function cadastrar (args, cfg) {
 }
 
 // ---------------------------------------------------------------------------
+// corrigir (leitura, alteracao de campos avulsos, reenvio do corpo completo)
+// ---------------------------------------------------------------------------
 
-const VERBOS = { cadastrar, itens, situacao, anexar, anexos, imprimir }
+/**
+ * Converte 'campo=valor' da linha de comando para o tipo que o Joi espera.
+ *
+ * So tres conversoes, e todas explicitas: 'null' vira null, 'true'/'false'
+ * viram booleano, e o resto fica string. Numero NAO se adivinha: o unico campo
+ * numerico editavel aqui e cliente_id, e passar '65' como string faria o Joi
+ * reclamar em vez de gravar o pedido na OM errada calado.
+ */
+function valorDoSet (bruto) {
+  if (bruto === 'null') return null
+  if (bruto === 'true') return true
+  if (bruto === 'false') return false
+  return bruto
+}
+
+async function corrigir (args, cfg) {
+  const flags = args.flags
+  const id = Number(argsLib.exigir(flags, 'id', 'id do pedido'))
+  // Os pares campo=valor vao POSICIONAIS, depois do verbo: uma flag repetida
+  // sobrescreveria a anterior e a correcao sairia pela metade, sem aviso.
+  const pares = args._.slice(2)
+  if (pares.length === 0) {
+    throw new Error(
+      'Falta o que corrigir. Use pares campo=valor depois do verbo, por exemplo:\n' +
+      '  mapoteca pedido corrigir --id 29 documento_solicitacao="PIT 07" previsto_pit=true meta_pit=4.1'
+    )
+  }
+
+  const m = models()
+  const chaves = esquema.camposDe(m.pedidoAtualizacao).map(c => c.nome)
+  const camposData = new Set(esquema.camposDataDe(m.pedidoAtualizacao))
+
+  const mudancas = {}
+  for (const par of pares) {
+    const igual = par.indexOf('=')
+    if (igual === -1) {
+      throw new Error(`"${par}" nao e um par campo=valor.`)
+    }
+    const campo = par.slice(0, igual)
+    if (!chaves.includes(campo)) {
+      throw new Error(
+        `O pedido nao tem o campo "${campo}". Campos: ${chaves.join(', ')}.\n` +
+        'Contrato completo: mapoteca schema pedido'
+      )
+    }
+    mudancas[campo] = valorDoSet(par.slice(igual + 1))
+  }
+  if ('id' in mudancas) throw new Error('O id nao se corrige: ele identifica a linha.')
+
+  const r = await http.autenticada(cfg, 'GET', `${CAMINHO}/${id}`)
+  const atual = r.dados || {}
+  if (!atual.id) throw new Error(`Pedido ${id} nao encontrado.`)
+
+  // O PUT da mapoteca SUBSTITUI a linha. Reenviar so o campo que muda apaga o
+  // cliente, o prazo e o documento, calado. Por isso o corpo se remonta inteiro
+  // a partir da leitura, com as chaves que o schema conhece (a leitura traz
+  // dezenas de campos de JOIN que o stripUnknown descartaria).
+  const corpo = {}
+  for (const chave of chaves) {
+    if (!(chave in atual)) continue
+    corpo[chave] = camposData.has(chave) ? esquema.soData(atual[chave]) : atual[chave]
+  }
+  corpo.id = id
+  const antes = {}
+  for (const [campo, valor] of Object.entries(mudancas)) {
+    antes[campo] = corpo[campo] === undefined ? null : corpo[campo]
+    corpo[campo] = camposData.has(campo) ? esquema.soData(valor) : valor
+  }
+
+  const v = esquema.validarCorpo(m.pedidoAtualizacao, corpo)
+  if (!v.ok) {
+    const erro = new Error(esquema.explicarErro(
+      m.pedidoAtualizacao, v.erros,
+      'A correcao deixou o pedido invalido. Contrato: mapoteca schema pedido'
+    ))
+    erro.jaFormatado = true
+    throw erro
+  }
+
+  const diff = Object.keys(mudancas).map(campo =>
+    `  ${campo}: ${JSON.stringify(antes[campo])} -> ${JSON.stringify(corpo[campo])}`
+  )
+  const inertes = Object.keys(mudancas).filter(c =>
+    JSON.stringify(antes[c]) === JSON.stringify(corpo[c])
+  )
+
+  if (flags['dry-run']) {
+    return {
+      texto: [
+        `[dry-run] nada foi GRAVADO. O pedido ${id} mudaria assim:`,
+        ...diff,
+        '',
+        `  PUT /api${CAMINHO}  (corpo completo, ${Object.keys(v.valor).length} campos)`
+      ].join('\n'),
+      avisos: [
+        'Este dry-run fez um GET do pedido (leitura) para montar o corpo completo. ' +
+        'Nenhuma escrita ocorreu.',
+        ...(inertes.length ? [`Sem efeito (ja estava assim): ${inertes.join(', ')}.`] : [])
+      ]
+    }
+  }
+
+  const resp = await http.autenticada(cfg, 'PUT', CAMINHO, { corpo: v.valor })
+
+  // Le de volta: a resposta do servidor e eco dela mesma, nunca prova.
+  await http.pausa()
+  const conferencia = await http.autenticada(cfg, 'GET', `${CAMINHO}/${id}`)
+  const depois = conferencia.dados || {}
+
+  const avisos = []
+  const naoConferidos = []
+  for (const [campo, esperado] of Object.entries(mudancas)) {
+    if (!(campo in depois)) {
+      // O campo existe no schema mas a rota de leitura nao o devolve: nao da
+      // para provar a gravacao por aqui, e dizer isso e melhor que calar.
+      naoConferidos.push(campo)
+      continue
+    }
+    const lido = camposData.has(campo) ? esquema.soData(depois[campo]) : depois[campo]
+    if (JSON.stringify(lido) !== JSON.stringify(corpo[campo])) {
+      avisos.push(
+        `CONFERENCIA FALHOU em "${campo}": reli o pedido ${id} e o valor e ` +
+        `${JSON.stringify(lido)}, nao ${JSON.stringify(corpo[campo])}. Nao presuma que gravou.`
+      )
+    }
+  }
+  if (naoConferidos.length) {
+    avisos.push(
+      `Nao consegui conferir ${naoConferidos.join(', ')}: a rota de leitura do pedido ` +
+      'nao devolve esse(s) campo(s) nesta versao do servidor. Confira por outro caminho ' +
+      'antes de dar por gravado.'
+    )
+  }
+
+  return {
+    texto: [`${resp.message || 'ok'}`, `pedido ${id} corrigido (conferido lendo de volta):`, ...diff].join('\n'),
+    avisos
+  }
+}
+
+// ---------------------------------------------------------------------------
+// mover (item de um pedido para outro, sem apagar e recriar)
+// ---------------------------------------------------------------------------
+
+/**
+ * Move itens de um pedido para outro trocando `pedido_id`.
+ *
+ * Existe porque a carga historica prendeu os itens de um documento no pedido de
+ * OUTRO documento, e o conserto obvio (apagar la e cadastrar aqui) perderia
+ * quantidade_fornecida, data_entrega e observacao, alem de ser irreversivel. O
+ * PUT do produto_pedido aceita pedido_id, entao mover e uma ATUALIZACAO.
+ */
+async function mover (args, cfg) {
+  const flags = args.flags
+  const de = Number(argsLib.exigir(flags, 'de', 'id do pedido de origem'))
+  const para = Number(argsLib.exigir(flags, 'para', 'id do pedido de destino'))
+  if (de === para) throw new Error('Origem e destino sao o mesmo pedido.')
+
+  const m = models()
+  const origem = (await http.autenticada(cfg, 'GET', `${CAMINHO}/${de}`)).dados || {}
+  if (!origem.id) throw new Error(`Pedido de origem ${de} nao encontrado.`)
+  const destino = (await http.autenticada(cfg, 'GET', `${CAMINHO}/${para}`)).dados || {}
+  if (!destino.id) throw new Error(`Pedido de destino ${para} nao encontrado.`)
+
+  const todos = Array.isArray(origem.produtos) ? origem.produtos : []
+  // lista() devolve null quando a flag falta; aqui "sem --ids" significa todos.
+  const filtro = argsLib.lista(flags.ids) || []
+  const alvo = filtro.length
+    ? todos.filter(i => filtro.includes(String(i.id)))
+    : todos
+  if (!alvo.length) {
+    throw new Error(
+      filtro.length
+        ? `Nenhum dos ids ${filtro.join(', ')} esta no pedido ${de}.`
+        : `O pedido ${de} nao tem itens para mover.`
+    )
+  }
+  if (filtro.length && alvo.length !== filtro.length) {
+    const achados = new Set(alvo.map(i => String(i.id)))
+    throw new Error(
+      `Estes ids nao estao no pedido ${de}: ${filtro.filter(x => !achados.has(x)).join(', ')}. ` +
+      'Nada foi movido.'
+    )
+  }
+
+  const chaves = esquema.camposDe(m.produtoPedidoAtualizacao).map(c => c.nome)
+  const camposData = new Set(esquema.camposDataDe(m.produtoPedidoAtualizacao))
+  const corpos = []
+  for (const item of alvo) {
+    // Mesmo cuidado do pedido: o PUT substitui a linha inteira, entao o corpo
+    // se remonta a partir da leitura e so pedido_id muda.
+    const corpo = {}
+    for (const chave of chaves) {
+      if (!(chave in item)) continue
+      corpo[chave] = camposData.has(chave) ? esquema.soData(item[chave]) : item[chave]
+    }
+    corpo.id = item.id
+    corpo.pedido_id = para
+    const v = esquema.validarCorpo(m.produtoPedidoAtualizacao, corpo)
+    if (!v.ok) {
+      const erro = new Error(esquema.explicarErro(
+        m.produtoPedidoAtualizacao, v.erros,
+        `O item ${item.id} (${item.mi || item.produto_nome}) nao passa no contrato. Nada foi movido.`
+      ))
+      erro.jaFormatado = true
+      throw erro
+    }
+    corpos.push({ item, corpo: v.valor })
+  }
+
+  const linhas = corpos.map(({ item }) =>
+    `  item ${item.id}  ${item.mi || item.produto_nome || '-'}  ${item.escala || ''}  ` +
+    `q=${item.quantidade}  forn=${item.quantidade_fornecida === null ? '-' : item.quantidade_fornecida}`
+  )
+  const cabecalho =
+    `${alvo.length} item(ns) de #${de} "${origem.documento_solicitacao || '-'}" ` +
+    `-> #${para} "${destino.documento_solicitacao || '-'}"`
+
+  if (flags['dry-run']) {
+    return {
+      texto: [`[dry-run] nada foi GRAVADO. ${cabecalho}`, ...linhas].join('\n'),
+      avisos: [
+        'Este dry-run leu os dois pedidos para montar os corpos completos. Nenhuma escrita ocorreu.',
+        'As rotas nao tem transacao entre si: se a execucao parar no meio, parte dos itens ' +
+        'fica no destino. Rodar de novo com os ids que sobraram completa o movimento.'
+      ]
+    }
+  }
+
+  let gravados = 0
+  const avisos = []
+  for (const { item, corpo } of corpos) {
+    try {
+      await http.autenticada(cfg, 'PUT', '/mapoteca/produto_pedido', { corpo })
+      gravados++
+    } catch (e) {
+      avisos.push(
+        `PAROU no item ${item.id}: ${e.message}. ${gravados} item(ns) ja foram movidos; ` +
+        'os demais seguem na origem. Rode de novo com --ids dos que faltam.'
+      )
+      break
+    }
+    await http.pausa()
+  }
+
+  // Conferencia independente: reler os DOIS pedidos e contar.
+  const origemDepois = (await http.autenticada(cfg, 'GET', `${CAMINHO}/${de}`)).dados || {}
+  const destinoDepois = (await http.autenticada(cfg, 'GET', `${CAMINHO}/${para}`)).dados || {}
+  const nOrigem = (origemDepois.produtos || []).length
+  const nDestino = (destinoDepois.produtos || []).length
+  const esperadoOrigem = todos.length - gravados
+  if (nOrigem !== esperadoOrigem) {
+    avisos.push(
+      `CONFERENCIA: o pedido ${de} ficou com ${nOrigem} itens, e eu esperava ${esperadoOrigem}.`
+    )
+  }
+
+  return {
+    texto: [
+      `${gravados} de ${alvo.length} item(ns) movidos (conferido lendo os dois pedidos).`,
+      cabecalho,
+      `  #${de} agora tem ${nOrigem} itens`,
+      `  #${para} agora tem ${nDestino} itens`
+    ].join('\n'),
+    avisos
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+const VERBOS = { cadastrar, itens, situacao, corrigir, mover, anexar, anexos, imprimir }
 
 async function executar (args, cfg) {
   // `mapoteca imprimir` e verbo de topo; os demais sao subcomandos de pedido.
@@ -586,4 +858,4 @@ async function executar (args, cfg) {
   return fn(args, cfg)
 }
 
-module.exports = { executar, precisaServidor: true, VERBOS, resumoDoPlano }
+module.exports = { executar, precisaServidor: true, VERBOS, resumoDoPlano, valorDoSet }
