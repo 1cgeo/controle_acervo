@@ -32,6 +32,12 @@
 -- e os quatro contadores (numero_fotos, possui_croqui, possui_monografia,
 -- possui_arquivo_rastreio) são COUNT(*) sobre ponto_controle.arquivo.
 --
+-- Em 2026-07-30 as oito endereco_* SAÍRAM do plugin, junto com os dois
+-- algoritmos que as usavam. Sobram quatro colunas de fora, as de contagem. Este
+-- schema não muda por isso: ele nunca as teve, e o controller compara o
+-- manifesto com as COLUNAS VIVAS da tabela, descartando e RELATANDO o que ela
+-- não tem. É esse mecanismo, e não uma lista aqui, que avisa se elas voltarem.
+--
 -- DEPOIS desta migração, reaplique er/permissao.sql: sem os GRANTs do schema
 -- novo, o serviço conecta e não enxerga as tabelas.
 --
