@@ -112,13 +112,39 @@ test('plano completo passa, e os defaults do Joi sao aplicados', () => {
   assert.strictEqual(r.itens[0].corpo.uuid_versao, UUID_A)
 })
 
-test('item sem uuid_versao e recusado, com o comando do conserto junto', () => {
+test('item SEM DESTINO e recusado, com o comando do conserto junto', () => {
   const plano = planoBase()
   delete plano.itens[0].uuid_versao
 
   const r = planoLib.validar(plano, models)
   assert.strictEqual(r.ok, false)
   assert.ok(r.erros.some(e => e.includes('mapoteca resolver 2962-4-NE')))
+})
+
+test('item AVULSO passa sem uuid_versao: o destino dele e o nome_avulso', () => {
+  // O plano recusava todo item sem uuid_versao, e por isso um pedido que so
+  // tem impresso avulso (o DIEx 1433 do CA-Sul, 40 rosas em A1) nao entrava
+  // pelo cadastrar. O destino e um dos dois, nunca a ausencia dos dois.
+  const plano = planoBase()
+  plano.itens = [{
+    nome_avulso: 'Rosa do EASV MINUANO',
+    descricao_avulso: 'Impressao em A1, a partir do JPG anexo ao DIEx.',
+    quantidade: 40,
+    tipo_midia_id: 6
+  }]
+
+  const r = planoLib.validar(plano, models)
+  assert.strictEqual(r.ok, true, JSON.stringify(r.erros))
+  assert.strictEqual(r.itens[0].corpo.nome_avulso, 'Rosa do EASV MINUANO')
+  assert.strictEqual(r.itens[0].corpo.uuid_versao, undefined)
+})
+
+test('item com os DOIS destinos e recusado pelo xor do schema', () => {
+  const plano = planoBase()
+  plano.itens[0].nome_avulso = 'Nao pode junto'
+
+  const r = planoLib.validar(plano, models)
+  assert.strictEqual(r.ok, false)
 })
 
 test('mi e nome sao chaves LOCAIS: nao viram corpo nem aviso de descarte', () => {

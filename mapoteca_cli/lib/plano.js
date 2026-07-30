@@ -208,12 +208,17 @@ function validar (plano, models) {
   const itens = []
   for (const [i, bruto] of fundidos.itens.entries()) {
     const { corpo, local } = partirItem(bruto)
-    const rotulo = local.mi || corpo.uuid_versao || `item ${i + 1}`
+    const rotulo = local.mi || corpo.nome_avulso || corpo.uuid_versao || `item ${i + 1}`
 
-    if (!corpo.uuid_versao) {
+    // Um destino, e exatamente um: acervo (uuid_versao) OU avulso (nome_avulso).
+    // O .xor() do Joi ja recusa os dois juntos; o que se cobre aqui e o item SEM
+    // destino nenhum, para a mensagem dizer o que fazer em vez de sair um 400
+    // generico depois do round-trip.
+    if (!corpo.uuid_versao && !corpo.nome_avulso) {
       erros.push(
-        `${rotulo}: sem uuid_versao. Todo item precisa apontar uma versao do acervo. ` +
-        `Resolva antes: mapoteca resolver ${local.mi || '<MI>'}`
+        `${rotulo}: sem destino. O item aponta uma versao do acervo (uuid_versao) ou ` +
+        `descreve um impresso avulso (nome_avulso). ` +
+        `Para o acervo, resolva antes: mapoteca resolver ${local.mi || '<MI>'}`
       )
     }
     if (corpo.pedido_id === undefined || corpo.pedido_id === null) {
