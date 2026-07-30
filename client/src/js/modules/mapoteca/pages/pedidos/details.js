@@ -136,6 +136,13 @@ export async function renderPedidoDetails(container, { params }) {
         type: 'button',
         onClick: () => { location.hash = '/mapoteca/pedidos'; },
       }, [svgIcon(ICONS.arrowBack, 16), 'Voltar para pedidos']));
+
+      // O pedido some, o histórico NÃO. Registrar quem removeu é metade do que o
+      // chefe pediu (item 8, 2026-07-30), e sem isto essa metade ficava gravada
+      // e inalcançável: `pedido_auditoria` não tem chave estrangeira justamente
+      // para sobreviver à exclusão, e a rota do histórico não exige que o pedido
+      // exista. Quem chega aqui por link antigo vê quem apagou e quando.
+      renderHistoricoSection();
       return;
     }
     if (disposed) return;
@@ -602,6 +609,7 @@ export async function renderPedidoDetails(container, { params }) {
     pedido: 'Pedido',
     produto_pedido: 'Item',
     impressao_item: 'Impressão',
+    etiqueta_envio: 'Etiqueta de envio',
   };
 
   // I, U e D sao as letras que o banco grava. O verbo no passado diz o que a
@@ -690,7 +698,7 @@ export async function renderPedidoDetails(container, { params }) {
         el('div', { className: 'dashboard-section__controls' }, [
           el('span', {
             className: 'detail-card__label',
-            textContent: 'Quem alterou o pedido, os itens e as impressões',
+            textContent: 'Quem alterou o pedido, os itens, as impressões e a etiqueta',
           }),
         ]),
       ]),

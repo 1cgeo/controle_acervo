@@ -229,6 +229,47 @@ describe('detalhe do pedido: historico do pedido', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
+  // O que o chefe pediu no item 6 foi o historico de quem alterou a ETIQUETA, e
+  // ele sai desta mesma tabela. Sem o nome legivel, a linha mostrava
+  // 'etiqueta_envio' cru, que e nome de coluna do banco.
+  test('a etiqueta de envio aparece com nome legivel', async () => {
+    svc.getAuditoriaPedido.mockResolvedValue([
+      {
+        id: 9, pedido_id: 55, tabela: 'etiqueta_envio', registro_id: 4, operacao: 'U',
+        campos_alterados: ['endereco'], data_evento: '2026-07-30T12:00:00Z',
+        usuario_nome: 'Cap Fulano',
+      },
+    ]);
+    const { container, cleanup } = await montar();
+
+    expect(container.textContent).toContain('Etiqueta de envio#4');
+    expect(container.textContent).not.toContain('etiqueta_envio');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A outra metade do item 8: quem REMOVEU o pedido. A linha sobrevive (a
+  // auditoria nao tem chave estrangeira para o pedido, de proposito), mas antes
+  // ela ficava inalcancavel, porque a tela parava no "Pedido nao encontrado".
+  test('pedido apagado ainda mostra quem o removeu', async () => {
+    svc.getPedido.mockRejectedValueOnce(new Error('Pedido não encontrado'));
+    svc.getAuditoriaPedido.mockResolvedValue([
+      {
+        id: 10, pedido_id: 55, tabela: 'pedido', registro_id: 55, operacao: 'D',
+        campos_alterados: ['id', 'cliente_id'], data_evento: '2026-07-30T13:00:00Z',
+        usuario_nome: 'Cap Fulano',
+      },
+    ]);
+    const { container, cleanup } = await montar();
+
+    expect(container.textContent).toContain('Pedido não encontrado');
+    expect(container.textContent).toContain('Histórico do pedido');
+    expect(container.textContent).toContain('Removeu');
+    expect(container.textContent).toContain('Cap Fulano');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
   test('erro no historico nao derruba o resto do detalhe', async () => {
     svc.getAuditoriaPedido.mockRejectedValueOnce(new Error('Falha ao ler a auditoria'));
     const { container, cleanup } = await montar();
