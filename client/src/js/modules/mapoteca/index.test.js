@@ -83,6 +83,43 @@ describe('manifesto do modulo mapoteca', () => {
     expect(JSON.stringify(mapoteca.menu)).not.toContain('/usuarios');
   });
 
+  // Ordem e agrupamento sao decisao do chefe (2026-07-30), nao acidente de
+  // edicao: Dashboard abre, Atender pedidos vem logo depois, e Consumo mora
+  // dentro de Materiais. Sem este teste, um item novo inserido no meio da lista
+  // desfaz a ordem sem ninguem notar.
+  test('a ordem do menu comeca por Dashboard e Atender pedidos', () => {
+    const topo = mapoteca.menu.map(i => i.id);
+    expect(topo.slice(0, 2)).toEqual(['dashboard', 'atendimento']);
+    expect(topo).not.toContain('consumo');
+  });
+
+  test('Consumo de material mora dentro de Materiais, com catalogo e estoque', () => {
+    const grupo = mapoteca.menu.find(i => i.id === 'materiais-group');
+    expect(grupo.children.map(c => c.id)).toEqual(['materiais', 'estoque', 'consumo']);
+  });
+
+  // O OPERADOR e quem usa Consumo todo dia, e ele nao tem leitura no modulo.
+  // Dos tres filhos de Materiais so Consumo sobra para ele; o sidebar esconde
+  // grupo sem filho visivel, entao o que precisa valer e: sobra exatamente um, e
+  // e o Consumo. Se alguem der leitura ao operador, ou tirar o operador do
+  // consumo, este teste cai antes de o menu dele ficar vazio.
+  test('para o operador, o grupo Materiais mostra so o Consumo', () => {
+    const grupo = mapoteca.menu.find(i => i.id === 'materiais-group');
+    const rotaDe = (path) => mapoteca.rotas.find(r => r.path === path);
+    const visiveisParaOperador = grupo.children
+      .filter(c => (rotaDe(c.path).perfis || []).includes('operador'))
+      .map(c => c.id);
+    expect(visiveisParaOperador).toEqual(['consumo']);
+
+    // E o operador continua com as duas telas de sempre, uma no topo e outra
+    // dentro do grupo.
+    const doOperador = mapoteca.rotas
+      .filter(r => (r.perfis || []).includes('operador'))
+      .map(r => r.path)
+      .sort();
+    expect(doOperador).toEqual(['/atendimento', '/consumo']);
+  });
+
   test('todo item de menu aponta para uma rota registrada', () => {
     const caminhos = new Set(mapoteca.rotas.map(r => r.path));
     const itens = mapoteca.menu.flatMap(i => (i.children ? i.children : [i]));

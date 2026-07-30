@@ -61,10 +61,20 @@ export default {
   // Nenhum item repete a restricao: o sidebar pergunta ao registry, que le
   // `perfis`/`perfil` da ROTA (podeAbrirRota). Repetir a mao foi o que fez o item
   // Configuracao do orcamento aparecer para todo mundo e cair no 403.
+  // Ordem e agrupamento decididos pelo chefe em 2026-07-30: Dashboard abre o
+  // modulo, Atender pedidos vem logo depois, e Consumo de material passa a
+  // morar dentro de Materiais, junto do catalogo e do estoque.
+  //
+  // O QUE ISSO FAZ COM O OPERADOR, que e quem usa Consumo todo dia: ele nao tem
+  // leitura no modulo, entao dos tres filhos de Materiais so Consumo aparece
+  // para ele (o sidebar filtra filho a filho por podeAbrirRota, e esconde o
+  // grupo inteiro quando nenhum sobra). Ele passa a ver "Materiais" com um item
+  // dentro, em vez do item solto no topo. O grupo ABRE SOZINHO quando a rota
+  // ativa e de um filho, entao estando em /consumo ele ja encontra o menu
+  // aberto e marcado. Para gerente e administrador os tres filhos aparecem.
   menu: [
-    { id: 'atendimento', label: 'Atender pedidos', icon: ICONS.localShipping, path: '/atendimento' },
-    { id: 'consumo', label: 'Consumo de material', icon: ICONS.dataUsage, path: '/consumo' },
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
+    { id: 'atendimento', label: 'Atender pedidos', icon: ICONS.localShipping, path: '/atendimento' },
     { id: 'clientes', label: 'Clientes', icon: ICONS.people, path: '/clientes' },
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
     { id: 'avulsos', label: 'Produtos avulsos', icon: ICONS.description, path: '/avulsos' },
@@ -75,6 +85,7 @@ export default {
       children: [
         { id: 'materiais', label: 'Tipos de Material', icon: ICONS.category, path: '/materiais' },
         { id: 'estoque', label: 'Estoque', icon: ICONS.storage, path: '/estoque' },
+        { id: 'consumo', label: 'Consumo de material', icon: ICONS.dataUsage, path: '/consumo' },
       ],
     },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
