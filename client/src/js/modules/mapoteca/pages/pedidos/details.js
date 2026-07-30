@@ -15,17 +15,25 @@ import {
   getClientes,
   getDominioSituacaoPedido,
   getDominioCanalRecebimento,
+  getDominioFormaEntrega,
   getAnexosPedido,
   uploadAnexoPedido,
   downloadAnexoPedido,
   deleteAnexoPedido,
+  getAuditoriaPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatDateTime, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
-import { createPedidoFormFields } from './pedido-form.js';
+import {
+  createPedidoFormFields,
+  aplicarModoPedido,
+  modoDoTipoCliente,
+  ROTULO_MODO,
+} from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 import { openEtiquetaEnvioDialog } from './etiqueta-envio.js';
+import { openRegistrarImpressaoDialog } from './dialog-impressao.js';
 
 // Acima deste tamanho, o valor nao cabe na mesma linha do rotulo dentro de um
 // card de meia largura, e passa a ser empilhado.
@@ -91,12 +99,13 @@ export async function renderPedidoDetails(container, { params }) {
   let disposed = false;
   const cleanups = [];
 
-  // Toda escrita DESTA tela e gerente no servidor: editar e excluir o pedido,
-  // os itens, os anexos e o registro de impressao. Baixar anexo e ver o
-  // historico sao consulta, entao continuam para todo mundo.
+  // Quase toda escrita DESTA tela e gerente no servidor: editar e excluir o
+  // pedido, os itens, os anexos e o EXCLUIR de um registro de impressao. Baixar
+  // anexo, ver o historico de impressao e ver o historico do pedido sao
+  // consulta, entao continuam para todo mundo.
   //
-  // O que e operador na mapoteca (registrar impressao, transferir estoque,
-  // lancar consumo) mora nas telas de estoque e consumo, nao aqui.
+  // A excecao e REGISTRAR impressao, que POST /mapoteca/impressao trata como
+  // operador: quem imprime lanca o que saiu do plotter, e nao desfaz nada.
   const pode = permissoes('mapoteca');
 
   const root = el('div', { className: 'page' });
@@ -139,19 +148,35 @@ export async function renderPedidoDetails(container, { params }) {
   // Edit / delete pedido
   // ---------------------------------------------------------------------------
   async function editarPedido(pedido) {
-    let clientes, situacoes, canais;
+    let clientes, situacoes, canais, formasEntrega;
     try {
-      [clientes, situacoes, canais] = await Promise.all([
+      [clientes, situacoes, canais, formasEntrega] = await Promise.all([
         getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
+        getDominioFormaEntrega(),
       ]);
     } catch (err) {
       showError(err.message || 'Erro ao carregar os dados do formulário');
       return;
     }
 
-    const form = createPedidoFormFields({ pedido, clientes, situacoes, canais });
+    const form = createPedidoFormFields({ pedido, clientes, situacoes, canais, formasEntrega });
+
+    const civilSection = el('div', {}, [
+      el('div', {
+        className: 'detail-card__title',
+        style: { marginTop: 'var(--space-md)' },
+        textContent: 'Pedido de civil',
+      }),
+      form.civilElement,
+    ]);
+
+    // O modal do openModal aceita só texto no título, entao o chip do modo fica
+    // na primeira linha do corpo. Sem ele, os 24 campos de uma vez nao diziam se
+    // o pedido era civil ou militar.
+    const chipModo = el('div', { style: { marginBottom: 'var(--space-md)' } });
 
     const content = el('div', {}, [
+      chipModo,
       el('div', { className: 'detail-card__title', textContent: 'Dados básicos' }),
       form.basicoElement,
       el('div', {
@@ -160,13 +185,23 @@ export async function renderPedidoDetails(container, { params }) {
         textContent: 'Dados adicionais',
       }),
       form.adicionalElement,
-      el('div', {
-        className: 'detail-card__title',
-        style: { marginTop: 'var(--space-md)' },
-        textContent: 'Pedido de civil (opcional)',
-      }),
-      form.civilElement,
+      civilSection,
     ]);
+
+    // O modo sai do tipo do cliente SELECIONADO, não do que o pedido tinha ao
+    // abrir: trocar o cliente pode virar um pedido militar em civil.
+    function aplicarModo() {
+      const clienteId = form.fields.cliente_id.getValue();
+      const cliente = clientes.find(c => c.id === clienteId);
+      const tipo = cliente ? cliente.tipo_cliente_id : pedido.tipo_cliente_id;
+      const modo = modoDoTipoCliente(tipo);
+      clearChildren(chipModo);
+      chipModo.appendChild(chip(ROTULO_MODO[modo], modo === 'militar' ? 'info' : 'secondary'));
+      aplicarModoPedido({ fields: form.fields, modo, civilElement: civilSection });
+    }
+
+    form.fields.cliente_id.input.addEventListener('change', aplicarModo);
+    aplicarModo();
 
     let submitting = false;
 
@@ -261,6 +296,38 @@ export async function renderPedidoDetails(container, { params }) {
     }
   }
 
+  /**
+   * Quanto cada PESSOA imprimiu deste item, somando as sessoes dela.
+   *
+   * A impressao e livro-caixa: cada sessao e uma linha nova, e a mesma pessoa
+   * aparece varias vezes na lista. Sem esta soma, ler "quem imprimiu quanto"
+   * exige somar de cabeca uma tabela paginada de 5 em 5.
+   *
+   * Ordena por copias, da maior para a menor, e empata pelo nome, para a ordem
+   * nao dancar entre duas aberturas do mesmo historico.
+   * @param {Array<{usuario_nome?:string, quantidade:number}>} registros
+   * @returns {Array<{nome:string, copias:number, sessoes:number}>}
+   */
+  function resumoPorPessoa(registros) {
+    const porNome = new Map();
+    for (const r of registros || []) {
+      const nome = r.usuario_nome || r.usuario_nome_guerra || 'sem usuário';
+      const atual = porNome.get(nome) || { nome, copias: 0, sessoes: 0 };
+      atual.copias += Number(r.quantidade) || 0;
+      atual.sessoes += 1;
+      porNome.set(nome, atual);
+    }
+    return [...porNome.values()].sort(
+      (a, b) => b.copias - a.copias || a.nome.localeCompare(b.nome));
+  }
+
+  function textoResumoPorPessoa(pessoas) {
+    return pessoas
+      .map(p => `${p.nome} ${formatNumber(p.copias)} cópia(s)`
+        + ` (${p.sessoes} ${p.sessoes === 1 ? 'sessão' : 'sessões'})`)
+      .join(', ');
+  }
+
   async function verHistoricoImpressao(row) {
     let historico;
     try {
@@ -338,6 +405,22 @@ export async function renderPedidoDetails(container, { params }) {
           ? chip('Concluída', 'success')
           : chip('Pendente', 'warning')),
       ]));
+
+      // Quem imprimiu quanto, ANTES da lista. E o que o chefe pediu para
+      // enxergar (2026-07-30): uma pessoa imprimiu 40 e outra imprimiu 10.
+      const pessoas = resumoPorPessoa(dados.registros);
+      if (pessoas.length) {
+        content.appendChild(el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
+          el('div', { className: 'detail-card__title', textContent: 'Quem imprimiu' }),
+          el('div', { className: 'detail-card__value', textContent: textoResumoPorPessoa(pessoas) }),
+          el('div', {
+            className: 'detail-card__label',
+            textContent: `Total ${formatNumber(dados.quantidade_impressa)}`
+              + ` de ${formatNumber(dados.quantidade)}`,
+          }),
+        ]));
+      }
+
       content.appendChild(registrosTable.element);
     }
 
@@ -508,6 +591,117 @@ export async function renderPedidoDetails(container, { params }) {
   }
 
   // ---------------------------------------------------------------------------
+  // Histórico do pedido (auditoria)
+  // ---------------------------------------------------------------------------
+
+  // Nome da TABELA como quem usa a tela a chama. 'produto_pedido' e
+  // 'impressao_item' sao nomes de coluna do banco, e ninguem da mapoteca fala
+  // assim. Chave desconhecida cai no proprio nome, para uma tabela nova entrar
+  // no historico sem sumir da tela enquanto este mapa nao a conhece.
+  const NOME_TABELA = {
+    pedido: 'Pedido',
+    produto_pedido: 'Item',
+    impressao_item: 'Impressão',
+  };
+
+  // I, U e D sao as letras que o banco grava. O verbo no passado diz o que a
+  // pessoa fez, que e o que se procura ao ler um histórico.
+  const NOME_OPERACAO = {
+    I: { texto: 'Adicionou', cor: 'success' },
+    U: { texto: 'Alterou', cor: 'info' },
+    D: { texto: 'Removeu', cor: 'error' },
+  };
+
+  function renderHistoricoSection() {
+    const body = el('div', { className: 'data-table__empty', textContent: 'Carregando o histórico...' });
+    let historicoTable = null;
+
+    async function loadHistorico() {
+      let eventos;
+      try {
+        eventos = await getAuditoriaPedido(pedidoId);
+      } catch (err) {
+        if (disposed) return;
+        clearChildren(body);
+        body.className = 'data-table__empty';
+        body.textContent = err.message || 'Erro ao carregar o histórico';
+        return;
+      }
+      if (disposed) return;
+      if (historicoTable) historicoTable._cleanup();
+
+      historicoTable = createDataTable({
+        columns: [
+          {
+            key: 'data_evento',
+            label: 'Data',
+            sortable: true,
+            render: (r) => formatDateTime(r.data_evento),
+          },
+          {
+            key: 'usuario_nome',
+            label: 'Usuário',
+            // Usuário nulo é evento de migração, não erro: os eventos anteriores
+            // à auditoria entraram sem dono.
+            render: (r) => r.usuario_nome || r.usuario_nome_guerra || 'migração',
+          },
+          {
+            key: 'operacao',
+            label: 'Operação',
+            render: (r) => {
+              const op = NOME_OPERACAO[r.operacao];
+              return op ? chip(op.texto, op.cor) : (r.operacao || '-');
+            },
+          },
+          {
+            key: 'tabela',
+            label: 'Onde',
+            render: (r) => el('div', {}, [
+              el('div', { textContent: NOME_TABELA[r.tabela] || r.tabela || '-' }),
+              r.registro_id != null
+                ? el('span', { className: 'detail-card__label', textContent: `#${r.registro_id}` })
+                : null,
+            ].filter(Boolean)),
+          },
+          {
+            key: 'campos_alterados',
+            label: 'O que mudou',
+            render: (r) => (r.campos_alterados || []).length
+              ? (r.campos_alterados || []).join(', ')
+              : '-',
+          },
+        ],
+        rows: eventos || [],
+        pageSize: 10,
+        emptyMessage: 'Nenhuma alteração registrada neste pedido',
+      });
+      cleanups.push(() => historicoTable._cleanup());
+
+      clearChildren(body);
+      body.className = '';
+      body.appendChild(historicoTable.element);
+    }
+
+    const section = el('div', { className: 'dashboard-section' }, [
+      el('div', { className: 'dashboard-section__header' }, [
+        el('h2', { className: 'dashboard-section__title', textContent: 'Histórico do pedido' }),
+        // GET /pedido/:id/auditoria e perfil de CONSULTA: quem le o pedido le o
+        // historico dele. Nao ha acao aqui, so leitura, e por isso nenhum botao.
+        el('div', { className: 'dashboard-section__controls' }, [
+          el('span', {
+            className: 'detail-card__label',
+            textContent: 'Quem alterou o pedido, os itens e as impressões',
+          }),
+        ]),
+      ]),
+      body,
+    ]);
+
+    root.appendChild(section);
+    loadHistorico();
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   function renderPedido(pedido) {
@@ -562,9 +756,6 @@ export async function renderPedidoDetails(container, { params }) {
         el('div', { className: 'detail-card__title', textContent: 'Pedido' }),
         infoRow('Data do pedido', formatDate(pedido.data_pedido)),
         infoRow('Prazo', formatDate(pedido.prazo)),
-        // Esta e a data que a consulta publica mostra ao cliente, com o rotulo
-        // dele ("envio/entrega"): o pedido fecha no dia em que o material sai.
-        infoRow('Atendimento (envio/entrega)', formatDate(pedido.data_atendimento)),
         infoRow('Itens', `${nItens} carta(s) · ${nExemplares} exemplar(es)`),
         infoRow('Observação', pedido.observacao),
       ]),
@@ -593,8 +784,22 @@ export async function renderPedidoDetails(container, { params }) {
         infoRow('Previsto no PIT', pedido.previsto_pit ? 'Sim' : 'Não'),
         infoRow('Meta do PIT', pedido.meta_pit),
       ]),
+      // A forma e a data de entrega deixaram de ser do ITEM e passaram a ser do
+      // PEDIDO (decisao do chefe, 2026-07-30): o pedido inteiro sai numa remessa
+      // so. Por isso as duas colunas sairam da tabela de itens e viram estas
+      // duas linhas.
+      //
+      // A DATA fica AQUI e nao no card "Pedido", onde antes aparecia. O mesmo
+      // dado em dois cards vira duvida sobre serem dados diferentes. Este card
+      // responde "como e quando o material saiu"; o card "Pedido" ficou com as
+      // datas da DEMANDA (pedido e prazo). O rotulo nao mudou, para o campo
+      // continuar sendo o mesmo aos olhos de quem usa a tela.
       el('div', { className: 'detail-card' }, [
         el('div', { className: 'detail-card__title', textContent: 'Entrega' }),
+        infoRow('Forma de entrega', pedido.forma_entrega_nome),
+        // Esta e a data que a consulta publica mostra ao cliente, com o rotulo
+        // dele ("envio/entrega"): o pedido fecha no dia em que o material sai.
+        infoRow('Atendimento (envio/entrega)', formatDate(pedido.data_atendimento)),
         infoRow('Localizador de envio', pedido.localizador_envio),
         infoRow('Observação de envio', pedido.observacao_envio),
         infoRow('Operação', pedido.operacao),
@@ -665,13 +870,27 @@ export async function renderPedidoDetails(container, { params }) {
         {
           key: 'quantidade_fornecida',
           label: 'Qtd. fornecida',
-          render: (row) => row.quantidade_fornecida == null ? '-' : formatNumber(row.quantidade_fornecida),
-        },
-        { key: 'forma_entrega_nome', label: 'Entrega' },
-        {
-          key: 'data_entrega',
-          label: 'Data de entrega',
-          render: (row) => formatDate(row.data_entrega),
+          // Fornecida e IMPRESSA sao coisas diferentes, e as duas ficam na
+          // tabela por decisao do chefe (2026-07-30): a fornecida e o que foi
+          // ENTREGUE, e faz par com tipo_midia_fornecida_id; a impressa e o que
+          // saiu do plotter.
+          //
+          // Divergir entre as duas e ALARME de dado errado, nao caso comum:
+          // medido na producao em 2026-07-30, os 1.928 itens do acervo nunca
+          // divergiram. Por isso a marca so aparece quando ha diferenca.
+          render: (row) => {
+            if (row.quantidade_fornecida == null) return '-';
+            const fornecida = Number(row.quantidade_fornecida);
+            const impressa = Number(row.quantidade_impressa);
+            const diverge = Number.isFinite(fornecida) && Number.isFinite(impressa)
+              && fornecida !== impressa;
+            return el('span', { className: 'flex gap-sm' }, [
+              el('span', { textContent: formatNumber(row.quantidade_fornecida) }),
+              diverge
+                ? chip(`difere da impressa (${formatNumber(impressa)})`, 'warning')
+                : null,
+            ].filter(Boolean));
+          },
         },
         {
           key: 'impressao_concluida',
@@ -690,10 +909,24 @@ export async function renderPedidoDetails(container, { params }) {
       emptyMessage: 'Nenhum produto neste pedido',
       actions: [
         {
-          icon: ICONS.print,
+          icon: ICONS.schedule,
           title: 'Histórico de impressão',
           onClick: (row) => verHistoricoImpressao(row),
         },
+        // OPERADOR, e nao gerente: POST /mapoteca/impressao e operador no
+        // servidor, e o gate da tela le igual ao gate real. Na pratica quem
+        // chega a esta tela e o gerente (ela nao esta nas rotas de operador),
+        // mas quem so CONSULTA nao ve o botao, que e o ponto.
+        //
+        // Antes so a fila de atendimento registrava impressao, e quem abria o
+        // pedido pelo detalhe trocava de tela para lancar o que acabou de sair.
+        ...(pode.operador ? [
+          {
+            icon: ICONS.print,
+            title: 'Registrar impressão',
+            onClick: (row) => openRegistrarImpressaoDialog(row, () => load()),
+          },
+        ] : []),
         ...(pode.gerente ? [
           {
             icon: ICONS.edit,
@@ -743,6 +976,10 @@ export async function renderPedidoDetails(container, { params }) {
 
     // Anexos do pedido (documento de solicitação + arquivos)
     renderAnexosSection();
+
+    // Histórico do pedido, no fim: é o que se consulta depois de olhar o dado,
+    // e não o que se lê primeiro.
+    renderHistoricoSection();
   }
 
   await load();

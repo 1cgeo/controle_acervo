@@ -6,7 +6,6 @@ const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO } }
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
-  dataEntregaEfetiva,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
   JOIN_PRODUTO_ITEM,
@@ -26,11 +25,15 @@ const PEDIDO_MILITAR = (colId) =>
 // Situações que contam como entrega efetuada
 const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO];
 
-// Filtro "entregue no ano": pedido remetido/concluído cuja data efetiva de
-// entrega (item com fallback no fechamento do pedido) cai no ano consultado.
-// Requer aliases pp/ped e os parâmetros $<situacoesEntregue:csv> e $<ano>.
+// Filtro "entregue no ano": pedido remetido/concluído cuja data de entrega cai
+// no ano consultado. Requer o alias ped e os parâmetros
+// $<situacoesEntregue:csv> e $<ano>.
+//
+// A data é a do PEDIDO (data_atendimento) desde 2026-07-30. Era
+// COALESCE(pp.data_entrega, ped.data_atendimento), e a coluna do item saiu:
+// nenhum dos 91 pedidos da produção tinha mais de uma data de entrega.
 const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>)
-      AND EXTRACT(YEAR FROM ${dataEntregaEfetiva()}) = $<ano>`;
+      AND EXTRACT(YEAR FROM ped.data_atendimento) = $<ano>`;
 
 // Filtro "pedido do ano": pedido cuja DATA DE PEDIDO cai no ano consultado.
 //
@@ -549,7 +552,7 @@ controller.getEntregasPorMes = async (ano) => {
     ),
     itens AS (
       SELECT
-        EXTRACT(MONTH FROM ${dataEntregaEfetiva()})::int AS mes,
+        EXTRACT(MONTH FROM ped.data_atendimento)::int AS mes,
         ${QTD_EFETIVA} AS qtd,
         ${PRODUTO_TIPO_ID} AS tipo_produto_id
       FROM mapoteca.produto_pedido pp
@@ -849,9 +852,12 @@ controller.getEntregasFiltros = async (ano, filtros = {}) => {
 
 // Anos que têm dado na mapoteca, para o seletor de ano da navbar.
 //
-// Considera a data do PEDIDO e a data efetiva de entrega, que não caem
-// necessariamente no mesmo ano: pedido de dezembro entregue em janeiro tem de
-// aparecer nos dois, senão um dos dois anos some do seletor.
+// Considera a data do PEDIDO e a data de entrega, que não caem necessariamente
+// no mesmo ano: pedido de dezembro entregue em janeiro tem de aparecer nos
+// dois, senão um dos dois anos some do seletor.
+//
+// As duas datas saem da MESMA tabela desde 2026-07-30, quando data_entrega
+// deixou o item: a consulta não precisa mais visitar produto_pedido.
 controller.getAnosComDados = async () => {
   const linhas = await db.conn.any(
     `
@@ -860,10 +866,9 @@ controller.getAnosComDados = async () => {
       FROM mapoteca.pedido
       WHERE data_pedido IS NOT NULL
       UNION
-      SELECT EXTRACT(YEAR FROM ${dataEntregaEfetiva()})::int AS ano
-      FROM mapoteca.produto_pedido pp
-      JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
-      WHERE COALESCE(pp.data_entrega, ped.data_atendimento::date) IS NOT NULL
+      SELECT EXTRACT(YEAR FROM data_atendimento)::int AS ano
+      FROM mapoteca.pedido
+      WHERE data_atendimento IS NOT NULL
     ) t
     WHERE ano IS NOT NULL
     ORDER BY ano DESC

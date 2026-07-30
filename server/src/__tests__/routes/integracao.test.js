@@ -280,11 +280,12 @@ describe('Integracao Routes (públicas)', () => {
       const omId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
       const pedidoMil = await criaPedido(omId, { previsto_pit: true, meta_pit: '4.1', operacao: 'Operação Junho' })
       await criaProdutoPedido({
+        // O atendimento se data pela data_atendimento do PEDIDO desde
+        // 2026-07-30. O helper criaPedido já a põe em 2026-06-20.
         uuid_versao: versao.uuid_versao,
         pedido_id: pedidoMil.id,
         quantidade: 10,
-        tipo_midia_id: 5,
-        data_entrega: '2026-06-20'
+        tipo_midia_id: 5
       })
 
       // Civil/LAI: concluído em junho, 1 produto, com NUP
@@ -298,8 +299,7 @@ describe('Integracao Routes (públicas)', () => {
         uuid_versao: versao.uuid_versao,
         pedido_id: pedidoLai.id,
         quantidade: 1,
-        tipo_midia_id: 7,
-        data_entrega: '2026-06-22'
+        tipo_midia_id: 7
       })
       return { versao }
     }
@@ -339,8 +339,7 @@ describe('Integracao Routes (públicas)', () => {
         uuid_versao: versao.uuid_versao,
         pedido_id: pedidoMar.id,
         quantidade: 3,
-        tipo_midia_id: 5,
-        data_entrega: '2026-03-20'
+        tipo_midia_id: 5
       })
 
       const junho = await request(app).get('/api/integracao/mapoteca/atendimentos?ano=2026&mes=6&cumulativo=false')

@@ -7,6 +7,7 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
+const auditoriaCtrl = require("./auditoria_ctrl");
 const {
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
@@ -45,6 +46,9 @@ const PEDIDO_COLS = [
   { name: 'documento_solicitacao', def: null },
   { name: 'documento_solicitacao_nup', def: null },
   { name: 'endereco_entrega', def: null },
+  // Como o material saiu. Subiu do item para o pedido em 2026-07-30: 1 pedido
+  // em 91 tinha mais de uma forma entre os itens.
+  { name: 'forma_entrega_id', def: null },
   'palavras_chave',
   { name: 'operacao', def: null },
   { name: 'prazo', def: null },
@@ -74,8 +78,8 @@ const PRODUTO_PEDIDO_COLS = [
   { name: 'quantidade_fornecida', def: null },
   'tipo_midia_id',
   { name: 'tipo_midia_fornecida_id', def: null },
-  { name: 'forma_entrega_id', def: null },
-  { name: 'data_entrega', def: null },
+  // Sem forma_entrega_id e sem data_entrega: as duas sao do PEDIDO desde
+  // 2026-07-30. O item so descreve O QUE se imprime, nunca como sai daqui.
   { name: 'observacao', def: null },
   // O def aqui é só rede de segurança para id inexistente: no caminho normal o
   // preserveOmitted já preencheu a chave com o valor gravado (na criação o
@@ -343,6 +347,7 @@ controller.getPedidos = async (ano) => {
            p.documento_solicitacao, p.documento_solicitacao_nup,
            p.prazo, p.demandante, p.omds, p.previsto_pit, p.meta_pit, p.operacao,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
+           p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            u.nome AS usuario_criacao_nome,
            p.data_criacao,
            (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos,
@@ -354,6 +359,7 @@ controller.getPedidos = async (ano) => {
     LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
     LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
+    LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
     WHERE ${filtroAno('p.data_pedido')}
     ORDER BY p.data_pedido DESC
@@ -366,7 +372,10 @@ controller.getPedidos = async (ano) => {
  * NÃO filtra por ano, ao contrário da lista de pedidos. É deliberado: o pedido de
  * dezembro que ainda não foi atendido continua sendo trabalho em janeiro, e uma
  * fila que esconde o atrasado é pior que fila nenhuma. Em aberto é toda situação
- * menos Concluído e Cancelado (ver SITUACOES_EM_ABERTO).
+ * menos Concluído, Cancelado e Aguardando produção (ver SITUACOES_EM_ABERTO).
+ *
+ * Aguardando produção saiu da fila em 2026-07-30: o pedido espera carta que
+ * ainda não existe, então quem imprime não tem o que fazer com ele.
  *
  * A ordem é por PRAZO, com o pedido sem prazo no fim: o que tem data marcada
  * decide o dia de quem atende. O `dias_para_prazo` vem calculado no banco, então
@@ -386,6 +395,9 @@ controller.getPedidosEmAberto = async () => {
            p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
            p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
            p.observacao, p.observacao_interna, p.localizador_envio, p.operacao,
+           -- A forma de entrega sai aqui porque a ETIQUETA sai desta tela: quem
+           -- monta o pacote precisa saber se vai aos Correios ou sai em maos.
+           p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            COALESCE(i.total_itens, 0)::int AS total_itens,
            COALESCE(i.itens_impressos, 0)::int AS itens_impressos,
            COALESCE(i.quantidade_pedida, 0)::int AS quantidade_pedida,
@@ -394,6 +406,7 @@ controller.getPedidosEmAberto = async () => {
     LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
     LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
+    LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
     LEFT JOIN LATERAL (
       SELECT count(*)::int AS total_itens,
              SUM(pp.quantidade)::int AS quantidade_pedida,
@@ -429,8 +442,14 @@ controller.getPedidosEmAberto = async () => {
 controller.getImpressaoDoPedido = async (pedidoId) => {
   return db.conn.task(async t => {
     const pedido = await t.oneOrNone(
-      `SELECT id, localizador_pedido, situacao_pedido_id
-       FROM mapoteca.pedido WHERE id = $<pedidoId>`,
+      // A forma de entrega vem do PEDIDO desde 2026-07-30. Ela ficava no item, e
+      // saia repetida em cada linha da tela de impressao dizendo sempre a mesma
+      // coisa.
+      `SELECT p.id, p.localizador_pedido, p.situacao_pedido_id,
+              p.forma_entrega_id, fe.nome AS forma_entrega_nome
+       FROM mapoteca.pedido p
+       LEFT JOIN mapoteca.forma_entrega fe ON fe.code = p.forma_entrega_id
+       WHERE p.id = $<pedidoId>`,
       { pedidoId }
     );
 
@@ -445,7 +464,6 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
              GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
              (COALESCE(imp.quantidade_impressa, 0) >= pp.quantidade) AS impressao_concluida,
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
-             fe.nome AS forma_entrega_nome,
              pp.observacao,
              ${PRODUTO_NOME} AS produto_nome, ${PRODUTO_MI} AS mi, prod.inom,
              ${ESCALA_DISPLAY_ITEM} AS escala,
@@ -465,7 +483,6 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
       -- ve o que imprimir nem consegue registrar a impressao.
       ${JOIN_PRODUTO_ITEM}
       LEFT JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
-      LEFT JOIN mapoteca.forma_entrega fe ON fe.code = pp.forma_entrega_id
       LEFT JOIN LATERAL (
         SELECT SUM(ii.quantidade) AS quantidade_impressa
         FROM mapoteca.impressao_item ii
@@ -484,6 +501,8 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
       pedido_id: Number(pedido.id),
       localizador_pedido: pedido.localizador_pedido,
       situacao_pedido_id: pedido.situacao_pedido_id,
+      forma_entrega_id: pedido.forma_entrega_id,
+      forma_entrega_nome: pedido.forma_entrega_nome,
       itens,
       impressao: {
         total_itens: itens.length,
@@ -574,6 +593,8 @@ controller.getPedidoById = async (pedidoId) => {
              -- envio da tela de detalhe cai no segundo quando o pedido nao traz
              -- endereco nenhum.
              p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
+             -- Do PEDIDO desde 2026-07-30, e nao mais de cada item.
+             p.forma_entrega_id, fe.nome AS forma_entrega_nome,
              p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit, p.meta_pit,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
@@ -589,6 +610,7 @@ controller.getPedidoById = async (pedidoId) => {
       LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
       LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
       LEFT JOIN mapoteca.canal_recebimento AS cr ON cr.code = p.canal_recebimento_id
+      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
       LEFT JOIN dgeo.usuario AS uc ON uc.id = p.usuario_criacao_id
       LEFT JOIN dgeo.usuario AS ua ON ua.id = p.usuario_atualizacao_id
       WHERE p.id = $1
@@ -604,8 +626,7 @@ controller.getPedidoById = async (pedidoId) => {
       SELECT pp.id, pp.pedido_id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
-             pp.forma_entrega_id, fe.nome AS forma_entrega_nome,
-             pp.data_entrega, pp.observacao, pp.producao_especifica,
+             pp.observacao, pp.producao_especifica,
              pp.nome_avulso, pp.descricao_avulso,
              (pp.nome_avulso IS NOT NULL) AS item_avulso,
              v.versao, v.data_edicao, v.produto_id,
@@ -624,7 +645,6 @@ controller.getPedidoById = async (pedidoId) => {
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN mapoteca.tipo_midia AS tmf ON tmf.code = pp.tipo_midia_fornecida_id
-      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = pp.forma_entrega_id
       LEFT JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
       LEFT JOIN acervo.produto AS p ON p.id = v.produto_id
       LEFT JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
@@ -692,13 +712,26 @@ controller.criaPedido = async (pedido, usuarioUuid) => {
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
+    // RETURNING * (e nao so id/localizador) porque a linha inteira e o
+    // dados_depois da auditoria. A rota continua recebendo so os dois campos de
+    // sempre: quem monta a resposta e o objeto devolvido abaixo.
     const query = db.pgp.helpers.insert(pedido, cs, {
       table: 'pedido',
       schema: 'mapoteca'
-    }) + ' RETURNING id, localizador_pedido';
+    }) + ' RETURNING *';
 
-    const result = await t.one(query);
-    return result;
+    const criado = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      pedidoId: criado.id,
+      tabela: 'pedido',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid
+    });
+
+    return { id: criado.id, localizador_pedido: criado.localizador_pedido };
   });
 };
 
@@ -706,12 +739,14 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    // Verificar se o pedido existe e obter seu localizador atual
+    // Verificar se o pedido existe e obter seu localizador atual.
+    // SELECT * porque esta MESMA leitura vira o dados_antes da auditoria: ler as
+    // colunas de novo depois do UPDATE traria a linha ja alterada.
     const pedidoAtual = await t.oneOrNone(
-      `SELECT localizador_pedido FROM mapoteca.pedido WHERE id = $1`,
+      `SELECT * FROM mapoteca.pedido WHERE id = $1`,
       [pedido.id]
     );
-    
+
     if (!pedidoAtual) {
       throw new AppError('Pedido não encontrado', httpCode.NotFound);
     }
@@ -752,6 +787,24 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
     const query = db.pgp.helpers.update(pedido, cs) + ' WHERE id = $1';
 
     await t.none(query, [pedido.id]);
+
+    // A linha depois do UPDATE sai do banco, e nao do corpo da requisicao: o
+    // corpo traz o que o cliente PEDIU, e o que interessa auditar e o que o
+    // banco GRAVOU. Os dois lados do diff saem da mesma fonte.
+    const pedidoNovo = await t.one(
+      `SELECT * FROM mapoteca.pedido WHERE id = $1`,
+      [pedido.id]
+    );
+
+    await auditoriaCtrl.registrar(t, {
+      pedidoId: pedido.id,
+      tabela: 'pedido',
+      registroId: pedido.id,
+      operacao: 'U',
+      antes: pedidoAtual,
+      depois: pedidoNovo,
+      usuarioUuid
+    });
   });
 };
 
@@ -778,10 +831,14 @@ controller.getPedidoByLocalizador = async (localizador) => {
         p.data_atendimento,
         p.localizador_envio,
         p.observacao_envio,
+        -- A forma de entrega e do pedido desde 2026-07-30, e sai aqui pelo nome.
+        -- O cliente ja a via, uma vez por item; agora a ve uma vez so.
+        fe.nome AS forma_entrega_nome,
         p.motivo_cancelamento
       FROM mapoteca.pedido AS p
       LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
       LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
+      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
       WHERE p.localizador_pedido = $1
     `, [localizador]);
 
@@ -805,7 +862,6 @@ controller.getPedidoByLocalizador = async (localizador) => {
       SELECT
         pp.quantidade,
         tm.nome AS tipo_midia_nome,
-        fe.nome AS forma_entrega_nome,
         pp.observacao,
         v.versao,
         v.data_edicao,
@@ -818,7 +874,6 @@ controller.getPedidoByLocalizador = async (localizador) => {
         pp.descricao_avulso AS avulso_descricao
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
-      LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = pp.forma_entrega_id
       ${JOIN_PRODUTO_ITEM}
       WHERE pp.pedido_id = $1
       ORDER BY pp.data_criacao
@@ -831,11 +886,14 @@ controller.getPedidoByLocalizador = async (localizador) => {
   });
 };
 
-controller.deletePedidos = async (pedidoIds) => {
+controller.deletePedidos = async (pedidoIds, usuarioUuid) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs de pedido existem
+    // Verificar se todos os IDs de pedido existem.
+    // SELECT * e nao SELECT id: a linha inteira vira o dados_antes da auditoria,
+    // e depois do DELETE nao ha mais de onde tira-la. Sem isso a exclusao nao
+    // registra o que se perdeu, que e o caso principal desta auditoria.
     const existingOrders = await t.any(
-      `SELECT id FROM mapoteca.pedido WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.pedido WHERE id IN ($1:csv)`,
       [pedidoIds]
     );
 
@@ -843,6 +901,60 @@ controller.deletePedidos = async (pedidoIds) => {
       const existingIds = existingOrders.map(o => Number(o.id));
       const missingIds = pedidoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes pedidos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    // Os filhos tambem se registram, um a um. O dados_antes do PEDIDO nao
+    // contem os itens dele, entao sem estas linhas o historico diria que o
+    // pedido sumiu sem dizer o que ele levava.
+    const itens = await t.any(
+      `SELECT * FROM mapoteca.produto_pedido WHERE pedido_id IN ($1:csv)`,
+      [pedidoIds]
+    );
+
+    // As impressoes caem por ON DELETE CASCADE do produto_pedido, sem passar por
+    // DELETE nenhum deste arquivo. Por isso se leem AGORA, enquanto existem.
+    const impressoes = itens.length === 0
+      ? []
+      : await t.any(
+        `SELECT ii.*, pp.pedido_id
+           FROM mapoteca.impressao_item ii
+           JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
+          WHERE pp.pedido_id IN ($1:csv)`,
+        [pedidoIds]
+      );
+
+    for (const impressao of impressoes) {
+      const { pedido_id: pedidoId, ...linha } = impressao;
+      await auditoriaCtrl.registrar(t, {
+        pedidoId,
+        tabela: 'impressao_item',
+        registroId: linha.id,
+        operacao: 'D',
+        antes: linha,
+        usuarioUuid
+      });
+    }
+
+    for (const item of itens) {
+      await auditoriaCtrl.registrar(t, {
+        pedidoId: item.pedido_id,
+        tabela: 'produto_pedido',
+        registroId: item.id,
+        operacao: 'D',
+        antes: item,
+        usuarioUuid
+      });
+    }
+
+    for (const pedido of existingOrders) {
+      await auditoriaCtrl.registrar(t, {
+        pedidoId: pedido.id,
+        tabela: 'pedido',
+        registroId: pedido.id,
+        operacao: 'D',
+        antes: pedido,
+        usuarioUuid
+      });
     }
 
     // Primeiro, excluir os produtos do pedido associados
@@ -897,12 +1009,23 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
+    // RETURNING * pela auditoria: a linha gravada e o dados_depois, e o id dela
+    // e o registro_id. A rota nao devolve corpo, entao nada muda para o cliente.
     const query = db.pgp.helpers.insert(produtoPedido, cs, {
       table: 'produto_pedido',
       schema: 'mapoteca'
-    });
+    }) + ' RETURNING *';
 
-    await t.none(query);
+    const criado = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      pedidoId: criado.pedido_id,
+      tabela: 'produto_pedido',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid
+    });
   });
 };
 
@@ -910,6 +1033,13 @@ controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    // Linha antes da mudanca, para a auditoria. Vale tambem como fonte do
+    // pedido_id: o corpo da requisicao traz pedido_id, mas quem manda e o banco.
+    const itemAtual = await t.oneOrNone(
+      `SELECT * FROM mapoteca.produto_pedido WHERE id = $1`,
+      [produtoPedido.id]
+    );
+
     // Chave ausente = "não mexe": omitir producao_especifica desmarcava a flag
     await preserveOmitted(t, {
       schema: 'mapoteca',
@@ -934,14 +1064,31 @@ controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
     if (result.rowCount === 0) {
       throw new AppError('Produto do pedido não encontrado', httpCode.NotFound);
     }
+
+    const itemNovo = await t.one(
+      `SELECT * FROM mapoteca.produto_pedido WHERE id = $1`,
+      [produtoPedido.id]
+    );
+
+    await auditoriaCtrl.registrar(t, {
+      pedidoId: itemNovo.pedido_id,
+      tabela: 'produto_pedido',
+      registroId: itemNovo.id,
+      operacao: 'U',
+      antes: itemAtual,
+      depois: itemNovo,
+      usuarioUuid
+    });
   });
 };
 
-controller.deleteProdutosPedido = async (produtoPedidoIds) => {
+controller.deleteProdutosPedido = async (produtoPedidoIds, usuarioUuid) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem
+    // Verificar se todos os IDs existem.
+    // SELECT * e nao SELECT id: a linha inteira vira o dados_antes da auditoria,
+    // e depois do DELETE nao ha mais de onde tira-la.
     const existingProducts = await t.any(
-      `SELECT id FROM mapoteca.produto_pedido WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.produto_pedido WHERE id IN ($1:csv)`,
       [produtoPedidoIds]
     );
 
@@ -949,6 +1096,39 @@ controller.deleteProdutosPedido = async (produtoPedidoIds) => {
       const existingIds = existingProducts.map(p => Number(p.id));
       const missingIds = produtoPedidoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes produtos de pedido não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    // As impressoes do item caem por ON DELETE CASCADE, sem DELETE explicito
+    // nenhum. Leem-se agora, enquanto ainda existem.
+    const impressoes = await t.any(
+      `SELECT ii.*, pp.pedido_id
+         FROM mapoteca.impressao_item ii
+         JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
+        WHERE ii.produto_pedido_id IN ($1:csv)`,
+      [produtoPedidoIds]
+    );
+
+    for (const impressao of impressoes) {
+      const { pedido_id: pedidoId, ...linha } = impressao;
+      await auditoriaCtrl.registrar(t, {
+        pedidoId,
+        tabela: 'impressao_item',
+        registroId: linha.id,
+        operacao: 'D',
+        antes: linha,
+        usuarioUuid
+      });
+    }
+
+    for (const item of existingProducts) {
+      await auditoriaCtrl.registrar(t, {
+        pedidoId: item.pedido_id,
+        tabela: 'produto_pedido',
+        registroId: item.id,
+        operacao: 'D',
+        antes: item,
+        usuarioUuid
+      });
     }
 
     return t.any(
@@ -1072,8 +1252,10 @@ controller.registrarImpressao = async (registros, usuarioUuid) => {
   return db.conn.tx(async t => {
     const ids = [...new Set(registros.map(r => r.produto_pedido_id))];
 
+    // pedido_id vem junto porque a auditoria e POR PEDIDO: o registro nasce no
+    // item, mas quem le o historico procura pelo pedido dono dele.
     const existentes = await t.any(
-      `SELECT id FROM mapoteca.produto_pedido WHERE id IN ($<ids:csv>)`,
+      `SELECT id, pedido_id FROM mapoteca.produto_pedido WHERE id IN ($<ids:csv>)`,
       { ids }
     );
 
@@ -1086,6 +1268,10 @@ controller.registrarImpressao = async (registros, usuarioUuid) => {
       );
     }
 
+    const pedidoDoItem = new Map(
+      existentes.map(e => [Number(e.id), e.pedido_id])
+    );
+
     const cs = new db.pgp.helpers.ColumnSet([
       'produto_pedido_id', 'quantidade',
       { name: 'observacao', def: null },
@@ -1096,9 +1282,20 @@ controller.registrarImpressao = async (registros, usuarioUuid) => {
       registros.map(r => ({ ...r, usuario_uuid: usuarioUuid })),
       cs,
       { table: 'impressao_item', schema: 'mapoteca' }
-    );
+    ) + ' RETURNING *';
 
-    await t.none(query);
+    const inseridos = await t.any(query);
+
+    for (const registro of inseridos) {
+      await auditoriaCtrl.registrar(t, {
+        pedidoId: pedidoDoItem.get(Number(registro.produto_pedido_id)),
+        tabela: 'impressao_item',
+        registroId: registro.id,
+        operacao: 'I',
+        depois: registro,
+        usuarioUuid
+      });
+    }
   });
 };
 
@@ -1140,10 +1337,15 @@ controller.getImpressoesItem = async (produtoPedidoId) => {
 };
 
 // Remove registros de impressão (correções — somente admin)
-controller.deleteImpressoes = async (impressaoIds) => {
+controller.deleteImpressoes = async (impressaoIds, usuarioUuid) => {
   return db.conn.tx(async t => {
+    // A linha inteira, mais o pedido dono: e o dados_antes da auditoria, e
+    // depois do DELETE nao ha mais de onde tira-la.
     const existentes = await t.any(
-      `SELECT id FROM mapoteca.impressao_item WHERE id IN ($<impressaoIds:csv>)`,
+      `SELECT ii.*, pp.pedido_id
+         FROM mapoteca.impressao_item ii
+         JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
+        WHERE ii.id IN ($<impressaoIds:csv>)`,
       { impressaoIds }
     );
 
@@ -1154,6 +1356,18 @@ controller.deleteImpressoes = async (impressaoIds) => {
         `Os seguintes registros de impressão não foram encontrados: ${faltantes.join(', ')}`,
         httpCode.NotFound
       );
+    }
+
+    for (const impressao of existentes) {
+      const { pedido_id: pedidoId, ...linha } = impressao;
+      await auditoriaCtrl.registrar(t, {
+        pedidoId,
+        tabela: 'impressao_item',
+        registroId: linha.id,
+        operacao: 'D',
+        antes: linha,
+        usuarioUuid
+      });
     }
 
     return t.any(

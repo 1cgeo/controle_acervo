@@ -2,16 +2,18 @@ import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import { formatDate, formatNumber } from '@utils/format.js';
-import { showSuccess, showError } from '@utils/toast.js';
+import { showError } from '@utils/toast.js';
 import {
   getPedidosEmAberto,
   getImpressaoDoPedido,
-  registrarImpressao,
   baixarCartaDoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { openEtiquetaEnvioDialog } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
+// O dialogo de registrar impressao mora em pedidos/ e serve as DUAS telas. Ele
+// era daqui ate 2026-07-30, quando o detalhe do pedido passou a registrar
+// impressao tambem: duas copias divergiriam no texto que evita o erro de somar.
+import { openRegistrarImpressaoDialog } from '@modules/mapoteca/pages/pedidos/dialog-impressao.js';
 import { openModal } from '@components/modal/modal-base.js';
-import { createNumberField, createTextareaField } from '@components/form-fields/form-fields.js';
 
 /**
  * Atender pedidos (#/mapoteca/atendimento): a FILA de trabalho da mapoteca.
@@ -86,66 +88,6 @@ export async function renderAtendimento(container) {
     if (itens === 0) return 'sem itens';
     return `${formatNumber(p.itens_impressos)}/${formatNumber(itens)} itens`
       + ` · ${formatNumber(p.quantidade_impressa)}/${formatNumber(p.quantidade_pedida)} cópias`;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Registrar impressão de um item
-  // ---------------------------------------------------------------------------
-  function registrarDialog(item, onDone) {
-    // O padrão é o que FALTA: quem imprime o lote todo confirma sem digitar, e
-    // quem imprimiu parte corrige o número.
-    const quantidade = createNumberField({
-      label: 'Cópias impressas agora',
-      value: item.quantidade_restante > 0 ? item.quantidade_restante : 1,
-      min: 1,
-      required: true,
-      helpText: `Pedidas ${item.quantidade}, já impressas ${item.quantidade_impressa}.`,
-    });
-    const observacao = createTextareaField({
-      label: 'Observação (opcional)',
-      rows: 2,
-      helpText: 'Ex.: plotter 2, papel novo, reimpressão da folha rasgada.',
-    });
-
-    let enviando = false;
-    openModal({
-      title: `Registrar impressão — ${item.produto_nome || item.mi || 'item'}`,
-      content: el('div', { className: 'form-grid' }, [
-        quantidade.element,
-        observacao.element,
-      ]),
-      width: '520px',
-      actions: [
-        { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
-        {
-          label: 'Registrar',
-          variant: 'primary',
-          onClick: async ({ close }) => {
-            if (enviando) return;
-            quantidade.setError(null);
-            const qtd = quantidade.getValue();
-            if (!qtd || qtd < 1) {
-              quantidade.setError('Informe quantas cópias saíram');
-              return;
-            }
-            enviando = true;
-            try {
-              await registrarImpressao([{
-                produto_pedido_id: item.produto_pedido_id,
-                quantidade: qtd,
-                observacao: observacao.getValue() || undefined,
-              }]);
-              showSuccess('Impressão registrada');
-              close();
-              onDone();
-            } catch (err) {
-              enviando = false;
-              showError(err.message || 'Erro ao registrar a impressão');
-            }
-          },
-        },
-      ],
-    });
   }
 
   // Downloads em andamento, por uuid do arquivo. O botão de ação da tabela não
@@ -231,7 +173,7 @@ export async function renderAtendimento(container) {
           {
             icon: ICONS.print,
             title: 'Registrar impressão',
-            onClick: (r) => registrarDialog(r, async () => {
+            onClick: (r) => openRegistrarImpressaoDialog(r, async () => {
               const novo = await getImpressaoDoPedido(pedido.id);
               if (disposed) return;
               pintar(novo);

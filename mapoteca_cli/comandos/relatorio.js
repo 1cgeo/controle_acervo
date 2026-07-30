@@ -191,13 +191,15 @@ async function localizador (args, cfg) {
   const cabecalho = saida.registro(p, {
     campos: [
       'localizador_pedido', 'data_pedido', 'situacao_pedido_nome', 'cliente_nome',
-      'prazo', 'localizador_envio', 'observacao_envio', 'motivo_cancelamento'
+      'prazo', 'localizador_envio', 'observacao_envio', 'motivo_cancelamento',
+      // A forma de entrega saiu do item e virou campo do PEDIDO em 2026-07-30.
+      'forma_entrega_nome', 'data_atendimento'
     ]
   })
   const produtos = Array.isArray(p.produtos) ? p.produtos : []
   const out = saida.lista(produtos, {
     formato: flags.formato || 'tsv',
-    padrao: ['mi', 'produto_nome', 'escala', 'quantidade', 'tipo_midia_nome', 'forma_entrega_nome']
+    padrao: ['mi', 'produto_nome', 'escala', 'quantidade', 'tipo_midia_nome']
   })
 
   return { texto: `${cabecalho}\n\n${out.texto}`, avisos: out.avisos }

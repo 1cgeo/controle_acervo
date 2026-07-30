@@ -23,10 +23,21 @@ import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 // fisica e LAI. O mesmo corte que o dashboard usa para "pedido militar".
 const TIPOS_MILITARES = [1, 2, 3];
 
+// Aguardando producao (situacao 7) saiu da fila de atendimento em 2026-07-30:
+// o pedido espera carta que ainda nao existe. Fora da fila, esses pedidos so
+// aparecem AQUI. Sem um filtro proprio eles viram esquecimento quando a
+// producao terminar, porque ninguem lembra de procurar linha a linha.
+const SITUACAO_AGUARDANDO_PRODUCAO = 7;
+
 const FILTROS = [
   { id: 'todos', label: 'Todos', casa: () => true },
   { id: 'militar', label: 'Militar', casa: (p) => TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
   { id: 'civil', label: 'Civil', casa: (p) => !TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
+  {
+    id: 'aguardando_producao',
+    label: 'Aguardando produção',
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_AGUARDANDO_PRODUCAO,
+  },
 ];
 
 export async function renderPedidosList(container, _ctx) {
@@ -196,7 +207,7 @@ export async function renderPedidosList(container, _ctx) {
       ]),
     ]),
     el('div', { className: 'filtro-barra' }, [
-      el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar por tipo de cliente' }, botoesFiltro),
+      el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar os pedidos' }, botoesFiltro),
       contador,
     ]),
     table.element,

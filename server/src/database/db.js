@@ -20,7 +20,7 @@ db.pgp = require('pg-promise')()
 //
 // DATE nao tem hora nem fuso, entao converter para instante e o erro de origem.
 // Devolvendo a string crua, nenhum fuso a alcanca. Vale para toda coluna DATE
-// do sistema (prazo, data_entrega, ...). Medido e corrigido em 2026-07-27.
+// do sistema (prazo, data_atendimento, ...). Medido e corrigido em 2026-07-27.
 //
 // 1082 e o OID do tipo DATE no PostgreSQL.
 db.pgp.pg.types.setTypeParser(1082, valor => valor)

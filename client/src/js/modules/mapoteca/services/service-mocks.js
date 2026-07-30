@@ -28,6 +28,7 @@ const LISTAS = [
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
   'getAnexosPedido', 'uploadAnexoPedido', 'getAnosMapoteca',
+  'getAuditoriaPedido',
 ];
 
 /** Leituras que devolvem objeto. O default e `{}`. */
@@ -54,6 +55,10 @@ const ACOES = [
   'downloadMeta4Ods',
   'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',
+  // getEtiquetaEnvio e leitura, mas entra aqui e nao em OBJETOS porque o default
+  // `null` e o VERDADEIRO: pedido sem etiqueta salva devolve null. Um `{}` por
+  // default faria o teste ver "etiqueta salva vazia" e apagar a tela.
+  'salvarEtiquetaEnvio', 'getEtiquetaEnvio',
 ];
 
 function preencher(alvo, nomes, valor) {

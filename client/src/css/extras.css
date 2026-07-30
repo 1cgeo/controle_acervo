@@ -281,6 +281,20 @@
   background: #fff;
 }
 
+/* Por que o botao Imprimir esta travado. Botao morto e sem explicacao vira
+   chamado de suporte, entao o texto fica em destaque, e nao no cinza do help.
+   Ele vira discreto quando a etiqueta esta salva e a impressao ja liberou. */
+.etiqueta-dialogo__aviso {
+  border-left: 3px solid var(--color-warning);
+  padding-left: var(--space-sm);
+  color: var(--text-primary);
+}
+
+.etiqueta-dialogo__aviso--ok {
+  border-left-color: var(--color-success);
+  color: var(--text-secondary);
+}
+
 @media (max-width: 720px) {
   .etiqueta-dialogo {
     grid-template-columns: minmax(0, 1fr);

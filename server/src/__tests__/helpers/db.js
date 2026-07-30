@@ -37,7 +37,12 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE orcamento.dfd CASCADE')
     await t.none('TRUNCATE orcamento.meta_pit CASCADE')
 
-    // Mapoteca tables
+    // Mapoteca tables.
+    // A auditoria entra PRIMEIRO e por TRUNCATE proprio: ela nao tem FK para o
+    // pedido (de proposito, para sobreviver ao pedido apagado), entao o CASCADE
+    // do pedido nao a alcanca. Sem esta linha as auditorias de um teste vazariam
+    // para o teste seguinte, e a FK de usuario travaria o DELETE dos usuarios.
+    await t.none('TRUNCATE mapoteca.pedido_auditoria CASCADE')
     await t.none('TRUNCATE mapoteca.impressao_item CASCADE')
     await t.none('TRUNCATE mapoteca.consumo_material CASCADE')
     await t.none('TRUNCATE mapoteca.estoque_material CASCADE')

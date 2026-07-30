@@ -150,7 +150,10 @@ export function deletePedidos(ids) {
  * Add an item to an order. `uuid_versao` is required (RN08 — no loose items).
  * @param {{uuid_versao:string, pedido_id:number, quantidade:number, tipo_midia_id:number,
  *   producao_especifica?:boolean, quantidade_fornecida?:number, tipo_midia_fornecida_id?:number,
- *   forma_entrega_id?:number, data_entrega?:string, observacao?:string}} item
+ *   observacao?:string}} item
+ *
+ * A forma de entrega e a data de entrega saíram do item em 2026-07-30 e agora
+ * são do pedido (forma_entrega_id e data_atendimento).
  */
 export function createProdutoPedido(item) {
   invalidate('pedidos');
@@ -717,4 +720,51 @@ export function downloadAnexoPedido(anexoId, nomeFallback) {
 /** Remove um anexo do pedido. */
 export function deleteAnexoPedido(anexoId) {
   return apiDelete(`${BASE}/pedido/anexo/${anexoId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Etiqueta de envio do pedido
+// ---------------------------------------------------------------------------
+
+/**
+ * Etiqueta salva do pedido, ou `null` quando o pedido ainda não tem etiqueta.
+ *
+ * SEM cache, de propósito: o diálogo só libera o botão Imprimir quando a tela
+ * bate com o que está SALVO. Uma resposta de 5 minutos atrás liberaria a
+ * impressão de um endereço que outra pessoa já corrigiu.
+ * @param {number} pedidoId
+ * @returns {Promise<null|{id:number, destinatario:string, aos_cuidados:string,
+ *   endereco:string, cep:string}>}
+ */
+export function getEtiquetaEnvio(pedidoId) {
+  return apiGet(`${BASE}/pedido/${pedidoId}/etiqueta`);
+}
+
+/**
+ * Grava a etiqueta do pedido: cria na primeira vez, substitui nas seguintes.
+ * Devolve a linha como o banco a gravou, que é o que o diálogo compara com a
+ * tela.
+ * @param {number} pedidoId
+ * @param {{destinatario:string, aos_cuidados?:string, endereco?:string, cep?:string}} dados
+ */
+export function salvarEtiquetaEnvio(pedidoId, dados) {
+  return apiPut(`${BASE}/pedido/${pedidoId}/etiqueta`, dados);
+}
+
+// ---------------------------------------------------------------------------
+// Histórico do pedido (auditoria)
+// ---------------------------------------------------------------------------
+
+/**
+ * Quem alterou, adicionou e removeu o pedido, os itens e as impressões dele.
+ * Mais novo primeiro.
+ *
+ * SEM cache, de propósito: é a tela onde a pessoa confere o que ACABOU de
+ * mudar, e um histórico de 5 minutos atrás não mostraria a própria edição.
+ * @param {number} pedidoId
+ * @returns {Promise<Array<{data_evento:string, tabela:string, operacao:string,
+ *   campos_alterados:string[], usuario_nome:string}>>}
+ */
+export function getAuditoriaPedido(pedidoId) {
+  return apiGet(`${BASE}/pedido/${pedidoId}/auditoria`);
 }

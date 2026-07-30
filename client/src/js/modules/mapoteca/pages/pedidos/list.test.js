@@ -38,6 +38,17 @@ const PEDIDOS = [
   },
 ];
 
+// Um pedido em Aguardando producao (situacao 7) NAO entra no lote acima de
+// proposito: ele mudaria a contagem dos testes de militar/civil, que ja provam
+// outra coisa. O teste do filtro novo carrega o seu proprio lote.
+const PEDIDO_AGUARDANDO = {
+  id: 58, data_pedido: '2026-06-13', cliente_nome: 'Comando Militar do Sul',
+  tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+  documento_solicitacao: 'DIEx 789', situacao_pedido_id: 7,
+  situacao_pedido_nome: 'Aguardando produção', prazo: '2026-09-30',
+  quantidade_produtos: 33, itens_impressos: 0, localizador_pedido: 'AA10-BB20-CC30',
+};
+
 /** Texto das linhas visiveis da tabela (o filtro age no corpo, nao no cabecalho). */
 const corpo = (container) => [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
 
@@ -113,6 +124,30 @@ describe('renderPedidosList', () => {
 
     clicarFiltro(container, 'Todos');
     expect(corpo(container)).toHaveLength(3);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O pedido em Aguardando producao saiu da fila de atendimento em 2026-07-30
+  // (decisao do chefe): ele espera carta que ainda nao existe. Fora da fila,
+  // esta lista e o unico lugar onde ele aparece, e sem filtro proprio ele vira
+  // esquecimento quando a producao terminar.
+  test('o filtro "Aguardando produção" isola a situação 7', async () => {
+    svc.getPedidos.mockResolvedValue([...PEDIDOS, PEDIDO_AGUARDANDO]);
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(corpo(container)).toHaveLength(4);
+
+    clicarFiltro(container, 'Aguardando produção');
+    const linhas = corpo(container);
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain('Comando Militar do Sul');
+    expect(linhas[0]).toContain('AA10-BB20-CC30');
+
+    clicarFiltro(container, 'Todos');
+    expect(corpo(container)).toHaveLength(4);
 
     if (typeof cleanup === 'function') cleanup();
   });

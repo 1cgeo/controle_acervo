@@ -7,6 +7,7 @@ import {
   getClientes,
   getDominioSituacaoPedido,
   getDominioCanalRecebimento,
+  getDominioFormaEntrega,
   createPedido,
   createProdutoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
@@ -14,6 +15,8 @@ import { formatDate } from '@utils/format.js';
 import { showSuccess, showError, showInfo, showWarning } from '@utils/toast.js';
 import {
   createPedidoFormFields,
+  aplicarModoPedido,
+  filtrarClientesPorModo,
   SITUACAO_PEDIDO_EM_ANDAMENTO,
   TIPO_CLIENTE_LAI,
 } from './pedido-form.js';
@@ -86,11 +89,12 @@ export async function renderPedidoWizard(container, _ctx) {
   // ---------------------------------------------------------------------------
   // Lookups
   // ---------------------------------------------------------------------------
-  let clientes, situacoes, canais;
+  let clientes, situacoes, canais, formasEntrega;
   let modoAtual = 'militar';
   try {
-    [clientes, situacoes, canais] = await Promise.all([
+    [clientes, situacoes, canais, formasEntrega] = await Promise.all([
       getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
+      getDominioFormaEntrega(),
     ]);
   } catch (err) {
     if (disposed) return;
@@ -103,7 +107,7 @@ export async function renderPedidoWizard(container, _ctx) {
   }
   if (disposed) return () => {};
 
-  const form = createPedidoFormFields({ clientes, situacoes, canais });
+  const form = createPedidoFormFields({ clientes, situacoes, canais, formasEntrega });
   const itens = []; // each: { payload, display }
 
   // ---------------------------------------------------------------------------
@@ -112,7 +116,6 @@ export async function renderPedidoWizard(container, _ctx) {
   // Escolha inicial: Militar ou Civil. Define os clientes ofertados e quais
   // campos aparecem (civil = LAI/órgão/empresa/pessoa, com canal/município/nº
   // imagens; militar = OM, com produtos do acervo).
-  const MILITAR_TIPOS = [1, 2, 3]; // OM EB, Aeronáutica, Marinha
   const btnMil = el('button', {
     className: 'btn btn--secondary', type: 'button', onClick: () => setModo('militar'),
   }, 'Pedido Militar');
@@ -294,6 +297,11 @@ export async function renderPedidoWizard(container, _ctx) {
       infoRow('Endereço de entrega', valores.endereco_entrega),
       infoRow('Palavras-chave', valores.palavras_chave.length ? valores.palavras_chave.join(', ') : '-'),
       infoRow('Operação', valores.operacao),
+      // A forma de entrega e do pedido desde 2026-07-30, e nao mais do item.
+      // Ela tem de aparecer na revisao final, senao o usuario confirma sem ver
+      // como o material vai sair.
+      infoRow('Forma de entrega',
+        (formasEntrega.find(f => f.code === valores.forma_entrega_id) || {}).nome),
       infoRow('Localizador de envio', valores.localizador_envio),
       infoRow('Observação de envio', valores.observacao_envio),
       infoRow('Observação', valores.observacao),
@@ -461,16 +469,13 @@ export async function renderPedidoWizard(container, _ctx) {
     modoHint.textContent = civil
       ? 'Cliente civil (LAI/órgão/empresa/pessoa). NUP ou ofício opcionais; produtos do acervo opcionais (civil entrega imagem por área).'
       : 'Cliente OM, com DIEx e produtos do catálogo do acervo.';
-    const opts = clientes
-      .filter(c => civil ? !MILITAR_TIPOS.includes(c.tipo_cliente_id) : MILITAR_TIPOS.includes(c.tipo_cliente_id))
-      .map(c => ({ value: c.id, label: c.nome }));
+    const opts = filtrarClientesPorModo(clientes, modo).map(c => ({ value: c.id, label: c.nome }));
     form.fields.cliente_id.setOptions(opts);
     form.fields.cliente_id.setValue(null);
-    civilSection.classList.toggle('hidden', !civil);
-    form.fields.omds.element.classList.toggle('hidden', civil);
-    form.fields.previsto_pit.element.classList.toggle('hidden', civil);
-    form.fields.meta_pit.element.classList.toggle('hidden', civil);
-    form.fields.demandante.element.classList.toggle('hidden', civil);
+    // Quais campos aparecem em cada modo é regra compartilhada com a edição do
+    // pedido (details.js). Uma regra em dois lugares diverge, então ela mora só
+    // no pedido-form.js.
+    aplicarModoPedido({ fields: form.fields, modo, civilElement: civilSection });
     if (civil) form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
     produtosNote.textContent = civil
       ? 'Pedidos de civil geralmente NÃO têm produtos do acervo (entregam imagem por área). Deixe vazio se for o caso.'

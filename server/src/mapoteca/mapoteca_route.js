@@ -11,6 +11,8 @@ const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
 const mapotecaSchema = require('./mapoteca_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
+const auditoriaCtrl = require('./auditoria_ctrl')
+const etiquetaEnvioCtrl = require('./etiqueta_envio_ctrl')
 const uploadAnexoPedido = require('./anexo_pedido_upload')
 
 const { AppError } = require('../utils')
@@ -281,7 +283,7 @@ router.delete(
     body: mapotecaSchema.pedidoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deletePedidos(req.body.pedido_ids)
+    await mapotecaCtrl.deletePedidos(req.body.pedido_ids, req.usuarioUuid)
     const msg = 'Pedidos deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -340,7 +342,7 @@ router.delete(
     body: mapotecaSchema.impressaoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteImpressoes(req.body.impressao_ids)
+    await mapotecaCtrl.deleteImpressoes(req.body.impressao_ids, req.usuarioUuid)
     const msg = 'Registros de impressão deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -380,7 +382,7 @@ router.delete(
     body: mapotecaSchema.produtoPedidoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteProdutosPedido(req.body.produto_pedido_ids)
+    await mapotecaCtrl.deleteProdutosPedido(req.body.produto_pedido_ids, req.usuarioUuid)
     const msg = 'Produtos do pedido deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -963,6 +965,69 @@ router.delete(
     const msg = 'Anexo do pedido excluído com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
+// --- Etiqueta de envio do pedido --------------------------------------------
+
+// Etiqueta salva do pedido, ou dados nulo quando ainda não houver.
+//
+// Perfil de CONSULTA: quem lê o pedido lê a etiqueta dele, que é só o endereço
+// já cadastrado, com a correção aplicada.
+router.get(
+  '/pedido/:id/etiqueta',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({ params: mapotecaSchema.etiquetaPedidoParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await etiquetaEnvioCtrl.getPorPedido(req.params.id)
+
+    const msg = 'Etiqueta de envio retornada com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Grava a etiqueta do pedido (cria na primeira vez, substitui nas seguintes).
+//
+// Perfil de OPERADOR, e não gerente: quem embala o pacote é quem descobre que o
+// endereço do DIEx está errado, e é ele quem corrige. Mesmo perfil das outras
+// rotas do atendimento (imprimir, registrar impressão).
+router.put(
+  '/pedido/:id/etiqueta',
+  verifyPerfil('operador', 'mapoteca'),
+  schemaValidation({
+    params: mapotecaSchema.etiquetaPedidoParams,
+    body: mapotecaSchema.etiquetaEnvio
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await etiquetaEnvioCtrl.salvar(
+      req.params.id,
+      req.body,
+      req.usuarioUuid
+    )
+
+    const msg = 'Etiqueta de envio salva com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// --- Auditoria do pedido ----------------------------------------------------
+
+// Histórico de quem alterou, adicionou e removeu o pedido e os itens dele.
+// Perfil de CONSULTA: quem lê o pedido lê o histórico dele. Responde mesmo para
+// pedido já apagado, que é justamente o caso que a auditoria existe para
+// registrar (ver o comentário em auditoria_ctrl.listarPorPedido).
+router.get(
+  '/pedido/:id/auditoria',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({ params: mapotecaSchema.auditoriaPedidoParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await auditoriaCtrl.listarPorPedido(req.params.id)
+
+    const msg = 'Auditoria do pedido retornada com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 

@@ -3,13 +3,12 @@ import { openModal } from '@components/modal/modal-base.js';
 import {
   createTextField,
   createNumberField,
-  createDateField,
   createSelectField,
   createTextareaField,
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
 import { buscarProdutos, getProdutoDetalhado, getTiposProduto, getTiposEscala } from '@modules/mapoteca/services/acervo-service.js';
-import { getDominioTipoMidia, getDominioFormaEntrega } from '@modules/mapoteca/services/mapoteca-service.js';
+import { getDominioTipoMidia } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate } from '@utils/format.js';
 import { showError, showWarning } from '@utils/toast.js';
 
@@ -39,11 +38,10 @@ const PAGE_LIMIT = 5;
  *     message is shown verbatim in a toast
  */
 export async function openProdutoPedidoDialog({ item = null, title, submitLabel, onSubmit }) {
-  let tiposMidia, formasEntrega, tiposProduto, tiposEscala;
+  let tiposMidia, tiposProduto, tiposEscala;
   try {
-    [tiposMidia, formasEntrega, tiposProduto, tiposEscala] = await Promise.all([
+    [tiposMidia, tiposProduto, tiposEscala] = await Promise.all([
       getDominioTipoMidia(),
-      getDominioFormaEntrega(),
       getTiposProduto(),
       getTiposEscala(),
     ]);
@@ -287,8 +285,17 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
   // ---------------------------------------------------------------------------
   // Item fields
   // ---------------------------------------------------------------------------
+  // A forma de entrega e a data de entrega SAIRAM do item e subiram para o
+  // pedido (decisao do chefe, 2026-07-30). Medido na producao no mesmo dia: dos
+  // 91 pedidos com item, so 1 tinha mais de uma forma de entrega e NENHUM tinha
+  // mais de uma data. O pedido inteiro sai numa remessa so.
+  //
+  // A data nao virou campo novo: o pedido ja tem data_atendimento, o dia em que
+  // o material saiu.
+  //
+  // Ficam aqui a quantidade fornecida e a midia fornecida, que sao do ITEM: uma
+  // carta pode sair em papel e outra em PDF no mesmo pedido.
   const midiaOptions = tiposMidia.map(t => ({ value: t.code, label: t.nome }));
-  const entregaOptions = formasEntrega.map(f => ({ value: f.code, label: f.nome }));
 
   const midiaField = createSelectField({
     label: 'Tipo de mídia',
@@ -314,16 +321,6 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
     value: item && item.tipo_midia_fornecida_id != null ? item.tipo_midia_fornecida_id : undefined,
     placeholder: 'Não informada',
   });
-  const formaEntregaField = createSelectField({
-    label: 'Forma de entrega',
-    options: entregaOptions,
-    value: item && item.forma_entrega_id != null ? item.forma_entrega_id : undefined,
-    placeholder: 'Não informada',
-  });
-  const dataEntregaField = createDateField({
-    label: 'Data de entrega',
-    value: item && item.data_entrega ? String(item.data_entrega).slice(0, 10) : '',
-  });
   const producaoField = createCheckboxField({
     label: 'Produção específica (impressão sob demanda)',
     checked: Boolean(item && item.producao_especifica),
@@ -344,8 +341,6 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
       quantidadeField.element,
       qtdFornecidaField.element,
       midiaFornecidaField.element,
-      formaEntregaField.element,
-      dataEntregaField.element,
       producaoField.element,
       observacaoField.element,
     ]),
@@ -521,8 +516,6 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
             quantidade_fornecida: qtdFornecida,
             tipo_midia_id: midiaField.getValue(),
             tipo_midia_fornecida_id: midiaFornecidaField.getValue(),
-            forma_entrega_id: formaEntregaField.getValue(),
-            data_entrega: dataEntregaField.getValue(),
             observacao: observacaoField.getValue() || null,
             producao_especifica: producaoField.getValue(),
           };

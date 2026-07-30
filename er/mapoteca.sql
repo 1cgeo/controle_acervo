@@ -118,6 +118,12 @@ CREATE TABLE mapoteca.pedido(
     documento_solicitacao VARCHAR(255),
     documento_solicitacao_nup VARCHAR(255),
 	endereco_entrega TEXT,
+    -- Como o material saiu daqui. E do PEDIDO, e nao do item, desde 2026-07-30:
+    -- em 91 pedidos com item, so 1 tinha mais de uma forma (medido na producao).
+    -- Item entregue por outra forma se anota em observacao_envio, que o cliente
+    -- le. Instalacao existente chega aqui pela migracao
+    -- 2026-07-30_entrega_no_pedido.sql, que aplica a maioria por contagem.
+    forma_entrega_id SMALLINT REFERENCES mapoteca.forma_entrega (code),
     palavras_chave VARCHAR[] NOT NULL DEFAULT '{}',
     operacao TEXT,
     prazo DATE,
@@ -170,6 +176,8 @@ COMMENT ON COLUMN mapoteca.pedido.meta_pit IS
     'Código do item da meta do PIT que o pedido atende (ex.: 4.1). Obrigatório quando previsto_pit é verdadeiro, nulo caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
 COMMENT ON COLUMN mapoteca.pedido.observacao_interna IS
     'Anotação da equipe. NUNCA sai na consulta pública por localizador; ao contrário de observacao e observacao_envio, que saem.';
+COMMENT ON COLUMN mapoteca.pedido.forma_entrega_id IS
+    'Como o material do pedido saiu (Correios, em mãos, retirado). É do PEDIDO desde 2026-07-30: item com forma própria era exceção de 1 pedido em 91. Item entregue por outra forma se anota em observacao_envio.';
 
 -- RN04: localizador_pedido é imutável após definido
 CREATE OR REPLACE FUNCTION mapoteca.trg_localizador_imutavel()
@@ -213,8 +221,10 @@ CREATE TABLE mapoteca.produto_pedido(
         CHECK (quantidade_fornecida IS NULL OR quantidade_fornecida >= 0),
     tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
     tipo_midia_fornecida_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
-    forma_entrega_id SMALLINT REFERENCES mapoteca.forma_entrega (code),
-    data_entrega DATE,
+    -- SEM forma_entrega_id e SEM data_entrega: as duas subiram para o PEDIDO em
+    -- 2026-07-30 (ver mapoteca.pedido.forma_entrega_id e data_atendimento). Elas
+    -- prometiam remessa por item, e a producao nunca usou: 1 pedido em 91 tinha
+    -- duas formas e NENHUM tinha duas datas.
     observacao TEXT,
     producao_especifica BOOLEAN NOT NULL DEFAULT FALSE,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -232,8 +242,6 @@ COMMENT ON COLUMN mapoteca.produto_pedido.quantidade_fornecida IS
     'Quantidade efetivamente entregue, quando diverge da prevista.';
 COMMENT ON COLUMN mapoteca.produto_pedido.tipo_midia_fornecida_id IS
     'Mídia efetivamente usada, quando diverge da prevista.';
-COMMENT ON COLUMN mapoteca.produto_pedido.data_entrega IS
-    'Entrega efetiva por item — um mesmo pedido pode ter remessas em datas distintas.';
 
 -- Histórico de impressão por item de pedido: cada registro é uma sessão de
 -- impressão (quem imprimiu, quando e quantas cópias). O total impresso e o
@@ -389,6 +397,69 @@ CREATE TABLE mapoteca.anexo_pedido(
 
 CREATE INDEX idx_anexo_pedido_pedido ON mapoteca.anexo_pedido(pedido_id);
 
+-- Etiqueta de envio por Correios do pedido, agora SALVA.
+--
+-- Ate 2026-07-30 a etiqueta era descartavel: o dialogo montava o endereco a
+-- partir do pedido, imprimia e esquecia a correcao que a pessoa digitou. Quem
+-- imprimia a segunda via redigitava o mesmo conserto, e nada provava o que foi
+-- colado no pacote.
+--
+-- UMA etiqueta por pedido (UNIQUE em pedido_id): ela e o endereco corrigido
+-- daquele envio, e nao um historico de tentativas. Quem mudou o que, e quando,
+-- sai de mapoteca.pedido_auditoria com tabela = 'etiqueta_envio'.
+--
+-- Nao copia o endereco para o pedido de proposito: o pedido guarda o endereco
+-- que veio no DIEx, e a etiqueta guarda o que foi para o pacote. Sobrescrever o
+-- primeiro apagaria a prova do que o cliente pediu.
+--
+-- endereco e TEXT porque a etiqueta imprime uma linha por linha digitada.
+-- Usuario por UUID, a convencao das tabelas novas (igual a anexo_pedido).
+CREATE TABLE mapoteca.etiqueta_envio(
+    id BIGSERIAL NOT NULL PRIMARY KEY,
+    pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id) ON DELETE CASCADE,
+    destinatario VARCHAR(255) NOT NULL,
+    aos_cuidados VARCHAR(255),
+    endereco TEXT,
+    cep VARCHAR(9),
+    data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+    data_modificacao TIMESTAMP WITH TIME ZONE,
+    usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+    -- Nome explicito, e nao o que o Postgres geraria: o ON CONFLICT do upsert o
+    -- cita, e a migracao tem de criar a constraint com o MESMO nome, senao
+    -- instalacao nova diverge da migrada.
+    CONSTRAINT unique_etiqueta_por_pedido UNIQUE (pedido_id)
+);
+
+-- Historico de quem alterou, adicionou e removeu cada pedido. Ate 2026-07-30 o
+-- pedido e o item guardavam so o ULTIMO que mexeu (usuario_atualizacao_id), sem
+-- historico, e o DELETE apagava tudo sem rastro nenhum.
+--
+-- A linha nasce no BACKEND, nunca em gatilho de banco (decisao do chefe,
+-- 2026-07-30). O gatilho nao conhece o usuario da sessao HTTP, porque o Postgres
+-- ve so a conexao do pool; a saida seria um SET LOCAL em toda transacao. No
+-- backend o usuarioUuid ja chega em cada funcao do controller. Quem cobre o
+-- esquecimento e o teste de varredura mapoteca_auditoria.test.js.
+CREATE TABLE mapoteca.pedido_auditoria(
+    id BIGSERIAL PRIMARY KEY,
+    -- SEM chave estrangeira de proposito: a linha da auditoria tem de sobreviver
+    -- ao pedido apagado, que e justamente o caso que ela existe para registrar.
+    -- Com FK, o DELETE do pedido levaria junto a prova de que ele existiu.
+    pedido_id BIGINT NOT NULL,
+    tabela VARCHAR(50) NOT NULL,
+    registro_id BIGINT,
+    operacao CHAR(1) NOT NULL CHECK (operacao IN ('I','U','D')),
+    dados_antes JSONB,
+    dados_depois JSONB,
+    campos_alterados TEXT[],
+    -- Aceita nulo so para evento de migracao, onde nao ha pessoa por tras da
+    -- mudanca. Todo evento vindo de rota grava o usuario do token.
+    usuario_uuid UUID REFERENCES dgeo.usuario (uuid),
+    data_evento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_pedido_auditoria_pedido ON mapoteca.pedido_auditoria(pedido_id, data_evento DESC);
+
 -- Indexes para mapoteca
 CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
 CREATE INDEX idx_pedido_cliente ON mapoteca.pedido(cliente_id);
@@ -398,7 +469,6 @@ CREATE INDEX idx_pedido_operacao ON mapoteca.pedido(operacao) WHERE operacao IS 
 CREATE INDEX idx_pedido_palavras_chave ON mapoteca.pedido USING GIN (palavras_chave);
 CREATE INDEX idx_produto_pedido_pedido ON mapoteca.produto_pedido(pedido_id);
 CREATE INDEX idx_produto_pedido_uuid_versao ON mapoteca.produto_pedido(uuid_versao);
-CREATE INDEX idx_produto_pedido_data_entrega ON mapoteca.produto_pedido(data_entrega);
 CREATE INDEX idx_consumo_material_tipo ON mapoteca.consumo_material(tipo_material_id);
 CREATE INDEX idx_consumo_material_data ON mapoteca.consumo_material(data_consumo);
 CREATE INDEX idx_estoque_material_tipo ON mapoteca.estoque_material(tipo_material_id);

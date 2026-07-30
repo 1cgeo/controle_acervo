@@ -722,7 +722,7 @@ async function corrigir (args, cfg) {
  *
  * Existe porque a carga historica prendeu os itens de um documento no pedido de
  * OUTRO documento, e o conserto obvio (apagar la e cadastrar aqui) perderia
- * quantidade_fornecida, data_entrega e observacao, alem de ser irreversivel. O
+ * quantidade_fornecida e observacao, alem de ser irreversivel. O
  * PUT do produto_pedido aceita pedido_id, entao mover e uma ATUALIZACAO.
  */
 async function mover (args, cfg) {

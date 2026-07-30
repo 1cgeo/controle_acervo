@@ -1,9 +1,11 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { createTextField, createTextareaField } from '@components/form-fields/form-fields.js';
+import { showSuccess, showError } from '@utils/toast.js';
+import { getEtiquetaEnvio, salvarEtiquetaEnvio } from '@modules/mapoteca/services/mapoteca-service.js';
 
 /**
- * Etiqueta de endereço do envio por Correios, gerada a partir do pedido.
+ * Etiqueta de endereço do envio por Correios, salva no pedido.
  *
  * O procedimento (wiki_DGEO, mapoteca > Envio por Correios > Embalagem) manda
  * colar quatro documentos no rolo: declaração de conteúdo, AR, ESTA etiqueta e
@@ -15,6 +17,11 @@ import { createTextField, createTextareaField } from '@components/form-fields/fo
  * endereço do pedido é texto livre, digitado do DIEx, e o próprio procedimento
  * manda conferir o endereço antes de imprimir. Imprimir direto do cadastro
  * transformaria erro de digitação em pacote devolvido.
+ *
+ * Até 2026-07-30 a etiqueta era DESCARTÁVEL: o diálogo montava o HTML, imprimia
+ * e esquecia a correção digitada. Quem imprimia a segunda via redigitava o mesmo
+ * conserto. Agora ela é gravada em mapoteca.etiqueta_envio (uma por pedido) e o
+ * botão Imprimir só libera quando a tela bate com o que está salvo.
  */
 
 /**
@@ -156,7 +163,35 @@ export function imprimirHtml(html) {
 }
 
 /**
- * Diálogo da etiqueta: campos editáveis, prévia e impressão.
+ * Os quatro campos da etiqueta, com o mesmo formato dos dois lados da comparação.
+ *
+ * A tela e o banco usam nomes diferentes (aosCuidados x aos_cuidados) e o banco
+ * guarda NULL onde a tela tem ''. Sem normalizar, a etiqueta recém-salva já
+ * apareceria como "diferente do salvo" e o botão Imprimir nunca liberaria.
+ * @param {Object} origem
+ * @returns {{destinatario:string, aosCuidados:string, endereco:string, cep:string}}
+ */
+function normalizarCampos(origem) {
+  const texto = (valor) => String(valor === null || valor === undefined ? '' : valor).trim();
+  return {
+    destinatario: texto(origem.destinatario),
+    aosCuidados: texto(origem.aosCuidados !== undefined ? origem.aosCuidados : origem.aos_cuidados),
+    endereco: texto(origem.endereco),
+    cep: texto(origem.cep),
+  };
+}
+
+/** Verdadeiro quando os quatro campos batem. */
+function camposIguais(a, b) {
+  if (!a || !b) return false;
+  return a.destinatario === b.destinatario
+    && a.aosCuidados === b.aosCuidados
+    && a.endereco === b.endereco
+    && a.cep === b.cep;
+}
+
+/**
+ * Diálogo da etiqueta: campos editáveis, prévia, gravação e impressão.
  * @param {Object} pedido - o pedido da rota GET /mapoteca/pedido/:id
  */
 export function openEtiquetaEnvioDialog(pedido = {}) {
@@ -196,31 +231,100 @@ export function openEtiquetaEnvioDialog(pedido = {}) {
     title: 'Prévia da etiqueta',
   });
 
-  function dadosAtuais() {
-    return {
+  // A referência sai do PEDIDO, e não da etiqueta salva: ela é o localizador que
+  // liga o papel ao registro, e não um campo que alguém corrige.
+  const referencia = pedido.localizador_pedido
+    ? `Pedido ${pedido.localizador_pedido}`
+    : (pedido.id ? `Pedido #${pedido.id}` : '');
+
+  function camposDaTela() {
+    return normalizarCampos({
       destinatario: destinatario.getValue(),
       aosCuidados: aosCuidados.getValue(),
       endereco: endereco.getValue(),
       cep: cep.getValue(),
-      referencia: pedido.localizador_pedido
-        ? `Pedido ${pedido.localizador_pedido}`
-        : (pedido.id ? `Pedido #${pedido.id}` : ''),
-    };
+    });
   }
 
   function atualizarPrevia() {
-    previa.srcdoc = montarEtiquetaHtml(dadosAtuais());
+    // A prévia acompanha a EDIÇÃO, e não o que está salvo: ela existe para a
+    // pessoa ver o efeito do conserto antes de gravar.
+    previa.srcdoc = montarEtiquetaHtml({ ...camposDaTela(), referencia });
+  }
+
+  // --- A trava do botão Imprimir --------------------------------------------
+  //
+  // A trava vale SEMPRE, inclusive na primeira abertura e sem edição nenhuma
+  // (decisão do chefe, 2026-07-30). Liberar a primeira impressão "porque nada
+  // mudou" criaria a exceção que ninguém lembra: o papel colado no pacote
+  // deixaria de ter registro, e a segunda via sairia de outra fonte. Com a trava
+  // sem exceção, o que foi impresso é sempre o que está registrado.
+  //
+  // `salvo` é o que o SERVIDOR devolveu, nunca o que a tela mandou. Campo que o
+  // banco recusou ou truncou aparece como diferença e mantém o botão travado,
+  // em vez de imprimir um endereço que não foi gravado.
+  let salvo = null;
+  let carregando = Boolean(pedido.id);
+  let salvando = false;
+  // Só sobrescreve os campos com a etiqueta salva se a pessoa ainda não digitou:
+  // a leitura é assíncrona, e apagar o que ela acabou de escrever seria pior do
+  // que exigir um Salvar a mais.
+  let tocado = false;
+
+  const aviso = el('div', { className: 'form-field__help etiqueta-dialogo__aviso' });
+
+  function mensagemDaTrava() {
+    if (!pedido.id) {
+      return 'Este pedido não foi identificado, então a etiqueta não pode ser salva nem impressa.';
+    }
+    if (carregando) {
+      return 'Carregando a etiqueta salva deste pedido. Imprimir libera em seguida.';
+    }
+    if (salvando) {
+      return 'Salvando a etiqueta.';
+    }
+    if (!salvo) {
+      return 'Imprimir libera depois de Salvar: este pedido ainda não tem etiqueta salva. '
+        + 'O sistema só imprime o que está registrado.';
+    }
+    if (!camposIguais(camposDaTela(), salvo)) {
+      return 'Imprimir libera depois de Salvar: há mudanças na tela que ainda não foram salvas.';
+    }
+    return 'Etiqueta salva. O que sai impresso é o que está registrado no pedido.';
+  }
+
+  function atualizarTrava() {
+    const liberado = Boolean(pedido.id) && !carregando && !salvando
+      && camposIguais(camposDaTela(), salvo);
+    btnImprimir.disabled = !liberado;
+    btnSalvar.disabled = !pedido.id || carregando || salvando;
+    aviso.textContent = mensagemDaTrava();
+    // O aviso de botão travado é a explicação, não um erro do preenchimento.
+    aviso.classList.toggle('etiqueta-dialogo__aviso--ok', liberado);
+  }
+
+  const semEndereco = el('div', {
+    className: 'form-field__help',
+    textContent: 'O pedido não tem endereço de entrega, e o cadastro do cliente '
+      + 'também não. Digite o endereço abaixo.',
+  });
+
+  function atualizarAvisoEndereco() {
+    // Recalculado, e não decidido só na abertura: o endereço pode chegar depois,
+    // vindo da etiqueta salva, e o aviso mentiria na tela.
+    semEndereco.classList.toggle('hidden', Boolean(endereco.getValue()));
   }
 
   [destinatario, aosCuidados, endereco, cep].forEach((campo) => {
-    campo.input.addEventListener('input', atualizarPrevia);
+    campo.input.addEventListener('input', () => {
+      tocado = true;
+      atualizarPrevia();
+      atualizarAvisoEndereco();
+      atualizarTrava();
+    });
   });
   atualizarPrevia();
-
-  const semEndereco = !enderecoInicial
-    ? el('div', { className: 'form-field__help', textContent:
-      'O pedido não tem endereço de entrega, e o cadastro do cliente também não. Digite o endereço abaixo.' })
-    : null;
+  atualizarAvisoEndereco();
 
   const content = el('div', { className: 'etiqueta-dialogo' }, [
     el('div', { className: 'etiqueta-dialogo__campos' }, [
@@ -229,6 +333,7 @@ export function openEtiquetaEnvioDialog(pedido = {}) {
       aosCuidados.element,
       endereco.element,
       cep.element,
+      aviso,
     ]),
     el('div', { className: 'etiqueta-dialogo__previa' }, [
       el('div', { className: 'form-field__label', textContent: 'Prévia' }),
@@ -236,24 +341,92 @@ export function openEtiquetaEnvioDialog(pedido = {}) {
     ]),
   ]);
 
-  return openModal({
+  async function salvar() {
+    destinatario.setError(null);
+    if (!destinatario.getValue()) {
+      destinatario.setError('Campo obrigatório');
+      return;
+    }
+
+    salvando = true;
+    atualizarTrava();
+
+    try {
+      const atual = camposDaTela();
+      const gravado = await salvarEtiquetaEnvio(pedido.id, {
+        destinatario: atual.destinatario,
+        aos_cuidados: atual.aosCuidados,
+        endereco: atual.endereco,
+        cep: atual.cep,
+      });
+      // Lê o que o servidor devolveu, e não o que se mandou: é o que prova a
+      // gravação. Se o destino ignorar um campo, a diferença aparece aqui e o
+      // botão Imprimir continua travado.
+      salvo = normalizarCampos(gravado || {});
+      showSuccess('Etiqueta salva');
+    } catch (err) {
+      showError(err.message || 'Erro ao salvar a etiqueta');
+    } finally {
+      salvando = false;
+      atualizarTrava();
+    }
+  }
+
+  const modal = openModal({
     title: 'Etiqueta de envio',
     content,
     width: '900px',
     actions: [
       { label: 'Fechar', variant: 'text', onClick: ({ close }) => close() },
+      { label: 'Salvar', variant: 'secondary', onClick: () => salvar() },
       {
         label: 'Imprimir',
         variant: 'primary',
         onClick: () => {
-          destinatario.setError(null);
-          if (!destinatario.getValue()) {
-            destinatario.setError('Campo obrigatório');
-            return;
-          }
-          imprimirHtml(montarEtiquetaHtml(dadosAtuais()));
+          // Imprime o que está SALVO, e não o que está na tela. Com a trava, os
+          // dois são iguais neste ponto; imprimir do registro deixa isso valendo
+          // mesmo se um caminho novo esquecer de travar o botão.
+          imprimirHtml(montarEtiquetaHtml({ ...salvo, referencia }));
         },
       },
     ],
   });
+
+  // O openModal monta os botões do rodapé a partir das ações e não devolve
+  // referência a eles. Achar pelo rótulo dentro do PRÓPRIO diálogo é estável e
+  // não alcança botão de outra tela.
+  const acao = (rotulo) => [...modal.element.querySelectorAll('.modal__footer button')]
+    .find((b) => b.textContent.trim() === rotulo);
+  const btnSalvar = acao('Salvar');
+  const btnImprimir = acao('Imprimir');
+
+  atualizarTrava();
+
+  if (pedido.id) {
+    getEtiquetaEnvio(pedido.id)
+      .then((etiqueta) => {
+        if (etiqueta) {
+          salvo = normalizarCampos(etiqueta);
+          if (!tocado) {
+            destinatario.setValue(salvo.destinatario);
+            aosCuidados.setValue(salvo.aosCuidados);
+            endereco.setValue(salvo.endereco);
+            cep.setValue(salvo.cep);
+            atualizarPrevia();
+            atualizarAvisoEndereco();
+          }
+        }
+      })
+      .catch((err) => {
+        // Falha na leitura mantém o botão travado, e o texto diz o porquê. Sem a
+        // etiqueta salva não há como afirmar que o papel bate com o registro.
+        showError(err.message || 'Erro ao carregar a etiqueta salva');
+      })
+      .finally(() => {
+        carregando = false;
+        atualizarTrava();
+      });
+  }
+
+  return modal;
 }

@@ -19,9 +19,10 @@ const QTD_EFETIVA = "COALESCE(pp.quantidade_fornecida, pp.quantidade)";
 // Mídia efetivamente usada: fornecida com fallback na prevista
 const MIDIA_EFETIVA = "COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)";
 
-// Data efetiva de entrega por item: data do item com fallback no fechamento do pedido
-const dataEntregaEfetiva = (pedidoAlias = "ped") =>
-  `COALESCE(pp.data_entrega, ${pedidoAlias}.data_atendimento::date)`;
+// NAO existe mais fragmento de "data efetiva de entrega". Ele era
+// COALESCE(pp.data_entrega, ped.data_atendimento), e em 2026-07-30 a coluna do
+// item saiu: a data de entrega e do PEDIDO, e chama-se data_atendimento. Quem
+// precisa dela escreve `ped.data_atendimento`, sem COALESCE e sem fragmento.
 
 // ---------------------------------------------------------------------------
 // A identidade do item do pedido
@@ -74,13 +75,21 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
 // consulta de item nao passe a depender de um fragmento pensado para o acervo.
 const ESCALA_DISPLAY_ITEM = ESCALA_DISPLAY;
 
-// Situações que contam como pedido EM ABERTO: todas menos Concluído (5) e
-// Cancelado (6). É a fila de trabalho da tela de atendimento.
+// Situações que contam como pedido EM ABERTO: a fila de trabalho da tela de
+// atendimento. Ficam de fora Concluído (5), Cancelado (6) e Aguardando
+// produção (7).
 //
 // Remetido (4) fica DENTRO de propósito: o pedido saiu, mas ainda falta fechar.
 // Tirá-lo faria o pedido desaparecer da fila no meio do caminho, sem ninguém ter
 // marcado nada como concluído.
-const SITUACOES_EM_ABERTO = [1, 2, 3, 4, 7];
+//
+// Aguardando produção (7) saiu em 2026-07-30, por decisão do chefe. O pedido
+// nessa situação espera carta que AINDA NÃO EXISTE. Não é trabalho de quem
+// imprime, e fila que mostra o impossível deixa de ser fila. Na produção eram 2
+// pedidos assim (ids 127 e 128, com 33 e 16 itens), sempre no topo da tela e
+// nunca atendíveis. Eles continuam visíveis na lista de pedidos, pelo filtro
+// "Aguardando produção".
+const SITUACOES_EM_ABERTO = [1, 2, 3, 4];
 
 // O arquivo IMPRIMÍVEL de uma versão: o PDF do produto cartográfico em si.
 //
@@ -122,7 +131,6 @@ const filtroPeriodoMes = (coluna, { cumulativo = false } = {}) => {
 module.exports = {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
-  dataEntregaEfetiva,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
   JOIN_PRODUTO_ITEM,

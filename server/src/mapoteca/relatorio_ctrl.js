@@ -14,7 +14,6 @@ const {
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
-  dataEntregaEfetiva,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
   JOIN_PRODUTO_ITEM,
@@ -182,11 +181,16 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       tm.nome AS material_previsto,
       pp.quantidade_fornecida,
       tmf.nome AS material_fornecido,
-      pp.data_entrega,
+      -- As colunas "Data da Entrega" e "Forma da Entrega" da aba saem do PEDIDO
+      -- desde 2026-07-30. O nome da chave nao muda (data_entrega,
+      -- forma_entrega): e o rotulo da aba do RTM, e trocar o nome so quebraria a
+      -- exportacao sem ganhar nada. Antes elas vinham do item, e o COALESCE dos
+      -- relatorios ja as tratava como se fossem do pedido.
+      p.data_atendimento AS data_entrega,
       fe.nome AS forma_entrega,
       pp.observacao,
-      CASE WHEN pp.data_entrega IS NOT NULL
-           THEN EXTRACT(MONTH FROM pp.data_entrega)::int
+      CASE WHEN p.data_atendimento IS NOT NULL
+           THEN EXTRACT(MONTH FROM p.data_atendimento)::int
       END AS mes,
       p.id AS pedido_id,
       p.localizador_pedido
@@ -199,7 +203,7 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
     ${JOIN_PRODUTO_ITEM}
     JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
     LEFT JOIN mapoteca.tipo_midia tmf ON tmf.code = pp.tipo_midia_fornecida_id
-    LEFT JOIN mapoteca.forma_entrega fe ON fe.code = pp.forma_entrega_id
+    LEFT JOIN mapoteca.forma_entrega fe ON fe.code = p.forma_entrega_id
     WHERE ${filtroAno("p.data_pedido")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
@@ -258,7 +262,10 @@ controller.getRelatorioTematicos = async (ano) => {
       c.nome AS demandante,
       tp.nome AS tipo_produto,
       p.observacao AS descricao_pedido,
-      ${dataEntregaEfetiva("p")} AS data_entrega,
+      -- O dia em que o material saiu daqui, que e do PEDIDO. Era
+      -- COALESCE(pp.data_entrega, p.data_atendimento) ate 2026-07-30, quando a
+      -- coluna do item saiu.
+      p.data_atendimento AS data_entrega,
       COALESCE(v.descricao, prod.descricao) AS descricao_produto,
       v.orgao_produtor AS secao_responsavel,
       v.metadado->>'responsavel' AS militar_responsavel,

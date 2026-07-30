@@ -21,6 +21,89 @@ export const SITUACAO_PEDIDO_CONCLUIDO = 5;
 export const SITUACAO_PEDIDO_CANCELADO = 6;
 export const TIPO_CLIENTE_LAI = 9;
 
+// Tipos de cliente militares (mapoteca.tipo_cliente): 1 OM EB, 2 Aeronáutica,
+// 3 Marinha. Todo o resto (órgão público, empresa, pessoa física, LAI) é civil.
+export const TIPOS_CLIENTE_MILITAR = [1, 2, 3];
+
+// Campos que só o pedido militar usa. Medido na produção em 2026-07-30:
+// demandante preenchido em 100 de 100 militares e 0 de 33 civis; operação em
+// 33 militares e 0 civis; previsto no PIT em 3 militares e 0 civis.
+const CAMPOS_SO_MILITAR = ['demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit'];
+
+// Campos que só o pedido de civil usa. Canal de recebimento preenchido em 33 de
+// 33 civis e 0 de 100 militares (mesma medição).
+const CAMPOS_SO_CIVIL = ['canal_recebimento_id', 'municipio', 'qtd_imagens'];
+
+export const ROTULO_MODO = { militar: 'Pedido militar', civil: 'Pedido civil' };
+
+/**
+ * Modo do pedido a partir do tipo de cliente.
+ * @param {number|string|null} tipoClienteId
+ * @returns {'militar'|'civil'}
+ */
+export function modoDoTipoCliente(tipoClienteId) {
+  return TIPOS_CLIENTE_MILITAR.includes(Number(tipoClienteId)) ? 'militar' : 'civil';
+}
+
+/**
+ * Clientes que o modo aceita. Serve a criação, onde o usuário escolhe o modo
+ * primeiro e só depois o cliente.
+ * @param {Array<{tipo_cliente_id:number}>} clientes
+ * @param {'militar'|'civil'} modo
+ */
+export function filtrarClientesPorModo(clientes, modo) {
+  const militar = modo === 'militar';
+  return clientes.filter(c => TIPOS_CLIENTE_MILITAR.includes(c.tipo_cliente_id) === militar);
+}
+
+/** Campo sem valor gravado nem digitado (o checkbox desmarcado conta como vazio). */
+function campoVazio(field) {
+  const valor = field.getValue();
+  if (valor === null || valor === undefined || valor === false) return true;
+  if (Array.isArray(valor)) return valor.length === 0;
+  return String(valor).trim() === '';
+}
+
+/**
+ * Mostra só os campos do modo, escondendo o campo do OUTRO modo que está VAZIO.
+ *
+ * O campo PREENCHIDO nunca some, mesmo fora do modo. Medido na produção em
+ * 2026-07-30: os 33 pedidos civis têm omds gravado com o valor constante
+ * "1º CGEO". Esconder às cegas deixaria dado gravado e invisível, e ninguém
+ * conseguiria corrigi-lo.
+ *
+ * A visibilidade não muda o payload: getValues lê todos os campos, então o
+ * campo escondido continua enviando o valor que já tinha.
+ *
+ * @param {Object} options
+ * @param {Object} options.fields - o `fields` de createPedidoFormFields
+ * @param {'militar'|'civil'} options.modo
+ * @param {HTMLElement|null} [options.civilElement] - bloco da seção de civil
+ * @returns {boolean} true quando o modo é civil
+ */
+export function aplicarModoPedido({ fields, modo, civilElement = null }) {
+  const civil = modo === 'civil';
+
+  for (const nome of CAMPOS_SO_MILITAR) {
+    const field = fields[nome];
+    if (field) field.element.classList.toggle('hidden', civil && campoVazio(field));
+  }
+  for (const nome of CAMPOS_SO_CIVIL) {
+    const field = fields[nome];
+    if (field) field.element.classList.toggle('hidden', !civil && campoVazio(field));
+  }
+
+  // A seção inteira de civil só some quando os três campos dela estão vazios.
+  // Com um deles preenchido, o título tem de continuar na tela, senão o campo
+  // aparece solto e sem contexto.
+  if (civilElement) {
+    const algumPreenchido = CAMPOS_SO_CIVIL.some(nome => fields[nome] && !campoVazio(fields[nome]));
+    civilElement.classList.toggle('hidden', !civil && !algumPreenchido);
+  }
+
+  return civil;
+}
+
 function isoDateOrEmpty(value) {
   return value ? String(value).slice(0, 10) : '';
 }
@@ -36,10 +119,14 @@ function orNull(value) {
  * @param {Object|null} [options.pedido] - existing pedido for pre-fill (edit)
  * @param {Array<{id:number, nome:string}>} options.clientes
  * @param {Array<{code:number, nome:string}>} options.situacoes
+ * @param {Array<{code:number, nome:string}>} [options.formasEntrega] - dominio
+ *   mapoteca.forma_entrega
  * @returns {{fields:Object, basicoElement:HTMLElement, adicionalElement:HTMLElement,
  *   validateBasico:()=>boolean, validateAdicional:()=>boolean, getValues:()=>Object}}
  */
-export function createPedidoFormFields({ pedido = null, clientes = [], situacoes = [], canais = [] }) {
+export function createPedidoFormFields({
+  pedido = null, clientes = [], situacoes = [], canais = [], formasEntrega = [],
+}) {
   const fields = {
     // Etapa 1 — Básico
     cliente_id: createSelectField({
@@ -109,6 +196,17 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     operacao: createTextField({
       label: 'Operação',
       value: (pedido && pedido.operacao) || '',
+    }),
+    // A forma de entrega e do PEDIDO, nao do item: o pedido inteiro sai numa
+    // remessa so. Medido na producao em 2026-07-30: dos 91 pedidos com item, so
+    // 1 tinha itens com formas diferentes. O campo saiu do item por decisao do
+    // chefe na mesma data.
+    forma_entrega_id: createSelectField({
+      label: 'Forma de entrega',
+      options: formasEntrega.map(f => ({ value: f.code, label: f.nome })),
+      value: pedido ? pedido.forma_entrega_id : undefined,
+      placeholder: 'Não informada',
+      helpText: 'Como o material chega ao cliente (Correios, entrega em mãos).',
     }),
     localizador_envio: createTextField({
       label: 'Localizador de envio (rastreio)',
@@ -206,6 +304,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
     fields.demandante.element,
     fields.omds.element,
     fields.operacao.element,
+    fields.forma_entrega_id.element,
     fields.localizador_envio.element,
     fields.previsto_pit.element,
     fields.meta_pit.element,
@@ -303,6 +402,7 @@ export function createPedidoFormFields({ pedido = null, clientes = [], situacoes
       previsto_pit: fields.previsto_pit.getValue(),
       meta_pit: orNull(fields.meta_pit.getValue()),
       observacao: orNull(fields.observacao.getValue()),
+      forma_entrega_id: fields.forma_entrega_id.getValue(),
       localizador_envio: orNull(fields.localizador_envio.getValue()),
       observacao_envio: orNull(fields.observacao_envio.getValue()),
       observacao_interna: orNull(fields.observacao_interna.getValue()),

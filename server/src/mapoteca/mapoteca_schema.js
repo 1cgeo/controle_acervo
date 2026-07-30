@@ -73,6 +73,9 @@ const pedidoBase = {
   documento_solicitacao: Joi.string().max(255).allow(null, ''),
   documento_solicitacao_nup: Joi.string().max(255).allow(null, ''),
   endereco_entrega: Joi.string().allow(null, ''),
+  // Como o material sai daqui. Era campo do ITEM até 2026-07-30, e subiu para o
+  // pedido: 1 pedido em 91 tinha mais de uma forma entre os itens.
+  forma_entrega_id: Joi.number().integer().valid(...Object.values(FORMA_ENTREGA)).allow(null),
   palavras_chave: Joi.array().items(Joi.string()).default([]),
   operacao: Joi.string().allow(null, ''),
   prazo: Joi.date().raw().allow(null),
@@ -153,9 +156,10 @@ const produtoPedidoBase = {
   quantidade_fornecida: Joi.number().integer().min(0).allow(null),
   tipo_midia_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).required(),
   tipo_midia_fornecida_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).allow(null),
-  forma_entrega_id: Joi.number().integer().valid(...Object.values(FORMA_ENTREGA)).allow(null),
-  // raw(): preserva a string da data para evitar shift de fuso na coluna DATE
-  data_entrega: Joi.date().raw().allow(null),
+  // Sem forma_entrega_id e sem data_entrega: as duas são do PEDIDO desde
+  // 2026-07-30. Corpo antigo que ainda as mande cai no stripUnknown do
+  // schemaValidation, que descarta a chave e devolve o aviso no envelope. É o
+  // que se quer: o campo mudou de lugar, e o cliente velho fica sabendo.
   observacao: Joi.string().allow(null, ''),
   producao_especifica: Joi.boolean().default(false)
 }
@@ -433,6 +437,35 @@ models.anexoUploadBody = Joi.object().keys({
     .valid(...Object.values(TIPO_ANEXO_PEDIDO))
     .default(TIPO_ANEXO_PEDIDO.OUTROS),
   descricao: Joi.string().max(1000).allow(null, '')
+})
+
+// --- Etiqueta de envio do pedido --------------------------------------------
+
+// Parâmetro de rota do pedido (id) para ler e gravar a etiqueta dele.
+models.etiquetaPedidoParams = Joi.object().keys({
+  id: Joi.number().integer().required()
+})
+
+// Corpo do PUT. É um upsert do registro INTEIRO: o diálogo manda sempre os
+// quatro campos, e campo ausente apaga o valor antigo. Sem `.default(null)`, de
+// propósito: o controller converte ausente e '' em NULL num lugar só.
+//
+// Só o destinatário é obrigatório. O endereço pode faltar de verdade (etiqueta
+// que sai com o endereço colado à mão no pacote), e exigi-lo travaria o registro
+// da correção que já existe.
+models.etiquetaEnvio = Joi.object().keys({
+  destinatario: Joi.string().max(255).required(),
+  aos_cuidados: Joi.string().max(255).allow(null, ''),
+  endereco: Joi.string().max(2000).allow(null, ''),
+  cep: Joi.string().max(9).allow(null, '')
+})
+
+// --- Auditoria do pedido ----------------------------------------------------
+
+// Parâmetro de rota do pedido (id) para ler o histórico dele. Não exige que o
+// pedido ainda exista: a auditoria sobrevive ao pedido apagado.
+models.auditoriaPedidoParams = Joi.object().keys({
+  id: Joi.number().integer().required()
 })
 
 module.exports = models

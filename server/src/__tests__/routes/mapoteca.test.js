@@ -343,8 +343,7 @@ describe('Mapoteca Routes', () => {
         pedido_id: pedido.id,
         quantidade: 100,
         quantidade_fornecida: 100,
-        tipo_midia_id: 6,
-        data_entrega: '2026-03-20'
+        tipo_midia_id: 6
       })
 
       const res = await request(app)
@@ -513,7 +512,9 @@ describe('Mapoteca Routes', () => {
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId, {
-        observacao: 'Pedido urgente para exercício'
+        observacao: 'Pedido urgente para exercício',
+        // A forma de entrega é do PEDIDO desde 2026-07-30, e não mais do item.
+        forma_entrega_id: 1
       })
 
       await criaProdutoPedido({
@@ -521,7 +522,6 @@ describe('Mapoteca Routes', () => {
         pedido_id: pedido.id,
         quantidade: 4,
         tipo_midia_id: 5,
-        forma_entrega_id: 1,
         observacao: 'Plotagem em papel A0'
       })
 
@@ -534,6 +534,8 @@ describe('Mapoteca Routes', () => {
       expect(dados.localizador_pedido).toBe(pedido.localizador_pedido)
       expect(dados.situacao_pedido_nome).toBeDefined()
       expect(dados.observacao).toBe('Pedido urgente para exercício')
+      // A forma de entrega sai UMA vez, no pedido, e não repetida em cada item.
+      expect(dados.forma_entrega_nome).toBe('Correios')
       // Não deve expor o id interno do pedido
       expect(dados.id).toBeUndefined()
 
@@ -542,7 +544,6 @@ describe('Mapoteca Routes', () => {
       const item = dados.produtos[0]
       expect(item.quantidade).toBe(4)
       expect(item.tipo_midia_nome).toBeDefined()
-      expect(item.forma_entrega_nome).toBe('Correios')
       expect(item.observacao).toBe('Plotagem em papel A0')
       expect(item.produto_nome).toBeDefined()
       expect(item.tipo_produto_nome).toBe('Carta Topográfica')
@@ -912,7 +913,12 @@ describe('Mapoteca Routes', () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente()
-      const pedido = await criaPedido(clienteId)
+      // A forma e a data de entrega sao do PEDIDO desde 2026-07-30. O item so
+      // descreve O QUE se imprime.
+      const pedido = await criaPedido(clienteId, {
+        forma_entrega_id: 1,
+        data_atendimento: '2026-03-20'
+      })
 
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
@@ -921,8 +927,6 @@ describe('Mapoteca Routes', () => {
         quantidade_fornecida: 8,
         tipo_midia_id: 5,
         tipo_midia_fornecida_id: 8,
-        forma_entrega_id: 1,
-        data_entrega: '2026-03-20',
         observacao: 'Entrega parcial'
       })
 
@@ -931,16 +935,17 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateAdminToken())
 
       expect(res.status).toBe(200)
+      expect(res.body.dados.forma_entrega_id).toBe(1)
+      expect(res.body.dados.forma_entrega_nome).toBe('Correios')
+      // toBe, e nao toContain: o toContain passaria tambem com um timestamp em
+      // UTC ('2026-03-20T00:00:00.000Z'), que e justamente o que produz o D-1 na
+      // tela. A igualdade exata exige que a data volte sem hora e sem fuso.
+      expect(res.body.dados.data_atendimento).toBe('2026-03-20')
       const item = res.body.dados.produtos[0]
       expect(item.quantidade).toBe(10)
       expect(item.quantidade_fornecida).toBe(8)
       expect(item.tipo_midia_fornecida_nome).toBe('Tyvek')
-      expect(item.forma_entrega_nome).toBe('Correios')
       expect(item.observacao).toBe('Entrega parcial')
-      // toBe, e nao toContain: o toContain passaria tambem com um timestamp em
-      // UTC ('2026-03-20T00:00:00.000Z'), que e justamente o que produz o D-1 na
-      // tela. A igualdade exata exige que a data volte sem hora e sem fuso.
-      expect(item.data_entrega).toBe('2026-03-20')
       expect(item.tipo_produto_nome).toBe('Carta Topográfica')
     })
 
@@ -1166,15 +1171,17 @@ describe('Mapoteca Routes', () => {
         // O prazo existe no cenário de propósito: até 2026-07-29 ele saía na
         // coluna "Meta" do relatório, e um teste do .ods guarda essa correção.
         prazo: '2026-04-10',
-        documento_solicitacao: 'DIEx 123-S3/3º RCC'
+        documento_solicitacao: 'DIEx 123-S3/3º RCC',
+        // As colunas "Data da Entrega" e "Forma da Entrega" das abas saem do
+        // PEDIDO desde 2026-07-30. A data é a data_atendimento, que o helper
+        // criaPedido já põe em 2026-03-20.
+        forma_entrega_id: 1
       })
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
         pedido_id: pedido.id,
         quantidade: 10,
         tipo_midia_id: 5,
-        forma_entrega_id: 1,
-        data_entrega: '2026-03-20',
         producao_especifica: false
       })
       return { produto, versao, clienteId, pedido }
@@ -1685,13 +1692,14 @@ describe('Mapoteca Routes', () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente()
+      // O dashboard conta a entrega pela data_atendimento do PEDIDO desde
+      // 2026-07-30. O helper criaPedido já a põe em 2026-03-20.
       const pedido = await criaPedido(clienteId, { operacao: 'Operação Dash' })
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
         pedido_id: pedido.id,
         quantidade: 7,
-        tipo_midia_id: 5,
-        data_entrega: '2026-03-20'
+        tipo_midia_id: 5
       })
     }
 
@@ -2004,11 +2012,11 @@ describe('Mapoteca Routes', () => {
       const pedidoOrto = await criaPedido(omOrto)
       await criaProdutoPedido({
         uuid_versao: versaoTopo.uuid_versao, pedido_id: pedidoTopo.id,
-        quantidade: 3, tipo_midia_id: 5, data_entrega: '2026-03-20'
+        quantidade: 3, tipo_midia_id: 5
       })
       await criaProdutoPedido({
         uuid_versao: versaoOrto.uuid_versao, pedido_id: pedidoOrto.id,
-        quantidade: 4, tipo_midia_id: 5, data_entrega: '2026-03-20'
+        quantidade: 4, tipo_midia_id: 5
       })
 
       const semFiltro = await request(app)
@@ -2055,7 +2063,7 @@ describe('Mapoteca Routes', () => {
         const versao = await createVersao(produto.id)
         await criaProdutoPedido({
           uuid_versao: versao.uuid_versao, pedido_id: pedido.id,
-          quantidade: 1, tipo_midia_id: 5, data_entrega: '2026-03-20'
+          quantidade: 1, tipo_midia_id: 5
         })
       }
 
@@ -2124,8 +2132,7 @@ describe('Mapoteca Routes', () => {
         uuid_versao: versao.uuid_versao,
         pedido_id: pedido.id,
         quantidade: 2,
-        tipo_midia_id: 5,
-        data_entrega: '2026-01-15'
+        tipo_midia_id: 5
       })
 
       const res = await request(app)

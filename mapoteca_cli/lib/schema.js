@@ -11,7 +11,7 @@
 //
 // Limite conhecido e deliberado: joi.describe() nao enxerga os COMENTARIOS do
 // arquivo de schema, e e neles que mora boa parte da regra de negocio (por que
-// forma_entrega fica nula no cadastro, por exemplo). Por isso o comando `schema`
+// forma_entrega e do pedido e nao do item, por exemplo). Por isso o comando `schema`
 // tambem imprime o bloco curado de regras.js. A FORMA vem do Joi vivo; o PORQUE
 // vem da prosa curta ao lado.
 

@@ -153,9 +153,8 @@ controller.getProdutosFinalizados = async ({
 
 // 3) Atendimentos da mapoteca no mês (RPCMTec 2.4 militar e 2.7 civil/LAI).
 // Enxuto às colunas do RPCMTec: sem endereço, ponto de contato ou observações
-// de envio. Pedido entregue (Remetido/Concluído) cuja data efetiva de
-// atendimento (fechamento do pedido, com fallback na maior data de entrega de
-// item) cai no período. Uma linha por pedido.
+// de envio. Pedido entregue (Remetido/Concluído) cuja data de atendimento (o
+// fechamento do pedido) cai no período. Uma linha por pedido.
 controller.getMapotecaAtendimentos = async ({ ano, mes, cumulativo = true } = {}) => {
   const rows = await db.conn.any(
     `
@@ -171,7 +170,11 @@ controller.getMapotecaAtendimentos = async ({ ano, mes, cumulativo = true } = {}
         ped.previsto_pit,
         ped.operacao,
         COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS quantidade,
-        COALESCE(ped.data_atendimento::date, MAX(pp.data_entrega)) AS data_atendimento
+        -- Sem queda na data do item: a coluna saiu de produto_pedido em
+        -- 2026-07-30, e a data de entrega do pedido e esta. Pedido remetido sem
+        -- data_atendimento nao entra no periodo, e e o certo: enquanto ninguem
+        -- data o fechamento, nao ha atendimento a declarar no RPCMTec.
+        ped.data_atendimento
       FROM mapoteca.pedido ped
       JOIN mapoteca.cliente c ON c.id = ped.cliente_id
       JOIN mapoteca.tipo_cliente tc ON tc.code = c.tipo_cliente_id
