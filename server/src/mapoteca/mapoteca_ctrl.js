@@ -793,6 +793,16 @@ controller.getPedidoByLocalizador = async (localizador) => {
 
     // Itens do pedido — apenas campos seguros para consulta pública
     // (o que foi pedido + observação do item; sem dados internos/usuários).
+    //
+    // O item AVULSO (papel quadriculado, carta de outro CGEO) sai aqui como
+    // qualquer outro, por decisão do chefe de 2026-07-30. Os LEFT JOIN já o
+    // traziam, mas com todas as colunas de identificação nulas: o cliente veria
+    // uma linha em branco com uma quantidade ao lado. Os COALESCE abaixo é que
+    // dão nome a ele.
+    //
+    // pa.descricao É PÚBLICA: ela guarda a descrição física do impresso ("80 x
+    // 68 cm, quadrícula de 4 x 4 cm"), que é justamente o que o cliente precisa
+    // ler. Anotação interna sobre um avulso não vai aqui.
     const produtos = await t.any(`
       SELECT
         pp.quantidade,
@@ -801,17 +811,17 @@ controller.getPedidoByLocalizador = async (localizador) => {
         pp.observacao,
         v.versao,
         v.data_edicao,
-        p.nome AS produto_nome,
-        p.mi, p.inom,
-        te.nome AS escala,
-        tp.nome AS tipo_produto_nome
+        ${PRODUTO_NOME} AS produto_nome,
+        ${PRODUTO_MI} AS mi,
+        prod.inom,
+        ${ESCALA_DISPLAY_ITEM} AS escala,
+        COALESCE(tp.nome, pa.nome) AS tipo_produto_nome,
+        ${ITEM_E_AVULSO} AS item_avulso,
+        pa.descricao AS avulso_descricao
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = pp.forma_entrega_id
-      LEFT JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
-      LEFT JOIN acervo.produto AS p ON p.id = v.produto_id
-      LEFT JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-      LEFT JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+      ${JOIN_PRODUTO_ITEM}
       WHERE pp.pedido_id = $1
       ORDER BY pp.data_criacao
     `, [pedido.id]);

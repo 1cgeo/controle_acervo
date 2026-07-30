@@ -317,6 +317,35 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.some(r => r.mi === '2758-3-NE')).toBe(true)
     })
 
+    it('o avulso aparece IDENTIFICADO na consulta publica por localizador', async () => {
+      const clienteId = await criaCliente({ nome: 'OM Publica' })
+      const pedido = await criaPedido(clienteId, {
+        observacao_interna: 'anotacao da equipe que nao pode vazar'
+      })
+      const avulsoId = await criaProdutoAvulso({
+        nome: 'Papel quadriculado A0',
+        descricao: '80 x 68 cm, quadricula de 4 x 4 cm'
+      })
+      await criaProdutoPedido({
+        produto_avulso_id: avulsoId, pedido_id: pedido.id, quantidade: 100, tipo_midia_id: 6
+      })
+
+      // Rota PUBLICA: sem Authorization de proposito.
+      const res = await request(app)
+        .get(`/api/mapoteca/pedido/localizador/${pedido.localizador_pedido}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.produtos).toHaveLength(1)
+      const item = res.body.dados.produtos[0]
+      // Sem os COALESCE, o cliente veria uma linha em branco com "100" ao lado.
+      expect(item.produto_nome).toBe('Papel quadriculado A0')
+      expect(item.avulso_descricao).toBe('80 x 68 cm, quadricula de 4 x 4 cm')
+      expect(item.item_avulso).toBe(true)
+      expect(item.quantidade).toBe(100)
+      // O que a rota publica NUNCA pode devolver continua de fora.
+      expect(JSON.stringify(res.body)).not.toContain('anotacao da equipe')
+    })
+
     it('o avulso ENTRA nas somas do dashboard, e as parcelas fecham o total', async () => {
       // O modo de falhar aqui e silencioso: com JOIN interno o avulso sumiria, e
       // com "NULL NOT IN (...)" ele entraria no total e ficaria fora de outros.
