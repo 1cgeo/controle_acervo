@@ -30,7 +30,10 @@ const TIPO_ARQUIVO = {
 // dominio.tipo_versao
 const TIPO_VERSAO = {
   REGULAR: 1,
-  REGISTRO_HISTORICO: 2
+  REGISTRO_HISTORICO: 2,
+  // Folha que ainda vai ser produzida. Nasce sem arquivo, e o arquivo entra na
+  // MESMA versao quando a producao terminar.
+  PLANEJADA: 3
 }
 
 // dominio.tipo_escala

@@ -97,7 +97,11 @@ CREATE TABLE dominio.tipo_versao (
 
 INSERT INTO dominio.tipo_versao (code, nome) VALUES
 (1, 'Regular'),
-(2, 'Registro Histórico');
+(2, 'Registro Histórico'),
+-- Folha que o acervo ainda VAI produzir, cadastrada para o item do pedido poder
+-- apontar para ela. Nasce sem arquivo; o arquivo entra na MESMA versão quando a
+-- produção terminar. Ver migrations/2026-07-30_tipo_versao_planejada.sql.
+(3, 'Planejada');
 
 CREATE TABLE dominio.tipo_status_execucao (
 	code SMALLINT NOT NULL PRIMARY KEY,

@@ -96,6 +96,25 @@ router.post(
   })
 );
 
+// Irma da /produto_versao_historica, e de proposito uma ROTA PROPRIA em vez de
+// um campo naquela: "historica" e "planejada" sao coisas diferentes (passado
+// registrado x producao prometida) e um nome por coisa evita o corpo que muda
+// de significado por um inteiro escondido.
+router.post(
+  '/produto_versao_planejada',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: produtoSchema.produtosVersoesPlanejadas
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.criaProdutoVersoesPlanejadas(req.body, req.usuarioUuid);
+
+    const msg = 'Produtos com versões planejadas criados com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
 router.post(
   '/mover-arquivos',
   verifyPerfil('operador'),

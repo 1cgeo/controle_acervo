@@ -187,6 +187,10 @@ models.produtosVersoesHistoricas = Joi.array().items(
   })
 ).required().min(1);
 
+// A versao planejada aceita o MESMO corpo da historica: os dois criam produto
+// mais versao sem arquivo. Quem separa e a ROTA, e nao o corpo.
+models.produtosVersoesPlanejadas = models.produtosVersoesHistoricas;
+
 models.produtos = Joi.object().keys({
   produtos: Joi.array().items(
     Joi.object().keys({

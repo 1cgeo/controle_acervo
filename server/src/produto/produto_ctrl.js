@@ -856,7 +856,16 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
   });
 };
 
-controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
+// Cria produto e versoes SEM arquivo, numa transacao. Serve aos dois casos em
+// que isso e legitimo, e o tipoVersaoId e o que os separa:
+//   REGISTRO_HISTORICO: a folha existe no mundo e o acervo a registra sem ter o
+//     arquivo (carga do acervo legado).
+//   PLANEJADA: a folha ainda NAO existe, e o acervo a registra para o item do
+//     pedido poder apontar para ela. O arquivo entra nesta MESMA versao quando a
+//     producao terminar, e ai o item vira imprimivel sozinho.
+// Nao ha terceiro caso: versao Regular nasce do fluxo de carregamento, com
+// arquivo, e nunca por aqui.
+const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId) => {
   const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
@@ -879,7 +888,7 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
         produto_id: novoProduto.id,
         data_cadastramento: data_cadastramento,
         usuario_cadastramento_uuid: usuarioUuid,
-        tipo_versao_id: TIPO_VERSAO.REGISTRO_HISTORICO
+        tipo_versao_id: tipoVersaoId
       }));
 
       const cs = new db.pgp.helpers.ColumnSet([
@@ -895,6 +904,12 @@ controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) => {
 
   });
 };
+
+controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) =>
+  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO);
+
+controller.criaProdutoVersoesPlanejadas = async (produtos, usuarioUuid) =>
+  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.PLANEJADA);
 
 controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
   const data_cadastramento = new Date();

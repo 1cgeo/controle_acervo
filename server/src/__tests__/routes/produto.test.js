@@ -282,6 +282,102 @@ describe('Produto Routes', () => {
     })
   })
 
+  // A versao PLANEJADA e a folha que ainda vamos produzir. Ela existe para o item
+  // do pedido poder apontar para um MI de verdade, em vez de a informacao morrer
+  // numa observacao em prosa. O que estes testes guardam e o CICLO: nasce sem
+  // arquivo, e o arquivo entra na MESMA versao quando a producao terminar.
+  describe('POST /api/produtos/produto_versao_planejada', () => {
+    const folhaPlanejada = (over = {}) => ([{
+      nome: 'Arapongas-NE',
+      mi: '2758-3-NE',
+      inom: 'SF-22-Y-D-III-3-NE',
+      tipo_escala_id: 1,
+      denominador_escala_especial: null,
+      tipo_produto_id: 3,
+      subtipo_produto_id: null,
+      descricao: '',
+      geom: 'SRID=4674;POLYGON((-51.375 -23.375,-51.375 -23.25,-51.25 -23.25,-51.25 -23.375,-51.375 -23.375))',
+      versoes: [{
+        uuid_versao: null,
+        versao: '1-DSG',
+        nome: null,
+        subtipo_produto_id: 3,
+        lote_id: null,
+        metadado: {},
+        descricao: '',
+        orgao_produtor: '1º CGEO',
+        palavras_chave: [],
+        data_criacao: '2026-07-30',
+        data_edicao: '2026-07-30'
+      }],
+      ...over
+    }])
+
+    it('cria o produto e a versao com tipo_versao_id 3 e NENHUM arquivo', async () => {
+      const res = await request(app)
+        .post('/api/produtos/produto_versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(folhaPlanejada())
+
+      expect(res.status).toBe(201)
+
+      const versao = await conn.one(`
+        SELECT v.tipo_versao_id, v.id, p.mi, p.tipo_produto_id, p.tipo_escala_id,
+               (SELECT count(*)::int FROM acervo.arquivo a WHERE a.versao_id = v.id) AS arquivos
+        FROM acervo.versao v JOIN acervo.produto p ON p.id = v.produto_id
+        WHERE p.mi = '2758-3-NE'`)
+
+      expect(versao.tipo_versao_id).toBe(3)
+      // Sem isto a folha planejada apareceria como imprimivel na fila.
+      expect(versao.arquivos).toBe(0)
+      expect(versao.tipo_produto_id).toBe(3)
+      expect(versao.tipo_escala_id).toBe(1)
+    })
+
+    it('a versao planejada NAO exige a edicao anterior, como a historica', async () => {
+      // O caminho estrito do gatilho validate_version pede a versao N-1. Uma
+      // folha que ainda nao existe nao tem edicao anterior nenhuma, e a regra
+      // passou a valer para todo tipo que nao e Regular.
+      const res = await request(app)
+        .post('/api/produtos/produto_versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(folhaPlanejada({
+          mi: '2758-3-NO',
+          inom: 'SF-22-Y-D-III-3-NO',
+          nome: 'Arapongas-NO',
+          versoes: [{
+            uuid_versao: null, versao: '3-DSG', nome: null, subtipo_produto_id: 3,
+            lote_id: null, metadado: {}, descricao: '', orgao_produtor: '1º CGEO',
+            palavras_chave: [], data_criacao: '2026-07-30', data_edicao: '2026-07-30'
+          }]
+        }))
+
+      expect(res.status).toBe(201)
+    })
+
+    it('exige perfil de operador', async () => {
+      const res = await request(app)
+        .post('/api/produtos/produto_versao_planejada')
+        .set('Authorization', generateUserToken())
+        .send(folhaPlanejada({ mi: '2758-3-SE', inom: 'SF-22-Y-D-III-3-SE' }))
+
+      expect(res.status).toBe(403)
+    })
+
+    it('a rota historica continua gravando tipo 2, e nao 3', async () => {
+      const res = await request(app)
+        .post('/api/produtos/produto_versao_historica')
+        .set('Authorization', generateAdminToken())
+        .send(folhaPlanejada({ mi: '2758-3-SO', inom: 'SF-22-Y-D-III-3-SO', nome: 'Arapongas-SO' }))
+
+      expect(res.status).toBe(201)
+      const versao = await conn.one(`
+        SELECT v.tipo_versao_id FROM acervo.versao v
+        JOIN acervo.produto p ON p.id = v.produto_id WHERE p.mi = '2758-3-SO'`)
+      expect(versao.tipo_versao_id).toBe(2)
+    })
+  })
+
   describe('GET /api/produtos/versao_relacionamento', () => {
     it('should return relationships list with login token', async () => {
       const res = await request(app)

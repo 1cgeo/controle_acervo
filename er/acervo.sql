@@ -146,10 +146,11 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Registros históricos (tipo_versao_id = 2) carregam acervo legado:
-    -- aceitam o formato antigo "Xª Edição" independentemente do ano e não
-    -- exigem a versão sequencial anterior (a carga pode ser parcial)
-    IF NEW.tipo_versao_id = 2 THEN
+    -- Versões que NÃO são Regular carregam registro histórico (tipo 2, acervo
+    -- legado) ou promessa de produção (tipo 3, planejada): aceitam o formato
+    -- antigo "Xª Edição" independentemente do ano e não exigem a versão
+    -- sequencial anterior (a carga é parcial por natureza nos dois casos).
+    IF NEW.tipo_versao_id <> 1 THEN
         IF NEW.versao !~ '^[0-9]+ª Edição$' AND NEW.versao !~ '^[0-9]+-[A-Z]{1,5}$' THEN
             RAISE EXCEPTION 'Formato inválido para versão: %', NEW.versao;
         END IF;
