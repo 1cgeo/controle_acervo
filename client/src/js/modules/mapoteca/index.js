@@ -25,6 +25,7 @@ import { renderPedidosList } from './pages/pedidos/list.js';
 import { renderAtendimento } from './pages/atendimento/index.js';
 import { renderPedidoWizard } from './pages/pedidos/wizard.js';
 import { renderPedidoDetails } from './pages/pedidos/details.js';
+import { renderAvulsosList } from './pages/avulsos/list.js';
 import { renderMateriaisList } from './pages/materiais/list.js';
 import { renderMaterialDetails } from './pages/materiais/details.js';
 import { renderEstoqueList } from './pages/estoque/list.js';
@@ -66,6 +67,7 @@ export default {
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'clientes', label: 'Clientes', icon: ICONS.people, path: '/clientes' },
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
+    { id: 'avulsos', label: 'Produtos avulsos', icon: ICONS.description, path: '/avulsos' },
     {
       id: 'materiais-group',
       label: 'Materiais',
@@ -97,6 +99,7 @@ export default {
     // confirmar, perdendo tudo o que digitou.
     { path: '/pedidos/novo', render: renderPedidoWizard, perfis: ['gerente'] },
     { path: '/pedidos/:id', render: renderPedidoDetails, perfis: LEITURA },
+    { path: '/avulsos', render: renderAvulsosList, perfis: LEITURA },
     { path: '/materiais', render: renderMateriaisList, perfis: LEITURA },
     { path: '/materiais/:id', render: renderMaterialDetails, perfis: LEITURA },
     { path: '/estoque', render: renderEstoqueList, perfis: LEITURA },

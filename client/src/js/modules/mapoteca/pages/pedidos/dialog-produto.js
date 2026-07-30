@@ -9,7 +9,7 @@ import {
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
 import { buscarProdutos, getProdutoDetalhado, getTiposProduto, getTiposEscala } from '@modules/mapoteca/services/acervo-service.js';
-import { getDominioTipoMidia, getDominioFormaEntrega } from '@modules/mapoteca/services/mapoteca-service.js';
+import { getDominioTipoMidia, getDominioFormaEntrega, getProdutosAvulsos } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate } from '@utils/format.js';
 import { showError, showWarning } from '@utils/toast.js';
 
@@ -351,16 +351,94 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
     ]),
   ]);
 
-  const content = el('div', {}, [
+  // ---------------------------------------------------------------------------
+  // Origem do item: acervo ou avulso
+  // ---------------------------------------------------------------------------
+  //
+  // O corte é de POSSE, não de formato. O acervo guarda o que é NOSSO, com
+  // versão e arquivo; o avulso guarda o que só passa pela impressora (papel
+  // quadriculado, carta de outro CGEO).
+  //
+  // A busca no acervo vem primeiro na tela de propósito: folha nossa ainda não
+  // catalogada NÃO é avulso, é lacuna de catalogação, e registrar como avulso
+  // esconderia essa lacuna.
+  const origemField = createSelectField({
+    label: 'Origem do produto',
+    required: true,
+    options: [
+      { value: 'acervo', label: 'Do acervo (catálogo)' },
+      { value: 'avulso', label: 'Avulso (não é produto do acervo)' },
+    ],
+    value: item && item.produto_avulso_id ? 'avulso' : 'acervo',
+  });
+
+  const avulsoField = createSelectField({
+    label: 'Produto avulso',
+    options: [],
+    value: item ? item.produto_avulso_id : undefined,
+  });
+
+  const avulsoHint = el('p', {
+    className: 'form-hint',
+    textContent:
+      'Use só para o que NÃO é produto do acervo: papel quadriculado, carta de outro ' +
+      'CGEO, impresso de ocasião. Folha nossa ainda não catalogada não entra aqui: ' +
+      'ela vira item quando entrar no acervo.',
+  });
+
+  const avulsoSection = el('div', { className: 'hidden' }, [
+    avulsoField.element,
+    avulsoHint,
+  ]);
+
+  const acervoSection = el('div', {}, [
     el('div', { className: 'detail-card__title', textContent: 'Produto do acervo' }),
     searchSection,
     selectedSection,
+  ]);
+
+  let avulsosCarregados = false;
+  async function carregarAvulsos() {
+    if (avulsosCarregados) return;
+    try {
+      const lista = await getProdutosAvulsos();
+      avulsoField.setOptions(
+        (lista || [])
+          // Inativo só aparece se já for o do item que se está editando: senão
+          // some da tela e a edição perderia o vínculo em silêncio.
+          .filter(a => a.ativo || (item && item.produto_avulso_id === a.id))
+          .map(a => ({
+            value: a.id,
+            label: a.mi ? `${a.nome} (MI ${a.mi})` : a.nome,
+          }))
+      );
+      if (item && item.produto_avulso_id) avulsoField.setValue(item.produto_avulso_id);
+      avulsosCarregados = true;
+    } catch (err) {
+      showError(err.message || 'Erro ao carregar os produtos avulsos');
+    }
+  }
+
+  function aplicarOrigem() {
+    const avulso = origemField.getValue() === 'avulso';
+    acervoSection.classList.toggle('hidden', avulso);
+    avulsoSection.classList.toggle('hidden', !avulso);
+    if (avulso) carregarAvulsos();
+  }
+  origemField.element.addEventListener('change', aplicarOrigem);
+
+  const content = el('div', {}, [
+    origemField.element,
+    acervoSection,
+    avulsoSection,
     itemSection,
   ]);
 
+  aplicarOrigem();
+
   // Edit mode: pre-select the current product/version and load the other
   // versions in background so the user can switch.
-  if (item) {
+  if (item && !item.produto_avulso_id) {
     produtoSelecionado = {
       id: item.produto_id,
       nome: item.produto_nome,
@@ -410,9 +488,20 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
           quantidadeField.setError(null);
           qtdFornecidaField.setError(null);
 
+          avulsoField.setError(null);
+
           let ok = true;
-          const uuidVersao = versaoField.getValue();
-          if (!produtoSelecionado || !uuidVersao) {
+          const avulso = origemField.getValue() === 'avulso';
+          const uuidVersao = avulso ? null : versaoField.getValue();
+          const produtoAvulsoId = avulso ? avulsoField.getValue() : null;
+
+          if (avulso) {
+            if (!produtoAvulsoId) {
+              avulsoField.setError('Selecione o produto avulso');
+              showWarning('Selecione o produto avulso, ou cadastre um em Produtos avulsos.');
+              ok = false;
+            }
+          } else if (!produtoSelecionado || !uuidVersao) {
             versaoField.setError('Selecione o produto e a versão no catálogo do acervo');
             showWarning('Selecione um produto do catálogo do acervo e a versão desejada.');
             ok = false;
@@ -433,8 +522,11 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
           }
           if (!ok) return;
 
+          // Exatamente UM destino. O servidor recusa (Joi .xor e CHECK do
+          // banco) se vierem os dois ou nenhum, entao mandar a chave com null
+          // seria erro: manda-se so a que vale.
           const payload = {
-            uuid_versao: uuidVersao,
+            ...(avulso ? { produto_avulso_id: produtoAvulsoId } : { uuid_versao: uuidVersao }),
             quantidade,
             quantidade_fornecida: qtdFornecida,
             tipo_midia_id: midiaField.getValue(),
@@ -445,17 +537,35 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
             producao_especifica: producaoField.getValue(),
           };
 
-          const versaoSel = produtoSelecionado.versoes.find(v => v.uuid_versao === uuidVersao);
           const tipoMidiaSel = tiposMidia.find(t => t.code === payload.tipo_midia_id);
-          const display = {
-            produto_id: produtoSelecionado.id,
-            produto_nome: produtoSelecionado.nome,
-            mi: produtoSelecionado.mi,
-            inom: produtoSelecionado.inom,
-            escala: produtoSelecionado.escala,
-            versao: versaoSel ? versaoSel.versao : ((item && item.versao) || '-'),
-            tipo_midia_nome: tipoMidiaSel ? tipoMidiaSel.nome : '-',
-          };
+          let display;
+          if (avulso) {
+            const opt = avulsoField.getOptions
+              ? avulsoField.getOptions().find(o => o.value === produtoAvulsoId)
+              : null;
+            display = {
+              produto_avulso_id: produtoAvulsoId,
+              produto_nome: opt ? opt.label : 'Produto avulso',
+              mi: null,
+              inom: null,
+              escala: null,
+              versao: '-',
+              item_avulso: true,
+              tipo_midia_nome: tipoMidiaSel ? tipoMidiaSel.nome : '-',
+            };
+          } else {
+            const versaoSel = produtoSelecionado.versoes.find(v => v.uuid_versao === uuidVersao);
+            display = {
+              produto_id: produtoSelecionado.id,
+              produto_nome: produtoSelecionado.nome,
+              mi: produtoSelecionado.mi,
+              inom: produtoSelecionado.inom,
+              escala: produtoSelecionado.escala,
+              versao: versaoSel ? versaoSel.versao : ((item && item.versao) || '-'),
+              item_avulso: false,
+              tipo_midia_nome: tipoMidiaSel ? tipoMidiaSel.nome : '-',
+            };
+          }
 
           submitting = true;
           try {

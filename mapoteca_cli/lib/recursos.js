@@ -86,6 +86,19 @@ const RECURSOS = {
     ]
   },
 
+  produto_avulso: {
+    nome: 'produto avulso (o que se imprime sem ser do acervo)',
+    caminho: '/mapoteca/produto_avulso',
+    schema: modulo('produtoAvulso', 'produtoAvulsoAtualizacao', 'produtoAvulsoIds'),
+    chaveIds: 'produto_avulso_ids',
+    // vezes_pedido e o sinal de que talvez devesse estar catalogado: o que se
+    // imprime toda semana e produto, nao impresso de ocasiao.
+    colunas: [
+      'id', 'nome', 'mi', 'tipo_produto_nome', 'tipo_escala_nome',
+      'denominador_escala_especial', 'vezes_pedido', 'ativo'
+    ]
+  },
+
   plotter: {
     nome: 'plotter',
     caminho: '/mapoteca/plotter',

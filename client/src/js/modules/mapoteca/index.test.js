@@ -16,9 +16,11 @@ describe('manifesto do modulo mapoteca', () => {
     expect(modulosPortados().map(m => m.id)).toContain('mapoteca');
   });
 
-  test('as 14 telas estao registradas, cada uma com render e perfil', () => {
-    // 13 ate 2026-07-30, quando entrou a tela de atendimento (a fila de pedidos).
-    expect(mapoteca.rotas).toHaveLength(14);
+  test('as 15 telas estao registradas, cada uma com render e perfil', () => {
+    // 13 ate 2026-07-30, quando entrou a tela de atendimento (a fila de pedidos);
+    // 15 no mesmo dia, com a tela de produtos avulsos (o que a mapoteca imprime
+    // sem ser do acervo).
+    expect(mapoteca.rotas).toHaveLength(15);
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
       expect(typeof rota.render).toBe('function');
@@ -45,7 +47,7 @@ describe('manifesto do modulo mapoteca', () => {
     // E o operador NAO entra em mais nada: o resto do modulo e leitura, e o
     // conjunto (em vez de nivel minimo) e o que faz isso valer.
     const semOperador = mapoteca.rotas.filter(r => !(r.perfis || []).includes('operador'));
-    expect(semOperador).toHaveLength(12);
+    expect(semOperador).toHaveLength(13);
     for (const rota of semOperador) {
       expect(rota.perfis).not.toContain('operador');
     }
