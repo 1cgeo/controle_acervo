@@ -28,11 +28,27 @@ const { caminhoNoVolume } = require('./caminho_volume')
  */
 
 // DISTINCT ON escolhe UM arquivo por versao. A ordem dentro do grupo e a
-// politica: PDF antes de TIF (o PDF ja e a pagina montada, e ler 15 MB pela
-// rede custa uma fracao de um GeoTIFF de centenas de MB), depois o menor, e o
-// id so para desempatar de forma estavel. Sem o desempate, duas execucoes
-// poderiam escolher arquivos diferentes e refazer a mesma miniatura para
-// sempre.
+// politica, e cada degrau tem uma razao:
+//
+//   PDF primeiro, porque ja e a pagina montada (mapa, legenda, articulacao) e
+//   ler 15 MB pela rede custa uma fracao de um raster de centenas de MB.
+//
+//   TIF depois, que e o GeoTIFF da carta e do modelo de elevacao.
+//
+//   IMG por ultimo, que e o ERDAS da Ortoimagem. Ele entrou em 2026-07-31:
+//   antes disso os 6 produtos de Ortoimagem nao tinham miniatura nenhuma,
+//   porque nenhum arquivo deles e PDF ou TIF. O `.img` pesa quase nada (os
+//   pixels moram num `.ige` ao lado, de 7,4 GB), entao a ordem por tamanho
+//   sozinha ja o escolheria na frente do `.ecw`; a preferencia explicita
+//   existe porque o driver de ECW e proprietario e nem sempre esta presente.
+//
+//   O menor entre os iguais, e o id so para desempatar de forma estavel. Sem o
+//   desempate, duas execucoes poderiam escolher arquivos diferentes e refazer a
+//   mesma miniatura para sempre.
+//
+// O `.tif.ovr` (piramide do GDAL) NAO entra: ele e cadastrado como arquivo
+// proprio, e a extensao dele nao casa com nenhuma da lista. O GDAL o encontra
+// sozinho ao lado do `.tif`, que e justamente o que torna o MDS/MDT rapido.
 const SQL_CANDIDATOS = `
 WITH candidato AS (
   SELECT DISTINCT ON (v.id)
@@ -45,11 +61,17 @@ WITH candidato AS (
   FROM acervo.versao v
   JOIN acervo.arquivo a ON a.versao_id = v.id
   JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
-  WHERE lower(a.extensao) IN ('pdf', 'tif', 'tiff')
+  WHERE lower(a.extensao) IN ('pdf', 'tif', 'tiff', 'img', 'ecw')
     AND a.tipo_status_id = 1
   ORDER BY
     v.id,
-    CASE lower(a.extensao) WHEN 'pdf' THEN 0 ELSE 1 END,
+    CASE lower(a.extensao)
+      WHEN 'pdf' THEN 0
+      WHEN 'tif' THEN 1
+      WHEN 'tiff' THEN 1
+      WHEN 'img' THEN 2
+      ELSE 3
+    END,
     a.tamanho_mb NULLS LAST,
     a.id
 )

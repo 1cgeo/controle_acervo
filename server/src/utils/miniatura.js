@@ -4,100 +4,83 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { randomUUID } = require('crypto')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
+const sharp = require('sharp')
 
 const execFileAsync = promisify(execFile)
 
 /**
  * Miniatura de uma versao do acervo: a imagem que a ficha do produto mostra.
  *
- * Renderiza a PAGINA INTEIRA do PDF, ou o TIF inteiro quando nao ha PDF. A
- * miniatura serve para RECONHECER a carta de relance (o desenho da folha, a
- * mancha urbana, o layout com legenda e articulacao), nunca para ler o texto
- * dela. Por isso a pagina toda, e nao um recorte da area do mapa: e o conjunto
- * que identifica o produto (chefe, 2026-07-31).
+ * Ela serve para RECONHECER o produto de relance (o desenho da folha, a mancha
+ * urbana, o relevo), nunca para ler o texto dele. Por isso a pagina inteira, e
+ * nao um recorte da area do mapa (chefe, 2026-07-31).
  *
- * DOIS BINARIOS EXTERNOS, E NENHUMA DEPENDENCIA NATIVA NOVA NO NODE.
- *   - PDF  -> `pdftoppm` (poppler). Ele sozinho renderiza, redimensiona e
- *             codifica o JPEG, entao nao entra biblioteca de imagem nenhuma.
- *   - TIF  -> `gdal_translate`. Ler um GeoTIFF de centenas de MB e o que o GDAL
- *             faz melhor que qualquer biblioteca de imagem generica, e ele ja e
- *             ferramenta de casa.
- * Os caminhos saem do ambiente (`MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`
- * e `MINIATURA_GDALINFO`), com o nome no PATH como padrao. Sao configuracao, e
- * nao constante: em Windows o GDAL vive dentro do QGIS, e caminho de maquina
- * nao entra em arquivo versionado.
+ * DOIS CAMINHOS, porque o acervo tem duas naturezas de arquivo.
  *
- * O FORMATO E JPEG, e nao WebP ou PNG. O PNG de uma carta a 600 px passa de
- * 400 KB, porque a folha e cheia de detalhe fino e nao tem area chapada. O WebP
- * economizaria cerca de 30%, mas custaria um terceiro binario no caminho: nem o
- * poppler nem o driver JPEG do GDAL o escrevem direto. A conta nao paga.
+ *   PDF -> `pdftoppm` (poppler), que renderiza, reduz e codifica sozinho.
+ *   RASTER -> `gdalinfo` + `gdal_translate` para ABRIR o formato, e `sharp`
+ *             para reduzir e codificar.
  *
- * 600 px no lado maior sai de onde a imagem e consumida: um painel de cerca de
- * 300 px na ficha, dobrado para tela de alta densidade. Medido numa carta
- * topografica tipica: 82 KB por miniatura.
+ * POR QUE O GDAL NAO SAI (medido em 2026-07-31). Ele e a unica coisa que le o
+ * que o acervo esta passando a receber. A Ortoimagem chega em ERDAS `.img` de
+ * 43064x48311, com os pixels num `.ige` de 7,4 GB ao lado e dez niveis de
+ * piramide: o GDAL entrega a miniatura em 7 s lendo a piramide, e o `sharp`
+ * sequer abre o formato. MDS e MDT chegam em GeoTIFF Float32 de 150 MB.
+ *
+ * POR QUE O POPPLER TAMBEM NAO SAI. Foram testados dois substitutos permissivos
+ * (PDFium em WASM e pdf.js). Nas cartas topograficas os tres motores discordam
+ * do preenchimento (vegetacao, sombreado) em AMBOS os sentidos, arquivo a
+ * arquivo: em 9 cartas medidas, o PDFium desenhou mais em 4 e o poppler em 2.
+ * Sem um visualizador de referencia nao da para dizer qual acerta, e trocar o
+ * motor de 4.091 cartas para economizar um pacote de sistema e troca ruim.
+ * (O mupdf, tecnicamente o melhor, e AGPL-3.0 e este repositorio e MIT.)
+ *
+ * POR QUE O SHARP ENTRA MESMO ASSIM. O `-outsize` do GDAL decima por vizinho
+ * mais proximo: numa carta, o texto da legenda vira papa e a grade serrilha. O
+ * GDAL passa a extrair ao DOBRO do alvo e o `sharp` faz a reducao final com
+ * reamostragem de verdade. Medido: o texto volta a ser legivel e o arquivo sai
+ * cerca de 20% menor.
+ *
+ * Os caminhos dos binarios saem do ambiente (`MINIATURA_PDFTOPPM`,
+ * `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO`), com o nome no PATH como
+ * padrao. Em Linux e `apt install poppler-utils gdal-bin`; em Windows o GDAL vem
+ * dentro do QGIS. Use BARRA NORMAL no caminho: ver a armadilha no `.env.example`.
  */
 
-// Lado maior da miniatura, em pixels. Ver o cabecalho para a origem do numero.
+// Lado maior da miniatura, em pixels. Sai de onde a imagem e consumida: um
+// painel de cerca de 300 px na ficha, dobrado para tela de alta densidade.
 const LADO_MAX = 600
+
+// O GDAL extrai ao dobro e o sharp reduz dai. Extrair ja no alvo desperdicaria
+// a reamostragem boa; extrair muito acima so custaria leitura.
+const FATOR_EXTRACAO = 2
+
 const QUALIDADE_JPEG = 72
 const FORMATO = 'jpeg'
 
-// Tempo maximo por arquivo. Um PDF tipico leva cerca de 2,5 s (leitura pela
-// rede inclusa) e um GeoTIFF grande leva mais, entao o teto e generoso: ele
-// existe para o lote nao travar para sempre num arquivo doente, nao para
-// apertar o caso normal.
-const TIMEOUT_MS = 180000
+// Tempo maximo por arquivo. Uma Ortoimagem de 7,4 GB leva cerca de 7 s lendo a
+// piramide, e um PDF grande cerca de 3 s. O teto e generoso de proposito: ele
+// existe para o lote nao travar para sempre num arquivo doente.
+const TIMEOUT_MS = 300000
 
 const binario = (chave, padrao) => process.env[chave] || padrao
 
 /**
- * Largura e altura de um JPEG, lidas do proprio cabecalho.
+ * Extensoes que rendem miniatura, e por qual caminho.
  *
- * Existe para nao arrastar uma biblioteca de imagem so para descobrir dois
- * numeros que os binarios acima nao devolvem. Percorre os marcadores ate um
- * SOF, que e onde JPEG guarda as dimensoes.
- * @param {Buffer} buffer
- * @returns {{largura: number, altura: number}}
+ * A lista existe para nao gastar um processo do GDAL em cada zip e sqlite do
+ * acervo. Produto so vetorial simplesmente nao tem miniatura.
  */
-const dimensoesJpeg = (buffer) => {
-  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
-    throw new Error('A saida nao e um JPEG valido')
-  }
+const EXTENSOES_PDF = new Set(['pdf'])
+const EXTENSOES_RASTER = new Set(['tif', 'tiff', 'img', 'ecw', 'jp2', 'png', 'jpg', 'jpeg'])
 
-  let i = 2
-  while (i < buffer.length - 9) {
-    if (buffer[i] !== 0xff) { i += 1; continue }
-
-    const marcador = buffer[i + 1]
-
-    // SOF0..SOF15 carregam as dimensoes. Fora da faixa ficam DHT (0xc4), JPG
-    // (0xc8) e DAC (0xcc), que compartilham o prefixo e nao servem.
-    const ehSOF = marcador >= 0xc0 && marcador <= 0xcf
-      && marcador !== 0xc4 && marcador !== 0xc8 && marcador !== 0xcc
-
-    if (ehSOF) {
-      return {
-        altura: buffer.readUInt16BE(i + 5),
-        largura: buffer.readUInt16BE(i + 7)
-      }
-    }
-
-    // Marcador sem carga (RSTn, SOI, EOI): anda dois bytes. Os demais trazem o
-    // tamanho do segmento nos dois bytes seguintes.
-    if ((marcador >= 0xd0 && marcador <= 0xd9) || marcador === 0x01) {
-      i += 2
-    } else {
-      i += 2 + buffer.readUInt16BE(i + 2)
-    }
-  }
-
-  throw new Error('JPEG sem marcador de dimensao')
+const podeGerar = (extensao) => {
+  const e = String(extensao || '').toLowerCase()
+  return EXTENSOES_PDF.has(e) || EXTENSOES_RASTER.has(e)
 }
 
-/** Diretorio temporario proprio, para o lote poder rodar em paralelo. */
 const criarTemporario = async () =>
   fs.promises.mkdtemp(path.join(os.tmpdir(), 'sca-miniatura-'))
 
@@ -114,7 +97,14 @@ const executar = async (comando, argumentos) => {
     return await execFileAsync(comando, argumentos, {
       timeout: TIMEOUT_MS,
       windowsHide: true,
-      maxBuffer: 16 * 1024 * 1024
+      maxBuffer: 64 * 1024 * 1024,
+      env: {
+        ...process.env,
+        // O `-stats` do GDAL grava um `.aux.xml` ao lado do arquivo LIDO. Sem
+        // isto, gerar miniatura encheria o volume do acervo de sidecars nossos,
+        // dentro das pastas de entrega do fornecedor.
+        GDAL_PAM_ENABLED: 'NO'
+      }
     })
   } catch (erro) {
     if (erro.code === 'ENOENT') {
@@ -128,76 +118,146 @@ const executar = async (comando, argumentos) => {
   }
 }
 
-/** Renderiza a primeira pagina do PDF. */
+/** Reducao final e codificacao. Unico ponto que produz os bytes gravados. */
+const finalizar = async (entrada) => {
+  const buffer = await sharp(entrada, { limitInputPixels: 4e9 })
+    .resize(LADO_MAX, LADO_MAX, { fit: 'inside', withoutEnlargement: true })
+    // JPEG nao tem canal alfa. Sem achatar contra branco, a transparencia da
+    // Ortoimagem e do raster com alfa sairia PRETA.
+    .flatten({ background: '#ffffff' })
+    .jpeg({ quality: QUALIDADE_JPEG })
+    .toBuffer({ resolveWithObject: true })
+
+  return {
+    conteudo: buffer.data,
+    formato: FORMATO,
+    largura: buffer.info.width,
+    altura: buffer.info.height
+  }
+}
+
+/** PDF: o poppler renderiza a primeira pagina ao dobro, o sharp reduz. */
 const renderizarPdf = async (caminho, dir) => {
   const prefixo = path.join(dir, 'saida')
 
-  // -singlefile faz o nome ser exatamente <prefixo>.jpg, sem o sufixo de pagina
-  // que o poppler acrescenta quando renderiza um intervalo.
+  // -singlefile faz o nome ser exatamente <prefixo>.png, sem o sufixo de pagina.
+  // PNG, e nao JPEG: comprimir aqui e de novo no sharp somaria dois artefatos.
   await executar(binario('MINIATURA_PDFTOPPM', 'pdftoppm'), [
-    '-jpeg',
-    '-jpegopt', `quality=${QUALIDADE_JPEG}`,
-    '-scale-to', String(LADO_MAX),
+    '-png',
+    '-scale-to', String(LADO_MAX * FATOR_EXTRACAO),
     '-f', '1', '-l', '1',
     '-singlefile',
     caminho,
     prefixo
   ])
 
-  return fs.promises.readFile(`${prefixo}.jpg`)
+  return finalizar(`${prefixo}.png`)
+}
+
+/** O que o GDAL sabe do arquivo, e que decide como extrair. */
+const lerInfo = async (caminho, comEstatistica) => {
+  const args = ['-json']
+  // `-approx_stats` calcula a estatistica pelas piramides em vez de varrer o
+  // raster inteiro. Para esticar um modelo de elevacao numa miniatura, a
+  // aproximacao basta, e evita ler 150 MB. Ele SUBSTITUI o `-stats`; os dois
+  // juntos o gdalinfo recusa ("not allowed with").
+  if (comEstatistica) args.push('-approx_stats')
+  args.push(caminho)
+
+  const { stdout } = await executar(binario('MINIATURA_GDALINFO', 'gdalinfo'), args)
+  return JSON.parse(stdout)
 }
 
 /**
- * Renderiza o TIF.
+ * Uma banda que NAO e de 8 bits guarda medida, e nao intensidade de pixel.
  *
- * Pergunta as dimensoes antes porque `-outsize` do GDAL nao tem "ajuste ao
- * maior lado": passar `600 0` fixa a LARGURA, e um TIF em retrato sairia com
- * 600 de largura e altura muito maior que isso.
+ * E o caso do modelo de elevacao (MDS, MDT), onde o valor e a ALTITUDE. Sem
+ * esticar, toda cota acima de 255 m vira branco: medido num MDT do acervo,
+ * altitude de 193 a 735 m produzia miniatura de 2 KB, o tamanho de uma imagem
+ * vazia. Por isso a estatistica so e pedida ao GDAL quando este teste passa.
  */
-const renderizarTif = async (caminho, dir) => {
-  const { stdout } = await executar(
-    binario('MINIATURA_GDALINFO', 'gdalinfo'),
-    ['-json', caminho]
-  )
+const precisaEsticar = (info) => {
+  const bandas = info.bands || []
+  return bandas.length === 1
+    && Boolean(bandas[0].type)
+    && bandas[0].type !== 'Byte'
+}
 
-  const info = JSON.parse(stdout)
+/**
+ * Como converter as bandas para uma imagem de 8 bits. Funcao PURA, para a
+ * decisao poder ser testada sem GDAL e sem rede.
+ *
+ * @param {Object} info saida do `gdalinfo -json`
+ * @param {Object} [stats] estatistica da banda 1, quando `precisaEsticar`
+ * @returns {string[]} argumentos do gdal_translate
+ */
+const argumentosDeCor = (info, stats) => {
+  const bandas = info.bands || []
+  const primeira = bandas[0] || {}
+
+  if (precisaEsticar(info)) {
+    const { minimum, maximum, mean, stdDev } = stats || {}
+
+    if ([minimum, maximum, mean, stdDev].every(v => typeof v === 'number') && stdDev > 0) {
+      // Media +- 2,5 desvios, presa ao intervalo real. O recorte existe para um
+      // pico isolado (ou um valor de "sem dado") nao achatar todo o relevo.
+      const menor = Math.max(minimum, mean - 2.5 * stdDev)
+      const maior = Math.min(maximum, mean + 2.5 * stdDev)
+      if (maior > menor) {
+        return ['-ot', 'Byte', '-scale', String(menor), String(maior), '0', '255']
+      }
+    }
+    // Sem estatistica utilizavel, o -scale sozinho manda o GDAL usar o minimo e
+    // o maximo do proprio raster. Continua melhor que cortar em 255.
+    return ['-ot', 'Byte', '-scale']
+  }
+
+  // Raster paletado: uma banda com tabela de cor. Sem -expand ele sai em tom de
+  // cinza, com as cores da carta viradas em cinza sem sentido.
+  if (bandas.length === 1 && primeira.colorInterpretation === 'Palette') {
+    return ['-expand', 'rgb']
+  }
+
+  // RGB, RGBA ou multiespectral: as tres primeiras bandas. O JPEG aceita 1 ou 3.
+  if (bandas.length >= 3) return ['-b', '1', '-b', '2', '-b', '3']
+
+  return []
+}
+
+/** Raster: o GDAL abre o formato e extrai ao dobro, o sharp reduz. */
+const renderizarRaster = async (caminho, dir) => {
+  const info = await lerInfo(caminho, false)
   const [largura, altura] = info.size || []
   if (!largura || !altura) throw new Error('gdalinfo nao devolveu o tamanho do raster')
 
-  const bandas = info.bands || []
-  const paleta = bandas.length === 1 && bandas[0].colorInterpretation === 'Palette'
+  // `-outsize` nao tem "ajuste ao maior lado": passar `600 0` fixa a LARGURA, e
+  // um raster em retrato sairia com 600 de largura e altura muito maior.
+  const alvo = String(LADO_MAX * FATOR_EXTRACAO)
+  const escala = largura >= altura ? [alvo, '0'] : ['0', alvo]
 
-  // Ajuste pelo maior lado, com zero deixando o GDAL calcular o outro.
-  const escala = largura >= altura ? [String(LADO_MAX), '0'] : ['0', String(LADO_MAX)]
+  // A estatistica so e pedida quando muda a decisao: ela custa uma segunda
+  // chamada ao GDAL, e so o raster de medida (elevacao) precisa dela.
+  const stats = precisaEsticar(info)
+    ? ((await lerInfo(caminho, true)).bands || [])[0]
+    : null
 
-  // O driver JPEG aceita 1 banda (cinza) ou 3 (RGB). Raster paletado tem uma
-  // banda com tabela de cor, e sem -expand sairia em cinza, com as cores da
-  // carta viradas em tom de cinza sem sentido. Acima de 3 bandas (RGBA, ou
-  // multiespectral) tomam-se as tres primeiras.
-  const cor = paleta
-    ? ['-expand', 'rgb']
-    : bandas.length >= 3 ? ['-b', '1', '-b', '2', '-b', '3'] : []
-
-  const saida = path.join(dir, 'saida.jpg')
+  const cor = argumentosDeCor(info, stats)
+  const saida = path.join(dir, 'saida.png')
 
   await executar(binario('MINIATURA_GDAL_TRANSLATE', 'gdal_translate'), [
     '-q',
-    '-of', 'JPEG',
+    '-of', 'PNG',
     '-outsize', ...escala,
+    // Media, e nao vizinho mais proximo: sem isto o GDAL joga fora a maior parte
+    // dos pixels e a carta serrilha antes mesmo de chegar ao sharp.
+    '-r', 'average',
     ...cor,
-    '-co', `QUALITY=${QUALIDADE_JPEG}`,
     caminho,
     saida
   ])
 
-  return fs.promises.readFile(saida)
+  return finalizar(saida)
 }
-
-/** Extensoes que rendem miniatura. Produto so vetorial nao entra. */
-const EXTENSOES = new Set(['pdf', 'tif', 'tiff'])
-
-const podeGerar = (extensao) =>
-  EXTENSOES.has(String(extensao || '').toLowerCase())
 
 /**
  * Gera a miniatura de UM arquivo do volume.
@@ -224,16 +284,15 @@ const gerarMiniatura = async (caminho, extensao) => {
 
   const dir = await criarTemporario()
   try {
-    const conteudo = ext === 'pdf'
+    const resultado = EXTENSOES_PDF.has(ext)
       ? await renderizarPdf(caminho, dir)
-      : await renderizarTif(caminho, dir)
+      : await renderizarRaster(caminho, dir)
 
-    if (!conteudo || !conteudo.length) {
+    if (!resultado.conteudo || !resultado.conteudo.length) {
       throw new Error('Renderizacao devolveu arquivo vazio')
     }
 
-    const { largura, altura } = dimensoesJpeg(conteudo)
-    return { conteudo, formato: FORMATO, largura, altura }
+    return resultado
   } finally {
     await removerTemporario(dir)
   }
@@ -242,7 +301,11 @@ const gerarMiniatura = async (caminho, extensao) => {
 module.exports = {
   gerarMiniatura,
   podeGerar,
-  dimensoesJpeg,
+  // Exportados para teste: sao a decisao que produzia miniatura em branco.
+  argumentosDeCor,
+  precisaEsticar,
+  EXTENSOES_PDF,
+  EXTENSOES_RASTER,
   LADO_MAX,
   QUALIDADE_JPEG,
   FORMATO

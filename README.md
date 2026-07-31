@@ -150,11 +150,30 @@ Um cron de hora em hora limpa tokens de download e sessões de upload expiradas.
 
 Outro, na meia hora, gera as **miniaturas** que faltam (até 20 por passada). A
 miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da
-versão, ou o TIF quando não há PDF. Ela sai por `pdftoppm` (poppler) e
-`gdal_translate`, cujos caminhos vêm de `MINIATURA_PDFTOPPM`,
-`MINIATURA_GDAL_TRANSLATE` e `MINIATURA_GDALINFO` (vazio = procurar no PATH, que
-é o caso normal em Linux). Sem os binários, a rota da miniatura responde 404 e o
-job aborta a passada com um erro no log; nada mais quebra.
+versão, ou o raster quando não há PDF. Produto só vetorial não tem miniatura.
+
+Dois binários e uma biblioteca, e cada um faz o que só ele faz bem:
+
+| Etapa | Ferramenta | Por quê |
+|---|---|---|
+| Renderizar PDF | `pdftoppm` (poppler) | os substitutos em npm discordam do preenchimento das cartas, arquivo a arquivo, nos dois sentidos |
+| Abrir formato geo | `gdal_translate` + `gdalinfo` | é o único que lê ERDAS `.img` (Ortoimagem, 7,4 GB com pirâmides) e GeoTIFF Float32 (MDS/MDT) |
+| Reduzir e codificar | `sharp` (npm) | o `-outsize` do GDAL decima por vizinho mais próximo e serrilha o texto da legenda |
+
+Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final,
+com reamostragem de verdade. Em Linux é `apt install poppler-utils gdal-bin`; em
+Windows o GDAL vem dentro do QGIS. Os caminhos vêm de `MINIATURA_PDFTOPPM`,
+`MINIATURA_GDAL_TRANSLATE` e `MINIATURA_GDALINFO` (vazio = procurar no PATH).
+Sem os binários, a rota da miniatura responde 404 e o job aborta a passada com um
+erro no log; nada mais quebra.
+
+**Raster de medida é esticado, não cortado.** MDS e MDT guardam ALTITUDE na
+banda, não intensidade de pixel. Convertidos direto para 8 bits, toda cota acima
+de 255 m vira branco e a miniatura sai vazia. O gerador detecta a banda que não é
+de 8 bits e estica por média ± 2,5 desvios, presa ao intervalo real.
+
+O `GDAL_PAM_ENABLED=NO` é forçado pelo gerador: sem ele, pedir estatística grava
+um `.aux.xml` **ao lado do arquivo lido**, dentro do volume do acervo.
 
 Para carregar o acervo já existente de uma vez, em vez de esperar o cron:
 
@@ -165,7 +184,9 @@ node scripts/gerar_miniaturas.cjs --concorrencia 4                     # a carga
 
 O `--dry-run` lê o volume e renderiza de verdade, e para só antes de gravar.
 Falha vira linha de erro em `acervo.miniatura_versao`, para a carga seguinte não
-repetir o arquivo quebrado; `--refazer-erros` insiste neles.
+repetir o arquivo quebrado; `--refazer-erros` insiste neles. Para refazer o que
+deu certo (troca de renderizador, por exemplo), apague as linhas alvo: a
+miniatura é dado derivado, e a carga seguinte a reconstrói.
 
 ### Estrutura do servidor
 
