@@ -128,7 +128,11 @@ const getPedidosDoPeriodo = async ({ ano, mes, cumulativo }) => {
     `
     SELECT
       ped.id,
-      c.nome AS solicitante,
+      -- A SIGLA e o nome corrente da OM para quem le o RPCMTec, e o que cabe na
+      -- coluna de solicitante: "10º B Log" no lugar de "10º Batalhão Logístico".
+      -- Cai no nome quando nao ha sigla, que e o caso de quem nao e OM (orgao
+      -- publico, cidadao da LAI). NULLIF cobre a sigla gravada como string vazia.
+      COALESCE(NULLIF(BTRIM(c.sigla), ''), c.nome) AS solicitante,
       c.tipo_cliente_id,
       ped.situacao_pedido_id,
       sp.nome AS situacao,
@@ -141,7 +145,7 @@ const getPedidosDoPeriodo = async ({ ano, mes, cumulativo }) => {
     JOIN mapoteca.situacao_pedido sp ON sp.code = ped.situacao_pedido_id
     LEFT JOIN mapoteca.produto_pedido pp ON pp.pedido_id = ped.id
     WHERE ${filtroPeriodoMes('ped.data_pedido', { cumulativo })}
-    GROUP BY ped.id, c.nome, c.tipo_cliente_id, ped.situacao_pedido_id, sp.nome,
+    GROUP BY ped.id, c.sigla, c.nome, c.tipo_cliente_id, ped.situacao_pedido_id, sp.nome,
       ped.documento_solicitacao, ped.documento_solicitacao_nup, ped.previsto_pit
     ORDER BY ped.data_pedido, ped.id
     `,

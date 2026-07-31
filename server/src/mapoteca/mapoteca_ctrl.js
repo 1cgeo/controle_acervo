@@ -162,10 +162,11 @@ controller.getClientes = async () => {
     )
     SELECT 
       c.id, 
-      c.nome, 
-      c.ponto_contato_principal, 
-      c.endereco_entrega_principal, 
-      c.tipo_cliente_id, 
+      c.nome,
+      c.sigla,
+      c.ponto_contato_principal,
+      c.endereco_entrega_principal,
+      c.tipo_cliente_id,
       tc.nome AS tipo_cliente_nome,
       COALESCE(pi.total_pedidos, 0) AS total_pedidos,
       pi.data_ultimo_pedido,
@@ -185,11 +186,12 @@ controller.getClienteById = async (clienteId) => {
     // Buscar informações básicas do cliente
     const cliente = await t.oneOrNone(`
       SELECT 
-        c.id, 
-        c.nome, 
-        c.ponto_contato_principal, 
-        c.endereco_entrega_principal, 
-        c.tipo_cliente_id, 
+        c.id,
+        c.nome,
+        c.sigla,
+        c.ponto_contato_principal,
+        c.endereco_entrega_principal,
+        c.tipo_cliente_id,
         tc.nome AS tipo_cliente_nome
       FROM mapoteca.cliente AS c
       LEFT JOIN mapoteca.tipo_cliente AS tc ON tc.code = c.tipo_cliente_id
@@ -260,6 +262,7 @@ controller.criaCliente = async (cliente, usuarioUuid) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
+      { name: 'sigla', def: null },
       { name: 'ponto_contato_principal', def: null },
       { name: 'endereco_entrega_principal', def: null },
       'tipo_cliente_id'
@@ -278,8 +281,20 @@ controller.atualizaCliente = async (cliente, usuarioUuid) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    // A tela de cliente ainda nao conhece `sigla`. Sem isto, editar o endereco
+    // pela tela apagaria a sigla carregada, com 200 e sem aviso: e a armadilha
+    // do PUT de 2026-07-25. Ausente preserva; null explicito ainda limpa.
+    await preserveOmitted(t, {
+      schema: 'mapoteca',
+      table: 'cliente',
+      id: cliente.id,
+      fields: ['sigla'],
+      body: cliente
+    });
+
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
+      { name: 'sigla', def: null },
       { name: 'ponto_contato_principal', def: null },
       { name: 'endereco_entrega_principal', def: null },
       'tipo_cliente_id'

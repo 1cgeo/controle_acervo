@@ -19,8 +19,13 @@ models.clienteIds = Joi.object().keys({
     .required()
 })
 
+// `sigla` e opcional e SEM .default(): quem nao e OM (orgao publico, cidadao da
+// LAI) nao tem sigla, e na atualizacao a AUSENCIA da chave preserva o valor
+// gravado (preserveOmitted no controller). Um .default aqui injetaria a chave e
+// a tela que ainda nao conhece o campo apagaria a sigla ao editar o endereco.
 models.cliente = Joi.object().keys({
   nome: Joi.string().max(255).required(),
+  sigla: Joi.string().max(50).allow(null, ''),
   ponto_contato_principal: Joi.string().max(255).allow(null, ''),
   endereco_entrega_principal: Joi.string().max(255).allow(null, ''),
   tipo_cliente_id: Joi.number().integer().valid(...Object.values(TIPO_CLIENTE)).required()
@@ -29,6 +34,7 @@ models.cliente = Joi.object().keys({
 models.clienteAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   nome: Joi.string().max(255).required(),
+  sigla: Joi.string().max(50).allow(null, ''),
   ponto_contato_principal: Joi.string().max(255).allow(null, ''),
   endereco_entrega_principal: Joi.string().max(255).allow(null, ''),
   tipo_cliente_id: Joi.number().integer().valid(...Object.values(TIPO_CLIENTE)).required()

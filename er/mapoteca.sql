@@ -85,6 +85,11 @@ INSERT INTO mapoteca.canal_recebimento (code, nome) VALUES
 CREATE TABLE mapoteca.cliente(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
+	-- Sigla da OM (ex.: '10º B Log'). E o nome corrente da unidade para quem le
+	-- o RPCMTec, e o que cabe na coluna de solicitante. NULA para quem nao e OM
+	-- (orgao publico, cidadao da LAI): quem exibe cai no `nome`. Ver
+	-- migrations/2026-07-31_cliente_sigla.sql.
+	sigla VARCHAR(50),
     ponto_contato_principal VARCHAR(255),
     endereco_entrega_principal VARCHAR(255),
 	tipo_cliente_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_cliente (code)
