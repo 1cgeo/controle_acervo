@@ -10,7 +10,10 @@ models.volumeArmazenamento = Joi.object().keys({
       Joi.object().keys({
         nome: Joi.string().max(255).required(),
         volume: Joi.string().max(255).required(),
-        capacidade_gb: Joi.number().strict().required()
+        capacidade_gb: Joi.number().strict().required(),
+        // Opcional, e SEM .default(): o ColumnSet cobre a ausencia com false. Um
+        // .default aqui injetaria a chave e quebraria o preserveOmitted do PUT.
+        layout_origem: Joi.boolean().strict()
       })
     )
     .required()
@@ -24,7 +27,9 @@ models.volumeArmazenamentoAtualizacao = Joi.object().keys({
         id: Joi.number().integer().strict().required(),
         nome: Joi.string().max(255).required(),
         volume: Joi.string().max(255).required(),
-        capacidade_gb: Joi.number().strict().required()
+        capacidade_gb: Joi.number().strict().required(),
+        // Ausente preserva o valor gravado (preserveOmitted no controller).
+        layout_origem: Joi.boolean().strict()
       })
     )
     .required()

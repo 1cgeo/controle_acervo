@@ -9,7 +9,14 @@ CREATE TABLE acervo.volume_armazenamento(
 	id SERIAL NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL,
 	volume VARCHAR(255) NOT NULL UNIQUE,
-	capacidade_gb FLOAT NOT NULL
+	capacidade_gb FLOAT NOT NULL,
+	-- true = o volume guarda a entrega no LAYOUT DO FORNECEDOR. O nome fisico e o
+	-- caminho relativo de origem (subpasta inclusa), o padrao derivado
+	-- (acervo.nome_arquivo_padrao) nao se aplica, e o invariante 7a e o
+	-- renomear-padrao ignoram o volume. Existe porque formato com sidecar por nome
+	-- (o .ige de um .img do ERDAS) nao sobrevive a renome. Ver
+	-- migrations/2026-07-31_volume_layout_origem.sql.
+	layout_origem BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE acervo.volume_tipo_produto(

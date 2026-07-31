@@ -3,13 +3,13 @@
 
 const { db } = require("../database");
 
-const { AppError, httpCode } = require("../utils");
+const { AppError, httpCode, preserveOmitted } = require("../utils");
 
 const controller = {};
 
 controller.getVolumeArmazenamento = async () => {
   return db.conn.any(
-    `SELECT id, volume, nome, capacidade_gb FROM acervo.volume_armazenamento`
+    `SELECT id, volume, nome, capacidade_gb, layout_origem FROM acervo.volume_armazenamento`
   )
 }
 
@@ -37,8 +37,12 @@ controller.criaVolumeArmazenamento = async volumeArmazenamento => {
       )
     }
 
+    // layout_origem e opcional na criacao: `def` cobre a ausencia com o mesmo
+    // FALSE do DEFAULT da coluna. Volume novo guarda o padrao do acervo, e so
+    // vira layout de fornecedor por escolha explicita.
     const cs = new db.pgp.helpers.ColumnSet([
-      'nome', 'volume', 'capacidade_gb'
+      'nome', 'volume', 'capacidade_gb',
+      { name: 'layout_origem', def: false }
     ])
 
     const query = db.pgp.helpers.insert(volumeArmazenamento, cs, {
@@ -75,11 +79,25 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
       )
     }
 
+    // layout_origem e o unico campo opcional deste PUT. Sem isto, o cliente que
+    // nao manda a chave (a tela do dashboard, que nem conhece o campo) apagaria a
+    // marca ao editar o nome do volume, com 200 e sem aviso. E a armadilha do PUT
+    // corrigida em 2026-07-25: ausente preserva, null explicito ainda limpa.
+    for (const volume of volumeArmazenamento) {
+      await preserveOmitted(t, {
+        table: 'volume_armazenamento',
+        id: volume.id,
+        fields: ['layout_origem'],
+        body: volume
+      })
+    }
+
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'nome', 'volume', 'capacidade_gb'
+      'id', 'nome', 'volume', 'capacidade_gb',
+      { name: 'layout_origem', def: false }
     ])
 
-    const query = 
+    const query =
       db.pgp.helpers.update(
         volumeArmazenamento,
         cs,

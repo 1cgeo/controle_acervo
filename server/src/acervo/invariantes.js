@@ -402,6 +402,12 @@ const INVARIANTES = [
   {
     codigo: '7a',
     severidade: 'DEFECT',
+    // Volume com layout_origem fica de FORA. Ele guarda a entrega no layout do
+    // fornecedor por decisao (Convenio RS, 2026-07-31), e o nome fisico ali e o
+    // caminho relativo de origem. Sem o filtro este invariante acusaria milhares
+    // de DEFECT permanentes, e DEFECT que nunca zera apaga o valor de sinal do
+    // auditor. O renomear-padrao aplica o MESMO filtro: auditor e escritor nao
+    // podem divergir. Ver migrations/2026-07-31_volume_layout_origem.sql.
     titulo: 'nome fisico divergente do padrao derivado dos metadados',
     sql: `select a.id,a.nome_arquivo,a.extensao,
             acervo.nome_arquivo_padrao(p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,
@@ -410,7 +416,9 @@ const INVARIANTES = [
           from acervo.arquivo a
           join acervo.versao v on v.id=a.versao_id
           join acervo.produto p on p.id=v.produto_id
+          left join acervo.volume_armazenamento vol on vol.id=a.volume_armazenamento_id
           where a.tipo_arquivo_id<>9
+            and coalesce(vol.layout_origem,false)=false
             and a.nome_arquivo is distinct from acervo.nome_arquivo_padrao(
               p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,p.nome,
               p.tipo_escala_id,p.denominador_escala_especial,v.versao)`

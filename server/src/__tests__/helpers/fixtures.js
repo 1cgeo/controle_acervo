@@ -153,13 +153,14 @@ const createVolume = async (overrides = {}) => {
   const defaults = {
     nome: 'Volume Extra',
     volume: '/data/extra',
-    capacidade_gb: 500
+    capacidade_gb: 500,
+    layout_origem: false
   }
   const data = { ...defaults, ...overrides }
 
   return conn.one(`
-    INSERT INTO acervo.volume_armazenamento (nome, volume, capacidade_gb)
-    VALUES ($<nome>, $<volume>, $<capacidade_gb>)
+    INSERT INTO acervo.volume_armazenamento (nome, volume, capacidade_gb, layout_origem)
+    VALUES ($<nome>, $<volume>, $<capacidade_gb>, $<layout_origem>)
     RETURNING *
   `, data)
 }

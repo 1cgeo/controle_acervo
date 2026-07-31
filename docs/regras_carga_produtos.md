@@ -157,6 +157,35 @@ ou edições/anos/escalas diferentes com o mesmo nome base se sobrescrevem silen
   nome; o servidor o deriva da função. Existe em vez do `prepare-upload` porque aquele
   caminho transfere BYTES e renomear não move byte nenhum.
 
+#### A exceção: volume que guarda o layout do fornecedor (2026-07-31)
+
+`acervo.volume_armazenamento.layout_origem = true` declara que o volume guarda a entrega
+**no layout de quem a produziu**. Nele o `nome_arquivo` é o caminho relativo de origem
+(subpasta inclusa, com barra normal) e o padrão derivado **não se aplica**. O invariante
+`7a` e o `renomear-padrao` ignoram o volume, e o `renomear-padrao` continua ignorando
+mesmo quando o arquivo é pedido por `arquivo_ids`.
+
+Existe por dois motivos que renomear não resolve:
+
+1. **Formato com sidecar por NOME.** Um `.img` do ERDAS guarda dentro de si o nome do
+   `.ige`, onde estão TODOS os pixels (o `.img` tem 34 KB e o `.ige` tem 8 GB), e os
+   nomes das 30 entradas do `.rrd`. Renomear o conjunto quebra a referência interna e o
+   produto para de abrir. Nenhuma auditoria posterior pega isso.
+2. **Volume que já contém a entrega.** Achatar a árvore do fornecedor na raiz do volume
+   ou duplicar o acervo inteiro são os dois únicos caminhos, e nenhum se justifica.
+
+A marca é do VOLUME, nunca do produto ou do arquivo: um volume guarda o padrão do acervo
+ou o layout de quem entregou, nunca os dois. Marca por arquivo viraria escape para nome
+improvisado, que é o que o `7a` existe para impedir.
+
+O que a marca **não** afeta: a unicidade física `(volume, nome_arquivo, extensao)`
+continua valendo, o `confirm-upload` continua conferindo o sha256 do byte no volume, e os
+invariantes `7b` e `7c` continuam medindo o que mediam.
+
+Primeiro caso: as entregas do Convênio RS (MDS, MDT e Ortoimagem), já gravadas no volume
+em `LOTE_1..LOTE_5`. Ali o `prepare-upload` serve só para abrir a sessão e declarar o
+checksum; nada se copia, e o `confirm-upload` valida o byte onde ele já está.
+
 ### 2.4 Produtos
 
 - Mesma MI pode gerar **produtos distintos por tipo**: CT, CO, CDGV e Temática são

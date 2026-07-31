@@ -2018,6 +2018,11 @@ controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUu
     JOIN acervo.produto p ON p.id = v.produto_id
     JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
     WHERE a.tipo_arquivo_id <> ${TIPO_ARQUIVO.TILESERVER}
+      -- Volume que guarda o layout do fornecedor fica de fora, e o motivo e
+      -- irreversivel: renomear um .img do ERDAS quebra a referencia interna ao
+      -- .ige, onde estao todos os pixels. O invariante 7a aplica o MESMO filtro.
+      -- Ver migrations/2026-07-31_volume_layout_origem.sql.
+      AND NOT vol.layout_origem
       AND a.nome_arquivo IS DISTINCT FROM acervo.nome_arquivo_padrao(
         p.tipo_produto_id, v.subtipo_produto_id, p.mi, p.inom, p.nome,
         p.tipo_escala_id, p.denominador_escala_especial, v.versao)

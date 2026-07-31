@@ -11,7 +11,7 @@ const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { cleanTestData } = require('../helpers/db')
 const { generateAdminToken, generateUserToken } = require('../helpers/auth')
-const { createProduto, createVersao, createArquivo } = require('../helpers/fixtures')
+const { createProduto, createVersao, createArquivo, createVolume } = require('../helpers/fixtures')
 const { INVARIANTES } = require('../../acervo/invariantes')
 
 let app
@@ -140,6 +140,52 @@ describe('GET /api/acervo/auditoria', () => {
     const res = await auditar('?codigos=2c&amostra=0')
     expect(res.body.dados[0].total).toBeGreaterThan(0)
     expect(res.body.dados[0].amostra).toEqual([])
+  })
+
+  // 7a com layout_origem. O par de testes prova a exceção nos DOIS sentidos: o
+  // mesmo arquivo, com o mesmo nome fora do padrão, conta num volume comum e não
+  // conta num volume que guarda o layout do fornecedor. Um teste só do lado que
+  // isenta passaria com o filtro escrito ao contrário.
+  it('should count an off-pattern name on an ordinary volume (7a)', async () => {
+    const antes = (await auditar('?codigos=7a')).body.dados[0].total
+
+    const comum = await createVolume({
+      nome: 'Volume Comum 7a',
+      volume: '/data/comum-7a',
+      layout_origem: false
+    })
+    const p = await createProduto({ mi: '5555-1', inom: 'PADRAO-COMUM' })
+    const v = await createVersao(p.id)
+    await createArquivo(v.id, {
+      volume_armazenamento_id: comum.id,
+      nome_arquivo: 'LOTE_1/IMAGENS/Ortoimagem_MI 5555-1',
+      extensao: 'img'
+    })
+
+    expect((await auditar('?codigos=7a')).body.dados[0].total).toBe(antes + 1)
+  })
+
+  // O caso do Convênio RS: o .img do ERDAS guarda dentro de si o nome do .ige,
+  // então renomear quebra o produto. O volume declara que guarda o layout de
+  // origem e o invariante para de acusar. Ver
+  // migrations/2026-07-31_volume_layout_origem.sql.
+  it('should exempt a volume that keeps the supplier layout (7a)', async () => {
+    const antes = (await auditar('?codigos=7a')).body.dados[0].total
+
+    const origem = await createVolume({
+      nome: 'Entregas Convenio',
+      volume: '/data/entregas-convenio',
+      layout_origem: true
+    })
+    const p = await createProduto({ mi: '5555-2', inom: 'LAYOUT-ORIGEM' })
+    const v = await createVersao(p.id)
+    await createArquivo(v.id, {
+      volume_armazenamento_id: origem.id,
+      nome_arquivo: 'LOTE_1/IMAGENS/Ortoimagem_MI 5555-2',
+      extensao: 'img'
+    })
+
+    expect((await auditar('?codigos=7a')).body.dados[0].total).toBe(antes)
   })
 
   // A auditoria é leitura. Se algum invariante tentasse escrever, a transação
