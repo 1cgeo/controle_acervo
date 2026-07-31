@@ -22,6 +22,33 @@ import { formatNumber } from '@utils/format.js';
  * @param {(item:Object)=>string} [opts.rotulo] - como o item se chama na tela
  * @param {[string,string]} [opts.substantivo] - singular e plural do contador
  */
+/**
+ * Estado visivel do botao de selecao de UM cartao.
+ *
+ * Mora aqui, ao lado da `criarSelecao`, porque as DUAS telas que usam esta
+ * selecao (busca de produtos e ponto de controle) tem o mesmo cartao e o mesmo
+ * botao. Duplicar o pintor faria as duas divergirem no primeiro ajuste, e a
+ * pessoa reaprenderia a interface ao trocar de aba.
+ *
+ * O botao e de ESTADO, nao de acao unica: ele marca e desmarca. Por isso o
+ * rotulo muda e o `aria-pressed` acompanha. Sem o aria-pressed, o leitor de tela
+ * anuncia a mesma coisa nos dois estados, e quem nao ve a cor do cartao nao sabe
+ * o que ja escolheu.
+ *
+ * @param {HTMLElement} cartao
+ * @param {boolean} selecionado
+ */
+export function pintarBotaoSelecao(cartao, selecionado) {
+  const botao = cartao.querySelector('.busca-cartao__selecionar');
+  if (!botao) return;
+  botao.setAttribute('aria-pressed', String(selecionado));
+  botao.classList.toggle('btn--primary', selecionado);
+  botao.replaceChildren(
+    svgIcon(selecionado ? ICONS.checkCircle : ICONS.check, 16),
+    selecionado ? 'Selecionado' : 'Selecionar'
+  );
+}
+
 export function criarSelecao({
   onMudou,
   onVerFichas,

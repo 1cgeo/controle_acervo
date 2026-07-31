@@ -9,7 +9,7 @@ import {
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { criarMapa } from './mapa.js';
 import { abrirProdutoDialog, plural } from './produto-dialog.js';
-import { criarSelecao } from './selecao.js';
+import { criarSelecao, pintarBotaoSelecao } from './selecao.js';
 import { criarCampoPalavraChave } from './palavra-chave.js';
 
 /** Espera antes de disparar a busca enquanto a pessoa ainda digita. */
@@ -685,33 +685,13 @@ export async function renderBusca(container, ctx) {
     marcarCartoes();
   }
 
-  /**
-   * Estado visivel do botao de selecao de UM cartao.
-   *
-   * O botao e de ESTADO, nao de acao unica: ele marca e desmarca. Por isso o
-   * rotulo muda ("Selecionar" / "Selecionado") e o `aria-pressed` acompanha.
-   * Sem o aria-pressed, o leitor de tela le a mesma coisa nos dois estados, e
-   * quem nao ve a cor do cartao nao sabe o que ja escolheu.
-   */
-  function pintarBotaoSelecao(cartao, id) {
-    const botao = cartao.querySelector('.busca-cartao__selecionar');
-    if (!botao) return;
-    const dentro = selecao.tem(id);
-    botao.setAttribute('aria-pressed', String(dentro));
-    botao.classList.toggle('btn--primary', dentro);
-    botao.replaceChildren(
-      svgIcon(dentro ? ICONS.checkCircle : ICONS.check, 16),
-      dentro ? 'Selecionado' : 'Selecionar'
-    );
-  }
-
   /** Repinta a marca de selecao em todos os cartoes da pagina. */
   function marcarCartoes() {
     for (const [id, cartao] of cartoes) {
       cartao.classList.toggle('busca-cartao--selecionado', selecao.tem(id));
       // O botao acompanha a marca do cartao: a selecao muda por varios caminhos
       // (mapa, chip da barra, Limpar), e todos passam por aqui.
-      pintarBotaoSelecao(cartao, id);
+      pintarBotaoSelecao(cartao, selecao.tem(id));
     }
   }
 

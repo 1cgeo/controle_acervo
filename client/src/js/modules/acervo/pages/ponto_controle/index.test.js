@@ -127,6 +127,10 @@ const resposta = ({ pontos = PONTOS, total = 2, pagina = 1 } = {}) =>
   Promise.resolve({ total, pagina, pontos });
 
 const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
+// Selecionar passou a ser o BOTAO do rodape (chefe, 2026-07-31); o cartao abre
+// a ficha. As duas telas do acervo andam juntas: mesmo cartao, mesmo gesto.
+const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
+  .querySelector('.busca-cartao__selecionar').click();
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
 const selects = (c) => [...c.querySelectorAll('.busca-filtros__select')];
 const ultimaBusca = () => buscarPontos.mock.calls[buscarPontos.mock.calls.length - 1][0];
@@ -196,21 +200,32 @@ describe('tela de ponto de controle: lista e mapa', () => {
     expect(mapaFalso.pontos).toHaveLength(40);
   });
 
-  test('clicar no cartao seleciona E leva o mapa ate o ponto', async () => {
+  test('clicar no cartao abre a FICHA e leva o mapa ate o ponto, sem selecionar', async () => {
     const { container } = await montar();
     cartoes(container)[1].click();
 
-    expect(mapaFalso.selecionados).toEqual([2]);
+    expect(abrirPontoDialog).toHaveBeenCalledWith(['RS-HV-2'], 0);
+    // O enquadramento continua: fechada a ficha, o circulo ja esta no lugar.
     expect(mapaFalso.enquadradoPonto).toBe(2);
-    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(true);
+    expect(mapaFalso.selecionados).toEqual([]);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(false);
   });
 
-  test('clicar de novo desmarca', async () => {
+  test('o botao do rodape seleciona, e clicar de novo desmarca', async () => {
     const { container } = await montar();
-    cartoes(container)[0].click();
-    cartoes(container)[0].click();
+    const botao = () => cartoes(container)[0].querySelector('.busca-cartao__selecionar');
 
+    expect(botao().getAttribute('aria-pressed')).toBe('false');
+
+    botao().click();
+    expect(mapaFalso.selecionados).toEqual([1]);
+    expect(botao().getAttribute('aria-pressed')).toBe('true');
+    expect(botao().textContent).toContain('Selecionado');
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
+
+    botao().click();
     expect(mapaFalso.selecionados).toEqual([]);
+    expect(botao().getAttribute('aria-pressed')).toBe('false');
     expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
   });
 
@@ -269,7 +284,7 @@ describe('tela de ponto de controle: lista e mapa', () => {
     const { container } = await montar();
     expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
 
-    cartoes(container)[0].click();
+    marcar(container, 0);
     const barra = container.querySelector('.busca-selecao');
     expect(barra.classList.contains('hidden')).toBe(false);
     expect(barra.textContent).toContain('1 ponto selecionado');
@@ -279,19 +294,19 @@ describe('tela de ponto de controle: lista e mapa', () => {
 
   test('"Ver fichas" abre a ficha dos selecionados, na ordem', async () => {
     const { container } = await montar();
-    cartoes(container)[1].click();
-    cartoes(container)[0].click();
+    marcar(container, 1);
+    marcar(container, 0);
 
     container.querySelector('.busca-selecao__acoes .btn--primary').click();
     expect(abrirPontoDialog).toHaveBeenCalledWith(['RS-HV-2', 'RS-HV-1'], 0);
   });
 
-  test('o botao Ficha do cartao nao altera a selecao', async () => {
+  test('o botao do rodape NAO abre a ficha: ele so seleciona', async () => {
     const { container } = await montar();
-    cartoes(container)[0].querySelector('.busca-cartao__ficha').click();
+    marcar(container, 0);
 
-    expect(abrirPontoDialog).toHaveBeenCalledWith(['RS-HV-1'], 0);
-    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
+    expect(abrirPontoDialog).not.toHaveBeenCalled();
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
   });
 });
 
@@ -437,7 +452,7 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
 
   test('"Limpar filtros" zera tudo, inclusive a selecao', async () => {
     const { container } = await montar({ query: 'projeto_id=7&cod_ponto=HV' });
-    cartoes(container)[0].click();
+    marcar(container, 0);
 
     container.querySelector('.busca__acoes .btn--text').click();
     await flush();
@@ -554,8 +569,8 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
       .find(b => b.textContent.includes('selecionado'));
     expect(selecionadosBtn.classList.contains('hidden')).toBe(true);
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     expect(selecionadosBtn.classList.contains('hidden')).toBe(false);
     expect(selecionadosBtn.textContent).toContain('2 selecionados');
 

@@ -6,7 +6,7 @@ import {
   buscarPontos, buscarPosicoes, getFacetas, baixarPontosCsv,
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
-import { criarSelecao } from '@modules/acervo/pages/busca/selecao.js';
+import { criarSelecao, pintarBotaoSelecao } from '@modules/acervo/pages/busca/selecao.js';
 import { criarMapaPontos } from './mapa.js';
 import { abrirCodigosDisponiveis } from './codigos-dialog.js';
 import { abrirPontoDialog } from './ponto-dialog.js';
@@ -508,24 +508,35 @@ export async function renderPontoControle(container, ctx) {
   }
 
   function cartaoPonto(p) {
-    // Clicar no cartao faz DUAS coisas de proposito: alterna a selecao e leva o
-    // mapa ate o ponto. Sao a mesma intencao ("quero este"), e separa-las
-    // obrigaria a pessoa a procurar o circulo no mapa depois de escolher.
-    const escolher = () => {
+    // Clicar no cartao ABRE A FICHA (chefe, 2026-07-31), igual a busca de
+    // produtos. O cartao mostra um resumo, e o gesto natural sobre um resumo e
+    // "quero ver o resto". Selecionar virou o botao do rodape, que diz o que faz.
+    //
+    // As duas telas andam JUNTAS de proposito: sao a mesma lista, com o mesmo
+    // cartao e a mesma barra de selecao. Gesto diferente entre elas seria a
+    // pessoa reaprendendo a interface ao trocar de aba.
+    //
+    // O mapa continua indo ate o ponto: fechada a ficha, o circulo ja esta
+    // enquadrado atras dela.
+    const abrirFicha = () => {
+      mapa.enquadrarPonto(p.id);
+      abrirPontoDialog([p.cod_ponto], 0);
+    };
+
+    const alternarSelecao = () => {
       selecao.alternar(p);
       mapa.setSelecionados(selecao.ids());
-      mapa.enquadrarPonto(p.id);
     };
 
     const cartao = el('article', {
       className: 'busca-cartao pc-cartao',
       tabIndex: 0,
       dataset: { id: String(p.id) },
-      onClick: escolher,
+      onClick: abrirFicha,
       onKeyDown: (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
-        escolher();
+        abrirFicha();
       },
       // Apontar na lista acende o ponto, e vice-versa: e o que liga os dois
       // lados sem exigir clique.
@@ -558,15 +569,17 @@ export async function renderPontoControle(container, ctx) {
           textContent: `${p.total_arquivos} ${p.total_arquivos === 1 ? 'arquivo' : 'arquivos'}`
             + (p.total_mb ? ` · ${formatNumber(Number(p.total_mb).toFixed(1))} MB` : ''),
         }),
+        // O botao que era "Ficha" virou o de SELECAO, agora que o cartao inteiro
+        // abre a ficha. Conteudo e `aria-pressed` saem de `pintarBotaoSelecao`.
         el('button', {
-          className: 'btn btn--text btn--sm busca-cartao__ficha',
+          className: 'btn btn--text btn--sm busca-cartao__selecionar',
           type: 'button',
           onClick: (e) => {
-            // Sem isto o clique subiria para o cartao e alternaria a selecao.
+            // Sem isto o clique subiria para o cartao e abriria a ficha.
             e.stopPropagation();
-            abrirPontoDialog([p.cod_ponto], 0);
+            alternarSelecao();
           },
-        }, [svgIcon(ICONS.visibility, 16), 'Ficha']),
+        }),
       ]),
     ]);
 
@@ -577,6 +590,9 @@ export async function renderPontoControle(container, ctx) {
   function marcarCartoes() {
     for (const [id, cartao] of cartoesPorId) {
       cartao.classList.toggle('busca-cartao--selecionado', selecao.tem(id));
+      // O botao acompanha a marca do cartao: a selecao muda por varios caminhos
+      // (mapa, chip da barra, Limpar), e todos passam por aqui.
+      pintarBotaoSelecao(cartao, selecao.tem(id));
     }
   }
 
