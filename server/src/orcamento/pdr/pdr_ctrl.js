@@ -35,7 +35,7 @@ const SELECT = `
          i.data_modificacao, i.usuario_modificacao_uuid
   FROM orcamento.pdr_item AS i
   INNER JOIN dominio.natureza_despesa AS nd ON nd.code = i.cod_nd
-  LEFT JOIN orcamento.meta_pit AS mp ON mp.id = i.meta_pit_id`
+  LEFT JOIN pit.meta AS mp ON mp.id = i.meta_pit_id`
 
 controller.listar = async ano => {
   return db.conn.any(

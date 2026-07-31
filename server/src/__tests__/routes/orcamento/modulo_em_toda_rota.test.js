@@ -58,9 +58,14 @@ describe('Toda rota do orcamento passa o modulo para o verifyPerfil', () => {
       return soma + [...fonte.matchAll(CHAMADA)].length
     }, 0)
 
-    // 67 chamadas na fusao de 2026-07-27. Subir e normal (rota nova); cair quer
-    // dizer que uma rota perdeu a protecao, e ai o numero tem que ser revisto
-    // de proposito, nao por acidente.
-    expect(total).toBeGreaterThanOrEqual(67)
+    // 67 chamadas na fusao de 2026-07-27, 62 desde 2026-07-31. A queda de 5 foi
+    // DE PROPOSITO: a meta do PIT saiu do modulo e virou rota de plataforma
+    // (/api/metas), levando junto as suas 5 rotas. Ela nao ficou desprotegida:
+    // troca verifyPerfil por verifyLogin na leitura e verifyAdmin na escrita, e
+    // o teste disso mora em routes/pit_route.test.js.
+    //
+    // Subir e normal (rota nova); cair quer dizer que uma rota perdeu a
+    // protecao, e ai o numero tem que ser revisto de proposito, nao por acidente.
+    expect(total).toBeGreaterThanOrEqual(62)
   })
 })

@@ -1,9 +1,19 @@
-// Path: orcamento\utils\schema_validation.js
+// Path: utils\schema_validation_estrito.js
 'use strict'
 
-const AppError = require('../../utils/app_error')
-const httpCode = require('../../utils/http_code')
-const logger = require('../../utils/logger')
+// Validacao ESTRITA: chave desconhecida no corpo vira 400, com sugestao do nome
+// declarado mais parecido. O irmao schema_validation.js DESCARTA a chave e so
+// avisa no envelope.
+//
+// Nasceu dentro de src/orcamento/utils/ na fusao de 2026-07-27, e mudou para ca
+// em 2026-07-31: nada nele e do orcamento, e a rota /metas, que saiu daquele
+// modulo, precisava do mesmo contrato sem que a plataforma passasse a depender
+// de um modulo. As rotas do orcamento continuam recebendo este arquivo, agora
+// reexportado por src/orcamento/utils/index.js.
+
+const AppError = require('./app_error')
+const httpCode = require('./http_code')
+const logger = require('./logger')
 
 // Distância de edição (Levenshtein) entre duas strings, usada só para sugerir
 // a chave mais parecida quando o corpo traz um campo desconhecido. Roda apenas

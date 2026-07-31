@@ -22,6 +22,7 @@ import {
 } from './pedido-form.js';
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 import { openClienteDialog } from '../clientes/dialog-cliente.js';
+import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 
 const STEPS = ['Básico', 'Adicional', 'Produtos', 'Confirmação'];
 
@@ -89,12 +90,14 @@ export async function renderPedidoWizard(container, _ctx) {
   // ---------------------------------------------------------------------------
   // Lookups
   // ---------------------------------------------------------------------------
-  let clientes, situacoes, canais, formasEntrega;
+  let clientes, situacoes, canais, formasEntrega, metas;
   let modoAtual = 'militar';
   try {
-    [clientes, situacoes, canais, formasEntrega] = await Promise.all([
+    // As metas sao as do ANO CORRENTE: o pedido novo nasce com data de hoje, e
+    // um pedido cumpre meta do proprio exercicio. O PIT e reescrito todo ano.
+    [clientes, situacoes, canais, formasEntrega, metas] = await Promise.all([
       getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
-      getDominioFormaEntrega(),
+      getDominioFormaEntrega(), getMetasPit(new Date().getFullYear()),
     ]);
   } catch (err) {
     if (disposed) return;
@@ -107,7 +110,7 @@ export async function renderPedidoWizard(container, _ctx) {
   }
   if (disposed) return () => {};
 
-  const form = createPedidoFormFields({ clientes, situacoes, canais, formasEntrega });
+  const form = createPedidoFormFields({ clientes, situacoes, canais, formasEntrega, metas });
   const itens = []; // each: { payload, display }
 
   // ---------------------------------------------------------------------------
@@ -293,7 +296,9 @@ export async function renderPedidoWizard(container, _ctx) {
       infoRow('Demandante', valores.demandante),
       infoRow('OM responsável (OMDS)', valores.omds),
       infoRow('Previsto no PIT', valores.previsto_pit ? 'Sim' : 'Não'),
-      infoRow('Meta do PIT', valores.meta_pit),
+      infoRow('Meta do PIT', rotuloMetaPit(
+        (metas || []).find(m => m.id === valores.meta_pit_id)
+      ) || '-'),
       infoRow('Endereço de entrega', valores.endereco_entrega),
       infoRow('Palavras-chave', valores.palavras_chave.length ? valores.palavras_chave.join(', ') : '-'),
       infoRow('Operação', valores.operacao),

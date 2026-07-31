@@ -161,11 +161,12 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       -- A coluna "Meta" da aba guarda o CODIGO da meta do PIT ('4.1', '4.2'), e
       -- so vem preenchida no item coberto pelo PIT: na aba de junho de 2026 sao
       -- 86 linhas com 4.1/4.2, exatamente as 86 com "Previsto no PIT = sim".
-      -- Desde 2026-07-30 o codigo mora em mapoteca.pedido.meta_pit e sai daqui
-      -- pronto. Nao se deriva do material (a correlacao 4.1 sulfite / 4.2 tyvek
-      -- / 4.3 glossy valeu so em 2026): ver a migracao do campo.
-      -- Ate 2026-07-29 esta coluna trazia p.prazo, uma DATA sob o rotulo "Meta".
-      p.meta_pit AS meta,
+      -- Desde 2026-07-31 o pedido aponta a meta por CHAVE (pit.meta), e o codigo
+      -- sai do proprio cadastro do PIT. Antes era texto digitado a mao, e antes
+      -- disso, ate 2026-07-29, esta coluna trazia p.prazo: uma DATA sob o rotulo
+      -- "Meta". Nao se deriva do material (a correlacao 4.1 sulfite / 4.2 tyvek
+      -- / 4.3 glossy valeu so em 2026).
+      COALESCE(NULLIF(mp.item, '-'), mp.numero_meta::text) AS meta,
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
       p.documento_solicitacao,
@@ -196,6 +197,7 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
       p.localizador_pedido
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido p ON p.id = pp.pedido_id
+    LEFT JOIN pit.meta mp ON mp.id = p.meta_pit_id
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
     -- LEFT, e não INNER: decisão do chefe de 2026-07-30 é que impressão avulsa
     -- conta na Meta 4 como qualquer outra. Um INNER aqui apagaria da aba, sem
@@ -509,9 +511,9 @@ const materialDaAba = (nome) => {
  *  - material: 'Sulfite 90g' -> 'sulfite' (ver materialDaAba);
  *  - MI e material fornecido ausentes -> '-', que é o que a aba escreve na
  *    Carta Especial (sem folha MI) e no item sem mídia registrada;
- *  - Meta: '-' quando o item não é do PIT. Quando é, sai o código gravado em
- *    pedido.meta_pit ('4.1'). Fica VAZIA só no pedido marcado como previsto sem
- *    meta gravada, o que o CHECK do banco não deixa acontecer em linha nova;
+ *  - Meta: '-' quando o item não é do PIT. Quando é, sai o código da meta
+ *    apontada por pedido.meta_pit_id ('4.1'). Fica VAZIA só no pedido marcado
+ *    como previsto sem meta, o que o CHECK do banco não deixa acontecer;
  *  - Observações: o DIEx do pedido, que é o que a aba costuma trazer nessa
  *    coluna, mais a observação do item quando houver.
  *

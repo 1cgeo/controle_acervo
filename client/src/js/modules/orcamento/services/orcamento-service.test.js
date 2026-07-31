@@ -21,15 +21,8 @@ import * as svc from '@modules/orcamento/services/orcamento-service.js';
 beforeEach(() => vi.clearAllMocks());
 
 describe('orcamento-service: GET com query string', () => {
-  test('getMetas(ano) monta ?ano=', () => {
-    svc.getMetas(2026);
-    expect(apiGet).toHaveBeenCalledWith('/orcamento/metas?ano=2026');
-  });
-
-  test('getMetas() sem ano nao adiciona query', () => {
-    svc.getMetas();
-    expect(apiGet).toHaveBeenCalledWith('/orcamento/metas');
-  });
+  // As metas do PIT sairam deste service em 2026-07-31: viraram plataforma
+  // ('/metas'). O teste delas mora em services/plataforma-service.test.js.
 
   test('getNotasCredito filtra por ano e classificacao', () => {
     svc.getNotasCredito({ ano: 2026, classificacao_id: 1 });

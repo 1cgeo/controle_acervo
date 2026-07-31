@@ -7,7 +7,10 @@ const controller = {}
 
 // Tabelas que carregam o campo `ano`, usadas para listar os anos com dado.
 const TABELAS_ANO = [
-  'orcamento.meta_pit',
+  // pit.meta entra mesmo morando fora do schema: o seletor de ano do orcamento
+  // tem de oferecer o ano em que so existe meta cadastrada, que e o primeiro
+  // registro de todo exercicio novo.
+  'pit.meta',
   'orcamento.dfd',
   'orcamento.pdr_item',
   'orcamento.nota_credito',

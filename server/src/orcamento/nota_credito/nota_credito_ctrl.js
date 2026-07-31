@@ -89,7 +89,7 @@ controller.listar = async (filtros = {}) => {
      FROM orcamento.nota_credito AS nc
      INNER JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
-     LEFT JOIN orcamento.meta_pit AS mp ON mp.id = nc.meta_pit_id
+     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
      LEFT JOIN orcamento.arquivo AS af ON af.nota_credito_id = nc.id
      WHERE ($<ano> IS NULL OR nc.ano = $<ano>)
        AND ($<classificacaoId> IS NULL OR nc.classificacao_id = $<classificacaoId>)
@@ -125,7 +125,7 @@ controller.getPorId = async id => {
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.plano_interno AS pi ON pi.code = nc.cod_pi
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
-     LEFT JOIN orcamento.meta_pit AS mp ON mp.id = nc.meta_pit_id
+     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
      WHERE nc.id = $<id>`,
     { id }
   )

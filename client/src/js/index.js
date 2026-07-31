@@ -2,13 +2,14 @@ import '@css/style.css';
 import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
 import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
-import Router, { adminLoader, perfilLoader, rotaRaiz } from './router.js';
+import Router, { adminLoader, authLoader, perfilLoader, rotaRaiz } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
 import { renderLogin } from '@pages/login.js';
 import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 import { renderUsuariosList } from '@pages/usuarios/list.js';
+import { renderMetasList } from '@pages/metas/list.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
 
 // Inicializa o tema (claro/escuro via data-theme, persistido em sca-theme-mode)
@@ -61,6 +62,12 @@ router.add('/login', standalone(renderLogin), {
 
 // Tela unica de usuarios: uma coluna por modulo. Administrador global.
 router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
+
+// Metas do PIT: o plano anual da Divisao, que os tres modulos consomem. Saiu do
+// modulo orcamento em 2026-07-31 justamente porque quem so tem perfil na
+// mapoteca nao conseguia nem ver a lista. Sem `adminLoader`: LER e de qualquer
+// pessoa logada, e o backend cobra o administrador so na escrita.
+router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
 
 // Consulta PUBLICA de pedido da mapoteca pelo localizador (RN04). Sem sessao e
 // sem guarda: quem pediu acompanha o pedido pelo codigo XXXX-XXXX-XXXX, sem

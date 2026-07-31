@@ -12,8 +12,8 @@ import {
   createPdrItem,
   updatePdrItem,
   getNaturezaDespesa,
-  getMetas,
 } from '@modules/orcamento/services/orcamento-service.js';
+import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 
 /**
  * Abre o dialog de criar/editar um item do PDR. O PDR e o conjunto dos itens do
@@ -37,7 +37,7 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
   try {
     [naturezas, metas] = await Promise.all([
       getNaturezaDespesa(),
-      getMetas(anoItem),
+      getMetasPit(anoItem),
     ]);
   } catch (err) {
     showError(err.message || 'Erro ao carregar dados do item do PDR');
@@ -49,16 +49,9 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     label: `${nd.code} - ${nd.nome}`,
   }));
 
-  const metaOptions = (metas || []).map(m => {
-    const partes = [];
-    if (m.numero_meta !== null && m.numero_meta !== undefined) partes.push(`Meta ${m.numero_meta}`);
-    if (m.item) partes.push(`(${m.item})`);
-    const prefixo = partes.join(' ');
-    const label = m.descricao
-      ? (prefixo ? `${prefixo}: ${m.descricao}` : m.descricao)
-      : (prefixo || `Meta ${m.id}`);
-    return { value: m.id, label };
-  });
+  // O rotulo sai de rotuloMetaPit, a mesma funcao que a tela de metas e a
+  // mapoteca usam: uma meta nao pode aparecer com nome diferente em cada tela.
+  const metaOptions = (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) }));
 
   // ---- Campos ----
   const codNdField = createSelectField({

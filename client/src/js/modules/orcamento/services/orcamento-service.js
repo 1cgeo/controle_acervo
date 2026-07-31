@@ -51,11 +51,9 @@ export const updateConfig = (body) => apiPut(`${API}/configuracao`, body);
 export const getAnos = () => apiGet(`${API}/configuracao/anos`);
 
 // ---- Meta do PIT ----
-export const getMetas = (ano) => apiGet(`${API}/metas${qs({ ano })}`);
-export const getMeta = (id) => apiGet(`${API}/metas/${id}`);
-export const createMeta = (body) => apiPost(`${API}/metas`, body);
-export const updateMeta = (id, body) => apiPut(`${API}/metas/${id}`, body);
-export const deleteMeta = (id) => apiDelete(`${API}/metas/${id}`);
+// As metas do PIT sairam deste modulo em 2026-07-31: viraram dado de
+// plataforma, em '@services/plataforma-service.js' (getMetasPit). O orcamento
+// continua CONSUMINDO, nos dialogos de item do PDR e de nota de credito.
 
 // ---- DFD (o "PCA do ano" e o conjunto de DFDs do ano) ----
 export const getDfds = (ano) => apiGet(`${API}/dfd${qs({ ano })}`);

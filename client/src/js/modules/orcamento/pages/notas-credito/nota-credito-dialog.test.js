@@ -18,7 +18,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
     { code: 1, nome: 'PDR' },
     { code: 2, nome: 'Extra-PDR' },
   ])),
-  getMetas: vi.fn(() => Promise.resolve([])),
   getNotasCredito: vi.fn(() => Promise.resolve([])),
   getPdrItens: vi.fn(() => Promise.resolve([])),
   // Anexos (componente file-attachment, carregado no modo edicao da NC)
@@ -27,6 +26,11 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   downloadArquivo: vi.fn(() => Promise.resolve()),
   deleteArquivo: vi.fn(() => Promise.resolve()),
 }));
+
+vi.mock('@services/plataforma-service.js', async () => {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  return { ...real, getMetasPit: vi.fn(() => Promise.resolve([])) };
+});
 
 import { openNotaCreditoDialog } from '@modules/orcamento/pages/notas-credito/nota-credito-dialog.js';
 

@@ -82,14 +82,16 @@ const pedidoBase = {
   demandante: Joi.string().max(255).allow(null, ''),
   omds: Joi.string().max(255).allow(null, ''),
   previsto_pit: Joi.boolean().default(false),
-  // Código do item da meta do PIT (ex.: '4.1'). NÃO se deriva do material: em
-  // 2026 a Meta 4 é impressão e os sub-itens são o material (4.1 sulfite, 4.2
-  // tyvek, 4.3 glossy), mas o PIT é reescrito todo ano e a numeração muda com
-  // ele. Ver migrations/2026-07-30_pedido_meta_pit.sql.
-  meta_pit: Joi.when('previsto_pit', {
+  // Meta do PIT que o pedido atende, por CHAVE ESTRANGEIRA para pit.meta. Era o
+  // código digitado à mão ('4.1') até 2026-07-31, quando a tabela de metas saiu
+  // do schema `orcamento` e passou a ser dado de plataforma. NÃO se deriva do
+  // material: em 2026 a Meta 4 é impressão e os sub-itens são o material (4.1
+  // sulfite, 4.2 tyvek, 4.3 glossy), mas o PIT é reescrito todo ano e a
+  // numeração muda com ele.
+  meta_pit_id: Joi.when('previsto_pit', {
     is: true,
-    then: Joi.string().max(10).required(),
-    otherwise: Joi.string().max(10).allow(null, '')
+    then: Joi.number().integer().strict().required(),
+    otherwise: Joi.number().integer().strict().allow(null)
   }),
   // Campos de pedido de CIVIL (opcionais; NULL para OM)
   canal_recebimento_id: Joi.number().integer().valid(...Object.values(CANAL_RECEBIMENTO)).allow(null),
@@ -120,10 +122,10 @@ models.pedidoAtualizacao = Joi.object().keys({
   palavras_chave: Joi.array().items(Joi.string()),
   previsto_pit: Joi.boolean(),
   // Solto aqui pela mesma razão de previsto_pit: quem edita a partir da LISTA
-  // não recebe meta_pit de volta, e a condicional do pedidoBase reprovaria o
+  // não recebe meta_pit_id de volta, e a condicional do pedidoBase reprovaria o
   // corpo que só omite a chave. O controller preserva o valor atual (ver
   // preserveOmitted) e reprova a combinação inválida depois de mesclar.
-  meta_pit: Joi.string().max(10).allow(null, '')
+  meta_pit_id: Joi.number().integer().strict().allow(null)
 })
 
 models.pedidoLocalizador = Joi.object().keys({

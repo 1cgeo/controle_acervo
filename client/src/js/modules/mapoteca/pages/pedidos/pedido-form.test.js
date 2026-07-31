@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
 
+vi.mock('@services/plataforma-service.js', async () => {
+  const { mockPlataformaService } = await import('@modules/mapoteca/services/service-mocks.js');
+  return mockPlataformaService();
+});
+
 import {
   createPedidoFormFields,
   aplicarModoPedido,
@@ -15,10 +20,18 @@ const CLIENTES = [
 ];
 const SITUACOES = [{ code: 3, nome: 'Em andamento' }, { code: 5, nome: 'Concluído' }];
 const CANAIS = [{ code: 1, nome: 'Ouvidoria/LAI' }];
+// A meta do PIT virou lista desde 2026-07-31: sem opção cadastrada, o select
+// nasce vazio e o teste do campo PREENCHIDO não teria o que selecionar.
+const METAS = [
+  { id: 8, ano: 2026, numero_meta: 4, item: '4.1', descricao: 'Impressão em sulfite' },
+  { id: 9, ano: 2026, numero_meta: 4, item: '4.2', descricao: 'Impressão em Tyvek' },
+];
 
 /** Monta o formulário e a seção de civil, como as duas telas fazem. */
 function montar(pedido = null) {
-  const form = createPedidoFormFields({ pedido, clientes: CLIENTES, situacoes: SITUACOES, canais: CANAIS });
+  const form = createPedidoFormFields({
+    pedido, clientes: CLIENTES, situacoes: SITUACOES, canais: CANAIS, metas: METAS,
+  });
   const civilElement = document.createElement('div');
   civilElement.appendChild(form.civilElement);
   return { form, civilElement };
@@ -62,7 +75,7 @@ describe('aplicarModoPedido', () => {
     expect(escondido(form.fields.omds)).toBe(true);
     expect(escondido(form.fields.operacao)).toBe(true);
     expect(escondido(form.fields.previsto_pit)).toBe(true);
-    expect(escondido(form.fields.meta_pit)).toBe(true);
+    expect(escondido(form.fields.meta_pit_id)).toBe(true);
     expect(civilElement.classList.contains('hidden')).toBe(false);
   });
 
@@ -73,7 +86,7 @@ describe('aplicarModoPedido', () => {
       demandante: 'CMS',
       omds: '1º CGEO',
       previsto_pit: true,
-      meta_pit: '4.1',
+      meta_pit_id: 8,
     });
 
     aplicarModoPedido({ fields: form.fields, modo: 'civil', civilElement });
@@ -81,7 +94,7 @@ describe('aplicarModoPedido', () => {
     expect(escondido(form.fields.demandante)).toBe(false);
     expect(escondido(form.fields.omds)).toBe(false);
     expect(escondido(form.fields.previsto_pit)).toBe(false);
-    expect(escondido(form.fields.meta_pit)).toBe(false);
+    expect(escondido(form.fields.meta_pit_id)).toBe(false);
     // O campo militar que ficou vazio continua escondido.
     expect(escondido(form.fields.operacao)).toBe(true);
   });
@@ -121,7 +134,7 @@ describe('aplicarModoPedido', () => {
       omds: '1º CGEO',
       operacao: 'Operação Fronteira',
       previsto_pit: true,
-      meta_pit: '4.1',
+      meta_pit_id: 8,
       palavras_chave: ['adestramento'],
       observacao: 'entregar em mãos',
       canal_recebimento_id: 1,

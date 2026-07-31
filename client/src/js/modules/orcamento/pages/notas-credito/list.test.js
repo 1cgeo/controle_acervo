@@ -12,9 +12,13 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
   getPlanoInterno: vi.fn(() => Promise.resolve([])),
   getUg: vi.fn(() => Promise.resolve([])),
-  getMetas: vi.fn(() => Promise.resolve([])),
   getPdrItens: vi.fn(() => Promise.resolve([])),
 }));
+
+vi.mock('@services/plataforma-service.js', async () => {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  return { ...real, getMetasPit: vi.fn(() => Promise.resolve([])) };
+});
 
 import { renderNotasCreditoList } from '@modules/orcamento/pages/notas-credito/list.js';
 import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.js';

@@ -88,6 +88,44 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
   });
 });
 
+// A meta do PIT saiu do modulo orcamento em 2026-07-31 e virou item de
+// plataforma. O ponto do teste e o CONTRARIO do item de usuarios: este NAO leva
+// `admin: true`, porque quem so tem perfil na mapoteca precisa ler o plano
+// anual para amarrar o pedido a uma meta. Era exatamente isso que a tela dentro
+// do orcamento impedia.
+describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () => {
+  test('quem so tem perfil na mapoteca ve Metas do PIT', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    const lista = ids(sidebar);
+    expect(lista).toContain('metas');
+    // Sem perfil no orcamento, nenhuma tela daquele modulo aparece.
+    expect(lista).not.toContain('orcamento:dfd');
+    // E o item de usuarios continua so do administrador.
+    expect(lista).not.toContain('usuarios');
+  });
+
+  test('o item aponta a rota sem prefixo de modulo', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+    expect(sidebar.querySelector('[data-id="metas"]').getAttribute('href')).toBe('#/metas');
+  });
+
+  test('o orcamento nao tem mais o item nem o grupo colapsavel "Orçamento"', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: 'orcamento' });
+
+    expect(ids(sidebar)).not.toContain('orcamento:metas');
+    // O grupo tinha dois filhos e ficou com um: o PDR subiu para o topo.
+    expect(sidebar.querySelector('[data-id="orcamento:pdr"]').getAttribute('href'))
+      .toBe('#/orcamento/pdr');
+    const rotulos = [...sidebar.querySelectorAll('.sidebar__group-header')]
+      .map(h => h.textContent);
+    expect(rotulos.some(r => r.includes('Orçamento'))).toBe(false);
+  });
+});
+
 describe('sidebar: o menu nunca oferece tela que o guarda recusa', () => {
   // O item "Configuração" do orcamento aponta para uma rota `admin: true` e
   // NAO repetia a marca no proprio item: aparecia para gerente e o clique caia

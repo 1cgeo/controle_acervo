@@ -35,7 +35,7 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE orcamento.licitacao CASCADE')
     await t.none('TRUNCATE orcamento.dfd_item CASCADE')
     await t.none('TRUNCATE orcamento.dfd CASCADE')
-    await t.none('TRUNCATE orcamento.meta_pit CASCADE')
+    await t.none('TRUNCATE pit.meta CASCADE')
 
     // Mapoteca tables.
     // A auditoria entra PRIMEIRO e por TRUNCATE proprio: ela nao tem FK para o

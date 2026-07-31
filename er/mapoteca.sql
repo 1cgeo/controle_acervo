@@ -130,11 +130,13 @@ CREATE TABLE mapoteca.pedido(
     demandante VARCHAR(255),
     omds VARCHAR(255),
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Codigo do item da meta do PIT que o pedido atende (ex.: '4.1'). NAO se
-    -- deriva do material: em 2026 a correlacao (4.1 sulfite, 4.2 tyvek, 4.3
-    -- glossy) valeu sem excecao, mas o PIT e reescrito todo ano e a numeracao
-    -- muda com ele. Ver migrations/2026-07-30_pedido_meta_pit.sql.
-    meta_pit VARCHAR(10),
+    -- Meta do PIT que o pedido atende. Chave estrangeira para pit.meta desde
+    -- 2026-07-31; antes disso era o codigo digitado a mao ('4.1'), porque a
+    -- tabela de metas morava dentro do schema `orcamento` e a mapoteca nao a
+    -- alcancava. NAO se deriva do material: em 2026 a correlacao (4.1 sulfite,
+    -- 4.2 tyvek, 4.3 glossy) valeu sem excecao, mas o PIT e reescrito todo ano
+    -- e a numeracao muda com ele.
+    meta_pit_id BIGINT REFERENCES pit.meta (id),
     -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
     canal_recebimento_id SMALLINT REFERENCES mapoteca.canal_recebimento (code),
     municipio VARCHAR(255),
@@ -162,8 +164,8 @@ CREATE TABLE mapoteca.pedido(
     -- 400 limpo); o CHECK garante que nenhuma outra porta grave a combinacao
     -- invalida. O nome e o mesmo da migracao, senao instalacao nova divergiria
     -- da migrada e o ensaiar_migracao.cjs reprovaria.
-    CONSTRAINT pedido_meta_pit_exige_previsto
-        CHECK (NOT previsto_pit OR meta_pit IS NOT NULL)
+    CONSTRAINT pedido_meta_pit_id_exige_previsto
+        CHECK (NOT previsto_pit OR meta_pit_id IS NOT NULL)
 );
 
 COMMENT ON COLUMN mapoteca.pedido.demandante IS
@@ -172,8 +174,8 @@ COMMENT ON COLUMN mapoteca.pedido.omds IS
     'OM Diretamente Subordinada responsável pelo atendimento (ex: 1º CGEO).';
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
-COMMENT ON COLUMN mapoteca.pedido.meta_pit IS
-    'Código do item da meta do PIT que o pedido atende (ex.: 4.1). Obrigatório quando previsto_pit é verdadeiro, nulo caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
+COMMENT ON COLUMN mapoteca.pedido.meta_pit_id IS
+    'Meta do PIT que o pedido atende (pit.meta). Obrigatória quando previsto_pit é verdadeiro, nula caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
 COMMENT ON COLUMN mapoteca.pedido.observacao_interna IS
     'Anotação da equipe. NUNCA sai na consulta pública por localizador; ao contrário de observacao e observacao_envio, que saem.';
 COMMENT ON COLUMN mapoteca.pedido.forma_entrega_id IS
@@ -465,6 +467,7 @@ CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
 CREATE INDEX idx_pedido_cliente ON mapoteca.pedido(cliente_id);
 CREATE INDEX idx_pedido_data_pedido ON mapoteca.pedido(data_pedido);
 CREATE INDEX idx_pedido_data_atendimento ON mapoteca.pedido(data_atendimento);
+CREATE INDEX idx_pedido_meta_pit ON mapoteca.pedido(meta_pit_id);
 CREATE INDEX idx_pedido_operacao ON mapoteca.pedido(operacao) WHERE operacao IS NOT NULL;
 CREATE INDEX idx_pedido_palavras_chave ON mapoteca.pedido USING GIN (palavras_chave);
 CREATE INDEX idx_produto_pedido_pedido ON mapoteca.produto_pedido(pedido_id);

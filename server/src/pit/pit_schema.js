@@ -1,4 +1,4 @@
-// Path: orcamento\meta\meta_schema.js
+// Path: pit\pit_schema.js
 'use strict'
 
 const Joi = require('joi')

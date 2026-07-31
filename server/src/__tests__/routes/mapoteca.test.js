@@ -38,6 +38,22 @@ const criaCliente = async (overrides = {}) => {
   return row.id
 }
 
+// A meta do PIT deixou de ser texto no pedido em 2026-07-31: virou linha em
+// pit.meta, com chave estrangeira. O teste precisa da meta antes do pedido.
+// Insere direto no banco porque POST /api/metas e outro modulo, e o que se
+// prova aqui e o pedido, nao a rota de metas.
+const criaMeta = async (item = '4.1', ano = 2026) => {
+  const row = await conn.one(
+    `INSERT INTO pit.meta (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, $4, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (ano, numero_meta, item) DO UPDATE SET descricao = EXCLUDED.descricao
+     RETURNING id`,
+    [ano, parseInt(String(item).split('.')[0], 10), item, `Meta ${item}`]
+  )
+  // BIGSERIAL volta como STRING no driver, e o Joi do pedido pede number strict.
+  return Number(row.id)
+}
+
 const criaPedido = async (clienteId, overrides = {}) => {
   const body = {
     data_pedido: '2026-03-10T10:00:00Z',
@@ -386,11 +402,12 @@ describe('Mapoteca Routes', () => {
 
     it('POST /api/mapoteca/pedido should create with demandante/omds/previsto_pit', async () => {
       const clienteId = await criaCliente()
+      const metaId = await criaMeta('4.1')
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
         omds: '1º CGEO',
         previsto_pit: true,
-        meta_pit: '4.1'
+        meta_pit_id: metaId
       })
 
       expect(pedido.id).toBeDefined()
@@ -404,10 +421,12 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.demandante).toBe('CMS')
       expect(res.body.dados.omds).toBe('1º CGEO')
       expect(res.body.dados.previsto_pit).toBe(true)
-      expect(res.body.dados.meta_pit).toBe('4.1')
+      // O id serve a escrita; o codigo derivado e o que a tela e a planilha leem.
+      expect(res.body.dados.meta_pit_id).toBe(String(metaId))
+      expect(res.body.dados.meta_pit_codigo).toBe('4.1')
     })
 
-    it('POST /api/mapoteca/pedido previsto no PIT sem meta_pit should return 400', async () => {
+    it('POST /api/mapoteca/pedido previsto no PIT sem meta_pit_id should return 400', async () => {
       const clienteId = await criaCliente()
       const res = await request(app)
         .post('/api/mapoteca/pedido')
@@ -422,11 +441,12 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(400)
     })
 
-    it('PUT /api/mapoteca/pedido preserva meta_pit quando a chave é omitida', async () => {
+    it('PUT /api/mapoteca/pedido preserva meta_pit_id quando a chave é omitida', async () => {
       const clienteId = await criaCliente()
-      const pedido = await criaPedido(clienteId, { previsto_pit: true, meta_pit: '4.2' })
+      const metaId = await criaMeta('4.2')
+      const pedido = await criaPedido(clienteId, { previsto_pit: true, meta_pit_id: metaId })
 
-      // Corpo sem previsto_pit e sem meta_pit: é o que a edição a partir da
+      // Corpo sem previsto_pit e sem meta_pit_id: é o que a edição a partir da
       // LISTA manda. Nenhum dos dois pode ser zerado em silêncio.
       const res = await request(app)
         .put('/api/mapoteca/pedido')
@@ -446,11 +466,11 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateAdminToken())
 
       expect(depois.body.dados.previsto_pit).toBe(true)
-      expect(depois.body.dados.meta_pit).toBe('4.2')
+      expect(depois.body.dados.meta_pit_codigo).toBe('4.2')
       expect(depois.body.dados.demandante).toBe('CMS')
     })
 
-    it('PUT /api/mapoteca/pedido marcando previsto_pit sem meta_pit should return 400', async () => {
+    it('PUT /api/mapoteca/pedido marcando previsto_pit sem meta_pit_id should return 400', async () => {
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId)
 
@@ -463,7 +483,7 @@ describe('Mapoteca Routes', () => {
           cliente_id: clienteId,
           situacao_pedido_id: 3,
           previsto_pit: true,
-          meta_pit: null
+          meta_pit_id: null
         })
 
       expect(res.status).toBe(400)
@@ -1162,11 +1182,12 @@ describe('Mapoteca Routes', () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: 'MI-2965-2' })
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
+      const metaId = await criaMeta('4.1')
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
         omds: '1º CGEO',
         previsto_pit: true,
-        meta_pit: '4.1',
+        meta_pit_id: metaId,
         operacao: 'Operação Teste',
         // O prazo existe no cenário de propósito: até 2026-07-29 ele saía na
         // coluna "Meta" do relatório, e um teste do .ods guarda essa correção.
@@ -1326,7 +1347,7 @@ describe('Mapoteca Routes', () => {
 
         // previsto_pit = true no cenário
         expect(content).toContain('<text:p>sim</text:p>')
-        // A coluna "Meta" traz o código gravado em pedido.meta_pit, como TEXTO.
+        // A coluna "Meta" traz o código da meta apontada pelo pedido, como TEXTO.
         // Ate 2026-07-29 ela trazia p.prazo (uma DATA sob o rótulo "Meta"), e o
         // prazo 2026-04-10 continua no cenário justamente para guardar isso.
         expect(content).toContain('<text:p>4.1</text:p>')

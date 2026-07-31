@@ -4,9 +4,15 @@ import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modul
 
 /**
  * Itens de PLATAFORMA, fora de qualquer modulo: valem nos tres.
- * Hoje so a tela unica de usuarios, restrita ao administrador global.
+ *
+ * `admin: true` esconde o item de quem nao e administrador global. As Metas do
+ * PIT NAO levam a marca: qualquer pessoa logada le o plano anual da Divisao, e o
+ * backend cobra o administrador so na escrita. Elas moraram dentro do modulo
+ * orcamento ate 2026-07-31, e era justamente isso que impedia quem so tem perfil
+ * na mapoteca de ver a lista.
  */
 const MENU_PLATAFORMA = [
+  { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
   { id: 'usuarios', label: 'Usuários', icon: ICONS.people, path: '/usuarios', admin: true },
 ];
 

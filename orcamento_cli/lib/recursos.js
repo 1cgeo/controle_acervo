@@ -81,10 +81,14 @@ const RECURSOS = {
     anexo: 'pdr_ano'
   },
 
+  // Meta do PIT: recurso de PLATAFORMA desde 2026-07-31. Saiu de
+  // /orcamento/metas para /metas, e o schema saiu de server/src/orcamento/meta/
+  // para server/src/pit/, porque o PIT e o plano anual da Divisao e os tres
+  // modulos o consomem. Ler pede so login; escrever pede administrador.
   meta: {
     nome: 'meta do PIT',
-    caminho: '/orcamento/metas',
-    schema: carregar('meta/meta_schema'),
+    caminho: '/metas',
+    schema: carregarPlataforma('pit/pit_schema'),
     colunas: ['id', 'ano', 'numero_meta', 'item', 'descricao']
   },
 

@@ -16,7 +16,6 @@ import { ICONS } from '@utils/dom.js';
 
 import { renderDashboard } from './pages/dashboard/index.js';
 import { renderConfiguracao } from './pages/configuracao/index.js';
-import { renderMetasList } from './pages/metas/list.js';
 import { renderDfdList } from './pages/dfd/list.js';
 import { renderPdrList } from './pages/pdr/list.js';
 import { renderNotasCreditoList } from './pages/notas-credito/list.js';
@@ -37,15 +36,10 @@ export default {
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'configuracao', label: 'Configuração', icon: ICONS.category, path: '/configuracao' },
     { id: 'dfd', label: 'DFD', icon: ICONS.description, path: '/dfd' },
-    {
-      id: 'orcamento-group',
-      label: 'Orçamento',
-      icon: ICONS.dataUsage,
-      children: [
-        { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
-        { id: 'pdr', label: 'PDR', icon: ICONS.dataUsage, path: '/pdr' },
-      ],
-    },
+    // O grupo "Orçamento" saiu em 2026-07-31 (chefe). Ele tinha dois filhos, e
+    // um deles (Metas do PIT) deixou o módulo. Grupo colapsável com um item só
+    // esconde a tela atrás de um clique e nomeia o módulo dentro do módulo.
+    { id: 'pdr', label: 'PDR', icon: ICONS.dataUsage, path: '/pdr' },
     {
       id: 'execucao-group',
       label: 'Execução',
@@ -63,7 +57,6 @@ export default {
   rotas: [
     { path: '/dashboard', render: renderDashboard, perfil: 'consulta' },
     { path: '/configuracao', render: renderConfiguracao, admin: true },
-    { path: '/metas', render: renderMetasList, perfil: 'consulta' },
     { path: '/dfd', render: renderDfdList, perfil: 'consulta' },
     { path: '/pdr', render: renderPdrList, perfil: 'consulta' },
     { path: '/notas_credito', render: renderNotasCreditoList, perfil: 'consulta' },

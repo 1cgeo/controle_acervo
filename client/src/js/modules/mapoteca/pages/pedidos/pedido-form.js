@@ -9,6 +9,7 @@ import {
   createChipInput,
 } from '@components/form-fields/form-fields.js';
 import { toIsoDate } from '@utils/format.js';
+import { rotuloMetaPit } from '@services/plataforma-service.js';
 
 /**
  * Shared pedido form (wizard steps 1-2 and the edit dialog on the details
@@ -28,7 +29,7 @@ export const TIPOS_CLIENTE_MILITAR = [1, 2, 3];
 // Campos que só o pedido militar usa. Medido na produção em 2026-07-30:
 // demandante preenchido em 100 de 100 militares e 0 de 33 civis; operação em
 // 33 militares e 0 civis; previsto no PIT em 3 militares e 0 civis.
-const CAMPOS_SO_MILITAR = ['demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit'];
+const CAMPOS_SO_MILITAR = ['demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit_id'];
 
 // Campos que só o pedido de civil usa. Canal de recebimento preenchido em 33 de
 // 33 civis e 0 de 100 militares (mesma medição).
@@ -126,6 +127,7 @@ function orNull(value) {
  */
 export function createPedidoFormFields({
   pedido = null, clientes = [], situacoes = [], canais = [], formasEntrega = [],
+  metas = [],
 }) {
   const fields = {
     // Etapa 1 — Básico
@@ -216,12 +218,16 @@ export function createPedidoFormFields({
       label: 'Previsto no PIT',
       checked: Boolean(pedido && pedido.previsto_pit),
     }),
-    // O código sai do PIT do ano, não do material do item: a correlação
-    // 4.1 sulfite / 4.2 tyvek / 4.3 glossy valeu só em 2026.
-    meta_pit: createTextField({
+    // Lista do PIT do ano, e não texto digitado: até 2026-07-31 este campo era
+    // um código à mão ('4.1') porque a tabela de metas morava no schema do
+    // orçamento e a mapoteca não a alcançava. A meta NÃO se deriva do material
+    // do item: a correlação 4.1 sulfite / 4.2 tyvek / 4.3 glossy valeu só em
+    // 2026, e o PIT é reescrito todo ano.
+    meta_pit_id: createSelectField({
       label: 'Meta do PIT',
-      value: (pedido && pedido.meta_pit) || '',
-      placeholder: 'ex.: 4.1',
+      options: (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) })),
+      value: (pedido && pedido.meta_pit_id) || undefined,
+      placeholder: 'Selecione a meta...',
     }),
     endereco_entrega: createTextareaField({
       label: 'Endereço de entrega',
@@ -307,7 +313,7 @@ export function createPedidoFormFields({
     fields.forma_entrega_id.element,
     fields.localizador_envio.element,
     fields.previsto_pit.element,
-    fields.meta_pit.element,
+    fields.meta_pit_id.element,
     fields.endereco_entrega.element,
     fields.palavras_chave.element,
     fields.observacao_envio.element,
@@ -365,7 +371,7 @@ export function createPedidoFormFields({
    */
   function validateAdicional() {
     fields.motivo_cancelamento.setError(null);
-    fields.meta_pit.setError(null);
+    fields.meta_pit_id.setError(null);
     const situacao = fields.situacao_pedido_id.getValue();
     if (situacao === SITUACAO_PEDIDO_CANCELADO && !fields.motivo_cancelamento.getValue()) {
       fields.motivo_cancelamento.setError('Pedido Cancelado exige o motivo do cancelamento (RN03)');
@@ -373,8 +379,8 @@ export function createPedidoFormFields({
     }
     // Mesma regra do Joi e do CHECK do banco: previsto no PIT exige a meta.
     // Aqui ela existe só para o erro aparecer no campo, e não como 400 seco.
-    if (fields.previsto_pit.getValue() && !fields.meta_pit.getValue()) {
-      fields.meta_pit.setError('Pedido previsto no PIT exige o código da meta (ex.: 4.1)');
+    if (fields.previsto_pit.getValue() && !fields.meta_pit_id.getValue()) {
+      fields.meta_pit_id.setError('Pedido previsto no PIT exige a meta do PIT');
       return false;
     }
     return true;
@@ -400,7 +406,7 @@ export function createPedidoFormFields({
       demandante: orNull(fields.demandante.getValue()),
       omds: orNull(fields.omds.getValue()),
       previsto_pit: fields.previsto_pit.getValue(),
-      meta_pit: orNull(fields.meta_pit.getValue()),
+      meta_pit_id: fields.meta_pit_id.getValue(),
       observacao: orNull(fields.observacao.getValue()),
       forma_entrega_id: fields.forma_entrega_id.getValue(),
       localizador_envio: orNull(fields.localizador_envio.getValue()),

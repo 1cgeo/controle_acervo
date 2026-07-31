@@ -36,6 +36,13 @@ const getUsuarioId = async (usuarioUuid) => {
   return usuarioInfo.id;
 };
 
+// O CÓDIGO da meta do PIT como a tela e a planilha o esperam: '4.1' quando a
+// meta se subdivide, e o número da meta quando ela é indivisa (`item` NULO). O
+// NULLIF cobre também o '-' literal, caso alguém o digite no cadastro.
+// Uma expressão só, usada em toda consulta que devolve pedido, para as três não
+// divergirem. A tabela pit.meta é de plataforma (er/pit.sql).
+const ROTULO_META = "COALESCE(NULLIF(mp.item, '-'), mp.numero_meta::text)";
+
 // Colunas de pedido/produto_pedido compartilhadas entre criação e atualização
 // (pgp ColumnSet). `def` permite que o cliente omita campos opcionais.
 const PEDIDO_COLS = [
@@ -55,7 +62,7 @@ const PEDIDO_COLS = [
   { name: 'demandante', def: null },
   { name: 'omds', def: null },
   { name: 'previsto_pit', def: false },
-  { name: 'meta_pit', def: null },
+  { name: 'meta_pit_id', def: null },
   { name: 'canal_recebimento_id', def: null },
   { name: 'municipio', def: null },
   { name: 'qtd_imagens', def: null },
@@ -345,7 +352,10 @@ controller.getPedidos = async (ano) => {
            c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
-           p.prazo, p.demandante, p.omds, p.previsto_pit, p.meta_pit, p.operacao,
+           p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
+           -- A meta e chave estrangeira desde 2026-07-31 (era o codigo digitado
+           -- a mao). O id serve a escrita; o codigo serve a tela e a planilha.
+           p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            u.nome AS usuario_criacao_nome,
@@ -361,6 +371,7 @@ controller.getPedidos = async (ano) => {
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
     LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
+    LEFT JOIN pit.meta AS mp ON mp.id = p.meta_pit_id
     WHERE ${filtroAno('p.data_pedido')}
     ORDER BY p.data_pedido DESC
   `, { ano });
@@ -596,7 +607,9 @@ controller.getPedidoById = async (pedidoId) => {
              -- Do PEDIDO desde 2026-07-30, e nao mais de cada item.
              p.forma_entrega_id, fe.nome AS forma_entrega_nome,
              p.palavras_chave, p.operacao, p.prazo,
-             p.demandante, p.omds, p.previsto_pit, p.meta_pit,
+             p.demandante, p.omds, p.previsto_pit,
+             p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
+             mp.descricao AS meta_pit_descricao,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
              p.municipio, p.qtd_imagens,
              p.observacao, p.localizador_envio, p.observacao_envio,
@@ -613,6 +626,7 @@ controller.getPedidoById = async (pedidoId) => {
       LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
       LEFT JOIN dgeo.usuario AS uc ON uc.id = p.usuario_criacao_id
       LEFT JOIN dgeo.usuario AS ua ON ua.id = p.usuario_atualizacao_id
+      LEFT JOIN pit.meta AS mp ON mp.id = p.meta_pit_id
       WHERE p.id = $1
     `, [pedidoId]);
 
@@ -761,17 +775,17 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
       schema: 'mapoteca',
       table: 'pedido',
       id: pedido.id,
-      fields: ['palavras_chave', 'previsto_pit', 'meta_pit'],
+      fields: ['palavras_chave', 'previsto_pit', 'meta_pit_id'],
       body: pedido
     });
 
     // A condicional "PIT exige meta" mora no Joi só na CRIAÇÃO: na atualização
-    // o corpo pode omitir meta_pit de propósito, e quem resolve o valor final é
+    // o corpo pode omitir meta_pit_id de propósito, e quem resolve o valor final é
     // o preserveOmitted acima. Por isso a regra se confere aqui, depois da
     // mescla, e devolve 400 em vez de deixar o CHECK do banco virar 500.
-    if (pedido.previsto_pit && !pedido.meta_pit) {
+    if (pedido.previsto_pit && !pedido.meta_pit_id) {
       throw new AppError(
-        'Pedido previsto no PIT exige o código da meta (meta_pit).',
+        'Pedido previsto no PIT exige a meta do PIT (meta_pit_id).',
         httpCode.BadRequest
       );
     }

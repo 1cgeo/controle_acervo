@@ -597,7 +597,7 @@ async function corrigir (args, cfg) {
   if (pares.length === 0) {
     throw new Error(
       'Falta o que corrigir. Use pares campo=valor depois do verbo, por exemplo:\n' +
-      '  mapoteca pedido corrigir --id 29 documento_solicitacao="PIT 07" previsto_pit=true meta_pit=4.1'
+      '  mapoteca pedido corrigir --id 29 documento_solicitacao="PIT 07" previsto_pit=true meta_pit_id=8'
     )
   }
 

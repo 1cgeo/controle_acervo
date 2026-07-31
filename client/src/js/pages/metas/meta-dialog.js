@@ -6,19 +6,23 @@ import {
   createTextareaField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { createMeta, updateMeta } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
+import { createMetaPit, updateMetaPit } from '@services/plataforma-service.js';
 
 /**
- * Abre o dialog de criar/editar meta do PIT.
- * O ano vem do contexto global (navbar): no create grava o ano de contexto; no
- * edit mantem o ano do registro.
+ * Criar ou editar uma meta do PIT. Só o administrador global chega aqui: o
+ * backend cobra (verifyAdmin) e a lista só oferece o botão a ele.
+ *
+ * O ANO vem do filtro da tela ao criar, e do próprio registro ao editar. Não há
+ * seletor de ano na navbar aqui, porque esta é uma tela de plataforma.
+ *
  * @param {Object} options
  * @param {Object|null} [options.meta] - meta existente para editar (null cria nova)
- * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
+ * @param {number} [options.ano] - ano da meta nova
+ * @param {Function} [options.onSaved] - chamado após salvar com sucesso
  */
-export function openMetaDialog({ meta = null, onSaved = null } = {}) {
+export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {}) {
   const isEdit = Boolean(meta);
+  const anoAlvo = isEdit ? meta.ano : (ano || new Date().getFullYear());
 
   const numeroMetaField = createNumberField({
     label: 'Número da meta',
@@ -30,7 +34,7 @@ export function openMetaDialog({ meta = null, onSaved = null } = {}) {
   const itemField = createTextField({
     label: 'Item',
     maxLength: 20,
-    placeholder: 'Ex.: 1.1',
+    placeholder: 'Ex.: 4.1 (use - quando a meta não se subdivide)',
     value: meta?.item ?? '',
   });
   const descricaoField = createTextareaField({
@@ -47,7 +51,7 @@ export function openMetaDialog({ meta = null, onSaved = null } = {}) {
   let saving = false;
 
   openModal({
-    title: isEdit ? `Editar meta (${meta.ano})` : `Nova meta (${getAno()})`,
+    title: isEdit ? `Editar meta (${anoAlvo})` : `Nova meta (${anoAlvo})`,
     content,
     width: '560px',
     actions: [
@@ -68,7 +72,7 @@ export function openMetaDialog({ meta = null, onSaved = null } = {}) {
           }
 
           const payload = {
-            ano: isEdit ? meta.ano : getAno(),
+            ano: anoAlvo,
             numero_meta: numeroMeta,
             item: itemField.getValue() || null,
             descricao: descricaoField.getValue() || null,
@@ -77,10 +81,10 @@ export function openMetaDialog({ meta = null, onSaved = null } = {}) {
           saving = true;
           try {
             if (isEdit) {
-              await updateMeta(meta.id, payload);
+              await updateMetaPit(meta.id, payload);
               showSuccess('Meta atualizada com sucesso');
             } else {
-              await createMeta(payload);
+              await createMetaPit(payload);
               showSuccess('Meta criada com sucesso');
             }
             close();

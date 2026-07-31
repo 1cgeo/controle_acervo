@@ -184,6 +184,9 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     // Antes de acervo: o `limites` nao referencia ninguem, e o filtro por
     // municipio do acervo e do ponto de controle o consulta.
     await t.none(readSqlFile('./er/limites.sql'));
+    // Antes de mapoteca e de orcamento: os dois referenciam pit.meta. Depois de
+    // dgeo, porque a meta guarda o usuario de cadastramento.
+    await t.none(readSqlFile('./er/pit.sql'));
     await t.none(readSqlFile('./er/acervo.sql'));
     // Depois de acervo: o ponto_controle referencia acervo.lote e
     // acervo.volume_armazenamento, e acrescenta um CHECK em acervo.produto.

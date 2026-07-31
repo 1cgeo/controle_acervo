@@ -1,7 +1,7 @@
-// Path: orcamento\meta\meta_ctrl.js
+// Path: pit\pit_ctrl.js
 'use strict'
 
-const { db } = require('../../database')
+const { db } = require('../database')
 
 const { AppError, httpCode } = require('../utils')
 
@@ -14,7 +14,7 @@ controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
     return db.conn.any(
       `SELECT ${colunas}
-       FROM orcamento.meta_pit
+       FROM pit.meta
        WHERE ano = $<ano>
        ORDER BY numero_meta, item`,
       { ano }
@@ -23,15 +23,25 @@ controller.listar = async ano => {
 
   return db.conn.any(
     `SELECT ${colunas}
-     FROM orcamento.meta_pit
+     FROM pit.meta
      ORDER BY ano DESC, numero_meta, item`
   )
+}
+
+// Os anos que TEM meta cadastrada. A tela de metas e de plataforma e nao tem o
+// seletor de ano da navbar do orcamento, entao monta o proprio filtro a partir
+// desta lista, em vez de adivinhar um intervalo.
+controller.anos = async () => {
+  const linhas = await db.conn.any(
+    'SELECT DISTINCT ano FROM pit.meta ORDER BY ano DESC'
+  )
+  return linhas.map(l => l.ano)
 }
 
 controller.getPorId = async id => {
   return db.conn.oneOrNone(
     `SELECT ${colunas}
-     FROM orcamento.meta_pit
+     FROM pit.meta
      WHERE id = $<id>`,
     { id }
   )
@@ -40,7 +50,7 @@ controller.getPorId = async id => {
 controller.criar = async (dados, usuarioUuid) => {
   return db.conn.tx(async t => {
     return t.one(
-      `INSERT INTO orcamento.meta_pit
+      `INSERT INTO pit.meta
          (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
        VALUES ($<ano>, $<numero_meta>, $<item>, $<descricao>, $<usuarioUuid>)
        RETURNING id`,
@@ -58,7 +68,7 @@ controller.criar = async (dados, usuarioUuid) => {
 controller.atualizar = async (id, dados, usuarioUuid) => {
   return db.conn.tx(async t => {
     const existente = await t.oneOrNone(
-      'SELECT id FROM orcamento.meta_pit WHERE id = $<id>',
+      'SELECT id FROM pit.meta WHERE id = $<id>',
       { id }
     )
     if (!existente) {
@@ -66,7 +76,7 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
     }
 
     return t.one(
-      `UPDATE orcamento.meta_pit
+      `UPDATE pit.meta
        SET ano = $<ano>, numero_meta = $<numero_meta>, item = $<item>,
            descricao = $<descricao>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
@@ -87,18 +97,21 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
 
 controller.deletar = async id => {
   const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.meta_pit WHERE id = $<id>',
+    'SELECT id FROM pit.meta WHERE id = $<id>',
     { id }
   )
   if (!existente) {
     throw new AppError('Meta do PIT não encontrada', httpCode.NotFound)
   }
 
-  // Bloqueia exclusao se houver itens do PDR ou notas de credito vinculados a esta meta (FK).
+  // Bloqueia a exclusao quando algum consumidor aponta para esta meta. Os tres
+  // vivem em schemas diferentes, e a lista cresce quando um modulo novo passar a
+  // amarrar trabalho ao PIT. Sem isto o erro chegaria como 500 do banco (FK).
   const dependentes = await db.conn.one(
     `SELECT
        (SELECT COUNT(*) FROM orcamento.pdr_item WHERE meta_pit_id = $<id>) +
-       (SELECT COUNT(*) FROM orcamento.nota_credito WHERE meta_pit_id = $<id>) AS n`,
+       (SELECT COUNT(*) FROM orcamento.nota_credito WHERE meta_pit_id = $<id>) +
+       (SELECT COUNT(*) FROM mapoteca.pedido WHERE meta_pit_id = $<id>) AS n`,
     { id }
   )
   if (parseInt(dependentes.n, 10) > 0) {
@@ -108,7 +121,7 @@ controller.deletar = async id => {
     )
   }
 
-  return db.conn.none('DELETE FROM orcamento.meta_pit WHERE id = $<id>', { id })
+  return db.conn.none('DELETE FROM pit.meta WHERE id = $<id>', { id })
 }
 
 module.exports = controller

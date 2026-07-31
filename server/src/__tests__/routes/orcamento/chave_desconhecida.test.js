@@ -35,7 +35,9 @@ const logger = require('../../../utils/logger')
 const { buildTestApp } = require('../../helpers/orcamento/testApp')
 const { dfdRoute } = require('../../../orcamento/dfd')
 const { notaCreditoRoute } = require('../../../orcamento/nota_credito')
-const { metaRoute } = require('../../../orcamento/meta')
+// A meta do PIT saiu do modulo em 2026-07-31 e virou plataforma, mas o
+// contrato de chave desconhecida vale igual: o router entra daqui.
+const { pitRoute } = require('../../../pit')
 const { dominioRoute } = require('../../../orcamento/dominio')
 
 // A rota /usuarios do repo de origem nao veio na fusao: o SCA ja tem a sua, e e
@@ -44,7 +46,7 @@ const { dominioRoute } = require('../../../orcamento/dominio')
 const app = buildTestApp([
   { path: '/dfd', router: dfdRoute },
   { path: '/notas_credito', router: notaCreditoRoute },
-  { path: '/metas', router: metaRoute },
+  { path: '/metas', router: pitRoute },
   { path: '/dominio', router: dominioRoute }
 ])
 

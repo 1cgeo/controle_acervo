@@ -30,6 +30,13 @@
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA orcamento TO $1:name;
   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA orcamento TO $1:name;
 
+  -- `pit` e dado de REFERENCIA, mas de escrita PELA TELA: o administrador
+  -- cadastra as metas do ano no sistema, e nao por carga. Por isso CRUD, ao
+  -- contrario de `limites`, que so muda por carga.
+  GRANT USAGE ON SCHEMA pit TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pit TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pit TO $1:name;
+
   -- `limites` e dado de REFERENCIA: so leitura, nem para o usuario da aplicacao.
   -- A malha do IBGE se troca por carga, e nao por UPDATE de tela.
   GRANT USAGE ON SCHEMA limites TO $1:name;

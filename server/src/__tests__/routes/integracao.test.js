@@ -36,6 +36,20 @@ const criaCliente = async (overrides = {}) => {
   return row.id
 }
 
+// A meta do PIT virou linha em pit.meta em 2026-07-31, com chave estrangeira no
+// pedido. Insere direto no banco: o que se prova aqui e a rota de integracao.
+const criaMetaPit = async (item = '4.1', ano = 2026) => {
+  const row = await conn.one(
+    `INSERT INTO pit.meta (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, $4, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (ano, numero_meta, item) DO UPDATE SET descricao = EXCLUDED.descricao
+     RETURNING id`,
+    [ano, parseInt(String(item).split('.')[0], 10), item, `Meta ${item}`]
+  )
+  // BIGSERIAL volta como STRING no driver, e o Joi do pedido pede number strict.
+  return Number(row.id)
+}
+
 const criaPedido = async (clienteId, overrides = {}) => {
   const body = {
     data_pedido: '2026-06-01T10:00:00-03:00',
@@ -278,7 +292,7 @@ describe('Integracao Routes (públicas)', () => {
 
       // Militar: OM EB, remetido em junho, 10 cartas
       const omId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
-      const pedidoMil = await criaPedido(omId, { previsto_pit: true, meta_pit: '4.1', operacao: 'Operação Junho' })
+      const pedidoMil = await criaPedido(omId, { previsto_pit: true, meta_pit_id: await criaMetaPit('4.1'), operacao: 'Operação Junho' })
       await criaProdutoPedido({
         // O atendimento se data pela data_atendimento do PEDIDO desde
         // 2026-07-30. O helper criaPedido já a põe em 2026-06-20.

@@ -3,20 +3,24 @@
 // Teste unitario do controller de Meta do PIT (banco mockado).
 // Cobre: listar (com e sem filtro de ano), criar (NAO valida exercicio: vai
 // direto ao INSERT na tx), atualizar (404 se nao existe) e deletar (409 quando
-// ha pdr_item OU nota_credito vinculados; 404 se inexistente).
+// ha consumidor vinculado; 404 se inexistente).
+//
+// O controller saiu de src/orcamento/meta/ para src/pit/ em 2026-07-31: o PIT
+// virou dado de plataforma. O terceiro consumidor, mapoteca.pedido, entrou na
+// mesma data, e por isso o COUNT do deletar soma tres tabelas.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb } = require('../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
-jest.mock('../../../database', () => ({
+jest.mock('../../database', () => ({
   db: mockDb,
   databaseVersion: { nome: '1.0.0', load: jest.fn() }
 }))
 
-const ctrl = require('../../../orcamento/meta/meta_ctrl')
-const httpCode = require('../../../utils/http_code')
+const ctrl = require('../../pit/pit_ctrl')
+const httpCode = require('../../utils/http_code')
 
-describe('meta_ctrl', () => {
+describe('pit_ctrl', () => {
   beforeEach(() => mockDb.reset())
 
   test('listar com ano passa o filtro', async () => {
@@ -34,7 +38,7 @@ describe('meta_ctrl', () => {
     await ctrl.listar()
     // A chamada sem filtro usa apenas a query (sem objeto de parametros de ano).
     expect(mockDb.conn.any).toHaveBeenCalledWith(
-      expect.stringContaining('FROM orcamento.meta_pit')
+      expect.stringContaining('FROM pit.meta')
     )
   })
 
@@ -51,7 +55,7 @@ describe('meta_ctrl', () => {
     // NAO checa a existencia de exercicio: nenhum oneOrNone antes do INSERT.
     expect(mockDb.conn.oneOrNone).not.toHaveBeenCalled()
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO orcamento.meta_pit'),
+      expect.stringContaining('INSERT INTO pit.meta'),
       expect.objectContaining({ ano: 2026, numero_meta: 1, usuarioUuid: 'uuid-1' })
     )
   })
@@ -68,7 +72,7 @@ describe('meta_ctrl', () => {
 
     expect(r).toEqual({ id: 5 })
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE orcamento.meta_pit'),
+      expect.stringContaining('UPDATE pit.meta'),
       expect.objectContaining({ id: 5, numero_meta: 2 })
     )
   })
@@ -96,7 +100,7 @@ describe('meta_ctrl', () => {
     mockDb.conn.none.mockResolvedValueOnce(undefined)
     await ctrl.deletar(1)
     expect(mockDb.conn.none).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM orcamento.meta_pit'),
+      expect.stringContaining('DELETE FROM pit.meta'),
       { id: 1 }
     )
   })

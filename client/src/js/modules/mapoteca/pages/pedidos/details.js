@@ -34,6 +34,7 @@ import {
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 import { openEtiquetaEnvioDialog } from './etiqueta-envio.js';
 import { openRegistrarImpressaoDialog } from './dialog-impressao.js';
+import { getMetasPit } from '@services/plataforma-service.js';
 
 // Acima deste tamanho, o valor nao cabe na mesma linha do rotulo dentro de um
 // card de meia largura, e passa a ser empilhado.
@@ -155,18 +156,21 @@ export async function renderPedidoDetails(container, { params }) {
   // Edit / delete pedido
   // ---------------------------------------------------------------------------
   async function editarPedido(pedido) {
-    let clientes, situacoes, canais, formasEntrega;
+    let clientes, situacoes, canais, formasEntrega, metas;
     try {
-      [clientes, situacoes, canais, formasEntrega] = await Promise.all([
+      // Metas do ano DO PEDIDO, e nao do ano corrente: editar um pedido de 2025
+      // tem de oferecer o PIT de 2025, cuja numeracao nao e a de 2026.
+      const anoPedido = new Date(`${pedido.data_pedido}T00:00:00`).getFullYear();
+      [clientes, situacoes, canais, formasEntrega, metas] = await Promise.all([
         getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
-        getDominioFormaEntrega(),
+        getDominioFormaEntrega(), getMetasPit(anoPedido),
       ]);
     } catch (err) {
       showError(err.message || 'Erro ao carregar os dados do formulário');
       return;
     }
 
-    const form = createPedidoFormFields({ pedido, clientes, situacoes, canais, formasEntrega });
+    const form = createPedidoFormFields({ pedido, clientes, situacoes, canais, formasEntrega, metas });
 
     const civilSection = el('div', {}, [
       el('div', {
@@ -790,7 +794,7 @@ export async function renderPedidoDetails(container, { params }) {
         infoRow('Demandante', pedido.demandante),
         infoRow('OM responsável', pedido.omds),
         infoRow('Previsto no PIT', pedido.previsto_pit ? 'Sim' : 'Não'),
-        infoRow('Meta do PIT', pedido.meta_pit),
+        infoRow('Meta do PIT', pedido.meta_pit_codigo),
       ]),
       // A forma e a data de entrega deixaram de ser do ITEM e passaram a ser do
       // PEDIDO (decisao do chefe, 2026-07-30): o pedido inteiro sai numa remessa

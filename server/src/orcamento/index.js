@@ -9,7 +9,9 @@
 module.exports = {
   dominioRoute: require('./dominio').dominioRoute,
   configuracaoRoute: require('./configuracao').configuracaoRoute,
-  metaRoute: require('./meta').metaRoute,
+  // A meta do PIT saiu daqui em 2026-07-31: virou feature de plataforma, em
+  // server/src/pit/, servida por /api/metas. O orcamento continua consumindo,
+  // pelas FKs de pdr_item e nota_credito.
   dfdRoute: require('./dfd').dfdRoute,
   pdrRoute: require('./pdr').pdrRoute,
   notaCreditoRoute: require('./nota_credito').notaCreditoRoute,

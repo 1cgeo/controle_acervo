@@ -19,13 +19,13 @@ const { integracaoRoute } = require("./integracao");
 const { relatorioRoute } = require("./relatorio");
 const { pontoControleRoute } = require("./ponto_controle");
 const { limitesRoute } = require("./limites");
+const { pitRoute } = require("./pit");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
 const {
   dominioRoute: orcamentoDominioRoute,
   configuracaoRoute: orcamentoConfiguracaoRoute,
-  metaRoute: orcamentoMetaRoute,
   dfdRoute: orcamentoDfdRoute,
   pdrRoute: orcamentoPdrRoute,
   notaCreditoRoute: orcamentoNotaCreditoRoute,
@@ -56,6 +56,11 @@ router.use("/login", loginRoute);
 router.use("/acervo", acervoRoute);
 
 router.use("/usuarios", usuarioRoute);
+
+// Metas do PIT. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios:
+// os três módulos consomem o plano anual da Divisão e nenhum é dono dele.
+// Esteve em /api/orcamento/metas até 2026-07-31.
+router.use("/metas", pitRoute);
 
 router.use("/volumes", volumeRoute);
 
@@ -93,8 +98,6 @@ router.use("/relatorio", relatorioRoute);
 router.use("/orcamento/dominio", orcamentoDominioRoute);
 
 router.use("/orcamento/configuracao", orcamentoConfiguracaoRoute);
-
-router.use("/orcamento/metas", orcamentoMetaRoute);
 
 router.use("/orcamento/dfd", orcamentoDfdRoute);
 

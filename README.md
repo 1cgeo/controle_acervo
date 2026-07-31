@@ -105,11 +105,11 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
 | `/api/relatorio` | acervo | RPCMTec, seção do acervo |
+| `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
 | `/api/orcamento/configuracao` | orcamento | Singleton: UASG, CODOM, ano de referência |
-| `/api/orcamento/metas` | orcamento | Metas do PIT que o crédito financia |
 | `/api/orcamento/dfd` | orcamento | DFD e itens (o PCA do ano é o conjunto de DFDs do ano) |
 | `/api/orcamento/pdr` | orcamento | Itens do PDR do ano |
 | `/api/orcamento/notas_credito` | orcamento | Notas de crédito (NC) |
@@ -219,7 +219,8 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 |---|---|
 | `acervo` | projeto, lote, produto, versao, arquivo, download, sessões de upload |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
-| `orcamento` | 14 tabelas: configuracao, meta_pit, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, relatorio_rpcmtec, arquivo |
+| `orcamento` | 13 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, relatorio_rpcmtec, arquivo |
+| `pit` | `meta`: as metas do PIT do ano. Dado de referência, fora dos módulos (saiu de `orcamento` em 2026-07-31) |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
 | `dgeo` | `usuario` e `usuario_perfil` |
 | `public` | Versão do banco e estilos de camada do QGIS |
@@ -233,14 +234,15 @@ Arquivos em `er/`, nesta ordem:
 3. `dgeo.sql`: usuários e perfis
 4. `acervo.sql`: schema principal
 5. `acompanhamento.sql`: visões materializadas
-6. `mapoteca.sql`: mapoteca
-7. `orcamento.sql`: orçamento
-8. `permissao.sql`: permissões
-9. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
+6. `pit.sql`: metas do PIT (antes de mapoteca e orçamento, que a referenciam)
+7. `mapoteca.sql`: mapoteca
+8. `orcamento.sql`: orçamento
+9. `permissao.sql`: permissões
+10. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois.
 
-A versão do schema é **1.7.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+A versão do schema é **1.9.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
 
 ### Atualização de banco existente
 

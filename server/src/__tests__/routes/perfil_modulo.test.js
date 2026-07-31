@@ -142,17 +142,17 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
 
     // Leitura do orcamento
     const orcamentoLeitura = await request(app)
-      .get('/api/orcamento/metas?ano=2026')
+      .get('/api/orcamento/dfd?ano=2026')
       .set('Authorization', generateAdminToken())
     expect(orcamentoLeitura.status).toBe(200)
 
     // E escrita, para nao provar so o nivel mais baixo
     const orcamentoEscrita = await request(app)
-      .post('/api/orcamento/metas')
+      .post('/api/orcamento/dfd')
       .set('Authorization', generateAdminToken())
-      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta do admin' })
+      .send({ ano: 2026, numero: 'DFD-ADM', objeto: 'DFD do admin' })
     expect(orcamentoEscrita.status).toBe(201)
-    await conn.none('DELETE FROM orcamento.meta_pit WHERE ano = 2026')
+    await conn.none("DELETE FROM orcamento.dfd WHERE numero = 'DFD-ADM'")
   })
 
   it('desativar o usuario derruba o acesso na hora, com o mesmo token', async () => {
@@ -179,11 +179,11 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     // Escreve no proprio modulo: e o controle positivo, sem o qual um 403 em
     // toda parte passaria por aprovacao.
     const proprio = await request(app)
-      .post('/api/orcamento/metas')
+      .post('/api/orcamento/dfd')
       .set('Authorization', generateUserToken())
-      .send({ ano: 2026, numero_meta: 9, descricao: 'Meta do operador' })
+      .send({ ano: 2026, numero: 'DFD-OPER', objeto: 'DFD do operador' })
     expect(proprio.status).toBe(201)
-    await conn.none('DELETE FROM orcamento.meta_pit WHERE ano = 2026')
+    await conn.none("DELETE FROM orcamento.dfd WHERE numero = 'DFD-OPER'")
 
     const escritaAcervo = await request(app)
       .post('/api/projetos/projeto')
@@ -216,7 +216,7 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     await removePerfil(MODULO.orcamento)
 
     const res = await request(app)
-      .get('/api/orcamento/metas?ano=2026')
+      .get('/api/orcamento/dfd?ano=2026')
       .set('Authorization', generateUserToken())
 
     expect(res.status).toBe(403)

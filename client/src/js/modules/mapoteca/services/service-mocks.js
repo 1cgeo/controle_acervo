@@ -99,6 +99,36 @@ export function mockMapotecaService() {
 }
 
 /**
+ * Mock de plataforma-service.js, que o pedido passou a usar em 2026-07-31: a
+ * meta do PIT saiu do modulo orcamento e virou dado de plataforma.
+ *
+ * As duas funcoes de ROTULO nao sao mockadas, e sim reexportadas de verdade:
+ * elas sao puras, nao tocam a rede, e um mock delas so faria o teste conferir a
+ * propria fabrica em vez do texto que a tela mostra.
+ * @returns {Object}
+ */
+export async function mockPlataformaService() {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  return {
+    getMetasPit: vi.fn(() => Promise.resolve([])),
+    getAnosMetaPit: vi.fn(() => Promise.resolve([])),
+    getMetaPit: vi.fn(() => Promise.resolve({})),
+    createMetaPit: vi.fn(() => Promise.resolve(null)),
+    updateMetaPit: vi.fn(() => Promise.resolve(null)),
+    deleteMetaPit: vi.fn(() => Promise.resolve(null)),
+    getUsuarios: vi.fn(() => Promise.resolve([])),
+    getUsuariosAuthServer: vi.fn(() => Promise.resolve([])),
+    importarUsuarios: vi.fn(() => Promise.resolve(null)),
+    atualizarUsuario: vi.fn(() => Promise.resolve(null)),
+    sincronizarUsuarios: vi.fn(() => Promise.resolve(null)),
+    getModulos: vi.fn(() => Promise.resolve([])),
+    getTiposPerfil: vi.fn(() => Promise.resolve([])),
+    codigoMetaPit: real.codigoMetaPit,
+    rotuloMetaPit: real.rotuloMetaPit,
+  };
+}
+
+/**
  * Mock de acervo-service.js (busca no catalogo, usada pelo wizard de pedido).
  * @returns {Object}
  */

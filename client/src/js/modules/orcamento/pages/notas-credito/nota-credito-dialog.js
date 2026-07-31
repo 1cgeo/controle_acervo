@@ -17,10 +17,10 @@ import {
   getPlanoInterno,
   getUg,
   getClassificacaoNc,
-  getMetas,
   getNotasCredito,
   getPdrItens,
 } from '@modules/orcamento/services/orcamento-service.js';
+import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
 
 // UG emitente default: 160089 (DSG).
@@ -69,7 +69,7 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   const anoMetas = isEdit ? (nc?.ano ?? null) : anoContexto;
   if (anoMetas !== null && anoMetas !== undefined) {
     try {
-      metas = await getMetas(anoMetas);
+      metas = await getMetasPit(anoMetas);
     } catch {
       metas = [];
     }
@@ -102,17 +102,10 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
     return { value: it.id, label: `${base}${meta}` };
   });
 
+  // O rotulo sai de rotuloMetaPit, a mesma funcao que a tela de metas e a
+  // mapoteca usam: uma meta nao pode aparecer com nome diferente em cada tela.
   function metaOptions() {
-    return (metas || []).map(m => {
-      const partes = [];
-      if (m.numero_meta !== null && m.numero_meta !== undefined) partes.push(`Meta ${m.numero_meta}`);
-      if (m.item) partes.push(`(${m.item})`);
-      const prefixo = partes.join(' ');
-      const label = m.descricao
-        ? (prefixo ? `${prefixo}: ${m.descricao}` : m.descricao)
-        : (prefixo || `Meta ${m.id}`);
-      return { value: m.id, label };
-    });
+    return (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) }));
   }
 
   // ---- Campos ----

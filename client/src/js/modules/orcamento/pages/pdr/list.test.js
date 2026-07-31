@@ -10,8 +10,12 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   updatePdrItem: vi.fn(() => Promise.resolve({})),
   deletePdrItem: vi.fn(() => Promise.resolve()),
   getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
-  getMetas: vi.fn(() => Promise.resolve([])),
 }));
+
+vi.mock('@services/plataforma-service.js', async () => {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  return { ...real, getMetasPit: vi.fn(() => Promise.resolve([])) };
+});
 
 import { renderPdrList } from '@modules/orcamento/pages/pdr/list.js';
 import { getPdrItens } from '@modules/orcamento/services/orcamento-service.js';

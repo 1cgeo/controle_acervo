@@ -4,6 +4,10 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockMapotecaService();
 });
+vi.mock('@services/plataforma-service.js', async () => {
+  const { mockPlataformaService } = await import('@modules/mapoteca/services/service-mocks.js');
+  return mockPlataformaService();
+});
 vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
   const { mockAcervoService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockAcervoService();

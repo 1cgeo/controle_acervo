@@ -26,19 +26,11 @@ INSERT INTO orcamento.configuracao (id, uasg, codom) VALUES (1, '160382', '04821
 -- exercicio). O par de auditoria segue em toda tabela de negocio.
 -- ---------------------------------------------------------------------------
 
--- Meta do PIT que o credito financia (rastreabilidade do gasto a producao).
-CREATE TABLE orcamento.meta_pit(
-  id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL,
-  numero_meta SMALLINT NOT NULL,
-  item VARCHAR(20),
-  descricao TEXT,
-  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  UNIQUE (ano, numero_meta, item)
-);
+-- A meta do PIT que o credito financia mora em `pit.meta`, e nao aqui. Ela
+-- esteve neste schema ate 2026-07-31, quando saiu para schema proprio: o PIT e
+-- o plano anual da Divisao, que a mapoteca tambem consome, e nao um artefato
+-- orcamentario. Ver er/pit.sql e a migracao 2026-07-31_meta_pit_schema_proprio.
+-- O orcamento continua sendo consumidor, pelas FKs de pdr_item e nota_credito.
 
 -- DFD: documento de formalizacao da demanda, amarrado no ano. Nao ha mais
 -- entidade PCA: o "PCA do ano" e o conjunto de DFDs daquele ano. consta_pca
@@ -104,7 +96,7 @@ CREATE TABLE orcamento.pdr_item(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,
   cod_nd VARCHAR(6) NOT NULL REFERENCES dominio.natureza_despesa (code),
-  meta_pit_id BIGINT REFERENCES orcamento.meta_pit (id),
+  meta_pit_id BIGINT REFERENCES pit.meta (id),
   item_label VARCHAR(10),
   descricao TEXT,
   gnd SMALLINT,
@@ -131,7 +123,7 @@ CREATE TABLE orcamento.nota_credito(
   cod_pi VARCHAR(20) REFERENCES dominio.plano_interno (code),
   ug_emitente VARCHAR(10) REFERENCES dominio.ug (code),
   finalidade_historico TEXT,
-  meta_pit_id BIGINT REFERENCES orcamento.meta_pit (id),
+  meta_pit_id BIGINT REFERENCES pit.meta (id),
   -- valor_nc = valor recebido; NUNCA muda por devolucao (a devolucao corta empenhado/liquidado)
   valor_nc NUMERIC(15,2) NOT NULL,
   -- valor_recolhido = parte do credito recebido que foi devolvida/recolhida (informada na NC).
@@ -291,7 +283,6 @@ CREATE INDEX idx_nota_empenho_nc ON orcamento.nota_empenho (nota_credito_id);
 CREATE INDEX idx_liquidacao_ne ON orcamento.liquidacao (nota_empenho_id);
 CREATE INDEX idx_pdr_item_nd ON orcamento.pdr_item (cod_nd);
 CREATE INDEX idx_pdr_item_ano ON orcamento.pdr_item (ano);
-CREATE INDEX idx_meta_pit_ano ON orcamento.meta_pit (ano);
 CREATE INDEX idx_dfd_ano ON orcamento.dfd (ano);
 
 COMMIT;

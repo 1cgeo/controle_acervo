@@ -2,22 +2,25 @@
 
 // Teste de rota (supertest) da Meta do PIT. Mocka banco + autenticacao (admin).
 // Cobre: listar (envelope), criar (sem validar exercicio), validacao Joi (400),
-// e a regressao do 409 ao deletar com pdr_item/nota_credito vinculados.
+// e a regressao do 409 ao deletar com consumidor vinculado.
+//
+// A rota saiu de /api/orcamento/metas para /api/metas em 2026-07-31: virou
+// PLATAFORMA. Ler pede so login; escrever pede administrador global.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb } = require('../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
-jest.mock('../../../database', () => ({
+jest.mock('../../database', () => ({
   db: mockDb,
   databaseVersion: { nome: '1.0.0', load: jest.fn() }
 }))
-jest.mock('../../../login', () => require('../../helpers/orcamento/mockLogin'))
+jest.mock('../../login', () => require('../helpers/orcamento/mockLogin'))
 
 const request = require('supertest')
-const { buildTestApp } = require('../../helpers/orcamento/testApp')
-const { metaRoute } = require('../../../orcamento/meta')
+const { buildTestApp } = require('../helpers/orcamento/testApp')
+const { pitRoute } = require('../../pit')
 
-const app = buildTestApp([{ path: '/metas', router: metaRoute }])
+const app = buildTestApp([{ path: '/metas', router: pitRoute }])
 
 beforeEach(() => mockDb.reset())
 
