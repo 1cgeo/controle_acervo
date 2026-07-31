@@ -462,9 +462,20 @@
   font-size: var(--font-size-sm);
 }
 
-.busca-cartao__ficha {
+/* `__ficha` continua servindo a tela de PONTO DE CONTROLE, onde o botao do
+   rodape ainda abre a ficha. Na busca de produtos ele virou `__selecionar`
+   (chefe, 2026-07-31), porque la o cartao inteiro passou a abrir a ficha. */
+.busca-cartao__ficha,
+.busca-cartao__selecionar {
   padding: 2px var(--space-sm);
   white-space: nowrap;
+}
+
+/* O botao de selecao e de ESTADO, e a largura muda entre "Selecionar" e
+   "Selecionado". Sem um minimo, o rodape inteiro dana ao marcar e desmarcar. */
+.busca-cartao__selecionar {
+  min-width: 8.5rem;
+  justify-content: center;
 }
 
 .busca-chips {

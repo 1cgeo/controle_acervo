@@ -249,9 +249,24 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
 
     // O clique no produto ALTERNA a selecao: clicar de novo tira. Sem isso nao
     // havia como desmarcar o que se marcou por engano.
+    //
+    // E ele pega TODOS os poligonos sob o cursor, nao o de cima.
+    //
+    // Neste acervo a sobreposicao e a regra, nao a excecao: a mesma folha tem
+    // Carta Topografica, CDGV, Ortoimagem, MDS e MDT, e os cinco gravam a MESMA
+    // moldura por INOM. Com `features[0]`, o clique escolhia um deles por um
+    // criterio que nao aparece na tela (a ordem de desenho), e os outros quatro
+    // ficavam inalcancaveis pelo mapa: nao havia onde clicar para alcanca-los.
+    //
+    // O MapLibre repete a mesma feicao quando ela cai em mais de um ladrilho,
+    // entao o `Set` deduplica. A ordem que ele entrega e de cima para baixo, e
+    // ela se preserva: quem consome usa a primeira para decidir o que destacar.
     mapa.on('click', 'produtos-preenchimento', (e) => {
       if (desenho.ocupado() || !e.features.length) return;
-      if (onAlternarSelecao) onAlternarSelecao(e.features[0].id);
+      const ids = [...new Set(
+        e.features.map(f => Number(f.id)).filter(Number.isFinite)
+      )];
+      if (ids.length && onAlternarSelecao) onAlternarSelecao(ids);
     });
   }
 

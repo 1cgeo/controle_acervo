@@ -95,6 +95,31 @@ export function criarSelecao({
     onMudou(new Set(escolhidos.keys()));
   }
 
+  /**
+   * Alterna um GRUPO de itens de uma vez, com regra de tudo ou nada: se todos
+   * ja estao selecionados, o grupo inteiro sai; senao, entra o que falta.
+   *
+   * POR QUE NAO E `itens.forEach(alternar)`. Alternando um a um, o resultado
+   * depende do estado anterior de CADA item, e um clique sobre uma pilha de
+   * poligonos removeria uns e acrescentaria outros na mesma acao. Quem clicou
+   * pediu "estes", nao "inverta cada um destes".
+   *
+   * Tambem repinta e avisa UMA vez, e nao uma por item.
+   */
+  function alternarVarios(itens) {
+    const lista = (itens || []).filter(Boolean);
+    if (!lista.length) return;
+
+    const todosDentro = lista.every(item => escolhidos.has(Number(item.id)));
+    for (const item of lista) {
+      const id = Number(item.id);
+      if (todosDentro) escolhidos.delete(id);
+      else escolhidos.set(id, item);
+    }
+    pintar();
+    onMudou(new Set(escolhidos.keys()));
+  }
+
   function limpar() {
     if (!escolhidos.size) return;
     escolhidos.clear();
@@ -116,5 +141,5 @@ export function criarSelecao({
 
   pintar();
 
-  return { element, alternar, limpar, tem, ids, produtos };
+  return { element, alternar, alternarVarios, limpar, tem, ids, produtos };
 }

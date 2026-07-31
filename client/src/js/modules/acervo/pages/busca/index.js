@@ -272,15 +272,20 @@ export async function renderBusca(container, ctx) {
   // ---------------------------------------------------------------------------
   const mapa = criarMapa({
     onApontar: (produtoId) => apontarCartao(produtoId),
-    onAlternarSelecao: (produtoId) => {
+    onAlternarSelecao: (produtoIds) => {
+      // Chega a PILHA inteira sob o cursor, porque a mesma folha tem varios
+      // produtos com a moldura identica. Aceita id solto tambem, para nao
+      // depender de quem chama.
+      const ids = Array.isArray(produtoIds) ? produtoIds : [produtoIds];
       // O produto clicado no mapa pode nao estar na pagina atual da lista. A
       // camada do mapa guarda o basico (id, nome, mi, escala), que e o
       // suficiente para a barra de selecao e para abrir a ficha.
-      const produto = geometriasPorId.get(Number(produtoId))
-        || cartoesPorId.get(Number(produtoId))
-        || { id: Number(produtoId) };
-      selecao.alternar(produto);
-      destacarNaLista(Number(produtoId));
+      const produtos = ids.map(id => geometriasPorId.get(Number(id))
+        || cartoesPorId.get(Number(id))
+        || { id: Number(id) });
+      // Tudo ou nada: ver `alternarVarios` em selecao.js.
+      selecao.alternarVarios(produtos);
+      destacarNaLista(Number(ids[0]));
     },
     onAreaDesenhada: (geometria) => {
       modoArea = 'desenho';
@@ -576,24 +581,31 @@ export async function renderBusca(container, ctx) {
     const identificacao = [p.mi, p.inom].filter(Boolean).join(' · ');
     const palavras = (p.palavras_chave || []).slice(0, 3);
 
-    // Clicar no cartao faz DUAS coisas de proposito: alterna a selecao e leva o
-    // mapa ate a carta. Sao a mesma intencao ("quero esta"), e separa-las
-    // obrigaria a pessoa a procurar o poligono no mapa depois de escolher.
-    const escolher = () => {
+    // Clicar no cartao ABRE A FICHA (chefe, 2026-07-31). O cartao mostra um
+    // resumo, e o gesto natural sobre um resumo e "quero ver o resto", nao
+    // "marque isto". Selecionar virou o botao do rodape, que diz o que faz.
+    //
+    // O mapa continua indo ate a carta: quando a ficha fecha, o poligono ja
+    // esta enquadrado atras dela.
+    const abrirFicha = () => {
+      mapa.enquadrarProduto(p.id);
+      abrirProdutoDialog(p);
+    };
+
+    const alternarSelecao = () => {
       selecao.alternar(p);
       mapa.setSelecionados(selecao.ids());
-      mapa.enquadrarProduto(p.id);
     };
 
     return el('article', {
       className: 'busca-cartao',
       tabIndex: 0,
       dataset: { id: String(p.id) },
-      onClick: escolher,
+      onClick: abrirFicha,
       onKeyDown: (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
-        escolher();
+        abrirFicha();
       },
       // Apontar na lista acende o poligono, e vice-versa: e o que liga os dois
       // lados sem exigir clique.
@@ -626,15 +638,22 @@ export async function renderBusca(container, ctx) {
             ? `${p.ultima_versao} · ${formatDate(p.ultima_data_edicao)} · ${plural(p.num_versoes, 'versão', 'versões')}`
             : 'Sem versão cadastrada',
         }),
+        // O botao que era "Ficha" virou o de SELECAO (chefe, 2026-07-31), agora
+        // que o cartao inteiro abre a ficha. Ele carrega `aria-pressed` porque e
+        // um botao de estado: sem isso o leitor de tela anuncia "Selecionar" tanto
+        // no item marcado quanto no desmarcado. O rotulo e o icone saem de
+        // `pintarBotaoSelecao`, que tambem roda quando a selecao muda por fora
+        // (pelo mapa, pelo chip da barra ou pelo Limpar).
         el('button', {
-          className: 'btn btn--text btn--sm busca-cartao__ficha',
+          className: 'btn btn--text btn--sm busca-cartao__selecionar',
           type: 'button',
+          dataset: { selecionar: String(p.id) },
           onClick: (e) => {
-            // Sem isto o clique subiria para o cartao e alternaria a selecao.
+            // Sem isto o clique subiria para o cartao e abriria a ficha.
             e.stopPropagation();
-            abrirProdutoDialog(p);
+            alternarSelecao();
           },
-        }, [svgIcon(ICONS.visibility, 16), 'Ficha']),
+        }),
       ]),
     ]);
   }
@@ -666,10 +685,33 @@ export async function renderBusca(container, ctx) {
     marcarCartoes();
   }
 
+  /**
+   * Estado visivel do botao de selecao de UM cartao.
+   *
+   * O botao e de ESTADO, nao de acao unica: ele marca e desmarca. Por isso o
+   * rotulo muda ("Selecionar" / "Selecionado") e o `aria-pressed` acompanha.
+   * Sem o aria-pressed, o leitor de tela le a mesma coisa nos dois estados, e
+   * quem nao ve a cor do cartao nao sabe o que ja escolheu.
+   */
+  function pintarBotaoSelecao(cartao, id) {
+    const botao = cartao.querySelector('.busca-cartao__selecionar');
+    if (!botao) return;
+    const dentro = selecao.tem(id);
+    botao.setAttribute('aria-pressed', String(dentro));
+    botao.classList.toggle('btn--primary', dentro);
+    botao.replaceChildren(
+      svgIcon(dentro ? ICONS.checkCircle : ICONS.check, 16),
+      dentro ? 'Selecionado' : 'Selecionar'
+    );
+  }
+
   /** Repinta a marca de selecao em todos os cartoes da pagina. */
   function marcarCartoes() {
     for (const [id, cartao] of cartoes) {
       cartao.classList.toggle('busca-cartao--selecionado', selecao.tem(id));
+      // O botao acompanha a marca do cartao: a selecao muda por varios caminhos
+      // (mapa, chip da barra, Limpar), e todos passam por aqui.
+      pintarBotaoSelecao(cartao, id);
     }
   }
 

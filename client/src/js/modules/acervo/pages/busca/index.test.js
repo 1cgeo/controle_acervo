@@ -141,6 +141,11 @@ const TRIANGULO = {
 };
 
 const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
+// Selecionar passou a ser o BOTAO do rodape (chefe, 2026-07-31); o cartao abre
+// a ficha. Os testes que so querem "marque este produto" usam este atalho, em
+// vez de repetir o seletor e ficarem presos ao gesto.
+const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
+  .querySelector('.busca-cartao__selecionar').click();
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
 const ultimaBusca = () => buscarProdutos.mock.calls[buscarProdutos.mock.calls.length - 1][0];
 
@@ -172,6 +177,10 @@ beforeEach(() => {
     produtos: null, selecionados: null, extent: null, area: null,
     aoMoverCallback: null, iniciado: false, limpo: false,
     limiteDestacado: null, limiteEnquadrou: null, limiteLimpo: 0,
+    // `enquadradoProduto` ficava de fora e vazava entre testes: um teste que nao
+    // enquadra nada ainda via o id do anterior. So aparece quando alguem afirma
+    // sobre ele, e foi o que aconteceu ao inverter o gesto do cartao.
+    enquadradoProduto: null, apontado: undefined,
   });
   document.body.innerHTML = '';
   location.hash = '#/acervo/busca';
@@ -359,17 +368,44 @@ describe('busca do acervo: resultados', () => {
     cleanup();
   });
 
-  test('clicar no cartao seleciona, e clicar de novo DESSELECIONA', async () => {
+  // Os dois gestos TROCARAM de papel em 2026-07-31 (chefe): o cartao abre a
+  // ficha e o botao do rodape seleciona. O par de testes cobre os dois lados,
+  // porque so o primeiro passaria se o botao nao fizesse nada.
+  test('clicar no cartao abre a FICHA, e nao seleciona', async () => {
     const { container, cleanup } = await montar();
 
     cartoes(container)[1].click();
-    expect(mapaFalso.selecionados).toEqual([11]);
-    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(true);
+    await flush();
 
-    // Era o defeito relatado: nao havia como desmarcar o que se marcou.
-    cartoes(container)[1].click();
+    const modal = document.querySelector('.modal');
+    expect(modal).not.toBeNull();
+    expect(modal.querySelector('.modal__title').textContent).toBe('Viamão');
+    // O mapa continua indo ate a carta: fechada a ficha, o poligono ja esta
+    // enquadrado atras dela.
+    expect(mapaFalso.enquadradoProduto).toBe(11);
     expect(mapaFalso.selecionados).toEqual([]);
     expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(false);
+
+    cleanup();
+  });
+
+  test('o botao do rodape seleciona, e clicar de novo DESSELECIONA', async () => {
+    const { container, cleanup } = await montar();
+    const botao = () => cartoes(container)[1].querySelector('.busca-cartao__selecionar');
+
+    expect(botao().getAttribute('aria-pressed')).toBe('false');
+
+    botao().click();
+    expect(mapaFalso.selecionados).toEqual([11]);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(true);
+    expect(botao().getAttribute('aria-pressed')).toBe('true');
+    expect(botao().textContent).toContain('Selecionado');
+
+    // Era o defeito relatado: nao havia como desmarcar o que se marcou.
+    botao().click();
+    expect(mapaFalso.selecionados).toEqual([]);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(false);
+    expect(botao().getAttribute('aria-pressed')).toBe('false');
 
     cleanup();
   });
@@ -377,11 +413,54 @@ describe('busca do acervo: resultados', () => {
   test('clicar no produto NO MAPA alterna a selecao e marca o cartao', async () => {
     const { container, cleanup } = await montar();
 
-    mapaFalso.onAlternarSelecao(10);
+    mapaFalso.onAlternarSelecao([10]);
     expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
 
-    mapaFalso.onAlternarSelecao(10);
+    mapaFalso.onAlternarSelecao([10]);
     expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
+
+    cleanup();
+  });
+
+  // A mesma folha tem Carta Topografica, CDGV, Ortoimagem, MDS e MDT com a
+  // MESMA moldura. Antes o clique pegava so o poligono de cima, e os outros
+  // ficavam inalcancaveis pelo mapa.
+  test('clicar sobre poligonos SOBREPOSTOS seleciona todos', async () => {
+    const { container, cleanup } = await montar();
+
+    mapaFalso.onAlternarSelecao([10, 11]);
+
+    expect(mapaFalso.selecionados.slice().sort()).toEqual([10, 11]);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(true);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(true);
+
+    cleanup();
+  });
+
+  // Tudo ou nada: com a pilha inteira marcada, o mesmo clique tira a pilha
+  // inteira. Alternando um a um, este clique inverteria cada um e devolveria
+  // uma selecao parcial, que e o que a pessoa nao pediu.
+  test('clicar de novo na pilha inteira DESSELECIONA todos', async () => {
+    const { container, cleanup } = await montar();
+
+    mapaFalso.onAlternarSelecao([10, 11]);
+    mapaFalso.onAlternarSelecao([10, 11]);
+
+    expect(mapaFalso.selecionados).toEqual([]);
+    expect(cartoes(container)[0].classList.contains('busca-cartao--selecionado')).toBe(false);
+    expect(cartoes(container)[1].classList.contains('busca-cartao--selecionado')).toBe(false);
+
+    cleanup();
+  });
+
+  // Pilha com um ja marcado: o clique COMPLETA a selecao, em vez de inverter.
+  test('pilha parcialmente selecionada completa, em vez de inverter', async () => {
+    const { container, cleanup } = await montar();
+
+    mapaFalso.onAlternarSelecao([10]);
+    mapaFalso.onAlternarSelecao([10, 11]);
+
+    expect(mapaFalso.selecionados.slice().sort()).toEqual([10, 11]);
 
     cleanup();
   });
@@ -886,7 +965,7 @@ describe('busca do acervo: seleção múltipla', () => {
 
     expect(barra(container).classList.contains('hidden')).toBe(true);
 
-    cartoes(container)[0].click();
+    marcar(container, 0);
     expect(barra(container).classList.contains('hidden')).toBe(false);
     expect(barra(container).textContent).toContain('1 produto selecionado');
 
@@ -896,8 +975,8 @@ describe('busca do acervo: seleção múltipla', () => {
   test('seleciona vários e lista o que está selecionado', async () => {
     const { container, cleanup } = await montar();
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
 
     expect(barra(container).textContent).toContain('2 produtos selecionados');
     expect(chips(container)).toEqual(['Porto Alegre', 'Viamão']);
@@ -909,8 +988,8 @@ describe('busca do acervo: seleção múltipla', () => {
   test('o chip remove o próprio produto da seleção', async () => {
     const { container, cleanup } = await montar();
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     container.querySelector('.busca-selecao__chip-remover').click();
 
     expect(chips(container)).toEqual(['Viamão']);
@@ -922,8 +1001,8 @@ describe('busca do acervo: seleção múltipla', () => {
   test('"limpar" esvazia a seleção e apaga o realce do mapa', async () => {
     const { container, cleanup } = await montar();
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     botao(container, 'Limpar').click();
 
     expect(barra(container).classList.contains('hidden')).toBe(true);
@@ -937,8 +1016,8 @@ describe('busca do acervo: seleção múltipla', () => {
   test('"ver fichas" abre a ficha dos selecionados, com navegação entre eles', async () => {
     const { container, cleanup } = await montar();
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     botao(container, 'Ver fichas').click();
     await flush();
 
@@ -959,8 +1038,9 @@ describe('busca do acervo: seleção múltipla', () => {
   test('a ficha de um produto só não mostra navegação', async () => {
     const { container, cleanup } = await montar();
 
-    [...cartoes(container)[0].querySelectorAll('button')]
-      .find(b => b.textContent.includes('Ficha')).click();
+    // O botao "Ficha" do rodape virou "Selecionar" (chefe, 2026-07-31): quem
+    // abre a ficha agora e o cartao.
+    cartoes(container)[0].click();
     await flush();
 
     const modal = document.querySelector('.modal');
@@ -993,7 +1073,7 @@ describe('busca do acervo: seleção múltipla', () => {
     buscarProdutos.mockImplementation(() => resposta({ total: 45 }));
     const { container, cleanup } = await montar();
 
-    cartoes(container)[0].click();
+    marcar(container, 0);
     expect(chips(container)).toEqual(['Porto Alegre']);
 
     [...container.querySelectorAll('.busca-paginacao button')]
@@ -1010,6 +1090,8 @@ describe('busca do acervo: mapa e lista se acompanham', () => {
   test('clicar no cartão leva o mapa até aquela carta', async () => {
     const { container, cleanup } = await montar();
 
+    // O gesto do cartao virou "abrir a ficha", mas o enquadramento continua:
+    // fechada a ficha, o poligono esta la atras dela.
     cartoes(container)[1].click();
 
     expect(mapaFalso.enquadradoProduto).toBe(11);
@@ -1086,16 +1168,16 @@ describe('busca do acervo: exportar CSV', () => {
     const botao = botaoPorTexto(container, 'Exportar selecionado');
     expect(botao.classList.contains('hidden')).toBe(true);
 
-    cartoes(container)[0].click();
+    marcar(container, 0);
     expect(botao.classList.contains('hidden')).toBe(false);
     expect(botao.textContent).toContain('Exportar 1 selecionado');
 
-    cartoes(container)[1].click();
+    marcar(container, 1);
     expect(botao.textContent).toContain('Exportar 2 selecionados');
 
     // Desmarcar tudo o esconde de volta.
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     expect(botao.classList.contains('hidden')).toBe(true);
 
     cleanup();
@@ -1104,8 +1186,8 @@ describe('busca do acervo: exportar CSV', () => {
   test('exportar selecionados manda só os ids escolhidos, sem perder os filtros', async () => {
     const { container, cleanup } = await montar({ query: 'termo=carta' });
 
-    cartoes(container)[0].click();
-    cartoes(container)[1].click();
+    marcar(container, 0);
+    marcar(container, 1);
     botaoPorTexto(container, 'Exportar 2 selecionados').click();
     await flush();
 
