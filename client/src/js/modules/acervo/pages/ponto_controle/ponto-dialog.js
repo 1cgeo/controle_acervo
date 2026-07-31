@@ -2,10 +2,35 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { formatDate, formatDateTime } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
-import { showError } from '@utils/toast.js';
+import { showError, showSuccess } from '@utils/toast.js';
 import {
   getPonto, baixarArquivoDoPonto,
 } from '@modules/acervo/services/ponto-controle-service.js';
+import { criarMapaDoPonto } from './ponto-mapa-mini.js';
+
+/**
+ * Ficha do ponto de controle.
+ *
+ * O DESENHO, refeito em 2026-07-31 na mesma linguagem da ficha do acervo (pedido
+ * do chefe). A ficha anterior era uma pilha de 56 linhas rotulo-valor, todas com
+ * o mesmo peso: a latitude com oito casas decimais saia igual ao "Fuso", e os
+ * arquivos ficavam no fim, depois de sete blocos. Tres mudancas:
+ *
+ *   1. LUGAR. Um ponto de controle E um lugar, e a ficha nao mostrava onde. Um
+ *      mapinha abre junto do resumo. E o que a miniatura da carta e para o
+ *      acervo: a resposta que o texto nao da.
+ *   2. HIERARQUIA. O que identifica um ponto (coordenada, altitude, metodo,
+ *      data) sobe para uma faixa de fatos com o valor grande. Os arquivos vem
+ *      logo depois, porque sao o que a pessoa veio buscar. Os sete blocos de
+ *      detalhe descem, que e onde se confere, nao onde se olha.
+ *   3. COPIAR A COORDENADA. Um ponto de apoio existe para ser usado noutro
+ *      programa. Antes era selecionar o texto na mao, com risco de perder casa
+ *      decimal; agora e um botao.
+ *
+ * As classes `ficha-*` vem do acervo (`modules/acervo/acervo.css`), e nao sao
+ * copiadas: as duas fichas moram no mesmo modulo e no mesmo CSS, entao a
+ * linguagem visual e literalmente a mesma folha.
+ */
 
 // Cor do chip por situacao. Mesmos codigos e mesma leitura do mapa:
 // 1 Nao medido, 2 Aguardando revisao, 3 APROVADO, 4 REPROVADO.
@@ -60,6 +85,41 @@ function dominio(p, chave) {
   return vazio(p[chave]) ? null : `Código ${p[chave]} (fora do domínio)`;
 }
 
+/**
+ * A primeira coordenada utilizavel da lista, ou NaN.
+ *
+ * NAO usa `??` com `Number()` direto: `Number(null)` e ZERO, e nao NaN. Um ponto
+ * sem coordenada nenhuma viraria a posicao (0, 0), que fica no golfo da Guine, e
+ * o mapa abriria ali com toda a confianca do mundo.
+ */
+const coordenada = (...candidatos) => {
+  for (const c of candidatos) {
+    if (vazio(c)) continue;
+    const n = Number(c);
+    if (Number.isFinite(n)) return n;
+  }
+  return NaN;
+};
+
+/** A latitude e a longitude que valem: as da GEOMETRIA. Ver o bloco Posição. */
+const latDe = p => coordenada(p.geom_latitude, p.latitude);
+const lonDe = p => coordenada(p.geom_longitude, p.longitude);
+
+/**
+ * Um fato do resumo: valor grande em cima, rotulo pequeno embaixo.
+ * Mesmo componente da ficha do acervo (`ficha-fato`).
+ */
+function fato(rotulo, valor, mono = false) {
+  if (vazio(valor)) return null;
+  return el('div', { className: 'ficha-fato' }, [
+    el('span', {
+      className: `ficha-fato__valor${mono ? ' ficha-fato__valor--mono' : ''}`,
+      textContent: String(valor),
+    }),
+    el('span', { className: 'ficha-fato__rotulo', textContent: rotulo }),
+  ]);
+}
+
 function linha(rotulo, valor) {
   return el('div', { className: 'detail-card__row' }, [
     el('span', { className: 'detail-card__label', textContent: rotulo }),
@@ -79,10 +139,42 @@ function bloco(titulo, campos, mostrarVazios) {
   const visiveis = campos.filter(([, valor]) => mostrarVazios || !vazio(valor));
   if (visiveis.length === 0) return null;
   return el('section', { className: 'pc-ficha__bloco' }, [
-    el('h3', { className: 'pc-ficha__bloco-titulo', textContent: titulo }),
+    el('h3', { className: 'produto-ficha__secao', textContent: titulo }),
     el('div', { className: 'detail-card' },
       visiveis.map(([rotulo, valor]) => linha(rotulo, vazio(valor) ? '—' : valor))),
   ]);
+}
+
+/**
+ * Botao que copia a coordenada para a area de transferencia.
+ *
+ * Copia o par CRU, com todas as casas decimais e ponto decimal, e nao o texto
+ * formatado da tela: quem cola isto cola num programa, e virgula decimal ou
+ * casa perdida viram erro de posicao de metros.
+ */
+function botaoCopiar(p) {
+  const lat = latDe(p);
+  const lon = lonDe(p);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const texto = `${lat}, ${lon}`;
+
+  const botao = el('button', {
+    className: 'btn btn--text btn--sm',
+    type: 'button',
+    title: `Copiar ${texto}`,
+  }, [svgIcon(ICONS.contentCopy, 14), 'Copiar coordenada']);
+
+  botao.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      showSuccess('Coordenada copiada');
+    } catch {
+      showError('O navegador não permitiu copiar');
+    }
+  });
+
+  return botao;
 }
 
 /**
@@ -92,28 +184,36 @@ function bloco(titulo, campos, mostrarVazios) {
  * com tudo o que so se le junto, e a MONOGRAFIA, que e o documento que alguem
  * busca sozinho. Nao ha mais agrupamento por tipo porque nao ha mais nove tipos.
  *
+ * A MONOGRAFIA vem primeiro, invertendo a ordem do banco: e ela que se abre para
+ * conferir o ponto, e o pacote de 20 MB e o que se baixa quando ja se decidiu.
+ *
  * O CAMINHO no volume nao aparece, e o servidor nem o envia: e infraestrutura,
  * nao informacao do ponto.
  */
 const TIPO_DO_CODIGO = { 1: 'pacote', 2: 'monografia' };
+const ORDEM_TIPO = { 2: 0, 1: 1 };
 
 function blocoArquivos(p) {
-  const arquivos = p.arquivos || [];
+  const arquivos = [...(p.arquivos || [])].sort(
+    (a, b) => (ORDEM_TIPO[a.tipo_arquivo_id] ?? 9) - (ORDEM_TIPO[b.tipo_arquivo_id] ?? 9)
+  );
+
   if (arquivos.length === 0) {
     return el('p', {
-      className: 'pc-ficha__vazio',
+      className: 'produto-ficha__vazio',
       textContent: 'Nenhum arquivo registrado para este ponto.',
     });
   }
 
-  return el('div', { className: 'pc-ficha__downloads' }, arquivos.map(a => {
+  return el('ul', { className: 'ficha-arquivos' }, arquivos.map(a => {
     const nome = a.extensao ? `${a.nome_arquivo}.${a.extensao}` : a.nome_arquivo;
     const tipo = TIPO_DO_CODIGO[a.tipo_arquivo_id];
 
     const botao = el('button', {
-      className: 'btn btn--primary btn--sm',
+      className: 'btn btn--text btn--sm ficha-arquivo__baixar',
       type: 'button',
-    }, [svgIcon(ICONS.download, 16), 'Baixar']);
+      title: tipo ? `Baixar ${nome}` : 'Este tipo de arquivo não tem download',
+    }, [svgIcon(ICONS.download, 14), 'Baixar']);
 
     // Tipo que a tela nao conhece nao vira botao morto por acidente: ele fica
     // visivel como registro, desabilitado, sem prometer um download que a rota
@@ -136,32 +236,39 @@ function blocoArquivos(p) {
       });
     }
 
-    return el('div', { className: 'pc-ficha__download' }, [
-      el('div', { className: 'pc-ficha__download-info' }, [
-        el('span', {
-          className: 'pc-ficha__download-tipo',
-          textContent: a.tipo_arquivo || `Tipo ${a.tipo_arquivo_id}`,
-        }),
-        el('span', { className: 'pc-ficha__arquivo-nome', textContent: nome }),
-        a.tamanho_mb != null
-          ? el('span', {
-            className: 'pc-ficha__arquivo-tamanho',
-            textContent: numero(a.tamanho_mb, 1, ' MB') || '',
-          })
-          : null,
-      ].filter(Boolean)),
+    return el('li', { className: 'ficha-arquivo' }, [
+      svgIcon(ICONS.description, 16),
+      el('span', { className: 'ficha-arquivo__nome', textContent: nome }),
+      el('span', {
+        className: 'ficha-arquivo__tipo',
+        textContent: a.tipo_arquivo || `Tipo ${a.tipo_arquivo_id}`,
+      }),
+      el('span', {
+        className: 'ficha-arquivo__tamanho',
+        textContent: numero(a.tamanho_mb, 1, ' MB') || '',
+      }),
       botao,
     ]);
   }));
 }
 
+/** Espaco reservado enquanto a ficha carrega, no formato do que vai chegar. */
+function esqueleto() {
+  return el('div', { className: 'ficha-esqueleto' }, [
+    el('div', { className: 'ficha-esqueleto__bloco' }),
+    el('div', { className: 'ficha-esqueleto__faixa' }),
+    el('div', { className: 'ficha-esqueleto__faixa' }),
+  ]);
+}
+
 /**
  * A ficha inteira.
  *
- * A ordem dos blocos segue o CICLO do ponto, e nao a ordem das colunas na
- * tabela: identificacao, onde ele esta, como foi medido, com o que, como foi
- * processado, o marco no terreno, e por fim os arquivos. E a ordem em que
- * alguem confere um ponto de apoio.
+ * A ordem dos blocos de detalhe segue o CICLO do ponto, e nao a ordem das
+ * colunas na tabela: identificacao, onde ele esta, como foi medido, com o que,
+ * como foi processado, o marco no terreno. E a ordem em que alguem confere um
+ * ponto de apoio. O que mudou em 2026-07-31 foi o que vem ANTES deles: o resumo,
+ * o mapa e os arquivos.
  *
  * `lote_nome` e `projeto_nome` sao as ENTIDADES do acervo; `p.lote` e
  * `p.projeto` sao texto livre que o medidor digitou em campo, e por isso
@@ -171,15 +278,41 @@ function blocoArquivos(p) {
  * no acervo porque o BPC o exige na entrega, e nao para ser exibido a quem
  * consulta. Mesma razao de o usuario read-only nao receber GRANT no schema
  * (er/permissao_readonly.sql).
+ *
+ * @param {HTMLElement} barraVazios o interruptor dos campos vazios, criado uma
+ *   vez pelo dialogo e reposicionado a cada pintura para o estado dele
+ *   sobreviver a troca de ponto
+ * @returns {{elemento: HTMLElement, destruir: Function}}
  */
-function corpo(p, mostrarVazios) {
-  const cabecalho = el('div', { className: 'pc-ficha__cabecalho' }, [
+function corpo(p, mostrarVazios, barraVazios) {
+  const marcas = el('div', { className: 'pc-ficha__cabecalho' }, [
     chip(p.tipo_situacao_nome || `Situação ${p.tipo_situacao}`,
       VARIANTE_SITUACAO[p.tipo_situacao] || 'default'),
     p.reserva ? chip('Reserva', 'secondary') : null,
     p.materializado ? chip('Materializado', 'info') : null,
     p.geometria_aproximada ? chip('Geometria aproximada', 'warning') : null,
   ].filter(Boolean));
+
+  // O resumo: os fatos que identificam um ponto de apoio. Coordenada em fonte
+  // monoespacada, que e como se le e se confere numero longo.
+  const resumo = el('div', { className: 'ficha-identificacao' }, [
+    fato('Latitude', numero(latDe(p), 8, '°'), true),
+    fato('Longitude', numero(lonDe(p), 8, '°'), true),
+    fato('Alt. ortométrica', numero(p.altitude_ortometrica, 3, ' m')),
+    fato('Método', dominio(p, 'metodo_posicionamento')),
+    fato('Rastreio', formatDate(p.data_rastreio)),
+  ].filter(Boolean));
+
+  const mapa = criarMapaDoPonto(latDe(p), lonDe(p));
+
+  const topo = el('div', { className: 'pc-ficha__topo' }, [
+    mapa.elemento,
+    el('div', { className: 'pc-ficha__topo-dados' }, [
+      marcas,
+      resumo,
+      botaoCopiar(p),
+    ].filter(Boolean)),
+  ]);
 
   const blocos = [
     ['Identificação', [
@@ -200,8 +333,8 @@ function corpo(p, mostrarVazios) {
       // A posicao vem da GEOMETRIA (`geom_*`, double precision), e nao das
       // colunas `latitude`/`longitude` do plugin, que sao REAL e perdem casa
       // decimal. As colunas ficam de reserva para o ponto antigo, sem geometria.
-      ['Latitude', numero(p.geom_latitude ?? p.latitude, 8, '°')],
-      ['Longitude', numero(p.geom_longitude ?? p.longitude, 8, '°')],
+      ['Latitude', numero(latDe(p), 8, '°')],
+      ['Longitude', numero(lonDe(p), 8, '°')],
       ['Norte', numero(p.norte, 3, ' m')],
       ['Leste', numero(p.leste, 3, ' m')],
       ['Fuso', p.fuso],
@@ -265,22 +398,35 @@ function corpo(p, mostrarVazios) {
     ]],
   ];
 
-  return el('div', { className: 'pc-ficha' }, [
-    cabecalho,
-    ...blocos.map(([titulo, campos]) => bloco(titulo, campos, mostrarVazios)),
+  const elemento = el('div', { className: 'pc-ficha' }, [
+    topo,
+
+    // Os arquivos sobem para logo depois do resumo: sao o que a pessoa veio
+    // buscar. Antes vinham no fim, depois de sete blocos de conferencia.
+    el('section', { className: 'pc-ficha__bloco' }, [
+      el('h3', { className: 'produto-ficha__secao', textContent: 'Arquivos' }),
+      blocoArquivos(p),
+    ]),
 
     !vazio(p.observacao)
       ? el('section', { className: 'pc-ficha__bloco' }, [
-        el('h3', { className: 'pc-ficha__bloco-titulo', textContent: 'Observação' }),
+        el('h3', { className: 'produto-ficha__secao', textContent: 'Observação' }),
         el('p', { className: 'pc-ficha__observacao', textContent: p.observacao }),
       ])
       : null,
 
-    el('section', { className: 'pc-ficha__bloco' }, [
-      el('h3', { className: 'pc-ficha__bloco-titulo', textContent: 'Arquivos' }),
-      blocoArquivos(p),
-    ]),
+    // O interruptor fica logo ACIMA dos blocos que ele governa, e rola com
+    // eles. Ele ficava grudado no topo da ficha inteira, e ao rolar passava por
+    // cima do conteudo com o fundo cobrindo so parte da largura (chefe,
+    // 2026-07-31: "fica voando quando da scroll down"). Grudar exigiria sangrar
+    // o fundo ate as bordas da area rolavel; aqui nao precisa, porque ele nao
+    // governa nem os arquivos nem o resumo, que agora vem antes.
+    barraVazios,
+
+    ...blocos.map(([titulo, campos]) => bloco(titulo, campos, mostrarVazios)),
   ].filter(Boolean));
+
+  return { elemento, destruir: mapa.destruir };
 }
 
 /**
@@ -302,9 +448,19 @@ export async function abrirPontoDialog(codigos, indice = 0) {
   /** @type {Map<string, Object>} ponto já carregado: o vaivém não repete a chamada. */
   const cache = new Map();
 
-  const corpoEl = el('div', {}, [
-    el('p', { className: 'pc-ficha__carregando', textContent: 'Carregando…' }),
-  ]);
+  // O mapa em cena. Trocar de ponto ou fechar a ficha destrói o anterior: um
+  // mapa do MapLibre segura contexto WebGL, e o navegador limita quantos
+  // existem ao mesmo tempo. Sem destruir, percorrer uma seleção grande esgota.
+  let mapaAtual = null;
+
+  const descartarMapa = () => {
+    if (mapaAtual) {
+      mapaAtual();
+      mapaAtual = null;
+    }
+  };
+
+  const corpoEl = el('div', {}, [esqueleto()]);
 
   const posicao = el('span', { className: 'produto-ficha__posicao' });
 
@@ -318,7 +474,7 @@ export async function abrirPontoDialog(codigos, indice = 0) {
     className: 'btn btn--secondary btn--sm',
     type: 'button',
     onClick: () => irPara(atual + 1),
-  }, ['Próxima']);
+  }, ['Próxima', svgIcon(ICONS.chevronRight, 16)]);
 
   const navegacao = el('div', { className: 'produto-ficha__nav' }, [
     btnAnterior, posicao, btnProxima,
@@ -342,18 +498,21 @@ export async function abrirPontoDialog(codigos, indice = 0) {
   ]);
 
   // A navegacao so existe quando ha mais de um: com um ponto so, uma barra com
-  // dois botoes desativados e ruido.
-  const raiz = el('div', {}, [
+  // dois botoes desativados e ruido. O interruptor dos campos vazios NAO fica
+  // aqui: ele entra dentro do corpo, junto dos blocos que governa.
+  const raiz = el('div', { className: 'produto-ficha__raiz' }, [
     lista.length > 1 ? navegacao : null,
-    barraVazios,
     corpoEl,
   ].filter(Boolean));
 
   const modal = openModal({
     title: lista[atual],
     content: raiz,
-    width: '760px',
-    onClose: () => { fechado = true; },
+    width: '1040px',
+    onClose: () => {
+      fechado = true;
+      descartarMapa();
+    },
     actions: [{ label: 'Fechar', variant: 'text', onClick: ({ close }) => close() }],
   });
 
@@ -362,7 +521,10 @@ export async function abrirPontoDialog(codigos, indice = 0) {
   function pintar() {
     const ponto = cache.get(lista[atual]);
     if (!ponto) return;
-    corpoEl.replaceChildren(corpo(ponto, mostrarVazios));
+    descartarMapa();
+    const montado = corpo(ponto, mostrarVazios, barraVazios);
+    mapaAtual = montado.destruir;
+    corpoEl.replaceChildren(montado.elemento);
   }
 
   async function irPara(novo) {
@@ -380,9 +542,8 @@ export async function abrirPontoDialog(codigos, indice = 0) {
       return;
     }
 
-    corpoEl.replaceChildren(
-      el('p', { className: 'pc-ficha__carregando', textContent: 'Carregando…' })
-    );
+    descartarMapa();
+    corpoEl.replaceChildren(esqueleto());
     try {
       const ponto = await getPonto(codigo);
       if (fechado) return;

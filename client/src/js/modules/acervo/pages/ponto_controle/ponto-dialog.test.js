@@ -5,6 +5,10 @@ vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   baixarArquivoDoPonto: vi.fn(() => Promise.resolve()),
 }));
 
+// O jsdom nao tem WebGL. O repo ja mantem um duble do MapLibre para isso, e e
+// ele que deixa provar o caminho COM mapa, e nao so o de indisponivel.
+vi.mock('maplibre-gl', async () => await import('@components/mapa/maplibre-stub.js'));
+
 vi.mock('@utils/toast.js', () => ({
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -76,7 +80,7 @@ const modal = () => document.querySelector('.modal, dialog');
 const texto = () => (modal() ? modal().textContent : '');
 const rotulos = () => [...document.querySelectorAll('.detail-card__label')]
   .map(n => n.textContent);
-const titulos = () => [...document.querySelectorAll('.pc-ficha__bloco-titulo')]
+const titulos = () => [...document.querySelectorAll('.pc-ficha .produto-ficha__secao')]
   .map(n => n.textContent);
 
 beforeEach(() => {
@@ -181,10 +185,13 @@ describe('ficha do ponto: campos', () => {
     abrirPontoDialog('RS-HV-1');
     await flush();
 
+    // Arquivos e Observacao vem ANTES dos blocos de conferencia desde
+    // 2026-07-31: sao o que a pessoa veio buscar, e ficavam depois de sete
+    // blocos. Os blocos de detalhe seguem o ciclo do ponto, como antes.
     expect(titulos()).toEqual([
+      'Arquivos', 'Observação',
       'Identificação', 'Posição', 'Rastreio', 'Equipamento',
       'Processamento', 'Marco no terreno', 'Registro no acervo',
-      'Observação', 'Arquivos',
     ]);
   });
 
@@ -213,7 +220,7 @@ describe('ficha do ponto: os dois downloads', () => {
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    const linhas = [...document.querySelectorAll('.pc-ficha__download')];
+    const linhas = [...document.querySelectorAll('.ficha-arquivo')];
     expect(linhas).toHaveLength(2);
     expect(texto()).toContain('Pacote do ponto');
     expect(texto()).toContain('RS-HV-1_pacote.zip');
@@ -228,7 +235,9 @@ describe('ficha do ponto: os dois downloads', () => {
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    const [pacote, mono] = [...document.querySelectorAll('.pc-ficha__download button')];
+    // A MONOGRAFIA vem primeiro desde 2026-07-31: e ela que se abre para
+    // conferir o ponto, e o pacote de 20 MB e o que se baixa depois de decidir.
+    const [mono, pacote] = [...document.querySelectorAll('.ficha-arquivo button')];
     pacote.click();
     await flush();
     expect(baixarArquivoDoPonto).toHaveBeenCalledWith(
@@ -248,7 +257,7 @@ describe('ficha do ponto: os dois downloads', () => {
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    const botao = document.querySelector('.pc-ficha__download button');
+    const botao = document.querySelector('.ficha-arquivo button');
     botao.click();
     await flush();
 
@@ -265,7 +274,7 @@ describe('ficha do ponto: os dois downloads', () => {
     await flush();
 
     expect(texto()).toContain('Tipo novo');
-    expect(document.querySelector('.pc-ficha__download button').disabled).toBe(true);
+    expect(document.querySelector('.ficha-arquivo button').disabled).toBe(true);
   });
 
   test('o CAMINHO do arquivo no volume NÃO aparece', async () => {
@@ -301,11 +310,11 @@ describe('ficha do ponto: navegação e falha', () => {
     await flush();
 
     expect(texto()).toContain('RS-HV-1');
-    expect(texto()).toContain('Carregando');
+    expect(document.querySelector('.ficha-esqueleto')).not.toBeNull();
 
     liberar(PONTO);
     await flush();
-    expect(texto()).not.toContain('Carregando');
+    expect(document.querySelector('.ficha-esqueleto')).toBeNull();
   });
 
   test('com um ponto só, não há barra de navegação', async () => {
@@ -370,5 +379,81 @@ describe('ficha do ponto: navegação e falha', () => {
     expect(showError).toHaveBeenCalled();
     // Fechar aqui tiraria da pessoa os outros pontos que ela selecionou.
     expect(modal()).not.toBeNull();
+  });
+});
+
+// O que entrou em 2026-07-31, na mesma reforma da ficha do acervo: o LUGAR
+// (mapa e coordenada copiavel) e o RESUMO com os fatos que identificam o ponto.
+describe('ficha do ponto: o lugar', () => {
+  test('o resumo traz coordenada, altitude, método e data', async () => {
+    getPonto.mockResolvedValue(PONTO);
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const resumo = document.querySelector('.ficha-identificacao');
+    expect(resumo).not.toBeNull();
+    // O rotulo fica embaixo e o VALOR em cima, ao contrario da linha
+    // rotulo-valor: quem procura um ponto procura a coordenada, nao a palavra.
+    const rotulosResumo = [...resumo.querySelectorAll('.ficha-fato__rotulo')]
+      .map(n => n.textContent);
+    expect(rotulosResumo).toEqual(
+      ['Latitude', 'Longitude', 'Alt. ortométrica', 'Método', 'Rastreio']
+    );
+  });
+
+  test('a coordenada do resumo mantém as 8 casas', async () => {
+    getPonto.mockResolvedValue(PONTO);
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const valores = [...document.querySelectorAll('.ficha-identificacao .ficha-fato__valor')]
+      .map(n => n.textContent);
+    expect(valores[0]).toBe('-30,12345678°');
+    expect(valores[1]).toBe('-51,87654321°');
+  });
+
+  test('o mapa aparece quando há coordenada', async () => {
+    getPonto.mockResolvedValue(PONTO);
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const mapa = document.querySelector('.pc-mapa-mini');
+    expect(mapa).not.toBeNull();
+    expect(mapa.classList.contains('pc-mapa-mini--vazio')).toBe(false);
+  });
+
+  // Ponto sem coordenada nao deixa um retangulo vazio na tela dizendo nada.
+  test('sem coordenada, o mapa diz por quê', async () => {
+    getPonto.mockResolvedValue({
+      ...PONTO,
+      geom_latitude: null, geom_longitude: null, latitude: null, longitude: null,
+    });
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const mapa = document.querySelector('.pc-mapa-mini');
+    expect(mapa.classList.contains('pc-mapa-mini--vazio')).toBe(true);
+    expect(mapa.textContent).toContain('Sem coordenada');
+  });
+
+  // Copia o par CRU, com ponto decimal: quem cola isto cola noutro programa, e
+  // virgula decimal ou casa perdida viram erro de posicao de metros.
+  test('copiar leva o par cru, e não o texto formatado da tela', async () => {
+    const escrever = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: escrever }, configurable: true,
+    });
+
+    getPonto.mockResolvedValue(PONTO);
+    abrirPontoDialog('RS-HV-1');
+    await flush();
+
+    const botao = [...document.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Copiar coordenada'));
+    expect(botao).toBeDefined();
+
+    botao.click();
+    await flush();
+    expect(escrever).toHaveBeenCalledWith('-30.12345678, -51.87654321');
   });
 });

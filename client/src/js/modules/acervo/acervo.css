@@ -696,6 +696,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   gap: var(--space-sm) var(--space-md);
+  /* start, e nao o stretch padrao: como o item usa column-reverse, esticar faz o
+   * fato de valor CURTO descer e encostar na base da linha, que fica alta por
+   * causa do fato de valor LONGO (o metodo de posicionamento quebra em tres
+   * linhas). Os valores deixavam de comecar na mesma altura. */
+  align-items: start;
   padding: var(--space-md);
   background: var(--bg-secondary);
   border: 1px solid var(--border-light);
@@ -1365,6 +1370,51 @@
 }
 
 /* ---- Ficha do ponto (modal) ---- */
+/* O TOPO da ficha: mapa a esquerda, resumo a direita.
+ *
+ * Mesma ideia da ficha do acervo, onde a miniatura fica ao lado da versao. Aqui
+ * o que se olha e o LUGAR: um ponto de controle e uma coordenada, e a ficha
+ * antiga mostrava oito casas decimais sem dizer onde isso fica.
+ *
+ * A coluna do mapa tem largura fixa para o resumo comecar sempre no mesmo lugar
+ * quando se percorre uma selecao de pontos. */
+.pc-ficha__topo {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.pc-ficha__topo-dados {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.pc-mapa-mini {
+  height: 220px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.pc-mapa-mini--vazio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-disabled);
+  font-size: var(--font-size-sm);
+  border-style: dashed;
+}
+
+/* O mapa desenha num canvas proprio; sem isto ele nasce com 0 de altura dentro
+ * do grid e so aparece depois de um redimensionamento da janela. */
+.pc-mapa-mini .maplibregl-map {
+  height: 100%;
+}
+
 .pc-ficha {
   display: flex;
   flex-direction: column;
@@ -1377,83 +1427,48 @@
   gap: var(--space-xs);
 }
 
-/* O interruptor dos campos vazios fica GRUDADO no topo da ficha: com 56 campos,
- * quem o procura ja rolou a tela, e a barra some junto. */
+/* O interruptor dos campos vazios, logo acima dos blocos que ele governa.
+ *
+ * Ele ja foi GRUDADO no topo (position: sticky), e o resultado era ele passar
+ * por cima do conteudo ao rolar, com o fundo cobrindo so parte da largura
+ * (chefe, 2026-07-31: "fica voando quando da scroll down"). Grudar dentro de uma
+ * area rolavel com padding exige sangrar o fundo ate as bordas dela; aqui nao
+ * compensa, porque desde a reforma o interruptor nao governa mais o resumo nem
+ * os arquivos, que vem antes. Onde ele esta, ja se ve o que ele faz. */
 .pc-ficha__vazios-toggle {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-xs) 0 var(--space-sm);
-  background: var(--bg-paper);
+  margin-top: var(--space-sm);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   cursor: pointer;
   user-select: none;
 }
 
-.pc-ficha__bloco-titulo {
-  margin: 0 0 var(--space-xs);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+.pc-ficha__bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
 }
 
 .pc-ficha__observacao {
   margin: 0;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-}
-
-.pc-ficha__grupo-titulo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin-bottom: 4px;
-  color: var(--text-primary);
   font-size: var(--font-size-sm);
-}
-
-.pc-ficha__lista {
-  list-style: none;
-  margin: 0 0 var(--space-sm);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pc-ficha__lista li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.pc-ficha__arquivo-nome {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--text-primary);
+  line-height: var(--line-height);
 }
 
-.pc-ficha__arquivo-tamanho {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* Tela estreita: o mapa vira uma faixa no alto, como a miniatura na ficha do
+ * acervo. Com 320 px de mapa mais o resumo, os dois ficariam ilegiveis. */
+@media (max-width: 720px) {
+  .pc-ficha__topo {
+    grid-template-columns: 1fr;
+  }
 
-.pc-ficha__vazio,
-.pc-ficha__carregando {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  .pc-mapa-mini {
+    height: 180px;
+  }
 }
 
 /* Numa tela estreita a divisao lado a lado nao cabe: o mapa vai para cima, com
@@ -1467,39 +1482,6 @@
   .pc-mapa {
     order: -1;
   }
-}
-
-/* Os DOIS downloads da ficha do ponto (pacote e monografia). Substituiram a
- * lista agrupada por tipo quando o acervo passou a guardar dois arquivos por
- * ponto, em 2026-07-29. */
-.pc-ficha__downloads {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.pc-ficha__download {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-}
-
-.pc-ficha__download-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.pc-ficha__download-tipo {
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
 }
 
 /* Códigos de ponto disponíveis (diálogo). Era o P14 do plugin. */
