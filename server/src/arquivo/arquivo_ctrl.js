@@ -13,6 +13,18 @@ const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
 
+// Blocos de 8 MB, e não os 64 KB padrão do Node.
+//
+// O acervo mora num volume SMB, e ali o custo por leitura é de rede, não de
+// disco: quanto menor o bloco, mais viagens. Medido em 2026-07-31 contra o
+// volume de produção, sobre arquivos de 440 MB: 64 KB deu 80 MB/s, 1 MB deu 86 e
+// 8 MB deu 89. Ganho de 11%, não de ordem de grandeza. A carga do LOTE_1 do
+// Convênio RS (362 GB relidos pelo confirm-upload) variou de 31 a 81 MB/s entre
+// requisições, então a maior parte da variação é contenção do share, não o
+// buffer. O ajuste é barato e ajuda em toda carga; não é a solução de um
+// gargalo, e registrar isso evita que alguém volte aqui esperando milagre.
+const BLOCO_LEITURA = 8 * 1024 * 1024;
+
 /**
  * Calcula checksum SHA-256 via streaming, sem carregar o arquivo inteiro em memória.
  * Retorna { checksum, fileSizeMB }.
@@ -21,7 +33,7 @@ function calculateChecksumStream(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
     let fileSize = 0;
-    const stream = fsClassic.createReadStream(filePath);
+    const stream = fsClassic.createReadStream(filePath, { highWaterMark: BLOCO_LEITURA });
     stream.on('data', (chunk) => {
       hash.update(chunk);
       fileSize += chunk.length;

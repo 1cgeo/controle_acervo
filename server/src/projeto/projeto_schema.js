@@ -5,12 +5,31 @@ const Joi = require("joi");
 
 const models = {};
 
+// `acervo.projeto.data_inicio/data_fim` e `acervo.lote.data_inicio/data_fim` sao
+// colunas DATE: dia de calendario, nao instante.
+//
+// O BUG QUE O `.raw()` MATA. Sem ele, o Joi converte a string 'AAAA-MM-DD' num
+// Date de MEIA-NOITE UTC. O driver manda o instante, e o Postgres o converte
+// para o fuso da sessao antes de guardar no DATE. Em UTC-3, 2022-09-15T00:00Z
+// vira 2022-09-14 21:00 local, e a coluna guarda 2022-09-14: o dia ANDA PARA
+// TRAS. O GET devolve 'AAAA-MM-DD', entao reenviar o que o GET devolveu, sem
+// mudar nada, RECUA A DATA UM DIA a cada chamada. Pego em 2026-07-31 ao
+// reparentar dois lotes do Convenio RS, que perderam um dia cada.
+//
+// Com `.raw()`, a validacao continua sendo de data (o `.min` abaixo segue
+// valendo), mas o valor que sai do Joi e a STRING original. O Postgres faz o
+// cast de 'AAAA-MM-DD' para DATE sem fuso nenhum no caminho.
+//
+// Mesma solucao que `mapoteca.pedido` ja usava (data_pedido e irmas). O padrao
+// da casa para dia de calendario e este.
+const dataCalendario = () => Joi.date().raw();
+
 models.projeto = Joi.object().keys({
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').required(),
-  data_inicio: Joi.date().required(),
+  data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
-  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
+  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -18,9 +37,9 @@ models.projetoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').required(),
-  data_inicio: Joi.date().required(),
+  data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
-  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
+  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -37,9 +56,9 @@ models.lote = Joi.object().keys({
   pit: Joi.string().required(),
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').optional(),
-  data_inicio: Joi.date().required(),
+  data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
-  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
+  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -49,9 +68,9 @@ models.loteAtualizacao = Joi.object().keys({
   pit: Joi.string().required(),
   nome: Joi.string().required(),
   descricao: Joi.string().allow('').optional(),
-  data_inicio: Joi.date().required(),
+  data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
-  data_fim: Joi.date().min(Joi.ref('data_inicio')).allow(null).required(),
+  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 

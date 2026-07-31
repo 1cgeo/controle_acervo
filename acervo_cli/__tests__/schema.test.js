@@ -141,12 +141,27 @@ test('toda operacao da registry aponta uma chave que existe no schema', () => {
   }
 })
 
+// A lista esperada era COPIADA do schema, e apodreceu na primeira vez que o
+// servidor ganhou filtro: o commit que acrescentou bbox, estado_id, municipio_id,
+// palavra_chave, geometria, com_geometria e subtipo_produto_id derrubou este
+// teste sem que nada estivesse errado. Contrato copiado e o que o acervo_cli
+// existe para NAO fazer (principio 1 do README), e o teste fazia justamente isso.
+//
+// O que precisa ser provado aqui e o CONTRATO do camposDe: ele devolve as chaves
+// do proprio Joi, sem perder nem inventar. Comparar contra `describe().keys` mede
+// isso e nunca envelhece. O spot-check embaixo impede a versao degenerada do
+// teste: uma implementacao que devolvesse [] passaria na comparacao (dois vazios
+// sao iguais) se o schema tambem estivesse vazio.
 test('deriva os filtros de listagem do proprio schema de query', () => {
   const filtros = esquema.camposDe(schemaAcervo.buscaProdutos).map(f => f.nome)
-  assert.deepStrictEqual(
-    filtros.sort(),
-    ['limit', 'lote_id', 'page', 'projeto_id', 'termo', 'tipo_escala_id', 'tipo_produto_id']
-  )
+  const doJoi = Object.keys(schemaAcervo.buscaProdutos.describe().keys)
+
+  assert.deepStrictEqual(filtros.sort(), doJoi.sort(),
+    'camposDe deve devolver exatamente as chaves do schema')
+
+  for (const esperado of ['termo', 'limit', 'page', 'tipo_produto_id']) {
+    assert.ok(filtros.includes(esperado), `filtro "${esperado}" sumiu do schema de busca`)
+  }
 })
 
 test('validarCorpo recusa corpo incompleto sem tocar a rede', () => {
