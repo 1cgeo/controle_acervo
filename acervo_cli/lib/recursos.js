@@ -417,9 +417,16 @@ const RECURSOS = {
         caminho: '/volumes/volume_armazenamento',
         acesso: 'admin',
         envelope: 'lista',
-        colunas: ['id', 'nome', 'volume', 'capacidade_gb'],
+        // `layout_origem` entra na projecao porque decide como o nome fisico do
+        // arquivo se le. Sem ela na lista, quem opera nao tem como saber que o
+        // volume guarda o layout do fornecedor, e conclui que o nome fora do
+        // padrao e defeito. Coluna que muda a interpretacao das outras nao pode
+        // ficar so no --json.
+        colunas: ['id', 'nome', 'volume', 'capacidade_gb', 'layout_origem'],
         nota: 'a coluna `volume` e o caminho de rede do armazenamento: nunca grave ' +
-          'essa saida em arquivo versionado nem na wiki'
+          'essa saida em arquivo versionado nem na wiki. `layout_origem` = o volume ' +
+          'guarda a entrega no layout do fornecedor: ali o nome fisico e o caminho ' +
+          'relativo de origem, e o padrao derivado nao se aplica'
       },
       criar: {
         metodo: 'POST',
