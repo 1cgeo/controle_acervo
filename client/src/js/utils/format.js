@@ -69,6 +69,23 @@ export function formatCurrency(value) {
 }
 
 /**
+ * Valor monetário como NÚMERO, para conta e ordenação.
+ *
+ * Coluna NUMERIC do PostgreSQL chega no JSON como STRING ('1000.00'), porque o
+ * driver não a converte: em float ela perderia centavo. Somar ou ordenar direto
+ * a string dá resultado errado calado ('1000.00' < '500.00' como texto). Toda
+ * tela que faz conta com dinheiro passa por aqui.
+ *
+ * @param {number|string|null|undefined} value
+ * @returns {number} 0 quando o valor é nulo, vazio ou não numérico
+ */
+export function toNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = Number(value);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
  * Convert a Date (or date-like) to ISO date string (YYYY-MM-DD) for API payloads.
  * @param {Date|string} value
  * @returns {string|null}

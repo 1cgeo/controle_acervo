@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
@@ -50,12 +50,14 @@ export async function renderRpnpList(container, _ctx) {
         key: 'valor_empenhado',
         label: 'Empenhado',
         sortable: true,
+        sortValue: (row) => toNumber(row.valor_empenhado),
         render: (row) => formatCurrency(row.valor_empenhado),
       },
       {
         key: 'valor_a_liquidar',
         label: 'A liquidar',
         sortable: true,
+        sortValue: (row) => toNumber(row.valor_a_liquidar),
         render: (row) => formatCurrency(row.valor_a_liquidar),
       },
     ],
@@ -63,6 +65,14 @@ export async function renderRpnpList(container, _ctx) {
     searchable: true,
     pageSize: 25,
     loading: true,
+    // A lista abre pelo maior valor a liquidar (chefe, 2026-07-31). O RPNP que
+    // importa e o que ainda deve dinheiro; o de saldo zero ja e historico e
+    // desce para o fim. Antes a ordem era ano e id de cadastro, que nao diz nada
+    // sobre o que precisa de acao.
+    defaultSort: { key: 'valor_a_liquidar', dir: 'desc' },
+    // Saldo zero fica esmaecido: da para varrer a lista e ver de longe onde
+    // acaba o que ainda pede trabalho.
+    rowClassName: (row) => (toNumber(row.valor_a_liquidar) <= 0 ? 'data-table__row--quitada' : ''),
     emptyMessage: 'Nenhum RPNP cadastrado',
     actions: [
       ...(pode.operador ? [{

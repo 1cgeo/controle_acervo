@@ -123,6 +123,15 @@
   background: var(--bg-selected);
 }
 
+/* Linha QUITADA: nada mais a liquidar.
+   Usada nas listas de empenho e de RPNP, onde a ordem já joga o quitado para o
+   fim (chefe, 2026-07-31). O esmaecido marca ONDE a lista deixa de pedir ação,
+   sem esconder a linha: o histórico continua legível e pesquisável. Só cor e
+   peso mudam, então o contraste segue acima do mínimo de leitura. */
+.data-table tbody tr.data-table__row--quitada td {
+  color: var(--text-secondary);
+}
+
 .data-table tbody tr:last-child td {
   border-bottom: none;
 }

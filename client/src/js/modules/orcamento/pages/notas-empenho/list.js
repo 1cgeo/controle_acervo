@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
@@ -12,6 +12,26 @@ import {
 import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openNotaEmpenhoDialog } from './nota-empenho-dialog.js';
+
+/**
+ * O que ainda falta liquidar de uma NE.
+ *
+ * O empenhado que vale e o LIQUIDO da anulacao: NE anulada em parte nunca vai
+ * liquidar o valor cheio, e contar o bruto a deixaria eternamente "em aberto".
+ * Nunca devolve negativo, para a linha nao aparecer no topo por erro de
+ * lancamento.
+ * @param {Object} ne
+ * @returns {number}
+ */
+function aLiquidar(ne) {
+  const liquido = toNumber(ne.valor_empenhado) - toNumber(ne.valor_anulado);
+  return Math.max(0, liquido - toNumber(ne.total_liquidado));
+}
+
+/** A NE ja liquidou tudo o que podia? NE de valor liquido zero conta como sim. */
+function estaQuitada(ne) {
+  return aLiquidar(ne) <= 0;
+}
 
 /**
  * Lista de Notas de Empenho (#/notas_empenho). Filtra pelo ano de contexto
@@ -61,21 +81,40 @@ export async function renderNotasEmpenhoList(container, _ctx) {
         key: 'valor_empenhado',
         label: 'Empenhado',
         sortable: true,
+        sortValue: (row) => toNumber(row.valor_empenhado),
         render: (row) => formatCurrency(row.valor_empenhado),
       },
       {
         key: 'total_liquidado',
         label: 'Liquidado',
         sortable: true,
+        sortValue: (row) => toNumber(row.total_liquidado),
         render: (row) => (row.total_liquidado === null || row.total_liquidado === undefined
           ? '-'
           : formatCurrency(row.total_liquidado)),
+      },
+      {
+        // Coluna NOVA, e o criterio de ordem da tela (chefe, 2026-07-31): o que
+        // importa e o que ainda falta liquidar. Ela nao vem do backend, e sai da
+        // conta empenhado menos anulado menos liquidado.
+        key: 'a_liquidar',
+        label: 'A liquidar',
+        sortable: true,
+        sortValue: (row) => aLiquidar(row),
+        render: (row) => (estaQuitada(row)
+          ? el('span', { className: 'chip chip--success', textContent: 'Liquidada' })
+          : formatCurrency(aLiquidar(row))),
       },
     ],
     rows: [],
     searchable: true,
     pageSize: 25,
     loading: true,
+    // Maior saldo a liquidar primeiro, e as 100% liquidadas no fim (chefe,
+    // 2026-07-31). A ordem antiga era ano e numero, que espalha o que precisa de
+    // acao entre o que ja fechou.
+    defaultSort: { key: 'a_liquidar', dir: 'desc' },
+    rowClassName: (row) => (estaQuitada(row) ? 'data-table__row--quitada' : ''),
     emptyMessage: 'Nenhuma nota de empenho cadastrada',
     actions: [
       {

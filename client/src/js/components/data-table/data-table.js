@@ -19,9 +19,18 @@ function normalizeText(value) {
  * actions and (optional) multi-selection.
  *
  * @param {Object} options
- * @param {Array<{key:string, label:string, render?:(row:Object)=>(string|Node), sortable?:boolean, className?:string}>} options.columns
+ * @param {Array<{key:string, label:string, render?:(row:Object)=>(string|Node), sortable?:boolean, className?:string, sortValue?:(row:Object)=>(number|string)}>} options.columns
  *        - render(row) returns a string or a DOM Node for the cell; default is row[key] ?? '-'.
  *        - sortable: enables click-to-sort on the header (sorts by row[key]).
+ *        - sortValue(row): valor usado na ordenação, quando row[key] não serve.
+ *          Existe por dois motivos concretos. Primeiro, NUMERIC do PostgreSQL
+ *          chega como STRING no JSON, e comparar '1000.00' com '500.00' como
+ *          texto ordena errado. Segundo, há coluna cujo critério é derivado
+ *          (percentual liquidado), e não uma coluna do registro.
+ * @param {{key:string, dir?:('asc'|'desc')}} [options.defaultSort] - ordem inicial
+ *        da tabela. O clique no cabeçalho continua mandando a partir daí.
+ * @param {(row:Object)=>string} [options.rowClassName] - classe extra do <tr>,
+ *        para a tela marcar visualmente uma condição (ex.: empenho 100% liquidado).
  * @param {Array<Object>} [options.rows]
  * @param {boolean} [options.searchable] - shows the client-side search input
  * @param {number} [options.pageSize] - 5 | 10 | 25 (default 10)
@@ -48,12 +57,14 @@ export function createDataTable({
   onSelectionChange = null,
   emptyMessage = 'Sem dados disponíveis',
   loading = false,
+  defaultSort = null,
+  rowClassName = null,
 }) {
   let allRows = rows;
   let isLoading = loading;
   let searchTerm = '';
-  let sortKey = null;
-  let sortDir = 1; // 1 asc, -1 desc
+  let sortKey = defaultSort ? defaultSort.key : null;
+  let sortDir = defaultSort && defaultSort.dir === 'desc' ? -1 : 1; // 1 asc, -1 desc
   let currentPage = 0;
   let currentPageSize = PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : 10;
   const selected = new Set();
@@ -99,9 +110,16 @@ export function createDataTable({
     }
 
     if (sortKey) {
+      const col = columns.find(c => c.key === sortKey);
+      const valorDe = col && typeof col.sortValue === 'function'
+        ? col.sortValue
+        : (row) => row[sortKey];
+
       result = [...result].sort((a, b) => {
-        const va = a[sortKey];
-        const vb = b[sortKey];
+        const va = valorDe(a);
+        const vb = valorDe(b);
+        // Nulo vai para o FIM, independente da direção: a linha sem valor não
+        // é "a menor", é a que não responde ao critério.
         if (va === null || va === undefined) return 1;
         if (vb === null || vb === undefined) return -1;
         if (typeof va === 'number' && typeof vb === 'number') {
@@ -244,9 +262,14 @@ export function createDataTable({
       cells.push(el('td', { className: 'data-table__actions-cell' }, actionButtons));
     }
 
-    const tr = el('tr', {
-      className: selected.has(row) ? 'data-table__row--selected' : '',
-    }, cells);
+    const classes = [];
+    if (selected.has(row)) classes.push('data-table__row--selected');
+    if (rowClassName) {
+      const extra = rowClassName(row);
+      if (extra) classes.push(extra);
+    }
+
+    const tr = el('tr', { className: classes.join(' ') }, cells);
 
     return tr;
   }
