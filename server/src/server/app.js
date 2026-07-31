@@ -33,9 +33,28 @@ app.use(sendJsonAndLogMiddleware)
 // CORS antes do rate limit: respostas 429 também precisam dos headers CORS
 app.use(cors())
 
+// O teto de 200/minuto foi calibrado para NAVEGADOR: uma tela do dashboard faz
+// dezenas de chamadas e nunca chega perto. Mas o SCA tambem e operado por CLIENTE
+// DE LOTE (o acervo_cli, os carregadores de carga), e ali a unidade de trabalho
+// nao e a tela, e o acervo inteiro. Mover 348 versoes de lote sao 696 chamadas
+// (um GET e um PUT por versao), e a operacao morria no terceiro minuto com 429,
+// pela metade, deixando parte das versoes migradas e parte nao (2026-07-31).
+//
+// Estado partido no meio e pior que lentidao: quem retoma precisa reler o estado
+// real para saber onde parou, e nem todo script faz isso.
+//
+// 3.000/minuto (50/s) e ordens de grandeza acima de qualquer uso humano e ainda
+// limita um flood. E aplicacao de INTRANET, atras da rede da OM, entao o
+// limitador nao e a defesa principal: ele existe para conter cliente com laco
+// desgovernado, e para isso 3.000 serve tao bem quanto 200.
+//
+// `standardHeaders` publica RateLimit-Limit/Remaining/Reset. Sem eles o cliente
+// de lote so descobre o teto batendo nele; com eles, da para pausar antes.
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
-  max: 200,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
   // Desligado sob NODE_ENV=test. A suite faz centenas de requisicoes em poucos
   // segundos, contra o mesmo processo, e passava de 200 no meio do arquivo de
   // rotas da mapoteca: dali em diante tudo virava 429. O efeito pior nao era
