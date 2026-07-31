@@ -64,6 +64,29 @@ models.produtoIds = Joi.object().keys({
   motivo_exclusao: Joi.string().required()
 })
 
+// Correcao do identificador da versao para o que o BDGEx ja publicou.
+//
+// Nao e um PUT de versao: o uuid_versao segue IMUTAVEL naquele caminho, e por
+// bom motivo (o item do pedido aponta a versao por ele). Aqui a troca e o
+// PROPOSITO da rota, ela vem em lote (uma carga refeita move dezenas de folhas
+// de uma vez), e cada linha carrega a PROVA de onde o numero novo saiu.
+models.versaoUuidCorrecao = Joi.object().keys({
+  correcoes: Joi.array()
+    .items(
+      Joi.object().keys({
+        versao_id: Joi.number().integer().strict().required(),
+        uuid_versao: Joi.string().uuid().required()
+      })
+    )
+    .unique('versao_id')
+    .unique('uuid_versao')
+    .required()
+    .min(1),
+  // De onde saiu o identificador novo. Vai para o metadado da versao, e sem ela
+  // a correcao viraria um numero trocado sem historia.
+  motivo: Joi.string().required()
+});
+
 models.versaoIds = Joi.object().keys({
   versao_ids: Joi.array()
     .items(Joi.number().integer().strict().required())

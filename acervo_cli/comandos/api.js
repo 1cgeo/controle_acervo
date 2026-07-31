@@ -99,8 +99,19 @@ function validar (schemaJoi, corpo, chave, acao) {
 function exigirConfirmacao (op, corpo, chave, acao, flags) {
   if (!op.confirmar) return
 
+  // O --dry-run nao toca a rede: ele nao tem o que confirmar, e a propria
+  // mensagem de erro abaixo o oferece como saida. Exigi-lo aqui obrigava a
+  // confirmar para poder OLHAR, que e o contrario do guardrail.
+  if (flags['dry-run']) return
+
   const valor = corpo ? corpo[op.confirmar.campo] : undefined
-  const alvos = Array.isArray(valor) ? valor : (valor === undefined ? [] : [valor])
+  const bruto = Array.isArray(valor) ? valor : (valor === undefined ? [] : [valor])
+  // Campo em lote de OBJETOS (uma correcao por linha, e nao um id solto): o
+  // identificador esta dentro de cada objeto. Sem isto a confirmacao pediria
+  // "[object Object]", que ninguem consegue repetir.
+  const alvos = op.confirmar.subcampo
+    ? bruto.map(item => (item && typeof item === 'object' ? item[op.confirmar.subcampo] : item))
+    : bruto
   const esperado = alvos.join(',')
 
   const dado = flags.confirmar === undefined || flags.confirmar === true

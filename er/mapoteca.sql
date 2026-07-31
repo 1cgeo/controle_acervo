@@ -219,7 +219,12 @@ CREATE TABLE mapoteca.produto_pedido(
     -- catalogacao se contradiz. O que merecer cadastro estavel merece estar no
     -- acervo. Pedido pode misturar item de acervo e item avulso a vontade,
     -- porque a escolha e de cada item.
-    uuid_versao UUID REFERENCES acervo.versao (uuid_versao),
+    -- ON UPDATE CASCADE: o uuid_versao e o MESMO identificador com que o produto
+    -- e publicado no BDGEx, e quando a carga la acontece antes da catalogacao e
+    -- o acervo que se acerta (ver POST /api/produtos/versao/uuid). O item do
+    -- pedido segue a versao para onde ela for. Sem cascata no DELETE, de
+    -- proposito: apagar versao nao pode apagar o historico de quem a recebeu.
+    uuid_versao UUID REFERENCES acervo.versao (uuid_versao) ON UPDATE CASCADE,
     nome_avulso VARCHAR(255),
     descricao_avulso TEXT,
 	pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id),

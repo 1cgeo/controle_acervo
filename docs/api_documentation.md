@@ -759,6 +759,34 @@ Atualiza metadados de uma versao.
 }
 ```
 
+O `uuid_versao` e **imutavel** nesta rota: mandar um valor diferente do gravado devolve **400**. Ele identifica a versao para o item de pedido da mapoteca, e aqui chega junto de doze outros campos, onde troca-lo seria acidente. Para corrigi-lo de proposito, use a rota abaixo.
+
+---
+
+### POST `/api/produtos/versao/uuid`
+
+Corrige o `uuid_versao` de uma ou mais versoes para o identificador que o **BDGEx ja publicou**.
+
+| Campo | Valor |
+|---|---|
+| **Auth** | perfil `gerente` |
+
+**Body:**
+```json
+{
+  "correcoes": [
+    { "versao_id": 6653, "uuid_versao": "4fe8d788-dc4b-2f73-22c8-8d5e6090f06d" }
+  ],
+  "motivo": "string (obrigatorio)"
+}
+```
+
+**Por que existe.** O `uuid_versao` identifica a versao nos DOIS lados: no acervo e na publicacao. Quando a carga no BDGEx acontece antes da catalogacao, ou e refeita, quem ja atribuiu o numero e o BDGEx, e e o acervo que se acerta. Sem esta rota a unica saida seria apagar e recadastrar a versao, perdendo arquivo, relacionamento e historico de pedido.
+
+O item de pedido que aponta a versao acompanha, pela cascata da chave estrangeira (`ON UPDATE CASCADE`, migracao `2026-07-31_uuid_versao_corrigivel.sql`). O identificador anterior fica no `metadado` da versao (`uuid_versao_anterior`, `uuid_versao_correcao_motivo`, `uuid_versao_corrigido_em`), que e a trilha de quem procurar pelo numero velho num RTM antigo.
+
+Idempotente: reenviar o valor ja gravado devolve `alterado: false`, sem erro. Recusa (409) uuid que ja pertenca a outra versao. Devolve, por linha, `versao_id`, `uuid_anterior`, `uuid_versao`, `itens_pedido` (quantos itens de pedido acompanharam) e `alterado`.
+
 ---
 
 ### DELETE `/api/produtos/produto`
@@ -2431,6 +2459,26 @@ Rota separada, e nao um `?formato=ods` na de cima, porque o CONTEUDO difere:
 | formatacao | nenhuma | cabecalho, borda, largura de coluna e filtro da aba |
 
 A coluna `Meta` sai em branco no item previsto no PIT e `-` no restante: o codigo (`4.1`) nao existe no SCA e e preenchido a mao. O gerador do arquivo e `server/src/utils/ods_export.js`, sem dependencia externa.
+
+### GET `/api/mapoteca/relatorio/anuario`
+
+O **Anuario Estatistico** do mes: a Tabela 5.4.9 do "O Exercito em Numeros" (suprimento cartografico convencional e digital distribuido), que o 1o CGEO remete a DSG junto com o RTM. Query: `?ano=&mes=` (`mes` obrigatorio), mais `?cumulativo=true` para acumular de janeiro ate o mes. Recorte pela **data de atendimento** do pedido (a entrega), e nao pela data do pedido.
+
+Devolve `titulo`, `colunas`, `total_convencional`, `convencional[]`, `total_digital`, `digital[]` e `lacunas[]`. Cada linha tem o `rotulo` (o tipo de suprimento) e uma chave por coluna: `exercito`, `rm`, `ee_exercito`, `outras_forcas`, `orgao_publico`, `empresa_privada`, `prof_autonomo`.
+
+**Celula nula e celula zero dizem coisas diferentes.** Nula = o SCA nao tem essa fonte. Zero = nao houve entrega. As lacunas declaradas em `lacunas[]`:
+
+| Lacuna | Por que |
+|---|---|
+| colunas `rm` e `ee_exercito` | `mapoteca.tipo_cliente` separa OM do EB de OM de outra Forca, mas nao separa Regiao Militar de Estabelecimento de Ensino dentro do EB |
+| linhas Carta de orientacao, Mapa Indice, Mosaico, Ortofocarta | sem tipo correspondente em `dominio.tipo_produto`. Entrega desse feitio cai em **Produtos Diversos**, e nunca some |
+| linha Downloads BDGEx | contador do BDGEx, fora do controle do acervo |
+
+Classificacao de cada entrega: a LINHA sai do denominador da escala do produto do acervo (a personalizada usa `denominador_escala_especial`); escala fora da lista, ou item avulso sem produto, cai em Produtos Diversos; Ortoimagem sem escala cai em Imagem de Satelite. A foto aerea entregue por LAI nao vira item de acervo, e vem de `mapoteca.pedido.qtd_imagens` (so nos pedidos SEM item, para nao contar a mesma entrega duas vezes).
+
+### GET `/api/mapoteca/relatorio/anuario_ods`
+
+O mesmo Anuario ja no arquivo que sobe para a DSG (`Anuario_Estatistico_1CGEO_<MM>_<Mes>_<ano>.ods`), com o titulo antes do cabecalho e o rodape com a fonte e as lacunas. Celula sem fonte sai `-`. Sem `?formato=json`: o corpo e binario.
 
 ### GET `/api/mapoteca/relatorio/pedidos_resumo`
 

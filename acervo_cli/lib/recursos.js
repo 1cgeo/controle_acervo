@@ -136,6 +136,24 @@ const RECURSOS = {
         envelope: 'mensagem',
         objetoInteiro: true
       },
+      'corrigir-uuid-versao': {
+        metodo: 'POST',
+        caminho: '/produtos/versao/uuid',
+        corpo: 'versaoUuidCorrecao',
+        acesso: 'admin',
+        envelope: 'lista',
+        confirmar: {
+          campo: 'correcoes',
+          subcampo: 'versao_id',
+          motivo: 'troca o IDENTIFICADOR da versao no acervo. Use so quando o ' +
+            'BDGEx ja publicou o produto com outro uuid e o acervo e que precisa ' +
+            'se acertar. O item de pedido da mapoteca acompanha por cascata, e o ' +
+            'uuid antigo fica no metadado da versao'
+        },
+        nota: 'o PUT de versao RECUSA trocar uuid_versao, e continua certo: la o ' +
+          'campo chega junto de vinte outros e a troca seria acidente. Esta rota ' +
+          'existe para a troca DELIBERADA, em lote, com motivo'
+      },
       'excluir-produto': {
         metodo: 'DELETE',
         caminho: '/produtos/produto',

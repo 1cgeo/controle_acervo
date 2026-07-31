@@ -141,6 +141,114 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
   });
 };
 
+/**
+ * Corrige o `uuid_versao` de uma ou mais versões para o identificador que o
+ * BDGEx já publicou.
+ *
+ * POR QUE existe uma rota só para isto. O `uuid_versao` identifica a versão nos
+ * DOIS lados: no acervo e na publicação. Quando a carga no BDGEx vem antes da
+ * catalogação (ou é refeita), quem já atribuiu o número é o BDGEx, e é o acervo
+ * que se acerta. Sem esta rota a única saída seria apagar e recadastrar a
+ * versão, o que perderia arquivo, relacionamento e histórico de pedido.
+ *
+ * O `atualizaVersao` continua RECUSANDO a troca, e continua certo: lá o
+ * uuid_versao chega junto de vinte outros campos, e trocá-lo seria acidente.
+ * Aqui a troca é o propósito declarado, com motivo obrigatório.
+ *
+ * O item de pedido que aponta a versão acompanha, pela cascata da chave
+ * estrangeira (migração 2026-07-31_uuid_versao_corrigivel.sql). Sem ela, o
+ * UPDATE falharia por integridade referencial.
+ *
+ * @param {Array<{versao_id: number, uuid_versao: string}>} correcoes
+ * @param {string} motivo - de onde saiu o identificador novo
+ * @param {string} usuarioUuid
+ * @returns {Promise<Array<{versao_id: number, uuid_anterior: string, uuid_versao: string, itens_pedido: number}>>}
+ */
+controller.corrigeUuidVersao = async (correcoes, motivo, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const ids = correcoes.map(c => c.versao_id);
+    const atuais = await t.any(
+      'SELECT id, uuid_versao, metadado FROM acervo.versao WHERE id IN ($1:csv)',
+      [ids]
+    );
+
+    if (atuais.length !== ids.length) {
+      const achados = atuais.map(v => Number(v.id));
+      const faltando = ids.filter(id => !achados.includes(id));
+      throw new AppError(
+        `As seguintes versões não foram encontradas: ${faltando.join(', ')}`,
+        httpCode.NotFound
+      );
+    }
+
+    const porId = new Map(atuais.map(v => [Number(v.id), v]));
+
+    // O uuid novo não pode já pertencer a OUTRA versão. A UNIQUE do banco pegaria
+    // isso, mas com mensagem de constraint; aqui o erro diz qual linha do lote
+    // está errada, que é o que quem manda o lote precisa saber.
+    const novos = correcoes.map(c => c.uuid_versao);
+    const ocupados = await t.any(
+      'SELECT id, uuid_versao FROM acervo.versao WHERE uuid_versao IN ($1:csv) AND id NOT IN ($2:csv)',
+      [novos, ids]
+    );
+    if (ocupados.length > 0) {
+      const lista = ocupados.map(o => `${o.uuid_versao} (versão ${o.id})`).join(', ');
+      throw new AppError(
+        `Estes identificadores já pertencem a outra versão: ${lista}`,
+        httpCode.Conflict
+      );
+    }
+
+    const resultado = [];
+    for (const c of correcoes) {
+      const atual = porId.get(c.versao_id);
+      if (atual.uuid_versao === c.uuid_versao) {
+        // Reenviar o mesmo valor não é erro: a rota é idempotente de propósito,
+        // porque um lote de 42 folhas pode ser reexecutado depois de uma falha
+        // parcial de rede.
+        resultado.push({
+          versao_id: c.versao_id,
+          uuid_anterior: atual.uuid_versao,
+          uuid_versao: c.uuid_versao,
+          itens_pedido: 0,
+          alterado: false
+        });
+        continue;
+      }
+
+      const itens = await t.one(
+        'SELECT COUNT(*)::int AS total FROM mapoteca.produto_pedido WHERE uuid_versao = $1',
+        [atual.uuid_versao]
+      );
+
+      // O identificador antigo fica registrado no metadado da própria versão: é
+      // a trilha de quem procurar pelo número velho num RTM antigo.
+      const metadado = Object.assign({}, atual.metadado || {}, {
+        uuid_versao_anterior: atual.uuid_versao,
+        uuid_versao_correcao_motivo: motivo,
+        uuid_versao_corrigido_em: new Date().toISOString()
+      });
+
+      await t.none(
+        `UPDATE acervo.versao
+         SET uuid_versao = $1, metadado = $2, data_modificacao = $3, usuario_modificacao_uuid = $4
+         WHERE id = $5`,
+        [c.uuid_versao, metadado, new Date(), usuarioUuid, c.versao_id]
+      );
+
+      resultado.push({
+        versao_id: c.versao_id,
+        uuid_anterior: atual.uuid_versao,
+        uuid_versao: c.uuid_versao,
+        itens_pedido: itens.total,
+        alterado: true
+      });
+    }
+
+    return resultado;
+  });
+};
+
 controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;

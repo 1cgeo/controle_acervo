@@ -66,6 +66,7 @@ ACOMPANHAMENTO
   mapoteca painel [--ano 2026]    resumo do ano (pedidos, entregas, OMs, custo)
   mapoteca relatorio              as abas da planilha de controle
   mapoteca relatorio detalhado --ano 2026 --csv    grava o CSV do servidor
+  mapoteca anuario --ano 2026 --mes 7 [--ods]      Anuario Estatistico (Tab 5.4.9)
   mapoteca localizador ABCD-EFGH-IJKL   consulta publica de um pedido
 
 RECURSOS  (${listarChaves().join(', ')})
@@ -107,6 +108,7 @@ const ROTEADOR = {
   pendentes: './comandos/relatorio',
   painel: './comandos/relatorio',
   relatorio: './comandos/relatorio',
+  anuario: './comandos/relatorio',
   localizador: './comandos/relatorio',
   login: './comandos/sessao',
   logout: './comandos/sessao',

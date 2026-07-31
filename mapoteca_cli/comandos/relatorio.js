@@ -28,6 +28,12 @@ function anoCorrente () {
   return new Date().getFullYear()
 }
 
+// Nome do mes no nome do arquivo do Anuario, como nos que ja subiram para a DSG.
+const NOME_MES = [
+  'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+]
+
 // ---------------------------------------------------------------------------
 
 async function pendentes (args, cfg) {
@@ -163,6 +169,63 @@ async function relatorio (args, cfg) {
 
 // ---------------------------------------------------------------------------
 
+// O Anuario Estatistico (Tabela 5.4.9 do "O Exercito em Numeros"), que sobe
+// para a DSG junto com o RTM. Nao entra no catalogo RELATORIOS porque nao e uma
+// aba da planilha de controle: e outro documento, com outro destinatario, e
+// exige o MES alem do ano.
+async function anuario (args, cfg) {
+  const flags = args.flags
+  const ano = argsLib.numero(flags, 'ano', anoCorrente())
+  const mes = argsLib.numero(flags, 'mes', null)
+  if (mes === null) {
+    throw new Error('Informe o mes: mapoteca anuario --ano 2026 --mes 7')
+  }
+
+  if (flags.ods) {
+    const mm = String(mes).padStart(2, '0')
+    const destino = flags.ods === true
+      ? `Anuario_Estatistico_1CGEO_${mm}_${NOME_MES[mes - 1]}_${ano}.ods`
+      : flags.ods
+    const r = await http.autenticada(
+      cfg, 'GET', '/mapoteca/relatorio/anuario_ods' + http.query({ ano, mes }),
+      { binario: true }
+    )
+    fs.writeFileSync(destino, r.bytes)
+    return { texto: `Anuario de ${String(mes).padStart(2, '0')}/${ano} salvo em ${destino} (${r.bytes.length} bytes).` }
+  }
+
+  const r = await http.autenticada(
+    cfg, 'GET', '/mapoteca/relatorio/anuario' + http.query({ ano, mes })
+  )
+  const a = r.dados || {}
+  if (flags.json) return { texto: JSON.stringify(a, null, 2) }
+
+  const linhas = [
+    a.total_convencional, ...(a.convencional || []),
+    a.total_digital, ...(a.digital || [])
+  ].filter(Boolean)
+
+  const out = saida.lista(linhas, {
+    formato: flags.formato || 'tsv',
+    campos: argsLib.lista(flags.campos),
+    padrao: [
+      'rotulo', 'exercito', 'rm', 'ee_exercito', 'outras_forcas',
+      'orgao_publico', 'empresa_privada', 'prof_autonomo'
+    ]
+  })
+
+  // A lacuna vai junto do numero, e nao num rodape que ninguem le: celula vazia
+  // aqui quer dizer "o SCA nao tem essa fonte", e nao "nao houve entrega".
+  const rodape = ['', 'O que o SCA nao sabe preencher:']
+    .concat((a.lacunas || []).map(l => `  - ${l}`))
+  return {
+    texto: [out.texto].concat(rodape).join('\n'),
+    avisos: out.avisos
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 async function localizador (args, cfg) {
   const flags = args.flags
   const codigo = String(args._[1] || '').toUpperCase()
@@ -207,7 +270,7 @@ async function localizador (args, cfg) {
 
 // ---------------------------------------------------------------------------
 
-const VERBOS = { pendentes, painel, relatorio, localizador }
+const VERBOS = { pendentes, painel, relatorio, anuario, localizador }
 
 async function executar (args, cfg) {
   const fn = VERBOS[args._[0]]

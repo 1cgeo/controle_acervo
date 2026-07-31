@@ -9,6 +9,7 @@ const { verifyPerfil } = require('../login')
 
 const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
+const anuarioCtrl = require('./anuario_ctrl')
 const mapotecaSchema = require('./mapoteca_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
 const auditoriaCtrl = require('./auditoria_ctrl')
@@ -864,6 +865,58 @@ router.get(
       aba: 'META4_DETALHADA',
       colunas: relatorioCtrl.COLUNAS_META4_ODS,
       linhas: relatorioCtrl.paraAbaMeta4(dados)
+    })
+  })
+)
+
+// --- Anuário Estatístico (Tabela 5.4.9 do "O Exército em Números") ----------
+//
+// Sobe para a DSG todo mês, junto com o RTM. Duas rotas, mesmo dado: a JSON
+// alimenta o preview em tela, e a .ods entrega o arquivo pronto.
+
+router.get(
+  '/relatorio/anuario',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({ query: mapotecaSchema.anuarioQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await anuarioCtrl.getAnuarioEstatistico(req.query)
+    const msg = 'Anuário Estatístico gerado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/relatorio/anuario_ods',
+  verifyPerfil('consulta', 'mapoteca'),
+  schemaValidation({ query: mapotecaSchema.anuarioQuery }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, mes } = req.query
+    const anuario = await anuarioCtrl.getAnuarioEstatistico(req.query)
+    // Célula sem fonte sai como '-', e não vazia nem 0: o arquivo histórico
+    // escreve '-' onde não houve o que contar, e vazio esconderia a lacuna.
+    const linhas = anuarioCtrl.paraPlanilha(anuario).map(linha => {
+      const saida = { rotulo: linha.rotulo }
+      for (const coluna of anuarioCtrl.COLUNAS_ANUARIO) {
+        saida[coluna.key] = linha[coluna.key] == null ? '-' : linha[coluna.key]
+      }
+      return saida
+    })
+    // Nome no padrão dos arquivos que já subiram para a DSG
+    // (Anuario_Estatistico_1CGEO_06_Junho_2026.ods): número E nome do mês.
+    const nome = `Anuario_Estatistico_1CGEO_${String(mes).padStart(2, '0')}_${anuarioCtrl.NOME_MES[mes - 1]}_${ano}.ods`
+    return odsExport.sendOds(res, nome, {
+      aba: '1º CGEO',
+      titulo: anuario.titulo,
+      colunas: anuarioCtrl.COLUNAS_ANUARIO_ODS,
+      linhas,
+      // Tabela de leitura, não base de dados: botão de filtro aqui só atrapalha.
+      filtro: false,
+      rodape: [
+        'Fonte: Departamento de Ciência e Tecnologia/ Diretoria do Serviço Geográfico.',
+        'EE – Estabelecimento de Ensino',
+        'BDGEx – Banco de Dados Geográficos do Exército',
+        ...anuario.lacunas.map(l => `Lacuna: ${l}`)
+      ]
     })
   })
 )

@@ -2,12 +2,34 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { monthName, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
-import { getRpcmtecAcervo, downloadRpcmtecDocx } from '@modules/mapoteca/services/mapoteca-service.js';
+import {
+  getRpcmtecAcervo,
+  downloadRpcmtecDocx,
+  getAnuario,
+  downloadAnuarioOds,
+} from '@modules/mapoteca/services/mapoteca-service.js';
 import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 const num = (key) => (row) => formatNumber(row[key] ?? 0);
 const txt = (key) => (row) => row[key] ?? '-';
 const pct = (key) => (row) => (row[key] == null ? '-' : `${row[key]}%`);
+
+// No Anuário, célula nula quer dizer "o SCA não tem essa fonte", e zero quer
+// dizer "não houve entrega". Um `?? 0` apagaria a diferença, que é justamente a
+// que o rodapé do arquivo declara.
+const numOuTraco = (key) => (row) => (row[key] == null ? '-' : formatNumber(row[key]));
+
+// As 8 colunas da Tabela 5.4.9, na ordem do arquivo que sobe para a DSG.
+const COLUNAS_ANUARIO = [
+  { key: 'rotulo', label: 'Suprimento de cartografia', render: txt('rotulo') },
+  { key: 'exercito', label: 'Exército', render: numOuTraco('exercito') },
+  { key: 'rm', label: 'RM', render: numOuTraco('rm') },
+  { key: 'ee_exercito', label: 'EE do Exército', render: numOuTraco('ee_exercito') },
+  { key: 'outras_forcas', label: 'Outras Forças', render: numOuTraco('outras_forcas') },
+  { key: 'orgao_publico', label: 'Órgão Público', render: numOuTraco('orgao_publico') },
+  { key: 'empresa_privada', label: 'Empresa Privada', render: numOuTraco('empresa_privada') },
+  { key: 'prof_autonomo', label: 'Prof. Autônomo', render: numOuTraco('prof_autonomo') },
+];
 
 // Colunas do detalhe 2.4/2.7, no formato exato do RPCMTec histórico.
 const COLUNAS_DETALHE = [
@@ -124,6 +146,14 @@ export async function renderRpcMtec(container) {
     onClick: () => baixarDocx(),
   }, [svgIcon(ICONS.print, 16), 'Baixar DOCX']);
 
+  // O Anuário sobe para a DSG junto com o RTM, e sai do mesmo mês desta tela.
+  // Fica aqui, e não numa página própria, porque é a mesma tarefa mensal.
+  const anuarioBtn = el('button', {
+    className: 'btn',
+    type: 'button',
+    onClick: () => baixarAnuario(),
+  }, [svgIcon(ICONS.print, 16), 'Baixar Anuário (ODS)']);
+
   const toolbar = el('div', { className: 'rpcm-toolbar' }, [
     el('div', { className: 'rpcm-toolbar__field' }, [
       el('label', { className: 'rpcm-toolbar__label', for: 'rpcmtec-mes', textContent: 'Mês' }),
@@ -134,6 +164,7 @@ export async function renderRpcMtec(container) {
       anoLabel,
     ]),
     el('div', { className: 'rpcm-toolbar__spacer' }),
+    anuarioBtn,
     baixarBtn,
   ]);
 
@@ -153,12 +184,36 @@ export async function renderRpcMtec(container) {
     ]);
   });
 
+  const anuarioTable = createDataTable({
+    columns: COLUNAS_ANUARIO,
+    rows: [],
+    pageSize: 40,
+    emptyMessage: 'Sem entregas no mês',
+  });
+
+  // As lacunas que o SCA declara não saber preencher. Ficam à vista na tela, e
+  // não só no rodapé do arquivo: quem confere o número precisa saber onde ele
+  // não existe.
+  const anuarioLacunas = el('ul', { className: 'dashboard-section__nota' });
+
+  const blocoAnuario = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', {
+        className: 'dashboard-section__title',
+        textContent: 'Anuário Estatístico - Tabela 5.4.9 (sobe para a DSG)',
+      }),
+    ]),
+    anuarioTable.element,
+    anuarioLacunas,
+  ]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header page__header--column' }, [
       el('h1', { className: 'page__title', textContent: 'RPCMTec - Seção Acervo' }),
       toolbar,
     ]),
     ...blocos,
+    blocoAnuario,
   ]);
   container.appendChild(page);
 
@@ -183,6 +238,31 @@ export async function renderRpcMtec(container) {
       for (const def of SECOES) tables[def.chave].update({ rows: [], loading: false });
       showError(err.message || 'Erro ao gerar o RPCMTec');
     }
+    await gerarAnuario();
+  }
+
+  // Chamada à parte da do RPCMTec, de propósito: o Anuário é outro relatório,
+  // com outra rota, e uma falha nele não pode apagar as tabelas do RPCMTec.
+  async function gerarAnuario() {
+    anuarioTable.update({ loading: true });
+    try {
+      const a = await getAnuario(getParams());
+      if (disposed) return;
+      const rows = [
+        a.total_convencional,
+        ...a.convencional,
+        a.total_digital,
+        ...a.digital,
+      ];
+      anuarioTable.update({ rows, loading: false });
+      anuarioLacunas.replaceChildren(
+        ...(a.lacunas || []).map((l) => el('li', { textContent: l })),
+      );
+    } catch (err) {
+      if (disposed) return;
+      anuarioTable.update({ rows: [], loading: false });
+      showError(err.message || 'Erro ao gerar o Anuário Estatístico');
+    }
   }
 
   async function baixarDocx() {
@@ -196,11 +276,23 @@ export async function renderRpcMtec(container) {
     }
   }
 
+  async function baixarAnuario() {
+    anuarioBtn.disabled = true;
+    try {
+      await downloadAnuarioOds(getParams());
+    } catch (err) {
+      showError(err.message || 'Erro ao baixar o Anuário');
+    } finally {
+      anuarioBtn.disabled = false;
+    }
+  }
+
   await gerar();
 
   return () => {
     disposed = true;
     offAno();
     for (const def of SECOES) tables[def.chave]._cleanup();
+    anuarioTable._cleanup();
   };
 }

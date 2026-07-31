@@ -425,6 +425,14 @@ models.relatorioQuery = models.anoQuery.keys({
   formato: Joi.string().valid('json', 'csv').default('json')
 })
 
+// Esquema de query do Anuário Estatístico (Tabela 5.4.9): o mês fechado que sobe
+// para a DSG. O padrão é o MÊS isolado, que é o recorte do arquivo histórico;
+// `cumulativo=true` acumula de janeiro até o mês.
+models.anuarioQuery = models.anoQuery.keys({
+  mes: Joi.number().integer().min(1).max(12).required(),
+  cumulativo: Joi.boolean().default(false)
+})
+
 // --- Anexos do pedido -------------------------------------------------------
 
 // Parâmetro de rota do pedido (id) para listar/anexar anexos.

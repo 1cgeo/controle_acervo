@@ -164,6 +164,43 @@ describe('ods_export', () => {
     })
   })
 
+  // O Anuário Estatístico (Tabela 5.4.9) não é uma tabela crua: ele leva um
+  // título antes do cabeçalho e um rodapé com a fonte e as lacunas declaradas.
+  describe('título e rodapé', () => {
+    it('sem título, o cabeçalho continua sendo a primeira linha', () => {
+      const xml = gerar()['content.xml'].conteudo.toString()
+      const primeira = xml.slice(xml.indexOf('<table:table-row>'))
+      expect(primeira).toContain('OM Destino')
+    })
+
+    it('o título entra antes do cabeçalho, com uma linha em branco entre eles', () => {
+      const xml = gerar({ titulo: 'Tabela 5.4.9' })['content.xml'].conteudo.toString()
+      expect(xml.indexOf('Tabela 5.4.9')).toBeLessThan(xml.indexOf('OM Destino'))
+      // Título, linha em branco, cabeçalho, 2 dados = 5 linhas.
+      expect(xml.match(/<table:table-row>/g)).toHaveLength(5)
+    })
+
+    it('com título, a faixa do filtro desce para a linha do CABEÇALHO', () => {
+      // Sem o deslocamento, o filtro tomaria a linha do título como cabeçalho e
+      // a planilha abriria com o filtro na linha errada.
+      const xml = gerar({ titulo: 'Tabela 5.4.9' })['content.xml'].conteudo.toString()
+      expect(xml).toContain('table:target-range-address="META4_DETALHADA.A3:META4_DETALHADA.D5"')
+    })
+
+    it('sem título, a faixa do filtro começa em A1', () => {
+      const xml = gerar()['content.xml'].conteudo.toString()
+      expect(xml).toContain('table:target-range-address="META4_DETALHADA.A1:META4_DETALHADA.D3"')
+    })
+
+    it('o rodapé entra depois dos dados, uma linha por texto', () => {
+      const xml = gerar({ rodape: ['Fonte: DCT/DSG', 'EE - Estabelecimento de Ensino'] })['content.xml'].conteudo.toString()
+      expect(xml.indexOf('Fonte: DCT/DSG')).toBeGreaterThan(xml.indexOf('6º RCB'))
+      expect(xml).toContain('EE - Estabelecimento de Ensino')
+      // Cabeçalho, 2 dados, branco, 2 de rodapé = 6 linhas.
+      expect(xml.match(/<table:table-row>/g)).toHaveLength(6)
+    })
+  })
+
   describe('letraColuna', () => {
     it('numera como a planilha (A, Z, AA)', () => {
       expect(letraColuna(0)).toBe('A')

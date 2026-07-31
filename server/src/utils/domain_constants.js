@@ -72,6 +72,9 @@ const SUBTIPO_PRODUTO = {
 const TIPO_PRODUTO = {
   CARTA_TOPOGRAFICA: 2,
   CARTA_ORTOIMAGEM: 3,
+  // Ortoimagem crua (sem moldura de carta). É o que o Anuário Estatístico conta
+  // na linha "Imagem de Satélite" / "Imagem de Satélite / Fotografia aérea".
+  ORTOIMAGEM: 4,
   CARTA_TEMATICA: 7,
   PONTO_CONTROLE: 10
 }

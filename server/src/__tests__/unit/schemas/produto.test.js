@@ -245,4 +245,66 @@ describe('Produto Schemas', () => {
       expect('palavras_chave' in value).toBe(false)
     })
   })
+
+  // A correção do uuid_versao para o identificador que o BDGEx já publicou.
+  // Vive numa rota própria porque no PUT de versão o uuid_versao é IMUTÁVEL.
+  describe('versaoUuidCorrecao', () => {
+    const valido = {
+      correcoes: [
+        { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
+        { versao_id: 6654, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
+      ],
+      motivo: 'Identificador lido do BDGEx Op'
+    }
+
+    it('aceita um lote de correções com motivo', () => {
+      const { error } = produtoSchema.versaoUuidCorrecao.validate(valido)
+      expect(error).toBeUndefined()
+    })
+
+    it('exige o motivo: correção sem procedência é número trocado sem história', () => {
+      const { error } = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido, motivo: undefined
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('recusa lote vazio', () => {
+      const { error } = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido, correcoes: []
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('recusa o mesmo uuid para duas versões (a UNIQUE do banco não permitiria)', () => {
+      const mesmo = '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d'
+      const { error } = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido,
+        correcoes: [
+          { versao_id: 6653, uuid_versao: mesmo },
+          { versao_id: 6654, uuid_versao: mesmo }
+        ]
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('recusa a mesma versão duas vezes no lote', () => {
+      const { error } = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido,
+        correcoes: [
+          { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
+          { versao_id: 6653, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
+        ]
+      })
+      expect(error).toBeDefined()
+    })
+
+    it('recusa o que não é uuid', () => {
+      const { error } = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido,
+        correcoes: [{ versao_id: 6653, uuid_versao: 'nao-e-uuid' }]
+      })
+      expect(error).toBeDefined()
+    })
+  })
 })

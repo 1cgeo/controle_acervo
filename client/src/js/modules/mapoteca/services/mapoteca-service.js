@@ -516,6 +516,38 @@ export function downloadMeta4Ods(ano) {
 }
 
 // ---------------------------------------------------------------------------
+// Anuário Estatístico (Tabela 5.4.9 do "O Exército em Números")
+// ---------------------------------------------------------------------------
+
+/**
+ * Preview em tela do Anuário Estatístico do mês: os dois blocos (Convencional e
+ * Digital) com o total de cada um, e as lacunas que o SCA declara não saber
+ * preencher.
+ * @param {{ano:number, mes:number}} params
+ */
+export function getAnuario({ ano, mes }) {
+  return apiGet(`${BASE}/relatorio/anuario?ano=${ano}&mes=${mes}`);
+}
+
+/**
+ * Baixa o Anuário Estatístico do mês em .ods, na forma do arquivo que sobe para
+ * a DSG.
+ * @param {{ano:number, mes:number}} params
+ */
+const NOME_MES = [
+  'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+export function downloadAnuarioOds({ ano, mes }) {
+  const mm = String(mes).padStart(2, '0');
+  return apiDownload(
+    `${BASE}/relatorio/anuario_ods?ano=${ano}&mes=${mes}`,
+    `Anuario_Estatistico_1CGEO_${mm}_${NOME_MES[mes - 1]}_${ano}.ods`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard (cache 1 min)
 // ---------------------------------------------------------------------------
 

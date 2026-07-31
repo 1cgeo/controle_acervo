@@ -22,9 +22,21 @@ const DADOS = {
   totaisConsolidados: [{ indicador: 'Total geral', mes: 7, ano: 52 }],
 };
 
+// O Anuario Estatistico vem de OUTRA rota, e a tela o pede junto do RPCMTec
+// porque e a mesma tarefa mensal. Celula nula = "o SCA nao tem essa fonte".
+const ANUARIO = {
+  colunas: [],
+  total_convencional: { rotulo: 'Total (Convencional)', exercito: 113, rm: null },
+  convencional: [{ rotulo: 'Escala 1:50 000', exercito: 14, rm: null }],
+  total_digital: { rotulo: 'Total (Digital)', exercito: 0, rm: null },
+  digital: [{ rotulo: 'Imagem de Satélite / Fotografia aérea', exercito: 0, rm: null }],
+  lacunas: ['RM e EE do Exército: o cadastro de cliente do SCA não separa.'],
+};
+
 describe('renderRpcMtec', () => {
   beforeEach(() => {
     svc.getRpcmtecAcervo.mockResolvedValue(DADOS);
+    svc.getAnuario.mockResolvedValue(ANUARIO);
   });
 
   test('gera o preview do mes/ano corrente ao abrir', async () => {
@@ -48,10 +60,52 @@ describe('renderRpcMtec', () => {
     await flush();
 
     const titulos = [...container.querySelectorAll('.dashboard-section__title')].map(e => e.textContent);
-    expect(titulos).toHaveLength(8);
+    // 8 do RPCMTec mais o Anuario Estatistico, que sobe para a DSG no mesmo mes.
+    expect(titulos).toHaveLength(9);
     expect(titulos[0]).toContain('Estado do Acervo');
+    expect(titulos[8]).toContain('Anuário Estatístico');
     expect(container.textContent).toContain('Carta Topográfica');
     expect(container.textContent).toContain('Papel A0');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o Anuario abre com o total de cada bloco e declara as lacunas', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderRpcMtec(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(svc.getAnuario).toHaveBeenCalled();
+    expect(container.textContent).toContain('Total (Convencional)');
+    expect(container.textContent).toContain('Total (Digital)');
+    expect(container.textContent).toContain('o cadastro de cliente do SCA não separa');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o botao do Anuario baixa o ODS pelo service', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderRpcMtec(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    [...container.querySelectorAll('button')].find(b => b.textContent.includes('Anuário')).click();
+    await flush();
+
+    expect(svc.downloadAnuarioOds).toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Sao duas rotas. Se o Anuario derrubasse as tabelas do RPCMTec, uma falha
+  // num relatorio apagaria o outro da tela.
+  test('erro no Anuario nao apaga as tabelas do RPCMTec', async () => {
+    svc.getAnuario.mockRejectedValueOnce(new Error('Erro no Anuário'));
+    const container = document.createElement('div');
+    const cleanup = await renderRpcMtec(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Carta Topográfica');
+    expect(container.textContent).toContain('Sem entregas no mês');
 
     if (typeof cleanup === 'function') cleanup();
   });

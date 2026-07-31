@@ -40,6 +40,30 @@ router.put(
   })
 )
 
+// Corrige o identificador da versao para o que o BDGEx ja publicou.
+//
+// POST, e nao PUT em /versao, de proposito: no PUT o uuid_versao segue IMUTAVEL,
+// porque la ele chega junto de vinte outros campos e troca-lo seria acidente.
+// Aqui a troca e o proposito declarado, vem em lote e exige motivo.
+//
+// Perfil GERENTE: mexe no identificador com que o produto foi publicado, e o
+// item de pedido que aponta a versao acompanha por cascata.
+router.post(
+  '/versao/uuid',
+  verifyPerfil('gerente'),
+  schemaValidation({
+    body: produtoSchema.versaoUuidCorrecao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await produtoCtrl.corrigeUuidVersao(
+      req.body.correcoes, req.body.motivo, req.usuarioUuid
+    )
+    const alteradas = dados.filter(d => d.alterado).length
+    const msg = `Identificador corrigido em ${alteradas} versão(ões)`
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 router.delete(
   '/produto',
   verifyPerfil('gerente'),

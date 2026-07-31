@@ -280,10 +280,17 @@ const MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8"?>
  *   `largura` é uma medida ODF ('2.115cm'); `tipo` decide como o valor é gravado.
  * @param {Array<Object>} opts.linhas - uma linha por objeto, lida por `key`
  * @param {boolean} [opts.filtro=true] - botões de filtro no cabeçalho
+ * @param {string} [opts.titulo] - uma linha de texto ANTES do cabeçalho, na
+ *   primeira coluna. O ODF permite mesclar célula, e este módulo não mescla (ver
+ *   o cabeçalho do arquivo): o texto transborda para a direita, que é como o
+ *   Calc mostra célula longa em linha vazia.
+ * @param {Array<string>} [opts.rodape] - linhas de texto DEPOIS dos dados,
+ *   separadas por uma linha em branco. Serve para a fonte e para a nota de
+ *   rodapé que a tabela oficial exige.
  * @param {Date} [opts.data] - carimbo de tempo do ZIP (fixo em teste)
  * @returns {Buffer} o arquivo .ods
  */
-const criarOds = ({ aba, colunas, linhas = [], filtro = true, data } = {}) => {
+const criarOds = ({ aba, colunas, linhas = [], filtro = true, titulo, rodape = [], data } = {}) => {
   if (!aba) throw new Error('criarOds: falta o nome da aba')
   if (!Array.isArray(colunas) || colunas.length === 0) {
     throw new Error('criarOds: falta a definição das colunas')
@@ -304,6 +311,18 @@ const criarOds = ({ aba, colunas, linhas = [], filtro = true, data } = {}) => {
     .map(c => celula(c.label, 'texto', 'ceCab'))
     .join('')}</table:table-row>`
 
+  // Linha solta (título, rodapé): texto na primeira coluna, o resto vazio e sem
+  // borda, para não desenhar uma tabela onde não há tabela.
+  const linhaSolta = texto =>
+    `<table:table-row><table:table-cell office:value-type="string"><text:p>${escaparXml(texto)}</text:p></table:table-cell></table:table-row>`
+
+  const linhaBranco = '<table:table-row><table:table-cell/></table:table-row>'
+
+  const linhaTitulo = titulo ? linhaSolta(titulo) + linhaBranco : ''
+  const linhasRodape = rodape.length
+    ? linhaBranco + rodape.map(linhaSolta).join('')
+    : ''
+
   const linhasDados = linhas
     .map(linha => `<table:table-row>${colunas
       .map(c => {
@@ -315,10 +334,14 @@ const criarOds = ({ aba, colunas, linhas = [], filtro = true, data } = {}) => {
     .join('')
 
   const ultimaColuna = letraColuna(colunas.length - 1)
-  const ultimaLinha = linhas.length + 1
+  // O título ocupa duas linhas (o texto e uma em branco), então o cabeçalho e a
+  // faixa do filtro descem junto. Sem esse deslocamento o filtro pegaria a linha
+  // do título como cabeçalho.
+  const primeiraLinha = titulo ? 3 : 1
+  const ultimaLinha = primeiraLinha + linhas.length
   const faixaFiltro = filtro
     ? `<table:database-ranges>
-   <table:database-range table:name="__Anonymous_Sheet_DB__0" table:target-range-address="${aba}.A1:${aba}.${ultimaColuna}${ultimaLinha}" table:display-filter-buttons="true"/>
+   <table:database-range table:name="__Anonymous_Sheet_DB__0" table:target-range-address="${aba}.A${primeiraLinha}:${aba}.${ultimaColuna}${ultimaLinha}" table:display-filter-buttons="true"/>
   </table:database-ranges>`
     : ''
 
@@ -330,8 +353,10 @@ const criarOds = ({ aba, colunas, linhas = [], filtro = true, data } = {}) => {
   <office:spreadsheet>
    <table:table table:name="${escaparXml(aba)}">
     ${declColunas}
+    ${linhaTitulo}
     ${linhaCabecalho}
     ${linhasDados}
+    ${linhasRodape}
    </table:table>
    ${faixaFiltro}
   </office:spreadsheet>
