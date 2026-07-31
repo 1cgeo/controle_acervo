@@ -169,8 +169,19 @@ async function executar (args, cfg) {
   }
   base.id = Number(id)
 
-  // ---- 2. o guardrail do default silencioso ------------------------------
   const schemaJoi = alvo.schema()
+
+  // Desfaz a stringificacao do driver nos campos numericos `.strict()`. Coluna
+  // BIGINT volta como STRING no JSON (ela nao cabe no numero do JavaScript sem
+  // risco), entao `lote_id` lido do proprio servidor chega "107" e o PUT o
+  // recusa. Vale SO para o que veio da leitura: string que o usuario digitou em
+  // --set continua sendo erro dele, e o Joi vai dizer isso.
+  for (const campo of esquema.numerosStrict(schemaJoi)) {
+    const v = base[campo]
+    if (typeof v === 'string' && /^-?\d+$/.test(v)) base[campo] = Number(v)
+  }
+
+  // ---- 2. o guardrail do default silencioso ------------------------------
   const ausentes = esquema.defaultsAusentes(schemaJoi, base)
     .filter(a => !(a.campo in mudancas))
 

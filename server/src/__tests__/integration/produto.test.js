@@ -79,6 +79,60 @@ describe('Produto Integration', () => {
       await expect(createVersao(produto.id, { versao: '1-DSG' }))
         .rejects.toThrow()
     })
+
+    // O rotulo da versao e unico por (produto, versao, SUBTIPO), e nao por
+    // (produto, versao). O produto que tem a Carta Ortoimagem SCN (3) e a
+    // Especial (27), ambas "1ª Edição", e legitimo: e o caso dos 42 mosaicos
+    // RADAMBRASIL. Ate 2026-07-31 a checagem amigavel do atualizaVersao ignorava
+    // o subtipo e devolvia 409 ao editar QUALQUER uma das duas.
+    it('edita a versao de um produto que tem o MESMO rotulo em outro subtipo', async () => {
+      const produto = await createProduto({ tipo_produto_id: 3 })
+      const scn = await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 3 })
+      const especial = await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 27 })
+      expect(especial.id).not.toBe(scn.id)
+
+      const atual = await conn.one('SELECT * FROM acervo.versao WHERE id = $1', [especial.id])
+      await produtoCtrl.atualizaVersao({
+        id: Number(especial.id),
+        versao: atual.versao,
+        nome: atual.nome,
+        tipo_versao_id: atual.tipo_versao_id,
+        subtipo_produto_id: atual.subtipo_produto_id,
+        descricao: atual.descricao || '',
+        metadado: atual.metadado || {},
+        lote_id: atual.lote_id === null ? null : Number(atual.lote_id),
+        orgao_produtor: atual.orgao_produtor,
+        palavras_chave: ['radambrasil'],
+        data_criacao: atual.data_criacao,
+        data_edicao: atual.data_edicao
+      }, ADMIN_UUID)
+
+      const depois = await conn.one('SELECT palavras_chave FROM acervo.versao WHERE id = $1', [especial.id])
+      expect(depois.palavras_chave).toEqual(['radambrasil'])
+    })
+
+    it('segue recusando o MESMO rotulo no MESMO subtipo', async () => {
+      const produto = await createProduto({ tipo_produto_id: 3 })
+      await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 3 })
+      const outra = await createVersao(produto.id, { versao: '1ª Edição', subtipo_produto_id: 27 })
+
+      const atual = await conn.one('SELECT * FROM acervo.versao WHERE id = $1', [outra.id])
+      await expect(produtoCtrl.atualizaVersao({
+        id: Number(outra.id),
+        versao: atual.versao,
+        nome: atual.nome,
+        tipo_versao_id: atual.tipo_versao_id,
+        // muda o subtipo para o da irma: agora COLIDE de verdade
+        subtipo_produto_id: 3,
+        descricao: atual.descricao || '',
+        metadado: atual.metadado || {},
+        lote_id: atual.lote_id === null ? null : Number(atual.lote_id),
+        orgao_produtor: atual.orgao_produtor,
+        palavras_chave: atual.palavras_chave || [],
+        data_criacao: atual.data_criacao,
+        data_edicao: atual.data_edicao
+      }, ADMIN_UUID)).rejects.toThrow(/Já existe a versão/)
+    })
   })
 
   describe('Identidade do produto pelo subtipo (militar = produto proprio)', () => {

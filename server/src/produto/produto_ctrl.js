@@ -111,16 +111,23 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
       body: versao
     });
 
-    // Espelha a UNIQUE unique_version_per_product com erro amigável
+    // Espelha a UNIQUE unique_version_per_product com erro amigável.
+    //
+    // O SUBTIPO faz parte da chave, e omiti-lo aqui tornava esta checagem mais
+    // rígida que a constraint que ela diz espelhar: o produto que tem a Carta
+    // Ortoimagem SCN e a Especial, ambas rotuladas "1ª Edição" (legítimo, e é o
+    // que a UNIQUE permite), passava a REJEITAR qualquer edição de qualquer uma
+    // das duas, com 409. Apareceu ao marcar palavra-chave nos mosaicos
+    // RADAMBRASIL: 16 dos 42 produtos têm as duas versões, e os 16 falharam.
     const versaoExistente = await t.oneOrNone(
       `SELECT id FROM acervo.versao
        WHERE produto_id = (SELECT produto_id FROM acervo.versao WHERE id = $1)
-       AND versao = $2 AND id != $1`,
-      [versao.id, versao.versao]
+       AND versao = $2 AND subtipo_produto_id = $3 AND id != $1`,
+      [versao.id, versao.versao, versao.subtipo_produto_id]
     );
     if (versaoExistente) {
       throw new AppError(
-        `Já existe a versão "${versao.versao}" para este produto`,
+        `Já existe a versão "${versao.versao}" para este produto neste subtipo`,
         httpCode.Conflict
       );
     }

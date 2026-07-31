@@ -442,6 +442,21 @@ function defaultsAusentes (schemaJoi, base) {
 }
 
 /**
+ * Nomes dos campos NUMERICOS declarados `.strict()`.
+ *
+ * Existe por causa do driver: coluna BIGINT/BIGSERIAL do Postgres volta como
+ * STRING no JSON (ela nao cabe no numero do JavaScript sem risco). Entao um
+ * `lote_id` lido do proprio servidor volta como "107", e o Joi `.strict()` do
+ * PUT o recusa. Quem le-altera-reenvia precisa desfazer essa stringificacao, e
+ * so nela: string que veio do usuario continua sendo erro dele.
+ */
+function numerosStrict (schemaJoi) {
+  return camposDe(schemaJoi)
+    .filter(c => /^int|^number/.test(c.tipo) && c.notas.some(n => n.startsWith('strict')))
+    .map(c => c.nome)
+}
+
+/**
  * Mensagem de erro que ENSINA: alem do que falhou, imprime a linha de contrato
  * exatamente dos campos que falharam. Evita que o agente tenha que reler o
  * contrato inteiro para consertar um campo.
@@ -486,6 +501,7 @@ module.exports = {
   validarCorpo,
   validarQuery,
   defaultsAusentes,
+  numerosStrict,
   explicarErro,
   OPCOES_CORPO,
   OPCOES_QUERY
