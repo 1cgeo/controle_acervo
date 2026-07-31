@@ -141,6 +141,32 @@ controller.getProdutoById = async (produtoId) => {
   return produto;
 };
 
+/**
+ * Metadado da miniatura de uma versao, SEM o binario.
+ *
+ * Existe separado da leitura do conteudo porque e ele que decide o 304: a
+ * revalidacao do navegador precisa comparar a etiqueta, e nao trazer os 55 KB
+ * de imagem para depois joga-los fora.
+ */
+controller.getMiniaturaMeta = async versaoId => {
+  return db.conn.oneOrNone(
+    `SELECT versao_id, formato, largura, altura, erro,
+            length(conteudo) AS bytes,
+            data_geracao
+     FROM acervo.miniatura_versao
+     WHERE versao_id = $1`,
+    [versaoId]
+  );
+};
+
+controller.getMiniaturaConteudo = async versaoId => {
+  const linha = await db.conn.oneOrNone(
+    `SELECT conteudo FROM acervo.miniatura_versao WHERE versao_id = $1`,
+    [versaoId]
+  );
+  return linha ? linha.conteudo : null;
+};
+
 controller.getProdutoDetailedById = async produtoId => {
   return db.conn.task(async t => {
     // Primeiro, obter informações básicas do produto
@@ -199,10 +225,21 @@ controller.getProdutoDetailedById = async produtoId => {
         v.palavras_chave,
         l.nome AS lote_nome,
         l.pit AS lote_pit,
-        pr.nome AS projeto_nome
+        pr.nome AS projeto_nome,
+        -- A ficha mostra a imagem da carta. O indicador vem AQUI para a tela
+        -- saber, antes de pedir, se ha imagem: sem ele, toda versao sem
+        -- miniatura (produto vetorial, arquivo que falhou) custaria um 404 por
+        -- versao aberta. O teste de nulidade nao le o BYTEA, so o cabecalho da
+        -- linha, entao o indicador nao arrasta a imagem para esta resposta.
+        -- Largura e altura viajam junto para a tela reservar o espaco e nao
+        -- pular quando a imagem chega.
+        (mini.conteudo IS NOT NULL) AS tem_miniatura,
+        mini.largura AS miniatura_largura,
+        mini.altura AS miniatura_altura
       FROM acervo.versao v
       LEFT JOIN acervo.lote l ON v.lote_id = l.id
       LEFT JOIN acervo.projeto pr ON l.projeto_id = pr.id
+      LEFT JOIN acervo.miniatura_versao mini ON mini.versao_id = v.id
       WHERE v.produto_id = $1
       -- Da MAIS RECENTE para a mais antiga. Sem ordem, a ficha devolvia as
       -- versões na ordem física da tabela, e a busca já promete o contrário: o
@@ -217,15 +254,26 @@ controller.getProdutoDetailedById = async produtoId => {
     // Para cada versão, obter seus relacionamentos e arquivos
     for (const versao of versoes) {
       // Obter relacionamentos
+      // O id da versão relacionada, sozinho, não diz nada a quem lê a ficha:
+      // "Insumo da versão 4712" manda a pessoa procurar o que é 4712. Daí os
+      // JOINs, que trazem o rótulo da versão e o produto dono dela, para a tela
+      // poder escrever "Insumo: 2823-1-SE, 1ª Edição" e ainda ligar para lá.
       versao.relacionamentos = await t.any(`
         SELECT
           vr.id,
           CASE WHEN vr.versao_id_1 = $1 THEN vr.versao_id_2 ELSE vr.versao_id_1 END AS versao_relacionada_id,
           vr.tipo_relacionamento_id,
-          tr.nome AS tipo_relacionamento
+          tr.nome AS tipo_relacionamento,
+          vrel.versao AS versao_relacionada,
+          vrel.produto_id AS produto_relacionado_id,
+          COALESCE(NULLIF(BTRIM(prel.nome), ''), prel.mi, prel.inom) AS produto_relacionado
         FROM acervo.versao_relacionamento vr
         LEFT JOIN dominio.tipo_relacionamento tr ON vr.tipo_relacionamento_id = tr.code
+        LEFT JOIN acervo.versao vrel
+          ON vrel.id = CASE WHEN vr.versao_id_1 = $1 THEN vr.versao_id_2 ELSE vr.versao_id_1 END
+        LEFT JOIN acervo.produto prel ON prel.id = vrel.produto_id
         WHERE vr.versao_id_1 = $1 OR vr.versao_id_2 = $1
+        ORDER BY tr.nome, vrel.versao
       `, [versao.versao_id]);
 
       // Obter arquivos

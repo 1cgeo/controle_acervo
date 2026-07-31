@@ -251,6 +251,54 @@ CREATE INDEX idx_arquivo_versao ON acervo.arquivo(versao_id);
 CREATE INDEX idx_lote_projeto ON acervo.lote(projeto_id);
 CREATE INDEX idx_versao_lote ON acervo.versao(lote_id);
 
+-- Miniatura da versao: a imagem que a ficha do produto mostra, derivada do PDF
+-- (ou do TIF, quando nao ha PDF) que ja esta no volume. Tabela propria, e nao
+-- coluna em `versao`, por duas razoes: `SELECT v.*` aparece em varias consultas
+-- e passaria a arrastar o BYTEA para nada; e a miniatura tem PROCEDENCIA (de
+-- qual arquivo saiu, com que checksum, quando), que a versao nao tem onde
+-- guardar. Sem procedencia nao da para saber se a miniatura envelheceu.
+--
+-- A linha existe em dois estados, e o CHECK garante que sao mutuamente
+-- exclusivos: ou tem `conteudo`, ou tem `erro`. Registrar a falha e o que
+-- impede a carga de tentar de novo, a cada execucao, o mesmo arquivo ausente ou
+-- corrompido. A rota que serve a imagem responde 404 quando so ha `erro`.
+--
+-- Os dois ON DELETE CASCADE existem porque miniatura e dado DERIVADO. Sem eles,
+-- o caminho de exclusao que ja existe (apagar versao, apagar arquivo) passaria
+-- a falhar por violacao de restricao. Fonte que sumiu deixa a miniatura
+-- mentindo, entao ela morre junto.
+--
+-- Produto so vetorial (zip/sqlite) nao tem raster para renderizar, e por isso
+-- simplesmente nao tem linha aqui (chefe, 2026-07-31).
+CREATE TABLE acervo.miniatura_versao(
+    versao_id BIGINT NOT NULL PRIMARY KEY REFERENCES acervo.versao (id) ON DELETE CASCADE,
+    arquivo_id BIGINT REFERENCES acervo.arquivo (id) ON DELETE CASCADE,
+    checksum_origem VARCHAR(64),
+    formato VARCHAR(10),
+    -- Largura e altura viajam com a imagem para a tela reservar o espaco antes
+    -- de decodificar. Sem elas a ficha pula quando a miniatura chega.
+    largura INTEGER,
+    altura INTEGER,
+    conteudo BYTEA,
+    erro TEXT,
+    data_geracao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT miniatura_conteudo_ou_erro CHECK (
+        (conteudo IS NOT NULL AND erro IS NULL
+         AND formato IS NOT NULL AND largura IS NOT NULL AND altura IS NOT NULL)
+        OR
+        (conteudo IS NULL AND erro IS NOT NULL)
+    )
+);
+
+COMMENT ON TABLE acervo.miniatura_versao IS
+  'Miniatura derivada do PDF (ou do TIF) da versao, servida pela ficha do produto. Linha com erro registra a falha para a carga nao repetir o arquivo quebrado.';
+
+-- A carga pergunta "que versoes ainda nao tem miniatura" por anti-join na PK, e
+-- "quais falharam para eu reprocessar" por este indice parcial, que so indexa a
+-- minoria com erro.
+CREATE INDEX idx_miniatura_versao_erro
+  ON acervo.miniatura_versao (versao_id) WHERE erro IS NOT NULL;
+
 CREATE TABLE acervo.arquivo_deletado(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
 	uuid_arquivo UUID,

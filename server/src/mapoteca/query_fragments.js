@@ -76,20 +76,25 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
 const ESCALA_DISPLAY_ITEM = ESCALA_DISPLAY;
 
 // Situações que contam como pedido EM ABERTO: a fila de trabalho da tela de
-// atendimento. Ficam de fora Concluído (5), Cancelado (6) e Aguardando
-// produção (7).
+// atendimento. Ficam de fora Concluído (5), Cancelado (6), Aguardando
+// produção (7) e Remetido (4).
 //
-// Remetido (4) fica DENTRO de propósito: o pedido saiu, mas ainda falta fechar.
-// Tirá-lo faria o pedido desaparecer da fila no meio do caminho, sem ninguém ter
-// marcado nada como concluído.
+// A régua é uma só: a fila mostra o que a mapoteca AINDA TEM DE FAZER. As duas
+// exclusões vieram do chefe, por esse mesmo critério.
 //
-// Aguardando produção (7) saiu em 2026-07-30, por decisão do chefe. O pedido
-// nessa situação espera carta que AINDA NÃO EXISTE. Não é trabalho de quem
-// imprime, e fila que mostra o impossível deixa de ser fila. Na produção eram 2
-// pedidos assim (ids 127 e 128, com 33 e 16 itens), sempre no topo da tela e
-// nunca atendíveis. Eles continuam visíveis na lista de pedidos, pelo filtro
-// "Aguardando produção".
-const SITUACOES_EM_ABERTO = [1, 2, 3, 4];
+// Aguardando produção (7) saiu em 2026-07-30. O pedido nessa situação espera
+// carta que AINDA NÃO EXISTE. Não é trabalho de quem imprime, e fila que mostra
+// o impossível deixa de ser fila. Na produção eram 2 pedidos assim (ids 127 e
+// 128, com 33 e 16 itens), sempre no topo da tela e nunca atendíveis.
+//
+// Remetido (4) saiu em 2026-07-31. O pedido já foi impresso, etiquetado e
+// despachado: as três ações que esta tela oferece já foram feitas, e a linha só
+// ocupava a fila. Na produção era 1 pedido, contra 20 Em andamento.
+//
+// O PREÇO, que é real: pedido Remetido some da fila e depende de alguém marcar
+// Concluído pela lista de pedidos, sem nada aqui lembrando disso. Os dois
+// continuam visíveis lá, pelo filtro de situação.
+const SITUACOES_EM_ABERTO = [1, 2, 3];
 
 // O arquivo IMPRIMÍVEL de uma versão: o PDF do produto cartográfico em si.
 //

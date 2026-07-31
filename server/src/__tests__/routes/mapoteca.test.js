@@ -646,15 +646,17 @@ describe('Mapoteca Routes', () => {
         expect(ids).not.toContain(Number(cancelado.id))
       })
 
-      // Remetido (4) FICA na fila: o pedido saiu, mas ainda falta fechar. Tirá-lo
-      // faria o pedido desaparecer no meio do caminho, sem ninguém concluir nada.
-      it('mantém o pedido Remetido na fila', async () => {
+      // Remetido (4) SAI da fila desde 2026-07-31 (chefe). O pedido já foi
+      // impresso, etiquetado e despachado: as três ações que a tela oferece já
+      // foram feitas, e a linha só ocupava a fila. Ele continua visível na
+      // lista de pedidos, pelo filtro de situação.
+      it('tira da fila o pedido Remetido', async () => {
         const clienteId = await criaCliente()
         const remetido = await criaPedido(clienteId, { situacao_pedido_id: 4 })
 
         const res = await emAberto()
 
-        expect(res.body.dados.map(p => Number(p.id))).toContain(Number(remetido.id))
+        expect(res.body.dados.map(p => Number(p.id))).not.toContain(Number(remetido.id))
       })
 
       // O pedido de dezembro ainda não atendido é trabalho em janeiro.

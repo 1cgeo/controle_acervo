@@ -9,6 +9,7 @@
  * @property {number} OK - 200
  * @property {number} Created - 201
  * @property {number} NoContent - 204
+ * @property {number} NotModified - 304
  * @property {number} BadRequest - 400
  * @property {number} Unauthorized - 401
  * @property {number} Forbidden - 403
@@ -21,6 +22,9 @@ const httpCode = {
   OK: 200,
   Created: 201,
   NoContent: 204,
+  // Revalidação por etiqueta: o cliente já tem a versão atual e nada viaja.
+  // Existe desde 2026-07-31, com a miniatura da versão.
+  NotModified: 304,
   BadRequest: 400,
   Unauthorized: 401,
   Forbidden: 403,

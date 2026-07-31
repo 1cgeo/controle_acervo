@@ -1,4 +1,4 @@
-import { apiGet, apiDownload } from '@services/api-client.js';
+import { apiGet, apiDownload, apiImagem } from '@services/api-client.js';
 import { cachedFetch, invalidate, TTL_DASHBOARD, TTL_DOMINIO } from '@services/cache.js';
 
 /**
@@ -203,6 +203,19 @@ export const baixarArquivoDoAcervo = (uuidArquivo, nomeArquivo) =>
     `/acervo/arquivo/${encodeURIComponent(uuidArquivo)}/download`,
     nomeArquivo
   );
+
+/**
+ * Miniatura de uma versao, para a ficha do produto.
+ *
+ * Devolve `null` quando a versao nao tem imagem (produto so vetorial, ou
+ * arquivo que falhou na renderizacao). Quem chama ja sabe disso antes de pedir,
+ * pelo `tem_miniatura` da ficha detalhada; esta funcao so nao mente quando
+ * chamada as cegas.
+ *
+ * Quem chama tem de liberar a URL devolvida com `URL.revokeObjectURL`.
+ */
+export const getMiniaturaVersao = (versaoId) =>
+  apiImagem(`/acervo/versao/${versaoId}/miniatura`);
 
 // Dominios dos filtros da busca. TTL de dominio: sao tabelas que quase nao mudam.
 export const getTiposProduto = () =>

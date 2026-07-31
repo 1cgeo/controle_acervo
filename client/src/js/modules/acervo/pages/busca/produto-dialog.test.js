@@ -6,6 +6,9 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getProdutoDetalhado: vi.fn(),
   baixarArquivoDoAcervo: vi.fn(() => Promise.resolve()),
+  // Devolve null: versao sem miniatura e o caso normal, e e o unico que o jsdom
+  // consegue exercitar (ele nao tem a API de blob URL).
+  getMiniaturaVersao: vi.fn(() => Promise.resolve(null)),
 }));
 
 import { abrirProdutoDialog } from '@modules/acervo/pages/busca/produto-dialog.js';
@@ -60,11 +63,12 @@ const FICHA = {
   ],
 };
 
-const botoesBaixar = () => [...document.querySelectorAll('.versao-bloco__baixar')];
+const botoesBaixar = () => [...document.querySelectorAll('.ficha-arquivo__baixar')];
 
 beforeEach(() => {
   svc.getProdutoDetalhado.mockResolvedValue(FICHA);
   svc.baixarArquivoDoAcervo.mockResolvedValue();
+  svc.getMiniaturaVersao.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -127,5 +131,126 @@ describe('abrirProdutoDialog: download de arquivo', () => {
     // Sem isto o botao ficaria travado depois da primeira falha, e a pessoa
     // precisaria fechar e reabrir a ficha para tentar de novo.
     expect(botao.disabled).toBe(false);
+  });
+});
+
+// A ficha detalhada ja diz quais versoes tem imagem (`tem_miniatura`). A tela
+// respeita isso: pedir a imagem de uma versao que nao tem custaria um 404 por
+// versao aberta, e o acervo tem 2.247 versoes so vetoriais.
+describe('abrirProdutoDialog: miniatura', () => {
+  const COM_IMAGEM = {
+    ...FICHA,
+    versoes: [
+      { versao_id: 90, versao: '2ª Edição', tem_miniatura: true, miniatura_largura: 600, miniatura_altura: 457, arquivos: [] },
+      { versao_id: 91, versao: '1ª Edição', tem_miniatura: false, arquivos: [] },
+    ],
+  };
+
+  test('so pede a imagem da versao que tem miniatura', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_IMAGEM);
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(svc.getMiniaturaVersao).toHaveBeenCalledTimes(1);
+    expect(svc.getMiniaturaVersao).toHaveBeenCalledWith(90);
+  });
+
+  test('versao sem miniatura mostra a marca, e nao um espaco vazio', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_IMAGEM);
+    svc.getMiniaturaVersao.mockResolvedValue('blob:miniatura-de-teste');
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    // A que tem imagem vira uma tag de imagem; a que nao tem fica com a marca.
+    expect(document.querySelectorAll('.ficha-miniatura__img')).toHaveLength(1);
+    expect(document.querySelectorAll('.ficha-miniatura--vazia')).toHaveLength(1);
+    expect(document.body.textContent).toContain('Sem imagem');
+  });
+
+  // O painel nasce com a proporcao real para a lista de versoes nao saltar
+  // quando cada imagem chega.
+  test('reserva a proporcao da imagem antes de ela chegar', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_IMAGEM);
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    const painel = document.querySelector('.ficha-miniatura--destaque');
+    expect(painel.style.aspectRatio).toBe('600 / 457');
+  });
+
+  // Falha de imagem nao pode derrubar a ficha: o resto dela continua util.
+  test('falha na imagem nao quebra a ficha', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_IMAGEM);
+    svc.getMiniaturaVersao.mockRejectedValueOnce(new Error('rede caiu'));
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(document.body.textContent).toContain('Imagem indisponível');
+    expect(document.body.textContent).toContain('2ª Edição');
+  });
+});
+
+// O servidor sempre devolveu os relacionamentos e a ficha anterior os
+// descartava em silencio. Sao a proveniencia da carta: de onde ela veio.
+describe('abrirProdutoDialog: relacionamentos', () => {
+  const COM_RELACAO = {
+    ...FICHA,
+    versoes: [{
+      versao_id: 90,
+      versao: '1ª Edição',
+      arquivos: [],
+      relacionamentos: [
+        {
+          id: 1,
+          versao_relacionada_id: 700,
+          tipo_relacionamento: 'Insumo',
+          versao_relacionada: '3ª Edição',
+          produto_relacionado_id: 55,
+          produto_relacionado: '2823-1-SE',
+        },
+        // Relacionamento cuja ponta sumiu: aparece, mas nao vira link.
+        {
+          id: 2,
+          versao_relacionada_id: 701,
+          tipo_relacionamento: 'Complementar',
+          versao_relacionada: null,
+          produto_relacionado_id: null,
+          produto_relacionado: null,
+        },
+      ],
+    }],
+  };
+
+  test('mostra o produto relacionado pelo nome, e nao pelo id', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_RELACAO);
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(document.body.textContent).toContain('Insumo');
+    expect(document.body.textContent).toContain('2823-1-SE, 3ª Edição');
+  });
+
+  test('relacionamento sem produto vivo nao vira link', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_RELACAO);
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    // Dois itens listados, um so clicavel.
+    expect(document.querySelectorAll('.ficha-relacionamentos__item')).toHaveLength(2);
+    expect(document.querySelectorAll('.ficha-relacionamentos__link')).toHaveLength(1);
+  });
+
+  // Seguir um insumo ACRESCENTA o produto a selecao, em vez de trocar a ficha no
+  // lugar: sem isso, "Anterior" nao teria como voltar para de onde a pessoa veio.
+  test('seguir um relacionamento acrescenta o produto a selecao', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_RELACAO);
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    document.querySelector('.ficha-relacionamentos__link').click();
+    await flush();
+
+    expect(svc.getProdutoDetalhado).toHaveBeenLastCalledWith(55);
+    expect(document.querySelector('.produto-ficha__posicao').textContent).toBe('2 de 2');
   });
 });

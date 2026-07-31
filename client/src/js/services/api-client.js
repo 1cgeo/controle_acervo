@@ -238,6 +238,57 @@ export async function apiUpload(endpoint, formData) {
 }
 
 /**
+ * Busca uma imagem da API e devolve uma URL de objeto para uma tag `img`.
+ *
+ * A tag de imagem não manda cabeçalho, então `src` apontando direto para a rota
+ * chegaria sem o token e tomaria 401. Por isso a imagem vem por `fetch`, que
+ * leva o Bearer, e vira `blob:` para o navegador desenhar.
+ *
+ * O cache HTTP continua valendo: `fetch` passa pelo cache do navegador, então a
+ * segunda visita à mesma ficha revalida pela etiqueta e recebe 304, sem baixar
+ * os bytes de novo.
+ *
+ * Devolve `null` quando não existe imagem (404), porque ausência é caso NORMAL
+ * aqui: produto só vetorial não tem miniatura. Quem chama trata como "sem
+ * imagem", e não como falha.
+ *
+ * IMPORTANTE: quem chama precisa liberar a URL com `URL.revokeObjectURL` ao
+ * descartar o elemento. Sem isso o blob fica na memória da aba até recarregar,
+ * e percorrer uma seleção de 50 produtos vazaria 50 imagens.
+ *
+ * @param {string} endpoint
+ * @returns {Promise<string|null>} URL de objeto, ou null se não houver imagem
+ */
+export async function apiImagem(endpoint) {
+  const token = getToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`/api${endpoint}`, { headers });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (response.status === 401) {
+    handleSessaoExpirada();
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+
+  if (response.status === 403) {
+    throw await tratarProibido(response, 'Você não tem perfil para ver esta imagem.');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Não foi possível carregar a imagem (HTTP ${response.status})`);
+  }
+
+  return URL.createObjectURL(await response.blob());
+}
+
+/**
  * Download a file (e.g. CSV export) with the Bearer token.
  * Fetches the endpoint as a blob and triggers a browser download.
  * @param {string} endpoint - e.g. '/relatorio/secao3/markdown?ano=2026&mes=5'

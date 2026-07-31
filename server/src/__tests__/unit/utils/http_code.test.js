@@ -7,6 +7,9 @@ describe('httpCode', () => {
     expect(httpCode.OK).toBe(200)
     expect(httpCode.Created).toBe(201)
     expect(httpCode.NoContent).toBe(204)
+    // 304 entrou em 2026-07-31, com a miniatura da versão: é a resposta para a
+    // revalidação por etiqueta, quando o navegador já tem a imagem atual.
+    expect(httpCode.NotModified).toBe(304)
     expect(httpCode.BadRequest).toBe(400)
     expect(httpCode.Unauthorized).toBe(401)
     expect(httpCode.Forbidden).toBe(403)
@@ -18,7 +21,7 @@ describe('httpCode', () => {
     expect(httpCode.InternalError).toBe(500)
   })
 
-  it('should have exactly 10 codes', () => {
-    expect(Object.keys(httpCode)).toHaveLength(10)
+  it('should have exactly 11 codes', () => {
+    expect(Object.keys(httpCode)).toHaveLength(11)
   })
 })

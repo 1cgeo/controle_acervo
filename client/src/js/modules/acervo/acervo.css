@@ -617,75 +617,426 @@
   background: rgba(237, 108, 2, 0.35);
 }
 
-/* ---- Ficha do produto ---- */
-.produto-ficha__secao {
-  margin: var(--space-lg) 0 var(--space-sm);
-  font-size: var(--font-size-md);
-  color: var(--text-primary);
+/* ---- Ficha do produto ----
+ *
+ * Reescrita em 2026-07-31 (chefe: "a UI e UX esta ruim"). O bloco anterior
+ * (`.versao-bloco*`) desenhava uma pilha de linhas rotulo-valor todas com o
+ * mesmo peso, sem imagem e sem hierarquia. Aqui a identificacao vira uma faixa
+ * de fatos com o VALOR grande, cada versao ganha a miniatura ao lado, e os
+ * ARQUIVOS sobem na ordem de leitura, na frente do metadado administrativo.
+ *
+ * Tudo sai dos tokens de design-tokens.css, entao o tema escuro vem de graca:
+ * nenhuma cor literal, so variaveis. A excecao e o fundo branco da miniatura,
+ * comentada no lugar. */
+
+.produto-ficha__raiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-.produto-ficha__carregando,
-.produto-ficha__vazio {
-  padding: var(--space-lg);
+.produto-ficha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.produto-ficha__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.produto-ficha__posicao {
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.versao-bloco {
-  padding: var(--space-md);
-  margin-bottom: var(--space-sm);
-  border: 1px solid var(--border-color);
+.produto-ficha__secao {
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.produto-ficha__vazio {
+  margin: 0;
+  padding: var(--space-lg);
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
   border-radius: var(--radius-md);
 }
 
-.versao-bloco__cabecalho {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
+/* ---- Identificacao do produto ---- */
+
+/* Fatos lado a lado, com o VALOR grande e o rotulo pequeno embaixo. E o inverso
+ * da linha rotulo-valor: quem procura uma folha procura o MI, nao a palavra
+ * "MI". `auto-fit` com minimo de 8rem faz caber os cinco fatos numa tela larga e
+ * quebrar sozinho numa estreita, sem media query. */
+.ficha-identificacao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--space-sm) var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
 }
 
-.versao-bloco__titulo {
+.ficha-fato {
+  display: flex;
+  flex-direction: column-reverse; /* rotulo depois no DOM, valor em cima na tela */
+  gap: 2px;
+  min-width: 0;
+}
+
+.ficha-fato__valor {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* MI e INOM sao codigos, e codigo se le melhor com largura fixa: alinha os
+ * digitos e evita confundir 1 com l. */
+.ficha-fato__valor--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-md);
+  letter-spacing: 0.02em;
+}
+
+.ficha-fato__rotulo {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ficha-descricao {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: var(--line-height);
+}
+
+/* ---- Uma versao ---- */
+
+/* Imagem a esquerda, conteudo a direita. A coluna da imagem tem largura FIXA
+ * para as versoes ficarem alinhadas entre si: com largura fluida, cada folha
+ * (retrato ou paisagem) empurraria o texto para um lugar diferente. */
+.ficha-versao {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+
+.ficha-versao:hover {
+  border-color: var(--color-primary-light);
+}
+
+/* A mais recente e a que quase todo mundo veio ver: imagem maior e uma marca de
+ * cor na borda esquerda. */
+.ficha-versao--destaque {
+  grid-template-columns: 232px 1fr;
+  border-left: 3px solid var(--color-primary);
+}
+
+.ficha-versao__corpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.ficha-versao__cabecalho {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.ficha-versao__titulo {
+  margin: 0;
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
-.versao-bloco__arquivos {
-  list-style: none;
-  margin: var(--space-sm) 0 0;
-  padding: 0;
+.ficha-versao__descricao {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ---- Miniatura ---- */
+
+.ficha-miniatura {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  /* Fallback: quando a ficha traz as dimensoes, o JS troca pela proporcao real
+   * antes de a imagem chegar, e a lista nao salta. */
+  aspect-ratio: 4 / 3;
+}
+
+.ficha-miniatura__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Branco de proposito, inclusive no tema escuro: a carta e desenhada sobre
+   * papel branco, e a margem dela some num fundo escuro. */
+  background: #fff;
+}
+
+.ficha-miniatura--vazia {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  color: var(--text-disabled);
+  font-size: var(--font-size-xs);
+  text-align: center;
+  border-style: dashed;
+}
+
+/* ---- Metadado administrativo da versao ---- */
+
+/* Uma linha so, separada por ponto. Antes eram cinco linhas rotulo-valor
+ * empilhadas ANTES dos arquivos, empurrando para baixo o que a pessoa veio
+ * buscar. */
+/* Sem `gap`: o espaco entre os itens vem do proprio separador, que viaja
+ * dentro do item seguinte. Com gap, o espaco sobrava no fim da linha quebrada. */
+.ficha-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.ficha-meta__item {
+  white-space: nowrap;
+}
+
+.ficha-meta__rotulo {
+  color: var(--text-secondary);
+}
+
+.ficha-meta__valor {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.ficha-meta__ponto {
+  color: var(--text-disabled);
+}
+
+.ficha-palavras {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-xs);
 }
 
-.versao-bloco__arquivos li {
+/* ---- Arquivos da versao ---- */
+
+.ficha-arquivos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.ficha-arquivo {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--text-secondary);
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-md);
   font-size: var(--font-size-sm);
+  color: var(--text-primary);
 }
 
-/* O NOME ocupa a sobra da linha, e o que vem depois (tamanho e botao de baixar)
- * fica encostado a direita. Antes o empurrao vinha de um margin-left:auto no
- * tamanho, e com o botao ao lado o arquivo SEM tamanho (o Tileserver, que por
- * DDL tem tamanho nulo) deixava o botao no meio da linha. */
-.versao-bloco__arquivos li > span:first-of-type {
+.ficha-arquivo + .ficha-arquivo {
+  border-top: 1px solid var(--border-light);
+}
+
+.ficha-arquivo:hover {
+  background: var(--bg-hover);
+}
+
+.ficha-arquivo svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* O nome ocupa a sobra da linha e corta no fim, para que tamanho e botao nao
+ * dancem de uma linha para outra. O nome inteiro fica no `title`. Antes o
+ * empurrao vinha de um margin-left:auto no tamanho, e o arquivo SEM tamanho (o
+ * Tileserver, que por DDL tem tamanho nulo) deixava o botao no meio da linha. */
+.ficha-arquivo__nome {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-xs);
 }
 
-.versao-bloco__tamanho {
-  white-space: nowrap;
+.ficha-arquivo__tipo {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
-.versao-bloco__baixar {
+/* Largura fixa e digito de largura fixa: assim a coluna de numeros fica reta e
+ * da para comparar de relance, e a linha sem tamanho nao encolhe. */
+.ficha-arquivo__tamanho {
+  flex-shrink: 0;
+  width: 5.5rem;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ficha-arquivo__baixar {
   flex-shrink: 0;
 }
+
+/* ---- Relacionamentos ---- */
+
+.ficha-relacionamentos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-color);
+}
+
+.ficha-relacionamentos__titulo {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ficha-relacionamentos__lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ficha-relacionamentos__item {
+  display: flex;
+}
+
+.ficha-relacionamentos__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.ficha-relacionamentos__link:hover {
+  background: var(--bg-hover);
+}
+
+.ficha-relacionamentos__link:hover .ficha-relacionamentos__alvo {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.ficha-relacionamentos__alvo {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+/* ---- Esqueleto de carregamento ---- */
+
+/* No formato do que vai chegar, em vez da frase "Carregando...": a caixa para
+ * de saltar quando o conteudo entra. */
+.ficha-esqueleto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.ficha-esqueleto__faixa,
+.ficha-esqueleto__bloco {
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--bg-hover) 37%,
+    var(--bg-secondary) 63%
+  );
+  background-size: 400% 100%;
+  animation: ficha-esqueleto-brilho 1.4s ease infinite;
+}
+
+.ficha-esqueleto__faixa { height: 76px; }
+.ficha-esqueleto__bloco { height: 148px; }
+
+@keyframes ficha-esqueleto-brilho {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ficha-esqueleto__faixa,
+  .ficha-esqueleto__bloco {
+    animation: none;
+  }
+}
+
+/* Abaixo de 720px a coluna da imagem some e a miniatura vira uma faixa larga no
+ * alto. Com 148px de imagem mais texto, os dois ficariam ilegiveis. */
+@media (max-width: 720px) {
+  .ficha-versao,
+  .ficha-versao--destaque {
+    grid-template-columns: 1fr;
+  }
+
+  .ficha-miniatura,
+  .ficha-miniatura--destaque {
+    max-height: 200px;
+    aspect-ratio: auto;
+  }
+
+  .ficha-arquivo__nome {
+    font-size: 0.7rem;
+  }
+}
+
 
 /* Tela estreita: o mapa vai para baixo da lista, com altura propria. Lado a
  * lado num celular daria duas metades inutilizaveis. */

@@ -5,15 +5,23 @@ import { resolve } from 'path';
 // orcamento), servido na raiz pelo Express. Os clients antigos (acervo_client e
 // mapoteca_client) foram apagados em 2026-07-27, quando os tres modulos
 // terminaram de ser portados.
+//
+// As duas portas saem do ambiente, com o padrao de sempre. Existe para levantar
+// uma SEGUNDA instancia de desenvolvimento em paralelo (outro par de portas,
+// mesmo codigo) sem editar este arquivo, que e versionado: editar o arquivo faz
+// a troca de porta aparecer em todo diff e acabar commitada por engano.
+const PORTA_CLIENT = Number(process.env.SCA_CLIENT_PORT) || 3003;
+const PORTA_API = Number(process.env.SCA_API_PORT) || 3015;
+
 export default defineConfig({
   root: '.',
   base: '/',
   publicDir: 'public',
   server: {
-    port: 3003,
+    port: PORTA_CLIENT,
     proxy: {
       '/api': {
-        target: 'http://localhost:3015',
+        target: `http://localhost:${PORTA_API}`,
         changeOrigin: true,
       },
     },

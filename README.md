@@ -148,6 +148,25 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 
 Um cron de hora em hora limpa tokens de download e sessões de upload expiradas.
 
+Outro, na meia hora, gera as **miniaturas** que faltam (até 20 por passada). A
+miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da
+versão, ou o TIF quando não há PDF. Ela sai por `pdftoppm` (poppler) e
+`gdal_translate`, cujos caminhos vêm de `MINIATURA_PDFTOPPM`,
+`MINIATURA_GDAL_TRANSLATE` e `MINIATURA_GDALINFO` (vazio = procurar no PATH, que
+é o caso normal em Linux). Sem os binários, a rota da miniatura responde 404 e o
+job aborta a passada com um erro no log; nada mais quebra.
+
+Para carregar o acervo já existente de uma vez, em vez de esperar o cron:
+
+```bash
+node scripts/gerar_miniaturas.cjs --limite 50 --embaralhar --dry-run   # ensaio real
+node scripts/gerar_miniaturas.cjs --concorrencia 4                     # a carga
+```
+
+O `--dry-run` lê o volume e renderiza de verdade, e para só antes de gravar.
+Falha vira linha de erro em `acervo.miniatura_versao`, para a carga seguinte não
+repetir o arquivo quebrado; `--refazer-erros` insiste neles.
+
 ### Estrutura do servidor
 
 ```
@@ -242,7 +261,7 @@ Arquivos em `er/`, nesta ordem:
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois.
 
-A versão do schema é **1.9.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+A versão do schema é **1.10.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
 
 ### Atualização de banco existente
 

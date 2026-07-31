@@ -3,7 +3,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode, logger, enviarArquivo } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, logger, enviarArquivo, AppError } = require('../utils')
 
 const { verifyAdmin, verifyPerfil } = require('../login')
 
@@ -38,6 +38,72 @@ router.get(
     const msg = 'Informações detalhadas do produto retornadas com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+/**
+ * Miniatura da versão, para a ficha do produto.
+ *
+ * Responde a IMAGEM crua, e não o envelope JSON: quem consome é uma tag de
+ * imagem, não um leitor de `dados`.
+ *
+ * CACHE. O `noCache()` do app manda "não guarde nada", e vale para dado que
+ * muda. A miniatura é derivada e praticamente imutável, e a ficha reabre a cada
+ * produto percorrido na seleção: sem cache, a mesma imagem viajaria de novo a
+ * cada volta. Por isso esta rota DESFAZ os cabeçalhos do `noCache` e põe os
+ * seus. A etiqueta sai da data de geração e do tamanho, então regerar a
+ * miniatura invalida o que o navegador guardou, sem ninguém precisar lembrar.
+ *
+ * Versão sem miniatura responde 404, e é caso NORMAL: produto só vetorial não
+ * tem imagem. A tela evita a viagem lendo `tem_miniatura` na ficha detalhada; o
+ * 404 é a rede de segurança para quem chama a rota direto.
+ */
+router.get(
+  '/versao/:versao_id/miniatura',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    params: acervoSchema.miniaturaVersaoParams
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { versao_id } = req.params;
+
+    const meta = await acervoCtrl.getMiniaturaMeta(versao_id);
+
+    if (!meta || !meta.bytes) {
+      throw new AppError(
+        'Esta versão não tem miniatura',
+        httpCode.NotFound
+      );
+    }
+
+    const etag = `"${new Date(meta.data_geracao).getTime()}-${meta.bytes}"`;
+
+    // O noCache() roda antes das rotas, então estes cabeçalhos já existem e
+    // precisam sair: Pragma e Expires contradizem o Cache-Control abaixo, e
+    // navegador que vê a contradição escolhe o mais conservador.
+    res.removeHeader('Pragma');
+    res.removeHeader('Expires');
+    res.removeHeader('Surrogate-Control');
+
+    // `private` porque a imagem exige perfil: ela não pode ficar num cache
+    // compartilhado. Um dia de validade, e depois revalidação pela etiqueta.
+    res.setHeader('Cache-Control', 'private, max-age=86400, must-revalidate');
+    res.setHeader('ETag', etag);
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(httpCode.NotModified).end();
+    }
+
+    const conteudo = await acervoCtrl.getMiniaturaConteudo(versao_id);
+
+    if (!conteudo) {
+      throw new AppError('Esta versão não tem miniatura', httpCode.NotFound);
+    }
+
+    res.setHeader('Content-Type', `image/${meta.formato}`);
+    res.setHeader('Content-Length', String(conteudo.length));
+
+    return res.status(httpCode.OK).end(conteudo);
   })
 );
 

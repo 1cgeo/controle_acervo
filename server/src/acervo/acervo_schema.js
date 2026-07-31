@@ -11,6 +11,15 @@ models.produtoByIdParams = Joi.object().keys({
   produto_id: Joi.number().integer().required()
 });
 
+// Miniatura da versão: identifica pelo id, e não pelo uuid, ao contrário do
+// download de arquivo. A URL da imagem nasce dentro da própria ficha, que já
+// recebeu o `versao_id` na resposta detalhada; ela não vira link colado nem
+// histórico, e o que ela devolve é a mesma imagem que a ficha já mostra a quem
+// tem perfil de consulta.
+models.miniaturaVersaoParams = Joi.object().keys({
+  versao_id: Joi.number().integer().required()
+});
+
 // Download de arquivo pelo navegador: identifica pelo uuid_arquivo, e não pelo
 // id sequencial, porque a URL vira histórico, log e link colado em documento.
 models.arquivoDownloadParams = Joi.object().keys({
