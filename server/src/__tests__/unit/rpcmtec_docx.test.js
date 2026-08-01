@@ -24,12 +24,12 @@ const documentoXml = async (secoes, { ano = 2026, mes = 7 } = {}) => {
 }
 
 const SECAO_DE_PROVA = [{
-  titulo: '2. EXECUÇÃO DO PIT',
+  titulo: '3. MAPOTECA',
   subsecoes: [{
-    numero: '2.2',
+    numero: '3.1',
     titulo: 'Totais do Mês e do Ano',
-    cabecalhos: ['Tipo de produto', 'Quantidade no mês', 'Quantidade no ano'],
-    linhas: [['Carta Topográfica', '3', '19']]
+    cabecalhos: ['Indicador', 'Total no mês', 'Total no ano'],
+    linhas: [['Mapoteca - produtos entregues', '485', '6479']]
   }]
 }]
 
@@ -45,12 +45,15 @@ describe('rpcmtec_docx: as medidas do modelo da Divisão', () => {
     expect(FORMATO.RECUO_TABELA).toBe(-141)
   })
 
-  test('as 16 subseções que o SCA gera têm grade de coluna declarada', () => {
+  test('as 13 subseções que o SCA gera têm grade de coluna declarada', () => {
     // Subseção sem grade cai na divisão por igual, que dá uma tabela que não é
     // a do modelo. É silencioso: por isso a lista fica explícita aqui.
+    // A 3.3 (Extra-PIT) NAO esta aqui de proposito: o SCA nao sabe distinguir a
+    // excecao autorizada de um pedido comum fora do PIT, e derivá-la de
+    // `previsto_pit` dava 23 linhas onde a edicao real traz 1.
     expect(Object.keys(FORMATO.GRADES).sort()).toEqual([
-      '2.2', '2.4', '2.7',
-      '3.1', '3.2', '3.3', '3.4',
+      '2.7',
+      '3.1', '3.2', '3.4',
       '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
       '7.2', '7.3'
     ])
@@ -60,13 +63,13 @@ describe('rpcmtec_docx: as medidas do modelo da Divisão', () => {
     // As grades NÃO são proporcionais entre si: a coluna "Finalidade" da 4.2 é
     // larga porque o texto é longo, e a "Qtd" da 3.3 é estreita porque cabe um
     // número. Distribuir por igual seria mais simples e daria outro documento.
-    expect(FORMATO.GRADES['2.2']).toEqual([4965, 2370, 2520])
     expect(FORMATO.GRADES['4.2']).toEqual([855, 855, 840, 2865, 1125, 1170, 1140, 945])
-    expect(FORMATO.GRADES['3.3']).toEqual([1590, 1575, 630, 1215, 1455, 3360])
 
     const colunasPorSubsecao = {
-      '2.2': 3, '2.4': 6, '2.7': 6,
-      '3.1': 3, '3.2': 4, '3.3': 6, '3.4': 3,
+      '2.7': 6,
+      // A 3.4 tem QUATRO colunas, e nao as tres do modelo: o codigo da LAI (o
+      // NUP do Fala.BR) entrou em 2026-08-01.
+      '3.1': 3, '3.2': 4, '3.4': 4,
       '4.1': 6, '4.2': 8, '4.3': 4, '4.4': 4, '4.5': 4, '4.6': 4, '4.7': 8,
       '7.2': 5, '7.3': 5
     }
@@ -114,7 +117,7 @@ describe('rpcmtec_docx: o OOXML gerado', () => {
     const xml = await documentoXml(SECAO_DE_PROVA)
     expect(xml).toContain('w:type="fixed"')
     expect(xml).toContain('w:w="-141"')
-    for (const largura of FORMATO.GRADES['2.2']) {
+    for (const largura of FORMATO.GRADES['3.1']) {
       expect(xml).toContain(`w:w="${largura}"`)
     }
   })
@@ -129,8 +132,8 @@ describe('rpcmtec_docx: o OOXML gerado', () => {
 
   test('o título de seção é negrito e o de subseção não é', async () => {
     const xml = await documentoXml(SECAO_DE_PROVA)
-    expect(xml).toContain('2. EXECUÇÃO DO PIT')
-    expect(xml).toContain('2.2. Totais do Mês e do Ano')
+    expect(xml).toContain('3. MAPOTECA')
+    expect(xml).toContain('3.1. Totais do Mês e do Ano')
     // Os dois são justificados, como no modelo.
     expect(xml).toContain('w:val="both"')
   })
@@ -157,10 +160,10 @@ describe('rpcmtec_docx: o OOXML gerado', () => {
     const xml = await documentoXml([{
       titulo: '2. EXECUÇÃO DO PIT',
       subsecoes: [{
-        numero: '2.4',
-        titulo: 'Entregas detalhada de produtos finais (BDGEx, IGW, EBGeo) no mês',
-        cabecalhos: ['Tipo produto', 'Escala', 'UUID BDGEx', 'Identificador',
-          'Meta PIT', 'Lote SAP'],
+        numero: '2.7',
+        titulo: 'Estado do Acervo',
+        cabecalhos: ['Escala', 'Tipo de produto', 'Total catalogado',
+          'Catalogo no mês', 'Universo da ASC', '% da ASC'],
         linhas: []
       }]
     }])

@@ -2537,16 +2537,20 @@ As secoes do relatorio do mes, ja com as celulas em TEXTO. Query: `?ano=&mes=`, 
 
 Devolve `{ ano, mes, secoes: [{ titulo, subsecoes: [{ numero, titulo, cabecalhos, linhas }] }] }`. E o MESMO objeto que alimenta o DOCX: a tela nao formata nada por conta propria, senao ela e o arquivo divergem no arredondamento.
 
-Saem 16 subsecoes, na numeracao do documento da Divisao, para que cada tabela seja colavel na subsecao de mesmo numero:
+Saem 15 subsecoes, na numeracao do documento da Divisao, para que cada tabela seja colavel na subsecao de mesmo numero:
 
 | Secao | Subsecoes | Fonte |
 |---|---|---|
 | 2. EXECUCAO DO PIT | 2.2 Totais do Mes e do Ano, 2.4 Entregas detalhada de produtos finais, 2.7 Estado do Acervo | `acervo.versao` por `data_edicao`; cobertura por escala x tipo |
-| 3. MAPOTECA | 3.1 Totais do Mes e do Ano, 3.2 Entregas da mapoteca, 3.3 Extra-PIT, 3.4 LAI e orgaos publicos | `mapoteca.pedido` por `data_pedido`, qualquer situacao |
+| 3. MAPOTECA | 3.1 Totais do Mes e do Ano, 3.2 Entregas da mapoteca, 3.4 LAI e orgaos publicos | `mapoteca.pedido` por `data_pedido`, qualquer situacao |
 | 4. EXECUCAO DO PDR | 4.1 Execucao por ND, 4.2 Situacao dos creditos recebidos, 4.3 Situacao RPNP, 4.4 GCALC DSG, 4.5 Demais licitacoes, 4.6 Recebimento de material, 4.7 Creditos Extra-PDR | orcamento, acumulado no ano ate o mes |
 | 7. EQUIPAMENTO E MATERIAL | 7.2 Insumos de Impressao - Papel, 7.3 Insumos de Impressao - Tintas | `mapoteca.tipo_material` por `categoria_id` |
 
-**O que o SCA NAO gera**, e por que (a tela tambem declara, para ninguem procurar o que nao existe): 2.1 Estado Atual do PIT (`pit.meta` nao tem quantidade prevista nem previsao de termino, e nenhuma versao aponta para uma meta), 2.3 Execucao por Lote (sem operador nem percentual concluido), 2.5 Atividades de campo e 2.6 Capacitacoes (sem cadastro), 5 Desenvolvimento e TI, 6 Recursos Humanos, 7.1 Equipamento Indisponivel, 8 Divulgacao e 9 Boas praticas.
+**O que o SCA NAO gera**, e por que (a tela tambem declara, para ninguem procurar o que nao existe): 2.1 Estado Atual do PIT (`pit.meta` nao tem quantidade prevista nem previsao de termino, e nenhuma versao aponta para uma meta), 2.3 Execucao por Lote (sem operador nem percentual concluido), 2.5 Atividades de campo e 2.6 Capacitacoes (sem cadastro), **3.3 Extra-PIT**, 5 Desenvolvimento e TI, 6 Recursos Humanos, 7.1 Equipamento Indisponivel, 8 Divulgacao e 9 Boas praticas.
+
+A 3.3 saiu do gerador em 2026-08-01, depois de medida contra producao: ela vinha de `previsto_pit = false`, e esse campo e FALSE por default em 142 dos 158 pedidos, entao a tabela listava 23 pedidos em julho/2026 onde a edicao real traz 1. O Extra-PIT do RPCMTec e a excecao AUTORIZADA (o modelo tem coluna "Documento autorizacao"), e o SCA nao guarda o que a distingue de um pedido comum fora do PIT.
+
+Na **2.7**, "Total catalogado" e "Catalogo no mes" contam so as folhas que TOCAM a Area Sob Coordenacao (`limites.area_suprimento`, ST_Intersects) e que tem versao REGULAR. Sem o recorte a "% da ASC" passava de 100 (a 1:50.000 Carta Topografica dava 943 sobre 927); com ele, a 1:50.000 da 927 sobre 927 e a 1:250.000 da 49 sobre 49, fechando com o universo do RT 11/2025.
 
 Nas 7.2 e 7.3 as colunas "Estoque mes anterior" e "Previsao de falta de estoque" saem `-`: `mapoteca.estoque_material` guarda so o saldo de hoje. Elas NAO sao derivaveis de estoque atual + consumo do mes, porque a conta ignora as entradas.
 
@@ -2557,6 +2561,14 @@ Na 4.1, `-` quer dizer "nao ha documento nenhum nesta ND" e `0,00` quer dizer "h
 O mesmo conteudo no arquivo `RPCMTec-<ano>-<MM>.docx`. Corpo binario, fora do envelope JSON.
 
 A formatacao e a do documento da Divisao, medida no OOXML de "RPCM Tecnico Julho_2026.docx": Calibri, 12pt no titulo e no cabecalho da tabela e 10pt no corpo, cabecalho com preenchimento `DDD9C4`, borda simples de 1pt, tabela de layout fixo com recuo `-141`, pagina Letter com margem superior de 990, e uma GRADE DE COLUNA propria por subsecao (elas nao sao proporcionais entre si). O cabecalho de pagina traz "RPCMTec 1o CGEO <Mes>/<ano>" com `PAGE`/`NUMPAGES` como campos. Tabela sem linha sai com uma linha de `-`, que e como o documento escreve "nao houve".
+
+### GET `/api/rpcmtec/rtm/ods`
+
+A aba **META4_DETALHADA** do RTM: o detalhamento da Meta 4 do PIT (o que a mapoteca imprimiu e entregou), uma linha por item de pedido. Query: `?ano=&mes=`; o `mes` e exigido pelo esquema e IGNORADO -- a aba e do ANO inteiro, porque e assim que ela e colada no RTM. Corpo binario, `META4_DETALHADA_<ano>.ods`.
+
+Sai da planilha-semente `server/src/rpcmtec/modelos/rtm_meta4_detalhada.ods` (o arquivo real com as linhas de dados removidas), entao a aba abre com a largura de coluna, o painel congelado e os estilos de sempre. As 15 colunas, o numero como NUMERO e a data como DATA (com `office:date-value` em ISO e o texto em DD/MM/AA) sao os do modelo.
+
+Esta rota e `GET /api/mapoteca/relatorio/impressao_detalhada_ods` chamam o MESMO gerador e produzem arquivo identico; o que muda e so a guarda (esta e admin, a da mapoteca e perfil de consulta no modulo).
 
 ### GET `/api/rpcmtec`, `/:id`, POST, PUT, DELETE
 
@@ -2712,7 +2724,7 @@ Interface Swagger UI com documentacao interativa da API.
 | Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 7 | verifyLogin / verifyAdmin |
 | Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 6 | verifyLogin / verifyAdmin |
 | Mapoteca - Relatorios | `/api/mapoteca/relatorio` | 2 | verifyLogin |
-| RPCMTec (plataforma) | `/api/rpcmtec` | 9 | verifyAdmin |
+| RPCMTec (plataforma) | `/api/rpcmtec` | 10 | verifyAdmin |
 | Dashboard Mapoteca | `/api/mapoteca/dashboard` | 13 | verifyLogin |
 | Dashboard Acervo | `/api/dashboard` | 24 | verifyLogin |
 | Integracao (vault DGEO) | `/api/integracao` | 3 | Nenhuma (publica, read-only) |

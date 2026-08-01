@@ -10,7 +10,7 @@
 const { db } = require('../database')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const {
-  domainConstants: { SITUACAO_PEDIDO, TIPO_CLIENTE }
+  domainConstants: { SITUACAO_PEDIDO, TIPO_CLIENTE, TIPO_VERSAO }
 } = require('../utils')
 const {
   QTD_EFETIVA,
@@ -70,6 +70,24 @@ controller.getSituacaoGeral = async ({
 // Critério = data_edicao (finalização / informações marginais) no período,
 // NÃO data_cadastramento (registro no SCA). cumulativo = acumulado no ano até
 // o mês. Uma linha por versão.
+//
+// A versão PLANEJADA (tipo 3) FICA DE FORA, e é o ponto mais delicado desta
+// consulta. Ela é a folha que o acervo ainda VAI produzir, cadastrada para o
+// item do pedido da mapoteca poder apontar para ela; como `acervo.versao` exige
+// `data_edicao` e uma folha não produzida não tem data de edição, grava-se a
+// data do CADASTRO (ver migrations/2026-07-30_tipo_versao_planejada.sql, que
+// diz isso com todas as letras: "quem carrega a verdade é o tipo_versao_id = 3
+// mais a ausência de arquivo, nunca a data").
+//
+// Sem este corte, uma promessa de produção entrava como produto ENTREGUE, pela
+// data em que alguém a cadastrou. Medido em 2026-08-01 contra produção: das 24
+// versões com data_edicao em julho/2026, 16 eram planejadas -- o RPCMTec do mês
+// anunciava 24 produtos entregues onde foram 8, e o ano ia a 294 em vez de 278.
+// As 16 não têm NENHUM arquivo, contra 7.148 de 7.148 das regulares.
+//
+// O Registro Histórico (tipo 2) CONTINUA entrando: ele documenta uma edição que
+// de fato existiu e foi finalizada, e a data dele é a de verdade. Em produção a
+// mais recente é de 2013, então ele não toca nenhum relatório do ano corrente.
 controller.getProdutosFinalizados = async ({
   ano,
   mes,
@@ -77,8 +95,11 @@ controller.getProdutosFinalizados = async ({
   tipo_produto_id: tipoProdutoId,
   tipo_escala_id: tipoEscalaId
 } = {}) => {
-  const filtros = [filtroPeriodoMes('v.data_edicao', { cumulativo })]
-  const params = { ano, mes }
+  const filtros = [
+    filtroPeriodoMes('v.data_edicao', { cumulativo }),
+    'v.tipo_versao_id <> $<versaoPlanejada>'
+  ]
+  const params = { ano, mes, versaoPlanejada: TIPO_VERSAO.PLANEJADA }
   if (tipoProdutoId != null) {
     filtros.push('prod.tipo_produto_id = $<tipoProdutoId>')
     params.tipoProdutoId = tipoProdutoId

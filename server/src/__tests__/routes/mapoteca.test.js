@@ -1368,12 +1368,23 @@ describe('Mapoteca Routes', () => {
         await setupPedidoMilitar()
 
         const content = lerZip((await baixar()).body)['content.xml'].toString('utf8')
-        const rotulos = [...content.matchAll(/table:style-name="ceCab"[^>]*>(.*?)<\/table:table-cell>/g)]
-          .map(m => m[1].replace(/<[^>]+>/g, ' ').trim())
+
+        // Le a PRIMEIRA linha da tabela, sem citar nome de estilo. O arquivo
+        // passou a sair da planilha-semente da propria aba em 2026-08-01, e com
+        // ele mudou o estilo do cabecalho (era `ceCab`, do gerador que montava o
+        // arquivo do zero; hoje e o `ce1` do modelo). O que este teste protege
+        // sao os ROTULOS e a ORDEM deles, e amarra-lo ao estilo fazia a troca de
+        // gerador reprovar uma aba que estava certa.
+        const linhaCabecalho = content.slice(
+          content.indexOf('<table:table-row'),
+          content.indexOf('</table:table-row>')
+        )
+        const rotulos = [...linhaCabecalho.matchAll(/<table:table-cell[^>]*>([\s\S]*?)<\/table:table-cell>/g)]
+          .map(m => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
 
         expect(rotulos).toEqual([
           'OMDS', 'Demandante', 'OM Destino', 'Previsto no PIT', 'Meta', 'Produto',
-          'MI', 'Escala', 'Qnt Prevista', 'Mat  Previsto', 'Qnt Fornecida',
+          'MI', 'Escala', 'Qnt Prevista', 'Mat Previsto', 'Qnt Fornecida',
           'Material Fornecido', 'Data da Entrega', 'Forma da Entrega', 'Observações'
         ])
         // O pedido do cenário tem prazo; ele NÃO pode aparecer sob "Meta".

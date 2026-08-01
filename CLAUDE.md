@@ -160,8 +160,34 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   nossas: cada tabela tem de ser colável na subseção de mesmo número sem ninguém
   reformatar. Cada subseção tem GRADE DE COLUNA própria, copiada do modelo, porque elas não
   são proporcionais entre si. Só saem as 16 subseções que o SCA preenche INTEIRAS (2.2, 2.4,
-  2.7, 3.1 a 3.4, 4.1 a 4.7, 7.2 e 7.3); o que fica de fora está listado com o motivo no
+  2.7, 3.1, 3.2, 3.4, 4.1 a 4.7, 7.2 e 7.3); o que fica de fora está listado com o motivo no
   cabeçalho de `rpcmtec_ctrl.js` e aparece na tela, para ninguém procurar o que não existe.
+- **Três números do RPCMTec só se provaram errados contra PRODUÇÃO, e a lição é essa.** Os
+  três passavam nos testes e eram plausíveis na tela. (1) A **3.3 Extra-PIT** saiu do gerador:
+  ela vinha de `previsto_pit = false`, e esse campo é FALSE por default em 142 dos 158
+  pedidos, então a tabela listava 23 pedidos onde a edição real traz 1. O Extra-PIT do
+  RPCMTec é a exceção AUTORIZADA (o modelo tem coluna "Documento autorização"), e o SCA não
+  guarda o que a distingue. As duas linhas de Extra-PIT da 3.1 caíram junto. (2) A **% da ASC
+  passava de 100%** (1:50.000 topográfica dava 943/927 = 101,7%) porque o numerador era o
+  acervo inteiro, que tem folha de fora da área; hoje é recortado por
+  `limites.area_suprimento`. (3) A **versão PLANEJADA entrava como produto entregue**: ela é
+  promessa de produção e sua `data_edicao` é a data do cadastro, então a 2.2 anunciava 24
+  produtos em julho/2026 onde foram 8. Corrigido em `integracaoCtrl.getProdutosFinalizados`,
+  o que conserta junto a rota pública do vault da DGEO. Depois das três, a 2.2, a 2.4 e o "no
+  mês" da 2.7 passam a fechar entre si, o que antes não acontecia.
+- **O RTM (aba META4_DETALHADA) também sai de SEMENTE, e as duas rotas que o exportam
+  usam o MESMO gerador.** `rpcmtec/modelos/rtm_meta4_detalhada.ods` é o arquivo real com as
+  1.628 linhas de dados removidas: sobraram as colunas, o cabeçalho, os estilos, o
+  `settings.xml` (painel congelado, zoom) e o `Configurations2/`, em 29 KB contra 3,5 MB.
+  Tirar os dados não foi só economia -- eles traziam nome de OM e quantidade entregue, e este
+  repositório é público. O conteúdo já batia com o modelo antes; o que faltava era o
+  envelope, que o gerador anterior não tinha porque montava o arquivo do zero. Cada linha
+  nova copia os estilos que a semente usa (`ro2`, `ce130`, `ce156` na data, `ce134` na
+  observação), lidos do modelo. `GET /api/rpcmtec/rtm/ods` e
+  `GET /api/mapoteca/relatorio/impressao_detalhada_ods` chamam o mesmo `gerarRtmOds` e
+  produzem arquivo IDÊNTICO (provado por hash): dois caminhos para o mesmo arquivo com
+  formatos diferentes é a divergência que a fusão do RPCMTec existiu para acabar. O módulo do
+  gerador só importa `utils`, então não há ciclo entre mapoteca e rpcmtec.
 - **O Anuário Estatístico sai da planilha-SEMENTE da DSG, e não é redesenhado.**
   `rpcmtec/modelos/anuario_estatistico_5_4_9.ods` é o arquivo real de junho de 2026,
   versionado. Gerar é abrir esse ZIP, trocar só o valor das células da matriz dentro do

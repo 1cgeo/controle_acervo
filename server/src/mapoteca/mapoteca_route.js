@@ -9,6 +9,7 @@ const { verifyPerfil } = require('../login')
 
 const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
+const { gerarRtmOds } = require('../rpcmtec/rtm_ods')
 const mapotecaSchema = require('./mapoteca_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
 const auditoriaCtrl = require('./auditoria_ctrl')
@@ -860,11 +861,15 @@ router.get(
   asyncHandler(async (req, res, next) => {
     const { ano } = req.query
     const dados = await relatorioCtrl.getRelatorioPedidosDetalhado(ano)
-    return odsExport.sendOds(res, `META4_DETALHADA_${ano}.ods`, {
-      aba: 'META4_DETALHADA',
-      colunas: relatorioCtrl.COLUNAS_META4_ODS,
-      linhas: relatorioCtrl.paraAbaMeta4(dados)
-    })
+    // MESMO gerador da rota /api/rpcmtec/rtm/ods, de proposito: dois caminhos
+    // para o mesmo arquivo com formatos diferentes e a divergencia que a fusao
+    // do RPCMTec existiu para acabar. Ele mora em `rpcmtec/` porque e onde ficam
+    // as planilhas-semente; nao ha ciclo, o modulo dele so importa `utils`.
+    const buffer = gerarRtmOds(relatorioCtrl.paraAbaMeta4(dados))
+    res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
+    res.setHeader('Content-Disposition', `attachment; filename="META4_DETALHADA_${ano}.ods"`)
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.end(buffer)
   })
 )
 

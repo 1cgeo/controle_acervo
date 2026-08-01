@@ -18,12 +18,9 @@
 // que cada tabela seja colável na subseção de mesmo número. Só saem as
 // subseções que o SCA sabe preencher INTEIRAS:
 //
-//   2.2  Totais do Mês e do Ano          acervo.versao por data_edicao
-//   2.4  Entregas detalhada de produtos  idem, uma linha por versão
-//   2.7  Estado do Acervo                cobertura por escala x tipo
+//   2.7  Estado do Acervo                cobertura da ASC por escala x tipo
 //   3.1  Totais do Mês e do Ano          mapoteca.pedido
 //   3.2  Entregas da mapoteca            idem, uma linha por pedido militar
-//   3.3  Extra-PIT                       idem, previsto_pit = false
 //   3.4  LAI e órgãos públicos           idem, cliente civil
 //   4.1  Execução por ND                 orçamento, classificação PDR
 //   4.2  Situação dos créditos           idem
@@ -36,11 +33,22 @@
 //   7.3  Insumos de impressão, tintas    idem
 //
 // FICAM DE FORA, com o motivo, para ninguém procurar o que não existe:
+//   2.2  Totais do Mês e do Ano  decisão do chefe em 2026-08-01: por enquanto
+//                                não vem do SCA.
+//   2.4  Entregas detalhada      idem.
 //   2.1  Estado Atual do PIT     `pit.meta` não tem quantidade prevista nem
 //                                previsão de término, e nenhuma versão do
 //                                acervo aponta para uma meta.
 //   2.3  Execução por Lote       o SCA conta os produtos do lote, mas não tem
 //                                operador nem percentual concluído.
+//   3.3  Extra-PIT               o RPCMTec chama de Extra-PIT a exceção
+//                                AUTORIZADA (o modelo tem coluna "Documento
+//                                autorização"), e o SCA não guarda o que a
+//                                distingue de um pedido comum fora do PIT.
+//                                Derivá-la de `previsto_pit` dava 23 linhas
+//                                em julho/2026 onde a edição real traz 1:
+//                                aquele campo é FALSE por default em 142 dos
+//                                158 pedidos de produção.
 //   2.5  Atividades de campo     não há tabela de atividade de campo.
 //   2.6  Capacitações externas   não há tabela de capacitação.
 //   5.   Desenvolvimento e TI    vem do painel do GitHub e do backup.
@@ -57,13 +65,14 @@
 
 const { db } = require('../database')
 const acervoCtrl = require('../acervo/acervo_ctrl')
-const integracaoCtrl = require('../integracao/integracao_ctrl')
 const mapotecaCtrl = require('../mapoteca/mapoteca_ctrl')
 const {
   domainConstants: {
     SITUACAO_PEDIDO,
     TIPO_CLIENTE,
     TIPO_LICITACAO,
+    TIPO_PRODUTO,
+    TIPO_VERSAO,
     CLASSIFICACAO_NC,
     CATEGORIA_MATERIAL
   }
@@ -72,7 +81,7 @@ const { QTD_EFETIVA, JOIN_PRODUTO_ITEM, filtroPeriodoMes } = require('../mapotec
 
 const controller = {}
 
-// Cliente militar (3.1/3.2/3.3) contra civil, órgão público e LAI (3.4).
+// Cliente militar (3.1 e 3.2) contra civil, órgão público e LAI (3.4).
 const TIPOS_CLIENTE_MILITAR = [
   TIPO_CLIENTE.OM_EB,
   TIPO_CLIENTE.OM_AERONAUTICA,
@@ -83,10 +92,15 @@ const TIPOS_CLIENTE_MILITAR = [
 // não há mais nada a cobrar, então ele sai das duas contas.
 const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 
-// Universo de folhas da ASC (Área de Suprimento Cartográfico, 576.000 km²) por
-// escala, para a % de cobertura da 2.7. Fonte: RT 11/2025 (proposta de base
-// contínua), confirmado pelo chefe da DGEO em 2026-07-01 (o RT registrava 250
-// para 1:100.000; o valor correto é 249).
+// Universo de folhas da ASC (Área Sob Coordenação do 1º CGEO, 694.301 km²) por
+// escala, o DENOMINADOR da 2.7. Fonte: RT 11/2025 (proposta de base contínua),
+// confirmado pelo chefe da DGEO em 2026-07-01 (o RT registrava 250 para
+// 1:100.000; o valor correto é 249).
+//
+// O numerador vem de `limites.area_suprimento` (ver buscarEstadoAcervo): os dois
+// TÊM de falar da mesma área, senão a fração não quer dizer nada. Que falam está
+// medido -- a 1:50.000 e a 1:250.000 dão exatamente 927 e 49, os números desta
+// tabela.
 const UNIVERSO_ASC = {
   '1:25.000': 3556,
   '1:50.000': 927,
@@ -104,15 +118,11 @@ const ESCALA_NOME = {
   '250k': '1:250.000'
 }
 
-const NAO_MAPEADO = 'Não mapeado'
-
-// Os dois tipos que a 2.7 conta, com a propriedade da célula que diz se aquela
-// folha está coberta naquele tipo. A cobertura vem de getSituacaoGeralCells,
-// que já mescla Carta Topográfica e Carta Ortoimagem da mesma MI (no SCA são
-// produtos distintos) numa célula só.
+// Os dois tipos que a 2.7 conta, na ordem do documento. O nome é o de
+// `dominio.tipo_produto`, e é por ele que a consulta agrupa.
 const TIPOS_ESTADO_ACERVO = [
-  { nome: 'Carta Topográfica', propriedade: 'situacao_topo' },
-  { nome: 'Carta Ortoimagem', propriedade: 'situacao_orto' }
+  { nome: 'Carta Topográfica', tipoId: TIPO_PRODUTO.CARTA_TOPOGRAFICA },
+  { nome: 'Carta Ortoimagem', tipoId: TIPO_PRODUTO.CARTA_ORTOIMAGEM }
 ]
 
 // ---------------------------------------------------------------------------
@@ -148,54 +158,76 @@ const moeda = valor => (valor == null ? '-' : formatadorMoeda.format(Number(valo
 // 2.2 / 2.4 / 2.7 - acervo
 // ---------------------------------------------------------------------------
 
-// 2.2: uma linha por tipo de produto entregue, mais "Total geral". Os rótulos
-// saem de `dominio.tipo_produto`, e não da lista fixa do modelo ("CDGV EDGV
-// 3.0", "Carta Militar (BDGEx Op)"): aqueles misturam tipo com subtipo e com
-// destino de carga, e o SCA não tem de onde derivá-los sem inventar mapeamento.
-const montarTotaisPorTipo = ({ produtosMes, produtosAno }) => {
-  const porTipo = resumo => resumo.reduce((mapa, r) => {
-    mapa[r.tipo_produto] = (mapa[r.tipo_produto] || 0) + r.quantidade
-    return mapa
-  }, {})
-
-  const mes = porTipo(produtosMes.resumo)
-  const ano = porTipo(produtosAno.resumo)
-  const tipos = [...new Set([...Object.keys(mes), ...Object.keys(ano)])].sort()
-
-  return [
-    ...tipos.map(tipo => [texto(tipo), numero(mes[tipo] || 0), numero(ano[tipo] || 0)]),
-    ['Total geral', numero(produtosMes.total), numero(produtosAno.total)]
-  ]
+// A 2.2 (Totais do Mês e do Ano) e a 2.4 (Entregas detalhada de produtos
+// finais) NÃO saem daqui, por decisão do chefe em 2026-08-01: por enquanto elas
+// não vêm do SCA. Elas chegaram a existir, e mediam `acervo.versao` por
+// `data_edicao`; o que as tirou foi o escopo, não defeito.
+//
+// 2.7: folhas catalogadas DENTRO DA ASC, por escala x tipo de produto.
+//
+// O RECORTE PELA ASC é o que faz a coluna "% da ASC" dizer a verdade. Sem ele o
+// numerador era o acervo INTEIRO, que guarda folha de fora da nossa área, e a
+// conta passava de 100: medido em 2026-08-01 contra produção, a 1:50.000 Carta
+// Topográfica dava 943 sobre 927, ou seja 101,7%. Com o recorte ela dá 927 sobre
+// 927 e a 1:250.000 dá 49 sobre 49 -- os dois fecham EXATAMENTE com o universo
+// do RT 11/2025, e é essa coincidência que prova que o polígono está certo.
+//
+// ST_Intersects, e não "centro dentro da área": medido, o centro
+// (ST_PointOnSurface) devolve 43 na 1:250.000 contra as 49 do universo, porque a
+// folha de borda tem o centro fora. Folha que TOCA a ASC é folha da ASC.
+//
+// "Catalogado" exige versão REGULAR, o mesmo critério da cobertura do acervo: o
+// Registro Histórico documenta que uma edição existiu e por definição não tem
+// arquivo, e contá-lo pintaria de pronta uma folha que ninguém pode baixar.
+//
+// A CONTAGEM DO MÊS usa o MESMO recorte: numa linha cujo total é da ASC, um "no
+// mês" que contasse folha de fora não fecharia com a coluna ao lado.
+const buscarEstadoAcervo = async ({ ano, mes }) => {
+  return db.conn.any(
+    `
+    WITH area AS (
+      SELECT geom FROM limites.area_suprimento WHERE e_1cgeo
+    )
+    SELECT
+      te.nome AS escala,
+      tp.nome AS tipo_produto,
+      COUNT(DISTINCT prod.mi)::int AS catalogado,
+      COUNT(DISTINCT prod.mi) FILTER (
+        WHERE ${filtroPeriodoMes('v.data_edicao', { cumulativo: false })}
+      )::int AS no_mes
+    FROM acervo.produto prod
+    JOIN acervo.versao v ON v.produto_id = prod.id AND v.tipo_versao_id = $<versaoRegular>
+    JOIN dominio.tipo_escala te ON te.code = prod.tipo_escala_id
+    JOIN dominio.tipo_produto tp ON tp.code = prod.tipo_produto_id
+    WHERE prod.mi IS NOT NULL
+      AND prod.tipo_escala_id IN ($<escalas:csv>)
+      AND prod.tipo_produto_id IN ($<tipos:csv>)
+      AND EXISTS (SELECT 1 FROM area a WHERE ST_Intersects(prod.geom, a.geom))
+    GROUP BY te.nome, tp.nome
+    `,
+    {
+      ano,
+      mes,
+      versaoRegular: TIPO_VERSAO.REGULAR,
+      escalas: acervoCtrl.SITUACAO_GERAL_ESCALAS.map(e => e.id),
+      tipos: TIPOS_ESTADO_ACERVO.map(t => t.tipoId)
+    }
+  )
 }
 
-// 2.4: uma linha por versão finalizada NO MÊS (não cumulativo, como o título da
-// subseção diz). O "UUID BDGEx" é `acervo.versao.uuid_versao`: é o mesmo
-// identificador com que o produto é publicado lá, e não um código nosso.
-const montarEntregasDetalhadas = ({ produtosMes }) =>
-  produtosMes.produtos.map(p => [
-    texto(p.tipo_produto),
-    texto(p.escala),
-    texto(p.uuid_versao),
-    texto(p.mi || p.inom),
-    texto(p.pit),
-    texto(p.lote)
-  ])
-
-// 2.7: escala x tipo de produto. O modelo escreve a escala sem o "1:" ("25.000").
-const montarEstadoAcervo = ({ situacaoGeral, produtosMes }) => {
+// O modelo escreve a escala sem o "1:" ("25.000"), e a ordem é tipo x escala:
+// as quatro escalas da Carta Topográfica e depois as quatro da Carta Ortoimagem.
+const montarEstadoAcervo = ({ estadoAcervo }) => {
   const linhas = []
 
   for (const tipo of TIPOS_ESTADO_ACERVO) {
     for (const escala of acervoCtrl.SITUACAO_GERAL_ESCALAS) {
       const escalaNome = ESCALA_NOME[escala.name]
-      const celulas = situacaoGeral[escala.name] || []
+      const achado = estadoAcervo.find(
+        l => l.escala === escalaNome && l.tipo_produto === tipo.nome)
 
-      const catalogado = celulas
-        .filter(c => c.properties[tipo.propriedade] !== NAO_MAPEADO).length
-
-      const noMes = produtosMes.resumo
-        .filter(r => r.escala === escalaNome && r.tipo_produto === tipo.nome)
-        .reduce((s, r) => s + r.quantidade, 0)
+      const catalogado = achado ? achado.catalogado : 0
+      const noMes = achado ? achado.no_mes : 0
 
       const universo = UNIVERSO_ASC[escalaNome] || null
       const percentual = universo
@@ -223,7 +255,7 @@ const montarEstadoAcervo = ({ situacaoGeral, produtosMes }) => {
 // Pedidos do período, por DATA DE CRIAÇÃO (data_pedido) e em QUALQUER situação.
 // É a mesma fonte que o RPCMTec histórico sempre mostrou nas 3.2 e 3.4, onde
 // convivem "Pendente" e "Concluído" no mesmo mês -- e por isso ela é mais ampla
-// que `integracaoCtrl.getMapotecaAtendimentos`, que só traz pedido já entregue,
+// que a rota de integração de atendimentos, que só traz pedido já entregue,
 // pela data de atendimento.
 //
 // Os LEFT JOIN de JOIN_PRODUTO_ITEM são o que impede o item AVULSO (papel
@@ -305,34 +337,37 @@ const totaisDoGrupo = pedidos => {
   }
 }
 
-// 3.1: as sete linhas do modelo, na ordem dele.
+// 3.1: os cinco indicadores que o SCA sabe apurar, na ordem do modelo.
 //
-// As duas linhas de Extra-PIT são um SUBCONJUNTO das de Mapoteca (pedido
-// militar com previsto_pit = false), e não um terceiro grupo a somar. É assim
-// no modelo também: em julho/2026 a Mapoteca soma 476 produtos e o Extra-PIT
-// aparece com 0, dentro daqueles 476.
+// AS DUAS LINHAS DE EXTRA-PIT DO MODELO NÃO SAEM DAQUI, e a subseção 3.3
+// (Extra-PIT) também não. Elas existiram por algumas horas em 2026-08-01,
+// derivadas de `previsto_pit = false`, e estavam ERRADAS: medido contra
+// produção, 142 dos 158 pedidos têm esse campo falso, porque FALSE é o default
+// da coluna e quase ninguém o preenche. A 3.3 saía com 23 pedidos em julho
+// onde a edição real traz 1, e esta tabela dizia 485 produtos Extra-PIT onde a
+// real diz 0.
+//
+// O Extra-PIT do RPCMTec é uma exceção autorizada -- o modelo tem coluna
+// "Documento autorização" --, e o SCA não guarda o que a distingue de um pedido
+// comum fora do PIT. Enquanto não guardar, a 3.3 continua sendo escrita à mão, e
+// a tela declara isso na lista de lacunas. Decisão do chefe em 2026-08-01.
 const montarTotaisMapoteca = ({ pedidosMes, pedidosAno }) => {
   const grupo = (pedidos, filtro) => totaisDoGrupo(pedidos.filter(filtro))
 
   const militar = p => ehMilitar(p)
   const civil = p => !ehMilitar(p)
-  const extraPit = p => ehMilitar(p) && p.previsto_pit === false
 
   const mesMil = grupo(pedidosMes, militar)
   const anoMil = grupo(pedidosAno, militar)
   const mesCiv = grupo(pedidosMes, civil)
   const anoCiv = grupo(pedidosAno, civil)
-  const mesExtra = grupo(pedidosMes, extraPit)
-  const anoExtra = grupo(pedidosAno, extraPit)
 
   return [
     ['Mapoteca - produtos entregues', numero(mesMil.produtos), numero(anoMil.produtos)],
     ['Mapoteca - quantidade de pedidos', numero(mesMil.pedidos), numero(anoMil.pedidos)],
     ['Mapoteca - OM atendidas', numero(mesMil.solicitantes), numero(anoMil.solicitantes)],
     ['LAI e órgãos públicos - produtos entregues', numero(mesCiv.produtos), numero(anoCiv.produtos)],
-    ['LAI e órgãos públicos - quantidade de pedidos', numero(mesCiv.pedidos), numero(anoCiv.pedidos)],
-    ['Extra-PIT - produtos entregues', numero(mesExtra.produtos), numero(anoExtra.produtos)],
-    ['Extra-PIT - número de solicitações', numero(mesExtra.pedidos), numero(anoExtra.pedidos)]
+    ['LAI e órgãos públicos - quantidade de pedidos', numero(mesCiv.pedidos), numero(anoCiv.pedidos)]
   ]
 }
 
@@ -345,26 +380,20 @@ const montarEntregasMapoteca = ({ pedidosMes }) =>
     texto(p.situacao)
   ])
 
-// 3.3: o pedido militar fora do PIT. O "Demandante" é quem ENCAMINHOU (o CMS
-// encaminhando pedido do 18º BI Mtz), e cai no solicitante quando não há.
-const montarExtraPit = ({ pedidosMes }) =>
-  pedidosMes
-    .filter(p => ehMilitar(p) && p.previsto_pit === false)
-    .map(p => [
-      texto(p.demandante || p.solicitante),
-      texto(p.tipos_produto.join(', ')),
-      numero(p.quantidade),
-      texto(p.situacao),
-      texto(p.documento_solicitacao || p.documento_solicitacao_nup),
-      texto(p.observacao)
-    ])
-
 // 3.4: cliente civil, órgão público e LAI. SEM coluna de quantidade, como o
 // modelo: o que se acompanha aqui é o atendimento, não o volume impresso.
+//
+// A coluna do CÓDIGO DA LAI é um acréscimo ao modelo (chefe, 2026-08-01): é o
+// NUP do Fala.BR (`60143.003284/2026-31`), que identifica a manifestação no
+// sistema da Ouvidoria e é por onde se responde ao cidadão. Ele vive em
+// `documento_solicitacao_nup`, separado do DIEx da DSG que encaminhou o pedido,
+// e sai '-' em quem chegou por outro canal (e-mail, ofício): em produção, 27 dos
+// 33 pedidos civis têm NUP.
 const montarLai = ({ pedidosMes }) =>
   pedidosMes.filter(p => !ehMilitar(p)).map(p => [
     texto(p.solicitante),
     texto(documentoExibicao(p)),
+    texto(p.documento_solicitacao_nup),
     texto(p.situacao)
   ])
 
@@ -628,9 +657,7 @@ controller.gerar = async ({ ano, mes }) => {
   const { inicio, cutoff } = recorteDoAno(ano, mes)
 
   const [
-    situacaoGeral,
-    produtosMes,
-    produtosAno,
+    estadoAcervo,
     pedidosMes,
     pedidosAno,
     tiposMaterial,
@@ -643,9 +670,7 @@ controller.gerar = async ({ ano, mes }) => {
     recebimentoMaterial,
     creditosExtraPdr
   ] = await Promise.all([
-    integracaoCtrl.getSituacaoGeral({}),
-    integracaoCtrl.getProdutosFinalizados({ ano, mes, cumulativo: false }),
-    integracaoCtrl.getProdutosFinalizados({ ano, mes, cumulativo: true }),
+    buscarEstadoAcervo({ ano, mes }),
     buscarPedidos({ ano, mes, cumulativo: false }),
     buscarPedidos({ ano, mes, cumulativo: true }),
     mapotecaCtrl.getTiposMaterial(),
@@ -671,24 +696,11 @@ controller.gerar = async ({ ano, mes }) => {
       titulo: '2. EXECUÇÃO DO PIT',
       subsecoes: [
         {
-          numero: '2.2',
-          titulo: 'Totais do Mês e do Ano',
-          cabecalhos: ['Tipo de produto', 'Quantidade no mês', 'Quantidade no ano'],
-          linhas: montarTotaisPorTipo({ produtosMes, produtosAno })
-        },
-        {
-          numero: '2.4',
-          titulo: 'Entregas detalhada de produtos finais (BDGEx, IGW, EBGeo) no mês',
-          cabecalhos: ['Tipo produto', 'Escala', 'UUID BDGEx', 'Identificador',
-            'Meta PIT', 'Lote SAP'],
-          linhas: montarEntregasDetalhadas({ produtosMes })
-        },
-        {
           numero: '2.7',
           titulo: 'Estado do Acervo',
           cabecalhos: ['Escala', 'Tipo de produto', 'Total catalogado',
             'Catalogo no mês', 'Universo da ASC', '% da ASC'],
-          linhas: montarEstadoAcervo({ situacaoGeral, produtosMes })
+          linhas: montarEstadoAcervo({ estadoAcervo })
         }
       ]
     },
@@ -707,17 +719,15 @@ controller.gerar = async ({ ano, mes }) => {
           cabecalhos: ['Solicitante', 'Documento de solicitação', 'Quantidade', 'Situação'],
           linhas: montarEntregasMapoteca({ pedidosMes })
         },
-        {
-          numero: '3.3',
-          titulo: 'Extra-PIT',
-          cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd', 'Situação',
-            'Documento autorização', 'Descrição'],
-          linhas: montarExtraPit({ pedidosMes })
-        },
+        // SEM a 3.3 (Extra-PIT): ver o comentário de montarTotaisMapoteca. O
+        // SCA não guarda o que distingue a exceção autorizada de um pedido
+        // comum fora do PIT, e derivá-la de `previsto_pit` produzia uma tabela
+        // com 23 linhas onde a edição real traz 1.
         {
           numero: '3.4',
           titulo: 'LAI e atendimento à órgãos públicos',
-          cabecalhos: ['Solicitante', 'Documento de solicitação', 'Situação'],
+          cabecalhos: ['Solicitante', 'Documento de solicitação',
+            'Código da LAI (NUP)', 'Situação'],
           linhas: montarLai({ pedidosMes })
         }
       ]

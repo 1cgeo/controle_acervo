@@ -49,9 +49,13 @@ const comoBinario = (req) => req
 // A numeração do documento da Divisão, medida em "RPCM Técnico Julho_2026.docx".
 // Só entram as subseções que o SCA preenche INTEIRAS; o que fica de fora está
 // listado em server/src/rpcmtec/rpcmtec_ctrl.js, com o motivo de cada uma.
+// A 3.3 (Extra-PIT) NAO entra: o RPCMTec chama de Extra-PIT a excecao
+// AUTORIZADA, e o SCA nao guarda o que a distingue de um pedido comum fora do
+// PIT. Ver o comentario de montarTotaisMapoteca.
+// A 2.2 e a 2.4 sairam em 2026-08-01: por enquanto elas nao vem do SCA.
 const SUBSECOES_ESPERADAS = [
-  '2.2', '2.4', '2.7',
-  '3.1', '3.2', '3.3', '3.4',
+  '2.7',
+  '3.1', '3.2', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
   '7.2', '7.3'
 ]
@@ -125,7 +129,7 @@ describe('GET /api/rpcmtec/gerar', () => {
     ])
   })
 
-  test('a 3.1 traz os sete indicadores do documento, na ordem dele', async () => {
+  test('a 3.1 traz os cinco indicadores que o SCA apura, na ordem do documento', async () => {
     const res = await request(app)
       .get('/api/rpcmtec/gerar?ano=2026&mes=7')
       .set('Authorization', admin())
@@ -134,14 +138,14 @@ describe('GET /api/rpcmtec/gerar', () => {
       .flatMap(s => s.subsecoes)
       .find(s => s.numero === '3.1')
 
+    // Sem as duas linhas de Extra-PIT do modelo: derivadas de `previsto_pit`
+    // elas diziam 485 produtos onde a edicao real diz 0.
     expect(totais.linhas.map(l => l[0])).toEqual([
       'Mapoteca - produtos entregues',
       'Mapoteca - quantidade de pedidos',
       'Mapoteca - OM atendidas',
       'LAI e órgãos públicos - produtos entregues',
-      'LAI e órgãos públicos - quantidade de pedidos',
-      'Extra-PIT - produtos entregues',
-      'Extra-PIT - número de solicitações'
+      'LAI e órgãos públicos - quantidade de pedidos'
     ])
   })
 

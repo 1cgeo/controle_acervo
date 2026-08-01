@@ -105,7 +105,7 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
 | `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
+| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |

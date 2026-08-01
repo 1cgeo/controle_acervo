@@ -29,7 +29,7 @@ Banco `sca` e auth ficam na rede interna, cada um no seu host: veja `DB_SERVER`,
    Sobe um processo PM2: `controle-acervo` (3015). A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) + `pm2 save`.
 
-O banco precisa estar na versao **1.7.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
+O banco precisa estar na versao **1.11.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
 
 ## Desenvolvimento (local)
 
@@ -52,7 +52,7 @@ SCA_URL=http://localhost:3015 SCA_USER=<login> SCA_SENHA=<senha> python scripts/
 
 Sao 32 checagens: interface na raiz, login com o catalogo dos tres modulos, dominios e leituras de cada modulo, a consulta publica por localizador (com um pedido REAL, porque com codigo inventado ela mede o 404 e nao a rota), a execucao por ND do painel do orcamento, o RPCMTec inteiro e o Anuario Estatistico (rotas de plataforma, admin), os anexos em BYTEA, e a colisao de nome `/arquivo` que so o prefixo `/api/orcamento/` faz conviver.
 
-O RPCMTec e conferido pela CONTAGEM de subsecoes (16, as que o SCA preenche inteiras) e o Anuario pelo numero de linhas de cada bloco (18 convencionais e 16 digitais): sao os dois numeros que caem em silencio se uma subsecao sumir do gerador ou se a planilha-semente for trocada por uma de outro formato.
+O RPCMTec e conferido pela CONTAGEM de subsecoes (13, as que o SCA preenche inteiras hoje) e o Anuario pelo numero de linhas de cada bloco (18 convencionais e 16 digitais): sao os dois numeros que caem em silencio se uma subsecao sumir do gerador ou se a planilha-semente for trocada por uma de outro formato.
 
 Conferencia rapida, sem credencial:
 ```bash

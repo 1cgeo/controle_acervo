@@ -37,7 +37,6 @@ const OBJETOS = [
   'getTipoMaterial', 'getEstoqueMaterialItem', 'getConsumoMaterialItem',
   'getImpressaoItem', 'getOrderStatus', 'getAvgFulfillmentTime',
   'getMaterialConsumption', 'getPlotterStatus', 'getResumoAnual',
-  'getAnuario',
 ];
 
 /** Mutacoes e downloads. O default e `null`. */
@@ -53,7 +52,7 @@ const ACOES = [
   'transferirEstoque',
   'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
   'downloadDashboardCsv',
-  'downloadMeta4Ods', 'downloadAnuarioOds',
+  'downloadMeta4Ods',
   'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',
   // getEtiquetaEnvio e leitura, mas entra aqui e nao em OBJETOS porque o default

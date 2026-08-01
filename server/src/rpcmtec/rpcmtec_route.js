@@ -21,7 +21,9 @@ const edicaoCtrl = require('./rpcmtec_edicao_ctrl')
 const rpcmtecDocx = require('./rpcmtec_docx')
 const rpcmtecSchema = require('./rpcmtec_schema')
 const anuarioCtrl = require('../mapoteca/anuario_ctrl')
+const mapotecaRelatorioCtrl = require('../mapoteca/relatorio_ctrl')
 const { gerarAnuarioOds } = require('./anuario_ods')
+const { gerarRtmOds } = require('./rtm_ods')
 
 const router = express.Router()
 
@@ -114,6 +116,36 @@ router.get(
     // O nome segue o dos arquivos que já subiram para a DSG
     // (Anuario_Estatistico_1CGEO_06_Junho_2026.ods): número E nome do mês.
     const nome = `Anuario_Estatistico_1CGEO_${doisDigitos(mes)}_${anuarioCtrl.NOME_MES[mes - 1]}_${ano}.ods`
+    res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.end(buffer)
+  })
+)
+
+// ---------------------------------------------------------------------------
+// RTM: a aba META4_DETALHADA
+//
+// Sai daqui pelo mesmo motivo do Anuário: é a MESMA tarefa mensal, e os três
+// arquivos (RPCMTec, Anuário e RTM) sobem para a DSG no mesmo envio. O dado vem
+// de `mapoteca/relatorio_ctrl`, que é onde a impressão é registrada; o que
+// mudou em 2026-08-01 foi o ARQUIVO, que passou a sair da planilha-semente em
+// vez de ser redesenhado (ver rpcmtec/rtm_ods.js).
+//
+// A aba é do ANO inteiro, e não do mês: ela é o detalhamento da Meta 4 do PIT,
+// e quem a cola no RTM cola o ano corrente. Por isso o `mes` é ignorado aqui.
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/rtm/ods',
+  verifyAdmin,
+  schemaValidation({ query: rpcmtecSchema.gerarQuery }),
+  asyncHandler(async (req, res, next) => {
+    const { ano } = req.query
+    const dados = await mapotecaRelatorioCtrl.getRelatorioPedidosDetalhado(ano)
+    const buffer = gerarRtmOds(mapotecaRelatorioCtrl.paraAbaMeta4(dados))
+
+    const nome = `META4_DETALHADA_${ano}.ods`
     res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
     res.setHeader('Content-Length', String(buffer.length))

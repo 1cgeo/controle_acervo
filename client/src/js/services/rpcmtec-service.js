@@ -60,3 +60,19 @@ export function downloadAnuarioOds({ ano, mes }) {
   const nome = `Anuario_Estatistico_1CGEO_${String(mes).padStart(2, '0')}_${ano}.ods`;
   return apiDownload(`/rpcmtec/anuario/ods?ano=${ano}&mes=${mes}`, nome);
 }
+
+/**
+ * Baixa a aba META4_DETALHADA do RTM, do ANO inteiro.
+ *
+ * Ela e o detalhamento da Meta 4 do PIT, e quem a cola no RTM cola o ano
+ * corrente: o mes vai na query so porque a rota o exige, e e ignorado.
+ *
+ * O arquivo sai da planilha-semente da propria aba, entao ja abre com a largura
+ * de coluna, o painel congelado e os estilos de sempre.
+ *
+ * @param {{ano:number, mes:number}} params
+ * @returns {Promise<void>}
+ */
+export function downloadRtmOds({ ano, mes }) {
+  return apiDownload(`/rpcmtec/rtm/ods?ano=${ano}&mes=${mes}`, `META4_DETALHADA_${ano}.ods`);
+}

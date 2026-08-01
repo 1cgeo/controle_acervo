@@ -168,12 +168,12 @@ secao('RPCMTec (plataforma, fora dos tres modulos)')
 # Desde 2026-08-01 o relatorio inteiro sai de um gerador so. Antes eram dois
 # (/api/relatorio/rpcmtec e /api/orcamento/relatorio/secao3), com numeracao
 # propria cada um, e alguem colava um arquivo no outro. As 16 subsecoes sao as
-# que o SCA preenche INTEIRAS; menos que isso e regressao.
+# que o SCA preenche INTEIRAS hoje; menos que isso e regressao.
 c, b = chamar('/api/rpcmtec/gerar?ano=2026&mes=6', token=tok)
 secoes = (b.get('dados') or {}).get('secoes') or []
 subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
 checa('RPCMTec inteiro, na numeracao do documento da Divisao',
-      c == 200 and len(subsecoes) == 16,
+      c == 200 and len(subsecoes) == 13,
       f'HTTP {c}, {len(secoes)} secoes / {len(subsecoes)} subsecoes')
 
 c, b = chamar('/api/rpcmtec/anuario?ano=2026&mes=6', token=tok)

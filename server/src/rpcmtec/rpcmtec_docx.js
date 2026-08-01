@@ -84,13 +84,15 @@ const ENTRELINHA_CELULA = { line: 240, lineRule: LineRuleType.AUTO }
 // número da subseção. Uma tabela sem entrada aqui cai na divisão por igual, que
 // é o certo para tabela que o modelo não tem (nenhuma, hoje).
 const GRADES = {
-  '2.2': [4965, 2370, 2520],
-  '2.4': [1740, 1050, 2535, 1560, 1440, 1485],
+  // SEM a 2.2 e a 2.4: por enquanto elas nao vem do SCA (chefe, 2026-08-01).
   '2.7': [1380, 1755, 2070, 1515, 1515, 1515],
   '3.1': [5010, 2580, 2175],
   '3.2': [2040, 3345, 2010, 2415],
-  '3.3': [1590, 1575, 630, 1215, 1455, 3360],
-  '3.4': [2040, 4260, 3525],
+  // SEM a 3.3 (Extra-PIT): o SCA nao a gera. Ver rpcmtec_ctrl.js.
+  // A 3.4 tem QUATRO colunas aqui, e tres no modelo: o codigo da LAI (o NUP do
+  // Fala.BR) foi acrescentado em 2026-08-01. A largura total continua a do
+  // modelo, 9825, para a tabela nascer do mesmo tamanho das vizinhas.
+  '3.4': [2040, 3000, 2200, 2585],
   '4.1': [1388, 2151, 1388, 1638, 1638, 1637],
   '4.2': [855, 855, 840, 2865, 1125, 1170, 1140, 945],
   '4.3': [2040, 2670, 2100, 3000],
