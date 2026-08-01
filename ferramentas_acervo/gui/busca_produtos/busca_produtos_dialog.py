@@ -1,15 +1,14 @@
 # Path: gui\busca_produtos\busca_produtos_dialog.py
 import csv
-import json
 import os
 
-from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
-                       QgsFeature, QgsJsonUtils, QgsProject, QgsVectorLayer)
+from qgis.core import Qgis, QgsFeature
 from qgis.PyQt import uic
 from qgis.PyQt.QtCore import Qt, QDateTime
 from qgis.PyQt.QtWidgets import (QDialog, QFileDialog, QHeaderView, QMessageBox,
                                  QTableWidget, QTableWidgetItem)
 
+from ..mapa_utils import adicionar_ao_projeto, bbox_do_canvas, criar_camada, geometria_de_geojson
 from ..ui_utils import sortable_item, sortable_int_item
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -199,36 +198,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
         return params
 
     def bbox_do_mapa(self):
-        """'minLon,minLat,maxLon,maxLat' da área visível, em graus.
-
-        O canvas pode estar em qualquer projeção, e a rota espera coordenadas
-        geográficas: sem reprojetar, um projeto em UTM mandaria metros e o
-        servidor recusaria por estar fora do intervalo de latitude/longitude.
-        """
-        canvas = self.iface.mapCanvas()
-        extensao = canvas.extent()
-        origem = canvas.mapSettings().destinationCrs()
-        destino = QgsCoordinateReferenceSystem('EPSG:4326')
-
-        if origem.isValid() and origem != destino:
-            try:
-                transformacao = QgsCoordinateTransform(
-                    origem, destino, QgsProject.instance()
-                )
-                extensao = transformacao.transformBoundingBox(extensao)
-            except Exception:
-                QMessageBox.warning(
-                    self, "Área do mapa",
-                    "Não consegui converter a área visível para coordenadas geográficas. "
-                    "A busca foi feita sem o recorte espacial."
-                )
-                return None
-
-        if extensao.isEmpty():
-            return None
-
-        return (f"{extensao.xMinimum():.6f},{extensao.yMinimum():.6f},"
-                f"{extensao.xMaximum():.6f},{extensao.yMaximum():.6f}")
+        return bbox_do_canvas(self.iface, self)
 
     # --- camada -------------------------------------------------------------
 
@@ -259,11 +229,12 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             )
             return
 
-        camada = QgsVectorLayer(
-            "Polygon?crs=EPSG:4674&field=id:integer&field=nome:string"
-            "&field=mi:string&field=escala:string",
-            "Busca no acervo", "memory"
-        )
+        camada = criar_camada("Busca no acervo", "Polygon",
+                              [('id', 'int'), ('nome', 'str'),
+                               ('mi', 'str'), ('escala', 'str')])
+        if camada is None:
+            QMessageBox.critical(self, "Erro", "Não foi possível criar a camada.")
+            return
         provedor = camada.dataProvider()
 
         feicoes = []
@@ -281,9 +252,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         provedor.addFeatures(feicoes)
         camada.updateExtents()
-        QgsProject.instance().addMapLayer(camada)
-        self.iface.mapCanvas().setExtent(camada.extent())
-        self.iface.mapCanvas().refresh()
+        adicionar_ao_projeto(self.iface, camada)
 
         recado = f"{len(feicoes)} produto(s) carregados na camada 'Busca no acervo'."
         if dados.get('truncado'):
@@ -302,20 +271,7 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
     @staticmethod
     def _geometria(geojson):
-        """QgsGeometry a partir do GeoJSON da rota.
-
-        A rota devolve `geom` já como OBJETO (o servidor faz `JSON.parse` do
-        `ST_AsGeoJSON`), então ele volta a texto aqui: `geometryFromGeoJson`
-        recebe a string.
-        """
-        if not geojson:
-            return None
-        try:
-            texto = geojson if isinstance(geojson, str) else json.dumps(geojson)
-            geom = QgsJsonUtils.geometryFromGeoJson(texto)
-            return geom if geom and not geom.isNull() else None
-        except Exception:
-            return None
+        return geometria_de_geojson(geojson)
 
     def load_results(self):
         """Load search results from the API with pagination."""

@@ -33,6 +33,7 @@ from .downloads_deletados.downloads_deletados_dialog import DownloadsDeletadosDi
 from .auditoria.auditoria_dialog import AuditoriaDialog
 from .nome_padrao.nome_padrao_dialog import NomePadraoDialog
 from .catalogar_volume.catalogar_volume_dialog import CatalogarVolumeDialog
+from .ponto_controle.ponto_controle_dialog import PontoControleDialog
 
 PANEL_MAPPING = {
     # Funções Gerais (acessíveis a todos os usuários)
@@ -63,6 +64,13 @@ PANEL_MAPPING = {
     },
     "Visualizar Relacionamentos entre Versões": {
         "class": VersaoRelacionamentoDialog,
+        "category": "Funções Gerais",
+        "perfil_minimo": 'consulta'
+    },
+    # Perfil do ACERVO, e não um módulo próprio: ponto de controle é uma tela do
+    # acervo, e quem tem consulta nele vê os pontos. Ver ponto_controle_route.js.
+    "Pontos de Controle": {
+        "class": PontoControleDialog,
         "category": "Funções Gerais",
         "perfil_minimo": 'consulta'
     },

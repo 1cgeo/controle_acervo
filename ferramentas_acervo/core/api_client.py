@@ -1,10 +1,12 @@
 # Path: core\api_client.py
 import logging
+import os
+import re
 import requests
 from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
 from qgis.PyQt.QtCore import QThread
 from qgis.PyQt.QtWidgets import QApplication, QMessageBox
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin
 
 from .dominios import Dominios
 
@@ -215,18 +217,44 @@ class APIClient:
         """Realiza uma requisição DELETE."""
         return self._make_request('DELETE', endpoint, data=data, params=params, timeout=timeout)
 
+    @staticmethod
+    def _nome_do_cabecalho(response):
+        """Nome do arquivo declarado no Content-Disposition, ou None.
+
+        O servidor manda os DOIS parâmetros de propósito: `filename` em ASCII,
+        para cliente antigo, e `filename*` na RFC 5987, com o nome de verdade.
+        O segundo tem precedência justamente porque é o que preserva acento --
+        ler só o primeiro traria "Monografia RS-HV-1.pdf" sem os acentos.
+        """
+        bruto = response.headers.get('content-disposition') or ''
+
+        achado = re.search(r"filename\*=UTF-8''([^;]+)", bruto, re.IGNORECASE)
+        if achado:
+            try:
+                return os.path.basename(unquote(achado.group(1).strip()))
+            except Exception:
+                pass
+
+        achado = re.search(r'filename="([^"]+)"', bruto)
+        if achado:
+            return os.path.basename(achado.group(1).strip())
+        return None
+
     def download_file(self, endpoint, dest_path, params=None, progress_callback=None):
         """Baixa um arquivo binário do servidor.
 
-        Args:
-            endpoint: Endpoint da API
-            dest_path: Caminho de destino do arquivo
-            params: Parâmetros da query string
-            progress_callback: Função opcional callback(bytes_baixados, total_bytes)
+        `dest_path` pode ser um arquivo ou uma PASTA. Sendo pasta, o nome vem do
+        `Content-Disposition` da resposta -- que é o nome real, com a extensão
+        certa. Isso importa no download em lote: sem ele, quem baixa trinta
+        pacotes fica com trinta arquivos sem extensão, e ninguém sabe se o de
+        um ponto é .zip e o de outro é .7z.
+
+        Devolve o CAMINHO escrito, ou None se falhou. O valor continua sendo
+        falsy no erro, então `if not ok:` segue valendo para quem já usava.
         """
         if not self.base_url:
             self.show_error("Erro de Configuração", "URL do servidor não configurada.")
-            return False
+            return None
 
         url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
@@ -240,16 +268,21 @@ class APIClient:
 
             response.raise_for_status()
 
+            destino = dest_path
+            if os.path.isdir(dest_path):
+                nome = self._nome_do_cabecalho(response) or 'download'
+                destino = os.path.join(dest_path, nome)
+
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
 
-            with open(dest_path, 'wb') as f:
+            with open(destino, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback and total_size > 0:
                         progress_callback(downloaded, total_size)
-            return True
+            return destino
 
         except ConnectionError:
             self.show_error("Falha na Conexão", "Não foi possível conectar ao servidor.")
@@ -260,4 +293,4 @@ class APIClient:
         except Exception as e:
             self.show_error("Erro Inesperado", f"Ocorreu um erro inesperado: {str(e)}")
 
-        return False
+        return None

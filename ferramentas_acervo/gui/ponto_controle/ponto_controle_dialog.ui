@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Path: gui\ponto_controle\ponto_controle_dialog.ui -->
+<ui version="4.0">
+ <class>PontoControleDialog</class>
+ <widget class="QDialog" name="PontoControleDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1060</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Pontos de Controle</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QGridLayout" name="filtroLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="codigoLabel">
+       <property name="text">
+        <string>Código:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="codigoLineEdit">
+       <property name="placeholderText">
+        <string>Parte do código do ponto (ex.: RS-HV)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="2">
+      <widget class="QLabel" name="projetoLabel">
+       <property name="text">
+        <string>Projeto:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="3">
+      <widget class="QComboBox" name="projetoComboBox"/>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="loteLabel">
+       <property name="text">
+        <string>Lote (missão):</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="loteComboBox"/>
+     </item>
+     <item row="1" column="2">
+      <widget class="QLabel" name="estadoLabel">
+       <property name="text">
+        <string>Estado:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="3">
+      <widget class="QComboBox" name="estadoComboBox"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="municipioLabel">
+       <property name="text">
+        <string>Município:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QComboBox" name="municipioComboBox">
+       <property name="toolTip">
+        <string>A lista de municípios só aparece depois de escolher o estado: sem isso ela traria os municípios com ponto espalhados pelo país, e escolher fica pior do que digitar.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="2" colspan="2">
+      <widget class="QCheckBox" name="areaVisivelCheckBox">
+       <property name="text">
+        <string>Só na área visível do mapa</string>
+       </property>
+       <property name="toolTip">
+        <string>Usa o retângulo atual do mapa do QGIS como recorte. Reenquadre e busque de novo para mudar a área.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="4">
+      <widget class="QPushButton" name="buscarButton">
+       <property name="text">
+        <string>Buscar</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="4">
+      <widget class="QPushButton" name="verNoMapaButton">
+       <property name="text">
+        <string>Ver no mapa</string>
+       </property>
+       <property name="toolTip">
+        <string>Carrega TODOS os pontos do filtro como camada, coloridos por situação. Não é só a página: o mapa não pode paginar.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="4">
+      <widget class="QPushButton" name="csvButton">
+       <property name="text">
+        <string>Exportar CSV</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="resultsTable"/>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="rodapeLayout">
+     <item>
+      <widget class="QPushButton" name="anteriorButton">
+       <property name="text">
+        <string>&lt; Anterior</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="proximaButton">
+       <property name="text">
+        <string>Próxima &gt;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="statusLabel">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="pacoteCheckBox">
+       <property name="text">
+        <string>Pacote</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="monografiaCheckBox">
+       <property name="text">
+        <string>Monografia</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="baixarButton">
+       <property name="text">
+        <string>Baixar arquivos</string>
+       </property>
+       <property name="toolTip">
+        <string>Baixa os arquivos de todos os pontos selecionados, numa subpasta por ponto.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="fichaButton">
+       <property name="text">
+        <string>Ficha do ponto</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="fecharButton">
+       <property name="text">
+        <string>Fechar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
