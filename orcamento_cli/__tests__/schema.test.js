@@ -151,7 +151,14 @@ test('todo recurso do modulo leva o prefixo /orcamento; usuarios nao', () => {
   // /arquivo e /relatorio existem TAMBEM no acervo, e sem o prefixo o CLI
   // acertaria a rota errada e responderia com dados de outro modulo.
   const { RECURSOS } = require('../lib/recursos')
-  const PLATAFORMA = new Set(['usuario'])
+  // Recurso de PLATAFORMA: mora fora dos tres modulos, entao NAO leva prefixo.
+  //
+  // `meta` entrou nesta lista em 2026-08-01. As metas do PIT sairam do modulo
+  // orcamento em 2026-07-31 (viraram /api/metas, schema `pit`), o
+  // lib/recursos.js acompanhou e este teste nao: ele vinha falhando desde
+  // entao, sozinho, porque a suite dos CLIs nao entra no `npm test` do servidor
+  // nem no do client -- so roda por `node --test`, a mao.
+  const PLATAFORMA = new Set(['usuario', 'meta'])
 
   for (const [chave, recurso] of Object.entries(RECURSOS)) {
     if (PLATAFORMA.has(chave)) {

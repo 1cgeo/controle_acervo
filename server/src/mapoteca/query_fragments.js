@@ -52,7 +52,6 @@ const JOIN_PRODUTO_ITEM = `
 // cadastro estável merece estar no acervo.
 const PRODUTO_NOME = "COALESCE(prod.nome, pp.nome_avulso)";
 const PRODUTO_MI = "prod.mi";        // avulso não tem MI
-const PRODUTO_INOM = "prod.inom";    // nem INOM
 const PRODUTO_TIPO_ID = "prod.tipo_produto_id";
 const PRODUTO_ESCALA_ID = "prod.tipo_escala_id";
 const ITEM_E_AVULSO = "(pp.nome_avulso IS NOT NULL)";
@@ -151,7 +150,6 @@ module.exports = {
   JOIN_PRODUTO_ITEM,
   PRODUTO_NOME,
   PRODUTO_MI,
-  PRODUTO_INOM,
   PRODUTO_TIPO_ID,
   PRODUTO_ESCALA_ID,
   ITEM_E_AVULSO,

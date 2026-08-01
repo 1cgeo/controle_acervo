@@ -1,79 +1,100 @@
 'use strict'
 
-const integracaoSchema = require('../../../integracao/integracao_schema')
+// As rotas de /api/integracao NAO tem autenticacao (decisao registrada no
+// CLAUDE.md: o vault da DGEO as consome sem credencial). O schema e a UNICA
+// porta dessas rotas, entao aqui a recusa de chave desconhecida nao e estilo:
+// o `schema_validation` do SCA descarta chave desconhecida e responde 200, e
+// estes schemas fecham essa porta de proposito.
 
-describe('Integracao Schemas', () => {
+const integracaoSchema = require('../../../integracao/integracao_schema')
+const { recusaPor, aceita } = require('../../helpers/joi')
+
+describe('Schemas da integracao (rotas publicas)', () => {
   describe('situacaoGeralQuery', () => {
-    it('should accept a valid escala and default geom to false', () => {
-      const { error, value } = integracaoSchema.situacaoGeralQuery.validate({ escala: '50k' })
-      expect(error).toBeUndefined()
+    it('aceita escala conhecida e geom nasce false', () => {
+      const value = aceita(integracaoSchema.situacaoGeralQuery.validate({ escala: '50k' }))
       expect(value.geom).toBe(false)
     })
 
-    it('should accept no escala (varre todas)', () => {
-      const { error } = integracaoSchema.situacaoGeralQuery.validate({})
-      expect(error).toBeUndefined()
+    it('sem escala, varre todas', () => {
+      aceita(integracaoSchema.situacaoGeralQuery.validate({}))
     })
 
-    it('should reject an invalid escala', () => {
-      const { error } = integracaoSchema.situacaoGeralQuery.validate({ escala: '500k' })
-      expect(error).toBeDefined()
+    it('recusa escala que nao existe no dominio', () => {
+      recusaPor(
+        integracaoSchema.situacaoGeralQuery.validate({ escala: '500k' }),
+        'escala',
+        'any.only'
+      )
     })
 
-    it('should coerce geom from string', () => {
-      const { error, value } = integracaoSchema.situacaoGeralQuery.validate({ geom: 'true' })
-      expect(error).toBeUndefined()
+    // A query string entrega texto. Sem a conversao, `geom=true` seria a string
+    // 'true', que e verdadeira em JS: a rota devolveria geometria SEMPRE, e o
+    // vault baixaria o poligono de todo o acervo sem ter pedido.
+    it('converte geom de texto para booleano', () => {
+      const value = aceita(integracaoSchema.situacaoGeralQuery.validate({ geom: 'true' }))
       expect(value.geom).toBe(true)
     })
 
-    it('should accept mi/inom csv strings', () => {
-      const { error } = integracaoSchema.situacaoGeralQuery.validate({ mi: '2753-1,2754-2', inom: 'SF-22-Y-C-I-1' })
-      expect(error).toBeUndefined()
+    it('aceita mi e inom como lista separada por virgula', () => {
+      aceita(integracaoSchema.situacaoGeralQuery.validate({
+        mi: '2753-1,2754-2', inom: 'SF-22-Y-C-I-1'
+      }))
     })
 
-    it('should reject unknown query keys', () => {
-      const { error } = integracaoSchema.situacaoGeralQuery.validate({ foo: 'bar' })
-      expect(error).toBeDefined()
+    it('recusa chave desconhecida: e rota sem autenticacao', () => {
+      recusaPor(
+        integracaoSchema.situacaoGeralQuery.validate({ foo: 'bar' }),
+        'foo',
+        'object.unknown'
+      )
     })
   })
 
   describe('produtosFinalizadosQuery', () => {
-    it('should apply defaults: ano/mes corrente e cumulativo true', () => {
-      const { error, value } = integracaoSchema.produtosFinalizadosQuery.validate({})
-      expect(error).toBeUndefined()
-      expect(value.ano).toBe(new Date().getFullYear())
-      expect(value.mes).toBe(new Date().getMonth() + 1)
+    // O default e o mes CORRENTE. O teste calcula o esperado uma vez e o usa nos
+    // dois campos, para nao virar duas leituras de relogio que discordam se a
+    // suite atravessar a virada do mes.
+    it('sem parametro, ano e mes correntes e cumulativo ligado', () => {
+      const agora = new Date()
+      const value = aceita(integracaoSchema.produtosFinalizadosQuery.validate({}))
+      expect(value.ano).toBe(agora.getFullYear())
+      expect(value.mes).toBe(agora.getMonth() + 1)
       expect(value.cumulativo).toBe(true)
     })
 
-    it('should accept ano, mes e cumulativo explicitos', () => {
-      const { error, value } = integracaoSchema.produtosFinalizadosQuery.validate({ ano: 2026, mes: 6, cumulativo: false })
-      expect(error).toBeUndefined()
-      expect(value.cumulativo).toBe(false)
+    it('aceita ano, mes e cumulativo explicitos', () => {
+      const value = aceita(integracaoSchema.produtosFinalizadosQuery.validate({
+        ano: 2026, mes: 6, cumulativo: false
+      }))
+      expect(value).toMatchObject({ ano: 2026, mes: 6, cumulativo: false })
     })
 
-    it('should reject mes fora de 1..12', () => {
-      expect(integracaoSchema.produtosFinalizadosQuery.validate({ mes: 0 }).error).toBeDefined()
-      expect(integracaoSchema.produtosFinalizadosQuery.validate({ mes: 13 }).error).toBeDefined()
+    it.each([0, 13])('recusa mes %s, fora de 1..12', (mes) => {
+      recusaPor(integracaoSchema.produtosFinalizadosQuery.validate({ mes }), 'mes')
     })
 
-    it('should accept optional tipo_produto_id/tipo_escala_id', () => {
-      const { error } = integracaoSchema.produtosFinalizadosQuery.validate({ tipo_produto_id: 2, tipo_escala_id: 2 })
-      expect(error).toBeUndefined()
+    it('aceita os filtros de dominio', () => {
+      aceita(integracaoSchema.produtosFinalizadosQuery.validate({
+        tipo_produto_id: 2, tipo_escala_id: 2
+      }))
     })
   })
 
   describe('atendimentosQuery', () => {
-    it('should apply defaults', () => {
-      const { error, value } = integracaoSchema.atendimentosQuery.validate({})
-      expect(error).toBeUndefined()
+    it('sem parametro, mes corrente e cumulativo ligado', () => {
+      const agora = new Date()
+      const value = aceita(integracaoSchema.atendimentosQuery.validate({}))
       expect(value.cumulativo).toBe(true)
-      expect(value.mes).toBe(new Date().getMonth() + 1)
+      expect(value.mes).toBe(agora.getMonth() + 1)
     })
 
-    it('should reject unknown keys', () => {
-      const { error } = integracaoSchema.atendimentosQuery.validate({ formato: 'csv' })
-      expect(error).toBeDefined()
+    it('recusa chave desconhecida: e rota sem autenticacao', () => {
+      recusaPor(
+        integracaoSchema.atendimentosQuery.validate({ formato: 'csv' }),
+        'formato',
+        'object.unknown'
+      )
     })
   })
 })

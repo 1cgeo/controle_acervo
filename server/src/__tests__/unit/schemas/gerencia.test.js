@@ -1,56 +1,31 @@
 'use strict'
 
+// Este arquivo tinha 9 casos, e 7 deles exercitavam o Joi (que `.min(1)` recusa
+// zero, que `.integer()` recusa 1.5). Sobraram os que sao POLITICA NOSSA: os
+// valores de default e o teto do limit, que e o que protege o banco de um
+// `limit=100000` vindo da query string.
+
 const gerenciaSchema = require('../../../gerencia/gerencia_schema')
+const { recusaPor, aceita } = require('../../helpers/joi')
 
-describe('Gerencia Schemas', () => {
-  describe('paginationParams', () => {
-    it('should use defaults', () => {
-      const { error, value } = gerenciaSchema.paginationParams.validate({})
-      expect(error).toBeUndefined()
-      expect(value.page).toBe(1)
-      expect(value.limit).toBe(20)
-    })
+describe('Paginacao da gerencia', () => {
+  it('sem parametro, pagina 1 e 20 por pagina', () => {
+    const value = aceita(gerenciaSchema.paginationParams.validate({}))
+    expect(value.page).toBe(1)
+    expect(value.limit).toBe(20)
+  })
 
-    it('should reject page < 1', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ page: 0 })
-      expect(error).toBeDefined()
-    })
+  it('aceita ate 100 por pagina', () => {
+    const value = aceita(gerenciaSchema.paginationParams.validate({ page: 5, limit: 100 }))
+    expect(value.page).toBe(5)
+    expect(value.limit).toBe(100)
+  })
 
-    it('should reject negative page', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ page: -1 })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject limit > 100', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ limit: 200 })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject limit < 1', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ limit: 0 })
-      expect(error).toBeDefined()
-    })
-
-    it('should accept valid page and limit', () => {
-      const { error, value } = gerenciaSchema.paginationParams.validate({ page: 5, limit: 50 })
-      expect(error).toBeUndefined()
-      expect(value.page).toBe(5)
-      expect(value.limit).toBe(50)
-    })
-
-    it('should accept limit at max boundary (100)', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ limit: 100 })
-      expect(error).toBeUndefined()
-    })
-
-    it('should reject non-integer page', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ page: 1.5 })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject non-integer limit', () => {
-      const { error } = gerenciaSchema.paginationParams.validate({ limit: 10.5 })
-      expect(error).toBeDefined()
-    })
+  it('recusa acima de 100, que e o teto que protege o banco', () => {
+    recusaPor(
+      gerenciaSchema.paginationParams.validate({ limit: 200 }),
+      'limit',
+      'number.max'
+    )
   })
 })

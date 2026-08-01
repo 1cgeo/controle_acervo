@@ -1,10 +1,11 @@
 'use strict'
 
 const produtoSchema = require('../../../produto/produto_schema')
+const { recusaPor, aceita } = require('../../helpers/joi')
 
-describe('Produto Schemas', () => {
+describe('Schemas de produto', () => {
   describe('produtoAtualizacao', () => {
-    const validProduto = {
+    const valido = {
       id: 1,
       nome: 'Carta Teste',
       tipo_escala_id: 2,
@@ -13,133 +14,116 @@ describe('Produto Schemas', () => {
       descricao: ''
     }
 
-    it('should validate correct product update', () => {
-      const { error } = produtoSchema.produtoAtualizacao.validate(validProduto)
-      expect(error).toBeUndefined()
+    it('aceita a atualizacao completa', () => {
+      aceita(produtoSchema.produtoAtualizacao.validate(valido))
     })
 
-    it('should require id as integer', () => {
-      const { error } = produtoSchema.produtoAtualizacao.validate({
-        ...validProduto, id: 'abc'
-      })
-      expect(error).toBeDefined()
+    // `.strict()` no id: sem ele o Joi converteria '1' para 1, e um id vindo de
+    // query string entraria no UPDATE parecendo validado.
+    it('recusa id em texto, porque o schema e strict', () => {
+      recusaPor(
+        produtoSchema.produtoAtualizacao.validate({ ...valido, id: 'abc' }),
+        'id',
+        'number.base'
+      )
     })
 
-    it('should require nome', () => {
-      const { error } = produtoSchema.produtoAtualizacao.validate({
-        ...validProduto, nome: undefined
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should allow optional geom', () => {
-      const { error } = produtoSchema.produtoAtualizacao.validate({
-        ...validProduto, geom: 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should allow null geom', () => {
-      const { error } = produtoSchema.produtoAtualizacao.validate({
-        ...validProduto, geom: null
-      })
-      expect(error).toBeUndefined()
+    it('aceita geom em EWKT e aceita geom nula', () => {
+      const ewkt = 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
+      aceita(produtoSchema.produtoAtualizacao.validate({ ...valido, geom: ewkt }))
+      aceita(produtoSchema.produtoAtualizacao.validate({ ...valido, geom: null }))
     })
   })
 
-  describe('produtoIds', () => {
-    it('should validate array of unique integer ids with motivo', () => {
-      const { error } = produtoSchema.produtoIds.validate({
+  // A exclusao em lote exige MOTIVO. Ele nao e enfeite: a linha vai para
+  // acervo.produto_deletado, e sem motivo a exclusao vira um registro sumido
+  // sem historia. Mesma regra do versaoUuidCorrecao, mais abaixo.
+  describe('produtoIds (exclusao em lote)', () => {
+    it('aceita a lista com motivo', () => {
+      aceita(produtoSchema.produtoIds.validate({
         produto_ids: [1, 2, 3],
         motivo_exclusao: 'Dados incorretos'
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should reject empty array', () => {
-      const { error } = produtoSchema.produtoIds.validate({
-        produto_ids: [],
-        motivo_exclusao: 'motivo'
-      })
-      expect(error).toBeDefined()
+    it('exige o motivo: exclusao sem procedencia e registro sumido sem historia', () => {
+      recusaPor(
+        produtoSchema.produtoIds.validate({ produto_ids: [1] }),
+        'motivo_exclusao',
+        'any.required'
+      )
     })
 
-    it('should reject duplicate ids', () => {
-      const { error } = produtoSchema.produtoIds.validate({
-        produto_ids: [1, 1],
-        motivo_exclusao: 'motivo'
-      })
-      expect(error).toBeDefined()
+    it('recusa lista vazia', () => {
+      recusaPor(
+        produtoSchema.produtoIds.validate({ produto_ids: [], motivo_exclusao: 'm' }),
+        'produto_ids',
+        'array.includesRequiredUnknowns'
+      )
     })
 
-    it('should require motivo_exclusao', () => {
-      const { error } = produtoSchema.produtoIds.validate({
-        produto_ids: [1]
-      })
-      expect(error).toBeDefined()
+    it('recusa id repetido, que tentaria excluir duas vezes o mesmo produto', () => {
+      recusaPor(
+        produtoSchema.produtoIds.validate({ produto_ids: [1, 1], motivo_exclusao: 'm' }),
+        'produto_ids.1',
+        'array.unique'
+      )
     })
   })
 
   describe('versaoRelacionamento', () => {
-    it('should validate correct relationship creation', () => {
-      const { error } = produtoSchema.versaoRelacionamento.validate({
+    it('aceita um relacionamento entre duas versoes', () => {
+      aceita(produtoSchema.versaoRelacionamento.validate({
         versao_relacionamento: [
           { versao_id_1: 1, versao_id_2: 2, tipo_relacionamento_id: 1 }
         ]
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should reject non-integer versao ids', () => {
-      const { error } = produtoSchema.versaoRelacionamento.validate({
-        versao_relacionamento: [
-          { versao_id_1: 'a', versao_id_2: 2, tipo_relacionamento_id: 1 }
-        ]
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require at least one relationship', () => {
-      const { error } = produtoSchema.versaoRelacionamento.validate({
-        versao_relacionamento: []
-      })
-      expect(error).toBeDefined()
+    // Aqui o tipo e `array.min`, e nao o `array.includesRequiredUnknowns` dos
+    // outros lotes deste arquivo: este schema declara o item SEM `.required()`,
+    // entao quem barra o vazio e o `.min(1)`. As duas construcoes recusam a
+    // lista vazia; a diferenca so aparece na mensagem, e e ela que o cliente le.
+    it('recusa lote vazio, que gravaria relacionamento nenhum com 200', () => {
+      recusaPor(
+        produtoSchema.versaoRelacionamento.validate({ versao_relacionamento: [] }),
+        'versao_relacionamento',
+        'array.min'
+      )
     })
   })
 
-  describe('produtos (bulk create)', () => {
-    it('should validate bulk create with valid data', () => {
-      const { error } = produtoSchema.produtos.validate({
-        produtos: [{
-          nome: 'Carta 1',
-          mi: 'MI-001',
-          inom: 'SF-22',
-          tipo_escala_id: 2,
-          denominador_escala_especial: null,
-          tipo_produto_id: 1,
-          descricao: null,
-          geom: 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
-        }]
-      })
-      expect(error).toBeUndefined()
+  // O produto NASCE com geometria: ele e uma area no mapa, e sem `geom` a busca
+  // espacial e as visoes materializadas simplesmente nao o alcancam.
+  describe('produtos (criacao em lote)', () => {
+    const produto = {
+      nome: 'Carta 1',
+      mi: 'MI-001',
+      inom: 'SF-22',
+      tipo_escala_id: 2,
+      denominador_escala_especial: null,
+      tipo_produto_id: 1,
+      descricao: null,
+      geom: 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
+    }
+
+    it('aceita a criacao com geometria', () => {
+      aceita(produtoSchema.produtos.validate({ produtos: [produto] }))
     })
 
-    it('should require geom for each product', () => {
-      const { error } = produtoSchema.produtos.validate({
-        produtos: [{
-          nome: 'Carta 1',
-          mi: 'MI-001',
-          inom: 'SF-22',
-          tipo_escala_id: 2,
-          denominador_escala_especial: null,
-          tipo_produto_id: 1,
-          descricao: null
-        }]
-      })
-      expect(error).toBeDefined()
+    it('exige geom em cada produto', () => {
+      const { geom, ...semGeom } = produto
+      recusaPor(
+        produtoSchema.produtos.validate({ produtos: [semGeom] }),
+        'produtos.0.geom',
+        'any.required'
+      )
     })
   })
 
+  // `familia` entra no rotulo da versao ('1-DSG'), e o rotulo tem UNIQUE no
+  // banco. Minuscula ou sigla longa produziriam rotulo que o trigger
+  // acervo.validate_version recusa depois, ja dentro da transacao.
   describe('renumeraVersoes', () => {
     const valido = {
       produto_id: 1,
@@ -148,44 +132,27 @@ describe('Produto Schemas', () => {
       nova_data_edicao: '1957-01-01'
     }
 
-    it('should validate correct request with familia EDICAO', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate(valido)
-      expect(error).toBeUndefined()
+    it.each(['EDICAO', 'DSG'])('aceita a familia %s', (familia) => {
+      aceita(produtoSchema.renumeraVersoes.validate({ ...valido, familia }))
     })
 
-    it('should validate correct request with familia sigla (ex. DSG)', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate({
-        ...valido, familia: 'DSG'
-      })
-      expect(error).toBeUndefined()
+    it.each([
+      ['minuscula', 'dsg'],
+      ['com mais de 5 letras', 'ABCDEF']
+    ])('recusa familia %s', (_rotulo, familia) => {
+      recusaPor(
+        produtoSchema.renumeraVersoes.validate({ ...valido, familia }),
+        'familia',
+        'string.pattern.base'
+      )
     })
 
-    it('should reject lowercase familia', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate({
-        ...valido, familia: 'dsg'
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject familia longer than 5 letters', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate({
-        ...valido, familia: 'ABCDEF'
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require produto_id', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate({
-        ...valido, produto_id: undefined
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require nova_data_edicao as a valid ISO date', () => {
-      const { error } = produtoSchema.renumeraVersoes.validate({
-        ...valido, nova_data_edicao: 'nao e uma data'
-      })
-      expect(error).toBeDefined()
+    it('exige nova_data_edicao em formato de data', () => {
+      recusaPor(
+        produtoSchema.renumeraVersoes.validate({ ...valido, nova_data_edicao: 'nao e uma data' }),
+        'nova_data_edicao',
+        'date.format'
+      )
     })
   })
 
@@ -258,53 +225,60 @@ describe('Produto Schemas', () => {
     }
 
     it('aceita um lote de correções com motivo', () => {
-      const { error } = produtoSchema.versaoUuidCorrecao.validate(valido)
-      expect(error).toBeUndefined()
+      aceita(produtoSchema.versaoUuidCorrecao.validate(valido))
     })
 
     it('exige o motivo: correção sem procedência é número trocado sem história', () => {
-      const { error } = produtoSchema.versaoUuidCorrecao.validate({
-        ...valido, motivo: undefined
-      })
-      expect(error).toBeDefined()
+      recusaPor(
+        produtoSchema.versaoUuidCorrecao.validate({ ...valido, motivo: undefined }),
+        'motivo',
+        'any.required'
+      )
     })
 
     it('recusa lote vazio', () => {
-      const { error } = produtoSchema.versaoUuidCorrecao.validate({
-        ...valido, correcoes: []
-      })
-      expect(error).toBeDefined()
+      recusaPor(
+        produtoSchema.versaoUuidCorrecao.validate({ ...valido, correcoes: [] }),
+        'correcoes'
+      )
     })
 
     it('recusa o mesmo uuid para duas versões (a UNIQUE do banco não permitiria)', () => {
       const mesmo = '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d'
-      const { error } = produtoSchema.versaoUuidCorrecao.validate({
-        ...valido,
-        correcoes: [
-          { versao_id: 6653, uuid_versao: mesmo },
-          { versao_id: 6654, uuid_versao: mesmo }
-        ]
-      })
-      expect(error).toBeDefined()
+      recusaPor(
+        produtoSchema.versaoUuidCorrecao.validate({
+          ...valido,
+          correcoes: [
+            { versao_id: 6653, uuid_versao: mesmo },
+            { versao_id: 6654, uuid_versao: mesmo }
+          ]
+        }),
+        'correcoes'
+      )
     })
 
     it('recusa a mesma versão duas vezes no lote', () => {
-      const { error } = produtoSchema.versaoUuidCorrecao.validate({
-        ...valido,
-        correcoes: [
-          { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
-          { versao_id: 6653, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
-        ]
-      })
-      expect(error).toBeDefined()
+      recusaPor(
+        produtoSchema.versaoUuidCorrecao.validate({
+          ...valido,
+          correcoes: [
+            { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
+            { versao_id: 6653, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
+          ]
+        }),
+        'correcoes'
+      )
     })
 
     it('recusa o que não é uuid', () => {
-      const { error } = produtoSchema.versaoUuidCorrecao.validate({
-        ...valido,
-        correcoes: [{ versao_id: 6653, uuid_versao: 'nao-e-uuid' }]
-      })
-      expect(error).toBeDefined()
+      recusaPor(
+        produtoSchema.versaoUuidCorrecao.validate({
+          ...valido,
+          correcoes: [{ versao_id: 6653, uuid_versao: 'nao-e-uuid' }]
+        }),
+        'correcoes.0.uuid_versao',
+        'string.guid'
+      )
     })
   })
 })

@@ -2,10 +2,12 @@
 
 const path = require('path')
 const fs = require('fs')
+const dotenv = require('dotenv')
 const { Client } = require('pg')
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..')
 const SCHEMAS_DIR = path.join(RAIZ, 'er')
+const CONFIG_TESTE = path.join(__dirname, '..', '..', 'config_testing.env')
 
 /**
  * A ordem dos `er/` como o create_config.js a executa.
@@ -32,61 +34,58 @@ const lerOrdemDoCreateConfig = () => {
 
 const SCHEMA_ORDER = lerOrdemDoCreateConfig()
 
-module.exports = async () => {
-  const dbName = process.env.DB_NAME || 'sca_test'
-  const connConfig = {
-    host: process.env.DB_SERVER || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres'
-  }
+// Lido do proprio arquivo de configuracao, e nao do ambiente: o globalSetup roda
+// ANTES de qualquer dotenv do servidor, entao process.env.DB_NAME ainda esta
+// vazio aqui. Antes isto funcionava por coincidencia, porque o default no
+// codigo era igual ao valor do arquivo.
+const AMBIENTE = dotenv.parse(fs.readFileSync(CONFIG_TESTE))
+const BASE = AMBIENTE.DB_NAME || 'sca_test'
+const TEMPLATE = `${BASE}_template`
 
-  // Connect to master DB to create test database
-  const masterClient = new Client({ ...connConfig, database: 'postgres' })
-  await masterClient.connect()
+const conexao = () => ({
+  host: AMBIENTE.DB_SERVER || 'localhost',
+  port: parseInt(AMBIENTE.DB_PORT || '5432'),
+  user: AMBIENTE.DB_USER || 'postgres',
+  password: AMBIENTE.DB_PASSWORD || 'postgres'
+})
 
-  try {
-    await masterClient.query(
-      `SELECT pg_terminate_backend(pg_stat_activity.pid)
+const derrubarEApagar = async (client, nome) => {
+  await client.query(
+    `SELECT pg_terminate_backend(pg_stat_activity.pid)
        FROM pg_stat_activity
-       WHERE pg_stat_activity.datname = $1 AND pid <> pg_backend_pid()`,
-      [dbName]
-    )
-    await masterClient.query(`DROP DATABASE IF EXISTS ${dbName}`)
-  } catch (e) {
-    // Ignore if database doesn't exist
-  }
+      WHERE pg_stat_activity.datname = $1 AND pid <> pg_backend_pid()`,
+    [nome]
+  )
+  await client.query(`DROP DATABASE IF EXISTS ${nome}`)
+}
 
-  await masterClient.query(`CREATE DATABASE ${dbName}`)
-  await masterClient.end()
+/** Cria o TEMPLATE: schema completo mais a semente que todo teste assume. */
+const montarTemplate = async (master) => {
+  await derrubarEApagar(master, TEMPLATE)
+  await master.query(`CREATE DATABASE ${TEMPLATE}`)
 
-  // Connect to the newly created test database
-  const testClient = new Client({ ...connConfig, database: dbName })
-  await testClient.connect()
+  const client = new Client({ ...conexao(), database: TEMPLATE })
+  await client.connect()
 
-  await testClient.query('CREATE EXTENSION IF NOT EXISTS postgis')
-  await testClient.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+  await client.query('CREATE EXTENSION IF NOT EXISTS postgis')
+  await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
-  // Run schema SQL files (raw pg client handles $$ delimiters correctly)
-  for (const schemaFile of SCHEMA_ORDER) {
-    const filePath = path.join(SCHEMAS_DIR, schemaFile)
-    if (fs.existsSync(filePath)) {
-      const sql = fs.readFileSync(filePath, 'utf8')
-      try {
-        await testClient.query(sql)
-      } catch (e) {
-        console.error(`Error executing ${schemaFile}:`, e.message)
-        throw e
-      }
+  for (const arquivo of SCHEMA_ORDER) {
+    const caminho = path.join(SCHEMAS_DIR, arquivo)
+    if (!fs.existsSync(caminho)) continue
+    try {
+      await client.query(fs.readFileSync(caminho, 'utf8'))
+    } catch (e) {
+      console.error(`Erro ao executar ${arquivo}:`, e.message)
+      throw e
     }
   }
 
-  // Seed test data
-  await testClient.query(`
+  await client.query(`
     INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
     VALUES ('test_admin', 'Test Admin', 'Admin', 1, TRUE, TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
   `)
-  await testClient.query(`
+  await client.query(`
     INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
     VALUES ('test_user', 'Test User', 'User', 1, FALSE, TRUE, 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22')
   `)
@@ -94,19 +93,49 @@ module.exports = async () => {
   // Perfil do usuario comum, reproduzindo o que ele podia ANTES do controle por
   // perfil: lia o acervo (consulta) e, na mapoteca, tambem imprimia (operador).
   // O admin nao ganha linha: a flag global ja o autoriza em qualquer modulo.
-  await testClient.query(`
+  await client.query(`
     INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
     SELECT id, 1, 1 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
   `)
-  await testClient.query(`
+  await client.query(`
     INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
     SELECT id, 2, 2 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
   `)
 
-  await testClient.query(`
+  await client.query(`
     INSERT INTO acervo.volume_armazenamento (nome, volume, capacidade_gb)
     VALUES ('Volume Teste', '/data/test', 1000)
   `)
 
-  await testClient.end()
+  await client.end()
+}
+
+/**
+ * UM BANCO POR WORKER, clonado do template.
+ *
+ * O clone e `CREATE DATABASE x TEMPLATE y`, que no PostgreSQL e copia de
+ * arquivo: custa uma fracao de rodar os ~13 arquivos de `er/` de novo. Sem isso,
+ * paralelizar sairia mais caro do que serializar.
+ *
+ * Por que N bancos e nao um: `cleanTestData()` faz TRUNCATE nas tabelas
+ * inteiras, entao dois workers no mesmo banco apagariam os dados um do outro.
+ * Cada worker do Jest escolhe o seu em `worker_db.js`, pelo JEST_WORKER_ID.
+ */
+module.exports = async (globalConfig) => {
+  const workers = Math.max(1, globalConfig?.maxWorkers || 1)
+
+  const master = new Client({ ...conexao(), database: 'postgres' })
+  await master.connect()
+
+  try {
+    await montarTemplate(master)
+
+    for (let i = 1; i <= workers; i++) {
+      const nome = `${BASE}_${i}`
+      await derrubarEApagar(master, nome)
+      await master.query(`CREATE DATABASE ${nome} TEMPLATE ${TEMPLATE}`)
+    }
+  } finally {
+    await master.end()
+  }
 }

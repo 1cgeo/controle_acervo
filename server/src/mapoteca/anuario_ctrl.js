@@ -316,16 +316,6 @@ controller.paraPlanilha = (anuario) => [
   ...anuario.digital
 ];
 
-controller.COLUNAS_ANUARIO_ODS = [
-  { key: "rotulo", label: "Suprimento de cartografia", largura: "6.5cm" },
-  ...COLUNAS_ANUARIO.map(({ key, label }) => ({
-    key,
-    label,
-    largura: "3.2cm",
-    tipo: "numero"
-  }))
-];
-
 controller.COLUNAS_ANUARIO = COLUNAS_ANUARIO;
 
 // Nome do mês para o nome do arquivo, no padrão dos que já subiram para a DSG

@@ -1,10 +1,23 @@
 'use strict'
 
-const arquivoSchema = require('../../../arquivo/arquivo_schema')
+// O que este arquivo guarda, e o que ele deixou de fingir que guardava.
+//
+// As regras aqui sao CONDICIONAIS (`Joi.when`) e ESPELHOS DO BANCO. As duas
+// classes falham em silencio: a condicional invertida aceita o corpo errado, e
+// o espelho desalinhado deixa o erro estourar no trigger, ja dentro da
+// transacao, com mensagem do PostgreSQL em vez de 400 dizendo o campo.
+//
+// Ate 2026-08-01 os casos afirmavam so `expect(error).toBeDefined()`, o que
+// passava mesmo se a regra do titulo fosse removida (bastava o fixture falhar
+// por outro campo). Agora cada recusa prova o CAMPO e a REGRA, pelo helper
+// __tests__/helpers/joi.js.
 
-describe('Arquivo Schemas', () => {
+const arquivoSchema = require('../../../arquivo/arquivo_schema')
+const { recusaPor, aceita } = require('../../helpers/joi')
+
+describe('Schemas de arquivo', () => {
   describe('arquivoAtualizacao', () => {
-    const valid = {
+    const valido = {
       id: 1,
       nome: 'arquivo_1',
       tipo_arquivo_id: 1,
@@ -15,124 +28,100 @@ describe('Arquivo Schemas', () => {
       descricao: ''
     }
 
-    it('should validate correct file update', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate(valid)
-      expect(error).toBeUndefined()
+    it('aceita a atualizacao completa', () => {
+      aceita(arquivoSchema.arquivoAtualizacao.validate(valido))
     })
 
-    it('should require id', () => {
-      const { id, ...noId } = valid
-      const { error } = arquivoSchema.arquivoAtualizacao.validate(noId)
-      expect(error).toBeDefined()
+    it('metadado tem de ser objeto: ele vai para uma coluna JSONB', () => {
+      recusaPor(
+        arquivoSchema.arquivoAtualizacao.validate({ ...valido, metadado: 'not-object' }),
+        'metadado',
+        'object.base'
+      )
     })
 
-    it('should require id as strict integer', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, id: 'abc'
+    // A coluna e VARCHAR(10). Sem o teto aqui, o valor longo so seria recusado
+    // pelo PostgreSQL, dentro da transacao de atualizacao.
+    it('recusa crs_original acima de 10 caracteres, que e a largura da coluna', () => {
+      aceita(arquivoSchema.arquivoAtualizacao.validate({ ...valido, crs_original: 'EPSG:4674' }))
+      recusaPor(
+        arquivoSchema.arquivoAtualizacao.validate({ ...valido, crs_original: 'EPSG:467412345' }),
+        'crs_original',
+        'string.max'
+      )
+    })
+
+    // O CONDICIONAL: Tileserver (tipo 9) e uma URL, nao um arquivo em disco, e
+    // por isso NAO tem volume. Invertida, esta regra deixaria um tileserver
+    // apontar para um volume (caminho que nunca existe) ou obrigaria um .tif a
+    // nao ter volume nenhum, e o download nao acharia o arquivo.
+    describe('volume x tipo de arquivo', () => {
+      it('tileserver (tipo 9) aceita volume nulo', () => {
+        aceita(arquivoSchema.arquivoAtualizacao.validate({
+          ...valido, tipo_arquivo_id: 9, volume_armazenamento_id: null
+        }))
       })
-      expect(error).toBeDefined()
-    })
 
-    it('should require nome', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, nome: undefined
+      it('tileserver (tipo 9) RECUSA volume preenchido', () => {
+        recusaPor(
+          arquivoSchema.arquivoAtualizacao.validate({
+            ...valido, tipo_arquivo_id: 9, volume_armazenamento_id: 1
+          }),
+          'volume_armazenamento_id',
+          'any.only'
+        )
       })
-      expect(error).toBeDefined()
-    })
 
-    it('should require metadado as object', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, metadado: 'not-object'
+      it('arquivo comum RECUSA volume nulo', () => {
+        recusaPor(
+          arquivoSchema.arquivoAtualizacao.validate({
+            ...valido, tipo_arquivo_id: 1, volume_armazenamento_id: null
+          }),
+          'volume_armazenamento_id',
+          'number.base'
+        )
       })
-      expect(error).toBeDefined()
-    })
-
-    it('should allow empty descricao', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, descricao: ''
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should allow optional crs_original', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, crs_original: 'EPSG:4674'
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should reject crs_original longer than 10 chars', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, crs_original: 'EPSG:467412345'
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require volume_armazenamento_id to be null for tileserver (tipo=9)', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, tipo_arquivo_id: 9, volume_armazenamento_id: null
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should reject non-null volume_armazenamento_id for tileserver (tipo=9)', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, tipo_arquivo_id: 9, volume_armazenamento_id: 1
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject null volume_armazenamento_id for non-tileserver files', () => {
-      const { error } = arquivoSchema.arquivoAtualizacao.validate({
-        ...valid, tipo_arquivo_id: 1, volume_armazenamento_id: null
-      })
-      expect(error).toBeDefined()
     })
   })
 
-  describe('arquivoIds', () => {
-    it('should validate with motivo_exclusao', () => {
-      const { error } = arquivoSchema.arquivoIds.validate({
-        arquivo_ids: [1, 2],
-        motivo_exclusao: 'Substituicao'
-      })
-      expect(error).toBeUndefined()
+  // Exclusao em lote: mesma regra de procedencia do produto. A linha vai para
+  // acervo.arquivo_deletado, e o motivo e o que a torna auditavel.
+  describe('arquivoIds (exclusao em lote)', () => {
+    it('aceita a lista com motivo', () => {
+      aceita(arquivoSchema.arquivoIds.validate({
+        arquivo_ids: [1, 2], motivo_exclusao: 'Substituicao'
+      }))
     })
 
-    it('should reject without motivo_exclusao', () => {
-      const { error } = arquivoSchema.arquivoIds.validate({
-        arquivo_ids: [1]
-      })
-      expect(error).toBeDefined()
+    it('exige o motivo da exclusao', () => {
+      recusaPor(
+        arquivoSchema.arquivoIds.validate({ arquivo_ids: [1] }),
+        'motivo_exclusao',
+        'any.required'
+      )
     })
 
-    it('should reject empty arquivo_ids array', () => {
-      const { error } = arquivoSchema.arquivoIds.validate({
-        arquivo_ids: [],
-        motivo_exclusao: 'motivo'
-      })
-      expect(error).toBeDefined()
+    it('recusa lista vazia', () => {
+      recusaPor(
+        arquivoSchema.arquivoIds.validate({ arquivo_ids: [], motivo_exclusao: 'm' }),
+        'arquivo_ids',
+        'array.includesRequiredUnknowns'
+      )
     })
 
-    it('should reject duplicate ids', () => {
-      const { error } = arquivoSchema.arquivoIds.validate({
-        arquivo_ids: [1, 1],
-        motivo_exclusao: 'motivo'
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require strict integer ids', () => {
-      const { error } = arquivoSchema.arquivoIds.validate({
-        arquivo_ids: ['abc'],
-        motivo_exclusao: 'motivo'
-      })
-      expect(error).toBeDefined()
+    it('recusa id repetido, que tentaria excluir duas vezes o mesmo arquivo', () => {
+      recusaPor(
+        arquivoSchema.arquivoIds.validate({ arquivo_ids: [1, 1], motivo_exclusao: 'm' }),
+        'arquivo_ids.1',
+        'array.unique'
+      )
     })
   })
 
+  // O MESMO condicional do tileserver, agora na criacao. Extensao, tamanho e
+  // checksum descrevem um arquivo em disco; uma URL nao tem nenhum dos tres.
   describe('prepareAddFiles', () => {
-    const validFile = {
+    const arquivo = {
       nome: 'test',
       nome_arquivo: 'test_file',
       tipo_arquivo_id: 1,
@@ -142,15 +131,12 @@ describe('Arquivo Schemas', () => {
       versao_id: 1
     }
 
-    it('should validate files with required fields', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [validFile]
-      })
-      expect(error).toBeUndefined()
+    it('aceita o arquivo comum completo', () => {
+      aceita(arquivoSchema.prepareAddFiles.validate({ arquivos: [arquivo] }))
     })
 
-    it('should allow null extensao/tamanho/checksum for tipo_arquivo_id=9 (Tileserver)', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
+    it('tileserver aceita extensao, tamanho e checksum nulos', () => {
+      aceita(arquivoSchema.prepareAddFiles.validate({
         arquivos: [{
           nome: 'tiles',
           nome_arquivo: 'https://tiles.example.com',
@@ -160,133 +146,65 @@ describe('Arquivo Schemas', () => {
           checksum: null,
           versao_id: 1
         }]
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should require extensao for non-tileserver types', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
+    it.each(['extensao', 'tamanho_mb', 'checksum'])(
+      'arquivo comum exige %s',
+      (campo) => {
+        const { [campo]: _fora, ...sem } = arquivo
+        recusaPor(
+          arquivoSchema.prepareAddFiles.validate({ arquivos: [sem] }),
+          `arquivos.0.${campo}`,
+          'any.required'
+        )
+      }
+    )
+
+    it('exige versao_id: o arquivo pertence a uma versao, nunca solto', () => {
+      const { versao_id: _fora, ...sem } = arquivo
+      recusaPor(
+        arquivoSchema.prepareAddFiles.validate({ arquivos: [sem] }),
+        'arquivos.0.versao_id',
+        'any.required'
+      )
+    })
+
+    it('aceita uuid_arquivo e metadado opcionais', () => {
+      aceita(arquivoSchema.prepareAddFiles.validate({
         arquivos: [{
-          nome: 'test',
-          nome_arquivo: 'test_file',
-          tipo_arquivo_id: 1,
-          tamanho_mb: 50,
-          checksum: 'abc',
-          versao_id: 1
-        }]
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require tamanho_mb for non-tileserver types', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [{
-          nome: 'test',
-          nome_arquivo: 'test_file',
-          tipo_arquivo_id: 1,
-          extensao: 'gpkg',
-          checksum: 'abc',
-          versao_id: 1
-        }]
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require checksum for non-tileserver types', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [{
-          nome: 'test',
-          nome_arquivo: 'test_file',
-          tipo_arquivo_id: 1,
-          extensao: 'gpkg',
-          tamanho_mb: 50,
-          versao_id: 1
-        }]
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require at least one arquivo', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: []
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require versao_id for each file', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [{
-          nome: 'test',
-          nome_arquivo: 'test_file',
-          tipo_arquivo_id: 1,
-          extensao: 'gpkg',
-          tamanho_mb: 50,
-          checksum: 'abc'
-        }]
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should allow optional uuid_arquivo', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [{
-          ...validFile,
-          uuid_arquivo: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
-        }]
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should allow null metadado', () => {
-      const { error } = arquivoSchema.prepareAddFiles.validate({
-        arquivos: [{
-          ...validFile,
+          ...arquivo,
+          uuid_arquivo: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
           metadado: null
         }]
-      })
-      expect(error).toBeUndefined()
+      }))
     })
   })
 
-  describe('confirmUpload', () => {
-    it('should validate UUID session', () => {
-      const { error } = arquivoSchema.confirmUpload.validate({
+  // O session_uuid e a chave da sessao de upload aberta. Texto que nao e uuid
+  // viraria busca que nunca casa: o cliente receberia 404 ("sessao nao existe")
+  // onde o certo e 400 ("voce mandou lixo").
+  describe('confirmUpload e cancelUpload', () => {
+    it.each(['confirmUpload', 'cancelUpload'])('%s aceita uuid', (rota) => {
+      aceita(arquivoSchema[rota].validate({
         session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should reject non-UUID', () => {
-      const { error } = arquivoSchema.confirmUpload.validate({
-        session_uuid: 'not-uuid'
-      })
-      expect(error).toBeDefined()
-    })
-
-    it('should require session_uuid', () => {
-      const { error } = arquivoSchema.confirmUpload.validate({})
-      expect(error).toBeDefined()
+    it.each(['confirmUpload', 'cancelUpload'])('%s recusa o que nao e uuid', (rota) => {
+      recusaPor(
+        arquivoSchema[rota].validate({ session_uuid: 'not-uuid' }),
+        'session_uuid',
+        'string.guid'
+      )
     })
   })
 
-  describe('cancelUpload', () => {
-    it('should validate UUID session', () => {
-      const { error } = arquivoSchema.cancelUpload.validate({
-        session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
-      })
-      expect(error).toBeUndefined()
-    })
-
-    it('should reject non-UUID', () => {
-      const { error } = arquivoSchema.cancelUpload.validate({
-        session_uuid: 'invalid'
-      })
-      expect(error).toBeDefined()
-    })
-  })
-
+  // ESPELHO DO TRIGGER acervo.validate_version. O formato do rotulo de versao e
+  // validado no banco; o schema repete a regra para o erro sair como 400 com o
+  // campo, e nao como excecao do PostgreSQL no meio da transacao.
   describe('prepareAddVersion', () => {
-    const validVersion = {
+    const valido = {
       versoes: [{
         produto_id: 1,
         versao: {
@@ -314,54 +232,49 @@ describe('Arquivo Schemas', () => {
       }]
     }
 
-    it('should validate correct version data', () => {
-      const { error } = arquivoSchema.prepareAddVersion.validate(validVersion)
-      expect(error).toBeUndefined()
+    const com = (mudanca) => {
+      const copia = JSON.parse(JSON.stringify(valido))
+      Object.assign(copia.versoes[0].versao, mudanca)
+      return copia
+    }
+
+    it('aceita o formato corrente (1-DSG)', () => {
+      aceita(arquivoSchema.prepareAddVersion.validate(valido))
     })
 
-    it('should require at least one versao', () => {
-      const { error } = arquivoSchema.prepareAddVersion.validate({ versoes: [] })
-      expect(error).toBeDefined()
+    it('recusa formato que o trigger do banco nao aceita (1.0.0)', () => {
+      recusaPor(
+        arquivoSchema.prepareAddVersion.validate(com({ versao: '1.0.0' })),
+        'versoes.0.versao.versao'
+      )
     })
 
-    it('should reject version format not accepted by the DB trigger', () => {
-      const invalid = JSON.parse(JSON.stringify(validVersion))
-      invalid.versoes[0].versao.versao = '1.0.0'
-      const { error } = arquivoSchema.prepareAddVersion.validate(invalid)
-      expect(error).toBeDefined()
+    // O trigger aceita "Xª Edição" nas DUAS familias, e nao so na historica: as
+    // cartas do acervo legado sao cadastradas como versao Regular usando esse
+    // formato. O schema espelha o trigger, e nao uma versao idealizada dele.
+    it('aceita o formato legado na versao historica (tipo 2)', () => {
+      aceita(arquivoSchema.prepareAddVersion.validate(
+        com({ tipo_versao_id: 2, versao: '2ª Edição' })
+      ))
     })
 
-    it('should accept legacy format for historical versions', () => {
-      const historica = JSON.parse(JSON.stringify(validVersion))
-      historica.versoes[0].versao.tipo_versao_id = 2
-      historica.versoes[0].versao.versao = '2ª Edição'
-      const { error } = arquivoSchema.prepareAddVersion.validate(historica)
-      expect(error).toBeUndefined()
+    it('aceita o formato legado tambem na versao Regular (acervo legado)', () => {
+      aceita(arquivoSchema.prepareAddVersion.validate(com({ versao: '2ª Edição' })))
     })
 
-    it('should accept legacy format for regular versions (acervo legado)', () => {
-      // O trigger acervo.validate_version aceita "Xª Edição" em versoes Regular
-      // (tipo_versao_id = 1): as cartas antigas do acervo legado sao cadastradas
-      // como versao Regular usando esse formato. O schema espelha o trigger.
-      const legado = JSON.parse(JSON.stringify(validVersion))
-      legado.versoes[0].versao.versao = '2ª Edição'
-      const { error } = arquivoSchema.prepareAddVersion.validate(legado)
-      expect(error).toBeUndefined()
-    })
-
-    it('should require produto_id', () => {
-      const { error } = arquivoSchema.prepareAddVersion.validate({
-        versoes: [{
-          versao: validVersion.versoes[0].versao,
-          arquivos: validVersion.versoes[0].arquivos
-        }]
-      })
-      expect(error).toBeDefined()
+    it('exige produto_id: a versao pende de um produto', () => {
+      const semProduto = JSON.parse(JSON.stringify(valido))
+      delete semProduto.versoes[0].produto_id
+      recusaPor(
+        arquivoSchema.prepareAddVersion.validate(semProduto),
+        'versoes.0.produto_id',
+        'any.required'
+      )
     })
   })
 
   describe('prepareAddProduct', () => {
-    const validProduct = {
+    const valido = {
       produtos: [{
         produto: {
           nome: 'Carta Teste',
@@ -398,21 +311,18 @@ describe('Arquivo Schemas', () => {
       }]
     }
 
-    it('should validate correct product data', () => {
-      const { error } = arquivoSchema.prepareAddProduct.validate(validProduct)
-      expect(error).toBeUndefined()
+    it('aceita produto com versao e arquivo, numa chamada so', () => {
+      aceita(arquivoSchema.prepareAddProduct.validate(valido))
     })
 
-    it('should require geom in produto', () => {
-      const invalid = JSON.parse(JSON.stringify(validProduct))
-      delete invalid.produtos[0].produto.geom
-      const { error } = arquivoSchema.prepareAddProduct.validate(invalid)
-      expect(error).toBeDefined()
-    })
-
-    it('should require at least one produto', () => {
-      const { error } = arquivoSchema.prepareAddProduct.validate({ produtos: [] })
-      expect(error).toBeDefined()
+    it('exige geom no produto', () => {
+      const semGeom = JSON.parse(JSON.stringify(valido))
+      delete semGeom.produtos[0].produto.geom
+      recusaPor(
+        arquivoSchema.prepareAddProduct.validate(semGeom),
+        'produtos.0.produto.geom',
+        'any.required'
+      )
     })
   })
 })

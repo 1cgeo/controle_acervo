@@ -21,7 +21,11 @@ describe('AppError', () => {
     expect(err.errorTrace).toBe('trace info')
   })
 
-  it('should serialize Error objects in errorTrace', () => {
+  // O titulo antigo dizia "should serialize Error objects", e o caso passava um
+  // objeto simples: ele nunca tocou o serialize-error, que e justamente a peca
+  // delicada (ESM puro, carregada pelo serialize_error_loader). Renomeado para o
+  // que ele de fato prova, para ninguem ler cobertura onde nao ha.
+  it('should keep a plain object in errorTrace untouched', () => {
     const err = new AppError('Fail', httpCode.BadRequest, { detail: 'info' })
     expect(err.errorTrace).toEqual({ detail: 'info' })
   })

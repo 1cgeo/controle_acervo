@@ -1,5 +1,4 @@
 import { apiGet, apiDownload } from '@services/api-client.js';
-import { cachedFetch, TTL_DOMINIO } from '@services/cache.js';
 
 /**
  * Camada de servico do PONTO DE CONTROLE.
@@ -89,17 +88,6 @@ export const getPonto = (codPonto) =>
  */
 export const baixarPontosCsv = (filtros = {}, nomeArquivo = 'pontos-de-controle.csv') =>
   apiDownload(`/ponto_controle/csv${queryString(filtros)}`, nomeArquivo);
-
-/**
- * Todos os dominios do schema ponto_controle, numa chamada so.
- *
- * TTL de dominio: sao tabelas de codigo, que mudam quando o plugin muda de
- * versao, nao a cada tecla.
- *
- * @returns {Promise<Object<string, Array<{code:number, nome:string}>>>}
- */
-export const getDominiosPontoControle = () =>
-  cachedFetch('ponto_controle:dominios', () => apiGet('/ponto_controle/dominios'), TTL_DOMINIO);
 
 /**
  * Baixa um dos DOIS arquivos do ponto.

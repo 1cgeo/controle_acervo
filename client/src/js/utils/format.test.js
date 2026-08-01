@@ -28,13 +28,15 @@ describe('formatDate', () => {
     expect(formatDate('2026-03-01')).toBe('01/03/2026');
   });
 
-  test('data com hora em UTC ainda desloca, e por isso o servidor nao a envia', () => {
-    // Documenta o defeito de origem, para ninguem "consertar" o formatDate
-    // achando que o problema estava aqui: com instante em UTC, o deslocamento
-    // e o comportamento CERTO de um horario. O erro era mandar DATE como
-    // instante, e isso se resolve no servidor.
-    const deslocado = formatDate('2026-01-14T00:00:00.000Z');
-    expect(['13/01/2026', '14/01/2026']).toContain(deslocado);
+  // O caso que existia aqui aceitava '13/01/2026' OU '14/01/2026', entao nao
+  // podia falhar: era comentario vestido de teste. O que ele queria dizer esta
+  // no bloco acima. O que da para AFIRMAR sem depender do fuso de quem roda e
+  // que instante e data pura seguem caminhos diferentes -- e por isso o servidor
+  // manda DATE como string, e nunca como instante.
+  test('instante em UTC nao e tratado como data pura', () => {
+    expect(formatDate('2026-01-14T00:00:00.000Z')).not.toBe(
+      formatDate('2026-01-14T23:59:59.000Z')
+    );
   });
 
   test('data ISO YYYY-MM-DD sem deslocamento de fuso', () => {

@@ -4,8 +4,8 @@
 // O Anuário Estatístico (Tabela 5.4.9) gerado A PARTIR DA PLANILHA-SEMENTE que
 // a DSG recebe, e não redesenhado.
 //
-// O PROBLEMA que isto resolve. Até 2026-08-01 o .ods era montado do zero, com
-// `utils/ods_export.criarOds`: cabeçalho de coluna nosso, largura de coluna
+// O PROBLEMA que isto resolve. Até 2026-08-01 o .ods era montado do zero, por um
+// construtor em `utils/ods_export`: cabeçalho de coluna nosso, largura de coluna
 // nossa, formato de número nosso. O resultado tinha os números certos e não era
 // o arquivo da DSG -- e o destino dele é uma aba de uma planilha que já existe,
 // conferida linha a linha por quem recebe. "Parecido" ali não serve.

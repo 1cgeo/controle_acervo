@@ -4,20 +4,23 @@
 const zlib = require('zlib')
 
 /**
- * Escreve uma planilha ODS (OpenDocument Spreadsheet) de UMA aba.
+ * ZIP de propósito único: abrir um .ods que já existe e reescrevê-lo com uma
+ * entrada trocada.
  *
- * POR QUE ESCREVER O ODS A MÃO. O destino destes relatórios é uma aba de
- * planilha que já existe (o RTM mensal do 1º CGEO), e CSV perde três coisas que
- * a aba tem: a data como DATA (o CSV entrega texto, e o Calc reinterpreta com o
- * fuso e a localidade de quem abre), o número como NÚMERO, e a formatação
- * (cabeçalho, borda, largura de coluna). Um .ods é um ZIP com XML dentro, e
- * escrevê-lo custa este arquivo. A alternativa era mais uma dependência para
- * gerar o que caberia aqui, e o `archiver` que já existe no projeto é stream de
- * arquivo, não buffer em memória.
+ * É o que permite gerar o Anuário Estatístico e o RTM a partir da
+ * planilha-SEMENTE (`rpcmtec/modelos/`) em vez de redesenhá-los: o estilo, a
+ * largura de coluna, a célula mesclada e o painel congelado continuam sendo os
+ * do arquivo original, byte a byte. Quem monta o `content.xml` novo é cada
+ * gerador, em `rpcmtec/anuario_ods.js` e `rpcmtec/rtm_ods.js`.
  *
- * O que este módulo NÃO faz, de propósito: fórmula, gráfico, mais de uma aba,
- * célula mesclada. Nenhum relatório precisa, e cada um desses seria mais
- * superfície para manter.
+ * Este módulo já soube montar um .ods do ZERO (`criarOds`, com estilo, cabeçalho
+ * e faixa de filtro próprios). Isso saiu em 2026-08-01, quando as duas planilhas
+ * passaram a sair de semente: o arquivo desenhado por nós tinha os números certos
+ * sem ser o arquivo que a DSG confere linha a linha. Sobrou o ZIP.
+ *
+ * O `archiver` do projeto não serve aqui: ele é stream de arquivo, e o que se
+ * precisa é buffer em memória com controle da ORDEM e da compressão de cada
+ * entrada, que é o que o ODF exige do `mimetype`.
  */
 
 // --- ZIP -------------------------------------------------------------------
@@ -125,282 +128,10 @@ const zipar = (entradas, data = new Date()) => {
   return Buffer.concat([...locais, diretorio, fim])
 }
 
-// --- XML -------------------------------------------------------------------
-
-const escaparXml = texto =>
-  String(texto)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    // O XML 1.0 não aceita caractere de controle. Observação colada de um Word
-    // chega com eles, e um só torna o arquivo inteiro ilegível no Calc. A
-    // tabulação, o LF e o CR ficam: o LF separa parágrafo dentro da célula.
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
-
-const pad = n => String(n).padStart(2, '0')
-
-// Letra da coluna no endereço da planilha (0 -> A, 26 -> AA).
-const letraColuna = indice => {
-  let n = indice
-  let letra = ''
-  do {
-    letra = String.fromCharCode(65 + (n % 26)) + letra
-    n = Math.floor(n / 26) - 1
-  } while (n >= 0)
-  return letra
-}
-
-/**
- * Data de calendário -> { iso: 'AAAA-MM-DD', exibicao: 'DD/MM/AA' }.
- *
- * Aceita string 'AAAA-MM-DD' (é assim que as colunas DATE chegam do banco, por
- * causa do type parser em database/db.js) e objeto Date. Da string a data sai
- * por fatia de texto, sem passar por Date: `new Date('2026-02-10')` é UTC, e num
- * fuso a oeste de Greenwich o dia volta um.
- */
-const partesData = valor => {
-  if (valor instanceof Date) {
-    const iso = `${valor.getFullYear()}-${pad(valor.getMonth() + 1)}-${pad(valor.getDate())}`
-    return { iso, exibicao: `${pad(valor.getDate())}/${pad(valor.getMonth() + 1)}/${String(valor.getFullYear()).slice(-2)}` }
-  }
-  const achado = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!achado) return null
-  const [, ano, mes, dia] = achado
-  return { iso: `${ano}-${mes}-${dia}`, exibicao: `${dia}/${mes}/${ano.slice(-2)}` }
-}
-
-const celula = (valor, tipo, estilo) => {
-  const attrEstilo = ` table:style-name="${estilo}"`
-
-  if (valor === null || valor === undefined || valor === '') {
-    return `<table:table-cell${attrEstilo}/>`
-  }
-
-  if (tipo === 'numero') {
-    const n = Number(valor)
-    if (!Number.isFinite(n)) {
-      return `<table:table-cell${attrEstilo} office:value-type="string"><text:p>${escaparXml(valor)}</text:p></table:table-cell>`
-    }
-    return `<table:table-cell${attrEstilo} office:value-type="float" office:value="${n}"><text:p>${n}</text:p></table:table-cell>`
-  }
-
-  if (tipo === 'data') {
-    const partes = partesData(valor)
-    if (!partes) {
-      return `<table:table-cell${attrEstilo} office:value-type="string"><text:p>${escaparXml(valor)}</text:p></table:table-cell>`
-    }
-    return `<table:table-cell${attrEstilo} office:value-type="date" office:date-value="${partes.iso}"><text:p>${partes.exibicao}</text:p></table:table-cell>`
-  }
-
-  // Texto: cada linha vira um parágrafo, como o Calc faz com Ctrl+Enter.
-  const paragrafos = String(valor)
-    .split('\n')
-    .map(linha => `<text:p>${escaparXml(linha)}</text:p>`)
-    .join('')
-  return `<table:table-cell${attrEstilo} office:value-type="string">${paragrafos}</table:table-cell>`
-}
-
-const NS = [
-  'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
-  'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"',
-  'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"',
-  'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"',
-  // ATENÇÃO: o prefixo `fo` do ODF é `xsl-fo-compatible`, e não `xsl-format-object`
-  // nem o namespace do XSL-FO do W3C. Com a URI errada o arquivo abre sem erro e
-  // TODO atributo fo:* é ignorado em silêncio: a planilha sai sem borda, sem
-  // fundo no cabeçalho e sem negrito. Medido em 2026-07-29, comparando com o
-  // content.xml do RTM do chefe.
-  'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"',
-  'xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"'
-].join(' ')
-
-// Estilo da aba do RTM, lido do próprio arquivo do chefe
-// (1_CGEO_RTM_JUN_26_preenchido.ods, aba META4_DETALHADA, 2026-07-29):
-// cabeçalho creme #fff5ce em Calibri Light 12pt negrito, dado em Liberation
-// Serif 10pt, tudo centralizado, com borda fina em toda célula.
-const ESTILOS_CELULA = `
-  <style:style style:name="ceCab" style:family="table-cell" style:parent-style-name="Default">
-   <style:table-cell-properties fo:background-color="#fff5ce" style:text-align-source="fix" style:repeat-content="false" fo:wrap-option="wrap" fo:border="0.74pt solid #000000" style:vertical-align="middle"/>
-   <style:paragraph-properties fo:text-align="center" fo:margin-left="0cm"/>
-   <style:text-properties style:font-name="Calibri Light" fo:font-size="12pt" fo:font-weight="bold"/>
-  </style:style>
-  <style:style style:name="ceDado" style:family="table-cell" style:parent-style-name="Default">
-   <style:table-cell-properties style:text-align-source="fix" style:repeat-content="false" fo:wrap-option="wrap" fo:border="0.74pt solid #000000" style:vertical-align="middle"/>
-   <style:paragraph-properties fo:text-align="center" fo:margin-left="0cm"/>
-   <style:text-properties style:font-name="Liberation Serif" fo:font-size="10pt" fo:language="pt" fo:country="BR"/>
-  </style:style>
-  <style:style style:name="ceData" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="Ndata">
-   <style:table-cell-properties style:text-align-source="fix" style:repeat-content="false" fo:wrap-option="wrap" fo:border="0.74pt solid #000000" style:vertical-align="middle"/>
-   <style:paragraph-properties fo:text-align="center" fo:margin-left="0cm"/>
-   <style:text-properties style:font-name="Liberation Serif" fo:font-size="10pt" fo:language="pt" fo:country="BR"/>
-  </style:style>`
-
-// DD/MM/AA, como na aba. `automatic-order` deixa o Calc reordenar conforme a
-// localidade de quem abre, que é o comportamento do arquivo original.
-const ESTILO_DATA = `
-  <number:date-style style:name="Ndata" number:automatic-order="true">
-   <number:day number:style="long"/><number:text>/</number:text>
-   <number:month number:style="long"/><number:text>/</number:text>
-   <number:year/>
-  </number:date-style>`
-
-const STYLES_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-styles ${NS} office:version="1.3">
- <office:styles>
-  <style:style style:name="Default" style:family="table-cell">
-   <style:text-properties style:font-name="Liberation Serif" fo:font-size="10pt" fo:language="pt" fo:country="BR"/>
-  </style:style>
- </office:styles>
- <office:automatic-styles>
-  <style:page-layout style:name="pm1">
-   <style:page-layout-properties fo:margin-top="1cm" fo:margin-bottom="1cm" fo:margin-left="1cm" fo:margin-right="1cm" style:print-orientation="landscape"/>
-  </style:page-layout>
- </office:automatic-styles>
- <office:master-styles>
-  <style:master-page style:name="Default" style:page-layout-name="pm1"/>
- </office:master-styles>
-</office:document-styles>`
-
-const MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
- <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
- <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
- <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
- <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
-</manifest:manifest>`
-
-/**
- * Gera o .ods de uma aba.
- *
- * @param {Object} opts
- * @param {string} opts.aba - nome da aba (o do destino, ex.: 'META4_DETALHADA')
- * @param {Array<{key: string, label: string, largura?: string, tipo?: 'texto'|'numero'|'data'}>} opts.colunas
- *   `label` com '\n' vira duas linhas dentro da célula do cabeçalho.
- *   `largura` é uma medida ODF ('2.115cm'); `tipo` decide como o valor é gravado.
- * @param {Array<Object>} opts.linhas - uma linha por objeto, lida por `key`
- * @param {boolean} [opts.filtro=true] - botões de filtro no cabeçalho
- * @param {string} [opts.titulo] - uma linha de texto ANTES do cabeçalho, na
- *   primeira coluna. O ODF permite mesclar célula, e este módulo não mescla (ver
- *   o cabeçalho do arquivo): o texto transborda para a direita, que é como o
- *   Calc mostra célula longa em linha vazia.
- * @param {Array<string>} [opts.rodape] - linhas de texto DEPOIS dos dados,
- *   separadas por uma linha em branco. Serve para a fonte e para a nota de
- *   rodapé que a tabela oficial exige.
- * @param {Date} [opts.data] - carimbo de tempo do ZIP (fixo em teste)
- * @returns {Buffer} o arquivo .ods
- */
-const criarOds = ({ aba, colunas, linhas = [], filtro = true, titulo, rodape = [], data } = {}) => {
-  if (!aba) throw new Error('criarOds: falta o nome da aba')
-  if (!Array.isArray(colunas) || colunas.length === 0) {
-    throw new Error('criarOds: falta a definição das colunas')
-  }
-
-  const estilosColuna = colunas
-    .map((c, i) => `
-  <style:style style:name="co${i + 1}" style:family="table-column">
-   <style:table-column-properties fo:break-before="auto" style:column-width="${c.largura || '2.115cm'}"/>
-  </style:style>`)
-    .join('')
-
-  const declColunas = colunas
-    .map((c, i) => `<table:table-column table:style-name="co${i + 1}" table:default-cell-style-name="ceDado"/>`)
-    .join('')
-
-  const linhaCabecalho = `<table:table-row>${colunas
-    .map(c => celula(c.label, 'texto', 'ceCab'))
-    .join('')}</table:table-row>`
-
-  // Linha solta (título, rodapé): texto na primeira coluna, o resto vazio e sem
-  // borda, para não desenhar uma tabela onde não há tabela.
-  const linhaSolta = texto =>
-    `<table:table-row><table:table-cell office:value-type="string"><text:p>${escaparXml(texto)}</text:p></table:table-cell></table:table-row>`
-
-  const linhaBranco = '<table:table-row><table:table-cell/></table:table-row>'
-
-  const linhaTitulo = titulo ? linhaSolta(titulo) + linhaBranco : ''
-  const linhasRodape = rodape.length
-    ? linhaBranco + rodape.map(linhaSolta).join('')
-    : ''
-
-  const linhasDados = linhas
-    .map(linha => `<table:table-row>${colunas
-      .map(c => {
-        const tipo = c.tipo || 'texto'
-        const estilo = tipo === 'data' ? 'ceData' : 'ceDado'
-        return celula(linha[c.key], tipo, estilo)
-      })
-      .join('')}</table:table-row>`)
-    .join('')
-
-  const ultimaColuna = letraColuna(colunas.length - 1)
-  // O título ocupa duas linhas (o texto e uma em branco), então o cabeçalho e a
-  // faixa do filtro descem junto. Sem esse deslocamento o filtro pegaria a linha
-  // do título como cabeçalho.
-  const primeiraLinha = titulo ? 3 : 1
-  const ultimaLinha = primeiraLinha + linhas.length
-  const faixaFiltro = filtro
-    ? `<table:database-ranges>
-   <table:database-range table:name="__Anonymous_Sheet_DB__0" table:target-range-address="${aba}.A${primeiraLinha}:${aba}.${ultimaColuna}${ultimaLinha}" table:display-filter-buttons="true"/>
-  </table:database-ranges>`
-    : ''
-
-  const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content ${NS} office:version="1.3">
- <office:automatic-styles>${estilosColuna}${ESTILO_DATA}${ESTILOS_CELULA}
- </office:automatic-styles>
- <office:body>
-  <office:spreadsheet>
-   <table:table table:name="${escaparXml(aba)}">
-    ${declColunas}
-    ${linhaTitulo}
-    ${linhaCabecalho}
-    ${linhasDados}
-    ${linhasRodape}
-   </table:table>
-   ${faixaFiltro}
-  </office:spreadsheet>
- </office:body>
-</office:document-content>`
-
-  const metaXml = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-meta ${NS} office:version="1.3">
- <office:meta>
-  <meta:generator xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0">SCA - Controle do Acervo, 1o CGEO</meta:generator>
- </office:meta>
-</office:document-meta>`
-
-  return zipar([
-    // Primeira e sem compressão: exigência do ODF.
-    { nome: 'mimetype', conteudo: Buffer.from('application/vnd.oasis.opendocument.spreadsheet', 'utf8'), comprimir: false },
-    { nome: 'META-INF/manifest.xml', conteudo: Buffer.from(MANIFEST_XML, 'utf8') },
-    { nome: 'styles.xml', conteudo: Buffer.from(STYLES_XML, 'utf8') },
-    { nome: 'meta.xml', conteudo: Buffer.from(metaXml, 'utf8') },
-    { nome: 'content.xml', conteudo: Buffer.from(contentXml, 'utf8') }
-  ], data)
-}
-
-/**
- * Envia o .ods como download.
- * @param {Object} res - response do Express
- * @param {string} filename - nome do arquivo baixado
- * @param {Object} opts - o mesmo objeto de criarOds
- */
-const sendOds = (res, filename, opts) => {
-  const buffer = criarOds(opts)
-  res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-  res.setHeader('Content-Length', String(buffer.length))
-  return res.end(buffer)
-}
-
 // --- Leitura de ZIP --------------------------------------------------------
 //
 // O contrário do `zipar`: abre um .ods que já existe para trocar o conteúdo de
-// uma entrada e reescrever o resto INTACTO. É o que permite gerar o Anuário
-// Estatístico a partir da planilha-semente da DSG, em vez de redesenhá-la: o
-// estilo, a largura de coluna, a célula mesclada e o formato numérico que
-// mostra zero como '-' continuam sendo os do arquivo original, byte a byte.
+// uma entrada e reescrever o resto INTACTO.
 //
 // Lê pelo DIRETÓRIO CENTRAL, e não varrendo cabeçalhos locais: só o diretório
 // central é autoritativo sobre onde cada entrada começa, e é dele que sai o
@@ -516,10 +247,6 @@ const reescreverOds = (original, substituicoes, data = new Date()) => {
 }
 
 module.exports = {
-  criarOds,
-  sendOds,
-  letraColuna,
-  partesData,
   desziparParaMapa,
   reescreverOds
 }

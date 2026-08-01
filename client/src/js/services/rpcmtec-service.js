@@ -34,19 +34,6 @@ export function downloadRpcmtecDocx({ ano, mes }) {
 }
 
 /**
- * O Anuario Estatistico (Tabela 5.4.9) do mes, para a previa em tela.
- *
- * Chamada A PARTE da do RPCMTec, de proposito: e outro relatorio, com outra
- * rota, e uma falha nele nao pode apagar as tabelas do RPCMTec da tela.
- *
- * @param {{ano:number, mes:number}} params
- * @returns {Promise<Object>}
- */
-export function getAnuario({ ano, mes }) {
-  return apiGet(`/rpcmtec/anuario?ano=${ano}&mes=${mes}`);
-}
-
-/**
  * Baixa o .ods do Anuario. O arquivo sai da planilha-semente da DSG com os
  * valores trocados, entao ele JA e o arquivo que sobe, sem reformatacao.
  *

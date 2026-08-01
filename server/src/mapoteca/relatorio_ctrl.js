@@ -467,30 +467,9 @@ controller.COLUNAS_IMPRESSAO_DETALHADA = [
 //
 // O destino é a aba META4_DETALHADA do RTM mensal do 1º CGEO, que se preenche
 // colando linhas. O CSV serve para conferir e para quem quer os dados crus; o
-// .ods sai formatado igual à aba, com data como DATA e quantidade como NÚMERO.
+// .ods sai da planilha-SEMENTE da própria aba (`rpcmtec/rtm_ods.js`), com a
+// largura de coluna, o painel congelado e os estilos dela.
 //
-// As larguras e os rótulos saíram do próprio arquivo do chefe
-// (1_CGEO_RTM_JUN_26_preenchido.ods, lido em 2026-07-29). "Mat\nPrevisto" tem a
-// quebra de linha da célula original, e a ordem das 15 colunas é a da aba: colar
-// no lugar errado é o erro que este formato existe para evitar.
-controller.COLUNAS_META4_ODS = [
-  { key: "omds", label: "OMDS", largura: "2.115cm" },
-  { key: "demandante", label: "Demandante", largura: "3.431cm" },
-  { key: "om_destino", label: "OM Destino", largura: "2.805cm" },
-  { key: "previsto_pit", label: "Previsto no PIT", largura: "2.115cm" },
-  { key: "meta", label: "Meta", largura: "2.115cm" },
-  { key: "produto", label: "Produto", largura: "5.509cm" },
-  { key: "mi", label: "MI", largura: "2.115cm" },
-  { key: "escala", label: "Escala", largura: "2.115cm" },
-  { key: "quantidade_prevista", label: "Qnt Prevista", largura: "2.115cm", tipo: "numero" },
-  { key: "material_previsto", label: "Mat\nPrevisto", largura: "2.429cm" },
-  { key: "quantidade_fornecida", label: "Qnt Fornecida", largura: "2.45cm", tipo: "numero" },
-  { key: "material_fornecido", label: "Material Fornecido", largura: "2.639cm" },
-  { key: "data_entrega", label: "Data da Entrega", largura: "2.115cm", tipo: "data" },
-  { key: "forma_entrega", label: "Forma da Entrega", largura: "2.387cm" },
-  { key: "observacao", label: "Observações", largura: "2.778cm" }
-];
-
 // A aba escreve o material em minúscula e sem a gramatura ('sulfite', e não
 // 'Sulfite 90g'), porque ela nunca distinguiu 90g de 120g. Quem precisa da
 // gramatura tem o CSV, que traz o nome do domínio como está no banco.

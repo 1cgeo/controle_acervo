@@ -8,16 +8,13 @@
     "dev-https": "nodemon src/index.js --https",
     "production": "pm2 start src/index.js --name controle-acervo",
     "production-https": "pm2 start src/index.js --name controle-acervo-https -- --https",
-    "test": "cross-env NODE_ENV=test jest --runInBand",
-    "test:unit": "cross-env NODE_ENV=test jest --testPathPatterns=unit",
-    "test:integration": "cross-env NODE_ENV=test jest --testPathPatterns=integration --runInBand",
-    "test:routes": "cross-env NODE_ENV=test jest --testPathPatterns=routes --runInBand",
-    "test:coverage": "cross-env NODE_ENV=test jest --runInBand --coverage"
-  },
-  "nodemonConfig": {
-    "ignore": [
-      "src/js_docs/*"
-    ]
+    "test": "cross-env NODE_ENV=test jest",
+    "test:rapido": "cross-env NODE_ENV=test jest --selectProjects rapido",
+    "test:banco": "cross-env NODE_ENV=test jest --selectProjects banco",
+    "test:unit": "cross-env NODE_ENV=test jest --selectProjects rapido --testPathPatterns=unit",
+    "test:integration": "cross-env NODE_ENV=test jest --selectProjects banco --testPathPatterns=integration",
+    "test:routes": "cross-env NODE_ENV=test jest --testPathPatterns=routes",
+    "test:coverage": "cross-env NODE_ENV=test jest --coverage"
   },
   "license": "MIT",
   "dependencies": {

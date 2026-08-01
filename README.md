@@ -6,7 +6,7 @@ Desde 2026-07-27 o SCA absorveu o antigo SCO (Sistema de Controle Orçamentário
 
 Para sua utilização é necessário o [Serviço de Autenticação](https://github.com/1cgeo/auth_server), que valida a senha e é a fonte dos usuários.
 
-> Regras de projeto, decisões de design deliberadas e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. Este arquivo é a referência: estrutura, stack, comandos, rotas, banco e instalação.
+> Regras de projeto, decisões de design deliberadas e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. Para subir o ambiente, veja **[`levantar_servico.md`](levantar_servico.md)**.
 
 ## Componentes
 
@@ -16,9 +16,7 @@ Para sua utilização é necessário o [Serviço de Autenticação](https://gith
 | **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os três módulos |
 | **Plugin QGIS do Acervo** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Catalogação, carga e diagnóstico |
 | **Plugin QGIS da Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Pedidos ativos, download de PDF e quantitativo impresso |
-| **CLI do Acervo** | `acervo_cli/` | Node (dependência zero) | Interface de agente do módulo acervo |
-| **CLI da Mapoteca** | `mapoteca_cli/` | Node (dependência zero) | Interface de agente do módulo mapoteca |
-| **CLI do Orçamento** | `orcamento_cli/` | Node (dependência zero) | Interface de agente do módulo orçamento |
+| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/` | Node (dependência zero) | Um por módulo |
 
 Os três CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
 
@@ -35,19 +33,13 @@ Os três CLIs são irmãos do client web, não scripts auxiliares: o client serv
 ### Instalação
 
 ```bash
-# Instalar dependências do servidor e da interface
-npm run install-all
-
-# Configuração interativa (cria banco de dados e config.env)
-npm run config
-
-# Ou via flags de linha de comando
-node create_config.js --db-server localhost --db-port 5432 --db-user postgres --db-password <senha> --db-name sca --port 3015 --db-create --auth-server-raw https://<auth_server_url> --auth-user <admin> --auth-password <senha>
+npm run install-all   # dependências do servidor e da interface
+npm run config        # configuração interativa (cria banco e config.env)
 ```
 
-### Execução
+O `create_config.js` também aceita flags de linha de comando (`--db-server`, `--db-port`, `--db-name`, `--auth-server-raw`, `--db-create`, ...); rode-o sem argumento para o modo interativo.
 
-> Para subir o ambiente completo (Auth Server, servidor, interface), com ordem de inicialização, smoke tests e troubleshooting, veja **[`levantar_servico.md`](levantar_servico.md)**. O servidor **não inicia** se o Serviço de Autenticação não estiver operacional.
+### Execução
 
 ```bash
 cd server && npm run dev        # Desenvolvimento (HTTP, hot-reload por nodemon)
@@ -56,36 +48,40 @@ npm start                       # Produção (HTTP, via PM2)
 npm run deploy                  # Build da interface + PM2 startOrReload + pm2 save
 ```
 
+O servidor **não inicia** se o Serviço de Autenticação não estiver operacional.
+
 ### Testes
+
+A suíte do servidor é dividida em **dois pacotes**, para nem toda mudança cobrar os três minutos da suíte inteira:
 
 ```bash
 cd server
-npm test                  # Suite completa
-npm run test:unit         # Unitários
-npm run test:integration  # Integração (exige PostgreSQL)
-npm run test:routes       # Rotas
-npm run test:coverage     # Cobertura
+npm run test:rapido       # ~3s: tudo que NÃO toca o banco (47 suítes, em paralelo)
+npm run test:banco        # ~3min: o que precisa de PostgreSQL (29 suítes)
+npm test                  # os dois
+npm run test:coverage     # cobertura
 ```
 
-Os testes usam `config_testing.env`. O `globalSetup` (`server/src/__tests__/setup.js`) cria o banco de teste aplicando `er/*.sql` na mesma ordem do `create_config.js`.
+No dia a dia, `test:rapido` é o que se roda: ele cobre schemas, controllers mockados, utilitários e as rotas do orçamento. `test:banco` antes de commitar.
+
+Quem entra em qual pacote é decidido **lendo o fonte**, não por uma lista: teste que faz `require` de `helpers/db` ou de `helpers/app` abre conexão e vai para o pacote de banco. Lista seria cópia, e cópia apodrece.
+
+Os testes usam `config_testing.env`. O `globalSetup` monta um banco-TEMPLATE aplicando `er/*.sql` na mesma ordem do `create_config.js`, e daí clona **um banco por worker** do Jest (`CREATE DATABASE ... TEMPLATE`, que é cópia de arquivo). É o que permite rodar em paralelo: cada teste de banco chama `cleanTestData()`, que faz TRUNCATE nas tabelas inteiras, e com um banco só dois workers apagariam os dados um do outro.
 
 ### Variáveis de ambiente
 
-Arquivo `server/config.env`, gerado pelo `npm run config`.
+Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado, sem valor nenhum, está em `.env.example`.
 
-| Variável | Tipo | Obrigatória | Descrição |
-|---|---|---|---|
-| `PORT` | inteiro | Sim | Porta HTTP do servidor |
-| `DB_SERVER` | string | Sim | Host do PostgreSQL |
-| `DB_PORT` | inteiro | Sim | Porta do PostgreSQL |
-| `DB_NAME` | string | Sim | Nome do banco de dados |
-| `DB_USER` | string | Sim | Usuário de escrita do banco |
-| `DB_PASSWORD` | string | Sim | Senha do usuário de escrita |
-| `DB_USER_READONLY` | string | Não | Usuário somente leitura (URI de camada do QGIS) |
-| `DB_PASSWORD_READONLY` | string | Não | Senha do usuário somente leitura |
-| `JWT_SECRET` | string | Sim | Segredo para assinatura JWT |
-| `AUTH_SERVER` | URI | Sim | URL do serviço de autenticação |
-| `USE_PROXY` | boolean | Não | Usar proxy do sistema nas chamadas ao auth (default `false`) |
+| Variável | Obrigatória | Descrição |
+|---|---|---|
+| `PORT` | Sim | Porta HTTP do servidor |
+| `DB_SERVER`, `DB_PORT`, `DB_NAME` | Sim | Conexão com o PostgreSQL |
+| `DB_USER`, `DB_PASSWORD` | Sim | Usuário de escrita do banco |
+| `DB_USER_READONLY`, `DB_PASSWORD_READONLY` | Não | Papel somente leitura (URI de camada do QGIS) |
+| `JWT_SECRET` | Sim | Segredo para assinatura JWT |
+| `AUTH_SERVER` | Sim | URL do serviço de autenticação |
+| `USE_PROXY` | Não | Usar proxy do sistema nas chamadas ao auth (default `false`) |
+| `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
 
 ### Endpoints da API
 
@@ -97,15 +93,16 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 |---|---|---|
 | `/api/login` | plataforma | Autenticação (JWT, expiração 1h). Devolve `perfis` e `modulos` |
 | `/api/usuarios` | plataforma | Gerenciamento de usuários e concessão de perfil por módulo (admin) |
+| `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
+| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
-| `/api/arquivo` | acervo | Upload e download de arquivos |
+| `/api/arquivo` | acervo | Upload, download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões |
 | `/api/projetos` | acervo | Projetos e lotes |
 | `/api/volumes` | acervo | Volumes de armazenamento |
+| `/api/ponto_controle` | acervo | Pontos de controle geodésico |
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
-| `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
@@ -127,30 +124,18 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 **Formato padrão de resposta:**
 
 ```json
-{
-  "version": "1.7.0",
-  "success": true,
-  "message": "Mensagem descritiva",
-  "dados": { },
-  "error": null
-}
+{ "version": "1.7.0", "success": true, "message": "...", "dados": { }, "error": null }
 ```
 
 ### Segurança
 
-- Helmet (CSP desabilitado para servir o SPA e o Swagger UI)
-- Limite de 200 requisições por 60 segundos por IP
-- Proteção contra HTTP Parameter Pollution (HPP)
-- CORS habilitado, cache desabilitado
-- JWT com expiração de 1 hora, e o perfil relido do banco a cada requisição
+Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 200 requisições por 60 segundos por IP, proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com expiração de 1 hora e o perfil relido do banco a cada requisição.
 
 ### Jobs agendados
 
 Um cron de hora em hora limpa tokens de download e sessões de upload expiradas.
 
-Outro, na meia hora, gera as **miniaturas** que faltam (até 20 por passada). A
-miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da
-versão, ou o raster quando não há PDF. Produto só vetorial não tem miniatura.
+Outro, na meia hora, gera as **miniaturas** que faltam (até 20 por passada). A miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da versão, ou o raster quando não há PDF. Produto só vetorial não tem miniatura.
 
 Dois binários e uma biblioteca, e cada um faz o que só ele faz bem:
 
@@ -160,20 +145,9 @@ Dois binários e uma biblioteca, e cada um faz o que só ele faz bem:
 | Abrir formato geo | `gdal_translate` + `gdalinfo` | é o único que lê ERDAS `.img` (Ortoimagem, 7,4 GB com pirâmides) e GeoTIFF Float32 (MDS/MDT) |
 | Reduzir e codificar | `sharp` (npm) | o `-outsize` do GDAL decima por vizinho mais próximo e serrilha o texto da legenda |
 
-Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final,
-com reamostragem de verdade. Em Linux é `apt install poppler-utils gdal-bin`; em
-Windows o GDAL vem dentro do QGIS. Os caminhos vêm de `MINIATURA_PDFTOPPM`,
-`MINIATURA_GDAL_TRANSLATE` e `MINIATURA_GDALINFO` (vazio = procurar no PATH).
-Sem os binários, a rota da miniatura responde 404 e o job aborta a passada com um
-erro no log; nada mais quebra.
+Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final, com reamostragem de verdade. Em Linux é `apt install poppler-utils gdal-bin`; em Windows o GDAL vem dentro do QGIS. Sem os binários, a rota da miniatura responde 404 e o job aborta a passada com um erro no log; nada mais quebra.
 
-**Raster de medida é esticado, não cortado.** MDS e MDT guardam ALTITUDE na
-banda, não intensidade de pixel. Convertidos direto para 8 bits, toda cota acima
-de 255 m vira branco e a miniatura sai vazia. O gerador detecta a banda que não é
-de 8 bits e estica por média ± 2,5 desvios, presa ao intervalo real.
-
-O `GDAL_PAM_ENABLED=NO` é forçado pelo gerador: sem ele, pedir estatística grava
-um `.aux.xml` **ao lado do arquivo lido**, dentro do volume do acervo.
+**Raster de medida é esticado, não cortado.** MDS e MDT guardam ALTITUDE na banda, não intensidade de pixel. Convertidos direto para 8 bits, toda cota acima de 255 m vira branco e a miniatura sai vazia. O gerador detecta a banda que não é de 8 bits e estica por média ± 2,5 desvios, presa ao intervalo real. O `GDAL_PAM_ENABLED=NO` é forçado: sem ele, pedir estatística grava um `.aux.xml` **ao lado do arquivo lido**, dentro do volume do acervo.
 
 Para carregar o acervo já existente de uma vez, em vez de esperar o cron:
 
@@ -182,34 +156,23 @@ node scripts/gerar_miniaturas.cjs --limite 50 --embaralhar --dry-run   # ensaio 
 node scripts/gerar_miniaturas.cjs --concorrencia 4                     # a carga
 ```
 
-O `--dry-run` lê o volume e renderiza de verdade, e para só antes de gravar.
-Falha vira linha de erro em `acervo.miniatura_versao`, para a carga seguinte não
-repetir o arquivo quebrado; `--refazer-erros` insiste neles. Para refazer o que
-deu certo (troca de renderizador, por exemplo), apague as linhas alvo: a
-miniatura é dado derivado, e a carga seguinte a reconstrói.
+O `--dry-run` lê o volume e renderiza de verdade, e para só antes de gravar. Falha vira linha de erro em `acervo.miniatura_versao`, para a carga seguinte não repetir o arquivo quebrado; `--refazer-erros` insiste neles. Para refazer o que deu certo, apague as linhas alvo: a miniatura é dado derivado, e a carga seguinte a reconstrói.
 
 ### Estrutura do servidor
 
 ```
 server/src/
-├── index.js              # Entry point (verifica versão do Node.js)
-├── main.js               # Boot: DB -> auth -> cron -> start
-├── config.js             # Configuração com validação Joi (VERSION, MIN_DATABASE_VERSION)
-├── routes.js             # Agregador de rotas
+├── index.js / main.js / config.js / routes.js
 ├── server/               # App Express, Swagger
 ├── database/             # Conexão pg-promise, checagem de versão, refresh de views
 ├── authentication/       # Integração com o serviço de autenticação
 ├── login/                # JWT, validate_token, verify_perfil, verify_admin
-├── acervo/               # Endpoints do acervo
-├── arquivo/              # Upload e download de arquivos
-├── produto/              # CRUD de produtos
-├── projeto/              # Projetos e lotes
-├── volume/               # Volumes de armazenamento
+├── acervo/ arquivo/ produto/ projeto/ volume/ ponto_controle/ dashboard/ gerencia/
 ├── usuario/              # Usuários e perfis (plataforma)
-├── gerencia/             # Domínios e operações de manutenção
-├── dashboard/            # Dashboard do acervo
+├── pit/                  # Metas do PIT (plataforma)
 ├── rpcmtec/              # RPCMTec inteiro e Anuário Estatístico (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
+├── limites/              # Limite político-administrativo (referência)
 ├── integracao/           # Rotas públicas para o vault da DGEO
 ├── orcamento/            # Módulo orçamento (13 features + utils próprio)
 └── utils/                # Utilitários compartilhados
@@ -228,15 +191,15 @@ client/src/js/
 ├── index.js          # Tema, roteador, layout, rotas de plataforma
 ├── router.js         # Roteador hash com guardas
 ├── store/            # auth-store: sessão única, prefixo @sca-*
-├── services/         # api-client, cache, plataforma-service (login e usuários)
+├── services/         # api-client, cache, plataforma-service, rpcmtec-service
 ├── utils/            # dom, formatação, tema, toast
-├── components/       # layout, data-table, modal, form-fields, charts, tabs, export-bar, wizard
-├── pages/            # login, usuarios, 404, não autorizado
+├── components/       # layout, data-table, modal, form-fields, charts, mapa, tabs, wizard
+├── pages/            # login, usuarios, rpcmtec, 404, não autorizado
 └── modules/
     ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
-    ├── acervo/       # Dashboard com 4 abas
+    ├── acervo/       # Dashboard, busca, pontos de controle
     ├── mapoteca/     # Clientes, pedidos, materiais, estoque, consumo, plotters, relatórios
-    └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, relatório, configuração
+    └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
 ```
 
 Para acrescentar página, leia `client/src/js/modules/registry.js`: um manifesto por módulo declara menu, rotas e perfil mínimo, e o roteador não precisa ser tocado.
@@ -247,7 +210,7 @@ npm run build         # Builda client/ e copia para server/src/build/
 npm run test-client   # vitest + jsdom
 ```
 
-Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e escuro por `[data-theme]`, gráficos com Chart.js em chunk separado. Em teste, o `chart.js` é substituído pelo dublê em `components/charts/chart-stub.js`, porque o jsdom não implementa canvas.
+Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e escuro por `[data-theme]`, gráficos com Chart.js em chunk separado. Em teste, `chart.js` e `maplibre-gl` são substituídos por dublês (`chart-stub.js`, `maplibre-stub.js`), porque o jsdom não implementa canvas nem WebGL.
 
 ---
 
@@ -257,36 +220,26 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 
 | Schema | Conteúdo |
 |---|---|
-| `acervo` | projeto, lote, produto, versao, arquivo, download, sessões de upload |
+| `acervo` | projeto, lote, produto, versao, arquivo, download, miniatura, sessões de upload |
+| `ponto_controle` | pontos de controle geodésico e seus arquivos |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
 | `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
-| `pit` | `meta`: as metas do PIT do ano. Dado de referência, fora dos módulos (saiu de `orcamento` em 2026-07-31) |
-| `rpcmtec` | `edicao`: o metadado da edição mensal do relatório (quem assina, quando). Fora dos módulos (saiu de `orcamento` em 2026-08-01). As tabelas do relatório são consultas, nunca gravadas |
+| `pit` | `meta`: as metas do PIT do ano. Dado de referência, fora dos módulos |
+| `rpcmtec` | `edicao`: o metadado da edição mensal do relatório. As tabelas do relatório são consultas, nunca gravadas |
+| `limites` | Limite político-administrativo e área de suprimento |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
 | `dgeo` | `usuario` e `usuario_perfil` |
 | `public` | Versão do banco e estilos de camada do QGIS |
 
 ### Instalação nova
 
-Arquivos em `er/`, nesta ordem:
+Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
 
-1. `versao.sql`: versão do banco
-2. `dominio.sql`: domínios dos três módulos
-3. `dgeo.sql`: usuários e perfis
-4. `limites.sql`: limite político-administrativo (referência). Antes de `acervo`, que não o referencia mas o consulta; declara o PostGIS, porque é o primeiro arquivo com geometria
-5. `pit.sql`: metas do PIT (antes de mapoteca e orçamento, que a referenciam)
-6. `acervo.sql`: schema principal
-7. `ponto_controle.sql`: pontos de controle (referencia `acervo.lote` e o volume)
-8. `acompanhamento.sql`: visões materializadas
-9. `mapoteca.sql`: mapoteca
-10. `orcamento.sql`: orçamento
-11. `rpcmtec.sql`: a edição mensal do RPCMTec (só depende de `dgeo`)
-12. `permissao.sql`: permissões
-13. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
+A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam.
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.11.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+A versão do schema é **1.11.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`.
 
 ### Atualização de banco existente
 
@@ -313,16 +266,9 @@ O schema `orcamento` não tem geometria, e liga usuário só por `uuid`.
 
 ---
 
-## Plugin QGIS
+## Plugins QGIS
 
-### Requisitos
-
-- QGIS >= 4.0 (Qt6)
-- Servidor SCA em execução
-
-### Instalação
-
-Copie a pasta `ferramentas_acervo/` para o diretório de plugins do QGIS:
+Dois plugins (QGIS >= 4.0/Qt6), com a mesma instalação: copie a pasta para o diretório de plugins do QGIS.
 
 | SO | Diretório |
 |---|---|
@@ -330,72 +276,15 @@ Copie a pasta `ferramentas_acervo/` para o diretório de plugins do QGIS:
 | Linux | `~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/` |
 | macOS | `~/Library/Application Support/QGIS/QGIS4/profiles/default/python/plugins/` |
 
-### Desenvolvimento
+Para desenvolvimento, os scripts em `.dev/` criam os symlinks dos DOIS plugins de uma vez (`setup_dev_windows.bat` como administrador, `setup_dev_linux.sh`, `setup_dev_macos.sh`).
 
-Scripts de setup criam symlinks para desenvolvimento live:
+O login pede URL do servidor, usuário e senha, envia `POST /api/login` e guarda o JWT; em 401 tenta re-autenticar em silêncio com as credenciais salvas em `QgsSettings` ("Lembrar-me").
 
-```bash
-ferramentas_acervo/.dev/setup_dev_windows.bat   # Windows (como administrador)
-ferramentas_acervo/.dev/setup_dev_linux.sh      # Linux
-ferramentas_acervo/.dev/setup_dev_macos.sh      # macOS
-```
+**`ferramentas_acervo/`** cobre funções gerais (carregar camadas, informações do produto, download, situação geral, busca, relacionamentos entre versões), funções de administrador (adicionar produto, versão histórica, carregar produtos), administração avançada (volumes, projetos, lotes, usuários), operações em lote e diagnóstico (inconsistências, limpeza de downloads, visões materializadas, arquivos com problema, sessões de upload).
 
-### Autenticação
+Transferência de arquivo: no **download**, prepara pela API (recebe token e caminho), o `FileTransferThread` copia (cópia direta no Windows, `smbclient` no Linux), 3 tentativas com espera exponencial (2s, 4s, 8s), confere o SHA-256 e confirma pela API. No **upload**, valida a camada tabular no QGIS, calcula SHA-256 e tamanho, prepara pela API (recebe `session_uuid` e destino), copia e confirma.
 
-1. O diálogo de login pede URL do servidor, usuário e senha
-2. O plugin envia `POST /api/login` e recebe um JWT
-3. Em 401, tenta re-autenticar em silêncio com as credenciais salvas
-4. "Lembrar-me" persiste as credenciais no `QgsSettings`
-
-### Funcionalidades
-
-| Categoria | Funcionalidades |
-|---|---|
-| Funções Gerais | Carregar camadas de produtos, informações do produto, download, situação geral, busca, relacionamentos entre versões, configurações |
-| Funções de Administrador | Adicionar produto, adicionar produto com versão histórica, carregar produtos |
-| Administração Avançada | Volumes, relacionamento volume e tipo de produto, projetos, lotes, usuários |
-| Operações em Lote | Arquivos, produtos completos (prepare, transfer, confirm), versões, criação de produtos, versões históricas, relacionamentos |
-| Diagnóstico e Manutenção | Inconsistências, limpeza de downloads, visões materializadas, arquivos com problema, arquivos e downloads excluídos, sessões de upload |
-
-### Transferência de arquivos
-
-**Download:** prepara pela API (recebe token e caminho), `FileTransferThread` copia (cópia direta no Windows, `smbclient` no Linux), 3 tentativas com espera exponencial (2s, 4s, 8s), confere o SHA-256 e confirma pela API.
-
-**Upload:** valida a camada tabular no QGIS, calcula SHA-256 e tamanho, prepara pela API (recebe `session_uuid` e destino), copia e confirma.
-
-### Estrutura do plugin
-
-```
-ferramentas_acervo/
-├── __init__.py           # classFactory(), entry point do QGIS
-├── main.py               # Classe principal
-├── config.py             # Nome e versão
-├── metadata.txt          # Manifesto do QGIS
-├── core/
-│   ├── api_client.py     # Cliente HTTP (requests + JWT, re-login em 401)
-│   ├── settings.py       # Wrapper de QgsSettings
-│   ├── file_transfer.py  # Thread de transferência
-│   ├── authSMB.py        # Diálogo de credencial SMB (Linux)
-│   └── getFileBySMB.py   # Cópia via SMB (Linux)
-└── gui/
-    ├── panel.py          # PANEL_MAPPING, registro das funcionalidades
-    ├── dockable_panel.py # Painel principal
-    ├── login_dialog.py   # Login
-    └── [uma pasta por funcionalidade]/   # .py + .ui
-```
-
----
-
-## Plugin QGIS da Mapoteca
-
-Plugin separado (`ferramentas_mapoteca/`, QGIS >= 4.0/Qt6, mesma instalação), voltado à operação de impressão:
-
-1. **Login** no mesmo servidor, com re-login automático em 401
-2. **Pedidos ativos**, com status de impressão por pedido
-3. **Download dos PDFs** das cartas de um pedido, sequencial e com verificação SHA-256, gravando o manifesto `quantitativos_impressao.csv` com o que falta imprimir de cada arquivo
-4. **Registro de impressão** por item (quem, quando, quantas cópias), com histórico, para que operadores diferentes continuem o trabalho em dias distintos
-
-Ele usa grupo próprio de `QgsSettings` (`"Mapoteca - Controle do Acervo"`), com as mesmas chaves do plugin do acervo.
+**`ferramentas_mapoteca/`** é voltado à operação de impressão: pedidos ativos com status por pedido, download dos PDFs das cartas de um pedido (sequencial, com verificação SHA-256, gravando o manifesto `quantitativos_impressao.csv`) e registro de impressão por item (quem, quando, quantas cópias), com histórico, para que operadores diferentes continuem o trabalho em dias distintos. Ele usa grupo próprio de `QgsSettings`, com as mesmas chaves do plugin do acervo.
 
 ---
 
@@ -412,19 +301,21 @@ node orcamento_cli/orcamento.js schema nc             # contrato formatado, do J
 
 Os três compartilham o cache de sessão em `~/.sca`: um login serve os três. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
 
+```bash
+npm run test-cli      # os três (node:test, sem dependência)
+```
+
+Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o teste também.
+
 ---
 
-## Documentação
+## Scripts
 
-| Arquivo | Conteúdo |
+| Script | O que faz |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Regras do projeto, decisões deliberadas, modelo de autorização, padrões de código |
-| [`levantar_servico.md`](levantar_servico.md) | Subir o ambiente, portas, smoke tests, troubleshooting |
-| `docs/api_documentation.md` | Documentação dos endpoints |
-| `docs/tutorial_configuracao_inicial.md` | Configuração inicial passo a passo |
-| `docs/tutorial_client_dashboard.md` | Uso do dashboard web |
-| `docs/fluxos_usuario_plugin.md` | Fluxos de usuário do plugin |
-| `docs/regras_carga_produtos.md` | Regras de carga de produtos |
+| `scripts/fumaca.py` | Fumaça pós-deploy: os três módulos de ponta a ponta, só leitura, sai com 1 se algo falha |
+| `scripts/check_vazamento.py` | Guard de pre-commit: barra segredo, IP interno e caminho de máquina neste repositório PÚBLICO |
+| `scripts/gerar_miniaturas.cjs` | Carga em lote das miniaturas do acervo já existente |
 
 ---
 

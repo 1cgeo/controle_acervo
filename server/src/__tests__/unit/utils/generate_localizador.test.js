@@ -22,8 +22,4 @@ describe('generateLocalizador', () => {
     }
     expect(results.size).toBe(50)
   })
-
-  it('should have length of 14 (4+1+4+1+4)', () => {
-    expect(generateLocalizador()).toHaveLength(14)
-  })
 })

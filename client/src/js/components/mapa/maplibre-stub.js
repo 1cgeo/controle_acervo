@@ -115,4 +115,26 @@ export class Popup {
   remove() { this.aberto = false; return this; }
 }
 
-export default { Map, NavigationControl, ScaleControl, Popup };
+// O mini-mapa do ponto de controle (`acervo/pages/ponto_controle/ponto-mapa-mini.js`)
+// planta um marcador. Sem esta classe o dublê ficava incompleto e o `new
+// maplibregl.Marker(...)` estourava DEPOIS do teste terminar, dentro do `on('load')`
+// assincrono: a suite passava com 25 rejeicoes penduradas, que e exatamente o
+// lugar onde uma falha de verdade passaria despercebida.
+export class Marker {
+  constructor(opcoes) {
+    this.opcoes = opcoes;
+  }
+
+  setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+
+  addTo(mapa) { this.mapa = mapa; (mapa.marcadores = mapa.marcadores || []).push(this); return this; }
+
+  remove() {
+    const lista = (this.mapa && this.mapa.marcadores) || [];
+    const i = lista.indexOf(this);
+    if (i >= 0) lista.splice(i, 1);
+    return this;
+  }
+}
+
+export default { Map, NavigationControl, ScaleControl, Popup, Marker };

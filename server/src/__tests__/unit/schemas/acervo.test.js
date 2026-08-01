@@ -1,103 +1,98 @@
 'use strict'
 
+// Os filtros da busca de produtos NAO sao testados aqui: eles tem arquivo
+// proprio (busca_acervo.test.js), que cobre defaults, teto do limit e o bbox.
+
 const acervoSchema = require('../../../acervo/acervo_schema')
+const { recusaPor, aceita } = require('../../helpers/joi')
 
-describe('Acervo Schemas', () => {
+describe('Schemas do acervo', () => {
+  // As rotas de download em lote recebem lista de id. O `unique()` nao e
+  // capricho: id repetido geraria dois tokens para o mesmo arquivo, e o segundo
+  // download confirmaria uma transferencia que ja tinha sido confirmada.
   describe('arquivosIds', () => {
-    it('should validate array of unique integer ids', () => {
-      const { error } = acervoSchema.arquivosIds.validate({
-        arquivos_ids: [1, 2, 3]
-      })
-      expect(error).toBeUndefined()
+    it('aceita lista de ids inteiros e distintos', () => {
+      aceita(acervoSchema.arquivosIds.validate({ arquivos_ids: [1, 2, 3] }))
     })
 
-    it('should reject empty array', () => {
-      const { error } = acervoSchema.arquivosIds.validate({
-        arquivos_ids: []
-      })
-      expect(error).toBeDefined()
+    // O tipo NAO e `array.min`, apesar do `.min(1)` estar no schema: o item
+    // declarado com `.required()` faz o Joi cobrar "pelo menos um item" ANTES
+    // de chegar ao min. Descoberto ao trocar o `toBeDefined()` por esta
+    // assercao, em 2026-08-01, e anotado para o proximo leitor nao "corrigir".
+    it('recusa lista vazia, que pediria download de nada', () => {
+      recusaPor(
+        acervoSchema.arquivosIds.validate({ arquivos_ids: [] }),
+        'arquivos_ids',
+        'array.includesRequiredUnknowns'
+      )
     })
 
-    it('should reject non-unique ids', () => {
-      const { error } = acervoSchema.arquivosIds.validate({
-        arquivos_ids: [1, 1]
-      })
-      expect(error).toBeDefined()
+    it('recusa id repetido, que geraria dois tokens para o mesmo arquivo', () => {
+      recusaPor(
+        acervoSchema.arquivosIds.validate({ arquivos_ids: [1, 1] }),
+        'arquivos_ids.1',
+        'array.unique'
+      )
     })
   })
 
   describe('produtosIdsComTipos', () => {
-    it('should validate products and file types arrays', () => {
-      const { error } = acervoSchema.produtosIdsComTipos.validate({
+    it('aceita as duas listas juntas', () => {
+      aceita(acervoSchema.produtosIdsComTipos.validate({
         produtos_ids: [1, 2],
         tipos_arquivo: [1, 3]
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should require both arrays', () => {
-      const { error } = acervoSchema.produtosIdsComTipos.validate({
-        produtos_ids: [1]
-      })
-      expect(error).toBeDefined()
+    it('exige tipos_arquivo: sem ele o download nao sabe o que levar', () => {
+      recusaPor(
+        acervoSchema.produtosIdsComTipos.validate({ produtos_ids: [1] }),
+        'tipos_arquivo',
+        'any.required'
+      )
     })
   })
 
+  // O token de download e a chave que autoriza a copia: ele TEM de ser uuid,
+  // porque o controller o procura por igualdade, e texto qualquer viraria busca
+  // que nunca casa, devolvendo 404 onde o certo e 400.
   describe('downloadConfirmations', () => {
-    it('should validate download confirmations', () => {
-      const { error } = acervoSchema.downloadConfirmations.validate({
+    it('aceita a confirmacao com token uuid', () => {
+      aceita(acervoSchema.downloadConfirmations.validate({
         confirmations: [{
           download_token: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
           success: true,
           error_message: null
         }]
-      })
-      expect(error).toBeUndefined()
+      }))
     })
 
-    it('should require valid UUID for download_token', () => {
-      const { error } = acervoSchema.downloadConfirmations.validate({
-        confirmations: [{
-          download_token: 'not-a-uuid',
-          success: true
-        }]
-      })
-      expect(error).toBeDefined()
-    })
-  })
-
-  describe('buscaProdutos', () => {
-    it('should use defaults for page and limit', () => {
-      const { error, value } = acervoSchema.buscaProdutos.validate({})
-      expect(error).toBeUndefined()
-      expect(value.page).toBe(1)
-      expect(value.limit).toBe(20)
-    })
-
-    it('should reject limit > 100', () => {
-      const { error } = acervoSchema.buscaProdutos.validate({ limit: 101 })
-      expect(error).toBeDefined()
-    })
-
-    it('should reject page < 1', () => {
-      const { error } = acervoSchema.buscaProdutos.validate({ page: 0 })
-      expect(error).toBeDefined()
+    it('recusa token que nao e uuid', () => {
+      recusaPor(
+        acervoSchema.downloadConfirmations.validate({
+          confirmations: [{ download_token: 'not-a-uuid', success: true }]
+        }),
+        'confirmations.0.download_token',
+        'string.guid'
+      )
     })
   })
 
+  // A situacao geral e consumida pelo plugin e pela rota publica de integracao.
+  // As escalas nascem FALSE: sem default, `undefined` entraria no SQL como
+  // "escala nao pedida" num caminho e como "todas" noutro.
   describe('situacaoGeralQuery', () => {
-    it('should default all scales to false', () => {
-      const { error, value } = acervoSchema.situacaoGeralQuery.validate({})
-      expect(error).toBeUndefined()
+    it('toda escala nasce false quando nada e pedido', () => {
+      const value = aceita(acervoSchema.situacaoGeralQuery.validate({}))
       expect(value.scale25k).toBe(false)
       expect(value.scale50k).toBe(false)
     })
 
-    it('should accept boolean values', () => {
-      const { error } = acervoSchema.situacaoGeralQuery.validate({
+    it('aceita a escala ligada explicitamente', () => {
+      const value = aceita(acervoSchema.situacaoGeralQuery.validate({
         scale25k: true, scale50k: false
-      })
-      expect(error).toBeUndefined()
+      }))
+      expect(value.scale25k).toBe(true)
     })
   })
 })
