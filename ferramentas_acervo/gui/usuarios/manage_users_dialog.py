@@ -1,12 +1,34 @@
 # Path: gui\usuarios\manage_users_dialog.py
+"""Gerência de usuários: quem é administrador, quem está ativo e o PERFIL POR MÓDULO.
+
+O perfil por módulo entrou no servidor em 2026-07-25 e esta tela não o
+acompanhou. O efeito não era um erro visível, era pior: o `perfis` é opcional no
+schema do PUT, então salvar sem ele passava com 200 e não mexia em nada, e a
+importação criava o usuário SEM nenhuma linha em `dgeo.usuario_perfil`. Como não
+ter linha para um módulo é o mesmo que não acessar aquele módulo, todo usuário
+importado pelo QGIS ficava sem acesso a coisa nenhuma -- e não havia nesta tela
+nem o diagnóstico nem o conserto: era preciso abrir a interface web.
+
+As colunas de módulo são MONTADAS a partir de `dominio.modulo`, e não escritas
+aqui: módulo novo no servidor aparece sozinho, que é a razão de o servidor
+devolver `perfis` como mapa em vez de uma coluna por módulo.
+"""
 import os
+
+from qgis.core import Qgis
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QPushButton, QMessageBox, QTableWidgetItem, QCheckBox, QLineEdit
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QHeaderView, QLineEdit,
+                                 QMessageBox, QTableWidget, QTableWidgetItem)
+
+from ...core.dominios import NOME_PERFIL, PERFIL_CONSULTA, PERFIL_GERENTE, PERFIL_OPERADOR
 from .import_users_dialog import ImportUsersDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'manage_users_dialog.ui'))
+
+COLUNAS_FIXAS = ['Posto/Grad', 'Nome', 'Login', 'Administrador', 'Ativo']
+SEM_ACESSO = "— sem acesso"
+
 
 class ManageUsersDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):
@@ -14,44 +36,57 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
         self.setupUi(self)
         self.iface = iface
         self.api_client = api_client
+        self.users = []
+        self.modulos = []
 
         self.setup_ui()
+        self.load_modulos()
         self.load_users()
+
+    # --- montagem -----------------------------------------------------------
 
     def setup_ui(self):
         self.setWindowTitle("Gerenciar Usuários")
-        
-        # Adicionar campo de busca
+
         self.searchField = QLineEdit(self)
-        self.searchField.setPlaceholderText("Buscar por nome...")
+        self.searchField.setPlaceholderText("Buscar por nome ou login...")
         self.searchField.textChanged.connect(self.filter_users)
         self.verticalLayout.insertWidget(0, self.searchField)
-        
-        # Configurar a tabela de usuários
-        self.usersTable.setColumnCount(5)
-        self.usersTable.setHorizontalHeaderLabels(['Posto/Grad', 'Nome', 'Login', 'Administrador', 'Ativo'])
+
         self.usersTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.usersTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-        # "Atualizar" era ambíguo (sugeria recarregar); a ação salva as
-        # alterações feitas nos checkboxes da tabela
         self.updateButton.setText("Salvar Alterações")
-        self.updateButton.setToolTip("Salva as alterações de Administrador/Ativo feitas na tabela.")
+        self.updateButton.setToolTip(
+            "Salva as alterações de Administrador, Ativo e perfil por módulo feitas na tabela."
+        )
 
-        # Conectar botões
         self.updateButton.clicked.connect(self.update_users)
         self.importButton.clicked.connect(self.import_users)
         self.syncButton.clicked.connect(self.sync_users)
 
+    def load_modulos(self):
+        """As colunas de módulo saem de dominio.modulo, não de uma lista aqui."""
+        resposta = self.api_client.get('usuarios/dominio/modulo')
+        self.modulos = (resposta or {}).get('dados', []) or []
+
+        cabecalho = COLUNAS_FIXAS + [m['nome'] for m in self.modulos]
+        self.usersTable.setColumnCount(len(cabecalho))
+        self.usersTable.setHorizontalHeaderLabels(cabecalho)
+        self.usersTable.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+
     def load_users(self):
-        response = self.api_client.get('usuarios')
-        if response is None:
+        resposta = self.api_client.get('usuarios')
+        if resposta is None:
             QMessageBox.warning(self, "Erro", "Não foi possível carregar os usuários.")
             return
 
-        self.users = response.get('dados', [])
+        self.users = resposta.get('dados', []) or []
         self.populate_table(self.users)
         self.usersTable.resizeColumnsToContents()
+        self.avisar_sem_acesso()
 
     def populate_table(self, users):
         self.usersTable.setRowCount(len(users))
@@ -60,113 +95,196 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
             self.usersTable.setItem(row, 1, QTableWidgetItem(user['nome']))
             self.usersTable.setItem(row, 2, QTableWidgetItem(user['login']))
 
-            admin_checkbox = QCheckBox()
-            admin_checkbox.setChecked(user['administrador'])
-            self.usersTable.setCellWidget(row, 3, admin_checkbox)
-            
-            active_checkbox = QCheckBox()
-            active_checkbox.setChecked(user['ativo'])
-            self.usersTable.setCellWidget(row, 4, active_checkbox)
+            admin = QCheckBox()
+            admin.setChecked(bool(user['administrador']))
+            admin.setToolTip(
+                "O administrador é GLOBAL: passa em qualquer módulo, em qualquer nível.\n"
+                "Não existe administrador de módulo."
+            )
+            self.usersTable.setCellWidget(row, 3, admin)
+
+            ativo = QCheckBox()
+            ativo.setChecked(bool(user['ativo']))
+            self.usersTable.setCellWidget(row, 4, ativo)
+
+            perfis = user.get('perfis') or {}
+            for i, modulo in enumerate(self.modulos):
+                combo = QComboBox()
+                combo.addItem(SEM_ACESSO, None)
+                for nivel in (PERFIL_CONSULTA, PERFIL_OPERADOR, PERFIL_GERENTE):
+                    combo.addItem(NOME_PERFIL[nivel], nivel)
+
+                atual = perfis.get(modulo['nome_abrev'])
+                indice = combo.findData(atual)
+                combo.setCurrentIndex(indice if indice >= 0 else 0)
+                combo.setToolTip(
+                    f"Perfil no módulo {modulo['nome']}.\n"
+                    f"'{SEM_ACESSO}' remove o acesso da pessoa a este módulo."
+                )
+                self.usersTable.setCellWidget(row, len(COLUNAS_FIXAS) + i, combo)
+
+    def avisar_sem_acesso(self):
+        """Diz quantos usuários ativos não acessam módulo nenhum.
+
+        É o estado em que a importação por esta tela deixava todo mundo, e ele é
+        INVISÍVEL para quem olha só Administrador e Ativo: a pessoa aparece
+        cadastrada e ativa, e mesmo assim o login não a leva a lugar nenhum.
+        """
+        orfaos = [u for u in self.users
+                  if u.get('ativo') and not u.get('administrador') and not (u.get('perfis') or {})]
+        if not orfaos:
+            return
+        nomes = ", ".join(u['nome'] for u in orfaos[:5])
+        if len(orfaos) > 5:
+            nomes += f" e mais {len(orfaos) - 5}"
+        self.iface.messageBar().pushMessage(
+            "Usuários sem acesso",
+            f"{len(orfaos)} usuário(s) ativo(s) não têm perfil em módulo nenhum e não "
+            f"conseguem usar o sistema: {nomes}. Defina o perfil na tabela e salve.",
+            level=Qgis.MessageLevel.Warning
+        )
 
     def filter_users(self):
-        search_text = self.searchField.text().lower()
+        procurado = self.searchField.text().lower()
         for row in range(self.usersTable.rowCount()):
             nome = self.usersTable.item(row, 1).text().lower()
-            self.usersTable.setRowHidden(row, search_text not in nome)
+            login = self.usersTable.item(row, 2).text().lower()
+            self.usersTable.setRowHidden(row, procurado not in nome and procurado not in login)
+
+    # --- gravação -----------------------------------------------------------
+
+    def _linha_alterada(self, row, user):
+        """Monta o corpo desta linha e diz se algo mudou. Devolve (corpo, mudou)."""
+        novo_admin = self.usersTable.cellWidget(row, 3).isChecked()
+        novo_ativo = self.usersTable.cellWidget(row, 4).isChecked()
+
+        perfis_atuais = user.get('perfis') or {}
+        perfis = {}
+        perfil_mudou = False
+        for i, modulo in enumerate(self.modulos):
+            combo = self.usersTable.cellWidget(row, len(COLUNAS_FIXAS) + i)
+            escolhido = combo.currentData()
+            perfis[modulo['nome_abrev']] = escolhido
+            if perfis_atuais.get(modulo['nome_abrev']) != escolhido:
+                perfil_mudou = True
+
+        mudou = (bool(user.get('administrador')) != novo_admin
+                 or bool(user.get('ativo')) != novo_ativo
+                 or perfil_mudou)
+
+        # `perfis` viaja SEMPRE, e o nível nulo é o que REMOVE a linha de
+        # dgeo.usuario_perfil. Mandar só os módulos alterados deixaria o servidor
+        # sem como distinguir "não mexa" de "tire o acesso".
+        return {
+            'uuid': user['uuid'],
+            'administrador': novo_admin,
+            'ativo': novo_ativo,
+            'perfis': perfis,
+        }, mudou
 
     def update_users(self):
-        updated_users = []
-        changes = 0
-        self_lockout = False
-        current_uuid = getattr(self.api_client, 'user_uuid', None)
+        corpo = []
+        alteracoes = 0
+        auto_bloqueio = False
+        meu_uuid = getattr(self.api_client, 'user_uuid', None)
 
         for row in range(self.usersTable.rowCount()):
             login = self.usersTable.item(row, 2).text()
             user = next((u for u in self.users if u['login'] == login), None)
-            if user:
-                admin_checkbox = self.usersTable.cellWidget(row, 3)
-                active_checkbox = self.usersTable.cellWidget(row, 4)
-                new_admin = admin_checkbox.isChecked()
-                new_active = active_checkbox.isChecked()
+            if not user:
+                continue
 
-                if bool(user.get('administrador')) != new_admin or bool(user.get('ativo')) != new_active:
-                    changes += 1
+            linha, mudou = self._linha_alterada(row, user)
+            if mudou:
+                alteracoes += 1
 
-                # Proteção contra auto-bloqueio: o admin logado não pode remover
-                # o próprio privilégio nem desativar a própria conta
-                if current_uuid and user.get('uuid') == current_uuid and (not new_admin or not new_active):
-                    self_lockout = True
+            # Proteção contra auto-bloqueio: o admin logado não pode remover o
+            # próprio privilégio nem desativar a própria conta.
+            if meu_uuid and user.get('uuid') == meu_uuid and (
+                    not linha['administrador'] or not linha['ativo']):
+                auto_bloqueio = True
 
-                updated_users.append({
-                    'uuid': user['uuid'],
-                    'administrador': new_admin,
-                    'ativo': new_active
-                })
+            corpo.append(linha)
 
-        if self_lockout:
+        if auto_bloqueio:
             QMessageBox.warning(
                 self, "Ação bloqueada",
                 "Você não pode remover seu próprio privilégio de administrador nem "
-                "desativar a sua própria conta — isso o impediria de acessar esta tela.\n\n"
+                "desativar a sua própria conta: isso o impediria de acessar esta tela.\n\n"
                 "Desfaça a alteração na sua conta antes de salvar."
             )
             return
 
-        if changes == 0:
+        if alteracoes == 0:
             QMessageBox.information(self, "Informação", "Nenhuma alteração a salvar.")
             return
 
-        reply = QMessageBox.question(
-            self, "Confirmar Alterações",
-            f"{changes} usuário(s) terão privilégios/estado alterados. Deseja salvar?",
+        resposta = QMessageBox.question(
+            self, "Confirmar alterações",
+            f"{alteracoes} usuário(s) terão privilégio, estado ou perfil alterados. Salvar?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        if resposta != QMessageBox.StandardButton.Yes:
             return
 
-        success = self.api_client.put('usuarios', {'usuarios': updated_users})
-        if success:
-            QMessageBox.information(self, "Sucesso", "Usuários atualizados com sucesso.")
+        if self.api_client.put('usuarios', {'usuarios': corpo}):
+            QMessageBox.information(self, "Sucesso", "Usuários atualizados.")
             self.load_users()
-        else:
-            QMessageBox.warning(self, "Erro", "Não foi possível atualizar os usuários.")
+
+    # --- importação e sincronização ----------------------------------------
 
     def import_users(self):
-        response = self.api_client.get('usuarios/servico_autenticacao')
-        if response is None:
-            QMessageBox.warning(self, "Erro", "Não foi possível obter a lista de usuários do serviço de autenticação.")
+        resposta = self.api_client.get('usuarios/servico_autenticacao')
+        if resposta is None:
+            QMessageBox.warning(
+                self, "Erro",
+                "Não foi possível obter a lista do serviço de autenticação."
+            )
             return
 
-        auth_users = response.get('dados', [])
-        existing_uuids = set(user['uuid'] for user in self.users)
-        new_users = [user for user in auth_users if user['uuid'] not in existing_uuids]
+        do_auth = resposta.get('dados', []) or []
+        ja_temos = {u['uuid'] for u in self.users}
+        novos = [u for u in do_auth if u['uuid'] not in ja_temos]
 
-        if not new_users:
+        if not novos:
             QMessageBox.information(self, "Informação", "Não há novos usuários para importar.")
             return
 
-        import_dialog = ImportUsersDialog(new_users, self)
-        if import_dialog.exec():
-            selected_uuids = import_dialog.get_selected_uuids()
-            if selected_uuids:
-                success = self.api_client.post('usuarios', {'usuarios': selected_uuids})
-                if success:
-                    QMessageBox.information(self, "Sucesso", "Usuários importados com sucesso.")
-                    self.load_users()
-                else:
-                    QMessageBox.warning(self, "Erro", "Não foi possível importar os usuários.")
-            else:
-                QMessageBox.information(self, "Informação", "Nenhum usuário selecionado para importação.")
+        dialogo = ImportUsersDialog(novos, self)
+        if not dialogo.exec():
+            return
+
+        escolhidos = dialogo.get_selected_uuids()
+        if not escolhidos:
+            QMessageBox.information(self, "Informação", "Nenhum usuário selecionado.")
+            return
+
+        if not self.api_client.post('usuarios', {'usuarios': escolhidos}):
+            return
+
+        self.load_users()
+        # Conceder acesso é ATO EXPLÍCITO, e não efeito colateral da importação.
+        # A rota de criação não escreve perfil nenhum, então dizer isto aqui é o
+        # que evita o usuário recém-importado tentar entrar e não conseguir.
+        QMessageBox.information(
+            self, "Usuários importados",
+            f"{len(escolhidos)} usuário(s) importado(s).\n\n"
+            "Eles ainda NÃO acessam nenhum módulo: quem não tem perfil não entra. "
+            "Defina o perfil de cada um nas colunas de módulo da tabela e clique em "
+            "Salvar Alterações."
+        )
 
     def sync_users(self):
-        reply = QMessageBox.question(self, 'Confirmar Sincronização',
-                                     'Tem certeza que deseja sincronizar os usuários com o serviço de autenticação?',
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            success = self.api_client.put('usuarios/sincronizar')
-            if success:
-                QMessageBox.information(self, "Sucesso", "Usuários sincronizados com sucesso.")
-                self.load_users()
-            else:
-                QMessageBox.warning(self, "Erro", "Não foi possível sincronizar os usuários.")
+        resposta = QMessageBox.question(
+            self, "Confirmar sincronização",
+            "Sincronizar nome, posto e graduação com o serviço de autenticação?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+
+        if self.api_client.put('usuarios/sincronizar'):
+            QMessageBox.information(self, "Sucesso", "Usuários sincronizados.")
+            self.load_users()

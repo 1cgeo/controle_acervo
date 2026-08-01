@@ -51,6 +51,16 @@
        </property>
       </widget>
      </item>
+     <item row="3" column="0" colspan="2">
+      <widget class="QCheckBox" name="layoutOrigemCheckBox">
+       <property name="text">
+        <string>Volume guarda o layout de origem do fornecedor</string>
+       </property>
+       <property name="toolTip">
+        <string>Marque para o volume que recebe a entrega no layout do fornecedor (ex.: Convênio RS). Só volume assim aceita a catalogação de produto que já está no disco, e ele fica de fora da auditoria de nome físico padronizado.</string>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
    <item>

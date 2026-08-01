@@ -98,6 +98,28 @@ describe('Contrato leitura/escrita', () => {
     })
   })
 
+  // O domínio é lido para MONTAR o corpo, então ele também é contrato de
+  // escrita: sem `define_produto`, quem escolhe o subtipo não tem como saber
+  // que aquele exige produto próprio, e a recusa só chega no gatilho — depois
+  // de o operador já ter copiado os bytes para o volume.
+  describe('GET /api/gerencia/dominio/subtipo_produto', () => {
+    it('devolve define_produto, a regra que o gatilho vai cobrar', async () => {
+      const res = await request(app)
+        .get('/api/gerencia/dominio/subtipo_produto')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+
+      const militar = res.body.dados.find(s => s.code === SUBTIPO_MILITAR)
+      expect(militar).toBeDefined()
+      expect(militar.define_produto).toBe(true)
+
+      // E o campo não é constante: subtipo comum vem false, senão o cliente
+      // passaria a exigir produto próprio para todo mundo.
+      expect(res.body.dados.some(s => s.define_produto === false)).toBe(true)
+    })
+  })
+
   describe('PUT /api/produtos/produto e o subtipo omitido', () => {
     it('omitir subtipo_produto_id preserva o valor gravado', async () => {
       const produto = await createProduto({ subtipo_produto_id: SUBTIPO_MILITAR })

@@ -82,11 +82,21 @@ controller.getTipoEscala = async () => {
     `);
 };
 
+// `define_produto` viaja junto, e não é detalhe de banco vazando para a API.
+//
+// Ele é a única forma de o cliente saber, ANTES de montar o corpo, que aquele
+// subtipo (hoje o 24, Carta Topográfica Militar) exige produto próprio: o
+// gatilho acervo.validate_version recusa a versão quando o produto não tem o
+// MESMO subtipo. Sem o campo aqui, o plugin oferecia o 24 como qualquer outro e
+// a recusa só aparecia no confirm-upload, isto é, DEPOIS de o operador ter
+// copiado os bytes para o volume, e como exceção do PostgreSQL, que vira 500
+// genérico. Quem escolhe precisa saber a regra na hora de escolher.
 controller.getSubtipoProduto = async () => {
   return db.conn.any(`
-    SELECT sp.code, sp.nome, sp.tipo_id, tp.nome AS tipo_produto
+    SELECT sp.code, sp.nome, sp.tipo_id, sp.define_produto, tp.nome AS tipo_produto
     FROM dominio.subtipo_produto AS sp
     INNER JOIN dominio.tipo_produto AS tp ON tp.code = sp.tipo_id
+    ORDER BY tp.nome, sp.nome
     `);
 };
 

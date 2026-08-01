@@ -1,6 +1,5 @@
 # Path: gui\informacao_produto\add_version_to_product_dialog.py
 import os
-import hashlib
 import json
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
@@ -8,13 +7,14 @@ from qgis.PyQt.QtWidgets import (
     QTableWidgetItem, QHeaderView, QFileDialog
 )
 from qgis.PyQt.QtCore import Qt, QDate
-from ...core.file_transfer import FileTransferThread
-from ..ui_utils import format_failure_causes
+from ...core.upload_flow import UploadFlowMixin, marcar_e_medir
+from ..campos_acervo import conferir_identidade
+from ...core.dominios import SITUACAO_CARREGAMENTO_NAO_CARREGADO
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'add_version_to_product_dialog.ui'))
 
-class AddVersionToProductDialog(QDialog, FORM_CLASS):
+class AddVersionToProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     def __init__(self, api_client, produto_data, parent=None):
         """
         Inicializa o diálogo para adicionar uma nova versão com arquivos a um produto existente.
@@ -29,8 +29,11 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         self.api_client = api_client
         self.produto_data = produto_data
         self.arquivos = []
-        self.transfer_threads = []
-        
+        # uuid_arquivo -> caminho local, preenchido em add_file
+        self.origens = {}
+        self._upload_zerar()
+        self.current_session_uuid = None
+
         self.setup_ui()
         self.load_domain_data()
         
@@ -67,35 +70,30 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
     def load_domain_data(self):
         """Carrega dados de domínio dos combos da interface."""
         try:
-            # Carregar tipos de arquivo
-            response = self.api_client.get('gerencia/dominio/tipo_arquivo')
-            if response and 'dados' in response:
-                self.tipoArquivoComboBox.clear()
-                for tipo in response['dados']:
-                    self.tipoArquivoComboBox.addItem(tipo['nome'], tipo['code'])
-            
-            # Carregar tipos de versão
-            response = self.api_client.get('gerencia/dominio/tipo_versao')
-            if response and 'dados' in response:
-                self.tipoVersaoComboBox.clear()
-                for tipo in response['dados']:
-                    self.tipoVersaoComboBox.addItem(tipo['nome'], tipo['code'])
-            
-            # Carregar subtipos de produto
-            response = self.api_client.get('gerencia/dominio/subtipo_produto')
-            if response and 'dados' in response:
-                subtipos = [item for item in response['dados'] if item['tipo_id'] == self.produto_data['tipo_produto_id']]
-                self.subtipoProdutoComboBox.clear()
-                for subtipo in subtipos:
-                    self.subtipoProdutoComboBox.addItem(subtipo['nome'], subtipo['code'])
-            
-            # Carregar lotes
-            response = self.api_client.get('projetos/lote')
-            if response and 'dados' in response:
-                self.loteComboBox.clear()
-                self.loteComboBox.addItem("Nenhum", None)
-                for lote in response['dados']:
-                    self.loteComboBox.addItem(f"{lote['nome']} ({lote['pit']})", lote['id'])
+            dominios = self.api_client.dominios
+
+            self.tipoArquivoComboBox.clear()
+            for tipo in dominios.get('tipo_arquivo'):
+                self.tipoArquivoComboBox.addItem(tipo['nome'], tipo['code'])
+
+            self.tipoVersaoComboBox.clear()
+            for tipo in dominios.get('tipo_versao'):
+                self.tipoVersaoComboBox.addItem(tipo['nome'], tipo['code'])
+
+            # Subtipos do tipo do produto. Os que EXIGEM produto próprio saem
+            # marcados: escolher um deles num produto de outro subtipo é
+            # exatamente o que o gatilho recusa.
+            self.subtipoProdutoComboBox.clear()
+            for subtipo in dominios.subtipos_do_tipo(self.produto_data['tipo_produto_id']):
+                rotulo = subtipo['nome']
+                if subtipo.get('define_produto'):
+                    rotulo += "  [exige produto próprio]"
+                self.subtipoProdutoComboBox.addItem(rotulo, subtipo['code'])
+
+            self.loteComboBox.clear()
+            self.loteComboBox.addItem("Nenhum", None)
+            for lote in dominios.get('lote'):
+                self.loteComboBox.addItem(f"{lote['nome']} ({lote['pit']})", lote['id'])
                     
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro ao carregar dados de domínio: {str(e)}")
@@ -108,37 +106,44 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         
         if not file_path:
             return
-        
-        # Calcular o checksum do arquivo
-        checksum = self.calculate_checksum(file_path)
-        
-        # Obter informações do arquivo
+
         filename = os.path.basename(file_path)
         nome_arquivo, extensao = os.path.splitext(filename)
         extensao = extensao[1:] if extensao.startswith('.') else extensao
-        
-        tipo_arquivo_id = self.tipoArquivoComboBox.currentData()
-        tipo_arquivo_nome = self.tipoArquivoComboBox.currentText()
-        
+
+        # O nome físico é único por volume (índice unique_nome_fisico_por_volume,
+        # inclusive ignorando maiúsculas): dois iguais no mesmo envio seriam
+        # recusados no meio da carga.
+        if any(a['nome_arquivo'].lower() == nome_arquivo.lower() for a in self.arquivos):
+            QMessageBox.warning(
+                self, "Nome repetido",
+                f"Já há um arquivo chamado '{nome_arquivo}' nesta lista.\n\n"
+                "O nome físico é único por volume, então os dois não podem entrar juntos."
+            )
+            return
+
         file_info = {
             "nome": nome_arquivo,
             "nome_arquivo": nome_arquivo,
             "extensao": extensao,
-            "tipo_arquivo_id": tipo_arquivo_id,
-            "tipo_arquivo_nome": tipo_arquivo_nome,
-            "tamanho_mb": os.path.getsize(file_path) / (1024 * 1024),
+            "tipo_arquivo_id": self.tipoArquivoComboBox.currentData(),
+            "tipo_arquivo_nome": self.tipoArquivoComboBox.currentText(),
             "path": file_path,
-            "checksum": checksum,
             "metadado": {},
-            "situacao_carregamento_id": 1,  # Não carregado por padrão
+            "situacao_carregamento_id": SITUACAO_CARREGAMENTO_NAO_CARREGADO,
             "descricao": self.descricaoArquivoTextEdit.toPlainText(),
             "crs_original": self.crsLineEdit.text()
         }
-        
-        # Adicionar à lista de arquivos
+
+        # Gera o uuid e mede hash e tamanho de uma vez. O uuid é o que casa esta
+        # entrada com a que o servidor devolve no prepare.
+        try:
+            self.origens[marcar_e_medir(file_info, file_path)] = file_path
+        except OSError as e:
+            QMessageBox.warning(self, "Erro", f"Não foi possível ler o arquivo: {e}")
+            return
+
         self.arquivos.append(file_info)
-        
-        # Atualizar a tabela
         self.update_files_table()
         
     def remove_file(self):
@@ -152,8 +157,9 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         indices_to_remove = sorted([index.row() for index in selected_rows], reverse=True)
         for index in indices_to_remove:
             if index < len(self.arquivos):
-                del self.arquivos[index]
-        
+                removido = self.arquivos.pop(index)
+                self.origens.pop(removido.get('uuid_arquivo'), None)
+
         # Atualizar a tabela
         self.update_files_table()
         
@@ -195,18 +201,6 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         
         self.uploadButton.setEnabled(enable_upload)
         
-    def calculate_checksum(self, file_path):
-        """Calcula o checksum SHA-256 de um arquivo."""
-        sha256_hash = hashlib.sha256()
-        try:
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return sha256_hash.hexdigest()
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Não foi possível calcular o checksum: {str(e)}")
-            return ""
-    
     def validate_form(self):
         """Valida o formulário antes de iniciar o upload."""
         if not self.nomeVersaoLineEdit.text().strip():
@@ -245,233 +239,75 @@ class AddVersionToProductDialog(QDialog, FORM_CLASS):
         return True
     
     def start_upload_process(self):
-        """Inicia o processo de upload."""
+        """Fase 1 do upload. A máquina inteira vive em core/upload_flow.py."""
         if not self.validate_form():
             return
-        
-        try:
-            # Fase 1: Preparação
-            self.statusLabel.setText("Preparando upload...")
-            self.progressGroupBox.setVisible(True)
-            self.progressBar.setValue(0)
-            
-            # Desabilitar interface durante upload
-            self.uploadButton.setEnabled(False)
-            self.addFileButton.setEnabled(False)
-            self.removeFileButton.setEnabled(False)
-            self.setCursor(Qt.CursorShape.WaitCursor)
-            
-            # Preparar dados da versão
-            palavras_chave = []
-            if self.palavrasChaveLineEdit.text().strip():
-                palavras_chave = [p.strip() for p in self.palavrasChaveLineEdit.text().split(',')]
-                
-            metadado = {}
-            if self.metadadoTextEdit.toPlainText().strip():
-                metadado = json.loads(self.metadadoTextEdit.toPlainText())
-                
-            versao_data = {
-                "versao": self.versaoLineEdit.text(),
+
+        # A regra do gatilho acervo.validate_version, ANTES de copiar bytes: o
+        # subtipo da versão tem que casar com o do produto, e o subtipo que exige
+        # produto próprio (Carta Topográfica Militar) só entra em produto do
+        # mesmo subtipo. Sem esta conferência a recusa vinha do banco, no
+        # confirm-upload, como 500 sem explicação.
+        recado = conferir_identidade(
+            self.produto_data.get('subtipo_produto_id'),
+            [self.subtipoProdutoComboBox.currentData()],
+            self.api_client.dominios
+        )
+        if recado:
+            QMessageBox.warning(self, "Subtipo incompatível", recado)
+            return
+
+        self.progressGroupBox.setVisible(True)
+        for botao in (self.addFileButton, self.removeFileButton):
+            botao.setEnabled(False)
+
+        palavras = [p.strip() for p in self.palavrasChaveLineEdit.text().split(',') if p.strip()]
+        metadado = {}
+        if self.metadadoTextEdit.toPlainText().strip():
+            metadado = json.loads(self.metadadoTextEdit.toPlainText())
+
+        corpo = {'versoes': [{
+            'produto_id': self.produto_data['id'],
+            'versao': {
+                'versao': self.versaoLineEdit.text(),
                 # Server aceita null, mas não string vazia
-                "nome": self.nomeVersaoLineEdit.text() or None,
-                "tipo_versao_id": self.tipoVersaoComboBox.currentData(),
-                "subtipo_produto_id": self.subtipoProdutoComboBox.currentData(),
-                "lote_id": self.loteComboBox.currentData(),
-                "metadado": metadado,
-                "descricao": self.descricaoVersaoTextEdit.toPlainText(),
-                "orgao_produtor": self.orgaoProdutorLineEdit.text(),
-                "palavras_chave": palavras_chave,
-                "data_criacao": self.dataCriacaoDateEdit.date().toString(Qt.DateFormat.ISODate),
-                "data_edicao": self.dataEdicaoDateEdit.date().toString(Qt.DateFormat.ISODate)
-            }
-            
-            # Preparar dados dos arquivos
-            arquivos_data = []
-            
-            for arquivo in self.arquivos:
-                arquivo_data = {
-                    "nome": arquivo['nome'],
-                    "nome_arquivo": arquivo['nome_arquivo'],
-                    "tipo_arquivo_id": arquivo['tipo_arquivo_id'],
-                    "extensao": arquivo['extensao'],
-                    "tamanho_mb": arquivo['tamanho_mb'],
-                    "checksum": arquivo['checksum'],
-                    "metadado": arquivo['metadado'],
-                    "situacao_carregamento_id": arquivo['situacao_carregamento_id'],
-                    "descricao": arquivo['descricao'],
-                    "crs_original": arquivo['crs_original']
-                }
-                arquivos_data.append(arquivo_data)
-            
-            # Preparar dados completos para API
-            prepared_data = {
-                "versoes": [{
-                    "produto_id": self.produto_data['id'],
-                    "versao": versao_data,
-                    "arquivos": arquivos_data
-                }]
-            }
-            
-            # Enviar requisição de preparação
-            response = self.api_client.post('arquivo/prepare-upload/version', prepared_data)
-            
-            if response and 'dados' in response:
-                # Extrair dados de resposta (o prepare de versão agrupa os
-                # arquivos dentro de dados.versoes; enviamos uma única versão)
-                session_uuid = response['dados']['session_uuid']
-                versoes_info = response['dados'].get('versoes') or []
-                arquivos_info = versoes_info[0].get('arquivos', []) if versoes_info else []
+                'nome': self.nomeVersaoLineEdit.text() or None,
+                'tipo_versao_id': self.tipoVersaoComboBox.currentData(),
+                'subtipo_produto_id': self.subtipoProdutoComboBox.currentData(),
+                'lote_id': self.loteComboBox.currentData(),
+                'metadado': metadado,
+                'descricao': self.descricaoVersaoTextEdit.toPlainText(),
+                'orgao_produtor': self.orgaoProdutorLineEdit.text(),
+                'palavras_chave': palavras,
+                'data_criacao': self.dataCriacaoDateEdit.date().toString(Qt.DateFormat.ISODate),
+                'data_edicao': self.dataEdicaoDateEdit.date().toString(Qt.DateFormat.ISODate),
+            },
+            'arquivos': [{
+                'uuid_arquivo': a['uuid_arquivo'],
+                'nome': a['nome'],
+                'nome_arquivo': a['nome_arquivo'],
+                'tipo_arquivo_id': a['tipo_arquivo_id'],
+                'extensao': a['extensao'],
+                'tamanho_mb': a['tamanho_mb'],
+                'checksum': a['checksum'],
+                'metadado': a['metadado'],
+                'situacao_carregamento_id': a['situacao_carregamento_id'],
+                'descricao': a['descricao'],
+                'crs_original': a['crs_original'],
+            } for a in self.arquivos],
+        }]}
 
-                # Tileserver é uma URL — não há arquivo físico para transferir
-                arquivos_transferiveis = [
-                    a for a in arquivos_info if a.get('tipo_arquivo_id') != 9
-                ]
+        if not self.executar_upload('arquivo/prepare-upload/version', corpo):
+            for botao in (self.addFileButton, self.removeFileButton):
+                botao.setEnabled(True)
 
-                # Armazenar UUID da sessão para confirmação após transferência
-                self.current_session_uuid = session_uuid
+    # --- ganchos do UploadFlowMixin -----------------------------------------
 
-                # Configurar barra de progresso
-                self.progressBar.setMaximum(max(len(arquivos_transferiveis), 1))
+    def upload_origem_de(self, arquivo_info):
+        """Casa pelo uuid_arquivo gerado aqui: a resposta do prepare de versão
+        não traz versao_id nas entradas de arquivo."""
+        return self.origens.get(arquivo_info.get('uuid_arquivo'))
 
-                # Fase 2: Transferência
-                self.statusLabel.setText(f"Iniciando transferência de {len(arquivos_transferiveis)} arquivos...")
-
-                # Iniciar threads de transferência
-                self.transfer_threads = []
-                self.arquivos_transferidos = 0
-                self.arquivos_com_falha = 0
-                self.failed_transfers = []
-
-                for arquivo_info in arquivos_transferiveis:
-                    # Encontrar o arquivo local correspondente
-                    arquivo_local = next(
-                        (a for a in self.arquivos if a['nome'] == arquivo_info['nome']),
-                        None
-                    )
-
-                    if arquivo_local:
-                        thread = FileTransferThread(
-                            arquivo_local['path'],
-                            arquivo_info['destination_path'],
-                            arquivo_info['checksum']
-                        )
-                        thread.progress_update.connect(self.update_file_progress)
-                        thread.file_transferred.connect(self.file_transfer_complete)
-                        self.transfer_threads.append(thread)
-                        thread.start()
-
-                # Sem arquivos físicos (ex.: somente tileserver): confirmar direto
-                if not self.transfer_threads:
-                    self.confirm_upload()
-            else:
-                raise Exception("Resposta inválida do servidor")
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro: {str(e)}")
-            self.progressGroupBox.setVisible(False)
-            self.uploadButton.setEnabled(True)
-            self.addFileButton.setEnabled(True)
-            self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            QMessageBox.critical(self, "Erro", f"Falha na preparação do upload: {str(e)}")
-    
-    def update_file_progress(self, current_bytes, total_bytes):
-        """Atualiza o progresso de transferência de um arquivo."""
-        # Este método pode ser usado para mostrar o progresso de um arquivo específico
-        pass
-    
-    def file_transfer_complete(self, success, file_path, identifier, error_msg=None):
-        """Manipula conclusão da transferência de um arquivo."""
-        self.arquivos_transferidos += 1
-        if not success:
-            self.arquivos_com_falha += 1
-            for thread in self.transfer_threads:
-                if thread.destination_path == file_path:
-                    self.failed_transfers.append({
-                        'source_path': thread.source_path,
-                        'destination_path': thread.destination_path,
-                        'identifier': thread.identifier,
-                        'error': error_msg
-                    })
-                    break
-        self.progressBar.setValue(self.arquivos_transferidos)
-
-        # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
-        if self.arquivos_transferidos == len(self.transfer_threads):
-            if self.arquivos_com_falha > 0:
-                detalhe = format_failure_causes(self.failed_transfers)
-                reply = QMessageBox.question(
-                    self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
-                    "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    self._retry_failed_transfers()
-                else:
-                    self._cancel_upload_session()
-                    self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
-                    self.uploadButton.setEnabled(True)
-                    self.addFileButton.setEnabled(True)
-                    self.removeFileButton.setEnabled(True)
-                    self.setCursor(Qt.CursorShape.ArrowCursor)
-            else:
-                self.confirm_upload()
-
-    def _retry_failed_transfers(self):
-        """Retenta apenas os arquivos que falharam na transferência."""
-        failed = self.failed_transfers[:]
-        self.failed_transfers = []
-        self.transfer_threads = []
-        self.arquivos_transferidos = 0
-        self.arquivos_com_falha = 0
-
-        self.progressBar.setMaximum(len(failed))
-        self.progressBar.setValue(0)
-        self.statusLabel.setText(f"Retentando {len(failed)} arquivo(s)...")
-
-        for info in failed:
-            thread = FileTransferThread(
-                info['source_path'],
-                info['destination_path'],
-                info['identifier']
-            )
-            thread.progress_update.connect(self.update_file_progress)
-            thread.file_transferred.connect(self.file_transfer_complete)
-            self.transfer_threads.append(thread)
-            thread.start()
-    
-    def _cancel_upload_session(self):
-        """Cancela a sessão de upload no servidor (best effort)."""
-        try:
-            if getattr(self, 'current_session_uuid', None):
-                self.api_client.post('arquivo/cancel-upload', {'session_uuid': self.current_session_uuid})
-        except Exception:
-            pass
-
-    def confirm_upload(self):
-        """Confirma o upload após transferência dos arquivos."""
-        try:
-            self.statusLabel.setText("Confirmando upload...")
-            
-            # Enviar confirmação
-            response = self.api_client.post('arquivo/confirm-upload', {'session_uuid': self.current_session_uuid})
-            
-            if response and response.get('success'):
-                self.statusLabel.setText("Upload concluído com sucesso!")
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                QMessageBox.information(self, "Sucesso", "Nova versão e arquivos carregados com sucesso!")
-                self.accept()
-            else:
-                error_message = "Falha na confirmação do upload"
-                if response and 'message' in response:
-                    error_message = response['message']
-                raise Exception(error_message)
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro na confirmação: {str(e)}")
-            self.uploadButton.setEnabled(True)
-            self.addFileButton.setEnabled(True)
-            self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {str(e)}")
+    def upload_concluido(self, mensagem):
+        QMessageBox.information(self, "Sucesso", "Versão e arquivos carregados com sucesso.")
+        self.accept()

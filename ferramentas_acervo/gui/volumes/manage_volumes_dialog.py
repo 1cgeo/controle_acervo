@@ -23,8 +23,9 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
         self.setWindowTitle("Gerenciar Volumes de Armazenamento")
         
         # Configurar a tabela de volumes
-        self.volumesTable.setColumnCount(4)
-        self.volumesTable.setHorizontalHeaderLabels(['Id', 'Nome', 'Volume', 'Capacidade (GB)'])
+        self.volumesTable.setColumnCount(5)
+        self.volumesTable.setHorizontalHeaderLabels(
+            ['Id', 'Nome', 'Volume', 'Capacidade (GB)', 'Layout de origem'])
         self.volumesTable.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.volumesTable.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
@@ -49,6 +50,10 @@ class ManageVolumesDialog(QDialog, FORM_CLASS):
             self.volumesTable.setItem(row, 1, QTableWidgetItem(volume['nome']))
             self.volumesTable.setItem(row, 2, QTableWidgetItem(volume['volume']))
             self.volumesTable.setItem(row, 3, QTableWidgetItem(str(volume['capacidade_gb'])))
+            self.volumesTable.setItem(
+                row, 4,
+                QTableWidgetItem("Sim" if volume.get('layout_origem') else "Não")
+            )
 
         self.volumesTable.resizeColumnsToContents()
 

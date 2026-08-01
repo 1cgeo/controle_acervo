@@ -4,8 +4,8 @@ author=Brazilian Army Geographic Service
 qgisMinimumVersion=4.0
 supportsQt6=True
 qgisMaximumVersion=4.99
-description=Plugin para uso do Sistema de Controle do Acervo
-version=1.0.0
+description=Plugin do acervo do SCA: busca com recorte espacial, carga de produtos, catalogacao no volume e auditoria
+version=2.0.0
 icon=icons/icon.png
 tags=EDGV, PostGIS, Spatialite, Brazilian, Army, Exército, Brasileiro, DSG, Diretoria, Serviço, Geográfico, BDGEx, Database, Spatial, INDE, Script
 ; end of mandatory metadata

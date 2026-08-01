@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Path: gui\catalogar_volume\catalogar_volume_dialog.ui -->
+<ui version="4.0">
+ <class>CatalogarVolumeDialog</class>
+ <widget class="QDialog" name="CatalogarVolumeDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>700</width>
+    <height>340</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Catalogar produtos já no volume</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string>Registra no acervo um produto cujos arquivos JÁ ESTÃO no volume, sem copiar nada. É o caminho para a entrega gravada no layout do fornecedor.
+
+O checksum e o tamanho são medidos pelo SERVIDOR, que lê cada arquivo uma vez. A requisição fica aberta durante essa leitura, então um lote grande demora.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="volumeLabel">
+       <property name="text">
+        <string>Volume (layout de origem):</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="volumeComboBox">
+       <property name="toolTip">
+        <string>Só volumes marcados como layout de origem aparecem aqui: o servidor recusa os demais.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="layerLabel">
+       <property name="text">
+        <string>Camada:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="layerComboBox"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="botoesLayout">
+     <item>
+      <widget class="QPushButton" name="createModelLayerButton">
+       <property name="text">
+        <string>Criar camada modelo</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="catalogarButton">
+       <property name="text">
+        <string>Catalogar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

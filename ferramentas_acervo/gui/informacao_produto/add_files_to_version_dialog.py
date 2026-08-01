@@ -1,19 +1,17 @@
 # Path: gui\informacao_produto\add_files_to_version_dialog.py
 import os
-import hashlib
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
     QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, 
     QTableWidgetItem, QHeaderView, QFileDialog
 )
 from qgis.PyQt.QtCore import Qt
-from ...core.file_transfer import FileTransferThread
-from ..ui_utils import format_failure_causes
+from ...core.upload_flow import UploadFlowMixin, calcular_checksum
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'add_files_to_version_dialog.ui'))
 
-class AddFilesToVersionDialog(QDialog, FORM_CLASS):
+class AddFilesToVersionDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     def __init__(self, api_client, versao_data, parent=None):
         """
         Inicializa o diálogo para adicionar arquivos a uma versão existente.
@@ -28,8 +26,11 @@ class AddFilesToVersionDialog(QDialog, FORM_CLASS):
         self.api_client = api_client
         self.versao_data = versao_data
         self.arquivos = []
-        self.transfer_threads = []
-        
+        # nome FÍSICO -> caminho local, preenchido em add_file
+        self.origens = {}
+        self._upload_zerar()
+        self.current_session_uuid = None
+
         self.setup_ui()
         self.load_tipo_arquivo()
         
@@ -102,10 +103,21 @@ class AddFilesToVersionDialog(QDialog, FORM_CLASS):
             "crs_original": self.crsLineEdit.text()
         }
         
-        # Adicionar à lista de arquivos
+        # O nome FÍSICO é único por volume (índice unique_nome_fisico_por_volume,
+        # inclusive na variante que ignora maiúsculas). Dois arquivos com o mesmo
+        # nome no mesmo envio seriam recusados pelo servidor no meio da carga;
+        # avisar aqui é mais barato.
+        if any(a['nome_arquivo'].lower() == nome_arquivo.lower() for a in self.arquivos):
+            QMessageBox.warning(
+                self, "Nome repetido",
+                f"Já há um arquivo chamado '{nome_arquivo}' nesta lista.\n\n"
+                "O nome físico é único por volume, então os dois não podem entrar juntos."
+            )
+            return
+
         self.arquivos.append(file_info)
-        
-        # Atualizar a tabela
+        self.origens[(self.versao_data['versao_id'], nome_arquivo)] = file_path
+
         self.update_files_table()
         
     def remove_file(self):
@@ -119,8 +131,11 @@ class AddFilesToVersionDialog(QDialog, FORM_CLASS):
         indices_to_remove = sorted([index.row() for index in selected_rows], reverse=True)
         for index in indices_to_remove:
             if index < len(self.arquivos):
-                del self.arquivos[index]
-        
+                removido = self.arquivos.pop(index)
+                self.origens.pop(
+                    (self.versao_data['versao_id'], removido['nome_arquivo']), None
+                )
+
         # Atualizar a tabela
         self.update_files_table()
         
@@ -150,196 +165,55 @@ class AddFilesToVersionDialog(QDialog, FORM_CLASS):
         self.uploadButton.setEnabled(len(self.arquivos) > 0)
         
     def calculate_checksum(self, file_path):
-        """Calcula o checksum SHA-256 de um arquivo."""
-        sha256_hash = hashlib.sha256()
+        """Checksum do arquivo, ou '' quando não deu para ler."""
         try:
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return sha256_hash.hexdigest()
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Não foi possível calcular o checksum: {str(e)}")
+            return calcular_checksum(file_path)
+        except OSError as e:
+            QMessageBox.warning(self, "Erro", f"Não foi possível calcular o checksum: {e}")
             return ""
-    
+
     def start_upload_process(self):
-        """Inicia o processo de upload."""
+        """Fase 1 do upload. A máquina inteira vive em core/upload_flow.py."""
         if not self.arquivos:
-            QMessageBox.warning(self, "Aviso", "Adicione pelo menos um arquivo para upload.")
+            QMessageBox.warning(self, "Aviso", "Adicione pelo menos um arquivo.")
             return
-        
-        try:
-            # Fase 1: Preparação
-            self.statusLabel.setText("Preparando upload...")
-            self.progressGroupBox.setVisible(True)
-            self.progressBar.setValue(0)
-            
-            # Desabilitar interface durante upload
-            self.uploadButton.setEnabled(False)
-            self.addFileButton.setEnabled(False)
-            self.removeFileButton.setEnabled(False)
-            self.setCursor(Qt.CursorShape.WaitCursor)
-            
-            # Preparar dados para a API
-            prepared_data = {
-                "arquivos": []
-            }
 
-            for arquivo in self.arquivos:
-                arquivo_data = {
-                    "versao_id": self.versao_data['versao_id'],
-                    "nome": arquivo['nome'],
-                    "nome_arquivo": arquivo['nome_arquivo'],
-                    "tipo_arquivo_id": arquivo['tipo_arquivo_id'],
-                    "extensao": arquivo['extensao'],
-                    "tamanho_mb": arquivo['tamanho_mb'],
-                    "checksum": arquivo['checksum'],
-                    "metadado": arquivo['metadado'],
-                    "situacao_carregamento_id": arquivo['situacao_carregamento_id'],
-                    "descricao": arquivo['descricao'],
-                    "crs_original": arquivo['crs_original']
-                }
-                prepared_data["arquivos"].append(arquivo_data)
-            
-            # Enviar requisição de preparação
-            response = self.api_client.post('arquivo/prepare-upload/files', prepared_data)
-            
-            if response and 'dados' in response:
-                # Extrair dados de resposta
-                session_uuid = response['dados']['session_uuid']
-                arquivos_info = response['dados']['arquivos']
-                
-                # Configurar barra de progresso
-                self.progressBar.setMaximum(len(arquivos_info))
-                
-                # Fase 2: Transferência
-                self.statusLabel.setText(f"Iniciando transferência de {len(arquivos_info)} arquivos...")
-                
-                # Iniciar threads de transferência
-                self.transfer_threads = []
-                self.arquivos_transferidos = 0
-                self.arquivos_com_falha = 0
-                self.failed_transfers = []
-                
-                for arquivo_info in arquivos_info:
-                    # Encontrar o arquivo local correspondente
-                    arquivo_local = next(
-                        (a for a in self.arquivos if a['nome'] == arquivo_info['nome']), 
-                        None
-                    )
-                    
-                    if arquivo_local:
-                        thread = FileTransferThread(
-                            arquivo_local['path'],
-                            arquivo_info['destination_path'],
-                            arquivo_info['checksum']
-                        )
-                        thread.progress_update.connect(self.update_file_progress)
-                        thread.file_transferred.connect(self.file_transfer_complete)
-                        self.transfer_threads.append(thread)
-                        thread.start()
-                
-                # Armazenar UUID da sessão para confirmação após transferência
-                self.current_session_uuid = session_uuid
-            else:
-                raise Exception("Resposta inválida do servidor")
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro: {str(e)}")
-            self.progressGroupBox.setVisible(False)
-            self.uploadButton.setEnabled(True)
-            self.addFileButton.setEnabled(True)
-            self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            QMessageBox.critical(self, "Erro", f"Falha na preparação do upload: {str(e)}")
-    
-    def update_file_progress(self, current_bytes, total_bytes):
-        """Atualiza o progresso de transferência de um arquivo."""
-        # Este método pode ser usado para mostrar o progresso de um arquivo específico
-        pass
-    
-    def file_transfer_complete(self, success, file_path, identifier, error_msg=None):
-        """Manipula conclusão da transferência de um arquivo."""
-        self.arquivos_transferidos += 1
-        if not success:
-            self.arquivos_com_falha += 1
-            for thread in self.transfer_threads:
-                if thread.destination_path == file_path:
-                    self.failed_transfers.append({
-                        'source_path': thread.source_path,
-                        'destination_path': thread.destination_path,
-                        'identifier': thread.identifier,
-                        'error': error_msg
-                    })
-                    break
-        self.progressBar.setValue(self.arquivos_transferidos)
+        self.progressGroupBox.setVisible(True)
+        for botao in (self.addFileButton, self.removeFileButton):
+            botao.setEnabled(False)
 
-        # Se todos os arquivos foram transferidos, verificar sucesso antes de confirmar
-        if self.arquivos_transferidos == len(self.transfer_threads):
-            if self.arquivos_com_falha > 0:
-                detalhe = format_failure_causes(self.failed_transfers)
-                reply = QMessageBox.question(
-                    self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
-                    "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    self._retry_failed_transfers()
-                else:
-                    self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
-                    self.uploadButton.setEnabled(True)
-                    self.addFileButton.setEnabled(True)
-                    self.removeFileButton.setEnabled(True)
-                    self.setCursor(Qt.CursorShape.ArrowCursor)
-            else:
-                self.confirm_upload()
+        versao_id = self.versao_data['versao_id']
+        corpo = {'arquivos': [{
+            'versao_id': versao_id,
+            'nome': a['nome'],
+            'nome_arquivo': a['nome_arquivo'],
+            'tipo_arquivo_id': a['tipo_arquivo_id'],
+            'extensao': a['extensao'],
+            'tamanho_mb': a['tamanho_mb'],
+            'checksum': a['checksum'],
+            'metadado': a['metadado'],
+            'situacao_carregamento_id': a['situacao_carregamento_id'],
+            'descricao': a['descricao'],
+            'crs_original': a['crs_original'],
+        } for a in self.arquivos]}
 
-    def _retry_failed_transfers(self):
-        """Retenta apenas os arquivos que falharam na transferência."""
-        failed = self.failed_transfers[:]
-        self.failed_transfers = []
-        self.transfer_threads = []
-        self.arquivos_transferidos = 0
-        self.arquivos_com_falha = 0
+        if not self.executar_upload('arquivo/prepare-upload/files', corpo):
+            for botao in (self.addFileButton, self.removeFileButton):
+                botao.setEnabled(True)
 
-        self.progressBar.setMaximum(len(failed))
-        self.progressBar.setValue(0)
-        self.statusLabel.setText(f"Retentando {len(failed)} arquivo(s)...")
+    # --- ganchos do UploadFlowMixin -----------------------------------------
 
-        for info in failed:
-            thread = FileTransferThread(
-                info['source_path'],
-                info['destination_path'],
-                info['identifier']
-            )
-            thread.progress_update.connect(self.update_file_progress)
-            thread.file_transferred.connect(self.file_transfer_complete)
-            self.transfer_threads.append(thread)
-            thread.start()
-    
-    def confirm_upload(self):
-        """Confirma o upload após transferência dos arquivos."""
-        try:
-            self.statusLabel.setText("Confirmando upload...")
-            
-            # Enviar confirmação
-            response = self.api_client.post('arquivo/confirm-upload', {'session_uuid': self.current_session_uuid})
-            
-            if response and response.get('success'):
-                self.statusLabel.setText("Upload concluído com sucesso!")
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                QMessageBox.information(self, "Sucesso", "Arquivos carregados com sucesso!")
-                self.accept()
-            else:
-                error_message = "Falha na confirmação do upload"
-                if response and 'message' in response:
-                    error_message = response['message']
-                raise Exception(error_message)
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro na confirmação: {str(e)}")
-            self.uploadButton.setEnabled(True)
-            self.addFileButton.setEnabled(True)
-            self.removeFileButton.setEnabled(True)
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {str(e)}")
+    def upload_origem_de(self, arquivo_info):
+        """Casa por (versao_id, nome_arquivo), e não pelo `nome`.
+
+        `nome` é rótulo descritivo e pode se repetir entre arquivos da mesma
+        versão ("Arquivo principal"); o par com o nome FÍSICO é único por volume,
+        garantido por índice no banco. Casando pelo rótulo, dois arquivos com o
+        mesmo nome mandavam o mesmo byte duas vezes e deixavam o outro de fora.
+        """
+        return self.origens.get((arquivo_info.get('versao_id'),
+                                 arquivo_info.get('nome_arquivo')))
+
+    def upload_concluido(self, mensagem):
+        QMessageBox.information(self, "Sucesso", "Arquivos carregados com sucesso.")
+        self.accept()

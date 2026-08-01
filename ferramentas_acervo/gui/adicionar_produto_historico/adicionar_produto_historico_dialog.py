@@ -14,6 +14,8 @@ from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis,
 from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 
+from ..campos_acervo import conferir_identidade
+
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'adicionar_produto_historico_dialog.ui'))
 
@@ -250,7 +252,7 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         # Conectar os campos desta versão
         version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
         version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
-        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self._versao_trocou_subtipo(version_index, subtype_combo))
         lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
         producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
         keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
@@ -259,6 +261,11 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', description_edit.toPlainText()))
         metadados_edit.textChanged.connect(lambda: self._update_version_metadata(version_index, metadados_edit))
     
+    def _versao_trocou_subtipo(self, version_index, subtype_combo):
+        subtipo = subtype_combo.itemData(subtype_combo.currentIndex())
+        self.update_version_data(version_index, 'subtipo_produto_id', subtipo)
+        self._sincronizar_subtipo_do_produto(subtipo)
+
     def update_version_data(self, version_index, field, value):
         """Atualizar dados da versão."""
         if version_index < len(self.versoes):
@@ -462,7 +469,7 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         # Conectar os campos desta versão
         version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
         version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
-        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self._versao_trocou_subtipo(version_index, subtype_combo))
         lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
         producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
         keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
@@ -518,6 +525,10 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
     
     def filterSubtypes(self):
         """Filtrar subtipos de produto com base no tipo de produto selecionado."""
+        # O subtipo do PRODUTO é refeito sempre, inclusive quando o tipo é
+        # limpo: senão a lista continuaria mostrando os subtipos do tipo anterior.
+        self._populate_product_subtype_combo()
+
         tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
         if not tipo_produto_id:
             return
@@ -535,6 +546,45 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         for item in self._subtipos_data:
             if item.get('tipo_id') == tipo_produto_id:
                 combo.addItem(item['nome'], item['code'])
+
+    def _populate_product_subtype_combo(self):
+        """Popular o subtipo do PRODUTO, que é a identidade dele.
+
+        "Nenhum" é o padrão certo: a maioria dos produtos tem identidade só por
+        (mi, escala, tipo). Os subtipos que EXIGEM produto próprio saem marcados
+        no rótulo, para a regra aparecer na hora da escolha.
+        """
+        combo = self.subtipoProdutoComboBox
+        anterior = combo.currentData()
+        combo.clear()
+        combo.addItem("Nenhum (produto comum)", None)
+
+        tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
+        for item in self._subtipos_data:
+            if item.get('tipo_id') != tipo_produto_id:
+                continue
+            rotulo = item['nome']
+            if item.get('define_produto'):
+                rotulo += "  [exige produto próprio]"
+            combo.addItem(rotulo, item['code'])
+
+        indice = combo.findData(anterior)
+        combo.setCurrentIndex(indice if indice >= 0 else 0)
+
+    def _sincronizar_subtipo_do_produto(self, subtipo_versao_id):
+        """Subtipo de versão que exige produto próprio arrasta o do produto.
+
+        É o gatilho `acervo.validate_version` virado affordance: aquele subtipo
+        só existe em produto do mesmo subtipo, então oferecer a combinação
+        impossível seria deixar a pessoa montar algo que o servidor recusa.
+        """
+        if subtipo_versao_id is None:
+            return
+        if not self.api_client.dominios.exige_produto_proprio(subtipo_versao_id):
+            return
+        indice = self.subtipoProdutoComboBox.findData(subtipo_versao_id)
+        if indice >= 0 and self.subtipoProdutoComboBox.currentData() != subtipo_versao_id:
+            self.subtipoProdutoComboBox.setCurrentIndex(indice)
 
     def _populate_lot_combo(self, combo):
         """Popular combo de lote."""
@@ -615,7 +665,19 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
         if not self.current_geometry:
             QMessageBox.warning(self, "Validação", "É necessário definir uma geometria para o produto.")
             return False
-        
+
+        # A regra do gatilho acervo.validate_version, conferida ANTES do envio:
+        # o subtipo que exige produto próprio só entra em produto do mesmo
+        # subtipo, e o banco recusa com exceção, que chega como 500 genérico.
+        recado = conferir_identidade(
+            self.get_combo_value(self.subtipoProdutoComboBox),
+            [v.get('subtipo_produto_id') for v in self.versoes],
+            self.api_client.dominios
+        )
+        if recado:
+            QMessageBox.warning(self, "Subtipo incompatível", recado)
+            return False
+
         # Validar versões
         for i, versao in enumerate(self.versoes):
             # Selecionar a aba da versão que está sendo validada
@@ -662,6 +724,9 @@ class AddHistoricalProductDialog(QDialog, FORM_CLASS):
                 'tipo_escala_id': self.get_combo_value(self.tipoEscalaComboBox),
                 'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
                 'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
+                # A IDENTIDADE do produto. Ver gui/campos_acervo.py: sem ela,
+                # todo produto criado pelo plugin nascia como comum.
+                'subtipo_produto_id': self.get_combo_value(self.subtipoProdutoComboBox),
                 'descricao': self.descricaoTextEdit.toPlainText(),
                 'geom': f"SRID=4674;{self.current_geometry.asWkt()}"
             }

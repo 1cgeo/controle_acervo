@@ -1,10 +1,16 @@
 # Path: gui\busca_produtos\busca_produtos_dialog.py
-import os
-from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
-from qgis.PyQt.QtCore import Qt, QDateTime
-from ..ui_utils import sortable_item, sortable_int_item
 import csv
+import json
+import os
+
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+                       QgsFeature, QgsJsonUtils, QgsProject, QgsVectorLayer)
+from qgis.PyQt import uic
+from qgis.PyQt.QtCore import Qt, QDateTime
+from qgis.PyQt.QtWidgets import (QDialog, QFileDialog, QHeaderView, QMessageBox,
+                                 QTableWidget, QTableWidgetItem)
+
+from ..ui_utils import sortable_item, sortable_int_item
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'busca_produtos_dialog.ui'))
@@ -51,6 +57,11 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         # Connect buttons
         self.searchButton.clicked.connect(self.search_produtos)
+        self.carregarCamadaButton.clicked.connect(self.carregar_camada)
+        # Trocar o tipo de produto refaz a lista de subtipos: subtipo que não
+        # pertence ao tipo escolhido deixou de fazer sentido, e mantê-lo daria
+        # uma busca que nunca acha nada.
+        self.tipoProdutoComboBox.currentIndexChanged.connect(self.load_subtipos)
         # Botão padrão: Enter dispara a busca a partir de qualquer filtro
         self.searchButton.setDefault(True)
         self.firstPageButton.clicked.connect(self.go_to_first_page)
@@ -73,84 +84,246 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
         self.pageSizeComboBox.currentTextChanged.connect(self.change_page_size)
 
     def load_filters(self):
-        """Load filter combo box options from domain endpoints."""
+        """Popula os filtros a partir do cache de domínios da sessão."""
         try:
             self.setCursor(Qt.CursorShape.WaitCursor)
+            dominios = self.api_client.dominios
 
-            # Tipo Produto
             self.tipoProdutoComboBox.clear()
             self.tipoProdutoComboBox.addItem("Todos", None)
-            response = self.api_client.get('gerencia/dominio/tipo_produto')
-            if response and 'dados' in response:
-                for item in response['dados']:
-                    self.tipoProdutoComboBox.addItem(item['nome'], item['code'])
+            for item in dominios.get('tipo_produto'):
+                self.tipoProdutoComboBox.addItem(item['nome'], item['code'])
 
-            # Tipo Escala
             self.tipoEscalaComboBox.clear()
             self.tipoEscalaComboBox.addItem("Todas", None)
-            response = self.api_client.get('gerencia/dominio/tipo_escala')
-            if response and 'dados' in response:
-                for item in response['dados']:
-                    self.tipoEscalaComboBox.addItem(item['nome'], item['code'])
+            for item in dominios.get('tipo_escala'):
+                self.tipoEscalaComboBox.addItem(item['nome'], item['code'])
 
-            # Projetos
             self.projetoComboBox.clear()
             self.projetoComboBox.addItem("Todos", None)
-            response = self.api_client.get('projetos/projeto')
-            if response and 'dados' in response:
-                for item in response['dados']:
-                    self.projetoComboBox.addItem(item['nome'], item['id'])
+            for item in dominios.get('projeto'):
+                self.projetoComboBox.addItem(item['nome'], item['id'])
 
-            # Lotes
             self.loteComboBox.clear()
             self.loteComboBox.addItem("Todos", None)
-            response = self.api_client.get('projetos/lote')
-            if response and 'dados' in response:
-                for item in response['dados']:
-                    self.loteComboBox.addItem(item['nome'], item['id'])
+            for item in dominios.get('lote'):
+                self.loteComboBox.addItem(item['nome'], item['id'])
+
+            self.load_subtipos()
+            self.load_palavras_chave()
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erro",
-                f"Erro ao carregar filtros: {str(e)}"
-            )
+            QMessageBox.critical(self, "Erro", f"Erro ao carregar filtros: {e}")
         finally:
             self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def load_subtipos(self):
+        """Subtipos do tipo escolhido, ou todos quando o tipo é 'Todos'."""
+        anterior = self.subtipoComboBox.currentData()
+        tipo_produto_id = self.tipoProdutoComboBox.currentData()
+
+        self.subtipoComboBox.clear()
+        self.subtipoComboBox.addItem("Todos", None)
+
+        subtipos = (self.api_client.dominios.subtipos_do_tipo(tipo_produto_id)
+                    if tipo_produto_id is not None
+                    else self.api_client.dominios.get('subtipo_produto'))
+        for item in subtipos:
+            self.subtipoComboBox.addItem(item['nome'], item['code'])
+
+        indice = self.subtipoComboBox.findData(anterior)
+        self.subtipoComboBox.setCurrentIndex(indice if indice >= 0 else 0)
+
+    def load_palavras_chave(self):
+        """As etiquetas mais usadas, com a contagem.
+
+        A rota limita a 20 de propósito e o acervo tem mais etiquetas que isso,
+        então o campo é editável: quem sabe a etiqueta digita.
+        """
+        self.palavraChaveComboBox.clear()
+        self.palavraChaveComboBox.setEditable(True)
+        self.palavraChaveComboBox.addItem("", None)
+
+        resposta = self.api_client.get('acervo/palavras_chave', params={'limit': 50})
+        for item in (resposta or {}).get('dados', []) or []:
+            palavra = item.get('palavra') or ''
+            self.palavraChaveComboBox.addItem(f"{palavra} ({item.get('usos')})", palavra)
+
+        self.palavraChaveComboBox.setCurrentIndex(0)
 
     def search_produtos(self):
         """Execute product search with current filters."""
         self.current_page = 1
         self.load_results()
 
+    # --- filtros ------------------------------------------------------------
+
+    def montar_filtros(self):
+        """Os filtros da tela, no formato da API.
+
+        UM lugar só, porque as duas rotas que os consomem -- a lista paginada e a
+        camada de geometrias -- respondem à MESMA pergunta. Montá-los duas vezes
+        é o que faria o mapa mostrar um conjunto e a tabela outro.
+        """
+        params = {}
+
+        termo = self.termoLineEdit.text().strip()
+        if termo:
+            params['termo'] = termo
+
+        for chave, combo in (('tipo_produto_id', self.tipoProdutoComboBox),
+                             ('subtipo_produto_id', self.subtipoComboBox),
+                             ('tipo_escala_id', self.tipoEscalaComboBox),
+                             ('projeto_id', self.projetoComboBox),
+                             ('lote_id', self.loteComboBox)):
+            valor = combo.currentData()
+            if valor is not None:
+                params[chave] = valor
+
+        # O combo é editável: vale o que está escrito, que pode ser uma etiqueta
+        # fora das 50 mais usadas.
+        palavra = self.palavraChaveComboBox.currentData()
+        if not palavra:
+            texto = self.palavraChaveComboBox.currentText().strip()
+            # Descarta o "(123)" quando a pessoa escolheu da lista e o texto
+            # ficou com a contagem junto.
+            palavra = texto.rsplit(' (', 1)[0] if texto.endswith(')') and ' (' in texto else texto
+        if palavra:
+            params['palavra_chave'] = palavra
+
+        if self.bboxCheckBox.isChecked():
+            bbox = self.bbox_do_mapa()
+            if bbox:
+                params['bbox'] = bbox
+
+        return params
+
+    def bbox_do_mapa(self):
+        """'minLon,minLat,maxLon,maxLat' da área visível, em graus.
+
+        O canvas pode estar em qualquer projeção, e a rota espera coordenadas
+        geográficas: sem reprojetar, um projeto em UTM mandaria metros e o
+        servidor recusaria por estar fora do intervalo de latitude/longitude.
+        """
+        canvas = self.iface.mapCanvas()
+        extensao = canvas.extent()
+        origem = canvas.mapSettings().destinationCrs()
+        destino = QgsCoordinateReferenceSystem('EPSG:4326')
+
+        if origem.isValid() and origem != destino:
+            try:
+                transformacao = QgsCoordinateTransform(
+                    origem, destino, QgsProject.instance()
+                )
+                extensao = transformacao.transformBoundingBox(extensao)
+            except Exception:
+                QMessageBox.warning(
+                    self, "Área do mapa",
+                    "Não consegui converter a área visível para coordenadas geográficas. "
+                    "A busca foi feita sem o recorte espacial."
+                )
+                return None
+
+        if extensao.isEmpty():
+            return None
+
+        return (f"{extensao.xMinimum():.6f},{extensao.yMinimum():.6f},"
+                f"{extensao.xMaximum():.6f},{extensao.yMaximum():.6f}")
+
+    # --- camada -------------------------------------------------------------
+
+    def carregar_camada(self):
+        """Traz a geometria de TODOS os produtos filtrados como camada no QGIS.
+
+        Não é a página atual: a rota de geometrias existe justamente porque
+        paginar o mapa engana -- vinte polígonos numa busca de oitocentos fazem
+        parecer que o acervo tem vinte cartas ali.
+        """
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            resposta = self.api_client.get(
+                'acervo/busca/geometrias', params=self.montar_filtros(), timeout=180
+            )
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        if not resposta or 'dados' not in resposta:
+            return
+
+        dados = resposta['dados']
+        produtos = dados.get('dados') or []
+        if not produtos:
+            QMessageBox.information(
+                self, "Nada a mostrar",
+                "Nenhum produto atende aos filtros informados."
+            )
+            return
+
+        camada = QgsVectorLayer(
+            "Polygon?crs=EPSG:4674&field=id:integer&field=nome:string"
+            "&field=mi:string&field=escala:string",
+            "Busca no acervo", "memory"
+        )
+        provedor = camada.dataProvider()
+
+        feicoes = []
+        sem_geometria = 0
+        for produto in produtos:
+            geom = self._geometria(produto.get('geom'))
+            if geom is None or geom.isEmpty():
+                sem_geometria += 1
+                continue
+            feicao = QgsFeature(camada.fields())
+            feicao.setGeometry(geom)
+            feicao.setAttributes([produto.get('id'), produto.get('nome') or '',
+                                  produto.get('mi') or '', produto.get('escala') or ''])
+            feicoes.append(feicao)
+
+        provedor.addFeatures(feicoes)
+        camada.updateExtents()
+        QgsProject.instance().addMapLayer(camada)
+        self.iface.mapCanvas().setExtent(camada.extent())
+        self.iface.mapCanvas().refresh()
+
+        recado = f"{len(feicoes)} produto(s) carregados na camada 'Busca no acervo'."
+        if dados.get('truncado'):
+            # O servidor avisa quando cortou em vez de mentir por omissão, e o
+            # aviso tem que chegar a quem está olhando o mapa.
+            recado += (f"\n\nA busca tem {dados.get('total')} produtos e o servidor "
+                       "truncou o resultado. Refine os filtros para ver o conjunto inteiro.")
+        if sem_geometria:
+            recado += f"\n\n{sem_geometria} produto(s) sem geometria utilizável ficaram de fora."
+
+        self.iface.messageBar().pushMessage(
+            "Busca no acervo", recado.split('\n')[0], level=Qgis.MessageLevel.Success
+        )
+        if dados.get('truncado') or sem_geometria:
+            QMessageBox.warning(self, "Camada carregada", recado)
+
+    @staticmethod
+    def _geometria(geojson):
+        """QgsGeometry a partir do GeoJSON da rota.
+
+        A rota devolve `geom` já como OBJETO (o servidor faz `JSON.parse` do
+        `ST_AsGeoJSON`), então ele volta a texto aqui: `geometryFromGeoJson`
+        recebe a string.
+        """
+        if not geojson:
+            return None
+        try:
+            texto = geojson if isinstance(geojson, str) else json.dumps(geojson)
+            geom = QgsJsonUtils.geometryFromGeoJson(texto)
+            return geom if geom and not geom.isNull() else None
+        except Exception:
+            return None
+
     def load_results(self):
         """Load search results from the API with pagination."""
         try:
             self.setCursor(Qt.CursorShape.WaitCursor)
 
-            # Build query parameters (params= cuida do URL-encoding —
-            # caracteres como & ou # no termo não corrompem a query)
-            params = {'page': self.current_page, 'limit': self.page_size}
-
-            termo = self.termoLineEdit.text().strip()
-            if termo:
-                params['termo'] = termo
-
-            tipo_produto_id = self.tipoProdutoComboBox.currentData()
-            if tipo_produto_id is not None:
-                params['tipo_produto_id'] = tipo_produto_id
-
-            tipo_escala_id = self.tipoEscalaComboBox.currentData()
-            if tipo_escala_id is not None:
-                params['tipo_escala_id'] = tipo_escala_id
-
-            projeto_id = self.projetoComboBox.currentData()
-            if projeto_id is not None:
-                params['projeto_id'] = projeto_id
-
-            lote_id = self.loteComboBox.currentData()
-            if lote_id is not None:
-                params['lote_id'] = lote_id
+            params = dict(self.montar_filtros(),
+                          page=self.current_page, limit=self.page_size)
 
             response = self.api_client.get('acervo/busca', params=params)
 

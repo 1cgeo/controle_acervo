@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Path: gui\nome_padrao\nome_padrao_dialog.ui -->
+<ui version="4.0">
+ <class>NomePadraoDialog</class>
+ <widget class="QDialog" name="NomePadraoDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>820</width>
+    <height>560</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Padronizar nome físico dos arquivos</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string>O nome do arquivo no volume é derivado dos metadados do produto e da versão. Quando um deles muda (renumerar uma edição, corrigir um subtipo), o nome esperado muda e o arquivo não. Esta tela reconcilia os dois.
+
+O nome novo é calculado pelo SERVIDOR, pela mesma regra que a auditoria usa. Volumes com layout de origem ficam de fora: neles o nome físico é o caminho do fornecedor, por decisão.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="parametrosLayout">
+     <item>
+      <widget class="QLabel" name="motivoLabel">
+       <property name="text">
+        <string>Motivo:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="motivoLineEdit">
+       <property name="placeholderText">
+        <string>Ex.: reconciliação após renumerar as edições do Convênio RS</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="loteLabel">
+       <property name="text">
+        <string>Arquivos por lote:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="loteSpinBox"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string>Calculando o plano...</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="amostraTable"/>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="botoesLayout">
+     <item>
+      <widget class="QPushButton" name="simularButton">
+       <property name="text">
+        <string>Simular de novo</string>
+       </property>
+       <property name="toolTip">
+        <string>Recalcula o plano sem alterar nada.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="aplicarButton">
+       <property name="text">
+        <string>Aplicar renome</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="fecharButton">
+       <property name="text">
+        <string>Fechar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

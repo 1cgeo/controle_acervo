@@ -2,9 +2,11 @@
 """Helpers de UI compartilhados entre os diálogos do plugin.
 
 Centraliza pequenos idiomas que apareciam copiados em vários diálogos:
-ordenação correta de colunas (texto exibido + chave de ordenação própria),
-habilitação de botões por seleção e formatação de causas de falha de
-transferência.
+ordenação correta de colunas (texto exibido + chave de ordenação própria) e
+habilitação de botões por seleção.
+
+Os dois helpers de falha de transferência saíram em 2026-08-01: a máquina de
+upload virou uma só (core/upload_flow.py) e ela formata as causas por dentro.
 """
 from qgis.PyQt.QtWidgets import QTableWidgetItem
 
@@ -60,19 +62,3 @@ def wire_single_selection_buttons(table, *buttons):
         button.setEnabled(False)
     table.itemSelectionChanged.connect(_update)
     return _update
-
-
-def format_failure_causes(failed_transfers):
-    """Monta o trecho '\\n\\nCausa(s):...' a partir das causas distintas dos
-    arquivos que falharam (ou '' quando nenhuma causa foi registrada)."""
-    causas = sorted({f.get('error') for f in failed_transfers if f.get('error')})
-    if not causas:
-        return ""
-    return "\n\nCausa(s):\n" + "\n".join(f"- {c}" for c in causas)
-
-
-def transfer_error_text(filename, error_msg):
-    """Texto de status para uma falha de transferência de um arquivo."""
-    if error_msg:
-        return f"Erro ao transferir {filename}: {error_msg}"
-    return f"Erro na transferência de {filename}"

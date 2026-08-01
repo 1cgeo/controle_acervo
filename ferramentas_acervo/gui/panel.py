@@ -30,6 +30,9 @@ from .busca_produtos.busca_produtos_dialog import BuscaProdutosDialog
 from .upload_sessions.upload_sessions_dialog import UploadSessionsDialog
 from .versao_relacionamento.versao_relacionamento_dialog import VersaoRelacionamentoDialog
 from .downloads_deletados.downloads_deletados_dialog import DownloadsDeletadosDialog
+from .auditoria.auditoria_dialog import AuditoriaDialog
+from .nome_padrao.nome_padrao_dialog import NomePadraoDialog
+from .catalogar_volume.catalogar_volume_dialog import CatalogarVolumeDialog
 
 PANEL_MAPPING = {
     # Funções Gerais (acessíveis a todos os usuários)
@@ -114,10 +117,23 @@ PANEL_MAPPING = {
     },
     
     # Ferramentas de Diagnóstico e Manutenção
-    "Verificar Inconsistências": {
+    # As duas perguntam coisas diferentes, e o nome de cada uma diz qual:
+    # "Verificar Arquivos no Volume" compara o banco com o DISCO; "Auditoria do
+    # Acervo" roda os invariantes de coerência, que não olham o disco.
+    "Verificar Arquivos no Volume": {
         "class": VerificarInconsistenciasDialog,
         "category": "Diagnóstico e Manutenção",
         "perfil_minimo": 'gerente'
+    },
+    "Auditoria do Acervo": {
+        "class": AuditoriaDialog,
+        "category": "Diagnóstico e Manutenção",
+        "perfil_minimo": 'gerente'
+    },
+    "Padronizar Nome dos Arquivos": {
+        "class": NomePadraoDialog,
+        "category": "Diagnóstico e Manutenção",
+        "perfil_minimo": 'admin'
     },
     "Limpar Downloads Expirados": {
         "class": CleanupExpiredDownloadsDialog,
@@ -193,6 +209,14 @@ PANEL_MAPPING = {
     },
     "Adicionar Versões Históricas em Lote": {
         "class": LoadHistoricalVersionsDialog,
+        "category": "Operações em Lote",
+        "perfil_minimo": 'operador'
+    },
+    # Fica ao lado das outras cargas porque é o que a pessoa está procurando
+    # quando chega aqui, mas NÃO transfere nada: registra o que já está no
+    # volume. Ver gui/catalogar_volume/.
+    "Catalogar Produtos já no Volume": {
+        "class": CatalogarVolumeDialog,
         "category": "Operações em Lote",
         "perfil_minimo": 'operador'
     }

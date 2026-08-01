@@ -1,15 +1,27 @@
 # Path: gui\bulk_versao_relacionamento\bulk_versao_relacionamento_dialog.py
+"""Relacionamentos entre versões, em lote."""
 import os
+
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QProgressBar
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes, Qgis, NULL
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+
+from ..camada_modelo import (Campo, CamadaModelo, preencher_combo_de_camadas,
+                             relatar_feicoes_invalidas, sem_null)
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'bulk_versao_relacionamento_dialog.ui'))
 
-def null_to_none(value):
-    return None if value == NULL else value
+MODELO = CamadaModelo(
+    "Modelo - Relacionamentos entre versões",
+    [Campo('versao_id_1', 'integer', True, 'id da primeira versão'),
+     Campo('versao_id_2', 'integer', True, 'id da segunda versão'),
+     Campo('tipo_relacionamento_id', 'integer', True,
+           'código do tipo de relacionamento (1 insumo, 2 complementar, 3 conjunto)')],
+    com_geometria=False,
+    observacao="O relacionamento não tem direção: (A, B) e (B, A) são o mesmo vínculo."
+)
+
 
 class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):
@@ -20,206 +32,121 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
         self.setup_ui()
 
     def setup_ui(self):
-        self.setWindowTitle("Criar Relacionamentos entre Versões")
+        self.setWindowTitle("Criar relacionamentos entre versões em lote")
 
-        # Configurar o combobox para selecionar a camada
-        self.layerComboBox.clear()
-        layers = QgsProject.instance().mapLayers().values()
-        valid_layers = []
-        for layer in layers:
-            if isinstance(layer, QgsVectorLayer) and layer.geometryType() == QgsWkbTypes.NullGeometry:
-                valid_layers.append(layer)
-                self.layerComboBox.addItem(layer.name(), layer)
-
-        # Se não houver camadas válidas, desabilitar o combobox e o botão de carregar
-        if not valid_layers:
+        if preencher_combo_de_camadas(self.layerComboBox, MODELO.com_geometria) == 0:
             self.layerComboBox.setEnabled(False)
             self.loadButton.setEnabled(False)
-            self.statusLabel.setText("Nenhuma camada tabular encontrada no projeto.")
-
-        # Adicionar barra de progresso
-        self.progressBar = QProgressBar(self)
-        self.progressBar.setVisible(False)
-        self.verticalLayout.addWidget(self.progressBar)
-
-        # Conectar sinais
-        self.loadButton.clicked.connect(self.create_version_relationships)
-        self.createModelLayerButton.clicked.connect(self.create_model_layer)
-
-    def create_version_relationships(self):
-        """Cria múltiplos relacionamentos entre versões"""
-        layer = self.layerComboBox.currentData()
-        if not layer:
-            QMessageBox.warning(self, "Aviso", "Selecione uma camada válida.")
-            return
-
-        is_valid, error_message = self.validate_layer_structure(layer)
-        if not is_valid:
-            QMessageBox.critical(self, "Erro de Estrutura", f"A camada não possui a estrutura correta. {error_message}")
-            return
-
-        # Preparar os dados para envio
-        relationships_data = self.prepare_data_from_layer(layer)
-        if not relationships_data:
-            QMessageBox.warning(self, "Aviso", "Nenhum relacionamento válido para criar.")
-            return
-
-        try:
-            self.progressBar.setVisible(True)
-            self.progressBar.setMaximum(len(relationships_data['versao_relacionamento']))
-            self.progressBar.setValue(0)
-            self.statusLabel.setText(f"Criando {len(relationships_data['versao_relacionamento'])} relacionamentos...")
-            self.setCursor(Qt.CursorShape.WaitCursor)
-            
-            # Enviar dados para o servidor
-            response = self.api_client.post('produtos/versao_relacionamento', relationships_data)
-            
-            if response and response.get('success'):
-                self.statusLabel.setText("Relacionamentos criados com sucesso!")
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                QMessageBox.information(self, "Sucesso", f"Todos os {len(relationships_data['versao_relacionamento'])} relacionamentos foram criados com sucesso.")
-                self.progressBar.setVisible(False)
-            else:
-                error_message = "Falha ao criar relacionamentos"
-                if response and 'message' in response:
-                    error_message = response['message']
-                
-                self.statusLabel.setText(f"Erro: {error_message}")
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-                QMessageBox.critical(self, "Erro", f"Falha ao criar relacionamentos: {error_message}")
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro: {str(e)}")
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            QMessageBox.critical(self, "Erro", f"Erro ao criar relacionamentos: {str(e)}")
-            self.progressBar.setVisible(False)
-
-    def validate_layer_structure(self, layer):
-        """Valida se a camada tem a estrutura necessária"""
-        required_fields = [
-            'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id'
-        ]
-        
-        field_names = [field.name() for field in layer.fields()]
-        
-        # Verificar campos obrigatórios
-        missing_fields = [field for field in required_fields if field not in field_names]
-        if missing_fields:
-            return False, f"Campos obrigatórios ausentes: {', '.join(missing_fields)}"
-        
-        return True, ""
-
-    def prepare_data_from_layer(self, layer):
-        """Prepara os dados da camada para o formato esperado pela API"""
-        relationships = []
-        invalid_features = []
-        # Dedupe no cliente: a constraint UNIQUE (versao_id_1, versao_id_2, tipo_relacionamento_id)
-        # faria toda a transação falhar no servidor se houvesse duplicatas no lote.
-        seen_tuples = set()
-        duplicate_count = 0
-
-        for feature in layer.getFeatures():
-            # Verificação de campos não nulos obrigatórios
-            non_null_fields = ['versao_id_1', 'versao_id_2', 'tipo_relacionamento_id']
-            null_fields = [field for field in non_null_fields if feature[field] == NULL]
-
-            if null_fields:
-                invalid_features.append((feature.id(), f"Campos não podem ser nulos: {', '.join(null_fields)}"))
-                continue
-
-            # Verificar se não está relacionando uma versão com ela mesma
-            if feature['versao_id_1'] == feature['versao_id_2']:
-                invalid_features.append((feature.id(), "Uma versão não pode ser relacionada a ela mesma"))
-                continue
-
-            key = (feature['versao_id_1'], feature['versao_id_2'], feature['tipo_relacionamento_id'])
-            if key in seen_tuples:
-                duplicate_count += 1
-                continue
-            seen_tuples.add(key)
-
-            # Criar objeto de relacionamento
-            relationship = {
-                "versao_id_1": feature['versao_id_1'],
-                "versao_id_2": feature['versao_id_2'],
-                "tipo_relacionamento_id": feature['tipo_relacionamento_id']
-            }
-
-            relationships.append(relationship)
-
-            # Atualizar barra de progresso
-            self.progressBar.setValue(len(relationships))
-
-        # Informar sobre features inválidas
-        if invalid_features:
-            error_msg = "As seguintes features têm problemas:\n"
-            for id, reason in invalid_features:
-                error_msg += f"ID {id}: {reason}\n"
-            QMessageBox.warning(self, "Problemas encontrados", error_msg)
-
-        if duplicate_count:
-            QMessageBox.information(
-                self,
-                "Duplicatas removidas",
-                f"{duplicate_count} relacionamento(s) duplicado(s) foram ignorados "
-                "(mesma tupla versao_id_1, versao_id_2, tipo_relacionamento_id)."
+            self.statusLabel.setText(
+                "Nenhuma camada tabular no projeto. Crie a camada modelo para começar."
             )
 
-        if not relationships:
-            return None
+        self.loadButton.clicked.connect(self.enviar)
+        self.createModelLayerButton.clicked.connect(self.criar_camada_modelo)
 
-        return {"versao_relacionamento": relationships}
+    def criar_camada_modelo(self):
+        if MODELO.criar(self, self.layerComboBox, self.iface):
+            self.loadButton.setEnabled(True)
+            self.statusLabel.setText("Camada modelo criada. Preencha as feições e clique em Carregar.")
 
-    def create_model_layer(self):
-        """Cria uma camada modelo com a estrutura necessária"""
-        layer_name = "Modelo de Relacionamentos entre Versões"
-        
-        # Definir a estrutura da camada (sem geometria)
-        uri = ("NoGeometry?crs=EPSG:4326"
-               "&field=versao_id_1:integer"
-               "&field=versao_id_2:integer"
-               "&field=tipo_relacionamento_id:integer")
-        
-        # Criar a camada
-        layer = QgsVectorLayer(uri, layer_name, "memory")
-        
-        if not layer.isValid():
-            QMessageBox.critical(self, "Erro", "Não foi possível criar a camada modelo.")
+    def enviar(self):
+        camada = self.layerComboBox.currentData()
+        ok, motivo = MODELO.validar_camada(camada)
+        if not ok:
+            QMessageBox.critical(self, "Camada incompatível", motivo)
             return
 
-        # Adicionar a camada ao projeto
-        QgsProject.instance().addMapLayer(layer)
-        
-        # Selecionar a camada recém-criada no combobox
-        self.layerComboBox.clear()
-        self.layerComboBox.addItem(layer_name, layer)
-        
-        # Habilitar botões
-        self.layerComboBox.setEnabled(True)
-        self.loadButton.setEnabled(True)
-        
-        # Mensagem de sucesso
-        self.iface.messageBar().pushMessage(
-            "Sucesso", 
-            "Camada modelo criada com sucesso. Agora você deve adicionar registros a esta camada.",
-            level=Qgis.MessageLevel.Success
-        )
-        
-        # Instruções detalhadas
-        QMessageBox.information(
-            self,
-            "Camada Modelo Criada",
-            "Uma nova camada modelo foi criada com a estrutura necessária.\n\n"
-            "Instruções de preenchimento:\n\n"
-            "1. O campo 'versao_id_1' deve conter o ID da primeira versão no relacionamento\n"
-            "2. O campo 'versao_id_2' deve conter o ID da segunda versão no relacionamento\n"
-            "3. O campo 'tipo_relacionamento_id' deve conter o ID do tipo de relacionamento\n\n"
-            "Tipos de relacionamento comuns:\n"
-            "1 - É substituída por\n"
-            "2 - Substitui\n"
-            "3 - É compatível com\n"
-            "4 - É derivada de\n"
-            "5 - É origem de\n\n"
-            "Note que uma versão não pode ser relacionada a ela mesma, ou seja,\n"
-            "'versao_id_1' e 'versao_id_2' devem ser diferentes."
-        )
+        vinculos = self.montar_corpo(camada)
+        if not vinculos:
+            return
+
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        self.statusLabel.setText(f"Criando {len(vinculos)} relacionamento(s)...")
+        try:
+            resposta = self.api_client.post('produtos/versao_relacionamento',
+                                            {'versao_relacionamento': vinculos})
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        if resposta and resposta.get('success'):
+            self.statusLabel.setText(f"{len(vinculos)} relacionamento(s) criados.")
+            QMessageBox.information(self, "Pronto",
+                                    f"{len(vinculos)} relacionamento(s) criados com sucesso.")
+        else:
+            self.statusLabel.setText("O servidor não criou os relacionamentos.")
+
+    def montar_corpo(self, camada):
+        presentes = {f.name() for f in camada.fields()}
+        vinculos, invalidas = [], []
+        total = 0
+
+        # Deduplicação no cliente, pela tupla EXATA -- que é o que a
+        # `unique_versao_relacionamento` cobre: (versao_id_1, versao_id_2,
+        # tipo). Uma linha repetida faria a transação INTEIRA falhar no
+        # servidor, e o lote de 300 vínculos morreria por causa de uma.
+        #
+        # O par INVERTIDO não é descartado, e isso é deliberado: para o banco
+        # (A, B) e (B, A) são linhas diferentes, e as duas entram. Descartar
+        # seria decidir por conta própria jogar fora um dado que o servidor
+        # aceitaria. Mas a leitura casa por `versao_id_1 = X OR versao_id_2 = X`,
+        # então o vínculo apareceria DUAS vezes na ficha do produto -- por isso
+        # o aviso.
+        vistos = set()
+        invertidos = []
+        repetidos = 0
+
+        for feature in camada.getFeatures():
+            total += 1
+            nulos = MODELO.campos_nulos(feature, presentes)
+            if nulos:
+                invalidas.append((feature.id(), "campo obrigatório em branco: " + ", ".join(nulos)))
+                continue
+
+            v1 = sem_null(feature['versao_id_1'])
+            v2 = sem_null(feature['versao_id_2'])
+            tipo = sem_null(feature['tipo_relacionamento_id'])
+
+            if v1 == v2:
+                invalidas.append((feature.id(), "uma versão não se relaciona com ela mesma"))
+                continue
+
+            chave = (v1, v2, tipo)
+            if chave in vistos:
+                repetidos += 1
+                continue
+            if (v2, v1, tipo) in vistos:
+                invertidos.append(f"{v1} e {v2}")
+            vistos.add(chave)
+
+            vinculos.append({'versao_id_1': v1, 'versao_id_2': v2,
+                             'tipo_relacionamento_id': tipo})
+
+        if not relatar_feicoes_invalidas(self, invalidas, total):
+            return None
+
+        if repetidos:
+            QMessageBox.information(
+                self, "Repetições ignoradas",
+                f"{repetidos} linha(s) idêntica(s) foram descartadas antes do envio.\n\n"
+                "A UNIQUE do banco recusaria a segunda, e isso derrubaria a transação "
+                "inteira: o lote todo falharia por causa de uma linha repetida."
+            )
+
+        if invertidos:
+            prosseguir = QMessageBox.question(
+                self, "Par invertido na camada",
+                "A camada traz o MESMO vínculo nos dois sentidos para: "
+                + ", ".join(invertidos[:10])
+                + (f" e mais {len(invertidos) - 10}." if len(invertidos) > 10 else ".")
+                + "\n\nO banco aceita os dois (a UNIQUE é sobre a ordem), mas a ficha do "
+                  "produto lê o vínculo pelos dois lados, então ele apareceria repetido.\n\n"
+                  "Enviar assim mesmo?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if prosseguir != QMessageBox.StandardButton.Yes:
+                return None
+
+        if not vinculos:
+            QMessageBox.warning(self, "Nada a enviar", "A camada não tem nenhuma feição válida.")
+            return None
+        return vinculos

@@ -6,6 +6,8 @@ from qgis.PyQt.QtCore import QThread
 from qgis.PyQt.QtWidgets import QApplication, QMessageBox
 from urllib.parse import urljoin
 
+from .dominios import Dominios
+
 class APIClient:
     REQUEST_TIMEOUT = 30  # segundos para requisições normais
     DOWNLOAD_TIMEOUT = 300  # 5 minutos para downloads de arquivos
@@ -21,6 +23,8 @@ class APIClient:
         self._password = None
         self.session = requests.Session()
         self._configure_proxy()
+        # Cache das listas de domínio da sessão. Ver core/dominios.py.
+        self.dominios = Dominios(self)
 
     # Niveis por modulo (dominio.tipo_perfil no servidor). O administrador e
     # GLOBAL: passa em qualquer modulo e qualquer nivel, e nao existe
@@ -187,6 +191,9 @@ class APIClient:
                 self.perfis = response["dados"].get("perfis", {})
                 self._username = username
                 self._password = password
+                # Sessão nova, domínios novos: trocar de usuário (ou de
+                # servidor) não pode herdar a lista da sessão anterior.
+                self.dominios.invalidar()
                 return True
         except Exception as e:
             self.show_error("Falha no Login", f"Não foi possível fazer login: {str(e)}")

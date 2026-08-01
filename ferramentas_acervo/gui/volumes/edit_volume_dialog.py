@@ -28,6 +28,7 @@ class EditVolumeDialog(QDialog, FORM_CLASS):
         self.nameLineEdit.setText(self.volume_data['nome'])
         self.volumeLineEdit.setText(self.volume_data['volume'])
         self.capacitySpinBox.setValue(self.volume_data['capacidade_gb'])
+        self.layoutOrigemCheckBox.setChecked(bool(self.volume_data.get('layout_origem')))
 
     def save_volume(self):
         if not self.validate_inputs():
@@ -36,7 +37,11 @@ class EditVolumeDialog(QDialog, FORM_CLASS):
         volume_data = {
             'nome': self.nameLineEdit.text(),
             'volume': self.volumeLineEdit.text(),
-            'capacidade_gb': self.capacitySpinBox.value()
+            'capacidade_gb': self.capacitySpinBox.value(),
+            # Vai SEMPRE, inclusive false. No PUT a chave ausente preserva o
+            # valor gravado (preserveOmitted no controlador), então omiti-la
+            # tornaria impossível DESMARCAR a caixa por esta tela.
+            'layout_origem': self.layoutOrigemCheckBox.isChecked(),
         }
 
         if self.volume_data:

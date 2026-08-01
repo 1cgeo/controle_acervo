@@ -2,7 +2,6 @@
 import os
 import json
 import uuid
-import hashlib
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (
     QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, 
@@ -14,23 +13,24 @@ from qgis.PyQt.QtCore import Qt, QDate, pyqtSignal, QThread, QObject, QSize, QSo
 from qgis.PyQt.QtGui import QColor
 from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis, QgsWkbTypes, QgsPointXY
 from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
-from ...core.file_transfer import FileTransferThread
-from ..ui_utils import format_failure_causes
+from ...core.upload_flow import UploadFlowMixin, calcular_checksum
+from ..campos_acervo import conferir_identidade
 from ...config import Config
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'adicionar_produto_dialog.ui'))
 
-class AddProductDialog(QDialog, FORM_CLASS):
+class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     def __init__(self, iface, api_client, parent=None):
         super(AddProductDialog, self).__init__(parent)
         self.setupUi(self)
         self.iface = iface
         self.api_client = api_client
-        
+
         # Lista para controlar as versões e arquivos
         self.versoes = []
-        self.transfer_threads = []
+        self._upload_zerar()
+        self.current_session_uuid = None
         self.current_geometry = None
         
         # Dicionários para armazenar dados de domínio
@@ -305,7 +305,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
         version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
         version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', version_type_combo.itemData(version_type_combo.currentIndex())))
-        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self._versao_trocou_subtipo(version_index, subtype_combo))
         lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
         producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
         keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
@@ -313,6 +313,11 @@ class AddProductDialog(QDialog, FORM_CLASS):
         edit_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_edicao', date))
         description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', description_edit.toPlainText()))
         metadados_edit.textChanged.connect(lambda: self._update_version_metadata(version_index, metadados_edit))
+
+    def _versao_trocou_subtipo(self, version_index, subtype_combo):
+        subtipo = subtype_combo.itemData(subtype_combo.currentIndex())
+        self.update_version_data(version_index, 'subtipo_produto_id', subtipo)
+        self._sincronizar_subtipo_do_produto(subtipo)
 
     def update_version_data(self, version_index, field, value):
         """Atualizar dados da versão."""
@@ -567,7 +572,7 @@ class AddProductDialog(QDialog, FORM_CLASS):
         version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
         version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
         version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', version_type_combo.itemData(version_type_combo.currentIndex())))
-        subtype_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'subtipo_produto_id', subtype_combo.itemData(subtype_combo.currentIndex())))
+        subtype_combo.currentIndexChanged.connect(lambda idx: self._versao_trocou_subtipo(version_index, subtype_combo))
         lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
         producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
         keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
@@ -585,6 +590,48 @@ class AddProductDialog(QDialog, FORM_CLASS):
         for item in self._subtipos_data:
             if item.get('tipo_id') == tipo_produto_id:
                 combo.addItem(item['nome'], item['code'])
+
+    def _populate_product_subtype_combo(self):
+        """Popular o subtipo do PRODUTO, que é a identidade dele.
+
+        "Nenhum" primeiro, e é o padrão certo: a maioria dos produtos é comum e
+        tem identidade só por (mi, escala, tipo). O subtipo aqui é a exceção, e
+        os que EXIGEM produto próprio saem marcados no rótulo, para quem escolhe
+        ver a regra na hora de escolher.
+        """
+        combo = self.subtipoProdutoComboBox
+        anterior = combo.currentData()
+        combo.clear()
+        combo.addItem("Nenhum (produto comum)", None)
+
+        tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
+        for item in self._subtipos_data:
+            if item.get('tipo_id') != tipo_produto_id:
+                continue
+            rotulo = item['nome']
+            if item.get('define_produto'):
+                rotulo += "  [exige produto próprio]"
+            combo.addItem(rotulo, item['code'])
+
+        indice = combo.findData(anterior)
+        combo.setCurrentIndex(indice if indice >= 0 else 0)
+
+    def _sincronizar_subtipo_do_produto(self, subtipo_versao_id):
+        """Quando a versão escolhe um subtipo que exige produto próprio, o
+        produto acompanha.
+
+        É o gatilho `acervo.validate_version` traduzido em affordance: aquele
+        subtipo só existe em produto do mesmo subtipo, então deixar a pessoa
+        escolher um e não o outro seria oferecer uma combinação que o servidor
+        vai recusar de qualquer jeito -- e recusar tarde, no confirm-upload.
+        """
+        if subtipo_versao_id is None:
+            return
+        if not self.api_client.dominios.exige_produto_proprio(subtipo_versao_id):
+            return
+        indice = self.subtipoProdutoComboBox.findData(subtipo_versao_id)
+        if indice >= 0 and self.subtipoProdutoComboBox.currentData() != subtipo_versao_id:
+            self.subtipoProdutoComboBox.setCurrentIndex(indice)
 
     def _populate_lot_combo(self, combo):
         """Popular combo de lote."""
@@ -700,73 +747,59 @@ class AddProductDialog(QDialog, FORM_CLASS):
             files_table.setItem(row, 4, QTableWidgetItem(file_info['path']))
     
     def calculate_checksum(self, file_path):
-        """Calcular o checksum SHA-256 de um arquivo."""
-        sha256_hash = hashlib.sha256()
+        """Checksum do arquivo, ou '' quando não deu para ler."""
         try:
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return sha256_hash.hexdigest()
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Não foi possível calcular o checksum: {str(e)}")
+            return calcular_checksum(file_path)
+        except OSError as e:
+            QMessageBox.warning(self, "Erro", f"Não foi possível calcular o checksum: {e}")
             return ""
     
     def load_domain_data(self):
-        """Carregar dados de domínio do servidor."""
+        """Carregar dados de domínio (do cache da sessão, ver core/dominios.py)."""
         try:
-            # Carregar escalas
-            response = self.api_client.get('gerencia/dominio/tipo_escala')
-            if response and 'dados' in response:
-                self.tipoEscalaComboBox.clear()
-                self.escalas = {item['code']: item['nome'] for item in response['dados']}
-                for item in response['dados']:
-                    self.tipoEscalaComboBox.addItem(item['nome'], item['code'])
-            
-            # Carregar tipos de produto
-            response = self.api_client.get('gerencia/dominio/tipo_produto')
-            if response and 'dados' in response:
-                self.tipoProdutoComboBox.clear()
-                self.tipos_produto = {item['code']: item['nome'] for item in response['dados']}
-                for item in response['dados']:
-                    self.tipoProdutoComboBox.addItem(item['nome'], item['code'])
-            
-            # Carregar tipos de versão
-            response = self.api_client.get('gerencia/dominio/tipo_versao')
-            if response and 'dados' in response:
-                self.tipos_versao = {item['code']: item['nome'] for item in response['dados']}
-                # Popular combo de tipo de versão em todas as abas existentes
-                for idx, widgets in self._version_widgets.items():
-                    combo = widgets['version_type_combo']
-                    combo.clear()
-                    for item in response['dados']:
-                        combo.addItem(item['nome'], item['code'])
+            dominios = self.api_client.dominios
 
-            # Carregar subtipos de produto
-            response = self.api_client.get('gerencia/dominio/subtipo_produto')
-            if response and 'dados' in response:
-                self._subtipos_data = response['dados']
-                self.subtipos_produto = {item['code']: item['nome'] for item in response['dados']}
-                # Filtrar subtipos com base no tipo de produto selecionado
-                self.filterSubtypes()
+            escalas = dominios.get('tipo_escala')
+            self.tipoEscalaComboBox.clear()
+            self.escalas = {item['code']: item['nome'] for item in escalas}
+            for item in escalas:
+                self.tipoEscalaComboBox.addItem(item['nome'], item['code'])
 
-            # Carregar lotes
-            response = self.api_client.get('projetos/lote')
-            if response and 'dados' in response:
-                self._lotes_data = response['dados']
-                # Popular combo de lote em todas as abas existentes
-                for idx, widgets in self._version_widgets.items():
-                    self._populate_lot_combo(widgets['lot_combo'])
-            
-            # Carregar tipos de arquivo
-            response = self.api_client.get('gerencia/dominio/tipo_arquivo')
-            if response and 'dados' in response:
-                self.tipos_arquivo = {item['code']: item['nome'] for item in response['dados']}
-            
+            tipos = dominios.get('tipo_produto')
+            self.tipoProdutoComboBox.clear()
+            self.tipos_produto = {item['code']: item['nome'] for item in tipos}
+            for item in tipos:
+                self.tipoProdutoComboBox.addItem(item['nome'], item['code'])
+
+            tipos_versao = dominios.get('tipo_versao')
+            self.tipos_versao = {item['code']: item['nome'] for item in tipos_versao}
+            for idx, widgets in self._version_widgets.items():
+                combo = widgets['version_type_combo']
+                combo.clear()
+                for item in tipos_versao:
+                    combo.addItem(item['nome'], item['code'])
+
+            self._subtipos_data = dominios.get('subtipo_produto')
+            self.subtipos_produto = {item['code']: item['nome'] for item in self._subtipos_data}
+            self.filterSubtypes()
+
+            self._lotes_data = dominios.get('lote')
+            for idx, widgets in self._version_widgets.items():
+                self._populate_lot_combo(widgets['lot_combo'])
+
+            self.tipos_arquivo = {item['code']: item['nome']
+                                  for item in dominios.get('tipo_arquivo')}
+
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Falha ao carregar dados: {str(e)}")
     
     def filterSubtypes(self):
         """Filtrar subtipos de produto com base no tipo de produto selecionado."""
+        # O subtipo do PRODUTO também depende do tipo, e é atualizado sempre --
+        # inclusive quando o tipo é limpo, senão a lista ficaria mostrando os
+        # subtipos do tipo anterior.
+        self._populate_product_subtype_combo()
+
         tipo_produto_id = self.get_combo_value(self.tipoProdutoComboBox)
         if not tipo_produto_id:
             return
@@ -852,6 +885,22 @@ class AddProductDialog(QDialog, FORM_CLASS):
         if not self.current_geometry:
             QMessageBox.warning(self, "Validação", "É necessário definir uma geometria para o produto.")
             return False
+
+        # A regra do gatilho acervo.validate_version, conferida AQUI.
+        #
+        # É o ponto inteiro desta validação: sem ela, uma Carta Topográfica
+        # Militar passava por todo o formulário, o servidor reservava a sessão,
+        # o operador copiava os arquivos para o volume -- e só então o
+        # confirm-upload batia no gatilho e devolvia 500 "tente novamente mais
+        # tarde". Tentar de novo nunca ia funcionar.
+        recado = conferir_identidade(
+            self.get_combo_value(self.subtipoProdutoComboBox),
+            [v.get('subtipo_produto_id') for v in self.versoes],
+            self.api_client.dominios
+        )
+        if recado:
+            QMessageBox.warning(self, "Subtipo incompatível", recado)
+            return False
         
         # Validar versões
         for i, versao in enumerate(self.versoes):
@@ -900,6 +949,10 @@ class AddProductDialog(QDialog, FORM_CLASS):
             'tipo_escala_id': self.get_combo_value(self.tipoEscalaComboBox),
             'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
             'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
+            # A IDENTIDADE do produto. Ficava de fora, e por isso todo produto
+            # criado pelo plugin nascia como comum: o servidor grava `?? null` e
+            # não reclama. Ver gui/campos_acervo.py.
+            'subtipo_produto_id': self.get_combo_value(self.subtipoProdutoComboBox),
             'descricao': self.descricaoTextEdit.toPlainText(),
             'geom': f"SRID=4674;{self.current_geometry.asWkt()}"
         }
@@ -955,204 +1008,30 @@ class AddProductDialog(QDialog, FORM_CLASS):
         self.start_upload_process(upload_data)
     
     def start_upload_process(self, upload_data):
-        """Iniciar o processo de upload em duas fases."""
-        try:
-            # Fase 1: Preparação
-            self.statusLabel.setText("Preparando upload...")
-            self.progressBar.setVisible(True)
-            self.progressBar.setValue(0)
-            
-            # Desabilitar botões durante o upload
-            self.saveButton.setEnabled(False)
-            self.cancelButton.setEnabled(False)
-            
-            # Enviar solicitação de preparação
-            response = self.api_client.post('arquivo/prepare-upload/product', upload_data)
-            
-            if response and 'dados' in response:
-                # Extrair dados de resposta
-                session_uuid = response['dados']['session_uuid']
-                produtos = response['dados']['produtos']
-                
-                # Estruturar arquivos para upload
-                arquivos_para_upload = []
-                
-                # Construir mapa uuid_arquivo -> arquivo local para match preciso
-                uuid_to_local = {}
-                for v in self.versoes:
-                    for a in v['arquivos']:
-                        if '_uuid_arquivo' in a:
-                            uuid_to_local[a['_uuid_arquivo']] = a
+        """Fase 1 do upload. A máquina inteira vive em core/upload_flow.py."""
+        self.executar_upload('arquivo/prepare-upload/product', upload_data)
 
-                for produto in produtos:
-                    for versao in produto['versoes']:
-                        for arquivo in versao['arquivos']:
-                            # Tileserver é uma URL — sem arquivo físico para transferir
-                            if arquivo.get('tipo_arquivo_id') == 9:
-                                continue
+    # --- ganchos do UploadFlowMixin -----------------------------------------
 
-                            # Encontrar o arquivo local por uuid_arquivo
-                            arquivo_local = uuid_to_local.get(arquivo.get('uuid_arquivo'))
+    def upload_origem_de(self, arquivo_info):
+        """Casa a entrada do servidor com o arquivo local pelo uuid_arquivo.
 
-                            if arquivo_local:
-                                arquivos_para_upload.append({
-                                    'nome': arquivo['nome'],
-                                    'source_path': arquivo_local['path'],
-                                    'destination_path': arquivo['destination_path'],
-                                    'checksum': arquivo['checksum']
-                                })
-                
-                # Configurar barra de progresso
-                total_arquivos = len(arquivos_para_upload)
-                self.progressBar.setMaximum(total_arquivos)
-                
-                # Fase 2: Transferência sequencial
-                self.statusLabel.setText(f"Iniciando transferência de {total_arquivos} arquivos...")
+        O uuid é gerado aqui, em save_product, e vai no corpo do prepare: a
+        resposta de `prepare-upload/product` não traz versao_id nas entradas de
+        arquivo, e casar por nome_arquivo trocaria os bytes entre duas versões
+        do mesmo produto sem erro nenhum.
+        """
+        procurado = arquivo_info.get('uuid_arquivo')
+        for versao in self.versoes:
+            for arquivo in versao['arquivos']:
+                if arquivo.get('_uuid_arquivo') == procurado:
+                    return arquivo.get('path')
+        return None
 
-                # Configurar estado para upload sequencial
-                self._upload_queue = list(arquivos_para_upload)
-                self.arquivos_transferidos = 0
-                self.arquivos_com_falha = 0
-                self.failed_transfers = []
-                self.current_session_uuid = session_uuid
+    def upload_concluido(self, mensagem):
+        QMessageBox.information(self, "Sucesso", "Produto e arquivos carregados com sucesso.")
+        self.accept()
 
-                # Iniciar o primeiro upload
-                self._upload_next_file()
-            else:
-                raise Exception("Resposta inválida do servidor")
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro: {str(e)}")
-            self.progressBar.setVisible(False)
-            self.saveButton.setEnabled(True)
-            self.cancelButton.setEnabled(True)
-            QMessageBox.critical(self, "Erro", f"Falha na preparação do upload: {str(e)}")
-    
-    def _upload_next_file(self):
-        """Inicia o upload do proximo arquivo na fila (sequencial)."""
-        if not self._upload_queue:
-            # Todos os arquivos processados
-            total = self.arquivos_transferidos
-            if self.arquivos_com_falha > 0:
-                detalhe = format_failure_causes(self.failed_transfers)
-                reply = QMessageBox.question(
-                    self, "Falha na Transferência",
-                    f"{self.arquivos_com_falha} arquivo(s) falharam na transferência.{detalhe}\n\n"
-                    "Deseja tentar novamente apenas os arquivos que falharam?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    self._retry_failed_transfers()
-                else:
-                    self._cancel_upload_session()
-                    self.statusLabel.setText(f"Erro: {self.arquivos_com_falha} arquivo(s) falharam")
-                    self.saveButton.setEnabled(True)
-                    self.cancelButton.setEnabled(True)
-            else:
-                self.confirm_upload()
-            return
-
-        arquivo = self._upload_queue[0]
-        self.statusLabel.setText(f"Transferindo: {arquivo['nome']} ({self.arquivos_transferidos + 1}/{self.progressBar.maximum()})...")
-
-        thread = FileTransferThread(
-            arquivo['source_path'],
-            arquivo['destination_path'],
-            arquivo['checksum']
-        )
-        thread.progress_update.connect(self.update_file_progress)
-        thread.file_transferred.connect(self._handle_upload_file_complete)
-        self._current_upload_thread = thread
-        thread.start()
-
-    def update_file_progress(self, current_bytes, total_bytes):
-        """Atualizar o progresso de transferência de um arquivo."""
-        if total_bytes > 0 and self._upload_queue:
-            nome = self._upload_queue[0].get('nome', '')
-            current_mb = current_bytes / (1024 * 1024)
-            total_mb = total_bytes / (1024 * 1024)
-            idx = self.arquivos_transferidos + 1
-            total_files = self.progressBar.maximum()
-            self.statusLabel.setText(
-                f"Transferindo: {nome} ({idx}/{total_files}) - {current_mb:.1f} / {total_mb:.1f} MB"
-            )
-
-    def _handle_upload_file_complete(self, success, file_path, identifier, error_msg=None):
-        """Manipular conclusão da transferência de um arquivo (sequencial)."""
-        # Remover da fila
-        if self._upload_queue:
-            arquivo_info = self._upload_queue.pop(0)
-        else:
-            return
-
-        self.arquivos_transferidos += 1
-        if not success:
-            self.arquivos_com_falha += 1
-            self.failed_transfers.append({
-                'source_path': arquivo_info['source_path'],
-                'destination_path': arquivo_info['destination_path'],
-                'identifier': identifier,
-                'error': error_msg
-            })
-        self.progressBar.setValue(self.arquivos_transferidos)
-
-        # Continuar com o proximo arquivo
-        self._upload_next_file()
-
-    def _retry_failed_transfers(self):
-        """Retenta apenas os arquivos que falharam na transferência."""
-        failed = self.failed_transfers[:]
-        self.failed_transfers = []
-        self.arquivos_transferidos = 0
-        self.arquivos_com_falha = 0
-
-        self.progressBar.setMaximum(len(failed))
-        self.progressBar.setValue(0)
-        self.statusLabel.setText(f"Retentando {len(failed)} arquivo(s)...")
-
-        # Reusar a fila sequencial
-        self._upload_queue = [
-            {
-                'nome': os.path.basename(info['source_path']),
-                'source_path': info['source_path'],
-                'destination_path': info['destination_path'],
-                'checksum': info['identifier']
-            }
-            for info in failed
-        ]
-        self._upload_next_file()
-    
-    def confirm_upload(self):
-        """Confirmar o upload após transferência dos arquivos."""
-        try:
-            self.statusLabel.setText("Confirmando upload...")
-            
-            # Enviar confirmação
-            response = self.api_client.post('arquivo/confirm-upload', {'session_uuid': self.current_session_uuid})
-            
-            if response and response.get('success'):
-                self.statusLabel.setText("Upload concluído com sucesso!")
-                QMessageBox.information(self, "Sucesso", "Produto e arquivos carregados com sucesso!")
-                self.accept()
-            else:
-                error_message = "Falha na confirmação do upload"
-                if response and 'message' in response:
-                    error_message = response['message']
-                raise Exception(error_message)
-                
-        except Exception as e:
-            self.statusLabel.setText(f"Erro na confirmação: {str(e)}")
-            self.saveButton.setEnabled(True)
-            self.cancelButton.setEnabled(True)
-            QMessageBox.critical(self, "Erro", f"Falha na confirmação do upload: {str(e)}")
-
-    def _cancel_upload_session(self):
-        """Cancela a sessão de upload no servidor (best effort)."""
-        try:
-            if getattr(self, 'current_session_uuid', None):
-                self.api_client.post('arquivo/cancel-upload', {'session_uuid': self.current_session_uuid})
-        except Exception:
-            pass
 
 class PolygonMapTool(QgsMapToolEmitPoint):
     """Ferramenta de mapa para desenhar polígonos."""
