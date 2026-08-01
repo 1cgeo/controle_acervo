@@ -175,6 +175,13 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   produtos em julho/2026 onde foram 8. Corrigido em `integracaoCtrl.getProdutosFinalizados`,
   o que conserta junto a rota pública do vault da DGEO. Depois das três, a 2.2, a 2.4 e o "no
   mês" da 2.7 passam a fechar entre si, o que antes não acontecia.
+- **Escala de item de pedido nunca sai NULA: o avulso é 'Sem escala'.** O `COALESCE` mora no
+  fragmento `ESCALA_DISPLAY_ITEM`, e não em cada consulta. O item avulso não aponta produto do
+  acervo, então `prod.tipo_escala_id` é nulo, e a tela mostrava a palavra "null" -- foi assim
+  que apareceu uma fatia chamada `null` no gráfico "Entregas por Tipo de Produto × Escala" do
+  dashboard da mapoteca, com 4 pedidos e 252 produtos. O tipo já caía num balde explícito
+  ("Impressão avulsa") e a escala tinha ficado sem o dela. Deixar a regra no chamador foi o
+  que permitiu quatro consultas acertarem e uma esquecer.
 - **O RTM (aba META4_DETALHADA) também sai de SEMENTE, e as duas rotas que o exportam
   usam o MESMO gerador.** `rpcmtec/modelos/rtm_meta4_detalhada.ods` é o arquivo real com as
   1.628 linhas de dados removidas: sobraram as colunas, o cabeçalho, os estilos, o

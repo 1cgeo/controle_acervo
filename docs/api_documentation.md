@@ -2511,7 +2511,7 @@ Rota separada, e nao um `?formato=ods` na de cima, porque o CONTEUDO difere:
 | `mi` / material fornecido vazios | vazio | `-`, como a aba escreve |
 | `data_entrega` | texto `DD/MM/AAAA` | celula de DATA (`DD/MM/AA` na tela) |
 | quantidade | texto | celula numerica |
-| `observacao` | so a observacao do item | DIEx do pedido + observacao do item |
+| `observacao` | so a observacao do item | so o DIEx do pedido (em branco quando nao ha) |
 | ordem | data do pedido | data da ENTREGA (a da aba) |
 | formatacao | nenhuma | cabecalho, borda, largura de coluna e filtro da aba |
 
@@ -2543,6 +2543,8 @@ Saem 15 subsecoes, na numeracao do documento da Divisao, para que cada tabela se
 |---|---|---|
 | 2. EXECUCAO DO PIT | 2.2 Totais do Mes e do Ano, 2.4 Entregas detalhada de produtos finais, 2.7 Estado do Acervo | `acervo.versao` por `data_edicao`; cobertura por escala x tipo |
 | 3. MAPOTECA | 3.1 Totais do Mes e do Ano, 3.2 Entregas da mapoteca, 3.4 LAI e orgaos publicos | `mapoteca.pedido` por `data_pedido`, qualquer situacao |
+
+A **3.4** nao tem as tres colunas do modelo: em 2026-08-01 saiu o "Documento de solicitacao" (o DIEx da DSG, que nao identifica a manifestacao -- dois pedidos podem vir no mesmo) e entraram o **Codigo da LAI (NUP)**, o numero do Fala.BR por onde se responde ao cidadao, e a **Descricao** do que foi pedido.
 | 4. EXECUCAO DO PDR | 4.1 Execucao por ND, 4.2 Situacao dos creditos recebidos, 4.3 Situacao RPNP, 4.4 GCALC DSG, 4.5 Demais licitacoes, 4.6 Recebimento de material, 4.7 Creditos Extra-PDR | orcamento, acumulado no ano ate o mes |
 | 7. EQUIPAMENTO E MATERIAL | 7.2 Insumos de Impressao - Papel, 7.3 Insumos de Impressao - Tintas | `mapoteca.tipo_material` por `categoria_id` |
 

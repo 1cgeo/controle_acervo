@@ -69,11 +69,21 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
            ELSE te.nome
       END`;
 
-// Idem, para consultas que partem do ITEM do pedido. Hoje e identico ao de
-// cima, porque o item avulso nao tem escala: ele e impresso de ocasiao, e o que
-// houver de dimensao vai na descricao. Fica separado de proposito, para que uma
-// consulta de item nao passe a depender de um fragmento pensado para o acervo.
-const ESCALA_DISPLAY_ITEM = ESCALA_DISPLAY;
+// Idem, para consultas que partem do ITEM do pedido, com uma diferenca: o item
+// AVULSO nao tem escala, e aqui isso vira 'Sem escala' em vez de NULO.
+//
+// O avulso e impresso de ocasiao (papel quadriculado, impresso de uma vez so), e
+// o que houver de dimensao vai na descricao dele. Como ele nao aponta produto do
+// acervo, `prod.tipo_escala_id` e nulo e o CASE acima devolvia NULO -- que a tela
+// mostrava como a palavra "null". Foi assim que apareceu, em 2026-08-01, uma
+// fatia chamada `null` no grafico "Entregas por Tipo de Produto x Escala" do
+// dashboard da mapoteca, com 4 pedidos e 252 produtos: o tipo ja caia num balde
+// explicito ('Impressao avulsa') e a escala tinha ficado sem o dela.
+//
+// O COALESCE mora AQUI, e nao em cada consulta, porque a pergunta e sempre a
+// mesma: como se ESCREVE a escala deste item. Deixar para o chamador foi o que
+// permitiu quatro consultas acertarem e uma esquecer.
+const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 
 // Situações que contam como pedido EM ABERTO: a fila de trabalho da tela de
 // atendimento. Ficam de fora Concluído (5), Cancelado (6), Aguardando

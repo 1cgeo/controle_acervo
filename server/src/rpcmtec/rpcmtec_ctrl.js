@@ -383,17 +383,25 @@ const montarEntregasMapoteca = ({ pedidosMes }) =>
 // 3.4: cliente civil, órgão público e LAI. SEM coluna de quantidade, como o
 // modelo: o que se acompanha aqui é o atendimento, não o volume impresso.
 //
-// A coluna do CÓDIGO DA LAI é um acréscimo ao modelo (chefe, 2026-08-01): é o
-// NUP do Fala.BR (`60143.003284/2026-31`), que identifica a manifestação no
-// sistema da Ouvidoria e é por onde se responde ao cidadão. Ele vive em
-// `documento_solicitacao_nup`, separado do DIEx da DSG que encaminhou o pedido,
-// e sai '-' em quem chegou por outro canal (e-mail, ofício): em produção, 27 dos
-// 33 pedidos civis têm NUP.
+// AS COLUNAS SÃO AS DO CHEFE (2026-08-01), e não as três do modelo. Saiu o
+// "Documento de solicitação" e entraram o código da LAI e a descrição:
+//
+//   Código da LAI  o NUP do Fala.BR ('60143.003284/2026-31'), que identifica a
+//                  manifestação na Ouvidoria e é por onde se responde ao
+//                  cidadão. Vive em `documento_solicitacao_nup`, separado do
+//                  DIEx da DSG que encaminhou o pedido. Em produção, 27 dos 33
+//                  pedidos civis o têm; quem chegou por outro canal (e-mail,
+//                  ofício) sai '-'.
+//   Descrição      o que a pessoa pediu, de `pedido.observacao`.
+//
+// O DIEx saiu porque ele é o encaminhamento interno da DSG, e não identifica a
+// manifestação: dois pedidos diferentes podem vir no mesmo DIEx, e é o NUP que
+// os separa.
 const montarLai = ({ pedidosMes }) =>
   pedidosMes.filter(p => !ehMilitar(p)).map(p => [
     texto(p.solicitante),
-    texto(documentoExibicao(p)),
     texto(p.documento_solicitacao_nup),
+    texto(p.observacao),
     texto(p.situacao)
   ])
 
@@ -726,8 +734,8 @@ controller.gerar = async ({ ano, mes }) => {
         {
           numero: '3.4',
           titulo: 'LAI e atendimento à órgãos públicos',
-          cabecalhos: ['Solicitante', 'Documento de solicitação',
-            'Código da LAI (NUP)', 'Situação'],
+          cabecalhos: ['Solicitante', 'Código da LAI (NUP)', 'Descrição',
+            'Situação'],
           linhas: montarLai({ pedidosMes })
         }
       ]

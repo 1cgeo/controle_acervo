@@ -89,10 +89,11 @@ const GRADES = {
   '3.1': [5010, 2580, 2175],
   '3.2': [2040, 3345, 2010, 2415],
   // SEM a 3.3 (Extra-PIT): o SCA nao a gera. Ver rpcmtec_ctrl.js.
-  // A 3.4 tem QUATRO colunas aqui, e tres no modelo: o codigo da LAI (o NUP do
-  // Fala.BR) foi acrescentado em 2026-08-01. A largura total continua a do
-  // modelo, 9825, para a tabela nascer do mesmo tamanho das vizinhas.
-  '3.4': [2040, 3000, 2200, 2585],
+  // A 3.4 tem QUATRO colunas aqui, e tres no modelo: em 2026-08-01 saiu o
+  // "Documento de solicitacao" e entraram o codigo da LAI (o NUP do Fala.BR) e a
+  // descricao. A Descricao e a mais larga porque e prosa; a largura total
+  // continua a do modelo, 9825, para a tabela nascer do tamanho das vizinhas.
+  '3.4': [2040, 2400, 3200, 2185],
   '4.1': [1388, 2151, 1388, 1638, 1638, 1637],
   '4.2': [855, 855, 840, 2865, 1125, 1170, 1140, 945],
   '4.3': [2040, 2670, 2100, 3000],

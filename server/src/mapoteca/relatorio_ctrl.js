@@ -533,9 +533,14 @@ controller.paraAbaMeta4 = (linhas) =>
       return 0;
     })
     .map((l) => {
-      const observacoes = [l.documento_solicitacao, l.observacao]
-        .map((t) => (t == null ? "" : String(t).trim()))
-        .filter(Boolean);
+      // A coluna "Observações" da aba leva o DIEx do pedido, e só ele: em
+      // branco quando não há (chefe, 2026-08-01). Ela juntava o DIEx com a
+      // observação do ITEM, e a observação do item é anotação interna de quem
+      // imprimiu -- não é o que a aba do RTM documenta. Quem precisa dela tem o
+      // CSV, que traz a observação do item na coluna própria.
+      const diex = l.documento_solicitacao == null
+        ? ""
+        : String(l.documento_solicitacao).trim();
 
       return {
         omds: l.omds || null,
@@ -552,7 +557,7 @@ controller.paraAbaMeta4 = (linhas) =>
         material_fornecido: materialDaAba(l.material_fornecido) || "-",
         data_entrega: l.data_entrega || null,
         forma_entrega: l.forma_entrega || null,
-        observacao: observacoes.join(" - ") || null
+        observacao: diex || null
       };
     });
 
