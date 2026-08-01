@@ -1,7 +1,8 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, preserveOmitted, domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
+const { arquivarArquivos, idsDosArquivosDasVersoes } = require("../arquivo/arquivo_deletado");
+const { AppError, httpCode, preserveOmitted, domainConstants: { TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
@@ -292,72 +293,29 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
       );
     }
 
-    for (let id of produtoIds) {
-      const produto = await t.one('SELECT * FROM acervo.produto WHERE id = $1', [id]);
+    const versoes = await t.any(
+      'SELECT id FROM acervo.versao WHERE produto_id IN ($<produtoIds:csv>)',
+      { produtoIds }
+    );
+    const versaoIds = versoes.map(v => Number(v.id));
 
-      const versoes = await t.any('SELECT * FROM acervo.versao WHERE produto_id = $1', [id]);
-      for (let versao of versoes) {
-        const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-        for (let arquivo of arquivos) {
-          const { id: arquivoDeletadoId } = await t.one(
-            `INSERT INTO acervo.arquivo_deletado (
-              uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-              volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-              tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-              data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
-              usuario_modificacao_uuid, data_delete, usuario_delete_uuid
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                      $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-              RETURNING id`,
-            [
-              arquivo.uuid_arquivo,
-              arquivo.nome,
-              arquivo.nome_arquivo,
-              motivo_exclusao,
-              arquivo.versao_id,
-              arquivo.tipo_arquivo_id,
-              arquivo.volume_armazenamento_id,
-              arquivo.extensao,
-              arquivo.tamanho_mb,
-              arquivo.checksum,
-              arquivo.metadado,
-              STATUS_ARQUIVO.EXCLUIDO,
-              arquivo.situacao_carregamento_id,
-              arquivo.descricao,
-              arquivo.crs_original,
-              arquivo.data_cadastramento,
-              arquivo.usuario_cadastramento_uuid,
-              arquivo.data_modificacao,
-              arquivo.usuario_modificacao_uuid,
-              data_delete,
-              usuario_delete_uuid
-            ]
-          );
+    const arquivoIds = await idsDosArquivosDasVersoes(t, versaoIds);
+    await arquivarArquivos(t, arquivoIds, {
+      motivo: motivo_exclusao,
+      dataDelete: data_delete,
+      usuarioDeleteUuid: usuario_delete_uuid
+    });
 
-          await t.none(
-            `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
-             SELECT $1, d.usuario_uuid, d.data_download
-             FROM acervo.download d
-             WHERE d.arquivo_id = $2`,
-            [arquivoDeletadoId, arquivo.id]
-          );
-
-          await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
-        }
-
-        await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-
-        await t.none(`
-          DELETE FROM acervo.versao_relacionamento 
-          WHERE versao_id_1 = $1 OR versao_id_2 = $1`,
-          [versao.id]
-        );
-      }
-
-      await t.none('DELETE FROM acervo.versao WHERE produto_id = $1', [id]);
-
-      await t.none('DELETE FROM acervo.produto WHERE id = $1', [id]);
+    if (versaoIds.length > 0) {
+      await t.none(
+        `DELETE FROM acervo.versao_relacionamento
+         WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)`,
+        { versaoIds }
+      );
+      await t.none('DELETE FROM acervo.versao WHERE id IN ($<versaoIds:csv>)', { versaoIds });
     }
+
+    await t.none('DELETE FROM acervo.produto WHERE id IN ($<produtoIds:csv>)', { produtoIds });
 
   });
 };
@@ -441,64 +399,21 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
         );
       }
 
-      const arquivos = await t.any('SELECT * FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-      for (let arquivo of arquivos) {
-        const { id: arquivoDeletadoId } = await t.one(
-          `INSERT INTO acervo.arquivo_deletado (
-            uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-            data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
-            usuario_modificacao_uuid, data_delete, usuario_delete_uuid
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-          RETURNING id`,
-          [
-            arquivo.uuid_arquivo,
-            arquivo.nome,
-            arquivo.nome_arquivo,
-            motivo_exclusao,
-            arquivo.versao_id,
-            arquivo.tipo_arquivo_id,
-            arquivo.volume_armazenamento_id,
-            arquivo.extensao,
-            arquivo.tamanho_mb,
-            arquivo.checksum,
-            arquivo.metadado,
-            STATUS_ARQUIVO.EXCLUIDO,
-            arquivo.situacao_carregamento_id,
-            arquivo.descricao,
-            arquivo.crs_original,
-            arquivo.data_cadastramento,
-            arquivo.usuario_cadastramento_uuid,
-            arquivo.data_modificacao,
-            arquivo.usuario_modificacao_uuid,
-            data_delete,
-            usuario_delete_uuid
-          ]
-        );
-
-        await t.none(
-          `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
-           SELECT $1, d.usuario_uuid, d.data_download
-           FROM acervo.download d
-           WHERE d.arquivo_id = $2`,
-          [arquivoDeletadoId, arquivo.id]
-        );
-
-        await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
-      }
-
-      await t.none('DELETE FROM acervo.arquivo WHERE versao_id = $1', [versao.id]);
-
-      await t.none(`
-        DELETE FROM acervo.versao_relacionamento 
-        WHERE versao_id_1 = $1 OR versao_id_2 = $1`,
-        [versao.id]
-      );
-
-      await t.none('DELETE FROM acervo.versao WHERE id = $1', [versao.id]);
     }
+
+    const arquivoIds = await idsDosArquivosDasVersoes(t, versaoIds);
+    await arquivarArquivos(t, arquivoIds, {
+      motivo: motivo_exclusao,
+      dataDelete: data_delete,
+      usuarioDeleteUuid: usuario_delete_uuid
+    });
+
+    await t.none(
+      `DELETE FROM acervo.versao_relacionamento
+       WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)`,
+      { versaoIds }
+    );
+    await t.none('DELETE FROM acervo.versao WHERE id IN ($<versaoIds:csv>)', { versaoIds });
 
   });
 };

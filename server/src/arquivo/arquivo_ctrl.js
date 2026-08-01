@@ -2,6 +2,7 @@
 const fs = require('fs').promises;
 const fsClassic = require('fs');
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
+const { arquivarArquivos } = require('./arquivo_deletado');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -381,64 +382,11 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         throw new AppError(`Os seguintes arquivos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
 
-      for (let id of arquivoIds) {
-        const arquivo = await t.one('SELECT * FROM acervo.arquivo WHERE id = $1', [id]);
-
-        const { id: arquivoDeletadoId } = await t.one(
-          `INSERT INTO acervo.arquivo_deletado (
-            uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
-            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 
-            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-            data_cadastramento, usuario_cadastramento_uuid, data_modificacao, 
-            usuario_modificacao_uuid, data_delete, usuario_delete_uuid
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-          RETURNING id`,
-          [
-            arquivo.uuid_arquivo, 
-            arquivo.nome, 
-            arquivo.nome_arquivo, 
-            motivo_exclusao, 
-            arquivo.versao_id, 
-            arquivo.tipo_arquivo_id, 
-            arquivo.volume_armazenamento_id, 
-            arquivo.extensao, 
-            arquivo.tamanho_mb, 
-            arquivo.checksum, 
-            arquivo.metadado, 
-            STATUS_ARQUIVO.EXCLUIDO,
-            arquivo.situacao_carregamento_id, 
-            arquivo.descricao, 
-            arquivo.crs_original,
-            arquivo.data_cadastramento, 
-            arquivo.usuario_cadastramento_uuid, 
-            arquivo.data_modificacao, 
-            arquivo.usuario_modificacao_uuid, 
-            data_delete, 
-            usuario_delete_uuid
-          ]
-        );
-
-        try {
-          await t.none(
-            `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
-             SELECT $1, d.usuario_uuid, d.data_download
-             FROM acervo.download d
-             WHERE d.arquivo_id = $2`,
-            [arquivoDeletadoId, arquivo.id]
-          );
-
-          await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
-        } catch (downloadError) {
-          throw new AppError(
-            `Erro ao processar downloads do arquivo ${arquivo.nome}: ${downloadError.message}`, 
-            httpCode.InternalError, 
-            downloadError
-          );
-        }
-
-        await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [arquivo.id]);
-      }
+      await arquivarArquivos(t, arquivoIds, {
+        motivo: motivo_exclusao,
+        dataDelete: data_delete,
+        usuarioDeleteUuid: usuario_delete_uuid
+      });
 
     } catch (error) {
       // Se não for um AppError, cria um

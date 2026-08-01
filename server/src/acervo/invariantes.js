@@ -180,12 +180,12 @@ const INVARIANTES = [
     codigo: '3c',
     severidade: 'DEFECT',
     titulo: 'data_edicao < data_criacao',
-    // Hoje o banco JÁ impede: acervo.versao tem CHECK (data_edicao >=
-    // data_criacao), er/acervo.sql:116. Este invariante nunca dispara, e fica
-    // de propósito: ele é a rede que sobra se a constraint cair numa migração
-    // futura, e custa uma consulta trivial. Descoberto em 2026-07-25, ao
-    // trazer os invariantes do vault para cá: no script antigo ninguém sabia
-    // que ele era redundante, porque nunca houve um teste que tentasse violá-lo.
+    // Hoje o banco JÁ impede: acervo.versao nasce com CHECK (data_edicao >=
+    // data_criacao) no er/acervo.sql. Este invariante nunca dispara, e fica de
+    // propósito: ele é a rede que sobra se a constraint cair numa migração
+    // futura, e custa uma consulta trivial. Descoberto em 2026-07-25, ao trazer
+    // os invariantes do vault para cá: no script antigo ninguém sabia que ele
+    // era redundante, porque nunca houve um teste que tentasse violá-lo.
     sql: 'select id,versao,data_criacao,data_edicao from acervo.versao where data_edicao<data_criacao'
   },
   {
