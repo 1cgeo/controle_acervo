@@ -299,12 +299,22 @@ CREATE TABLE mapoteca.tipo_material (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
     descricao TEXT,
+    -- Papel, tinta ou outro. E o que separa as tabelas 7.2 e 7.3 do RPCMTec, e
+    -- por isso e COLUNA e nao regra sobre o nome: "comeca com Cartucho" acerta
+    -- o catalogo de hoje e erra calado no primeiro "Tinta preta 300ml". Default
+    -- 3 (Outro) para que material novo entre sem categoria errada -- quem nao
+    -- escolheu nao aparece em nenhuma das duas tabelas, que e melhor do que
+    -- aparecer na errada.
+    categoria_id SMALLINT NOT NULL DEFAULT 3 REFERENCES dominio.categoria_material (code),
     -- INTEIROS: sao quantidades do MESMO material contado em unidade, entao
     -- seguem a regra do estoque e do consumo (chefe, 2026-07-30).
     estoque_minimo INTEGER,
     meta_anual INTEGER,
     ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+COMMENT ON COLUMN mapoteca.tipo_material.categoria_id IS
+    'Papel (7.2 do RPCMTec), Tinta (7.3) ou Outro (fora das duas). Dado, e nao regra sobre o nome.';
 
 COMMENT ON COLUMN mapoteca.tipo_material.estoque_minimo IS
     'Limiar para alertar estoque baixo na UI (badge). NULL = sem alerta.';
@@ -314,38 +324,41 @@ COMMENT ON COLUMN mapoteca.tipo_material.meta_anual IS
 -- Seed do controle de material de impressão (referência: planilha "Controle de
 -- Material de Impressão" da Seção; dados de implantação no CLAUDE.md raiz)
 
--- Cartuchos Plotter T730
-INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
-('Cartucho CY - T730',         'Cartucho Ciano para plotter HP T730 (P2V62A)'),
-('Cartucho MG - T730',         'Cartucho Magenta para plotter HP T730 (P2V63A)'),
-('Cartucho Y - T730',          'Cartucho Yellow para plotter HP T730 (P2V64A)'),
-('Cartucho MK - T730',         'Cartucho Matte Black 130ml para plotter HP T730 (P2V65A)'),
-('Cartucho MK - T730 300ml',   'Cartucho Matte Black 300ml para plotter HP T730'),
-('Cartucho GR - T730',         'Cartucho Gray para plotter HP T730 (P2V66A)'),
-('Cartucho GR - T730 300ml',   'Cartucho Gray 300ml para plotter HP T730'),
-('Cartucho PK - T730',         'Cartucho Photo Black para plotter HP T730 (P2V67A)');
+-- Cartuchos Plotter T730 (categoria 2 = Tinta, tabela 7.3 do RPCMTec)
+INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
+('Cartucho CY - T730',         'Cartucho Ciano para plotter HP T730 (P2V62A)', 2),
+('Cartucho MG - T730',         'Cartucho Magenta para plotter HP T730 (P2V63A)', 2),
+('Cartucho Y - T730',          'Cartucho Yellow para plotter HP T730 (P2V64A)', 2),
+('Cartucho MK - T730',         'Cartucho Matte Black 130ml para plotter HP T730 (P2V65A)', 2),
+('Cartucho MK - T730 300ml',   'Cartucho Matte Black 300ml para plotter HP T730', 2),
+('Cartucho GR - T730',         'Cartucho Gray para plotter HP T730 (P2V66A)', 2),
+('Cartucho GR - T730 300ml',   'Cartucho Gray 300ml para plotter HP T730', 2),
+('Cartucho PK - T730',         'Cartucho Photo Black para plotter HP T730 (P2V67A)', 2);
 
--- Cartuchos HP M470
-INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
-('Cartucho Black - HP M470',   'Cartucho Black para impressora HP M470 (W2020XC)'),
-('Cartucho Ciano - HP M470',   'Cartucho Ciano para impressora HP M470 (W2021XC)'),
-('Cartucho Magenta - HP M470', 'Cartucho Magenta para impressora HP M470 (W2023XC)'),
-('Cartucho Yellow - HP M470',  'Cartucho Yellow para impressora HP M470 (W2022XC)');
+-- Cartuchos HP M470 (categoria 2 = Tinta)
+INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
+('Cartucho Black - HP M470',   'Cartucho Black para impressora HP M470 (W2020XC)', 2),
+('Cartucho Ciano - HP M470',   'Cartucho Ciano para impressora HP M470 (W2021XC)', 2),
+('Cartucho Magenta - HP M470', 'Cartucho Magenta para impressora HP M470 (W2023XC)', 2),
+('Cartucho Yellow - HP M470',  'Cartucho Yellow para impressora HP M470 (W2022XC)', 2);
 
--- Cabeçotes
-INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
-('Cabeçote Universal',   'Cabeçote Universal novo (P2V27A, ficha C2982)'),
-('Cabeçote MK/Y usado',  'Cabeçote MK/Y reutilizado'),
-('Cabeçote CY/MG usado', 'Cabeçote CY/MG reutilizado'),
-('Cabeçote G/PK usado',  'Cabeçote G/PK reutilizado');
+-- Cabeçotes (categoria 3 = Outro): são peça de reposição do plotter, não insumo
+-- de impressão. Não saem nem na 7.2 nem na 7.3.
+INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
+('Cabeçote Universal',   'Cabeçote Universal novo (P2V27A, ficha C2982)', 3),
+('Cabeçote MK/Y usado',  'Cabeçote MK/Y reutilizado', 3),
+('Cabeçote CY/MG usado', 'Cabeçote CY/MG reutilizado', 3),
+('Cabeçote G/PK usado',  'Cabeçote G/PK reutilizado', 3);
 
--- Papéis
-INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
-('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter'),
-('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter'),
-('Papel Glossy',        'Papel glossy para plotter'),
-('Banner (tecido)',     'Banner em tecido'),
-('Tyvek',               'Papel sintético Tyvek para plotter');
+-- Papéis (categoria 1 = Papel, tabela 7.2 do RPCMTec). O banner de tecido entra
+-- aqui: o RPCMTec o lista como "Papel Tecido" na mesma tabela, porque o que ela
+-- controla é a MÍDIA em que se imprime, e não a fibra.
+INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
+('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter', 1),
+('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter', 1),
+('Papel Glossy',        'Papel glossy para plotter', 1),
+('Banner (tecido)',     'Banner em tecido', 1),
+('Tyvek',               'Papel sintético Tyvek para plotter', 1);
 
 CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,

@@ -24,7 +24,6 @@ const cleanTestData = async () => {
     // Orcamento tables (modulo absorvido do SCO). A configuracao e singleton
     // (linha id=1 criada pelo er/orcamento.sql), entao NAO entra no truncate.
     await t.none('TRUNCATE orcamento.arquivo CASCADE')
-    await t.none('TRUNCATE orcamento.relatorio_rpcmtec CASCADE')
     await t.none('TRUNCATE orcamento.rpnp CASCADE')
     await t.none('TRUNCATE orcamento.recebimento_material CASCADE')
     await t.none('TRUNCATE orcamento.liquidacao CASCADE')
@@ -36,6 +35,11 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE orcamento.dfd_item CASCADE')
     await t.none('TRUNCATE orcamento.dfd CASCADE')
     await t.none('TRUNCATE pit.meta CASCADE')
+
+    // A edicao mensal do RPCMTec. Era `orcamento.relatorio_rpcmtec` ate
+    // 2026-08-01; saiu para schema proprio quando o relatorio deixou de ser do
+    // modulo orcamento (ver migrations/2026-08-01_rpcmtec_schema_proprio.sql).
+    await t.none('TRUNCATE rpcmtec.edicao CASCADE')
 
     // Mapoteca tables.
     // A auditoria entra PRIMEIRO e por TRUNCATE proprio: ela nao tem FK para o

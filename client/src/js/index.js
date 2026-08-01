@@ -10,6 +10,7 @@ import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 import { renderUsuariosList } from '@pages/usuarios/list.js';
 import { renderMetasList } from '@pages/metas/list.js';
+import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
 
 // Inicializa o tema (claro/escuro via data-theme, persistido em sca-theme-mode)
@@ -68,6 +69,16 @@ router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 // mapoteca nao conseguia nem ver a lista. Sem `adminLoader`: LER e de qualquer
 // pessoa logada, e o backend cobra o administrador so na escrita.
 router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
+
+// RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de
+// PLATAFORMA porque a mesma edicao fala de acervo, mapoteca e orcamento, e o
+// chefe assina uma so; ela substituiu, em 2026-08-01, as duas telas que
+// geravam metade do relatorio cada (#/mapoteca/rpcmtec e #/orcamento/relatorio).
+//
+// `adminLoader`, e nao `authLoader`: o relatorio traz valor de credito, de
+// empenho e de liquidacao, e liberar por perfil de um modulo entregaria o
+// orcamento a quem so cataloga carta. O backend cobra o mesmo com verifyAdmin.
+router.add('/rpcmtec', withLayout(renderRpcmtec), { guard: adminLoader });
 
 // Consulta PUBLICA de pedido da mapoteca pelo localizador (RN04). Sem sessao e
 // sem guarda: quem pediu acompanha o pedido pelo codigo XXXX-XXXX-XXXX, sem

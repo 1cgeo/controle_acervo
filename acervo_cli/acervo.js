@@ -49,8 +49,8 @@ DIA A DIA
                                    os arquivos, com o caminho no volume
   acervo finalizados --ano 2026 --mes 7
                                    o que foi finalizado no periodo (rota publica)
-  acervo rpcmtec --ano 2026 --mes 7 [--docx]
-                                   a secao de acervo do RPCMTec
+  acervo rpcmtec --ano 2026 --mes 7 [--docx] [--anuario]
+                                   o RPCMTec inteiro (e o Anuario Estatistico)
 
 ESCRITA GUARDADA (acervo de PRODUCAO)
   acervo editar versao  --id 7244 --set data_edicao=2019-05-01 --dry-run

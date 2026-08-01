@@ -36,7 +36,7 @@ const OBJETOS = [
   'getCliente', 'getPedido', 'getPedidoPorLocalizador', 'getPlotter', 'getManutencao',
   'getTipoMaterial', 'getEstoqueMaterialItem', 'getConsumoMaterialItem',
   'getImpressaoItem', 'getOrderStatus', 'getAvgFulfillmentTime',
-  'getMaterialConsumption', 'getPlotterStatus', 'getResumoAnual', 'getRpcmtecAcervo',
+  'getMaterialConsumption', 'getPlotterStatus', 'getResumoAnual',
   'getAnuario',
 ];
 
@@ -52,7 +52,7 @@ const ACOES = [
   'createEstoqueMaterial', 'updateEstoqueMaterial', 'deleteEstoqueMaterial',
   'transferirEstoque',
   'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
-  'downloadRpcmtecDocx', 'downloadDashboardCsv',
+  'downloadDashboardCsv',
   'downloadMeta4Ods', 'downloadAnuarioOds',
   'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',

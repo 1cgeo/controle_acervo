@@ -104,8 +104,8 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/volumes` | acervo | Volumes de armazenamento |
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
-| `/api/relatorio` | acervo | RPCMTec, seção do acervo |
 | `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
+| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
@@ -118,7 +118,7 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/orcamento/recebimentos` | orcamento | Recebimento de material por NE |
 | `/api/orcamento/licitacoes` | orcamento | Licitações (GCALC DSG, própria, participante) |
 | `/api/orcamento/rpnp` | orcamento | Restos a pagar não processados |
-| `/api/orcamento/relatorio` | orcamento | RPCMTec seção 3 (execução do PDR), tabelas 3.1 a 3.7 |
+| `/api/orcamento/dashboard` | orcamento | Execução por ND para as abas do painel (números por PDR/Extra-PDR, com linha de total) |
 | `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
 | `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet) |
 
@@ -208,7 +208,7 @@ server/src/
 ├── usuario/              # Usuários e perfis (plataforma)
 ├── gerencia/             # Domínios e operações de manutenção
 ├── dashboard/            # Dashboard do acervo
-├── relatorio/            # RPCMTec, seção do acervo
+├── rpcmtec/              # RPCMTec inteiro e Anuário Estatístico (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
 ├── integracao/           # Rotas públicas para o vault da DGEO
 ├── orcamento/            # Módulo orçamento (13 features + utils próprio)
@@ -259,8 +259,9 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 |---|---|
 | `acervo` | projeto, lote, produto, versao, arquivo, download, sessões de upload |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
-| `orcamento` | 13 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, relatorio_rpcmtec, arquivo |
+| `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
 | `pit` | `meta`: as metas do PIT do ano. Dado de referência, fora dos módulos (saiu de `orcamento` em 2026-07-31) |
+| `rpcmtec` | `edicao`: o metadado da edição mensal do relatório (quem assina, quando). Fora dos módulos (saiu de `orcamento` em 2026-08-01). As tabelas do relatório são consultas, nunca gravadas |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
 | `dgeo` | `usuario` e `usuario_perfil` |
 | `public` | Versão do banco e estilos de camada do QGIS |
@@ -272,17 +273,20 @@ Arquivos em `er/`, nesta ordem:
 1. `versao.sql`: versão do banco
 2. `dominio.sql`: domínios dos três módulos
 3. `dgeo.sql`: usuários e perfis
-4. `acervo.sql`: schema principal
-5. `acompanhamento.sql`: visões materializadas
-6. `pit.sql`: metas do PIT (antes de mapoteca e orçamento, que a referenciam)
-7. `mapoteca.sql`: mapoteca
-8. `orcamento.sql`: orçamento
-9. `permissao.sql`: permissões
-10. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
+4. `limites.sql`: limite político-administrativo (referência). Antes de `acervo`, que não o referencia mas o consulta; declara o PostGIS, porque é o primeiro arquivo com geometria
+5. `pit.sql`: metas do PIT (antes de mapoteca e orçamento, que a referenciam)
+6. `acervo.sql`: schema principal
+7. `ponto_controle.sql`: pontos de controle (referencia `acervo.lote` e o volume)
+8. `acompanhamento.sql`: visões materializadas
+9. `mapoteca.sql`: mapoteca
+10. `orcamento.sql`: orçamento
+11. `rpcmtec.sql`: a edição mensal do RPCMTec (só depende de `dgeo`)
+12. `permissao.sql`: permissões
+13. `permissao_readonly.sql`: opcional, para o papel somente leitura do QGIS
 
-`create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois.
+`create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.10.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
+A versão do schema é **1.11.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`. O servidor recusa subir com banco abaixo do mínimo, e aceita banco à frente.
 
 ### Atualização de banco existente
 

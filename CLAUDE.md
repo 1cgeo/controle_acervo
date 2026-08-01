@@ -138,6 +138,64 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
   As janelas deslizantes ("últimos 6 meses", "últimos 12 meses") saíram junto, porque não têm como
   respeitar um ano escolhido: em 2025 elas continuariam terminando hoje. Viraram os doze meses do
   ano, que é a granularidade que o resto do dashboard já usava.
+- **O RPCMTec é UM gerador só, fora dos três módulos.** Ele é o relatório mensal da
+  DIVISÃO: a mesma edição fala de acervo, mapoteca e orçamento, e o chefe assina uma só.
+  Até 2026-08-01 era gerado em DOIS lugares que não se conheciam (`server/src/relatorio/`,
+  com acervo e mapoteca, e `server/src/orcamento/relatorio/`, com o PDR), cada um com a
+  própria numeração de seção, o próprio DOCX e a própria tela; quem montava a edição
+  colava um arquivo no outro, no Word, todo mês. Hoje é `server/src/rpcmtec/` sob
+  `/api/rpcmtec`, com tela de plataforma em `#/rpcmtec`, e a tabela da edição mensal mora
+  em `rpcmtec.edicao` (era `orcamento.relatorio_rpcmtec`). Mesmo critério que tirou
+  `pit.meta` do orçamento em 2026-07-31. A guarda é **`verifyAdmin`**, e não `verifyPerfil`:
+  o relatório traz valor de crédito, de empenho e de liquidação, e não existe "perfil de
+  RPCMTec" porque não existe módulo RPCMTec. O que NÃO foi junto é a execução por ND que
+  alimenta as três abas do painel do orçamento: ela virou `/api/orcamento/dashboard/execucao_nd`,
+  com `verifyPerfil('consulta','orcamento')`, porque o painel pede NÚMEROS quebrados em
+  PDR e Extra-PDR com linha de total, e o relatório pede a visão do PDR já formatada. Servir
+  os dois da mesma rota obrigaria a guarda mais fraca a valer para as duas.
+- **O DOCX do RPCMTec copia a FORMATAÇÃO do documento da Divisão, medida no OOXML.** As
+  constantes de `rpcmtec/rpcmtec_docx.js` (Calibri, 12pt no título e no cabeçalho da tabela
+  e 10pt no corpo, preenchimento `DDD9C4`, borda de 1pt, recuo `-141`, página Letter com
+  margem superior de 990) são valores LIDOS de "RPCM Técnico Julho_2026.docx", não escolhas
+  nossas: cada tabela tem de ser colável na subseção de mesmo número sem ninguém
+  reformatar. Cada subseção tem GRADE DE COLUNA própria, copiada do modelo, porque elas não
+  são proporcionais entre si. Só saem as 16 subseções que o SCA preenche INTEIRAS (2.2, 2.4,
+  2.7, 3.1 a 3.4, 4.1 a 4.7, 7.2 e 7.3); o que fica de fora está listado com o motivo no
+  cabeçalho de `rpcmtec_ctrl.js` e aparece na tela, para ninguém procurar o que não existe.
+- **O Anuário Estatístico sai da planilha-SEMENTE da DSG, e não é redesenhado.**
+  `rpcmtec/modelos/anuario_estatistico_5_4_9.ods` é o arquivo real de junho de 2026,
+  versionado. Gerar é abrir esse ZIP, trocar só o valor das células da matriz dentro do
+  `content.xml` e reescrever o resto byte a byte (16 das 17 entradas saem idênticas). Antes
+  ele era montado do zero e tinha os números certos sem ser o arquivo da DSG, cujo destino é
+  uma aba conferida linha a linha. TODA célula de valor é reescrita, inclusive as que dão
+  zero: deixar de escrever uma deixaria ali o número de junho de 2026 num relatório de outro
+  mês, que é o modo de falhar mais perigoso desse arquivo. O casamento é por RÓTULO com
+  contagem conferida (falha alto), e as fórmulas da semente viram valor de propósito: ela traz
+  `Exército = SUM(RM:EE)` em várias linhas, e RM e EE são justamente as duas colunas que o
+  SCA não sabe preencher.
+- **Produto que JÁ ESTÁ no volume entra por `POST /api/arquivo/catalogar/product`, e o
+  servidor mede o hash.** O `layout_origem` (2026-07-31) resolveu o NOME do arquivo de
+  convênio; o custo do caminho ficou de fora, e é o que esta rota (2026-08-01) resolve.
+  Passar por `prepare-upload`/`confirm-upload` cobrava por um trabalho que não acontece:
+  o cliente lia o arquivo inteiro para declarar o checksum e o `confirm-upload` lia tudo
+  de novo para conferir uma cópia que nunca houve (362 GB relidos no LOTE_1 do Convênio
+  RS, a 31-81 MB/s, de 1h20 a 3h), **com essa releitura dentro da transação**, aberta por
+  horas e sem retomada parcial. Agora o servidor lê UMA vez, fora de transação, e grava o
+  checksum e o tamanho que ele mesmo mediu; o cliente não declara nenhum dos dois, e
+  mandá-los é 400, porque descartado em silêncio ele acreditaria ter gravado o que mandou.
+  É a mesma política do `/atualizar-checksum`, que já media em vez de aceitar. O
+  `volume_armazenamento_id` vem no CORPO: no upload o volume é o primário do tipo de
+  produto, porque o servidor escolhe para onde copiar, e aqui é onde o arquivo já está.
+  Sem isso, catalogar num volume que não é o primário daquele tipo seria impossível, já
+  que `idx_unique_primario` só admite um por tipo. **A rota só aceita volume com
+  `layout_origem = true`**, e essa é a porta que a impede de virar atalho para pular a
+  validação de transferência no acervo comum. Não afrouxa nada que não dependa de cópia:
+  unicidade física, identidade do produto, sequência de versão e existência do arquivo
+  continuam valendo. Junto veio a validação de travessia de caminho
+  (`utils/caminho_volume.js`), que **não existia**: `path.join` não protege contra `..`, e
+  com a subpasta do fornecedor virando o caso normal o corpo da requisição escolheria
+  qualquer arquivo da máquina. Só cobre produto novo; versão e arquivo avulsos continuam
+  no `prepare-upload`.
 - **Pacote ESM puro entra no servidor por `require()`, e no Jest por dublê mapeado.** O servidor é
   CommonJS, e `serialize-error` (usado por `utils/app_error.js`, ou seja, por quase tudo) é ESM puro
   desde a versão 9. Ele era carregado por `import()` dinâmico, e isso **impedia a suíte inteira do
@@ -183,6 +241,19 @@ mapoteca que esquecer o segundo argumento passa a cobrar perfil no ACERVO, sem e
 ### Mapoteca, consumo de material
 - **Consumo** só pode sair da **Seção** (`tipo_localizacao` code=1). Material tem que ser transferido para a Seção antes de ser consumido, e o trigger recusa consumo sem saldo lá.
 - Localizações: 1=Seção, 2=Almoxarifado, 3=Aquisição realizada, 4=Saldo no empenho.
+- **`tipo_material.categoria_id` é COLUNA, e é o que separa as tabelas 7.2 (Papel) e 7.3
+  (Tintas) do RPCMTec.** Derivar do nome ("começa com Cartucho") acerta o catálogo de hoje e
+  cai calado no primeiro "Tinta preta 300ml": o material vai para a tabela errada, sem erro
+  nenhum, e o relatório que o chefe assina mente sem avisar. O default é `3` (Outro), e não
+  Papel: material sem categoria escolhida fica FORA das duas tabelas, e faltar de uma tabela
+  é visível, ao contrário de aparecer na errada. Cabeçote é Outro de propósito (é peça de
+  reposição, não insumo de impressão).
+- **O estoque guarda só o saldo de HOJE, sem histórico mensal.** Por isso as colunas
+  "Estoque mês anterior" e "Previsão de falta de estoque" do RPCMTec saem `-`. Ele NÃO é
+  derivável de estoque atual + consumo do mês: a conta ignora as entradas (compra,
+  transferência do almoxarifado) e erraria em silêncio todo mês em que houve reposição.
+  Fechar essa lacuna exige uma tabela de movimento ou de fotografia mensal, com quem a
+  grava definido; enquanto não existir, o `-` é a resposta honesta.
 
 ### Orçamento
 - **Não existe entidade "exercício", "PCA" nem cabeçalho de "PDR".** Tudo se amarra ao **ano** (coluna `ano SMALLINT`, sem FK). O PCA do ano é o conjunto de DFDs daquele ano; o PDR é o conjunto dos `pdr_item` do ano.
@@ -258,26 +329,3 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Per
 - `docs/`: tutoriais de uso, fluxos do plugin e `api_documentation.md`.
 - `migrations/`: caminho de atualização do banco, em ordem de data.
 - Swagger em `GET /api/api_docs` com o servidor no ar.
-- **Produto que JÁ ESTÁ no volume entra por `POST /api/arquivo/catalogar/product`, e o
-  servidor mede o hash.** O `layout_origem` (2026-07-31) resolveu o NOME do arquivo de
-  convênio; o custo do caminho ficou de fora, e é o que esta rota (2026-08-01) resolve.
-  Passar por `prepare-upload`/`confirm-upload` cobrava por um trabalho que não acontece:
-  o cliente lia o arquivo inteiro para declarar o checksum e o `confirm-upload` lia tudo
-  de novo para conferir uma cópia que nunca houve (362 GB relidos no LOTE_1 do Convênio
-  RS, a 31-81 MB/s, de 1h20 a 3h), **com essa releitura dentro da transação**, aberta por
-  horas e sem retomada parcial. Agora o servidor lê UMA vez, fora de transação, e grava o
-  checksum e o tamanho que ele mesmo mediu; o cliente não declara nenhum dos dois, e
-  mandá-los é 400, porque descartado em silêncio ele acreditaria ter gravado o que mandou.
-  É a mesma política do `/atualizar-checksum`, que já media em vez de aceitar. O
-  `volume_armazenamento_id` vem no CORPO: no upload o volume é o primário do tipo de
-  produto, porque o servidor escolhe para onde copiar, e aqui é onde o arquivo já está.
-  Sem isso, catalogar num volume que não é o primário daquele tipo seria impossível, já
-  que `idx_unique_primario` só admite um por tipo. **A rota só aceita volume com
-  `layout_origem = true`**, e essa é a porta que a impede de virar atalho para pular a
-  validação de transferência no acervo comum. Não afrouxa nada que não dependa de cópia:
-  unicidade física, identidade do produto, sequência de versão e existência do arquivo
-  continuam valendo. Junto veio a validação de travessia de caminho
-  (`utils/caminho_volume.js`), que **não existia**: `path.join` não protege contra `..`, e
-  com a subpasta do fornecedor virando o caso normal o corpo da requisição escolheria
-  qualquer arquivo da máquina. Só cobre produto novo; versão e arquivo avulsos continuam
-  no `prepare-upload`.

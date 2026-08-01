@@ -1,11 +1,18 @@
-import { getSecao3 } from '@modules/orcamento/services/orcamento-service.js';
+import { getExecucaoNd } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
 
 /**
- * Fonte unica da secao 3 para as abas do dashboard do orcamento.
+ * Fonte unica da execucao por ND para as abas do dashboard do orcamento.
  *
- * As tres abas saem do MESMO payload (`getSecao3`): os cards, o grafico por ND
- * e as duas tabelas sao recortes da tabela_31. Sem isto, trocar de aba
+ * Chamava-se "secao 3" porque a consulta era a tabela 3.1 do RPCMTec, servida
+ * por /orcamento/relatorio/secao3. Em 2026-08-01 o RPCMTec saiu do modulo e
+ * virou tela de plataforma, e esta consulta ficou como rota do PAINEL: sao
+ * perguntas diferentes, para publicos diferentes. O nome do arquivo continua o
+ * mesmo para nao espalhar a mudanca por seis arquivos de aba.
+ *
+ * As tres abas saem do MESMO payload (`getExecucaoNd`): os cards, o grafico por
+ * ND e as duas tabelas sao recortes da mesma lista de linhas. Sem isto, trocar
+ * de aba
  * refaria a consulta inteira para reexibir dado que ja estava na mao, e o
  * usuario pagaria um round-trip por clique de aba.
  *
@@ -45,7 +52,9 @@ export function criarSecao3Store() {
       chave = novaChave;
       // A promessa rejeitada NAO fica guardada: senao um erro de rede
       // congelaria o painel ate a proxima troca de mes.
-      promessa = getSecao3({ ano, mes, cumulativo: true }).catch((err) => {
+      // Sem `cumulativo`: a rota do painel so responde a pergunta acumulada no
+      // ano, que era a unica que esta tela ja fazia.
+      promessa = getExecucaoNd({ ano, mes }).catch((err) => {
         invalidar();
         throw err;
       });

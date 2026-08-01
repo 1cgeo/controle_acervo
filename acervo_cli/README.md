@@ -43,7 +43,8 @@ acervo cobertura --escala 250k --so-faltantes
 acervo produto 2965-2                                        # as edições da folha
 acervo produto --id 4211 --arquivos --caminho                # os arquivos, com o caminho
 acervo finalizados --ano 2026 --mes 7                        # o que foi finalizado
-acervo rpcmtec --ano 2026 --mes 7 --docx                     # a seção de acervo do RPCMTec
+acervo rpcmtec --ano 2026 --mes 7 --docx                     # o RPCMTec inteiro, em DOCX
+acervo rpcmtec --ano 2026 --mes 7 --anuario                  # o Anuário Estatístico, em ODS
 
 # escrita guardada
 acervo editar versao --id 7244 --set data_edicao=2019-08-15 --dry-run
@@ -68,7 +69,7 @@ Cada verbo colapsa um encadeamento que hoje se repete no dia a dia da DGEO (as s
 | `cobertura` | "já temos essa carta?". Uma chamada pública, mas a resposta é uma FeatureCollection por escala com os anos de edição em arrays: raciocinar folha a folha sobre isso custa a janela inteira. Aqui sai uma linha por folha, com o ano mais recente e o veredito, e **a folha que o acervo nem conhece vira aviso** em vez de sumir da lista. |
 | `produto` | "que edições tem essa folha?" e "qual é o arquivo mais recente do MI X?". Faz `busca` → `produto/detalhado` → (com `--caminho`) `volumes` e recorta. Termo ambíguo devolve os candidatos em vez de escolher o primeiro: a mesma folha costuma ter carta topográfica, ortoimagem e a versão militar. |
 | `editar` | o read-modify-write de um `PUT` de objeto inteiro. Ver abaixo. |
-| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo delega a montagem ao servidor, que já sabe fazer a seção, em JSON ou DOCX. O CLI não remonta tabela nenhuma. |
+| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo delega a montagem ao servidor, que já sabe fazer o relatório inteiro (acervo, mapoteca e orçamento), em JSON, DOCX ou, com `--anuario`, o ODS do Anuário Estatístico. O CLI não remonta tabela nenhuma. |
 | `dominio` | o dicionário dos ids. O acervo é todo dirigido por id numérico, e trocar 50k (code 2) por 250k (code 4) de cabeça já custou uma auditoria rodada na escala errada. |
 
 Ficaram **fora** de propósito: a carga em si (o `prepare-upload` não transfere byte, e a cópia acontece fora da API), a mapoteca (é do `mapoteca_cli`), e qualquer verbo que precisasse de regra de negócio nova.

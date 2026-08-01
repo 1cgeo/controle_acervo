@@ -101,6 +101,11 @@ describe('mapoteca.cliente.sigla', () => {
   })
 })
 
+// A rota era /api/relatorio/rpcmtec ate 2026-08-01, quando as duas geracoes
+// parciais do RPCMTec viraram uma so, em /api/rpcmtec (ver
+// server/src/rpcmtec/). O que este teste protege nao mudou: a coluna de
+// solicitante mostra a SIGLA da OM, porque e o nome corrente para quem le o
+// relatorio, e cai no nome de quem nao tem sigla (orgao publico, cidadao da LAI).
 describe('RPCMTec: solicitante pela sigla', () => {
   // Um pedido de OM COM sigla e um de cliente SEM sigla, no mesmo mes. O
   // relatorio tem de mostrar a sigla no primeiro e o nome no segundo.
@@ -122,7 +127,7 @@ describe('RPCMTec: solicitante pela sigla', () => {
     await criaPedido(civilId, '2026-03-11')
 
     const res = await request(app)
-      .get('/api/relatorio/rpcmtec?ano=2026&mes=3')
+      .get('/api/rpcmtec/gerar?ano=2026&mes=3')
       .set('Authorization', admin())
     expect(res.status).toBe(200)
 

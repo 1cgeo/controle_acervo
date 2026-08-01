@@ -42,8 +42,8 @@ node orcamento_cli/orcamento.js schema nc   # campos, tipos, regras da NC
 # dia a dia
 orcamento saldo                       # quanto falta empenhar e liquidar (total do PDR)
 orcamento saldo --nd 339040           # o mesmo, por natureza de despesa
-orcamento secao3 --mes 7              # a Seção 3 do RPCMTec em markdown
-orcamento secao3 --mes 7 --docx       # a mesma, em DOCX para colar no Google Docs
+# O RPCMTec saiu daqui em 2026-08-01: é gerado inteiro (acervo, mapoteca e
+# orçamento), fora dos módulos, por `acervo rpcmtec --ano 2026 --mes 7 --docx`.
 
 # CRUD
 orcamento nc listar --ano 2026 --campos numero,cod_nd,valor_nc
@@ -104,7 +104,7 @@ lib/recursos.js     registry: rota (com o prefixo), módulo de schema, colunas p
 lib/schema.js       joi.describe() -> contrato legível; validação local
 lib/regras.js       a prosa curada que o describe() não alcança
 lib/saida.js        TSV, tabela, JSON, --campos
-comandos/           schema, crud, relatorio (saldo/secao3), dominio, sessao
+comandos/           schema, crud, relatorio (saldo), dominio, sessao
 ```
 
 O prefixo `/orcamento` mora em `lib/recursos.js`, e só ali. Os comandos derivam o caminho da registry em vez de escrevê-lo à mão, para que a próxima mudança de rota seja de uma linha.

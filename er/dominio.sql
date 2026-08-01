@@ -254,6 +254,29 @@ INSERT INTO dominio.classificacao_nc (code, nome) VALUES
 (1, 'PDR'),
 (2, 'Extra-PDR');
 
+-- Categoria do material de impressão da mapoteca.
+--
+-- Existe porque o RPCMTec separa o estoque em duas tabelas, "Insumos de
+-- Impressão - Papel" (7.2) e "- Tintas" (7.3), e a separação PRECISA ser um
+-- dado. Derivá-la do nome ("começa com Cartucho") funcionaria com o catálogo de
+-- hoje e cairia calada no dia em que alguém cadastrasse "Tinta preta 300ml": o
+-- material iria para a tabela errada sem erro nenhum, e o relatório do chefe
+-- mentiria sem avisar. Ver migrations/2026-08-01_material_categoria.sql.
+--
+-- OUTRO existe para o material que não é insumo de impressão (cabeçote, peça de
+-- reposição). Ele não sai em nenhuma das duas tabelas do RPCMTec, e é assim que
+-- se declara isso: sem a opção, alguém teria de escolher entre papel e tinta
+-- para algo que não é nem um nem outro.
+CREATE TABLE dominio.categoria_material(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.categoria_material (code, nome) VALUES
+(1, 'Papel'),
+(2, 'Tinta'),
+(3, 'Outro');
+
 -- Tipo de item do DFD (material / servico)
 CREATE TABLE dominio.tipo_item_dfd(
   code SMALLINT NOT NULL PRIMARY KEY,

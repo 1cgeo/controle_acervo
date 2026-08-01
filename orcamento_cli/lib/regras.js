@@ -97,13 +97,15 @@ const REGRAS = {
     'tabela 3.3.'
   ],
 
-  relatorio: [
-    'O RPCMTec e CUMULATIVO: secao3 --mes N traz o acumulado de 01-jan ate o fim do mes',
-    'N. Use --mes-apenas para recortar so o mes.',
-    'Uma edicao por (ano, mes): repetir volta 409.',
-    'A Secao 3 sai PRONTA do servidor em tres formatos: JSON (/secao3), Markdown',
-    '(/secao3/markdown) e DOCX (/secao3/docx). O DOCX e o que cola no Google Docs.',
-    'Registro sem data entra so no acumulado do ano, nao num mes isolado.'
+  dashboard: [
+    'A execucao por ND e sempre CUMULATIVA: --mes N traz o acumulado de 01-jan',
+    'ate o fim do mes N. A pergunta do painel e "quanto do credito do ANO ja foi',
+    'executado", e nao "quanto se moveu neste mes".',
+    'Registro sem data entra no acumulado do ano: credito ainda sem data de',
+    'emissao e credito do ano, e some-lo fora faria o painel mostrar menos do que',
+    'o banco tem.',
+    'O RPCMTec NAO sai daqui desde 2026-08-01: ele e gerado inteiro, fora dos',
+    'modulos, por `acervo rpcmtec --ano N --mes M --docx`.'
   ],
 
   arquivo: [

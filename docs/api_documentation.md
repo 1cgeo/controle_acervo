@@ -2517,9 +2517,58 @@ Rota separada, e nao um `?formato=ods` na de cima, porque o CONTEUDO difere:
 
 A coluna `Meta` sai em branco no item previsto no PIT e `-` no restante: o codigo (`4.1`) nao existe no SCA e e preenchido a mao. O gerador do arquivo e `server/src/utils/ods_export.js`, sem dependencia externa.
 
-### GET `/api/mapoteca/relatorio/anuario`
+### GET `/api/mapoteca/relatorio/pedidos_resumo`
 
-O **Anuario Estatistico** do mes: a Tabela 5.4.9 do "O Exercito em Numeros" (suprimento cartografico convencional e digital distribuido), que o 1o CGEO remete a DSG junto com o RTM. Query: `?ano=&mes=` (`mes` obrigatorio), mais `?cumulativo=true` para acumular de janeiro ate o mes. Recorte pela **data de atendimento** do pedido (a entrega), e nao pela data do pedido.
+Resumo por pedido (uma linha por pedido, **todos os clientes** — nao so OM militares): `numero_pedido` (`pedido.id`), `unidade` (cliente), `documento` (DIEx), `status` (situacao), `data_envio` (`data_atendimento`), `informacoes_envio` (`localizador_envio`) e o consolidado de produtos entregues por tipo x escala (`topo_25k`..`topo_250k`/`total_topo`, `orto_25k`..`orto_250k`/`total_orto`, `outros_produtos`, `produtos_digitais`, `total`). Quantidade entregue = `COALESCE(quantidade_fornecida, quantidade)`. Filtra por `data_pedido`.
+
+---
+
+## 19b. RPCMTec (plataforma)
+
+O **Relatorio de Prestacao de Contas Mensal Tecnico**: o relatorio mensal da DIVISAO, gerado num lugar so. Prefixo `/api/rpcmtec`, TODAS as rotas com **`verifyAdmin`**.
+
+A guarda e administrador global, e nao perfil de modulo, porque o relatorio cruza acervo, mapoteca e orcamento numa peca so e traz valor de credito, de empenho e de liquidacao: um `verifyPerfil('consulta','acervo')` entregaria o orcamento a quem so cataloga carta. Nao existe "perfil de RPCMTec" porque nao existe modulo RPCMTec -- ele e rota de PLATAFORMA, como `/api/usuarios` e `/api/metas`.
+
+Substitui, desde 2026-08-01, as duas geracoes parciais que existiam e nao se conheciam: `/api/relatorio/rpcmtec` (acervo e mapoteca) e `/api/orcamento/relatorio/secao3` (o PDR). Quem montava a edicao mensal colava um arquivo no outro, no Word.
+
+### GET `/api/rpcmtec/gerar`
+
+As secoes do relatorio do mes, ja com as celulas em TEXTO. Query: `?ano=&mes=`, os dois obrigatorios (sem `cumulativo`: cada subsecao ja sabe qual e o recorte dela -- a 2.4 lista o mes, a 3.1 mostra mes e ano lado a lado, a 4.1 e sempre acumulada no ano).
+
+Devolve `{ ano, mes, secoes: [{ titulo, subsecoes: [{ numero, titulo, cabecalhos, linhas }] }] }`. E o MESMO objeto que alimenta o DOCX: a tela nao formata nada por conta propria, senao ela e o arquivo divergem no arredondamento.
+
+Saem 16 subsecoes, na numeracao do documento da Divisao, para que cada tabela seja colavel na subsecao de mesmo numero:
+
+| Secao | Subsecoes | Fonte |
+|---|---|---|
+| 2. EXECUCAO DO PIT | 2.2 Totais do Mes e do Ano, 2.4 Entregas detalhada de produtos finais, 2.7 Estado do Acervo | `acervo.versao` por `data_edicao`; cobertura por escala x tipo |
+| 3. MAPOTECA | 3.1 Totais do Mes e do Ano, 3.2 Entregas da mapoteca, 3.3 Extra-PIT, 3.4 LAI e orgaos publicos | `mapoteca.pedido` por `data_pedido`, qualquer situacao |
+| 4. EXECUCAO DO PDR | 4.1 Execucao por ND, 4.2 Situacao dos creditos recebidos, 4.3 Situacao RPNP, 4.4 GCALC DSG, 4.5 Demais licitacoes, 4.6 Recebimento de material, 4.7 Creditos Extra-PDR | orcamento, acumulado no ano ate o mes |
+| 7. EQUIPAMENTO E MATERIAL | 7.2 Insumos de Impressao - Papel, 7.3 Insumos de Impressao - Tintas | `mapoteca.tipo_material` por `categoria_id` |
+
+**O que o SCA NAO gera**, e por que (a tela tambem declara, para ninguem procurar o que nao existe): 2.1 Estado Atual do PIT (`pit.meta` nao tem quantidade prevista nem previsao de termino, e nenhuma versao aponta para uma meta), 2.3 Execucao por Lote (sem operador nem percentual concluido), 2.5 Atividades de campo e 2.6 Capacitacoes (sem cadastro), 5 Desenvolvimento e TI, 6 Recursos Humanos, 7.1 Equipamento Indisponivel, 8 Divulgacao e 9 Boas praticas.
+
+Nas 7.2 e 7.3 as colunas "Estoque mes anterior" e "Previsao de falta de estoque" saem `-`: `mapoteca.estoque_material` guarda so o saldo de hoje. Elas NAO sao derivaveis de estoque atual + consumo do mes, porque a conta ignora as entradas.
+
+Na 4.1, `-` quer dizer "nao ha documento nenhum nesta ND" e `0,00` quer dizer "ha, e somam zero" -- as somas sao feitas SEM `COALESCE` para preservar a distincao, que e a que o documento da Divisao faz.
+
+### GET `/api/rpcmtec/gerar/docx`
+
+O mesmo conteudo no arquivo `RPCMTec-<ano>-<MM>.docx`. Corpo binario, fora do envelope JSON.
+
+A formatacao e a do documento da Divisao, medida no OOXML de "RPCM Tecnico Julho_2026.docx": Calibri, 12pt no titulo e no cabecalho da tabela e 10pt no corpo, cabecalho com preenchimento `DDD9C4`, borda simples de 1pt, tabela de layout fixo com recuo `-141`, pagina Letter com margem superior de 990, e uma GRADE DE COLUNA propria por subsecao (elas nao sao proporcionais entre si). O cabecalho de pagina traz "RPCMTec 1o CGEO <Mes>/<ano>" com `PAGE`/`NUMPAGES` como campos. Tabela sem linha sai com uma linha de `-`, que e como o documento escreve "nao houve".
+
+### GET `/api/rpcmtec`, `/:id`, POST, PUT, DELETE
+
+CRUD da **edicao mensal** (`rpcmtec.edicao`): o metadado do relatorio (ano, mes, assinante, data de assinatura). `GET /` aceita `?ano=`. As TABELAS do relatorio nao sao gravadas: sao consultas recortadas por ano e mes, e recalcula-las e o que mantem o RPCMTec coerente com o banco.
+
+Duas edicoes do mesmo mes dao **409**, e nao 500: existe UMA edicao por mes (`UNIQUE (ano, mes)`).
+
+### GET `/api/rpcmtec/anuario`
+
+O **Anuario Estatistico** do mes: a Tabela 5.4.9 do "O Exercito em Numeros" (suprimento cartografico convencional e digital distribuido), que o 1o CGEO remete a DSG junto com o RTM. Query: `?ano=&mes=`, os dois obrigatorios. Recorte pela **data de atendimento** do pedido (a entrega), e nao pela data do pedido.
+
+Esteve em `/api/mapoteca/relatorio/anuario` ate 2026-08-01, e saiu junto com o RPCMTec: os dois sobem para a DSG no mesmo envio mensal, e agora saem da mesma tela. O `anuario_ctrl` continua no modulo mapoteca, que e onde a entrega e registrada.
 
 Devolve `titulo`, `colunas`, `total_convencional`, `convencional[]`, `total_digital`, `digital[]` e `lacunas[]`. Cada linha tem o `rotulo` (o tipo de suprimento) e uma chave por coluna: `exercito`, `rm`, `ee_exercito`, `outras_forcas`, `orgao_publico`, `empresa_privada`, `prof_autonomo`.
 
@@ -2533,15 +2582,13 @@ Devolve `titulo`, `colunas`, `total_convencional`, `convencional[]`, `total_digi
 
 Classificacao de cada entrega: a LINHA sai do denominador da escala do produto do acervo (a personalizada usa `denominador_escala_especial`); escala fora da lista, ou item avulso sem produto, cai em Produtos Diversos; Ortoimagem sem escala cai em Imagem de Satelite. A foto aerea entregue por LAI nao vira item de acervo, e vem de `mapoteca.pedido.qtd_imagens` (so nos pedidos SEM item, para nao contar a mesma entrega duas vezes).
 
-### GET `/api/mapoteca/relatorio/anuario_ods`
+### GET `/api/rpcmtec/anuario/ods`
 
-O mesmo Anuario ja no arquivo que sobe para a DSG (`Anuario_Estatistico_1CGEO_<MM>_<Mes>_<ano>.ods`), com o titulo antes do cabecalho e o rodape com a fonte e as lacunas. Celula sem fonte sai `-`. Sem `?formato=json`: o corpo e binario.
+O mesmo Anuario ja no arquivo que sobe para a DSG (`Anuario_Estatistico_1CGEO_<MM>_<Mes>_<ano>.ods`). O corpo e binario.
 
-### GET `/api/mapoteca/relatorio/pedidos_resumo`
+O arquivo sai da **planilha-semente** `server/src/rpcmtec/modelos/anuario_estatistico_5_4_9.ods` (a edicao real de junho de 2026, versionada): gerar e abrir esse ZIP, trocar so o valor das celulas da matriz no `content.xml` e reescrever o resto byte a byte. Estilo, largura de coluna, celula mesclada e rodape continuam sendo os do original, entao nada precisa ser reformatado. Ate 2026-08-01 ele era montado do zero e tinha os numeros certos sem ser o arquivo da DSG.
 
-Resumo por pedido (uma linha por pedido, **todos os clientes** — nao so OM militares): `numero_pedido` (`pedido.id`), `unidade` (cliente), `documento` (DIEx), `status` (situacao), `data_envio` (`data_atendimento`), `informacoes_envio` (`localizador_envio`) e o consolidado de produtos entregues por tipo x escala (`topo_25k`..`topo_250k`/`total_topo`, `orto_25k`..`orto_250k`/`total_orto`, `outros_produtos`, `produtos_digitais`, `total`). Quantidade entregue = `COALESCE(quantidade_fornecida, quantidade)`. Filtra por `data_pedido`.
-
----
+TODA celula de valor e reescrita, inclusive as que dao zero: deixar de escrever uma deixaria ali o numero da semente num relatorio de outro mes. As formulas da semente viram valor de proposito (ela traz `Exercito = SUM(RM:EE)` em varias linhas, e RM e EE sao justamente as colunas que o SCA nao preenche). Coluna sem fonte sai `-` como TEXTO, e nao como zero formatado.
 
 ## 20. Dashboard do Acervo
 
@@ -2664,7 +2711,8 @@ Interface Swagger UI com documentacao interativa da API.
 | Mapoteca - Tipo Material | `/api/mapoteca/tipo_material` | 5 | verifyLogin / verifyAdmin |
 | Mapoteca - Estoque | `/api/mapoteca/estoque_material` | 7 | verifyLogin / verifyAdmin |
 | Mapoteca - Consumo | `/api/mapoteca/consumo_material` | 6 | verifyLogin / verifyAdmin |
-| Mapoteca - Relatorios | `/api/mapoteca/relatorio` | 4 | verifyLogin |
+| Mapoteca - Relatorios | `/api/mapoteca/relatorio` | 2 | verifyLogin |
+| RPCMTec (plataforma) | `/api/rpcmtec` | 9 | verifyAdmin |
 | Dashboard Mapoteca | `/api/mapoteca/dashboard` | 13 | verifyLogin |
 | Dashboard Acervo | `/api/dashboard` | 24 | verifyLogin |
 | Integracao (vault DGEO) | `/api/integracao` | 3 | Nenhuma (publica, read-only) |

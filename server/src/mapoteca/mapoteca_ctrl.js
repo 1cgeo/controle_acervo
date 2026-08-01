@@ -1672,6 +1672,7 @@ controller.deleteManutencoesPlotter = async (manutencaoIds) => {
 controller.getTiposMaterial = async () => {
   return db.conn.any(`
     SELECT tm.id, tm.nome, tm.descricao,
+           tm.categoria_id, cm.nome AS categoria,
            tm.estoque_minimo, tm.meta_anual, tm.ativo,
            COALESCE(est.estoque_total, 0) AS estoque_total,
            COALESCE(est.localizacoes_armazenadas, 0) AS localizacoes_armazenadas,
@@ -1680,6 +1681,7 @@ controller.getTiposMaterial = async () => {
              COALESCE(est.estoque_total, 0) < tm.estoque_minimo
            ) AS abaixo_minimo
     FROM mapoteca.tipo_material AS tm
+    JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
     LEFT JOIN (
       SELECT tipo_material_id,
              SUM(quantidade) AS estoque_total,
@@ -1696,8 +1698,10 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
     // Buscar informações do tipo de material
     const tipoMaterial = await t.oneOrNone(`
       SELECT tm.id, tm.nome, tm.descricao,
+             tm.categoria_id, cm.nome AS categoria,
              tm.estoque_minimo, tm.meta_anual, tm.ativo
       FROM mapoteca.tipo_material AS tm
+      JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
       WHERE tm.id = $1
     `, [tipoMaterialId]);
 
@@ -1770,6 +1774,9 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
+      // 3 = Outro, o mesmo default da coluna. Material sem categoria escolhida
+      // não sai em nenhuma das duas tabelas de insumo do RPCMTec.
+      { name: 'categoria_id', def: 3 },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
       { name: 'ativo', def: true }
@@ -1787,18 +1794,21 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
 
 controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
   return db.conn.tx(async t => {
-    // Chave ausente = "não mexe": omitir ativo ressuscitava material desativado
+    // Chave ausente = "não mexe": omitir ativo ressuscitava material desativado,
+    // e omitir categoria_id jogaria o material de volta para Outro, tirando-o
+    // da tabela 7.2 ou 7.3 do RPCMTec sem ninguém ter pedido.
     await preserveOmitted(t, {
       schema: 'mapoteca',
       table: 'tipo_material',
       id: tipoMaterial.id,
-      fields: ['ativo'],
+      fields: ['ativo', 'categoria_id'],
       body: tipoMaterial
     });
 
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
+      { name: 'categoria_id', def: 3 },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
       { name: 'ativo', def: true }

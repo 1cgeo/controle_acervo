@@ -31,8 +31,13 @@ dotenv.config({
 // A 1.5.0 foi a versao unica depois da fusao com o SCO (2026-07-27).
 // 1.10.0 acrescenta `acervo.miniatura_versao` (2026-07-31), que a ficha do
 // produto le para mostrar a imagem da carta.
-const VERSION = '1.10.0'
-const MIN_DATABASE_VERSION = '1.10.0'
+// 1.11.0 acrescenta o schema `rpcmtec` (2026-08-01), para onde a edicao mensal
+// do relatorio saiu do orcamento, e `mapoteca.tipo_material.categoria_id`, que
+// e o que separa as tabelas 7.2 e 7.3 do RPCMTec. As duas sao exigidas: sem a
+// primeira as rotas de /rpcmtec quebram em runtime, e sem a segunda a consulta
+// de insumos falha na coluna que nao existe.
+const VERSION = '1.11.0'
+const MIN_DATABASE_VERSION = '1.11.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

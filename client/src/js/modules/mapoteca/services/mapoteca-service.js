@@ -469,30 +469,11 @@ export function deleteConsumoMaterial(ids) {
   return apiDelete(`${BASE}/consumo_material`, { consumo_material_ids: ids });
 }
 
-// ---------------------------------------------------------------------------
-// RPCMTec (seção acervo) - rota /api/relatorio, fora do namespace /mapoteca
-// ---------------------------------------------------------------------------
-
-/**
- * Preview em tela do RPCMTec (seção acervo): mesmos dados do DOCX, no
- * envelope JSON (estadoAcervo, produtosPorTipo, mapotecaLinhas, insumos,
- * laiLinhas, totaisConsolidados).
- * @param {{ano:number, mes:number}} params
- */
-export function getRpcmtecAcervo({ ano, mes }) {
-  return apiGet(`/relatorio/rpcmtec?ano=${ano}&mes=${mes}`);
-}
-
-/**
- * Download do DOCX do RPCMTec (seção acervo: estado do acervo, produtos
- * entregues, mapoteca + insumos de impressão, LAI/órgãos públicos e totais
- * consolidados do mês e do ano).
- * @param {{ano:number, mes:number}} params
- */
-export function downloadRpcmtecDocx({ ano, mes }) {
-  const nome = `RPCMTec-acervo-${ano}-${String(mes).padStart(2, '0')}.docx`;
-  return apiDownload(`/relatorio/rpcmtec/docx?ano=${ano}&mes=${mes}`, nome);
-}
+// SEM as chamadas do RPCMTec: elas sairam daqui em 2026-08-01 para
+// @services/rpcmtec-service.js, junto com a tela. Estas geravam so a secao do
+// acervo e da mapoteca, e o PDR vinha de outro servico, de outra tela e de
+// outro arquivo, que alguem colava a mao; hoje o relatorio inteiro sai de
+// /api/rpcmtec.
 
 // ---------------------------------------------------------------------------
 // RTM: a aba META4_DETALHADA

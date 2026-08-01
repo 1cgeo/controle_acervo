@@ -109,14 +109,22 @@ export const createRpnp = (body) => apiPost(`${API}/rpnp`, body);
 export const updateRpnp = (id, body) => apiPut(`${API}/rpnp/${id}`, body);
 export const deleteRpnp = (id) => apiDelete(`${API}/rpnp/${id}`);
 
-// ---- Relatorio (RPCMTec secao 3) ----
-export const getRelatorios = () => apiGet(`${API}/relatorio`);
-export const getRelatorio = (id) => apiGet(`${API}/relatorio/${id}`);
-export const createRelatorio = (body) => apiPost(`${API}/relatorio`, body);
-export const updateRelatorio = (id, body) => apiPut(`${API}/relatorio/${id}`, body);
-export const deleteRelatorio = (id) => apiDelete(`${API}/relatorio/${id}`);
-export const getSecao3 = (params = {}) => apiGet(`${API}/relatorio/secao3${qs(params)}`);
-export const downloadSecao3Docx = (params = {}) => apiDownload(`${API}/relatorio/secao3/docx${qs(params)}`, `RPCMTec-secao3-${params.ano || ''}-${params.mes || ''}.docx`);
+// ---- Painel ----
+// A execucao por ND que alimenta as tres abas do dashboard. Era
+// /orcamento/relatorio/secao3, e virou rota propria do painel em 2026-08-01,
+// quando o RPCMTec saiu do modulo: o painel quer NUMEROS quebrados em PDR e
+// Extra-PDR, com linha de TOTAL, e e lido por quem tem consulta no orcamento; o
+// relatorio quer a visao do PDR ja formatada e e admin-only. Servir os dois da
+// mesma rota obrigaria a guarda mais fraca a valer para os dois.
+//
+// Devolve a LISTA de linhas por ND direto, e nao mais { tabela_31: [...] }: as
+// outras seis tabelas da antiga secao 3 nunca foram lidas por esta tela.
+export const getExecucaoNd = (params = {}) => apiGet(`${API}/dashboard/execucao_nd${qs(params)}`);
+
+// SEM as chamadas do RPCMTec: elas sairam daqui em 2026-08-01 para
+// @services/rpcmtec-service.js, junto com a tela. Este modulo gerava so a secao
+// do PDR, e o CRUD da edicao mensal vivia sob /api/orcamento/relatorio; hoje as
+// duas coisas estao em /api/rpcmtec, porque o relatorio e da Divisao inteira.
 
 // ---- Arquivos anexados (NC = 1 PDF, DFD = 1 PDF, PDR = varios por ano) ----
 // O vinculo e exatamente um entre { nota_credito_id } | { dfd_id } | { pdr_ano }.

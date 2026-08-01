@@ -16,7 +16,7 @@ const { arquivoRoute } = require("./arquivo");
 const { mapotecaRoute, dashboardRoute: mapotecaDashboardRoute } = require("./mapoteca");
 const { dashboardRoute: acervoDashboardRoute } = require("./dashboard");
 const { integracaoRoute } = require("./integracao");
-const { relatorioRoute } = require("./relatorio");
+const { rpcmtecRoute } = require("./rpcmtec");
 const { pontoControleRoute } = require("./ponto_controle");
 const { limitesRoute } = require("./limites");
 const { pitRoute } = require("./pit");
@@ -34,7 +34,7 @@ const {
   recebimentoRoute: orcamentoRecebimentoRoute,
   licitacaoRoute: orcamentoLicitacaoRoute,
   rpnpRoute: orcamentoRpnpRoute,
-  relatorioRoute: orcamentoRelatorioRoute,
+  dashboardRoute: orcamentoDashboardRoute,
   arquivoRoute: orcamentoArquivoRoute
 } = require("./orcamento");
 
@@ -89,8 +89,14 @@ router.use("/mapoteca", mapotecaRoute);
 // Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
 router.use("/integracao", integracaoRoute);
 
-// Geração do RPCMTec (seção acervo): admin-only
-router.use("/relatorio", relatorioRoute);
+// RPCMTec: o relatório mensal da Divisão, inteiro, num gerador só. Rota de
+// PLATAFORMA, sem prefixo de módulo, como /usuarios e /metas: a mesma edição
+// fala de acervo, mapoteca e orçamento, e o chefe assina uma só.
+//
+// Substitui, desde 2026-08-01, as duas gerações que existiam e não se
+// conheciam: /api/relatorio/rpcmtec (acervo e mapoteca) e
+// /api/orcamento/relatorio/secao3 (o PDR). Ver server/src/rpcmtec/.
+router.use("/rpcmtec", rpcmtecRoute);
 
 // Módulo orçamento (antigo SCO). Todas as features do sistema absorvido ficam
 // sob /api/orcamento/, o que resolve as colisões de nome com o acervo
@@ -115,7 +121,11 @@ router.use("/orcamento/licitacoes", orcamentoLicitacaoRoute);
 
 router.use("/orcamento/rpnp", orcamentoRpnpRoute);
 
-router.use("/orcamento/relatorio", orcamentoRelatorioRoute);
+// SEM /orcamento/relatorio: a geração da seção do PDR e o CRUD da edição mensal
+// saíram daqui em 2026-08-01 para /api/rpcmtec. O orçamento continua sendo
+// FONTE das subseções 4.1 a 4.7, e não dono do relatório. O que ficou é o
+// painel, que pergunta outra coisa e é lido por outro perfil.
+router.use("/orcamento/dashboard", orcamentoDashboardRoute);
 
 router.use("/orcamento/arquivo", orcamentoArquivoRoute);
 

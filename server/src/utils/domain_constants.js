@@ -124,6 +124,28 @@ const FORMA_ENTREGA = {
   OUTROS: 5
 }
 
+// dominio.categoria_material (o que separa as tabelas 7.2 e 7.3 do RPCMTec)
+const CATEGORIA_MATERIAL = {
+  PAPEL: 1,
+  TINTA: 2,
+  // Material que não é insumo de impressão (cabeçote, peça). Não sai em
+  // nenhuma das duas tabelas do RPCMTec.
+  OUTRO: 3
+}
+
+// dominio.tipo_licitacao (4.4 GCALC DSG / 4.5 demais licitações)
+const TIPO_LICITACAO = {
+  GCALC_DSG: 1,
+  PROPRIA: 2,
+  PARTICIPANTE: 3
+}
+
+// dominio.classificacao_nc (4.2 PDR / 4.7 Extra-PDR)
+const CLASSIFICACAO_NC = {
+  PDR: 1,
+  EXTRA_PDR: 2
+}
+
 // mapoteca.tipo_localizacao
 const TIPO_LOCALIZACAO = {
   SECAO: 1,
@@ -167,6 +189,9 @@ module.exports = {
   SITUACAO_PEDIDO,
   TIPO_MIDIA,
   FORMA_ENTREGA,
+  CATEGORIA_MATERIAL,
+  TIPO_LICITACAO,
+  CLASSIFICACAO_NC,
   TIPO_LOCALIZACAO,
   TIPO_RELACIONAMENTO,
   TIPO_ANEXO_PEDIDO,

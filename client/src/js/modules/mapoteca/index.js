@@ -31,7 +31,6 @@ import { renderEstoqueList } from './pages/estoque/list.js';
 import { renderConsumoList } from './pages/consumo/list.js';
 import { renderPlottersList } from './pages/plotters/list.js';
 import { renderPlotterDetails } from './pages/plotters/details.js';
-import { renderRpcMtec } from './pages/rpcmtec/index.js';
 
 import { criarSeletorAno } from './components/seletor-ano.js';
 
@@ -86,7 +85,9 @@ export default {
       ],
     },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
-    { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec' },
+    // SEM item de RPCMTec: ele virou tela de PLATAFORMA em 2026-08-01
+    // (#/rpcmtec, na secao de plataforma da sidebar). O relatorio e da
+    // Divisao inteira, e esta tela gerava so a metade dele.
   ],
 
   // Rota estatica ANTES da rota com ':id' ('/pedidos/novo' antes de
@@ -113,7 +114,6 @@ export default {
     { path: '/consumo', render: renderConsumoList, perfis: EXECUCAO },
     { path: '/plotters', render: renderPlottersList, perfis: LEITURA },
     { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
-    { path: '/rpcmtec', render: renderRpcMtec, perfis: LEITURA },
   ],
 
   // O ano de referencia e contexto das telas POR ANO da mapoteca (resumo anual,

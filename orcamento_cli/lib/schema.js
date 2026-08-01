@@ -238,7 +238,14 @@ function contrato (chave, recurso) {
   // Rotas. O acesso e por perfil no modulo orcamento: consulta le, operador
   // cria e atualiza, gerente deleta. O CRUD de dominio exige administrador.
   linhas.push('rotas')
-  if (recurso.singleton) {
+  if (recurso.somenteLeitura) {
+    // Recurso de LEITURA, sem CRUD: o painel calcula, ninguem escreve nele. Sem
+    // esta ramificacao o CLI anunciava POST, PUT e DELETE que nao existem, e o
+    // agente que acreditasse no contrato descobriria pelo 404.
+    for (const sub of recurso.somenteLeitura) {
+      linhas.push(`  GET    ${base}/${sub.caminho}   ${sub.descricao || ''}`.trimEnd())
+    }
+  } else if (recurso.singleton) {
     linhas.push(`  GET    ${base}`)
     linhas.push(`  PUT    ${base}                 (singleton, sem id)`)
   } else if (chave === 'dominio') {

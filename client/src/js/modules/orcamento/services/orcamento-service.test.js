@@ -29,9 +29,13 @@ describe('orcamento-service: GET com query string', () => {
     expect(apiGet).toHaveBeenCalledWith('/orcamento/notas_credito?ano=2026&classificacao_id=1');
   });
 
-  test('getSecao3 monta a query do relatorio', () => {
-    svc.getSecao3({ ano: 2026, mes: 6, cumulativo: true });
-    expect(apiGet).toHaveBeenCalledWith('/orcamento/relatorio/secao3?ano=2026&mes=6&cumulativo=true');
+  // Era getSecao3, em /orcamento/relatorio/secao3, ate 2026-08-01. Quando o
+  // RPCMTec saiu do modulo, esta consulta ficou como rota do PAINEL: ela e a
+  // unica das sete tabelas da antiga secao 3 que o dashboard lia, e o publico
+  // dela e quem tem consulta no orcamento, nao o administrador.
+  test('getExecucaoNd monta a query do painel', () => {
+    svc.getExecucaoNd({ ano: 2026, mes: 6 });
+    expect(apiGet).toHaveBeenCalledWith('/orcamento/dashboard/execucao_nd?ano=2026&mes=6');
   });
 
   test('getDfds(ano) monta ?ano=', () => {
@@ -107,18 +111,19 @@ describe('orcamento-service: o prefixo do modulo esta em TODA rota', () => {
     expect(apiGet).toHaveBeenCalledWith('/orcamento/recebimentos?nota_empenho_id=5');
   });
 
-  test('arquivo e download do RPCMTec tambem levam o prefixo', () => {
+  test('arquivo e download tambem levam o prefixo', () => {
     svc.getArquivos({ nota_credito_id: 9 });
     expect(apiGet).toHaveBeenCalledWith('/orcamento/arquivo?nota_credito_id=9');
 
     svc.downloadArquivo(4, 'nc.pdf');
     expect(apiDownload).toHaveBeenCalledWith('/orcamento/arquivo/4/download', 'nc.pdf');
+  });
 
-    svc.downloadSecao3Docx({ ano: 2026, mes: 6 });
-    expect(apiDownload).toHaveBeenCalledWith(
-      '/orcamento/relatorio/secao3/docx?ano=2026&mes=6',
-      'RPCMTec-secao3-2026-6.docx'
-    );
+  // O RPCMTec saiu do modulo em 2026-08-01. Este teste e o inverso do que havia
+  // aqui: garantir que nenhuma chamada dele volte para o service do orcamento.
+  test('o service do orcamento NAO expoe mais nada de RPCMTec', () => {
+    const doRpcmtec = Object.keys(svc).filter(k => /rpcmtec|secao3/i.test(k));
+    expect(doRpcmtec).toEqual([]);
   });
 
   test('nenhum caminho do service escapa do prefixo do modulo', () => {

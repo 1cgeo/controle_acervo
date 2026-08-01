@@ -81,10 +81,11 @@ export async function renderExecucaoTab(container, store) {
     execucaoChart.update({ loading: true });
 
     try {
-      const secao3 = await store.carregar();
+      // A rota do painel devolve a LISTA de linhas por ND direto; ate
+      // 2026-08-01 ela vinha embrulhada em { tabela_31 }, junto com as outras
+      // seis tabelas da secao 3 do RPCMTec, que esta tela nunca leu.
+      const rows = (await store.carregar()) || [];
       if (disposed) return;
-
-      const rows = (secao3 && secao3.tabela_31) || [];
       const total = getTotalRow(rows);
 
       cardPrevisto.update({ value: formatCurrency(total.previsto), loading: false });

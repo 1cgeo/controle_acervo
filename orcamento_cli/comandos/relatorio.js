@@ -1,20 +1,19 @@
 // Path: comandos\relatorio.js
 'use strict'
 
-// Os dois verbos de INTENCAO do dia a dia orcamentario:
+// O verbo de INTENCAO do dia a dia orcamentario:
 //
-//   orcamento saldo  [--nd 339040] [--ano 2026] [--mes 7] [--extra]
-//   orcamento secao3 [--ano 2026] [--mes 7] [--mes-apenas] [--docx arquivo.docx]
+//   orcamento saldo [--nd 339040] [--ano 2026] [--mes 7] [--extra]
 //
 // `saldo` existe porque a pergunta mais frequente ("quanto falta empenhar da ND
-// X?") hoje custa um snapshot inteiro de sete tabelas para ser respondida em uma
-// linha. Ele deriva da MESMA rota <base>/secao3 que o resto usa: nao ha
-// regra de negocio duplicada aqui, so recorte de apresentacao.
+// X?") custaria um snapshot inteiro para ser respondida em uma linha. Ele deriva
+// da MESMA rota que o painel usa: nao ha regra de negocio duplicada aqui, so
+// recorte de apresentacao.
 //
-// `secao3` delega a renderizacao ao servidor (/secao3/markdown e /secao3/docx),
-// que ja sabe montar as sete tabelas. O CLI nao remonta tabela nenhuma.
-
-const fs = require('fs')
+// O COMANDO `secao3` SAIU em 2026-08-01. Ele gerava a secao do PDR do RPCMTec em
+// markdown e em DOCX, e quem montava a edicao mensal colava esse arquivo dentro
+// do que o outro CLI gerava. O RPCMTec passou a ser gerado inteiro num lugar so,
+// fora dos modulos: use `acervo rpcmtec --ano N --mes M --docx`.
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')
@@ -24,7 +23,7 @@ const { obter } = require('../lib/recursos')
 // A base da rota sai da registry, nunca escrita a mao aqui: ela ganhou o
 // prefixo /orcamento na fusao de 2026-07-27, e um caminho literal neste arquivo
 // teria sobrevivido em silencio ate o primeiro 404.
-const BASE = obter('relatorio').caminho
+const BASE = obter('dashboard').caminho
 
 function agora () {
   const d = new Date()
@@ -48,11 +47,14 @@ async function saldo (args, cfg) {
   const mes = argsLib.numero(flags, 'mes', hoje.mes)
   const faixa = flags.extra ? 'extra' : 'pdr'
 
-  const r = await http.autenticada(cfg, 'GET', BASE + '/secao3' + http.query({
-    ano, mes, cumulativo: true
+  // A rota do painel devolve a LISTA de linhas por ND direto. Ate 2026-08-01 ela
+  // era /orcamento/relatorio/secao3 e vinha embrulhada em { tabela_31 }, junto
+  // com as outras seis tabelas da secao 3, que este comando nunca leu.
+  const r = await http.autenticada(cfg, 'GET', BASE + '/execucao_nd' + http.query({
+    ano, mes
   }))
 
-  const tabela = (r.dados && r.dados.tabela_31) || []
+  const tabela = Array.isArray(r.dados) ? r.dados : []
   if (!tabela.length) {
     return { texto: `Sem execucao registrada em ${ano} ate o mes ${String(mes).padStart(2, '0')}.` }
   }
@@ -105,50 +107,15 @@ async function saldo (args, cfg) {
   return { texto: out.join('\n').trimEnd() }
 }
 
-async function secao3 (args, cfg) {
-  const flags = args.flags
-  const hoje = agora()
-  const ano = argsLib.numero(flags, 'ano', hoje.ano)
-  const mes = argsLib.numero(flags, 'mes', hoje.mes)
-  const cumulativo = !flags['mes-apenas']
-
-  // DOCX: o formato que o chefe cola no Google Docs. Sai binario, direto para o
-  // arquivo; nunca para o stdout (seriam megabytes de lixo na janela do agente).
-  if (flags.docx) {
-    const destino = flags.docx === true
-      ? `orcamento-secao3-${ano}-m${String(mes).padStart(2, '0')}.docx`
-      : flags.docx
-    const r = await http.autenticada(
-      cfg, 'GET', BASE + '/secao3/docx' + http.query({ ano, mes }), { binario: true }
-    )
-    fs.writeFileSync(destino, r.bytes)
-    return { texto: `Secao 3 (${ano}, ate o mes ${mes}) salva em ${destino} (${r.bytes.length} bytes).` }
-  }
-
-  if (flags.json) {
-    const r = await http.autenticada(cfg, 'GET', BASE + '/secao3' + http.query({ ano, mes, cumulativo }))
-    return { texto: JSON.stringify(r.dados, null, 2) }
-  }
-
-  // Markdown renderizado pelo proprio servidor: as sete tabelas ja montadas.
-  const r = await http.autenticada(
-    cfg, 'GET', BASE + '/secao3/markdown' + http.query({ ano, mes, cumulativo })
-  )
-  const texto = typeof r.dados === 'string'
-    ? r.dados
-    : (r.dados && (r.dados.markdown || r.dados.conteudo)) || JSON.stringify(r.dados, null, 2)
-
-  const avisos = []
-  if (!flags.docx) {
-    avisos.push('Para colar no Google Docs, gere o DOCX: orcamento secao3 --ano ' + ano + ' --mes ' + mes + ' --docx')
-  }
-  return { texto, avisos }
-}
-
 async function executar (args, cfg) {
   const comando = args._[0]
   if (comando === 'saldo') return saldo(args, cfg)
-  if (comando === 'secao3') return secao3(args, cfg)
+  if (comando === 'secao3') {
+    throw new Error(
+      'O comando `secao3` saiu em 2026-08-01: o RPCMTec passou a ser gerado ' +
+      'inteiro num lugar so, fora dos modulos. Use: acervo rpcmtec --ano N --mes M --docx'
+    )
+  }
   throw new Error(`Comando de relatorio desconhecido: ${comando}`)
 }
 

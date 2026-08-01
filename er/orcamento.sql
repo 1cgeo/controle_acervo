@@ -220,20 +220,12 @@ CREATE TABLE orcamento.rpnp(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
--- Edicao mensal do RPCMTec (metadados; as tabelas 3.1-3.7 sao consultas geradas
--- pela feature relatorio, recortadas por ano e mes cumulativo)
-CREATE TABLE orcamento.relatorio_rpcmtec(
-  id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL,
-  mes SMALLINT NOT NULL,
-  assinante VARCHAR(255),
-  data_assinatura DATE,
-  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  UNIQUE (ano, mes)
-);
+-- A edicao mensal do RPCMTec NAO mora mais aqui. Ela era
+-- `orcamento.relatorio_rpcmtec` ate 2026-08-01, quando saiu para `rpcmtec.edicao`
+-- (ver er/rpcmtec.sql e migrations/2026-08-01_rpcmtec_schema_proprio.sql): o
+-- relatorio e da Divisao inteira, e enquanto morava neste schema quem so tinha
+-- perfil na mapoteca nao alcancava a edicao do proprio relatorio. O orcamento
+-- continua sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
 
 -- Arquivos anexados (documentos originais). Vinculo polimorfico: cada arquivo
 -- pertence a EXATAMENTE um dono: uma NC (PDF do SIAFI), um DFD (PDF) ou o PDR de

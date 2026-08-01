@@ -194,6 +194,10 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     await t.none(readSqlFile('./er/acompanhamento.sql'));
     await t.none(readSqlFile('./er/mapoteca.sql'));
     await t.none(readSqlFile('./er/orcamento.sql'));
+    // Depois de dgeo, que a edicao referencia pelo usuario de cadastramento. O
+    // RPCMTec e da Divisao inteira e nao depende de nenhum dos tres modulos:
+    // ele os CONSULTA em tempo de geracao, sem chave estrangeira para eles.
+    await t.none(readSqlFile('./er/rpcmtec.sql'));
     await givePermission({ dbUser, connection: t });
     await insertAdminUser(authUserData, t);
   });

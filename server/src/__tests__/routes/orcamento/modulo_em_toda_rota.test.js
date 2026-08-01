@@ -58,14 +58,23 @@ describe('Toda rota do orcamento passa o modulo para o verifyPerfil', () => {
       return soma + [...fonte.matchAll(CHAMADA)].length
     }, 0)
 
-    // 67 chamadas na fusao de 2026-07-27, 62 desde 2026-07-31. A queda de 5 foi
-    // DE PROPOSITO: a meta do PIT saiu do modulo e virou rota de plataforma
-    // (/api/metas), levando junto as suas 5 rotas. Ela nao ficou desprotegida:
-    // troca verifyPerfil por verifyLogin na leitura e verifyAdmin na escrita, e
-    // o teste disso mora em routes/pit_route.test.js.
+    // 67 chamadas na fusao de 2026-07-27, 62 desde 2026-07-31, 55 desde
+    // 2026-08-01. As duas quedas foram DE PROPOSITO.
+    //
+    // A de 5 (67 -> 62): a meta do PIT saiu do modulo e virou rota de
+    // plataforma (/api/metas), levando junto as suas 5 rotas. Ela nao ficou
+    // desprotegida: troca verifyPerfil por verifyLogin na leitura e verifyAdmin
+    // na escrita, e o teste disso mora em routes/pit_route.test.js.
+    //
+    // A de 7 (62 -> 55): o RPCMTec saiu do modulo pelo mesmo motivo, levando 8
+    // rotas (as 5 do CRUD da edicao mensal e as 3 da geracao da secao 3), e o
+    // painel ganhou 1 (/orcamento/dashboard/execucao_nd, que continua sendo
+    // verifyPerfil('consulta', 'orcamento')). O RPCMTec e admin-only em
+    // /api/rpcmtec: ele cruza os tres modulos e traz valor de credito, entao
+    // nenhum perfil de modulo serve de guarda para ele.
     //
     // Subir e normal (rota nova); cair quer dizer que uma rota perdeu a
     // protecao, e ai o numero tem que ser revisto de proposito, nao por acidente.
-    expect(total).toBeGreaterThanOrEqual(62)
+    expect(total).toBeGreaterThanOrEqual(55)
   })
 })

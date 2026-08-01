@@ -57,9 +57,9 @@ export function criarNdTab(recorte) {
     async function load() {
       tabela.update({ loading: true });
       try {
-        const secao3 = await store.carregar();
+        const rows = (await store.carregar()) || [];
         if (disposed) return;
-        tabela.update({ rows: (secao3 && secao3.tabela_31) || [], loading: false });
+        tabela.update({ rows, loading: false });
       } catch (err) {
         if (disposed) return;
         tabela.update({ rows: [], loading: false });

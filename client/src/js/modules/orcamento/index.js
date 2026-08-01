@@ -23,7 +23,6 @@ import { renderNotasEmpenhoList } from './pages/notas-empenho/list.js';
 import { renderNotaEmpenhoDetails } from './pages/notas-empenho/details.js';
 import { renderLicitacoesList } from './pages/licitacoes/list.js';
 import { renderRpnpList } from './pages/rpnp/list.js';
-import { renderRelatorio } from './pages/relatorio/index.js';
 
 import { criarSeletorAno } from './components/seletor-ano.js';
 
@@ -51,7 +50,9 @@ export default {
         { id: 'rpnp', label: 'RPNP', icon: ICONS.schedule, path: '/rpnp' },
       ],
     },
-    { id: 'relatorio', label: 'RPCMTec', icon: ICONS.print, path: '/relatorio' },
+    // SEM item de RPCMTec: ele virou tela de PLATAFORMA em 2026-08-01
+    // (#/rpcmtec, na secao de plataforma da sidebar). Esta tela gerava so a
+    // secao do PDR, que alguem colava a mao no arquivo da outra.
   ],
 
   rotas: [
@@ -64,7 +65,6 @@ export default {
     { path: '/notas_empenho/:id', render: renderNotaEmpenhoDetails, perfil: 'consulta' },
     { path: '/licitacoes', render: renderLicitacoesList, perfil: 'consulta' },
     { path: '/rpnp', render: renderRpnpList, perfil: 'consulta' },
-    { path: '/relatorio', render: renderRelatorio, perfil: 'consulta' },
   ],
 
   // O ano de referencia e contexto de TODAS as telas do orcamento, entao o

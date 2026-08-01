@@ -132,9 +132,12 @@ const REGRAS = {
     'cadastro no SCA: um lote antigo carregado hoje nao vira producao do mes.'
   ],
 
-  relatorio: [
-    'Gera a secao de acervo do RPCMTec, no envelope JSON (preview) ou em DOCX',
-    'binario. Admin-only: e relatorio de chefe.'
+  rpcmtec: [
+    'Gera o RPCMTec INTEIRO (acervo, mapoteca e orcamento) num lugar so, no',
+    'envelope JSON ou em DOCX binario, na numeracao e no formato do documento',
+    'da Divisao. --anuario baixa o Anuario Estatistico (.ods) do mesmo mes, que',
+    'sobe para a DSG no mesmo envio e sai da planilha-semente da propria DSG.',
+    'Admin-only: cruza os tres modulos e traz valor de credito e de empenho.'
   ],
 
   dashboard: [

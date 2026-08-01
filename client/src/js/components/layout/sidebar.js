@@ -13,6 +13,10 @@ import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modul
  */
 const MENU_PLATAFORMA = [
   { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
+  // O RPCMTec LEVA a marca de administrador: ele cruza os tres modulos numa
+  // peca so, com valor de credito e de empenho dentro. Esteve partido em dois
+  // itens de modulo ate 2026-08-01, um na mapoteca e outro no orcamento.
+  { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec', admin: true },
   { id: 'usuarios', label: 'Usuários', icon: ICONS.people, path: '/usuarios', admin: true },
 ];
 

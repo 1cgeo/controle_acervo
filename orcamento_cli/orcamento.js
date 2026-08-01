@@ -34,8 +34,8 @@ DIA A DIA
   orcamento saldo                       quanto falta empenhar e liquidar (total do PDR)
   orcamento saldo --nd 339040           o mesmo, de uma natureza de despesa
   orcamento saldo --extra               a faixa Extra-PDR
-  orcamento secao3 --mes 7              a Secao 3 do RPCMTec em markdown
-  orcamento secao3 --mes 7 --docx       a mesma Secao 3 em DOCX (cola no Google Docs)
+  (o RPCMTec saiu daqui em 2026-08-01: e gerado inteiro, fora dos modulos,
+   por: acervo rpcmtec --ano N --mes M --docx)
 
 RECURSOS  (${listarChaves().join(', ')})
   orcamento <recurso> listar [--ano 2026] [--campos a,b] [--formato tsv|tabela|json]
@@ -75,6 +75,9 @@ operador. Deletar exige gerente. O administrador passa em tudo.`
 const ROTEADOR = {
   schema: './comandos/schema',
   saldo: './comandos/relatorio',
+  // Mantido no mapa so para o comando responder com a instrucao certa em vez
+  // de "comando desconhecido": quem tinha o verbo na memoria precisa saber para
+  // onde ele foi.
   secao3: './comandos/relatorio',
   dominio: './comandos/dominio',
   login: './comandos/sessao',

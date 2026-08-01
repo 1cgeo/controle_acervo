@@ -155,20 +155,40 @@ if ano:
         (f'/api/orcamento/metas?ano={ano}', 'metas do PIT', 1),
     ], tok)
 
-    c, b = chamar(f'/api/orcamento/relatorio/secao3?ano={ano}&mes=6', token=tok)
-    d = b.get('dados') or {}
-    tabelas = sorted(k for k in d if k.startswith('tabela_'))
-    checa('RPCMTec secao 3 (a razao de ser do modulo)', c == 200 and len(tabelas) >= 5,
-          f'HTTP {c}, {len(tabelas)} tabelas')
+    c, b = chamar(f'/api/orcamento/dashboard/execucao_nd?ano={ano}&mes=6', token=tok)
+    linhas = b.get('dados') or []
+    checa('execucao por ND (o painel do orcamento)',
+          c == 200 and isinstance(linhas, list) and len(linhas) >= 2,
+          f'HTTP {c}, {len(linhas) if isinstance(linhas, list) else 0} linha(s)')
 
 c, b = chamar('/api/orcamento/arquivo?nota_credito_id=1', token=tok)
 checa('anexos de NC (conteudo BYTEA)', c == 200, f"HTTP {c}, {len(b.get('dados') or [])} anexo(s)")
 
+secao('RPCMTec (plataforma, fora dos tres modulos)')
+# Desde 2026-08-01 o relatorio inteiro sai de um gerador so. Antes eram dois
+# (/api/relatorio/rpcmtec e /api/orcamento/relatorio/secao3), com numeracao
+# propria cada um, e alguem colava um arquivo no outro. As 16 subsecoes sao as
+# que o SCA preenche INTEIRAS; menos que isso e regressao.
+c, b = chamar('/api/rpcmtec/gerar?ano=2026&mes=6', token=tok)
+secoes = (b.get('dados') or {}).get('secoes') or []
+subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
+checa('RPCMTec inteiro, na numeracao do documento da Divisao',
+      c == 200 and len(subsecoes) == 16,
+      f'HTTP {c}, {len(secoes)} secoes / {len(subsecoes)} subsecoes')
+
+c, b = chamar('/api/rpcmtec/anuario?ano=2026&mes=6', token=tok)
+d = b.get('dados') or {}
+checa('Anuario Estatistico (Tabela 5.4.9, sobe para a DSG)',
+      c == 200 and len(d.get('convencional') or []) == 18 and len(d.get('digital') or []) == 16,
+      f"HTTP {c}, {len(d.get('convencional') or [])} convencional / {len(d.get('digital') or [])} digital")
+
 secao('COLISOES DE NOME RESOLVIDAS PELO PREFIXO')
-# /relatorio e /arquivo existem nos DOIS modulos. Antes da fusao colidiam; o
-# prefixo /api/orcamento/ e o que os faz conviver. 5xx aqui e regressao.
+# /arquivo existe nos DOIS modulos. Antes da fusao colidia; o prefixo
+# /api/orcamento/ e o que os faz conviver. 5xx aqui e regressao.
+#
+# `/relatorio` saiu desta lista em 2026-08-01: a colisao deixou de existir
+# porque as duas rotas foram embora, cada uma para o seu lugar.
 for rota_acervo, rota_orc, nome in [
-    ('/api/relatorio/rpcmtec?ano=2026&mes=6', '/api/orcamento/relatorio/secao3?ano=2026&mes=6', 'relatorio'),
     ('/api/arquivo/deletados?pagina=1&total_pagina=1', '/api/orcamento/arquivo?nota_credito_id=1', 'arquivo'),
 ]:
     ca, _ = chamar(rota_acervo, token=tok)

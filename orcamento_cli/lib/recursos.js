@@ -106,11 +106,21 @@ const RECURSOS = {
     colunas: ['id', 'ano', 'nota_empenho_numero', 'empenho_label', 'finalidade', 'valor_empenhado', 'valor_a_liquidar']
   },
 
-  relatorio: {
-    nome: 'edicao mensal do RPCMTec',
-    caminho: '/orcamento/relatorio',
-    schema: carregar('relatorio/relatorio_schema'),
-    colunas: ['id', 'ano', 'mes', 'assinante', 'data_assinatura']
+  // A edicao mensal do RPCMTec NAO e mais recurso do orcamento: ela saiu para
+  // /api/rpcmtec em 2026-08-01, com o relatorio inteiro, e quem a alcanca pelo
+  // terminal e o `acervo rpcmtec`. O que ficou aqui e o PAINEL: a execucao por
+  // ND, que e pergunta do orcamento e tem o perfil do orcamento.
+  dashboard: {
+    nome: 'execucao por ND (o painel do orcamento)',
+    caminho: '/orcamento/dashboard',
+    schema: carregar('dashboard/dashboard_schema'),
+    colunas: ['cod_nd', 'nd_nome', 'previsto', 'recebido', 'empenhado', 'liquidado'],
+    // Recurso de LEITURA: o painel CALCULA a partir de NC, NE e liquidacao, e
+    // nao ha o que escrever nele. Sem isto o CLI anunciaria o CRUD que o
+    // registry assume por padrao, e o agente descobriria pelo 404.
+    somenteLeitura: [
+      { caminho: 'execucao_nd', descricao: 'perfil consulta; query: ano*, mes*' }
+    ]
   },
 
   configuracao: {

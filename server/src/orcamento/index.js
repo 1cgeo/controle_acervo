@@ -20,7 +20,17 @@ module.exports = {
   recebimentoRoute: require('./nota_empenho').recebimentoRoute,
   licitacaoRoute: require('./licitacao').licitacaoRoute,
   rpnpRoute: require('./licitacao').rpnpRoute,
-  relatorioRoute: require('./relatorio').relatorioRoute,
+  // A execucao por ND que alimenta as tres abas do painel. Era a "tabela 3.1"
+  // da feature relatorio, e ficou no orcamento quando o RPCMTec saiu: o painel
+  // pede NUMEROS quebrados em PDR e Extra-PDR, com linha de total, e e lido por
+  // quem tem consulta no modulo -- o relatorio pede a visao do PDR formatada e
+  // e admin-only. Ver orcamento/dashboard/dashboard_ctrl.js.
+  dashboardRoute: require('./dashboard').dashboardRoute,
+  // O RPCMTec saiu daqui em 2026-08-01, pelo mesmo motivo que a meta do PIT:
+  // virou feature de plataforma, em server/src/rpcmtec/, servida por
+  // /api/rpcmtec. Ele gerava a "secao 3" (o PDR) num DOCX proprio, que alguem
+  // colava a mao no arquivo gerado pelo outro gerador. O orcamento continua
+  // sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
   arquivoRoute: require('./arquivo').arquivoRoute,
   arquivoCtrl: require('./arquivo').arquivoCtrl
 }

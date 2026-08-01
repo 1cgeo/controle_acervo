@@ -1,5 +1,14 @@
 BEGIN;
 
+-- O PostGIS é declarado AQUI, e não só em `er/acervo.sql`, porque este arquivo
+-- roda ANTES dele na ordem do create_config.js (limites não referencia ninguém,
+-- e o filtro por município do acervo o consulta). Sem esta linha a instalação
+-- nova morria em `tipo "geometry" não existe`, na primeira coluna geométrica
+-- abaixo; o banco de teste não pegava porque o globalSetup do Jest cria as
+-- extensões antes do laço. Todo arquivo de `er/` que usa geometria declara a
+-- extensão, que é a convenção que `acervo.sql` já seguia.
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- Limite político-administrativo: município e estado.
 --
 -- Dado de REFERÊNCIA, e não acervo. Ele não é produto nem ponto de controle:

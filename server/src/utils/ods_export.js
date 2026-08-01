@@ -394,4 +394,132 @@ const sendOds = (res, filename, opts) => {
   return res.end(buffer)
 }
 
-module.exports = { criarOds, sendOds, letraColuna, partesData }
+// --- Leitura de ZIP --------------------------------------------------------
+//
+// O contrário do `zipar`: abre um .ods que já existe para trocar o conteúdo de
+// uma entrada e reescrever o resto INTACTO. É o que permite gerar o Anuário
+// Estatístico a partir da planilha-semente da DSG, em vez de redesenhá-la: o
+// estilo, a largura de coluna, a célula mesclada e o formato numérico que
+// mostra zero como '-' continuam sendo os do arquivo original, byte a byte.
+//
+// Lê pelo DIRETÓRIO CENTRAL, e não varrendo cabeçalhos locais: só o diretório
+// central é autoritativo sobre onde cada entrada começa, e é dele que sai o
+// tamanho comprimido quando a entrada usa descritor de dados.
+//
+// Não trata ZIP64 nem entrada cifrada, de propósito: a semente é um arquivo
+// nosso, versionado, de dezenas de KB. Se um dia deixar de sê-lo, o erro
+// abaixo diz isso em vez de devolver bytes truncados.
+
+const FIM_DIRETORIO = 0x06054b50
+const ENTRADA_CENTRAL = 0x02014b50
+
+/**
+ * Abre um ZIP e devolve o conteúdo já descomprimido de cada entrada.
+ * @param {Buffer} buffer
+ * @returns {Map<string, Buffer>} nome da entrada para conteúdo
+ */
+const desziparParaMapa = buffer => {
+  // O fim do diretório central tem tamanho variável (comentário no fim), então
+  // procura-se a assinatura de trás para frente.
+  let fim = -1
+  for (let i = buffer.length - 22; i >= 0; i--) {
+    if (buffer.readUInt32LE(i) === FIM_DIRETORIO) {
+      fim = i
+      break
+    }
+  }
+  if (fim < 0) {
+    throw new Error('ODS inválido: não achei o fim do diretório central do ZIP')
+  }
+
+  const total = buffer.readUInt16LE(fim + 10)
+  let posicao = buffer.readUInt32LE(fim + 16)
+  const entradas = new Map()
+
+  for (let i = 0; i < total; i++) {
+    if (buffer.readUInt32LE(posicao) !== ENTRADA_CENTRAL) {
+      throw new Error('ODS inválido: entrada do diretório central fora de lugar')
+    }
+    const metodo = buffer.readUInt16LE(posicao + 10)
+    const tamanhoComprimido = buffer.readUInt32LE(posicao + 20)
+    const tamanhoCru = buffer.readUInt32LE(posicao + 24)
+    const tamanhoNome = buffer.readUInt16LE(posicao + 28)
+    const tamanhoExtra = buffer.readUInt16LE(posicao + 30)
+    const tamanhoComentario = buffer.readUInt16LE(posicao + 32)
+    const deslocamentoLocal = buffer.readUInt32LE(posicao + 42)
+    const nome = buffer.toString('utf8', posicao + 46, posicao + 46 + tamanhoNome)
+
+    // O cabeçalho local repete nome e extra, e os tamanhos dele podem diferir
+    // dos do diretório central: os dados começam depois DESTE extra.
+    const nomeLocal = buffer.readUInt16LE(deslocamentoLocal + 26)
+    const extraLocal = buffer.readUInt16LE(deslocamentoLocal + 28)
+    const inicio = deslocamentoLocal + 30 + nomeLocal + extraLocal
+    const dados = buffer.subarray(inicio, inicio + tamanhoComprimido)
+
+    if (metodo === 0) {
+      entradas.set(nome, Buffer.from(dados))
+    } else if (metodo === 8) {
+      entradas.set(nome, zlib.inflateRawSync(dados))
+    } else {
+      throw new Error(`ODS inválido: método de compressão ${metodo} não suportado em "${nome}"`)
+    }
+
+    if (entradas.get(nome).length !== tamanhoCru) {
+      throw new Error(`ODS inválido: "${nome}" descomprimiu com tamanho inesperado`)
+    }
+
+    posicao += 46 + tamanhoNome + tamanhoExtra + tamanhoComentario
+  }
+
+  return entradas
+}
+
+/**
+ * Reescreve um .ods trocando o conteúdo de algumas entradas e copiando o resto.
+ *
+ * A entrada `mimetype` volta PRIMEIRO e SEM compressão, que é o que o ODF exige
+ * para o descompactador reconhecer o tipo do documento sem abrir o XML. Sem
+ * isso o LibreOffice ainda abre, mas o arquivo deixa de ser um ODF válido e o
+ * `file`/`xdg-mime` passa a chamá-lo de "Zip archive".
+ *
+ * @param {Buffer} original
+ * @param {Object<string, Buffer|string>} substituicoes - nome da entrada para conteúdo novo
+ * @param {Date} [data]
+ * @returns {Buffer}
+ */
+const reescreverOds = (original, substituicoes, data = new Date()) => {
+  const entradas = desziparParaMapa(original)
+
+  for (const nome of Object.keys(substituicoes)) {
+    if (!entradas.has(nome)) {
+      throw new Error(`ODS-semente não tem a entrada "${nome}"`)
+    }
+  }
+
+  const conteudo = nome => {
+    const novo = substituicoes[nome]
+    if (novo == null) return entradas.get(nome)
+    return Buffer.isBuffer(novo) ? novo : Buffer.from(novo, 'utf8')
+  }
+
+  const nomes = [...entradas.keys()]
+  const ordenados = ['mimetype', ...nomes.filter(n => n !== 'mimetype')]
+
+  return zipar(
+    ordenados.map(nome => ({
+      nome,
+      conteudo: conteudo(nome),
+      comprimir: nome !== 'mimetype'
+    })),
+    data
+  )
+}
+
+module.exports = {
+  criarOds,
+  sendOds,
+  letraColuna,
+  partesData,
+  desziparParaMapa,
+  reescreverOds
+}

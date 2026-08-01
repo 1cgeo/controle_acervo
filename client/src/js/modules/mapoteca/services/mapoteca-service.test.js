@@ -151,15 +151,13 @@ describe('mapoteca-service: material, estoque e consumo', () => {
 describe('mapoteca-service: relatorios', () => {
 
 
-  test('o RPCMTec fica FORA de /mapoteca: e a rota do acervo', async () => {
-    await svc.getRpcmtecAcervo({ ano: 2026, mes: 6 });
-    expect(apiGet).toHaveBeenCalledWith('/relatorio/rpcmtec?ano=2026&mes=6');
-
-    await svc.downloadRpcmtecDocx({ ano: 2026, mes: 6 });
-    expect(apiDownload).toHaveBeenCalledWith(
-      '/relatorio/rpcmtec/docx?ano=2026&mes=6',
-      'RPCMTec-acervo-2026-06.docx'
-    );
+  // O RPCMTec NAO tem mais funcao aqui: ele saiu do modulo em 2026-08-01 para
+  // @services/rpcmtec-service.js, porque o relatorio e da Divisao inteira e
+  // este service gerava so a metade dele. O teste que sobrou e o inverso:
+  // garantir que ninguem o traga de volta para dentro da mapoteca.
+  test('o service da mapoteca NAO expoe mais nada de RPCMTec', () => {
+    const doRpcmtec = Object.keys(svc).filter(k => /rpcmtec/i.test(k));
+    expect(doRpcmtec).toEqual([]);
   });
 
   // A aba META4_DETALHADA do RTM: a interface baixa SO o .ods. O CSV da mesma

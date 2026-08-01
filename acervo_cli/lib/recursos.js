@@ -658,14 +658,24 @@ const RECURSOS = {
   },
 
   // -------------------------------------------------------------------------
-  relatorio: {
-    nome: 'RPCMTec, secao acervo',
-    schema: carregar('relatorio/relatorio_schema'),
+  // O RPCMTec e o relatorio mensal da DIVISAO, e nao do acervo: a mesma edicao
+  // fala de acervo, mapoteca e orcamento. Era `/relatorio/rpcmtec` (so acervo e
+  // mapoteca) ate 2026-08-01, quando as duas geracoes parciais viraram uma so.
+  rpcmtec: {
+    nome: 'RPCMTec (relatorio mensal da Divisao) e Anuario Estatistico',
+    schema: carregar('rpcmtec/rpcmtec_schema'),
     operacoes: {
       rpcmtec: {
         metodo: 'GET',
-        caminho: '/relatorio/rpcmtec',
-        query: 'rpcmtecQuery',
+        caminho: '/rpcmtec/gerar',
+        query: 'gerarQuery',
+        acesso: 'admin',
+        envelope: 'registro'
+      },
+      anuario: {
+        metodo: 'GET',
+        caminho: '/rpcmtec/anuario',
+        query: 'gerarQuery',
         acesso: 'admin',
         envelope: 'registro'
       }

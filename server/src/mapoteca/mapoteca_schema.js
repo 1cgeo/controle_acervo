@@ -275,6 +275,11 @@ models.tipoMaterialIds = Joi.object().keys({
 const tipoMaterialBase = {
   nome: Joi.string().max(100).required(),
   descricao: Joi.string().allow(null, ''),
+  // Papel (1), Tinta (2) ou Outro (3), de dominio.categoria_material. É o que
+  // separa as tabelas 7.2 e 7.3 do RPCMTec. O default 3 é deliberado: material
+  // sem categoria escolhida fica FORA das duas tabelas, e faltar de uma tabela
+  // é visível, ao contrário de aparecer na errada.
+  categoria_id: Joi.number().integer().valid(1, 2, 3).default(3),
   // Inteiros: contam o MESMO material que o estoque e o consumo, em unidade.
   estoque_minimo: Joi.number().integer().min(0).allow(null),
   meta_anual: Joi.number().integer().min(0).allow(null),
@@ -283,12 +288,17 @@ const tipoMaterialBase = {
 
 models.tipoMaterial = Joi.object().keys(tipoMaterialBase)
 
-// Sem .default(true) no ativo: omitir a chave ressuscitava material desativado.
-// Ver o comentário em pedidoAtualizacao.
+// Sem default no ativo nem na categoria: chave omitida quer dizer "não mexe".
+// Com o default, um PUT que só corrige o nome ressuscitava material desativado
+// (o caso que gerou a regra) e, agora, jogaria a categoria de volta para Outro,
+// tirando o material da tabela 7.2 ou 7.3 do RPCMTec sem ninguém pedir. Quem
+// preserva de fato é o preserveOmitted do ctrl. Ver o comentário em
+// pedidoAtualizacao.
 models.tipoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   ...tipoMaterialBase,
-  ativo: Joi.boolean()
+  ativo: Joi.boolean(),
+  categoria_id: Joi.number().integer().valid(1, 2, 3)
 })
 
 // Esquemas para Estoque de Material
@@ -425,13 +435,10 @@ models.relatorioQuery = models.anoQuery.keys({
   formato: Joi.string().valid('json', 'csv').default('json')
 })
 
-// Esquema de query do Anuário Estatístico (Tabela 5.4.9): o mês fechado que sobe
-// para a DSG. O padrão é o MÊS isolado, que é o recorte do arquivo histórico;
-// `cumulativo=true` acumula de janeiro até o mês.
-models.anuarioQuery = models.anoQuery.keys({
-  mes: Joi.number().integer().min(1).max(12).required(),
-  cumulativo: Joi.boolean().default(false)
-})
+// O esquema do Anuário Estatístico saiu daqui em 2026-08-01, junto com a rota,
+// para server/src/rpcmtec/. Lá ele é o mesmo `gerarQuery` do relatório (ano e
+// mês, os dois obrigatórios): o Anuário e o RPCMTec são sempre do mesmo mês, e
+// deixá-los com esquemas separados só permitiria gerar os dois desencontrados.
 
 // --- Anexos do pedido -------------------------------------------------------
 
