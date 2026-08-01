@@ -1,4 +1,3 @@
-// Path: server\app.js
 'use strict'
 
 const express = require('express')
@@ -27,7 +26,6 @@ const {
 
 const app = express()
 
-// Add sendJsonAndLog to res object
 app.use(sendJsonAndLogMiddleware)
 
 // CORS antes do rate limit: respostas 429 também precisam dos headers CORS
@@ -100,7 +98,6 @@ app.use((req, res, next) => {
   return next()
 })
 
-// All routes used by the App
 app.use('/api', appRoutes)
 
 app.use('/logs', (req, res) => {

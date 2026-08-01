@@ -1,4 +1,3 @@
-// Path: ponto_controle\ponto_controle_schema.js
 'use strict'
 
 const Joi = require('joi')

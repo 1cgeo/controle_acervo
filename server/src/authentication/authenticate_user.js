@@ -1,4 +1,3 @@
-// Path: authentication\authenticate_user.js
 'use strict'
 
 const { AppError, httpCode, httpClient } = require('../utils')

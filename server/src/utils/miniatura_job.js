@@ -1,4 +1,3 @@
-// Path: utils/miniatura_job.js
 'use strict'
 
 const cron = require('node-cron')

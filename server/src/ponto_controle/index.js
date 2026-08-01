@@ -1,4 +1,3 @@
-// Path: ponto_controle\index.js
 'use strict'
 
 module.exports = {

@@ -1,4 +1,3 @@
-// Path: orcamento\arquivo\arquivo_schema.js
 'use strict'
 
 const Joi = require('joi')

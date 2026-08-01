@@ -1,4 +1,3 @@
-// Path: orcamento\licitacao\index.js
 'use strict'
 
 module.exports = {

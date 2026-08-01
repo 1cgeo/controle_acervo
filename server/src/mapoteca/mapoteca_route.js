@@ -1,9 +1,8 @@
-// Path: mapoteca\mapoteca_route.js
 'use strict'
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode, csvExport, odsExport, enviarArquivo } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, csvExport, enviarArquivo } = require('../utils')
 
 const { verifyPerfil } = require('../login')
 

@@ -1,4 +1,3 @@
-// Path: orcamento\dashboard\index.js
 'use strict'
 
 module.exports = {

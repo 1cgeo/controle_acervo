@@ -1,4 +1,3 @@
-// Path: dashboard\dashboard_schema.js
 'use strict'
 
 const Joi = require('joi')
@@ -17,7 +16,6 @@ models.totalMaxQuery = Joi.object().keys({
     .integer()
 })
 
-// New schemas for dashboard extensions
 models.timelineParams = Joi.object().keys({
   months: Joi.number()
     .integer()

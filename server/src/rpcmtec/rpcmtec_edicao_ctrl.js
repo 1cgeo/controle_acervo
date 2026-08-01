@@ -1,4 +1,3 @@
-// Path: rpcmtec\rpcmtec_edicao_ctrl.js
 'use strict'
 
 // CRUD da edição mensal (`rpcmtec.edicao`): o metadado do relatório, quem

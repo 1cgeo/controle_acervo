@@ -1,4 +1,3 @@
-// Path: usuario\usuario_schema.js
 'use strict'
 
 const Joi = require('joi')

@@ -1,4 +1,3 @@
-// Path: utils\ods_export.js
 'use strict'
 
 const zlib = require('zlib')

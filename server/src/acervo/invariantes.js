@@ -1,4 +1,3 @@
-// Path: acervo\invariantes.js
 'use strict'
 
 // Invariantes lógicos do acervo: as regras que o schema NÃO consegue exprimir

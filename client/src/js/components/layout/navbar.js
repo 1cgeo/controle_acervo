@@ -104,7 +104,6 @@ export function createNavbar({ onToggleSidebar }) {
     },
   }, [usernameEl, avatar, dropdown]);
 
-  // Close dropdown on outside click
   const closeDropdown = (e) => {
     if (dropdownOpen && !userBtn.contains(e.target)) {
       dropdownOpen = false;

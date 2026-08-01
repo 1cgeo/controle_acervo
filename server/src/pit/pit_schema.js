@@ -1,4 +1,3 @@
-// Path: pit\pit_schema.js
 'use strict'
 
 const Joi = require('joi')

@@ -1,4 +1,3 @@
-// Path: comandos\produto.js
 'use strict'
 
 // `acervo produto` - o encadeamento mais repetido do dia a dia do acervo,

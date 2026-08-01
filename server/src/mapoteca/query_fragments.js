@@ -1,4 +1,3 @@
-// Path: mapoteca\query_fragments.js
 "use strict";
 
 const {
@@ -123,6 +122,35 @@ const JOIN_ARQUIVO_IMPRIMIVEL = `
         AND a.tipo_arquivo_id IN ($<tiposImprimiveis:csv>)
       LEFT JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id`;
 
+// O pivô de produtos entregues por tipo e escala, agregado por pedido. É o
+// corpo da CTE `agregado` das duas abas que o publicam: a "Mil" (só clientes
+// militares) e o resumo anual (todos os clientes).
+//
+// Mora aqui pelo mesmo motivo do ESCALA_DISPLAY_ITEM acima: as duas abas TÊM de
+// contar igual. São treze colunas com a mesma régua repetida, e a régua não é
+// óbvia -- `outros_produtos` é definido por NEGAÇÃO (o que não é Topo nem Orto
+// nas escalas padrão), então acrescentar uma escala ao pivô sem mexer nesse
+// FILTER faz a coluna nova entrar em dobro, somada também em "outros". Com duas
+// cópias, bastava corrigir uma e as abas passariam a divergir em silêncio.
+//
+// Espera a CTE `itens` com as colunas qtd, tipo_produto_id, tipo_escala_id e
+// digital, e os parâmetros $<tipoTopo>, $<tipoOrto>, $<escala25k>, $<escala50k>,
+// $<escala100k>, $<escala250k> e $<escalasPadrao:csv>.
+const PIVO_TIPO_ESCALA = `
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala25k>) AS topo_25k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala50k>) AS topo_50k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala100k>) AS topo_100k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id = $<escala250k>) AS topo_250k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoTopo> AND tipo_escala_id IN ($<escalasPadrao:csv>)) AS total_topo,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala25k>) AS orto_25k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala50k>) AS orto_50k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala100k>) AS orto_100k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id = $<escala250k>) AS orto_250k,
+        SUM(qtd) FILTER (WHERE NOT digital AND tipo_produto_id = $<tipoOrto> AND tipo_escala_id IN ($<escalasPadrao:csv>)) AS total_orto,
+        SUM(qtd) FILTER (WHERE NOT digital AND NOT (tipo_produto_id IN ($<tipoTopo>, $<tipoOrto>) AND tipo_escala_id IN ($<escalasPadrao:csv>))) AS outros_produtos,
+        SUM(qtd) FILTER (WHERE digital) AS produtos_digitais,
+        SUM(qtd) AS total`;
+
 // Filtro sargável de ano sobre uma coluna de data/timestamp (usa índice btree,
 // ao contrário de EXTRACT(YEAR FROM col) = ano). Requer parâmetro $<ano>.
 const filtroAno = (coluna) =>
@@ -153,6 +181,7 @@ module.exports = {
   PRODUTO_TIPO_ID,
   PRODUTO_ESCALA_ID,
   ITEM_E_AVULSO,
+  PIVO_TIPO_ESCALA,
   SITUACOES_EM_ABERTO,
   JOIN_ARQUIVO_IMPRIMIVEL,
   filtroAno,

@@ -1,4 +1,3 @@
-// Path: orcamento\utils\index.js
 'use strict'
 
 // O modulo orcamento reusa os utilitarios do SCA, com UMA excecao declarada: o

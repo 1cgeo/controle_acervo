@@ -1,4 +1,3 @@
-// Path: orcamento\licitacao\rpnp_schema.js
 'use strict'
 
 const Joi = require('joi')

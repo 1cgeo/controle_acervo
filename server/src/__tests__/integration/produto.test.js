@@ -1,6 +1,6 @@
 'use strict'
 
-const { conn, cleanTestData, closeConnection } = require('../helpers/db')
+const { conn, cleanTestData } = require('../helpers/db')
 const { createProduto, createVersao, createFullProduct } = require('../helpers/fixtures')
 const { ADMIN_UUID } = require('../helpers/auth')
 const { getApp } = require('../helpers/app')
@@ -296,7 +296,6 @@ describe('Produto Integration', () => {
     it('should track arquivo_deletado when deleting files', async () => {
       const chain = await createFullProduct()
 
-      // Move file to deleted table
       await conn.one(`
         INSERT INTO acervo.arquivo_deletado (uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, tipo_status_id, situacao_carregamento_id, descricao, crs_original, data_cadastramento, usuario_cadastramento_uuid, data_delete, usuario_delete_uuid)
         SELECT uuid_arquivo, nome, nome_arquivo, 'teste', versao_id, tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado, 4, situacao_carregamento_id, descricao, crs_original, data_cadastramento, usuario_cadastramento_uuid, NOW(), $2

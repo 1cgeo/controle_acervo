@@ -1,4 +1,3 @@
-// Path: comandos\auditar.js
 'use strict'
 
 // `acervo auditar` - os invariantes logicos do acervo, rodados no servidor.

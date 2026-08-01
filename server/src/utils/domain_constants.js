@@ -1,4 +1,3 @@
-// Path: utils\domain_constants.js
 'use strict'
 
 /**

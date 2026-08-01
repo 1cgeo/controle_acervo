@@ -1,4 +1,3 @@
-// Path: rpcmtec\rpcmtec_route.js
 'use strict'
 
 // Rotas do RPCMTec, o relatório mensal da Divisão.

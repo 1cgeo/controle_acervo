@@ -1,4 +1,3 @@
-// Path: pit\pit_ctrl.js
 'use strict'
 
 const { db } = require('../database')

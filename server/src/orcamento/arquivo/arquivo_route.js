@@ -1,4 +1,3 @@
-// Path: orcamento\arquivo\arquivo_route.js
 'use strict'
 
 const express = require('express')

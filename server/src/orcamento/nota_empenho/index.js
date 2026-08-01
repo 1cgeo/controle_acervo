@@ -1,4 +1,3 @@
-// Path: orcamento\nota_empenho\index.js
 'use strict'
 
 module.exports = {

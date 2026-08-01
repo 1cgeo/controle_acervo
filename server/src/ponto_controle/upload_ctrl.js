@@ -1,9 +1,7 @@
-// Path: ponto_controle\upload_ctrl.js
 'use strict'
 
 const fs = require('fs').promises
 const fsClassic = require('fs')
-const path = require('path')
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto')
 

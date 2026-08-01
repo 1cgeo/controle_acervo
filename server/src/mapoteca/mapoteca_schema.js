@@ -1,9 +1,8 @@
-// Path: mapoteca\mapoteca_schema.js
 'use strict'
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO, TIPO_ESCALA, TIPO_PRODUTO } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO } = require('../utils/domain_constants')
 
 const models = {}
 

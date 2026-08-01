@@ -1,4 +1,3 @@
-// Path: utils\index.js
 'use strict'
 
 module.exports = {
@@ -15,7 +14,6 @@ module.exports = {
   serializeErrorLoader: require('./serialize_error_loader'),
   domainConstants: require('./domain_constants'),
   csvExport: require('./csv_export'),
-  odsExport: require('./ods_export'),
   enviarArquivo: require('./enviar_arquivo'),
   preserveOmitted: require('./preserve_omitted'),
 }

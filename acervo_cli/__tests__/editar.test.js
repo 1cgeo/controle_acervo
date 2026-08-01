@@ -1,4 +1,3 @@
-// Path: __tests__\editar.test.js
 'use strict'
 
 // O `editar` faz read-modify-write contra um acervo de PRODUCAO. O que se testa

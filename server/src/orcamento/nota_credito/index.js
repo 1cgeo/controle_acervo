@@ -1,4 +1,3 @@
-// Path: orcamento\nota_credito\index.js
 'use strict'
 
 module.exports = {

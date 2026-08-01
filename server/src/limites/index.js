@@ -1,4 +1,3 @@
-// Path: limites\index.js
 'use strict'
 
 module.exports = {

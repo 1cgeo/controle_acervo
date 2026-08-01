@@ -1,7 +1,6 @@
 'use strict'
 
-const { conn, cleanTestData, closeConnection } = require('../helpers/db')
-const { ADMIN_UUID } = require('../helpers/auth')
+const { conn, cleanTestData } = require('../helpers/db')
 
 afterEach(async () => {
   await cleanTestData()

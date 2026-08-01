@@ -1,4 +1,3 @@
-// Path: comandos\api.js
 'use strict'
 
 // Executor generico das operacoes da registry:

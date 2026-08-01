@@ -1,4 +1,3 @@
-// Path: authentication\verify_server.js
 'use strict'
 
 const { AppError, httpClient } = require('../utils')

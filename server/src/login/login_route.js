@@ -1,4 +1,3 @@
-// Path: login\login_route.js
 'use strict'
 
 const express = require('express')

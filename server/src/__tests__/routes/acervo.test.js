@@ -2,7 +2,7 @@
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
-const { conn, cleanTestData } = require('../helpers/db')
+const { cleanTestData } = require('../helpers/db')
 const { generateAdminToken, generateUserToken } = require('../helpers/auth')
 const { createFullProduct, createVersao } = require('../helpers/fixtures')
 

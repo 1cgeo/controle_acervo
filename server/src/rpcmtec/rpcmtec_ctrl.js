@@ -1,4 +1,3 @@
-// Path: rpcmtec\rpcmtec_ctrl.js
 'use strict'
 
 // O RPCMTec, inteiro, num gerador só.

@@ -1,4 +1,3 @@
-// Path: login\validate_token.js
 'use strict'
 
 const jwt = require('jsonwebtoken')
@@ -25,7 +24,6 @@ const validateToken = async token => {
     throw new AppError('Nenhum token fornecido', httpCode.Unauthorized)
   }
   if (token.startsWith('Bearer ')) {
-    // Remove Bearer from string
     token = token.slice(7, token.length)
   }
 

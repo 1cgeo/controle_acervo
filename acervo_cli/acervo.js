@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Path: acervo.js
 'use strict'
 
 // acervo - interface de linha de comando do SCA, desenhada para AGENTES.

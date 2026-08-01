@@ -1,4 +1,3 @@
-// Path: orcamento\nota_credito\nota_credito_schema.js
 'use strict'
 
 const Joi = require('joi')

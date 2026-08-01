@@ -1,4 +1,3 @@
-// Path: mapoteca\dashboard_route.js
 'use strict'
 
 const express = require('express')

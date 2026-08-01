@@ -1,4 +1,3 @@
-// Path: utils/miniatura_fila.js
 'use strict'
 
 const { gerarMiniatura } = require('./miniatura')

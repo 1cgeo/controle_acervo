@@ -1,4 +1,3 @@
-// Path: orcamento\licitacao\licitacao_route.js
 'use strict'
 
 const express = require('express')

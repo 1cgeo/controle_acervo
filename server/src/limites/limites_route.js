@@ -1,4 +1,3 @@
-// Path: limites\limites_route.js
 'use strict'
 
 const express = require('express')

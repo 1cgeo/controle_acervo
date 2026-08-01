@@ -1,4 +1,3 @@
-// Path: limites\limites_schema.js
 'use strict'
 
 const Joi = require('joi')

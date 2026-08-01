@@ -1,4 +1,3 @@
-// Path: mapoteca\dashboard_ctrl.js
 "use strict";
 
 const { db } = require("../database");
@@ -62,7 +61,6 @@ const MESES_DO_ANO = `SELECT generate_series(
 // Escopo: pedidos ABERTOS no ano (data_pedido). Ver FILTRO_ANO_PEDIDO.
 controller.getOrderStatusDistribution = async (ano) => {
   return db.conn.task(async t => {
-    // Get counts for different statuses
     const statusCounts = await t.any(`
       SELECT
         situacao_pedido_id,
@@ -76,7 +74,6 @@ controller.getOrderStatusDistribution = async (ano) => {
       ORDER BY situacao_pedido_id
     `, { ano });
 
-    // Get total orders
     const totalOrders = await t.one(`
       SELECT COUNT(*) AS total FROM mapoteca.pedido p
       WHERE ${PEDIDO_MILITAR('p.cliente_id')}
@@ -167,7 +164,6 @@ controller.getAverageFulfillmentTime = async (ano) => {
         AND ${FILTRO_ANO_PEDIDO()}
     `, { ano });
 
-    // By client type
     const byClientType = await t.any(`
       SELECT 
         c.tipo_cliente_id,
@@ -296,7 +292,6 @@ controller.getPendingOrders = async () => {
   `);
 };
 
-// Stock by Location - pie chart
 controller.getStockByLocation = async () => {
   return db.conn.any(`
     SELECT 
@@ -318,7 +313,6 @@ controller.getStockByLocation = async () => {
 // os dois passam a contar a mesma coisa.
 controller.getMaterialConsumptionTrends = async (ano) => {
   return db.conn.task(async t => {
-    // Monthly consumption for all materials
     const monthlyConsumption = await t.any(`
       WITH meses AS (
         ${MESES_DO_ANO}
@@ -404,7 +398,6 @@ controller.getPlotterStatus = async () => {
       FROM mapoteca.plotter
     `);
 
-    // List of all plotters with last maintenance info
     const plotters = await t.any(`
       WITH ultima_manutencao AS (
         SELECT 

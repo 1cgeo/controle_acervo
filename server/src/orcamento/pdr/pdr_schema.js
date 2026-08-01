@@ -1,4 +1,3 @@
-// Path: orcamento\pdr\pdr_schema.js
 'use strict'
 
 const Joi = require('joi')

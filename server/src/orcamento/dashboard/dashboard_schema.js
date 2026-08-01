@@ -1,4 +1,3 @@
-// Path: orcamento\dashboard\dashboard_schema.js
 'use strict'
 
 const Joi = require('joi')

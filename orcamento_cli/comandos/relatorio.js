@@ -1,4 +1,3 @@
-// Path: comandos\relatorio.js
 'use strict'
 
 // O verbo de INTENCAO do dia a dia orcamentario:

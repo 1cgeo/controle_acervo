@@ -1,4 +1,3 @@
-// Path: utils\http_code.js
 'use strict'
 
 /**

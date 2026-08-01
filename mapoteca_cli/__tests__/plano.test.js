@@ -1,4 +1,3 @@
-// Path: __tests__\plano.test.js
 'use strict'
 
 // Os guardrails do cadastro de pedido, testados offline contra os schemas REAIS

@@ -1,4 +1,3 @@
-// Path: rpcmtec\rpcmtec_schema.js
 'use strict'
 
 const Joi = require('joi')

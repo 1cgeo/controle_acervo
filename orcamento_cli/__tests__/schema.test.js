@@ -1,4 +1,3 @@
-// Path: __tests__\schema.test.js
 'use strict'
 
 // Testa o formatador de contrato e a validacao local CONTRA OS SCHEMAS REAIS do

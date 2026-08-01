@@ -1,4 +1,3 @@
-// Path: lib\http.js
 'use strict'
 
 const http = require('http')

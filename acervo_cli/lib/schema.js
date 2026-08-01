@@ -1,4 +1,3 @@
-// Path: lib\schema.js
 'use strict'
 
 // Le o contrato direto dos schemas Joi do server/ e o imprime em forma compacta,

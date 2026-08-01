@@ -1,4 +1,3 @@
-// Path: lib\plano.js
 'use strict'
 
 // O PLANO de um pedido: um JSON unico com o cliente, o pedido, os itens e os

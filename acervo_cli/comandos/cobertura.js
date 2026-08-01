@@ -1,4 +1,3 @@
-// Path: comandos\cobertura.js
 'use strict'
 
 // `acervo cobertura` - a pergunta numero um do roteamento de demanda:

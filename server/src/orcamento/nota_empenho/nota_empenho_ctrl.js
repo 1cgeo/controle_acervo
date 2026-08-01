@@ -1,4 +1,3 @@
-// Path: orcamento\nota_empenho\nota_empenho_ctrl.js
 'use strict'
 
 const { db } = require('../../database')

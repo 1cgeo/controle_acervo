@@ -1,4 +1,3 @@
-// Path: comandos\sessao.js
 'use strict'
 
 // `orcamento login`, `orcamento logout`, `orcamento status`.

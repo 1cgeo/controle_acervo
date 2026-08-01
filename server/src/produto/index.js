@@ -1,4 +1,3 @@
-// Path: produto\index.js
 "use strict";
 
 module.exports = {

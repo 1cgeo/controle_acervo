@@ -1,4 +1,3 @@
-// Path: orcamento\pdr\pdr_ctrl.js
 'use strict'
 
 const { db } = require('../../database')

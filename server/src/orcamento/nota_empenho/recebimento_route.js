@@ -1,4 +1,3 @@
-// Path: orcamento\nota_empenho\recebimento_route.js
 'use strict'
 
 const express = require('express')

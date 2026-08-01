@@ -1,4 +1,3 @@
-// Path: __tests__\dominios.test.js
 'use strict'
 
 // Os apelidos de dominio saem do utils/domain_constants.js do server/, lido ao

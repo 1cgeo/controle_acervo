@@ -1,4 +1,3 @@
-// Path: integracao\index.js
 'use strict'
 
 module.exports = {

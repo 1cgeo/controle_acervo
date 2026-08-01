@@ -1,4 +1,3 @@
-// Path: rpcmtec\rpcmtec_docx.js
 'use strict'
 
 // A FORMATAÇÃO do RPCMTec, medida no documento que a Divisão usa hoje

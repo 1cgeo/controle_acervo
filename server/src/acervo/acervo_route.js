@@ -1,4 +1,3 @@
-// Path: acervo\acervo_route.js
 'use strict'
 
 const express = require('express')
@@ -302,14 +301,12 @@ router.get(
     
     const zipData = await acervoCtrl.getSituacaoGeralJSON(scales);
     
-    // Set appropriate headers for ZIP file download
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': 'attachment; filename="situacao-geral.zip"',
       'Content-Length': zipData.length
     });
     
-    // Send the ZIP file directly
     return res.send(zipData);
   })
 );

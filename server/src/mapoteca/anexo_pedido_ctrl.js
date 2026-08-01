@@ -1,4 +1,3 @@
-// Path: mapoteca\anexo_pedido_ctrl.js
 'use strict'
 
 const path = require('path')

@@ -1,4 +1,3 @@
-// Path: comandos\dominio.js
 'use strict'
 
 // `mapoteca dominio [<sub>]` - as tabelas de dominio da mapoteca.

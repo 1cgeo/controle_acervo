@@ -1,4 +1,3 @@
-// Path: dashboard\dashboard_ctrl.js
 'use strict'
 
 const { db } = require('../database')
@@ -151,7 +150,6 @@ controller.getDownload = async () => {
 
 // NEW DASHBOARD FUNCTIONS
 
-// Get product activity by month
 controller.getProdutoActivityTimeline = async (months = 12) => {
   // Agregar o UNION por mês (antes saíam 2 linhas/mês em ordem DESC,
   // duplicando meses no gráfico do client)
@@ -181,10 +179,8 @@ controller.getProdutoActivityTimeline = async (months = 12) => {
   `, [months]);
 }
 
-// Get version statistics
 controller.getVersionStatistics = async () => {
   return db.conn.task(async t => {
-    // Get basic version stats
     const versionStats = await t.one(`
       SELECT
         COALESCE(SUM(versions_per_product), 0) AS total_versions,
@@ -198,7 +194,6 @@ controller.getVersionStatistics = async () => {
       ) subquery
     `);
     
-    // Get version count distribution
     const versionDistribution = await t.any(`
       SELECT 
         versions_per_product,
@@ -212,7 +207,6 @@ controller.getVersionStatistics = async () => {
       ORDER BY versions_per_product
     `);
     
-    // Get version type distribution
     const versionTypeDistribution = await t.any(`
       SELECT 
         tv.nome AS version_type,
@@ -230,7 +224,6 @@ controller.getVersionStatistics = async () => {
   });
 }
 
-// Get storage growth trends
 controller.getStorageGrowthTrends = async (months = 12) => {
   return db.conn.any(`
     WITH monthly_data AS (
@@ -258,7 +251,6 @@ controller.getStorageGrowthTrends = async (months = 12) => {
   `);
 }
 
-// Get project status summary
 controller.getProjectStatusSummary = async () => {
   return db.conn.task(async t => {
     // Project status summary
@@ -301,7 +293,6 @@ controller.getProjectStatusSummary = async () => {
   });
 }
 
-// Get user activity metrics
 controller.getUserActivityMetrics = async (limit = 10) => {
   return db.conn.any(`
     WITH user_uploads AS (
@@ -407,7 +398,6 @@ controller.getSystemHealth = async () => {
   })
 }
 
-// Products by scale distribution
 controller.getProdutosPorEscala = async () => {
   return db.conn.any(`
     SELECT te.nome AS tipo_escala, COUNT(*) AS quantidade
@@ -418,7 +408,6 @@ controller.getProdutosPorEscala = async () => {
   `)
 }
 
-// Files by file type with storage
 controller.getArquivosPorTipoArquivo = async () => {
   return db.conn.any(`
     SELECT ta.nome AS tipo_arquivo, COUNT(*) AS quantidade,

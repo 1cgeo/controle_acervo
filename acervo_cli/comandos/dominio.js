@@ -1,4 +1,3 @@
-// Path: comandos\dominio.js
 'use strict'
 
 // `acervo dominio [tabela]` - as tabelas de dominio do SCA.

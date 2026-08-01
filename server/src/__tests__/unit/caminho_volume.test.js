@@ -1,4 +1,3 @@
-// Path: __tests__/unit/caminho_volume.test.js
 'use strict'
 
 // O bug que estes testes guardam derrubou TODO download pelo navegador quando o

@@ -1,4 +1,3 @@
-// Path: comandos\sessao.js
 'use strict'
 
 // `mapoteca login`, `mapoteca logout`, `mapoteca status`.

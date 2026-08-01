@@ -1,4 +1,3 @@
-// Path: orcamento\dominio\dominio_schema.js
 'use strict'
 
 const Joi = require('joi')

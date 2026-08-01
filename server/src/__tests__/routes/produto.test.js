@@ -3,7 +3,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken } = require('../helpers/auth')
 const { createFullProduct, createProduto, createVersao } = require('../helpers/fixtures')
 
 let app

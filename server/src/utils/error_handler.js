@@ -1,4 +1,3 @@
-// Path: utils\error_handler.js
 'use strict'
 
 const { serialize } = require('./serialize_error_loader')

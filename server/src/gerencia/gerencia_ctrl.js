@@ -1,4 +1,3 @@
-// Path: gerencia\gerencia_ctrl.js
 "use strict";
 const fs = require('fs').promises;
 const path = require('path');
@@ -6,8 +5,6 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
-const { v4: uuidv4 } = require('uuid');
-const { version } = require('os');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
@@ -95,15 +92,12 @@ controller.getSubtipoProduto = async () => {
 
 controller.getArquivosDeletados = async (page = 1, limit = 20) => {
   return db.conn.task(async t => {
-    // Calculate offset based on page and limit
     const offset = (page - 1) * limit;
     
-    // Get total count for pagination metadata
     const totalCount = await t.one(
       `SELECT COUNT(*) AS total FROM acervo.arquivo_deletado`
     );
     
-    // Get paginated data
     const arquivosDeletados = await t.any(
       `
       SELECT 
@@ -180,10 +174,8 @@ controller.getArquivosDeletados = async (page = 1, limit = 20) => {
       [limit, offset]
     );
 
-    // Calculate total pages
     const totalPages = Math.ceil(totalCount.total / limit);
 
-    // Return data with pagination metadata
     return {
       data: arquivosDeletados,
       pagination: {
@@ -362,10 +354,8 @@ controller.verificarConsistencia = async () => {
 
 controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
   return db.conn.task(async t => {
-    // Calculate offset based on page and limit
     const offset = (page - 1) * limit;
     
-    // Use UNION ALL with proper pagination using ROW_NUMBER
     const arquivosIncorretos = await t.any(`
       WITH arquivos_combined AS (
         SELECT 
@@ -405,17 +395,14 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
       ORDER BY row_num
     `, [offset, offset + limit]);
     
-    // Get total count
     const totalCount = await t.one(`
       SELECT 
         (SELECT COUNT(*) FROM acervo.arquivo WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_CARREGAMENTO}) +
         (SELECT COUNT(*) FROM acervo.arquivo_deletado WHERE tipo_status_id = ${STATUS_ARQUIVO.ERRO_EXCLUSAO}) AS total
     `);
     
-    // Calculate total pages
     const totalPages = Math.ceil(totalCount.total / limit);
     
-    // Return data with pagination metadata
     return {
       data: arquivosIncorretos,
       pagination: {

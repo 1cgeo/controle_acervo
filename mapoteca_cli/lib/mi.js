@@ -1,4 +1,3 @@
-// Path: lib\mi.js
 'use strict'
 
 // Normalizacao do MI (indice de nomenclatura da carta) tal como ele chega num

@@ -1,4 +1,3 @@
-// Path: login\verify_login.js
 'use strict'
 
 const { AppError, asyncHandler, httpCode } = require('../utils')

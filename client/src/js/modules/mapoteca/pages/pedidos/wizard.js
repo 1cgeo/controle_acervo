@@ -12,7 +12,7 @@ import {
   createProdutoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate } from '@utils/format.js';
-import { showSuccess, showError, showInfo, showWarning } from '@utils/toast.js';
+import { showSuccess, showError, showWarning } from '@utils/toast.js';
 import {
   createPedidoFormFields,
   aplicarModoPedido,

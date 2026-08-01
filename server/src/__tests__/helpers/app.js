@@ -16,10 +16,9 @@ const getApp = async () => {
   const { db, databaseVersion } = require('../../database')
   await db.createConn()
 
-  // Load database version (required by routes.js)
+  // Exigido pelo routes.js, que lê a versão no require.
   await databaseVersion.load()
 
-  // Now import the app (controllers will use the initialized db.conn)
   const app = require('../../server/app')
   appInstance = app
   return app

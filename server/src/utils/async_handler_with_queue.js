@@ -1,4 +1,3 @@
-// Path: utils\async_handler_with_queue.js
 'use strict'
 
 const BetterQueue = require('better-queue');

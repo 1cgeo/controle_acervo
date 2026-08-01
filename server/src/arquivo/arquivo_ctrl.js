@@ -1,14 +1,11 @@
-// Path: arquivo\arquivo_ctrl.js
 "use strict";
 const fs = require('fs').promises;
 const fsClassic = require('fs');
-const path = require('path');
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { v4: uuidv4 } = require('uuid');
-const { version } = require('os');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
@@ -24,6 +21,19 @@ const pipelineAsync = promisify(pipeline);
 // buffer. O ajuste é barato e ajuda em toda carga; não é a solução de um
 // gargalo, e registrar isso evita que alguém volte aqui esperando milagre.
 const BLOCO_LEITURA = 8 * 1024 * 1024;
+
+// O INSERT do arquivo na tabela principal, um so para os cinco pontos que
+// gravam arquivo: o catalogo de produto que ja esta no volume e os quatro
+// caminhos do confirm-upload (arquivo avulso, versao nova, produto novo e o
+// slot reaproveitado). Sao dezesseis colunas, e acrescentar uma em quatro dos
+// cinco pontos e o modo de falhar que nao da erro: o arquivo entra sem o campo
+// e a falta so aparece depois, no relatorio.
+const SQL_INSERT_ARQUIVO = `INSERT INTO acervo.arquivo(
+  uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+  volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+  tipo_status_id, situacao_carregamento_id, descricao, crs_original,
+  usuario_cadastramento_uuid, data_cadastramento
+) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`;
 
 /**
  * Calcula checksum SHA-256 via streaming, sem carregar o arquivo inteiro em memória.
@@ -374,7 +384,6 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
       for (let id of arquivoIds) {
         const arquivo = await t.one('SELECT * FROM acervo.arquivo WHERE id = $1', [id]);
 
-        // Move the file to arquivo_deletado table
         const { id: arquivoDeletadoId } = await t.one(
           `INSERT INTO acervo.arquivo_deletado (
             uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, tipo_arquivo_id, 
@@ -411,7 +420,6 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         );
 
         try {
-          // Move related downloads to download_deletado table for THIS file
           await t.none(
             `INSERT INTO acervo.download_deletado (arquivo_deletado_id, usuario_uuid, data_download)
              SELECT $1, d.usuario_uuid, d.data_download
@@ -420,7 +428,6 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
             [arquivoDeletadoId, arquivo.id]
           );
 
-          // Delete related downloads from the original download table
           await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [arquivo.id]);
         } catch (downloadError) {
           throw new AppError(
@@ -430,7 +437,6 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
           );
         }
 
-        // Finally, delete the file itself from the arquivo table
         await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [arquivo.id]);
       }
 
@@ -449,7 +455,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
     try {
       const { arquivos } = requestData;
       
-      // Verify all versao_ids exist and get their product types
       const versao_ids = [...new Set(arquivos.map(a => a.versao_id))];
       
       const versoes = await t.any(
@@ -472,7 +477,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         versaoMap[v.id] = v;
       });
       
-      // Get volumes for all product types
       const productTypes = [...new Set(versoes.map(v => v.tipo_produto_id))];
       const volumeTypes = await t.any(
         `SELECT vtp.tipo_produto_id, vtp.volume_armazenamento_id, va.volume, va.capacidade_gb
@@ -487,14 +491,12 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         volumeByProductType[vt.tipo_produto_id] = vt;
       });
       
-      // Check if all product types have primary volumes
       for (const pt of productTypes) {
         if (!volumeByProductType[pt]) {
           throw new AppError(`Não existe volume primário cadastrado para o tipo de produto ${pt}`, httpCode.BadRequest);
         }
       }
       
-      // Check if any file already exists for its version
       for (const arquivo of arquivos) {
         // A chave fisica e (volume, nome_arquivo, extensao); arquivos irmaos de uma
         // mesma versao (ex.: .tif principal + .pdf + .json de edicao) compartilham
@@ -533,7 +535,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         throw new AppError('A requisição contém arquivos com checksum duplicado para a mesma versão', httpCode.BadRequest);
       }
 
-      // Calculate required space per volume
       const spaceNeededByVolume = {};
       for (const arquivo of arquivos) {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
@@ -545,7 +546,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         spaceNeededByVolume[volume.volume_armazenamento_id] += arquivo.tamanho_mb || 0;
       }
       
-      // Check space availability for each volume
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
         const spaceGB = space / 1024; // Convert to GB
         const espacoDisponivel = await t.one(
@@ -562,7 +562,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         }
       }
       
-      // Create upload session
       const { id: sessionId, uuid_session } = await t.one(
         `INSERT INTO acervo.upload_session(
           usuario_uuid, operation_type
@@ -570,7 +569,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         [usuarioUuid, 'add_files']
       );
       
-      // Process files
       const arquivosInfo = [];
       const nomesFisicosUsados = new Set();
 
@@ -590,7 +588,6 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
         );
 
-        // Register file in the temporary table
         await t.none(
           `INSERT INTO acervo.upload_arquivo_temp(
             session_id, nome, nome_arquivo, destination_path, 
@@ -777,7 +774,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
     try {
       const { versoes } = requestData;
       
-      // Verify all product_ids exist
       const produto_ids = [...new Set(versoes.map(v => v.produto_id))];
       
       const produtos = await t.any(
@@ -791,13 +787,11 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         throw new AppError(`Produtos não encontrados com IDs: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
       
-      // Create mapping for easier access
       const produtoMap = {};
       produtos.forEach(p => {
         produtoMap[p.id] = p;
       });
       
-      // Check if any version name already exists for its product
       for (const item of versoes) {
         const versaoExistente = await t.oneOrNone(
           'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2 AND subtipo_produto_id = $3',
@@ -840,7 +834,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         }
       }
 
-      // Get volumes for all product types
       const productTypes = [...new Set(produtos.map(p => p.tipo_produto_id))];
       const volumeTypes = await t.any(
         `SELECT vtp.tipo_produto_id, vtp.volume_armazenamento_id, va.volume, va.capacidade_gb
@@ -855,14 +848,12 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         volumeByProductType[vt.tipo_produto_id] = vt;
       });
       
-      // Check if all product types have primary volumes
       for (const pt of productTypes) {
         if (!volumeByProductType[pt]) {
           throw new AppError(`Não existe volume primário cadastrado para o tipo de produto ${pt}`, httpCode.BadRequest);
         }
       }
       
-      // Calculate required space per volume
       const spaceNeededByVolume = {};
       for (const item of versoes) {
         const produto = produtoMap[item.produto_id];
@@ -877,7 +868,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         }
       }
       
-      // Check space availability for each volume
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
         const spaceGB = space / 1024; // Convert to GB
         const espacoDisponivel = await t.one(
@@ -894,7 +884,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         }
       }
       
-      // Create upload session
       const { id: sessionId, uuid_session } = await t.one(
         `INSERT INTO acervo.upload_session(
           usuario_uuid, operation_type
@@ -902,7 +891,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         [usuarioUuid, 'add_version']
       );
       
-      // Process each version and its files
       const result = [];
       const nomesFisicosUsados = new Set();
 
@@ -910,7 +898,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         const produto = produtoMap[item.produto_id];
         const volume = volumeByProductType[produto.tipo_produto_id];
         
-        // Create temporary version
         const { id: versaoTempId } = await t.one(
           `INSERT INTO acervo.upload_versao_temp(
             session_id, uuid_versao, versao, nome, tipo_versao_id, 
@@ -936,7 +923,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
           ]
         );
         
-        // Process files for this version
         const arquivosInfo = [];
         
         for (const arquivo of item.arquivos) {
@@ -953,7 +939,6 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
             arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
           );
 
-          // Register file in the temporary table
           await t.none(
             `INSERT INTO acervo.upload_arquivo_temp(
               session_id, nome, nome_arquivo, destination_path,
@@ -1018,7 +1003,6 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
       await assertIdentidadeProdutoLivre(t, produtos);
       assertSequenciaVersoes(produtos);
 
-      // Get volumes for all product types
       const productTypes = [...new Set(produtos.map(p => p.produto.tipo_produto_id))];
       const volumeTypes = await t.any(
         `SELECT vtp.tipo_produto_id, vtp.volume_armazenamento_id, va.volume, va.capacidade_gb
@@ -1033,14 +1017,12 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         volumeByProductType[vt.tipo_produto_id] = vt;
       });
       
-      // Check if all product types have primary volumes
       for (const pt of productTypes) {
         if (!volumeByProductType[pt]) {
           throw new AppError(`Não existe volume primário cadastrado para o tipo de produto ${pt}`, httpCode.BadRequest);
         }
       }
       
-      // Calculate required space per volume
       const spaceNeededByVolume = {};
       for (const item of produtos) {
         const volume = volumeByProductType[item.produto.tipo_produto_id];
@@ -1056,7 +1038,6 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         }
       }
       
-      // Check space availability for each volume
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
         const spaceGB = space / 1024; // Convert to GB
         const espacoDisponivel = await t.one(
@@ -1073,7 +1054,6 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         }
       }
       
-      // Create upload session
       const { id: sessionId, uuid_session } = await t.one(
         `INSERT INTO acervo.upload_session(
           usuario_uuid, operation_type
@@ -1081,14 +1061,12 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         [usuarioUuid, 'add_product']
       );
       
-      // Process each product and its versions
       const result = [];
       const nomesFisicosUsados = new Set();
 
       for (const item of produtos) {
         const volume = volumeByProductType[item.produto.tipo_produto_id];
         
-        // Create temporary product
         const { id: produtoTempId } = await t.one(
           `INSERT INTO acervo.upload_produto_temp(
             session_id, nome, mi, inom, tipo_escala_id,
@@ -1109,11 +1087,9 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           ]
         );
         
-        // Process each version for this product
         const versoesInfo = [];
         
         for (const versao of item.versoes) {
-          // Create temporary version
           const { id: versaoTempId } = await t.one(
             `INSERT INTO acervo.upload_versao_temp(
               session_id, uuid_versao, versao, nome, tipo_versao_id, 
@@ -1139,7 +1115,6 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
             ]
           );
           
-          // Process files for this version
           const arquivosInfo = [];
           
           for (const arquivo of versao.arquivos) {
@@ -1156,7 +1131,6 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
               arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
             );
 
-            // Register file in the temporary table
             await t.none(
               `INSERT INTO acervo.upload_arquivo_temp(
                 session_id, nome, nome_arquivo, destination_path, 
@@ -1418,13 +1392,7 @@ controller.catalogarProduto = async (requestData, usuarioUuid) => {
             const medida = medidas.get(arquivo);
 
             const { id: arquivoId } = await t.one(
-              `INSERT INTO acervo.arquivo(
-                uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-                volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-                tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-                usuario_cadastramento_uuid, data_cadastramento
-              ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-              RETURNING id`,
+              SQL_INSERT_ARQUIVO + ' RETURNING id',
               [
                 arquivo.nome,
                 arquivo.nome_arquivo,
@@ -1498,7 +1466,6 @@ controller.getProblemUploads = async () => {
     const result = [];
     
     for (const session of failedSessions) {
-      // Get failed files based on operation type
       const failedFiles = await t.any(
         `SELECT uf.nome, uf.nome_arquivo, uf.destination_path, uf.status, 
                 uf.error_message, uf.versao_id, uf.versao_temp_id
@@ -1507,7 +1474,6 @@ controller.getProblemUploads = async () => {
         [session.id]
       );
       
-      // Organize results based on operation type
       let sessionDetails = {
         session_uuid: session.uuid_session,
         operation_type: session.operation_type,
@@ -1520,7 +1486,6 @@ controller.getProblemUploads = async () => {
       
       switch (session.operation_type) {
         case 'add_files':
-          // Group failed files by version
           const filesByVersion = {};
           
           for (const file of failedFiles) {
@@ -1543,7 +1508,6 @@ controller.getProblemUploads = async () => {
           break;
           
         case 'add_version':
-          // Get all temporary versions for this session
           const versoesTemp = await t.any(
             `SELECT v.*, p.nome as produto_nome
              FROM acervo.upload_versao_temp v
@@ -1552,7 +1516,6 @@ controller.getProblemUploads = async () => {
             [session.id]
           );
           
-          // Group failed files by version
           const filesByTempVersion = {};
           
           for (const file of failedFiles) {
@@ -1580,7 +1543,6 @@ controller.getProblemUploads = async () => {
           break;
           
         case 'add_product':
-          // Get all temporary products and versions for this session
           const produtosTemp = await t.any(
             `SELECT * FROM acervo.upload_produto_temp WHERE session_id = $1`,
             [session.id]
@@ -1635,7 +1597,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
 
   return db.conn.tx(async t => {
     try {
-      // Find the upload session
       const session = await t.oneOrNone(
         `SELECT * FROM acervo.upload_session WHERE uuid_session = $1 AND status = 'pending'`,
         [sessionUuid]
@@ -1645,12 +1606,10 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         throw new AppError('Sessão de upload não encontrada ou já processada', httpCode.NotFound);
       }
       
-      // Check if user matches
       if (session.usuario_uuid !== usuarioUuid) {
         throw new AppError('Usuário não autorizado para esta sessão de upload', httpCode.Forbidden);
       }
       
-      // Get all files for this session
       const arquivos = await t.any(
         `SELECT * FROM acervo.upload_arquivo_temp WHERE session_id = $1`,
         [session.id]
@@ -1660,7 +1619,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         throw new AppError('Nenhum arquivo encontrado para esta sessão', httpCode.BadRequest);
       }
       
-      // Verify each file exists and validate checksums
       const fileResults = {};
       let allValid = true;
       
@@ -1670,7 +1628,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         let fileValid = true;
         let errorMessage = null;
         
-        // Create structure to organize files by version/product
         if (arquivo.versao_id) {
           if (!fileResults[`versao_${arquivo.versao_id}`]) {
             fileResults[`versao_${arquivo.versao_id}`] = {
@@ -1703,7 +1660,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
             continue;
           }
 
-          // Check if file exists
           await fs.access(filePath);
 
           // Validate checksum via streaming (sem carregar arquivo inteiro em memória)
@@ -1715,7 +1671,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
             allValid = false;
           }
 
-          // Update real file size
           if (fileValid) {
             await t.none(
               `UPDATE acervo.upload_arquivo_temp SET tamanho_mb = $1, status = 'completed' WHERE id = $2`,
@@ -1738,7 +1693,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           );
         }
         
-        // Add file result to appropriate group
         const fileResult = {
           nome: arquivo.nome,
           nome_arquivo: arquivo.nome_arquivo,
@@ -1753,7 +1707,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         }
       }
       
-      // If all files are valid, process based on operation type
       if (allValid) {
         try {
           switch (session.operation_type) {
@@ -1778,7 +1731,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
             [session.id]
           );
           
-          // Organize files by operation type
           let result;
           switch (session.operation_type) {
             case 'replace_files':
@@ -1863,7 +1815,6 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           [session.id]
         );
         
-        // Return failure result with file details
         return {
           session_uuid: sessionUuid,
           operation_type: session.operation_type,
@@ -1895,25 +1846,17 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
 // Helper function for Scenario 1: Process add_files to main tables
 async function processAddFiles(t, session) {
   try {
-    // Get files from the temporary table with existing version ID
     const arquivos = await t.any(
       `SELECT * FROM acervo.upload_arquivo_temp 
        WHERE session_id = $1 AND versao_id IS NOT NULL`,
       [session.id]
     );
     
-    // Get the versao_ids
     const versaoIds = [...new Set(arquivos.map(a => a.versao_id))];
     
-    // Insert each file into the main arquivo table
     for (const arquivo of arquivos) {
       await t.none(
-        `INSERT INTO acervo.arquivo(
-          uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-          tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-          usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+        SQL_INSERT_ARQUIVO,
         [
           arquivo.nome, 
           arquivo.nome_arquivo, 
@@ -1990,12 +1933,7 @@ async function processReplaceFiles(t, session) {
 
       // Insere o novo arquivo no mesmo slot
       await t.none(
-        `INSERT INTO acervo.arquivo(
-          uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-          volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-          tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-          usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+        SQL_INSERT_ARQUIVO,
         [
           arquivo.nome,
           arquivo.nome_arquivo,
@@ -2022,7 +1960,6 @@ async function processReplaceFiles(t, session) {
 // Helper function for Scenario 2: Process add_version to main tables
 async function processAddVersion(t, session) {
   try {
-    // Get versions from temporary table
     const versoesTemp = await t.any(
       `SELECT * FROM acervo.upload_versao_temp 
        WHERE session_id = $1 AND produto_id IS NOT NULL`,
@@ -2032,11 +1969,9 @@ async function processAddVersion(t, session) {
     const produtoIds = [];
     const versaoIds = [];
     
-    // Process each version
     for (const versaoTemp of versoesTemp) {
       produtoIds.push(versaoTemp.produto_id);
       
-      // Insert version into the main versao table
       const { id: versaoId } = await t.one(
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
@@ -2064,26 +1999,19 @@ async function processAddVersion(t, session) {
       
       versaoIds.push(versaoId);
       
-      // Get files for this version from temporary table
       const arquivos = await t.any(
         `SELECT * FROM acervo.upload_arquivo_temp 
          WHERE session_id = $1 AND versao_temp_id = $2`,
         [session.id, versaoTemp.id]
       );
       
-      // Insert each file into the main arquivo table
       for (const arquivo of arquivos) {
         await t.none(
-          `INSERT INTO acervo.arquivo(
-            uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-            volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-            tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-            usuario_cadastramento_uuid, data_cadastramento
-          ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+          SQL_INSERT_ARQUIVO,
           [
             arquivo.nome, 
             arquivo.nome_arquivo, 
-            versaoId,  // Use the newly created versao ID
+            versaoId,
             arquivo.tipo_arquivo_id,
             arquivo.volume_armazenamento_id, 
             arquivo.extensao, 
@@ -2107,7 +2035,6 @@ async function processAddVersion(t, session) {
 // Helper function for Scenario 3: Process add_product to main tables
 async function processAddProduct(t, session) {
   try {
-    // Get products from temporary table
     const produtosTemp = await t.any(
       `SELECT * FROM acervo.upload_produto_temp 
        WHERE session_id = $1`,
@@ -2116,9 +2043,7 @@ async function processAddProduct(t, session) {
     
     const produtoIds = [];
     
-    // Process each product
     for (const produtoTemp of produtosTemp) {
-      // Insert product into the main produto table
       const { id: produtoId } = await t.one(
         `INSERT INTO acervo.produto(
           nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
@@ -2141,16 +2066,13 @@ async function processAddProduct(t, session) {
       
       produtoIds.push(produtoId);
       
-      // Get versions for this product from temporary table
       const versoesTemp = await t.any(
         `SELECT * FROM acervo.upload_versao_temp 
          WHERE session_id = $1 AND produto_temp_id = $2`,
         [session.id, produtoTemp.id]
       );
       
-      // Process each version
       for (const versaoTemp of versoesTemp) {
-        // Insert version into the main versao table
         const { id: versaoId } = await t.one(
           `INSERT INTO acervo.versao(
             uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
@@ -2176,26 +2098,19 @@ async function processAddProduct(t, session) {
           ]
         );
         
-        // Get files for this version from temporary table
         const arquivos = await t.any(
           `SELECT * FROM acervo.upload_arquivo_temp 
            WHERE session_id = $1 AND versao_temp_id = $2`,
           [session.id, versaoTemp.id]
         );
         
-        // Insert each file into the main arquivo table
         for (const arquivo of arquivos) {
           await t.none(
-            `INSERT INTO acervo.arquivo(
-              uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
-              volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
-              tipo_status_id, situacao_carregamento_id, descricao, crs_original,
-              usuario_cadastramento_uuid, data_cadastramento
-            ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`,
+            SQL_INSERT_ARQUIVO,
             [
               arquivo.nome, 
               arquivo.nome_arquivo, 
-              versaoId,  // Use the newly created versao ID
+              versaoId,
               arquivo.tipo_arquivo_id,
               arquivo.volume_armazenamento_id, 
               arquivo.extensao, 

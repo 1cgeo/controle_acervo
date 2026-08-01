@@ -1,4 +1,3 @@
-// Path: utils/caminho_volume.js
 'use strict'
 
 const path = require('path')

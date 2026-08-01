@@ -1,4 +1,3 @@
-// Path: integracao\integracao_route.js
 'use strict'
 
 // Rotas públicas de integração (read-only, SEM autenticação), consumidas pelo

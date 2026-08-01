@@ -1,4 +1,3 @@
-// Path: orcamento\dominio\dominio_route.js
 'use strict'
 
 // Rotas de dominio. Os GET populam selects no client e passaram a exigir perfil

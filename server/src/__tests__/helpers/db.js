@@ -83,7 +83,6 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE acervo.produto CASCADE')
     await t.none('TRUNCATE acervo.volume_tipo_produto CASCADE')
 
-    // Reset volume_armazenamento to only seed row
     await t.none('DELETE FROM acervo.volume_armazenamento WHERE id > 1')
 
     // Reset users to only seed rows (o perfil sai antes: FK para dgeo.usuario)

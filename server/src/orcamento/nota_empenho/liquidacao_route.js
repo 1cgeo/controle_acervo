@@ -1,4 +1,3 @@
-// Path: orcamento\nota_empenho\liquidacao_route.js
 'use strict'
 
 const express = require('express')

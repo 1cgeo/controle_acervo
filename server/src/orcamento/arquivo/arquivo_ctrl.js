@@ -1,4 +1,3 @@
-// Path: orcamento\arquivo\arquivo_ctrl.js
 'use strict'
 
 const path = require('path')

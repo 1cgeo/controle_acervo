@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Path: mapoteca.js
 'use strict'
 
 // mapoteca - interface de linha de comando da Mapoteca do SCA, para AGENTES.

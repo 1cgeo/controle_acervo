@@ -1,4 +1,3 @@
-// Path: ponto_controle\ponto_controle_route.js
 'use strict'
 
 const express = require('express')

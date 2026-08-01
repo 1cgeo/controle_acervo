@@ -1,4 +1,3 @@
-// Path: pit\index.js
 'use strict'
 
 // Plano Interno de Trabalho: o plano anual da Divisao.

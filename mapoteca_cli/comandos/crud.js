@@ -1,4 +1,3 @@
-// Path: comandos\crud.js
 'use strict'
 
 // CRUD generico sobre a registry de recursos da mapoteca:

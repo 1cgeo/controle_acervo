@@ -89,7 +89,6 @@ class Router {
 
     const { route, params } = matched;
 
-    // Run guard
     if (route.guard) {
       const result = route.guard({ params, query });
       if (result !== true) {

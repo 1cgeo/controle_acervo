@@ -1,4 +1,3 @@
-// Path: rpcmtec\rtm_ods.js
 'use strict'
 
 // A aba META4_DETALHADA do RTM, gerada A PARTIR DA PLANILHA-SEMENTE, e não

@@ -1,4 +1,3 @@
-// Path: server\swagger_options.js
 'use strict'
 
 const path = require('path');

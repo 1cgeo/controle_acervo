@@ -1,4 +1,3 @@
-// Path: comandos\relatorio.js
 'use strict'
 
 // Os dois verbos do fechamento do mes:

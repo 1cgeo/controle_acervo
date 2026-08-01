@@ -1,4 +1,3 @@
-// Path: usuario\usuario_ctrl.js
 "use strict";
 
 const { db } = require("../database");

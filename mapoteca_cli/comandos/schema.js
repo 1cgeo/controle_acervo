@@ -1,4 +1,3 @@
-// Path: comandos\schema.js
 'use strict'
 
 // `mapoteca schema [recurso]` - imprime o contrato de um recurso direto do Joi

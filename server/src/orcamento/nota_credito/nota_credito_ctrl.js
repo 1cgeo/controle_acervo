@@ -1,4 +1,3 @@
-// Path: orcamento\nota_credito\nota_credito_ctrl.js
 'use strict'
 
 const { db } = require('../../database')

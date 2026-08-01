@@ -1,7 +1,5 @@
-// Path: acervo\acervo_ctrl.js
 "use strict";
 const archiver = require('archiver');
-const path = require('path');
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { Readable } = require('stream');
 const { db } = require("../database");
@@ -430,7 +428,6 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
     throw new AppError("Usuário não encontrado", httpCode.NotFound);
   }
 
-  // Check if all arquivoIds exist in the database
   const existingArquivos = await db.conn.any(
     `SELECT id, nome, nome_arquivo, extensao, checksum, tipo_arquivo_id, tipo_status_id FROM acervo.arquivo WHERE id IN ($<arquivosIds:csv>)`,
     { arquivosIds }
@@ -459,7 +456,6 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
     );
   }
 
-  // Create download records with pending status
   const downloads = arquivosIds.map(id => ({
     arquivo_id: id,
     usuario_uuid: usuario.uuid
@@ -472,7 +468,6 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
 
   const result = await db.conn.query(query + " RETURNING download_token");
   
-  // Get the download tokens from the result
   const downloadTokens = result.map(row => row.download_token);
 
   const filePaths = await db.conn.any(
@@ -514,7 +509,6 @@ controller.confirmDownload = async (downloadConfirmations) => {
     for (const confirmation of downloadConfirmations) {
       const { download_token, success, error_message } = confirmation;
       
-      // Find the download record
       const download = await t.oneOrNone(
         `SELECT d.id, d.arquivo_id, a.nome 
          FROM acervo.download d 
@@ -532,7 +526,6 @@ controller.confirmDownload = async (downloadConfirmations) => {
         continue;
       }
       
-      // Update the download status
       await t.none(
         `UPDATE acervo.download 
          SET status = $1, 
@@ -585,7 +578,6 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
     throw new AppError("Nenhum arquivo encontrado para os produtos e tipos especificados", httpCode.NotFound);
   }
 
-  // Prepare download entries
   const cs = new db.pgp.helpers.ColumnSet([
     "arquivo_id",
     "usuario_uuid",
@@ -600,7 +592,6 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
     usuario_uuid: usuario.uuid
   }));
 
-  // Insert download entries
   const query = db.pgp.helpers.insert(downloads, cs, {
     table: "download",
     schema: "acervo"
@@ -608,13 +599,11 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
 
   const result = await db.conn.query(query + " RETURNING arquivo_id, download_token");
   
-  // Map the download tokens to files
   const tokenMap = {};
   result.forEach(row => {
     tokenMap[row.arquivo_id] = row.download_token;
   });
 
-  // Prepare file paths for response
   const filePaths = newestVersionsWithFiles.map(file => ({
     arquivo_id: file.arquivo_id,
     nome: file.nome,
@@ -668,12 +657,10 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
       const archive = archiver('zip', { zlib: { level: 9 } });
       const chunks = [];
       
-      // Collect data in memory chunks
       archive.on('data', (chunk) => chunks.push(chunk));
       archive.on('end', () => resolve(Buffer.concat(chunks)));
       archive.on('error', (err) => reject(err));
       
-      // Define all available scales
       const allScales = [
         { id: TIPO_ESCALA.ESCALA_25K, name: '25k', description: '1:25.000' },
         { id: TIPO_ESCALA.ESCALA_50K, name: '50k', description: '1:50.000' },
@@ -681,7 +668,6 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
         { id: TIPO_ESCALA.ESCALA_250K, name: '250k', description: '1:250.000' }
       ];
       
-      // Filter scales based on user selection
       const selectedScales = allScales.filter(scale => 
         scaleOptions[scale.name] === true
       );
@@ -696,11 +682,9 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
         // Create a readable stream from the JSON string
         const jsonStream = Readable.from(jsonString);
         
-        // Add the stream to the archive
         archive.append(jsonStream, { name: `situacao-geral-ct-${scale.name}.geojson` });
       }
       
-      // Finalize the archive
       archive.finalize();
       
     } catch (error) {
@@ -943,7 +927,6 @@ async function generateGeoJSONForScale(scaleId) {
   const features = await controller.getSituacaoGeralCells(scaleId, { incluirGeom: true });
   const escala = SITUACAO_GERAL_ESCALAS.find(s => s.id === scaleId);
 
-  // Create the GeoJSON structure
   return {
     type: "FeatureCollection",
     name: `situacao-geral-ct-${escala ? escala.name : scaleId}`,

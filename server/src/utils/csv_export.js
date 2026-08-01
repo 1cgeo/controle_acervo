@@ -1,4 +1,3 @@
-// Path: utils\csv_export.js
 'use strict'
 
 const httpCode = require('./http_code')

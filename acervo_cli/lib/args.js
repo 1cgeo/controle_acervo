@@ -1,4 +1,3 @@
-// Path: lib\args.js
 'use strict'
 
 // Parser de argumentos proprio, sem dependencia externa. O CLI nao instala

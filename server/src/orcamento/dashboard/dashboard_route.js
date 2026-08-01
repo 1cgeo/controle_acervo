@@ -1,4 +1,3 @@
-// Path: orcamento\dashboard\dashboard_route.js
 'use strict'
 
 // Painel do orçamento. Perfil de CONSULTA no módulo orçamento, e não

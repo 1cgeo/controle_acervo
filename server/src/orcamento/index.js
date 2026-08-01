@@ -1,4 +1,3 @@
-// Path: orcamento\index.js
 'use strict'
 
 // Modulo orcamento (o antigo SCO, Sistema de Controle Orcamentario), absorvido

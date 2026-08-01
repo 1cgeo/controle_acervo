@@ -1,4 +1,3 @@
-// Path: comandos\sessao.js
 'use strict'
 
 // `acervo login`, `acervo logout`, `acervo status`.

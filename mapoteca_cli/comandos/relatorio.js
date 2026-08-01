@@ -1,4 +1,3 @@
-// Path: comandos\relatorio.js
 'use strict'
 
 // As perguntas de acompanhamento da mapoteca, que nao sao CRUD:

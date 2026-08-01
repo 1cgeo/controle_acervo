@@ -1,4 +1,3 @@
-// Path: database\refresh_views.js
 'use strict'
 
 // SELECT de função sempre retorna 1 linha, então .any() (não .none(), que

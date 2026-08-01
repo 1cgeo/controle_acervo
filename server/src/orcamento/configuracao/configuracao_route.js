@@ -1,4 +1,3 @@
-// Path: orcamento\configuracao\configuracao_route.js
 'use strict'
 
 const express = require('express')

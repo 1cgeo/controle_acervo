@@ -1,4 +1,3 @@
-// Path: utils\serialize_error_loader.js
 'use strict'
 
 // `serialize-error` e ESM PURO desde a versao 9. Este modulo existe so para

@@ -1,4 +1,3 @@
-// Path: ponto_controle\dashboard_ctrl.js
 'use strict'
 
 const { db } = require('../database')

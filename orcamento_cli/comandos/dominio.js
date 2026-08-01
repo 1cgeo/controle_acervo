@@ -1,4 +1,3 @@
-// Path: comandos\dominio.js
 'use strict'
 
 // `orcamento dominio <sub> [acao]` - as tabelas de dominio, que tem forma propria

@@ -1,4 +1,3 @@
-// Path: lib\saida.js
 'use strict'
 
 // Formatacao da saida. O padrao e COMPACTO, porque o consumidor e um agente com

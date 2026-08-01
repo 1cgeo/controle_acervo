@@ -1,4 +1,3 @@
-// Path: login\login_ctrl.js
 'use strict'
 
 const jwt = require('jsonwebtoken')

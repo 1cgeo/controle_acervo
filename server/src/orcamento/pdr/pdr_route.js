@@ -1,4 +1,3 @@
-// Path: orcamento\pdr\pdr_route.js
 'use strict'
 
 // O PDR e o conjunto dos seus itens (amarrados no ano). Esta feature e um CRUD

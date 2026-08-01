@@ -1,4 +1,3 @@
-// Path: orcamento\configuracao\configuracao_ctrl.js
 'use strict'
 
 const { db } = require('../../database')

@@ -1,4 +1,3 @@
-// Path: rpcmtec\anuario_ods.js
 'use strict'
 
 // O Anuário Estatístico (Tabela 5.4.9) gerado A PARTIR DA PLANILHA-SEMENTE que

@@ -1,4 +1,3 @@
-// Path: lib\dominios.js
 'use strict'
 
 const path = require('path')

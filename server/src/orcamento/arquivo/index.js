@@ -1,4 +1,3 @@
-// Path: orcamento\arquivo\index.js
 'use strict'
 
 module.exports = {

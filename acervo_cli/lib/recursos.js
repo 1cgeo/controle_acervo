@@ -1,4 +1,3 @@
-// Path: lib\recursos.js
 'use strict'
 
 const path = require('path')

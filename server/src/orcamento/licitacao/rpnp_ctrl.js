@@ -1,4 +1,3 @@
-// Path: orcamento\licitacao\rpnp_ctrl.js
 'use strict'
 
 const { db } = require('../../database')

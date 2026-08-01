@@ -1,4 +1,3 @@
-// Path: comandos\editar.js
 'use strict'
 
 // `acervo editar <versao|produto|arquivo> --id N --set campo=valor`

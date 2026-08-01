@@ -1,4 +1,3 @@
-// Path: authentication\get_usuarios.js
 'use strict'
 
 const { AppError, httpCode, httpClient } = require('../utils')

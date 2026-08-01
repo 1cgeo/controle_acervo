@@ -1,4 +1,3 @@
-// Path: orcamento\arquivo\arquivo_upload.js
 'use strict'
 
 // Middleware de upload (multer) para um unico arquivo no campo "arquivo".

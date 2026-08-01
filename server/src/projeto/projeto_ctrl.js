@@ -1,4 +1,3 @@
-// Path: projeto\projeto_ctrl.js
 "use strict";
 
 const { db } = require("../database");
@@ -97,7 +96,6 @@ controller.deleteProjetos = async (projetoIds) => {
       );
     }
 
-    // Check if any project has associated lotes
     const associatedLotes = await t.any(
       `SELECT DISTINCT projeto_id FROM acervo.lote
       WHERE projeto_id IN ($<projetoIds:csv>)`,
@@ -257,7 +255,6 @@ controller.deleteLotes = async (loteIds) => {
       );
     }
 
-    // Check if any lote has associated versoes
     const associatedVersoes = await t.any(
       `SELECT DISTINCT lote_id FROM acervo.versao
       WHERE lote_id IN ($<loteIds:csv>)`,

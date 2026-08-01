@@ -1,4 +1,3 @@
-// Path: comandos\pedido.js
 'use strict'
 
 // Os verbos de INTENCAO do pedido. Nao sao espelho do CRUD: cada um existe

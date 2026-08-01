@@ -1,4 +1,3 @@
-// Path: login\verify_perfil.js
 "use strict";
 
 const { AppError, asyncHandler, httpCode } = require("../utils");

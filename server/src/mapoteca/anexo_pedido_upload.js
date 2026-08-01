@@ -1,4 +1,3 @@
-// Path: mapoteca\anexo_pedido_upload.js
 'use strict'
 
 // Middleware de upload (multer) para um único arquivo no campo "arquivo",

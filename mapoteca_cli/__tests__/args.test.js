@@ -1,4 +1,3 @@
-// Path: __tests__\args.test.js
 'use strict'
 
 // Testes com node:test (embutido no Node), nao jest: o CLI nao instala

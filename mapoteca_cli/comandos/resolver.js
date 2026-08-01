@@ -1,4 +1,3 @@
-// Path: comandos\resolver.js
 'use strict'
 
 // Os dois verbos de RESOLUCAO, que colapsam o passo mais caro do dia a dia da

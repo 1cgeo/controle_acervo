@@ -1,7 +1,5 @@
-// Path: mapoteca\mapoteca_ctrl.js
 "use strict";
 
-const path = require("path");
 
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");

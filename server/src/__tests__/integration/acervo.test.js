@@ -1,6 +1,6 @@
 'use strict'
 
-const { conn, cleanTestData, closeConnection } = require('../helpers/db')
+const { conn, cleanTestData } = require('../helpers/db')
 const { createFullProduct } = require('../helpers/fixtures')
 const { ADMIN_UUID } = require('../helpers/auth')
 
@@ -42,13 +42,11 @@ describe('Acervo Integration', () => {
     it('should cleanup expired downloads', async () => {
       const chain = await createFullProduct()
 
-      // Create an expired download
       await conn.none(`
         INSERT INTO acervo.download (arquivo_id, usuario_uuid, status, expiration_time)
         VALUES ($1, $2, 'pending', NOW() - INTERVAL '1 hour')
       `, [chain.arquivo.id, ADMIN_UUID])
 
-      // Try to call the cleanup - check if function exists first
       try {
         await conn.none('SELECT acervo.cleanup_expired_downloads()')
       } catch (e) {
@@ -107,7 +105,6 @@ describe('Acervo Integration', () => {
     })
 
     it('should support pagination', async () => {
-      // Create 3 products with unique names
       for (let i = 0; i < 3; i++) {
         await conn.one(`
           INSERT INTO acervo.produto (nome, mi, inom, tipo_escala_id, tipo_produto_id, descricao, geom, usuario_cadastramento_uuid)

@@ -1,4 +1,3 @@
-// Path: integracao\integracao_ctrl.js
 'use strict'
 
 // Controller das rotas públicas de integração (read-only, sem autenticação).

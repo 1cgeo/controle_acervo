@@ -1,4 +1,3 @@
-// Path: orcamento\dashboard\dashboard_ctrl.js
 'use strict'
 
 // Execução orçamentária por natureza de despesa: a fonte das três abas do

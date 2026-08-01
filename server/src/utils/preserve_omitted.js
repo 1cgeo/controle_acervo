@@ -1,4 +1,3 @@
-// Path: utils\preserve_omitted.js
 'use strict'
 
 /**

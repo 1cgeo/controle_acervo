@@ -1,4 +1,3 @@
-// Path: server\index.js
 'use strict'
 
 module.exports = {

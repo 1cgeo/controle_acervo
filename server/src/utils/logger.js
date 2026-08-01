@@ -1,4 +1,3 @@
-// Path: utils\logger.js
 'use strict'
 
 const { createLogger, format, transports } = require('winston')
@@ -9,7 +8,6 @@ const path = require('path')
 const logDir = path.join(__dirname, '..', '..', 'logs')
 
 if (!fs.existsSync(logDir)) {
-  // Create the directory if it does not exist
   fs.mkdirSync(logDir)
 }
 

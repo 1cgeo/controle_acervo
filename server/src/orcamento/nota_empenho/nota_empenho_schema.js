@@ -1,4 +1,3 @@
-// Path: orcamento\nota_empenho\nota_empenho_schema.js
 'use strict'
 
 const Joi = require('joi')

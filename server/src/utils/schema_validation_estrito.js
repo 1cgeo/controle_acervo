@@ -1,4 +1,3 @@
-// Path: utils\schema_validation_estrito.js
 'use strict'
 
 // Validacao ESTRITA: chave desconhecida no corpo vira 400, com sugestao do nome

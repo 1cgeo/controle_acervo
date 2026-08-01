@@ -1,4 +1,3 @@
-// Path: main.js
 'use strict'
 
 const { errorHandler, serializeErrorLoader } = require('./utils')

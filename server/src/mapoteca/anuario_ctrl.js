@@ -1,4 +1,3 @@
-// Path: mapoteca\anuario_ctrl.js
 "use strict";
 
 // Anuário Estatístico: a Tabela 5.4.9 do "O Exército em Números", que o 1º CGEO

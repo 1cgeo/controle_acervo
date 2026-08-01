@@ -1,4 +1,3 @@
-// Path: utils\generate_localizador.js
 'use strict'
 
 const crypto = require('crypto')

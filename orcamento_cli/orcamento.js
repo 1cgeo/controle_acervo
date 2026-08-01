@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Path: orcamento.js
 'use strict'
 
 // orcamento - CLI do modulo orcamento do SCA, desenhado para AGENTES.

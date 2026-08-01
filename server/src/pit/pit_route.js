@@ -1,4 +1,3 @@
-// Path: pit\pit_route.js
 'use strict'
 
 const express = require('express')

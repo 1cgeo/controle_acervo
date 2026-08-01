@@ -1,4 +1,3 @@
-// Path: lib\regras.js
 'use strict'
 
 // O que o joi.describe() NAO consegue contar.

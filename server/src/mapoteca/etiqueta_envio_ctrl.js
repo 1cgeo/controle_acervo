@@ -1,4 +1,3 @@
-// Path: mapoteca\etiqueta_envio_ctrl.js
 'use strict'
 
 const { db } = require('../database')
