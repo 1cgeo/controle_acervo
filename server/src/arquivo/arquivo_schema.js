@@ -120,49 +120,98 @@ models.prepareAddVersion = Joi.object().keys({
   ).min(1).required()
 });
 
-models.prepareAddProduct = Joi.object().keys({
-  produtos: Joi.array().items(
+// Produto novo com suas versões e arquivos. O que muda entre o upload e a
+// catalogação in-place é SÓ a forma do arquivo, então ela é o parâmetro: duas
+// cópias desta árvore divergiriam no primeiro campo novo de produto ou versão.
+const produtoComVersoes = camposArquivo => Joi.object().keys({
+  produto: Joi.object().keys({
+    nome: Joi.string().allow(null).required(),
+    mi: Joi.string().allow(null).required(),
+    inom: Joi.string().allow(null).required(),
+    tipo_escala_id: Joi.number().integer().strict().required(),
+    // Espelha o CHECK de acervo.produto: denominador obrigatório
+    // apenas para escala personalizada (tipo 5), NULL nos demais
+    denominador_escala_especial: Joi.alternatives().conditional('tipo_escala_id', {
+      is: TIPO_ESCALA.ESCALA_PERSONALIZADA,
+      then: Joi.number().integer().strict().required(),
+      otherwise: Joi.valid(null)
+    }),
+    tipo_produto_id: Joi.number().integer().required(),
+    // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+    // Militar); NULL = produto comum, identidade so por (mi, escala, tipo).
+    subtipo_produto_id: Joi.number().integer().allow(null).default(null),
+    descricao: Joi.string().allow(null, ''),
+    geom: Joi.string().required()
+  }).required(),
+  versoes: Joi.array().items(
     Joi.object().keys({
-      produto: Joi.object().keys({
-        nome: Joi.string().allow(null).required(),
-        mi: Joi.string().allow(null).required(),
-        inom: Joi.string().allow(null).required(),
-        tipo_escala_id: Joi.number().integer().strict().required(),
-        // Espelha o CHECK de acervo.produto: denominador obrigatório
-        // apenas para escala personalizada (tipo 5), NULL nos demais
-        denominador_escala_especial: Joi.alternatives().conditional('tipo_escala_id', {
-          is: TIPO_ESCALA.ESCALA_PERSONALIZADA,
-          then: Joi.number().integer().strict().required(),
-          otherwise: Joi.valid(null)
-        }),
-        tipo_produto_id: Joi.number().integer().required(),
-        // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
-        // Militar); NULL = produto comum, identidade so por (mi, escala, tipo).
-        subtipo_produto_id: Joi.number().integer().allow(null).default(null),
-        descricao: Joi.string().allow(null, ''),
-        geom: Joi.string().required()
-      }).required(),
-      versoes: Joi.array().items(
-        Joi.object().keys({
-          uuid_versao: Joi.string().uuid().allow(null),
-          versao: versaoSchema,
-          nome: Joi.string().allow(null).required(),
-          tipo_versao_id: Joi.number().integer().required(),
-          subtipo_produto_id: Joi.number().integer().required(),
-          lote_id: Joi.number().integer().allow(null),
-          metadado: Joi.object().allow(null),
-          descricao: Joi.string().allow(null, ''),
-          orgao_produtor: Joi.string().required(),
-          palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
-          data_criacao: Joi.date().iso().required(),
-          data_edicao: Joi.date().iso().min(Joi.ref('data_criacao')).required(),
-          arquivos: Joi.array().items(
-            Joi.object().keys(arquivoCampos)
-          ).min(1).required()
-        })
+      uuid_versao: Joi.string().uuid().allow(null),
+      versao: versaoSchema,
+      nome: Joi.string().allow(null).required(),
+      tipo_versao_id: Joi.number().integer().required(),
+      subtipo_produto_id: Joi.number().integer().required(),
+      lote_id: Joi.number().integer().allow(null),
+      metadado: Joi.object().allow(null),
+      descricao: Joi.string().allow(null, ''),
+      orgao_produtor: Joi.string().required(),
+      palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+      data_criacao: Joi.date().iso().required(),
+      data_edicao: Joi.date().iso().min(Joi.ref('data_criacao')).required(),
+      arquivos: Joi.array().items(
+        Joi.object().keys(camposArquivo)
       ).min(1).required()
     })
   ).min(1).required()
+});
+
+models.prepareAddProduct = Joi.object().keys({
+  produtos: Joi.array().items(produtoComVersoes(arquivoCampos)).min(1).required()
+});
+
+// Catalogação de produto que JÁ ESTÁ no volume.
+//
+// Duas diferenças de contrato em relação ao prepare-upload/product, e as duas
+// vêm de não haver transferência:
+//
+//   - `volume_armazenamento_id` é OBRIGATÓRIO e vem do cliente. No upload o
+//     volume é o primário do tipo de produto, porque o servidor escolhe para
+//     onde copiar. Aqui o volume é onde o arquivo JÁ ESTÁ: é dado de entrada, e
+//     derivá-lo do tipo tornaria impossível catalogar num volume que não é o
+//     primário daquele tipo (e `idx_unique_primario` só admite um por tipo).
+//   - `checksum` e `tamanho_mb` são RECUSADOS. Quem mede é o servidor, que lê o
+//     arquivo uma vez. Aceitar do cliente custaria a segunda leitura do mesmo
+//     byte pelo mesmo share só para conferir uma cópia que não aconteceu.
+//     Recusar em vez de ignorar: descartado em silêncio, o cliente acredita ter
+//     gravado o checksum que mandou.
+const arquivoCatalogoCampos = {
+  nome: Joi.string().required(),
+  // Caminho RELATIVO à raiz do volume, com barra normal e subpasta inclusa
+  // (`LOTE_1/IMAGENS/Ortoimagem_MI 2965-1`). O servidor recusa travessia.
+  nome_arquivo: Joi.string().required(),
+  // Tileserver (9) é URL, não byte em volume: não há o que catalogar in-place.
+  tipo_arquivo_id: Joi.number().integer().invalid(TIPO_ARQUIVO.TILESERVER).required()
+    .messages({
+      'any.invalid': 'Tileserver não tem arquivo físico no volume; cadastre-o pelo prepare-upload'
+    }),
+  extensao: Joi.string().required(),
+  metadado: Joi.object().allow(null),
+  situacao_carregamento_id: Joi.number().integer(),
+  descricao: Joi.string().allow(null, ''),
+  crs_original: Joi.string().max(10).allow(null, ''),
+  checksum: Joi.any().forbidden().messages({
+    'any.unknown': 'O checksum é medido pelo servidor ao ler o arquivo no volume; não o envie'
+  }),
+  tamanho_mb: Joi.any().forbidden().messages({
+    'any.unknown': 'O tamanho é medido pelo servidor ao ler o arquivo no volume; não o envie'
+  })
+};
+
+models.catalogarProduto = Joi.object().keys({
+  volume_armazenamento_id: Joi.number().integer().strict().positive().required(),
+  // O teto existe porque a requisição fica aberta enquanto o servidor lê os
+  // bytes: quem carrega um lote inteiro chama em laço, e cada chamada é
+  // atômica. Sem sessão, a retomada é a própria requisição seguinte.
+  produtos: Joi.array().items(produtoComVersoes(arquivoCatalogoCampos)).min(1).max(200).required()
 });
 
 models.confirmUpload = Joi.object().keys({

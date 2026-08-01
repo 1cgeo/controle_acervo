@@ -183,8 +183,36 @@ continua valendo, o `confirm-upload` continua conferindo o sha256 do byte no vol
 invariantes `7b` e `7c` continuam medindo o que mediam.
 
 Primeiro caso: as entregas do Convênio RS (MDS, MDT e Ortoimagem), já gravadas no volume
-em `LOTE_1..LOTE_5`. Ali o `prepare-upload` serve só para abrir a sessão e declarar o
-checksum; nada se copia, e o `confirm-upload` valida o byte onde ele já está.
+em `LOTE_1..LOTE_5`.
+
+#### Como se cataloga o que já está no volume (2026-08-01)
+
+`POST /api/arquivo/catalogar/product`, e **não** o par `prepare-upload`/`confirm-upload`.
+Aquele par existe para cobrir a janela entre reservar o destino e **copiar** os bytes, e
+num volume de layout de origem essa janela não existe. Passar por ele cobrava três coisas
+por um trabalho que não acontece:
+
+1. **Duas leituras integrais do mesmo byte.** O cliente lia o arquivo para declarar o
+   checksum e o `confirm-upload` lia tudo de novo para conferir uma cópia que não houve.
+   Medido no LOTE_1: 362 GB relidos a 31-81 MB/s, de 1h20 a 3h só de releitura.
+2. **Essa releitura rodava dentro da transação**, aberta por horas. Uma queda de rede no
+   arquivo 900 de 1.000 desfazia os 899 anteriores, e não havia retomada parcial.
+3. **A checagem de espaço livre**, que num volume in-place mede a coisa errada: os bytes já
+   estão no disco, o que falta é o registro.
+
+Na rota nova o servidor lê o arquivo **uma vez**, fora de transação, e grava o `checksum` e
+o `tamanho_mb` que ele mesmo mediu (mesma política do `atualizar-checksum`). O cliente não
+declara nenhum dos dois, e mandá-los é 400. O `volume_armazenamento_id` vem no corpo,
+porque o volume é onde o arquivo já está, e não o primário do tipo de produto: sem isso
+seria impossível catalogar num volume que não é o primário daquele tipo, já que
+`idx_unique_primario` só admite um por tipo.
+
+Continua valendo tudo que não depende de transferência: a unicidade física
+`(volume, nome_arquivo, extensao)`, a identidade `(INOM, tipo, subtipo)` do produto, a
+sequência de versão e a existência do arquivo. O `nome_arquivo` é o caminho relativo com
+subpasta, e o servidor recusa travessia (`..`), caminho absoluto, letra de unidade e
+contrabarra: com subpasta virando o caso normal, `path.join` sozinho deixaria o corpo da
+requisição escolher qualquer arquivo da máquina.
 
 ### 2.4 Produtos
 

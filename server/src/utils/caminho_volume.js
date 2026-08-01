@@ -84,4 +84,52 @@ const caminhoNoVolume = (volume, ...segmentos) => {
   return juntar(raiz, ...segmentos.filter(s => s !== undefined && s !== null && s !== ''))
 }
 
-module.exports = { caminhoNoVolume, raizDoVolume, uncParaPosix, ehUNC, chaveDoShare }
+/**
+ * Valida um caminho RELATIVO que veio do cliente e vai ser juntado à raiz de um
+ * volume.
+ *
+ * O `caminhoNoVolume` é um `path.join` puro, e `join` NÃO protege contra
+ * travessia: `LOTE_1/../../../etc/passwd` sai do volume sem reclamar. Enquanto o
+ * nome físico era um identificador plano derivado do padrão, isso não aparecia.
+ * A catalogação in-place torna a SUBPASTA o caso normal (o layout do fornecedor
+ * é `LOTE_1/IMAGENS/...`), então a validação passa a ser obrigatória.
+ *
+ * A recusa é por SEGMENTO, e não por busca de substring: sem nenhum segmento
+ * `..` e sem raiz absoluta não existe caminho que escape, e `..` no meio de um
+ * nome legítimo (`MDS..2021.img`) não é travessia e não deve ser recusado.
+ *
+ * @param {string} relativo caminho relativo com barra normal
+ * @returns {string|null} o motivo da recusa, ou null quando o caminho é seguro
+ */
+const motivoCaminhoInseguro = (relativo) => {
+  if (typeof relativo !== 'string' || relativo.trim() === '') {
+    return 'está vazio'
+  }
+  if (relativo.includes('\\')) {
+    return 'usa contrabarra; escreva a subpasta com barra normal (/), que o servidor traduz para o separador da plataforma'
+  }
+  if (relativo.startsWith('/')) {
+    return 'é absoluto; o caminho tem de ser relativo à raiz do volume'
+  }
+  if (/^[A-Za-z]:/.test(relativo)) {
+    return 'traz letra de unidade; mapeamento de unidade é local de cada máquina e não descreve o volume'
+  }
+  if (/[\u0000-\u001f]/.test(relativo)) {
+    return 'contém caractere de controle'
+  }
+  for (const segmento of relativo.split('/')) {
+    if (segmento === '' || segmento === '.' || segmento === '..') {
+      return `contém o segmento "${segmento}", que sairia da raiz do volume`
+    }
+  }
+  return null
+}
+
+module.exports = {
+  caminhoNoVolume,
+  raizDoVolume,
+  uncParaPosix,
+  ehUNC,
+  chaveDoShare,
+  motivoCaminhoInseguro
+}

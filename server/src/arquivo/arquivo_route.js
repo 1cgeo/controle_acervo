@@ -91,6 +91,39 @@ router.post(
   })
 );
 
+// Cataloga produto que JA ESTA no volume, sem transferir nem renomear byte.
+//
+// Rota propria, e nao o par prepare-upload/confirm-upload, pelo mesmo motivo do
+// renomear-padrao: aquele caminho existe para TRANSFERIR bytes, e aqui nao ha
+// transferencia. O que ele cobraria a mais e uma segunda leitura integral do
+// arquivo (o cliente ja lera uma vez para declarar o checksum), com essa
+// releitura DENTRO de uma transacao aberta por horas. Aqui o servidor le uma
+// vez, fora de transacao, e grava o checksum e o tamanho que ele mesmo mediu.
+//
+// So aceita volume marcado com `layout_origem`: e essa marca que declara que o
+// produto ja esta gravado no volume. Sem ela a rota viraria atalho para pular a
+// validacao de transferencia no acervo comum.
+//
+// Uma requisicao, sem sessao: nao ha janela entre reservar o destino e copiar,
+// entao nao ha o que a sessao cobriria. Cada chamada e atomica, e quem carrega
+// um lote grande chama em laco.
+router.post(
+  '/catalogar/product',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: arquivoSchema.catalogarProduto
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.catalogarProduto(req.body, req.usuarioUuid);
+
+    const msg = `Produto catalogado no volume: ${dados.produtos.length} produto(s), ` +
+      `${dados.total_arquivos} arquivo(s), ${dados.total_mb.toFixed(2)} MB lidos ` +
+      `em ${dados.segundos_leitura.toFixed(1)}s`;
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
+  })
+);
+
 router.post(
   '/confirm-upload',
   verifyPerfil('operador'),

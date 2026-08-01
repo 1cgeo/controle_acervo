@@ -311,6 +311,19 @@ const RECURSOS = {
         acesso: 'admin',
         envelope: 'registro'
       },
+      catalogar: {
+        metodo: 'POST',
+        caminho: '/arquivo/catalogar/product',
+        corpo: 'catalogarProduto',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'produto que JA ESTA no volume: cadastra sem transferir nem renomear ' +
+          'byte, e devolve os ids criados. So aceita volume marcado com ' +
+          '`layout_origem`, e o `volume_armazenamento_id` vem no corpo, porque o ' +
+          'volume e onde o arquivo ja esta. NAO mande checksum nem tamanho_mb: quem ' +
+          'le o arquivo e mede e o servidor, uma vez so. Nao ha sessao para fechar, ' +
+          'e a resposta ja e definitiva'
+      },
       'preparar-substituicao': {
         metodo: 'POST',
         caminho: '/arquivo/prepare-upload/replace-files',

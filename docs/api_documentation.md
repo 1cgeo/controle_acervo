@@ -626,6 +626,63 @@ Prepara sessao de upload para criar produtos completos com versoes e arquivos.
 
 ---
 
+### POST `/api/arquivo/catalogar/product`
+
+Cadastra produto que **ja esta gravado no volume**, sem transferir nem renomear byte. E o caminho da entrega de convenio, tipicamente grande demais para duplicar. Uma requisicao, sem sessao: nao ha janela entre reservar destino e copiar, entao nao ha o que uma sessao cobriria, e a resposta ja e definitiva (traz os ids criados, que o `confirm-upload` nao traz).
+
+| Campo | Valor |
+|---|---|
+| **Auth** | `verifyPerfil('operador')` |
+
+Duas diferencas de contrato em relacao ao `prepare-upload/product`, as duas por nao haver transferencia:
+
+- **`volume_armazenamento_id` e obrigatorio e vem do cliente.** No upload o volume e o primario do tipo de produto, porque o servidor escolhe para onde copiar; aqui o volume e onde o arquivo **ja esta**. Ele precisa ter `layout_origem = true`, senao a rota recusa com 400: e essa marca que declara que o produto ja esta no volume, e sem ela a rota viraria atalho para pular a validacao de transferencia no acervo comum.
+- **`checksum` e `tamanho_mb` sao recusados com 400.** Quem le o arquivo e mede e o servidor, **uma vez so**. No `prepare-upload` o cliente declara o checksum (tendo lido o arquivo) e o `confirm-upload` le tudo de novo para conferir a copia; sem copia, aquela segunda leitura do mesmo byte pelo mesmo share nao prova nada. Mesma politica do `atualizar-checksum`.
+
+O `nome_arquivo` e o **caminho relativo** dentro do volume, com barra normal e subpasta inclusa (`LOTE_1/IMAGENS/Ortoimagem_MI 2965-1`). O servidor recusa travessia (`..`), caminho absoluto, letra de unidade e contrabarra. Tileserver (tipo 9) nao entra aqui: e URL, nao byte em volume.
+
+O que **nao** afrouxa: a unicidade fisica `(volume, nome_arquivo, extensao)`, a identidade `(INOM, tipo, subtipo)` do produto, a sequencia de versao do trigger `validate_version` e a existencia do arquivo (o `stat` falha com 404 se o arquivo nao estiver la).
+
+**Body:**
+```json
+{
+  "volume_armazenamento_id": 3,
+  "produtos": [
+    { "...mesma estrutura de prepare-upload/product, com o arquivo sem checksum e sem tamanho_mb" }
+  ]
+}
+```
+
+**Resposta (201):**
+```json
+{
+  "volume": { "id": 3, "nome": "Entregas Convenio" },
+  "produtos": [
+    {
+      "produto_id": 4211,
+      "mi": "2965-1",
+      "inom": "SH-22-Y-A-I-1",
+      "versoes": [
+        {
+          "versao_id": 7244,
+          "versao": "1-DSG",
+          "arquivos": [
+            { "arquivo_id": 9001, "nome_arquivo": "LOTE_1/IMAGENS/Ortoimagem_MI 2965-1", "extensao": "img", "checksum": "sha256 medido pelo servidor", "tamanho_mb": 8123.4 }
+          ]
+        }
+      ]
+    }
+  ],
+  "total_arquivos": 1,
+  "total_mb": 8123.4,
+  "segundos_leitura": 96.2
+}
+```
+
+> **Nota**: a requisicao fica aberta enquanto o servidor le os bytes, e o teto e de 200 produtos por chamada. Quem carrega um lote grande chama em laco: cada chamada e atomica, e a retomada e a requisicao seguinte.
+
+---
+
 ### POST `/api/arquivo/confirm-upload`
 
 Confirma conclusao de upload. Valida existencia dos arquivos e checksums. Se valido, processa a sessao conforme tipo de operacao e move registros temporarios para tabelas definitivas.

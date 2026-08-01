@@ -258,3 +258,26 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Per
 - `docs/`: tutoriais de uso, fluxos do plugin e `api_documentation.md`.
 - `migrations/`: caminho de atualização do banco, em ordem de data.
 - Swagger em `GET /api/api_docs` com o servidor no ar.
+- **Produto que JÁ ESTÁ no volume entra por `POST /api/arquivo/catalogar/product`, e o
+  servidor mede o hash.** O `layout_origem` (2026-07-31) resolveu o NOME do arquivo de
+  convênio; o custo do caminho ficou de fora, e é o que esta rota (2026-08-01) resolve.
+  Passar por `prepare-upload`/`confirm-upload` cobrava por um trabalho que não acontece:
+  o cliente lia o arquivo inteiro para declarar o checksum e o `confirm-upload` lia tudo
+  de novo para conferir uma cópia que nunca houve (362 GB relidos no LOTE_1 do Convênio
+  RS, a 31-81 MB/s, de 1h20 a 3h), **com essa releitura dentro da transação**, aberta por
+  horas e sem retomada parcial. Agora o servidor lê UMA vez, fora de transação, e grava o
+  checksum e o tamanho que ele mesmo mediu; o cliente não declara nenhum dos dois, e
+  mandá-los é 400, porque descartado em silêncio ele acreditaria ter gravado o que mandou.
+  É a mesma política do `/atualizar-checksum`, que já media em vez de aceitar. O
+  `volume_armazenamento_id` vem no CORPO: no upload o volume é o primário do tipo de
+  produto, porque o servidor escolhe para onde copiar, e aqui é onde o arquivo já está.
+  Sem isso, catalogar num volume que não é o primário daquele tipo seria impossível, já
+  que `idx_unique_primario` só admite um por tipo. **A rota só aceita volume com
+  `layout_origem = true`**, e essa é a porta que a impede de virar atalho para pular a
+  validação de transferência no acervo comum. Não afrouxa nada que não dependa de cópia:
+  unicidade física, identidade do produto, sequência de versão e existência do arquivo
+  continuam valendo. Junto veio a validação de travessia de caminho
+  (`utils/caminho_volume.js`), que **não existia**: `path.join` não protege contra `..`, e
+  com a subpasta do fornecedor virando o caso normal o corpo da requisição escolheria
+  qualquer arquivo da máquina. Só cobre produto novo; versão e arquivo avulsos continuam
+  no `prepare-upload`.

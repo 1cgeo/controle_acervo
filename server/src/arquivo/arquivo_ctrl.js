@@ -3,7 +3,7 @@
 const fs = require('fs').promises;
 const fsClassic = require('fs');
 const path = require('path');
-const { caminhoNoVolume } = require('../utils/caminho_volume');
+const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -90,6 +90,80 @@ async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados)
   }
 
   if (usados) usados.add(chave);
+}
+
+/**
+ * Recusa produto cuja identidade já exista, no banco ou dentro do próprio lote.
+ *
+ * A mesma MI/INOM pode gerar produtos distintos por TIPO (ex.: Carta
+ * Topográfica e o CDGV de mesma folha são produtos separados — ver
+ * regras_carga_produtos.md 2.4). Desde 2026-07-06 a identidade também
+ * considera o SUBTIPO quando ele exige produto próprio (define_produto),
+ * p.ex. a Carta Topográfica Militar (24) coexiste com a civil na mesma
+ * folha como produto separado (ver acervo.validate_version). Logo a
+ * unicidade é por (INOM, tipo_produto_id, subtipo_produto_id).
+ *
+ * Compartilhada entre o prepare-upload/product e o catalogar/product: as duas
+ * rotas criam produto, e identidade que valesse numa e não na outra deixaria a
+ * porta aberta pela rota mais nova.
+ */
+async function assertIdentidadeProdutoLivre(t, produtos) {
+  const inomKeys = produtos
+    .filter(p => p.produto.inom !== null && p.produto.inom !== '')
+    .map(p => `${p.produto.inom}|${p.produto.tipo_produto_id}|${p.produto.subtipo_produto_id ?? ''}`);
+  const uniqueInomKeys = [...new Set(inomKeys)];
+
+  if (inomKeys.length !== uniqueInomKeys.length) {
+    throw new AppError('Existem produtos com mesmo INOM, tipo e subtipo duplicados na solicitação', httpCode.BadRequest);
+  }
+
+  for (const item of produtos) {
+    if (item.produto.inom) {
+      const existingProduct = await t.oneOrNone(
+        'SELECT id FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = $2 AND subtipo_produto_id IS NOT DISTINCT FROM $3',
+        [item.produto.inom, item.produto.tipo_produto_id, item.produto.subtipo_produto_id ?? null]
+      );
+
+      if (existingProduct) {
+        throw new AppError(`Já existe um produto do mesmo tipo e subtipo com o INOM ${item.produto.inom}`, httpCode.Conflict);
+      }
+    }
+  }
+}
+
+/**
+ * Espelha o trigger acervo.validate_version: como os produtos são novos,
+ * versão "N-SIGLA" com N > 1 exige a versão anterior dentro do próprio
+ * payload (exceto registros históricos). Também valida duplicatas.
+ *
+ * Não toca o banco de propósito: é regra sobre o payload, e por isso roda antes
+ * de qualquer leitura de volume na catalogação in-place.
+ */
+function assertSequenciaVersoes(produtos) {
+  for (const item of produtos) {
+    const versoesProduto = item.versoes.map(v => v.versao);
+    const versaoDuplicada = versoesProduto.filter((v, i) => versoesProduto.indexOf(v) !== i);
+    if (versaoDuplicada.length > 0) {
+      throw new AppError(`O produto ${item.produto.inom || item.produto.nome} contém versões duplicadas: ${[...new Set(versaoDuplicada)].join(', ')}`, httpCode.BadRequest);
+    }
+
+    for (const versao of item.versoes) {
+      const match = /^([0-9]+)-([A-Z]{1,5})$/.exec(versao.versao);
+      if (!match || versao.tipo_versao_id === TIPO_VERSAO.REGISTRO_HISTORICO) {
+        continue;
+      }
+
+      const numero = parseInt(match[1], 10);
+      if (numero <= 1) {
+        continue;
+      }
+
+      const versaoAnterior = `${numero - 1}-${match[2]}`;
+      if (!versoesProduto.includes(versaoAnterior)) {
+        throw new AppError(`Não existe a versão anterior ${versaoAnterior} para o produto ${item.produto.inom || item.produto.nome} na solicitação`, httpCode.BadRequest);
+      }
+    }
+  }
 }
 
 const {
@@ -940,65 +1014,9 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
   return db.conn.tx(async t => {
     try {
       const { produtos } = requestData;
-      
-      // Check for duplicate INOMs.
-      // A mesma MI/INOM pode gerar produtos distintos por TIPO (ex.: Carta
-      // Topográfica e o CDGV de mesma folha são produtos separados — ver
-      // regras_carga_produtos.md 2.4). Desde 2026-07-06 a identidade também
-      // considera o SUBTIPO quando ele exige produto próprio (define_produto),
-      // p.ex. a Carta Topográfica Militar (24) coexiste com a civil na mesma
-      // folha como produto separado (ver acervo.validate_version). Logo a
-      // unicidade é por (INOM, tipo_produto_id, subtipo_produto_id).
-      const inomKeys = produtos
-        .filter(p => p.produto.inom !== null && p.produto.inom !== '')
-        .map(p => `${p.produto.inom}|${p.produto.tipo_produto_id}|${p.produto.subtipo_produto_id ?? ''}`);
-      const uniqueInomKeys = [...new Set(inomKeys)];
 
-      if (inomKeys.length !== uniqueInomKeys.length) {
-        throw new AppError('Existem produtos com mesmo INOM, tipo e subtipo duplicados na solicitação', httpCode.BadRequest);
-      }
-
-      // Check if any (INOM, tipo_produto, subtipo_produto) already exists in the database
-      for (const item of produtos) {
-        if (item.produto.inom) {
-          const existingProduct = await t.oneOrNone(
-            'SELECT id FROM acervo.produto WHERE inom = $1 AND tipo_produto_id = $2 AND subtipo_produto_id IS NOT DISTINCT FROM $3',
-            [item.produto.inom, item.produto.tipo_produto_id, item.produto.subtipo_produto_id ?? null]
-          );
-
-          if (existingProduct) {
-            throw new AppError(`Já existe um produto do mesmo tipo e subtipo com o INOM ${item.produto.inom}`, httpCode.Conflict);
-          }
-        }
-      }
-
-      // Espelha o trigger acervo.validate_version: como os produtos são novos,
-      // versão "N-SIGLA" com N > 1 exige a versão anterior dentro do próprio
-      // payload (exceto registros históricos). Também valida duplicatas
-      for (const item of produtos) {
-        const versoesProduto = item.versoes.map(v => v.versao);
-        const versaoDuplicada = versoesProduto.filter((v, i) => versoesProduto.indexOf(v) !== i);
-        if (versaoDuplicada.length > 0) {
-          throw new AppError(`O produto ${item.produto.inom || item.produto.nome} contém versões duplicadas: ${[...new Set(versaoDuplicada)].join(', ')}`, httpCode.BadRequest);
-        }
-
-        for (const versao of item.versoes) {
-          const match = /^([0-9]+)-([A-Z]{1,5})$/.exec(versao.versao);
-          if (!match || versao.tipo_versao_id === TIPO_VERSAO.REGISTRO_HISTORICO) {
-            continue;
-          }
-
-          const numero = parseInt(match[1], 10);
-          if (numero <= 1) {
-            continue;
-          }
-
-          const versaoAnterior = `${numero - 1}-${match[2]}`;
-          if (!versoesProduto.includes(versaoAnterior)) {
-            throw new AppError(`Não existe a versão anterior ${versaoAnterior} para o produto ${item.produto.inom || item.produto.nome} na solicitação`, httpCode.BadRequest);
-          }
-        }
-      }
+      await assertIdentidadeProdutoLivre(t, produtos);
+      assertSequenciaVersoes(produtos);
 
       // Get volumes for all product types
       const productTypes = [...new Set(produtos.map(p => p.produto.tipo_produto_id))];
@@ -1194,6 +1212,271 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
     } catch (error) {
       if (!(error instanceof AppError)) {
         throw new AppError(`Erro ao preparar upload de produto: ${error.message}`, httpCode.InternalError, error);
+      }
+      throw error;
+    }
+  });
+};
+
+
+// Catalogacao de produto que JA ESTA no volume, sem transferir nem renomear.
+//
+// POR QUE NAO E O prepare-upload/product + confirm-upload. Aquele par existe
+// para cobrir a janela entre reservar o destino e COPIAR os bytes: sessao de 24
+// horas, checksum declarado pelo cliente, quatro tabelas temporarias e uma
+// revalidacao. Num volume `layout_origem` o produto ja esta no lugar (entrega de
+// convenio, tipicamente grande demais para duplicar), e cada peca daquele par
+// cobra por um trabalho que nao acontece:
+//
+//   1. O confirm-upload le o arquivo INTEIRO para conferir o checksum que o
+//      cliente declarou. Mas para declarar aquele checksum o cliente ja tinha
+//      lido o arquivo inteiro, pelo mesmo share. Sao duas varreduras do mesmo
+//      byte para provar uma copia que nao houve. Aqui o servidor le UMA vez e
+//      grava o que ele mesmo mediu, como o /atualizar-checksum ja fazia.
+//   2. La a releitura roda DENTRO da transacao, que fica aberta por horas
+//      (362 GB do LOTE_1 a 31-81 MB/s). Aqui a leitura acontece FORA de
+//      transacao nenhuma, e a transacao abre so para os INSERTs.
+//   3. La o espaco livre e conferido contra a capacidade do volume. Os bytes
+//      catalogados ja estao no disco: o que falta e o REGISTRO. Num volume
+//      quase cheio aquela conta recusaria um cadastro que nao ocupa nada.
+//   4. La o volume sai de volume_tipo_produto.primario. Aqui o volume e dado de
+//      ENTRADA, porque e onde o arquivo ja esta.
+//
+// O que NAO afrouxa: a unicidade fisica (volume, nome_arquivo, extensao), a
+// identidade do produto, a sequencia de versao, os indices unicos do banco e a
+// existencia do arquivo. Ver migrations/2026-07-31_volume_layout_origem.sql.
+controller.catalogarProduto = async (requestData, usuarioUuid) => {
+  const { volume_armazenamento_id: volumeId, produtos } = requestData;
+
+  // ---- Fase 1: tudo que se recusa SEM ler um byte ----
+  //
+  // Vem antes da leitura de proposito: descobrir no arquivo 900 que o INOM do
+  // primeiro ja existia custaria horas de leitura para nada.
+  const { volume, plano } = await db.conn.task(async t => {
+    const volume = await t.oneOrNone(
+      `SELECT id, nome, volume, layout_origem
+       FROM acervo.volume_armazenamento WHERE id = $1`,
+      [volumeId]
+    );
+
+    if (!volume) {
+      throw new AppError(`Volume de armazenamento ${volumeId} não encontrado`, httpCode.NotFound);
+    }
+
+    // A porta que impede esta rota de virar atalho para pular o confirm-upload
+    // no acervo comum. Catalogar sem ler byte so e correto onde o byte JA esta,
+    // e isso quem declara e o admin, ao marcar o volume.
+    if (!volume.layout_origem) {
+      throw new AppError(
+        `O volume ${volumeId} (${volume.nome}) não guarda o layout de origem. ` +
+        `A catalogação in-place só existe para volume marcado com layout_origem, ` +
+        `onde o produto já está gravado. Para transferir arquivos, use o prepare-upload.`,
+        httpCode.BadRequest
+      );
+    }
+
+    await assertIdentidadeProdutoLivre(t, produtos);
+    assertSequenciaVersoes(produtos);
+
+    const nomesFisicosUsados = new Set();
+    const plano = [];
+
+    for (const item of produtos) {
+      for (const versao of item.versoes) {
+        for (const arquivo of versao.arquivos) {
+          const motivo = motivoCaminhoInseguro(arquivo.nome_arquivo);
+          if (motivo) {
+            throw new AppError(
+              `O caminho "${arquivo.nome_arquivo}" ${motivo}.`,
+              httpCode.BadRequest
+            );
+          }
+
+          await assertNomeFisicoLivre(
+            t, volumeId, arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
+          );
+
+          plano.push({
+            arquivo,
+            caminho: caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`)
+          });
+        }
+      }
+    }
+
+    return { volume, plano };
+  });
+
+  // ---- Fase 2: a unica leitura dos bytes, FORA de transacao ----
+  //
+  // O `stat` separado do stream existe para dar erro legivel: sem ele, uma
+  // subpasta apontada por engano viraria um EISDIR cru do stream.
+  const medidas = new Map();
+  const inicio = Date.now();
+  let totalMb = 0;
+
+  for (const { arquivo, caminho } of plano) {
+    let info;
+    try {
+      info = await fs.stat(caminho);
+    } catch (error) {
+      throw new AppError(
+        `Arquivo não encontrado no volume: ${arquivo.nome_arquivo}.${arquivo.extensao}. ` +
+        `A catalogação não copia nada, então o arquivo precisa já estar no volume.`,
+        httpCode.NotFound,
+        error
+      );
+    }
+
+    if (!info.isFile()) {
+      throw new AppError(
+        `O caminho ${arquivo.nome_arquivo}.${arquivo.extensao} não é um arquivo no volume`,
+        httpCode.BadRequest
+      );
+    }
+
+    const { checksum, fileSizeMB } = await calculateChecksumStream(caminho);
+    medidas.set(arquivo, { checksum, tamanho_mb: fileSizeMB });
+    totalMb += fileSizeMB;
+  }
+
+  const segundosLeitura = (Date.now() - inicio) / 1000;
+
+  logger.info('Leitura do volume concluída para catalogação in-place', {
+    volume_armazenamento_id: volumeId,
+    arquivos: plano.length,
+    total_mb: Number(totalMb.toFixed(2)),
+    segundos: Number(segundosLeitura.toFixed(1)),
+    usuario_uuid: usuarioUuid
+  });
+
+  // ---- Fase 3: transacao curta, so INSERT ----
+  return db.conn.tx(async t => {
+    try {
+      // A fase 1 conferiu com o banco de minutos (ou horas) atras. Reconferir
+      // aqui troca uma violacao crua de indice unico por um 409 que diz qual
+      // arquivo colidiu; os indices parciais continuam sendo a rede embaixo.
+      const nomesFisicosUsados = new Set();
+      const resultado = [];
+
+      for (const item of produtos) {
+        const { id: produtoId } = await t.one(
+          `INSERT INTO acervo.produto(
+            nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
+            subtipo_produto_id, descricao, data_cadastramento, usuario_cadastramento_uuid, geom
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9, ST_GeomFromEWKT($10))
+          RETURNING id`,
+          [
+            item.produto.nome,
+            item.produto.mi,
+            item.produto.inom,
+            item.produto.tipo_escala_id,
+            item.produto.denominador_escala_especial,
+            item.produto.tipo_produto_id,
+            item.produto.subtipo_produto_id ?? null,
+            item.produto.descricao || '',
+            usuarioUuid,
+            item.produto.geom
+          ]
+        );
+
+        const versoesResultado = [];
+
+        for (const versao of item.versoes) {
+          const { id: versaoId } = await t.one(
+            `INSERT INTO acervo.versao(
+              uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
+              lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
+              data_edicao, usuario_cadastramento_uuid, data_cadastramento
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+            RETURNING id`,
+            [
+              versao.uuid_versao || uuidv4(),
+              versao.versao,
+              versao.nome,
+              versao.tipo_versao_id,
+              versao.subtipo_produto_id,
+              produtoId,
+              versao.lote_id,
+              versao.metadado || {},
+              versao.descricao || '',
+              versao.orgao_produtor,
+              versao.palavras_chave || [],
+              versao.data_criacao,
+              versao.data_edicao,
+              usuarioUuid
+            ]
+          );
+
+          const arquivosResultado = [];
+
+          for (const arquivo of versao.arquivos) {
+            await assertNomeFisicoLivre(
+              t, volumeId, arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
+            );
+
+            const medida = medidas.get(arquivo);
+
+            const { id: arquivoId } = await t.one(
+              `INSERT INTO acervo.arquivo(
+                uuid_arquivo, nome, nome_arquivo, versao_id, tipo_arquivo_id,
+                volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
+                tipo_status_id, situacao_carregamento_id, descricao, crs_original,
+                usuario_cadastramento_uuid, data_cadastramento
+              ) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+              RETURNING id`,
+              [
+                arquivo.nome,
+                arquivo.nome_arquivo,
+                versaoId,
+                arquivo.tipo_arquivo_id,
+                volumeId,
+                arquivo.extensao,
+                medida.tamanho_mb,
+                medida.checksum,
+                arquivo.metadado || {},
+                STATUS_ARQUIVO.CARREGADO,
+                arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
+                arquivo.descricao || '',
+                arquivo.crs_original || null,
+                usuarioUuid
+              ]
+            );
+
+            arquivosResultado.push({
+              arquivo_id: arquivoId,
+              nome_arquivo: arquivo.nome_arquivo,
+              extensao: arquivo.extensao,
+              checksum: medida.checksum,
+              tamanho_mb: medida.tamanho_mb
+            });
+          }
+
+          versoesResultado.push({
+            versao_id: versaoId,
+            versao: versao.versao,
+            arquivos: arquivosResultado
+          });
+        }
+
+        resultado.push({
+          produto_id: produtoId,
+          mi: item.produto.mi,
+          inom: item.produto.inom,
+          versoes: versoesResultado
+        });
+      }
+
+      return {
+        volume: { id: volume.id, nome: volume.nome },
+        produtos: resultado,
+        total_arquivos: plano.length,
+        total_mb: totalMb,
+        segundos_leitura: segundosLeitura
+      };
+    } catch (error) {
+      if (!(error instanceof AppError)) {
+        throw new AppError(`Erro ao catalogar produto no volume: ${error.message}`, httpCode.InternalError, error);
       }
       throw error;
     }
