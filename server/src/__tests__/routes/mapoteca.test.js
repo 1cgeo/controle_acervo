@@ -3,7 +3,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken, USER_UUID } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, generateToken, USER_UUID } = require('../helpers/auth')
 const { createProduto, createVersao, createArquivo } = require('../helpers/fixtures')
 
 let app
@@ -248,6 +248,51 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.produtos[0].quantidade).toBe(100)
       expect(res.body.dados.produtos[0].uuid_versao).toBeNull()
       expect(res.body.dados.produtos[0].produto_nome).toBe('Papel quadriculado')
+    })
+
+    // GET /pedido/:id era a QUINTA consulta que parte do item do pedido, e a
+    // unica que escrevia a escala a mao (`te.nome`). O que se prova aqui e que
+    // ela nao pode divergir do /download_impressao, que o plugin do QGIS le na
+    // MESMA sessao: a tabela de itens e o manifesto CSV sairiam com escalas
+    // diferentes para a mesma carta.
+    it('a escala do detalhe do pedido e a MESMA do download_impressao', async () => {
+      const produto = await createProduto({
+        tipo_produto_id: 2,
+        tipo_escala_id: 5,
+        denominador_escala_especial: 30000,
+        mi: '2965-1'
+      })
+      const versao = await createVersao(produto.id)
+      await createArquivo(versao.id, { nome_arquivo: 'carta_30k', extensao: 'pdf' })
+
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      await criaProdutoPedido({
+        uuid_versao: versao.uuid_versao,
+        pedido_id: pedido.id, quantidade: 2, tipo_midia_id: 5
+      })
+      await criaProdutoPedido({
+        nome_avulso: 'Papel quadriculado',
+        pedido_id: pedido.id, quantidade: 10, tipo_midia_id: 6
+      })
+
+      const detalhe = await request(app)
+        .get(`/api/mapoteca/pedido/${pedido.id}`)
+        .set('Authorization', generateAdminToken())
+      const download = await request(app)
+        .post(`/api/mapoteca/pedido/${pedido.id}/download_impressao`)
+        .set('Authorization', generateAdminToken())
+
+      const doAcervo = detalhe.body.dados.produtos.find(p => !p.item_avulso)
+      const avulso = detalhe.body.dados.produtos.find(p => p.item_avulso)
+
+      // Escala personalizada se ESCREVE, nao se nomeia: era 'Escala personalizada'
+      expect(doAcervo.escala).toBe('1:30000')
+      expect(doAcervo.escala).toBe(download.body.dados.arquivos[0].escala)
+
+      // O avulso nao aponta produto do acervo: era NULO, e a tela mostrava "null"
+      expect(avulso.escala).toBe('Sem escala')
+      expect(avulso.escala).toBe(download.body.dados.itens_sem_pdf[0].escala)
     })
 
     it('item sem destino nenhum should return 400', async () => {
@@ -1584,12 +1629,128 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.itens_sem_pdf[0].quantidade).toBe(3)
     })
 
+    // itens_sem_pdf mistura duas coisas que o operador trata de formas opostas.
+    // Sem `item_avulso`, o plugin anuncia as duas com a mesma frase e manda
+    // procurar um arquivo que nunca vai existir.
+    it('itens_sem_pdf separa o AVULSO do item do acervo sem PDF', async () => {
+      const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2, mi: '2965-3' })
+      const versao = await createVersao(produto.id) // do acervo, mas sem PDF
+      const clienteId = await criaCliente()
+      const pedido = await criaPedido(clienteId)
+      await criaProdutoPedido({
+        uuid_versao: versao.uuid_versao,
+        pedido_id: pedido.id, quantidade: 4, tipo_midia_id: 5
+      })
+      await criaProdutoPedido({
+        nome_avulso: 'Papel quadriculado',
+        descricao_avulso: '80 x 68 cm',
+        pedido_id: pedido.id, quantidade: 100, tipo_midia_id: 6
+      })
+
+      const res = await request(app)
+        .post(`/api/mapoteca/pedido/${pedido.id}/download_impressao`)
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados.arquivos).toHaveLength(0)
+      const semPdf = res.body.dados.itens_sem_pdf
+      expect(semPdf).toHaveLength(2)
+
+      const avulso = semPdf.find(i => i.item_avulso)
+      const doAcervo = semPdf.find(i => !i.item_avulso)
+      expect(avulso.produto_nome).toBe('Papel quadriculado')
+      expect(avulso.avulso_descricao).toBe('80 x 68 cm')
+      expect(doAcervo.mi).toBe('2965-3')
+      expect(doAcervo.avulso_descricao).toBeNull()
+    })
+
     it('POST /pedido/:id/download_impressao should return 404 for missing pedido', async () => {
       const res = await request(app)
         .post('/api/mapoteca/pedido/99999/download_impressao')
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(404)
+    })
+
+    // O par prepare/confirm do plugin fechava em POST /acervo/confirm-download,
+    // que e verifyPerfil('consulta') SEM modulo, ou seja, consulta no ACERVO. O
+    // test_user da semente tem perfil nos DOIS modulos, e por isso o 403 nunca
+    // aparecia em teste: quem imprime de verdade costuma ter operador so na
+    // mapoteca. Este usuario e o caso real.
+    const criaOperadorSoDaMapoteca = async () => {
+      const uuid = 'c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33'
+      const row = await conn.one(
+        `INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+         VALUES ('op_mapoteca', 'Operador Mapoteca', 'Mapoteca', 1, FALSE, TRUE, $1)
+         RETURNING id`,
+        [uuid]
+      )
+      await conn.none(
+        'INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id) VALUES ($1, 2, 2)',
+        [row.id]
+      )
+      return generateToken({ id: Number(row.id), uuid, administrador: false })
+    }
+
+    it('quem so tem perfil na mapoteca prepara, confirma e nao passa pela rota do acervo', async () => {
+      const { pedido } = await setupPedidoComPdf()
+      const token = await criaOperadorSoDaMapoteca()
+
+      const prepare = await request(app)
+        .post(`/api/mapoteca/pedido/${pedido.id}/download_impressao`)
+        .set('Authorization', token)
+      expect(prepare.status).toBe(200)
+      const downloadToken = prepare.body.dados.arquivos[0].download_token
+
+      // A rota do acervo recusa este usuario: e o 403 que o plugin levava no
+      // fim de um download bem-sucedido, deixando o token pendente.
+      const peloAcervo = await request(app)
+        .post('/api/acervo/confirm-download')
+        .set('Authorization', token)
+        .send({ confirmations: [{ download_token: downloadToken, success: true }] })
+      expect(peloAcervo.status).toBe(403)
+
+      const res = await request(app)
+        .post('/api/mapoteca/impressao/confirmar_download')
+        .set('Authorization', token)
+        .send({ confirmations: [{ download_token: downloadToken, success: true }] })
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados[0].status).toBe('completed')
+
+      const download = await conn.one(
+        'SELECT status FROM acervo.download WHERE download_token = $1',
+        [downloadToken]
+      )
+      expect(download.status).toBe('completed')
+    })
+
+    it('POST /impressao/confirmar_download registra a falha declarada pelo plugin', async () => {
+      const { pedido } = await setupPedidoComPdf()
+
+      const prepare = await request(app)
+        .post(`/api/mapoteca/pedido/${pedido.id}/download_impressao`)
+        .set('Authorization', generateUserToken())
+      const downloadToken = prepare.body.dados.arquivos[0].download_token
+
+      const res = await request(app)
+        .post('/api/mapoteca/impressao/confirmar_download')
+        .set('Authorization', generateUserToken())
+        .send({
+          confirmations: [{
+            download_token: downloadToken,
+            success: false,
+            error_message: 'Falha na verificação de integridade (checksum não corresponde)'
+          }]
+        })
+
+      expect(res.status).toBe(200)
+      const download = await conn.one(
+        'SELECT status, error_message FROM acervo.download WHERE download_token = $1',
+        [downloadToken]
+      )
+      expect(download.status).toBe('failed')
+      expect(download.error_message).toContain('checksum')
     })
 
     it('POST /impressao should accumulate printed quantities across users/days', async () => {

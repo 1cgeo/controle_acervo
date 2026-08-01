@@ -1,6 +1,5 @@
 # Path: gui\login_dialog.py
-from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtWidgets import QDialog
 from qgis.PyQt import uic
 import os
 
@@ -8,8 +7,6 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'ui', 'login.ui'))
 
 class LoginDialog(QDialog, FORM_CLASS):
-    login_successful = pyqtSignal(dict)
-
     def __init__(self, api_client, settings, version, parent=None):
         super().__init__(parent)
         self.setupUi(self)
@@ -79,12 +76,5 @@ class LoginDialog(QDialog, FORM_CLASS):
 
         if self.api_client.login(username, password):
             self.save_credentials()
-            user_data = {
-                "username": username,
-                "server": server,
-                "uuid": self.api_client.user_uuid,
-                "is_admin": self.api_client.is_admin
-            }
-            self.login_successful.emit(user_data)
             self.accept()
         # Error handling is done in api_client.login()

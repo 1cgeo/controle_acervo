@@ -10,6 +10,10 @@ const mapotecaCtrl = require('./mapoteca_ctrl')
 const relatorioCtrl = require('./relatorio_ctrl')
 const { gerarRtmOds } = require('../rpcmtec/rtm_ods')
 const mapotecaSchema = require('./mapoteca_schema')
+// O par prepare/confirm do download do plugin mora em acervo.download, que e
+// uma tabela so. Ver POST '/impressao/confirmar_download', abaixo.
+const acervoCtrl = require('../acervo/acervo_ctrl')
+const acervoSchema = require('../acervo/acervo_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
 const auditoriaCtrl = require('./auditoria_ctrl')
 const etiquetaEnvioCtrl = require('./etiqueta_envio_ctrl')
@@ -302,6 +306,35 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const dados = await mapotecaCtrl.prepareDownloadImpressao(req.params.id, req.usuarioUuid)
     const msg = 'Download para impressão preparado com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Fecha o par aberto por '/pedido/:id/download_impressao'.
+//
+// Existe pela MESMA razão de '/pedido/:id/arquivo/:uuid_arquivo/download': a
+// permissão segue o MÓDULO do trabalho, e não o do dado. A rota gêmea do acervo
+// (POST /acervo/confirm-download) é `verifyPerfil('consulta')` SEM módulo, ou
+// seja, consulta no ACERVO — e quem atende pedido tem operador na mapoteca e
+// pode não ter perfil nenhum no acervo.
+//
+// O que isso custava, medido no plugin: o prepare passava (mapoteca), os PDFs
+// eram copiados do volume, e o confirm levava 403. O operador via dois diálogos
+// de erro em cima de um download que tinha dado certo, os tokens ficavam
+// 'pending' e `acervo.cleanup_expired_downloads()` os marcava como 'failed' 24h
+// depois. O histórico de download passava a registrar falha em toda impressão
+// bem-sucedida.
+//
+// O controlador é o MESMO do acervo, de propósito: `acervo.download` é uma
+// tabela só, e duas implementações de "confirmar download" divergiriam na
+// primeira coluna nova.
+router.post(
+  '/impressao/confirmar_download',
+  verifyPerfil('operador', 'mapoteca'),
+  schemaValidation({ body: acervoSchema.downloadConfirmations }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await acervoCtrl.confirmDownload(req.body.confirmations)
+    const msg = 'Status de download atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )

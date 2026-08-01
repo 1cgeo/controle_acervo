@@ -101,7 +101,7 @@ class FileTransferThread(QThread):
     def cancel(self):
         """Cancela a transferência"""
         self.cancelled = True
-
+        
     def transfer_file_windows(self):
         """Retorna (sucesso, mensagem_erro|None)."""
         source_path = self.source_path.replace("/", "\\")
@@ -187,7 +187,7 @@ class FileTransferThread(QThread):
         return self.run_system_command(command)
 
     def _copy_file_with_progress(self, source_path, dest_path):
-        """Copia arquivo com atualização de progresso"""
+        """Copia arquivo com atualização de progresso. Retorna (sucesso, erro|None)."""
         file_size = os.path.getsize(source_path)
 
         if file_size == 0:

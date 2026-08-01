@@ -655,14 +655,19 @@ controller.getPedidoById = async (pedidoId) => {
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
              pp.observacao, pp.producao_especifica,
              pp.nome_avulso, pp.descricao_avulso,
-             (pp.nome_avulso IS NOT NULL) AS item_avulso,
+             ${ITEM_E_AVULSO} AS item_avulso,
              v.versao, v.data_edicao, v.produto_id,
-             -- COALESCE, e nao p.nome: o item avulso nao tem linha em
-             -- acervo.produto, e sem isto a tela do pedido mostra a quantidade
-             -- ao lado de um nome em branco.
-             COALESCE(p.nome, pp.nome_avulso) AS produto_nome,
-             p.mi, p.inom, te.nome AS escala, p.denominador_escala_especial,
-             p.tipo_produto_id, tp.nome AS tipo_produto_nome,
+             -- Os fragmentos, e nao SQL proprio: esta era a QUINTA consulta que
+             -- parte do item do pedido, e a unica que escrevia a escala a mao
+             -- (te.nome). Resultado, ate 2026-08-01: a mesma carta de escala
+             -- personalizada saia "Escala personalizada" aqui e "1:30.000" no
+             -- /pedido/:id/download_impressao, e o item avulso saia com escala
+             -- NULA aqui e "Sem escala" la. Duas telas do mesmo pedido nao podem
+             -- escrever a mesma carta de dois jeitos.
+             ${PRODUTO_NOME} AS produto_nome,
+             ${PRODUTO_MI} AS mi, prod.inom,
+             ${ESCALA_DISPLAY_ITEM} AS escala,
+             prod.tipo_produto_id, tp.nome AS tipo_produto_nome,
              COALESCE(imp.quantidade_impressa, 0)::int AS quantidade_impressa,
              GREATEST(pp.quantidade - COALESCE(imp.quantidade_impressa, 0), 0)::int AS quantidade_restante,
              (COALESCE(imp.quantidade_impressa, 0) >= pp.quantidade) AS impressao_concluida,
@@ -672,10 +677,7 @@ controller.getPedidoById = async (pedidoId) => {
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN mapoteca.tipo_midia AS tmf ON tmf.code = pp.tipo_midia_fornecida_id
-      LEFT JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
-      LEFT JOIN acervo.produto AS p ON p.id = v.produto_id
-      LEFT JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-      LEFT JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+      ${JOIN_PRODUTO_ITEM}
       LEFT JOIN LATERAL (
         SELECT SUM(ii.quantidade) AS quantidade_impressa
         FROM mapoteca.impressao_item ii
@@ -1195,6 +1197,8 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
              ${PRODUTO_NOME} AS produto_nome,
              ${PRODUTO_MI} AS mi,
              ${ESCALA_DISPLAY_ITEM} AS escala,
+             ${ITEM_E_AVULSO} AS item_avulso,
+             pp.descricao_avulso AS avulso_descricao,
              v.versao,
              a.id AS arquivo_id,
              a.nome,
@@ -1226,6 +1230,12 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
     );
 
     const arquivos = itens.filter(i => i.arquivo_id);
+    // `item_avulso` vai junto porque esta lista mistura DUAS coisas que o
+    // operador trata de formas opostas: o item avulso (papel quadriculado,
+    // carta de outro CGEO) nunca terá PDF no acervo e se imprime do original,
+    // enquanto o item do acervo sem PDF é uma falta de verdade, que alguém tem
+    // de carregar. Sem esta coluna o plugin anunciava os dois com a mesma
+    // frase, mandando procurar arquivo que não existe.
     const itensSemPdf = itens
       .filter(i => !i.arquivo_id)
       .map(i => ({
@@ -1233,6 +1243,8 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
         produto_nome: i.produto_nome,
         mi: i.mi,
         escala: i.escala,
+        item_avulso: i.item_avulso,
+        avulso_descricao: i.avulso_descricao,
         quantidade: i.quantidade,
         quantidade_restante: i.quantidade_restante
       }));

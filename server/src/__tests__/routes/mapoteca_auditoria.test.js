@@ -141,6 +141,10 @@ const COBERTAS = new Set([
 const FORA_DO_ESCOPO = new Map([
   // Cria token de download em acervo.download; nao muda o pedido.
   ['POST /pedido/:id/download_impressao', 'so prepara download, nao muda pedido'],
+  // O outro lado do mesmo par: fecha o token em acervo.download, com o mesmo
+  // controlador do acervo. Nao toca pedido, item nem impressao -- registrar o
+  // que foi IMPRESSO continua sendo POST /impressao, que audita.
+  ['POST /impressao/confirmar_download', 'so fecha o token de download, nao muda pedido'],
   // Escreve em mapoteca.anexo_pedido, que tem historico proprio de
   // cadastramento e modificacao na propria tabela.
   ['POST /pedido/:id/anexos', 'escreve em anexo_pedido, nao em pedido'],

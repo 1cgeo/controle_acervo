@@ -1,31 +1,37 @@
 # Path: gui\pedidos\impressao_manager.py
 import os
+import re
 import hashlib
 import logging
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QTimer
 from ...core.file_transfer import FileTransferThread
 
+
 class ImpressaoManager(QObject):
     """
     Gerencia o download dos PDFs das cartas de um pedido para impressão.
-    Os downloads são sequenciais, com verificação de checksum e retentativas,
-    e confirmados com o servidor ao final (mesmo fluxo do plugin do acervo).
-    Ao concluir, grava um manifesto CSV com os quantitativos de impressão
-    de cada arquivo.
+
+    Os downloads são sequenciais, com verificação de checksum e retentativas, e
+    confirmados com o servidor ao final. A confirmação sai por
+    `mapoteca/impressao/confirmar_download`, e NÃO por `acervo/confirm-download`:
+    as duas escrevem na mesma `acervo.download`, mas a do acervo cobra perfil no
+    módulo ACERVO, e quem atende pedido tem operador na MAPOTECA e pode não ter
+    perfil nenhum no acervo. Pelo caminho antigo, o operador chegava ao fim de um
+    download bem-sucedido e levava 403: os PDFs ficavam na pasta, os tokens
+    ficavam pendentes e o servidor os marcava como falha 24h depois.
+
+    Ao concluir, grava um manifesto CSV com o que falta imprimir de cada item.
     """
 
     # Sinais
-    prepare_complete = pyqtSignal(dict)  # resposta de download_impressao
+    prepare_complete = pyqtSignal(dict)       # resposta de download_impressao
     download_progress = pyqtSignal(int, int)  # atual, total
-    file_progress = pyqtSignal(int, int, str)  # bytes_atuais, bytes_totais, nome
-    file_complete = pyqtSignal(str, bool)  # nome, sucesso
-    download_complete = pyqtSignal(list, str)  # resultados, caminho_manifesto
-    download_error = pyqtSignal(str)  # mensagem
+    file_progress = pyqtSignal(int, int, str) # bytes_atuais, bytes_totais, nome
+    download_complete = pyqtSignal(list, str) # resultados, caminho_manifesto
+    download_error = pyqtSignal(str)          # mensagem
 
     MAX_CHECKSUM_RETRIES = 3
     CHECKSUM_RETRY_BASE_DELAY = 2  # segundos
-
-    MANIFESTO_NOME = 'quantitativos_impressao.csv'
 
     def __init__(self, api_client):
         super(ImpressaoManager, self).__init__()
@@ -37,22 +43,31 @@ class ImpressaoManager(QObject):
         self._destination_dir = ''
         self._total_files = 0
         self._completed_count = 0
-        self._file_infos = []
+        self._localizador = ''
+        self._itens_pedido = []
         # Mantém referência a cada FileTransferThread até o sinal finished.
         # Sem isso, zerar current_transfer deixaria a única referência Python
         # cair e o GC destruiria a QThread ainda em execução -> crash nativo.
         self._active_threads = []
         self._shutdown = False
 
-    def prepare_download(self, pedido_id):
-        """Prepara o download dos PDFs do pedido no servidor (gera tokens)."""
+    def prepare_download(self, pedido_id, localizador=None, itens=None):
+        """Prepara o download dos PDFs do pedido no servidor (gera tokens).
+
+        `localizador` e `itens` não vão ao servidor: são o que o manifesto
+        precisa e a resposta do prepare não traz por inteiro (ela só devolve os
+        itens COM arquivo mais os sem PDF, e o manifesto lista o pedido todo).
+        """
+        self._localizador = localizador or ''
+        self._itens_pedido = list(itens or [])
         try:
             response = self.api_client.post(f'mapoteca/pedido/{pedido_id}/download_impressao')
 
             if response and 'dados' in response:
                 self.prepare_complete.emit(response['dados'])
             else:
-                self.download_error.emit("Não foi possível preparar o download. Resposta inválida do servidor.")
+                self.download_error.emit(
+                    "Não foi possível preparar o download. Resposta inválida do servidor.")
         except Exception as e:
             self.download_error.emit(f"Erro ao preparar o download: {str(e)}")
 
@@ -70,7 +85,6 @@ class ImpressaoManager(QObject):
         self._destination_dir = destination_dir
         self._total_files = len(file_infos)
         self._completed_count = 0
-        self._file_infos = file_infos
 
         if not os.path.exists(destination_dir):
             os.makedirs(destination_dir)
@@ -89,6 +103,7 @@ class ImpressaoManager(QObject):
             used_names.add(dest_name)
 
             self._pending_files.append({
+                'produto_pedido_id': file_info.get('produto_pedido_id'),
                 'arquivo_id': file_info['arquivo_id'],
                 'nome': file_info['nome'],
                 'download_path': file_info['download_path'],
@@ -170,11 +185,7 @@ class ImpressaoManager(QObject):
                             f"(tentativa {retry_count}/{self.MAX_CHECKSUM_RETRIES}). "
                             f"Retentando em {delay}s..."
                         )
-                        try:
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                        except OSError:
-                            pass
+                        self._remover_arquivo(file_path)
 
                         # Guarda no callback: se a janela fechar durante o delay,
                         # _shutdown bloqueia o reagendamento
@@ -183,17 +194,13 @@ class ImpressaoManager(QObject):
                             lambda: None if self._shutdown else self._download_next_file()
                         )
                         return
-                    else:
-                        success = False
-                        error_message = (
-                            f"Falha na verificação de integridade após "
-                            f"{self.MAX_CHECKSUM_RETRIES} tentativas (checksum não corresponde)"
-                        )
-                        try:
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                        except OSError:
-                            pass
+
+                    success = False
+                    error_message = (
+                        f"Falha na verificação de integridade após "
+                        f"{self.MAX_CHECKSUM_RETRIES} tentativas (checksum não corresponde)"
+                    )
+                    self._remover_arquivo(file_path)
         else:
             error_message = error_msg or "Falha na transferência do arquivo"
 
@@ -201,6 +208,7 @@ class ImpressaoManager(QObject):
             self._pending_files.remove(file_info)
 
         self.download_results.append({
+            'produto_pedido_id': file_info.get('produto_pedido_id'),
             'download_token': file_info['download_token'],
             'success': success,
             'error_message': error_message,
@@ -210,9 +218,15 @@ class ImpressaoManager(QObject):
         })
         self._completed_count += 1
 
-        self.file_complete.emit(file_info['nome'], success)
-
         self._download_next_file()
+
+    @staticmethod
+    def _remover_arquivo(caminho):
+        try:
+            if os.path.exists(caminho):
+                os.remove(caminho)
+        except OSError:
+            pass
 
     def confirm_downloads(self):
         """Confirma os downloads com o servidor e grava o manifesto."""
@@ -234,7 +248,8 @@ class ImpressaoManager(QObject):
         ]
 
         try:
-            response = self.api_client.post('acervo/confirm-download', {'confirmations': confirmations})
+            response = self.api_client.post(
+                'mapoteca/impressao/confirmar_download', {'confirmations': confirmations})
 
             if not response:
                 self.download_error.emit("Falha ao confirmar os downloads com o servidor.")
@@ -248,43 +263,70 @@ class ImpressaoManager(QObject):
     def _write_manifesto(self):
         """Grava o CSV de quantitativos de impressão na pasta de destino.
 
-        Uma linha por arquivo baixado, com o que falta imprimir de cada um.
+        Uma linha por ITEM DO PEDIDO, e não por arquivo baixado. É deliberado: o
+        item avulso e o item do acervo sem PDF também têm de ser impressos, e um
+        manifesto que só lista o que veio por download esconde justamente o que
+        exige atenção de quem opera.
+
+        O nome leva o LOCALIZADOR porque baixar dois pedidos na mesma pasta era
+        perder o manifesto do primeiro, em silêncio.
+
         Separador ';' e BOM UTF-8 para abrir direto no Excel pt-BR.
         """
-        if not self._destination_dir:
+        if not self._destination_dir or not self._itens_pedido:
             return ''
 
-        sucesso_por_token = {
-            r['download_token']: r for r in self.download_results if r['success']
-        }
+        # Um item pode render mais de um PDF (arquivo principal e formato
+        # alternativo), então o arquivo baixado é uma LISTA por item.
+        arquivos_por_item = {}
+        for r in self.download_results:
+            if r['success'] and r.get('produto_pedido_id') is not None:
+                arquivos_por_item.setdefault(r['produto_pedido_id'], []).append(r['dest_name'])
 
-        manifesto_path = os.path.join(self._destination_dir, self.MANIFESTO_NOME)
+        manifesto_path = os.path.join(self._destination_dir, self._nome_manifesto())
+        cabecalho = ['Arquivo baixado', 'Produto', 'MI', 'Escala', 'Mídia',
+                     'Qtd pedida', 'Já impresso', 'Restante a imprimir', 'Observação']
         try:
             with open(manifesto_path, 'w', encoding='utf-8-sig', newline='') as f:
-                f.write('Arquivo;Produto;MI;Escala;Mídia;Qtd pedida;Já impresso;Restante a imprimir\r\n')
-                for info in self._file_infos:
-                    result = sucesso_por_token.get(info['download_token'])
-                    if not result:
-                        continue
+                f.write(';'.join(cabecalho) + '\r\n')
+                for item in self._itens_pedido:
+                    baixados = arquivos_por_item.get(item.get('produto_pedido_id'), [])
+                    if baixados:
+                        arquivo = ' | '.join(baixados)
+                    elif item.get('item_avulso'):
+                        arquivo = 'avulso - imprimir do original'
+                    else:
+                        arquivo = 'sem PDF no acervo'
+
                     campos = [
-                        result['dest_name'],
-                        info.get('produto_nome') or '',
-                        info.get('mi') or '',
-                        info.get('escala') or '',
-                        info.get('tipo_midia_nome') or '',
-                        str(info.get('quantidade', '')),
-                        str(info.get('quantidade_impressa', '')),
-                        str(info.get('quantidade_restante', ''))
+                        arquivo,
+                        item.get('produto_nome') or '',
+                        item.get('mi') or '',
+                        item.get('escala') or '',
+                        item.get('tipo_midia_nome') or '',
+                        str(item.get('quantidade', '')),
+                        str(item.get('quantidade_impressa', '')),
+                        str(item.get('quantidade_restante', '')),
+                        item.get('avulso_descricao') or item.get('observacao') or ''
                     ]
-                    escaped = [
-                        f'"{c.replace(chr(34), chr(34) * 2)}"' if any(ch in c for ch in ';"\n\r') else c
-                        for c in campos
-                    ]
-                    f.write(';'.join(escaped) + '\r\n')
+                    f.write(';'.join(self._escapar(c) for c in campos) + '\r\n')
             return manifesto_path
         except Exception as e:
             logging.error(f"Erro ao gravar manifesto de impressão: {str(e)}")
             return ''
+
+    def _nome_manifesto(self):
+        localizador = re.sub(r'[^A-Za-z0-9_-]', '', self._localizador or '')
+        if localizador:
+            return f"impressao_{localizador}.csv"
+        return "impressao.csv"
+
+    @staticmethod
+    def _escapar(campo):
+        campo = str(campo)
+        if any(ch in campo for ch in ';"\n\r'):
+            return '"' + campo.replace('"', '""') + '"'
+        return campo
 
     def cancel_downloads(self):
         """Cancela os downloads em andamento (mantém a UI viva)."""
@@ -323,10 +365,6 @@ class ImpressaoManager(QObject):
         self._cleanup_finished_threads()
         self.current_transfer = None
 
-    def has_active_threads(self):
-        """True se ainda há threads de transferência em execução."""
-        return any(t.isRunning() for t in self._active_threads)
-
     @staticmethod
     def calculate_checksum(file_path):
         """Calcula o checksum SHA-256 de um arquivo."""
@@ -343,11 +381,11 @@ class ImpressaoManager(QObject):
 
     @staticmethod
     def get_total_size_mb(file_infos):
-        """Soma o tamanho estimado dos arquivos em MB."""
+        """Soma o tamanho dos arquivos em MB, para anunciar o download."""
         total_size = 0
         for file_info in file_infos:
-            if file_info.get('tamanho_mb') is not None:
-                total_size += float(file_info['tamanho_mb'])
-            else:
-                total_size += 10
+            try:
+                total_size += float(file_info.get('tamanho_mb') or 0)
+            except (TypeError, ValueError):
+                continue
         return total_size

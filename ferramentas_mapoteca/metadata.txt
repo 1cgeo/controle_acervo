@@ -4,8 +4,35 @@ author=Brazilian Army Geographic Service
 qgisMinimumVersion=4.0
 supportsQt6=True
 qgisMaximumVersion=4.99
-description=Plugin da Mapoteca do Sistema de Controle do Acervo: consulta de pedidos ativos, download dos PDFs das cartas para impressão e controle dos quantitativos impressos
-version=1.0.0
+description=Plugin da Mapoteca do Sistema de Controle do Acervo: fila de atendimento, download dos PDFs das cartas para impressão e controle dos quantitativos impressos
+about=Ferramenta de quem imprime na mapoteca do 1º CGEO. Exige o perfil Operador no módulo Mapoteca do SCA.
+version=2.0.0
+experimental=False
+deprecated=False
 icon=icons/icon.png
 tags=Mapoteca, DSG, Exército, Brasileiro, Acervo, Impressão, Cartas, BDGEx
+homepage=https://github.com/1cgeo/controle_acervo
+repository=https://github.com/1cgeo/controle_acervo
+tracker=https://github.com/1cgeo/controle_acervo/issues
+changelog=2.0.0
+    - A lista passa a ser a FILA de atendimento (/pedido/em_aberto): o pedido de
+      dezembro ainda aberto em janeiro voltou a aparecer. A lista antiga passou
+      a ser filtrada pelo ano corrente no servidor, e o plugin não tem seletor
+      de ano.
+    - A confirmação do download sai por /mapoteca/impressao/confirmar_download.
+      Pela rota do acervo, quem tinha perfil só na mapoteca levava 403 no fim de
+      todo download bem-sucedido, e os tokens ficavam pendentes.
+    - Item avulso (carta de outro CGEO, papel quadriculado) aparece
+      identificado, com a descrição, em vez de ser anunciado como "sem PDF no
+      acervo".
+    - Entrada barrada com explicação para quem não tem perfil Operador na
+      mapoteca, em vez de abrir a janela vazia e um 403 atrás do outro.
+    - Fila ordenada por prazo, com atraso e urgência destacados; filtro por
+      localizador, cliente ou documento; forma de entrega do pedido na tela.
+    - O manifesto CSV passa a listar o pedido INTEIRO (inclusive o avulso e o
+      item sem PDF) e leva o localizador no nome, para não sobrescrever o de
+      outro pedido baixado na mesma pasta.
+    - A pasta de destino é lembrada entre sessões.
+    1.0.0
+    - Versão inicial.
 ; end of mandatory metadata
