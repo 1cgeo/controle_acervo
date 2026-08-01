@@ -31,7 +31,16 @@ import sys
 # Drive local ou unidade mapeada: letra + ':' + barra + caminho.
 # Exige DOIS caracteres de caminho para nao pegar a sequencia de escape `:\n` de
 # string ("problemas:\n"), que era 40% dos falsos positivos na primeira medicao.
-DRIVE_RE = re.compile(r"[A-Za-z]:[\\/][\w.$~-]{2,}")
+#
+# O lookbehind e o resto do conserto, e veio de um bloqueio de verdade: a letra
+# de unidade e UMA letra, entao ela nunca vem grudada em outra. Sem ele, a
+# mensagem "...localizar o arquivo de origem para:\n- " casava como se `a:\n-`
+# fosse um caminho -- o "a" de "para" mais o escape de linha mais o marcador de
+# lista. Toda frase em portugues terminada em "para:", "pasta:" ou "mapa:"
+# seguida de `\n-` cai no mesmo lugar. Ele NAO afrouxa a regra: caminho real
+# ("C:\\Users", "dir=D:\\dados") sempre traz aspas, espaco, sinal ou inicio de
+# linha antes da letra, nunca outra letra.
+DRIVE_RE = re.compile(r"(?<![^\W\d_])[A-Za-z]:[\\/][\w.$~-]{2,}")
 # UNC com barra invertida (\\servidor\share). O lookahead descarta o escape
 # unicode `\\u0300` de expressao regular em JavaScript, e o piso de 2 caracteres
 # no host descarta `\\n\\n` de docstring: nome de servidor nao tem 1 letra.
