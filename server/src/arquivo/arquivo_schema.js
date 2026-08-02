@@ -237,45 +237,119 @@ models.catalogarProduto = Joi.object().keys({
 //
 // Recusar em vez de ignorar, pela mesma razão de sempre: descartado em
 // silêncio, o cliente acredita ter gravado o checksum que mandou.
+// UM ENVIO, UMA REQUISIÇÃO. O corpo é multipart: o campo de texto `dados` traz
+// este JSON, e os arquivos vêm no campo `arquivos`. Ver o cabeçalho de
+// `upload_web.js` para por que não há sessão aqui.
+//
+// TRÊS COISAS O CLIENTE NÃO DECLARA, e cada recusa tem a sua razão:
+//
+//   `nome_arquivo` -- o nome físico sai de `acervo.nome_arquivo_padrao`, a mesma
+//     função que o invariante `7a` usa para auditar. Auditor e escritor são a
+//     mesma regra, como já está escrito em `renomearPadrao`. Deixar o cliente
+//     nomear produzia uma linha de DEFECT no `7a` a cada envio.
+//   `extensao` -- ela sai do NOME DO ARQUIVO que subiu. Declarada, poderia dizer
+//     `tif` num PDF, e o acervo passaria a prometer um formato que não tem.
+//   `checksum` e `tamanho_mb` -- o servidor os mede enquanto grava, no mesmo
+//     passo, sem segunda leitura. O navegador nem teria como declarar o
+//     checksum: `crypto.subtle.digest` exige o arquivo inteiro na memória.
+//
+// Recusar em vez de ignorar, pela razão de sempre: descartado em silêncio, o
+// cliente acredita ter gravado o que mandou.
+const recusado = (mensagem) => Joi.any().forbidden().messages({ 'any.unknown': mensagem });
+
 const arquivoWebCampos = {
   uuid_arquivo: Joi.string().uuid().allow(null),
+  // O rótulo humano do arquivo, que aparece na ficha. Não é o nome no volume.
   nome: Joi.string().required(),
-  // Nome físico sem extensão, relativo à raiz do volume. Subpasta com barra
-  // normal é aceita; o servidor recusa travessia (utils/caminho_volume.js).
-  nome_arquivo: Joi.string().required(),
   // Tileserver (9) é URL, não byte: não há o que enviar pelo navegador.
   tipo_arquivo_id: Joi.number().integer().invalid(TIPO_ARQUIVO.TILESERVER).required()
     .messages({
       'any.invalid': 'Tileserver é uma URL e não tem arquivo para enviar; cadastre-o pelo prepare-upload'
     }),
-  extensao: Joi.string().required(),
   metadado: Joi.object().allow(null),
   situacao_carregamento_id: Joi.number().integer(),
   descricao: Joi.string().allow(null, ''),
   crs_original: Joi.string().max(10).allow(null, ''),
-  checksum: Joi.any().forbidden().messages({
-    'any.unknown': 'O checksum é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
-  }),
-  tamanho_mb: Joi.any().forbidden().messages({
-    'any.unknown': 'O tamanho é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
-  })
+  nome_arquivo: recusado(
+    'O nome físico é derivado dos metadados por acervo.nome_arquivo_padrao (a mesma regra do invariante 7a); não o envie'
+  ),
+  extensao: recusado(
+    'A extensão sai do nome do arquivo enviado; não a envie'
+  ),
+  checksum: recusado(
+    'O checksum é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
+  ),
+  tamanho_mb: recusado(
+    'O tamanho é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
+  )
 };
 
-models.prepareUploadWebProduct = Joi.object().keys({
-  produtos: Joi.array().items(produtoComVersoes(arquivoWebCampos)).min(1).required()
+// A versão, sem o produto: os campos são os mesmos das rotas irmãs.
+const versaoWeb = Joi.object().keys({
+  uuid_versao: Joi.string().uuid().allow(null),
+  versao: versaoSchema,
+  nome: Joi.string().allow(null).required(),
+  tipo_versao_id: Joi.number().integer().required(),
+  subtipo_produto_id: Joi.number().integer().required(),
+  lote_id: Joi.number().integer().allow(null),
+  metadado: Joi.object().allow(null),
+  descricao: Joi.string().allow(null, ''),
+  orgao_produtor: Joi.string().required(),
+  palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+  data_criacao: dataCalendario().required(),
+  // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
+  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
+}).required();
+
+const arquivosWeb = Joi.array().items(Joi.object().keys(arquivoWebCampos)).min(1).required();
+
+/** Versão nova, com arquivos, em produto que já existe. */
+models.uploadWebVersao = Joi.object().keys({
+  // Sem `.strict()`, como na rota irma `versaoDeProduto`: `acervo.produto.id` e
+  // BIGINT, o driver o entrega como STRING, e e assim que ele viaja no JSON da
+  // ficha ate voltar aqui.
+  produto_id: Joi.number().integer().positive().required(),
+  versao: versaoWeb,
+  arquivos: arquivosWeb
 });
 
-models.prepareUploadWebVersion = Joi.object().keys({
-  versoes: Joi.array().items(versaoDeProduto(arquivoWebCampos)).min(1).required()
+/**
+ * Arquivos novos numa versão que JÁ EXISTE.
+ *
+ * É o que completa a versão PLANEJADA: ela nasce sem arquivo, de propósito, e o
+ * arquivo entra nesta MESMA versão quando a produção terminar
+ * (`domain_constants.js`). Sem esta rota, a folha planejada pela web ficava sem
+ * como ser completada pela web.
+ *
+ * Não traz produto nem versão: os dois já estão gravados, e reenviá-los abriria
+ * a porta para esta rota editar o que ela não deveria.
+ */
+models.uploadWebArquivos = Joi.object().keys({
+  versao_id: Joi.number().integer().positive().required(),
+  arquivos: arquivosWeb
 });
 
-// A sessão vem na URL e o id do arquivo é o `temp_id` que o prepare devolveu.
-// O corpo é o multipart com o campo "arquivo", e por isso não há schema de body:
-// quem valida o corpo é o multer.
-models.uploadWebArquivoParams = Joi.object().keys({
-  session_uuid: Joi.string().uuid().required(),
-  temp_id: Joi.number().integer().positive().required()
+/** Produto novo, com a primeira versão e os arquivos dela. */
+models.uploadWebProduto = Joi.object().keys({
+  produto: Joi.object().keys({
+    nome: Joi.string().allow(null).required(),
+    mi: Joi.string().allow(null).required(),
+    inom: Joi.string().allow(null).required(),
+    tipo_escala_id: Joi.number().integer().strict().required(),
+    denominador_escala_especial: Joi.alternatives().conditional('tipo_escala_id', {
+      is: TIPO_ESCALA.ESCALA_PERSONALIZADA,
+      then: Joi.number().integer().strict().required(),
+      otherwise: Joi.valid(null)
+    }),
+    tipo_produto_id: Joi.number().integer().required(),
+    subtipo_produto_id: Joi.number().integer().allow(null).default(null),
+    descricao: Joi.string().allow(null, ''),
+    geom: Joi.string().required()
+  }).required(),
+  versao: versaoWeb,
+  arquivos: arquivosWeb
 });
+
 
 models.confirmUpload = Joi.object().keys({
   session_uuid: Joi.string().uuid().required()

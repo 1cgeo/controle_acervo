@@ -426,29 +426,21 @@ describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
   // o mesmo defeito. Sem este caso, corrigir um e esquecer o outro nao apareceria.
   it('o schema do upload tambem devolve a string original', () => {
     const arquivoSchema = require('../../../arquivo/arquivo_schema')
-    const { value, error } = arquivoSchema.prepareUploadWebVersion.validate({
-      versoes: [{
-        produto_id: 1,
-        versao: {
-          versao: '1-DSG',
-          nome: null,
-          tipo_versao_id: 1,
-          subtipo_produto_id: 2,
-          orgao_produtor: '1º CGEO',
-          data_criacao: '2026-07-01',
-          data_edicao: '2026-08-01'
-        },
-        arquivos: [{
-          nome: 'Carta',
-          nome_arquivo: 'CT_s25_2757-1-NE_1-DSG',
-          tipo_arquivo_id: 1,
-          extensao: 'pdf',
-          situacao_carregamento_id: 1
-        }]
-      }]
+    const { value, error } = arquivoSchema.uploadWebVersao.validate({
+      produto_id: 1,
+      versao: {
+        versao: '1-DSG',
+        nome: null,
+        tipo_versao_id: 1,
+        subtipo_produto_id: 2,
+        orgao_produtor: '1º CGEO',
+        data_criacao: '2026-07-01',
+        data_edicao: '2026-08-01'
+      },
+      arquivos: [{ nome: 'Carta', tipo_arquivo_id: 1, situacao_carregamento_id: 1 }]
     })
     expect(error).toBeUndefined()
-    expect(value.versoes[0].versao.data_edicao).toBe('2026-08-01')
+    expect(value.versao.data_edicao).toBe('2026-08-01')
   })
 
   it('continua cobrando data_edicao >= data_criacao', () => {

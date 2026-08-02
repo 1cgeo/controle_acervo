@@ -1,33 +1,34 @@
 'use strict'
 
-// Recebe UM arquivo por HTTP e o grava direto no volume do acervo.
+// Envio de arquivo pelo NAVEGADOR: metadados e bytes numa requisição só.
 //
-// O QUE MUDA AQUI. Ate 2026-08-01 o servidor nunca gravava byte em volume:
-// quem copiava era o plugin do QGIS, por SMB, e o par prepare-upload/
-// confirm-upload so registrava a intencao e conferia o resultado. O servidor ja
-// ALCANCA o volume (o download faz createReadStream + pipe em
-// utils/enviar_arquivo.js), entao o que faltava para o navegador tambem carregar
-// era o sentido contrario. A sessao, as tabelas _temp e o confirm-upload sao os
-// MESMOS: um caminho novo de deposito, nao uma segunda maquina de upload.
+// POR QUE UMA CHAMADA, E NÃO O TRIO prepare/PUT/confirm. O par
+// prepare-upload/confirm-upload existe para o PLUGIN, e a sessão entre eles
+// cobre uma janela real: ali o servidor reserva o destino, o cliente copia os
+// bytes por SMB por conta própria, e volta depois para confirmar. Aqui os bytes
+// vêm DENTRO da requisição -- não há janela entre reservar e gravar, e portanto
+// não há o que a sessão cobrir. É o mesmo raciocínio que `/catalogar/product` já
+// registrou ("uma requisição, sem sessão"), e o custo de ignorá-lo era real:
+// sessão aberta que ninguém fecha vira linha pendurada em `upload_session` e
+// `.parcial` no volume, esperando o cron de 24 h.
 //
-// POR QUE MULTER COM STORAGE PROPRIO, e nao `diskStorage` nem `busboy` direto:
+// O que se perde: reenviar SÓ o arquivo que falhou. Com uma chamada, a queda no
+// meio custa o envio inteiro. É aceitável porque o teto do caminho web é de
+// poucos GB (`UPLOAD_WEB_MAX_GB`) e a mediana em produção é de 6 a 11 MB; acima
+// disso o caminho continua sendo o plugin, que copia direto para o volume.
 //
-//   - `memoryStorage` esta fora de questao. Ele guarda o arquivo inteiro em
-//     `file.buffer`, e um .img de 7,4 GB derruba o processo. E o que os dois
-//     usos de multer que ja existiam (anexo do pedido, anexo do orcamento)
-//     fazem, e ali cabe: sao anexos de 50 a 100 MB que vao para o BANCO.
-//   - `diskStorage` grava o arquivo e devolve so o caminho. Para o SHA-256
-//     seria preciso ler o arquivo DE NOVO, e ler duas vezes o mesmo byte e
-//     exatamente o custo que a catalogacao in-place existiu para remover
-//     (362 GB relidos no LOTE_1 do Convenio RS). Aqui o byte passa pelo
-//     processo uma unica vez: o mesmo fluxo que escreve alimenta o hash.
-//   - `busboy` direto daria o mesmo, mas ele e dependencia TRANSITIVA do
-//     multer, e nao esta no package.json. Depender de dependencia de terceiro
-//     quebra na primeira atualizacao que o multer fizer sem nos avisar.
+// O NOME FÍSICO NÃO VEM DO CLIENTE. Ele sai de `acervo.nome_arquivo_padrao`, a
+// mesma função que o invariante `7a` usa para auditar -- auditor e escritor são
+// a mesma regra, como já está escrito no cabeçalho de `renomearPadrao`. Deixar o
+// cliente nomear produzia uma linha de DEFECT no `7a` a cada envio: medido em
+// 2026-08-02, um arquivo subiu como `carta_ensaio` onde o padrão pedia
+// `CT_s12_2757-1-NE_1dsg`.
 //
-// Sobra o contrato de storage do proprio multer, que e publico e entrega o
-// fluxo cru em `file.stream`: parsing de multipart e teto de tamanho ficam com
-// a biblioteca, e a escrita fica conosco.
+// ORDEM DAS PARTES DO MULTIPART: o campo `dados` tem de vir ANTES dos arquivos.
+// O destino de cada byte sai dos metadados, e eles são lidos enquanto o corpo
+// ainda está chegando: arquivo que chegasse antes não teria para onde ir. O
+// `FormData` preserva a ordem do `append`, então quem envia controla isso; parte
+// fora de ordem é recusada com a razão, e não ignorada.
 
 const multer = require('multer')
 const fs = require('fs')
@@ -48,23 +49,16 @@ const {
   domainConstants: { TIPO_ARQUIVO }
 } = require('../utils')
 
-// Sufixo do arquivo AINDA INCOMPLETO.
-//
-// Nada e gravado direto no nome definitivo. Conexao cortada no meio (aba
-// fechada, cabo, timeout do proxy) deixaria um arquivo truncado com o nome que
-// o acervo considera valido: o registro diria 400 MB, o volume teria 12, e o
-// unico jeito de descobrir seria alguem baixar e reclamar. Com o `.parcial`, a
-// interrupcao deixa lixo visivel e nomeado, que o cancel-upload apaga.
+const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume')
+const arquivoSchema = require('./arquivo_schema')
+
+/** Sufixo do arquivo AINDA INCOMPLETO. Ver `promoverArquivos`. */
 const SUFIXO_PARCIAL = '.parcial'
 
-// Blocos de 8 MB, pelo mesmo motivo do BLOCO_LEITURA de arquivo_ctrl.js: o
-// destino e um share SMB, e ali o custo por escrita e de rede, nao de disco.
+/** Blocos de 8 MB: o destino é um share, e ali o custo é de rede. */
 const BLOCO_ESCRITA = 8 * 1024 * 1024
 
-/** Teto em bytes, lido a cada requisicao para nao divergir do config. */
 const tetoEmBytes = () => Number(config.UPLOAD_WEB_MAX_GB) * 1024 * 1024 * 1024
-
-const emGb = bytes => (bytes / (1024 * 1024 * 1024)).toFixed(2)
 
 const mensagemDeTeto = () =>
   `Arquivo maior que o teto de ${config.UPLOAD_WEB_MAX_GB} GB do envio pelo navegador. ` +
@@ -72,59 +66,347 @@ const mensagemDeTeto = () =>
   'sem passar pelo servidor.'
 
 /**
+ * Extensão do arquivo que subiu, sem o ponto e em minúsculas.
+ *
+ * Sai do NOME DO ARQUIVO enviado, e não de um campo do corpo: quem declara a
+ * extensão declara o que o byte é, e o byte já veio. Declarada, ela poderia
+ * dizer `tif` num PDF, e o acervo passaria a prometer um formato que não tem.
+ */
+const extensaoDe = (nomeOriginal) => {
+  const ext = path.extname(nomeOriginal || '').replace(/^\./, '').toLowerCase()
+  return ext || null
+}
+
+/**
+ * O plano do envio: onde cada arquivo vai parar, e sob que nome.
+ *
+ * Roda UMA vez, quando a primeira parte de arquivo chega, e antes de qualquer
+ * byte tocar o disco. Tudo que se recusa sem ler byte se recusa aqui: produto
+ * inexistente, versão repetida, sequência de versão, volume sem primário, nome
+ * padrão não computável e colisão de nome físico.
+ */
+const construirPlano = async (dados, contexto) => {
+  const { tipo } = contexto
+
+  return db.conn.task(async t => {
+    // ---- de onde saem os metadados do produto e da versão ----
+    let produto
+    let versao
+
+    let versaoExistenteId = null
+
+    if (tipo === 'arquivos') {
+      // Versão e produto já estão gravados: aqui só se acrescenta arquivo.
+      // Os apelidos são obrigatórios: `subtipo_produto_id` existe nas DUAS
+      // tabelas, e sem separá-los o do produto (quase sempre NULL) sobrescreve o
+      // da versão no objeto da linha. O nome padrão sairia NULL, e a rota
+      // recusaria o envio dizendo que o metadado está fora do padrão -- com o
+      // metadado inteiro correto.
+      const linha = await t.oneOrNone(
+        `SELECT v.id AS versao_id, v.versao AS versao_rotulo,
+                v.subtipo_produto_id AS versao_subtipo, v.tipo_versao_id,
+                p.id, p.nome, p.mi, p.inom, p.tipo_produto_id,
+                p.subtipo_produto_id AS produto_subtipo,
+                p.tipo_escala_id, p.denominador_escala_especial
+         FROM acervo.versao v
+         JOIN acervo.produto p ON p.id = v.produto_id
+         WHERE v.id = $1`,
+        [dados.versao_id]
+      )
+      if (!linha) {
+        throw new AppError(`Versão ${dados.versao_id} não encontrada`, httpCode.NotFound)
+      }
+
+      versaoExistenteId = Number(linha.versao_id)
+      produto = { ...linha, subtipo_produto_id: linha.produto_subtipo }
+      // O nome padrão precisa do rótulo e do subtipo DA VERSÃO, e os dois vêm do
+      // banco: a rota não os aceita do cliente, para não editar o que não é dela.
+      versao = { versao: linha.versao_rotulo, subtipo_produto_id: linha.versao_subtipo }
+    } else if (tipo === 'versao') {
+      produto = await t.oneOrNone(
+        `SELECT id, nome, mi, inom, tipo_produto_id, subtipo_produto_id,
+                tipo_escala_id, denominador_escala_especial
+         FROM acervo.produto WHERE id = $1`,
+        [dados.produto_id]
+      )
+      if (!produto) {
+        throw new AppError(`Produto ${dados.produto_id} não encontrado`, httpCode.NotFound)
+      }
+      versao = dados.versao
+
+      const repetida = await t.oneOrNone(
+        'SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2',
+        [produto.id, versao.versao]
+      )
+      if (repetida) {
+        throw new AppError(
+          `Já existe a versão "${versao.versao}" para o produto ${produto.id}`,
+          httpCode.Conflict
+        )
+      }
+    } else {
+      produto = dados.produto
+      versao = dados.versao
+
+      // Identidade do produto: espelha `unique_produto_identidade` com erro
+      // legível, em vez de deixar o índice estourar depois dos bytes.
+      if (produto.mi) {
+        const existente = await t.oneOrNone(
+          `SELECT id FROM acervo.produto
+           WHERE mi = $1 AND tipo_escala_id = $2 AND tipo_produto_id = $3
+             AND COALESCE(subtipo_produto_id, 0) = COALESCE($4, 0)`,
+          [produto.mi, produto.tipo_escala_id, produto.tipo_produto_id,
+            produto.subtipo_produto_id ?? null]
+        )
+        if (existente) {
+          throw new AppError(
+            `Já existe o produto ${existente.id} com este MI, escala, tipo e subtipo. ` +
+            'Para acrescentar uma versão a ele, use o envio de versão.',
+            httpCode.Conflict
+          )
+        }
+      }
+    }
+
+    // ---- volume ----
+    //
+    // Não vem do cliente. No `catalogar/product` ele vem, porque lá o arquivo já
+    // está em algum volume e o cliente diz em qual; aqui o servidor é quem
+    // escolhe para onde copiar, e essa escolha é do acervo.
+    //
+    // Acrescentando arquivo a uma versão que já tem outros, o volume é o DELES, e
+    // não o primário do tipo: o primário pode ter mudado depois, e a versão
+    // ficaria partida entre dois volumes. Isso importa mais do que parece --
+    // a unicidade de nome físico é POR VOLUME, então metade da versão num volume
+    // e metade noutro deixa de ser protegida contra colisão de nome.
+    let volume = null
+
+    if (versaoExistenteId !== null) {
+      const volumes = await t.any(
+        `SELECT DISTINCT va.id, va.nome, va.volume
+         FROM acervo.arquivo a
+         JOIN acervo.volume_armazenamento va ON va.id = a.volume_armazenamento_id
+         WHERE a.versao_id = $1`,
+        [versaoExistenteId]
+      )
+      if (volumes.length > 1) {
+        throw new AppError(
+          `Os arquivos desta versão estão espalhados por ${volumes.length} volumes ` +
+          `(${volumes.map(v => v.nome).join(', ')}). Junte-os antes de acrescentar outro: ` +
+          'a unicidade do nome físico vale por volume.',
+          httpCode.Conflict
+        )
+      }
+      if (volumes.length === 1) volume = volumes[0]
+    }
+
+    if (!volume) {
+      volume = await t.oneOrNone(
+        `SELECT va.id, va.nome, va.volume
+         FROM acervo.volume_tipo_produto vtp
+         JOIN acervo.volume_armazenamento va ON va.id = vtp.volume_armazenamento_id
+         WHERE vtp.tipo_produto_id = $1 AND vtp.primario = TRUE`,
+        [produto.tipo_produto_id]
+      )
+    }
+
+    if (!volume) {
+      throw new AppError(
+        `Não existe volume primário cadastrado para o tipo de produto ${produto.tipo_produto_id}`,
+        httpCode.BadRequest
+      )
+    }
+
+    // ---- o nome físico, derivado dos metadados ----
+    const { nome_padrao: nomePadrao } = await t.one(
+      // Os casts sao obrigatorios: a funcao e declarada com `smallint` e
+      // `varchar`, o driver manda `integer` e `unknown`, e o Postgres nao resolve
+      // a sobrecarga sozinho ("nenhuma funcao corresponde com o nome e os tipos").
+      `SELECT acervo.nome_arquivo_padrao(
+         $1::smallint, $2::smallint, $3::varchar, $4::varchar, $5::varchar,
+         $6::smallint, $7::integer, $8::varchar
+       ) AS nome_padrao`,
+      [
+        produto.tipo_produto_id,
+        versao.subtipo_produto_id,
+        produto.mi ?? null,
+        produto.inom ?? null,
+        produto.nome ?? null,
+        produto.tipo_escala_id,
+        produto.denominador_escala_especial ?? null,
+        versao.versao
+      ]
+    )
+
+    // NULL não é "sem nome": é metadado que não descreve uma folha. Gravar assim
+    // criaria de saída uma linha do invariante 7b, e um arquivo que a rota de
+    // renome não conseguiria consertar depois.
+    if (!nomePadrao) {
+      throw new AppError(
+        'O nome físico padrão não é computável com estes metadados: o rótulo da versão ' +
+        `("${versao.versao}") ou a identificação do produto (MI, INOM ou nome) está fora ` +
+        'do padrão. Corrija antes de enviar os arquivos; é o mesmo que o invariante 7b cobra.',
+        httpCode.BadRequest
+      )
+    }
+
+    const motivo = motivoCaminhoInseguro(`${nomePadrao}.ext`)
+    if (motivo) {
+      throw new AppError(
+        `O nome físico derivado dos metadados ${motivo}: "${nomePadrao}"`,
+        httpCode.BadRequest
+      )
+    }
+
+    return {
+      tipo,
+      produto,
+      versao,
+      versaoExistenteId,
+      arquivos: dados.arquivos,
+      volume,
+      nomePadrao,
+      // Extensões já usadas nesta requisição, para a segunda ocorrência não
+      // sobrescrever a primeira em silêncio. Ver `destinoDoArquivo`.
+      extensoesUsadas: new Map(),
+      gravados: []
+    }
+  })
+}
+
+/**
+ * O destino deste arquivo, e as recusas que dependem dele.
+ *
+ * O nome é o mesmo para todos os arquivos da versão, e quem os distingue é a
+ * EXTENSÃO -- é assim que `acervo.nome_arquivo_padrao` foi desenhada (ela não
+ * recebe `tipo_arquivo_id`) e é assim que a unicidade física está declarada no
+ * banco, sobre `(volume, nome_arquivo, extensao)`.
+ *
+ * Consequência que a tela precisa dizer: dois arquivos da MESMA versão com a
+ * MESMA extensão não cabem no padrão. Aqui isso é recusa, e não um sufixo
+ * inventado: um `_2` faria este código nomear diferente do que o `renomear-padrao`
+ * e o invariante `7a` esperam, e a próxima auditoria acusaria o que acabou de ser
+ * gravado.
+ */
+const destinoDoArquivo = async (plano, indice, nomeOriginal) => {
+  const declarado = plano.arquivos[indice]
+  if (!declarado) {
+    throw new AppError(
+      `Chegou um arquivo a mais do que os ${plano.arquivos.length} descritos no campo "dados".`,
+      httpCode.BadRequest
+    )
+  }
+
+  const extensao = extensaoDe(nomeOriginal)
+  if (!extensao) {
+    throw new AppError(
+      `O arquivo "${nomeOriginal}" não tem extensão, e é ela que distingue os arquivos ` +
+      'de uma mesma versão no volume.',
+      httpCode.BadRequest
+    )
+  }
+
+  const jaUsada = plano.extensoesUsadas.get(extensao)
+  if (jaUsada !== undefined) {
+    throw new AppError(
+      `Dois arquivos desta versão têm a extensão "${extensao}" ("${jaUsada}" e ` +
+      `"${nomeOriginal}"). O nome físico padrão é um só por versão, e quem separa os ` +
+      'arquivos é a extensão, então os dois receberiam o mesmo nome. Envie um deles ' +
+      'noutra versão, ou converta um dos formatos.',
+      httpCode.Conflict
+    )
+  }
+  plano.extensoesUsadas.set(extensao, nomeOriginal)
+
+  const livre = await db.conn.oneOrNone(
+    `SELECT id FROM acervo.arquivo
+     WHERE volume_armazenamento_id = $1 AND lower(nome_arquivo) = lower($2)
+       AND lower(extensao) = lower($3) LIMIT 1`,
+    [plano.volume.id, plano.nomePadrao, extensao]
+  )
+  if (livre) {
+    throw new AppError(
+      `Já existe no volume ${plano.volume.nome} um arquivo "${plano.nomePadrao}.${extensao}" ` +
+      `(id ${livre.id}). O nome físico é derivado dos metadados, então isto quer dizer que ` +
+      'esta versão deste produto já tem um arquivo deste formato.',
+      httpCode.Conflict
+    )
+  }
+
+  const destino = caminhoNoVolume(plano.volume.volume, `${plano.nomePadrao}.${extensao}`)
+  return { declarado, extensao, destino, caminhoParcial: destino + SUFIXO_PARCIAL }
+}
+
+/**
  * Storage do multer que grava no `.parcial` e MEDE no mesmo passo.
  *
- * O destino nao sai daqui: ele foi calculado no prepare, gravado em
- * `acervo.upload_arquivo_temp.destination_path` e ja validado contra travessia.
- * O middleware abaixo o carrega em `req.arquivoWeb` antes do multer rodar,
- * porque o multipart so pode ser parseado depois de se saber para onde escrever.
+ * `diskStorage` não serve: ele grava e devolve o caminho, e o SHA-256 exigiria
+ * ler o arquivo DE NOVO -- a segunda leitura que a catalogação in-place existiu
+ * para remover. Aqui o byte passa pelo processo uma vez só, e o mesmo fluxo que
+ * escreve alimenta o hash.
+ *
+ * O hash entra por um `Transform` no MEIO do cano, e não por um `on('data')` ao
+ * lado do `pipe`: com dois consumidores do mesmo fluxo, a ordem entre "entrar em
+ * modo fluente" e "conectar o pipe" passa a importar, e um pedaço perdido daria
+ * checksum errado sem erro nenhum.
  */
 const storageNoVolume = {
   _handleFile (req, file, cb) {
-    const { caminhoParcial } = req.arquivoWeb
+    planoDaRequisicao(req)
+      .then(async (plano) => {
+        const indice = req._indiceArquivoWeb || 0
+        req._indiceArquivoWeb = indice + 1
 
-    // `file.path` e o que multer passa para `_removeFile` quando aborta (teto
-    // estourado, conexao caida). Sem ele, o `.parcial` do envio interrompido
-    // ficaria no volume ate alguem cancelar a sessao.
-    file.path = caminhoParcial
+        const { declarado, extensao, destino, caminhoParcial } =
+          await destinoDoArquivo(plano, indice, file.originalname)
 
-    const hash = crypto.createHash('sha256')
-    let bytes = 0
+        // `file.path` é o que o multer passa para `_removeFile` ao abortar
+        // (teto estourado, conexão caída). Sem ele, o `.parcial` do envio
+        // interrompido ficaria no volume.
+        file.path = caminhoParcial
 
-    // Transform em vez de um `on('data')` ao lado do pipe: com dois consumidores
-    // do mesmo fluxo a ordem entre "entrar em modo fluente" e "conectar o pipe"
-    // passa a importar, e um pedaco perdido daria um checksum errado sem erro
-    // nenhum. No meio do cano, cada byte e contado exatamente uma vez.
-    const medidor = new Transform({
-      transform (pedaco, _codificacao, proximo) {
-        hash.update(pedaco)
-        bytes += pedaco.length
-        proximo(null, pedaco)
-      }
-    })
+        const hash = crypto.createHash('sha256')
+        let bytes = 0
+        const medidor = new Transform({
+          transform (pedaco, _codificacao, proximo) {
+            hash.update(pedaco)
+            bytes += pedaco.length
+            proximo(null, pedaco)
+          }
+        })
 
-    // A subpasta e legitima (o nome fisico pode trazer caminho relativo) e
-    // `createWriteStream` nao a cria. `recursive` tambem torna a retentativa
-    // barata. A raiz ja foi validada: `motivoCaminhoInseguro` roda no prepare.
-    fsPromises
-      .mkdir(path.dirname(caminhoParcial), { recursive: true })
-      .then(() => {
-        // `flags: 'w'` trunca: um `.parcial` de tentativa anterior e sobrescrito,
-        // nunca continuado. Retomada parcial exigiria saber que os bytes ja
-        // gravados sao os mesmos deste envio, e ninguem sabe disso.
+        // A subpasta é legítima e `createWriteStream` não a cria. `flags: 'w'`
+        // trunca: `.parcial` de tentativa anterior é sobrescrito, nunca
+        // continuado -- retomada parcial exigiria saber que os bytes já
+        // gravados são os mesmos deste envio, e ninguém sabe disso.
+        await fsPromises.mkdir(path.dirname(caminhoParcial), { recursive: true })
         const saida = fs.createWriteStream(caminhoParcial, {
           flags: 'w',
           highWaterMark: BLOCO_ESCRITA
         })
-        return pipelineAsync(file.stream, medidor, saida)
-      })
-      .then(() => {
-        cb(null, {
-          caminho_parcial: caminhoParcial,
+        await pipelineAsync(file.stream, medidor, saida)
+
+        // O teto do multer TRUNCA o fluxo em vez de derrubá-lo: o busboy para de
+        // emitir e marca `truncated`. Sem esta checagem o `pipeline` terminaria
+        // normalmente, e o arquivo entraria no acervo pela metade -- com um
+        // checksum calculado sobre a metade, portanto "válido" para sempre. É o
+        // pior modo de falhar que este caminho tem, porque nada depois o acusa.
+        if (file.stream.truncated) {
+          throw new AppError(mensagemDeTeto(), httpCode.BadRequest)
+        }
+
+        const medida = {
+          declarado,
+          extensao,
+          destino,
+          caminhoParcial,
+          nome_arquivo: plano.nomePadrao,
           checksum: hash.digest('hex'),
           bytes,
           tamanho_mb: bytes / (1024 * 1024)
-        })
+        }
+        plano.gravados.push(medida)
+        cb(null, medida)
       })
       .catch(cb)
   },
@@ -132,106 +414,73 @@ const storageNoVolume = {
   _removeFile (req, file, cb) {
     const caminho = file.path
     delete file.path
-    // Ausente nao e erro: o abort pode ter acontecido antes de a escrita comecar.
+    // Ausente não é erro: o abort pode ter acontecido antes de a escrita começar.
     fs.unlink(caminho, erro => cb(erro && erro.code !== 'ENOENT' ? erro : null))
   }
 }
 
 /**
- * Carrega a sessao e a linha `_temp` do arquivo, e decide se este usuario pode
- * gravar naquele destino. Roda ANTES do multer: sem destino nao ha para onde
- * streamar, e adiar isso significaria receber gigabytes para so entao recusar.
+ * Lê e valida o campo `dados`, e monta o plano. Memorizado por requisição.
+ *
+ * A validação do corpo NÃO passa pelo `schemaValidation` da rota: ele roda antes
+ * do multer, e antes do multer o corpo multipart ainda não foi parseado. Por
+ * isso o Joi é chamado aqui, com o mesmo schema, assim que o campo existe.
  */
-const resolverDestino = async (req, res, next) => {
-  try {
-    const { session_uuid: sessionUuid, temp_id: tempId } = req.params
+const planoDaRequisicao = (req) => {
+  if (req._planoWeb) return req._planoWeb
 
-    // O JOIN e o que faz o `temp_id` de OUTRA sessao virar 404: casar so pelo id
-    // deixaria qualquer operador escrever no destino reservado por um colega.
-    const linha = await db.conn.oneOrNone(
-      `SELECT a.id, a.destination_path, a.status, a.tipo_arquivo_id,
-              a.nome, a.nome_arquivo, a.extensao,
-              s.id AS session_id, s.usuario_uuid, s.status AS session_status,
-              s.operation_type
-       FROM acervo.upload_arquivo_temp a
-       JOIN acervo.upload_session s ON s.id = a.session_id
-       WHERE s.uuid_session = $<sessionUuid> AND a.id = $<tempId>`,
-      { sessionUuid, tempId }
-    )
-
-    if (!linha) {
+  req._planoWeb = (async () => {
+    const bruto = req.body && req.body.dados
+    if (!bruto) {
       throw new AppError(
-        'Arquivo não encontrado nesta sessão de upload. ' +
-        'O identificador do arquivo tem de ser um dos que o prepare devolveu para esta mesma sessão.',
-        httpCode.NotFound
-      )
-    }
-
-    if (linha.usuario_uuid !== req.usuarioUuid) {
-      throw new AppError(
-        'Usuário não autorizado para esta sessão de upload',
-        httpCode.Forbidden
-      )
-    }
-
-    if (linha.session_status !== 'pending') {
-      throw new AppError(
-        `Sessão de upload já está com status "${linha.session_status}"; não aceita mais arquivos`,
-        httpCode.Conflict
-      )
-    }
-
-    if (Number(linha.tipo_arquivo_id) === TIPO_ARQUIVO.TILESERVER) {
-      throw new AppError(
-        'Tileserver é uma URL e não tem byte para enviar',
+        'O campo "dados" não chegou antes dos arquivos. Ele descreve o produto, a versão ' +
+        'e os arquivos, e é dele que sai o destino de cada byte: mande-o como a PRIMEIRA ' +
+        'parte do multipart.',
         httpCode.BadRequest
       )
     }
 
-    // O `Content-Length` do navegador chega antes do primeiro byte do corpo, e
-    // recusar aqui evita receber gigabytes para descartar no fim. Nao substitui
-    // o teto do multer: requisicao em `chunked` nao declara tamanho nenhum, e e
-    // la que a conta vale. A folga cobre o envelope do multipart (delimitador,
-    // cabecalho da parte), que viaja junto e nao e do arquivo: com um arquivo
-    // por requisicao ele fica na casa das centenas de bytes, entao 64 KB e
-    // folga larga sem tornar o teto pequeno inexequivel.
-    const declarado = Number(req.headers['content-length'])
-    const teto = tetoEmBytes()
-    if (Number.isFinite(declarado) && declarado > teto + 64 * 1024) {
+    let json
+    try {
+      json = JSON.parse(bruto)
+    } catch {
+      throw new AppError('O campo "dados" não é um JSON válido', httpCode.BadRequest)
+    }
+
+    const schema = {
+      versao: arquivoSchema.uploadWebVersao,
+      produto: arquivoSchema.uploadWebProduto,
+      arquivos: arquivoSchema.uploadWebArquivos
+    }[req._tipoEnvioWeb]
+
+    const { error, value } = schema.validate(json, { abortEarly: false, stripUnknown: true })
+    if (error) {
       throw new AppError(
-        `${mensagemDeTeto()} Recebido: ${emGb(declarado)} GB.`,
+        `Campo "dados" inválido: ${error.details.map(d => d.message).join('; ')}`,
         httpCode.BadRequest
       )
     }
 
-    req.arquivoWeb = {
-      tempId: Number(linha.id),
-      sessionId: Number(linha.session_id),
-      destino: linha.destination_path,
-      caminhoParcial: linha.destination_path + SUFIXO_PARCIAL,
-      nome: linha.nome,
-      nomeArquivo: linha.nome_arquivo,
-      extensao: linha.extensao
-    }
+    return construirPlano(value, { tipo: req._tipoEnvioWeb })
+  })()
 
-    return next()
-  } catch (erro) {
-    return next(erro)
-  }
+  return req._planoWeb
 }
 
 /**
- * Recebe o multipart de um arquivo so, no campo "arquivo".
+ * Recebe o multipart. `dados` no campo de texto, arquivos no campo "arquivos".
  *
- * O multer e construido A CADA requisicao porque o teto e lido do config na
- * hora: construido uma vez no `require`, ele congelaria o valor e o teste (e o
- * ajuste em producao) passaria a mentir. O objeto e barato.
+ * O multer é construído A CADA requisição porque o teto é lido do config na
+ * hora: congelado no `require`, o ajuste em produção (e o teste) passaria a
+ * mentir. O objeto é barato.
  */
-const receberMultipart = (req, res, next) => {
+const receberMultipart = (tipo) => (req, res, next) => {
+  req._tipoEnvioWeb = tipo
+
   const middleware = multer({
     storage: storageNoVolume,
-    limits: { fileSize: tetoEmBytes(), files: 1 }
-  }).single('arquivo')
+    limits: { fileSize: tetoEmBytes(), files: 50 }
+  }).array('arquivos', 50)
 
   middleware(req, res, erro => {
     if (!erro) return next()
@@ -246,41 +495,54 @@ const receberMultipart = (req, res, next) => {
   })
 }
 
-const uploadArquivoWeb = [resolverDestino, receberMultipart]
+/** Recusa antes de receber o corpo, quando o navegador declara o tamanho. */
+const conferirTamanhoDeclarado = (req, res, next) => {
+  const declarado = Number(req.headers['content-length'])
+  const teto = tetoEmBytes()
+  // A folga cobre o envelope do multipart (cabeçalho de cada parte,
+  // delimitadores) e o campo `dados`, que viajam junto e não são do arquivo.
+  if (Number.isFinite(declarado) && declarado > teto + 1024 * 1024) {
+    return next(new AppError(
+      `${mensagemDeTeto()} Recebido: ${(declarado / (1024 ** 3)).toFixed(2)} GB.`,
+      httpCode.BadRequest
+    ))
+  }
+  return next()
+}
+
+const uploadWebVersao = [conferirTamanhoDeclarado, receberMultipart('versao')]
+const uploadWebProduto = [conferirTamanhoDeclarado, receberMultipart('produto')]
+const uploadWebArquivos = [conferirTamanhoDeclarado, receberMultipart('arquivos')]
 
 /**
- * Apaga os `.parcial` de uma sessao.
+ * Apaga os `.parcial` que este envio deixou.
  *
- * So os `.parcial`: arquivo ja renomeado para o nome definitivo saiu do dominio
- * desta funcao. Ele pode ser o byte que outra sessao (ou um confirm anterior)
- * ja considera gravado, e apagar arquivo de acervo por causa de um cancelamento
- * seria destruir dado para limpar lixo.
- *
- * Falha ao apagar vira log, nunca erro da requisicao: quem cancelou cancelou, e
- * derrubar o cancelamento porque um arquivo temporario resistiu deixaria a
- * sessao aberta, que e o problema maior.
+ * Só os `.parcial`: arquivo já promovido ao nome definitivo saiu do domínio
+ * desta função. Falha ao apagar vira log, nunca erro da requisição -- o envio já
+ * falhou por outro motivo, e derrubá-lo de novo por causa de um temporário
+ * teimoso só esconderia a causa real.
  */
-const removerParciais = async (caminhos, contexto = {}) => {
-  let apagados = 0
-  for (const destino of caminhos) {
-    if (!destino) continue
+const limparParciais = async (plano, contexto = {}) => {
+  if (!plano || !plano.gravados) return
+  for (const g of plano.gravados) {
     try {
-      await fsPromises.unlink(destino + SUFIXO_PARCIAL)
-      apagados++
+      await fsPromises.unlink(g.caminhoParcial)
     } catch (erro) {
       if (erro.code === 'ENOENT') continue
-      logger.warn('Não foi possível apagar arquivo parcial de upload', {
-        ...contexto,
-        caminho: destino + SUFIXO_PARCIAL,
-        erro: erro.message
+      logger.warn('Não foi possível apagar arquivo parcial de upload web', {
+        ...contexto, caminho: g.caminhoParcial, erro: erro.message
       })
     }
   }
-  return apagados
 }
 
 module.exports = {
-  uploadArquivoWeb,
-  removerParciais,
-  SUFIXO_PARCIAL
+  uploadWebVersao,
+  uploadWebProduto,
+  uploadWebArquivos,
+  planoDaRequisicao,
+  limparParciais,
+  extensaoDe,
+  SUFIXO_PARCIAL,
+  TIPO_ARQUIVO
 }

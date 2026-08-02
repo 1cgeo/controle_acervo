@@ -3,7 +3,6 @@ const fs = require('fs').promises;
 const fsClassic = require('fs');
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
 const { arquivarArquivos } = require('./arquivo_deletado');
-const { removerParciais } = require('./upload_web');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -752,21 +751,17 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
 /**
  * Reserva o destino de uma versao nova em produto que ja existe.
  *
- * UMA funcao para os DOIS depositos, e a diferenca vai no parametro `web`:
- *
- *   - `false` e o caminho do plugin. O cliente declara `checksum` e
- *     `tamanho_mb`, copia os arquivos por SMB e chama o confirm-upload, que
- *     confere o que ele declarou.
- *   - `true` e o caminho do navegador. Nao ha checksum declarado (o servidor o
- *     mede ao gravar), o `destination_path` NAO volta na resposta (caminho de
- *     rede nao tem uso no browser, e caminho de maquina nao deve sair para
- *     ele), e cada arquivo volta com o `temp_id` que enderecca o PUT dos bytes.
+ * E o caminho do PLUGIN: o cliente declara `checksum` e `tamanho_mb`, copia os
+ * arquivos por SMB e chama o confirm-upload, que confere o que ele declarou. O
+ * navegador NAO passa por aqui -- ele manda metadados e bytes numa requisicao
+ * so, em `upload_web.js`, onde nao ha janela entre reservar e gravar e portanto
+ * nao ha sessao a cobrir.
  *
  * Duas copias desta validacao (produto existe, versao inedita, sequencia de
  * versao, volume primario do tipo, nome fisico livre) divergiriam na primeira
  * regra nova, e a que ficasse para tras seria a porta aberta.
  */
-const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) => {
+const prepararVersao = async (requestData, usuarioUuid) => {
   return db.conn.tx(async t => {
     try {
       const { versoes } = requestData;
@@ -889,9 +884,6 @@ const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) =>
       );
 
       const result = [];
-      // No caminho da web a resposta e PLANA: quem envia itera arquivo a
-      // arquivo, e a arvore de versoes so faria o cliente reconstrui-la.
-      const arquivosWeb = [];
       const nomesFisicosUsados = new Set();
 
       for (const item of versoes) {
@@ -927,7 +919,7 @@ const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) =>
         
         for (const arquivo of item.arquivos) {
           const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-          if (web) assertCaminhoSeguro(arquivo.nome_arquivo);
+          assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -966,10 +958,6 @@ const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) =>
             ]
           );
 
-          if (web) {
-            arquivosWeb.push(descreverArquivoWeb(arquivoTempId, arquivo));
-          }
-
           arquivosInfo.push({
             uuid_arquivo: arquivo.uuid_arquivo || null,
             nome: arquivo.nome,
@@ -987,14 +975,6 @@ const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) =>
         });
       }
       
-      if (web) {
-        return {
-          session_uuid: uuid_session,
-          operation_type: 'add_version',
-          arquivos: arquivosWeb
-        };
-      }
-
       return {
         session_uuid: uuid_session,
         operation_type: 'add_version',
@@ -1009,19 +989,14 @@ const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) =>
   });
 };
 
-controller.prepareAddVersion = (requestData, usuarioUuid) =>
-  prepararVersao(requestData, usuarioUuid, { web: false });
-
-controller.prepareUploadWebVersion = (requestData, usuarioUuid) =>
-  prepararVersao(requestData, usuarioUuid, { web: true });
+controller.prepareAddVersion = prepararVersao;
 
 /**
  * Reserva o destino de um produto NOVO, com suas versoes e arquivos.
  *
- * Mesma funcao para os dois depositos, e o parametro `web` e a diferenca; ver o
- * cabecalho de `prepararVersao`, que explica cada uma delas.
+ * Caminho do PLUGIN, irmao de `prepararVersao`; ver o cabecalho de la.
  */
-const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) => {
+const prepararProduto = async (requestData, usuarioUuid) => {
   return db.conn.tx(async t => {
     try {
       const { produtos } = requestData;
@@ -1088,8 +1063,6 @@ const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) =
       );
 
       const result = [];
-      // Resposta PLANA no caminho da web: um arquivo, um PUT.
-      const arquivosWeb = [];
       const nomesFisicosUsados = new Set();
 
       for (const item of produtos) {
@@ -1147,7 +1120,7 @@ const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) =
           
           for (const arquivo of versao.arquivos) {
             const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-            if (web) assertCaminhoSeguro(arquivo.nome_arquivo);
+            assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -1186,10 +1159,6 @@ const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) =
               ]
             );
 
-            if (web) {
-              arquivosWeb.push(descreverArquivoWeb(arquivoTempId, arquivo));
-            }
-
             arquivosInfo.push({
               uuid_arquivo: arquivo.uuid_arquivo || null,
               nome: arquivo.nome,
@@ -1212,14 +1181,6 @@ const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) =
         });
       }
       
-      if (web) {
-        return {
-          session_uuid: uuid_session,
-          operation_type: 'add_product',
-          arquivos: arquivosWeb
-        };
-      }
-
       return {
         session_uuid: uuid_session,
         operation_type: 'add_product',
@@ -1234,80 +1195,172 @@ const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) =
   });
 };
 
-controller.prepareAddProduct = (requestData, usuarioUuid) =>
-  prepararProduto(requestData, usuarioUuid, { web: false });
-
-controller.prepareUploadWebProduct = (requestData, usuarioUuid) =>
-  prepararProduto(requestData, usuarioUuid, { web: true });
+controller.prepareAddProduct = prepararProduto;
 
 /**
- * Fecha o envio de UM arquivo pelo navegador: promove o `.parcial` ao nome
- * definitivo e grava a medida que saiu da propria escrita.
+ * Fecha o envio pelo NAVEGADOR: promove os bytes e cadastra, numa transacao.
  *
- * ESCRITA ATOMICA. Os bytes chegaram em `<destino>.parcial`. O acervo so ve o
- * arquivo quando ele esta inteiro, e o que faz isso e o rename, que no mesmo
- * sistema de arquivos e troca de nome, nao copia. Conexao cortada no meio deixa
- * um `.parcial` -- lixo nomeado, que o cancel-upload apaga -- e nunca um
- * arquivo truncado com o nome que o acervo considera valido.
+ * TRES CASOS, e o `plano.tipo` os separa:
  *
- * A ORDEM E RENAME PRIMEIRO, BANCO DEPOIS, e e o contrario do renomear-padrao.
- * La o banco decide primeiro porque quem arbitra a colisao e um indice unico.
- * Aqui nao ha o que arbitrar: o que nao pode acontecer e a linha ficar
- * 'completed' sem o byte no lugar, porque o confirm-upload CONFIA nesse status e
- * pula a releitura. Registro adiantado cadastraria no acervo um arquivo que nao
- * esta la; rename adiantado, no maximo, faz o proximo PUT reescrever o mesmo
- * destino.
+ *   'produto'  - produto novo, com a primeira versao e os arquivos dela.
+ *   'versao'   - versao nova, com arquivos, em produto que ja existe.
+ *   'arquivos' - arquivos numa versao que ja existe. E o que completa a versao
+ *                PLANEJADA, que nasce sem arquivo de proposito e o recebe nesta
+ *                MESMA versao quando a producao termina.
  *
- * O rename SOBRESCREVE (`fs.rename` do Node substitui em silencio no Windows),
- * e aqui isso e o comportamento desejado: o prepare reservou este nome fisico e
- * a unicidade (volume, nome_arquivo, extensao) o mantem livre no acervo, entao
- * o unico arquivo que pode estar neste caminho e um envio anterior DESTA mesma
- * linha. Recusar tornaria impossivel repetir um envio que falhou.
+ * Os bytes ja estao gravados e MEDIDOS quando esta funcao comeca: quem os
+ * escreveu foi o storage de `upload_web.js`, no mesmo passo em que calculou o
+ * SHA-256. Aqui so falta o registro e a promocao ao nome definitivo.
+ *
+ * A ORDEM E BANCO PRIMEIRO, DISCO DEPOIS, DENTRO DA MESMA TRANSACAO -- e e a
+ * mesma do `renomearPadrao`, pela mesma razao. Quem arbitra a colisao de nome
+ * fisico sao os indices `unique_nome_fisico_por_volume{,_ci}`: deixando o INSERT
+ * ir primeiro, a colisao e recusada com o disco ainda intacto. So depois de o
+ * banco aceitar e que o byte assume o nome definitivo, e se o `rename` falhar o
+ * ROLLBACK desfaz o registro -- nada muda.
+ *
+ * O rename e o que torna a escrita ATOMICA: o acervo so ve o arquivo quando ele
+ * esta inteiro. Conexao cortada no meio deixa um `.parcial`, que a limpeza apaga,
+ * e nunca um arquivo truncado com o nome que o acervo considera valido.
+ *
+ * Se o rename falhar no meio de varios arquivos, os que ja foram promovidos
+ * VOLTAM ao `.parcial` antes de a transacao abortar: sem isso ficariam bytes com
+ * nome definitivo e nenhuma linha apontando para eles, que e lixo que nenhuma
+ * auditoria reconhece (o 7c so ve o que tem lapide).
  */
-controller.gravarArquivoWeb = async (arquivoWeb, medida, usuarioUuid) => {
-  const { destino, caminhoParcial, tempId } = arquivoWeb;
+controller.enviarWeb = async (plano, usuarioUuid) => {
+  const gravados = plano.gravados;
 
-  try {
-    await fs.rename(caminhoParcial, destino);
-  } catch (error) {
-    // O `.parcial` sem promocao e lixo puro: nada aponta para ele.
-    await fs.unlink(caminhoParcial).catch(() => {});
+  if (gravados.length !== plano.arquivos.length) {
     throw new AppError(
-      `Não foi possível gravar o arquivo ${arquivoWeb.nomeArquivo}.${arquivoWeb.extensao} no volume: ${error.message}`,
-      httpCode.InternalError,
-      error
+      `Chegaram ${gravados.length} arquivo(s), e o campo "dados" descreve ` +
+      `${plano.arquivos.length}. Mande um arquivo para cada descricao, na mesma ordem.`,
+      httpCode.BadRequest
     );
   }
 
-  // O checksum e o tamanho sao os que o servidor MEDIU enquanto escrevia, no
-  // mesmo passo e sem segunda leitura. `status = 'completed'` e o que diz ao
-  // confirm-upload que esta linha ja foi medida.
-  await db.conn.none(
-    `UPDATE acervo.upload_arquivo_temp
-     SET expected_checksum = $<checksum>, tamanho_mb = $<tamanhoMb>,
-         status = 'completed', error_message = NULL
-     WHERE id = $<tempId>`,
-    { checksum: medida.checksum, tamanhoMb: medida.tamanho_mb, tempId }
-  );
+  const promovidos = [];
 
-  logger.info('Arquivo gravado no volume por upload web', {
-    upload_arquivo_temp_id: tempId,
-    nome_arquivo: arquivoWeb.nomeArquivo,
-    extensao: arquivoWeb.extensao,
-    bytes: medida.bytes,
-    usuario_uuid: usuarioUuid
-  });
+  try {
+    return await db.conn.tx(async t => {
+      let produtoId;
+      let versaoId;
 
-  return {
-    temp_id: tempId,
-    nome: arquivoWeb.nome,
-    nome_arquivo: arquivoWeb.nomeArquivo,
-    extensao: arquivoWeb.extensao,
-    checksum: medida.checksum,
-    tamanho_mb: medida.tamanho_mb,
-    bytes: medida.bytes
-  };
+      if (plano.tipo === 'arquivos') {
+        // Produto e versao ja existem, e a rota so acrescenta arquivo.
+        // Reinseri-los seria editar o que ela nao e dona -- por isso o corpo
+        // dela nem os aceita.
+        produtoId = plano.produto.id;
+        versaoId = plano.versaoExistenteId;
+      } else {
+        produtoId = plano.tipo === 'versao'
+          ? plano.produto.id
+          : await inserirProdutoDoEnvio(t, plano.produto, usuarioUuid);
+
+        versaoId = await inserirVersaoDoEnvio(t, plano.versao, produtoId, usuarioUuid);
+      }
+
+      // ---- arquivos: registro ANTES do disco ----
+      for (const g of gravados) {
+        await t.none(SQL_INSERT_ARQUIVO, [
+          g.declarado.nome,
+          g.nome_arquivo,
+          versaoId,
+          g.declarado.tipo_arquivo_id,
+          plano.volume.id,
+          g.extensao,
+          g.tamanho_mb,
+          g.checksum,
+          g.declarado.metadado || {},
+          // Mesmo status dos outros caminhos que gravam arquivo: o byte acabou
+          // de ser escrito e conferido pelo proprio servidor.
+          STATUS_ARQUIVO.CARREGADO,
+          g.declarado.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
+          g.declarado.descricao || '',
+          g.declarado.crs_original || null,
+          usuarioUuid
+        ]);
+      }
+
+      // ---- promocao dos bytes, ja com o banco de acordo ----
+      for (const g of gravados) {
+        await fs.rename(g.caminhoParcial, g.destino);
+        promovidos.push(g);
+      }
+
+      logger.info('Envio web concluido', {
+        tipo: plano.tipo,
+        produto_id: produtoId,
+        versao_id: versaoId,
+        arquivos: gravados.length,
+        nome_arquivo: plano.nomePadrao,
+        volume: plano.volume.nome,
+        usuario_uuid: usuarioUuid
+      });
+
+      return {
+        produto_id: Number(produtoId),
+        versao_id: Number(versaoId),
+        nome_arquivo: plano.nomePadrao,
+        volume: plano.volume.nome,
+        arquivos: gravados.map(g => ({
+          nome: g.declarado.nome,
+          nome_arquivo: g.nome_arquivo,
+          extensao: g.extensao,
+          checksum: g.checksum,
+          tamanho_mb: g.tamanho_mb
+        }))
+      };
+    });
+  } catch (erro) {
+    // Desfaz a promocao dos que ja tinham mudado de nome. A transacao ja abortou
+    // sozinha; o disco nao tem rollback, entao ele e desfeito aqui.
+    for (const g of promovidos) {
+      await fs.rename(g.destino, g.caminhoParcial).catch(() => {});
+    }
+    throw erro;
+  }
 };
+
+/** O produto que nasce junto com o envio (caso 'produto'). */
+const inserirProdutoDoEnvio = async (t, p, usuarioUuid) => {
+  const { id } = await t.one(
+    `INSERT INTO acervo.produto(
+      nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
+      subtipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), CURRENT_TIMESTAMP, $10)
+    RETURNING id`,
+    [p.nome, p.mi, p.inom, p.tipo_escala_id, p.denominador_escala_especial ?? null,
+      p.tipo_produto_id, p.subtipo_produto_id ?? null, p.descricao || '', p.geom, usuarioUuid]
+  );
+  return id;
+};
+
+/**
+ * A versao do envio.
+ *
+ * O gatilho `acervo.validate_version` arbitra formato, sequencia e a coerencia
+ * produto/subtipo. O formulario o espelha para dar a frase certa antes do envio,
+ * mas quem decide continua sendo ele.
+ */
+const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid) => {
+  const { id } = await t.one(
+    `INSERT INTO acervo.versao(
+      uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
+      lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
+      data_edicao, usuario_cadastramento_uuid, data_cadastramento
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+    RETURNING id`,
+    [
+      v.uuid_versao || uuidv4(), v.versao, v.nome, v.tipo_versao_id,
+      v.subtipo_produto_id, produtoId, v.lote_id ?? null, v.metadado || {},
+      v.descricao || '', v.orgao_produtor, v.palavras_chave || [],
+      v.data_criacao, v.data_edicao, usuarioUuid
+    ]
+  );
+  return id;
+};
+
 
 
 // Catalogacao de produto que JA ESTA no volume, sem transferir nem renomear.
@@ -2305,13 +2358,12 @@ controller.getUploadSessions = async () => {
 };
 
 /**
- * Cancela a sessao e APAGA os arquivos parciais que ela deixou no volume.
+ * Cancela a sessao de upload do PLUGIN.
  *
- * Ate o servidor passar a gravar byte, cancelar nao tocava em disco nenhum: quem
- * copiava era o plugin, por SMB, e o que ficasse no volume era problema de quem
- * copiou. Com o upload web, uma sessao cancelada no meio do envio deixa
- * `<destino>.parcial` no acervo, e lixo que ninguem apaga vira lixo que ninguem
- * reconhece meses depois.
+ * Nao toca em disco, e isso e correto: nesta sessao quem copia os bytes e o
+ * cliente, por SMB, e o servidor nunca escreveu nada que lhe caiba apagar. O
+ * envio pelo NAVEGADOR nao passa por aqui (ele nao usa sessao), e o `.parcial`
+ * dele e limpo na propria requisicao que falhou.
  *
  * So o `.parcial`. Arquivo ja renomeado para o nome definitivo NAO se apaga:
  * cancelar registra que a sessao nao vai virar cadastro, e nao autoriza destruir
@@ -2323,7 +2375,7 @@ controller.getUploadSessions = async () => {
  * pendurada, que e o problema maior.
  */
 controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
-  const parciais = await db.conn.tx(async t => {
+  return db.conn.tx(async t => {
     const session = await t.oneOrNone(
       `SELECT * FROM acervo.upload_session WHERE uuid_session = $1 AND status = 'pending'`,
       [sessionUuid]
@@ -2359,25 +2411,12 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
       [session.id]
     );
 
-    // Tileserver nao tem byte, entao nao tem parcial.
-    const destinos = await t.any(
-      `SELECT destination_path FROM acervo.upload_arquivo_temp
-       WHERE session_id = $1 AND tipo_arquivo_id <> $2`,
-      [session.id, TIPO_ARQUIVO.TILESERVER]
-    );
-
-    return destinos.map(d => d.destination_path);
+    // Nao ha `.parcial` a apagar aqui. Ele so existe no envio pelo NAVEGADOR, e
+    // aquele caminho nao usa sessao: metadados e bytes vao numa requisicao so, e
+    // a limpeza do parcial acontece na propria requisicao que falhou. A sessao
+    // cobre o caminho do PLUGIN, onde quem copia os bytes e o cliente e o
+    // servidor nunca escreveu nada para limpar.
   });
-
-  const apagados = await removerParciais(parciais, { session_uuid: sessionUuid, usuario_uuid: usuarioUuid });
-
-  if (apagados > 0) {
-    logger.info('Arquivos parciais apagados no cancelamento da sessão de upload', {
-      session_uuid: sessionUuid,
-      usuario_uuid: usuarioUuid,
-      apagados
-    });
-  }
 };
 
 /**

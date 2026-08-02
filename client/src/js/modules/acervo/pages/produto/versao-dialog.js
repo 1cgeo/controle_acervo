@@ -15,6 +15,8 @@ import {
   getProjetos,
   criarVersoesPlanejadas,
   criarVersoesHistoricas,
+  criarProdutoComVersaoPlanejada,
+  criarProdutoComVersaoHistorica,
   atualizarVersao,
 } from '@modules/acervo/services/acervo-service.js';
 import { abrirAssistenteUpload } from './upload-wizard.js';
@@ -219,6 +221,12 @@ export async function openVersaoDialog({
   produto,
   versao = null,
   versoesExistentes = [],
+  // O produto que AINDA NAO EXISTE, vindo do formulario de produto quando a
+  // pessoa escolheu "Salvar e criar versao". Preenchido, os dois nascem juntos:
+  // pelas rotas `/produtos/produto_versao_*` quando a versao nao tem arquivo, ou
+  // pelo assistente quando ela e Regular. Gravar o produto antes deixaria uma
+  // casca sem versao toda vez que alguem desistisse aqui.
+  produtoPendente = null,
   onSaved = null,
 } = {}) {
   const edicao = Boolean(versao);
@@ -574,7 +582,12 @@ export async function openVersaoDialog({
           if (!edicao && tipoVersaoId === TIPO_VERSAO_REGULAR) {
             close();
             abrirAssistenteUpload({
-              produtoId: Number(produto.id),
+              // Com produto pendente os dois nascem juntos, na rota que os cria
+              // numa transacao so; sem ele, a versao entra num produto que ja
+              // existe. A tela do assistente e a MESMA nos dois.
+              ...(produtoPendente
+                ? { modo: 'produto', produto: produtoPendente }
+                : { modo: 'versao', produtoId: Number(produto.id) }),
               produtoNome: produto.nome,
               versao: {
                 uuid_versao: null,
@@ -605,17 +618,25 @@ export async function openVersaoDialog({
               // Corpo em ARRAY: as rotas aceitam lote, e mandar um item é o caso
               // de uma tela que cadastra uma versão de cada vez.
               const historica = tipoVersaoId === TIPO_VERSAO_HISTORICA;
-              const criar = historica ? criarVersoesHistoricas : criarVersoesPlanejadas;
+              const versaoNova = { uuid_versao: null, ...corpo };
 
-              await criar([{
-                uuid_versao: null,
-                produto_id: Number(produto.id),
-                ...corpo,
-              }]);
-
-              showSuccess(historica
-                ? 'Versão de registro histórico criada com sucesso'
-                : 'Versão planejada criada com sucesso');
+              if (produtoPendente) {
+                // Produto e versao numa transacao so. O corpo destas rotas e o
+                // produto com as `versoes` dentro, e nao os dois lado a lado.
+                const criarJunto = historica
+                  ? criarProdutoComVersaoHistorica
+                  : criarProdutoComVersaoPlanejada;
+                await criarJunto([{ ...produtoPendente, versoes: [versaoNova] }]);
+                showSuccess(historica
+                  ? 'Produto e versão de registro histórico criados com sucesso'
+                  : 'Produto e versão planejada criados com sucesso');
+              } else {
+                const criar = historica ? criarVersoesHistoricas : criarVersoesPlanejadas;
+                await criar([{ ...versaoNova, produto_id: Number(produto.id) }]);
+                showSuccess(historica
+                  ? 'Versão de registro histórico criada com sucesso'
+                  : 'Versão planejada criada com sucesso');
+              }
             }
             close();
             if (onSaved) onSaved();

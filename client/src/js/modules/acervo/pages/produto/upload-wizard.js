@@ -6,63 +6,79 @@ import { showSuccess, showError } from '@utils/toast.js';
 import {
   getTiposArquivo,
   getSituacoesCarregamento,
-  prepararEnvioVersao,
-  enviarBytesDoArquivo,
-  confirmarEnvio,
-  cancelarEnvio,
+  enviarVersaoComArquivos,
+  enviarProdutoComArquivos,
+  enviarArquivosEmVersao,
 } from '@modules/acervo/services/acervo-service.js';
 
 /**
  * Assistente de carregamento: a versão REGULAR, que nasce com o arquivo.
  *
  * POR QUE ELE EXISTE. Versão Regular é a única que não se cadastra sozinha: o
- * arquivo é o que a define, e o servidor não tem rota para criar uma sem ele
- * (`produto_ctrl.js:874-882`). Até 2026-08-01 o único caminho era o plugin do
- * QGIS, que copia os bytes para o volume por SMB -- e isso exige QGIS instalado
- * e acesso ao compartilhamento. Quem não tem os dois não catalogava nada.
+ * arquivo é o que a define, e o servidor não tem rota que crie uma sem ele. Até
+ * 2026-08-01 o único caminho era o plugin do QGIS, que copia os bytes para o
+ * volume por SMB -- e isso exige QGIS instalado e acesso ao compartilhamento.
+ * Quem não tinha os dois não catalogava nada.
  *
- * O CAMINHO DOS BYTES, e o que ele tem de diferente do plugin:
+ * TRÊS MODOS, e o `modo` os separa:
  *
- *   1. `prepare/version` reserva o destino e devolve um `temp_id` por arquivo.
- *   2. Um PUT POR ARQUIVO manda os bytes. Um por arquivo, e não um multipart com
- *      o lote todo, porque assim a queda no meio custa UM arquivo e a retomada é
- *      reenviar aquele, em vez de recomeçar os quatro.
- *   3. `confirm-upload` promove as linhas temporárias para o acervo.
+ *   'produto'  - produto novo, com a primeira versão e os arquivos dela;
+ *   'versao'   - versão nova, com arquivos, em produto que já existe;
+ *   'arquivos' - arquivos numa versão que já existe. É o que COMPLETA a versão
+ *                Planejada, que nasce sem arquivo de propósito e o recebe nesta
+ *                mesma versão quando a produção termina. O tipo dela não muda
+ *                por ganhar arquivo: quem quiser mudar edita a versão.
  *
- * O CHECKSUM NÃO SAI DAQUI. Quem mede é o servidor, enquanto grava. O navegador
- * nem teria como: `crypto.subtle.digest` exige o arquivo inteiro na memória, e o
- * acervo tem arquivo de gigabytes. Mandá-lo é 400, de propósito -- descartado em
- * silêncio, esta tela acreditaria ter gravado o que mandou.
+ * A tela é a MESMA nos três: o que muda é o que já está decidido quando ela
+ * abre, e a rota que recebe. Três assistentes divergiriam na primeira regra
+ * nova de arquivo.
  *
- * A VERSÃO JÁ VEM PRONTA de `versao-dialog.js`, e não se digita de novo aqui. O
- * formulário de lá espelha o gatilho `acervo.validate_version` (formato do
- * rótulo, sequência, subtipo), e uma segunda cópia dessas regras divergiria da
- * primeira no dia em que uma das duas mudasse.
+ * UMA REQUISIÇÃO. Metadados e bytes vão juntos. Não há sessão a abrir nem a fechar:
+ * como os bytes vêm dentro da requisição, não existe janela entre reservar o
+ * destino e gravar, e portanto não há o que uma sessão cobrisse. É o mesmo
+ * raciocínio que `/catalogar/product` já registrou. Ou tudo entra no acervo, ou
+ * nada entra, e o que falha não deixa linha pendurada em `upload_session` nem
+ * `.parcial` esperando o cron de 24 h.
+ *
+ * O custo, deliberado: a queda no meio custa o envio inteiro, e não só o arquivo
+ * que falhou. Vale porque o teto do caminho web é de poucos GB e a mediana em
+ * produção é de 6 a 11 MB; acima disso o caminho continua sendo o plugin.
+ *
+ * O NOME NO VOLUME NÃO SAI DAQUI. Ele é derivado dos metadados pelo servidor,
+ * por `acervo.nome_arquivo_padrao` -- a mesma função que o invariante `7a` usa
+ * para auditar, e "auditor e escritor são a mesma regra" já estava escrito em
+ * `renomearPadrao`. Enquanto o cliente nomeava, cada envio pela web criava uma
+ * linha de DEFECT no `7a`: medido em 2026-08-02, um arquivo entrou como
+ * `carta_ensaio` onde o padrão pedia `CT_s12_2757-1-NE_1dsg`.
+ *
+ * Também não saem daqui a extensão (vem do arquivo escolhido), o checksum nem o
+ * tamanho (o servidor os mede enquanto grava). Mandá-los é 400.
  */
 
-/** Extensão e nome físico derivados do arquivo escolhido. */
-function partesDoArquivo(nomeCompleto) {
-  const ponto = nomeCompleto.lastIndexOf('.');
-  const semExtensao = ponto > 0 ? nomeCompleto.slice(0, ponto) : nomeCompleto;
+/** Nome sem extensão e extensão, a partir do arquivo escolhido. */
+export function partesDoArquivo(nomeCompleto) {
+  const ponto = String(nomeCompleto || '').lastIndexOf('.');
+  const semExtensao = ponto > 0 ? nomeCompleto.slice(0, ponto) : (nomeCompleto || '');
   const extensao = ponto > 0 ? nomeCompleto.slice(ponto + 1).toLowerCase() : '';
   return { semExtensao, extensao };
 }
 
 /**
- * Nome físico sugerido a partir do nome do arquivo escolhido.
+ * As extensões que aparecem mais de uma vez na lista.
  *
- * Tira acento e troca o que não é letra, número, hífen ou barra: o nome vira
- * caminho dentro do volume, e caractere de acentuação em nome de arquivo já
- * quebrou download em compartilhamento de rede. A barra sobrevive porque
- * subpasta é caso legítimo (`LOTE_1/IMAGENS/...`); a travessia quem recusa é o
- * servidor.
+ * O nome físico é UM por versão -- `acervo.nome_arquivo_padrao` não recebe o
+ * tipo de arquivo --, e quem separa os arquivos no volume é a extensão. Dois
+ * PDFs na mesma versão receberiam o mesmo nome. O servidor recusa; a tela avisa
+ * antes, para a pessoa não descobrir isso depois de subir os bytes.
  */
-function nomeFisicoSugerido(texto) {
-  return texto
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^A-Za-z0-9\-_/.]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
+export function extensoesRepetidas(itens) {
+  const vistas = new Set();
+  const repetidas = new Set();
+  for (const i of itens || []) {
+    if (vistas.has(i.extensao)) repetidas.add(i.extensao);
+    vistas.add(i.extensao);
+  }
+  return [...repetidas];
 }
 
 function formatarBytes(bytes) {
@@ -76,19 +92,37 @@ function formatarBytes(bytes) {
  * Abre o assistente.
  *
  * @param {Object} opcoes
- * @param {number} opcoes.produtoId
+ * @param {'produto'|'versao'|'arquivos'} [opcoes.modo='versao']
+ * @param {number} [opcoes.produtoId] - modo 'versao'
+ * @param {Object} [opcoes.produto] - modo 'produto': o corpo do produto, já
+ *   validado pelo formulário (com `geom` em EWKT)
+ * @param {number} [opcoes.versaoId] - modo 'arquivos'
  * @param {string} [opcoes.produtoNome]
- * @param {Object} opcoes.versao - o corpo da versão, já validado pelo versao-dialog
- * @param {Function} [opcoes.onConcluido] - chamado depois do confirm bem-sucedido
+ * @param {Object} [opcoes.versao] - o corpo da versão, já validado pelo
+ *   versao-dialog. Ausente no modo 'arquivos', onde ela já está gravada.
+ * @param {string} [opcoes.rotuloVersao] - modo 'arquivos', só para a tela
+ * @param {Function} [opcoes.onConcluido]
  */
-export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConcluido }) {
-  // Cada item: { arquivo: File, nome, nomeFisico, extensao, tipoArquivoId,
-  //              situacaoId, estado, progresso, erro, tempId }
+export function abrirAssistenteUpload({
+  modo = 'versao',
+  produtoId,
+  produto,
+  versaoId,
+  produtoNome,
+  versao,
+  rotuloVersao,
+  onConcluido,
+}) {
+  // O rótulo que a tela mostra. No modo 'arquivos' a versão já existe, então ele
+  // vem pronto; nos outros sai do corpo que o formulário montou.
+  const rotulo = versao ? versao.versao : (rotuloVersao || '');
+  // Cada item: { arquivo: File, nome, extensao, tipoArquivoId, situacaoId }.
+  // NÃO há `nomeFisico`: quem nomeia é o servidor.
   let itens = [];
   let etapa = 0;
   let enviando = false;
-  let sessao = null;
-  let envioCorrente = null;
+  let envio = null;
+  let progresso = 0;
   let fechado = false;
 
   const stepper = createWizardStepper({ steps: ['Arquivos', 'Envio'] });
@@ -124,8 +158,8 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
     el('p', { textContent: 'Arraste os arquivos aqui, ou clique para escolher' }),
     el('p', {
       className: 'envio-zona__nota',
-      textContent: 'O servidor grava no volume e mede o checksum. Arquivo muito grande '
-        + 'continua entrando pelo plugin do QGIS, que copia direto para o volume.',
+      textContent: 'O servidor grava no volume, mede o checksum e nomeia o arquivo pelo '
+        + 'padrão do acervo. Arquivo muito grande continua entrando pelo plugin do QGIS.',
     }),
   ]);
 
@@ -134,18 +168,14 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
       const { semExtensao, extensao } = partesDoArquivo(arquivo.name);
       itens.push({
         arquivo,
+        // O rótulo humano, que aparece na ficha. Não é o nome no volume.
         nome: semExtensao,
-        nomeFisico: nomeFisicoSugerido(semExtensao),
         extensao,
         // 1 = Arquivo principal, que é o caso da esmagadora maioria.
         tipoArquivoId: 1,
         // 1 = Não carregado: o arquivo entra no acervo, e publicá-lo no BDGEx é
         // outro ato, feito depois e por outra pessoa.
         situacaoId: 1,
-        estado: 'pendente',
-        progresso: 0,
-        erro: null,
-        tempId: null,
       });
     }
     pintar();
@@ -160,21 +190,16 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
     const campoNome = createTextField({
       label: 'Nome',
       value: item.nome,
+      helpText: 'Como o arquivo aparece na ficha. O nome no volume é outro, e quem o define '
+        + 'é o servidor, pelo padrão do acervo.',
       onInput: (v) => { item.nome = v; },
-    });
-
-    const campoFisico = createTextField({
-      label: 'Nome físico',
-      value: item.nomeFisico,
-      helpText: `Vira ${item.nomeFisico || '?'}.${item.extensao} no volume`,
-      onInput: (v) => { item.nomeFisico = v; },
     });
 
     const campoTipo = createSelectField({
       label: 'Tipo de arquivo',
       value: String(item.tipoArquivoId),
       options: tiposArquivo
-        // Tileserver e URL, e nao byte: nao ha o que enviar por aqui.
+        // Tileserver é URL, e não byte: não há o que enviar por aqui.
         .filter(t => Number(t.code) !== 9)
         .map(t => ({ value: String(t.code), label: t.nome })),
       onChange: (v) => { item.tipoArquivoId = Number(v); },
@@ -190,7 +215,14 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
     return el('div', { className: 'envio-item' }, [
       el('div', { className: 'envio-item__cabecalho' }, [
         el('span', { className: 'envio-item__arquivo', textContent: item.arquivo.name }),
-        el('span', { className: 'envio-item__tamanho', textContent: formatarBytes(item.arquivo.size) }),
+        el('span', {
+          className: 'envio-item__extensao',
+          textContent: item.extensao ? `.${item.extensao}` : 'sem extensão',
+        }),
+        el('span', {
+          className: 'envio-item__tamanho',
+          textContent: formatarBytes(item.arquivo.size),
+        }),
         el('button', {
           className: 'btn btn--text btn--sm',
           type: 'button',
@@ -199,137 +231,72 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
         }, ['Remover']),
       ]),
       el('div', { className: 'envio-item__campos' }, [
-        campoNome.element, campoFisico.element,
-        campoTipo.element, campoSituacao.element,
+        campoNome.element, campoTipo.element, campoSituacao.element,
       ]),
     ]);
-  }
-
-  // ------------------------------------------------------------ etapa 2
-
-  function linhaDeProgresso(item) {
-    const barra = el('div', {
-      className: 'envio-barra__preenchimento',
-      style: { width: `${item.progresso}%` },
-    });
-
-    const rotulo = {
-      pendente: 'aguardando',
-      enviando: `${item.progresso}%`,
-      ok: 'gravado no volume',
-      erro: item.erro || 'falhou',
-    }[item.estado];
-
-    const linha = el('div', { className: `envio-progresso envio-progresso--${item.estado}` }, [
-      el('div', { className: 'envio-progresso__topo' }, [
-        el('span', { textContent: `${item.nomeFisico}.${item.extensao}` }),
-        el('span', { className: 'envio-progresso__estado', textContent: rotulo }),
-      ]),
-      el('div', { className: 'envio-barra' }, [barra]),
-    ]);
-
-    // Reenviar SO o que falhou: a sessao continua aberta e os outros arquivos
-    // ja gravados nao voltam a subir.
-    if (item.estado === 'erro' && !enviando) {
-      linha.appendChild(el('button', {
-        className: 'btn btn--secondary btn--sm',
-        type: 'button',
-        onClick: () => enviarUm(item).then(pintar),
-      }, ['Reenviar este arquivo']));
-    }
-
-    return linha;
   }
 
   // ------------------------------------------------------------ envio
 
-  async function enviarUm(item) {
-    if (!item.tempId) {
-      item.estado = 'erro';
-      item.erro = 'sem destino reservado';
-      return false;
-    }
-
-    item.estado = 'enviando';
-    item.progresso = 0;
-    item.erro = null;
-    pintar();
-
-    try {
-      envioCorrente = enviarBytesDoArquivo(sessao, item.tempId, item.arquivo, (info) => {
-        item.progresso = info.porcentagem === null ? item.progresso : info.porcentagem;
-        pintar();
-      });
-      await envioCorrente.promessa;
-      item.estado = 'ok';
-      item.progresso = 100;
-      return true;
-    } catch (erro) {
-      item.estado = 'erro';
-      item.erro = erro.message || 'falha no envio';
-      return false;
-    } finally {
-      envioCorrente = null;
-      pintar();
-    }
-  }
-
-  async function enviarTudo() {
+  async function enviar() {
     if (enviando) return;
     enviando = true;
+    progresso = 0;
     pintar();
 
     try {
-      if (!sessao) {
-        const preparo = await prepararEnvioVersao([{
-          produto_id: produtoId,
-          versao,
-          arquivos: itens.map(i => ({
-            nome: i.nome,
-            nome_arquivo: i.nomeFisico,
-            tipo_arquivo_id: i.tipoArquivoId,
-            extensao: i.extensao,
-            situacao_carregamento_id: i.situacaoId,
-          })),
-        }]);
+      // A ORDEM importa: o servidor casa o n-ésimo arquivo do multipart com a
+      // n-ésima descrição. Por isso as duas listas saem do MESMO array.
+      const descricoes = itens.map(i => ({
+        nome: i.nome,
+        tipo_arquivo_id: i.tipoArquivoId,
+        situacao_carregamento_id: i.situacaoId,
+      }));
 
-        sessao = preparo.session_uuid;
-        // O pareamento e por ORDEM porque o prepare devolve os arquivos na ordem
-        // em que foram mandados, e e uma sessao so. O `nome_arquivo` confirma.
-        preparo.arquivos.forEach((devolvido, i) => {
-          if (itens[i]) itens[i].tempId = devolvido.temp_id;
-        });
-      }
+      // Cada modo manda o mínimo que a sua rota precisa, e nada além: mandar
+      // produto ou versão no modo 'arquivos' seria oferecer a esta rota a chance
+      // de editar o que ela não é dona.
+      const corpoPorModo = {
+        produto: {
+          dados: { produto, versao, arquivos: descricoes },
+          enviar: enviarProdutoComArquivos,
+        },
+        versao: {
+          dados: { produto_id: produtoId, versao, arquivos: descricoes },
+          enviar: enviarVersaoComArquivos,
+        },
+        arquivos: {
+          dados: { versao_id: versaoId, arquivos: descricoes },
+          enviar: enviarArquivosEmVersao,
+        },
+      }[modo];
 
-      // Um de cada vez, e nao em paralelo: sao bytes indo para o MESMO volume,
-      // e disputar a banda entre quatro envios so faz os quatro demorarem mais,
-      // com quatro barras andando devagar em vez de uma andando rapido.
-      for (const item of itens) {
-        if (fechado) return;
-        if (item.estado === 'ok') continue;
-        await enviarUm(item);
-      }
+      envio = corpoPorModo.enviar(
+        corpoPorModo.dados,
+        itens.map(i => i.arquivo),
+        (info) => {
+          if (info.porcentagem !== null) progresso = info.porcentagem;
+          if (!fechado) pintar();
+        }
+      );
 
-      if (itens.some(i => i.estado !== 'ok')) {
-        showError('Alguns arquivos não subiram. Reenvie os que falharam e confirme depois.');
-        return;
-      }
+      const resultado = await envio.promessa;
+      if (fechado) return;
 
-      const resultado = await confirmarEnvio(sessao);
-      if (resultado && resultado.status === 'failed') {
-        showError(resultado.error_message || 'A validação do envio falhou');
-        return;
-      }
-
-      showSuccess(`Versão ${versao.versao} criada com ${itens.length} arquivo(s)`);
-      sessao = null;
+      const quantos = `${resultado.arquivos.length} arquivo(s)`;
+      showSuccess(modo === 'arquivos'
+        ? `${quantos} acrescentado(s) à versão ${rotulo}, no volume como `
+          + `"${resultado.nome_arquivo}"`
+        : `Versão ${rotulo} criada com ${quantos}, no volume como `
+          + `"${resultado.nome_arquivo}"`);
       if (onConcluido) onConcluido();
       modal.close();
     } catch (erro) {
-      showError(erro.message || 'Não foi possível concluir o envio');
+      if (!fechado) showError(erro.message || 'Não foi possível concluir o envio');
     } finally {
+      envio = null;
       enviando = false;
-      pintar();
+      if (!fechado) pintar();
     }
   }
 
@@ -341,20 +308,56 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
     stepper.setActive(etapa);
 
     if (etapa === 0) {
+      const repetidas = extensoesRepetidas(itens);
       corpo.replaceChildren(
-        el('p', { className: 'envio-assistente__resumo', textContent:
-          `Versão ${versao.versao} de ${produtoNome || `produto ${produtoId}`}. `
-          + 'Escolha os arquivos que a definem.' }),
+        el('p', {
+          className: 'envio-assistente__resumo',
+          textContent: modo === 'arquivos'
+            ? `Acrescentando arquivos à versão ${rotulo} de ${produtoNome || 'produto'}. `
+              + 'Eles recebem o mesmo nome no volume que os que já estão lá, e o que '
+              + 'os separa é a extensão.'
+            : `Versão ${rotulo} de ${produtoNome || 'produto novo'}. `
+              + 'Escolha os arquivos que a definem.',
+        }),
         zona,
         entrada,
         ...itens.map(linhaDeArquivo),
+        repetidas.length
+          ? el('p', {
+              className: 'envio-assistente__erro',
+              textContent: `Dois arquivos com a extensão .${repetidas.join(', .')}. O nome no `
+                + 'volume é um só por versão, e é a extensão que separa os arquivos: os dois '
+                + 'receberiam o mesmo nome. Deixe um de cada formato, ou cadastre o outro '
+                + 'noutra versão.',
+            })
+          : null,
       );
     } else {
       corpo.replaceChildren(
-        el('p', { className: 'envio-assistente__resumo', textContent:
-          'O servidor grava cada arquivo no volume e mede o checksum enquanto grava. '
-          + 'A versão só entra no acervo depois que todos subirem.' }),
-        ...itens.map(linhaDeProgresso),
+        el('p', {
+          className: 'envio-assistente__resumo',
+          textContent: 'Os dados da versão e os arquivos vão numa requisição só. O servidor '
+            + 'grava cada byte no volume, mede o checksum e nomeia pelo padrão do acervo. '
+            + 'Ou tudo entra, ou nada entra.',
+        }),
+        el('div', { className: 'envio-progresso' }, [
+          el('div', { className: 'envio-progresso__topo' }, [
+            el('span', {
+              textContent: `${itens.length} arquivo(s), `
+                + formatarBytes(itens.reduce((s, i) => s + i.arquivo.size, 0)),
+            }),
+            el('span', {
+              className: 'envio-progresso__estado',
+              textContent: enviando ? `${progresso}%` : 'pronto para enviar',
+            }),
+          ]),
+          el('div', { className: 'envio-barra' }, [
+            el('div', {
+              className: 'envio-barra__preenchimento',
+              style: { width: `${progresso}%` },
+            }),
+          ]),
+        ]),
       );
     }
 
@@ -370,8 +373,11 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
         type: 'button',
         onClick: () => { etapa = 1; pintar(); },
       }, ['Continuar para o envio']);
+      // Sem extensão o servidor não sabe separar os arquivos no volume, e é ela
+      // que distingue o principal do metadado sob o mesmo nome.
       avancar.disabled = itens.length === 0
-        || itens.some(i => !i.nomeFisico || !i.extensao);
+        || itens.some(i => !i.extensao)
+        || extensoesRepetidas(itens).length > 0;
       botoes.push(avancar);
     } else {
       const voltar = el('button', {
@@ -379,18 +385,18 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
         type: 'button',
         onClick: () => { etapa = 0; pintar(); },
       }, ['Voltar']);
-      // Voltar depois de abrir a sessao mudaria a lista sob um destino ja
-      // reservado, e o prepare nao seria refeito.
-      voltar.disabled = enviando || Boolean(sessao);
+      // Voltar durante o envio não: nada foi reservado no servidor, mas mexer na
+      // lista com o corpo já subindo deixaria a tela mentindo sobre o que vai.
+      voltar.disabled = enviando;
 
-      const enviar = el('button', {
+      const botaoEnviar = el('button', {
         className: 'btn btn--primary',
         type: 'button',
-        onClick: () => enviarTudo(),
-      }, [enviando ? 'Enviando...' : 'Enviar os arquivos']);
-      enviar.disabled = enviando;
+        onClick: () => enviar(),
+      }, [enviando ? 'Enviando...' : 'Enviar']);
+      botaoEnviar.disabled = enviando;
 
-      botoes.push(voltar, enviar);
+      botoes.push(voltar, botaoEnviar);
     }
 
     rodape.replaceChildren(...botoes);
@@ -406,13 +412,10 @@ export function abrirAssistenteUpload({ produtoId, produtoNome, versao, onConclu
     width: '820px',
     onClose: () => {
       fechado = true;
-      // Parar a subida em curso: esconder a tela nao para o XHR, e um envio de
-      // gigabytes seguiria correndo invisivel.
-      if (envioCorrente) envioCorrente.abortar();
-      // Sessao aberta sem confirmacao vira lixo no volume (os `.parcial`) e
-      // linha pendurada em `upload_session`. O cancel apaga os dois. Falhar aqui
-      // nao tem o que fazer: o cron de 24 h limpa o que sobrar.
-      if (sessao) cancelarEnvio(sessao).catch(() => {});
+      // Fechar a tela não para o XHR: um envio de gigabytes seguiria correndo
+      // invisível. Abortado, o servidor recebe o corpo truncado, falha e limpa
+      // os `.parcial` dele mesmo -- não há sessão a cancelar.
+      if (envio) envio.abortar();
     },
   });
 

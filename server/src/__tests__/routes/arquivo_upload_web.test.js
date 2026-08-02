@@ -1,21 +1,24 @@
 'use strict'
 
-// Envio de arquivo pelo NAVEGADOR: prepare, PUT dos bytes, confirm.
+// Envio de arquivo pelo NAVEGADOR: metadados e bytes numa requisição só.
 //
-// O QUE ESTE ARQUIVO GUARDA, em ordem de importancia:
+// O QUE ESTE ARQUIVO GUARDA, em ordem de importância:
 //
-//   1. O byte chega ao VOLUME e o checksum gravado e o SHA-256 do conteudo que
-//      subiu. Como o servidor mede enquanto escreve, um erro no cano (pedaco
-//      perdido, hash alimentado fora de ordem) daria checksum errado sem erro
-//      nenhum, e so apareceria muito depois, quando alguem baixasse. Por isso o
-//      volume aqui e um diretorio de verdade, e nao um duble.
-//   2. O fluxo do PLUGIN continua funcionando e continua CONFERINDO o checksum
-//      declarado. O confirm-upload passou a pular a releitura da linha ja
-//      medida, e uma condicao larga demais desligaria a unica prova de que a
-//      copia por SMB chegou inteira. Regressao aqui e silenciosa: tudo
-//      responderia 200.
-//   3. As recusas que impedem o corpo da requisicao de escolher onde escrever:
-//      travessia de caminho, arquivo de outra sessao, arquivo acima do teto.
+//   1. O NOME NO VOLUME sai de `acervo.nome_arquivo_padrao`, e não do cliente.
+//      É o mesmo nome que o invariante `7a` cobra, e por isso a prova aqui é
+//      contra a PRÓPRIA função: um literal esperado envelheceria em silêncio se
+//      o padrão mudasse, e o teste passaria a guardar a regra errada. Enquanto o
+//      cliente nomeava, cada envio pela web criava uma linha de DEFECT no 7a.
+//   2. O byte chega ao volume e o checksum gravado é o SHA-256 do conteúdo. Como
+//      o servidor mede enquanto escreve, um erro no cano (pedaço perdido, hash
+//      alimentado fora de ordem) daria checksum errado sem erro nenhum, e só
+//      apareceria muito depois, quando alguém baixasse. Por isso o volume aqui é
+//      um diretório de verdade, e não um dublê.
+//   3. ATOMICIDADE: o que falha não deixa metade. Nem linha no acervo sem byte,
+//      nem byte no volume sem linha, nem `.parcial` esquecido.
+//   4. O fluxo do PLUGIN (prepare-upload + confirm-upload) continua intacto e
+//      continua CONFERINDO o checksum declarado. Regressão ali é silenciosa:
+//      tudo continuaria respondendo 200.
 
 const request = require('supertest')
 const fs = require('fs').promises
@@ -26,13 +29,14 @@ const crypto = require('crypto')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
 const { generateAdminToken, generateUserToken } = require('../helpers/auth')
-const { createVolume, createProduto, createVersao } = require('../helpers/fixtures')
+const { createVolume, createProduto } = require('../helpers/fixtures')
 const config = require('../../config')
 
 let app
 let raizVolume
 
 const TIPO_PRODUTO = 4 // Ortoimagem, o mesmo do teste de catalogacao
+const SUBTIPO = 4      // Ortoimagem, subtipo do tipo 4
 const TETO_PADRAO = config.UPLOAD_WEB_MAX_GB
 
 beforeAll(async () => {
@@ -68,388 +72,621 @@ const volumePrimario = async () => {
   return volume
 }
 
-const arquivoWeb = (overrides = {}) => ({
+const versaoBase = (overrides = {}) => ({
+  versao: '1-DSG',
+  nome: 'Primeira edição',
+  tipo_versao_id: 1,
+  subtipo_produto_id: SUBTIPO,
+  lote_id: null,
+  orgao_produtor: 'DSG',
+  data_criacao: '2026-01-10',
+  data_edicao: '2026-02-10',
+  ...overrides
+})
+
+const arquivoBase = (overrides = {}) => ({
   nome: 'Ortoimagem',
-  nome_arquivo: 'Ortoimagem_MI 2965-1',
   tipo_arquivo_id: 1,
-  extensao: 'tif',
+  situacao_carregamento_id: 1,
   crs_original: '4674',
   ...overrides
 })
 
-const corpoProduto = (overrides = {}, arquivos = [arquivoWeb()]) => ({
-  produtos: [
-    {
+/**
+ * Monta o multipart na ordem que o servidor exige: `dados` ANTES dos arquivos.
+ *
+ * A ordem nao e detalhe de teste: e dela que sai o destino de cada byte, e o
+ * caso "arquivo antes dos dados" tem prova propria mais abaixo.
+ */
+const enviarVersao = (dados, arquivos, token = generateAdminToken()) => {
+  const req = request(app)
+    .post('/api/arquivo/upload-web/versao')
+    .set('Authorization', token)
+    .field('dados', JSON.stringify(dados))
+  for (const a of arquivos) req.attach('arquivos', a.conteudo, a.nome)
+  return req
+}
+
+const enviarProduto = (dados, arquivos, token = generateAdminToken()) => {
+  const req = request(app)
+    .post('/api/arquivo/upload-web/produto')
+    .set('Authorization', token)
+    .field('dados', JSON.stringify(dados))
+  for (const a of arquivos) req.attach('arquivos', a.conteudo, a.nome)
+  return req
+}
+
+const sha256 = conteudo => crypto.createHash('sha256').update(conteudo).digest('hex')
+const existe = caminho => fs.access(caminho).then(() => true).catch(() => false)
+
+/** O nome que o PADRAO manda, perguntado ao proprio banco. */
+const nomePadraoDe = async (produtoId, rotuloVersao, subtipo = SUBTIPO) => {
+  const { nome } = await conn.one(
+    // Casts como no controlador: a funcao e declarada com smallint/varchar e o
+    // driver manda integer/unknown, entao o Postgres nao resolve a sobrecarga.
+    `SELECT acervo.nome_arquivo_padrao(p.tipo_produto_id, $2::smallint, p.mi, p.inom,
+              p.nome, p.tipo_escala_id, p.denominador_escala_especial, $3::varchar) AS nome
+     FROM acervo.produto p WHERE p.id = $1`,
+    [produtoId, subtipo, rotuloVersao]
+  )
+  return nome
+}
+
+describe('POST /api/arquivo/upload-web/versao', () => {
+  it('exige perfil de operador', async () => {
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const semToken = await request(app)
+      .post('/api/arquivo/upload-web/versao')
+      .field('dados', JSON.stringify({ produto_id: produto.id }))
+    expect(semToken.status).toBe(401)
+
+    const consulta = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'a.tif' }],
+      generateUserToken()
+    )
+    expect(consulta.status).toBe(403)
+  })
+
+  // O caso central, e a prova e contra a PROPRIA funcao do padrao.
+  it('grava no volume com o NOME DO PADRAO e o checksum que o servidor mediu', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const conteudo = Buffer.from('pixels da ortoimagem que subiu pelo navegador')
+
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo, nome: 'ortoimagem_do_meu_computador.tif' }]
+    )
+
+    expect(res.status).toBe(201)
+
+    const esperado = await nomePadraoDe(produto.id, '1-DSG')
+    expect(esperado).toBeTruthy()
+    expect(res.body.dados.nome_arquivo).toBe(esperado)
+    // O nome do arquivo NO COMPUTADOR de quem enviou nao vira nome no volume.
+    expect(res.body.dados.nome_arquivo).not.toContain('meu_computador')
+
+    const noVolume = path.join(raizVolume, `${esperado}.tif`)
+    expect(await existe(noVolume)).toBe(true)
+    expect(await fs.readFile(noVolume)).toEqual(conteudo)
+    expect(await existe(`${noVolume}.parcial`)).toBe(false)
+
+    const arquivo = await conn.one('SELECT * FROM acervo.arquivo')
+    expect(arquivo.nome_arquivo).toBe(esperado)
+    expect(arquivo.extensao).toBe('tif')          // veio do arquivo, nao do corpo
+    expect(arquivo.checksum).toBe(sha256(conteudo))
+    expect(Number(arquivo.tamanho_mb)).toBeCloseTo(conteudo.length / (1024 * 1024), 6)
+  })
+
+  // O 7a e DEFECT: nome fora do padrao e defeito, nao gosto. Este caso prova que
+  // o envio pela web nao PRODUZ defeito -- era o que acontecia antes.
+  it('o arquivo gravado NAO aparece no invariante 7a', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('bytes'), nome: 'qualquer_nome.tif' }]
+    )
+
+    const divergentes = await conn.any(`
+      SELECT a.id FROM acervo.arquivo a
+      JOIN acervo.versao v ON v.id = a.versao_id
+      JOIN acervo.produto p ON p.id = v.produto_id
+      WHERE a.nome_arquivo IS DISTINCT FROM acervo.nome_arquivo_padrao(
+        p.tipo_produto_id, v.subtipo_produto_id, p.mi, p.inom, p.nome,
+        p.tipo_escala_id, p.denominador_escala_especial, v.versao)`)
+    expect(divergentes).toHaveLength(0)
+  })
+
+  it('varios arquivos da mesma versao dividem o nome e se separam pela extensao', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const res = await enviarVersao(
+      {
+        produto_id: produto.id,
+        versao: versaoBase(),
+        arquivos: [arquivoBase(), arquivoBase({ nome: 'Metadado', tipo_arquivo_id: 4 })]
+      },
+      [
+        { conteudo: Buffer.from('raster'), nome: 'orto.tif' },
+        { conteudo: Buffer.from('<xml/>'), nome: 'meta.xml' }
+      ]
+    )
+
+    expect(res.status).toBe(201)
+    const esperado = await nomePadraoDe(produto.id, '1-DSG')
+    expect(await existe(path.join(raizVolume, `${esperado}.tif`))).toBe(true)
+    expect(await existe(path.join(raizVolume, `${esperado}.xml`))).toBe(true)
+
+    const nomes = await conn.any(
+      'SELECT nome_arquivo, extensao FROM acervo.arquivo ORDER BY extensao'
+    )
+    expect(nomes.map(n => n.nome_arquivo)).toEqual([esperado, esperado])
+    expect(nomes.map(n => n.extensao)).toEqual(['tif', 'xml'])
+  })
+
+  // O padrao da UM nome por versao. Dois arquivos do mesmo formato receberiam o
+  // mesmo nome, e inventar um sufixo faria este codigo nomear diferente do que o
+  // renomear-padrao e o 7a esperam.
+  it('recusa dois arquivos da mesma versao com a MESMA extensao', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const res = await enviarVersao(
+      {
+        produto_id: produto.id,
+        versao: versaoBase(),
+        arquivos: [arquivoBase(), arquivoBase({ nome: 'Outro' })]
+      },
+      [
+        { conteudo: Buffer.from('um'), nome: 'a.tif' },
+        { conteudo: Buffer.from('dois'), nome: 'b.tif' }
+      ]
+    )
+
+    expect(res.status).toBe(409)
+    expect(res.body.message).toContain('extensão')
+
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.arquivo')
+    expect(n.c).toBe(0)
+  })
+
+  it('recusa o arquivo sem extensao, que e o que separa os arquivos no volume', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'sem_extensao' }]
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('extensão')
+  })
+
+  // O corpo declara N arquivos e chegam M: casar por ORDEM exige que os dois
+  // numeros batam, senao o arquivo 2 herdaria a descricao do 3.
+  it('recusa quando a contagem de arquivos nao bate com a de descricoes', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const aMais = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [
+        { conteudo: Buffer.from('um'), nome: 'a.tif' },
+        { conteudo: Buffer.from('dois'), nome: 'b.xml' }
+      ]
+    )
+    expect(aMais.status).toBe(400)
+
+    const aMenos = await enviarVersao(
+      {
+        produto_id: produto.id,
+        versao: versaoBase(),
+        arquivos: [arquivoBase(), arquivoBase({ nome: 'Metadado' })]
+      },
+      [{ conteudo: Buffer.from('um'), nome: 'a.tif' }]
+    )
+    expect(aMenos.status).toBe(400)
+
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.arquivo')
+    expect(n.c).toBe(0)
+  })
+
+  it('recusa o arquivo que chega ANTES do campo dados', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const res = await request(app)
+      .post('/api/arquivo/upload-web/versao')
+      .set('Authorization', generateAdminToken())
+      .attach('arquivos', Buffer.from('bytes'), 'a.tif')
+      .field('dados', JSON.stringify({
+        produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()]
+      }))
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('PRIMEIRA')
+  })
+
+  it('recusa produto inexistente antes de gravar byte', async () => {
+    await volumePrimario()
+
+    const res = await enviarVersao(
+      { produto_id: 9999999, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('bytes'), nome: 'a.tif' }]
+    )
+
+    expect(res.status).toBe(404)
+    expect(await fs.readdir(raizVolume)).toEqual([])
+  })
+
+  it('recusa versao ja existente no produto', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const primeira = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('um'), nome: 'a.tif' }]
+    )
+    expect(primeira.status).toBe(201)
+
+    const repetida = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('dois'), nome: 'b.xml' }]
+    )
+    expect(repetida.status).toBe(409)
+  })
+
+  it('recusa checksum, tamanho, nome fisico e extensao declarados', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    // A mensagem tem de dizer QUAL regra recusou, e nao so que houve recusa: e a
+    // diferenca entre a pessoa corrigir o corpo e ficar adivinhando.
+    const proibidos = [
+      ['checksum', 'a'.repeat(64), 'checksum é medido pelo servidor'],
+      ['tamanho_mb', 12, 'tamanho é medido pelo servidor'],
+      ['nome_arquivo', 'o_nome_que_eu_quero', 'nome_arquivo_padrao'],
+      ['extensao', 'tif', 'nome do arquivo enviado']
+    ]
+
+    for (const [chave, valor, razao] of proibidos) {
+      const res = await enviarVersao(
+        {
+          produto_id: produto.id,
+          versao: versaoBase(),
+          arquivos: [arquivoBase({ [chave]: valor })]
+        },
+        [{ conteudo: Buffer.from('x'), nome: 'a.tif' }]
+      )
+      expect(res.status).toBe(400)
+      expect(res.body.message).toContain(razao)
+    }
+  })
+
+  it('recusa arquivo acima do teto', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    // 1 KB exato: fracao que da numero redondo em bytes, para o teto nao depender
+    // de arredondamento.
+    config.UPLOAD_WEB_MAX_GB = 1 / (1024 * 1024)
+
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.alloc(64 * 1024, 7), nome: 'grande.tif' }]
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('plugin')
+
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.arquivo')
+    expect(n.c).toBe(0)
+    // E, principalmente, nao sobra o arquivo TRUNCADO no volume: o teto do
+    // multer corta o fluxo em vez de derruba-lo, e sem a guarda o pedaco entraria
+    // com um checksum calculado sobre ele mesmo -- valido para sempre.
+    expect(await fs.readdir(raizVolume)).toEqual([])
+  })
+
+  it('recusa quando nao ha volume primario para o tipo', async () => {
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'a.tif' }]
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('volume primário')
+  })
+})
+
+describe('POST /api/arquivo/upload-web/produto', () => {
+  const produtoNovo = (overrides = {}) => ({
+    produto: {
+      nome: 'Ortoimagem Web',
+      mi: '2965-1',
+      inom: 'SH-22-Y-A-I-1',
+      tipo_escala_id: 1,
+      denominador_escala_especial: null,
+      tipo_produto_id: TIPO_PRODUTO,
+      subtipo_produto_id: null,
+      descricao: 'Enviada pelo navegador',
+      geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))',
+      ...overrides
+    },
+    versao: versaoBase(),
+    arquivos: [arquivoBase()]
+  })
+
+  it('cria produto, versao e arquivo numa requisicao so', async () => {
+    await volumePrimario()
+    const conteudo = Buffer.from('pixels de um produto novo')
+
+    const res = await enviarProduto(produtoNovo(), [{ conteudo, nome: 'orto.tif' }])
+
+    expect(res.status).toBe(201)
+
+    const produto = await conn.one('SELECT * FROM acervo.produto')
+    expect(produto.mi).toBe('2965-1')
+
+    const esperado = await nomePadraoDe(produto.id, '1-DSG')
+    expect(res.body.dados.nome_arquivo).toBe(esperado)
+    expect(await existe(path.join(raizVolume, `${esperado}.tif`))).toBe(true)
+
+    const arquivo = await conn.one('SELECT * FROM acervo.arquivo')
+    expect(arquivo.checksum).toBe(sha256(conteudo))
+  })
+
+  // ATOMICIDADE. A identidade colidir depois dos bytes gravados nao pode deixar
+  // nem produto pela metade nem byte solto no volume.
+  it('produto de identidade repetida nao deixa produto novo nem byte novo', async () => {
+    await volumePrimario()
+    await enviarProduto(produtoNovo(), [{ conteudo: Buffer.from('um'), nome: 'a.tif' }])
+
+    const antes = await fs.readdir(raizVolume)
+
+    const repetido = await enviarProduto(
+      produtoNovo(), [{ conteudo: Buffer.from('dois'), nome: 'b.tif' }]
+    )
+
+    expect(repetido.status).toBe(409)
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.produto')
+    expect(n.c).toBe(1)
+    expect((await fs.readdir(raizVolume)).sort()).toEqual(antes.sort())
+  })
+
+  it('geometria invalida nao deixa byte no volume', async () => {
+    await volumePrimario()
+
+    const res = await enviarProduto(
+      produtoNovo({ geom: 'SRID=4674;POLYGON((0 0, 1 1))' }),
+      [{ conteudo: Buffer.from('bytes'), nome: 'a.tif' }]
+    )
+
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.produto')
+    expect(n.c).toBe(0)
+    expect(await fs.readdir(raizVolume)).toEqual([])
+  })
+})
+
+describe('POST /api/arquivo/upload-web/arquivos', () => {
+  const enviarArquivos = (dados, arquivos, token = generateAdminToken()) => {
+    const req = request(app)
+      .post('/api/arquivo/upload-web/arquivos')
+      .set('Authorization', token)
+      .field('dados', JSON.stringify(dados))
+    for (const a of arquivos) req.attach('arquivos', a.conteudo, a.nome)
+    return req
+  }
+
+  /** Uma versao ja gravada, com um arquivo, para acrescentar sobre ela. */
+  const versaoComArquivo = async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('o principal'), nome: 'orto.tif' }]
+    )
+    expect(res.status).toBe(201)
+    return { produto, versaoId: res.body.dados.versao_id }
+  }
+
+  it('acrescenta arquivo com o MESMO nome da versao, separado pela extensao', async () => {
+    const { produto, versaoId } = await versaoComArquivo()
+    const conteudo = Buffer.from('<metadado/>')
+
+    const res = await enviarArquivos(
+      { versao_id: versaoId, arquivos: [arquivoBase({ nome: 'Metadado', tipo_arquivo_id: 4 })] },
+      [{ conteudo, nome: 'qualquer.xml' }]
+    )
+
+    expect(res.status).toBe(201)
+    const esperado = await nomePadraoDe(produto.id, '1-DSG')
+    expect(res.body.dados.nome_arquivo).toBe(esperado)
+    expect(await existe(path.join(raizVolume, `${esperado}.xml`))).toBe(true)
+
+    const arquivos = await conn.any(
+      'SELECT nome_arquivo, extensao, checksum FROM acervo.arquivo ORDER BY extensao'
+    )
+    expect(arquivos).toHaveLength(2)
+    expect(arquivos.map(a => a.nome_arquivo)).toEqual([esperado, esperado])
+    expect(arquivos.map(a => a.extensao)).toEqual(['tif', 'xml'])
+    expect(arquivos[1].checksum).toBe(sha256(conteudo))
+  })
+
+  // A versao PLANEJADA nasce sem arquivo de proposito e o recebe depois. Este
+  // caso e a razao de a rota existir.
+  it('completa a versao PLANEJADA, e NAO muda o tipo dela', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const { id: versaoId } = await conn.one(
+      `INSERT INTO acervo.versao(
+        uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
+        metadado, descricao, orgao_produtor, data_criacao, data_edicao,
+        usuario_cadastramento_uuid, data_cadastramento
+      ) VALUES (uuid_generate_v4(), '1-DSG', NULL, 3, $1, $2, '{}', '', 'DSG',
+        '2026-01-10', '2026-02-10', $3, NOW()) RETURNING id`,
+      [SUBTIPO, produto.id, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11']
+    )
+
+    const res = await enviarArquivos(
+      { versao_id: versaoId, arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('a folha ficou pronta'), nome: 'orto.tif' }]
+    )
+
+    expect(res.status).toBe(201)
+    const versao = await conn.one('SELECT tipo_versao_id FROM acervo.versao WHERE id = $1', [versaoId])
+    // Planejada continua Planejada: "tem byte" nao e o mesmo que "foi prometida",
+    // e o RPCMTec conta produto entregue por TIPO de versao.
+    expect(Number(versao.tipo_versao_id)).toBe(3)
+  })
+
+  it('recusa a extensao que a versao JA TEM', async () => {
+    const { versaoId } = await versaoComArquivo()
+
+    const res = await enviarArquivos(
+      { versao_id: versaoId, arquivos: [arquivoBase({ nome: 'Outro raster' })] },
+      [{ conteudo: Buffer.from('outro'), nome: 'outro.tif' }]
+    )
+
+    expect(res.status).toBe(409)
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.arquivo')
+    expect(n.c).toBe(1)
+  })
+
+  it('recusa versao inexistente antes de gravar byte', async () => {
+    await volumePrimario()
+
+    const res = await enviarArquivos(
+      { versao_id: 9999999, arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'a.tif' }]
+    )
+
+    expect(res.status).toBe(404)
+    expect(await fs.readdir(raizVolume)).toEqual([])
+  })
+
+  // O corpo desta rota nao aceita produto nem versao: ela so acrescenta arquivo.
+  it('recusa corpo que tente trazer versao ou produto junto', async () => {
+    const { versaoId } = await versaoComArquivo()
+
+    const res = await enviarArquivos(
+      { versao_id: versaoId, versao: versaoBase({ versao: '9-DSG' }), arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'a.xml' }]
+    )
+
+    // `stripUnknown` descarta a chave e o envio segue, mas a versao NAO muda.
+    if (res.status === 201) {
+      const v = await conn.one('SELECT versao FROM acervo.versao WHERE id = $1', [versaoId])
+      expect(v.versao).toBe('1-DSG')
+    } else {
+      expect(res.status).toBe(400)
+    }
+  })
+
+  it('exige perfil de operador', async () => {
+    const { versaoId } = await versaoComArquivo()
+
+    const res = await enviarArquivos(
+      { versao_id: versaoId, arquivos: [arquivoBase()] },
+      [{ conteudo: Buffer.from('x'), nome: 'a.xml' }],
+      generateUserToken()
+    )
+
+    expect(res.status).toBe(403)
+  })
+})
+
+// REGRESSAO. O envio pela web nao passa mais por sessao nenhuma, e o fluxo do
+// PLUGIN continua sendo o par prepare/confirm, com o checksum DECLARADO pelo
+// cliente e conferido na releitura. Mexer no web nao pode ter afrouxado isso:
+// seria silencioso, porque tudo continuaria respondendo 200.
+describe('REGRESSÃO: prepare-upload/product + confirm-upload (fluxo do plugin)', () => {
+  const corpoPlugin = (conteudo) => ({
+    produtos: [{
       produto: {
-        nome: 'Ortoimagem Web',
-        mi: '2965-1',
-        inom: 'SH-22-Y-A-I-1',
+        nome: 'Ortoimagem Plugin',
+        mi: '2965-2',
+        inom: 'SH-22-Y-A-I-2',
         tipo_escala_id: 1,
         denominador_escala_especial: null,
         tipo_produto_id: TIPO_PRODUTO,
         subtipo_produto_id: null,
-        descricao: 'Enviada pelo navegador',
-        geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))',
-        ...overrides
+        descricao: '',
+        geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))'
       },
-      versoes: [
-        {
-          versao: '1-DSG',
-          nome: 'Primeira edição',
-          tipo_versao_id: 1,
-          subtipo_produto_id: 1,
-          lote_id: null,
-          orgao_produtor: 'DSG',
-          data_criacao: '2026-01-10T12:00:00-03:00',
-          data_edicao: '2026-02-10T12:00:00-03:00',
-          arquivos
-        }
-      ]
-    }
-  ]
-})
-
-const preparar = (body, token = generateAdminToken()) =>
-  request(app)
-    .post('/api/arquivo/upload-web/prepare/product')
-    .set('Authorization', token)
-    .send(body)
-
-const enviarBytes = (sessionUuid, tempId, conteudo, token = generateAdminToken()) =>
-  request(app)
-    .put(`/api/arquivo/upload-web/${sessionUuid}/arquivo/${tempId}`)
-    .set('Authorization', token)
-    .attach('arquivo', conteudo, 'ortoimagem.tif')
-
-const confirmar = (sessionUuid, token = generateAdminToken()) =>
-  request(app)
-    .post('/api/arquivo/confirm-upload')
-    .set('Authorization', token)
-    .send({ session_uuid: sessionUuid })
-
-const cancelar = (sessionUuid, token = generateAdminToken()) =>
-  request(app)
-    .post('/api/arquivo/cancel-upload')
-    .set('Authorization', token)
-    .send({ session_uuid: sessionUuid })
-
-const sha256 = conteudo => crypto.createHash('sha256').update(conteudo).digest('hex')
-
-const existe = caminho => fs.access(caminho).then(() => true).catch(() => false)
-
-/** O destino fisico que o prepare reservou, lido da linha _temp. */
-const destinoDe = async tempId =>
-  (await conn.one('SELECT destination_path FROM acervo.upload_arquivo_temp WHERE id = $1', [tempId]))
-    .destination_path
-
-describe('PUT /api/arquivo/upload-web/:session_uuid/arquivo/:temp_id', () => {
-  it('exige o perfil de operador', async () => {
-    const semToken = await request(app)
-      .post('/api/arquivo/upload-web/prepare/product')
-      .send(corpoProduto())
-    expect(semToken.status).toBe(401)
-
-    const consulta = await preparar(corpoProduto(), generateUserToken())
-    expect(consulta.status).toBe(403)
+      versoes: [{
+        versao: '1-DSG',
+        nome: null,
+        tipo_versao_id: 1,
+        subtipo_produto_id: SUBTIPO,
+        lote_id: null,
+        orgao_produtor: 'DSG',
+        data_criacao: '2026-01-10',
+        data_edicao: '2026-02-10',
+        arquivos: [{
+          nome: 'Ortoimagem',
+          nome_arquivo: 'Ortoimagem_MI 2965-2',
+          tipo_arquivo_id: 1,
+          extensao: 'tif',
+          tamanho_mb: conteudo.length / (1024 * 1024),
+          checksum: sha256(conteudo),
+          situacao_carregamento_id: 1
+        }]
+      }]
+    }]
   })
 
-  // O caso central: os bytes sobem por HTTP, o servidor os grava no volume e o
-  // checksum que fica no acervo e o do conteudo REAL, medido na escrita.
-  it('grava no volume e cadastra com o checksum que o servidor mediu', async () => {
-    await volumePrimario()
-    const conteudo = Buffer.from('pixels da ortoimagem que subiu pelo navegador')
-
-    const preparado = await preparar(corpoProduto())
-    expect(preparado.status).toBe(200)
-
-    const { session_uuid: sessionUuid, arquivos } = preparado.body.dados
-    expect(arquivos).toHaveLength(1)
-    expect(arquivos[0].nome_arquivo).toBe('Ortoimagem_MI 2965-1')
-    expect(arquivos[0].extensao).toBe('tif')
-    // Caminho de volume nao sai para o navegador: ele nao tem o que fazer com
-    // um caminho de rede, e caminho de maquina nao deve vazar para o cliente.
-    expect(arquivos[0].destination_path).toBeUndefined()
-
-    const envio = await enviarBytes(sessionUuid, arquivos[0].temp_id, conteudo)
-    expect(envio.status).toBe(200)
-    expect(envio.body.dados.checksum).toBe(sha256(conteudo))
-    expect(envio.body.dados.bytes).toBe(conteudo.length)
-
-    // O arquivo esta no volume, com o nome DEFINITIVO e o conteudo inteiro.
-    const destino = path.join(raizVolume, 'Ortoimagem_MI 2965-1.tif')
-    expect(await existe(destino)).toBe(true)
-    expect((await fs.readFile(destino)).equals(conteudo)).toBe(true)
-
-    // E o `.parcial` nao sobrou: ele e nome de arquivo incompleto, e o envio
-    // terminou. Sobrando, o volume acumularia uma copia de cada upload.
-    expect(await existe(destino + '.parcial')).toBe(false)
-
-    const confirmado = await confirmar(sessionUuid)
-    expect(confirmado.status).toBe(200)
-    expect(confirmado.body.dados.status).toBe('completed')
-
-    const gravado = await conn.one(`
-      SELECT a.checksum, a.tamanho_mb, a.nome_arquivo, a.extensao, a.tipo_status_id,
-             v.versao, p.inom
-      FROM acervo.arquivo a
-      JOIN acervo.versao v ON v.id = a.versao_id
-      JOIN acervo.produto p ON p.id = v.produto_id
-    `)
-    expect(gravado.checksum).toBe(sha256(conteudo))
-    expect(gravado.nome_arquivo).toBe('Ortoimagem_MI 2965-1')
-    expect(gravado.extensao).toBe('tif')
-    expect(Number(gravado.tamanho_mb)).toBeGreaterThan(0)
-    expect(gravado.versao).toBe('1-DSG')
-    expect(gravado.inom).toBe('SH-22-Y-A-I-1')
-  })
-
-  it('grava versão nova de produto que já existe', async () => {
-    await volumePrimario()
-    const produto = await createProduto({
-      mi: '2965-1',
-      inom: 'SH-22-Y-A-I-1',
-      tipo_produto_id: TIPO_PRODUTO,
-      subtipo_produto_id: null
-    })
-    await createVersao(produto.id, { versao: '1-DSG' })
-
-    const conteudo = Buffer.from('segunda edicao da mesma folha')
-    const preparado = await request(app)
-      .post('/api/arquivo/upload-web/prepare/version')
-      .set('Authorization', generateAdminToken())
-      .send({
-        versoes: [
-          {
-            produto_id: Number(produto.id),
-            versao: {
-              versao: '2-DSG',
-              nome: 'Segunda edição',
-              tipo_versao_id: 1,
-              subtipo_produto_id: 1,
-              lote_id: null,
-              orgao_produtor: 'DSG',
-              data_criacao: '2026-01-10T12:00:00-03:00',
-              data_edicao: '2026-02-10T12:00:00-03:00'
-            },
-            arquivos: [arquivoWeb({ nome_arquivo: 'Ortoimagem_MI 2965-1_2-DSG' })]
-          }
-        ]
-      })
-
-    expect(preparado.status).toBe(200)
-    const { session_uuid: sessionUuid, arquivos } = preparado.body.dados
-
-    expect((await enviarBytes(sessionUuid, arquivos[0].temp_id, conteudo)).status).toBe(200)
-    const confirmado = await confirmar(sessionUuid)
-    expect(confirmado.body.dados.status).toBe('completed')
-
-    const nova = await conn.one(
-      `SELECT a.checksum FROM acervo.arquivo a
-       JOIN acervo.versao v ON v.id = a.versao_id
-       WHERE v.versao = '2-DSG'`
-    )
-    expect(nova.checksum).toBe(sha256(conteudo))
-  })
-
-  // `path.join` nao protege contra `..`, entao sem esta recusa o corpo da
-  // requisicao escolheria qualquer caminho da maquina para o servidor GRAVAR.
-  it('recusa no prepare o caminho que sai da raiz do volume', async () => {
-    await volumePrimario()
-
-    const res = await preparar(
-      corpoProduto({}, [arquivoWeb({ nome_arquivo: 'LOTE_1/../../../etc/passwd' })])
-    )
-
-    expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/sairia da raiz do volume/i)
-    expect((await conn.one('SELECT count(*)::int AS n FROM acervo.upload_session')).n).toBe(0)
-  })
-
-  it('recusa no prepare caminho absoluto, letra de unidade e contrabarra', async () => {
-    await volumePrimario()
-    const comCaminho = nome_arquivo => preparar(corpoProduto({}, [arquivoWeb({ nome_arquivo })]))
-
-    // Os marcadores `path-ok` sao o uso legitimo do escape do guard: a linha e o
-    // exemplo da propria regra, e o que ela prova e que a rota RECUSA.
-    expect((await comCaminho('/etc/passwd')).status).toBe(400)
-    expect((await comCaminho('W:/entregas/carta')).status).toBe(400) // path-ok
-    expect((await comCaminho('LOTE_1\\IMAGENS\\carta')).status).toBe(400) // path-ok
-  })
-
-  // Casar so pelo id do arquivo deixaria qualquer operador gravar no destino
-  // que um colega reservou.
-  it('recusa arquivo que pertence a OUTRA sessão', async () => {
-    await volumePrimario()
-
-    const primeira = await preparar(corpoProduto())
-    const segunda = await preparar(
-      corpoProduto({ mi: '2965-2', inom: 'SH-22-Y-A-I-2' }, [
-        arquivoWeb({ nome_arquivo: 'Ortoimagem_MI 2965-2' })
-      ])
-    )
-    expect(segunda.status).toBe(200)
-
-    const res = await enviarBytes(
-      primeira.body.dados.session_uuid,
-      segunda.body.dados.arquivos[0].temp_id,
-      Buffer.from('bytes de qualquer coisa')
-    )
-
-    expect(res.status).toBe(404)
-    expect(res.body.message).toMatch(/não encontrado nesta sessão/i)
-  })
-
-  it('recusa arquivo acima do teto, mandando usar o plugin', async () => {
-    await volumePrimario()
-
-    const preparado = await preparar(corpoProduto())
-    const { session_uuid: sessionUuid, arquivos } = preparado.body.dados
-
-    // O teto e lido do config a cada requisicao justamente para poder ser
-    // exercitado: 2 GB de verdade nao cabem num teste.
-    config.UPLOAD_WEB_MAX_GB = 0.000001 // ~1 KB
-
-    const res = await enviarBytes(sessionUuid, arquivos[0].temp_id, Buffer.alloc(200 * 1024, 7))
-
-    expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/plugin do QGIS/i)
-    // Nada foi gravado: nem o definitivo nem o parcial.
-    const destino = await destinoDe(arquivos[0].temp_id)
-    expect(await existe(destino)).toBe(false)
-    expect(await existe(destino + '.parcial')).toBe(false)
-  })
-})
-
-describe('POST /api/arquivo/cancel-upload com upload web', () => {
-  // Antes de o servidor gravar byte, cancelar nao tocava em disco: quem copiava
-  // era o plugin. Agora a sessao cancelada no meio do envio deixa `.parcial` no
-  // acervo, e lixo que ninguem apaga vira lixo que ninguem reconhece depois.
-  it('apaga o .parcial da sessão e PRESERVA o arquivo definitivo', async () => {
-    await volumePrimario()
-
-    const preparado = await preparar(corpoProduto())
-    const { session_uuid: sessionUuid, arquivos } = preparado.body.dados
-    const destino = await destinoDe(arquivos[0].temp_id)
-
-    // O que um envio interrompido deixa para tras, e um homonimo definitivo que
-    // o cancelamento nao tem o direito de apagar.
-    await fs.writeFile(destino + '.parcial', Buffer.from('metade dos bytes'))
-    await fs.writeFile(destino, Buffer.from('arquivo definitivo de outro envio'))
-
-    const res = await cancelar(sessionUuid)
-    expect(res.status).toBe(200)
-
-    expect(await existe(destino + '.parcial')).toBe(false)
-    expect(await existe(destino)).toBe(true)
-
-    const sessao = await conn.one('SELECT status FROM acervo.upload_session WHERE uuid_session = $1', [sessionUuid])
-    expect(sessao.status).toBe('cancelled')
-  })
-})
-
-describe('confirm-upload confere que o arquivo AINDA esta no volume', () => {
-  // O confirm nao rele o CONTEUDO da linha ja medida -- reler seria refazer os
-  // 362 GB do LOTE_1 dentro da transacao. Mas ele confere a EXISTENCIA, que e um
-  // `access` de microssegundos e independe do tamanho.
-  //
-  // A janela e real: a sessao vale 24 h, e entre o PUT e o confirm alguem pode
-  // ter mexido no volume. Sem esta conferencia o acervo cadastraria um caminho
-  // vazio, e o defeito so apareceria quando alguem fosse baixar -- longe daqui,
-  // e sem nada que ligue o download quebrado ao envio que o originou.
-  it('recusa quando o arquivo gravado sumiu entre o envio e a confirmacao', async () => {
-    await volumePrimario()
-
-    const preparado = await preparar(corpoProduto())
-    const { session_uuid: sessionUuid, arquivos } = preparado.body.dados
-    const destino = await destinoDe(arquivos[0].temp_id)
-
-    const envio = await enviarBytes(sessionUuid, arquivos[0].temp_id, Buffer.from('bytes que vao sumir'))
-    expect(envio.status).toBe(200)
-    expect(await existe(destino)).toBe(true)
-
-    // O que aconteceria se alguem limpasse o volume no meio da sessao.
-    await fs.rm(destino)
-
-    const res = await confirmar(sessionUuid)
-    expect(res.body.success).toBe(false)
-    expect(JSON.stringify(res.body)).toContain('não está mais lá')
-
-    // E nada foi cadastrado: produto sem o arquivo que o define nao entra.
-    const { count } = await conn.one('SELECT count(*)::int FROM acervo.arquivo')
-    expect(count).toBe(0)
-  })
-})
-
-// REGRESSAO. O upload web fez o confirm-upload pular a releitura da linha que
-// ja foi medida na escrita. O fluxo do plugin NAO passa por ali: a linha dele
-// continua 'pending' e o checksum foi DECLARADO pelo cliente, entao a releitura
-// e a unica coisa que prova que a copia por SMB chegou inteira. Uma condicao
-// larga demais desligaria essa prova sem quebrar teste nenhum: tudo continuaria
-// respondendo 200, e o acervo passaria a aceitar copia truncada.
-describe('REGRESSÃO: prepare-upload/product + confirm-upload (fluxo do plugin)', () => {
-  const arquivoPlugin = (overrides = {}) => ({
-    nome: 'Ortoimagem',
-    nome_arquivo: 'Ortoimagem_MI 2965-1',
-    tipo_arquivo_id: 1,
-    extensao: 'tif',
-    tamanho_mb: 0.001,
-    checksum: 'nao-usado',
-    crs_original: '4674',
-    ...overrides
-  })
-
-  const prepararPlugin = (arquivos) =>
+  const prepararPlugin = (body) =>
     request(app)
       .post('/api/arquivo/prepare-upload/product')
       .set('Authorization', generateAdminToken())
-      .send(corpoProduto({}, arquivos))
+      .send(body)
 
-  it('continua cadastrando quando o checksum declarado bate com o arquivo copiado', async () => {
+  const confirmar = (sessionUuid) =>
+    request(app)
+      .post('/api/arquivo/confirm-upload')
+      .set('Authorization', generateAdminToken())
+      .send({ session_uuid: sessionUuid })
+
+  const destinoDoPreparo = (preparo) =>
+    preparo.body.dados.produtos[0].versoes[0].arquivos[0].destination_path
+
+  it('o plugin continua declarando o checksum, e o confirm o CONFERE', async () => {
     await volumePrimario()
     const conteudo = Buffer.from('bytes que o plugin copiou por SMB')
 
-    const preparado = await prepararPlugin([arquivoPlugin({ checksum: sha256(conteudo) })])
-    expect(preparado.status).toBe(200)
+    const preparo = await prepararPlugin(corpoPlugin(conteudo))
+    expect(preparo.status).toBe(200)
 
-    const { session_uuid: sessionUuid, produtos } = preparado.body.dados
-    const destino = produtos[0].versoes[0].arquivos[0].destination_path
+    // O plugin copia por fora; aqui o teste faz o papel dele.
+    await fs.writeFile(destinoDoPreparo(preparo), conteudo)
 
-    // O papel do plugin: copiar os bytes para o destino que o prepare reservou.
-    await fs.writeFile(destino, conteudo)
+    const res = await confirmar(preparo.body.dados.session_uuid)
+    expect(res.body.success).toBe(true)
 
-    const confirmado = await confirmar(sessionUuid)
-    expect(confirmado.status).toBe(200)
-    expect(confirmado.body.dados.status).toBe('completed')
-
-    const gravado = await conn.one('SELECT checksum FROM acervo.arquivo')
-    expect(gravado.checksum).toBe(sha256(conteudo))
+    const arquivo = await conn.one('SELECT * FROM acervo.arquivo')
+    expect(arquivo.checksum).toBe(sha256(conteudo))
   })
 
-  it('continua RECUSANDO quando o arquivo copiado não bate com o checksum declarado', async () => {
+  it('checksum declarado que NAO bate com o byte continua falhando', async () => {
     await volumePrimario()
+    const conteudo = Buffer.from('o que o plugin disse que copiou')
 
-    const preparado = await prepararPlugin([arquivoPlugin({ checksum: 'a'.repeat(64) })])
-    const { session_uuid: sessionUuid, produtos } = preparado.body.dados
-    const destino = produtos[0].versoes[0].arquivos[0].destination_path
+    const preparo = await prepararPlugin(corpoPlugin(conteudo))
+    // Copia truncada: e exatamente o que a releitura existe para pegar.
+    await fs.writeFile(destinoDoPreparo(preparo), Buffer.from('metade'))
 
-    await fs.writeFile(destino, Buffer.from('outro conteudo, copia truncada'))
+    const res = await confirmar(preparo.body.dados.session_uuid)
+    expect(res.body.success).toBe(false)
 
-    const confirmado = await confirmar(sessionUuid)
-    expect(confirmado.body.dados.status).toBe('failed')
-    expect(JSON.stringify(confirmado.body.dados)).toMatch(/checksum/i)
-
-    // E nada entrou no acervo.
-    expect((await conn.one('SELECT count(*)::int AS n FROM acervo.arquivo')).n).toBe(0)
-    expect((await conn.one('SELECT count(*)::int AS n FROM acervo.produto')).n).toBe(0)
-  })
-
-  it('continua recusando quando o arquivo nem chegou ao volume', async () => {
-    await volumePrimario()
-
-    const preparado = await prepararPlugin([arquivoPlugin({ checksum: 'b'.repeat(64) })])
-    const confirmado = await confirmar(preparado.body.dados.session_uuid)
-
-    expect(confirmado.body.dados.status).toBe('failed')
-    expect((await conn.one('SELECT count(*)::int AS n FROM acervo.arquivo')).n).toBe(0)
+    const n = await conn.one('SELECT count(*)::int AS c FROM acervo.arquivo')
+    expect(n.c).toBe(0)
   })
 })

@@ -122,9 +122,10 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 
 Desde 2026-08-01 o acervo também se **escreve pela interface web**: produto, versão e relacionamento.
 A geometria do produto sai do MI/INOM quando a folha é do SCN, e dos cantos quando não é; a versão
-Regular entra pelo assistente de carregamento, que manda os bytes ao volume por
-`PUT /api/arquivo/upload-web/...` (o servidor grava e mede o checksum no mesmo passo). O plugin do
-QGIS continua sendo o caminho da carga em lote e do arquivo grande. Ver o `CLAUDE.md`.
+Regular entra pelo assistente de carregamento, que manda metadados e bytes numa requisição só
+(`POST /api/arquivo/upload-web/versao`): o servidor grava no volume, mede o checksum e NOMEIA o
+arquivo pelo padrão do acervo. O plugin do QGIS continua sendo o caminho da carga em lote e do
+arquivo grande. Ver o `CLAUDE.md`.
 
 `/api/mapoteca/dashboard` é montada ANTES de `/api/mapoteca` em `routes.js`, para o Express casar o prefixo mais específico primeiro. Preserve essa ordem ao acrescentar rota.
 

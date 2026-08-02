@@ -330,143 +330,115 @@ describe('Schemas de arquivo', () => {
   // ao prepare-upload do plugin, e a arvore de produto e de versao e a MESMA
   // (as duas saem das fabricas `produtoComVersoes` e `versaoDeProduto`): o que
   // estes casos guardam e justamente a diferenca.
-  describe('prepareUploadWeb (product e version)', () => {
+  // O envio pelo NAVEGADOR e uma requisicao so, e o cliente declara MENOS do que
+  // no caminho do plugin. Cada recusa aqui fecha um modo de falhar diferente.
+  describe('uploadWeb (produto e versao)', () => {
     const arquivoWeb = {
       nome: 'Carta',
-      nome_arquivo: 'carta_teste',
       tipo_arquivo_id: 1,
-      extensao: 'tif',
-      crs_original: 'EPSG:4674'
+      situacao_carregamento_id: 1
     }
 
-    const produto = (arquivo) => ({
-      produtos: [{
-        produto: {
-          nome: 'Carta Teste',
-          mi: 'MI-001',
-          inom: 'SF-22',
-          tipo_escala_id: 2,
-          denominador_escala_especial: null,
-          tipo_produto_id: 1,
-          descricao: '',
-          geom: 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
-        },
-        versoes: [{
-          uuid_versao: null,
-          versao: '1-DSG',
-          nome: 'Versao 1',
-          tipo_versao_id: 1,
-          subtipo_produto_id: 1,
-          lote_id: null,
-          metadado: null,
-          descricao: '',
-          orgao_produtor: 'DSG',
-          palavras_chave: [],
-          data_criacao: '2024-01-01T00:00:00.000Z',
-          data_edicao: '2024-01-01T00:00:00.000Z',
-          arquivos: [arquivo]
-        }]
-      }]
+    const versao = (arquivos) => ({
+      produto_id: 7,
+      versao: {
+        versao: '1-DSG',
+        nome: null,
+        tipo_versao_id: 1,
+        subtipo_produto_id: 2,
+        orgao_produtor: '1º CGEO',
+        data_criacao: '2026-07-01',
+        data_edicao: '2026-08-01'
+      },
+      arquivos: [arquivos]
     })
 
-    const versao = (arquivo) => ({
-      versoes: [{
-        produto_id: 1,
-        versao: {
-          uuid_versao: null,
-          versao: '1-DSG',
-          nome: 'Versao teste',
-          tipo_versao_id: 1,
-          subtipo_produto_id: 1,
-          lote_id: null,
-          metadado: null,
-          descricao: '',
-          orgao_produtor: 'DSG',
-          palavras_chave: [],
-          data_criacao: '2024-01-01T00:00:00.000Z',
-          data_edicao: '2024-01-01T00:00:00.000Z'
-        },
-        arquivos: [arquivo]
-      }]
+    const produto = (arquivos) => ({
+      produto: {
+        nome: 'Folha',
+        mi: '2757-1-NE',
+        inom: 'SF-22-Y-D-II-1-NE',
+        tipo_escala_id: 1,
+        denominador_escala_especial: null,
+        tipo_produto_id: 2,
+        subtipo_produto_id: null,
+        descricao: '',
+        geom: 'SRID=4674;POLYGON((-51 -23, -50 -23, -50 -22, -51 -22, -51 -23))'
+      },
+      versao: versao(arquivos).versao,
+      arquivos: [arquivos]
     })
 
-    it('aceita o arquivo SEM checksum e SEM tamanho: quem mede e o servidor', () => {
-      aceita(arquivoSchema.prepareUploadWebProduct.validate(produto(arquivoWeb)))
-      aceita(arquivoSchema.prepareUploadWebVersion.validate(versao(arquivoWeb)))
+    it('aceita o arquivo so com o rotulo e o tipo: o resto o servidor deriva', () => {
+      aceita(arquivoSchema.uploadWebVersao.validate(versao(arquivoWeb)))
+      aceita(arquivoSchema.uploadWebProduto.validate(produto(arquivoWeb)))
     })
 
-    // Descartado em silencio, o cliente acreditaria ter gravado o checksum que
-    // mandou. O `any.unknown` e a prova de que a recusa veio do `forbidden()`
-    // deste campo, e nao de outro campo do fixture.
-    it('RECUSA checksum declarado pelo cliente, no produto e na versao', () => {
-      recusaPor(
-        arquivoSchema.prepareUploadWebProduct.validate(
-          produto({ ...arquivoWeb, checksum: 'a'.repeat(64) })
-        ),
-        'produtos.0.versoes.0.arquivos.0.checksum',
-        'any.unknown'
+    // O nome fisico sai de `acervo.nome_arquivo_padrao`, a mesma funcao que o
+    // invariante 7a audita. Aceito do cliente, cada envio pela web criava uma
+    // linha de DEFECT no 7a -- medido em 2026-08-02, com `carta_ensaio` onde o
+    // padrao pedia `CT_s12_2757-1-NE_1dsg`.
+    it('RECUSA nome_arquivo declarado pelo cliente', () => {
+      for (const [nome, montar] of [['versao', versao], ['produto', produto]]) {
+        const r = arquivoSchema[nome === 'versao' ? 'uploadWebVersao' : 'uploadWebProduto']
+          .validate(montar({ ...arquivoWeb, nome_arquivo: 'nome_que_eu_quero' }))
+        expect(r.error).toBeDefined()
+        expect(r.error.details[0].message).toContain('nome_arquivo_padrao')
+      }
+    })
+
+    // A extensao sai do nome do arquivo que subiu. Declarada, poderia dizer
+    // `tif` num PDF, e o acervo prometeria um formato que nao tem.
+    it('RECUSA extensao declarada pelo cliente', () => {
+      const r = arquivoSchema.uploadWebVersao.validate(
+        versao({ ...arquivoWeb, extensao: 'tif' })
       )
-      recusaPor(
-        arquivoSchema.prepareUploadWebVersion.validate(
-          versao({ ...arquivoWeb, checksum: 'a'.repeat(64) })
-        ),
-        'versoes.0.arquivos.0.checksum',
-        'any.unknown'
-      )
+      expect(r.error).toBeDefined()
+      expect(r.error.details[0].message).toContain('nome do arquivo enviado')
     })
 
-    it('RECUSA tamanho_mb declarado pelo cliente', () => {
-      recusaPor(
-        arquivoSchema.prepareUploadWebProduct.validate(
-          produto({ ...arquivoWeb, tamanho_mb: 12.5 })
-        ),
-        'produtos.0.versoes.0.arquivos.0.tamanho_mb',
-        'any.unknown'
+    it('RECUSA checksum e tamanho_mb, que o servidor mede ao gravar', () => {
+      const comChecksum = arquivoSchema.uploadWebVersao.validate(
+        versao({ ...arquivoWeb, checksum: 'a'.repeat(64) })
       )
+      expect(comChecksum.error).toBeDefined()
+      expect(comChecksum.error.details[0].message).toContain('checksum é medido pelo servidor')
+
+      const comTamanho = arquivoSchema.uploadWebVersao.validate(
+        versao({ ...arquivoWeb, tamanho_mb: 12 })
+      )
+      expect(comTamanho.error).toBeDefined()
+      expect(comTamanho.error.details[0].message).toContain('tamanho é medido pelo servidor')
     })
 
-    // Tileserver (9) e URL: nao ha byte para o navegador enviar.
-    it('RECUSA tileserver, que nao tem arquivo para enviar', () => {
+    it('RECUSA tileserver, que e URL e nao tem byte para enviar', () => {
       recusaPor(
-        arquivoSchema.prepareUploadWebProduct.validate(
-          produto({ ...arquivoWeb, tipo_arquivo_id: 9, nome_arquivo: 'https://tiles/x' })
-        ),
-        'produtos.0.versoes.0.arquivos.0.tipo_arquivo_id',
+        arquivoSchema.uploadWebVersao.validate(versao({ ...arquivoWeb, tipo_arquivo_id: 9 })),
+        'arquivos.0.tipo_arquivo_id',
         'any.invalid'
       )
     })
 
-    // A arvore continua sendo a do prepare-upload: o que a fabrica garante e
-    // que uma regra nova de produto valha nos dois caminhos.
-    it('exige geom no produto, como o prepare-upload do plugin', () => {
-      const semGeom = produto(arquivoWeb)
-      delete semGeom.produtos[0].produto.geom
+    it('exige ao menos um arquivo: e o arquivo que define a versao Regular', () => {
       recusaPor(
-        arquivoSchema.prepareUploadWebProduct.validate(semGeom),
-        'produtos.0.produto.geom',
-        'any.required'
+        arquivoSchema.uploadWebVersao.validate({ ...versao(arquivoWeb), arquivos: [] }),
+        'arquivos',
+        'array.min'
       )
     })
 
-    describe('uploadWebArquivoParams', () => {
-      it('aceita o par sessao/arquivo como ele chega da URL (texto)', () => {
-        const valor = aceita(arquivoSchema.uploadWebArquivoParams.validate({
-          session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-          temp_id: '42'
-        }))
-        expect(valor.temp_id).toBe(42)
-      })
+    it('exige geom no produto novo', () => {
+      const corpo = produto(arquivoWeb)
+      delete corpo.produto.geom
+      recusaPor(arquivoSchema.uploadWebProduto.validate(corpo), 'produto.geom', 'any.required')
+    })
 
-      it('recusa sessao que nao e UUID', () => {
-        recusaPor(
-          arquivoSchema.uploadWebArquivoParams.validate({
-            session_uuid: 'nao-e-uuid',
-            temp_id: '42'
-          }),
-          'session_uuid',
-          'string.guid'
-        )
-      })
+    // As datas seguem sendo dia de calendario aqui tambem: este schema tinha o
+    // mesmo defeito de fuso que o de produto, e corrigir um so nao adiantaria.
+    it('a data de versao volta como a string original', () => {
+      const { value, error } = arquivoSchema.uploadWebVersao.validate(versao(arquivoWeb))
+      expect(error).toBeUndefined()
+      expect(value.versao.data_edicao).toBe('2026-08-01')
     })
   })
 })

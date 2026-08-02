@@ -10,6 +10,8 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getProjetos: vi.fn(() => Promise.resolve([])),
   criarVersoesPlanejadas: vi.fn(() => Promise.resolve()),
   criarVersoesHistoricas: vi.fn(() => Promise.resolve()),
+  criarProdutoComVersaoPlanejada: vi.fn(() => Promise.resolve()),
+  criarProdutoComVersaoHistorica: vi.fn(() => Promise.resolve()),
   atualizarVersao: vi.fn(() => Promise.resolve()),
 }));
 
@@ -608,5 +610,100 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
     await flush();
 
     expect(svc.criarVersoesHistoricas).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('openVersaoDialog: produto e versao num passo so', () => {
+  // O produto vem PENDENTE do formulario dele: nao foi gravado, para nao deixar
+  // uma casca sem versao quando alguem desiste aqui -- e desiste, porque e aqui
+  // que o gatilho cobra o rotulo e o subtipo.
+  const PENDENTE = {
+    nome: 'Folha Nova',
+    mi: '2757-1-NE',
+    inom: 'SF-22-Y-D-II-1-NE',
+    tipo_escala_id: 1,
+    denominador_escala_especial: null,
+    tipo_produto_id: 2,
+    subtipo_produto_id: null,
+    descricao: '',
+    geom: 'SRID=4674;POLYGON((-51 -23, -50 -23, -50 -22, -51 -22, -51 -23))',
+  };
+
+  const abrirPendente = async () => {
+    await openVersaoDialog({
+      produto: { ...PENDENTE, id: null },
+      produtoPendente: PENDENTE,
+      versoesExistentes: [],
+    });
+    await flush();
+  };
+
+  const preencher_ = (tipo) => {
+    preencher('Tipo de versão', String(tipo));
+    preencher('Rótulo da versão', '1-DSG');
+    preencher('Subtipo de produto', '2');
+    preencher('Órgão produtor', '1º CGEO');
+    preencher('Data de criação', '2026-07-01');
+    preencher('Data de edição', '2026-08-01');
+  };
+
+  test('planejada vai para a rota que cria os DOIS juntos', async () => {
+    await abrirPendente();
+    preencher_(TIPO_VERSAO_PLANEJADA);
+    clicar('Salvar');
+    await flush();
+
+    expect(svc.criarProdutoComVersaoPlanejada).toHaveBeenCalledTimes(1);
+    // A rota de versao avulsa NAO e chamada: ela exigiria um produto_id que
+    // ainda nao existe.
+    expect(svc.criarVersoesPlanejadas).not.toHaveBeenCalled();
+
+    const [enviado] = svc.criarProdutoComVersaoPlanejada.mock.calls[0][0];
+    // O corpo e o produto COM as versoes dentro, e nao os dois lado a lado.
+    expect(enviado.mi).toBe('2757-1-NE');
+    expect(enviado.geom).toContain('POLYGON');
+    expect(enviado.versoes).toHaveLength(1);
+    expect(enviado.versoes[0].versao).toBe('1-DSG');
+    // Sem `produto_id`: ele nao existe.
+    expect(enviado.versoes[0].produto_id).toBeUndefined();
+  });
+
+  test('historica tambem cria os dois juntos, na rota dela', async () => {
+    await abrirPendente();
+    preencher_(TIPO_VERSAO_HISTORICA);
+    preencher('Rótulo da versão', '1ª Edição');
+    clicar('Salvar');
+    await flush();
+
+    expect(svc.criarProdutoComVersaoHistorica).toHaveBeenCalledTimes(1);
+    expect(svc.criarProdutoComVersaoPlanejada).not.toHaveBeenCalled();
+  });
+
+  test('regular leva o produto pendente ao assistente, no modo produto', async () => {
+    await abrirPendente();
+    preencher_(TIPO_VERSAO_REGULAR);
+    clicar('Continuar para os arquivos');
+    await flush();
+
+    expect(assistente.abrirAssistenteUpload).toHaveBeenCalledTimes(1);
+    const arg = assistente.abrirAssistenteUpload.mock.calls[0][0];
+    expect(arg.modo).toBe('produto');
+    expect(arg.produto.mi).toBe('2757-1-NE');
+    // Nada e gravado aqui: quem grava e a rota do assistente, numa transacao so.
+    expect(svc.criarProdutoComVersaoPlanejada).not.toHaveBeenCalled();
+    expect(svc.criarVersoesPlanejadas).not.toHaveBeenCalled();
+  });
+
+  test('sem produto pendente, a regular segue no modo versao', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+    preencher_(TIPO_VERSAO_REGULAR);
+    clicar('Continuar para os arquivos');
+    await flush();
+
+    const arg = assistente.abrirAssistenteUpload.mock.calls[0][0];
+    expect(arg.modo).toBe('versao');
+    expect(arg.produtoId).toBe(Number(PRODUTO.id));
+    expect(arg.produto).toBeUndefined();
   });
 });

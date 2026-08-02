@@ -19,6 +19,7 @@ import {
 } from '@modules/acervo/services/acervo-service.js';
 import { openProdutoDialogForm } from '@modules/acervo/pages/produto/produto-dialog-form.js';
 import { openVersaoDialog } from '@modules/acervo/pages/produto/versao-dialog.js';
+import { abrirAssistenteUpload } from '@modules/acervo/pages/produto/upload-wizard.js';
 import { abrirSeletorVersao } from '@modules/acervo/pages/produto/seletor-versao.js';
 
 /**
@@ -460,6 +461,28 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
   // produto: a ficha mostra varias versoes, e um botao "Editar versão" no rodape
   // do modal nao diria qual.
   const acoes = el('div', { className: 'ficha-versao__acoes' }, [
+    // Acrescentar arquivo mora AQUI, e nao na barra do produto, pela mesma razao
+    // que editar: a ficha mostra varias versoes, e o arquivo entra numa delas.
+    //
+    // E o que COMPLETA a versao Planejada, que nasce sem arquivo de proposito e
+    // o recebe nesta MESMA versao quando a producao termina. Sem este botao, a
+    // folha planejada pela web nao tinha como ser completada pela web.
+    pode.operador
+      ? el('button', {
+        className: 'btn btn--text btn--sm',
+        type: 'button',
+        title: arquivos.length
+          ? 'Acrescentar outro arquivo a esta versão'
+          : 'Enviar o arquivo desta versão',
+        onClick: () => abrirAssistenteUpload({
+          modo: 'arquivos',
+          versaoId: Number(v.versao_id ?? v.id),
+          rotuloVersao: v.versao,
+          produtoNome: ficha().nome,
+          onConcluido: recarregar,
+        }),
+      }, [svgIcon(ICONS.add, 14), arquivos.length ? 'Mais arquivos' : 'Enviar arquivo'])
+      : null,
     pode.operador
       ? el('button', {
         className: 'btn btn--text btn--sm',

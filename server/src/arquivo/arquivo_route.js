@@ -8,7 +8,9 @@ const { verifyPerfil, verifyAdmin } = require('../login')
 
 const arquivoCtrl = require('./arquivo_ctrl')
 const arquivoSchema = require('./arquivo_schema')
-const { uploadArquivoWeb } = require('./upload_web')
+const {
+  uploadWebProduto, uploadWebVersao, uploadWebArquivos, planoDaRequisicao, limparParciais
+} = require('./upload_web')
 
 const router = express.Router()
 
@@ -93,7 +95,7 @@ router.post(
 
 // ---------------------------------------------------------------------------
 // Envio pelo NAVEGADOR. O byte sobe por HTTP e quem o grava no volume e o
-// SERVIDOR.
+// SERVIDOR, e numa requisicao so.
 //
 // Ate 2026-08-01 nenhuma rota gravava byte em volume: o prepare-upload reservava
 // o destino, o PLUGIN copiava por SMB e o confirm-upload conferia o checksum que
@@ -101,76 +103,98 @@ router.post(
 // ficava de fora do cadastro. O servidor ja ALCANCA o volume -- o download faz
 // createReadStream e pipe --, entao o que faltava era o sentido contrario.
 //
-// A MAQUINA DE SESSAO E A MESMA. Mesmas tabelas _temp, mesmo `operation_type`,
-// mesmo `POST /confirm-upload` fechando. O que muda e so o deposito: em vez de o
-// cliente copiar os bytes entre o prepare e o confirm, ele os MANDA, um arquivo
-// por requisicao. Uma segunda maquina de upload divergiria da primeira na
-// primeira regra nova de identidade de produto ou de sequencia de versao.
+// SEM SESSAO, e isso e o ponto. O par prepare/confirm existe para cobrir a
+// janela em que o cliente sai para copiar os bytes por conta propria. Aqui os
+// bytes vem DENTRO da requisicao: nao ha janela, e portanto nao ha o que a
+// sessao cobrir -- o mesmo raciocinio que `/catalogar/product` ja registrou. O
+// desenho anterior usava a sessao mesmo assim, e cobrava por isso: linha
+// pendurada em `upload_session` e `.parcial` no volume a cada envio abandonado.
 //
-// O checksum e do SERVIDOR, e o cliente nao o declara. Aqui os bytes passam pelo
-// processo, entao o SHA-256 sai do MESMO passo que escreve: nao ha segunda
-// leitura para pagar. O navegador nem teria como declara-lo -- `crypto.subtle`
-// exige o arquivo inteiro na memoria, que e justamente o que nao cabe.
-router.post(
-  '/upload-web/prepare/product',
-  verifyPerfil('operador'),
-  schemaValidation({
-    body: arquivoSchema.prepareUploadWebProduct
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.prepareUploadWebProduct(req.body, req.usuarioUuid);
-    const msg = 'Envio de produto preparado. Mande os bytes de cada arquivo em ' +
-      'PUT /api/arquivo/upload-web/{session_uuid}/arquivo/{temp_id} e feche com confirm-upload.';
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
-  })
-);
-
-router.post(
-  '/upload-web/prepare/version',
-  verifyPerfil('operador'),
-  schemaValidation({
-    body: arquivoSchema.prepareUploadWebVersion
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.prepareUploadWebVersion(req.body, req.usuarioUuid);
-    const msg = 'Envio de versão preparado. Mande os bytes de cada arquivo em ' +
-      'PUT /api/arquivo/upload-web/{session_uuid}/arquivo/{temp_id} e feche com confirm-upload.';
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
-  })
-);
-
-// Os bytes de UM arquivo, em multipart, no campo "arquivo".
+// O que se perde e reenviar SO o arquivo que falhou. Aceitavel: o teto do
+// caminho web e de poucos GB e a mediana em producao e de 6 a 11 MB; acima
+// disso o caminho continua sendo o plugin.
 //
-// PUT e nao POST porque o destino ja existe e e nomeado: o prepare reservou
-// aquela linha, e mandar os mesmos bytes duas vezes tem de deixar o volume no
-// mesmo estado. Uma requisicao por arquivo, e nao um multipart com o lote todo:
-// assim a queda no meio custa um arquivo, e a retomada e reenviar aquele.
-// O limitador nao atrapalha (3.000/minuto, ver server/app.js).
-router.put(
-  '/upload-web/:session_uuid/arquivo/:temp_id',
+// O CLIENTE NAO NOMEIA, NAO DECLARA EXTENSAO E NAO DECLARA CHECKSUM. O nome
+// fisico sai de `acervo.nome_arquivo_padrao`, a mesma funcao que o invariante
+// `7a` audita; a extensao sai do arquivo enviado; o checksum sai do mesmo passo
+// que grava. Deixar o cliente nomear produzia uma linha de DEFECT no `7a` a cada
+// envio -- medido em 2026-08-02.
+//
+// O campo `dados` (JSON) tem de vir ANTES dos arquivos no multipart: e dele que
+// sai o destino de cada byte.
+router.post(
+  '/upload-web/produto',
   verifyPerfil('operador'),
-  schemaValidation({
-    params: arquivoSchema.uploadWebArquivoParams
-  }),
-  // Resolve o destino no banco e so entao streama o corpo para o volume. Nada
-  // de body parser aqui: o corpo pode ter gigabytes e nunca entra em memoria.
-  ...uploadArquivoWeb,
+  // Sem `schemaValidation` de corpo: ele roda antes do multer, e antes do multer
+  // o multipart ainda nao foi parseado. O Joi e chamado dentro do middleware,
+  // com o MESMO schema, assim que o campo `dados` existe.
+  ...uploadWebProduto,
   asyncHandler(async (req, res, next) => {
-    if (!req.file) {
-      throw new AppError(
-        'Nenhum arquivo recebido. Mande o conteúdo como multipart/form-data no campo "arquivo".',
-        httpCode.BadRequest
-      );
+    const plano = await planoDaRequisicao(req);
+    try {
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const msg = `Produto cadastrado com a versão ${plano.versao.versao} e ` +
+        `${dados.arquivos.length} arquivo(s) gravado(s) no volume ${dados.volume} ` +
+        `como "${dados.nome_arquivo}"`;
+      return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
+    } catch (erro) {
+      await limparParciais(plano, { usuario_uuid: req.usuarioUuid });
+      throw erro;
     }
-
-    const dados = await arquivoCtrl.gravarArquivoWeb(req.arquivoWeb, req.file, req.usuarioUuid);
-
-    const msg = `Arquivo ${dados.nome_arquivo}.${dados.extensao} gravado no volume ` +
-      `(${dados.tamanho_mb.toFixed(2)} MB, checksum medido pelo servidor)`;
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
+
+router.post(
+  '/upload-web/versao',
+  verifyPerfil('operador'),
+  ...uploadWebVersao,
+  asyncHandler(async (req, res, next) => {
+    const plano = await planoDaRequisicao(req);
+    try {
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const msg = `Versão ${plano.versao.versao} cadastrada com ${dados.arquivos.length} ` +
+        `arquivo(s) gravado(s) no volume ${dados.volume} como "${dados.nome_arquivo}"`;
+      return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
+    } catch (erro) {
+      await limparParciais(plano, { usuario_uuid: req.usuarioUuid });
+      throw erro;
+    }
+  })
+);
+
+// Arquivos numa versao que JA EXISTE.
+//
+// E o que COMPLETA a versao PLANEJADA: ela nasce sem arquivo de proposito, e o
+// arquivo entra nesta MESMA versao quando a producao termina (ver TIPO_VERSAO em
+// utils/domain_constants.js). Sem esta rota, a folha planejada pela web nao
+// tinha como ser completada pela web.
+//
+// O corpo NAO traz produto nem versao: os dois ja estao gravados, e aceita-los
+// abriria a porta para esta rota editar o que ela nao e dona. O rotulo e o
+// subtipo que o nome fisico exige sao lidos do banco.
+//
+// O tipo da versao NAO muda ao ganhar arquivo. "Planejada" e "Regular" dizem
+// coisas diferentes sobre a PROMESSA, nao sobre ter byte, e o RPCMTec conta
+// produto entregue por tipo de versao: virar Regular sozinho mexeria no
+// relatorio sem ninguem ter pedido. Quem quiser mudar edita a versao.
+router.post(
+  '/upload-web/arquivos',
+  verifyPerfil('operador'),
+  ...uploadWebArquivos,
+  asyncHandler(async (req, res, next) => {
+    const plano = await planoDaRequisicao(req);
+    try {
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const msg = `${dados.arquivos.length} arquivo(s) acrescentado(s) à versão ` +
+        `${plano.versao.versao}, no volume ${dados.volume} como "${dados.nome_arquivo}"`;
+      return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
+    } catch (erro) {
+      await limparParciais(plano, { usuario_uuid: req.usuarioUuid });
+      throw erro;
+    }
+  })
+);
+
 // ---------------------------------------------------------------------------
 
 // Cataloga produto que JA ESTA no volume, sem transferir nem renomear byte.

@@ -15,6 +15,7 @@ import {
   criarProdutos,
   atualizarProduto,
 } from '@modules/acervo/services/acervo-service.js';
+import { openVersaoDialog } from './versao-dialog.js';
 
 /**
  * Criar e editar PRODUTO do acervo.
@@ -297,96 +298,136 @@ export async function openProdutoDialogForm({ produto = null, onSaved = null } =
 
   let salvando = false;
 
+  /**
+   * Valida o formulário e monta o corpo do produto, ou devolve null.
+   *
+   * Extraída porque DOIS botões precisam dela: "Salvar" grava o produto sozinho,
+   * e "Salvar e criar versão" o entrega ao diálogo de versão sem gravar. Duas
+   * cópias da validação divergiriam na primeira regra nova.
+   */
+  function validarEMontar() {
+    [nomeField, escalaField, tipoField, denominadorField].forEach(c => c.setError(null));
+
+    const nome = nomeField.getValue();
+    const tipoEscalaId = escalaField.getValue();
+    const tipoProdutoId = tipoField.getValue();
+    const personalizada = Number(tipoEscalaId) === TIPO_ESCALA_PERSONALIZADA;
+    const denominador = denominadorField.getValue();
+
+    let valido = true;
+    // O PUT do servidor exige nome não vazio. Aceitar um produto sem nome na
+    // criação criaria justamente o registro que não se consegue salvar de novo
+    // sem inventar um.
+    if (!nome) {
+      nomeField.setError('Informe o nome do produto');
+      valido = false;
+    }
+    if (!tipoProdutoId) {
+      tipoField.setError('Escolha o tipo de produto');
+      valido = false;
+    }
+    if (!tipoEscalaId) {
+      escalaField.setError('Escolha a escala');
+      valido = false;
+    }
+    if (personalizada && !denominador) {
+      denominadorField.setError('A escala personalizada exige o denominador');
+      valido = false;
+    }
+    if (!valido) return null;
+
+    if (!edicao && !ewkt) {
+      showError('Defina a geometria do produto antes de salvar');
+      return null;
+    }
+
+    return {
+      nome,
+      mi: miField.getValue() || null,
+      inom: inomField.getValue() || null,
+      tipo_escala_id: Number(tipoEscalaId),
+      denominador_escala_especial: personalizada ? Number(denominador) : null,
+      tipo_produto_id: Number(tipoProdutoId),
+      subtipo_produto_id: subtipoField.getValue() === null
+        ? null
+        : Number(subtipoField.getValue()),
+      descricao: descricaoField.getValue(),
+    };
+  }
+
+  const acoes = [
+    { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+  ];
+
+  // Produto e versão num passo só.
+  //
+  // O produto NÃO é gravado aqui: o corpo segue PENDENTE para o diálogo de
+  // versão, e quem grava os dois é a rota que os cria juntos
+  // (`/produtos/produto_versao_*`, ou o assistente quando a versão é Regular e
+  // traz arquivo). Gravar o produto antes deixaria uma casca sem versão sempre
+  // que a pessoa desistisse no passo seguinte -- e ela desiste, porque o passo
+  // seguinte é onde o gatilho de versão cobra o rótulo e o subtipo.
+  //
+  // Só na CRIAÇÃO: editando, o produto já existe e a versão se acrescenta pela
+  // ficha, que é onde estão as outras.
+  if (!edicao) {
+    acoes.push({
+      label: 'Salvar e criar versão',
+      variant: 'secondary',
+      onClick: ({ close }) => {
+        const corpo = validarEMontar();
+        if (!corpo) return;
+
+        close();
+        openVersaoDialog({
+          // O produto ainda não tem id: quem o receber precisa saber disso.
+          produtoPendente: { ...corpo, geom: ewkt },
+          produto: { ...corpo, id: null },
+          versoesExistentes: [],
+          onSaved,
+        });
+      },
+    });
+  }
+
+  acoes.push({
+    label: 'Salvar',
+    variant: 'primary',
+    onClick: async ({ close }) => {
+      if (salvando) return;
+
+      const corpo = validarEMontar();
+      if (!corpo) return;
+
+      salvando = true;
+      try {
+        if (edicao) {
+          // `geom` só viaja quando existe: no PUT sem geometria o servidor
+          // preserva a que está gravada, e mandar null a apagaria.
+          await atualizarProduto({
+            id: Number(produto.id),
+            ...corpo,
+            ...(ewkt ? { geom: ewkt } : {}),
+          });
+          showSuccess('Produto atualizado com sucesso');
+        } else {
+          await criarProdutos([{ ...corpo, geom: ewkt }]);
+          showSuccess('Produto criado com sucesso');
+        }
+        close();
+        if (onSaved) onSaved();
+      } catch (erro) {
+        showError(erro.message || 'Erro ao salvar o produto');
+      } finally {
+        salvando = false;
+      }
+    },
+  });
+
   openModal({
     title: edicao ? 'Editar produto' : 'Novo produto',
     content,
     width: '720px',
-    actions: [
-      { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
-      {
-        label: 'Salvar',
-        variant: 'primary',
-        onClick: async ({ close }) => {
-          if (salvando) return;
-
-          [nomeField, escalaField, tipoField, denominadorField].forEach(c => c.setError(null));
-
-          const nome = nomeField.getValue();
-          const tipoEscalaId = escalaField.getValue();
-          const tipoProdutoId = tipoField.getValue();
-          const personalizada = Number(tipoEscalaId) === TIPO_ESCALA_PERSONALIZADA;
-          const denominador = denominadorField.getValue();
-
-          let valido = true;
-          // O PUT do servidor exige nome não vazio. Aceitar um produto sem nome
-          // na criação criaria justamente o registro que não se consegue salvar
-          // de novo sem inventar um.
-          if (!nome) {
-            nomeField.setError('Informe o nome do produto');
-            valido = false;
-          }
-          if (!tipoProdutoId) {
-            tipoField.setError('Escolha o tipo de produto');
-            valido = false;
-          }
-          if (!tipoEscalaId) {
-            escalaField.setError('Escolha a escala');
-            valido = false;
-          }
-          if (personalizada && !denominador) {
-            denominadorField.setError('A escala personalizada exige o denominador');
-            valido = false;
-          }
-          if (!valido) return;
-
-          const corpo = {
-            nome,
-            mi: miField.getValue() || null,
-            inom: inomField.getValue() || null,
-            tipo_escala_id: Number(tipoEscalaId),
-            // A chave vai SEMPRE, com null fora da escala personalizada: o
-            // schema exige a presença dela, e o CHECK do banco exige o null.
-            denominador_escala_especial: personalizada ? Number(denominador) : null,
-            tipo_produto_id: Number(tipoProdutoId),
-            // Explícito, inclusive null. Em geral "ausente" significa "não mexe"
-            // neste campo (ver produto_schema.js), mas aqui a pessoa está vendo
-            // o `<select>` na tela: omitir faria o campo vazio à vista dela
-            // deixar de valer, que é o contrário do que a tela promete.
-            subtipo_produto_id: subtipoField.getValue() === null
-              ? null
-              : Number(subtipoField.getValue()),
-            descricao: descricaoField.getValue(),
-          };
-
-          if (!edicao && !ewkt) {
-            showError('Defina a geometria do produto antes de salvar');
-            return;
-          }
-
-          salvando = true;
-          try {
-            if (edicao) {
-              // `geom` só viaja quando existe: no PUT sem geometria o servidor
-              // preserva a que está gravada, e mandar null a apagaria.
-              await atualizarProduto({
-                id: Number(produto.id),
-                ...corpo,
-                ...(ewkt ? { geom: ewkt } : {}),
-              });
-              showSuccess('Produto atualizado com sucesso');
-            } else {
-              await criarProdutos([{ ...corpo, geom: ewkt }]);
-              showSuccess('Produto criado com sucesso');
-            }
-            close();
-            if (onSaved) onSaved();
-          } catch (erro) {
-            showError(erro.message || 'Erro ao salvar o produto');
-          } finally {
-            salvando = false;
-          }
-        },
-      },
-    ],
+    actions: acoes,
   });
 }

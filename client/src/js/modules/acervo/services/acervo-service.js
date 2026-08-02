@@ -357,6 +357,18 @@ export function criarProdutoComVersaoPlanejada(produtos) {
 }
 
 /**
+ * Cria produto e versao de REGISTRO HISTORICO de uma vez.
+ *
+ * Irma da planejada, e com o MESMO corpo: quem separa as duas e a ROTA, e nao um
+ * inteiro escondido no corpo. Ver o comentario de `criarVersoesHistoricas`.
+ * @param {Array<Object>} produtos
+ */
+export function criarProdutoComVersaoHistorica(produtos) {
+  invalidarEscrita();
+  return apiPost('/produtos/produto_versao_historica', produtos);
+}
+
+/**
  * Cria versoes de REGISTRO HISTORICO em produtos que ja existem.
  *
  * Mesma forma da planejada, e de proposito: as duas nascem SEM arquivo, e o que
@@ -471,57 +483,65 @@ export const getFolha = ({ mi = '', inom = '' } = {}) =>
 // Envio de arquivo pelo NAVEGADOR (versão Regular)
 // ---------------------------------------------------------------------------
 //
-// Três chamadas, na ordem: preparar, mandar os bytes de cada arquivo, confirmar.
-// A sessão que o prepare abre expira sozinha em 24 h (`acervo.upload_session`), e
-// o cron de limpeza a fecha; cancelar é o caminho educado, e apaga os `.parcial`
-// que ficaram no volume.
+// UMA requisição: os metadados e os bytes vão juntos. Não há sessão a abrir nem
+// a fechar, porque não há janela entre reservar o destino e gravar -- é o mesmo
+// raciocínio de `/catalogar/product`. Ou tudo entra no acervo, ou nada entra.
 //
-// O checksum NÃO é declarado aqui, de propósito: quem mede é o servidor, no mesmo
-// passo em que grava. Mandá-lo é 400. Ver o comentário da rota em
-// server/src/arquivo/arquivo_route.js.
+// O que esta tela NÃO manda, e cada um por uma razão:
+//   - o NOME FÍSICO, que o servidor deriva de `acervo.nome_arquivo_padrao` (a
+//     mesma regra que o invariante 7a audita);
+//   - a EXTENSÃO, que sai do arquivo escolhido;
+//   - o CHECKSUM e o TAMANHO, que o servidor mede enquanto grava.
+// Mandar qualquer um deles é 400, de propósito: descartado em silêncio, a tela
+// acreditaria ter gravado o que mandou.
+//
+// A ORDEM DAS PARTES IMPORTA: `dados` primeiro, arquivos depois. O destino de
+// cada byte sai dos metadados, e eles são lidos enquanto o corpo ainda chega.
 
-/**
- * Abre a sessão de envio de uma versão nova em produto que já existe.
- *
- * @param {Array<Object>} versoes - [{ produto_id, versao: {...}, arquivos: [...] }]
- * @returns {Promise<{session_uuid:string, arquivos:Array<{temp_id:number}>}>}
- */
-export const prepararEnvioVersao = (versoes) =>
-  apiPost('/arquivo/upload-web/prepare/version', { versoes });
-
-/** O mesmo, para produto que ainda não existe. */
-export const prepararEnvioProduto = (produtos) =>
-  apiPost('/arquivo/upload-web/prepare/product', { produtos });
-
-/**
- * Manda os bytes de UM arquivo da sessão.
- *
- * Devolve `{ promessa, abortar }`, e não só a promessa: fechar o assistente no
- * meio de um envio grande precisa parar a subida, e não só esconder a tela.
- *
- * @param {string} sessionUuid
- * @param {number} tempId - o `temp_id` que o prepare devolveu
- * @param {File} arquivo
- * @param {Function} [onProgress]
- */
-export const enviarBytesDoArquivo = (sessionUuid, tempId, arquivo, onProgress) => {
+/** Monta o corpo multipart na ordem que o servidor exige. */
+function corpoDoEnvio(dados, arquivos) {
   const corpo = new FormData();
-  corpo.append('arquivo', arquivo);
+  corpo.append('dados', JSON.stringify(dados));
+  for (const arquivo of arquivos) corpo.append('arquivos', arquivo);
+  return corpo;
+}
+
+/**
+ * Versão nova, com arquivos, em produto que já existe.
+ *
+ * @param {{produto_id:number, versao:Object, arquivos:Array<Object>}} dados
+ * @param {Array<File>} arquivos - na MESMA ordem de `dados.arquivos`
+ * @param {Function} [onProgress]
+ * @returns {{promessa:Promise<Object>, abortar:Function}}
+ */
+export function enviarVersaoComArquivos(dados, arquivos, onProgress) {
+  invalidarEscrita();
   return apiUploadComProgresso(
-    `/arquivo/upload-web/${sessionUuid}/arquivo/${tempId}`,
-    corpo,
-    onProgress,
-    { metodo: 'PUT' }
+    '/arquivo/upload-web/versao', corpoDoEnvio(dados, arquivos), onProgress
   );
-};
+}
 
-/** Promove as linhas temporárias para o acervo. */
-export const confirmarEnvio = (sessionUuid) =>
-  apiPost('/arquivo/confirm-upload', { session_uuid: sessionUuid });
+/** Produto novo, com a primeira versão e os arquivos dela. */
+export function enviarProdutoComArquivos(dados, arquivos, onProgress) {
+  invalidarEscrita();
+  return apiUploadComProgresso(
+    '/arquivo/upload-web/produto', corpoDoEnvio(dados, arquivos), onProgress
+  );
+}
 
-/** Fecha a sessão sem gravar, e apaga os `.parcial` do volume. */
-export const cancelarEnvio = (sessionUuid) =>
-  apiPost('/arquivo/cancel-upload', { session_uuid: sessionUuid });
-
-/** Sessões que ficaram abertas, para retomar ou cancelar. */
-export const getSessoesDeEnvio = () => apiGet('/arquivo/upload-sessions');
+/**
+ * Arquivos novos numa versão que JÁ EXISTE.
+ *
+ * É o que completa a versão PLANEJADA: ela nasce sem arquivo, de propósito, e o
+ * arquivo entra nesta MESMA versão quando a produção termina. O tipo dela NÃO
+ * muda por ganhar arquivo -- quem quiser mudar edita a versão.
+ *
+ * @param {{versao_id:number, arquivos:Array<Object>}} dados
+ * @param {Array<File>} arquivos - na MESMA ordem de `dados.arquivos`
+ */
+export function enviarArquivosEmVersao(dados, arquivos, onProgress) {
+  invalidarEscrita();
+  return apiUploadComProgresso(
+    '/arquivo/upload-web/arquivos', corpoDoEnvio(dados, arquivos), onProgress
+  );
+}

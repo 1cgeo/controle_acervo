@@ -157,20 +157,66 @@ que exige QGIS instalado e acesso SMB ao volume. Quem não tinha os dois não ca
 - **`GET /api/produtos/folha?mi=|inom=` devolve o quadro da folha**, `verifyPerfil('consulta')`. Aceita
   um identificador só: os dois juntos fariam o servidor desempatar em silêncio.
 
-- **O upload web grava byte no volume, e o SERVIDOR mede o checksum enquanto grava.** Até 2026-08-01 o
-  servidor nunca escreveu no volume: quem copiava era o plugin, por SMB. `arquivo/upload_web.js`
-  fecha o sentido contrário, reusando a máquina de sessão inteira (`upload_session`, as tabelas
-  `_temp`, o cron de expiração e o `confirm-upload`), **sem migração**: `expected_checksum` e
-  `tamanho_mb` já eram nullable e `operation_type` já cobria os dois casos. As decisões:
-  o cliente **não declara** checksum nem tamanho (mandá-los é 400), porque o byte passa pelo processo
-  e o SHA-256 sai do MESMO passo da escrita — e o navegador nem teria como, já que `crypto.subtle`
-  exige o arquivo inteiro em memória; a escrita é **atômica** (`<destino>.parcial` e `rename` no fim),
-  senão conexão cortada deixaria arquivo truncado com o nome que o acervo considera válido; o
-  `confirm-upload` **pula a linha já medida** (`status = 'completed'`), porque relê-la seria refazer os
-  362 GB do LOTE_1 dentro da transação; o `cancel-upload` passa a apagar os `.parcial`, e **só** eles.
-  Storage próprio do multer, e não `diskStorage`: aquele grava e devolve o caminho, e o hash exigiria
-  uma SEGUNDA leitura. `UPLOAD_WEB_MAX_GB` (default 2) é o teto; acima dele o caminho continua sendo o
-  plugin, que copia direto para o volume sem passar pelo servidor.
+- **O upload web é UMA requisição, e o SERVIDOR decide o nome, a extensão e o checksum.** Até
+  2026-08-01 o servidor nunca escreveu no volume: quem copiava era o plugin, por SMB.
+  `arquivo/upload_web.js` fecha o sentido contrário, e o desenho passou por uma revisão em
+  2026-08-02 que mudou duas coisas de fundo:
+
+  **Sem sessão.** A primeira versão reusava a máquina de `prepare-upload`/`confirm-upload`: três
+  chamadas e quatro tabelas `_temp`. O par existe para cobrir a janela em que o PLUGIN sai para
+  copiar os bytes por conta própria; no navegador os bytes vêm DENTRO da requisição, então não há
+  janela e não há o que a sessão cubra — é o mesmo raciocínio que `/catalogar/product` já
+  registrava. Usá-la mesmo assim cobrava caro: sessão abandonada virava linha pendurada em
+  `upload_session` e `.parcial` no volume até o cron de 24 h. Hoje são
+  `POST /api/arquivo/upload-web/{produto,versao}`, multipart, e ou tudo entra ou nada entra. O que
+  se perde é reenviar só o arquivo que falhou; vale, porque o teto é de poucos GB
+  (`UPLOAD_WEB_MAX_GB`, default 2) e a mediana em produção é de 6 a 11 MB.
+
+  **O cliente não nomeia.** O nome físico sai de `acervo.nome_arquivo_padrao`, a MESMA função que o
+  invariante `7a` usa para auditar — "auditor e escritor são a mesma regra" já estava escrito em
+  `renomearPadrao`, e a primeira versão do upload web o contrariava. O custo era medível: cada envio
+  criava uma linha de DEFECT no `7a`. Medido em 2026-08-02, um arquivo entrou como `carta_ensaio`
+  onde o padrão pedia `CT_s12_2757-1-NE_1dsg`. Pela mesma razão o cliente não declara a **extensão**
+  (ela sai do arquivo enviado; declarada, poderia dizer `tif` num PDF) nem o **checksum** e o
+  **tamanho** (o servidor os mede no mesmo passo da escrita, e o navegador nem teria como: o
+  `crypto.subtle` exige o arquivo inteiro em memória). Mandar qualquer um dos quatro é 400.
+
+  **O padrão dá UM nome por versão, e quem separa os arquivos é a extensão** — `nome_arquivo_padrao`
+  não recebe `tipo_arquivo_id`, e a unicidade física é `(volume, nome_arquivo, extensao)`. Dois
+  arquivos da mesma versão com a mesma extensão são RECUSADOS, e não desambiguados com um sufixo:
+  um `_2` faria o escritor nomear diferente do que o `renomear-padrao` e o `7a` esperam.
+
+  As demais decisões seguem: escrita **atômica** (`<destino>.parcial` e `rename` no fim), o `rename`
+  DENTRO da transação e depois do INSERT (é a ordem do `renomearPadrao`: o índice único arbitra a
+  colisão com o disco intacto, e falha de disco derruba o registro junto), `motivoCaminhoInseguro`
+  no nome derivado, e storage próprio do multer em vez de `diskStorage` (aquele grava e devolve o
+  caminho, e o hash exigiria uma SEGUNDA leitura).
+
+  **O teto do multer TRUNCA o fluxo, não o derruba.** O busboy para de emitir e marca `truncated`;
+  sem conferir isso, o `pipeline` termina normal e o arquivo entra pela metade, com um checksum
+  calculado sobre a metade — "válido" para sempre, e nada depois o acusa. A guarda está logo após o
+  `pipeline`, e tem teste próprio.
+
+  **TRÊS ROTAS, e a tela é a mesma nas três:** `/upload-web/produto` (produto novo, com a primeira
+  versão e os arquivos dela), `/upload-web/versao` (versão nova em produto que já existe) e
+  `/upload-web/arquivos` (arquivos numa versão que já existe). A terceira é o que **completa a versão
+  PLANEJADA**, que nasce sem arquivo de propósito e o recebe nesta MESMA versão quando a produção
+  termina: sem ela, a folha planejada pela web não tinha como ser completada pela web. Ela **não muda
+  o tipo da versão** ao dar-lhe arquivo — "Planejada" e "Regular" dizem coisas diferentes sobre a
+  PROMESSA, não sobre ter byte, e o RPCMTec conta produto entregue por tipo de versão. E o volume
+  dela é o dos arquivos que a versão JÁ TEM, e não o primário do tipo: o primário pode ter mudado
+  depois, e a unicidade de nome físico vale POR VOLUME, então metade da versão num volume e metade
+  noutro deixaria de ser protegida contra colisão.
+
+  **No caminho "produto e versão num passo só" o produto NÃO é gravado antes.** O corpo dele segue
+  pendente do formulário de produto para o de versão, e quem grava os dois é a rota que os cria
+  juntos. Gravar antes deixaria uma casca sem versão toda vez que alguém desistisse no passo
+  seguinte — e desiste, porque é lá que o gatilho cobra o rótulo e o subtipo.
+
+  **A ordem das partes do multipart importa:** o campo `dados` (JSON) vem ANTES dos arquivos, porque
+  é dele que sai o destino de cada byte, lido enquanto o corpo ainda chega. Parte fora de ordem é
+  recusada com a razão. E o n-ésimo arquivo casa com a n-ésima descrição, então as contagens têm de
+  bater.
 
 - **Data de versão é DIA DE CALENDÁRIO: `Joi.date().iso().raw()`, nunca `Joi.date()`.** Sem o
   `.raw()`, o Joi converte 'AAAA-MM-DD' em meia-noite UTC e a coluna `TIMESTAMP WITH TIME ZONE` guarda
