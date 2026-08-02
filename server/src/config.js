@@ -57,8 +57,12 @@ dotenv.config({
 // (texto) sai e entra `rpcmtec.capacitacao_militar`. Exigida: a 6.2 do relatorio
 // e a tela leem a tabela nova, e num banco 1.16.0 as duas quebram na coluna que
 // deixou de existir.
+// 1.18.0 acrescenta o PLANEJADO mensal (2026-08-02): `pit.execucao` ganha
+// `quantidade_planejada` e `quantidade` deixa de ser NOT NULL. Exigida nos dois
+// sentidos: a grade e a subsecao 2.1 leem a coluna nova, e num banco 1.17.0 o
+// NOT NULL faria planejar um mes gravar um realizado zero que ninguem lancou.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.17.0'
+const MIN_DATABASE_VERSION = '1.18.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

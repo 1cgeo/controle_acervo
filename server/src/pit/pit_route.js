@@ -10,7 +10,7 @@ const { asyncHandler, httpCode, AppError } = require('../utils')
 // de carga, onde um nome de campo errado descartado em silencio grava meia meta.
 const schemaValidation = require('../utils/schema_validation_estrito')
 
-const { verifyLogin, verifyAdmin } = require('../login')
+const { verifyLogin, verifyAdmin, verifyGerente } = require('../login')
 
 const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
@@ -61,27 +61,33 @@ router.get(
 // ANTES de '/:id', como '/anos': o Express casa na ordem de declaração, e
 // 'execucao' cairia na rota do id e reprovaria na validação de parâmetro.
 //
-// A guarda segue a da meta: LER é de qualquer pessoa logada, porque o
-// andamento do plano anual interessa aos três módulos, e ESCREVER é do
-// administrador global. Não há perfil de PIT, porque não há módulo PIT.
+// LER é do GERENTE de qualquer módulo e do administrador global (chefe,
+// 2026-08-02). Era de qualquer pessoa logada até essa data: o PIT é o
+// compromisso do ano, e quem responde por ele é quem responde pelo módulo.
+// ESCREVER continua sendo do administrador global. Não há perfil de PIT, porque
+// não há módulo PIT.
 // ---------------------------------------------------------------------------
 
+// A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
+// cada um. Substituiu o `GET /execucao?ano&mes` em 2026-08-02, quando o mês
+// deixou de ser filtro e virou coluna: o trabalho é anual, e "estou atrasado?"
+// não se responde um mês por vez.
 router.get(
   '/execucao',
-  verifyLogin,
-  schemaValidation({ query: pitSchema.execucaoDoMesQuery }),
+  verifyGerente,
+  schemaValidation({ query: pitSchema.gradeQuery }),
   asyncHandler(async (req, res, next) => {
-    const dados = await execucaoCtrl.listarDoMes(req.query.ano, req.query.mes)
+    const dados = await execucaoCtrl.grade(req.query.ano)
 
     return res.sendJsonAndLog(
-      true, 'Execução do mês retornada com sucesso', httpCode.OK, dados
+      true, 'Grade do PIT retornada com sucesso', httpCode.OK, dados
     )
   })
 )
 
 router.get(
   '/execucao/resumo',
-  verifyLogin,
+  verifyGerente,
   schemaValidation({ query: pitSchema.resumoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.resumoDoAno(req.query.ano, req.query.mes)
@@ -94,7 +100,7 @@ router.get(
 
 router.get(
   '/execucao/meta/:metaId',
-  verifyLogin,
+  verifyGerente,
   schemaValidation({ params: pitSchema.metaIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.listarDaMeta(req.params.metaId)
@@ -105,9 +111,11 @@ router.get(
   })
 )
 
-// UMA rota para criar e para alterar, porque o par (meta, mês) é uma CÉLULA de
-// grade: quem preenche não sabe (nem deveria saber) se aquele mês já tinha
-// linha. Quem separa criação de alteração é o controlador, e só para o rastro.
+// UMA rota para criar, alterar e APAGAR, porque o par (meta, mês) é uma CÉLULA
+// de grade: quem preenche não sabe (nem deveria saber) se aquele mês já tinha
+// linha. Quem separa criação de alteração é o controlador, e só para o rastro; e
+// quando a célula fica sem nenhum dos quatro campos, ele apaga a linha em vez de
+// guardar uma que não diz nada.
 router.post(
   '/execucao',
   verifyAdmin,

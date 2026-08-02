@@ -383,3 +383,143 @@
   vertical-align: middle;
   margin-right: 4px;
 }
+
+/* ---------------------------------------------------------------------------
+ * Grade do PIT (#/execucao_pit)
+ *
+ * Uma linha por meta, doze colunas de mes, DOIS numeros por celula: o realizado
+ * em cima e o planejado embaixo, menor e em cinza. A planilha que a Divisao
+ * preenche tem duas abas com as mesmas linhas e as mesmas colunas, e a unica
+ * diferenca entre elas e qual dos dois a celula guarda -- entao elas nao sao
+ * duas coisas, sao esta.
+ *
+ * A COR compara o par: quem alcancou o plano do mes fica verde, quem ficou no
+ * meio fica ambar, e o mes que tinha plano e nao teve nada fica vermelho. Mes
+ * sem plano nenhum fica neutro, porque nao ha o que comparar.
+ * ------------------------------------------------------------------------- */
+
+.grade-pit {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+.grade-pit__tabela {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.grade-pit__tabela th {
+  padding: 6px 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+/* O rotulo fica GRUDADO na esquerda: com doze colunas de mes mais os totais,
+ * rolar para ver dezembro deixaria a pessoa sem saber de qual meta e a linha. */
+.grade-pit__rotulo {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-paper);
+  padding: 4px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-right: 1px solid var(--border-color);
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grade-pit__codigo {
+  color: var(--text-secondary);
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A linha da META e cabecalho de grupo, com o subtotal. "Como esta a Meta 6"
+ * passa a ser uma linha em vez de uma conta. */
+.grade-pit__grupo td {
+  background: var(--bg-hover);
+  font-weight: 600;
+  border-top: 1px solid var(--border-color);
+}
+
+.grade-pit__celula {
+  width: 52px;
+  min-width: 52px;
+  padding: 2px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.grade-pit__celula:hover { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+
+.grade-pit__realizado { display: block; }
+
+/* O planejado e o numero de referencia, nao o dado: menor e apagado. */
+.grade-pit__planejado {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.grade-pit__celula--atingiu   { background: color-mix(in srgb, var(--color-success) 22%, transparent); }
+.grade-pit__celula--parcial   { background: color-mix(in srgb, var(--color-warning) 22%, transparent); }
+.grade-pit__celula--nada      { background: color-mix(in srgb, var(--color-error) 22%, transparent); }
+.grade-pit__celula--mes-atual { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+
+.grade-pit__total {
+  padding: 4px 10px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--border-color);
+}
+
+/* A quantidade do ano que NAO bate com a soma do planejado. Na planilha essa
+ * conferencia e a coluna "Total" ao lado da "Qnt", feita com o olho. */
+.grade-pit__divergente {
+  color: var(--color-error);
+  font-weight: 600;
+  cursor: help;
+}
+
+.grade-pit__edicao {
+  width: 46px;
+  padding: 1px 2px;
+  text-align: center;
+  font-size: 0.8125rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 2px;
+  background: var(--bg-paper);
+  color: var(--text-primary);
+}
+
+.grade-pit__legenda {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.grade-pit__amostra {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-color);
+  vertical-align: middle;
+  margin-right: 4px;
+}

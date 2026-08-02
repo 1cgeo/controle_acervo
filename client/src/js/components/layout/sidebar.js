@@ -127,11 +127,16 @@ const SISTEMA_PRODUCAO = {
   chavePrefixo: '',
   menu: [
     { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
+    // A execução do PIT é do GERENTE e do administrador (chefe, 2026-08-02), e
+    // não de qualquer pessoa logada como as metas ao lado. Por isso ela leva
+    // `visivel` em vez de `admin: true`: nenhuma das duas marcas descreve
+    // "administrador OU gerente", que é a regra que o servidor cobra.
     {
       id: 'execucao_pit',
       label: 'Execução do PIT',
       icon: ICONS.dataUsage,
       path: '/execucao_pit',
+      visivel: () => isAdmin() || ehGerenteDeAlgumModulo(),
     },
     { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
     {

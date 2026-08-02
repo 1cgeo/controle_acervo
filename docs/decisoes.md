@@ -95,6 +95,68 @@ entre SISTEMAS.
   preço é mais uma tabela apontando `dgeo.usuario`, ou seja, mais uma razão para excluir usuário
   falhar -- e está certo, porque desativar não apaga a passagem de quem já esteve aqui.
 
+## A execução do PIT é uma GRADE, e a célula tem dois números (2026-08-02)
+
+A tela nasceu de manhã como ano MAIS mês: uma lista de 37 linhas com um campo cada. Para saber se a
+meta 4.2 estava atrasada era preciso trocar o mês sete vezes e somar de cabeça.
+
+A fonte que resolveu isso é a planilha que a Divisão preenche, com duas abas: PLANEJ_PIT e EXEC_PIT.
+
+- **As duas abas não são duas coisas.** Elas têm as MESMAS linhas, as mesmas doze colunas de mês e a
+  mesma quantidade anual; a única diferença é qual dos dois números a célula guarda. Por isso o
+  planejado entrou como COLUNA em `pit.execucao`, e não numa tabela irmã: duas tabelas repetiriam a
+  chave (meta, mês) e deixariam a comparação, que é a razão de as duas existirem, a um JOIN de
+  distância.
+- **O planejamento é MENSAL**, e é o que `pit.meta.quantidade_prevista` sozinha não dizia: a meta 1.1
+  promete 24 no ano, distribuídos em abril 4, maio 1, julho 16 e agosto 3. A soma dos doze TEM de
+  bater com a quantidade do ano, e a tela acusa quando não bate. Na planilha essa conferência é a
+  coluna "Total" ao lado da "Qnt", feita com o olho.
+- **`quantidade` perdeu o NOT NULL, e é o ponto mais delicado da mudança.** Enquanto a linha só
+  existia para o realizado, a AUSÊNCIA dela dizia "ninguém lançou" e o zero dizia "conferi e não
+  houve". Agora a linha nasce no começo do ano para guardar o plano, então quem carrega esse recado é
+  o nulo. Sem tirar o NOT NULL, planejar um mês gravaria um realizado ZERO que ninguém lançou, e a
+  2.1 do relatório passaria a afirmar que se conferiu e não houve entrega.
+- **A linha que não diz nada não existe.** Um CHECK recusa os quatro campos nulos, e o controlador
+  APAGA a linha nesse caso em vez de guardar uma vazia.
+- **O nome `execucao` ficou**, embora a tabela guarde as duas coisas. Renomeá-la orfanaria o rastro:
+  `auditoria.evento` guarda o nome da tabela em cada linha, e o schema `auditoria` não tem UPDATE nem
+  DELETE para a aplicação, de propósito. O nome imperfeito custa menos do que uma trilha que deixa de
+  casar com o mapa de entidades.
+
+**A COR É DO ACUMULADO, e não do mês sozinho.** Foi a primeira regra e estava errada. O caso que
+provou, com dado real do chefe: a meta 1.1 planejou 4/1/1/1 de abril a julho e entregou nada/6/2/0.
+Julho ficava VERMELHO, com plano 1 e realizado 0, embora o que ele pedia estivesse entregue desde
+maio. A régua mensal não enxerga adiantamento nem recuperação de atraso. No acumulado, abril continua
+vermelho (no fim de abril não havia nada dos 4 prometidos) e maio em diante fica verde: 6 contra 5, 8
+contra 6, 8 contra 7. É a história certa, "atrasou em abril e recuperou em maio".
+
+- **Mês que ainda corre e mês futuro não recebem cor.** Pintar agosto de vermelho no dia 2 de agosto
+  diria que se atrasou o que nem começou.
+- **O `title` mostra as DUAS contas**, a do mês e a do acumulado. Sem ele, uma célula verde com
+  realizado zero se leria como erro.
+- **Salvar redesenha a LINHA, e os doze meses dela**, porque mexer em maio muda a cor de junho a
+  dezembro. A primeira versão refazia a grade inteira, o que destruía a célula para onde o Tab tinha
+  acabado de levar o foco.
+- O teste da tela roda com o **relógio fixo**: como a cor só vale para o mês fechado, com a data real
+  ele passaria de fevereiro a dezembro e falharia em janeiro.
+
+**A LEITURA passou a ser do GERENTE e do administrador** (chefe), e era de qualquer pessoa logada. O
+PIT é o compromisso do ano, e quem responde por ele é quem responde pelo módulo. Nasceu daí o
+`login/verify_gerente.js`: o `verifyPerfil` lê um módulo por vez e o PIT não é de módulo nenhum, e o
+`verifyLogin` lê o `administrador` do TOKEN, que envelhece oito horas. O `rastreabilidadeLoader` do
+cliente passou a chamar o `gerenteLoader` novo, porque a pergunta é a mesma e duas cópias
+divergiriam.
+
+**O `meta_id` vai como NÚMERO no corpo, e quem converte é o cliente.** O BIGSERIAL chega como string
+no JSON (o pg-promise não arrisca perder precisão em inteiro de 64 bits) e o Joi desta rota é
+`.strict()`, que recusa `'18'` em vez de converter. A validação estrita aqui é deliberada, porque a
+escrita também vem de CLI e de carga.
+
+**Ficaram de fora, por falta de decisão do chefe:** as colunas `Situação` e `Pronto` da EXEC_PIT
+(vazias no arquivo, e não se inventa campo sem saber o que ele guarda); a importação do `pit.ods`,
+que exige decidir qual revisão vence, já que a planilha tem 5.2 e 5.3 que o banco não tem; e o
+histórico de replanejamento, que hoje vive só no rastro de auditoria.
+
 ## O aproveitamento do efetivo é INTERVALO, e não retrato mensal (2026-08-02)
 
 `rpcmtec.aproveitamento_mes` nasceu de manhã, copiando o formato que o SAP copiou do RPCMTec de

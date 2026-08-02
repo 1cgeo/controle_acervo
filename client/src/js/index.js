@@ -3,7 +3,7 @@ import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
 import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
 import Router, {
-  adminLoader, authLoader, perfilLoader, rastreabilidadeLoader, rotaRaiz,
+  adminLoader, authLoader, gerenteLoader, perfilLoader, rastreabilidadeLoader, rotaRaiz,
 } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
@@ -112,11 +112,14 @@ router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 // pessoa logada, e o backend cobra o administrador so na escrita.
 router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
 
-// Execucao do PIT: o lancamento mensal que alimenta a subsecao 2.1 do RPCMTec.
-// Absorvida do SAP em 2026-08-02. `authLoader` como as metas, e pela mesma
-// razao: LER o andamento do plano anual interessa aos tres modulos, e o backend
-// cobra o administrador so na escrita. A tela esconde o campo de quem nao pode.
-router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: authLoader });
+// Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
+// Absorvida do SAP em 2026-08-02.
+//
+// `gerenteLoader`, e nao `authLoader`: a leitura passou a ser do gerente de
+// qualquer modulo e do administrador (chefe, 2026-08-02). O PIT e o compromisso
+// do ano, e quem responde por ele e quem responde pelo modulo. O servidor cobra
+// o mesmo, com verifyGerente, lendo o perfil do BANCO.
+router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: gerenteLoader });
 
 // Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3). Mesma guarda,
 // pela mesma razao.

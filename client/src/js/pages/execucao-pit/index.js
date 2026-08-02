@@ -1,38 +1,50 @@
 import { el } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import {
-  getExecucaoMes,
-  getResumoPit,
+  getGradePit,
   getAnosMetaPit,
   salvarExecucaoPit,
   codigoMetaPit,
 } from '@services/plataforma-service.js';
 import { isAdmin } from '@store/auth-store.js';
 
+const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+// Os dois modos de trabalho do ano. Não são duas telas nem duas abas: a grade é
+// a mesma e os dois números ficam sempre visíveis. O modo só decide qual deles o
+// clique edita.
+const PLANEJAR = 'quantidade_planejada';
+const EXECUTAR = 'quantidade';
+
+const numero = (v) => (v == null ? '·' : String(v));
+
 /**
- * Execução do PIT (#/execucao_pit): o lançamento mensal que alimenta a subseção
- * 2.1 do RPCMTec.
+ * Execução do PIT (#/execucao_pit): a grade do ano.
  *
- * É uma GRADE DE PREENCHIMENTO, e não uma lista do que existe. Ela mostra TODA
- * meta-folha do ano, com ou sem lançamento naquele mês: uma tela que só
- * mostrasse o já lançado não diria o que falta, que é justamente a pergunta de
- * quem abre isto no fim do mês.
+ * O QUE ELA SUBSTITUIU. Até 2026-08-02 a tela era ano MAIS mês, com uma lista de
+ * 37 linhas e um campo por linha. Para saber se a meta 4.2 estava atrasada era
+ * preciso trocar o mês sete vezes e somar de cabeça, e o mês vazio não se
+ * distinguia do mês zerado. O trabalho é anual, então o mês virou coluna.
  *
- * TUDO É MANUAL, inclusive as metas de produção (chefe, 2026-08-02). Enquanto o
- * SAP não for absorvido não há de onde calcular, e a tela DIZ isso: sem a frase,
- * a coluna zerada da meta 1 se leria como "não produzimos nada", e não como
- * "ninguém lançou".
+ * DOIS NÚMEROS POR CÉLULA, e é isso que desfaz as duas abas da planilha. A
+ * PLANEJ_PIT e a EXEC_PIT têm as MESMAS linhas, as mesmas doze colunas e a mesma
+ * quantidade anual: a única diferença entre elas é qual dos dois a célula
+ * guarda. Aqui o realizado fica em cima e o planejado embaixo, menor, e o
+ * alternador "Planejar / Executar" só decide qual deles o clique edita. Nenhum
+ * dos dois some da tela em nenhum dos modos.
  *
- * SÓ A FOLHA aparece. A meta que se subdivide tem uma linha de cabeçalho e uma
- * por item, e quem entrega é o item; o servidor recusa lançamento no cabeçalho,
- * e oferecê-lo aqui seria oferecer o 400.
+ * A COR COMPARA O PAR, e é o que responde "estou atrasado" sem ninguém somar:
+ * verde alcançou o plano do mês, âmbar ficou no meio, vermelho tinha plano e não
+ * teve nada. Mês sem plano fica neutro, porque não há o que comparar.
  *
- * O CAMPO SALVA NO `change` (sair do campo ou apertar Enter), e a tela NÃO se
- * recarrega ao salvar: recarregar redesenharia os 37 campos e tiraria o foco de
- * quem está descendo a grade com Tab. O acumulado é corrigido pelo DELTA na
- * própria linha, que é a mesma conta que o servidor fez.
+ * `·` É VAZIO E `0` É ZERO. "Ninguém lançou" e "conferi e não houve" são coisas
+ * diferentes, e é a mesma honestidade de três estados do mapa do efetivo.
+ *
+ * SÓ A FOLHA RECEBE LANÇAMENTO. A meta que se subdivide vira linha de grupo com
+ * o subtotal dos itens; quem entrega é o item. O servidor recusa lançamento no
+ * cabeçalho, e oferecê-lo aqui seria oferecer o 400.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -44,10 +56,7 @@ export async function renderExecucaoPit(container, _ctx) {
 
   const hoje = new Date();
   let anoSelecionado = hoje.getFullYear();
-  let mesSelecionado = hoje.getMonth() + 1;
-
-  // Os dados da tela, por meta. Guardados aqui (e não só na tabela) porque o
-  // salvamento corrige a linha sem redesenhar a tabela inteira.
+  let modo = EXECUTAR;
   let linhas = [];
 
   const anoFilter = createSelectField({
@@ -62,81 +71,26 @@ export async function renderExecucaoPit(container, _ctx) {
     },
   });
 
-  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-
-  const mesFilter = createSelectField({
-    label: 'Mês',
-    options: MESES.map((nome, i) => ({ value: i + 1, label: nome })),
-    placeholder: 'Mês',
-    value: mesSelecionado,
+  const modoFilter = createSelectField({
+    label: 'Editando',
+    options: [
+      { value: EXECUTAR, label: 'Executar (o que foi feito)' },
+      { value: PLANEJAR, label: 'Planejar (o que se pretende)' },
+    ],
+    value: modo,
+    placeholder: null,
     onChange: (valor) => {
       if (valor === null) return;
-      mesSelecionado = Number(valor);
-      load();
+      modo = valor;
+      desenhar();
     },
   });
 
-  /** Campo de quantidade de UMA linha. Salva ao sair do campo. */
-  function campoQuantidade(row) {
-    if (!podeEscrever) {
-      return row.quantidade == null ? '-' : String(row.quantidade);
-    }
-
-    const input = el('input', {
-      className: 'form-field__input',
-      type: 'number',
-      min: '0',
-      step: '1',
-      style: { width: '90px', textAlign: 'right' },
-      'aria-label': `Realizado em ${MESES[mesSelecionado - 1]} na meta ${codigoMetaPit(row)}`,
-      value: row.quantidade == null ? '' : String(row.quantidade),
-    });
-
-    input.addEventListener('change', () => salvar(row, input));
-
-    return input;
-  }
-
-  const table = createDataTable({
-    columns: [
-      { key: 'codigo', label: 'Meta', sortable: true, render: (row) => codigoMetaPit(row) },
-      { key: 'descricao', label: 'Produto ou serviço', render: (row) => row.descricao || '-' },
-      {
-        key: 'quantidade_prevista',
-        label: 'Previsto',
-        sortable: true,
-        render: (row) => (row.quantidade_prevista == null
-          ? '-'
-          : `${row.quantidade_prevista}${row.unidade ? ` ${row.unidade}` : ''}`),
-      },
-      { key: 'quantidade', label: 'Realizado no mês', render: campoQuantidade },
-      {
-        key: 'realizado',
-        label: 'Acumulado no ano',
-        sortable: true,
-        render: (row) => String(row.realizado ?? 0),
-      },
-      {
-        key: 'percentual',
-        label: '% do previsto',
-        // O percentual é DERIVADO, então a ordenação precisa do valor e não do
-        // texto: '100%' e '9%' comparados como texto põem o 100 antes do 9.
-        sortValue: (row) => percentual(row) ?? -1,
-        render: (row) => {
-          const p = percentual(row);
-          return p === null ? '-' : `${p.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
-        },
-      },
-    ],
-    rows: [],
-    searchable: true,
-    // Sem paginação: são algumas dezenas de metas e a grade se preenche de cima
-    // a baixo. Paginar obrigaria a trocar de página no meio do preenchimento.
-    paginated: false,
-    loading: true,
-    emptyMessage: 'Nenhuma meta cadastrada neste ano',
-  });
+  const grade = el('div', { className: 'grade-pit' });
+  // O `<tr>` de cada linha de grupo, para o subtotal ser corrigido sem
+  // refazer a grade.
+  const gruposPorNumero = new Map();
+  const resumo = el('p', { style: { margin: '0 0 8px' } });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
@@ -145,74 +99,392 @@ export async function renderExecucaoPit(container, _ctx) {
     el('div', {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [anoFilter.element, mesFilter.element]),
-    table.element,
+    }, podeEscrever ? [anoFilter.element, modoFilter.element] : [anoFilter.element]),
+    resumo,
+    grade,
+    montarLegenda(),
   ]);
   container.appendChild(page);
 
-  function percentual(row) {
-    const previsto = Number(row.quantidade_prevista);
-    if (!previsto || previsto <= 0) return null;
-    return (100 * Number(row.realizado || 0)) / previsto;
+  function montarLegenda() {
+    const amostra = (classe, texto) => el('span', {}, [
+      el('span', { className: `grade-pit__amostra grade-pit__celula--${classe}` }),
+      texto,
+    ]);
+    // A cor é do ACUMULADO até aquele mês, e não do mês sozinho: é o que faz
+    // trabalho adiantado deixar de aparecer como atraso no mês em que ele estava
+    // planejado. Mês que ainda corre e mês futuro não recebem cor.
+    return el('div', { className: 'grade-pit__legenda' }, [
+      el('span', { textContent: 'Cor: posição ACUMULADA até o mês.' }),
+      amostra('atingiu', 'em dia ou adiantado'),
+      amostra('parcial', 'atrasado'),
+      amostra('nada', 'nada entregue'),
+      el('span', { textContent: '·  ninguém lançou   |   0  conferido, não houve' }),
+    ]);
   }
 
-  async function salvar(row, input) {
-    const bruto = input.value.trim();
-    // Campo esvaziado NÃO apaga o lançamento: apagar é ato próprio, e um Tab
-    // apressado sobre um campo preenchido não deveria destruir o número.
-    // Devolvemos o valor de antes, que é o que o servidor tem.
-    if (bruto === '') {
-      input.value = row.quantidade == null ? '' : String(row.quantidade);
-      return;
-    }
+  /**
+   * O último mês que JÁ FECHOU no ano escolhido.
+   *
+   * Mês que ainda corre e mês futuro não recebem cor: pintar agosto de vermelho
+   * no dia 2 de agosto diria que se atrasou o que ainda nem começou, e pintar
+   * dezembro diria isso de um plano que só vence daqui a meio ano.
+   */
+  function mesLimite() {
+    const anoCorrente = hoje.getFullYear();
+    if (anoSelecionado < anoCorrente) return 12;
+    if (anoSelecionado > anoCorrente) return 0;
+    return hoje.getMonth();
+  }
 
-    const quantidade = Number(bruto);
-    if (!Number.isInteger(quantidade) || quantidade < 0) {
+  /**
+   * A cor de cada mês da linha, pela POSIÇÃO ACUMULADA no fim dele.
+   *
+   * COMPARAR O MÊS ISOLADO ESTAVA ERRADO, e o caso real que mostrou isso: a meta
+   * 1.1 de 2026 planejou 4 em abril, 1 em maio, 1 em junho e 1 em julho, e
+   * entregou 6 em maio, 2 em junho e 0 em julho. Julho ficava VERMELHO, embora o
+   * que ele pedia já estivesse entregue desde maio -- o trabalho foi adiantado, e
+   * a régua mensal não enxerga adiantamento nem recuperação de atraso.
+   *
+   * No acumulado, abril continua vermelho (no fim de abril não havia nada dos 4
+   * prometidos), e maio em diante fica verde: 6 contra 5, 8 contra 6, 8 contra 7.
+   * É a história certa, "atrasou em abril e recuperou em maio", e é a que o mês
+   * isolado não conta.
+   */
+  function acumuladoDaLinha(linha) {
+    const limite = mesLimite();
+    const cores = [];
+    let plan = 0;
+    let real = 0;
+
+    for (let mes = 1; mes <= 12; mes += 1) {
+      plan += valorDoMes(linha, mes, PLANEJAR) || 0;
+      real += valorDoMes(linha, mes, EXECUTAR) || 0;
+
+      let classe = '';
+      if (mes <= limite && plan > 0) {
+        if (real >= plan) classe = ' grade-pit__celula--atingiu';
+        else if (real > 0) classe = ' grade-pit__celula--parcial';
+        else classe = ' grade-pit__celula--nada';
+      }
+      cores[mes] = { plan, real, classe };
+    }
+    return cores;
+  }
+
+  /**
+   * Troca a célula por um campo, salva ao sair e volta ao texto.
+   *
+   * UM campo por vez, e não 444 na tela. A grade tem 37 linhas por 12 meses, e
+   * montar um `<input>` em cada uma pesaria o DOM sem nenhum ganho: só se edita
+   * uma célula de cada vez.
+   */
+  function editar(td, linha, mes) {
+    if (!podeEscrever || !linha.folha) return;
+    if (td.querySelector('input')) return;
+
+    const atual = valorDoMes(linha, mes, modo);
+
+    const input = el('input', {
+      className: 'grade-pit__edicao',
+      type: 'number',
+      min: '0',
+      step: '1',
+      value: atual == null ? '' : String(atual),
+      'aria-label': `${modo === PLANEJAR ? 'Planejado' : 'Realizado'} de ${MESES[mes - 1]} na meta ${codigoMetaPit(linha)}`,
+    });
+
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    input.select();
+
+    let encerrado = false;
+
+    const encerrar = async (salvar) => {
+      if (encerrado) return;
+      encerrado = true;
+
+      // `gravar` redesenha a LINHA inteira quando o valor muda, porque a cor
+      // acumulada dos meses seguintes depende dele. Aqui a célula só se refaz
+      // se nada tiver sido salvo: Escape, valor igual ou erro.
+      if (salvar) await gravar(linha, mes, input.value.trim(), atual);
+      if (td.querySelector('input')) desenharCelula(td, linha, mes);
+    };
+
+    input.addEventListener('blur', () => encerrar(true));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); encerrar(false); }
+      // Tab sai pelo `blur`, que já salva; o navegador leva o foco à próxima
+      // célula sozinho.
+    });
+  }
+
+  function valorDoMes(linha, mes, campo) {
+    const m = (linha.meses || []).find(x => Number(x.mes) === mes);
+    if (!m) return null;
+    return campo === PLANEJAR ? m.planejada : m.realizada;
+  }
+
+  async function gravar(linha, mes, bruto, anterior) {
+    // Campo esvaziado APAGA o número daquele modo, e é deliberado: é o único
+    // jeito de desfazer um lançamento errado sem uma segunda ação. O servidor
+    // apaga a linha inteira quando os dois números e os dois campos ficam nulos.
+    const valor = bruto === '' ? null : Number(bruto);
+
+    if (bruto !== '' && (!Number.isInteger(valor) || valor < 0)) {
       showError('A quantidade tem de ser um número inteiro, zero ou mais');
-      input.value = row.quantidade == null ? '' : String(row.quantidade);
       return;
     }
-    if (quantidade === row.quantidade) return;
+    if (valor === anterior) return;
 
-    const anterior = row.quantidade || 0;
     try {
       await salvarExecucaoPit({
-        meta_id: row.meta_id,
-        mes: mesSelecionado,
-        quantidade,
+        // `Number` porque o BIGSERIAL chega como STRING no JSON (o pg-promise
+        // não arrisca perder precisão), e o Joi desta rota é `.strict()`: ele
+        // recusa '18' com "meta_id must be a number" em vez de converter. A
+        // validação estrita é deliberada aqui, então quem converte é o cliente.
+        meta_id: Number(linha.meta_id),
+        mes,
+        // Só o campo do MODO vai no corpo. Omitir o outro é "não mexer nele", e
+        // é o que permite lançar o realizado sem carregar o plano junto.
+        [modo]: valor,
       });
       if (disposed) return;
 
-      // A mesma conta que o servidor fez. Refazer a consulta redesenharia a
-      // tabela e tiraria o foco de quem está descendo a grade com Tab.
-      row.quantidade = quantidade;
-      row.realizado = Number(row.realizado || 0) - anterior + quantidade;
-      atualizarLinha(row, input);
-      showSuccess('Execução lançada');
+      aplicarLocalmente(linha, mes, valor);
+      redesenharLinha(linha);
+      montarResumo();
+      showSuccess(modo === PLANEJAR ? 'Planejamento salvo' : 'Execução lançada');
     } catch (err) {
       if (disposed) return;
-      input.value = row.quantidade == null ? '' : String(row.quantidade);
-      showError(err.message || 'Erro ao lançar a execução');
+      showError(err.message || 'Erro ao salvar');
     }
   }
 
-  // Redesenha SÓ as duas células derivadas da linha alterada. A tabela não é
-  // reconstruída, então o campo em foco continua onde estava.
-  //
-  // A linha é achada A PARTIR DO CAMPO (`closest('tr')`), e não por um seletor
-  // com o id: o `data-table` não marca a linha com atributo nenhum, e inventar
-  // um casamento por índice quebraria na primeira ordenação de coluna.
-  function atualizarLinha(row, input) {
-    const tr = input.closest('tr');
+  // A mesma conta que o servidor fez. Refazer a consulta redesenharia a grade
+  // inteira e tiraria o foco de quem está percorrendo os meses com Tab.
+  function aplicarLocalmente(linha, mes, valor) {
+    if (!linha.meses) linha.meses = [];
+    let m = linha.meses.find(x => Number(x.mes) === mes);
+    if (!m) {
+      m = { mes, planejada: null, realizada: null };
+      linha.meses.push(m);
+    }
+    if (modo === PLANEJAR) m.planejada = valor;
+    else m.realizada = valor;
+
+    linha.planejado = linha.meses.reduce((t, x) => t + (x.planejada || 0), 0);
+    linha.realizado = linha.meses.reduce((t, x) => t + (x.realizada || 0), 0);
+    // O acumulado guardado envelheceu: mudar um mês muda a cor de todos os
+    // seguintes, que é justamente o que a régua acumulada faz.
+    linha.__acumulado = null;
+  }
+
+  function desenharCelula(td, linha, mes) {
+    const planejada = valorDoMes(linha, mes, PLANEJAR);
+    const realizada = valorDoMes(linha, mes, EXECUTAR);
+    const atual = mes === hoje.getMonth() + 1 && anoSelecionado === hoje.getFullYear();
+
+    // O acumulado é da LINHA inteira, então ele é calculado uma vez por
+    // redesenho e guardado nela. Recalcular a cada célula seria doze passadas
+    // sobre os mesmos doze meses.
+    if (!linha.__acumulado) linha.__acumulado = acumuladoDaLinha(linha);
+    const ate = linha.__acumulado[mes];
+
+    td.className = `grade-pit__celula${ate.classe}`
+      + (atual ? ' grade-pit__celula--mes-atual' : '');
+    // O `title` mostra as DUAS contas: o mês, que é o que a célula escreve, e o
+    // acumulado, que é o que a cor diz. Sem ele, uma célula verde com realizado
+    // zero se leria como erro.
+    td.title = `${MESES[mes - 1]}: planejado ${numero(planejada)}, realizado ${numero(realizada)}`
+      + `
+até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`;
+    td.innerHTML = '';
+    td.append(
+      el('span', { className: 'grade-pit__realizado', textContent: numero(realizada) }),
+      el('span', { className: 'grade-pit__planejado', textContent: numero(planejada) })
+    );
+  }
+
+  function linhaDaMeta(linha) {
+    const tr = el('tr', {});
+    // O `tr` fica na linha para o salvamento redesenhar SÓ ela. Sem isto, a
+    // única saída seria refazer a grade, e refazer a grade destrói a célula
+    // para onde o Tab acabou de levar o foco.
+    linha.__tr = tr;
+    tr.appendChild(el('td', { className: 'grade-pit__rotulo' }, [
+      el('span', { className: 'grade-pit__codigo', textContent: codigoMetaPit(linha) }),
+      linha.descricao || '',
+    ]));
+
+    for (let mes = 1; mes <= 12; mes += 1) {
+      const td = el('td', {});
+      desenharCelula(td, linha, mes);
+      td.addEventListener('click', () => editar(td, linha, mes));
+      tr.appendChild(td);
+    }
+
+    tr.append(...totaisDaLinha(linha));
+    return tr;
+  }
+
+  function totaisDaLinha(linha) {
+    return [
+      el('td', { className: 'grade-pit__total', textContent: String(linha.realizado ?? 0) }),
+      celulaPrevisto(linha),
+      el('td', { className: 'grade-pit__total', textContent: percentual(linha) }),
+    ];
+  }
+
+  /**
+   * Redesenha UMA linha depois de salvar: os doze meses e as três colunas da
+   * direita.
+   *
+   * OS DOZE, e não só o mês editado: a cor é do ACUMULADO, então mexer em maio
+   * muda a cor de junho até dezembro. Redesenhar só a célula tocada deixaria a
+   * linha contando duas histórias ao mesmo tempo.
+   */
+  function redesenharLinha(linha) {
+    const tr = linha.__tr;
     if (!tr) return;
-    const celulas = tr.querySelectorAll('td');
-    // As duas últimas colunas são Acumulado e %, nesta ordem.
-    if (celulas.length < 2) return;
-    const p = percentual(row);
-    celulas[celulas.length - 2].textContent = String(row.realizado ?? 0);
-    celulas[celulas.length - 1].textContent = p === null
-      ? '-'
-      : `${p.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+
+    const celulas = [...tr.children];
+    for (let mes = 1; mes <= 12; mes += 1) {
+      if (celulas[mes]) desenharCelula(celulas[mes], linha, mes);
+    }
+    // As três da direita são substituídas: elas não têm estado nem ouvinte.
+    for (let i = 0; i < 3; i += 1) tr.removeChild(tr.lastChild);
+    tr.append(...totaisDaLinha(linha));
+
+    redesenharGrupo(linha.numero_meta);
+  }
+
+  function redesenharGrupo(numeroMeta) {
+    const tr = gruposPorNumero.get(numeroMeta);
+    if (!tr) return;
+    const totais = subtotalDoGrupo(numeroMeta);
+    const celulas = [...tr.children];
+    celulas[celulas.length - 3].textContent = totais.realizado;
+    celulas[celulas.length - 2].textContent = totais.previsto;
+    celulas[celulas.length - 1].textContent = totais.percentual;
+  }
+
+  function subtotalDoGrupo(numeroMeta) {
+    const doGrupo = linhas.filter(l => l.numero_meta === numeroMeta && l.folha);
+    const realizado = doGrupo.reduce((t, l) => t + Number(l.realizado || 0), 0);
+    const previsto = doGrupo.reduce((t, l) => t + Number(l.quantidade_prevista || 0), 0);
+    return {
+      realizado: String(realizado),
+      previsto: previsto ? String(previsto) : '·',
+      percentual: previsto
+        ? `${((100 * realizado) / previsto).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+        : '·',
+    };
+  }
+
+  /**
+   * A quantidade do ANO, com a conferência contra a soma do planejado.
+   *
+   * Na planilha isso é a coluna "Total" ao lado da "Qnt", conferida com o olho.
+   * Aqui a divergência fica vermelha e o `title` diz de quanto ela é: um plano
+   * que não fecha com o compromisso do ano é erro de digitação em 100% dos
+   * casos, e ele só aparece se alguém o procurar.
+   */
+  function celulaPrevisto(linha) {
+    const previsto = linha.quantidade_prevista;
+    const planejado = linha.planejado ?? 0;
+
+    if (previsto == null) {
+      return el('td', {
+        className: 'grade-pit__total',
+        textContent: '·',
+        title: 'Sem quantidade prevista cadastrada. Ela se preenche na tela Metas do PIT.',
+      });
+    }
+
+    const bate = planejado === previsto;
+    return el('td', {
+      className: `grade-pit__total${bate ? '' : ' grade-pit__divergente'}`,
+      textContent: `${previsto}${linha.unidade ? ` ${linha.unidade}` : ''}`,
+      title: bate
+        ? `Planejado nos doze meses: ${planejado}`
+        : `O plano soma ${planejado} e o ano promete ${previsto}. Faltam ${previsto - planejado}.`,
+    });
+  }
+
+  function percentual(linha) {
+    const previsto = Number(linha.quantidade_prevista);
+    if (!previsto || previsto <= 0) return '·';
+    const p = (100 * Number(linha.realizado || 0)) / previsto;
+    return `${p.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+  }
+
+  function desenhar() {
+    grade.innerHTML = '';
+    gruposPorNumero.clear();
+
+    if (!linhas.length) {
+      grade.appendChild(el('p', {
+        style: { padding: '24px', color: 'var(--text-secondary)' },
+        textContent: 'Nenhuma meta cadastrada neste ano. Comece pela tela Metas do PIT.',
+      }));
+      resumo.textContent = '';
+      return;
+    }
+
+    const cabecalho = el('tr', {}, [
+      el('th', { className: 'grade-pit__rotulo', textContent: 'Meta' }),
+      ...MESES.map(m => el('th', { textContent: m })),
+      el('th', { textContent: 'Realiz.' }),
+      el('th', { textContent: 'Ano' }),
+      el('th', { textContent: '%' }),
+    ]);
+
+    const corpo = el('tbody', {});
+
+    // As linhas vêm ordenadas por (numero_meta, item NULLS FIRST), então o
+    // cabeçalho de cada meta chega antes dos itens dela.
+    for (const linha of linhas) {
+      if (!linha.folha) {
+        const totais = subtotalDoGrupo(linha.numero_meta);
+        const tr = el('tr', { className: 'grade-pit__grupo' }, [
+          el('td', { className: 'grade-pit__rotulo' }, [
+            el('span', { className: 'grade-pit__codigo', textContent: `Meta ${linha.numero_meta}` }),
+            linha.descricao || '',
+          ]),
+          el('td', { colSpan: '12' }),
+          el('td', { className: 'grade-pit__total', textContent: totais.realizado }),
+          el('td', { className: 'grade-pit__total', textContent: totais.previsto }),
+          el('td', { className: 'grade-pit__total', textContent: totais.percentual }),
+        ]);
+        gruposPorNumero.set(linha.numero_meta, tr);
+        corpo.appendChild(tr);
+        continue;
+      }
+      corpo.appendChild(linhaDaMeta(linha));
+    }
+
+    grade.appendChild(el('table', { className: 'grade-pit__tabela' }, [
+      el('thead', {}, [cabecalho]),
+      corpo,
+    ]));
+
+    montarResumo();
+  }
+
+  function montarResumo() {
+    const folhas = linhas.filter(l => l.folha);
+    const semPrevisto = folhas.filter(l => l.quantidade_prevista == null).length;
+    const divergentes = folhas.filter(l => l.quantidade_prevista != null
+      && (l.planejado ?? 0) !== l.quantidade_prevista).length;
+
+    resumo.innerHTML = '';
+    const partes = [`${folhas.length} meta(s) em ${anoSelecionado}.`];
+    if (semPrevisto) partes.push(`${semPrevisto} sem quantidade do ano.`);
+    if (divergentes) partes.push(`${divergentes} com o plano fora da quantidade do ano.`);
+    resumo.textContent = partes.join(' ');
   }
 
   async function loadAnos() {
@@ -230,36 +502,19 @@ export async function renderExecucaoPit(container, _ctx) {
   }
 
   async function load() {
-    table.update({ loading: true });
     try {
-      // DUAS consultas, e não uma: a grade do mês traz o lançamento daquele mês
-      // (e diz se ele existe), e o resumo traz o acumulado até ele. Somar no
-      // cliente daria um acumulado que ignora os meses que a grade não carregou.
-      const [doMes, resumo] = await Promise.all([
-        getExecucaoMes(anoSelecionado, mesSelecionado),
-        getResumoPit(anoSelecionado, mesSelecionado),
-      ]);
+      const dados = await getGradePit(anoSelecionado);
       if (disposed) return;
-
-      const acumuladoPorMeta = new Map(
-        (resumo || []).map(r => [String(r.meta_id), Number(r.realizado || 0)])
-      );
-
-      linhas = (doMes || []).map(m => ({
-        ...m,
-        // `id` para o data-table casar a linha, e `meta_id` continua sendo a
-        // chave de negócio.
-        id: m.meta_id,
-        quantidade: m.quantidade == null ? null : Number(m.quantidade),
-        realizado: acumuladoPorMeta.get(String(m.meta_id)) || 0,
+      linhas = (dados || []).map(l => ({
+        ...l,
+        meses: (l.meses || []).map(m => ({ ...m, mes: Number(m.mes) })),
       }));
-
-      table.update({ rows: linhas, loading: false });
+      desenhar();
     } catch (err) {
       if (disposed) return;
       linhas = [];
-      table.update({ rows: [], loading: false });
-      showError(err.message || 'Erro ao carregar a execução do PIT');
+      grade.innerHTML = '';
+      showError(err.message || 'Erro ao carregar a grade do PIT');
     }
   }
 
@@ -268,6 +523,5 @@ export async function renderExecucaoPit(container, _ctx) {
 
   return () => {
     disposed = true;
-    table._cleanup();
   };
 }

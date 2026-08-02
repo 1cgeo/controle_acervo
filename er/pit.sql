@@ -86,13 +86,35 @@ COMMENT ON TABLE pit.meta IS
 
 CREATE INDEX idx_meta_ano ON pit.meta (ano);
 
--- Execução MENSAL de uma meta: o "Prontos no mês" da 2.1.
+-- O MÊS de uma meta: o que ela PLANEJOU entregar e o que ENTREGOU.
+--
+-- DOIS NÚMEROS NA MESMA LINHA, e não duas tabelas (chefe, 2026-08-02). A
+-- planilha que a Divisão preenche tem duas abas, PLANEJ_PIT e EXEC_PIT, com as
+-- MESMAS linhas, as mesmas doze colunas de mês e a mesma quantidade anual: a
+-- única diferença entre elas é qual dos dois números a célula guarda. Duas
+-- tabelas repetiriam a chave (meta, mês) e deixariam a comparação, que é a
+-- razão de as duas existirem, a um JOIN de distância.
+--
+-- O PLANEJAMENTO É MENSAL, e isso é o que `pit.meta.quantidade_prevista`
+-- sozinha não dizia: a meta 1.1 promete 24 no ano, distribuídos em abril 4,
+-- maio 1, julho 16 e agosto 3. A soma do planejado TEM de bater com a
+-- quantidade prevista, e é a tela que confere -- na planilha essa conferência é
+-- a coluna "Total" ao lado da "Qnt", feita com o olho.
+--
+-- OS DOIS SÃO ANULÁVEIS, e o nulo é uma afirmação: "ninguém lançou" é diferente
+-- de "conferi e não houve", que é o zero. Enquanto a linha só existia para o
+-- realizado, a ausência DA LINHA dizia isso; agora que ela também guarda o
+-- plano, a linha existe desde o começo do ano e o nulo é quem carrega o
+-- recado. O CHECK do fim recusa a linha que não diz nada: quando os quatro
+-- campos ficam nulos, o controlador apaga a linha em vez de guardá-la vazia.
+--
+-- O REALIZADO PODE PASSAR DO PLANEJADO, e passa: a meta 4.1 de 2026 planejou
+-- 327 e já entregou mais de cinco mil. Não há teto em lugar nenhum.
 --
 -- LANÇAMENTO À MÃO, para TODA meta (chefe, 2026-08-02). No SAP a régua era
 -- `lote_id IS NULL`: meta de produção tinha o realizado calculado das
 -- atividades, e só o resto se digitava. Aqui não existe essa régua, porque
--- enquanto o SAP não for absorvido não há de onde calcular. Quando ele entrar,
--- é aqui que nasce a coluna que diz qual meta deixa de ser digitada.
+-- enquanto o SAP não for absorvido não há de onde calcular.
 --
 -- O CUSTO ESTÁ ACEITO, e vale escrever: a meta 4 (impressão) o SCA JÁ sabe
 -- somar, porque `mapoteca.pedido.meta_pit_id` liga o pedido à meta e é disso
@@ -100,13 +122,20 @@ CREATE INDEX idx_meta_ano ON pit.meta (ano);
 -- lá podem divergir, e quando divergirem a 2.1 e o RTM do mesmo mês vão se
 -- contradizer.
 --
+-- O NOME `execucao` FICOU, embora a tabela guarde as duas coisas desde
+-- 2026-08-02. Renomeá-la orfanaria o rastro: `auditoria.evento` guarda o nome da
+-- tabela em cada linha, e o schema `auditoria` não tem UPDATE nem DELETE para a
+-- aplicação, de propósito. O nome imperfeito custa menos do que uma trilha que
+-- deixa de casar com o mapa de entidades.
+--
 -- SEM COLUNA `ano`: ele vem da meta. Uma cópia aqui permitiria lançar 2025 numa
 -- meta de 2026, e nada acusaria.
 CREATE TABLE pit.execucao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   meta_id BIGINT NOT NULL REFERENCES pit.meta (id) ON DELETE CASCADE,
   mes SMALLINT NOT NULL CHECK (mes BETWEEN 1 AND 12),
-  quantidade INTEGER NOT NULL DEFAULT 0 CHECK (quantidade >= 0),
+  quantidade_planejada INTEGER CHECK (quantidade_planejada IS NULL OR quantidade_planejada >= 0),
+  quantidade INTEGER CHECK (quantidade IS NULL OR quantidade >= 0),
   -- A data em que aquilo ficou pronto, quando a meta se cumpre num ato só
   -- (entregar um relatório) em vez de por quantidade acumulada.
   data_conclusao DATE,
@@ -117,11 +146,17 @@ CREATE TABLE pit.execucao(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
   -- Uma linha por meta por mês. Duas seriam duas verdades sobre o mesmo mês, e
   -- a soma do ano contaria as duas.
-  UNIQUE (meta_id, mes)
+  UNIQUE (meta_id, mes),
+  CONSTRAINT execucao_diz_alguma_coisa CHECK (
+    quantidade_planejada IS NOT NULL
+    OR quantidade IS NOT NULL
+    OR data_conclusao IS NOT NULL
+    OR observacao IS NOT NULL
+  )
 );
 
 COMMENT ON TABLE pit.execucao IS
-    'Execução mensal lançada à mão para uma meta do PIT. Uma linha por (meta, mês); o ano vem da meta.';
+    'O mês de uma meta do PIT: o que ela planejou entregar e o que entregou. Uma linha por (meta, mês); o ano vem da meta.';
 
 CREATE INDEX idx_execucao_meta ON pit.execucao (meta_id);
 

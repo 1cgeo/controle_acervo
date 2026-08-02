@@ -149,10 +149,14 @@ module.exports = {
     modulo: 'plataforma',
     entidade: 'meta',
     agregado: (t, linha) => linha.meta_id,
-    resumo: linha => `Execução do mês ${String(linha.mes).padStart(2, '0')}`,
+    resumo: linha => `Mês ${String(linha.mes).padStart(2, '0')}`,
     campos: {
       meta_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
       mes: { rotulo: 'Mês', tipo: 'numero' },
+      // O PLANEJADO do mes entrou em 2026-08-02, junto com a grade: a planilha
+      // da Divisao tem duas abas com as mesmas linhas, e a diferenca entre elas
+      // e qual dos dois numeros a celula guarda.
+      quantidade_planejada: { rotulo: 'Quantidade planejada', tipo: 'numero' },
       quantidade: { rotulo: 'Quantidade realizada', tipo: 'numero' },
       data_conclusao: { rotulo: 'Data de conclusão', tipo: 'data' },
       observacao: { rotulo: 'Observação' }

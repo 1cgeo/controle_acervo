@@ -47,9 +47,8 @@ models.atualizar = Joi.object().keys({
 
 // --- Execução mensal --------------------------------------------------------
 
-models.execucaoDoMesQuery = Joi.object().keys({
-  ano: Joi.number().integer().required(),
-  mes: Joi.number().integer().min(1).max(12).required()
+models.gradeQuery = Joi.object().keys({
+  ano: Joi.number().integer().required()
 })
 
 // O `mes` é OPCIONAL aqui, e a ausência dele muda a resposta: sem mês, o
@@ -64,12 +63,19 @@ models.metaIdParams = Joi.object().keys({
   metaId: Joi.number().integer().required()
 })
 
+// UMA CÉLULA da grade. Os quatro campos são OPCIONAIS, e a diferença entre
+// omitir e mandar nulo é o contrato desta rota: omitir é NÃO MEXER, mandar nulo
+// é APAGAR. É o que permite o modo "Executar" gravar o realizado sem carregar o
+// plano junto, e o modo "Planejar" fazer o contrário, escrevendo os dois na
+// mesma linha sem um limpar o outro.
+//
+// Zero é valor legítimo e diferente de nulo nos dois números: "conferi o mês e
+// não houve" é uma resposta, e ela some da tela se for tratada como ausência.
 models.salvarExecucao = Joi.object().keys({
   meta_id: Joi.number().integer().strict().required(),
   mes: Joi.number().integer().strict().min(1).max(12).required(),
-  // Zero é valor legítimo e diferente de não lançado: "conferi o mês e não
-  // houve" é uma resposta, e ela some da tela se for tratada como ausência.
-  quantidade: Joi.number().integer().strict().min(0).required(),
+  quantidade_planejada: Joi.number().integer().strict().min(0).allow(null),
+  quantidade: Joi.number().integer().strict().min(0).allow(null),
   data_conclusao: dia.allow(null, ''),
   observacao: Joi.string().allow(null, '')
 })

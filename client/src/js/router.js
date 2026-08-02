@@ -169,11 +169,27 @@ export function adminLoader() {
  * abrir uma tela que responderia 403, e le a foto do login, que envelhece.
  * @returns {true|string}
  */
-export function rastreabilidadeLoader() {
+/**
+ * Guard: administrador global OU gerente de qualquer modulo.
+ *
+ * MESMA pergunta do `rastreabilidadeLoader`, e por isso ele passou a chamar
+ * este: a resposta e uma so, e duas copias divergiriam no dia em que o criterio
+ * mudasse. Nasceu em 2026-08-02 para o PIT, cuja leitura deixou de ser de
+ * qualquer pessoa logada (chefe).
+ *
+ * O servidor cobra o mesmo, em `login/verify_gerente.js`, lendo o perfil do
+ * BANCO. Aqui e so ergonomia: evita abrir uma tela que responderia 403.
+ * @returns {true|string}
+ */
+export function gerenteLoader() {
   const auth = authLoader();
   if (auth !== true) return auth;
   if (!isAdmin() && !ehGerenteDeAlgumModulo()) return '/unauthorized';
   return true;
+}
+
+export function rastreabilidadeLoader() {
+  return gerenteLoader();
 }
 
 /**

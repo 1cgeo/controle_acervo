@@ -77,11 +77,16 @@ export const createMetaPit = (body) => apiPost('/metas', body);
 export const updateMetaPit = (id, body) => apiPut(`/metas/${id}`, body);
 export const deleteMetaPit = (id) => apiDelete(`/metas/${id}`);
 
-// ---- Execucao mensal das metas (2.1 do RPCMTec) ----
-// Absorvida do SAP em 2026-08-02, junto com as colunas de PROMESSA da meta. LER
-// segue a meta (qualquer pessoa logada); ESCREVER e do administrador global.
-export const getExecucaoMes = (ano, mes) =>
-  apiGet(`/metas/execucao?ano=${ano}&mes=${mes}`);
+// ---- O mes de cada meta: planejado e realizado (2.1 do RPCMTec) ----
+// Absorvida do SAP em 2026-08-02, junto com as colunas de PROMESSA da meta.
+//
+// UMA GRADE do ano, e nao um mes por vez: a planilha da Divisao tem duas abas
+// (PLANEJ_PIT e EXEC_PIT) com as MESMAS linhas e as mesmas doze colunas, e a
+// diferenca entre elas e qual dos dois numeros a celula guarda.
+//
+// LER passou a ser do gerente de qualquer modulo e do administrador (chefe,
+// 2026-08-02); ESCREVER continua sendo do administrador global.
+export const getGradePit = (ano) => apiGet(`/metas/execucao?ano=${ano}`);
 export const getResumoPit = (ano, mes) =>
   apiGet(mes ? `/metas/execucao/resumo?ano=${ano}&mes=${mes}` : `/metas/execucao/resumo?ano=${ano}`);
 export const getExecucaoDaMeta = (metaId) => apiGet(`/metas/execucao/meta/${metaId}`);

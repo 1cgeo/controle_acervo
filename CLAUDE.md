@@ -170,8 +170,12 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Rot
 
 - **`pit.meta` é dado de PLATAFORMA**, consumido pelos três módulos. Ler exige só login; escrever
   exige administrador. A numeração NÃO é estável entre anos: guarde o `id`, nunca o código.
-- **Só a meta-FOLHA recebe lançamento de execução.** A meta subdividida tem cabeçalho (`item` nulo) e
-  itens, e quem entrega é o item.
+- **Só a meta-FOLHA recebe lançamento.** A meta subdividida tem cabeçalho (`item` nulo) e itens, e
+  quem entrega é o item.
+- **`pit.execucao` guarda o PLANEJADO e o REALIZADO do mês**, nos dois anuláveis: nulo é "ninguém
+  lançou" e zero é "conferi e não houve". A cor da grade compara o ACUMULADO, nunca o mês sozinho,
+  senão trabalho adiantado aparece como atraso. Ler é do gerente e do administrador
+  (`verifyGerente`); escrever é do administrador.
 - **Extra-PIT é a exceção AUTORIZADA**, e `documento_autorizacao` é obrigatório. Não derive de
   `previsto_pit`.
 - O RPCMTec gera 18 subseções; 2.2, 2.3, 2.4 e 2.5 leem a produção e ficam no SAP.
