@@ -61,9 +61,12 @@ CREATE INDEX idx_edicao_ano ON rpcmtec.edicao (ano);
 -- fato visto dos dois lados: um curso tem nome, instituição, local e período em
 -- qualquer dos casos. O que muda são três colunas, e elas são anuláveis por
 -- isso: `efetivo_capacitado` só faz sentido na ministrada (quantos de fora nós
--- treinamos), `militares` e `plano_codigo` só na recebida (quem foi, e sob que
--- Plano/Código, ex.: 'C25/DCT003 PCE-EECN'). Duas tabelas com dez colunas
--- iguais divergiriam na primeira que fosse acrescentada a uma só.
+-- treinamos) e `plano_codigo` só na recebida (sob que Plano/Código, ex.:
+-- 'C25/DCT003 PCE-EECN'). Duas tabelas com dez colunas iguais divergiriam na
+-- primeira que fosse acrescentada a uma só.
+--
+-- QUEM da Divisão participou sai de `rpcmtec.capacitacao_militar`, e não de um
+-- texto: ver o comentário dela, abaixo.
 --
 -- O ANO é coluna, e não derivado de `data_inicio`: capacitação PREVISTA para o
 -- ano ainda não tem data, e é justamente ela que precisa aparecer na lista do
@@ -86,7 +89,6 @@ CREATE TABLE rpcmtec.capacitacao(
   data_inicio DATE,
   data_fim DATE,
   efetivo_capacitado INTEGER CHECK (efetivo_capacitado IS NULL OR efetivo_capacitado >= 0),
-  militares TEXT,
   plano_codigo VARCHAR(255),
   documento VARCHAR(255),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -100,5 +102,34 @@ COMMENT ON TABLE rpcmtec.capacitacao IS
     'Capacitação ministrada (2.6 do RPCMTec) ou recebida (6.2). O tipo decide quais colunas a linha preenche.';
 
 CREATE INDEX idx_capacitacao_ano ON rpcmtec.capacitacao (ano);
+
+-- Quem da DIVISÃO participou da capacitação, ligado ao cadastro (chefe,
+-- 2026-08-02). Era um `militares TEXT` até então, e texto livre não casa com
+-- pessoa: "Cap Fulano" e "Fulano" são a mesma pessoa e duas strings, e nenhuma
+-- das duas responde "de quais capacitações o Fulano participou".
+--
+-- O PAPEL NÃO É COLUNA: ele vem do `tipo_id` da capacitação. Na MINISTRADA quem
+-- está aqui é instrutor ou monitor (nós ensinamos); na RECEBIDA é quem foi
+-- capacitado (nós aprendemos). Uma coluna de papel seria a mesma informação
+-- gravada duas vezes, e nada impediria as duas de divergirem.
+--
+-- `efetivo_capacitado` continua existindo e NÃO se confunde com esta tabela: lá
+-- é a contagem de gente DE FORA que nós treinamos, e aqui é gente NOSSA. Numa
+-- capacitação ministrada as duas coisas coexistem, e o relatório pede as duas.
+--
+-- ON DELETE CASCADE: vínculo sem capacitação não é histórico de nada. É a mesma
+-- razão do `dgeo.usuario_perfil`.
+CREATE TABLE rpcmtec.capacitacao_militar(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  capacitacao_id BIGINT NOT NULL REFERENCES rpcmtec.capacitacao (id) ON DELETE CASCADE,
+  usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+  UNIQUE (capacitacao_id, usuario_uuid)
+);
+
+COMMENT ON TABLE rpcmtec.capacitacao_militar IS
+    'Quem da Divisão participou da capacitação. O papel vem do tipo dela: instrutor na ministrada, capacitado na recebida.';
+
+CREATE INDEX idx_capacitacao_militar_usuario
+    ON rpcmtec.capacitacao_militar (usuario_uuid);
 
 COMMIT;

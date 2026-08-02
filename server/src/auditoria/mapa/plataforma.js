@@ -217,10 +217,27 @@ module.exports = {
       data_fim: { rotulo: 'Término', tipo: 'data' },
       // Só na MINISTRADA: quantos de fora nós treinamos.
       efetivo_capacitado: { rotulo: 'Efetivo capacitado', tipo: 'numero' },
-      // Só na RECEBIDA: quem foi, e sob que Plano/Código.
-      militares: { rotulo: 'Militares' },
+      // Só na RECEBIDA: sob que Plano/Código.
       plano_codigo: { rotulo: 'Plano/Código' },
       documento: { rotulo: 'Documento' }
+    }
+  },
+
+  // Quem da Divisao participou. ESTA ENTRADA DESCREVE A LISTA, e nao a linha: o
+  // vinculo e regravado INTEIRO a cada salvamento, entao auditar linha a linha
+  // faria o historico dizer "removeu 3, acrescentou 3" toda vez que alguem
+  // abrisse e salvasse. E o mesmo desenho dos itens do DFD.
+  'rpcmtec.capacitacao_militar': {
+    modulo: 'plataforma',
+    entidade: 'capacitacao',
+    agregado: (t, linha) => linha.capacitacao_id,
+    resumo: linha => `${(linha.militares || []).length} militar(es) da Divisão`,
+    campos: {
+      // SINTETICO: nao ha coluna `militares` em `rpcmtec.capacitacao_militar`.
+      // Ela e montada pelo controller com a lista inteira em texto, que e o que
+      // permite o evento ser do PAI.
+      militares: { rotulo: 'Militares da Divisão', tipo: 'lista', sintetico: true },
+      capacitacao_id: { rotulo: 'Capacitação', entidade: 'capacitacao' }
     }
   }
 }

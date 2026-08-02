@@ -13,6 +13,7 @@ vi.mock('@services/plataforma-service.js', async () => {
     getCapacitacoes: vi.fn(() => Promise.resolve([])),
     getAnosCapacitacao: vi.fn(() => Promise.resolve([2026])),
     deleteCapacitacao: vi.fn(() => Promise.resolve()),
+    getUsuarios: vi.fn(() => Promise.resolve([])),
   };
 });
 
@@ -37,7 +38,10 @@ const MINISTRADA = {
   tipo_id: 1, tipo: 'Ministrada', situacao_id: 3, situacao: 'Concluída',
   instituicoes: 'CMS', local_realizacao: '1 CGEO',
   data_inicio: '2026-07-06', data_fim: '2026-07-10',
-  efetivo_capacitado: 18, militares: null, plano_codigo: null,
+  efetivo_capacitado: 18, plano_codigo: null,
+  // Quem MINISTROU e gente nossa, e nao se confunde com o efetivo capacitado,
+  // que e a contagem de gente de fora.
+  militares: [{ usuario_uuid: 'u1', nome: 'Fulano de Tal', nome_guerra: 'Fulano', posto_abrev: 'Cap' }],
 };
 
 const RECEBIDA = {
@@ -45,10 +49,17 @@ const RECEBIDA = {
   tipo_id: 2, tipo: 'Recebida', situacao_id: 2, situacao: 'Em execução',
   instituicoes: 'EsIME', local_realizacao: null,
   data_inicio: '2026-07-20', data_fim: null,
-  efetivo_capacitado: null, militares: 'Cap Fulano', plano_codigo: 'C25/DCT003',
+  efetivo_capacitado: null, plano_codigo: 'C25/DCT003',
+  militares: [
+    { usuario_uuid: 'u1', nome: 'Fulano de Tal', nome_guerra: 'Fulano', posto_abrev: 'Cap' },
+    { usuario_uuid: 'u2', nome: 'Beltrano', nome_guerra: 'Beltrano', posto_abrev: '2º Sgt' },
+  ],
 };
 
-const ultimaColuna = (container) => [...container.querySelectorAll('tbody tr')]
+// [Capacitacao, Situacao, Periodo, Instituicoes, Local, <do tipo>, Militares, acoes]
+const colunaDoTipo = (container) => [...container.querySelectorAll('tbody tr')]
+  .map(tr => [...tr.querySelectorAll('td')].slice(-3, -2)[0]?.textContent);
+const colunaMilitares = (container) => [...container.querySelectorAll('tbody tr')]
   .map(tr => [...tr.querySelectorAll('td')].slice(-2, -1)[0]?.textContent);
 
 describe('capacitação em duas telas', () => {
@@ -65,8 +76,10 @@ describe('capacitação em duas telas', () => {
 
     expect(getCapacitacoes).toHaveBeenCalledWith(new Date().getFullYear(), 1);
     expect(container.querySelector('.page__title').textContent).toBe('Capacitação ministrada');
-    // Quantos de FORA nós treinamos.
-    expect(ultimaColuna(container)).toEqual(['18']);
+    // Quantos de FORA nós treinamos, contra quem NOSSO ministrou. As duas coisas
+    // coexistem numa ministrada, e o relatório pede as duas.
+    expect(colunaDoTipo(container)).toEqual(['18']);
+    expect(colunaMilitares(container)).toEqual(['Cap Fulano']);
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -78,8 +91,9 @@ describe('capacitação em duas telas', () => {
 
     expect(getCapacitacoes).toHaveBeenCalledWith(new Date().getFullYear(), 2);
     expect(container.querySelector('.page__title').textContent).toBe('Capacitação recebida');
-    // Quem da Divisão foi.
-    expect(ultimaColuna(container)).toEqual(['Cap Fulano']);
+    expect(colunaDoTipo(container)).toEqual(['C25/DCT003']);
+    // Os nomes saem do CADASTRO, e a célula os junta.
+    expect(colunaMilitares(container)).toEqual(['Cap Fulano, 2º Sgt Beltrano']);
 
     if (typeof cleanup === 'function') cleanup();
   });

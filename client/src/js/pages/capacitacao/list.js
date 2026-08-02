@@ -7,6 +7,7 @@ import {
   getCapacitacoes,
   getAnosCapacitacao,
   deleteCapacitacao,
+  getUsuarios,
 } from '@services/plataforma-service.js';
 import { openCapacitacaoDialog, MINISTRADA, RECEBIDA } from './capacitacao-dialog.js';
 
@@ -33,11 +34,16 @@ function criarTela(tipoId, textos) {
   return async function render(container, _ctx) {
     let disposed = false;
     let anoSelecionado = new Date().getFullYear();
+    // O cadastro alimenta o seletor de militares do formulário. Carregado UMA
+    // vez: ele não muda entre uma capacitação e outra.
+    let usuarios = [];
 
     const newBtn = el('button', {
       className: 'btn btn--primary',
       type: 'button',
-      onClick: () => openCapacitacaoDialog({ ano: anoSelecionado, tipoId, onSaved: load }),
+      onClick: () => openCapacitacaoDialog({
+        ano: anoSelecionado, tipoId, usuarios, onSaved: load,
+      }),
     }, [svgIcon(ICONS.add, 16), textos.rotuloNovo]);
 
     const anoFilter = createSelectField({
@@ -69,6 +75,15 @@ function criarTela(tipoId, textos) {
         { key: 'instituicoes', label: 'Instituições', render: (row) => row.instituicoes || '-' },
         { key: 'local_realizacao', label: 'Local', render: (row) => row.local_realizacao || '-' },
         textos.coluna,
+        // Os militares vêm do CADASTRO desde 2026-08-02, e a célula os junta
+        // aqui: quem monta a frase do relatório é o gerador.
+        {
+          key: 'militares',
+          label: textos.colunaMilitares,
+          render: (row) => ((row.militares || []).length
+            ? row.militares.map(m => `${m.posto_abrev} ${m.nome_guerra}`.trim()).join(', ')
+            : '-'),
+        },
       ],
       rows: [],
       searchable: true,
@@ -79,7 +94,9 @@ function criarTela(tipoId, textos) {
         {
           icon: ICONS.edit,
           title: 'Editar',
-          onClick: (row) => openCapacitacaoDialog({ capacitacao: row, tipoId, onSaved: load }),
+          onClick: (row) => openCapacitacaoDialog({
+            capacitacao: row, tipoId, usuarios, onSaved: load,
+          }),
         },
         {
           icon: ICONS.delete,
@@ -102,6 +119,31 @@ function criarTela(tipoId, textos) {
       table.element,
     ]);
     container.appendChild(page);
+
+    async function loadUsuarios() {
+      try {
+        const lista = await getUsuarios();
+        if (disposed) return;
+        // `GET /usuarios` chama a abreviatura do posto de `tipo_posto_grad`, e o
+        // seletor a chama de `posto_abrev`. A tradução mora aqui, num lugar só.
+        usuarios = (lista || [])
+          .filter(u => u.ativo)
+          .map(u => ({
+            uuid: u.uuid,
+            nome: u.nome,
+            nome_guerra: u.nome_guerra,
+            posto_abrev: u.tipo_posto_grad,
+            tipo_posto_grad_id: u.tipo_posto_grad_id,
+            ativo: true,
+          }))
+          .sort((a, b) => (b.tipo_posto_grad_id - a.tipo_posto_grad_id)
+            || a.nome_guerra.localeCompare(b.nome_guerra));
+      } catch (err) {
+        // Sem o cadastro a tela continua listando; só o seletor do formulário
+        // nasce vazio. Não vale interromper a leitura por isto.
+        usuarios = [];
+      }
+    }
 
     async function loadAnos() {
       let anos = [];
@@ -148,6 +190,7 @@ function criarTela(tipoId, textos) {
       }
     }
 
+    await loadUsuarios();
     await loadAnos();
     await load();
 
@@ -163,13 +206,15 @@ export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
   titulo: 'Capacitação ministrada',
   rotuloNovo: 'Nova capacitação',
   vazio: 'Nenhuma capacitação ministrada cadastrada',
-  // Quantas pessoas DE FORA nós treinamos.
+  // Quantas pessoas DE FORA nós treinamos. Quem MINISTROU é gente nossa, e sai
+  // na coluna ao lado.
   coluna: {
     key: 'efetivo_capacitado',
     label: 'Efetivo capacitado',
     sortable: true,
     render: (row) => (row.efetivo_capacitado == null ? '-' : String(row.efetivo_capacitado)),
   },
+  colunaMilitares: 'Instrutores',
 });
 
 /** Capacitação RECEBIDA (#/capacitacao_recebida), em Efetivo. Subseção 6.2. */
@@ -177,10 +222,11 @@ export const renderCapacitacaoRecebida = criarTela(RECEBIDA, {
   titulo: 'Capacitação recebida',
   rotuloNovo: 'Nova capacitação',
   vazio: 'Nenhuma capacitação recebida cadastrada',
-  // Quem da Divisão está em curso, e sob que Plano/Código.
+  // Sob que Plano/Código. Quem foi sai na coluna ao lado.
   coluna: {
-    key: 'militares',
-    label: 'Militares',
-    render: (row) => row.militares || '-',
+    key: 'plano_codigo',
+    label: 'Plano / Código',
+    render: (row) => row.plano_codigo || '-',
   },
+  colunaMilitares: 'Militares',
 });

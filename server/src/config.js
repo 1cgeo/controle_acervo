@@ -53,8 +53,12 @@ dotenv.config({
 // `rpcmtec.aproveitamento_mes` sai, e entram `dgeo.efetivo_periodo` e
 // `dgeo.impedimento`. Exigida: a subsecao 6.1 do relatorio le as duas, e num
 // banco 1.15.0 o gerador quebra na tabela que nao existe.
+// 1.17.0 liga a capacitacao ao CADASTRO (2026-08-02): `capacitacao.militares`
+// (texto) sai e entra `rpcmtec.capacitacao_militar`. Exigida: a 6.2 do relatorio
+// e a tela leem a tabela nova, e num banco 1.16.0 as duas quebram na coluna que
+// deixou de existir.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.16.0'
+const MIN_DATABASE_VERSION = '1.17.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

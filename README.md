@@ -234,7 +234,7 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
 | `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
 | `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o realizado por mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
-| `rpcmtec` | `edicao` (o metadado da edição mensal) e `capacitacao` (a ENTRADA digitada das subseções 2.6 e 6.2). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
+| `rpcmtec` | `edicao` (o metadado da edição mensal), `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
 | `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
 | `limites` | Limite político-administrativo e área de suprimento |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
@@ -249,7 +249,7 @@ A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas 
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.16.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
+A versão do schema é **1.17.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
 
 ### Atualização de banco existente
 

@@ -61,6 +61,27 @@ entre SISTEMAS.
 - **`rpcmtec.capacitacao` mora no schema do RELATÓRIO**, e isso não contradiz o "as tabelas do
   relatório não se gravam aqui" de `er/rpcmtec.sql`: aquilo vale para tabela CALCULADA, e esta é
   DIGITADA. É entrada, e não saída; reconsultar não recupera nada, porque não há de onde.
+- **Quem participou da capacitação vem do CADASTRO, e não de um texto** (chefe, 2026-08-02).
+  `rpcmtec.capacitacao.militares` era um TEXT com os nomes digitados, e texto livre não casa com
+  pessoa: "Cap Fulano" e "Fulano" são a mesma pessoa e duas strings, e nenhuma das duas responde "de
+  quais capacitações o Fulano participou". É o mesmo defeito do `atividades` do efetivo, corrigido
+  horas antes. Hoje é `rpcmtec.capacitacao_militar`, ligando a `dgeo.usuario`.
+  - **O PAPEL não é coluna: vem do `tipo_id` da capacitação.** Na MINISTRADA quem está ligado é
+    instrutor ou monitor; na RECEBIDA foi capacitado. Uma coluna de papel seria a mesma informação
+    gravada duas vezes, e nada impediria as duas de divergirem.
+  - **`efetivo_capacitado` não se confunde com o vínculo, e as duas coisas coexistem.** Lá é a
+    contagem de gente DE FORA que nós treinamos; aqui é gente NOSSA. Numa ministrada o relatório
+    pede as duas.
+  - **A 2.6 do documento NÃO ganhou coluna de instrutor.** O modelo tem quatro colunas naquela
+    subseção, e quem ministrou é informação de gestão, não do documento: ela aparece na tela. A 6.2,
+    que já tinha a coluna "Militar", passou a preenchê-la a partir do vínculo.
+  - **A lista é regravada INTEIRA a cada salvamento**, então o rastro dela é UM evento do PAI com a
+    lista descrita em texto dos dois lados (`sintetico: true`). Auditar linha a linha faria o
+    histórico dizer "removeu 3, acrescentou 3" toda vez que alguém abrisse e salvasse. É o desenho
+    dos itens do DFD.
+  - **Quem já está marcado continua na lista de escolha mesmo desativado no cadastro.** Quem
+    participou em março e saiu da Divisão em julho não pode sumir da linha de março só porque o
+    seletor filtra os ativos.
 - **A capacitação é UMA tabela para ministrada (2.6) e recebida (6.2), e DUAS telas.** A linha é o
   mesmo fato visto dos dois lados; o que muda são três colunas, anuláveis por isso. O servidor
   **não** recusa a coluna do outro tipo: quem decide o que aparece é o formulário, e quem decide o

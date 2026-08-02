@@ -68,7 +68,15 @@ const capacitacao = {
   // que SAI é o gerador. Recusar aqui transformaria em erro um campo que a tela
   // nem mostra, no meio de um cadastro montado aos poucos.
   efetivo_capacitado: Joi.number().integer().strict().min(0).allow(null),
-  militares: Joi.string().allow(null, ''),
+  // QUEM da Divisão participou, por uuid do cadastro (chefe, 2026-08-02). Era um
+  // texto livre, e texto livre não casa com pessoa. Vale para os DOIS tipos: na
+  // ministrada são os instrutores, na recebida são os capacitados, e o papel vem
+  // do `tipo_id` em vez de ser um campo.
+  //
+  // `unique()` porque a tabela tem a UNIQUE (capacitacao, usuario): mandar o
+  // mesmo duas vezes chegaria ao 409 do banco, e a lista vem de uma tela de
+  // seleção onde repetir não faz sentido.
+  militares: Joi.array().items(Joi.string().uuid()).unique().default([]),
   plano_codigo: Joi.string().max(255).allow(null, ''),
   documento: Joi.string().max(255).allow(null, '')
 }

@@ -3,10 +3,10 @@ import { openModal } from '@components/modal/modal-base.js';
 import {
   createNumberField,
   createTextField,
-  createTextareaField,
   createSelectField,
   createDateField,
 } from '@components/form-fields/form-fields.js';
+import { createSeletorMilitares } from '@components/form-fields/seletor-militares.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createCapacitacao, updateCapacitacao } from '@services/plataforma-service.js';
 
@@ -32,16 +32,23 @@ const SITUACOES = [
  * no meio limparia três campos já preenchidos.
  *
  * O tipo decide QUAIS campos existem: ministrada pergunta quantos de fora nós
- * treinamos, recebida pergunta quem foi e sob que Plano/Código.
+ * treinamos, recebida pergunta sob que Plano/Código.
+ *
+ * OS MILITARES DA DIVISÃO valem para os DOIS tipos, e o rótulo é o que muda: na
+ * ministrada são os instrutores e monitores, na recebida são os capacitados
+ * (chefe, 2026-08-02). Eles vêm do CADASTRO, e não de um texto: "Cap Fulano" e
+ * "Fulano" eram a mesma pessoa e duas strings, e nenhuma das duas respondia "de
+ * quais capacitações o Fulano participou".
  *
  * @param {Object} options
  * @param {Object|null} [options.capacitacao]
  * @param {number} [options.ano]
  * @param {number} options.tipoId - MINISTRADA ou RECEBIDA, fixo pela tela
+ * @param {Array<Object>} [options.usuarios] - o cadastro, para o seletor
  * @param {Function} [options.onSaved]
  */
 export function openCapacitacaoDialog({
-  capacitacao = null, ano = null, tipoId = MINISTRADA, onSaved = null,
+  capacitacao = null, ano = null, tipoId = MINISTRADA, usuarios = [], onSaved = null,
 } = {}) {
   const isEdit = Boolean(capacitacao);
   const anoAlvo = isEdit ? capacitacao.ano : (ano || new Date().getFullYear());
@@ -99,20 +106,42 @@ export function openCapacitacaoDialog({
     placeholder: 'Ex.: C25/DCT003 PCE-EECN',
     value: capacitacao?.plano_codigo ?? '',
   });
-  const militaresField = createTextareaField({
-    label: 'Militares',
-    value: capacitacao?.militares ?? '',
-    helpText: 'Quem da Divisão está em capacitação.',
+  // OS MILITARES DA DIVISÃO valem para os DOIS tipos, e só o rótulo muda: na
+  // ministrada são quem ensinou, na recebida quem aprendeu. Vêm do CADASTRO
+  // desde 2026-08-02, e não de um texto digitado.
+  //
+  // Quem já está marcado continua na lista mesmo se tiver sido desativado no
+  // cadastro: quem participou em março e saiu da Divisão em julho não pode sumir
+  // da linha de março só porque a lista de escolha filtra os ativos.
+  const jaMarcados = (capacitacao?.militares || []).map(m => m.usuario_uuid);
+  const doCadastro = new Set(usuarios.map(u => u.uuid));
+  const paraOSeletor = [
+    ...usuarios,
+    ...(capacitacao?.militares || [])
+      .filter(m => !doCadastro.has(m.usuario_uuid))
+      .map(m => ({
+        uuid: m.usuario_uuid,
+        nome: m.nome,
+        nome_guerra: m.nome_guerra,
+        posto_abrev: m.posto_abrev,
+        ativo: false,
+      })),
+  ];
+
+  const militaresField = createSeletorMilitares({
+    label: ministrada ? 'Instrutores e monitores' : 'Militares em capacitação',
+    usuarios: paraOSeletor,
+    selecionados: jaMarcados,
+    helpText: ministrada
+      ? 'Quem da Divisão ministrou. Não se confunde com o efetivo capacitado, que é gente de fora.'
+      : 'Quem da Divisão foi capacitado.',
   });
 
   // Só os campos do tipo desta tela entram no formulário. Os do outro nem são
   // montados: escondê-los por CSS deixaria valor pendurado num campo invisível.
   const especificos = ministrada
     ? [el('div', { className: 'form-grid__full' }, [efetivoField.element])]
-    : [
-      planoField.element,
-      el('div', { className: 'form-grid__full' }, [militaresField.element]),
-    ];
+    : [planoField.element];
 
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [nomeField.element]),
@@ -123,6 +152,7 @@ export function openCapacitacaoDialog({
     instituicoesField.element,
     localField.element,
     ...especificos,
+    el('div', { className: 'form-grid__full' }, [militaresField.element]),
   ]);
 
   let saving = false;
@@ -172,7 +202,8 @@ export function openCapacitacaoDialog({
             // subseção diferente do relatório, e um valor esquecido apareceria lá.
             efetivo_capacitado: ministrada ? efetivoField.getValue() : null,
             plano_codigo: ministrada ? null : (planoField.getValue() || null),
-            militares: ministrada ? null : (militaresField.getValue() || null),
+            // A lista vale para os DOIS tipos, ao contrário dos dois acima.
+            militares: militaresField.getValue(),
             documento: documentoField.getValue() || null,
           };
 

@@ -783,12 +783,24 @@ const montarCapacitacaoMinistrada = ({ capacitacoes }) =>
     numero(c.efetivo_capacitado)
   ])
 
+// 'Cap Fulano, 2º Sgt Beltrano'. Os nomes vêm do CADASTRO desde 2026-08-02, e
+// não de um texto digitado: `rpcmtec.capacitacao_militar` liga a capacitação a
+// `dgeo.usuario`, e a coluna "Militar" do modelo é montada aqui.
+//
+// A 2.6 (ministrada) NÃO ganhou coluna de instrutor, embora o vínculo exista
+// para ela também. O modelo tem quatro colunas naquela subseção, e quem
+// ministrou é informação de gestão, não do documento: ela aparece na tela.
+const nomesDosMilitares = c =>
+  (c.militares || [])
+    .map(m => `${m.posto_abrev} ${m.nome_guerra}`.trim())
+    .join(', ')
+
 const montarCapacitacaoRecebida = ({ capacitacoes }) =>
   capacitacoes.map(c => [
     texto(c.plano_codigo),
     texto(c.nome),
     texto(c.instituicoes),
-    texto(c.militares)
+    texto(nomesDosMilitares(c))
   ])
 
 // ---------------------------------------------------------------------------
