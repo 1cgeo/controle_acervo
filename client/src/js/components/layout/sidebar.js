@@ -17,7 +17,24 @@ const MENU_PLATAFORMA = [
   // peca so, com valor de credito e de empenho dentro. Esteve partido em dois
   // itens de modulo ate 2026-08-01, um na mapoteca e outro no orcamento.
   { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec', admin: true },
-  { id: 'usuarios', label: 'Usuários', icon: ICONS.people, path: '/usuarios', admin: true },
+  // Grupo colapsavel desde 2026-08-02, quando a autenticacao veio para dentro do
+  // SCA: administrar gente deixou de ser uma tela so. "Gestão" e o cadastro das
+  // pessoas; "Acessos" e a visao pelo lado do acesso, que ainda esta sendo
+  // escrita NESTE MESMO trabalho -- por isso o item ja aparece aqui, embora a
+  // rota #/acessos so passe a existir quando a tela entrar.
+  //
+  // O id do GRUPO nao e 'usuarios': a chave do item ativo sai do primeiro
+  // segmento da rota (activeIdFromPath), e o filho '/usuarios' precisa dela.
+  {
+    id: 'usuarios-group',
+    label: 'Usuários',
+    icon: ICONS.people,
+    admin: true,
+    children: [
+      { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios' },
+      { id: 'acessos', label: 'Acessos', icon: ICONS.lock, path: '/acessos' },
+    ],
+  },
 ];
 
 /** Icone de cada modulo, quando o manifesto nao declara um. */

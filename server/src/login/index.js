@@ -7,5 +7,11 @@ module.exports = {
   // materializadas, limpeza). O resto vai por verifyPerfil, com modulo.
   verifyLogin: require('./verify_login'),
   verifyAdmin: require('./verify_admin'),
-  verifyPerfil: require('./verify_perfil')
+  verifyPerfil: require('./verify_perfil'),
+  // `senha` e `loginCtrl.conferirSenha` saem daqui porque autenticar e o que
+  // ESTA feature faz. `usuario/` importa dos dois em vez de chamar o bcrypt por
+  // conta propria: dois lugares escolhendo o custo do hash divergiriam no
+  // primeiro ajuste, e o hash mais fraco seria o que ninguem estaria olhando.
+  loginCtrl: require('./login_ctrl'),
+  senha: require('./senha')
 }

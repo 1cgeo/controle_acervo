@@ -3,7 +3,7 @@
 const path = require('path')
 const os = require('os')
 
-// A aplicacao registrada no servico de autenticacao. O login do SCA so aceita
+// O CLIENTE que o login do SCA aceita. Ele so aceita
 // 'sca_qgis' ou 'sca_web' (server/src/login/login_schema.js); o CLI e um cliente
 // de API como o client web, entao usa 'sca_web'. Este e o unico lugar do CLI que
 // sabe disso.
@@ -31,7 +31,7 @@ function caminhoSessao (server) {
  *   SCA_URL    URL do backend do SCA, ex.: http://IP:porta
  *              (SCA_SERVER e alias aceito, igual nos tres CLIs irmaos;
  *              MAPOTECA_SERVER continua aceito como legado)
- *   SCA_USER   login de admin no servico de autenticacao
+ *   SCA_USER   login de admin no SCA
  *   SCA_SENHA  senha (preferir esta a passar --senha na linha de comando)
  *   SCA_TOKEN  JWT pronto (pula o login)
  */

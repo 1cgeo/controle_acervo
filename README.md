@@ -4,7 +4,7 @@ Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográf
 
 Desde 2026-07-27 o SCA absorveu o antigo SCO (Sistema de Controle Orçamentário). São **três módulos na mesma plataforma**: `acervo`, `mapoteca` e `orcamento`, com um servidor, um banco e uma interface web.
 
-Para sua utilização é necessário o [Serviço de Autenticação](https://github.com/1cgeo/auth_server), que valida a senha e é a fonte dos usuários.
+Desde 2026-08-02 a **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. O [Serviço de Autenticação](https://github.com/1cgeo/auth_server) externo, de que o sistema dependia até então, saiu — e com ele a exigência de subir um segundo serviço para alguém conseguir entrar.
 
 > Regras de projeto, decisões de design deliberadas e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. Para subir o ambiente, veja **[`levantar_servico.md`](levantar_servico.md)**.
 
@@ -16,9 +16,9 @@ Para sua utilização é necessário o [Serviço de Autenticação](https://gith
 | **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os três módulos |
 | **Plugin QGIS do Acervo** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Catalogação, carga e diagnóstico |
 | **Plugin QGIS da Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Pedidos ativos, download de PDF e quantitativo impresso |
-| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/` | Node (dependência zero) | Um por módulo |
+| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/`, `auth_cli/` | Node (dependência zero) | Um por módulo, mais o de identidade |
 
-Os três CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
+Os CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
 
 ---
 
@@ -28,7 +28,6 @@ Os três CLIs são irmãos do client web, não scripts auxiliares: o client serv
 
 - Node.js >= 16.15
 - PostgreSQL com extensão PostGIS
-- [Serviço de Autenticação](https://github.com/1cgeo/auth_server) em execução
 
 ### Instalação
 
@@ -37,7 +36,9 @@ npm run install-all   # dependências do servidor e da interface
 npm run config        # configuração interativa (cria banco e config.env)
 ```
 
-O `create_config.js` também aceita flags de linha de comando (`--db-server`, `--db-port`, `--db-name`, `--auth-server-raw`, `--db-create`, ...); rode-o sem argumento para o modo interativo.
+A configuração pergunta os dados do **primeiro administrador** (login, senha, nome, nome de guerra e posto/graduação) e o cria no banco: é com ele que se entra no sistema pela primeira vez. Até 2026-08-02 essas perguntas eram as credenciais de uma conta que já existisse no Auth Server, de onde o cadastro era lido por HTTP.
+
+O `create_config.js` também aceita flags de linha de comando (`--db-server`, `--db-port`, `--db-name`, `--db-create`, `--admin-login`, `--admin-senha`, ...); rode-o sem argumento para o modo interativo.
 
 ### Execução
 
@@ -47,8 +48,6 @@ cd server && npm run dev-https  # Desenvolvimento (HTTPS)
 npm start                       # Produção (HTTP, via PM2)
 npm run deploy                  # Build da interface + PM2 startOrReload + pm2 save
 ```
-
-O servidor **não inicia** se o Serviço de Autenticação não estiver operacional.
 
 ### Testes
 
@@ -79,8 +78,7 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 | `DB_USER`, `DB_PASSWORD` | Sim | Usuário de escrita do banco |
 | `DB_USER_READONLY`, `DB_PASSWORD_READONLY` | Não | Papel somente leitura (URI de camada do QGIS) |
 | `JWT_SECRET` | Sim | Segredo para assinatura JWT |
-| `AUTH_SERVER` | Sim | URL do serviço de autenticação |
-| `USE_PROXY` | Não | Usar proxy do sistema nas chamadas ao auth (default `false`) |
+| `JWT_EXPIRACAO` | Não | Duração da sessão no formato do jsonwebtoken (default `8h`) |
 | `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
 | `UPLOAD_WEB_MAX_GB` | Não | Teto do arquivo que o NAVEGADOR envia ao volume (default 2). Acima dele, o caminho é o plugin |
 
@@ -92,8 +90,9 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
-| `/api/login` | plataforma | Autenticação (JWT, expiração 1h). Devolve `perfis` e `modulos` |
-| `/api/usuarios` | plataforma | Gerenciamento de usuários e concessão de perfil por módulo (admin) |
+| `/api/login` | plataforma | Autenticação local por bcrypt (JWT, `JWT_EXPIRACAO`, default 8h). Devolve `perfis` e `modulos`, e grava `dgeo.login` |
+| `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login |
+| `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
 | `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
 | `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
@@ -173,10 +172,10 @@ server/src/
 ├── index.js / main.js / config.js / routes.js
 ├── server/               # App Express, Swagger
 ├── database/             # Conexão pg-promise, checagem de versão, refresh de views
-├── authentication/       # Integração com o serviço de autenticação
-├── login/                # JWT, validate_token, verify_perfil, verify_admin
+├── login/                # Autenticação local (bcrypt), JWT, verify_perfil, verify_admin
 ├── acervo/ arquivo/ produto/ projeto/ volume/ ponto_controle/ dashboard/ gerencia/
-├── usuario/              # Usuários e perfis (plataforma)
+├── usuario/              # Usuários, senha e perfis (plataforma)
+├── acessos/              # Histórico de login (plataforma)
 ├── pit/                  # Metas do PIT (plataforma)
 ├── rpcmtec/              # RPCMTec inteiro e Anuário Estatístico (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
@@ -300,19 +299,20 @@ Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa s�
 
 ## CLIs de agente
 
-Um por módulo, todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
+Um por módulo, mais o `auth_cli` (identidade, que é de plataforma e não de módulo). Todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
 
 ```bash
 node acervo_cli/acervo.js --help
 node mapoteca_cli/mapoteca.js --help
 node orcamento_cli/orcamento.js --help
+node auth_cli/auth.js --help
 node orcamento_cli/orcamento.js schema nc             # contrato formatado, do Joi vivo
 ```
 
-Os três compartilham o cache de sessão em `~/.sca`: um login serve os três. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
+Todos compartilham o cache de sessão em `~/.sca`: um login serve todos. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
 
 ```bash
-npm run test-cli      # os três (node:test, sem dependência)
+npm run test-cli      # os quatro (node:test, sem dependência)
 ```
 
 Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o teste também.
@@ -326,6 +326,14 @@ Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o tes
 | `scripts/fumaca.py` | Fumaça pós-deploy: os três módulos de ponta a ponta, só leitura, sai com 1 se algo falha |
 | `scripts/check_vazamento.py` | Guard de pre-commit: barra segredo, IP interno e caminho de máquina neste repositório PÚBLICO |
 | `scripts/gerar_miniaturas.cjs` | Carga em lote das miniaturas do acervo já existente |
+| `scripts/copiar_usuarios_auth.js` | Copia, uma vez, os hashes de senha do banco do Auth Server para o do SCA |
+
+O detalhe de cada um está em [`scripts/README.md`](scripts/README.md). Os testes
+do que roda sem banco (argumentos, plano, relatório):
+
+```bash
+npm run test-scripts
+```
 
 ---
 

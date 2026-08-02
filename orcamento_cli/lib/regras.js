@@ -130,8 +130,8 @@ const REGRAS = {
   usuario: [
     'Rota de PLATAFORMA (/api/usuarios), compartilhada com o acervo e a mapoteca:',
     'fica fora do prefixo /api/orcamento.',
-    'Os usuarios sao IMPORTADOS do servico de autenticacao. O SCA nao guarda senha:',
-    'a verificacao e sempre delegada.'
+    'Desde 2026-08-02 o SCA e o dono da identidade: ele guarda o hash da senha e',
+    'valida o login sozinho. Cadastro, senha e acesso ficam no auth_cli.'
   ]
 }
 

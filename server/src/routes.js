@@ -5,6 +5,7 @@ const { databaseVersion } = require("./database");
 const { httpCode } = require("./utils");
 
 const { loginRoute } = require("./login");
+const { acessosRoute } = require("./acessos");
 const { acervoRoute } = require("./acervo");
 const { volumeRoute } = require("./volume");
 const { usuarioRoute } = require("./usuario");
@@ -55,6 +56,14 @@ router.use("/login", loginRoute);
 router.use("/acervo", acervoRoute);
 
 router.use("/usuarios", usuarioRoute);
+
+// Histórico de acesso (dgeo.login). Rota de PLATAFORMA, sem prefixo de módulo,
+// como /usuarios e /rpcmtec: quem entrou no sistema não é dado do acervo, da
+// mapoteca nem do orçamento. Todas as rotas são verifyAdmin.
+//
+// Existe desde 2026-08-02, com a fusão da autenticação: é o porte do dashboard
+// do Auth Server externo, que era quem lia essa tabela.
+router.use("/acessos", acessosRoute);
 
 // Metas do PIT. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios:
 // os três módulos consomem o plano anual da Divisão e nenhum é dono dele.

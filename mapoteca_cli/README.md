@@ -132,7 +132,7 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 | Variável | Para quê |
 |---|---|
 | `SCA_URL` | URL do backend do SCA (`MAPOTECA_SERVER` é aceito como sinônimo) |
-| `SCA_USER` | login de admin no serviço de autenticação |
+| `SCA_USER` | login de admin no SCA |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 

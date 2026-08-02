@@ -4,14 +4,15 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   getUsuarios,
-  getUsuariosAuthServer,
   atualizarUsuario,
-  sincronizarUsuarios,
+  excluirUsuario,
+  resetarSenhas,
   getModulos,
   getTiposPerfil,
+  getPostosGrad,
 } from '@services/plataforma-service.js';
 import { abrirPerfisDialog } from './perfis-dialog.js';
-import { abrirImportarDialog } from './importar-dialog.js';
+import { abrirUsuarioDialog } from './usuario-dialog.js';
 
 /** Rotulo do nivel a partir do catalogo do servidor (evita decorar codigo). */
 function rotuloPerfil(nivel, tiposPerfil) {
@@ -26,13 +27,18 @@ function nomeExibicao(u) {
 }
 
 /**
- * Tela UNICA de usuarios da plataforma (#/usuarios), do administrador global.
+ * Tela de GESTÃO de usuarios da plataforma (#/usuarios), do administrador global.
  *
  * Uma coluna por MODULO, com o nivel da pessoa em cada um. Os modulos e os
  * niveis vem do catalogo do servidor (GET /api/usuarios/dominio/modulo e
  * /tipo_perfil), entao um modulo novo aparece aqui sozinho, sem tocar no codigo.
  * Salvar manda PUT /api/usuarios/:uuid com `perfis` (nivel 1 a 3, ou null para
  * revogar o acesso naquele modulo).
+ *
+ * Em 2026-08-02 a autenticacao veio para dentro do SCA, e esta tela mudou de
+ * natureza: sairam "Importar do serviço de autenticação" e "Sincronizar", que
+ * espelhavam o Auth Server, e entrou o CADASTRO (criar, editar, excluir e
+ * resetar senha). O SCA passou a ser a fonte das pessoas, e nao mais a copia.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -42,35 +48,59 @@ export async function renderUsuariosList(container, _ctx) {
   let disposed = false;
   let tiposPerfil = [];
   let modulos = [];
+  let postosGrad = [];
 
   // ---------------------------------------------------------------------------
   // Catalogos primeiro: as COLUNAS por modulo dependem deles
   // ---------------------------------------------------------------------------
   try {
-    [modulos, tiposPerfil] = await Promise.all([getModulos(), getTiposPerfil()]);
+    [modulos, tiposPerfil, postosGrad] = await Promise.all([
+      getModulos(),
+      getTiposPerfil(),
+      getPostosGrad(),
+    ]);
   } catch (err) {
     showError(err.message || 'Erro ao carregar o catálogo de módulos e perfis');
     modulos = [];
     tiposPerfil = [];
+    postosGrad = [];
   }
   if (disposed) return () => {};
 
   modulos = (modulos || []).slice().sort((a, b) => a.code - b.code);
+  postosGrad = postosGrad || [];
 
   // ---------------------------------------------------------------------------
   // Botoes do topo
   // ---------------------------------------------------------------------------
-  const importarBtn = el('button', {
+  const novoBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => abrirImportar(),
-  }, [svgIcon(ICONS.add, 16), 'Importar do serviço de autenticação']);
+    onClick: () => abrirUsuarioDialog({ postosGrad, onSaved: load }),
+  }, [svgIcon(ICONS.add, 16), 'Novo usuário']);
 
-  const sincronizarBtn = el('button', {
-    className: 'btn btn--secondary',
-    type: 'button',
-    onClick: () => handleSincronizar(),
-  }, [svgIcon(ICONS.swapHoriz, 16), 'Sincronizar']);
+  // ---------------------------------------------------------------------------
+  // Aviso de quem esta sem senha
+  //
+  // `senha_definida: false` e, literalmente, a lista de quem NAO CONSEGUE ENTRAR:
+  // a fusao de 2026-08-02 deixou `dgeo.usuario.senha` anulavel e quem preencheu
+  // foi um script rodado uma vez, por fora. Sem isto na tela, quem ficou de fora
+  // da copia so apareceria ao reclamar que o login nao funciona.
+  // ---------------------------------------------------------------------------
+  const aviso = el('div', { className: 'usuarios__aviso hidden' }, [
+    svgIcon(ICONS.warning, 18),
+    el('span', { className: 'usuarios__aviso-texto' }),
+  ]);
+  const avisoTexto = aviso.querySelector('.usuarios__aviso-texto');
+
+  function atualizarAviso(linhas) {
+    const semSenha = (linhas || []).filter(u => u.senha_definida === false);
+    aviso.classList.toggle('hidden', semSenha.length === 0);
+    if (!semSenha.length) return;
+    avisoTexto.textContent = semSenha.length === 1
+      ? '1 usuário está sem senha definida e não consegue entrar. Use "Resetar senha" para dar a ele a senha igual ao login.'
+      : `${semSenha.length} usuários estão sem senha definida e não conseguem entrar. Use "Resetar senha" para dar a cada um a senha igual ao login.`;
+  }
 
   // ---------------------------------------------------------------------------
   // Tabela: uma coluna por modulo
@@ -97,16 +127,27 @@ export async function renderUsuariosList(container, _ctx) {
         key: 'nome',
         label: 'Nome',
         sortable: true,
-        render: (row) => (row.administrador
-          ? el('span', { className: 'usuarios__nome' }, [
-            nomeExibicao(row),
-            el('span', {
+        // As marcas dizem coisas de natureza diferente e por isso convivem:
+        // "Admin" e o que a pessoa PODE, "Sem senha" e se ela consegue entrar.
+        render: (row) => {
+          const marcas = [];
+          if (row.administrador) {
+            marcas.push(el('span', {
               className: 'usuarios__chip-admin',
               title: 'Administrador global da plataforma',
               textContent: 'Admin',
-            }),
-          ])
-          : nomeExibicao(row)),
+            }));
+          }
+          if (row.senha_definida === false) {
+            marcas.push(el('span', {
+              className: 'usuarios__chip-sem-senha',
+              title: 'Sem senha definida: esta pessoa não consegue entrar. Use "Resetar senha".',
+              textContent: 'Sem senha',
+            }));
+          }
+          if (!marcas.length) return nomeExibicao(row);
+          return el('span', { className: 'usuarios__nome' }, [nomeExibicao(row), ...marcas]);
+        },
       },
       { key: 'login', label: 'Login', sortable: true, render: (row) => row.login || '-' },
       { key: 'tipo_posto_grad', label: 'Posto/Grad', render: (row) => row.tipo_posto_grad || '-' },
@@ -121,8 +162,18 @@ export async function renderUsuariosList(container, _ctx) {
     actions: [
       {
         icon: ICONS.edit,
+        title: 'Editar cadastro',
+        onClick: (row) => abrirUsuarioDialog({ usuario: row, postosGrad, onSaved: load }),
+      },
+      {
+        icon: ICONS.layers,
         title: 'Definir perfis por módulo',
         onClick: (row) => abrirPerfis(row),
+      },
+      {
+        icon: ICONS.key,
+        title: 'Resetar senha',
+        onClick: (row) => resetarSenha(row),
       },
       {
         icon: ICONS.lock,
@@ -134,14 +185,21 @@ export async function renderUsuariosList(container, _ctx) {
         title: 'Alternar ativo',
         onClick: (row) => toggleAtivo(row),
       },
+      {
+        icon: ICONS.delete,
+        title: 'Excluir',
+        variant: 'danger',
+        onClick: (row) => handleDelete(row),
+      },
     ],
   });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Usuários' }),
-      el('div', { className: 'page__actions' }, [importarBtn, sincronizarBtn]),
+      el('div', { className: 'page__actions' }, [novoBtn]),
     ]),
+    aviso,
     table.element,
   ]);
   container.appendChild(page);
@@ -155,9 +213,11 @@ export async function renderUsuariosList(container, _ctx) {
       const dados = await getUsuarios();
       if (disposed) return;
       table.update({ rows: dados || [], loading: false });
+      atualizarAviso(dados);
     } catch (err) {
       if (disposed) return;
       table.update({ rows: [], loading: false });
+      atualizarAviso([]);
       showError(err.message || 'Erro ao carregar usuários');
     }
   }
@@ -201,45 +261,55 @@ export async function renderUsuariosList(container, _ctx) {
   }
 
   // ---------------------------------------------------------------------------
-  // Sincronizar
+  // Resetar senha
+  //
+  // A senha passa a ser o LOGIN da pessoa. A confirmacao diz isso com todas as
+  // letras, e diz o login: uma senha adivinhavel so serve enquanto a pessoa a
+  // troca no primeiro acesso, e quem reseta precisa saber que e assim.
   // ---------------------------------------------------------------------------
-  async function handleSincronizar() {
-    sincronizarBtn.disabled = true;
+  async function resetarSenha(row) {
+    const ok = await confirmDialog({
+      title: 'Resetar senha',
+      message: `A senha de ${nomeExibicao(row)} passará a ser o login dele: "${row.login}". `
+        + 'Qualquer pessoa que saiba o login poderá entrar até que ele troque a senha em "Meu perfil". Deseja continuar?',
+      confirmLabel: 'Resetar senha',
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      await sincronizarUsuarios();
-      if (disposed) return;
-      showSuccess('Usuários sincronizados com sucesso');
+      await resetarSenhas([row.uuid]);
+      showSuccess(`Senha resetada. A senha de ${nomeExibicao(row)} agora é "${row.login}".`);
       await load();
     } catch (err) {
-      if (disposed) return;
-      showError(err.message || 'Erro ao sincronizar usuários');
-    } finally {
-      sincronizarBtn.disabled = false;
+      showError(err.message || 'Erro ao resetar a senha');
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Importar do servico de autenticacao
+  // Excluir
+  //
+  // Quase sempre o servidor RECUSA, e esta certo: quem ja trabalhou no sistema
+  // tem registros apontando para ele, e apagar reescreveria a autoria do que
+  // cadastrou. A mensagem que aparece e a DELE ("Usuário já possui registros no
+  // sistema e não pode ser excluído. Desative-o."), porque uma frase generica
+  // nao diria o que fazer em seguida.
   // ---------------------------------------------------------------------------
-  async function abrirImportar() {
-    importarBtn.disabled = true;
-    let disponiveis = [];
+  async function handleDelete(row) {
+    const ok = await confirmDialog({
+      title: 'Excluir usuário',
+      message: `Deseja excluir ${nomeExibicao(row)}? Só é possível excluir quem ainda não tem `
+        + 'nenhum registro no sistema. Quem já trabalhou aqui deve ser DESATIVADO, não excluído.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      disponiveis = await getUsuariosAuthServer();
+      await excluirUsuario(row.uuid);
+      showSuccess('Usuário excluído com sucesso');
+      await load();
     } catch (err) {
-      showError(err.message || 'Erro ao consultar o serviço de autenticação');
-      importarBtn.disabled = false;
-      return;
+      showError(err.message || 'Erro ao excluir usuário');
     }
-    importarBtn.disabled = false;
-    if (disposed) return;
-
-    if (!disponiveis || !disponiveis.length) {
-      showError('Nenhuma pessoa disponível para importação.');
-      return;
-    }
-
-    abrirImportarDialog({ disponiveis, nomeExibicao, onSaved: load });
   }
 
   // ---------------------------------------------------------------------------

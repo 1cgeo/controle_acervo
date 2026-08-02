@@ -9,6 +9,8 @@ import { renderLogin } from '@pages/login.js';
 import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 import { renderUsuariosList } from '@pages/usuarios/list.js';
+import { renderAcessos } from '@pages/acessos/index.js';
+import { renderPerfil } from '@pages/perfil/index.js';
 import { renderMetasList } from '@pages/metas/list.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
@@ -63,6 +65,20 @@ router.add('/login', standalone(renderLogin), {
 
 // Tela unica de usuarios: uma coluna por modulo. Administrador global.
 router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
+
+// Acessos: o historico de login (dgeo.login), que nasceu com a fusao da
+// autenticacao em 2026-08-02. E a outra metade da area "Usuarios" da sidebar.
+//
+// `adminLoader` como a de cima, e pela mesma razao: quem entrou e quando nao e
+// dado de modulo nenhum, e nao existe perfil de "acessos". O servidor cobra o
+// mesmo, com verifyAdmin em todas as rotas de /api/acessos.
+router.add('/acessos', withLayout(renderAcessos), { guard: adminLoader });
+
+// Meu perfil: os proprios dados e a troca da PROPRIA senha. `authLoader`, e nao
+// adminLoader: e a unica tela de plataforma que serve a todo mundo, e sem ela
+// ninguem troca a senha de ninguem a nao ser o administrador (por reset). Ela
+// nasceu em 2026-08-02, quando a autenticacao veio do Auth Server para o SCA.
+router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 
 // Metas do PIT: o plano anual da Divisao, que os tres modulos consomem. Saiu do
 // modulo orcamento em 2026-07-31 justamente porque quem so tem perfil na

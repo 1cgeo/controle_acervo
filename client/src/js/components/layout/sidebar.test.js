@@ -126,6 +126,42 @@ describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () =>
   });
 });
 
+// Em 2026-08-02 a autenticacao veio para dentro do SCA, e administrar gente
+// deixou de ser UMA tela: "Usuários" virou grupo, com Gestão e Acessos dentro.
+describe('sidebar: Usuários e um grupo, e nao um item', () => {
+  test('o grupo traz Gestão e Acessos, cada um na sua rota de plataforma', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(sidebar.querySelector('[data-id="usuarios"]').getAttribute('href')).toBe('#/usuarios');
+    expect(sidebar.querySelector('[data-id="acessos"]').getAttribute('href')).toBe('#/acessos');
+
+    const rotulos = [...sidebar.querySelectorAll('.sidebar__group-header')]
+      .map(h => h.textContent);
+    expect(rotulos.some(r => r.includes('Usuários'))).toBe(true);
+  });
+
+  // A chave do item ativo sai do PRIMEIRO segmento da rota, entao o id do grupo
+  // nao pode ser 'usuarios': ele roubaria a chave do filho que aponta /usuarios.
+  test('setActive marca a Gestão e abre o grupo que a contem', () => {
+    logar({ administrador: true });
+    const ctrl = createSidebar({ modulo: null });
+    ctrl.setActive(activeIdFromPath('/usuarios'));
+
+    const item = ctrl.sidebar.querySelector('[data-id="usuarios"]');
+    expect(item.classList.contains('sidebar__item--active')).toBe(true);
+    expect(item.closest('.sidebar__group').classList.contains('sidebar__group--open')).toBe(true);
+  });
+
+  test('o grupo inteiro e do administrador global', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    expect(ids(sidebar)).not.toContain('usuarios');
+    expect(ids(sidebar)).not.toContain('acessos');
+  });
+});
+
 describe('sidebar: o menu nunca oferece tela que o guarda recusa', () => {
   // O item "Configuração" do orcamento aponta para uma rota `admin: true` e
   // NAO repetia a marca no proprio item: aparecia para gerente e o clique caia

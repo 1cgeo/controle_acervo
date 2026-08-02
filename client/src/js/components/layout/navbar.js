@@ -80,8 +80,15 @@ export function createNavbar({ onToggleSidebar }) {
     },
   }, [svgIcon(getTheme() === 'dark' ? ICONS.lightMode : ICONS.darkMode, 20)]);
 
-  // User dropdown
+  // User dropdown. "Meu perfil" entrou em 2026-08-02, com a autenticacao vindo
+  // para dentro do SCA: e de la que a pessoa troca a PROPRIA senha, e sem esse
+  // caminho ninguem troca a senha de ninguem a nao ser o administrador.
   const dropdown = el('div', { className: 'navbar__dropdown hidden' }, [
+    el('a', {
+      className: 'navbar__dropdown-item',
+      href: '#/perfil',
+      textContent: 'Meu perfil',
+    }),
     el('button', {
       className: 'navbar__dropdown-item navbar__dropdown-item--danger',
       textContent: 'Sair',

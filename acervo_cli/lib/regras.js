@@ -116,11 +116,6 @@ const REGRAS = {
     've o motivo_exclusao informado na hora de excluir.'
   ],
 
-  usuarios: [
-    'Os usuarios sao IMPORTADOS do servico de autenticacao pelo uuid. O SCA nao',
-    'guarda senha: a verificacao e sempre delegada.'
-  ],
-
   integracao: [
     'Sao as unicas rotas de leitura SEM login, feitas para o vault do chefe. Nao',
     'gastam credencial nem token.',

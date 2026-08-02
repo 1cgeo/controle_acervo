@@ -3,6 +3,7 @@
 const path = require('path')
 const fs = require('fs')
 const dotenv = require('dotenv')
+const bcrypt = require('bcryptjs')
 const { Client } = require('pg')
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..')
@@ -81,14 +82,20 @@ const montarTemplate = async (master) => {
     }
   }
 
+  // A senha de cada um da semente e o PROPRIO login, que e a convencao do reset
+  // administrativo (`usuario_ctrl.resetaSenhas`). Com isso o teste de login
+  // exercita bcrypt de verdade, contra hash gerado do mesmo jeito que a
+  // producao gera: um hash escrito a mao aqui provaria a consulta, e nao a
+  // conferencia. O custo e o de `login/senha.js`, e isto roda no globalSetup,
+  // uma vez por suite inteira.
   await client.query(`
-    INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
-    VALUES ('test_admin', 'Test Admin', 'Admin', 1, TRUE, TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
-  `)
+    INSERT INTO dgeo.usuario (login, senha, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+    VALUES ('test_admin', $1, 'Test Admin', 'Admin', 1, TRUE, TRUE, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+  `, [await bcrypt.hash('test_admin', 10)])
   await client.query(`
-    INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
-    VALUES ('test_user', 'Test User', 'User', 1, FALSE, TRUE, 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22')
-  `)
+    INSERT INTO dgeo.usuario (login, senha, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+    VALUES ('test_user', $1, 'Test User', 'User', 1, FALSE, TRUE, 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22')
+  `, [await bcrypt.hash('test_user', 10)])
 
   // Perfil do usuario comum, reproduzindo o que ele podia ANTES do controle por
   // perfil: lia o acervo (consulta) e, na mapoteca, tambem imprimia (operador).

@@ -13,7 +13,8 @@
     "dev-client": "cd client && npm run dev",
     "build-client": "cd client && npm run build",
     "test-client": "cd client && npm test",
-    "test-cli": "node --test acervo_cli/__tests__/*.test.js mapoteca_cli/__tests__/*.test.js orcamento_cli/__tests__/*.test.js",
+    "test-cli": "node --test acervo_cli/__tests__/*.test.js mapoteca_cli/__tests__/*.test.js orcamento_cli/__tests__/*.test.js auth_cli/__tests__/*.test.js",
+    "test-scripts": "node --test scripts/__tests__/*.test.js",
     "config": "node create_config.js",
     "build": "node create_build.js",
     "start": "pm2 start server/src/index.js --name controle-acervo",
@@ -31,7 +32,7 @@
     "url": "https://github.com/1cgeo/controle_acervo/issues"
   },
   "dependencies": {
-    "axios": "^1.18.1",
+    "bcryptjs": "^3.0.3",
     "chalk": "^5.4.1",
     "commander": "^14.0.3",
     "inquirer": "^13.3.0",

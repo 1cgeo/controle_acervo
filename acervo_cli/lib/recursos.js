@@ -583,55 +583,23 @@ const RECURSOS = {
   },
 
   // -------------------------------------------------------------------------
-  usuarios: {
-    nome: 'usuario (importado do servico de autenticacao)',
-    schema: carregar('usuario/usuario_schema'),
-    operacoes: {
-      listar: {
-        metodo: 'GET',
-        caminho: '/usuarios',
-        acesso: 'admin',
-        envelope: 'lista',
-        colunas: ['id', 'uuid', 'login', 'nome', 'administrador', 'ativo']
-      },
-      'listar-auth': {
-        metodo: 'GET',
-        caminho: '/usuarios/servico_autenticacao',
-        acesso: 'admin',
-        envelope: 'lista'
-      },
-      criar: {
-        metodo: 'POST',
-        caminho: '/usuarios',
-        corpo: 'listaUsuario',
-        acesso: 'admin',
-        envelope: 'mensagem',
-        nota: 'importa usuarios do servico de autenticacao pelo uuid; o SCA nunca ' +
-          'guarda senha'
-      },
-      atualizar: {
-        metodo: 'PUT',
-        caminho: '/usuarios/:uuid',
-        corpo: 'updateUsuario',
-        params: 'uuidParams',
-        acesso: 'admin',
-        envelope: 'mensagem'
-      },
-      'atualizar-lista': {
-        metodo: 'PUT',
-        caminho: '/usuarios',
-        corpo: 'updateUsuarioLista',
-        acesso: 'admin',
-        envelope: 'mensagem'
-      },
-      sincronizar: {
-        metodo: 'PUT',
-        caminho: '/usuarios/sincronizar',
-        acesso: 'admin',
-        envelope: 'mensagem'
-      }
-    }
-  },
+  // SEM recurso `usuarios`: identidade e do `auth_cli`, desde 2026-08-02.
+  //
+  // Ele existia aqui porque o SCA so sabia IMPORTAR gente do Auth Server, e
+  // isso cabia num canto do CLI do acervo. Com a autenticacao vindo para
+  // dentro, o assunto virou cadastro, senha e historico de acesso -- coisa de
+  // PLATAFORMA, como /metas e /rpcmtec, e nao do modulo acervo.
+  //
+  // O que ficou aqui envelheceu em SILENCIO, e e por isso que este comentario
+  // existe no lugar de um recurso remendado: `listar-auth` e `sincronizar`
+  // apontavam para `/usuarios/servico_autenticacao` e `/usuarios/sincronizar`,
+  // que sumiram na fusao, e `criar` mandava o corpo `listaUsuario` (a lista de
+  // uuid a importar) para um `POST /usuarios` que hoje espera um cadastro
+  // completo. Nada disso quebrou teste: `listaUsuario` continua existindo no
+  // schema, agora como corpo do reset de senha. Um registry que aponta rota
+  // morta e pior do que um registry incompleto, porque ele ANUNCIA a rota.
+  //
+  // Use: node auth_cli/auth.js usuario --help
 
   // -------------------------------------------------------------------------
   integracao: {

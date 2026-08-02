@@ -8,7 +8,7 @@ const { AppError, httpCode } = require('../utils')
 
 const { JWT_SECRET, JWT_EXPIRACAO } = require('../config')
 
-const { authenticateUser } = require('../authentication')
+const senhaUtils = require('./senha')
 
 const controller = {}
 
@@ -30,54 +30,104 @@ const signJWT = (data, secret) => {
   })
 }
 
-controller.login = async (login, senha, aplicacao) => {
-  const usuarioDb = await db.conn.oneOrNone(
-    'SELECT id, uuid, administrador FROM dgeo.usuario WHERE login = $<login> and ativo IS TRUE',
-    { login }
-  )
-  if (!usuarioDb) {
-    throw new AppError(
-      'Usuário não autorizado para utilizar o Sistema de Controle do Acervo',
-      httpCode.BadRequest
-    )
-  }
-
-  const verifyAuthentication = await authenticateUser(login, senha, aplicacao)
-  if (!verifyAuthentication) {
-    throw new AppError('Usuário ou senha inválida', httpCode.BadRequest)
-  }
-
-  const { id, uuid, administrador } = usuarioDb
-
-  // Perfil por modulo (acervo, mapoteca, orcamento), para o client saber o que
-  // exibir. A lista sai de dominio.modulo, entao modulo novo entra sozinho. O
-  // token NAO carrega isso de proposito: quem decide o que a pessoa pode e o
-  // verifyPerfil, lendo o banco a cada requisicao, senao rebaixar perfil so
-  // valeria quando o token expirasse.
-  const perfisDb = await db.conn.any(
+/**
+ * Perfil por MODULO no formato que o client consome ({ acervo: 1, mapoteca: 2 }).
+ *
+ * A lista sai de dominio.modulo, entao modulo novo entra sozinho. Virou funcao
+ * porque o login e a rota de sessao respondem a MESMA foto: duas copias da
+ * consulta divergiriam na primeira coluna nova.
+ */
+const lerPerfis = async (t, usuarioId) => {
+  const perfisDb = await t.any(
     `SELECT m.nome_abrev AS modulo, up.perfil_id
      FROM dgeo.usuario_perfil AS up
      INNER JOIN dominio.modulo AS m ON m.code = up.modulo_id
-     WHERE up.usuario_id = $<id>`,
-    { id }
+     WHERE up.usuario_id = $<usuarioId>`,
+    { usuarioId }
   )
 
   const perfis = {}
   perfisDb.forEach(p => {
     perfis[p.modulo] = p.perfil_id
   })
+  return perfis
+}
 
-  // Catalogo dos modulos, para o client montar o seletor com o NOME de cada um
-  // em vez de decorar codigo ou rotulo. Vai aqui, e nao numa rota propria,
-  // porque GET /usuarios/dominio/modulo e verifyAdmin: quem so tem perfil de
-  // consulta tambem precisa saber como o modulo se chama.
-  const modulos = await db.conn.any(
-    'SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code'
-  )
+/**
+ * Catalogo dos modulos, para o client montar o seletor com o NOME de cada um em
+ * vez de decorar codigo ou rotulo. Vai junto da sessao, e nao numa rota propria,
+ * porque GET /usuarios/dominio/modulo e verifyAdmin: quem so tem perfil de
+ * consulta tambem precisa saber como o modulo se chama.
+ */
+const lerModulos = async t =>
+  t.any('SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code')
 
-  const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
+/**
+ * Autentica contra o PROPRIO banco.
+ *
+ * Ate 2026-08-02 esta funcao so conferia se a pessoa existia aqui e mandava a
+ * senha para o Auth Server externo (`authentication/authenticate_user.js`), num
+ * POST que atravessava a rede a cada login. Hoje o hash bcrypt mora em
+ * `dgeo.usuario.senha` e a conferencia e local.
+ *
+ * O CONTRATO DA ROTA NAO MUDOU: o plugin do QGIS e os CLIs continuam mandando
+ * { usuario, senha, cliente } e recebendo { token, administrador, uuid, perfis,
+ * modulos }. A fusao nao pediu nada de quem ja e cliente desta rota.
+ *
+ * @param {string} login
+ * @param {string} senha
+ * @param {string} cliente - 'sca_web' ou 'sca_qgis' (o Joi ja restringiu)
+ */
+controller.login = async (login, senha, cliente) => {
+  return db.conn.tx(async t => {
+    const usuarioDb = await t.oneOrNone(
+      `SELECT id, uuid, administrador, senha
+       FROM dgeo.usuario WHERE login = $<login> AND ativo IS TRUE`,
+      { login }
+    )
+    if (!usuarioDb) {
+      throw new AppError(
+        'Usuário não autorizado para utilizar o Sistema de Controle do Acervo',
+        httpCode.BadRequest
+      )
+    }
 
-  return { token, administrador, uuid, perfis, modulos }
+    // Senha nula e o estado de quem foi importado do Auth Server e ainda nao
+    // teve o hash copiado por `scripts/copiar_usuarios_auth.js`. Responder
+    // "usuário ou senha inválida" mandaria a pessoa tentar para sempre a senha
+    // certa; a causa e administrativa, e a frase diz a quem recorrer.
+    if (!usuarioDb.senha) {
+      throw new AppError(
+        'Usuário sem senha cadastrada no sistema. Procure um administrador.',
+        httpCode.BadRequest
+      )
+    }
+
+    const senhaConfere = await senhaUtils.conferir(senha, usuarioDb.senha)
+    if (!senhaConfere) {
+      throw new AppError('Usuário ou senha inválida', httpCode.BadRequest)
+    }
+
+    const { id, uuid, administrador } = usuarioDb
+
+    // O token NAO carrega os perfis de proposito: quem decide o que a pessoa
+    // pode e o verifyPerfil, lendo o banco a cada requisicao, senao rebaixar
+    // perfil so valeria quando o token expirasse.
+    const perfis = await lerPerfis(t, id)
+    const modulos = await lerModulos(t)
+
+    const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
+
+    // Historico de acesso, que alimenta a tela #/acessos. Fica DEPOIS da
+    // assinatura do token e dentro da mesma transacao: gravar antes contaria
+    // como acesso um login que terminasse em erro.
+    await t.none(
+      'INSERT INTO dgeo.login (usuario_id, cliente) VALUES ($<id>, $<cliente>)',
+      { id, cliente }
+    )
+
+    return { token, administrador, uuid, perfis, modulos }
+  })
 }
 
 /**
@@ -94,8 +144,44 @@ controller.login = async (login, senha, aplicacao) => {
  * cai em 401 de proposito, porque ai a sessao acabou mesmo e o client desloga.
  */
 controller.sessao = async uuid => {
+  return db.conn.task(async t => {
+    const usuarioDb = await t.oneOrNone(
+      'SELECT id, uuid, administrador FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
+      { uuid }
+    )
+    if (!usuarioDb) {
+      throw new AppError(
+        'Usuário não encontrado ou inativo',
+        httpCode.Unauthorized
+      )
+    }
+
+    const perfis = await lerPerfis(t, usuarioDb.id)
+    const modulos = await lerModulos(t)
+
+    return {
+      administrador: usuarioDb.administrador,
+      uuid: usuarioDb.uuid,
+      perfis,
+      modulos
+    }
+  })
+}
+
+/**
+ * Confere a senha VIGENTE de quem ja esta logado.
+ *
+ * Existe para a troca de senha (`usuario_ctrl.atualizaSenhaPropria`) poder
+ * exigi-la: sem isso, uma sessao esquecida aberta viraria uma conta tomada.
+ * Mora aqui, e nao em usuario/, porque conferir senha e o que ESTA feature faz
+ * -- assim ha um caminho unico de conferencia no sistema inteiro.
+ *
+ * @param {string} uuid
+ * @param {string} senha
+ */
+controller.conferirSenha = async (uuid, senha) => {
   const usuarioDb = await db.conn.oneOrNone(
-    'SELECT id, uuid, administrador FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
+    'SELECT senha FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
     { uuid }
   )
   if (!usuarioDb) {
@@ -105,28 +191,9 @@ controller.sessao = async uuid => {
     )
   }
 
-  const perfisDb = await db.conn.any(
-    `SELECT m.nome_abrev AS modulo, up.perfil_id
-     FROM dgeo.usuario_perfil AS up
-     INNER JOIN dominio.modulo AS m ON m.code = up.modulo_id
-     WHERE up.usuario_id = $<id>`,
-    { id: usuarioDb.id }
-  )
-
-  const perfis = {}
-  perfisDb.forEach(p => {
-    perfis[p.modulo] = p.perfil_id
-  })
-
-  const modulos = await db.conn.any(
-    'SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code'
-  )
-
-  return {
-    administrador: usuarioDb.administrador,
-    uuid: usuarioDb.uuid,
-    perfis,
-    modulos
+  const confere = await senhaUtils.conferir(senha, usuarioDb.senha)
+  if (!confere) {
+    throw new AppError('Senha atual inválida', httpCode.BadRequest)
   }
 }
 

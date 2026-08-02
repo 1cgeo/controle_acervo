@@ -24,8 +24,9 @@ só o que vaza, nunca estilo: guard que bloqueia todo commit ensina `--no-verify
 O **SCA** gerencia o acervo geoespacial do 1º CGEO: produtos versionados (cartas, ortoimagens, modelos
 de elevação), seus arquivos, os volumes de armazenamento, a mapoteca física e, desde 2026-07-27, o
 controle orçamentário. São **três módulos de autorização no mesmo servidor e na mesma interface**:
-`acervo`, `mapoteca` e `orcamento`. Depende do [Auth Server](https://github.com/1cgeo/auth_server)
-externo, que valida senha e é a fonte dos usuários.
+`acervo`, `mapoteca` e `orcamento`. Desde 2026-08-02 ele também é o **dono da identidade**: guarda o
+hash da senha, valida o login sozinho e cadastra usuário pela própria interface. Não depende de
+serviço externo nenhum.
 
 ## Modelo de autorização
 
@@ -49,6 +50,56 @@ mapoteca que esquecer o segundo argumento passa a cobrar perfil no ACERVO, sem e
 ## Decisões de design deliberadas
 
 Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
+
+### Autenticação dentro do SCA (2026-08-02)
+
+Até esta data `dgeo.usuario` era um **espelho**: o SCA não sabia validar uma senha, e todo login
+virava um `POST` no [Auth Server](https://github.com/1cgeo/auth_server), noutro processo e noutro
+banco. Custava três coisas: o SCA não subia com o outro serviço fora do ar, cadastrar gente era
+trabalho em DOIS sistemas (criar lá, importar aqui) e **"trocar a minha senha" era uma tela que o
+SCA não tinha e não poderia ter**.
+
+- **O catálogo de APLICAÇÕES não veio, e é por isso que `dgeo.login.cliente` é VARCHAR.** O Auth
+  Server serve o SAP e o Gerenciador FME além do SCA, e por isso tinha `dgeo.aplicacao` com CRUD
+  próprio. Aqui a lista fechada é `sca_web` e `sca_qgis`, e ela já vive no Joi de
+  `login/login_schema.js`: a rota só grava o que ela mesma acabou de aceitar, então valor fora da
+  lista não tem por onde entrar. Uma tabela de domínio seria administrar um catálogo de duas
+  linhas. `dgeo.login.usuario_id` é ANULÁVEL de propósito: apagar a pessoa não apaga a passagem
+  dela, senão a contagem de acessos do mês mudaria retroativamente ao demitir alguém.
+- **`dgeo.usuario.senha` é ANULÁVEL nos DOIS caminhos, e o login trata isso como caso próprio.**
+  Os hashes de quem já existia foram copiados do banco do Auth Server por
+  `scripts/copiar_usuarios_auth.js`, fora do sistema, depois da migração (bcrypt é portátil, e o
+  custo é o mesmo 10 dos dois lados). Nula significa "cadastrada e ainda sem senha local", e a
+  resposta diz isso em vez de "usuário ou senha inválida" — a causa é administrativa, e mandar a
+  pessoa tentar de novo a senha certa para sempre é o que a mensagem genérica faria. A tela
+  `#/usuarios` marca quem está nesse estado, senão a pessoa só apareceria ao reclamar que não
+  entra. **Não existe `SET NOT NULL` como passo final**, embora ele tenha sido planejado: `er/`
+  declararia a coluna obrigatória e a migração não, e o `migrations/ensaiar_migracao.cjs` existe
+  justamente para provar que atualização e instalação nova chegam ao mesmo schema. Nenhum caminho
+  de escrita produz nulo — `criaUsuario` sempre grava hash —, então a garantia que se perde é
+  teórica, e a que se ganha (os dois caminhos convergirem) é verificada a cada ensaio.
+- **Há UM caminho de conferência de senha no sistema, e um só de geração de hash.** `login/senha.js`
+  gera e confere; `loginCtrl.conferirSenha` é o que a troca de senha usa. `usuario/` importa dos
+  dois em vez de chamar bcrypt por conta própria: dois lugares escolhendo o custo divergiriam no
+  primeiro ajuste, e o hash mais fraco seria justamente o que ninguém estaria olhando.
+- **Excluir usuário quase sempre falha, e está certo.** `dgeo.usuario.uuid` é referenciado por
+  dezenas de tabelas dos três módulos. Quem já trabalhou no sistema não se apaga, se **desativa** —
+  apagar reescreveria a autoria do que a pessoa cadastrou. A rota existe para o cadastro errado de
+  cinco minutos atrás, e o `23503` vira frase que diz o que fazer, em vez do 500 cru da FK. Só
+  `dgeo.usuario_perfil` cai junto, por CASCADE: perfil sem dono não é histórico de nada.
+- **O reset administrativo vale para ADMINISTRADOR também, ao contrário do original.** Lá
+  (`GET_NON_ADMIN_USERS`) o reset recusava administrador. Aqui o administrador é global e único, e
+  recusar bloquearia justamente a conta sem outro caminho de recuperação. Não há escalada: quem
+  chama a rota já é administrador e já passa em todo módulo.
+- **A política de senha ficou em PARIDADE (qualquer coisa não vazia), de propósito.** Subir o piso
+  no mesmo dia em que o login mudou de lugar recusaria a senha que muita gente já usa. Quando
+  virar política, o lugar é o `senha` de `usuario_schema.js`, e ela sobe nas três rotas de uma vez.
+- **`/perfil` é registrado ANTES de `/:uuid`.** O Express casa na ordem de declaração, e
+  `PUT /perfil` cairia na rota de administrador com 'perfil' no lugar do uuid.
+- **Os campos de identidade do `PUT /usuarios/:uuid` são OPCIONAIS, com omissão valendo "não mexe".**
+  Os botões de alternar da tela de usuários chamam essa rota só com `administrador` e `ativo`, e
+  isso é anterior a ela saber editar cadastro. Quem preenche o valor atual é o `preserveOmitted`;
+  um `.default()` no Joi injetaria a chave e apagaria o nome de quem só foi ativado.
 
 ### Autenticação e superfície pública
 
@@ -325,6 +376,9 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Per
 - Não introduza ORM, TypeScript no servidor, framework de front, Docker ou biblioteca de UI sem registrar a decisão e o motivo.
 - Não recrie a SPA React da mapoteca, que foi removida de propósito.
 - Não recrie clients separados por módulo: `acervo_client` e `mapoteca_client` foram apagados em 2026-07-27, e a interface é uma só.
-- Não armazene senha de usuário: a verificação é sempre delegada ao Auth Server.
+- Não guarde senha em claro, nem a devolva por rota nenhuma. O SCA guarda o **hash bcrypt** em
+  `dgeo.usuario.senha` desde 2026-08-02, e o único lugar que gera e confere hash é
+  `login/senha.js`. (Esta linha dizia "não armazene senha: a verificação é sempre delegada ao Auth
+  Server" e valia até a fusão.)
 - Não invente campo de domínio que não está no DDL nem no schema Joi. Marque como pendência.
 - Não escreva em `er/` para atualizar banco existente: `er/` é instalação nova, o caminho de atualização é `migrations/`.

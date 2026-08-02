@@ -1,18 +1,45 @@
 'use strict'
 
 const pgp = require('pg-promise')()
+const bcrypt = require('bcryptjs')
 
 const {
   DB_SERVER, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 } = require('../../config')
 
+// `max: 2` pela mesma razao do `POOL_TESTE` em `database/db.js`: este e o
+// SEGUNDO pool de cada arquivo do pacote de banco, e sem teto os workers em
+// paralelo pedem mais conexoes do que o PostgreSQL aceita. Os testes de um
+// arquivo sao sequenciais, entao duas conexoes sobram.
 const conn = pgp({
   host: DB_SERVER,
   port: DB_PORT,
   database: DB_NAME,
   user: DB_USER,
-  password: DB_PASSWORD
+  password: DB_PASSWORD,
+  max: 2
 })
+
+/**
+ * Hash bcrypt da senha de cada usuario da semente, que e o PROPRIO login (a
+ * convencao do reset administrativo, ver `usuario_ctrl.resetaSenhas`).
+ *
+ * Memoizado: bcrypt a custo 10 leva dezenas de milissegundos de proposito, e o
+ * `cleanTestData` roda depois de CADA teste do pacote de banco. Calcular a cada
+ * limpeza somaria minutos a suite; calcular uma vez por processo nao soma nada.
+ * Duas senhas iguais nao produzem o mesmo hash (o sal e aleatorio), e nao
+ * precisam: o que importa e que `bcrypt.compare` aceite a senha.
+ */
+let hashesMemo = null
+const hashesDaSemente = () => {
+  if (!hashesMemo) {
+    hashesMemo = Promise.all([
+      bcrypt.hash('test_admin', 10),
+      bcrypt.hash('test_user', 10)
+    ])
+  }
+  return hashesMemo
+}
 
 /**
  * Cleans all test data from the database while preserving
@@ -96,6 +123,60 @@ const cleanTestData = async () => {
       'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
     )`)
+
+    // As duas linhas da semente voltam ao estado do setup.js.
+    //
+    // Apagar quem sobrou nunca bastou: o que o teste MUDA nos dois usuarios da
+    // semente sobrevivia ao clean e vazava para o arquivo seguinte. Medido em
+    // 2026-08-02, com o cadastro de usuario pela API: um teste rebaixava o
+    // `test_admin` para provar que o sistema deixa rebaixar administrador
+    // quando ha outro ativo, e dali em diante TODO teste que usasse o token de
+    // admin levava 403 -- inclusive em arquivo que ninguem tinha tocado, e com
+    // a falha aparecendo longe da causa. E a mesma classe de defeito que o
+    // rate limit desligado sob NODE_ENV=test evita: suite que depende de ordem.
+    //
+    // A senha e regravada junto porque a troca de senha e testavel agora (ela
+    // nao existia enquanto a senha morava no Auth Server), e uma senha trocada
+    // e invisivel ate o proximo teste que tente logar.
+    const [hashAdmin, hashUser] = await hashesDaSemente()
+    await t.none(
+      `UPDATE dgeo.usuario SET
+         login = 'test_admin', senha = $<hashAdmin>, nome = 'Test Admin',
+         nome_guerra = 'Admin', tipo_posto_grad_id = 1,
+         administrador = TRUE, ativo = TRUE
+       WHERE uuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'`,
+      { hashAdmin }
+    )
+    await t.none(
+      `UPDATE dgeo.usuario SET
+         login = 'test_user', senha = $<hashUser>, nome = 'Test User',
+         nome_guerra = 'User', tipo_posto_grad_id = 1,
+         administrador = FALSE, ativo = TRUE
+       WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'`,
+      { hashUser }
+    )
+
+    // O perfil da semente (acervo consulta, mapoteca operador) tambem volta: um
+    // teste que conceda ou revogue perfil ao `test_user` mudaria o que ele pode
+    // em todos os arquivos seguintes.
+    await t.none(`
+      INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+      SELECT id, 1, 1 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
+      ON CONFLICT (usuario_id, modulo_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id
+    `)
+    await t.none(`
+      INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+      SELECT id, 2, 2 FROM dgeo.usuario WHERE uuid = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22'
+      ON CONFLICT (usuario_id, modulo_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id
+    `)
+    await t.none(`
+      DELETE FROM dgeo.usuario_perfil
+      WHERE usuario_id = (SELECT id FROM dgeo.usuario WHERE uuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+    `)
+
+    // O historico de acesso e do teste, nao da semente: o setup.js nao grava
+    // nenhum, e cada login feito por um teste deixa uma linha aqui.
+    await t.none('TRUNCATE dgeo.login')
   })
 }
 

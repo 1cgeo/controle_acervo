@@ -1,13 +1,12 @@
 # Levantar o Controle do Acervo (SCA)
 
-O SCA server **aborta o boot se o Auth Server nao estiver operacional** (`main.js`: `db -> verifyAuthServer -> cron -> startServer`). Suba o auth antes.
+Desde 2026-08-02 o SCA **nao depende de servico externo para subir**: a autenticacao veio para dentro (`dgeo.usuario.senha`, hash bcrypt), e o `verifyAuthServer` saiu do boot (`main.js`: `db -> versao -> cron -> startServer`). Basta o PostgreSQL.
 
 ## Componentes e portas
 
 | Componente | Porta | Observacao |
 |---|---|---|
-| PostgreSQL + PostGIS | 5432 (dev) / 5434 (prod) | banco `sca` |
-| Auth Server | 3010 (dev) / 4000 (prod) | dependencia; subir primeiro |
+| PostgreSQL + PostGIS | 5432 (dev) / 5434 (prod) | banco `sca`; unica dependencia |
 | SCA server | 3015 | API REST + a interface unica em `/` |
 | Client (dev) | 3003 | Vite, com proxy `/api` -> 3015 |
 
@@ -15,22 +14,21 @@ Em **producao** o server serve a interface na mesma origem, sem proxy nem porta 
 
 ## Desenvolvimento (local)
 
-Banco `sca` e auth em `localhost`:
+Banco `sca` em `localhost`:
 ```bash
-cd <auth>/server && node dist/index.js          # auth 3010
 cd <sca>/server && npm run dev                  # SCA 3015
 cd <sca> && npm run dev-client                  # interface 3003
 ```
 
-Para trabalhar contra o banco e o auth de **producao** a partir da maquina local, aponte `DB_*` e `AUTH_SERVER` do `config.env` para producao. Vale para ler e depurar; escrever assim mexe em dado real.
+Para trabalhar contra o banco de **producao** a partir da maquina local, aponte `DB_*` do `config.env` para producao. Vale para ler e depurar; escrever assim mexe em dado real.
 
 ## Producao (rede da DGEO)
 
 Este repositorio e PUBLICO. Endereco de servidor, porta acoplada a host, pasta de rede e credencial vivem so no `server/config.env`, que e gitignored. Aqui se cita a CHAVE; o catalogo comentado esta em `.env.example`.
 
-Banco `sca` e auth ficam na rede interna, cada um no seu host: veja `DB_SERVER`, `DB_PORT` e `AUTH_SERVER`. Clientes de login: `sca_web` (interface) e `sca_qgis` (plugin). Os arquivos do acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, no proprio banco, que e a fonte canonica do caminho.
+O banco `sca` fica na rede interna: veja `DB_SERVER` e `DB_PORT`. Clientes de login: `sca_web` (interface) e `sca_qgis` (plugin), que e o que a coluna `dgeo.login.cliente` guarda. Os arquivos do acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, no proprio banco, que e a fonte canonica do caminho.
 
-1. `server/config.env`: `DB_*` do banco de producao, `DB_USER_READONLY` e `DB_PASSWORD_READONLY`, `AUTH_SERVER` e `USE_PROXY=false`. (A role de leitura precisa existir no banco antes do deploy.)
+1. `server/config.env`: `DB_*` do banco de producao, `DB_USER_READONLY` e `DB_PASSWORD_READONLY`. (A role de leitura precisa existir no banco antes do deploy.) `AUTH_SERVER` e `USE_PROXY` sairam em 2026-08-02 e podem ficar no arquivo sem efeito.
 2. Deploy (build da interface + PM2, idempotente):
    ```bash
    npm run deploy   # = npm run build + pm2 startOrReload ecosystem.config.cjs + pm2 save
@@ -38,7 +36,7 @@ Banco `sca` e auth ficam na rede interna, cada um no seu host: veja `DB_SERVER`,
    Sobe um processo PM2: `controle-acervo` (3015). A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) + `pm2 save`.
 
-O banco precisa estar na versao **1.11.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
+O banco precisa estar na versao **1.12.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
 
 ## Smoke tests
 
@@ -54,7 +52,6 @@ Os minimos da fumaca sao do acervo da DGEO em 2026-07. Instalacao nova devolve m
 
 Conferencia rapida, sem credencial:
 ```bash
-curl -s http://localhost:3010/api | grep operacional                            # auth (4000 em prod)
 curl -s http://localhost:3015/api | grep operacional                            # SCA
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3015/                 # interface
 ```
@@ -71,7 +68,8 @@ Sem isso o `.githooks/pre-commit` nao roda, porque o git nao versiona `.git/hook
 
 ## Troubleshooting
 
-- **SCA sobe e cai na hora** -> quase sempre o Auth Server fora do ar; confirme o `curl` do auth (3010 dev / 4000 prod).
+- **SCA sobe e cai na hora** -> banco fora do ar ou `DB_*` errado. Ate 2026-08-02 a causa comum era outra (o Auth Server fora do ar), e ela deixou de existir com a fusao.
+- **Ninguem consegue entrar, com "Usuario sem senha cadastrada"** -> a migracao `2026-08-02_autenticacao_local.sql` foi aplicada e a copia dos hashes nao. Rode `scripts/copiar_usuarios_auth.js` (em ensaio primeiro). A tela `#/usuarios` marca quem esta sem senha.
 - **Erro de conexao com banco** -> PostgreSQL parado ou `DB_*` errado no `config.env`.
 - **Boot recusado por versao** -> banco abaixo de `MIN_DATABASE_VERSION`; falta aplicar migracao de `migrations/`.
 - **Interface em branco / 404 nos assets** -> `base` no `client/vite.config.js` tem que ser `'/'`, e o `build/` precisa ter sido gerado (`npm run build`).

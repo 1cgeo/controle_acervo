@@ -12,6 +12,18 @@ nem o diagnóstico nem o conserto: era preciso abrir a interface web.
 As colunas de módulo são MONTADAS a partir de `dominio.modulo`, e não escritas
 aqui: módulo novo no servidor aparece sozinho, que é a razão de o servidor
 devolver `perfis` como mapa em vez de uma coluna por módulo.
+
+Esta tela EDITA quem já existe: privilégio, estado e perfil por módulo. Ela não
+CRIA ninguém, e os botões "Importar Usuários" e "Sincronizar Usuários" saíram em
+2026-08-02. Eles falavam com `GET /usuarios/servico_autenticacao` e
+`PUT /usuarios/sincronizar`, que existiam enquanto `dgeo.usuario` era um espelho
+do Auth Server externo: importar era copiar de lá para cá, e sincronizar era
+buscar nome e posto atualizados. Com a autenticação dentro do SCA não há de onde
+importar nem com quem sincronizar -- o cadastro nasce aqui.
+
+Criar usuário exige definir SENHA, e por isso mora na interface web (#/usuarios)
+e no `auth_cli`, não no plugin: o QGIS não é lugar de digitar senha de terceiro,
+e o plugin não tem tela de senha nenhuma.
 """
 import os
 
@@ -21,7 +33,6 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QHeaderView, QLi
                                  QMessageBox, QTableWidget, QTableWidgetItem)
 
 from ...core.dominios import NOME_PERFIL, PERFIL_CONSULTA, PERFIL_GERENTE, PERFIL_OPERADOR
-from .import_users_dialog import ImportUsersDialog
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'manage_users_dialog.ui'))
@@ -62,8 +73,6 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
         )
 
         self.updateButton.clicked.connect(self.update_users)
-        self.importButton.clicked.connect(self.import_users)
-        self.syncButton.clicked.connect(self.sync_users)
 
     def load_modulos(self):
         """As colunas de módulo saem de dominio.modulo, não de uma lista aqui."""
@@ -230,61 +239,4 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
 
         if self.api_client.put('usuarios', {'usuarios': corpo}):
             QMessageBox.information(self, "Sucesso", "Usuários atualizados.")
-            self.load_users()
-
-    # --- importação e sincronização ----------------------------------------
-
-    def import_users(self):
-        resposta = self.api_client.get('usuarios/servico_autenticacao')
-        if resposta is None:
-            QMessageBox.warning(
-                self, "Erro",
-                "Não foi possível obter a lista do serviço de autenticação."
-            )
-            return
-
-        do_auth = resposta.get('dados', []) or []
-        ja_temos = {u['uuid'] for u in self.users}
-        novos = [u for u in do_auth if u['uuid'] not in ja_temos]
-
-        if not novos:
-            QMessageBox.information(self, "Informação", "Não há novos usuários para importar.")
-            return
-
-        dialogo = ImportUsersDialog(novos, self)
-        if not dialogo.exec():
-            return
-
-        escolhidos = dialogo.get_selected_uuids()
-        if not escolhidos:
-            QMessageBox.information(self, "Informação", "Nenhum usuário selecionado.")
-            return
-
-        if not self.api_client.post('usuarios', {'usuarios': escolhidos}):
-            return
-
-        self.load_users()
-        # Conceder acesso é ATO EXPLÍCITO, e não efeito colateral da importação.
-        # A rota de criação não escreve perfil nenhum, então dizer isto aqui é o
-        # que evita o usuário recém-importado tentar entrar e não conseguir.
-        QMessageBox.information(
-            self, "Usuários importados",
-            f"{len(escolhidos)} usuário(s) importado(s).\n\n"
-            "Eles ainda NÃO acessam nenhum módulo: quem não tem perfil não entra. "
-            "Defina o perfil de cada um nas colunas de módulo da tabela e clique em "
-            "Salvar Alterações."
-        )
-
-    def sync_users(self):
-        resposta = QMessageBox.question(
-            self, "Confirmar sincronização",
-            "Sincronizar nome, posto e graduação com o serviço de autenticação?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if resposta != QMessageBox.StandardButton.Yes:
-            return
-
-        if self.api_client.put('usuarios/sincronizar'):
-            QMessageBox.information(self, "Sucesso", "Usuários sincronizados.")
             self.load_users()

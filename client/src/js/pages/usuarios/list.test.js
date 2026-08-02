@@ -1,20 +1,36 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
-// Tela UNICA de usuarios: uma coluna por modulo. Mocka o service de plataforma.
+// Tela de GESTÃO de usuarios: uma coluna por modulo. Mocka o service de
+// plataforma.
+//
+// Desde 2026-08-02 o SCA CRIA usuario, com senha: o par importar/sincronizar
+// saiu junto com o Auth Server, e por isso nenhuma das duas funcoes existe mais
+// aqui -- se voltarem ao service, este mock nao as devolve e a tela quebra.
 vi.mock('@services/plataforma-service.js', () => ({
   getUsuarios: vi.fn(() => Promise.resolve([])),
-  getUsuariosAuthServer: vi.fn(() => Promise.resolve([])),
-  importarUsuarios: vi.fn(() => Promise.resolve({})),
+  criarUsuario: vi.fn(() => Promise.resolve({ uuid: 'u-novo' })),
   atualizarUsuario: vi.fn(() => Promise.resolve({})),
-  sincronizarUsuarios: vi.fn(() => Promise.resolve({})),
+  excluirUsuario: vi.fn(() => Promise.resolve({})),
+  resetarSenhas: vi.fn(() => Promise.resolve({ total: 1 })),
   getModulos: vi.fn(() => Promise.resolve([])),
   getTiposPerfil: vi.fn(() => Promise.resolve([])),
+  getPostosGrad: vi.fn(() => Promise.resolve([])),
+}));
+
+vi.mock('@utils/toast.js', () => ({
+  showError: vi.fn(),
+  showSuccess: vi.fn(),
+  showWarning: vi.fn(),
+  showInfo: vi.fn(),
+  showToast: vi.fn(),
 }));
 
 import { renderUsuariosList } from '@pages/usuarios/list.js';
 import {
-  getUsuarios, getModulos, getTiposPerfil, atualizarUsuario,
+  getUsuarios, getModulos, getTiposPerfil, getPostosGrad,
+  atualizarUsuario, criarUsuario, excluirUsuario, resetarSenhas,
 } from '@services/plataforma-service.js';
+import { showError } from '@utils/toast.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -30,14 +46,21 @@ const PERFIS = [
   { code: 3, nome: 'Gerente' },
 ];
 
+const POSTOS = [
+  { code: 11, nome: 'Terceiro Sargento', nome_abrev: '3 Sgt' },
+  { code: 12, nome: 'Segundo Sargento', nome_abrev: '2 Sgt' },
+];
+
 const USUARIO = {
   uuid: 'u-1',
   login: 'sgt.silva',
   nome: 'Silva',
   nome_guerra: 'Silva',
+  tipo_posto_grad_id: 11,
   tipo_posto_grad: '3 Sgt',
   administrador: false,
   ativo: true,
+  senha_definida: true,
   perfis: { acervo: 1, orcamento: 2 },
 };
 
@@ -50,6 +73,7 @@ beforeEach(() => {
   getUsuarios.mockResolvedValue([]);
   getModulos.mockResolvedValue(MODULOS);
   getTiposPerfil.mockResolvedValue(PERFIS);
+  getPostosGrad.mockResolvedValue(POSTOS);
 });
 
 async function montar() {
@@ -59,6 +83,19 @@ async function montar() {
   await flush();
   return { container, cleanup };
 }
+
+/** Botao de acao da linha pelo `title`, que e como a tela os distingue. */
+const acao = (container, titulo) => [...container.querySelectorAll('.data-table__action-btn')]
+  .find(b => b.getAttribute('title') === titulo);
+
+const botaoModal = (rotulo) => [...document.querySelectorAll('.modal__footer button')]
+  .find(b => b.textContent.startsWith(rotulo));
+
+const campoModal = (rotulo) => {
+  const label = [...document.querySelectorAll('.modal .form-field__label')]
+    .find(l => l.textContent.replace('*', '').trim() === rotulo);
+  return document.getElementById(label.getAttribute('for'));
+};
 
 describe('renderUsuariosList', () => {
   test('monta titulo e carrega a lista do service', async () => {
@@ -146,9 +183,213 @@ describe('renderUsuariosList', () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { cleanup } = await montar();
     expect(atualizarUsuario).not.toHaveBeenCalled();
+    expect(criarUsuario).not.toHaveBeenCalled();
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A tela deixou de espelhar o Auth Server e passou a CADASTRAR (2026-08-02)
+// ---------------------------------------------------------------------------
+describe('usuarios: o cadastro e do SCA, e nao mais uma importacao', () => {
+  test('o topo oferece "Novo usuário", e nenhum caminho de importar ou sincronizar', async () => {
+    const { container, cleanup } = await montar();
+
+    const rotulos = [...container.querySelectorAll('.page__actions button')]
+      .map(b => b.textContent.trim());
+    expect(rotulos).toEqual(['Novo usuário']);
+    expect(rotulos.some(r => /Importar|Sincronizar/i.test(r))).toBe(false);
+
     if (typeof cleanup === 'function') cleanup();
   });
 
+  test('criar manda login, senha, identidade e as duas flags num corpo so', async () => {
+    const { container, cleanup } = await montar();
+
+    container.querySelector('.page__actions button').click();
+    await flush();
+
+    campoModal('Login').value = 'cb.souza';
+    campoModal('Senha inicial').value = 'trocar123';
+    campoModal('Nome completo').value = 'João de Souza';
+    campoModal('Nome de guerra').value = 'Souza';
+    campoModal('Posto/Graduação').value = '12';
+
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(criarUsuario).toHaveBeenCalledWith({
+      login: 'cb.souza',
+      senha: 'trocar123',
+      nome: 'João de Souza',
+      nome_guerra: 'Souza',
+      tipo_posto_grad_id: 12,
+      administrador: false,
+      // Quem nasce inativo nao entra: o padrao do formulario e ativo.
+      ativo: true,
+    });
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  test('a criacao pede senha; a edicao NAO, porque quem troca e o dono ou o reset', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    container.querySelector('.page__actions button').click();
+    await flush();
+    expect([...document.querySelectorAll('.modal input[type="password"]')]).toHaveLength(1);
+
+    botaoModal('Cancelar').click();
+    await flush();
+
+    acao(container, 'Editar cadastro').click();
+    await flush();
+    expect([...document.querySelectorAll('.modal input[type="password"]')]).toHaveLength(0);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  // Omitir um campo vale "nao mexe" no servidor (preserveOmitted). Mandar o
+  // valor atual de volta funcionaria hoje e apagaria o campo no dia em que a
+  // tela mandasse um vazio para preencher o corpo.
+  test('editar manda as duas flags obrigatorias e SO o campo que mudou', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    acao(container, 'Editar cadastro').click();
+    await flush();
+
+    campoModal('Nome completo').value = 'Silva da Silva';
+
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(atualizarUsuario).toHaveBeenCalledWith('u-1', {
+      administrador: false,
+      ativo: true,
+      nome: 'Silva da Silva',
+    });
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  test('campo obrigatorio vazio nao vira corpo com string vazia: recusa na tela', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    acao(container, 'Editar cadastro').click();
+    await flush();
+
+    campoModal('Nome de guerra').value = '';
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(atualizarUsuario).not.toHaveBeenCalled();
+    expect([...document.querySelectorAll('.modal .form-field__error')]
+      .some(e => e.textContent === 'Informe o nome de guerra')).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+});
+
+describe('usuarios: senha', () => {
+  // `senha_definida: false` e a lista de quem NAO CONSEGUE ENTRAR depois da
+  // migracao de 2026-08-02. Sem marca na tela, essa gente so apareceria ao
+  // reclamar que o login nao funciona.
+  test('quem esta sem senha leva marca na linha e entra na contagem do aviso', async () => {
+    getUsuarios.mockResolvedValue([
+      { ...USUARIO, senha_definida: false },
+      { ...USUARIO, uuid: 'u-2', login: 'cb.souza', nome: 'Souza', senha_definida: false },
+      { ...USUARIO, uuid: 'u-3', login: 'ten.lima', nome: 'Lima', senha_definida: true },
+    ]);
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelectorAll('.usuarios__chip-sem-senha')).toHaveLength(2);
+    const aviso = container.querySelector('.usuarios__aviso');
+    expect(aviso.classList.contains('hidden')).toBe(false);
+    expect(aviso.textContent).toContain('2 usuários');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('com todo mundo com senha, o aviso nao aparece', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelectorAll('.usuarios__chip-sem-senha')).toHaveLength(0);
+    expect(container.querySelector('.usuarios__aviso').classList.contains('hidden')).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A senha vira o LOGIN, que qualquer um adivinha. A confirmacao tem de dizer
+  // isso com todas as letras, e dizer o login: e o que separa "resetei a senha"
+  // de "abri a conta desta pessoa para quem souber o login dela".
+  test('resetar senha confirma dizendo que a senha passa a ser o login', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    acao(container, 'Resetar senha').click();
+    await flush();
+
+    expect(document.querySelector('.modal__message').textContent).toContain('sgt.silva');
+    expect(resetarSenhas).not.toHaveBeenCalled();
+
+    botaoModal('Resetar senha').click();
+    await flush();
+
+    expect(resetarSenhas).toHaveBeenCalledWith(['u-1']);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+});
+
+describe('usuarios: excluir', () => {
+  test('exclui depois de confirmar', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    const { container, cleanup } = await montar();
+
+    acao(container, 'Excluir').click();
+    await flush();
+    botaoModal('Excluir').click();
+    await flush();
+
+    expect(excluirUsuario).toHaveBeenCalledWith('u-1');
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  // O servidor quase sempre RECUSA, e a frase dele diz o que fazer em seguida
+  // ("Desative-o."). Uma mensagem generica aqui esconderia justamente isso.
+  test('a recusa do servidor sobe para a tela COMO ELA VEIO', async () => {
+    getUsuarios.mockResolvedValue([USUARIO]);
+    excluirUsuario.mockRejectedValueOnce(
+      new Error('Usuário já possui registros no sistema e não pode ser excluído. Desative-o.')
+    );
+    const { container, cleanup } = await montar();
+
+    acao(container, 'Excluir').click();
+    await flush();
+    botaoModal('Excluir').click();
+    await flush();
+
+    expect(showError).toHaveBeenCalledWith(
+      'Usuário já possui registros no sistema e não pode ser excluído. Desative-o.'
+    );
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+});
+
+describe('usuarios: perfis por modulo', () => {
   // O <select> por modulo virou um controle segmentado: os quatro niveis a
   // vista, na ordem da hierarquia, em vez de escondidos atras de um clique.
   const linhasPerfil = () => [...document.querySelectorAll('.modal .perfil-linha')];
@@ -158,14 +399,13 @@ describe('renderUsuariosList', () => {
       .find(b => b.textContent === rotulo)
       .click();
   };
-  const botaoSalvar = () => [...document.querySelectorAll('.modal__footer button')]
-    .find(b => b.textContent.startsWith('Salvar'));
+  const botaoSalvar = () => botaoModal('Salvar');
 
   test('o modal de perfis traz um seletor por modulo, marcando o nivel atual', async () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { container, cleanup } = await montar();
 
-    container.querySelector('.data-table__action-btn').click();
+    acao(container, 'Definir perfis por módulo').click();
     await flush();
 
     const linhas = linhasPerfil();
@@ -184,7 +424,7 @@ describe('renderUsuariosList', () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { container, cleanup } = await montar();
 
-    container.querySelector('.data-table__action-btn').click();
+    acao(container, 'Definir perfis por módulo').click();
     await flush();
 
     expect(botaoSalvar().disabled).toBe(true);
@@ -210,7 +450,7 @@ describe('renderUsuariosList', () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { container, cleanup } = await montar();
 
-    container.querySelector('.data-table__action-btn').click();
+    acao(container, 'Definir perfis por módulo').click();
     await flush();
 
     const linha = linhasPerfil()[0]; // acervo, hoje Consulta
@@ -229,7 +469,7 @@ describe('renderUsuariosList', () => {
     getUsuarios.mockResolvedValue([USUARIO]);
     const { container, cleanup } = await montar();
 
-    container.querySelector('.data-table__action-btn').click();
+    acao(container, 'Definir perfis por módulo').click();
     await flush();
 
     const linhas = linhasPerfil();

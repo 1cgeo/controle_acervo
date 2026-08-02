@@ -212,7 +212,7 @@ async function autenticar (cfg) {
     if (err instanceof ErroHttp) {
       throw new Error(
         `Falha no login (HTTP ${err.status}): ${err.mensagem}. ` +
-        `Confira o usuario, a senha e se a aplicacao "${cfg.cliente}" esta ativa no servico de autenticacao.`
+        `Confira o usuario e a senha. O cliente "${cfg.cliente}" e um dos aceitos pelo login do SCA (server/src/login/login_schema.js).`
       )
     }
     throw err

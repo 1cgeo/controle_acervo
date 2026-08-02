@@ -63,7 +63,7 @@ Nunca ponha senha na linha de comando.
 | Variável | Para quê |
 |---|---|
 | `SCA_URL` | URL do backend, ex.: `http://IP:porta` (`SCA_SERVER` é alias aceito) |
-| `SCA_USER` | login no serviço de autenticação |
+| `SCA_USER` | login no SCA |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 

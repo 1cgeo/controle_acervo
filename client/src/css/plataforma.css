@@ -52,6 +52,96 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* Sem senha definida: a pessoa NAO CONSEGUE ENTRAR. E um estado a corrigir, e
+ * nao uma propriedade dela, entao usa o vermelho do erro e nao o azul do Admin.
+ * Contorno, e nao preenchimento, pela mesma razao do "de X para Y" do perfil. */
+.usuarios__chip-sem-senha {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--color-error);
+  border-radius: 999px;
+  color: var(--color-error);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Contagem de quem esta sem senha, acima da tabela: a marca na linha responde
+ * "quem", e este aviso responde "quantos", que e a pergunta de quem acabou de
+ * migrar e nao sabe se sobrou alguem de fora. */
+.usuarios__aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+.usuarios__aviso svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-warning);
+}
+
+/* Nota do formulario de usuario: criar nao concede acesso a modulo nenhum. */
+.usuario-dialog__nota {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+/* ---------------------------------------------------------------------------
+ * Meu perfil (#/perfil).
+ *
+ * Duas seções, porque sao duas rotas com contratos diferentes: o cadastro nao
+ * pede senha, e a troca de senha exige a vigente. Num bloco so, corrigir o nome
+ * de guerra passaria a pedir a senha atual.
+ * ------------------------------------------------------------------------- */
+.perfil {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 720px;
+}
+
+.perfil__secao {
+  padding: var(--space-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+.perfil__secao-titulo {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.perfil__acoes {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-md);
+}
+
+.perfil__carregando {
+  color: var(--text-secondary);
+}
+
+/* O item de menu do usuario virou link em 2026-08-02 ("Meu perfil"), e o
+ * sublinhado padrao de <a> nao combina com uma linha de menu. */
+.navbar__dropdown-item:hover {
+  text-decoration: none;
+}
+
 /* ---------------------------------------------------------------------------
  * Modal de perfis por modulo.
  *
@@ -193,90 +283,5 @@
 .seletor-nivel__item--n2.seletor-nivel__item--ativo { color: var(--color-primary); }
 .seletor-nivel__item--n3.seletor-nivel__item--ativo { color: var(--color-warning); }
 
-/* ---------------------------------------------------------------------------
- * Modal de importacao do Auth Server.
- *
- * A lista chega com a DGEO inteira, entao busca, contador e selecao em massa
- * nao sao enfeite: sem eles, achar uma pessoa e rolar a lista com o olho.
- * ------------------------------------------------------------------------- */
-.importar-dialog__barra {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-}
-
-.importar-dialog__contador {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.importar-dialog__barra-acoes {
-  display: flex;
-  gap: var(--space-xs);
-}
-
-.importar-dialog__lista {
-  display: flex;
-  flex-direction: column;
-  max-height: 45vh;
-  overflow-y: auto;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-}
-
-.importar-dialog__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border-light);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.importar-dialog__item:last-child {
-  border-bottom: none;
-}
-
-.importar-dialog__item:hover {
-  background: var(--bg-hover);
-}
-
-.importar-dialog__item--marcada {
-  background: var(--bg-selected);
-}
-
-.importar-dialog__pessoa {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.importar-dialog__nome {
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-}
-
-.importar-dialog__secundario {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.importar-dialog__vazio {
-  margin: 0;
-  padding: var(--space-lg);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.importar-dialog__nota {
-  margin: var(--space-md) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height);
-}
+/* O modal de importacao do Auth Server saiu em 2026-08-02, com o CSS dele: a
+ * autenticacao veio para dentro do SCA e nao ha mais de onde importar. */

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { Command } from 'commander';
-import axios from 'axios';
+import bcrypt from 'bcryptjs';
 import pgPromise from 'pg-promise';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,95 +22,14 @@ const verifyDotEnv = () => {
   return existsSync(join(__dirname, 'server', 'config.env'));
 };
 
-const getAxiosConfig = (useProxy, extraConfig = {}) => {
-  const config = { ...extraConfig };
-  if (!useProxy) {
-    config.proxy = false;
-  }
-  return config;
-};
+// Ate 2026-08-02 este arquivo falava com o Auth Server externo por HTTP: ele
+// conferia se o servico respondia, fazia login com as credenciais do futuro
+// administrador e LIA de la o cadastro dele (nome, nome de guerra, posto e
+// uuid) para inserir no SCA. Nada disso existe mais -- a autenticacao veio para
+// dentro, entao o primeiro administrador se CADASTRA aqui, com senha, e o axios
+// saiu junto do `server/package.json`.
 
-const verifyAuthServer = async (authServer, useProxy) => {
-  if (!authServer.startsWith('http://') && !authServer.startsWith('https://')) {
-    throw new Error('Servidor deve iniciar com http:// ou https://');
-  }
-  try {
-    const response = await axios.get(`${authServer}/api`, getAxiosConfig(useProxy));
-    const wrongServer =
-      !response ||
-      response.status !== 200 ||
-      !('data' in response) ||
-      response.data.message !== 'Serviço de autenticação operacional';
-
-    if (wrongServer) {
-      throw new Error();
-    }
-  } catch(e) {
-    console.log(e)
-    throw new Error('Erro ao se comunicar com o servidor de autenticação');
-  }
-};
-
-const getAuthUserData = async (servidor, token, uuid, useProxy) => {
-  const server = `${servidor}/api/usuarios/${uuid}`;
-
-  try {
-    const config = getAxiosConfig(useProxy, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    });
-    const response = await axios.get(server, config);
-
-    if (
-      !('status' in response) ||
-      response.status !== 200 ||
-      !('data' in response) ||
-      !('dados' in response.data)
-    ) {
-      throw new Error();
-    }
-    return response.data.dados;
-  } catch {
-    throw new Error('Erro ao se comunicar com o servidor de autenticação');
-  }
-};
-
-const verifyLoginAuthServer = async (servidor, usuario, senha, useProxy) => {
-  const server = `${servidor}/api/login`;
-
-  try {
-    const response = await axios.post(server, {
-      usuario,
-      senha,
-      aplicacao: 'sca_web'
-    }, getAxiosConfig(useProxy));
-    if (
-      !response ||
-      !('status' in response) ||
-      response.status !== 201 ||
-      !('data' in response) ||
-      !('dados' in response.data) ||
-      !('success' in response.data) ||
-      !('token' in response.data.dados) ||
-      !('uuid' in response.data.dados)
-    ) {
-      throw new Error();
-    }
-
-    const authenticated = response.data.success || false;
-    const authUserUUID = response.data.dados.uuid;
-    const token = response.data.dados.token;
-
-    const authUserData = await getAuthUserData(servidor, token, authUserUUID, useProxy);
-    return { authenticated, authUserData };
-  } catch {
-    throw new Error('Erro ao se comunicar com o servidor de autenticação');
-  }
-};
-
-const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, authServer, useProxy, dbUserReadonly, dbPasswordReadonly) => {
+const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, dbUserReadonly, dbPasswordReadonly) => {
   const secret = randomBytes(64).toString('hex');
 
   const env = `PORT=${port}
@@ -121,9 +40,7 @@ DB_USER=${dbUser}
 DB_PASSWORD=${dbPassword}
 DB_USER_READONLY=${dbUserReadonly || ''}
 DB_PASSWORD_READONLY=${dbPasswordReadonly || ''}
-JWT_SECRET=${secret}
-AUTH_SERVER=${authServer}
-USE_PROXY=${useProxy}`;
+JWT_SECRET=${secret}`;
 
   writeFileSync(join(__dirname, 'server', 'config.env'), env);
 };
@@ -154,23 +71,50 @@ const giveReadonlyPermission = async ({ dbUser, dbPassword, dbPort, dbServer, db
   await connection.none(readSqlFile('./er/permissao_readonly.sql'), [roUser, dbUser]);
 };
 
-const insertAdminUser = async (authUserData, connection) => {
-  const {
-    login,
-    nome,
-    nome_guerra: nomeGuerra,
-    tipo_posto_grad_id: tpgId,
-    uuid
-  } = authUserData;
+/**
+ * Cria o PRIMEIRO administrador, com senha.
+ *
+ * O `uuid` sai do default da coluna, e nao vem de fora: ate a fusao de
+ * 2026-08-02 ele era copiado do Auth Server, porque `dgeo.usuario` era um
+ * espelho e o uuid precisava casar com o de la.
+ *
+ * O codigo de posto/graduacao e conferido contra `dominio.tipo_posto_grad`
+ * LIDO DO BANCO, dentro da mesma transacao que acabou de carregar o
+ * `er/dominio.sql`. A lista NAO e copiada para ca de proposito: copia apodrece,
+ * e o dia em que um posto entrar no dominio o instalador estaria mentindo. Sem
+ * a conferencia, o codigo errado morreria numa violacao de chave estrangeira
+ * que nao diz a ninguem qual era o valor certo.
+ */
+const insertAdminUser = async (admin, connection) => {
+  const { login, senha, nome, nomeGuerra, tipoPostoGradId } = admin;
+
+  const posto = await connection.oneOrNone(
+    'SELECT code FROM dominio.tipo_posto_grad WHERE code = $<tipoPostoGradId>',
+    { tipoPostoGradId }
+  );
+
+  if (!posto) {
+    const opcoes = await connection.any(
+      'SELECT code, nome FROM dominio.tipo_posto_grad ORDER BY code'
+    );
+    throw new Error(
+      `Posto/graduação ${tipoPostoGradId} não existe. Opções: ` +
+        opcoes.map((o) => `${o.code}=${o.nome}`).join(', ')
+    );
+  }
+
+  // Custo 10, o mesmo de server/src/login/senha.js. Divergir aqui produziria um
+  // hash que o login aceita mas com outro custo, e ninguem perceberia.
+  const hash = await bcrypt.hash(senha, 10);
 
   await connection.none(
-    `INSERT INTO dgeo.usuario (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid) VALUES
-    ($<login>, $<nome>, $<nomeGuerra>, $<tpgId>, TRUE, TRUE, $<uuid>)`,
-    { login, nome, nomeGuerra, tpgId, uuid }
+    `INSERT INTO dgeo.usuario (login, senha, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo) VALUES
+    ($<login>, $<hash>, $<nome>, $<nomeGuerra>, $<tipoPostoGradId>, TRUE, TRUE)`,
+    { login, hash, nome, nomeGuerra, tipoPostoGradId }
   );
 };
 
-const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, authUserData) => {
+const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admin) => {
   const maintenanceDb = pgp(`postgres://${dbUser}:${dbPassword}@${dbServer}:${dbPort}/postgres`);
   await maintenanceDb.none('CREATE DATABASE $1:name', [dbName]);
 
@@ -199,7 +143,7 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, auth
     // ele os CONSULTA em tempo de geracao, sem chave estrangeira para eles.
     await t.none(readSqlFile('./er/rpcmtec.sql'));
     await givePermission({ dbUser, connection: t });
-    await insertAdminUser(authUserData, t);
+    await insertAdminUser(admin, t);
   });
 };
 
@@ -334,36 +278,75 @@ const getConfigFromUser = (options) => {
       when: readonlyEnabled
     });
   }
-  if (!options.authServerRaw) {
+  // O primeiro administrador so faz sentido quando o banco esta sendo CRIADO:
+  // com --no-db-create ele ja existe na base que se esta reaproveitando.
+  const criaBanco = (answers) => {
+    if (options.dbCreate !== undefined) return options.dbCreate;
+    return answers.dbCreate;
+  };
+
+  if (!options.adminLogin) {
     questions.push({
       type: 'input',
-      name: 'authServerRaw',
-      message: 'Qual a URL do serviço de autenticação (iniciar com http:// ou https://)?'
+      name: 'adminLogin',
+      message: 'Qual o login do primeiro administrador do SCA?',
+      when: criaBanco,
+      validate: (value) => (value ? true : 'Informe um login')
     });
   }
-  if (options.useProxy === undefined) {
-    questions.push({
-      type: 'confirm',
-      name: 'useProxy',
-      message: 'Deseja utilizar proxy para as conexões HTTP?',
-      default: false
-    });
-  }
-  if (!options.authUser) {
-    questions.push({
-      type: 'input',
-      name: 'authUser',
-      message:
-        'Qual o nome do usuário já existente Serviço de Autenticação que será administrador do SCA?'
-    });
-  }
-  if (!options.authPassword) {
+  if (!options.adminSenha) {
     questions.push({
       type: 'password',
-      name: 'authPassword',
+      name: 'adminSenha',
       mask: '*',
+      message: 'Qual a senha do primeiro administrador do SCA?',
+      when: criaBanco,
+      validate: (value) => (value ? true : 'Informe uma senha')
+    });
+    // A confirmacao existe porque a senha vai MASCARADA e este e o unico
+    // caminho de entrada no sistema recem-instalado: um erro de digitacao aqui
+    // so apareceria no primeiro login, sem ninguem para resetar a senha.
+    questions.push({
+      type: 'password',
+      name: 'adminSenhaConfirmacao',
+      mask: '*',
+      message: 'Repita a senha do primeiro administrador:',
+      when: (answers) => criaBanco(answers) && !options.adminSenha,
+      validate: (value, answers) =>
+        value === answers.adminSenha ? true : 'As senhas não conferem'
+    });
+  }
+  if (!options.adminNome) {
+    questions.push({
+      type: 'input',
+      name: 'adminNome',
+      message: 'Qual o nome completo do primeiro administrador?',
+      when: criaBanco,
+      validate: (value) => (value ? true : 'Informe o nome')
+    });
+  }
+  if (!options.adminNomeGuerra) {
+    questions.push({
+      type: 'input',
+      name: 'adminNomeGuerra',
+      message: 'Qual o nome de guerra do primeiro administrador?',
+      when: criaBanco,
+      validate: (value) => (value ? true : 'Informe o nome de guerra')
+    });
+  }
+  if (!options.adminPostoGrad) {
+    questions.push({
+      type: 'input',
+      name: 'adminPostoGrad',
       message:
-        'Qual a senha do usuário já existente Serviço de Autenticação que será administrador do SCA?'
+        'Qual o código do posto/graduação do primeiro administrador (1=Civil, 13=Capitão, 16=Coronel; a lista completa está em er/dominio.sql)?',
+      default: 1,
+      when: criaBanco,
+      filter: Number,
+      validate: (value) =>
+        Number.isInteger(value) && value > 0
+          ? true
+          : 'Informe um código inteiro positivo'
     });
   }
 
@@ -395,36 +378,43 @@ const createConfig = async (options) => {
       dbCreate,
       dbUserReadonly,
       dbPasswordReadonly,
-      authServerRaw,
-      useProxy,
-      authUser,
-      authPassword
+      adminLogin,
+      adminSenha,
+      adminNome,
+      adminNomeGuerra,
+      adminPostoGrad
     } = { ...options, ...(await inquirer.prompt(questions)) };
 
     const readonlyConfigured = Boolean(dbUserReadonly && dbPasswordReadonly);
 
-    const authServer = authServerRaw.endsWith('/')
-      ? authServerRaw.slice(0, -1)
-      : authServerRaw;
-
-    await verifyAuthServer(authServer, useProxy);
-
-    const { authenticated, authUserData } = await verifyLoginAuthServer(
-      authServer,
-      authUser,
-      authPassword,
-      useProxy
-    );
-
-    if (!authenticated) {
-      throw new Error('Usuário ou senha inválida no Serviço de Autenticação.');
-    }
-
     if (dbCreate) {
-      await createDatabase(dbUser, dbPassword, dbPort, dbServer, dbName, authUserData);
+      const admin = {
+        login: adminLogin,
+        senha: adminSenha,
+        nome: adminNome,
+        nomeGuerra: adminNomeGuerra,
+        tipoPostoGradId: Number(adminPostoGrad)
+      };
+
+      // Falha ANTES de criar o banco. Descobrir que falta o nome de guerra
+      // depois do CREATE DATABASE deixaria uma base pela metade, e a proxima
+      // tentativa esbarraria em "o banco ja existe".
+      const faltando = Object.entries(admin)
+        .filter(([, v]) => v === undefined || v === null || v === '')
+        .map(([k]) => k);
+      if (faltando.length) {
+        throw new Error(
+          `Dados do primeiro administrador incompletos: ${faltando.join(', ')}`
+        );
+      }
+
+      await createDatabase(dbUser, dbPassword, dbPort, dbServer, dbName, admin);
 
       console.log(
         chalk.blue('Banco de dados do Sistema de Controle do Acervo criado com sucesso!')
+      );
+      console.log(
+        chalk.blue(`Administrador ${adminLogin} criado. É com ele que se entra no sistema pela primeira vez.`)
       );
     } else {
       await givePermission({ dbUser, dbPassword, dbPort, dbServer, dbName });
@@ -455,8 +445,6 @@ const createConfig = async (options) => {
       dbName,
       dbUser,
       dbPassword,
-      authServer,
-      useProxy,
       readonlyConfigured ? dbUserReadonly : '',
       readonlyConfigured ? dbPasswordReadonly : ''
     );
@@ -484,11 +472,13 @@ program
   .option('--no-db-readonly', 'Não configurar usuário somente leitura')
   .option('--db-user-readonly <value>', 'Usuário do PostgreSQL somente leitura (criado caso não exista)')
   .option('--db-password-readonly <value>', 'Senha do usuário somente leitura')
-  .option('--auth-server-raw <value>', 'URL do serviço de autenticação (iniciar com http:// ou https://)')
-  .option('--use-proxy', 'Utilizar proxy para conexões HTTP')
-  .option('--no-use-proxy', 'Não utilizar proxy para conexões HTTP')
-  .option('--auth-user <value>', 'Usuário administrador do Serviço de Autenticação')
-  .option('--auth-password <value>', 'Senha do usuário administrador do Serviço de Autenticação')
+  // Primeiro administrador do SCA. So valem com criacao de banco: sem ela a
+  // pessoa ja existe na base que se esta reaproveitando.
+  .option('--admin-login <value>', 'Login do primeiro administrador do SCA')
+  .option('--admin-senha <value>', 'Senha do primeiro administrador do SCA')
+  .option('--admin-nome <value>', 'Nome completo do primeiro administrador')
+  .option('--admin-nome-guerra <value>', 'Nome de guerra do primeiro administrador')
+  .option('--admin-posto-grad <value>', 'Código do posto/graduação do primeiro administrador (dominio.tipo_posto_grad)')
   .option('--overwrite-env', 'Sobrescrever arquivo de configuração');
 
 program.parse(process.argv);

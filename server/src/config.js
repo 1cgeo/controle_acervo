@@ -35,8 +35,12 @@ dotenv.config({
 // e o que separa as tabelas 7.2 e 7.3 do RPCMTec. As duas sao exigidas: sem a
 // primeira as rotas de /rpcmtec quebram em runtime, e sem a segunda a consulta
 // de insumos falha na coluna que nao existe.
-const VERSION = '1.11.0'
-const MIN_DATABASE_VERSION = '1.11.0'
+// 1.12.0 traz a autenticacao para DENTRO do SCA (2026-08-02): `dgeo.usuario`
+// ganha a coluna `senha` e nasce `dgeo.login`, o historico de acesso. As duas
+// sao exigidas: sem a primeira ninguem entra, porque nao ha mais Auth Server
+// para quem perguntar; sem a segunda o login falha ao gravar o historico.
+const VERSION = '1.12.0'
+const MIN_DATABASE_VERSION = '1.12.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()
@@ -56,12 +60,14 @@ const configSchema = Joi.object().keys({
   JWT_EXPIRACAO: Joi.string()
     .pattern(/^\d+[smhd]$/)
     .default('8h'),
-  AUTH_SERVER: Joi.string()
-    .uri()
-    .required(),
+  // SEM AUTH_SERVER e SEM USE_PROXY desde 2026-08-02: a autenticacao veio para
+  // dentro do SCA e nao ha mais servico externo a quem perguntar a senha, nem
+  // chamada de saida que precise atravessar proxy. As duas chaves podem ficar
+  // no config.env antigo sem efeito nenhum -- o Joi aqui nao usa `.unknown()`,
+  // mas o objeto validado e MONTADO abaixo chave por chave, entao o que sobrar
+  // no arquivo simplesmente nao e lido.
   DB_USER_READONLY: Joi.string().allow('').default(''),
   DB_PASSWORD_READONLY: Joi.string().allow('').default(''),
-  USE_PROXY: Joi.boolean().default(false),
   // Onde os shares do acervo estao MONTADOS nesta maquina. So importa fora do
   // Windows: acervo.volume_armazenamento.volume guarda caminho UNC do Windows,
   // que no Linux nao existe em forma nenhuma. Com VOLUMES_RAIZ=/mnt, o share
@@ -93,8 +99,6 @@ const config = {
   DB_PASSWORD_READONLY: process.env.DB_PASSWORD_READONLY || '',
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRACAO: process.env.JWT_EXPIRACAO || '8h',
-  AUTH_SERVER: process.env.AUTH_SERVER,
-  USE_PROXY: process.env.USE_PROXY === 'true',
   VOLUMES_RAIZ: process.env.VOLUMES_RAIZ || '',
   // Ausente vale 2, e nao NaN: `Number(undefined)` reprovaria a validacao e
   // mataria o boot de toda instalacao que nunca ouviu falar desta chave.
