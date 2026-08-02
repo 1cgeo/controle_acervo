@@ -58,11 +58,9 @@ entre SISTEMAS.
   produção do SAP. E `documento_autorizacao` é **NOT NULL**, porque é ele que distingue a exceção
   AUTORIZADA de trabalho fora do plano -- derivar a 3.3 de `previsto_pit` dava 23 linhas onde a
   edição real de julho/2026 traz 1.
-- **`rpcmtec.aproveitamento_mes` e `rpcmtec.capacitacao` moram no schema do RELATÓRIO**, e isso não
-  contradiz o "as tabelas do relatório não se gravam aqui" de `er/rpcmtec.sql`: aquilo vale para
-  tabela CALCULADA, e estas são DIGITADAS. São entrada, e não saída; reconsultar não recupera nada,
-  porque não há de onde. O retrato do efetivo guarda o posto DA ÉPOCA de propósito: lendo o cadastro
-  de hoje, a edição de março se reescreveria sozinha na primeira promoção de julho.
+- **`rpcmtec.capacitacao` mora no schema do RELATÓRIO**, e isso não contradiz o "as tabelas do
+  relatório não se gravam aqui" de `er/rpcmtec.sql`: aquilo vale para tabela CALCULADA, e esta é
+  DIGITADA. É entrada, e não saída; reconsultar não recupera nada, porque não há de onde.
 - **A capacitação é UMA tabela para ministrada (2.6) e recebida (6.2), e DUAS telas.** A linha é o
   mesmo fato visto dos dois lados; o que muda são três colunas, anuláveis por isso. O servidor
   **não** recusa a coluna do outro tipo: quem decide o que aparece é o formulário, e quem decide o
@@ -74,10 +72,60 @@ entre SISTEMAS.
   limparia três campos já preenchidos.
 - **`usuario_uuid` no efetivo, e não `usuario_id` como no SAP.** É a convenção de tabela nova aqui. O
   preço é mais uma tabela apontando `dgeo.usuario`, ou seja, mais uma razão para excluir usuário
-  falhar -- e está certo, porque desativar não apaga o retrato dos meses em que a pessoa esteve.
-- **O lançamento em massa do efetivo NÃO gera `lote_id` próprio.** `montarContexto` já emite um por
-  REQUISIÇÃO, e cada partida rápida é uma requisição. Um segundo mecanismo faria a tela agrupar
-  errado no dia em que os dois divergissem.
+  falhar -- e está certo, porque desativar não apaga a passagem de quem já esteve aqui.
+
+## O aproveitamento do efetivo é INTERVALO, e não retrato mensal (2026-08-02)
+
+`rpcmtec.aproveitamento_mes` nasceu de manhã, copiando o formato que o SAP copiou do RPCMTec de
+2026: uma linha por pessoa por mês, com um texto livre de atividades. Ela media a coisa errada, e
+saiu no mesmo dia.
+
+- **A prova está no próprio documento.** Até 2025 a subseção 6.1 tinha QUATRO colunas (Serviços,
+  Funções Administrativas, Dias não apresentado), e em 2026 elas viraram duas (Militar, Atividades).
+  A tabela deixou de medir, e nós herdamos a versão que perdeu a conta. O número continua sendo
+  usado: o fechamento de 2025 registra "2º Sgt Barreto (17%, funções fora da DGEO desde 06 MAR)",
+  que é 2 meses de 12.
+- **Texto livre não soma, não compara entre meses e não responde "por que 70%".** E retrato mensal
+  não sabe dizer o que aconteceu no dia 06 de março. A saída são dois intervalos:
+  `dgeo.efetivo_periodo` diz quando a pessoa esteve na Divisão, e `dgeo.impedimento` diz o que a
+  tirou do trabalho sem tirá-la da Divisão, e quanto. **Mês, semana e ano deixam de ser dado e viram
+  consulta.**
+- **`atividades` nunca foi o que a pessoa faz aqui: é o que a tira daqui** (chefe). Função acumulada
+  na administração, licença de saúde, curso. Por isso quase todo mundo não tem nenhum, e o
+  preenchimento mensal que a tela antiga pedia era digitar o vazio trinta vezes por mês.
+- **A não sobreposição de PASSAGEM é do banco**, por `EXCLUDE USING gist` com `daterange` (e a
+  extensão `btree_gist`, que é padrão). A regra vale para a tela, para o CLI, para a carga e para o
+  `psql` de quem vier depois; validá-la na aplicação a deixaria a um `INSERT` de distância de ser
+  furada. O `[]` fecha os dois lados, então sair no dia 30 e voltar no dia 30 é sobreposição.
+- **IMPEDIMENTO pode sobrepor, e é o caso real.** O 1º Ten Raul Magno estava em LTSP E chefiando o
+  S5. Os percentuais somam e a soma é truncada em 100% na leitura; recusar a sobreposição negaria o
+  fato.
+- **A descrição do impedimento é TEXTO LIVRE, sem catálogo** (chefe). "Chefe do S5", "LTSP",
+  "Curso PCE-EECN" e "Fiscal administrativo" não pertencem a uma taxonomia que caiba num domínio de
+  cinco linhas, e classificar antes de escrever atrapalha.
+- **A conta é por DIA, e em dia CORRIDO.** Por dia, porque o mês quebrado é o caso que motivou tudo:
+  quem chegou em 06 de março rendeu 26 de 31. Corrido, porque numerador e denominador usam a mesma
+  régua, e dia útil exigiria um calendário de feriados só para mudar o denominador.
+- **A disponibilidade tem TRÊS estados, e confundir os dois últimos é o erro que a tela existe para
+  não cometer**: nulo (não estava na Divisão), zero (estava e um impedimento consumiu o dia) e 1 a
+  100. No mapa, célula sem cor contra célula vermelha. Com as duas em cinza, a chegada em março se
+  leria como quatro meses de licença.
+- **`dgeo`, e não `rpcmtec`.** "Quem esteve na Divisão e quando" não existe por causa do relatório:
+  o relatório é um leitor. É dado de pessoa, e mora junto de `dgeo.usuario`. As duas tabelas são
+  auditadas no agregado da PESSOA, então a passagem e o impedimento aparecem na ficha dela.
+- **O POSTO DA ÉPOCA se perde, e está aceito** (chefe). A linha do mês o congelava, e agora ele vem
+  do cadastro. O que importa é a associação com a PESSOA, e a promoção não muda quem esteve na
+  Divisão em março.
+- **A 6.1 sai com TRÊS colunas, e o modelo de 2026 tem duas.** A terceira é o aproveitamento. Uma
+  tabela de aproveitamento sem o aproveitamento é a que o documento tinha e que o chefe pediu para
+  desfazer; quem cola no Word apaga a coluna se não quiser, o que é barato, e recuperar um número
+  que não saiu não é. A coluna "Atividades" passou a ser DERIVADA dos impedimentos.
+- **O impedimento se cadastra a partir do MILITAR, e não por um botão geral** (chefe). O mapa já
+  respondeu "de quem", e um botão no topo pediria a pessoa de novo. A passagem tem botão geral,
+  porque cadastrar a primeira de alguém é o caso em que a pessoa ainda não está no mapa.
+- **A data de fim é um campo MAIS uma caixa, e o campo fica desabilitado em vez de sumir.** A
+  primeira versão escondia o campo, e a célula da grade encolhia e crescia conforme a caixa: o
+  formulário pulava e as duas colunas deixavam de alinhar.
 
 ## Autenticação dentro do SCA (2026-08-02)
 

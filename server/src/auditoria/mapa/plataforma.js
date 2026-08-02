@@ -54,6 +54,47 @@ module.exports = {
     }
   },
 
+  // Passagem pela DGEO e impedimento sao do agregado PESSOA, e nao agregados
+  // proprios. "Chegou em marco", "saiu em novembro" e "acumulou o S5 de junho a
+  // dezembro" sao a historia daquela pessoa, e e na ficha dela que se leem. Um
+  // agregado proprio para cada um daria duas fichas que ninguem abre.
+  //
+  // Eles substituiram `rpcmtec.aproveitamento_mes` em 2026-08-02, no mesmo dia
+  // em que ela nasceu: retrato mensal nao sabe dizer o que aconteceu no dia 06 de
+  // marco, e o rastro dele herdava o mesmo defeito -- editar o mes de marco
+  // aparecia como um evento por mes, e nunca como "a passagem mudou de data".
+  'dgeo.efetivo_periodo': {
+    modulo: 'plataforma',
+    entidade: 'usuario',
+    agregado: (t, linha) => linha.usuario_uuid,
+    resumo: linha =>
+      `Passagem pela DGEO desde ${linha.data_inicio}${linha.data_fim ? ` até ${linha.data_fim}` : ''}`,
+    campos: {
+      usuario_uuid: { rotulo: 'Militar', entidade: 'usuario' },
+      data_inicio: { rotulo: 'Entrada na DGEO', tipo: 'data' },
+      // Nulo e "sem previsao de saida", e nao "esqueceram de preencher". A tela
+      // mostra isso como uma caixa marcada.
+      data_fim: { rotulo: 'Saída da DGEO', tipo: 'data' },
+      observacao: { rotulo: 'Observação' }
+    }
+  },
+
+  'dgeo.impedimento': {
+    modulo: 'plataforma',
+    entidade: 'usuario',
+    agregado: (t, linha) => linha.usuario_uuid,
+    resumo: linha => `${linha.descricao} (${linha.percentual}%)`,
+    campos: {
+      usuario_uuid: { rotulo: 'Militar', entidade: 'usuario' },
+      // TEXTO LIVRE, sem catalogo de tipo (chefe, 2026-08-02): a lista de
+      // motivos nao fecha, e classificar antes de escrever atrapalha.
+      descricao: { rotulo: 'Impedimento' },
+      percentual: { rotulo: 'Percentual do tempo', tipo: 'numero' },
+      data_inicio: { rotulo: 'Início', tipo: 'data' },
+      data_fim: { rotulo: 'Término', tipo: 'data' }
+    }
+  },
+
   'dgeo.usuario_perfil': {
     modulo: 'plataforma',
     entidade: 'usuario',
@@ -155,43 +196,6 @@ module.exports = {
       mes: { rotulo: 'Mês', tipo: 'numero' },
       assinante: { rotulo: 'Assinante' },
       data_assinatura: { rotulo: 'Data da assinatura', tipo: 'data' }
-    }
-  },
-
-  // --- Agregado: aproveitamento do efetivo -----------------------------------
-  //
-  // O AGREGADO E O MES, e nao a linha. A pergunta que se faz aqui e "quem mexeu
-  // no efetivo de julho", e nao "o que aconteceu com a linha 412": a tela e por
-  // (ano, mes), o retrato inteiro se preenche de uma vez e se confere de uma
-  // vez. Com a linha por agregado, a ficha do mes teria de juntar trinta
-  // historicos para contar uma historia so.
-  //
-  // Por isso o id do agregado e TEXTO no formato 'AAAA-MM'. A coluna
-  // `auditoria.evento.entidade_id` e VARCHAR justamente porque o sistema
-  // identifica registro de mais de uma forma.
-  //
-  // As duas partidas rapidas (iniciar do efetivo, copiar o mes anterior) criam
-  // dezenas de linhas de uma vez, e cada uma vira um evento. O que impede a
-  // tela de virar trinta linhas iguais e o `lote_id`, que `montarContexto` ja
-  // emite um por REQUISICAO -- e cada partida rapida e uma requisicao so.
-
-  'rpcmtec.aproveitamento_mes': {
-    modulo: 'plataforma',
-    entidade: 'aproveitamento',
-    agregado: (t, linha) => `${linha.ano}-${String(linha.mes).padStart(2, '0')}`,
-    // O UUID de quem e a linha, e nao o nome: o resumo e montado a partir da
-    // PROPRIA linha, que nao traz o cadastro. Quem le a tela ve o nome, porque
-    // a tela consulta o cadastro; o rastro guarda o que identifica sem depender
-    // de o cadastro continuar existindo.
-    resumo: linha => `Efetivo de ${String(linha.mes).padStart(2, '0')}/${linha.ano}`,
-    campos: {
-      ano: { rotulo: 'Ano' },
-      mes: { rotulo: 'Mês', tipo: 'numero' },
-      usuario_uuid: { rotulo: 'Militar', entidade: 'usuario' },
-      // CONGELADO no mês: é o posto da época, e não o de hoje. Alterá-lo aqui é
-      // corrigir o retrato, e não promover ninguém.
-      tipo_posto_grad_id: { rotulo: 'Posto/graduação no mês', dominio: 'dominio.tipo_posto_grad' },
-      atividades: { rotulo: 'Atividades e encargos' }
     }
   },
 

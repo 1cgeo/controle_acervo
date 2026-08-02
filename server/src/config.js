@@ -49,8 +49,12 @@ dotenv.config({
 // O piso PULA a 1.13.0 e a 1.14.0 (rastreabilidade), que nao o subiram. Elas
 // tambem eram exigidas: `auditoria.evento` e escrito DENTRO da transacao de toda
 // mudanca, entao num banco 1.12.0 nenhuma escrita do sistema passa.
+// 1.16.0 troca o retrato mensal do efetivo por INTERVALO (2026-08-02):
+// `rpcmtec.aproveitamento_mes` sai, e entram `dgeo.efetivo_periodo` e
+// `dgeo.impedimento`. Exigida: a subsecao 6.1 do relatorio le as duas, e num
+// banco 1.15.0 o gerador quebra na tabela que nao existe.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.15.0'
+const MIN_DATABASE_VERSION = '1.16.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

@@ -16,13 +16,15 @@ BEGIN;
 -- coerente com o banco. Uma edição gravada envelheceria em silêncio no primeiro
 -- pedido corrigido depois de fechada.
 --
--- AS DUAS TABELAS DE 2026-08-02 NÃO CONTRADIZEM O PARÁGRAFO ACIMA, e a
--- diferença é a que separa entrada de saída. `aproveitamento_mes` e
--- `capacitacao` não são recalculáveis: ninguém as deriva do banco, alguém as
--- DIGITA. Reconsultar não recupera nada, porque não há de onde. São a matéria
--- prima das subseções 2.6, 6.1 e 6.2, e moram aqui porque não existem por outra
--- razão que não o relatório. Se um dia alguém as consultar fora dele, é sinal de
--- que mudaram de natureza e devem mudar de casa.
+-- `capacitacao` NÃO CONTRADIZ O PARÁGRAFO ACIMA, e a diferença é a que separa
+-- entrada de saída. Ela não é recalculável: ninguém a deriva do banco, alguém a
+-- DIGITA. Reconsultar não recupera nada, porque não há de onde. É a matéria
+-- prima das subseções 2.6 e 6.2, e mora aqui porque não existe por outra razão
+-- que não o relatório.
+--
+-- `aproveitamento_mes` morou aqui por algumas horas em 2026-08-02 e saiu no
+-- mesmo dia: ela media a coisa errada, e virou `dgeo.efetivo_periodo` mais
+-- `dgeo.impedimento`. A razão está escrita em er/dgeo.sql.
 --
 -- PERMISSÃO. Ler e gerar é de quem administra: o RPCMTec cruza os três módulos,
 -- inclusive valor de crédito e de empenho, e liberá-lo por perfil de um módulo
@@ -52,43 +54,6 @@ COMMENT ON TABLE rpcmtec.edicao IS
     'Metadado da edição mensal do RPCMTec (quem assina, quando). As tabelas do relatório são consultas recortadas por ano e mês, nunca gravadas.';
 
 CREATE INDEX idx_edicao_ano ON rpcmtec.edicao (ano);
-
--- Aproveitamento do efetivo: a subseção 6.1 ("Militar | Atividades").
---
--- É um RETRATO MENSAL CONGELADO, e é essa a razão de a tabela existir em vez de
--- a 6.1 sair de `dgeo.usuario` na hora. Guarda-se o posto DA ÉPOCA, porque a
--- edição de março não pode mudar quando alguém for promovido em julho, e o
--- efetivo de março não pode encolher quando alguém for transferido. Lendo o
--- cadastro de hoje, toda edição antiga se reescreveria sozinha a cada mudança
--- de gente, e ninguém veria acontecer.
---
--- `usuario_uuid`, e não `usuario_id`. O SAP usa o serial; aqui a convenção de
--- tabela nova é o UUID (a mesma do acervo e do orçamento), e é ele que as
--- dezenas de tabelas dos três módulos referenciam. O preço é conhecido e
--- aceito: mais uma tabela apontando `dgeo.usuario`, ou seja, mais uma razão
--- para excluir usuário falhar. Quem já trabalhou aqui se DESATIVA, e desativar
--- não apaga o retrato dos meses em que a pessoa esteve.
---
--- `atividades` é TEXTO LIVRE, e vazio é resposta: quem só produziu no mês não
--- tem encargo a declarar, e a coluna sai em branco no documento.
-CREATE TABLE rpcmtec.aproveitamento_mes(
-  id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL,
-  mes SMALLINT NOT NULL CHECK (mes BETWEEN 1 AND 12),
-  usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  tipo_posto_grad_id SMALLINT NOT NULL REFERENCES dominio.tipo_posto_grad (code),
-  atividades TEXT,
-  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  UNIQUE (ano, mes, usuario_uuid)
-);
-
-COMMENT ON TABLE rpcmtec.aproveitamento_mes IS
-    'Retrato mensal do efetivo (6.1 do RPCMTec): uma linha por pessoa por mês, com o posto da época. Congelado de propósito, para a edição assinada não mudar depois.';
-
-CREATE INDEX idx_aproveitamento_ano_mes ON rpcmtec.aproveitamento_mes (ano, mes);
 
 -- Capacitação: MINISTRADA alimenta a 2.6 e RECEBIDA alimenta a 6.2.
 --

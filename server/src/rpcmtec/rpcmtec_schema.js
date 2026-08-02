@@ -47,35 +47,6 @@ models.atualizar = Joi.object().keys({ ...camposBase })
 // janeiro pelo DateStyle MDY. Padrão da casa desde 2026-08-01.
 const dia = Joi.date().iso().raw()
 
-// --- Aproveitamento do efetivo (6.1) ----------------------------------------
-
-models.anoMesParams = Joi.object().keys({
-  ano: Joi.number().integer().required(),
-  mes: Joi.number().integer().min(1).max(12).required()
-})
-
-models.anoMesBody = Joi.object().keys({
-  ano: Joi.number().integer().strict().required(),
-  mes: Joi.number().integer().strict().min(1).max(12).required()
-})
-
-models.criarEfetivo = Joi.object().keys({
-  ano: Joi.number().integer().strict().required(),
-  mes: Joi.number().integer().strict().min(1).max(12).required(),
-  usuario_uuid: Joi.string().uuid().required(),
-  // OPCIONAL: omitido, sai do cadastro atual da pessoa. Exigi-lo faria a tela
-  // ter de conhecer a tabela de postos só para acrescentar uma linha.
-  tipo_posto_grad_id: Joi.number().integer().strict(),
-  atividades: Joi.string().allow(null, '')
-})
-
-// Só o posto e as atividades. Trocar a PESSOA ou o MÊS de uma linha existente
-// seria reescrever de quem é o retrato: para isso, exclui-se e lança de novo.
-models.atualizarEfetivo = Joi.object().keys({
-  tipo_posto_grad_id: Joi.number().integer().strict(),
-  atividades: Joi.string().allow(null, '')
-})
-
 // --- Capacitação (2.6 ministrada / 6.2 recebida) ----------------------------
 
 models.capacitacaoQuery = Joi.object().keys({

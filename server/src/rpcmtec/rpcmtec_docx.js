@@ -102,9 +102,12 @@ const GRADES = {
   '4.5': [2535, 2955, 2145, 2205],
   '4.6': [1965, 2685, 1755, 3435],
   '4.7': [855, 870, 840, 2295, 1185, 1245, 1485, 1050],
-  // A 6.1 tem DUAS colunas largas: "Militar" e um nome curto, e "Atividades" é
-  // a lista de encargos de cada um, que é prosa.
-  '6.1': [2310, 7515],
+  // A 6.1 tem TRÊS colunas aqui, e duas no modelo de 2026: entrou a de
+  // "Aproveitamento", em 2026-08-02. Uma tabela de aproveitamento sem o
+  // aproveitamento é a que o documento tinha e que o chefe pediu para desfazer.
+  // A largura total continua a do modelo, 9825, para a tabela nascer do tamanho
+  // das vizinhas, e a coluna do meio cede o espaço porque é a única que é prosa.
+  '6.1': [2310, 6015, 1500],
   '6.2': [2310, 2415, 2325, 2835],
   // 7.2 e 7.3 dividem a mesma grade: no modelo a 7.3 quebrava as tintas em uma
   // coluna por plotter (HP 70 / HP 72 / HP 730), e aqui cada cartucho é uma

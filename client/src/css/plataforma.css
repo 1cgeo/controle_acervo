@@ -285,3 +285,101 @@
 
 /* O modal de importacao do Auth Server saiu em 2026-08-02, com o CSS dele: a
  * autenticacao veio para dentro do SCA e nao ha mais de onde importar. */
+
+/* ---------------------------------------------------------------------------
+ * Mapa do efetivo (#/aproveitamento)
+ *
+ * Uma linha por militar, uma celula por SEMANA do ano. A cor e a unica coisa
+ * que se le de longe, e por isso ela carrega o significado inteiro: quanto mais
+ * quente, menos aproveitamento. Celula VAZIA (sem cor) e "nao estava na
+ * Divisao", que e diferente de "estava e nao rendeu" -- com as duas em cinza, a
+ * chegada em marco se leria como quatro meses de licenca.
+ * ------------------------------------------------------------------------- */
+
+.mapa-efetivo {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+.mapa-efetivo__tabela {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+/* O nome fica GRUDADO na esquerda: com 52 colunas, rolar para ver dezembro
+ * deixaria a pessoa sem saber de quem e a linha. */
+.mapa-efetivo__nome {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-paper);
+  padding: 4px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-right: 1px solid var(--border-color);
+}
+
+.mapa-efetivo__mes {
+  padding: 4px 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mapa-efetivo__celula {
+  width: 14px;
+  min-width: 14px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--bg-paper);
+}
+
+/* Cinco faixas, e nao um gradiente continuo: a diferenca entre 71% e 73% nao
+ * muda decisao nenhuma, e um gradiente convida a compara-las. */
+.mapa-efetivo__celula--fora    { background: transparent; }
+.mapa-efetivo__celula--f0      { background: var(--color-error); }
+.mapa-efetivo__celula--f25     { background: var(--color-warning); }
+.mapa-efetivo__celula--f50     { background: var(--color-warning-light); }
+.mapa-efetivo__celula--f75     { background: var(--color-success-light); }
+.mapa-efetivo__celula--f100    { background: var(--color-success); }
+
+.mapa-efetivo__total {
+  position: sticky;
+  right: 0;
+  background: var(--bg-paper);
+  padding: 4px 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-left: 1px solid var(--border-color);
+}
+
+.mapa-efetivo__linha:hover .mapa-efetivo__nome,
+.mapa-efetivo__linha:hover .mapa-efetivo__total {
+  background: var(--bg-hover);
+}
+
+.mapa-efetivo__linha { cursor: pointer; }
+
+.mapa-efetivo__legenda {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.mapa-efetivo__amostra {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-color);
+  vertical-align: middle;
+  margin-right: 4px;
+}

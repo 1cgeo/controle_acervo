@@ -20,6 +20,7 @@ const { rpcmtecRoute } = require("./rpcmtec");
 const { pontoControleRoute } = require("./ponto_controle");
 const { limitesRoute } = require("./limites");
 const { pitRoute } = require("./pit");
+const { efetivoRoute } = require("./efetivo");
 const { auditoriaRoute } = require("./auditoria");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
@@ -83,6 +84,13 @@ router.use("/auditoria", auditoriaRoute);
 // os três módulos consomem o plano anual da Divisão e nenhum é dono dele.
 // Esteve em /api/orcamento/metas até 2026-07-31.
 router.use("/metas", pitRoute);
+
+// Aproveitamento do efetivo: quem esteve na Divisão, quando, e o que o impediu.
+// Rota de PLATAFORMA pela mesma razão das metas, e sob `/efetivo` em vez de
+// `/rpcmtec` porque "quem esteve na Divisão" não existe por causa do relatório:
+// o relatório é um leitor. Toda ela é `verifyAdmin`, inclusive a leitura, porque
+// a tela mostra licença de saúde e função acumulada, nominalmente.
+router.use("/efetivo", efetivoRoute);
 
 router.use("/volumes", volumeRoute);
 

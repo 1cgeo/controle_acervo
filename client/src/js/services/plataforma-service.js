@@ -99,20 +99,30 @@ export const createExtraPit = (body) => apiPost('/metas/extra', body);
 export const updateExtraPit = (id, body) => apiPut(`/metas/extra/${id}`, body);
 export const deleteExtraPit = (id) => apiDelete(`/metas/extra/${id}`);
 
-// ---- Aproveitamento do efetivo (6.1) e capacitacao (2.6 e 6.2) ----
-// Moram sob /rpcmtec porque sao a ENTRADA do relatorio e nao existem por outra
-// razao. Todas sao verifyAdmin no servidor, como o resto daquele modulo.
-export const getEfetivoMes = (ano, mes) => apiGet(`/rpcmtec/efetivo/${ano}/${mes}`);
-export const getEfetivoFaltantes = (ano, mes) =>
-  apiGet(`/rpcmtec/efetivo/faltantes/${ano}/${mes}`);
-export const getMesesEfetivo = (ano) =>
-  apiGet(ano ? `/rpcmtec/efetivo/meses?ano=${ano}` : '/rpcmtec/efetivo/meses');
-export const iniciarEfetivoDoMes = (body) => apiPost('/rpcmtec/efetivo/iniciar', body);
-export const copiarEfetivoMesAnterior = (body) => apiPost('/rpcmtec/efetivo/copiar', body);
-export const createEfetivo = (body) => apiPost('/rpcmtec/efetivo', body);
-export const updateEfetivo = (id, body) => apiPut(`/rpcmtec/efetivo/${id}`, body);
-export const deleteEfetivo = (id) => apiDelete(`/rpcmtec/efetivo/${id}`);
+// ---- Aproveitamento do efetivo (6.1) ----
+// INTERVALO, e nao retrato mensal (chefe, 2026-08-02). `dgeo.efetivo_periodo`
+// diz quando a pessoa esteve na Divisao e `dgeo.impedimento` diz o que a tirou
+// do trabalho sem tira-la da Divisao. Mes, semana e ano sao consulta.
+//
+// Sob /efetivo, e nao /rpcmtec: "quem esteve na Divisao" nao existe por causa do
+// relatorio. Todas sao verifyAdmin no servidor, inclusive a leitura, porque a
+// tela mostra licenca de saude e funcao acumulada, nominalmente.
+export const getMapaEfetivo = (ano) => apiGet(`/efetivo/mapa?ano=${ano}`);
+export const getEfetivoDoMes = (ano, mes) => apiGet(`/efetivo/mes?ano=${ano}&mes=${mes}`);
 
+export const getPeriodosEfetivo = (ano) =>
+  apiGet(ano ? `/efetivo/periodos?ano=${ano}` : '/efetivo/periodos');
+export const createPeriodoEfetivo = (body) => apiPost('/efetivo/periodos', body);
+export const updatePeriodoEfetivo = (id, body) => apiPut(`/efetivo/periodos/${id}`, body);
+export const deletePeriodoEfetivo = (id) => apiDelete(`/efetivo/periodos/${id}`);
+
+export const getImpedimentos = (ano) =>
+  apiGet(ano ? `/efetivo/impedimentos?ano=${ano}` : '/efetivo/impedimentos');
+export const createImpedimento = (body) => apiPost('/efetivo/impedimentos', body);
+export const updateImpedimento = (id, body) => apiPut(`/efetivo/impedimentos/${id}`, body);
+export const deleteImpedimento = (id) => apiDelete(`/efetivo/impedimentos/${id}`);
+
+// ---- Capacitacao (2.6 ministrada e 6.2 recebida) ----
 export const getCapacitacoes = (ano, tipoId) => {
   const q = new URLSearchParams();
   if (ano) q.set('ano', ano);

@@ -31,7 +31,7 @@
 //   4.5  Demais licitações               idem, tipo 2
 //   4.6  Recebimento de material         orcamento.recebimento_material
 //   4.7  Créditos Extra-PDR              orçamento, classificação Extra-PDR
-//   6.1  Aproveitamento do efetivo      rpcmtec.aproveitamento_mes
+//   6.1  Aproveitamento do efetivo      dgeo.efetivo_periodo e dgeo.impedimento
 //   6.2  Capacitação do efetivo         rpcmtec.capacitacao, tipo Recebida
 //   7.2  Insumos de impressão, papel     mapoteca.tipo_material
 //   7.3  Insumos de impressão, tintas    idem
@@ -82,7 +82,7 @@ const mapotecaCtrl = require('../mapoteca/mapoteca_ctrl')
 // a mapoteca. Sem ciclo, porque `pit/` não conhece o RPCMTec.
 const pitExecucaoCtrl = require('../pit/pit_execucao_ctrl')
 const pitExtraCtrl = require('../pit/pit_extra_ctrl')
-const efetivoCtrl = require('./rpcmtec_efetivo_ctrl')
+const efetivoCtrl = require('../efetivo/efetivo_ctrl')
 const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
 const {
   domainConstants: {
@@ -812,16 +812,42 @@ const montarExtraPit = ({ demandas }) =>
 
 // ---------------------------------------------------------------------------
 // 6.1 Aproveitamento do efetivo
+//
+// A coluna "Atividades" do modelo de 2026 é DERIVADA dos impedimentos, e não
+// digitada. Ela existia como texto livre até 2026-08-02, e era isso que impedia
+// a subseção de dizer quanto do efetivo esteve disponível -- que é a pergunta
+// que ela existe para responder, e que o modelo de 2025 respondia com três
+// colunas de número.
+//
+// A COLUNA DE PERCENTUAL É NOSSA, e não do modelo de 2026. Ele tem duas colunas;
+// nós emitimos três, porque uma tabela de aproveitamento sem o aproveitamento é
+// a tabela que o documento tinha e que o chefe pediu para desfazer. Quem cola no
+// Word apaga a coluna se não quiser, o que é barato; recuperar um número que não
+// saiu não é.
 // ---------------------------------------------------------------------------
 
 // 'Cap claude', que é como o documento nomeia a pessoa: posto abreviado mais
-// nome de guerra. O posto sai da LINHA do mês, e não do cadastro de hoje: é o
-// congelamento que `rpcmtec.aproveitamento_mes` existe para guardar.
+// nome de guerra.
+const nomeMilitar = e => `${e.posto_abrev} ${e.nome_guerra}`.trim()
+
+// 'Chefe do S5 (50%), LTSP (100%)'. Sem impedimento nenhum, a célula fica com o
+// '-' do modelo, que é como ele escreve "não houve" -- e não vazia, que se lê
+// como "ainda não preenchi".
 const montarAproveitamento = ({ efetivo }) =>
-  efetivo.map(e => [
-    `${e.posto_abrev} ${e.nome_guerra}`.trim(),
-    texto(e.atividades)
-  ])
+  efetivo.map(e => {
+    const impedimentos = (e.impedimentos || [])
+      .map(i => `${i.descricao} (${i.percentual}%)`)
+      .join(', ')
+
+    // Quem passou o mês inteiro fora da Divisão não entra: a 6.1 é a lista de
+    // quem esteve nela. Quem esteve parte do mês entra, com o percentual
+    // dizendo quanto.
+    return [
+      nomeMilitar(e),
+      texto(impedimentos),
+      `${Number(e.aproveitamento).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+    ]
+  }).filter(Boolean)
 
 // ---------------------------------------------------------------------------
 // Orquestrador
@@ -874,7 +900,7 @@ controller.gerar = async ({ ano, mes }) => {
     gerarLicitacoes(ano, TIPO_LICITACAO.PROPRIA),
     gerarRecebimentoMaterial(ano),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR),
-    efetivoCtrl.listar(ano, mes),
+    efetivoCtrl.resumoMensal(ano, mes),
     capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA)
   ])
 
@@ -1002,7 +1028,7 @@ controller.gerar = async ({ ano, mes }) => {
         {
           numero: '6.1',
           titulo: 'Aproveitamento do efetivo',
-          cabecalhos: ['Militar', 'Atividades'],
+          cabecalhos: ['Militar', 'Atividades', 'Aproveitamento'],
           linhas: montarAproveitamento({ efetivo })
         },
         {

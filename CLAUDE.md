@@ -175,6 +175,10 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Rot
 - **Extra-PIT é a exceção AUTORIZADA**, e `documento_autorizacao` é obrigatório. Não derive de
   `previsto_pit`.
 - O RPCMTec gera 18 subseções; 2.2, 2.3, 2.4 e 2.5 leem a produção e ficam no SAP.
+- **O aproveitamento do efetivo é INTERVALO** (`dgeo.efetivo_periodo` e `dgeo.impedimento`), e mês,
+  semana e ano são CONSULTA. `impedimento.descricao` é texto livre e vale o que TIRA a pessoa do
+  trabalho da Divisão, não o que ela faz aqui. Passagem não sobrepõe (o banco cobra por `EXCLUDE`);
+  impedimento sobrepõe, e os percentuais somam até 100.
 
 ## Armadilhas conhecidas
 

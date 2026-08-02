@@ -94,7 +94,8 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login |
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
 | `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`) e as demandas Extra-PIT (`/extra`). Ler exige só login; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS), a edição mensal, o aproveitamento do efetivo (`/efetivo`) e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
+| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS), a edição mensal e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
+| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano (admin, inclusive na leitura) |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
@@ -177,7 +178,8 @@ server/src/
 ├── usuario/              # Usuários, senha e perfis (plataforma)
 ├── acessos/              # Histórico de login (plataforma)
 ├── pit/                  # Metas do PIT, execução mensal e Extra-PIT (plataforma)
-├── rpcmtec/              # RPCMTec inteiro, Anuário, efetivo e capacitação (plataforma)
+├── efetivo/              # Passagem pela DGEO, impedimentos e aproveitamento (plataforma)
+├── rpcmtec/              # RPCMTec inteiro, Anuário e capacitação (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
 ├── limites/              # Limite político-administrativo (referência)
 ├── integracao/           # Rotas públicas para o vault da DGEO
@@ -232,11 +234,11 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
 | `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
 | `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o realizado por mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
-| `rpcmtec` | `edicao` (o metadado da edição mensal), `aproveitamento_mes` e `capacitacao` (a ENTRADA digitada das subseções 6.1, 2.6 e 6.2). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
+| `rpcmtec` | `edicao` (o metadado da edição mensal) e `capacitacao` (a ENTRADA digitada das subseções 2.6 e 6.2). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
 | `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
 | `limites` | Limite político-administrativo e área de suprimento |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
-| `dgeo` | `usuario` e `usuario_perfil` |
+| `dgeo` | `usuario` e `usuario_perfil`, mais `efetivo_periodo` e `impedimento` (a passagem de cada pessoa pela DGEO e o que a tirou do trabalho, por intervalo) |
 | `public` | Versão do banco e estilos de camada do QGIS |
 
 ### Instalação nova
@@ -247,7 +249,7 @@ A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas 
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.15.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
+A versão do schema é **1.16.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
 
 ### Atualização de banco existente
 

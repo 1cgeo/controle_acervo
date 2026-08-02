@@ -27,6 +27,7 @@ const {
 const usuarioRouter = require('../../usuario/usuario_route')
 const { pitRoute } = require('../../pit')
 const rpcmtecRouter = require('../../rpcmtec/rpcmtec_route')
+const { efetivoRoute } = require('../../efetivo')
 
 let app
 
@@ -799,27 +800,29 @@ const COBERTAS = new Set([
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
   'DELETE /rpcmtec/:id',
-  // Efetivo do mes (6.1) e capacitacao (2.6 e 6.2), absorvidos do SAP no mesmo
-  // dia. As duas partidas rapidas criam DEZENAS de linhas por chamada, e cada
-  // linha vira um evento sob o `lote_id` da requisicao: o evento por linha e o
-  // que se confere depois, e o lote e o que impede a tela de virar trinta
-  // linhas iguais.
-  'POST /rpcmtec/efetivo/iniciar',
-  'POST /rpcmtec/efetivo/copiar',
-  'POST /rpcmtec/efetivo',
-  'PUT /rpcmtec/efetivo/:id',
-  'DELETE /rpcmtec/efetivo/:id',
+  // Capacitacao (2.6 e 6.2), absorvida do SAP em 2026-08-02.
   'POST /rpcmtec/capacitacao',
   'PUT /rpcmtec/capacitacao/:id',
-  'DELETE /rpcmtec/capacitacao/:id'
+  'DELETE /rpcmtec/capacitacao/:id',
+  // Efetivo por INTERVALO. Ele nasceu sob /rpcmtec como retrato mensal e mudou
+  // para /efetivo no mesmo dia: "quem esteve na Divisao" nao existe por causa do
+  // relatorio, e o relatorio e um leitor. As duas tabelas sao auditadas no
+  // agregado da PESSOA, entao a passagem e o impedimento aparecem na ficha dela.
+  'POST /efetivo/periodos',
+  'PUT /efetivo/periodos/:id',
+  'DELETE /efetivo/periodos/:id',
+  'POST /efetivo/impedimentos',
+  'PUT /efetivo/impedimentos/:id',
+  'DELETE /efetivo/impedimentos/:id'
 ])
 
 describe('Rastreabilidade: varredura das rotas de escrita da plataforma', () => {
-  test('toda rota de escrita de usuario, meta e edicao esta coberta', () => {
+  test('toda rota de escrita de usuario, meta, edicao e efetivo esta coberta', () => {
     const encontradas = [
       ...rotasDeEscrita('/usuarios', usuarioRouter),
       ...rotasDeEscrita('/metas', pitRoute),
-      ...rotasDeEscrita('/rpcmtec', rpcmtecRouter)
+      ...rotasDeEscrita('/rpcmtec', rpcmtecRouter),
+      ...rotasDeEscrita('/efetivo', efetivoRoute)
     ]
 
     // Rede contra o falso verde: se o formato do router mudar e a extracao
