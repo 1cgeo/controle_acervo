@@ -101,7 +101,20 @@ export async function sincronizarSessao() {
  * @returns {Promise<Error>} - o erro a ser lancado por quem chamou
  */
 async function tratarProibido(response, padrao) {
-  const message = await mensagemDaResposta(response, padrao);
+  return proibidoComMensagem(await mensagemDaResposta(response, padrao));
+}
+
+/**
+ * O 403 a partir de uma mensagem ja extraida.
+ *
+ * Existe separado de `tratarProibido` porque o XMLHttpRequest nao produz um
+ * `Response`: ele entrega texto. A REGRA do 403 (nao desloga, reconfere o
+ * perfil, avisa por evento se ele mudou) e uma so, e duas copias dela
+ * divergiriam no primeiro ajuste.
+ * @param {string} message
+ * @returns {Promise<Error>}
+ */
+async function proibidoComMensagem(message) {
   await sincronizarSessao();
   return new Error(message);
 }
@@ -235,6 +248,125 @@ export async function apiUpload(endpoint, formData) {
   }
 
   return json.dados;
+}
+
+/**
+ * Envia arquivo por multipart/form-data COM progresso de subida.
+ *
+ * Por que XMLHttpRequest, e nao `fetch`: o `fetch` nao reporta quanto do corpo
+ * ja subiu. Ele resolve quando a resposta chega, e antes disso nao ha evento
+ * nenhum. Para um arquivo de centenas de MB (o acervo tem ortoimagem de 3 GB)
+ * isso e uma tela parada por minutos, sem diferenca visivel entre "enviando" e
+ * "travado", e a pessoa cancela um envio que estava indo bem. O
+ * `xhr.upload.onprogress` e a unica API de navegador que da esse numero.
+ *
+ * O `apiUpload` acima continua como esta, de proposito: o orçamento e a mapoteca
+ * enviam anexo pequeno, onde a barra nao muda nada, e trocar a implementacao
+ * deles cobraria o risco sem entregar o ganho.
+ *
+ * Devolve `{ promessa, abortar }` em vez de so a promessa porque cancelar e
+ * parte do recurso: sem `abortar()`, fechar o assistente no meio de um envio de
+ * 3 GB deixaria a subida correndo ate o fim, invisivel.
+ *
+ * @param {string} endpoint - ex.: '/arquivo/upload?session=abc'
+ * @param {FormData} formData - corpo com o(s) arquivo(s)
+ * @param {(info:{carregado:number, total:number, porcentagem:number|null})=>void} [onProgress]
+ *   `porcentagem` vem null quando o navegador nao sabe o tamanho total.
+ * @param {{metodo?:'POST'|'PUT'}} [opcoes]
+ * @returns {{promessa:Promise<any>, abortar:Function}}
+ */
+export function apiUploadComProgresso(endpoint, formData, onProgress, { metodo = 'POST' } = {}) {
+  const xhr = new XMLHttpRequest();
+  let abortado = false;
+
+  const promessa = new Promise((resolve, reject) => {
+    xhr.open(metodo, `/api${endpoint}`);
+
+    const token = getToken();
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    // Content-Type NAO se declara: o navegador o escreve com o boundary certo.
+
+    if (onProgress && xhr.upload) {
+      xhr.upload.addEventListener('progress', (e) => {
+        onProgress({
+          carregado: e.loaded,
+          total: e.total,
+          porcentagem: e.lengthComputable ? Math.round((e.loaded / e.total) * 100) : null,
+        });
+      });
+    }
+
+    /** Mensagem do envelope no texto cru do XHR, com um padrao quando ilegivel. */
+    const mensagem = (padrao) => {
+      try {
+        const json = JSON.parse(xhr.responseText);
+        if (json && json.message) return json.message;
+      } catch {
+        // corpo ilegivel: fica o padrao
+      }
+      return padrao;
+    };
+
+    xhr.addEventListener('load', async () => {
+      // Sessao acabou: limpa e volta ao login, como no resto do api-client.
+      if (xhr.status === 401) {
+        handleSessaoExpirada();
+        reject(new Error(mensagem('Sessão expirada. Faça login novamente.')));
+        return;
+      }
+
+      // Sem perfil para esta acao: a sessao continua de pe.
+      if (xhr.status === 403) {
+        reject(await proibidoComMensagem(
+          mensagem('Você não tem perfil para enviar arquivo.')
+        ));
+        return;
+      }
+
+      let json;
+      try {
+        json = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new Error(`Resposta inválida do servidor (HTTP ${xhr.status})`));
+        return;
+      }
+
+      if (xhr.status < 200 || xhr.status >= 300 || !json.success) {
+        reject(new Error(json.message || 'Erro no envio do arquivo'));
+        return;
+      }
+
+      resolve(json.dados);
+    });
+
+    // Rede caiu no meio da subida. Distinguir de `abort` importa: um e falha, o
+    // outro e a pessoa desistindo, e a tela nao deve pintar de vermelho o que
+    // ela mesma pediu.
+    xhr.addEventListener('error', () => {
+      reject(new Error('Falha de rede durante o envio do arquivo'));
+    });
+
+    xhr.addEventListener('timeout', () => {
+      reject(new Error('O envio do arquivo expirou'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Envio cancelado'));
+    });
+
+    xhr.send(formData);
+  });
+
+  return {
+    promessa,
+    abortar: () => {
+      if (abortado) return;
+      abortado = true;
+      xhr.abort();
+    },
+  };
 }
 
 /**

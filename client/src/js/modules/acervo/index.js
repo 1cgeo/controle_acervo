@@ -18,6 +18,20 @@ import './acervo.css';
 import { renderDashboard } from './pages/dashboard/index.js';
 import { renderBusca } from './pages/busca/index.js';
 import { renderPontoControle } from './pages/ponto_controle/index.js';
+import { registrarEditorGeometria } from './pages/produto/produto-dialog-form.js';
+import { pedirGeometria } from '@components/mapa/editor-geometria.js';
+
+// O editor de geometria e ligado ao formulario de produto AQUI, no arranque do
+// modulo, e nao por import direto dentro do formulario.
+//
+// A razao e o peso do mapa: `editor-geometria.js` puxa `components/mapa/base.js`,
+// que importa o CSS do MapLibre no topo. Um import direto do formulario ainda
+// seria carregado sob demanda junto com ele, mas amarraria o formulario ao mapa
+// para sempre -- e o formulario tem de continuar funcionando sem editor, pelo
+// caminho "Buscar folha", que e o normal para carta sistematica. Registrando de
+// fora, quem depende de quem fica explicito e testavel: o teste do formulario
+// nao precisa de WebGL.
+registrarEditorGeometria(pedirGeometria);
 
 export default {
   id: 'acervo',

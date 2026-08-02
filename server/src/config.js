@@ -69,6 +69,15 @@ const configSchema = Joi.object().keys({
   // fugir da convencao, VOLUME_<SHARE>_CAMINHO manda (utils/caminho_volume.js).
   // Vazio no Windows; no Linux, sem isso TODO download responde 404.
   VOLUMES_RAIZ: Joi.string().allow('').default(''),
+  // Teto, em GB, do arquivo que o NAVEGADOR pode enviar por
+  // PUT /api/arquivo/upload-web/... Existe porque o byte atravessa o processo
+  // do servidor: o upload pela web e o unico caminho em que o Node segura a
+  // conexao do começo ao fim da transferencia, e uma requisicao de horas nao e
+  // o que o navegador (nem o proxy da rede) aguenta. A mediana em producao e de
+  // 6 a 11 MB e o maximo e 500 MB, entao 2 GB deixa folga larga e ainda barra o
+  // .img de 7,4 GB, que continua entrando pelo plugin, por SMB, sem passar por
+  // aqui. E configuravel porque o teto certo depende da rede da instalacao.
+  UPLOAD_WEB_MAX_GB: Joi.number().positive().default(2),
   VERSION: Joi.string().required(),
   MIN_DATABASE_VERSION: Joi.string().required()
 })
@@ -87,6 +96,11 @@ const config = {
   AUTH_SERVER: process.env.AUTH_SERVER,
   USE_PROXY: process.env.USE_PROXY === 'true',
   VOLUMES_RAIZ: process.env.VOLUMES_RAIZ || '',
+  // Ausente vale 2, e nao NaN: `Number(undefined)` reprovaria a validacao e
+  // mataria o boot de toda instalacao que nunca ouviu falar desta chave.
+  UPLOAD_WEB_MAX_GB: process.env.UPLOAD_WEB_MAX_GB
+    ? Number(process.env.UPLOAD_WEB_MAX_GB)
+    : 2,
   VERSION,
   MIN_DATABASE_VERSION
 }

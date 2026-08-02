@@ -121,6 +121,117 @@ export function paraPolygon(vertices) {
   return { type: 'Polygon', coordinates: [coordenadas] };
 }
 
+// SRID do acervo. `acervo.produto.geom` e `geometry(POLYGON, 4674)` (SIRGAS
+// 2000), e o servidor grava com ST_GeomFromEWKT, que exige o prefixo SRID=.
+export const SRID_ACERVO = 4674;
+
+// Casas decimais do EWKT. Sete casas em grau valem cerca de 1 cm no equador, o
+// que e ordens de grandeza melhor do que qualquer folha do acervo precisa, e
+// evita que a serializacao devolva o ruido binario do double ("-50.10000000000001")
+// para dentro do banco.
+const CASAS = 7;
+
+/**
+ * Numero em notacao decimal simples, sem expoente e sem zero a direita.
+ *
+ * O corte dos zeros e feito na STRING, e nao voltando por `Number()`: para
+ * coordenada proxima de zero, `Number('0.0000001').toString()` devolve "1e-7",
+ * e o PostGIS nao le expoente em WKT. Como as coordenadas sao graus (presos a
+ * +-180), `toFixed` nunca cai em notacao cientifica do outro lado.
+ */
+function numero(valor) {
+  const fixo = valor.toFixed(CASAS);
+  if (!fixo.includes('.')) return fixo;
+  const semZeros = fixo.replace(/0+$/, '').replace(/\.$/, '');
+  // `(-0.00000001).toFixed(7)` e "-0.0000000", que vira "-0" ao perder os zeros.
+  return semZeros === '-0' ? '0' : semZeros;
+}
+
+/**
+ * Vertices -> EWKT que o PUT/POST de produto aceita.
+ *
+ * O anel sai FECHADO (primeiro vertice repetido no fim), como o PostGIS exige.
+ * Devolve null para geometria invalida, em vez de um EWKT que o banco recusaria
+ * longe daqui: quem chama trata o null como "nao ha o que salvar".
+ *
+ * @param {Array<Array<number>>} vertices anel ABERTO
+ * @returns {string|null}
+ */
+export function paraEwkt(vertices) {
+  if (!validarVertices(vertices).valid) return null;
+  const anel = [...vertices, vertices[0]]
+    .map(v => `${numero(v[0])} ${numero(v[1])}`)
+    .join(', ');
+  return `SRID=${SRID_ACERVO};POLYGON((${anel}))`;
+}
+
+/**
+ * EWKT (ou WKT) de POLYGON -> vertices, no anel ABERTO que o modelo usa.
+ *
+ * Le o que `ST_AsEWKT` devolve nas rotas de leitura (`acervo_ctrl.js:130,188`),
+ * que e justamente o formato pensado para poder voltar no PUT. Aceita WKT sem o
+ * prefixo SRID, porque colar geometria de outra ferramenta e caso real.
+ *
+ * Devolve null para qualquer coisa que nao seja um POLYGON de anel unico:
+ * MULTIPOLYGON nao entra, e nao por descuido. A coluna e `geometry(POLYGON,
+ * 4674)`, entao um MULTIPOLYGON e recusado pelo PostGIS na gravacao. O plugin
+ * promete aceita-lo num texto de ajuda e quebra na hora de gravar; aqui a
+ * recusa e imediata e diz o motivo.
+ *
+ * @param {string} ewkt
+ * @returns {Array<Array<number>>|null} anel aberto
+ */
+export function deEwkt(ewkt) {
+  if (typeof ewkt !== 'string') return null;
+
+  const semSrid = ewkt.trim().replace(/^SRID=\d+\s*;\s*/i, '');
+  const casa = /^POLYGON\s*\(\s*\((.+)\)\s*\)$/is.exec(semSrid);
+  if (!casa) return null;
+  // Anel interno (buraco) viria como um segundo par de parenteses dentro do
+  // grupo capturado. O acervo nao guarda buraco, e aceitar so o contorno
+  // externo em silencio seria perder area sem avisar.
+  if (casa[1].includes('(')) return null;
+
+  const vertices = [];
+  for (const par of casa[1].split(',')) {
+    const partes = par.trim().split(/\s+/);
+    if (partes.length < 2) return null;
+    const lon = Number(partes[0]);
+    const lat = Number(partes[1]);
+    if (!ehCoordenada([lon, lat])) return null;
+    vertices.push([lon, lat]);
+  }
+
+  // O WKT chega FECHADO; o modelo trabalha com o anel aberto.
+  if (vertices.length > 1 && mesmoPonto(vertices[0], vertices[vertices.length - 1])) {
+    vertices.pop();
+  }
+
+  return validarVertices(vertices).valid ? vertices : null;
+}
+
+/**
+ * Retangulo a partir de dois cantos opostos, para o produto FORA do
+ * enquadramento SCN (escala personalizada), que nao tem folha para calcular.
+ *
+ * Normaliza os cantos em vez de exigir que a pessoa acerte qual e o sudoeste:
+ * trocar os dois na digitacao produziria um anel de orientacao invertida, e o
+ * erro so apareceria no mapa, sem mensagem.
+ *
+ * @returns {Array<Array<number>>|null} anel aberto, no sentido anti-horario
+ */
+export function retanguloDeCantos(cantoA, cantoB) {
+  if (!ehCoordenada(cantoA) || !ehCoordenada(cantoB)) return null;
+
+  const oeste = Math.min(cantoA[0], cantoB[0]);
+  const leste = Math.max(cantoA[0], cantoB[0]);
+  const sul = Math.min(cantoA[1], cantoB[1]);
+  const norte = Math.max(cantoA[1], cantoB[1]);
+
+  const vertices = [[oeste, sul], [leste, sul], [leste, norte], [oeste, norte]];
+  return validarVertices(vertices).valid ? vertices : null;
+}
+
 /**
  * O que o mapa desenha em cada instante: a area (quando concluida), a linha em
  * andamento (com a previa que segue o cursor) e os vertices.
@@ -236,6 +347,26 @@ export function criarModeloDesenho() {
       copiaEdicao = null;
       estado = 'concluido';
       return true;
+    },
+
+    // Parte de um poligono que JA EXISTE, em vez de do zero.
+    //
+    // E o que separa "desenhar area para filtrar a busca", que sempre comeca
+    // vazio, de "editar a geometria de um produto ja cadastrado", que comeca do
+    // que esta gravado. Entra direto em 'concluido': o poligono ja e valido, e
+    // exigir que a pessoa reclique os vertices para poder mexer num deles seria
+    // pedir que ela redesenhe o que ja existe.
+    //
+    // Geometria invalida e RECUSADA em vez de carregada pela metade: melhor a
+    // tela dizer que nao consegue editar aquele produto do que abrir um editor
+    // que vai gravar um poligino pior do que o que estava la.
+    carregar(novosVertices) {
+      const validacao = validarVertices(novosVertices);
+      if (!validacao.valid) return validacao;
+      vertices = novosVertices.map(v => [v[0], v[1]]);
+      copiaEdicao = null;
+      estado = 'concluido';
+      return { valid: true, geometria: paraPolygon(vertices) };
     },
 
     limpar() {

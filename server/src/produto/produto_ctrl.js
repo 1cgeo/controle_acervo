@@ -3,6 +3,7 @@
 const { db } = require("../database");
 const { arquivarArquivos, idsDosArquivosDasVersoes } = require("../arquivo/arquivo_deletado");
 const { AppError, httpCode, preserveOmitted, domainConstants: { TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
+const scn = require("../utils/scn");
 const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
@@ -820,7 +821,16 @@ controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioU
   });
 };
 
-controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
+// Cria versao SEM arquivo num produto que JA EXISTE, e o tipoVersaoId e o que
+// separa os dois casos legitimos, exatamente como em criaProdutoComVersoes:
+//   REGISTRO_HISTORICO: a edicao existe no mundo e o acervo a registra sem ter o
+//     arquivo (carga do acervo legado).
+//   PLANEJADA: a edicao ainda NAO existe, e o acervo a registra para o item do
+//     pedido poder apontar para ela.
+// O corpo e um so porque a diferenca entre os dois e um inteiro: duplicar aqui
+// seria pedir que a proxima coluna de acervo.versao fosse lembrada em dois
+// lugares, e esquecer um nao da erro nenhum.
+const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId) => {
   const data_cadastramento = new Date();
 
   const versoesPreparadas = versoes.map(versao => {
@@ -829,7 +839,7 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
       uuid_versao: versao.uuid_versao || uuidv4(),
       data_cadastramento: data_cadastramento,
       usuario_cadastramento_uuid: usuarioUuid,
-      tipo_versao_id: TIPO_VERSAO.REGISTRO_HISTORICO,
+      tipo_versao_id: tipoVersaoId,
     };
   });
 
@@ -842,6 +852,31 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
       throw new AppError(
         `A requisição contém versões duplicadas para o mesmo produto: ${[...new Set(duplicadas)].join(', ')}`,
         httpCode.BadRequest
+      );
+    }
+
+    // O produto tem de existir ANTES do INSERT.
+    //
+    // Sem esta conferência, `produto_id` inexistente estourava a chave
+    // estrangeira e virava 500 com a mensagem genérica -- que é a resposta que o
+    // servidor dá quando ELE errou, e aqui quem errou foi quem chamou. Quem
+    // recebia o 500 não tinha como saber que o problema era o id do produto.
+    //
+    // Em lote, o SELECT é um só: um por versão custaria uma ida ao banco por
+    // linha para provar o que uma consulta prova de uma vez.
+    const produtoIds = [...new Set(versoesPreparadas.map(v => Number(v.produto_id)))];
+    const existentes = await t.any(
+      'SELECT id FROM acervo.produto WHERE id IN ($<produtoIds:csv>)',
+      { produtoIds }
+    );
+    const achados = new Set(existentes.map(p => Number(p.id)));
+    const faltando = produtoIds.filter(id => !achados.has(id));
+    if (faltando.length > 0) {
+      throw new AppError(
+        faltando.length === 1
+          ? `Produto ${faltando[0]} não encontrado`
+          : `Produtos não encontrados: ${faltando.join(', ')}`,
+        httpCode.NotFound
       );
     }
 
@@ -870,6 +905,12 @@ controller.criaVersaoHistorica = async (versoes, usuarioUuid) => {
     await t.none(query);
   });
 };
+
+controller.criaVersaoHistorica = async (versoes, usuarioUuid) =>
+  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO);
+
+controller.criaVersaoPlanejada = async (versoes, usuarioUuid) =>
+  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.PLANEJADA);
 
 // Cria produto e versoes SEM arquivo, numa transacao. Serve aos dois casos em
 // que isso e legitimo, e o tipoVersaoId e o que os separa:
@@ -944,5 +985,60 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
 
   });
 };
+
+// Folha do SCN a partir do INOM ou do MI. É o ÚNICO método deste controlador que
+// não toca o banco, e é assim de propósito: a folha existe no Sistema
+// Cartográfico Nacional esteja ou não catalogada aqui. Quem for cadastrar um
+// produto precisa da geometria ANTES de o produto existir, e uma consulta ao
+// acervo devolveria "não encontrado" para toda folha ainda não cadastrada, que é
+// exatamente o caso de uso.
+//
+// Toda a regra mora em `utils/scn.js`. Aqui fica só a tradução de "não deu" para
+// o status HTTP, porque são três "não deu" bem diferentes e só um é erro.
+controller.getFolha = async ({ inom, mi, tipo_escala_id: tipoEscalaId }) => {
+  let inomCanonico = inom
+
+  if (mi) {
+    inomCanonico = scn.inomDoMi(mi, tipoEscalaId)
+    if (!inomCanonico) {
+      throw new AppError(
+        `Folha de MI "${mi}" não encontrada no Mapa Índice. ` +
+        'Nem toda folha do Sistema Cartográfico Nacional tem MI (a numeração ' +
+        'cobre só o território brasileiro, e há folhas de fronteira sem número ' +
+        'emitido). Informe o INOM pelo parâmetro `inom`, que descreve a folha ' +
+        'por construção e sempre resolve.',
+        httpCode.NotFound
+      )
+    }
+  }
+
+  const poligono = scn.poligonoDoInom(inomCanonico)
+  if (!poligono) {
+    throw new AppError(
+      `INOM "${inom}" fora do formato do Sistema Cartográfico Nacional. ` +
+      'O formato é <hemisfério><faixa>-<fuso> seguido de um token por ' +
+      'subdivisão: SF-22 (1:1.000.000), -V/X/Y/Z (1:500.000), -A/B/C/D ' +
+      '(1:250.000), -I a -VI (1:100.000), -1 a -4 (1:50.000) e -NO/NE/SO/SE ' +
+      '(1:25.000). Exemplo completo: SF-22-Y-D-II-4-NE.',
+      httpCode.BadRequest
+    )
+  }
+
+  const canonico = scn.normalizarInom(inomCanonico)
+  const resultadoMi = scn.miDoInom(canonico)
+
+  // `sem_mi` sai SEMPRE, e não só quando é verdadeiro. Um campo que aparece só
+  // no caso negativo obriga quem consome a distinguir "não tem MI" de "esqueci
+  // de olhar", e as duas coisas se leem como `undefined`.
+  return {
+    inom: canonico,
+    mi: resultadoMi.mi || null,
+    sem_mi: resultadoMi.sem_mi === true,
+    motivo_sem_mi: resultadoMi.motivo || null,
+    tipo_escala_id: poligono.tipo_escala_id,
+    geom: poligono.ewkt,
+    bbox: poligono.bbox
+  }
+}
 
 module.exports = controller;

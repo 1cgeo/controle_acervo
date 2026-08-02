@@ -1540,3 +1540,387 @@
   color: var(--text-secondary);
   font-style: italic;
 }
+
+/* ===========================================================================
+ * ESCRITA no acervo: cadastro de produto e versao, e edicao de relacionamento.
+ * Tudo o que aparece aqui esta atras de perfil na tela e do verifyPerfil no
+ * servidor; o CSS so cuida de nao deixar a acao parecer parte da leitura.
+ * =========================================================================== */
+
+/* "Novo produto" fica na faixa de identidade, empurrado para a direita: ele nao
+ * e acao sobre o resultado (essas moram na linha dos filtros), e sim o cadastro. */
+.busca__novo {
+  margin-left: auto;
+}
+
+/* Editar/excluir a versao ficam no cabecalho DELA. `margin-left: auto` para
+ * grudarem na borda direita, longe das marcas que descrevem a versao: acao
+ * misturada com informacao vira clique por engano. */
+.ficha-versao__acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: auto;
+}
+
+/* ---- Relacionamentos que se editam ---- */
+
+.ficha-relacionamentos__vazio {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.ficha-relacionamentos__acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* O `<select>` do tipo tem a altura de uma marca, e nao a de um campo de
+ * formulario: ele ocupa o lugar onde antes havia um chip, e um campo de altura
+ * cheia ali faria a lista de relacoes parecer um formulario. */
+.ficha-relacionamentos__tipo {
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-xs);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+}
+
+.ficha-relacionamentos__remover {
+  color: var(--color-error);
+}
+
+/* ---- Geometria no formulario de produto ---- */
+
+.produto-form__geom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.produto-form__geom-titulo {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.produto-form__geom-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-success);
+}
+
+/* Sem geometria o produto NAO pode ser criado (o schema a exige). O aviso e
+ * laranja, e nao vermelho: e o estado normal de um formulario recem-aberto, e
+ * nao um erro do que a pessoa fez. */
+.produto-form__geom-estado--falta {
+  color: var(--color-warning);
+}
+
+.produto-form__geom-acoes {
+  display: flex;
+  gap: var(--space-xs);
+  margin-left: auto;
+}
+
+/* ---- Aviso do tipo de versao ---- */
+
+.versao-form__aviso {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--color-info);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.versao-form__aviso p {
+  margin: 0;
+}
+
+/* Regular escolhida na CRIACAO: o formulario nao salva, e o aviso muda de cor
+ * para dizer que ali ha um caminho fechado, e nao so uma explicacao. */
+.versao-form__aviso--bloqueio {
+  border-left-color: var(--color-warning);
+  background: rgba(237, 108, 2, 0.08);
+  color: var(--text-primary);
+}
+
+.versao-form__aviso-nota {
+  margin-top: var(--space-xs) !important;
+  font-size: var(--font-size-xs);
+}
+
+[data-theme="dark"] .versao-form__aviso--bloqueio {
+  background: rgba(255, 152, 0, 0.14);
+}
+
+/* ---- Seletor de versao (dois passos: produto, depois versao) ---- */
+
+.seletor-versao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* `position: relative` para o popover de sugestoes ancorar no campo, e nao na
+ * janela: dentro de um modal que rola, ancorar na janela deixa a lista parada
+ * enquanto o campo se move. */
+.seletor-versao__campo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.seletor-versao__sugestoes {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--z-dropdown);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.seletor-versao__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-sm);
+  cursor: pointer;
+}
+
+.seletor-versao__item--ativo {
+  background: var(--bg-selected);
+}
+
+.seletor-versao__item-nome {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.seletor-versao__item-id {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.seletor-versao__versoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-height: 96px;
+}
+
+.seletor-versao__titulo {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.seletor-versao__lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.seletor-versao__versao {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.seletor-versao__versao:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.seletor-versao__versao:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.seletor-versao__versao--marcada {
+  border-color: var(--color-primary);
+  background: var(--bg-selected);
+}
+
+.seletor-versao__versao-data {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.seletor-versao__aviso {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Assistente de carregamento (versão Regular)
+ * ------------------------------------------------------------------------- */
+
+.envio-assistente {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.envio-assistente__resumo {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.envio-assistente__rodape {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-color);
+}
+
+/* A zona de soltar é o alvo principal da etapa, então ocupa a largura inteira e
+ * tem altura de sobra: alvo pequeno de arrastar-e-soltar erra o tempo todo. */
+.envio-zona {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  text-align: center;
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.envio-zona:hover,
+.envio-zona--sobre {
+  border-color: var(--color-primary);
+  background: var(--bg-hover);
+}
+
+.envio-zona p {
+  margin: 0;
+}
+
+.envio-zona__nota {
+  font-size: 0.75rem;
+  max-width: 46ch;
+}
+
+.envio-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.envio-item__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.envio-item__arquivo {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.envio-item__tamanho {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.envio-item__campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.envio-progresso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+}
+
+.envio-progresso__topo {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-size: 0.875rem;
+}
+
+.envio-progresso__estado {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.envio-progresso--ok .envio-progresso__estado { color: var(--color-success); }
+.envio-progresso--erro .envio-progresso__estado { color: var(--color-error); }
+
+.envio-barra {
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.envio-barra__preenchimento {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 120ms linear;
+}
+
+.envio-progresso--ok .envio-barra__preenchimento { background: var(--color-success); }
+.envio-progresso--erro .envio-barra__preenchimento { background: var(--color-error); }
+
+@media (max-width: 640px) {
+  .envio-item__campos {
+    grid-template-columns: 1fr;
+  }
+}

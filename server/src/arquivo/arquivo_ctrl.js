@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const fsClassic = require('fs');
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
 const { arquivarArquivos } = require('./arquivo_deletado');
+const { removerParciais } = require('./upload_web');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -176,6 +177,37 @@ function assertSequenciaVersoes(produtos) {
     }
   }
 }
+
+/**
+ * Recusa nome fisico que sairia da raiz do volume.
+ *
+ * Roda no prepare do envio pela WEB, e nao no do plugin, porque sao dois graus
+ * de confianca diferentes: o plugin monta o nome a partir dos metadados e copia
+ * ele mesmo os bytes, enquanto no caminho da web e o SERVIDOR que abre o arquivo
+ * para escrita, com o nome que veio do navegador. `path.join` nao protege contra
+ * `..` (ver utils/caminho_volume.js), entao sem esta chamada o corpo da
+ * requisicao escolheria qualquer caminho da maquina para gravar.
+ */
+function assertCaminhoSeguro(nomeArquivo) {
+  const motivo = motivoCaminhoInseguro(nomeArquivo);
+  if (motivo) {
+    throw new AppError(`O caminho "${nomeArquivo}" ${motivo}.`, httpCode.BadRequest);
+  }
+}
+
+/**
+ * O que o navegador precisa saber de cada arquivo reservado.
+ *
+ * O `destination_path` fica de FORA de proposito: o browser nao tem o que fazer
+ * com um caminho de volume, e caminho de rede nao deve sair para ele. O que ele
+ * usa e o `temp_id`, que endereca o PUT dos bytes.
+ */
+const descreverArquivoWeb = (tempId, arquivo) => ({
+  temp_id: Number(tempId),
+  nome: arquivo.nome,
+  nome_arquivo: arquivo.nome_arquivo,
+  extensao: arquivo.extensao
+});
 
 const {
   DB_USER,
@@ -717,7 +749,24 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
   });
 };
 
-controller.prepareAddVersion = async (requestData, usuarioUuid) => {
+/**
+ * Reserva o destino de uma versao nova em produto que ja existe.
+ *
+ * UMA funcao para os DOIS depositos, e a diferenca vai no parametro `web`:
+ *
+ *   - `false` e o caminho do plugin. O cliente declara `checksum` e
+ *     `tamanho_mb`, copia os arquivos por SMB e chama o confirm-upload, que
+ *     confere o que ele declarou.
+ *   - `true` e o caminho do navegador. Nao ha checksum declarado (o servidor o
+ *     mede ao gravar), o `destination_path` NAO volta na resposta (caminho de
+ *     rede nao tem uso no browser, e caminho de maquina nao deve sair para
+ *     ele), e cada arquivo volta com o `temp_id` que enderecca o PUT dos bytes.
+ *
+ * Duas copias desta validacao (produto existe, versao inedita, sequencia de
+ * versao, volume primario do tipo, nome fisico livre) divergiriam na primeira
+ * regra nova, e a que ficasse para tras seria a porta aberta.
+ */
+const prepararVersao = async (requestData, usuarioUuid, { web = false } = {}) => {
   return db.conn.tx(async t => {
     try {
       const { versoes } = requestData;
@@ -838,8 +887,11 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         ) VALUES ($1, $2) RETURNING id, uuid_session`,
         [usuarioUuid, 'add_version']
       );
-      
+
       const result = [];
+      // No caminho da web a resposta e PLANA: quem envia itera arquivo a
+      // arquivo, e a arvore de versoes so faria o cliente reconstrui-la.
+      const arquivosWeb = [];
       const nomesFisicosUsados = new Set();
 
       for (const item of versoes) {
@@ -875,6 +927,7 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         
         for (const arquivo of item.arquivos) {
           const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+          if (web) assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -887,31 +940,36 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
             arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
           );
 
-          await t.none(
+          const { id: arquivoTempId } = await t.one(
             `INSERT INTO acervo.upload_arquivo_temp(
               session_id, nome, nome_arquivo, destination_path,
               tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
               expected_checksum, metadado, situacao_carregamento_id,
               descricao, crs_original, versao_temp_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id`,
             [
-              sessionId, 
-              arquivo.nome, 
-              arquivo.nome_arquivo, 
-              destinationPath, 
+              sessionId,
+              arquivo.nome,
+              arquivo.nome_arquivo,
+              destinationPath,
               arquivo.tipo_arquivo_id,
               isTileserver ? null : volume.volume_armazenamento_id,
-              arquivo.extensao, 
+              arquivo.extensao,
               arquivo.tamanho_mb,
-              arquivo.checksum, 
-              arquivo.metadado || {}, 
+              arquivo.checksum,
+              arquivo.metadado || {},
               arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
               arquivo.descricao || '',
               arquivo.crs_original || null,
               versaoTempId
             ]
           );
-          
+
+          if (web) {
+            arquivosWeb.push(descreverArquivoWeb(arquivoTempId, arquivo));
+          }
+
           arquivosInfo.push({
             uuid_arquivo: arquivo.uuid_arquivo || null,
             nome: arquivo.nome,
@@ -929,6 +987,14 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
         });
       }
       
+      if (web) {
+        return {
+          session_uuid: uuid_session,
+          operation_type: 'add_version',
+          arquivos: arquivosWeb
+        };
+      }
+
       return {
         session_uuid: uuid_session,
         operation_type: 'add_version',
@@ -943,7 +1009,19 @@ controller.prepareAddVersion = async (requestData, usuarioUuid) => {
   });
 };
 
-controller.prepareAddProduct = async (requestData, usuarioUuid) => {
+controller.prepareAddVersion = (requestData, usuarioUuid) =>
+  prepararVersao(requestData, usuarioUuid, { web: false });
+
+controller.prepareUploadWebVersion = (requestData, usuarioUuid) =>
+  prepararVersao(requestData, usuarioUuid, { web: true });
+
+/**
+ * Reserva o destino de um produto NOVO, com suas versoes e arquivos.
+ *
+ * Mesma funcao para os dois depositos, e o parametro `web` e a diferenca; ver o
+ * cabecalho de `prepararVersao`, que explica cada uma delas.
+ */
+const prepararProduto = async (requestData, usuarioUuid, { web = false } = {}) => {
   return db.conn.tx(async t => {
     try {
       const { produtos } = requestData;
@@ -1008,8 +1086,10 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         ) VALUES ($1, $2) RETURNING id, uuid_session`,
         [usuarioUuid, 'add_product']
       );
-      
+
       const result = [];
+      // Resposta PLANA no caminho da web: um arquivo, um PUT.
+      const arquivosWeb = [];
       const nomesFisicosUsados = new Set();
 
       for (const item of produtos) {
@@ -1067,6 +1147,7 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
           
           for (const arquivo of versao.arquivos) {
             const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+            if (web) assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL — sem arquivo físico, volume ou extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -1079,31 +1160,36 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
               arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
             );
 
-            await t.none(
+            const { id: arquivoTempId } = await t.one(
               `INSERT INTO acervo.upload_arquivo_temp(
-                session_id, nome, nome_arquivo, destination_path, 
-                tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
-                expected_checksum, metadado, situacao_carregamento_id, 
+                session_id, nome, nome_arquivo, destination_path,
+                tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
+                expected_checksum, metadado, situacao_carregamento_id,
                 descricao, crs_original, versao_temp_id
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+              RETURNING id`,
               [
-                sessionId, 
-                arquivo.nome, 
-                arquivo.nome_arquivo, 
-                destinationPath, 
+                sessionId,
+                arquivo.nome,
+                arquivo.nome_arquivo,
+                destinationPath,
                 arquivo.tipo_arquivo_id,
                 isTileserver ? null : volume.volume_armazenamento_id,
-                arquivo.extensao, 
+                arquivo.extensao,
                 arquivo.tamanho_mb,
-                arquivo.checksum, 
-                arquivo.metadado || {}, 
+                arquivo.checksum,
+                arquivo.metadado || {},
                 arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
                 arquivo.descricao || '',
                 arquivo.crs_original || null,
                 versaoTempId
               ]
             );
-            
+
+            if (web) {
+              arquivosWeb.push(descreverArquivoWeb(arquivoTempId, arquivo));
+            }
+
             arquivosInfo.push({
               uuid_arquivo: arquivo.uuid_arquivo || null,
               nome: arquivo.nome,
@@ -1126,6 +1212,14 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
         });
       }
       
+      if (web) {
+        return {
+          session_uuid: uuid_session,
+          operation_type: 'add_product',
+          arquivos: arquivosWeb
+        };
+      }
+
       return {
         session_uuid: uuid_session,
         operation_type: 'add_product',
@@ -1138,6 +1232,81 @@ controller.prepareAddProduct = async (requestData, usuarioUuid) => {
       throw error;
     }
   });
+};
+
+controller.prepareAddProduct = (requestData, usuarioUuid) =>
+  prepararProduto(requestData, usuarioUuid, { web: false });
+
+controller.prepareUploadWebProduct = (requestData, usuarioUuid) =>
+  prepararProduto(requestData, usuarioUuid, { web: true });
+
+/**
+ * Fecha o envio de UM arquivo pelo navegador: promove o `.parcial` ao nome
+ * definitivo e grava a medida que saiu da propria escrita.
+ *
+ * ESCRITA ATOMICA. Os bytes chegaram em `<destino>.parcial`. O acervo so ve o
+ * arquivo quando ele esta inteiro, e o que faz isso e o rename, que no mesmo
+ * sistema de arquivos e troca de nome, nao copia. Conexao cortada no meio deixa
+ * um `.parcial` -- lixo nomeado, que o cancel-upload apaga -- e nunca um
+ * arquivo truncado com o nome que o acervo considera valido.
+ *
+ * A ORDEM E RENAME PRIMEIRO, BANCO DEPOIS, e e o contrario do renomear-padrao.
+ * La o banco decide primeiro porque quem arbitra a colisao e um indice unico.
+ * Aqui nao ha o que arbitrar: o que nao pode acontecer e a linha ficar
+ * 'completed' sem o byte no lugar, porque o confirm-upload CONFIA nesse status e
+ * pula a releitura. Registro adiantado cadastraria no acervo um arquivo que nao
+ * esta la; rename adiantado, no maximo, faz o proximo PUT reescrever o mesmo
+ * destino.
+ *
+ * O rename SOBRESCREVE (`fs.rename` do Node substitui em silencio no Windows),
+ * e aqui isso e o comportamento desejado: o prepare reservou este nome fisico e
+ * a unicidade (volume, nome_arquivo, extensao) o mantem livre no acervo, entao
+ * o unico arquivo que pode estar neste caminho e um envio anterior DESTA mesma
+ * linha. Recusar tornaria impossivel repetir um envio que falhou.
+ */
+controller.gravarArquivoWeb = async (arquivoWeb, medida, usuarioUuid) => {
+  const { destino, caminhoParcial, tempId } = arquivoWeb;
+
+  try {
+    await fs.rename(caminhoParcial, destino);
+  } catch (error) {
+    // O `.parcial` sem promocao e lixo puro: nada aponta para ele.
+    await fs.unlink(caminhoParcial).catch(() => {});
+    throw new AppError(
+      `Não foi possível gravar o arquivo ${arquivoWeb.nomeArquivo}.${arquivoWeb.extensao} no volume: ${error.message}`,
+      httpCode.InternalError,
+      error
+    );
+  }
+
+  // O checksum e o tamanho sao os que o servidor MEDIU enquanto escrevia, no
+  // mesmo passo e sem segunda leitura. `status = 'completed'` e o que diz ao
+  // confirm-upload que esta linha ja foi medida.
+  await db.conn.none(
+    `UPDATE acervo.upload_arquivo_temp
+     SET expected_checksum = $<checksum>, tamanho_mb = $<tamanhoMb>,
+         status = 'completed', error_message = NULL
+     WHERE id = $<tempId>`,
+    { checksum: medida.checksum, tamanhoMb: medida.tamanho_mb, tempId }
+  );
+
+  logger.info('Arquivo gravado no volume por upload web', {
+    upload_arquivo_temp_id: tempId,
+    nome_arquivo: arquivoWeb.nomeArquivo,
+    extensao: arquivoWeb.extensao,
+    bytes: medida.bytes,
+    usuario_uuid: usuarioUuid
+  });
+
+  return {
+    temp_id: tempId,
+    nome: arquivoWeb.nome,
+    nome_arquivo: arquivoWeb.nomeArquivo,
+    extensao: arquivoWeb.extensao,
+    checksum: medida.checksum,
+    tamanho_mb: medida.tamanho_mb,
+    bytes: medida.bytes
+  };
 };
 
 
@@ -1592,6 +1761,49 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
           }
         }
         
+        // Linha JA MEDIDA na escrita: e o arquivo que chegou pelo upload web,
+        // cujo checksum e tamanho sairam do mesmo passo que gravou o byte, com
+        // ele passando pelo processo uma unica vez. Reler aqui seria refazer
+        // exatamente o custo que o cabecalho da catalogacao in-place documenta
+        // ter sido removido -- 362 GB relidos no LOTE_1 do Convenio RS, de 1h20
+        // a 3h -- e ainda por cima DENTRO desta transacao, que ficaria aberta o
+        // tempo todo. Conferir o checksum contra ele mesmo nao prova nada: o
+        // valor que esta no banco nao veio de cliente nenhum.
+        //
+        // O fluxo do PLUGIN nao passa por aqui: la a linha continua 'pending' e
+        // o checksum foi DECLARADO pelo cliente, entao a releitura e a unica
+        // coisa que prova que a copia por SMB chegou inteira.
+        if (arquivo.status === 'completed') {
+          // Nao se rele o CONTEUDO, mas se confere que o arquivo AINDA ESTA la.
+          // O `access` le so o metadado do diretorio: custa microssegundos,
+          // independe do tamanho, e fecha a janela entre o PUT e o confirm --
+          // sessao aberta vale 24 h, e nesse intervalo alguem pode ter mexido no
+          // volume. Sem esta linha o acervo passaria a apontar para um caminho
+          // vazio, e o defeito so apareceria quando alguem fosse baixar.
+          let sumiu = null;
+          try {
+            await fs.access(filePath);
+          } catch {
+            sumiu = `O arquivo ${arquivo.nome} foi gravado no volume, mas não está mais lá: ${filePath}`;
+          }
+
+          if (sumiu) {
+            allValid = false;
+            await t.none(
+              `UPDATE acervo.upload_arquivo_temp SET status = 'failed', error_message = $1 WHERE id = $2`,
+              [sumiu, arquivo.id]
+            );
+          }
+
+          fileResults[arquivo.versao_id ? `versao_${arquivo.versao_id}` : `versao_temp_${arquivo.versao_temp_id}`].files.push({
+            nome: arquivo.nome,
+            nome_arquivo: arquivo.nome_arquivo,
+            status: sumiu ? 'failed' : 'completed',
+            error_message: sumiu
+          });
+          continue;
+        }
+
         try {
           if (isTileserver) {
             // Tileserver é uma URL — não há arquivo físico para validar
@@ -2092,8 +2304,26 @@ controller.getUploadSessions = async () => {
   );
 };
 
+/**
+ * Cancela a sessao e APAGA os arquivos parciais que ela deixou no volume.
+ *
+ * Ate o servidor passar a gravar byte, cancelar nao tocava em disco nenhum: quem
+ * copiava era o plugin, por SMB, e o que ficasse no volume era problema de quem
+ * copiou. Com o upload web, uma sessao cancelada no meio do envio deixa
+ * `<destino>.parcial` no acervo, e lixo que ninguem apaga vira lixo que ninguem
+ * reconhece meses depois.
+ *
+ * So o `.parcial`. Arquivo ja renomeado para o nome definitivo NAO se apaga:
+ * cancelar registra que a sessao nao vai virar cadastro, e nao autoriza destruir
+ * byte que pode ser o de outra sessao ou de um confirm anterior.
+ *
+ * A limpeza acontece DEPOIS do commit, e falha nela vira log. Se rodasse dentro
+ * da transacao, um `unlink` que falhasse derrubaria o cancelamento e deixaria a
+ * sessao aberta -- trocando um arquivo temporario esquecido por uma sessao
+ * pendurada, que e o problema maior.
+ */
 controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
-  return db.conn.tx(async t => {
+  const parciais = await db.conn.tx(async t => {
     const session = await t.oneOrNone(
       `SELECT * FROM acervo.upload_session WHERE uuid_session = $1 AND status = 'pending'`,
       [sessionUuid]
@@ -2128,7 +2358,26 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
        WHERE session_id = $1 AND status = 'pending'`,
       [session.id]
     );
+
+    // Tileserver nao tem byte, entao nao tem parcial.
+    const destinos = await t.any(
+      `SELECT destination_path FROM acervo.upload_arquivo_temp
+       WHERE session_id = $1 AND tipo_arquivo_id <> $2`,
+      [session.id, TIPO_ARQUIVO.TILESERVER]
+    );
+
+    return destinos.map(d => d.destination_path);
   });
+
+  const apagados = await removerParciais(parciais, { session_uuid: sessionUuid, usuario_uuid: usuarioUuid });
+
+  if (apagados > 0) {
+    logger.info('Arquivos parciais apagados no cancelamento da sessão de upload', {
+      session_uuid: sessionUuid,
+      usuario_uuid: usuarioUuid,
+      apagados
+    });
+  }
 };
 
 /**

@@ -82,6 +82,7 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 | `AUTH_SERVER` | Sim | URL do serviço de autenticação |
 | `USE_PROXY` | Não | Usar proxy do sistema nas chamadas ao auth (default `false`) |
 | `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
+| `UPLOAD_WEB_MAX_GB` | Não | Teto do arquivo que o NAVEGADOR envia ao volume (default 2). Acima dele, o caminho é o plugin |
 
 ### Endpoints da API
 
@@ -96,8 +97,8 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
 | `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
-| `/api/arquivo` | acervo | Upload, download e catalogação de arquivos |
-| `/api/produtos` | acervo | CRUD de produtos e versões |
+| `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
+| `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
 | `/api/projetos` | acervo | Projetos e lotes |
 | `/api/volumes` | acervo | Volumes de armazenamento |
 | `/api/ponto_controle` | acervo | Pontos de controle geodésico |
@@ -119,6 +120,12 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
 | `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet) |
 
+Desde 2026-08-01 o acervo também se **escreve pela interface web**: produto, versão e relacionamento.
+A geometria do produto sai do MI/INOM quando a folha é do SCN, e dos cantos quando não é; a versão
+Regular entra pelo assistente de carregamento, que manda os bytes ao volume por
+`PUT /api/arquivo/upload-web/...` (o servidor grava e mede o checksum no mesmo passo). O plugin do
+QGIS continua sendo o caminho da carga em lote e do arquivo grande. Ver o `CLAUDE.md`.
+
 `/api/mapoteca/dashboard` é montada ANTES de `/api/mapoteca` em `routes.js`, para o Express casar o prefixo mais específico primeiro. Preserve essa ordem ao acrescentar rota.
 
 **Formato padrão de resposta:**
@@ -129,7 +136,7 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 
 ### Segurança
 
-Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 200 requisições por 60 segundos por IP, proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com expiração de 1 hora e o perfil relido do banco a cada requisição.
+Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP, proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com expiração de 1 hora e o perfil relido do banco a cada requisição.
 
 ### Jobs agendados
 
@@ -197,7 +204,7 @@ client/src/js/
 ├── pages/            # login, usuarios, rpcmtec, 404, não autorizado
 └── modules/
     ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
-    ├── acervo/       # Dashboard, busca, pontos de controle
+    ├── acervo/       # Dashboard, busca, pontos de controle, cadastro de produto e versão
     ├── mapoteca/     # Clientes, pedidos, materiais, estoque, consumo, plotters, relatórios
     └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
 ```

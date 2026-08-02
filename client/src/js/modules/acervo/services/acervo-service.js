@@ -1,4 +1,6 @@
-import { apiGet, apiDownload, apiImagem } from '@services/api-client.js';
+import {
+  apiGet, apiPost, apiPut, apiDelete, apiDownload, apiImagem, apiUploadComProgresso,
+} from '@services/api-client.js';
 import { cachedFetch, invalidate, TTL_DASHBOARD, TTL_DOMINIO } from '@services/cache.js';
 
 /**
@@ -231,3 +233,295 @@ export const getTiposEscala = () =>
  */
 export const getSubtiposProduto = () =>
   cachedFetch('acervo:dominio:subtipo_produto', () => apiGet('/gerencia/dominio/subtipo_produto'), TTL_DOMINIO);
+
+/**
+ * Tipos de versao (1 Regular, 2 Registro histórico, 3 Planejada).
+ *
+ * A lista chega inteira do servidor, e QUEM FILTRA e a tela: o formulario de
+ * versao oferece so Regular e Planejada, e essa escolha e de interface, nao de
+ * dominio. Filtrar aqui esconderia o tipo 2 de quem so quer EXIBIR o rotulo de
+ * uma versao historica que ja existe.
+ */
+export const getTiposVersao = () =>
+  cachedFetch('acervo:dominio:tipo_versao', () => apiGet('/gerencia/dominio/tipo_versao'), TTL_DOMINIO);
+
+export const getTiposRelacionamento = () =>
+  cachedFetch('acervo:dominio:tipo_relacionamento', () => apiGet('/gerencia/dominio/tipo_relacionamento'), TTL_DOMINIO);
+
+export const getTiposArquivo = () =>
+  cachedFetch('acervo:dominio:tipo_arquivo', () => apiGet('/gerencia/dominio/tipo_arquivo'), TTL_DOMINIO);
+
+export const getSituacoesCarregamento = () =>
+  cachedFetch('acervo:dominio:situacao_carregamento', () => apiGet('/gerencia/dominio/situacao_carregamento'), TTL_DOMINIO);
+
+/**
+ * Projetos e lotes, para o campo `lote_id` da versao.
+ *
+ * Cacheados como dominio, e nao como lista: sao dezenas de linhas que mudam
+ * quando um projeto novo comeca, e nao a cada cadastro de versao.
+ */
+export const getProjetos = () =>
+  cachedFetch('acervo:dominio:projeto', () => apiGet('/projetos/projeto'), TTL_DOMINIO);
+
+export const getLotes = () =>
+  cachedFetch('acervo:dominio:lote', () => apiGet('/projetos/lote'), TTL_DOMINIO);
+
+// ---------------------------------------------------------------------------
+// Escrita: produto, versao e relacionamento
+// ---------------------------------------------------------------------------
+
+/**
+ * Descarta o que uma escrita torna mentira.
+ *
+ * Sao dois prefixos, e nao o `acervo:` inteiro, porque os DOMINIOS (tipo de
+ * produto, escala, subtipo) nao mudam por cadastrar produto: derrubar os tres
+ * junto faria cada gravacao custar quatro requisicoes de tabela que ninguem
+ * alterou. O que muda e o quantitativo do dashboard e a lista de palavras-chave
+ * em uso, que e alimentada pelas versoes.
+ *
+ * A BUSCA nao aparece aqui porque nunca entrou no cache: cada combinacao de
+ * filtro e uma pergunta nova (ver `buscarProdutos`).
+ */
+function invalidarEscrita() {
+  invalidate(CACHE);
+  invalidate('acervo:palavras_chave');
+}
+
+/**
+ * Cria produtos SEM versao e SEM arquivo (a casca).
+ *
+ * O corpo e um OBJETO com a chave `produtos`, ao contrario das rotas de versao,
+ * que recebem array puro. A diferenca e do servidor (`produtoSchema.produtos` x
+ * `produtoSchema.versoesPlanejadas`), e quem chama nao deve ter de lembrar dela:
+ * esta funcao recebe a lista e monta o envelope.
+ *
+ * @param {Array<Object>} produtos
+ * @returns {Promise<any>}
+ */
+export function criarProdutos(produtos) {
+  invalidarEscrita();
+  return apiPost('/produtos/produtos', { produtos });
+}
+
+/**
+ * Atualiza UM produto, com o objeto inteiro.
+ *
+ * `subtipo_produto_id` AUSENTE significa "não mexe", e nao null: e o campo que
+ * carrega a identidade do produto (24 = Carta Topográfica Militar). Quem quer
+ * despinar manda null explicito. Ver o comentario de produto_schema.js.
+ *
+ * @param {Object} produto - com `id`
+ */
+export function atualizarProduto(produto) {
+  invalidarEscrita();
+  return apiPut('/produtos/produto', produto);
+}
+
+/**
+ * Exclui produtos, com as versoes e os arquivos deles.
+ *
+ * O motivo e obrigatorio no servidor, e nao e enfeite: as linhas vao para as
+ * tabelas `*_deletado`, e sem ele a exclusao vira um registro sumido sem
+ * historia.
+ *
+ * @param {Array<number>} ids
+ * @param {string} motivo
+ */
+export function excluirProdutos(ids, motivo) {
+  invalidarEscrita();
+  return apiDelete('/produtos/produto', { produto_ids: ids, motivo_exclusao: motivo });
+}
+
+/**
+ * Cria versoes PLANEJADAS em produtos que ja existem.
+ *
+ * Corpo em ARRAY puro, como a rota historica irma. Planejada e promessa de
+ * producao: nasce sem arquivo, e o arquivo entra nesta MESMA versao quando a
+ * producao terminar.
+ *
+ * @param {Array<Object>} versoes - cada uma com `produto_id`
+ */
+export function criarVersoesPlanejadas(versoes) {
+  invalidarEscrita();
+  return apiPost('/produtos/versao_planejada', versoes);
+}
+
+/**
+ * Cria produto e versao planejada de uma vez, para a folha que ainda nao esta
+ * no acervo. Corpo em ARRAY puro, e cada produto traz suas `versoes`.
+ * @param {Array<Object>} produtos
+ */
+export function criarProdutoComVersaoPlanejada(produtos) {
+  invalidarEscrita();
+  return apiPost('/produtos/produto_versao_planejada', produtos);
+}
+
+/**
+ * Cria versoes de REGISTRO HISTORICO em produtos que ja existem.
+ *
+ * Mesma forma da planejada, e de proposito: as duas nascem SEM arquivo, e o que
+ * as separa e o significado. Historica e a folha que existe no mundo e o acervo
+ * registra sem ter o arquivo (edicao antiga, carta de outro orgao); planejada e
+ * promessa de producao, e ganha o arquivo na MESMA versao quando ela terminar.
+ *
+ * @param {Array<Object>} versoes - cada uma com `produto_id`
+ */
+export function criarVersoesHistoricas(versoes) {
+  invalidarEscrita();
+  return apiPost('/produtos/versao_historica', versoes);
+}
+
+/**
+ * Atualiza UMA versao, com o objeto inteiro.
+ *
+ * `uuid_versao` segue IMUTAVEL por aqui de proposito: nesta rota ele chegaria
+ * junto de vinte outros campos e troca-lo seria acidente. A troca deliberada tem
+ * rota propria (`POST /produtos/versao/uuid`, perfil gerente).
+ *
+ * `palavras_chave` ausente PRESERVA o que esta gravado; mandar `[]` zera.
+ *
+ * @param {Object} versao - com `id`
+ */
+export function atualizarVersao(versao) {
+  invalidarEscrita();
+  return apiPut('/produtos/versao', versao);
+}
+
+/**
+ * Exclui versoes, com os arquivos delas. Motivo obrigatorio, pela mesma razao
+ * de `excluirProdutos`.
+ * @param {Array<number>} ids
+ * @param {string} motivo
+ */
+export function excluirVersoes(ids, motivo) {
+  invalidarEscrita();
+  return apiDelete('/produtos/versao', { versao_ids: ids, motivo_exclusao: motivo });
+}
+
+/**
+ * Relacionamentos entre versoes (insumo, complementar, conjunto).
+ *
+ * As tres funcoes montam o envelope que cada rota espera, e ele NAO e o mesmo:
+ * POST e PUT levam `versao_relacionamento`, o DELETE leva
+ * `versao_relacionamento_ids`. Deixar isso para quem chama transformaria um
+ * detalhe do schema em regra decorada por cada tela.
+ *
+ * O servidor recusa auto-relacionamento, par duplicado (409) e CICLO em relacao
+ * de Insumo. A tela nao reimplementa nenhuma das tres: mostra a mensagem que
+ * volta daqui.
+ *
+ * @param {Array<{versao_id_1:number, versao_id_2:number, tipo_relacionamento_id:number}>} lista
+ */
+/**
+ * Todas as linhas de `acervo.versao_relacionamento`, com os dois lados.
+ *
+ * A ficha detalhada do produto NAO serve para trocar o tipo de uma relacao: ela
+ * devolve a "versao relacionada" ja resolvida por um CASE, e portanto nao diz
+ * qual das duas e a `versao_id_1`. O PUT exige as duas na ordem gravada, e
+ * chutar a ordem inverteria o sentido da relacao de Insumo em silencio, que e
+ * justamente o que a deteccao de ciclo do servidor percorre.
+ *
+ * Sem cache: quem chama isto esta prestes a ESCREVER, e uma direcao lida de
+ * cinco minutos atras e a informacao errada na hora errada.
+ *
+ * @returns {Promise<Array<{id:number, versao_id_1:number, versao_id_2:number, tipo_relacionamento_id:number}>>}
+ */
+export const getRelacionamentos = () => apiGet('/produtos/versao_relacionamento');
+
+export function criarRelacionamentos(lista) {
+  invalidarEscrita();
+  return apiPost('/produtos/versao_relacionamento', { versao_relacionamento: lista });
+}
+
+/** Cada item leva tambem o `id` da linha de relacionamento. */
+export function atualizarRelacionamentos(lista) {
+  invalidarEscrita();
+  return apiPut('/produtos/versao_relacionamento', { versao_relacionamento: lista });
+}
+
+/** @param {Array<number>} ids */
+export function excluirRelacionamentos(ids) {
+  invalidarEscrita();
+  return apiDelete('/produtos/versao_relacionamento', { versao_relacionamento_ids: ids });
+}
+
+/**
+ * Geometria e identificacao de uma folha do mapa indice, por MI ou por INOM.
+ *
+ * Existe para o cadastro nao exigir que alguem desenhe a mao um poligono que a
+ * DSG ja definiu: informado o MI, o resto da identidade da folha vem junto. A
+ * folha existe no SCN esteja ou nao catalogada, entao esta rota nao consulta o
+ * acervo.
+ *
+ * MANDA UM DOS DOIS, nunca os dois: a rota recusa a combinacao, e o MI ganha
+ * quando os dois vem preenchidos. A regra fica AQUI, e nao em cada tela: quem
+ * abre um formulario com os dois campos ja preenchidos nao tem por que saber
+ * disso, e cada tela que resolvesse por conta poderia escolher o outro.
+ *
+ * Sem cache: cada folha e uma pergunta diferente, e guardar por MI encheria a
+ * memoria da aba com uma entrada por carta consultada.
+ *
+ * @param {{mi?:string, inom?:string}} chave - um dos dois basta
+ * @returns {Promise<{inom:string, mi:string, sem_mi:boolean, tipo_escala_id:number, geom:string}>}
+ */
+export const getFolha = ({ mi = '', inom = '' } = {}) =>
+  apiGet(`/produtos/folha${queryString(mi ? { mi } : { inom })}`);
+
+// ---------------------------------------------------------------------------
+// Envio de arquivo pelo NAVEGADOR (versão Regular)
+// ---------------------------------------------------------------------------
+//
+// Três chamadas, na ordem: preparar, mandar os bytes de cada arquivo, confirmar.
+// A sessão que o prepare abre expira sozinha em 24 h (`acervo.upload_session`), e
+// o cron de limpeza a fecha; cancelar é o caminho educado, e apaga os `.parcial`
+// que ficaram no volume.
+//
+// O checksum NÃO é declarado aqui, de propósito: quem mede é o servidor, no mesmo
+// passo em que grava. Mandá-lo é 400. Ver o comentário da rota em
+// server/src/arquivo/arquivo_route.js.
+
+/**
+ * Abre a sessão de envio de uma versão nova em produto que já existe.
+ *
+ * @param {Array<Object>} versoes - [{ produto_id, versao: {...}, arquivos: [...] }]
+ * @returns {Promise<{session_uuid:string, arquivos:Array<{temp_id:number}>}>}
+ */
+export const prepararEnvioVersao = (versoes) =>
+  apiPost('/arquivo/upload-web/prepare/version', { versoes });
+
+/** O mesmo, para produto que ainda não existe. */
+export const prepararEnvioProduto = (produtos) =>
+  apiPost('/arquivo/upload-web/prepare/product', { produtos });
+
+/**
+ * Manda os bytes de UM arquivo da sessão.
+ *
+ * Devolve `{ promessa, abortar }`, e não só a promessa: fechar o assistente no
+ * meio de um envio grande precisa parar a subida, e não só esconder a tela.
+ *
+ * @param {string} sessionUuid
+ * @param {number} tempId - o `temp_id` que o prepare devolveu
+ * @param {File} arquivo
+ * @param {Function} [onProgress]
+ */
+export const enviarBytesDoArquivo = (sessionUuid, tempId, arquivo, onProgress) => {
+  const corpo = new FormData();
+  corpo.append('arquivo', arquivo);
+  return apiUploadComProgresso(
+    `/arquivo/upload-web/${sessionUuid}/arquivo/${tempId}`,
+    corpo,
+    onProgress,
+    { metodo: 'PUT' }
+  );
+};
+
+/** Promove as linhas temporárias para o acervo. */
+export const confirmarEnvio = (sessionUuid) =>
+  apiPost('/arquivo/confirm-upload', { session_uuid: sessionUuid });
+
+/** Fecha a sessão sem gravar, e apaga os `.parcial` do volume. */
+export const cancelarEnvio = (sessionUuid) =>
+  apiPost('/arquivo/cancel-upload', { session_uuid: sessionUuid });
+
+/** Sessões que ficaram abertas, para retomar ou cancelar. */
+export const getSessoesDeEnvio = () => apiGet('/arquivo/upload-sessions');

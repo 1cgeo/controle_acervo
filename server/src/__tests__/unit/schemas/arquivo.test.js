@@ -325,4 +325,148 @@ describe('Schemas de arquivo', () => {
       )
     })
   })
+
+  // Envio pelo NAVEGADOR. O contrato do arquivo e o unico que muda em relacao
+  // ao prepare-upload do plugin, e a arvore de produto e de versao e a MESMA
+  // (as duas saem das fabricas `produtoComVersoes` e `versaoDeProduto`): o que
+  // estes casos guardam e justamente a diferenca.
+  describe('prepareUploadWeb (product e version)', () => {
+    const arquivoWeb = {
+      nome: 'Carta',
+      nome_arquivo: 'carta_teste',
+      tipo_arquivo_id: 1,
+      extensao: 'tif',
+      crs_original: 'EPSG:4674'
+    }
+
+    const produto = (arquivo) => ({
+      produtos: [{
+        produto: {
+          nome: 'Carta Teste',
+          mi: 'MI-001',
+          inom: 'SF-22',
+          tipo_escala_id: 2,
+          denominador_escala_especial: null,
+          tipo_produto_id: 1,
+          descricao: '',
+          geom: 'SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'
+        },
+        versoes: [{
+          uuid_versao: null,
+          versao: '1-DSG',
+          nome: 'Versao 1',
+          tipo_versao_id: 1,
+          subtipo_produto_id: 1,
+          lote_id: null,
+          metadado: null,
+          descricao: '',
+          orgao_produtor: 'DSG',
+          palavras_chave: [],
+          data_criacao: '2024-01-01T00:00:00.000Z',
+          data_edicao: '2024-01-01T00:00:00.000Z',
+          arquivos: [arquivo]
+        }]
+      }]
+    })
+
+    const versao = (arquivo) => ({
+      versoes: [{
+        produto_id: 1,
+        versao: {
+          uuid_versao: null,
+          versao: '1-DSG',
+          nome: 'Versao teste',
+          tipo_versao_id: 1,
+          subtipo_produto_id: 1,
+          lote_id: null,
+          metadado: null,
+          descricao: '',
+          orgao_produtor: 'DSG',
+          palavras_chave: [],
+          data_criacao: '2024-01-01T00:00:00.000Z',
+          data_edicao: '2024-01-01T00:00:00.000Z'
+        },
+        arquivos: [arquivo]
+      }]
+    })
+
+    it('aceita o arquivo SEM checksum e SEM tamanho: quem mede e o servidor', () => {
+      aceita(arquivoSchema.prepareUploadWebProduct.validate(produto(arquivoWeb)))
+      aceita(arquivoSchema.prepareUploadWebVersion.validate(versao(arquivoWeb)))
+    })
+
+    // Descartado em silencio, o cliente acreditaria ter gravado o checksum que
+    // mandou. O `any.unknown` e a prova de que a recusa veio do `forbidden()`
+    // deste campo, e nao de outro campo do fixture.
+    it('RECUSA checksum declarado pelo cliente, no produto e na versao', () => {
+      recusaPor(
+        arquivoSchema.prepareUploadWebProduct.validate(
+          produto({ ...arquivoWeb, checksum: 'a'.repeat(64) })
+        ),
+        'produtos.0.versoes.0.arquivos.0.checksum',
+        'any.unknown'
+      )
+      recusaPor(
+        arquivoSchema.prepareUploadWebVersion.validate(
+          versao({ ...arquivoWeb, checksum: 'a'.repeat(64) })
+        ),
+        'versoes.0.arquivos.0.checksum',
+        'any.unknown'
+      )
+    })
+
+    it('RECUSA tamanho_mb declarado pelo cliente', () => {
+      recusaPor(
+        arquivoSchema.prepareUploadWebProduct.validate(
+          produto({ ...arquivoWeb, tamanho_mb: 12.5 })
+        ),
+        'produtos.0.versoes.0.arquivos.0.tamanho_mb',
+        'any.unknown'
+      )
+    })
+
+    // Tileserver (9) e URL: nao ha byte para o navegador enviar.
+    it('RECUSA tileserver, que nao tem arquivo para enviar', () => {
+      recusaPor(
+        arquivoSchema.prepareUploadWebProduct.validate(
+          produto({ ...arquivoWeb, tipo_arquivo_id: 9, nome_arquivo: 'https://tiles/x' })
+        ),
+        'produtos.0.versoes.0.arquivos.0.tipo_arquivo_id',
+        'any.invalid'
+      )
+    })
+
+    // A arvore continua sendo a do prepare-upload: o que a fabrica garante e
+    // que uma regra nova de produto valha nos dois caminhos.
+    it('exige geom no produto, como o prepare-upload do plugin', () => {
+      const semGeom = produto(arquivoWeb)
+      delete semGeom.produtos[0].produto.geom
+      recusaPor(
+        arquivoSchema.prepareUploadWebProduct.validate(semGeom),
+        'produtos.0.produto.geom',
+        'any.required'
+      )
+    })
+
+    describe('uploadWebArquivoParams', () => {
+      it('aceita o par sessao/arquivo como ele chega da URL (texto)', () => {
+        const valor = aceita(arquivoSchema.uploadWebArquivoParams.validate({
+          session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          temp_id: '42'
+        }))
+        expect(valor.temp_id).toBe(42)
+      })
+
+      it('recusa sessao que nao e UUID', () => {
+        recusaPor(
+          arquivoSchema.uploadWebArquivoParams.validate({
+            session_uuid: 'nao-e-uuid',
+            temp_id: '42'
+          }),
+          'session_uuid',
+          'string.guid'
+        )
+      })
+    })
+  })
 })

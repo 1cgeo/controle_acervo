@@ -2,12 +2,13 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
 
 const { verifyPerfil, verifyAdmin } = require('../login')
 
 const arquivoCtrl = require('./arquivo_ctrl')
 const arquivoSchema = require('./arquivo_schema')
+const { uploadArquivoWeb } = require('./upload_web')
 
 const router = express.Router()
 
@@ -89,6 +90,88 @@ router.post(
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
+
+// ---------------------------------------------------------------------------
+// Envio pelo NAVEGADOR. O byte sobe por HTTP e quem o grava no volume e o
+// SERVIDOR.
+//
+// Ate 2026-08-01 nenhuma rota gravava byte em volume: o prepare-upload reservava
+// o destino, o PLUGIN copiava por SMB e o confirm-upload conferia o checksum que
+// o cliente declarara. Quem nao tem o volume montado (e nao tem o QGIS aberto)
+// ficava de fora do cadastro. O servidor ja ALCANCA o volume -- o download faz
+// createReadStream e pipe --, entao o que faltava era o sentido contrario.
+//
+// A MAQUINA DE SESSAO E A MESMA. Mesmas tabelas _temp, mesmo `operation_type`,
+// mesmo `POST /confirm-upload` fechando. O que muda e so o deposito: em vez de o
+// cliente copiar os bytes entre o prepare e o confirm, ele os MANDA, um arquivo
+// por requisicao. Uma segunda maquina de upload divergiria da primeira na
+// primeira regra nova de identidade de produto ou de sequencia de versao.
+//
+// O checksum e do SERVIDOR, e o cliente nao o declara. Aqui os bytes passam pelo
+// processo, entao o SHA-256 sai do MESMO passo que escreve: nao ha segunda
+// leitura para pagar. O navegador nem teria como declara-lo -- `crypto.subtle`
+// exige o arquivo inteiro na memoria, que e justamente o que nao cabe.
+router.post(
+  '/upload-web/prepare/product',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: arquivoSchema.prepareUploadWebProduct
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.prepareUploadWebProduct(req.body, req.usuarioUuid);
+    const msg = 'Envio de produto preparado. Mande os bytes de cada arquivo em ' +
+      'PUT /api/arquivo/upload-web/{session_uuid}/arquivo/{temp_id} e feche com confirm-upload.';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+router.post(
+  '/upload-web/prepare/version',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: arquivoSchema.prepareUploadWebVersion
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.prepareUploadWebVersion(req.body, req.usuarioUuid);
+    const msg = 'Envio de versão preparado. Mande os bytes de cada arquivo em ' +
+      'PUT /api/arquivo/upload-web/{session_uuid}/arquivo/{temp_id} e feche com confirm-upload.';
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
+// Os bytes de UM arquivo, em multipart, no campo "arquivo".
+//
+// PUT e nao POST porque o destino ja existe e e nomeado: o prepare reservou
+// aquela linha, e mandar os mesmos bytes duas vezes tem de deixar o volume no
+// mesmo estado. Uma requisicao por arquivo, e nao um multipart com o lote todo:
+// assim a queda no meio custa um arquivo, e a retomada e reenviar aquele.
+// O limitador nao atrapalha (3.000/minuto, ver server/app.js).
+router.put(
+  '/upload-web/:session_uuid/arquivo/:temp_id',
+  verifyPerfil('operador'),
+  schemaValidation({
+    params: arquivoSchema.uploadWebArquivoParams
+  }),
+  // Resolve o destino no banco e so entao streama o corpo para o volume. Nada
+  // de body parser aqui: o corpo pode ter gigabytes e nunca entra em memoria.
+  ...uploadArquivoWeb,
+  asyncHandler(async (req, res, next) => {
+    if (!req.file) {
+      throw new AppError(
+        'Nenhum arquivo recebido. Mande o conteúdo como multipart/form-data no campo "arquivo".',
+        httpCode.BadRequest
+      );
+    }
+
+    const dados = await arquivoCtrl.gravarArquivoWeb(req.arquivoWeb, req.file, req.usuarioUuid);
+
+    const msg = `Arquivo ${dados.nome_arquivo}.${dados.extensao} gravado no volume ` +
+      `(${dados.tamanho_mb.toFixed(2)} MB, checksum medido pelo servidor)`;
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+// ---------------------------------------------------------------------------
 
 // Cataloga produto que JA ESTA no volume, sem transferir nem renomear byte.
 //

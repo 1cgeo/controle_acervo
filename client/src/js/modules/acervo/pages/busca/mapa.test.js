@@ -16,11 +16,15 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 let ouvintes = {};
 let camadas = [];
 
+// Dados que cada fonte recebeu, por nome: e o que permite provar que o rotulo
+// le PONTOS e nao os poligonos.
+let dadosPorFonte = {};
+
 const mapaFalso = {
   addControl: vi.fn(),
-  addSource: vi.fn(),
+  addSource: vi.fn((nome, opcoes) => { dadosPorFonte[nome] = opcoes.data; }),
   addLayer: vi.fn(l => camadas.push(l)),
-  getSource: vi.fn(() => ({ setData: vi.fn() })),
+  getSource: vi.fn(nome => ({ setData: dados => { dadosPorFonte[nome] = dados; } })),
   getCanvas: vi.fn(() => ({ style: {} })),
   getLayer: vi.fn(() => true),
   setFeatureState: vi.fn(),
@@ -85,9 +89,12 @@ const MOLDURA = {
   coordinates: [[[-51, -30], [-51, -29], [-50, -29], [-50, -30], [-51, -30]]],
 };
 
+const PONTO = { type: 'Point', coordinates: [-50.5, -29.5] };
+
 async function montar() {
   ouvintes = {};
   camadas = [];
+  dadosPorFonte = {};
   const recebido = [];
   const mapa = criarMapa({
     onAlternarSelecao: ids => recebido.push(ids),
@@ -98,9 +105,9 @@ async function montar() {
   await mapa.iniciar();
   ouvintes.load();
   mapa.setProdutos([
-    { id: 10, nome: 'Garibaldi (CT)', geom: MOLDURA },
-    { id: 11, nome: 'Garibaldi (Orto)', geom: MOLDURA },
-    { id: 12, nome: 'Garibaldi (MDS)', geom: MOLDURA },
+    { id: 10, nome: 'Garibaldi (CT)', mi: '2952-1-SO', geom: MOLDURA, ponto: PONTO, area: 1 },
+    { id: 11, nome: 'Garibaldi (Orto)', mi: '2952-1-SO', geom: MOLDURA, ponto: PONTO, area: 1 },
+    { id: 12, nome: 'Garibaldi (MDS)', mi: '2952-1-SO', geom: MOLDURA, ponto: PONTO, area: 1 },
   ]);
   return { mapa, recebido };
 }
@@ -169,5 +176,81 @@ describe('mapa da busca: clique sobre poligonos sobrepostos', () => {
     ouvintes['click:produtos-preenchimento']({ features: [] });
 
     expect(recebido).toEqual([]);
+  });
+});
+
+describe('mapa da busca: rotulo em fonte de PONTOS', () => {
+  // O defeito: rotulando o POLIGONO, o MapLibre corta o GeoJSON em ladrilhos e
+  // ancora o texto por pedaco, entao a folha que cruza a borda de um ladrilho
+  // aparece rotulada DUAS vezes. Foi visto na tela em 2026-08-02, com um produto
+  // so no mapa. Um ponto cabe num ladrilho so.
+  test('a camada de rotulo nao le a fonte dos poligonos', async () => {
+    await montar();
+    const rotulo = camadas.find(c => c.id === 'produtos-rotulo');
+
+    expect(rotulo).toBeTruthy();
+    expect(rotulo.type).toBe('symbol');
+    expect(rotulo.source).toBe('produtos-pontos');
+    expect(rotulo.source).not.toBe('produtos');
+  });
+
+  test('a fonte de rotulo recebe um PONTO por produto', async () => {
+    await montar();
+    const pontos = dadosPorFonte['produtos-pontos'];
+
+    expect(pontos.features).toHaveLength(3);
+    for (const f of pontos.features) {
+      expect(f.geometry.type).toBe('Point');
+    }
+    // E o texto que o rotulo desenha continua vindo junto.
+    expect(pontos.features[0].properties.mi).toBe('2952-1-SO');
+  });
+
+  test('produto sem ponto perde o rotulo, e nao o poligono', async () => {
+    // Resposta de servidor mais antigo, sem o campo `ponto`. Sumir com a carta
+    // do mapa seria pior do que ela ficar sem nome.
+    const mapa = criarMapa({
+      onAlternarSelecao: () => {}, onApontar: () => {},
+      onAreaDesenhada: () => {}, onAreaCancelada: () => {},
+    });
+    ouvintes = {}; camadas = []; dadosPorFonte = {};
+    await mapa.iniciar();
+    ouvintes.load();
+    mapa.setProdutos([{ id: 7, nome: 'Sem ponto', geom: MOLDURA }]);
+
+    expect(dadosPorFonte['produtos'].features).toHaveLength(1);
+    expect(dadosPorFonte['produtos-pontos'].features).toHaveLength(0);
+  });
+});
+
+describe('mapa da busca: folha pequena por cima da grande', () => {
+  // O mapeamento do SCN e ANINHADO: a 2952-1-SO esta dentro da 2952, que esta
+  // dentro da 535. Sem ordenar, a ordem de desenho e a da fonte (por id), e a
+  // folha grande cai por cima da pequena e a engole.
+  test('o preenchimento ordena pela area NEGATIVA', async () => {
+    await montar();
+    const fill = camadas.find(c => c.id === 'produtos-preenchimento');
+
+    // `fill-sort-key` desenha do MENOR para o maior; a area negativa faz a folha
+    // de menor area ter a maior chave, e portanto ficar por cima.
+    expect(fill.layout['fill-sort-key']).toEqual(['-', 0, ['get', 'area']]);
+  });
+
+  test('a area viaja em properties, que e de onde o sort-key le', async () => {
+    await montar();
+    expect(dadosPorFonte['produtos'].features[0].properties.area).toBe(1);
+  });
+
+  test('produto sem area nao quebra a ordenacao', async () => {
+    const mapa = criarMapa({
+      onAlternarSelecao: () => {}, onApontar: () => {},
+      onAreaDesenhada: () => {}, onAreaCancelada: () => {},
+    });
+    ouvintes = {}; camadas = []; dadosPorFonte = {};
+    await mapa.iniciar();
+    ouvintes.load();
+    mapa.setProdutos([{ id: 7, nome: 'Sem area', geom: MOLDURA, ponto: PONTO }]);
+
+    expect(dadosPorFonte['produtos'].features[0].properties.area).toBe(0);
   });
 });

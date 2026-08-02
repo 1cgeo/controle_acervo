@@ -1,13 +1,25 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
-import { showError } from '@utils/toast.js';
+import { showError, showSuccess } from '@utils/toast.js';
+import { permissoes } from '@store/auth-store.js';
 import {
   getProdutoDetalhado,
   getMiniaturaVersao,
   baixarArquivoDoAcervo,
+  getTiposRelacionamento,
+  getRelacionamentos,
+  criarRelacionamentos,
+  atualizarRelacionamentos,
+  excluirRelacionamentos,
+  excluirProdutos,
+  excluirVersoes,
 } from '@modules/acervo/services/acervo-service.js';
+import { openProdutoDialogForm } from '@modules/acervo/pages/produto/produto-dialog-form.js';
+import { openVersaoDialog } from '@modules/acervo/pages/produto/versao-dialog.js';
+import { abrirSeletorVersao } from '@modules/acervo/pages/produto/seletor-versao.js';
 
 /**
  * Ficha do produto.
@@ -163,48 +175,217 @@ function linhaArquivo(a) {
 }
 
 /**
+ * Troca o TIPO de uma relacao ja gravada.
+ *
+ * A direcao (`versao_id_1`, `versao_id_2`) vem da LISTA do servidor, e nao da
+ * ficha: a ficha resolve "a outra ponta" por um CASE e nao diz qual das duas e a
+ * primeira. Chutar a ordem inverteria o sentido da relacao de Insumo em
+ * silencio, e e por esse sentido que a deteccao de ciclo caminha. O PUT exige as
+ * duas, entao le-las e a unica forma de trocar SO o tipo.
+ */
+async function trocarTipoRelacao(r, novoTipo, select, recarregar) {
+  select.disabled = true;
+  try {
+    const todos = await getRelacionamentos();
+    const linha = (todos || []).find(x => Number(x.id) === Number(r.id));
+    if (!linha) {
+      throw new Error('Esta relação não existe mais. Feche e abra a ficha de novo.');
+    }
+    await atualizarRelacionamentos([{
+      id: Number(linha.id),
+      versao_id_1: Number(linha.versao_id_1),
+      versao_id_2: Number(linha.versao_id_2),
+      tipo_relacionamento_id: Number(novoTipo),
+    }]);
+    showSuccess('Tipo da relação atualizado');
+    await recarregar();
+  } catch (erro) {
+    showError(erro.message || 'Erro ao trocar o tipo da relação');
+    // Volta ao valor gravado: deixar o `<select>` mostrando a escolha que NAO
+    // foi gravada faria a tela mentir sobre o que esta no banco.
+    select.value = String(r.tipo_relacionamento_id);
+    select.disabled = false;
+  }
+}
+
+async function removerRelacao(r, recarregar) {
+  const alvo = [r.produto_relacionado, r.versao_relacionada].filter(Boolean).join(', ')
+    || `versão ${r.versao_relacionada_id}`;
+
+  const ok = await confirmDialog({
+    title: 'Remover relação',
+    message: `Remover a relação "${r.tipo_relacionamento || 'Relação'}" com ${alvo}? `
+      + 'O vínculo é apagado de vez: não há tabela de relações excluídas, e recriá-lo '
+      + 'exige escolher as duas versões de novo.',
+    confirmLabel: 'Remover',
+    danger: true,
+  });
+  if (!ok) return;
+
+  try {
+    await excluirRelacionamentos([Number(r.id)]);
+    showSuccess('Relação removida');
+    await recarregar();
+  } catch (erro) {
+    showError(erro.message || 'Erro ao remover a relação');
+  }
+}
+
+/**
+ * Acrescenta uma relacao entre ESTA versao e outra, escolhida no seletor.
+ *
+ * A versao gravada em `versao_id_1` e a desta ficha, e a escolhida vai em
+ * `versao_id_2`. E o que o rotulo do campo diz, para ninguem ter de deduzir o
+ * sentido depois.
+ *
+ * O servidor recusa auto-relacionamento, par duplicado (409) e CICLO em relacao
+ * de Insumo. Nada disso e refeito aqui: a deteccao de ciclo percorre o grafo
+ * INTEIRO dentro da transacao, e uma copia no navegador so poderia responder
+ * pelo pedaco que ela conhece, dizendo "pode" onde o servidor diz "nao".
+ */
+async function acrescentarRelacao(versaoId, tipoRelacionamentoId, recarregar) {
+  const escolha = await abrirSeletorVersao({
+    titulo: 'Relacionar a outra versão',
+    versaoExcluida: versaoId,
+  });
+  if (!escolha) return;
+
+  try {
+    await criarRelacionamentos([{
+      versao_id_1: Number(versaoId),
+      versao_id_2: Number(escolha.versao_id),
+      tipo_relacionamento_id: Number(tipoRelacionamentoId),
+    }]);
+    showSuccess(`Relação com ${escolha.produto_nome}, ${escolha.rotulo}, criada`);
+    await recarregar();
+  } catch (erro) {
+    showError(erro.message || 'Erro ao criar a relação');
+  }
+}
+
+/**
  * Relacionamentos da versao.
  *
  * O servidor sempre devolveu isto e a tela anterior descartava em silencio. Um
  * insumo ou um conjunto e informacao de proveniencia: e o que responde "de onde
  * veio esta carta". Cada item leva para a ficha do produto relacionado.
+ *
+ * Desde 2026-08-02 o bloco tambem ESCREVE, atras do perfil: acrescentar e trocar
+ * o tipo sao operador, remover e gerente, espelhando as rotas. O perfil no
+ * client e ergonomia (esconder o que vai dar 403); quem barra e o `verifyPerfil`.
+ *
+ * Quando nao ha relacao nenhuma o bloco so aparece para quem pode acrescentar:
+ * para quem so consulta, um titulo "Relacionadas" seguido de nada seria uma
+ * pergunta sem resposta.
  */
-function blocoRelacionamentos(relacionamentos, irParaProduto) {
-  if (!relacionamentos || !relacionamentos.length) return null;
+function blocoRelacionamentos(versao, ctx) {
+  const { pode, irParaProduto, tiposRelacionamento, recarregar } = ctx;
+  const relacionamentos = versao.relacionamentos || [];
+
+  if (!relacionamentos.length && !pode.operador) return null;
+
+  const nomeTipo = (code) => {
+    const achado = (tiposRelacionamento || []).find(t => Number(t.code) === Number(code));
+    return achado ? achado.nome : null;
+  };
+
+  const itens = relacionamentos.map((r) => {
+    const alvo = [r.produto_relacionado, r.versao_relacionada].filter(Boolean).join(', ');
+
+    // Com perfil de operador o tipo vira um `<select>`; sem ele continua sendo a
+    // marca de leitura que sempre foi.
+    const marca = pode.operador
+      ? el('select', {
+        className: 'ficha-relacionamentos__tipo',
+        'aria-label': 'Tipo da relação',
+        onChange: (e) => {
+          e.stopPropagation();
+          trocarTipoRelacao(r, e.target.value, e.target, recarregar);
+        },
+        onClick: (e) => e.stopPropagation(),
+      }, (tiposRelacionamento || []).map(t => el('option', {
+        value: String(t.code),
+        textContent: t.nome,
+        selected: Number(t.code) === Number(r.tipo_relacionamento_id) ? 'selected' : null,
+      })))
+      : chip(r.tipo_relacionamento || nomeTipo(r.tipo_relacionamento_id) || 'Relação', 'secondary');
+
+    const rotuloAlvo = el('span', {
+      className: 'ficha-relacionamentos__alvo',
+      textContent: alvo || `versão ${r.versao_relacionada_id}`,
+    });
+
+    // So vira link quando ha para onde ir. Relacionamento apontando para
+    // versao apagada continua aparecendo (a proveniencia existiu), mas como
+    // texto: link que nao leva a lugar nenhum e pior que texto.
+    const destino = r.produto_relacionado_id
+      ? el('button', {
+        className: 'ficha-relacionamentos__link',
+        type: 'button',
+        title: `Abrir a ficha de ${alvo}`,
+        onClick: () => irParaProduto({
+          id: Number(r.produto_relacionado_id),
+          nome: r.produto_relacionado,
+        }),
+      }, [rotuloAlvo])
+      : rotuloAlvo;
+
+    return el('li', { className: 'ficha-relacionamentos__item' }, [
+      marca,
+      destino,
+      pode.gerente
+        ? el('button', {
+          className: 'btn btn--text btn--sm ficha-relacionamentos__remover',
+          type: 'button',
+          title: 'Remover esta relação',
+          onClick: () => removerRelacao(r, recarregar),
+        }, [svgIcon(ICONS.delete, 14)])
+        : null,
+    ].filter(Boolean));
+  });
+
+  // O tipo da relacao NOVA se escolhe antes de escolher a versao, e fica no
+  // proprio botao: assim o seletor abre uma vez so e nao volta perguntando.
+  let tipoNovo = (tiposRelacionamento || []).length
+    ? String(tiposRelacionamento[0].code)
+    : '';
+
+  const barra = pode.operador
+    ? el('div', { className: 'ficha-relacionamentos__acoes' }, [
+      el('select', {
+        className: 'ficha-relacionamentos__tipo',
+        'aria-label': 'Tipo da relação a criar',
+        onChange: (e) => { tipoNovo = e.target.value; },
+      }, (tiposRelacionamento || []).map(t => el('option', {
+        value: String(t.code),
+        textContent: t.nome,
+      }))),
+      el('button', {
+        className: 'btn btn--text btn--sm',
+        type: 'button',
+        // Diz o SENTIDO do que vai ser gravado: a relação parte desta versão.
+        title: 'Cria a relação partindo desta versão para a que for escolhida',
+        onClick: () => {
+          if (!tipoNovo) {
+            showError('Não foi possível carregar os tipos de relação');
+            return;
+          }
+          acrescentarRelacao(versao.versao_id, tipoNovo, recarregar);
+        },
+      }, [svgIcon(ICONS.add, 14), 'Relacionar a outra versão']),
+    ])
+    : null;
 
   return el('div', { className: 'ficha-relacionamentos' }, [
     el('span', { className: 'ficha-relacionamentos__titulo', textContent: 'Relacionadas' }),
-    el('ul', { className: 'ficha-relacionamentos__lista' }, relacionamentos.map((r) => {
-      const alvo = [r.produto_relacionado, r.versao_relacionada].filter(Boolean).join(', ');
-
-      const conteudo = () => [
-        chip(r.tipo_relacionamento || 'Relação', 'secondary'),
-        el('span', {
-          className: 'ficha-relacionamentos__alvo',
-          textContent: alvo || `versão ${r.versao_relacionada_id}`,
-        }),
-      ];
-
-      // So vira link quando ha para onde ir. Relacionamento apontando para
-      // versao apagada continua aparecendo (a proveniencia existiu), mas como
-      // texto: link que nao leva a lugar nenhum e pior que texto.
-      if (!r.produto_relacionado_id) {
-        return el('li', { className: 'ficha-relacionamentos__item' }, conteudo());
-      }
-
-      return el('li', { className: 'ficha-relacionamentos__item' }, [
-        el('button', {
-          className: 'ficha-relacionamentos__link',
-          type: 'button',
-          title: `Abrir a ficha de ${alvo}`,
-          onClick: () => irParaProduto({
-            id: Number(r.produto_relacionado_id),
-            nome: r.produto_relacionado,
-          }),
-        }, conteudo()),
-      ]);
-    })),
-  ]);
+    itens.length
+      ? el('ul', { className: 'ficha-relacionamentos__lista' }, itens)
+      : el('p', {
+        className: 'ficha-relacionamentos__vazio',
+        textContent: 'Esta versão não tem relação com nenhuma outra.',
+      }),
+    barra,
+  ].filter(Boolean));
 }
 
 /**
@@ -271,8 +452,36 @@ function painelMiniatura(v, destaque, registrarUrl) {
  * digital" e informacao, e e o caso da versao historica (chefe, 2026-07-25).
  * Esconder faria a ficha mentir sobre quantas versoes existem.
  */
-function blocoVersao(v, maisRecente, registrarUrl, irParaProduto) {
+function blocoVersao(v, maisRecente, registrarUrl, ctx) {
   const arquivos = v.arquivos || [];
+  const { pode, ficha, recarregar } = ctx;
+
+  // Editar e excluir a versao moram no cabecalho DELA, e nao na barra do
+  // produto: a ficha mostra varias versoes, e um botao "Editar versão" no rodape
+  // do modal nao diria qual.
+  const acoes = el('div', { className: 'ficha-versao__acoes' }, [
+    pode.operador
+      ? el('button', {
+        className: 'btn btn--text btn--sm',
+        type: 'button',
+        title: 'Editar esta versão',
+        onClick: () => openVersaoDialog({
+          produto: ficha(),
+          versao: v,
+          versoesExistentes: (ficha().versoes || []),
+          onSaved: recarregar,
+        }),
+      }, [svgIcon(ICONS.edit, 14), 'Editar'])
+      : null,
+    pode.gerente
+      ? el('button', {
+        className: 'btn btn--text btn--sm',
+        type: 'button',
+        title: 'Excluir esta versão',
+        onClick: () => excluirVersaoDaFicha(v, recarregar),
+      }, [svgIcon(ICONS.delete, 14), 'Excluir'])
+      : null,
+  ].filter(Boolean));
 
   const cabecalho = el('div', { className: 'ficha-versao__cabecalho' }, [
     el('h4', {
@@ -287,6 +496,7 @@ function blocoVersao(v, maisRecente, registrarUrl, irParaProduto) {
     arquivos.length
       ? chip(plural(arquivos.length, 'arquivo', 'arquivos'), 'info')
       : chip('Sem arquivo digital', 'default'),
+    acoes.childNodes.length ? acoes : null,
   ].filter(Boolean));
 
   const meta = linhaMeta([
@@ -317,9 +527,98 @@ function blocoVersao(v, maisRecente, registrarUrl, irParaProduto) {
         : null,
       palavras,
       listaArquivos,
-      blocoRelacionamentos(v.relacionamentos, irParaProduto),
+      blocoRelacionamentos(v, ctx),
     ].filter(Boolean)),
   ]);
+}
+
+/**
+ * Exclui UMA versao a partir da ficha.
+ *
+ * O motivo e exigido pelo servidor e nao e enfeite: a versao e os arquivos dela
+ * vao para as tabelas `*_deletado`, e sem motivo a exclusao vira um registro
+ * sumido sem historia. Por isso ele e digitado, e nao escolhido numa lista de
+ * frases prontas.
+ */
+async function excluirVersaoDaFicha(v, recarregar) {
+  const ok = await confirmDialog({
+    title: `Excluir a versão ${v.versao || ''}`.trim(),
+    message: 'A versão e os arquivos dela saem do acervo. As linhas ficam nas tabelas de '
+      + 'exclusão e os bytes seguem no volume, mas o acervo deixa de enxergá-los.',
+    confirmLabel: 'Excluir',
+    danger: true,
+  });
+  if (!ok) return;
+
+  const motivo = await pedirMotivo(`Motivo da exclusão da versão ${v.versao || ''}`.trim());
+  if (motivo === null) return;
+
+  try {
+    await excluirVersoes([Number(v.versao_id)], motivo);
+    showSuccess('Versão excluída com sucesso');
+    await recarregar();
+  } catch (erro) {
+    showError(erro.message || 'Erro ao excluir a versão');
+  }
+}
+
+/**
+ * Pede o motivo da exclusao, DEPOIS da confirmacao.
+ *
+ * Sao dois passos porque sao duas coisas: o `confirmDialog` e a decisao (e e o
+ * caminho de toda acao destrutiva desta interface), e isto aqui e o dado que o
+ * servidor exige para gravar a lapide. Pedir o motivo antes de confirmar faria
+ * quem fosse desistir escrever a justificativa a toa.
+ *
+ * O botao so fecha com o campo preenchido: o servidor recusa motivo vazio, e
+ * descobrir isso depois seria refazer os dois passos.
+ *
+ * @param {string} titulo
+ * @returns {Promise<string|null>} null quando desiste
+ */
+function pedirMotivo(titulo) {
+  return new Promise((resolve) => {
+    let valor = null;
+
+    const campo = el('textarea', {
+      className: 'form-field__textarea',
+      rows: '3',
+      placeholder: 'Por que este registro está sendo excluído?',
+      'aria-label': 'Motivo da exclusão',
+    });
+
+    const erro = el('div', { className: 'form-field__error hidden' });
+
+    const conteudo = el('div', { className: 'form-field' }, [
+      el('label', { className: 'form-field__label', textContent: 'Motivo da exclusão' }),
+      campo,
+      erro,
+    ]);
+
+    openModal({
+      title: titulo,
+      content: conteudo,
+      width: '520px',
+      onClose: () => resolve(valor),
+      actions: [
+        { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+        {
+          label: 'Excluir',
+          variant: 'danger',
+          onClick: ({ close }) => {
+            const texto = campo.value.trim();
+            if (!texto) {
+              erro.textContent = 'Informe o motivo da exclusão';
+              erro.classList.remove('hidden');
+              return;
+            }
+            valor = texto;
+            close();
+          },
+        },
+      ],
+    });
+  });
 }
 
 /** Espaco reservado enquanto a ficha carrega, no formato do que vai chegar. */
@@ -345,10 +644,16 @@ function esqueleto() {
  *
  * @param {Array<{id:number, nome:string}>|Object} produtos - a selecao, ou um so
  * @param {number} [indiceInicial]
+ * @param {{onAlterado?:Function}} [opcoes] - `onAlterado` roda depois de toda
+ *   gravacao feita daqui de dentro. Quem chama (a busca) recarrega a lista com
+ *   ela: sem isso, excluir um produto o deixaria no resultado ate a proxima
+ *   busca, e o cartao anunciaria uma ficha que nao existe mais.
  */
-export function abrirProdutoDialog(produtos, indiceInicial = 0) {
+export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = null } = {}) {
   const lista = Array.isArray(produtos) ? produtos : [produtos];
   if (!lista.length) return null;
+
+  const pode = permissoes('acervo');
 
   let indice = Math.min(Math.max(indiceInicial, 0), lista.length - 1);
   // Fichas ja buscadas: voltar para a anterior nao refaz a requisicao.
@@ -356,6 +661,12 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
   // Respostas fora de ordem nao podem pintar a ficha do produto errado.
   let requisicao = 0;
   let fechado = false;
+  // Ficha do produto na tela. Os dialogos de escrita precisam dela inteira (o
+  // subtipo do produto e as versoes ja gravadas), e nao do resumo que veio da
+  // busca.
+  let fichaAtual = null;
+  // Tipos de relacionamento, carregados uma vez e reusados por toda versao.
+  let tiposRelacionamento = [];
 
   // URLs de objeto das miniaturas ja desenhadas. Sem soltar, percorrer uma
   // selecao grande deixaria uma imagem por produto presa na memoria da aba.
@@ -403,6 +714,62 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
     return (p && p.nome) || `Produto ${p && p.id}`;
   }
 
+  /**
+   * Recarrega a ficha do zero depois de uma gravacao.
+   *
+   * Descarta o cache do produto na tela, e nao o cache inteiro: as outras fichas
+   * da selecao nao mudaram, e joga-las fora faria "Anterior" custar rede a cada
+   * salvamento. Avisa quem abriu a ficha na mesma passada, para a lista da busca
+   * acompanhar.
+   */
+  async function recarregar() {
+    const produto = lista[indice];
+    cache.delete(produto.id);
+    if (onAlterado) onAlterado();
+    if (fechado) return;
+    corpo.replaceChildren(esqueleto());
+    const meuToken = ++requisicao;
+    await carregar(produto, meuToken);
+  }
+
+  // Excluir e GERENTE, editar e nova versao sao OPERADOR: e o que as rotas
+  // cobram. O perfil aqui e ergonomia (nao oferecer o que vai voltar 403); quem
+  // barra de verdade e o `verifyPerfil` no servidor.
+  const acoes = [
+    { label: 'Fechar', variant: 'text', onClick: ({ close }) => close() },
+  ];
+
+  if (pode.gerente) {
+    acoes.push({
+      label: 'Excluir',
+      variant: 'danger',
+      onClick: ({ close }) => excluirProdutoDaFicha(close),
+    });
+  }
+
+  if (pode.operador) {
+    acoes.push({
+      label: 'Nova versão',
+      variant: 'secondary',
+      onClick: () => {
+        if (!fichaAtual) return;
+        openVersaoDialog({
+          produto: fichaAtual,
+          versoesExistentes: fichaAtual.versoes || [],
+          onSaved: recarregar,
+        });
+      },
+    });
+    acoes.push({
+      label: 'Editar',
+      variant: 'primary',
+      onClick: () => {
+        if (!fichaAtual) return;
+        openProdutoDialogForm({ produto: fichaAtual, onSaved: recarregar });
+      },
+    });
+  }
+
   const modal = openModal({
     title: tituloDe(lista[indice]),
     content: raiz,
@@ -411,10 +778,41 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
       fechado = true;
       soltarMiniaturas();
     },
-    actions: [{ label: 'Fechar', variant: 'text', onClick: ({ close }) => close() }],
+    actions: acoes,
   });
 
   const tituloEl = modal.element.querySelector('.modal__title');
+
+  /**
+   * Exclui o produto da ficha, com as versoes e os arquivos dele.
+   *
+   * Fecha a ficha depois: ela passaria a mostrar um produto que nao existe mais,
+   * e "Anterior"/"Próxima" continuariam oferecendo a navegacao para ele.
+   */
+  async function excluirProdutoDaFicha(fecharModal) {
+    const produto = lista[indice];
+    const ok = await confirmDialog({
+      title: `Excluir ${tituloDe(produto)}`,
+      message: 'O produto sai do acervo com TODAS as versões e arquivos dele. As linhas '
+        + 'ficam nas tabelas de exclusão e os bytes seguem no volume, mas o acervo deixa '
+        + 'de enxergá-los.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
+
+    const motivo = await pedirMotivo(`Motivo da exclusão de ${tituloDe(produto)}`);
+    if (motivo === null) return;
+
+    try {
+      await excluirProdutos([Number(produto.id)], motivo);
+      showSuccess('Produto excluído com sucesso');
+      if (onAlterado) onAlterado();
+      fecharModal();
+    } catch (erro) {
+      showError(erro.message || 'Erro ao excluir o produto');
+    }
+  }
 
   /**
    * Abre a ficha de OUTRO produto, vindo de um relacionamento.
@@ -465,7 +863,16 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
           v,
           versoes.length > 1 && i === 0,
           registrarUrl,
-          irParaProduto
+          {
+            pode,
+            irParaProduto,
+            tiposRelacionamento,
+            recarregar,
+            // Função, e não o objeto: a ficha é trocada a cada recarga, e uma
+            // referência presa no fechamento entregaria a versão velha ao
+            // diálogo de edição depois do primeiro salvamento.
+            ficha: () => fichaAtual,
+          }
         ))
         : [el('p', {
           className: 'produto-ficha__vazio',
@@ -475,10 +882,11 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
   }
 
   function carregar(produto, meuToken) {
-    getProdutoDetalhado(produto.id)
+    return getProdutoDetalhado(produto.id)
       .then((d) => {
         cache.set(produto.id, d);
         if (fechado || meuToken !== requisicao) return;
+        fichaAtual = d;
         pintarFicha(d);
       })
       .catch((err) => {
@@ -506,7 +914,8 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
     soltarMiniaturas();
 
     if (cache.has(produto.id)) {
-      pintarFicha(cache.get(produto.id));
+      fichaAtual = cache.get(produto.id);
+      pintarFicha(fichaAtual);
       return;
     }
 
@@ -519,6 +928,22 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0) {
     indice = novo;
     corpo.scrollTop = 0;
     pintar();
+  }
+
+  // Os tipos de relacao so servem a quem escreve, e por isso so sao pedidos para
+  // quem pode. Chegam depois da primeira pintura: a ficha nao espera por eles, e
+  // a repintura acontece na primeira gravacao ou troca de produto.
+  if (pode.operador) {
+    getTiposRelacionamento()
+      .then((tipos) => {
+        if (fechado) return;
+        tiposRelacionamento = tipos || [];
+        if (fichaAtual) pintarFicha(fichaAtual);
+      })
+      .catch(() => {
+        // Sem os tipos, o bloco de relacao aparece so para leitura. O resto da
+        // ficha nao tem por que sofrer com isso.
+      });
   }
 
   pintar();

@@ -1,6 +1,12 @@
 "use strict";
 const archiver = require('archiver');
 const { caminhoNoVolume } = require('../utils/caminho_volume');
+// A normalização de MI/INOM era uma cópia de três linhas aqui e outra igual em
+// `integracao/integracao_ctrl.js`, e as duas só tiravam caixa e espaço: quem
+// pedia a folha `0155` não achava a que está gravada como `155`, sem erro
+// nenhum, só um "Não mapeado" falso. Hoje é `utils/mi.js`, o mesmo normalizador
+// do `mapoteca_cli`.
+const { normalizarIdentificador } = require('../utils/mi');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
@@ -777,9 +783,6 @@ const SITUACAO_GERAL_ESCALAS = [
 ];
 controller.SITUACAO_GERAL_ESCALAS = SITUACAO_GERAL_ESCALAS;
 
-// Normaliza um identificador (MI/INOM) para comparação tolerante a espaços/caixa
-const normIdentificador = (s) =>
-  s == null ? '' : String(s).trim().toUpperCase().replace(/\s+/g, '');
 
 const situacaoEdicoes = (edicoes) => {
   if (edicoes.length === 0) return 'Não mapeado';
@@ -894,8 +897,8 @@ controller.getSituacaoGeralCells = async (
   // mais longa que `edicoes_*`.
   return celulas
     .filter(c => !filtroIds ||
-      filtroIds.has(normIdentificador(c.identificadorMI)) ||
-      filtroIds.has(normIdentificador(c.identificadorINOM)))
+      filtroIds.has(normalizarIdentificador(c.identificadorMI)) ||
+      filtroIds.has(normalizarIdentificador(c.identificadorINOM)))
     .map((celula, index) => {
       const edicoesTopo = celula.edicoes_topo.map(ano => ano.toString());
       const edicoesOrto = celula.edicoes_orto.map(ano => ano.toString());
@@ -1209,7 +1212,28 @@ controller.buscaGeometrias = async (filtros = {}) => {
     );
 
     const linhas = await t.any(
-      `SELECT p.id, p.nome, p.mi, te.nome AS escala, ST_AsGeoJSON(p.geom) AS geom
+      `SELECT p.id, p.nome, p.mi, te.nome AS escala,
+              -- O (9, 0) corta o campo \`crs\` que o ST_AsGeoJSON emite por
+              -- padrão. Ele é resquício de uma versão antiga do GeoJSON, a RFC
+              -- 7946 o removeu e o MapLibre o ignora. Medido no PostGIS 3.4.1:
+              -- 172 bytes por geometria contra 116, num corpo que traz o acervo
+              -- INTEIRO (5.741 produtos em 2026-07-28).
+              ST_AsGeoJSON(p.geom, 9, 0) AS geom,
+              -- Ponto de rótulo, calculado aqui e não no navegador.
+              --
+              -- Rotular o POLÍGONO faz a mesma carta aparecer duas vezes: o
+              -- MapLibre corta o GeoJSON em ladrilhos e ancora o texto por
+              -- pedaço, então a folha que cruza a borda ganha um rótulo de cada
+              -- lado. Um ponto cabe num ladrilho só. É a mesma solução do mapa
+              -- da mapoteca (mapoteca/dashboard_ctrl.js), e pelo mesmo motivo.
+              --
+              -- PointOnSurface, e não Centroid: o centroide de uma folha em L
+              -- cai fora dela, e o rótulo apareceria sobre a carta vizinha.
+              ST_AsGeoJSON(ST_PointOnSurface(p.geom), 9, 0) AS ponto,
+              -- Área só para ordenar o desenho. O mapeamento do SCN é ANINHADO
+              -- por escala (a 2952-1-SO está contida na 2952 e na 535): sem
+              -- ordenar, a folha grande cai por cima da pequena e a engole.
+              ST_Area(p.geom)::float8 AS area
        FROM acervo.produto p
        INNER JOIN dominio.tipo_escala te ON te.code = p.tipo_escala_id
        ${whereClause}
@@ -1226,7 +1250,9 @@ controller.buscaGeometrias = async (filtros = {}) => {
         nome: l.nome,
         mi: l.mi,
         escala: l.escala,
-        geom: JSON.parse(l.geom)
+        geom: JSON.parse(l.geom),
+        ponto: JSON.parse(l.ponto),
+        area: l.area
       }))
     };
   });

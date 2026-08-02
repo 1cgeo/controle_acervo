@@ -281,4 +281,183 @@ describe('Schemas de produto', () => {
       )
     })
   })
+  // A rota GET /api/produtos/folha resolve a folha do SCN por INOM ou por MI. O
+  // schema e onde mora a regra de que sao um OU outro, nunca os dois, e onde a
+  // dica de escala fica presa ao MI.
+  describe('folhaQuery', () => {
+    it('aceita so o INOM', () => {
+      expect(aceita(produtoSchema.folhaQuery.validate({ inom: 'SF-22-Y-D-II-4-NE' })))
+        .toEqual({ inom: 'SF-22-Y-D-II-4-NE' })
+    })
+
+    it('aceita so o MI', () => {
+      expect(aceita(produtoSchema.folhaQuery.validate({ mi: '2757-4-NE' })))
+        .toEqual({ mi: '2757-4-NE' })
+    })
+
+    // Com os dois preenchidos a rota teria de escolher um em silencio.
+    it('recusa INOM e MI juntos', () => {
+      recusaPor(
+        produtoSchema.folhaQuery.validate({ inom: 'SF-22', mi: '2757' }),
+        'inom',
+        'object.xor'
+      )
+    })
+
+    it('recusa a consulta sem nenhum dos dois', () => {
+      recusaPor(produtoSchema.folhaQuery.validate({}), 'inom', 'object.missing')
+    })
+
+    // O acervo grava o MI sem zero a esquerda, e sem o preenchimento 549 dos 563
+    // MIs de 250k colidem com um MI de 100k. A dica e o que alcanca a folha de
+    // 250k, e por isso ela so vale 3 (100k) ou 4 (250k).
+    it('aceita a dica de escala junto do MI', () => {
+      aceita(produtoSchema.folhaQuery.validate({ mi: '1', tipo_escala_id: 4 }))
+      aceita(produtoSchema.folhaQuery.validate({ mi: '1', tipo_escala_id: 3 }))
+    })
+
+    it('recusa dica de escala que nao desempata nada', () => {
+      recusaPor(
+        produtoSchema.folhaQuery.validate({ mi: '2757', tipo_escala_id: 1 }),
+        'tipo_escala_id',
+        'any.only'
+      )
+    })
+
+    // Recusada, e nao ignorada: o INOM ja diz a escala pela profundidade, e
+    // aceitar-e-descartar faria o cliente acreditar que pediu o que a rota nem
+    // leu.
+    it('recusa a dica de escala junto do INOM', () => {
+      recusaPor(
+        produtoSchema.folhaQuery.validate({ inom: 'SF-22', tipo_escala_id: 3 }),
+        'tipo_escala_id',
+        'object.with'
+      )
+    })
+
+    // A query NAO passa por stripUnknown no schemaValidation (so o corpo passa),
+    // entao chave errada na URL e 400 e nao um filtro que sumiu.
+    it('recusa parametro desconhecido', () => {
+      recusaPor(
+        produtoSchema.folhaQuery.validate({ inom: 'SF-22', escala: '50k' }),
+        'escala',
+        'object.unknown'
+      )
+    })
+  })
+})
+
+// Dia de calendário: o valor tem de sair do Joi como a STRING que entrou.
+//
+// Sem `.raw()`, o Joi devolvia um Date de meia-noite UTC, e a coluna
+// TIMESTAMP WITH TIME ZONE guardava 21:00 do DIA ANTERIOR em America/Sao_Paulo.
+// Medido em 2026-08-01 pela interface web (que manda o formato do
+// `<input type="date">`): edição pedida em 01/08 voltou 31/07 na ficha.
+//
+// O custo real não é a tela: `acervo.versao.data_edicao` é o que conta produto
+// entregue no MÊS, e por ele o RPCMTec. A carta editada no dia 1º entrava no
+// relatório do mês anterior.
+describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
+  const versaoValida = {
+    uuid_versao: null,
+    versao: '1-DSG',
+    nome: null,
+    produto_id: 1,
+    subtipo_produto_id: 2,
+    lote_id: null,
+    metadado: {},
+    descricao: '',
+    orgao_produtor: '1º CGEO',
+    data_criacao: '2026-07-01',
+    data_edicao: '2026-08-01'
+  }
+
+  it('versoesHistoricas devolve a string original, e nao um Date', () => {
+    const { value, error } = produtoSchema.versoesHistoricas.validate([versaoValida])
+    expect(error).toBeUndefined()
+    expect(value[0].data_criacao).toBe('2026-07-01')
+    expect(value[0].data_edicao).toBe('2026-08-01')
+  })
+
+  it('versaoAtualizacao devolve a string original', () => {
+    const { value, error } = produtoSchema.versaoAtualizacao.validate({
+      id: 1,
+      versao: '1-DSG',
+      nome: null,
+      tipo_versao_id: 1,
+      subtipo_produto_id: 2,
+      descricao: '',
+      metadado: {},
+      lote_id: null,
+      orgao_produtor: '1º CGEO',
+      data_criacao: '2026-07-01',
+      data_edicao: '2026-08-01'
+    })
+    expect(error).toBeUndefined()
+    expect(value.data_edicao).toBe('2026-08-01')
+  })
+
+  // O `.raw()` devolve a string, mas a VALIDACAO continua sendo de data: sem
+  // isso o schema aceitaria qualquer texto e o erro apareceria no INSERT.
+  it('continua recusando texto que nao e data', () => {
+    recusaPor(
+      produtoSchema.versoesHistoricas.validate([
+        { ...versaoValida, data_criacao: 'nao e data' }
+      ]),
+      'data_criacao',
+      'date.format'
+    )
+  })
+
+  // O par `.iso().raw()` e deliberado, e esta e a razao: com `.raw()` sozinho a
+  // string seguiria CRUA para o Postgres, e '01/08/2026' viraria 8 de JANEIRO,
+  // porque o DateStyle padrao e MDY. Um dia trocado por outro mes inteiro.
+  it('recusa data fora do formato ISO, que o Postgres leria como outro mes', () => {
+    recusaPor(
+      produtoSchema.versoesHistoricas.validate([
+        { ...versaoValida, data_edicao: '01/08/2026' }
+      ]),
+      'data_edicao',
+      'date.format'
+    )
+  })
+
+  // O caminho do upload web passa por OUTRO schema (arquivo_schema), e ele tinha
+  // o mesmo defeito. Sem este caso, corrigir um e esquecer o outro nao apareceria.
+  it('o schema do upload tambem devolve a string original', () => {
+    const arquivoSchema = require('../../../arquivo/arquivo_schema')
+    const { value, error } = arquivoSchema.prepareUploadWebVersion.validate({
+      versoes: [{
+        produto_id: 1,
+        versao: {
+          versao: '1-DSG',
+          nome: null,
+          tipo_versao_id: 1,
+          subtipo_produto_id: 2,
+          orgao_produtor: '1º CGEO',
+          data_criacao: '2026-07-01',
+          data_edicao: '2026-08-01'
+        },
+        arquivos: [{
+          nome: 'Carta',
+          nome_arquivo: 'CT_s25_2757-1-NE_1-DSG',
+          tipo_arquivo_id: 1,
+          extensao: 'pdf',
+          situacao_carregamento_id: 1
+        }]
+      }]
+    })
+    expect(error).toBeUndefined()
+    expect(value.versoes[0].versao.data_edicao).toBe('2026-08-01')
+  })
+
+  it('continua cobrando data_edicao >= data_criacao', () => {
+    recusaPor(
+      produtoSchema.versoesHistoricas.validate([
+        { ...versaoValida, data_criacao: '2026-08-01', data_edicao: '2026-07-01' }
+      ]),
+      'data_edicao',
+      'date.min'
+    )
+  })
 })

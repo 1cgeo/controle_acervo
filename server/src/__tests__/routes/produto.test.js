@@ -378,6 +378,165 @@ describe('Produto Routes', () => {
     })
   })
 
+  // Versao planejada num produto que JA EXISTE. E a irma de
+  // /produto_versao_planejada para a folha que ja esta no acervo e vai ganhar
+  // uma edicao nova: o produto nao pode nascer de novo, so a versao.
+  describe('POST /api/produtos/versao_planejada', () => {
+    const versaoPlanejada = (produtoId, over = {}) => ([{
+      uuid_versao: null,
+      versao: '1-DSG',
+      nome: null,
+      produto_id: Number(produtoId),
+      subtipo_produto_id: 1,
+      lote_id: null,
+      metadado: {},
+      descricao: '',
+      orgao_produtor: '1º CGEO',
+      palavras_chave: [],
+      data_criacao: '2026-07-30',
+      data_edicao: '2026-07-30',
+      ...over
+    }])
+
+    it('grava tipo_versao_id 3 no produto existente, sem arquivo', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(produto.id))
+
+      expect(res.status).toBe(201)
+
+      const versao = await conn.one(`
+        SELECT v.tipo_versao_id, v.versao,
+               (SELECT count(*)::int FROM acervo.arquivo a WHERE a.versao_id = v.id) AS arquivos
+        FROM acervo.versao v WHERE v.produto_id = $1`, [produto.id])
+
+      expect(versao.tipo_versao_id).toBe(3)
+      expect(versao.versao).toBe('1-DSG')
+      // Sem isto a folha prometida apareceria como imprimivel na fila.
+      expect(versao.arquivos).toBe(0)
+    })
+
+    // A rota gemea nao pode escorregar de tipo: as duas passam pelo MESMO corpo
+    // de funcao, e um argumento trocado nao daria erro nenhum, so um numero
+    // errado na coluna que separa promessa de registro.
+    it('a rota historica continua gravando tipo 2, e nao 3', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/versao_historica')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(produto.id))
+
+      expect(res.status).toBe(201)
+
+      const versao = await conn.one(
+        `SELECT tipo_versao_id FROM acervo.versao WHERE produto_id = $1`, [produto.id]
+      )
+      expect(versao.tipo_versao_id).toBe(2)
+    })
+
+    it('produto inexistente nao grava versao nenhuma', async () => {
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(999999))
+
+      expect(res.status).toBeGreaterThanOrEqual(400)
+
+      const n = await conn.one(
+        `SELECT count(*)::int AS c FROM acervo.versao WHERE produto_id = 999999`
+      )
+      expect(n.c).toBe(0)
+    })
+
+    // 409, e nao 400: o corpo esta certo, o que colide e o estado do acervo. E o
+    // mesmo espelho amigavel da UNIQUE unique_version_per_product que a rota
+    // historica ja tinha.
+    it('versao repetida no mesmo produto devolve 409', async () => {
+      const produto = await createProduto()
+      await createVersao(produto.id, { versao: '1-DSG' })
+
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(produto.id))
+
+      expect(res.status).toBe(409)
+
+      const n = await conn.one(
+        `SELECT count(*)::int AS c FROM acervo.versao WHERE produto_id = $1`, [produto.id]
+      )
+      expect(n.c).toBe(1)
+    })
+
+    it('exige perfil de operador', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateUserToken())
+        .send(versaoPlanejada(produto.id))
+
+      expect(res.status).toBe(403)
+    })
+
+    // 404, e nao 500. Antes, `produto_id` inexistente estourava a chave
+    // estrangeira e virava a mensagem generica de erro interno -- que e o que o
+    // servidor responde quando ELE errou. Aqui quem errou foi quem chamou, e o
+    // 500 nao dizia que o problema era o id do produto.
+    it('produto inexistente devolve 404 dizendo qual id faltou', async () => {
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(9999999))
+
+      expect(res.status).toBe(404)
+      expect(res.body.success).toBe(false)
+      expect(res.body.message).toContain('9999999')
+
+      const n = await conn.one('SELECT count(*)::int AS c FROM acervo.versao')
+      expect(n.c).toBe(0)
+    })
+
+    // Em lote, o erro nomeia TODOS os que faltam: dizer so o primeiro faria quem
+    // corrigisse voltar a tomar 404 pelo seguinte, um por vez.
+    it('em lote, nomeia todos os produtos que faltam e nao grava nenhum', async () => {
+      const produto = await createProduto()
+
+      const res = await request(app)
+        .post('/api/produtos/versao_planejada')
+        .set('Authorization', generateAdminToken())
+        .send([
+          ...versaoPlanejada(produto.id),
+          ...versaoPlanejada(8888888, { versao: '2-DSG' }),
+          ...versaoPlanejada(7777777, { versao: '3-DSG' })
+        ])
+
+      expect(res.status).toBe(404)
+      expect(res.body.message).toContain('8888888')
+      expect(res.body.message).toContain('7777777')
+
+      // A transacao nao deixa meia carga: nem a versao do produto que EXISTE.
+      const n = await conn.one('SELECT count(*)::int AS c FROM acervo.versao')
+      expect(n.c).toBe(0)
+    })
+
+    // A rota historica e a irma, e passa pelo MESMO controlador: consertar uma e
+    // esquecer a outra e o modo de falhar que este caso fecha.
+    it('a rota historica ganha o mesmo 404', async () => {
+      const res = await request(app)
+        .post('/api/produtos/versao_historica')
+        .set('Authorization', generateAdminToken())
+        .send(versaoPlanejada(9999999, { versao: '1ª Edição' }))
+
+      expect(res.status).toBe(404)
+      expect(res.body.message).toContain('9999999')
+    })
+  })
+
   describe('GET /api/produtos/versao_relacionamento', () => {
     it('should return relationships list with login token', async () => {
       const res = await request(app)

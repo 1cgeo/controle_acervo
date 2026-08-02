@@ -4,6 +4,29 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
+ * Modais abertos, do mais antigo para o mais recente.
+ *
+ * Existe porque MODAL SOBRE MODAL e caso real: a ficha do produto do acervo abre
+ * "Nova versão" e "Editar" por cima de si mesma, e o editor de geometria abre por
+ * cima do formulário.
+ *
+ * Sem a pilha, cada modal registrava o proprio `keydown` no `document`, e um
+ * unico Escape fechava TODOS de uma vez. Medido em 2026-08-01, com a ficha e o
+ * diálogo de versão abertos: dois modais, um Escape, zero modais.
+ *
+ * O `stopPropagation` que ja estava ali nao resolve: ele barra a propagacao para
+ * OUTROS elementos, e nao os demais ouvintes registrados no MESMO elemento (isso
+ * seria `stopImmediatePropagation`). E nem ele bastaria, porque em captura os
+ * ouvintes do `document` rodam na ordem de registro: quem responderia primeiro
+ * seria o modal de BAIXO, ou seja, justamente o errado.
+ *
+ * Com a pilha, so o do topo reage ao Escape e ao Tab. O Tab importa tanto quanto
+ * o Escape: sem isso, a armadilha de foco do modal de baixo puxava o foco para
+ * fora do de cima a cada volta.
+ */
+const pilha = [];
+
+/**
  * Open an accessible modal dialog (role="dialog", ESC closes, focus trap).
  *
  * @param {Object} options
@@ -78,6 +101,9 @@ export function openModal({
   }
 
   function onKeyDown(e) {
+    // So o modal do TOPO responde. Ver o comentario da `pilha`.
+    if (pilha[pilha.length - 1] !== dialog) return;
+
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();
@@ -107,6 +133,10 @@ export function openModal({
     if (closed) return;
     closed = true;
     document.removeEventListener('keydown', onKeyDown, true);
+    // Sai por identidade, e nao por `pop()`: fechar pelo botao um modal que nao
+    // e o do topo e possivel, e o `pop()` tiraria o do topo no lugar dele.
+    const posicao = pilha.indexOf(dialog);
+    if (posicao !== -1) pilha.splice(posicao, 1);
     overlay.remove();
     if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
       previouslyFocused.focus();
@@ -115,6 +145,7 @@ export function openModal({
   }
 
   document.addEventListener('keydown', onKeyDown, true);
+  pilha.push(dialog);
   document.body.appendChild(overlay);
 
   // Focus the first focusable element inside the body, else the close button

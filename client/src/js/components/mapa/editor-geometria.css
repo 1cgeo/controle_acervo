@@ -1,0 +1,150 @@
+/* Editor da geometria de um produto do acervo.
+ *
+ * Tela cheia porque o mapa E a ferramenta: num quadro do tamanho de um
+ * formulario nao da para conferir onde a folha cai, que e o unico jeito de
+ * perceber um identificador digitado errado antes de gravar. */
+
+/* A classe vai no PROPRIO `.modal` (o `element` que openModal devolve e o
+ * dialog), e nao num invólucro: por isso o seletor nao e descendente. */
+.modal--tela-cheia {
+  height: 92vh;
+  max-height: 92vh;
+}
+
+/* `padding: 0` porque o painel e o mapa encostam na borda do modal; o respiro
+ * fica dentro do painel, onde ha texto. */
+.modal--tela-cheia .modal__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.editor-geom {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  gap: 0;
+}
+
+.editor-geom__painel {
+  width: 340px;
+  flex-shrink: 0;
+  padding: var(--space-md);
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-paper);
+}
+
+.editor-geom__intro {
+  margin: 0 0 var(--space-md);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.editor-geom__canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.editor-geom__semmapa {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+/* Os quatro cantos em duas colunas: oeste/leste em cima, sul/norte embaixo,
+ * na mesma disposicao geografica que a pessoa tem na cabeca. */
+.editor-geom__cantos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.editor-geom__acoes {
+  margin: var(--space-md) 0 var(--space-sm);
+}
+
+/* A pergunta do enquadramento, quando a escala ainda nao foi escolhida. Os dois
+ * botoes ocupam a largura inteira e ficam empilhados: sao uma escolha sobre o
+ * produto, e nao um par de acoes secundarias. */
+.editor-geom__escolha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.editor-geom__aviso {
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  border-left: 3px solid transparent;
+}
+
+.editor-geom__aviso--info {
+  background: var(--bg-hover);
+  border-left-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.editor-geom__aviso--ok {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  border-left-color: var(--color-success);
+}
+
+/* "Esta folha nao tem MI" chega aqui: e informacao correta, nao erro, e por
+ * isso nao usa o vermelho de falha. */
+.editor-geom__aviso--aviso {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border-left-color: var(--color-warning);
+}
+
+.editor-geom__aviso--erro {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border-left-color: var(--color-error);
+}
+
+.editor-geom__resumo {
+  margin-top: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.editor-geom__fato {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+}
+
+.editor-geom__fato strong {
+  font-family: var(--font-mono, monospace);
+}
+
+@media (max-width: 900px) {
+  .editor-geom {
+    flex-direction: column;
+  }
+
+  .editor-geom__painel {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    max-height: 45%;
+  }
+}

@@ -104,6 +104,73 @@ router.post(
   })
 );
 
+// Irma da /versao_historica, e de proposito uma ROTA PROPRIA em vez de um campo
+// naquela, pelo mesmo motivo do par /produto_versao_*: "historica" e "planejada"
+// sao coisas diferentes (passado registrado x producao prometida) e um nome por
+// coisa evita o corpo que muda de significado por um inteiro escondido.
+//
+// A diferenca para /produto_versao_planejada e o PRODUTO: la ele nasce junto,
+// aqui ele ja existe e so ganha mais uma versao.
+/**
+ * @swagger
+ * /api/produtos/versao_planejada:
+ *   post:
+ *     summary: Versões PLANEJADAS em produtos que já existem
+ *     description: >
+ *       A versão planejada é a folha que ainda vai ser produzida: nasce sem
+ *       arquivo, para o item de pedido da mapoteca poder apontar para ela, e o
+ *       arquivo entra nesta MESMA versão quando a produção terminar.
+ *       O corpo é o mesmo de `/versao_historica` (as duas criam versão sem
+ *       arquivo); quem separa é a rota, que grava `tipo_versao_id = 3`.
+ *       Não exige a edição anterior da série N-SIGLA: uma folha que ainda não
+ *       existe não tem edição anterior nenhuma.
+ *     tags: [produtos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             minItems: 1
+ *             items:
+ *               type: object
+ *               required: [uuid_versao, versao, nome, produto_id, subtipo_produto_id, lote_id, metadado, descricao, orgao_produtor, data_criacao, data_edicao]
+ *               properties:
+ *                 uuid_versao: { type: string, format: uuid, nullable: true }
+ *                 versao: { type: string, example: 1-DSG }
+ *                 nome: { type: string, nullable: true }
+ *                 produto_id: { type: integer }
+ *                 subtipo_produto_id: { type: integer }
+ *                 lote_id: { type: integer, nullable: true }
+ *                 metadado: { type: object }
+ *                 descricao: { type: string }
+ *                 orgao_produtor: { type: string }
+ *                 palavras_chave: { type: array, items: { type: string } }
+ *                 data_criacao: { type: string, format: date }
+ *                 data_edicao: { type: string, format: date }
+ *     responses:
+ *       201:
+ *         description: Versões planejadas criadas
+ *       400:
+ *         description: Corpo fora do schema, ou versões duplicadas dentro do próprio corpo
+ *       409:
+ *         description: Já existe versão com este rótulo no produto
+ */
+router.post(
+  '/versao_planejada',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: produtoSchema.versoesPlanejadas
+  }),
+  asyncHandler(async (req, res, next) => {
+    await produtoCtrl.criaVersaoPlanejada(req.body, req.usuarioUuid);
+
+    const msg = 'Versões planejadas criadas com sucesso';
+
+    return res.sendJsonAndLog(true, msg, httpCode.Created);
+  })
+);
+
 router.post(
   '/produto_versao_historica',
   verifyPerfil('operador'),
@@ -242,5 +309,57 @@ router.delete(
     return res.sendJsonAndLog(true, msg, httpCode.OK);
   })
 );
+
+/**
+ * @swagger
+ * /api/produtos/folha:
+ *   get:
+ *     summary: Folha do Sistema Cartográfico Nacional por INOM ou por MI
+ *     description: >
+ *       Devolve o polígono da folha, o `tipo_escala_id` correspondente e o par
+ *       INOM/MI. Não consulta o acervo: a folha existe no SCN esteja ou não
+ *       catalogada, e é justamente antes do cadastro que a geometria é
+ *       necessária. Informe `inom` OU `mi`, nunca os dois.
+ *       Folha sem MI (fora do território brasileiro, ou de fronteira sem número
+ *       emitido) responde 200 com `mi: null` e `sem_mi: true`, porque é resposta
+ *       e não falha.
+ *     tags: [produtos]
+ *     parameters:
+ *       - in: query
+ *         name: inom
+ *         schema: { type: string }
+ *         example: SF-22-Y-D-II-4-NE
+ *       - in: query
+ *         name: mi
+ *         schema: { type: string }
+ *         example: 2757-4-NE
+ *       - in: query
+ *         name: tipo_escala_id
+ *         description: >
+ *           Só com `mi`, e só 3 (1:100.000) ou 4 (1:250.000). Desempata o MI nu,
+ *           que sem o zero à esquerda é ambíguo entre as duas escalas.
+ *         schema: { type: integer, enum: [3, 4] }
+ *     responses:
+ *       200:
+ *         description: Folha resolvida
+ *       400:
+ *         description: INOM fora do formato do SCN, ou combinação inválida de parâmetros
+ *       404:
+ *         description: MI não encontrado no Mapa Índice
+ */
+router.get(
+  '/folha',
+  verifyPerfil('consulta'),
+  schemaValidation({
+    query: produtoSchema.folhaQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await produtoCtrl.getFolha(req.query)
+
+    const msg = 'Folha retornada com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
 
 module.exports = router;

@@ -74,6 +74,13 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
 
 - **`maplibre-gl` é a única dependência de mapa, e entra por `import()` dinâmico.** Decisão do chefe em 2026-07-25. Ela pesa cerca de 1 MB minificada, contra 290 KB de todo o resto da interface: num `import` de topo, quem abre a tela de pedidos baixaria o mapa junto. `components/mapa/base.js` a carrega sob demanda (`carregarMapLibre()`) e ela vira um pedaço próprio no build; é dele que saem os dois mapas que existem, a busca do acervo e as entregas da mapoteca. O CSS dela continua estático, que são poucos KB e evita o mapa nascer sem controles. O fundo é OSM: sem internet os polígonos continuam aparecendo, porque vêm da nossa API. Em teste, `@components/mapa/maplibre-stub.js` faz o papel da biblioteca, porque o jsdom não tem WebGL.
 - **Os filtros do mapa da mapoteca são do SERVIDOR, e a escala entra pelo rótulo.** O cliente não existe na feição (ela traz a CONTAGEM de OMs atendidas), então filtrar tipo e escala na tela e o cliente no servidor faria as três contas seguirem regras diferentes. A escala vai como `'1:50.000'`, e não como código de domínio, porque a escala personalizada tem um código só para todos os denominadores: por código, 1:30.000 e 1:75.000 virariam uma opção chamada "personalizada".
+- **Nos DOIS mapas de polígono o rótulo sai de uma fonte de PONTOS, e o preenchimento é ordenado
+  por área.** Valia só para a mapoteca até 2026-08-02, quando o mesmo defeito foi visto na busca do
+  acervo com UM produto na tela: a folha que cruza a borda de um ladrilho aparecia rotulada duas
+  vezes. A causa é a mesma nos dois, e a correção também — `acervo_ctrl.buscaGeometrias` passou a
+  devolver `ponto` (`ST_PointOnSurface`) e `area`, como `mapoteca/dashboard_ctrl.js` já fazia. Ter
+  consertado num mapa e não no outro é o que fez o defeito sobreviver: a decisão abaixo estava
+  escrita, e ainda assim o segundo mapa nasceu com ela.
 - **No mapa da mapoteca o rótulo sai de uma fonte de PONTOS, e o preenchimento é ordenado por área.** Rotulando o polígono, a mesma carta aparecia duas vezes: o MapLibre corta o GeoJSON em ladrilhos e ancora o texto por pedaço. O ponto vem do servidor por `ST_PointOnSurface` (e não `ST_Centroid`, que cai fora de uma folha em L). A ordenação existe porque o mapeamento é **aninhado por escala**: sem `fill-sort-key` pela área negativa, a folha grande cai por cima da pequena e a engole, inclusive para o clique. O tom de azul mais escuro é a soma dos preenchimentos translúcidos empilhados, não erro de classificação.
 - **Polígono empilhado no mapa da mapoteca é PRODUTO diferente, nunca versão.** A consulta agrega por `prod.id`; a versão só aparece no caminho `produto_pedido -> versao -> produto`, nunca no resultado. O empilhamento tem duas origens legítimas: o aninhamento por escala (a 2952-1-SO está contida na 2952 e na 535), e Carta Topográfica e Carta Ortoimagem da MESMA folha, que no SCA são produtos distintos com contorno idêntico. Por isso o balão lista TODOS os produtos sob o ponteiro: mostrar um só era o que fazia a tela parecer errada.
 - **A informação do mapa da mapoteca sai num painel FIXO, não num balão que segue o ponteiro.** O balão do MapLibre é ancorado na coordenada apontada, então perto da borda do quadro ele saía da área visível — e a carta perto da borda é justamente a que se aponta. O painel nunca esvazia: sem carta sob o ponteiro volta ao texto de convite, porque aparecer e sumir a cada movimento do mouse é o que faz um painel piscar. O `max-height` para antes do rodapé para não cobrir a barra de escala.
@@ -97,6 +104,93 @@ Parecem defeito e não são. Não "conserte" nenhuma sem falar com o chefe.
 - **Produto que JÁ ESTÁ no volume entra por `POST /api/arquivo/catalogar/product`, e o servidor mede o hash.** Passar por `prepare-upload`/`confirm-upload` cobrava por um trabalho que não acontece: o cliente lia o arquivo inteiro para declarar o checksum e o `confirm-upload` lia tudo de novo para conferir uma cópia que nunca houve (362 GB relidos no LOTE_1 do Convênio RS, de 1h20 a 3h), **com essa releitura dentro da transação**, aberta por horas e sem retomada parcial. Agora o servidor lê UMA vez, fora de transação, e grava o checksum e o tamanho que ele mesmo mediu; o cliente não declara nenhum dos dois, e mandá-los é 400, porque descartado em silêncio ele acreditaria ter gravado o que mandou. É a mesma política do `/atualizar-checksum`. O `volume_armazenamento_id` vem no CORPO: no upload o volume é o primário do tipo de produto, porque o servidor escolhe para onde copiar, e aqui é onde o arquivo já está. **A rota só aceita volume com `layout_origem = true`**, e essa é a porta que a impede de virar atalho para pular a validação de transferência no acervo comum. Unicidade física, identidade do produto, sequência de versão e existência do arquivo continuam valendo. Junto veio a validação de travessia de caminho (`utils/caminho_volume.js`), que **não existia**: `path.join` não protege contra `..`. Só cobre produto novo; versão e arquivo avulsos continuam no `prepare-upload`.
 
 - **A LÁPIDE do arquivo excluído mora num módulo só, e o vínculo com o download casa por `uuid_arquivo`, nunca por ordem.** Excluir no acervo copia o arquivo para `acervo.arquivo_deletado` e leva os downloads dele junto. Esse bloco de ~55 linhas, com 21 colunas escritas à mão, estava copiado em TRÊS lugares (`deleteArquivos`, `deleteVersoes`, `deleteProdutos`), e só o primeiro tinha teste — por uma rota, que provava a contagem e não as colunas. Acrescentar coluna a `acervo.arquivo` exigia lembrar dos três, e esquecer um não dá erro: a lápide nasce com o campo nulo e a falta só aparece quando alguém for procurar o dado. Hoje é `arquivo/arquivo_deletado.js`, na feature dona de `acervo.arquivo`, pelo mesmo desenho de `mapoteca/query_fragments.js`. Como todo dado da lápide sai da PRÓPRIA `acervo.arquivo`, virou `INSERT ... SELECT` com CTE: apagar um produto com 400 arquivos era **2.000 idas ao banco dentro de uma transação, e passou a 4**, independente da quantidade. O pareamento download → lápide usa `RETURNING id, uuid_arquivo` casado com `acervo.arquivo.uuid_arquivo` (que é UNIQUE), e **não** a ordem em que o banco devolve os ids: por ordem funcionaria hoje e trocaria os downloads de dois arquivos no dia em que o plano mudasse, sem erro nenhum e com as contagens ainda batendo. É o caso que `__tests__/integration/exclusao_acervo.test.js` guarda, com quantidades diferentes de download por arquivo justamente para que a troca apareça.
+
+### Escrita do acervo pela interface web (2026-08-01)
+
+Até aqui o módulo acervo do client era **100% leitura**, e todo cadastro passava pelo plugin do QGIS,
+que exige QGIS instalado e acesso SMB ao volume. Quem não tinha os dois não catalogava nada.
+
+- **O método de definir a GEOMETRIA sai da ESCALA, e não da vontade de quem cadastra.** Escala 1 a 4
+  (25k, 50k, 100k, 250k) é enquadramento SCN e o quadro nasce do **MI ou do INOM**, calculado, sem
+  desenho a mão. Escala 5 (personalizada) não tem folha para calcular, e ali valem os **cantos**, com
+  o desenho livre como escape para o recorte irregular (que existe: o invariante `1e_info` conta
+  quantos são). Não é restrição gratuita: folha do SCN tem quadro DEFINIDO pelo identificador, e
+  desenhá-la a mão é o que produz os defeitos que a auditoria persegue **depois do fato** — `1d`, `1e`,
+  `1g`, `1h` (MI preenchido com o INOM, 29 produtos errados achados em 2026-07-30) e `1i`. Nascendo do
+  identificador, geometria, MI, INOM e escala ficam coerentes **por construção**. Quando a escala
+  ainda não foi escolhida, o editor PERGUNTA o enquadramento em vez de assumir: cair no modo livre por
+  omissão ofereceria desenho a mão para uma folha sistemática.
+- **INOM → polígono é FÓRMULA; MI ↔ INOM é TABELA.** `utils/scn.js` faz a decomposição do SCN por
+  aritmética, em SEGUNDOS DE ARCO (em grau, o 1/3 do nível de 1:100.000 não tem representação binária
+  exata e o canto sai com ruído). Os tamanhos que ele produz são exatamente os do invariante `1e`, e a
+  profundidade em tokens mapeia para `tipo_escala_id` pela regra do `1d`: **são a mesma régua, e
+  divergirem é defeito de um dos dois.** Já o MI é numeração histórica sem fórmula, e folha fora do
+  território brasileiro simplesmente **não tem MI**. "Esta folha não tem MI" é RESPOSTA, não erro.
+- **Os CSV de `utils/scn_dados/` vêm do DSGTools e carregam a licença de origem (GPL-2.0).** Este
+  repositório é MIT. As duas obras são da DSG/Exército, o que torna o porte decisão INTERNA e não uso
+  de obra de terceiro; por isso os dados moram em diretório próprio, com `LICENSE-DSGTOOLS` ao lado
+  e atribuição no `README.md` de lá. **Não é código portado — o cálculo foi escrito do padrão.**
+  **Pendência do chefe:** o porte foi decidido no desenvolvimento, e quem lê este repositório vê MIT
+  com uma pasta GPL-2.0 dentro. Confirmar com a chefia antes do próximo `push` público.
+- **Os TRÊS tipos de versão entram pela web, e o que muda entre eles é o CAMINHO da gravação, não o
+  formulário.** Regular nasce COM o arquivo e por isso sai do formulário para o assistente de
+  carregamento; Planejada e Registro histórico nascem sem arquivo e gravam direto, cada uma na sua
+  rota (`/versao_planejada` e `/versao_historica`), que são irmãs e têm o mesmo corpo. O tipo NÃO vai
+  no corpo: as duas rotas o fixam no servidor, e mandá-lo seria um campo descartado em silêncio.
+  Uma rota por coisa, e não um inteiro escondido: "promessa de produção" e "folha que existe e o
+  acervo não tem o arquivo" são fatos diferentes, e o RPCMTec conta produto entregue por tipo de
+  versão. Por isso a tela EXPLICA cada tipo em uma frase — os três preenchem os mesmos campos, e sem a
+  frase a escolha viraria um número. A carga em LOTE continua sendo do plugin ou do CLI: esta tela
+  grava uma versão por vez, e o acervo legado entra por dezenas de folhas. O tipo gravado entra na
+  lista mesmo quando não é um dos oferecidos — sem isso, abrir a edição mostraria o campo vazio e
+  salvar converteria em silêncio.
+- **Versão Regular não se grava no formulário: ela vai para o assistente de carregamento.** O
+  servidor não tem rota que crie Regular sem arquivo (`produto_ctrl.js:874-882`), e o arquivo é o que
+  a define. O formulário valida tudo (ele espelha o gatilho `acervo.validate_version`) e passa o corpo
+  PRONTO ao assistente, que só cuida dos arquivos: uma segunda cópia do espelho divergiria da
+  primeira. O botão muda de nome para "Continuar para os arquivos", porque "Salvar" mentiria.
+- **O subtipo da VERSÃO é filtrado pelo tipo do produto.** A lista inteira tem 29 entradas e cobre os
+  treze tipos; oferecer todas convida a gravar "Modelo Digital de Superfície" numa versão de Carta
+  Topográfica. Nada no banco impede, e é por isso que o servidor persegue esse caso no invariante `3h`.
+  O subtipo já gravado continua na lista mesmo fora do tipo, porque o `3h` é REVISAR e há combinação
+  legada tolerada.
+- **`GET /api/produtos/folha?mi=|inom=` devolve o quadro da folha**, `verifyPerfil('consulta')`. Aceita
+  um identificador só: os dois juntos fariam o servidor desempatar em silêncio.
+
+- **O upload web grava byte no volume, e o SERVIDOR mede o checksum enquanto grava.** Até 2026-08-01 o
+  servidor nunca escreveu no volume: quem copiava era o plugin, por SMB. `arquivo/upload_web.js`
+  fecha o sentido contrário, reusando a máquina de sessão inteira (`upload_session`, as tabelas
+  `_temp`, o cron de expiração e o `confirm-upload`), **sem migração**: `expected_checksum` e
+  `tamanho_mb` já eram nullable e `operation_type` já cobria os dois casos. As decisões:
+  o cliente **não declara** checksum nem tamanho (mandá-los é 400), porque o byte passa pelo processo
+  e o SHA-256 sai do MESMO passo da escrita — e o navegador nem teria como, já que `crypto.subtle`
+  exige o arquivo inteiro em memória; a escrita é **atômica** (`<destino>.parcial` e `rename` no fim),
+  senão conexão cortada deixaria arquivo truncado com o nome que o acervo considera válido; o
+  `confirm-upload` **pula a linha já medida** (`status = 'completed'`), porque relê-la seria refazer os
+  362 GB do LOTE_1 dentro da transação; o `cancel-upload` passa a apagar os `.parcial`, e **só** eles.
+  Storage próprio do multer, e não `diskStorage`: aquele grava e devolve o caminho, e o hash exigiria
+  uma SEGUNDA leitura. `UPLOAD_WEB_MAX_GB` (default 2) é o teto; acima dele o caminho continua sendo o
+  plugin, que copia direto para o volume sem passar pelo servidor.
+
+- **Data de versão é DIA DE CALENDÁRIO: `Joi.date().iso().raw()`, nunca `Joi.date()`.** Sem o
+  `.raw()`, o Joi converte 'AAAA-MM-DD' em meia-noite UTC e a coluna `TIMESTAMP WITH TIME ZONE` guarda
+  **21:00 do dia anterior** em UTC-3. Medido em 2026-08-01 cadastrando pela web, que manda o formato
+  do `<input type="date">`: edição pedida em 01/08 voltou 31/07 na ficha. O custo não é a tela —
+  `acervo.versao.data_edicao` é o que conta produto entregue no MÊS (`integracaoCtrl.getProdutosFinalizados`,
+  e por ele o RPCMTec), então a carta editada no dia 1º entrava no relatório do mês anterior, e
+  ninguém confere um relatório contra a data de cada folha. O `.iso()` anda JUNTO do `.raw()`: sem
+  ele a string seguiria crua para o Postgres, e '01/08/2026' seria lido como 8 de JANEIRO, porque o
+  DateStyle padrão é MDY. Mesma solução de `projeto_schema.js` e de `mapoteca.pedido`. É o padrão da
+  casa para dia de calendário, e vale para `produto_schema.js` e `arquivo_schema.js`.
+
+- **Modal empilhado: só o do TOPO responde ao Escape e ao Tab.** A ficha do produto abre "Nova versão"
+  e "Editar" por cima de si mesma, e o editor de geometria abre por cima do formulário. Cada modal
+  registrava o próprio `keydown` no `document`, e um único Escape fechava TODOS (medido em 2026-08-01,
+  com dois modais abertos). O `stopPropagation` que estava lá não resolve: ele barra a propagação para
+  outros elementos, e não os demais ouvintes do MESMO elemento — e nem `stopImmediatePropagation`
+  bastaria, porque em captura os ouvintes do `document` rodam na ordem de registro e quem responderia
+  primeiro seria o modal de BAIXO. Hoje `modal-base.js` mantém uma pilha, e a saída dela é por
+  identidade, e não `pop()`: fechar pelo botão um modal que não é o do topo é possível.
 
 ### Plugin da mapoteca
 

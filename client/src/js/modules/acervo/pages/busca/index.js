@@ -7,6 +7,8 @@ import {
   getTiposProduto, getTiposEscala, getSubtiposProduto,
 } from '@modules/acervo/services/acervo-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
+import { permissoes } from '@store/auth-store.js';
+import { openProdutoDialogForm } from '@modules/acervo/pages/produto/produto-dialog-form.js';
 import { criarMapa } from './mapa.js';
 import { abrirProdutoDialog, plural } from './produto-dialog.js';
 import { criarSelecao, pintarBotaoSelecao } from './selecao.js';
@@ -54,6 +56,7 @@ function debounce(fn, ms) {
  */
 export async function renderBusca(container, ctx) {
   let disposed = false;
+  const pode = permissoes('acervo');
   let pagina = 1;
   // Buscas voltam fora de ordem; so a mais recente pode pintar a tela.
   let requisicao = 0;
@@ -166,6 +169,18 @@ export async function renderBusca(container, ctx) {
 
   const contador = el('p', { className: 'busca-resultados__contador', textContent: 'Buscando...' });
 
+  // Cadastrar produto é OPERADOR, como a rota. Perfil no client é ergonomia:
+  // esconder o botão que devolveria 403 poupa a viagem, mas quem barra a escrita
+  // continua sendo o `verifyPerfil` do servidor.
+  const novoProdutoBtn = el('button', {
+    className: 'btn btn--primary btn--sm busca__novo',
+    type: 'button',
+    // Refaz a busca depois de criar: o produto novo pode não casar com os
+    // filtros da tela, e nesse caso não aparecer é a resposta certa. Recarregar
+    // é o que impede a lista de ficar afirmando um total que mudou.
+    onClick: () => openProdutoDialogForm({ onSaved: () => buscar({ recarregarMapa: true }) }),
+  }, [svgIcon(ICONS.add, 16), 'Novo produto']);
+
   /**
    * Exporta o resultado em CSV.
    * @param {boolean} soSelecionados
@@ -239,7 +254,9 @@ export async function renderBusca(container, ctx) {
         document.createTextNode(` Exportar ${ids.size} selecionado${ids.size > 1 ? 's' : ''}`)
       );
     },
-    onVerFichas: (produtos, indice) => abrirProdutoDialog(produtos, indice),
+    onVerFichas: (produtos, indice) => abrirProdutoDialog(produtos, indice, {
+      onAlterado: () => buscar({ recarregarMapa: true }),
+    }),
   });
 
   // ---------------------------------------------------------------------------
@@ -356,11 +373,18 @@ export async function renderBusca(container, ctx) {
 
   const page = el('div', { className: 'busca' }, [
     el('div', { className: 'busca__topo' }, [
-      // Só a identidade: as ações desceram para a linha dos filtros.
+      // Só a identidade: as ações que dizem respeito ao RESULTADO desceram para
+      // a linha dos filtros. "Novo produto" fica aqui porque não é ação sobre o
+      // resultado: é o cadastro, e ele não depende de filtro nenhum.
+      //
+      // Não há tela separada de "lista de produtos", e não deve haver: a busca
+      // JÁ é a lista, com filtro facetado, mapa e exportação. Uma segunda lista
+      // seria outra régua do que existe no acervo.
       el('div', { className: 'busca__identidade' }, [
         el('h1', { className: 'busca__titulo', textContent: 'Busca no Acervo' }),
         contador,
-      ]),
+        pode.operador ? novoProdutoBtn : null,
+      ].filter(Boolean)),
       campoBusca,
       filtros,
     ]),
@@ -589,7 +613,10 @@ export async function renderBusca(container, ctx) {
     // esta enquadrado atras dela.
     const abrirFicha = () => {
       mapa.enquadrarProduto(p.id);
-      abrirProdutoDialog(p);
+      // Editar ou excluir na ficha muda o que a lista mostra: a busca refaz o
+      // resultado e a camada do mapa junto, senão o cartão continuaria anunciando
+      // a última edição de um produto que acabou de ganhar outra.
+      abrirProdutoDialog(p, 0, { onAlterado: () => buscar({ recarregarMapa: true }) });
     };
 
     const alternarSelecao = () => {

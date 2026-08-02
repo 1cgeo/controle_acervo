@@ -11,6 +11,11 @@ const acervoCtrl = require('../acervo/acervo_ctrl')
 const {
   domainConstants: { SITUACAO_PEDIDO, TIPO_CLIENTE, TIPO_VERSAO }
 } = require('../utils')
+// Mesmo normalizador que o filtro do lado do acervo aplica na célula. Os dois
+// lados TÊM de ser a mesma função: se um normalizasse mais que o outro, a chave
+// pedida e a chave gravada deixariam de casar e a folha sumiria da resposta sem
+// erro nenhum.
+const { normalizarIdentificador } = require('../utils/mi')
 const {
   QTD_EFETIVA,
   ESCALA_DISPLAY,
@@ -28,9 +33,6 @@ const TIPOS_CLIENTE_MILITAR = [
 
 // Situações que contam como entrega efetuada
 const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
-
-const normIdentificador = (s) =>
-  s == null ? '' : String(s).trim().toUpperCase().replace(/\s+/g, '')
 
 const parseCsv = (s) =>
   s ? String(s).split(',').map(x => x.trim()).filter(Boolean) : []
@@ -50,7 +52,7 @@ controller.getSituacaoGeral = async ({
     ? acervoCtrl.SITUACAO_GERAL_ESCALAS.filter(e => e.name === escala)
     : acervoCtrl.SITUACAO_GERAL_ESCALAS
 
-  const ids = [...parseCsv(mi), ...parseCsv(inom)].map(normIdentificador)
+  const ids = [...parseCsv(mi), ...parseCsv(inom)].map(normalizarIdentificador)
   const filtroIds = ids.length ? new Set(ids) : null
 
   const dados = {}

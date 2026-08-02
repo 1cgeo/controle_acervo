@@ -23,6 +23,22 @@ import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 const FONTE = 'produtos';
 
 /**
+ * Fonte SO do rotulo, com um PONTO por produto.
+ *
+ * Rotular o poligono faz a mesma carta aparecer duas vezes: o MapLibre corta o
+ * GeoJSON em ladrilhos e ancora o texto por pedaco, entao a folha que cruza a
+ * borda de um ladrilho ganha um rotulo de cada lado. Um ponto cabe num ladrilho
+ * so. O ponto vem do SERVIDOR, por `ST_PointOnSurface` (e nao `ST_Centroid`, que
+ * cai fora de uma folha em L).
+ *
+ * E a mesma solucao que o mapa da mapoteca ja usava, e pelo mesmo motivo.
+ */
+const FONTE_ROTULO = 'produtos-pontos';
+
+/** Coleção vazia, para a fonte nascer válida antes do primeiro resultado. */
+const VAZIO = { type: 'FeatureCollection', features: [] };
+
+/**
  * @param {Object} opts
  * @param {(produtoId:number)=>void} opts.onAlternarSelecao - clique num produto
  * @param {(produtoId:number|null)=>void} [opts.onApontar] - mouse sobre o poligono
@@ -44,7 +60,9 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   // tela de ponto de controle.
   const limite = criarDestaqueDeLimite();
 
-  let ultimoResultado = { type: 'FeatureCollection', features: [] };
+  let ultimoResultado = VAZIO;
+  // Os pontos de rotulo, na MESMA passada. Ver o comentario de FONTE_ROTULO.
+  let ultimosRotulos = VAZIO;
   let selecionados = new Set();
   let apontado = null;
   let extentPendente = null;
@@ -126,6 +144,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
 
     mapa.on('load', () => {
       mapa.addSource(FONTE, { type: 'geojson', data: ultimoResultado });
+      mapa.addSource(FONTE_ROTULO, { type: 'geojson', data: ultimosRotulos });
 
       // Preenchimento translucido: com cartas sobrepostas, opaco esconderia o
       // que esta embaixo e o fundo que da o contexto geografico.
@@ -133,6 +152,14 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
         id: 'produtos-preenchimento',
         type: 'fill',
         source: FONTE,
+        layout: {
+          // O mapeamento do SCN e ANINHADO por escala: a 2952-1-SO esta contida
+          // na 2952, que esta na 535. Sem ordenar, a ordem de desenho e a da
+          // fonte (por id), e a folha grande cai por cima da pequena e a
+          // engole. A area entra NEGATIVA porque `fill-sort-key` desenha do
+          // MENOR para o maior, e o que tem de ficar por cima e a folha menor.
+          'fill-sort-key': ['-', 0, ['get', 'area']],
+        },
         paint: {
           'fill-color': [
             'case',
@@ -177,7 +204,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
       mapa.addLayer({
         id: 'produtos-rotulo',
         type: 'symbol',
-        source: FONTE,
+        source: FONTE_ROTULO,
         minzoom: 8,
         layout: {
           'text-field': ['coalesce', ['get', 'mi'], ['get', 'nome']],
@@ -223,6 +250,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   function aplicarResultado() {
     if (!pronto) return;
     mapa.getSource(FONTE).setData(ultimoResultado);
+    mapa.getSource(FONTE_ROTULO).setData(ultimosRotulos);
     // setData zera o feature-state, entao a selecao e repintada em seguida.
     for (const id of selecionados) marcar(id, 'selecionado', true);
   }
@@ -273,21 +301,47 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   // ---------------------------------------------------------------------------
   // API para a pagina
   // ---------------------------------------------------------------------------
-  /** @param {Array<Object>} produtos - com `geom` (GeoJSON) e `id` */
+  /** @param {Array<Object>} produtos - com `geom` (GeoJSON), `ponto`, `area` e `id` */
   function setProdutos(produtos) {
+    const comGeometria = (produtos || []).filter(p => p.geom);
+
     ultimoResultado = {
       type: 'FeatureCollection',
-      features: (produtos || [])
-        .filter(p => p.geom)
-        // O `id` no topo da feature (e nao so em properties) e o que permite
-        // setFeatureState: sem ele nao ha realce de apontado nem de selecao.
+      // O `id` no topo da feature (e nao so em properties) e o que permite
+      // setFeatureState: sem ele nao ha realce de apontado nem de selecao.
+      features: comGeometria.map(p => ({
+        type: 'Feature',
+        id: p.id,
+        properties: {
+          id: p.id,
+          nome: p.nome,
+          mi: p.mi || null,
+          // Le o `fill-sort-key`. Sem area a folha vai para o fim da ordem, que
+          // e onde uma geometria de tamanho desconhecido menos atrapalha.
+          area: typeof p.area === 'number' ? p.area : 0,
+        },
+        geometry: p.geom,
+      })),
+    };
+
+    // Um ponto por produto, SO com o texto do rotulo. Ver o comentario de
+    // FONTE_ROTULO: e isto que impede a carta de aparecer rotulada duas vezes.
+    //
+    // O produto sem `ponto` fica sem rotulo, e nao sem poligono: a resposta pode
+    // vir de um servidor mais antigo, e perder o nome da carta e melhor do que
+    // sumir com ela do mapa.
+    ultimosRotulos = {
+      type: 'FeatureCollection',
+      features: comGeometria
+        .filter(p => p.ponto)
         .map(p => ({
           type: 'Feature',
           id: p.id,
           properties: { id: p.id, nome: p.nome, mi: p.mi || null },
-          geometry: p.geom,
+          geometry: p.ponto,
         })),
     };
+
     aplicarResultado();
   }
 

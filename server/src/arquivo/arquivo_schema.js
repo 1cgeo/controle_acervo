@@ -12,6 +12,12 @@ const models = {}
 // formatos (o trigger no banco aplica as regras mais profundas de sequência).
 const VERSAO_HISTORICA_REGEX = /^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$/
 
+// Dia de calendário, e não instante. Sem o `.raw()` o Joi converte
+// 'AAAA-MM-DD' em meia-noite UTC, e a coluna TIMESTAMP WITH TIME ZONE guarda
+// 21:00 do DIA ANTERIOR em UTC-3. Ver a explicação inteira, com o custo no
+// RPCMTec, no cabeçalho de `produto/produto_schema.js`.
+const dataCalendario = () => Joi.date().iso().raw()
+
 const versaoSchema = Joi.alternatives().conditional('tipo_versao_id', {
   is: TIPO_VERSAO.REGISTRO_HISTORICO,
   then: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
@@ -93,30 +99,34 @@ models.prepareReplaceFiles = Joi.object().keys({
   arquivos: Joi.array().items(fileSchema).min(1).required()
 });
 
-models.prepareAddVersion = Joi.object().keys({
-  versoes: Joi.array().items(
-    Joi.object().keys({
-      produto_id: Joi.number().integer().required(),
-      versao: Joi.object().keys({
-        uuid_versao: Joi.string().uuid().allow(null),
-        versao: versaoSchema,
-        nome: Joi.string().allow(null).required(),
-        tipo_versao_id: Joi.number().integer().required(),
-        subtipo_produto_id: Joi.number().integer().required(),
-        lote_id: Joi.number().integer().allow(null),
-        metadado: Joi.object().allow(null),
-        descricao: Joi.string().allow(null, ''),
-        orgao_produtor: Joi.string().required(),
-        palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
-        data_criacao: Joi.date().iso().required(),
-        // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
-        data_edicao: Joi.date().iso().min(Joi.ref('data_criacao')).required()
-      }).required(),
-      arquivos: Joi.array().items(
-        Joi.object().keys(arquivoCampos)
-      ).min(1).required()
-    })
+// Versão nova de produto que JÁ EXISTE, com seus arquivos. Parametrizada pela
+// forma do arquivo pelo mesmo motivo de produtoComVersoes logo abaixo: o que
+// muda entre o upload pelo plugin e o envio pelo navegador é só o arquivo, e
+// duas cópias desta árvore divergiriam no primeiro campo novo de versão.
+const versaoDeProduto = camposArquivo => Joi.object().keys({
+  produto_id: Joi.number().integer().required(),
+  versao: Joi.object().keys({
+    uuid_versao: Joi.string().uuid().allow(null),
+    versao: versaoSchema,
+    nome: Joi.string().allow(null).required(),
+    tipo_versao_id: Joi.number().integer().required(),
+    subtipo_produto_id: Joi.number().integer().required(),
+    lote_id: Joi.number().integer().allow(null),
+    metadado: Joi.object().allow(null),
+    descricao: Joi.string().allow(null, ''),
+    orgao_produtor: Joi.string().required(),
+    palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+    data_criacao: dataCalendario().required(),
+    // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
+    data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
+  }).required(),
+  arquivos: Joi.array().items(
+    Joi.object().keys(camposArquivo)
   ).min(1).required()
+});
+
+models.prepareAddVersion = Joi.object().keys({
+  versoes: Joi.array().items(versaoDeProduto(arquivoCampos)).min(1).required()
 });
 
 // Produto novo com suas versões e arquivos. O que muda entre o upload e a
@@ -154,8 +164,9 @@ const produtoComVersoes = camposArquivo => Joi.object().keys({
       descricao: Joi.string().allow(null, ''),
       orgao_produtor: Joi.string().required(),
       palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
-      data_criacao: Joi.date().iso().required(),
-      data_edicao: Joi.date().iso().min(Joi.ref('data_criacao')).required(),
+      data_criacao: dataCalendario().required(),
+      // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
+      data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
       arquivos: Joi.array().items(
         Joi.object().keys(camposArquivo)
       ).min(1).required()
@@ -211,6 +222,59 @@ models.catalogarProduto = Joi.object().keys({
   // bytes: quem carrega um lote inteiro chama em laço, e cada chamada é
   // atômica. Sem sessão, a retomada é a própria requisição seguinte.
   produtos: Joi.array().items(produtoComVersoes(arquivoCatalogoCampos)).min(1).max(200).required()
+});
+
+// Envio pelo NAVEGADOR: o cliente descreve o produto (ou a versão) e depois
+// manda os bytes, um arquivo por requisição, em
+// PUT /api/arquivo/upload-web/<sessao>/arquivo/<id>.
+//
+// `checksum` e `tamanho_mb` são RECUSADOS, e aqui a razão é ainda mais forte do
+// que na catalogação in-place: lá o servidor precisa ler o arquivo no volume,
+// aqui os bytes PASSAM pelo processo, então o SHA-256 sai do mesmo passo que
+// escreve e não custa leitura nenhuma. O navegador, aliás, não teria como
+// declará-lo: `crypto.subtle.digest` exige o arquivo inteiro na memória, e é
+// justamente o arquivo grande que não cabe lá.
+//
+// Recusar em vez de ignorar, pela mesma razão de sempre: descartado em
+// silêncio, o cliente acredita ter gravado o checksum que mandou.
+const arquivoWebCampos = {
+  uuid_arquivo: Joi.string().uuid().allow(null),
+  nome: Joi.string().required(),
+  // Nome físico sem extensão, relativo à raiz do volume. Subpasta com barra
+  // normal é aceita; o servidor recusa travessia (utils/caminho_volume.js).
+  nome_arquivo: Joi.string().required(),
+  // Tileserver (9) é URL, não byte: não há o que enviar pelo navegador.
+  tipo_arquivo_id: Joi.number().integer().invalid(TIPO_ARQUIVO.TILESERVER).required()
+    .messages({
+      'any.invalid': 'Tileserver é uma URL e não tem arquivo para enviar; cadastre-o pelo prepare-upload'
+    }),
+  extensao: Joi.string().required(),
+  metadado: Joi.object().allow(null),
+  situacao_carregamento_id: Joi.number().integer(),
+  descricao: Joi.string().allow(null, ''),
+  crs_original: Joi.string().max(10).allow(null, ''),
+  checksum: Joi.any().forbidden().messages({
+    'any.unknown': 'O checksum é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
+  }),
+  tamanho_mb: Joi.any().forbidden().messages({
+    'any.unknown': 'O tamanho é medido pelo servidor enquanto ele grava os bytes no volume; não o envie'
+  })
+};
+
+models.prepareUploadWebProduct = Joi.object().keys({
+  produtos: Joi.array().items(produtoComVersoes(arquivoWebCampos)).min(1).required()
+});
+
+models.prepareUploadWebVersion = Joi.object().keys({
+  versoes: Joi.array().items(versaoDeProduto(arquivoWebCampos)).min(1).required()
+});
+
+// A sessão vem na URL e o id do arquivo é o `temp_id` que o prepare devolveu.
+// O corpo é o multipart com o campo "arquivo", e por isso não há schema de body:
+// quem valida o corpo é o multer.
+models.uploadWebArquivoParams = Joi.object().keys({
+  session_uuid: Joi.string().uuid().required(),
+  temp_id: Joi.number().integer().positive().required()
 });
 
 models.confirmUpload = Joi.object().keys({
