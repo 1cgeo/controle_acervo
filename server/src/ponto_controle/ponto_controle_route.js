@@ -142,7 +142,8 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const relatorio = await uploadCtrl.confirmarMissao(
       req.body.session_uuid,
-      req.usuarioUuid
+      req.usuarioUuid,
+      req.contexto
     )
 
     // success=false com 200, como o confirm-upload do acervo: a conferência que

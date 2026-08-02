@@ -125,6 +125,11 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admi
     await t.none(readSqlFile('./er/versao.sql'));
     await t.none(readSqlFile('./er/dominio.sql'));
     await t.none(readSqlFile('./er/dgeo.sql'));
+    // Logo depois de dgeo, e sem depender de ninguem: a auditoria NAO tem chave
+    // estrangeira nenhuma, de proposito (o rastro sobrevive ao registro e ao
+    // usuario apagados). Fica aqui porque o lugar logico e junto do schema da
+    // identidade, que e de quem ela guarda o nome.
+    await t.none(readSqlFile('./er/auditoria.sql'));
     // Antes de acervo: o `limites` nao referencia ninguem, e o filtro por
     // municipio do acervo e do ponto de controle o consulta.
     await t.none(readSqlFile('./er/limites.sql'));

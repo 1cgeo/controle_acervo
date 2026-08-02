@@ -58,7 +58,15 @@ for (let i = 2; i < process.argv.length; i += 2) {
   argumentos[process.argv[i].replace(/^--/, '')] = process.argv[i + 1]
 }
 
+// Aceita UMA migracao ou uma CADEIA separada por virgula, na ordem de
+// aplicacao. A cadeia existe porque uma funcionalidade pode entrar em mais de um
+// passo por boa razao: a rastreabilidade (2026-08-02) veio em dois, o primeiro
+// criando o schema (reversivel por um DROP) e o segundo movendo dado que ja
+// existia. Ensaiar so o primeiro reprovaria na versao, e ensaiar cada um
+// isolado nao provaria o que interessa -- que a SEQUENCIA chega onde a
+// instalacao nova chega.
 const MIGRACAO = argumentos.migracao
+const MIGRACOES = (argumentos.migracao || '').split(',').filter(Boolean)
 const NOVOS = (argumentos.novos || '').split(',').filter(Boolean)
   .map(a => path.basename(a))
 const VERSAO_ANTERIOR = argumentos['versao-anterior']
@@ -278,11 +286,14 @@ const comparar = (a, b) => {
 // --- Execução ----------------------------------------------------------------
 
 ;(async () => {
-  const sql = fs.readFileSync(path.join(RAIZ, MIGRACAO), 'utf8')
+  const sqls = MIGRACOES.map(m => ({
+    nome: m,
+    sql: fs.readFileSync(path.join(RAIZ, m), 'utf8')
+  }))
   const ordemCompleta = ordemDoCreateConfig()
   const ordemAnterior = ordemCompleta.filter(a => !NOVOS.includes(a))
 
-  console.log(`migração: ${MIGRACAO}`)
+  console.log(`migração: ${MIGRACOES.join(' -> ')}`)
   console.log(`er/ do banco anterior: ${ordemAnterior.join(', ')}`)
   console.log(`er/ vindo de: ${ER_DE || 'working tree (ATENCAO: so serve se a migracao nao mudar CONTEUDO do er/)'}`)
   console.log(`schemas comparados: ${SCHEMAS.join(', ')}`)
@@ -305,7 +316,10 @@ const comparar = (a, b) => {
   console.log(`   versão antes: ${antes}`)
 
   console.log('   aplicando a migração...')
-  await a.query(sql)
+  for (const { nome, sql } of sqls) {
+    if (sqls.length > 1) console.log(`     ${nome}`)
+    await a.query(sql)
+  }
   const depois = (await a.query('SELECT nome FROM public.versao WHERE code = 1'))
     .rows[0].nome
   console.log(`   versão depois: ${depois}`)
@@ -315,8 +329,12 @@ const comparar = (a, b) => {
     )
   }
 
+  // A CADEIA inteira de novo, e nao cada uma isolada: em producao ninguem
+  // reaplica so o passo do meio.
   console.log('   aplicando a MESMA migração de novo (idempotência)...')
-  await a.query(sql)
+  for (const { sql } of sqls) {
+    await a.query(sql)
+  }
   console.log('   passou duas vezes.')
 
   console.log('B) banco novo pelo er/ completo')

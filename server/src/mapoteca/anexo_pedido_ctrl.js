@@ -5,8 +5,22 @@ const path = require('path')
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 const { TIPO_ANEXO_PEDIDO } = require('../utils/domain_constants')
+const auditoriaCtrl = require('../auditoria/auditoria_ctrl')
 
 const controller = {}
+
+// Toda coluna de `mapoteca.anexo_pedido` MENOS `conteudo`. É o que a
+// rastreabilidade lê nos dois sentidos (criação e exclusão).
+//
+// O BYTEA fica de fora da LEITURA, e não só do JSON: `SELECT *` traria o arquivo
+// inteiro de volta pela conexão só para o helper o descartar, e um anexo de
+// dezenas de MB pagaria esse trajeto duas vezes (na gravação e no evento). O
+// `omitir: ['conteudo']` do mapa de entidades continua valendo como rede, para o
+// dia em que alguém trocar esta lista por um `*`. O diff continua acusando a
+// mudança do conteúdo, porque `tamanho_bytes` e `nome_original` estão aqui.
+const COLUNAS_AUDITAVEIS = `id, pedido_id, tipo_anexo_id, nome_original, extensao,
+  mimetype, tamanho_bytes, descricao, data_cadastramento,
+  usuario_cadastramento_uuid, data_modificacao, usuario_modificacao_uuid`
 
 // O multer/busboy entrega file.originalname decodificado como latin1; refaz
 // para UTF-8 para não corromper nomes com acento (ex.: "relatório.pdf"). Para
@@ -45,7 +59,7 @@ controller.listarPorPedido = async pedidoId => {
 
 // Cria o registro do anexo gravando os bytes (file.buffer) no banco. Um pedido
 // admite vários anexos (não substitui). Devolve a lista atualizada do pedido.
-controller.criar = async (pedidoId, file, dados, usuarioUuid) => {
+controller.criar = async (pedidoId, file, dados, usuarioUuid, contexto) => {
   const nomeOriginal = decodeNome(file.originalname)
   const meta = {
     pedidoId,
@@ -72,15 +86,25 @@ controller.criar = async (pedidoId, file, dados, usuarioUuid) => {
       throw new AppError('Pedido não encontrado', httpCode.NotFound)
     }
 
-    await t.none(
+    const criado = await t.one(
       `INSERT INTO mapoteca.anexo_pedido
          (pedido_id, tipo_anexo_id, nome_original, extensao, mimetype,
           tamanho_bytes, conteudo, descricao, usuario_cadastramento_uuid)
        VALUES
          ($<pedidoId>, $<tipoAnexoId>, $<nomeOriginal>, $<extensao>, $<mimetype>,
-          $<tamanhoBytes>, $<conteudo>, $<descricao>, $<usuarioUuid>)`,
+          $<tamanhoBytes>, $<conteudo>, $<descricao>, $<usuarioUuid>)
+       RETURNING ${COLUNAS_AUDITAVEIS}`,
       meta
     )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.anexo_pedido',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    })
 
     return listarPorPedido(pedidoId, t)
   })
@@ -99,15 +123,44 @@ controller.getParaDownload = async id => {
   return arquivo
 }
 
-controller.deletar = async id => {
-  const arquivo = await db.conn.oneOrNone(
-    'SELECT id FROM mapoteca.anexo_pedido WHERE id = $1',
-    [id]
-  )
-  if (!arquivo) {
-    throw new AppError('Anexo não encontrado', httpCode.NotFound)
-  }
-  await db.conn.none('DELETE FROM mapoteca.anexo_pedido WHERE id = $1', [id])
+/**
+ * Remove um anexo do pedido.
+ *
+ * GANHOU TRANSAÇÃO em 2026-08-02. Eram dois comandos soltos, em duas conexões
+ * do pool: entre a conferência e o DELETE, outra requisição podia apagar o mesmo
+ * anexo, e o segundo comando saía sem erro nenhum sobre uma linha que já não
+ * existia. Com o evento de rastreabilidade a transação passa a ser obrigatória
+ * por outra razão: a linha do rastro tem de cair junto com a exclusão que ela
+ * descreve, ou não cair.
+ *
+ * @param {number|string} id
+ * @param {string} [usuarioUuid] - uuid do usuário do token
+ * @param {object} [contexto] - { origem, rota, loteId } montado pelo guarda
+ */
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    // A linha inteira (menos os bytes), e não `SELECT id`: depois do DELETE não
+    // há mais de onde tirá-la, e uma exclusão sem `dados_antes` não diz o que se
+    // perdeu, que é o caso principal deste rastro.
+    const antes = await t.oneOrNone(
+      `SELECT ${COLUNAS_AUDITAVEIS} FROM mapoteca.anexo_pedido WHERE id = $1`,
+      [id]
+    )
+    if (!antes) {
+      throw new AppError('Anexo não encontrado', httpCode.NotFound)
+    }
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.anexo_pedido',
+      registroId: antes.id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+
+    await t.none('DELETE FROM mapoteca.anexo_pedido WHERE id = $1', [id])
+  })
 }
 
 module.exports = controller

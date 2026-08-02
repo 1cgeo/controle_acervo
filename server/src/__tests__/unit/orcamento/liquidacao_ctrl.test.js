@@ -27,7 +27,7 @@ describe('liquidacao_ctrl.criar', () => {
     })
     mockDb.conn.one
       .mockResolvedValueOnce({ total: '200' }) // outras liquidacoes
-      .mockResolvedValueOnce({ id: 9 }) // INSERT RETURNING
+      .mockResolvedValueOnce({ id: 9, nota_empenho_id: 1 }) // INSERT RETURNING *
 
     const r = await ctrl.criar(
       { nota_empenho_id: 1, valor_liquidado: 300 },
@@ -71,7 +71,7 @@ describe('liquidacao_ctrl.criar', () => {
     })
     mockDb.conn.one
       .mockResolvedValueOnce({ total: '700' }) // outras
-      .mockResolvedValueOnce({ id: 3 }) // INSERT
+      .mockResolvedValueOnce({ id: 3, nota_empenho_id: 1 }) // INSERT RETURNING *
     // 700 + 300 = 1000 == disponivel => ok
     const r = await ctrl.criar(
       { nota_empenho_id: 1, valor_liquidado: 300 },
@@ -91,7 +91,7 @@ describe('liquidacao_ctrl.atualizar', () => {
 
   test('REGRA: estouro no recalculo (ignorando a propria) -> 400', async () => {
     mockDb.conn.oneOrNone
-      .mockResolvedValueOnce({ id: 1 }) // liquidacao existe
+      .mockResolvedValueOnce({ id: 1, nota_empenho_id: 1 }) // liquidacao existe
       .mockResolvedValueOnce({ valor_empenhado: '1000', valor_anulado: '0' }) // NE
     mockDb.conn.one.mockResolvedValueOnce({ total: '900' }) // outras (sem esta)
 
@@ -106,11 +106,11 @@ describe('liquidacao_ctrl.atualizar', () => {
 
   test('atualiza quando cabe no disponivel', async () => {
     mockDb.conn.oneOrNone
-      .mockResolvedValueOnce({ id: 1 }) // existe
+      .mockResolvedValueOnce({ id: 1, nota_empenho_id: 1 }) // existe
       .mockResolvedValueOnce({ valor_empenhado: '1000', valor_anulado: '0' }) // NE
     mockDb.conn.one
       .mockResolvedValueOnce({ total: '300' }) // outras
-      .mockResolvedValueOnce({ id: 1 }) // UPDATE RETURNING
+      .mockResolvedValueOnce({ id: 1, nota_empenho_id: 1 }) // UPDATE RETURNING *
 
     const r = await ctrl.atualizar(
       1,
@@ -124,15 +124,20 @@ describe('liquidacao_ctrl.atualizar', () => {
 describe('liquidacao_ctrl.deletar', () => {
   test('404 quando nao existe', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
-    await expect(ctrl.deletar(1)).rejects.toMatchObject({
+    await expect(ctrl.deletar(1, 'uuid')).rejects.toMatchObject({
       statusCode: httpCode.NotFound
     })
   })
 
-  test('remove quando existe', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1 })
+  test('remove quando existe, e o autor da exclusao chega ao controller', async () => {
+    // A linha INTEIRA, e nao so o id: ela e o `dados_antes` do evento, o unico
+    // registro do que se perdeu. E `deletar` passou a receber o uuid de quem
+    // apaga: ate 2026-08-02 nenhuma exclusao do orcamento o recebia.
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 1, nota_empenho_id: 1, valor_liquidado: '100'
+    })
     mockDb.conn.none.mockResolvedValueOnce(undefined)
-    await ctrl.deletar(1)
+    await ctrl.deletar(1, 'uuid')
     expect(mockDb.conn.none).toHaveBeenCalledWith(
       expect.stringContaining('DELETE FROM orcamento.liquidacao'),
       { id: 1 }

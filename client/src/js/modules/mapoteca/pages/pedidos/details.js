@@ -20,8 +20,11 @@ import {
   uploadAnexoPedido,
   downloadAnexoPedido,
   deleteAnexoPedido,
-  getAuditoriaPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
+// O histórico deixou de ser código desta tela em 2026-08-02: ele é o mesmo nas
+// seis fichas que o mostram, e a versão daqui escondia os valores (ver o
+// comentário de renderHistoricoSection).
+import { criarHistorico } from '@components/historico/historico.js';
 import { formatDate, formatDateTime, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
@@ -140,9 +143,10 @@ export async function renderPedidoDetails(container, { params }) {
 
       // O pedido some, o histórico NÃO. Registrar quem removeu é metade do que o
       // chefe pediu (item 8, 2026-07-30), e sem isto essa metade ficava gravada
-      // e inalcançável: `pedido_auditoria` não tem chave estrangeira justamente
-      // para sobreviver à exclusão, e a rota do histórico não exige que o pedido
-      // exista. Quem chega aqui por link antigo vê quem apagou e quando.
+      // e inalcançável: `auditoria.evento` não tem chave estrangeira nenhuma,
+      // justamente para sobreviver à exclusão, e a rota do histórico não exige
+      // que o registro exista. Quem chega aqui por link antigo vê quem apagou e
+      // quando.
       renderHistoricoSection();
       return;
     }
@@ -602,115 +606,42 @@ export async function renderPedidoDetails(container, { params }) {
   }
 
   // ---------------------------------------------------------------------------
-  // Histórico do pedido (auditoria)
+  // Histórico do pedido (rastreabilidade)
   // ---------------------------------------------------------------------------
 
-  // Nome da TABELA como quem usa a tela a chama. 'produto_pedido' e
-  // 'impressao_item' sao nomes de coluna do banco, e ninguem da mapoteca fala
-  // assim. Chave desconhecida cai no proprio nome, para uma tabela nova entrar
-  // no historico sem sumir da tela enquanto este mapa nao a conhece.
-  const NOME_TABELA = {
-    pedido: 'Pedido',
-    produto_pedido: 'Item',
-    impressao_item: 'Impressão',
-    etiqueta_envio: 'Etiqueta de envio',
-  };
-
-  // I, U e D sao as letras que o banco grava. O verbo no passado diz o que a
-  // pessoa fez, que e o que se procura ao ler um histórico.
-  const NOME_OPERACAO = {
-    I: { texto: 'Adicionou', cor: 'success' },
-    U: { texto: 'Alterou', cor: 'info' },
-    D: { texto: 'Removeu', cor: 'error' },
-  };
-
+  /**
+   * A seção de histórico virou o componente compartilhado `components/historico/`
+   * em 2026-08-02, e com ela foi embora um defeito que esta tela carregava desde
+   * que o histórico nasceu.
+   *
+   * O QUE HAVIA AQUI. Cinco colunas montadas à mão, sendo a última um
+   * `campos_alterados.join(', ')`: a tela mostrava o NOME DA COLUNA DO BANCO
+   * ("situacao_pedido_id, prazo") e mais nada. Quem lia sabia que algo mudou,
+   * sem saber DE QUÊ PARA QUÊ, enquanto `dados_antes` e `dados_depois` chegavam
+   * na resposta e eram jogados fora. Havia até um mapa `NOME_TABELA` aqui,
+   * porque alguém já tinha percebido que nome de coluna não é português; o mesmo
+   * raciocínio nunca chegou aos CAMPOS.
+   *
+   * O QUE MUDOU. O servidor manda o diff pronto (`mudancas`, com rótulo em
+   * português e os dois valores em texto) e o componente o mostra na linha:
+   * "Situação: Em produção → Concluído", sem clique. O `NOME_TABELA` morreu
+   * junto: o `resumo` de cada evento vem do servidor, que conhece as ~60 tabelas
+   * auditadas, e não de um mapa de quatro chaves que só valia para o pedido.
+   *
+   * Duas regras desta tela sobreviveram e agora valem para as seis fichas que
+   * usam o componente: erro no histórico não derruba o resto da ficha, e pedido
+   * apagado ainda mostra histórico (a rota não exige que o registro exista).
+   */
   function renderHistoricoSection() {
-    const body = el('div', { className: 'data-table__empty', textContent: 'Carregando o histórico...' });
-    let historicoTable = null;
-
-    async function loadHistorico() {
-      let eventos;
-      try {
-        eventos = await getAuditoriaPedido(pedidoId);
-      } catch (err) {
-        if (disposed) return;
-        clearChildren(body);
-        body.className = 'data-table__empty';
-        body.textContent = err.message || 'Erro ao carregar o histórico';
-        return;
-      }
-      if (disposed) return;
-      if (historicoTable) historicoTable._cleanup();
-
-      historicoTable = createDataTable({
-        columns: [
-          {
-            key: 'data_evento',
-            label: 'Data',
-            sortable: true,
-            render: (r) => formatDateTime(r.data_evento),
-          },
-          {
-            key: 'usuario_nome',
-            label: 'Usuário',
-            // Usuário nulo é evento de migração, não erro: os eventos anteriores
-            // à auditoria entraram sem dono.
-            render: (r) => r.usuario_nome || r.usuario_nome_guerra || 'migração',
-          },
-          {
-            key: 'operacao',
-            label: 'Operação',
-            render: (r) => {
-              const op = NOME_OPERACAO[r.operacao];
-              return op ? chip(op.texto, op.cor) : (r.operacao || '-');
-            },
-          },
-          {
-            key: 'tabela',
-            label: 'Onde',
-            render: (r) => el('div', {}, [
-              el('div', { textContent: NOME_TABELA[r.tabela] || r.tabela || '-' }),
-              r.registro_id != null
-                ? el('span', { className: 'detail-card__label', textContent: `#${r.registro_id}` })
-                : null,
-            ].filter(Boolean)),
-          },
-          {
-            key: 'campos_alterados',
-            label: 'O que mudou',
-            render: (r) => (r.campos_alterados || []).length
-              ? (r.campos_alterados || []).join(', ')
-              : '-',
-          },
-        ],
-        rows: eventos || [],
-        pageSize: 10,
-        emptyMessage: 'Nenhuma alteração registrada neste pedido',
-      });
-      cleanups.push(() => historicoTable._cleanup());
-
-      clearChildren(body);
-      body.className = '';
-      body.appendChild(historicoTable.element);
-    }
-
-    const section = el('div', { className: 'dashboard-section' }, [
-      el('div', { className: 'dashboard-section__header' }, [
-        el('h2', { className: 'dashboard-section__title', textContent: 'Histórico do pedido' }),
-        // GET /pedido/:id/auditoria e perfil de CONSULTA: quem le o pedido le o
-        // historico dele. Nao ha acao aqui, so leitura, e por isso nenhum botao.
-        el('div', { className: 'dashboard-section__controls' }, [
-          el('span', {
-            className: 'detail-card__label',
-            textContent: 'Quem alterou o pedido, os itens, as impressões e a etiqueta',
-          }),
-        ]),
-      ]),
-      body,
-    ]);
-
-    root.appendChild(section);
-    loadHistorico();
+    const historico = criarHistorico({
+      modulo: 'mapoteca',
+      entidade: 'pedido',
+      id: pedidoId,
+      titulo: 'Histórico do pedido',
+      subtitulo: 'Quem alterou o pedido, os itens, as impressões e a etiqueta',
+    });
+    cleanups.push(() => historico.cleanup());
+    root.appendChild(historico.element);
   }
 
   // ---------------------------------------------------------------------------

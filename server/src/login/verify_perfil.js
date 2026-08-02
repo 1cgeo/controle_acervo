@@ -6,6 +6,8 @@ const { db } = require("../database");
 
 const validateToken = require("./validate_token");
 
+const { montarContexto } = require("./contexto");
+
 // Niveis DENTRO de um modulo, hierarquicos: quem e gerente satisfaz operador e
 // consulta. O administrador NAO e um nivel daqui, e a flag global
 // dgeo.usuario.administrador, que vale em qualquer modulo.
@@ -66,6 +68,11 @@ const verifyPerfil = (minimo, modulo = "acervo") => {
     req.usuarioId = usuario.id;
     req.administrador = usuario.administrador;
     req.perfilId = usuario.perfil_id;
+
+    // Origem, rota e lote da rastreabilidade. Montado aqui, e nao num
+    // middleware proprio, porque o token ja esta decodificado: decodifica-lo
+    // uma segunda vez seria dois lugares para divergir.
+    montarContexto(req, decoded);
 
     // Quem nao e administrador so mexe no proprio registro
     const requestedUuid =

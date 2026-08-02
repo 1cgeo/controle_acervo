@@ -116,7 +116,20 @@ controller.login = async (login, senha, cliente) => {
     const perfis = await lerPerfis(t, id)
     const modulos = await lerModulos(t)
 
-    const token = await signJWT({ id, uuid, administrador }, JWT_SECRET)
+    // O `cliente` entra no token desde 2026-08-02, e e o que da a coluna
+    // `origem` da rastreabilidade: sem ele, o rastro nao sabe distinguir a carga
+    // em lote do plugin do trabalho feito na tela, e as duas se leem igual.
+    //
+    // Ele pode entrar, ao contrario dos PERFIS, porque e imutavel para aquele
+    // token: descreve por onde a pessoa entrou, e isso nao muda enquanto o token
+    // vive. O perfil muda, e por isso o verifyPerfil o rele do banco a cada
+    // requisicao.
+    //
+    // Token emitido ANTES desta mudanca nao tem o campo, e nesse caso a origem
+    // fica 'desconhecido' em vez de ser adivinhada. A janela dura no maximo o
+    // JWT_EXPIRACAO (8h por default), e adivinhar por User-Agent seria pior do
+    // que dizer que nao se sabe.
+    const token = await signJWT({ id, uuid, administrador, cliente }, JWT_SECRET)
 
     // Historico de acesso, que alimenta a tela #/acessos. Fica DEPOIS da
     // assinatura do token e dentro da mesma transacao: gravar antes contaria
@@ -176,11 +189,18 @@ controller.sessao = async uuid => {
  * Mora aqui, e nao em usuario/, porque conferir senha e o que ESTA feature faz
  * -- assim ha um caminho unico de conferencia no sistema inteiro.
  *
+ * O `executor` existe para a troca de senha poder conferir e gravar na MESMA
+ * transacao. Com duas conexoes cabia outra requisicao no meio, e a segunda
+ * gravaria por cima com a autorizacao da primeira. Ele e opcional e cai em
+ * `db.conn` porque quem confere fora de transacao (o login) nao tem `t` nenhum.
+ *
  * @param {string} uuid
  * @param {string} senha
+ * @param {object} [executor] - a transacao de quem vai gravar em seguida
  */
-controller.conferirSenha = async (uuid, senha) => {
-  const usuarioDb = await db.conn.oneOrNone(
+controller.conferirSenha = async (uuid, senha, executor) => {
+  const conexao = executor || db.conn
+  const usuarioDb = await conexao.oneOrNone(
     'SELECT senha FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
     { uuid }
   )

@@ -33,6 +33,7 @@ const ncCtrl = require('../../orcamento/nota_credito/nota_credito_ctrl')
 const neCtrl = require('../../orcamento/nota_empenho/nota_empenho_ctrl')
 const liqCtrl = require('../../orcamento/nota_empenho/liquidacao_ctrl')
 const pdrCtrl = require('../../orcamento/pdr/pdr_ctrl')
+const dfdCtrl = require('../../orcamento/dfd/dfd_ctrl')
 
 const ANO = 2026
 const ND_CONSUMO = '339030'
@@ -267,6 +268,217 @@ describe('Orcamento contra o banco de verdade', () => {
 
       const lida = await ncCtrl.getPorId(nc.id)
       expect(lida.pdr_item_id).toBe(item.id)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Rastreabilidade
+  // -------------------------------------------------------------------------
+  // O QUE SO O BANCO PROVA. No `helpers/orcamento/mockDb` a "transacao" e o
+  // proprio objeto de conexao (`conn.tx = cb => cb(conn)`), entao um `registrar`
+  // colocado FORA da transacao passa verde em todo teste mockado do modulo. A
+  // linha de rastro TEM de cair junto com a mudanca que ela descreve, ou nao
+  // cair: com conexao propria, um rollback deixaria para tras o registro de uma
+  // alteracao que nunca aconteceu -- e quem le a trilha acredita nela.
+  //
+  // Os testes mockados continuam cobrindo a tabela, a operacao e o autor de cada
+  // evento; aqui esta so a atomicidade, e o custo do banco se paga por isso.
+  describe('Rastreabilidade', () => {
+    const eventos = async (tabela, entidadeId) =>
+      db.conn.any(
+        `SELECT * FROM auditoria.evento
+          WHERE tabela = $<tabela>
+            AND ($<entidadeId> IS NULL OR entidade_id = $<entidadeId>)
+          ORDER BY id`,
+        { tabela, entidadeId: entidadeId != null ? String(entidadeId) : null }
+      )
+
+    it('a criacao da NC grava o evento com o autor e o estado resultante', async () => {
+      const nc = await novaNc()
+      const linhas = await eventos('orcamento.nota_credito', nc.id)
+
+      expect(linhas).toHaveLength(1)
+      expect(linhas[0].operacao).toBe('I')
+      expect(linhas[0].modulo).toBe('orcamento')
+      expect(linhas[0].entidade).toBe('nota_credito')
+      expect(linhas[0].usuario_uuid).toBe(ADMIN_UUID)
+      // `dados_antes` nulo na insercao, por definicao; `dados_depois` sai do
+      // BANCO (o RETURNING *), e nao do corpo da requisicao.
+      expect(linhas[0].dados_antes).toBeNull()
+      expect(Number(linhas[0].dados_depois.valor_nc)).toBe(10000)
+    })
+
+    it('a alteracao guarda os DOIS lados, e o diff so acusa o que mudou', async () => {
+      const nc = await novaNc()
+      await ncCtrl.atualizar(
+        nc.id,
+        {
+          numero: 'NC-001',
+          ano: ANO,
+          cod_nd: ND_CONSUMO,
+          valor_nc: 25000,
+          classificacao_id: PDR
+        },
+        ADMIN_UUID
+      )
+
+      const linhas = await eventos('orcamento.nota_credito', nc.id)
+      const alteracao = linhas.filter(l => l.operacao === 'U')
+
+      expect(alteracao).toHaveLength(1)
+      expect(Number(alteracao[0].dados_antes.valor_nc)).toBe(10000)
+      expect(Number(alteracao[0].dados_depois.valor_nc)).toBe(25000)
+      // O carimbo de escrituracao muda em todo UPDATE e fica FORA do diff, mas
+      // continua nos dois JSONs. Sem isso, toda linha do historico traria
+      // "data_modificacao" na frente do que interessa.
+      expect(alteracao[0].campos_alterados).toEqual(['valor_nc'])
+      expect(alteracao[0].dados_depois).toHaveProperty('data_modificacao')
+    })
+
+    // O CASO QUE ESTE ARQUIVO EXISTE PARA GUARDAR.
+    //
+    // A NE nasce numa transacao: INSERT na NE, evento, e as alocacoes. Se a
+    // ultima parte falha (NC inexistente), nem a NE nem o EVENTO podem ficar
+    // gravados. Um evento sobrevivente descreveria uma nota de empenho que nunca
+    // existiu, e seria indistinguivel de uma que existiu e foi apagada.
+    it('ROLLBACK derruba o evento junto com a escrita', async () => {
+      const antes = await eventos('orcamento.nota_empenho', null)
+
+      await expect(
+        neCtrl.criar(
+          { numero: 'NE-ROLLBACK', ano: ANO, nota_credito_id: 999999, valor_empenhado: 100 },
+          ADMIN_UUID
+        )
+      ).rejects.toMatchObject({ statusCode: 400 })
+
+      const depois = await eventos('orcamento.nota_empenho', null)
+      expect(depois).toHaveLength(antes.length)
+
+      // E a prova do outro lado: a NE tambem nao ficou.
+      const sobrou = await db.conn.one(
+        "SELECT COUNT(*)::int AS n FROM orcamento.nota_empenho WHERE numero = 'NE-ROLLBACK'"
+      )
+      expect(sobrou.n).toBe(0)
+    })
+
+    // Mesmo caso, pela regra de NEGOCIO em vez da FK: a liquidacao que estoura o
+    // empenhado e recusada dentro da transacao, depois de a soma ser lida do
+    // banco. Nem a liquidacao nem o evento podem ficar.
+    it('a regra de negocio que recusa dentro da transacao nao deixa evento', async () => {
+      const nc = await novaNc()
+      const ne = await neCtrl.criar(
+        { numero: 'NE-020', ano: ANO, nota_credito_id: nc.id, valor_empenhado: 1000 },
+        ADMIN_UUID
+      )
+
+      await expect(
+        liqCtrl.criar({ nota_empenho_id: ne.id, valor_liquidado: 5000 }, ADMIN_UUID)
+      ).rejects.toMatchObject({ statusCode: 400 })
+
+      const linhas = await eventos('orcamento.liquidacao', null)
+      expect(linhas).toHaveLength(0)
+    })
+
+    // O rastro SOBREVIVE ao registro apagado, e e por isso que `entidade_id` nao
+    // referencia nada: a exclusao e justamente o evento que a tabela existe para
+    // guardar.
+    it('a exclusao deixa o que se perdeu, e a linha sobrevive ao registro', async () => {
+      const item = await pdrCtrl.criar(
+        {
+          ano: ANO,
+          cod_nd: ND_CONSUMO,
+          item_label: '9',
+          descricao: 'Item que vai sair',
+          valor_solicitado: 4200
+        },
+        ADMIN_UUID
+      )
+
+      await pdrCtrl.deletar(item.id, ADMIN_UUID)
+
+      const sumiu = await db.conn.oneOrNone(
+        'SELECT id FROM orcamento.pdr_item WHERE id = $1',
+        [item.id]
+      )
+      expect(sumiu).toBeNull()
+
+      // O agregado do PDR e o ANO: nao ha cabecalho de PDR, e o PDR do ano E o
+      // conjunto dos itens daquele ano.
+      const linhas = await eventos('orcamento.pdr_item', ANO)
+      const exclusao = linhas.filter(l => l.operacao === 'D')
+
+      expect(exclusao).toHaveLength(1)
+      expect(exclusao[0].usuario_uuid).toBe(ADMIN_UUID)
+      expect(exclusao[0].dados_depois).toBeNull()
+      expect(exclusao[0].dados_antes.descricao).toBe('Item que vai sair')
+      expect(Number(exclusao[0].dados_antes.valor_solicitado)).toBe(4200)
+    })
+
+    // A lista de itens do DFD e reescrita INTEIRA a cada salvamento, com ids
+    // novos. Salvar sem mexer nos itens nao pode produzir "removeu 2 itens,
+    // acrescentou 2 itens": e o defeito que o evento por lista existe para
+    // evitar, e so o banco prova (os ids reais e o `RETURNING` de verdade).
+    it('salvar o DFD sem mexer nos itens nao gera evento de itens', async () => {
+      const itens = [
+        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5, valor_total: 50 },
+        { tipo_item_id: 1, descricao: 'Tinta', quantidade: 2, valor_unitario: 300, valor_total: 600 }
+      ]
+      // `consta_pca` explicito: este arquivo chama o CONTROLLER direto, e o
+      // default TRUE mora no Joi da rota. A coluna e NOT NULL.
+      const dfd = await dfdCtrl.criar(
+        { numero: 'DFD-900', ano: ANO, objeto: 'Aquisicao', consta_pca: true, itens },
+        ADMIN_UUID
+      )
+
+      // Salva de novo, mudando SO o cabecalho e mandando os mesmos itens.
+      await dfdCtrl.atualizar(
+        dfd.id,
+        { numero: 'DFD-900', ano: ANO, objeto: 'Aquisicao revista', consta_pca: true, itens },
+        ADMIN_UUID
+      )
+
+      const doCabecalho = await eventos('orcamento.dfd', dfd.id)
+      const dosItens = await eventos('orcamento.dfd_item', dfd.id)
+
+      expect(doCabecalho.map(l => l.operacao)).toEqual(['I', 'U'])
+      expect(doCabecalho[1].campos_alterados).toEqual(['objeto'])
+      // UM evento de itens, o da criacao. A regravacao identica nao produziu
+      // nenhum, apesar de ter apagado e reinserido as duas linhas.
+      expect(dosItens).toHaveLength(1)
+      expect(dosItens[0].operacao).toBe('I')
+      expect(dosItens[0].dados_depois.itens).toHaveLength(2)
+    })
+
+    it('mudar um item do DFD gera UM evento com a lista dos dois lados', async () => {
+      const itens = [
+        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5, valor_total: 50 }
+      ]
+      const dfd = await dfdCtrl.criar(
+        { numero: 'DFD-901', ano: ANO, objeto: 'Aquisicao', consta_pca: true, itens },
+        ADMIN_UUID
+      )
+
+      await dfdCtrl.atualizar(
+        dfd.id,
+        {
+          numero: 'DFD-901',
+          ano: ANO,
+          objeto: 'Aquisicao',
+          consta_pca: true,
+          itens: [
+            { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 25, valor_unitario: 5, valor_total: 125 }
+          ]
+        },
+        ADMIN_UUID
+      )
+
+      const dosItens = await eventos('orcamento.dfd_item', dfd.id)
+      const alteracao = dosItens.filter(l => l.operacao === 'U')
+
+      expect(alteracao).toHaveLength(1)
+      expect(alteracao[0].campos_alterados).toEqual(['itens'])
+      expect(alteracao[0].dados_antes.itens[0]).toContain('qtd 10')
+      expect(alteracao[0].dados_depois.itens[0]).toContain('qtd 25')
     })
   })
 })

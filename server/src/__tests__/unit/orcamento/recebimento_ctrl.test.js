@@ -19,7 +19,7 @@ describe('recebimento_ctrl', () => {
   beforeEach(() => mockDb.reset())
 
   test('criar envia ano_referencia quando informado', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 30 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 30, nota_empenho_id: 51 })
     const r = await ctrl.criar(
       { nota_empenho_id: 51, material: 'Nobreak', ano_referencia: 2026 },
       'uuid'
@@ -32,7 +32,7 @@ describe('recebimento_ctrl', () => {
   })
 
   test('criar usa null quando ano_referencia ausente (cai no ano da NE na 3.6)', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 31 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 31, nota_empenho_id: 12 })
     await ctrl.criar({ nota_empenho_id: 12, material: 'Tinta' }, 'uuid')
     expect(mockDb.conn.one).toHaveBeenCalledWith(
       expect.any(String),
@@ -41,8 +41,8 @@ describe('recebimento_ctrl', () => {
   })
 
   test('atualizar envia ano_referencia', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 10 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 10 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 10, nota_empenho_id: 51 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 10, nota_empenho_id: 51 })
     await ctrl.atualizar(
       10,
       { nota_empenho_id: 51, material: 'Nobreak', ano_referencia: 2026 },

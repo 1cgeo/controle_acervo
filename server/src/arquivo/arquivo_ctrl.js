@@ -6,6 +6,7 @@ const { arquivarArquivos } = require('./arquivo_deletado');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 const { v4: uuidv4 } = require('uuid');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
@@ -34,7 +35,33 @@ const SQL_INSERT_ARQUIVO = `INSERT INTO acervo.arquivo(
   volume_armazenamento_id, extensao, tamanho_mb, checksum, metadado,
   tipo_status_id, situacao_carregamento_id, descricao, crs_original,
   usuario_cadastramento_uuid, data_cadastramento
-) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)`;
+) VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+RETURNING *`;
+
+/**
+ * Grava o evento de CRIACAO de um arquivo do acervo.
+ *
+ * Existe porque os cinco pontos que inserem arquivo (a catalogacao in-place, o
+ * envio pela web e os quatro caminhos do confirm-upload) precisariam do MESMO
+ * bloco de sete linhas. E a mesma razao pela qual `SQL_INSERT_ARQUIVO` e um so:
+ * acrescentar um campo em quatro dos cinco pontos e o modo de falhar que nao da
+ * erro.
+ *
+ * O `produtoId` vem PRONTO de quem chama, e nunca da funcao `agregado` do mapa:
+ * quem grava arquivo acabou de criar (ou de ler) a versao e ja sabe o produto,
+ * e deixar o mapa resolver custaria um SELECT por arquivo numa carga de lote.
+ */
+const registrarArquivoCriado = async (t, arquivo, { produtoId, usuarioUuid, contexto }) => {
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'acervo.arquivo',
+    registroId: arquivo.id,
+    operacao: 'I',
+    depois: arquivo,
+    usuarioUuid,
+    contexto,
+    entidadeId: produtoId
+  });
+};
 
 /**
  * Calcula checksum SHA-256 via streaming, sem carregar o arquivo inteiro em memória.
@@ -218,20 +245,15 @@ const {
 
 const controller = {};
 
-controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
+controller.atualizaArquivo = async (arquivo, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     try {
       arquivo.data_modificacao = new Date();
       arquivo.usuario_modificacao_uuid = usuarioUuid;
 
-      const arquivoAtual = await t.oneOrNone(
-        `SELECT tipo_arquivo_id FROM acervo.arquivo WHERE id = $1`,
-        [arquivo.id]
-      );
-
-      if (!arquivoAtual) {
-        throw new AppError('Arquivo não encontrado', httpCode.NotFound);
-      }
+      // SUBSTITUI o `SELECT tipo_arquivo_id` que existia para o 404 e para a
+      // guarda do Tileserver: a linha inteira sai pela mesma ida ao banco.
+      const arquivoAtual = await auditoriaCtrl.lerAntes(t, 'acervo.arquivo', arquivo.id, 'Arquivo');
 
       // Os CHECKs de acervo.arquivo exigem nome_arquivo URL e
       // extensao/tamanho_mb/checksum NULL para Tileserver (e o inverso para os
@@ -263,13 +285,23 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
       ];
 
       const cs = new db.pgp.helpers.ColumnSet(colunasArquivo, { table: { table: 'arquivo', schema: 'acervo' } });
-      const query = db.pgp.helpers.update(arquivo, cs) + ' WHERE id = $1';
+      const query = db.pgp.helpers.update(arquivo, cs) + ' WHERE id = $1 RETURNING *';
 
-      const result = await t.result(query, [arquivo.id]);
+      const depois = await t.oneOrNone(query, [arquivo.id]);
 
-      if (result.rowCount === 0) {
+      if (!depois) {
         throw new AppError('Arquivo não encontrado', httpCode.NotFound);
       }
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.arquivo',
+        registroId: arquivo.id,
+        operacao: 'U',
+        antes: arquivoAtual,
+        depois,
+        usuarioUuid,
+        contexto
+      });
 
     } catch (error) {
       if (error instanceof AppError) {
@@ -296,12 +328,17 @@ controller.atualizaArquivo = async (arquivo, usuarioUuid) => {
  * linha antiga para arquivo_deletado). Este preserva id, uuid e histórico de
  * download, porque o arquivo é o mesmo, só mudou o empacotamento.
  */
-controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
+controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid, contexto) => {
+  // `a.*` no lugar da lista de colunas, mais o `produto_id` da versão: as
+  // colunas eram exatamente as que a medição usa, e as demais viram o
+  // `dados_antes` de cada arquivo pela MESMA ida ao banco. O `produto_id` entra
+  // aqui pela mesma razão: o agregado dono sai desta consulta, e não de um
+  // SELECT por arquivo no momento de auditar.
   const arquivos = await db.conn.any(`
-    SELECT a.id, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb,
-           a.tipo_arquivo_id, v.volume
+    SELECT a.*, v.volume, ver.produto_id
     FROM acervo.arquivo a
     JOIN acervo.volume_armazenamento v ON a.volume_armazenamento_id = v.id
+    JOIN acervo.versao ver ON ver.id = a.versao_id
     WHERE a.id IN ($<ids:csv>)
   `, { ids: arquivoIds });
 
@@ -336,6 +373,9 @@ controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
       );
     }
     const { checksum, fileSizeMB } = await calculateChecksumStream(filePath);
+    // `volume` e `produto_id` vieram do JOIN e não são colunas de
+    // `acervo.arquivo`: fora do `dados_antes`, que descreve a LINHA.
+    const { volume, produto_id: produtoId, ...linhaArquivo } = a;
     medidos.push({
       id: a.id,
       nome_arquivo: a.nome_arquivo,
@@ -344,7 +384,9 @@ controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
       checksum_novo: checksum,
       tamanho_mb_anterior: Number(a.tamanho_mb),
       tamanho_mb_novo: fileSizeMB,
-      alterado: checksum !== a.checksum
+      alterado: checksum !== a.checksum,
+      antes: linhaArquivo,
+      produto_id: produtoId
     });
   }
 
@@ -354,18 +396,35 @@ controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
     const data_modificacao = new Date();
     await db.conn.tx(async t => {
       for (const m of alterados) {
-        await t.none(`
+        const depois = await t.one(`
           UPDATE acervo.arquivo
           SET checksum = $<checksum>, tamanho_mb = $<tamanho_mb>,
               data_modificacao = $<data_modificacao>,
               usuario_modificacao_uuid = $<usuarioUuid>
           WHERE id = $<id>
+          RETURNING *
         `, {
           checksum: m.checksum_novo,
           tamanho_mb: m.tamanho_mb_novo,
           data_modificacao,
           usuarioUuid,
           id: m.id
+        });
+
+        // O caso mais barato do plano: o `checksum_anterior`, o novo e os dois
+        // tamanhos já estavam montados em memória e só iam para o LOG (que
+        // roda 14 dias) e para a resposta HTTP (que ninguém guarda). O `motivo`
+        // é obrigatório nesta rota e também não era gravado em lugar nenhum.
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.arquivo',
+          registroId: m.id,
+          operacao: 'U',
+          antes: m.antes,
+          depois,
+          usuarioUuid,
+          contexto,
+          motivo,
+          entidadeId: m.produto_id
         });
       }
     });
@@ -390,11 +449,13 @@ controller.atualizarChecksum = async (arquivoIds, motivo, usuarioUuid) => {
     alterados: alterados.length,
     inalterados: medidos.length - alterados.length,
     economia_mb: alterados.reduce((s, m) => s + (m.tamanho_mb_anterior - m.tamanho_mb_novo), 0),
-    arquivos: medidos
+    // A RESPOSTA não muda: `antes` e `produto_id` existem só para o rastro, e
+    // devolvê-los faria a rota passar a expor a linha inteira do arquivo.
+    arquivos: medidos.map(({ antes, produto_id: _produtoId, ...publico }) => publico)
   };
 };
 
-controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => {
+controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid, contexto) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
@@ -413,10 +474,13 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid) => 
         throw new AppError(`Os seguintes arquivos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
       }
 
+      // O evento de exclusão de cada arquivo nasce DENTRO do arquivar, a partir
+      // da própria lápide: os dados não passam por aqui.
       await arquivarArquivos(t, arquivoIds, {
         motivo: motivo_exclusao,
         dataDelete: data_delete,
-        usuarioDeleteUuid: usuario_delete_uuid
+        usuarioDeleteUuid: usuario_delete_uuid,
+        contexto
       });
 
     } catch (error) {
@@ -1228,7 +1292,7 @@ controller.prepareAddProduct = prepararProduto;
  * nome definitivo e nenhuma linha apontando para eles, que e lixo que nenhuma
  * auditoria reconhece (o 7c so ve o que tem lapide).
  */
-controller.enviarWeb = async (plano, usuarioUuid) => {
+controller.enviarWeb = async (plano, usuarioUuid, contexto) => {
   const gravados = plano.gravados;
 
   if (gravados.length !== plano.arquivos.length) {
@@ -1255,14 +1319,14 @@ controller.enviarWeb = async (plano, usuarioUuid) => {
       } else {
         produtoId = plano.tipo === 'versao'
           ? plano.produto.id
-          : await inserirProdutoDoEnvio(t, plano.produto, usuarioUuid);
+          : await inserirProdutoDoEnvio(t, plano.produto, usuarioUuid, contexto);
 
-        versaoId = await inserirVersaoDoEnvio(t, plano.versao, produtoId, usuarioUuid);
+        versaoId = await inserirVersaoDoEnvio(t, plano.versao, produtoId, usuarioUuid, contexto);
       }
 
       // ---- arquivos: registro ANTES do disco ----
       for (const g of gravados) {
-        await t.none(SQL_INSERT_ARQUIVO, [
+        const criado = await t.one(SQL_INSERT_ARQUIVO, [
           g.declarado.nome,
           g.nome_arquivo,
           versaoId,
@@ -1280,6 +1344,8 @@ controller.enviarWeb = async (plano, usuarioUuid) => {
           g.declarado.crs_original || null,
           usuarioUuid
         ]);
+
+        await registrarArquivoCriado(t, criado, { produtoId, usuarioUuid, contexto });
       }
 
       // ---- promocao dos bytes, ja com o banco de acordo ----
@@ -1323,7 +1389,7 @@ controller.enviarWeb = async (plano, usuarioUuid) => {
 };
 
 /** O produto que nasce junto com o envio (caso 'produto'). */
-const inserirProdutoDoEnvio = async (t, p, usuarioUuid) => {
+const inserirProdutoDoEnvio = async (t, p, usuarioUuid, contexto) => {
   const { id } = await t.one(
     `INSERT INTO acervo.produto(
       nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
@@ -1333,6 +1399,18 @@ const inserirProdutoDoEnvio = async (t, p, usuarioUuid) => {
     [p.nome, p.mi, p.inom, p.tipo_escala_id, p.denominador_escala_especial ?? null,
       p.tipo_produto_id, p.subtipo_produto_id ?? null, p.descricao || '', p.geom, usuarioUuid]
   );
+
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'acervo.produto',
+    registroId: id,
+    operacao: 'I',
+    // Relido, e não `RETURNING *`: a geometria precisa sair em EWKT, e quem
+    // sabe fazer isso é o `lerDepois`.
+    depois: await auditoriaCtrl.lerDepois(t, 'acervo.produto', id),
+    usuarioUuid,
+    contexto
+  });
+
   return id;
 };
 
@@ -1343,14 +1421,14 @@ const inserirProdutoDoEnvio = async (t, p, usuarioUuid) => {
  * produto/subtipo. O formulario o espelha para dar a frase certa antes do envio,
  * mas quem decide continua sendo ele.
  */
-const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid) => {
-  const { id } = await t.one(
+const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid, contexto) => {
+  const criada = await t.one(
     `INSERT INTO acervo.versao(
       uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
       lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
       data_edicao, usuario_cadastramento_uuid, data_cadastramento
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-    RETURNING id`,
+    RETURNING *`,
     [
       v.uuid_versao || uuidv4(), v.versao, v.nome, v.tipo_versao_id,
       v.subtipo_produto_id, produtoId, v.lote_id ?? null, v.metadado || {},
@@ -1358,7 +1436,17 @@ const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid) => {
       v.data_criacao, v.data_edicao, usuarioUuid
     ]
   );
-  return id;
+
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'acervo.versao',
+    registroId: criada.id,
+    operacao: 'I',
+    depois: criada,
+    usuarioUuid,
+    contexto
+  });
+
+  return criada.id;
 };
 
 
@@ -1389,7 +1477,7 @@ const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid) => {
 // O que NAO afrouxa: a unicidade fisica (volume, nome_arquivo, extensao), a
 // identidade do produto, a sequencia de versao, os indices unicos do banco e a
 // existencia do arquivo. Ver migrations/2026-07-31_volume_layout_origem.sql.
-controller.catalogarProduto = async (requestData, usuarioUuid) => {
+controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
   const { volume_armazenamento_id: volumeId, produtos } = requestData;
 
   // ---- Fase 1: tudo que se recusa SEM ler um byte ----
@@ -1524,16 +1612,25 @@ controller.catalogarProduto = async (requestData, usuarioUuid) => {
           ]
         );
 
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.produto',
+          registroId: produtoId,
+          operacao: 'I',
+          depois: await auditoriaCtrl.lerDepois(t, 'acervo.produto', produtoId),
+          usuarioUuid,
+          contexto
+        });
+
         const versoesResultado = [];
 
         for (const versao of item.versoes) {
-          const { id: versaoId } = await t.one(
+          const versaoCriada = await t.one(
             `INSERT INTO acervo.versao(
               uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
               lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
               data_edicao, usuario_cadastramento_uuid, data_cadastramento
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-            RETURNING id`,
+            RETURNING *`,
             [
               versao.uuid_versao || uuidv4(),
               versao.versao,
@@ -1552,6 +1649,17 @@ controller.catalogarProduto = async (requestData, usuarioUuid) => {
             ]
           );
 
+          const versaoId = versaoCriada.id;
+
+          await auditoriaCtrl.registrar(t, {
+            tabela: 'acervo.versao',
+            registroId: versaoId,
+            operacao: 'I',
+            depois: versaoCriada,
+            usuarioUuid,
+            contexto
+          });
+
           const arquivosResultado = [];
 
           for (const arquivo of versao.arquivos) {
@@ -1561,8 +1669,8 @@ controller.catalogarProduto = async (requestData, usuarioUuid) => {
 
             const medida = medidas.get(arquivo);
 
-            const { id: arquivoId } = await t.one(
-              SQL_INSERT_ARQUIVO + ' RETURNING id',
+            const arquivoCriado = await t.one(
+              SQL_INSERT_ARQUIVO,
               [
                 arquivo.nome,
                 arquivo.nome_arquivo,
@@ -1581,8 +1689,10 @@ controller.catalogarProduto = async (requestData, usuarioUuid) => {
               ]
             );
 
+            await registrarArquivoCriado(t, arquivoCriado, { produtoId, usuarioUuid, contexto });
+
             arquivosResultado.push({
-              arquivo_id: arquivoId,
+              arquivo_id: arquivoCriado.id,
               nome_arquivo: arquivo.nome_arquivo,
               extensao: arquivo.extensao,
               checksum: medida.checksum,
@@ -1760,7 +1870,15 @@ controller.getProblemUploads = async () => {
   });
 };
 
-controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
+// O confirm-upload é onde o evento do caminho do PLUGIN nasce.
+//
+// O `prepare-upload` e o `cancel-upload` NÃO auditam, e é deliberado: sessão que
+// não virou arquivo não mudou o acervo. Ela vive em `upload_session` e nas três
+// `*_temp`, que são efêmeras por natureza (o cron de 24 h as fecha), e registrar
+// a reserva como se fosse cadastro faria a trilha contar duas vezes o que
+// aconteceu uma. É aqui que a linha entra em `acervo.produto`, `acervo.versao` e
+// `acervo.arquivo`, e é aqui que o rastro começa.
+controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
   // Falha de processamento precisa ser persistida fora da transação:
   // o rollback desfaria um UPDATE de status feito dentro dela
   let processingFailure = null;
@@ -1924,16 +2042,16 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
         try {
           switch (session.operation_type) {
             case 'add_files':
-              await processAddFiles(t, session);
+              await processAddFiles(t, session, contexto);
               break;
             case 'replace_files':
-              await processReplaceFiles(t, session);
+              await processReplaceFiles(t, session, contexto);
               break;
             case 'add_version':
-              await processAddVersion(t, session);
+              await processAddVersion(t, session, contexto);
               break;
             case 'add_product':
-              await processAddProduct(t, session);
+              await processAddProduct(t, session, contexto);
               break;
           }
           
@@ -2056,19 +2174,37 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid) => {
   });
 };
 
+/**
+ * O produto dono de cada versão citada, numa consulta só.
+ *
+ * Os quatro `process*` gravam arquivo em lote, e deixar o mapa de auditoria
+ * resolver o agregado custaria um SELECT por arquivo. Aqui a resolução acontece
+ * uma vez para o lote inteiro.
+ */
+async function produtoPorVersao(t, versaoIds) {
+  const ids = [...new Set(versaoIds.map(Number))].filter(Number.isFinite);
+  if (ids.length === 0) return new Map();
+  const linhas = await t.any(
+    'SELECT id, produto_id FROM acervo.versao WHERE id IN ($<ids:csv>)',
+    { ids }
+  );
+  return new Map(linhas.map(v => [String(v.id), v.produto_id]));
+}
+
 // Helper function for Scenario 1: Process add_files to main tables
-async function processAddFiles(t, session) {
+async function processAddFiles(t, session, contexto) {
   try {
     const arquivos = await t.any(
-      `SELECT * FROM acervo.upload_arquivo_temp 
+      `SELECT * FROM acervo.upload_arquivo_temp
        WHERE session_id = $1 AND versao_id IS NOT NULL`,
       [session.id]
     );
-    
+
     const versaoIds = [...new Set(arquivos.map(a => a.versao_id))];
-    
+    const donos = await produtoPorVersao(t, versaoIds);
+
     for (const arquivo of arquivos) {
-      await t.none(
+      const criado = await t.one(
         SQL_INSERT_ARQUIVO,
         [
           arquivo.nome, 
@@ -2087,6 +2223,14 @@ async function processAddFiles(t, session) {
           session.usuario_uuid
         ]
       );
+
+      // O usuário é o DONO DA SESSÃO, e não quem chamou o confirm: a sessão só
+      // pode ser confirmada por quem a abriu, e é dele o cadastro.
+      await registrarArquivoCriado(t, criado, {
+        produtoId: donos.get(String(arquivo.versao_id)),
+        usuarioUuid: session.usuario_uuid,
+        contexto
+      });
     }
   } catch (error) {
     throw new AppError(`Erro ao processar arquivos: ${error.message}`, httpCode.InternalError, error);
@@ -2097,7 +2241,7 @@ async function processAddFiles(t, session) {
 // confirm, faz soft-delete do arquivo que ocupa o slot (versao_id, nome_arquivo,
 // extensao) -- se houver -- e insere o novo. Atomico: sem meio-termo entre apagar
 // e recadastrar. Se o slot estiver vazio (upsert), apenas insere.
-async function processReplaceFiles(t, session) {
+async function processReplaceFiles(t, session, contexto) {
   try {
     const arquivos = await t.any(
       `SELECT * FROM acervo.upload_arquivo_temp
@@ -2106,8 +2250,10 @@ async function processReplaceFiles(t, session) {
     );
 
     const motivo = 'Substituído por nova versão do mesmo arquivo (replace-files)';
+    const donos = await produtoPorVersao(t, arquivos.map(a => a.versao_id));
 
     for (const arquivo of arquivos) {
+      const produtoId = donos.get(String(arquivo.versao_id));
       // Arquivo que ocupa o slot atualmente (se houver)
       const atual = await t.oneOrNone(
         `SELECT * FROM acervo.arquivo
@@ -2142,10 +2288,26 @@ async function processReplaceFiles(t, session) {
         );
         await t.none('DELETE FROM acervo.download WHERE arquivo_id = $1', [atual.id]);
         await t.none('DELETE FROM acervo.arquivo WHERE id = $1', [atual.id]);
+
+        // A substituição é uma EXCLUSÃO seguida de uma criação, e o rastro diz
+        // as duas: sem o evento de exclusão, o arquivo antigo desapareceria da
+        // ficha do produto sem que nada dissesse por quê. Este caminho tem
+        // lápide própria (ele não passa por `arquivarArquivos`), e por isso o
+        // evento é escrito aqui -- o `atual` já é a linha inteira.
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.arquivo',
+          registroId: atual.id,
+          operacao: 'D',
+          antes: atual,
+          usuarioUuid: session.usuario_uuid,
+          contexto,
+          motivo,
+          entidadeId: produtoId
+        });
       }
 
       // Insere o novo arquivo no mesmo slot
-      await t.none(
+      const criado = await t.one(
         SQL_INSERT_ARQUIVO,
         [
           arquivo.nome,
@@ -2164,6 +2326,12 @@ async function processReplaceFiles(t, session) {
           session.usuario_uuid
         ]
       );
+
+      await registrarArquivoCriado(t, criado, {
+        produtoId,
+        usuarioUuid: session.usuario_uuid,
+        contexto
+      });
     }
   } catch (error) {
     throw new AppError(`Erro ao substituir arquivos: ${error.message}`, httpCode.InternalError, error);
@@ -2171,7 +2339,7 @@ async function processReplaceFiles(t, session) {
 }
 
 // Helper function for Scenario 2: Process add_version to main tables
-async function processAddVersion(t, session) {
+async function processAddVersion(t, session, contexto) {
   try {
     const versoesTemp = await t.any(
       `SELECT * FROM acervo.upload_versao_temp 
@@ -2185,13 +2353,13 @@ async function processAddVersion(t, session) {
     for (const versaoTemp of versoesTemp) {
       produtoIds.push(versaoTemp.produto_id);
       
-      const { id: versaoId } = await t.one(
+      const versaoCriada = await t.one(
         `INSERT INTO acervo.versao(
-          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
-          lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao, 
+          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
+          lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
           usuario_cadastramento_uuid, data_cadastramento
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-        RETURNING id`,
+        RETURNING *`,
         [
           versaoTemp.uuid_versao,
           versaoTemp.versao,
@@ -2210,20 +2378,30 @@ async function processAddVersion(t, session) {
         ]
       );
       
+      const versaoId = versaoCriada.id;
       versaoIds.push(versaoId);
-      
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao',
+        registroId: versaoId,
+        operacao: 'I',
+        depois: versaoCriada,
+        usuarioUuid: session.usuario_uuid,
+        contexto
+      });
+
       const arquivos = await t.any(
-        `SELECT * FROM acervo.upload_arquivo_temp 
+        `SELECT * FROM acervo.upload_arquivo_temp
          WHERE session_id = $1 AND versao_temp_id = $2`,
         [session.id, versaoTemp.id]
       );
-      
+
       for (const arquivo of arquivos) {
-        await t.none(
+        const criado = await t.one(
           SQL_INSERT_ARQUIVO,
           [
-            arquivo.nome, 
-            arquivo.nome_arquivo, 
+            arquivo.nome,
+            arquivo.nome_arquivo,
             versaoId,
             arquivo.tipo_arquivo_id,
             arquivo.volume_armazenamento_id, 
@@ -2238,6 +2416,12 @@ async function processAddVersion(t, session) {
             session.usuario_uuid
           ]
         );
+
+        await registrarArquivoCriado(t, criado, {
+          produtoId: versaoTemp.produto_id,
+          usuarioUuid: session.usuario_uuid,
+          contexto
+        });
       }
     }
   } catch (error) {
@@ -2246,7 +2430,7 @@ async function processAddVersion(t, session) {
 }
 
 // Helper function for Scenario 3: Process add_product to main tables
-async function processAddProduct(t, session) {
+async function processAddProduct(t, session, contexto) {
   try {
     const produtosTemp = await t.any(
       `SELECT * FROM acervo.upload_produto_temp 
@@ -2278,21 +2462,30 @@ async function processAddProduct(t, session) {
       );
       
       produtoIds.push(produtoId);
-      
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.produto',
+        registroId: produtoId,
+        operacao: 'I',
+        depois: await auditoriaCtrl.lerDepois(t, 'acervo.produto', produtoId),
+        usuarioUuid: session.usuario_uuid,
+        contexto
+      });
+
       const versoesTemp = await t.any(
-        `SELECT * FROM acervo.upload_versao_temp 
+        `SELECT * FROM acervo.upload_versao_temp
          WHERE session_id = $1 AND produto_temp_id = $2`,
         [session.id, produtoTemp.id]
       );
-      
+
       for (const versaoTemp of versoesTemp) {
-        const { id: versaoId } = await t.one(
+        const versaoCriada = await t.one(
           `INSERT INTO acervo.versao(
             uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
             lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao, 
             usuario_cadastramento_uuid, data_cadastramento
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-          RETURNING id`,
+          RETURNING *`,
           [
             versaoTemp.uuid_versao,
             versaoTemp.versao,
@@ -2311,18 +2504,29 @@ async function processAddProduct(t, session) {
           ]
         );
         
+        const versaoId = versaoCriada.id;
+
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.versao',
+          registroId: versaoId,
+          operacao: 'I',
+          depois: versaoCriada,
+          usuarioUuid: session.usuario_uuid,
+          contexto
+        });
+
         const arquivos = await t.any(
-          `SELECT * FROM acervo.upload_arquivo_temp 
+          `SELECT * FROM acervo.upload_arquivo_temp
            WHERE session_id = $1 AND versao_temp_id = $2`,
           [session.id, versaoTemp.id]
         );
-        
+
         for (const arquivo of arquivos) {
-          await t.none(
+          const criado = await t.one(
             SQL_INSERT_ARQUIVO,
             [
-              arquivo.nome, 
-              arquivo.nome_arquivo, 
+              arquivo.nome,
+              arquivo.nome_arquivo,
               versaoId,
               arquivo.tipo_arquivo_id,
               arquivo.volume_armazenamento_id, 
@@ -2337,6 +2541,12 @@ async function processAddProduct(t, session) {
               session.usuario_uuid
             ]
           );
+
+          await registrarArquivoCriado(t, criado, {
+            produtoId,
+            usuarioUuid: session.usuario_uuid,
+            contexto
+          });
         }
       }
     }
@@ -2439,7 +2649,7 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
  * (o que está no banco e o que está no disco), nunca por um log da execução
  * anterior. Interrupção no meio não deixa estado que a próxima chamada não resolva.
  */
-controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUuid) => {
+controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUuid, contexto) => {
   // Sessão de upload aberta congela um destination_path e a transferência
   // sobrescreve o físico no lugar. Renomear por baixo dela perde bytes.
   const abertas = await db.conn.one(
@@ -2454,8 +2664,10 @@ controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUu
   }
 
   const filtro = arquivoIds && arquivoIds.length ? 'AND a.id IN ($<ids:csv>)' : '';
+  // O `p.id AS produto_id` entra para o rastro: o agregado dono já sai desta
+  // consulta, então auditar não custa um SELECT por arquivo num lote de 5.000.
   const divergentes = await db.conn.any(`
-    SELECT a.id, a.nome_arquivo, a.extensao, vol.volume,
+    SELECT a.id, a.nome_arquivo, a.extensao, vol.volume, p.id AS produto_id,
            acervo.nome_arquivo_padrao(p.tipo_produto_id, v.subtipo_produto_id, p.mi,
              p.inom, p.nome, p.tipo_escala_id, p.denominador_escala_especial,
              v.versao) AS esperado
@@ -2524,17 +2736,40 @@ controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUu
       }
 
       await db.conn.tx(async t => {
+        // UMA TRANSAÇÃO POR ARQUIVO, e é correto assim: não existe transação do
+        // lote, e o rollback de um arquivo não pode desfazer os que já
+        // renomearam no disco. O evento é por arquivo, DENTRO da transação
+        // daquele arquivo, e quem amarra os N é o `loteId` do contexto -- um por
+        // requisição. Assim a tela mostra uma linha ("Renomeou 4.812 arquivos")
+        // que abre nos eventos individuais, e o arquivo que falhou não deixa
+        // rastro de uma mudança que não aconteceu.
+        const antes = await auditoriaCtrl.lerAntes(t, 'acervo.arquivo', d.id, 'Arquivo');
+
         // O banco decide primeiro. Colisão estoura aqui, com o disco intacto.
-        const upd = await t.result(
+        const depois = await t.oneOrNone(
           `UPDATE acervo.arquivo
            SET nome_arquivo = $<esperado>, data_modificacao = NOW(),
                usuario_modificacao_uuid = $<usuarioUuid>
-           WHERE id = $<id> AND nome_arquivo = $<atual>`,
+           WHERE id = $<id> AND nome_arquivo = $<atual>
+           RETURNING *`,
           { esperado: d.esperado, usuarioUuid, id: d.id, atual: d.nome_arquivo }
         );
-        if (upd.rowCount !== 1) {
-          throw new Error(`UPDATE afetou ${upd.rowCount} linha(s); outro processo mexeu neste arquivo`);
+        if (!depois) {
+          throw new Error('UPDATE afetou 0 linha(s); outro processo mexeu neste arquivo');
         }
+
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.arquivo',
+          registroId: d.id,
+          operacao: 'U',
+          antes,
+          depois,
+          usuarioUuid,
+          contexto,
+          motivo,
+          entidadeId: d.produto_id
+        });
+
         if (temAtual) {
           await fs.rename(atual, alvo);
           renomeou = true;

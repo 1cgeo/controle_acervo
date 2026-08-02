@@ -2,6 +2,9 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+const { invalidarCatalogos } = require('../../auditoria/renderizar')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -59,80 +62,289 @@ controller.getGrauPrioridade = async () => {
 
 // ---------------------------------------------------------------------------
 // CRUD dos dominios editaveis pela Configuracao: natureza de despesa, plano
-// interno e UG emitente. O `code` e a chave (informado pelo usuario). Nao ha
-// auditoria nessas tabelas de dominio.
+// interno e UG emitente. O `code` e a chave (informado pelo usuario).
+//
+// AS NOVE FUNCOES ABAIXO PASSARAM A AUDITAR EM 2026-08-02, e ate ali este
+// cabecalho dizia "Nao ha auditoria nessas tabelas de dominio". Elas sao a
+// alteracao de MAIOR ALCANCE do modulo: mudar o nome ou o GND de uma ND
+// RECLASSIFICA toda NC e toda NE ja lancadas com aquele codigo, e o rastro
+// disso nao existia em lugar nenhum. Junto vieram as duas coisas que faltavam:
+// a TRANSACAO (nenhuma das nove tinha) e o AUTOR (nenhuma das nove o recebia,
+// embora `req.usuarioUuid` ja existisse na rota).
+//
+// As tres tabelas moram no schema `dominio`, e nao em `orcamento`, mas o CRUD e
+// do orcamento e o mapa de auditoria as declara com `modulo: 'orcamento'`: quem
+// procura "por que a ND 339030 mudou de nome" procura no orcamento.
 // ---------------------------------------------------------------------------
 
 // grupo (custeio/capital) e derivado do GND (3 = custeio, 4 = capital).
 const grupoDoGnd = gnd => (Number(gnd) === 4 ? 'capital' : 'custeio')
 
-controller.criarNaturezaDespesa = async ({ code, nome, gnd }) => {
-  return db.conn
-    .none(
-      'INSERT INTO dominio.natureza_despesa (code, nome, gnd, grupo) VALUES ($<code>, $<nome>, $<gnd>, $<grupo>)',
+/**
+ * Descarta o cache de catalogos que a renderizacao do historico mantem.
+ *
+ * O `renderizar.js` traduz `cod_nd: '339030'` para "Material de consumo (339030)"
+ * a partir de um cache em memoria carregado sob demanda. Estas nove funcoes sao
+ * as UNICAS escritas em tabela de dominio do sistema inteiro, entao a
+ * invalidacao mora aqui: sem ela, um nome corrigido hoje continuaria aparecendo
+ * errado no historico ate o processo reiniciar.
+ *
+ * Chamado DEPOIS do commit de proposito. Invalidar dentro da transacao que
+ * depois volta atras custaria uma recarga desnecessaria (barata), mas o
+ * contrario -- deixar o cache velho apos um commit -- e o erro que se ve na
+ * tela.
+ */
+const aposEscritaDeDominio = () => {
+  invalidarCatalogos()
+}
+
+controller.criarNaturezaDespesa = async ({ code, nome, gnd }, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const criada = await t.one(
+        `INSERT INTO dominio.natureza_despesa (code, nome, gnd, grupo)
+         VALUES ($<code>, $<nome>, $<gnd>, $<grupo>)
+         RETURNING *`,
+        { code, nome, gnd, grupo: grupoDoGnd(gnd) }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.natureza_despesa',
+        registroId: criada.code,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      })
+    })
+    .catch(tratarCriar)
+
+  aposEscritaDeDominio()
+}
+
+controller.atualizarNaturezaDespesa = async (code, { nome, gnd }, usuarioUuid, contexto) => {
+  await db.conn.tx(async t => {
+    // `lerAntes` SUBSTITUI o teste de existencia: antes era o `rowCount` do
+    // UPDATE que produzia o 404, e o estado anterior se perdia. Agora o mesmo
+    // numero de idas ao banco devolve a linha inteira.
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'dominio.natureza_despesa',
+      code,
+      'Natureza de despesa',
+      'code'
+    )
+
+    const depois = await t.one(
+      `UPDATE dominio.natureza_despesa
+       SET nome = $<nome>, gnd = $<gnd>, grupo = $<grupo>
+       WHERE code = $<code>
+       RETURNING *`,
       { code, nome, gnd, grupo: grupoDoGnd(gnd) }
     )
-    .catch(tratarCriar)
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'dominio.natureza_despesa',
+      registroId: code,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+  })
+
+  aposEscritaDeDominio()
 }
 
-controller.atualizarNaturezaDespesa = async (code, { nome, gnd }) => {
-  const r = await db.conn.result(
-    'UPDATE dominio.natureza_despesa SET nome = $<nome>, gnd = $<gnd>, grupo = $<grupo> WHERE code = $<code>',
-    { code, nome, gnd, grupo: grupoDoGnd(gnd) }
-  )
-  if (!r.rowCount) throw new AppError('Natureza de despesa não encontrada', httpCode.NotFound)
-}
+controller.deletarNaturezaDespesa = async (code, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'dominio.natureza_despesa',
+        code,
+        'Natureza de despesa',
+        'code'
+      )
 
-controller.deletarNaturezaDespesa = async code => {
-  const r = await db.conn
-    .result('DELETE FROM dominio.natureza_despesa WHERE code = $<code>', { code })
+      await t.none('DELETE FROM dominio.natureza_despesa WHERE code = $<code>', { code })
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.natureza_despesa',
+        registroId: code,
+        operacao: 'D',
+        antes,
+        usuarioUuid,
+        contexto
+      })
+    })
     .catch(tratarDeletar)
-  if (!r.rowCount) throw new AppError('Natureza de despesa não encontrada', httpCode.NotFound)
+
+  aposEscritaDeDominio()
 }
 
-controller.criarPlanoInterno = async ({ code, nome, alinea }) => {
-  return db.conn
-    .none(
-      'INSERT INTO dominio.plano_interno (code, nome, alinea) VALUES ($<code>, $<nome>, $<alinea>)',
+controller.criarPlanoInterno = async ({ code, nome, alinea }, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const criado = await t.one(
+        `INSERT INTO dominio.plano_interno (code, nome, alinea)
+         VALUES ($<code>, $<nome>, $<alinea>)
+         RETURNING *`,
+        { code, nome, alinea: alinea || null }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.plano_interno',
+        registroId: criado.code,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      })
+    })
+    .catch(tratarCriar)
+
+  aposEscritaDeDominio()
+}
+
+controller.atualizarPlanoInterno = async (code, { nome, alinea }, usuarioUuid, contexto) => {
+  await db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'dominio.plano_interno',
+      code,
+      'Plano interno',
+      'code'
+    )
+
+    const depois = await t.one(
+      `UPDATE dominio.plano_interno
+       SET nome = $<nome>, alinea = $<alinea>
+       WHERE code = $<code>
+       RETURNING *`,
       { code, nome, alinea: alinea || null }
     )
-    .catch(tratarCriar)
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'dominio.plano_interno',
+      registroId: code,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+  })
+
+  aposEscritaDeDominio()
 }
 
-controller.atualizarPlanoInterno = async (code, { nome, alinea }) => {
-  const r = await db.conn.result(
-    'UPDATE dominio.plano_interno SET nome = $<nome>, alinea = $<alinea> WHERE code = $<code>',
-    { code, nome, alinea: alinea || null }
-  )
-  if (!r.rowCount) throw new AppError('Plano interno não encontrado', httpCode.NotFound)
-}
+controller.deletarPlanoInterno = async (code, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'dominio.plano_interno',
+        code,
+        'Plano interno',
+        'code'
+      )
 
-controller.deletarPlanoInterno = async code => {
-  const r = await db.conn
-    .result('DELETE FROM dominio.plano_interno WHERE code = $<code>', { code })
+      await t.none('DELETE FROM dominio.plano_interno WHERE code = $<code>', { code })
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.plano_interno',
+        registroId: code,
+        operacao: 'D',
+        antes,
+        usuarioUuid,
+        contexto
+      })
+    })
     .catch(tratarDeletar)
-  if (!r.rowCount) throw new AppError('Plano interno não encontrado', httpCode.NotFound)
+
+  aposEscritaDeDominio()
 }
 
-controller.criarUg = async ({ code, nome }) => {
-  return db.conn
-    .none('INSERT INTO dominio.ug (code, nome) VALUES ($<code>, $<nome>)', { code, nome })
+controller.criarUg = async ({ code, nome }, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const criada = await t.one(
+        `INSERT INTO dominio.ug (code, nome)
+         VALUES ($<code>, $<nome>)
+         RETURNING *`,
+        { code, nome }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.ug',
+        registroId: criada.code,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      })
+    })
     .catch(tratarCriar)
+
+  aposEscritaDeDominio()
 }
 
-controller.atualizarUg = async (code, { nome }) => {
-  const r = await db.conn.result(
-    'UPDATE dominio.ug SET nome = $<nome> WHERE code = $<code>',
-    { code, nome }
-  )
-  if (!r.rowCount) throw new AppError('Unidade gestora não encontrada', httpCode.NotFound)
+controller.atualizarUg = async (code, { nome }, usuarioUuid, contexto) => {
+  await db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'dominio.ug',
+      code,
+      'Unidade gestora',
+      'code'
+    )
+
+    const depois = await t.one(
+      `UPDATE dominio.ug SET nome = $<nome> WHERE code = $<code> RETURNING *`,
+      { code, nome }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'dominio.ug',
+      registroId: code,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+  })
+
+  aposEscritaDeDominio()
 }
 
-controller.deletarUg = async code => {
-  const r = await db.conn
-    .result('DELETE FROM dominio.ug WHERE code = $<code>', { code })
+controller.deletarUg = async (code, usuarioUuid, contexto) => {
+  await db.conn
+    .tx(async t => {
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'dominio.ug',
+        code,
+        'Unidade gestora',
+        'code'
+      )
+
+      await t.none('DELETE FROM dominio.ug WHERE code = $<code>', { code })
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'dominio.ug',
+        registroId: code,
+        operacao: 'D',
+        antes,
+        usuarioUuid,
+        contexto
+      })
+    })
     .catch(tratarDeletar)
-  if (!r.rowCount) throw new AppError('Unidade gestora não encontrada', httpCode.NotFound)
+
+  aposEscritaDeDominio()
 }
 
 module.exports = controller

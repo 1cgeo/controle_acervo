@@ -97,7 +97,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: dominioSchema.naturezaDespesaCriar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.criarNaturezaDespesa(req.body)
+    await dominioCtrl.criarNaturezaDespesa(req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Natureza de despesa criada com sucesso', httpCode.Created)
   })
 )
@@ -107,7 +107,7 @@ router.put(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams, body: dominioSchema.naturezaDespesaAtualizar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.atualizarNaturezaDespesa(req.params.code, req.body)
+    await dominioCtrl.atualizarNaturezaDespesa(req.params.code, req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Natureza de despesa atualizada com sucesso', httpCode.OK)
   })
 )
@@ -117,7 +117,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.deletarNaturezaDespesa(req.params.code)
+    await dominioCtrl.deletarNaturezaDespesa(req.params.code, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Natureza de despesa excluída com sucesso', httpCode.OK)
   })
 )
@@ -131,7 +131,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: dominioSchema.planoInternoCriar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.criarPlanoInterno(req.body)
+    await dominioCtrl.criarPlanoInterno(req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Plano interno criado com sucesso', httpCode.Created)
   })
 )
@@ -141,7 +141,7 @@ router.put(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams, body: dominioSchema.planoInternoAtualizar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.atualizarPlanoInterno(req.params.code, req.body)
+    await dominioCtrl.atualizarPlanoInterno(req.params.code, req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Plano interno atualizado com sucesso', httpCode.OK)
   })
 )
@@ -151,7 +151,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.deletarPlanoInterno(req.params.code)
+    await dominioCtrl.deletarPlanoInterno(req.params.code, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Plano interno excluído com sucesso', httpCode.OK)
   })
 )
@@ -165,7 +165,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: dominioSchema.ugCriar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.criarUg(req.body)
+    await dominioCtrl.criarUg(req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Unidade gestora criada com sucesso', httpCode.Created)
   })
 )
@@ -175,7 +175,7 @@ router.put(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams, body: dominioSchema.ugAtualizar }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.atualizarUg(req.params.code, req.body)
+    await dominioCtrl.atualizarUg(req.params.code, req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Unidade gestora atualizada com sucesso', httpCode.OK)
   })
 )
@@ -185,7 +185,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: dominioSchema.codeParams }),
   asyncHandler(async (req, res, next) => {
-    await dominioCtrl.deletarUg(req.params.code)
+    await dominioCtrl.deletarUg(req.params.code, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Unidade gestora excluída com sucesso', httpCode.OK)
   })
 )

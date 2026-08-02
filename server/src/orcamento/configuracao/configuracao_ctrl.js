@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const controller = {}
 
 // Tabelas que carregam o campo `ano`, usadas para listar os anos com dado.
@@ -33,21 +35,56 @@ controller.get = async () => {
   return cfg
 }
 
-controller.atualizar = async (dados, usuarioUuid) => {
-  return db.conn.one(
-    `UPDATE orcamento.configuracao SET
-       uasg = $<uasg>, codom = $<codom>, ano_referencia = $<anoReferencia>,
-       data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
-     WHERE id = 1
-     RETURNING id, uasg, codom, ano_referencia`,
-    {
-      uasg: dados.uasg != null ? dados.uasg : null,
-      codom: dados.codom != null ? dados.codom : null,
-      anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
-      dataModificacao: new Date(),
-      usuarioUuid
+// Singleton (`CHECK (id = 1)`): a linha nasce no DDL e aqui so ha UPDATE.
+//
+// GANHOU TRANSACAO em 2026-08-02, com a rastreabilidade. A linha do rastro tem
+// de cair JUNTO com a mudanca que ela descreve, ou nao cair: com conexao
+// propria, um erro depois do UPDATE deixaria para tras o registro de uma
+// alteracao que nao aconteceu.
+controller.atualizar = async (dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.configuracao',
+      1,
+      'Configuração'
+    )
+
+    const depois = await t.one(
+      `UPDATE orcamento.configuracao SET
+         uasg = $<uasg>, codom = $<codom>, ano_referencia = $<anoReferencia>,
+         data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = 1
+       RETURNING *`,
+      {
+        uasg: dados.uasg != null ? dados.uasg : null,
+        codom: dados.codom != null ? dados.codom : null,
+        anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
+        dataModificacao: new Date(),
+        usuarioUuid
+      }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.configuracao',
+      registroId: 1,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    // O `RETURNING *` existe para o rastro (os dois lados do diff saem do
+    // BANCO), e a ROTA continua devolvendo o que devolvia: o carimbo de
+    // escrituracao nao e resposta de API.
+    return {
+      id: depois.id,
+      uasg: depois.uasg,
+      codom: depois.codom,
+      ano_referencia: depois.ano_referencia
     }
-  )
+  })
 }
 
 // Lista os anos distintos que tem dado (qualquer tabela do schema), em ordem

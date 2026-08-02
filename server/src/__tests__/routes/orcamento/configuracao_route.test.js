@@ -6,7 +6,7 @@
 //   * PUT /configuracao        -> atualiza e devolve a config (mock db.conn.one)
 //   * GET /configuracao/anos   -> devolve a lista de anos (mock db.conn.any)
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -51,13 +51,27 @@ describe('GET /configuracao', () => {
 })
 
 describe('PUT /configuracao', () => {
-  test('atualiza e devolve a configuracao', async () => {
+  // A ORDEM das consultas mudou com a rastreabilidade: o `lerAntes` (oneOrNone)
+  // vem ANTES do UPDATE, e e ele que produz o `dados_antes`. Este e o unico
+  // ajuste que a fase 4 pediu nos testes mockados, e ele se repete em todo caso
+  // de `atualizar` e `deletar` do modulo.
+  const preparaUpdate = () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 1,
+      uasg: '160382',
+      codom: '048215',
+      ano_referencia: 2026
+    })
     mockDb.conn.one.mockResolvedValueOnce({
       id: 1,
       uasg: '160500',
       codom: '048215',
       ano_referencia: 2027
     })
+  }
+
+  test('atualiza e devolve a configuracao', async () => {
+    preparaUpdate()
     const res = await request(app)
       .put('/configuracao')
       .send({ uasg: '160500', codom: '048215', ano_referencia: 2027 })
@@ -68,6 +82,28 @@ describe('PUT /configuracao', () => {
       expect.stringContaining('UPDATE orcamento.configuracao'),
       expect.objectContaining({ uasg: '160500', anoReferencia: 2027 })
     )
+  })
+
+  test('registra o evento de rastreabilidade com o autor do token', async () => {
+    preparaUpdate()
+    await request(app)
+      .put('/configuracao')
+      .send({ uasg: '160500', codom: '048215', ano_referencia: 2027 })
+
+    const eventos = eventosDeAuditoria(mockDb)
+    expect(eventos).toHaveLength(1)
+    expect(eventos[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'configuracao',
+      // Singleton: a ficha e a propria pagina Configuração, e o agregado e
+      // sempre 1.
+      entidadeId: '1',
+      tabela: 'orcamento.configuracao',
+      operacao: 'U',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
+    // O diff e CALCULADO dos dois lados lidos do banco.
+    expect(eventos[0].camposAlterados).toEqual(['ano_referencia', 'uasg'])
   })
 
   test('ano_referencia string (strict) vira 400 (validacao Joi)', async () => {

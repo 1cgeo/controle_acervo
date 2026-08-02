@@ -3,6 +3,7 @@
 const { db } = require("../database");
 
 const { AppError, httpCode, preserveOmitted } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 
 const controller = {};
 
@@ -18,7 +19,7 @@ controller.getProjetos = async () => {
   );
 };
 
-controller.criaProjeto = async (projeto, usuarioUuid) => {
+controller.criaProjeto = async (projeto, usuarioUuid, contexto) => {
   projeto.data_cadastramento = new Date();
   projeto.usuario_cadastramento_uuid = usuarioUuid;
 
@@ -32,13 +33,25 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
       'usuario_cadastramento_uuid'
     ]);
 
+    // `RETURNING *` no lugar de `RETURNING id, nome`: o rastro grava a linha que
+    // o BANCO produziu, e nao o corpo da requisicao. A RESPOSTA da rota nao
+    // muda, porque quem a decide e o objeto montado abaixo.
     const query = db.pgp.helpers.insert(projeto, cs, {
       table: 'projeto',
       schema: 'acervo'
-    }) + ' RETURNING id, nome';
+    }) + ' RETURNING *';
 
     const result = await t.one(query);
-    
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.projeto',
+      registroId: result.id,
+      operacao: 'I',
+      depois: result,
+      usuarioUuid,
+      contexto
+    });
+
     return {
       id: result.id,
       nome: result.nome,
@@ -47,15 +60,20 @@ controller.criaProjeto = async (projeto, usuarioUuid) => {
   });
 };
 
-controller.atualizaProjeto = async (projeto, usuarioUuid) => {
+controller.atualizaProjeto = async (projeto, usuarioUuid, contexto) => {
   projeto.data_modificacao = new Date();
   projeto.usuario_modificacao_uuid = usuarioUuid;
   return db.conn.tx(async t => {
+    // A linha INTEIRA antes da mudanca, na MESMA transacao que vai altera-la.
+    // Ela tambem passa a dar o 404 amigavel que este UPDATE nao tinha: sem ela,
+    // id inexistente estourava o `t.one` com a mensagem crua do driver.
+    const antes = await auditoriaCtrl.lerAntes(t, 'acervo.projeto', projeto.id, 'Projeto');
+
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'nome', { name: 'descricao', def: null }, 
+      'id', 'nome', { name: 'descricao', def: null },
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao_id', 
+      'status_execucao_id',
       {name: 'data_modificacao', cast: 'timestamptz'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}
     ]);
@@ -69,10 +87,20 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id RETURNING X.nome';
-      
+      ) + ' WHERE Y.id = X.id RETURNING X.*';
+
     const result = await t.one(query);
-    
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.projeto',
+      registroId: projeto.id,
+      operacao: 'U',
+      antes,
+      depois: result,
+      usuarioUuid,
+      contexto
+    });
+
     return {
       id: projeto.id,
       nome: result.nome,
@@ -81,10 +109,13 @@ controller.atualizaProjeto = async (projeto, usuarioUuid) => {
   });
 };
 
-controller.deleteProjetos = async (projetoIds) => {
+controller.deleteProjetos = async (projetoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    // `SELECT *` no lugar de `SELECT id, nome`: e o `dados_antes` da exclusao,
+    // pela mesma ida ao banco que a conferencia de existencia ja custava. Sem
+    // ele o evento diria que o projeto foi apagado sem dizer o que se perdeu.
     const exists = await t.any(
-      `SELECT id, nome FROM acervo.projeto
+      `SELECT * FROM acervo.projeto
       WHERE id in ($<projetoIds:csv>)`,
       { projetoIds }
     );
@@ -116,7 +147,21 @@ controller.deleteProjetos = async (projetoIds) => {
       WHERE id in ($<projetoIds:csv>)`,
       { projetoIds }
     );
-    
+
+    // Um evento por PROJETO apagado, e nao um com a contagem: "o projeto X, que
+    // ia de tal data a tal data, foi apagado" e a informacao de que se precisa.
+    // O `loteId` do contexto amarra os N eventos da mesma requisicao.
+    for (const projeto of exists) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.projeto',
+        registroId: projeto.id,
+        operacao: 'D',
+        antes: projeto,
+        usuarioUuid,
+        contexto
+      });
+    }
+
     const deletedNames = exists.map(p => p.nome);
     
     return {
@@ -141,7 +186,7 @@ controller.getLotes = async () => {
   );
 };
 
-controller.criaLote = async (lote, usuarioUuid) => {
+controller.criaLote = async (lote, usuarioUuid, contexto) => {
   lote.data_cadastramento = new Date();
   lote.usuario_cadastramento_uuid = usuarioUuid;
   return db.conn.tx(async t => {
@@ -169,10 +214,19 @@ controller.criaLote = async (lote, usuarioUuid) => {
     const query = db.pgp.helpers.insert(lote, cs, {
       table: 'lote',
       schema: 'acervo'
-    }) + ' RETURNING id, nome, pit';
+    }) + ' RETURNING *';
 
     const result = await t.one(query);
-    
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.lote',
+      registroId: result.id,
+      operacao: 'I',
+      depois: result,
+      usuarioUuid,
+      contexto
+    });
+
     return {
       id: result.id,
       nome: result.nome,
@@ -182,11 +236,15 @@ controller.criaLote = async (lote, usuarioUuid) => {
   });
 };
 
-controller.atualizaLote = async (lote, usuarioUuid) => {
+controller.atualizaLote = async (lote, usuarioUuid, contexto) => {
   lote.data_modificacao = new Date();
   lote.usuario_modificacao_uuid = usuarioUuid;
 
   return db.conn.tx(async t => {
+    // Antes do `preserveOmitted`, que já lê a linha: o `antes` tem de descrever
+    // o estado que a requisição encontrou, e não um estado meio preenchido.
+    const antes = await auditoriaCtrl.lerAntes(t, 'acervo.lote', lote.id, 'Lote');
+
     // descricao é o único campo optional deste PUT e o def:null do ColumnSet
     // apagava a descrição gravada de quem omitiu a chave. Ausente agora
     // preserva; null explícito ainda limpa.
@@ -227,10 +285,20 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id RETURNING X.nome, X.pit';
+      ) + ' WHERE Y.id = X.id RETURNING X.*';
 
     const result = await t.one(query);
-    
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.lote',
+      registroId: lote.id,
+      operacao: 'U',
+      antes,
+      depois: result,
+      usuarioUuid,
+      contexto
+    });
+
     return {
       id: lote.id,
       nome: result.nome,
@@ -240,10 +308,12 @@ controller.atualizaLote = async (lote, usuarioUuid) => {
   });
 };
 
-controller.deleteLotes = async (loteIds) => {
+controller.deleteLotes = async (loteIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    // `SELECT *` pelo mesmo motivo de deleteProjetos: e o `dados_antes`, pela
+    // ida ao banco que a conferencia de existencia ja custava.
     const exists = await t.any(
-      `SELECT id, nome, pit FROM acervo.lote
+      `SELECT * FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,
       { loteIds }
     );
@@ -275,7 +345,18 @@ controller.deleteLotes = async (loteIds) => {
       WHERE id in ($<loteIds:csv>)`,
       { loteIds }
     );
-    
+
+    for (const lote of exists) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.lote',
+        registroId: lote.id,
+        operacao: 'D',
+        antes: lote,
+        usuarioUuid,
+        contexto
+      });
+    }
+
     const deletedInfo = exists.map(l => `${l.nome} (PIT: ${l.pit})`);
     
     return {

@@ -46,7 +46,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: notaCreditoSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await notaCreditoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await notaCreditoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de credito criada com sucesso'
 
@@ -62,7 +62,7 @@ router.put(
     params: notaCreditoSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await notaCreditoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await notaCreditoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de credito atualizada com sucesso'
 
@@ -75,7 +75,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: notaCreditoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await notaCreditoCtrl.deletar(req.params.id)
+    await notaCreditoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de credito excluida com sucesso'
 

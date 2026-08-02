@@ -39,7 +39,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: dfdSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await dfdCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await dfdCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(true, 'DFD criado com sucesso', httpCode.Created, dados)
   })
@@ -50,7 +50,7 @@ router.put(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ params: dfdSchema.idParams, body: dfdSchema.atualizar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await dfdCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    const dados = await dfdCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(true, 'DFD atualizado com sucesso', httpCode.OK, dados)
   })
@@ -61,7 +61,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: dfdSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await dfdCtrl.deletar(req.params.id)
+    await dfdCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(true, 'DFD excluído com sucesso', httpCode.OK)
   })

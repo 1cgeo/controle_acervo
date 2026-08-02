@@ -5,7 +5,13 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
-const auditoriaCtrl = require("./auditoria_ctrl");
+// A rastreabilidade e do SISTEMA, e nao da mapoteca: `mapoteca/auditoria_ctrl.js`
+// existiu entre 2026-07-30 e 2026-08-02 e subiu para `../auditoria` quando o
+// rastro deixou de ser do pedido. O `modulo`, a `entidade` e o `entidade_id` de
+// cada evento saem do mapa (`../auditoria/mapa/mapoteca.js`), e nao daqui: dois
+// controllers escrevendo na mesma tabela com entidades diferentes seria
+// divergencia que nada acusa.
+const auditoriaCtrl = require("../auditoria/auditoria_ctrl");
 const {
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
@@ -254,9 +260,13 @@ controller.getClienteById = async (clienteId) => {
   });
 };
 
-controller.criaCliente = async (cliente, usuarioUuid) => {
-  const usuarioId = await getUsuarioId(usuarioUuid);
-
+// `mapoteca.cliente` NAO tem coluna de escrituracao (nem usuario_criacao_id nem
+// data_criacao), e por isso as tres funcoes abaixo nao resolvem o id inteiro do
+// usuario: ele nao teria onde ser gravado. Ate 2026-08-02 elas o resolviam
+// mesmo assim, numa variavel que nunca era usada -- uma ida ao banco por
+// cadastro, sem efeito nenhum. Quem responde "quem mexeu" aqui e o evento de
+// rastreabilidade, que grava o UUID do token.
+controller.criaCliente = async (cliente, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
@@ -266,19 +276,36 @@ controller.criaCliente = async (cliente, usuarioUuid) => {
       'tipo_cliente_id'
     ]);
 
+    // RETURNING * porque a linha gravada e o `dados_depois` do evento, e o id
+    // dela e o `registro_id`. A rota nao devolve corpo, entao nada muda para o
+    // cliente.
     const query = db.pgp.helpers.insert(cliente, cs, {
       table: 'cliente',
       schema: 'mapoteca'
-    });
+    }) + ' RETURNING *';
 
-    await t.none(query);
+    const criado = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.cliente',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.atualizaCliente = async (cliente, usuarioUuid) => {
-  const usuarioId = await getUsuarioId(usuarioUuid);
-
+controller.atualizaCliente = async (cliente, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    // A linha INTEIRA antes da mudanca, e o 404 de quebra: e a mesma ida ao
+    // banco que o `SELECT id` de conferencia custava, agora servindo tambem de
+    // `dados_antes`.
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.cliente', cliente.id, 'Cliente'
+    );
+
     // A tela de cliente ainda nao conhece `sigla`. Sem isto, editar o endereco
     // pela tela apagaria a sigla carregada, com 200 e sem aviso: e a armadilha
     // do PUT de 2026-07-25. Ausente preserva; null explicito ainda limpa.
@@ -298,21 +325,29 @@ controller.atualizaCliente = async (cliente, usuarioUuid) => {
       'tipo_cliente_id'
     ], { table: { table: 'cliente', schema: 'mapoteca' } });
 
-    const query = db.pgp.helpers.update(cliente, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(cliente, cs) + ' WHERE id = $1 RETURNING *';
 
-    const result = await t.result(query, [cliente.id]);
+    const depois = await t.one(query, [cliente.id]);
 
-    if (result.rowCount === 0) {
-      throw new AppError('Cliente não encontrado', httpCode.NotFound);
-    }
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.cliente',
+      registroId: cliente.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.deleteClientes = async (clienteIds) => {
+controller.deleteClientes = async (clienteIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs de cliente existem
+    // Verificar se todos os IDs de cliente existem.
+    // SELECT * e nao SELECT id: a linha inteira vira o `dados_antes` do evento,
+    // e depois do DELETE nao ha mais de onde tira-la.
     const existingClients = await t.any(
-      `SELECT id FROM mapoteca.cliente WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.cliente WHERE id IN ($1:csv)`,
       [clienteIds]
     );
 
@@ -337,6 +372,17 @@ controller.deleteClientes = async (clienteIds) => {
         `Não é possível excluir os clientes com IDs: ${clientsWithOrders.join(', ')} pois possuem pedidos associados`,
         httpCode.BadRequest
       );
+    }
+
+    for (const cliente of existingClients) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.cliente',
+        registroId: cliente.id,
+        operacao: 'D',
+        antes: cliente,
+        usuarioUuid,
+        contexto
+      });
     }
 
     // Se não houver pedidos associados, deletar os clientes
@@ -701,7 +747,7 @@ controller.getPedidoById = async (pedidoId) => {
   });
 };
 
-controller.criaPedido = async (pedido, usuarioUuid) => {
+controller.criaPedido = async (pedido, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -752,19 +798,19 @@ controller.criaPedido = async (pedido, usuarioUuid) => {
     const criado = await t.one(query);
 
     await auditoriaCtrl.registrar(t, {
-      pedidoId: criado.id,
-      tabela: 'pedido',
+      tabela: 'mapoteca.pedido',
       registroId: criado.id,
       operacao: 'I',
       depois: criado,
-      usuarioUuid
+      usuarioUuid,
+      contexto
     });
 
     return { id: criado.id, localizador_pedido: criado.localizador_pedido };
   });
 };
 
-controller.atualizaPedido = async (pedido, usuarioUuid) => {
+controller.atualizaPedido = async (pedido, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -826,13 +872,13 @@ controller.atualizaPedido = async (pedido, usuarioUuid) => {
     );
 
     await auditoriaCtrl.registrar(t, {
-      pedidoId: pedido.id,
-      tabela: 'pedido',
+      tabela: 'mapoteca.pedido',
       registroId: pedido.id,
       operacao: 'U',
       antes: pedidoAtual,
       depois: pedidoNovo,
-      usuarioUuid
+      usuarioUuid,
+      contexto
     });
   });
 };
@@ -915,7 +961,7 @@ controller.getPedidoByLocalizador = async (localizador) => {
   });
 };
 
-controller.deletePedidos = async (pedidoIds, usuarioUuid) => {
+controller.deletePedidos = async (pedidoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Verificar se todos os IDs de pedido existem.
     // SELECT * e nao SELECT id: a linha inteira vira o dados_antes da auditoria,
@@ -955,34 +1001,39 @@ controller.deletePedidos = async (pedidoIds, usuarioUuid) => {
     for (const impressao of impressoes) {
       const { pedido_id: pedidoId, ...linha } = impressao;
       await auditoriaCtrl.registrar(t, {
-        pedidoId,
-        tabela: 'impressao_item',
+        tabela: 'mapoteca.impressao_item',
         registroId: linha.id,
         operacao: 'D',
         antes: linha,
-        usuarioUuid
+        usuarioUuid,
+        contexto,
+        // O mapa resolve o pedido da impressao por uma consulta a
+        // produto_pedido, e aqui o item JA ESTA apagado quando esse caminho
+        // rodaria. O pedido dono ja veio no JOIN acima: passa-lo evita a
+        // consulta redundante e o nulo que ela devolveria.
+        entidadeId: pedidoId
       });
     }
 
     for (const item of itens) {
       await auditoriaCtrl.registrar(t, {
-        pedidoId: item.pedido_id,
-        tabela: 'produto_pedido',
+        tabela: 'mapoteca.produto_pedido',
         registroId: item.id,
         operacao: 'D',
         antes: item,
-        usuarioUuid
+        usuarioUuid,
+        contexto
       });
     }
 
     for (const pedido of existingOrders) {
       await auditoriaCtrl.registrar(t, {
-        pedidoId: pedido.id,
-        tabela: 'pedido',
+        tabela: 'mapoteca.pedido',
         registroId: pedido.id,
         operacao: 'D',
         antes: pedido,
-        usuarioUuid
+        usuarioUuid,
+        contexto
       });
     }
 
@@ -1001,7 +1052,7 @@ controller.deletePedidos = async (pedidoIds, usuarioUuid) => {
 };
 
 // Funções para Produto do Pedido
-controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
+controller.criaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -1048,17 +1099,17 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid) => {
     const criado = await t.one(query);
 
     await auditoriaCtrl.registrar(t, {
-      pedidoId: criado.pedido_id,
-      tabela: 'produto_pedido',
+      tabela: 'mapoteca.produto_pedido',
       registroId: criado.id,
       operacao: 'I',
       depois: criado,
-      usuarioUuid
+      usuarioUuid,
+      contexto
     });
   });
 };
 
-controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
+controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -1100,18 +1151,18 @@ controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid) => {
     );
 
     await auditoriaCtrl.registrar(t, {
-      pedidoId: itemNovo.pedido_id,
-      tabela: 'produto_pedido',
+      tabela: 'mapoteca.produto_pedido',
       registroId: itemNovo.id,
       operacao: 'U',
       antes: itemAtual,
       depois: itemNovo,
-      usuarioUuid
+      usuarioUuid,
+      contexto
     });
   });
 };
 
-controller.deleteProdutosPedido = async (produtoPedidoIds, usuarioUuid) => {
+controller.deleteProdutosPedido = async (produtoPedidoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Verificar se todos os IDs existem.
     // SELECT * e nao SELECT id: a linha inteira vira o dados_antes da auditoria,
@@ -1140,23 +1191,26 @@ controller.deleteProdutosPedido = async (produtoPedidoIds, usuarioUuid) => {
     for (const impressao of impressoes) {
       const { pedido_id: pedidoId, ...linha } = impressao;
       await auditoriaCtrl.registrar(t, {
-        pedidoId,
-        tabela: 'impressao_item',
+        tabela: 'mapoteca.impressao_item',
         registroId: linha.id,
         operacao: 'D',
         antes: linha,
-        usuarioUuid
+        usuarioUuid,
+        contexto,
+        // O pedido dono ja veio no JOIN: sem isto o mapa iria buscar o item
+        // que este mesmo DELETE esta prestes a apagar.
+        entidadeId: pedidoId
       });
     }
 
     for (const item of existingProducts) {
       await auditoriaCtrl.registrar(t, {
-        pedidoId: item.pedido_id,
-        tabela: 'produto_pedido',
+        tabela: 'mapoteca.produto_pedido',
         registroId: item.id,
         operacao: 'D',
         antes: item,
-        usuarioUuid
+        usuarioUuid,
+        contexto
       });
     }
 
@@ -1287,12 +1341,12 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
  * Qualquer usuário logado pode registrar — é log operacional, não gestão de
  * catálogo. O total impresso por item é a soma dos registros.
  */
-controller.registrarImpressao = async (registros, usuarioUuid) => {
+controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const ids = [...new Set(registros.map(r => r.produto_pedido_id))];
 
-    // pedido_id vem junto porque a auditoria e POR PEDIDO: o registro nasce no
-    // item, mas quem le o historico procura pelo pedido dono dele.
+    // pedido_id vem junto porque o agregado da auditoria e o PEDIDO: o registro
+    // nasce no item, mas quem le o historico procura pelo pedido dono dele.
     const existentes = await t.any(
       `SELECT id, pedido_id FROM mapoteca.produto_pedido WHERE id IN ($<ids:csv>)`,
       { ids }
@@ -1327,12 +1381,15 @@ controller.registrarImpressao = async (registros, usuarioUuid) => {
 
     for (const registro of inseridos) {
       await auditoriaCtrl.registrar(t, {
-        pedidoId: pedidoDoItem.get(Number(registro.produto_pedido_id)),
-        tabela: 'impressao_item',
+        tabela: 'mapoteca.impressao_item',
         registroId: registro.id,
         operacao: 'I',
         depois: registro,
-        usuarioUuid
+        usuarioUuid,
+        contexto,
+        // O pedido dono ja saiu da consulta acima, para todos os itens de uma
+        // vez: sem isto o mapa faria uma consulta a produto_pedido POR registro.
+        entidadeId: pedidoDoItem.get(Number(registro.produto_pedido_id))
       });
     }
   });
@@ -1376,7 +1433,7 @@ controller.getImpressoesItem = async (produtoPedidoId) => {
 };
 
 // Remove registros de impressão (correções — somente admin)
-controller.deleteImpressoes = async (impressaoIds, usuarioUuid) => {
+controller.deleteImpressoes = async (impressaoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // A linha inteira, mais o pedido dono: e o dados_antes da auditoria, e
     // depois do DELETE nao ha mais de onde tira-la.
@@ -1400,12 +1457,13 @@ controller.deleteImpressoes = async (impressaoIds, usuarioUuid) => {
     for (const impressao of existentes) {
       const { pedido_id: pedidoId, ...linha } = impressao;
       await auditoriaCtrl.registrar(t, {
-        pedidoId,
-        tabela: 'impressao_item',
+        tabela: 'mapoteca.impressao_item',
         registroId: linha.id,
         operacao: 'D',
         antes: linha,
-        usuarioUuid
+        usuarioUuid,
+        contexto,
+        entidadeId: pedidoId
       });
     }
 
@@ -1513,7 +1571,11 @@ controller.getPlotterById = async (plotterId) => {
   });
 };
 
-controller.criaPlotter = async (plotter, usuarioUuid) => {
+// Como `mapoteca.cliente`, `mapoteca.plotter` nao tem coluna de escrituracao.
+// As duas primeiras funcoes recebiam `usuarioUuid` e o IGNORAVAM por completo
+// ate 2026-08-02: nem "quem mexeu por ultimo" existia. Agora ele vai para o
+// evento de rastreabilidade, que e onde o autor cabe.
+controller.criaPlotter = async (plotter, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'ativo', 'nr_serie', 'modelo',
@@ -1524,35 +1586,55 @@ controller.criaPlotter = async (plotter, usuarioUuid) => {
     const query = db.pgp.helpers.insert(plotter, cs, {
       table: 'plotter',
       schema: 'mapoteca'
-    });
+    }) + ' RETURNING *';
 
-    await t.none(query);
+    const criado = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.plotter',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.atualizaPlotter = async (plotter, usuarioUuid) => {
+controller.atualizaPlotter = async (plotter, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.plotter', plotter.id, 'Plotter'
+    );
+
     const cs = new db.pgp.helpers.ColumnSet([
       'ativo', 'nr_serie', 'modelo',
       { name: 'data_aquisicao', def: null },
       { name: 'vida_util', def: null }
     ], { table: { table: 'plotter', schema: 'mapoteca' } });
 
-    const query = db.pgp.helpers.update(plotter, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(plotter, cs) + ' WHERE id = $1 RETURNING *';
 
-    const result = await t.result(query, [plotter.id]);
+    const depois = await t.one(query, [plotter.id]);
 
-    if (result.rowCount === 0) {
-      throw new AppError('Plotter não encontrado', httpCode.NotFound);
-    }
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.plotter',
+      registroId: plotter.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.deletePlotters = async (plotterIds) => {
+controller.deletePlotters = async (plotterIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs de plotter existem
+    // Verificar se todos os IDs de plotter existem.
+    // SELECT * porque a linha inteira e o `dados_antes` do evento.
     const existingPlotters = await t.any(
-      `SELECT id FROM mapoteca.plotter WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.plotter WHERE id IN ($1:csv)`,
       [plotterIds]
     );
 
@@ -1576,6 +1658,17 @@ controller.deletePlotters = async (plotterIds) => {
         `Não é possível excluir os plotters com IDs: ${plottersWithMaintenance.join(', ')} pois possuem manutenções associadas`,
         httpCode.BadRequest
       );
+    }
+
+    for (const plotter of existingPlotters) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.plotter',
+        registroId: plotter.id,
+        operacao: 'D',
+        antes: plotter,
+        usuarioUuid,
+        contexto
+      });
     }
 
     // Se não houver manutenções associadas, deletar os plotters
@@ -1602,7 +1695,7 @@ controller.getManutencoesPlotter = async () => {
   `);
 };
 
-controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
+controller.criaManutencaoPlotter = async (manutencao, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -1628,16 +1721,29 @@ controller.criaManutencaoPlotter = async (manutencao, usuarioUuid) => {
     const query = db.pgp.helpers.insert(manutencao, cs, {
       table: 'manutencao_plotter',
       schema: 'mapoteca'
-    });
+    }) + ' RETURNING *';
 
-    await t.none(query);
+    const criada = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.manutencao_plotter',
+      registroId: criada.id,
+      operacao: 'I',
+      depois: criada,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.atualizaManutencaoPlotter = async (manutencao, usuarioUuid) => {
+controller.atualizaManutencaoPlotter = async (manutencao, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.manutencao_plotter', manutencao.id, 'Manutenção de plotter'
+    );
+
     manutencao.usuario_atualizacao_id = usuarioId;
     manutencao.data_atualizacao = new Date();
 
@@ -1647,21 +1753,28 @@ controller.atualizaManutencaoPlotter = async (manutencao, usuarioUuid) => {
       'usuario_atualizacao_id', 'data_atualizacao'
     ], { table: { table: 'manutencao_plotter', schema: 'mapoteca' } });
 
-    const query = db.pgp.helpers.update(manutencao, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(manutencao, cs) + ' WHERE id = $1 RETURNING *';
 
-    const result = await t.result(query, [manutencao.id]);
+    const depois = await t.one(query, [manutencao.id]);
 
-    if (result.rowCount === 0) {
-      throw new AppError('Manutenção de plotter não encontrada', httpCode.NotFound);
-    }
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.manutencao_plotter',
+      registroId: manutencao.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.deleteManutencoesPlotter = async (manutencaoIds) => {
+controller.deleteManutencoesPlotter = async (manutencaoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem
+    // Verificar se todos os IDs existem.
+    // SELECT * porque a linha inteira e o `dados_antes` do evento.
     const existingMaintenance = await t.any(
-      `SELECT id FROM mapoteca.manutencao_plotter WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.manutencao_plotter WHERE id IN ($1:csv)`,
       [manutencaoIds]
     );
 
@@ -1669,6 +1782,17 @@ controller.deleteManutencoesPlotter = async (manutencaoIds) => {
       const existingIds = existingMaintenance.map(m => m.id);
       const missingIds = manutencaoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`As seguintes manutenções não foram encontradas: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    for (const manutencao of existingMaintenance) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.manutencao_plotter',
+        registroId: manutencao.id,
+        operacao: 'D',
+        antes: manutencao,
+        usuarioUuid,
+        contexto
+      });
     }
 
     return t.any(
@@ -1779,7 +1903,9 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
   });
 };
 
-controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
+// `mapoteca.tipo_material` tambem nao tem coluna de escrituracao, e esta funcao
+// recebia `usuarioUuid` e o ignorava. O autor passa a viver no evento.
+controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
@@ -1792,18 +1918,35 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
       { name: 'ativo', def: true }
     ]);
 
+    // RETURNING *, e nao RETURNING id: a linha inteira e o `dados_depois` do
+    // evento. A rota continua devolvendo so o id, porque quem monta a resposta
+    // e o valor devolvido aqui embaixo.
     const query = db.pgp.helpers.insert(tipoMaterial, cs, {
       table: 'tipo_material',
       schema: 'mapoteca'
-    }) + ' RETURNING id';
+    }) + ' RETURNING *';
 
-    const result = await t.one(query);
-    return result.id;
+    const criado = await t.one(query);
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.tipo_material',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    });
+
+    return criado.id;
   });
 };
 
-controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
+controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.tipo_material', tipoMaterial.id, 'Tipo de material'
+    );
+
     // Chave ausente = "não mexe": omitir ativo ressuscitava material desativado,
     // e omitir categoria_id jogaria o material de volta para Outro, tirando-o
     // da tabela 7.2 ou 7.3 do RPCMTec sem ninguém ter pedido.
@@ -1824,21 +1967,28 @@ controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid) => {
       { name: 'ativo', def: true }
     ], { table: { table: 'tipo_material', schema: 'mapoteca' } });
 
-    const query = db.pgp.helpers.update(tipoMaterial, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(tipoMaterial, cs) + ' WHERE id = $1 RETURNING *';
 
-    const result = await t.result(query, [tipoMaterial.id]);
+    const depois = await t.one(query, [tipoMaterial.id]);
 
-    if (result.rowCount === 0) {
-      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
-    }
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.tipo_material',
+      registroId: tipoMaterial.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.deleteTiposMaterial = async (tipoMaterialIds) => {
+controller.deleteTiposMaterial = async (tipoMaterialIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem
+    // Verificar se todos os IDs existem.
+    // SELECT * porque a linha inteira e o `dados_antes` do evento.
     const existingTypes = await t.any(
-      `SELECT id FROM mapoteca.tipo_material WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.tipo_material WHERE id IN ($1:csv)`,
       [tipoMaterialIds]
     );
 
@@ -1880,6 +2030,17 @@ controller.deleteTiposMaterial = async (tipoMaterialIds) => {
       );
     }
 
+    for (const tipo of existingTypes) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.tipo_material',
+        registroId: tipo.id,
+        operacao: 'D',
+        antes: tipo,
+        usuarioUuid,
+        contexto
+      });
+    }
+
     // Finalmente, excluir os tipos de material
     return t.any(
       `DELETE FROM mapoteca.tipo_material WHERE id IN ($1:csv)`,
@@ -1917,7 +2078,7 @@ controller.getEstoquePorLocalizacao = async () => {
   `);
 };
 
-controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
+controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -1941,10 +2102,22 @@ controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
       throw new AppError('Localização não encontrada', httpCode.NotFound);
     }
 
+    // "Criar" AQUI pode ser um UPDATE mudo: a rota e um upsert, e quem chama
+    // duas vezes com o mesmo par (material, localizacao) esta redefinindo o
+    // nivel de estoque, nao criando linha nova. O evento tem de dizer QUAL dos
+    // dois foi, senao o historico do material registraria uma criacao que nunca
+    // houve. Por isso a leitura antes: a linha anterior e o `dados_antes`, e a
+    // ausencia dela e o que faz a operacao ser 'I'.
+    const antes = await t.oneOrNone(
+      `SELECT * FROM mapoteca.estoque_material
+        WHERE tipo_material_id = $1 AND localizacao_id = $2`,
+      [estoqueMaterial.tipo_material_id, estoqueMaterial.localizacao_id]
+    );
+
     // Upsert atômico (check-then-insert tinha corrida com a UNIQUE
     // tipo_material/localizacao). Semântica preservada: define o nível
     // de estoque (substitui a quantidade existente).
-    const result = await t.one(
+    const depois = await t.one(
       `INSERT INTO mapoteca.estoque_material
          (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
        VALUES ($1, $2, $3, $4, $4)
@@ -1952,17 +2125,32 @@ controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
        DO UPDATE SET quantidade = EXCLUDED.quantidade,
                      usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id,
                      data_atualizacao = CURRENT_TIMESTAMP
-       RETURNING id`,
+       RETURNING *`,
       [estoqueMaterial.tipo_material_id, estoqueMaterial.quantidade, estoqueMaterial.localizacao_id, usuarioId]
     );
-    return result.id;
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.estoque_material',
+      registroId: depois.id,
+      operacao: antes ? 'U' : 'I',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
+
+    return depois.id;
   });
 };
 
-controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
+controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.estoque_material', estoqueMaterial.id, 'Registro de estoque'
+    );
+
     estoqueMaterial.usuario_atualizacao_id = usuarioId;
     estoqueMaterial.data_atualizacao = new Date();
 
@@ -1971,11 +2159,11 @@ controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
       'usuario_atualizacao_id', 'data_atualizacao'
     ], { table: { table: 'estoque_material', schema: 'mapoteca' } });
 
-    const query = db.pgp.helpers.update(estoqueMaterial, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(estoqueMaterial, cs) + ' WHERE id = $1 RETURNING *';
 
-    let result;
+    let depois;
     try {
-      result = await t.result(query, [estoqueMaterial.id]);
+      depois = await t.one(query, [estoqueMaterial.id]);
     } catch (error) {
       // 23505: mover o registro para material+localização que já existem
       if (error.code === '23505') {
@@ -1984,17 +2172,24 @@ controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid) => {
       throw error;
     }
 
-    if (result.rowCount === 0) {
-      throw new AppError('Registro de estoque não encontrado', httpCode.NotFound);
-    }
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.estoque_material',
+      registroId: estoqueMaterial.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
-controller.deleteEstoqueMaterial = async (estoqueMaterialIds) => {
+controller.deleteEstoqueMaterial = async (estoqueMaterialIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem
+    // Verificar se todos os IDs existem.
+    // SELECT * porque a linha inteira e o `dados_antes` do evento.
     const existingStock = await t.any(
-      `SELECT id FROM mapoteca.estoque_material WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.estoque_material WHERE id IN ($1:csv)`,
       [estoqueMaterialIds]
     );
 
@@ -2002,6 +2197,17 @@ controller.deleteEstoqueMaterial = async (estoqueMaterialIds) => {
       const existingIds = existingStock.map(s => s.id);
       const missingIds = estoqueMaterialIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes registros de estoque não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    }
+
+    for (const estoque of existingStock) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.estoque_material',
+        registroId: estoque.id,
+        operacao: 'D',
+        antes: estoque,
+        usuarioUuid,
+        contexto
+      });
     }
 
     return t.any(
@@ -2014,7 +2220,7 @@ controller.deleteEstoqueMaterial = async (estoqueMaterialIds) => {
 // Transferência de material entre localizações
 // FOR UPDATE na origem serializa transferências simultâneas do mesmo material;
 // upsert no destino usa o UNIQUE (tipo_material_id, localizacao_id)
-controller.transferirMaterial = async (data, usuarioUuid) => {
+controller.transferirMaterial = async (data, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   const { tipo_material_id: tipoMaterialId, origem_id: origemId, destino_id: destinoId, quantidade } = data;
@@ -2030,9 +2236,14 @@ controller.transferirMaterial = async (data, usuarioUuid) => {
     }
 
     // Travar origem e destino em ordem determinística de localizacao_id —
-    // transferências opostas simultâneas (A→B e B→A) não deadlockam
+    // transferências opostas simultâneas (A→B e B→A) não deadlockam.
+    //
+    // SELECT * porque estas MESMAS linhas sao o `dados_antes` dos dois eventos:
+    // a transferencia escreve DUAS linhas de estoque, e cada uma tem o seu.
+    // O destino pode nao existir ainda (o upsert abaixo o cria), e ai o `antes`
+    // dele e legitimamente nulo e a operacao e uma insercao.
     const estoques = await t.any(
-      `SELECT id, localizacao_id, quantidade
+      `SELECT *
        FROM mapoteca.estoque_material
        WHERE tipo_material_id = $<tipoMaterialId>
          AND localizacao_id IN ($<origemId>, $<destinoId>)
@@ -2042,6 +2253,7 @@ controller.transferirMaterial = async (data, usuarioUuid) => {
     );
 
     const origem = estoques.find(e => e.localizacao_id === origemId);
+    const destinoAntes = estoques.find(e => e.localizacao_id === destinoId) || null;
 
     if (!origem) {
       throw new AppError(
@@ -2057,25 +2269,54 @@ controller.transferirMaterial = async (data, usuarioUuid) => {
       );
     }
 
-    await t.none(
+    const origemDepois = await t.one(
       `UPDATE mapoteca.estoque_material
        SET quantidade = quantidade - $<quantidade>,
            data_atualizacao = CURRENT_TIMESTAMP,
            usuario_atualizacao_id = $<usuarioId>
-       WHERE id = $<id>`,
+       WHERE id = $<id>
+       RETURNING *`,
       { id: origem.id, quantidade, usuarioId }
     );
 
-    await t.none(
+    const destinoDepois = await t.one(
       `INSERT INTO mapoteca.estoque_material
          (tipo_material_id, localizacao_id, quantidade, usuario_criacao_id, usuario_atualizacao_id)
        VALUES ($<tipoMaterialId>, $<destinoId>, $<quantidade>, $<usuarioId>, $<usuarioId>)
        ON CONFLICT (tipo_material_id, localizacao_id)
        DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
                      data_atualizacao = CURRENT_TIMESTAMP,
-                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id`,
+                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id
+       RETURNING *`,
       { tipoMaterialId, destinoId, quantidade, usuarioId }
     );
+
+    // DOIS eventos, um por linha de estoque escrita, e nao um evento "de
+    // transferencia": o historico do material e lido por linha de estoque, e um
+    // evento agregado nao diria de qual localizacao o saldo saiu nem para qual
+    // entrou. O `loteId` do contexto e o mesmo nos dois, e e ele que diz que os
+    // dois sao um ato so.
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.estoque_material',
+      registroId: origemDepois.id,
+      operacao: 'U',
+      antes: origem,
+      depois: origemDepois,
+      usuarioUuid,
+      contexto
+    });
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.estoque_material',
+      registroId: destinoDepois.id,
+      // O destino pode nascer aqui: o upsert cria a linha quando o material
+      // nunca esteve naquela localizacao.
+      operacao: destinoAntes ? 'U' : 'I',
+      antes: destinoAntes,
+      depois: destinoDepois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
@@ -2151,7 +2392,54 @@ controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
   `, [ano]);
 };
 
-controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
+// O EFEITO DE GATILHO NO ESTOQUE, e por que ele vira evento
+// ---------------------------------------------------------------------------
+// Os tres gatilhos de mapoteca.consumo_material (er/mapoteca.sql) mexem em
+// mapoteca.estoque_material: inserir consumo decrementa o saldo da Secao, apagar
+// devolve, alterar acerta a diferenca. Auditando so o consumo, o historico do
+// estoque ficaria VAZIO no exato momento em que o estoque muda, e a tela de
+// estoque nao teria como explicar de onde veio o saldo.
+//
+// A saida e o controller LER a linha de estoque afetada antes e depois, dentro
+// da mesma transacao, e gravar o evento com `origem: 'gatilho'` -- porque a
+// pessoa nao mexeu naquela linha diretamente, e um evento indistinguivel de uma
+// edicao manual de estoque diria que alguem a editou.
+//
+// A alternativa (declarar o estoque derivado e nao audita-lo) foi descartada:
+// o estoque e o numero que a mapoteca confere, e "derivado" nao e resposta para
+// quem pergunta por que o saldo caiu.
+const contextoDeGatilho = contexto => ({ ...(contexto || {}), origem: 'gatilho' });
+
+// O saldo da Secao de um material, que e a UNICA linha que os gatilhos de
+// consumo tocam (o consumo so pode sair da Secao, RN01). Devolve null quando a
+// linha ainda nao existe: `devolver_estoque_secao` a CRIA, entao o `antes` pode
+// ser legitimamente nulo e o evento e uma insercao.
+const lerEstoqueSecao = (t, tipoMaterialId) =>
+  t.oneOrNone(
+    `SELECT * FROM mapoteca.estoque_material
+      WHERE tipo_material_id = $<tipoMaterialId> AND localizacao_id = $<secao>`,
+    { tipoMaterialId, secao: TIPO_LOCALIZACAO.SECAO }
+  );
+
+// Grava o evento do estoque quando (e so quando) o gatilho mexeu nele. Sem a
+// comparacao, um consumo que nao muda quantidade nenhuma deixaria uma linha de
+// historico dizendo que o estoque mudou.
+const registrarEfeitoNoEstoque = async (t, { antes, depois, usuarioUuid, contexto }) => {
+  if (!depois) return;
+  if (antes && String(antes.quantidade) === String(depois.quantidade)) return;
+
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'mapoteca.estoque_material',
+    registroId: depois.id,
+    operacao: antes ? 'U' : 'I',
+    antes,
+    depois,
+    usuarioUuid,
+    contexto: contextoDeGatilho(contexto)
+  });
+};
+
+controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
@@ -2165,13 +2453,13 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
-    // Verificar se há estoque suficiente na Seção
-    // O consumo só pode ocorrer a partir do estoque da Seção (RN01)
-    const estoqueSecao = await t.oneOrNone(
-      `SELECT quantidade FROM mapoteca.estoque_material
-       WHERE tipo_material_id = $1 AND localizacao_id = $2`,
-      [consumoMaterial.tipo_material_id, TIPO_LOCALIZACAO.SECAO]
-    );
+    // Verificar se há estoque suficiente na Seção.
+    // O consumo só pode ocorrer a partir do estoque da Seção (RN01).
+    //
+    // A linha INTEIRA, e nao so a quantidade: esta pre-checagem ja existia e
+    // descartava o resto: agora ela e tambem o `dados_antes` do evento de
+    // estoque, sem custar uma ida a mais ao banco.
+    const estoqueSecao = await lerEstoqueSecao(t, consumoMaterial.tipo_material_id);
 
     if (!estoqueSecao) {
       throw new AppError(
@@ -2195,15 +2483,16 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
-    // O trigger trg_consumo_material_insert decrementa automaticamente o estoque na Seção
+    // O trigger trg_consumo_material_insert decrementa automaticamente o estoque na Seção.
+    // RETURNING * porque a linha gravada e o `dados_depois` do evento.
     const query = db.pgp.helpers.insert(consumoMaterial, cs, {
       table: 'consumo_material',
       schema: 'mapoteca'
-    }) + ' RETURNING id';
+    }) + ' RETURNING *';
 
-    let result;
+    let criado;
     try {
-      result = await t.one(query);
+      criado = await t.one(query);
     } catch (error) {
       // Sob corrida, a pré-verificação pode passar e o trigger rejeitar — 400 amigável
       if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
@@ -2211,14 +2500,50 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       }
       throw error;
     }
-    return result.id;
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.consumo_material',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    });
+
+    // O saldo DEPOIS, relido do banco: o gatilho ja rodou, e o que interessa
+    // auditar e o que o banco gravou, nao a subtracao que o JS faria de cabeca.
+    await registrarEfeitoNoEstoque(t, {
+      antes: estoqueSecao,
+      depois: await lerEstoqueSecao(t, criado.tipo_material_id),
+      usuarioUuid,
+      contexto
+    });
+
+    return criado.id;
   });
 };
 
-controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
+controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'mapoteca.consumo_material', consumoMaterial.id, 'Registro de consumo'
+    );
+
+    // DOIS materiais podem ser tocados, e nao um: quando o tipo de material
+    // muda, o gatilho devolve o saldo do ANTIGO e consome do NOVO. Ler so o
+    // novo perderia metade do efeito, que e justamente a devolucao.
+    const materiaisTocados = [...new Set([
+      Number(antes.tipo_material_id),
+      Number(consumoMaterial.tipo_material_id)
+    ])];
+
+    const estoqueAntes = new Map();
+    for (const tipoMaterialId of materiaisTocados) {
+      estoqueAntes.set(tipoMaterialId, await lerEstoqueSecao(t, tipoMaterialId));
+    }
+
     consumoMaterial.usuario_atualizacao_id = usuarioId;
     consumoMaterial.data_atualizacao = new Date();
 
@@ -2228,11 +2553,11 @@ controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
     ], { table: { table: 'consumo_material', schema: 'mapoteca' } });
 
     // O trigger trg_consumo_material_update ajusta automaticamente o estoque na Seção
-    const query = db.pgp.helpers.update(consumoMaterial, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(consumoMaterial, cs) + ' WHERE id = $1 RETURNING *';
 
-    let result;
+    let depois;
     try {
-      result = await t.result(query, [consumoMaterial.id]);
+      depois = await t.one(query, [consumoMaterial.id]);
     } catch (error) {
       // Exceções de regra de negócio dos triggers viram 400 com a mensagem original
       if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
@@ -2241,17 +2566,33 @@ controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid) => {
       throw error;
     }
 
-    if (result.rowCount === 0) {
-      throw new AppError('Registro de consumo não encontrado', httpCode.NotFound);
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.consumo_material',
+      registroId: consumoMaterial.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    });
+
+    for (const tipoMaterialId of materiaisTocados) {
+      await registrarEfeitoNoEstoque(t, {
+        antes: estoqueAntes.get(tipoMaterialId),
+        depois: await lerEstoqueSecao(t, tipoMaterialId),
+        usuarioUuid,
+        contexto
+      });
     }
   });
 };
 
-controller.deleteConsumoMaterial = async (consumoMaterialIds) => {
+controller.deleteConsumoMaterial = async (consumoMaterialIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem
+    // Verificar se todos os IDs existem.
+    // SELECT * porque a linha inteira e o `dados_antes` do evento.
     const existingConsumption = await t.any(
-      `SELECT id FROM mapoteca.consumo_material WHERE id IN ($1:csv)`,
+      `SELECT * FROM mapoteca.consumo_material WHERE id IN ($1:csv)`,
       [consumoMaterialIds]
     );
 
@@ -2261,11 +2602,44 @@ controller.deleteConsumoMaterial = async (consumoMaterialIds) => {
       throw new AppError(`Os seguintes registros de consumo não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
 
-    // O trigger trg_consumo_material_delete restaura automaticamente o estoque na Seção
-    return t.any(
-      `DELETE FROM mapoteca.consumo_material WHERE id IN ($1:csv)`,
-      [consumoMaterialIds]
-    );
+    // UM DELETE POR LINHA, e nao o `IN (...)` de antes.
+    //
+    // O gatilho trg_consumo_material_delete e FOR EACH ROW: num delete em lote
+    // ele dispara N vezes, cada uma devolvendo a quantidade daquela linha ao
+    // saldo da Secao. Num comando so, o JS enxerga apenas o saldo inicial e o
+    // final, e os N eventos de estoque teriam de ser INVENTADOS por subtracao
+    // -- que e exatamente o que o desenho proibe (os dois lados do diff saem do
+    // BANCO). Apagando linha a linha, cada evento traz uma leitura de verdade, e
+    // o `loteId` do contexto e o mesmo em todos: e ele que diz que foi um ato so.
+    //
+    // O custo e N comandos em vez de um, dentro da transacao que ja existe. O
+    // banco ja fazia N unidades de trabalho, porque o gatilho e por linha.
+    for (const consumo of existingConsumption) {
+      const estoqueAntes = await lerEstoqueSecao(t, consumo.tipo_material_id);
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.consumo_material',
+        registroId: consumo.id,
+        operacao: 'D',
+        antes: consumo,
+        usuarioUuid,
+        contexto
+      });
+
+      await t.none(
+        `DELETE FROM mapoteca.consumo_material WHERE id = $<id>`,
+        { id: consumo.id }
+      );
+
+      await registrarEfeitoNoEstoque(t, {
+        antes: estoqueAntes,
+        depois: await lerEstoqueSecao(t, consumo.tipo_material_id),
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return existingConsumption;
   });
 };
 

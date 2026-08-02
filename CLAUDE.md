@@ -208,6 +208,82 @@ SCA não tinha e não poderia ter**.
 
 - **A LÁPIDE do arquivo excluído mora num módulo só, e o vínculo com o download casa por `uuid_arquivo`, nunca por ordem.** Excluir no acervo copia o arquivo para `acervo.arquivo_deletado` e leva os downloads dele junto. Esse bloco de ~55 linhas, com 21 colunas escritas à mão, estava copiado em TRÊS lugares (`deleteArquivos`, `deleteVersoes`, `deleteProdutos`), e só o primeiro tinha teste — por uma rota, que provava a contagem e não as colunas. Acrescentar coluna a `acervo.arquivo` exigia lembrar dos três, e esquecer um não dá erro: a lápide nasce com o campo nulo e a falta só aparece quando alguém for procurar o dado. Hoje é `arquivo/arquivo_deletado.js`, na feature dona de `acervo.arquivo`, pelo mesmo desenho de `mapoteca/query_fragments.js`. Como todo dado da lápide sai da PRÓPRIA `acervo.arquivo`, virou `INSERT ... SELECT` com CTE: apagar um produto com 400 arquivos era **2.000 idas ao banco dentro de uma transação, e passou a 4**, independente da quantidade. O pareamento download → lápide usa `RETURNING id, uuid_arquivo` casado com `acervo.arquivo.uuid_arquivo` (que é UNIQUE), e **não** a ordem em que o banco devolve os ids: por ordem funcionaria hoje e trocaria os downloads de dois arquivos no dia em que o plano mudasse, sem erro nenhum e com as contagens ainda batendo. É o caso que `__tests__/integration/exclusao_acervo.test.js` guarda, com quantidades diferentes de download por arquivo justamente para que a troca apareça.
 
+### Rastreabilidade das alterações (2026-08-02)
+
+O que muda uma decisão de quem escreve código (o resto vive nos comentários de `er/auditoria.sql` e
+de `server/src/auditoria/`, que são o lugar em que ninguém deixa de ler):
+
+- **`auditoria.evento` é UMA tabela para os três módulos, e o rastro nasce no BACKEND.** Decisão do
+  chefe, repetida em 2026-07-30 e 2026-08-02: o gatilho não conhece o usuário da sessão HTTP, porque
+  o Postgres vê a conexão do pool. Substitui `mapoteca.pedido_auditoria`, cujo `pedido_id NOT NULL`
+  amarrava o histórico ao pedido. O preço de não ter gatilho é a rota nova que esquece de auditar, e
+  quem cobra é um teste de varredura por módulo, que lê o router de verdade.
+- **`auditoria` é o único schema sem `UPDATE` e sem `DELETE` para o usuário da aplicação.** Uma
+  trilha que a própria aplicação reescreve não prova nada. O preço é que expurgo, se um dia for
+  decidido, exige o dono do banco em vez de uma rota. **Não há expurgo automático e a tabela não
+  nasce particionada**: expurgo automático falharia exatamente quando o rastro é procurado, que é ao
+  perguntar sobre mudança antiga. **Pendente de confirmação da chefia**, e a resposta precisa vir
+  antes de a tabela crescer, porque particionar depois custa migração de dados.
+- **Escrever é `auditoriaCtrl.registrar(t, {...})`, DENTRO da transação da mudança.** Falhar ao
+  auditar derruba a escrita, e é deliberado: trilha que se perde em silêncio é pior do que trilha
+  nenhuma, porque quem a lê acredita nela. `modulo`, `entidade` e `entidade_id` **não** são passados
+  pelo chamador, saem do mapa: dois controllers escrevendo na mesma tabela com entidades diferentes
+  seria divergência que nada acusa.
+- **`auditoriaCtrl.lerAntes` SUBSTITUI o `SELECT id` que só existia para o 404**, e lança o mesmo
+  `AppError`. Não é uma consulta a mais: se fosse, o rastro custaria uma ida ao banco em cada uma das
+  ~20 funções que seguem esse padrão.
+- **`server/src/auditoria/mapa/` é a única declaração de o que se audita**, um arquivo por módulo
+  (são ~60 tabelas, e um arquivo só faria dois trabalhos paralelos colidirem). Tabela auditada que
+  não está lá é **erro em tempo de execução**, e não evento com módulo vazio. Duas marcas existem
+  porque a varredura confere tudo contra os `er/*.sql`: **`sintetico: true`** no campo que o
+  controller monta e a tabela não tem (a lista de itens do DFD, o rateio da NE), e
+  **`pseudoTabela: true`** na entrada que é alvo de evento de OPERAÇÃO e não descreve linha nenhuma
+  (visões materializadas, verificação de volume). Sem as marcas, ou o teste reprova o caso legítimo,
+  ou afrouxá-lo deixaria passar o erro de digitação num nome de coluna, que é o que ele pega.
+- **A ORDEM é diff primeiro, sanitização depois.** É o que faz a troca de senha aparecer como
+  `campos_alterados: ['senha']` com os dois valores nulos. Sanitizar antes apagaria a mudança
+  (nulo comparado a nulo não acusa nada), e "trocaram a senha de alguém" deixaria de aparecer.
+- **Três coisas NUNCA entram no JSON, e quem as tira é `sanitizar.js`, não o chamador**: o hash da
+  senha (declarado em `omitir`, senão haveria uma segunda cópia da credencial numa tabela que ninguém
+  pensa como guardadora de senha), o `conteudo` BYTEA dos anexos (que dobraria o armazenamento a cada
+  anexo trocado) e valor acima do teto de 8 kB, que vira resumo. Quem esquece de excluir uma vez
+  vaza para sempre, e o vazamento só aparece quando alguém abrir a tela. **O teto de 8 kB está
+  pendente de confirmação da chefia**: acima dele o estado anterior de uma folha de recorte irregular
+  deixa de ser recuperável, e subir o teto depois não recupera o que já foi gravado resumido.
+- **O DIFF SAI PRONTO DO SERVIDOR, e o cliente não traduz nada.** São ~60 tabelas auditadas e ~25
+  domínios; a tela de rastreabilidade mistura os três módulos numa página só, e precisaria de todos
+  os catálogos, inclusive dos módulos que a pessoa não usa (o orçamento não guarda catálogo nenhum no
+  cliente). `renderizar.js` devolve `mudancas` com rótulo em português e os dois valores em texto.
+  **Domínio traduz; FK para ENTIDADE não**, e sai o id: o nome do cliente pode ter mudado depois do
+  evento, e mostrar o nome de hoje ao lado de um valor de um ano atrás afirma algo que pode ser falso.
+- **Campo não declarado NÃO some da tela**: aparece com o nome de coluna e marcado. Um mapa que
+  silencia o desconhecido esconde justamente o campo que ninguém está olhando.
+- **O que corrigiu o defeito que originou o trabalho**: a tela do pedido mostrava
+  `campos_alterados.join(', ')`, ou seja o nome da coluna do banco, enquanto `dados_antes` e
+  `dados_depois` chegavam na resposta e eram jogados fora. Hoje a linha diz
+  `Situação: Em produção → Concluído`, sem clique. O componente é `components/historico/`, usado por
+  todas as fichas; o `NOME_TABELA` que vivia na tela do pedido morreu junto, porque o `resumo` vem do
+  servidor, que conhece as dezenas de tabelas auditadas, e não de um mapa de quatro chaves.
+- **O detalhe abre em MODAL, e não em linha que se expande.** O `createDataTable` não tem linha
+  expansível nem `onRowClick`, e acrescentar isso a um componente usado por dezenas de telas não é
+  proporcional. Na ficha do produto, que já é modal, a LISTA é seção e só o DETALHE empilha.
+- **`services/rastreabilidade-service.js` é próprio, e não um bloco em `plataforma-service.js`.** São
+  três funções consumidas por seis fichas de módulos diferentes; a fábrica de mock do
+  `plataforma-service` já lista dezenas de nomes, e toda tela que mostrasse histórico teria de
+  mantê-la em dia por causa dessas três.
+- **`#/rastreabilidade` tem guarda PRÓPRIA (`verifyRastreabilidade`), e não é `verifyPerfil` nem
+  `verifyAdmin`.** O `verifyPerfil` lê um módulo por vez, e esta tela mistura os três; o
+  `verifyLogin` lê `administrador` do TOKEN, que envelhece por até 8 horas, e esta é justamente a
+  tela que mostra quem promoveu quem. O recorte (administrador vê tudo, gerente vê o módulo dele) é do
+  SERVIDOR: recorte de cliente seria sugestão.
+- **O nome não é "auditoria", e isso é deliberado.** `#/acervo/auditoria` já existe e quer dizer
+  outra coisa: os invariantes, que medem a coerência do acervo HOJE e não dizem quem produziu a
+  incoerência. Nem é `#/acessos`, que registra quem ENTROU e não o que a pessoa fez depois.
+- **O `cliente` (`sca_web`/`sca_qgis`) passou a ser assinado no JWT**, e é o que dá a coluna `origem`.
+  Ele PODE entrar, ao contrário dos perfis, porque é imutável para aquele token. Token anterior à
+  mudança fica com `origem = 'desconhecido'` por até o `JWT_EXPIRACAO`: adivinhar por `User-Agent`
+  seria pior do que dizer que não se sabe.
+
 ### Auditoria dos invariantes na web (2026-08-02)
 
 O motor é o de sempre (`acervo/invariantes.js`, `GET /api/acervo/auditoria`, `verifyPerfil('gerente')`).

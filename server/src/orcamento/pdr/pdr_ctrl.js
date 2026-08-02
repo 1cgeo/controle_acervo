@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -56,44 +58,79 @@ controller.getPorId = async id => {
   return item
 }
 
-controller.criar = async (item, usuarioUuid) => {
-  return db.conn.one(
-    `INSERT INTO orcamento.pdr_item
-       (ano, cod_nd, meta_pit_id, item_label, descricao, gnd,
-        valor_solicitado, valor_autorizado, observacao, usuario_cadastramento_uuid)
-     VALUES
-       ($<ano>, $<cod_nd>, $<meta_pit_id>, $<item_label>, $<descricao>, $<gnd>,
-        $<valor_solicitado>, $<valor_autorizado>, $<observacao>, $<usuarioUuid>)
-     RETURNING id`,
-    { ...normaliza(item), usuarioUuid }
-  )
-}
-
-controller.atualizar = async (id, item, usuarioUuid) => {
-  const result = await db.conn.result(
-    `UPDATE orcamento.pdr_item SET
-       ano = $<ano>, cod_nd = $<cod_nd>, meta_pit_id = $<meta_pit_id>,
-       item_label = $<item_label>, descricao = $<descricao>, gnd = $<gnd>,
-       valor_solicitado = $<valor_solicitado>, valor_autorizado = $<valor_autorizado>,
-       observacao = $<observacao>,
-       data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
-     WHERE id = $<id>`,
-    { ...normaliza(item), id, dataModificacao: new Date(), usuarioUuid }
-  )
-  if (!result.rowCount || result.rowCount !== 1) {
-    throw new AppError('Item do PDR não encontrado', httpCode.NotFound)
-  }
-}
-
-controller.deletar = async id => {
+// GANHOU TRANSACAO em 2026-08-02: a linha de rastro tem de cair junto com a
+// mudanca que ela descreve, e no INSERT solto isso nao era possivel.
+controller.criar = async (item, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    const existente = await t.oneOrNone(
-      'SELECT id FROM orcamento.pdr_item WHERE id = $<id>',
-      { id }
+    const criado = await t.one(
+      `INSERT INTO orcamento.pdr_item
+         (ano, cod_nd, meta_pit_id, item_label, descricao, gnd,
+          valor_solicitado, valor_autorizado, observacao, usuario_cadastramento_uuid)
+       VALUES
+         ($<ano>, $<cod_nd>, $<meta_pit_id>, $<item_label>, $<descricao>, $<gnd>,
+          $<valor_solicitado>, $<valor_autorizado>, $<observacao>, $<usuarioUuid>)
+       RETURNING *`,
+      { ...normaliza(item), usuarioUuid }
     )
-    if (!existente) {
-      throw new AppError('Item do PDR não encontrado', httpCode.NotFound)
-    }
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.pdr_item',
+      registroId: criado.id,
+      operacao: 'I',
+      depois: criado,
+      usuarioUuid,
+      contexto
+    })
+
+    // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
+    return { id: criado.id }
+  })
+}
+
+controller.atualizar = async (id, item, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    // Antes daqui o 404 saia do `rowCount` do proprio UPDATE, e o estado
+    // anterior era destruido sem nunca ser lido. `lerAntes` faz as duas coisas
+    // e lanca o MESMO 404.
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.pdr_item',
+      id,
+      'Item do PDR'
+    )
+
+    const depois = await t.one(
+      `UPDATE orcamento.pdr_item SET
+         ano = $<ano>, cod_nd = $<cod_nd>, meta_pit_id = $<meta_pit_id>,
+         item_label = $<item_label>, descricao = $<descricao>, gnd = $<gnd>,
+         valor_solicitado = $<valor_solicitado>, valor_autorizado = $<valor_autorizado>,
+         observacao = $<observacao>,
+         data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<id>
+       RETURNING *`,
+      { ...normaliza(item), id, dataModificacao: new Date(), usuarioUuid }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.pdr_item',
+      registroId: id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+  })
+}
+
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.pdr_item',
+      id,
+      'Item do PDR'
+    )
 
     // Bloqueia a exclusao se houver nota de credito vinculada ao item (FK).
     const referenciado = await t.oneOrNone(
@@ -107,7 +144,16 @@ controller.deletar = async id => {
       )
     }
 
-    return t.none('DELETE FROM orcamento.pdr_item WHERE id = $<id>', { id })
+    await t.none('DELETE FROM orcamento.pdr_item WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.pdr_item',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 

@@ -85,7 +85,7 @@ const auditoria = async pedidoId => {
     .get(`/api/mapoteca/pedido/${pedidoId}/auditoria`)
     .set('Authorization', generateAdminToken())
   expect(res.status).toBe(200)
-  return res.body.dados.filter(l => l.tabela === 'etiqueta_envio')
+  return res.body.dados.filter(l => l.tabela === 'mapoteca.etiqueta_envio')
 }
 
 // --- Testes -----------------------------------------------------------------
@@ -230,7 +230,7 @@ describe('Mapoteca - Etiqueta de envio do pedido', () => {
     ).toBe(401)
   })
 
-  // A auditoria da Fase 1 tem de registrar a escrita da etiqueta no histórico do
+  // A rastreabilidade tem de registrar a escrita da etiqueta no histórico do
   // PEDIDO. É o que responde "quem mudou o endereço, e quando".
   it('registra criação e alteração na auditoria do pedido', async () => {
     const pedidoId = await criaPedidoNovo()
@@ -240,7 +240,10 @@ describe('Mapoteca - Etiqueta de envio do pedido', () => {
     const aposCriacao = await auditoria(pedidoId)
     expect(aposCriacao).toHaveLength(1)
     expect(aposCriacao[0].operacao).toBe('I')
-    expect(Number(aposCriacao[0].pedido_id)).toBe(pedidoId)
+    // `entidade_id` substituiu o `pedido_id` da tabela antiga: o agregado dono
+    // agora e (modulo, entidade, entidade_id), e o da etiqueta e o pedido.
+    expect(aposCriacao[0].entidade).toBe('pedido')
+    expect(Number(aposCriacao[0].entidade_id)).toBe(pedidoId)
     expect(aposCriacao[0].usuario_uuid).toBe(ADMIN_UUID)
     expect(aposCriacao[0].dados_antes).toBeNull()
     expect(aposCriacao[0].dados_depois.destinatario).toBe(ETIQUETA.destinatario)

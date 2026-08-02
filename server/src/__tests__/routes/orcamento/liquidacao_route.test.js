@@ -4,7 +4,7 @@
 // Cobre: caminho feliz do POST, validacao Joi (valor_liquidado > 0) e a
 // regra de estouro do valor empenhado disponivel virando 400 via rota.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -39,7 +39,10 @@ describe('POST /liquidacoes', () => {
     })
     mockDb.conn.one
       .mockResolvedValueOnce({ total: '100' }) // outras
-      .mockResolvedValueOnce({ id: 4 }) // INSERT
+      // `RETURNING *` desde 2026-08-02, e `nota_empenho_id` esta na linha porque
+      // e dele que sai o agregado: a liquidacao aparece na ficha da NE, que e a
+      // ficha que a pessoa abre.
+      .mockResolvedValueOnce({ id: 4, nota_empenho_id: 1, valor_liquidado: '500' })
 
     const res = await request(app)
       .post('/liquidacoes')
@@ -47,6 +50,18 @@ describe('POST /liquidacoes', () => {
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
     expect(res.body.dados).toEqual({ id: 4 })
+
+    const eventos = eventosDeAuditoria(mockDb)
+    expect(eventos).toHaveLength(1)
+    expect(eventos[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'nota_empenho',
+      entidadeId: '1',
+      tabela: 'orcamento.liquidacao',
+      registroId: '4',
+      operacao: 'I',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
   })
 
   test('valor_liquidado = 0 vira 400 (validacao Joi)', async () => {
@@ -80,5 +95,8 @@ describe('POST /liquidacoes', () => {
     expect(res.status).toBe(400)
     expect(res.body.success).toBe(false)
     expect(res.body.message).toContain('excede o valor empenhado')
+    // Recusada a liquidacao, nao ha evento: a auditoria nao registra o que nao
+    // foi gravado.
+    expect(eventosDeAuditoria(mockDb)).toHaveLength(0)
   })
 })

@@ -3,8 +3,18 @@
 const { db } = require("../database");
 
 const { AppError, httpCode, preserveOmitted } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 
 const controller = {};
+
+// As SEIS funcoes deste controlador trabalham em LOTE (o corpo das rotas e um
+// array), e nenhuma delas recebia o usuario ate 2026-08-02: quem mexeu no volume
+// nao existia em lugar nenhum. Agora as seis recebem `usuarioUuid` e `contexto`,
+// e gravam UM evento por LINHA, com o `loteId` da requisicao amarrando os N.
+//
+// Um evento por linha, e nao um com a contagem, porque a pergunta que este
+// cadastro produz e "quem mudou o caminho do volume X" -- e o caminho e o que
+// faz o acervo inteiro daquele volume apontar para outro lugar.
 
 controller.getVolumeArmazenamento = async () => {
   return db.conn.any(
@@ -12,7 +22,7 @@ controller.getVolumeArmazenamento = async () => {
   )
 }
 
-controller.criaVolumeArmazenamento = async volumeArmazenamento => {
+controller.criaVolumeArmazenamento = async (volumeArmazenamento, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Espelha a UNIQUE de acervo.volume_armazenamento(volume) com erro amigável
     const volumes = volumeArmazenamento.map(v => v.volume)
@@ -44,16 +54,30 @@ controller.criaVolumeArmazenamento = async volumeArmazenamento => {
       { name: 'layout_origem', def: false }
     ])
 
+    // `RETURNING *` porque sem ele o id da linha criada nao existe no
+    // JavaScript, e sem id nao ha `registro_id`. A rota continua respondendo o
+    // que respondia (ela nao devolve dados).
     const query = db.pgp.helpers.insert(volumeArmazenamento, cs, {
       table: 'volume_armazenamento',
       schema: 'acervo'
-    })
+    }) + ' RETURNING *'
 
-    await t.none(query)
+    const criados = await t.any(query)
+
+    for (const criado of criados) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_armazenamento',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      })
+    }
   })
 }
 
-controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
+controller.atualizaVolumeArmazenamento = async (volumeArmazenamento, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Espelha a UNIQUE de acervo.volume_armazenamento(volume) com erro amigável
     const volumes = volumeArmazenamento.map(v => v.volume)
@@ -77,6 +101,17 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
         httpCode.Conflict
       )
     }
+
+    // O estado anterior de TODOS os volumes do lote, numa consulta so, e ANTES
+    // do `preserveOmitted`: ele copia para o corpo o valor gravado de quem
+    // omitiu a chave, entao ler depois dele descreveria um estado intermediario
+    // que ninguem viu.
+    const antesPorId = new Map(
+      (await t.any(
+        'SELECT * FROM acervo.volume_armazenamento WHERE id in ($<ids:csv>)',
+        { ids }
+      )).map(v => [String(v.id), v])
+    )
 
     // layout_origem e o unico campo opcional deste PUT. Sem isto, o cliente que
     // nao manda a chave (a tela do dashboard, que nem conhece o campo) apagaria a
@@ -105,20 +140,32 @@ controller.atualizaVolumeArmazenamento = async volumeArmazenamento => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id'
+      ) + ' WHERE Y.id = X.id RETURNING X.*'
 
-    const result = await t.result(query)
+    const atualizados = await t.any(query)
 
-    if (result.rowCount !== volumeArmazenamento.length) {
+    if (atualizados.length !== volumeArmazenamento.length) {
       throw new AppError(
         'Um ou mais volumes não foram encontrados',
         httpCode.NotFound
       )
     }
+
+    for (const depois of atualizados) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_armazenamento',
+        registroId: depois.id,
+        operacao: 'U',
+        antes: antesPorId.get(String(depois.id)),
+        depois,
+        usuarioUuid,
+        contexto
+      })
+    }
   })
 }
 
-controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
+controller.deleteVolumeArmazenamento = async (volumeArmazenamentoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Verificar se há arquivos usando este volume
     const arquivosAssociados = await t.any(
@@ -161,8 +208,11 @@ controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
       );
     }
 
+    // `SELECT *` no lugar de `SELECT id`: e o `dados_antes` da exclusao, pela
+    // mesma ida ao banco que a conferencia de existencia ja custava. Sem ele o
+    // evento nao diria qual caminho de volume deixou de existir.
     const exists = await t.any(
-      `SELECT id FROM acervo.volume_armazenamento
+      `SELECT * FROM acervo.volume_armazenamento
       WHERE id in ($<volumeArmazenamentoIds:csv>)`,
       { volumeArmazenamentoIds }
     );
@@ -174,11 +224,24 @@ controller.deleteVolumeArmazenamento = async volumeArmazenamentoIds => {
       );
     }
 
-    return t.any(
+    const apagados = await t.any(
       `DELETE FROM acervo.volume_armazenamento
       WHERE id in ($<volumeArmazenamentoIds:csv>)`,
       { volumeArmazenamentoIds }
     );
+
+    for (const volume of exists) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_armazenamento',
+        registroId: volume.id,
+        operacao: 'D',
+        antes: volume,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return apagados;
   });
 };
 
@@ -226,7 +289,7 @@ async function verificaPrimarioUnico (t, volumeTipoProduto, excludeIds = null) {
   }
 }
 
-controller.criaVolumeTipoProduto = async volumeTipoProduto => {
+controller.criaVolumeTipoProduto = async (volumeTipoProduto, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     await verificaPrimarioUnico(t, volumeTipoProduto)
 
@@ -237,15 +300,33 @@ controller.criaVolumeTipoProduto = async volumeTipoProduto => {
     const query = db.pgp.helpers.insert(volumeTipoProduto, cs, {
       table: 'volume_tipo_produto',
       schema: 'acervo'
-    })
+    }) + ' RETURNING *'
 
-    await t.none(query)
+    const criados = await t.any(query)
+
+    for (const criado of criados) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_tipo_produto',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      })
+    }
   })
 }
 
-controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
+controller.atualizaVolumeTipoProduto = async (volumeTipoProduto, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     await verificaPrimarioUnico(t, volumeTipoProduto, volumeTipoProduto.map(v => v.id))
+
+    const antesPorId = new Map(
+      (await t.any(
+        'SELECT * FROM acervo.volume_tipo_produto WHERE id in ($<ids:csv>)',
+        { ids: volumeTipoProduto.map(v => v.id) }
+      )).map(v => [String(v.id), v])
+    )
 
     const cs = new db.pgp.helpers.ColumnSet([
       'id', 'tipo_produto_id', 'volume_armazenamento_id', 'primario'
@@ -260,25 +341,37 @@ controller.atualizaVolumeTipoProduto = async volumeTipoProduto => {
           tableAlias: 'X',
           valueAlias: 'Y'
         }
-      ) + ' WHERE Y.id = X.id'
+      ) + ' WHERE Y.id = X.id RETURNING X.*'
 
-    const result = await t.result(query)
+    const atualizados = await t.any(query)
 
-    if (result.rowCount !== volumeTipoProduto.length) {
+    if (atualizados.length !== volumeTipoProduto.length) {
       throw new AppError(
         'Uma ou mais associações Volume Tipo Produto não foram encontradas',
         httpCode.NotFound
       )
     }
+
+    for (const depois of atualizados) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_tipo_produto',
+        registroId: depois.id,
+        operacao: 'U',
+        antes: antesPorId.get(String(depois.id)),
+        depois,
+        usuarioUuid,
+        contexto
+      })
+    }
   })
 }
 
-controller.deleteVolumeTipoProduto = async volumeTipoProdutoIds => {
+controller.deleteVolumeTipoProduto = async (volumeTipoProdutoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Primeiro, buscar os registros para verificar dependências
+    // Primeiro, buscar os registros para verificar dependências. `SELECT *`
+    // porque estas mesmas linhas sao o `dados_antes` da exclusao.
     const volumeTipos = await t.any(
-      `SELECT id, tipo_produto_id, volume_armazenamento_id, primario 
-       FROM acervo.volume_tipo_produto
+      `SELECT * FROM acervo.volume_tipo_produto
        WHERE id in ($<volumeTipoProdutoIds:csv>)`,
       { volumeTipoProdutoIds }
     );
@@ -324,11 +417,28 @@ controller.deleteVolumeTipoProduto = async volumeTipoProdutoIds => {
     }
 
     // Se chegou aqui, podemos excluir com segurança
-    return t.any(
+    const apagados = await t.any(
       `DELETE FROM acervo.volume_tipo_produto
       WHERE id in ($<volumeTipoProdutoIds:csv>)`,
       { volumeTipoProdutoIds }
     );
+
+    // Apagar o PRIMARIO deixa o tipo de produto sem destino para o upload web, e
+    // o servidor so recusa esse caso quando ja EXISTE produto do tipo. Por isso
+    // o evento importa aqui: com o catalogo vazio a exclusao passa, e meses
+    // depois ninguem saberia quem tirou o destino.
+    for (const vtp of volumeTipos) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.volume_tipo_produto',
+        registroId: vtp.id,
+        operacao: 'D',
+        antes: vtp,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return apagados;
   });
 };
 

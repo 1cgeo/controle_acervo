@@ -3,7 +3,7 @@
 // Teste de rota (supertest) do RPNP. Mocka banco + autenticacao (admin).
 // Foco: a regra de identificacao do schema (.or) e o filtro de listagem.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -50,17 +50,27 @@ describe('POST /rpnp', () => {
   })
 
   test('cria com empenho_label apenas', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 22 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 22, ano: 2026, empenho_label: '2023NE000261' })
     const res = await request(app)
       .post('/rpnp')
       .send({ ano: 2026, empenho_label: '2023NE000261' })
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
+    // A rota continua devolvendo SO o id: o `RETURNING *` e do rastro.
     expect(res.body.dados).toEqual({ id: 22 })
+
+    expect(eventosDeAuditoria(mockDb)[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'rpnp',
+      entidadeId: '22',
+      tabela: 'orcamento.rpnp',
+      operacao: 'I',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
   })
 
   test('cria com nota_empenho_id apenas', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 23 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 23, ano: 2026, nota_empenho_id: 5 })
     const res = await request(app)
       .post('/rpnp')
       .send({ ano: 2026, nota_empenho_id: 5 })
@@ -69,7 +79,7 @@ describe('POST /rpnp', () => {
   })
 
   test('aceita valor_a_liquidar = 0 (RPNP totalmente liquidado)', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 24 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 24, ano: 2026, nota_empenho_id: 5 })
     const res = await request(app)
       .post('/rpnp')
       .send({

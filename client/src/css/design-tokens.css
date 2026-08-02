@@ -60,6 +60,12 @@
 
   /* Typography */
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Monoespaçado. Dois arquivos já o usavam como `var(--font-mono, monospace)`,
+     contando com o fallback porque o token nunca existiu; agora eles recebem o
+     valor de verdade. Serve para o que se lê CARACTERE A CARACTERE: checksum,
+     nome físico de arquivo, código de folha e o JSON da linha inteira no
+     histórico de alterações. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;

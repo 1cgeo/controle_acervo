@@ -1,0 +1,166 @@
+/* Histórico de alterações de um registro.
+ *
+ * O bloco traz classe de célula própria porque a única alavanca de largura do
+ * `data-table` é o CSS (ele não tem `width` nem `<colgroup>`), e a classe que
+ * existe pronta, `.data-table__cell--truncate`, tem `max-width: 200px` e
+ * ellipsis: é exatamente o que NÃO se quer na coluna do diff, que é onde a
+ * informação mora. */
+
+.historico__col-quando { white-space: nowrap; }
+.historico__col-quem { white-space: nowrap; }
+.historico__col-oque { white-space: nowrap; }
+
+/* A coluna que carrega a resposta. Larga de propósito. */
+.historico__col-mudou { min-width: 320px; }
+
+.historico__mudancas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.historico__mudanca {
+  /* Quebra dentro do valor, e não entre rótulo e valor: um prazo que desce
+     sozinho para a linha de baixo se lê como outra mudança. */
+  overflow-wrap: anywhere;
+}
+
+.historico__rotulo {
+  color: var(--text-secondary);
+}
+
+.historico__valor {
+  font-weight: var(--font-weight-medium);
+}
+
+/* Nulo é a PALAVRA "vazio", em cinza: célula em branco se leria como "esta
+   coluna não se aplica", e "passou a ter observação" e "sempre foi vazio" são
+   fatos diferentes. */
+.historico__vazio {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.historico__seta {
+  color: var(--text-secondary);
+}
+
+.historico__resumo {
+  color: var(--text-primary);
+}
+
+.historico__mais {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary-color);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Seção recolhida, para a ficha do produto (que é um modal já pesado). */
+.historico--recolhido {
+  border-top: 1px solid var(--border-light);
+  padding-top: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.historico__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* --- O quadro de diferenças, no modal ----------------------------------- */
+
+.historico-diff__corpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.historico-diff__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.historico-diff__origem {
+  font-size: var(--font-size-xs);
+}
+
+.historico-diff__motivo {
+  margin: 0;
+  padding: var(--space-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.historico-diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.historico-diff th,
+.historico-diff td {
+  text-align: left;
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.historico-diff th {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.historico-diff__campo {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+/* Campo que o servidor não conhece: aparece com o nome de coluna cru e MARCADO.
+   Um mapa que silencia o desconhecido esconde justamente o campo que ninguém
+   está olhando, e a marca é o que faz alguém ir declará-lo. */
+.historico-diff__linha--nao-declarado {
+  background: var(--bg-secondary);
+}
+
+.historico-diff__cru {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+}
+
+.historico-diff__vazio {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.historico-diff__bruto summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.historico-diff__json {
+  /* Rola dentro de si: o JSON de uma linha larga não pode fazer o modal rolar
+     na horizontal. */
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  margin: var(--space-sm) 0 0;
+}

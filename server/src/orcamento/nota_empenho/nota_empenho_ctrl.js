@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -51,10 +53,15 @@ const somaAlocacoes = alocacoes =>
 // Quando ha mais de uma NC, todas precisam existir e compartilhar a mesma ND e a
 // mesma classificacao (regra de negocio). NC unica dispensa a checagem (a FK ja
 // garante a existencia e "mesma ND" e trivial).
-const validarNcsHomogeneas = async alocacoes => {
+//
+// RECEBE `t` desde 2026-08-02. Ela lia por `db.conn.any`, ou seja numa conexao
+// FORA da transacao que gravava a NE: entre a validacao e o INSERT cabia outra
+// requisicao mudando a ND de uma daquelas NCs, e a NE nascia violando a regra
+// que esta funcao existe para garantir.
+const validarNcsHomogeneas = async (t, alocacoes) => {
   if (alocacoes.length <= 1) return
   const ids = alocacoes.map(a => a.nota_credito_id)
-  const ncs = await db.conn.any(
+  const ncs = await t.any(
     `SELECT id, cod_nd, classificacao_id
      FROM orcamento.nota_credito
      WHERE id IN ($<ids:csv>)`,
@@ -86,6 +93,29 @@ const inserirAlocacoes = async (t, neId, alocacoes) => {
       { neId, ncId: a.nota_credito_id, valor: a.valor }
     )
   }
+}
+
+// --- A auditoria do RATEIO, que e da NE -------------------------------------
+//
+// `nota_empenho_nota_credito` e "apaga tudo e reinsere": salvar a NE destroi as
+// linhas de rateio e cria outras, com ids novos. Auditar linha a linha faria o
+// historico da NE dizer "removeu 2 alocacoes, acrescentou 2 alocacoes" em todo
+// salvamento, mesmo sem mudanca nenhuma. Por isso o evento e UM so, da NE, com
+// o antes e o depois da LISTA. E o mesmo desenho dos itens do DFD.
+//
+// O campo `alocacoes` esta declarado `sintetico: true` no mapa: nao ha coluna
+// com esse nome na tabela.
+const descreverAlocacao = a => `NC #${a.nota_credito_id}: ${a.valor}`
+
+const lerLinhaDoRateio = async (t, neId) => {
+  const linhas = await t.any(
+    `SELECT nota_credito_id, valor
+     FROM orcamento.nota_empenho_nota_credito
+     WHERE nota_empenho_id = $<neId>
+     ORDER BY nota_credito_id`,
+    { neId }
+  )
+  return { nota_empenho_id: neId, alocacoes: linhas.map(descreverAlocacao) }
 }
 
 controller.listar = async (filtros = {}) => {
@@ -181,7 +211,7 @@ controller.getPorId = async id => {
   return ne
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+controller.criar = async (dados, usuarioUuid, contexto) => {
   const alocacoes = normalizarAlocacoes(dados)
   const valorEmpenhado = somaAlocacoes(alocacoes)
   const valorAnulado = dados.valor_anulado != null ? Number(dados.valor_anulado) : 0
@@ -191,12 +221,15 @@ controller.criar = async (dados, usuarioUuid) => {
       httpCode.BadRequest
     )
   }
-  await validarNcsHomogeneas(alocacoes)
   // NC representativa (dirige ND/PI/classificacao e a 3.1).
   const notaCreditoId = alocacoes[0].nota_credito_id
 
   return db.conn
     .tx(async t => {
+      // A validacao entrou PARA DENTRO da transacao (era `db.conn.any`): ver o
+      // comentario de `validarNcsHomogeneas`.
+      await validarNcsHomogeneas(t, alocacoes)
+
       const ne = await t.one(
         `INSERT INTO orcamento.nota_empenho
           (numero, ano, data_empenho, nota_credito_id,
@@ -206,7 +239,7 @@ controller.criar = async (dados, usuarioUuid) => {
           ($<numero>, $<ano>, $<dataEmpenho>, $<notaCreditoId>,
            $<finalidade>, $<valorEmpenhado>, $<valorAnulado>,
            $<usuarioUuid>)
-         RETURNING id`,
+         RETURNING *`,
         {
           numero: dados.numero,
           ano: dados.ano,
@@ -218,21 +251,36 @@ controller.criar = async (dados, usuarioUuid) => {
           usuarioUuid
         }
       )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.nota_empenho',
+        registroId: ne.id,
+        operacao: 'I',
+        depois: ne,
+        usuarioUuid,
+        contexto
+      })
+
       await inserirAlocacoes(t, ne.id, alocacoes)
-      return ne
+
+      const rateioDepois = await lerLinhaDoRateio(t, ne.id)
+      if (rateioDepois.alocacoes.length) {
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'orcamento.nota_empenho_nota_credito',
+          operacao: 'I',
+          depois: rateioDepois,
+          usuarioUuid,
+          contexto
+        })
+      }
+
+      // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
+      return { id: ne.id }
     })
     .catch(tratarFk)
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.nota_empenho WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Nota de empenho nao encontrada', httpCode.NotFound)
-  }
-
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   const alocacoes = normalizarAlocacoes(dados)
   const valorEmpenhado = somaAlocacoes(alocacoes)
   const valorAnulado = dados.valor_anulado != null ? Number(dados.valor_anulado) : 0
@@ -243,28 +291,43 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
     )
   }
 
-  // O valor_anulado nao pode deixar o saldo negativo: o total ja liquidado
-  // nao pode exceder valor_empenhado - valor_anulado.
-  const liquidado = await db.conn.one(
-    `SELECT COALESCE(SUM(valor_liquidado), 0) AS total
-     FROM orcamento.liquidacao
-     WHERE nota_empenho_id = $<id>`,
-    { id }
-  )
-  const totalLiquidado = Number(liquidado.total)
-  const disponivel = valorEmpenhado - valorAnulado
-  if (totalLiquidado > disponivel) {
-    throw new AppError(
-      'Valor empenhado disponivel nao cobre as liquidacoes ja registradas',
-      httpCode.BadRequest
-    )
-  }
-
-  await validarNcsHomogeneas(alocacoes)
   const notaCreditoId = alocacoes[0].nota_credito_id
 
   return db.conn
     .tx(async t => {
+      // AS TRES LEITURAS ENTRARAM PARA DENTRO DA TRANSACAO em 2026-08-02. Elas
+      // rodavam em conexoes avulsas ANTES do `tx`: o teste de existencia, a soma
+      // das liquidacoes e a validacao das NCs. Entre qualquer uma delas e o
+      // UPDATE cabia outra requisicao lancando uma liquidacao, e o
+      // valor_anulado passava a deixar o saldo negativo -- que e exatamente o
+      // que a checagem existe para impedir.
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'orcamento.nota_empenho',
+        id,
+        'Nota de empenho'
+      )
+      const rateioAntes = await lerLinhaDoRateio(t, id)
+
+      // O valor_anulado nao pode deixar o saldo negativo: o total ja liquidado
+      // nao pode exceder valor_empenhado - valor_anulado.
+      const liquidado = await t.one(
+        `SELECT COALESCE(SUM(valor_liquidado), 0) AS total
+         FROM orcamento.liquidacao
+         WHERE nota_empenho_id = $<id>`,
+        { id }
+      )
+      const totalLiquidado = Number(liquidado.total)
+      const disponivel = valorEmpenhado - valorAnulado
+      if (totalLiquidado > disponivel) {
+        throw new AppError(
+          'Valor empenhado disponivel nao cobre as liquidacoes ja registradas',
+          httpCode.BadRequest
+        )
+      }
+
+      await validarNcsHomogeneas(t, alocacoes)
+
       const ne = await t.one(
         `UPDATE orcamento.nota_empenho SET
            numero = $<numero>, ano = $<ano>, data_empenho = $<dataEmpenho>,
@@ -273,7 +336,7 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
-         RETURNING id`,
+         RETURNING *`,
         {
           id,
           numero: dados.numero,
@@ -287,52 +350,103 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
           usuarioUuid
         }
       )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.nota_empenho',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois: ne,
+        usuarioUuid,
+        contexto
+      })
+
       // Regrava o rateio: limpa o anterior e insere as alocacoes atuais.
       await t.none(
         'DELETE FROM orcamento.nota_empenho_nota_credito WHERE nota_empenho_id = $<id>',
         { id }
       )
       await inserirAlocacoes(t, id, alocacoes)
-      return ne
+
+      const rateioDepois = await lerLinhaDoRateio(t, id)
+      // So registra quando o rateio MUDOU: regravar o mesmo rateio nao pode
+      // produzir uma linha de historico dizendo que ele mudou.
+      if (JSON.stringify(rateioAntes.alocacoes) !== JSON.stringify(rateioDepois.alocacoes)) {
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'orcamento.nota_empenho_nota_credito',
+          operacao: 'U',
+          antes: rateioAntes,
+          depois: rateioDepois,
+          usuarioUuid,
+          contexto
+        })
+      }
+
+      return { id: ne.id }
     })
     .catch(tratarFk)
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.nota_empenho WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Nota de empenho nao encontrada', httpCode.NotFound)
-  }
-
-  // Bloqueia exclusao se houver liquidacao referenciando esta NE.
-  const liquidacao = await db.conn.oneOrNone(
-    'SELECT 1 FROM orcamento.liquidacao WHERE nota_empenho_id = $<id> LIMIT 1',
-    { id }
-  )
-  if (liquidacao) {
-    throw new AppError(
-      'Nota de empenho possui liquidacoes vinculadas e nao pode ser excluida',
-      httpCode.Conflict
+// GANHOU TRANSACAO em 2026-08-02: eram QUATRO comandos em quatro conexoes (o
+// teste de existencia, as duas checagens de dependencia e o DELETE). Entre a
+// checagem e o DELETE cabia outra requisicao lancando a liquidacao que a
+// checagem acabara de nao encontrar.
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  await db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.nota_empenho',
+      id,
+      'Nota de empenho'
     )
-  }
+    const rateioAntes = await lerLinhaDoRateio(t, id)
 
-  // Bloqueia exclusao se houver recebimento de material referenciando esta NE.
-  const recebimento = await db.conn.oneOrNone(
-    'SELECT 1 FROM orcamento.recebimento_material WHERE nota_empenho_id = $<id> LIMIT 1',
-    { id }
-  )
-  if (recebimento) {
-    throw new AppError(
-      'Nota de empenho possui recebimentos de material vinculados e nao pode ser excluida',
-      httpCode.Conflict
+    // Bloqueia exclusao se houver liquidacao referenciando esta NE.
+    const liquidacao = await t.oneOrNone(
+      'SELECT 1 FROM orcamento.liquidacao WHERE nota_empenho_id = $<id> LIMIT 1',
+      { id }
     )
-  }
+    if (liquidacao) {
+      throw new AppError(
+        'Nota de empenho possui liquidacoes vinculadas e nao pode ser excluida',
+        httpCode.Conflict
+      )
+    }
 
-  return db.conn.none('DELETE FROM orcamento.nota_empenho WHERE id = $<id>', {
-    id
+    // Bloqueia exclusao se houver recebimento de material referenciando esta NE.
+    const recebimento = await t.oneOrNone(
+      'SELECT 1 FROM orcamento.recebimento_material WHERE nota_empenho_id = $<id> LIMIT 1',
+      { id }
+    )
+    if (recebimento) {
+      throw new AppError(
+        'Nota de empenho possui recebimentos de material vinculados e nao pode ser excluida',
+        httpCode.Conflict
+      )
+    }
+
+    // O rateio cai por ON DELETE CASCADE, sem DELETE explicito. Sem este evento,
+    // a divisao do empenho entre as NCs desapareceria sem rastro nenhum.
+    if (rateioAntes.alocacoes.length) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.nota_empenho_nota_credito',
+        operacao: 'D',
+        antes: rateioAntes,
+        usuarioUuid,
+        contexto
+      })
+    }
+
+    await t.none('DELETE FROM orcamento.nota_empenho WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.nota_empenho',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 

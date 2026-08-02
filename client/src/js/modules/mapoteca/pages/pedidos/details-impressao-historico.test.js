@@ -15,9 +15,25 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
   const { mockAcervoService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockAcervoService();
 });
+// O historico saiu do service da mapoteca em 2026-08-02: ele virou
+// `/api/auditoria`, rota de PLATAFORMA, porque o rastro dos tres modulos vive
+// numa tabela so.
+//
+// O service dele e PROPRIO e pequeno (tres funcoes), e por isso o mock aqui e
+// ele INTEIRO, em tres linhas. Se as funcoes morassem em `plataforma-service.js`,
+// que tem dezenas, este arquivo teria de manter a fabrica daquele service em dia
+// por causa de tres nomes que nao tem nada a ver com o pedido.
+vi.mock('@services/rastreabilidade-service.js', () => ({
+  getHistorico: vi.fn(() => Promise.resolve([])),
+  getRastreabilidade: vi.fn(() => Promise.resolve({ dados: [], pagination: null })),
+  getFiltrosRastreabilidade: vi.fn(() => Promise.resolve({
+    modulos: [], entidades: [], origens: [], usuarios: [],
+  })),
+}));
 
 import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import * as rastro from '@services/rastreabilidade-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -55,21 +71,43 @@ const HISTORICO_ITEM = {
   ],
 };
 
+// O evento como o SERVIDOR o devolve desde 2026-08-02: com o `resumo` do
+// registro e o diff JA RENDERIZADO (`mudancas`), em vez de só a lista de nomes
+// de coluna. Ver server/src/auditoria/renderizar.js.
 const AUDITORIA = [
   {
-    id: 3, pedido_id: 55, tabela: 'impressao_item', registro_id: 12, operacao: 'I',
+    id: 3, tabela: 'mapoteca.impressao_item', registro_id: 12, operacao: 'I',
+    resumo: 'Impressão de 4 cópia(s)',
     campos_alterados: ['quantidade', 'produto_pedido_id'],
-    data_evento: '2026-07-29T14:00:00Z', usuario_nome: 'Sd Beltrano',
+    mudancas: [],
+    data_evento: '2026-07-29T14:00:00Z',
+    usuario_nome: 'Beltrano', usuario_nome_guerra: 'Beltrano', usuario_posto: 'Sd',
+    origem: 'web',
   },
   {
-    id: 2, pedido_id: 55, tabela: 'produto_pedido', registro_id: 900, operacao: 'U',
+    id: 2, tabela: 'mapoteca.produto_pedido', registro_id: 900, operacao: 'U',
+    resumo: 'Item da versão 9f1e-...',
     campos_alterados: ['quantidade_fornecida'],
-    data_evento: '2026-07-28T09:00:00Z', usuario_nome: 'Cap Fulano',
+    mudancas: [{
+      campo: 'quantidade_fornecida',
+      rotulo: 'Quantidade fornecida',
+      tipo: 'numero',
+      declarado: true,
+      antes: 40, depois: 50,
+      antes_texto: '40', depois_texto: '50',
+    }],
+    data_evento: '2026-07-28T09:00:00Z',
+    usuario_nome: 'Fulano', usuario_nome_guerra: 'Fulano', usuario_posto: 'Cap',
+    origem: 'web',
   },
   {
-    id: 1, pedido_id: 55, tabela: 'pedido', registro_id: 55, operacao: 'I',
+    id: 1, tabela: 'mapoteca.pedido', registro_id: 55, operacao: 'I',
+    resumo: 'Pedido AB12-CD34-EF56',
     campos_alterados: ['cliente_id', 'data_pedido'],
-    data_evento: '2026-06-10T08:00:00Z', usuario_nome: null, usuario_nome_guerra: null,
+    mudancas: [],
+    data_evento: '2026-06-10T08:00:00Z',
+    usuario_nome: null, usuario_nome_guerra: null, usuario_posto: null,
+    origem: 'migracao',
   },
 ];
 
@@ -94,7 +132,7 @@ beforeEach(() => {
   saveAuth({ token: 't', administrador: false, uuid: 'u-1', perfis: { mapoteca: 3 } }, 'fulano');
   svc.getPedido.mockResolvedValue(PEDIDO);
   svc.getAnexosPedido.mockResolvedValue([]);
-  svc.getAuditoriaPedido.mockResolvedValue(AUDITORIA);
+  rastro.getHistorico.mockResolvedValue(AUDITORIA);
   svc.getImpressaoItem.mockResolvedValue(HISTORICO_ITEM);
   svc.registrarImpressao.mockResolvedValue(null);
 });
@@ -189,75 +227,108 @@ describe('detalhe do pedido: quem imprimiu quanto', () => {
 });
 
 describe('detalhe do pedido: historico do pedido', () => {
-  test('le a rota de auditoria e traduz tabela e operacao', async () => {
+  test('le a rota de rastreabilidade pelo agregado do pedido', async () => {
     const { container, cleanup } = await montar();
 
-    expect(svc.getAuditoriaPedido).toHaveBeenCalledWith(55);
+    // Modulo, entidade e id: o historico do pedido traz tudo o que aconteceu com
+    // ele, itens e impressoes inclusive, porque os tres compartilham o agregado.
+    expect(rastro.getHistorico).toHaveBeenCalledWith('mapoteca', 'pedido', 55);
     const texto = container.textContent;
     expect(texto).toContain('Histórico do pedido');
     expect(texto).toContain('Adicionou');
     expect(texto).toContain('Alterou');
-    // Nome legivel da tabela, com o id da linha ao lado, e nao 'produto_pedido'
-    // cru. O nome de COLUNA segue cru em "o que mudou": ele nomeia o campo, e
-    // traduzi-lo exigiria um mapa que envelhece a cada coluna nova.
-    expect(texto).toContain('Item#900');
-    expect(texto).toContain('Impressão#12');
-    expect(texto).toContain('Pedido#55');
-    expect(texto).not.toContain('impressao_item');
+    // O RESUMO do registro, montado pelo servidor, e nao o nome da tabela. O
+    // mapa `NOME_TABELA` que vivia nesta tela morreu junto: ele tinha quatro
+    // chaves e so valia para o pedido, enquanto o servidor conhece as dezenas de
+    // tabelas auditadas.
+    expect(texto).toContain('Impressão de 4 cópia(s)');
+    expect(texto).toContain('Pedido AB12-CD34-EF56');
+    expect(texto).not.toContain('mapoteca.impressao_item');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('mostra quem mudou e quais campos mudaram', async () => {
+  // ESTE E O CASO QUE O TRABALHO DE RASTREABILIDADE EXISTIU PARA CRIAR.
+  //
+  // Ate 2026-08-02 a coluna "O que mudou" era `campos_alterados.join(', ')`: a
+  // tela mostrava "quantidade_fornecida" -- o nome da coluna do banco -- e mais
+  // nada, enquanto `dados_antes` e `dados_depois` chegavam na resposta e eram
+  // jogados fora. Quem lia sabia que algo mudou, sem saber DE QUE PARA QUE.
+  test('mostra o valor ANTERIOR e o ATUAL, e nao o nome da coluna', async () => {
+    const { container, cleanup } = await montar();
+    const texto = container.textContent;
+
+    expect(texto).toContain('Quantidade fornecida');
+    expect(texto).toContain('40');
+    expect(texto).toContain('50');
+    // O nome cru da coluna nao aparece mais: quem le a mapoteca nao fala assim.
+    expect(texto).not.toContain('quantidade_fornecida');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('mostra quem mudou, com posto e nome de guerra', async () => {
     const { container, cleanup } = await montar();
 
     expect(container.textContent).toContain('Sd Beltrano');
-    expect(container.textContent).toContain('quantidade_fornecida');
+    expect(container.textContent).toContain('Cap Fulano');
     // Evento sem usuario e migracao, e nao erro: os eventos anteriores a
-    // auditoria entraram sem dono.
+    // rastreabilidade entraram sem dono.
     expect(container.textContent).toContain('migração');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
   test('pedido sem evento diz que nao ha alteracao, sem tabela vazia muda', async () => {
-    svc.getAuditoriaPedido.mockResolvedValue([]);
+    rastro.getHistorico.mockResolvedValue([]);
     const { container, cleanup } = await montar();
 
-    expect(container.textContent).toContain('Nenhuma alteração registrada neste pedido');
+    expect(container.textContent).toContain('Nenhuma alteração registrada');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
   // O que o chefe pediu no item 6 foi o historico de quem alterou a ETIQUETA, e
-  // ele sai desta mesma tabela. Sem o nome legivel, a linha mostrava
-  // 'etiqueta_envio' cru, que e nome de coluna do banco.
-  test('a etiqueta de envio aparece com nome legivel', async () => {
-    svc.getAuditoriaPedido.mockResolvedValue([
+  // ele sai do mesmo agregado. O que a tela mostra e o resumo do servidor.
+  test('a etiqueta de envio aparece pelo resumo, e diz o que mudou', async () => {
+    rastro.getHistorico.mockResolvedValue([
       {
-        id: 9, pedido_id: 55, tabela: 'etiqueta_envio', registro_id: 4, operacao: 'U',
-        campos_alterados: ['endereco'], data_evento: '2026-07-30T12:00:00Z',
-        usuario_nome: 'Cap Fulano',
+        id: 9, tabela: 'mapoteca.etiqueta_envio', registro_id: 4, operacao: 'U',
+        resumo: 'Etiqueta para 12º BE Cmb',
+        campos_alterados: ['endereco'],
+        mudancas: [{
+          campo: 'endereco', rotulo: 'Endereço', tipo: 'texto', declarado: true,
+          antes: 'Rua A, 1', depois: 'Rua B, 2',
+          antes_texto: 'Rua A, 1', depois_texto: 'Rua B, 2',
+        }],
+        data_evento: '2026-07-30T12:00:00Z',
+        usuario_nome: 'Fulano', usuario_nome_guerra: 'Fulano', usuario_posto: 'Cap',
+        origem: 'web',
       },
     ]);
     const { container, cleanup } = await montar();
 
-    expect(container.textContent).toContain('Etiqueta de envio#4');
+    expect(container.textContent).toContain('Endereço');
+    expect(container.textContent).toContain('Rua A, 1');
+    expect(container.textContent).toContain('Rua B, 2');
     expect(container.textContent).not.toContain('etiqueta_envio');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A outra metade do item 8: quem REMOVEU o pedido. A linha sobrevive (a
-  // auditoria nao tem chave estrangeira para o pedido, de proposito), mas antes
-  // ela ficava inalcancavel, porque a tela parava no "Pedido nao encontrado".
+  // A outra metade do item 8: quem REMOVEU o pedido. A linha sobrevive (o rastro
+  // nao tem chave estrangeira para o pedido, de proposito), mas antes ela ficava
+  // inalcancavel, porque a tela parava no "Pedido nao encontrado".
   test('pedido apagado ainda mostra quem o removeu', async () => {
     svc.getPedido.mockRejectedValueOnce(new Error('Pedido não encontrado'));
-    svc.getAuditoriaPedido.mockResolvedValue([
+    rastro.getHistorico.mockResolvedValue([
       {
-        id: 10, pedido_id: 55, tabela: 'pedido', registro_id: 55, operacao: 'D',
-        campos_alterados: ['id', 'cliente_id'], data_evento: '2026-07-30T13:00:00Z',
-        usuario_nome: 'Cap Fulano',
+        id: 10, tabela: 'mapoteca.pedido', registro_id: 55, operacao: 'D',
+        resumo: 'Pedido AB12-CD34-EF56',
+        campos_alterados: ['id', 'cliente_id'], mudancas: [],
+        data_evento: '2026-07-30T13:00:00Z',
+        usuario_nome: 'Fulano', usuario_nome_guerra: 'Fulano', usuario_posto: 'Cap',
+        origem: 'web',
       },
     ]);
     const { container, cleanup } = await montar();
@@ -271,7 +342,7 @@ describe('detalhe do pedido: historico do pedido', () => {
   });
 
   test('erro no historico nao derruba o resto do detalhe', async () => {
-    svc.getAuditoriaPedido.mockRejectedValueOnce(new Error('Falha ao ler a auditoria'));
+    rastro.getHistorico.mockRejectedValueOnce(new Error('Falha ao ler a auditoria'));
     const { container, cleanup } = await montar();
 
     expect(container.textContent).toContain('Falha ao ler a auditoria');

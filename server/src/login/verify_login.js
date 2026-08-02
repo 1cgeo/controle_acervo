@@ -4,6 +4,8 @@ const { AppError, asyncHandler, httpCode } = require('../utils')
 
 const validateToken = require('./validate_token')
 
+const { montarContexto } = require('./contexto')
+
 // middleware para verificar o JWT
 const verifyLogin = asyncHandler(async (req, res, next) => {
   // Verifica o header authorization para pegar o token
@@ -15,7 +17,10 @@ const verifyLogin = asyncHandler(async (req, res, next) => {
   req.usuarioUuid = decoded.uuid;
   req.usuarioId = decoded.id;
   req.administrador = decoded.administrador || false;
-  
+
+  // Origem, rota e lote da rastreabilidade.
+  montarContexto(req, decoded);
+
   // Verificação de segurança expandida - verifica em params, body e query
   const requestedUuid = (req.params && req.params.usuario_uuid) || (req.body && req.body.usuario_uuid) || (req.query && req.query.usuario_uuid);
   

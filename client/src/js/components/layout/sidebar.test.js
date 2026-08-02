@@ -29,10 +29,15 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     const { sidebar } = createSidebar({ modulo: null });
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
+    //
+    // A quarta seção é a de USUÁRIOS, que desde 2026-08-02 se desenha como
+    // sistema e vem LOGO DEPOIS do orçamento (chefe). A ordem é asserida
+    // inteira de propósito: a posição é metade do que ela comunica.
     expect(modulosNaTela(sidebar)).toEqual([
       '#/acervo/dashboard',
       '#/mapoteca/dashboard',
       '#/orcamento/dashboard',
+      '#/acessos',
     ]);
     expect(ids(sidebar)).toContain('acervo:dashboard');
     expect(ids(sidebar)).toContain('usuarios');
@@ -57,11 +62,12 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     const secoes = () => [...ctrl.sidebar.querySelectorAll('.sidebar__module')]
       .map(s => s.classList.contains('sidebar__module--open'));
 
-    expect(secoes()).toEqual([false, false, true]);
+    // Quatro seções: os três módulos e a área de Usuários, que é a última.
+    expect(secoes()).toEqual([false, false, true, false]);
     const antes = ids(ctrl.sidebar).length;
 
     ctrl.setModulo('acervo');
-    expect(secoes()).toEqual([true, false, false]);
+    expect(secoes()).toEqual([true, false, false, false]);
 
     // Nenhum item foi destruido: a sidebar so abriu e fechou seção.
     expect(ids(ctrl.sidebar).length).toBe(antes);
@@ -126,39 +132,101 @@ describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () =>
   });
 });
 
-// Em 2026-08-02 a autenticacao veio para dentro do SCA, e administrar gente
-// deixou de ser UMA tela: "Usuários" virou grupo, com Gestão e Acessos dentro.
-describe('sidebar: Usuários e um grupo, e nao um item', () => {
-  test('o grupo traz Gestão e Acessos, cada um na sua rota de plataforma', () => {
+// Em 2026-08-02 a autenticacao veio para dentro do SCA e administrar gente
+// deixou de ser UMA tela. No mesmo dia, a pedido do chefe, "Usuários" deixou de
+// ser um grupo colapsavel no meio das telas soltas de plataforma e virou uma
+// SEÇÃO DE SISTEMA, logo depois do orçamento: ela tem dashboard, tem cadastro, e
+// tem quem entre nela para trabalhar um turno inteiro.
+describe('sidebar: Usuários e uma seção de sistema, como os modulos', () => {
+  test('o cabeçalho e um LINK para o dashboard, e nao so um botao que abre', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
-    expect(sidebar.querySelector('[data-id="usuarios"]').getAttribute('href')).toBe('#/usuarios');
-    expect(sidebar.querySelector('[data-id="acessos"]').getAttribute('href')).toBe('#/acessos');
+    const cabecalhos = [...sidebar.querySelectorAll('.sidebar__module-header')];
+    const usuarios = cabecalhos.find(h => h.textContent.includes('Usuários'));
 
-    const rotulos = [...sidebar.querySelectorAll('.sidebar__group-header')]
-      .map(h => h.textContent);
-    expect(rotulos.some(r => r.includes('Usuários'))).toBe(true);
+    expect(usuarios).toBeTruthy();
+    // Clicar no nome do sistema entra nele, como nos três módulos.
+    expect(usuarios.getAttribute('href')).toBe('#/acessos');
+    // E NÃO é um grupo daqueles que só abrem e fecham.
+    expect(usuarios.tagName).toBe('A');
   });
 
-  // A chave do item ativo sai do PRIMEIRO segmento da rota, entao o id do grupo
+  test('o DASHBOARD vem primeiro, e a Gestão depois', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const itens = [...sidebar.querySelectorAll('[data-id="acessos"], [data-id="usuarios"]')];
+    expect(itens.map(i => i.dataset.id)).toEqual(['acessos', 'usuarios']);
+    // A rota nao mudou de nome junto com o rotulo: `#/acessos` e o que le
+    // `dgeo.login`, e renomear a URL quebraria link guardado.
+    expect(itens[0].getAttribute('href')).toBe('#/acessos');
+    expect(itens[0].textContent).toContain('Dashboard');
+    expect(itens[1].getAttribute('href')).toBe('#/usuarios');
+  });
+
+  // A chave do item ativo sai do PRIMEIRO segmento da rota, entao o id da SEÇÃO
   // nao pode ser 'usuarios': ele roubaria a chave do filho que aponta /usuarios.
-  test('setActive marca a Gestão e abre o grupo que a contem', () => {
+  test('setActive marca a Gestão e ABRE a seção que a contem', () => {
     logar({ administrador: true });
     const ctrl = createSidebar({ modulo: null });
     ctrl.setActive(activeIdFromPath('/usuarios'));
 
     const item = ctrl.sidebar.querySelector('[data-id="usuarios"]');
     expect(item.classList.contains('sidebar__item--active')).toBe(true);
-    expect(item.closest('.sidebar__group').classList.contains('sidebar__group--open')).toBe(true);
+    // `setModulo` recebe null numa rota de plataforma, entao quem abre a seção e
+    // o proprio `setActive`: sem isso ela ficaria fechada justamente quando a
+    // pessoa esta dentro dela.
+    expect(item.closest('.sidebar__module').classList.contains('sidebar__module--open')).toBe(true);
   });
 
-  test('o grupo inteiro e do administrador global', () => {
+  test('a seção inteira e do administrador global', () => {
     logar({ perfis: { mapoteca: 3 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
     expect(ids(sidebar)).not.toContain('usuarios');
     expect(ids(sidebar)).not.toContain('acessos');
+  });
+});
+
+// A Rastreabilidade (2026-08-02) e o TERCEIRO estado de visibilidade que a
+// sidebar passou a ter. Ate ela, um item de plataforma era "de todo mundo"
+// (Metas do PIT) ou "so do administrador" (RPCMTec, Usuários); esta e do
+// administrador global E do gerente de qualquer modulo, porque cada gerente ve o
+// recorte do modulo dele. O recorte de verdade e do servidor
+// (verifyRastreabilidade); o que se prova aqui e que o MENU nao oferece a tela a
+// quem levaria 403, nem a esconde de quem pode abri-la.
+describe('sidebar: Rastreabilidade e do administrador E do gerente', () => {
+  test('o administrador global ve o item', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(sidebar.querySelector('[data-id="rastreabilidade"]').getAttribute('href'))
+      .toBe('#/rastreabilidade');
+  });
+
+  test('gerente de UM modulo ve o item, mesmo sem ser administrador', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    expect(ids(sidebar)).toContain('rastreabilidade');
+    // E continua sem ver o que e so do administrador, na mesma seção.
+    expect(ids(sidebar)).not.toContain('usuarios');
+  });
+
+  test('operador nao ve: para ele a tela seria uma varredura que responde 403', () => {
+    logar({ perfis: { mapoteca: 2, acervo: 1 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    expect(ids(sidebar)).not.toContain('rastreabilidade');
+  });
+
+  test('fica FORA do grupo Usuários: aquele grupo e sobre pessoas, este item e sobre dados', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const item = sidebar.querySelector('[data-id="rastreabilidade"]');
+    expect(item.closest('.sidebar__group')).toBeNull();
   });
 });
 

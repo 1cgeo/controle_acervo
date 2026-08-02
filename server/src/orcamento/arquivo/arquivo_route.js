@@ -40,7 +40,7 @@ router.post(
       )
     }
 
-    const dados = await arquivoCtrl.criar(req.file, req.query, req.usuarioUuid)
+    const dados = await arquivoCtrl.criar(req.file, req.query, req.usuarioUuid, req.contexto)
 
     const msg = 'Arquivo anexado com sucesso'
 
@@ -75,7 +75,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: arquivoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await arquivoCtrl.deletar(req.params.id)
+    await arquivoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Arquivo excluido com sucesso'
 

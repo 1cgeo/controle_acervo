@@ -69,6 +69,27 @@ export function formatCurrency(value) {
 }
 
 /**
+ * Booleano como palavra, em TRÊS estados.
+ *
+ * O ternário `? 'Sim' : 'Não'` estava copiado em seis telas, e todas as seis
+ * tratam nulo como "Não" sem querer: em `previsto_pit` e em `administrador`,
+ * "não marcado" e "não informado" são fatos diferentes, e o histórico de
+ * alterações precisa distinguir os dois para não afirmar que alguém desmarcou
+ * uma caixa que nunca esteve marcada.
+ *
+ * A versão de três estados existia local em ponto-dialog.js desde 2026-07-28;
+ * ela subiu para cá quando o histórico passou a precisar dela.
+ *
+ * @param {boolean|null|undefined} value
+ * @returns {string} 'Sim', 'Não' ou '-'
+ */
+export function formatBoolean(value) {
+  if (value === true) return 'Sim';
+  if (value === false) return 'Não';
+  return '-';
+}
+
+/**
  * Valor monetário como NÚMERO, para conta e ordenação.
  *
  * Coluna NUMERIC do PostgreSQL chega no JSON como STRING ('1000.00'), porque o

@@ -259,7 +259,7 @@ router.post(
   verifyAdmin,
   verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.refreshAllMaterializedViews();
+    const dados = await acervoCtrl.refreshAllMaterializedViews(req.usuarioUuid, req.contexto);
     const msg = 'Atualização de views materializadas concluída com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
@@ -271,7 +271,7 @@ router.post(
   verifyAdmin,
   verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.createMaterializedViews();
+    const dados = await acervoCtrl.createMaterializedViews(req.usuarioUuid, req.contexto);
     const msg = 'Criação de views materializadas concluída com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);

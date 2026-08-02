@@ -4,7 +4,7 @@
 // Cobre: GET, caminho feliz do POST, validacao Joi (valor_empenhado > 0 e
 // valor_anulado <= valor_empenhado) e o 409 do DELETE.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -37,11 +37,48 @@ describe('GET /notas_empenho', () => {
 
 describe('POST /notas_empenho', () => {
   test('cria NE e responde com sucesso', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 7 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 7, ...bodyValido })
     const res = await request(app).post('/notas_empenho').send(bodyValido)
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
+    // A rota continua devolvendo SO o id: o `RETURNING *` e do rastro.
     expect(res.body.dados).toEqual({ id: 7 })
+  })
+
+  // SAO DOIS EVENTOS, e o segundo descreve a LISTA do rateio.
+  //
+  // `nota_empenho_nota_credito` e "apaga tudo e reinsere", como os itens do DFD:
+  // auditar linha a linha faria o historico da NE dizer "removeu 2 alocacoes,
+  // acrescentou 2 alocacoes" em todo salvamento.
+  test('registra a NE e o RATEIO, os dois na ficha da NE', async () => {
+    mockDb.conn.one.mockResolvedValueOnce({ id: 7, ...bodyValido })
+    mockDb.conn.any.mockResolvedValueOnce([
+      { nota_credito_id: 5, valor: '2000.00' }
+    ]) // releitura do rateio, para o rastro
+    await request(app).post('/notas_empenho').send(bodyValido)
+
+    const eventos = eventosDeAuditoria(mockDb)
+    expect(eventos).toHaveLength(2)
+
+    expect(eventos[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'nota_empenho',
+      entidadeId: '7',
+      tabela: 'orcamento.nota_empenho',
+      registroId: '7',
+      operacao: 'I',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
+
+    expect(eventos[1]).toMatchObject({
+      entidade: 'nota_empenho',
+      entidadeId: '7',
+      tabela: 'orcamento.nota_empenho_nota_credito',
+      operacao: 'I',
+      // Sem `registro_id`: o evento descreve a lista, e nao uma linha.
+      registroId: null
+    })
+    expect(JSON.parse(eventos[1].dadosDepois).alocacoes).toEqual(['NC #5: 2000.00'])
   })
 
   test('valor_empenhado = 0 vira 400 (deve ser positivo)', async () => {
@@ -82,7 +119,7 @@ describe('POST /notas_empenho', () => {
       { id: 5, cod_nd: '339030', classificacao_id: 2 },
       { id: 6, cod_nd: '339030', classificacao_id: 2 }
     ])
-    mockDb.conn.one.mockResolvedValueOnce({ id: 8 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 8, numero: 'NE-2', ano: 2026 })
     const res = await request(app)
       .post('/notas_empenho')
       .send({
@@ -130,13 +167,41 @@ describe('GET /notas_empenho/:id', () => {
   })
 })
 
+// Eram QUATRO comandos em quatro conexoes ate 2026-08-02 (o `SELECT id`, as duas
+// checagens de dependencia e o DELETE). Hoje e uma transacao so, e o `SELECT id`
+// virou `lerAntes`.
 describe('DELETE /notas_empenho/:id', () => {
   test('409 quando ha liquidacao vinculada', async () => {
     mockDb.conn.oneOrNone
-      .mockResolvedValueOnce({ id: 1 })
-      .mockResolvedValueOnce({ '?column?': 1 })
+      .mockResolvedValueOnce({ id: 1, ...bodyValido }) // lerAntes
+      .mockResolvedValueOnce({ '?column?': 1 }) // liquidacao vinculada
     const res = await request(app).delete('/notas_empenho/1')
     expect(res.status).toBe(409)
     expect(res.body.success).toBe(false)
+    // Recusada a exclusao, nada foi apagado e nada se registra.
+    expect(eventosDeAuditoria(mockDb)).toHaveLength(0)
+  })
+
+  test('exclui e registra a NE mais o rateio que cai por cascata', async () => {
+    mockDb.conn.oneOrNone
+      .mockResolvedValueOnce({ id: 1, ...bodyValido, valor_empenhado: '2000.00' })
+      .mockResolvedValueOnce(null) // sem liquidacao
+      .mockResolvedValueOnce(null) // sem recebimento
+    mockDb.conn.any.mockResolvedValueOnce([{ nota_credito_id: 5, valor: '2000.00' }])
+    mockDb.conn.none.mockResolvedValueOnce(undefined)
+
+    const res = await request(app).delete('/notas_empenho/1')
+    expect(res.status).toBe(200)
+
+    const eventos = eventosDeAuditoria(mockDb)
+    const tabelas = eventos.map(e => e.tabela)
+    // O rateio cai por ON DELETE CASCADE, sem DELETE explicito: sem este evento,
+    // a divisao do empenho entre as NCs desapareceria sem rastro nenhum.
+    expect(tabelas).toContain('orcamento.nota_empenho_nota_credito')
+    expect(tabelas).toContain('orcamento.nota_empenho')
+    for (const evento of eventos) {
+      expect(evento.operacao).toBe('D')
+      expect(evento.dadosDepois).toBeNull()
+    }
   })
 })

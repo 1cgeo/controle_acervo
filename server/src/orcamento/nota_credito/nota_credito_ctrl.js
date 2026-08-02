@@ -2,6 +2,9 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+const arquivoCtrl = require('../arquivo/arquivo_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -136,143 +139,198 @@ controller.getPorId = async id => {
   return nc
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+// GANHOU TRANSACAO em 2026-08-02, com a rastreabilidade.
+controller.criar = async (dados, usuarioUuid, contexto) => {
   const pdrItemId = normalizarPdrItemId(dados)
 
   return db.conn
-    .one(
-      `INSERT INTO orcamento.nota_credito
-        (numero, ano, data_emissao, cod_nd, ptres, fonte, cod_pi, ug_emitente,
-         finalidade_historico, meta_pit_id, valor_nc, valor_recolhido, doc_ro, prazo_empenho,
-         classificacao_id, pdr_item_id, nc_complementada_id, marcador, observacao,
-         usuario_cadastramento_uuid)
-       VALUES
-        ($<numero>, $<ano>, $<dataEmissao>, $<codNd>, $<ptres>, $<fonte>, $<codPi>,
-         $<ugEmitente>, $<finalidadeHistorico>, $<metaPitId>, $<valorNc>, $<valorRecolhido>, $<docRo>,
-         $<prazoEmpenho>, $<classificacaoId>, $<pdrItemId>, $<ncComplementadaId>,
-         $<marcador>, $<observacao>, $<usuarioUuid>)
-       RETURNING id`,
-      {
-        numero: dados.numero,
-        ano: dados.ano,
-        dataEmissao: dados.data_emissao || null,
-        codNd: dados.cod_nd,
-        ptres: dados.ptres || null,
-        fonte: dados.fonte || null,
-        codPi: dados.cod_pi || null,
-        ugEmitente: dados.ug_emitente || null,
-        finalidadeHistorico: dados.finalidade_historico || null,
-        metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
-        valorNc: dados.valor_nc,
-        valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
-        docRo: dados.doc_ro || null,
-        prazoEmpenho: dados.prazo_empenho || null,
-        classificacaoId: dados.classificacao_id,
-        pdrItemId,
-        ncComplementadaId:
-          dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
-        marcador: dados.marcador || null,
-        observacao: dados.observacao || null,
-        usuarioUuid
-      }
-    )
+    .tx(async t => {
+      const criada = await t.one(
+        `INSERT INTO orcamento.nota_credito
+          (numero, ano, data_emissao, cod_nd, ptres, fonte, cod_pi, ug_emitente,
+           finalidade_historico, meta_pit_id, valor_nc, valor_recolhido, doc_ro, prazo_empenho,
+           classificacao_id, pdr_item_id, nc_complementada_id, marcador, observacao,
+           usuario_cadastramento_uuid)
+         VALUES
+          ($<numero>, $<ano>, $<dataEmissao>, $<codNd>, $<ptres>, $<fonte>, $<codPi>,
+           $<ugEmitente>, $<finalidadeHistorico>, $<metaPitId>, $<valorNc>, $<valorRecolhido>, $<docRo>,
+           $<prazoEmpenho>, $<classificacaoId>, $<pdrItemId>, $<ncComplementadaId>,
+           $<marcador>, $<observacao>, $<usuarioUuid>)
+         RETURNING *`,
+        {
+          numero: dados.numero,
+          ano: dados.ano,
+          dataEmissao: dados.data_emissao || null,
+          codNd: dados.cod_nd,
+          ptres: dados.ptres || null,
+          fonte: dados.fonte || null,
+          codPi: dados.cod_pi || null,
+          ugEmitente: dados.ug_emitente || null,
+          finalidadeHistorico: dados.finalidade_historico || null,
+          metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
+          valorNc: dados.valor_nc,
+          valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
+          docRo: dados.doc_ro || null,
+          prazoEmpenho: dados.prazo_empenho || null,
+          classificacaoId: dados.classificacao_id,
+          pdrItemId,
+          ncComplementadaId:
+            dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
+          marcador: dados.marcador || null,
+          observacao: dados.observacao || null,
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.nota_credito',
+        registroId: criada.id,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      })
+
+      // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
+      return { id: criada.id }
+    })
     .catch(tratarFk)
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.nota_credito WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Nota de credito nao encontrada', httpCode.NotFound)
-  }
-
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   const pdrItemId = normalizarPdrItemId(dados)
 
   return db.conn
-    .one(
-      `UPDATE orcamento.nota_credito SET
-         numero = $<numero>, ano = $<ano>, data_emissao = $<dataEmissao>,
-         cod_nd = $<codNd>, ptres = $<ptres>, fonte = $<fonte>, cod_pi = $<codPi>,
-         ug_emitente = $<ugEmitente>, finalidade_historico = $<finalidadeHistorico>,
-         meta_pit_id = $<metaPitId>, valor_nc = $<valorNc>,
-         valor_recolhido = $<valorRecolhido>, doc_ro = $<docRo>,
-         prazo_empenho = $<prazoEmpenho>, classificacao_id = $<classificacaoId>,
-         pdr_item_id = $<pdrItemId>, nc_complementada_id = $<ncComplementadaId>,
-         marcador = $<marcador>, observacao = $<observacao>,
-         data_modificacao = $<dataModificacao>,
-         usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id>
-       RETURNING id`,
-      {
+    .tx(async t => {
+      // O `SELECT id` que existia so para o 404 virou `lerAntes`: mesma ida ao
+      // banco, mesmo 404, e o estado anterior deixa de se perder. Numa tabela em
+      // que o campo mais provavel de mudar e um VALOR, "de quanto para quanto" e
+      // a pergunta inteira. E agora ele e lido DENTRO da transacao que altera a
+      // linha, e nao numa conexao avulsa antes dela.
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'orcamento.nota_credito',
         id,
-        numero: dados.numero,
-        ano: dados.ano,
-        dataEmissao: dados.data_emissao || null,
-        codNd: dados.cod_nd,
-        ptres: dados.ptres || null,
-        fonte: dados.fonte || null,
-        codPi: dados.cod_pi || null,
-        ugEmitente: dados.ug_emitente || null,
-        finalidadeHistorico: dados.finalidade_historico || null,
-        metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
-        valorNc: dados.valor_nc,
-        valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
-        docRo: dados.doc_ro || null,
-        prazoEmpenho: dados.prazo_empenho || null,
-        classificacaoId: dados.classificacao_id,
-        pdrItemId,
-        ncComplementadaId:
-          dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
-        marcador: dados.marcador || null,
-        observacao: dados.observacao || null,
-        dataModificacao: new Date(),
-        usuarioUuid
-      }
-    )
+        'Nota de crédito'
+      )
+
+      const depois = await t.one(
+        `UPDATE orcamento.nota_credito SET
+           numero = $<numero>, ano = $<ano>, data_emissao = $<dataEmissao>,
+           cod_nd = $<codNd>, ptres = $<ptres>, fonte = $<fonte>, cod_pi = $<codPi>,
+           ug_emitente = $<ugEmitente>, finalidade_historico = $<finalidadeHistorico>,
+           meta_pit_id = $<metaPitId>, valor_nc = $<valorNc>,
+           valor_recolhido = $<valorRecolhido>, doc_ro = $<docRo>,
+           prazo_empenho = $<prazoEmpenho>, classificacao_id = $<classificacaoId>,
+           pdr_item_id = $<pdrItemId>, nc_complementada_id = $<ncComplementadaId>,
+           marcador = $<marcador>, observacao = $<observacao>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+         WHERE id = $<id>
+         RETURNING *`,
+        {
+          id,
+          numero: dados.numero,
+          ano: dados.ano,
+          dataEmissao: dados.data_emissao || null,
+          codNd: dados.cod_nd,
+          ptres: dados.ptres || null,
+          fonte: dados.fonte || null,
+          codPi: dados.cod_pi || null,
+          ugEmitente: dados.ug_emitente || null,
+          finalidadeHistorico: dados.finalidade_historico || null,
+          metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
+          valorNc: dados.valor_nc,
+          valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
+          docRo: dados.doc_ro || null,
+          prazoEmpenho: dados.prazo_empenho || null,
+          classificacaoId: dados.classificacao_id,
+          pdrItemId,
+          ncComplementadaId:
+            dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
+          marcador: dados.marcador || null,
+          observacao: dados.observacao || null,
+          dataModificacao: new Date(),
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.nota_credito',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: depois.id }
+    })
     .catch(tratarFk)
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.nota_credito WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Nota de credito nao encontrada', httpCode.NotFound)
-  }
-
-  // Bloqueia exclusao se houver nota de empenho referenciando esta NC, seja como
-  // NC representativa (nota_empenho.nota_credito_id) seja no rateio (junção NE-NC).
-  const empenho = await db.conn.oneOrNone(
-    `SELECT 1
-     WHERE EXISTS (SELECT 1 FROM orcamento.nota_empenho WHERE nota_credito_id = $<id>)
-        OR EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito WHERE nota_credito_id = $<id>)`,
-    { id }
-  )
-  if (empenho) {
-    throw new AppError(
-      'Nota de credito possui notas de empenho vinculadas e nao pode ser excluida',
-      httpCode.Conflict
+/**
+ * GANHOU TRANSACAO em 2026-08-02, e aqui isso NAO e so pela auditoria.
+ *
+ * Esta funcao fazia QUATRO comandos em QUATRO conexoes diferentes: o `SELECT
+ * id`, as duas checagens de dependencia e o `DELETE`. Entre a checagem e o
+ * DELETE cabia outra requisicao criando a NE que a checagem acabara de nao
+ * encontrar, e a NC saia com empenho vinculado -- exatamente o que as duas
+ * checagens existem para impedir. Envolve-las numa transacao conserta um defeito
+ * de concorrencia que ja existia; a linha de rastro veio de carona.
+ */
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  await db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.nota_credito',
+      id,
+      'Nota de crédito'
     )
-  }
 
-  // Bloqueia exclusao se outra NC a referencia como complementada (self-FK).
-  const complementacao = await db.conn.oneOrNone(
-    'SELECT 1 FROM orcamento.nota_credito WHERE nc_complementada_id = $<id> LIMIT 1',
-    { id }
-  )
-  if (complementacao) {
-    throw new AppError(
-      'Nota de credito e complementada por outra NC e nao pode ser excluida',
-      httpCode.Conflict
+    // Bloqueia exclusao se houver nota de empenho referenciando esta NC, seja como
+    // NC representativa (nota_empenho.nota_credito_id) seja no rateio (junção NE-NC).
+    const empenho = await t.oneOrNone(
+      `SELECT 1
+       WHERE EXISTS (SELECT 1 FROM orcamento.nota_empenho WHERE nota_credito_id = $<id>)
+          OR EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito WHERE nota_credito_id = $<id>)`,
+      { id }
     )
-  }
+    if (empenho) {
+      throw new AppError(
+        'Nota de credito possui notas de empenho vinculadas e nao pode ser excluida',
+        httpCode.Conflict
+      )
+    }
 
-  // O DELETE da NC remove as linhas de anexo (com os bytes) por ON DELETE CASCADE.
-  await db.conn.none('DELETE FROM orcamento.nota_credito WHERE id = $<id>', {
-    id
+    // Bloqueia exclusao se outra NC a referencia como complementada (self-FK).
+    const complementacao = await t.oneOrNone(
+      'SELECT 1 FROM orcamento.nota_credito WHERE nc_complementada_id = $<id> LIMIT 1',
+      { id }
+    )
+    if (complementacao) {
+      throw new AppError(
+        'Nota de credito e complementada por outra NC e nao pode ser excluida',
+        httpCode.Conflict
+      )
+    }
+
+    // O DELETE da NC remove as linhas de anexo (com os bytes) por ON DELETE
+    // CASCADE, e o anexo tem rastro proprio: sem esta chamada, o unico registro
+    // de que o PDF do SIAFI existiu sumiria em silencio junto com a NC.
+    await arquivoCtrl.auditarCascata(t, 'nota_credito_id', id, usuarioUuid, contexto)
+
+    await t.none('DELETE FROM orcamento.nota_credito WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.nota_credito',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 

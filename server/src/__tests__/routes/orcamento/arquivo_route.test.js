@@ -5,7 +5,7 @@
 // arquivo, o download (bytes do banco) e o DELETE (200 e 404). O upload real
 // (multer + banco) e coberto na suite de integracao.
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -86,12 +86,69 @@ describe('GET /arquivo/:id/download', () => {
 })
 
 describe('DELETE /arquivo/:id', () => {
-  test('200 quando o anexo existe', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 9 })
+  // O anexo do orcamento e a UNICA tabela do sistema cuja entidade dona sai da
+  // LINHA: o CHECK `arquivo_um_vinculo` garante que ele pertence a exatamente um
+  // de nota_credito_id, dfd_id ou pdr_ano, e o historico dele tem de aparecer na
+  // ficha do dono. Por isso o mock traz o vinculo.
+  test('200 quando o anexo existe, e o evento vai para a ficha da NC', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 9,
+      nota_credito_id: 5,
+      dfd_id: null,
+      pdr_ano: null,
+      nome_original: 'extrato.pdf',
+      extensao: 'pdf',
+      tamanho_bytes: 1024
+    })
     mockDb.conn.none.mockResolvedValueOnce(undefined)
     const res = await request(app).delete('/arquivo/9')
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
+
+    const eventos = eventosDeAuditoria(mockDb)
+    expect(eventos).toHaveLength(1)
+    expect(eventos[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'nota_credito',
+      entidadeId: '5',
+      tabela: 'orcamento.arquivo',
+      registroId: '9',
+      operacao: 'D',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
+    // O `conteudo` (BYTEA) nunca e lido: o SELECT da auditoria pede so os
+    // metadados, e a chave nem aparece no JSON.
+    expect(JSON.parse(eventos[0].dadosAntes)).not.toHaveProperty('conteudo')
+    expect(JSON.parse(eventos[0].dadosAntes).nome_original).toBe('extrato.pdf')
+  })
+
+  test('o anexo do PDR cai na ficha do ANO, e o do DFD na do DFD', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 11,
+      nota_credito_id: null,
+      dfd_id: null,
+      pdr_ano: 2026,
+      nome_original: 'pdr.xlsx'
+    })
+    await request(app).delete('/arquivo/11')
+    expect(eventosDeAuditoria(mockDb)[0]).toMatchObject({
+      entidade: 'pdr',
+      entidadeId: '2026'
+    })
+
+    mockDb.reset()
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 12,
+      nota_credito_id: null,
+      dfd_id: 42,
+      pdr_ano: null,
+      nome_original: 'dfd.pdf'
+    })
+    await request(app).delete('/arquivo/12')
+    expect(eventosDeAuditoria(mockDb)[0]).toMatchObject({
+      entidade: 'dfd',
+      entidadeId: '42'
+    })
   })
 
   test('404 quando o anexo nao existe', async () => {

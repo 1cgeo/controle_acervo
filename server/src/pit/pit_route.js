@@ -73,7 +73,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: pitSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await pitCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await pitCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(true, 'Meta do PIT criada com sucesso', httpCode.Created, dados)
   })
@@ -87,7 +87,9 @@ router.put(
     body: pitSchema.atualizar
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await pitCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    const dados = await pitCtrl.atualizar(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
 
     return res.sendJsonAndLog(true, 'Meta do PIT atualizada com sucesso', httpCode.OK, dados)
   })
@@ -98,7 +100,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await pitCtrl.deletar(req.params.id)
+    await pitCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(true, 'Meta do PIT excluída com sucesso', httpCode.OK)
   })

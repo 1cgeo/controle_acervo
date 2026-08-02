@@ -155,7 +155,11 @@ export async function renderAcessos(container, _ctx) {
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
-      el('h1', { className: 'page__title', textContent: 'Acessos' }),
+      // "Dashboard de usuários", e não "Acessos": desde 2026-08-02 esta é a tela
+      // de entrada da seção Usuários da sidebar, e lá ela se chama Dashboard.
+      // Título discordando do menu faz a pessoa achar que clicou errado. A ROTA
+      // continua `#/acessos`, que é o que lê `dgeo.login`.
+      el('h1', { className: 'page__title', textContent: 'Dashboard de usuários' }),
     ]),
     el('p', {
       className: 'page__subtitle',

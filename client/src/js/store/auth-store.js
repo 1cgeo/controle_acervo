@@ -144,6 +144,24 @@ export function temAcessoModulo(modulo) {
 }
 
 /**
+ * A pessoa e GERENTE de pelo menos um modulo?
+ *
+ * Existe para a tela de Rastreabilidade, que e do administrador global e do
+ * gerente de qualquer modulo, e que por isso nao cabe no par `admin` /
+ * `qualquer pessoa logada` que a sidebar tinha. Quem decide de verdade e o
+ * `verifyRastreabilidade` do servidor, lendo o banco; isto aqui so evita
+ * oferecer no menu uma tela que levaria 403.
+ *
+ * NAO inclui o administrador de proposito: quem chama decide se o soma, e nos
+ * dois casos a leitura fica explicita (`isAdmin() || ehGerenteDeAlgumModulo()`).
+ *
+ * @returns {boolean}
+ */
+export function ehGerenteDeAlgumModulo() {
+  return Object.values(getPerfis()).some(nivel => Number(nivel) >= NIVEL.gerente);
+}
+
+/**
  * O que a pessoa pode NESTE modulo, num objeto so, para a tela decidir o que
  * mostrar sem repetir o nome do modulo em cada botao:
  *

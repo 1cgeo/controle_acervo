@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -58,73 +60,100 @@ controller.getPorId = async id => {
   return rpnp
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+// As tres ganharam TRANSACAO em 2026-08-02, com a rastreabilidade.
+controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `INSERT INTO orcamento.rpnp
-        (ano, nota_empenho_id, empenho_label, finalidade,
-         valor_empenhado, valor_a_liquidar, usuario_cadastramento_uuid)
-       VALUES
-        ($<ano>, $<notaEmpenhoId>, $<empenhoLabel>, $<finalidade>,
-         $<valorEmpenhado>, $<valorALiquidar>, $<usuarioUuid>)
-       RETURNING id`,
-      {
-        ano: dados.ano,
-        notaEmpenhoId: dados.nota_empenho_id != null ? dados.nota_empenho_id : null,
-        empenhoLabel: dados.empenho_label || null,
-        finalidade: dados.finalidade || null,
-        valorEmpenhado: dados.valor_empenhado != null ? dados.valor_empenhado : null,
-        valorALiquidar: dados.valor_a_liquidar != null ? dados.valor_a_liquidar : null,
-        usuarioUuid
-      }
-    )
+    .tx(async t => {
+      const criado = await t.one(
+        `INSERT INTO orcamento.rpnp
+          (ano, nota_empenho_id, empenho_label, finalidade,
+           valor_empenhado, valor_a_liquidar, usuario_cadastramento_uuid)
+         VALUES
+          ($<ano>, $<notaEmpenhoId>, $<empenhoLabel>, $<finalidade>,
+           $<valorEmpenhado>, $<valorALiquidar>, $<usuarioUuid>)
+         RETURNING *`,
+        {
+          ano: dados.ano,
+          notaEmpenhoId: dados.nota_empenho_id != null ? dados.nota_empenho_id : null,
+          empenhoLabel: dados.empenho_label || null,
+          finalidade: dados.finalidade || null,
+          valorEmpenhado: dados.valor_empenhado != null ? dados.valor_empenhado : null,
+          valorALiquidar: dados.valor_a_liquidar != null ? dados.valor_a_liquidar : null,
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.rpnp',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: criado.id }
+    })
     .catch(tratarFk)
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.rpnp WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('RPNP nao encontrado', httpCode.NotFound)
-  }
-
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `UPDATE orcamento.rpnp SET
-         ano = $<ano>, nota_empenho_id = $<notaEmpenhoId>,
-         empenho_label = $<empenhoLabel>, finalidade = $<finalidade>,
-         valor_empenhado = $<valorEmpenhado>, valor_a_liquidar = $<valorALiquidar>,
-         data_modificacao = $<dataModificacao>,
-         usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id>
-       RETURNING id`,
-      {
-        id,
-        ano: dados.ano,
-        notaEmpenhoId: dados.nota_empenho_id != null ? dados.nota_empenho_id : null,
-        empenhoLabel: dados.empenho_label || null,
-        finalidade: dados.finalidade || null,
-        valorEmpenhado: dados.valor_empenhado != null ? dados.valor_empenhado : null,
-        valorALiquidar: dados.valor_a_liquidar != null ? dados.valor_a_liquidar : null,
-        dataModificacao: new Date(),
-        usuarioUuid
-      }
-    )
+    .tx(async t => {
+      const antes = await auditoriaCtrl.lerAntes(t, 'orcamento.rpnp', id, 'RPNP')
+
+      const depois = await t.one(
+        `UPDATE orcamento.rpnp SET
+           ano = $<ano>, nota_empenho_id = $<notaEmpenhoId>,
+           empenho_label = $<empenhoLabel>, finalidade = $<finalidade>,
+           valor_empenhado = $<valorEmpenhado>, valor_a_liquidar = $<valorALiquidar>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+         WHERE id = $<id>
+         RETURNING *`,
+        {
+          id,
+          ano: dados.ano,
+          notaEmpenhoId: dados.nota_empenho_id != null ? dados.nota_empenho_id : null,
+          empenhoLabel: dados.empenho_label || null,
+          finalidade: dados.finalidade || null,
+          valorEmpenhado: dados.valor_empenhado != null ? dados.valor_empenhado : null,
+          valorALiquidar: dados.valor_a_liquidar != null ? dados.valor_a_liquidar : null,
+          dataModificacao: new Date(),
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.rpnp',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: depois.id }
+    })
     .catch(tratarFk)
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.rpnp WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('RPNP nao encontrado', httpCode.NotFound)
-  }
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(t, 'orcamento.rpnp', id, 'RPNP')
 
-  return db.conn.none('DELETE FROM orcamento.rpnp WHERE id = $<id>', { id })
+    await t.none('DELETE FROM orcamento.rpnp WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.rpnp',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+  })
 }
 
 module.exports = controller

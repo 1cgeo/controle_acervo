@@ -2,7 +2,9 @@ import '@css/style.css';
 import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
 import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
-import Router, { adminLoader, authLoader, perfilLoader, rotaRaiz } from './router.js';
+import Router, {
+  adminLoader, authLoader, perfilLoader, rastreabilidadeLoader, rotaRaiz,
+} from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
 import { renderLogin } from '@pages/login.js';
@@ -10,6 +12,7 @@ import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 import { renderUsuariosList } from '@pages/usuarios/list.js';
 import { renderAcessos } from '@pages/acessos/index.js';
+import { renderRastreabilidade } from '@pages/rastreabilidade/index.js';
 import { renderPerfil } from '@pages/perfil/index.js';
 import { renderMetasList } from '@pages/metas/list.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
@@ -73,6 +76,22 @@ router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 // dado de modulo nenhum, e nao existe perfil de "acessos". O servidor cobra o
 // mesmo, com verifyAdmin em todas as rotas de /api/acessos.
 router.add('/acessos', withLayout(renderAcessos), { guard: adminLoader });
+
+// Rastreabilidade: o que foi ALTERADO nos modulos, quando e por quem. E a outra
+// pergunta de #/acessos, que registra quem ENTROU e nao o que a pessoa fez
+// depois de entrar.
+//
+// `rastreabilidadeLoader`, e nao `adminLoader`: a tela e do administrador global
+// (que ve os tres modulos e a plataforma) E do gerente de qualquer modulo (que
+// ve o dele). O recorte de verdade vem do servidor, no verifyRastreabilidade,
+// que le o perfil do BANCO a cada requisicao -- este guarda so evita abrir uma
+// tela que responderia 403.
+//
+// NAO confundir com #/acervo/auditoria: aquela roda os invariantes do acervo,
+// mede a coerencia entre tabelas HOJE e nao diz quem produziu a incoerencia.
+router.add('/rastreabilidade', withLayout(renderRastreabilidade), {
+  guard: rastreabilidadeLoader,
+});
 
 // Meu perfil: os proprios dados e a troca da PROPRIA senha. `authLoader`, e nao
 // adminLoader: e a unica tela de plataforma que serve a todo mundo, e sem ela

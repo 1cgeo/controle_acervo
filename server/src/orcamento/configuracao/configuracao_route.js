@@ -36,7 +36,7 @@ router.put(
   verifyAdmin,
   schemaValidation({ body: configuracaoSchema.atualizar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await configuracaoCtrl.atualizar(req.body, req.usuarioUuid)
+    const dados = await configuracaoCtrl.atualizar(req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Configuração atualizada com sucesso', httpCode.OK, dados)
   })
 )

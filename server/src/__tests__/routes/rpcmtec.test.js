@@ -22,7 +22,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
 
 let app
 
@@ -321,5 +321,93 @@ describe('RPCMTec: a edição mensal', () => {
     const de2026 = await request(app).get('/api/rpcmtec?ano=2026').set('Authorization', admin())
     expect(de2026.body.dados).toHaveLength(1)
     expect(de2026.body.dados[0].ano).toBe(2026)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Rastreabilidade da edição mensal (2026-08-02)
+//
+// É o relatório que o chefe assina, e as três escritas dele não tinham nem
+// transação: o `exigirExistente` era um `SELECT id` numa conexão e o DELETE
+// noutra. "Quem trocou o assinante desta edição" é pergunta que se faz depois
+// de o documento ter saído, e até aqui não havia onde respondê-la.
+// ---------------------------------------------------------------------------
+
+describe('RPCMTec: o rastro da edição mensal', () => {
+  const eventos = id =>
+    conn.any(
+      `SELECT * FROM auditoria.evento
+       WHERE tabela = 'rpcmtec.edicao' AND entidade_id = $<id>
+       ORDER BY id`,
+      { id: String(id) }
+    )
+
+  const criarEdicao = async (corpo = { ano: 2026, mes: 7, assinante: 'Maj Diniz' }) => {
+    const res = await request(app)
+      .post('/api/rpcmtec').set('Authorization', admin()).send(corpo)
+    expect(res.status).toBe(201)
+    return res.body.dados.id
+  }
+
+  test('a criação registra o autor e o que foi gravado', async () => {
+    const id = await criarEdicao()
+
+    const [criacao] = await eventos(id)
+
+    expect(criacao.operacao).toBe('I')
+    expect(criacao.modulo).toBe('plataforma')
+    expect(criacao.entidade).toBe('edicao')
+    expect(criacao.usuario_uuid).toBe(ADMIN_UUID)
+    expect(criacao.dados_antes).toBeNull()
+    expect(criacao.dados_depois.assinante).toBe('Maj Diniz')
+  })
+
+  test('a troca do assinante registra os DOIS lados', async () => {
+    const id = await criarEdicao()
+
+    const res = await request(app)
+      .put(`/api/rpcmtec/${id}`)
+      .set('Authorization', admin())
+      .send({ ano: 2026, mes: 7, assinante: 'Ten Cel Fulano', data_assinatura: null })
+    expect(res.status).toBe(200)
+
+    const alteracao = (await eventos(id)).find(e => e.operacao === 'U')
+
+    // O `lerAntes` no lugar do `SELECT id`: sem ele o rastro diria que a edição
+    // mudou, sem dizer de quem para quem.
+    expect(alteracao.dados_antes.assinante).toBe('Maj Diniz')
+    expect(alteracao.dados_depois.assinante).toBe('Ten Cel Fulano')
+    expect(alteracao.campos_alterados).toEqual(['assinante'])
+  })
+
+  test('a exclusão registra o que se perdeu, e sobrevive à edição', async () => {
+    const id = await criarEdicao()
+
+    expect(
+      (await request(app).delete(`/api/rpcmtec/${id}`).set('Authorization', admin())).status
+    ).toBe(200)
+
+    const exclusao = (await eventos(id)).find(e => e.operacao === 'D')
+
+    expect(exclusao.dados_depois).toBeNull()
+    expect(exclusao.dados_antes.mes).toBe(7)
+    expect(exclusao.usuario_uuid).toBe(ADMIN_UUID)
+  })
+
+  test('a edição recusada pela UNIQUE não deixa rastro', async () => {
+    const id = await criarEdicao({ ano: 2026, mes: 9 })
+
+    const segunda = await request(app)
+      .post('/api/rpcmtec').set('Authorization', admin()).send({ ano: 2026, mes: 9 })
+    expect(segunda.status).toBe(409)
+
+    // Falhar ao escrever tem de derrubar o rastro junto: uma trilha que registra
+    // o que não aconteceu é pior do que trilha nenhuma, porque quem a lê
+    // acredita nela. A da primeira edição continua de pé.
+    const todos = await conn.any(
+      "SELECT * FROM auditoria.evento WHERE tabela = 'rpcmtec.edicao'"
+    )
+    expect(todos).toHaveLength(1)
+    expect(todos[0].entidade_id).toBe(String(id))
   })
 })

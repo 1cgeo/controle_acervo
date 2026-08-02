@@ -2,6 +2,9 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+const arquivoCtrl = require('../arquivo/arquivo_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -71,6 +74,61 @@ const inserirItens = async (t, dfdId, itens, usuarioUuid) => {
   return t.none(query)
 }
 
+// --- A auditoria dos ITENS, que e do PAI ------------------------------------
+//
+// `dfd_item` e "apaga tudo e reinsere": salvar um DFD com quatro itens sempre
+// destroi as quatro linhas e cria quatro novas, com ids e carimbos novos.
+// Auditar linha a linha faria o historico do DFD dizer "removeu 4 itens,
+// acrescentou 4 itens" TODA VEZ que alguem abrisse e salvasse, mesmo sem tocar
+// em nada. Por isso o evento e UM so, do PAI, com o antes e o depois da LISTA
+// INTEIRA descrita em texto: o que muda de verdade e o que esta escrito aqui.
+//
+// A descricao mora neste controller porque ele e o unico que reescreve a lista;
+// o campo `itens` esta declarado `sintetico: true` no mapa de auditoria, ja que
+// nao ha coluna com esse nome na tabela.
+const descreverItem = item => [
+  `tipo ${item.tipo_item_id}`,
+  item.cod_catmat_catser ? `cat. ${item.cod_catmat_catser}` : null,
+  item.descricao,
+  item.quantidade != null ? `qtd ${item.quantidade}` : null,
+  item.valor_unitario != null ? `unit. ${item.valor_unitario}` : null,
+  item.valor_total != null ? `total ${item.valor_total}` : null
+]
+  .filter(Boolean)
+  .join(' | ')
+
+// A linha SINTETICA que vai ao registrar. `dfd_id` esta nela porque e dele que
+// o mapa tira o agregado dono.
+const lerLinhaDosItens = async (t, dfdId) => {
+  const linhas = await t.any(
+    `SELECT tipo_item_id, cod_catmat_catser, descricao,
+            quantidade, valor_unitario, valor_total
+     FROM orcamento.dfd_item
+     WHERE dfd_id = $<dfdId>
+     ORDER BY id`,
+    { dfdId }
+  )
+  return { dfd_id: dfdId, itens: linhas.map(descreverItem) }
+}
+
+// So registra quando a lista MUDOU. Salvar o cabecalho sem mexer nos itens nao
+// pode produzir uma linha de historico dizendo que os itens mudaram.
+const registrarItens = async (t, dfdId, antes, depois, usuarioUuid, contexto) => {
+  if (JSON.stringify(antes.itens) === JSON.stringify(depois.itens)) {
+    return
+  }
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'orcamento.dfd_item',
+    // Sem `registro_id`: o evento descreve a lista, e nao uma linha. Apontar o
+    // id do DFD aqui se leria como "o item numero 42", que nao existe.
+    operacao: 'U',
+    antes,
+    depois,
+    usuarioUuid,
+    contexto
+  })
+}
+
 controller.listar = async ano => {
   return db.conn.any(
     `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto, d.justificativa,
@@ -111,7 +169,7 @@ controller.getPorId = async id => {
   return dfd
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+controller.criar = async (dados, usuarioUuid, contexto) => {
   const valorEstimado = resolveValorEstimado(dados.valor_estimado, dados.itens)
 
   return db.conn.tx(async t => {
@@ -124,7 +182,7 @@ controller.criar = async (dados, usuarioUuid) => {
         ($<numero>, $<ano>, $<rotulo>, $<objeto>, $<justificativa>, $<area_requisitante>,
          $<grau_prioridade_id>, $<data_prevista_conclusao>, $<responsavel_cpf>, $<vinculo_plano_gestao>,
          $<consta_pca>, $<valor_estimado>, $<usuarioUuid>)
-       RETURNING id`,
+       RETURNING *`,
       {
         numero: dados.numero,
         ano: dados.ano,
@@ -142,23 +200,39 @@ controller.criar = async (dados, usuarioUuid) => {
       }
     )
 
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.dfd',
+      registroId: dfd.id,
+      operacao: 'I',
+      depois: dfd,
+      usuarioUuid,
+      contexto
+    })
+
     await inserirItens(t, dfd.id, dados.itens, usuarioUuid)
 
-    return dfd
+    const itensDepois = await lerLinhaDosItens(t, dfd.id)
+    if (itensDepois.itens.length) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.dfd_item',
+        operacao: 'I',
+        depois: itensDepois,
+        usuarioUuid,
+        contexto
+      })
+    }
+
+    // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
+    return { id: dfd.id }
   })
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   const valorEstimado = resolveValorEstimado(dados.valor_estimado, dados.itens)
 
   return db.conn.tx(async t => {
-    const existente = await t.oneOrNone(
-      'SELECT id FROM orcamento.dfd WHERE id = $<id>',
-      { id }
-    )
-    if (!existente) {
-      throw new AppError('DFD não encontrado', httpCode.NotFound)
-    }
+    const antes = await auditoriaCtrl.lerAntes(t, 'orcamento.dfd', id, 'DFD')
+    const itensAntes = await lerLinhaDosItens(t, id)
 
     const dfd = await t.one(
       `UPDATE orcamento.dfd
@@ -169,7 +243,7 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
            consta_pca = $<consta_pca>, valor_estimado = $<valor_estimado>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
-       RETURNING id`,
+       RETURNING *`,
       {
         id,
         numero: dados.numero,
@@ -189,30 +263,61 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
       }
     )
 
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.dfd',
+      registroId: id,
+      operacao: 'U',
+      antes,
+      depois: dfd,
+      usuarioUuid,
+      contexto
+    })
+
     // Substitui os itens: remove os antigos do DFD e insere os novos na mesma transacao.
     await t.none('DELETE FROM orcamento.dfd_item WHERE dfd_id = $<id>', { id })
 
     await inserirItens(t, id, dados.itens, usuarioUuid)
 
-    return dfd
+    const itensDepois = await lerLinhaDosItens(t, id)
+    await registrarItens(t, id, itensAntes, itensDepois, usuarioUuid, contexto)
+
+    return { id: dfd.id }
   })
 }
 
-controller.deletar = async id => {
+controller.deletar = async (id, usuarioUuid, contexto) => {
   await db.conn.tx(async t => {
-    const existente = await t.oneOrNone(
-      'SELECT id FROM orcamento.dfd WHERE id = $<id>',
-      { id }
-    )
-    if (!existente) {
-      throw new AppError('DFD não encontrado', httpCode.NotFound)
-    }
+    const antes = await auditoriaCtrl.lerAntes(t, 'orcamento.dfd', id, 'DFD')
+    const itensAntes = await lerLinhaDosItens(t, id)
 
     // Remove primeiro os itens (FK dfd_item.dfd_id) e depois o proprio DFD. As
     // linhas de anexo (com os bytes) saem junto por ON DELETE CASCADE.
     await t.none('DELETE FROM orcamento.dfd_item WHERE dfd_id = $<id>', { id })
 
-    return t.none('DELETE FROM orcamento.dfd WHERE id = $<id>', { id })
+    if (itensAntes.itens.length) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.dfd_item',
+        operacao: 'D',
+        antes: itensAntes,
+        usuarioUuid,
+        contexto
+      })
+    }
+
+    // O anexo do DFD cai por ON DELETE CASCADE, sem DELETE explicito aqui. Sem
+    // esta chamada, o unico registro de que o PDF existiu sumiria em silencio.
+    await arquivoCtrl.auditarCascata(t, 'dfd_id', id, usuarioUuid, contexto)
+
+    await t.none('DELETE FROM orcamento.dfd WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.dfd',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 

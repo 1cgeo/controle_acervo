@@ -62,7 +62,7 @@ describe('pdr_ctrl.getPorId', () => {
 
 describe('pdr_ctrl.criar', () => {
   test('caminho feliz: insere o item e devolve o id', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 77 }) // INSERT RETURNING id
+    mockDb.conn.one.mockResolvedValueOnce({ id: 77, ano: 2026 }) // INSERT RETURNING *
 
     const r = await ctrl.criar(
       { ano: 2026, cod_nd: '339015', gnd: 3, valor_autorizado: 50000 },
@@ -79,7 +79,7 @@ describe('pdr_ctrl.criar', () => {
   })
 
   test('opcionais omitidos sao normalizados para null', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 78 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 78, ano: 2026 })
     await ctrl.criar({ ano: 2026, cod_nd: '339015' }, 'uuid')
     expect(mockDb.conn.one).toHaveBeenCalledWith(
       expect.any(String),
@@ -88,26 +88,42 @@ describe('pdr_ctrl.criar', () => {
   })
 })
 
+// A FORMA destas duas mudou em 2026-08-02, com a rastreabilidade: o 404 saia do
+// `rowCount` do proprio UPDATE, e o estado anterior era destruido sem nunca ser
+// lido. Hoje `lerAntes` faz as DUAS coisas -- le a linha inteira (que vira o
+// `dados_antes` do evento) e lanca o mesmo 404 -- e o UPDATE devolve
+// `RETURNING *`. E o mesmo numero de idas ao banco de antes.
 describe('pdr_ctrl.atualizar', () => {
-  test('caminho feliz: rowCount === 1 resolve sem erro', async () => {
-    mockDb.conn.result.mockResolvedValueOnce({ rowCount: 1 })
+  test('caminho feliz: le o estado anterior e devolve a linha nova', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 10, ano: 2026, gnd: 3 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 10, ano: 2026, gnd: 4 })
+
     await expect(
       ctrl.atualizar(10, { ano: 2026, cod_nd: '339015' }, 'uuid')
     ).resolves.toBeUndefined()
+
+    // O SELECT do estado anterior nao e uma consulta A MAIS: ele substituiu o
+    // `SELECT id` que so existia para produzir o 404.
+    expect(mockDb.conn.oneOrNone).toHaveBeenCalledWith(
+      expect.stringContaining('FROM orcamento.pdr_item'),
+      { id: 10 }
+    )
   })
 
-  test('404 quando o item nao existe (rowCount 0)', async () => {
-    mockDb.conn.result.mockResolvedValueOnce({ rowCount: 0 })
+  test('404 quando o item nao existe, e agora vem do lerAntes', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     await expect(
       ctrl.atualizar(999, { ano: 2026, cod_nd: '339015' }, 'uuid')
     ).rejects.toMatchObject({ statusCode: httpCode.NotFound })
+    // E o UPDATE nem chega a ser tentado.
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
   })
 })
 
 describe('pdr_ctrl.deletar', () => {
   test('404 quando o item nao existe', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null) // existencia -> null
-    await expect(ctrl.deletar(999)).rejects.toMatchObject({
+    await expect(ctrl.deletar(999, 'uuid')).rejects.toMatchObject({
       statusCode: httpCode.NotFound
     })
     expect(mockDb.conn.none).not.toHaveBeenCalled()
@@ -115,10 +131,10 @@ describe('pdr_ctrl.deletar', () => {
 
   test('409 quando ha nota_credito vinculada ao item', async () => {
     mockDb.conn.oneOrNone
-      .mockResolvedValueOnce({ id: 1 }) // item existe
+      .mockResolvedValueOnce({ id: 1, ano: 2026 }) // item existe
       .mockResolvedValueOnce({ '?column?': 1 }) // SELECT 1 da NC vinculada
 
-    await expect(ctrl.deletar(1)).rejects.toMatchObject({
+    await expect(ctrl.deletar(1, 'uuid')).rejects.toMatchObject({
       statusCode: httpCode.Conflict
     })
     expect(mockDb.conn.none).not.toHaveBeenCalled()
@@ -126,11 +142,13 @@ describe('pdr_ctrl.deletar', () => {
 
   test('remove o item quando nao ha NC vinculada', async () => {
     mockDb.conn.oneOrNone
-      .mockResolvedValueOnce({ id: 1 }) // item existe
+      // A linha INTEIRA: ela e o `dados_antes` do evento de exclusao, que e o
+      // unico registro do que se perdeu.
+      .mockResolvedValueOnce({ id: 1, ano: 2026, cod_nd: '339015' })
       .mockResolvedValueOnce(null) // sem NC vinculada
     mockDb.conn.none.mockResolvedValueOnce(undefined) // DELETE
 
-    await ctrl.deletar(1)
+    await ctrl.deletar(1, 'uuid')
 
     expect(mockDb.conn.tx).toHaveBeenCalledTimes(1)
     expect(mockDb.conn.none).toHaveBeenCalledWith(

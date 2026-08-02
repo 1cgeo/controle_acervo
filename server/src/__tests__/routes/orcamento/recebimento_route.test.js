@@ -1,0 +1,126 @@
+'use strict'
+
+// Teste de rota (supertest) do recebimento de material. Mocka banco e
+// autenticacao.
+//
+// A FEATURE NAO TINHA ARQUIVO DE TESTE ate 2026-08-02: as tres rotas dela
+// existiam desde a fusao e nenhuma era exercitada. Ele nasceu com a
+// rastreabilidade, entao cobre o basico (caminho feliz, 404 e a validacao Joy)
+// junto do evento.
+//
+// O agregado e a NOTA DE EMPENHO, e nao o recebimento: ninguem abre "recebimento
+// n.o 812"; abre a ficha da NE e olha o que foi recebido contra ela.
+
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
+
+const mockDb = createMockDb()
+jest.mock('../../../database', () => ({
+  db: mockDb,
+  databaseVersion: { nome: '1.0.0', load: jest.fn() }
+}))
+jest.mock('../../../login', () => require('../../helpers/orcamento/mockLogin'))
+
+const request = require('supertest')
+const { buildTestApp } = require('../../helpers/orcamento/testApp')
+const { recebimentoRoute } = require('../../../orcamento/nota_empenho')
+
+const app = buildTestApp([{ path: '/recebimentos', router: recebimentoRoute }])
+
+const AUTOR = '11111111-1111-1111-1111-111111111111'
+
+const bodyValido = {
+  nota_empenho_id: 3,
+  material: 'Plotter HP DesignJet',
+  prazo_entrega: '30 dias',
+  situacao: 'Aguardando entrega'
+}
+
+beforeEach(() => mockDb.reset())
+
+describe('POST /recebimentos', () => {
+  test('cria e registra o evento na ficha da NE', async () => {
+    mockDb.conn.one.mockResolvedValueOnce({ id: 15, ...bodyValido })
+    const res = await request(app).post('/recebimentos').send(bodyValido)
+    expect([200, 201]).toContain(res.status)
+    // A rota continua devolvendo SO o id: o `RETURNING *` e do rastro.
+    expect(res.body.dados).toEqual({ id: 15 })
+
+    expect(eventosDeAuditoria(mockDb)[0]).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'nota_empenho',
+      entidadeId: '3',
+      tabela: 'orcamento.recebimento_material',
+      registroId: '15',
+      operacao: 'I',
+      usuarioUuid: AUTOR
+    })
+  })
+
+  test('sem material vira 400 (validacao Joi)', async () => {
+    const { material, ...sem } = bodyValido
+    const res = await request(app).post('/recebimentos').send(sem)
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
+  // A NE e obrigatoria: o recebimento nao existe solto.
+  test('NE inexistente (FK 23503) vira 400 com mensagem, e nao 500', async () => {
+    mockDb.conn.one.mockRejectedValueOnce({ code: '23503' })
+    const res = await request(app).post('/recebimentos').send(bodyValido)
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/nota de empenho/i)
+  })
+})
+
+describe('PUT /recebimentos/:id', () => {
+  test('a alteracao guarda os dois lados', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 15,
+      ...bodyValido,
+      situacao: 'Aguardando entrega'
+    }) // lerAntes
+    mockDb.conn.one.mockResolvedValueOnce({
+      id: 15,
+      ...bodyValido,
+      situacao: 'Recebido'
+    })
+
+    const res = await request(app)
+      .put('/recebimentos/15')
+      .send({ ...bodyValido, situacao: 'Recebido' })
+    expect(res.status).toBe(200)
+
+    const [evento] = eventosDeAuditoria(mockDb)
+    expect(evento.operacao).toBe('U')
+    expect(evento.camposAlterados).toEqual(['situacao'])
+    expect(JSON.parse(evento.dadosAntes).situacao).toBe('Aguardando entrega')
+    expect(JSON.parse(evento.dadosDepois).situacao).toBe('Recebido')
+  })
+
+  test('404 quando o recebimento nao existe', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+    const res = await request(app).put('/recebimentos/999').send(bodyValido)
+    expect(res.status).toBe(404)
+    expect(eventosDeAuditoria(mockDb)).toHaveLength(0)
+  })
+})
+
+describe('DELETE /recebimentos/:id', () => {
+  test('exclui e guarda o que se perdeu', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 15, ...bodyValido })
+    mockDb.conn.none.mockResolvedValueOnce(undefined)
+    const res = await request(app).delete('/recebimentos/15')
+    expect(res.status).toBe(200)
+
+    const [evento] = eventosDeAuditoria(mockDb)
+    expect(evento).toMatchObject({ operacao: 'D', usuarioUuid: AUTOR })
+    expect(JSON.parse(evento.dadosAntes).material).toBe('Plotter HP DesignJet')
+    expect(evento.dadosDepois).toBeNull()
+  })
+
+  test('404 quando o recebimento nao existe', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+    const res = await request(app).delete('/recebimentos/999')
+    expect(res.status).toBe(404)
+  })
+})

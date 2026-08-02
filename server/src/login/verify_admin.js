@@ -6,6 +6,8 @@ const { db } = require('../database')
 
 const validateToken = require('./validate_token')
 
+const { montarContexto } = require('./contexto')
+
 // middleware para verificar se o usuário é administrador
 const verifyAdmin = asyncHandler(async (req, res, next) => {
   const token = req.headers.authorization
@@ -34,6 +36,9 @@ const verifyAdmin = asyncHandler(async (req, res, next) => {
   req.usuarioUuid = decoded.uuid
   req.usuarioId = decoded.id
   req.administrador = true
+
+  // Origem, rota e lote da rastreabilidade.
+  montarContexto(req, decoded)
 
   next()
 })

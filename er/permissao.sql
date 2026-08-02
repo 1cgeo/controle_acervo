@@ -15,6 +15,18 @@
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA dgeo TO $1:name;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA dgeo TO $1:name;
 
+  -- `auditoria` e o UNICO schema sem UPDATE e sem DELETE para o usuario da
+  -- aplicacao, e isso e a garantia, nao um esquecimento: uma trilha que a
+  -- propria aplicacao pode reescrever nao prova nada. O backend so INSERE
+  -- (auditoria/auditoria_ctrl.js) e LE (a tela de historico e a de
+  -- rastreabilidade); nenhum caminho de codigo altera ou apaga evento.
+  --
+  -- O preco e que o expurgo, se um dia for decidido, exige o dono do banco em
+  -- vez de uma rota. Ver o rodape de er/auditoria.sql.
+  GRANT USAGE ON SCHEMA auditoria TO $1:name;
+  GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA auditoria TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA auditoria TO $1:name;
+
   GRANT USAGE ON SCHEMA acervo TO $1:name;
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA acervo TO $1:name;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA acervo TO $1:name;

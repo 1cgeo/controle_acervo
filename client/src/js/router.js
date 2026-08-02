@@ -1,4 +1,7 @@
-import { isAuthenticated, isAdmin, temPerfil, ehDeAlgumPerfil, temAcessoModulo } from '@store/auth-store.js';
+import {
+  isAuthenticated, isAdmin, temPerfil, ehDeAlgumPerfil, temAcessoModulo,
+  ehGerenteDeAlgumModulo,
+} from '@store/auth-store.js';
 import { primeiroModuloAcessivel, rotaInicial } from '@modules/registry.js';
 
 /**
@@ -152,6 +155,24 @@ export function adminLoader() {
   if (!isAdmin()) {
     return '/unauthorized';
   }
+  return true;
+}
+
+/**
+ * Guard da tela de RASTREABILIDADE: administrador global OU gerente de algum
+ * modulo.
+ *
+ * Nao cabe no `adminLoader` nem no `authLoader`, que sao os dois que a
+ * plataforma tinha: a tela e do administrador (que ve tudo) e do gerente (que ve
+ * o modulo dele). O recorte de verdade e do servidor, no
+ * `verifyRastreabilidade`, que le o perfil do BANCO -- este guarda so evita
+ * abrir uma tela que responderia 403, e le a foto do login, que envelhece.
+ * @returns {true|string}
+ */
+export function rastreabilidadeLoader() {
+  const auth = authLoader();
+  if (auth !== true) return auth;
+  if (!isAdmin() && !ehGerenteDeAlgumModulo()) return '/unauthorized';
   return true;
 }
 

@@ -45,7 +45,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: rpnpSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await rpnpCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await rpnpCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'RPNP criado com sucesso'
 
@@ -61,7 +61,7 @@ router.put(
     params: rpnpSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await rpnpCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await rpnpCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'RPNP atualizado com sucesso'
 
@@ -74,7 +74,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: rpnpSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await rpnpCtrl.deletar(req.params.id)
+    await rpnpCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'RPNP excluido com sucesso'
 

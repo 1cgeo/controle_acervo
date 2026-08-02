@@ -45,7 +45,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: liquidacaoSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await liquidacaoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await liquidacaoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Liquidacao criada com sucesso'
 
@@ -61,7 +61,7 @@ router.put(
     params: liquidacaoSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await liquidacaoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await liquidacaoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Liquidacao atualizada com sucesso'
 
@@ -74,7 +74,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: liquidacaoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await liquidacaoCtrl.deletar(req.params.id)
+    await liquidacaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Liquidacao excluida com sucesso'
 

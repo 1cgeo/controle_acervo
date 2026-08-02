@@ -42,7 +42,7 @@ router.post(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ body: pdrSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await pdrCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await pdrCtrl.criar(req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Item do PDR criado com sucesso', httpCode.Created, dados)
   })
 )
@@ -52,7 +52,7 @@ router.put(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: pdrSchema.idParams, body: pdrSchema.atualizar }),
   asyncHandler(async (req, res, next) => {
-    await pdrCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await pdrCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Item do PDR atualizado com sucesso', httpCode.OK)
   })
 )
@@ -62,7 +62,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: pdrSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await pdrCtrl.deletar(req.params.id)
+    await pdrCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Item do PDR excluído com sucesso', httpCode.OK)
   })
 )

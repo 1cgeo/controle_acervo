@@ -48,6 +48,16 @@ const hashesDaSemente = () => {
  */
 const cleanTestData = async () => {
   await conn.tx(async t => {
+    // A RASTREABILIDADE entra primeiro, e por TRUNCATE proprio: `auditoria.evento`
+    // nao tem chave estrangeira nenhuma (de proposito, para o rastro sobreviver
+    // ao registro e ao usuario apagados), entao nenhum CASCADE a alcanca. Sem
+    // esta linha os eventos de um teste vazariam para o teste seguinte, e as
+    // contagens de "quantos eventos este caso gerou" passariam a depender da
+    // ordem dos arquivos. E o mesmo motivo pelo qual a antiga
+    // `mapoteca.pedido_auditoria` tinha a sua linha propria aqui, na secao da
+    // mapoteca, antes de virar `auditoria.evento`.
+    await t.none('TRUNCATE auditoria.evento CASCADE')
+
     // Orcamento tables (modulo absorvido do SCO). A configuracao e singleton
     // (linha id=1 criada pelo er/orcamento.sql), entao NAO entra no truncate.
     await t.none('TRUNCATE orcamento.arquivo CASCADE')
@@ -69,11 +79,6 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE rpcmtec.edicao CASCADE')
 
     // Mapoteca tables.
-    // A auditoria entra PRIMEIRO e por TRUNCATE proprio: ela nao tem FK para o
-    // pedido (de proposito, para sobreviver ao pedido apagado), entao o CASCADE
-    // do pedido nao a alcanca. Sem esta linha as auditorias de um teste vazariam
-    // para o teste seguinte, e a FK de usuario travaria o DELETE dos usuarios.
-    await t.none('TRUNCATE mapoteca.pedido_auditoria CASCADE')
     await t.none('TRUNCATE mapoteca.impressao_item CASCADE')
     await t.none('TRUNCATE mapoteca.consumo_material CASCADE')
     await t.none('TRUNCATE mapoteca.estoque_material CASCADE')

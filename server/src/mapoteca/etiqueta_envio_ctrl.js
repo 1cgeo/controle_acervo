@@ -2,7 +2,7 @@
 
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
-const auditoriaCtrl = require('./auditoria_ctrl')
+const auditoriaCtrl = require('../auditoria/auditoria_ctrl')
 
 const controller = {}
 
@@ -60,8 +60,9 @@ controller.getPorPedido = async pedidoId => {
  * @param {number|string} pedidoId
  * @param {{destinatario:string, aos_cuidados?:string, endereco?:string, cep?:string}} dados
  * @param {string} usuarioUuid - uuid do usuário do token
+ * @param {object} [contexto] - { origem, rota, loteId } montado pelo guarda
  */
-controller.salvar = async (pedidoId, dados, usuarioUuid) => {
+controller.salvar = async (pedidoId, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     await conferePedido(t, pedidoId)
 
@@ -99,13 +100,13 @@ controller.salvar = async (pedidoId, dados, usuarioUuid) => {
     )
 
     await auditoriaCtrl.registrar(t, {
-      pedidoId,
-      tabela: 'etiqueta_envio',
+      tabela: 'mapoteca.etiqueta_envio',
       registroId: depois.id,
       operacao: antes ? 'U' : 'I',
       antes,
       depois,
-      usuarioUuid
+      usuarioUuid,
+      contexto
     })
 
     return depois

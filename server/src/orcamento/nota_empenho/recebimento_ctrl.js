@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -59,74 +61,108 @@ controller.getPorId = async id => {
   return rm
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+// As tres ganharam TRANSACAO em 2026-08-02, com a rastreabilidade.
+controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `INSERT INTO orcamento.recebimento_material
-        (nota_empenho_id, material, prazo_entrega, situacao, ano_referencia,
-         usuario_cadastramento_uuid)
-       VALUES
-        ($<notaEmpenhoId>, $<material>, $<prazoEntrega>, $<situacao>, $<anoReferencia>,
-         $<usuarioUuid>)
-       RETURNING id`,
-      {
-        notaEmpenhoId: dados.nota_empenho_id,
-        material: dados.material,
-        prazoEntrega: dados.prazo_entrega || null,
-        situacao: dados.situacao || null,
-        anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
-        usuarioUuid
-      }
-    )
+    .tx(async t => {
+      const criado = await t.one(
+        `INSERT INTO orcamento.recebimento_material
+          (nota_empenho_id, material, prazo_entrega, situacao, ano_referencia,
+           usuario_cadastramento_uuid)
+         VALUES
+          ($<notaEmpenhoId>, $<material>, $<prazoEntrega>, $<situacao>, $<anoReferencia>,
+           $<usuarioUuid>)
+         RETURNING *`,
+        {
+          notaEmpenhoId: dados.nota_empenho_id,
+          material: dados.material,
+          prazoEntrega: dados.prazo_entrega || null,
+          situacao: dados.situacao || null,
+          anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.recebimento_material',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: criado.id }
+    })
     .catch(tratarFk)
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.recebimento_material WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Recebimento de material nao encontrado', httpCode.NotFound)
-  }
-
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `UPDATE orcamento.recebimento_material SET
-         nota_empenho_id = $<notaEmpenhoId>, material = $<material>,
-         prazo_entrega = $<prazoEntrega>, situacao = $<situacao>,
-         ano_referencia = $<anoReferencia>,
-         data_modificacao = $<dataModificacao>,
-         usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id>
-       RETURNING id`,
-      {
+    .tx(async t => {
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'orcamento.recebimento_material',
         id,
-        notaEmpenhoId: dados.nota_empenho_id,
-        material: dados.material,
-        prazoEntrega: dados.prazo_entrega || null,
-        situacao: dados.situacao || null,
-        anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
-        dataModificacao: new Date(),
-        usuarioUuid
-      }
-    )
+        'Recebimento de material'
+      )
+
+      const depois = await t.one(
+        `UPDATE orcamento.recebimento_material SET
+           nota_empenho_id = $<notaEmpenhoId>, material = $<material>,
+           prazo_entrega = $<prazoEntrega>, situacao = $<situacao>,
+           ano_referencia = $<anoReferencia>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+         WHERE id = $<id>
+         RETURNING *`,
+        {
+          id,
+          notaEmpenhoId: dados.nota_empenho_id,
+          material: dados.material,
+          prazoEntrega: dados.prazo_entrega || null,
+          situacao: dados.situacao || null,
+          anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
+          dataModificacao: new Date(),
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.recebimento_material',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: depois.id }
+    })
     .catch(tratarFk)
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.recebimento_material WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Recebimento de material nao encontrado', httpCode.NotFound)
-  }
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.recebimento_material',
+      id,
+      'Recebimento de material'
+    )
 
-  return db.conn.none(
-    'DELETE FROM orcamento.recebimento_material WHERE id = $<id>',
-    { id }
-  )
+    await t.none('DELETE FROM orcamento.recebimento_material WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.recebimento_material',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+  })
 }
 
 module.exports = controller

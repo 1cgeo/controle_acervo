@@ -15,7 +15,11 @@ const mapotecaSchema = require('./mapoteca_schema')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const acervoSchema = require('../acervo/acervo_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
-const auditoriaCtrl = require('./auditoria_ctrl')
+// O rastro do pedido saiu de `mapoteca.pedido_auditoria` para `auditoria.evento`
+// em 2026-08-02. A URL desta rota NAO mudou junto, de proposito: ver o
+// comentario dela, no fim do arquivo.
+const auditoriaCtrl = require('../auditoria/auditoria_ctrl')
+const { enriquecer } = require('../auditoria/renderizar')
 const etiquetaEnvioCtrl = require('./etiqueta_envio_ctrl')
 const uploadAnexoPedido = require('./anexo_pedido_upload')
 
@@ -116,7 +120,7 @@ router.post(
     body: mapotecaSchema.cliente
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaCliente(req.body, req.usuarioUuid)
+    await mapotecaCtrl.criaCliente(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Cliente criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
@@ -129,7 +133,7 @@ router.put(
     body: mapotecaSchema.clienteAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaCliente(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaCliente(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Cliente atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -142,7 +146,7 @@ router.delete(
     body: mapotecaSchema.clienteIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteClientes(req.body.cliente_ids)
+    await mapotecaCtrl.deleteClientes(req.body.cliente_ids, req.usuarioUuid, req.contexto)
     const msg = 'Clientes deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -261,7 +265,7 @@ router.post(
     body: mapotecaSchema.pedido
   }),
   asyncHandler(async (req, res, next) => {
-    const result = await mapotecaCtrl.criaPedido(req.body, req.usuarioUuid)
+    const result = await mapotecaCtrl.criaPedido(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Pedido criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, result)
   })
@@ -274,7 +278,7 @@ router.put(
     body: mapotecaSchema.pedidoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaPedido(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaPedido(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Pedido atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -287,7 +291,7 @@ router.delete(
     body: mapotecaSchema.pedidoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deletePedidos(req.body.pedido_ids, req.usuarioUuid)
+    await mapotecaCtrl.deletePedidos(req.body.pedido_ids, req.usuarioUuid, req.contexto)
     const msg = 'Pedidos deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -347,7 +351,7 @@ router.post(
     body: mapotecaSchema.registroImpressao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.registrarImpressao(req.body.registros, req.usuarioUuid)
+    await mapotecaCtrl.registrarImpressao(req.body.registros, req.usuarioUuid, req.contexto)
     const msg = 'Impressão registrada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
@@ -375,7 +379,7 @@ router.delete(
     body: mapotecaSchema.impressaoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteImpressoes(req.body.impressao_ids, req.usuarioUuid)
+    await mapotecaCtrl.deleteImpressoes(req.body.impressao_ids, req.usuarioUuid, req.contexto)
     const msg = 'Registros de impressão deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -389,7 +393,7 @@ router.post(
     body: mapotecaSchema.produtoPedido
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaProdutoPedido(req.body, req.usuarioUuid)
+    await mapotecaCtrl.criaProdutoPedido(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Produto adicionado ao pedido com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
@@ -402,7 +406,7 @@ router.put(
     body: mapotecaSchema.produtoPedidoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaProdutoPedido(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaProdutoPedido(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Produto do pedido atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -415,7 +419,7 @@ router.delete(
     body: mapotecaSchema.produtoPedidoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteProdutosPedido(req.body.produto_pedido_ids, req.usuarioUuid)
+    await mapotecaCtrl.deleteProdutosPedido(req.body.produto_pedido_ids, req.usuarioUuid, req.contexto)
     const msg = 'Produtos do pedido deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -453,7 +457,7 @@ router.post(
     body: mapotecaSchema.plotter
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaPlotter(req.body, req.usuarioUuid)
+    await mapotecaCtrl.criaPlotter(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Plotter criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
@@ -466,7 +470,7 @@ router.put(
     body: mapotecaSchema.plotterAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaPlotter(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaPlotter(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Plotter atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -479,7 +483,7 @@ router.delete(
     body: mapotecaSchema.plotterIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deletePlotters(req.body.plotter_ids)
+    await mapotecaCtrl.deletePlotters(req.body.plotter_ids, req.usuarioUuid, req.contexto)
     const msg = 'Plotters deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -516,7 +520,7 @@ router.post(
     body: mapotecaSchema.manutencaoPlotter
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaManutencaoPlotter(req.body, req.usuarioUuid)
+    await mapotecaCtrl.criaManutencaoPlotter(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Manutenção de plotter registrada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created)
   })
@@ -529,7 +533,7 @@ router.put(
     body: mapotecaSchema.manutencaoPlotterAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaManutencaoPlotter(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaManutencaoPlotter(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Manutenção de plotter atualizada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -542,7 +546,7 @@ router.delete(
     body: mapotecaSchema.manutencaoPlotterIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteManutencoesPlotter(req.body.manutencao_ids)
+    await mapotecaCtrl.deleteManutencoesPlotter(req.body.manutencao_ids, req.usuarioUuid, req.contexto)
     const msg = 'Manutenções de plotter deletadas com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -580,7 +584,7 @@ router.post(
     body: mapotecaSchema.tipoMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaTipoMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaTipoMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Tipo de material criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -593,7 +597,7 @@ router.put(
     body: mapotecaSchema.tipoMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaTipoMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaTipoMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Tipo de material atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -606,7 +610,7 @@ router.delete(
     body: mapotecaSchema.tipoMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteTiposMaterial(req.body.tipo_material_ids)
+    await mapotecaCtrl.deleteTiposMaterial(req.body.tipo_material_ids, req.usuarioUuid, req.contexto)
     const msg = 'Tipos de material deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -640,7 +644,7 @@ router.post(
     body: mapotecaSchema.transferenciaEstoque
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.transferirMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.transferirMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Transferência realizada com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -666,7 +670,7 @@ router.post(
     body: mapotecaSchema.estoqueMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaEstoqueMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaEstoqueMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Estoque de material criado/atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -679,7 +683,7 @@ router.put(
     body: mapotecaSchema.estoqueMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaEstoqueMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaEstoqueMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Estoque de material atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -692,7 +696,7 @@ router.delete(
     body: mapotecaSchema.estoqueMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteEstoqueMaterial(req.body.estoque_material_ids)
+    await mapotecaCtrl.deleteEstoqueMaterial(req.body.estoque_material_ids, req.usuarioUuid, req.contexto)
     const msg = 'Registros de estoque deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -754,7 +758,7 @@ router.post(
     body: mapotecaSchema.consumoMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaConsumoMaterial(req.body, req.usuarioUuid)
+    const id = await mapotecaCtrl.criaConsumoMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Registro de consumo criado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
@@ -767,7 +771,7 @@ router.put(
     body: mapotecaSchema.consumoMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaConsumoMaterial(req.body, req.usuarioUuid)
+    await mapotecaCtrl.atualizaConsumoMaterial(req.body, req.usuarioUuid, req.contexto)
     const msg = 'Registro de consumo atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -780,7 +784,7 @@ router.delete(
     body: mapotecaSchema.consumoMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteConsumoMaterial(req.body.consumo_material_ids)
+    await mapotecaCtrl.deleteConsumoMaterial(req.body.consumo_material_ids, req.usuarioUuid, req.contexto)
     const msg = 'Registros de consumo deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -968,7 +972,8 @@ router.post(
       req.params.id,
       req.file,
       req.body,
-      req.usuarioUuid
+      req.usuarioUuid,
+      req.contexto
     )
 
     const msg = 'Anexo do pedido cadastrado com sucesso'
@@ -1004,7 +1009,7 @@ router.delete(
   verifyPerfil('gerente', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.anexoIdParams }),
   asyncHandler(async (req, res, next) => {
-    await anexoPedidoCtrl.deletar(req.params.anexoId)
+    await anexoPedidoCtrl.deletar(req.params.anexoId, req.usuarioUuid, req.contexto)
 
     const msg = 'Anexo do pedido excluído com sucesso'
 
@@ -1047,7 +1052,8 @@ router.put(
     const dados = await etiquetaEnvioCtrl.salvar(
       req.params.id,
       req.body,
-      req.usuarioUuid
+      req.usuarioUuid,
+      req.contexto
     )
 
     const msg = 'Etiqueta de envio salva com sucesso'
@@ -1061,13 +1067,31 @@ router.put(
 // Histórico de quem alterou, adicionou e removeu o pedido e os itens dele.
 // Perfil de CONSULTA: quem lê o pedido lê o histórico dele. Responde mesmo para
 // pedido já apagado, que é justamente o caso que a auditoria existe para
-// registrar (ver o comentário em auditoria_ctrl.listarPorPedido).
+// registrar (ver o comentário em auditoriaCtrl.listarPorEntidade).
+//
+// A URL CONTINUA A MESMA depois de a tabela mudar de casa (2026-08-02), e isso
+// é deliberado: existe `GET /api/auditoria/mapoteca/pedido/:id`, que serve o
+// mesmo conteúdo pelo caminho geral, e trocar as duas coisas no mesmo commit
+// mexeria na tela do pedido, no `mapoteca-service.js` e nos seis casos de
+// `details-impressao-historico.test.js` junto com a migração dos dados. Uma
+// coisa por vez: se algo quebrar, se sabe o quê.
+//
+// O que MUDOU na resposta, e ninguém do cliente ainda lê: `tabela` vem
+// qualificada (`mapoteca.pedido`, e não `pedido`), e cada evento traz `resumo` e
+// `mudancas` -- o diff já renderizado, com o rótulo em português e os dois
+// valores em texto. A tela ainda mostra `campos_alterados.join(', ')`, que é o
+// defeito que a fase 2 do plano corrige.
 router.get(
   '/pedido/:id/auditoria',
   verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({ params: mapotecaSchema.auditoriaPedidoParams }),
   asyncHandler(async (req, res, next) => {
-    const dados = await auditoriaCtrl.listarPorPedido(req.params.id)
+    const eventos = await auditoriaCtrl.listarPorEntidade(
+      'mapoteca',
+      'pedido',
+      req.params.id
+    )
+    const dados = await enriquecer(eventos)
 
     const msg = 'Auditoria do pedido retornada com sucesso'
 

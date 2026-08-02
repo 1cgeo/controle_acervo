@@ -12,6 +12,11 @@
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 
+// E o relatorio que o chefe assina: quem trocou o assinante ou a data de
+// assinatura de uma edicao e pergunta que se faz depois de o documento ter
+// saido, e ate 2026-08-02 nao havia onde responde-la.
+const { auditoriaCtrl } = require('../auditoria')
+
 const controller = {}
 
 // SQLSTATE de violação de UNIQUE. Traduz o erro cru da constraint
@@ -33,15 +38,6 @@ const CAMPOS = `id, ano, mes, assinante, data_assinatura,
                 data_cadastramento, usuario_cadastramento_uuid,
                 data_modificacao, usuario_modificacao_uuid`
 
-const exigirExistente = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM rpcmtec.edicao WHERE id = $<id>', { id }
-  )
-  if (!existente) {
-    throw new AppError('Edição do RPCMTec não encontrada', httpCode.NotFound)
-  }
-}
-
 controller.listar = async (filtros = {}) => {
   return db.conn.any(
     `SELECT ${CAMPOS}
@@ -62,52 +58,104 @@ controller.getPorId = async id => {
   return edicao
 }
 
-controller.criar = async (dados, usuarioUuid) => {
-  return db.conn
-    .one(
-      `INSERT INTO rpcmtec.edicao
-         (ano, mes, assinante, data_assinatura, usuario_cadastramento_uuid)
-       VALUES ($<ano>, $<mes>, $<assinante>, $<dataAssinatura>, $<usuarioUuid>)
-       RETURNING id`,
-      {
-        ano: dados.ano,
-        mes: dados.mes,
-        assinante: dados.assinante || null,
-        dataAssinatura: dados.data_assinatura || null,
-        usuarioUuid
-      }
-    )
-    .catch(tratarErroEdicao)
+// As TRES funcoes de escrita ganharam transacao em 2026-08-02. Nenhuma tinha, e
+// a de exclusao chegava a fazer dois comandos em duas conexoes diferentes. O
+// rastro tem de cair JUNTO com a mudanca que ele descreve, ou nao cair: com
+// conexao propria, um erro depois do INSERT deixaria para tras o registro de uma
+// alteracao que nunca aconteceu.
+controller.criar = async (dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const criada = await t
+      .one(
+        `INSERT INTO rpcmtec.edicao
+           (ano, mes, assinante, data_assinatura, usuario_cadastramento_uuid)
+         VALUES ($<ano>, $<mes>, $<assinante>, $<dataAssinatura>, $<usuarioUuid>)
+         RETURNING *`,
+        {
+          ano: dados.ano,
+          mes: dados.mes,
+          assinante: dados.assinante || null,
+          dataAssinatura: dados.data_assinatura || null,
+          usuarioUuid
+        }
+      )
+      .catch(tratarErroEdicao)
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.edicao',
+      registroId: criada.id,
+      operacao: 'I',
+      depois: criada,
+      usuarioUuid,
+      contexto
+    })
+
+    // A rota continua devolvendo so o id: o RETURNING * e do rastro.
+    return { id: criada.id }
+  })
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  await exigirExistente(id)
-
-  return db.conn
-    .one(
-      `UPDATE rpcmtec.edicao SET
-         ano = $<ano>, mes = $<mes>, assinante = $<assinante>,
-         data_assinatura = $<dataAssinatura>,
-         data_modificacao = $<dataModificacao>,
-         usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id>
-       RETURNING id`,
-      {
-        id,
-        ano: dados.ano,
-        mes: dados.mes,
-        assinante: dados.assinante || null,
-        dataAssinatura: dados.data_assinatura || null,
-        dataModificacao: new Date(),
-        usuarioUuid
-      }
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    // Substitui o `exigirExistente`, que era um `SELECT id` numa conexao propria
+    // so para produzir o 404: agora a linha inteira sai pelo mesmo custo, dentro
+    // da transacao, e vira o `dados_antes`.
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'rpcmtec.edicao', id, 'Edição do RPCMTec'
     )
-    .catch(tratarErroEdicao)
+
+    const depois = await t
+      .one(
+        `UPDATE rpcmtec.edicao SET
+           ano = $<ano>, mes = $<mes>, assinante = $<assinante>,
+           data_assinatura = $<dataAssinatura>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+         WHERE id = $<id>
+         RETURNING *`,
+        {
+          id,
+          ano: dados.ano,
+          mes: dados.mes,
+          assinante: dados.assinante || null,
+          dataAssinatura: dados.data_assinatura || null,
+          dataModificacao: new Date(),
+          usuarioUuid
+        }
+      )
+      .catch(tratarErroEdicao)
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.edicao',
+      registroId: id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: depois.id }
+  })
 }
 
-controller.deletar = async id => {
-  await exigirExistente(id)
-  return db.conn.none('DELETE FROM rpcmtec.edicao WHERE id = $<id>', { id })
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'rpcmtec.edicao', id, 'Edição do RPCMTec'
+    )
+
+    await t.none('DELETE FROM rpcmtec.edicao WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.edicao',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+  })
 }
 
 module.exports = controller

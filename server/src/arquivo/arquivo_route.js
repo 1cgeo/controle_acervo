@@ -21,7 +21,7 @@ router.put(
     body: arquivoSchema.arquivoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await arquivoCtrl.atualizaArquivo(req.body, req.usuarioUuid);
+    await arquivoCtrl.atualizaArquivo(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Arquivo atualizado com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK);
@@ -35,7 +35,7 @@ router.delete(
     body: arquivoSchema.arquivoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await arquivoCtrl.deleteArquivos(req.body.arquivo_ids, req.body.motivo_exclusao, req.usuarioUuid);
+    await arquivoCtrl.deleteArquivos(req.body.arquivo_ids, req.body.motivo_exclusao, req.usuarioUuid, req.contexto);
     const msg = 'Arquivos deletados com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK);
   })
@@ -132,7 +132,7 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const plano = await planoDaRequisicao(req);
     try {
-      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid, req.contexto);
       const msg = `Produto cadastrado com a versão ${plano.versao.versao} e ` +
         `${dados.arquivos.length} arquivo(s) gravado(s) no volume ${dados.volume} ` +
         `como "${dados.nome_arquivo}"`;
@@ -151,7 +151,7 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const plano = await planoDaRequisicao(req);
     try {
-      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid, req.contexto);
       const msg = `Versão ${plano.versao.versao} cadastrada com ${dados.arquivos.length} ` +
         `arquivo(s) gravado(s) no volume ${dados.volume} como "${dados.nome_arquivo}"`;
       return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
@@ -184,7 +184,7 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const plano = await planoDaRequisicao(req);
     try {
-      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid);
+      const dados = await arquivoCtrl.enviarWeb(plano, req.usuarioUuid, req.contexto);
       const msg = `${dados.arquivos.length} arquivo(s) acrescentado(s) à versão ` +
         `${plano.versao.versao}, no volume ${dados.volume} como "${dados.nome_arquivo}"`;
       return res.sendJsonAndLog(true, msg, httpCode.Created, dados);
@@ -220,7 +220,7 @@ router.post(
     body: arquivoSchema.catalogarProduto
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.catalogarProduto(req.body, req.usuarioUuid);
+    const dados = await arquivoCtrl.catalogarProduto(req.body, req.usuarioUuid, req.contexto);
 
     const msg = `Produto catalogado no volume: ${dados.produtos.length} produto(s), ` +
       `${dados.total_arquivos} arquivo(s), ${dados.total_mb.toFixed(2)} MB lidos ` +
@@ -237,7 +237,7 @@ router.post(
     body: arquivoSchema.confirmUpload
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.confirmUpload(req.body.session_uuid, req.usuarioUuid);
+    const dados = await arquivoCtrl.confirmUpload(req.body.session_uuid, req.usuarioUuid, req.contexto);
     
     let msg = 'Validação de upload concluída com sucesso';
     if (dados.status === 'failed') {
@@ -301,7 +301,8 @@ router.post(
     const dados = await arquivoCtrl.atualizarChecksum(
       req.body.arquivo_ids,
       req.body.motivo,
-      req.usuarioUuid
+      req.usuarioUuid,
+      req.contexto
     );
 
     const msg = 'Checksum e tamanho atualizados por releitura do volume';
@@ -334,7 +335,8 @@ router.post(
       req.body.limite,
       req.body.dry_run,
       req.body.motivo,
-      req.usuarioUuid
+      req.usuarioUuid,
+      req.contexto
     );
 
     const msg = dados.dry_run

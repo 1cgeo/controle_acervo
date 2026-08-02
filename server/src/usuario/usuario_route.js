@@ -70,7 +70,7 @@ router.put(
   verifyLogin,
   schemaValidation({ body: usuarioSchema.updatePerfilProprio }),
   asyncHandler(async (req, res, next) => {
-    await usuarioCtrl.atualizaPerfilProprio(req.usuarioUuid, req.body)
+    await usuarioCtrl.atualizaPerfilProprio(req.usuarioUuid, req.body, req.contexto)
     return res.sendJsonAndLog(true, 'Perfil atualizado com sucesso', httpCode.OK)
   })
 )
@@ -85,7 +85,8 @@ router.put(
     await usuarioCtrl.atualizaSenhaPropria(
       req.usuarioUuid,
       req.body.senha_atual,
-      req.body.senha_nova
+      req.body.senha_nova,
+      req.contexto
     )
     return res.sendJsonAndLog(true, 'Senha alterada com sucesso', httpCode.OK)
   })
@@ -102,7 +103,12 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: usuarioSchema.listaUsuario }),
   asyncHandler(async (req, res, next) => {
-    const dados = await usuarioCtrl.resetaSenhas(req.body.usuarios)
+    // `req.usuarioUuid` e quem RESETA, e nunca o alvo. Ele existia em toda rota
+    // desta feature e simplesmente nao era repassado, e por isso nenhum ato de
+    // administracao de usuario deixava rastro ate 2026-08-02.
+    const dados = await usuarioCtrl.resetaSenhas(
+      req.body.usuarios, req.usuarioUuid, req.contexto
+    )
     return res.sendJsonAndLog(
       true,
       'Senhas resetadas com sucesso. A senha de cada usuário passou a ser o login dele.',
@@ -120,7 +126,9 @@ router.put(
     params: usuarioSchema.uuidParams
   }),
   asyncHandler(async (req, res, next) => {
-    await usuarioCtrl.atualizaUsuario(req.params.uuid, req.body)
+    await usuarioCtrl.atualizaUsuario(
+      req.params.uuid, req.body, req.usuarioUuid, req.contexto
+    )
     return res.sendJsonAndLog(true, 'Usuário atualizado com sucesso', httpCode.OK)
   })
 )
@@ -130,7 +138,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: usuarioSchema.uuidParams }),
   asyncHandler(async (req, res, next) => {
-    await usuarioCtrl.deletaUsuario(req.params.uuid)
+    await usuarioCtrl.deletaUsuario(req.params.uuid, req.usuarioUuid, req.contexto)
     return res.sendJsonAndLog(true, 'Usuário excluído com sucesso', httpCode.OK)
   })
 )
@@ -151,7 +159,9 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: usuarioSchema.criaUsuario }),
   asyncHandler(async (req, res, next) => {
-    const dados = await usuarioCtrl.criaUsuario(req.body)
+    const dados = await usuarioCtrl.criaUsuario(
+      req.body, req.usuarioUuid, req.contexto
+    )
     return res.sendJsonAndLog(true, 'Usuário criado com sucesso', httpCode.Created, dados)
   })
 )
@@ -163,7 +173,9 @@ router.put(
     body: usuarioSchema.updateUsuarioLista
   }),
   asyncHandler(async (req, res, next) => {
-    await usuarioCtrl.atualizaUsuarioLista(req.body.usuarios)
+    await usuarioCtrl.atualizaUsuarioLista(
+      req.body.usuarios, req.usuarioUuid, req.contexto
+    )
     return res.sendJsonAndLog(true, 'Usuários atualizados com sucesso', httpCode.OK)
   })
 )

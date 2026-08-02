@@ -20,7 +20,7 @@ describe('dfd_ctrl', () => {
   beforeEach(() => mockDb.reset())
 
   test('criar insere o DFD e os itens na transacao', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 42 }) // INSERT dfd RETURNING id
+    mockDb.conn.one.mockResolvedValueOnce({ id: 42, numero: 'DFD-001', ano: 2026 }) // INSERT dfd RETURNING *
     mockDb.conn.none.mockResolvedValueOnce(undefined) // insert em lote dos itens
 
     const r = await ctrl.criar(
@@ -42,17 +42,26 @@ describe('dfd_ctrl', () => {
       expect.stringContaining('INSERT INTO orcamento.dfd'),
       expect.objectContaining({ numero: 'DFD-001', ano: 2026 })
     )
-    // os itens viram um insert em lote (db.pgp.helpers.insert) -> t.none(query string)
-    expect(mockDb.conn.none).toHaveBeenCalledTimes(1)
+    // Os itens viram um insert em lote (db.pgp.helpers.insert) -> t.none(query).
+    //
+    // Contagem crua de `none` deixou de dizer isto em 2026-08-02: a auditoria
+    // grava o evento pelo MESMO `none`, entao o numero passa a somar as duas
+    // coisas e muda toda vez que alguem acrescenta um evento. Asserir o SQL diz
+    // o que aconteceu e continua valendo.
+    const insertsDeItem = mockDb.conn.none.mock.calls
+      .filter(([sql]) => String(sql).includes('"dfd_item"'))
+    expect(insertsDeItem).toHaveLength(1)
   })
 
   test('criar sem itens nao chama o insert em lote', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 5, numero: 'DFD-002', ano: 2026 })
     await ctrl.criar(
       { numero: 'DFD-002', ano: 2026, objeto: 'x', itens: [] },
       'uuid'
     )
-    expect(mockDb.conn.none).not.toHaveBeenCalled()
+    const insertsDeItem = mockDb.conn.none.mock.calls
+      .filter(([sql]) => String(sql).includes('"dfd_item"'))
+    expect(insertsDeItem).toHaveLength(0)
   })
 
   test('getPorId traz o DFD com o array de itens', async () => {

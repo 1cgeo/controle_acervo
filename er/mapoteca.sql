@@ -431,7 +431,7 @@ CREATE INDEX idx_anexo_pedido_pedido ON mapoteca.anexo_pedido(pedido_id);
 --
 -- UMA etiqueta por pedido (UNIQUE em pedido_id): ela e o endereco corrigido
 -- daquele envio, e nao um historico de tentativas. Quem mudou o que, e quando,
--- sai de mapoteca.pedido_auditoria com tabela = 'etiqueta_envio'.
+-- sai de auditoria.evento com tabela = 'mapoteca.etiqueta_envio'.
 --
 -- Nao copia o endereco para o pedido de proposito: o pedido guarda o endereco
 -- que veio no DIEx, e a etiqueta guarda o que foi para o pacote. Sobrescrever o
@@ -456,34 +456,19 @@ CREATE TABLE mapoteca.etiqueta_envio(
     CONSTRAINT unique_etiqueta_por_pedido UNIQUE (pedido_id)
 );
 
--- Historico de quem alterou, adicionou e removeu cada pedido. Ate 2026-07-30 o
--- pedido e o item guardavam so o ULTIMO que mexeu (usuario_atualizacao_id), sem
--- historico, e o DELETE apagava tudo sem rastro nenhum.
+-- mapoteca.pedido_auditoria NAO mora mais aqui. Ela existiu entre 2026-07-30 e
+-- 2026-08-02 e virou `auditoria.evento` (er/auditoria.sql, schema proprio).
 --
--- A linha nasce no BACKEND, nunca em gatilho de banco (decisao do chefe,
--- 2026-07-30). O gatilho nao conhece o usuario da sessao HTTP, porque o Postgres
--- ve so a conexao do pool; a saida seria um SET LOCAL em toda transacao. No
--- backend o usuarioUuid ja chega em cada funcao do controller. Quem cobre o
--- esquecimento e o teste de varredura mapoteca_auditoria.test.js.
-CREATE TABLE mapoteca.pedido_auditoria(
-    id BIGSERIAL PRIMARY KEY,
-    -- SEM chave estrangeira de proposito: a linha da auditoria tem de sobreviver
-    -- ao pedido apagado, que e justamente o caso que ela existe para registrar.
-    -- Com FK, o DELETE do pedido levaria junto a prova de que ele existiu.
-    pedido_id BIGINT NOT NULL,
-    tabela VARCHAR(50) NOT NULL,
-    registro_id BIGINT,
-    operacao CHAR(1) NOT NULL CHECK (operacao IN ('I','U','D')),
-    dados_antes JSONB,
-    dados_depois JSONB,
-    campos_alterados TEXT[],
-    -- Aceita nulo so para evento de migracao, onde nao ha pessoa por tras da
-    -- mudanca. Todo evento vindo de rota grava o usuario do token.
-    usuario_uuid UUID REFERENCES dgeo.usuario (uuid),
-    data_evento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_pedido_auditoria_pedido ON mapoteca.pedido_auditoria(pedido_id, data_evento DESC);
+-- A razao da mudanca esta na coluna que ela tinha: `pedido_id BIGINT NOT NULL`
+-- amarrava o historico ao pedido, e cliente, plotter, tipo de material, produto
+-- do acervo, nota de empenho e usuario nao tem pedido nenhum. A tabela nova
+-- troca o pedido por (modulo, entidade, entidade_id), e o pedido passa a ser um
+-- agregado entre outros -- o historico dele continua trazendo item, impressao e
+-- etiqueta juntos, pelo mapa de `server/src/auditoria/mapa/mapoteca.js`.
+--
+-- O que NAO mudou: a linha nasce no BACKEND, nunca em gatilho de banco (decisao
+-- do chefe, 2026-07-30), e quem cobra o esquecimento continua sendo o teste de
+-- varredura mapoteca_auditoria.test.js.
 
 -- Indexes para mapoteca
 CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);

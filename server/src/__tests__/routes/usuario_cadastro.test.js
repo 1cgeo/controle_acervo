@@ -19,7 +19,14 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken, USER_UUID } = require('../helpers/auth')
+const {
+  generateAdminToken, generateUserToken, ADMIN_UUID, USER_UUID
+} = require('../helpers/auth')
+
+// Os TRES roteadores da plataforma entram na mesma varredura, no fim do arquivo.
+const usuarioRouter = require('../../usuario/usuario_route')
+const { pitRoute } = require('../../pit')
+const rpcmtecRouter = require('../../rpcmtec/rpcmtec_route')
 
 let app
 
@@ -66,6 +73,24 @@ const acharPorLogin = async login =>
 
 const hashNoBanco = login =>
   conn.one('SELECT senha FROM dgeo.usuario WHERE login = $<login>', { login })
+
+// Le o que foi GRAVADO, e nao o que a rota de historico apresenta: o que estes
+// casos guardam e a linha de rastro, e a formatacao dela tem teste proprio.
+const eventos = (tabela, entidadeId) =>
+  conn.any(
+    `SELECT * FROM auditoria.evento
+     WHERE tabela = $<tabela> AND entidade_id = $<entidadeId>
+     ORDER BY id`,
+    { tabela, entidadeId }
+  )
+
+const umEventoDe = async (tabela, entidadeId, operacao) => {
+  const achados = (await eventos(tabela, entidadeId)).filter(
+    e => e.operacao === operacao
+  )
+  expect(achados).toHaveLength(1)
+  return achados[0]
+}
 
 describe('POST /api/usuarios', () => {
   test('cria a pessoa e devolve o uuid, sem devolver senha', async () => {
@@ -413,5 +438,377 @@ describe('/api/usuarios/perfil (o proprio cadastro)', () => {
       .post('/api/login')
       .send({ usuario: 'test_user', senha: 'test_user', cliente: 'sca_web' }) // path-ok: fixture
     expect(velha.status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Rastreabilidade (auditoria.evento), 2026-08-02
+//
+// Este e o grupo mais sensivel do sistema e era o MENOS rastreado: promover
+// alguem a administrador global nao deixava rastro nenhum, e nao havia como
+// saber quem concedeu. `req.usuarioUuid` existia em toda rota desta feature e
+// simplesmente nao era repassado ao controller.
+// ---------------------------------------------------------------------------
+
+describe('Rastreabilidade: a senha nunca entra no rastro', () => {
+  // O caso mais importante do arquivo, e o unico que causa dano se falhar em
+  // silencio: um vazamento aqui poria uma SEGUNDA copia do hash bcrypt numa
+  // tabela que ninguem pensa como guardadora de credencial. Os TRES caminhos que
+  // gravam hash sao cobrados um a um, porque cada um monta o evento por conta
+  // propria e o `omitir` do mapa e a unica rede comum.
+  test('POST /usuarios: o hash nao aparece no evento de criacao', async () => {
+    const { body } = await criar(NOVO)
+    const { senha } = await hashNoBanco('ciclano')
+
+    const criacao = await umEventoDe('dgeo.usuario', body.dados.uuid, 'I')
+
+    expect(criacao.dados_depois).toHaveProperty('senha')
+    expect(criacao.dados_depois.senha).toBeNull()
+    // A prova forte: o hash de verdade, procurado no evento inteiro. Uma
+    // assercao so sobre a chave `senha` passaria se o valor vazasse por outra.
+    expect(JSON.stringify(criacao)).not.toContain(senha)
+    expect(JSON.stringify(criacao)).not.toContain('senha-inicial')
+  })
+
+  test('POST /senha/reset: o evento diz que mudou, e nao para que', async () => {
+    const { body } = await criar(NOVO)
+    const antes = await hashNoBanco('ciclano')
+
+    await resetar([body.dados.uuid])
+    const depois = await hashNoBanco('ciclano')
+
+    const reset = await umEventoDe('dgeo.usuario', body.dados.uuid, 'U')
+
+    // O diff roda sobre a linha CRUA e a sanitizacao vem depois: e isso que faz
+    // a troca de senha aparecer como a mudanca que ela e, com os dois valores
+    // nulos. Sanitizar antes apagaria a mudanca, porque nulo comparado a nulo
+    // nao acusa nada.
+    expect(reset.campos_alterados).toEqual(['senha'])
+    expect(reset.dados_antes.senha).toBeNull()
+    expect(reset.dados_depois.senha).toBeNull()
+    expect(JSON.stringify(reset)).not.toContain(antes.senha)
+    expect(JSON.stringify(reset)).not.toContain(depois.senha)
+  })
+
+  test('PUT /perfil/senha faz o mesmo, e o autor e o proprio', async () => {
+    const res = await request(app)
+      .put('/api/usuarios/perfil/senha')
+      .set('Authorization', generateUserToken())
+      .send({ senha_atual: 'test_user', senha_nova: 'senha-nova' })
+    expect(res.status).toBe(200)
+
+    const { senha } = await conn.one(
+      'SELECT senha FROM dgeo.usuario WHERE uuid = $<uuid>', { uuid: USER_UUID }
+    )
+
+    const troca = await umEventoDe('dgeo.usuario', USER_UUID, 'U')
+
+    expect(troca.campos_alterados).toEqual(['senha'])
+    expect(troca.dados_antes.senha).toBeNull()
+    expect(troca.dados_depois.senha).toBeNull()
+    expect(JSON.stringify(troca)).not.toContain(senha)
+    expect(JSON.stringify(troca)).not.toContain('senha-nova')
+    // Trocar a PROPRIA senha e o unico caso em que autor e alvo sao a mesma
+    // pessoa, e e o que separa "eu troquei" de "o administrador resetou".
+    expect(troca.usuario_uuid).toBe(USER_UUID)
+    expect(troca.entidade_id).toBe(USER_UUID)
+  })
+})
+
+describe('Rastreabilidade: o cadastro do usuario', () => {
+  test('promover a administrador registra o AUTOR, e nao o alvo', async () => {
+    const { body } = await criar(NOVO)
+    const uuid = body.dados.uuid
+
+    const res = await atualizar(uuid, { administrador: true, ativo: true })
+    expect(res.status).toBe(200)
+
+    const promocao = await umEventoDe('dgeo.usuario', uuid, 'U')
+
+    // Era a pergunta sem resposta ate 2026-08-02: quem promoveu.
+    expect(promocao.usuario_uuid).toBe(ADMIN_UUID)
+    expect(promocao.entidade_id).toBe(uuid)
+    expect(promocao.modulo).toBe('plataforma')
+    expect(promocao.entidade).toBe('usuario')
+    expect(promocao.campos_alterados).toEqual(['administrador'])
+    expect(promocao.dados_antes.administrador).toBe(false)
+    expect(promocao.dados_depois.administrador).toBe(true)
+  })
+
+  test('a rota diz por onde a mudanca entrou', async () => {
+    const { body } = await criar(NOVO)
+
+    const criacao = await umEventoDe('dgeo.usuario', body.dados.uuid, 'I')
+
+    expect(criacao.rota).toBe('POST /api/usuarios/')
+    expect(criacao.lote_id).toEqual(expect.any(String))
+  })
+
+  test('a exclusao registra o que se perdeu, e sobrevive a pessoa', async () => {
+    const { body } = await criar({ ...NOVO, perfis: { acervo: 2 } })
+    const uuid = body.dados.uuid
+
+    expect((await excluir(uuid)).status).toBe(200)
+
+    const exclusao = await umEventoDe('dgeo.usuario', uuid, 'D')
+
+    // A tabela nao tem chave estrangeira para dgeo.usuario justamente para isto:
+    // a exclusao e o evento que o rastro existe para guardar, e ele nao pode
+    // cair junto com a pessoa.
+    expect(exclusao.dados_depois).toBeNull()
+    expect(exclusao.dados_antes.login).toBe('ciclano')
+    expect(exclusao.dados_antes.senha).toBeNull()
+    expect(exclusao.usuario_uuid).toBe(ADMIN_UUID)
+
+    // O perfil cai por CASCADE, sem DELETE explicito: sem evento proprio,
+    // "era operador do acervo quando foi apagada" sumiria sem deixar nada.
+    const doPerfil = await umEventoDe('dgeo.usuario_perfil', uuid, 'D')
+    expect(doPerfil.dados_antes.perfil_id).toBe(2)
+  })
+
+  test('a alteracao em lote grava um evento por pessoa, com lote_id comum', async () => {
+    const primeiro = (await criar(NOVO)).body.dados.uuid
+    const segundo = (await criar({ ...NOVO, login: 'beltrano' })).body.dados.uuid
+
+    const res = await request(app)
+      .put('/api/usuarios')
+      .set('Authorization', admin())
+      .send({
+        usuarios: [
+          { uuid: primeiro, administrador: false, ativo: false },
+          { uuid: segundo, administrador: false, ativo: false }
+        ]
+      })
+    expect(res.status).toBe(200)
+
+    const um = await umEventoDe('dgeo.usuario', primeiro, 'U')
+    const outro = await umEventoDe('dgeo.usuario', segundo, 'U')
+
+    expect(um.campos_alterados).toEqual(['ativo'])
+    expect(outro.campos_alterados).toEqual(['ativo'])
+    // Sem o lote, N eventos soltos: ninguem saberia que foram um ato so.
+    expect(um.lote_id).toBe(outro.lote_id)
+    expect(um.lote_id).not.toBeNull()
+  })
+
+  test('quando a escrita falha, o rastro cai junto', async () => {
+    await criar(NOVO)
+    const contagem = async () => {
+      const { n } = await conn.one(
+        "SELECT COUNT(*)::integer AS n FROM auditoria.evento WHERE tabela = 'dgeo.usuario'"
+      )
+      return n
+    }
+    expect(await contagem()).toBe(1)
+
+    // Login repetido: o INSERT falha depois de a transacao ter comecado.
+    expect((await criar({ ...NOVO, nome: 'Outra Pessoa' })).status).toBe(400)
+
+    // Uma trilha que sobrevive a operacao desfeita e pior do que trilha nenhuma,
+    // porque quem a le acredita nela.
+    expect(await contagem()).toBe(1)
+  })
+
+  test('editar o proprio cadastro registra o proprio como autor', async () => {
+    const res = await request(app)
+      .put('/api/usuarios/perfil')
+      .set('Authorization', generateUserToken())
+      .send({ nome: 'User Corrigido', nome_guerra: 'User', tipo_posto_grad_id: 7 })
+    expect(res.status).toBe(200)
+
+    const evento = await umEventoDe('dgeo.usuario', USER_UUID, 'U')
+
+    expect(evento.usuario_uuid).toBe(USER_UUID)
+    expect(evento.campos_alterados.sort()).toEqual(['nome', 'tipo_posto_grad_id'])
+  })
+})
+
+describe('Rastreabilidade: a concessao de perfil', () => {
+  // `gravaPerfis` e a unica funcao que escreve dgeo.usuario_perfil, e ela e um
+  // upsert com DELETE no ramo do nulo: nos dois caminhos o valor anterior era
+  // destruido sem nunca ser lido. Um RETURNING nao resolveria, porque o upsert
+  // devolve o valor NOVO. O `test_user` da semente nasce com acervo=consulta(1)
+  // e mapoteca=operador(2).
+  const comoPerfis = perfis =>
+    atualizar(USER_UUID, { administrador: false, ativo: true, perfis })
+
+  test('subir o perfil registra o valor ANTERIOR', async () => {
+    expect((await comoPerfis({ acervo: 3 })).status).toBe(200)
+
+    const evento = await umEventoDe('dgeo.usuario_perfil', USER_UUID, 'U')
+
+    expect(evento.dados_antes.perfil_id).toBe(1)
+    expect(evento.dados_depois.perfil_id).toBe(3)
+    expect(evento.campos_alterados).toEqual(['perfil_id'])
+    // O agregado do perfil e o USUARIO, e o salto e de tipo: a tabela aponta o
+    // `id` serial e a ficha e pelo uuid. Sem a resolucao, o evento nao apareceria
+    // em ficha nenhuma.
+    expect(evento.entidade).toBe('usuario')
+    expect(evento.entidade_id).toBe(USER_UUID)
+    expect(evento.usuario_uuid).toBe(ADMIN_UUID)
+  })
+
+  test('revogar o modulo registra o que a pessoa tinha', async () => {
+    expect((await comoPerfis({ mapoteca: null })).status).toBe(200)
+
+    const evento = await umEventoDe('dgeo.usuario_perfil', USER_UUID, 'D')
+
+    expect(evento.dados_antes.perfil_id).toBe(2)
+    expect(evento.dados_antes.modulo_id).toBe(2)
+    // Revogar e o caso em que o rastro e a UNICA memoria: a linha some, e sem
+    // ela nada no banco diz que a pessoa ja teve acesso ao modulo.
+    expect(evento.dados_depois).toBeNull()
+  })
+
+  // Este caso NAO usa o `test_user` da semente, e a razao e a rede do
+  // `cleanTestData`: ela restaura os DOIS modulos que a semente tem (acervo e
+  // mapoteca) e nao sabe apagar um terceiro. Concedendo orcamento ao usuario da
+  // semente, a linha sobreviveria a limpeza e o caso seguinte revogaria um
+  // perfil que ele acreditava nao existir. Num usuario criado aqui, o perfil cai
+  // junto com a pessoa.
+  test('conceder modulo novo registra a concessao', async () => {
+    const { body } = await criar(NOVO)
+    const uuid = body.dados.uuid
+
+    const res = await atualizar(uuid, {
+      administrador: false, ativo: true, perfis: { orcamento: 2 }
+    })
+    expect(res.status).toBe(200)
+
+    const evento = await umEventoDe('dgeo.usuario_perfil', uuid, 'I')
+
+    expect(evento.dados_antes).toBeNull()
+    expect(evento.dados_depois.perfil_id).toBe(2)
+    expect(evento.dados_depois.modulo_id).toBe(3)
+  })
+
+  test('a AUSENCIA do modulo no corpo nao e revogacao', async () => {
+    // `gravaPerfis` e incremental: mexer no acervo nao pode virar um evento de
+    // revogacao da mapoteca, que o corpo nem mencionou.
+    expect((await comoPerfis({ acervo: 3 })).status).toBe(200)
+
+    const todos = await eventos('dgeo.usuario_perfil', USER_UUID)
+    expect(todos).toHaveLength(1)
+    expect(todos[0].dados_antes.modulo_id).toBe(1)
+  })
+
+  test('reenviar o MESMO nivel nao inventa evento', async () => {
+    // A tela manda o mapa inteiro de perfis a cada "Salvar". Sem esta regra,
+    // cada salvamento deixaria uma linha por modulo com o diff vazio dentro, e a
+    // ficha viraria ruido.
+    expect((await comoPerfis({ acervo: 1, mapoteca: 2 })).status).toBe(200)
+
+    expect(await eventos('dgeo.usuario_perfil', USER_UUID)).toHaveLength(0)
+  })
+
+  test('revogar o que a pessoa nao tem nao inventa evento', async () => {
+    expect((await comoPerfis({ orcamento: null })).status).toBe(200)
+
+    expect(await eventos('dgeo.usuario_perfil', USER_UUID)).toHaveLength(0)
+  })
+})
+
+describe('Rastreabilidade: o historico chega pela rota', () => {
+  const historico = (uuid, token = admin()) =>
+    request(app)
+      .get(`/api/auditoria/plataforma/usuario/${uuid}`)
+      .set('Authorization', token)
+
+  test('a ficha do usuario junta o cadastro e o perfil', async () => {
+    const { body } = await criar({ ...NOVO, perfis: { acervo: 1 } })
+    const uuid = body.dados.uuid
+    await atualizar(uuid, { administrador: true, ativo: true, perfis: { acervo: 3 } })
+
+    const res = await historico(uuid)
+    expect(res.status).toBe(200)
+
+    const tabelas = res.body.dados.map(e => e.tabela)
+    expect(tabelas).toContain('dgeo.usuario')
+    expect(tabelas).toContain('dgeo.usuario_perfil')
+
+    // O diff sai PRONTO do servidor, com o dominio traduzido: o cliente nao
+    // carrega catalogo nenhum.
+    const doPerfil = res.body.dados.find(e => e.tabela === 'dgeo.usuario_perfil')
+    const mudanca = doPerfil.mudancas.find(m => m.campo === 'perfil_id')
+    expect(mudanca.rotulo).toBe('Perfil')
+    expect(mudanca.antes_texto).toContain('(1)')
+    expect(mudanca.depois_texto).toContain('(3)')
+  })
+
+  test('o historico da plataforma e do administrador global', async () => {
+    // Aqui moram os eventos de usuario, de perfil e de senha. Quem ve a tela que
+    // os origina (#/usuarios) e o administrador, e so ele ve o historico deles.
+    const res = await historico(USER_UUID, generateUserToken())
+    expect(res.status).toBe(403)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A varredura das rotas de escrita da PLATAFORMA
+//
+// Este arquivo e a troca por nao usar gatilho de banco: a insercao do rastro
+// mora no backend, porque o gatilho nao conhece o usuario da sessao HTTP. O
+// preco dessa escolha e a rota nova que esquece de auditar, e quem cobra o preco
+// e esta varredura, que le o router DE VERDADE.
+//
+// Os TRES roteadores entram juntos porque a plataforma e um grupo so: usuario,
+// meta do PIT e edicao do RPCMTec nao sao de modulo nenhum, e todos gravam sob
+// `modulo = 'plataforma'`. Uma varredura por arquivo seriam tres copias do mesmo
+// laco, e a terceira copia e onde a divergencia nasce.
+// ---------------------------------------------------------------------------
+
+const METODOS_DE_ESCRITA = ['post', 'put', 'patch', 'delete']
+
+const rotasDeEscrita = (prefixo, router) => {
+  expect(Array.isArray(router.stack)).toBe(true)
+
+  const chaves = []
+  for (const camada of router.stack) {
+    if (!camada.route) continue
+    for (const metodo of METODOS_DE_ESCRITA) {
+      if (camada.route.methods[metodo]) {
+        chaves.push(`${metodo.toUpperCase()} ${prefixo}${camada.route.path}`)
+      }
+    }
+  }
+  return chaves
+}
+
+// Chave igual a que o laco acima monta. Rota nova sem auditoria cai no teste
+// abaixo: para consertar, audite a rota e acrescente a chave aqui.
+const COBERTAS = new Set([
+  'POST /usuarios/',
+  'PUT /usuarios/',
+  'PUT /usuarios/:uuid',
+  'DELETE /usuarios/:uuid',
+  'POST /usuarios/senha/reset',
+  'PUT /usuarios/perfil',
+  'PUT /usuarios/perfil/senha',
+  'POST /metas/',
+  'PUT /metas/:id',
+  'DELETE /metas/:id',
+  'POST /rpcmtec/',
+  'PUT /rpcmtec/:id',
+  'DELETE /rpcmtec/:id'
+])
+
+describe('Rastreabilidade: varredura das rotas de escrita da plataforma', () => {
+  test('toda rota de escrita de usuario, meta e edicao esta coberta', () => {
+    const encontradas = [
+      ...rotasDeEscrita('/usuarios', usuarioRouter),
+      ...rotasDeEscrita('/metas', pitRoute),
+      ...rotasDeEscrita('/rpcmtec', rpcmtecRouter)
+    ]
+
+    // Rede contra o falso verde: se o formato do router mudar e a extracao
+    // devolver lista vazia, o teste passaria sem cobrar nada.
+    expect(encontradas.length).toBe(COBERTAS.size)
+
+    const descobertas = encontradas.filter(r => !COBERTAS.has(r))
+    expect(descobertas).toEqual([])
+
+    // O caminho inverso: chave que nao existe mais no router.
+    const orfas = [...COBERTAS].filter(r => !encontradas.includes(r))
+    expect(orfas).toEqual([])
   })
 })

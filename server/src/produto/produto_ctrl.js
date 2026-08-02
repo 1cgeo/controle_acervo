@@ -3,13 +3,26 @@
 const { db } = require("../database");
 const { arquivarArquivos, idsDosArquivosDasVersoes } = require("../arquivo/arquivo_deletado");
 const { AppError, httpCode, preserveOmitted, domainConstants: { TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 const scn = require("../utils/scn");
 const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
 
-controller.atualizaProduto = async (produto, usuarioUuid) => {
+// A GEOMETRIA do produto é lida por `lerAntes`/`lerDepois`, e nunca por um
+// `RETURNING *` cru. `SELECT *` numa coluna geométrica devolve o WKB em
+// hexadecimal, ilegível e longo; as duas funções trocam a coluna pelo EWKT, que
+// é o formato em que o estado anterior de uma folha redesenhada serve para
+// desfazer o redesenho. É por isso que os INSERTs de produto abaixo continuam
+// com `RETURNING id` e leem a linha em seguida: uma ida a mais ao banco por
+// produto, contra copiar a regra do EWKT para cinco lugares.
+
+controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    // Antes do `preserveOmitted`, que já lê a linha para preencher a chave
+    // omitida: ler depois dele descreveria um estado intermediário.
+    const antes = await auditoriaCtrl.lerAntes(t, 'acervo.produto', produto.id, 'Produto')
+
     produto.data_modificacao = new Date()
     produto.usuario_modificacao_uuid = usuarioUuid
 
@@ -75,22 +88,29 @@ controller.atualizaProduto = async (produto, usuarioUuid) => {
       await t.none(query, [produto.id])
     }
 
+    const depois = await auditoriaCtrl.lerDepois(t, 'acervo.produto', produto.id)
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.produto',
+      registroId: produto.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 
-controller.atualizaVersao = async (versao, usuarioUuid) => {
+controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     versao.data_modificacao = new Date();
     versao.usuario_modificacao_uuid = usuarioUuid;
 
-    const versaoAtual = await t.oneOrNone(
-      'SELECT uuid_versao FROM acervo.versao WHERE id = $1',
-      [versao.id]
-    );
-
-    if (!versaoAtual) {
-      throw new AppError('Versão não encontrada', httpCode.NotFound);
-    }
+    // SUBSTITUI o `SELECT uuid_versao` que existia só para o 404 e para a
+    // conferência de imutabilidade: a linha inteira sai pela mesma ida ao banco,
+    // e a mensagem de "não encontrada" continua sendo a que a rota já dava.
+    const versaoAtual = await auditoriaCtrl.lerAntes(t, 'acervo.versao', versao.id, 'Versão');
 
     // uuid_versao é aceito pelo schema mas NÃO está no ColumnSet abaixo: é
     // imutável (o pedido da mapoteca referencia a versão por ele). Antes, mandar
@@ -142,10 +162,19 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
     ];
 
     const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: { table: 'versao', schema: 'acervo' } });
-    const query = db.pgp.helpers.update(versao, cs) + ' WHERE id = $1';
+    const query = db.pgp.helpers.update(versao, cs) + ' WHERE id = $1 RETURNING *';
 
-    await t.none(query, [versao.id]);
+    const depois = await t.one(query, [versao.id]);
 
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.versao',
+      registroId: versao.id,
+      operacao: 'U',
+      antes: versaoAtual,
+      depois,
+      usuarioUuid,
+      contexto
+    });
   });
 };
 
@@ -172,11 +201,14 @@ controller.atualizaVersao = async (versao, usuarioUuid) => {
  * @param {string} usuarioUuid
  * @returns {Promise<Array<{versao_id: number, uuid_anterior: string, uuid_versao: string, itens_pedido: number}>>}
  */
-controller.corrigeUuidVersao = async (correcoes, motivo, usuarioUuid) => {
+controller.corrigeUuidVersao = async (correcoes, motivo, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const ids = correcoes.map(c => c.versao_id);
+    // `SELECT *` no lugar das três colunas: é o `dados_antes` de cada correção,
+    // pela mesma ida ao banco. É o único rastro de qual identificador a versão
+    // tinha antes de o BDGEx impor o dele.
     const atuais = await t.any(
-      'SELECT id, uuid_versao, metadado FROM acervo.versao WHERE id IN ($1:csv)',
+      'SELECT * FROM acervo.versao WHERE id IN ($1:csv)',
       [ids]
     );
 
@@ -237,12 +269,27 @@ controller.corrigeUuidVersao = async (correcoes, motivo, usuarioUuid) => {
         uuid_versao_corrigido_em: new Date().toISOString()
       });
 
-      await t.none(
+      const depois = await t.one(
         `UPDATE acervo.versao
          SET uuid_versao = $1, metadado = $2, data_modificacao = $3, usuario_modificacao_uuid = $4
-         WHERE id = $5`,
+         WHERE id = $5
+         RETURNING *`,
         [c.uuid_versao, metadado, new Date(), usuarioUuid, c.versao_id]
       );
+
+      // O `motivo` é obrigatório nesta rota e até aqui só existia dentro do
+      // metadado da própria versão. No rastro ele responde a pergunta que a
+      // correção produz: de onde saiu o identificador novo.
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao',
+        registroId: c.versao_id,
+        operacao: 'U',
+        antes: atual,
+        depois,
+        usuarioUuid,
+        contexto,
+        motivo
+      });
 
       resultado.push({
         versao_id: c.versao_id,
@@ -257,7 +304,19 @@ controller.corrigeUuidVersao = async (correcoes, motivo, usuarioUuid) => {
   });
 };
 
-controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => {
+// EXCLUSÃO EM CASCATA, e o rastro é UM EVENTO POR LINHA APAGADA.
+//
+// Apagar um produto apaga as versões dele, os arquivos dessas versões, os
+// downloads e os relacionamentos, e nenhum schema Joi põe teto nisso. Um evento
+// agregado com a contagem ("apagou 1 produto") não permitiria conferir nem
+// desfazer nada: quem pergunta depois quer saber QUAL folha se perdeu. O
+// `loteId` do contexto é o que impede a tela de virar 400 linhas iguais: ela
+// mostra uma, que abre.
+//
+// A ORDEM de registro segue a ordem de exclusão, e ela importa: o agregado do
+// arquivo e do relacionamento é resolvido lendo `acervo.versao`, então os dois
+// têm de ser registrados enquanto a versão ainda existe.
+controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid, contexto) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
@@ -294,34 +353,98 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid) => 
       );
     }
 
+    // A linha inteira de cada produto, com a geometria em EWKT. Uma consulta por
+    // produto, e não uma só para todos: `lerAntes` é o único lugar que sabe
+    // trocar o WKB pelo EWKT, e reescrever essa regra aqui a colocaria em dois
+    // lugares. A conferência de existência acima já garante que nenhuma delas
+    // levanta 404, e ela continua sendo quem lista TODOS os ids que faltam.
+    const produtosAntes = [];
+    for (const id of produtoIds) {
+      produtosAntes.push(await auditoriaCtrl.lerAntes(t, 'acervo.produto', id, 'Produto'));
+    }
+
+    // `SELECT *` porque estas linhas são o `dados_antes` das versões apagadas.
     const versoes = await t.any(
-      'SELECT id FROM acervo.versao WHERE produto_id IN ($<produtoIds:csv>)',
+      'SELECT * FROM acervo.versao WHERE produto_id IN ($<produtoIds:csv>)',
       { produtoIds }
     );
     const versaoIds = versoes.map(v => Number(v.id));
 
+    // Os arquivos saem primeiro, e `arquivarArquivos` registra o evento de cada
+    // um a partir da própria lápide.
     const arquivoIds = await idsDosArquivosDasVersoes(t, versaoIds);
     await arquivarArquivos(t, arquivoIds, {
       motivo: motivo_exclusao,
       dataDelete: data_delete,
-      usuarioDeleteUuid: usuario_delete_uuid
+      usuarioDeleteUuid: usuario_delete_uuid,
+      contexto
     });
 
     if (versaoIds.length > 0) {
-      await t.none(
+      const relacionamentos = await t.any(
         `DELETE FROM acervo.versao_relacionamento
-         WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)`,
+         WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)
+         RETURNING *`,
         { versaoIds }
       );
+      await registraRelacionamentosApagados(t, relacionamentos, { motivo_exclusao, usuarioUuid, contexto });
+
       await t.none('DELETE FROM acervo.versao WHERE id IN ($<versaoIds:csv>)', { versaoIds });
+      for (const versao of versoes) {
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.versao',
+          registroId: versao.id,
+          operacao: 'D',
+          antes: versao,
+          usuarioUuid,
+          contexto,
+          motivo: motivo_exclusao
+        });
+      }
     }
 
     await t.none('DELETE FROM acervo.produto WHERE id IN ($<produtoIds:csv>)', { produtoIds });
 
+    for (const produto of produtosAntes) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.produto',
+        registroId: produto.id,
+        operacao: 'D',
+        antes: produto,
+        usuarioUuid,
+        contexto,
+        motivo: motivo_exclusao
+      });
+    }
   });
 };
 
-controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
+/**
+ * Os eventos dos relacionamentos que caíram junto com as versões.
+ *
+ * Aqui o agregado NÃO é passado pronto, ao contrário do arquivo: o
+ * relacionamento liga duas versões que costumam ser de produtos diferentes (é o
+ * caso do insumo), e a `versao_id_1` pode estar fora do conjunto que está sendo
+ * apagado. Quem resolve é a função `agregado` do mapa, que lê a versão, e ela
+ * ainda existe neste ponto, porque o DELETE da versão vem depois. São poucas
+ * linhas por exclusão, então a consulta por linha não pesa como pesaria nos
+ * arquivos.
+ */
+const registraRelacionamentosApagados = async (t, relacionamentos, { motivo_exclusao, usuarioUuid, contexto }) => {
+  for (const rel of relacionamentos) {
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.versao_relacionamento',
+      registroId: rel.id,
+      operacao: 'D',
+      antes: rel,
+      usuarioUuid,
+      contexto,
+      motivo: motivo_exclusao
+    });
+  }
+};
+
+controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid, contexto) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
 
@@ -357,9 +480,20 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
       );
     }
 
+    // As linhas inteiras, guardadas para o `dados_antes`. Os dois laços abaixo já
+    // liam cada versão com `SELECT *`; agora a leitura acontece UMA vez e os dois
+    // usam o que ela trouxe, em vez de duas idas ao banco por versão.
+    const versoesAntes = new Map();
+    for (const id of versaoIds) {
+      versoesAntes.set(
+        Number(id),
+        await t.one('SELECT * FROM acervo.versao WHERE id = $1', [id])
+      );
+    }
+
     // Verificar se alguma versão possui versões posteriores que dependem dela (formato X-SIGLA)
     for (let id of versaoIds) {
-      const versao = await t.one('SELECT * FROM acervo.versao WHERE id = $1', [id]);
+      const versao = versoesAntes.get(Number(id));
 
       // Verificar formato novo "X-SIGLA"
       const match = versao.versao.match(/^(\d+)-([A-Z]{1,5})$/);
@@ -385,7 +519,7 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
     }
 
     for (let id of versaoIds) {
-      const versao = await t.one('SELECT * FROM acervo.versao WHERE id = $1', [id]);
+      const versao = versoesAntes.get(Number(id));
 
       // Verificar se é a única versão do produto
       const countVersions = await t.one(
@@ -406,20 +540,35 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid) => {
     await arquivarArquivos(t, arquivoIds, {
       motivo: motivo_exclusao,
       dataDelete: data_delete,
-      usuarioDeleteUuid: usuario_delete_uuid
+      usuarioDeleteUuid: usuario_delete_uuid,
+      contexto
     });
 
-    await t.none(
+    const relacionamentos = await t.any(
       `DELETE FROM acervo.versao_relacionamento
-       WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)`,
+       WHERE versao_id_1 IN ($<versaoIds:csv>) OR versao_id_2 IN ($<versaoIds:csv>)
+       RETURNING *`,
       { versaoIds }
     );
+    await registraRelacionamentosApagados(t, relacionamentos, { motivo_exclusao, usuarioUuid, contexto });
+
     await t.none('DELETE FROM acervo.versao WHERE id IN ($<versaoIds:csv>)', { versaoIds });
 
+    for (const versao of versoesAntes.values()) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao',
+        registroId: versao.id,
+        operacao: 'D',
+        antes: versao,
+        usuarioUuid,
+        contexto,
+        motivo: motivo_exclusao
+      });
+    }
   });
 };
 
-controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, permitirEntreProdutos = false, permitirEsvaziarOrigem = false) => {
+controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, permitirEntreProdutos = false, permitirEsvaziarOrigem = false, contexto) => {
   return db.conn.tx(async t => {
     // Versao de destino existe?
     const destino = await t.oneOrNone(
@@ -430,9 +579,10 @@ controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, perm
       throw new AppError(`Versão de destino ${versaoIdDestino} não encontrada`, httpCode.NotFound);
     }
 
-    // Todos os arquivos existem?
+    // Todos os arquivos existem? `SELECT *` porque estas linhas são o
+    // `dados_antes` do movimento, pela mesma ida ao banco.
     const arquivos = await t.any(
-      'SELECT id, versao_id, checksum FROM acervo.arquivo WHERE id IN ($1:csv)',
+      'SELECT * FROM acervo.arquivo WHERE id IN ($1:csv)',
       [arquivoIds]
     );
     if (arquivos.length !== arquivoIds.length) {
@@ -500,12 +650,60 @@ controller.moverArquivos = async (arquivoIds, versaoIdDestino, usuarioUuid, perm
 
     // Mover
     const data_modificacao = new Date();
-    await t.none(
+    const movidos = await t.any(
       `UPDATE acervo.arquivo
        SET versao_id = $1, data_modificacao = $2, usuario_modificacao_uuid = $3
-       WHERE id IN ($4:csv)`,
+       WHERE id IN ($4:csv)
+       RETURNING *`,
       [versaoIdDestino, data_modificacao, usuarioUuid, arquivoIds]
     );
+
+    // O produto de ORIGEM de cada arquivo, resolvido numa consulta só.
+    const produtoPorVersao = new Map(
+      (await t.any(
+        'SELECT id, produto_id FROM acervo.versao WHERE id IN ($1:csv)',
+        [[...origemVersaoIds, Number(versaoIdDestino)]]
+      )).map(v => [String(v.id), String(v.produto_id)])
+    );
+
+    const antesPorId = new Map(arquivos.map(a => [String(a.id), a]));
+
+    for (const depois of movidos) {
+      const antes = antesPorId.get(String(depois.id));
+      const produtoOrigem = produtoPorVersao.get(String(antes.versao_id));
+      const produtoDestino = String(destino.produto_id);
+
+      // O evento nasce na ficha do produto de DESTINO, que é onde o arquivo
+      // passou a estar e onde alguém vai encontrá-lo.
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.arquivo',
+        registroId: depois.id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto,
+        entidadeId: produtoDestino
+      });
+
+      // Mover ENTRE PRODUTOS é opt-in explícito e raro, e é o caso em que um
+      // evento só não basta: o produto de origem perdeu um arquivo, e a ficha
+      // dele não teria como dizer para onde ele foi. O segundo evento tem o
+      // mesmo `registro_id` e o mesmo `lote_id`, então a tela os mostra como o
+      // movimento único que eles são.
+      if (produtoOrigem && produtoOrigem !== produtoDestino) {
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.arquivo',
+          registroId: depois.id,
+          operacao: 'U',
+          antes,
+          depois,
+          usuarioUuid,
+          contexto,
+          entidadeId: produtoOrigem
+        });
+      }
+    }
   });
 };
 
@@ -518,15 +716,18 @@ function familiaVersao(familia) {
   return { regex: new RegExp(`^([0-9]+)-${familia}$`), sufixo: `-${familia}` };
 }
 
-controller.renumeraVersoes = async (produtoId, subtipoProdutoId, familia, novaDataEdicao, usuarioUuid) => {
+controller.renumeraVersoes = async (produtoId, subtipoProdutoId, familia, novaDataEdicao, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const produto = await t.oneOrNone('SELECT id FROM acervo.produto WHERE id = $1', [produtoId]);
     if (!produto) {
       throw new AppError(`Produto ${produtoId} não encontrado`, httpCode.NotFound);
     }
 
+    // `SELECT *` porque a linha inteira vira o `dados_antes` de cada versão
+    // deslocada: o rótulo muda debaixo de quem não pediu nada a ela, e sem o
+    // estado anterior não haveria como saber que "2ª Edição" já foi a 1ª.
     const versoes = await t.any(
-      `SELECT id, versao, data_edicao FROM acervo.versao
+      `SELECT * FROM acervo.versao
        WHERE produto_id = $1 AND subtipo_produto_id = $2`,
       [produtoId, subtipoProdutoId]
     );
@@ -535,7 +736,7 @@ controller.renumeraVersoes = async (produtoId, subtipoProdutoId, familia, novaDa
     const daFamilia = versoes
       .map(v => {
         const m = regex.exec(v.versao);
-        return m ? { id: v.id, numero: parseInt(m[1], 10), data_edicao: v.data_edicao } : null;
+        return m ? { id: v.id, numero: parseInt(m[1], 10), data_edicao: v.data_edicao, linha: v } : null;
       })
       .filter(Boolean)
       .sort((a, b) => a.numero - b.numero);
@@ -562,10 +763,21 @@ controller.renumeraVersoes = async (produtoId, subtipoProdutoId, familia, novaDa
     const deslocadas = [];
     for (const v of aDeslocar) {
       const rotuloNovo = `${v.numero + 1}${sufixo}`;
-      await t.none(
-        `UPDATE acervo.versao SET versao = $1, data_modificacao = $2, usuario_modificacao_uuid = $3 WHERE id = $4`,
+      const depois = await t.one(
+        `UPDATE acervo.versao SET versao = $1, data_modificacao = $2, usuario_modificacao_uuid = $3 WHERE id = $4 RETURNING *`,
         [rotuloNovo, data_modificacao, usuarioUuid, v.id]
       );
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao',
+        registroId: v.id,
+        operacao: 'U',
+        antes: v.linha,
+        depois,
+        usuarioUuid,
+        contexto
+      });
+
       deslocadas.push({ id: v.id, rotulo_antigo: `${v.numero}${sufixo}`, rotulo_novo: rotuloNovo });
     }
 
@@ -642,7 +854,7 @@ async function verificaCicloRelacionamento(t, versaoId1, versaoId2, tipoRelacion
   return await dfs(Number(versaoId2));
 }
 
-controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid) => {
+controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     for (const item of versaoRelacionamentos) {
       item.usuario_relacionamento_uuid = usuarioUuid;
@@ -697,14 +909,23 @@ controller.criaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid)
       const query = db.pgp.helpers.insert(item, cs, {
         table: 'versao_relacionamento',
         schema: 'acervo'
-      });
+      }) + ' RETURNING *';
 
-      await t.none(query);
+      const criado = await t.one(query);
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao_relacionamento',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      });
     }
   });
 };
 
-controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid) => {
+controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     for (const item of versaoRelacionamentos) {
       item.usuario_relacionamento_uuid = usuarioUuid;
@@ -785,23 +1006,36 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioU
 
       // UPDATE parametrizado simples: helpers.update com objeto único ignora
       // os aliases e gerava SQL inválido (WHERE Y.id = X.id sem FROM)
-      await t.none(
+      const depois = await t.one(
         `UPDATE acervo.versao_relacionamento
          SET versao_id_1 = $2,
              versao_id_2 = $3,
              tipo_relacionamento_id = $4,
              usuario_relacionamento_uuid = $5
-         WHERE id = $1`,
+         WHERE id = $1
+         RETURNING *`,
         [item.id, item.versao_id_1, item.versao_id_2, item.tipo_relacionamento_id, usuarioUuid]
       );
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao_relacionamento',
+        registroId: item.id,
+        operacao: 'U',
+        antes: relacionamentoAtual,
+        depois,
+        usuarioUuid,
+        contexto
+      });
     }
   });
 };
 
-controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioUuid) => {
+controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
+    // `SELECT *` porque estas linhas são o `dados_antes` da exclusão, pela mesma
+    // ida ao banco que a conferência de existência já custava.
     const exists = await t.any(
-      `SELECT id FROM acervo.versao_relacionamento
+      `SELECT * FROM acervo.versao_relacionamento
       WHERE id in ($<versaoRelacionamentoIds:csv>)`,
       { versaoRelacionamentoIds }
     );
@@ -813,11 +1047,24 @@ controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioU
       );
     }
 
-    return t.any(
+    const apagados = await t.any(
       `DELETE FROM acervo.versao_relacionamento
       WHERE id in ($<versaoRelacionamentoIds:csv>)`,
       { versaoRelacionamentoIds }
     );
+
+    for (const rel of exists) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao_relacionamento',
+        registroId: rel.id,
+        operacao: 'D',
+        antes: rel,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return apagados;
   });
 };
 
@@ -830,7 +1077,7 @@ controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioU
 // O corpo e um so porque a diferenca entre os dois e um inteiro: duplicar aqui
 // seria pedir que a proxima coluna de acervo.versao fosse lembrada em dois
 // lugares, e esquecer um nao da erro nenhum.
-const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId) => {
+const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId, contexto) => {
   const data_cadastramento = new Date();
 
   const versoesPreparadas = versoes.map(versao => {
@@ -900,17 +1147,32 @@ const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId) => {
       'data_cadastramento', 'usuario_cadastramento_uuid'
     ], { table: { table: 'versao', schema: 'acervo' } });
 
-    const query = db.pgp.helpers.insert(versoesPreparadas, cs);
+    // O INSERT multi-linha não devolvia NADA: o id das versões criadas não
+    // existia no JavaScript, e sem id não há `registro_id`. `RETURNING *` num
+    // insert de várias linhas devolve uma linha por versão, na mesma ida ao
+    // banco. A resposta da rota não muda: ela nunca devolveu dados.
+    const query = db.pgp.helpers.insert(versoesPreparadas, cs) + ' RETURNING *';
 
-    await t.none(query);
+    const criadas = await t.any(query);
+
+    for (const criada of criadas) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.versao',
+        registroId: criada.id,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      });
+    }
   });
 };
 
-controller.criaVersaoHistorica = async (versoes, usuarioUuid) =>
-  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO);
+controller.criaVersaoHistorica = async (versoes, usuarioUuid, contexto) =>
+  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO, contexto);
 
-controller.criaVersaoPlanejada = async (versoes, usuarioUuid) =>
-  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.PLANEJADA);
+controller.criaVersaoPlanejada = async (versoes, usuarioUuid, contexto) =>
+  criaVersoesEmProduto(versoes, usuarioUuid, TIPO_VERSAO.PLANEJADA, contexto);
 
 // Cria produto e versoes SEM arquivo, numa transacao. Serve aos dois casos em
 // que isso e legitimo, e o tipoVersaoId e o que os separa:
@@ -921,7 +1183,7 @@ controller.criaVersaoPlanejada = async (versoes, usuarioUuid) =>
 //     producao terminar, e ai o item vira imprimivel sozinho.
 // Nao ha terceiro caso: versao Regular nasce do fluxo de carregamento, com
 // arquivo, e nunca por aqui.
-const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId) => {
+const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId, contexto) => {
   const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
@@ -936,6 +1198,17 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId) => {
       `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
       produtosIds.push(novoProduto.id)
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.produto',
+        registroId: novoProduto.id,
+        operacao: 'I',
+        // Relido em vez de `RETURNING *` por causa da geometria: ver o
+        // comentário no topo deste arquivo.
+        depois: await auditoriaCtrl.lerDepois(t, 'acervo.produto', novoProduto.id),
+        usuarioUuid,
+        contexto
+      })
 
       // Preparar e inserir as versões
       const versoesPreparadas = produto.versoes.map(versao => ({
@@ -954,20 +1227,31 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId) => {
         'data_cadastramento', 'usuario_cadastramento_uuid'
       ], { table: { table: 'versao', schema: 'acervo' } });
 
-      const query = db.pgp.helpers.insert(versoesPreparadas, cs);
-      await t.none(query);
+      const query = db.pgp.helpers.insert(versoesPreparadas, cs) + ' RETURNING *';
+      const versoesCriadas = await t.any(query);
+
+      for (const criada of versoesCriadas) {
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.versao',
+          registroId: criada.id,
+          operacao: 'I',
+          depois: criada,
+          usuarioUuid,
+          contexto
+        });
+      }
     }
 
   });
 };
 
-controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid) =>
-  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO);
+controller.criaProdutoVersoesHistoricas = async (produtos, usuarioUuid, contexto) =>
+  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.REGISTRO_HISTORICO, contexto);
 
-controller.criaProdutoVersoesPlanejadas = async (produtos, usuarioUuid) =>
-  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.PLANEJADA);
+controller.criaProdutoVersoesPlanejadas = async (produtos, usuarioUuid, contexto) =>
+  criaProdutoComVersoes(produtos, usuarioUuid, TIPO_VERSAO.PLANEJADA, contexto);
 
-controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
+controller.bulkCreateProducts = async (produtos, usuarioUuid, contexto) => {
   const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
@@ -981,6 +1265,15 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid) => {
       `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
 
       produtosIds.push(novoProduto.id);
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'acervo.produto',
+        registroId: novoProduto.id,
+        operacao: 'I',
+        depois: await auditoriaCtrl.lerDepois(t, 'acervo.produto', novoProduto.id),
+        usuarioUuid,
+        contexto
+      });
     }
 
   });

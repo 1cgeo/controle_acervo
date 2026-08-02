@@ -2,7 +2,7 @@
 
 // Teste de rota (supertest) da licitacao. Mocka banco + autenticacao (admin).
 
-const { createMockDb } = require('../../helpers/orcamento/mockDb')
+const { createMockDb, eventosDeAuditoria } = require('../../helpers/orcamento/mockDb')
 
 const mockDb = createMockDb()
 jest.mock('../../../database', () => ({
@@ -47,17 +47,26 @@ describe('GET /licitacao', () => {
 
 describe('POST /licitacao', () => {
   test('cria (tipo_id 1) com sucesso', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 11 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 11, ano: 2026, tipo_id: 1, objeto: 'GCALC DSG' })
     const res = await request(app)
       .post('/licitacao')
       .send({ ano: 2026, tipo_id: 1, objeto: 'GCALC DSG' })
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
+    // A rota continua devolvendo SO o id: o `RETURNING *` e do rastro.
     expect(res.body.dados).toEqual({ id: 11 })
+
+    expect(eventosDeAuditoria(mockDb)[0]).toMatchObject({
+      entidade: 'licitacao',
+      entidadeId: '11',
+      tabela: 'orcamento.licitacao',
+      operacao: 'I',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
   })
 
   test('cria (tipo_id 3 = Participante) com sucesso', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 13 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 13, ano: 2026, tipo_id: 3 })
     const res = await request(app)
       .post('/licitacao')
       .send({ ano: 2026, tipo_id: 3, objeto: 'Pregao participante (outra OM)' })
@@ -82,12 +91,33 @@ describe('POST /licitacao', () => {
 })
 
 describe('DELETE /licitacao/:id', () => {
+  // O `SELECT id` que existia so para o 404 virou `lerAntes` em 2026-08-02:
+  // mesma ida ao banco, e o estado anterior deixa de se perder.
   test('exclui a licitacao (nada referencia a licitacao)', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1 }) // existe
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 1,
+      ano: 2026,
+      tipo_id: 1,
+      objeto: 'GCALC DSG',
+      valor_final_homologado: '75000.00'
+    })
     mockDb.conn.none.mockResolvedValueOnce(undefined)
     const res = await request(app).delete('/licitacao/1')
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
+
+    const [evento] = eventosDeAuditoria(mockDb)
+    expect(evento).toMatchObject({
+      modulo: 'orcamento',
+      entidade: 'licitacao',
+      entidadeId: '1',
+      tabela: 'orcamento.licitacao',
+      operacao: 'D',
+      usuarioUuid: '11111111-1111-1111-1111-111111111111'
+    })
+    // dados_antes PREENCHIDO: sem ele a exclusao nao diz o que se perdeu, e aqui
+    // o que se perde e um valor homologado.
+    expect(JSON.parse(evento.dadosAntes).valor_final_homologado).toBe('75000.00')
   })
 
   test('404 quando a licitacao nao existe', async () => {
@@ -95,5 +125,6 @@ describe('DELETE /licitacao/:id', () => {
     const res = await request(app).delete('/licitacao/999')
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
+    expect(eventosDeAuditoria(mockDb)).toHaveLength(0)
   })
 })

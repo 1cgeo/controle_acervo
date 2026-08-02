@@ -55,4 +55,28 @@ function createMockDb () {
   return db
 }
 
-module.exports = { createMockDb }
+/**
+ * Os eventos de rastreabilidade que passaram pelo mock, na ordem em que foram
+ * gravados.
+ *
+ * O `auditoriaCtrl.registrar` insere por `t.none`, e no mock `t === conn`: a
+ * chamada fica misturada com os DELETEs do proprio controller. Filtrar pelo SQL
+ * e o que separa uma coisa da outra.
+ *
+ * O QUE ESTE HELPER NAO PROVA, e vale repetir: `conn.tx = cb => cb(conn)` faz a
+ * "transacao" ser o proprio objeto de conexao, entao um `registrar` colocado
+ * FORA da transacao passaria aqui igual. Atomicidade so a suite de integracao
+ * prova (`__tests__/integration/orcamento.test.js`).
+ *
+ * @param {object} db - o mockDb
+ * @returns {Array<object>} os parametros nomeados de cada INSERT de evento
+ */
+function eventosDeAuditoria (db) {
+  return db.conn.none.mock.calls
+    .filter(
+      ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento')
+    )
+    .map(([, params]) => params)
+}
+
+module.exports = { createMockDb, eventosDeAuditoria }

@@ -5,6 +5,7 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
@@ -198,7 +199,25 @@ controller.getArquivosDeletados = async (page = 1, limit = 20) => {
   });
 };
 
-controller.verificarConsistencia = async () => {
+/**
+ * Relê o byte de todo o acervo, confere o SHA-256 e escreve o status.
+ *
+ * O RASTRO DELA É UM EVENTO DE OPERAÇÃO, e não uma linha por arquivo. Dois dos
+ * quatro UPDATEs abaixo (`:339` e `:349`) são `WHERE tipo_status_id = ERRO AND
+ * id NOT IN (...)`, ou seja SEM lista de ids: eles podem reescrever a
+ * `acervo.arquivo` e a `acervo.arquivo_deletado` INTEIRAS. Um evento por arquivo
+ * ali seria a auditoria crescendo mais rápido que o acervo, para registrar algo
+ * que ninguém decidiu arquivo a arquivo -- e a lista dos arquivos com problema
+ * já existe, é a tela de diagnóstico, que duplicá-la aqui só faria envelhecer.
+ *
+ * O que se guarda é o que se procura depois: quem mandou rodar, quando, e o que
+ * saiu. A `origem` do evento é 'sistema', que é o que `registrarOperacao` põe.
+ *
+ * Ela não recebia o usuário: agora recebe, porque "quem mandou rodar" era
+ * exatamente a pergunta sem resposta.
+ */
+controller.verificarConsistencia = async (usuarioUuid, contexto) => {
+    const inicio = Date.now();
     // Leitura e checksums fora de transação: o cálculo pode levar horas em
     // acervos grandes e seguraria uma conexão/transação aberta o tempo todo.
     // 1. Obter todos os arquivos e suas informações em uma consulta
@@ -355,10 +374,27 @@ controller.verificarConsistencia = async () => {
       AND id NOT IN (SELECT unnest($1::bigint[]))
     `, [arquivosDeletadosParaAtualizar.length > 0 ? arquivosDeletadosParaAtualizar : [-1]]);
 
-    return {
+    const resultado = {
       arquivos_atualizados: arquivosParaAtualizar.length,
       arquivos_deletados_atualizados: arquivosDeletadosParaAtualizar.length
     };
+
+    await auditoriaCtrl.registrarOperacao(t, {
+      tabela: 'acervo.arquivo',
+      resultado: {
+        ...resultado,
+        // A duração é a informação que só existe aqui: esta rota leva horas em
+        // acervo grande, e saber quanto levou é o que separa "rodou" de "rodou
+        // sobre o acervo inteiro".
+        arquivos_verificados: arquivos.length,
+        arquivos_deletados_verificados: arquivosDeletados.length,
+        segundos: Number(((Date.now() - inicio) / 1000).toFixed(1))
+      },
+      usuarioUuid,
+      contexto
+    });
+
+    return resultado;
     });
 };
 

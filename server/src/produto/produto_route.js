@@ -18,7 +18,7 @@ router.put(
     body: produtoSchema.produtoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.atualizaProduto(req.body, req.usuarioUuid)
+    await produtoCtrl.atualizaProduto(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Produto atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
@@ -32,7 +32,7 @@ router.put(
     body: produtoSchema.versaoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.atualizaVersao(req.body, req.usuarioUuid);
+    await produtoCtrl.atualizaVersao(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Versão atualizada com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK);
@@ -55,7 +55,7 @@ router.post(
   }),
   asyncHandler(async (req, res, next) => {
     const dados = await produtoCtrl.corrigeUuidVersao(
-      req.body.correcoes, req.body.motivo, req.usuarioUuid
+      req.body.correcoes, req.body.motivo, req.usuarioUuid, req.contexto
     )
     const alteradas = dados.filter(d => d.alterado).length
     const msg = `Identificador corrigido em ${alteradas} versão(ões)`
@@ -70,7 +70,7 @@ router.delete(
     body: produtoSchema.produtoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deleteProdutos(req.body.produto_ids, req.body.motivo_exclusao, req.usuarioUuid)
+    await produtoCtrl.deleteProdutos(req.body.produto_ids, req.body.motivo_exclusao, req.usuarioUuid, req.contexto)
     const msg = 'Produtos deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
@@ -83,7 +83,7 @@ router.delete(
     body: produtoSchema.versaoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deleteVersoes(req.body.versao_ids, req.body.motivo_exclusao, req.usuarioUuid);
+    await produtoCtrl.deleteVersoes(req.body.versao_ids, req.body.motivo_exclusao, req.usuarioUuid, req.contexto);
     const msg = 'Versões deletadas com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK);
   })
@@ -96,7 +96,7 @@ router.post(
     body: produtoSchema.versoesHistoricas
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaVersaoHistorica(req.body, req.usuarioUuid);
+    await produtoCtrl.criaVersaoHistorica(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Versões históricas criadas com sucesso';
 
@@ -163,7 +163,7 @@ router.post(
     body: produtoSchema.versoesPlanejadas
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaVersaoPlanejada(req.body, req.usuarioUuid);
+    await produtoCtrl.criaVersaoPlanejada(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Versões planejadas criadas com sucesso';
 
@@ -178,7 +178,7 @@ router.post(
     body: produtoSchema.produtosVersoesHistoricas
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaProdutoVersoesHistoricas(req.body, req.usuarioUuid);
+    await produtoCtrl.criaProdutoVersoesHistoricas(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Produtos com versões históricas criados com sucesso';
 
@@ -197,7 +197,7 @@ router.post(
     body: produtoSchema.produtosVersoesPlanejadas
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaProdutoVersoesPlanejadas(req.body, req.usuarioUuid);
+    await produtoCtrl.criaProdutoVersoesPlanejadas(req.body, req.usuarioUuid, req.contexto);
 
     const msg = 'Produtos com versões planejadas criados com sucesso';
 
@@ -212,7 +212,7 @@ router.post(
     body: produtoSchema.moverArquivos
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.moverArquivos(req.body.arquivo_ids, req.body.versao_id_destino, req.usuarioUuid, req.body.permitir_entre_produtos, req.body.permitir_esvaziar_origem);
+    await produtoCtrl.moverArquivos(req.body.arquivo_ids, req.body.versao_id_destino, req.usuarioUuid, req.body.permitir_entre_produtos, req.body.permitir_esvaziar_origem, req.contexto);
 
     const msg = 'Arquivos movidos de versão com sucesso';
 
@@ -229,7 +229,7 @@ router.post(
   asyncHandler(async (req, res, next) => {
     const dados = await produtoCtrl.renumeraVersoes(
       req.body.produto_id, req.body.subtipo_produto_id, req.body.familia,
-      req.body.nova_data_edicao, req.usuarioUuid
+      req.body.nova_data_edicao, req.usuarioUuid, req.contexto
     );
 
     const msg = 'Versões renumeradas com sucesso';
@@ -245,7 +245,7 @@ router.post(
     body: produtoSchema.produtos
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.bulkCreateProducts(req.body.produtos, req.usuarioUuid);
+    await produtoCtrl.bulkCreateProducts(req.body.produtos, req.usuarioUuid, req.contexto);
 
     const msg = 'Produtos criados com sucesso';
 
@@ -272,7 +272,7 @@ router.post(
     body: produtoSchema.versaoRelacionamento
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.criaVersaoRelacionamento(req.body.versao_relacionamento, req.usuarioUuid );
+    await produtoCtrl.criaVersaoRelacionamento(req.body.versao_relacionamento, req.usuarioUuid, req.contexto);
 
     const msg = 'Entradas do Versão Relacionamento criadas com sucesso';
 
@@ -287,7 +287,7 @@ router.put(
     body: produtoSchema.versaoRelacionamentoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.atualizaVersaoRelacionamento(req.body.versao_relacionamento, req.usuarioUuid );
+    await produtoCtrl.atualizaVersaoRelacionamento(req.body.versao_relacionamento, req.usuarioUuid, req.contexto);
 
     const msg = 'Entradas do Versão Relacionamento atualizadas com sucesso';
 
@@ -302,7 +302,7 @@ router.delete(
     body: produtoSchema.versaoRelacionamentoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await produtoCtrl.deleteVersaoRelacionamento(req.body.versao_relacionamento_ids);
+    await produtoCtrl.deleteVersaoRelacionamento(req.body.versao_relacionamento_ids, req.usuarioUuid, req.contexto);
 
     const msg = 'Entradas do Versão Relacionamento deletadas com sucesso';
 

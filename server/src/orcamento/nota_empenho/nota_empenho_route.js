@@ -46,7 +46,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: notaEmpenhoSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await notaEmpenhoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await notaEmpenhoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de empenho criada com sucesso'
 
@@ -62,7 +62,7 @@ router.put(
     params: notaEmpenhoSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await notaEmpenhoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await notaEmpenhoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de empenho atualizada com sucesso'
 
@@ -75,7 +75,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: notaEmpenhoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await notaEmpenhoCtrl.deletar(req.params.id)
+    await notaEmpenhoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Nota de empenho excluida com sucesso'
 

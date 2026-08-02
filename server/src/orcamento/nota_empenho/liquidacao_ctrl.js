@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -79,7 +81,7 @@ controller.getPorId = async id => {
   return li
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+controller.criar = async (dados, usuarioUuid, contexto) => {
   // Transacao: valida que a soma das liquidacoes (incluindo esta) nao excede
   // o valor empenhado disponivel, e so entao insere.
   return db.conn
@@ -97,14 +99,14 @@ controller.criar = async (dados, usuarioUuid) => {
         )
       }
 
-      return t.one(
+      const criada = await t.one(
         `INSERT INTO orcamento.liquidacao
           (nota_empenho_id, valor_liquidado, data, documento_ns,
            usuario_cadastramento_uuid)
          VALUES
           ($<notaEmpenhoId>, $<valorLiquidado>, $<data>, $<documentoNs>,
            $<usuarioUuid>)
-         RETURNING id`,
+         RETURNING *`,
         {
           notaEmpenhoId: dados.nota_empenho_id,
           valorLiquidado: dados.valor_liquidado,
@@ -113,6 +115,17 @@ controller.criar = async (dados, usuarioUuid) => {
           usuarioUuid
         }
       )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.liquidacao',
+        registroId: criada.id,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: criada.id }
     })
     .catch(err => {
       if (err && err.code === FK_VIOLATION) {
@@ -126,17 +139,19 @@ controller.criar = async (dados, usuarioUuid) => {
     })
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   // Transacao: valida o saldo desconsiderando a propria liquidacao, e atualiza.
   return db.conn
     .tx(async t => {
-      const existente = await t.oneOrNone(
-        'SELECT id FROM orcamento.liquidacao WHERE id = $<id>',
-        { id }
+      // `lerAntes` no lugar do `SELECT id`: mesma ida ao banco, mesmo 404, e o
+      // estado anterior deixa de se perder. Numa tabela em que o campo que muda
+      // e um VALOR, "de quanto para quanto" e a pergunta inteira.
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'orcamento.liquidacao',
+        id,
+        'Liquidação'
       )
-      if (!existente) {
-        throw new AppError('Liquidacao nao encontrada', httpCode.NotFound)
-      }
 
       const { disponivel, totalOutras } = await carregarDisponivel(
         t,
@@ -151,7 +166,7 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
         )
       }
 
-      return t.one(
+      const depois = await t.one(
         `UPDATE orcamento.liquidacao SET
            nota_empenho_id = $<notaEmpenhoId>,
            valor_liquidado = $<valorLiquidado>,
@@ -159,7 +174,7 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
-         RETURNING id`,
+         RETURNING *`,
         {
           id,
           notaEmpenhoId: dados.nota_empenho_id,
@@ -170,6 +185,18 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
           usuarioUuid
         }
       )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.liquidacao',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: depois.id }
     })
     .catch(err => {
       if (err && err.code === FK_VIOLATION) {
@@ -183,17 +210,26 @@ controller.atualizar = async (id, dados, usuarioUuid) => {
     })
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.liquidacao WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Liquidacao nao encontrada', httpCode.NotFound)
-  }
+// GANHOU TRANSACAO em 2026-08-02: eram dois comandos em duas conexoes.
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.liquidacao',
+      id,
+      'Liquidação'
+    )
 
-  return db.conn.none('DELETE FROM orcamento.liquidacao WHERE id = $<id>', {
-    id
+    await t.none('DELETE FROM orcamento.liquidacao WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.liquidacao',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
   })
 }
 

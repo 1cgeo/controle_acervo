@@ -46,7 +46,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: licitacaoSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await licitacaoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await licitacaoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Licitacao criada com sucesso'
 
@@ -62,7 +62,7 @@ router.put(
     params: licitacaoSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await licitacaoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await licitacaoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Licitacao atualizada com sucesso'
 
@@ -75,7 +75,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: licitacaoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await licitacaoCtrl.deletar(req.params.id)
+    await licitacaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Licitacao excluida com sucesso'
 

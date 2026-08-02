@@ -45,7 +45,7 @@ router.post(
   verifyPerfil('operador', 'orcamento'),
   schemaValidation({ body: recebimentoSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await recebimentoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await recebimentoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Recebimento de material criado com sucesso'
 
@@ -61,7 +61,7 @@ router.put(
     params: recebimentoSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await recebimentoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await recebimentoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid, req.contexto)
 
     const msg = 'Recebimento de material atualizado com sucesso'
 
@@ -74,7 +74,7 @@ router.delete(
   verifyPerfil('gerente', 'orcamento'),
   schemaValidation({ params: recebimentoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await recebimentoCtrl.deletar(req.params.id)
+    await recebimentoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     const msg = 'Recebimento de material excluido com sucesso'
 

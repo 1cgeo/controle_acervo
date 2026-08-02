@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { isAdmin, nomeModulo } from '@store/auth-store.js';
+import { isAdmin, nomeModulo, ehGerenteDeAlgumModulo } from '@store/auth-store.js';
 import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modules/registry.js';
 
 /**
@@ -17,25 +17,62 @@ const MENU_PLATAFORMA = [
   // peca so, com valor de credito e de empenho dentro. Esteve partido em dois
   // itens de modulo ate 2026-08-01, um na mapoteca e outro no orcamento.
   { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec', admin: true },
-  // Grupo colapsavel desde 2026-08-02, quando a autenticacao veio para dentro do
-  // SCA: administrar gente deixou de ser uma tela so. "Gestão" e o cadastro das
-  // pessoas; "Acessos" e a visao pelo lado do acesso, que ainda esta sendo
-  // escrita NESTE MESMO trabalho -- por isso o item ja aparece aqui, embora a
-  // rota #/acessos so passe a existir quando a tela entrar.
+  // Rastreabilidade: o que foi alterado nos modulos, quando e por quem. NAO leva
+  // `admin: true`, e nao e esquecimento: ela e do administrador global E do
+  // gerente de qualquer modulo, que ve o recorte do modulo dele. Quem decide o
+  // recorte e o servidor (verifyRastreabilidade), e o `visivel` daqui so evita
+  // oferecer a tela a quem levaria 403.
   //
-  // O id do GRUPO nao e 'usuarios': a chave do item ativo sai do primeiro
-  // segmento da rota (activeIdFromPath), e o filho '/usuarios' precisa dela.
+  // Fora do grupo "Usuarios" de proposito: aquele grupo e sobre PESSOAS, e este
+  // item e sobre o que aconteceu com os DADOS. Ele tambem nao se confunde com
+  // #/acervo/auditoria, que mede a coerencia do acervo hoje e nao diz quem
+  // produziu a incoerencia.
   {
-    id: 'usuarios-group',
-    label: 'Usuários',
-    icon: ICONS.people,
-    admin: true,
-    children: [
-      { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios' },
-      { id: 'acessos', label: 'Acessos', icon: ICONS.lock, path: '/acessos' },
-    ],
+    id: 'rastreabilidade',
+    label: 'Rastreabilidade',
+    icon: ICONS.assignment,
+    path: '/rastreabilidade',
+    visivel: () => isAdmin() || ehGerenteDeAlgumModulo(),
   },
 ];
+
+/**
+ * USUÁRIOS como SEÇÃO DE SISTEMA, e não como grupo do menu de plataforma
+ * (chefe, 2026-08-02).
+ *
+ * Ele fica logo depois do orçamento, ACIMA do separador, e se desenha como os
+ * três módulos: cabeçalho que é LINK para a home, com o chevron ao lado abrindo
+ * a lista sem navegar. A razão é que administrar gente virou um sistema de
+ * verdade quando a autenticação veio para dentro do SCA: tem dashboard, tem
+ * cadastro, e tem quem entre nele para trabalhar um turno inteiro. Como grupo
+ * colapsável no meio de "Metas do PIT" e "RPCMTec" ele se lia como um item de
+ * configuração.
+ *
+ * O DASHBOARD VEM PRIMEIRO, e é o que o cabeçalho abre. É a mesma regra dos
+ * módulos, e a mesma razão: quem clica no nome de um sistema quer a visão geral,
+ * não a primeira tela em ordem alfabética. Ele se chamava "Acessos" e virou
+ * "Dashboard" no menu; a rota continua `#/acessos`, porque `dgeo.login` é o que
+ * ela lê e renomear a URL quebraria link guardado.
+ *
+ * Não é um módulo de verdade: não está em `dominio.modulo`, não tem perfil e não
+ * entra no `registry.js`. Por isso o `id` daqui não pode ser 'usuarios' -- a
+ * chave do item ativo sai do primeiro segmento da rota (`activeIdFromPath`), e
+ * o FILHO '/usuarios' precisa dela.
+ */
+const SISTEMA_USUARIOS = {
+  id: 'usuarios-area',
+  label: 'Usuários',
+  icon: ICONS.people,
+  admin: true,
+  home: '/acessos',
+  // Sem prefixo: são rotas de PLATAFORMA, e não '/usuarios-area/...'.
+  prefixo: '',
+  chavePrefixo: '',
+  menu: [
+    { id: 'acessos', label: 'Dashboard', icon: ICONS.dashboard, path: '/acessos' },
+    { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios' },
+  ],
+};
 
 /** Icone de cada modulo, quando o manifesto nao declara um. */
 const ICONE_PADRAO_MODULO = ICONS.layers;
@@ -107,6 +144,13 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    */
   function itemVisivel(item, moduloId) {
     if (item.admin && !isAdmin()) return false;
+    // `visivel` e a terceira resposta, para o item de plataforma que nao e "de
+    // todos" nem "so do administrador". Existe por causa da Rastreabilidade, que
+    // e do administrador global E do gerente de qualquer modulo: com `admin:
+    // true` o gerente nao veria o item e ainda assim abriria a tela pela URL,
+    // que e exatamente o desencontro que `podeAbrirRota` existe para evitar do
+    // lado dos modulos.
+    if (typeof item.visivel === 'function' && !item.visivel()) return false;
     if (!moduloId || !item.path) return true;
     return podeAbrirRota(moduloId, item.path);
   }
@@ -148,18 +192,32 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
   }
 
   /**
-   * Uma seção colapsavel por modulo. O cabecalho e um LINK para a home do
-   * modulo, entao clicar nele ja troca de modulo; o chevron ao lado abre e
-   * fecha a lista sem navegar.
+   * Uma seção colapsavel de SISTEMA. O cabecalho e um LINK para a home, entao
+   * clicar nele ja entra no sistema; o chevron ao lado abre e fecha a lista sem
+   * navegar.
+   *
+   * Serve aos tres modulos E a area de Usuarios, que se desenha igual sem ser
+   * modulo (ver SISTEMA_USUARIOS). Por isso ela recebe o rotulo e a home JA
+   * RESOLVIDOS: o modulo os tira do catalogo do servidor (`nomeModulo`) e do
+   * manifesto (`rotaInicial`), e a area de Usuarios os declara, porque nao esta
+   * em `dominio.modulo` nem no registry.
+   *
+   * @param {Object} sistema
+   * @param {string} sistema.id
+   * @param {string} sistema.label
+   * @param {string} sistema.home - rota completa, com o '/' inicial
+   * @param {Array} sistema.menu
+   * @param {string} sistema.prefixo - '' quando os caminhos ja sao completos
+   * @param {string} sistema.chavePrefixo - '' quando a chave nao leva modulo
    */
-  function buildModuleSection(mod) {
+  function buildSystemSection(sistema) {
     const itensContainer = el('div', { className: 'sidebar__module-items' });
-    buildMenu(mod.menu || [], `/${mod.id}`, mod.id, itensContainer);
+    buildMenu(sistema.menu || [], sistema.prefixo, sistema.chavePrefixo, itensContainer);
 
     const chevron = el('button', {
       className: 'sidebar__module-chevron',
       type: 'button',
-      'aria-label': `Abrir ou fechar ${nomeModulo(mod.id)}`,
+      'aria-label': `Abrir ou fechar ${sistema.label}`,
       onClick: (e) => {
         // Sem isto o clique subiria para o link e navegaria junto.
         e.preventDefault();
@@ -171,26 +229,48 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
     const header = el('a', {
       className: 'sidebar__module-header',
-      href: `#${rotaInicial(mod)}`,
-      title: nomeModulo(mod.id),
+      href: `#${sistema.home}`,
+      title: sistema.label,
       onClick: () => setMobileOpen(false),
     }, [
-      el('span', { className: 'sidebar__item-icon' }, [svgIcon(mod.icon || ICONE_PADRAO_MODULO, 24)]),
-      el('span', { className: 'sidebar__item-label', textContent: nomeModulo(mod.id) }),
+      el('span', { className: 'sidebar__item-icon' }, [svgIcon(sistema.icon || ICONE_PADRAO_MODULO, 24)]),
+      el('span', { className: 'sidebar__item-label', textContent: sistema.label }),
       chevron,
     ]);
 
+    // As chaves dos filhos, para o `setActive` saber abrir a seção quando a rota
+    // ativa mora dentro dela. Os modulos ja abriam pelo `setModulo`, que le o
+    // modulo da rota; a area de Usuarios nao tem modulo nenhum, e sem isto
+    // ficaria fechada justamente quando a pessoa esta dentro dela.
+    const childIds = (sistema.menu || [])
+      .filter(i => i.path)
+      .map(i => (sistema.chavePrefixo ? `${sistema.chavePrefixo}:${i.id}` : i.id));
+
     const section = el('div', { className: 'sidebar__module' }, [header, itensContainer]);
-    moduleSections.push({ id: mod.id, section, header, chevron });
+    moduleSections.push({ id: sistema.id, section, header, chevron, childIds });
     nav.appendChild(section);
   }
 
   function build() {
     for (const mod of modulosAcessiveis()) {
-      buildModuleSection(mod);
+      buildSystemSection({
+        id: mod.id,
+        label: nomeModulo(mod.id),
+        icon: mod.icon,
+        home: rotaInicial(mod),
+        menu: mod.menu || [],
+        prefixo: `/${mod.id}`,
+        chavePrefixo: mod.id,
+      });
     }
 
-    const plataforma = MENU_PLATAFORMA.filter(i => !i.admin || isAdmin());
+    // Logo DEPOIS dos módulos e ACIMA do separador: é a posição que diz "isto é
+    // um sistema", e não um item de configuração no meio das telas soltas.
+    if (itemVisivel(SISTEMA_USUARIOS, '')) {
+      buildSystemSection(SISTEMA_USUARIOS);
+    }
+
+    const plataforma = MENU_PLATAFORMA.filter(i => itemVisivel(i, ''));
     if (plataforma.length) {
       if (nav.childElementCount) {
         nav.appendChild(el('div', { className: 'sidebar__separator' }));
@@ -218,6 +298,17 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
   function setActive(activeId) {
     for (const [chave, itemEl] of Object.entries(itemElements)) {
       itemEl.classList.toggle('sidebar__item--active', chave === activeId);
+    }
+
+    // Seção de sistema cuja rota ativa mora dentro dela: abre e marca o
+    // cabeçalho. Os módulos já faziam isso pelo `setModulo`, que lê o módulo da
+    // rota; a área de Usuários não tem módulo, então `setModulo` recebe null e
+    // ela ficaria fechada justamente quando a pessoa está dentro dela.
+    for (const { section, header, chevron, childIds } of moduleSections) {
+      if (!childIds || !childIds.includes(activeId)) continue;
+      header.classList.add('sidebar__module-header--active');
+      section.classList.add('sidebar__module--open');
+      chevron.setAttribute('aria-expanded', 'true');
     }
     for (const { group, header, childIds } of groupElements) {
       const hasActiveChild = childIds.includes(activeId);

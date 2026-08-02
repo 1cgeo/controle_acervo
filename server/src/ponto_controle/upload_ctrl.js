@@ -11,6 +11,7 @@ const {
   httpCode,
   domainConstants: { TIPO_PRODUTO }
 } = require('../utils')
+const { auditoriaCtrl } = require('../auditoria')
 
 const controller = {}
 
@@ -379,7 +380,11 @@ controller.prepararMissao = async (
  * ponto de controle com metade das fotos é pior do que ponto nenhum, porque
  * parece completo na tela.
  */
-controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
+// O rastro do ponto de controle nasce AQUI, e não no `prepare-upload/missao`
+// nem no `cancel-upload`: sessão que não virou ponto não mudou nada, e a linha
+// só entra em `ponto_controle.ponto` e `ponto_controle.arquivo` neste ponto. É a
+// mesma regra do confirm-upload do acervo.
+controller.confirmarMissao = async (sessionUuid, usuarioUuid, contexto) => {
   // --- Transação 1: conferir no destino e gravar o diagnóstico ---------------
   const conferencia = await db.conn.tx(async t => {
     const sessao = await t.oneOrNone(
@@ -566,6 +571,13 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
 
         let pontoId
         if (existente) {
+          // A linha inteira ANTES da substituição, com a geometria em EWKT.
+          // Substituir um ponto reescreve uma medição de campo, e sem o estado
+          // anterior o rastro não diria o que a missão nova apagou.
+          const antes = await auditoriaCtrl.lerAntes(
+            t, 'ponto_controle.ponto', existente.id, 'Ponto de controle'
+          )
+
           const atribuicoes = campos.map(c => `${c} = $<${c}>`).join(', ')
           await t.none(
             `UPDATE ponto_controle.ponto SET
@@ -578,18 +590,43 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
           pontoId = existente.id
           relatorio.substituidos.push(pontoTemp.cod_ponto)
 
+          await auditoriaCtrl.registrar(t, {
+            tabela: 'ponto_controle.ponto',
+            registroId: pontoId,
+            operacao: 'U',
+            antes,
+            depois: await auditoriaCtrl.lerDepois(t, 'ponto_controle.ponto', pontoId),
+            usuarioUuid,
+            contexto
+          })
+
           // Substituir o ponto substitui TAMBÉM os arquivos dele. Sem isto a
           // linha velha e a nova conviveriam apontando para o MESMO caminho no
           // volume, porque o caminho sai do nome do arquivo. O checksum antigo
           // viraria mentira: descreveria bytes que já foram sobrescritos.
           // Também estouraria o `maximo_por_ponto`, que só conta o que vem no
           // manifesto.
+          // `RETURNING *` no lugar das três colunas: as mesmas linhas que o
+          // laço de órfãos usa são o `dados_antes` da exclusão, sem consulta a
+          // mais.
           const antigos = await t.any(
             `DELETE FROM ponto_controle.arquivo
              WHERE ponto_id = $<pontoId>
-             RETURNING nome_arquivo, extensao, volume_armazenamento_id`,
+             RETURNING *`,
             { pontoId }
           )
+
+          for (const antigo of antigos) {
+            await auditoriaCtrl.registrar(t, {
+              tabela: 'ponto_controle.arquivo',
+              registroId: antigo.id,
+              operacao: 'D',
+              antes: antigo,
+              usuarioUuid,
+              contexto,
+              motivo: 'Substituição do ponto por nova importação de missão'
+            })
+          }
           const novosCaminhos = new Set(
             arquivosTemp
               .filter(a => String(a.ponto_temp_id) === String(pontoTemp.id))
@@ -628,6 +665,16 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
           )
           pontoId = inserido.id
           relatorio.inseridos.push(pontoTemp.cod_ponto)
+
+          await auditoriaCtrl.registrar(t, {
+            tabela: 'ponto_controle.ponto',
+            registroId: pontoId,
+            operacao: 'I',
+            // Relido, e não `RETURNING *`: o `geom` precisa sair em EWKT.
+            depois: await auditoriaCtrl.lerDepois(t, 'ponto_controle.ponto', pontoId),
+            usuarioUuid,
+            contexto
+          })
         }
 
         await t.none(
@@ -649,7 +696,7 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
                      $<tamanhoMb>, $<checksum>, $<volumeId>, $<metadado>,
                      $<usuarioUuid>)
              ON CONFLICT (checksum, ponto_id) DO NOTHING
-             RETURNING id`,
+             RETURNING *`,
             {
               pontoId,
               tipoArquivoId: arquivo.tipo_arquivo_id,
@@ -663,8 +710,22 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid) => {
               usuarioUuid
             }
           )
-          if (gravado) relatorio.arquivos_novos += 1
-          else relatorio.arquivos_repetidos += 1
+          // O `DO NOTHING` devolve NADA quando o arquivo já existia com o mesmo
+          // checksum, e é por isso que o evento fica dentro do `if`: o repetido
+          // não mudou nada, e registrá-lo diria que entrou algo que não entrou.
+          if (gravado) {
+            relatorio.arquivos_novos += 1
+            await auditoriaCtrl.registrar(t, {
+              tabela: 'ponto_controle.arquivo',
+              registroId: gravado.id,
+              operacao: 'I',
+              depois: gravado,
+              usuarioUuid,
+              contexto
+            })
+          } else {
+            relatorio.arquivos_repetidos += 1
+          }
         }
       }
 

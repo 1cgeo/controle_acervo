@@ -2,6 +2,8 @@
 
 const { db } = require('../../database')
 
+const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -76,87 +78,130 @@ controller.getPorId = async id => {
   return licitacao
 }
 
-controller.criar = async (dados, usuarioUuid) => {
+// As tres funcoes de escrita GANHARAM TRANSACAO em 2026-08-02, com a
+// rastreabilidade: a linha do rastro cai junto com a mudanca ou nao cai.
+controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `INSERT INTO orcamento.licitacao
-        (ano, tipo_id, objeto, fase_atual,
-         valor_total_estimado, valor_final_homologado, om_gestora,
-         usuario_cadastramento_uuid)
-       VALUES
-        ($<ano>, $<tipoId>, $<objeto>, $<faseAtual>,
-         $<valorTotalEstimado>, $<valorFinalHomologado>, $<omGestora>,
-         $<usuarioUuid>)
-       RETURNING id`,
-      {
-        ano: dados.ano,
-        tipoId: dados.tipo_id,
-        objeto: dados.objeto,
-        faseAtual: dados.fase_atual || null,
-        valorTotalEstimado:
-          dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
-        valorFinalHomologado:
-          dados.valor_final_homologado != null
-            ? dados.valor_final_homologado
-            : null,
-        omGestora: dados.om_gestora || null,
-        usuarioUuid
-      }
-    )
+    .tx(async t => {
+      const criada = await t.one(
+        `INSERT INTO orcamento.licitacao
+          (ano, tipo_id, objeto, fase_atual,
+           valor_total_estimado, valor_final_homologado, om_gestora,
+           usuario_cadastramento_uuid)
+         VALUES
+          ($<ano>, $<tipoId>, $<objeto>, $<faseAtual>,
+           $<valorTotalEstimado>, $<valorFinalHomologado>, $<omGestora>,
+           $<usuarioUuid>)
+         RETURNING *`,
+        {
+          ano: dados.ano,
+          tipoId: dados.tipo_id,
+          objeto: dados.objeto,
+          faseAtual: dados.fase_atual || null,
+          valorTotalEstimado:
+            dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
+          valorFinalHomologado:
+            dados.valor_final_homologado != null
+              ? dados.valor_final_homologado
+              : null,
+          omGestora: dados.om_gestora || null,
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.licitacao',
+        registroId: criada.id,
+        operacao: 'I',
+        depois: criada,
+        usuarioUuid,
+        contexto
+      })
+
+      // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
+      return { id: criada.id }
+    })
     .catch(tratarFk)
 }
 
-controller.atualizar = async (id, dados, usuarioUuid) => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.licitacao WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Licitacao nao encontrada', httpCode.NotFound)
-  }
-
+controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   return db.conn
-    .one(
-      `UPDATE orcamento.licitacao SET
-         ano = $<ano>, tipo_id = $<tipoId>,
-         objeto = $<objeto>, fase_atual = $<faseAtual>,
-         valor_total_estimado = $<valorTotalEstimado>,
-         valor_final_homologado = $<valorFinalHomologado>,
-         om_gestora = $<omGestora>,
-         data_modificacao = $<dataModificacao>,
-         usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id>
-       RETURNING id`,
-      {
+    .tx(async t => {
+      // Era um `SELECT id` fora de transacao, so para o 404. `lerAntes` faz as
+      // duas coisas pelo mesmo custo, e agora dentro da transacao que altera a
+      // linha: le-la fora deixaria uma janela em que outra requisicao a muda no
+      // meio, e o `dados_antes` descreveria um estado que ninguem viu.
+      const antes = await auditoriaCtrl.lerAntes(
+        t,
+        'orcamento.licitacao',
         id,
-        ano: dados.ano,
-        tipoId: dados.tipo_id,
-        objeto: dados.objeto,
-        faseAtual: dados.fase_atual || null,
-        valorTotalEstimado:
-          dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
-        valorFinalHomologado:
-          dados.valor_final_homologado != null
-            ? dados.valor_final_homologado
-            : null,
-        omGestora: dados.om_gestora || null,
-        dataModificacao: new Date(),
-        usuarioUuid
-      }
-    )
+        'Licitação'
+      )
+
+      const depois = await t.one(
+        `UPDATE orcamento.licitacao SET
+           ano = $<ano>, tipo_id = $<tipoId>,
+           objeto = $<objeto>, fase_atual = $<faseAtual>,
+           valor_total_estimado = $<valorTotalEstimado>,
+           valor_final_homologado = $<valorFinalHomologado>,
+           om_gestora = $<omGestora>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+         WHERE id = $<id>
+         RETURNING *`,
+        {
+          id,
+          ano: dados.ano,
+          tipoId: dados.tipo_id,
+          objeto: dados.objeto,
+          faseAtual: dados.fase_atual || null,
+          valorTotalEstimado:
+            dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
+          valorFinalHomologado:
+            dados.valor_final_homologado != null
+              ? dados.valor_final_homologado
+              : null,
+          omGestora: dados.om_gestora || null,
+          dataModificacao: new Date(),
+          usuarioUuid
+        }
+      )
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'orcamento.licitacao',
+        registroId: id,
+        operacao: 'U',
+        antes,
+        depois,
+        usuarioUuid,
+        contexto
+      })
+
+      return { id: depois.id }
+    })
     .catch(tratarFk)
 }
 
-controller.deletar = async id => {
-  const existente = await db.conn.oneOrNone(
-    'SELECT id FROM orcamento.licitacao WHERE id = $<id>',
-    { id }
-  )
-  if (!existente) {
-    throw new AppError('Licitacao nao encontrada', httpCode.NotFound)
-  }
+controller.deletar = async (id, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await auditoriaCtrl.lerAntes(
+      t,
+      'orcamento.licitacao',
+      id,
+      'Licitação'
+    )
 
-  return db.conn.none('DELETE FROM orcamento.licitacao WHERE id = $<id>', { id })
+    await t.none('DELETE FROM orcamento.licitacao WHERE id = $<id>', { id })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'orcamento.licitacao',
+      registroId: id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+  })
 }
 
 module.exports = controller

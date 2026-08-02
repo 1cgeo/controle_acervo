@@ -11,6 +11,7 @@ const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
 const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, TIPO_VERSAO, STATUS_ARQUIVO } } = require("../utils");
+const { auditoriaCtrl } = require("../auditoria");
 
 const {
   DB_USER,
@@ -628,29 +629,59 @@ controller.cleanupExpiredDownloads = async () => {
   return db.conn.any(`SELECT acervo.cleanup_expired_downloads()`);
 };
 
-controller.refreshAllMaterializedViews = async () => {
-  return db.conn.task(async t => {
+// As duas visões materializadas geram EVENTO DE OPERAÇÃO, e não linha a linha:
+// não há par de linhas para comparar, e a pergunta que a ação produz na prática
+// é "quem mandou rodar isso, e quando". A tela de Manutenção já descreve o que
+// cada uma faz e o que NÃO faz; o rastro só acrescenta o autor.
+//
+// O `task` virou `tx` nas duas: o evento tem de cair JUNTO com a operação que
+// ele descreve, e num `task` cada comando é uma transação própria -- o registro
+// sobreviveria a uma falha da operação, afirmando que ela aconteceu.
+controller.refreshAllMaterializedViews = async (usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
     try {
       await t.any(`SELECT acervo.refresh_all_materialized_views()`);
-      return {
+
+      const resultado = {
         success: true,
         message: 'Todas as views materializadas foram atualizadas com sucesso'
       };
+
+      await auditoriaCtrl.registrarOperacao(t, {
+        tabela: 'acervo.mv_produto',
+        resultado,
+        usuarioUuid,
+        contexto
+      });
+
+      return resultado;
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(`Erro ao atualizar views materializadas: ${error.message}`, httpCode.InternalError, error);
     }
   });
 };
 
-controller.createMaterializedViews = async () => {
-  return db.conn.task(async t => {
+controller.createMaterializedViews = async (usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
     try {
       await t.any(`SELECT acervo.criar_views_materializadas()`);
-      return {
+
+      const resultado = {
         success: true,
         message: 'Views materializadas criadas com sucesso'
       };
+
+      await auditoriaCtrl.registrarOperacao(t, {
+        tabela: 'acervo.mv_produto',
+        resultado,
+        usuarioUuid,
+        contexto
+      });
+
+      return resultado;
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(`Erro ao criar views materializadas: ${error.message}`, httpCode.InternalError, error);
     }
   });

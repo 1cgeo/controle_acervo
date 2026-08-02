@@ -187,7 +187,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: rpcmtecSchema.criar }),
   asyncHandler(async (req, res, next) => {
-    const dados = await edicaoCtrl.criar(req.body, req.usuarioUuid)
+    const dados = await edicaoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(
       true, 'Edição do RPCMTec criada com sucesso', httpCode.Created, dados
@@ -203,7 +203,9 @@ router.put(
     params: rpcmtecSchema.idParams
   }),
   asyncHandler(async (req, res, next) => {
-    await edicaoCtrl.atualizar(req.params.id, req.body, req.usuarioUuid)
+    await edicaoCtrl.atualizar(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
 
     return res.sendJsonAndLog(
       true, 'Edição do RPCMTec atualizada com sucesso', httpCode.OK
@@ -216,7 +218,7 @@ router.delete(
   verifyAdmin,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
-    await edicaoCtrl.deletar(req.params.id)
+    await edicaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
 
     return res.sendJsonAndLog(
       true, 'Edição do RPCMTec excluída com sucesso', httpCode.OK

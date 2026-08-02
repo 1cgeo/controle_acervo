@@ -20,6 +20,7 @@ const { rpcmtecRoute } = require("./rpcmtec");
 const { pontoControleRoute } = require("./ponto_controle");
 const { limitesRoute } = require("./limites");
 const { pitRoute } = require("./pit");
+const { auditoriaRoute } = require("./auditoria");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
@@ -64,6 +65,19 @@ router.use("/usuarios", usuarioRoute);
 // Existe desde 2026-08-02, com a fusão da autenticação: é o porte do dashboard
 // do Auth Server externo, que era quem lia essa tabela.
 router.use("/acessos", acessosRoute);
+
+// Rastreabilidade: o que foi mudado, quando, por quem e qual era o estado
+// anterior. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios e
+// /acessos: o rastro dos três módulos mora numa tabela só, e a pergunta "o que o
+// usuário X fez" não é de módulo nenhum.
+//
+// NÃO confundir com `/acervo/auditoria`, que roda os invariantes do acervo: essa
+// mede a coerência entre tabelas HOJE e não diz quem produziu a incoerência.
+// Nomes parecidos, perguntas diferentes.
+//
+// A guarda é por caminho: quem vê o registro vê o histórico dele. Ver
+// `auditoria/auditoria_route.js`.
+router.use("/auditoria", auditoriaRoute);
 
 // Metas do PIT. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios:
 // os três módulos consomem o plano anual da Divisão e nenhum é dono dele.

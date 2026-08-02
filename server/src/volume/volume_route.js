@@ -30,7 +30,7 @@ router.delete(
     body: volumeSchema.volumeTipoProdutoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.deleteVolumeTipoProduto(req.body.volume_tipo_produto_ids)
+    await volumeCtrl.deleteVolumeTipoProduto(req.body.volume_tipo_produto_ids, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do Volume Tipo Produto deletadas com sucesso'
 
@@ -45,7 +45,7 @@ router.post(
     body: volumeSchema.volumeTipoProduto
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.criaVolumeTipoProduto(req.body.volume_tipo_produto)
+    await volumeCtrl.criaVolumeTipoProduto(req.body.volume_tipo_produto, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do Volume Tipo Produto criadas com sucesso'
 
@@ -60,7 +60,7 @@ router.put(
     body: volumeSchema.volumeTipoProdutoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.atualizaVolumeTipoProduto(req.body.volume_tipo_produto)
+    await volumeCtrl.atualizaVolumeTipoProduto(req.body.volume_tipo_produto, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do Volume Tipo Produto atualizadas com sucesso'
 
@@ -87,7 +87,7 @@ router.delete(
     body: volumeSchema.volumeArmazenamentoIds
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.deleteVolumeArmazenamento(req.body.volume_armazenamento_ids)
+    await volumeCtrl.deleteVolumeArmazenamento(req.body.volume_armazenamento_ids, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do volume de armazenamento deletadas com sucesso'
 
@@ -102,7 +102,7 @@ router.post(
     body: volumeSchema.volumeArmazenamento
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.criaVolumeArmazenamento(req.body.volume_armazenamento)
+    await volumeCtrl.criaVolumeArmazenamento(req.body.volume_armazenamento, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do volume de armazenamento criadas com sucesso'
 
@@ -117,7 +117,7 @@ router.put(
     body: volumeSchema.volumeArmazenamentoAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await volumeCtrl.atualizaVolumeArmazenamento(req.body.volume_armazenamento)
+    await volumeCtrl.atualizaVolumeArmazenamento(req.body.volume_armazenamento, req.usuarioUuid, req.contexto)
 
     const msg = 'Entradas do volume de armazenamento atualizadas com sucesso'
 

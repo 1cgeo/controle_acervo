@@ -51,8 +51,10 @@ describe('createMainLayout', () => {
 
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
-    // A troca de modulo mora na sidebar, uma seção por modulo.
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(3);
+    // A troca de modulo mora na sidebar, uma seção por modulo. São QUATRO
+    // seções: os três módulos e a área de Usuários, que desde 2026-08-02 se
+    // desenha como sistema sem ser módulo (ver sidebar.js).
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(4);
   });
 
   test('o nome do modulo vem do catalogo do servidor, nao decorado na tela', () => {
@@ -61,7 +63,14 @@ describe('createMainLayout', () => {
 
     const rotulos = [...ctrl.layout.querySelectorAll('.sidebar__module-header .sidebar__item-label')]
       .map(e => e.textContent);
-    expect(rotulos).toEqual(['Controle do Acervo', 'Mapoteca', 'Controle Orçamentário']);
+    // Os três primeiros são MÓDULOS, e o nome de cada um sai de `dominio.modulo`
+    // (auth-store.nomeModulo): trocar o nome no banco troca o menu, sem deploy.
+    expect(rotulos.slice(0, 3)).toEqual([
+      'Controle do Acervo', 'Mapoteca', 'Controle Orçamentário',
+    ]);
+    // "Usuários" é a exceção, e é declarado na tela porque NÃO é módulo: não
+    // está em `dominio.modulo`, não tem perfil e não entra no registry.
+    expect(rotulos[3]).toBe('Usuários');
   });
 
   test('mudar o hash sincroniza o modulo aberto e o item ativo', () => {
@@ -84,7 +93,7 @@ describe('createMainLayout', () => {
     window.dispatchEvent(new Event('hashchange'));
 
     // Era o defeito relatado: o menu do modulo sumia ao abrir Usuarios.
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(3);
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(4);
     expect(ctrl.layout.querySelector('[data-id="acervo:dashboard"]')).not.toBeNull();
     expect(ctrl.layout.querySelector('[data-id="usuarios"]')
       .classList.contains('sidebar__item--active')).toBe(true);

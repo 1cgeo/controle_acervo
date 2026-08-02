@@ -156,7 +156,7 @@ router.post(
   '/verificar_inconsistencias',
   verifyPerfil('gerente'),
   asyncHandler(async (req, res, next) => {
-    const resultados = await gerenciaCtrl.verificarConsistencia()
+    const resultados = await gerenciaCtrl.verificarConsistencia(req.usuarioUuid, req.contexto)
 
     const msg = 'Verificação de consistência concluída com sucesso'
 

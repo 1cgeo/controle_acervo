@@ -1,0 +1,152 @@
+/* Tela de Rastreabilidade (#/rastreabilidade).
+ *
+ * O que este CSS corrige, medido olhando a tela em 2026-08-02:
+ *
+ * 1. A barra de filtros nascia da `.filtro-barra` genérica, que é um flex de uma
+ *    linha só. Com sete controles, dois deles com rótulo, o resultado era rótulo
+ *    colado no campo ("De" grudado no seletor de data), larguras diferentes e
+ *    quebra em lugar arbitrário. Aqui ela é uma GRADE, com o rótulo acima do
+ *    campo e largura mínima igual para todos.
+ * 2. A coluna "O que mudou" engolia a tabela: uma observação longa fazia a linha
+ *    ter sete linhas de altura, e a tela deixava de ser varrível, que é o que
+ *    ela existe para ser. O valor agora é recortado por CSS, com o texto inteiro
+ *    no `title` e no detalhe.
+ */
+
+.rastro-filtros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+  align-items: end;
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+}
+
+.rastro-filtros__campo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Rótulo ACIMA do campo, e não ao lado: ao lado ele rouba a largura do controle
+   e some quando a tela estreita. */
+.rastro-filtros__rotulo {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.rastro-filtros__campo select,
+.rastro-filtros__campo input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* O período são dois campos que se leem juntos: "de" não quer dizer nada sozinho.
+   Ocupa duas colunas da grade para os dois caberem lado a lado. */
+.rastro-filtros__periodo {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.rastro-filtros__acoes {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+}
+
+/* Quantos eventos o filtro encontrou. Fica DENTRO da barra, ao lado do botão de
+   limpar: separado dela, a pessoa lê a contagem sem saber a que recorte ela se
+   refere. */
+.rastro-filtros__contagem {
+  align-self: center;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* --- O aviso do que a tela NÃO registra ---------------------------------- */
+
+/* Recolhido por padrão. As duas frases precisam existir (sem elas, a ausência de
+   registro se lê como "ninguém mexeu"), mas como dois parágrafos permanentes no
+   topo elas competiam com o título e empurravam a tabela para baixo da dobra. */
+.rastro-aviso {
+  margin-bottom: var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.rastro-aviso > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--text-secondary);
+}
+
+.rastro-aviso > p {
+  margin: var(--space-xs) 0 0 var(--space-lg);
+}
+
+/* --- A tabela ------------------------------------------------------------ */
+
+/* A coluna do diff é a que carrega a resposta, então ela leva a largura; as
+   outras quatro são estreitas e não quebram. */
+.rastro-col-quando,
+.rastro-col-quem,
+.rastro-col-oque { white-space: nowrap; }
+
+.rastro-col-onde { white-space: nowrap; }
+
+/* Recorte por ALTURA, e não por número de caracteres: o corte por caractere
+   erraria em todo tamanho de tela, e o `-webkit-line-clamp` corta onde a linha
+   realmente acaba. Três linhas cobrem duas mudanças curtas ou uma longa. */
+.rastro-col-mudou {
+  max-width: 620px;
+}
+
+.rastro-col-mudou .historico__mudancas {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* O resumo (inserção e exclusão) é uma frase só: uma linha basta. */
+.rastro-col-mudou .historico__resumo {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* "Onde": o sistema em cima, o registro embaixo, e o registro é LINK quando a
+   ficha dele existe. Sem o link, a pessoa lê "pedido #58" e tem de procurar o
+   pedido 58 na mão, que é o passo que a tela deveria poupar. */
+.rastro-onde__modulo {
+  display: block;
+}
+
+.rastro-onde__registro {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+a.rastro-onde__registro {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+a.rastro-onde__registro:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .rastro-filtros__periodo { grid-column: span 1; }
+  .rastro-col-mudou { max-width: none; }
+}
