@@ -49,6 +49,25 @@ export const OPERACAO = {
   D: { texto: 'Removeu', cor: 'error' },
 };
 
+/**
+ * Por onde a mudança entrou, em português.
+ *
+ * Ela aparece no detalhe de cada evento, e vinha CRUA ('web', 'qgis'): quem lê o
+ * histórico não decorou os valores da coluna. Mora aqui, e não na tela de
+ * rastreabilidade, porque quem desenha o detalhe é este componente -- a tela
+ * deixou de ter o filtro de origem em 2026-08-02, quando ele deu lugar a Sistema
+ * e Subsistema.
+ */
+export const NOME_ORIGEM = {
+  web: 'Interface web',
+  qgis: 'Plugin do QGIS',
+  cli: 'Linha de comando',
+  gatilho: 'Efeito no banco',
+  sistema: 'Sistema',
+  migracao: 'Migração',
+  desconhecido: 'Não registrada',
+};
+
 // Quantas mudanças cabem na linha antes de virar "e mais N". Duas é o que cabe
 // sem a célula quebrar em telas estreitas, e cobre a maioria esmagadora das
 // alterações reais (trocar a situação, trocar o prazo).
@@ -187,7 +206,8 @@ export function abrirDetalheDoEvento(evento) {
         // pergunta quando duas portas escrevem a mesma tabela.
         el('span', {
           className: 'historico-diff__origem',
-          textContent: `origem: ${evento.origem}${evento.rota ? ` · ${evento.rota}` : ''}`,
+          textContent: `Entrou por: ${NOME_ORIGEM[evento.origem] || evento.origem}`
+            + `${evento.rota ? ` · ${evento.rota}` : ''}`,
         }),
       ]),
       evento.motivo

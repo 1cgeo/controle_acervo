@@ -14,6 +14,7 @@ import {
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openPlotterDialog } from './plotter-dialog.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 function summaryCard(label, value) {
   return el('div', { className: 'summary-card' }, [
@@ -280,6 +281,21 @@ export async function renderPlotterDetails(container, { params }) {
       onClick: () => openManutencaoDialog({ plotterId: id, onSaved: load }),
     }, [svgIcon(ICONS.add, 14), 'Adicionar manutenção']);
 
+    // Historico de alteracoes. E o MESMO componente da ficha do pedido.
+    //
+    // O agregado e `plotter`, e ele reune o equipamento e as MANUTENCOES: quem
+    // pergunta "quando este plotter parou" quer os dois no mesmo lugar.
+    //
+    // Montado DENTRO do `load` porque esta tela se remonta inteira a cada
+    // salvamento (a pagina nao guarda um `root` persistente).
+    const historico = criarHistorico({
+      modulo: 'mapoteca',
+      entidade: 'plotter',
+      id,
+      subtitulo: 'Alteracoes no equipamento e nas manutencoes',
+    });
+    cleanups.push(() => historico.cleanup());
+
     // -------------------------------------------------------------------------
     // Page assembly
     // -------------------------------------------------------------------------
@@ -296,6 +312,7 @@ export async function renderPlotterDetails(container, { params }) {
         ]),
         manutencoesTable.element,
       ]),
+      historico.element,
     ]));
   }
 

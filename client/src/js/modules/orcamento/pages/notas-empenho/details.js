@@ -22,6 +22,7 @@ import {
   deleteRecebimento,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 function infoRow(label, value) {
   return el('div', { className: 'detail-card__row' }, [
@@ -456,8 +457,26 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
 
   await load();
 
+  // Histórico de alterações. É o MESMO componente da ficha do pedido.
+  //
+  // O agregado `nota_empenho` reúne QUATRO tabelas: a NE, o rateio por NC, as
+  // liquidações e os recebimentos de material. São as quatro coisas que esta
+  // ficha mostra, e é o módulo em que "qual era o valor antes" é a pergunta mais
+  // provável do sistema inteiro.
+  //
+  // Fora do `load` de propósito: ele se remonta a cada salvamento, e dentro dele
+  // o histórico seria destruído e refeito a cada edição.
+  const historico = criarHistorico({
+    modulo: 'orcamento',
+    entidade: 'nota_empenho',
+    id: notaEmpenhoId,
+    subtitulo: 'Alterações na NE, no rateio por NC, nas liquidações e nos recebimentos',
+  });
+  root.appendChild(historico.element);
+
   return () => {
     disposed = true;
     cleanupTables();
+    historico.cleanup();
   };
 }

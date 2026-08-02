@@ -6,6 +6,7 @@ import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
 import { openClienteDialog } from './dialog-cliente.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 function summaryCard(label, value) {
   return el('div', { className: 'summary-card' }, [
@@ -162,6 +163,22 @@ export async function renderClienteDetails(container, { params }) {
   }
 
   await load();
+
+  // Histórico de alterações. É o MESMO componente da ficha do pedido, e é por
+  // isso que ele existe: a seção que o chefe gostou lá vale em toda ficha, e
+  // copiá-la seria a segunda versão a divergir na primeira correção.
+  //
+  // Fica FORA do `load()` de propósito: `load` se remonta a cada salvamento, e
+  // dentro dele o histórico seria destruído e refeito a cada edição. Aqui ele é
+  // montado uma vez, e quem o recarrega é quem sabe que algo mudou.
+  const historico = criarHistorico({
+    modulo: 'mapoteca',
+    entidade: 'cliente',
+    id: clienteId,
+    subtitulo: 'Quem alterou o cadastro deste cliente',
+  });
+  cleanups.push(() => historico.cleanup());
+  root.appendChild(historico.element);
 
   return () => {
     disposed = true;

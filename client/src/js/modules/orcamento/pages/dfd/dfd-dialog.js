@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
   createSelectField,
@@ -305,6 +306,22 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
 
   renderItens();
 
+    // Histórico de alterações, RECOLHIDO e só na edição.
+    //
+    // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
+    // uma consulta de quem só veio corrigir um campo. Só na edição porque num
+    // cadastro novo não há o que mostrar.
+    const historico = isEdit
+      ? criarHistorico({
+        modulo: 'orcamento',
+        entidade: 'dfd',
+        id: dfd.id,
+        titulo: 'Histórico de alterações',
+        subtitulo: 'Alteracoes neste DFD e nos itens dele',
+        recolhido: true,
+      })
+      : null;
+
   const content = el('div', {}, [
     el('div', { className: 'form-grid' }, [
       numeroField.element,
@@ -332,6 +349,7 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
       ]),
       anexo.element,
     ]),
+    historico ? historico.element : null,
   ]);
 
   let saving = false;

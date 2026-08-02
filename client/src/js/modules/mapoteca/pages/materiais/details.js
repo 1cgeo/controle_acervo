@@ -8,6 +8,7 @@ import { getTipoMaterial, getConsumoMensal } from '@modules/mapoteca/services/ma
 import { permissoes } from '@store/auth-store.js';
 import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 import { openMaterialDialog } from './material-dialog.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 function summaryCard(label, value, extra = null) {
   return el('div', { className: 'summary-card' }, [
@@ -182,6 +183,23 @@ export async function renderMaterialDetails(container, { params }) {
     });
     cleanups.push(() => consumoChart._cleanup());
 
+    // Histórico de alterações. É o MESMO componente da ficha do pedido, e é por
+    // isso que ele existe: a seção que o chefe gostou lá vale em toda ficha.
+    //
+    // O agregado é `material`, e ele reúne o tipo, o estoque e o consumo: quem
+    // pergunta "por que o saldo caiu" quer os três no mesmo lugar, e o consumo
+    // que o gatilho do banco descontou aparece aqui com origem "Efeito no banco".
+    //
+    // Montado DENTRO do `load` porque esta tela se remonta inteira a cada troca
+    // de ano (a página não guarda um `root` persistente).
+    const historico = criarHistorico({
+      modulo: 'mapoteca',
+      entidade: 'material',
+      id,
+      subtitulo: 'Alterações no cadastro, no estoque e no consumo deste material',
+    });
+    cleanups.push(() => historico.cleanup());
+
     // -------------------------------------------------------------------------
     // Page assembly
     // -------------------------------------------------------------------------
@@ -211,6 +229,7 @@ export async function renderMaterialDetails(container, { params }) {
         consumoTable.element,
       ]),
       consumoChart,
+      historico.element,
     ]));
   }
 

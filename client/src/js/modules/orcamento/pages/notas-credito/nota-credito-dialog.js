@@ -1,5 +1,6 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
   createNumberField,
@@ -238,6 +239,22 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
     }
   }
 
+    // Histórico de alterações, RECOLHIDO e só na edição.
+    //
+    // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
+    // uma consulta de quem só veio corrigir um campo. Só na edição porque num
+    // cadastro novo não há o que mostrar.
+    const historico = isEdit
+      ? criarHistorico({
+        modulo: 'orcamento',
+        entidade: 'nota_credito',
+        id: ncId,
+        titulo: 'Histórico de alterações',
+        subtitulo: 'Alteracoes nesta nota de credito',
+        recolhido: true,
+      })
+      : null;
+
   const content = el('div', { className: 'form-grid' }, [
     numeroField.element,
     dataEmissaoField.element,
@@ -258,6 +275,7 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
     marcadorField.element,
     el('div', { className: 'form-grid__full' }, [observacaoField.element]),
     el('div', { className: 'form-grid__full' }, [anexo.element]),
+    historico ? el('div', { className: 'form-grid__full' }, [historico.element]) : null,
   ]);
 
   // Estado inicial da visibilidade do item de PDR.

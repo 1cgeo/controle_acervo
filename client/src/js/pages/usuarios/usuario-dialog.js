@@ -1,5 +1,6 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
   createSelectField,
@@ -80,6 +81,22 @@ export function abrirUsuarioDialog({ usuario = null, postosGrad = [], onSaved })
     helpText: 'Passa em TODOS os módulos e em todos os níveis, independente dos perfis.',
   });
 
+    // Histórico de alterações, RECOLHIDO e só na edição.
+    //
+    // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
+    // uma consulta de quem só veio corrigir um campo. Só na edição porque num
+    // cadastro novo não há o que mostrar.
+    const historico = edicao
+      ? criarHistorico({
+        modulo: 'plataforma',
+        entidade: 'usuario',
+        id: usuario.uuid,
+        titulo: 'Histórico de alterações',
+        subtitulo: 'Alteracoes no cadastro, no perfil por modulo e na senha',
+        recolhido: true,
+      })
+      : null;
+
   const content = el('div', { className: 'form-grid' }, [
     loginField.element,
     senhaField ? senhaField.element : null,
@@ -95,6 +112,7 @@ export function abrirUsuarioDialog({ usuario = null, postosGrad = [], onSaved })
       textContent: 'Criar a pessoa não concede acesso a módulo nenhum. '
         + 'O acesso é dado depois, em "Definir perfis por módulo".',
     }),
+    historico ? el('div', { className: 'form-grid__full' }, [historico.element]) : null,
   ]);
 
   let salvando = false;

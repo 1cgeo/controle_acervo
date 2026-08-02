@@ -65,15 +65,39 @@ const FICHA = {
   'orcamento:dfd': (id) => `#/orcamento/dfd/${id}`,
 };
 
-const NOME_ORIGEM = {
-  web: 'Interface web',
-  qgis: 'Plugin do QGIS',
-  cli: 'Linha de comando',
-  gatilho: 'Efeito no banco',
-  sistema: 'Sistema',
-  migracao: 'Migração',
-  desconhecido: 'Não registrada',
+/**
+ * Nome de cada SUBSISTEMA, que no banco e a `entidade` do evento.
+ *
+ * A entidade e o AGREGADO dono: 'pedido' reune o pedido, os itens, as impressoes
+ * e a etiqueta; 'produto' reune produto, versao, arquivo e relacionamento. E o
+ * mesmo recorte da ficha que a pessoa abre, e por isso ele serve de filtro: quem
+ * pergunta "o que mudou nos pedidos" nao quer saber em qual das quatro tabelas.
+ *
+ * Chave desconhecida cai no proprio nome, como no resto do sistema: agregado
+ * novo aparece no combo enquanto ninguem o traduziu, em vez de sumir.
+ */
+const NOME_ENTIDADE = {
+  produto: 'Produtos, versões e arquivos',
+  projeto: 'Projetos e lotes',
+  volume: 'Volumes de armazenamento',
+  ponto: 'Pontos de controle',
+  pedido: 'Pedidos, itens e impressões',
+  cliente: 'Clientes',
+  plotter: 'Plotters e manutenções',
+  material: 'Materiais, estoque e consumo',
+  dfd: 'DFD',
+  pdr: 'PDR',
+  nota_credito: 'Notas de crédito',
+  nota_empenho: 'Empenhos, liquidações e recebimentos',
+  licitacao: 'Licitações',
+  rpnp: 'RPNP',
+  configuracao: 'Configuração',
+  dominio: 'Tabelas de domínio',
+  usuario: 'Usuários e perfis',
+  meta: 'Metas do PIT',
+  edicao: 'Edições do RPCMTec',
 };
+
 
 export async function renderRastreabilidade(container, _ctx) {
   let disposed = false;
@@ -98,7 +122,7 @@ export async function renderRastreabilidade(container, _ctx) {
     filtros.modulo = valorDe('modulo');
     filtros.usuario_uuid = valorDe('usuario_uuid');
     filtros.operacao = valorDe('operacao');
-    filtros.origem = valorDe('origem');
+    filtros.entidade = valorDe('entidade');
     filtros.campo = valorDe('campo');
     filtros.data_inicio = valorDe('data_inicio');
     filtros.data_fim = valorDe('data_fim');
@@ -247,12 +271,18 @@ export async function renderRastreabilidade(container, _ctx) {
     carregar();
   }
 
-  function selectDe(nome, rotulo, opcoes) {
+  function selectDe(nome, rotulo, opcoes, aoMudar = null) {
     const select = el('select', { className: 'form-control', 'aria-label': rotulo }, [
       el('option', { value: '', textContent: 'Todos' }),
       ...opcoes.map((o) => el('option', { value: o.valor, textContent: o.texto })),
     ]);
-    select.addEventListener('change', aoFiltrar);
+    select.addEventListener('change', () => {
+      // O gancho roda ANTES de buscar: e ele que repovoa o combo dependente, e
+      // pode descartar um valor que deixou de existir no recorte novo.
+      coletarFiltros();
+      if (aoMudar) aoMudar();
+      aoFiltrar();
+    });
     campos[nome] = select;
     return campo(rotulo, select);
   }
@@ -279,7 +309,42 @@ export async function renderRastreabilidade(container, _ctx) {
     }
     if (disposed) return null;
 
-    const podeEscolherModulo = (opcoes.modulos || []).length > 1;
+    // O SUBSISTEMA depende do SISTEMA: a lista de agregados de cada modulo vem do
+    // servidor em `entidades` ([{modulo, entidade}]). Sem a dependencia, o combo
+    // ofereceria "Notas de credito" a quem filtrou a mapoteca, e o cruzamento
+    // devolveria vazio sem dizer por que.
+    const entidadesPorModulo = new Map();
+    for (const e of opcoes.entidades || []) {
+      if (!entidadesPorModulo.has(e.modulo)) entidadesPorModulo.set(e.modulo, []);
+      entidadesPorModulo.get(e.modulo).push(e.entidade);
+    }
+
+    function entidadesVisiveis() {
+      const escolhido = filtros.modulo;
+      const lista = escolhido
+        ? (entidadesPorModulo.get(escolhido) || [])
+        // Sem sistema escolhido, o combo traz TODOS os subsistemas, sem repetir:
+        // o mesmo nome nao existe em dois modulos, entao nao ha o que desempatar.
+        : [...new Set((opcoes.entidades || []).map(e => e.entidade))];
+      return lista.sort().map(ent => ({ valor: ent, texto: NOME_ENTIDADE[ent] || ent }));
+    }
+
+    function repovoarSubsistema() {
+      const select = campos.entidade;
+      if (!select) return;
+      const escolhido = select.value;
+      select.innerHTML = '';
+      select.appendChild(el('option', { value: '', textContent: 'Todos' }));
+      let aindaExiste = false;
+      for (const o of entidadesVisiveis()) {
+        select.appendChild(el('option', { value: o.valor, textContent: o.texto }));
+        if (o.valor === escolhido) aindaExiste = true;
+      }
+      // Trocar de sistema com um subsistema escolhido que nao existe la deixaria
+      // o filtro cobrando um cruzamento impossivel, e a tela viria vazia sem
+      // dizer por que. Aqui ele e descartado junto.
+      select.value = aindaExiste ? escolhido : '';
+    }
 
     // O periodo sao dois campos que se leem juntos: "de" nao quer dizer nada
     // sozinho, e separados na grade eles caiam em linhas diferentes.
@@ -289,13 +354,19 @@ export async function renderRastreabilidade(container, _ctx) {
     ]);
 
     const barra = el('div', { className: 'rastro-filtros' }, [
-      // O combo de modulo so existe para quem tem mais de um: para o gerente de
-      // um modulo so, ele seria um controle com uma opcao.
-      podeEscolherModulo
-        ? selectDe('modulo', 'Módulo', opcoes.modulos.map((m) => ({
-          valor: m, texto: NOME_MODULO[m] || m,
-        })))
-        : null,
+      // SISTEMA e SUBSISTEMA respondem "o que foi alterado", que era a pergunta
+      // sem controle na tela (chefe, 2026-08-02). Entraram no lugar do combo de
+      // ORIGEM, que respondia "por qual porta a mudanca entrou": e uma pergunta
+      // de quem depura o sistema, e nao de quem procura uma alteracao. A origem
+      // continua no rastro e aparece no detalhe de cada evento.
+      //
+      // O sistema aparece SEMPRE, mesmo com uma opcao so: para o gerente de um
+      // modulo, ele diz de que recorte a tela esta falando -- e esse recorte e do
+      // servidor, nao dele.
+      selectDe('modulo', 'Sistema', (opcoes.modulos || []).map((m) => ({
+        valor: m, texto: NOME_MODULO[m] || m,
+      })), () => repovoarSubsistema()),
+      selectDe('entidade', 'Subsistema', entidadesVisiveis()),
       selectDe('usuario_uuid', 'Usuário', (opcoes.usuarios || []).map((u) => ({
         valor: u.usuario_uuid,
         texto: u.posto ? `${u.posto} ${u.nome_guerra}` : (u.nome_guerra || u.nome),
@@ -305,9 +376,6 @@ export async function renderRastreabilidade(container, _ctx) {
         { valor: 'U', texto: 'Alterou' },
         { valor: 'D', texto: 'Removeu' },
       ]),
-      selectDe('origem', 'Origem', (opcoes.origens || []).map((o) => ({
-        valor: o, texto: NOME_ORIGEM[o] || o,
-      }))),
       periodo,
       // Busca pelo NOME DA COLUNA, e nao por texto livre dentro do JSON: o
       // servidor casa contra o array indexavel `campos_alterados`, e texto livre
