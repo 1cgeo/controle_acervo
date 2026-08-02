@@ -61,5 +61,9 @@ export function downloadAnuarioOds({ ano, mes }) {
  * @returns {Promise<void>}
  */
 export function downloadRtmOds({ ano, mes }) {
-  return apiDownload(`/rpcmtec/rtm/ods?ano=${ano}&mes=${mes}`, `META4_DETALHADA_${ano}.ods`);
+  // O nome leva o mes porque o CONTEUDO depende dele desde 2026-08-02: o RTM e
+  // acumulado ate o mes escolhido. Dois arquivos de 2026 com o mesmo nome e
+  // conteudo diferente e o jeito certo de mandar o errado para a DSG.
+  const nome = `META4_DETALHADA_${ano}_ate_${String(mes).padStart(2, '0')}.ods`;
+  return apiDownload(`/rpcmtec/rtm/ods?ano=${ano}&mes=${mes}`, nome);
 }

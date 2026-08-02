@@ -44,7 +44,11 @@ export async function renderRpcmtec(container, _ctx) {
     className: 'form-field__select',
     id: 'rpcmtec-mes',
     'aria-label': 'Selecionar mês',
-    onChange: () => gerar(),
+    onChange: () => {
+      // O rotulo do RTM carrega o mes, entao ele muda junto.
+      atualizarRotuloRtm();
+      gerar();
+    },
   }, Array.from({ length: 12 }, (_, i) => el('option', {
     value: String(i + 1),
     textContent: monthName(i + 1),
@@ -83,14 +87,33 @@ export async function renderRpcmtec(container, _ctx) {
     onClick: () => baixarAnuario(),
   }, [svgIcon(ICONS.print, 16), 'Baixar Anuário (ODS)']);
 
-  // O RTM sobe para a DSG no mesmo envio, e por isso sai da mesma barra. Ele e
-  // do ANO inteiro (o detalhamento da Meta 4 do PIT), e nao do mes: o rotulo diz
-  // isso, senao quem troca o mes espera um arquivo diferente e recebe o mesmo.
+  // O RTM sobe para a DSG no mesmo envio, e por isso sai da mesma barra. Ele
+  // tambem passou a seguir o MES escolhido em 2026-08-02 (chefe), com uma
+  // diferenca que o rotulo precisa dizer: ele e ACUMULADO. Escolher marco traz
+  // janeiro, fevereiro e marco; o DOCX e o Anuario trazem so marco.
+  //
+  // Ate esta data ele era do ano inteiro e o `mes` que a tela mandava era
+  // ignorado pelo servidor: trocar o mes devolvia o mesmo arquivo.
+  //
+  // O rotulo carrega o mes escolhido porque o botao e o unico lugar em que essa
+  // diferenca aparece; "Baixar RTM (ODS)" ao lado dos outros dois se leria como
+  // se os tres fossem do mesmo periodo.
   const rtmBtn = el('button', {
     className: 'btn',
     type: 'button',
+    title: 'Detalhamento da Meta 4 do PIT, acumulado de janeiro até o mês escolhido. '
+      + 'O DOCX e o Anuário trazem apenas o mês.',
     onClick: () => baixarRtm(),
-  }, [svgIcon(ICONS.print, 16), 'Baixar RTM do ano (ODS)']);
+  }, [svgIcon(ICONS.print, 16), el('span', { className: 'rpcm-rtm-rotulo' })]);
+
+  /** Mantem o rotulo do RTM em dia com o mes escolhido. */
+  function atualizarRotuloRtm() {
+    const nome = monthName(Number(mesSelect.value));
+    rtmBtn.querySelector('.rpcm-rtm-rotulo').textContent =
+      `Baixar RTM até ${nome} (ODS)`;
+  }
+
+  atualizarRotuloRtm();
 
   const toolbar = el('div', { className: 'rpcm-toolbar' }, [
     el('div', { className: 'rpcm-toolbar__field' }, [

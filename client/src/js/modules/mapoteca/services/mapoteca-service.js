@@ -479,22 +479,6 @@ export function deleteConsumoMaterial(ids) {
 // RTM: a aba META4_DETALHADA
 // ---------------------------------------------------------------------------
 
-/**
- * Baixa a aba META4_DETALHADA do RTM em .ods: uma linha por ITEM de pedido do
- * ano, nas 15 colunas da aba, formatada para colar na planilha.
- *
- * A MESMA leitura sai em CSV por `/mapoteca/relatorio/impressao_detalhada`,
- * que a interface NÃO oferece de propósito (chefe, 2026-07-29): o CSV é para
- * agente e CLI, que querem o dado cru do banco ('Sulfite 90g', booleano). Quem
- * está na tela quer a planilha pronta.
- * @param {number} ano
- */
-export function downloadMeta4Ods(ano) {
-  return apiDownload(
-    `${BASE}/relatorio/impressao_detalhada_ods?ano=${ano}`,
-    `META4_DETALHADA_${ano}.ods`
-  );
-}
 
 // O Anuario Estatistico NAO tem mais chamada aqui: as rotas dele sairam do
 // modulo em 2026-08-01 para /api/rpcmtec/anuario, junto com o RPCMTec, e quem as

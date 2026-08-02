@@ -22,7 +22,8 @@ const {
   PRODUTO_ESCALA_ID,
   ITEM_E_AVULSO,
   PIVO_TIPO_ESCALA,
-  filtroAno
+  filtroAno,
+  filtroPeriodoMes
 } = require("./query_fragments");
 
 const controller = {};
@@ -134,10 +135,28 @@ controller.getRelatorioPedidosMil = async (ano) => {
 };
 
 /**
- * Relatório anual detalhado por item (reproduz a aba "Detalhado" da planilha).
+ * Relatório detalhado por item (reproduz a aba "Detalhado" da planilha), que é a
+ * mesma aba META4_DETALHADA do RTM.
+ *
+ * O `mes` é OPCIONAL e ACUMULA: com mes = 3 saem os itens de janeiro, fevereiro
+ * e março; sem mes, o ano inteiro. É o que o RTM exige (chefe, 2026-08-02) --
+ * ele sobe para a DSG todo mês com o acumulado do exercício até ali, e antes
+ * desta data o botão entregava sempre o ano inteiro, então trocar o mês na tela
+ * do RPCMTec dava o mesmo arquivo.
+ *
+ * O recorte é por `p.data_pedido`, que é a MESMA coluna que o filtro de ano já
+ * usava: acrescentar o corte de mês numa coluna e trocar a coluna são mudanças
+ * diferentes, e a segunda mudaria em silêncio o que a aba conta.
+ *
+ * Sem `mes`, a consulta não muda em nada -- é o caminho de
+ * `GET /api/mapoteca/relatorio/impressao_detalhada_ods`, que continua anual.
+ *
  * Tipo/escala/MI sempre via catálogo do acervo (RN08).
+ *
+ * @param {number} ano
+ * @param {number} [mes] - 1 a 12; acumula de janeiro até ele
  */
-controller.getRelatorioPedidosDetalhado = async (ano) => {
+controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
   return db.conn.any(
     `
     SELECT
@@ -193,10 +212,10 @@ controller.getRelatorioPedidosDetalhado = async (ano) => {
     JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
     LEFT JOIN mapoteca.tipo_midia tmf ON tmf.code = pp.tipo_midia_fornecida_id
     LEFT JOIN mapoteca.forma_entrega fe ON fe.code = p.forma_entrega_id
-    WHERE ${filtroAno("p.data_pedido")}
+    WHERE ${mes ? filtroPeriodoMes("p.data_pedido", { cumulativo: true }) : filtroAno("p.data_pedido")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
-    { ano }
+    { ano, mes }
   );
 };
 

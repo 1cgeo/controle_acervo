@@ -5,6 +5,9 @@ const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
 const { generateAdminToken, generateUserToken, generateToken, USER_UUID } = require('../helpers/auth')
 const { createProduto, createVersao, createArquivo } = require('../helpers/fixtures')
+// O recorte do RTM (acumulado ate o mes) se prova no CONTROLLER: a regra e o
+// filtro, e o formato do .ods tem teste proprio em unit/rtm_ods.test.js.
+const relatorioCtrl = require('../../mapoteca/relatorio_ctrl')
 
 let app
 
@@ -1440,6 +1443,75 @@ describe('Mapoteca Routes', () => {
         const res = await request(app)
           .get('/api/mapoteca/relatorio/impressao_detalhada_ods?ano=2026')
         expect(res.status).toBe(401)
+      })
+    })
+
+    // O RTM (a mesma aba META4_DETALHADA) passou a ser ACUMULADO ATE O MES em
+    // 2026-08-02, a pedido do chefe: escolher marco traz janeiro, fevereiro e
+    // marco. Ate ali o `mes` chegava a rota e era IGNORADO -- trocar o mes na
+    // tela do RPCMTec devolvia sempre o mesmo arquivo do ano inteiro, e nada
+    // dizia isso.
+    //
+    // O teste bate no CONTROLLER, e nao no .ods: a regra e o recorte, e o
+    // formato do arquivo tem teste proprio em unit/rtm_ods.test.js. Contar
+    // linhas dentro do ZIP aqui provaria a mesma coisa por um caminho mais caro
+    // e mais fragil.
+    describe('o RTM acumula do inicio do ano ate o mes', () => {
+      const pedidoEm = async (dataPedido) => {
+        const produto = await createProduto({
+          tipo_produto_id: 2, tipo_escala_id: 2, mi: `MI-${dataPedido.slice(5, 7)}`
+        })
+        const versao = await createVersao(produto.id)
+        const clienteId = await criaCliente({ nome: `OM ${dataPedido}`, tipo_cliente_id: 1 })
+        // A data de atendimento acompanha a do pedido: o helper a fixa em marco,
+        // e atender ANTES de pedir e recusado pelo servidor.
+        const pedido = await criaPedido(clienteId, {
+          data_pedido: dataPedido,
+          data_atendimento: dataPedido
+        })
+        await criaProdutoPedido({
+          uuid_versao: versao.uuid_versao,
+          pedido_id: pedido.id,
+          quantidade: 1,
+          tipo_midia_id: 5,
+          producao_especifica: false
+        })
+        return pedido
+      }
+
+      it('mes = 3 traz janeiro a marco, e deixa junho de fora', async () => {
+        await pedidoEm('2026-01-15T10:00:00Z')
+        await pedidoEm('2026-03-10T10:00:00Z')
+        await pedidoEm('2026-06-20T10:00:00Z')
+
+        const ate3 = await relatorioCtrl.getRelatorioPedidosDetalhado(2026, 3)
+        expect(ate3).toHaveLength(2)
+
+        const ate6 = await relatorioCtrl.getRelatorioPedidosDetalhado(2026, 6)
+        expect(ate6).toHaveLength(3)
+
+        // O limite superior e INCLUSIVE: o proprio mes 3 entra.
+        const ate2 = await relatorioCtrl.getRelatorioPedidosDetalhado(2026, 2)
+        expect(ate2).toHaveLength(1)
+      })
+
+      it('dezembro traz o ano inteiro, e nao vaza para o ano seguinte', async () => {
+        await pedidoEm('2026-12-31T10:00:00Z')
+        await pedidoEm('2027-01-02T10:00:00Z')
+
+        const ate12 = await relatorioCtrl.getRelatorioPedidosDetalhado(2026, 12)
+        expect(ate12).toHaveLength(1)
+      })
+
+      // O caminho de `GET /api/mapoteca/relatorio/impressao_detalhada_ods`, que
+      // continua ANUAL: sem `mes` nada muda, e e o que mantem aquela rota
+      // gemea da de rpcmtec quando as duas pedem o ano inteiro.
+      it('sem mes, continua o ano inteiro', async () => {
+        await pedidoEm('2026-01-15T10:00:00Z')
+        await pedidoEm('2026-11-20T10:00:00Z')
+
+        const anual = await relatorioCtrl.getRelatorioPedidosDetalhado(2026)
+        expect(anual).toHaveLength(2)
       })
     })
 

@@ -160,14 +160,15 @@ describe('mapoteca-service: relatorios', () => {
     expect(doRpcmtec).toEqual([]);
   });
 
-  // A aba META4_DETALHADA do RTM: a interface baixa SO o .ods. O CSV da mesma
-  // leitura existe na API, para agente e CLI, e nao tem funcao aqui de proposito.
-  test('a aba META4 do RTM sai em .ods, pelo ano', async () => {
-    await svc.downloadMeta4Ods(2026);
-    expect(apiDownload).toHaveBeenCalledWith(
-      '/mapoteca/relatorio/impressao_detalhada_ods?ano=2026',
-      'META4_DETALHADA_2026.ods'
-    );
+  // A aba META4_DETALHADA do RTM saiu deste service em 2026-08-02 (chefe): o
+  // botao dela saiu da tela de pedidos e foi para a do RPCMTec, onde ela e
+  // baixada junto do Anuario e do DOCX -- que e onde se monta o envio mensal
+  // para a DSG, e onde ela passou a respeitar o MES escolhido.
+  //
+  // A ROTA `/mapoteca/relatorio/impressao_detalhada_ods` continua no servidor,
+  // anual, para agente e CLI. O que saiu foi o caminho do CLIENT.
+  test('a aba META4 do RTM nao sai mais deste service', () => {
+    expect(svc.downloadMeta4Ods).toBeUndefined();
     expect(svc.downloadMeta4Csv).toBeUndefined();
   });
 });

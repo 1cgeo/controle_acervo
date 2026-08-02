@@ -2,7 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { chipSituacaoPedido } from '@components/status-chip.js';
-import { getPedidos, deletePedidos, downloadMeta4Ods } from '@modules/mapoteca/services/mapoteca-service.js';
+import { getPedidos, deletePedidos } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
@@ -93,33 +93,6 @@ export async function renderPedidosList(container, _ctx) {
 
   const contador = el('span', { className: 'page__meta', textContent: '' });
 
-  // Planilha do RTM (aba META4_DETALHADA): uma linha por ITEM entregue do ano,
-  // nas 15 colunas da aba, formatada para colar. Fica AQUI, e não na tela do
-  // RPCMTec (chefe, 2026-07-29): a planilha sai dos pedidos, e é nesta tela que
-  // se está quando se percebe que falta lançar algo.
-  //
-  // O recorte é o ANO da navbar, o mesmo da lista, então o que a planilha traz é
-  // o que está na tela. O título do botão diz que a coluna Meta fica em branco no
-  // item do PIT: esse código ('4.1') não existe no SCA e é preenchido à mão.
-  const odsBtn = el('button', {
-    className: 'btn btn--secondary',
-    type: 'button',
-    title: 'Uma linha por item do ano, nas 15 colunas da aba META4_DETALHADA. '
-      + 'A coluna Meta sai em branco no item previsto no PIT.',
-    onClick: () => baixarPlanilhaRtm(),
-  }, [svgIcon(ICONS.description, 16), 'Planilha do RTM (.ods)']);
-
-  async function baixarPlanilhaRtm() {
-    odsBtn.disabled = true;
-    try {
-      await downloadMeta4Ods(ano);
-    } catch (err) {
-      showError(err.message || 'Erro ao baixar a planilha do RTM');
-    } finally {
-      odsBtn.disabled = false;
-    }
-  }
-
   const botoesFiltro = FILTROS.map(f => el('button', {
     className: `btn btn--sm ${f.id === filtroAtual ? 'btn--primary' : 'btn--secondary'}`,
     type: 'button',
@@ -194,9 +167,11 @@ export async function renderPedidosList(container, _ctx) {
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Pedidos' }),
       el('div', { className: 'page__actions' }, [
-        // Baixar a planilha e LEITURA, entao vale para todo perfil. Criar pedido
-        // e gerente.
-        odsBtn,
+        // A planilha do RTM saiu daqui em 2026-08-02 (chefe). Ela morava nesta
+        // tela porque "a planilha sai dos pedidos"; agora ela sai da tela do
+        // RPCMTec, junto do Anuario e do DOCX, que e onde se monta o envio
+        // mensal para a DSG -- e la ela passou a respeitar o MES escolhido, o
+        // que aqui nao tinha como acontecer (esta tela so tem ano).
         ...(pode.gerente ? [
           el('button', {
             className: 'btn btn--primary',

@@ -52,7 +52,6 @@ const ACOES = [
   'transferirEstoque',
   'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
   'downloadDashboardCsv',
-  'downloadMeta4Ods',
   'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',
   // getEtiquetaEnvio e leitura, mas entra aqui e nao em OBJETOS porque o default

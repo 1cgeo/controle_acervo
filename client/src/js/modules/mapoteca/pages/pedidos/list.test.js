@@ -168,26 +168,19 @@ describe('renderPedidosList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A planilha do RTM sai desta tela, e nao da do RPCMTec (chefe, 2026-07-29).
-  // Baixar e LEITURA, entao o botao vale para todo perfil, ao contrario de "Novo
-  // pedido"; e o recorte e o ANO da lista, para o arquivo bater com a tela.
-  test('a planilha do RTM baixa pelo ano da lista, e aparece sem perfil de gerente', async () => {
+  // A planilha do RTM SAIU desta tela em 2026-08-02 (chefe) e foi para a do
+  // RPCMTec, onde ela e baixada junto do Anuario e do DOCX -- que e onde se monta
+  // o envio mensal para a DSG. La ela respeita o MES escolhido; aqui nao tinha
+  // como, porque esta tela so tem o seletor de ano.
+  test('a planilha do RTM nao sai mais desta tela', async () => {
     logarComo({ mapoteca: CONSULTA });
     setAno(2026);
     const container = document.createElement('div');
     const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    const botao = [...container.querySelectorAll('button')]
-      .find(b => b.textContent.includes('Planilha do RTM'));
-    expect(botao).toBeTruthy();
-    // Quem só consulta não vê "Novo pedido", e continua vendo a planilha.
     expect([...container.querySelectorAll('button')]
-      .some(b => b.textContent.includes('Novo pedido'))).toBe(false);
-
-    botao.click();
-    await flush();
-    expect(svc.downloadMeta4Ods).toHaveBeenCalledWith(2026);
+      .some(b => b.textContent.includes('RTM'))).toBe(false);
 
     if (typeof cleanup === 'function') cleanup();
   });

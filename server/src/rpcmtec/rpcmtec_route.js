@@ -140,11 +140,22 @@ router.get(
   verifyAdmin,
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
-    const { ano } = req.query
-    const dados = await mapotecaRelatorioCtrl.getRelatorioPedidosDetalhado(ano)
+    // O RTM e ACUMULADO ate o mes escolhido (chefe, 2026-08-02): 2026 com marco
+    // traz janeiro, fevereiro e marco. Ate esta data o `mes` chegava aqui e era
+    // IGNORADO -- trocar o mes na tela devolvia sempre o mesmo arquivo do ano
+    // inteiro, e nada dizia isso.
+    //
+    // E o unico dos tres downloads desta tela que acumula: o DOCX e o Anuario
+    // sao do MES. Os tres sobem para a DSG no mesmo envio, e e assim que a DSG
+    // os espera.
+    const { ano, mes } = req.query
+    const dados = await mapotecaRelatorioCtrl.getRelatorioPedidosDetalhado(ano, mes)
     const buffer = gerarRtmOds(mapotecaRelatorioCtrl.paraAbaMeta4(dados))
 
-    const nome = `META4_DETALHADA_${ano}.ods`
+    // O mes entra no NOME porque o conteudo depende dele: dois arquivos de 2026
+    // com o mesmo nome e conteudo diferente e o jeito certo de mandar o errado
+    // para a DSG.
+    const nome = `META4_DETALHADA_${ano}_ate_${doisDigitos(mes)}.ods`
     res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
     res.setHeader('Content-Length', String(buffer.length))
