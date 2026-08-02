@@ -49,14 +49,19 @@ const comoBinario = (req) => req
 // A numeração do documento da Divisão, medida em "RPCM Técnico Julho_2026.docx".
 // Só entram as subseções que o SCA preenche INTEIRAS; o que fica de fora está
 // listado em server/src/rpcmtec/rpcmtec_ctrl.js, com o motivo de cada uma.
-// A 3.3 (Extra-PIT) NAO entra: o RPCMTec chama de Extra-PIT a excecao
-// AUTORIZADA, e o SCA nao guarda o que a distingue de um pedido comum fora do
-// PIT. Ver o comentario de montarTotaisMapoteca.
-// A 2.2 e a 2.4 sairam em 2026-08-01: por enquanto elas nao vem do SCA.
+//
+// CINCO ENTRARAM EM 2026-08-02, quando o SCA absorveu do SAP o que nao depende
+// da producao: a 2.1 (metas e execucao), a 2.6 e a 6.2 (capacitacao ministrada e
+// recebida), a 3.3 (Extra-PIT) e a 6.1 (efetivo). A 3.3 e o caso que mais custou
+// a chegar: o RPCMTec chama de Extra-PIT a excecao AUTORIZADA, e ate esta data o
+// SCA nao guardava o documento que a distingue de um pedido comum fora do PIT.
+//
+// A 2.2, a 2.3, a 2.4 e a 2.5 continuam fora, e leem a producao do SAP.
 const SUBSECOES_ESPERADAS = [
-  '2.7',
-  '3.1', '3.2', '3.4',
+  '2.1', '2.6', '2.7',
+  '3.1', '3.2', '3.3', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
+  '6.1', '6.2',
   '7.2', '7.3'
 ]
 
@@ -83,6 +88,8 @@ describe('GET /api/rpcmtec/gerar', () => {
       '2. EXECUÇÃO DO PIT',
       '3. MAPOTECA',
       '4. EXECUÇÃO DO PDR',
+      // Entrou em 2026-08-02 com o efetivo e a capacitação recebida.
+      '6. RECURSOS HUMANOS',
       '7. EQUIPAMENTO E MATERIAL'
     ])
   })

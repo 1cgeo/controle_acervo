@@ -11,7 +11,19 @@ const { auditoriaCtrl } = require('../auditoria')
 const controller = {}
 
 const colunas = `id, ano, numero_meta, item, descricao,
+  quantidade_prevista, unidade, demandante, prazo::text AS prazo,
   data_cadastramento, usuario_cadastramento_uuid, data_modificacao, usuario_modificacao_uuid`
+
+// O que o PIT promete no item, e o que a 2.1 do RPCMTec cobra. Os quatro são
+// opcionais no schema, e `undefined` vira nulo aqui: a meta indivisa e o
+// cabeçalho de meta subdividida não prometem quantidade, e o PIT de 2025 foi
+// cadastrado sem nenhum deles.
+const promessa = dados => ({
+  quantidade_prevista: dados.quantidade_prevista === undefined ? null : dados.quantidade_prevista,
+  unidade: dados.unidade === undefined ? null : dados.unidade,
+  demandante: dados.demandante === undefined ? null : dados.demandante,
+  prazo: dados.prazo === undefined ? null : dados.prazo
+})
 
 controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
@@ -56,14 +68,19 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     // que se audita e o que o banco GRAVOU.
     const criada = await t.one(
       `INSERT INTO pit.meta
-         (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
-       VALUES ($<ano>, $<numero_meta>, $<item>, $<descricao>, $<usuarioUuid>)
+         (ano, numero_meta, item, descricao,
+          quantidade_prevista, unidade, demandante, prazo,
+          usuario_cadastramento_uuid)
+       VALUES ($<ano>, $<numero_meta>, $<item>, $<descricao>,
+               $<quantidade_prevista>, $<unidade>, $<demandante>, $<prazo>,
+               $<usuarioUuid>)
        RETURNING *`,
       {
         ano: dados.ano,
         numero_meta: dados.numero_meta,
         item: dados.item,
         descricao: dados.descricao,
+        ...promessa(dados),
         usuarioUuid
       }
     )
@@ -92,6 +109,8 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       `UPDATE pit.meta
        SET ano = $<ano>, numero_meta = $<numero_meta>, item = $<item>,
            descricao = $<descricao>,
+           quantidade_prevista = $<quantidade_prevista>, unidade = $<unidade>,
+           demandante = $<demandante>, prazo = $<prazo>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,
@@ -101,6 +120,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         numero_meta: dados.numero_meta,
         item: dados.item,
         descricao: dados.descricao,
+        ...promessa(dados),
         dataModificacao: new Date(),
         usuarioUuid
       }
@@ -140,6 +160,23 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
     if (parseInt(dependentes.n, 10) > 0) {
       throw new AppError(
         'Meta do PIT possui registros vinculados e não pode ser excluída',
+        httpCode.Conflict
+      )
+    }
+
+    // Lançamento de execução é caso à parte, e por isso tem mensagem própria.
+    // A chave estrangeira é ON DELETE CASCADE -- e é isso que torna a guarda
+    // necessária, não dispensável: sem ela, apagar a meta levaria junto os doze
+    // meses lançados, em silêncio e SEM evento de auditoria para eles, porque
+    // quem apaga é o banco. O remédio aqui é do alcance de quem chamou (apagar
+    // os lançamentos), ao contrário do PDR e do pedido de impressão.
+    const { lancamentos } = await t.one(
+      'SELECT COUNT(*)::int AS lancamentos FROM pit.execucao WHERE meta_id = $<id>',
+      { id }
+    )
+    if (lancamentos > 0) {
+      throw new AppError(
+        `Meta do PIT possui ${lancamentos} lançamento(s) de execução. Exclua os lançamentos antes de excluir a meta.`,
         httpCode.Conflict
       )
     }

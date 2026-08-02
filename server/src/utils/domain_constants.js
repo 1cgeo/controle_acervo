@@ -176,6 +176,30 @@ const CANAL_RECEBIMENTO = {
   OUTRO: 4
 }
 
+// dominio.situacao_extra_pit (3.3 do RPCMTec)
+const SITUACAO_EXTRA_PIT = {
+  PREVISTO: 1,
+  EM_PRODUCAO: 2,
+  ENVIADO: 3,
+  CONCLUIDO: 4,
+  CANCELADO: 5
+}
+
+// dominio.tipo_capacitacao: MINISTRADA sai na 2.6 e RECEBIDA na 6.2. São duas
+// subseções do relatório e um cadastro só.
+const TIPO_CAPACITACAO = {
+  MINISTRADA: 1,
+  RECEBIDA: 2
+}
+
+// dominio.situacao_capacitacao
+const SITUACAO_CAPACITACAO = {
+  PREVISTA: 1,
+  EM_EXECUCAO: 2,
+  CONCLUIDA: 3,
+  CANCELADA: 4
+}
+
 module.exports = {
   STATUS_ARQUIVO,
   TIPO_ARQUIVO,
@@ -194,5 +218,8 @@ module.exports = {
   TIPO_LOCALIZACAO,
   TIPO_RELACIONAMENTO,
   TIPO_ANEXO_PEDIDO,
-  CANAL_RECEBIMENTO
+  CANAL_RECEBIMENTO,
+  SITUACAO_EXTRA_PIT,
+  TIPO_CAPACITACAO,
+  SITUACAO_CAPACITACAO
 }

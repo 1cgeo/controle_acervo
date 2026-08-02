@@ -51,10 +51,10 @@ describe('createMainLayout', () => {
 
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
-    // A troca de modulo mora na sidebar, uma seção por modulo. São QUATRO
-    // seções: os três módulos e a área de Usuários, que desde 2026-08-02 se
-    // desenha como sistema sem ser módulo (ver sidebar.js).
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(4);
+    // A troca de modulo mora na sidebar, uma seção por modulo. São CINCO
+    // seções: os três módulos, mais Produção e Efetivo, que desde 2026-08-02 se
+    // desenham como sistema sem ser módulo (ver sidebar.js).
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
   });
 
   test('o nome do modulo vem do catalogo do servidor, nao decorado na tela', () => {
@@ -68,9 +68,10 @@ describe('createMainLayout', () => {
     expect(rotulos.slice(0, 3)).toEqual([
       'Controle do Acervo', 'Mapoteca', 'Controle Orçamentário',
     ]);
-    // "Usuários" é a exceção, e é declarado na tela porque NÃO é módulo: não
-    // está em `dominio.modulo`, não tem perfil e não entra no registry.
-    expect(rotulos[3]).toBe('Usuários');
+    // "Produção" e "Efetivo" são a exceção, e são declarados na tela porque NÃO
+    // são módulos: não estão em `dominio.modulo`, não têm perfil e não entram no
+    // registry.
+    expect(rotulos.slice(3)).toEqual(['Produção', 'Efetivo']);
   });
 
   test('mudar o hash sincroniza o modulo aberto e o item ativo', () => {
@@ -93,7 +94,7 @@ describe('createMainLayout', () => {
     window.dispatchEvent(new Event('hashchange'));
 
     // Era o defeito relatado: o menu do modulo sumia ao abrir Usuarios.
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(4);
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
     expect(ctrl.layout.querySelector('[data-id="acervo:dashboard"]')).not.toBeNull();
     expect(ctrl.layout.querySelector('[data-id="usuarios"]')
       .classList.contains('sidebar__item--active')).toBe(true);

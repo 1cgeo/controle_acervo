@@ -94,7 +94,10 @@ const NOME_ENTIDADE = {
   configuracao: 'Configuração',
   dominio: 'Tabelas de domínio',
   usuario: 'Usuários e perfis',
-  meta: 'Metas do PIT',
+  meta: 'Metas do PIT e execução',
+  extra_pit: 'Extra-PIT',
+  aproveitamento: 'Aproveitamento do efetivo',
+  capacitacao: 'Capacitações',
   edicao: 'Edições do RPCMTec',
 };
 

@@ -45,16 +45,24 @@ describe('rpcmtec_docx: as medidas do modelo da Divisão', () => {
     expect(FORMATO.RECUO_TABELA).toBe(-141)
   })
 
-  test('as 13 subseções que o SCA gera têm grade de coluna declarada', () => {
+  test('as 18 subseções que o SCA gera têm grade de coluna declarada', () => {
     // Subseção sem grade cai na divisão por igual, que dá uma tabela que não é
     // a do modelo. É silencioso: por isso a lista fica explícita aqui.
-    // A 3.3 (Extra-PIT) NAO esta aqui de proposito: o SCA nao sabe distinguir a
-    // excecao autorizada de um pedido comum fora do PIT, e derivá-la de
-    // `previsto_pit` dava 23 linhas onde a edicao real traz 1.
+    //
+    // Cinco entraram em 2026-08-02, quando o SCA absorveu do SAP o que não
+    // depende da produção: 2.1 (metas e execução), 2.6 e 6.2 (capacitação
+    // ministrada e recebida), 3.3 (Extra-PIT) e 6.1 (efetivo). As larguras são
+    // as MESMAS do gerador do SAP, e não uma escolha nova: as duas foram
+    // medidas no mesmo documento, e divergirem seria a mesma subseção saindo de
+    // dois tamanhos conforme quem a gerou.
+    //
+    // NÃO estão aqui, e é deliberado: 2.2, 2.3, 2.4 e 2.5, que leem a produção
+    // e continuam no SAP.
     expect(Object.keys(FORMATO.GRADES).sort()).toEqual([
-      '2.7',
-      '3.1', '3.2', '3.4',
+      '2.1', '2.6', '2.7',
+      '3.1', '3.2', '3.3', '3.4',
       '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
+      '6.1', '6.2',
       '7.2', '7.3'
     ])
   })

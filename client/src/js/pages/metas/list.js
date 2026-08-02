@@ -66,6 +66,24 @@ export async function renderMetasList(container, _ctx) {
         render: (row) => codigoMetaPit(row),
       },
       { key: 'descricao', label: 'Descrição', render: (row) => row.descricao || '-' },
+      // O que o PIT promete. Entrou em 2026-08-02 e é o que faz a subseção 2.1
+      // do RPCMTec ser gerável. Vazio na linha de cabeçalho da meta é o certo:
+      // quem promete são os itens que ela agrupa.
+      {
+        key: 'quantidade_prevista',
+        label: 'Previsto',
+        sortable: true,
+        render: (row) => (row.quantidade_prevista == null
+          ? '-'
+          : `${row.quantidade_prevista}${row.unidade ? ` ${row.unidade}` : ''}`),
+      },
+      { key: 'demandante', label: 'Demandante', render: (row) => row.demandante || '-' },
+      {
+        key: 'prazo',
+        label: 'Prazo',
+        sortable: true,
+        render: (row) => (row.prazo ? String(row.prazo).slice(0, 10).split('-').reverse().join('/') : '-'),
+      },
     ],
     rows: [],
     searchable: true,

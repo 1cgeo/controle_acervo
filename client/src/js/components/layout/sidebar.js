@@ -12,7 +12,10 @@ import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modul
  * na mapoteca de ver a lista.
  */
 const MENU_PLATAFORMA = [
-  { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
+  // "Metas do PIT" saiu daqui em 2026-08-02 e virou a primeira tela da seção
+  // Produção: ela deixou de ser um cadastro solto quando ganhou a execução
+  // mensal e o Extra-PIT ao lado.
+  //
   // O RPCMTec LEVA a marca de administrador: ele cruza os tres modulos numa
   // peca so, com valor de credito e de empenho dentro. Esteve partido em dois
   // itens de modulo ate 2026-08-01, um na mapoteca e outro no orcamento.
@@ -37,8 +40,14 @@ const MENU_PLATAFORMA = [
 ];
 
 /**
- * USUÁRIOS como SEÇÃO DE SISTEMA, e não como grupo do menu de plataforma
+ * EFETIVO como SEÇÃO DE SISTEMA, e não como grupo do menu de plataforma
  * (chefe, 2026-08-02).
+ *
+ * Chamava-se "Usuários" até 2026-08-02, e o nome mudou junto com o conteúdo: o
+ * aproveitamento mensal entrou aqui, e ele não é sobre CONTA de sistema, é sobre
+ * quem serve na Divisão e o que cada um faz. "Usuários" descreveria bem duas das
+ * três telas e mal a terceira. A rota `#/usuarios` continua a mesma, porque
+ * renomear URL quebra link guardado.
  *
  * Ele fica logo depois do orçamento, ACIMA do separador, e se desenha como os
  * três módulos: cabeçalho que é LINK para a home, com o chevron ao lado abrindo
@@ -59,18 +68,79 @@ const MENU_PLATAFORMA = [
  * chave do item ativo sai do primeiro segmento da rota (`activeIdFromPath`), e
  * o FILHO '/usuarios' precisa dela.
  */
-const SISTEMA_USUARIOS = {
-  id: 'usuarios-area',
-  label: 'Usuários',
+const SISTEMA_EFETIVO = {
+  id: 'efetivo-area',
+  label: 'Efetivo',
   icon: ICONS.people,
   admin: true,
   home: '/acessos',
-  // Sem prefixo: são rotas de PLATAFORMA, e não '/usuarios-area/...'.
+  // Sem prefixo: são rotas de PLATAFORMA, e não '/efetivo-area/...'.
   prefixo: '',
   chavePrefixo: '',
   menu: [
     { id: 'acessos', label: 'Dashboard', icon: ICONS.dashboard, path: '/acessos' },
     { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios' },
+    // O retrato mensal do efetivo, que alimenta a subseção 6.1 do RPCMTec.
+    // Fica aqui, e não junto do relatório, porque quem o preenche vem procurar
+    // por PESSOA: é a mesma lista de gente da tela ao lado, num mês.
+    {
+      id: 'aproveitamento',
+      label: 'Aproveitamento',
+      icon: ICONS.assignment,
+      path: '/aproveitamento',
+    },
+    // A capacitação RECEBIDA é gente nossa em curso, então mora aqui. A
+    // MINISTRADA é serviço que a Divisão presta, e mora em Produção. As duas
+    // saem da mesma tabela, e em subseções diferentes do relatório.
+    {
+      id: 'capacitacao_recebida',
+      label: 'Capacitação recebida',
+      icon: ICONS.description,
+      path: '/capacitacao_recebida',
+    },
+  ],
+};
+
+/**
+ * PRODUÇÃO: o plano anual da Divisão e o que acontece com ele (chefe,
+ * 2026-08-02).
+ *
+ * Nasceu quando o SCA absorveu do SAP o que não depende da produção controlada
+ * lá: a execução mensal das metas, o Extra-PIT e a capacitação. As "Metas do
+ * PIT" vieram do menu de plataforma para cá, porque as quatro telas se leem
+ * JUNTAS -- a execução não faz sentido sem a meta, e o Extra-PIT é a exceção
+ * a ela.
+ *
+ * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. Metas e execução são
+ * `authLoader`: qualquer pessoa logada LÊ o plano anual, e o servidor cobra o
+ * administrador só na escrita. A capacitação leva a marca no ITEM, porque ela é
+ * entrada do RPCMTec e o servidor a guarda com verifyAdmin -- oferecê-la a quem
+ * levaria 403 é o desencontro que `podeAbrirRota` existe para evitar do lado
+ * dos módulos.
+ */
+const SISTEMA_PRODUCAO = {
+  id: 'producao-area',
+  label: 'Produção',
+  icon: ICONS.layers,
+  home: '/metas',
+  prefixo: '',
+  chavePrefixo: '',
+  menu: [
+    { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
+    {
+      id: 'execucao_pit',
+      label: 'Execução do PIT',
+      icon: ICONS.dataUsage,
+      path: '/execucao_pit',
+    },
+    { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
+    {
+      id: 'capacitacao_ministrada',
+      label: 'Capacitação ministrada',
+      icon: ICONS.description,
+      path: '/capacitacao_ministrada',
+      admin: true,
+    },
   ],
 };
 
@@ -197,7 +267,7 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    * navegar.
    *
    * Serve aos tres modulos E a area de Usuarios, que se desenha igual sem ser
-   * modulo (ver SISTEMA_USUARIOS). Por isso ela recebe o rotulo e a home JA
+   * modulo (ver SISTEMA_EFETIVO e SISTEMA_PRODUCAO). Por isso ela recebe o rotulo e a home JA
    * RESOLVIDOS: o modulo os tira do catalogo do servidor (`nomeModulo`) e do
    * manifesto (`rotaInicial`), e a area de Usuarios os declara, porque nao esta
    * em `dominio.modulo` nem no registry.
@@ -266,8 +336,15 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
     // Logo DEPOIS dos módulos e ACIMA do separador: é a posição que diz "isto é
     // um sistema", e não um item de configuração no meio das telas soltas.
-    if (itemVisivel(SISTEMA_USUARIOS, '')) {
-      buildSystemSection(SISTEMA_USUARIOS);
+    //
+    // Produção vem antes de Efetivo porque é a que fala do TRABALHO, e Efetivo é
+    // quem o faz. A ordem também põe as telas mais usadas mais perto dos
+    // módulos.
+    if (itemVisivel(SISTEMA_PRODUCAO, '')) {
+      buildSystemSection(SISTEMA_PRODUCAO);
+    }
+    if (itemVisivel(SISTEMA_EFETIVO, '')) {
+      buildSystemSection(SISTEMA_EFETIVO);
     }
 
     const plataforma = MENU_PLATAFORMA.filter(i => itemVisivel(i, ''));

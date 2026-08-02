@@ -39,8 +39,18 @@ dotenv.config({
 // ganha a coluna `senha` e nasce `dgeo.login`, o historico de acesso. As duas
 // sao exigidas: sem a primeira ninguem entra, porque nao ha mais Auth Server
 // para quem perguntar; sem a segunda o login falha ao gravar o historico.
+// 1.15.0 traz do SAP o que nao depende da producao (2026-08-02): `pit.execucao`
+// e `pit.demanda_extra`, as quatro colunas de PROMESSA de `pit.meta`, e
+// `rpcmtec.aproveitamento_mes` e `rpcmtec.capacitacao`. Sao exigidas, e nao
+// opcionais: `GET /api/rpcmtec/gerar` consulta as quatro tabelas para montar as
+// subsecoes 2.1, 2.6, 3.3, 6.1 e 6.2, e num banco anterior ele quebra na tabela
+// que nao existe -- ou seja, o relatorio inteiro cai, e nao so a parte nova.
+//
+// O piso PULA a 1.13.0 e a 1.14.0 (rastreabilidade), que nao o subiram. Elas
+// tambem eram exigidas: `auditoria.evento` e escrito DENTRO da transacao de toda
+// mudanca, entao num banco 1.12.0 nenhuma escrita do sistema passa.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.12.0'
+const MIN_DATABASE_VERSION = '1.15.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

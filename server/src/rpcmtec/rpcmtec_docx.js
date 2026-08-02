@@ -83,11 +83,13 @@ const ENTRELINHA_CELULA = { line: 240, lineRule: LineRuleType.AUTO }
 // número da subseção. Uma tabela sem entrada aqui cai na divisão por igual, que
 // é o certo para tabela que o modelo não tem (nenhuma, hoje).
 const GRADES = {
-  // SEM a 2.2 e a 2.4: por enquanto elas nao vem do SCA (chefe, 2026-08-01).
+  // SEM a 2.2, a 2.3, a 2.4 e a 2.5: elas leem a producao, que vive no SAP.
+  '2.1': [1665, 825, 2835, 1425, 1005, 1035, 1365],
+  '2.6': [2160, 2385, 3015, 2205],
   '2.7': [1380, 1755, 2070, 1515, 1515, 1515],
   '3.1': [5010, 2580, 2175],
   '3.2': [2040, 3345, 2010, 2415],
-  // SEM a 3.3 (Extra-PIT): o SCA nao a gera. Ver rpcmtec_ctrl.js.
+  '3.3': [1590, 1575, 630, 1215, 1455, 3360],
   // A 3.4 tem QUATRO colunas aqui, e tres no modelo: em 2026-08-01 saiu o
   // "Documento de solicitacao" e entraram o codigo da LAI (o NUP do Fala.BR) e a
   // descricao. A Descricao e a mais larga porque e prosa; a largura total
@@ -100,6 +102,10 @@ const GRADES = {
   '4.5': [2535, 2955, 2145, 2205],
   '4.6': [1965, 2685, 1755, 3435],
   '4.7': [855, 870, 840, 2295, 1185, 1245, 1485, 1050],
+  // A 6.1 tem DUAS colunas largas: "Militar" e um nome curto, e "Atividades" é
+  // a lista de encargos de cada um, que é prosa.
+  '6.1': [2310, 7515],
+  '6.2': [2310, 2415, 2325, 2835],
   // 7.2 e 7.3 dividem a mesma grade: no modelo a 7.3 quebrava as tintas em uma
   // coluna por plotter (HP 70 / HP 72 / HP 730), e aqui cada cartucho é uma
   // LINHA própria de `mapoteca.tipo_material`, então as duas tabelas têm as

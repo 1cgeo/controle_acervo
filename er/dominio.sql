@@ -328,4 +328,56 @@ INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (2, 'Mapoteca', 'mapoteca'),
 (3, 'Controle Orçamentário', 'orcamento');
 
+-- ---------------------------------------------------------------------------
+-- Domínios do PIT e do efetivo (absorvidos do SAP em 2026-08-02).
+--
+-- Eles vieram porque as subseções 2.1, 2.6, 3.3, 6.1 e 6.2 do RPCMTec não
+-- tinham dono no SCA e tinham no SAP, num dado que NÃO depende da produção: o
+-- Extra-PIT, a execução manual de meta e o efetivo se cadastram à mão e não
+-- olham `macrocontrole` nenhum. Nada saiu do SAP (decisão do chefe,
+-- 2026-08-02): lá as tabelas continuam, e o SCA passa a ser quem gera essas
+-- subseções.
+--
+-- Os códigos são os MESMOS do SAP, e isso é deliberado: quando os dois sistemas
+-- se fundirem, a linha migrada não precisa de tradução de código. O que mudou
+-- foi o NOME das tabelas, para caber na convenção daqui.
+-- ---------------------------------------------------------------------------
+
+-- Situação da demanda Extra-PIT (3.3 do RPCMTec).
+CREATE TABLE dominio.situacao_extra_pit(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.situacao_extra_pit (code, nome) VALUES
+(1, 'Previsto'),
+(2, 'Em produção'),
+(3, 'Enviado'),
+(4, 'Concluído'),
+(5, 'Cancelado');
+
+-- Capacitação MINISTRADA alimenta a 2.6 (externos treinados por nós) e
+-- RECEBIDA alimenta a 6.2 (nosso militar em curso). São duas subseções
+-- diferentes do relatório e um cadastro só, porque a linha é a mesma coisa
+-- vista dos dois lados; o que muda são as colunas que cada uma preenche.
+CREATE TABLE dominio.tipo_capacitacao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.tipo_capacitacao (code, nome) VALUES
+(1, 'Ministrada'),
+(2, 'Recebida');
+
+CREATE TABLE dominio.situacao_capacitacao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.situacao_capacitacao (code, nome) VALUES
+(1, 'Prevista'),
+(2, 'Em execução'),
+(3, 'Concluída'),
+(4, 'Cancelada');
+
 COMMIT;

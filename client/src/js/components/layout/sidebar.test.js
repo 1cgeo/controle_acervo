@@ -30,13 +30,15 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
     //
-    // A quarta seção é a de USUÁRIOS, que desde 2026-08-02 se desenha como
-    // sistema e vem LOGO DEPOIS do orçamento (chefe). A ordem é asserida
-    // inteira de propósito: a posição é metade do que ela comunica.
+    // Depois dos três módulos vêm PRODUÇÃO e EFETIVO, que desde 2026-08-02 se
+    // desenham como sistema sem ser módulo (chefe). A ordem é asserida inteira
+    // de propósito: a posição é metade do que ela comunica. Produção antes de
+    // Efetivo porque é a que fala do TRABALHO, e Efetivo é quem o faz.
     expect(modulosNaTela(sidebar)).toEqual([
       '#/acervo/dashboard',
       '#/mapoteca/dashboard',
       '#/orcamento/dashboard',
+      '#/metas',
       '#/acessos',
     ]);
     expect(ids(sidebar)).toContain('acervo:dashboard');
@@ -62,12 +64,12 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     const secoes = () => [...ctrl.sidebar.querySelectorAll('.sidebar__module')]
       .map(s => s.classList.contains('sidebar__module--open'));
 
-    // Quatro seções: os três módulos e a área de Usuários, que é a última.
-    expect(secoes()).toEqual([false, false, true, false]);
+    // Cinco seções: os três módulos, Produção e Efetivo, nesta ordem.
+    expect(secoes()).toEqual([false, false, true, false, false]);
     const antes = ids(ctrl.sidebar).length;
 
     ctrl.setModulo('acervo');
-    expect(secoes()).toEqual([true, false, false, false]);
+    expect(secoes()).toEqual([true, false, false, false, false]);
 
     // Nenhum item foi destruido: a sidebar so abriu e fechou seção.
     expect(ids(ctrl.sidebar).length).toBe(antes);
@@ -88,8 +90,12 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     logar({ perfis: { orcamento: 3 } });
     const { sidebar } = createSidebar({ modulo: 'orcamento' });
 
-    expect(modulosNaTela(sidebar)).toEqual(['#/orcamento/dashboard']);
+    // PRODUÇÃO aparece e EFETIVO não, e a diferença não é acidente: o plano
+    // anual da Divisão se LÊ com qualquer conta (o servidor cobra o
+    // administrador só na escrita), e o efetivo é verifyAdmin de ponta a ponta.
+    expect(modulosNaTela(sidebar)).toEqual(['#/orcamento/dashboard', '#/metas']);
     expect(ids(sidebar)).not.toContain('usuarios');
+    expect(ids(sidebar)).not.toContain('aproveitamento');
     expect(ids(sidebar)).toContain('orcamento:dfd');
   });
 });
@@ -137,32 +143,43 @@ describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () =>
 // ser um grupo colapsavel no meio das telas soltas de plataforma e virou uma
 // SEÇÃO DE SISTEMA, logo depois do orçamento: ela tem dashboard, tem cadastro, e
 // tem quem entre nela para trabalhar um turno inteiro.
-describe('sidebar: Usuários e uma seção de sistema, como os modulos', () => {
+//
+// No fim do mesmo dia ela passou a se chamar EFETIVO, junto com a entrada do
+// aproveitamento mensal: o grupo deixou de ser sobre CONTA de sistema e passou a
+// ser sobre quem serve na Divisão. A rota `#/usuarios` NÃO mudou de nome com o
+// rótulo, e é o que os casos abaixo guardam.
+describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
   test('o cabeçalho e um LINK para o dashboard, e nao so um botao que abre', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     const cabecalhos = [...sidebar.querySelectorAll('.sidebar__module-header')];
-    const usuarios = cabecalhos.find(h => h.textContent.includes('Usuários'));
+    const efetivo = cabecalhos.find(h => h.textContent.includes('Efetivo'));
 
-    expect(usuarios).toBeTruthy();
+    expect(efetivo).toBeTruthy();
     // Clicar no nome do sistema entra nele, como nos três módulos.
-    expect(usuarios.getAttribute('href')).toBe('#/acessos');
+    expect(efetivo.getAttribute('href')).toBe('#/acessos');
     // E NÃO é um grupo daqueles que só abrem e fecham.
-    expect(usuarios.tagName).toBe('A');
+    expect(efetivo.tagName).toBe('A');
   });
 
-  test('o DASHBOARD vem primeiro, e a Gestão depois', () => {
+  test('o DASHBOARD vem primeiro, a Gestão depois e o Aproveitamento por último', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
-    const itens = [...sidebar.querySelectorAll('[data-id="acessos"], [data-id="usuarios"]')];
-    expect(itens.map(i => i.dataset.id)).toEqual(['acessos', 'usuarios']);
+    const itens = [...sidebar.querySelectorAll(
+      '[data-id="acessos"], [data-id="usuarios"], [data-id="aproveitamento"], [data-id="capacitacao_recebida"]'
+    )];
+    expect(itens.map(i => i.dataset.id))
+      .toEqual(['acessos', 'usuarios', 'aproveitamento', 'capacitacao_recebida']);
     // A rota nao mudou de nome junto com o rotulo: `#/acessos` e o que le
     // `dgeo.login`, e renomear a URL quebraria link guardado.
     expect(itens[0].getAttribute('href')).toBe('#/acessos');
     expect(itens[0].textContent).toContain('Dashboard');
     expect(itens[1].getAttribute('href')).toBe('#/usuarios');
+    // O retrato mensal do efetivo (6.1 do RPCMTec) mora aqui, e nao junto do
+    // relatorio, porque quem o preenche vem procurar por PESSOA.
+    expect(itens[2].getAttribute('href')).toBe('#/aproveitamento');
   });
 
   // A chave do item ativo sai do PRIMEIRO segmento da rota, entao o id da SEÇÃO
@@ -186,6 +203,56 @@ describe('sidebar: Usuários e uma seção de sistema, como os modulos', () => {
 
     expect(ids(sidebar)).not.toContain('usuarios');
     expect(ids(sidebar)).not.toContain('acessos');
+    expect(ids(sidebar)).not.toContain('aproveitamento');
+  });
+});
+
+// PRODUÇÃO nasceu em 2026-08-02 (chefe), quando o SCA absorveu do SAP o que não
+// depende da produção controlada lá: a execução mensal das metas, o Extra-PIT e
+// a capacitação. "Metas do PIT" saiu do menu solto de plataforma e virou a
+// primeira tela da seção, porque as quatro se leem JUNTAS.
+describe('sidebar: Produção reúne o plano anual e o que acontece com ele', () => {
+  test('as quatro telas estão na seção, e o cabeçalho leva às metas', () => {
+    logar({ administrador: true });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const producao = [...sidebar.querySelectorAll('.sidebar__module-header')]
+      .find(h => h.textContent.includes('Produção'));
+    expect(producao).toBeTruthy();
+    expect(producao.getAttribute('href')).toBe('#/metas');
+
+    const itens = [...sidebar.querySelectorAll(
+      '[data-id="metas"], [data-id="execucao_pit"], [data-id="extra_pit"], [data-id="capacitacao_ministrada"]'
+    )];
+    expect(itens.map(i => i.dataset.id))
+      .toEqual(['metas', 'execucao_pit', 'extra_pit', 'capacitacao_ministrada']);
+    expect(itens[1].getAttribute('href')).toBe('#/execucao_pit');
+  });
+
+  // A seção NÃO leva `admin: true`, e o item de capacitação leva. A diferença
+  // não é descuido: metas e execução são `authLoader` (o servidor cobra o
+  // administrador só na escrita), e a capacitação é entrada do RPCMTec, guardada
+  // com verifyAdmin. Oferecê-la a quem levaria 403 é o desencontro que o
+  // `podeAbrirRota` existe para evitar do lado dos módulos.
+  test('quem nao e administrador ve o plano, e nao ve a capacitação', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    const lista = ids(sidebar);
+    expect(lista).toContain('metas');
+    expect(lista).toContain('execucao_pit');
+    expect(lista).toContain('extra_pit');
+    expect(lista).not.toContain('capacitacao_ministrada');
+  });
+
+  test('setActive marca a execução e ABRE a seção que a contem', () => {
+    logar({ administrador: true });
+    const ctrl = createSidebar({ modulo: null });
+    ctrl.setActive(activeIdFromPath('/execucao_pit'));
+
+    const item = ctrl.sidebar.querySelector('[data-id="execucao_pit"]');
+    expect(item.classList.contains('sidebar__item--active')).toBe(true);
+    expect(item.closest('.sidebar__module').classList.contains('sidebar__module--open')).toBe(true);
   });
 });
 

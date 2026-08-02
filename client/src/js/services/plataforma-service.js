@@ -77,6 +77,54 @@ export const createMetaPit = (body) => apiPost('/metas', body);
 export const updateMetaPit = (id, body) => apiPut(`/metas/${id}`, body);
 export const deleteMetaPit = (id) => apiDelete(`/metas/${id}`);
 
+// ---- Execucao mensal das metas (2.1 do RPCMTec) ----
+// Absorvida do SAP em 2026-08-02, junto com as colunas de PROMESSA da meta. LER
+// segue a meta (qualquer pessoa logada); ESCREVER e do administrador global.
+export const getExecucaoMes = (ano, mes) =>
+  apiGet(`/metas/execucao?ano=${ano}&mes=${mes}`);
+export const getResumoPit = (ano, mes) =>
+  apiGet(mes ? `/metas/execucao/resumo?ano=${ano}&mes=${mes}` : `/metas/execucao/resumo?ano=${ano}`);
+export const getExecucaoDaMeta = (metaId) => apiGet(`/metas/execucao/meta/${metaId}`);
+// UMA rota para criar e alterar: o par (meta, mes) e uma CELULA de grade, e quem
+// preenche nao sabe se aquele mes ja tinha linha. Quem separa e o servidor, e so
+// para o rastro.
+export const salvarExecucaoPit = (body) => apiPost('/metas/execucao', body);
+export const deleteExecucaoPit = (id) => apiDelete(`/metas/execucao/${id}`);
+
+// ---- Demanda Extra-PIT (3.3 do RPCMTec) ----
+export const getExtraPit = (ano) =>
+  apiGet(ano ? `/metas/extra?ano=${ano}` : '/metas/extra');
+export const getAnosExtraPit = () => apiGet('/metas/extra/anos');
+export const createExtraPit = (body) => apiPost('/metas/extra', body);
+export const updateExtraPit = (id, body) => apiPut(`/metas/extra/${id}`, body);
+export const deleteExtraPit = (id) => apiDelete(`/metas/extra/${id}`);
+
+// ---- Aproveitamento do efetivo (6.1) e capacitacao (2.6 e 6.2) ----
+// Moram sob /rpcmtec porque sao a ENTRADA do relatorio e nao existem por outra
+// razao. Todas sao verifyAdmin no servidor, como o resto daquele modulo.
+export const getEfetivoMes = (ano, mes) => apiGet(`/rpcmtec/efetivo/${ano}/${mes}`);
+export const getEfetivoFaltantes = (ano, mes) =>
+  apiGet(`/rpcmtec/efetivo/faltantes/${ano}/${mes}`);
+export const getMesesEfetivo = (ano) =>
+  apiGet(ano ? `/rpcmtec/efetivo/meses?ano=${ano}` : '/rpcmtec/efetivo/meses');
+export const iniciarEfetivoDoMes = (body) => apiPost('/rpcmtec/efetivo/iniciar', body);
+export const copiarEfetivoMesAnterior = (body) => apiPost('/rpcmtec/efetivo/copiar', body);
+export const createEfetivo = (body) => apiPost('/rpcmtec/efetivo', body);
+export const updateEfetivo = (id, body) => apiPut(`/rpcmtec/efetivo/${id}`, body);
+export const deleteEfetivo = (id) => apiDelete(`/rpcmtec/efetivo/${id}`);
+
+export const getCapacitacoes = (ano, tipoId) => {
+  const q = new URLSearchParams();
+  if (ano) q.set('ano', ano);
+  if (tipoId) q.set('tipo_id', tipoId);
+  const busca = q.toString();
+  return apiGet(busca ? `/rpcmtec/capacitacao?${busca}` : '/rpcmtec/capacitacao');
+};
+export const getAnosCapacitacao = () => apiGet('/rpcmtec/capacitacao/anos');
+export const createCapacitacao = (body) => apiPost('/rpcmtec/capacitacao', body);
+export const updateCapacitacao = (id, body) => apiPut(`/rpcmtec/capacitacao/${id}`, body);
+export const deleteCapacitacao = (id) => apiDelete(`/rpcmtec/capacitacao/${id}`);
+
 /**
  * Rotulo curto da meta, como a planilha e as telas a escrevem: '4.1' quando a
  * meta se subdivide, e o numero da meta quando ela e indivisa (`item` NULO; o

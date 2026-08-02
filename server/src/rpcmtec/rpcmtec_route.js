@@ -12,11 +12,13 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
 const { verifyAdmin } = require('../login')
 
 const rpcmtecCtrl = require('./rpcmtec_ctrl')
 const edicaoCtrl = require('./rpcmtec_edicao_ctrl')
+const efetivoCtrl = require('./rpcmtec_efetivo_ctrl')
+const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
 const rpcmtecDocx = require('./rpcmtec_docx')
 const rpcmtecSchema = require('./rpcmtec_schema')
 const anuarioCtrl = require('../mapoteca/anuario_ctrl')
@@ -160,6 +162,228 @@ router.get(
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
     res.setHeader('Content-Length', String(buffer.length))
     return res.end(buffer)
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Aproveitamento do efetivo (subseção 6.1)
+//
+// ANTES do CRUD da edição, porque lá existe um `GET /:id` que capturaria
+// 'efetivo' e reprovaria na validação de parâmetro.
+//
+// A ENTRADA do relatório mora sob a rota do relatório, e não num módulo. Não é
+// dado de acervo, de mapoteca nem de orçamento: é o efetivo da DIVISÃO no mês, e
+// existe porque a 6.1 existe. A guarda é a mesma `verifyAdmin` do resto daqui.
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/efetivo/meses',
+  verifyAdmin,
+  schemaValidation({ query: rpcmtecSchema.listarQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.mesesPreenchidos(req.query.ano)
+
+    return res.sendJsonAndLog(
+      true, 'Meses com efetivo lançado retornados com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// Quem AINDA não está no mês. A tela oferece só estes ao acrescentar uma linha:
+// escolher alguém já lançado só produziria o 409 da UNIQUE.
+router.get(
+  '/efetivo/faltantes/:ano/:mes',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.anoMesParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.faltantes(req.params.ano, req.params.mes)
+
+    return res.sendJsonAndLog(
+      true, 'Militares fora do mês retornados com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.get(
+  '/efetivo/:ano/:mes',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.anoMesParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.listar(req.params.ano, req.params.mes)
+
+    return res.sendJsonAndLog(
+      true, 'Aproveitamento do efetivo retornado com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// As duas partidas rápidas. NUNCA sobrescrevem quem já tem linha no mês: elas
+// são para COMEÇAR o mês, e reexecutá-las depois de alguém editar apagaria o
+// trabalho de quem editou. O `inseridos` da resposta é o que distingue "copiou
+// 31" de "não copiou nada porque já estava lá".
+router.post(
+  '/efetivo/iniciar',
+  verifyAdmin,
+  schemaValidation({ body: rpcmtecSchema.anoMesBody }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.iniciarDoEfetivo(
+      req.body.ano, req.body.mes, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, `Mês iniciado a partir do efetivo atual: ${dados.inseridos} linha(s)`,
+      httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/efetivo/copiar',
+  verifyAdmin,
+  schemaValidation({ body: rpcmtecSchema.anoMesBody }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.copiarMesAnterior(
+      req.body.ano, req.body.mes, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, `Mês anterior copiado: ${dados.inseridos} linha(s)`, httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/efetivo',
+  verifyAdmin,
+  schemaValidation({ body: rpcmtecSchema.criarEfetivo }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
+
+    return res.sendJsonAndLog(
+      true, 'Militar acrescentado ao mês com sucesso', httpCode.Created, dados
+    )
+  })
+)
+
+router.put(
+  '/efetivo/:id',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.idParams,
+    body: rpcmtecSchema.atualizarEfetivo
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await efetivoCtrl.atualizar(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Linha do efetivo atualizada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.delete(
+  '/efetivo/:id',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    await efetivoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
+
+    return res.sendJsonAndLog(
+      true, 'Linha do efetivo excluída com sucesso', httpCode.OK
+    )
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Capacitação (2.6 ministrada, 6.2 recebida)
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/capacitacao',
+  verifyAdmin,
+  schemaValidation({ query: rpcmtecSchema.capacitacaoQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await capacitacaoCtrl.listar(req.query.ano, req.query.tipo_id)
+
+    return res.sendJsonAndLog(
+      true, 'Capacitações retornadas com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// Antes de '/capacitacao/:id', senão 'anos' cai na rota do id.
+router.get(
+  '/capacitacao/anos',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await capacitacaoCtrl.anos()
+
+    return res.sendJsonAndLog(
+      true, 'Anos com capacitação retornados com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.get(
+  '/capacitacao/:id',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await capacitacaoCtrl.getPorId(req.params.id)
+
+    if (!dados) {
+      throw new AppError('Capacitação não encontrada', httpCode.NotFound)
+    }
+
+    return res.sendJsonAndLog(
+      true, 'Capacitação retornada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/capacitacao',
+  verifyAdmin,
+  schemaValidation({ body: rpcmtecSchema.criarCapacitacao }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await capacitacaoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
+
+    return res.sendJsonAndLog(
+      true, 'Capacitação criada com sucesso', httpCode.Created, dados
+    )
+  })
+)
+
+router.put(
+  '/capacitacao/:id',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.idParams,
+    body: rpcmtecSchema.atualizarCapacitacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await capacitacaoCtrl.atualizar(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Capacitação atualizada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.delete(
+  '/capacitacao/:id',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    await capacitacaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
+
+    return res.sendJsonAndLog(
+      true, 'Capacitação excluída com sucesso', httpCode.OK
+    )
   })
 )
 

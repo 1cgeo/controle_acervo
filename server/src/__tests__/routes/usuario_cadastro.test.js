@@ -787,9 +787,31 @@ const COBERTAS = new Set([
   'POST /metas/',
   'PUT /metas/:id',
   'DELETE /metas/:id',
+  // Execucao mensal e Extra-PIT, absorvidos do SAP em 2026-08-02. O POST de
+  // execucao e UMA rota para criar e alterar, porque o par (meta, mes) e uma
+  // CELULA de grade; quem separa a insercao da alteracao e o controller, e so
+  // para o rastro dizer "lancou 12" contra "trocou 12 por 30".
+  'POST /metas/execucao',
+  'DELETE /metas/execucao/:id',
+  'POST /metas/extra',
+  'PUT /metas/extra/:id',
+  'DELETE /metas/extra/:id',
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
-  'DELETE /rpcmtec/:id'
+  'DELETE /rpcmtec/:id',
+  // Efetivo do mes (6.1) e capacitacao (2.6 e 6.2), absorvidos do SAP no mesmo
+  // dia. As duas partidas rapidas criam DEZENAS de linhas por chamada, e cada
+  // linha vira um evento sob o `lote_id` da requisicao: o evento por linha e o
+  // que se confere depois, e o lote e o que impede a tela de virar trinta
+  // linhas iguais.
+  'POST /rpcmtec/efetivo/iniciar',
+  'POST /rpcmtec/efetivo/copiar',
+  'POST /rpcmtec/efetivo',
+  'PUT /rpcmtec/efetivo/:id',
+  'DELETE /rpcmtec/efetivo/:id',
+  'POST /rpcmtec/capacitacao',
+  'PUT /rpcmtec/capacitacao/:id',
+  'DELETE /rpcmtec/capacitacao/:id'
 ])
 
 describe('Rastreabilidade: varredura das rotas de escrita da plataforma', () => {

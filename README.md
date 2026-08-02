@@ -6,7 +6,7 @@ Desde 2026-07-27 o SCA absorveu o antigo SCO (Sistema de Controle Orçamentário
 
 Desde 2026-08-02 a **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. O [Serviço de Autenticação](https://github.com/1cgeo/auth_server) externo, de que o sistema dependia até então, saiu — e com ele a exigência de subir um segundo serviço para alguém conseguir entrar.
 
-> Regras de projeto, decisões de design deliberadas e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. Para subir o ambiente, veja **[`levantar_servico.md`](levantar_servico.md)**.
+> Regras de projeto e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. O **porquê** de cada escolha que parece estranha, e o que custou a alternativa, em **[`docs/decisoes.md`](docs/decisoes.md)**. Para subir o ambiente, veja **[`levantar_servico.md`](levantar_servico.md)**.
 
 ## Componentes
 
@@ -86,15 +86,15 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 
 Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 
-Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio, que antes eram anônimos. Endpoints de plataforma (usuários, views materializadas, limpeza de download) exigem `verifyAdmin`. As únicas rotas sem autenticação são `/api/integracao/*` e a consulta de pedido por localizador, as duas por decisão registrada no `CLAUDE.md`.
+Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio, que antes eram anônimos. Endpoints de plataforma (usuários, views materializadas, limpeza de download) exigem `verifyAdmin`. As únicas rotas sem autenticação são `/api/integracao/*` e a consulta de pedido por localizador, as duas por decisão registrada em `docs/decisoes.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
 | `/api/login` | plataforma | Autenticação local por bcrypt (JWT, `JWT_EXPIRACAO`, default 8h). Devolve `perfis` e `modulos`, e grava `dgeo.login` |
 | `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login |
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
-| `/api/metas` | plataforma | Metas do PIT: o plano anual da Divisão, que os três módulos consomem. Ler exige só login; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS) e a edição mensal. Admin: cruza os três módulos e traz valor de crédito |
+| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`) e as demandas Extra-PIT (`/extra`). Ler exige só login; escrever exige administrador |
+| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS), a edição mensal, o aproveitamento do efetivo (`/efetivo`) e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
@@ -124,7 +124,7 @@ A geometria do produto sai do MI/INOM quando a folha é do SCN, e dos cantos qua
 Regular entra pelo assistente de carregamento, que manda metadados e bytes numa requisição só
 (`POST /api/arquivo/upload-web/versao`): o servidor grava no volume, mede o checksum e NOMEIA o
 arquivo pelo padrão do acervo. O plugin do QGIS continua sendo o caminho da carga em lote e do
-arquivo grande. Ver o `CLAUDE.md`.
+arquivo grande. Ver `docs/decisoes.md`.
 
 `/api/mapoteca/dashboard` é montada ANTES de `/api/mapoteca` em `routes.js`, para o Express casar o prefixo mais específico primeiro. Preserve essa ordem ao acrescentar rota.
 
@@ -176,8 +176,8 @@ server/src/
 ├── acervo/ arquivo/ produto/ projeto/ volume/ ponto_controle/ dashboard/ gerencia/
 ├── usuario/              # Usuários, senha e perfis (plataforma)
 ├── acessos/              # Histórico de login (plataforma)
-├── pit/                  # Metas do PIT (plataforma)
-├── rpcmtec/              # RPCMTec inteiro e Anuário Estatístico (plataforma)
+├── pit/                  # Metas do PIT, execução mensal e Extra-PIT (plataforma)
+├── rpcmtec/              # RPCMTec inteiro, Anuário, efetivo e capacitação (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
 ├── limites/              # Limite político-administrativo (referência)
 ├── integracao/           # Rotas públicas para o vault da DGEO
@@ -231,8 +231,9 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
 | `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
-| `pit` | `meta`: as metas do PIT do ano. Dado de referência, fora dos módulos |
-| `rpcmtec` | `edicao`: o metadado da edição mensal do relatório. As tabelas do relatório são consultas, nunca gravadas |
+| `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o realizado por mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
+| `rpcmtec` | `edicao` (o metadado da edição mensal), `aproveitamento_mes` e `capacitacao` (a ENTRADA digitada das subseções 6.1, 2.6 e 6.2). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
+| `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
 | `limites` | Limite político-administrativo e área de suprimento |
 | `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
 | `dgeo` | `usuario` e `usuario_perfil` |
@@ -240,13 +241,13 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 
 ### Instalação nova
 
-Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
+Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `auditoria`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
 
-A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam.
+A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam, e depois de `dominio`, de onde saiu `situacao_extra_pit`; `rpcmtec` é o último dos schemas porque referencia `dgeo` e `dominio`.
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.11.0**, casada com `VERSION` e `MIN_DATABASE_VERSION` em `server/src/config.js`.
+A versão do schema é **1.15.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
 
 ### Atualização de banco existente
 
@@ -293,7 +294,7 @@ Transferência de arquivo: no **download**, prepara pela API (recebe token e cam
 
 **`ferramentas_mapoteca/`** é voltado à operação de impressão: a fila de atendimento (`GET /api/mapoteca/pedido/em_aberto`, ordenada por prazo), os itens de cada pedido com o que falta imprimir, o download dos PDFs das cartas (sequencial, com verificação SHA-256, gravando o manifesto `impressao_<localizador>.csv`) e o registro de impressão por item (quem, quando, quantas cópias), com histórico, para que operadores diferentes continuem o trabalho em dias distintos. Ele usa grupo próprio de `QgsSettings`, com as mesmas chaves do plugin do acervo, mais a pasta de destino dos PDFs.
 
-Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa são de `/api/mapoteca` — inclusive a confirmação do download (`POST /api/mapoteca/impressao/confirmar_download`), que existe porque a gêmea do acervo cobra perfil no módulo acervo. Ver a seção do plugin no `CLAUDE.md`.
+Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa são de `/api/mapoteca` — inclusive a confirmação do download (`POST /api/mapoteca/impressao/confirmar_download`), que existe porque a gêmea do acervo cobra perfil no módulo acervo. Ver a seção do plugin em `docs/decisoes.md`.
 
 ---
 

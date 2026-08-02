@@ -4,6 +4,7 @@ import {
   createNumberField,
   createTextField,
   createTextareaField,
+  createDateField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createMetaPit, updateMetaPit } from '@services/plataforma-service.js';
@@ -42,10 +43,46 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     value: meta?.descricao ?? '',
   });
 
+  // O que o PIT PROMETE no item. Entrou em 2026-08-02, e é o que faltava para a
+  // subseção 2.1 do RPCMTec sair: ela pede "Quantidade" e "Previsão de término".
+  //
+  // Os quatro ficam VAZIOS na linha de cabeçalho da meta, e a ajuda diz isso:
+  // quem promete são os itens que ela agrupa, e uma quantidade na meta e outra
+  // nos itens dela seriam dois totais para o mesmo compromisso.
+  const quantidadeField = createNumberField({
+    label: 'Quantidade prevista',
+    min: 0,
+    step: 1,
+    value: meta?.quantidade_prevista ?? undefined,
+    helpText: 'Deixe vazio na meta que se subdivide: quem promete são os itens.',
+  });
+  const unidadeField = createTextField({
+    label: 'Unidade',
+    maxLength: 50,
+    placeholder: 'Ex.: carta, folha, ano',
+    value: meta?.unidade ?? '',
+    helpText: 'Qualifica a quantidade na tela. A tabela 2.1 do RPCMTec imprime só o número.',
+  });
+  const demandanteField = createTextField({
+    label: 'Demandante',
+    maxLength: 255,
+    placeholder: 'Ex.: COTER/DECEX',
+    value: meta?.demandante ?? '',
+  });
+  const prazoField = createDateField({
+    label: 'Previsão de término',
+    value: meta?.prazo ?? '',
+    helpText: 'Sai como "AGO 26" no relatório.',
+  });
+
   const content = el('div', { className: 'form-grid' }, [
     numeroMetaField.element,
     itemField.element,
     el('div', { className: 'form-grid__full' }, [descricaoField.element]),
+    quantidadeField.element,
+    unidadeField.element,
+    demandanteField.element,
+    prazoField.element,
   ]);
 
   let saving = false;
@@ -76,6 +113,10 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
             numero_meta: numeroMeta,
             item: itemField.getValue() || null,
             descricao: descricaoField.getValue() || null,
+            quantidade_prevista: quantidadeField.getValue(),
+            unidade: unidadeField.getValue() || null,
+            demandante: demandanteField.getValue() || null,
+            prazo: prazoField.getValue(),
           };
 
           saving = true;

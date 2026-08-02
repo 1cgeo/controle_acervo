@@ -15,6 +15,13 @@ import { renderAcessos } from '@pages/acessos/index.js';
 import { renderRastreabilidade } from '@pages/rastreabilidade/index.js';
 import { renderPerfil } from '@pages/perfil/index.js';
 import { renderMetasList } from '@pages/metas/list.js';
+import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
+import { renderExtraPitList } from '@pages/extra-pit/list.js';
+import { renderAproveitamento } from '@pages/aproveitamento/index.js';
+import {
+  renderCapacitacaoMinistrada,
+  renderCapacitacaoRecebida,
+} from '@pages/capacitacao/list.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
 
@@ -104,6 +111,28 @@ router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 // mapoteca nao conseguia nem ver a lista. Sem `adminLoader`: LER e de qualquer
 // pessoa logada, e o backend cobra o administrador so na escrita.
 router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
+
+// Execucao do PIT: o lancamento mensal que alimenta a subsecao 2.1 do RPCMTec.
+// Absorvida do SAP em 2026-08-02. `authLoader` como as metas, e pela mesma
+// razao: LER o andamento do plano anual interessa aos tres modulos, e o backend
+// cobra o administrador so na escrita. A tela esconde o campo de quem nao pode.
+router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: authLoader });
+
+// Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3). Mesma guarda,
+// pela mesma razao.
+router.add('/extra_pit', withLayout(renderExtraPitList), { guard: authLoader });
+
+// Aproveitamento do efetivo (6.1) e capacitacao (2.6 e 6.2). `adminLoader`, e
+// nao authLoader: as duas sao ENTRADA do RPCMTec, moram sob /api/rpcmtec e sao
+// verifyAdmin no servidor. Com authLoader a tela abriria para levar 403.
+router.add('/aproveitamento', withLayout(renderAproveitamento), { guard: adminLoader });
+
+// A capacitacao e DUAS telas, em dois lugares do menu (chefe, 2026-08-02). A
+// MINISTRADA e servico que a Divisao presta, e fica em Producao; a RECEBIDA e
+// gente nossa em curso, e fica em Efetivo. A tabela do banco continua UMA: o que
+// muda entre as duas sao tres colunas.
+router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), { guard: adminLoader });
+router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), { guard: adminLoader });
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de
 // PLATAFORMA porque a mesma edicao fala de acervo, mapoteca e orcamento, e o

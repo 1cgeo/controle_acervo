@@ -41,4 +41,68 @@ const camposBase = {
 models.criar = Joi.object().keys({ ...camposBase })
 models.atualizar = Joi.object().keys({ ...camposBase })
 
+// Dia de CALENDÁRIO: `.iso().raw()`. Sem o `.raw()` o Joi converte
+// 'AAAA-MM-DD' em meia-noite UTC e a coluna guarda o dia anterior em UTC-3; sem
+// o `.iso()` a string segue crua para o Postgres, e '01/08/2026' viraria 8 de
+// janeiro pelo DateStyle MDY. Padrão da casa desde 2026-08-01.
+const dia = Joi.date().iso().raw()
+
+// --- Aproveitamento do efetivo (6.1) ----------------------------------------
+
+models.anoMesParams = Joi.object().keys({
+  ano: Joi.number().integer().required(),
+  mes: Joi.number().integer().min(1).max(12).required()
+})
+
+models.anoMesBody = Joi.object().keys({
+  ano: Joi.number().integer().strict().required(),
+  mes: Joi.number().integer().strict().min(1).max(12).required()
+})
+
+models.criarEfetivo = Joi.object().keys({
+  ano: Joi.number().integer().strict().required(),
+  mes: Joi.number().integer().strict().min(1).max(12).required(),
+  usuario_uuid: Joi.string().uuid().required(),
+  // OPCIONAL: omitido, sai do cadastro atual da pessoa. Exigi-lo faria a tela
+  // ter de conhecer a tabela de postos só para acrescentar uma linha.
+  tipo_posto_grad_id: Joi.number().integer().strict(),
+  atividades: Joi.string().allow(null, '')
+})
+
+// Só o posto e as atividades. Trocar a PESSOA ou o MÊS de uma linha existente
+// seria reescrever de quem é o retrato: para isso, exclui-se e lança de novo.
+models.atualizarEfetivo = Joi.object().keys({
+  tipo_posto_grad_id: Joi.number().integer().strict(),
+  atividades: Joi.string().allow(null, '')
+})
+
+// --- Capacitação (2.6 ministrada / 6.2 recebida) ----------------------------
+
+models.capacitacaoQuery = Joi.object().keys({
+  ano: Joi.number().integer(),
+  tipo_id: Joi.number().integer().min(1).max(2)
+})
+
+const capacitacao = {
+  ano: Joi.number().integer().strict().required(),
+  nome: Joi.string().max(255).required(),
+  tipo_id: Joi.number().integer().strict().required(),
+  situacao_id: Joi.number().integer().strict().required(),
+  instituicoes: Joi.string().allow(null, ''),
+  local_realizacao: Joi.string().max(255).allow(null, ''),
+  data_inicio: dia.allow(null, ''),
+  data_fim: dia.allow(null, ''),
+  // As três seguintes valem para UM dos dois tipos, e o servidor não recusa a
+  // que não pertence: quem decide o que aparece é o formulário, e quem decide o
+  // que SAI é o gerador. Recusar aqui transformaria em erro um campo que a tela
+  // nem mostra, no meio de um cadastro montado aos poucos.
+  efetivo_capacitado: Joi.number().integer().strict().min(0).allow(null),
+  militares: Joi.string().allow(null, ''),
+  plano_codigo: Joi.string().max(255).allow(null, ''),
+  documento: Joi.string().max(255).allow(null, '')
+}
+
+models.criarCapacitacao = Joi.object().keys({ ...capacitacao })
+models.atualizarCapacitacao = Joi.object().keys({ ...capacitacao })
+
 module.exports = models

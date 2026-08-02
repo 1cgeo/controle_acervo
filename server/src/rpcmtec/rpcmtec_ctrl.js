@@ -17,9 +17,12 @@
 // que cada tabela seja colável na subseção de mesmo número. Só saem as
 // subseções que o SCA sabe preencher INTEIRAS:
 //
+//   2.1  Estado Atual do PIT             pit.meta e pit.execucao
+//   2.6  Capacitações externas           rpcmtec.capacitacao, tipo Ministrada
 //   2.7  Estado do Acervo                cobertura da ASC por escala x tipo
 //   3.1  Totais do Mês e do Ano          mapoteca.pedido
 //   3.2  Entregas da mapoteca            idem, uma linha por pedido militar
+//   3.3  Extra-PIT                       pit.demanda_extra
 //   3.4  LAI e órgãos públicos           idem, cliente civil
 //   4.1  Execução por ND                 orçamento, classificação PDR
 //   4.2  Situação dos créditos           idem
@@ -28,33 +31,43 @@
 //   4.5  Demais licitações               idem, tipo 2
 //   4.6  Recebimento de material         orcamento.recebimento_material
 //   4.7  Créditos Extra-PDR              orçamento, classificação Extra-PDR
+//   6.1  Aproveitamento do efetivo      rpcmtec.aproveitamento_mes
+//   6.2  Capacitação do efetivo         rpcmtec.capacitacao, tipo Recebida
 //   7.2  Insumos de impressão, papel     mapoteca.tipo_material
 //   7.3  Insumos de impressão, tintas    idem
+//
+// O QUE ENTROU EM 2026-08-02, e por quê. A 2.1, a 2.6, a 3.3, a 6.1 e a 6.2
+// tinham dono no SAP, num dado que NÃO depende da produção: Extra-PIT, meta não
+// calculada, efetivo e capacitação se cadastram à mão, e nenhum deles lê
+// `macrocontrole`. É o critério que tirou `limites` do acervo em 2026-07-29 e
+// `pit.meta` do orçamento em 2026-07-31, aplicado entre SISTEMAS. Nada saiu do
+// SAP (decisão do chefe): lá as tabelas continuam, e o que impede as duas
+// cópias de brigarem é o SCA passar a ser quem GERA estas subseções.
+//
+// A 2.1 sai INTEIRA daqui, inclusive as metas de produção, que hoje só têm
+// número se alguém lançar à mão. Uma tabela montada metade de um sistema e
+// metade de outro obrigaria quem a cola a descobrir todo mês quais linhas vêm
+// de onde.
 //
 // FICAM DE FORA, com o motivo, para ninguém procurar o que não existe:
 //   2.2  Totais do Mês e do Ano  decisão do chefe em 2026-08-01: por enquanto
 //                                não vem do SCA.
 //   2.4  Entregas detalhada      idem.
-//   2.1  Estado Atual do PIT     `pit.meta` não tem quantidade prevista nem
-//                                previsão de término, e nenhuma versão do
-//                                acervo aponta para uma meta.
 //   2.3  Execução por Lote       o SCA conta os produtos do lote, mas não tem
 //                                operador nem percentual concluído.
-//   3.3  Extra-PIT               o RPCMTec chama de Extra-PIT a exceção
-//                                AUTORIZADA (o modelo tem coluna "Documento
-//                                autorização"), e o SCA não guarda o que a
-//                                distingue de um pedido comum fora do PIT.
-//                                Derivá-la de `previsto_pit` dava 23 linhas
-//                                em julho/2026 onde a edição real traz 1:
-//                                aquele campo é FALSE por default em 142 dos
-//                                158 pedidos de produção.
-//   2.5  Atividades de campo     não há tabela de atividade de campo.
-//   2.6  Capacitações externas   não há tabela de capacitação.
+//   2.5  Atividades de campo     não há tabela de atividade de campo. É a única
+//                                das cinco do SAP que não veio junto, porque
+//                                `controle_campo` aponta `macrocontrole.produto`.
 //   5.   Desenvolvimento e TI    vem do painel do GitHub e do backup.
-//   6.   Recursos Humanos        o efetivo é do Auth Server, sem atividade.
 //   7.1  Equipamento indisponível  não há cadastro de equipamento técnico.
 //   8.   Divulgação              não há cadastro de publicação em BI.
 //   9.   Boas práticas           é texto do chefe, não dado.
+//
+// AS TRÊS LINHAS DE TOTAL DA 2.6 não saem. No modelo elas ficam abaixo da
+// tabela, com o rótulo ocupando três colunas mescladas, e o desenhador daqui
+// não tem rodapé de tabela. Emiti-las como linha comum daria um total alinhado
+// errado, que é pior do que não ter: quem confere veria a tabela como se
+// estivesse formatada, e ela não estaria.
 //
 // O MESMO OBJETO alimenta a tela e o arquivo. `gerar()` devolve as subseções já
 // com as células em texto, e o DOCX só as desenha. Foi assim de propósito: com
@@ -65,6 +78,12 @@
 const { db } = require('../database')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const mapotecaCtrl = require('../mapoteca/mapoteca_ctrl')
+// O PIT é dado de PLATAFORMA, e não de módulo: o gerador o lê como lê o acervo e
+// a mapoteca. Sem ciclo, porque `pit/` não conhece o RPCMTec.
+const pitExecucaoCtrl = require('../pit/pit_execucao_ctrl')
+const pitExtraCtrl = require('../pit/pit_extra_ctrl')
+const efetivoCtrl = require('./rpcmtec_efetivo_ctrl')
+const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
 const {
   domainConstants: {
     SITUACAO_PEDIDO,
@@ -73,7 +92,8 @@ const {
     TIPO_PRODUTO,
     TIPO_VERSAO,
     CLASSIFICACAO_NC,
-    CATEGORIA_MATERIAL
+    CATEGORIA_MATERIAL,
+    TIPO_CAPACITACAO
   }
 } = require('../utils')
 const { QTD_EFETIVA, JOIN_PRODUTO_ITEM, filtroPeriodoMes } = require('../mapoteca/query_fragments')
@@ -649,6 +669,161 @@ const montarInsumos = ({ tiposMaterial, consumoAno, mes, categoria }) => {
 }
 
 // ---------------------------------------------------------------------------
+// 2.1 Estado Atual do PIT
+//
+// Entrou em 2026-08-02, quando `pit.meta` passou a guardar o que o PIT PROMETE
+// (quantidade e prazo) e nasceu `pit.execucao`. Até então esta subseção ficava
+// de fora por falta das duas coisas, e não por falta de tabela.
+//
+// A tabela sai INTEIRA daqui, inclusive as metas de produção. Elas hoje só têm
+// número se alguém lançar à mão, porque o SCA não calcula produção -- e é essa a
+// decisão do chefe enquanto o SAP não for absorvido. Metade da tabela vinda de
+// um sistema e metade de outro seria pior: a 2.1 é UMA tabela, e quem a monta
+// não deveria descobrir todo mês quais linhas colar de onde.
+// ---------------------------------------------------------------------------
+
+const MESES_ABREV = [
+  'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'
+]
+
+// 'AGO 26', como o modelo escreve a previsão de término. O documento também traz
+// '1º trim 2026' e 'Mensal' em algumas linhas, que são texto escrito à mão lá; o
+// SCA guarda uma DATA, e é ela que sai.
+//
+// A string chega como 'AAAA-MM-DD' (o `prazo::text` da consulta), e é fatiada em
+// vez de passada por `new Date()`: só-data parseada assim vira meia-noite UTC, e
+// em UTC-3 o mês vira o anterior no dia 1º.
+const formatPrazo = valor => {
+  if (!valor) return '-'
+  const [ano, mes] = String(valor).slice(0, 10).split('-')
+  const indice = parseInt(mes, 10) - 1
+  if (!MESES_ABREV[indice]) return '-'
+  return `${MESES_ABREV[indice]} ${String(ano).slice(-2)}`
+}
+
+/**
+ * Uma linha por meta-FOLHA, agrupada por meta.
+ *
+ * O rótulo da meta é escrito só na PRIMEIRA linha do bloco, como o documento
+ * faz: repeti-lo em todas encheria a coluna mais estreita da tabela com o mesmo
+ * texto.
+ *
+ * A `unidade` da meta NÃO sai. O modelo tem uma coluna "Quantidade" e nenhuma de
+ * unidade, e enfiar 'carta' dentro do número faria a coluna deixar de ser
+ * numérica. Ela existe para qualificar o número na TELA.
+ */
+const montarEstadoPit = ({ metas }) => {
+  const porNumero = new Map()
+  for (const m of metas) {
+    if (!porNumero.has(m.numero_meta)) porNumero.set(m.numero_meta, [])
+    porNumero.get(m.numero_meta).push(m)
+  }
+
+  const linhas = []
+  const numerosOrdenados = [...porNumero.keys()].sort((a, b) => a - b)
+
+  for (const numeroMeta of numerosOrdenados) {
+    const doGrupo = porNumero.get(numeroMeta)
+    const cabecalho = doGrupo.find(m => m.item === null)
+    const itens = doGrupo.filter(m => m.item !== null)
+
+    // Meta subdividida: as linhas são os ITENS, e o nome da meta vira o rótulo
+    // do bloco. Meta indivisa: a própria linha de cabeçalho é a folha, e a
+    // descrição dela é o produto -- pô-la também no rótulo a escreveria duas
+    // vezes na mesma linha.
+    const subdividida = itens.length > 0
+    const daTabela = subdividida ? itens : doGrupo.filter(m => m.folha)
+
+    const rotulo = subdividida && cabecalho && cabecalho.descricao
+      ? `Meta ${numeroMeta} - ${cabecalho.descricao}`
+      : `Meta ${numeroMeta}`
+
+    daTabela.forEach((m, i) => {
+      linhas.push([
+        i === 0 ? rotulo : '',
+        texto(m.item),
+        texto(m.descricao),
+        numero(m.quantidade_prevista),
+        numero(m.realizado_mes),
+        numero(m.realizado),
+        formatPrazo(m.prazo)
+      ])
+    })
+  }
+
+  return linhas
+}
+
+// ---------------------------------------------------------------------------
+// 2.6 e 6.2: capacitação ministrada e recebida
+// ---------------------------------------------------------------------------
+
+// 'de 06/07/2026 a 10/07/2026', ou só a data quando não há término. Igual ao
+// `prazo`, a string vem como 'AAAA-MM-DD' e é fatiada, sem passar por Date.
+const formatDia = valor => {
+  if (!valor) return null
+  const [ano, mes, dia] = String(valor).slice(0, 10).split('-')
+  return `${dia}/${mes}/${ano}`
+}
+
+const formatPeriodo = (inicio, fim) => {
+  const a = formatDia(inicio)
+  const b = formatDia(fim)
+  if (!a) return '-'
+  if (!b || b === a) return a
+  return `de ${a} a ${b}`
+}
+
+const montarCapacitacaoMinistrada = ({ capacitacoes }) =>
+  capacitacoes.map(c => [
+    texto(c.nome),
+    formatPeriodo(c.data_inicio, c.data_fim),
+    texto(c.instituicoes),
+    numero(c.efetivo_capacitado)
+  ])
+
+const montarCapacitacaoRecebida = ({ capacitacoes }) =>
+  capacitacoes.map(c => [
+    texto(c.plano_codigo),
+    texto(c.nome),
+    texto(c.instituicoes),
+    texto(c.militares)
+  ])
+
+// ---------------------------------------------------------------------------
+// 3.3 Extra-PIT
+//
+// É do ANO, e não do mês, ao contrário das vizinhas 3.1, 3.2 e 3.4. A demanda
+// Extra-PIT é uma autorização que atravessa o ano e muda de situação; a edição
+// de agosto que só mostrasse a autorizada em agosto esconderia as sete que
+// continuam em produção.
+// ---------------------------------------------------------------------------
+
+const montarExtraPit = ({ demandas }) =>
+  demandas.map(d => [
+    texto(d.demandante),
+    texto(d.tipo_produto),
+    numero(d.quantidade),
+    texto(d.situacao),
+    texto(d.documento_autorizacao),
+    texto(d.descricao)
+  ])
+
+// ---------------------------------------------------------------------------
+// 6.1 Aproveitamento do efetivo
+// ---------------------------------------------------------------------------
+
+// 'Cap claude', que é como o documento nomeia a pessoa: posto abreviado mais
+// nome de guerra. O posto sai da LINHA do mês, e não do cadastro de hoje: é o
+// congelamento que `rpcmtec.aproveitamento_mes` existe para guardar.
+const montarAproveitamento = ({ efetivo }) =>
+  efetivo.map(e => [
+    `${e.posto_abrev} ${e.nome_guerra}`.trim(),
+    texto(e.atividades)
+  ])
+
+// ---------------------------------------------------------------------------
 // Orquestrador
 // ---------------------------------------------------------------------------
 
@@ -665,8 +840,11 @@ controller.gerar = async ({ ano, mes }) => {
 
   const [
     estadoAcervo,
+    metasPit,
+    capacitacaoMinistrada,
     pedidosMes,
     pedidosAno,
+    demandasExtra,
     tiposMaterial,
     consumoAno,
     execucaoPorNd,
@@ -675,11 +853,18 @@ controller.gerar = async ({ ano, mes }) => {
     licitacoesGcalc,
     licitacoesProprias,
     recebimentoMaterial,
-    creditosExtraPdr
+    creditosExtraPdr,
+    efetivo,
+    capacitacaoRecebida
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
+    // O `mes` recorta o acumulado: `realizado` vira janeiro até aqui, e
+    // `realizado_mes`, só este mês. São as duas colunas da 2.1.
+    pitExecucaoCtrl.resumoDoAno(ano, mes),
+    capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.MINISTRADA),
     buscarPedidos({ ano, mes, cumulativo: false }),
     buscarPedidos({ ano, mes, cumulativo: true }),
+    pitExtraCtrl.listar(ano),
     mapotecaCtrl.getTiposMaterial(),
     mapotecaCtrl.getConsumoMensalPorTipo(ano),
     gerarExecucaoPorNd(ano, inicio, cutoff),
@@ -688,7 +873,9 @@ controller.gerar = async ({ ano, mes }) => {
     gerarLicitacoes(ano, TIPO_LICITACAO.GCALC_DSG),
     gerarLicitacoes(ano, TIPO_LICITACAO.PROPRIA),
     gerarRecebimentoMaterial(ano),
-    gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR)
+    gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR),
+    efetivoCtrl.listar(ano, mes),
+    capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA)
   ])
 
   const colunasCredito = ['NC', 'NE', 'ND', 'Finalidade', 'Valor NC',
@@ -702,6 +889,20 @@ controller.gerar = async ({ ano, mes }) => {
     {
       titulo: '2. EXECUÇÃO DO PIT',
       subsecoes: [
+        {
+          numero: '2.1',
+          titulo: 'Estado Atual do PIT',
+          cabecalhos: ['Meta', 'Item', 'Produto ou serviço', 'Quantidade',
+            'Prontos no mês', 'Prontos', 'Previsão de término'],
+          linhas: montarEstadoPit({ metas: metasPit })
+        },
+        {
+          numero: '2.6',
+          titulo: 'Capacitações externas',
+          cabecalhos: ['Capacitação', 'Período', 'Instituições participantes',
+            'Efetivo capacitado'],
+          linhas: montarCapacitacaoMinistrada({ capacitacoes: capacitacaoMinistrada })
+        },
         {
           numero: '2.7',
           titulo: 'Estado do Acervo',
@@ -726,10 +927,18 @@ controller.gerar = async ({ ano, mes }) => {
           cabecalhos: ['Solicitante', 'Documento de solicitação', 'Quantidade', 'Situação'],
           linhas: montarEntregasMapoteca({ pedidosMes })
         },
-        // SEM a 3.3 (Extra-PIT): ver o comentário de montarTotaisMapoteca. O
-        // SCA não guarda o que distingue a exceção autorizada de um pedido
-        // comum fora do PIT, e derivá-la de `previsto_pit` produzia uma tabela
-        // com 23 linhas onde a edição real traz 1.
+        // A 3.3 saiu de `mapoteca.pedido` e virou `pit.demanda_extra` em
+        // 2026-08-02. A tentativa antiga derivava a tabela de `previsto_pit` e
+        // dava 23 linhas onde a edição real de julho/2026 traz 1: aquele campo é
+        // falso por omissão, e o que o relatório chama de Extra-PIT é a exceção
+        // AUTORIZADA, com documento. Agora o documento é obrigatório na origem.
+        {
+          numero: '3.3',
+          titulo: 'Extra-PIT',
+          cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd', 'Situação',
+            'Documento autorização', 'Descrição'],
+          linhas: montarExtraPit({ demandas: demandasExtra })
+        },
         {
           numero: '3.4',
           titulo: 'LAI e atendimento à órgãos públicos',
@@ -784,6 +993,23 @@ controller.gerar = async ({ ano, mes }) => {
           titulo: 'Situação de créditos Extra-PDR',
           cabecalhos: colunasCredito,
           linhas: creditosExtraPdr
+        }
+      ]
+    },
+    {
+      titulo: '6. RECURSOS HUMANOS',
+      subsecoes: [
+        {
+          numero: '6.1',
+          titulo: 'Aproveitamento do efetivo',
+          cabecalhos: ['Militar', 'Atividades'],
+          linhas: montarAproveitamento({ efetivo })
+        },
+        {
+          numero: '6.2',
+          titulo: 'Capacitação do efetivo',
+          cabecalhos: ['Plano / Código', 'Capacitação', 'Instituição', 'Militar'],
+          linhas: montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida })
         }
       ]
     },
