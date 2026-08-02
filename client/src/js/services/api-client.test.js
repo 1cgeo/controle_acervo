@@ -9,7 +9,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 //  (d) 403 -> MANTEM a sessao e so lanca a mensagem do servidor;
 //  (e) apiPost -> method POST, Authorization Bearer (quando ha token) e JSON.
 
-import { apiGet, apiPost } from './api-client.js';
+import { apiGet, apiGetPaginado, apiPost, apiPostComFalhaParcial } from './api-client.js';
 import { saveAuth, getToken, getPerfil } from '@store/auth-store.js';
 
 // Helper: monta uma Response falsa (status + corpo JSON) para o fetch mockado.
@@ -30,6 +30,46 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+// As rotas paginadas do /gerencia poem `pagination` AO LADO de `dados`, no topo
+// do envelope. Lidas por `apiGet`, que devolve so o `dados`, a contagem total e
+// o numero de paginas se perderiam, e a tela nao teria como desenhar o rodape
+// nem dizer "1-20 de 349".
+describe('api-client: rota paginada no servidor', () => {
+  test('apiGetPaginado devolve dados E pagination', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      body: {
+        success: true,
+        dados: [{ id: 1 }],
+        pagination: { totalItems: 349, totalPages: 18, currentPage: 1, pageSize: 20 },
+      },
+    }));
+
+    const resposta = await apiGetPaginado('/gerencia/arquivos_deletados?page=1&limit=20');
+
+    expect(resposta.dados).toEqual([{ id: 1 }]);
+    expect(resposta.pagination.totalItems).toBe(349);
+  });
+
+  test('apiGet continua devolvendo SO os dados, sem mudar de forma', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      body: { success: true, dados: [{ id: 1 }], pagination: { totalItems: 349 } },
+    }));
+
+    const dados = await apiGet('/gerencia/arquivos_deletados');
+
+    expect(dados).toEqual([{ id: 1 }]);
+  });
+
+  test('o erro do servidor continua virando Error, e nao envelope', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      status: 400, body: { success: false, message: 'page deve ser inteiro' },
+    }));
+
+    await expect(apiGetPaginado('/gerencia/arquivos_deletados?page=x'))
+      .rejects.toThrow('page deve ser inteiro');
+  });
 });
 
 describe('api-client: caminho de sucesso', () => {
@@ -210,5 +250,58 @@ describe('api-client: apiPost', () => {
     expect(options.headers['Content-Type']).toBe('application/json');
     // corpo serializado em JSON
     expect(options.body).toBe(JSON.stringify(payload));
+  });
+});
+
+// FALHA PARCIAL de rota em LOTE. `POST /arquivo/renomear-padrao` responde HTTP
+// 200 com `success: false` quando parte do lote falhou, e poe o resultado
+// inteiro em `dados` -- inclusive o `detalhe`, que diz QUAL arquivo travou.
+//
+// Lida por `apiPost`, essa resposta virava excecao e o `dados` era descartado:
+// a tela de manutencao tinha um ramo de falha que nunca rodava, e um lote com
+// uma falha em quinhentos anunciava "0 renomeado(s)". O teste da tela nao pegava
+// porque mockava o SERVICO, e o duble resolvia onde o real rejeitava. Por isso
+// este teste mocka o FETCH: e a unica altura em que o envelope existe.
+describe('api-client: falha parcial em rota de lote', () => {
+  test('apiPostComFalhaParcial devolve dados mesmo com success false', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      body: {
+        success: false,
+        message: 'Renome aplicado: 3 arquivo(s), 1 falha(s), 496 restante(s)',
+        dados: {
+          renomeados: 3,
+          falhas: 1,
+          restantes: 496,
+          detalhe: [{ id: 7, erro: 'o nome alvo JA EXISTE no volume' }],
+        },
+      },
+    }));
+
+    const d = await apiPostComFalhaParcial('/arquivo/renomear-padrao', { motivo: 'x' });
+
+    expect(d.renomeados).toBe(3);
+    expect(d.falhas).toBe(1);
+    expect(d.detalhe[0].erro).toContain('JA EXISTE');
+  });
+
+  test('apiPost comum continua lancando no mesmo corpo', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      body: { success: false, message: 'nao deu', dados: { falhas: 1 } },
+    }));
+
+    await expect(apiPost('/arquivo/renomear-padrao', {})).rejects.toThrow('nao deu');
+  });
+
+  // A tolerancia vale SO para o `success` de uma resposta 200 com corpo. Erro de
+  // HTTP continua sendo erro, senao um 500 passaria por resultado.
+  test('erro de HTTP continua lancando, mesmo com a tolerancia ligada', async () => {
+    fetch.mockResolvedValueOnce(fakeResponse({
+      status: 500,
+      body: { success: false, message: 'Erro interno' },
+    }));
+
+    await expect(
+      apiPostComFalhaParcial('/arquivo/renomear-padrao', {})
+    ).rejects.toThrow('Erro interno');
   });
 });

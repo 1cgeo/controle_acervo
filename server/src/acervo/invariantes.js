@@ -160,6 +160,27 @@ const INVARIANTES = [
        from acervo.produto p join acervo.versao v on v.produto_id=p.id
        where p.subtipo_produto_id is not null and v.subtipo_produto_id<>p.subtipo_produto_id group by 1,2,3`
   },
+  // Subtipo que DEFINE produto (hoje só o 24, Carta Topográfica Militar) morando
+  // como versão de um produto de outra identidade. Vive em zero, igual ao 3c: o
+  // gatilho acervo.validate_version já recusa na escrita, nos dois sentidos
+  // (produto pinado divergente, e define_produto sem produto próprio).
+  //
+  // Fica como REDE, e por duas razões que o 3c não tem: `define_produto` é dado,
+  // e não código -- um UPDATE em dominio.subtipo_produto marcando outro subtipo
+  // não revalida as versões que já existem. E o 2d só enxerga o produto PINADO,
+  // então o caso que importa (produto com subtipo_produto_id NULO recebendo uma
+  // versão militar) escapa dele por construção.
+  {
+    codigo: '2e',
+    severidade: 'DEFECT',
+    titulo: 'versao de subtipo que EXIGE produto proprio em produto de outra identidade',
+    sql: `select v.id versao_id,v.versao,v.subtipo_produto_id,
+            p.id produto_id,p.nome,p.subtipo_produto_id produto_subtipo
+       from acervo.versao v
+       join acervo.produto p on p.id=v.produto_id
+       join dominio.subtipo_produto s on s.code=v.subtipo_produto_id
+       where s.define_produto and p.subtipo_produto_id is distinct from v.subtipo_produto_id`
+  },
 
   // ---- P3: versao (tipo x arquivo x datas x rotulo) ----
   {
@@ -228,13 +249,92 @@ const INVARIANTES = [
           or (p.tipo_produto_id=7 and v.subtipo_produto_id not in (13,14,15,16,17,29))
        group by 1,2`
   },
+  // A SÉRIE, e não a linha. O 3c e o 3d olham uma versão isolada (data invertida
+  // dentro dela, data absurda); nenhum dos dois enxerga a 2ª Edição datada ANTES
+  // da 1ª, que é o erro de digitação comum ao recadastrar acervo legado.
+  //
+  // O ordinal é o inteiro à esquerda do rótulo, e ele serve aos DOIS formatos que
+  // acervo.validate_version aceita ('Nª Edição' e 'N-XXXXX'). Rótulo fora de
+  // forma não entra aqui: quem cobra isso é o 3e, e tentar ordenar o que não tem
+  // ordinal produziria achado que não diz nada.
+  //
+  // Particiona por SUBTIPO porque o produto civil abrange T34-700(2) e ET-RDG(12)
+  // nas versões (ver o comentário de acervo.produto.subtipo_produto_id): são duas
+  // séries de edição dentro do mesmo registro, e compará-las entre si acusaria
+  // erro onde há só duas numerações independentes.
+  //
+  // Compara por DIA de calendário, e não por instante, pela mesma razão que o 5i:
+  // data de versão é dia, e duas edições cadastradas no mesmo dia em horas
+  // diferentes não são incoerência nenhuma.
+  //
+  // O `distinct on` conta VERSÃO, e não PAR, e isso não é cosmético. O auto-join
+  // produz uma linha por par (maior, menor): um produto cuja 1ª Edição ficou com
+  // a data errada acusa uma vez para CADA edição posterior, e um único registro
+  // errado vira "3 ocorrências" num invariante cuja regra é dar zero. O `order
+  // by menor.data_edicao desc` faz a linha que sobra trazer o pior infrator, que
+  // é a data que empurra a série inteira para fora de ordem.
+  //
+  // O `versao_id` continua sendo o da MAIOR, e ele nem sempre é o registro
+  // errado: quando quem está errada é a menor (data no futuro), a maior é só
+  // quem denuncia. Por isso as duas edições saem no resultado, com as duas
+  // datas -- quem tria decide qual das duas corrigir, e a tela mostra as
+  // colunas que o invariante devolveu.
+  {
+    codigo: '3i',
+    severidade: 'DEFECT',
+    titulo: 'serie de edicao incoerente (edicao maior com data_edicao ANTERIOR a de uma menor)',
+    sql: `with s as (
+            select v.id,v.produto_id,v.versao,v.data_edicao,v.subtipo_produto_id,
+                   (substring(btrim(v.versao) from '^[0-9]+'))::int ord
+              from acervo.versao v
+             where v.data_edicao is not null and btrim(v.versao) ~ '^[0-9]+')
+          select distinct on (maior.id)
+                 maior.id versao_id,maior.produto_id,p.nome produto,
+                 maior.versao versao_maior,maior.data_edicao data_maior,
+                 menor.versao versao_menor,menor.data_edicao data_menor
+            from s maior
+            join s menor
+              on menor.produto_id=maior.produto_id
+             and menor.subtipo_produto_id is not distinct from maior.subtipo_produto_id
+             and menor.ord<maior.ord
+            join acervo.produto p on p.id=maior.produto_id
+           where date_trunc('day',maior.data_edicao)<date_trunc('day',menor.data_edicao)
+           order by maior.id,menor.data_edicao desc`
+  },
+  // A promessa VENCIDA. Planejada (tipo 3) nasce sem arquivo de propósito, para o
+  // item do pedido poder apontar para ela, e recebe o arquivo na MESMA versão
+  // quando a produção termina -- por isso "Planejada COM arquivo" não é defeito
+  // nenhum, é o caminho de conclusão de POST /api/arquivo/upload-web/arquivos, e
+  // um invariante que a acusasse nunca zeraria. O sinal útil é o inverso: a data
+  // de edição já passou e o arquivo não chegou.
+  //
+  // REVISAR, e não DEFECT: atraso de produção é fato administrativo, não dado
+  // errado. Quem lê a lista decide se cobra a produção ou se corrige a data.
+  {
+    codigo: '3j',
+    severidade: 'REVISAR',
+    titulo: 'versao Planejada VENCIDA (data_edicao ja passou e continua sem arquivo)',
+    sql: `select v.id versao_id,v.versao,v.data_edicao,p.id produto_id,p.nome produto
+       from acervo.versao v join acervo.produto p on p.id=v.produto_id
+       where v.tipo_versao_id=3 and v.data_edicao<current_date
+         and not exists(select 1 from acervo.arquivo a where a.versao_id=v.id)`
+  },
 
   // ---- P4: arquivo ----
+  //
+  // O TILESERVER (tipo_arquivo_id = 9) fica de fora de 4a, 4f e 4g. Ele não é
+  // byte no volume, é URL: `er/acervo.sql` EXIGE dele `checksum`, `tamanho_mb` e
+  // `volume_armazenamento_id` nulos, por CHECK. Sem o filtro, os três acusavam
+  // DEFECT em todo tileserver do acervo -- um DEFECT que não pode zerar, porque
+  // zerá-lo violaria o schema. Achado em 2026-08-02, ao levar a auditoria para a
+  // web. O 7a e o 7b já traziam o mesmo `<> 9` desde que nasceram; estes três
+  // vieram do script do vault sem ele, e nada acusava porque ninguém tinha uma
+  // tela onde a contagem ficasse na cara.
   {
     codigo: '4a',
     severidade: 'DEFECT',
     titulo: 'arquivo com checksum NULL',
-    sql: 'select id,nome_arquivo,versao_id from acervo.arquivo where checksum is null'
+    sql: 'select id,nome_arquivo,versao_id from acervo.arquivo where checksum is null and tipo_arquivo_id<>9'
   },
   {
     codigo: '4b',
@@ -271,13 +371,46 @@ const INVARIANTES = [
     codigo: '4f',
     severidade: 'DEFECT',
     titulo: 'arquivo com tamanho_mb null ou <=0',
-    sql: 'select id,nome_arquivo,tamanho_mb from acervo.arquivo where tamanho_mb is null or tamanho_mb<=0'
+    sql: 'select id,nome_arquivo,tamanho_mb from acervo.arquivo where tipo_arquivo_id<>9 and (tamanho_mb is null or tamanho_mb<=0)'
   },
   {
     codigo: '4g',
     severidade: 'DEFECT',
     titulo: 'arquivo sem volume_armazenamento_id',
-    sql: 'select id,nome_arquivo,versao_id from acervo.arquivo where volume_armazenamento_id is null'
+    sql: 'select id,nome_arquivo,versao_id from acervo.arquivo where volume_armazenamento_id is null and tipo_arquivo_id<>9'
+  },
+  // A LACUNA do par: nos produtos que se entregam em raster E em PDF, a versão
+  // com um só dos dois é entrega pela metade. O 4d não pega: ele confere se a
+  // extensão do PRINCIPAL está no conjunto aceito, e um PDF sozinho passa nele.
+  //
+  // Nasce REVISAR e não DEFECT de propósito (decisão de 2026-08-02): ninguém
+  // mediu ainda quantas folhas do acervo legado têm só um dos dois, e DEFECT que
+  // não zera envenena a auditoria inteira (ver a nota do 3f). Promover a DEFECT
+  // é commit próprio, depois de rodar contra produção.
+  //
+  // Só entra `tipo_arquivo_id` 1 (principal) e 2 (formato alternativo), que é
+  // onde a entrega vive: um PDF que fosse Documentos(6) ou Insumo(3) contaria
+  // como se o PDF da carta existisse, e a falta some.
+  //
+  // Tipos 2 (Carta Topográfica) e 3 (Carta Ortoimagem) são o mesmo conjunto que o
+  // 4d já trata como raster-ou-PDF. Ortoimagem pura (4) fica de fora: ela é
+  // imagem, e não carta, e não se espera PDF dela.
+  {
+    codigo: '4h',
+    severidade: 'REVISAR',
+    titulo: 'versao Regular de carta com raster SEM PDF, ou PDF SEM raster',
+    sql: `with e as (
+            select v.id versao_id,v.versao,p.id produto_id,p.nome,p.tipo_produto_id,
+                   bool_or(lower(a.extensao) in ('tif','tiff')) tem_raster,
+                   bool_or(lower(a.extensao)='pdf') tem_pdf
+              from acervo.versao v
+              join acervo.produto p on p.id=v.produto_id
+              join acervo.arquivo a on a.versao_id=v.id and a.tipo_arquivo_id in (1,2)
+             where p.tipo_produto_id in (2,3) and v.tipo_versao_id=1
+             group by 1,2,3,4,5)
+          select versao_id,versao,produto_id,nome,tipo_produto_id,
+                 case when tem_raster then 'falta o PDF' else 'falta o raster (tif/tiff)' end falta
+            from e where tem_raster <> tem_pdf`
   },
 
   // ---- P5: relacionamento ----

@@ -119,7 +119,12 @@ async function proibidoComMensagem(message) {
   return new Error(message);
 }
 
-async function apiRequest(method, endpoint, body = undefined) {
+async function apiRequest(
+  method,
+  endpoint,
+  body = undefined,
+  { envelope = false, aceitaFalhaParcial = false } = {}
+) {
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -158,11 +163,11 @@ async function apiRequest(method, endpoint, body = undefined) {
     throw new Error(`Resposta inválida do servidor (HTTP ${response.status})`);
   }
 
-  if (!response.ok || !json.success) {
+  if (!response.ok || (!json.success && !aceitaFalhaParcial)) {
     throw new Error(json.message || 'Erro na requisição');
   }
 
-  return json.dados;
+  return envelope ? json : json.dados;
 }
 
 /**
@@ -172,6 +177,56 @@ async function apiRequest(method, endpoint, body = undefined) {
  */
 export function apiGet(endpoint) {
   return apiRequest('GET', endpoint);
+}
+
+/**
+ * GET de rota PAGINADA NO SERVIDOR: devolve o envelope inteiro.
+ *
+ * `apiGet` entrega so o `dados`, e para a esmagadora maioria das rotas isso e o
+ * certo -- o resto do envelope e protocolo. As rotas paginadas do `/gerencia`
+ * sao a excecao: elas poem `pagination` ao LADO de `dados`
+ * (`sendJsonAndLog(..., dados, null, { pagination })`), e a contagem total, o
+ * numero de paginas e a pagina atual so existem ali. Lidas por `apiGet`, essas
+ * telas nao teriam como desenhar o rodape, nem como dizer "1-20 de 349".
+ *
+ * Uma funcao propria, e nao um parametro no `apiGet`: quem chama esta sabe que
+ * recebe `{ dados, pagination }`, e nenhuma das dezenas de chamadas existentes
+ * muda de forma.
+ *
+ * @param {string} endpoint
+ * @returns {Promise<{dados:any, pagination?:{totalItems:number, totalPages:number,
+ *   currentPage:number, pageSize:number}}>}
+ */
+export function apiGetPaginado(endpoint) {
+  return apiRequest('GET', endpoint, undefined, { envelope: true });
+}
+
+/**
+ * POST de rota em que FALHA PARCIAL e resultado, e nao erro.
+ *
+ * O envelope do SCA carrega `success`, e o normal e que `success: false`
+ * signifique "nao fez". Ha uma excecao: a rota que opera em LOTE e conclui com
+ * parte feita e parte falhada. `POST /arquivo/renomear-padrao` responde
+ * `sendJsonAndLog(dados.falhas === 0, ...)`, ou seja, HTTP 200, `success` FALSO
+ * e o `dados` inteiro do lado -- com quantos renomearam, quantos faltam e, no
+ * `detalhe`, QUAL arquivo falhou e por que.
+ *
+ * Lida pelo `apiPost`, essa resposta virava excecao e o `dados` era jogado fora
+ * na linha seguinte. O efeito, medido em 2026-08-02: a tela de manutencao tinha
+ * um ramo `if (d.falhas) { mostrarFalhasRenome(d) }` que NUNCA rodava, e o lote
+ * com uma falha em quinhentos arquivos anunciava "0 renomeado(s)" (o contador
+ * soma depois do `await` que lancou) sem dizer qual arquivo travou. O teste nao
+ * pegava porque mockava o SERVICO, e o duble resolvia onde o real rejeitava.
+ *
+ * A guarda de HTTP continua valendo: `!response.ok` lanca do mesmo jeito. O que
+ * esta opcao tolera e so o `success: false` de uma resposta 200 com corpo.
+ *
+ * @param {string} endpoint
+ * @param {Object} body
+ * @returns {Promise<any>} o `dados`, mesmo quando `success` e falso
+ */
+export function apiPostComFalhaParcial(endpoint, body) {
+  return apiRequest('POST', endpoint, body, { aceitaFalhaParcial: true });
 }
 
 /**

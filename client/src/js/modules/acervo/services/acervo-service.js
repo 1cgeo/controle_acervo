@@ -545,3 +545,27 @@ export function enviarArquivosEmVersao(dados, arquivos, onProgress) {
     '/arquivo/upload-web/arquivos', corpoDoEnvio(dados, arquivos), onProgress
   );
 }
+
+// ---- Auditoria dos invariantes logicos ----
+//
+// SEM CACHE, ao contrario do dashboard: auditoria e medicao do AGORA, e quem
+// abre a tela depois de corrigir um defeito precisa ver a contagem cair. Servir
+// do cache mostraria o numero de antes da correcao, que e o modo de falhar mais
+// caro desta tela -- ela existe justamente para dizer se ja acabou.
+//
+// A rota exige gerente no acervo (o administrador global passa por cima).
+
+/**
+ * Roda os invariantes no servidor.
+ *
+ * @param {{severidade?:string, codigos?:string, amostra?:number}} [opcoes]
+ * @returns {Promise<Array<{codigo:string, severidade:string, titulo:string,
+ *   total:number|null, amostra:Array<Object>, truncada?:boolean, erro?:string}>>}
+ */
+export function getAuditoria({ severidade = '', codigos = '', amostra = 50 } = {}) {
+  const params = new URLSearchParams();
+  if (severidade) params.set('severidade', severidade);
+  if (codigos) params.set('codigos', codigos);
+  params.set('amostra', String(amostra));
+  return apiGet(`/acervo/auditoria?${params.toString()}`);
+}

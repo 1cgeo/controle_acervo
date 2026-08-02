@@ -29,6 +29,20 @@
   color: var(--text-primary);
 }
 
+/* A linha que diz o que a tela faz, sob o titulo.
+ *
+ * Mora aqui, ao lado do `.page__title`, e nao no CSS de um modulo: as telas de
+ * auditoria e de administracao do acervo ja a usavam, cada uma por um caminho, e
+ * uma delas escrevia `.page__subtitle` sem que a classe existisse -- o texto
+ * saia com tamanho e cor de corpo, competindo com o `h1`. Uma regra so, e a
+ * proxima tela que precisar dela ja a encontra. */
+.page__subtitle {
+  margin-top: var(--space-xs);
+  max-width: 80ch;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
 .page__actions {
   display: flex;
   align-items: center;

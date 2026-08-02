@@ -18,6 +18,8 @@ import './acervo.css';
 import { renderDashboard } from './pages/dashboard/index.js';
 import { renderBusca } from './pages/busca/index.js';
 import { renderPontoControle } from './pages/ponto_controle/index.js';
+import { renderAdministracao } from './pages/administracao/index.js';
+import { renderAuditoria } from './pages/auditoria/index.js';
 import { registrarEditorGeometria } from './pages/produto/produto-dialog-form.js';
 import { pedirGeometria } from '@components/mapa/editor-geometria.js';
 
@@ -42,6 +44,10 @@ export default {
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'busca', label: 'Busca', icon: ICONS.search, path: '/busca' },
     { id: 'ponto_controle', label: 'Ponto de controle', icon: ICONS.place, path: '/ponto_controle' },
+    // Ultimo item, e nao um grupo colapsavel: e uma tela so. O sidebar a esconde
+    // sozinho de quem nao passa no perfil da rota (podeAbrirRota).
+    { id: 'administracao', label: 'Administração', icon: ICONS.settings, path: '/administracao' },
+    { id: 'auditoria', label: 'Auditoria', icon: ICONS.assignment, path: '/auditoria' },
   ],
 
   rotas: [
@@ -53,5 +59,16 @@ export default {
     // consulta o acervo consulta os pontos. IMPORTAR exige gerente, e o guarda
     // disso e o backend: a tela e so de leitura, nao ha upload aqui.
     { path: '/ponto_controle', render: renderPontoControle, perfil: 'consulta' },
+    // OPERADOR, e nao consulta: e o menor nivel que faz alguma coisa nesta tela.
+    // O proprio GET de volume e operador no servidor, entao quem tem so consulta
+    // abriria uma pagina que so sabe mostrar erro. Excluir, dentro dela, e
+    // gerente, e quem barra e o verifyPerfil.
+    { path: '/administracao', render: renderAdministracao, perfil: 'operador' },
+    // GERENTE, que e exatamente o que a rota GET /api/acervo/auditoria cobra
+    // (o administrador global passa por cima de qualquer modulo). Nao ha nivel a
+    // escolher aqui: pedir menos abriria uma tela que so sabe mostrar 403, e a
+    // saida da auditoria e o formato do acervo inteiro, que serve de mapa para
+    // quem for escrever nele.
+    { path: '/auditoria', render: renderAuditoria, perfil: 'gerente' },
   ],
 };

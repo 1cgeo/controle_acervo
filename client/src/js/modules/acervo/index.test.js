@@ -26,15 +26,19 @@ describe('manifesto do modulo acervo', () => {
     expect(rotaInicial('acervo')).toBe('/acervo/dashboard');
   });
 
-  test('registra o dashboard, a busca e o ponto de controle, com render assincrono', () => {
-    expect(acervo.rotas.map(r => r.path)).toEqual(['/dashboard', '/busca', '/ponto_controle']);
+  test('registra as telas do modulo, com render assincrono', () => {
+    expect(acervo.rotas.map(r => r.path)).toEqual([
+      '/dashboard', '/busca', '/ponto_controle', '/administracao', '/auditoria',
+    ]);
     for (const rota of acervo.rotas) {
       expect(typeof rota.render).toBe('function');
     }
   });
 
-  test('o menu leva as tres telas, sem repetir a tela de usuarios da plataforma', () => {
-    expect(acervo.menu.map(i => i.path)).toEqual(['/dashboard', '/busca', '/ponto_controle']);
+  test('o menu leva as telas do modulo, sem repetir a tela de usuarios da plataforma', () => {
+    expect(acervo.menu.map(i => i.path)).toEqual([
+      '/dashboard', '/busca', '/ponto_controle', '/administracao', '/auditoria',
+    ]);
     expect(acervo.menu.some(i => i.path === '/usuarios')).toBe(false);
   });
 
@@ -59,11 +63,28 @@ describe('manifesto do modulo acervo', () => {
 });
 
 describe('guardas das rotas do acervo', () => {
-  test('toda rota exige ao menos o perfil de consulta NO ACERVO', () => {
+  // Nenhuma rota do acervo e `admin: true`: o modulo se guarda por PERFIL, e a
+  // marca de administrador global fica para rota de plataforma (#/usuarios). Uma
+  // rota de acervo com `admin` seria invisivel ao gerente do modulo, que e
+  // exatamente quem tem de administrar e auditar o acervo.
+  test('toda rota se guarda por perfil no ACERVO, nunca por admin global', () => {
     for (const rota of acervo.rotas) {
       expect(rota.admin).toBeUndefined();
-      expect(rota.perfil).toBe('consulta');
+      expect(['consulta', 'operador', 'gerente']).toContain(rota.perfil);
     }
+  });
+
+  // O nivel de cada tela de ESCRITA fica pinado: ele espelha o verifyPerfil da
+  // rota correspondente no servidor, e afrouxa-lo aqui abriria uma tela que so
+  // sabe mostrar 403. A auditoria e gerente porque GET /api/acervo/auditoria e
+  // gerente; a administracao e operador porque o GET de volume e operador.
+  test('as telas de escrita pedem o nivel que o servidor cobra', () => {
+    const nivel = p => acervo.rotas.find(r => r.path === p).perfil;
+    expect(nivel('/administracao')).toBe('operador');
+    expect(nivel('/auditoria')).toBe('gerente');
+    expect(nivel('/dashboard')).toBe('consulta');
+    expect(nivel('/busca')).toBe('consulta');
+    expect(nivel('/ponto_controle')).toBe('consulta');
   });
 
   test('quem tem consulta no acervo entra no dashboard', () => {

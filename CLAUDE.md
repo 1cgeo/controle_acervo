@@ -118,6 +118,58 @@ SCA não tinha e não poderia ter**.
 
 - **A troca de módulo mora na SIDEBAR, não num dropdown na navbar.** Cada módulo é uma seção colapsável, e o cabeçalho dela leva para a home do módulo. O dropdown existiu por algumas horas em 2026-07-27 e foi recusado pelo chefe. Junto veio a regra que o desenho anterior violava: a sidebar é montada uma vez e **nunca se desmonta**, senão entrar numa rota de plataforma (`#/usuarios`) apaga o menu do módulo.
 - **O administrador global não é coluna da tabela de usuários.** Ele é propriedade da pessoa, então aparece como marca ao lado do nome. Repetir "Administrador" numa coluna por módulo sugere que existe administrador de módulo, que é justamente o que o modelo não tem.
+- **A administração do acervo é UMA tela com abas (`#/acervo/administracao`, 2026-08-02), e não um item de menu por cadastro.** Volume de armazenamento, volume × tipo de produto, projeto e lote só existiam no plugin do QGIS (`ManageVolumesDialog` e irmãos), o que exigia QGIS instalado para uma tarefa sem nada de espacial; as rotas (`/volumes`, `/projetos`) sempre estiveram no servidor. São cadastros que se leem JUNTOS — a associação volume × tipo não se confere sem a lista de volumes, e lote não existe sem projeto —, então quatro itens soltos na sidebar dariam quatro telas de uma linha cada. Abas em dois níveis, e só a ativa no DOM: abrir a tela não dispara as quatro cargas. A rota pede **operador**, e não consulta, porque o próprio `GET /volumes/volume_armazenamento` é operador no servidor: com consulta a tela abriria só para mostrar erro. Dentro dela, editar é operador e **excluir é gerente**, e cada aba esconde o botão que aquele perfil levaria 403 ao usar.
+- **O grupo "Diagnóstico" é GERENTE, um nível acima do que a página pede, e "Verificar volume" vem
+  primeiro porque é ela que ESCREVE.** As quatro rotas (`/gerencia/verificar_inconsistencias`,
+  `/arquivos_incorretos`, `/arquivos_deletados`, `/downloads_deletados`) são `verifyPerfil('gerente')`,
+  então para um operador o grupo seria quatro sub-abas que só sabem responder 403. Dentro dele, a
+  ordem não é alfabética: "Verificar volume" é a única que muda dado, e é ela que grava o status que
+  as outras três leem — sem rodá-la, a lista de arquivos com problema é a foto da última vez que
+  alguém rodou, e não do acervo de hoje. A tela diz isso, porque lista vazia ali se leria como "está
+  tudo certo".
+- **A verificação contra o volume é a única ação sem progresso possível, e o que se mostra é o TEMPO.**
+  Ela relê o byte de todo o acervo para conferir o SHA-256, leva horas em acervo grande e a rota só
+  responde no fim — não existe "40%" a exibir. O contador de tempo decorrido é o acompanhamento
+  honesto: sem ele, uma tela parada por vinte minutos se lê como travada e a pessoa aperta de novo,
+  pagando a releitura duas vezes. A tela também avisa que sair dela não cancela nada no servidor, só
+  perde o resultado. E que a escrita vale nos DOIS sentidos: marca com erro o que não bate e **limpa
+  a marca** do que voltou a bater, o que ninguém espera de algo chamado "verificar".
+- **Paginação de SERVIDOR entrou com componente próprio, e sem busca.** O `data-table` pagina no
+  cliente: recebe a lista inteira e fatia. Isso vale para tudo o que cabe numa resposta e não vale
+  para a lápide do acervo inteiro, então as três listas de diagnóstico usam `paginated: false` (senão
+  a tabela pagina de novo em cima das 20 linhas que o servidor já paginou) mais
+  `components/paginacao/`, que desenha o rodapé com as MESMAS classes `pagination__*` — é o mesmo
+  controle, e duas aparências na mesma tela leriam como coisas diferentes. **Sem `searchable`**: a
+  busca do `data-table` filtra as linhas que ele tem, e sobre uma página de 20 diria "nenhum
+  resultado" para um registro que existe na página 7. O envelope chega por `apiGetPaginado`, função
+  separada porque `pagination` vem ao LADO de `dados` e o `apiGet` o descarta; um parâmetro no
+  `apiGet` mudaria a forma de retorno de dezenas de chamadas existentes. As três telas compartilham
+  `pages/administracao/lista-paginada.js` pelo mesmo motivo que a lápide virou um módulo só no
+  servidor: a terceira cópia do laço é onde a divergência nasce.
+- **A aba "Manutenção" é a única que só o ADMINISTRADOR GLOBAL vê, e é cartão, não tabela.** As quatro
+  rotas dela são `verifyAdmin` e nenhuma é trabalho de módulo: duas mexem no banco inteiro (as visões
+  materializadas), uma renomeia arquivo no VOLUME e uma relê byte para remedir checksum. Para um
+  gerente seria uma aba de quatro botões que só sabem responder 403, então ela nem é montada. É a
+  última do conjunto de propósito: pô-la no caminho de quem veio conferir um volume seria convidá-la.
+  Cartão em vez de tabela porque não são registros que se leem, são operações que se disparam, e cada
+  uma tem três partes na tela — o que faz, **o que NÃO faz** (onde mora o susto: "limpar downloads
+  expirados" se lê como se apagasse arquivo) e o acompanhamento, sem o qual uma ação de minutos
+  parece travada e a pessoa aperta de novo.
+- **O renome padrão é o único que não é um clique, e o LAÇO é do cliente.** `POST /arquivo/renomear-padrao`
+  trabalha por lote de propósito — uma passada inteira numa requisição só seguraria a conexão por
+  dezenas de minutos —, então a tela começa em SIMULAÇÃO (mostra de que nome para qual, sem mudar
+  nada) e depois chama em laço até `restantes` zerar, somando o progresso na tela. O laço para em três
+  casos, e cada um por uma razão: acabou; **houve falha** (insistir repetiria o mesmo erro até o teto
+  de 5.000, e o servidor já interrompe em 20); ou `nesta_chamada` veio zero com `restantes` positivo,
+  que é lote que não anda e seria laço infinito. O botão Aplicar volta a desabilitar depois de rodar:
+  o plano na tela envelheceu, e aplicar de novo sem simular repetiria uma contagem que já não vale.
+  É o mesmo desenho do `NomePadraoDialog` do plugin, pelas mesmas razões.
+- **O `atualizar-checksum` trabalha por ID, e a tela diz de onde os ids saem.** Não existe consulta
+  de "arquivos que precisam de checksum novo": a recompressão acontece fora do sistema. Os ids vêm da
+  amostra dos invariantes `4a` e `4f` da tela de Auditoria, ou de quem recomprimiu, e o campo aceita
+  vírgula, espaço ou quebra de linha para colar de qualquer lugar. O teto de 500 do schema é cobrado
+  na tela: colada uma lista longa, o 400 chegaria com a mensagem crua do Joi.
+- **Nessa tela, as duas caixinhas de "Sim/Não" dizem na tela o que DECIDEM.** `layout_origem` é a porta do `POST /arquivo/catalogar/product`, a única rota que registra arquivo já no disco sem validação de transferência; `primario` é o destino que o upload web escolhe sozinho para aquele tipo de produto. Como colunas mudas, as duas pareceriam preferência de organização, e marcá-las por engano só apareceria depois, em outra tela e para outra pessoa. Por isso o formulário traz a frase e a exclusão do primário avisa que o tipo fica sem destino — o servidor só recusa esse caso quando já **existe** produto do tipo, e com o catálogo vazio a exclusão passa.
 - **O ano de referência é contexto de MÓDULO, e mora na navbar.** Pela fábrica `@store/year-store.js`: chave de `localStorage` e evento são namespaced por módulo (`@sca-mapoteca-ano`, `anochange:mapoteca`), senão escolher 2025 num módulo mudaria o outro sob os pés de quem troca pela sidebar. O seletor é o mesmo componente; a diferença é de política: no orçamento o ano também decide **onde se cadastra**, e por isso ele oferece "+ Outro ano…"; na mapoteca o ano só **filtra o que já aconteceu**. Na mapoteca vale para o dashboard inteiro, pedidos, consumo, RPCMTec e detalhe do material; fica de fora só a lista de **clientes**, que é cadastro e não movimento. Pedidos esteve fora por algumas horas em 2026-07-28 e o chefe reverteu no mesmo dia. O custo, deliberado: o pedido de dezembro concluído em janeiro só aparece trocando o ano na navbar.
 - **No dashboard da mapoteca existem DOIS recortes anuais, e cada aba diz na tela qual é o dela.** Resumo Anual e Mapa contam por data de **entrega** (`FILTRO_ENTREGUE_ANO`); Pedidos e Atendimento, por data do **pedido** (`FILTRO_ANO_PEDIDO`). O pedido de dezembro de 2025 entregue em janeiro de 2026 cai em anos diferentes nos dois, e os dois estão certos. Sem a linha de escopo na tela (`.dashboard__escopo`) os números pareceriam se contradizer. A aba Materiais é meio a meio e também avisa: o consumo é do ano, mas o **estoque é o saldo de hoje** e ignora o seletor, porque "estoque de 2025" não existe; a rota dele é a única do dashboard que não aceita `ano`. As janelas deslizantes ("últimos 6 meses") saíram junto: em 2025 elas continuariam terminando hoje.
 
@@ -155,6 +207,59 @@ SCA não tinha e não poderia ter**.
 - **Produto que JÁ ESTÁ no volume entra por `POST /api/arquivo/catalogar/product`, e o servidor mede o hash.** Passar por `prepare-upload`/`confirm-upload` cobrava por um trabalho que não acontece: o cliente lia o arquivo inteiro para declarar o checksum e o `confirm-upload` lia tudo de novo para conferir uma cópia que nunca houve (362 GB relidos no LOTE_1 do Convênio RS, de 1h20 a 3h), **com essa releitura dentro da transação**, aberta por horas e sem retomada parcial. Agora o servidor lê UMA vez, fora de transação, e grava o checksum e o tamanho que ele mesmo mediu; o cliente não declara nenhum dos dois, e mandá-los é 400, porque descartado em silêncio ele acreditaria ter gravado o que mandou. É a mesma política do `/atualizar-checksum`. O `volume_armazenamento_id` vem no CORPO: no upload o volume é o primário do tipo de produto, porque o servidor escolhe para onde copiar, e aqui é onde o arquivo já está. **A rota só aceita volume com `layout_origem = true`**, e essa é a porta que a impede de virar atalho para pular a validação de transferência no acervo comum. Unicidade física, identidade do produto, sequência de versão e existência do arquivo continuam valendo. Junto veio a validação de travessia de caminho (`utils/caminho_volume.js`), que **não existia**: `path.join` não protege contra `..`. Só cobre produto novo; versão e arquivo avulsos continuam no `prepare-upload`.
 
 - **A LÁPIDE do arquivo excluído mora num módulo só, e o vínculo com o download casa por `uuid_arquivo`, nunca por ordem.** Excluir no acervo copia o arquivo para `acervo.arquivo_deletado` e leva os downloads dele junto. Esse bloco de ~55 linhas, com 21 colunas escritas à mão, estava copiado em TRÊS lugares (`deleteArquivos`, `deleteVersoes`, `deleteProdutos`), e só o primeiro tinha teste — por uma rota, que provava a contagem e não as colunas. Acrescentar coluna a `acervo.arquivo` exigia lembrar dos três, e esquecer um não dá erro: a lápide nasce com o campo nulo e a falta só aparece quando alguém for procurar o dado. Hoje é `arquivo/arquivo_deletado.js`, na feature dona de `acervo.arquivo`, pelo mesmo desenho de `mapoteca/query_fragments.js`. Como todo dado da lápide sai da PRÓPRIA `acervo.arquivo`, virou `INSERT ... SELECT` com CTE: apagar um produto com 400 arquivos era **2.000 idas ao banco dentro de uma transação, e passou a 4**, independente da quantidade. O pareamento download → lápide usa `RETURNING id, uuid_arquivo` casado com `acervo.arquivo.uuid_arquivo` (que é UNIQUE), e **não** a ordem em que o banco devolve os ids: por ordem funcionaria hoje e trocaria os downloads de dois arquivos no dia em que o plano mudasse, sem erro nenhum e com as contagens ainda batendo. É o caso que `__tests__/integration/exclusao_acervo.test.js` guarda, com quantidades diferentes de download por arquivo justamente para que a troca apareça.
+
+### Auditoria dos invariantes na web (2026-08-02)
+
+O motor é o de sempre (`acervo/invariantes.js`, `GET /api/acervo/auditoria`, `verifyPerfil('gerente')`).
+O que entrou foi a TERCEIRA porta para ele: `#/acervo/auditoria`. As outras duas, o CLI
+(`acervo auditar`) e o diálogo do QGIS, exigem instalar alguma coisa, e gerente que só usa o
+navegador não tinha como ver o estado do acervo.
+
+- **`4a`, `4f` e `4g` acusavam DEFECT em TODO tileserver, e nada acusava isso.** `er/acervo.sql`
+  EXIGE por CHECK que `tipo_arquivo_id = 9` tenha `checksum`, `tamanho_mb` e `volume_armazenamento_id`
+  nulos — era um DEFECT impossível de zerar, porque zerá-lo violaria o schema. O `7a` e o `7b` já
+  traziam o `<> 9`; os três vieram do script do vault sem ele. Depois do filtro, `4a` e `4g` vivem em
+  ZERO como o `3c` (o CHECK impede o caso real), e o teste que documenta isso é o que impede alguém
+  de "limpar" os dois achando que pararam de olhar. O `4f` continua provocável: o CHECK só exige
+  `tamanho_mb` NOT NULL, e zero passa por ele.
+- **"Planejada COM arquivo" não é defeito, e por isso o invariante é o INVERSO.** Dar arquivo a uma
+  Planejada é o caminho de conclusão de `POST /api/arquivo/upload-web/arquivos`, que **não muda o tipo
+  da versão** de propósito. Um invariante escrito como pedido ("planejada com arquivo") acusaria toda
+  folha concluída pela web e nunca zeraria. O que ficou é `3j` REVISAR: promessa VENCIDA, com
+  `data_edicao` no passado e ainda sem arquivo nenhum.
+- **O `3i` mede a SÉRIE, que é o que o `3c` e o `3d` não enxergam.** Os dois olham uma versão isolada;
+  a 2ª Edição datada antes da 1ª passa nos dois. O ordinal é o inteiro à esquerda do rótulo, e serve
+  aos dois formatos que `acervo.validate_version` aceita. Particiona por SUBTIPO porque o produto
+  civil abrange T34-700(2) e ET-RDG(12) nas versões: são duas séries no mesmo registro, e compará-las
+  entre si acusaria erro onde há duas numerações independentes. **Conta VERSÃO, e não PAR**: o
+  auto-join produz uma linha por (maior, menor), então uma 1ª Edição com a data errada acusava uma
+  vez para CADA edição posterior, e um único registro errado virava "3 ocorrências" num invariante
+  cuja regra é dar zero. O `distinct on (maior.id)` com `order by menor.data_edicao desc` deixa uma
+  linha por versão, trazendo o pior infrator. O `versao_id` é o da MAIOR e nem sempre é o registro
+  errado (quando a menor está no futuro, a maior só denuncia): por isso as duas edições e as duas
+  datas saem no resultado, e quem tria decide qual corrigir.
+- **O `4h` (par raster/PDF da carta) nasceu REVISAR, e a promoção a DEFECT é commit próprio.** Ninguém
+  mediu quantas folhas do acervo legado têm só um dos dois, e DEFECT que não zera envenena a auditoria
+  inteira (a lição do `3f` e do `1i`). Só conta `tipo_arquivo_id` 1 e 2: um PDF cadastrado como
+  Documentos(6) contaria como se o PDF da carta existisse, e a falta sumiria.
+- **Abrir a tela NÃO mede nada, e o filtro de severidade é do CLIENTE.** São dezenas de consultas numa
+  transação só, o controller materializa TODAS as linhas de cada invariante para depois fatiar a
+  amostra, e o `7a` deriva o nome padrão de cada arquivo do acervo. Rodando na montagem, um clique
+  errado na sidebar custava uma auditoria inteira e voltar de outra tela custava outra; hoje só o
+  botão mede. O servidor aceita `?severidade=`, e a tela não usa, porque de lá o custo é pago de novo
+  a cada clique no combo. **O último resultado sobrevive à troca de tela, DATADO** ("Medido às
+  10:52"): guardar não é cachear, e a hora ao lado do número é o que impede o modo de falhar caro
+  desta tela, que é mostrar a contagem de antes da correção para quem acabou de corrigir. E **só
+  pinta a linha que TEM ocorrência**: um DEFECT com zero é boa notícia, e pintá-lo faria a tela
+  parecer cheia de problema no dia em que o acervo está limpo. As colunas da amostra saem do PRÓPRIO
+  resultado, como no diálogo do plugin: uma tabela fixa esconderia justamente a coluna que explica a
+  ocorrência.
+- **O teste da rota entra com token de ADMINISTRADOR, e por isso um caso prova a guarda de perfil.**
+  A rota é `verifyPerfil('gerente')`; o administrador global passa em qualquer módulo pela flag, então
+  trocá-la para `verifyAdmin` não quebraria nenhum dos outros 40 casos, e o gerente perderia a tela
+  em silêncio. É a mesma classe de defeito do 403 da mapoteca: o usuário da semente tinha perfil
+  demais e o caso real nunca aparecia. O caso troca o perfil do `test_user` no acervo e o devolve,
+  provando os dois lados — operador leva 403, gerente entra.
 
 ### Escrita do acervo pela interface web (2026-08-01)
 
