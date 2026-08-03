@@ -36,7 +36,9 @@ O banco `sca` fica na rede interna: veja `DB_SERVER` e `DB_PORT`. Clientes de lo
    Sobe um processo PM2: `controle-acervo` (3015). A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) + `pm2 save`.
 
-O banco precisa estar na versao **1.12.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
+O banco precisa estar na versao **1.18.0**. O server recusa subir com banco abaixo do `MIN_DATABASE_VERSION` (`semver.lt`), e aceita banco a frente. Migracoes em `migrations/`, aplicadas em ordem de data.
+
+**A versao do banco NAO diz quais migracoes faltam.** Varias delas nao mexem no numero (as de 2026-07-29 e 2026-07-30, por exemplo), e duas do mesmo dia nao se ordenam pelo nome do arquivo. Antes de atualizar um banco, MEÇA o que ja esta la, objeto por objeto (a tabela existe? a coluna existe? o indice existe?), e monte a lista de pendentes a partir da medicao. Medido assim em 2026-08-03, um banco que se dizia 1.10.0 tinha dez migracoes pendentes, e tres que pareciam pendentes ja estavam aplicadas e superadas por migracoes posteriores.
 
 ## Smoke tests
 

@@ -248,6 +248,29 @@ CREATE TABLE acervo.arquivo(
 CREATE INDEX idx_arquivo_metadato ON acervo.arquivo USING GIN (metadado);
 CREATE INDEX idx_arquivo_tipo_arquivo ON acervo.arquivo(tipo_arquivo_id);
 CREATE INDEX idx_arquivo_versao ON acervo.arquivo(versao_id);
+
+-- Unicidade do NOME FISICO. O servidor monta o download como
+-- <volume>/<nome_arquivo>.<extensao>, entao o trio e a chave fisica: dois
+-- registros com o mesmo trio apontam para o MESMO byte no disco, e um
+-- sobrescreve o outro em silencio.
+--
+-- SAO DOIS indices, e o segundo nao e redundancia. O Postgres distingue caixa e
+-- o SMB do volume NAO: sem o indice em lower(), "CT_s02_2834-1_ed1.tif" e
+-- "ct_s02_2834-1_ed1.TIF" passam como duas linhas e disputam UM arquivo.
+--
+-- Tileserver (tipo_arquivo_id = 9) fica de fora: ali nome_arquivo e uma URL e
+-- volume_armazenamento_id e NULL, por arquivo_check1.
+--
+-- Vieram da migracao 2026-07-29_nome_fisico_unico.sql e ficaram fora daqui ate
+-- 2026-08-03, quando o ensaio de convergencia os achou: o banco ATUALIZADO os
+-- tinha e a INSTALACAO NOVA nascia sem eles.
+CREATE UNIQUE INDEX unique_nome_fisico_por_volume
+  ON acervo.arquivo (volume_armazenamento_id, nome_arquivo, extensao)
+  WHERE tipo_arquivo_id <> 9;
+
+CREATE UNIQUE INDEX unique_nome_fisico_por_volume_ci
+  ON acervo.arquivo (volume_armazenamento_id, lower(nome_arquivo), lower(extensao))
+  WHERE tipo_arquivo_id <> 9;
 CREATE INDEX idx_lote_projeto ON acervo.lote(projeto_id);
 CREATE INDEX idx_versao_lote ON acervo.versao(lote_id);
 

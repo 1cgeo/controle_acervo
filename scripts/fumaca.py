@@ -152,7 +152,10 @@ checa('configuracao singleton', c == 200 and bool(cfg), f'HTTP {c}, ano_referenc
 if ano:
     lista([
         (f'/api/orcamento/pdr?ano={ano}', f'itens do PDR de {ano}', 1),
-        (f'/api/orcamento/metas?ano={ano}', 'metas do PIT', 1),
+        # As metas do PIT sairam do orcamento em 2026-07-31 e viraram rota de
+        # PLATAFORMA, sem prefixo de modulo, como /usuarios: os tres modulos
+        # consomem o plano anual e nenhum e dono dele.
+        (f'/api/metas?ano={ano}', 'metas do PIT', 1),
     ], tok)
 
     c, b = chamar(f'/api/orcamento/dashboard/execucao_nd?ano={ano}&mes=6', token=tok)
@@ -167,14 +170,20 @@ checa('anexos de NC (conteudo BYTEA)', c == 200, f"HTTP {c}, {len(b.get('dados')
 secao('RPCMTec (plataforma, fora dos tres modulos)')
 # Desde 2026-08-01 o relatorio inteiro sai de um gerador so. Antes eram dois
 # (/api/relatorio/rpcmtec e /api/orcamento/relatorio/secao3), com numeracao
-# propria cada um, e alguem colava um arquivo no outro. As 16 subsecoes sao as
-# que o SCA preenche INTEIRAS hoje; menos que isso e regressao.
+# propria cada um, e alguem colava um arquivo no outro.
+#
+# O piso e 18, que sao as subsecoes que o SCA preenche INTEIRAS desde 2026-08-02
+# (o dia em que ele absorveu do SAP a 2.1, a 2.6, a 3.3, a 6.1 e a 6.2). MENOS
+# que isso e regressao; MAIS e crescimento, e por isso a comparacao e >= e nao
+# ==. A igualdade travava a fumaca no numero de ontem: ela reprovava com 18
+# contra 13 enquanto o gerador estava certo, e portao que falha sempre ensina a
+# ignorar portao.
 c, b = chamar('/api/rpcmtec/gerar?ano=2026&mes=6', token=tok)
 secoes = (b.get('dados') or {}).get('secoes') or []
 subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
 checa('RPCMTec inteiro, na numeracao do documento da Divisao',
-      c == 200 and len(subsecoes) == 13,
-      f'HTTP {c}, {len(secoes)} secoes / {len(subsecoes)} subsecoes')
+      c == 200 and len(subsecoes) >= 18,
+      f'HTTP {c}, {len(secoes)} secoes / {len(subsecoes)} subsecoes (piso 18)')
 
 c, b = chamar('/api/rpcmtec/anuario?ano=2026&mes=6', token=tok)
 d = b.get('dados') or {}
