@@ -74,8 +74,14 @@ dotenv.config({
 // 3.3 passa a fazer JOIN em `dominio.origem_meta` e a contar as versoes
 // materializadas: num banco 1.19.0 as duas colunas nao existem e a listagem da
 // demanda quebra.
+// 1.21.0 da REVISOES ao PIT (2026-08-04): a meta se separa entre identidade
+// (`pit.meta`) e o que a DSG declara (`pit.meta_revisao`), e nascem
+// `pit.exercicio`, `pit.revisao` e o anexo do documento assinado. Exigida porque
+// a leitura da meta passa a sair da view `pit.meta_vigente` e da funcao
+// `pit.meta_em(data)`: num banco 1.20.0 as duas nao existem, e a grade, a lista
+// de metas e a subsecao 2.1 do RPCMTec quebram juntas.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.20.0'
+const MIN_DATABASE_VERSION = '1.21.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

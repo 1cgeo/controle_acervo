@@ -203,9 +203,11 @@ describe('A folha cumpre o plano OU é a exceção', () => {
   test('o banco recusa meta e demanda na mesma versão', async () => {
     const criada = await criar({ origem_id: PRODUCAO })
     const meta = await conn.one(
-      `INSERT INTO pit.meta (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
-       VALUES (2026, 1, '1.1', 'Meta de teste', (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
-       ON CONFLICT (ano, numero_meta, item) DO UPDATE SET descricao = EXCLUDED.descricao
+      // Só a IDENTIDADE: a descrição mora em pit.meta_revisao desde 2026-08-04,
+      // e este caso não precisa dela. O que se prova aqui é o CHECK do banco.
+      `INSERT INTO pit.meta (ano, numero_meta, item, usuario_cadastramento_uuid)
+       VALUES (2026, 1, '1.1', (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+       ON CONFLICT (ano, numero_meta, item) DO UPDATE SET ano = EXCLUDED.ano
        RETURNING id`
     )
     const produto = await produtoNovo()

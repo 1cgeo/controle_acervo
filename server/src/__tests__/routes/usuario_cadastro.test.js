@@ -804,6 +804,27 @@ const COBERTAS = new Set([
   'POST /metas/midia',
   'PUT /metas/midia/:id',
   'DELETE /metas/midia/:id',
+  // Exercicio e REVISAO do PIT (2026-08-04). A DSG revisa o plano durante a
+  // execucao, e alterar o PIT e cancelar, alterar e adicionar meta: as tres
+  // caem em `pit.meta_revisao`, dentro da revisao aberta.
+  //
+  // O exercicio e a revisao sao auditados no agregado do EXERCICIO, e a linha de
+  // declaracao no da META: a pergunta "o que mudou no PIT de 2026" e diferente
+  // de "por que a 4.2 virou 252", e cada uma se faz numa tela.
+  'POST /metas/exercicios',
+  'PUT /metas/exercicios/:ano',
+  'POST /metas/revisoes',
+  'PUT /metas/revisoes/:revisaoId',
+  'DELETE /metas/revisoes/:revisaoId',
+  // PUBLICAR e o ato que faz a revisao passar a reger, e por isso e rota
+  // propria: ele nao muda o que a revisao diz, muda desde quando ela vale.
+  'POST /metas/revisoes/:revisaoId/publicar',
+  'POST /metas/revisoes/:revisaoId/anexos',
+  'DELETE /metas/revisoes/anexo/:anexoId',
+  // CORRIGIR TRANSCRICAO, e nao alterar o PIT. Rota separada de propósito: quem
+  // digitou 53 onde o documento diz 35 nao pode precisar inventar uma revisao
+  // que a DSG nao emitiu, e o motivo e obrigatorio para separar as duas.
+  'PUT /metas/:id/transcricao',
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
   'DELETE /rpcmtec/:id',

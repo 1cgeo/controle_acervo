@@ -430,7 +430,7 @@ controller.getPedidos = async (ano) => {
     LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
     LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
-    LEFT JOIN pit.meta AS mp ON mp.id = p.meta_pit_id
+    LEFT JOIN pit.meta_vigente AS mp ON mp.id = p.meta_pit_id
     WHERE ${filtroAno('p.data_pedido')}
     ORDER BY p.data_pedido DESC
   `, { ano });
@@ -685,7 +685,7 @@ controller.getPedidoById = async (pedidoId) => {
       LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
       LEFT JOIN dgeo.usuario AS uc ON uc.id = p.usuario_criacao_id
       LEFT JOIN dgeo.usuario AS ua ON ua.id = p.usuario_atualizacao_id
-      LEFT JOIN pit.meta AS mp ON mp.id = p.meta_pit_id
+      LEFT JOIN pit.meta_vigente AS mp ON mp.id = p.meta_pit_id
       WHERE p.id = $1
     `, [pedidoId]);
 

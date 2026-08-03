@@ -38,12 +38,21 @@ describe('pit_ctrl', () => {
     await ctrl.listar()
     // A chamada sem filtro usa apenas a query (sem objeto de parametros de ano).
     expect(mockDb.conn.any).toHaveBeenCalledWith(
-      expect.stringContaining('FROM pit.meta')
+      expect.stringContaining('FROM pit.meta_vigente')
     )
   })
 
-  test('criar insere a meta na transacao SEM validar exercicio', async () => {
-    mockDb.conn.one.mockResolvedValueOnce({ id: 9 }) // INSERT RETURNING id
+  // O exercicio VIGENTE e a revisao ABERTA, que toda escrita de meta consulta
+  // desde 2026-08-04.
+  const comRevisaoAberta = () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 7, codigo: 'R1' })
+  }
+
+  test('criar insere a IDENTIDADE e declara a meta na revisao aberta', async () => {
+    comRevisaoAberta()
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9 })
 
     const r = await ctrl.criar(
       { ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' },
@@ -52,17 +61,38 @@ describe('pit_ctrl', () => {
 
     expect(r).toEqual({ id: 9 })
     expect(mockDb.conn.tx).toHaveBeenCalledTimes(1)
-    // NAO checa a existencia de exercicio: nenhum oneOrNone antes do INSERT.
-    expect(mockDb.conn.oneOrNone).not.toHaveBeenCalled()
+    // A identidade: sem descricao, sem quantidade, sem prazo.
     expect(mockDb.conn.one).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO pit.meta'),
       expect.objectContaining({ ano: 2026, numero_meta: 1, usuarioUuid: 'uuid-1' })
     )
+    // A declaracao, na revisao que a autoriza.
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO pit.meta_revisao'),
+      expect.objectContaining({ revisaoId: 7, descricao: 'Meta 1' })
+    )
+  })
+
+  test('criar sem revisao aberta recusa, e nao grava nada', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+
+    await expect(ctrl.criar(
+      { ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' },
+      'uuid-1'
+    )).rejects.toThrow(/revis/i)
+
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
   })
 
   test('atualizar atualiza a meta existente', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5 }) // meta existe
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 }) // UPDATE RETURNING id
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ // a declaracao vigente, igual
+      descricao: 'Nova', quantidade_prevista: null, prazo: null,
+      demandante: null, cancelada: false
+    })
 
     const r = await ctrl.atualizar(
       5,

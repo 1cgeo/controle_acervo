@@ -185,7 +185,7 @@ const CELULAS = `
       UNION
       SELECT meta_id, mes FROM calculada
     ) AS ms
-    INNER JOIN pit.meta AS m ON m.id = ms.meta_id
+    INNER JOIN pit.meta_vigente AS m ON m.id = ms.meta_id
     LEFT JOIN pit.execucao AS e ON e.meta_id = ms.meta_id AND e.mes = ms.mes
     LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
   )
@@ -215,13 +215,12 @@ controller.grade = async ano => {
             m.prazo::text AS prazo,
             m.origem_id,
             (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
-            m.situacao_id,
-            (SELECT nome FROM dominio.situacao_meta WHERE code = m.situacao_id) AS situacao,
+            m.cancelada, m.revisao, m.revisao_id,
             ${EH_FOLHA} AS folha,
             COALESCE(mes.lista, '[]'::json) AS meses,
             COALESCE(tot.realizado, 0) AS realizado,
             COALESCE(tot.planejado, 0) AS planejado
-     FROM pit.meta AS m
+     FROM pit.meta_vigente AS m
      LEFT JOIN LATERAL (
        SELECT json_agg(json_build_object(
                 'id', x.id,
@@ -273,8 +272,7 @@ controller.resumoDoAno = async (ano, mes) => {
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
             m.origem_id,
-            m.situacao_id,
-            (SELECT nome FROM dominio.situacao_meta WHERE code = m.situacao_id) AS situacao,
+            m.cancelada, m.revisao, m.revisao_id,
             ${EH_FOLHA} AS folha,
             COALESCE(SUM(e.realizada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
@@ -287,10 +285,23 @@ controller.resumoDoAno = async (ano, mes) => {
             COALESCE(SUM(e.planejada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
             ), 0)::int AS planejado_ate
-     FROM pit.meta AS m
+     -- A REVISAO VIGENTE NAQUELE MES, e nao a de hoje (2026-08-04). O RPCMTec
+     -- de agosto tem de continuar reportando o que reportava depois de a DSG
+     -- publicar uma revisao em setembro. Sem mes, vale a de hoje.
+     FROM pit.meta_em(
+       CASE WHEN $<mes>::smallint IS NULL THEN CURRENT_DATE
+            ELSE (make_date($<ano>::int, $<mes>::int, 1)
+                  + INTERVAL '1 month' - INTERVAL '1 day')::date
+       END
+     ) AS m
      LEFT JOIN celula AS e ON e.meta_id = m.id
      WHERE m.ano = $<ano>
-     GROUP BY m.id
+     -- TODAS as colunas, e não só m.id: pit.meta_em é FUNÇÃO, e o PostgreSQL só
+     -- dispensa as demais quando o agrupamento é pela chave primária de uma
+     -- TABELA. Com pit.meta isso funcionava; aqui não.
+     GROUP BY m.id, m.ano, m.numero_meta, m.item, m.descricao, m.unidade,
+              m.demandante, m.quantidade_prevista, m.prazo, m.origem_id,
+              m.cancelada, m.revisao, m.revisao_id
      ORDER BY m.numero_meta, m.item NULLS FIRST`,
     { ano, mes: mes === undefined ? null : mes }
   )
@@ -352,7 +363,7 @@ controller.ensaio = async (ano, metaId) => {
        UNION
        SELECT meta_id, mes FROM calculada
      ) AS ms
-     INNER JOIN pit.meta AS m ON m.id = ms.meta_id
+     INNER JOIN pit.meta_vigente AS m ON m.id = ms.meta_id
      LEFT JOIN pit.execucao AS e ON e.meta_id = ms.meta_id AND e.mes = ms.mes
      LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
      WHERE m.ano = $<ano>

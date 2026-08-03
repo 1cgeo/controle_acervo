@@ -19,20 +19,28 @@ models.listarQuery = Joi.object().keys({
   ano: Joi.number().integer()
 })
 
-// O que o PIT promete no item. Os quatro são OPCIONAIS, e omitir vale nulo: a
-// linha de cabeçalho da meta não promete quantidade nenhuma (quem promete são
-// os itens que ela agrupa), e o PIT de 2025 foi cadastrado só no nível da meta.
+// O que a DSG DECLARA sobre o item, e que vai para a linha da revisão
+// (2026-08-04). Os quatro primeiros são OPCIONAIS, e omitir vale nulo: a linha
+// de cabeçalho da meta não promete quantidade nenhuma (quem promete são os itens
+// que ela agrupa), e o PIT de 2025 foi cadastrado só no nível da meta.
+//
+// `descricao` é a frase da DSG, e ela JÁ contém o demandante e a quantidade
+// ("Carta Topográfica 1:25.000. COTER, 24"): por isso os três andam juntos.
 const promessa = {
   quantidade_prevista: Joi.number().integer().strict().min(0).allow(null),
-  unidade: Joi.string().max(50).allow(null, ''),
   demandante: Joi.string().max(255).allow(null, ''),
   prazo: dia.allow(null, ''),
-  // Prevista, Em execução, Concluída ou Cancelada (2026-08-03). OPCIONAL, e o
-  // nulo é uma afirmação: ninguém classificou. Entrou porque meta CANCELADA não
-  // tinha onde ser dita: as 5.2 e 5.3 de 2026 só se distinguiam por terem
-  // quantidade prevista zero, o que ninguém lê como cancelamento.
+  // O ÚNICO ato de situação que é da DSG (2026-08-04). Substituiu o
+  // `situacao_id` de quatro estados: 'Em execução' e 'Concluída' a grade calcula
+  // do que foi lançado, e status digitado ao lado de status calculado é a
+  // segunda verdade que este módulo vem eliminando.
+  cancelada: Joi.boolean(),
+  // O QUE A META CONTA: 1 Folha, 2 Marco, 3 Capacitação, 4 Item de acervo, 5
+  // Atividade. Classificação NOSSA, não da DSG, e por isso muda sem revisão.
   //
-  situacao_id: Joi.number().integer().strict().min(1).max(4).allow(null),
+  // A coerência com a origem é cobrada no controller: Produção e Impressão
+  // exigem Folha, e Capacitação exige Capacitação.
+  unidade_id: Joi.number().integer().strict().min(1).max(5).allow(null),
   // De onde vem o NÚMERO da meta: 1 Manual, 2 Capacitação, 3 Produção, 4
   // Impressão. Omitir vale 1, que é o que toda meta já é.
   //
@@ -47,7 +55,9 @@ models.criar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  descricao: Joi.string().allow(null, ''),
+  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão declara, e a
+  // coluna de `pit.meta_revisao` é NOT NULL.
+  descricao: Joi.string().required(),
   ...promessa
 })
 
@@ -55,7 +65,9 @@ models.atualizar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  descricao: Joi.string().allow(null, ''),
+  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão declara, e a
+  // coluna de `pit.meta_revisao` é NOT NULL.
+  descricao: Joi.string().required(),
   ...promessa
 })
 
@@ -145,5 +157,79 @@ const midiaMeta = {
 models.criarMidiaMeta = Joi.object().keys({ ...midiaMeta })
 
 models.atualizarMidiaMeta = Joi.object().keys({ ...midiaMeta })
+
+// --- Exercício e revisão do PIT ---------------------------------------------
+
+models.anoParams = Joi.object().keys({
+  ano: Joi.number().integer().min(2000).max(2100).required()
+})
+
+models.criarExercicio = Joi.object().keys({
+  ano: Joi.number().integer().strict().min(2000).max(2100).required(),
+  // 1 Em elaboração, 2 Vigente, 3 Encerrado. Omitir vale Vigente.
+  situacao_id: Joi.number().integer().strict().min(1).max(3),
+  observacao: Joi.string().allow(null, '')
+})
+
+models.atualizarExercicio = Joi.object().keys({
+  situacao_id: Joi.number().integer().strict().min(1).max(3).required(),
+  observacao: Joi.string().allow(null, '')
+})
+
+models.revisaoQuery = Joi.object().keys({
+  ano: Joi.number().integer()
+})
+
+// A revisão NASCE RASCUNHO: `data_vigencia` não entra aqui de propósito. Ela é
+// preenchida na publicação, depois de o gerente conferir as alterações contra o
+// documento. Aceitar a data no cadastro faria a grade mudar antes da conferência.
+const revisao = {
+  codigo: Joi.string().max(20).required(),
+  // A data do fecho do documento, que NÃO é a da assinatura digital: o R1 de
+  // 2026 traz "Brasília-DF, 11 de maio de 2026" e o Diretor assinou em 14/05.
+  data_documento: dia.allow(null, ''),
+  data_assinatura: dia.allow(null, ''),
+  assinante: Joi.string().max(255).allow(null, ''),
+  observacao: Joi.string().allow(null, '')
+}
+
+models.criarRevisao = Joi.object().keys({
+  ano: Joi.number().integer().strict().required(),
+  ...revisao
+})
+
+models.atualizarRevisao = Joi.object().keys({ ...revisao })
+
+// PUBLICAR. A data pode ser RETROATIVA, e às vezes tem de ser: o R1 de 2026 foi
+// assinado em 14/05 e o documento é de 11/05. Quem escolhe é quem publica.
+models.publicarRevisao = Joi.object().keys({
+  data_vigencia: dia.required()
+})
+
+// CORRIGIR TRANSCRIÇÃO, e não alterar o PIT. O motivo é OBRIGATÓRIO: é ele que
+// separa "digitei errado" de "a DSG mudou", que é a distinção inteira.
+models.corrigirTranscricao = Joi.object().keys({
+  descricao: Joi.string().required(),
+  quantidade_prevista: Joi.number().integer().strict().min(0).allow(null),
+  demandante: Joi.string().max(255).allow(null, ''),
+  prazo: dia.allow(null, ''),
+  cancelada: Joi.boolean(),
+  motivo: Joi.string().min(5).required()
+})
+
+models.revisaoIdParams = Joi.object().keys({
+  revisaoId: Joi.number().integer().required()
+})
+
+models.anexoIdParams = Joi.object().keys({
+  anexoId: Joi.number().integer().required()
+})
+
+// Vem em multipart, então tudo chega como TEXTO: `tipo_anexo_id` sem
+// `.strict()`, ao contrário do resto do arquivo.
+models.anexoUploadBody = Joi.object().keys({
+  tipo_anexo_id: Joi.number().integer().min(1).max(4),
+  descricao: Joi.string().allow(null, '')
+})
 
 module.exports = models

@@ -56,7 +56,7 @@ const colunas = `dm.id, dm.ano, dm.tipo_midia_id, tm.nome AS tipo_midia,
 
 const de = `FROM mapoteca.midia_meta_pit AS dm
   INNER JOIN mapoteca.tipo_midia AS tm ON tm.code = dm.tipo_midia_id
-  INNER JOIN pit.meta AS m ON m.id = dm.meta_pit_id`
+  INNER JOIN pit.meta_vigente AS m ON m.id = dm.meta_pit_id`
 
 controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
@@ -97,7 +97,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     // conflito chega como 500 do banco.
     const existente = await t.oneOrNone(
       `SELECT dm.id, m.item FROM mapoteca.midia_meta_pit AS dm
-       INNER JOIN pit.meta AS m ON m.id = dm.meta_pit_id
+       INNER JOIN pit.meta_vigente AS m ON m.id = dm.meta_pit_id
        WHERE dm.ano = $<ano> AND dm.tipo_midia_id = $<tipoMidiaId>`,
       { ano: dados.ano, tipoMidiaId: dados.tipo_midia_id }
     )

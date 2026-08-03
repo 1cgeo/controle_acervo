@@ -396,18 +396,46 @@ INSERT INTO dominio.origem_meta (code, nome) VALUES
 (3, 'Produção'),
 (4, 'Impressão');
 
--- Os MESMOS quatro estados de `dominio.situacao_capacitacao`, e de propósito:
--- meta cancelada e capacitação cancelada são a mesma ideia, e dois vocabulários
--- para ela divergiriam na primeira palavra acrescentada a um só.
-CREATE TABLE dominio.situacao_meta(
+-- NÃO EXISTE `dominio.situacao_meta`. Ela existiu por um dia, em 2026-08-03,
+-- com quatro estados. Dos quatro, só 'Cancelada' era ato da DSG, e por isso
+-- virou o booleano `pit.meta_revisao.cancelada`; 'Em execução' e 'Concluída' a
+-- grade calcula do que foi lançado, e status digitado ao lado de status
+-- calculado é a segunda verdade que este banco vem eliminando.
+
+-- O QUE A META DO PIT CONTA (2026-08-04). Antes era texto livre em
+-- `pit.meta.unidade`, com 13 valores: 'carta' e 'folha' para a mesma coisa, e 12
+-- itens SEM unidade nenhuma, incluindo as duas metas que já calculam sozinhas.
+--
+-- Cinco códigos, e o corte é por como se conta. Folha absorve carta e CDGV
+-- (decisão do chefe, 2026-08-04). Marco é entregável único, e Atividade é o que
+-- se repete no ano (12 atualizações de conteúdo). Item de acervo é o que a APHC
+-- cataloga ou digitaliza.
+--
+-- A COERÊNCIA COM A ORIGEM é cobrada pelo controlador: origem Produção e
+-- Impressão exigem Folha, e Capacitação exige Capacitação. É o que impede virar
+-- automática uma meta cuja unidade não é a que a origem sabe contar.
+CREATE TABLE dominio.unidade_meta(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL UNIQUE
 );
 
-INSERT INTO dominio.situacao_meta (code, nome) VALUES
-(1, 'Prevista'),
-(2, 'Em execução'),
-(3, 'Concluída'),
-(4, 'Cancelada');
+INSERT INTO dominio.unidade_meta (code, nome) VALUES
+(1, 'Folha'),
+(2, 'Marco'),
+(3, 'Capacitação'),
+(4, 'Item de acervo'),
+(5, 'Atividade');
+
+-- O estado do ANO do PIT. 'Encerrado' é o que faz o servidor recusar lançamento
+-- em ano fechado.
+CREATE TABLE dominio.situacao_exercicio(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.situacao_exercicio (code, nome) VALUES
+(1, 'Em elaboração'),
+(2, 'Vigente'),
+(3, 'Encerrado');
 
 COMMIT;

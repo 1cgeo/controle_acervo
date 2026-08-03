@@ -33,12 +33,26 @@ beforeEach(() => mockDb.reset())
  * autor que o MAPA resolve. A meta do PIT nao tem teste contra banco de verdade,
  * e sem isto a rota poderia deixar de auditar sem nada acusar.
  */
-const eventoAuditado = () => {
-  const chamadas = mockDb.conn.none.mock.calls.filter(
-    ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento')
-  )
+const eventosAuditados = () =>
+  mockDb.conn.none.mock.calls
+    .filter(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento'))
+    .map(c => c[1])
+
+// Desde 2026-08-04 uma escrita de meta gera DOIS eventos: a identidade
+// (`pit.meta`) e o que a revisao declara (`pit.meta_revisao`). `tabela` diz de
+// qual deles se quer falar.
+const eventoAuditado = (tabela = 'pit.meta') => {
+  const chamadas = eventosAuditados().filter(e => e.tabela === tabela)
   expect(chamadas).toHaveLength(1)
-  return chamadas[0][1]
+  return chamadas[0]
+}
+
+// O exercicio VIGENTE e a revisao ABERTA, que toda escrita de meta consulta
+// antes de gravar. Sem elas o controller recusa com 400, que e o comportamento
+// desejado e tem teste proprio.
+const comRevisaoAberta = () => {
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 7, codigo: 'R1' })
 }
 
 describe('GET /metas', () => {
@@ -74,35 +88,112 @@ describe('POST /metas', () => {
     expect(res.body.success).toBe(false)
   })
 
-  test('cria meta e responde com sucesso (sem validar exercicio)', async () => {
+  test('rejeita body sem descricao com 400: ela e a frase que a revisao declara', async () => {
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 1, item: '1.1' })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+  })
+
+  test('cria meta e responde com sucesso', async () => {
+    comRevisaoAberta()
     mockDb.conn.one.mockResolvedValueOnce({ id: 9 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9 })
     const res = await request(app)
       .post('/metas')
       .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
     expect(res.body.dados).toEqual({ id: 9 })
-    // sem checagem previa de exercicio
-    expect(mockDb.conn.oneOrNone).not.toHaveBeenCalled()
+  })
+
+  test('sem exercicio cadastrado, recusa com 400', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2031, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/exerc/i)
+  })
+
+  // O guard que faz o historico ficar completo POR CONSTRUCAO: nao da para mudar
+  // o que o PIT promete sem dizer qual documento autorizou.
+  test('sem revisao aberta, recusa com 400 e diz o que fazer', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/revis/i)
+  })
+
+  test('exercicio encerrado recusa com 400', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 3 })
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2025, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/encerrado/i)
+  })
+
+  // A coerencia entre a origem e a unidade: a origem Producao conta versao do
+  // acervo, e uma versao e uma FOLHA.
+  test('origem Producao com unidade que nao e Folha recusa com 400', async () => {
+    const res = await request(app)
+      .post('/metas')
+      .send({
+        ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1',
+        origem_id: 3, unidade_id: 2
+      })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/Folha/)
   })
 })
 
 describe('PUT /metas/:id', () => {
-  test('atualiza meta existente', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5 }) // existe
+  // A DECLARACAO nao mudou (a mesma descricao e a mesma quantidade), entao esta
+  // edicao NAO precisa de revisao aberta: ela so mexe na identidade.
+  test('atualiza so a identidade sem exigir revisao', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      descricao: 'Meta 2', quantidade_prevista: null, prazo: null,
+      demandante: null, cancelada: false
+    })
     const res = await request(app)
       .put('/metas/5')
-      .send({ ano: 2026, numero_meta: 2, item: '2.1' })
+      .send({ ano: 2026, numero_meta: 2, item: '2.1', descricao: 'Meta 2' })
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
+  })
+
+  test('mudar a quantidade sem revisao aberta recusa com 400', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      descricao: 'Meta 2', quantidade_prevista: 24, prazo: null,
+      demandante: null, cancelada: false
+    })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .put('/metas/5')
+      .send({
+        ano: 2026, numero_meta: 2, item: '2.1', descricao: 'Meta 2',
+        quantidade_prevista: 20
+      })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/revis/i)
   })
 
   test('404 quando a meta nao existe', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app)
       .put('/metas/99')
-      .send({ ano: 2026, numero_meta: 1 })
+      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta 1' })
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
   })
@@ -145,7 +236,9 @@ describe('DELETE /metas/:id', () => {
 
 describe('Rastreabilidade da meta do PIT', () => {
   test('POST registra a criacao, com o autor do token', async () => {
+    comRevisaoAberta()
     mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 1 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 7 })
 
     await request(app)
       .post('/metas')
@@ -166,9 +259,15 @@ describe('Rastreabilidade da meta do PIT', () => {
 
   test('PUT registra os dois lados, lidos do BANCO', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
     mockDb.conn.one.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 4 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      descricao: 'Meta 4', quantidade_prevista: null, prazo: null,
+      demandante: null, cancelada: false
+    })
 
-    await request(app).put('/metas/5').send({ ano: 2026, numero_meta: 4 })
+    await request(app).put('/metas/5')
+      .send({ ano: 2026, numero_meta: 4, descricao: 'Meta 4' })
 
     const evento = eventoAuditado()
 

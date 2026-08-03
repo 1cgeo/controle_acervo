@@ -5,6 +5,7 @@ import {
   createTextField,
   createTextareaField,
   createDateField,
+  createSelectField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createMetaPit, updateMetaPit } from '@services/plataforma-service.js';
@@ -38,8 +39,11 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     placeholder: 'Ex.: 4.1 (use - quando a meta não se subdivide)',
     value: meta?.item ?? '',
   });
+  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão do PIT declara, e
+  // a coluna de `pit.meta_revisao` é NOT NULL.
   const descricaoField = createTextareaField({
     label: 'Descrição',
+    required: true,
     value: meta?.descricao ?? '',
   });
 
@@ -56,12 +60,24 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     value: meta?.quantidade_prevista ?? undefined,
     helpText: 'Deixe vazio na meta que se subdivide: quem promete são os itens.',
   });
-  const unidadeField = createTextField({
+  // DOMÍNIO FECHADO desde 2026-08-04. Era texto livre, e o resultado foram 13
+  // valores para cinco coisas ('carta' e 'folha' para a mesma), mais 12 itens
+  // sem unidade nenhuma. A grade assume que uma versão do acervo vale UMA
+  // unidade da meta, e nada declarava isso.
+  //
+  // A coerência com a origem é cobrada no servidor: origem Produção e Impressão
+  // exigem Folha, e Capacitação exige Capacitação.
+  const unidadeField = createSelectField({
     label: 'Unidade',
-    maxLength: 50,
-    placeholder: 'Ex.: carta, folha, ano',
-    value: meta?.unidade ?? '',
-    helpText: 'Qualifica a quantidade na tela. A tabela 2.1 do RPCMTec imprime só o número.',
+    options: [
+      { value: 1, label: 'Folha' },
+      { value: 2, label: 'Marco' },
+      { value: 3, label: 'Capacitação' },
+      { value: 4, label: 'Item de acervo' },
+      { value: 5, label: 'Atividade' },
+    ],
+    value: meta?.unidade_id ?? undefined,
+    helpText: 'O que a meta conta. Vazio só na linha de cabeçalho.',
   });
   const demandanteField = createTextField({
     label: 'Demandante',
@@ -108,13 +124,25 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
             return;
           }
 
+          descricaoField.setError(null);
+          const descricao = descricaoField.getValue();
+          if (!descricao) {
+            descricaoField.setError('Informe a descrição da meta');
+            return;
+          }
+
+          // A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE são o que a DSG
+          // DECLARA, e desde 2026-08-04 eles caem na revisão ABERTA do ano.
+          // Mudar qualquer um deles sem revisão aberta volta 400, e a mensagem
+          // do servidor diz o que fazer. A unidade e a origem são classificação
+          // nossa, e mudam sem revisão.
           const payload = {
             ano: anoAlvo,
             numero_meta: numeroMeta,
             item: itemField.getValue() || null,
-            descricao: descricaoField.getValue() || null,
+            descricao,
             quantidade_prevista: quantidadeField.getValue(),
-            unidade: unidadeField.getValue() || null,
+            unidade_id: unidadeField.getValue(),
             demandante: demandanteField.getValue() || null,
             prazo: prazoField.getValue(),
           };

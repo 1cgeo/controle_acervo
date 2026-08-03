@@ -16,6 +16,9 @@ const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
 const extraCtrl = require('./pit_extra_ctrl')
 const midiaCtrl = require('./pit_midia_ctrl')
+const revisaoCtrl = require('./pit_revisao_ctrl')
+
+const uploadAnexoRevisao = require('./anexo_revisao_upload')
 
 const pitSchema = require('./pit_schema')
 
@@ -310,8 +313,249 @@ router.delete(
 )
 
 // ---------------------------------------------------------------------------
+// Exercício e revisão do PIT (2026-08-04).
+//
+// Ficam antes de '/:id' pela mesma razão de '/anos': o Express casa na ordem de
+// declaração, e 'exercicios' cairia na rota do id.
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/exercicios',
+  verifyLogin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.listarExercicios()
+
+    return res.sendJsonAndLog(true, 'Exercícios do PIT retornados', httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/exercicios',
+  verifyAdmin,
+  schemaValidation({ body: pitSchema.criarExercicio }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.criarExercicio(
+      req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Exercício do PIT criado', httpCode.Created, dados)
+  })
+)
+
+// Encerrar o ano é aqui: `situacao_id` 3. É o que faz o servidor recusar
+// alteração em exercício fechado.
+router.put(
+  '/exercicios/:ano',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.anoParams,
+    body: pitSchema.atualizarExercicio
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.atualizarExercicio(
+      req.params.ano, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Exercício do PIT atualizado', httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/revisoes',
+  verifyLogin,
+  schemaValidation({ query: pitSchema.revisaoQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.listarRevisoes(req.query.ano)
+
+    return res.sendJsonAndLog(true, 'Revisões do PIT retornadas', httpCode.OK, dados)
+  })
+)
+
+// O QUE A REVISÃO FAZ, meta a meta, com o valor anterior ao lado. É a tela de
+// conferência: o gerente lê isto contra o DIEx antes de publicar.
+router.get(
+  '/revisoes/:revisaoId/alteracoes',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.revisaoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.alteracoes(req.params.revisaoId)
+
+    return res.sendJsonAndLog(true, 'Alterações da revisão retornadas', httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/revisoes/:revisaoId/anexos',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.revisaoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.listarAnexos(req.params.revisaoId)
+
+    return res.sendJsonAndLog(true, 'Anexos da revisão retornados', httpCode.OK, dados)
+  })
+)
+
+// Anexa o documento assinado. Ordem: auth -> valida params -> multer -> valida
+// corpo -> handler, como no anexo do pedido da mapoteca.
+router.post(
+  '/revisoes/:revisaoId/anexos',
+  verifyAdmin,
+  schemaValidation({ params: pitSchema.revisaoIdParams }),
+  uploadAnexoRevisao,
+  schemaValidation({ body: pitSchema.anexoUploadBody }),
+  asyncHandler(async (req, res, next) => {
+    if (!req.file) {
+      throw new AppError(
+        'Nenhum arquivo enviado (campo "arquivo")', httpCode.BadRequest
+      )
+    }
+
+    const dados = await revisaoCtrl.criarAnexo(
+      req.params.revisaoId, req.file, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Anexo da revisão cadastrado', httpCode.Created, dados)
+  })
+)
+
+router.get(
+  '/revisoes/anexo/:anexoId/download',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const arquivo = await revisaoCtrl.getAnexoParaDownload(req.params.anexoId)
+
+    res.setHeader('Content-Type', arquivo.mimetype || 'application/octet-stream')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(arquivo.nome_original)}`
+    )
+
+    return res.send(arquivo.conteudo)
+  })
+)
+
+router.delete(
+  '/revisoes/anexo/:anexoId',
+  verifyAdmin,
+  schemaValidation({ params: pitSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    await revisaoCtrl.deletarAnexo(
+      req.params.anexoId, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Anexo da revisão excluído', httpCode.OK)
+  })
+)
+
+// PUBLICAR: o ato que faz a revisão passar a reger. Antes de '/revisoes/:id'
+// pela ordem de declaração.
+router.post(
+  '/revisoes/:revisaoId/publicar',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.revisaoIdParams,
+    body: pitSchema.publicarRevisao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.publicar(
+      req.params.revisaoId, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Revisão do PIT publicada', httpCode.OK, dados)
+  })
+)
+
+router.get(
+  '/revisoes/:revisaoId',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.revisaoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.getRevisao(req.params.revisaoId)
+    if (!dados) {
+      throw new AppError('Revisão do PIT não encontrada', httpCode.NotFound)
+    }
+
+    return res.sendJsonAndLog(true, 'Revisão do PIT retornada', httpCode.OK, dados)
+  })
+)
+
+router.post(
+  '/revisoes',
+  verifyAdmin,
+  schemaValidation({ body: pitSchema.criarRevisao }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.criarRevisao(
+      req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Revisão do PIT criada', httpCode.Created, dados)
+  })
+)
+
+router.put(
+  '/revisoes/:revisaoId',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.revisaoIdParams,
+    body: pitSchema.atualizarRevisao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.atualizarRevisao(
+      req.params.revisaoId, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Revisão do PIT atualizada', httpCode.OK, dados)
+  })
+)
+
+router.delete(
+  '/revisoes/:revisaoId',
+  verifyAdmin,
+  schemaValidation({ params: pitSchema.revisaoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    await revisaoCtrl.deletarRevisao(
+      req.params.revisaoId, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Revisão do PIT excluída', httpCode.OK)
+  })
+)
+
+// ---------------------------------------------------------------------------
 // A meta em si. Fica por ÚLTIMO porque '/:id' captura qualquer segmento.
 // ---------------------------------------------------------------------------
+
+// O HISTÓRICO da meta: em que revisão ela mudou, e para quanto. Antes de '/:id'.
+router.get(
+  '/:id/historico',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await pitCtrl.historico(req.params.id)
+
+    return res.sendJsonAndLog(true, 'Histórico da meta retornado', httpCode.OK, dados)
+  })
+)
+
+// CORRIGIR TRANSCRIÇÃO, e não alterar o PIT. Edita a linha da revisão em vigor,
+// exigindo motivo, para quem digitou 53 onde o documento diz 35 não precisar
+// inventar uma revisão que a DSG não emitiu.
+router.put(
+  '/:id/transcricao',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.idParams,
+    body: pitSchema.corrigirTranscricao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await pitCtrl.corrigirTranscricao(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Transcrição da meta corrigida', httpCode.OK, dados)
+  })
+)
 
 router.get(
   '/:id',

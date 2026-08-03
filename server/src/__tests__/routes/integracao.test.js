@@ -40,11 +40,28 @@ const criaCliente = async (overrides = {}) => {
 // pedido. Insere direto no banco: o que se prova aqui e a rota de integracao.
 const criaMetaPit = async (item = '4.1', ano = 2026) => {
   const row = await conn.one(
-    `INSERT INTO pit.meta (ano, numero_meta, item, descricao, usuario_cadastramento_uuid)
-     VALUES ($1, $2, $3, $4, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
-     ON CONFLICT (ano, numero_meta, item) DO UPDATE SET descricao = EXCLUDED.descricao
+    `INSERT INTO pit.meta (ano, numero_meta, item, usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (ano, numero_meta, item) DO UPDATE SET ano = EXCLUDED.ano
      RETURNING id`,
-    [ano, parseInt(String(item).split('.')[0], 10), item, `Meta ${item}`]
+    [ano, parseInt(String(item).split('.')[0], 10), item]
+  )
+
+  // A DESCRICAO mora na revisao desde 2026-08-04. A fixtura cria a R0 do ano e
+  // declara a meta nela, que e o que a migracao fez em producao.
+  const revisao = await conn.one(
+    `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
+     VALUES ($1, 'R0', make_date($1, 1, 1), (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (ano, codigo) DO UPDATE SET ano = EXCLUDED.ano
+     RETURNING id`,
+    [ano]
+  )
+  await conn.none(
+    `INSERT INTO pit.meta_revisao
+       (meta_id, revisao_id, descricao, usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (meta_id, revisao_id) DO UPDATE SET descricao = EXCLUDED.descricao`,
+    [row.id, revisao.id, `Meta ${item}`]
   )
   // BIGSERIAL volta como STRING no driver, e o Joi do pedido pede number strict.
   return Number(row.id)

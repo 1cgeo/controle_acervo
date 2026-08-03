@@ -131,13 +131,85 @@ module.exports = {
       ano: { rotulo: 'Ano' },
       numero_meta: { rotulo: 'Número da meta', tipo: 'numero' },
       item: { rotulo: 'Item' },
+      // A DESCRICAO, A QUANTIDADE, O PRAZO E O DEMANDANTE NAO ESTAO AQUI desde
+      // 2026-08-04: eles sao o que a DSG declara, e mudam por REVISAO. O rastro
+      // deles esta em `pit.meta_revisao`, que cai na ficha desta mesma meta.
+      //
+      // O que sobrou e o que o SCA decide, e e por isso que muda sem revisao.
+      unidade_id: { rotulo: 'Unidade', dominio: 'dominio.unidade_meta' },
+      origem_id: { rotulo: 'Origem do número', dominio: 'dominio.origem_meta' }
+    }
+  },
+
+  // --- A revisao do PIT, e a meta como cada uma a declara ---------------------
+  // As tres caem na entidade que o leitor procura: o EXERCICIO para a revisao e
+  // o anexo (a pergunta e "o que mudou no PIT de 2026"), e a META para a linha
+  // de declaracao (a pergunta e "por que a 4.2 virou 252").
+
+  'pit.exercicio': {
+    modulo: 'plataforma',
+    entidade: 'exercicio',
+    agregado: (t, linha) => linha.ano,
+    resumo: linha => `Exercício de ${linha.ano}`,
+    campos: {
+      ano: { rotulo: 'Ano' },
+      situacao_id: { rotulo: 'Situação', dominio: 'dominio.situacao_exercicio' },
+      observacao: { rotulo: 'Observação' }
+    }
+  },
+
+  'pit.revisao': {
+    modulo: 'plataforma',
+    entidade: 'exercicio',
+    agregado: (t, linha) => linha.ano,
+    resumo: linha => `Revisão ${linha.codigo} do PIT de ${linha.ano}`,
+    campos: {
+      ano: { rotulo: 'Ano' },
+      codigo: { rotulo: 'Código' },
+      data_documento: { rotulo: 'Data do documento', tipo: 'data' },
+      data_assinatura: { rotulo: 'Data da assinatura', tipo: 'data' },
+      assinante: { rotulo: 'Assinante' },
+      // Preencher esta data e PUBLICAR: e o instante em que a grade do ano passa
+      // a ler outros numeros. Nulo e rascunho.
+      data_vigencia: { rotulo: 'Vigência a partir de', tipo: 'data' },
+      observacao: { rotulo: 'Observação' }
+    }
+  },
+
+  'pit.anexo_revisao': {
+    modulo: 'plataforma',
+    entidade: 'exercicio',
+    agregado: (t, linha) =>
+      t.one('SELECT ano FROM pit.revisao WHERE id = $<id>', { id: linha.revisao_id })
+        .then(r => r.ano),
+    resumo: linha => `Anexo ${linha.nome_original}`,
+    campos: {
+      revisao_id: { rotulo: 'Revisão' },
+      tipo_anexo_id: { rotulo: 'Tipo de anexo', dominio: 'pit.tipo_anexo_revisao' },
+      nome_original: { rotulo: 'Arquivo' },
+      extensao: { rotulo: 'Extensão' },
+      mimetype: { rotulo: 'Tipo MIME' },
+      tamanho_bytes: { rotulo: 'Tamanho em bytes', tipo: 'numero' },
+      descricao: { rotulo: 'Descrição' }
+      // `conteudo` fica de FORA: o evento guardaria uma segunda copia dos bytes.
+    }
+  },
+
+  'pit.meta_revisao': {
+    modulo: 'plataforma',
+    entidade: 'meta',
+    agregado: (t, linha) => linha.meta_id,
+    resumo: linha => `Declaração da meta na revisão ${linha.revisao_id}`,
+    campos: {
+      meta_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      revisao_id: { rotulo: 'Revisão do PIT' },
       descricao: { rotulo: 'Descrição' },
-      // O que o PIT PROMETE, absorvido do SAP em 2026-08-02. Sem estes quatro a
-      // subsecao 2.1 do relatorio nao tinha como sair.
       quantidade_prevista: { rotulo: 'Quantidade prevista', tipo: 'numero' },
-      unidade: { rotulo: 'Unidade' },
       demandante: { rotulo: 'Demandante' },
-      prazo: { rotulo: 'Previsão de término', tipo: 'data' }
+      prazo: { rotulo: 'Previsão de término', tipo: 'data' },
+      // O UNICO ato de situacao que e da DSG. O andamento e a conclusao a grade
+      // calcula do que foi lancado.
+      cancelada: { rotulo: 'Cancelada' }
     }
   },
 
