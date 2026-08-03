@@ -370,22 +370,33 @@ async function acharOuCriarCliente (cfg, cliente, avisos) {
   return { id: novo.id, criado: true }
 }
 
-async function acharPedidoExistente (cfg, pedido) {
+async function acharPedidoExistente (cfg, pedido, clienteId) {
   const nup = pedido.documento_solicitacao_nup
   const doc = pedido.documento_solicitacao
   if (!nup && !doc) return null
 
   const r = await http.autenticada(cfg, 'GET', CAMINHO)
-  const pedidos = Array.isArray(r.dados) ? r.dados : []
+  const todos = Array.isArray(r.dados) ? r.dados : []
+
+  // A deduplicacao e por (documento, CLIENTE), nunca so pelo documento. Um DIEx
+  // que encaminha a demanda de varias OM gera um pedido POR CLIENTE, sob o mesmo
+  // NUP: sem o recorte por cliente, o 2o pedido cairia dentro do 1o e os itens de
+  // todas as OM virariam um pedido so, em silencio. Medido em 2026-08-03 com o
+  // DIEx 7234-E4/Cmdo CMS, que trazia tres unidades num NUP unico.
+  // O cliente_id da listagem volta como STRING; comparar como texto.
+  const pedidos = clienteId == null
+    ? todos
+    : todos.filter(p => String(p.cliente_id) === String(clienteId))
+  const escopo = clienteId == null ? '' : ` + cliente ${clienteId}`
 
   // O NUP e a chave pratica de deduplicacao; o numero do documento e a segunda.
   if (nup) {
     const porNup = pedidos.find(p => p.documento_solicitacao_nup === nup)
-    if (porNup) return { pedido: porNup, chave: `NUP ${nup}` }
+    if (porNup) return { pedido: porNup, chave: `NUP ${nup}${escopo}` }
   }
   if (doc) {
     const porDoc = pedidos.find(p => p.documento_solicitacao === doc)
-    if (porDoc) return { pedido: porDoc, chave: `documento ${doc}` }
+    if (porDoc) return { pedido: porDoc, chave: `documento ${doc}${escopo}` }
   }
   return null
 }
@@ -456,7 +467,7 @@ async function cadastrar (args, cfg) {
 
   if (!flags.novo) {
     await http.pausa()
-    const existente = await acharPedidoExistente(cfg, corpoPedido)
+    const existente = await acharPedidoExistente(cfg, corpoPedido, clienteId)
     if (existente) {
       pedidoId = existente.pedido.id
       relato.push(
@@ -857,4 +868,6 @@ async function executar (args, cfg) {
   return fn(args, cfg)
 }
 
-module.exports = { executar, precisaServidor: true, VERBOS, resumoDoPlano, valorDoSet }
+module.exports = {
+  executar, precisaServidor: true, VERBOS, resumoDoPlano, valorDoSet, acharPedidoExistente
+}
