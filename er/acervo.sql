@@ -50,12 +50,26 @@ CREATE TABLE acervo.lote (
     descricao TEXT,
     data_inicio DATE NOT NULL,
     data_fim DATE,
+    -- Quando o lote PROMETE terminar, e daqui sai o MES DO PLANEJADO do PIT
+    -- (2026-08-03). Coluna propria, e nao `data_fim`, porque as duas dizem
+    -- coisas diferentes: esta e a promessa e aquela e o que aconteceu. Em todos
+    -- os 16 lotes de 2026 as duas datas existentes sao IGUAIS, o que mostra que
+    -- `data_fim` vinha sendo preenchida so no fim, com o fato consumado.
+    --
+    -- Ela precisa existir porque a versao Planejada guarda hoje a data prevista
+    -- no proprio `data_edicao` (o invariante 3j da auditoria cobra a "Planejada
+    -- VENCIDA" por ali), e esse valor e SOBRESCRITO quando a versao vira
+    -- Regular. Sem coluna no lote, o plano desapareceria no instante em que se
+    -- cumpre, e a grade do PIT perderia a coluna com que se compara.
+    data_fim_prevista DATE,
     status_execucao_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
     usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
     CHECK (data_fim IS NULL OR data_fim >= data_inicio),
+    CONSTRAINT lote_data_fim_prevista_check
+        CHECK (data_fim_prevista IS NULL OR data_fim_prevista >= data_inicio),
     CONSTRAINT unique_pit_per_project UNIQUE (projeto_id, pit)
 );
 
@@ -106,6 +120,32 @@ CREATE TABLE acervo.versao(
 	subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
 	produto_id BIGINT NOT NULL REFERENCES acervo.produto (id),
 	lote_id BIGINT REFERENCES acervo.lote (id),
+	-- Meta do PIT que esta versao cumpre (2026-08-03). E o vinculo que CONTA na
+	-- grade do PIT: a versao vale uma unidade da meta quando vira Regular.
+	--
+	-- FICA NA VERSAO, E NAO NO LOTE, e isso foi medido antes de decidir. Todo
+	-- lote de Carta Topografica de 2026 traz o CDGV junto, um para um por MI: o
+	-- lote 2026-1a tem 6 cartas e 6 CDGV, 12 versoes, e a meta 1.1 promete 24
+	-- FOLHAS e nao 48. Com o vinculo no lote seria preciso filtrar por tipo e
+	-- escala dentro dele; aqui a versao de carta aponta a 1.1, a de CDGV aponta
+	-- outra meta ou nenhuma, e filtro nenhum precisa existir.
+	--
+	-- ANULAVEL, e a maioria fica nula: registro historico, lote Extra-PIT e
+	-- produto de fora do plano nao cumprem meta. Sem esta coluna, contar por
+	-- tipo e escala engoliria 22 Carta Ortoimagem 1:25.000 do lote Extra-PIT de
+	-- 2026 e mais 16 sem lote nenhum, todas na meta 1.3.
+	meta_pit_id BIGINT REFERENCES pit.meta (id),
+	-- Demanda Extra-PIT que esta versao materializa (2026-08-03). O Extra-PIT e
+	-- PRODUCAO, e nao entrega: a demanda so fecha quando a versao existe.
+	--
+	-- EXCLUSIVA COM meta_pit_id, pelo CHECK abaixo. A folha cumpre o plano OU e
+	-- a excecao autorizada, nunca as duas, e essa exclusao e o que impede a
+	-- contagem dupla. No SAP a mesma regra vivia em `extra_pit.lote_id`.
+	--
+	-- O lote nao serve de vinculo, e isso foi medido: o lote 2026-1a tem seis
+	-- cartas topograficas, quatro da meta 1.1 e duas do CMS para a Op. Arandu.
+	-- A producao Extra-PIT mora DENTRO de um lote do PIT.
+	demanda_extra_id BIGINT REFERENCES pit.demanda_extra (id),
 	metadado JSONB,
 	descricao TEXT,
     orgao_produtor VARCHAR(255) NOT NULL,
@@ -120,6 +160,7 @@ CREATE TABLE acervo.versao(
     -- (subtipo 24) vive num PRODUTO proprio (acervo.produto.subtipo_produto_id = 24), entao
     -- o cenario "1ª Edição civil e militar" ocorre entre DOIS produtos, nao dentro de um.
     CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao, subtipo_produto_id),
+    CONSTRAINT versao_plano_ou_excecao CHECK (meta_pit_id IS NULL OR demanda_extra_id IS NULL),
     CHECK (data_edicao >= data_criacao)
 );
 
@@ -273,6 +314,8 @@ CREATE UNIQUE INDEX unique_nome_fisico_por_volume_ci
   WHERE tipo_arquivo_id <> 9;
 CREATE INDEX idx_lote_projeto ON acervo.lote(projeto_id);
 CREATE INDEX idx_versao_lote ON acervo.versao(lote_id);
+CREATE INDEX idx_versao_meta_pit ON acervo.versao(meta_pit_id);
+CREATE INDEX idx_versao_demanda_extra ON acervo.versao(demanda_extra_id);
 
 -- Miniatura da versao: a imagem que a ficha do produto mostra, derivada do PDF
 -- (ou do TIF, quando nao ha PDF) que ja esta no volume. Tabela propria, e nao

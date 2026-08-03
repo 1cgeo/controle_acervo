@@ -33,6 +33,7 @@ const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
   c.situacao_id, s.nome AS situacao, c.instituicoes, c.local_realizacao,
   c.data_inicio::text AS data_inicio, c.data_fim::text AS data_fim,
   c.efetivo_capacitado, c.plano_codigo, c.documento,
+  c.meta_pit_id, mp.item AS meta_pit_item,
   COALESCE(mil.lista, '[]'::json) AS militares,
   c.data_cadastramento, c.usuario_cadastramento_uuid,
   c.data_modificacao, c.usuario_modificacao_uuid`
@@ -44,6 +45,7 @@ const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
 const de = `FROM rpcmtec.capacitacao AS c
   INNER JOIN dominio.tipo_capacitacao AS t ON t.code = c.tipo_id
   INNER JOIN dominio.situacao_capacitacao AS s ON s.code = c.situacao_id
+  LEFT JOIN pit.meta AS mp ON mp.id = c.meta_pit_id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object(
              'usuario_uuid', u.uuid,
@@ -126,6 +128,7 @@ const paraBanco = (dados, usuarioUuid) => ({
   efetivoCapacitado: nulo(dados.efetivo_capacitado),
   planoCodigo: nulo(dados.plano_codigo),
   documento: nulo(dados.documento),
+  metaPitId: nulo(dados.meta_pit_id),
   usuarioUuid
 })
 
@@ -184,10 +187,10 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       `INSERT INTO rpcmtec.capacitacao
          (ano, nome, tipo_id, situacao_id, instituicoes, local_realizacao,
           data_inicio, data_fim, efetivo_capacitado, plano_codigo,
-          documento, usuario_cadastramento_uuid)
+          documento, meta_pit_id, usuario_cadastramento_uuid)
        VALUES ($<ano>, $<nome>, $<tipoId>, $<situacaoId>, $<instituicoes>, $<localRealizacao>,
                $<dataInicio>, $<dataFim>, $<efetivoCapacitado>, $<planoCodigo>,
-               $<documento>, $<usuarioUuid>)
+               $<documento>, $<metaPitId>, $<usuarioUuid>)
        RETURNING *`,
       paraBanco(dados, usuarioUuid)
     )
@@ -226,6 +229,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            data_inicio = $<dataInicio>, data_fim = $<dataFim>,
            efetivo_capacitado = $<efetivoCapacitado>,
            plano_codigo = $<planoCodigo>, documento = $<documento>,
+           meta_pit_id = $<metaPitId>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,

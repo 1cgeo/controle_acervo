@@ -175,7 +175,7 @@ controller.deleteProjetos = async (projetoIds, usuarioUuid, contexto) => {
 controller.getLotes = async () => {
   return db.conn.any(
     `SELECT l.id, l.projeto_id, l.pit, l.nome, l.descricao, l.data_inicio,
-    l.data_fim, l.status_execucao_id, l.data_cadastramento,
+    l.data_fim, l.data_fim_prevista, l.status_execucao_id, l.data_cadastramento,
     l.usuario_cadastramento_uuid, l.data_modificacao,
     l.usuario_modificacao_uuid, tse.nome AS status_execucao,
     p.nome AS projeto
@@ -203,10 +203,13 @@ controller.criaLote = async (lote, usuarioUuid, contexto) => {
     }
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
+      'projeto_id', 'pit', 'nome', { name: 'descricao', def: null },
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
-      'status_execucao_id', 
+      // `def: null` porque a coluna e opcional no schema: sem ele, o lote
+      // criado sem data prevista quebraria a montagem do INSERT.
+      {name: 'data_fim_prevista', cast: 'date', def: null},
+      'status_execucao_id',
       'data_cadastramento',
       'usuario_cadastramento_uuid'
     ]);
@@ -251,7 +254,11 @@ controller.atualizaLote = async (lote, usuarioUuid, contexto) => {
     await preserveOmitted(t, {
       table: 'lote',
       id: lote.id,
-      fields: ['descricao'],
+      // `data_fim_prevista` entra aqui (2026-08-03) pelo mesmo motivo da
+      // `descricao`: ela e opcional no schema e tem `def: null` no ColumnSet,
+      // entao um cliente que nao a envie apagaria em silencio a data prometida
+      // do lote, e com ela o mes do planejado da grade do PIT.
+      fields: ['descricao', 'data_fim_prevista'],
       body: lote
     });
 
@@ -268,9 +275,10 @@ controller.atualizaLote = async (lote, usuarioUuid, contexto) => {
     }
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'id', 'projeto_id', 'pit', 'nome', { name: 'descricao', def: null }, 
+      'id', 'projeto_id', 'pit', 'nome', { name: 'descricao', def: null },
       {name: 'data_inicio', cast: 'date'},
       {name: 'data_fim', cast: 'date'},
+      {name: 'data_fim_prevista', cast: 'date', def: null},
       'status_execucao_id',
       {name: 'data_modificacao', cast: 'timestamptz'},
       {name: 'usuario_modificacao_uuid', cast: 'uuid'}

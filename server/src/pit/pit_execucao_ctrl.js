@@ -50,6 +50,150 @@ const EH_FOLHA = `(
   )
 )`
 
+// ---------------------------------------------------------------------------
+// A GRADE CALCULADA (2026-08-03)
+//
+// A meta declara em `origem_id` de onde vem o seu numero, e quando a origem nao
+// e Manual a celula deixa de ser lida de `pit.execucao` e passa a ser CONTADA na
+// hora da leitura. Nada e gravado: dado derivado que se grava vira segunda
+// verdade no primeiro que editar a copia a mao, e e esse o defeito que a meta 4
+// ja tinha de olhos abertos (a mapoteca sabia somar, o numero era digitado, e o
+// DDL escrevia que um dia os dois se contradiriam).
+//
+// QUAL COLUNA CADA ORIGEM SABE PROVAR, e esta e a parte que nao se adivinha:
+//
+//   Capacitacao (2)  as duas. Prevista, Em execucao e Concluida entram no
+//                    planejado; so Concluida entra no realizado; Cancelada nao
+//                    entra em nenhum. O mes e `data_fim` nos dois casos, e essa
+//                    e a imperfeicao conhecida: a capacitacao nao tem data
+//                    prevista propria, entao concluir com atraso MOVE o mes que
+//                    ela havia planejado.
+//
+//   Producao (3)     as duas. O realizado conta a versao que ja e Regular, no
+//                    mes de `data_edicao`; o planejado conta TODA versao ligada
+//                    a meta cujo lote tem `data_fim_prevista`, no mes dela, e
+//                    inclui de proposito a que ja virou Regular: plano nao
+//                    encolhe quando se cumpre.
+//
+//   Impressao (4)    so o REALIZADO. A mapoteca nao planeja: a impressao e
+//                    puxada por demanda, e em 2026 a meta 4.1 prometeu 327 e
+//                    entregou mais de cinco mil. O PLANEJADO dela continua
+//                    vindo de `pit.execucao`, digitado da PLANEJ_PIT, porque
+//                    nao existe no sistema quem o prove.
+//
+// O CALCULO NAO OLHA `origem_id`, de proposito. Ele conta para TODA meta que
+// tenha vinculo, e quem escolhe entre o calculado e o digitado e a consulta que
+// o consome. E isso que permite ao ensaio comparar os dois lados ANTES de virar
+// a meta: filtrar aqui deixaria o ensaio cego justamente na meta que interessa,
+// que e a que ainda esta Manual.
+const CELULAS_CALCULADAS = `
+  SELECT c.meta_id, c.mes,
+         SUM(c.planejada)::int AS soma_planejada,
+         SUM(c.realizada)::int AS soma_realizada
+  FROM (
+    -- Producao, realizado: a versao virou Regular, no mes da edicao.
+    SELECT v.meta_pit_id AS meta_id,
+           EXTRACT(MONTH FROM v.data_edicao)::smallint AS mes,
+           NULL::int AS planejada,
+           count(*)::int AS realizada
+    FROM acervo.versao AS v
+    INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
+    WHERE v.tipo_versao_id = 1
+      AND EXTRACT(YEAR FROM v.data_edicao) = mm.ano
+    GROUP BY 1, 2
+
+    UNION ALL
+
+    -- Producao, planejado: o mes prometido pelo LOTE da versao.
+    SELECT v.meta_pit_id,
+           EXTRACT(MONTH FROM l.data_fim_prevista)::smallint,
+           count(*)::int,
+           NULL::int
+    FROM acervo.versao AS v
+    INNER JOIN acervo.lote AS l ON l.id = v.lote_id
+    INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
+    WHERE l.data_fim_prevista IS NOT NULL
+      AND EXTRACT(YEAR FROM l.data_fim_prevista) = mm.ano
+    GROUP BY 1, 2
+
+    UNION ALL
+
+    -- Capacitacao, realizado: so a Concluida.
+    SELECT cap.meta_pit_id,
+           EXTRACT(MONTH FROM cap.data_fim)::smallint,
+           NULL::int,
+           count(*)::int
+    FROM rpcmtec.capacitacao AS cap
+    INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
+    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id = 3 AND cap.ano = mm.ano
+    GROUP BY 1, 2
+
+    UNION ALL
+
+    -- Capacitacao, planejado: tudo menos a Cancelada.
+    SELECT cap.meta_pit_id,
+           EXTRACT(MONTH FROM cap.data_fim)::smallint,
+           count(*)::int,
+           NULL::int
+    FROM rpcmtec.capacitacao AS cap
+    INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
+    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id <> 4 AND cap.ano = mm.ano
+    GROUP BY 1, 2
+
+    UNION ALL
+
+    -- Impressao, realizado: folha ENTREGUE, pela midia que saiu, somada pelo
+    -- de-para do ano. A quantidade FORNECIDA manda sobre a pedida porque o que a
+    -- meta conta e o que saiu. (Sem crase aqui: template literal.)
+    SELECT dm.meta_pit_id,
+           EXTRACT(MONTH FROM p.data_atendimento)::smallint,
+           NULL::int,
+           SUM(COALESCE(pp.quantidade_fornecida, pp.quantidade))::int
+    FROM mapoteca.pedido AS p
+    INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
+    INNER JOIN mapoteca.midia_meta_pit AS dm
+            ON dm.tipo_midia_id = COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)
+           AND dm.ano = EXTRACT(YEAR FROM p.data_atendimento)
+    WHERE p.data_atendimento IS NOT NULL
+    GROUP BY 1, 2
+  ) AS c
+  GROUP BY c.meta_id, c.mes
+`
+
+// Quais colunas a origem sabe provar. Escrito UMA vez: repetido em cada consulta
+// e onde a divergencia nasceria no dia em que uma origem nova entrasse.
+const ORIGEM_CALCULA_PLANEJADA = 'm.origem_id IN (2, 3)'
+const ORIGEM_CALCULA_REALIZADA = 'm.origem_id IN (2, 3, 4)'
+
+// A celula EFETIVA: para cada (meta, mes) que exista de um lado ou do outro,
+// escolhe entre o calculado e o digitado, coluna a coluna.
+//
+// A uniao dos meses vem dos DOIS lados: a meta automatica tem mes que
+// `pit.execucao` nunca viu, e a meta que acabou de virar pode ter mes digitado
+// que o calculo nao reproduz -- e ver esse buraco e melhor do que esconde-lo.
+const CELULAS = `
+  celula AS (
+    SELECT ms.meta_id, ms.mes,
+           CASE WHEN ${ORIGEM_CALCULA_PLANEJADA} THEN cc.soma_planejada
+                ELSE e.quantidade_planejada END AS planejada,
+           CASE WHEN ${ORIGEM_CALCULA_REALIZADA} THEN cc.soma_realizada
+                ELSE e.quantidade END AS realizada,
+           CASE WHEN m.origem_id = 1 THEN e.id ELSE NULL END AS id,
+           e.data_conclusao, e.observacao
+    FROM (
+      SELECT meta_id, mes FROM pit.execucao
+      UNION
+      SELECT meta_id, mes FROM calculada
+    ) AS ms
+    INNER JOIN pit.meta AS m ON m.id = ms.meta_id
+    LEFT JOIN pit.execucao AS e ON e.meta_id = ms.meta_id AND e.mes = ms.mes
+    LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
+  )
+`
+
+// O prefixo comum das consultas que leem a grade.
+const COM_CELULAS = `WITH calculada AS (${CELULAS_CALCULADAS}), ${CELULAS}`
+
 /**
  * A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
  * cada um.
@@ -65,9 +209,14 @@ const EH_FOLHA = `(
  */
 controller.grade = async ano => {
   return db.conn.any(
-    `SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+    `${COM_CELULAS}
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
+            m.origem_id,
+            (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
+            m.situacao_id,
+            (SELECT nome FROM dominio.situacao_meta WHERE code = m.situacao_id) AS situacao,
             ${EH_FOLHA} AS folha,
             COALESCE(mes.lista, '[]'::json) AS meses,
             COALESCE(tot.realizado, 0) AS realizado,
@@ -77,13 +226,15 @@ controller.grade = async ano => {
        SELECT json_agg(json_build_object(
                 'id', x.id,
                 'mes', x.mes,
-                'planejada', x.quantidade_planejada,
-                'realizada', x.quantidade,
+                'planejada', x.planejada,
+                'realizada', x.realizada,
                 'data_conclusao', x.data_conclusao::text,
                 'observacao', x.observacao
               ) ORDER BY x.mes) AS lista
-       FROM pit.execucao AS x
+       FROM celula AS x
        WHERE x.meta_id = m.id
+         AND (x.planejada IS NOT NULL OR x.realizada IS NOT NULL
+              OR x.data_conclusao IS NOT NULL OR x.observacao IS NOT NULL)
      ) AS mes ON TRUE
      -- Os totais saem de um LATERAL, e nao de GROUP BY. Agrupar exigiria a
      -- coluna dos meses na clausula, e o PostgreSQL nao sabe comparar json por
@@ -91,9 +242,9 @@ controller.grade = async ano => {
      -- igualdade para tipo json", que nao diz nada sobre a causa.
      -- (Sem crase neste comentario: ele vive dentro de um template literal.)
      LEFT JOIN LATERAL (
-       SELECT SUM(t.quantidade)::int AS realizado,
-              SUM(t.quantidade_planejada)::int AS planejado
-       FROM pit.execucao AS t
+       SELECT SUM(t.realizada)::int AS realizado,
+              SUM(t.planejada)::int AS planejado
+       FROM celula AS t
        WHERE t.meta_id = m.id
      ) AS tot ON TRUE
      WHERE m.ano = $<ano>
@@ -117,23 +268,27 @@ controller.grade = async ano => {
  */
 controller.resumoDoAno = async (ano, mes) => {
   return db.conn.any(
-    `SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+    `${COM_CELULAS}
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
+            m.origem_id,
+            m.situacao_id,
+            (SELECT nome FROM dominio.situacao_meta WHERE code = m.situacao_id) AS situacao,
             ${EH_FOLHA} AS folha,
-            COALESCE(SUM(e.quantidade) FILTER (
+            COALESCE(SUM(e.realizada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
             ), 0)::int AS realizado,
             CASE WHEN $<mes>::smallint IS NULL THEN NULL
-                 ELSE COALESCE(SUM(e.quantidade) FILTER (WHERE e.mes = $<mes>::smallint), 0)::int
+                 ELSE COALESCE(SUM(e.realizada) FILTER (WHERE e.mes = $<mes>::smallint), 0)::int
             END AS realizado_mes,
             -- Quanto o PLANO mandava ter entregue até aqui. É o que separa
             -- "entregou 30 de 252" de "entregou 30 onde o plano pedia 30".
-            COALESCE(SUM(e.quantidade_planejada) FILTER (
+            COALESCE(SUM(e.planejada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
             ), 0)::int AS planejado_ate
      FROM pit.meta AS m
-     LEFT JOIN pit.execucao AS e ON e.meta_id = m.id
+     LEFT JOIN celula AS e ON e.meta_id = m.id
      WHERE m.ano = $<ano>
      GROUP BY m.id
      ORDER BY m.numero_meta, m.item NULLS FIRST`,
@@ -141,17 +296,69 @@ controller.resumoDoAno = async (ano, mes) => {
   )
 }
 
-/** Os lançamentos de UMA meta, mês a mês. É o que a ficha da meta mostra. */
+/**
+ * Os lançamentos de UMA meta, mês a mês. É o que a ficha da meta mostra.
+ *
+ * Sai da célula EFETIVA, e não de `pit.execucao`: numa meta automática a ficha
+ * tem de mostrar o mesmo número da grade, senão a tela se contradiz consigo
+ * mesma. O `id` vem nulo quando a célula é calculada, e é por ele que a tela
+ * sabe que ali não há o que editar nem o que apagar.
+ */
 controller.listarDaMeta = async metaId => {
   return db.conn.any(
-    `SELECT id, meta_id, mes, quantidade_planejada, quantidade,
-            data_conclusao::text AS data_conclusao, observacao,
-            data_cadastramento, usuario_cadastramento_uuid,
-            data_modificacao, usuario_modificacao_uuid
-     FROM pit.execucao
-     WHERE meta_id = $<metaId>
-     ORDER BY mes`,
+    `${COM_CELULAS}
+     SELECT c.id, c.meta_id, c.mes,
+            c.planejada AS quantidade_planejada, c.realizada AS quantidade,
+            c.data_conclusao::text AS data_conclusao, c.observacao,
+            e.data_cadastramento, e.usuario_cadastramento_uuid,
+            e.data_modificacao, e.usuario_modificacao_uuid
+     FROM celula AS c
+     LEFT JOIN pit.execucao AS e ON e.meta_id = c.meta_id AND e.mes = c.mes
+     WHERE c.meta_id = $<metaId>
+       AND (c.planejada IS NOT NULL OR c.realizada IS NOT NULL
+            OR c.data_conclusao IS NOT NULL OR c.observacao IS NOT NULL)
+     ORDER BY c.mes`,
     { metaId }
+  )
+}
+
+/**
+ * O ENSAIO: o digitado e o calculado lado a lado, sem escrever nada.
+ *
+ * É o portão para virar uma meta de Manual para automática. A regra é: só vira
+ * quando o calculado REPRODUZ o que já está digitado, ou quando o chefe aceita a
+ * diferença por escrito. Se divergir, alguém aprende alguma coisa antes de o
+ * relatório mudar sozinho.
+ *
+ * Funciona na meta que AINDA está Manual, e é esse o ponto: por isso o cálculo
+ * lá em cima não filtra por `origem_id`. Um ensaio que só respondesse depois da
+ * virada não seria ensaio nenhum.
+ */
+controller.ensaio = async (ano, metaId) => {
+  return db.conn.any(
+    `WITH calculada AS (${CELULAS_CALCULADAS})
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+            m.origem_id,
+            (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
+            ms.mes,
+            e.quantidade_planejada AS planejada_digitada,
+            cc.soma_planejada AS planejada_calculada,
+            e.quantidade AS realizada_digitada,
+            cc.soma_realizada AS realizada_calculada,
+            (e.quantidade IS NOT DISTINCT FROM cc.soma_realizada) AS realizada_bate,
+            (e.quantidade_planejada IS NOT DISTINCT FROM cc.soma_planejada) AS planejada_bate
+     FROM (
+       SELECT meta_id, mes FROM pit.execucao
+       UNION
+       SELECT meta_id, mes FROM calculada
+     ) AS ms
+     INNER JOIN pit.meta AS m ON m.id = ms.meta_id
+     LEFT JOIN pit.execucao AS e ON e.meta_id = ms.meta_id AND e.mes = ms.mes
+     LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
+     WHERE m.ano = $<ano>
+       AND ($<metaId>::bigint IS NULL OR m.id = $<metaId>::bigint)
+     ORDER BY m.numero_meta, m.item NULLS FIRST, ms.mes`,
+    { ano, metaId: metaId === undefined ? null : metaId }
   )
 }
 
@@ -181,11 +388,41 @@ const vazia = linha =>
 controller.salvar = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const meta = await t.oneOrNone(
-      'SELECT id, ano, numero_meta, item FROM pit.meta WHERE id = $<metaId>',
+      `SELECT m.id, m.ano, m.numero_meta, m.item, m.origem_id,
+              o.nome AS origem
+       FROM pit.meta AS m
+       INNER JOIN dominio.origem_meta AS o ON o.code = m.origem_id
+       WHERE m.id = $<metaId>`,
       { metaId: dados.meta_id }
     )
     if (!meta) {
       throw new AppError('Meta do PIT não encontrada', httpCode.NotFound)
+    }
+
+    // A COLUNA QUE A ORIGEM CALCULA NÃO SE DIGITA (2026-08-03).
+    //
+    // Sem esta guarda, a gravação seria aceita, o número ficaria em
+    // `pit.execucao` e a leitura o ignoraria: o cliente veria 200 e o valor não
+    // mudaria na tela, sem erro nenhum. É pior do que recusar, porque some.
+    //
+    // A recusa é POR COLUNA, e não pela meta inteira: a meta de Impressão
+    // calcula só o realizado, e o planejado dela continua sendo digitado da
+    // PLANEJ_PIT, porque a mapoteca não planeja nada.
+    const rotuloMeta = `Meta ${meta.numero_meta}${meta.item ? ` (item ${meta.item})` : ''}`
+    const calculadas = []
+    if ([2, 3].includes(meta.origem_id) && 'quantidade_planejada' in dados) {
+      calculadas.push('quantidade_planejada')
+    }
+    if ([2, 3, 4].includes(meta.origem_id) && 'quantidade' in dados) {
+      calculadas.push('quantidade')
+    }
+    if (calculadas.length > 0) {
+      throw new AppError(
+        `${rotuloMeta} tem origem ${meta.origem}, e ${calculadas.join(' e ')} ` +
+        'sai do próprio sistema, não do lançamento. Corrija na fonte ' +
+        '(a versão do acervo, a capacitação ou o pedido da mapoteca).',
+        httpCode.BadRequest
+      )
     }
 
     // Cabeçalho de meta subdividida não recebe lançamento (ver o topo).

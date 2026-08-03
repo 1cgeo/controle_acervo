@@ -380,4 +380,34 @@ INSERT INTO dominio.situacao_capacitacao (code, nome) VALUES
 (3, 'Concluída'),
 (4, 'Cancelada');
 
+-- De onde vem o número de uma meta do PIT (2026-08-03). Manual é o lançamento à
+-- mão em `pit.execucao`, que foi o único jeito até esta data. Os outros três são
+-- calculados na LEITURA, a partir do módulo que já registra o trabalho: nada é
+-- gravado, porque dado derivado que se grava vira segunda verdade no primeiro
+-- que editar a cópia à mão.
+CREATE TABLE dominio.origem_meta(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.origem_meta (code, nome) VALUES
+(1, 'Manual'),
+(2, 'Capacitação'),
+(3, 'Produção'),
+(4, 'Impressão');
+
+-- Os MESMOS quatro estados de `dominio.situacao_capacitacao`, e de propósito:
+-- meta cancelada e capacitação cancelada são a mesma ideia, e dois vocabulários
+-- para ela divergiriam na primeira palavra acrescentada a um só.
+CREATE TABLE dominio.situacao_meta(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+INSERT INTO dominio.situacao_meta (code, nome) VALUES
+(1, 'Prevista'),
+(2, 'Em execução'),
+(3, 'Concluída'),
+(4, 'Cancelada');
+
 COMMIT;

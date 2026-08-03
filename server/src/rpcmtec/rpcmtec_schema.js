@@ -78,7 +78,11 @@ const capacitacao = {
   // seleção onde repetir não faz sentido.
   militares: Joi.array().items(Joi.string().uuid()).unique().default([]),
   plano_codigo: Joi.string().max(255).allow(null, ''),
-  documento: Joi.string().max(255).allow(null, '')
+  documento: Joi.string().max(255).allow(null, ''),
+  // Meta do PIT que esta capacitação cumpre (2026-08-03). ANULÁVEL, e a maioria
+  // fica nula: em 2026 o PIT só promete capacitação MINISTRADA (a meta 5), e as
+  // Recebidas não têm meta que as prometa. Exigir uma inventaria compromisso.
+  meta_pit_id: Joi.number().integer().strict().allow(null)
 }
 
 models.criarCapacitacao = Joi.object().keys({ ...capacitacao })

@@ -91,6 +91,15 @@ CREATE TABLE rpcmtec.capacitacao(
   efetivo_capacitado INTEGER CHECK (efetivo_capacitado IS NULL OR efetivo_capacitado >= 0),
   plano_codigo VARCHAR(255),
   documento VARCHAR(255),
+  -- Meta do PIT que esta capacitação cumpre (2026-08-03). Quando a meta declara
+  -- origem Capacitação, é daqui que sai o número da grade: Prevista e Em
+  -- execução alimentam o planejado, Concluída alimenta o realizado, e o mês vem
+  -- de `data_fim`. Cancelada não entra em nenhum dos dois.
+  --
+  -- ANULÁVEL, e a maioria fica nula. Em 2026 o PIT só promete capacitação
+  -- MINISTRADA (a meta 5): as Recebidas (pós-graduação, curso de SARP, ISO 9001)
+  -- não têm meta que as prometa, e forçar uma inventaria compromisso.
+  meta_pit_id BIGINT REFERENCES pit.meta (id),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
@@ -102,6 +111,7 @@ COMMENT ON TABLE rpcmtec.capacitacao IS
     'Capacitação ministrada (2.6 do RPCMTec) ou recebida (6.2). O tipo decide quais colunas a linha preenche.';
 
 CREATE INDEX idx_capacitacao_ano ON rpcmtec.capacitacao (ano);
+CREATE INDEX idx_capacitacao_meta_pit ON rpcmtec.capacitacao (meta_pit_id);
 
 -- Quem da DIVISÃO participou da capacitação, ligado ao cadastro (chefe,
 -- 2026-08-02). Era um `militares TEXT` até então, e texto livre não casa com

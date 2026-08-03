@@ -74,6 +74,30 @@ CREATE TABLE pit.meta(
   -- '1º trim 2026', e quem formata é o gerador. Guardar a frase impediria
   -- ordenar e comparar com o mês da edição.
   prazo DATE,
+  -- DE ONDE VEM O NÚMERO desta meta (2026-08-03). Manual é o lançamento à mão em
+  -- `pit.execucao`, e é o padrão: toda meta nasce assim, inclusive as que já
+  -- existiam. As outras três são calculadas na LEITURA, e a gravação nelas é
+  -- recusada com 400.
+  --
+  -- A DIVISÃO É PERMANENTE, e não uma fase de transição. Das 42 folhas do PIT de
+  -- 2026, no máximo 17 têm de onde calcular (as metas 1, 4 e 5). As metas 6
+  -- (Programa Memória) e 7 (TI) são catalogação, digitalização e marco: não
+  -- existe entidade no SCA para contar, e nunca vai existir só por causa disto.
+  -- É por isso que a origem se declara na meta, em vez de ser adivinhada.
+  --
+  -- SÓ A FOLHA pode ser automática. A linha de cabeçalho de uma meta subdividida
+  -- não recebe lançamento, e deixá-la calcular somaria o mesmo trabalho duas
+  -- vezes, uma nos itens e outra nela. Quem cobra isso é o controlador: o CHECK
+  -- não enxerga "tem item abaixo", que é outra linha desta mesma tabela.
+  origem_id SMALLINT NOT NULL DEFAULT 1 REFERENCES dominio.origem_meta (code),
+  -- ANULÁVEL, e o nulo é uma afirmação: ninguém classificou. As metas que já
+  -- existiam não têm situação declarada em lugar nenhum, e escolher uma por elas
+  -- inventaria dado.
+  --
+  -- O que motivou a coluna: as metas 5.2 e 5.3 de 2026 foram CANCELADAS, e até
+  -- 2026-08-03 só se distinguiam por terem quantidade prevista zero. Quem lesse
+  -- a grade via um planejamento de 1 no mês e nenhuma explicação.
+  situacao_id SMALLINT REFERENCES dominio.situacao_meta (code),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
@@ -169,11 +193,21 @@ CREATE INDEX idx_execucao_meta ON pit.execucao (meta_id);
 -- 3.3 de `mapoteca.pedido.previsto_pit`: aquele campo é falso por omissão, e a
 -- conta deu 23 linhas onde a edição real de julho/2026 traz 1.
 --
--- SEM VÍNCULO COM LOTE. No SAP existe `lote_id`, que serve para a 2.1 não
--- contar duas vezes o mesmo trabalho. Aqui não há o que descontar: a 2.1 do SCA
--- soma o que foi lançado em `pit.execucao`, e o Extra-PIT não é lançado lá.
--- Apontar para `acervo.lote` seria inventar um vínculo, porque o lote do acervo
--- não é o lote de produção do SAP.
+-- O EXTRA-PIT É PRODUÇÃO (chefe, 2026-08-03): "se fosse só entrega entraria na
+-- mapoteca". Por isso a demanda materializa, e o vínculo vive em
+-- `acervo.versao.demanda_extra_id`, exclusivo com `meta_pit_id`. Essa exclusão
+-- é o que impede a contagem dupla, e é a mesma regra que no SAP vivia em
+-- `extra_pit.lote_id`.
+--
+-- SEM VÍNCULO COM LOTE, e isso foi medido. O lote `2026_1a_CT_Faxinal_Soturno_25k`
+-- tem seis cartas topográficas: quatro cumprem a meta 1.1 e duas (2966-1-NE e
+-- 2966-1-SE) são as demandas do CMS para a Op. Arandu. A produção Extra-PIT
+-- mora DENTRO de um lote do PIT, saiu na mesma corrida e na mesma data de
+-- edição. Só a versão tem a granularidade que separa as duas.
+--
+-- SEM VÍNCULO COM PEDIDO, pela mesma régua. O pedido é entrega, e a entrega é a
+-- mapoteca. Do pedido até a autorização já há caminho: item, versão, demanda.
+-- Uma chave estrangeira direta seria um segundo caminho para a mesma verdade.
 --
 -- `tipo_produto` é TEXTO, e não `dominio.tipo_produto`. A demanda Extra-PIT é
 -- justamente a que não cabe no catálogo (super-resolução de imagem, carta
@@ -186,13 +220,24 @@ CREATE TABLE pit.demanda_extra(
   tipo_produto VARCHAR(255) NOT NULL,
   quantidade INTEGER NOT NULL CHECK (quantidade > 0),
   situacao_id SMALLINT NOT NULL REFERENCES dominio.situacao_extra_pit (code),
+  -- De onde vem a PROVA desta linha (2026-08-03). Reusa `dominio.origem_meta` e
+  -- aceita só Manual (1) e Produção (3): um domínio próprio criaria um segundo
+  -- código chamado 'Produção', diferente do da meta, e quem lesse os dois lados
+  -- teria de traduzir. A pergunta é a mesma que a meta responde.
+  --
+  -- Manual é para a exceção que não gera produto de acervo, e ela existe: a
+  -- 'Exposição do Dia do Exército' e a 'Pista de orientação com Chefe do DCT'
+  -- de 2026 nunca vão ter versão nenhuma. É o padrão, então a demanda só passa
+  -- a exigir materialização depois que alguém declara a origem.
+  origem_id SMALLINT NOT NULL DEFAULT 1 REFERENCES dominio.origem_meta (code),
   documento_autorizacao VARCHAR(255) NOT NULL,
   descricao TEXT,
   data_entrega DATE,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+  CONSTRAINT demanda_extra_origem_manual_ou_producao CHECK (origem_id IN (1, 3))
 );
 
 COMMENT ON TABLE pit.demanda_extra IS

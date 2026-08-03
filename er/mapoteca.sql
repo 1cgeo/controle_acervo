@@ -47,6 +47,52 @@ INSERT INTO mapoteca.tipo_midia (code, nome) VALUES
 (7, 'Digital'),
 (8, 'Tyvek');
 
+-- De-para da MIDIA impressa para a meta do PIT, por ano (2026-08-03). E a fonte
+-- da meta 4 quando ela declara origem Impressao: o realizado do mes e a soma do
+-- fornecido, agrupada pela midia entregue e mapeada aqui.
+--
+-- POR QUE NAO PELO PEDIDO. `mapoteca.pedido.meta_pit_id` existe desde
+-- 2026-07-31 e responde outra pergunta: "este pedido estava previsto no PIT,
+-- sob esta meta". O CHECK `pedido_meta_pit_id_exige_previsto` diz isso, e o
+-- dado confirma: em 2026 os 16 pedidos que o preencheram sao exatamente os 16
+-- marcados como previstos, de 160.
+--
+-- A meta 4 conta o que SAIU, e o que saiu esta no ITEM (midia entregue,
+-- quantidade fornecida). Somando pelo campo do pedido, 2026 daria 253 folhas na
+-- 4.1 onde o RTM publica 5.664. Pior: a 4.2 (Tyvek) receberia 199, e em 2026
+-- nenhuma folha saiu em tyvek -- aqueles pedidos foram planejados como tyvek e
+-- atendidos em sulfite, que e o padrao da casa quando falta material. Os dois
+-- campos nao se substituem: um guarda o prometido, o outro o entregue.
+--
+-- POR QUE NAO UMA COLUNA EM `tipo_midia`. A numeracao do PIT e reescrita todo
+-- ano, e a meta 4.1 de 2026 pode ser outra coisa em 2027. Uma coluna na midia
+-- amarraria a um ano so, e o de-para do ano seguinte apagaria o do anterior.
+--
+-- O `ano` ESTA AQUI e tambem na meta, e a duplicata e deliberada: a restricao
+-- unica precisa impedir que a mesma midia aponte duas metas no MESMO ano, e
+-- restricao nao enxerga coluna de outra tabela. O controlador confere que este
+-- ano casa com o da meta.
+--
+-- CORRELACAO MEDIDA EM 2026: sulfite na 4.1, tyvek na 4.2, glossy na 4.3. Ela
+-- NAO se deduz do nome nem se fixa no codigo, pelo mesmo motivo do paragrafo
+-- acima.
+CREATE TABLE mapoteca.midia_meta_pit(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  ano SMALLINT NOT NULL,
+  tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
+  meta_pit_id BIGINT NOT NULL REFERENCES pit.meta (id) ON DELETE CASCADE,
+  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+  data_modificacao TIMESTAMP WITH TIME ZONE,
+  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+  CONSTRAINT unique_midia_por_ano UNIQUE (ano, tipo_midia_id)
+);
+
+COMMENT ON TABLE mapoteca.midia_meta_pit IS
+    'De-para da mídia impressa para a meta do PIT, por ano. Fonte da meta 4 quando ela é automática; o ano está na chave porque a numeração do PIT muda todo ano.';
+
+CREATE INDEX idx_midia_meta_pit_meta ON mapoteca.midia_meta_pit (meta_pit_id);
+
 CREATE TABLE mapoteca.forma_entrega(
 	code SMALLINT NOT NULL PRIMARY KEY,
 	nome VARCHAR(255) NOT NULL

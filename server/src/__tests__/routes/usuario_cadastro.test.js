@@ -797,6 +797,13 @@ const COBERTAS = new Set([
   'POST /metas/extra',
   'PUT /metas/extra/:id',
   'DELETE /metas/extra/:id',
+  // De-para da MIDIA impressa para a meta, por ano (2026-08-03). E a fonte da
+  // meta 4 quando ela for automatica. Auditado no agregado da META, e nao no
+  // dele proprio: a pergunta que se faz deste dado e "por que a 4.1 passou a
+  // contar sulfite", e ela se faz na ficha da meta.
+  'POST /metas/midia',
+  'PUT /metas/midia/:id',
+  'DELETE /metas/midia/:id',
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
   'DELETE /rpcmtec/:id',

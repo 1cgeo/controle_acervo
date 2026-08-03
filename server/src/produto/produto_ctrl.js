@@ -128,9 +128,25 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
     await preserveOmitted(t, {
       table: 'versao',
       id: versao.id,
-      fields: ['palavras_chave'],
+      // `meta_pit_id` entra aqui (2026-08-03) pela mesma razão: ele é opcional
+      // no schema, e o cliente que ainda não conhece o campo desligaria da meta
+      // do PIT toda versão que editasse. Enviar null continua desligando de
+      // propósito.
+      fields: ['palavras_chave', 'meta_pit_id', 'demanda_extra_id'],
       body: versao
     });
+
+    // Espelha o CHECK `versao_plano_ou_excecao` com erro amigável, e por isso
+    // vem DEPOIS do preserveOmitted: quem manda só `demanda_extra_id` numa
+    // versão que já tinha meta receberia o erro do banco sem saber que a chave
+    // omitida foi preservada.
+    if (versao.meta_pit_id != null && versao.demanda_extra_id != null) {
+      throw new AppError(
+        'A versão cumpre uma meta do PIT ou materializa uma demanda Extra-PIT, ' +
+        'nunca as duas. Envie null na que deve sair.',
+        httpCode.BadRequest
+      );
+    }
 
     // Espelha a UNIQUE unique_version_per_product com erro amigável.
     //
@@ -155,7 +171,7 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
 
     const colunasVersao = [
       'versao', 'nome', 'tipo_versao_id', 'subtipo_produto_id',
-      'descricao', 'metadado', 'lote_id',
+      'descricao', 'metadado', 'lote_id', 'meta_pit_id', 'demanda_extra_id',
       'orgao_produtor', 'palavras_chave',
       'data_criacao', 'data_edicao',
       'data_modificacao', 'usuario_modificacao_uuid'

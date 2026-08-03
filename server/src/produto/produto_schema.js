@@ -70,6 +70,24 @@ models.versaoAtualizacao = Joi.object().keys({
   descricao: Joi.string().allow('').required(),
   metadado: Joi.object().required(),
   lote_id: Joi.number().integer().strict().allow(null).required(),
+  // Meta do PIT que esta versão cumpre (2026-08-03). É o vínculo que CONTA na
+  // grade do PIT quando a meta for automática.
+  //
+  // SEM `.required()` e SEM default: chave ausente significa "não mexe" (o
+  // controller preserva o valor gravado), e enviar null é como se desliga o
+  // vínculo. Sem isso, o cliente que ainda não conhece o campo apagaria a meta
+  // de toda versão que editasse, que é o bug que o preserve_omitted existe para
+  // matar.
+  meta_pit_id: Joi.number().integer().strict().allow(null),
+  // Demanda Extra-PIT que esta versão materializa (2026-08-03). Mesmas regras do
+  // `meta_pit_id`: ausente preserva, null desliga.
+  //
+  // EXCLUSIVA com `meta_pit_id`, e o banco cobra pelo CHECK
+  // `versao_plano_ou_excecao`. Aqui a exclusão não é declarada porque o PUT
+  // aceita chave ausente: validar as duas juntas no Joi rejeitaria o corpo que
+  // manda só uma e preserva a outra, que é o uso normal. O controller confere
+  // depois de resolver o que foi preservado.
+  demanda_extra_id: Joi.number().integer().strict().allow(null),
   orgao_produtor: Joi.string().required(),
   // SEM .default([]): na atualização isso zerava as palavras-chave gravadas de
   // quem apenas omitiu a chave. Ausente = preserva (ver o controller).

@@ -29,6 +29,14 @@ models.projeto = Joi.object().keys({
   data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
+  // Quando o lote PROMETE terminar (2026-08-03). Daqui sai o mês do PLANEJADO
+  // da grade do PIT, e por isso ela é coluna separada de `data_fim`: aquela é o
+  // que aconteceu, esta é o que se prometeu, e a primeira sobrescreveria a
+  // segunda no dia em que o lote fechasse.
+  //
+  // OPCIONAL, e não `required`: os lotes que já existem nasceram sem ela, e
+  // exigi-la agora recusaria a edição de qualquer um deles.
+  data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -39,6 +47,14 @@ models.projetoAtualizacao = Joi.object().keys({
   data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
+  // Quando o lote PROMETE terminar (2026-08-03). Daqui sai o mês do PLANEJADO
+  // da grade do PIT, e por isso ela é coluna separada de `data_fim`: aquela é o
+  // que aconteceu, esta é o que se prometeu, e a primeira sobrescreveria a
+  // segunda no dia em que o lote fechasse.
+  //
+  // OPCIONAL, e não `required`: os lotes que já existem nasceram sem ela, e
+  // exigi-la agora recusaria a edição de qualquer um deles.
+  data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -58,6 +74,14 @@ models.lote = Joi.object().keys({
   data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
+  // Quando o lote PROMETE terminar (2026-08-03). Daqui sai o mês do PLANEJADO
+  // da grade do PIT, e por isso ela é coluna separada de `data_fim`: aquela é o
+  // que aconteceu, esta é o que se prometeu, e a primeira sobrescreveria a
+  // segunda no dia em que o lote fechasse.
+  //
+  // OPCIONAL, e não `required`: os lotes que já existem nasceram sem ela, e
+  // exigi-la agora recusaria a edição de qualquer um deles.
+  data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -70,6 +94,14 @@ models.loteAtualizacao = Joi.object().keys({
   data_inicio: dataCalendario().required(),
   // Espelha o CHECK data_fim >= data_inicio do banco
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
+  // Quando o lote PROMETE terminar (2026-08-03). Daqui sai o mês do PLANEJADO
+  // da grade do PIT, e por isso ela é coluna separada de `data_fim`: aquela é o
+  // que aconteceu, esta é o que se prometeu, e a primeira sobrescreveria a
+  // segunda no dia em que o lote fechasse.
+  //
+  // OPCIONAL, e não `required`: os lotes que já existem nasceram sem ela, e
+  // exigi-la agora recusaria a edição de qualquer um deles.
+  data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 

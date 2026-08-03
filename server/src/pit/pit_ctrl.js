@@ -12,6 +12,10 @@ const controller = {}
 
 const colunas = `id, ano, numero_meta, item, descricao,
   quantidade_prevista, unidade, demandante, prazo::text AS prazo,
+  situacao_id,
+  (SELECT nome FROM dominio.situacao_meta WHERE code = pit.meta.situacao_id) AS situacao,
+  origem_id,
+  (SELECT nome FROM dominio.origem_meta WHERE code = pit.meta.origem_id) AS origem,
   data_cadastramento, usuario_cadastramento_uuid, data_modificacao, usuario_modificacao_uuid`
 
 // O que o PIT promete no item, e o que a 2.1 do RPCMTec cobra. Os quatro são
@@ -22,7 +26,13 @@ const promessa = dados => ({
   quantidade_prevista: dados.quantidade_prevista === undefined ? null : dados.quantidade_prevista,
   unidade: dados.unidade === undefined ? null : dados.unidade,
   demandante: dados.demandante === undefined ? null : dados.demandante,
-  prazo: dados.prazo === undefined ? null : dados.prazo
+  prazo: dados.prazo === undefined ? null : dados.prazo,
+  // Omitir vale NULO, como os quatro acima: o formulário manda a meta inteira, e
+  // um campo ausente aqui é campo que ninguém preencheu, não campo a preservar.
+  situacao_id: dados.situacao_id === undefined ? null : dados.situacao_id,
+  // Omitir vale MANUAL, e não nulo: a coluna é NOT NULL no banco, e Manual é o
+  // que toda meta é enquanto ninguém a vira de propósito.
+  origem_id: dados.origem_id === undefined ? 1 : dados.origem_id
 })
 
 controller.listar = async ano => {
@@ -69,10 +79,11 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     const criada = await t.one(
       `INSERT INTO pit.meta
          (ano, numero_meta, item, descricao,
-          quantidade_prevista, unidade, demandante, prazo,
+          quantidade_prevista, unidade, demandante, prazo, situacao_id, origem_id,
           usuario_cadastramento_uuid)
        VALUES ($<ano>, $<numero_meta>, $<item>, $<descricao>,
                $<quantidade_prevista>, $<unidade>, $<demandante>, $<prazo>,
+               $<situacao_id>, $<origem_id>,
                $<usuarioUuid>)
        RETURNING *`,
       {
@@ -111,6 +122,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            descricao = $<descricao>,
            quantidade_prevista = $<quantidade_prevista>, unidade = $<unidade>,
            demandante = $<demandante>, prazo = $<prazo>,
+           situacao_id = $<situacao_id>, origem_id = $<origem_id>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,

@@ -61,8 +61,21 @@ dotenv.config({
 // `quantidade_planejada` e `quantidade` deixa de ser NOT NULL. Exigida nos dois
 // sentidos: a grade e a subsecao 2.1 leem a coluna nova, e num banco 1.17.0 o
 // NOT NULL faria planejar um mes gravar um realizado zero que ninguem lancou.
+// 1.19.0 faz a grade do PIT declarar a ORIGEM do numero (2026-08-03):
+// `pit.meta` ganha `origem_id` e `situacao_id`, e nascem os vinculos que
+// alimentam o calculo (`acervo.versao.meta_pit_id`, `acervo.lote`
+// `.data_fim_prevista`, `rpcmtec.capacitacao.meta_pit_id` e
+// `mapoteca.midia_meta_pit`). Exigida porque a leitura da grade passa a
+// consultar `origem_id` para decidir de onde vem cada celula: num banco 1.18.0 a
+// coluna nao existe e toda leitura do PIT quebra.
+// 1.20.0 faz o Extra-PIT apontar a producao que o cumpriu (2026-08-03):
+// `pit.demanda_extra` ganha `origem_id` e `acervo.versao` ganha
+// `demanda_extra_id`, exclusivo com `meta_pit_id`. Exigida porque a leitura da
+// 3.3 passa a fazer JOIN em `dominio.origem_meta` e a contar as versoes
+// materializadas: num banco 1.19.0 as duas colunas nao existem e a listagem da
+// demanda quebra.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.18.0'
+const MIN_DATABASE_VERSION = '1.20.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()
