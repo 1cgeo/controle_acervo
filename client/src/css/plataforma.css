@@ -3,17 +3,6 @@
  * Tudo que e de um modulo so continua no CSS daquele modulo.
  * ------------------------------------------------------------------------- */
 
-/* Area dos extras do modulo ativo (ex.: o seletor de ano do orcamento) */
-.navbar__extras {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.navbar__extras:empty {
-  display: none;
-}
-
 /* Separa o menu do modulo da secao de plataforma (Usuarios) */
 .sidebar__separator {
   height: 1px;

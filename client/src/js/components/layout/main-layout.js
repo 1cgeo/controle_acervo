@@ -39,12 +39,11 @@ export function createMainLayout() {
     contentArea,
   ]);
 
-  // Mantem modulo ativo, item da sidebar e extras da navbar em dia com o hash.
+  // Mantem o modulo ativo e o item da sidebar em dia com o hash. A navbar saiu
+  // daqui em 2026-08-04: sem os extras de modulo, ela nao muda com a rota.
   const sync = () => {
     const path = location.hash.slice(1) || '/';
-    const modulo = moduloDaRota(path);
-    sidebarCtrl.setModulo(modulo);
-    navbar._setModulo(modulo);
+    sidebarCtrl.setModulo(moduloDaRota(path));
     sidebarCtrl.setActive(activeIdFromPath(path));
   };
   window.addEventListener('hashchange', sync);

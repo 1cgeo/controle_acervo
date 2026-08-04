@@ -2,19 +2,23 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { toggleTheme, getTheme } from '@utils/theme.js';
 import { getUsername, logout } from '@store/auth-store.js';
 import { clearCache } from '@services/cache.js';
-import { getModulo } from '@modules/registry.js';
 
 /**
- * Navbar da interface unica: hamburger, titulo, area de extras do modulo
- * ativo, tema, usuario e sair.
+ * Navbar da interface unica: hamburger, titulo, tema, usuario e sair.
  *
  * A troca de modulo NAO fica aqui. Ela vive na sidebar, onde cada modulo e uma
  * seção colapsavel e o cabecalho leva para a home dele. O seletor em dropdown
  * que existia aqui foi removido em 2026-07-27, a pedido do chefe.
  *
+ * A navbar tambem NAO tem mais area de extras do modulo. O unico extra que
+ * existiu foi o seletor de ano, que saiu em 2026-08-04: o ano virou filtro de
+ * cada tela. Com ele foram embora o `navbarExtras`, o slot e o `_setModulo`,
+ * que so existiam para montar e desmontar esses extras. A navbar deixou de
+ * depender do registro de modulos.
+ *
  * @param {Object} options
  * @param {Function} options.onToggleSidebar
- * @returns {HTMLElement} - elemento com ._cleanup() e ._setModulo(id)
+ * @returns {HTMLElement} - elemento com ._cleanup()
  */
 export function createNavbar({ onToggleSidebar }) {
   let dropdownOpen = false;
@@ -33,41 +37,6 @@ export function createNavbar({ onToggleSidebar }) {
     className: 'navbar__title',
     textContent: 'SCA',
   });
-
-  // Slot dos extras do modulo ativo (ex.: o seletor de ano do orcamento).
-  const extrasSlot = el('div', { className: 'navbar__extras' });
-  let extrasCleanup = null;
-  // Sentinela: `null` e um valor VALIDO (rota de plataforma), entao a primeira
-  // chamada nao pode ser confundida com "ja esta neste modulo".
-  let moduloAtual;
-
-  /**
-   * Troca o modulo exibido: sincroniza o seletor e remonta os extras.
-   * @param {string|null} moduloId
-   */
-  function setModulo(moduloId) {
-    if (moduloId === moduloAtual) return;
-    moduloAtual = moduloId;
-
-    if (typeof extrasCleanup === 'function') {
-      try {
-        extrasCleanup();
-      } catch (err) {
-        console.error('Erro ao limpar extras da navbar:', err);
-      }
-      extrasCleanup = null;
-    }
-    extrasSlot.innerHTML = '';
-
-    const mod = moduloId ? getModulo(moduloId) : null;
-    if (mod && typeof mod.navbarExtras === 'function') {
-      const extras = mod.navbarExtras() || {};
-      for (const item of extras.elements || []) {
-        if (item) extrasSlot.appendChild(item);
-      }
-      extrasCleanup = extras.cleanup || null;
-    }
-  }
 
   // Theme toggle
   const themeBtn = el('button', {
@@ -121,14 +90,11 @@ export function createNavbar({ onToggleSidebar }) {
 
   const navbar = el('nav', { className: 'navbar' }, [
     el('div', { className: 'navbar__left' }, [toggleBtn, title]),
-    el('div', { className: 'navbar__right' }, [extrasSlot, themeBtn, userBtn]),
+    el('div', { className: 'navbar__right' }, [themeBtn, userBtn]),
   ]);
-
-  navbar._setModulo = setModulo;
 
   navbar._cleanup = () => {
     document.removeEventListener('click', closeDropdown);
-    if (typeof extrasCleanup === 'function') extrasCleanup();
   };
 
   return navbar;

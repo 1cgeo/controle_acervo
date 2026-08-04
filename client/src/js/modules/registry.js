@@ -19,7 +19,6 @@
 //       // de leitura, embora seja um nivel acima de consulta (chefe, 2026-07-30).
 //       { path: '/atendimento', render: renderFila, perfis: ['operador', 'gerente'] },
 //     ],
-//     navbarExtras: () => ({ elements: [el], cleanup: () => {} }), // opcional
 //   }
 //
 // O `id` NAO e um rotulo de tela. O nome que aparece para a pessoa vem do
