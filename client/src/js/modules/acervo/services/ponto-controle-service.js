@@ -16,7 +16,11 @@ function queryString(filtros) {
   const params = new URLSearchParams();
   for (const [chave, valor] of Object.entries(filtros)) {
     if (valor === null || valor === undefined || valor === '' || valor === false) continue;
-    params.set(chave, String(valor));
+    // Lista VAZIA e filtro nao aplicado, e nao filtro vazio. Sem esta linha o
+    // filtro de marcacao multipla sem nada marcado mandaria `lote_id=` na URL,
+    // porque array vazio e verdadeiro e `String([])` devolve texto vazio.
+    if (Array.isArray(valor) && valor.length === 0) continue;
+    params.set(chave, Array.isArray(valor) ? valor.join(',') : String(valor));
   }
   const s = params.toString();
   return s ? `?${s}` : '';

@@ -1,0 +1,147 @@
+/* ---- Filtro de dominio com marcacao MULTIPLA ----
+ * Substitui o `<select>` de escolha unica na busca do acervo e no ponto de
+ * controle. O botao ocupa o mesmo espaco do combo antigo, para a faixa de
+ * filtros nao mudar de altura nem de ritmo. */
+
+.filtro-multiplo {
+  position: relative;
+  display: inline-block;
+}
+
+.filtro-multiplo__botao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  max-width: 220px;
+  padding: 8px var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.filtro-multiplo__botao:hover {
+  background: var(--bg-hover);
+}
+
+/* Filtro COM marcacao se destaca na faixa: com seis filtros lado a lado, saber
+ * quais estao valendo sem abrir cada um e o que evita a busca "sem resultado"
+ * que na verdade tem um filtro esquecido. */
+.filtro-multiplo--ativo .filtro-multiplo__botao {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.filtro-multiplo__texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filtro-multiplo__seta {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.filtro-multiplo--ativo .filtro-multiplo__seta {
+  color: var(--color-primary);
+}
+
+.filtro-multiplo__painel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-md);
+}
+
+.filtro-multiplo__cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 6px var(--space-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.filtro-multiplo__titulo {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filtro-multiplo__limpar {
+  flex: none;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.filtro-multiplo__limpar:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.filtro-multiplo__limpar:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* Oito linhas de 32px, como a sugestao de palavra-chave. Passando disso, rola
+ * por dentro em vez de crescer. */
+.filtro-multiplo__lista {
+  max-height: 256px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.filtro-multiplo__opcao {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.filtro-multiplo__opcao:hover {
+  background: var(--bg-hover);
+}
+
+.filtro-multiplo__nome {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filtro-multiplo__total {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.filtro-multiplo__vazio {
+  margin: 0;
+  padding: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}

@@ -3,6 +3,7 @@
 const Joi = require('joi')
 
 const { geometriaSchema } = require('../utils/geometria_schema')
+const { listaDeInteiros } = require('../utils/lista_schema')
 
 const models = {}
 
@@ -17,16 +18,19 @@ models.codPontoParams = Joi.object().keys({
 // Os filtros da tela, compartilhados pela lista, pelas facetas, pelas posicoes
 // do mapa e pelo CSV. Um schema so porque um filtro so: se divergirem, o numero
 // entre parenteses na faceta deixa de ser o total que a lista devolve.
+// Os filtros de dominio aceitam VARIOS codigos desde 2026-08-04 (chefe), como
+// na busca do acervo: o gesto e o mesmo nas duas telas e se aprende uma vez. Um
+// valor solto continua valendo; ver utils/lista_schema.js.
 const filtros = {
-  lote_id: Joi.number().integer(),
-  projeto_id: Joi.number().integer(),
+  lote_id: listaDeInteiros(),
+  projeto_id: listaDeInteiros(),
   // O filtro por situacao saiu em 2026-07-29: so ponto APROVADO entra no
   // acervo, entao a coluna e constante e o filtro nao discriminava nada. Ela
   // continua na ficha, como registro da decisao de campo.
   // Recorte por LUGAR: codigo do IBGE, 2 digitos no estado e 7 no municipio.
   // Valida a FORMA, e nao a faixa que existe hoje (ver acervo_schema.js).
-  estado_id: Joi.number().integer().min(10).max(99),
-  municipio_id: Joi.number().integer().min(1000000).max(9999999),
+  estado_id: listaDeInteiros({ min: 10, max: 99 }),
+  municipio_id: listaDeInteiros({ min: 1000000, max: 9999999 }),
   // Recorte espacial da tela: minx,miny,maxx,maxy em 4674.
   bbox: Joi.string().pattern(/^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$/),
   // Area DESENHADA no mapa, como GeoJSON em texto (chefe, 2026-07-29). Mesmo

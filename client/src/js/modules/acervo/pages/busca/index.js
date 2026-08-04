@@ -9,6 +9,7 @@ import {
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openProdutoDialogForm } from '@modules/acervo/pages/produto/produto-dialog-form.js';
+import { criarFiltroMultiplo } from '@components/filtro-multiplo/filtro-multiplo.js';
 import { criarMapa } from './mapa.js';
 import { abrirProdutoDialog, plural } from './produto-dialog.js';
 import { criarSelecao, pintarBotaoSelecao } from './selecao.js';
@@ -91,49 +92,65 @@ export async function renderBusca(container, ctx) {
     termoInput,
   ]);
 
-  const tipoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Tipo de produto',
-    onChange: () => {
-      // Trocar o tipo estreita a lista de subtipos. Um subtipo que nao pertence
-      // ao tipo novo e descartado, senao a busca ficaria com dois filtros que
-      // nunca se cruzam e devolveria zero sem explicar por que.
+  /** Lista de codigos que veio na URL, como '1,3'. */
+  const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
+
+  // Os filtros de dominio marcam VARIAS opcoes (chefe, 2026-08-04). Antes eram
+  // `<select>` de escolha unica, e perguntar "o que existe em 25k e em 50k"
+  // custava duas buscas e a soma na mao.
+  const tipoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os tipos',
+    nomePlural: 'tipos',
+    ariaLabel: 'Tipo de produto',
+    valorInicial: daUrl('tipo_produto_id'),
+    onMudar: () => {
+      // Marcar um tipo estreita a lista de subtipos. O subtipo que nao pertence
+      // a nenhum tipo marcado e descartado, senao a busca ficaria com dois
+      // filtros que nunca se cruzam e devolveria zero sem explicar por que.
       atualizarSubtipos();
       buscar({ reiniciarPagina: true });
     },
-  }, [el('option', { value: '', textContent: 'Todos os tipos' })]);
+  });
 
-  const subtipoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Subtipo de produto',
-    onChange: () => buscar({ reiniciarPagina: true }),
-  }, [el('option', { value: '', textContent: 'Todos os subtipos' })]);
+  const subtipoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os subtipos',
+    nomePlural: 'subtipos',
+    ariaLabel: 'Subtipo de produto',
+    valorInicial: daUrl('subtipo_produto_id'),
+    onMudar: () => buscar({ reiniciarPagina: true }),
+  });
 
-  const escalaSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Escala',
-    onChange: () => buscar({ reiniciarPagina: true }),
-  }, [el('option', { value: '', textContent: 'Todas as escalas' })]);
+  const escalaFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todas as escalas',
+    nomePlural: 'escalas',
+    ariaLabel: 'Escala',
+    valorInicial: daUrl('tipo_escala_id'),
+    onMudar: () => buscar({ reiniciarPagina: true }),
+  });
 
   // Lugar (chefe, 2026-07-29). O municipio depende do ESTADO: sem estado
   // escolhido o servidor devolve lista vazia, porque um combo com os 5.572
   // municipios do pais nao ajuda a escolher. Trocar de estado zera o municipio,
   // senao a busca levaria um municipio de outro estado.
-  const estadoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Estado',
-    onChange: () => {
-      municipioSelect.value = '';
+  const estadoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os estados',
+    nomePlural: 'estados',
+    ariaLabel: 'Estado',
+    valorInicial: daUrl('estado_id'),
+    onMudar: () => {
+      municipioFiltro.limpar();
       destacarLugar();
       buscar({ reiniciarPagina: true });
     },
-  }, [el('option', { value: '', textContent: 'Todos os estados' })]);
+  });
 
-  const municipioSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Município',
-    onChange: () => { destacarLugar(); buscar({ reiniciarPagina: true }); },
-  }, [el('option', { value: '', textContent: 'Escolha o estado' })]);
+  const municipioFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Escolha o estado',
+    nomePlural: 'municípios',
+    ariaLabel: 'Município',
+    valorInicial: daUrl('municipio_id'),
+    onMudar: () => { destacarLugar(); buscar({ reiniciarPagina: true }); },
+  });
 
   // Sugestao propria em vez de `<datalist>`: a lista nativa escolhia sozinha
   // quantas linhas mostrar, sem CSS que a alcance, e abria cobrindo boa parte da
@@ -226,11 +243,11 @@ export async function renderBusca(container, ctx) {
   ]);
 
   const filtros = el('div', { className: 'busca-filtros' }, [
-    tipoSelect,
-    subtipoSelect,
-    escalaSelect,
-    estadoSelect,
-    municipioSelect,
+    tipoFiltro.element,
+    subtipoFiltro.element,
+    escalaFiltro.element,
+    estadoFiltro.element,
+    municipioFiltro.element,
     campoPalavra.element,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
@@ -339,9 +356,15 @@ export async function renderBusca(container, ctx) {
    * @param {boolean} [opcoes.enquadrar=true]
    */
   async function destacarLugar({ enquadrar = true } = {}) {
-    const chave = municipioSelect.value
-      ? `municipio:${municipioSelect.value}`
-      : (estadoSelect.value ? `estado:${estadoSelect.value}` : '');
+    // O municipio manda quando ha algum marcado, e nao a soma dos dois: ele e o
+    // recorte mais fino, e desenhar o contorno do estado por cima diria que a
+    // busca cobre o estado inteiro.
+    const municipios = municipioFiltro.valores();
+    const estados = estadoFiltro.valores();
+    const tipo = municipios.length ? 'municipio' : (estados.length ? 'estado' : '');
+    const ids = municipios.length ? municipios : estados;
+    const chave = tipo ? `${tipo}:${ids.join(',')}` : '';
+
     if (chave === chaveLugar) return;
     chaveLugar = chave;
 
@@ -357,13 +380,24 @@ export async function renderBusca(container, ctx) {
     // saltaria duas vezes, para dois lugares diferentes.
     lugarComandaCamera = enquadrar;
 
-    const [tipo, id] = chave.split(':');
     try {
-      const limite = await getLimite(tipo, id);
+      // `allSettled`: um limite que falha nao pode apagar os que vieram. Com
+      // tres estados marcados, dois contornos valem mais que nenhum.
+      const respostas = await Promise.allSettled(ids.map(id => getLimite(tipo, id)));
       // Trocar de lugar duas vezes seguidas: a primeira resposta pode chegar
       // depois da segunda, e pintaria o estado que a pessoa ja abandonou.
       if (disposed || chaveLugar !== chave) return;
-      mapa.destacarLimite(limite, { enquadrar });
+
+      const limites = respostas
+        .filter(r => r.status === 'fulfilled' && r.value)
+        .map(r => r.value);
+      if (!limites.length) {
+        chaveLugar = '';
+        lugarComandaCamera = false;
+        mapa.limparLimite();
+        return;
+      }
+      mapa.destacarLimite(limites, { enquadrar });
     } catch {
       if (chaveLugar !== chave) return;
       chaveLugar = '';
@@ -465,11 +499,13 @@ export async function renderBusca(container, ctx) {
     const recorte = recorteAtual();
     return {
       termo: termoInput.value.trim(),
-      tipo_produto_id: tipoSelect.value,
-      subtipo_produto_id: subtipoSelect.value,
-      tipo_escala_id: escalaSelect.value,
-      estado_id: estadoSelect.value,
-      municipio_id: municipioSelect.value,
+      // Arrays: o servico junta com virgula, e o servidor aceita a lista. Array
+      // vazio some no `queryString`, que e o filtro nao aplicado.
+      tipo_produto_id: tipoFiltro.valores(),
+      subtipo_produto_id: subtipoFiltro.valores(),
+      tipo_escala_id: escalaFiltro.valores(),
+      estado_id: estadoFiltro.valores(),
+      municipio_id: municipioFiltro.valores(),
       palavra_chave: campoPalavra.valor(),
       geometria: recorte.geometria,
       bbox: recorte.bbox,
@@ -484,12 +520,19 @@ export async function renderBusca(container, ctx) {
    */
   function sincronizarUrl(f) {
     const params = new URLSearchParams();
+    // Lista some quando vazia, e vira '1,3' quando tem marcacao. E a MESMA
+    // forma que o servico manda para a API, entao o link colado da barra de
+    // endereco e o que a tela consultou.
+    const lista = (campo, valores) => {
+      if (Array.isArray(valores) && valores.length) params.set(campo, valores.join(','));
+    };
+
     if (f.termo) params.set('termo', f.termo);
-    if (f.tipo_produto_id) params.set('tipo_produto_id', f.tipo_produto_id);
-    if (f.subtipo_produto_id) params.set('subtipo_produto_id', f.subtipo_produto_id);
-    if (f.estado_id) params.set('estado_id', f.estado_id);
-    if (f.municipio_id) params.set('municipio_id', f.municipio_id);
-    if (f.tipo_escala_id) params.set('tipo_escala_id', f.tipo_escala_id);
+    lista('tipo_produto_id', f.tipo_produto_id);
+    lista('subtipo_produto_id', f.subtipo_produto_id);
+    lista('estado_id', f.estado_id);
+    lista('municipio_id', f.municipio_id);
+    lista('tipo_escala_id', f.tipo_escala_id);
     if (f.palavra_chave) params.set('palavra_chave', f.palavra_chave);
     if (f.geometria) params.set('geometria', f.geometria);
     if (f.bbox) params.set('bbox', f.bbox.map(n => n.toFixed(5)).join(','));
@@ -748,13 +791,15 @@ export async function renderBusca(container, ctx) {
   // ---------------------------------------------------------------------------
   function limparTudo() {
     termoInput.value = '';
-    tipoSelect.value = '';
-    estadoSelect.value = '';
-    municipioSelect.value = '';
+    // `limpar` nao dispara `onMudar`: limpar a tela busca UMA vez, no fim, e
+    // nao seis vezes, uma por filtro.
+    tipoFiltro.limpar();
+    estadoFiltro.limpar();
+    municipioFiltro.limpar();
     destacarLugar();
-    subtipoSelect.value = '';
+    subtipoFiltro.limpar();
     atualizarSubtipos();
-    escalaSelect.value = '';
+    escalaFiltro.limpar();
     campoPalavra.limpar();
     areaCheck.checked = false;
     modoArea = 'nenhum';
@@ -767,61 +812,11 @@ export async function renderBusca(container, ctx) {
   // ---------------------------------------------------------------------------
   // Carga inicial
   // ---------------------------------------------------------------------------
-  /**
-   * Preenche um `<select>` de dominio, com o quantitativo de cada opcao quando
-   * ele ja chegou.
-   *
-   * O numero ao lado da opcao e o total que a busca devolveria ao escolhe-la, e
-   * ele vem do servidor CRUZADO pelos outros filtros: escolher "Carta
-   * Topografica" muda o numero ao lado de cada escala. A regra que faz isso
-   * funcionar e a lista nunca aplicar o proprio filtro (`exceto`, no servidor).
-   *
-   * Opcao com zero sai da lista, que e o que "filtrar as demais" significa. A
-   * excecao e a opcao ESCOLHIDA: se o cruzamento a zerou, ela fica com "(0)" em
-   * vez de sumir, senao a tela desfaria em silencio o que a pessoa pediu e ela
-   * veria o resultado mudar sem entender por que.
-   *
-   * @param {HTMLSelectElement} select
-   * @param {Array<{code:number, nome:string}>} itens
-   * @param {string} rotuloTodos
-   * @param {Map<string, number>|null} contagem - null antes da primeira resposta
-   * @param {string} [desejado] - valor a manter. Sem isto, o que ja esta no
-   *   campo. Existe por causa da carga inicial e da troca de tipo: atribuir a um
-   *   `<select>` AINDA SEM as opcoes nao guarda nada, o navegador descarta em
-   *   silencio, e o valor que veio no link se perdia.
-   */
-  function preencherSelect(select, itens, rotuloTodos, contagem = null, desejado = null) {
-    const atual = desejado === null ? select.value : desejado;
-    const rotuloAtual = select.selectedOptions[0]?.dataset.rotulo || '';
-
-    select.replaceChildren(el('option', { value: '', textContent: rotuloTodos }));
-    let presente = false;
-
-    for (const i of itens) {
-      const chave = String(i.code);
-      const total = contagem ? (contagem.get(chave) || 0) : null;
-      if (contagem && total === 0 && chave !== atual) continue;
-      if (chave === atual) presente = true;
-      const option = el('option', {
-        value: chave,
-        textContent: total === null ? i.nome : `${i.nome} (${formatNumber(total)})`,
-      });
-      option.dataset.rotulo = i.nome;
-      select.appendChild(option);
-    }
-
-    // Escolha que sumiu ate da lista de dominio (nao so do cruzamento): pode
-    // acontecer com subtipo quando o tipo muda. Ai o rotulo guardado e a unica
-    // forma de a opcao continuar legivel.
-    if (!presente && atual && rotuloAtual) {
-      const option = el('option', { value: atual, textContent: `${rotuloAtual} (0)` });
-      option.dataset.rotulo = rotuloAtual;
-      select.appendChild(option);
-      presente = true;
-    }
-
-    select.value = presente ? atual : '';
-  }
+  // O quantitativo ao lado de cada opcao e o total que a busca devolveria ao
+  // marca-la, e ele vem do servidor CRUZADO pelos outros filtros: marcar "Carta
+  // Topografica" muda o numero ao lado de cada escala. A regra que faz isso
+  // funcionar e a lista nunca aplicar o proprio filtro (`exceto`, no servidor).
+  // Quem desenha a lista e o `filtro-multiplo`, que guarda a regra do "(0)".
 
   /** code -> produtos, para a lista de opcoes. */
   function mapaDeContagem(linhas) {
@@ -847,46 +842,43 @@ export async function renderBusca(container, ctx) {
       escalas: mapaDeContagem(f.tipos_escala),
       subtipos: mapaDeContagem(f.subtipos_produto),
     };
-    preencherSelect(tipoSelect, tiposDominio, 'Todos os tipos', contagens.tipos);
-    preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', contagens.escalas);
+    tipoFiltro.preencher(tiposDominio, null, contagens.tipos);
+    escalaFiltro.preencher(escalasDominio, null, contagens.escalas);
 
     // Estado e municipio vem PRONTOS do servidor, com a contagem, e nao de um
     // dominio local: sao 5.572 municipios, e mandar a lista inteira ao
     // navegador para filtrar aqui seria pagar 25 MB por combo.
     const comCodigo = itens => (itens || []).map(i => ({ ...i, code: i.id }));
-    preencherSelect(
-      estadoSelect,
+    estadoFiltro.preencher(
       comCodigo(f.estados).map(e => ({ ...e, nome: `${e.nome} (${e.sigla})` })),
       'Todos os estados'
     );
-    preencherSelect(
-      municipioSelect,
+    municipioFiltro.preencher(
       comCodigo(f.municipios),
-      estadoSelect.value ? 'Todos os municípios' : 'Escolha o estado'
+      estadoFiltro.valores().length ? 'Todos os municípios' : 'Escolha o estado'
     );
 
     atualizarSubtipos();
   }
 
   /**
-   * @param {string} [preferido] - subtipo a manter. Sem isto, o valor que ja
-   *   esta no campo. Existe por causa da carga inicial: atribuir a um <select>
-   *   AINDA SEM as opcoes nao guarda nada, o navegador descarta em silencio, e
-   *   o subtipo que veio no link se perdia.
+   * @param {Array<string>} [preferidos] - subtipos a manter. Sem isto, os que ja
+   *   estao marcados. Existe por causa da carga inicial: o dominio dos subtipos
+   *   chega depois da montagem, e sem a semente o que veio no link se perdia.
    */
-  function atualizarSubtipos(preferido = subtipoSelect.value) {
-    const tipo = tipoSelect.value;
-    const visiveis = tipo
-      ? todosSubtipos.filter(s => String(s.tipo_id) === String(tipo))
+  function atualizarSubtipos(preferidos = subtipoFiltro.valores()) {
+    const tipos = tipoFiltro.valores();
+    const visiveis = tipos.length
+      ? todosSubtipos.filter(s => tipos.includes(String(s.tipo_id)))
       : todosSubtipos;
 
-    // Subtipo que nao pertence ao tipo novo e DESCARTADO, e nao mantido com
-    // "(0)": ele nao cruzou a zero, ele deixou de fazer sentido. Manter deixaria
-    // a busca com dois filtros que nunca se cruzam, devolvendo zero sem dizer
-    // por que. Vale so aqui; nas outras listas o cruzamento manda.
-    const manter = visiveis.some(s => String(s.code) === preferido) ? preferido : '';
-    preencherSelect(subtipoSelect, visiveis, 'Todos os subtipos', contagens.subtipos, manter);
-    subtipoSelect.classList.toggle('hidden', visiveis.length === 0);
+    // Subtipo que nao pertence a nenhum tipo marcado e DESCARTADO, e nao mantido
+    // com "(0)": ele nao cruzou a zero, ele deixou de fazer sentido. Manter
+    // deixaria a busca com dois filtros que nunca se cruzam, devolvendo zero sem
+    // dizer por que. Vale so aqui; nas outras listas o cruzamento manda.
+    const manter = preferidos.filter(p => visiveis.some(s => String(s.code) === p));
+    subtipoFiltro.preencher(visiveis, null, contagens.subtipos, manter);
+    subtipoFiltro.definirVisivel(visiveis.length > 0);
   }
 
   // Os dominios nao bloqueiam a busca: se um deles falhar, o filtro fica so com
@@ -899,32 +891,21 @@ export async function renderBusca(container, ctx) {
 
   if (tipos.status === 'fulfilled') {
     tiposDominio = tipos.value || [];
-    preencherSelect(tipoSelect, tiposDominio, 'Todos os tipos', null,
-      query.get('tipo_produto_id') || '');
+    tipoFiltro.preencher(tiposDominio, null, null, daUrl('tipo_produto_id'));
   }
   if (subtipos.status === 'fulfilled') {
     todosSubtipos = subtipos.value || [];
-    atualizarSubtipos(query.get('subtipo_produto_id') || '');
+    atualizarSubtipos(daUrl('subtipo_produto_id'));
   }
   if (escalas.status === 'fulfilled') {
     escalasDominio = escalas.value || [];
-    preencherSelect(escalaSelect, escalasDominio, 'Todas as escalas', null,
-      query.get('tipo_escala_id') || '');
+    escalaFiltro.preencher(escalasDominio, null, null, daUrl('tipo_escala_id'));
   }
 
-  // Estado e municipio do link: o <select> nasce com o valor para que a PRIMEIRA
-  // busca ja o aplique. As opcoes chegam com as facetas, e o `preencherSelect`
-  // preserva a escolha. Sem esta semente o valor se perderia, porque atribuir a
-  // um <select> sem opcoes nao guarda nada, e o navegador descarta calado.
-  for (const [campo, elemento] of [
-    ['estado_id', estadoSelect],
-    ['municipio_id', municipioSelect],
-  ]) {
-    const valor = query.get(campo);
-    if (!valor) continue;
-    elemento.replaceChildren(el('option', { value: valor, textContent: valor }));
-    elemento.value = valor;
-  }
+  // Estado e municipio do link ja nasceram marcados no `valorInicial`, e por
+  // isso a PRIMEIRA busca ja os aplica. O nome de cada um chega com as facetas,
+  // e ate la o botao mostra o codigo. O filtro guarda a marcacao sozinho, ao
+  // contrario do <select>, que descartava em silencio o valor sem opcao.
 
   // Area que veio na URL: e DESENHADA no mapa, para a pessoa ver o recorte que
   // o link trouxe em vez de um resultado filtrado por uma area invisivel.
@@ -987,6 +968,11 @@ export async function renderBusca(container, ctx) {
     buscarComEspera.cancelar();
     buscarPorMapa.cancelar();
     campoPalavra._cleanup();
+    // Os filtros ouvem o DOCUMENTO (clique fora, Escape). Sem isto, a tela
+    // seguinte herdaria o ouvinte de uma tela que ja morreu.
+    for (const f of [tipoFiltro, subtipoFiltro, escalaFiltro, estadoFiltro, municipioFiltro]) {
+      f._cleanup();
+    }
     mapa._cleanup();
   };
 }

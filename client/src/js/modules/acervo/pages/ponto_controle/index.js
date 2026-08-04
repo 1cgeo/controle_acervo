@@ -1,4 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
+import { reconciliar } from '@utils/reconciliar.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { chip } from '@components/status-chip.js';
@@ -7,6 +8,7 @@ import {
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { criarSelecao, pintarBotaoSelecao } from '@modules/acervo/pages/busca/selecao.js';
+import { criarFiltroMultiplo } from '@components/filtro-multiplo/filtro-multiplo.js';
 import { criarMapaPontos } from './mapa.js';
 import { abrirCodigosDisponiveis } from './codigos-dialog.js';
 import { abrirPontoDialog } from './ponto-dialog.js';
@@ -22,6 +24,11 @@ const POR_PAGINA = 20;
 // 3 APROVADO, 4 REPROVADO. Trocar o 3 com o 4 pinta a lista mentindo.
 const VARIANTE_SITUACAO = { 1: 'warning', 2: 'info', 3: 'success', 4: 'error' };
 
+// Item sentinela do resultado vazio. Ele entra na mesma reconciliacao dos
+// cartoes, e por isso o aviso "nada encontrado" sai da tela sozinho quando o
+// resultado volta a ter ponto.
+const VAZIO = { vazio: true };
+
 function debounce(fn, ms) {
   let id = null;
   const chamada = (...args) => {
@@ -33,33 +40,28 @@ function debounce(fn, ms) {
 }
 
 /**
- * Preenche um <select> de faceta.
+ * Preenche um filtro de faceta com marcacao multipla.
  *
- * So entra quem TEM ponto, e o numero vai entre parenteses. Um combo com os 86
- * lotes do acervo, dos quais dois tem ponto de controle, faz a pessoa procurar
- * agulha; e opcao sem numero nao diz se escolher vale a pena.
+ * So entra quem TEM ponto, e o numero vai ao lado. Um filtro com os 86 lotes do
+ * acervo, dos quais dois tem ponto de controle, faz a pessoa procurar agulha; e
+ * opcao sem numero nao diz se marcar vale a pena.
  *
- * A opcao ESCOLHIDA sobrevive mesmo com zero, marcada com "(0)": some-la
- * enquanto ela esta selecionada tiraria da tela o filtro que produziu o
- * resultado vazio, e a pessoa nao teria o que desfazer.
+ * A opcao MARCADA sobrevive mesmo com zero, com "(0)": some-la enquanto esta
+ * marcada tiraria da tela o filtro que produziu o resultado vazio, e a pessoa
+ * nao teria o que desfazer. Quem guarda essa regra e o `filtro-multiplo`.
+ *
+ * O total no rotulo de "nada marcado" e a soma da faceta, e nao um dominio
+ * fixo: e quantos pontos a consulta devolve sem este filtro.
  */
-function preencherFaceta(selectEl, itens, rotuloVazio, valorAtual = selectEl.value) {
-  const atual = String(valorAtual || '');
-  const visiveis = itens.filter(i => i.pontos > 0 || String(i.code) === atual);
+function preencherFaceta(filtro, itens, rotuloVazio, desejado = null) {
   const total = itens.reduce((s, i) => s + i.pontos, 0);
-
-  selectEl.replaceChildren(
-    el('option', {
-      value: '',
-      textContent: total > 0 ? `${rotuloVazio} (${formatNumber(total)})` : rotuloVazio,
-    }),
-    ...visiveis.map(i => el('option', {
-      value: String(i.code),
-      textContent: `${i.nome} (${formatNumber(i.pontos)})`,
-    }))
+  const contagem = new Map(itens.map(i => [String(i.code), i.pontos]));
+  filtro.preencher(
+    itens,
+    total > 0 ? `${rotuloVazio} (${formatNumber(total)})` : rotuloVazio,
+    contagem,
+    desejado
   );
-  selectEl.value = visiveis.some(i => String(i.code) === atual) ? atual : '';
-  selectEl.disabled = visiveis.length === 0;
 }
 
 /**
@@ -137,36 +139,50 @@ export async function renderPontoControle(container, ctx) {
     codigoInput,
   ]);
 
-  const projetoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Projeto',
-    onChange: () => reiniciar(),
+  /** Lista de codigos que veio na URL, como '1,3'. */
+  const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
+
+  // Marcacao MULTIPLA (chefe, 2026-08-04), igual a busca do acervo: as duas
+  // telas andam juntas, e um filtro que se usa de um jeito aqui e de outro la
+  // seria a pessoa reaprendendo a interface ao trocar de aba.
+  const projetoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os projetos',
+    nomePlural: 'projetos',
+    ariaLabel: 'Projeto',
+    valorInicial: daUrl('projeto_id'),
+    onMudar: () => reiniciar(),
   });
 
-  const loteSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Lote (missão)',
-    onChange: () => reiniciar(),
+  const loteFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os lotes',
+    nomePlural: 'lotes',
+    ariaLabel: 'Lote (missão)',
+    valorInicial: daUrl('lote_id'),
+    onMudar: () => reiniciar(),
   });
 
   // Lugar. O município depende do ESTADO: sem estado escolhido o servidor
   // devolve lista vazia, porque um combo com os municípios de todo o país não
   // ajuda a escolher. Trocar de estado zera o município, senão a consulta
   // levaria um município que não pertence ao estado da tela.
-  const estadoSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Estado',
-    onChange: () => {
-      municipioSelect.value = '';
+  const estadoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os estados',
+    nomePlural: 'estados',
+    ariaLabel: 'Estado',
+    valorInicial: daUrl('estado_id'),
+    onMudar: () => {
+      municipioFiltro.limpar();
       destacarLugar();
       reiniciar();
     },
   });
 
-  const municipioSelect = el('select', {
-    className: 'busca-filtros__select',
-    'aria-label': 'Município',
-    onChange: () => { destacarLugar(); reiniciar(); },
+  const municipioFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Escolha o estado',
+    nomePlural: 'municípios',
+    ariaLabel: 'Município',
+    valorInicial: daUrl('municipio_id'),
+    onMudar: () => { destacarLugar(); reiniciar(); },
   });
 
   const areaCheck = el('input', {
@@ -184,7 +200,21 @@ export async function renderPontoControle(container, ctx) {
   // Chip da área desenhada, no mesmo lugar dos outros filtros: sem ele o único
   // sinal de que a consulta está recortada seria o polígono no mapa, que sai da
   // vista assim que a pessoa navega para outro canto.
-  const chipArea = el('div', { className: 'busca-area-chip hidden' });
+  //
+  // O conteudo nasce junto com ele, e nao a cada desenho: o chip so aparece e
+  // some, e refazer o icone, o texto e o botao de remover a cada area nova
+  // tiraria o foco de quem estava sobre o ×.
+  const chipArea = el('div', { className: 'busca-area-chip hidden' }, [
+    svgIcon(ICONS.layers, 16),
+    el('span', { textContent: 'Área desenhada no mapa' }),
+    el('button', {
+      className: 'busca-area-chip__remover',
+      type: 'button',
+      'aria-label': 'Remover a área desenhada',
+      textContent: '×',
+      onClick: () => { removerArea(); reiniciar(); },
+    }),
+  ]);
 
   const limparBtn = el('button', {
     className: 'btn btn--text btn--sm',
@@ -226,21 +256,25 @@ export async function renderPontoControle(container, ctx) {
   }, [svgIcon(ICONS.download, 16), 'Exportar CSV']);
 
   // So aparece quando ha selecao: um botao permanentemente desativado e ruido.
+  // O rotulo muda a cada clique de selecao, e por isso ele e um NO DE TEXTO
+  // guardado: refazer o conteudo do botao recriaria o icone junto, a cada
+  // clique, sem nada ter mudado nele.
+  const exportarSelecaoTexto = document.createTextNode('Exportar selecionados');
   const exportarSelecaoBtn = el('button', {
     className: 'btn btn--secondary btn--sm hidden',
     type: 'button',
     onClick: (e) => exportarCsv(true, e.currentTarget),
-  }, [svgIcon(ICONS.download, 16), 'Exportar selecionados']);
+  }, [svgIcon(ICONS.download, 16), exportarSelecaoTexto]);
 
   const acoesTopo = el('div', { className: 'busca__acoes' }, [
     limparBtn, codigosBtn, exportarSelecaoBtn, exportarTudoBtn,
   ]);
 
   const filtros = el('div', { className: 'busca-filtros' }, [
-    projetoSelect,
-    loteSelect,
-    estadoSelect,
-    municipioSelect,
+    projetoFiltro.element,
+    loteFiltro.element,
+    estadoFiltro.element,
+    municipioFiltro.element,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
       el('span', { textContent: 'Só na área do mapa' }),
@@ -260,10 +294,8 @@ export async function renderPontoControle(container, ctx) {
       mapa.setSelecionados(ids);
       marcarCartoes();
       exportarSelecaoBtn.classList.toggle('hidden', ids.size === 0);
-      exportarSelecaoBtn.replaceChildren(
-        svgIcon(ICONS.download, 16),
-        document.createTextNode(` Exportar ${ids.size} selecionado${ids.size > 1 ? 's' : ''}`)
-      );
+      exportarSelecaoTexto.data =
+        ` Exportar ${ids.size} selecionado${ids.size > 1 ? 's' : ''}`;
     },
     onVerFichas: (pontos) => abrirPontoDialog(pontos.map(p => p.cod_ponto), 0),
   });
@@ -277,7 +309,37 @@ export async function renderPontoControle(container, ctx) {
     textContent: 'Consultando...',
   });
   const lista = el('div', { className: 'pc-lista' });
+
+  // O aviso de lista vazia entra pela MESMA reconciliação dos cartões, como um
+  // item sentinela. Fora dela, ele seria apagado na varredura seguinte (a
+  // reconciliação remove todo filho que não está na lista final), ou teria de
+  // morar noutro nó, sempre presente e mentindo "nada encontrado" no texto da
+  // página.
+  const listaVazia = el('div', { className: 'busca-lista__vazio' }, [
+    el('p', { textContent: 'Nenhum ponto de controle com esses filtros.' }),
+  ]);
+
   const paginacao = el('div', { className: 'busca-paginacao' });
+
+  // `disabled` vai como PROPRIEDADE, e nunca como atributo no el(): o helper faz
+  // setAttribute, e `disabled="false"` desabilita o botao do mesmo jeito.
+  //
+  // Os tres nos nascem aqui, e nao a cada consulta: quem clica em "Próxima"
+  // dispara a consulta que recriava o proprio botao debaixo do cursor, e o foco
+  // caia no body. Virar a segunda pagina pelo teclado era impossivel.
+  const paginaAnteriorBtn = el('button', {
+    className: 'btn btn--secondary btn--sm',
+    type: 'button',
+    onClick: () => { pagina -= 1; consultar(); },
+  }, [svgIcon(ICONS.arrowBack, 16), 'Anterior']);
+
+  const paginaPosicao = el('span', { className: 'busca-paginacao__posicao' });
+
+  const paginaProximaBtn = el('button', {
+    className: 'btn btn--secondary btn--sm',
+    type: 'button',
+    onClick: () => { pagina += 1; consultar(); },
+  }, ['Próxima']);
 
   const mapa = criarMapaPontos({
     // O ponto clicado no mapa quase nunca está na página atual da lista: o mapa
@@ -322,9 +384,13 @@ export async function renderPontoControle(container, ctx) {
    * @param {boolean} [opcoes.enquadrar=true]
    */
   async function destacarLugar({ enquadrar = true } = {}) {
-    const chave = municipioSelect.value
-      ? `municipio:${municipioSelect.value}`
-      : (estadoSelect.value ? `estado:${estadoSelect.value}` : '');
+    // O municipio manda quando ha algum marcado: e o recorte mais fino, e o
+    // contorno do estado por cima diria que a consulta cobre o estado inteiro.
+    const municipios = municipioFiltro.valores();
+    const estados = estadoFiltro.valores();
+    const tipoLugar = municipios.length ? 'municipio' : (estados.length ? 'estado' : '');
+    const idsLugar = municipios.length ? municipios : estados;
+    const chave = tipoLugar ? `${tipoLugar}:${idsLugar.join(',')}` : '';
     if (chave === chaveLugar) return;
     chaveLugar = chave;
 
@@ -340,13 +406,26 @@ export async function renderPontoControle(container, ctx) {
     // câmera saltaria duas vezes, para dois lugares diferentes.
     lugarComandaCamera = enquadrar;
 
-    const [tipo, id] = chave.split(':');
     try {
-      const limite = await getLimite(tipo, id);
+      // `allSettled`: um limite que falha não pode apagar os que vieram. Com
+      // três estados marcados, dois contornos valem mais que nenhum.
+      const respostas = await Promise.allSettled(
+        idsLugar.map(id => getLimite(tipoLugar, id))
+      );
       // Trocar de lugar duas vezes seguidas: a primeira resposta pode chegar
       // depois da segunda, e pintaria o estado que a pessoa já abandonou.
       if (disposed || chaveLugar !== chave) return;
-      mapa.destacarLimite(limite, { enquadrar });
+
+      const limites = respostas
+        .filter(r => r.status === 'fulfilled' && r.value)
+        .map(r => r.value);
+      if (!limites.length) {
+        chaveLugar = '';
+        lugarComandaCamera = false;
+        mapa.limparLimite();
+        return;
+      }
+      mapa.destacarLimite(limites, { enquadrar });
     } catch {
       if (chaveLugar !== chave) return;
       chaveLugar = '';
@@ -362,22 +441,7 @@ export async function renderPontoControle(container, ctx) {
   }
 
   function atualizarChipArea() {
-    if (!areaDesenhada) {
-      chipArea.classList.add('hidden');
-      return;
-    }
-    chipArea.replaceChildren(
-      svgIcon(ICONS.layers, 16),
-      el('span', { textContent: 'Área desenhada no mapa' }),
-      el('button', {
-        className: 'busca-area-chip__remover',
-        type: 'button',
-        'aria-label': 'Remover a área desenhada',
-        textContent: '×',
-        onClick: () => { removerArea(); reiniciar(); },
-      })
-    );
-    chipArea.classList.remove('hidden');
+    chipArea.classList.toggle('hidden', !areaDesenhada);
   }
 
   const painel = el('div', { className: 'pc-painel' }, [
@@ -403,10 +467,11 @@ export async function renderPontoControle(container, ctx) {
   function filtrosAtuais() {
     return {
       cod_ponto: codigoInput.value.trim(),
-      projeto_id: projetoSelect.value,
-      lote_id: loteSelect.value,
-      estado_id: estadoSelect.value,
-      municipio_id: municipioSelect.value,
+      // Arrays: o servico junta com virgula, e o servidor aceita a lista.
+      projeto_id: projetoFiltro.valores(),
+      lote_id: loteFiltro.valores(),
+      estado_id: estadoFiltro.valores(),
+      municipio_id: municipioFiltro.valores(),
       // O desenho VENCE a área visível: quem desenhou pediu aquele recorte, e
       // mandar os dois traria a interseção dos dois.
       bbox: !areaDesenhada && seguirMapa ? mapa.caixaVisivel() : '',
@@ -418,6 +483,12 @@ export async function renderPontoControle(container, ctx) {
   function gravarNaUrl(atuais) {
     const params = new URLSearchParams();
     for (const [chave, valor] of Object.entries(atuais)) {
+      // Array VAZIO e verdadeiro em JavaScript, e sem este teste o filtro de
+      // marcacao multipla sem nada marcado sujaria a URL com `lote_id=`.
+      if (Array.isArray(valor)) {
+        if (valor.length) params.set(chave, valor.join(','));
+        continue;
+      }
       if (valor) params.set(chave, valor);
     }
     if (pagina > 1) params.set('pagina', String(pagina));
@@ -467,10 +538,11 @@ export async function renderPontoControle(container, ctx) {
 
   function limparTudo() {
     codigoInput.value = '';
-    projetoSelect.value = '';
-    loteSelect.value = '';
-    estadoSelect.value = '';
-    municipioSelect.value = '';
+    // `limpar` nao dispara `onMudar`: limpar a tela consulta UMA vez, no fim.
+    projetoFiltro.limpar();
+    loteFiltro.limpar();
+    estadoFiltro.limpar();
+    municipioFiltro.limpar();
     destacarLugar();
     areaCheck.checked = false;
     seguirMapa = false;
@@ -483,11 +555,11 @@ export async function renderPontoControle(container, ctx) {
   // Pintura
   // ---------------------------------------------------------------------------
   function pintarFacetas(facetas) {
-    preencherFaceta(projetoSelect, facetas.projetos || [], 'Todos os projetos');
-    // O lote ja chega estreitado pelo projeto escolhido: a faceta aplica os
+    preencherFaceta(projetoFiltro, facetas.projetos || [], 'Todos os projetos');
+    // O lote ja chega estreitado pelos projetos marcados: a faceta aplica os
     // OUTROS filtros, entao o servidor ja o fez. Nao ha o que filtrar aqui.
     preencherFaceta(
-      loteSelect,
+      loteFiltro,
       (facetas.lotes || []).map(l => ({
         ...l, nome: l.pit ? `${l.nome} (${l.pit})` : l.nome,
       })),
@@ -496,17 +568,28 @@ export async function renderPontoControle(container, ctx) {
     // O estado mostra a SIGLA junto do nome: "Rio Grande do Sul (RS)" é o que
     // quem opera reconhece de imediato numa lista de 27.
     preencherFaceta(
-      estadoSelect,
+      estadoFiltro,
       (facetas.estados || []).map(e => ({ ...e, nome: `${e.nome} (${e.sigla})` })),
       'Todos os estados'
     );
     preencherFaceta(
-      municipioSelect,
+      municipioFiltro,
       facetas.municipios || [],
-      estadoSelect.value ? 'Todos os municípios' : 'Escolha o estado'
+      estadoFiltro.valores().length ? 'Todos os municípios' : 'Escolha o estado'
     );
   }
 
+  /**
+   * Monta o cartao VAZIO (nos, listeners) e pinta nele o primeiro ponto.
+   *
+   * Criar e pintar sao separados porque a lista se RECONCILIA: o cartao do ponto
+   * que continua no resultado sobrevive a consulta nova, e so troca de conteudo.
+   * Mesmo desenho do `buildRow`/`paintRow` do data-table.
+   *
+   * Todo listener le `cartao._dados`, e nunca o `p` da criacao. Com o `p`
+   * capturado, o cartao reaproveitado abriria a ficha do ponto da consulta
+   * ANTERIOR, e a tela nao mostraria nada de errado.
+   */
   function cartaoPonto(p) {
     // Clicar no cartao ABRE A FICHA (chefe, 2026-07-31), igual a busca de
     // produtos. O cartao mostra um resumo, e o gesto natural sobre um resumo e
@@ -519,19 +602,29 @@ export async function renderPontoControle(container, ctx) {
     // O mapa continua indo ate o ponto: fechada a ficha, o circulo ja esta
     // enquadrado atras dela.
     const abrirFicha = () => {
-      mapa.enquadrarPonto(p.id);
-      abrirPontoDialog([p.cod_ponto], 0);
+      const dados = cartao._dados;
+      mapa.enquadrarPonto(dados.id);
+      abrirPontoDialog([dados.cod_ponto], 0);
     };
 
     const alternarSelecao = () => {
-      selecao.alternar(p);
+      selecao.alternar(cartao._dados);
       mapa.setSelecionados(selecao.ids());
     };
+
+    const partes = {
+      nome: el('h2', { className: 'busca-cartao__nome' }),
+      chip: null,
+      projeto: el('p', { className: 'busca-cartao__id' }),
+      lote: el('p', { className: 'busca-cartao__id' }),
+      meta: el('div', { className: 'pc-cartao__meta' }),
+      arquivos: el('span'),
+    };
+    partes.topo = el('div', { className: 'busca-cartao__topo' }, [partes.nome]);
 
     const cartao = el('article', {
       className: 'busca-cartao pc-cartao',
       tabIndex: 0,
-      dataset: { id: String(p.id) },
       onClick: abrirFicha,
       onKeyDown: (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -540,35 +633,17 @@ export async function renderPontoControle(container, ctx) {
       },
       // Apontar na lista acende o ponto, e vice-versa: e o que liga os dois
       // lados sem exigir clique.
-      onMouseEnter: () => mapa.setApontado(p.id),
+      onMouseEnter: () => mapa.setApontado(cartao._dados.id),
       onMouseLeave: () => mapa.setApontado(null),
-      onFocus: () => mapa.setApontado(p.id),
+      onFocus: () => mapa.setApontado(cartao._dados.id),
       onBlur: () => mapa.setApontado(null),
     }, [
-      el('div', { className: 'busca-cartao__topo' }, [
-        el('h2', { className: 'busca-cartao__nome', textContent: p.cod_ponto }),
-        chip(p.tipo_situacao_nome || `Situação ${p.tipo_situacao}`,
-          VARIANTE_SITUACAO[p.tipo_situacao] || 'default'),
-      ]),
-      el('p', { className: 'busca-cartao__id', textContent: p.projeto || '-' }),
-      el('p', {
-        className: 'busca-cartao__id',
-        textContent: p.pit ? `${p.lote} · ${p.pit}` : (p.lote || '-'),
-      }),
-      el('div', { className: 'pc-cartao__meta' }, [
-        el('span', { textContent: formatDate(p.data_rastreio) }),
-        p.medidor ? el('span', { textContent: p.medidor }) : null,
-        p.altitude_ortometrica != null
-          ? el('span', {
-            textContent: `${formatNumber(Number(p.altitude_ortometrica).toFixed(2))} m`,
-          })
-          : null,
-      ].filter(Boolean)),
+      partes.topo,
+      partes.projeto,
+      partes.lote,
+      partes.meta,
       el('div', { className: 'busca-cartao__rodape' }, [
-        el('span', {
-          textContent: `${p.total_arquivos} ${p.total_arquivos === 1 ? 'arquivo' : 'arquivos'}`
-            + (p.total_mb ? ` · ${formatNumber(Number(p.total_mb).toFixed(1))} MB` : ''),
-        }),
+        partes.arquivos,
         // O botao que era "Ficha" virou o de SELECAO, agora que o cartao inteiro
         // abre a ficha. Conteudo e `aria-pressed` saem de `pintarBotaoSelecao`.
         el('button', {
@@ -583,7 +658,50 @@ export async function renderPontoControle(container, ctx) {
       ]),
     ]);
 
+    cartao._partes = partes;
+    pintarCartao(cartao, p);
+    return cartao;
+  }
+
+  /** Repinta um cartao ja montado com o ponto novo, sem trocar o no. */
+  function pintarCartao(cartao, p) {
+    const partes = cartao._partes;
     cartao._dados = p;
+    cartao.dataset.id = String(p.id);
+
+    partes.nome.textContent = p.cod_ponto;
+
+    // O chip e um no montado pelo componente, e nao um texto: troca-se o no.
+    // A situacao muda de verdade entre duas consultas (o ponto e revisado), e um
+    // chip que nao acompanha faz a tela mentir a situacao.
+    const novo = chip(
+      p.tipo_situacao_nome || `Situação ${p.tipo_situacao}`,
+      VARIANTE_SITUACAO[p.tipo_situacao] || 'default'
+    );
+    if (partes.chip) partes.topo.replaceChild(novo, partes.chip);
+    else partes.topo.appendChild(novo);
+    partes.chip = novo;
+
+    partes.projeto.textContent = p.projeto || '-';
+    partes.lote.textContent = p.pit ? `${p.lote} · ${p.pit}` : (p.lote || '-');
+
+    // A meta tem de um a tres spans, conforme o ponto tenha medidor e altitude.
+    // Refazer os tres cabe aqui: sao folhas sem foco e sem estado, e a contagem
+    // muda de um ponto para o outro.
+    partes.meta.replaceChildren(...[
+      el('span', { textContent: formatDate(p.data_rastreio) }),
+      p.medidor ? el('span', { textContent: p.medidor }) : null,
+      p.altitude_ortometrica != null
+        ? el('span', {
+          textContent: `${formatNumber(Number(p.altitude_ortometrica).toFixed(2))} m`,
+        })
+        : null,
+    ].filter(Boolean));
+
+    partes.arquivos.textContent =
+      `${p.total_arquivos} ${p.total_arquivos === 1 ? 'arquivo' : 'arquivos'}`
+      + (p.total_mb ? ` · ${formatNumber(Number(p.total_mb).toFixed(1))} MB` : '');
+
     return cartao;
   }
 
@@ -622,18 +740,27 @@ export async function renderPontoControle(container, ctx) {
     posicoesPorId.clear();
     for (const p of posicoes.pontos || []) posicoesPorId.set(Number(p.id), p);
 
+    // A lista se RECONCILIA (2026-08-04). Antes ela era refeita inteira a cada
+    // consulta, e a consulta dispara a cada tecla digitada e a cada arrasto do
+    // mapa com "só na área do mapa": vinte cartões trocados de meio em meio
+    // segundo. O foco do teclado morria com o nó, e a rolagem voltava ao topo.
+    //
+    // A chave é o `id` do ponto. O cartão que continua no resultado fica, e só
+    // muda de conteúdo; o que saiu é removido; o que mudou de lugar é movido.
+    const montados = reconciliar(lista, pontos.length ? pontos : [VAZIO], {
+      chave: (item) => (item === VAZIO ? '__vazio__' : Number(item.id)),
+      criar: (item) => (item === VAZIO ? listaVazia : cartaoPonto(item)),
+      atualizar: (no, item) => { if (item !== VAZIO) pintarCartao(no, item); },
+    });
+
+    // O índice do realce cruzado sai da reconciliação, e não de uma montagem
+    // própria. Ele fica SEPARADO do mapa devolvido acima por dois motivos: o
+    // aviso de lista vazia não é cartão, e três chamadas (`marcarCartoes`,
+    // `apontarCartao` e o clique no mapa) esperam só ponto aqui dentro.
     cartoesPorId.clear();
-    if (pontos.length === 0) {
-      lista.replaceChildren(el('div', { className: 'busca-lista__vazio' }, [
-        el('p', { textContent: 'Nenhum ponto de controle com esses filtros.' }),
-      ]));
-    } else {
-      const cartoes = pontos.map(p => {
-        const c = cartaoPonto(p);
-        cartoesPorId.set(Number(p.id), c);
-        return c;
-      });
-      lista.replaceChildren(...cartoes);
+    for (const p of pontos) {
+      const cartao = montados.get(Number(p.id));
+      if (cartao) cartoesPorId.set(Number(p.id), cartao);
     }
     marcarCartoes();
 
@@ -663,49 +790,23 @@ export async function renderPontoControle(container, ctx) {
       return;
     }
 
-    // `disabled` vai como PROPRIEDADE, e nunca como atributo no el(): o helper
-    // faz setAttribute, e `disabled="false"` desabilita o botao do mesmo jeito.
-    const anterior = el('button', {
-      className: 'btn btn--secondary btn--sm',
-      type: 'button',
-      onClick: () => { pagina -= 1; consultar(); },
-    }, [svgIcon(ICONS.arrowBack, 16), 'Anterior']);
-    anterior.disabled = pagina <= 1;
+    paginaAnteriorBtn.disabled = pagina <= 1;
+    paginaProximaBtn.disabled = pagina >= paginas;
+    paginaPosicao.textContent = `Página ${pagina} de ${paginas}`;
 
-    const proxima = el('button', {
-      className: 'btn btn--secondary btn--sm',
-      type: 'button',
-      onClick: () => { pagina += 1; consultar(); },
-    }, ['Próxima']);
-    proxima.disabled = pagina >= paginas;
-
-    paginacao.replaceChildren(
-      anterior,
-      el('span', {
-        className: 'busca-paginacao__posicao',
-        textContent: `Página ${pagina} de ${paginas}`,
-      }),
-      proxima
-    );
+    // Os nos ja estao na tela na virada de pagina comum. So se inserem quando a
+    // paginacao volta a existir, depois de um resultado que cabia numa pagina.
+    if (paginaAnteriorBtn.parentNode !== paginacao) {
+      paginacao.replaceChildren(paginaAnteriorBtn, paginaPosicao, paginaProximaBtn);
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Estado que veio no link
   // ---------------------------------------------------------------------------
-  // Os selects nascem com o valor da URL para que a PRIMEIRA consulta ja o
-  // aplique. As opcoes chegam depois, com as facetas, e o `preencherFaceta`
-  // preserva o valor escolhido.
-  for (const [campo, elemento] of [
-    ['projeto_id', projetoSelect],
-    ['lote_id', loteSelect],
-    ['estado_id', estadoSelect],
-    ['municipio_id', municipioSelect],
-  ]) {
-    const valor = query.get(campo);
-    if (!valor) continue;
-    elemento.replaceChildren(el('option', { value: valor, textContent: valor }));
-    elemento.value = valor;
-  }
+  // Os filtros ja nascem marcados com o que veio na URL (`valorInicial`), e por
+  // isso a PRIMEIRA consulta ja os aplica. O nome de cada um chega depois, com
+  // as facetas, e ate la o botao mostra o codigo.
   if (query.get('bbox')) {
     seguirMapa = true;
     areaCheck.checked = true;
@@ -753,6 +854,9 @@ export async function renderPontoControle(container, ctx) {
     document.removeEventListener('keydown', aoTeclar);
     buscarComEspera.cancelar();
     buscarPorMapa.cancelar();
+    // Os filtros ouvem o DOCUMENTO (clique fora, Escape). Sem isto, a tela
+    // seguinte herdaria o ouvinte de uma tela que ja morreu.
+    for (const f of [projetoFiltro, loteFiltro, estadoFiltro, municipioFiltro]) f._cleanup();
     mapa.destruir();
   };
 }

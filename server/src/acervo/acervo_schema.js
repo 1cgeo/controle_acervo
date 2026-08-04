@@ -3,6 +3,7 @@
 const Joi = require('joi')
 
 const { geometriaSchema } = require('../utils/geometria_schema')
+const { listaDeInteiros } = require('../utils/lista_schema')
 
 const models = {}
 
@@ -119,15 +120,18 @@ const bboxSchema = Joi.string().custom((valor, helpers) => {
 // se divergirem, o mapa passa a mostrar um conjunto e a lista outro, que e pior
 // do que nao ter mapa. Espalhar (`...filtrosBusca`) e o que impede um filtro
 // novo de entrar so num lado.
+// Os filtros de dominio aceitam VARIOS codigos desde 2026-08-04 (chefe). Um
+// valor solto continua valendo, entao link antigo, CLI e plugin nao quebram;
+// ver utils/lista_schema.js.
 const filtrosBusca = {
   termo: Joi.string().allow(''),
-  tipo_produto_id: Joi.number().integer(),
+  tipo_produto_id: listaDeInteiros(),
   // Subtipo (T34-700, ET-RDG, Carta Topografica Militar...). Ver o comentario
   // do controlador: ele casa no produto E na versao, de proposito.
-  subtipo_produto_id: Joi.number().integer(),
-  tipo_escala_id: Joi.number().integer(),
-  projeto_id: Joi.number().integer(),
-  lote_id: Joi.number().integer(),
+  subtipo_produto_id: listaDeInteiros(),
+  tipo_escala_id: listaDeInteiros(),
+  projeto_id: listaDeInteiros(),
+  lote_id: listaDeInteiros(),
   // Recorte por LUGAR: codigo do IBGE, 2 digitos no estado e 7 no municipio.
   // E recorte espacial como o bbox, e nao um campo do produto.
   //
@@ -135,8 +139,8 @@ const filtrosBusca = {
   // municipio se cria e se funde, e um schema preso a tabela do IBGE de 2022
   // recusaria um codigo legitimo amanha. Codigo que nao existe nao acha nada, o
   // que e a resposta certa e nao um erro de validacao.
-  estado_id: Joi.number().integer().min(10).max(99),
-  municipio_id: Joi.number().integer().min(1000000).max(9999999),
+  estado_id: listaDeInteiros({ min: 10, max: 99 }),
+  municipio_id: listaDeInteiros({ min: 1000000, max: 9999999 }),
   // Recorte espacial: a caixa (navegacao do mapa) ou o poligono (desenho).
   bbox: bboxSchema,
   geometria: geometriaSchema,

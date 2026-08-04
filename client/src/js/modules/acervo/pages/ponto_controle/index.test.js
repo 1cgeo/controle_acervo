@@ -132,9 +132,49 @@ const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
 const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
   .querySelector('.busca-cartao__selecionar').click();
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
-const selects = (c) => [...c.querySelectorAll('.busca-filtros__select')];
 const ultimaBusca = () => buscarPontos.mock.calls[buscarPontos.mock.calls.length - 1][0];
-const opcoes = (sel) => [...sel.options].map(o => o.textContent);
+
+// Os filtros de dominio viraram marcacao MULTIPLA em 2026-08-04. Os auxiliares
+// abaixo dirigem o componente pelo mesmo gesto de quem usa a tela: abrir o
+// painel, marcar a caixa, fechar.
+const filtros = (c) => [...c.querySelectorAll('.filtro-multiplo')];
+const filtro = (c, rotulo) => c
+  .querySelector(`.filtro-multiplo__botao[aria-label="${rotulo}"]`)
+  .closest('.filtro-multiplo');
+
+/** Texto do botao: e o que a pessoa le sem abrir o painel. */
+const rotulo = (raiz) => raiz.querySelector('.filtro-multiplo__texto').textContent;
+
+/** Codigos marcados, na ordem em que aparecem no painel. */
+const marcados = (raiz) => [...raiz.querySelectorAll('input[type="checkbox"]')]
+  .filter(i => i.checked).map(i => i.value);
+
+function abrir(raiz) {
+  const botao = raiz.querySelector('.filtro-multiplo__botao');
+  if (botao.getAttribute('aria-expanded') !== 'true') botao.click();
+  return botao;
+}
+
+/** Marca (ou desmarca) um codigo, e fecha o painel para a repintura entrar. */
+function marcarFiltro(raiz, valor, ligado = true) {
+  const botao = abrir(raiz);
+  const caixa = raiz.querySelector(`input[type="checkbox"][value="${valor}"]`);
+  caixa.checked = ligado;
+  caixa.dispatchEvent(new Event('change'));
+  botao.click();
+}
+
+/** Opcoes do painel como 'Nome (N)', para comparar com o combo antigo. */
+function opcoes(raiz) {
+  const botao = abrir(raiz);
+  const itens = [...raiz.querySelectorAll('.filtro-multiplo__opcao')].map((o) => {
+    const nome = o.querySelector('.filtro-multiplo__nome').textContent;
+    const total = o.querySelector('.filtro-multiplo__total');
+    return total ? `${nome} (${total.textContent})` : nome;
+  });
+  botao.click();
+  return itens;
+}
 
 async function montar(ctx = {}) {
   const container = document.createElement('div');
@@ -311,28 +351,32 @@ describe('tela de ponto de controle: lista e mapa', () => {
 });
 
 describe('tela de ponto de controle: facetas', () => {
-  test('o combo mostra o quantitativo entre parenteses', async () => {
+  test('a opcao mostra o quantitativo, e o botao mostra o total', async () => {
     const { container } = await montar();
-    // Nao ha combo de SITUACAO desde 2026-07-29: so ponto aprovado entra no
+    // Nao ha filtro de SITUACAO desde 2026-07-29: so ponto aprovado entra no
     // acervo, entao a coluna e constante e o filtro nao discriminava nada.
-    const [projeto, lote, estado] = selects(container);
+    const projeto = filtro(container, 'Projeto');
+    const lote = filtro(container, 'Lote (missão)');
 
     expect(opcoes(projeto)).toContain('Copa Verde (2)');
     expect(opcoes(lote)).toContain('Missão 1 (PIT-01) (2)');
-    expect(estado.getAttribute('aria-label')).toBe('Estado');
+    // Sem nada marcado, o botao diz quantos pontos a consulta devolve.
+    expect(rotulo(projeto)).toBe('Todos os projetos (2)');
+    expect(filtro(container, 'Estado')).toBeTruthy();
   });
 
   test('opcao SEM ponto nao aparece', async () => {
     const { container } = await montar();
-    const [projeto, lote] = selects(container);
+    const projeto = filtro(container, 'Projeto');
+    const lote = filtro(container, 'Lote (missão)');
 
-    // Um combo com os 86 lotes do acervo, dos quais dois tem ponto, faz a
+    // Um filtro com os 86 lotes do acervo, dos quais dois tem ponto, faz a
     // pessoa procurar agulha.
     expect(opcoes(projeto).join()).not.toContain('Fronteira Oeste');
     expect(opcoes(lote).join()).not.toContain('Missão 2');
   });
 
-  test('a opcao ESCOLHIDA sobrevive mesmo caindo a zero', async () => {
+  test('a opcao MARCADA sobrevive mesmo caindo a zero', async () => {
     // O servidor devolve a faceta com o proprio filtro aplicado zerado quando
     // ele nao casa com mais nada. Some-la tiraria da tela o filtro que produziu
     // o vazio, e a pessoa nao teria o que desfazer.
@@ -341,41 +385,111 @@ describe('tela de ponto de controle: facetas', () => {
       lotes: [{ code: 71, nome: 'Missão 2', pit: 'PIT-02', projeto_id: 7, pontos: 0 }],
     }));
     const { container } = await montar({ query: 'lote_id=71' });
-    const lote = selects(container)[1];
+    const lote = filtro(container, 'Lote (missão)');
 
     expect(opcoes(lote).join()).toContain('Missão 2 (PIT-02) (0)');
-    expect(lote.value).toBe('71');
+    expect(marcados(lote)).toEqual(['71']);
   });
 
   test('as facetas recebem os MESMOS filtros da lista', async () => {
     await montar({ query: 'projeto_id=7' });
     const chamada = getFacetas.mock.calls[getFacetas.mock.calls.length - 1][0];
-    expect(chamada.projeto_id).toBe('7');
+    expect(chamada.projeto_id).toEqual(['7']);
   });
 
-  test('escolher um projeto reconsulta, e o combo de lote se estreita', async () => {
+  test('marcar um projeto reconsulta, e a lista de lote se estreita', async () => {
     const { container } = await montar();
-    const [projeto, lote] = selects(container);
+    const projeto = filtro(container, 'Projeto');
+    const lote = filtro(container, 'Lote (missão)');
 
     getFacetas.mockImplementation(() => Promise.resolve({
       ...FACETAS,
       lotes: [{ code: 70, nome: 'Missão 1', pit: 'PIT-01', projeto_id: 7, pontos: 2 }],
     }));
 
-    projeto.value = '7';
-    projeto.dispatchEvent(new Event('change'));
+    marcarFiltro(projeto, '7');
     await flush();
 
-    expect(ultimaBusca().projeto_id).toBe('7');
-    expect(opcoes(lote)).toEqual(['Todos os lotes (2)', 'Missão 1 (PIT-01) (2)']);
+    expect(ultimaBusca().projeto_id).toEqual(['7']);
+    expect(opcoes(lote)).toEqual(['Missão 1 (PIT-01) (2)']);
   });
 
-  test('combo sem nenhuma opcao fica desabilitado', async () => {
+  test('marcar DOIS projetos pergunta pelos dois de uma vez', async () => {
+    // A razao de o filtro ter deixado de ser combo (chefe, 2026-08-04): antes,
+    // responder "o que existe nos dois projetos" custava duas consultas.
+    const { container } = await montar();
+    const projeto = filtro(container, 'Projeto');
+
+    // Com o primeiro marcado, a faceta passa a contar ponto nos dois.
+    getFacetas.mockImplementation(() => Promise.resolve({
+      ...FACETAS,
+      projetos: [
+        { code: 7, nome: 'Copa Verde', pontos: 2 },
+        { code: 8, nome: 'Fronteira Oeste', pontos: 3 },
+      ],
+    }));
+
+    marcarFiltro(projeto, '7');
+    await flush();
+    marcarFiltro(projeto, '8');
+    await flush();
+
+    expect(ultimaBusca().projeto_id).toEqual(['7', '8']);
+    expect(rotulo(projeto)).toBe('2 projetos');
+  });
+
+  test('desmarcar a ultima opcao tira o filtro, e nao manda lista vazia', async () => {
+    const { container } = await montar();
+    const projeto = filtro(container, 'Projeto');
+
+    marcarFiltro(projeto, '7');
+    await flush();
+    marcarFiltro(projeto, '7', false);
+    await flush();
+
+    expect(ultimaBusca().projeto_id).toEqual([]);
+    expect(location.hash).not.toContain('projeto_id');
+  });
+
+  test('"Limpar" dentro do painel desmarca tudo de uma vez', async () => {
+    const { container } = await montar();
+    const projeto = filtro(container, 'Projeto');
+
+    getFacetas.mockImplementation(() => Promise.resolve({
+      ...FACETAS,
+      projetos: [
+        { code: 7, nome: 'Copa Verde', pontos: 2 },
+        { code: 8, nome: 'Fronteira Oeste', pontos: 3 },
+      ],
+    }));
+
+    marcarFiltro(projeto, '7');
+    await flush();
+    marcarFiltro(projeto, '8');
+    await flush();
+
+    abrir(projeto);
+    projeto.querySelector('.filtro-multiplo__limpar').click();
+    await flush();
+
+    expect(marcados(projeto)).toEqual([]);
+    expect(ultimaBusca().projeto_id).toEqual([]);
+    // O total do rotulo e a soma da faceta corrente: 2 + 3 dos dois projetos.
+    expect(rotulo(projeto)).toBe('Todos os projetos (5)');
+  });
+
+  test('filtro sem nenhuma opcao diz que nao ha o que marcar', async () => {
     getFacetas.mockImplementation(() => Promise.resolve({
       projetos: [], lotes: [],
     }));
     const { container } = await montar();
-    expect(selects(container).every(s => s.disabled)).toBe(true);
+    const projeto = filtro(container, 'Projeto');
+    abrir(projeto);
+
+    expect(opcoes(projeto)).toEqual([]);
+    expect(projeto.querySelector('.filtro-multiplo__vazio').classList.contains('hidden'))
+      .toBe(false);
+    expect(filtros(container).length).toBeGreaterThan(0);
   });
 });
 
@@ -400,12 +514,12 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
   test('o filtro que veio no link e aplicado ja na PRIMEIRA consulta', async () => {
     await montar({ query: 'projeto_id=7&lote_id=70&estado_id=43&cod_ponto=HV' });
 
-    // A primeira chamada, e nao a ultima: os selects nascem com o valor da URL
-    // justamente para que a consulta inicial ja o aplique.
+    // A primeira chamada, e nao a ultima: os filtros nascem marcados com o que
+    // veio na URL justamente para que a consulta inicial ja o aplique.
     const primeira = buscarPontos.mock.calls[0][0];
-    expect(primeira.projeto_id).toBe('7');
-    expect(primeira.lote_id).toBe('70');
-    expect(primeira.estado_id).toBe('43');
+    expect(primeira.projeto_id).toEqual(['7']);
+    expect(primeira.lote_id).toEqual(['70']);
+    expect(primeira.estado_id).toEqual(['43']);
     expect(primeira.cod_ponto).toBe('HV');
 
     expect(location.hash).toContain('projeto_id=7');
@@ -458,7 +572,7 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
     await flush();
 
     const filtros = ultimaBusca();
-    expect(filtros.projeto_id).toBe('');
+    expect(filtros.projeto_id).toEqual([]);
     expect(filtros.cod_ponto).toBe('');
     expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
   });
@@ -557,7 +671,7 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
     await flush();
 
     const [filtros, nome] = baixarPontosCsv.mock.calls[0];
-    expect(filtros.projeto_id).toBe('7');
+    expect(filtros.projeto_id).toEqual(['7']);
     expect(filtros.pagina).toBeUndefined();
     expect(filtros.ids).toBeNull();
     expect(nome).toBe('pontos-de-controle.csv');
@@ -654,30 +768,28 @@ describe('tela de ponto de controle: robustez', () => {
   // O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista
   // e deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
 
-  test('escolher o estado pinta o contorno e leva a camera ate ele', async () => {
+  test('marcar o estado pinta o contorno e leva a camera ate ele', async () => {
     const { container } = await montar();
-    const estado = selects(container)[2];
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
     expect(getLimite).toHaveBeenCalledWith('estado', '43');
-    expect(mapaFalso.limiteDestacado.bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
+    // Uma LISTA de limites desde 2026-08-04: o filtro marca varios estados.
+    expect(mapaFalso.limiteDestacado[0].bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
     expect(mapaFalso.limiteEnquadrou).toBe(true);
   });
 
   test('o MUNICIPIO ganha do estado: e o recorte que a consulta aplica', async () => {
     const { container } = await montar();
-    const estado = selects(container)[2];
-    const municipio = selects(container)[3];
+    const estado = filtro(container, 'Estado');
+    const municipio = filtro(container, 'Município');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
-    municipio.value = '4314902';
-    municipio.dispatchEvent(new Event('change'));
+    marcarFiltro(municipio, '4314902');
     await flush();
 
     expect(getLimite).toHaveBeenLastCalledWith('municipio', '4314902');
@@ -685,15 +797,13 @@ describe('tela de ponto de controle: robustez', () => {
 
   test('tirar o lugar apaga o contorno, sem mexer na camera', async () => {
     const { container } = await montar();
-    const estado = selects(container)[2];
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
     expect(mapaFalso.limiteLimpo).toBe(0);
 
-    estado.value = '';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43', false);
     await flush();
 
     expect(mapaFalso.limiteLimpo).toBe(1);
@@ -704,10 +814,9 @@ describe('tela de ponto de controle: robustez', () => {
     // Sem lugar, a consulta enquadra nos pontos, como sempre fez.
     expect(mapaFalso.enquadrado).not.toBeNull();
 
-    const estado = selects(container)[2];
+    const estado = filtro(container, 'Estado');
     mapaFalso.enquadrado = null;
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
     // Enquadrar nos pontos aqui tiraria a borda vermelha da vista logo depois
@@ -737,16 +846,37 @@ describe('tela de ponto de controle: robustez', () => {
   test('o contorno que falha nao derruba a consulta', async () => {
     getLimite.mockImplementation(() => Promise.reject(new Error('sem rede')));
     const { container } = await montar();
-    const estado = selects(container)[2];
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
     // O destaque e apoio visual. Sem ele a tela perde a borda, e nao a lista.
     expect(mapaFalso.limiteDestacado).toBeNull();
     expect(cartoes(container)).toHaveLength(2);
-    expect(ultimaBusca().estado_id).toBe('43');
+    expect(ultimaBusca().estado_id).toEqual(['43']);
+  });
+
+  test('marcar DOIS estados destaca os dois e enquadra a uniao', async () => {
+    getFacetas.mockImplementation(() => Promise.resolve({
+      ...FACETAS,
+      estados: [
+        { code: 43, sigla: 'RS', nome: 'Rio Grande do Sul', pontos: 2 },
+        { code: 42, sigla: 'SC', nome: 'Santa Catarina', pontos: 1 },
+      ],
+    }));
+    const { container } = await montar();
+    const estado = filtro(container, 'Estado');
+
+    marcarFiltro(estado, '43');
+    await flush();
+    marcarFiltro(estado, '42');
+    await flush();
+
+    // Enquadrar so o primeiro deixaria o outro fora da tela, dizendo que o
+    // recorte e menor do que e.
+    expect(mapaFalso.limiteDestacado).toHaveLength(2);
+    expect(ultimaBusca().estado_id).toEqual(['43', '42']);
   });
 
   test('o cleanup solta o mapa e a altura fixa', async () => {

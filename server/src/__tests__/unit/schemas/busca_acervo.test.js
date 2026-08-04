@@ -75,7 +75,16 @@ describe('Schema da busca do acervo', () => {
       })
       expect(error).toBeUndefined()
       expect(value.palavra_chave).toBe('Mapeamento Sistemático')
-      expect(value.tipo_produto_id).toBe(9)
+      // Desde 2026-08-04 o filtro de dominio e uma LISTA, e o valor solto vira
+      // lista de um: e o que mantem de pe o link antigo e o CLI.
+      expect(value.tipo_produto_id).toEqual([9])
+      expect(value.tipo_escala_id).toEqual([2])
+    })
+
+    it('o filtro de dominio aceita VARIOS codigos', () => {
+      const { error, value } = valida({ tipo_escala_id: '2,3' })
+      expect(error).toBeUndefined()
+      expect(value.tipo_escala_id).toEqual([2, 3])
     })
   })
 })

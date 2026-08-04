@@ -7,6 +7,7 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 // nenhum, só um "Não mapeado" falso. Hoje é `utils/mi.js`, o mesmo normalizador
 // do `mapoteca_cli`.
 const { normalizarIdentificador } = require('../utils/mi');
+const { temValor } = require('../utils/lista_schema');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
@@ -999,7 +1000,10 @@ async function generateGeoJSONForScale(scaleId) {
 function montarFiltrosBusca(f, exceto = null) {
   const conditions = [];
   const params = {};
-  const usa = (chave) => chave !== exceto && f[chave];
+  // `temValor` e nao a verdade do JavaScript: os filtros de dominio chegam como
+  // ARRAY desde 2026-08-04, e array vazio e verdadeiro. Sem isto, desmarcar a
+  // ultima opcao montaria `IN ()` e derrubaria a consulta.
+  const usa = (chave) => chave !== exceto && temValor(f[chave]);
 
   if (f.termo) {
     conditions.push(`(
@@ -1029,24 +1033,27 @@ function montarFiltrosBusca(f, exceto = null) {
     params.palavraChave = f.palavra_chave;
   }
 
+  // `IN` e nao `=` nos filtros de dominio: cada um aceita varios codigos, e
+  // marcar dois tipos pergunta por um OU o outro. O cruzamento ENTRE filtros
+  // continua sendo E, que e o que a faceta ja contava.
   if (usa('tipo_produto_id')) {
-    conditions.push(`p.tipo_produto_id = $<tipoProdutoId>`);
+    conditions.push(`p.tipo_produto_id IN ($<tipoProdutoId:csv>)`);
     params.tipoProdutoId = f.tipo_produto_id;
   }
 
   if (usa('subtipo_produto_id')) {
     conditions.push(`(
-      p.subtipo_produto_id = $<subtipoProdutoId>
+      p.subtipo_produto_id IN ($<subtipoProdutoId:csv>)
       OR EXISTS (
         SELECT 1 FROM acervo.versao vs
-        WHERE vs.produto_id = p.id AND vs.subtipo_produto_id = $<subtipoProdutoId>
+        WHERE vs.produto_id = p.id AND vs.subtipo_produto_id IN ($<subtipoProdutoId:csv>)
       )
     )`);
     params.subtipoProdutoId = f.subtipo_produto_id;
   }
 
   if (usa('tipo_escala_id')) {
-    conditions.push(`p.tipo_escala_id = $<tipoEscalaId>`);
+    conditions.push(`p.tipo_escala_id IN ($<tipoEscalaId:csv>)`);
     params.tipoEscalaId = f.tipo_escala_id;
   }
 
@@ -1094,7 +1101,7 @@ function montarFiltrosBusca(f, exceto = null) {
   if (usa('municipio_id')) {
     conditions.push(`EXISTS (
       SELECT 1 FROM limites.municipio m
-      WHERE m.id = $<municipioId> AND ST_Intersects(p.geom, m.geom)
+      WHERE m.id IN ($<municipioId:csv>) AND ST_Intersects(p.geom, m.geom)
     )`);
     params.municipioId = f.municipio_id;
   }
@@ -1102,21 +1109,26 @@ function montarFiltrosBusca(f, exceto = null) {
   if (usa('estado_id')) {
     conditions.push(`EXISTS (
       SELECT 1 FROM limites.estado e
-      WHERE e.id = $<estadoId> AND ST_Intersects(p.geom, e.geom)
+      WHERE e.id IN ($<estadoId:csv>) AND ST_Intersects(p.geom, e.geom)
     )`);
     params.estadoId = f.estado_id;
   }
 
-  if (f.projeto_id || f.lote_id) {
+  // Projeto e lote NAO passam pelo `usa`: os dois montam um EXISTS so, porque
+  // pedir os dois quer dizer "o lote X, dentro do projeto Y", e nao dois testes
+  // independentes sobre versoes diferentes do mesmo produto.
+  const temProjeto = exceto !== 'projeto_id' && temValor(f.projeto_id);
+  const temLote = exceto !== 'lote_id' && temValor(f.lote_id);
+  if (temProjeto || temLote) {
     conditions.push(`EXISTS (
       SELECT 1 FROM acervo.versao v2
       LEFT JOIN acervo.lote l2 ON v2.lote_id = l2.id
       WHERE v2.produto_id = p.id
-      ${f.projeto_id ? 'AND l2.projeto_id = $<projetoId>' : ''}
-      ${f.lote_id ? 'AND v2.lote_id = $<loteId>' : ''}
+      ${temProjeto ? 'AND l2.projeto_id IN ($<projetoId:csv>)' : ''}
+      ${temLote ? 'AND v2.lote_id IN ($<loteId:csv>)' : ''}
     )`);
-    if (f.projeto_id) params.projetoId = f.projeto_id;
-    if (f.lote_id) params.loteId = f.lote_id;
+    if (temProjeto) params.projetoId = f.projeto_id;
+    if (temLote) params.loteId = f.lote_id;
   }
 
   return {
@@ -1372,16 +1384,17 @@ controller.buscaFacetas = async (filtros = {}) => {
       porEstado.params
     );
 
-    // O municipio so entra na lista quando ha ESTADO escolhido. Sem isso a
+    // O municipio so entra na lista quando ha ESTADO marcado. Sem isso a
     // resposta traria centenas de municipios de todo o Brasil, e a lista deixa
-    // de ajudar a escolher.
-    const municipios = filtros.estado_id
+    // de ajudar a escolher. Com mais de um estado marcado, a lista e a UNIAO
+    // dos municipios deles.
+    const municipios = temValor(filtros.estado_id)
       ? await t.any(
         `SELECT m.id, m.nome, COUNT(DISTINCT p.id)::int AS produtos
          FROM acervo.produto p
          INNER JOIN limites.municipio m ON ST_Intersects(p.geom, m.geom)
          ${porMunicipio.whereClause}
-           ${porMunicipio.whereClause ? 'AND' : 'WHERE'} m.estado_id = $<estadoDaLista>
+           ${porMunicipio.whereClause ? 'AND' : 'WHERE'} m.estado_id IN ($<estadoDaLista:csv>)
          GROUP BY m.id, m.nome
          ORDER BY m.nome`,
         { ...porMunicipio.params, estadoDaLista: filtros.estado_id }

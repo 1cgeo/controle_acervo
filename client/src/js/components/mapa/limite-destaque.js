@@ -37,17 +37,35 @@ export function criarDestaqueDeLimite() {
    */
   let pendente = null;
 
-  function colecao(geometria) {
-    if (!geometria) return VAZIO;
-    return {
-      type: 'FeatureCollection',
-      features: [{ type: 'Feature', properties: {}, geometry: geometria }],
-    };
+  function colecao(geometrias) {
+    const features = (geometrias || [])
+      .filter(Boolean)
+      .map(geometry => ({ type: 'Feature', properties: {}, geometry }));
+    if (!features.length) return VAZIO;
+    return { type: 'FeatureCollection', features };
   }
 
-  function pintar(geometria) {
+  function pintar(geometrias) {
     const fonte = mapa && mapa.getSource(FONTE);
-    if (fonte) fonte.setData(colecao(geometria));
+    if (fonte) fonte.setData(colecao(geometrias));
+  }
+
+  /**
+   * Caixa que cobre TODOS os limites destacados.
+   *
+   * Existe desde 2026-08-04, com o filtro de marcacao multipla: escolher dois
+   * estados tem de enquadrar os dois. Enquadrar so o primeiro deixaria o outro
+   * fora da tela, dizendo que o recorte e menor do que e.
+   */
+  function caixaDaUniao(bboxes) {
+    const validas = (bboxes || []).filter(b => Array.isArray(b) && b.length === 4);
+    if (!validas.length) return null;
+    return validas.reduce((uniao, b) => [
+      Math.min(uniao[0], b[0]),
+      Math.min(uniao[1], b[1]),
+      Math.max(uniao[2], b[2]),
+      Math.max(uniao[3], b[3]),
+    ]);
   }
 
   function enquadrarCaixa(bbox) {
@@ -97,20 +115,25 @@ export function criarDestaqueDeLimite() {
   /**
    * Desenha o contorno e, por padrao, leva a camera ate ele.
    *
-   * @param {{geometria:Object, bbox:Array<number>}} limite - resposta de
-   *   /api/limites/<tipo>/<id>
+   * Aceita UM limite ou uma LISTA deles: o filtro por lugar passou a marcar
+   * varios estados ou municipios (chefe, 2026-08-04). Com lista, a camera
+   * enquadra a uniao das caixas, e nao a do primeiro.
+   *
+   * @param {Object|Array<Object>} limite - resposta de /api/limites/<tipo>/<id>,
+   *   no formato {geometria, bbox}, ou um array delas
    * @param {Object} [opcoes]
    * @param {boolean} [opcoes.enquadrar=true] - false quando a camera ja esta
    *   onde a pessoa quer (area desenhada, link com recorte proprio)
    */
   function mostrar(limite, { enquadrar = true } = {}) {
-    if (!limite || !limite.geometria) return;
+    const limites = (Array.isArray(limite) ? limite : [limite]).filter(l => l && l.geometria);
+    if (!limites.length) return;
     if (!montado) {
-      pendente = { limite, enquadrar };
+      pendente = { limite: limites, enquadrar };
       return;
     }
-    pintar(limite.geometria);
-    if (enquadrar) enquadrarCaixa(limite.bbox);
+    pintar(limites.map(l => l.geometria));
+    if (enquadrar) enquadrarCaixa(caixaDaUniao(limites.map(l => l.bbox)));
   }
 
   /** Apaga o contorno. Nao mexe na camera: tirar o filtro nao e pedir zoom. */

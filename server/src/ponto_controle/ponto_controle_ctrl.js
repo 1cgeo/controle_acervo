@@ -4,6 +4,7 @@
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
+const { temValor } = require('../utils/lista_schema')
 
 const controller = {}
 
@@ -67,14 +68,19 @@ const dominiosDoPonto = async connection => {
 const montarFiltros = (filtros, exceto) => {
   const condicoes = []
   const valores = {}
-  const usar = chave => chave !== exceto && filtros[chave]
+  // `temValor` e nao a verdade do JavaScript: os filtros de dominio chegam como
+  // ARRAY desde 2026-08-04, e array vazio e verdadeiro. Sem isto, desmarcar a
+  // ultima opcao montaria `IN ()` e derrubaria a consulta.
+  const usar = chave => chave !== exceto && temValor(filtros[chave])
 
+  // `IN` e nao `=`: marcar dois lotes pergunta por um OU o outro. O cruzamento
+  // ENTRE filtros continua sendo E, que e o que a faceta ja contava.
   if (usar('lote_id')) {
-    condicoes.push('p.lote_id = $<lote_id>')
+    condicoes.push('p.lote_id IN ($<lote_id:csv>)')
     valores.lote_id = filtros.lote_id
   }
   if (usar('projeto_id')) {
-    condicoes.push('l.projeto_id = $<projeto_id>')
+    condicoes.push('l.projeto_id IN ($<projeto_id:csv>)')
     valores.projeto_id = filtros.projeto_id
   }
   if (usar('cod_ponto')) {
@@ -111,14 +117,14 @@ const montarFiltros = (filtros, exceto) => {
   if (usar('municipio_id')) {
     condicoes.push(`EXISTS (
       SELECT 1 FROM limites.municipio AS mu
-      WHERE mu.id = $<municipio_id> AND ST_Intersects(p.geom, mu.geom)
+      WHERE mu.id IN ($<municipio_id:csv>) AND ST_Intersects(p.geom, mu.geom)
     )`)
     valores.municipio_id = filtros.municipio_id
   }
   if (usar('estado_id')) {
     condicoes.push(`EXISTS (
       SELECT 1 FROM limites.estado AS es
-      WHERE es.id = $<estado_id> AND ST_Intersects(p.geom, es.geom)
+      WHERE es.id IN ($<estado_id:csv>) AND ST_Intersects(p.geom, es.geom)
     )`)
     valores.estado_id = filtros.estado_id
   }
@@ -188,16 +194,17 @@ controller.getFacetas = async (filtros = {}) => {
       porEstado.valores
     )
 
-    // O municipio so vem quando ha ESTADO escolhido: sem isso a lista traria os
+    // O municipio so vem quando ha ESTADO marcado: sem isso a lista traria os
     // 204 municipios com ponto espalhados pelo pais, e escolher fica pior do que
-    // digitar.
-    const municipios = filtros.estado_id
+    // digitar. Com mais de um estado marcado, a lista e a UNIAO dos municipios
+    // deles.
+    const municipios = temValor(filtros.estado_id)
       ? await t.any(
         `SELECT mu.id AS code, mu.nome, COUNT(p.id)::int AS pontos
          ${DE}
          INNER JOIN limites.municipio AS mu ON ST_Intersects(p.geom, mu.geom)
          ${porMunicipio.where}
-           ${porMunicipio.where ? 'AND' : 'WHERE'} mu.estado_id = $<estado_da_lista>
+           ${porMunicipio.where ? 'AND' : 'WHERE'} mu.estado_id IN ($<estado_da_lista:csv>)
          GROUP BY mu.id, mu.nome
          ORDER BY mu.nome`,
         { ...porMunicipio.valores, estado_da_lista: filtros.estado_id }

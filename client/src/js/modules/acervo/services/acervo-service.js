@@ -99,6 +99,10 @@ function queryString(filtros) {
   const params = new URLSearchParams();
   for (const [chave, valor] of Object.entries(filtros)) {
     if (valor === null || valor === undefined || valor === '' || valor === false) continue;
+    // Lista VAZIA e filtro nao aplicado, e nao filtro vazio: sem esta linha o
+    // filtro de marcacao multipla sem nada marcado mandaria `tipo_produto_id=`
+    // na URL, que o servidor ignora mas que suja todo link copiado da tela.
+    if (Array.isArray(valor) && valor.length === 0) continue;
     params.set(chave, Array.isArray(valor) ? valor.join(',') : String(valor));
   }
   const s = params.toString();

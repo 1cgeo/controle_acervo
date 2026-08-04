@@ -146,6 +146,55 @@ describe('Busca do acervo - filtro por lugar', () => {
     // Beta continua na lista, senão escolher Alfa impediria trocar de estado.
     expect(res.body.dados.estados.map(e => e.sigla).sort()).toEqual(['AL', 'BE'])
   })
+
+  // --- Marcação MÚLTIPLA (chefe, 2026-08-04) --------------------------------
+  //
+  // O filtro deixou de ser combo de escolha única. Responder "o que existe nos
+  // dois estados" custava duas buscas e a soma na mão.
+
+  it('DOIS estados devolvem a união dos dois', async () => {
+    await semear()
+    const res = await buscar('estado_id=11,12')
+    expect(res.status).toBe(200)
+    expect(res.body.dados.dados.map(p => p.nome).sort()).toEqual([
+      'Carta de Vila Alfa', 'Carta de Vila Beta', 'Carta de Vila Gama'
+    ])
+  })
+
+  it('a folha da divisa entra UMA vez na união dos dois municípios', async () => {
+    // De -49.3 a -48.7: metade em Vila Alfa, metade em Vila Beta. Somar os dois
+    // filtros a contaria duas vezes, e o total da tela mentiria.
+    await carta('Carta da divisa', -49.3, -48.7, 9)
+    const res = await buscar('municipio_id=1100001,1100002')
+    expect(res.body.dados.total).toBe(1)
+    expect(res.body.dados.dados.map(p => p.nome)).toEqual(['Carta da divisa'])
+  })
+
+  it('a lista de municípios de DOIS estados é a união dos dois', async () => {
+    await semear()
+    const res = await request(app)
+      .get('/api/acervo/busca/facetas?estado_id=11,12')
+      .set('Authorization', token())
+    expect(res.body.dados.municipios.map(m => m.nome))
+      .toEqual(['Vila Alfa', 'Vila Beta', 'Vila Gama'])
+  })
+
+  it('UM valor solto continua valendo: o link antigo não quebra', async () => {
+    // É o contrato com todo link já colado em DIEx, com o `acervo_cli` e com o
+    // plugin do QGIS.
+    await semear()
+    const res = await buscar('estado_id=11')
+    expect(res.status).toBe(200)
+    expect(res.body.dados.total).toBe(2)
+  })
+
+  it('código inválido na lista recusa a busca, em vez de ignorar o item', async () => {
+    // Descartar só o item ruim devolveria um resultado a mais, plausível e
+    // errado, para quem não teria como perceber.
+    await semear()
+    const res = await buscar('estado_id=11,abc')
+    expect(res.status).toBe(400)
+  })
 })
 
 // --- Ponto de controle -------------------------------------------------------
@@ -198,6 +247,21 @@ describe('Ponto de controle - filtro por lugar', () => {
       .set('Authorization', token())
     expect(com.body.dados.municipios.map(m => [m.nome, m.pontos]))
       .toEqual([['Vila Alfa', 1], ['Vila Beta', 1]])
+  })
+
+  it('DOIS estados devolvem a união, na lista e na faceta', async () => {
+    await semear()
+    const res = await request(app)
+      .get('/api/ponto_controle?estado_id=11,12')
+      .set('Authorization', token())
+    expect(res.status).toBe(200)
+    expect(res.body.dados.total).toBe(3)
+
+    const facetas = await request(app)
+      .get('/api/ponto_controle/facetas?estado_id=11,12')
+      .set('Authorization', token())
+    expect(facetas.body.dados.municipios.map(m => m.nome))
+      .toEqual(['Vila Alfa', 'Vila Beta', 'Vila Gama'])
   })
 
   it('o filtro de lugar vale também para o mapa e para o CSV', async () => {

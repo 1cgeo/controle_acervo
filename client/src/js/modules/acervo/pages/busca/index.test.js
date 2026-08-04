@@ -149,6 +149,47 @@ const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
 const ultimaBusca = () => buscarProdutos.mock.calls[buscarProdutos.mock.calls.length - 1][0];
 
+// Os filtros de dominio viraram marcacao MULTIPLA em 2026-08-04. Os auxiliares
+// abaixo dirigem o componente pelo mesmo gesto de quem usa a tela: abrir o
+// painel, marcar a caixa, fechar.
+const filtro = (c, rotuloBotao) => c
+  .querySelector(`.filtro-multiplo__botao[aria-label="${rotuloBotao}"]`)
+  .closest('.filtro-multiplo');
+
+/** Texto do botao: e o que a pessoa le sem abrir o painel. */
+const rotulo = (raiz) => raiz.querySelector('.filtro-multiplo__texto').textContent;
+
+/** Codigos marcados, na ordem em que aparecem no painel. */
+const marcados = (raiz) => [...raiz.querySelectorAll('input[type="checkbox"]')]
+  .filter(i => i.checked).map(i => i.value);
+
+function abrirFiltro(raiz) {
+  const botao = raiz.querySelector('.filtro-multiplo__botao');
+  if (botao.getAttribute('aria-expanded') !== 'true') botao.click();
+  return botao;
+}
+
+/** Marca (ou desmarca) um codigo, e fecha o painel para a repintura entrar. */
+function marcarFiltro(raiz, valor, ligado = true) {
+  const botao = abrirFiltro(raiz);
+  const caixa = raiz.querySelector(`input[type="checkbox"][value="${valor}"]`);
+  caixa.checked = ligado;
+  caixa.dispatchEvent(new Event('change'));
+  botao.click();
+}
+
+/** Opcoes do painel como 'Nome (N)', para comparar com o combo antigo. */
+function opcoesFiltro(raiz) {
+  const botao = abrirFiltro(raiz);
+  const itens = [...raiz.querySelectorAll('.filtro-multiplo__opcao')].map((o) => {
+    const nome = o.querySelector('.filtro-multiplo__nome').textContent;
+    const total = o.querySelector('.filtro-multiplo__total');
+    return total ? `${nome} (${total.textContent})` : nome;
+  });
+  botao.click();
+  return itens;
+}
+
 async function montar(ctx = {}) {
   const container = document.createElement('div');
   const cleanup = await renderBusca(container, {
@@ -222,11 +263,12 @@ describe('busca do acervo: montagem', () => {
   test('preenche os filtros de dominio a partir do servidor', async () => {
     const { container, cleanup } = await montar();
 
-    const opcoesTipo = [...container.querySelectorAll('select')][0].options;
-    expect(opcoesTipo[0].textContent).toBe('Todos os tipos');
+    const tipo = filtro(container, 'Tipo de produto');
+    // Sem nada marcado, o botao diz que o filtro nao esta valendo.
+    expect(rotulo(tipo)).toBe('Todos os tipos');
     // Com o quantitativo ao lado: o numero e o total que a busca devolveria ao
-    // escolher aquela opcao.
-    expect([...opcoesTipo].map(o => o.textContent)).toContain('Carta Ortoimagem (1)');
+    // marcar aquela opcao.
+    expect(opcoesFiltro(tipo)).toContain('Carta Ortoimagem (1)');
 
     cleanup();
   });
@@ -503,12 +545,11 @@ describe('busca do acervo: filtros', () => {
     await flush();
     expect(ultimaBusca().page).toBe(2);
 
-    const tipo = [...container.querySelectorAll('select')][0];
-    tipo.value = '9';
-    tipo.dispatchEvent(new Event('change'));
+    const tipo = filtro(container, 'Tipo de produto');
+    marcarFiltro(tipo, '9');
     await flush();
 
-    expect(ultimaBusca().tipo_produto_id).toBe('9');
+    expect(ultimaBusca().tipo_produto_id).toEqual(['9']);
     // Trocar filtro na pagina 3 e continuar na pagina 3 costuma cair num vazio
     // que parece "nao ha nada", quando na verdade ha, na primeira pagina.
     expect(ultimaBusca().page).toBe(1);
@@ -520,13 +561,11 @@ describe('busca do acervo: filtros', () => {
   test('filtra por subtipo de produto', async () => {
     const { container, cleanup } = await montar();
 
-    const subtipo = [...container.querySelectorAll('select')][1];
-    expect(subtipo.getAttribute('aria-label')).toBe('Subtipo de produto');
-    subtipo.value = '2';
-    subtipo.dispatchEvent(new Event('change'));
+    const subtipo = filtro(container, 'Subtipo de produto');
+    marcarFiltro(subtipo, '2');
     await flush();
 
-    expect(ultimaBusca().subtipo_produto_id).toBe('2');
+    expect(ultimaBusca().subtipo_produto_id).toEqual(['2']);
 
     cleanup();
   });
@@ -536,18 +575,17 @@ describe('busca do acervo: filtros', () => {
   test('escolher o tipo estreita a lista de subtipos', async () => {
     const { container, cleanup } = await montar();
 
-    const [tipo, subtipo] = [...container.querySelectorAll('select')];
-    // "Todos" mais os subtipos COM produto. O terceiro do dominio (Carta
-    // Topografica Militar) nao voltou nas facetas, ou seja, tem zero, e por isso
-    // nao aparece: e o que "uma opcao preenchida filtra as demais" significa.
-    expect(subtipo.options).toHaveLength(3);
+    const tipo = filtro(container, 'Tipo de produto');
+    const subtipo = filtro(container, 'Subtipo de produto');
+    // Os subtipos COM produto. O terceiro do dominio (Carta Topografica
+    // Militar) nao voltou nas facetas, ou seja, tem zero, e por isso nao
+    // aparece: e o que "uma opcao marcada filtra as demais" significa.
+    expect(opcoesFiltro(subtipo)).toHaveLength(2);
 
-    tipo.value = '9'; // Carta Ortoimagem
-    tipo.dispatchEvent(new Event('change'));
+    marcarFiltro(tipo, '9'); // Carta Ortoimagem
     await flush();
 
-    const rotulos = [...subtipo.options].map(o => o.textContent);
-    expect(rotulos).toEqual(['Todos os subtipos', 'Carta Ortoimagem (1)']);
+    expect(opcoesFiltro(subtipo)).toEqual(['Carta Ortoimagem (1)']);
 
     cleanup();
   });
@@ -555,17 +593,16 @@ describe('busca do acervo: filtros', () => {
   test('trocar o tipo descarta o subtipo que nao pertence a ele', async () => {
     const { container, cleanup } = await montar();
 
-    const [tipo, subtipo] = [...container.querySelectorAll('select')];
-    subtipo.value = '2'; // T34-700, do tipo 1
-    subtipo.dispatchEvent(new Event('change'));
+    const tipo = filtro(container, 'Tipo de produto');
+    const subtipo = filtro(container, 'Subtipo de produto');
+    marcarFiltro(subtipo, '2'); // T34-700, do tipo 1
     await flush();
 
-    tipo.value = '9'; // Carta Ortoimagem: o subtipo 2 nao existe aqui
-    tipo.dispatchEvent(new Event('change'));
+    marcarFiltro(tipo, '9'); // Carta Ortoimagem: o subtipo 2 nao existe aqui
     await flush();
 
-    expect(subtipo.value).toBe('');
-    expect(ultimaBusca().subtipo_produto_id).toBe('');
+    expect(marcados(subtipo)).toEqual([]);
+    expect(ultimaBusca().subtipo_produto_id).toEqual([]);
 
     cleanup();
   });
@@ -573,7 +610,7 @@ describe('busca do acervo: filtros', () => {
   test('subtipo da URL entra na primeira busca', async () => {
     const { cleanup } = await montar({ query: 'subtipo_produto_id=24' });
 
-    expect(ultimaBusca().subtipo_produto_id).toBe('24');
+    expect(ultimaBusca().subtipo_produto_id).toEqual(['24']);
 
     cleanup();
   });
@@ -607,13 +644,12 @@ describe('busca do acervo: quantitativo nos filtros', () => {
   test('as opcoes mostram quantos produtos cada uma tem', async () => {
     const { container, cleanup } = await montar();
 
-    const [tipo, , escala] = [...container.querySelectorAll('select')];
-    expect([...tipo.options].map(o => o.textContent)).toEqual([
-      'Todos os tipos', 'Carta Topográfica (2)', 'Carta Ortoimagem (1)',
+    const tipo = filtro(container, 'Tipo de produto');
+    const escala = filtro(container, 'Escala');
+    expect(opcoesFiltro(tipo)).toEqual([
+      'Carta Topográfica (2)', 'Carta Ortoimagem (1)',
     ]);
-    expect([...escala.options].map(o => o.textContent)).toEqual([
-      'Todas as escalas', '1:50.000 (2)', '1:25.000 (1)',
-    ]);
+    expect(opcoesFiltro(escala)).toEqual(['1:50.000 (2)', '1:25.000 (1)']);
 
     cleanup();
   });
@@ -621,13 +657,12 @@ describe('busca do acervo: quantitativo nos filtros', () => {
   test('as facetas saem com os MESMOS filtros da busca, e junto com ela', async () => {
     const { container, cleanup } = await montar();
 
-    const [tipo] = [...container.querySelectorAll('select')];
-    tipo.value = '1';
-    tipo.dispatchEvent(new Event('change'));
+    const tipo = filtro(container, 'Tipo de produto');
+    marcarFiltro(tipo, '1');
     await flush();
 
     const facetas = getBuscaFacetas.mock.calls[getBuscaFacetas.mock.calls.length - 1][0];
-    expect(facetas.tipo_produto_id).toBe('1');
+    expect(facetas.tipo_produto_id).toEqual(['1']);
     expect(facetas.termo).toBe(ultimaBusca().termo);
     // Uma ida por busca, e nao duas: as tres chamadas saem no mesmo Promise.all.
     expect(getBuscaFacetas).toHaveBeenCalledTimes(buscarProdutos.mock.calls.length);
@@ -640,9 +675,8 @@ describe('busca do acervo: quantitativo nos filtros', () => {
   test('a escolha que o cruzamento zerou FICA na lista, com (0)', async () => {
     const { container, cleanup } = await montar();
 
-    const [tipo] = [...container.querySelectorAll('select')];
-    tipo.value = '9';
-    tipo.dispatchEvent(new Event('change'));
+    const tipo = filtro(container, 'Tipo de produto');
+    marcarFiltro(tipo, '9');
     await flush();
 
     getBuscaFacetas.mockResolvedValueOnce({
@@ -652,13 +686,14 @@ describe('busca do acervo: quantitativo nos filtros', () => {
     });
     // Qualquer busca nova basta para trazer o cruzamento novo.
     container.querySelector('input[type="search"]').value = 'nada';
-    tipo.dispatchEvent(new Event('change'));
+    container.querySelector('input[type="search"]').dispatchEvent(new Event('input'));
+    await new Promise(r => setTimeout(r, 400));
     await flush();
 
-    expect(tipo.value).toBe('9');
-    expect([...tipo.options].map(o => o.textContent)).toContain('Carta Ortoimagem (0)');
+    expect(marcados(tipo)).toEqual(['9']);
+    expect(opcoesFiltro(tipo)).toContain('Carta Ortoimagem (0)');
     // E continua valendo como filtro: a tela nao mexeu na busca por conta propria.
-    expect(ultimaBusca().tipo_produto_id).toBe('9');
+    expect(ultimaBusca().tipo_produto_id).toEqual(['9']);
 
     cleanup();
   });
@@ -669,8 +704,8 @@ describe('busca do acervo: quantitativo nos filtros', () => {
 
     expect(cartoes(container)).toHaveLength(2);
     // Sem quantitativo, as opcoes ficam so com o nome.
-    const [tipo] = [...container.querySelectorAll('select')];
-    expect([...tipo.options].map(o => o.textContent)).toContain('Carta Ortoimagem');
+    const tipo = filtro(container, 'Tipo de produto');
+    expect(opcoesFiltro(tipo)).toContain('Carta Ortoimagem');
 
     cleanup();
   });
@@ -784,7 +819,7 @@ describe('busca do acervo: recorte espacial', () => {
     const { container, cleanup } = await montar();
     mapaFalso.extent = null;
 
-    const check = container.querySelector('input[type="checkbox"]');
+    const check = container.querySelector('.busca-filtros__area input[type="checkbox"]');
     check.checked = true;
     check.dispatchEvent(new Event('change'));
     await flush();
@@ -827,7 +862,7 @@ describe('busca do acervo: recorte espacial', () => {
   test('desenhar uma area desliga o modo "seguir o mapa"', async () => {
     const { container, cleanup } = await montar();
 
-    const check = container.querySelector('input[type="checkbox"]');
+    const check = container.querySelector('.busca-filtros__area input[type="checkbox"]');
     check.checked = true;
     check.dispatchEvent(new Event('change'));
     await flush();
@@ -863,7 +898,7 @@ describe('busca do acervo: a busca vive na URL', () => {
 
     const chamada = ultimaBusca();
     expect(chamada.termo).toBe('porto');
-    expect(chamada.tipo_escala_id).toBe('2');
+    expect(chamada.tipo_escala_id).toEqual(['2']);
     expect(chamada.palavra_chave).toBe('CDGV');
     expect(JSON.parse(chamada.geometria)).toEqual(TRIANGULO);
 
@@ -880,9 +915,8 @@ describe('busca do acervo: a busca vive na URL', () => {
 
     const input = container.querySelector('input[type="search"]');
     input.value = 'viamão';
-    const tipo = [...container.querySelectorAll('select')][0];
-    tipo.value = '1';
-    tipo.dispatchEvent(new Event('change'));
+    const tipo = filtro(container, 'Tipo de produto');
+    marcarFiltro(tipo, '1');
     await flush();
 
     expect(location.hash).toContain('termo=viam');
@@ -1152,7 +1186,7 @@ describe('busca do acervo: exportar CSV', () => {
 
     const [filtros, nome] = baixarBuscaCsv.mock.calls[0];
     expect(filtros.termo).toBe('porto');
-    expect(filtros.tipo_escala_id).toBe('2');
+    expect(filtros.tipo_escala_id).toEqual(['2']);
     // Sem ids: o CSV é do conjunto todo, e não da página exibida.
     expect(filtros.ids).toBeNull();
     expect(nome).toBe('busca-acervo.csv');
@@ -1278,32 +1312,27 @@ describe('busca do acervo: altura da tela', () => {
 // O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista e
 // deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
 describe('busca do acervo: destaque do lugar', () => {
-  const selectPorRotulo = (c, rotulo) =>
-    c.querySelector(`select[aria-label="${rotulo}"]`);
-
-  test('escolher o estado pinta o contorno e leva a camera ate ele', async () => {
+  test('marcar o estado pinta o contorno e leva a camera ate ele', async () => {
     const { container } = await montar();
-    const estado = selectPorRotulo(container, 'Estado');
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
     expect(getLimite).toHaveBeenCalledWith('estado', '43');
-    expect(mapaFalso.limiteDestacado.bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
+    // Uma LISTA de limites desde 2026-08-04: o filtro marca varios estados.
+    expect(mapaFalso.limiteDestacado[0].bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
     expect(mapaFalso.limiteEnquadrou).toBe(true);
   });
 
   test('o MUNICIPIO ganha do estado: e o recorte mais estreito', async () => {
     const { container } = await montar();
-    const estado = selectPorRotulo(container, 'Estado');
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    const estado = filtro(container, 'Estado');
+    marcarFiltro(estado, '43');
     await flush();
 
-    const municipio = selectPorRotulo(container, 'Município');
-    municipio.value = '4314902';
-    municipio.dispatchEvent(new Event('change'));
+    const municipio = filtro(container, 'Município');
+    marcarFiltro(municipio, '4314902');
     await flush();
 
     expect(getLimite).toHaveBeenLastCalledWith('municipio', '4314902');
@@ -1311,15 +1340,13 @@ describe('busca do acervo: destaque do lugar', () => {
 
   test('tirar o lugar apaga o contorno', async () => {
     const { container } = await montar();
-    const estado = selectPorRotulo(container, 'Estado');
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
     expect(mapaFalso.limiteLimpo).toBe(0);
 
-    estado.value = '';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43', false);
     await flush();
 
     expect(mapaFalso.limiteLimpo).toBe(1);
@@ -1331,9 +1358,8 @@ describe('busca do acervo: destaque do lugar', () => {
     expect(mapaFalso.extent).not.toBeNull();
 
     mapaFalso.extent = null;
-    const estado = selectPorRotulo(container, 'Estado');
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    const estado = filtro(container, 'Estado');
+    marcarFiltro(estado, '43');
     await flush();
 
     // Aqui o extent e ainda pior do que na tela de ponto: existem produtos de
@@ -1344,9 +1370,8 @@ describe('busca do acervo: destaque do lugar', () => {
 
   test('"Limpar filtros" tira tambem o contorno do lugar', async () => {
     const { container } = await montar();
-    const estado = selectPorRotulo(container, 'Estado');
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    const estado = filtro(container, 'Estado');
+    marcarFiltro(estado, '43');
     await flush();
 
     [...container.querySelectorAll('button')]
@@ -1377,15 +1402,37 @@ describe('busca do acervo: destaque do lugar', () => {
   test('o contorno que falha nao derruba a busca', async () => {
     getLimite.mockImplementation(() => Promise.reject(new Error('sem rede')));
     const { container } = await montar();
-    const estado = selectPorRotulo(container, 'Estado');
+    const estado = filtro(container, 'Estado');
 
-    estado.value = '43';
-    estado.dispatchEvent(new Event('change'));
+    marcarFiltro(estado, '43');
     await flush();
 
     // O destaque e apoio visual. Sem ele a tela perde a borda, e nao a lista.
     expect(mapaFalso.limiteDestacado).toBeNull();
     expect(cartoes(container)).toHaveLength(2);
-    expect(ultimaBusca().estado_id).toBe('43');
+    expect(ultimaBusca().estado_id).toEqual(['43']);
+  });
+
+  test('marcar DOIS estados destaca os dois e enquadra a uniao', async () => {
+    getBuscaFacetas.mockResolvedValue({
+      tipos_produto: [], tipos_escala: [], subtipos_produto: [],
+      estados: [
+        { id: 43, sigla: 'RS', nome: 'Rio Grande do Sul', produtos: 2 },
+        { id: 42, sigla: 'SC', nome: 'Santa Catarina', produtos: 1 },
+      ],
+      municipios: [],
+    });
+    const { container } = await montar();
+    const estado = filtro(container, 'Estado');
+
+    marcarFiltro(estado, '43');
+    await flush();
+    marcarFiltro(estado, '42');
+    await flush();
+
+    // Enquadrar so o primeiro deixaria o outro fora da tela, dizendo que o
+    // recorte e menor do que e.
+    expect(mapaFalso.limiteDestacado).toHaveLength(2);
+    expect(ultimaBusca().estado_id).toEqual(['43', '42']);
   });
 });
