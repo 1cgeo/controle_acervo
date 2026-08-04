@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
+import { mostrarErro, mostrarErroNoGrafico } from './estado-erro.js';
 
 const PERIODOS = [6, 12, 24];
 
@@ -86,9 +87,15 @@ export async function renderAdvancedTab(container) {
         data: (Array.isArray(dados) ? dados : []).map(d => ({ ...d, mes_label: formatMes(d.month) })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
+      // Estado de ERRO, e nao grafico vazio. Zerar a serie fazia o card mostrar
+      // "Sem dados disponiveis", que e a frase do acervo sem producao: a falha
+      // da API lia-se como mes sem carta cadastrada. O painel e o que o chefe
+      // olha para decidir, e "nao houve" e "nao consegui saber" pedem acoes
+      // opostas (2026-08-04, mesma correcao ja feita na aba de Atividade).
       produtos.card.update({ data: [], loading: false });
+      mostrarErroNoGrafico(produtos.card, erro, () => loadProdutos(produtos.getPeriodo()));
     }
   }
 
@@ -117,9 +124,10 @@ export async function renderAdvancedTab(container) {
         })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
       versoes.card.update({ data: [], loading: false });
+      mostrarErroNoGrafico(versoes.card, erro, () => loadVersoes(versoes.getPeriodo()));
     }
   }
 
@@ -213,10 +221,14 @@ export async function renderVersionStats(container) {
         })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
+      // Uma chamada so alimenta os quatro cartoes e os dois graficos desta
+      // sub-aba. Falhando ela, nada aqui tem valor, entao o erro toma a
+      // sub-aba inteira, e nao cada grafico.
       pieDistribuicao.update({ data: [], loading: false });
       pieTipo.update({ data: [], loading: false });
+      mostrarErro(container, erro, load);
     }
   }
 
@@ -265,9 +277,12 @@ export async function renderStorageTrends(container) {
         })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
+      // No corpo do card, e nao no container: o cabecalho tem o seletor de
+      // periodo, e quem ve o erro precisa dele para tentar outra janela.
       grafico.card.update({ data: [], loading: false });
+      mostrarErroNoGrafico(grafico.card, erro, () => load(grafico.getPeriodo()));
     }
   }
 
@@ -320,10 +335,11 @@ export async function renderProjectStatus(container) {
         })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
       pieProjetos.update({ data: [], loading: false });
       pieLotes.update({ data: [], loading: false });
+      mostrarErro(container, erro, load);
     }
   }
 
@@ -379,9 +395,10 @@ export async function renderUserActivity(container) {
         })),
         loading: false,
       });
-    } catch {
+    } catch (erro) {
       if (disposed) return;
       tabela.update({ rows: [], loading: false });
+      mostrarErro(container, erro, load);
     }
   }
 

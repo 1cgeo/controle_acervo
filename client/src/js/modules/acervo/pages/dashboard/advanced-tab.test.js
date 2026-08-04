@@ -142,13 +142,18 @@ describe('sub-aba: estatisticas de versoes', () => {
     sub.cleanup();
   });
 
-  test('falha do endpoint deixa os setores vazios, sem lancar', async () => {
+  // ESTE TESTE FIXAVA O DEFEITO: ele exigia os dois setores VAZIOS quando o
+  // endpoint falhava. O que ele cobrava era exatamente a leitura errada. A
+  // asercao virou "nao lanca", que e a parte legitima, e o estado de erro tem
+  // teste proprio no bloco do fim.
+  test('falha do endpoint nao lanca, e a sub-aba continua de pe', async () => {
     acervoService.getVersionStatistics.mockRejectedValueOnce(new Error('500'));
 
     const container = document.createElement('div');
     const sub = await renderVersionStats(container);
 
-    expect(container.querySelectorAll('.chart-card__empty')).toHaveLength(2);
+    expect(sub.cleanup).toBeTypeOf('function');
+    expect(container.querySelectorAll('.chart-card__empty')).toHaveLength(0);
     sub.cleanup();
   });
 });
@@ -203,14 +208,129 @@ describe('sub-aba: atividade de usuarios', () => {
     sub.cleanup();
   });
 
-  test('falha do endpoint mostra a mensagem de tabela vazia', async () => {
+  // ESTE TESTE FIXAVA O DEFEITO. Ele exigia a frase "Sem atividade de usuario
+  // registrada" quando o endpoint falhava, ou seja, cobrava justamente a leitura
+  // errada: acervo sem movimento e API fora do ar viravam a mesma tela.
+  test('falha do endpoint mostra ERRO, e nao a frase de tabela vazia', async () => {
     acervoService.getUserActivityMetrics.mockRejectedValueOnce(new Error('500'));
 
     const container = document.createElement('div');
     const sub = await renderUserActivity(container);
 
-    expect(container.querySelector('.data-table__empty').textContent)
-      .toBe('Sem atividade de usuário registrada');
+    const erro = container.querySelector('.dashboard-erro');
+    expect(erro).not.toBeNull();
+    expect(erro.getAttribute('role')).toBe('alert');
+    expect(container.textContent).not.toContain('Sem atividade de usuário registrada');
+
+    sub.cleanup();
+  });
+});
+
+/**
+ * O painel nao pode dizer "nao ha" quando a resposta certa e "nao consegui
+ * saber". Os seis carregamentos desta aba engoliam a falha no `catch` e
+ * pintavam a serie com zero pontos, e o card entao mostrava "Sem dados
+ * disponiveis", que e a frase do acervo sem producao (2026-08-04).
+ */
+describe('endpoint que falha mostra ERRO, e nao grafico vazio', () => {
+  const semDados = (container) =>
+    Array.from(container.querySelectorAll('.chart-card__empty'))
+      .some(n => n.textContent.includes('Sem dados disponíveis'));
+
+  test('linha do tempo de produtos', async () => {
+    acervoService.getProdutoActivityTimeline.mockRejectedValueOnce(new Error('Falha ao consultar'));
+
+    const container = document.createElement('div');
+    const aba = await renderAdvancedTab(container);
+
+    const erro = container.querySelector('.dashboard-erro');
+    expect(erro).not.toBeNull();
+    expect(erro.textContent).toContain('Falha ao consultar');
+    expect(semDados(container)).toBe(false);
+
+    aba.cleanup();
+  });
+
+  // O GRAFICO VIZINHO SOBREVIVE. As duas linhas do tempo dividem a mesma grade,
+  // e vem de endpoints diferentes: pintar o erro por cima do container apagaria
+  // o grafico que carregou BEM, o que e perder informacao boa por causa de uma
+  // falha alheia.
+  test('a falha de uma linha do tempo nao apaga a outra', async () => {
+    acervoService.getProdutoActivityTimeline.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const aba = await renderAdvancedTab(container);
+
+    expect(container.querySelectorAll('.dashboard-erro')).toHaveLength(1);
+
+    // O card de versoes carregou, e o erro esta no card de produtos.
+    const cards = Array.from(container.querySelectorAll('.chart-card'));
+    const comErro = cards.filter(c => c.querySelector('.dashboard-erro'));
+    expect(comErro).toHaveLength(1);
+    expect(comErro[0].querySelector('.chart-card__title').textContent)
+      .toBe('Linha do Tempo de Produtos');
+
+    // E o seletor de periodo continua no cabecalho do card que falhou: sem ele
+    // quem ve o erro perde o controle que refaz a pergunta com outra janela.
+    expect(comErro[0].querySelector('.chart-card__select')).not.toBeNull();
+
+    aba.cleanup();
+  });
+
+  test('o "tentar de novo" da linha do tempo refaz a chamada', async () => {
+    acervoService.getVersaoActivityTimeline.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const aba = await renderAdvancedTab(container);
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+
+    const antes = acervoService.getVersaoActivityTimeline.mock.calls.length;
+    [...container.querySelectorAll('.dashboard-erro button')]
+      .find(b => b.textContent.includes('Tentar de novo')).click();
+    await flush();
+
+    expect(acervoService.getVersaoActivityTimeline.mock.calls.length).toBe(antes + 1);
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+
+    aba.cleanup();
+  });
+
+  test('estatisticas de versoes', async () => {
+    acervoService.getVersionStatistics.mockRejectedValueOnce(new Error('sem permissão'));
+
+    const container = document.createElement('div');
+    const sub = await renderVersionStats(container);
+
+    const erro = container.querySelector('.dashboard-erro');
+    expect(erro).not.toBeNull();
+    expect(erro.textContent).toContain('sem permissão');
+    expect(semDados(container)).toBe(false);
+
+    sub.cleanup();
+  });
+
+  test('tendencias de armazenamento', async () => {
+    acervoService.getStorageGrowthTrends.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const sub = await renderStorageTrends(container);
+
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    expect(semDados(container)).toBe(false);
+    // O seletor de periodo fica de pe tambem aqui.
+    expect(container.querySelector('.chart-card__select')).not.toBeNull();
+
+    sub.cleanup();
+  });
+
+  test('status de projetos', async () => {
+    acervoService.getProjectStatusSummary.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const sub = await renderProjectStatus(container);
+
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    expect(semDados(container)).toBe(false);
 
     sub.cleanup();
   });

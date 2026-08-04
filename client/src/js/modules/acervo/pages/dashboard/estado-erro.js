@@ -54,3 +54,27 @@ export function mostrarErro(container, erro, recarregar) {
     recarregar();
   }));
 }
+
+/**
+ * O mesmo estado de erro, mas dentro do CORPO de um card de gráfico.
+ *
+ * Serve ao card que divide a linha com outro (a aba de análises tem dois lado a
+ * lado) e ao que tem seletor de período no cabeçalho. Trocar o container
+ * inteiro apagaria o gráfico vizinho, que talvez tenha carregado bem, e levaria
+ * junto o seletor: quem visse o erro perderia o controle que refaz a pergunta
+ * com outro período.
+ *
+ * O `chart-card__body` é seguro de sobrescrever porque o `render()` do gráfico
+ * já o esvazia a cada `update()`. A carga seguinte apaga o erro sozinha.
+ *
+ * @param {HTMLElement} card - o elemento devolvido por createBarChart/createPieChart
+ * @param {Error} erro
+ * @param {Function} recarregar
+ */
+export function mostrarErroNoGrafico(card, erro, recarregar) {
+  const corpo = card.querySelector('.chart-card__body');
+  // Sem corpo não há onde pintar. Some é melhor que quebrar a aba inteira num
+  // TypeError, e o card segue mostrando o que já tinha.
+  if (!corpo) return;
+  mostrarErro(corpo, erro, recarregar);
+}

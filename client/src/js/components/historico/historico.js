@@ -2,7 +2,7 @@ import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { chip } from '@components/status-chip.js';
-import { formatDateTime } from '@utils/format.js';
+import { formatDate, formatDateTime } from '@utils/format.js';
 import { getHistorico } from '@services/rastreabilidade-service.js';
 import './historico.css';
 
@@ -72,6 +72,22 @@ export const NOME_ORIGEM = {
 // sem a célula quebrar em telas estreitas, e cobre a maioria esmagadora das
 // alterações reais (trocar a situação, trocar o prazo).
 const MUDANCAS_INLINE = 2;
+
+/**
+ * Quando o registro unificado de alterações passou a existir.
+ *
+ * Medido no banco de produção em 2026-08-04: o primeiro `auditoria.evento` é de
+ * 2026-07-30. Antes dessa data não há rastro de coisa nenhuma, e o acervo é bem
+ * mais velho que ela: 7.025 das 7.572 versões (92,8%) e 5.743 dos 6.309 produtos
+ * (91,0%) foram cadastrados antes do corte.
+ *
+ * POR QUE ISSO VAI PARA A TELA. A frase "Nenhuma alteração registrada", sozinha,
+ * se lê como "este registro nunca mudou", e ela aparece em mais de nove de cada
+ * dez fichas do acervo. É a mesma confusão que o estado de erro do painel
+ * corrige: "não houve" e "não sei" são respostas opostas, e o histórico vazio
+ * estava dando a primeira quando a verdadeira é a segunda.
+ */
+const INICIO_DO_REGISTRO = '2026-07-30';
 
 /**
  * Um valor do diff, pronto para a tela.
@@ -332,7 +348,9 @@ export function criarHistorico({
       // o que interessa buscar aqui (o valor dentro do diff) não está em nenhuma
       // coluna crua.
       searchable: false,
-      emptyMessage: 'Nenhuma alteração registrada',
+      emptyMessage: `Nenhuma alteração registrada. O registro de alterações `
+        + `começou em ${formatDate(INICIO_DO_REGISTRO)}. O que mudou antes `
+        + `dessa data não aparece aqui.`,
       actions: [{
         icon: ICONS.visibility,
         title: 'Ver as diferenças',

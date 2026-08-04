@@ -129,3 +129,37 @@ describe('criarHistorico: recarregar nao remonta a tabela', () => {
     expect(painel.element.querySelector('.data-table-wrapper')).not.toBeNull();
   });
 });
+
+// O HISTORICO VAZIO NAO PODE DIZER "NADA MUDOU" (2026-08-04).
+//
+// O registro unificado de alteracoes so passou a existir em 2026-07-30, e o
+// acervo e muito mais velho: 92,8% das versoes e 91,0% dos produtos foram
+// cadastrados antes do corte (medido no banco de producao em 2026-08-04). A
+// frase "Nenhuma alteracao registrada", sozinha, aparecia em mais de nove de
+// cada dez fichas e se lia como "este registro nunca mudou".
+describe('historico sem eventos', () => {
+  test('a mensagem de vazio diz quando o registro comecou', async () => {
+    getHistorico.mockImplementation(() => Promise.resolve([]));
+
+    const painel = criarHistorico({ modulo: 'acervo', entidade: 'produto', id: 42 });
+    document.body.appendChild(painel.element);
+    await esperar();
+
+    const vazio = painel.element.querySelector('.data-table__empty');
+    expect(vazio).not.toBeNull();
+    // A data vem formatada em pt-BR, que e como o resto do sistema a mostra.
+    expect(vazio.textContent).toContain('30/07/2026');
+    // E a frase nao para na afirmacao que enganava.
+    expect(vazio.textContent).not.toBe('Nenhuma alteração registrada');
+  });
+
+  test('havendo eventos, a mensagem de vazio nao aparece', async () => {
+    getHistorico.mockImplementation(() => Promise.resolve(eventos()));
+
+    const painel = criarHistorico({ modulo: 'acervo', entidade: 'produto', id: 42 });
+    document.body.appendChild(painel.element);
+    await esperar();
+
+    expect(painel.element.textContent).not.toContain('30/07/2026');
+  });
+});

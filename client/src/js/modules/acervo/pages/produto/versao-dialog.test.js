@@ -767,3 +767,42 @@ describe('openVersaoDialog: produto e versao num passo so', () => {
     expect(arg.produto).toBeUndefined();
   });
 });
+
+// AS DUAS DATAS PRECISAM DIZER O QUE SAO (2026-08-04).
+//
+// `data_criacao` e `data_edicao` chegavam ao operador sem uma palavra, e
+// confundi-las e o erro classico do acervo. A de EDICAO e a que o
+// `pit_execucao_ctrl` usa para decidir o mes e o ano da producao: trocar uma
+// pela outra move a carta de mes na grade do PIT, sem erro nenhum na tela.
+// Seis outros campos deste mesmo formulario ja tinham helpText.
+describe('ajuda nas datas', () => {
+  beforeEach(() => {
+    svc.getTiposVersao.mockResolvedValue(TIPOS);
+    svc.getSubtiposProduto.mockResolvedValue(SUBTIPOS);
+  });
+
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  const ajudaDe = (rotulo) =>
+    campoPorRotulo(rotulo)?.querySelector('.form-field__help')?.textContent || '';
+
+  test('a data de criacao diz que e a data do DADO', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    const ajuda = ajudaDe('Data de criação');
+    expect(ajuda).not.toBe('');
+    expect(ajuda).toContain('DADO');
+  });
+
+  // Esta e a que importa: e a consequencia, e nao a definicao, que impede a
+  // troca. Quem le "decide o mes e o ano que contam no PIT" para para pensar.
+  test('a data de edicao diz que ela decide o mes do PIT', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    const ajuda = ajudaDe('Data de edição');
+    expect(ajuda).not.toBe('');
+    expect(ajuda).toContain('PIT');
+  });
+});

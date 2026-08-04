@@ -391,16 +391,30 @@ export async function openVersaoDialog({
     helpText: 'Enter ou vírgula confirma cada etiqueta',
   });
 
+  // AS DUAS DATAS PRECISAM DIZER O QUE SAO (2026-08-04). Elas chegavam ao
+  // operador sem uma palavra, e confundi-las e o erro classico do acervo: a de
+  // EDICAO e a que o `pit_execucao_ctrl` usa para decidir o mes e o ano da
+  // producao, entao trocar uma pela outra move a carta de mes na grade do PIT
+  // sem erro nenhum na tela. Seis outros campos deste mesmo formulario ja
+  // tinham helpText, e justo estas duas nao.
+  //
+  // A TERCEIRA DATA NAO ESTA AQUI de proposito: `data_cadastramento` e o
+  // carimbo de quando a versao entrou no sistema, e quem a grava e o banco
+  // (DEFAULT CURRENT_TIMESTAMP). Nao ha o que o operador digite nela.
   const criacaoField = createDateField({
     label: 'Data de criação',
     required: true,
     value: soData(versao?.versao_data_criacao ?? versao?.data_criacao),
+    helpText: 'A data do DADO, e não do arquivo. Use a data da fonte ou do '
+      + 'levantamento que originou esta versão.',
   });
 
   const edicaoField = createDateField({
     label: 'Data de edição',
     required: true,
     value: soData(versao?.versao_data_edicao ?? versao?.data_edicao),
+    helpText: 'A data em que a versão ficou PRONTA. Ela decide o mês e o ano '
+      + 'que contam no PIT e nos relatórios.',
   });
 
   const descricaoField = createTextareaField({
