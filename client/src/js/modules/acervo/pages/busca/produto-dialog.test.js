@@ -25,6 +25,10 @@ const FICHA = {
   nome: 'Porto Alegre',
   mi: '2987-2',
   inom: 'SH-22-Y-B-VI-2',
+  data_cadastramento: '2026-01-05',
+  usuario_cadastramento: '3º Sgt Silva',
+  data_modificacao: '2026-02-11',
+  usuario_modificacao: 'Cap Souza',
   versoes: [
     {
       versao_id: 90,
@@ -39,6 +43,7 @@ const FICHA = {
           tamanho_mb: 42.5,
           tipo_arquivo_id: 1,
           tipo_status_id: 1,
+          checksum: 'abc123def4567890fedcba',
         },
         {
           uuid_arquivo: 'bbbbbbbb-1111-2222-3333-444444444444',
@@ -252,5 +257,66 @@ describe('abrirProdutoDialog: relacionamentos', () => {
 
     expect(svc.getProdutoDetalhado).toHaveBeenLastCalledWith(55);
     expect(document.querySelector('.produto-ficha__posicao').textContent).toBe('2 de 2');
+  });
+});
+
+// --- O DADO QUE O SERVIDOR JA MANDAVA E A TELA DESCARTAVA -------------------
+//
+// Padrao que atravessa o modulo inteiro: a consulta resolve o campo, a resposta
+// o carrega, e o cliente nao o desenha. Aqui eram tres, e os tres respondem
+// pergunta que alguem fazia na mao, no SQL.
+describe('abrirProdutoDialog: o que a ficha passou a mostrar', () => {
+  test('diz QUEM cadastrou e quem alterou por ultimo', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    // Os dois uuid ja vinham resolvidos em nome pela consulta da ficha
+    // (`u1.nome`, `u2.nome`), e a tela mostrava so a data.
+    const texto = document.body.textContent;
+    expect(texto).toContain('3º Sgt Silva');
+    expect(texto).toContain('Cap Souza');
+  });
+
+  test('o checksum aparece abreviado, com o completo no title', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    const checksum = document.querySelector('.ficha-arquivo__checksum');
+    expect(checksum).not.toBeNull();
+    // Doze caracteres bastam para distinguir; o inteiro nao cabe na linha.
+    expect(checksum.textContent).toBe('abc123def456');
+    expect(checksum.getAttribute('title')).toContain('abc123def4567890fedcba');
+  });
+});
+
+// "Sem arquivo digital" fundia dois fatos OPOSTOS: a folha que ainda nao existe
+// (promessa de producao) e a folha que existe no mundo e o acervo nao tem o
+// arquivo. Quem procura carta decide coisas diferentes em cada caso.
+describe('abrirProdutoDialog: versao sem arquivo diz QUAL e o caso', () => {
+  const semArquivo = (tipoVersaoId) => ({
+    ...FICHA,
+    versoes: [{
+      versao_id: 91,
+      versao: '1',
+      versao_data_edicao: '2026-03-01',
+      tipo_versao_id: tipoVersaoId,
+      arquivos: [],
+    }],
+  });
+
+  test('planejada e promessa de producao', async () => {
+    svc.getProdutoDetalhado.mockResolvedValueOnce(semArquivo(3));
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(document.body.textContent).toContain('Planejada, ainda sem arquivo');
+  });
+
+  test('registro historico e folha que existe e o acervo nao tem', async () => {
+    svc.getProdutoDetalhado.mockResolvedValueOnce(semArquivo(2));
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(document.body.textContent).toContain('Registro histórico, sem arquivo');
   });
 });

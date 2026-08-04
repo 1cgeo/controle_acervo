@@ -83,6 +83,23 @@ function nomeFisico(a) {
  * embaixo. E o inverso da linha rotulo-valor, e e o que faz MI e INOM saltarem
  * aos olhos: sao eles que identificam a folha, nao a palavra "MI".
  */
+// dominio.tipo_versao. Espelha o que `versao-dialog.js` ja declara; o valor vive
+// aqui com o nome que ele tem no banco.
+const TIPO_VERSAO_HISTORICA = 2;
+const TIPO_VERSAO_PLANEJADA = 3;
+
+/**
+ * O chip da versao sem arquivo, dizendo QUAL e o caso.
+ *
+ * `tipo_versao_id` sempre chegou na resposta e a tela nunca o usou.
+ */
+function chipSemArquivo(v) {
+  const tipo = Number(v.tipo_versao_id);
+  if (tipo === TIPO_VERSAO_PLANEJADA) return chip('Planejada, ainda sem arquivo', 'warning');
+  if (tipo === TIPO_VERSAO_HISTORICA) return chip('Registro histórico, sem arquivo', 'default');
+  return chip('Sem arquivo digital', 'default');
+}
+
 function fato(rotulo, valor, mono = false) {
   if (valor == null || valor === '') return null;
   return el('div', { className: 'ficha-fato' }, [
@@ -172,6 +189,18 @@ function linhaArquivo(a) {
       ? el('span', { className: 'ficha-arquivo__tipo', textContent: a.tipo_arquivo })
       : null,
     el('span', { className: 'ficha-arquivo__tamanho', textContent: tamanho }),
+    // O CHECKSUM, abreviado. Ele sempre veio na resposta e a tela o descartava.
+    // E o que prova que o byte no volume e o byte catalogado, e e o primeiro
+    // dado que se compara quando alguem desconfia do arquivo. Inteiro nao cabe
+    // na linha; os 12 primeiros ja distinguem, e o `title` traz o completo para
+    // copiar.
+    a.checksum
+      ? el('span', {
+        className: 'ficha-arquivo__checksum',
+        title: `SHA-256: ${a.checksum}`,
+        textContent: String(a.checksum).slice(0, 12),
+      })
+      : null,
     botaoBaixar(a),
   ].filter(Boolean));
 }
@@ -517,9 +546,13 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
     // linhas e aquela que o cartao anunciou. A ordem (mais nova primeiro) vem do
     // servidor; a marca e o que a torna legivel sem contar datas.
     maisRecente ? chip('Mais recente', 'success') : null,
+    // Versao SEM arquivo tem dois significados opostos, e "Sem arquivo digital"
+    // fundia os dois: PLANEJADA e promessa de producao (a folha ainda nao
+    // existe), REGISTRO HISTORICO e folha que existe no mundo e o acervo nao
+    // tem o arquivo. Quem procura carta decide coisas diferentes em cada caso.
     arquivos.length
       ? chip(plural(arquivos.length, 'arquivo', 'arquivos'), 'info')
-      : chip('Sem arquivo digital', 'default'),
+      : chipSemArquivo(v),
     acoes.childNodes.length ? acoes : null,
   ].filter(Boolean));
 
@@ -869,6 +902,16 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
       fato('Escala', escala),
       fato('Versões', formatNumber(versoes.length)),
       fato('Cadastrado', formatDate(d.data_cadastramento)),
+      // O NOME de quem mexeu, e nao so a data. O servidor ja resolve os dois
+      // uuid em nome (`u1.nome`, `u2.nome` na consulta da ficha) e a tela
+      // descartava os dois: "quem cadastrou isto" era pergunta sem resposta na
+      // interface, e so o SQL respondia.
+      fato('Cadastrou', d.usuario_cadastramento),
+      // So aparece quando houve alteracao: produto nunca editado nao ganha um
+      // campo vazio para a pessoa interpretar.
+      d.data_modificacao
+        ? fato('Alterado', `${formatDate(d.data_modificacao)}${d.usuario_modificacao ? ` por ${d.usuario_modificacao}` : ''}`)
+        : null,
     ].filter(Boolean));
 
     corpo.replaceChildren(...[

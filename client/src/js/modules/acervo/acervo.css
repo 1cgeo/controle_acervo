@@ -936,6 +936,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* O checksum abreviado: e o que prova que o byte no volume e o byte catalogado.
+ * Monoespacado porque se compara CARACTERE a caractere com outro hash, e some
+ * na tela estreita, onde o nome do arquivo importa mais. */
+.ficha-arquivo__checksum {
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  cursor: help;
+}
+
+@media (max-width: 700px) {
+  .ficha-arquivo__checksum { display: none; }
+}
+
 .ficha-arquivo__baixar {
   flex-shrink: 0;
 }
