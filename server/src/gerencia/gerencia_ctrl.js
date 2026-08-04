@@ -433,8 +433,15 @@ controller.getArquivosIncorretos = async (page = 1, limit = 20) => {
         SELECT *, ROW_NUMBER() OVER (ORDER BY ordem_data DESC NULLS LAST) as row_num
         FROM arquivos_combined
       )
-      SELECT 
-        id, nome, nome_arquivo, extensao, tipo_status_id,
+      -- A coluna origem SAI na resposta, e não pode voltar a ficar de fora. Os
+      -- dois lados da união têm sequências de id DISTINTAS (acervo.arquivo e
+      -- acervo.arquivo_deletado), então o id sozinho é ambíguo: o mesmo
+      -- número existe nas duas tabelas apontando arquivos diferentes. Sem este
+      -- campo a tela mostrava um número cru, e um id de excluído colado no
+      -- cartão de checksum manda o servidor reler OUTRO arquivo, vivo, sem que
+      -- nada perceba (ele existe, então a rota não recusa).
+      SELECT
+        origem, id, nome, nome_arquivo, extensao, tipo_status_id,
         data_cadastramento, data_modificacao, volume, volume_nome, versao_nome, tipo
       FROM arquivos_numerados
       WHERE row_num > $1 AND row_num <= $2

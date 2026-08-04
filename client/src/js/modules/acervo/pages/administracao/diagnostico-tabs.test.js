@@ -49,11 +49,13 @@ describe('aba Arquivos com problema', () => {
   test('mostra a situacao que separa as duas origens', async () => {
     svc.getArquivosIncorretos.mockResolvedValue(umaPagina([
       {
+        origem: 'arquivo',
         id: 1, nome: 'Carta 2757', nome_arquivo: 'CT_s12_2757', extensao: 'tif',
         versao_nome: '1ª Edição', volume_nome: 'Acervo principal',
         tipo: 'Arquivo com erro', data_modificacao: '2026-08-01T10:00:00-03:00',
       },
       {
+        origem: 'arquivo_deletado',
         id: 2, nome: 'Carta 2758', nome_arquivo: 'CT_s12_2758', extensao: 'tif',
         versao_nome: 'Versão removida', volume_nome: 'Acervo principal',
         tipo: 'Arquivo deletado com erro', data_modificacao: '2026-07-30T10:00:00-03:00',
@@ -66,6 +68,51 @@ describe('aba Arquivos com problema', () => {
     expect(container.textContent).toContain('Arquivo com erro');
     expect(container.textContent).toContain('Arquivo deletado com erro');
     expect(container.textContent).toContain('CT_s12_2757.tif');
+
+    aba.cleanup();
+  });
+
+  // O ID QUALIFICADO PELA TABELA. As duas origens têm sequências próprias, então
+  // o mesmo número existe nas duas apontando arquivos diferentes. Um id de
+  // excluído colado no cartão "Atualizar checksum" faz o servidor reler OUTRO
+  // arquivo, vivo, e gravar nele: a rota não recusa, porque o id existe. Mostrar
+  // o número cru era o que permitia esse erro.
+  test('o id sai com a tabela a que pertence, e nunca cru', async () => {
+    svc.getArquivosIncorretos.mockResolvedValue(umaPagina([
+      {
+        origem: 'arquivo',
+        id: 12, nome: 'Vivo', nome_arquivo: 'CT_a', extensao: 'tif',
+        versao_nome: '1ª Edição', volume_nome: 'Acervo principal',
+        tipo: 'Arquivo com erro', data_modificacao: '2026-08-01T10:00:00-03:00',
+      },
+      {
+        // MESMO número, outra tabela: é exatamente a colisão que o id cru
+        // escondia.
+        origem: 'arquivo_deletado',
+        id: 12, nome: 'Excluído', nome_arquivo: 'CT_b', extensao: 'tif',
+        versao_nome: 'Versão removida', volume_nome: 'Acervo principal',
+        tipo: 'Arquivo deletado com erro', data_modificacao: '2026-07-30T10:00:00-03:00',
+      },
+    ]));
+
+    const aba = await montar(renderArquivosProblemaTab);
+
+    expect(container.textContent).toContain('arquivo #12');
+    expect(container.textContent).toContain('excluído #12');
+
+    aba.cleanup();
+  });
+
+  // Ver o defeito sem saber o que fazer com ele deixa a aba sendo um lamento. E
+  // o id do excluído não serve para ação nenhuma, o que precisa estar escrito.
+  test('diz o que fazer com cada situação, e que o id do excluído não serve', async () => {
+    svc.getArquivosIncorretos.mockResolvedValue(umaPagina([]));
+
+    const aba = await montar(renderArquivosProblemaTab);
+
+    expect(container.textContent).toContain('se recarrega');
+    expect(container.textContent).toContain('investiga no volume');
+    expect(container.textContent).toContain('outra tabela');
 
     aba.cleanup();
   });

@@ -48,6 +48,7 @@ const {
   logger,
   domainConstants: { TIPO_ARQUIVO }
 } = require('../utils')
+const { conferirIdentidadeLivre } = require('../utils/identidade_produto')
 
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume')
 const arquivoSchema = require('./arquivo_schema')
@@ -150,22 +151,12 @@ const construirPlano = async (dados, contexto) => {
 
       // Identidade do produto: espelha `unique_produto_identidade` com erro
       // legível, em vez de deixar o índice estourar depois dos bytes.
-      if (produto.mi) {
-        const existente = await t.oneOrNone(
-          `SELECT id FROM acervo.produto
-           WHERE mi = $1 AND tipo_escala_id = $2 AND tipo_produto_id = $3
-             AND COALESCE(subtipo_produto_id, 0) = COALESCE($4, 0)`,
-          [produto.mi, produto.tipo_escala_id, produto.tipo_produto_id,
-            produto.subtipo_produto_id ?? null]
-        )
-        if (existente) {
-          throw new AppError(
-            `Já existe o produto ${existente.id} com este MI, escala, tipo e subtipo. ` +
-            'Para acrescentar uma versão a ele, use o envio de versão.',
-            httpCode.Conflict
-          )
-        }
-      }
+      //
+      // A regra mora em utils/identidade_produto.js desde 2026-08-04, e não mais
+      // aqui: ela existia SÓ neste caminho, então cadastrar pelo assistente dava
+      // 409 com instrução e cadastrar pelo formulário estourava o índice. A
+      // mesma regra escrita em dois lugares volta a divergir.
+      await conferirIdentidadeLivre(t, produto)
     }
 
     // ---- volume ----

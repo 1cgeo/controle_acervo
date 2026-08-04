@@ -3,6 +3,7 @@
 const { db } = require("../database");
 const { arquivarArquivos, idsDosArquivosDasVersoes } = require("../arquivo/arquivo_deletado");
 const { AppError, httpCode, preserveOmitted, domainConstants: { TIPO_VERSAO, TIPO_RELACIONAMENTO } } = require("../utils");
+const { conferirIdentidadeLivre } = require("../utils/identidade_produto");
 const { auditoriaCtrl } = require("../auditoria");
 const scn = require("../utils/scn");
 const { v4: uuidv4 } = require('uuid');
@@ -1206,6 +1207,11 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId, contex
     const produtosIds = []
 
     for (const produto of produtos) {
+      // A identidade é conferida ANTES do INSERT, e não deixada para o índice
+      // único estourar: o estouro não diz qual produto já ocupa a identidade,
+      // e no lote ele derruba a transação inteira depois de tudo preenchido.
+      await conferirIdentidadeLivre(t, produto);
+
       // Inserir o produto
       const [novoProduto] = await t.any(`
         INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
@@ -1274,6 +1280,10 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid, contexto) => {
     const produtosIds = [];
 
     for (const produto of produtos) {
+      // Mesma conferência do outro caminho de criação: a regra da identidade
+      // não pode depender do botão que a pessoa apertou.
+      await conferirIdentidadeLivre(t, produto);
+
       const [novoProduto] = await t.any(`
         INSERT INTO acervo.produto(nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom, data_cadastramento, usuario_cadastramento_uuid)
         VALUES($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), $10, $11)

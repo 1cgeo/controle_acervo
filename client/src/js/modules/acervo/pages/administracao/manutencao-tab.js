@@ -512,6 +512,10 @@ export async function renderManutencaoTab(container) {
     avisos: [
       'Trabalha por ID, e não sozinha: os ids saem da amostra dos invariantes 4a e 4f da '
         + 'tela de Auditoria, ou de quem fez a recompressão.',
+      'O id é de acervo.arquivo. NÃO use o id de uma linha marcada como "Arquivo '
+        + 'deletado com erro" na aba Diagnóstico: ela vem de outra tabela, com numeração '
+        + 'própria, e o mesmo número aponta um arquivo VIVO e diferente aqui. A rota não '
+        + 'tem como recusar, porque o id existe.',
       'Se qualquer um dos arquivos não existir no volume, NADA é alterado.',
       'Preserva o id, o uuid e o histórico de download do arquivo, ao contrário de '
         + 'substituir o arquivo por upload.',
