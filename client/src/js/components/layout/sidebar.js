@@ -127,6 +127,15 @@ const SISTEMA_PRODUCAO = {
   chavePrefixo: '',
   menu: [
     { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
+    // Logo abaixo das metas, e nao no fim: a revisao e o que EXPLICA o numero
+    // que a grade mostra, e as duas se leem juntas. Sem `admin: true` pelo
+    // mesmo motivo das metas -- ler o plano e de qualquer pessoa logada.
+    {
+      id: 'revisoes_pit',
+      label: 'Revisões do PIT',
+      icon: ICONS.swapHoriz,
+      path: '/revisoes_pit',
+    },
     // A execução do PIT é do GERENTE e do administrador (chefe, 2026-08-02), e
     // não de qualquer pessoa logada como as metas ao lado. Por isso ela leva
     // `visivel` em vez de `admin: true`: nenhuma das duas marcas descreve

@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete } from './api-client.js';
+import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './api-client.js';
 
 /**
  * Servicos de PLATAFORMA: o que nao pertence a nenhum modulo.
@@ -164,3 +164,67 @@ export function rotuloMetaPit(meta) {
   const codigo = codigoMetaPit(meta);
   return meta.descricao ? `Meta ${codigo} - ${meta.descricao}` : `Meta ${codigo}`;
 }
+
+
+// ---- Exercicio e REVISOES do PIT (2026-08-04) ----
+//
+// A DSG revisa o plano durante a execucao, e alterar o PIT e cancelar, alterar
+// e adicionar meta: as tres viram uma linha em `pit.meta_revisao`, esparsa, que
+// por isso E o historico. O modelo nasceu em 2026-08-04 e ficou sem tela ate
+// aqui: a revisao so se lia pela varredura geral de rastreabilidade.
+//
+// RASCUNHO e a revisao sem `data_vigencia`. Publicar e preencher essa data, e e
+// so a partir dai que ela rege.
+
+export const listarExercicios = () => apiGet('/metas/exercicios');
+
+export const criarExercicio = (body) => apiPost('/metas/exercicios', body);
+
+export const atualizarExercicio = (ano, body) =>
+  apiPut(`/metas/exercicios/${ano}`, body);
+
+export const listarRevisoes = (ano) =>
+  apiGet(`/metas/revisoes${ano ? `?ano=${ano}` : ''}`);
+
+export const getRevisao = (id) => apiGet(`/metas/revisoes/${id}`);
+
+/**
+ * O que a revisao FAZ, meta a meta, com o valor anterior ao lado.
+ *
+ * E a tela de conferencia: o gerente le isto contra o DIEx antes de publicar.
+ * O "anterior" sai da revisao vigente ANTES desta, o que para um rascunho e a
+ * que esta no ar hoje.
+ */
+export const getAlteracoesRevisao = (id) =>
+  apiGet(`/metas/revisoes/${id}/alteracoes`);
+
+export const criarRevisao = (body) => apiPost('/metas/revisoes', body);
+
+export const atualizarRevisao = (id, body) =>
+  apiPut(`/metas/revisoes/${id}`, body);
+
+export const excluirRevisao = (id) => apiDelete(`/metas/revisoes/${id}`);
+
+/** Publicar e o ato que faz a revisao passar a reger. Recusa com zero alteracao. */
+export const publicarRevisao = (id, body) =>
+  apiPost(`/metas/revisoes/${id}/publicar`, body);
+
+/**
+ * Tira a declaracao de UMA meta do RASCUNHO.
+ *
+ * So no rascunho: na revisao publicada esta linha e o que o relatorio de um mes
+ * passado reporta, e remove-la reescreveria esse passado.
+ */
+export const removerDeclaracao = (revisaoId, metaId) =>
+  apiDelete(`/metas/revisoes/${revisaoId}/meta/${metaId}`);
+
+export const listarAnexosRevisao = (id) => apiGet(`/metas/revisoes/${id}/anexos`);
+
+export const enviarAnexoRevisao = (id, formData) =>
+  apiUpload(`/metas/revisoes/${id}/anexos`, formData);
+
+export const excluirAnexoRevisao = (anexoId) =>
+  apiDelete(`/metas/revisoes/anexo/${anexoId}`);
+
+export const baixarAnexoRevisao = (anexoId, nome) =>
+  apiDownload(`/metas/revisoes/anexo/${anexoId}/download`, nome);

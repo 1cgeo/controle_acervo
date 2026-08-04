@@ -221,6 +221,14 @@ models.revisaoIdParams = Joi.object().keys({
   revisaoId: Joi.number().integer().required()
 })
 
+// A declaracao de UMA meta dentro de UMA revisao. Os dois ids na rota, porque a
+// linha e a interseccao dos dois: `pit.meta_revisao` nao tem id que alguem
+// conheca de fora.
+models.declaracaoParams = Joi.object().keys({
+  revisaoId: Joi.number().integer().required(),
+  metaId: Joi.number().integer().required()
+})
+
 models.anexoIdParams = Joi.object().keys({
   anexoId: Joi.number().integer().required()
 })

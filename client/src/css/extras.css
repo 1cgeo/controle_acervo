@@ -506,3 +506,10 @@
   padding-top: var(--space-md);
   border-top: 1px solid var(--border-color);
 }
+
+/* O valor ANTERIOR no diff de uma revisao do PIT: riscado e apagado, para o
+   olho cair no valor novo sem precisar ler os dois. */
+.revisao-diff__antes {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}

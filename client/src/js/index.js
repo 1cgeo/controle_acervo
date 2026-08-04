@@ -22,6 +22,7 @@ import {
   renderCapacitacaoMinistrada,
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
+import { renderRevisoesPit } from '@pages/revisoes-pit/index.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
@@ -112,6 +113,10 @@ router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 // mapoteca nao conseguia nem ver a lista. Sem `adminLoader`: LER e de qualquer
 // pessoa logada, e o backend cobra o administrador so na escrita.
 router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
+// As REVISOES do PIT. `authLoader` como as metas ao lado: qualquer pessoa
+// logada LE o plano anual e o que a DSG mudou nele, e o servidor cobra o
+// administrador so na escrita.
+router.add('/revisoes_pit', withLayout(renderRevisoesPit), { guard: authLoader });
 
 // Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
 // Absorvida do SAP em 2026-08-02.

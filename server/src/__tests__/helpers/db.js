@@ -71,6 +71,13 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE orcamento.licitacao CASCADE')
     await t.none('TRUNCATE orcamento.dfd_item CASCADE')
     await t.none('TRUNCATE orcamento.dfd CASCADE')
+    // A REVISAO vem ANTES da meta, e ela nao cai por CASCADE de `pit.meta`:
+    // `pit.revisao` aponta `pit.exercicio`, e nao a meta. Sem esta linha, o
+    // rascunho de um teste sobrevivia ao proximo e o segundo `POST /revisoes`
+    // batia no indice parcial `unique_rascunho_por_ano` -- 409 num teste que
+    // nao fala de revisao nenhuma. Ficou de fora quando o modelo nasceu, em
+    // 2026-08-04.
+    await t.none('TRUNCATE pit.revisao CASCADE')
     await t.none('TRUNCATE pit.meta CASCADE')
 
     // A edicao mensal do RPCMTec. Era `orcamento.relatorio_rpcmtec` ate

@@ -819,6 +819,10 @@ const COBERTAS = new Set([
   // PUBLICAR e o ato que faz a revisao passar a reger, e por isso e rota
   // propria: ele nao muda o que a revisao diz, muda desde quando ela vale.
   'POST /metas/revisoes/:revisaoId/publicar',
+  // REMOVER a declaracao de uma meta do RASCUNHO. Rota propria porque nao e
+  // alterar a revisao: e desfazer o acrescimo de uma meta a ela. So no
+  // rascunho, e o evento cai no agregado da META.
+  'DELETE /metas/revisoes/:revisaoId/meta/:metaId',
   'POST /metas/revisoes/:revisaoId/anexos',
   'DELETE /metas/revisoes/anexo/:anexoId',
   // CORRIGIR TRANSCRICAO, e nao alterar o PIT. Rota separada de propósito: quem

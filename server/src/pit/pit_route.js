@@ -466,6 +466,29 @@ router.post(
   })
 )
 
+// REMOVE a declaracao de UMA meta do RASCUNHO. Antes de '/revisoes/:id' pela
+// ordem de declaracao.
+//
+// Existe porque `pit.meta_revisao` e esparsa -- as linhas de uma revisao SAO as
+// alteracoes dela --, e faltava o caminho de volta: quem acrescentasse uma meta
+// por engano so saia publicando o erro. A lacuna apareceu na carga do PIT de
+// 2026, onde a meta 6.9 teve de entrar no R0 marcada `cancelada` por nao haver
+// como deixa-la AUSENTE.
+router.delete(
+  '/revisoes/:revisaoId/meta/:metaId',
+  verifyAdmin,
+  schemaValidation({ params: pitSchema.declaracaoParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await revisaoCtrl.removerDeclaracao(
+      req.params.revisaoId, req.params.metaId, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Meta removida do rascunho da revisão', httpCode.OK, dados
+    )
+  })
+)
+
 router.get(
   '/revisoes/:revisaoId',
   verifyLogin,

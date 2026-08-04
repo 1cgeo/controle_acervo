@@ -177,7 +177,7 @@ controller.alteracoes = async id => {
     `WITH alvo AS (
        SELECT r.id, r.ano, r.data_vigencia FROM pit.revisao r WHERE r.id = $<id>
      )
-     SELECT m.item, m.numero_meta, mr.descricao, mr.quantidade_prevista,
+     SELECT mr.meta_id, m.item, m.numero_meta, mr.descricao, mr.quantidade_prevista,
             mr.prazo::text AS prazo, mr.demandante, mr.cancelada,
             ant.quantidade_prevista AS quantidade_anterior,
             ant.prazo::text AS prazo_anterior,
@@ -358,6 +358,70 @@ controller.publicar = async (id, dados, usuarioUuid, contexto) => {
     })
 
     return { id: depois.id, alteracoes }
+  })
+}
+
+/**
+ * Tira a declaração de UMA meta de uma revisão em RASCUNHO.
+ *
+ * POR QUE ELA EXISTE. A tabela `pit.meta_revisao` é esparsa: a linha só nasce
+ * quando algo muda, e por isso as linhas de uma revisão SÃO as alterações dela.
+ * Faltava o caminho de volta: quem acrescentasse uma meta por engano ao
+ * rascunho só saía publicando o erro, e revisão publicada não se apaga.
+ *
+ * A lacuna apareceu na carga do PIT de 2026: a meta 6.9 não existe no R0, e
+ * teve de entrar nele marcada `cancelada` porque não havia como deixá-la
+ * AUSENTE.
+ *
+ * SÓ NO RASCUNHO. Na revisão publicada esta linha é o que o relatório de um mês
+ * passado reporta; removê-la reescreveria esse passado.
+ *
+ * O evento cai no agregado da META, e não no do exercício: a pergunta que se
+ * faz depois é "por que a 4.2 voltou a 247", e ela se faz na ficha da meta.
+ */
+controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const revisao = await t.oneOrNone(
+      'SELECT id, ano, codigo, data_vigencia FROM pit.revisao WHERE id = $<revisaoId>',
+      { revisaoId }
+    )
+    if (!revisao) {
+      throw new AppError('Revisão do PIT não encontrada', httpCode.NotFound)
+    }
+    if (revisao.data_vigencia !== null) {
+      throw new AppError(
+        'A revisão já foi publicada, e o que ela declara é o que o relatório ' +
+        'daquele mês reporta. Para corrigir, emita uma revisão nova.',
+        httpCode.BadRequest
+      )
+    }
+
+    const antes = await t.oneOrNone(
+      `SELECT * FROM pit.meta_revisao
+       WHERE revisao_id = $<revisaoId> AND meta_id = $<metaId>`,
+      { revisaoId, metaId }
+    )
+    if (!antes) {
+      throw new AppError(
+        'Esta meta não é alterada por esta revisão', httpCode.NotFound
+      )
+    }
+
+    await t.none(
+      'DELETE FROM pit.meta_revisao WHERE id = $<id>', { id: antes.id }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'pit.meta_revisao',
+      registroId: antes.id,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto,
+      motivo: `Removida do rascunho da revisão ${revisao.codigo} de ${revisao.ano}.`
+    })
+
+    return { revisaoId, metaId, removida: true }
   })
 }
 

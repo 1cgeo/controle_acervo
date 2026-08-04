@@ -52,12 +52,11 @@ const SEM_PAINEL_JUSTIFICADO = {
 // com o tempo, que é como a lacuna volta.
 //
 // Cada entrada aponta onde o plano está escrito.
-const PENDENTE_COM_PLANO = {
-  // A revisão do PIT nasceu em 2026-08-04 e não tem tela nenhuma: nem lista de
-  // revisões do ano, nem diff de uma contra a anterior, nem publicar, nem
-  // anexar o assinado. É a única lacuna de CLASSE C do sistema.
-  exercicio: 'Fase 4 de chefe_dgeo 01-Projects/rastreabilidade-completa'
-}
+//
+// ESTÁ VAZIA desde 2026-08-04, quando a revisão do PIT ganhou tela
+// (`pages/revisoes-pit/`). Ela era a única, e era a última lacuna de CLASSE C
+// do sistema: agregado que registra evento e não tem tela nenhuma.
+const PENDENTE_COM_PLANO = {}
 
 /** Todo arquivo .js do cliente, menos teste. */
 const arquivosDoCliente = () => {
