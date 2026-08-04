@@ -91,19 +91,27 @@ UPDATE acervo.versao
                       4166,4167,4168,4169,4170,4171,4172,4173,4194);
 
 -- ---------------------------------------------------------------------------
--- 3b. Nome de folha errado em dois produtos de carta imagem
+-- 3b. RETIRADO. A FOLHA muda de nome entre eras, e isso nao e erro de cadastro
 -- ---------------------------------------------------------------------------
--- Vem ANTES do split (3c) de proposito: o produto novo copia o nome do antigo,
--- e corrigir depois deixaria a metade nova com o nome errado.
+-- Este passo existia e renomeava dois produtos, porque o XML de metadados e os
+-- produtos irmaos da mesma folha discordavam do nome gravado. Ele foi aplicado
+-- em producao em 2026-08-04 e DESFEITO no mesmo dia, depois que a prancha
+-- provou o contrario. Fica o registro, para ninguem refazer a conta:
 --
--- Tres testemunhas independentes contra o nome gravado, nos dois casos: o
--- alternateTitle do XML de metadados que veio com o produto, e outros DOIS
--- produtos do acervo na MESMA folha (a carta topografica e o CDGV).
-UPDATE acervo.produto SET nome = 'Guaíra'
- WHERE id = 5189 AND inom = 'SG-21-X-B' AND nome = 'Marechal Cândido Rondon';
-
-UPDATE acervo.produto SET nome = 'Pedro Osório'
- WHERE id = 5201 AND inom = 'SH-22-Y-C' AND nome = 'Canguçu';
+--   folha SG-21-X-B / MIR 503: a Carta Topografica de 1980 se chama GUAIRA e a
+--     Carta Ortoimagem de 2020 se chama MARECHAL CANDIDO RONDON;
+--   folha SH-22-Y-C / MIR 545: a Carta Topografica de 1981 se chama PEDRO
+--     OSORIO e a Carta Ortoimagem de 2020 se chama CANGUCU.
+--
+-- Os dois toponimos estao DENTRO da folha nos dois casos, entao a geometria nao
+-- arbitra. Cada produto segue o selo da SUA prancha, e o split do passo 3c ja
+-- separa as duas eras em produtos distintos, deixando cada um com o seu nome.
+--
+-- A licao de metodo: XML de backfill do BDGEx NAO e testemunha independente do
+-- produto irmao, porque os dois saem da mesma colheita. Contar quantas fontes
+-- concordam nao substitui abrir a prancha. Ver tambem a folha SH-21-Y-B, em que
+-- a divergencia vinha de uma prancha COMBINADA (uma folha impressa cobrindo
+-- SH-21-Z-A, SH-21-Z-C e SH-21-Y-B, titulada Santana do Livramento).
 
 -- ---------------------------------------------------------------------------
 -- 3c. Split: 19 produtos empilham DUAS naturezas na mesma folha
@@ -121,6 +129,11 @@ UPDATE acervo.produto SET nome = 'Pedro Osório'
 -- O produto ORIGINAL fica com a ortoimagem e permanece no tipo 3. A carta
 -- imagem vai para um produto NOVO, no tipo 7 e com o subtipo 27 pinado, igual
 -- aos outros 25 do mesmo grupo, que ja nascem puros.
+--
+-- O produto novo COPIA o nome do original. Onde a folha mudou de nome entre as
+-- duas eras (MIR 503 e MIR 545, ver 3b), o nome de cada metade se acerta
+-- depois, pela rota PUT /api/produtos/produto, e nao aqui: o nome sai do selo
+-- da prancha de CADA versao, e esta migracao nao le prancha.
 --
 -- Idempotente por construcao: depois do split o original nao tem mais versao de
 -- subtipo 27, entao o laco nao acha nada na segunda rodada.
