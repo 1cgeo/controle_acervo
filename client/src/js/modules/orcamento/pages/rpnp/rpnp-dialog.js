@@ -14,6 +14,7 @@ import {
   getNotasEmpenho,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
+import { paraId } from '@utils/format.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
 /**
@@ -112,7 +113,9 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
 
           const body = {
             ano: isEdit ? rpnp.ano : getAno(),
-            nota_empenho_id: notaEmpenhoField.getValue(),
+            // paraId: o select devolve o id como TEXTO e o schema cobra
+            // Joi.number().integer().strict().
+            nota_empenho_id: paraId(notaEmpenhoField.getValue()),
             empenho_label: empenhoLabelField.getValue() || null,
             finalidade: finalidadeField.getValue() || null,
             valor_empenhado: valorEmpenhadoField.getValue(),

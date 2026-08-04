@@ -116,9 +116,12 @@ export async function renderNotasCreditoList(container, _ctx) {
     try {
       const classificacoes = await getClassificacaoNc();
       if (disposed) return;
+      // O dominio devolve `code`, e nao `id`. Com c.id as duas opcoes viravam
+      // value="undefined", o parametro era descartado e o filtro nao filtrava
+      // nada. O dialog ja tinha essa correcao; a lista tinha ficado para tras.
       classificacaoFilter.setOptions((classificacoes || []).map(c => ({
-        value: c.id,
-        label: c.nome ?? c.descricao ?? `Classificação ${c.id}`,
+        value: c.code ?? c.id,
+        label: c.nome ?? c.descricao ?? `Classificação ${c.code ?? c.id}`,
       })));
     } catch (err) {
       if (disposed) return;

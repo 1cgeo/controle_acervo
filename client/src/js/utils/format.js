@@ -107,6 +107,27 @@ export function toNumber(value) {
 }
 
 /**
+ * Converte para NUMERO o id que veio de um select, preservando o nulo.
+ *
+ * O id de chave estrangeira chega da API como STRING, porque o Postgres entrega
+ * BIGINT como texto para nao perder precisao. O createSelectField devolve o
+ * valor da opcao com o TIPO ORIGINAL, entao o id sai do formulario como texto.
+ * Os schemas do servidor cobram Joi.number().integer().strict(), que RECUSA
+ * texto: o corpo voltava 400 e a tela mostrava a mensagem crua do Joi.
+ *
+ * Use sempre que um id de select for para o corpo de um POST ou PUT. Campo
+ * vazio continua null, que e o que a coluna anulavel espera.
+ *
+ * @param {number|string|null|undefined} value
+ * @returns {number|null} null quando o campo esta vazio
+ */
+export function paraId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
  * Convert a Date (or date-like) to ISO date string (YYYY-MM-DD) for API payloads.
  * @param {Date|string} value
  * @returns {string|null}

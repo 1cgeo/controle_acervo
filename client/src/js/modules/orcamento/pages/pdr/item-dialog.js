@@ -13,6 +13,7 @@ import {
   updatePdrItem,
   getNaturezaDespesa,
 } from '@modules/orcamento/services/orcamento-service.js';
+import { paraId } from '@utils/format.js';
 import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
@@ -72,6 +73,16 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     placeholder: 'Ex.: 1D',
     value: item?.item_label ?? '',
   });
+  // A descricao e o unico texto que identifica o item para uma pessoa: o
+  // item_label vale "10", "1D" ou ate "339040". O campo nao existia na tela, e
+  // como o UPDATE grava null no que nao vem no corpo (pdr_ctrl.js:13-27),
+  // salvar qualquer outra coisa APAGAVA a descricao. Coluna TEXT, sem maxLength.
+  const descricaoField = createTextareaField({
+    label: 'Descrição',
+    rows: 2,
+    value: item?.descricao ?? '',
+    helpText: 'O que o item financia. Aparece na lista do PDR.',
+  });
   const gndField = createSelectField({
     label: 'GND',
     options: [
@@ -119,6 +130,7 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     codNdField.element,
     metaField.element,
     itemLabelField.element,
+    el('div', { className: 'form-grid__full' }, [descricaoField.element]),
     gndField.element,
     valorSolicitadoField.element,
     valorAutorizadoField.element,
@@ -153,8 +165,11 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
           const body = {
             ano: anoItem,
             cod_nd: codNd,
-            meta_pit_id: metaField.getValue(),
+            // Number: /api/metas devolve id como TEXTO e o schema cobra
+            // Joi.number().integer().strict().
+            meta_pit_id: paraId(metaField.getValue()),
             item_label: itemLabelField.getValue() || null,
+            descricao: descricaoField.getValue() || null,
             gnd: gndField.getValue(),
             valor_solicitado: valorSolicitadoField.getValue(),
             valor_autorizado: valorAutorizadoField.getValue(),

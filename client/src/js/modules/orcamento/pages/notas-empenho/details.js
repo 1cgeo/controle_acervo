@@ -147,7 +147,11 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
               return;
             }
 
+            // nota_empenho_id vai no corpo TAMBEM na edicao: o models.atualizar
+            // do Joi o exige (liquidacao_schema.js:22,33), e sem ele o PUT
+            // voltava 400 sempre. O criar ja o mandava.
             const body = {
+              nota_empenho_id: notaEmpenhoId,
               valor_liquidado: valor,
               data: dataField.getValue(),
               documento_ns: documentoField.getValue() || null,
@@ -255,7 +259,10 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
               return;
             }
 
+            // Mesmo motivo da liquidacao: recebimento_schema.js:19,33 exige o
+            // dono no models.atualizar, e o PUT sem ele voltava 400 sempre.
             const body = {
+              nota_empenho_id: notaEmpenhoId,
               material,
               prazo_entrega: prazoField.getValue() || null,
               situacao: situacaoField.getValue() || null,

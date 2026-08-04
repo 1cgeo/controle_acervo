@@ -226,7 +226,10 @@ export async function openNotaEmpenhoDialog({ neId = null, onSaved = null } = {}
               valid = false;
             }
             if (ncId != null && valor != null && valor > 0) {
-              alocacoes.push({ nota_credito_id: ncId, valor });
+              // Number: o select devolve o valor da opcao com o tipo original, e
+              // o id vem da API como TEXTO (BIGINT do Postgres). O schema cobra
+              // Joi.number().integer().strict(), que recusa texto.
+              alocacoes.push({ nota_credito_id: Number(ncId), valor });
             }
           }
           if (!alocacoes.length) valid = false;

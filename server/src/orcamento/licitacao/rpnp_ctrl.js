@@ -27,8 +27,13 @@ controller.listar = async (filtros = {}) => {
   // Lista os RPNP (restos a pagar nao processados) do ano. Quando a nota de
   // empenho esta cadastrada, traz o numero dela; senao usa o empenho_label livre.
   return db.conn.any(
+    // A coluna `empenho` e o identificador que o usuario procura, e sai da MESMA
+    // expressao que o relatorio usa (rpcmtec_ctrl.js:541). Ela precisa existir
+    // como CHAVE da linha: a busca do data-table le row[col.key], nunca o
+    // render, entao a coluna montada so no render nao era pesquisavel.
     `SELECT rp.id, rp.ano, rp.nota_empenho_id,
             ne.numero AS nota_empenho_numero,
+            COALESCE(rp.empenho_label, ne.numero) AS empenho,
             rp.empenho_label, rp.finalidade,
             rp.valor_empenhado, rp.valor_a_liquidar
      FROM orcamento.rpnp AS rp

@@ -204,6 +204,18 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
     value: dfd?.vinculo_plano_gestao ?? '',
     maxLength: 255,
   });
+  // O valor estimado e o numero que o DFD leva ao PCA, e a lista ja o mostrava
+  // numa coluna. Nenhuma tela permitia informa-lo: o corpo saia sem o campo e o
+  // servidor caia em resolveValorEstimado(undefined, itens), que grava null sem
+  // itens e 0 com itens sem valor_total. Editar o objeto de um DFD sem itens
+  // zerava o valor. Em branco, o servidor volta a somar os itens.
+  const valorEstimadoField = createNumberField({
+    label: 'Valor estimado',
+    min: 0,
+    step: 0.01,
+    value: dfd?.valor_estimado ?? undefined,
+    helpText: 'Em branco, soma os itens.',
+  });
   const constaPcaField = createCheckboxField({
     label: 'Consta no PCA',
     checked: dfd ? Boolean(dfd.consta_pca) : true,
@@ -333,6 +345,7 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
       dataPrevistaField.element,
       cpfField.element,
       vinculoField.element,
+      valorEstimadoField.element,
       el('div', { className: 'form-grid__full' }, [constaPcaField.element]),
     ]),
     el('div', { className: 'dfd-itens-section' }, [
@@ -388,6 +401,7 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
             data_prevista_conclusao: dataPrevistaField.getValue(),
             responsavel_cpf: orNull(cpfField.getValue()),
             vinculo_plano_gestao: orNull(vinculoField.getValue()),
+            valor_estimado: valorEstimadoField.getValue(),
             consta_pca: constaPcaField.getValue(),
             itens,
           };

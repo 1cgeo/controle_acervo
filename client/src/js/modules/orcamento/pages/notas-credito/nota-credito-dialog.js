@@ -9,6 +9,7 @@ import {
   createTextareaField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { paraId } from '@utils/format.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
 import {
   getNotaCredito,
@@ -334,20 +335,22 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
             cod_pi: codPiField.getValue(),
             ug_emitente: ugEmitenteField.getValue(),
             finalidade_historico: finalidadeField.getValue() || null,
-            meta_pit_id: metaField.getValue(),
+            // paraId nos tres ids de select: eles chegam da API como TEXTO e os
+            // schemas cobram Joi.number().integer().strict().
+            meta_pit_id: paraId(metaField.getValue()),
             valor_nc: valorNc,
             valor_recolhido: valorRecolhidoField.getValue() ?? null,
             doc_ro: docRoField.getValue() || null,
             prazo_empenho: prazoEmpenhoField.getValue(),
             classificacao_id: classificacaoId,
-            nc_complementada_id: ncComplementadaField.getValue(),
+            nc_complementada_id: paraId(ncComplementadaField.getValue()),
             marcador: marcadorField.getValue() || null,
             observacao: observacaoField.getValue() || null,
           };
 
           // Só envia pdr_item_id quando a classificacao e PDR (1).
           if (isPdr(classificacaoId)) {
-            body.pdr_item_id = pdrItemField.getValue();
+            body.pdr_item_id = paraId(pdrItemField.getValue());
           }
 
           saving = true;

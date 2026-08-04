@@ -1,0 +1,66 @@
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+// Regressao: o filtro de Classificacao montava as opcoes com c.id, e o dominio
+// devolve c.code (GET /api/orcamento/dominio/classificacao_nc responde
+// [{"code":1,"nome":"PDR"},{"code":2,"nome":"Extra-PDR"}]). As duas opcoes
+// viravam value="undefined", resolveValue devolvia undefined e o parametro era
+// descartado: o unico filtro da tela nao filtrava nada. O mesmo defeito ja tinha
+// sido corrigido no dialog (nota-credito-dialog.js:94) e nao na lista.
+
+vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
+  getNotasCredito: vi.fn(() => Promise.resolve([])),
+  deleteNotaCredito: vi.fn(() => Promise.resolve()),
+  getClassificacaoNc: vi.fn(() => Promise.resolve([
+    { code: 1, nome: 'PDR' },
+    { code: 2, nome: 'Extra-PDR' },
+  ])),
+  getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
+  getPlanoInterno: vi.fn(() => Promise.resolve([])),
+  getUg: vi.fn(() => Promise.resolve([])),
+  getPdrItens: vi.fn(() => Promise.resolve([])),
+  getNotaCredito: vi.fn(() => Promise.resolve({})),
+  createNotaCredito: vi.fn(() => Promise.resolve({})),
+  updateNotaCredito: vi.fn(() => Promise.resolve({})),
+  getArquivos: vi.fn(() => Promise.resolve([])),
+  uploadArquivo: vi.fn(() => Promise.resolve([])),
+  downloadArquivo: vi.fn(() => Promise.resolve()),
+  deleteArquivo: vi.fn(() => Promise.resolve()),
+}));
+
+import { renderNotasCreditoList } from '@modules/orcamento/pages/notas-credito/list.js';
+import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.js';
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+describe('renderNotasCreditoList: filtro de classificacao', () => {
+  beforeEach(() => {
+    localStorage.setItem('@sca-orcamento-ano', '2026');
+    vi.clearAllMocks();
+  });
+
+  test('as opcoes do filtro carregam o code do dominio', async () => {
+    const container = document.createElement('div');
+    await renderNotasCreditoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    await flush();
+
+    const select = container.querySelector('.page__filters select');
+    const valores = [...select.options].map(o => o.value);
+    expect(valores).toEqual(['', '1', '2']);
+  });
+
+  test('escolher Extra-PDR manda classificacao_id ao servidor', async () => {
+    const container = document.createElement('div');
+    await renderNotasCreditoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    await flush();
+
+    const select = container.querySelector('.page__filters select');
+    select.value = '2';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    const ultimaChamada = getNotasCredito.mock.calls.at(-1)[0];
+    expect(ultimaChamada.classificacao_id).toBe(2);
+  });
+});

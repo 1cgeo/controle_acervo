@@ -119,6 +119,14 @@ export async function renderPdrList(container, _ctx) {
   const table = createDataTable({
     columns: [
       { key: 'item_label', label: 'Rótulo', sortable: true, render: (row) => row.item_label || '-' },
+      // A descricao e o que identifica o item para uma pessoa. Ela existe em 36
+      // de 36 itens reais e nao aparecia em tela nenhuma.
+      {
+        key: 'descricao',
+        label: 'Descrição',
+        className: 'data-table__cell--truncate',
+        render: (row) => row.descricao || '-',
+      },
       {
         key: 'cod_nd',
         label: 'ND',
