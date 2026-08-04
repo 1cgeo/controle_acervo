@@ -224,27 +224,49 @@ controller.getVersionStatistics = async () => {
   });
 }
 
+/**
+ * Crescimento do armazenamento, mês a mês.
+ *
+ * O ACUMULADO INCLUI O SALDO ANTERIOR À JANELA, desde 2026-08-04. Antes, a soma
+ * corrente começava do zero no primeiro mês mostrado, então a série "GB
+ * Acumulados" terminava no total dos últimos 12 meses e o cartão "Armazenamento
+ * Total" mostrava o acervo inteiro. Dois números com o mesmo nome, na mesma
+ * tela, discordando, e nenhum dos dois dizia qual era qual.
+ *
+ * O recorte também passou a nascer no INÍCIO DO MÊS (`date_trunc`), e não em
+ * "hoje menos N meses": o mês mais antigo da série vinha pela metade, e o
+ * primeiro ponto do gráfico ficava sistematicamente menor sem razão visível.
+ */
 controller.getStorageGrowthTrends = async (months = 12) => {
   return db.conn.any(`
-    WITH monthly_data AS (
-      SELECT 
+    WITH janela AS (
+      SELECT date_trunc('month', NOW() - INTERVAL '${months - 1} months') AS inicio
+    ),
+    saldo_anterior AS (
+      SELECT COALESCE(SUM(tamanho_mb) / 1024, 0) AS gb
+      FROM acervo.arquivo, janela
+      WHERE data_cadastramento < janela.inicio
+    ),
+    monthly_data AS (
+      SELECT
         date_trunc('month', data_cadastramento) AS month,
         SUM(tamanho_mb) / 1024 AS gb_added
-      FROM acervo.arquivo
-      WHERE data_cadastramento > NOW() - INTERVAL '${months} months'
+      FROM acervo.arquivo, janela
+      WHERE data_cadastramento >= janela.inicio
       GROUP BY month
     ),
     months_series AS (
       SELECT generate_series(
-        date_trunc('month', NOW() - INTERVAL '${months-1} months'),
+        (SELECT inicio FROM janela),
         date_trunc('month', NOW()),
         '1 month'::interval
       ) AS month
     )
-    SELECT 
+    SELECT
       TO_CHAR(ms.month, 'YYYY-MM') AS month,
       COALESCE(md.gb_added, 0) AS gb_added,
-      SUM(COALESCE(md.gb_added, 0)) OVER (ORDER BY ms.month) AS cumulative_gb
+      (SELECT gb FROM saldo_anterior)
+        + SUM(COALESCE(md.gb_added, 0)) OVER (ORDER BY ms.month) AS cumulative_gb
     FROM months_series ms
     LEFT JOIN monthly_data md ON ms.month = md.month
     ORDER BY ms.month
@@ -430,27 +452,43 @@ controller.getSituacaoCarregamento = async () => {
   `)
 }
 
-// Version activity timeline
+/**
+ * Versões criadas, mês a mês.
+ *
+ * Mesma correção do `getStorageGrowthTrends` (2026-08-04): o "Acumulado" soma o
+ * SALDO ANTERIOR à janela, senão ele termina no total dos últimos 12 meses
+ * enquanto o cartão "Total de Versões" mostra o acervo inteiro. E o recorte
+ * nasce no início do mês, para o primeiro ponto não vir pela metade.
+ */
 controller.getVersaoActivityTimeline = async (months = 12) => {
   return db.conn.any(`
-    WITH monthly AS (
+    WITH janela AS (
+      SELECT date_trunc('month', NOW() - INTERVAL '${months - 1} months') AS inicio
+    ),
+    saldo_anterior AS (
+      SELECT COUNT(*) AS versoes
+      FROM acervo.versao, janela
+      WHERE data_criacao < janela.inicio
+    ),
+    monthly AS (
       SELECT
         TO_CHAR(date_trunc('month', data_criacao), 'YYYY-MM') AS month,
         COUNT(*) AS novas_versoes
-      FROM acervo.versao
-      WHERE data_criacao > NOW() - INTERVAL '${months} months'
+      FROM acervo.versao, janela
+      WHERE data_criacao >= janela.inicio
       GROUP BY month
     ),
     months_series AS (
       SELECT TO_CHAR(generate_series(
-        date_trunc('month', NOW() - INTERVAL '${months - 1} months'),
+        (SELECT inicio FROM janela),
         date_trunc('month', NOW()),
         '1 month'::interval
       ), 'YYYY-MM') AS month
     )
     SELECT ms.month,
       COALESCE(m.novas_versoes, 0) AS novas_versoes,
-      SUM(COALESCE(m.novas_versoes, 0)) OVER (ORDER BY ms.month) AS acumulado
+      (SELECT versoes FROM saldo_anterior)
+        + SUM(COALESCE(m.novas_versoes, 0)) OVER (ORDER BY ms.month) AS acumulado
     FROM months_series ms
     LEFT JOIN monthly m ON ms.month = m.month
     ORDER BY ms.month
