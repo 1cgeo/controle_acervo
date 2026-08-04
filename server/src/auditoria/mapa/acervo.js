@@ -201,6 +201,32 @@ module.exports = {
     }
   },
 
+  // A limpeza de downloads expirados, como evento de OPERACAO.
+  //
+  // A chave NAO e `acervo.download`, que e tabela real: o download individual
+  // nao entra na auditoria por decisao (ele ja tem historico proprio na tabela),
+  // e declarar a tabela aqui prometeria um rastro por linha que nao existe. O
+  // que se registra e a OPERACAO: quem mandou fechar os vencidos, quando, e
+  // quantos fecharam.
+  //
+  // Ate 2026-08-04 esta operacao nao registrava nada, e era a unica das quatro
+  // de manutencao sem autor, apesar de o comentario de `registrarOperacao`
+  // afirmar que as quatro registravam.
+  'acervo.download_expirado': {
+    pseudoTabela: true,
+    modulo: 'acervo',
+    entidade: 'manutencao',
+    agregado: () => 'operacao',
+    resumo: linha => {
+      const n = linha && linha.fechados
+      if (n === 1) return '1 download expirado fechado'
+      return `${n || 0} downloads expirados fechados`
+    },
+    campos: {
+      fechados: { rotulo: 'Downloads fechados', tipo: 'numero' }
+    }
+  },
+
   // --- Agregado: projeto ----------------------------------------------------
 
   'acervo.projeto': {

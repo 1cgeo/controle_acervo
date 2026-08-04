@@ -158,13 +158,38 @@ describe('renderActivityTab', () => {
     aba.cleanup();
   });
 
-  test('endpoint da tabela que falha deixa a aba de pe, so vazia', async () => {
-    acervoService.getUltimosProdutos.mockRejectedValueOnce(new Error('500'));
+  // Este teste FIXAVA o defeito: ele exigia o estado vazio quando o endpoint
+  // falhava. Zerar as linhas fazia a tabela mostrar "Sem dados disponiveis", que
+  // e a frase do acervo vazio, e a falha da API lia-se como ausencia de dado.
+  // "Nao ha" e "nao consegui saber" sao respostas opostas.
+  test('endpoint que falha mostra ERRO, e nao a frase de acervo vazio', async () => {
+    acervoService.getUltimosProdutos.mockRejectedValueOnce(new Error('Falha ao consultar'));
 
     const container = document.createElement('div');
     const aba = await renderActivityTab(container);
 
-    expect(container.querySelector('.tabs__content .data-table__empty')).not.toBeNull();
+    const erro = container.querySelector('.dashboard-erro');
+    expect(erro).not.toBeNull();
+    // A mensagem do SERVIDOR aparece: e ela que distingue sem rede de sem
+    // permissao, e o que decide se a pessoa tenta de novo ou chama alguem.
+    expect(erro.textContent).toContain('Falha ao consultar');
+    expect(erro.getAttribute('role')).toBe('alert');
+    aba.cleanup();
+  });
+
+  test('o "tentar de novo" refaz a chamada e devolve a tabela', async () => {
+    acervoService.getUltimosProdutos.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const aba = await renderActivityTab(container);
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+
+    const botao = [...container.querySelectorAll('.dashboard-erro button')]
+      .find(b => b.textContent.includes('Tentar de novo'));
+    botao.click();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
     aba.cleanup();
   });
 });

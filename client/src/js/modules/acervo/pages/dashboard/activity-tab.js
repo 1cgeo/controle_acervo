@@ -5,6 +5,7 @@ import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
 import { formatDateTime, formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
+import { mostrarErro } from './estado-erro.js';
 
 const DIAS_DA_SERIE = 30;
 
@@ -33,9 +34,13 @@ function tabelaTab({ columns, getData, mapData = null, emptyMessage = 'Sem dados
         if (disposed) return;
         const linhas = Array.isArray(dados) ? dados : [];
         tabela.update({ rows: mapData ? linhas.map(mapData) : linhas, loading: false });
-      } catch {
+      } catch (erro) {
         if (disposed) return;
+        // Estado de ERRO proprio, e nao lista vazia. Zerar as linhas fazia a
+        // tabela mostrar "Sem dados disponiveis", que e a frase do acervo
+        // vazio: a falha da API lia-se como ausencia de dado.
         tabela.update({ rows: [], loading: false });
+        mostrarErro(content, erro, load);
       }
     };
 

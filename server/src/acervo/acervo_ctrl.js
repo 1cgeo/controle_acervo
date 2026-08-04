@@ -630,8 +630,54 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
 
 // Cleanup function that can be called by a scheduled job
 // SELECT de função retorna 1 linha — usar .any(), nunca .none()
-controller.cleanupExpiredDownloads = async () => {
-  return db.conn.any(`SELECT acervo.cleanup_expired_downloads()`);
+/**
+ * Fecha os downloads pendentes cuja validade venceu, e DIZ QUANTOS.
+ *
+ * Duas coisas mudaram em 2026-08-04, e as duas eram sobre prova.
+ *
+ * 1. A operação passa a registrar QUEM mandou rodar. Ela era a única das quatro
+ *    operações de manutenção sem autor no rastro, apesar de o comentário de
+ *    `auditoria_ctrl.registrarOperacao` afirmar que as quatro registravam.
+ * 2. Ela devolve a contagem. Antes o SQL era uma função `RETURNS void`, então a
+ *    tela anunciava "downloads expirados marcados como falhos" sem número
+ *    nenhum: a confirmação era eco da própria chamada, e não medida. Agora o
+ *    UPDATE é daqui e o `RETURNING` conta as linhas que ele mesmo mexeu.
+ *
+ * A função `acervo.cleanup_expired_downloads()` continua no banco, e o CRON
+ * passou a chamar ESTE controlador em vez dela: a regra de quando um download
+ * vence vive num lugar só, e as duas cópias divergiriam com o tempo.
+ *
+ * @param {string|null} usuarioUuid - nulo quando é o cron que roda
+ * @param {Object|null} contexto
+ * @returns {Promise<{fechados:number}>}
+ */
+controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null) => {
+  return db.conn.tx(async t => {
+    const fechados = await t.any(`
+      UPDATE acervo.download
+         SET status = 'failed'
+       WHERE status = 'pending'
+         AND expiration_time IS NOT NULL
+         AND expiration_time < NOW()
+      RETURNING id
+    `);
+
+    const resultado = { fechados: fechados.length };
+
+    // Quem mandou rodar sempre é registrado. O CRON só entra no rastro quando
+    // FEZ alguma coisa: um evento por hora dizendo "não havia nada" faria a
+    // auditoria crescer mais rápido que o acervo, para não contar nada.
+    if (usuarioUuid || resultado.fechados > 0) {
+      await auditoriaCtrl.registrarOperacao(t, {
+        tabela: 'acervo.download_expirado',
+        resultado,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return resultado;
+  });
 };
 
 // As duas visões materializadas geram EVENTO DE OPERAÇÃO, e não linha a linha:

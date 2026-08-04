@@ -246,11 +246,15 @@ router.post(
   verifyAdmin,
   verifyAdmin, // Only admin users can access this endpoint
   asyncHandler(async (req, res, next) => {
-    await acervoCtrl.cleanupExpiredDownloads()
+    // O retorno era DESCARTADO, e a tela anunciava sucesso sem número: a
+    // confirmação era eco da chamada, e não medida do que mudou.
+    const dados = await acervoCtrl.cleanupExpiredDownloads(req.usuarioUuid, req.contexto)
 
-    const msg = 'Limpeza de downloads expirados realizada com sucesso'
+    const msg = dados.fechados === 1
+      ? '1 download expirado foi fechado'
+      : `${dados.fechados} downloads expirados foram fechados`
 
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 
