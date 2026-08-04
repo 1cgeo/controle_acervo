@@ -74,61 +74,87 @@ const paraDiaLocal = valor => {
 const INICIO_JANELA_DIAS = "(now()::date - ($<total> - 1) * INTERVAL '1 day')"
 
 /**
- * Quem entrou HOJE: o ultimo login de cada par usuario + cliente no dia.
+ * Quem entrou HOJE: uma linha por PESSOA, com os clientes que ela usou.
+ *
+ * ERA uma linha por par pessoa + cliente, e a mudanca e de 2026-08-04. A
+ * pergunta da tabela e "quem esta no sistema", e quem abriu a interface web e o
+ * plugin do QGIS no mesmo dia e UMA pessoa. O "por onde" nao se perde: ele
+ * desce de linha para COLUNA, em `clientes`.
+ *
+ * DEVOLVE `u.uuid`, e nao mais um `ROW_NUMBER()` sintetico. O numero de ordem
+ * nao identifica ninguem: era chave de tabela e nada mais, e sem a identidade
+ * real a linha nao podia virar link para o aproveitamento daquela pessoa
+ * (`#/aproveitamento?usuario_uuid=`). O uuid ja existia na coluna desde sempre.
  *
  * O recorte por data entra DENTRO do agrupamento, e nao depois dele como no
  * original (`WHERE l.ultimo_login::date = now()::date` sobre o max de toda a
- * historia). O resultado e o mesmo -- para quem entrou hoje, o maior login de
- * hoje E o maior login de sempre --, mas assim o `login_data_login_idx` serve
- * para alguma coisa, em vez de a consulta varrer a tabela inteira e so entao
- * jogar fora quase tudo.
+ * historia): assim o `login_data_login_idx` serve para alguma coisa, em vez de
+ * a consulta varrer a tabela inteira e so entao jogar fora quase tudo.
  *
  * INNER JOIN com `dgeo.usuario`, de proposito: quem foi apagado hoje some deste
  * painel. Ele responde "quem esta no sistema agora", e nao ha nome para
  * mostrar. A passagem dela nao se perde -- `dgeo.login.usuario_id` e ON DELETE
- * SET NULL, e a linha continua contando nos totais e aparecendo no ranking como
- * 'Usuario deletado'.
+ * SET NULL, e a linha continua aparecendo no ranking como 'Usuario deletado'.
  */
 controller.logados = async () => {
   return db.conn.any(
-    `SELECT ROW_NUMBER() OVER (ORDER BY l.ultimo_login DESC)::integer AS id,
-            l.ultimo_login,
-            l.cliente,
+    `SELECT u.uuid,
             u.login,
             u.nome_guerra,
-            tpg.nome_abrev AS tipo_posto_grad
-       FROM (
-             SELECT usuario_id, cliente, max(data_login) AS ultimo_login
-               FROM dgeo.login
-              WHERE data_login >= now()::date
-                AND usuario_id IS NOT NULL
-              GROUP BY usuario_id, cliente
-            ) AS l
+            tpg.nome_abrev AS tipo_posto_grad,
+            max(l.data_login) AS ultimo_login,
+            count(*)::integer AS logins,
+            array_agg(DISTINCT l.cliente) AS clientes
+       FROM dgeo.login AS l
        INNER JOIN dgeo.usuario AS u ON u.id = l.usuario_id
        INNER JOIN dominio.tipo_posto_grad AS tpg ON tpg.code = u.tipo_posto_grad_id
-      ORDER BY l.ultimo_login DESC`
+      WHERE l.data_login >= now()::date
+      GROUP BY u.uuid, u.login, u.nome_guerra, tpg.nome_abrev
+      ORDER BY max(l.data_login) DESC`
   )
 }
 
 /**
- * Os tres numeros do topo da tela.
+ * Os quatro numeros do topo da aba de acessos.
  *
- * Uma consulta so, com subselects: sao tres contagens independentes e sem
- * junção entre si, e tres idas ao banco para preencher tres caixinhas da mesma
- * tela nao se pagam.
+ * CADA UM DIZ O QUE MEDE, e a distincao entre pessoa e evento e a razao de esta
+ * consulta ter mudado em 2026-08-04. Antes ela devolvia `logins_hoje` e
+ * `logins_30_dias`, que contavam LINHA de `dgeo.login`: com JWT de 8 horas e
+ * dois clientes, a mesma pessoa conta varias vezes por dia. Medido na producao,
+ * 102 logins em 30 dias eram 98 de uma conta de servico. "Quantos logins" nao e
+ * pergunta de ninguem; "quantas pessoas" e.
+ *
+ * `count(DISTINCT usuario_id)` IGNORA O NULO, e isso esta certo aqui: o login de
+ * quem foi apagado nao pertence a nenhuma pessoa que se possa contar, e somar
+ * todos os nulos como um so inventaria uma pessoa que nao existe.
+ *
+ * `contas_ativas` e `contas_sem_senha` falam de CONTA, e nao de gente. `ativo` e
+ * permissao de entrar, e `senha` nula e quem nao consegue entrar (estado real
+ * desde a fusao de 2026-08-02: quem veio do Auth Server so ganha hash quando o
+ * `scripts/copiar_usuarios_auth.js` rodar). Quantos militares estao na Divisao e
+ * pergunta da aba Efetivo, que a responde por `dgeo.efetivo_periodo`.
+ *
+ * A JANELA DE 30 DIAS E FIXA, ao contrario da serie e do ranking, que a tela
+ * recorta. Ela e o retrato do modulo, e nao a resposta ao filtro.
+ *
+ * Uma consulta so, com subselects: sao quatro contagens independentes e sem
+ * junção entre si, e quatro idas ao banco para preencher quatro caixinhas da
+ * mesma tela nao se pagam.
  *
  * `::integer` em cada uma porque `count()` e BIGINT, e o pg-promise entrega
- * BIGINT como STRING para nao perder precisao. Sem o cast, `usuarios_ativos`
+ * BIGINT como STRING para nao perder precisao. Sem o cast, `contas_ativas`
  * chegaria como '12' na tela e qualquer soma no cliente viraria concatenacao.
  * Mesma razao do `::integer` nas series abaixo.
  */
 controller.resumo = async () => {
   return db.conn.one(
     `SELECT
-       (SELECT count(*) FROM dgeo.usuario WHERE ativo IS TRUE)::integer AS usuarios_ativos,
-       (SELECT count(*) FROM dgeo.login WHERE data_login >= now()::date)::integer AS logins_hoje,
-       (SELECT count(*) FROM dgeo.login
-         WHERE data_login >= (now()::date - 29 * INTERVAL '1 day'))::integer AS logins_30_dias`
+       (SELECT count(*) FROM dgeo.usuario WHERE ativo IS TRUE)::integer AS contas_ativas,
+       (SELECT count(*) FROM dgeo.usuario WHERE senha IS NULL)::integer AS contas_sem_senha,
+       (SELECT count(DISTINCT usuario_id) FROM dgeo.login
+         WHERE data_login >= now()::date)::integer AS pessoas_hoje,
+       (SELECT count(DISTINCT usuario_id) FROM dgeo.login
+         WHERE data_login >= (now()::date - 29 * INTERVAL '1 day'))::integer AS pessoas_30_dias`
   )
 }
 
@@ -161,6 +187,12 @@ controller.loginsDia = async total => {
 /**
  * Logins por MES, um ponto por mes do periodo. Mesma regra do zero da serie
  * diaria: mes sem login entra com 0.
+ *
+ * SEM LEITOR NA TELA desde 2026-08-04. O painel de 12 meses saiu porque nasce
+ * degenerado: `dgeo.login` comecou em 2026-08-02, entao dez dos doze meses sao
+ * zero por construcao, e um grafico de dez zeros nao responde nada. A rota fica
+ * de pe -- ela volta a valer sozinha quando houver um ano de historico, e o
+ * defeito era do RECORTE, nunca da consulta.
  *
  * A data devolvida e o PRIMEIRO dia do mes, e nao 'AAAA-MM': quem consome
  * ordena e formata por conta propria, e um dia de calendario e mais facil de
@@ -219,6 +251,11 @@ controller.loginsUsuarios = async (total, max) => {
 
 /**
  * Logins por cliente no periodo: web contra QGIS.
+ *
+ * SEM LEITOR NA TELA desde 2026-08-04, pela mesma razao da serie mensal: um
+ * grafico de barras sobre um dominio de DOIS valores (`er/dgeo.sql`, e o Joi de
+ * `login/login_schema.js`) e um numero vestido de grafico. O dado nao se perde:
+ * "por onde" virou COLUNA da tabela de quem entrou hoje, por pessoa.
  *
  * Sem `max`, ao contrario do ranking de usuarios: a lista de clientes e FECHADA
  * e tem duas entradas (`login/login_schema.js`). Um teto aqui so teria como

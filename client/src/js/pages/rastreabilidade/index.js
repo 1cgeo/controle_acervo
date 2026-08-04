@@ -99,11 +99,41 @@ const DESTINO = {
   'orcamento:configuracao': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
   'orcamento:dominio': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
   'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
+  'plataforma:capacitacao': { tipo: 'lista', href: (id, evento) => telaDaCapacitacao(evento) },
   'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },
   'plataforma:exercicio': { tipo: 'lista', href: () => '#/metas' },
   'plataforma:extra_pit': { tipo: 'lista', href: () => '#/extra_pit' },
-  'plataforma:capacitacao': { tipo: 'lista', href: () => '#/capacitacao_ministrada' },
 };
+
+/** dominio.tipo_capacitacao, lido em er/dominio.sql. */
+const CAPACITACAO_MINISTRADA = 1;
+const CAPACITACAO_RECEBIDA = 2;
+
+/**
+ * De qual das DUAS telas de capacitação este evento é.
+ *
+ * A tabela `rpcmtec.capacitacao` é UMA, e as telas são duas desde 2026-08-02:
+ * a ministrada em Produção, a recebida em Efetivo. O destino fixo mandava toda
+ * capacitação recebida para a tela de Produção, onde ela não está.
+ *
+ * O tipo sai do PRÓPRIO evento (`dados_depois`, ou `dados_antes` na exclusão),
+ * que carrega a linha inteira. O evento da LISTA DE MILITARES
+ * (`rpcmtec.capacitacao_militar`) não a carrega: a linha dele é sintética, com
+ * `capacitacao_id` e os nomes. Aí devolve null, e a coluna sai como TEXTO.
+ * Chutar uma das duas telas mandaria metade das pessoas a uma lista onde o
+ * registro não está, e quem não o achar conclui que ele foi apagado.
+ *
+ * @param {Object} evento
+ * @returns {string|null} o href, ou null quando o tipo não veio
+ */
+function telaDaCapacitacao(evento) {
+  const linha = (evento && (evento.dados_depois || evento.dados_antes)) || {};
+  if (linha.tipo_id == null) return null;
+  const tipo = Number(linha.tipo_id);
+  if (tipo === CAPACITACAO_RECEBIDA) return '#/capacitacao_recebida';
+  if (tipo === CAPACITACAO_MINISTRADA) return '#/capacitacao_ministrada';
+  return null;
+}
 
 /**
  * Nome de cada SUBSISTEMA, que no banco e a `entidade` do evento.
@@ -115,8 +145,16 @@ const DESTINO = {
  *
  * Chave desconhecida cai no proprio nome, como no resto do sistema: agregado
  * novo aparece no combo enquanto ninguem o traduziu, em vez de sumir.
+ *
+ * AS CHAVES SAO AS DO SERVIDOR, uma a uma: o `entidade:` de cada entrada de
+ * server/src/auditoria/mapa/*.js. Conferido em 2026-08-04, e o caso de
+ * `index.test.js` guarda a igualdade. Chave a mais e entidade FANTASMA, que
+ * oferece no combo um filtro que sempre volta vazio -- era o caso de
+ * 'aproveitamento', removido: passagem pela DGEO e impedimento sao eventos do
+ * agregado 'usuario'. Chave a menos deixa o nome cru do banco na tela -- era o
+ * caso de 'exercicio' e 'manutencao'.
  */
-const NOME_ENTIDADE = {
+export const NOME_ENTIDADE = {
   produto: 'Produtos, versões e arquivos',
   projeto: 'Projetos e lotes',
   volume: 'Volumes de armazenamento',
@@ -133,20 +171,27 @@ const NOME_ENTIDADE = {
   rpnp: 'RPNP',
   configuracao: 'Configuração',
   dominio: 'Tabelas de domínio',
-  usuario: 'Usuários e perfis',
+  manutencao: 'Manutenção das visões do acervo',
+  usuario: 'Usuários, perfis e passagens',
   meta: 'Metas do PIT e execução',
+  exercicio: 'Exercícios e revisões do PIT',
   extra_pit: 'Extra-PIT',
-  aproveitamento: 'Aproveitamento do efetivo',
   capacitacao: 'Capacitações',
   edicao: 'Edições do RPCMTec',
 };
 
 
-export async function renderRastreabilidade(container, _ctx) {
+export async function renderRastreabilidade(container, ctx) {
   let disposed = false;
   let requisicao = 0;
   let pagina = 1;
   let tabela = null;
+
+  // A ROTA MANDA. Outra tela aponta para um recorte desta
+  // (#/rastreabilidade?usuario_uuid=...&data_inicio=...), e a tela chega
+  // filtrada nele. Sem isto, nenhuma ficha consegue mostrar "o histórico desta
+  // pessoa", e o link teria de ser explicado em prosa ao usuário.
+  const query = ctx && ctx.query ? ctx.query : new URLSearchParams();
 
   const root = el('div', { className: 'page' });
   container.appendChild(root);
@@ -210,15 +255,19 @@ export async function renderRastreabilidade(container, _ctx) {
           render: (r) => {
             const rotulo = `${r.entidade} #${r.entidade_id}`;
             const destino = DESTINO[`${r.modulo}:${r.entidade}`];
+            // O evento inteiro vai para o `href`: um agregado com mais de uma
+            // tela decide por ele qual delas serve (ver telaDaCapacitacao).
+            // Nulo aqui quer dizer "não sei para onde", e a célula vira texto.
+            const href = destino ? destino.href(r.entidade_id, r) : null;
             return el('div', {}, [
               el('span', {
                 className: 'rastro-onde__modulo',
                 textContent: NOME_MODULO[r.modulo] || r.modulo,
               }),
-              destino
+              href
                 ? el('a', {
                   className: 'rastro-onde__registro',
-                  href: destino.href(r.entidade_id),
+                  href,
                   // O título diz para ONDE vai. Prometer "abrir a ficha" e
                   // cair numa lista faz o usuário achar que se perdeu.
                   title: destino.tipo === 'ficha'
@@ -441,6 +490,50 @@ export async function renderRastreabilidade(container, _ctx) {
         contagemEl,
       ]),
     ].filter(Boolean));
+
+    /**
+     * Põe no controle o valor que veio na URL.
+     *
+     * O valor entra no COMBO, e não só na variável de filtro: filtro que age
+     * sem aparecer faz a lista parecer curta sem dizer por quê, e o botão
+     * "Limpar" não teria como desfazê-lo.
+     *
+     * O combo vem do que EXISTE na tabela de eventos. Valor que não está lá
+     * ganha uma opção própria, em vez de ser descartado: descartá-lo mostraria
+     * o sistema inteiro a quem pediu uma pessoa, que é o pior dos dois erros.
+     * Resultado vazio é a resposta certa para quem nunca gerou evento.
+     *
+     * @param {string} nome - o campo, que é também o nome do parâmetro
+     * @returns {boolean} verdadeiro quando a rota trouxe valor aceito
+     */
+    function definirDaRota(nome) {
+      const valor = query.get(nome);
+      if (valor === null || valor === '') return false;
+      const controle = campos[nome];
+      if (!controle) return false;
+
+      if (controle.tagName === 'SELECT') {
+        const existe = [...controle.options].some((o) => o.value === valor);
+        if (!existe) {
+          controle.appendChild(el('option', {
+            value: valor,
+            textContent: nome === 'entidade' ? (NOME_ENTIDADE[valor] || valor) : valor,
+          }));
+        }
+      }
+      controle.value = valor;
+      // Data inválida, que o campo `date` recusa em silêncio: o filtro seria
+      // uma string que o servidor rejeita, e a tela abriria em erro.
+      return controle.value === valor;
+    }
+
+    // O SISTEMA primeiro: é ele que decide quais subsistemas o combo oferece.
+    if (definirDaRota('modulo')) {
+      coletarFiltros();
+      repovoarSubsistema();
+    }
+    ['entidade', 'usuario_uuid', 'operacao', 'data_inicio', 'data_fim', 'campo']
+      .forEach(definirDaRota);
 
     return barra;
   }

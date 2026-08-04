@@ -184,12 +184,30 @@ controller.montar = async id => {
         }
 
         if (b.origem === estrutura.ORIGEM.CALCULADA) {
+          const semGerador = calculadas[b.numero] === undefined
+          const linhas = calculadas[b.numero] || []
+
           return {
             ...paraSaida(b),
-            linhas: calculadas[b.numero] || [],
+            linhas,
             // Subseção declarada calculada sem implementação no gerador é
             // lacuna, e aparece como tal em vez de sair como tabela vazia.
-            semGerador: calculadas[b.numero] === undefined,
+            semGerador,
+            // O GERADOR RODOU E NÃO ACHOU NADA. É a outra lacuna, e até
+            // 2026-08-04 ela saía como subseção em ordem: sem passagem de
+            // efetivo cadastrada, a 6.1 virava tabela vazia e a edição fechava
+            // sem apontar nada. Tabela vazia num documento assinado AFIRMA "não
+            // houve", e o que havia era ninguém ter cadastrado.
+            //
+            // As duas causas ficam SEPARADAS: sem gerador, não há tabela vazia
+            // a reportar, porque a causa já está dita e o conserto é outro
+            // (implementar o gerador, e não cadastrar o dado).
+            semLinhas: !semGerador && linhas.length === 0,
+            // `preenchida` NÃO muda de sentido, e é deliberado. Ela responde
+            // "alguém visitou esta subseção?", pergunta que só a DIGITADA
+            // aceita: uma calculada não se preenche à mão, então marcá-la
+            // pendente travaria o fechamento sem saída nenhuma. A lacuna sai
+            // nos campos acima e em `lacunasCalculadas`.
             preenchida: true
           }
         }
@@ -205,7 +223,25 @@ controller.montar = async id => {
 
   const pendentes = blocos.filter(b => !b.preenchida).map(b => b.numero)
 
-  return { ...edicao, pendentes, secoes: agruparPorSecao(blocos) }
+  // AS DUAS LISTAS SÃO DIFERENTES, e a diferença é quem conserta.
+  //
+  //   `pendentes`          o gestor preenche, e o fechamento RECUSA sem isso;
+  //   `lacunasCalculadas`  o banco preenche, e o fechamento AVISA.
+  //
+  // Recusar aqui travaria a edição: quem vê a 6.1 vazia não tem botão nenhum
+  // que a preencha. Calar seria pior, que é o defeito de origem. Numa edição
+  // FECHADA a lista sai vazia: o congelado é o que foi assinado, e o que o
+  // banco diria hoje é assunto do `conferirHoje`.
+  const lacunasCalculadas = blocos
+    .filter(b => b.semGerador || b.semLinhas)
+    .map(b => b.numero)
+
+  return {
+    ...edicao,
+    pendentes,
+    lacunasCalculadas,
+    secoes: agruparPorSecao(blocos)
+  }
 }
 
 // Os campos que a estrutura empresta a um bloco em construção.
@@ -363,6 +399,10 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
  * RECUSA com subseção digitada por visitar. Preencher ou declarar "sem
  * ocorrência" são as duas saídas, e a diferença entre elas é o que separa "não
  * houve" de "ninguém preencheu".
+ *
+ * AVISA da subseção calculada que saiu vazia, em `lacunas`, sem recusar por
+ * causa dela: o gestor não tem como preenchê-la à mão, e o conserto é cadastrar
+ * o dado na origem.
  */
 controller.fechar = async (id, usuarioUuid, contexto) => {
   const montada = await controller.montar(id)
@@ -450,7 +490,10 @@ controller.fechar = async (id, usuarioUuid, contexto) => {
       contexto
     })
 
-    return { id, subsecoes: blocos.length }
+    // As lacunas VÃO NO RETORNO, e não param o fechamento. Quem congela tem de
+    // saber que a 6.1 foi congelada vazia: o documento assinado passa a
+    // afirmar isso, e depois do fechamento só a reabertura desfaz.
+    return { id, subsecoes: blocos.length, lacunas: montada.lacunasCalculadas }
   })
 }
 

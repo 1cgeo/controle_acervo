@@ -1,14 +1,23 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Tela de acessos (#/acessos): o historico de login, que nasceu em 2026-08-02
-// com a autenticacao vindo para dentro do SCA. Ate ali o registro de quem
-// entrava morava no banco do Auth Server.
+// A aba ACESSOS de #/acessos: o historico de login, enxugado.
 //
-// O que estes testes guardam, e que nao e obvio:
-//   - a tela nao pede recorte de periodo; o default mora SO no Joi do servidor
-//   - uma rota fora do ar nao derruba a tela inteira (allSettled)
-//   - 'sca_web'/'sca_qgis' viram nome de gente, e nao codigo cru
-//   - a serie chega em 'AAAA-MM-DD' e o eixo mostra dia e mes
+// A tela nasceu em 2026-08-02, com a fusao da autenticacao: ate ali o registro
+// de quem entrava no SCA morava no banco do Auth Server, e o painel que o lia
+// era de la. Em 2026-08-04 ela deixou de ser a tela inteira e virou a SEGUNDA
+// aba, atras do efetivo.
+//
+// O QUE MUDOU, e o que estes testes guardam:
+//   - o cartao conta PESSOA distinta, e nao linha de `dgeo.login`; com JWT de
+//     8 horas e dois clientes, a mesma pessoa contava varias vezes por dia
+//   - o cartao de conta habilitada se chama "conta", e nao "usuario": ele mede
+//     `dgeo.usuario.ativo`, que e permissao de entrar e nao gente na Divisao
+//   - a tela mostra quem NAO consegue entrar (`senha` nula)
+//   - a serie de 12 meses e o grafico "por onde se entra" sairam: os dois
+//     nasciam degenerados (dez meses em zero, e uma barra sobre dois valores)
+//   - o recorte do periodo agora e escolhido na tela
+//   - a linha de quem entrou hoje leva ao aproveitamento daquela pessoa
+//   - falha de rota nao se escreve com o texto do vazio legitimo
 
 vi.mock('@services/plataforma-service.js', () => ({
   getAcessosResumo: vi.fn(() => Promise.resolve({})),
@@ -17,6 +26,9 @@ vi.mock('@services/plataforma-service.js', () => ({
   getLoginsMes: vi.fn(() => Promise.resolve([])),
   getLoginsUsuarios: vi.fn(() => Promise.resolve([])),
   getLoginsClientes: vi.fn(() => Promise.resolve([])),
+  getEfetivoDoMes: vi.fn(() => Promise.resolve([])),
+  getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
+  getUsuarios: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock('@utils/toast.js', () => ({
@@ -28,7 +40,7 @@ vi.mock('@utils/toast.js', () => ({
 }));
 
 // O jsdom nao tem canvas, entao o Chart.js de verdade nao roda em teste. O
-// projeto ja resolve isso com o dublê em @components/charts/chart-stub.js.
+// projeto ja resolve isso com o duble em @components/charts/chart-stub.js.
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
 import { renderAcessos } from '@pages/acessos/index.js';
@@ -44,24 +56,34 @@ import { showError } from '@utils/toast.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
-const RESUMO = { usuarios_ativos: 12, logins_hoje: 5, logins_30_dias: 148 };
+const RESUMO = {
+  pessoas_hoje: 4,
+  pessoas_30_dias: 9,
+  contas_ativas: 7,
+  contas_sem_senha: 3,
+};
 
+// UMA linha por pessoa, com os clientes dela ao lado. Ate 2026-08-04 era uma
+// linha por par pessoa + cliente, e quem abria a interface e o plugin no mesmo
+// dia aparecia duas vezes numa tabela que responde "quem esta no sistema".
 const LOGADOS = [
   {
-    id: 1,
-    ultimo_login: '2026-08-02T13:20:00.000Z',
-    cliente: 'sca_web',
+    uuid: 'uuid-silva',
     login: 'sgt.silva',
     nome_guerra: 'Silva',
     tipo_posto_grad: '3 Sgt',
+    ultimo_login: '2026-08-04T13:20:00.000Z',
+    logins: 3,
+    clientes: ['sca_web', 'sca_qgis'],
   },
   {
-    id: 2,
-    ultimo_login: '2026-08-02T11:05:00.000Z',
-    cliente: 'sca_qgis',
+    uuid: 'uuid-souza',
     login: 'cap.souza',
     nome_guerra: 'Souza',
     tipo_posto_grad: 'Cap',
+    ultimo_login: '2026-08-04T11:05:00.000Z',
+    logins: 1,
+    clientes: ['sca_qgis'],
   },
 ];
 
@@ -72,36 +94,105 @@ beforeEach(() => {
   getAcessosResumo.mockResolvedValue(RESUMO);
   getAcessosLogados.mockResolvedValue(LOGADOS);
   getLoginsDia.mockResolvedValue([
-    { data: '2026-08-01', logins: 3 },
-    { data: '2026-08-02', logins: 5 },
+    { data: '2026-08-03', logins: 3 },
+    { data: '2026-08-04', logins: 5 },
   ]);
-  getLoginsMes.mockResolvedValue([{ data: '2026-08-01', logins: 148 }]);
-  getLoginsUsuarios.mockResolvedValue([{ usuario: '3 Sgt Silva (sgt.silva)', logins: 20 }]);
-  getLoginsClientes.mockResolvedValue([
-    { cliente: 'sca_web', logins: 100 },
-    { cliente: 'sca_qgis', logins: 48 },
+  getLoginsUsuarios.mockResolvedValue([
+    { usuario: '3 Sgt Silva (sgt.silva)', logins: 20 },
   ]);
   container = document.createElement('div');
   document.body.appendChild(container);
 });
 
-const textos = (seletor) =>
-  Array.from(container.querySelectorAll(seletor)).map(e => e.textContent.trim());
+afterEach(() => {
+  container.remove();
+});
 
-describe('tela de acessos', () => {
-  test('mostra os tres numeros do resumo', async () => {
-    const cleanup = await renderAcessos(container, {});
-    await flush();
+const abas = () => Array.from(container.querySelectorAll('.tabs > .tabs__item'));
 
-    const valores = textos('.stats-card__value');
-    expect(valores).toEqual(['12', '5', '148']);
+/** Abre a aba Acessos, que nao e a que a tela abre. */
+async function abrirAcessos() {
+  const cleanup = await renderAcessos(container, {});
+  await flush();
+  abas().find(b => b.textContent === 'Acessos').click();
+  await flush();
+  return cleanup;
+}
+
+const rotulosCards = () =>
+  Array.from(container.querySelectorAll('.stats-card__title')).map(e => e.textContent.trim());
+
+const valorDoCard = (rotulo) => {
+  const titulo = Array.from(container.querySelectorAll('.stats-card__title'))
+    .find(e => e.textContent.trim() === rotulo);
+  if (!titulo) return null;
+  return titulo.parentElement.querySelector('.stats-card__value').textContent.trim();
+};
+
+describe('aba Acessos: o cartao diz o que mede', () => {
+  test('conta pessoas distintas, e nomeia a conta como conta', async () => {
+    const cleanup = await abrirAcessos();
+
+    expect(rotulosCards()).toEqual([
+      'Pessoas que entraram hoje',
+      'Pessoas que entraram em 30 dias',
+      'Contas ativas',
+      'Contas sem senha',
+    ]);
+    expect(valorDoCard('Pessoas que entraram hoje')).toBe('4');
+    expect(valorDoCard('Pessoas que entraram em 30 dias')).toBe('9');
+    expect(valorDoCard('Contas ativas')).toBe('7');
+    // `dgeo.usuario.senha` nula e quem NAO consegue entrar.
+    expect(valorDoCard('Contas sem senha')).toBe('3');
 
     cleanup();
   });
 
-  test('lista quem entrou hoje, com o cliente por extenso', async () => {
-    const cleanup = await renderAcessos(container, {});
+  // Os dois nasciam degenerados por construcao: `dgeo.login` comecou em
+  // 2026-08-02, entao dez dos doze meses eram zero; e "por onde se entra" e uma
+  // barra sobre um dominio de DOIS valores, fixado no Joi do login.
+  test('nao pede a serie de 12 meses nem o grafico de clientes', async () => {
+    const cleanup = await abrirAcessos();
+
+    expect(getLoginsMes).not.toHaveBeenCalled();
+    expect(getLoginsClientes).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Por onde se entra');
+    expect(container.textContent).not.toContain('12 meses');
+
+    cleanup();
+  });
+});
+
+describe('aba Acessos: o recorte do periodo', () => {
+  test('manda o recorte que a tela escolheu', async () => {
+    const cleanup = await abrirAcessos();
+
+    expect(getLoginsDia).toHaveBeenCalledWith(30);
+    expect(getLoginsUsuarios).toHaveBeenCalledWith(30, expect.any(Number));
+
+    cleanup();
+  });
+
+  test('trocar o periodo rebusca as duas series', async () => {
+    const cleanup = await abrirAcessos();
+
+    const seletor = container.querySelector('[aria-label="Selecionar período"]');
+    expect(seletor).not.toBeNull();
+
+    seletor.value = '90';
+    seletor.dispatchEvent(new Event('change'));
     await flush();
+
+    expect(getLoginsDia).toHaveBeenLastCalledWith(90);
+    expect(getLoginsUsuarios).toHaveBeenLastCalledWith(90, expect.any(Number));
+
+    cleanup();
+  });
+});
+
+describe('aba Acessos: quem entrou hoje', () => {
+  test('uma linha por pessoa, com o cliente por extenso', async () => {
+    const cleanup = await abrirAcessos();
 
     const corpo = container.textContent;
     expect(corpo).toContain('3 Sgt Silva');
@@ -114,33 +205,16 @@ describe('tela de acessos', () => {
     cleanup();
   });
 
-  // O default do recorte (14 dias, 12 meses, 30 dias) mora SO no Joi de
-  // `acessos_schema.js`. Repeti-lo aqui criaria um segundo lugar declarando a
-  // mesma coisa, e os dois divergiriam no primeiro ajuste.
-  test('nao manda recorte de periodo: o default e do servidor', async () => {
-    const cleanup = await renderAcessos(container, {});
-    await flush();
+  // Sem o uuid a linha nao vira link, e era esse o motivo de a consulta antiga
+  // devolver um ROW_NUMBER sintetico no lugar da identidade da pessoa.
+  test('a linha leva ao aproveitamento da pessoa', async () => {
+    const cleanup = await abrirAcessos();
 
-    expect(getLoginsDia).toHaveBeenCalledWith();
-    expect(getLoginsMes).toHaveBeenCalledWith();
-    expect(getLoginsUsuarios).toHaveBeenCalledWith();
-    expect(getLoginsClientes).toHaveBeenCalledWith();
+    const link = Array.from(container.querySelectorAll('a'))
+      .find(a => a.getAttribute('href')?.includes('uuid-silva'));
 
-    cleanup();
-  });
-
-  // Sao seis rotas independentes. Com `Promise.all`, uma delas fora do ar
-  // deixaria a tela inteira em branco -- inclusive as cinco que responderam.
-  test('uma rota que falha nao derruba o resto da tela', async () => {
-    getLoginsDia.mockRejectedValue(new Error('deu ruim'));
-
-    const cleanup = await renderAcessos(container, {});
-    await flush();
-
-    // O resumo e a tabela continuam de pe.
-    expect(textos('.stats-card__value')).toEqual(['12', '5', '148']);
-    expect(container.textContent).toContain('sgt.silva');
-    expect(showError).toHaveBeenCalledTimes(1);
+    expect(link).toBeDefined();
+    expect(link.getAttribute('href')).toBe('#/aproveitamento?usuario_uuid=uuid-silva');
 
     cleanup();
   });
@@ -148,22 +222,48 @@ describe('tela de acessos', () => {
   test('sem ninguem logado hoje, a tabela diz isso em vez de ficar vazia', async () => {
     getAcessosLogados.mockResolvedValue([]);
 
-    const cleanup = await renderAcessos(container, {});
-    await flush();
+    const cleanup = await abrirAcessos();
 
     expect(container.textContent).toContain('Ninguém entrou hoje');
+    expect(container.textContent).not.toContain('Falha ao carregar');
+
+    cleanup();
+  });
+});
+
+describe('aba Acessos: falha nao e vazio', () => {
+  // Sao rotas independentes. Com `Promise.all`, uma delas fora do ar deixaria a
+  // aba inteira em branco, inclusive as que responderam.
+  test('uma rota que falha nao derruba o resto da aba', async () => {
+    getLoginsDia.mockRejectedValue(new Error('deu ruim'));
+
+    const cleanup = await abrirAcessos();
+
+    expect(valorDoCard('Pessoas que entraram hoje')).toBe('4');
+    expect(container.textContent).toContain('sgt.silva');
+    expect(showError).toHaveBeenCalledTimes(1);
 
     cleanup();
   });
 
-  test('resumo indisponivel nao deixa os cards em esqueleto para sempre', async () => {
+  test('o resumo fora do ar escreve Erro, e nao um traco', async () => {
     getAcessosResumo.mockRejectedValue(new Error('deu ruim'));
 
-    const cleanup = await renderAcessos(container, {});
-    await flush();
+    const cleanup = await abrirAcessos();
 
-    expect(textos('.stats-card__value')).toEqual(['-', '-', '-']);
+    // '-' se confunde com "nao ha", e ate 2026-08-04 era o que a tela escrevia.
+    expect(valorDoCard('Pessoas que entraram hoje')).toBe('Erro');
     expect(container.querySelectorAll('.stats-card--loading')).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('a serie fora do ar nao se escreve como serie vazia', async () => {
+    getLoginsDia.mockRejectedValue(new Error('deu ruim'));
+
+    const cleanup = await abrirAcessos();
+
+    expect(container.textContent).toContain('Falha ao carregar');
 
     cleanup();
   });

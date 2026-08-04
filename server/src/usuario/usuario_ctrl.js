@@ -33,9 +33,43 @@ controller.getUsuarios = async () => {
   // `scripts/copiar_usuarios_auth.js`, rodado por fora, uma vez. Sem esta
   // coluna, quem ficasse de fora da copia so apareceria ao reclamar que nao
   // consegue entrar.
+  //
+  // `na_dgeo_desde` sai do periodo ABERTO de `dgeo.efetivo_periodo`, que e
+  // "esta na Divisao e sem previsao de saida". A subconsulta escalar e segura
+  // porque o EXCLUDE da tabela proibe intervalos sobrepostos da mesma pessoa:
+  // dois periodos abertos se cruzariam, entao no maximo um existe.
+  //
+  // `ultimo_acesso` sai de `dgeo.login` SEM recorte de data. A tela de acessos
+  // pergunta "quem entrou hoje" (`data_login >= now()::date`), e por isso o
+  // ultimo acesso de quem nao entrou hoje nao aparecia em lugar nenhum.
+  //
+  // `tem_registro` responde uma pergunta da TELA: mostrar ou nao o botao
+  // "Excluir". Ele e VERDADEIRO quando a pessoa ja tem login, passagem ou
+  // impedimento gravado. FALSO nao promete que o DELETE passa: dezenas de
+  // tabelas dos tres modulos tambem apontam para o uuid, e a recusa final e do
+  // banco (23503), traduzida em `deletaUsuario`.
+  //
+  // A ORDEM e a HIERARQUIA, a mesma de `efetivo_ctrl` (posto decrescente,
+  // depois nome de guerra). Por nome completo, a lista misturava coronel e
+  // soldado em ordem alfabetica de um nome que a tela nem usa como identidade.
   return db.conn.any(`
   SELECT u.uuid, u.login, u.nome, u.tipo_posto_grad_id, tpg.nome_abrev AS tipo_posto_grad, u.nome_guerra, u.administrador, u.ativo,
     (u.senha IS NOT NULL) AS senha_definida,
+    (
+      SELECT ep.data_inicio
+      FROM dgeo.efetivo_periodo AS ep
+      WHERE ep.usuario_uuid = u.uuid AND ep.data_fim IS NULL
+    ) AS na_dgeo_desde,
+    (
+      SELECT MAX(l.data_login)
+      FROM dgeo.login AS l
+      WHERE l.usuario_id = u.id
+    ) AS ultimo_acesso,
+    (
+      EXISTS (SELECT 1 FROM dgeo.login AS l WHERE l.usuario_id = u.id)
+      OR EXISTS (SELECT 1 FROM dgeo.efetivo_periodo AS ep WHERE ep.usuario_uuid = u.uuid)
+      OR EXISTS (SELECT 1 FROM dgeo.impedimento AS i WHERE i.usuario_uuid = u.uuid)
+    ) AS tem_registro,
     COALESCE((
       SELECT json_object_agg(m.nome_abrev, up.perfil_id)
       FROM dgeo.usuario_perfil AS up
@@ -44,7 +78,7 @@ controller.getUsuarios = async () => {
     ), '{}'::json) AS perfis
   FROM dgeo.usuario AS u
   INNER JOIN dominio.tipo_posto_grad AS tpg ON tpg.code = u.tipo_posto_grad_id
-  ORDER BY u.nome
+  ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra
   `);
 };
 

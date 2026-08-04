@@ -10,7 +10,9 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 //    a grade e o ANO, e nao o periodo da pessoa;
 //  - o `title` de cada celula explica a cor, e e por onde os impedimentos
 //    aparecem sem ocupar espaco na tabela;
-//  - o aproveitamento da Divisao e a media dos individuais.
+//  - o aproveitamento da Divisao e PONDERADO por dias na DGEO desde 2026-08-04.
+//    Media simples de percentuais dava a quem ficou uma semana o mesmo peso de
+//    quem ficou o ano. As duas ficam a vista, cada uma com o seu nome.
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {
@@ -137,14 +139,16 @@ describe('renderAproveitamento', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('o resumo da Divisao e a media dos individuais', async () => {
+  test('o resumo da Divisao pondera por dias na DGEO, e nomeia as duas medias', async () => {
     getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
 
     const { container, cleanup } = await montar();
 
-    // (50,0 + 82,5) / 2 = 66,25, arredondado para uma casa.
+    // (0,50 x 365 + 0,825 x 365) / (365 + 301) = 72,6%.
+    expect(container.textContent).toContain('72,6%');
+    // A media simples continua a mesa, dita pelo nome: (50,0 + 82,5) / 2.
     expect(container.textContent).toContain('66,3%');
-    expect(container.textContent).toContain('2 militar(es)');
+    expect(container.textContent).toContain('2 militares');
 
     if (typeof cleanup === 'function') cleanup();
   });

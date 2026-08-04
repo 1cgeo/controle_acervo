@@ -251,6 +251,16 @@ export function criarHistorico({
     textContent: recolhido ? '' : 'Carregando o histórico...',
   });
 
+  // O aviso de falha mora FORA do corpo, e some quando a carga volta a dar
+  // certo. Ele existe porque a recarga que falha não pode apagar o histórico
+  // que a pessoa já está lendo (2026-08-04).
+  const aviso = el('div', { className: 'data-table__empty', hidden: true });
+
+  function mostrarAviso(texto) {
+    aviso.textContent = texto;
+    aviso.hidden = false;
+  }
+
   async function carregar() {
     carregado = true;
     let eventos;
@@ -258,15 +268,32 @@ export function criarHistorico({
       eventos = await getHistorico(modulo, entidade, id);
     } catch (err) {
       if (disposed) return;
-      clearChildren(corpo);
-      corpo.className = 'data-table__empty';
+      const texto = err.message || 'Erro ao carregar o histórico';
       // O erro no histórico NÃO derruba o resto da ficha: o histórico é
       // acessório, a ficha é o trabalho. Regra herdada da tela do pedido.
-      corpo.textContent = err.message || 'Erro ao carregar o histórico';
+      if (tabela) {
+        // Já há tabela na tela: o aviso entra ao lado dela. Trocar a tabela
+        // pela mensagem faria a recarga que falha apagar o que já se sabia.
+        mostrarAviso(texto);
+        return;
+      }
+      clearChildren(corpo);
+      corpo.className = 'data-table__empty';
+      corpo.textContent = texto;
       return;
     }
     if (disposed) return;
-    if (tabela) tabela._cleanup();
+    aviso.hidden = true;
+
+    // A TABELA SOBREVIVE À RECARGA (2026-08-04). Seis fichas chamam
+    // `recarregar()` depois de gravar. Recriar a tabela jogava fora a
+    // ordenação e a página em que a pessoa estava, e mudava a altura da seção
+    // debaixo do cursor. O `update` do data-table preserva as duas, e reconcilia
+    // as linhas pelo `id` do evento.
+    if (tabela) {
+      tabela.update({ rows: eventos || [] });
+      return;
+    }
 
     tabela = createDataTable({
       columns: [
@@ -316,6 +343,7 @@ export function criarHistorico({
     clearChildren(corpo);
     corpo.className = '';
     corpo.appendChild(tabela.element);
+    corpo.appendChild(aviso);
   }
 
   const cabecalho = el('div', { className: 'dashboard-section__header' }, [

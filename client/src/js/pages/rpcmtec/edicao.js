@@ -1,4 +1,5 @@
 import { el, svgIcon, ICONS, clearChildren } from '@utils/dom.js';
+import { reconciliar } from '@utils/reconciliar.js';
 import { monthName, formatDateTime, formatDate } from '@utils/format.js';
 import { showError, showSuccess, showWarning } from '@utils/toast.js';
 import { openModal } from '@components/modal/modal-base.js';
@@ -27,6 +28,13 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
  * Sem isso, a tabela vazia de uma subsecao calculada e a de uma esquecida se
  * parecem, e so uma delas e problema.
  *
+ * A TELA NAO SE REMONTA (2026-08-04). Toda carga RECONCILIA: a secao, a
+ * subsecao, o botao e o anexo se procuram pela chave, e so o que mudou se
+ * refaz. Antes cada carga jogava fora a tela inteira, e havia carga a cada
+ * gravacao. O custo aparecia em tres lugares: o `details` nascia aberto e
+ * reabria toda secao que a pessoa tinha fechado, o arquivo escolhido no campo
+ * sumia, e a rolagem saltava no meio da edicao.
+ *
  * DOIS ESTADOS mudam a tela inteira:
  *
  *   ABERTA   o calculado sai do banco a cada abertura, o digitado se edita, e o
@@ -37,6 +45,16 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
  * O "conferir hoje" e o contrapeso do congelamento: um pedido de marco
  * corrigido em agosto nao muda a edicao de marco, e esta certo, mas a
  * divergencia ficaria invisivel.
+ *
+ * DUAS LACUNAS DA SUBSECAO CALCULADA, e a diferenca e quem conserta:
+ *
+ *   semGerador  a estrutura a declara calculada e o gerador nao a produz. Quem
+ *               conserta e quem programa o sistema;
+ *   semLinhas   o gerador rodou e nao achou nada. Quem conserta e o gestor, e o
+ *               conserto e cadastrar o dado na origem.
+ *
+ * Nenhuma das duas trava o fechamento: nao existe botao que preencha uma
+ * subsecao calculada. As duas AVISAM, aqui e no fechamento.
  */
 
 const ORIGEM = { CALCULADA: 1, DIGITADA: 2, FIXA: 3 };
@@ -70,12 +88,40 @@ export async function renderRpcmtecEdicao(container, ctx) {
   container.appendChild(page);
 
   // -------------------------------------------------------------------------
+  // Reconciliação
+  // -------------------------------------------------------------------------
+
+  /**
+   * Reconcilia uma lista em que o nó só se refaz quando o ITEM muda.
+   *
+   * O `reconciliar` preserva o nó de mesma chave, mas quem decide repintá-lo é o
+   * `atualizar`. Aqui a ASSINATURA decide: item igual ao do desenho anterior
+   * mantém o nó intocado, e o navegador não repinta o que ninguém mexeu.
+   */
+  function reconciliarPorAssinatura(alvo, itens, { chave, assinatura, criar }) {
+    const montar = (item, indice) => {
+      const no = criar(item, indice);
+      no.__assinatura = assinatura(item, indice);
+      return no;
+    };
+    return reconciliar(alvo, itens, {
+      chave,
+      criar: montar,
+      atualizar: (no, item, indice) => (
+        no.__assinatura === assinatura(item, indice) ? undefined : montar(item, indice)
+      ),
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // Desenho
   // -------------------------------------------------------------------------
 
-  function desenharCabecalho() {
-    clearChildren(cabecalho);
+  // Os nós do cabeçalho que mudam de texto. Eles nascem uma vez, e a carga
+  // seguinte só escreve neles.
+  let nosCabecalho = null;
 
+  function desenharCabecalho() {
     const estado = !documento.fechada
       ? { texto: 'Aberta', classe: 'status-chip--warning' }
       : (documento.anexos > 0
@@ -93,24 +139,29 @@ export async function renderRpcmtecEdicao(container, ctx) {
       detalhes.push(`Fechada em ${formatDateTime(documento.data_fechamento)}`);
     }
 
-    cabecalho.append(
-      el('a', {
-        className: 'consulta-card__voltar',
-        href: '#/rpcmtec',
-        style: { marginBottom: '8px' },
-      }, [svgIcon(ICONS.arrowBack, 14), 'Voltar para as edições']),
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } }, [
-        el('h1', {
-          className: 'page__title',
-          textContent: `RPCMTec ${monthName(documento.mes)}/${documento.ano}`,
-        }),
-        el('span', { className: `status-chip ${estado.classe}`, textContent: estado.texto }),
-      ]),
-      el('p', {
-        className: 'page__subtitle',
-        textContent: detalhes.join('  ·  ') || 'Assinante ainda não definido.',
-      }),
-    );
+    if (!nosCabecalho) {
+      const titulo = el('h1', { className: 'page__title' });
+      const chipEstado = el('span', { className: 'status-chip' });
+      const subtitulo = el('p', { className: 'page__subtitle' });
+
+      cabecalho.append(
+        el('a', {
+          className: 'consulta-card__voltar',
+          href: '#/rpcmtec',
+          style: { marginBottom: '8px' },
+        }, [svgIcon(ICONS.arrowBack, 14), 'Voltar para as edições']),
+        el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } }, [
+          titulo, chipEstado,
+        ]),
+        subtitulo,
+      );
+      nosCabecalho = { titulo, chipEstado, subtitulo };
+    }
+
+    nosCabecalho.titulo.textContent = `RPCMTec ${monthName(documento.mes)}/${documento.ano}`;
+    nosCabecalho.chipEstado.className = `status-chip ${estado.classe}`;
+    nosCabecalho.chipEstado.textContent = estado.texto;
+    nosCabecalho.subtitulo.textContent = detalhes.join('  ·  ') || 'Assinante ainda não definido.';
   }
 
   function botao(rotulo, icone, aoClicar, { primario = false, titulo = null } = {}) {
@@ -122,63 +173,148 @@ export async function renderRpcmtecEdicao(container, ctx) {
     }, [icone ? svgIcon(icone, 16) : null, rotulo].filter(Boolean));
   }
 
-  function desenharBarra() {
-    clearChildren(barra);
-
-    barra.appendChild(botao('Baixar PDF', ICONS.print, baixarPdf, {
+  /**
+   * Os botões da barra, em ordem, cada um com a sua chave.
+   *
+   * Os manipuladores leem `documento` na hora do clique, e não na hora da
+   * montagem: por isso o botão que continua na barra nunca precisa ser refeito.
+   */
+  function botoesDaBarra() {
+    const itens = [{
+      chave: 'pdf',
+      rotulo: 'Baixar PDF',
+      icone: ICONS.print,
+      aoClicar: baixarPdf,
       primario: true,
       titulo: documento.fechada
         ? 'O documento congelado, pronto para assinar.'
         : 'A edição está aberta: o PDF sai com a marca RASCUNHO.',
-    }));
+    }];
 
     if (!documento.fechada) {
-      barra.append(
-        botao('Copiar tudo do mês anterior', ICONS.contentCopy, () => copiar(null), {
-          titulo: 'Traz o que foi digitado no mês passado, sem sobrescrever o que você já preencheu.',
-        }),
-        botao('Fechar e congelar', ICONS.lock, fechar),
-      );
+      itens.push({
+        chave: 'copiar',
+        rotulo: 'Copiar tudo do mês anterior',
+        icone: ICONS.contentCopy,
+        aoClicar: () => copiar(null),
+        titulo: 'Traz o que foi digitado no mês passado, sem sobrescrever o que você já preencheu.',
+      }, {
+        chave: 'fechar', rotulo: 'Fechar e congelar', icone: ICONS.lock, aoClicar: fechar,
+      });
     } else {
-      barra.append(
-        botao('Conferir hoje', ICONS.swapHoriz, conferir, {
-          titulo: 'Recalcula as subseções calculadas e mostra a diferença contra o congelado.',
-        }),
-        botao('Reabrir', ICONS.edit, reabrir),
-      );
+      itens.push({
+        chave: 'conferir',
+        rotulo: 'Conferir hoje',
+        icone: ICONS.swapHoriz,
+        aoClicar: conferir,
+        titulo: 'Recalcula as subseções calculadas e mostra a diferença contra o congelado.',
+      }, {
+        chave: 'reabrir', rotulo: 'Reabrir', icone: ICONS.edit, aoClicar: reabrir,
+      });
     }
 
-    barra.append(
-      botao('Editar metadados', ICONS.settings, () => abrirDialogoEdicao({
-        edicao: documento, usuarios, onSaved: carregar,
-      })),
-      el('div', { style: { flex: '1' } }),
-      botao('Anuário (ODS)', ICONS.download, baixarAnuario),
-      botao(`RTM até ${monthName(documento.mes)} (ODS)`, ICONS.download, baixarRtm, {
-        titulo: 'Detalhamento da Meta 4 do PIT, acumulado de janeiro até o mês da edição.',
-      }),
-    );
+    itens.push({
+      chave: 'metadados',
+      rotulo: 'Editar metadados',
+      icone: ICONS.settings,
+      aoClicar: () => abrirDialogoEdicao({ edicao: documento, usuarios, onSaved: carregar }),
+    }, {
+      chave: 'espaco',
+    }, {
+      chave: 'anuario', rotulo: 'Anuário (ODS)', icone: ICONS.download, aoClicar: baixarAnuario,
+    }, {
+      chave: 'rtm',
+      rotulo: `RTM até ${monthName(documento.mes)} (ODS)`,
+      icone: ICONS.download,
+      aoClicar: baixarRtm,
+      titulo: 'Detalhamento da Meta 4 do PIT, acumulado de janeiro até o mês da edição.',
+    });
+
+    return itens;
   }
 
-  function desenharAvisos() {
-    clearChildren(avisos);
-    if (documento.fechada || !documento.pendentes.length) return;
+  const criarItemDaBarra = (item) => (item.chave === 'espaco'
+    ? el('div', { style: { flex: '1' } })
+    : botao(item.rotulo, item.icone, item.aoClicar,
+      { primario: item.primario, titulo: item.titulo }));
 
-    avisos.appendChild(el('div', { className: 'rpcm-aviso' }, [
+  function desenharBarra() {
+    reconciliar(barra, botoesDaBarra(), {
+      chave: (item) => item.chave,
+      criar: criarItemDaBarra,
+      atualizar: (no, item) => {
+        if (!item.rotulo) return undefined;
+        // O título do PDF muda com o estado da edição, e é só texto: escrevê-lo
+        // no botão que já existe evita trocar o nó em que o foco pode estar.
+        if (item.titulo) no.title = item.titulo;
+        else no.removeAttribute('title');
+        // Só o rótulo do RTM muda, e ele carrega o mês da edição.
+        return no.textContent === item.rotulo ? undefined : criarItemDaBarra(item);
+      },
+    });
+  }
+
+  /**
+   * Os avisos do topo. São DOIS, e a diferença é quem conserta:
+   *
+   *   pendentes  o gestor preenche, e o fechamento RECUSA sem isso;
+   *   lacunas    o dado falta na origem, e o fechamento só AVISA.
+   */
+  function avisosDaTela() {
+    if (documento.fechada) return [];
+
+    const itens = [];
+    const pendentes = documento.pendentes || [];
+    if (pendentes.length) itens.push({ chave: 'pendentes', numeros: pendentes });
+
+    const lacunas = documento.lacunasCalculadas || [];
+    if (lacunas.length) itens.push({ chave: 'lacunas', numeros: lacunas });
+
+    return itens;
+  }
+
+  function criarAviso(item) {
+    if (item.chave === 'pendentes') {
+      return el('div', { className: 'rpcm-aviso' }, [
+        svgIcon(ICONS.warning, 18),
+        el('div', {}, [
+          el('strong', {
+            textContent: `${item.numeros.length} subseção(ões) por preencher: `,
+          }),
+          item.numeros.join(', '),
+          el('div', {
+            className: 'rpcm-aviso__nota',
+            textContent: 'Preencha cada uma ou marque "sem ocorrência no mês". '
+              + 'A edição não fecha com subseção nunca visitada, porque vazio por decisão '
+              + 'e vazio por esquecimento sairiam iguais no documento.',
+          }),
+        ]),
+      ]);
+    }
+
+    return el('div', { className: 'rpcm-aviso' }, [
       svgIcon(ICONS.warning, 18),
       el('div', {}, [
         el('strong', {
-          textContent: `${documento.pendentes.length} subseção(ões) por preencher: `,
+          textContent: `${item.numeros.length} subseção(ões) calculada(s) sem linha: `,
         }),
-        documento.pendentes.join(', '),
+        item.numeros.join(', '),
         el('div', {
           className: 'rpcm-aviso__nota',
-          textContent: 'Preencha cada uma ou marque "sem ocorrência no mês". '
-            + 'A edição não fecha com subseção nunca visitada, porque vazio por decisão '
-            + 'e vazio por esquecimento sairiam iguais no documento.',
+          textContent: 'Cadastre o dado de origem antes de fechar. '
+            + 'A tabela vazia afirma "não houve" no documento assinado. '
+            + 'A subseção marcada "Lacuna do gerador" depende de quem programa o sistema.',
         }),
       ]),
-    ]));
+    ]);
+  }
+
+  function desenharAvisos() {
+    reconciliarPorAssinatura(avisos, avisosDaTela(), {
+      chave: (item) => item.chave,
+      assinatura: (item) => item.numeros.join(','),
+      criar: criarAviso,
+    });
   }
 
   /** A etiqueta que diz quem preenche a subseção. */
@@ -260,6 +396,18 @@ export async function renderRpcmtecEdicao(container, ctx) {
         textContent: 'Lacuna do gerador',
       }));
     }
+    // O CÁLCULO RODOU E NÃO ACHOU NADA. A etiqueta diz o que a pessoa faz, e não
+    // o que o sistema encontrou: uma 6.1 vazia quer dizer que falta cadastrar
+    // passagem de efetivo, e não que ninguém passou pela Divisão no mês.
+    if (sub.semLinhas) {
+      marcas.push(el('span', {
+        className: 'rpcm-etiqueta rpcm-etiqueta--pendente',
+        title: `O cálculo rodou e não achou nada${sub.fonte ? ` em ${sub.fonte}` : ''}. `
+          + 'Cadastre o dado na origem. '
+          + 'Sem isso a tabela sai vazia, e o documento assinado afirma que não houve nada.',
+        textContent: 'Falta cadastrar o dado de origem',
+      }));
+    }
 
     let conteudo;
     if (sub.cabecalhos) {
@@ -285,24 +433,119 @@ export async function renderRpcmtecEdicao(container, ctx) {
     ]);
   }
 
-  function desenharCorpo() {
-    clearChildren(corpo);
+  /**
+   * A ASSINATURA da subseção: tudo o que a tela desenha a partir dela.
+   *
+   * O bloco chega novo do servidor a cada carga, então comparar por referência
+   * marcaria tudo como mudado. O estado da edição entra porque ele decide se os
+   * botões de edição aparecem.
+   */
+  const assinaturaDaSubsecao = (sub) => JSON.stringify([documento.fechada, sub]);
 
-    for (const secao of documento.secoes) {
-      // `details` aberto por padrão: quem abre a edição quer VER o relatório,
-      // e não caçar nove gavetas. Fechar é gesto de quem já se orientou.
-      const bloco = el('details', { className: 'rpcm-secao', open: true }, [
-        el('summary', { className: 'rpcm-secao__titulo', textContent: secao.titulo }),
-      ]);
-
-      for (const sub of secao.subsecoes) bloco.appendChild(desenharSubsecao(sub));
-      corpo.appendChild(bloco);
-    }
+  function preencherSecao(bloco, secao) {
+    reconciliarPorAssinatura(bloco.__conteudo, secao.subsecoes, {
+      chave: (sub) => sub.numero,
+      assinatura: assinaturaDaSubsecao,
+      criar: desenharSubsecao,
+    });
   }
 
-  async function desenharAnexos() {
-    clearChildren(areaAnexos);
+  function criarSecao(secao) {
+    // As subseções vivem num contêiner PRÓPRIO, e não soltas dentro do
+    // `details`: o `reconciliar` remove todo filho que não está na lista, e o
+    // `summary` sairia junto.
+    const conteudo = el('div', { className: 'rpcm-secao__corpo' });
 
+    // `details` aberto por padrão na CRIAÇÃO, e só nela: quem abre a edição quer
+    // VER o relatório, e não caçar nove gavetas. Fechar é gesto de quem já se
+    // orientou, e recriar o `details` a cada carga desfazia esse gesto.
+    const bloco = el('details', { className: 'rpcm-secao', open: true }, [
+      el('summary', { className: 'rpcm-secao__titulo', textContent: secao.titulo }),
+      conteudo,
+    ]);
+    bloco.__conteudo = conteudo;
+
+    preencherSecao(bloco, secao);
+    return bloco;
+  }
+
+  function desenharCorpo() {
+    // A chave da seção é o TÍTULO: é o que o servidor manda, e ele não repete.
+    // O número da subseção é a chave de dentro.
+    reconciliar(corpo, documento.secoes, {
+      chave: (secao) => secao.titulo,
+      criar: criarSecao,
+      atualizar: (bloco, secao) => { preencherSecao(bloco, secao); },
+    });
+  }
+
+  // Os nós fixos da área de anexo. O `<input type=file>` guarda o arquivo
+  // escolhido, e refazê-lo apagava a escolha de quem clicou "Anexar assinado"
+  // logo depois de qualquer outra gravação.
+  const listaAnexos = el('div');
+
+  const entradaAnexo = el('input', {
+    type: 'file',
+    accept: '.pdf,.p7s',
+    className: 'form-field__input',
+    style: { maxWidth: '360px' },
+  });
+
+  const botaoEnviarAnexo = el('button', {
+    className: 'btn',
+    type: 'button',
+    onClick: async () => {
+      const arquivo = entradaAnexo.files && entradaAnexo.files[0];
+      if (!arquivo) {
+        showWarning('Escolha o arquivo do RPCMTec assinado');
+        return;
+      }
+      botaoEnviarAnexo.disabled = true;
+      try {
+        const dados = new FormData();
+        dados.append('arquivo', arquivo);
+        await enviarAnexo(edicaoId, dados);
+        showSuccess('RPCMTec assinado anexado com sucesso');
+        await carregar();
+      } catch (err) {
+        showError(err.message || 'Erro ao anexar o arquivo');
+      } finally {
+        botaoEnviarAnexo.disabled = false;
+      }
+    },
+  }, [svgIcon(ICONS.add, 16), 'Anexar assinado']);
+
+  let areaAnexosMontada = false;
+
+  const linhaDeAnexo = (anexo) => el('div', { className: 'rpcm-anexo' }, [
+    svgIcon(ICONS.description, 16),
+    el('span', { textContent: anexo.nome_original }),
+    el('span', {
+      className: 'rpcm-anexo__meta',
+      textContent: formatDateTime(anexo.data_cadastramento) || '',
+    }),
+    el('button', {
+      className: 'btn btn--icon',
+      type: 'button',
+      title: 'Baixar',
+      onClick: () => downloadAnexo(anexo.id, anexo.nome_original)
+        .catch((err) => showError(err.message || 'Erro ao baixar o anexo')),
+    }, [svgIcon(ICONS.download, 16)]),
+    el('button', {
+      className: 'btn btn--icon btn--danger-text',
+      type: 'button',
+      title: 'Excluir',
+      onClick: () => removerAnexo(anexo),
+    }, [svgIcon(ICONS.delete, 16)]),
+  ]);
+
+  const avisoSemAnexo = () => el('p', {
+    className: 'rpcm-anexo__vazio',
+    textContent: 'Nenhum arquivo assinado anexado. '
+      + 'O assinado é a fonte primária da edição: o congelado tem de dizer o que ele diz.',
+  });
+
+  async function desenharAnexos() {
     let anexos = [];
     try {
       anexos = await listarAnexos(edicaoId);
@@ -311,74 +554,56 @@ export async function renderRpcmtecEdicao(container, ctx) {
     }
     if (disposed) return;
 
-    const entrada = el('input', {
-      type: 'file',
-      accept: '.pdf,.p7s',
-      className: 'form-field__input',
-      style: { maxWidth: '360px' },
+    if (!areaAnexosMontada) {
+      areaAnexosMontada = true;
+      areaAnexos.append(
+        el('div', { className: 'dashboard-section__header' }, [
+          el('h3', { className: 'dashboard-section__title', textContent: 'RPCMTec assinado' }),
+        ]),
+        listaAnexos,
+        el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' } }, [
+          entradaAnexo, botaoEnviarAnexo,
+        ]),
+      );
+    }
+
+    // O "nenhum anexo" é um item de chave própria. Assim o primeiro anexo troca
+    // só esse nó, em vez de refazer a área inteira.
+    const itens = (anexos || []).length
+      ? anexos.map((anexo) => ({ chave: `anexo-${anexo.id}`, anexo }))
+      : [{ chave: 'vazio', anexo: null }];
+
+    reconciliarPorAssinatura(listaAnexos, itens, {
+      chave: (item) => item.chave,
+      assinatura: (item) => (item.anexo
+        ? `${item.anexo.nome_original}|${item.anexo.data_cadastramento}`
+        : 'vazio'),
+      criar: (item) => (item.anexo ? linhaDeAnexo(item.anexo) : avisoSemAnexo()),
     });
+  }
 
-    const enviar = el('button', {
-      className: 'btn',
-      type: 'button',
-      onClick: async () => {
-        const arquivo = entrada.files && entrada.files[0];
-        if (!arquivo) {
-          showWarning('Escolha o arquivo do RPCMTec assinado');
-          return;
-        }
-        enviar.disabled = true;
-        try {
-          const dados = new FormData();
-          dados.append('arquivo', arquivo);
-          await enviarAnexo(edicaoId, dados);
-          showSuccess('RPCMTec assinado anexado com sucesso');
-          await carregar();
-        } catch (err) {
-          showError(err.message || 'Erro ao anexar o arquivo');
-        } finally {
-          enviar.disabled = false;
-        }
-      },
-    }, [svgIcon(ICONS.add, 16), 'Anexar assinado']);
+  // O painel do histórico nasce UMA vez. Ele guarda a página, a ordenação e o
+  // estado recolhido, e recriá-lo a cada gravação jogava os três fora.
+  let historico = null;
 
-    const lista = anexos.length
-      ? anexos.map((anexo) => el('div', { className: 'rpcm-anexo' }, [
-        svgIcon(ICONS.description, 16),
-        el('span', { textContent: anexo.nome_original }),
-        el('span', {
-          className: 'rpcm-anexo__meta',
-          textContent: formatDateTime(anexo.data_cadastramento) || '',
-        }),
-        el('button', {
-          className: 'btn btn--icon',
-          type: 'button',
-          title: 'Baixar',
-          onClick: () => downloadAnexo(anexo.id, anexo.nome_original)
-            .catch((err) => showError(err.message || 'Erro ao baixar o anexo')),
-        }, [svgIcon(ICONS.download, 16)]),
-        el('button', {
-          className: 'btn btn--icon btn--danger-text',
-          type: 'button',
-          title: 'Excluir',
-          onClick: () => removerAnexo(anexo),
-        }, [svgIcon(ICONS.delete, 16)]),
-      ]))
-      : [el('p', {
-        className: 'rpcm-anexo__vazio',
-        textContent: 'Nenhum arquivo assinado anexado. '
-          + 'O assinado é a fonte primária da edição: o congelado tem de dizer o que ele diz.',
-      })];
+  function desenharHistorico() {
+    if (!historico) {
+      historico = criarHistorico({
+        modulo: 'plataforma',
+        entidade: 'edicao',
+        id: edicaoId,
+        titulo: 'Histórico da edição',
+        subtitulo: 'Metadados, subseções digitadas, fechamento, reabertura e anexo assinado',
+        recolhido: true,
+      });
+      areaHistorico.appendChild(historico.element);
+      return;
+    }
 
-    areaAnexos.append(
-      el('div', { className: 'dashboard-section__header' }, [
-        el('h3', { className: 'dashboard-section__title', textContent: 'RPCMTec assinado' }),
-      ]),
-      ...lista,
-      el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' } }, [
-        entrada, enviar,
-      ]),
-    );
+    // Recolhido e nunca aberto, o painel ainda não buscou nada: recarregá-lo
+    // aqui pagaria uma consulta que ninguém pediu. Aberto, ele tem de trazer o
+    // evento que acabou de sair (fechar, reabrir, anexar).
+    if (historico.element.open) historico.recarregar();
   }
 
   // -------------------------------------------------------------------------
@@ -459,6 +684,20 @@ export async function renderRpcmtecEdicao(container, ctx) {
     try {
       const resposta = await fecharEdicao(edicaoId);
       showSuccess(`Edição fechada. ${resposta.subsecoes} blocos congelados.`);
+
+      // AS LACUNAS NÃO PARAM O FECHAMENTO, e por isso o aviso vem depois dele.
+      // Quem congela tem de saber que a 6.1 foi congelada vazia: o documento
+      // assinado passa a afirmar isso, e só a reabertura desfaz.
+      const lacunas = resposta.lacunas || [];
+      if (lacunas.length) {
+        showWarning(
+          `Congelada com ${lacunas.length} subseção(ões) calculada(s) vazia(s): `
+          + `${lacunas.join(', ')}. `
+          + 'Cadastre o dado de origem e reabra a edição para corrigi-la. '
+          + 'A tabela vazia afirma "não houve" no documento assinado.',
+        );
+      }
+
       await carregar();
     } catch (err) {
       showError(err.message || 'Erro ao fechar a edição');
@@ -563,17 +802,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
       desenharAvisos();
       desenharCorpo();
       await desenharAnexos();
-      // Remontado a cada carga porque a edicao muda de estado por baixo (fechar,
-      // reabrir, anexar), e o painel tem de trazer o evento que acabou de sair.
-      clearChildren(areaHistorico);
-      areaHistorico.appendChild(criarHistorico({
-        modulo: 'plataforma',
-        entidade: 'edicao',
-        id: edicaoId,
-        titulo: 'Histórico da edição',
-        subtitulo: 'Metadados, subseções digitadas, fechamento, reabertura e anexo assinado',
-        recolhido: true,
-      }).element);
+      desenharHistorico();
     } catch (err) {
       if (disposed) return;
       clearChildren(corpo);
@@ -595,5 +824,8 @@ export async function renderRpcmtecEdicao(container, ctx) {
 
   await carregar();
 
-  return () => { disposed = true; };
+  return () => {
+    disposed = true;
+    if (historico) historico.cleanup();
+  };
 }

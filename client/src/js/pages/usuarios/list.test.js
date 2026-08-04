@@ -46,9 +46,11 @@ const PERFIS = [
   { code: 3, nome: 'Gerente' },
 ];
 
+// Os codigos sao os do DDL (er/dominio.sql:11-30), e nao numeros inventados: a
+// tela passou a ORDENAR por eles, entao um codigo falso aqui ensinaria errado.
 const POSTOS = [
-  { code: 11, nome: 'Terceiro Sargento', nome_abrev: '3 Sgt' },
-  { code: 12, nome: 'Segundo Sargento', nome_abrev: '2 Sgt' },
+  { code: 6, nome: 'Terceiro Sargento', nome_abrev: '3º Sgt' },
+  { code: 7, nome: 'Segundo Sargento', nome_abrev: '2º Sgt' },
 ];
 
 const USUARIO = {
@@ -56,8 +58,8 @@ const USUARIO = {
   login: 'sgt.silva',
   nome: 'Silva',
   nome_guerra: 'Silva',
-  tipo_posto_grad_id: 11,
-  tipo_posto_grad: '3 Sgt',
+  tipo_posto_grad_id: 6,
+  tipo_posto_grad: '3º Sgt',
   administrador: false,
   ativo: true,
   senha_definida: true,
@@ -148,7 +150,9 @@ describe('renderUsuariosList', () => {
 
     expect(linha.querySelectorAll('.usuarios__chip-admin')).toHaveLength(1);
     expect(celulas.filter(c => c === 'Administrador')).toHaveLength(0);
-    expect(celulas.filter(c => c === 'Sim')).toHaveLength(1); // so a coluna Ativo
+    // Desde 2026-08-04 a coluna do booleano diz o que mede: a situacao do
+    // LOGIN, com a propria palavra na celula (antes era um "Sim" solto).
+    expect(celulas.filter(c => c === 'Ativo')).toHaveLength(1);
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -213,7 +217,7 @@ describe('usuarios: o cadastro e do SCA, e nao mais uma importacao', () => {
     campoModal('Senha inicial').value = 'trocar123';
     campoModal('Nome completo').value = 'João de Souza';
     campoModal('Nome de guerra').value = 'Souza';
-    campoModal('Posto/Graduação').value = '12';
+    campoModal('Posto/Graduação').value = '7';
 
     botaoModal('Salvar').click();
     await flush();
@@ -223,7 +227,7 @@ describe('usuarios: o cadastro e do SCA, e nao mais uma importacao', () => {
       senha: 'trocar123',
       nome: 'João de Souza',
       nome_guerra: 'Souza',
-      tipo_posto_grad_id: 12,
+      tipo_posto_grad_id: 7,
       administrador: false,
       // Quem nasce inativo nao entra: o padrao do formulario e ativo.
       ativo: true,
@@ -312,7 +316,7 @@ describe('usuarios: senha', () => {
     expect(container.querySelectorAll('.usuarios__chip-sem-senha')).toHaveLength(2);
     const aviso = container.querySelector('.usuarios__aviso');
     expect(aviso.classList.contains('hidden')).toBe(false);
-    expect(aviso.textContent).toContain('2 usuários');
+    expect(aviso.textContent).toContain('2 pessoas');
 
     if (typeof cleanup === 'function') cleanup();
   });

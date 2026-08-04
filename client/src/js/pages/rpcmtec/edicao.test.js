@@ -1,0 +1,260 @@
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+// A EDICAO do RPCMTec (#/rpcmtec/:id).
+//
+// O que estes casos FIXAM:
+//  - a tela NAO se remonta a cada gravacao. Quem fecha uma secao, escolhe um
+//    arquivo ou rola a pagina nao perde o gesto quando algo e salvo. O `details`
+//    nascia `open: true` a cada carga, e reabria tudo o que a pessoa fechou;
+//  - a subsecao que nao mudou mantem o MESMO no, e so a que mudou se refaz;
+//  - a subsecao CALCULADA que saiu vazia mostra o que a pessoa precisa FAZER. A
+//    6.1 vazia quer dizer que falta cadastrar passagem de efetivo, e nao que nao
+//    houve passagem nenhuma;
+//  - o fechamento avisa das lacunas congeladas, pela chave `lacunas`.
+
+vi.mock('@services/rpcmtec-service.js', async () => {
+  const real = await vi.importActual('@services/rpcmtec-service.js');
+  return {
+    ...real,
+    getDocumento: vi.fn(),
+    listarAnexos: vi.fn(() => Promise.resolve([])),
+    copiarMesAnterior: vi.fn(() => Promise.resolve({ de: '05/2026', copiadas: ['3.1'] })),
+    fecharEdicao: vi.fn(() => Promise.resolve({ id: 7, subsecoes: 34, lacunas: [] })),
+  };
+});
+
+vi.mock('@services/plataforma-service.js', async () => {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  return { ...real, getUsuarios: vi.fn(() => Promise.resolve([])) };
+});
+
+vi.mock('@utils/toast.js', async () => {
+  const real = await vi.importActual('@utils/toast.js');
+  return {
+    ...real,
+    showError: vi.fn(),
+    showSuccess: vi.fn(),
+    showWarning: vi.fn(),
+    showInfo: vi.fn(),
+  };
+});
+
+vi.mock('@components/modal/confirm-dialog.js', () => ({
+  confirmDialog: vi.fn(() => Promise.resolve(true)),
+}));
+
+import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
+import {
+  getDocumento, copiarMesAnterior, fecharEdicao,
+} from '@services/rpcmtec-service.js';
+import { showWarning } from '@utils/toast.js';
+
+const flush = async () => {
+  for (let i = 0; i < 4; i += 1) await new Promise(resolve => setTimeout(resolve, 0));
+};
+
+// O documento de uma edicao ABERTA, com as tres situacoes de subsecao calculada
+// lado a lado: a que veio com linha, a que saiu VAZIA (6.1) e a que o gerador
+// nem produz (6.3).
+function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
+  return {
+    id: 7,
+    ano: 2026,
+    mes: 6,
+    fechada: false,
+    anexos: 0,
+    assinante_nome: 'Diniz',
+    assinante_posto: 'Maj',
+    data_assinatura: null,
+    data_fechamento: null,
+    pendentes,
+    lacunasCalculadas: ['6.1', '6.3'],
+    secoes: [
+      {
+        titulo: '3. ATIVIDADES DA DIVISÃO',
+        subsecoes: [{
+          numero: '3.1',
+          titulo: 'Atividades realizadas',
+          origem: 2,
+          fonte: null,
+          cabecalhos: ['Atividade', 'Observação'],
+          linhas: preenchida31 ? [['Curso', 'ok']] : [],
+          texto: null,
+          semOcorrencia: false,
+          preenchida: preenchida31,
+        }],
+      },
+      {
+        titulo: '6. RECURSOS HUMANOS',
+        subsecoes: [
+          {
+            numero: '6.1',
+            titulo: 'Aproveitamento do efetivo',
+            origem: 1,
+            fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
+            cabecalhos: ['Militar', 'Atividades', 'Aproveitamento'],
+            linhas: [],
+            semGerador: false,
+            semLinhas: true,
+            preenchida: true,
+          },
+          {
+            numero: '6.2',
+            titulo: 'Capacitação do efetivo',
+            origem: 1,
+            fonte: 'rpcmtec.capacitacao, tipo Recebida',
+            cabecalhos: ['Plano / Código', 'Capacitação'],
+            linhas: [['PCEG', 'QSMS']],
+            semGerador: false,
+            semLinhas: false,
+            preenchida: true,
+          },
+          {
+            numero: '6.3',
+            titulo: 'Subseção sem gerador',
+            origem: 1,
+            fonte: 'algum lugar',
+            cabecalhos: ['Coluna'],
+            linhas: [],
+            semGerador: true,
+            semLinhas: false,
+            preenchida: true,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function montar() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const cleanup = await renderRpcmtecEdicao(container, { params: { id: '7' } });
+  await flush();
+  return { container, cleanup };
+}
+
+const subsecao = (container, numero) => [...container.querySelectorAll('.rpcm-subsecao')]
+  .find(no => no.querySelector('.rpcm-subsecao__titulo').textContent.startsWith(`${numero}.`));
+
+const marcas = (no) => [...no.querySelectorAll('.rpcm-etiqueta')].map(e => e.textContent);
+
+const botaoPor = (container, rotulo) => [...container.querySelectorAll('button')]
+  .find(b => b.textContent.trim() === rotulo);
+
+describe('renderRpcmtecEdicao', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+    getDocumento.mockImplementation(() => Promise.resolve(doc()));
+  });
+
+  // -------------------------------------------------------------------------
+  // A etiqueta da subsecao calculada vazia
+  // -------------------------------------------------------------------------
+
+  test('a subseção calculada VAZIA diz o que fazer, e não o que o sistema achou', async () => {
+    const { container, cleanup } = await montar();
+
+    const seis1 = subsecao(container, '6.1');
+    expect(marcas(seis1)).toContain('Falta cadastrar o dado de origem');
+
+    // O texto de apoio nomeia a origem e diz a consequência de deixar assim.
+    const etiqueta = [...seis1.querySelectorAll('.rpcm-etiqueta')]
+      .find(e => e.textContent === 'Falta cadastrar o dado de origem');
+    expect(etiqueta.title).toContain('dgeo.efetivo_periodo e dgeo.impedimento');
+
+    cleanup();
+  });
+
+  test('a calculada com linha e a sem gerador não recebem a etiqueta nova', async () => {
+    const { container, cleanup } = await montar();
+
+    expect(marcas(subsecao(container, '6.2')))
+      .not.toContain('Falta cadastrar o dado de origem');
+
+    // As duas lacunas são EXCLUSIVAS: sem gerador não há tabela vazia a
+    // reportar, porque a causa já está dita e o conserto é outro.
+    const seis3 = marcas(subsecao(container, '6.3'));
+    expect(seis3).toContain('Lacuna do gerador');
+    expect(seis3).not.toContain('Falta cadastrar o dado de origem');
+
+    cleanup();
+  });
+
+  test('o fechamento avisa das lacunas congeladas, com o conserto', async () => {
+    fecharEdicao.mockResolvedValueOnce({ id: 7, subsecoes: 34, lacunas: ['6.1'] });
+
+    const { container, cleanup } = await montar();
+
+    botaoPor(container, 'Fechar e congelar').click();
+    await flush();
+
+    expect(showWarning).toHaveBeenCalled();
+    const texto = showWarning.mock.calls[0][0];
+    expect(texto).toContain('6.1');
+    expect(texto).toContain('Cadastre o dado de origem');
+
+    cleanup();
+  });
+
+  // -------------------------------------------------------------------------
+  // O remonte
+  // -------------------------------------------------------------------------
+
+  test('a seção que a pessoa fechou continua fechada depois de uma gravação', async () => {
+    const { container, cleanup } = await montar();
+
+    const secoes = [...container.querySelectorAll('.rpcm-secao')];
+    expect(secoes.length).toBe(2);
+    secoes[1].open = false;
+
+    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    await flush();
+
+    expect(copiarMesAnterior).toHaveBeenCalled();
+    const depois = [...container.querySelectorAll('.rpcm-secao')];
+    // O MESMO nó, e ainda fechado. Recriar o `details` com `open: true` reabria
+    // tudo o que a pessoa tinha fechado.
+    expect(depois[1]).toBe(secoes[1]);
+    expect(depois[1].open).toBe(false);
+
+    cleanup();
+  });
+
+  test('só a subseção que mudou se refaz', async () => {
+    const { container, cleanup } = await montar();
+
+    const antes31 = subsecao(container, '3.1');
+    const antes62 = subsecao(container, '6.2');
+
+    // A gravação preenche a 3.1 e não toca em nenhuma outra.
+    getDocumento.mockImplementation(
+      () => Promise.resolve(doc({ pendentes: [], preenchida31: true })),
+    );
+    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    await flush();
+
+    expect(subsecao(container, '3.1')).not.toBe(antes31);
+    expect(subsecao(container, '6.2')).toBe(antes62);
+
+    cleanup();
+  });
+
+  test('o painel de histórico e o campo de arquivo sobrevivem à gravação', async () => {
+    const { container, cleanup } = await montar();
+
+    const historico = container.querySelector('.historico');
+    const arquivo = container.querySelector('input[type="file"]');
+    expect(historico).not.toBeNull();
+    expect(arquivo).not.toBeNull();
+
+    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    await flush();
+
+    expect(container.querySelector('.historico')).toBe(historico);
+    expect(container.querySelector('input[type="file"]')).toBe(arquivo);
+
+    cleanup();
+  });
+});

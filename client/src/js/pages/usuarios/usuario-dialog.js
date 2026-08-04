@@ -1,6 +1,5 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
-import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
   createSelectField,
@@ -22,6 +21,10 @@ import { criarUsuario, atualizarUsuario } from '@services/plataforma-service.js'
  * campo de senha aqui seria um terceiro caminho, sem a senha atual e sem o aviso
  * de que a nova é adivinhável.
  *
+ * O HISTÓRICO saiu daqui em 2026-08-04. Ele vivia no rodapé, recolhido, e
+ * cobrava um clique de quem só veio corrigir um campo. Agora é ação de linha
+ * própria na lista, dentro da ficha da pessoa, e abre aberto.
+ *
  * @param {Object} opts
  * @param {Object|null} [opts.usuario] - linha da lista para editar (null cria)
  * @param {Array<{code:number, nome:string, nome_abrev:string}>} opts.postosGrad
@@ -36,7 +39,7 @@ export function abrirUsuarioDialog({ usuario = null, postosGrad = [], onSaved })
     value: usuario?.login ?? '',
     placeholder: 'Ex.: sgt.silva',
     helpText: edicao
-      ? 'Trocar o login troca o nome de usuário do login desta pessoa.'
+      ? null
       : 'É o nome de usuário do login. Também é a senha que o reset devolve.',
   });
 
@@ -81,22 +84,6 @@ export function abrirUsuarioDialog({ usuario = null, postosGrad = [], onSaved })
     helpText: 'Passa em TODOS os módulos e em todos os níveis, independente dos perfis.',
   });
 
-    // Histórico de alterações, RECOLHIDO e só na edição.
-    //
-    // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
-    // uma consulta de quem só veio corrigir um campo. Só na edição porque num
-    // cadastro novo não há o que mostrar.
-    const historico = edicao
-      ? criarHistorico({
-        modulo: 'plataforma',
-        entidade: 'usuario',
-        id: usuario.uuid,
-        titulo: 'Histórico de alterações',
-        subtitulo: 'Alteracoes no cadastro, no perfil por modulo e na senha',
-        recolhido: true,
-      })
-      : null;
-
   const content = el('div', { className: 'form-grid' }, [
     loginField.element,
     senhaField ? senhaField.element : null,
@@ -105,14 +92,6 @@ export function abrirUsuarioDialog({ usuario = null, postosGrad = [], onSaved })
     postoField.element,
     ativoField.element,
     adminField.element,
-    // Criar NÃO libera módulo nenhum: sem linha em usuario_perfil a pessoa entra
-    // e não vê nada. Conceder continua sendo ato explícito, na tela de perfis.
-    edicao ? null : el('p', {
-      className: 'form-grid__full usuario-dialog__nota',
-      textContent: 'Criar a pessoa não concede acesso a módulo nenhum. '
-        + 'O acesso é dado depois, em "Definir perfis por módulo".',
-    }),
-    historico ? el('div', { className: 'form-grid__full' }, [historico.element]) : null,
   ]);
 
   let salvando = false;

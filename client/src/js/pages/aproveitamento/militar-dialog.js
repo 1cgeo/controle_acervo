@@ -25,6 +25,39 @@ const dia = (valor) => (valor
   ? String(valor).slice(0, 10).split('-').reverse().join('/')
   : null);
 
+// A data do servidor chega como 'AAAA-MM-DD'. Datas ISO comparam como texto.
+const iso = (valor) => (valor ? String(valor).slice(0, 10) : null);
+
+/** Dois intervalos se cruzam quando cada um começa antes de o outro acabar. */
+function intervalosSeCruzam(a, b) {
+  const fimA = iso(a.data_fim) || '9999-12-31';
+  const fimB = iso(b.data_fim) || '9999-12-31';
+  return iso(a.data_inicio) <= fimB && iso(b.data_inicio) <= fimA;
+}
+
+/**
+ * O impedimento que NÃO cruza passagem nenhuma no ano.
+ *
+ * O SQL do mapa descarta esse registro em silêncio: o dia em que a pessoa não
+ * estava na Divisão sai NULO, e o impedimento não tem onde descontar. A ficha o
+ * mostrava do mesmo jeito que os outros, e ele não mudava número nenhum.
+ *
+ * A CONTA É DENTRO DO ANO da tela, e não na vida inteira do militar. As duas
+ * listas chegam aqui recortadas pelo ano, e afirmar sobre passagem de outro ano
+ * seria afirmar sobre o que não está na mesa.
+ */
+function foraDaPassagem(impedimento, periodos, ano) {
+  const inicio = iso(impedimento.data_inicio);
+  const fim = iso(impedimento.data_fim) || '9999-12-31';
+  const janela = {
+    data_inicio: inicio > `${ano}-01-01` ? inicio : `${ano}-01-01`,
+    data_fim: fim < `${ano}-12-31` ? fim : `${ano}-12-31`,
+  };
+  // Impedimento que nem toca o ano da tela não é caso deste aviso.
+  if (janela.data_inicio > janela.data_fim) return false;
+  return !periodos.some(p => intervalosSeCruzam(janela, p));
+}
+
 /**
  * A DATA DE FIM É UM CAMPO MAIS UMA CAIXA, empilhados: o campo em cima, a caixa
  * embaixo.
@@ -200,7 +233,9 @@ export function openImpedimentoDialog({
     max: 100,
     step: 1,
     value: impedimento?.percentual ?? 100,
-    helpText: 'Quanto do tempo este impedimento consome. Afastamento integral é 100.',
+    // Só o que o rótulo não diz. "Quanto do tempo este impedimento consome" era
+    // o rótulo escrito de novo, uma linha abaixo dele.
+    helpText: 'Afastamento integral é 100.',
   });
 
   const inicioField = createDateField({
@@ -288,18 +323,45 @@ export function openImpedimentoDialog({
  * É o que abre ao clicar na linha do mapa. O mapa responde "quanto", e esta
  * ficha responde "por quê", que é a pergunta seguinte e a única que leva a uma
  * correção.
+ *
+ * A FICHA SE REPINTA SEM FECHAR. Até 2026-08-04 salvar recarregava a tela por
+ * baixo e deixava a ficha aberta com a lista velha: quem acabou de lançar a
+ * saída de um militar via a passagem antiga ali, e lançava de novo. O `onSaved`
+ * agora DEVOLVE as listas novas daquela pessoa, e é com elas que a ficha se
+ * repinta. Quem não devolver nada mantém a lista que tinha.
+ *
+ * @param {Object} opcoes
+ * @param {Object} opcoes.militar
+ * @param {number} [opcoes.ano] - o ano da tela, que recorta as duas listas.
+ * @param {Array} [opcoes.periodos]
+ * @param {Array} [opcoes.impedimentos]
+ * @param {() => Promise<{periodos:Array, impedimentos:Array}|void>} [opcoes.onSaved]
  */
 export function openMilitarDialog({
-  militar, periodos = [], impedimentos = [], onSaved = null,
+  militar, ano = new Date().getFullYear(),
+  periodos = [], impedimentos = [], onSaved = null,
 } = {}) {
   const nome = `${militar.posto_abrev} ${militar.nome_guerra}`.trim();
 
-  function recarregar({ close }) {
-    close();
-    if (onSaved) onSaved();
+  let listaPeriodos = periodos;
+  let listaImpedimentos = impedimentos;
+
+  const corpoPassagens = el('div');
+  const corpoImpedimentos = el('div');
+
+  // Recarrega a tela de baixo e repinta ESTA ficha com o que voltou. A ordem
+  // importa: pintar antes da resposta mostraria de novo o dado velho.
+  async function aposSalvar() {
+    const novo = onSaved ? await onSaved() : null;
+    if (novo) {
+      listaPeriodos = novo.periodos || [];
+      listaImpedimentos = novo.impedimentos || [];
+    }
+    pintar();
   }
 
-  const linha = (texto, secundario, acoes) => el('div', {
+  const linha = (texto, secundario, acoes, aviso = null) => el('div', {
+    className: aviso ? 'impedimento--fora-da-passagem' : '',
     style: {
       display: 'flex', alignItems: 'center', gap: '8px',
       padding: '8px 0', borderBottom: '1px solid var(--border-color)',
@@ -311,7 +373,13 @@ export function openMilitarDialog({
         style: { fontSize: '0.8125rem', color: 'var(--text-secondary)' },
         textContent: secundario,
       }),
-    ]),
+      aviso
+        ? el('div', {
+          style: { fontSize: '0.8125rem', color: 'var(--color-warning)' },
+          textContent: aviso,
+        })
+        : null,
+    ].filter(Boolean)),
     ...acoes,
   ]);
 
@@ -323,7 +391,10 @@ export function openMilitarDialog({
     onClick,
   }, [svgIcon(icone, 16)]);
 
-  const secao = (titulo, itens, vazio, botaoNovo) => el('div', {
+  // A seção é montada UMA vez; só o corpo dela se repinta. Recriar a seção
+  // inteira trocaria o botão "Nova" a cada salvamento, e o foco morreria com o
+  // nó que o continha.
+  const secao = (titulo, corpo, botaoNovo) => el('div', {
     style: { marginBottom: '20px' },
   }, [
     el('div', {
@@ -335,95 +406,116 @@ export function openMilitarDialog({
       el('h3', { style: { margin: '0', fontSize: '0.9375rem' }, textContent: titulo }),
       botaoNovo,
     ]),
-    itens.length
-      ? el('div', {}, itens)
-      : el('p', { style: { color: 'var(--text-secondary)' }, textContent: vazio }),
+    corpo,
   ]);
+
+  const vazio = (texto) => el('p', {
+    style: { color: 'var(--text-secondary)' }, textContent: texto,
+  });
+
+  function linhaDaPassagem(p) {
+    return linha(
+      // "Atual" e "Em curso" são o que o nulo QUER dizer. Um traço aqui se
+      // leria como campo em branco.
+      `${dia(p.data_inicio)} até ${p.data_fim ? dia(p.data_fim) : 'Atual'}`,
+      p.observacao || '',
+      [
+        botaoIcone(ICONS.edit, 'Editar', () => openPeriodoDialog({
+          periodo: p, nomeMilitar: nome, onSaved: aposSalvar,
+        })),
+        botaoIcone(ICONS.delete, 'Excluir', async () => {
+          const ok = await confirmDialog({
+            title: 'Excluir passagem',
+            message: `Excluir a passagem de ${nome} iniciada em ${dia(p.data_inicio)}?`,
+            confirmLabel: 'Excluir',
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deletePeriodoEfetivo(p.id);
+            showSuccess('Passagem excluída');
+            await aposSalvar();
+          } catch (err) {
+            showError(err.message || 'Erro ao excluir a passagem');
+          }
+        }, true),
+      ]
+    );
+  }
+
+  function linhaDoImpedimento(i) {
+    return linha(
+      `${i.descricao} (${i.percentual}%)`,
+      `${dia(i.data_inicio)} até ${i.data_fim ? dia(i.data_fim) : 'Em curso'}`,
+      [
+        botaoIcone(ICONS.edit, 'Editar', () => openImpedimentoDialog({
+          impedimento: i, nomeMilitar: nome, onSaved: aposSalvar,
+        })),
+        botaoIcone(ICONS.delete, 'Excluir', async () => {
+          const ok = await confirmDialog({
+            title: 'Excluir impedimento',
+            message: `Excluir "${i.descricao}" de ${nome}?`,
+            confirmLabel: 'Excluir',
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteImpedimento(i.id);
+            showSuccess('Impedimento excluído');
+            await aposSalvar();
+          } catch (err) {
+            showError(err.message || 'Erro ao excluir o impedimento');
+          }
+        }, true),
+      ],
+      foraDaPassagem(i, listaPeriodos, ano)
+        ? `Fora de qualquer passagem em ${ano}. Não entra na conta.`
+        : null
+    );
+  }
+
+  function pintar() {
+    corpoPassagens.innerHTML = '';
+    corpoPassagens.appendChild(
+      listaPeriodos.length
+        ? el('div', {}, listaPeriodos.map(linhaDaPassagem))
+        : vazio('Nenhuma passagem cadastrada neste ano.')
+    );
+
+    corpoImpedimentos.innerHTML = '';
+    corpoImpedimentos.appendChild(
+      listaImpedimentos.length
+        ? el('div', {}, listaImpedimentos.map(linhaDoImpedimento))
+        : vazio('Nenhum impedimento neste ano.')
+    );
+  }
+
+  pintar();
 
   openModal({
     title: nome,
     width: '640px',
     content: el('div', {}, [
-      secao(
-        'Passagens pela DGEO',
-        periodos.map(p => linha(
-          // "Atual" e "Em curso" são o que o nulo QUER dizer. Um traço aqui se
-          // leria como campo em branco.
-          `${dia(p.data_inicio)} até ${p.data_fim ? dia(p.data_fim) : 'Atual'}`,
-          p.observacao || '',
-          [
-            botaoIcone(ICONS.edit, 'Editar', () => openPeriodoDialog({
-              periodo: p, nomeMilitar: nome, onSaved,
-            })),
-            botaoIcone(ICONS.delete, 'Excluir', async () => {
-              const ok = await confirmDialog({
-                title: 'Excluir passagem',
-                message: `Excluir a passagem de ${nome} iniciada em ${dia(p.data_inicio)}?`,
-                confirmLabel: 'Excluir',
-                danger: true,
-              });
-              if (!ok) return;
-              try {
-                await deletePeriodoEfetivo(p.id);
-                showSuccess('Passagem excluída');
-                if (onSaved) onSaved();
-              } catch (err) {
-                showError(err.message || 'Erro ao excluir a passagem');
-              }
-            }, true),
-          ]
-        )),
-        'Nenhuma passagem cadastrada neste ano.',
-        el('button', {
-          className: 'btn btn--secondary btn--sm',
-          type: 'button',
-          onClick: () => openPeriodoDialog({
-            usuarioUuid: militar.usuario_uuid,
-            nomeMilitar: nome,
-            onSaved,
-          }),
-          textContent: 'Nova',
-        })
-      ),
-      secao(
-        'Impedimentos',
-        impedimentos.map(i => linha(
-          `${i.descricao} (${i.percentual}%)`,
-          `${dia(i.data_inicio)} até ${i.data_fim ? dia(i.data_fim) : 'Em curso'}`,
-          [
-            botaoIcone(ICONS.edit, 'Editar', () => openImpedimentoDialog({
-              impedimento: i, nomeMilitar: nome, onSaved,
-            })),
-            botaoIcone(ICONS.delete, 'Excluir', async () => {
-              const ok = await confirmDialog({
-                title: 'Excluir impedimento',
-                message: `Excluir "${i.descricao}" de ${nome}?`,
-                confirmLabel: 'Excluir',
-                danger: true,
-              });
-              if (!ok) return;
-              try {
-                await deleteImpedimento(i.id);
-                showSuccess('Impedimento excluído');
-                if (onSaved) onSaved();
-              } catch (err) {
-                showError(err.message || 'Erro ao excluir o impedimento');
-              }
-            }, true),
-          ]
-        )),
-        'Nenhum impedimento neste ano. O militar rendeu 100% do tempo em que esteve.',
-        el('button', {
-          className: 'btn btn--secondary btn--sm',
-          type: 'button',
-          onClick: () => openImpedimentoDialog({
-            usuarioUuid: militar.usuario_uuid,
-            nomeMilitar: nome,
-            onSaved,
-          }),
-          textContent: 'Novo',
-        })
-      ),
+      secao('Passagens pela DGEO', corpoPassagens, el('button', {
+        className: 'btn btn--secondary btn--sm',
+        type: 'button',
+        onClick: () => openPeriodoDialog({
+          usuarioUuid: militar.usuario_uuid,
+          nomeMilitar: nome,
+          onSaved: aposSalvar,
+        }),
+        textContent: 'Nova',
+      })),
+      secao('Impedimentos', corpoImpedimentos, el('button', {
+        className: 'btn btn--secondary btn--sm',
+        type: 'button',
+        onClick: () => openImpedimentoDialog({
+          usuarioUuid: militar.usuario_uuid,
+          nomeMilitar: nome,
+          onSaved: aposSalvar,
+        }),
+        textContent: 'Novo',
+      })),
       // O HISTORICO da PESSOA, RECOLHIDO. As passagens e os impedimentos caem
       // no mesmo agregado `usuario`, e e por isso que um painel so responde as
       // duas perguntas.
@@ -442,7 +534,8 @@ export function openMilitarDialog({
         : null,
     ].filter(Boolean)),
     actions: [
-      { label: 'Fechar', variant: 'text', onClick: ({ close }) => recarregar({ close }) },
+      // Fechar só fecha: cada salvamento já recarregou a tela de baixo.
+      { label: 'Fechar', variant: 'text', onClick: ({ close }) => close() },
     ],
   });
 }

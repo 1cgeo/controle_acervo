@@ -224,6 +224,12 @@ export function openCapacitacaoDialog({
             // A lista vale para os DOIS tipos, ao contrário dos dois acima.
             militares: militaresField.getValue(),
             documento: documentoField.getValue() || null,
+            // SEM `meta_pit_id`, e a omissão é deliberada (2026-08-04). Este
+            // formulário não tem o campo, e a chave AUSENTE manda o servidor
+            // preservar o vínculo gravado. Mandar `meta_pit_id: null` aqui
+            // desligaria o vínculo com a meta do PIT a cada salvamento, que é
+            // o defeito que a preservação matou. Ao acrescentar o campo,
+            // mande-o SÓ quando a pessoa escolher, e nunca vazio por padrão.
           };
 
           saving = true;

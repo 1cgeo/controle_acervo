@@ -74,6 +74,12 @@ controller.listar = async (ano, tipoId) => {
   )
 }
 
+// A situação CANCELADA de `dominio.situacao_capacitacao` (er/dominio.sql:381).
+// O código vem do DDL, e não do rótulo da tela: o domínio tem 1 Prevista,
+// 2 Em execução, 3 Concluída e 4 Cancelada. É o mesmo 4 que
+// `pit_execucao_ctrl` já exclui do planejado da meta.
+const SITUACAO_CANCELADA = 4
+
 /**
  * As capacitações que ACONTECERAM no mês, que é o recorte das subseções 2.6 e
  * 6.2.
@@ -83,6 +89,11 @@ controller.listar = async (ano, tipoId) => {
  * julho que o omitisse estaria errado. Curso ainda sem data não entra, e é a
  * resposta certa: uma capacitação prevista sem período marcado não aconteceu em
  * mês nenhum.
+ *
+ * A CANCELADA SAI SEMPRE, e a PREVISTA entra (chefe, 2026-08-04). A 2.6
+ * descreve o que a Divisão planejou para o mês, então prever e executar contam
+ * do mesmo jeito. O que a Divisão cancelou não é atividade nenhuma, e listá-lo
+ * num documento assinado afirma trabalho que não houve.
  */
 controller.listarDoMes = async (ano, mes, tipoId) => {
   const dois = n => String(n).padStart(2, '0')
@@ -91,12 +102,14 @@ controller.listarDoMes = async (ano, mes, tipoId) => {
   return db.conn.any(
     `SELECT ${colunas} ${de}
      WHERE c.tipo_id = $<tipoId>
+       AND c.situacao_id <> $<cancelada>
        AND c.data_inicio IS NOT NULL
        AND c.data_inicio <= $<fimDoMes>::date
        AND COALESCE(c.data_fim, c.data_inicio) >= $<inicioDoMes>::date
      ORDER BY c.data_inicio, c.nome`,
     {
       tipoId,
+      cancelada: SITUACAO_CANCELADA,
       inicioDoMes: `${ano}-${dois(mes)}-01`,
       fimDoMes: `${ano}-${dois(mes)}-${dois(ultimoDia)}`
     }
@@ -115,6 +128,32 @@ controller.anos = async () => {
 }
 
 const nulo = v => (v === undefined || v === '' ? null : v)
+
+/**
+ * O vínculo com a meta do PIT que o UPDATE deve gravar.
+ *
+ * A CHAVE AUSENTE PRESERVA, o `null` explícito desliga. São coisas diferentes,
+ * e tratá-las igual apagava o vínculo em silêncio: o formulário da tela não tem
+ * o campo, então toda edição do nome ou da data zerava o `meta_pit_id`, e a
+ * execução da meta 5 do PIT (`pit_execucao_ctrl`) caía sem nada acusar.
+ *
+ * A DISTINÇÃO MORA AQUI, NO CONTROLLER, e não no schema Joi. O Joi só enxerga o
+ * corpo da requisição: ele sabe dizer que a chave é opcional, e nunca "mantenha
+ * o que está gravado", porque o valor gravado não passa por ele. O dever do
+ * schema é NEGATIVO, e vale cobrá-lo em revisão: `meta_pit_id` não pode ganhar
+ * `.default(...)` em `rpcmtec_schema.js`, senão o Joi injeta a chave, ela nunca
+ * chega ausente e esta preservação deixa de acontecer. É a mesma regra do
+ * `utils/preserve_omitted`, que resolve o problema idêntico do acervo.
+ *
+ * A linha ANTERIOR já foi lida na mesma transação, para o rastro: preservar
+ * daqui custa zero consulta a mais.
+ *
+ * @param {Object} dados - o corpo já validado
+ * @param {Object} antes - a linha como está no banco
+ * @returns {number|null} o valor a gravar
+ */
+const metaPitParaGravar = (dados, antes) =>
+  dados.meta_pit_id === undefined ? antes.meta_pit_id : nulo(dados.meta_pit_id)
 
 const paraBanco = (dados, usuarioUuid) => ({
   ano: dados.ano,
@@ -233,7 +272,15 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,
-      { ...paraBanco(dados, usuarioUuid), id, dataModificacao: new Date() }
+      {
+        ...paraBanco(dados, usuarioUuid),
+        // O ÚNICO campo que a ausência preserva em vez de apagar. Ver
+        // `metaPitParaGravar`: a tela não manda a chave, e o UPDATE escreve a
+        // coluna inteira a cada salvamento.
+        metaPitId: metaPitParaGravar(dados, antes),
+        id,
+        dataModificacao: new Date()
+      }
     )
 
     await auditoriaCtrl.registrar(t, {

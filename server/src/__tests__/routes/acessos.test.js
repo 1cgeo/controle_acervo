@@ -118,7 +118,10 @@ describe('Guarda: /api/acessos e admin-only', () => {
 })
 
 describe('GET /api/acessos/logados', () => {
-  test('traz o ultimo login de cada par usuario + cliente no dia', async () => {
+  // A linha passou a ser a PESSOA, e nao o par pessoa + cliente (2026-08-04). A
+  // tela pergunta quem entrou hoje, e a mesma pessoa em dois clientes aparecia
+  // duas vezes. O cliente desceu para uma coluna, que agrega os dois.
+  test('traz uma linha por pessoa, com os clientes agregados', async () => {
     const usuarioId = await idPorUuid(USER_UUID)
 
     await inserirLogin(usuarioId, 'sca_web', "now() - INTERVAL '3 hours'")
@@ -130,25 +133,28 @@ describe('GET /api/acessos/logados', () => {
       .set('Authorization', admin())
 
     expect(res.status).toBe(200)
-    // Tres logins, DOIS clientes: a linha e o par, e nao a passagem.
-    expect(res.body.dados).toHaveLength(2)
+    // Tres logins, DOIS clientes, UMA pessoa: a linha e a pessoa.
+    expect(res.body.dados).toHaveLength(1)
 
-    const web = res.body.dados.find(d => d.cliente === 'sca_web')
-    expect(web).toMatchObject({
+    const pessoa = res.body.dados[0]
+    expect(pessoa).toMatchObject({
       login: 'test_user',
       nome_guerra: 'User',
-      tipo_posto_grad: 'Civ'
+      tipo_posto_grad: 'Civ',
+      logins: 3
     })
-    expect(typeof web.id).toBe('number')
+    // O uuid substituiu o ROW_NUMBER sintetico. Sem ele a linha nao vira link
+    // para a ficha da pessoa.
+    expect(pessoa.uuid).toBe(USER_UUID)
 
-    // O de sca_web e o mais recente dos tres, entao encabeca a lista.
-    expect(res.body.dados[0].cliente).toBe('sca_web')
+    // Os dois clientes na mesma linha, e nao duas linhas.
+    expect([...pessoa.clientes].sort()).toEqual(['sca_qgis', 'sca_web'])
 
-    // ...e e o login de UMA hora atras, nao o de tres.
-    const qgis = res.body.dados.find(d => d.cliente === 'sca_qgis')
-    expect(new Date(web.ultimo_login).getTime()).toBeGreaterThan(
-      new Date(qgis.ultimo_login).getTime()
-    )
+    // O ultimo login e o de UMA hora atras, nao o de tres.
+    const umaHora = Date.now() - 60 * 60 * 1000
+    expect(
+      Math.abs(new Date(pessoa.ultimo_login).getTime() - umaHora)
+    ).toBeLessThan(5 * 60 * 1000)
   })
 
   test('nao traz quem so entrou ontem', async () => {
@@ -164,7 +170,10 @@ describe('GET /api/acessos/logados', () => {
 })
 
 describe('GET /api/acessos/resumo', () => {
-  test('conta usuarios ativos, logins de hoje e dos ultimos 30 dias', async () => {
+  // O resumo passou a contar PESSOA, e nao evento de login (2026-08-04). Com
+  // token de 8 horas e dois clientes, a mesma pessoa contava varias vezes, e o
+  // cartao respondia uma pergunta que ninguem faz.
+  test('conta pessoas distintas, e nao eventos de login', async () => {
     const usuarioId = await idPorUuid(USER_UUID)
     const adminId = await idPorUuid(ADMIN_UUID)
 
@@ -179,16 +188,18 @@ describe('GET /api/acessos/resumo', () => {
       .set('Authorization', admin())
 
     expect(res.status).toBe(200)
+    // Quatro logins de DUAS pessoas. A contagem por evento daria 3 nos 30 dias.
     expect(res.body.dados).toEqual({
-      usuarios_ativos: 2,
-      logins_hoje: 2,
-      logins_30_dias: 3
+      contas_ativas: 2,
+      contas_sem_senha: 0,
+      pessoas_hoje: 2,
+      pessoas_30_dias: 2
     })
     // BIGINT viria como string; o ::integer da consulta e o que evita isso.
-    expect(typeof res.body.dados.logins_hoje).toBe('number')
+    expect(typeof res.body.dados.pessoas_hoje).toBe('number')
   })
 
-  test('usuario desativado sai da contagem de ativos', async () => {
+  test('usuario desativado sai da contagem de contas ativas', async () => {
     await conn.none(
       'UPDATE dgeo.usuario SET ativo = FALSE WHERE uuid = $<uuid>',
       { uuid: USER_UUID }
@@ -198,7 +209,7 @@ describe('GET /api/acessos/resumo', () => {
       .get('/api/acessos/resumo')
       .set('Authorization', admin())
 
-    expect(res.body.dados.usuarios_ativos).toBe(1)
+    expect(res.body.dados.contas_ativas).toBe(1)
 
     await conn.none(
       'UPDATE dgeo.usuario SET ativo = TRUE WHERE uuid = $<uuid>',

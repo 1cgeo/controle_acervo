@@ -103,8 +103,12 @@ describe('capacitação em duas telas', () => {
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
-    const periodos = [...container.querySelectorAll('tbody tr td:nth-child(3)')]
-      .map(td => td.textContent);
+    // A coluna sai pelo RÓTULO, e não pela posição: a tela ganhou a coluna Ano
+    // em 2026-08-04, e contar colunas quebra o caso a cada coluna nova.
+    const indice = [...container.querySelectorAll('thead th')]
+      .findIndex(th => th.textContent.replace(/[▲▼]/g, '').trim() === 'Período');
+    const periodos = [...container.querySelectorAll('tbody tr')]
+      .map(tr => tr.children[indice].textContent);
     expect(periodos).toEqual(['20/07/2026']);
 
     if (typeof cleanup === 'function') cleanup();

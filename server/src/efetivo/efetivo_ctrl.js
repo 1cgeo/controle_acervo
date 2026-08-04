@@ -104,13 +104,22 @@ const fimDoMes = (ano, mes) => {
  * A célula é a MÉDIA da disponibilidade nos dias da semana, com dia fora da
  * Divisão contando ZERO no numerador mas SIM no denominador da semana. É o que
  * faz a semana de chegada aparecer parcial, que é a verdade.
+ *
+ * `dias` E `dias_na_dgeo` SAIEM JUNTOS, e a tela mostra os dois: 5 de 7 dias a
+ * 100% dão a mesma célula que 7 de 7 dias a 71%, e só o denominador separa
+ * "chegou na quarta" de "esteve e não rendeu".
+ *
+ * O QUE ESTA CONSULTA NÃO DEVOLVE, desde 2026-08-04: `u.nome`, `u.login` e o
+ * nome por extenso do posto. A tela desenha `posto_abrev` e `nome_guerra`, e
+ * mais nada. Dado de pessoal que trafega sem uso é vazamento à espera de um
+ * log. Quem escreve o nome por extenso é a 6.1 do RPCMTec, por `resumoMensal`.
  */
 controller.mapaAnual = async ano => {
   return db.conn.any(
     `WITH base AS (${DISPONIBILIDADE_POR_DIA})
      SELECT
        b.usuario_uuid,
-       u.nome, u.nome_guerra, u.login, u.ativo,
+       u.nome_guerra, u.ativo,
        pg.nome_abrev AS posto_abrev,
        u.tipo_posto_grad_id,
        (EXTRACT(DOY FROM b.dia)::int - 1) / 7 + 1 AS semana,
@@ -120,7 +129,7 @@ controller.mapaAnual = async ano => {
      FROM base AS b
      INNER JOIN dgeo.usuario AS u ON u.uuid = b.usuario_uuid
      INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
-     GROUP BY b.usuario_uuid, u.nome, u.nome_guerra, u.login, u.ativo,
+     GROUP BY b.usuario_uuid, u.nome_guerra, u.ativo,
               pg.nome_abrev, u.tipo_posto_grad_id, semana
      ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra, semana`,
     { inicio: primeiroDia(ano), fim: ultimoDia(ano) }
@@ -133,23 +142,27 @@ controller.mapaAnual = async ano => {
  *
  * O denominador é o ano INTEIRO, e não os dias de presença: é isso que faz quem
  * chegou em março aparecer com 17% em vez de 100%. Quem só quer a média de quem
- * estava tem `dias_na_dgeo` ao lado para fazer a outra conta.
+ * estava tem `dias_na_dgeo` ao lado para fazer a outra conta, e é essa a conta
+ * que a tela usa para ponderar a média da Divisão.
+ *
+ * Sem `u.nome`, `u.login` e o posto por extenso, pelo mesmo motivo do
+ * `mapaAnual`: a tela não os desenha.
  */
 controller.resumoAnual = async ano => {
   return db.conn.any(
     `WITH base AS (${DISPONIBILIDADE_POR_DIA})
      SELECT
        b.usuario_uuid,
-       u.nome, u.nome_guerra, u.login, u.ativo,
-       pg.nome_abrev AS posto_abrev, pg.nome AS posto,
+       u.nome_guerra, u.ativo,
+       pg.nome_abrev AS posto_abrev,
        COUNT(*)::int AS dias_do_ano,
        COUNT(b.disponibilidade)::int AS dias_na_dgeo,
        ROUND(COALESCE(SUM(b.disponibilidade), 0)::numeric / COUNT(*), 1) AS aproveitamento
      FROM base AS b
      INNER JOIN dgeo.usuario AS u ON u.uuid = b.usuario_uuid
      INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
-     GROUP BY b.usuario_uuid, u.nome, u.nome_guerra, u.login, u.ativo,
-              pg.nome_abrev, pg.nome, u.tipo_posto_grad_id
+     GROUP BY b.usuario_uuid, u.nome_guerra, u.ativo,
+              pg.nome_abrev, u.tipo_posto_grad_id
      ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra`,
     { inicio: primeiroDia(ano), fim: ultimoDia(ano) }
   )
@@ -161,6 +174,10 @@ controller.resumoAnual = async ano => {
  * É o que alimenta a subseção 6.1 do RPCMTec. Os impedimentos vêm em lista, e
  * não concatenados: quem monta a frase é o gerador, e quem monta a tela é a
  * tela.
+ *
+ * ESTA MANTÉM `u.nome` E O POSTO POR EXTENSO, ao contrário das duas de cima. O
+ * documento escreve "1º Ten Pedro Martins" por extenso, e cortar as colunas das
+ * três de uma vez quebraria a 6.1 sem erro visível.
  */
 controller.resumoMensal = async (ano, mes) => {
   const inicio = inicioDoMes(ano, mes)

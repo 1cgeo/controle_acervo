@@ -1,4 +1,5 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
+import { reconciliar } from '@utils/reconciliar.js';
 import { formatCurrency, formatDate } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
@@ -24,19 +25,47 @@ import {
 import { permissoes } from '@store/auth-store.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
-function infoRow(label, value) {
-  return el('div', { className: 'detail-card__row' }, [
-    el('span', { className: 'detail-card__label', textContent: label }),
-    value instanceof Node
-      ? el('span', { className: 'detail-card__value' }, [value])
-      : el('span', { className: 'detail-card__value', textContent: value || '-' }),
-  ]);
+/**
+ * Linha rotulo/valor do cartao, com os dois nos guardados para repintura.
+ *
+ * Devolve os nos em vez de so a linha porque a ficha se RECARREGA a cada
+ * gravacao. Com os nos na mao, a recarga escreve o valor novo no mesmo no, e a
+ * tela nao se move. O rotulo tambem muda em um caso: a nota de credito vira
+ * "rateio" quando ha mais de uma.
+ *
+ * @param {string} rotulo
+ * @returns {{element:HTMLElement, label:HTMLElement, valor:HTMLElement}}
+ */
+function criarLinha(rotulo) {
+  const label = el('span', { className: 'detail-card__label', textContent: rotulo });
+  const valor = el('span', { className: 'detail-card__value' });
+  return {
+    element: el('div', { className: 'detail-card__row' }, [label, valor]),
+    label,
+    valor,
+  };
+}
+
+/** Uma parcela do rateio, como ela aparece na linha da nota de credito. */
+function textoRateio(a) {
+  return `${a.nota_credito_numero ?? `NC ${a.nota_credito_id}`}: ${formatCurrency(a.valor)}`;
 }
 
 /**
  * Pagina de detalhes de uma Nota de Empenho (#/notas_empenho/:id).
  * Cabecalho com os dados da NE e duas secoes com data-table:
  * liquidacoes e recebimentos de material, cada uma com criar/editar/excluir.
+ *
+ * A TELA SE MONTA UMA VEZ (2026-08-04). Ate aqui, `renderNota` limpava a raiz e
+ * criava as duas data-table dentro do `load()`. Como toda gravacao chama
+ * `load()`, editar uma liquidacao trocava todos os nos da tela: a ordenacao
+ * escolhida voltava ao padrao, o foco do teclado caia no body e o painel de
+ * historico saia da tela, porque ele era pendurado DEPOIS do primeiro load e o
+ * `clearChildren(root)` seguinte o levava junto.
+ *
+ * Agora o esqueleto (cabecalho, cartoes e as duas secoes) nasce uma vez, e o
+ * `load()` so repinta: escreve no no do valor e chama `table.update({ rows })`.
+ *
  * @param {HTMLElement} container
  * @param {{params:{id:string}, query:URLSearchParams}} ctx
  * @returns {Function} cleanup
@@ -44,8 +73,9 @@ function infoRow(label, value) {
 export async function renderNotaEmpenhoDetails(container, { params }) {
   const notaEmpenhoId = Number(params.id);
   let disposed = false;
-  let liquidacoesTable = null;
-  let recebimentosTable = null;
+  // Verdadeiro depois que o esqueleto entra na tela. Separa a PRIMEIRA carga
+  // (que ainda nao tem o que preservar) das recargas de gravacao.
+  let montado = false;
   // Liquidacao e recebimento seguem o corte do modulo: lancar e editar sao
   // operador, excluir e gerente. Quem so consulta ve as duas tabelas cheias.
   const pode = permissoes('orcamento');
@@ -54,8 +84,8 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   container.appendChild(root);
 
   function cleanupTables() {
-    if (liquidacoesTable) { liquidacoesTable._cleanup(); liquidacoesTable = null; }
-    if (recebimentosTable) { recebimentosTable._cleanup(); recebimentosTable = null; }
+    liquidacoesTable._cleanup();
+    recebimentosTable._cleanup();
   }
 
   // ---------------------------------------------------------------------------
@@ -272,157 +302,220 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   }
 
   // ---------------------------------------------------------------------------
-  // Render
+  // Esqueleto: montado UMA vez, e so repintado dali em diante
   // ---------------------------------------------------------------------------
-  function renderNota(nota) {
-    cleanupTables();
-    clearChildren(root);
+  const carregando = el('div', {
+    className: 'data-table__empty',
+    textContent: 'Carregando nota de empenho...',
+  });
+  root.appendChild(carregando);
 
-    // Header com botao voltar
-    root.appendChild(el('div', { className: 'page__header' }, [
-      el('div', {}, [
+  const titulo = el('h1', { className: 'page__title' });
+
+  const cabecalho = el('div', { className: 'page__header' }, [
+    el('div', {}, [
+      el('button', {
+        className: 'btn btn--text btn--sm',
+        type: 'button',
+        onClick: () => { location.hash = '/orcamento/notas_empenho'; },
+      }, [svgIcon(ICONS.arrowBack, 16), 'Voltar']),
+      titulo,
+    ]),
+  ]);
+
+  const linhaNumero = criarLinha('Número');
+  const linhaAno = criarLinha('Ano');
+  const linhaNc = criarLinha('Nota de crédito');
+  const linhaNd = criarLinha('ND (herdada da NC)');
+  const linhaEmpenhado = criarLinha('Empenhado');
+  const linhaAnulado = criarLinha('Anulado');
+  const linhaSaldo = criarLinha('Saldo a liquidar');
+
+  // O rateio por NC e uma LISTA dentro da linha. Ela vive num no proprio, para
+  // a recarga reconciliar as parcelas em vez de refazer o bloco inteiro.
+  const rateioLista = el('div');
+
+  const cartoes = el('div', { className: 'detail-cards' }, [
+    el('div', { className: 'detail-card' }, [
+      el('div', { className: 'detail-card__title', textContent: 'Dados da NE' }),
+      linhaNumero.element,
+      linhaAno.element,
+      linhaNc.element,
+      linhaNd.element,
+    ]),
+    el('div', { className: 'detail-card' }, [
+      el('div', { className: 'detail-card__title', textContent: 'Valores' }),
+      linhaEmpenhado.element,
+      linhaAnulado.element,
+      linhaSaldo.element,
+    ]),
+  ]);
+
+  // ---- Secao: Liquidacoes ----
+  // A tabela nasce vazia e FORA do load: criada de novo a cada gravacao, ela
+  // levava junto a busca, a ordenacao, a pagina atual e a selecao. O
+  // `update({ rows })` preserva os quatro.
+  const liquidacoesTable = createDataTable({
+    columns: [
+      {
+        key: 'valor_liquidado',
+        label: 'Valor liquidado',
+        sortable: true,
+        render: (row) => formatCurrency(row.valor_liquidado),
+      },
+      {
+        key: 'data',
+        label: 'Data',
+        sortable: true,
+        render: (row) => formatDate(row.data),
+      },
+      {
+        key: 'documento_ns',
+        label: 'Documento (NS)',
+        render: (row) => row.documento_ns || '-',
+      },
+    ],
+    rows: [],
+    pageSize: 10,
+    emptyMessage: 'Nenhuma liquidação registrada',
+    actions: [
+      ...(pode.operador ? [{
+        icon: ICONS.edit,
+        title: 'Editar liquidação',
+        onClick: (row) => editarLiquidacao(row),
+      }] : []),
+      ...(pode.gerente ? [{
+        icon: ICONS.delete,
+        title: 'Excluir liquidação',
+        variant: 'danger',
+        onClick: (row) => excluirLiquidacao(row),
+      }] : []),
+    ],
+  });
+
+  const secaoLiquidacoes = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Liquidações' }),
+      el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
         el('button', {
-          className: 'btn btn--text btn--sm',
+          className: 'btn btn--primary btn--sm',
           type: 'button',
-          onClick: () => { location.hash = '/orcamento/notas_empenho'; },
-        }, [svgIcon(ICONS.arrowBack, 16), 'Voltar']),
-        el('h1', { className: 'page__title', textContent: `Nota de empenho ${nota.numero || `#${nota.id}`}` }),
-      ]),
-    ]));
+          onClick: novaLiquidacao,
+        }, [svgIcon(ICONS.add, 14), 'Nova liquidação']),
+      ] : []),
+    ]),
+    liquidacoesTable.element,
+  ]);
 
-    // Cabecalho com os dados da NE
-    root.appendChild(el('div', { className: 'detail-cards' }, [
-      el('div', { className: 'detail-card' }, [
-        el('div', { className: 'detail-card__title', textContent: 'Dados da NE' }),
-        infoRow('Número', nota.numero),
-        infoRow('Ano', nota.ano != null ? String(nota.ano) : '-'),
-        infoRow(
-          (nota.notas_credito && nota.notas_credito.length > 1) ? 'Notas de crédito (rateio)' : 'Nota de crédito',
-          (nota.notas_credito && nota.notas_credito.length)
-            ? el('div', {}, nota.notas_credito.map(a => el('div', {
-              textContent: `${a.nota_credito_numero ?? `NC ${a.nota_credito_id}`}: ${formatCurrency(a.valor)}`,
-            })))
-            : nota.nota_credito_numero,
-        ),
-        infoRow('ND (herdada da NC)', nota.cod_nd ? (nota.nd_nome ? `${nota.cod_nd} - ${nota.nd_nome}` : nota.cod_nd) : '-'),
-      ]),
-      el('div', { className: 'detail-card' }, [
-        el('div', { className: 'detail-card__title', textContent: 'Valores' }),
-        infoRow('Empenhado', formatCurrency(nota.valor_empenhado)),
-        infoRow('Anulado', formatCurrency(nota.valor_anulado)),
-        infoRow('Saldo a liquidar', formatCurrency(nota.saldo_a_liquidar)),
-      ]),
-    ]));
+  // ---- Secao: Recebimentos de material ----
+  const recebimentosTable = createDataTable({
+    columns: [
+      {
+        key: 'material',
+        label: 'Material',
+        render: (row) => row.material || '-',
+      },
+      {
+        key: 'prazo_entrega',
+        label: 'Prazo de entrega',
+        render: (row) => row.prazo_entrega || '-',
+      },
+      {
+        key: 'situacao',
+        label: 'Situação',
+        render: (row) => row.situacao || '-',
+      },
+    ],
+    rows: [],
+    pageSize: 10,
+    emptyMessage: 'Nenhum recebimento de material registrado',
+    actions: [
+      ...(pode.operador ? [{
+        icon: ICONS.edit,
+        title: 'Editar recebimento',
+        onClick: (row) => editarRecebimento(row),
+      }] : []),
+      ...(pode.gerente ? [{
+        icon: ICONS.delete,
+        title: 'Excluir recebimento',
+        variant: 'danger',
+        onClick: (row) => excluirRecebimento(row),
+      }] : []),
+    ],
+  });
 
-    // ---- Secao: Liquidacoes ----
-    liquidacoesTable = createDataTable({
-      columns: [
-        {
-          key: 'valor_liquidado',
-          label: 'Valor liquidado',
-          sortable: true,
-          render: (row) => formatCurrency(row.valor_liquidado),
-        },
-        {
-          key: 'data',
-          label: 'Data',
-          sortable: true,
-          render: (row) => formatDate(row.data),
-        },
-        {
-          key: 'documento_ns',
-          label: 'Documento (NS)',
-          render: (row) => row.documento_ns || '-',
-        },
-      ],
-      rows: nota.liquidacoes || [],
-      pageSize: 10,
-      emptyMessage: 'Nenhuma liquidação registrada',
-      actions: [
-        ...(pode.operador ? [{
-          icon: ICONS.edit,
-          title: 'Editar liquidação',
-          onClick: (row) => editarLiquidacao(row),
-        }] : []),
-        ...(pode.gerente ? [{
-          icon: ICONS.delete,
-          title: 'Excluir liquidação',
-          variant: 'danger',
-          onClick: (row) => excluirLiquidacao(row),
-        }] : []),
-      ],
+  const secaoRecebimentos = el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Recebimentos de material' }),
+      el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
+        el('button', {
+          className: 'btn btn--primary btn--sm',
+          type: 'button',
+          onClick: novoRecebimento,
+        }, [svgIcon(ICONS.add, 14), 'Novo recebimento']),
+      ] : []),
+    ]),
+    recebimentosTable.element,
+  ]);
+
+  // ---------------------------------------------------------------------------
+  // Repintura
+  // ---------------------------------------------------------------------------
+  /** Escreve a linha da nota de credito: rateio com varias, ou o numero so. */
+  function pintarNotaCredito(nota) {
+    const rateio = nota.notas_credito || [];
+    linhaNc.label.textContent = rateio.length > 1
+      ? 'Notas de crédito (rateio)'
+      : 'Nota de crédito';
+
+    if (!rateio.length) {
+      // Sem rateio a linha e texto: escrever nela solta o no da lista, que volta
+      // sozinho se a NE ganhar rateio depois.
+      linhaNc.valor.textContent = nota.nota_credito_numero || '-';
+      return;
+    }
+
+    if (rateioLista.parentNode !== linhaNc.valor) {
+      linhaNc.valor.replaceChildren(rateioLista);
+    }
+    reconciliar(rateioLista, rateio, {
+      chave: (a, i) => a.nota_credito_id ?? i,
+      criar: (a) => el('div', { textContent: textoRateio(a) }),
+      atualizar: (no, a) => { no.textContent = textoRateio(a); },
     });
+  }
 
-    root.appendChild(el('div', { className: 'dashboard-section' }, [
-      el('div', { className: 'dashboard-section__header' }, [
-        el('h2', { className: 'dashboard-section__title', textContent: 'Liquidações' }),
-        el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
-          el('button', {
-            className: 'btn btn--primary btn--sm',
-            type: 'button',
-            onClick: novaLiquidacao,
-          }, [svgIcon(ICONS.add, 14), 'Nova liquidação']),
-        ] : []),
-      ]),
-      liquidacoesTable.element,
-    ]));
+  function pintarNota(nota) {
+    titulo.textContent = `Nota de empenho ${nota.numero || `#${nota.id}`}`;
 
-    // ---- Secao: Recebimentos de material ----
-    recebimentosTable = createDataTable({
-      columns: [
-        {
-          key: 'material',
-          label: 'Material',
-          render: (row) => row.material || '-',
-        },
-        {
-          key: 'prazo_entrega',
-          label: 'Prazo de entrega',
-          render: (row) => row.prazo_entrega || '-',
-        },
-        {
-          key: 'situacao',
-          label: 'Situação',
-          render: (row) => row.situacao || '-',
-        },
-      ],
-      rows: nota.recebimentos || [],
-      pageSize: 10,
-      emptyMessage: 'Nenhum recebimento de material registrado',
-      actions: [
-        ...(pode.operador ? [{
-          icon: ICONS.edit,
-          title: 'Editar recebimento',
-          onClick: (row) => editarRecebimento(row),
-        }] : []),
-        ...(pode.gerente ? [{
-          icon: ICONS.delete,
-          title: 'Excluir recebimento',
-          variant: 'danger',
-          onClick: (row) => excluirRecebimento(row),
-        }] : []),
-      ],
-    });
+    linhaNumero.valor.textContent = nota.numero || '-';
+    linhaAno.valor.textContent = nota.ano != null ? String(nota.ano) : '-';
+    pintarNotaCredito(nota);
+    linhaNd.valor.textContent = nota.cod_nd
+      ? (nota.nd_nome ? `${nota.cod_nd} - ${nota.nd_nome}` : nota.cod_nd)
+      : '-';
+    linhaEmpenhado.valor.textContent = formatCurrency(nota.valor_empenhado);
+    linhaAnulado.valor.textContent = formatCurrency(nota.valor_anulado);
+    linhaSaldo.valor.textContent = formatCurrency(nota.saldo_a_liquidar);
 
-    root.appendChild(el('div', { className: 'dashboard-section' }, [
-      el('div', { className: 'dashboard-section__header' }, [
-        el('h2', { className: 'dashboard-section__title', textContent: 'Recebimentos de material' }),
-        el('div', { className: 'dashboard-section__controls' }, pode.operador ? [
-          el('button', {
-            className: 'btn btn--primary btn--sm',
-            type: 'button',
-            onClick: novoRecebimento,
-          }, [svgIcon(ICONS.add, 14), 'Novo recebimento']),
-        ] : []),
-      ]),
-      recebimentosTable.element,
-    ]));
+    if (!montado) {
+      // Troca a mensagem de carga pelo esqueleto, uma vez so. O historico e
+      // pendurado DEPOIS disto, e por isso nunca mais e removido.
+      root.replaceChildren(cabecalho, cartoes, secaoLiquidacoes, secaoRecebimentos);
+      montado = true;
+    }
+
+    liquidacoesTable.update({ rows: nota.liquidacoes || [], loading: false });
+    recebimentosTable.update({ rows: nota.recebimentos || [], loading: false });
   }
 
   async function load() {
-    cleanupTables();
-    clearChildren(root);
-    root.appendChild(el('div', { className: 'data-table__empty', textContent: 'Carregando nota de empenho...' }));
+    if (montado) {
+      // Recarga silenciosa: a tabela que ja tem linhas fica na tela e so avisa
+      // que esta carregando, por classe. Ver `render` do data-table.
+      liquidacoesTable.update({ loading: true });
+      recebimentosTable.update({ loading: true });
+    }
 
     let nota;
     let liquidacoes = [];
@@ -435,8 +528,16 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       ]);
     } catch (err) {
       if (disposed) return;
-      clearChildren(root);
       showError(err.message || 'Erro ao carregar a nota de empenho');
+      if (montado) {
+        // A ficha ja esta na tela. Trocar tudo por uma mensagem de erro apagaria
+        // o trabalho de quem so perdeu a rede por um instante: o aviso ja saiu
+        // no toast, e a tela segue mostrando o ultimo estado bom.
+        liquidacoesTable.update({ loading: false });
+        recebimentosTable.update({ loading: false });
+        return;
+      }
+      clearChildren(root);
       root.appendChild(el('div', { className: 'data-table__empty', textContent: err.message || 'Nota de empenho não encontrada' }));
       root.appendChild(el('button', {
         className: 'btn btn--secondary',
@@ -452,7 +553,7 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     nota.liquidacoes = liquidacoes || nota.liquidacoes || [];
     nota.recebimentos = recebimentos || nota.recebimentos || [];
 
-    renderNota(nota);
+    pintarNota(nota);
   }
 
   await load();
@@ -464,8 +565,11 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   // ficha mostra, e é o módulo em que "qual era o valor antes" é a pergunta mais
   // provável do sistema inteiro.
   //
-  // Fora do `load` de propósito: ele se remonta a cada salvamento, e dentro dele
-  // o histórico seria destruído e refeito a cada edição.
+  // Fora do `load` de propósito: dentro dele o histórico seria destruído e
+  // refeito a cada edição. Estar fora não bastava enquanto o `load` limpava a
+  // raiz: o painel era pendurado depois do primeiro load, e a primeira gravação
+  // o arrancava da tela. Hoje a raiz só se limpa na falha da PRIMEIRA carga,
+  // quando o histórico ainda nem existe.
   const historico = criarHistorico({
     modulo: 'orcamento',
     entidade: 'nota_empenho',

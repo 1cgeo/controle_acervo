@@ -244,6 +244,54 @@
   width: 80%;
 }
 
+/* Altura reservada durante o esqueleto.
+   O componente MEDE a altura do container antes de trocar a tabela pelo
+   esqueleto e escreve o valor na variável. Sem a reserva, uma tela de 25 linhas
+   caía de cerca de 1.000 px para cerca de 160 px e voltava em seguida, e era a
+   causa principal do "a tela fica se movendo" (medido em 2026-08-04).
+   O valor vive numa variável, e não no atributo style, para a regra continuar
+   aqui: o JS entrega o número, a CSS decide o que fazer com ele. */
+.data-table-scroll--carregando {
+  min-height: var(--data-table-altura-reservada, 0);
+}
+
+/* Recarga silenciosa: a tabela que já tem linhas continua na tela, e só avisa
+   que está carregando. Nada aqui muda o tamanho de caixa nenhuma, de propósito:
+   é o que separa "avisar" de "empurrar a tela". */
+.data-table-wrapper--recarregando {
+  position: relative;
+}
+
+.data-table-wrapper--recarregando .data-table-scroll {
+  opacity: 0.6;
+  transition: opacity var(--transition-normal);
+}
+
+.data-table-wrapper--recarregando::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30%;
+  height: 2px;
+  background: var(--color-primary);
+  animation: data-table-progresso 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes data-table-progresso {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(433%); }
+}
+
+/* Movimento reduzido: a barra fica parada e visível, e o aviso continua de pé. */
+@media (prefers-reduced-motion: reduce) {
+  .data-table-wrapper--recarregando::after {
+    animation: none;
+    width: 100%;
+  }
+}
+
 /* Table empty state */
 .data-table__empty {
   text-align: center;
@@ -252,7 +300,10 @@
   font-size: var(--font-size-sm);
 }
 
-/* Responsive table */
+/* Responsive table.
+   A rolagem horizontal continua sendo daqui. A reserva de altura entra por
+   min-height (regra .data-table-scroll--carregando acima), que não conflita com
+   overflow-x. */
 .data-table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
