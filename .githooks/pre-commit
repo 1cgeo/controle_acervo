@@ -1,14 +1,66 @@
 #!/bin/sh
-# Guard anti-vazamento do SCA, fail-closed.
+# Guards de pre-commit do SCA, fail-closed.
 #
 # Este repositorio e PUBLICO. O hook barra o commit se achar caminho de maquina,
-# UNC, IP interno ou segredo com valor em arquivo versionado.
+# UNC, IP interno ou segredo com valor em arquivo versionado, e barra tambem
+# arquivo .js que nao compila.
 #
 # Ativacao numa maquina nova (o git NAO versiona .git/hooks, so esta pasta):
 #     git config core.hooksPath .githooks
 #
 # Escape de emergencia: git commit --no-verify. Use so quando souber por que.
 
+# ---------------------------------------------------------------------------
+# 1. Sintaxe dos .js que entram no commit
+# ---------------------------------------------------------------------------
+# Existe por um defeito real, de 2026-08-04: uma crase escrita dentro de um
+# comentario SQL, num template literal, FECHOU a string e quebrou o
+# `gerencia_ctrl.js` inteiro. O servidor parou de subir, e a mensagem apontava
+# outro arquivo (o que fazia o `require`), o que atrasou o diagnostico.
+#
+# O erro e de PARSE, entao ele nao aparece em revisao de diff nem em teste que
+# importe o modulo: a suite morre na carga. E derruba o servico inteiro por
+# causa de um comentario.
+#
+# So os arquivos DO COMMIT, e nao o repo todo: 0,42 s por arquivo contra 16 s
+# para varrer os 665 .js versionados. Guard que custa caro deixa de ser rodado.
+if command -v node >/dev/null 2>&1; then
+  # -z e -0 para sobreviver a nome com espaco. ACM: acrescentado, copiado,
+  # modificado. Arquivo apagado nao se compila.
+  quebrados=""
+  while IFS= read -r arquivo; do
+    [ -z "$arquivo" ] && continue
+    case "$arquivo" in node_modules/*|*/node_modules/*) continue ;; esac
+    [ -f "$arquivo" ] || continue
+    if ! node --check "$arquivo" >/dev/null 2>&1; then
+      quebrados="$quebrados $arquivo"
+    fi
+  done <<EOF
+$(git diff --cached --name-only --diff-filter=ACM -- '*.js')
+EOF
+
+  if [ -n "$quebrados" ]; then
+    echo ""
+    echo "COMMIT ABORTADO: arquivo .js que nao compila."
+    for arquivo in $quebrados; do
+      echo ""
+      echo "  --> $arquivo"
+      node --check "$arquivo" 2>&1 | head -5
+    done
+    echo ""
+    echo "Causa comum: crase dentro de template literal (comentario SQL com"
+    echo "\`coluna\` fecha a string). Escreva sem crase, ou escape com \\\`."
+    exit 1
+  fi
+else
+  echo "COMMIT ABORTADO: nao achei o node para checar a sintaxe dos .js."
+  echo "Instale o Node ou rode com --no-verify sabendo o que faz."
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Guard anti-vazamento
+# ---------------------------------------------------------------------------
 # Sem Python, o hook FALHA em vez de deixar passar em silencio. Guard que se
 # desliga sozinho quando falta dependencia nao e guard.
 for py in python python3 py; do

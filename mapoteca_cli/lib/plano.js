@@ -107,16 +107,38 @@ function partirItem (item) {
   return { corpo, local }
 }
 
-function conferirAnexo (anexo) {
+/**
+ * @param {Object} anexo
+ * @param {string|null} baseDir - diretorio do PLANO, para resolver o relativo.
+ *
+ * O caminho relativo resolve contra o PLANO, e nao contra o diretorio corrente.
+ * O plano e um artefato revisavel que anda junto com os anexos (o DIEx e os
+ * ofícios ficam na mesma pasta), entao "Oficio_1828.pdf" ao lado dele e o que
+ * quem escreve o plano espera. Resolver contra o CWD reprovava um plano correto
+ * so porque o comando foi chamado de outra pasta.
+ *
+ * Caminho ABSOLUTO passa intacto, e sem `baseDir` o comportamento e o antigo.
+ */
+function conferirAnexo (anexo, baseDir = null) {
   const erros = []
-  const caminho = anexo && (anexo.arquivo || anexo.caminho)
+  const declarado = anexo && (anexo.arquivo || anexo.caminho)
 
-  if (!caminho) {
+  if (!declarado) {
     erros.push('anexo sem a chave "arquivo" (caminho do arquivo a subir)')
     return { erros }
   }
+
+  const caminho = (baseDir && !path.isAbsolute(declarado))
+    ? path.resolve(baseDir, declarado)
+    : declarado
+
   if (!fs.existsSync(caminho)) {
-    erros.push(`anexo nao encontrado no disco: ${caminho}`)
+    erros.push(
+      `anexo nao encontrado no disco: ${declarado}` +
+      (baseDir && !path.isAbsolute(declarado)
+        ? ` (procurado em ${caminho}, ao lado do plano)`
+        : '')
+    )
     return { erros }
   }
 
@@ -146,7 +168,7 @@ function conferirAnexo (anexo) {
  * corpos ja normalizados pelo proprio Joi (defaults aplicados, tipos coeridos),
  * que e exatamente o que sera enviado depois.
  */
-function validar (plano, models) {
+function validar (plano, models, baseDir = null) {
   const erros = []
   const avisos = []
 
@@ -239,7 +261,7 @@ function validar (plano, models) {
   // --- anexos --------------------------------------------------------------
   const anexos = []
   for (const bruto of (Array.isArray(plano.anexos) ? plano.anexos : [])) {
-    const r = conferirAnexo(bruto)
+    const r = conferirAnexo(bruto, baseDir)
     if (r.erros.length) {
       erros.push(...r.erros.map(e => `anexo: ${e}`))
       continue

@@ -91,7 +91,7 @@ dotenv.config({
 // 1.22.0 a coluna não existe: a consulta do consumo mensal quebra, e com ela a
 // tela de consumo da mapoteca e as subseções 7.2 e 7.3 do RPCMTec.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.23.0'
+const MIN_DATABASE_VERSION = '1.24.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

@@ -9,6 +9,8 @@
 //   mapoteca pedido situacao  --id 42 --situacao 5 --data-atendimento 2026-07-24
 //   mapoteca pedido anexar    --id 42 --file DIEx_123.pdf
 //   mapoteca pedido anexos    --id 42
+//   mapoteca pedido anexo baixar --id 7 --para conferir.pdf
+//   mapoteca pedido anexo apagar --ids 7 --confirmar 7
 //   mapoteca imprimir --item 88 --qtd 5        registra a impressao do item
 //
 // `cadastrar` e o verbo grande: um pedido nasce de um documento, e cadastra-lo
@@ -25,6 +27,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const crypto = require('crypto')
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')
@@ -251,6 +254,131 @@ async function anexos (args, cfg) {
 }
 
 // ---------------------------------------------------------------------------
+// anexo baixar / anexo apagar
+// ---------------------------------------------------------------------------
+//
+// As duas rotas existiam desde 2026-07-30 e o CLI nao as alcancava, entao
+// conferir um anexo exigia sair dele e chamar HTTP na mao com o token do cache.
+//
+// Sem o download nao se prova o CONTEUDO do que subiu, so o TAMANHO, e tamanho e
+// prova fraca: dois PDF diferentes com o mesmo numero de bytes passam. Por isso
+// o baixar imprime o sha256 do que chegou.
+
+/**
+ * `mapoteca pedido anexo baixar --id <anexoId> [--para <arquivo>]`
+ *
+ * Sem `--para`, grava com o nome que o servidor devolve no Content-Disposition,
+ * e recusa sobrescrever arquivo que ja existe: baixar para conferir nao pode
+ * apagar o original com que se compara.
+ */
+async function anexoBaixar (args, cfg) {
+  const flags = args.flags
+  const id = argsLib.exigir(flags, 'id', 'id do ANEXO (nao o do pedido)')
+  const destinoPedido = argsLib.texto(flags, 'para', null)
+
+  if (flags['dry-run']) {
+    return {
+      texto: `[dry-run] nada foi baixado. Seria: GET /api${CAMINHO}/anexo/${id}/download`
+    }
+  }
+
+  const r = await http.autenticada(
+    cfg, 'GET', `${CAMINHO}/anexo/${encodeURIComponent(id)}/download`,
+    { binario: true }
+  )
+
+  const bytes = r.bytes
+  const destino = destinoPedido || `anexo_${id}`
+
+  if (fs.existsSync(destino)) {
+    const erro = new Error(
+      `"${destino}" ja existe e nao foi sobrescrito. Escolha outro nome com --para.`
+    )
+    erro.jaFormatado = true
+    throw erro
+  }
+
+  fs.writeFileSync(destino, bytes)
+  const sha = crypto.createHash('sha256').update(bytes).digest('hex')
+
+  return {
+    texto: `anexo ${id} gravado em ${destino} (${bytes.length} bytes)\nsha256    ${sha}`,
+    avisos: [
+      'Compare o sha256 com o do arquivo de origem para provar o CONTEUDO. ' +
+      'Tamanho igual nao prova nada: dois PDF diferentes podem ter os mesmos bytes de tamanho.'
+    ]
+  }
+}
+
+/**
+ * `mapoteca pedido anexo apagar --ids <a,b> --confirmar <a,b>`
+ *
+ * Mesma convencao do `deletar` do CRUD: a confirmacao repete a lista INTEIRA,
+ * porque confirmar "42" quando se pediu "42,43" e exatamente o acidente que o
+ * guardrail existe para impedir.
+ */
+async function anexoApagar (args, cfg) {
+  const flags = args.flags
+  const ids = (argsLib.lista(flags.ids) || []).map(v => {
+    const n = Number(v)
+    if (!Number.isInteger(n) || n <= 0) {
+      const erro = new Error(`--ids aceita id inteiro positivo, e veio "${v}".`)
+      erro.jaFormatado = true
+      throw erro
+    }
+    return n
+  })
+
+  if (!ids.length) {
+    const erro = new Error('anexo apagar exige --ids com ao menos um id de anexo.')
+    erro.jaFormatado = true
+    throw erro
+  }
+
+  const confirmacao = argsLib.lista(flags.confirmar) || []
+  const bate = confirmacao.length === ids.length &&
+    confirmacao.every((v, i) => Number(v) === ids[i])
+
+  if (!bate) {
+    const erro = new Error([
+      `Exclusao de ${ids.length} anexo(s) e IRREVERSIVEL e nao foi confirmada.`,
+      'O byte do anexo vive no banco: apagado, nao ha de onde recuperar.',
+      'Para apagar de fato, repita a mesma lista em --confirmar:',
+      `  mapoteca pedido anexo apagar --ids ${ids.join(',')} --confirmar ${ids.join(',')}`,
+      'Para so ver o que aconteceria: acrescente --dry-run.'
+    ].join('\n'))
+    erro.jaFormatado = true
+    throw erro
+  }
+
+  if (flags['dry-run']) {
+    return {
+      texto: `[dry-run] nada foi apagado. Seriam ${ids.length}: ` +
+        ids.map(i => `DELETE /api${CAMINHO}/anexo/${i}`).join(', ')
+    }
+  }
+
+  const apagados = []
+  for (const id of ids) {
+    await http.autenticada(cfg, 'DELETE', `${CAMINHO}/anexo/${encodeURIComponent(id)}`)
+    apagados.push(id)
+  }
+
+  return { texto: `anexo(s) apagado(s): ${apagados.join(', ')}` }
+}
+
+/** Roteia `pedido anexo <baixar|apagar>`. */
+async function anexo (args, cfg) {
+  const acao = args._[2]
+  if (acao === 'baixar') return anexoBaixar(args, cfg)
+  if (acao === 'apagar') return anexoApagar(args, cfg)
+  throw new Error(
+    `Acao desconhecida "${acao || ''}" para anexo. Use: baixar, apagar. ` +
+    'Para enviar, o verbo e `pedido anexar`; para listar, `pedido anexos`.'
+  )
+}
+
+// ---------------------------------------------------------------------------
 // imprimir (registro da impressao de um item)
 // ---------------------------------------------------------------------------
 
@@ -413,7 +541,9 @@ async function cadastrar (args, cfg) {
 
   const m = models()
   const bruto = planoLib.ler(caminhoPlano)
-  const validado = planoLib.validar(bruto, m)
+  // O diretorio do PLANO resolve o caminho relativo do anexo: eles andam
+  // juntos, e o comando pode ser chamado de qualquer pasta.
+  const validado = planoLib.validar(bruto, m, path.dirname(path.resolve(caminhoPlano)))
 
   if (!validado.ok) {
     const erro = new Error([
@@ -853,7 +983,7 @@ async function mover (args, cfg) {
 
 // ---------------------------------------------------------------------------
 
-const VERBOS = { cadastrar, itens, situacao, corrigir, mover, anexar, anexos, imprimir }
+const VERBOS = { cadastrar, itens, situacao, corrigir, mover, anexar, anexos, anexo, imprimir }
 
 async function executar (args, cfg) {
   // `mapoteca imprimir` e verbo de topo; os demais sao subcomandos de pedido.

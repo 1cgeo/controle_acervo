@@ -165,7 +165,7 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (16, 'Rede de transporte', 8),
 (17, 'Mapa de geografia humana', 7),
 (18, 'Levantamento topográfico', 13),
-(19, 'Carta ortoimagem de OM', 3),
+(19, 'Carta Ortoimagem de SARP', 7),
 (20, 'Conjunto de dados geoespaciais vetoriais - MUVD', 1),
 (21, 'Modelo Digital de Superfície - TREx', 5),
 (22, 'Conjunto de dados geoespaciais vetoriais para Ortoimagem - ET-EDGV 3.0', 11),
@@ -173,9 +173,10 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (24, 'Carta Topográfica Militar', 2),
 (25, 'Modelo 3D Tiles', 9),
 (26, 'Modelo 3D', 9),
-(27, 'Carta Ortoimagem Especial', 3),
+(27, 'Carta Ortoimagem Especial', 7),
 (28, 'Carta Topográfica Não-SCN', 2),
-(29, 'Carta Aeronáutica', 7);
+(29, 'Carta Aeronáutica', 7),
+(30, 'CDGV Especial', 8);
 
 -- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).

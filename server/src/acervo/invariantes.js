@@ -245,8 +245,9 @@ const INVARIANTES = [
        from acervo.versao v join acervo.produto p on p.id=v.produto_id
        where (p.tipo_produto_id=1 and v.subtipo_produto_id not in (1,7,8,20,22,23))
           or (p.tipo_produto_id=2 and v.subtipo_produto_id not in (2,12,24,28))
-          or (p.tipo_produto_id=3 and v.subtipo_produto_id not in (3,19,27))
-          or (p.tipo_produto_id=7 and v.subtipo_produto_id not in (13,14,15,16,17,29))
+          or (p.tipo_produto_id=3 and v.subtipo_produto_id not in (3))
+          or (p.tipo_produto_id=7 and v.subtipo_produto_id not in (13,14,15,16,17,19,27,29))
+          or (p.tipo_produto_id=8 and v.subtipo_produto_id not in (16,23,30))
        group by 1,2`
   },
   // A SÉRIE, e não a linha. O 3c e o 3d olham uma versão isolada (data invertida

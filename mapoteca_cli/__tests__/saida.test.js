@@ -128,6 +128,15 @@ test('lista vazia diz que esta vazia, em vez de sair em branco', () => {
   assert.strictEqual(saida.lista([], {}).texto, '(nenhum registro)')
 })
 
+// Quem le com os olhos quer a frase; quem processa em lote quer JSON valido. A
+// lista vazia respondia a frase nos DOIS casos, e o `JSON.parse` de quem
+// automatiza quebrava justamente na consulta que nao achou nada.
+test('lista vazia em --json sai como [], e nao como frase', () => {
+  const { texto } = saida.lista([], { formato: 'json' })
+  assert.strictEqual(texto, '[]')
+  assert.deepStrictEqual(JSON.parse(texto), [])
+})
+
 test('o rodape conta registros e quantas colunas foram omitidas', () => {
   const { texto } = saida.lista(PEDIDOS, { formato: 'tsv', campos: ['id'] })
   assert.ok(texto.includes('2 registros'))
