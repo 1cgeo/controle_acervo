@@ -84,8 +84,24 @@ controller.getOrderStatusDistribution = async (ano) => {
 
     const completedOrders = statusCounts.find(s => s.situacao_pedido_id === SITUACAO_PEDIDO.CONCLUIDO) || { quantidade: 0 };
 
+    // Pendente é tudo que NÃO fechou: nem concluído, nem cancelado. Era uma
+    // lista escolhida a dedo (pré-cadastramento, documento recebido, em
+    // andamento), e ela deixava "Aguardando produção" e "Remetido" fora de
+    // TODO cartão. Medido na produção em 2026, com cliente militar: 129
+    // pedidos = 98 concluídos + 25 em andamento + 5 aguardando produção + 1
+    // remetido. A tela mostrava 129 / 98 / 25 e escondia 6.
+    //
+    // A regra é por exclusão, e não por lista, para que situação nova no
+    // domínio entre em pendentes sozinha, em vez de sumir em silêncio.
+    //
+    // Com isso vale total = concluídos + pendentes, desde que o ano não tenha
+    // pedido CANCELADO: o cancelado conta no total e em nenhum dos dois
+    // cartões, de propósito, porque não é fila nem entrega. O gráfico de
+    // situações ao lado é quem o mostra.
+    const SITUACOES_FECHADAS = [SITUACAO_PEDIDO.CONCLUIDO, SITUACAO_PEDIDO.CANCELADO];
+
     const pendingOrders = statusCounts
-      .filter(s => [SITUACAO_PEDIDO.PRE_CADASTRAMENTO, SITUACAO_PEDIDO.DOCUMENTO_RECEBIDO, SITUACAO_PEDIDO.EM_ANDAMENTO].includes(s.situacao_pedido_id))
+      .filter(s => !SITUACOES_FECHADAS.includes(s.situacao_pedido_id))
       .reduce((sum, curr) => sum + parseInt(curr.quantidade), 0);
 
     return {
@@ -271,7 +287,13 @@ controller.getPendingOrders = async () => {
       sp.nome AS situacao_nome,
       p.documento_solicitacao,
       (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos,
-      CASE 
+      -- Idade do pedido em dias. E o criterio de ordem desta lista (ver o
+      -- ORDER BY), e sai como coluna para a tela mostrar o mesmo numero que
+      -- ordenou, em vez de recalcular a data no navegador.
+      -- O ::date vale antes e depois da migracao 2026-07-26, que passa a
+      -- coluna de TIMESTAMPTZ para DATE.
+      (current_date - p.data_pedido::date)::int AS dias_aberto,
+      CASE
         WHEN p.prazo IS NULL THEN NULL
         WHEN current_date > p.prazo THEN true
         ELSE false
@@ -285,10 +307,13 @@ controller.getPendingOrders = async () => {
     JOIN mapoteca.situacao_pedido sp ON p.situacao_pedido_id = sp.code
     WHERE p.situacao_pedido_id NOT IN (${SITUACAO_PEDIDO.CONCLUIDO}, ${SITUACAO_PEDIDO.CANCELADO})
       AND ${PEDIDO_MILITAR('p.cliente_id')}
-    ORDER BY
-      CASE WHEN p.prazo IS NULL THEN 1 ELSE 0 END, -- nulls last
-      p.prazo,
-      p.data_pedido
+    -- Por IDADE (o mais antigo primeiro), e NUNCA por prazo. Medido na
+    -- producao: so 33 dos 164 pedidos tem prazo preenchido, e nenhum pedido
+    -- aberto esta vencido hoje. Ordenar por prazo poe no topo a minoria que
+    -- alguem preencheu, e uma fila de "atrasados" mostraria zero por campo em
+    -- branco, nao por bom desempenho. A idade existe para todo pedido.
+    -- O id desempata, para a ordem nao variar entre duas chamadas iguais.
+    ORDER BY p.data_pedido, p.id
   `);
 };
 
@@ -505,7 +530,7 @@ controller.getResumoAnual = async (ano) => {
   const row = await db.conn.one(
     `
     SELECT p.total_pedidos, p.oms_distintas_count, p.operacoes_distintas_count,
-           e.total_entregas, m.custo_manutencao_total
+           e.total_entregas, m.manutencoes_count, m.custo_manutencao_total
     FROM (
       SELECT
         COUNT(*)::int AS total_pedidos,
@@ -513,6 +538,12 @@ controller.getResumoAnual = async (ano) => {
         (COUNT(DISTINCT operacao) FILTER (WHERE operacao IS NOT NULL AND operacao <> ''))::int AS operacoes_distintas_count
       FROM mapoteca.pedido
       WHERE ${filtroAno("data_pedido")}
+        -- Recorte MILITAR, igual ao das outras metricas de pedido deste
+        -- arquivo. Sem ele, este bloco era o unico que somava o cliente civil,
+        -- e o Resumo dizia 162 pedidos em 2026 enquanto a aba Pedidos ao lado
+        -- dizia 129 (129 militares + 33 civis, 29 deles de LAI). O civil tem
+        -- relatorio proprio. Ver o comentario do topo do arquivo.
+        AND ${PEDIDO_MILITAR('cliente_id')}
     ) p
     CROSS JOIN (
       SELECT COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_entregas
@@ -521,7 +552,14 @@ controller.getResumoAnual = async (ano) => {
       WHERE ${FILTRO_ENTREGUE_ANO}
     ) e
     CROSS JOIN (
-      SELECT COALESCE(SUM(valor), 0)::float8 AS custo_manutencao_total
+      -- A CONTAGEM de linhas sai junto da soma, e o COALESCE saiu de proposito.
+      -- Ano sem nenhuma manutencao registrada devolve NULL, e a tela diz "sem
+      -- registro"; ano com registro somando zero devolve 0 e mostra R$ 0,00.
+      -- Sao coisas diferentes: mapoteca.manutencao_plotter esta VAZIA na
+      -- producao desde 2024-09-07, entao o R$ 0,00 do cartao era ausencia de
+      -- fonte, e nao custo medido.
+      SELECT COUNT(*)::int AS manutencoes_count,
+             SUM(valor)::float8 AS custo_manutencao_total
       FROM mapoteca.manutencao_plotter
       WHERE ${filtroAno("data_manutencao")}
     ) m
@@ -529,7 +567,16 @@ controller.getResumoAnual = async (ano) => {
     { ano, situacoesEntregue: SITUACOES_ENTREGUE }
   );
 
-  return { ano, ...row };
+  return {
+    ano,
+    ...row,
+    // Null só quando NÃO HÁ linha. Havendo linha, a soma vale, inclusive zero.
+    // O segundo caso cobre a linha com valor nulo, que somaria NULL e seria
+    // confundida com ausência de registro.
+    custo_manutencao_total: row.manutencoes_count > 0
+      ? Number(row.custo_manutencao_total || 0)
+      : null
+  };
 };
 
 // Entregas por mês (reproduz a tabela-resumo mensal da aba Detalhado:

@@ -19,9 +19,11 @@ import { showError, showWarning } from '@utils/toast.js';
  * details page (add/edit item).
  */
 
+// A mensagem do estado vazio da busca. O nome da constante guarda a regra do
+// repositório; o TEXTO fala com o operador, e por isso não cita o código dela.
 const RN08_MESSAGE =
-  'Produto não encontrado no acervo. Cadastre o produto no acervo (plugin QGIS) ' +
-  'antes de criar o pedido — a mapoteca só entrega produtos do catálogo.';
+  'Produto não encontrado no acervo. A mapoteca só entrega produto do catálogo. ' +
+  'Cadastre o produto no acervo pelo plugin do QGIS antes de criar o pedido.';
 
 const PAGE_LIMIT = 5;
 
@@ -150,10 +152,23 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
     }, [svgIcon(ICONS.search, 14), 'Trocar produto']));
   }
 
+  // A versão certa é a mais recente COM ARQUIVO. Versão sem arquivo não se
+  // entrega: a mapoteca não tem o que imprimir. Medido na produção em
+  // 2026-08-04: 424 das 7.572 versões do acervo não têm arquivo, e 17 itens de
+  // pedido apontaram versão vazia havendo outra versão do mesmo produto com
+  // arquivo. Os 17 foram impressos.
+  //
+  // O servidor manda a lista em versao.arquivos (getProdutoDetalhado). Campo
+  // ausente significa "não sei", nunca "está vazio": nesse caso não se marca
+  // nada, para não acusar versão boa.
+  function versaoSemArquivo(v) {
+    return Array.isArray(v.arquivos) && v.arquivos.length === 0;
+  }
+
   function fillVersoes(versoes) {
     versaoField.setOptions(versoes.map(v => ({
       value: v.uuid_versao,
-      label: `${v.versao}${v.nome_versao ? ` — ${v.nome_versao}` : ''} (edição: ${formatDate(v.versao_data_edicao)})`,
+      label: `${v.versao}${v.nome_versao ? ` — ${v.nome_versao}` : ''} (edição: ${formatDate(v.versao_data_edicao)})${versaoSemArquivo(v) ? ' [SEM ARQUIVO]' : ''}`,
     })));
   }
 
@@ -179,8 +194,16 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
       versoes,
     };
     fillVersoes(versoes);
+    // Auto-seleção só quando a versão única TEM arquivo. Antes, o produto de
+    // uma versão só nascia apontando essa versão mesmo vazia, sem o operador
+    // tocar no campo, e o item saía para impressão sem arquivo.
     if (versoes.length === 1) {
-      versaoField.setValue(versoes[0].uuid_versao);
+      if (versaoSemArquivo(versoes[0])) {
+        versaoField.setValue(null);
+        showWarning('A única versão deste produto não tem arquivo no acervo. A mapoteca não tem o que imprimir.');
+      } else {
+        versaoField.setValue(versoes[0].uuid_versao);
+      }
     }
     versaoField.setError(null);
     renderSelectedInfo();
@@ -387,9 +410,8 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
   const avulsoHint = el('p', {
     className: 'form-hint',
     textContent:
-      'Use só para o que NÃO é produto do acervo: papel quadriculado, impresso de ' +
-      'ocasião. Folha nossa ainda não catalogada não entra aqui: ela vira item quando ' +
-      'entrar no acervo. A descrição aparece na consulta pública do cliente.',
+      'Use só para o que não é do acervo, como papel quadriculado. Folha nossa ' +
+      'não catalogada não entra aqui. A descrição aparece na consulta do cliente.',
   });
 
   const avulsoSection = el('div', { className: 'hidden' }, [
@@ -504,6 +526,17 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
             ok = false;
           }
           if (!ok) return;
+
+          // Aviso, nunca bloqueio: o chefe pode ter motivo para pedir a folha
+          // assim mesmo. O objetivo é que ninguém aponte versão sem arquivo por
+          // acidente. Versão fora da lista carregada não gera aviso, porque aí
+          // não se sabe se ela tem arquivo.
+          if (!avulso && produtoSelecionado) {
+            const versaoEscolhida = produtoSelecionado.versoes.find(v => v.uuid_versao === uuidVersao);
+            if (versaoEscolhida && versaoSemArquivo(versaoEscolhida)) {
+              showWarning('A versão escolhida não tem arquivo no acervo. A mapoteca não tem o que imprimir.');
+            }
+          }
 
           // Exatamente UM destino. O servidor recusa (Joi .xor e CHECK do
           // banco) se vierem os dois ou nenhum, entao mandar a chave com null

@@ -29,10 +29,31 @@ const TIPOS_MILITARES = [1, 2, 3];
 // producao terminar, porque ninguem lembra de procurar linha a linha.
 const SITUACAO_AGUARDANDO_PRODUCAO = 7;
 
+// As duas situacoes que SAO o trabalho de atendimento, do dominio
+// mapoteca.situacao_pedido (codigos copiados do DDL, er/mapoteca.sql).
+//
+// Militar e Civil sao o corte do DASHBOARD, e nao o de quem atende. Sem estes
+// dois filtros nao havia como chegar aos 25 pedidos em andamento nem ao unico
+// pedido Remetido (medidos na producao em 2026-08-04). O Remetido depende de
+// alguem marca-lo Concluido justamente aqui, e uma linha em 17 paginas de 10
+// nao e encontrada por quem nao a procura.
+const SITUACAO_EM_ANDAMENTO = 3;
+const SITUACAO_REMETIDO = 4;
+
 const FILTROS = [
   { id: 'todos', label: 'Todos', casa: () => true },
   { id: 'militar', label: 'Militar', casa: (p) => TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
   { id: 'civil', label: 'Civil', casa: (p) => !TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
+  {
+    id: 'em_andamento',
+    label: 'Em andamento',
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_EM_ANDAMENTO,
+  },
+  {
+    id: 'remetido',
+    label: 'Remetido',
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_REMETIDO,
+  },
   {
     id: 'aguardando_producao',
     label: 'Aguardando produção',
@@ -129,6 +150,24 @@ export async function renderPedidosList(container, _ctx) {
       },
       { key: 'prazo', label: 'Prazo', sortable: true, render: (row) => formatDate(row.prazo) },
       {
+        key: 'data_atualizacao',
+        label: 'Alterado em',
+        sortable: true,
+        // QUANDO O REGISTRO mudou pela ultima vez, e nao a data do pedido, que
+        // e a do DIEx. E o que mostra qual dos pedidos em aberto esta parado:
+        // ordenar por esta coluna poe o esquecido na frente.
+        //
+        // Registro nunca alterado tem `data_atualizacao` nulo, e nele a ultima
+        // alteracao E a criacao. Por isso a queda para `data_criacao`, que a
+        // lista sempre traz.
+        //
+        // So a DATA, sem o autor: a migracao gravou um unico login em 164 de
+        // 164 pedidos (medido na producao em 2026-08-04), entao `usuario_criacao_nome`
+        // chega na resposta e fica de fora de proposito, e nao por esquecimento.
+        render: (row) => formatDate(row.data_atualizacao || row.data_criacao),
+        sortValue: (row) => row.data_atualizacao || row.data_criacao || null,
+      },
+      {
         key: 'quantidade_produtos',
         label: 'Qtd. produtos',
         sortable: true,
@@ -142,6 +181,11 @@ export async function renderPedidosList(container, _ctx) {
       { key: 'localizador_pedido', label: 'Localizador' },
     ],
     rows: [],
+    // A ordem que o servidor JA aplica (ORDER BY p.data_pedido DESC). Sem
+    // declara-la, nenhum cabecalho mostrava a seta, o `aria-sort` ficava "none"
+    // em todos, e o primeiro clique em "Data" saltava para o pedido mais ANTIGO,
+    // obrigando a um segundo clique para voltar ao que a tela ja mostrava.
+    defaultSort: { key: 'data_pedido', dir: 'desc' },
     searchable: true,
     loading: true,
     // Sem o ano no texto, de proposito: a mensagem e montada uma vez e o ano

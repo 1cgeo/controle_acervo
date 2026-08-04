@@ -131,6 +131,18 @@ export async function renderClienteDetails(container, { params }) {
   });
   cleanups.push(() => pedidosTable._cleanup());
 
+  // O título da seção é FIXO. O recorte ("5 de 29") vive no nó ao lado, e não
+  // dentro do título: o título é a âncora que identifica a seção na tela e nos
+  // testes, e ele muda de sentido se o número entra nele.
+  const tituloPedidos = el('h2', {
+    className: 'dashboard-section__title',
+    textContent: 'Últimos pedidos',
+  });
+
+  // Diz QUANTOS pedidos a tabela mostra e quantos existem. O texto se escreve
+  // em `pintarCliente`, porque o total vem do cliente.
+  const metaPedidos = el('span', { className: 'dashboard-section__meta', textContent: '' });
+
   const conteudo = el('div', {}, [
     cabecalho,
     cartoes,
@@ -142,7 +154,8 @@ export async function renderClienteDetails(container, { params }) {
     ]),
     el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
-        el('h2', { className: 'dashboard-section__title', textContent: 'Últimos pedidos' }),
+        tituloPedidos,
+        metaPedidos,
       ]),
       pedidosTable.element,
     ]),
@@ -226,6 +239,10 @@ export async function renderClienteDetails(container, { params }) {
 
     reconciliar(contatoLinhas, [
       ['Tipo de cliente', cliente.tipo_cliente_nome],
+      // A sigla é o nome corrente da OM, e é por ela que a pessoa se apresenta
+      // ao telefone. Fica logo abaixo do tipo, porque o tipo é a primeira linha
+      // da ficha desde sempre, e trocar essa âncora quebra quem a observa.
+      ['Sigla', cliente.sigla],
       // "Geral" e o que o distingue do contato de UM pedido, que mora em
       // mapoteca.pedido.ponto_contato e aparece no detalhe do pedido.
       ['Contato geral da OM', cliente.ponto_contato_principal],
@@ -236,7 +253,18 @@ export async function renderClienteDetails(container, { params }) {
       atualizar: (no, [, valor]) => escreverValor(no, '.detail-card__value', valor || '-'),
     });
 
-    pedidosTable.update({ rows: cliente.ultimos_pedidos || [], loading: false });
+    // A rota do cliente devolve no máximo 5 pedidos, e a tabela mostra o que
+    // veio. Sem dizer o total, a ficha passava 5 por "tudo o que existe": o
+    // cliente 65 tem 29 pedidos, e a tela mostrava 5 sem avisar nada. O nó de
+    // apoio conta a verdade. Paginar aqui não resolveria, porque o resto não
+    // veio. Some quando a tabela já mostra todos os pedidos.
+    const pedidos = cliente.ultimos_pedidos || [];
+    const totalPedidos = Number(est.total_pedidos) || 0;
+    metaPedidos.textContent = totalPedidos > pedidos.length
+      ? `(${formatNumber(pedidos.length)} de ${formatNumber(totalPedidos)})`
+      : '';
+
+    pedidosTable.update({ rows: pedidos, loading: false });
   }
 
   /**

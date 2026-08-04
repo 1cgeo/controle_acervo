@@ -37,7 +37,8 @@ function repintarChip(no, novo) {
  *    falta fazer;
  *  - SEM o ano da navbar: o pedido de dezembro ainda não atendido é trabalho em
  *    janeiro, e fila que esconde o atrasado não serve de fila;
- *  - ordenada por PRAZO, que é o que decide o dia de quem atende;
+ *  - ordenada por PRAZO quando ele existe, e por IDADE (o mais antigo primeiro)
+ *    para o pedido sem prazo, que é a maioria da fila;
  *  - perfil OPERADOR, então não aparece no menu de quem só consulta (o guarda sai
  *    do próprio manifesto, ver modules/registry.js).
  *
@@ -71,7 +72,9 @@ export async function renderAtendimento(container) {
   const root = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('div', {}, [
-        el('h1', { className: 'page__title', textContent: 'Atender pedidos' }),
+        // O titulo NAO repete o rotulo do menu ("Atender pedidos"): quem chegou
+        // aqui ja leu aquele rotulo, e a linha so devolvia a mesma palavra.
+        el('h1', { className: 'page__title', textContent: 'Fila de atendimento' }),
         contador,
       ]),
       el('div', { className: 'page__actions' }, [
@@ -211,7 +214,28 @@ export async function renderAtendimento(container) {
       ],
     });
 
+    // A observação do pedido entra AQUI, e não numa coluna da fila: ela é texto
+    // livre, e a fila já usa cinco colunas. Medido na produção em 2026-08-04:
+    // dos 25 pedidos em aberto, 14 têm observação e 22 têm observação interna.
+    // Sem isto o operador abria o detalhe do pedido só para ler a instrução, e a
+    // volta remontava a tela que este arquivo se esforça para preservar.
+    //
+    // A observação INTERNA aparece porque esta tela é de dentro (perfil
+    // operador). Ela nunca sai na consulta pública do cliente.
+    const notas = [
+      ['Observação', pedido.observacao],
+      ['Observação interna', pedido.observacao_interna],
+    ]
+      .filter(([, texto]) => texto)
+      .map(([rotulo, texto]) => el('div', { style: { marginBottom: 'var(--space-xs)' } }, [
+        el('span', { className: 'detail-card__label', textContent: `${rotulo}: ` }),
+        el('span', { textContent: texto }),
+      ]));
+
     const conteudo = el('div', {}, [
+      notas.length
+        ? el('div', { style: { marginBottom: 'var(--space-sm)' } }, notas)
+        : null,
       el('div', { className: 'flex gap-sm', style: { marginBottom: 'var(--space-sm)' } }, [
         chipSituacao,
         contagem,
@@ -307,7 +331,7 @@ export async function renderAtendimento(container) {
     rows: [],
     searchable: true,
     pageSize: 15,
-    emptyMessage: 'Nenhum pedido em aberto. A fila está limpa.',
+    emptyMessage: 'A fila está limpa.',
     actions: [
       {
         icon: ICONS.print,

@@ -22,12 +22,17 @@ import { openClienteDialog } from './dialog-cliente.js';
 export async function renderClientesList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('mapoteca');
+  // Os clientes da ÚLTIMA carga. O diálogo de criação usa esta lista para avisar
+  // sobre cliente parecido ANTES de gravar. Nada impede duplicata no banco, e o
+  // par já existe: os ids 33 e 59 são a mesma OM, com um pedido cada.
+  let clientesCarregados = [];
 
   async function load() {
     table.update({ loading: true });
     try {
       const clientes = await getClientes();
       if (disposed) return;
+      clientesCarregados = clientes;
       table.update({ rows: clientes, loading: false });
     } catch (err) {
       if (disposed) return;
@@ -37,7 +42,7 @@ export async function renderClientesList(container, _ctx) {
   }
 
   function abrirDialog(cliente) {
-    openClienteDialog({ cliente, onSaved: load });
+    openClienteDialog({ cliente, onSaved: load, clientesExistentes: clientesCarregados });
   }
 
   async function excluirCliente(cliente) {
@@ -96,6 +101,11 @@ export async function renderClientesList(container, _ctx) {
       // Sem coluna de ID: o id e chave interna, e quem opera identifica o
       // cliente pelo nome. Ele continua na URL do detalhe, para quem precisar.
       { key: 'nome', label: 'Nome', sortable: true },
+      // A sigla é como a OM se apresenta ao telefone ("aqui é do 3º GAC Ap").
+      // A busca da tabela varre as colunas DECLARADAS, então declarar a coluna
+      // já faz "GAC Ap" achar a linha, sem digitar o nome por extenso. Ela está
+      // preenchida em 174 dos 180 clientes; quem não é OM fica com "-".
+      { key: 'sigla', label: 'Sigla', sortable: true },
       { key: 'tipo_cliente_nome', label: 'Tipo', sortable: true },
       { key: 'ponto_contato_principal', label: 'Contato' },
       {

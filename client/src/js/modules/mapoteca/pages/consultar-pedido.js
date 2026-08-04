@@ -56,11 +56,20 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     el('div', { className: 'consulta-card__header' }, [
       el('div', {}, [
         el('div', { className: 'consulta-card__title', textContent: 'Acompanhamento de Pedido' }),
-        el('div', { className: 'consulta-card__localizador', textContent: localizador }),
+        // A linha do localizador so entra quando ha localizador. Vazia, ela
+        // abria uma faixa em branco sob o titulo, na PRIMEIRA tela que o
+        // cliente externo ve.
+        localizador
+          ? el('div', { className: 'consulta-card__localizador', textContent: localizador })
+          : null,
       ]),
       svgIcon(ICONS.localShipping, 32),
     ]),
     resultArea,
+    // Este rotulo e a UNICA instrucao da tela (chefe, 2026-08-04). Antes a
+    // mesma frase saia tres vezes acima do mesmo campo: o rotulo, a mensagem da
+    // area de resultado e o exemplo de formato. Ficaram o rotulo e o exemplo,
+    // que mostra o formato e nao repete a frase.
     el('div', {
       className: 'consulta-info__label',
       textContent: localizador ? 'Consultar outro localizador:' : 'Informe o localizador do pedido:',
@@ -106,6 +115,12 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     ];
     if (pedido.observacao) {
       rows.push(infoRow('Observação', pedido.observacao));
+    }
+    // A forma de entrega e do PEDIDO desde 2026-07-30, e o servidor a devolve no
+    // objeto do pedido. Ela saia no laco do ITEM, onde nenhum item traz o campo:
+    // a linha "Entrega" simplesmente nunca aparecia para o cliente.
+    if (pedido.forma_entrega_nome) {
+      rows.push(infoRow('Forma de entrega', pedido.forma_entrega_nome));
     }
     // A data que o cliente quer ver e a do envio, e ela e a data_atendimento:
     // o pedido fecha no dia em que o material sai (51 de 52 pedidos concluidos
@@ -166,13 +181,17 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       const meta = [
         itemMeta('Escala', p.escala),
         itemMeta('Tipo', p.tipo_produto_nome),
+        // A descricao do avulso e PUBLICA e o servidor a manda de proposito
+        // (avulso_descricao). Ela guarda a medida do impresso ("80 x 68 cm,
+        // quadricula de 4 x 4 cm"), e e a unica coisa que identifica um item
+        // avulso para quem esta de fora: a carta tem MI e escala, ele nao.
+        itemMeta('Descrição', p.avulso_descricao),
         itemMeta('MI', p.mi),
         itemMeta('INOM', p.inom),
         itemMeta('Versão', p.versao),
         itemMeta('Edição', p.data_edicao ? formatDate(p.data_edicao) : null),
         itemMeta('Quantidade', p.quantidade),
         itemMeta('Mídia', p.tipo_midia_nome),
-        itemMeta('Entrega', p.forma_entrega_nome),
       ].filter(Boolean);
 
       const children = [
@@ -194,7 +213,8 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   }
 
   if (!localizador) {
-    showMessage('Digite o localizador que você recebeu ao fazer o pedido.');
+    // Sem mensagem aqui: o rotulo acima do campo ja diz o que fazer, e a frase
+    // repetida so empurrava o campo para baixo.
     otherInput.focus();
     return;
   }

@@ -144,7 +144,11 @@ describe('renderDashboard da mapoteca', () => {
       expect(container.textContent).not.toContain('Tipo de Mídia');
     }
 
-    expect(svc.getPendingOrders).not.toHaveBeenCalled();
+    // getPendingOrders SAIU desta lista em 2026-08-04. A rota existia desde
+    // sempre e nenhuma tela a chamava; agora a aba Pedidos a consome no bloco
+    // "Pedidos parados", que lista os pedidos abertos mais antigos. O laco
+    // acima abre a aba Pedidos, entao aqui ela ja foi chamada.
+    expect(svc.getPendingOrders).toHaveBeenCalled();
     expect(svc.getPlotterStatus).not.toHaveBeenCalled();
     expect(svc.getEntregasPorMidia).not.toHaveBeenCalled();
     expect(svc.getEntregasPorMes).not.toHaveBeenCalled();

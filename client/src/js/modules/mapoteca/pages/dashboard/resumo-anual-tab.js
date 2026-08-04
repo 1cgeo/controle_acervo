@@ -155,7 +155,16 @@ export async function renderResumoAnualTab(container) {
       cards.totalEntregas.setValue(formatNumber(resumo.total_entregas));
       cards.omsDistintas.setValue(formatNumber(resumo.oms_distintas_count));
       cards.operacoesDistintas.setValue(formatNumber(resumo.operacoes_distintas_count));
-      cards.custoManutencao.setValue(formatCurrency(resumo.custo_manutencao_total));
+      // Ausência de fonte não é zero. O servidor manda null quando o ano não
+      // tem NENHUM registro de manutenção, e o cartão diz "Sem registro". O
+      // R$ 0,00 fica reservado para registro que soma zero. A tabela
+      // mapoteca.manutencao_plotter está vazia na produção desde 2024-09-07,
+      // e o cartão mostrava R$ 0,00 como se fosse custo medido.
+      cards.custoManutencao.setValue(
+        resumo.custo_manutencao_total == null
+          ? 'Sem registro'
+          : formatCurrency(resumo.custo_manutencao_total)
+      );
     } else {
       showError(resumoRes.reason?.message || 'Erro ao carregar o resumo anual');
     }

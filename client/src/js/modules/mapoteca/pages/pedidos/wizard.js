@@ -62,10 +62,29 @@ function buildItensSummaryTable(itens) {
   ]);
 }
 
+/** Table of the items the server refused, with the error message of each one. */
+function buildFalhasTable(falhas) {
+  const header = el('thead', {}, [
+    el('tr', {}, ['Produto', 'MI', 'Qtd.', 'Erro'].map(h => el('th', { textContent: h }))),
+  ]);
+  const body = el('tbody', {}, falhas.map(({ item, erro }) => el('tr', {}, [
+    el('td', { textContent: item.display.produto_nome || '-' }),
+    el('td', { textContent: item.display.mi || '-' }),
+    el('td', { textContent: String(item.payload.quantidade) }),
+    el('td', { textContent: erro }),
+  ])));
+
+  return el('div', { className: 'data-table-wrapper' }, [
+    el('div', { className: 'data-table-scroll' }, [
+      el('table', { className: 'data-table' }, [header, body]),
+    ]),
+  ]);
+}
+
 /**
  * Novo pedido — 4-step wizard (#/pedidos/novo): básico, adicional, produtos
- * (catalog search, RN08) and confirmação (createPedido + createProdutoPedido
- * per item, showing the generated localizador).
+ * (catalog search) and confirmação (createPedido, then one createProdutoPedido
+ * per item, with a progress counter and a retry of the failed items only).
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -167,6 +186,32 @@ export async function renderPedidoWizard(container, _ctx) {
     form.civilElement,
   ]);
 
+  // A etapa tinha 14 campos em fila, e o operador atravessava todos em todo
+  // pedido. Medido na producao em 2026-08-04, sobre 164 pedidos: endereco de
+  // entrega preenchido em 3, previsto no PIT em 16, meta do PIT em 16,
+  // palavras-chave em 17, localizador de envio em 28. O motivo do cancelamento
+  // tem 0, e isso e NORMAL: nao ha pedido cancelado. Os frequentes ficam a
+  // vista (demandante 157, omds 123, observacao interna 106, observacao 82,
+  // forma de entrega 89, ponto de contato 80).
+  //
+  // NENHUM campo foi removido. Os de uso raro so mudaram de lugar, para uma
+  // secao recolhida. O recurso e o elemento details do HTML, o mesmo que a
+  // consulta publica do pedido ja usa: sem componente novo e sem CSS novo.
+  const CAMPOS_RAROS = [
+    'previsto_pit', 'meta_pit_id', 'localizador_envio', 'endereco_entrega',
+    'palavras_chave', 'motivo_cancelamento',
+  ];
+
+  const secaoRaros = el('details', { style: { marginTop: 'var(--space-md)' } }, [
+    el('summary', {
+      className: 'detail-card__title',
+      style: { cursor: 'pointer', padding: 'var(--space-sm) 0' },
+      textContent: 'Campos de uso raro (PIT, entrega, palavras-chave, cancelamento)',
+    }),
+    el('div', { className: 'form-grid' },
+      CAMPOS_RAROS.map(nome => form.fields[nome].element)),
+  ]);
+
   const stepAdicional = el('div', { className: 'hidden' }, [
     el('div', {
       className: 'detail-card__title',
@@ -174,8 +219,16 @@ export async function renderPedidoWizard(container, _ctx) {
       textContent: 'Dados adicionais',
     }),
     form.adicionalElement,
+    secaoRaros,
     civilSection,
   ]);
+
+  // A validacao da etapa 2 marca o erro na meta do PIT e no motivo do
+  // cancelamento, e os dois campos moram na secao recolhida. Sem abrir a
+  // secao, o usuario veria a etapa travar sem erro nenhum na tela.
+  function abrirSecaoRarosNoErro() {
+    secaoRaros.open = true;
+  }
 
   // ---------------------------------------------------------------------------
   // Step 3 — Produtos
@@ -248,10 +301,15 @@ export async function renderPedidoWizard(container, _ctx) {
     showSuccess('Item removido da lista do pedido');
   }
 
+  // O texto dizia "RN08", codigo interno do repositorio. O operador da mapoteca
+  // nao conhece esse codigo, entao a regra vai em portugues claro.
+  const NOTA_PRODUTOS_MILITAR = 'Cada item do pedido aponta uma versão de produto '
+    + 'do catálogo do acervo. Caso o produto não exista no acervo, cadastre-o '
+    + 'primeiro pelo plugin QGIS.';
+
   const produtosNote = el('p', {
     className: 'form-field__help',
-    textContent: 'Todos os itens referenciam uma versão do catálogo do acervo (RN08). ' +
-      'Caso o produto não exista no acervo, cadastre-o primeiro pelo plugin QGIS.',
+    textContent: NOTA_PRODUTOS_MILITAR,
   });
 
   const stepProdutos = el('div', { className: 'hidden' }, [
@@ -366,9 +424,19 @@ export async function renderPedidoWizard(container, _ctx) {
 
   const content = el('div', { className: 'wizard__content' }, panels);
 
+  // Andamento da gravacao dos itens. O pedido grande chega a 132 itens, e cada
+  // item e um POST em serie. So desabilitar o botao deixa a tela parada e muda.
+  // Este elemento fica FORA do content e do nav, porque a tela de sucesso limpa
+  // um e esconde o outro, e a repeticao dos itens que falharam precisa dele.
+  const progresso = el('p', {
+    className: 'form-field__help hidden',
+    style: { textAlign: 'center' },
+  });
+
   root.appendChild(stepper.element);
   root.appendChild(content);
   root.appendChild(nav);
+  root.appendChild(progresso);
 
   function goTo(index) {
     if (submitting) return;
@@ -383,33 +451,109 @@ export async function renderPedidoWizard(container, _ctx) {
 
   function avancar() {
     if (activeStep === 0 && !form.validateBasico()) return;
-    if (activeStep === 1 && !form.validateAdicional()) return;
+    if (activeStep === 1 && !form.validateAdicional()) {
+      abrirSecaoRarosNoErro();
+      return;
+    }
     goTo(activeStep + 1);
   }
 
-  function renderSucesso(criado, falhas) {
+  /**
+   * Grava os itens no pedido que JA existe, um POST por item, com contador.
+   *
+   * Esta funcao NUNCA chama createPedido. O pedido ja foi criado antes dela, e
+   * por isso ela serve tanto a primeira gravacao quanto a repeticao dos itens
+   * que falharam, sem risco de criar um segundo pedido.
+   *
+   * @param {Object} criado - o pedido gravado
+   * @param {Array<{payload:Object, display:Object}>} lista - itens a gravar
+   * @returns {Promise<{gravados:number, falhas:Array<{item:Object, erro:string}>}>}
+   */
+  async function gravarItens(criado, lista) {
+    const falhas = [];
+    let gravados = 0;
+    progresso.classList.remove('hidden');
+    for (let i = 0; i < lista.length; i += 1) {
+      const item = lista[i];
+      progresso.textContent = `Gravando o item ${i + 1} de ${lista.length}...`;
+      try {
+        await createProdutoPedido({ ...item.payload, pedido_id: criado.id });
+        gravados += 1;
+      } catch (err) {
+        falhas.push({ item, erro: err.message || 'Erro ao gravar o item' });
+      }
+    }
+    progresso.classList.add('hidden');
+    progresso.textContent = '';
+    return { gravados, falhas };
+  }
+
+  /**
+   * Tela final do wizard, com o resultado REAL da gravacao.
+   *
+   * Com item recusado ela NAO se apresenta como sucesso limpo: o titulo diz
+   * quantos itens ficaram de fora, a lista dos recusados continua na tela e um
+   * botao repete SO esses itens.
+   *
+   * @param {Object} criado - o pedido gravado
+   * @param {{total:number, gravados:number, falhas:Array}} resultado
+   */
+  function renderSucesso(criado, resultado) {
     clearChildren(content);
     nav.classList.add('hidden');
+
+    const { total, gravados, falhas } = resultado;
+    const houveFalha = falhas.length > 0;
+
+    const btnRepetir = el('button', {
+      className: 'btn btn--primary',
+      type: 'button',
+      onClick: async () => {
+        btnRepetir.disabled = true;
+        // O pedido JA existe neste ponto. A repeticao manda de novo SO os itens
+        // que falharam, sempre por createProdutoPedido. Chamar createPedido
+        // aqui criaria um SEGUNDO pedido, com outro localizador.
+        const novo = await gravarItens(criado, falhas.map(f => f.item));
+        if (disposed) return;
+        if (novo.gravados) showSuccess(`${novo.gravados} item(ns) gravado(s) na repetição`);
+        renderSucesso(criado, {
+          total,
+          gravados: total - novo.falhas.length,
+          falhas: novo.falhas,
+        });
+      },
+    }, 'Tentar de novo os itens que falharam');
 
     content.appendChild(el('div', { className: 'text-center' }, [
       el('h2', {
         className: 'dashboard-section__title',
         style: { marginBottom: 'var(--space-md)' },
-        textContent: 'Pedido criado com sucesso',
+        textContent: houveFalha
+          ? `Pedido criado, mas ${falhas.length} de ${total} itens não entraram`
+          : 'Pedido criado com sucesso',
       }),
       el('div', { className: 'summary-card', style: { marginBottom: 'var(--space-md)' } }, [
         el('div', { className: 'summary-card__value', textContent: criado.localizador_pedido }),
         el('div', { className: 'summary-card__label', textContent: `Localizador do pedido #${criado.id}` }),
       ]),
-      falhas.length
+      total
         ? el('p', {
-            className: 'form-field__error',
-            textContent: `${falhas.length} item(ns) não puderam ser adicionados — verifique no detalhe do pedido.`,
+            className: houveFalha ? 'form-field__error' : 'form-field__help',
+            textContent: `${gravados} de ${total} itens gravados no pedido.`,
           })
         : null,
-      el('div', { className: 'flex flex-center gap-sm' }, [
+      houveFalha
+        ? el('p', {
+            className: 'form-field__help',
+            style: { marginBottom: 'var(--space-sm)' },
+            textContent: 'Estes itens ficaram de fora. O pedido já existe: o botão abaixo repete só estes itens, e não cria outro pedido.',
+          })
+        : null,
+      houveFalha ? buildFalhasTable(falhas) : null,
+      el('div', { className: 'flex flex-center gap-sm', style: { marginTop: 'var(--space-md)' } }, [
+        houveFalha ? btnRepetir : null,
         el('button', {
-          className: 'btn btn--primary',
+          className: houveFalha ? 'btn btn--secondary' : 'btn btn--primary',
           type: 'button',
           onClick: () => { location.hash = `/mapoteca/pedidos/${criado.id}`; },
         }, [svgIcon(ICONS.visibility, 16), 'Ver pedido']),
@@ -432,6 +576,7 @@ export async function renderPedidoWizard(container, _ctx) {
     if (!form.validateAdicional()) {
       showWarning('Há erros nos dados adicionais do pedido. Revise a etapa 2.');
       goTo(1);
+      abrirSecaoRarosNoErro();
       return;
     }
 
@@ -450,19 +595,20 @@ export async function renderPedidoWizard(container, _ctx) {
       return;
     }
 
-    const falhas = [];
-    for (const item of itens) {
-      try {
-        await createProdutoPedido({ ...item.payload, pedido_id: criado.id });
-      } catch (err) {
-        falhas.push(`${item.display.produto_nome || 'Item'}: ${err.message}`);
-      }
-    }
+    // O pedido esta gravado. Os itens vao a seguir, um POST por item.
+    const total = itens.length;
+    const { falhas } = await gravarItens(criado, itens);
     if (disposed) return;
+    const gravados = total - falhas.length;
 
-    showSuccess(`Pedido criado com sucesso. Localizador: ${criado.localizador_pedido}`);
-    falhas.forEach(falha => showError(`Erro ao adicionar item — ${falha}`));
-    renderSucesso(criado, falhas);
+    // Um toast por item falho inundaria a tela: o pedido maior tem 132 itens.
+    // A lista dos recusados fica na tela de resultado, que nao some sozinha.
+    if (falhas.length) {
+      showError(`Pedido criado, mas só ${gravados} de ${total} itens entraram.`);
+    } else {
+      showSuccess(`Pedido criado com sucesso. Localizador: ${criado.localizador_pedido}`);
+    }
+    renderSucesso(criado, { total, gravados, falhas });
   }
 
   // Aplica o modo (Militar/Civil): filtra clientes, mostra/esconde campos.
@@ -484,8 +630,7 @@ export async function renderPedidoWizard(container, _ctx) {
     if (civil) form.fields.situacao_pedido_id.setValue(SITUACAO_PEDIDO_EM_ANDAMENTO);
     produtosNote.textContent = civil
       ? 'Pedidos de civil geralmente NÃO têm produtos do acervo (entregam imagem por área). Deixe vazio se for o caso.'
-      : 'Todos os itens referenciam uma versão do catálogo do acervo (RN08). ' +
-        'Caso o produto não exista no acervo, cadastre-o primeiro pelo plugin QGIS.';
+      : NOTA_PRODUTOS_MILITAR;
   }
 
   setModo('militar');

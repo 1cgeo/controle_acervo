@@ -92,7 +92,9 @@ describe('renderAtendimento: a fila', () => {
     // Sem argumento: a fila nao tem recorte de ano, ao contrario da lista de
     // pedidos. O pedido de dezembro ainda aberto e trabalho em janeiro.
     expect(svc.getPedidosEmAberto).toHaveBeenCalledWith();
-    expect(container.querySelector('.page__title').textContent).toBe('Atender pedidos');
+    // O titulo NAO repete o rotulo do menu ("Atender pedidos"), decisao de
+    // 2026-08-04: rotulo repetido gasta a primeira linha da tela sem informar.
+    expect(container.querySelector('.page__title').textContent).toBe('Fila de atendimento');
     expect(container.textContent).toContain('18º BI Mtz');
     expect(container.textContent).toContain('6º RCB');
     expect(container.textContent).toContain('3º RCC');

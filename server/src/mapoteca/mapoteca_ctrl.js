@@ -418,7 +418,12 @@ controller.getPedidos = async (ano) => {
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            u.nome AS usuario_criacao_nome,
-           p.data_criacao,
+           -- As duas datas do REGISTRO, distintas da data_pedido, que e a data
+           -- do DIEx. A lista mostra a alteracao para quem procura o pedido
+           -- parado; sem data_atualizacao ela caia para a criacao e dizia que
+           -- todo pedido era recente. Medido em 2026-08-04: 130 dos 164 pedidos
+           -- tem data_atualizacao, com variancia real.
+           p.data_criacao, p.data_atualizacao,
            (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos,
            (SELECT COUNT(*) FROM mapoteca.produto_pedido pp
             WHERE pp.pedido_id = p.id
@@ -447,9 +452,11 @@ controller.getPedidos = async (ano) => {
  * Aguardando produção saiu da fila em 2026-07-30: o pedido espera carta que
  * ainda não existe, então quem imprime não tem o que fazer com ele.
  *
- * A ordem é por PRAZO, com o pedido sem prazo no fim: o que tem data marcada
- * decide o dia de quem atende. O `dias_para_prazo` vem calculado no banco, então
- * a tela não precisa fazer conta de data (e não erra por fuso).
+ * A ordem tem DOIS trechos (2026-08-04). Primeiro quem tem prazo, do mais
+ * próximo ao mais distante, porque data marcada decide o dia de quem atende.
+ * Depois quem NÃO tem prazo, do pedido mais ANTIGO para o mais novo, porque
+ * idade é o único sinal de urgência que sobra. O `dias_para_prazo` vem calculado
+ * no banco, então a tela não precisa fazer conta de data (e não erra por fuso).
  *
  * Traz o endereço e o contato porque a etiqueta de envio sai desta tela: sem eles
  * seria uma segunda requisição por pedido só para imprimir um endereço.
@@ -491,7 +498,18 @@ controller.getPedidosEmAberto = async () => {
       WHERE pp.pedido_id = p.id
     ) i ON TRUE
     WHERE p.situacao_pedido_id IN ($<situacoes:csv>)
-    ORDER BY p.prazo ASC NULLS LAST, p.data_pedido ASC, p.id ASC
+    -- A regua da fila (2026-08-04): quem TEM prazo vem primeiro, do mais proximo
+    -- ao mais distante; depois vem quem NAO tem prazo, do mais antigo para o
+    -- mais novo. A ordem antiga era so "prazo ASC NULLS LAST", e ela punha o
+    -- pedido menos urgente no topo: medido na producao, dos 25 pedidos da fila
+    -- 1 tem prazo (vence em 31 dias) e 24 nao tem, alguns com 215 dias de idade.
+    -- O unico com prazo, o mais folgado de todos, abria a lista.
+    -- (p.prazo IS NULL) ordena falso antes de verdadeiro, e e o que separa os
+    -- dois trechos. O id fecha o desempate e deixa a ordem unica e estavel.
+    ORDER BY (p.prazo IS NULL) ASC,
+             p.prazo ASC,
+             p.data_pedido ASC NULLS LAST,
+             p.id ASC
   `, { situacoes: SITUACOES_EM_ABERTO });
 };
 

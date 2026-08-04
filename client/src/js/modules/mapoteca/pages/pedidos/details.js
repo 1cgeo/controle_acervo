@@ -86,8 +86,12 @@ function repintarChip(no, novo) {
  * Marcar a mao errava nos dois sentidos: o campo vazio ficava empilhado gastando
  * duas linhas para mostrar um traco, e o campo nao marcado com texto longo
  * seguia espremido. Medido na tela em 2026-07-27.
+ *
+ * `temValor()` diz se o ultimo `definir` recebeu alguma coisa. Quem monta card
+ * usa isso para TIRAR do DOM a linha vazia (ver criarCard). O traco continua
+ * valendo para quem mantem a linha na tela, como o modal do historico.
  * @param {string} label
- * @returns {{element:HTMLElement, definir:(value:string|Node)=>void}}
+ * @returns {{element:HTMLElement, definir:(value:string|Node)=>void, temValor:()=>boolean}}
  */
 function criarInfoRow(label) {
   const valorEl = el('span', { className: 'detail-card__value' });
@@ -95,8 +99,10 @@ function criarInfoRow(label) {
     el('span', { className: 'detail-card__label', textContent: label }),
     valorEl,
   ]);
+  let comValor = false;
 
   function definir(value) {
+    comValor = value instanceof Node || Boolean(value);
     const texto = value instanceof Node ? null : (value || '-');
     const longo = typeof texto === 'string' && texto.length > LIMITE_VALOR_CURTO;
     element.className = longo ? 'detail-card__row detail-card__row--longo' : 'detail-card__row';
@@ -110,7 +116,7 @@ function criarInfoRow(label) {
     }
   }
 
-  return { element, definir };
+  return { element, definir, temValor: () => comValor };
 }
 
 /**
@@ -141,6 +147,12 @@ function formatBytes(bytes) {
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+// `formatDate` e `formatDateTime` escrevem um traco quando o valor e nulo, e o
+// traco e a unica coisa que a linha de card nao pode receber: ele conta como
+// valor e a linha deixa de sumir. Na celula de tabela o traco continua certo.
+const dataOuNada = (valor) => (valor ? formatDate(valor) : '');
+const dataHoraOuNada = (valor) => (valor ? formatDateTime(valor) : '');
 
 /**
  * Pedido details page (#/pedidos/:id): header with chips and edit/delete,
@@ -666,37 +678,144 @@ export async function renderPedidoDetails(container, { params }) {
   // apagaria o alvo do clique no meio de quem estava mirando nele.
   const clienteLink = el('a', {});
 
+  /**
+   * Card de detalhe cujas linhas ENTRAM E SAEM conforme o valor do campo.
+   *
+   * Ate 2026-08-04 as 21 linhas dos quatro cards eram fixas, e a linha sem
+   * valor escrevia um traco. Medido na producao: das 14 linhas opcionais, so
+   * 39% das posicoes tinham valor, e o endereco de entrega tinha 3 em 164. O
+   * traco nao informa nada e empurra para baixo o que informa. E o mesmo
+   * defeito que a docstring de `criarInfoRow` ja registrava dentro da linha:
+   * ele parava na fronteira do card.
+   *
+   * A linha SAI DO DOM, e nao se esconde por CSS, pelo motivo dos blocos
+   * condicionais desta tela: escondida, ela continuaria no texto da pagina.
+   *
+   * Vazio nao quer dizer "sem informacao". Endereco de entrega nulo quer dizer
+   * que o pedido usa o endereco da OM. Por isso a linha some e NADA se escreve
+   * no lugar dela: texto de ausencia inventaria significado campo a campo.
+   *
+   * O card recebe linhas soltas e SUBSECOES (ver `subsecao`), na ordem em que
+   * aparecem. Linha solta vem antes da primeira subsecao: depois dela, o olho
+   * le a linha como sendo do titulo de cima.
+   *
+   * @param {string} titulo
+   * @param {Array<Array<string>|{titulo:string, campos:Array<Array<string>>}>} itens
+   *   - par [chave, rotulo] para linha solta, ou o retorno de `subsecao`
+   * @returns {HTMLElement}
+   */
+  const cardsDeLinhas = [];
+  function criarCard(titulo, itens) {
+    const corpo = el('div');
+    // Um grupo por subsecao, mais o grupo sem titulo das linhas soltas.
+    const grupos = [{ tituloEl: null, chaves: [] }];
+    for (const item of itens) {
+      if (Array.isArray(item)) {
+        const [chave, rotulo] = item;
+        linha(chave, rotulo);
+        grupos[grupos.length - 1].chaves.push(chave);
+        continue;
+      }
+      const grupo = {
+        tituloEl: el('div', {
+          className: 'detail-card__title',
+          style: { marginTop: 'var(--space-md)' },
+          textContent: item.titulo,
+        }),
+        chaves: [],
+      };
+      for (const [chave, rotulo] of item.campos) { linha(chave, rotulo); grupo.chaves.push(chave); }
+      grupos.push(grupo);
+    }
+    cardsDeLinhas.push({ corpo, grupos });
+    return el('div', { className: 'detail-card' }, [
+      el('div', { className: 'detail-card__title', textContent: titulo }),
+      corpo,
+    ]);
+  }
+
+  /**
+   * Subsecao de um card: um titulo e as linhas embaixo dele.
+   *
+   * O TITULO E ESTRUTURA, e nao dado. Ele fica na tela mesmo com todas as
+   * linhas vazias, pela mesma regra do titulo do card ("o card fica; a LINHA
+   * vazia dele some"). E o titulo que diz de QUEM e o telefone logo abaixo, e
+   * confundir o contato do pedido com o da OM faz alguem ligar para a pessoa
+   * errada.
+   *
+   * O chefe pediu (2026-08-04) que a subsecao vazia sumisse com titulo e tudo,
+   * para nao gastar linha a toa. NAO FOI FEITO, e a razao esta na regra que o
+   * teste desta tela fixa: o pedido do teste nao tem contato nenhum, nem o
+   * proprio nem o da OM, e ainda assim exige os dois titulos na tela
+   * (details.test.js:142). As duas regras nao valem juntas. Fica a do teste,
+   * que e a que protege o telefone certo; a decisao entre as duas e do chefe.
+   * @param {string} titulo
+   * @param {Array<Array<string>>} campos - pares [chave, rotulo], na ordem
+   */
+  const subsecao = (titulo, campos) => ({ titulo, campos });
+
+  /** Poe na tela so as linhas com valor, sob os titulos fixos das subsecoes. */
+  function mostrarLinhasComValor() {
+    for (const card of cardsDeLinhas) {
+      const nos = [];
+      for (const grupo of card.grupos) {
+        if (grupo.tituloEl) nos.push(grupo.tituloEl);
+        for (const chave of grupo.chaves) {
+          if (L[chave].temValor()) nos.push(L[chave].element);
+        }
+      }
+      mostrar(card.corpo, nos);
+    }
+  }
+
   // Quatro cards, SEMPRE visiveis. Antes havia um card "Resumo" fixo mais um
   // bloco "Detalhes do pedido" colapsado, e os dois repetiam cliente, DIEx,
   // NUP, data e prazo. Cada dado aparece UMA vez, e nada fica escondido atras
-  // de um clique (chefe, 2026-07-27).
+  // de um clique (chefe, 2026-07-27). O card fica; a LINHA vazia dele some.
   const cardsEl = el('div', { className: 'detail-cards', style: { marginBottom: 'var(--space-md)' } }, [
-    el('div', { className: 'detail-card' }, [
-      el('div', { className: 'detail-card__title', textContent: 'Pedido' }),
-      linha('dataPedido', 'Data do pedido'),
-      linha('prazo', 'Prazo'),
-      linha('itens', 'Itens'),
-      linha('observacao', 'Observação'),
+    criarCard('Pedido', [
+      ['dataPedido', 'Data do pedido'],
+      ['prazo', 'Prazo'],
+      ['itens', 'Itens'],
+      // Quando o REGISTRO nasceu e quando mudou pela ultima vez. Nao e a data
+      // do pedido acima, que e a data do DIEx: o pedido de marco cadastrado em
+      // agosto so aparece com as duas datas lado a lado. O "alterado em" tambem
+      // e o que mostra qual pedido em aberto esta parado.
+      //
+      // SO A DATA, sem o autor. A migracao gravou um unico login em 164 de 164
+      // pedidos na criacao e em 159 de 164 na atualizacao (medido na producao
+      // em 2026-08-04), entao "quem" hoje e ruido, e nao dado. Nao foi
+      // esquecimento: `usuario_criacao_nome` e `usuario_atualizacao_nome`
+      // chegam na resposta e ficam de fora de proposito. Quando os pedidos
+      // cadastrados a mao forem a maioria, a linha do autor entra aqui.
+      ['cadastro', 'Cadastrado no sistema'],
+      ['atualizacao', 'Alterado no sistema'],
+      ['observacao', 'Observação'],
     ]),
-    el('div', { className: 'detail-card' }, [
-      el('div', { className: 'detail-card__title', textContent: 'Cliente e contato' }),
-      linha('clienteNome', 'Nome'),
-      linha('tipoCliente', 'Tipo'),
-      // DOIS contatos, de proposito. O do pedido costuma vir no DIEx e vale
-      // so para ele; o da OM e o geral, usado quando o pedido nao traz um.
-      linha('contatoPedido', 'Contato do pedido'),
-      linha('contatoOm', 'Contato geral da OM'),
-      linha('enderecoEntrega', 'Endereço de entrega'),
+    criarCard('Cliente e contato', [
+      ['clienteNome', 'Nome'],
+      ['tipoCliente', 'Tipo'],
+      ['enderecoEntrega', 'Endereço de entrega'],
+      // DOIS contatos, de proposito, e cada um debaixo do proprio titulo. O do
+      // pedido costuma vir no DIEx e vale so para ele; o da OM e o geral, usado
+      // quando o pedido nao traz um. Ate 2026-08-04 os dois eram uma linha
+      // cada, e o rotulo da linha era quem dizia de quem era o telefone: com a
+      // linha vazia saindo do DOM, o titulo passa a ser quem separa os dois.
+      subsecao('Contato do pedido', [
+        ['contatoPedido', 'Ponto de contato'],
+      ]),
+      subsecao('Contato geral da OM', [
+        ['contatoOm', 'Ponto de contato geral'],
+      ]),
     ]),
-    el('div', { className: 'detail-card' }, [
-      el('div', { className: 'detail-card__title', textContent: 'Documento' }),
-      linha('documento', 'DIEx/Ofício'),
-      linha('nup', 'NUP'),
-      linha('palavrasChave', 'Palavras-chave'),
-      linha('demandante', 'Demandante'),
-      linha('omds', 'OM responsável'),
-      linha('previstoPit', 'Previsto no PIT'),
-      linha('metaPit', 'Meta do PIT'),
+    criarCard('Documento', [
+      ['documento', 'DIEx/Ofício'],
+      ['nup', 'NUP'],
+      ['palavrasChave', 'Palavras-chave'],
+      ['demandante', 'Demandante'],
+      ['omds', 'OM responsável'],
+      ['previstoPit', 'Previsto no PIT'],
+      ['metaPit', 'Meta do PIT'],
     ]),
     // A forma e a data de entrega deixaram de ser do ITEM e passaram a ser do
     // PEDIDO (decisao do chefe, 2026-07-30): o pedido inteiro sai numa remessa
@@ -706,17 +825,17 @@ export async function renderPedidoDetails(container, { params }) {
     // A DATA fica AQUI e nao no card "Pedido", onde antes aparecia. O mesmo
     // dado em dois cards vira duvida sobre serem dados diferentes. Este card
     // responde "como e quando o material saiu"; o card "Pedido" ficou com as
-    // datas da DEMANDA (pedido e prazo). O rotulo nao mudou, para o campo
-    // continuar sendo o mesmo aos olhos de quem usa a tela.
-    el('div', { className: 'detail-card' }, [
-      el('div', { className: 'detail-card__title', textContent: 'Entrega' }),
-      linha('formaEntrega', 'Forma de entrega'),
-      // Esta e a data que a consulta publica mostra ao cliente, com o rotulo
-      // dele ("envio/entrega"): o pedido fecha no dia em que o material sai.
-      linha('atendimento', 'Atendimento (envio/entrega)'),
-      linha('localizadorEnvio', 'Localizador de envio'),
-      linha('observacaoEnvio', 'Observação de envio'),
-      linha('operacao', 'Operação'),
+    // datas da DEMANDA (pedido e prazo) e com as do registro. O rotulo nao
+    // mudou, para o campo continuar sendo o mesmo aos olhos de quem usa a tela.
+    //
+    // "Atendimento" e a data que a consulta publica mostra ao cliente, com o
+    // rotulo dele: o pedido fecha no dia em que o material sai.
+    criarCard('Entrega', [
+      ['formaEntrega', 'Forma de entrega'],
+      ['atendimento', 'Atendimento (envio/entrega)'],
+      ['localizadorEnvio', 'Localizador de envio'],
+      ['observacaoEnvio', 'Observação de envio'],
+      ['operacao', 'Operação'],
     ]),
   ]);
   L.clienteNome.definir(clienteLink);
@@ -760,7 +879,24 @@ export async function renderPedidoDetails(container, { params }) {
         key: 'produto_nome',
         label: 'Produto',
         sortable: true,
-        render: (row) => row.produto_nome || '-',
+        // O nome LEVA a ficha do produto no acervo. Quem le o pedido pergunta
+        // "que carta e essa" e ate 2026-08-04 tinha de sair da tela e buscar o
+        // nome a mao. A rota #/acervo/busca?produto_id= e a mesma que a tela de
+        // rastreabilidade usa para o agregado acervo:produto: a ficha do
+        // produto abre em dialogo, de dentro da busca, e nao tem rota propria.
+        //
+        // Item AVULSO nao tem produto do acervo (6 dos 2.423 itens, medidos na
+        // producao em 2026-08-04) e fica como texto: link que nao leva a nada e
+        // pior do que texto.
+        render: (row) => {
+          const nome = row.produto_nome || '-';
+          if (!row.produto_id) return nome;
+          return el('a', {
+            href: `#/acervo/busca?produto_id=${row.produto_id}`,
+            textContent: nome,
+            title: 'Abrir a ficha do produto no acervo',
+          });
+        },
       },
       { key: 'mi', label: 'MI', sortable: true },
       { key: 'inom', label: 'INOM' },
@@ -1034,8 +1170,10 @@ export async function renderPedidoDetails(container, { params }) {
       (soma, r) => soma + (Number(r.quantidade) || 0), 0);
 
     L.dataPedido.definir(formatDate(pedido.data_pedido));
-    L.prazo.definir(formatDate(pedido.prazo));
+    L.prazo.definir(dataOuNada(pedido.prazo));
     L.itens.definir(`${nItens} carta(s) · ${nExemplares} exemplar(es)`);
+    L.cadastro.definir(dataHoraOuNada(pedido.data_criacao));
+    L.atualizacao.definir(dataHoraOuNada(pedido.data_atualizacao));
     L.observacao.definir(pedido.observacao);
 
     clienteLink.href = `#/mapoteca/clientes/${pedido.cliente_id}`;
@@ -1047,19 +1185,21 @@ export async function renderPedidoDetails(container, { params }) {
 
     L.documento.definir(pedido.documento_solicitacao);
     L.nup.definir(pedido.documento_solicitacao_nup);
-    L.palavrasChave.definir((pedido.palavras_chave || []).length
-      ? pedido.palavras_chave.join(', ')
-      : '-');
+    L.palavrasChave.definir((pedido.palavras_chave || []).join(', '));
     L.demandante.definir(pedido.demandante);
     L.omds.definir(pedido.omds);
     L.previstoPit.definir(pedido.previsto_pit ? 'Sim' : 'Não');
     L.metaPit.definir(pedido.meta_pit_codigo);
 
     L.formaEntrega.definir(pedido.forma_entrega_nome);
-    L.atendimento.definir(formatDate(pedido.data_atendimento));
+    L.atendimento.definir(dataOuNada(pedido.data_atendimento));
     L.localizadorEnvio.definir(pedido.localizador_envio);
     L.observacaoEnvio.definir(pedido.observacao_envio);
     L.operacao.definir(pedido.operacao);
+
+    // Depois de TODOS os `definir` dos quatro cards: e aqui que a linha vazia
+    // sai da tela e a que ganhou valor volta.
+    mostrarLinhasComValor();
 
     // Pedido de civil (visível quando houver dado civil)
     const temCivil = Boolean(pedido.canal_recebimento_nome || pedido.municipio

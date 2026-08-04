@@ -68,6 +68,62 @@ export const NOME_ORIGEM = {
   desconhecido: 'Não registrada',
 };
 
+/**
+ * Palavras de identificador de banco que perdem o acento no nome da coluna.
+ *
+ * A troca é por PALAVRA, e não por tabela: tabela nova reaproveita o que já
+ * está aqui, e palavra que falta sai sem acento, nunca em branco. As entradas
+ * saem das tabelas declaradas em server/src/auditoria/mapa/ (conferido em
+ * 2026-08-04).
+ */
+const PALAVRA_ACENTUADA = {
+  capacitacao: 'capacitação',
+  configuracao: 'configuração',
+  credito: 'crédito',
+  edicao: 'edição',
+  execucao: 'execução',
+  impressao: 'impressão',
+  licitacao: 'licitação',
+  liquidacao: 'liquidação',
+  manutencao: 'manutenção',
+  midia: 'mídia',
+  periodo: 'período',
+  revisao: 'revisão',
+  subsecao: 'subseção',
+  usuario: 'usuário',
+  versao: 'versão',
+};
+
+/**
+ * O nome de uma tabela de origem, como a pessoa o lê.
+ *
+ * É DERIVAÇÃO, e não catálogo, porque catálogo não existe. O evento traz
+ * `tabela` (o nome cru), `entidade` (o AGREGADO, que é o MESMO para as quatro
+ * tabelas do pedido, e por isso não separa nada aqui) e `resumo` (que descreve
+ * o REGISTRO, não a tabela). O mapa do servidor tem rótulo por CAMPO, nunca por
+ * tabela. Ver server/src/auditoria/mapa/index.js.
+ *
+ * POR QUE NÃO UM MAPA DE TABELAS AQUI. São cerca de 60 tabelas auditadas nos
+ * três módulos, e este componente serve mais de vinte telas. Mapa escrito à mão
+ * apodrece na primeira tabela nova, e a chave que faltar devolve o nome cru
+ * justamente na tela que esta regra existe para proteger.
+ *
+ * O SCHEMA SAI FORA. O filtro só lista as tabelas de UM agregado, e todas elas
+ * são do mesmo módulo: o prefixo não distingue nada e é jargão de banco.
+ *
+ * O valor interno do filtro continua sendo o nome cru da tabela. O que não pode
+ * é ele APARECER.
+ *
+ * @param {string} tabela - 'schema.tabela'
+ * @returns {string} 'Impressão item'
+ */
+export function rotuloDaTabela(tabela) {
+  const nome = String(tabela || '').split('.').pop();
+  if (!nome) return '';
+  const texto = nome.split('_').map((p) => PALAVRA_ACENTUADA[p] || p).join(' ');
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 // Quantas mudanças cabem na linha antes de virar "e mais N". Duas é o que cabe
 // sem a célula quebrar em telas estreitas, e cobre a maioria esmagadora das
 // alterações reais (trocar a situação, trocar o prazo).
@@ -153,6 +209,39 @@ export function autor(evento) {
   }
   const nome = evento.usuario_nome_guerra || evento.usuario_nome;
   return evento.usuario_posto ? `${evento.usuario_posto} ${nome}` : nome;
+}
+
+/**
+ * O texto que a busca da tabela varre, montado por evento.
+ *
+ * POR QUE ELE EXISTE (2026-08-04). A busca do data-table casa contra
+ * `row[col.key]`, o valor CRU da coluna, e não contra o que o `render` desenhou.
+ * Das quatro colunas daqui, uma é um array de objetos (vira "[object Object]"),
+ * outra é a letra do banco ('U') e a terceira é a data em ISO. Ligar a busca sem
+ * isto entregaria uma caixa que não acha "Situação", "Concluído" nem
+ * "impressao_item".
+ *
+ * O que entra é o que se procura num histórico: o verbo, o resumo, a tabela de
+ * origem (crua e como o filtro a mostra), quem fez, a data como a tela a mostra
+ * e, de cada mudança, o rótulo, o nome da coluna e os dois valores.
+ *
+ * A tabela entra nas DUAS formas: quem digita "impressao_item" vem do banco e
+ * quem digita "Impressão item" leu o filtro. Este texto não vai para a tela.
+ */
+export function textoDeBusca(evento) {
+  const op = OPERACAO[evento.operacao];
+  const partes = [
+    op ? op.texto : evento.operacao,
+    evento.resumo,
+    evento.tabela,
+    rotuloDaTabela(evento.tabela),
+    autor(evento),
+    formatDateTime(evento.data_evento),
+  ];
+  for (const m of evento.mudancas || []) {
+    partes.push(m.rotulo, m.campo, m.antes_texto, m.depois_texto);
+  }
+  return partes.filter(Boolean).join(' ');
 }
 
 /**
@@ -277,6 +366,126 @@ export function criarHistorico({
     aviso.hidden = false;
   }
 
+  /**
+   * OS DOIS FILTROS (2026-08-04).
+   *
+   * O histórico de um agregado junta as tabelas dele. No pedido 68 são 235
+   * eventos em 24 páginas, e os 2 eventos da própria tabela `mapoteca.pedido`
+   * caem nas posições 78 e 156, ou seja, nas páginas 8 e 16. As 12 primeiras
+   * linhas dizem todas "Alterou · Data da impressão". No módulo inteiro, evento
+   * do próprio pedido é 6,7% do total. "Quem mudou a situação e quando" custava
+   * dezenas de cliques.
+   *
+   * O FILTRO NÃO MOSTRA NOME DE TABELA. A tela traduz o diff para português
+   * ("Situação: Em produção → Concluído") para quem lê não precisar saber o
+   * schema, e um select com "mapoteca.impressao_item" desfazia isso. O rótulo
+   * sai de rotuloDaTabela(); o nome cru fica no valor da opção.
+   *
+   * AS OPÇÕES VÊM DOS DADOS, nunca de uma lista fixa: este componente serve os
+   * três módulos e mais de vinte telas, e lista escrita à mão apodrece na
+   * primeira tabela nova.
+   *
+   * FILTRO COM UMA OPÇÃO SÓ NÃO APARECE. Ele não recorta nada e vira ruído na
+   * ficha que tem uma tabela só (a maioria fora do pedido).
+   *
+   * A OPERAÇÃO DEPENDE DA TABELA, como Sistema e Subsistema na tela de
+   * rastreabilidade. Sem a dependência, cruzar "mapoteca.pedido" com "Removeu"
+   * daria lista vazia, e o vazio da tabela diz "o registro começou em 30/07",
+   * que ali seria mentira.
+   */
+  let linhas = [];
+  let filtroTabela = '';
+  let filtroOperacao = '';
+
+  function visiveis() {
+    return linhas.filter((l) => (
+      (!filtroTabela || l.tabela === filtroTabela)
+      && (!filtroOperacao || l.operacao === filtroOperacao)
+    ));
+  }
+
+  function criarSelect(rotulo, aoEscolher) {
+    const select = el('select', {
+      // Classe do select compacto do rodapé da tabela, que já é global em
+      // tables.css: o filtro fica do tamanho de um controle de tabela.
+      className: 'pagination__select',
+      'aria-label': rotulo,
+      onChange: (e) => {
+        aoEscolher(e.target.value);
+        sincronizarFiltros();
+        if (tabela) tabela.update({ rows: visiveis() });
+      },
+    });
+    // `hidden` vai como PROPRIEDADE: o el() faz setAttribute, e hidden="false"
+    // esconde do mesmo jeito. É a armadilha que o repo já registrou.
+    select.hidden = true;
+    return select;
+  }
+
+  const selectTabela = criarSelect('Filtrar por tabela de origem', (v) => { filtroTabela = v; });
+  const selectOperacao = criarSelect('Filtrar por operação', (v) => { filtroOperacao = v; });
+
+  // A barra fica FORA do cartão da tabela, e por isso não usa a classe da
+  // toolbar dela: solta, a toolbar deixaria uma borda inferior órfã acima do
+  // cartão. Aqui ela é a mesma fileira de controles das seções do painel.
+  const barra = el('div', {
+    className: 'dashboard-section__controls historico__filtros',
+    style: { marginBottom: 'var(--space-sm)' },
+  }, [selectTabela, selectOperacao]);
+  barra.hidden = true;
+
+  /**
+   * Repõe as opções de um select a partir dos dados, e devolve o valor que
+   * sobreviveu. Escolha que sumiu do recorte é DESCARTADA: mantê-la deixaria o
+   * filtro cobrando um cruzamento impossível, e a lista viria vazia sem dizer
+   * por quê.
+   */
+  function preencherSelect(select, opcoes, textoTodos) {
+    const escolhido = select.value;
+    clearChildren(select);
+    select.appendChild(el('option', { value: '', textContent: textoTodos }));
+    for (const o of opcoes) {
+      select.appendChild(el('option', { value: o.valor, textContent: o.texto }));
+    }
+    select.value = opcoes.some((o) => o.valor === escolhido) ? escolhido : '';
+    select.hidden = opcoes.length < 2;
+    return select.value;
+  }
+
+  /**
+   * As tabelas presentes, em ordem alfabética pelo RÓTULO, que é o que a pessoa
+   * lê. O valor da opção continua sendo o nome cru, porque é por ele que o
+   * filtro casa; o nome cru nunca vai para a tela. Ver rotuloDaTabela().
+   */
+  function opcoesDeTabela() {
+    return [...new Set(linhas.map((l) => l.tabela).filter(Boolean))]
+      .map((t) => ({ valor: t, texto: rotuloDaTabela(t) }))
+      .sort((a, b) => a.texto.localeCompare(b.texto, 'pt-BR'));
+  }
+
+  /**
+   * As operações presentes no recorte da tabela escolhida.
+   * A ordem é a do vocabulário do banco (I, U, D). Letra que o mapa não conhece
+   * entra com o próprio nome, e não some: sumir esconderia eventos da contagem.
+   */
+  function opcoesDeOperacao() {
+    const base = filtroTabela ? linhas.filter((l) => l.tabela === filtroTabela) : linhas;
+    const presentes = [...new Set(base.map((l) => l.operacao).filter(Boolean))];
+    const conhecidas = Object.keys(OPERACAO).filter((op) => presentes.includes(op));
+    const outras = presentes.filter((op) => !OPERACAO[op]).sort();
+    return [...conhecidas, ...outras].map((op) => ({
+      valor: op,
+      texto: OPERACAO[op] ? OPERACAO[op].texto : op,
+    }));
+  }
+
+  function sincronizarFiltros() {
+    filtroTabela = preencherSelect(selectTabela, opcoesDeTabela(), 'Todas as tabelas');
+    // A operação se repovoa DEPOIS da tabela, porque ela depende do recorte.
+    filtroOperacao = preencherSelect(selectOperacao, opcoesDeOperacao(), 'Todas as operações');
+    barra.hidden = selectTabela.hidden && selectOperacao.hidden;
+  }
+
   async function carregar() {
     carregado = true;
     let eventos;
@@ -301,13 +510,18 @@ export function criarHistorico({
     if (disposed) return;
     aviso.hidden = true;
 
+    // O texto de busca entra numa CÓPIA da linha, e o evento original segue
+    // inteiro para o modal de diferenças.
+    linhas = (eventos || []).map((e) => ({ ...e, busca: textoDeBusca(e) }));
+    sincronizarFiltros();
+
     // A TABELA SOBREVIVE À RECARGA (2026-08-04). Seis fichas chamam
     // `recarregar()` depois de gravar. Recriar a tabela jogava fora a
     // ordenação e a página em que a pessoa estava, e mudava a altura da seção
     // debaixo do cursor. O `update` do data-table preserva as duas, e reconcilia
     // as linhas pelo `id` do evento.
     if (tabela) {
-      tabela.update({ rows: eventos || [] });
+      tabela.update({ rows: visiveis() });
       return;
     }
 
@@ -336,18 +550,24 @@ export function criarHistorico({
           },
         },
         {
-          key: 'mudancas',
+          // A CHAVE É O TEXTO DE BUSCA, e não 'mudancas' (2026-08-04). A busca
+          // do data-table lê row[col.key], e o array de mudanças vira
+          // "[object Object]". A célula continua saindo do render, que lê
+          // r.mudancas direto, e a coluna não ordena: a chave só governa o que a
+          // busca enxerga. Ver textoDeBusca().
+          key: 'busca',
           label: 'O que mudou',
           className: 'historico__col-mudou',
           render: (r) => celulaDoQueMudou(r, abrirDetalheDoEvento),
         },
       ],
-      rows: eventos || [],
+      rows: visiveis(),
       pageSize: 10,
-      // Sem `searchable`: a busca do data-table filtra as linhas que ele tem, e
-      // o que interessa buscar aqui (o valor dentro do diff) não está em nenhuma
-      // coluna crua.
-      searchable: false,
+      // BUSCA LIGADA (2026-08-04). Ela varre o texto montado por textoDeBusca,
+      // que traz o diff, o campo alterado e a tabela. Sem esse texto a busca não
+      // acharia nada: o data-table casa contra o valor cru da coluna, e o valor
+      // que interessa aqui mora dentro do diff.
+      searchable: true,
       emptyMessage: `Nenhuma alteração registrada. O registro de alterações `
         + `começou em ${formatDate(INICIO_DO_REGISTRO)}. O que mudou antes `
         + `dessa data não aparece aqui.`,
@@ -360,6 +580,7 @@ export function criarHistorico({
 
     clearChildren(corpo);
     corpo.className = '';
+    corpo.appendChild(barra);
     corpo.appendChild(tabela.element);
     corpo.appendChild(aviso);
   }

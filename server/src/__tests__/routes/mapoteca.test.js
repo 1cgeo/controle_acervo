@@ -2102,7 +2102,13 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.total_entregas).toBe(7)
       expect(res.body.dados.oms_distintas_count).toBe(1)
       expect(res.body.dados.operacoes_distintas_count).toBe(1)
-      expect(res.body.dados.custo_manutencao_total).toBe(0)
+      // NULL, e nao 0, quando nao ha nenhuma linha de manutencao no ano
+      // (mudanca de 2026-08-04). O cartao da tela distingue os dois casos: sem
+      // registro ele escreve "Sem registro", e com registro somando zero ele
+      // escreve R$ 0,00. Antes os dois apareciam iguais, e o chefe lia
+      // "gastamos R$ 0,00 em manutencao" quando o certo era "ninguem lancou".
+      expect(res.body.dados.custo_manutencao_total).toBeNull()
+      expect(res.body.dados.manutencoes_count).toBe(0)
     })
 
     it('GET /dashboard/entregas_por_mes should return 12 months', async () => {
