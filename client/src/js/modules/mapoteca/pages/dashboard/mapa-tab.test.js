@@ -9,10 +9,19 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderMapaTab } from '@modules/mapoteca/pages/dashboard/mapa-tab.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-import { setAno } from '@modules/mapoteca/store/year-store.js';
 import { instanciasMapa } from '@components/mapa/maplibre-stub.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// A aba NAO tem filtro proprio: ela recebe o ano da pagina do dashboard, que
+// tem um filtro so para as cinco abas (chefe, 2026-08-04). Quem prova que a
+// pagina abre no ano ATUAL e o teste do index. Aqui o ano e injetado, e por
+// isso os anos abaixo sao fixos e nao dependem da data de hoje.
+let ano = 2026;
+const getAno = () => ano;
+
+/** Monta a aba com o ano injetado, como o dashboard faz. */
+const montar = (container) => renderMapaTab(container, getAno);
 
 const CACEQUI = {
   id: 880,
@@ -92,16 +101,18 @@ const SEM_FILTRO = { tipo_produto_id: null, escala: null, cliente_id: null };
 
 describe('aba Mapa do dashboard da mapoteca', () => {
   beforeEach(() => {
+    // O ano volta ao padrao a cada teste: sem isto, o teste que o troca
+    // decidiria o ano do proximo, pela ordem de execucao.
+    ano = 2026;
     instanciasMapa.length = 0;
     document.body.innerHTML = '';
     svc.getEntregasGeo.mockResolvedValue(resposta([CACEQUI, CAMPO_INSTRUCAO]));
     svc.getEntregasFiltros.mockResolvedValue(FILTROS);
   });
 
-  test('busca as entregas do ano de contexto e leva as feicoes para o mapa', async () => {
-    setAno(2026);
+  test('busca as entregas do ano recebido da pagina e leva as feicoes para o mapa', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     expect(svc.getEntregasGeo).toHaveBeenCalledWith(2026, SEM_FILTRO);
@@ -119,7 +130,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('o rotulo usa o MI, e cai para o nome no produto sem MI', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const rotulo = instanciasMapa[0].camadas['entregas-rotulo'];
@@ -136,7 +147,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // ladrilho so.
   test('o rotulo sai de uma fonte de PONTOS, e nao do poligono', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const mapa = instanciasMapa[0];
@@ -157,7 +168,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // o clique.
   test('a folha menor fica por cima da maior', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const preenchimento = instanciasMapa[0].camadas['entregas-preenchimento'];
@@ -171,7 +182,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('resume quantos exemplares e quantos produtos entraram no mapa', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const resumo = container.querySelector('.mapa-entregas__resumo').textContent;
@@ -186,7 +197,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   test('avisa quando alguma entrega ficou fora por falta de geometria', async () => {
     svc.getEntregasGeo.mockResolvedValue(resposta([CACEQUI], { sem_geometria: 7 }));
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const aviso = container.querySelector('.mapa-entregas__resumo-aviso');
@@ -197,10 +208,10 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   });
 
   test('sem entrega no ano, diz isso em vez de deixar a tela muda', async () => {
-    setAno(2019);
+    ano = 2019;
     svc.getEntregasGeo.mockResolvedValue(resposta([]));
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     expect(container.querySelector('.mapa-entregas__resumo').textContent)
@@ -210,9 +221,9 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   });
 
   test('o refresh reenquadra ao trocar o ano, e nao reenquadra no auto-refresh', async () => {
-    setAno(2026);
+    ano = 2026;
     const container = document.createElement('div');
-    const { cleanup, refresh } = await renderMapaTab(container);
+    const { cleanup, refresh } = await montar(container);
     await flush();
 
     const mapa = instanciasMapa[0];
@@ -226,7 +237,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
     expect(mapa.enquadramentos).toHaveLength(enquadramentosIniciais);
 
     // Troca de ano: agora reenquadra, porque a area coberta e outra.
-    setAno(2025);
+    ano = 2025;
     await refresh();
     await flush();
     expect(svc.getEntregasGeo).toHaveBeenLastCalledWith(2025, SEM_FILTRO);
@@ -240,9 +251,9 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // ---------------------------------------------------------------------------
 
   test('as opcoes de filtro sao as do ano, e trazem quantos produtos cada uma tem', async () => {
-    setAno(2026);
+    ano = 2026;
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     expect(svc.getEntregasFiltros).toHaveBeenCalledWith(2026, SEM_FILTRO);
@@ -257,9 +268,9 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   });
 
   test('escolher um filtro refaz a busca com ele e reenquadra', async () => {
-    setAno(2026);
+    ano = 2026;
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
     const mapa = instanciasMapa[0];
     const antes = mapa.enquadramentos.length;
@@ -279,7 +290,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // numero ao lado de cada escala e de cada tipo.
   test('um filtro cruza o quantitativo dos outros', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     svc.getEntregasFiltros.mockResolvedValue({
@@ -310,7 +321,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // mapa mudar sem entender. Com "(0)" na lista, o mapa vazio tem explicacao.
   test('a escolha que zera com o cruzamento fica na lista, marcada com (0)', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     await escolher(container, 1, '1:25.000');
@@ -336,7 +347,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('os tres filtros se combinam, e o id vai como numero', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     await escolher(container, 0, '2');
@@ -352,7 +363,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('o botao de limpar so aparece com filtro, e devolve tudo', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const limpar = [...container.querySelectorAll('button')]
@@ -376,7 +387,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // o ano ter 3.119.
   test('com filtro, o resumo mostra o recorte contra o total do ano', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     svc.getEntregasGeo.mockResolvedValue(
@@ -392,7 +403,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('combinacao de filtros sem resultado diz que foi o filtro', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     svc.getEntregasGeo.mockResolvedValue(resposta([], { filtrado: true, total_ano: 3119 }));
@@ -407,9 +418,9 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   // A OM que nao entregou nada no ano novo nao existe mais como opcao. Manter a
   // selecao faria o mapa nascer vazio sem a pessoa entender por que.
   test('trocar o ano descarta o filtro que sumiu da lista, e mantem o que ficou', async () => {
-    setAno(2026);
+    ano = 2026;
     const container = document.createElement('div');
-    const { cleanup, refresh } = await renderMapaTab(container);
+    const { cleanup, refresh } = await montar(container);
     await flush();
 
     await escolher(container, 2, '38');
@@ -422,7 +433,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
       escalas: [{ escala: '1:25.000', produtos: 4 }],
       clientes: [{ id: 5, nome: '11ª Bateria de Artilharia Antiaérea', produtos: 2 }],
     });
-    setAno(2025);
+    ano = 2025;
     await refresh();
     await flush();
 
@@ -437,7 +448,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
   test('a lista de opcoes que falha nao derruba o mapa', async () => {
     svc.getEntregasFiltros.mockRejectedValue(new Error('rede fora'));
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     expect(svc.getEntregasGeo).toHaveBeenCalledWith(2026, SEM_FILTRO);
@@ -448,7 +459,7 @@ describe('aba Mapa do dashboard da mapoteca', () => {
 
   test('o cleanup remove o mapa', async () => {
     const container = document.createElement('div');
-    const { cleanup } = await renderMapaTab(container);
+    const { cleanup } = await montar(container);
     await flush();
 
     const mapa = instanciasMapa[0];

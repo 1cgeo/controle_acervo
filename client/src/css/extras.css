@@ -1,28 +1,8 @@
-/* Ajustes do refactor: seletor de ano no navbar e barra do RPCMTec. */
-
-/* Seletor de ano no navbar (segue o tema claro/escuro pelos tokens) */
-.navbar__year {
-  height: 32px;
-  background-color: var(--bg-elevated);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 0 8px;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.navbar__year:hover {
-  border-color: var(--color-primary);
-}
-
-.navbar__year:focus-visible {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--bg-selected);
-}
+/* Ajustes do refactor: barra do RPCMTec, barra de filtro e cabecalho de pagina.
+ *
+ * A regra `.navbar__year` saiu em 2026-08-04, com o seletor de ano da navbar.
+ * O ano agora e filtro de cada tela (@components/filtro-ano.js) e usa o estilo
+ * de campo de formulario, como os demais filtros ao lado dele. */
 
 /* Faz os selects nativos (popup e seta) seguirem o tema no modo escuro */
 [data-theme="dark"] select {

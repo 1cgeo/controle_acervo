@@ -24,8 +24,8 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
  * isso a tela abre numa LISTA -- consultar o RPCMTec de um mes passado e a
  * operacao mais comum, e ela nao existia.
  *
- * O ANO tem seletor PROPRIO, e nao o da navbar: aquele e contexto de MODULO
- * (`@sca-mapoteca-ano`, `@sca-orcamento-ano`) e nao existe fora deles.
+ * O ANO tem filtro PROPRIO, como toda tela desde 2026-08-04 (chefe). O seletor
+ * de ano da navbar, que valia para um modulo inteiro, acabou.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx

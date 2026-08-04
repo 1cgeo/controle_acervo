@@ -3,7 +3,6 @@ import { formatNumber, formatCurrency } from '@utils/format.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
-import { getAno } from '@modules/mapoteca/store/year-store.js';
 
 /** Card simples de numero, sem icone: aqui o que importa e o valor. */
 function summaryCard(label) {
@@ -17,7 +16,7 @@ function summaryCard(label) {
 }
 
 // O ano chega como FUNÇÃO, e não como valor: o botão é montado uma vez e o ano
-// de contexto muda depois. Com o valor, todo CSV sairia do ano da montagem.
+// do filtro muda depois. Com o valor, todo CSV sairia do ano da montagem.
 function exportButton(nome, anoDoPainel) {
   return el('button', {
     className: 'btn btn--secondary btn--sm',
@@ -61,24 +60,19 @@ function pivotEntregasPorTipo(rows) {
  * Abre o dashboard (chefe, 2026-07-27), e por isso e a PRIMEIRA aba: e o que se
  * quer ver ao entrar, antes do movimento do dia a dia.
  *
- * O ano vem do CONTEXTO do modulo (seletor da navbar, 2026-07-28). Era local
- * desta aba, quando ela era o unico painel por ano da mapoteca; hoje o mapa das
- * entregas, o consumo e o RPCMTec tambem sao, e quatro seletores independentes
- * faziam a mesma escolha ter de ser refeita quatro vezes.
+ * O ano vem do filtro da PAGINA do dashboard, que vale para as cinco abas
+ * (chefe, 2026-08-04). Um filtro por aba faria a mesma escolha ser refeita a
+ * cada troca de aba.
  *
  * @param {HTMLElement} container
+ * @param {() => number} getAno - ano do filtro da pagina
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
-export async function renderResumoAnualTab(container) {
+export async function renderResumoAnualTab(container, getAno) {
   let disposed = false;
   let anoSelecionado = getAno();
 
   const anoDoPainel = () => anoSelecionado;
-
-  const anoLabel = el('span', {
-    className: 'dashboard-section__ano',
-    textContent: String(anoSelecionado),
-  });
 
   const cards = {
     totalPedidos: summaryCard('Pedidos no ano'),
@@ -111,11 +105,9 @@ export async function renderResumoAnualTab(container) {
 
   container.appendChild(el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [
+      // Sem rotulo de ano aqui: o filtro da pagina fica logo acima das abas, e
+      // repetir o ano em cada secao so duplicaria a informacao.
       el('h2', { className: 'dashboard-section__title', textContent: 'Resumo Anual' }),
-      el('div', { className: 'dashboard-section__controls' }, [
-        el('span', { textContent: 'Ano:' }),
-        anoLabel,
-      ]),
     ]),
     el('div', { className: 'summary-cards' }, Object.values(cards)),
     el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
@@ -131,10 +123,9 @@ export async function renderResumoAnualTab(container) {
   ]));
 
   async function load() {
-    // Reler o contexto a cada carga cobre os dois caminhos: o refresh de 60 s
-    // da aba e a troca de ano na navbar, que o dashboard repassa como refresh.
+    // Reler o filtro a cada carga cobre os dois caminhos: o refresh de 60 s da
+    // aba e a troca de ano, que o dashboard repassa como refresh.
     anoSelecionado = getAno();
-    anoLabel.textContent = String(anoSelecionado);
     const ano = anoSelecionado;
     entregasTipoChart.update({ loading: true });
     operacoesChart.update({ loading: true });

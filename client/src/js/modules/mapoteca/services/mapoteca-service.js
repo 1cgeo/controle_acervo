@@ -626,8 +626,9 @@ function buscarComFiltros(rota, ano, filtros) {
 
 /**
  * Anos com dado na mapoteca, do mais recente para o mais antigo. Alimenta o
- * seletor de ano da navbar. Cache de DOMINIO (30 min): a lista só muda quando
- * nasce o primeiro pedido de um ano.
+ * filtro de ano de cada tela. Cache de DOMINIO (30 min): a lista só muda quando
+ * nasce o primeiro pedido de um ano, e por isso as varias telas que a pedem
+ * gastam uma busca só.
  * @returns {Promise<Array<number>>}
  */
 export function getAnosMapoteca() {

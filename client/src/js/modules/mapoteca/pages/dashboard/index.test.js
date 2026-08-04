@@ -12,9 +12,24 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderDashboard } from '@modules/mapoteca/pages/dashboard/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// O dashboard tem UM filtro de ano, no nivel da pagina, e abre no ano ATUAL
+// (chefe, 2026-08-04). O seletor da navbar acabou, e nada fica no localStorage.
+const ANO_ATUAL = new Date().getFullYear();
+const ANO_ANTERIOR = ANO_ATUAL - 1;
+
+/** O select do filtro de ano da pagina, acima das abas. */
+const filtroAno = (container) => container.querySelector('.page__filters select');
+
+/** Troca o ano da pagina e espera a recarga da aba aberta. */
+async function trocarAno(container, ano) {
+  const select = filtroAno(container);
+  select.value = String(ano);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await flush();
+}
 
 // 1200 + 689 dos dois clientes do mock, formatado como o Intl pt-BR faz.
 const SOMA_IMPRESSOES = new Intl.NumberFormat('pt-BR').format(1889);
@@ -34,6 +49,7 @@ async function abrirAba(container, rotulo) {
 
 describe('renderDashboard da mapoteca', () => {
   beforeEach(() => {
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
     svc.getOrderStatus.mockResolvedValue({
       total: 68, em_andamento: 12, concluidos: 50, pendentes: 6,
       distribuicao: [],
@@ -82,14 +98,16 @@ describe('renderDashboard da mapoteca', () => {
   // presta contas. Virou a PRIMEIRA aba, e nao a primeira secao, mas a ordem
   // continua sendo uma decisao, e nao acaso.
   test('abre no Resumo Anual, e so ele busca dado', async () => {
-    const ano = new Date().getFullYear();
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(svc.getResumoAnual).toHaveBeenCalledWith(ano);
-    expect(svc.getEntregasPorTipoProduto).toHaveBeenCalledWith(ano);
-    expect(svc.getOperacoesApoiadas).toHaveBeenCalledWith(ano);
+    // A pagina abre no ano ATUAL. Antes o ano vinha do localStorage, e voltar
+    // semanas depois abria num ano antigo sem nada avisar.
+    expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
+    expect(svc.getResumoAnual).toHaveBeenCalledWith(ANO_ATUAL);
+    expect(svc.getEntregasPorTipoProduto).toHaveBeenCalledWith(ANO_ATUAL);
+    expect(svc.getOperacoesApoiadas).toHaveBeenCalledWith(ANO_ATUAL);
     expect(container.textContent).toContain('Resumo Anual');
 
     // As outras tres abas ainda nao existem no DOM: nada delas foi buscado.
@@ -101,15 +119,15 @@ describe('renderDashboard da mapoteca', () => {
   });
 
   test('cada aba busca o seu proprio grupo de endpoints', async () => {
-    // Ano FIXADO: o contexto vive em localStorage e sobrevive entre testes,
-    // entao sem isto a assercao dependeria da ordem de execucao.
-    const ANO = 2026;
-    setAno(ANO);
+    // Sem ano fixado: a pagina abre no ano atual, e as cinco abas leem o MESMO
+    // filtro. Era preciso fixar quando o ano vinha do localStorage e sobrevivia
+    // entre os testes.
+    const ANO = ANO_ATUAL;
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    // Todas as abas passaram a levar o ANO de contexto (2026-07-28). As janelas
+    // Todas as abas passaram a levar o ANO da pagina (2026-07-28). As janelas
     // deslizantes ("ultimos 6 meses", "ultimos 12 meses") sairam junto: elas nao
     // tinham como respeitar um ano escolhido, porque continuariam terminando
     // hoje.
@@ -212,19 +230,16 @@ describe('renderDashboard da mapoteca', () => {
     cleanup();
   });
 
-  // O ano vem do contexto do modulo (seletor da navbar). Antes cada painel por
-  // ano tinha o proprio seletor, e todos nasciam no ano corrente: a escolha se
-  // perdia a cada troca de tela.
-  test('trocar o ano de contexto recarrega a aba aberta com o novo ano', async () => {
-    setAno(2026);
+  // O filtro e UM so, no nivel da pagina, e vale para as cinco abas. Um filtro
+  // por aba faria a mesma escolha ser refeita a cada troca de aba.
+  test('trocar o ano no filtro recarrega a aba aberta com o novo ano', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
-    expect(svc.getResumoAnual).toHaveBeenLastCalledWith(2025);
+    expect(svc.getResumoAnual).toHaveBeenLastCalledWith(ANO_ANTERIOR);
     // Sem derrubar o cache: as respostas sao guardadas por ano, entao voltar ao
     // ano anterior nao paga a busca de novo.
     expect(svc.invalidateDashboardCache).not.toHaveBeenCalled();
@@ -232,16 +247,29 @@ describe('renderDashboard da mapoteca', () => {
     cleanup();
   });
 
-  test('o cleanup para de ouvir a troca de ano', async () => {
-    setAno(2026);
+  // A aba que MONTA depois da troca tambem nasce no ano escolhido: o filtro e
+  // da pagina, e nao da aba que estava aberta na hora.
+  test('a aba aberta depois da troca ja nasce no ano escolhido', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await trocarAno(container, ANO_ANTERIOR);
+    await abrirAba(container, 'Pedidos');
+
+    expect(svc.getOrderStatus).toHaveBeenCalledWith(ANO_ANTERIOR);
+
+    cleanup();
+  });
+
+  test('depois do cleanup, trocar o ano nao busca mais nada', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
     cleanup();
     svc.getResumoAnual.mockClear();
 
-    setAno(2024);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
     expect(svc.getResumoAnual).not.toHaveBeenCalled();
   });
 

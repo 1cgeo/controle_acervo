@@ -8,8 +8,8 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 //
 // Estes testes provam a IDENTIDADE do no (toBe), e nao o texto na tela. Repintar
 // tudo tambem acerta o texto, e perde no caminho a ordenacao, a pagina atual e o
-// foco do teclado. O gatilho de recarga usado aqui e a troca de ano, que a
-// pagina ja escuta.
+// foco do teclado. O gatilho de recarga usado aqui e a troca de ano no filtro do
+// grafico de consumo, o unico bloco da ficha que tem ano.
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -18,10 +18,24 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderMaterialDetails } from '@modules/mapoteca/pages/materiais/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-import { setAno } from '@modules/mapoteca/store/year-store.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// O filtro e desta tela e abre no ano ATUAL (chefe, 2026-08-04).
+const ANO_ATUAL = new Date().getFullYear();
+const ANO_ANTERIOR = ANO_ATUAL - 1;
+
+/** O select do filtro de ano, na barra de controle do grafico de consumo. */
+const filtroAno = (container) => container.querySelector('.export-bar select');
+
+/** Troca o ano do grafico. E o gatilho de recarga da ficha. */
+async function trocarAno(container, ano) {
+  const select = filtroAno(container);
+  select.value = String(ano);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await flush();
+}
 
 const MATERIAL = {
   id: 1,
@@ -80,18 +94,33 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     logarComo({ mapoteca: GERENTE });
     svc.getTipoMaterial.mockResolvedValue(MATERIAL);
     svc.getConsumoMensal.mockResolvedValue([]);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
   });
 
   afterEach(() => {
     document.body.innerHTML = '';
   });
 
+  // O ano nao vem mais da navbar: e desta tela, e recorta SO o grafico de
+  // consumo mensal. O cadastro, o estoque e o consumo recente nao tem ano.
+  test('o grafico abre no ano ATUAL e trocar o ano recarrega', async () => {
+    const { container, cleanup } = await montar();
+
+    expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ATUAL);
+
+    await trocarAno(container, ANO_ANTERIOR);
+
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ANTERIOR);
+    expect(svc.getTipoMaterial).toHaveBeenLastCalledWith(1);
+    cleanup();
+  });
+
   test('a raiz da pagina e a MESMA depois da recarga', async () => {
     const { container, cleanup } = await montar();
     const paginaAntes = container.querySelector('.page');
 
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     expect(container.querySelector('.page')).toBe(paginaAntes);
     cleanup();
@@ -102,8 +131,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     const estoqueAntes = tabelaDe(container, 'Estoque por localização');
     const consumoAntes = tabelaDe(container, 'Consumo recente');
 
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     expect(tabelaDe(container, 'Estoque por localização')).toBe(estoqueAntes);
     expect(tabelaDe(container, 'Consumo recente')).toBe(consumoAntes);
@@ -116,8 +144,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     cabecalho(estoque, 'Quantidade').click();
     expect(cabecalho(estoque, 'Quantidade').getAttribute('aria-sort')).toBe('ascending');
 
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     const depois = secao(container, 'Estoque por localização');
     expect(cabecalho(depois, 'Quantidade').getAttribute('aria-sort')).toBe('ascending');
@@ -129,8 +156,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     const tituloAntes = container.querySelector('.page__title');
 
     svc.getTipoMaterial.mockResolvedValue({ ...MATERIAL, nome: 'Papel A1' });
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     expect(container.querySelector('.page__title')).toBe(tituloAntes);
     expect(tituloAntes.textContent).toBe('Papel A1');
@@ -146,8 +172,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
       ...MATERIAL,
       estoque: { ...MATERIAL.estoque, total: 30 },
     });
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     expect(container.querySelector('.summary-card')).toBe(cartaoAntes);
     expect(cartaoAntes.querySelector('.summary-card__value').textContent).toBe('30');
@@ -161,8 +186,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     editar.focus();
     expect(document.activeElement).toBe(editar);
 
-    setAno(2025);
-    await flush();
+    await trocarAno(container, ANO_ANTERIOR);
 
     expect(container.contains(editar)).toBe(true);
     expect(document.activeElement).toBe(editar);

@@ -6,6 +6,7 @@ import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { createNumberField, createSelectField, createDateField } from '@components/form-fields/form-fields.js';
 import { createLineChart } from '@components/charts/line-chart.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import {
   getConsumoMaterial,
   getConsumoMensal,
@@ -13,9 +14,9 @@ import {
   updateConsumoMaterial,
   deleteConsumoMaterial,
   getTiposMaterial,
+  getAnosMapoteca,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
-import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 /**
  * Consumo de material page (#/consumo).
@@ -32,10 +33,9 @@ export async function renderConsumoList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('mapoteca');
   let materialOptions = [];
-  // O ano vem do contexto do modulo (seletor da navbar), e nao de um seletor
-  // local: era o quarto seletor de ano da mapoteca, e todos nasciam no ano
-  // corrente, entao a escolha se perdia a cada troca de tela.
-  let selectedYear = getAno();
+  // O ano que a ultima carga do grafico usou. Serve para descartar a resposta
+  // que chegar depois de outra troca de ano.
+  let selectedYear = null;
 
   // -------------------------------------------------------------------------
   // Filters
@@ -135,16 +135,17 @@ export async function renderConsumoList(container, _ctx) {
     loading: true,
   });
 
-  // Rotulo do ano em uso, para o grafico nao ficar sem dizer de que ano ele e.
-  const anoLabel = el('span', {
-    className: 'dashboard-section__ano',
-    textContent: String(selectedYear),
-  });
-
-  const offAno = onAnoChange(() => {
-    selectedYear = getAno();
-    anoLabel.textContent = String(selectedYear);
-    loadChart();
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). Ele mora no cabecalho da secao do grafico, e nao na barra de
+  // filtros do topo: o ano recorta SO a tendencia anual, enquanto a barra do
+  // topo recorta a tabela por data. Juntos, os dois pareceriam um filtro so.
+  //
+  // Sem "+ Outro ano": aqui o ano so filtra o que ja aconteceu, e um ano sem
+  // consumo nenhum seria um grafico em branco.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnosMapoteca,
+    permitirOutroAno: false,
+    onChange: () => loadChart(),
   });
 
   // -------------------------------------------------------------------------
@@ -176,7 +177,8 @@ export async function renderConsumoList(container, _ctx) {
   }
 
   async function loadChart() {
-    const ano = selectedYear;
+    const ano = filtroAno.getAno();
+    selectedYear = ano;
     consumoChart.update({ loading: true });
     try {
       const dados = await getConsumoMensal(ano);
@@ -349,10 +351,7 @@ export async function renderConsumoList(container, _ctx) {
     el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Tendência anual' }),
-        el('div', { className: 'dashboard-section__controls' }, [
-          el('span', { textContent: 'Ano:' }),
-          anoLabel,
-        ]),
+        el('div', { className: 'dashboard-section__controls' }, [filtroAno.element]),
       ]),
       consumoChart,
     ]),
@@ -363,7 +362,6 @@ export async function renderConsumoList(container, _ctx) {
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
     consumoChart._cleanup();
   };

@@ -8,9 +8,16 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderPedidosList } from '@modules/mapoteca/pages/pedidos/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE, CONSULTA } from '@/__tests__/helpers/sessao.js';
-import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// A tela tem o proprio filtro de ano e abre no ano ATUAL (chefe, 2026-08-04).
+// O seletor da navbar acabou, e nada fica guardado no localStorage.
+const ANO_ATUAL = new Date().getFullYear();
+const ANO_ANTERIOR = ANO_ATUAL - 1;
+
+/** O select do filtro de ano, primeiro item da barra de filtros. */
+const filtroAno = (container) => container.querySelector('.filtro-barra select');
 
 // Militar (tipo 1 a 3) e civil (4 a 9) no mesmo lote, senao o filtro nao tem o
 // que separar e o teste passa sem provar nada.
@@ -65,6 +72,29 @@ describe('renderPedidosList', () => {
     // A tela esconde escrita por perfil: sem sessao nao ha botao para testar.
     logarComo({ mapoteca: GERENTE });
     svc.getPedidos.mockResolvedValue(PEDIDOS);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
+  });
+
+  // O filtro e desta tela e abre sempre no ano ATUAL. Antes o ano vinha da
+  // navbar e valia para o modulo inteiro: olhar o mapa de outro ano mudava
+  // calado esta lista.
+  test('abre no ano ATUAL e trocar o ano recarrega a lista', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL);
+
+    filtroAno(container).value = String(ANO_ANTERIOR);
+    filtroAno(container).dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ANTERIOR);
+    // O contador diz de que ano e a contagem que esta na tela.
+    expect(container.querySelector('.page__meta').textContent).toContain(String(ANO_ANTERIOR));
+
+    if (typeof cleanup === 'function') cleanup();
   });
 
   test('monta o titulo e carrega os pedidos', async () => {
@@ -174,7 +204,6 @@ describe('renderPedidosList', () => {
   // como, porque esta tela so tem o seletor de ano.
   test('a planilha do RTM nao sai mais desta tela', async () => {
     logarComo({ mapoteca: CONSULTA });
-    setAno(2026);
     const container = document.createElement('div');
     const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
     await flush();

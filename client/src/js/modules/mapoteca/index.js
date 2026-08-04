@@ -32,8 +32,6 @@ import { renderConsumoList } from './pages/consumo/list.js';
 import { renderPlottersList } from './pages/plotters/list.js';
 import { renderPlotterDetails } from './pages/plotters/details.js';
 
-import { criarSeletorAno } from './components/seletor-ano.js';
-
 // Os dois conjuntos de tela da mapoteca. Sao LISTAS de perfil, e nao nivel
 // minimo, porque o operador daqui nao e consulta com mais poder:
 //
@@ -116,12 +114,9 @@ export default {
     { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
   ],
 
-  // O ano de referencia e contexto das telas POR ANO da mapoteca (resumo anual,
-  // mapa das entregas, consumo, RPCMTec), entao o seletor mora na navbar, como
-  // no orcamento. Some quando a pessoa troca de modulo.
-  //
-  // O que ele NAO filtra, de proposito: a lista de pedidos e a de clientes, que
-  // sao operacionais e tem filtro proprio. Esconder o pedido do ano passado de
-  // quem esta atendendo o cliente seria perder trabalho, nao ganhar contexto.
-  navbarExtras: criarSeletorAno,
+  // SEM `navbarExtras`. O seletor de ano da navbar saiu em 2026-08-04 (chefe).
+  // Ele era um so para o modulo inteiro e guardava a escolha no localStorage:
+  // olhar o mapa de 2025 mudava calado a lista de pedidos, e voltar semanas
+  // depois abria num ano antigo sem aviso. Agora cada tela monta o seu filtro
+  // (@components/filtro-ano.js), sempre no ano atual.
 };

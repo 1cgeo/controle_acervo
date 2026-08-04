@@ -2,7 +2,6 @@ import { el } from '@utils/dom.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
-import { getAno } from '@modules/mapoteca/store/year-store.js';
 import { mesLabel } from './utils.js';
 
 /**
@@ -14,14 +13,15 @@ import { mesLabel } from './utils.js';
  * e o que diz se falta transferir material para la.
  *
  * A unica aba do dashboard em que o ano vale SO PARA METADE. O consumo e do ano
- * de contexto; o estoque e o saldo de HOJE, e nao existe "estoque de 2025".
+ * do filtro; o estoque e o saldo de HOJE, e nao existe "estoque de 2025".
  * Silenciar essa diferenca seria pior do que ela: quem trocasse o ano veria um
  * grafico mudar e o outro nao, sem explicacao.
  *
  * @param {HTMLElement} container
+ * @param {() => number} getAno - ano do filtro da pagina do dashboard
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
-export async function renderMateriaisTab(container) {
+export async function renderMateriaisTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
 
@@ -52,7 +52,7 @@ export async function renderMateriaisTab(container) {
 
   const escopoEstoque = el('p', {
     className: 'dashboard__escopo',
-    textContent: 'O estoque é o saldo de hoje, e não acompanha o ano de referência.',
+    textContent: 'O estoque é o saldo de hoje, e não acompanha o ano escolhido.',
   });
   const tituloConsumo = el('h2', { className: 'dashboard-section__title' });
 

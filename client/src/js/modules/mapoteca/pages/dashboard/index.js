@@ -1,7 +1,10 @@
 import { el } from '@utils/dom.js';
 import { createTabs } from '@components/tabs/tabs.js';
-import { invalidateDashboardCache } from '@modules/mapoteca/services/mapoteca-service.js';
-import { onAnoChange } from '@modules/mapoteca/store/year-store.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
+import {
+  invalidateDashboardCache,
+  getAnosMapoteca,
+} from '@modules/mapoteca/services/mapoteca-service.js';
 import { renderResumoAnualTab } from './resumo-anual-tab.js';
 import { renderMapaTab } from './mapa-tab.js';
 import { renderPedidosTab } from './pedidos-tab.js';
@@ -25,23 +28,39 @@ const REFRESH_MS = 60 * 1000;
  * dia vem depois. O Mapa (2026-07-28) fica logo em seguida: e a leitura
  * espacial do MESMO numero do resumo, e nao um assunto novo.
  *
- * Resumo e Mapa sao por ANO, e o ano vem do contexto do modulo (seletor da
- * navbar). Trocar o ano recarrega a aba aberta; as demais buscam sozinhas
- * quando forem montadas.
+ * As cinco abas recortam o mesmo ANO. O ano e DESTA TELA desde 2026-08-04
+ * (chefe): comeca sempre no ano atual e nao guarda nada. Antes vinha do seletor
+ * da navbar, que valia para o modulo inteiro. Trocar o ano recarrega a aba
+ * aberta; as demais buscam sozinhas quando forem montadas.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} [_ctx]
  * @returns {Promise<Function>} cleanup
  */
 export async function renderDashboard(container, _ctx) {
+  // UM filtro, no nivel da pagina, e nao um por aba: as cinco leem o mesmo ano,
+  // e cinco filtros fariam a mesma escolha ser refeita cinco vezes.
+  //
+  // Sem "+ Outro ano": aqui o ano so FILTRA o que ja aconteceu, e oferecer um
+  // ano sem movimento nenhum seria oferecer telas em branco.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnosMapoteca,
+    permitirOutroAno: false,
+    onChange: () => abas.refreshActive(),
+  });
+
+  // O ano chega a aba como FUNCAO, e nao como valor: a aba e montada uma vez e
+  // recarregada depois, entao ela precisa ler o ano do momento da carga.
+  const getAno = filtroAno.getAno;
+
   const abas = createTabs({
     ariaLabel: 'Painéis da mapoteca',
     tabs: [
-      { id: 'resumo', label: 'Resumo Anual', render: renderResumoAnualTab },
-      { id: 'mapa', label: 'Mapa', render: renderMapaTab },
-      { id: 'pedidos', label: 'Pedidos', render: renderPedidosTab },
-      { id: 'atendimento', label: 'Atendimento', render: renderAtendimentoTab },
-      { id: 'materiais', label: 'Materiais', render: renderMateriaisTab },
+      { id: 'resumo', label: 'Resumo Anual', render: (c) => renderResumoAnualTab(c, getAno) },
+      { id: 'mapa', label: 'Mapa', render: (c) => renderMapaTab(c, getAno) },
+      { id: 'pedidos', label: 'Pedidos', render: (c) => renderPedidosTab(c, getAno) },
+      { id: 'atendimento', label: 'Atendimento', render: (c) => renderAtendimentoTab(c, getAno) },
+      { id: 'materiais', label: 'Materiais', render: (c) => renderMateriaisTab(c, getAno) },
     ],
   });
 
@@ -49,6 +68,18 @@ export async function renderDashboard(container, _ctx) {
     el('div', { className: 'dashboard-section__header' }, [
       el('h1', { className: 'dashboard__title', textContent: 'Dashboard da Mapoteca' }),
     ]),
+    // O filtro fica ACIMA das abas, e nao dentro delas: ele vale para as cinco,
+    // e trocar de aba nao pode mudar o ano na tela.
+    el('div', {
+      className: 'page__filters',
+      style: {
+        display: 'flex',
+        gap: '16px',
+        flexWrap: 'wrap',
+        alignItems: 'flex-end',
+        marginBottom: '16px',
+      },
+    }, [filtroAno.element]),
     abas.element,
   ]);
   container.appendChild(page);
@@ -62,14 +93,12 @@ export async function renderDashboard(container, _ctx) {
     abas.refreshActive();
   }, REFRESH_MS);
 
-  // Trocar o ano de contexto recarrega a aba aberta. Sem derrubar o cache: as
+  // O `onChange` do filtro so recarrega a aba aberta, e nao derruba o cache: as
   // respostas sao guardadas POR ANO, entao voltar ao ano anterior nao paga a
   // busca de novo.
-  const offAno = onAnoChange(() => abas.refreshActive());
 
   return () => {
     clearInterval(intervalo);
-    offAno();
     abas._cleanup();
   };
 }

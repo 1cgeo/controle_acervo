@@ -2,11 +2,13 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { chipSituacaoPedido } from '@components/status-chip.js';
-import { getPedidos, deletePedidos } from '@modules/mapoteca/services/mapoteca-service.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
+import {
+  getPedidos, deletePedidos, getAnosMapoteca,
+} from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
-import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 
 /**
  * Pedidos list page (#/pedidos): table with search, status chips, printing
@@ -65,8 +67,18 @@ export async function renderPedidosList(container, _ctx) {
   let disposed = false;
   let todosPedidos = [];
   let filtroAtual = 'todos';
-  let ano = getAno();
+  // O ano da ultima carga, para o contador dizer de que ano e a contagem.
+  let ano = null;
   const pode = permissoes('mapoteca');
+
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). Sem "+ Outro ano": aqui o ano so filtra o pedido que ja
+  // existe, e um ano sem pedido nenhum seria uma lista em branco.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnosMapoteca,
+    permitirOutroAno: false,
+    onChange: () => load(),
+  });
 
   function aplicarFiltro() {
     const filtro = FILTROS.find(f => f.id === filtroAtual) || FILTROS[0];
@@ -78,7 +90,7 @@ export async function renderPedidosList(container, _ctx) {
   }
 
   async function load() {
-    ano = getAno();
+    ano = filtroAno.getAno();
     table.update({ loading: true });
     try {
       const pedidos = await getPedidos(ano);
@@ -189,9 +201,9 @@ export async function renderPedidosList(container, _ctx) {
     searchable: true,
     loading: true,
     // Sem o ano no texto, de proposito: a mensagem e montada uma vez e o ano
-    // muda pela navbar. Quem diz de que ano e a lista e o contador ao lado dos
+    // muda no filtro. Quem diz de que ano e a lista e o contador ao lado dos
     // filtros, que se repinta a cada carga.
-    emptyMessage: 'Nenhum pedido neste ano. Troque o ano na barra do topo para ver outro.',
+    emptyMessage: 'Nenhum pedido neste ano. Troque o ano no filtro para ver outro.',
     actions: [
       {
         icon: ICONS.visibility,
@@ -226,6 +238,9 @@ export async function renderPedidosList(container, _ctx) {
       ]),
     ]),
     el('div', { className: 'filtro-barra' }, [
+      // O ano vem PRIMEIRO: ele decide o que o servidor traz, e os botoes ao
+      // lado so recortam o que ja chegou.
+      filtroAno.element,
       el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar os pedidos' }, botoesFiltro),
       contador,
     ]),
@@ -234,13 +249,8 @@ export async function renderPedidosList(container, _ctx) {
 
   await load();
 
-  // Trocar o ano na navbar recarrega a lista. Sem isto, a tela ficaria no ano
-  // antigo enquanto o resto do modulo ja teria mudado.
-  const offAno = onAnoChange(() => load());
-
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

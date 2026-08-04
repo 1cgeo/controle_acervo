@@ -6,7 +6,6 @@ import { createPieChart } from '@components/charts/pie-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
-import { getAno } from '@modules/mapoteca/store/year-store.js';
 import { mesLabel } from './utils.js';
 
 // Quantas linhas o bloco "Pedidos parados" mostra. E um RECORTE, e a tela diz
@@ -17,7 +16,7 @@ const LIMITE_PARADOS = 10;
  * Aba "Pedidos": quantos entraram no ano, em que situacao estao e como se
  * distribuem pelos meses.
  *
- * O ano vem do contexto do modulo (seletor da navbar) e conta pela DATA DO
+ * O ano vem do filtro da PAGINA do dashboard e conta pela DATA DO
  * PEDIDO, ou seja, quando o pedido ENTROU. E um recorte diferente do Resumo
  * Anual e do Mapa, que contam por data de ENTREGA: o pedido de dezembro
  * entregue em janeiro cai em anos diferentes nos dois, e os dois estao certos.
@@ -34,9 +33,10 @@ const LIMITE_PARADOS = 10;
  * grafico de situacoes.
  *
  * @param {HTMLElement} container
+ * @param {() => number} getAno - ano do filtro da pagina do dashboard
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
-export async function renderPedidosTab(container) {
+export async function renderPedidosTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
 
@@ -118,7 +118,7 @@ export async function renderPedidosTab(container) {
       el('h2', { className: 'dashboard-section__title', textContent: 'Pedidos parados' }),
       paradosMeta,
     ]),
-    // A fila e de HOJE, e nao do ano do seletor: este bloco nao muda quando o
+    // A fila e de HOJE, e nao do ano do filtro: este bloco nao muda quando o
     // ano muda. Dizer isso evita a leitura de que ele contradiz os cartoes.
     el('p', {
       className: 'dashboard__escopo',

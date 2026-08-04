@@ -5,7 +5,6 @@ import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
-import { getAno } from '@modules/mapoteca/store/year-store.js';
 import { mesLabel } from './utils.js';
 
 /**
@@ -14,15 +13,16 @@ import { mesLabel } from './utils.js';
  * O tempo medio e o Top 10 de clientes andam juntos porque respondem a mesma
  * pergunta por dois lados: quanto demora, e quem puxa a fila.
  *
- * Tudo aqui e do ANO de contexto, contado pela DATA DO PEDIDO, igual a aba
- * Pedidos: o tempo de atendimento pertence ao pedido, e o pedido entrou num
+ * Tudo aqui e do ano do FILTRO da pagina, contado pela DATA DO PEDIDO, igual a
+ * aba Pedidos: o tempo de atendimento pertence ao pedido, e o pedido entrou num
  * ano. Com isso o Top 10 deixou de ser o acumulado historico (uma lista
  * praticamente imovel) e passou a ser quem mais pediu naquele ano.
  *
  * @param {HTMLElement} container
+ * @param {() => number} getAno - ano do filtro da pagina do dashboard
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
-export async function renderAtendimentoTab(container) {
+export async function renderAtendimentoTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
 

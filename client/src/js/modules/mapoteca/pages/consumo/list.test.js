@@ -8,9 +8,16 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderConsumoList } from '@modules/mapoteca/pages/consumo/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
-import { setAno } from '@modules/mapoteca/store/year-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// A tela tem o proprio filtro de ano e abre no ano ATUAL (chefe, 2026-08-04).
+// Nao ha mais ano global do modulo nem nada guardado no localStorage.
+const ANO_ATUAL = new Date().getFullYear();
+const ANO_ANTERIOR = ANO_ATUAL - 1;
+
+/** O select do filtro de ano, que mora no cabecalho da secao do grafico. */
+const filtroAno = (container) => container.querySelector('.dashboard-section__controls select');
 
 const CONSUMO = [
   {
@@ -27,6 +34,7 @@ describe('renderConsumoList', () => {
     svc.getConsumoMaterial.mockResolvedValue(CONSUMO);
     svc.getConsumoMensal.mockResolvedValue([]);
     svc.getTiposMaterial.mockResolvedValue([{ id: 1, nome: 'Papel A0' }]);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
   });
 
   afterEach(() => {
@@ -47,22 +55,40 @@ describe('renderConsumoList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A tendencia anual segue o ano de contexto do modulo. O seletor local saiu:
-  // era o quarto seletor de ano da mapoteca, e todos nasciam no ano corrente.
-  test('a tendencia anual segue o ano de contexto', async () => {
-    setAno(2026);
+  // O filtro e desta tela e abre sempre no ano ATUAL. Antes o ano vinha do
+  // seletor da navbar, e a escolha sobrevivia a sessao: voltar semanas depois
+  // abria num ano antigo sem nada avisar.
+  test('a tendencia anual abre no ano ATUAL e recarrega ao trocar de ano', async () => {
     const container = document.createElement('div');
     const cleanup = await renderConsumoList(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(svc.getConsumoMensal).toHaveBeenCalledWith(2026);
-    expect(container.querySelector('.dashboard-section__ano').textContent).toBe('2026');
+    expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ATUAL);
 
-    setAno(2025);
+    filtroAno(container).value = String(ANO_ANTERIOR);
+    filtroAno(container).dispatchEvent(new Event('change', { bubbles: true }));
     await flush();
 
-    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(2025);
-    expect(container.querySelector('.dashboard-section__ano').textContent).toBe('2025');
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ANTERIOR);
+    expect(filtroAno(container).value).toBe(String(ANO_ANTERIOR));
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O ano recorta SO o grafico. A tabela tem os filtros dela, por data, e
+  // trocar o ano nao pode refazer a busca da lista.
+  test('trocar o ano nao mexe na lista, que filtra por data', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderConsumoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    svc.getConsumoMaterial.mockClear();
+
+    filtroAno(container).value = String(ANO_ANTERIOR);
+    filtroAno(container).dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    expect(svc.getConsumoMaterial).not.toHaveBeenCalled();
 
     if (typeof cleanup === 'function') cleanup();
   });

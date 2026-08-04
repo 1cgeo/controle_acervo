@@ -2,7 +2,6 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
-import { getAno } from '@modules/mapoteca/store/year-store.js';
 import { criarMapaEntregas } from './mapa-entregas.js';
 
 /**
@@ -19,9 +18,10 @@ import { criarMapaEntregas } from './mapa-entregas.js';
  * regras diferentes, e o numero do resumo pararia de fechar com o mapa.
  *
  * @param {HTMLElement} container
+ * @param {() => number} getAno - ano do filtro da pagina do dashboard
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
-export async function renderMapaTab(container) {
+export async function renderMapaTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
   const filtros = { tipo_produto_id: null, escala: null, cliente_id: null };
@@ -36,11 +36,6 @@ export async function renderMapaTab(container) {
   let cargaAtual = 0;
 
   const mapa = criarMapaEntregas();
-
-  const anoLabel = el('span', {
-    className: 'dashboard-section__ano',
-    textContent: String(ano),
-  });
 
   const resumo = el('p', { className: 'mapa-entregas__resumo' });
 
@@ -161,11 +156,8 @@ export async function renderMapaTab(container) {
 
   const secao = el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [
+      // Sem rotulo de ano aqui: o filtro da pagina fica logo acima das abas.
       el('h2', { className: 'dashboard-section__title', textContent: 'Cobertura das entregas' }),
-      el('div', { className: 'dashboard-section__controls' }, [
-        el('span', { textContent: 'Ano:' }),
-        anoLabel,
-      ]),
     ]),
     el('div', { className: 'mapa-entregas__filtros' }, [
       filtroTipo.campo, filtroEscala.campo, filtroCliente.campo, limparBtn,
@@ -228,7 +220,6 @@ export async function renderMapaTab(container) {
     // não serviria aqui: `carregarFiltros` pode alterar `filtros` de propósito.
     const meuToken = ++cargaAtual;
     ano = getAno();
-    anoLabel.textContent = String(ano);
 
     // As opções são relidas SEMPRE, porque o quantitativo de cada uma depende
     // dos outros filtros: escolher uma OM tem de mudar o número ao lado de cada

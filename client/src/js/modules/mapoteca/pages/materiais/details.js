@@ -5,9 +5,11 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { chip, badgeAbaixoMinimo } from '@components/status-chip.js';
 import { reconciliar } from '@utils/reconciliar.js';
-import { getTipoMaterial, getConsumoMensal } from '@modules/mapoteca/services/mapoteca-service.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
+import {
+  getTipoMaterial, getConsumoMensal, getAnosMapoteca,
+} from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
-import { getAno, onAnoChange } from '@modules/mapoteca/store/year-store.js';
 import { openMaterialDialog } from './material-dialog.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
@@ -84,6 +86,20 @@ export async function renderMaterialDetails(container, { params }) {
   // Os nos da pagina, montados uma vez. Nulo antes da primeira carga, e nulo de
   // novo depois de um erro, que troca a ficha pela tela de erro.
   let tela = null;
+
+  // ONDE O ANO ENTRA NESTA FICHA. A ficha e de UM material, e o cadastro, o
+  // estoque e o consumo recente nao tem ano. So o grafico de consumo mensal
+  // recorta por ano, entao o filtro mora colado nele, e nao no topo da pagina:
+  // no topo ele pareceria filtrar a ficha inteira.
+  //
+  // Ele nasce aqui, e nao no `montarTela`, porque a primeira carga LE o ano
+  // antes de a ficha existir. Sem "+ Outro ano": o ano so filtra o consumo que
+  // ja aconteceu.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnosMapoteca,
+    permitirOutroAno: false,
+    onChange: () => load(),
+  });
 
   function dispose() {
     for (const fn of cleanups) {
@@ -220,6 +236,13 @@ export async function renderMaterialDetails(container, { params }) {
     });
     cleanups.push(() => consumoChart._cleanup());
 
+    // O filtro fica na mesma barra de controle do grafico, no molde da barra de
+    // exportacao das outras telas.
+    const blocoGrafico = el('div', {}, [
+      el('div', { className: 'export-bar' }, [filtroAno.element]),
+      consumoChart,
+    ]);
+
     // Histórico de alterações. É o MESMO componente da ficha do pedido, e é por
     // isso que ele existe: a seção que o chefe gostou lá vale em toda ficha.
     //
@@ -250,6 +273,7 @@ export async function renderMaterialDetails(container, { params }) {
       estoqueTable,
       consumoTable,
       consumoChart,
+      blocoGrafico,
       tituloGrafico: consumoChart.querySelector('.chart-card__title'),
       // Assinatura do que o grafico ja mostra. Ver o comentario no `pintar`.
       assinaturaGrafico: null,
@@ -351,7 +375,7 @@ export async function renderMaterialDetails(container, { params }) {
       { chave: 'resumo', criar: () => tela.resumo },
       { chave: 'estoque', criar: () => tela.secaoEstoque },
       { chave: 'consumo', criar: () => tela.secaoConsumo },
-      { chave: 'grafico', criar: () => tela.consumoChart },
+      { chave: 'grafico', criar: () => tela.blocoGrafico },
       { chave: 'historico', criar: () => tela.historico.element },
     ]);
   }
@@ -364,10 +388,8 @@ export async function renderMaterialDetails(container, { params }) {
       marcarCarregando(tela.consumoTable, tela.linhasConsumo);
     }
 
-    // O grafico de consumo mensal segue o ano de contexto do modulo, como as
-    // demais telas por ano. Estava preso ao ano corrente, e nao havia como olhar
-    // o consumo do ano passado por aqui.
-    const ano = getAno();
+    // So o grafico de consumo mensal usa o ano. O resto da ficha nao tem ano.
+    const ano = filtroAno.getAno();
     let carregado;
     let consumoMensal = [];
     try {
@@ -409,13 +431,11 @@ export async function renderMaterialDetails(container, { params }) {
 
   await load();
 
-  // Trocar o ano so precisa chamar o `load` de novo: ele repinta a pagina que
-  // ja esta no ar, sem remonta-la.
-  const offAno = onAnoChange(() => load());
+  // Trocar o ano so chama o `load` de novo: ele repinta a pagina que ja esta no
+  // ar, sem remonta-la.
 
   return () => {
     disposed = true;
-    offAno();
     dispose();
   };
 }
