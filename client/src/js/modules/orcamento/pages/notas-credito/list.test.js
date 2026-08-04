@@ -1,11 +1,13 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Smoke test da pagina de Notas de Credito. Mocka o service (lista + dialog).
-// O ano de contexto global e fixado em 2026 no localStorage.
+// A tela tem o proprio filtro de ano e abre no ano ATUAL: nao ha mais ano global
+// nem nada guardado no localStorage.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getNotasCredito: vi.fn(() => Promise.resolve([])),
   deleteNotaCredito: vi.fn(() => Promise.resolve()),
   getClassificacaoNc: vi.fn(() => Promise.resolve([])),
+  getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
   getNotaCredito: vi.fn(() => Promise.resolve({})),
   createNotaCredito: vi.fn(() => Promise.resolve({})),
   updateNotaCredito: vi.fn(() => Promise.resolve({})),
@@ -25,9 +27,11 @@ import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.j
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
+const ANO_ATUAL = new Date().getFullYear();
+
 describe('renderNotasCreditoList', () => {
   beforeEach(() => {
-    localStorage.setItem('@sca-orcamento-ano', '2026');
+    vi.clearAllMocks();
   });
 
   test('monta titulo e carrega a lista do service', async () => {
@@ -38,6 +42,35 @@ describe('renderNotasCreditoList', () => {
     expect(getNotasCredito).toHaveBeenCalled();
     expect(container.querySelector('.page__title')).not.toBeNull();
     expect(container.querySelector('.data-table-wrapper')).not.toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Chefe, 2026-08-04: o ano e de cada tela, comeca no ano ATUAL e nao guarda
+  // nada. O seletor da navbar acabou.
+  test('abre no ano atual e pede a lista desse ano', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderNotasCreditoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const filtro = container.querySelector('.page__filters select');
+    expect(filtro.value).toBe(String(ANO_ATUAL));
+    expect(getNotasCredito.mock.calls.at(-1)[0].ano).toBe(ANO_ATUAL);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('trocar o ano no filtro recarrega a lista naquele ano', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderNotasCreditoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const filtro = container.querySelector('.page__filters select');
+    filtro.value = '2025';
+    filtro.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    expect(getNotasCredito.mock.calls.at(-1)[0].ano).toBe(2025);
 
     if (typeof cleanup === 'function') cleanup();
   });

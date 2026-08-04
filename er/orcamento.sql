@@ -5,15 +5,21 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE SCHEMA orcamento;
 
 -- ---------------------------------------------------------------------------
--- Configuracao geral (linha unica). UASG, CODOM e o ano de referencia (default
--- das telas). Substitui o que antes morava no exercicio. A linha id=1 e criada
--- aqui; o backend so faz UPDATE.
+-- Configuracao geral (linha unica). UASG e CODOM. Substitui o que antes morava
+-- no exercicio. A linha id=1 e criada aqui; o backend so faz UPDATE.
+--
+-- NAO ha mais `ano_referencia` aqui. Ela era o ano PADRAO das telas, e o
+-- seletor de ano global acabou (decisao do chefe, 2026-08-04): cada tela tem o
+-- seu filtro, comeca no ano atual e nao guarda nada. Em banco ja instalado a
+-- coluna sai pela secao 5 de
+-- migrations/2026-08-04_licitacao_campos_fase_e_anexo.sql, que o chefe aplica
+-- quando quiser. Nao confunda com `recebimento_material.ano_referencia`, que
+-- diz em que RPCMTec o material recebido consta e PERMANECE.
 -- ---------------------------------------------------------------------------
 CREATE TABLE orcamento.configuracao(
   id SMALLINT NOT NULL PRIMARY KEY DEFAULT 1,
   uasg VARCHAR(10),
   codom VARCHAR(10),
-  ano_referencia SMALLINT,
   data_modificacao TIMESTAMP WITH TIME ZONE,
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
   CONSTRAINT configuracao_singleton CHECK (id = 1)
@@ -70,19 +76,33 @@ CREATE TABLE orcamento.dfd_item(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
--- Licitacao (4.4 GCALC DSG / 4.5 propria). Antes de nota_empenho (FK).
--- O tipo 3 (participante) EXISTE no dominio e nao tem subsecao no RPCMTec:
--- o relatorio gera so os tipos 1 e 2 (rpcmtec_ctrl.js). A UI avisa.
--- Licitacao: uma licitacao pode cobrir varios DFDs, entao nao guardamos um
+-- Licitacao (4.4 GCALC DSG / 4.5 demais). Antes de nota_empenho (FK).
+-- Os TRES tipos saem no RPCMTec: o tipo 1 (GCALC DSG) alimenta a subsecao 4.4,
+-- e os tipos 2 (Propria) e 3 (Participante) alimentam a 4.5 (decisao do chefe,
+-- 2026-08-04). Uma licitacao pode cobrir varios DFDs, entao nao guardamos um
 -- vinculo direto com um DFD unico aqui.
+--
+-- `fase_atual` e `fase_id` convivem por decisao. O codigo classifica (filtra e
+-- agrupa) e o texto livre narra: um registro real guarda 103 caracteres
+-- explicando que o vencedor nao entregou e o pregao se tornou fracassado.
+-- Converter esse texto em codigo perderia a explicacao.
 CREATE TABLE orcamento.licitacao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,
   tipo_id SMALLINT NOT NULL REFERENCES dominio.tipo_licitacao (code),
   objeto TEXT NOT NULL,
+  -- Identificacao do processo, para achar a licitacao fora do SCA.
+  numero_pregao VARCHAR(20),
+  -- Numero Unico de Protocolo, formato '64286.011195/2026-94' (21 caracteres).
+  nup VARCHAR(25),
+  fase_id SMALLINT REFERENCES dominio.fase_licitacao (code),
   fase_atual TEXT,
   valor_total_estimado NUMERIC(15,2),
   valor_final_homologado NUMERIC(15,2),
+  -- Dia da homologacao. Par de valor_final_homologado, que sozinho nao dizia quando.
+  data_homologacao DATE,
+  -- Empresa vencedora. Nulo enquanto nao ha vencedor (fracassado ou deserto).
+  fornecedor VARCHAR(255),
   om_gestora VARCHAR(60),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
@@ -234,16 +254,21 @@ CREATE TABLE orcamento.rpnp(
 -- continua sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
 
 -- Arquivos anexados (documentos originais). Vinculo polimorfico: cada arquivo
--- pertence a EXATAMENTE um dono: uma NC (PDF do SIAFI), um DFD (PDF) ou o PDR de
--- um ano (XLSX/PDF; o PDR nao tem tabela, e o conjunto dos itens do ano, entao o
--- vinculo e o proprio ano). NC e DFD admitem no maximo 1 anexo (reenviar
--- substitui); o PDR admite varios. Os bytes do arquivo ficam no proprio banco
--- (coluna conteudo BYTEA); aqui guardamos tambem os metadados.
+-- pertence a EXATAMENTE um de CINCO donos: uma NC (PDF do SIAFI), um DFD (PDF),
+-- o PDR de um ano (XLSX/PDF; o PDR nao tem tabela, e o conjunto dos itens do
+-- ano, entao o vinculo e o proprio ano), uma licitacao (edital, ata, termo de
+-- homologacao) ou um RPNP (demonstrativo do SIAFI). NC e DFD admitem no maximo
+-- 1 anexo (reenviar substitui); PDR, licitacao e RPNP admitem varios, porque
+-- cada um junta mais de um documento e limitar a um obrigaria a escolher qual
+-- guardar. Os bytes do arquivo ficam no proprio banco (coluna conteudo BYTEA);
+-- aqui guardamos tambem os metadados.
 CREATE TABLE orcamento.arquivo(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   nota_credito_id BIGINT REFERENCES orcamento.nota_credito (id) ON DELETE CASCADE,
   dfd_id BIGINT REFERENCES orcamento.dfd (id) ON DELETE CASCADE,
   pdr_ano SMALLINT,
+  licitacao_id BIGINT REFERENCES orcamento.licitacao (id) ON DELETE CASCADE,
+  rpnp_id BIGINT REFERENCES orcamento.rpnp (id) ON DELETE CASCADE,
   nome_original VARCHAR(255) NOT NULL,
   extensao VARCHAR(10) NOT NULL,
   mimetype VARCHAR(150),
@@ -256,15 +281,20 @@ CREATE TABLE orcamento.arquivo(
   CONSTRAINT arquivo_um_vinculo CHECK (
     (nota_credito_id IS NOT NULL)::int +
     (dfd_id IS NOT NULL)::int +
-    (pdr_ano IS NOT NULL)::int = 1
+    (pdr_ano IS NOT NULL)::int +
+    (licitacao_id IS NOT NULL)::int +
+    (rpnp_id IS NOT NULL)::int = 1
   )
 );
 
 -- NC e DFD: no maximo 1 anexo cada (a regra "reenviar substitui" tambem e
--- garantida no banco). O PDR (pdr_ano) admite varios, entao fica so um indice comum.
+-- garantida no banco). PDR, licitacao e RPNP admitem varios, entao ficam so
+-- indices comuns.
 CREATE UNIQUE INDEX uniq_arquivo_nc ON orcamento.arquivo (nota_credito_id) WHERE nota_credito_id IS NOT NULL;
 CREATE UNIQUE INDEX uniq_arquivo_dfd ON orcamento.arquivo (dfd_id) WHERE dfd_id IS NOT NULL;
 CREATE INDEX idx_arquivo_pdr_ano ON orcamento.arquivo (pdr_ano);
+CREATE INDEX idx_arquivo_licitacao ON orcamento.arquivo (licitacao_id);
+CREATE INDEX idx_arquivo_rpnp ON orcamento.arquivo (rpnp_id);
 
 -- Unicidade da NC: (ano, numero, ND) POR UG emitente. A numeracao do SIAFI e por
 -- UG emitente, logo o mesmo numero+ND pode ocorrer para emitentes distintos.

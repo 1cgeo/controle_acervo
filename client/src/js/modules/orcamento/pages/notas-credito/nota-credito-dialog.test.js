@@ -46,12 +46,12 @@ function selectByLabel(label) {
 describe('openNotaCreditoDialog (edicao)', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 
   test('o select de classificacao vem pre-selecionado com o valor da NC', async () => {
-    await openNotaCreditoDialog({ ncId: 5 });
+    // O ano vem por PARAMETRO de quem abre o dialog: ele nao le store global.
+    await openNotaCreditoDialog({ ncId: 5, ano: 2026 });
     await flush();
     await flush();
 

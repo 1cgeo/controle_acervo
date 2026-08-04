@@ -56,7 +56,6 @@ const DFD = {
 describe('openDfdDialog: valor estimado', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 

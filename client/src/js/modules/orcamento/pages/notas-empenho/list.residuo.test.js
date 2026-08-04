@@ -13,6 +13,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getNotasEmpenho: vi.fn(() => Promise.resolve([])),
   deleteNotaEmpenho: vi.fn(() => Promise.resolve()),
   getNotasCredito: vi.fn(() => Promise.resolve([])),
+  getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
   getNotaEmpenho: vi.fn(() => Promise.resolve({})),
   createNotaEmpenho: vi.fn(() => Promise.resolve({})),
   updateNotaEmpenho: vi.fn(() => Promise.resolve({})),
@@ -33,7 +34,6 @@ function linhaPorTexto(container, texto) {
 
 describe('renderNotasEmpenhoList: residuo de ponto flutuante', () => {
   beforeEach(() => {
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 

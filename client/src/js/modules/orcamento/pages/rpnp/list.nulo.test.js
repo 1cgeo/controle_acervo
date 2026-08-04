@@ -13,6 +13,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   createRpnp: vi.fn(() => Promise.resolve({})),
   updateRpnp: vi.fn(() => Promise.resolve({})),
   getNotasEmpenho: vi.fn(() => Promise.resolve([])),
+  getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
 }));
 
 import { renderRpnpList } from '@modules/orcamento/pages/rpnp/list.js';
@@ -27,7 +28,6 @@ function linhaPorTexto(container, texto) {
 
 describe('renderRpnpList: nulo nao e zero', () => {
   beforeEach(() => {
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 

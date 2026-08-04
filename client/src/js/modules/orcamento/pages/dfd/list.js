@@ -3,8 +3,8 @@ import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import * as svc from '@modules/orcamento/services/orcamento-service.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openDfdDialog } from './dfd-dialog.js';
 
@@ -37,7 +37,7 @@ function valorMaisComum(linhas, campo) {
 
 /**
  * Lista de DFD (#/dfd). Documento de Formalizacao da Demanda, com itens.
- * O conjunto de DFDs do ano de contexto e o "PCA do ano".
+ * O conjunto de DFDs do ano da tela e o "PCA do ano".
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -55,13 +55,27 @@ export async function renderDfdList(container, _ctx) {
   // Valores padrao do DFD novo, medidos nas linhas do ano carregado.
   let padroes = {};
 
-  const title = el('h1', { className: 'page__title', textContent: `DFD ${getAno()}` });
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o DFD e cadastrado:
+  // montar o PCA do exercicio seguinte comeca num ano vazio.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: svc.getAnos,
+    permitirOutroAno: true,
+    onChange: () => load(),
+  });
+
+  const title = el('h1', { className: 'page__title', textContent: `DFD ${filtroAno.getAno()}` });
   const resumo = el('p', { className: 'page__subtitle', textContent: '' });
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openDfdDialog({ dominios, padroes, onSaved: load }),
+    onClick: () => openDfdDialog({
+      ano: filtroAno.getAno(),
+      dominios,
+      padroes,
+      onSaved: load,
+    }),
   }, [svgIcon(ICONS.add, 16), 'Novo DFD']);
 
   const table = createDataTable({
@@ -150,6 +164,12 @@ export async function renderDfdList(container, _ctx) {
       ]),
       el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
+    el('div', {
+      className: 'page__filters',
+      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
+    }, [
+      filtroAno.element,
+    ]),
     table.element,
   ]);
   container.appendChild(page);
@@ -157,15 +177,16 @@ export async function renderDfdList(container, _ctx) {
   function atualizarResumo(dfds) {
     const total = (dfds || []).reduce((soma, d) => soma + (Number(d.valor_estimado) || 0), 0);
     const n = (dfds || []).length;
-    resumo.textContent = `PCA ${getAno()}: ${n} ${n === 1 ? 'DFD' : 'DFDs'}, total ${formatCurrency(total)}`;
+    resumo.textContent = `PCA ${filtroAno.getAno()}: ${n} ${n === 1 ? 'DFD' : 'DFDs'}, total ${formatCurrency(total)}`;
   }
 
   async function load() {
-    title.textContent = `DFD ${getAno()}`;
+    const ano = filtroAno.getAno();
+    title.textContent = `DFD ${ano}`;
     table.update({ loading: true });
     try {
       const [dfds, grauPrioridade, tipoItem] = await Promise.all([
-        svc.getDfds(getAno()),
+        svc.getDfds(ano),
         svc.getGrauPrioridade(),
         svc.getTipoItemDfd(),
       ]);
@@ -224,13 +245,10 @@ export async function renderDfdList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(() => load());
-
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

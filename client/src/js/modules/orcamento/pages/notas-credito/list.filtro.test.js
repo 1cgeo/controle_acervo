@@ -14,6 +14,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
     { code: 1, nome: 'PDR' },
     { code: 2, nome: 'Extra-PDR' },
   ])),
+  getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
   getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
   getPlanoInterno: vi.fn(() => Promise.resolve([])),
   getUg: vi.fn(() => Promise.resolve([])),
@@ -32,9 +33,17 @@ import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.j
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
+// A barra de filtros agora tem DOIS selects, e o de ano vem primeiro (contrato do
+// ano, 2026-08-04). Buscar por rotulo evita que o teste passe a medir o campo
+// errado quando outro filtro entrar na barra.
+function selectPorRotulo(container, rotulo) {
+  const campos = [...container.querySelectorAll('.page__filters .form-field')];
+  const campo = campos.find(f => f.querySelector('.form-field__label')?.textContent.includes(rotulo));
+  return campo ? campo.querySelector('select') : null;
+}
+
 describe('renderNotasCreditoList: filtro de classificacao', () => {
   beforeEach(() => {
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 
@@ -44,7 +53,8 @@ describe('renderNotasCreditoList: filtro de classificacao', () => {
     await flush();
     await flush();
 
-    const select = container.querySelector('.page__filters select');
+    const select = selectPorRotulo(container, 'Classificação');
+    expect(select).not.toBeNull();
     const valores = [...select.options].map(o => o.value);
     expect(valores).toEqual(['', '1', '2']);
   });
@@ -55,7 +65,7 @@ describe('renderNotasCreditoList: filtro de classificacao', () => {
     await flush();
     await flush();
 
-    const select = container.querySelector('.page__filters select');
+    const select = selectPorRotulo(container, 'Classificação');
     select.value = '2';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await flush();

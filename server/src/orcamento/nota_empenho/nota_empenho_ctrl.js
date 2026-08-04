@@ -130,7 +130,35 @@ const EMPENHADO_POR_NC = `
   WHERE v.nota_credito_id IN ($<ids:csv>)
   GROUP BY v.nota_credito_id`
 
-// Recusa a NE que faria os empenhos de uma NC passarem do valor recebido nela.
+// Quanto UMA NE especifica consome de cada NC, ja liquido de anulacao. Mesma
+// conta do EMPENHADO_POR_NC, invertendo o filtro: aqui SO a NE informada.
+const EMPENHADO_DESTA_NE = `
+  SELECT v.nota_credito_id, SUM(v.valor) AS empenhado
+  FROM (
+    SELECT enc.nota_credito_id,
+           enc.valor - COALESCE(ne.valor_anulado, 0)
+             * (enc.valor / NULLIF(tot.soma, 0)) AS valor
+    FROM orcamento.nota_empenho_nota_credito AS enc
+    INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
+    INNER JOIN LATERAL (
+      SELECT SUM(x.valor) AS soma
+      FROM orcamento.nota_empenho_nota_credito AS x
+      WHERE x.nota_empenho_id = enc.nota_empenho_id
+    ) AS tot ON TRUE
+    WHERE enc.nota_empenho_id = $<neId>
+    UNION ALL
+    SELECT ne.nota_credito_id, ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
+    FROM orcamento.nota_empenho AS ne
+    WHERE ne.id = $<neId>
+      AND NOT EXISTS (
+        SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+        WHERE x.nota_empenho_id = ne.id
+      )
+  ) AS v
+  WHERE v.nota_credito_id IN ($<ids:csv>)
+  GROUP BY v.nota_credito_id`
+
+// Recusa a NE que faria os empenhos de uma NC passarem do saldo dela.
 //
 // A checagem OPOSTA (liquidar acima do empenhado) ja existia em
 // `liquidacao_ctrl.criar`, e a assimetria ensinava o usuario que o sistema
@@ -138,13 +166,21 @@ const EMPENHADO_POR_NC = `
 // devolvida. Roda DENTRO da transacao que grava, pelo mesmo motivo de
 // `validarNcsHomogeneas`: fora dela, duas NEs simultaneas passam as duas.
 //
-// O teto e `valor_nc`. O `valor_recolhido` NAO desconta aqui: ele e informativo
-// na NC, e descontar bloquearia a edicao de NE ja lancada contra credito
-// devolvido depois.
+// O teto DESCONTA o valor recolhido, e a barreira so vale para quem AUMENTA o
+// consumo da NC. Os dois lados vem de fatos medidos em producao, e um sozinho
+// erraria:
+//  - descontar e obrigatorio, porque credito devolvido nao pode ser empenhado.
+//    Sem descontar, o teto aceita gastar dinheiro que voltou, e o painel passa a
+//    discordar do servidor (20 NCs de prazo vencido "com saldo" contra 9 reais);
+//  - barrar so o AUMENTO e obrigatorio, porque duas NCs reais de 2026
+//    (2026NC400698 e 2026NC400702) tiveram o credito devolvido DEPOIS do
+//    empenho, e ja nascem acima do teto estrito. Barrar por valor absoluto
+//    impediria de corrigir a finalidade ou a data dessas NEs para sempre.
+// Corrigir, reduzir ou manter o valor continua livre. Crescer, nao.
 const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
   const ids = alocacoes.map(a => a.nota_credito_id)
   const ncs = await t.any(
-    `SELECT id, numero, valor_nc
+    `SELECT id, numero, valor_nc, valor_recolhido
      FROM orcamento.nota_credito
      WHERE id IN ($<ids:csv>)`,
     { ids }
@@ -156,6 +192,15 @@ const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
     ignorarNeId: ignorarNeId != null ? Number(ignorarNeId) : null
   })
 
+  // Quanto ESTA NE ja consumia de cada NC antes desta gravacao. Zero no create.
+  // E a referencia para saber se a edicao CRESCE ou nao.
+  const anterior = ignorarNeId == null
+    ? []
+    : await t.any(EMPENHADO_DESTA_NE, { ids, neId: Number(ignorarNeId) })
+  const anteriorPorNc = new Map(
+    anterior.map(l => [String(l.nota_credito_id), Number(l.empenhado)])
+  )
+
   const empenhadoPorNc = new Map(
     jaEmpenhado.map(l => [String(l.nota_credito_id), Number(l.empenhado)])
   )
@@ -165,13 +210,21 @@ const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
     const desta = alocacoes
       .filter(a => String(a.nota_credito_id) === String(nc.id))
       .reduce((s, a) => s + Number(a.valor), 0)
-    const teto = Number(nc.valor_nc)
+    // Teto = recebido menos devolvido. Credito recolhido voltou e nao se empenha.
+    const teto = Number(nc.valor_nc) - Number(nc.valor_recolhido || 0)
+    const antes = anteriorPorNc.get(String(nc.id)) || 0
     // Tolerancia de centavo: a soma em ponto flutuante deixa residuo de 1e-13,
     // e sem ela um empenho exato do saldo seria recusado.
-    if (outras + desta > teto + 0.005) {
+    const passaDoTeto = outras + desta > teto + 0.005
+    // A NE que ja estava acima do teto (credito devolvido depois do empenho)
+    // continua editavel, desde que nao consuma MAIS do que ja consumia.
+    const cresce = desta > antes + 0.005
+    if (passaDoTeto && cresce) {
       throw new AppError(
-        `O empenho excede o valor da nota de credito ${nc.numero}. ` +
-          `Valor da NC: ${teto.toFixed(2)}; ja empenhado: ${outras.toFixed(2)}; ` +
+        `O empenho excede o saldo da nota de credito ${nc.numero}. ` +
+          `Valor da NC: ${Number(nc.valor_nc).toFixed(2)}; ` +
+          `recolhido: ${Number(nc.valor_recolhido || 0).toFixed(2)}; ` +
+          `ja empenhado: ${outras.toFixed(2)}; ` +
           `saldo: ${(teto - outras).toFixed(2)}; tentativa: ${desta.toFixed(2)}`,
         httpCode.BadRequest
       )

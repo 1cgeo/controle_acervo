@@ -39,45 +39,116 @@ const recorteDoAno = (ano, mes) => {
   }
 }
 
+// Empenhado LÍQUIDO contra a NC `nc`, nas duas formas de vínculo: as linhas do
+// rateio (nota_empenho_nota_credito) e as NEs antigas, que apontam a NC direto.
+// A anulação desconta, e é proporcional à fatia de cada NC.
+//
+// É a MESMA conta de `nota_credito_ctrl.listar` e do EMPENHADO_POR_NC em
+// `nota_empenho_ctrl.js`. Contar o bruto daria 556.545,40 contra os 483.568,51
+// que o próprio painel soma, e o painel se contradiria consigo mesmo.
+const EMPENHADO_LIQUIDO_DA_NC = `
+  COALESCE((
+    SELECT SUM(v.valor) FROM (
+      SELECT enc.valor - COALESCE(ne.valor_anulado, 0)
+               * (enc.valor / NULLIF(tot.soma, 0)) AS valor
+        FROM orcamento.nota_empenho_nota_credito AS enc
+        INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
+        INNER JOIN LATERAL (
+          SELECT SUM(x.valor) AS soma
+            FROM orcamento.nota_empenho_nota_credito AS x
+           WHERE x.nota_empenho_id = enc.nota_empenho_id
+        ) AS tot ON TRUE
+       WHERE enc.nota_credito_id = nc.id
+      UNION ALL
+      SELECT ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
+        FROM orcamento.nota_empenho AS ne
+       WHERE ne.nota_credito_id = nc.id
+         AND NOT EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+                          WHERE x.nota_empenho_id = ne.id)
+    ) AS v
+  ), 0)`
+
 /**
- * Quantos registros de cada fluxo estao SEM data no ano.
+ * As pendências de dado do ano, cada uma com o total do seu fluxo.
  *
- * Existe por causa do `IS NULL` que cada filtro da consulta principal carrega.
- * O registro sem data entra em TODOS os meses, entao o painel de janeiro mostra
- * o empenho de dezembro. Nao da para saber isso olhando os valores.
+ * O painel mostra estes defeitos À VISTA, para chamar a ação (chefe,
+ * 2026-08-04). Antes havia só um aviso de uma linha sobre registro sem data.
  *
- * A regra do corte NAO muda aqui: a decisao e do chefe. Esta contagem so torna
- * o efeito visivel, para o usuario ler o numero sabendo o que ele contem.
+ * As três pendências de DATA existem por causa do `IS NULL` que cada filtro da
+ * consulta principal carrega: o registro sem data entra em TODOS os meses,
+ * então o painel de janeiro mostra o empenho de dezembro. A regra do corte NÃO
+ * muda aqui, porque a decisão é do chefe. Esta contagem só torna o efeito
+ * visível, para o usuário ler o número sabendo o que ele contém.
  *
- * O recolhido nao tem contagem propria: ele usa o mesmo recorte do recebido
- * (data_emissao da NC), entao a contagem do recebido ja o descreve.
+ * As outras três apontam dado que falta ou crédito prestes a se perder.
+ *
+ * O recolhido não tem contagem própria: ele usa o mesmo recorte do recebido
+ * (data_emissao da NC), então a contagem do recebido já o descreve.
+ *
+ * O prazo vencido usa o saldo LÍQUIDO da NC, e desconta também o recolhido:
+ * crédito devolvido não se empenha, e empenhar sobre ele volta do SIAFI como
+ * nota devolvida. É o mesmo critério do card "Saldo a empenhar" desta tela.
  *
  * @param {number} ano
- * @returns {Promise<{recebido:number, empenhado:number, liquidado:number}>}
+ * @returns {Promise<Object<string, {n:number, total:number}>>}
  */
-const contarSemData = async ano => {
+const contarPendencias = async ano => {
   const l = await db.conn.one(
     `SELECT
        (SELECT COUNT(*)
-        FROM orcamento.nota_credito AS nc
-        WHERE nc.ano = $<ano> AND nc.data_emissao IS NULL) AS recebido,
+        FROM orcamento.nota_empenho AS ne
+        WHERE ne.ano = $<ano> AND ne.data_empenho IS NULL) AS ne_sem_data,
        (SELECT COUNT(*)
         FROM orcamento.nota_empenho AS ne
-        INNER JOIN orcamento.nota_credito AS ncne ON ncne.id = ne.nota_credito_id
-        WHERE ne.ano = $<ano> AND ne.data_empenho IS NULL) AS empenhado,
+        WHERE ne.ano = $<ano>) AS ne_total,
        (SELECT COUNT(*)
         FROM orcamento.liquidacao AS lq
         INNER JOIN orcamento.nota_empenho AS ne ON ne.id = lq.nota_empenho_id
-        INNER JOIN orcamento.nota_credito AS ncne ON ncne.id = ne.nota_credito_id
-        WHERE ne.ano = $<ano> AND lq.data IS NULL) AS liquidado`,
+        WHERE ne.ano = $<ano> AND lq.data IS NULL) AS liquidacao_sem_data,
+       (SELECT COUNT(*)
+        FROM orcamento.liquidacao AS lq
+        INNER JOIN orcamento.nota_empenho AS ne ON ne.id = lq.nota_empenho_id
+        WHERE ne.ano = $<ano>) AS liquidacao_total,
+       (SELECT COUNT(*)
+        FROM orcamento.nota_credito AS nc
+        WHERE nc.ano = $<ano> AND nc.data_emissao IS NULL) AS nc_sem_data,
+       (SELECT COUNT(*)
+        FROM orcamento.nota_credito AS nc
+        WHERE nc.ano = $<ano>) AS nc_total,
+       (SELECT COUNT(*)
+        FROM orcamento.rpnp AS r
+        WHERE r.ano = $<ano> AND r.valor_a_liquidar IS NULL) AS rpnp_sem_valor,
+       (SELECT COUNT(*)
+        FROM orcamento.rpnp AS r
+        WHERE r.ano = $<ano>) AS rpnp_total,
+       (SELECT COUNT(*)
+        FROM orcamento.nota_credito AS nc
+        WHERE nc.ano = $<ano> AND nc.meta_pit_id IS NULL) AS nc_sem_meta,
+       (SELECT COUNT(*)
+        FROM orcamento.nota_credito AS nc
+        WHERE nc.ano = $<ano>
+          AND nc.prazo_empenho IS NOT NULL
+          AND nc.prazo_empenho < CURRENT_DATE
+          -- Tolerância de meio centavo: os valores são NUMERIC(15,2), e sem ela
+          -- uma NC empenhada por inteiro entraria na conta por um resíduo.
+          AND nc.valor_nc - nc.valor_recolhido - ${EMPENHADO_LIQUIDO_DA_NC} > 0.005
+       ) AS nc_prazo_vencido`,
     { ano }
   )
 
   // COUNT do pg chega como string (BIGINT).
+  const par = (chave, chaveTotal) => ({
+    n: Number(l[chave]),
+    total: Number(l[chaveTotal])
+  })
+
   return {
-    recebido: Number(l.recebido),
-    empenhado: Number(l.empenhado),
-    liquidado: Number(l.liquidado)
+    ne_sem_data: par('ne_sem_data', 'ne_total'),
+    liquidacao_sem_data: par('liquidacao_sem_data', 'liquidacao_total'),
+    nc_sem_data: par('nc_sem_data', 'nc_total'),
+    rpnp_sem_valor: par('rpnp_sem_valor', 'rpnp_total'),
+    nc_sem_meta: par('nc_sem_meta', 'nc_total'),
+    nc_prazo_vencido: par('nc_prazo_vencido', 'nc_total')
   }
 }
 
@@ -96,11 +167,11 @@ const contarSemData = async ano => {
  * Registro sem data entra no acumulado (a visão do ano), e é o que o
  * `IS NULL` de cada filtro faz: crédito ainda sem data de emissão é crédito do
  * ano, e sumir com ele faria o painel mostrar menos do que o banco tem. O preço
- * é que ele entra em todos os meses, e por isso o payload leva junto a contagem
- * de registros sem data (ver contarSemData).
+ * é que ele entra em todos os meses, e por isso o payload leva junto as
+ * pendências de dado do ano (ver contarPendencias).
  *
  * @param {{ano:number, mes:number}} params
- * @returns {Promise<{linhas:Array<Object>, sem_data:Object}>}
+ * @returns {Promise<{linhas:Array<Object>, pendencias:Object}>}
  */
 controller.getExecucaoPorNd = async ({ ano, mes }) => {
   const { inicio, cutoff } = recorteDoAno(ano, mes)
@@ -214,7 +285,7 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
 
   norm.push({ cod_nd: 'TOTAL', nd_nome: 'TOTAL', ...total })
 
-  return { linhas: norm, sem_data: await contarSemData(ano) }
+  return { linhas: norm, pendencias: await contarPendencias(ano) }
 }
 
 module.exports = controller

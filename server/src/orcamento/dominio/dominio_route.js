@@ -62,6 +62,15 @@ router.get(
 )
 
 router.get(
+  '/fase_licitacao',
+  verifyPerfil('consulta', 'orcamento'),
+  asyncHandler(async (req, res, next) => {
+    const dados = await dominioCtrl.getFaseLicitacao()
+    return res.sendJsonAndLog(true, 'Domínio Fase da Licitação retornado com sucesso', httpCode.OK, dados)
+  })
+)
+
+router.get(
   '/classificacao_nc',
   verifyPerfil('consulta', 'orcamento'),
   asyncHandler(async (req, res, next) => {

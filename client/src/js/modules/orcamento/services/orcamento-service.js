@@ -27,6 +27,7 @@ export const getNaturezaDespesa = () => apiGet(`${API}/dominio/natureza_despesa`
 export const getPlanoInterno = () => apiGet(`${API}/dominio/plano_interno`);
 export const getUg = () => apiGet(`${API}/dominio/ug`);
 export const getTipoLicitacao = () => apiGet(`${API}/dominio/tipo_licitacao`);
+export const getFaseLicitacao = () => apiGet(`${API}/dominio/fase_licitacao`);
 export const getClassificacaoNc = () => apiGet(`${API}/dominio/classificacao_nc`);
 export const getTipoItemDfd = () => apiGet(`${API}/dominio/tipo_item_dfd`);
 export const getGrauPrioridade = () => apiGet(`${API}/dominio/grau_prioridade`);

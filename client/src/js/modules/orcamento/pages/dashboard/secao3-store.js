@@ -1,5 +1,4 @@
 import { getExecucaoNd } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 
 /**
  * Fonte unica da execucao por ND para as abas do dashboard do orcamento.
@@ -16,15 +15,20 @@ import { getAno } from '@modules/orcamento/store/year-store.js';
  * refaria a consulta inteira para reexibir dado que ja estava na mao, e o
  * usuario pagaria um round-trip por clique de aba.
  *
- * O payload e { linhas, sem_data } desde 2026-08-04. Era a lista crua; o
- * `sem_data` entrou junto porque o registro sem data entra em TODOS os meses, e
- * so a contagem torna isso visivel (ver avisoSemData).
+ * O payload e { linhas, pendencias } desde 2026-08-04. Era a lista crua; as
+ * pendencias de dado do ano entraram junto porque o registro sem data entra em
+ * TODOS os meses, e so a contagem torna isso visivel (ver pendencias.js).
  *
  * A memoizacao e por (ano, mes) e guarda a PROMESSA, e nao o resultado: duas
  * abas montando ao mesmo tempo esperam a mesma requisicao em vez de disparar
  * duas. Trocar o mes ou o ano invalida, e ai a proxima leitura busca de novo.
+ *
+ * O ano vem de FORA, por funcao: o seletor de ano e da TELA desde 2026-08-04, e
+ * nao mais do modulo inteiro. O store nao le store global nenhum.
+ *
+ * @param {{getAno:() => number}} opts
  */
-export function criarSecao3Store() {
+export function criarSecao3Store({ getAno } = {}) {
   let mes = new Date().getMonth() + 1; // 1-12
   let chave = null;
   let promessa = null;
@@ -46,8 +50,8 @@ export function criarSecao3Store() {
   }
 
   /**
-   * A secao 3 do ano de contexto, cumulativa ate o mes escolhido.
-   * @returns {Promise<{linhas:Array<Object>, sem_data:Object}>}
+   * A secao 3 do ano da tela, cumulativa ate o mes escolhido.
+   * @returns {Promise<{linhas:Array<Object>, pendencias:Object}>}
    */
   function carregar() {
     const ano = getAno();
@@ -83,36 +87,10 @@ export function getLinhas(payload) {
   return (payload && Array.isArray(payload.linhas)) ? payload.linhas : [];
 }
 
-/** Rotulo de cada fluxo na frase do aviso. */
-const FLUXO_SEM_DATA = {
-  recebido: ['nota de crédito sem data de emissão', 'notas de crédito sem data de emissão'],
-  empenhado: ['empenho sem data', 'empenhos sem data'],
-  liquidado: ['liquidação sem data', 'liquidações sem data'],
-};
-
-/**
- * A frase que avisa quantos registros do ano nao tem data.
- *
- * O recorte do painel aceita `data IS NULL`, entao esses registros entram em
- * TODOS os meses. Sem o aviso, o painel de janeiro mostra o empenho de dezembro
- * e nada na tela diz isso. A regra do corte NAO muda: a decisao e do chefe, e o
- * aviso so devolve a ele a informacao para decidir.
- *
- * @param {{recebido?:number, empenhado?:number, liquidado?:number}|null} semData
- * @returns {string} vazio quando todo registro do ano tem data
- */
-export function avisoSemData(semData) {
-  if (!semData) return '';
-
-  const partes = Object.keys(FLUXO_SEM_DATA)
-    .map(fluxo => ({ fluxo, n: Number(semData[fluxo]) || 0 }))
-    .filter(({ n }) => n > 0)
-    .map(({ fluxo, n }) => `${n} ${FLUXO_SEM_DATA[fluxo][n === 1 ? 0 : 1]}`);
-
-  if (partes.length === 0) return '';
-
-  return `Atenção: ${partes.join(', ')}. Registro sem data entra em TODOS os meses do ano.`;
-}
+// A frase de uma linha sobre registro sem data (`avisoSemData`) saiu em
+// 2026-08-04. Ela virou o BLOCO de pendencias (pendencias.js), com uma linha
+// por defeito, a contagem e o caminho do conserto: o chefe quer os defeitos de
+// dado A VISTA, e um paragrafo sob o titulo nao chama acao nenhuma.
 
 /** Localiza a linha TOTAL (ou agrega como fallback) da tabela 3.1. */
 export function getTotalRow(rows) {

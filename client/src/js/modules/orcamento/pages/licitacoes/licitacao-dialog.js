@@ -4,6 +4,7 @@ import {
   createSelectField,
   createNumberField,
   createTextField,
+  createDateField,
   createTextareaField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
@@ -12,8 +13,9 @@ import {
   createLicitacao,
   updateLicitacao,
   getTipoLicitacao,
+  getFaseLicitacao,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
+import { paraId } from '@utils/format.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
 // Codigo do tipo Participante: so nesse tipo a OM gestora pode ser outra OM.
@@ -22,23 +24,31 @@ const TIPO_PARTICIPANTE = 3;
 /**
  * Abre o dialog de criar/editar Licitacao.
  * O tipo da licitacao decide a subsecao do RPCMTec: tipo 1 (GCALC DSG) alimenta
- * a 4.4 e tipo 2 (Própria) alimenta a 4.5. O tipo 3 (Participante) NAO tem
- * subsecao: o relatorio gera so os tipos 1 e 2 (rpcmtec_ctrl.js:983-984). Uma
- * licitacao pode cobrir varios DFDs, entao nao ha vinculo direto a um DFD. Em
- * GCALC DSG e Própria a OM gestora e a propria OM; so em Participante a OM
- * gestora pode ser outra.
+ * a 4.4, e os tipos 2 (Própria) e 3 (Participante) alimentam a 4.5 (decisao do
+ * chefe, 2026-08-04; ver gerarLicitacoes em rpcmtec_ctrl.js). Uma licitacao
+ * pode cobrir varios DFDs, entao nao ha vinculo direto a um DFD. Em GCALC DSG
+ * e Própria a OM gestora e a propria OM; so em Participante a OM gestora pode
+ * ser outra.
  * @param {Object} options
  * @param {number|null} [options.licId] - id da licitacao existente para editar (null cria nova)
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export async function openLicitacaoDialog({ licId = null, onSaved = null } = {}) {
+export async function openLicitacaoDialog({
+  licId = null,
+  ano = new Date().getFullYear(),
+  onSaved = null,
+} = {}) {
   const isEdit = licId !== null && licId !== undefined;
 
   let tipos = [];
+  let fases = [];
   let lic = null;
 
   try {
-    tipos = await getTipoLicitacao();
+    [tipos, fases] = await Promise.all([getTipoLicitacao(), getFaseLicitacao()]);
     if (isEdit) lic = await getLicitacao(licId);
   } catch (err) {
     showError(err.message || 'Erro ao carregar dados da licitação');
@@ -46,6 +56,7 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
   }
 
   const tipoOptions = (tipos || []).map(t => ({ value: t.code, label: t.nome }));
+  const faseOptions = (fases || []).map(f => ({ value: f.code, label: f.nome }));
 
   // ---- Campos ----
   const tipoField = createSelectField({
@@ -53,17 +64,43 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
     required: true,
     options: tipoOptions,
     value: lic?.tipo_id ?? undefined,
-    helpText: 'GCALC DSG entra na subseção 4.4 do RPCMTec. Própria entra na 4.5. Participante NÃO entra no RPCMTec: o registro fica só no sistema.',
+    // Os TRES tipos saem no RPCMTec. O aviso anterior dizia que Participante
+    // ficava de fora, e deixou de ser verdade em 2026-08-04.
+    helpText: 'Os três tipos entram no RPCMTec. GCALC DSG vai para a subseção 4.4. Própria e Participante vão para a 4.5, "Demais Licitações da atividade-fim".',
     onChange: (v) => updateOmVisibility(v),
+  });
+  const numeroPregaoField = createTextField({
+    label: 'Número do pregão',
+    // 20 e o limite da coluna (er/orcamento.sql, orcamento.licitacao).
+    maxLength: 20,
+    value: lic?.numero_pregao ?? '',
+    helpText: 'Identifica o processo para quem o acompanha fora do sistema.',
+  });
+  const nupField = createTextField({
+    label: 'NUP',
+    // 25 e o limite da coluna; o NUP real tem 21 caracteres.
+    maxLength: 25,
+    value: lic?.nup ?? '',
+    placeholder: 'Ex.: 64286.011195/2026-94',
   });
   const objetoField = createTextareaField({
     label: 'Objeto',
     required: true,
     value: lic?.objeto ?? '',
   });
+  // A fase CLASSIFICA (serve para filtrar e agrupar) e o texto NARRA. Os dois
+  // convivem: um pregão fracassado é o code 4, e o porquê ("vencedor não
+  // entregou os softwares licitados") só cabe em texto livre.
+  const faseField = createSelectField({
+    label: 'Fase',
+    options: faseOptions,
+    value: lic?.fase_id ?? undefined,
+    helpText: 'Classifica a licitação. O texto abaixo conta a história.',
+  });
   const faseAtualField = createTextareaField({
     label: 'Fase atual',
     value: lic?.fase_atual ?? '',
+    helpText: 'Texto livre. Guarda a história do processo, e não só em que pé ele está.',
   });
   const valorEstimadoField = createNumberField({
     label: 'Valor total estimado',
@@ -76,6 +113,17 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
     min: 0,
     step: 0.01,
     value: lic?.valor_final_homologado ?? undefined,
+  });
+  const dataHomologacaoField = createDateField({
+    label: 'Data de homologação',
+    value: lic?.data_homologacao ?? '',
+  });
+  const fornecedorField = createTextField({
+    label: 'Fornecedor',
+    // 255 e o limite da coluna.
+    maxLength: 255,
+    value: lic?.fornecedor ?? '',
+    helpText: 'A empresa vencedora. Fica vazio em licitação fracassada ou deserta.',
   });
   const omGestoraField = createTextField({
     label: 'OM gestora',
@@ -111,10 +159,15 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
 
   const content = el('div', { className: 'form-grid' }, [
     tipoField.element,
+    numeroPregaoField.element,
+    nupField.element,
     el('div', { className: 'form-grid__full' }, [objetoField.element]),
+    faseField.element,
     el('div', { className: 'form-grid__full' }, [faseAtualField.element]),
     valorEstimadoField.element,
     valorHomologadoField.element,
+    dataHomologacaoField.element,
+    fornecedorField.element,
     omWrapper,
     historico
       ? el('div', { className: 'form-grid__full' }, [historico.element])
@@ -124,7 +177,8 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
   let saving = false;
 
   openModal({
-    title: isEdit ? `Editar licitação (${lic.ano})` : `Nova licitação (${getAno()})`,
+    // Na edicao o ano do REGISTRO manda, e nao o da tela.
+    title: isEdit ? `Editar licitação (${lic.ano})` : `Nova licitação (${ano})`,
     content,
     width: '760px',
     actions: [
@@ -153,12 +207,17 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
           if (!valid) return;
 
           const body = {
-            ano: isEdit ? lic.ano : getAno(),
+            ano: isEdit ? lic.ano : ano,
             tipo_id: tipoId,
             objeto,
+            numero_pregao: numeroPregaoField.getValue() || null,
+            nup: nupField.getValue() || null,
+            fase_id: paraId(faseField.getValue()),
             fase_atual: faseAtualField.getValue() || null,
             valor_total_estimado: valorEstimadoField.getValue(),
             valor_final_homologado: valorHomologadoField.getValue(),
+            data_homologacao: dataHomologacaoField.getValue() || null,
+            fornecedor: fornecedorField.getValue() || null,
             // OM gestora so vale para Participante; nos demais e a propria OM (null).
             om_gestora: Number(tipoId) === TIPO_PARTICIPANTE ? (omGestoraField.getValue() || null) : null,
           };

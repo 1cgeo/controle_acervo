@@ -7,7 +7,6 @@ import {
   createTextareaField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 import {
   createPdrItem,
   updatePdrItem,
@@ -52,19 +51,26 @@ function blocoDeFatos(registro) {
 
 /**
  * Abre o dialog de criar/editar um item do PDR. O PDR e o conjunto dos itens do
- * ano: nao ha cabecalho de PDR, so o item. No create o ano e o contexto global;
- * no edit, o ano do registro. Um item: { ano, cod_nd, meta_pit_id, item_label,
- * gnd, valor_solicitado, valor_autorizado, observacao }.
+ * ano: nao ha cabecalho de PDR, so o item. No create o ano e o da tela; no edit,
+ * o ano do registro. Um item: { ano, cod_nd, meta_pit_id, item_label, gnd,
+ * valor_solicitado, valor_autorizado, observacao }.
  *
  * @param {Object} options
  * @param {Object|null} [options.item] - item existente para editar (null cria novo)
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
+export async function openPdrItemDialog({
+  item = null,
+  ano = new Date().getFullYear(),
+  onSaved = null,
+} = {}) {
   const isEdit = item !== null && item !== undefined && item.id !== undefined;
 
-  // No create o ano e o contexto global; no edit, o ano do registro.
-  const anoItem = isEdit ? (item.ano ?? getAno()) : getAno();
+  // No create o ano e o da tela; no edit, o ano do registro.
+  const anoItem = isEdit ? (item.ano ?? ano) : ano;
 
   let naturezas = [];
   let metas = [];

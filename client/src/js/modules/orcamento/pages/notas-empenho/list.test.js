@@ -1,11 +1,13 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Smoke test da pagina de Notas de Empenho. Mocka o service (lista + dialog).
-// O ano de contexto global e fixado em 2026 no localStorage.
+// A tela tem o proprio filtro de ano e abre no ano ATUAL: nao ha mais ano global
+// nem nada guardado no localStorage.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getNotasEmpenho: vi.fn(() => Promise.resolve([])),
   deleteNotaEmpenho: vi.fn(() => Promise.resolve()),
   getNotasCredito: vi.fn(() => Promise.resolve([])),
+  getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
   getNotaEmpenho: vi.fn(() => Promise.resolve({})),
   createNotaEmpenho: vi.fn(() => Promise.resolve({})),
   updateNotaEmpenho: vi.fn(() => Promise.resolve({})),
@@ -19,9 +21,24 @@ import { getNotasEmpenho } from '@modules/orcamento/services/orcamento-service.j
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
+const ANO_ATUAL = new Date().getFullYear();
+
 describe('renderNotasEmpenhoList', () => {
   beforeEach(() => {
-    localStorage.setItem('@sca-orcamento-ano', '2026');
+    vi.clearAllMocks();
+  });
+
+  // Chefe, 2026-08-04: o ano e de cada tela e comeca no ano ATUAL.
+  test('abre no ano atual e pede a lista desse ano', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderNotasEmpenhoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const filtro = container.querySelector('.page__filters select');
+    expect(filtro.value).toBe(String(ANO_ATUAL));
+    expect(getNotasEmpenho.mock.calls.at(-1)[0].ano).toBe(ANO_ATUAL);
+
+    if (typeof cleanup === 'function') cleanup();
   });
 
   test('monta titulo e carrega a lista do service', async () => {

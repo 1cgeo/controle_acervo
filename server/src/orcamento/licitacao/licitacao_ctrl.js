@@ -21,6 +21,9 @@ const mensagemFk = err => {
   if (detalhe.includes('(tipo_id)')) {
     return 'O tipo de licitacao informado nao existe'
   }
+  if (detalhe.includes('(fase_id)')) {
+    return 'A fase de licitacao informada nao existe'
+  }
   return 'Referencia invalida em um dos campos da licitacao'
 }
 
@@ -33,17 +36,24 @@ const tratarFk = err => {
 }
 
 controller.listar = async (filtros = {}) => {
-  // Lista as licitacoes com o nome do tipo (JOIN dominio.tipo_licitacao).
+  // Lista as licitacoes com o nome do tipo (JOIN dominio.tipo_licitacao) e o da
+  // fase. A fase entra por LEFT JOIN, e nao INNER: fase_id e anulavel, e os
+  // registros carregados antes do dominio existir ficariam de fora da lista.
   // Filtros opcionais por ano e tipo_id. Ordenado por ano e id.
   return db.conn.any(
     `SELECT li.id, li.ano,
             li.tipo_id,
             tl.nome AS tipo_nome,
-            li.objeto, li.fase_atual,
+            li.objeto,
+            li.numero_pregao, li.nup,
+            li.fase_id, fl.nome AS fase_nome,
+            li.fase_atual,
             li.valor_total_estimado, li.valor_final_homologado,
+            li.data_homologacao, li.fornecedor,
             li.om_gestora
      FROM orcamento.licitacao AS li
      INNER JOIN dominio.tipo_licitacao AS tl ON tl.code = li.tipo_id
+     LEFT JOIN dominio.fase_licitacao AS fl ON fl.code = li.fase_id
      WHERE ($<ano> IS NULL OR li.ano = $<ano>)
        AND ($<tipoId> IS NULL OR li.tipo_id = $<tipoId>)
      ORDER BY li.ano DESC, li.id`,
@@ -60,13 +70,18 @@ controller.getPorId = async id => {
     `SELECT li.id, li.ano,
             li.tipo_id,
             tl.nome AS tipo_nome,
-            li.objeto, li.fase_atual,
+            li.objeto,
+            li.numero_pregao, li.nup,
+            li.fase_id, fl.nome AS fase_nome,
+            li.fase_atual,
             li.valor_total_estimado, li.valor_final_homologado,
+            li.data_homologacao, li.fornecedor,
             li.om_gestora,
             li.data_cadastramento, li.usuario_cadastramento_uuid,
             li.data_modificacao, li.usuario_modificacao_uuid
      FROM orcamento.licitacao AS li
      INNER JOIN dominio.tipo_licitacao AS tl ON tl.code = li.tipo_id
+     LEFT JOIN dominio.fase_licitacao AS fl ON fl.code = li.fase_id
      WHERE li.id = $<id>`,
     { id }
   )
@@ -85,18 +100,23 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     .tx(async t => {
       const criada = await t.one(
         `INSERT INTO orcamento.licitacao
-          (ano, tipo_id, objeto, fase_atual,
-           valor_total_estimado, valor_final_homologado, om_gestora,
+          (ano, tipo_id, objeto, numero_pregao, nup, fase_id, fase_atual,
+           valor_total_estimado, valor_final_homologado,
+           data_homologacao, fornecedor, om_gestora,
            usuario_cadastramento_uuid)
          VALUES
-          ($<ano>, $<tipoId>, $<objeto>, $<faseAtual>,
-           $<valorTotalEstimado>, $<valorFinalHomologado>, $<omGestora>,
+          ($<ano>, $<tipoId>, $<objeto>, $<numeroPregao>, $<nup>, $<faseId>, $<faseAtual>,
+           $<valorTotalEstimado>, $<valorFinalHomologado>,
+           $<dataHomologacao>, $<fornecedor>, $<omGestora>,
            $<usuarioUuid>)
          RETURNING *`,
         {
           ano: dados.ano,
           tipoId: dados.tipo_id,
           objeto: dados.objeto,
+          numeroPregao: dados.numero_pregao || null,
+          nup: dados.nup || null,
+          faseId: dados.fase_id != null ? dados.fase_id : null,
           faseAtual: dados.fase_atual || null,
           valorTotalEstimado:
             dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
@@ -104,6 +124,8 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
             dados.valor_final_homologado != null
               ? dados.valor_final_homologado
               : null,
+          dataHomologacao: dados.data_homologacao || null,
+          fornecedor: dados.fornecedor || null,
           omGestora: dados.om_gestora || null,
           usuarioUuid
         }
@@ -141,9 +163,13 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       const depois = await t.one(
         `UPDATE orcamento.licitacao SET
            ano = $<ano>, tipo_id = $<tipoId>,
-           objeto = $<objeto>, fase_atual = $<faseAtual>,
+           objeto = $<objeto>,
+           numero_pregao = $<numeroPregao>, nup = $<nup>,
+           fase_id = $<faseId>, fase_atual = $<faseAtual>,
            valor_total_estimado = $<valorTotalEstimado>,
            valor_final_homologado = $<valorFinalHomologado>,
+           data_homologacao = $<dataHomologacao>,
+           fornecedor = $<fornecedor>,
            om_gestora = $<omGestora>,
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
@@ -154,6 +180,9 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           ano: dados.ano,
           tipoId: dados.tipo_id,
           objeto: dados.objeto,
+          numeroPregao: dados.numero_pregao || null,
+          nup: dados.nup || null,
+          faseId: dados.fase_id != null ? dados.fase_id : null,
           faseAtual: dados.fase_atual || null,
           valorTotalEstimado:
             dados.valor_total_estimado != null ? dados.valor_total_estimado : null,
@@ -161,6 +190,8 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
             dados.valor_final_homologado != null
               ? dados.valor_final_homologado
               : null,
+          dataHomologacao: dados.data_homologacao || null,
+          fornecedor: dados.fornecedor || null,
           omGestora: dados.om_gestora || null,
           dataModificacao: new Date(),
           usuarioUuid

@@ -44,12 +44,14 @@ function campoPorRotulo(rotulo) {
 describe('openRpnpDialog: tipo do id enviado ao servidor', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 
   test('nota_empenho_id vai como numero, e nao como texto', async () => {
-    await openRpnpDialog({});
+    // O ano vem por PARAMETRO de quem abre o dialog: ele nao le store global. E
+    // o ano que decide quais NEs entram na lista (resto a pagar e sempre de
+    // exercicio anterior), entao passa-lo errado esvazia o select.
+    await openRpnpDialog({ ano: 2026 });
     await flush();
 
     const select = campoPorRotulo('Nota de empenho');
@@ -67,7 +69,7 @@ describe('openRpnpDialog: tipo do id enviado ao servidor', () => {
   });
 
   test('sem NE escolhida, nota_empenho_id continua null', async () => {
-    await openRpnpDialog({});
+    await openRpnpDialog({ ano: 2026 });
     await flush();
 
     const rotulo = campoPorRotulo('Rótulo do empenho');
@@ -79,5 +81,7 @@ describe('openRpnpDialog: tipo do id enviado ao servidor', () => {
 
     expect(createRpnp).toHaveBeenCalledTimes(1);
     expect(createRpnp.mock.calls[0][0].nota_empenho_id).toBeNull();
+    // O RPNP novo nasce no ano que a TELA passou, e nao num ano guardado.
+    expect(createRpnp.mock.calls[0][0].ano).toBe(2026);
   });
 });

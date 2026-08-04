@@ -3,13 +3,14 @@ import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   getNotasEmpenho,
   deleteNotaEmpenho,
   getNotasCredito,
+  getAnos,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openNotaEmpenhoDialog } from './nota-empenho-dialog.js';
 
@@ -47,9 +48,9 @@ function estaQuitada(ne) {
 }
 
 /**
- * Lista de Notas de Empenho (#/notas_empenho). Filtra pelo ano de contexto
- * global (navbar). Filtro no topo: nota de credito. A acao "Ver detalhes" navega
- * para a pagina de detalhes da NE (liquidacoes e recebimentos de material).
+ * Lista de Notas de Empenho (#/notas_empenho). Filtros no topo: ano da tela e
+ * nota de credito. A acao "Ver detalhes" navega para a pagina de detalhes da NE
+ * (liquidacoes e recebimentos de material).
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -62,10 +63,24 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openNotaEmpenhoDialog({ onSaved: load }),
+    onClick: () => openNotaEmpenhoDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Nova nota de empenho']);
 
   // ---- Filtros ----
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). Trocar o ano tambem LIMPA o filtro de NC: as NCs sao do ano
+  // anterior e a lista ficaria presa a uma NC que nao esta mais nas opcoes.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnos,
+    permitirOutroAno: true,
+    onChange: async () => {
+      filtroNotaCredito = null;
+      notaCreditoFilter.setValue(null);
+      await loadFilterOptions();
+      await load();
+    },
+  });
+
   const notaCreditoFilter = createSelectField({
     label: 'Nota de crédito',
     options: [],
@@ -150,7 +165,11 @@ export async function renderNotasEmpenhoList(container, _ctx) {
       ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
-        onClick: (row) => openNotaEmpenhoDialog({ neId: row.id, onSaved: load }),
+        onClick: (row) => openNotaEmpenhoDialog({
+          neId: row.id,
+          ano: filtroAno.getAno(),
+          onSaved: load,
+        }),
       }] : []),
       ...(pode.gerente ? [{
         icon: ICONS.delete,
@@ -170,6 +189,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
     }, [
+      filtroAno.element,
       notaCreditoFilter.element,
     ]),
     table.element,
@@ -178,7 +198,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
 
   async function loadFilterOptions() {
     try {
-      const notasCredito = await getNotasCredito({ ano: getAno() });
+      const notasCredito = await getNotasCredito({ ano: filtroAno.getAno() });
       if (disposed) return;
       notaCreditoFilter.setOptions((notasCredito || []).map(nc => ({
         value: nc.id,
@@ -194,7 +214,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
     table.update({ loading: true });
     try {
       const dados = await getNotasEmpenho({
-        ano: getAno(),
+        ano: filtroAno.getAno(),
         nota_credito_id: filtroNotaCredito ?? undefined,
       });
       if (disposed) return;
@@ -223,19 +243,11 @@ export async function renderNotasEmpenhoList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(async () => {
-    filtroNotaCredito = null;
-    notaCreditoFilter.setValue(null);
-    await loadFilterOptions();
-    await load();
-  });
-
   await loadFilterOptions();
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

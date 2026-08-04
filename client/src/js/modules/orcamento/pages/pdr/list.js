@@ -5,17 +5,17 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
-import { getPdrItens, deletePdrItem } from '@modules/orcamento/services/orcamento-service.js';
+import { getPdrItens, deletePdrItem, getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openPdrItemDialog } from './item-dialog.js';
 
 /**
- * Tela do PDR (#/pdr). O PDR e o CONJUNTO DOS SEUS ITENS amarrados no ano de
- * contexto global (navbar): esta pagina lista os itens (CRUD) e mostra um
- * cartao-resumo com os totais calculados a partir dos itens carregados.
- * Recarrega ao trocar o ano de contexto.
+ * Tela do PDR (#/pdr). O PDR e o CONJUNTO DOS SEUS ITENS amarrados num ano:
+ * esta pagina lista os itens (CRUD) e mostra um cartao-resumo com os totais
+ * calculados a partir dos itens carregados. O filtro de ano do topo recarrega a
+ * tela.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -24,12 +24,21 @@ export async function renderPdrList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('orcamento');
 
-  const title = el('h1', { className: 'page__title', textContent: `PDR ${getAno()}` });
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o item e
+  // cadastrado: montar o PDR do exercicio seguinte comeca num ano vazio.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnos,
+    permitirOutroAno: true,
+    onChange: () => { if (!disposed) load(); },
+  });
+
+  const title = el('h1', { className: 'page__title', textContent: `PDR ${filtroAno.getAno()}` });
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openPdrItemDialog({ onSaved: load }),
+    onClick: () => openPdrItemDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Novo item']);
 
   // Anexos do PDR: ficam no nivel do ano (nao do item; o PDR nao tem cabecalho).
@@ -38,7 +47,7 @@ export async function renderPdrList(container, _ctx) {
     className: 'btn btn--secondary',
     type: 'button',
     onClick: () => {
-      const ano = getAno();
+      const ano = filtroAno.getAno();
       const anexo = createFileAttachment({
         mode: 'multi',
         vinculo: { pdr_ano: ano },
@@ -223,7 +232,7 @@ export async function renderPdrList(container, _ctx) {
       {
         icon: ICONS.edit,
         title: 'Editar',
-        onClick: (row) => openPdrItemDialog({ item: row, onSaved: load }),
+        onClick: (row) => openPdrItemDialog({ item: row, ano: filtroAno.getAno(), onSaved: load }),
       },
       {
         icon: ICONS.delete,
@@ -244,13 +253,19 @@ export async function renderPdrList(container, _ctx) {
         ...(pode.gerente ? [newBtn] : []),
       ]),
     ]),
+    el('div', {
+      className: 'page__filters',
+      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
+    }, [
+      filtroAno.element,
+    ]),
     summaryCard,
     table.element,
   ]);
   container.appendChild(page);
 
   async function load() {
-    const ano = getAno();
+    const ano = filtroAno.getAno();
     title.textContent = `PDR ${ano}`;
     table.update({ loading: true });
     try {
@@ -288,13 +303,10 @@ export async function renderPdrList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(() => { if (!disposed) load(); });
-
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

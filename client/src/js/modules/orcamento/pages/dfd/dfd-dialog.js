@@ -12,7 +12,6 @@ import {
 import { showSuccess, showError } from '@utils/toast.js';
 import { formatCurrency, formatDateTime } from '@utils/format.js';
 import * as svc from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
 
 /** String vazia vira null (campos opcionais da API). */
@@ -219,10 +218,12 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
 
 /**
  * Abre o dialog de criar/editar DFD, incluindo a lista de itens.
- * O ano vem do contexto global (navbar): no create grava o ano de contexto; no
- * edit mantem o ano do registro.
+ * No create grava o ano recebido; no edit mantem o ano do registro.
  * @param {Object} options
  * @param {Object|null} [options.dfd] - DFD existente (ja com itens) para editar
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Object} options.dominios - { grauPrioridade, tipoItem }
  * @param {Object} [options.padroes] - valores padrao do DFD novo, medidos na lista
  * @param {boolean} [options.somenteLeitura] - abre a ficha sem permitir salvar
@@ -230,6 +231,7 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
  */
 export function openDfdDialog({
   dfd = null,
+  ano = new Date().getFullYear(),
   dominios = {},
   padroes = {},
   somenteLeitura = false,
@@ -530,7 +532,7 @@ export function openDfdDialog({
 
         const body = {
           numero: numeroField.getValue(),
-          ano: isEdit ? dfd.ano : getAno(),
+          ano: isEdit ? dfd.ano : ano,
           rotulo: orNull(rotuloField.getValue()),
           objeto: orNull(objetoField.getValue()),
           justificativa: orNull(justificativaField.getValue()),
@@ -580,7 +582,7 @@ export function openDfdDialog({
   openModal({
     title: somenteLeitura
       ? tituloLeitura
-      : (isEdit ? `Editar DFD (${dfd.ano})` : `Novo DFD (${getAno()})`),
+      : (isEdit ? `Editar DFD (${dfd.ano})` : `Novo DFD (${ano})`),
     content,
     width: '820px',
     actions: somenteLeitura ? acoesLeitura : acoesEdicao,

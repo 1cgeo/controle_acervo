@@ -3,8 +3,8 @@ import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
-import { getRpnps, deleteRpnp } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
+import { getRpnps, deleteRpnp, getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openRpnpDialog } from './rpnp-dialog.js';
 
@@ -26,7 +26,7 @@ function temValorALiquidar(row) {
 
 /**
  * Lista de RPNP (#/rpnp). Restos a pagar não processados; alimenta a subseção 4.3.
- * Filtra pelo ano de contexto global (navbar).
+ * Filtra pelo ano do filtro no topo da tela.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -35,10 +35,19 @@ export async function renderRpnpList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('orcamento');
 
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o RPNP e
+  // cadastrado: a virada de exercicio comeca num ano ainda vazio.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnos,
+    permitirOutroAno: true,
+    onChange: () => load(),
+  });
+
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openRpnpDialog({ onSaved: load }),
+    onClick: () => openRpnpDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Novo RPNP']);
 
   const table = createDataTable({
@@ -96,7 +105,7 @@ export async function renderRpnpList(container, _ctx) {
       ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
-        onClick: (row) => openRpnpDialog({ rpnpId: row.id, onSaved: load }),
+        onClick: (row) => openRpnpDialog({ rpnpId: row.id, ano: filtroAno.getAno(), onSaved: load }),
       }] : []),
       ...(pode.gerente ? [{
         icon: ICONS.delete,
@@ -117,6 +126,12 @@ export async function renderRpnpList(container, _ctx) {
       ]),
       el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
+    el('div', {
+      className: 'page__filters',
+      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
+    }, [
+      filtroAno.element,
+    ]),
     table.element,
   ]);
   container.appendChild(page);
@@ -129,7 +144,7 @@ export async function renderRpnpList(container, _ctx) {
     const informadas = linhas.filter(temValorALiquidar);
     const total = informadas.reduce((soma, rp) => soma + toNumber(rp.valor_a_liquidar), 0);
     const semValor = linhas.length - informadas.length;
-    let texto = `${linhas.length} RPNP em ${getAno()}, total a liquidar ${formatCurrency(total)}`;
+    let texto = `${linhas.length} RPNP em ${filtroAno.getAno()}, total a liquidar ${formatCurrency(total)}`;
     if (semValor > 0) {
       texto += `; ${semValor} sem valor informado, fora do total`;
     }
@@ -139,7 +154,7 @@ export async function renderRpnpList(container, _ctx) {
   async function load() {
     table.update({ loading: true });
     try {
-      const dados = await getRpnps(getAno());
+      const dados = await getRpnps(filtroAno.getAno());
       if (disposed) return;
       table.update({ rows: dados || [], loading: false });
       atualizarResumo(dados);
@@ -168,13 +183,10 @@ export async function renderRpnpList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(() => load());
-
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

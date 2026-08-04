@@ -52,9 +52,24 @@ describe('POST /notas_empenho', () => {
   // acrescentou 2 alocacoes" em todo salvamento.
   test('registra a NE e o RATEIO, os dois na ficha da NE', async () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 7, ...bodyValido })
-    mockDb.conn.any.mockResolvedValueOnce([
-      { nota_credito_id: 5, valor: '2000.00' }
-    ]) // releitura do rateio, para o rastro
+    // Despacho por CONTEUDO da consulta, e nao por ordem de chamada. A transacao
+    // de `criar` faz quatro `any`: a homogeneidade das NCs, as duas do teto (que
+    // entrou em 2026-08-04) e a releitura do rateio. Com `mockResolvedValueOnce`
+    // em fila, acrescentar uma validacao no controller desloca todos os mocks e
+    // o teste passa a medir outra coisa, calado.
+    mockDb.conn.any.mockImplementation(async (sql) => {
+      const texto = String(sql)
+      if (texto.includes('valor_recolhido')) {
+        return [{ id: 5, numero: 'NC-5', valor_nc: '5000.00', valor_recolhido: '0.00' }]
+      }
+      if (texto.includes('nota_empenho_nota_credito') && texto.includes('SUM')) {
+        return [] // nada empenhado ainda contra a NC
+      }
+      if (texto.includes('FROM orcamento.nota_empenho_nota_credito')) {
+        return [{ nota_credito_id: 5, valor: '2000.00' }] // releitura do rateio
+      }
+      return [{ id: 5, cod_nd: '339030', classificacao_id: 2 }] // NCs do rateio
+    })
     await request(app).post('/notas_empenho').send(bodyValido)
 
     const eventos = eventosDeAuditoria(mockDb)
@@ -146,17 +161,23 @@ describe('POST /notas_empenho', () => {
 })
 
 describe('GET /notas_empenho/:id', () => {
-  test('traz saldo_a_liquidar', async () => {
+  // O saldo e somado no BANCO desde 2026-08-04, e nao mais em JS: NUMERIC em vez
+  // de ponto flutuante (ver o teste irmao em unit/orcamento/nota_empenho_ctrl).
+  // A rota entrega o que a consulta calculou, como TEXTO, que e o que o driver
+  // devolve para NUMERIC.
+  test('traz saldo_a_liquidar como veio do banco', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 1,
       valor_empenhado: '1000',
-      valor_anulado: '0'
+      valor_anulado: '0',
+      total_liquidado: '250',
+      saldo_a_liquidar: '750.00'
     })
     mockDb.conn.any.mockResolvedValueOnce([{ id: 1, valor_liquidado: '250' }])
 
     const res = await request(app).get('/notas_empenho/1')
     expect(res.status).toBe(200)
-    expect(res.body.dados.saldo_a_liquidar).toBe(750)
+    expect(res.body.dados.saldo_a_liquidar).toBe('750.00')
   })
 
   test('404 quando nao existe', async () => {

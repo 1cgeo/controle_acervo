@@ -1,7 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
-import { createSelectField } from '@components/form-fields/form-fields.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   getMetasPit,
@@ -11,7 +11,6 @@ import {
 } from '@services/plataforma-service.js';
 import { isAdmin } from '@store/auth-store.js';
 import { formatCurrency, toNumber } from '@utils/format.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 import { openMetaDialog } from './meta-dialog.js';
 
 /**
@@ -28,14 +27,19 @@ import { openMetaDialog } from './meta-dialog.js';
  * tres modulos. O backend cobra a regra; aqui so escondemos o que nao adianta
  * oferecer.
  *
- * O ANO tem filtro PROPRIO no topo, e nao o seletor da navbar: aquele e do
- * modulo orcamento e some quando a pessoa troca de modulo. Os anos vem de
- * GET /metas/anos, mais o ano corrente, para cadastrar o exercicio novo.
+ * O ANO tem filtro PROPRIO no topo, o mesmo componente que as telas do
+ * orcamento usam (@components/filtro-ano.js). Ele nasce no ano ATUAL e nao
+ * guarda nada. Os anos vem de GET /metas/anos, mais o ano corrente, para
+ * cadastrar o exercicio novo.
  *
- * O filtro NASCE no ano do orcamento (2026-08-04). Quem trabalhava em 2025 no
- * orcamento e clicava em Metas caia em 2026 sem aviso, e a tela parecia vazia.
- * O `getAno` cai no ano corrente quando ninguem escolheu nada, que era o
- * comportamento antigo: a semente so muda a tela de quem ja escolheu um ano.
+ * Ate 2026-08-04 esta tela importava o ano do modulo ORCAMENTO, porque o
+ * seletor daquele modulo morava na navbar. Era acoplamento errado: metas e tela
+ * de PLATAFORMA, e o ano dela nao depende de em que ano alguem lancou uma nota
+ * de credito.
+ *
+ * `permitirOutroAno` fica FALSO: aqui o ano so filtra o que ja existe, e um ano
+ * vazio seria oferecer uma tela em branco. A meta de um ano novo se cria pelo
+ * dialogo, que recebe o ano por parametro.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -44,24 +48,18 @@ import { openMetaDialog } from './meta-dialog.js';
 export async function renderMetasList(container, _ctx) {
   let disposed = false;
   const podeEscrever = isAdmin();
-  let anoSelecionado = getAno();
+
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnosMetaPit,
+    permitirOutroAno: false,
+    onChange: () => load(),
+  });
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openMetaDialog({ ano: anoSelecionado, onSaved: load }),
+    onClick: () => openMetaDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Nova meta']);
-
-  const anoFilter = createSelectField({
-    label: 'Ano',
-    options: [],
-    placeholder: 'Todos os anos',
-    value: anoSelecionado,
-    onChange: (valor) => {
-      anoSelecionado = valor === null ? null : Number(valor);
-      load();
-    },
-  });
 
   const table = createDataTable({
     columns: [
@@ -141,37 +139,15 @@ export async function renderMetasList(container, _ctx) {
     el('div', {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [anoFilter.element]),
+    }, [filtroAno.element]),
     table.element,
   ]);
   container.appendChild(page);
 
-  async function loadAnos() {
-    let anos = [];
-    try {
-      anos = await getAnosMetaPit();
-    } catch (err) {
-      if (disposed) return;
-      // Sem a lista de anos a tela continua util: o filtro nasce com o ano
-      // corrente e a listagem responde. Nao vale interromper por isto.
-      anos = [];
-    }
-    if (disposed) return;
-    const corrente = new Date().getFullYear();
-    // O ano semeado pelo orcamento entra na lista mesmo sem meta cadastrada.
-    // Sem isto o select receberia um valor que nao existe entre as opcoes, e
-    // mostraria outro ano ao lado de uma lista filtrada pelo semeado.
-    const todos = [...new Set([corrente, anoSelecionado, ...(anos || []).map(Number)])]
-      .filter(a => Number.isInteger(a))
-      .sort((a, b) => b - a);
-    anoFilter.setOptions(todos.map(a => ({ value: a, label: String(a) })));
-    anoFilter.setValue(anoSelecionado);
-  }
-
   async function load() {
     table.update({ loading: true });
     try {
-      const dados = await getMetasPit(anoSelecionado);
+      const dados = await getMetasPit(filtroAno.getAno());
       if (disposed) return;
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
@@ -198,7 +174,6 @@ export async function renderMetasList(container, _ctx) {
     }
   }
 
-  await loadAnos();
   await load();
 
   return () => {

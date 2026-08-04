@@ -77,6 +77,10 @@ controller.getTipoLicitacao = async () => {
   return db.conn.any('SELECT code, nome FROM dominio.tipo_licitacao ORDER BY code')
 }
 
+controller.getFaseLicitacao = async () => {
+  return db.conn.any('SELECT code, nome FROM dominio.fase_licitacao ORDER BY code')
+}
+
 controller.getClassificacaoNc = async () => {
   return db.conn.any('SELECT code, nome FROM dominio.classificacao_nc ORDER BY code')
 }

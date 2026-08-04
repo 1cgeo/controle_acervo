@@ -245,7 +245,32 @@ INSERT INTO dominio.tipo_licitacao (code, nome) VALUES
 (2, 'Própria'),
 (3, 'Participante');
 
--- Classificacao da NC (3.2 PDR / 3.7 Extra-PDR)
+-- Fase da licitação. Classifica o processo para filtrar e agrupar.
+--
+-- NÃO substitui `orcamento.licitacao.fase_atual`, que é texto livre e continua
+-- existindo. Um registro real guarda 103 caracteres ("Homologado. Vencedor não
+-- entregou os softwares licitados, o que implica que o pregão se tornou
+-- fracassado"). Isso não é uma fase, é a história do processo, e é ela que
+-- explica por que o empenho foi anulado. O código classifica; o texto narra.
+--
+-- Os valores saem do texto REAL das subseções 3.4 e 3.5 do RPCMTec de 2025 e de
+-- 2026. Fase intermediária de tramitação ("na SALC", "na AGU") fica de fora até
+-- que alguém a registre. Ver migrations/2026-08-04_licitacao_campos_fase_e_anexo.sql.
+CREATE TABLE dominio.fase_licitacao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+-- Os quatro valores saem dos `fase_atual` que os registros reais exibem. O
+-- code 2 fica reservado para a fase anterior a homologacao, e so entra quando
+-- aparecer o primeiro caso: dominio grande e vazio convida a classificar errado.
+INSERT INTO dominio.fase_licitacao (code, nome) VALUES
+(1, 'Previsto'),
+(3, 'Homologado'),
+(4, 'Fracassado'),
+(5, 'Renovando contrato vigente');
+
+-- Classificacao da NC (4.2 PDR / 4.7 Extra-PDR)
 CREATE TABLE dominio.classificacao_nc(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL

@@ -15,26 +15,32 @@ import {
   updateNotaEmpenho,
   getNotasCredito,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 
 /**
  * Abre o dialog de criar/editar Nota de Empenho.
  * A NE empenha contra uma OU MAIS NCs; o valor empenhado e dividido por NC
  * (a soma das linhas = valor empenhado da NE). A ND, o PI e o GND sao HERDADOS
  * da NC, entao a NE nao tem esses campos nem licitacao; por regra todas as NCs
- * de uma NE devem ter a mesma ND e classificacao. O ano vem do contexto global.
+ * de uma NE devem ter a mesma ND e classificacao.
  * @param {Object} options
  * @param {number|null} [options.neId] - id da NE existente para editar (null cria nova)
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export async function openNotaEmpenhoDialog({ neId = null, onSaved = null } = {}) {
+export async function openNotaEmpenhoDialog({
+  neId = null,
+  ano = new Date().getFullYear(),
+  onSaved = null,
+} = {}) {
   const isEdit = neId !== null && neId !== undefined;
 
   let notasCredito = [];
   let ne = null;
 
   try {
-    notasCredito = await getNotasCredito({ ano: getAno() });
+    notasCredito = await getNotasCredito({ ano });
     if (isEdit) ne = await getNotaEmpenho(neId);
   } catch (err) {
     showError(err.message || 'Erro ao carregar dados da nota de empenho');
@@ -275,7 +281,7 @@ export async function openNotaEmpenhoDialog({ neId = null, onSaved = null } = {}
   let saving = false;
 
   openModal({
-    title: isEdit ? `Editar nota de empenho (${ne.ano})` : `Nova nota de empenho (${getAno()})`,
+    title: isEdit ? `Editar nota de empenho (${ne.ano})` : `Nova nota de empenho (${ano})`,
     content,
     width: '720px',
     actions: [
@@ -353,7 +359,7 @@ export async function openNotaEmpenhoDialog({ neId = null, onSaved = null } = {}
 
           const body = {
             numero,
-            ano: isEdit ? ne.ano : getAno(),
+            ano: isEdit ? ne.ano : ano,
             data_empenho: dataEmpenhoField.getValue(),
             finalidade: finalidadeField.getValue() || null,
             valor_anulado: valorAnulado,

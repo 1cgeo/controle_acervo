@@ -3,19 +3,19 @@ import { formatCurrency } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   getLicitacoes,
   deleteLicitacao,
   getTipoLicitacao,
+  getAnos,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openLicitacaoDialog } from './licitacao-dialog.js';
 
 // As licitacoes alimentam o RPCMTec: o tipo 1 (GCALC DSG) corresponde a
-// subsecao 4.4 e o tipo 2 (Própria) corresponde a 4.5 do relatorio. O tipo 3
-// (Participante) nao tem subsecao e nao sai no relatorio.
+// subsecao 4.4, e os tipos 2 (Própria) e 3 (Participante) correspondem a 4.5.
 const COMPRIMENTO_TRUNCAR = 80;
 
 function truncar(texto) {
@@ -24,9 +24,25 @@ function truncar(texto) {
 }
 
 /**
- * Lista de Licitacoes (#/licitacoes). Filtra pelo ano de contexto global (navbar).
- * Filtro no topo: tipo (1 = GCALC DSG / subsecao 4.4; 2 = Própria / subsecao 4.5;
- * 3 = Participante, fora do relatorio).
+ * A celula da fase: o rotulo do dominio na tela, o texto livre no title.
+ *
+ * As duas coisas convivem por decisao. `fase_nome` classifica e serve para
+ * varrer a lista; `fase_atual` narra, e um registro real gasta 103 caracteres
+ * explicando por que o pregao se tornou fracassado. Mostrar so o rotulo
+ * esconderia a explicacao, e mostrar so o texto devolveria a coluna ilegivel
+ * que a tela tinha antes.
+ * @param {Object} row
+ * @returns {Node|string}
+ */
+function celulaFase(row) {
+  const rotulo = row.fase_nome || truncar(row.fase_atual);
+  if (!row.fase_atual) return rotulo;
+  return el('span', { title: row.fase_atual, textContent: rotulo });
+}
+
+/**
+ * Lista de Licitacoes (#/licitacoes). Filtros no topo: ano da tela e tipo
+ * (1 = GCALC DSG / subsecao 4.4; 2 = Própria e 3 = Participante / subsecao 4.5).
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -39,10 +55,19 @@ export async function renderLicitacoesList(container, _ctx) {
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openLicitacaoDialog({ onSaved: load }),
+    onClick: () => openLicitacaoDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Nova licitação']);
 
   // ---- Filtros ----
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE a licitacao e
+  // cadastrada: abrir um exercicio novo passa por escolher um ano ainda vazio.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnos,
+    permitirOutroAno: true,
+    onChange: () => load(),
+  });
+
   const tipoFilter = createSelectField({
     label: 'Tipo',
     options: [],
@@ -54,7 +79,16 @@ export async function renderLicitacoesList(container, _ctx) {
   });
 
   const table = createDataTable({
+    // Sete campos novos entraram no cadastro e SO DOIS aparecem aqui. A lista
+    // identifica a licitacao (pregao, objeto, tipo) e diz em que pe ela esta;
+    // NUP, fornecedor e data de homologacao ficam no dialogo, que e onde se
+    // trabalha um processo de cada vez.
     columns: [
+      {
+        key: 'numero_pregao',
+        label: 'Pregão',
+        render: (row) => row.numero_pregao || '-',
+      },
       {
         key: 'objeto',
         label: 'Objeto',
@@ -67,10 +101,10 @@ export async function renderLicitacoesList(container, _ctx) {
         render: (row) => row.tipo_nome || '-',
       },
       {
-        key: 'fase_atual',
-        label: 'Fase atual',
+        key: 'fase_nome',
+        label: 'Fase',
         className: 'truncate',
-        render: (row) => truncar(row.fase_atual),
+        render: celulaFase,
       },
       {
         key: 'valor_total_estimado',
@@ -94,7 +128,7 @@ export async function renderLicitacoesList(container, _ctx) {
       ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
-        onClick: (row) => openLicitacaoDialog({ licId: row.id, onSaved: load }),
+        onClick: (row) => openLicitacaoDialog({ licId: row.id, ano: filtroAno.getAno(), onSaved: load }),
       }] : []),
       ...(pode.gerente ? [{
         icon: ICONS.delete,
@@ -114,6 +148,7 @@ export async function renderLicitacoesList(container, _ctx) {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
     }, [
+      filtroAno.element,
       tipoFilter.element,
     ]),
     table.element,
@@ -135,7 +170,7 @@ export async function renderLicitacoesList(container, _ctx) {
     table.update({ loading: true });
     try {
       const dados = await getLicitacoes({
-        ano: getAno(),
+        ano: filtroAno.getAno(),
         tipo_id: filtroTipo ?? undefined,
       });
       if (disposed) return;
@@ -169,14 +204,11 @@ export async function renderLicitacoesList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(() => load());
-
   await loadFilterOptions();
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

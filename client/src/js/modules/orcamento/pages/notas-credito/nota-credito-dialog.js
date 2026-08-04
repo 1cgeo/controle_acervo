@@ -71,8 +71,8 @@ export async function openNotaCreditoDialog({
   let metas = [];
   let nc = null;
 
-  // Ano de contexto da NC: no edit segue o ano do registro; no create e o ano global.
-  const anoContexto = isEdit ? null : getAno();
+  // Ano de contexto da NC: no edit segue o ano do registro; no create e o ano da tela.
+  const anoContexto = isEdit ? null : ano;
 
   try {
     [naturezas, planos, ugs, classificacoes, outrasNcs, pdrItens] = await Promise.all([
@@ -80,8 +80,8 @@ export async function openNotaCreditoDialog({
       getPlanoInterno(),
       getUg(),
       getClassificacaoNc(),
-      getNotasCredito({ ano: getAno() }),
-      getPdrItens(getAno()),
+      getNotasCredito({ ano }),
+      getPdrItens(ano),
     ]);
     if (isEdit) nc = await getNotaCredito(ncId);
   } catch (err) {
@@ -315,7 +315,7 @@ export async function openNotaCreditoDialog({
   let saving = false;
 
   openModal({
-    title: isEdit ? `Editar nota de crédito (${nc.ano})` : `Nova nota de crédito (${getAno()})`,
+    title: isEdit ? `Editar nota de crédito (${nc.ano})` : `Nova nota de crédito (${ano})`,
     content,
     width: '760px',
     actions: [
@@ -365,7 +365,7 @@ export async function openNotaCreditoDialog({
 
           const body = {
             numero,
-            ano: isEdit ? nc.ano : getAno(),
+            ano: isEdit ? nc.ano : ano,
             data_emissao: dataEmissaoField.getValue(),
             cod_nd: codNd,
             ptres: ptresField.getValue() || null,

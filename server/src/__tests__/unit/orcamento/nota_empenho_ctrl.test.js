@@ -96,23 +96,34 @@ describe('nota_empenho_ctrl.getPorId', () => {
     })
   })
 
-  test('calcula saldo_a_liquidar = empenhado - anulado - SUM(liquidado)', async () => {
+  // O saldo saiu do JS e foi para o BANCO. Antes ele era somado com Number sobre
+  // colunas NUMERIC(15,2), e o ponto flutuante deixava residuo: a NE real
+  // 2026NE000023 (2499,01 - 339,16 - 2159,85) devolvia 4,5e-13 em vez de zero, a
+  // NE perdia o chip "Liquidada" e subia na ordem da tela, que e por saldo.
+  // Em NUMERIC a mesma conta fecha em 0.00 exato.
+  //
+  // Por isso o teste mudou de alvo: nao ha mais conta em JS para exercitar. O que
+  // precisa ficar fixo e que a SOMA acontece no banco, e que o controller entrega
+  // o que a consulta calculou, sem refazer a conta por cima.
+  test('a soma do liquidado e feita no BANCO, e nao em ponto flutuante no JS', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 1,
-      valor_empenhado: '1000',
-      valor_anulado: '200'
+      valor_empenhado: '2499.01',
+      valor_anulado: '339.16',
+      total_liquidado: '2159.85',
+      saldo_a_liquidar: '0.00'
     })
-    // liquidacoes da NE
-    mockDb.conn.any.mockResolvedValueOnce([
-      { id: 1, valor_liquidado: '300' },
-      { id: 2, valor_liquidado: '100' }
-    ])
+    mockDb.conn.any.mockResolvedValueOnce([])
 
     const ne = await ctrl.getPorId(1)
 
-    expect(ne.total_liquidado).toBe(400)
-    // 1000 - 200 - 400 = 400
-    expect(ne.saldo_a_liquidar).toBe(400)
+    // Entregue como veio da consulta: NUMERIC chega como texto e nao vira float.
+    expect(ne.total_liquidado).toBe('2159.85')
+    expect(ne.saldo_a_liquidar).toBe('0.00')
+
+    const [sql] = mockDb.conn.oneOrNone.mock.calls[0]
+    expect(String(sql)).toMatch(/SUM\s*\(/i)
+    expect(String(sql)).toContain('valor_liquidado')
   })
 })
 

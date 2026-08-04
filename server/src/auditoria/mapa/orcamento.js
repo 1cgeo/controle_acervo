@@ -204,7 +204,7 @@ module.exports = {
       material: { rotulo: 'Material' },
       prazo_entrega: { rotulo: 'Prazo de entrega' },
       situacao: { rotulo: 'Situação' },
-      // Decide em qual RPCMTec (3.6) o item aparece. Nulo cai no ano da NE.
+      // Decide em qual RPCMTec (4.6) o item aparece. Nulo cai no ano da NE.
       ano_referencia: { rotulo: 'Ano de referência', tipo: 'numero' },
       nota_empenho_id: { rotulo: 'Nota de empenho', entidade: 'nota_empenho' }
     }
@@ -221,7 +221,12 @@ module.exports = {
       ano: { rotulo: 'Ano', tipo: 'numero' },
       tipo_id: { rotulo: 'Tipo', dominio: 'dominio.tipo_licitacao' },
       objeto: { rotulo: 'Objeto' },
+      numero_pregao: { rotulo: 'Número do pregão' },
+      nup: { rotulo: 'NUP do processo' },
+      fase_id: { rotulo: 'Fase', dominio: 'dominio.fase_licitacao' },
       fase_atual: { rotulo: 'Fase atual' },
+      fornecedor: { rotulo: 'Fornecedor' },
+      data_homologacao: { rotulo: 'Data de homologação', tipo: 'data' },
       valor_total_estimado: { rotulo: 'Valor total estimado', tipo: 'dinheiro' },
       valor_final_homologado: { rotulo: 'Valor final homologado', tipo: 'dinheiro' },
       om_gestora: { rotulo: 'OM gestora' }
@@ -296,8 +301,12 @@ module.exports = {
     resumo: () => 'Configuração do módulo orçamento',
     campos: {
       uasg: { rotulo: 'UASG' },
-      codom: { rotulo: 'CODOM' },
-      ano_referencia: { rotulo: 'Ano de referência', tipo: 'numero' }
+      codom: { rotulo: 'CODOM' }
+      // `ano_referencia` saiu daqui em 2026-08-04: era o ano PADRAO das telas, e
+      // o seletor de ano global acabou. Cada tela tem o seu filtro, comeca no
+      // ano atual e nao guarda nada. Nao confunda com o `ano_referencia` do
+      // recebimento_material, logo acima, que decide em que RPCMTec o item
+      // aparece e PERMANECE.
     }
   },
 

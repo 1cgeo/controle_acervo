@@ -15,7 +15,7 @@ vi.mock('@services/plataforma-service.js', async () => {
 });
 
 import { renderMetasList } from '@pages/metas/list.js';
-import { getMetasPit } from '@services/plataforma-service.js';
+import { getMetasPit, getAnosMetaPit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -86,9 +86,11 @@ describe('renderMetasList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A tela é de plataforma e não tem o seletor de ano da navbar do orçamento.
-  // O filtro é próprio, e nasce no ano corrente.
-  test('filtra por ano com seletor próprio, no ano corrente', async () => {
+  // A tela é de plataforma e usa o filtro de ano compartilhado
+  // (@components/filtro-ano.js), o mesmo das telas do orçamento. Ele nasce no
+  // ano corrente e não guarda nada: até 2026-08-04 esta tela lia o ano do
+  // módulo orçamento, que persistia a escolha no localStorage.
+  test('filtra por ano com filtro próprio, no ano corrente', async () => {
     logar({ administrador: true });
     getMetasPit.mockResolvedValueOnce(METAS);
 
@@ -98,6 +100,23 @@ describe('renderMetasList', () => {
     const select = container.querySelector('.page__filters select');
     expect(select).not.toBeNull();
     expect(select.value).toBe(String(new Date().getFullYear()));
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('as opções do ano vêm de GET /metas/anos, sem a opção de outro ano', async () => {
+    logar({ administrador: true });
+    getMetasPit.mockResolvedValueOnce(METAS);
+
+    const { container, cleanup } = await montar();
+
+    expect(getAnosMetaPit).toHaveBeenCalled();
+    const opcoes = [...container.querySelectorAll('.page__filters select option')]
+      .map(o => o.textContent);
+    expect(opcoes).toContain('2025');
+    // `permitirOutroAno: false`: no PIT o ano só filtra o que já existe, e um
+    // ano vazio abriria uma tela em branco.
+    expect(opcoes.some(o => o.includes('Outro ano'))).toBe(false);
 
     if (typeof cleanup === 'function') cleanup();
   });

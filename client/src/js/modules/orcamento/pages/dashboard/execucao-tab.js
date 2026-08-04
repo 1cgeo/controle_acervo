@@ -121,7 +121,7 @@ export async function renderExecucaoTab(container, store) {
     execucaoChart.update({ loading: true });
 
     try {
-      // A rota do painel devolve { linhas, sem_data }; ate 2026-08-01 ela vinha
+      // A rota do painel devolve { linhas, pendencias }; ate 2026-08-01 ela vinha
       // embrulhada em { tabela_31 }, junto com as outras seis tabelas da secao 3
       // do RPCMTec, que esta tela nunca leu.
       const rows = getLinhas(await store.carregar());

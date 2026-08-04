@@ -49,12 +49,12 @@ function preencherTexto(input, valor) {
 describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 
   test('nota_credito_id do rateio vai como numero, e nao como texto', async () => {
-    await openNotaEmpenhoDialog({});
+    // O ano vem por PARAMETRO de quem abre o dialog: ele nao le store global.
+    await openNotaEmpenhoDialog({ ano: 2026 });
     await flush();
 
     const numero = document.querySelector('.modal__body input[type="text"]');
@@ -72,13 +72,15 @@ describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
 
     expect(createNotaEmpenho).toHaveBeenCalledTimes(1);
     const corpo = createNotaEmpenho.mock.calls[0][0];
+    // A NE nova nasce no ano que a TELA passou, e nao num ano guardado.
+    expect(corpo.ano).toBe(2026);
     expect(corpo.notas_credito).toHaveLength(1);
     expect(typeof corpo.notas_credito[0].nota_credito_id).toBe('number');
     expect(corpo.notas_credito[0].nota_credito_id).toBe(3);
   });
 
   test('na edicao com duas NCs, os dois ids vao como numero', async () => {
-    await openNotaEmpenhoDialog({ neId: 55 });
+    await openNotaEmpenhoDialog({ neId: 55, ano: 2026 });
     await flush();
 
     // Acrescenta a segunda NC do rateio.

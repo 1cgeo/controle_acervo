@@ -13,7 +13,6 @@ import {
   updateRpnp,
   getNotasEmpenho,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 import { paraId, formatCurrency, toNumber } from '@utils/format.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
@@ -24,9 +23,16 @@ import { criarHistorico } from '@components/historico/historico.js';
  * empenho.
  * @param {Object} options
  * @param {number|null} [options.rpnpId] - id do RPNP existente para editar (null cria novo)
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
+export async function openRpnpDialog({
+  rpnpId = null,
+  ano = new Date().getFullYear(),
+  onSaved = null,
+} = {}) {
   const isEdit = rpnpId !== null && rpnpId !== undefined;
 
   let notasEmpenho = [];
@@ -40,8 +46,9 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
     return;
   }
 
-  // Ano do RPNP: decide quais NEs podem ser vinculadas.
-  const anoRpnp = isEdit ? rpnp.ano : getAno();
+  // Ano do RPNP: decide quais NEs podem ser vinculadas. Na edicao manda o ano do
+  // registro; no cadastro novo, o ano da tela.
+  const anoRpnp = isEdit ? rpnp.ano : ano;
 
   // Resto a pagar e SEMPRE de exercicio anterior, entao a NE do proprio ano nao
   // entra. O rotulo antigo era so `ne.numero`, que em producao vale

@@ -68,12 +68,12 @@ const ITEM = {
 describe('openPdrItemDialog', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    localStorage.setItem('@sca-orcamento-ano', '2026');
     vi.clearAllMocks();
   });
 
   test('meta_pit_id vai como numero, e nao como texto', async () => {
-    await openPdrItemDialog({ item: ITEM });
+    // O ano vem por PARAMETRO de quem abre o dialog: ele nao le store global.
+    await openPdrItemDialog({ item: ITEM, ano: 2026 });
     await flush();
 
     const meta = campoPorRotulo('Meta do PIT');
@@ -90,7 +90,7 @@ describe('openPdrItemDialog', () => {
   });
 
   test('meta em branco continua indo como null', async () => {
-    await openPdrItemDialog({});
+    await openPdrItemDialog({ ano: 2026 });
     await flush();
 
     campoPorRotulo('Natureza de despesa').value = '339039';
@@ -101,10 +101,12 @@ describe('openPdrItemDialog', () => {
 
     expect(createPdrItem).toHaveBeenCalledTimes(1);
     expect(createPdrItem.mock.calls[0][0].meta_pit_id).toBeNull();
+    // O item novo nasce no ano que a TELA passou, e nao num ano guardado.
+    expect(createPdrItem.mock.calls[0][0].ano).toBe(2026);
   });
 
   test('a descricao do item aparece no formulario e sobrevive ao salvar', async () => {
-    await openPdrItemDialog({ item: ITEM });
+    await openPdrItemDialog({ item: ITEM, ano: 2026 });
     await flush();
 
     const descricao = campoPorRotulo('Descrição');
