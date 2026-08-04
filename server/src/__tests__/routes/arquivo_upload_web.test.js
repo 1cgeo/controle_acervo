@@ -39,10 +39,16 @@ const TIPO_PRODUTO = 4 // Ortoimagem, o mesmo do teste de catalogacao
 const SUBTIPO = 4      // Ortoimagem, subtipo do tipo 4
 const TETO_PADRAO = config.UPLOAD_WEB_MAX_GB
 
+// O TIMEOUT do hook vai EXPLÍCITO (2026-08-04). O `testTimeout: 30000` do
+// jest.config vale para o teste e NÃO para o `beforeAll`, que fica nos 5.000 ms
+// padrão. Este arquivo é dos mais pesados da suíte, e o `getApp()` abre conexão
+// de banco: com a suíte inteira em paralelo, o arranque passa dos 5 s e os 24
+// casos caem juntos com "Exceeded timeout for a hook" -- falha que se lê como
+// defeito e é contenção de máquina. Isolado, o arquivo sempre passou.
 beforeAll(async () => {
   app = await getApp()
   raizVolume = await fs.mkdtemp(path.join(os.tmpdir(), 'sca-upload-web-'))
-})
+}, 60000)
 
 afterAll(async () => {
   await fs.rm(raizVolume, { recursive: true, force: true })

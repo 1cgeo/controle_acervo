@@ -26,10 +26,16 @@ const { createVolume, createProduto, createVersao, createArquivo } = require('..
 let app
 let raizVolume
 
+// O TIMEOUT do hook vai EXPLÍCITO (2026-08-04). O `testTimeout: 30000` do
+// jest.config vale para o teste e NÃO para o `beforeAll`, que fica nos 5.000 ms
+// padrão. Este arquivo é dos mais pesados da suíte, e o `getApp()` abre conexão
+// de banco: com a suíte inteira em paralelo, o arranque passa dos 5 s e os 12
+// casos caem juntos com "Exceeded timeout for a hook" -- falha que se lê como
+// defeito e é contenção de máquina. Isolado, o arquivo sempre passou.
 beforeAll(async () => {
   app = await getApp()
   raizVolume = await fs.mkdtemp(path.join(os.tmpdir(), 'sca-catalogo-'))
-})
+}, 60000)
 
 afterAll(async () => {
   await fs.rm(raizVolume, { recursive: true, force: true })

@@ -616,13 +616,99 @@ const gerarRecebimentoMaterial = async ano => {
 // uma folha gasta depende do que está desenhado nela. Zero ali quer dizer
 // "ninguém declarou troca", que é diferente de errado.
 //
-// LACUNA CONHECIDA, e é do SCA, não desta tela: "Estoque mês anterior" sai '-'
-// porque `mapoteca.estoque_material` guarda só o saldo de HOJE, sem histórico.
-// Ele NÃO é derivável de estoque atual + consumo do mês: a conta ignora as
-// entradas (compra, transferência do almoxarifado), e erraria em silêncio todo
-// mês em que houve reposição. "Previsão de falta de estoque" sai '-' pelo mesmo
-// motivo: sem série histórica não há ritmo de consumo para projetar.
-const montarInsumos = ({ tiposMaterial, consumoAno, mes, categoria }) => {
+// AS DUAS COLUNAS QUE SAÍAM '-' foram fechadas em 2026-08-04, e nenhuma delas
+// pediu tabela nova:
+//
+//   "Estoque mês anterior"  vem da EDIÇÃO FECHADA do mês anterior, que
+//                           congelou a própria 7.2. `estoque_material` guarda
+//                           só o saldo de hoje, e derivá-lo de "atual mais
+//                           consumo" ignoraria as ENTRADAS (compra,
+//                           transferência) e erraria calado todo mês com
+//                           reposição.
+//   "Previsão de falta"     vem do ritmo dos meses JÁ FECHADOS, que passou a
+//                           existir quando o consumo do papel virou derivado da
+//                           impressão.
+//
+// As duas continuam saindo '-' quando não há base: mês anterior não fechado, ou
+// menos de três meses com consumo. Traço é a resposta honesta; número inventado
+// a partir do saldo de hoje pareceria apurado e não seria.
+// O mês anterior ao do recorte, virando o ano em janeiro.
+const mesAnterior = (ano, mes) =>
+  (mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 })
+
+/**
+ * O ESTOQUE que a edição do mês anterior reportou, por nome de insumo.
+ *
+ * Ele NÃO sai de `mapoteca.estoque_material`, e não tem como sair: aquela
+ * tabela guarda o saldo de HOJE, atualizado no lugar, e o saldo de maio é
+ * irrecuperável de lá. Também não se deriva de "estoque atual mais consumo do
+ * mês": a conta ignora as ENTRADAS (compra, transferência do almoxarifado) e
+ * erraria em silêncio todo mês em que houve reposição.
+ *
+ * A resposta vem da EDIÇÃO FECHADA do mês anterior, que congelou a própria 7.2
+ * no instante do fechamento. É a comparação que o relatório quer: "o que
+ * reportamos no mês passado", e não "o que o banco acha que era".
+ *
+ * Sem edição fechada no mês anterior, devolve vazio e a coluna sai '-'. Isso é
+ * deliberado e tem de continuar visível: inventar o número a partir do saldo de
+ * hoje daria uma coluna que parece apurada e não é.
+ */
+const buscarEstoqueDoMesAnterior = async ({ ano, mes, numero }) => {
+  const anterior = mesAnterior(ano, mes)
+
+  const gravada = await db.conn.oneOrNone(
+    `SELECT s.linhas
+     FROM rpcmtec.subsecao AS s
+     INNER JOIN rpcmtec.edicao AS e ON e.id = s.edicao_id
+     WHERE e.ano = $<ano> AND e.mes = $<mes>
+       AND e.data_fechamento IS NOT NULL
+       AND s.numero = $<numero>`,
+    { ...anterior, numero }
+  )
+
+  const mapa = new Map()
+  for (const linha of (gravada && gravada.linhas) || []) {
+    // A linha congelada é [insumo, estoque atual, mês anterior, consumo,
+    // previsão]. Casa-se pelo NOME porque é o que a linha guarda: o id do
+    // material não vai para o documento, e não deveria ir.
+    if (Array.isArray(linha) && linha.length >= 2) mapa.set(linha[0], linha[1])
+  }
+  return mapa
+}
+
+// Quantos meses COM CONSUMO bastam para projetar. Abaixo disso a média diz mais
+// sobre o acaso do que sobre o ritmo, e a coluna sai '-'.
+const MESES_MINIMOS_PARA_PROJETAR = 3
+
+/**
+ * Quando o estoque acaba, no ritmo dos últimos meses.
+ *
+ * Média dos meses que TIVERAM consumo, e não dos doze: dividir por doze num
+ * ano que começou em março afundaria a média e empurraria a falta para longe.
+ *
+ * Devolve o mês no formato do documento ('NOV 26'), 'Sem estoque' quando já
+ * zerou com consumo acontecendo, e '-' quando não há série que sustente a
+ * conta.
+ */
+const projetarFalta = ({ estoque, consumoPorMes, ano, mes }) => {
+  // Só os meses JÁ FECHADOS até o corte: o mês corrente ainda está andando, e
+  // entrar com ele pela metade puxa a média para baixo.
+  const meses = consumoPorMes
+    .filter(l => Number(l.mes) < Number(mes) && Number(l.quantidade) > 0)
+    .map(l => Number(l.quantidade))
+
+  if (meses.length < MESES_MINIMOS_PARA_PROJETAR) return '-'
+
+  const media = meses.reduce((soma, q) => soma + q, 0) / meses.length
+  if (media <= 0) return '-'
+  if (estoque <= 0) return 'Sem estoque'
+
+  const mesesQueRestam = Math.floor(estoque / media)
+  const alvo = new Date(ano, mes - 1 + mesesQueRestam, 1)
+  return `${MESES_ABREV[alvo.getMonth()]} ${String(alvo.getFullYear()).slice(-2)}`
+}
+
+const montarInsumos = ({ tiposMaterial, consumoAno, mes, ano, categoria, estoqueAnterior }) => {
   const consumoDoMes = consumoAno.reduce((mapa, linha) => {
     if (Number(linha.mes) === Number(mes)) {
       mapa[linha.tipo_material_id] = Number(linha.quantidade)
@@ -632,13 +718,20 @@ const montarInsumos = ({ tiposMaterial, consumoAno, mes, categoria }) => {
 
   return tiposMaterial
     .filter(tm => tm.ativo && tm.categoria_id === categoria)
-    .map(tm => [
-      texto(tm.nome),
-      numero(Number(tm.estoque_total)),
-      '-',
-      numero(consumoDoMes[tm.id] || 0),
-      '-'
-    ])
+    .map(tm => {
+      const estoque = Number(tm.estoque_total)
+      const doMaterial = consumoAno.filter(l => l.tipo_material_id === tm.id)
+
+      return [
+        texto(tm.nome),
+        numero(estoque),
+        // O que a edição fechada do mês anterior reportou. '-' quando aquele
+        // mês não foi fechado.
+        texto(estoqueAnterior.get(tm.nome)),
+        numero(consumoDoMes[tm.id] || 0),
+        projetarFalta({ estoque, consumoPorMes: doMaterial, ano, mes })
+      ]
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -870,7 +963,9 @@ controller.calcular = async ({ ano, mes }) => {
     recebimentoMaterial,
     creditosExtraPdr,
     efetivo,
-    capacitacaoRecebida
+    capacitacaoRecebida,
+    estoqueAnteriorPapel,
+    estoqueAnteriorTinta
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
     // O `mes` recorta o acumulado: `realizado` vira janeiro até aqui, e
@@ -890,7 +985,12 @@ controller.calcular = async ({ ano, mes }) => {
     gerarRecebimentoMaterial(ano),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR),
     efetivoCtrl.resumoMensal(ano, mes),
-    capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA)
+    capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA),
+    // O estoque que a edição FECHADA do mês anterior reportou. É a única fonte
+    // possível: `mapoteca.estoque_material` guarda o saldo de hoje, e o de maio
+    // não existe mais lá.
+    buscarEstoqueDoMesAnterior({ ano, mes, numero: '7.2' }),
+    buscarEstoqueDoMesAnterior({ ano, mes, numero: '7.3' })
   ])
 
   return {
@@ -916,10 +1016,14 @@ controller.calcular = async ({ ano, mes }) => {
     '6.1': montarAproveitamento({ efetivo }),
     '6.2': montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida }),
     '7.2': montarInsumos({
-      tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.PAPEL
+      tiposMaterial, consumoAno, mes, ano,
+      categoria: CATEGORIA_MATERIAL.PAPEL,
+      estoqueAnterior: estoqueAnteriorPapel
     }),
     '7.3': montarInsumos({
-      tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.TINTA
+      tiposMaterial, consumoAno, mes, ano,
+      categoria: CATEGORIA_MATERIAL.TINTA,
+      estoqueAnterior: estoqueAnteriorTinta
     })
   }
 }

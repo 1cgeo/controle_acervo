@@ -317,7 +317,7 @@ const SECOES = [
         // exemplar gasta uma folha da mídia, e a mídia aponta o papel. Antes
         // disso ele saía só de `consumo_material`, que ninguém preenche, e a
         // coluna dizia 0 com 1.753 impressões registradas.
-        fonte: 'estoque de mapoteca.tipo_material, consumo das impressões do mês',
+        fonte: 'estoque atual e do mês anterior, consumo das impressões, projeção pelo ritmo',
         cabecalhos: COLUNAS_INSUMO,
         grade: [3374, 1554, 1554, 1491, 1896]
       },
@@ -329,7 +329,7 @@ const SECOES = [
         // gasta depende do que está desenhado nela. O consumo vem da troca
         // DECLARADA, e fica zerado enquanto ninguém a declarar -- o que é
         // diferente de estar errado.
-        fonte: 'estoque de mapoteca.tipo_material, consumo declarado em mapoteca.consumo_material',
+        fonte: 'estoque atual e do mês anterior, consumo declarado em mapoteca.consumo_material',
         // CINCO colunas, e o modelo tem oito: lá as tintas se abriam em uma
         // coluna por plotter (HP 70, HP 72, HP 730), e aqui cada cartucho é
         // uma LINHA de `mapoteca.tipo_material`. Por isso a 7.3 usa a grade da

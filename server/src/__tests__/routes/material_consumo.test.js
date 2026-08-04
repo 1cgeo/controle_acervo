@@ -445,3 +445,159 @@ describe('A data da impressão', () => {
     expect(res.status).toBe(404)
   })
 })
+
+// ---------------------------------------------------------------------------
+// "Estoque mês anterior" e "Previsão de falta", as duas colunas que saíam '-'
+//
+// `mapoteca.estoque_material` guarda só o saldo de HOJE, atualizado no lugar: o
+// saldo de maio não existe mais lá, e derivá-lo de "estoque atual mais consumo"
+// ignoraria as ENTRADAS e erraria em silêncio todo mês com reposição.
+//
+// A resposta vem da EDIÇÃO FECHADA do mês anterior, que congelou a própria 7.2
+// no instante do fechamento. É a comparação que o relatório quer: "o que
+// reportamos no mês passado".
+// ---------------------------------------------------------------------------
+
+describe('Estoque do mês anterior e previsão de falta', () => {
+  const estrutura = require('../../rpcmtec/rpcmtec_estrutura')
+
+  const abrirEdicao = async (mes) => {
+    const res = await request(app)
+      .post('/api/rpcmtec')
+      .set('Authorization', admin())
+      .send({ ano: 2026, mes, assinante_uuid: ADMIN_UUID })
+    expect(res.status).toBe(201)
+    return res.body.dados.id
+  }
+
+  const fechar = async (id) => {
+    for (const numero of estrutura.NUMEROS_DIGITADOS) {
+      await request(app)
+        .put(`/api/rpcmtec/${id}/subsecao/${numero}`)
+        .set('Authorization', admin())
+        .send({ sem_ocorrencia: true })
+    }
+    const res = await request(app)
+      .post(`/api/rpcmtec/${id}/fechar`)
+      .set('Authorization', admin())
+    expect(res.status).toBe(200)
+  }
+
+  const linha72 = async (edicaoId, nome) => {
+    const doc = await request(app)
+      .get(`/api/rpcmtec/${edicaoId}/documento`)
+      .set('Authorization', admin())
+    const bloco = doc.body.dados.secoes
+      .flatMap(s => s.subsecoes).find(b => b.numero === '7.2')
+    return bloco.linhas.find(l => l[0] === nome)
+  }
+
+  test('sem edição fechada no mês anterior, a coluna sai traço', async () => {
+    // Inventar o número a partir do saldo de hoje daria uma coluna que parece
+    // apurada e não é. O traço é a resposta honesta.
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+
+    const abril = await abrirEdicao(4)
+    const l = await linha72(abril, 'Papel Sulfite 120g')
+
+    expect(l[1]).toBe('100')
+    expect(l[2]).toBe('-')
+  })
+
+  test('com o mês anterior FECHADO, traz o que aquela edição reportou', async () => {
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+
+    // Março fecha com 100 no estoque.
+    const marco = await abrirEdicao(3)
+    await fechar(marco)
+
+    // O saldo de HOJE muda: alguém consumiu 40 folhas depois do fechamento.
+    await conn.none(
+      'UPDATE mapoteca.estoque_material SET quantidade = 60 WHERE tipo_material_id = $1',
+      [papel.id]
+    )
+
+    const abril = await abrirEdicao(4)
+    const l = await linha72(abril, 'Papel Sulfite 120g')
+
+    expect(l[1]).toBe('60')
+    // O congelado de março, e não o saldo de hoje.
+    expect(l[2]).toBe('100')
+  })
+
+  test('edição do mês anterior ABERTA não conta', async () => {
+    // Só o fechamento congela. Uma edição aberta ainda vai mudar, e ler dela
+    // daria um "mês anterior" que muda depois de publicado.
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+
+    await abrirEdicao(3)
+    const abril = await abrirEdicao(4)
+
+    expect((await linha72(abril, 'Papel Sulfite 120g'))[2]).toBe('-')
+  })
+
+  test('em janeiro, procura dezembro do ano anterior', async () => {
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 70)
+
+    const dez = await request(app)
+      .post('/api/rpcmtec').set('Authorization', admin())
+      .send({ ano: 2025, mes: 12, assinante_uuid: ADMIN_UUID })
+    await fechar(dez.body.dados.id)
+
+    const jan = await abrirEdicao(1)
+    expect((await linha72(jan, 'Papel Sulfite 120g'))[2]).toBe('70')
+  })
+
+  test('com menos de três meses de consumo, não projeta', async () => {
+    // Média sobre dois meses diz mais sobre o acaso do que sobre o ritmo.
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+    await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 10, data: '2026-01-10' })
+    await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 10, data: '2026-02-10' })
+
+    const abril = await abrirEdicao(4)
+    expect((await linha72(abril, 'Papel Sulfite 120g'))[4]).toBe('-')
+  })
+
+  test('com três meses fechados, projeta o mês da falta', async () => {
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+    for (const dia of ['2026-01-10', '2026-02-10', '2026-03-10']) {
+      await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 20, data: dia })
+    }
+
+    // Média 20/mês, 100 em estoque: cinco meses a partir de abril = setembro.
+    const abril = await abrirEdicao(4)
+    expect((await linha72(abril, 'Papel Sulfite 120g'))[4]).toBe('SET 26')
+  })
+
+  test('estoque zerado com consumo acontecendo sai como "Sem estoque"', async () => {
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 0)
+    for (const dia of ['2026-01-10', '2026-02-10', '2026-03-10']) {
+      await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 20, data: dia })
+    }
+
+    const abril = await abrirEdicao(4)
+    expect((await linha72(abril, 'Papel Sulfite 120g'))[4]).toBe('Sem estoque')
+  })
+
+  test('o mês CORRENTE não entra na média', async () => {
+    // Ele ainda está andando, e entrar pela metade puxa a média para baixo,
+    // empurrando a falta para longe.
+    const papel = await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    await semearEstoque(papel.id, 100)
+    for (const dia of ['2026-01-10', '2026-02-10', '2026-03-10']) {
+      await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 20, data: dia })
+    }
+    // Abril mal começou: 2 folhas. Se entrasse, a média cairia de 20 para 15,5.
+    await criarImpressao({ midiaPedida: MIDIA_SULFITE, quantidade: 2, data: '2026-04-01' })
+
+    const abril = await abrirEdicao(4)
+    expect((await linha72(abril, 'Papel Sulfite 120g'))[4]).toBe('SET 26')
+  })
+})
