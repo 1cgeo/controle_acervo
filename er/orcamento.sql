@@ -70,7 +70,9 @@ CREATE TABLE orcamento.dfd_item(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
--- Licitacao (3.4 GCALC DSG / 3.5 propria). Antes de nota_empenho (FK).
+-- Licitacao (4.4 GCALC DSG / 4.5 propria). Antes de nota_empenho (FK).
+-- O tipo 3 (participante) EXISTE no dominio e nao tem subsecao no RPCMTec:
+-- o relatorio gera so os tipos 1 e 2 (rpcmtec_ctrl.js). A UI avisa.
 -- Licitacao: uma licitacao pode cobrir varios DFDs, entao nao guardamos um
 -- vinculo direto com um DFD unico aqui.
 CREATE TABLE orcamento.licitacao(
@@ -110,8 +112,12 @@ CREATE TABLE orcamento.pdr_item(
 );
 
 -- Credito recebido (NC) e execucao (NE / liquidacao). Uma NC pode trazer mais de
--- uma ND: nesse caso o mesmo numero e cadastrado uma vez por ND, e o par
--- (ano, numero, cod_nd) e unico (no uso, escolhe-se a NC olhando "numero - ND").
+-- uma ND: nesse caso o mesmo numero e cadastrado uma vez por ND. A chave unica
+-- tem QUATRO campos, e nao tres: (ano, numero, cod_nd, COALESCE(ug_emitente,''))
+-- -- ver uniq_nota_credito_num_nd_ug no fim do arquivo. A numeracao do SIAFI e
+-- por emitente, entao duas UGs emitem o mesmo numero no mesmo ano (caso real:
+-- 2026NC400412 pelas UGs 160035 e 167035). Escolher a NC por "numero - ND", sem
+-- a UG, e sorteio.
 CREATE TABLE orcamento.nota_credito(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   numero VARCHAR(20) NOT NULL,
@@ -205,7 +211,7 @@ CREATE TABLE orcamento.recebimento_material(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
--- RPNP (3.3): restos a pagar nao processados carregados para o ano.
+-- RPNP (4.3): restos a pagar nao processados carregados para o ano.
 CREATE TABLE orcamento.rpnp(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,

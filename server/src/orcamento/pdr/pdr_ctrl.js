@@ -26,6 +26,10 @@ const normaliza = item => {
   return out
 }
 
+// O NOME de quem cadastrou e de quem alterou sai junto com o uuid. A tela nao
+// tem como resolver um uuid, e o historico de alteracoes so comeca em
+// 2026-07-30: para os itens gravados antes disso, a data de cadastro e o nome
+// sao a unica rastreabilidade que existe.
 const SELECT = `
   SELECT i.id, i.ano, i.cod_nd, nd.nome AS nd_nome,
          i.meta_pit_id, mp.numero_meta AS meta_numero, mp.item AS meta_item,
@@ -33,10 +37,14 @@ const SELECT = `
          i.item_label, i.descricao, i.gnd,
          i.valor_solicitado, i.valor_autorizado, i.observacao,
          i.data_cadastramento, i.usuario_cadastramento_uuid,
-         i.data_modificacao, i.usuario_modificacao_uuid
+         uc.nome AS usuario_cadastramento,
+         i.data_modificacao, i.usuario_modificacao_uuid,
+         um.nome AS usuario_modificacao
   FROM orcamento.pdr_item AS i
   INNER JOIN dominio.natureza_despesa AS nd ON nd.code = i.cod_nd
-  LEFT JOIN pit.meta_vigente AS mp ON mp.id = i.meta_pit_id`
+  LEFT JOIN pit.meta_vigente AS mp ON mp.id = i.meta_pit_id
+  LEFT JOIN dgeo.usuario AS uc ON uc.uuid = i.usuario_cadastramento_uuid
+  LEFT JOIN dgeo.usuario AS um ON um.uuid = i.usuario_modificacao_uuid`
 
 controller.listar = async ano => {
   return db.conn.any(

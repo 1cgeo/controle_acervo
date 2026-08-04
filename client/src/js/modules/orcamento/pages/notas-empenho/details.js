@@ -1,6 +1,6 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
-import { formatCurrency, formatDate } from '@utils/format.js';
+import { formatCurrency, formatDate, formatDateTime } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { openModal } from '@components/modal/modal-base.js';
@@ -21,6 +21,7 @@ import {
   createRecebimento,
   updateRecebimento,
   deleteRecebimento,
+  downloadArquivo,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { criarHistorico } from '@components/historico/historico.js';
@@ -50,6 +51,7 @@ function criarLinha(rotulo) {
 function textoRateio(a) {
   return `${a.nota_credito_numero ?? `NC ${a.nota_credito_id}`}: ${formatCurrency(a.valor)}`;
 }
+
 
 /**
  * Pagina de detalhes de uma Nota de Empenho (#/notas_empenho/:id).
@@ -115,7 +117,9 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     });
     const documentoField = createTextField({
       label: 'Documento (NS)',
-      maxLength: 30,
+      // 20: o limite da coluna (orcamento.liquidacao.documento_ns VARCHAR(20)).
+      // A tela aceitava 30 e o banco recusava na gravação.
+      maxLength: 20,
       placeholder: 'Ex.: 2025NS000045',
       value: liquidacao?.documento_ns ?? '',
     });
@@ -217,7 +221,9 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     });
     const prazoField = createTextField({
       label: 'Prazo de entrega',
-      maxLength: 100,
+      // 60: o limite da coluna
+      // (orcamento.recebimento_material.prazo_entrega VARCHAR(60)).
+      maxLength: 60,
       value: recebimento?.prazo_entrega ?? '',
     });
     const situacaoField = createTextareaField({
@@ -225,10 +231,10 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       value: recebimento?.situacao ?? '',
     });
     const anoRefField = createNumberField({
-      label: 'Ano de referência (3.6)',
+      label: 'Ano de referência (4.6)',
       step: 1,
       value: recebimento?.ano_referencia ?? undefined,
-      helpText: 'Ano em que o material foi recebido, ou seja, em que RPCMTec (3.6) deve constar. Em branco usa o ano do empenho. Use para itens de RPNP (empenho de ano anterior) recebidos neste ano.',
+      helpText: 'Ano em que o material foi recebido, ou seja, em que RPCMTec (4.6) deve constar. Em branco usa o ano do empenho. Use para itens de RPNP (empenho de ano anterior) recebidos neste ano.',
     });
 
     const content = el('div', { className: 'form-grid' }, [
@@ -332,29 +338,78 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
 
   const linhaNumero = criarLinha('Número');
   const linhaAno = criarLinha('Ano');
+  // A `finalidade`, a data do empenho, o PI e o GND já vinham na resposta da API
+  // e não eram pintados em lugar nenhum. A finalidade é o único texto que diz
+  // para que serve o empenho, é editável no diálogo, e sumia da tela ao salvar.
+  const linhaDataEmpenho = criarLinha('Data do empenho');
+  const linhaFinalidade = criarLinha('Finalidade');
   const linhaNc = criarLinha('Nota de crédito');
+  const linhaAnexoNc = criarLinha('Anexo da NC');
   const linhaNd = criarLinha('ND (herdada da NC)');
+  const linhaGnd = criarLinha('GND');
+  const linhaPi = criarLinha('PI (herdado da NC)');
   const linhaEmpenhado = criarLinha('Empenhado');
   const linhaAnulado = criarLinha('Anulado');
+  const linhaLiquidado = criarLinha('Liquidado');
   const linhaSaldo = criarLinha('Saldo a liquidar');
+  // O número da DECISÃO: quanto ainda resta do crédito daquela NC. Os outros
+  // três valores do cartão são todos da própria NE, e nenhum responde "posso
+  // emitir uma NE nova contra esta NC?".
+  const linhaSaldoNc = criarLinha('Saldo da NC');
+  const linhaCadastro = criarLinha('Cadastrado em');
+  const linhaCadastroPor = criarLinha('Cadastrado por');
+  const linhaAlteracao = criarLinha('Alterado em');
+  const linhaAlteracaoPor = criarLinha('Alterado por');
 
   // O rateio por NC e uma LISTA dentro da linha. Ela vive num no proprio, para
   // a recarga reconciliar as parcelas em vez de refazer o bloco inteiro.
   const rateioLista = el('div');
+
+  // Os dois nós abaixo nascem UMA vez e só têm o texto reescrito a cada recarga,
+  // como o resto da ficha. Recriá-los a cada gravação tiraria o foco de quem
+  // estivesse sobre eles.
+  const linkNc = el('a', { href: '#/orcamento/notas_credito' });
+  const botaoAnexoNc = el('button', {
+    className: 'btn btn--text btn--sm',
+    type: 'button',
+  });
+  const rotuloAnexoNc = el('span');
+  botaoAnexoNc.append(svgIcon(ICONS.download, 14), rotuloAnexoNc);
+  // O anexo corrente da NC, escrito por `pintarAnexoNc` e lido pelo clique.
+  let arquivoNc = null;
+  botaoAnexoNc.addEventListener('click', () => {
+    if (!arquivoNc) return;
+    downloadArquivo(arquivoNc.id, arquivoNc.nome)
+      .catch((e) => showError(e.message || 'Erro ao baixar o anexo'));
+  });
 
   const cartoes = el('div', { className: 'detail-cards' }, [
     el('div', { className: 'detail-card' }, [
       el('div', { className: 'detail-card__title', textContent: 'Dados da NE' }),
       linhaNumero.element,
       linhaAno.element,
+      linhaDataEmpenho.element,
+      linhaFinalidade.element,
       linhaNc.element,
+      linhaAnexoNc.element,
       linhaNd.element,
+      linhaGnd.element,
+      linhaPi.element,
     ]),
     el('div', { className: 'detail-card' }, [
       el('div', { className: 'detail-card__title', textContent: 'Valores' }),
       linhaEmpenhado.element,
       linhaAnulado.element,
+      linhaLiquidado.element,
       linhaSaldo.element,
+      linhaSaldoNc.element,
+    ]),
+    el('div', { className: 'detail-card' }, [
+      el('div', { className: 'detail-card__title', textContent: 'Registro' }),
+      linhaCadastro.element,
+      linhaCadastroPor.element,
+      linhaAlteracao.element,
+      linhaAlteracaoPor.element,
     ]),
   ]);
 
@@ -380,6 +435,20 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
         key: 'documento_ns',
         label: 'Documento (NS)',
         render: (row) => row.documento_ns || '-',
+      },
+      // Quando e por quem: as quatro colunas de auditoria existem na tabela
+      // desde sempre, e a rota que a ficha consome não as selecionava. É o mesmo
+      // par que a ficha do pedido da mapoteca mostra, no mesmo componente.
+      {
+        key: 'data_cadastramento',
+        label: 'Cadastrado em',
+        sortable: true,
+        render: (row) => formatDateTime(row.data_cadastramento),
+      },
+      {
+        key: 'usuario_cadastramento_nome',
+        label: 'Por',
+        render: (row) => row.usuario_cadastramento_nome || '-',
       },
     ],
     rows: [],
@@ -432,6 +501,17 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
         label: 'Situação',
         render: (row) => row.situacao || '-',
       },
+      {
+        key: 'data_cadastramento',
+        label: 'Cadastrado em',
+        sortable: true,
+        render: (row) => formatDateTime(row.data_cadastramento),
+      },
+      {
+        key: 'usuario_cadastramento_nome',
+        label: 'Por',
+        render: (row) => row.usuario_cadastramento_nome || '-',
+      },
     ],
     rows: [],
     pageSize: 10,
@@ -468,17 +548,32 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   // ---------------------------------------------------------------------------
   // Repintura
   // ---------------------------------------------------------------------------
-  /** Escreve a linha da nota de credito: rateio com varias, ou o numero so. */
+  /**
+   * Escreve a linha da nota de crédito: rateio com várias, ou o número só.
+   *
+   * UMA NC é o caso de 81 das 81 NEs reais. Nele a lista de rateio repetia um
+   * valor que o cartão já mostra dois centímetros abaixo, em "Empenhado". Com
+   * uma NC ou nenhuma a linha volta a ser texto simples, e agora um LINK: a
+   * lista de NCs era um beco sem saída, escrita como texto morto.
+   */
   function pintarNotaCredito(nota) {
     const rateio = nota.notas_credito || [];
     linhaNc.label.textContent = rateio.length > 1
       ? 'Notas de crédito (rateio)'
       : 'Nota de crédito';
 
-    if (!rateio.length) {
-      // Sem rateio a linha e texto: escrever nela solta o no da lista, que volta
-      // sozinho se a NE ganhar rateio depois.
-      linhaNc.valor.textContent = nota.nota_credito_numero || '-';
+    if (rateio.length <= 1) {
+      const numero = rateio.length
+        ? (rateio[0].nota_credito_numero ?? `NC ${rateio[0].nota_credito_id}`)
+        : nota.nota_credito_numero;
+      // Trocar o filho da linha solta o nó da lista, que volta sozinho se a NE
+      // ganhar rateio depois.
+      if (numero) {
+        linkNc.textContent = numero;
+        if (linkNc.parentNode !== linhaNc.valor) linhaNc.valor.replaceChildren(linkNc);
+      } else {
+        linhaNc.valor.textContent = '-';
+      }
       return;
     }
 
@@ -492,18 +587,85 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     });
   }
 
+  /**
+   * O anexo da NC, como botão de download. A linha some quando a NC não tem
+   * anexo: uma linha "Anexo da NC: -" só ocupa espaço.
+   *
+   * O arquivo é o documento que criou o crédito, e a ficha da NE é onde se
+   * decide gastar contra ele. `arquivoNc` guarda o id corrente, e o clique o
+   * lê: assim o mesmo botão serve depois de uma recarga que trocou o anexo.
+   */
+  function pintarAnexoNc(nota) {
+    arquivoNc = nota.nc_arquivo_id
+      ? { id: nota.nc_arquivo_id, nome: nota.nc_arquivo_nome || 'Anexo da NC' }
+      : null;
+    if (!arquivoNc) {
+      linhaAnexoNc.element.style.display = 'none';
+      return;
+    }
+    linhaAnexoNc.element.style.display = '';
+    rotuloAnexoNc.textContent = arquivoNc.nome;
+    botaoAnexoNc.title = `Baixar ${arquivoNc.nome}`;
+    if (botaoAnexoNc.parentNode !== linhaAnexoNc.valor) {
+      linhaAnexoNc.valor.replaceChildren(botaoAnexoNc);
+    }
+  }
+
+  /**
+   * O saldo da NC representativa, com as parcelas à vista.
+   *
+   * É o MESMO teto que o servidor cobra ao gravar (valor da NC menos tudo o que
+   * já se empenhou contra ela). O `valor_recolhido` aparece ao lado, e NÃO
+   * desconta: ele é informativo na NC, e o servidor não o desconta do teto.
+   * Mostrar um saldo que a validação não reconhece seria pior que não mostrar.
+   */
+  function pintarSaldoNc(nota) {
+    if (nota.nc_saldo === null || nota.nc_saldo === undefined) {
+      linhaSaldoNc.element.style.display = 'none';
+      return;
+    }
+    linhaSaldoNc.element.style.display = '';
+    const recolhido = Number(nota.nc_valor_recolhido || 0);
+    const partes = [
+      `NC ${formatCurrency(nota.nc_valor_nc)}`,
+      `empenhado ${formatCurrency(nota.nc_empenhado)}`,
+    ];
+    if (recolhido > 0) partes.push(`recolhido ${formatCurrency(recolhido)}`);
+    linhaSaldoNc.valor.textContent =
+      `${formatCurrency(nota.nc_saldo)} (${partes.join('; ')})`;
+  }
+
   function pintarNota(nota) {
     titulo.textContent = `Nota de empenho ${nota.numero || `#${nota.id}`}`;
 
     linhaNumero.valor.textContent = nota.numero || '-';
     linhaAno.valor.textContent = nota.ano != null ? String(nota.ano) : '-';
+    linhaDataEmpenho.valor.textContent = formatDate(nota.data_empenho);
+    linhaFinalidade.valor.textContent = nota.finalidade || '-';
     pintarNotaCredito(nota);
+    pintarAnexoNc(nota);
     linhaNd.valor.textContent = nota.cod_nd
       ? (nota.nd_nome ? `${nota.cod_nd} - ${nota.nd_nome}` : nota.cod_nd)
       : '-';
+    // O GND mora em dominio.natureza_despesa e é 3 (custeio) ou 4 (capital). O
+    // diálogo promete o GND ao usuário desde sempre, e ele não existia em tela
+    // nenhuma.
+    linhaGnd.valor.textContent = nota.gnd != null
+      ? `${nota.gnd} - ${Number(nota.gnd) === 4 ? 'capital' : 'custeio'}`
+      : '-';
+    linhaPi.valor.textContent = nota.cod_pi
+      ? (nota.pi_nome ? `${nota.cod_pi} - ${nota.pi_nome}` : nota.cod_pi)
+      : '-';
     linhaEmpenhado.valor.textContent = formatCurrency(nota.valor_empenhado);
     linhaAnulado.valor.textContent = formatCurrency(nota.valor_anulado);
+    linhaLiquidado.valor.textContent = formatCurrency(nota.total_liquidado);
     linhaSaldo.valor.textContent = formatCurrency(nota.saldo_a_liquidar);
+    pintarSaldoNc(nota);
+
+    linhaCadastro.valor.textContent = formatDateTime(nota.data_cadastramento);
+    linhaCadastroPor.valor.textContent = nota.usuario_cadastramento_nome || '-';
+    linhaAlteracao.valor.textContent = formatDateTime(nota.data_modificacao);
+    linhaAlteracaoPor.valor.textContent = nota.usuario_modificacao_nome || '-';
 
     if (!montado) {
       // Troca a mensagem de carga pelo esqueleto, uma vez so. O historico e

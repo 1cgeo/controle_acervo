@@ -83,6 +83,102 @@ const validarNcsHomogeneas = async (t, alocacoes) => {
   }
 }
 
+// Empenhado por NC, somando as DUAS formas de rateio numa NUMERIC do banco.
+//
+// A forma nova mora em `nota_empenho_nota_credito`. A NE antiga nao tem linha
+// nenhuma la: o vinculo dela e o proprio `nota_empenho.nota_credito_id`, com o
+// valor empenhado cheio. Contar so a tabela de rateio ignoraria essas NEs, e o
+// teto da NC sairia alto demais.
+//
+// `ignorarNeId` serve ao UPDATE: a NE que esta sendo salva nao pode contar
+// contra si mesma, senao editar uma NE sem mudar valor ja estouraria o teto.
+//
+// A ANULACAO desconta. O que consome o credito da NC e o empenho LIQUIDO, e nao
+// o bruto: anular devolve o valor a NC. Medido em 2026, o bruto soma 556.545,40
+// e o liquido 483.568,51, uma diferenca de 72.976,89. Tres NEs reais estao
+// anuladas por INTEIRO (2026NE000002, 2026NE000152 e 2026NE000153): contando o
+// bruto, o teto daria essas NCs por esgotadas e recusaria qualquer empenho novo
+// contra credito que esta livre. O painel ja soma liquido
+// (dashboard_ctrl.js:146,154), entao o bruto tambem discordaria dele.
+//
+// A NE anula no total, e o rateio e por NC: a anulacao entra PROPORCIONAL a
+// fatia de cada NC. Hoje 81 de 81 NEs tem uma NC so, e a proporcao e exata em
+// todos os casos reais.
+const EMPENHADO_POR_NC = `
+  SELECT v.nota_credito_id, SUM(v.valor) AS empenhado
+  FROM (
+    SELECT enc.nota_credito_id,
+           enc.valor - COALESCE(ne.valor_anulado, 0)
+             * (enc.valor / NULLIF(tot.soma, 0)) AS valor
+    FROM orcamento.nota_empenho_nota_credito AS enc
+    INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
+    INNER JOIN LATERAL (
+      SELECT SUM(x.valor) AS soma
+      FROM orcamento.nota_empenho_nota_credito AS x
+      WHERE x.nota_empenho_id = enc.nota_empenho_id
+    ) AS tot ON TRUE
+    WHERE ($<ignorarNeId> IS NULL OR enc.nota_empenho_id <> $<ignorarNeId>)
+    UNION ALL
+    SELECT ne.nota_credito_id, ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
+    FROM orcamento.nota_empenho AS ne
+    WHERE ($<ignorarNeId> IS NULL OR ne.id <> $<ignorarNeId>)
+      AND NOT EXISTS (
+        SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+        WHERE x.nota_empenho_id = ne.id
+      )
+  ) AS v
+  WHERE v.nota_credito_id IN ($<ids:csv>)
+  GROUP BY v.nota_credito_id`
+
+// Recusa a NE que faria os empenhos de uma NC passarem do valor recebido nela.
+//
+// A checagem OPOSTA (liquidar acima do empenhado) ja existia em
+// `liquidacao_ctrl.criar`, e a assimetria ensinava o usuario que o sistema
+// barra estouro. O empenho acima da NC passava, e voltava do SIAFI como nota
+// devolvida. Roda DENTRO da transacao que grava, pelo mesmo motivo de
+// `validarNcsHomogeneas`: fora dela, duas NEs simultaneas passam as duas.
+//
+// O teto e `valor_nc`. O `valor_recolhido` NAO desconta aqui: ele e informativo
+// na NC, e descontar bloquearia a edicao de NE ja lancada contra credito
+// devolvido depois.
+const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
+  const ids = alocacoes.map(a => a.nota_credito_id)
+  const ncs = await t.any(
+    `SELECT id, numero, valor_nc
+     FROM orcamento.nota_credito
+     WHERE id IN ($<ids:csv>)`,
+    { ids }
+  )
+  const jaEmpenhado = await t.any(EMPENHADO_POR_NC, {
+    ids,
+    // Number: o id chega da rota como texto, e a comparacao contra BIGINT
+    // precisa do tipo certo.
+    ignorarNeId: ignorarNeId != null ? Number(ignorarNeId) : null
+  })
+
+  const empenhadoPorNc = new Map(
+    jaEmpenhado.map(l => [String(l.nota_credito_id), Number(l.empenhado)])
+  )
+
+  for (const nc of ncs) {
+    const outras = empenhadoPorNc.get(String(nc.id)) || 0
+    const desta = alocacoes
+      .filter(a => String(a.nota_credito_id) === String(nc.id))
+      .reduce((s, a) => s + Number(a.valor), 0)
+    const teto = Number(nc.valor_nc)
+    // Tolerancia de centavo: a soma em ponto flutuante deixa residuo de 1e-13,
+    // e sem ela um empenho exato do saldo seria recusado.
+    if (outras + desta > teto + 0.005) {
+      throw new AppError(
+        `O empenho excede o valor da nota de credito ${nc.numero}. ` +
+          `Valor da NC: ${teto.toFixed(2)}; ja empenhado: ${outras.toFixed(2)}; ` +
+          `saldo: ${(teto - outras).toFixed(2)}; tentativa: ${desta.toFixed(2)}`,
+        httpCode.BadRequest
+      )
+    }
+  }
+}
+
 // Grava as linhas de rateio NE-NC (sequencial: uma conexao por transacao).
 const inserirAlocacoes = async (t, neId, alocacoes) => {
   for (const a of alocacoes) {
@@ -122,6 +218,10 @@ controller.listar = async (filtros = {}) => {
   // Lista as NEs com o numero da NC, a ND HERDADA da NC e o total ja liquidado
   // (subselect SUM em orcamento.liquidacao). Filtros opcionais por
   // nota_credito_id e ano. Ordenado por ano e numero.
+  //
+  // `finalidade` entra na listagem porque o numero NAO distingue as NEs: tres
+  // NEs reais de 2026 compartilham o numero 2026NE000024. Sem a finalidade, a
+  // busca da tela nao alcanca o unico texto que diz para que serve o empenho.
   return db.conn.any(
     `SELECT ne.id, ne.numero, ne.ano, ne.data_empenho,
             ne.nota_credito_id,
@@ -129,6 +229,7 @@ controller.listar = async (filtros = {}) => {
             nc.cod_nd,
             nd.nome AS nd_nome,
             nc.cod_pi,
+            ne.finalidade,
             ne.valor_empenhado, ne.valor_anulado,
             COALESCE((SELECT SUM(li.valor_liquidado)
                       FROM orcamento.liquidacao AS li
@@ -153,22 +254,64 @@ controller.listar = async (filtros = {}) => {
 controller.getPorId = async id => {
   // Uma NE com nomes resolvidos, suas liquidacoes (array) e o saldo a
   // liquidar = valor_empenhado - valor_anulado - SUM(liquidado).
+  //
+  // A conta do saldo mudou de lugar em 2026-08-04: era um `reduce` em Number
+  // sobre os NUMERIC do Postgres, e sobrava residuo de ponto flutuante. Dado
+  // real, a NE 2026NE000023: 2499.01 - 339.16 - 2159.85 dava 4.5e-13 em vez de
+  // zero, e a NE quitada aparecia em aberto. Somado no banco, o tipo e NUMERIC
+  // e a conta fecha exata.
+  //
+  // O bloco `nc_*` existe para responder a pergunta da DECISAO: antes de emitir
+  // uma NE nova, quanto resta do credito daquela NC. Sem ele a ficha mostrava
+  // tres valores, todos da propria NE.
   const ne = await db.conn.oneOrNone(
     `SELECT ne.id, ne.numero, ne.ano, ne.data_empenho,
             ne.nota_credito_id,
             nc.numero AS nota_credito_numero,
             nc.cod_nd,
             nd.nome AS nd_nome,
+            nd.gnd,
             nc.cod_pi,
             pi.nome AS pi_nome,
             ne.finalidade,
             ne.valor_empenhado, ne.valor_anulado,
+            nc.valor_nc AS nc_valor_nc,
+            nc.valor_recolhido AS nc_valor_recolhido,
+            COALESCE((
+              SELECT SUM(v.valor)
+              FROM (
+                SELECT enc2.valor
+                FROM orcamento.nota_empenho_nota_credito AS enc2
+                WHERE enc2.nota_credito_id = nc.id
+                UNION ALL
+                SELECT ne2.valor_empenhado
+                FROM orcamento.nota_empenho AS ne2
+                WHERE ne2.nota_credito_id = nc.id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+                    WHERE x.nota_empenho_id = ne2.id
+                  )
+              ) AS v
+            ), 0) AS nc_empenhado,
+            af.id AS nc_arquivo_id, af.nome_original AS nc_arquivo_nome,
+            COALESCE((SELECT SUM(li.valor_liquidado)
+                      FROM orcamento.liquidacao AS li
+                      WHERE li.nota_empenho_id = ne.id), 0) AS total_liquidado,
+            ne.valor_empenhado - ne.valor_anulado
+              - COALESCE((SELECT SUM(li2.valor_liquidado)
+                          FROM orcamento.liquidacao AS li2
+                          WHERE li2.nota_empenho_id = ne.id), 0) AS saldo_a_liquidar,
             ne.data_cadastramento, ne.usuario_cadastramento_uuid,
-            ne.data_modificacao, ne.usuario_modificacao_uuid
+            uc.nome AS usuario_cadastramento_nome,
+            ne.data_modificacao, ne.usuario_modificacao_uuid,
+            um.nome AS usuario_modificacao_nome
      FROM orcamento.nota_empenho AS ne
      INNER JOIN orcamento.nota_credito AS nc ON nc.id = ne.nota_credito_id
      LEFT JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      LEFT JOIN dominio.plano_interno AS pi ON pi.code = nc.cod_pi
+     LEFT JOIN orcamento.arquivo AS af ON af.nota_credito_id = nc.id
+     LEFT JOIN dgeo.usuario AS uc ON uc.uuid = ne.usuario_cadastramento_uuid
+     LEFT JOIN dgeo.usuario AS um ON um.uuid = ne.usuario_modificacao_uuid
      WHERE ne.id = $<id>`,
     { id }
   )
@@ -199,14 +342,10 @@ controller.getPorId = async id => {
     { id }
   )
 
-  // Saldo a liquidar = valor_empenhado - valor_anulado - SUM(liquidado).
-  const totalLiquidado = ne.liquidacoes.reduce(
-    (soma, li) => soma + Number(li.valor_liquidado),
-    0
-  )
-  ne.total_liquidado = totalLiquidado
-  ne.saldo_a_liquidar =
-    Number(ne.valor_empenhado) - Number(ne.valor_anulado) - totalLiquidado
+  // Saldo da NC = valor da NC menos tudo o que ja se empenhou contra ela. E o
+  // MESMO teto que `validarTetoDasNcs` cobra na gravacao: a tela nao pode
+  // mostrar um saldo que a validacao nao reconhece.
+  ne.nc_saldo = Number(ne.nc_valor_nc) - Number(ne.nc_empenhado)
 
   return ne
 }
@@ -229,6 +368,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       // A validacao entrou PARA DENTRO da transacao (era `db.conn.any`): ver o
       // comentario de `validarNcsHomogeneas`.
       await validarNcsHomogeneas(t, alocacoes)
+      await validarTetoDasNcs(t, alocacoes, null)
 
       const ne = await t.one(
         `INSERT INTO orcamento.nota_empenho
@@ -327,6 +467,9 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       }
 
       await validarNcsHomogeneas(t, alocacoes)
+      // `id` entra como `ignorarNeId`: a NE que esta sendo salva nao conta
+      // contra o proprio teto, senao salvar sem mudar valor ja estouraria.
+      await validarTetoDasNcs(t, alocacoes, id)
 
       const ne = await t.one(
         `UPDATE orcamento.nota_empenho SET

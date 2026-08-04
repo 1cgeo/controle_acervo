@@ -18,7 +18,7 @@ models.listarQuery = Joi.object().keys({
 //
 // Regra de negocio (ver tambem o ctrl):
 //   * RPNP e carregamento anual de restos a pagar nao processados. Alimenta a
-//     tabela 3.3 do RPCMTec.
+//     subsecao 4.3 do RPCMTec.
 //   * nota_empenho_id e opcional: quando o empenho de origem nao esta cadastrado
 //     em orcamento.nota_empenho, empenho_label (texto livre, ex.:
 //     '2023NE000261 (PI K1PDMGCDEGE - DCT)') serve de identificacao. Exigimos ao
@@ -28,9 +28,11 @@ const camposBase = {
   nota_empenho_id: Joi.number().integer().strict().allow(null),
   empenho_label: Joi.string().max(60).allow(null, ''),
   finalidade: Joi.string().allow(null, ''),
-  valor_empenhado: Joi.number().positive().strict().allow(null),
+  // min(0) pelo mesmo motivo do valor_a_liquidar abaixo: o empenho anulado por
+  // inteiro carrega zero e continua sendo um resto a pagar do exercicio.
+  valor_empenhado: Joi.number().min(0).strict().allow(null),
   // pode ser 0: um RPNP totalmente liquidado nao tem mais saldo a liquidar,
-  // mas continua sendo carregado/exibido (tabela 3.3). Por isso min(0), nao positive().
+  // mas continua sendo carregado/exibido (subsecao 4.3). Por isso min(0), nao positive().
   valor_a_liquidar: Joi.number().min(0).strict().allow(null)
 }
 

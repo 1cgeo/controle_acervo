@@ -23,11 +23,19 @@ const TABELAS_ANO = [
 
 // Configuracao geral (linha unica id=1). Se ano_referencia estiver vazio,
 // devolve o ano corrente como default.
+//
+// O NOME de quem alterou vem junto desde 2026-08-04. A rota ja devolvia
+// `usuario_modificacao_uuid`, e UUID cru nao serve a ninguem: a tela precisa
+// dizer "Alterado em DD/MM/AAAA por Fulano". LEFT JOIN porque a linha nasce no
+// DDL sem autor, e porque a pessoa pode ter sido apagada depois.
 controller.get = async () => {
   const cfg = await db.conn.one(
-    `SELECT id, uasg, codom, ano_referencia,
-            data_modificacao, usuario_modificacao_uuid
-     FROM orcamento.configuracao WHERE id = 1`
+    `SELECT c.id, c.uasg, c.codom, c.ano_referencia,
+            c.data_modificacao, c.usuario_modificacao_uuid,
+            u.nome AS usuario_modificacao
+     FROM orcamento.configuracao AS c
+     LEFT JOIN dgeo.usuario AS u ON u.uuid = c.usuario_modificacao_uuid
+     WHERE c.id = 1`
   )
   if (cfg.ano_referencia == null) {
     cfg.ano_referencia = new Date().getFullYear()

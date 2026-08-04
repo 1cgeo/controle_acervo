@@ -13,8 +13,9 @@ import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openLicitacaoDialog } from './licitacao-dialog.js';
 
-// As licitacoes alimentam o RPCMTec: o tipo 1 (GCALC DSG) corresponde a tabela
-// 3.4 e o tipo 2 (Própria) corresponde a tabela 3.5 do relatorio.
+// As licitacoes alimentam o RPCMTec: o tipo 1 (GCALC DSG) corresponde a
+// subsecao 4.4 e o tipo 2 (Própria) corresponde a 4.5 do relatorio. O tipo 3
+// (Participante) nao tem subsecao e nao sai no relatorio.
 const COMPRIMENTO_TRUNCAR = 80;
 
 function truncar(texto) {
@@ -24,7 +25,8 @@ function truncar(texto) {
 
 /**
  * Lista de Licitacoes (#/licitacoes). Filtra pelo ano de contexto global (navbar).
- * Filtro no topo: tipo (1 = GCALC DSG / tabela 3.4; 2 = Própria / tabela 3.5).
+ * Filtro no topo: tipo (1 = GCALC DSG / subsecao 4.4; 2 = Própria / subsecao 4.5;
+ * 3 = Participante, fora do relatorio).
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -146,9 +148,14 @@ export async function renderLicitacoesList(container, _ctx) {
   }
 
   async function handleDelete(row) {
+    // A confirmacao NOMEIA o registro. Dois ids reais tem o mesmo objeto em anos
+    // diferentes: "esta licitação" nao distingue qual das duas some.
+    const identificacao = [row.objeto ? truncar(row.objeto) : null, row.tipo_nome, row.ano]
+      .filter(Boolean)
+      .join(', ');
     const ok = await confirmDialog({
       title: 'Excluir licitação',
-      message: 'Tem certeza que deseja excluir esta licitação? Esta ação não pode ser desfeita.',
+      message: `Tem certeza que deseja excluir a licitação "${identificacao}"? Esta ação não pode ser desfeita.`,
       confirmLabel: 'Excluir',
       danger: true,
     });

@@ -1,6 +1,8 @@
 import { el } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createTextField, createNumberField } from '@components/form-fields/form-fields.js';
+import { criarHistorico } from '@components/historico/historico.js';
+import { formatDateTime } from '@utils/format.js';
 import {
   getConfig, updateConfig,
   getNaturezaDespesa, createNaturezaDespesa, updateNaturezaDespesa, deleteNaturezaDespesa,
@@ -27,6 +29,22 @@ export async function renderConfiguracao(container) {
 
   const saveBtn = el('button', { className: 'btn btn--primary', type: 'submit', textContent: 'Salvar' });
 
+  // Quem alterou por ultimo. A rota ja devolvia a data e o UUID, e a pagina
+  // descartava os dois: numa tela que qualquer perfil `consulta` abre, e que
+  // muda o ano de referencia de todo o modulo, "quem mexeu nisto" e a pergunta
+  // seguinte. Fica vazio enquanto a linha nunca foi salva.
+  const alteradoEm = el('p', { className: 'page__subtitle', hidden: true });
+
+  function pintarAlteracao(cfg) {
+    if (!cfg || !cfg.data_modificacao) {
+      alteradoEm.hidden = true;
+      return;
+    }
+    const autor = cfg.usuario_modificacao || 'autor não identificado';
+    alteradoEm.textContent = `Alterado em ${formatDateTime(cfg.data_modificacao)} por ${autor}`;
+    alteradoEm.hidden = false;
+  }
+
   const form = el('form', { className: 'form-grid', style: { maxWidth: '480px' } }, [
     uasg.element,
     codom.element,
@@ -46,6 +64,11 @@ export async function renderConfiguracao(container) {
       const dados = await updateConfig(body);
       showSuccess('Configuração salva com sucesso');
       if (dados && dados.ano_referencia) setAno(dados.ano_referencia);
+      // O PUT devolve so os tres campos de negocio, sem o carimbo de
+      // escrituracao. A releitura traz a data e o autor recem-gravados, e o
+      // historico ganha a linha da alteracao que acabou de acontecer.
+      recarregarCarimbo();
+      historico.recarregar();
     } catch (err) {
       showError(err.message || 'Erro ao salvar configuração');
     } finally {
@@ -53,10 +76,24 @@ export async function renderConfiguracao(container) {
     }
   });
 
+  async function recarregarCarimbo() {
+    try {
+      const cfg = await getConfig();
+      if (disposed) return;
+      pintarAlteracao(cfg);
+    } catch (err) {
+      // Falhar aqui nao desfaz o que ja foi salvo: o carimbo e acessorio.
+    }
+  }
+
   // ---- Secoes de dominios editaveis ----
+  // O `genero` acerta o participio das mensagens ("Plano interno excluido", e
+  // nao "excluida"). Ele mora aqui, junto do `singular` com que concorda,
+  // porque e fato do NOME de cada dominio, e nao do componente que os mostra.
   const naturezaSection = createDominioSection({
     title: 'Naturezas de despesa',
     singular: 'natureza de despesa',
+    genero: 'f',
     novoLabel: 'Nova natureza',
     emptyMessage: 'Nenhuma natureza de despesa cadastrada',
     columns: [
@@ -86,6 +123,7 @@ export async function renderConfiguracao(container) {
   const planoSection = createDominioSection({
     title: 'Planos internos',
     singular: 'plano interno',
+    genero: 'm',
     novoLabel: 'Novo plano interno',
     emptyMessage: 'Nenhum plano interno cadastrado',
     columns: [
@@ -107,6 +145,7 @@ export async function renderConfiguracao(container) {
   const ugSection = createDominioSection({
     title: 'UG emitentes',
     singular: 'unidade gestora',
+    genero: 'f',
     novoLabel: 'Nova UG',
     emptyMessage: 'Nenhuma UG cadastrada',
     columns: [
@@ -123,16 +162,30 @@ export async function renderConfiguracao(container) {
     remove: deleteUg,
   });
 
+  // O rastro da tela de MAIOR ALCANCE do modulo. Mudar o ano de referencia
+  // troca o contexto de todas as telas, e mudar o nome ou o GND de uma ND
+  // reclassifica NC e NE ja lancadas. O servidor registra as duas escritas
+  // desde 2026-08-02, e ate aqui nenhuma tela mostrava o registro.
+  const historico = criarHistorico({
+    modulo: 'orcamento',
+    entidade: 'configuracao',
+    id: 1,
+    titulo: 'Histórico da configuração',
+    subtitulo: 'Quem mudou a UASG, o CODOM ou o ano de referência',
+  });
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Configuração' }),
     ]),
-    el('p', { textContent: 'Dados gerais do controle orçamentário (UASG, CODOM) e o ano de referência padrão das telas.' }),
     form,
+    alteradoEm,
     el('hr', { className: 'config-divider' }),
     naturezaSection.element,
     planoSection.element,
     ugSection.element,
+    el('hr', { className: 'config-divider' }),
+    historico.element,
   ]);
   container.appendChild(page);
 
@@ -142,6 +195,7 @@ export async function renderConfiguracao(container) {
     uasg.setValue(cfg.uasg || '');
     codom.setValue(cfg.codom || '');
     anoRef.setValue(cfg.ano_referencia);
+    pintarAlteracao(cfg);
   } catch (err) {
     if (!disposed) showError(err.message || 'Erro ao carregar configuração');
   }
@@ -156,5 +210,6 @@ export async function renderConfiguracao(container) {
     naturezaSection.cleanup();
     planoSection.cleanup();
     ugSection.cleanup();
+    historico.cleanup();
   };
 }

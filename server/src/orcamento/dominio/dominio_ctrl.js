@@ -32,16 +32,45 @@ controller.getTipoPostoGrad = async () => {
   return db.conn.any('SELECT code, nome, nome_abrev FROM dominio.tipo_posto_grad ORDER BY code')
 }
 
+// AS TRES LISTAGENS DEVOLVEM `em_uso` (2026-08-04): quantos lancamentos apontam
+// para cada codigo. E o que permite a tela avisar ANTES do clique.
+//
+// Ate aqui o unico aviso era o 409 que o `tratarDeletar` acima produz, e ele so
+// chega DEPOIS de a pessoa confirmar "Esta acao nao pode ser desfeita". As FKs
+// nao declaram ON DELETE, entao o banco de fato bloqueia; o defeito era a ordem,
+// nao o resultado.
+//
+// As FKs contadas sao as do DDL (er/orcamento.sql:98,120,123,124), e sao TODAS
+// as que existem para as tres tabelas. O ::integer evita o BIGINT do COUNT
+// chegar como texto no JSON.
 controller.getNaturezaDespesa = async () => {
-  return db.conn.any('SELECT code, nome, gnd, grupo FROM dominio.natureza_despesa ORDER BY code')
+  return db.conn.any(
+    `SELECT nd.code, nd.nome, nd.gnd, nd.grupo,
+            ((SELECT COUNT(*) FROM orcamento.nota_credito WHERE cod_nd = nd.code)
+           + (SELECT COUNT(*) FROM orcamento.pdr_item WHERE cod_nd = nd.code))::integer AS em_uso
+     FROM dominio.natureza_despesa AS nd
+     ORDER BY nd.code`
+  )
 }
 
 controller.getPlanoInterno = async () => {
-  return db.conn.any('SELECT code, nome, alinea FROM dominio.plano_interno ORDER BY code')
+  return db.conn.any(
+    `SELECT pi.code, pi.nome, pi.alinea,
+            (SELECT COUNT(*) FROM orcamento.nota_credito
+              WHERE cod_pi = pi.code)::integer AS em_uso
+     FROM dominio.plano_interno AS pi
+     ORDER BY pi.code`
+  )
 }
 
 controller.getUg = async () => {
-  return db.conn.any('SELECT code, nome FROM dominio.ug ORDER BY code')
+  return db.conn.any(
+    `SELECT ug.code, ug.nome,
+            (SELECT COUNT(*) FROM orcamento.nota_credito
+              WHERE ug_emitente = ug.code)::integer AS em_uso
+     FROM dominio.ug AS ug
+     ORDER BY ug.code`
+  )
 }
 
 controller.getTipoLicitacao = async () => {

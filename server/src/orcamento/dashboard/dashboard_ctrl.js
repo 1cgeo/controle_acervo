@@ -40,6 +40,48 @@ const recorteDoAno = (ano, mes) => {
 }
 
 /**
+ * Quantos registros de cada fluxo estao SEM data no ano.
+ *
+ * Existe por causa do `IS NULL` que cada filtro da consulta principal carrega.
+ * O registro sem data entra em TODOS os meses, entao o painel de janeiro mostra
+ * o empenho de dezembro. Nao da para saber isso olhando os valores.
+ *
+ * A regra do corte NAO muda aqui: a decisao e do chefe. Esta contagem so torna
+ * o efeito visivel, para o usuario ler o numero sabendo o que ele contem.
+ *
+ * O recolhido nao tem contagem propria: ele usa o mesmo recorte do recebido
+ * (data_emissao da NC), entao a contagem do recebido ja o descreve.
+ *
+ * @param {number} ano
+ * @returns {Promise<{recebido:number, empenhado:number, liquidado:number}>}
+ */
+const contarSemData = async ano => {
+  const l = await db.conn.one(
+    `SELECT
+       (SELECT COUNT(*)
+        FROM orcamento.nota_credito AS nc
+        WHERE nc.ano = $<ano> AND nc.data_emissao IS NULL) AS recebido,
+       (SELECT COUNT(*)
+        FROM orcamento.nota_empenho AS ne
+        INNER JOIN orcamento.nota_credito AS ncne ON ncne.id = ne.nota_credito_id
+        WHERE ne.ano = $<ano> AND ne.data_empenho IS NULL) AS empenhado,
+       (SELECT COUNT(*)
+        FROM orcamento.liquidacao AS lq
+        INNER JOIN orcamento.nota_empenho AS ne ON ne.id = lq.nota_empenho_id
+        INNER JOIN orcamento.nota_credito AS ncne ON ncne.id = ne.nota_credito_id
+        WHERE ne.ano = $<ano> AND lq.data IS NULL) AS liquidado`,
+    { ano }
+  )
+
+  // COUNT do pg chega como string (BIGINT).
+  return {
+    recebido: Number(l.recebido),
+    empenhado: Number(l.empenhado),
+    liquidado: Number(l.liquidado)
+  }
+}
+
+/**
  * Execução por ND: uma linha para CADA natureza de despesa do domínio (na ordem
  * do código), mais uma linha de TOTAL ao final.
  *
@@ -53,10 +95,12 @@ const recorteDoAno = (ano, mes) => {
  *
  * Registro sem data entra no acumulado (a visão do ano), e é o que o
  * `IS NULL` de cada filtro faz: crédito ainda sem data de emissão é crédito do
- * ano, e sumir com ele faria o painel mostrar menos do que o banco tem.
+ * ano, e sumir com ele faria o painel mostrar menos do que o banco tem. O preço
+ * é que ele entra em todos os meses, e por isso o payload leva junto a contagem
+ * de registros sem data (ver contarSemData).
  *
  * @param {{ano:number, mes:number}} params
- * @returns {Promise<Array<Object>>}
+ * @returns {Promise<{linhas:Array<Object>, sem_data:Object}>}
  */
 controller.getExecucaoPorNd = async ({ ano, mes }) => {
   const { inicio, cutoff } = recorteDoAno(ano, mes)
@@ -170,7 +214,7 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
 
   norm.push({ cod_nd: 'TOTAL', nd_nome: 'TOTAL', ...total })
 
-  return norm
+  return { linhas: norm, sem_data: await contarSemData(ano) }
 }
 
 module.exports = controller

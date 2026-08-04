@@ -124,12 +124,22 @@
 }
 
 /* Linha QUITADA: nada mais a liquidar.
-   Usada nas listas de empenho e de RPNP, onde a ordem já joga o quitado para o
-   fim (chefe, 2026-07-31). O esmaecido marca ONDE a lista deixa de pedir ação,
+   Usada nas listas de empenho, de RPNP e de nota de crédito (nesta última marca
+   o crédito devolvido por inteiro), onde a ordem já joga o quitado para o fim
+   (chefe, 2026-07-31). O esmaecido marca ONDE a lista deixa de pedir ação,
    sem esconder a linha: o histórico continua legível e pesquisável. Só cor e
    peso mudam, então o contraste segue acima do mínimo de leitura. */
 .data-table tbody tr.data-table__row--quitada td {
   color: var(--text-secondary);
+}
+
+/* Linha de TOTAL: o agregado da tabela, e não mais um registro.
+   O painel do orçamento recebe a linha TOTAL do servidor junto com as NDs. Sem
+   marca ela tem o mesmo peso visual de uma ND, e quem soma a coluna à mão conta
+   o total duas vezes. O filete de cima separa o agregado das parcelas. */
+.data-table tbody tr.data-table__row--total td {
+  font-weight: var(--font-weight-bold, 600);
+  border-top: 2px solid var(--border-color);
 }
 
 .data-table tbody tr:last-child td {

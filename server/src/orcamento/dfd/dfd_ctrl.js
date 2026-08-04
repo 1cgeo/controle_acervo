@@ -129,6 +129,9 @@ const registrarItens = async (t, dfdId, antes, depois, usuarioUuid, contexto) =>
   })
 }
 
+// O NOME de quem cadastrou e de quem alterou sai junto com o uuid: a tela nao
+// resolve uuid, e o historico de alteracoes so comeca em 2026-07-30. Para o DFD
+// gravado antes disso, a data de cadastro e o nome sao a unica rastreabilidade.
 controller.listar = async ano => {
   return db.conn.any(
     `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto, d.justificativa,
@@ -136,11 +139,15 @@ controller.listar = async ano => {
             d.data_prevista_conclusao, d.responsavel_cpf, d.vinculo_plano_gestao,
             d.consta_pca, d.valor_estimado,
             d.data_cadastramento, d.usuario_cadastramento_uuid,
+            uc.nome AS usuario_cadastramento,
             d.data_modificacao, d.usuario_modificacao_uuid,
+            um.nome AS usuario_modificacao,
             af.id AS arquivo_id, af.nome_original AS arquivo_nome
      FROM orcamento.dfd AS d
      LEFT JOIN dominio.grau_prioridade AS gp ON gp.code = d.grau_prioridade_id
      LEFT JOIN orcamento.arquivo AS af ON af.dfd_id = d.id
+     LEFT JOIN dgeo.usuario AS uc ON uc.uuid = d.usuario_cadastramento_uuid
+     LEFT JOIN dgeo.usuario AS um ON um.uuid = d.usuario_modificacao_uuid
      WHERE ($<ano> IS NULL OR d.ano = $<ano>)
      ORDER BY d.ano DESC, d.numero`,
     { ano: ano !== undefined ? ano : null }
@@ -154,9 +161,13 @@ controller.getPorId = async id => {
             d.data_prevista_conclusao, d.responsavel_cpf, d.vinculo_plano_gestao,
             d.consta_pca, d.valor_estimado,
             d.data_cadastramento, d.usuario_cadastramento_uuid,
-            d.data_modificacao, d.usuario_modificacao_uuid
+            uc.nome AS usuario_cadastramento,
+            d.data_modificacao, d.usuario_modificacao_uuid,
+            um.nome AS usuario_modificacao
      FROM orcamento.dfd AS d
      LEFT JOIN dominio.grau_prioridade AS gp ON gp.code = d.grau_prioridade_id
+     LEFT JOIN dgeo.usuario AS uc ON uc.uuid = d.usuario_cadastramento_uuid
+     LEFT JOIN dgeo.usuario AS um ON um.uuid = d.usuario_modificacao_uuid
      WHERE d.id = $<id>`,
     { id }
   )

@@ -5,7 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
-import { mostrarErro, mostrarErroNoGrafico } from './estado-erro.js';
+import { mostrarErro, mostrarErroNoGrafico } from '@components/estado-erro.js';
 
 const PERIODOS = [6, 12, 24];
 

@@ -14,14 +14,14 @@ import {
   getNotasEmpenho,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
-import { paraId } from '@utils/format.js';
+import { paraId, formatCurrency, toNumber } from '@utils/format.js';
 import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Abre o dialog de criar/editar RPNP (Restos a Pagar Não Processados).
- * Alimenta a tabela 3.3 do RPCMTec. A nota de empenho vinculada e opcional
- * (label = numero da NE); quando a NE nao esta no sistema, usa-se empenho_label
- * como rotulo livre do empenho.
+ * Alimenta a subseção 4.3 do RPCMTec. A nota de empenho vinculada e opcional;
+ * quando a NE nao esta no sistema, usa-se empenho_label como rotulo livre do
+ * empenho.
  * @param {Object} options
  * @param {number|null} [options.rpnpId] - id do RPNP existente para editar (null cria novo)
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
@@ -40,10 +40,26 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
     return;
   }
 
-  const neOptions = (notasEmpenho || []).map(ne => ({
-    value: ne.id,
-    label: ne.numero ?? `NE ${ne.id}`,
-  }));
+  // Ano do RPNP: decide quais NEs podem ser vinculadas.
+  const anoRpnp = isEdit ? rpnp.ano : getAno();
+
+  // Resto a pagar e SEMPRE de exercicio anterior, entao a NE do proprio ano nao
+  // entra. O rotulo antigo era so `ne.numero`, que em producao vale
+  // 'RPCA-400267', enquanto os rotulos gravados no RPNP sao '2025NE000001': as
+  // duas numeracoes nao casam e ninguem achava a NE certa. Ano, numero e valor
+  // dao os tres sinais que o operador confere no SIAFI.
+  const neVinculada = rpnp?.nota_empenho_id ?? null;
+  const neOptions = (notasEmpenho || [])
+    // A NE ja vinculada fica na lista mesmo fora do filtro, senao editar outro
+    // campo apagaria o vinculo em silencio.
+    .filter(ne => String(ne.id) === String(neVinculada)
+      || anoRpnp == null
+      || toNumber(ne.ano) < toNumber(anoRpnp))
+    .sort((a, b) => toNumber(b.ano) - toNumber(a.ano))
+    .map(ne => ({
+      value: ne.id,
+      label: `${ne.ano ?? '?'} - ${ne.numero ?? `NE ${ne.id}`} - ${formatCurrency(ne.valor_empenhado)}`,
+    }));
 
   // ---- Campos ----
   const notaEmpenhoField = createSelectField({
@@ -53,7 +69,9 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
   });
   const empenhoLabelField = createTextField({
     label: 'Rótulo do empenho',
-    maxLength: 255,
+    // 60 e o limite da coluna (er/orcamento.sql:213, VARCHAR(60)). A tela
+    // aceitava 255 e o banco cortava a diferenca com erro no salvar.
+    maxLength: 60,
     placeholder: 'Ex.: 2023NE000261 (PI K1...)',
     value: rpnp?.empenho_label ?? '',
     helpText: 'Use quando a NE não estiver cadastrada no sistema.',
@@ -112,7 +130,7 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
           if (saving) return;
 
           const body = {
-            ano: isEdit ? rpnp.ano : getAno(),
+            ano: anoRpnp,
             // paraId: o select devolve o id como TEXTO e o schema cobra
             // Joi.number().integer().strict().
             nota_empenho_id: paraId(notaEmpenhoField.getValue()),

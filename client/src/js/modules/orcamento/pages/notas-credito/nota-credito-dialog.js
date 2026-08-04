@@ -31,6 +31,21 @@ const UG_DSG = '160089';
 const CLASSIFICACAO_PDR = 1;
 
 /**
+ * Rotulo de uma NC numa lista de escolha.
+ *
+ * Carrega a UG emitente porque a identidade real da NC e (ano, numero, ND, UG):
+ * a numeracao do SIAFI e por emitente. Sem a UG, duas NCs distintas aparecem
+ * com o mesmo texto e a escolha vira sorteio.
+ * @param {Object} nc
+ * @returns {string}
+ */
+function rotuloNc(nc) {
+  const numero = nc.numero ?? `NC ${nc.id}`;
+  const base = nc.cod_nd ? `${numero} - ${nc.cod_nd}` : numero;
+  return nc.ug_emitente ? `${base} (UG ${nc.ug_emitente})` : base;
+}
+
+/**
  * Abre o dialog de criar/editar Nota de Credito.
  * valor_nc e o valor recebido na NC e nunca muda por devolucao (a devolucao e
  * registrada a parte; este campo permanece o valor original recebido).
@@ -97,11 +112,15 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   }));
   const ncComplementadaOptions = (outrasNcs || [])
     .filter(o => !isEdit || o.id !== ncId)
-    .map(o => ({ value: o.id, label: o.cod_nd ? `${o.numero ?? `NC ${o.id}`} - ${o.cod_nd}` : (o.numero ?? `NC ${o.id}`) }));
+    .map(o => ({ value: o.id, label: rotuloNc(o) }));
+  // A DESCRICAO entra no rotulo: o item_label e a ND descrevem a celula
+  // orcamentaria ("10 - Servicos de terceiros"), e nao o que o item compra
+  // ("Producao de Geoinformacao para o EBGeo"). Sem ela a escolha e no escuro.
   const pdrItemOptions = (pdrItens || []).map(it => {
     const base = `${it.item_label || it.cod_nd} - ${it.nd_nome ?? ''}`.trim();
+    const descricao = it.descricao ? `: ${it.descricao}` : '';
     const meta = it.meta_numero ? ` (Meta ${it.meta_numero})` : '';
-    return { value: it.id, label: `${base}${meta}` };
+    return { value: it.id, label: `${base}${descricao}${meta}` };
   });
 
   // O rotulo sai de rotuloMetaPit, a mesma funcao que a tela de metas e a
@@ -111,12 +130,16 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   }
 
   // ---- Campos ----
+  // Os maxLength abaixo copiam o VARCHAR do banco (er/orcamento.sql). Campo que
+  // aceita mais do que a coluna guarda deixa o usuario digitar e so reprova
+  // depois de salvar, com erro cru do banco.
   const numeroField = createTextField({
     label: 'Número',
     required: true,
-    maxLength: 30,
+    maxLength: 20,
     placeholder: 'Ex.: 2026NC400134',
     value: nc?.numero ?? '',
+    helpText: 'Uma NC com mais de uma ND entra uma vez por ND, com o mesmo número.',
   });
   const dataEmissaoField = createDateField({
     label: 'Data de emissão',
@@ -130,13 +153,13 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   });
   const ptresField = createTextField({
     label: 'PTRES',
-    maxLength: 20,
+    maxLength: 10,
     placeholder: 'Ex.: 232039',
     value: nc?.ptres ?? '',
   });
   const fonteField = createTextField({
     label: 'Fonte',
-    maxLength: 20,
+    maxLength: 15,
     placeholder: 'Ex.: 1000000000',
     value: nc?.fonte ?? '',
   });
@@ -176,7 +199,7 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   });
   const docRoField = createTextField({
     label: 'Documento RO',
-    maxLength: 30,
+    maxLength: 20,
     value: nc?.doc_ro ?? '',
   });
   const prazoEmpenhoField = createDateField({
@@ -190,11 +213,12 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
     value: nc?.classificacao_id ?? undefined,
     onChange: (id) => updatePdrItemVisibility(id),
   });
+  // Sem helpText: o campo inteiro SOME quando a classificacao nao e PDR, entao
+  // avisar que ele "so se aplica ao PDR" so aparecia para quem ja estava no PDR.
   const pdrItemField = createSelectField({
     label: 'Item do PDR',
     options: pdrItemOptions,
     value: nc?.pdr_item_id ?? undefined,
-    helpText: 'Só se aplica quando a classificação é PDR.',
   });
   const ncComplementadaField = createSelectField({
     label: 'NC complementada',
@@ -203,7 +227,7 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
   });
   const marcadorField = createTextField({
     label: 'Marcador',
-    maxLength: 10,
+    maxLength: 8,
     placeholder: 'Ex.: *',
     value: nc?.marcador ?? '',
   });
@@ -299,11 +323,13 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
           numeroField.setError(null);
           codNdField.setError(null);
           valorNcField.setError(null);
+          valorRecolhidoField.setError(null);
           classificacaoField.setError(null);
 
           const numero = numeroField.getValue();
           const codNd = codNdField.getValue();
           const valorNc = valorNcField.getValue();
+          const valorRecolhido = valorRecolhidoField.getValue();
           const classificacaoId = classificacaoField.getValue();
 
           let valid = true;
@@ -323,6 +349,12 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
             classificacaoField.setError('Selecione a classificação');
             valid = false;
           }
+          // Nao se devolve credito que nao se recebeu. O schema do servidor cobra
+          // o mesmo teto; aqui o usuario ve o erro no campo, antes de enviar.
+          if (valorRecolhido !== null && valorNc !== null && valorRecolhido > valorNc) {
+            valorRecolhidoField.setError('O recolhido não pode passar do valor da NC');
+            valid = false;
+          }
           if (!valid) return;
 
           const body = {
@@ -339,7 +371,7 @@ export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}
             // schemas cobram Joi.number().integer().strict().
             meta_pit_id: paraId(metaField.getValue()),
             valor_nc: valorNc,
-            valor_recolhido: valorRecolhidoField.getValue() ?? null,
+            valor_recolhido: valorRecolhido ?? null,
             doc_ro: docRoField.getValue() || null,
             prazo_empenho: prazoEmpenhoField.getValue(),
             classificacao_id: classificacaoId,

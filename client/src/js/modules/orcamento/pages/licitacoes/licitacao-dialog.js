@@ -21,10 +21,12 @@ const TIPO_PARTICIPANTE = 3;
 
 /**
  * Abre o dialog de criar/editar Licitacao.
- * O tipo da licitacao decide a tabela do RPCMTec: tipo 1 (GCALC DSG) alimenta a
- * tabela 3.4 e tipo 2 (Própria) alimenta a tabela 3.5. Uma licitacao pode cobrir
- * varios DFDs, entao nao ha vinculo direto a um DFD. Em GCALC DSG e Própria a OM
- * gestora e a propria OM; so em Participante a OM gestora pode ser outra.
+ * O tipo da licitacao decide a subsecao do RPCMTec: tipo 1 (GCALC DSG) alimenta
+ * a 4.4 e tipo 2 (Própria) alimenta a 4.5. O tipo 3 (Participante) NAO tem
+ * subsecao: o relatorio gera so os tipos 1 e 2 (rpcmtec_ctrl.js:983-984). Uma
+ * licitacao pode cobrir varios DFDs, entao nao ha vinculo direto a um DFD. Em
+ * GCALC DSG e Própria a OM gestora e a propria OM; so em Participante a OM
+ * gestora pode ser outra.
  * @param {Object} options
  * @param {number|null} [options.licId] - id da licitacao existente para editar (null cria nova)
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
@@ -51,7 +53,7 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
     required: true,
     options: tipoOptions,
     value: lic?.tipo_id ?? undefined,
-    helpText: '1 = GCALC DSG (tabela 3.4); 2 = Própria (tabela 3.5); 3 = Participante.',
+    helpText: 'GCALC DSG entra na subseção 4.4 do RPCMTec. Própria entra na 4.5. Participante NÃO entra no RPCMTec: o registro fica só no sistema.',
     onChange: (v) => updateOmVisibility(v),
   });
   const objetoField = createTextareaField({
@@ -77,7 +79,8 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
   });
   const omGestoraField = createTextField({
     label: 'OM gestora',
-    maxLength: 100,
+    // 60 e o limite da coluna (er/orcamento.sql:84, VARCHAR(60)).
+    maxLength: 60,
     value: lic?.om_gestora ?? '',
     helpText: 'Só em Participante (a OM que conduz a licitação). Em GCALC DSG e Própria é a própria OM.',
   });

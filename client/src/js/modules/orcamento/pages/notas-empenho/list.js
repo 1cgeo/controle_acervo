@@ -28,9 +28,22 @@ function aLiquidar(ne) {
   return Math.max(0, liquido - toNumber(ne.total_liquidado));
 }
 
+/**
+ * Tolerância da quitação, em reais. Meio centavo.
+ *
+ * Os valores chegam como NUMERIC(15,2) e a subtração roda em ponto flutuante:
+ * sobra resíduo. Dado real, a NE 2026NE000023: 2499.01 menos 339.16 menos
+ * 2159.85 dá 4.547473508864641e-13, e não zero. Com o teste `<= 0` ela perdia o
+ * chip "Liquidada" e subia na ordem padrão, que é por saldo.
+ *
+ * Meio centavo é menor que a menor diferença que o dado sabe representar: um
+ * centavo de verdade continua em aberto.
+ */
+const TOLERANCIA_QUITACAO = 0.005;
+
 /** A NE ja liquidou tudo o que podia? NE de valor liquido zero conta como sim. */
 function estaQuitada(ne) {
-  return aLiquidar(ne) <= 0;
+  return aLiquidar(ne) < TOLERANCIA_QUITACAO;
 }
 
 /**
@@ -76,6 +89,15 @@ export async function renderNotasEmpenhoList(container, _ctx) {
         key: 'cod_nd',
         label: 'ND',
         render: (row) => (row.nd_nome ? `${row.cod_nd} - ${row.nd_nome}` : (row.cod_nd ?? '-')),
+      },
+      {
+        // O numero NAO distingue as NEs: tres NEs reais de 2026 compartilham o
+        // 2026NE000024 e so a NC as separa. A finalidade e o unico texto que diz
+        // para que serve o empenho, e a busca da tabela varre esta coluna.
+        key: 'finalidade',
+        label: 'Finalidade',
+        className: 'data-table__cell--truncate',
+        render: (row) => row.finalidade || '-',
       },
       {
         key: 'valor_empenhado',

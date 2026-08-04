@@ -12,12 +12,17 @@ vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js')
 //
 // A rota era /orcamento/relatorio/secao3 e devolvia { tabela_31, ..., tabela_37 }
 // ate 2026-08-01, quando o RPCMTec saiu do modulo. Das sete tabelas o painel so
-// lia a 3.1, entao a rota nova devolve a lista direto.
+// lia a 3.1, entao a rota nova devolve a lista direto. Desde 2026-08-04 ela vem
+// em { linhas, sem_data }: a contagem de registros sem data anda junto porque
+// esses registros entram em TODOS os meses do ano.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
-  getExecucaoNd: vi.fn(() => Promise.resolve([
-    { cod_nd: '339030', nd_nome: 'Material', previsto: 60, recebido: 30, recebido_pdr: 20, recebido_extra: 10, empenhado: 25, empenhado_pdr: 15, empenhado_extra: 10, liquidado: 20, liquidado_pdr: 12, liquidado_extra: 8 },
-    { cod_nd: 'TOTAL', nd_nome: 'TOTAL', previsto: 100, recebido: 50, recebido_pdr: 35, recebido_extra: 15, empenhado: 40, empenhado_pdr: 25, empenhado_extra: 15, liquidado: 30, liquidado_pdr: 18, liquidado_extra: 12 },
-  ])),
+  getExecucaoNd: vi.fn(() => Promise.resolve({
+    linhas: [
+      { cod_nd: '339030', nd_nome: 'Material', previsto: 60, recebido: 30, recebido_pdr: 20, recebido_extra: 10, recolhido: 5, recolhido_pdr: 3, recolhido_extra: 2, empenhado: 25, empenhado_pdr: 15, empenhado_extra: 10, liquidado: 20, liquidado_pdr: 12, liquidado_extra: 8 },
+      { cod_nd: 'TOTAL', nd_nome: 'TOTAL', previsto: 100, recebido: 50, recebido_pdr: 35, recebido_extra: 15, recolhido: 8, recolhido_pdr: 5, recolhido_extra: 3, empenhado: 40, empenhado_pdr: 25, empenhado_extra: 15, liquidado: 30, liquidado_pdr: 18, liquidado_extra: 12 },
+    ],
+    sem_data: { recebido: 0, empenhado: 25, liquidado: 0 },
+  })),
 }));
 
 import { renderDashboard } from '@modules/orcamento/pages/dashboard/index.js';
@@ -79,8 +84,10 @@ describe('renderDashboard: as tres abas', () => {
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
+    // Sem a numeracao 3.x: ela era do modelo antigo e apontava para a subsecao
+    // errada (a aba "PDR" mostra a quebra por ND, que o RPCMTec numera 4.1).
     expect(abas(container).map(b => b.textContent)).toEqual([
-      'Visão Geral', 'PDR (3.2)', 'Extra-PDR (3.7)',
+      'Visão Geral', 'PDR', 'Extra-PDR',
     ]);
     // A visao geral e a unica montada: as tabelas ainda nao existem no DOM.
     expect(container.querySelector('.tabs__content .stats-grid')).not.toBeNull();
@@ -98,8 +105,8 @@ describe('renderDashboard: as tres abas', () => {
 
     expect(getExecucaoNd).toHaveBeenCalledTimes(1);
 
-    await abrirAba(container, 'PDR (3.2)');
-    await abrirAba(container, 'Extra-PDR (3.7)');
+    await abrirAba(container, 'PDR');
+    await abrirAba(container, 'Extra-PDR');
     await abrirAba(container, 'Visão Geral');
 
     expect(getExecucaoNd).toHaveBeenCalledTimes(1);
@@ -112,16 +119,52 @@ describe('renderDashboard: as tres abas', () => {
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    await abrirAba(container, 'PDR (3.2)');
+    await abrirAba(container, 'PDR');
     const cabecalhoPdr = container.querySelector('.tabs__content thead').textContent;
     // O previsto so existe no PDR.
     expect(cabecalhoPdr).toContain('Previsto');
+    // O recolhido e o que faltava: sem ele o leitor soma recebido menos
+    // empenhado e conclui um saldo maior do que o disponivel.
+    expect(cabecalhoPdr).toContain('Recolhido');
     expect(container.querySelector('.tabs__content tbody').textContent).toContain('339030');
 
-    await abrirAba(container, 'Extra-PDR (3.7)');
+    await abrirAba(container, 'Extra-PDR');
     const cabecalhoExtra = container.querySelector('.tabs__content thead').textContent;
     expect(cabecalhoExtra).not.toContain('Previsto');
     expect(cabecalhoExtra).toContain('Empenhado');
+    expect(cabecalhoExtra).toContain('Recolhido');
+
+    cleanup();
+  });
+
+  // A linha TOTAL e uma linha comum na tabela: o grafico a filtra, a tabela
+  // nao. Sem a marca, ela le-se como mais uma natureza de despesa.
+  test('a linha TOTAL da tabela de ND leva a classe de total', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await abrirAba(container, 'PDR');
+    const marcadas = container.querySelectorAll('.tabs__content tbody tr.data-table__row--total');
+
+    expect(marcadas.length).toBe(1);
+    expect(marcadas[0].textContent).toContain('TOTAL');
+
+    cleanup();
+  });
+
+  // O recorte do painel aceita `data IS NULL`, entao esses registros entram em
+  // TODOS os meses. Nada na tela dizia isso: com janeiro selecionado o painel
+  // mostrava o empenho do ano inteiro e o usuario lia como empenho de janeiro.
+  test('avisa quantos registros do ano entram em todos os meses', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const aviso = container.querySelector('.page__subtitle');
+
+    expect(aviso.classList.contains('hidden')).toBe(false);
+    expect(aviso.textContent).toContain('25 empenhos sem data');
 
     cleanup();
   });
@@ -140,6 +183,25 @@ describe('renderDashboard: as tres abas', () => {
 
     expect(getExecucaoNd).toHaveBeenCalledTimes(2);
     expect(getExecucaoNd).toHaveBeenLastCalledWith({ ano: 2026, mes: 3 });
+
+    cleanup();
+  });
+
+  // Exercicio fechado abre fechado. O mes nascia com o mes de hoje, entao ir
+  // para um ano anterior cortava o ano encerrado no mes corrente: o painel
+  // mostrava um total menor que o real, e nada avisava.
+  test('trocar para um ano anterior leva o mes para dezembro', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const anoAnterior = new Date().getFullYear() - 1;
+    localStorage.setItem('@sca-orcamento-ano', String(anoAnterior));
+    window.dispatchEvent(new CustomEvent('anochange:orcamento', { detail: { ano: anoAnterior } }));
+    await flush();
+
+    expect(container.querySelector('.chart-card__select').value).toBe('12');
+    expect(getExecucaoNd).toHaveBeenLastCalledWith({ ano: anoAnterior, mes: 12 });
 
     cleanup();
   });

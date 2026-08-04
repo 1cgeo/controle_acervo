@@ -1,8 +1,8 @@
 import { el } from '@utils/dom.js';
 import { monthName } from '@utils/format.js';
 import { createTabs } from '@components/tabs/tabs.js';
-import { onAnoChange } from '@modules/orcamento/store/year-store.js';
-import { criarSecao3Store } from './secao3-store.js';
+import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
+import { criarSecao3Store, avisoSemData } from './secao3-store.js';
 import { renderExecucaoTab } from './execucao-tab.js';
 import { criarNdTab } from './nd-tab.js';
 
@@ -15,12 +15,17 @@ import { criarNdTab } from './nd-tab.js';
  * abaixo da dobra.
  *
  * A diferenca para os outros dois dashboards e que aqui as tres abas saem da
- * MESMA consulta (a secao 3). Por isso a busca mora num store memoizado por
- * (ano, mes): trocar de aba nao refaz a consulta, e trocar o mes ou o ano
- * invalida uma vez so, para todas.
+ * MESMA consulta. Por isso a busca mora num store memoizado por (ano, mes):
+ * trocar de aba nao refaz a consulta, e trocar o mes ou o ano invalida uma vez
+ * so, para todas.
  *
  * O ano vem do contexto global (seletor da navbar); o mes e desta tela, porque
- * so ela le a secao 3 de forma cumulativa.
+ * so ela le a execucao por ND de forma cumulativa.
+ *
+ * As abas se chamavam "PDR (3.2)" e "Extra-PDR (3.7)". A numeracao era do
+ * modelo antigo e ficou morta: o RPCMTec numera 4.1, 4.2 e 4.7, e a aba "PDR"
+ * mostra a quebra por ND, que e a 4.1, e nao a 4.2. Numero errado engana mais
+ * que numero nenhum.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} [_ctx]
@@ -35,6 +40,7 @@ export async function renderDashboard(container, _ctx) {
     onChange: (e) => {
       store.setMes(parseInt(e.target.value, 10));
       abas.refreshActive();
+      atualizarAviso();
     },
   }, Array.from({ length: 12 }, (_, i) => {
     const m = i + 1;
@@ -42,18 +48,39 @@ export async function renderDashboard(container, _ctx) {
   }));
   mesSelect.value = String(store.getMes());
 
+  // O recorte do painel aceita registro sem data, que entra em TODOS os meses.
+  // Este aviso e a unica coisa na tela que denuncia isso. Vive sob o h1, e nao
+  // dentro de uma aba, porque vale para as tres.
+  const aviso = el('p', { className: 'page__subtitle hidden', role: 'status' });
+
+  async function atualizarAviso() {
+    try {
+      const payload = await store.carregar();
+      const texto = avisoSemData(payload && payload.sem_data);
+      aviso.textContent = texto;
+      aviso.classList.toggle('hidden', !texto);
+    } catch {
+      // A falha de carga ja tem dono: o estado de erro da aba ativa. Repetir
+      // aqui daria duas mensagens para um problema so.
+      aviso.classList.add('hidden');
+    }
+  }
+
   const abas = createTabs({
     ariaLabel: 'Painéis da execução orçamentária',
     tabs: [
       { id: 'execucao', label: 'Visão Geral', render: (c) => renderExecucaoTab(c, store) },
-      { id: 'pdr', label: 'PDR (3.2)', render: (c) => criarNdTab('pdr')(c, store) },
-      { id: 'extra', label: 'Extra-PDR (3.7)', render: (c) => criarNdTab('extra')(c, store) },
+      { id: 'pdr', label: 'PDR', render: (c) => criarNdTab('pdr')(c, store) },
+      { id: 'extra', label: 'Extra-PDR', render: (c) => criarNdTab('extra')(c, store) },
     ],
   });
 
   const page = el('div', { className: 'dashboard' }, [
     el('div', { className: 'dashboard-section__header' }, [
-      el('h1', { className: 'dashboard__title', textContent: 'Execução Orçamentária' }),
+      el('div', {}, [
+        el('h1', { className: 'dashboard__title', textContent: 'Execução Orçamentária' }),
+        aviso,
+      ]),
       el('div', { className: 'dashboard-section__controls' }, [
         el('span', { textContent: 'Mês:' }),
         mesSelect,
@@ -64,12 +91,21 @@ export async function renderDashboard(container, _ctx) {
   container.appendChild(page);
 
   await abas.ready;
+  atualizarAviso();
 
-  // Trocar o ano de contexto invalida a secao 3 guardada e recarrega a aba que
+  // Trocar o ano de contexto invalida a execucao guardada e recarrega a aba que
   // estiver aberta. As outras buscam sozinhas quando forem montadas.
   const offAno = onAnoChange(() => {
+    // Exercicio fechado abre fechado. O mes nasce com o mes de hoje, entao ir
+    // para um ano anterior mostrava o ano encerrado cortado no mes corrente, e
+    // o usuario lia um total menor que o real sem nada avisar.
+    if (getAno() < new Date().getFullYear()) {
+      store.setMes(12);
+      mesSelect.value = '12';
+    }
     store.invalidar();
     abas.refreshActive();
+    atualizarAviso();
   });
 
   return () => {

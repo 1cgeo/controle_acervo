@@ -77,25 +77,70 @@ const normalizarPdrItemId = dados => {
 
 controller.listar = async (filtros = {}) => {
   // Lista as NCs com nomes resolvidos por JOIN: natureza de despesa,
-  // classificacao e a meta do PIT (numero_meta) quando houver.
-  // Filtros opcionais por ano e classificacao_id. Ordenado por data_emissao.
+  // classificacao, UG emitente e a meta do PIT (numero_meta) quando houver.
+  // Filtros opcionais por ano e classificacao_id.
+  //
+  // ug_emitente entra porque ela FAZ PARTE da identidade da NC: a unicidade e
+  // (ano, numero, cod_nd, COALESCE(ug_emitente,'')), e sem a UG duas NCs
+  // legitimamente distintas aparecem identicas na tela.
+  //
+  // prazo_empenho entra porque e a data que decide se ainda da para empenhar o
+  // credito; sem ela a lista nao diz o que esta prestes a se perder.
+  //
+  // ORDEM: data_emissao DESC NULLS LAST com desempate por numero e ND. Sem o
+  // desempate a ordem e INSTAVEL onde a data se repete ou e nula (todas as NCs
+  // de 2025 tem data nula), e a mesma consulta devolve ordens diferentes.
   return db.conn.any(
     `SELECT nc.id, nc.numero, nc.ano, nc.data_emissao, nc.cod_nd,
             nd.nome AS nd_nome,
-            nc.valor_nc, nc.valor_recolhido, nc.classificacao_id,
+            nc.ug_emitente,
+            ug.nome AS ug_nome,
+            nc.valor_nc, nc.valor_recolhido, nc.prazo_empenho,
+            nc.classificacao_id,
             cl.nome AS classificacao_nome,
             nc.pdr_item_id, nc.meta_pit_id,
-            mp.numero_meta,
+            mp.numero_meta, mp.item AS meta_item, mp.descricao AS meta_descricao,
             nc.marcador, nc.nc_complementada_id,
+            -- Empenhado LIQUIDO contra esta NC, nas duas formas de vinculo: as
+            -- linhas do rateio e as NEs antigas, que apontam a NC direto. Sem
+            -- ele a tela de empenho so sabe o VALOR da NC, e nao o saldo, que e
+            -- o numero da decisao de empenhar.
+            -- A anulacao desconta, e proporcional a fatia de cada NC: anular
+            -- devolve o valor a NC. Mesma conta de EMPENHADO_POR_NC em
+            -- nota_empenho_ctrl.js, e mesmo criterio liquido do painel.
+            COALESCE((
+              SELECT SUM(v.valor) FROM (
+                SELECT enc.valor - COALESCE(ne.valor_anulado, 0)
+                         * (enc.valor / NULLIF(tot.soma, 0)) AS valor
+                  FROM orcamento.nota_empenho_nota_credito AS enc
+                  INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
+                  INNER JOIN LATERAL (
+                    SELECT SUM(x.valor) AS soma
+                      FROM orcamento.nota_empenho_nota_credito AS x
+                     WHERE x.nota_empenho_id = enc.nota_empenho_id
+                  ) AS tot ON TRUE
+                 WHERE enc.nota_credito_id = nc.id
+                UNION ALL
+                SELECT ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
+                  FROM orcamento.nota_empenho AS ne
+                 WHERE ne.nota_credito_id = nc.id
+                   AND NOT EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+                                    WHERE x.nota_empenho_id = ne.id)
+              ) AS v
+            ), 0) AS empenhado,
             af.id AS arquivo_id, af.nome_original AS arquivo_nome
      FROM orcamento.nota_credito AS nc
      INNER JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
-     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
+     LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
+     -- meta_vigente, e nao pit.meta: a descricao da meta mora em meta_revisao e
+     -- so sai pela view. Sem ela a tela escreve o algarismo "3" solto, e a mesma
+     -- meta aparece com nome no PDR e sem nome aqui. O pdr_ctrl ja usa a view.
+     LEFT JOIN pit.meta_vigente AS mp ON mp.id = nc.meta_pit_id
      LEFT JOIN orcamento.arquivo AS af ON af.nota_credito_id = nc.id
      WHERE ($<ano> IS NULL OR nc.ano = $<ano>)
        AND ($<classificacaoId> IS NULL OR nc.classificacao_id = $<classificacaoId>)
-     ORDER BY nc.data_emissao`,
+     ORDER BY nc.data_emissao DESC NULLS LAST, nc.numero, nc.cod_nd`,
     {
       ano: filtros.ano != null ? filtros.ano : null,
       classificacaoId:
@@ -114,7 +159,7 @@ controller.getPorId = async id => {
             nc.ug_emitente,
             ug.nome AS ug_nome,
             nc.finalidade_historico, nc.meta_pit_id,
-            mp.numero_meta,
+            mp.numero_meta, mp.item AS meta_item, mp.descricao AS meta_descricao,
             nc.valor_nc, nc.valor_recolhido, nc.doc_ro, nc.prazo_empenho,
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
@@ -127,7 +172,8 @@ controller.getPorId = async id => {
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.plano_interno AS pi ON pi.code = nc.cod_pi
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
-     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
+     -- Ver o comentario do listar: a descricao da meta so sai pela view.
+     LEFT JOIN pit.meta_vigente AS mp ON mp.id = nc.meta_pit_id
      WHERE nc.id = $<id>`,
     { id }
   )

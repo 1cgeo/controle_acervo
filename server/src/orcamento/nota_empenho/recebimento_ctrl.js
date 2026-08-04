@@ -26,12 +26,18 @@ const tratarFk = err => {
 controller.listar = async (filtros = {}) => {
   // Lista os recebimentos, opcionalmente filtrados por nota de empenho.
   // Traz o numero da NE para contexto. Ordenado por id.
+  //
+  // A data de cadastro e o nome de quem lancou entram aqui pelo mesmo motivo da
+  // liquidacao: a ficha da NE consome ESTA rota, e nao a `getPorId`.
   return db.conn.any(
     `SELECT rm.id, rm.nota_empenho_id,
             ne.numero AS nota_empenho_numero,
-            rm.material, rm.prazo_entrega, rm.situacao, rm.ano_referencia
+            rm.material, rm.prazo_entrega, rm.situacao, rm.ano_referencia,
+            rm.data_cadastramento,
+            u.nome AS usuario_cadastramento_nome
      FROM orcamento.recebimento_material AS rm
      INNER JOIN orcamento.nota_empenho AS ne ON ne.id = rm.nota_empenho_id
+     LEFT JOIN dgeo.usuario AS u ON u.uuid = rm.usuario_cadastramento_uuid
      WHERE ($<notaEmpenhoId> IS NULL OR rm.nota_empenho_id = $<notaEmpenhoId>)
      ORDER BY rm.id`,
     {

@@ -16,6 +16,10 @@ import { getAno } from '@modules/orcamento/store/year-store.js';
  * refaria a consulta inteira para reexibir dado que ja estava na mao, e o
  * usuario pagaria um round-trip por clique de aba.
  *
+ * O payload e { linhas, sem_data } desde 2026-08-04. Era a lista crua; o
+ * `sem_data` entrou junto porque o registro sem data entra em TODOS os meses, e
+ * so a contagem torna isso visivel (ver avisoSemData).
+ *
  * A memoizacao e por (ano, mes) e guarda a PROMESSA, e nao o resultado: duas
  * abas montando ao mesmo tempo esperam a mesma requisicao em vez de disparar
  * duas. Trocar o mes ou o ano invalida, e ai a proxima leitura busca de novo.
@@ -43,7 +47,7 @@ export function criarSecao3Store() {
 
   /**
    * A secao 3 do ano de contexto, cumulativa ate o mes escolhido.
-   * @returns {Promise<Object>}
+   * @returns {Promise<{linhas:Array<Object>, sem_data:Object}>}
    */
   function carregar() {
     const ano = getAno();
@@ -65,6 +69,51 @@ export function criarSecao3Store() {
   return { carregar, invalidar, getMes, setMes };
 }
 
+/**
+ * As linhas por ND do payload.
+ *
+ * Aceita a lista crua tambem: o formato antigo da rota era um array, e o
+ * fallback evita que uma versao velha do servidor esvazie o painel em silencio.
+ *
+ * @param {{linhas?:Array}|Array|null} payload
+ * @returns {Array<Object>}
+ */
+export function getLinhas(payload) {
+  if (Array.isArray(payload)) return payload;
+  return (payload && Array.isArray(payload.linhas)) ? payload.linhas : [];
+}
+
+/** Rotulo de cada fluxo na frase do aviso. */
+const FLUXO_SEM_DATA = {
+  recebido: ['nota de crédito sem data de emissão', 'notas de crédito sem data de emissão'],
+  empenhado: ['empenho sem data', 'empenhos sem data'],
+  liquidado: ['liquidação sem data', 'liquidações sem data'],
+};
+
+/**
+ * A frase que avisa quantos registros do ano nao tem data.
+ *
+ * O recorte do painel aceita `data IS NULL`, entao esses registros entram em
+ * TODOS os meses. Sem o aviso, o painel de janeiro mostra o empenho de dezembro
+ * e nada na tela diz isso. A regra do corte NAO muda: a decisao e do chefe, e o
+ * aviso so devolve a ele a informacao para decidir.
+ *
+ * @param {{recebido?:number, empenhado?:number, liquidado?:number}|null} semData
+ * @returns {string} vazio quando todo registro do ano tem data
+ */
+export function avisoSemData(semData) {
+  if (!semData) return '';
+
+  const partes = Object.keys(FLUXO_SEM_DATA)
+    .map(fluxo => ({ fluxo, n: Number(semData[fluxo]) || 0 }))
+    .filter(({ n }) => n > 0)
+    .map(({ fluxo, n }) => `${n} ${FLUXO_SEM_DATA[fluxo][n === 1 ? 0 : 1]}`);
+
+  if (partes.length === 0) return '';
+
+  return `Atenção: ${partes.join(', ')}. Registro sem data entra em TODOS os meses do ano.`;
+}
+
 /** Localiza a linha TOTAL (ou agrega como fallback) da tabela 3.1. */
 export function getTotalRow(rows) {
   const total = rows.find(r => String(r.cod_nd).toUpperCase() === 'TOTAL'
@@ -72,6 +121,7 @@ export function getTotalRow(rows) {
   if (total) return total;
 
   const campos = ['previsto', 'recebido', 'recebido_pdr', 'recebido_extra',
+    'recolhido', 'recolhido_pdr', 'recolhido_extra',
     'empenhado', 'empenhado_pdr', 'empenhado_extra',
     'liquidado', 'liquidado_pdr', 'liquidado_extra'];
   return rows.reduce((acc, r) => {

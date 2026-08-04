@@ -140,10 +140,29 @@ const gravarDeclaracao = async (t, { metaId, revisaoId, dados, usuarioUuid, cont
   return linha
 }
 
+// O CAMINHO DE VOLTA do orcamento para o PIT (2026-08-04). A tela de metas
+// dizia o que a Divisao promete e nada do que financia a promessa: "quanto
+// credito a meta 3 recebeu" nao tinha resposta na interface, embora a NC e o
+// item do PDR apontem a meta desde sempre.
+//
+// SUBSELECT, e nao JOIN: a meta SEM credito tem de continuar na lista, e um
+// INNER JOIN a apagaria. Sao essas as metas que interessam ao chefe.
+//
+// `credito_nc` leva COALESCE para zero porque `valor_nc` e NOT NULL: nenhuma NC
+// apontando a meta significa credito zero, e isso e fato. `pdr_autorizado` NAO
+// leva COALESCE: `valor_autorizado` e anulavel, e a soma nula quer dizer "nao
+// informado", que a tela pinta como '-'. Afirmar zero ali seria mentir.
+const agregadosDoOrcamento = `
+  COALESCE((SELECT SUM(nc.valor_nc) FROM orcamento.nota_credito AS nc
+             WHERE nc.meta_pit_id = pit.meta_vigente.id), 0) AS credito_nc,
+  (SELECT SUM(pi.valor_autorizado) FROM orcamento.pdr_item AS pi
+    WHERE pi.meta_pit_id = pit.meta_vigente.id) AS pdr_autorizado`
+
 controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
     return db.conn.any(
-      `SELECT ${colunas}
+      `SELECT ${colunas},
+       ${agregadosDoOrcamento}
        FROM pit.meta_vigente
        WHERE ano = $<ano>
        ORDER BY numero_meta, item`,
@@ -152,7 +171,8 @@ controller.listar = async ano => {
   }
 
   return db.conn.any(
-    `SELECT ${colunas}
+    `SELECT ${colunas},
+     ${agregadosDoOrcamento}
      FROM pit.meta_vigente
      ORDER BY ano DESC, numero_meta, item`
   )

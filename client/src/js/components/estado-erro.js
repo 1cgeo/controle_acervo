@@ -1,7 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 
 /**
- * Estado de ERRO do painel, distinto do estado VAZIO.
+ * Estado de ERRO de um painel, distinto do estado VAZIO.
  *
  * Existe por um defeito de leitura, e não de código: todo bloco do dashboard
  * engolia a falha no `catch` e pintava a lista com zero linhas. A tabela então
@@ -12,6 +12,13 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
  * A diferença importa mais aqui do que em outra tela: este painel é o que o
  * chefe olha para saber o estado do acervo. "Não há" e "não consegui saber" são
  * respostas opostas, e só uma delas pede ação.
+ *
+ * MORA EM `components/` desde 2026-08-04. Nasceu em
+ * `modules/acervo/pages/dashboard/`, e o painel do orçamento tinha o mesmo
+ * defeito: o `catch` das abas de ND escrevia "Sem execução PDR para o mês
+ * selecionado" quando a carga falhava. O cliente não tem nenhum outro import
+ * entre módulos, e abrir o primeiro para buscar isto acoplaria orçamento a
+ * acervo. O CSS (`.dashboard-erro`, em `css/dashboard.css`) já era comum.
  *
  * @param {Error} erro
  * @param {Function} aoTentarDeNovo

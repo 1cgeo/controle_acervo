@@ -13,9 +13,42 @@ import {
   updatePdrItem,
   getNaturezaDespesa,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { paraId } from '@utils/format.js';
+import { paraId, formatDateTime } from '@utils/format.js';
 import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 import { criarHistorico } from '@components/historico/historico.js';
+
+/**
+ * Bloco de fatos de auditoria do registro: quando e por quem.
+ *
+ * O historico de alteracoes so tem linha a partir de 2026-07-30, e os itens do
+ * PDR foram gravados em 2026-06-15: para todas as pecas atuais o historico abre
+ * vazio, e a data de cadastro e a unica rastreabilidade em tela.
+ *
+ * @param {Object} registro - linha com as quatro colunas de auditoria
+ * @returns {HTMLElement|null} null quando nao ha data de cadastro
+ */
+function blocoDeFatos(registro) {
+  if (!registro || !registro.data_cadastramento) return null;
+
+  const partes = [
+    `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
+      + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : ''),
+  ];
+  // A linha de alteracao so aparece quando houve alteracao: registro nunca
+  // editado nao ganha um campo vazio para a pessoa interpretar.
+  if (registro.data_modificacao) {
+    partes.push(
+      `Alterado em ${formatDateTime(registro.data_modificacao)}`
+        + (registro.usuario_modificacao ? ` por ${registro.usuario_modificacao}` : '')
+    );
+  }
+
+  return el('p', {
+    className: 'form-field__help',
+    textContent: partes.join('. ') + '.',
+    style: { margin: '0' },
+  });
+}
 
 /**
  * Abre o dialog de criar/editar um item do PDR. O PDR e o conjunto dos itens do
@@ -51,6 +84,17 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     label: `${nd.code} - ${nd.nome}`,
   }));
 
+  // O GND e DERIVADO da ND: `dominio.natureza_despesa` traz o gnd de cada
+  // codigo, e nos 36 itens reais o GND digitado bate com o da ND em 36 de 36.
+  // Enquanto o campo era livre, um GND divergente da ND quebrava a divisao
+  // custeio/capital do cartao-resumo do PDR, sem aviso nenhum.
+  const gndPorNd = new Map((naturezas || []).map(nd => [String(nd.code), nd.gnd]));
+  const gndDaNd = (codNd) => {
+    if (codNd === null || codNd === undefined || codNd === '') return null;
+    const gnd = gndPorNd.get(String(codNd));
+    return gnd === undefined ? null : gnd;
+  };
+
   // O rotulo sai de rotuloMetaPit, a mesma funcao que a tela de metas e a
   // mapoteca usam: uma meta nao pode aparecer com nome diferente em cada tela.
   const metaOptions = (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) }));
@@ -61,6 +105,7 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     required: true,
     options: ndOptions,
     value: item?.cod_nd ?? undefined,
+    onChange: (codNd) => { gndField.setValue(gndDaNd(codNd)); },
   });
   const metaField = createSelectField({
     label: 'Meta do PIT',
@@ -83,14 +128,19 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     value: item?.descricao ?? '',
     helpText: 'O que o item financia. Aparece na lista do PDR.',
   });
+  // Somente leitura: quem manda e a ND. O campo continua na tela porque o GND e
+  // o que separa custeio de capital, e o usuario precisa ver o efeito da ND que
+  // escolheu antes de salvar.
   const gndField = createSelectField({
     label: 'GND',
     options: [
-      { value: 3, label: '3' },
-      { value: 4, label: '4' },
+      { value: 3, label: '3 (custeio)' },
+      { value: 4, label: '4 (capital)' },
     ],
-    value: item?.gnd ?? undefined,
+    value: gndDaNd(item?.cod_nd) ?? item?.gnd ?? undefined,
+    helpText: 'Vem da natureza de despesa escolhida.',
   });
+  gndField.input.disabled = true;
   const valorSolicitadoField = createNumberField({
     label: 'Valor solicitado',
     min: 0,
@@ -107,6 +157,8 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     label: 'Observação',
     value: item?.observacao ?? '',
   });
+
+  const fatos = isEdit ? blocoDeFatos(item) : null;
 
   const historico = isEdit
     ? criarHistorico({
@@ -135,6 +187,9 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     valorSolicitadoField.element,
     valorAutorizadoField.element,
     el('div', { className: 'form-grid__full' }, [observacaoField.element]),
+    fatos
+      ? el('div', { className: 'form-grid__full' }, [fatos])
+      : null,
     historico
       ? el('div', { className: 'form-grid__full' }, [historico.element])
       : null,

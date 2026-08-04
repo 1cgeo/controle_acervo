@@ -5,7 +5,7 @@ import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
 import { formatDateTime, formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
-import { mostrarErro } from './estado-erro.js';
+import { mostrarErro } from '@components/estado-erro.js';
 
 const DIAS_DA_SERIE = 30;
 

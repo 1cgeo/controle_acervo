@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
@@ -8,12 +8,31 @@ import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openDfdDialog } from './dfd-dialog.js';
 
-const MAX_OBJETO = 80;
-
-function truncar(texto, limite) {
-  if (!texto) return '-';
-  const str = String(texto);
-  return str.length > limite ? `${str.slice(0, limite)}...` : str;
+/**
+ * Valor que mais se repete numa coluna das linhas carregadas.
+ *
+ * Serve de valor padrao do DFD NOVO: `area_requisitante` e
+ * `vinculo_plano_gestao` sao iguais nos 8 DFDs reais, e redigitar os dois a cada
+ * cadastro so cria divergencia de grafia. O padrao sai do dado do proprio ano,
+ * e nao de um literal no codigo, entao ele acompanha a realidade sozinho.
+ *
+ * @param {Array<Object>} linhas
+ * @param {string} campo
+ * @returns {string|null} null quando nao ha valor preenchido
+ */
+function valorMaisComum(linhas, campo) {
+  const contagem = new Map();
+  for (const linha of (linhas || [])) {
+    const valor = linha[campo];
+    if (valor === null || valor === undefined || valor === '') continue;
+    contagem.set(valor, (contagem.get(valor) || 0) + 1);
+  }
+  let escolhido = null;
+  let maior = 0;
+  for (const [valor, vezes] of contagem) {
+    if (vezes > maior) { escolhido = valor; maior = vezes; }
+  }
+  return escolhido;
 }
 
 /**
@@ -33,30 +52,52 @@ export async function renderDfdList(container, _ctx) {
     grauPrioridade: [],
     tipoItem: [],
   };
+  // Valores padrao do DFD novo, medidos nas linhas do ano carregado.
+  let padroes = {};
 
+  const title = el('h1', { className: 'page__title', textContent: `DFD ${getAno()}` });
   const resumo = el('p', { className: 'page__subtitle', textContent: '' });
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openDfdDialog({ dominios, onSaved: load }),
+    onClick: () => openDfdDialog({ dominios, padroes, onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Novo DFD']);
 
   const table = createDataTable({
     columns: [
       { key: 'numero', label: 'Número', sortable: true },
-      { key: 'ano', label: 'Ano', sortable: true },
+      // A coluna "Ano" saiu daqui: a lista ja e filtrada pelo ano, entao ela
+      // repetia o mesmo valor em toda linha. Pior, o numero real e "103/2025"
+      // dentro do ano 2026, e as duas colunas lado a lado se liam como
+      // contradicao. O ano agora esta no titulo. O grau de prioridade, que o
+      // servidor ja mandava e nenhuma coluna mostrava, ocupa o lugar.
+      {
+        key: 'grau_prioridade',
+        label: 'Prioridade',
+        sortable: true,
+        render: (row) => row.grau_prioridade || '-',
+      },
       { key: 'rotulo', label: 'Rótulo', render: (row) => row.rotulo || '-' },
       {
+        // O texto INTEIRO vai para a celula, e o corte e da CSS. Cortar antes
+        // fazia o `title` do <td> (data-table.js:347-348) repetir o texto ja
+        // cortado, entao passar o mouse nao revelava nada. A classe 'truncate'
+        // tambem nao existe no CSS: as reais sao `.text-truncate` e
+        // `.data-table__cell--truncate`. 4 dos 8 objetos de 2026 passam de 80
+        // caracteres, e o maior tem 201.
         key: 'objeto',
         label: 'Objeto',
-        className: 'truncate',
-        render: (row) => truncar(row.objeto, MAX_OBJETO),
+        className: 'data-table__cell--truncate',
+        render: (row) => row.objeto || '-',
       },
       {
         key: 'valor_estimado',
         label: 'Valor estimado',
         sortable: true,
+        // NUMERIC chega como texto, e a ordem por string mente. As irmas
+        // (notas-empenho, rpnp) ja passam por toNumber.
+        sortValue: (row) => toNumber(row.valor_estimado),
         render: (row) => formatCurrency(row.valor_estimado),
       },
       {
@@ -71,6 +112,15 @@ export async function renderDfdList(container, _ctx) {
     loading: true,
     emptyMessage: 'Nenhum DFD cadastrado',
     actions: [
+      {
+        // SEM gate de perfil. O DFD leva justificativa, area requisitante,
+        // prazo, vinculo e a LISTA DE ITENS, que sao a substancia do PCA, e o
+        // unico caminho ate eles era o botao Editar, so de operador. Quem le o
+        // PCA para decidir e justamente o perfil de consulta.
+        icon: ICONS.visibility,
+        title: 'Ver',
+        onClick: (row) => handleVer(row),
+      },
       {
         icon: ICONS.download,
         title: 'Baixar anexo (PDF)',
@@ -95,7 +145,7 @@ export async function renderDfdList(container, _ctx) {
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('div', {}, [
-        el('h1', { className: 'page__title', textContent: 'DFD' }),
+        title,
         resumo,
       ]),
       el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
@@ -111,6 +161,7 @@ export async function renderDfdList(container, _ctx) {
   }
 
   async function load() {
+    title.textContent = `DFD ${getAno()}`;
     table.update({ loading: true });
     try {
       const [dfds, grauPrioridade, tipoItem] = await Promise.all([
@@ -120,11 +171,28 @@ export async function renderDfdList(container, _ctx) {
       ]);
       if (disposed) return;
       dominios = { grauPrioridade, tipoItem };
+      padroes = {
+        area_requisitante: valorMaisComum(dfds, 'area_requisitante'),
+        vinculo_plano_gestao: valorMaisComum(dfds, 'vinculo_plano_gestao'),
+      };
       atualizarResumo(dfds);
       table.update({ rows: dfds, loading: false });
     } catch (err) {
       if (disposed) return;
+      // O resumo TAMBEM cai. Sem isto a tela mantinha "PCA 2026: 8 DFDs" sobre
+      // uma tabela vazia, depois de a carga falhar.
+      resumo.textContent = '';
       table.update({ rows: [], loading: false });
+      showError(err.message || 'Erro ao carregar DFD');
+    }
+  }
+
+  async function handleVer(row) {
+    try {
+      const dfd = await svc.getDfd(row.id);
+      if (disposed) return;
+      openDfdDialog({ dfd, dominios, somenteLeitura: true });
+    } catch (err) {
       showError(err.message || 'Erro ao carregar DFD');
     }
   }

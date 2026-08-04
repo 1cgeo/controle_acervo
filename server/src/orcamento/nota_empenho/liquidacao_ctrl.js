@@ -46,12 +46,20 @@ const carregarDisponivel = async (t, notaEmpenhoId, ignorarLiquidacaoId) => {
 controller.listar = async (filtros = {}) => {
   // Lista as liquidacoes, opcionalmente filtradas por nota de empenho.
   // Traz o numero da NE para contexto. Ordenado por data.
+  //
+  // A data de cadastro e o nome de quem lancou entram aqui porque a ficha da NE
+  // consome ESTA rota, e nao a `getPorId`. As colunas ja existiam na tabela e
+  // so o `getPorId` as lia: quem olhava a ficha nao tinha como saber quando um
+  // valor foi lancado nem por quem.
   return db.conn.any(
     `SELECT li.id, li.nota_empenho_id,
             ne.numero AS nota_empenho_numero,
-            li.valor_liquidado, li.data, li.documento_ns
+            li.valor_liquidado, li.data, li.documento_ns,
+            li.data_cadastramento,
+            u.nome AS usuario_cadastramento_nome
      FROM orcamento.liquidacao AS li
      INNER JOIN orcamento.nota_empenho AS ne ON ne.id = li.nota_empenho_id
+     LEFT JOIN dgeo.usuario AS u ON u.uuid = li.usuario_cadastramento_uuid
      WHERE ($<notaEmpenhoId> IS NULL OR li.nota_empenho_id = $<notaEmpenhoId>)
      ORDER BY li.data, li.id`,
     {

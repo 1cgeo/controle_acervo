@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
+import { rotuloMetaPit } from '@services/plataforma-service.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
@@ -59,7 +60,19 @@ export async function renderPdrList(container, _ctx) {
   const gnd3AutorizadoValue = el('div', { className: 'pdr-summary__value', style: { fontWeight: '600' } });
   const gnd4AutorizadoValue = el('div', { className: 'pdr-summary__value', style: { fontWeight: '600' } });
 
-  function summaryItem(label, valueEl) {
+  // Nota discreta abaixo do valor: diz quantos itens tem o valor informado,
+  // quando nem todos tem. Sem ela o cartao soma 20 itens e cala que 8 estao em
+  // branco, e a diferenca entre "solicitou menos" e "nao informou" se perde.
+  const totalSolicitadoNota = el('div', {
+    className: 'pdr-summary__nota',
+    style: { fontSize: 'var(--font-size-xs, 0.75rem)', color: 'var(--text-secondary)' },
+  });
+  const totalAutorizadoNota = el('div', {
+    className: 'pdr-summary__nota',
+    style: { fontSize: 'var(--font-size-xs, 0.75rem)', color: 'var(--text-secondary)' },
+  });
+
+  function summaryItem(label, valueEl, notaEl = null) {
     return el('div', { className: 'pdr-summary__item' }, [
       el('div', {
         className: 'pdr-summary__label',
@@ -67,7 +80,8 @@ export async function renderPdrList(container, _ctx) {
         style: { fontSize: 'var(--font-size-xs, 0.75rem)', color: 'var(--text-secondary)' },
       }),
       valueEl,
-    ]);
+      notaEl,
+    ].filter(Boolean));
   }
 
   const summaryCard = el('div', {
@@ -87,33 +101,60 @@ export async function renderPdrList(container, _ctx) {
         gap: 'var(--space-md, 16px)',
       },
     }, [
-      summaryItem('Total solicitado', totalSolicitadoValue),
-      summaryItem('Total autorizado', totalAutorizadoValue),
+      summaryItem('Total solicitado', totalSolicitadoValue, totalSolicitadoNota),
+      summaryItem('Total autorizado', totalAutorizadoValue, totalAutorizadoNota),
       summaryItem('GND3 autorizado', gnd3AutorizadoValue),
       summaryItem('GND4 autorizado', gnd4AutorizadoValue),
     ]),
   ]);
 
+  /** Valor de dinheiro INFORMADO (nulo, vazio e texto nao numerico ficam fora). */
+  function temValor(valor) {
+    if (valor === null || valor === undefined || valor === '') return false;
+    return !isNaN(Number(valor));
+  }
+
+  // O cartao distingue ZERO de DESCONHECIDO. `Number(null)` e 0, entao a soma
+  // antiga escrevia "Total solicitado R$ 0,00" para os 8 itens do PDR de 2025,
+  // todos com o valor em branco: a tela afirmava que a Divisao pediu nada. Sem
+  // nenhum item informado o cartao mostra "-", como a celula da tabela ja faz.
   function renderSummary(itens) {
     let totalSolicitado = 0;
     let totalAutorizado = 0;
     let gnd3Autorizado = 0;
     let gnd4Autorizado = 0;
+    let comSolicitado = 0;
+    let comAutorizado = 0;
+    let comGnd3 = 0;
+    let comGnd4 = 0;
     for (const item of itens) {
-      const sol = Number(item.valor_solicitado);
-      const aut = Number(item.valor_autorizado);
-      if (!isNaN(sol)) totalSolicitado += sol;
-      if (!isNaN(aut)) {
+      if (temValor(item.valor_solicitado)) {
+        totalSolicitado += toNumber(item.valor_solicitado);
+        comSolicitado += 1;
+      }
+      if (temValor(item.valor_autorizado)) {
+        const aut = toNumber(item.valor_autorizado);
         totalAutorizado += aut;
-        if (Number(item.gnd) === 3) gnd3Autorizado += aut;
-        if (Number(item.gnd) === 4) gnd4Autorizado += aut;
+        comAutorizado += 1;
+        if (Number(item.gnd) === 3) { gnd3Autorizado += aut; comGnd3 += 1; }
+        if (Number(item.gnd) === 4) { gnd4Autorizado += aut; comGnd4 += 1; }
       }
     }
-    totalSolicitadoValue.textContent = formatCurrency(totalSolicitado);
-    totalAutorizadoValue.textContent = formatCurrency(totalAutorizado);
-    gnd3AutorizadoValue.textContent = formatCurrency(gnd3Autorizado);
-    gnd4AutorizadoValue.textContent = formatCurrency(gnd4Autorizado);
+    const total = itens.length;
+    totalSolicitadoValue.textContent = comSolicitado ? formatCurrency(totalSolicitado) : '-';
+    totalAutorizadoValue.textContent = comAutorizado ? formatCurrency(totalAutorizado) : '-';
+    gnd3AutorizadoValue.textContent = comGnd3 ? formatCurrency(gnd3Autorizado) : '-';
+    gnd4AutorizadoValue.textContent = comGnd4 ? formatCurrency(gnd4Autorizado) : '-';
+    totalSolicitadoNota.textContent = notaDeCobertura(comSolicitado, total);
+    totalAutorizadoNota.textContent = notaDeCobertura(comAutorizado, total);
   }
+
+  /** Texto da nota: vazio quando todo item informou, ou nao ha item nenhum. */
+  function notaDeCobertura(informados, total) {
+    if (!total || informados === total) return '';
+    return `${informados} de ${total} ${total === 1 ? 'item' : 'itens'} com valor`;
+  }
+
   renderSummary([]);
 
   const table = createDataTable({
@@ -133,11 +174,22 @@ export async function renderPdrList(container, _ctx) {
         render: (row) => (row.nd_nome ? `${row.cod_nd} - ${row.nd_nome}` : (row.cod_nd ?? '-')),
       },
       {
+        // A meta com o NOME dela, e nao o algarismo solto. O servidor manda
+        // `meta_descricao` na mesma linha (pdr_ctrl.js) e a tela a descartava:
+        // como os 17 itens de 2026 com meta tem `meta_item` nulo, 100% deles
+        // caiam no ramo que escrevia so "3". `rotuloMetaPit` e a MESMA funcao do
+        // dialog e da tela de metas: uma meta nao pode ter nome diferente em
+        // cada tela.
         key: 'meta_numero',
         label: 'Meta',
+        className: 'data-table__cell--truncate',
         render: (row) => {
           if (row.meta_numero === null || row.meta_numero === undefined) return '-';
-          return row.meta_item ? `${row.meta_numero} (${row.meta_item})` : String(row.meta_numero);
+          return rotuloMetaPit({
+            numero_meta: row.meta_numero,
+            item: row.meta_item,
+            descricao: row.meta_descricao,
+          });
         },
       },
       { key: 'gnd', label: 'GND', sortable: true, render: (row) => (row.gnd ?? '-') },
@@ -145,12 +197,16 @@ export async function renderPdrList(container, _ctx) {
         key: 'valor_solicitado',
         label: 'Solicitado',
         sortable: true,
+        // NUMERIC chega como texto: sem sortValue a ordem sai do comparador de
+        // string. As irmas (notas-empenho, rpnp) ja passam por toNumber.
+        sortValue: (row) => toNumber(row.valor_solicitado),
         render: (row) => formatCurrency(row.valor_solicitado),
       },
       {
         key: 'valor_autorizado',
         label: 'Autorizado',
         sortable: true,
+        sortValue: (row) => toNumber(row.valor_autorizado),
         render: (row) => formatCurrency(row.valor_autorizado),
       },
       { key: 'observacao', label: 'Observação', render: (row) => row.observacao || '-' },
@@ -205,6 +261,8 @@ export async function renderPdrList(container, _ctx) {
       table.update({ rows: itens, loading: false });
     } catch (err) {
       if (disposed) return;
+      // Lista vazia agora pinta "-" nos quatro cartoes. Depois de uma falha de
+      // carga a tela nao pode afirmar "R$ 0,00", que se le como dado real.
       renderSummary([]);
       table.update({ rows: [], loading: false });
       showError(err.message || 'Erro ao carregar os itens do PDR');

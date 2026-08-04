@@ -10,6 +10,8 @@ import {
   codigoMetaPit,
 } from '@services/plataforma-service.js';
 import { isAdmin } from '@store/auth-store.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
+import { getAno } from '@modules/orcamento/store/year-store.js';
 import { openMetaDialog } from './meta-dialog.js';
 
 /**
@@ -30,6 +32,11 @@ import { openMetaDialog } from './meta-dialog.js';
  * modulo orcamento e some quando a pessoa troca de modulo. Os anos vem de
  * GET /metas/anos, mais o ano corrente, para cadastrar o exercicio novo.
  *
+ * O filtro NASCE no ano do orcamento (2026-08-04). Quem trabalhava em 2025 no
+ * orcamento e clicava em Metas caia em 2026 sem aviso, e a tela parecia vazia.
+ * O `getAno` cai no ano corrente quando ninguem escolheu nada, que era o
+ * comportamento antigo: a semente so muda a tela de quem ja escolheu um ano.
+ *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -37,7 +44,7 @@ import { openMetaDialog } from './meta-dialog.js';
 export async function renderMetasList(container, _ctx) {
   let disposed = false;
   const podeEscrever = isAdmin();
-  let anoSelecionado = new Date().getFullYear();
+  let anoSelecionado = getAno();
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -83,6 +90,27 @@ export async function renderMetasList(container, _ctx) {
         label: 'Prazo',
         sortable: true,
         render: (row) => (row.prazo ? String(row.prazo).slice(0, 10).split('-').reverse().join('/') : '-'),
+      },
+      // O que FINANCIA a promessa. As duas colunas entraram em 2026-08-04 e sao
+      // o caminho de volta do orcamento para o PIT: a NC e o item do PDR
+      // apontam a meta, e a tela da meta nao mostrava nenhum dos dois.
+      // NUMERIC chega como texto no JSON, entao a ordenacao passa por sortValue.
+      {
+        key: 'credito_nc',
+        label: 'Crédito (NC)',
+        sortable: true,
+        sortValue: (row) => toNumber(row.credito_nc),
+        render: (row) => formatCurrency(row.credito_nc),
+      },
+      {
+        key: 'pdr_autorizado',
+        label: 'PDR autorizado',
+        sortable: true,
+        // Nulo aqui e "nao informado", e nao zero: `valor_autorizado` e
+        // anulavel. O sortValue devolve nulo para a linha cair no fim da
+        // ordenacao, em vez de se misturar com as metas de valor zero.
+        sortValue: (row) => (row.pdr_autorizado == null ? null : toNumber(row.pdr_autorizado)),
+        render: (row) => formatCurrency(row.pdr_autorizado),
       },
     ],
     rows: [],
@@ -130,7 +158,12 @@ export async function renderMetasList(container, _ctx) {
     }
     if (disposed) return;
     const corrente = new Date().getFullYear();
-    const todos = [...new Set([corrente, ...(anos || []).map(Number)])].sort((a, b) => b - a);
+    // O ano semeado pelo orcamento entra na lista mesmo sem meta cadastrada.
+    // Sem isto o select receberia um valor que nao existe entre as opcoes, e
+    // mostraria outro ano ao lado de uma lista filtrada pelo semeado.
+    const todos = [...new Set([corrente, anoSelecionado, ...(anos || []).map(Number)])]
+      .filter(a => Number.isInteger(a))
+      .sort((a, b) => b - a);
     anoFilter.setOptions(todos.map(a => ({ value: a, label: String(a) })));
     anoFilter.setValue(anoSelecionado);
   }

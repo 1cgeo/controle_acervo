@@ -10,7 +10,7 @@ import {
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, formatDateTime } from '@utils/format.js';
 import * as svc from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
@@ -18,6 +18,73 @@ import { createFileAttachment } from '@modules/orcamento/components/file-attachm
 /** String vazia vira null (campos opcionais da API). */
 function orNull(value) {
   return value === '' || value === undefined ? null : value;
+}
+
+/**
+ * CPF no formato aceito: 11 digitos, com ou sem pontuacao.
+ *
+ * So o formato, e nao os digitos verificadores: o campo e antigo e ja tem valor
+ * gravado. Reprovar um CPF legado aqui travaria a correcao de qualquer OUTRO
+ * campo do mesmo DFD.
+ *
+ * @param {string} texto
+ * @returns {boolean}
+ */
+function cpfNoFormato(texto) {
+  return /^\d{11}$/.test(String(texto).replace(/\D/g, ''));
+}
+
+/**
+ * Bloco de fatos de auditoria do registro: quando e por quem.
+ *
+ * O historico de alteracoes so tem linha a partir de 2026-07-30, e os DFDs
+ * atuais foram gravados em 2026-06-15: para todas as pecas de hoje o historico
+ * abre vazio, e a data de cadastro e a unica rastreabilidade em tela.
+ *
+ * @param {Object} registro - linha com as quatro colunas de auditoria
+ * @returns {HTMLElement|null} null quando nao ha data de cadastro
+ */
+function blocoDeFatos(registro) {
+  if (!registro || !registro.data_cadastramento) return null;
+
+  const partes = [
+    `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
+      + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : ''),
+  ];
+  // A linha de alteracao so aparece quando houve alteracao: registro nunca
+  // editado nao ganha um campo vazio para a pessoa interpretar.
+  if (registro.data_modificacao) {
+    partes.push(
+      `Alterado em ${formatDateTime(registro.data_modificacao)}`
+        + (registro.usuario_modificacao ? ` por ${registro.usuario_modificacao}` : '')
+    );
+  }
+
+  return el('p', {
+    className: 'form-field__help',
+    textContent: partes.join('. ') + '.',
+    style: { margin: '0' },
+  });
+}
+
+/**
+ * O total gravado do item foi digitado na mao?
+ *
+ * Verdadeiro quando o item tem total e ele NAO e quantidade x unitario. Sem
+ * quantidade ou sem unitario nao ha produto para comparar, e o total so pode ter
+ * vindo da mao.
+ *
+ * @param {Object|null} item
+ * @returns {boolean}
+ */
+function totalDivergeDoProduto(item) {
+  if (!item || item.valor_total == null) return false;
+  if (item.quantidade == null || item.valor_unitario == null) return true;
+  const produto = Math.round(Number(item.quantidade) * Number(item.valor_unitario) * 100) / 100;
+  if (isNaN(produto)) return true;
+  // Tolerancia de centavo: o produto de dois NUMERIC volta do banco como texto e
+  // a multiplicacao em ponto flutuante deixa residuo.
+  return Math.abs(Number(item.valor_total) - produto) >= 0.005;
 }
 
 /**
@@ -41,7 +108,9 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
   const codField = createTextField({
     label: 'CATMAT/CATSER',
     value: item?.cod_catmat_catser ?? '',
-    maxLength: 50,
+    // `cod_catmat_catser VARCHAR(30)` (er/orcamento.sql:62). A tela aceitava 50
+    // e o banco recusava o resto.
+    maxLength: 30,
   });
   const descricaoField = createTextField({
     label: 'Descrição',
@@ -68,9 +137,14 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
     helpText: 'Calculado da quantidade x unitário (editável).',
   });
 
-  // Auto-calculo do total: enquanto o usuario nao digitar o total na mao, ele
-  // segue quantidade x valor unitario.
-  let totalTocado = item?.valor_total != null;
+  // Auto-calculo do total: enquanto o total gravado for o proprio produto
+  // quantidade x unitario, editar a quantidade recalcula o total.
+  //
+  // A marca antiga era `item?.valor_total != null`, verdadeira em TODA edicao de
+  // item ja salvo, nos 26 itens reais: o recalculo nunca disparava e o texto de
+  // ajuda prometia um comportamento que a tela nao tinha. Agora so conta como
+  // "digitado na mao" o total que DIVERGE do produto, com tolerancia de centavo.
+  let totalTocado = totalDivergeDoProduto(item);
   function recalcula() {
     if (totalTocado) return;
     const q = quantidadeField.getValue();
@@ -150,9 +224,17 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
  * @param {Object} options
  * @param {Object|null} [options.dfd] - DFD existente (ja com itens) para editar
  * @param {Object} options.dominios - { grauPrioridade, tipoItem }
+ * @param {Object} [options.padroes] - valores padrao do DFD novo, medidos na lista
+ * @param {boolean} [options.somenteLeitura] - abre a ficha sem permitir salvar
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}) {
+export function openDfdDialog({
+  dfd = null,
+  dominios = {},
+  padroes = {},
+  somenteLeitura = false,
+  onSaved = null,
+} = {}) {
   const isEdit = Boolean(dfd);
   const {
     grauPrioridade = [],
@@ -165,12 +247,16 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
     label: 'Número',
     required: true,
     value: dfd?.numero ?? '',
-    maxLength: 50,
+    // Os limites da tela seguem o DDL (er/orcamento.sql:40,42,49): `numero`
+    // VARCHAR(20), `rotulo` VARCHAR(120), `vinculo_plano_gestao` VARCHAR(60). A
+    // tela aceitava 50, 255 e 255, e o banco recusava o excedente na hora de
+    // salvar, depois do formulario inteiro preenchido.
+    maxLength: 20,
   });
   const rotuloField = createTextField({
     label: 'Rótulo',
     value: dfd?.rotulo ?? '',
-    maxLength: 255,
+    maxLength: 120,
   });
   const objetoField = createTextareaField({
     label: 'Objeto',
@@ -180,9 +266,11 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
     label: 'Justificativa',
     value: dfd?.justificativa ?? '',
   });
+  // O DFD novo nasce com a area requisitante e o vinculo do plano de gestao que
+  // a lista do ano mostra: os dois campos sao iguais nos 8 DFDs reais.
   const areaField = createTextField({
     label: 'Área requisitante',
-    value: dfd?.area_requisitante ?? '',
+    value: dfd?.area_requisitante ?? padroes.area_requisitante ?? '',
     maxLength: 255,
   });
   const grauField = createSelectField({
@@ -198,11 +286,13 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
     label: 'CPF do responsável',
     value: dfd?.responsavel_cpf ?? '',
     maxLength: 14,
+    placeholder: '000.000.000-00',
+    helpText: '11 dígitos, com ou sem pontuação.',
   });
   const vinculoField = createTextField({
     label: 'Vínculo com plano de gestão',
-    value: dfd?.vinculo_plano_gestao ?? '',
-    maxLength: 255,
+    value: dfd?.vinculo_plano_gestao ?? padroes.vinculo_plano_gestao ?? '',
+    maxLength: 60,
   });
   // O valor estimado e o numero que o DFD leva ao PCA, e a lista ja o mostrava
   // numa coluna. Nenhuma tela permitia informa-lo: o corpo saia sem o campo e o
@@ -276,6 +366,19 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
       return;
     }
     itens.forEach((it, idx) => {
+      // Em leitura a linha nao tem botao: a celula de acoes fica vazia, e a
+      // tabela mantem as seis colunas do cabecalho.
+      if (somenteLeitura) {
+        tbody.appendChild(el('tr', {}, [
+          el('td', { textContent: tipoNome.get(String(it.tipo_item_id)) || '-' }),
+          el('td', { textContent: it.descricao || '-' }),
+          el('td', { className: 'dfd-itens-table__num', textContent: it.quantidade != null ? String(it.quantidade) : '-' }),
+          el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_unitario) }),
+          el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_total) }),
+          el('td', { className: 'dfd-itens-table__actions' }),
+        ]));
+        return;
+      }
       const editBtn = el('button', {
         className: 'data-table__action-btn',
         type: 'button',
@@ -318,41 +421,56 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
 
   renderItens();
 
-    // Histórico de alterações, RECOLHIDO e só na edição.
-    //
-    // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
-    // uma consulta de quem só veio corrigir um campo. Só na edição porque num
-    // cadastro novo não há o que mostrar.
-    const historico = isEdit
-      ? criarHistorico({
-        modulo: 'orcamento',
-        entidade: 'dfd',
-        id: dfd.id,
-        titulo: 'Histórico de alterações',
-        subtitulo: 'Alteracoes neste DFD e nos itens dele',
-        recolhido: true,
-      })
-      : null;
+  // Histórico de alterações, RECOLHIDO e só na edição.
+  //
+  // Recolhido porque o diálogo já é um formulário cheio: aberto, ele cobraria
+  // uma consulta de quem só veio corrigir um campo. Só na edição porque num
+  // cadastro novo não há o que mostrar.
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'dfd',
+      id: dfd.id,
+      titulo: 'Histórico de alterações',
+      subtitulo: 'Alteracoes neste DFD e nos itens dele',
+      recolhido: true,
+    })
+    : null;
+
+  const fatos = isEdit ? blocoDeFatos(dfd) : null;
 
   const content = el('div', {}, [
-    el('div', { className: 'form-grid' }, [
-      numeroField.element,
-      rotuloField.element,
-      areaField.element,
-      el('div', { className: 'form-grid__full' }, [objetoField.element]),
-      el('div', { className: 'form-grid__full' }, [justificativaField.element]),
-      grauField.element,
-      dataPrevistaField.element,
-      cpfField.element,
-      vinculoField.element,
-      valorEstimadoField.element,
-      el('div', { className: 'form-grid__full' }, [constaPcaField.element]),
+    // O cabecalho ganha titulo de secao, como "Itens do DFD" e "Anexo" ja
+    // tinham: eram 10 campos soltos no topo, sem nome que dissesse do que se
+    // trata. Sem a borda e o respiro do topo, que a classe usa para SEPARAR de
+    // uma secao anterior, e aqui nao ha secao anterior.
+    el('div', {
+      className: 'dfd-itens-section',
+      style: { marginTop: '0', borderTop: 'none', paddingTop: '0' },
+    }, [
+      el('div', { className: 'dfd-itens-section__header' }, [
+        el('h3', { className: 'dfd-itens-section__title', textContent: 'Dados do DFD' }),
+      ]),
+      el('div', { className: 'form-grid' }, [
+        numeroField.element,
+        rotuloField.element,
+        areaField.element,
+        el('div', { className: 'form-grid__full' }, [objetoField.element]),
+        el('div', { className: 'form-grid__full' }, [justificativaField.element]),
+        grauField.element,
+        dataPrevistaField.element,
+        cpfField.element,
+        vinculoField.element,
+        valorEstimadoField.element,
+        el('div', { className: 'form-grid__full' }, [constaPcaField.element]),
+        fatos ? el('div', { className: 'form-grid__full' }, [fatos]) : null,
+      ].filter(Boolean)),
     ]),
     el('div', { className: 'dfd-itens-section' }, [
       el('div', { className: 'dfd-itens-section__header' }, [
         el('h3', { className: 'dfd-itens-section__title', textContent: 'Itens do DFD' }),
-        addItemBtn,
-      ]),
+        somenteLeitura ? null : addItemBtn,
+      ].filter(Boolean)),
       itensTable,
       editorContainer,
     ]),
@@ -365,76 +483,106 @@ export function openDfdDialog({ dfd = null, dominios = {}, onSaved = null } = {}
     historico ? historico.element : null,
   ]);
 
+  // Leitura: os campos ficam desabilitados e o rodape so tem Fechar. O anexo
+  // segue de fora, porque o widget tem gate proprio e quem consulta pode baixar.
+  if (somenteLeitura) {
+    for (const campo of [
+      numeroField, rotuloField, objetoField, justificativaField, areaField,
+      grauField, dataPrevistaField, cpfField, vinculoField, valorEstimadoField,
+      constaPcaField,
+    ]) {
+      campo.input.disabled = true;
+    }
+  }
+
   let saving = false;
 
+  const acoesLeitura = [
+    { label: 'Fechar', variant: 'text', onClick: ({ close }) => close() },
+  ];
+
+  const acoesEdicao = [
+    { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+    {
+      label: 'Salvar',
+      variant: 'primary',
+      onClick: async ({ close }) => {
+        if (saving) return;
+
+        numeroField.setError(null);
+        cpfField.setError(null);
+
+        let valid = true;
+        if (!numeroField.getValue()) {
+          numeroField.setError('Informe o número do DFD');
+          valid = false;
+        }
+        // O CPF tinha maxLength e nenhuma validacao: qualquer texto de ate 14
+        // caracteres virava "CPF do responsavel" no PCA.
+        const cpf = cpfField.getValue();
+        if (cpf && !cpfNoFormato(cpf)) {
+          cpfField.setError('CPF deve ter 11 dígitos');
+          valid = false;
+        }
+        // Se houver um item em edicao, tenta consolida-lo antes de salvar.
+        if (editor && !editor.trySave()) valid = false;
+        if (!valid) return;
+
+        const body = {
+          numero: numeroField.getValue(),
+          ano: isEdit ? dfd.ano : getAno(),
+          rotulo: orNull(rotuloField.getValue()),
+          objeto: orNull(objetoField.getValue()),
+          justificativa: orNull(justificativaField.getValue()),
+          area_requisitante: orNull(areaField.getValue()),
+          grau_prioridade_id: grauField.getValue(),
+          data_prevista_conclusao: dataPrevistaField.getValue(),
+          responsavel_cpf: orNull(cpfField.getValue()),
+          vinculo_plano_gestao: orNull(vinculoField.getValue()),
+          valor_estimado: valorEstimadoField.getValue(),
+          consta_pca: constaPcaField.getValue(),
+          itens,
+        };
+
+        saving = true;
+        try {
+          if (isEdit) {
+            await svc.updateDfd(dfd.id, body);
+            showSuccess('DFD atualizado com sucesso');
+          } else {
+            const criado = await svc.createDfd(body);
+            // Envia o anexo retido (se houver) agora que o DFD tem id.
+            if (anexo.hasPending() && criado && criado.id != null) {
+              try {
+                await anexo.flush({ dfd_id: criado.id });
+              } catch (errAnexo) {
+                showError(
+                  'DFD criado, mas houve falha ao anexar o PDF: ' +
+                    (errAnexo.message || 'erro desconhecido')
+                );
+              }
+            }
+            showSuccess('DFD criado com sucesso');
+          }
+          close();
+          if (onSaved) onSaved();
+        } catch (err) {
+          showError(err.message || 'Erro ao salvar DFD');
+        } finally {
+          saving = false;
+        }
+      },
+    },
+  ];
+
+  const tituloLeitura = isEdit ? `DFD ${dfd.numero} (${dfd.ano})` : 'DFD';
+
   openModal({
-    title: isEdit ? `Editar DFD (${dfd.ano})` : `Novo DFD (${getAno()})`,
+    title: somenteLeitura
+      ? tituloLeitura
+      : (isEdit ? `Editar DFD (${dfd.ano})` : `Novo DFD (${getAno()})`),
     content,
     width: '820px',
-    actions: [
-      { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
-      {
-        label: 'Salvar',
-        variant: 'primary',
-        onClick: async ({ close }) => {
-          if (saving) return;
-
-          numeroField.setError(null);
-
-          let valid = true;
-          if (!numeroField.getValue()) {
-            numeroField.setError('Informe o número do DFD');
-            valid = false;
-          }
-          // Se houver um item em edicao, tenta consolida-lo antes de salvar.
-          if (editor && !editor.trySave()) valid = false;
-          if (!valid) return;
-
-          const body = {
-            numero: numeroField.getValue(),
-            ano: isEdit ? dfd.ano : getAno(),
-            rotulo: orNull(rotuloField.getValue()),
-            objeto: orNull(objetoField.getValue()),
-            justificativa: orNull(justificativaField.getValue()),
-            area_requisitante: orNull(areaField.getValue()),
-            grau_prioridade_id: grauField.getValue(),
-            data_prevista_conclusao: dataPrevistaField.getValue(),
-            responsavel_cpf: orNull(cpfField.getValue()),
-            vinculo_plano_gestao: orNull(vinculoField.getValue()),
-            valor_estimado: valorEstimadoField.getValue(),
-            consta_pca: constaPcaField.getValue(),
-            itens,
-          };
-
-          saving = true;
-          try {
-            if (isEdit) {
-              await svc.updateDfd(dfd.id, body);
-              showSuccess('DFD atualizado com sucesso');
-            } else {
-              const criado = await svc.createDfd(body);
-              // Envia o anexo retido (se houver) agora que o DFD tem id.
-              if (anexo.hasPending() && criado && criado.id != null) {
-                try {
-                  await anexo.flush({ dfd_id: criado.id });
-                } catch (errAnexo) {
-                  showError(
-                    'DFD criado, mas houve falha ao anexar o PDF: ' +
-                      (errAnexo.message || 'erro desconhecido')
-                  );
-                }
-              }
-              showSuccess('DFD criado com sucesso');
-            }
-            close();
-            if (onSaved) onSaved();
-          } catch (err) {
-            showError(err.message || 'Erro ao salvar DFD');
-          } finally {
-            saving = false;
-          }
-        },
-      },
-    ],
+    actions: somenteLeitura ? acoesLeitura : acoesEdicao,
   });
 }

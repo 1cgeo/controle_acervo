@@ -3,6 +3,7 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
   createNumberField,
@@ -18,6 +19,9 @@ import {
  * @param {Object} config
  * @param {string} config.title - titulo da secao (ex.: 'Naturezas de despesa')
  * @param {string} config.singular - nome no singular para mensagens (ex.: 'natureza de despesa')
+ * @param {'m'|'f'} [config.genero='f'] - genero do `singular`, para o participio
+ *   das mensagens. Ate 2026-08-04 o feminino estava fixo, e "plano interno" saia
+ *   como "Plano interno excluida com sucesso".
  * @param {string} config.novoLabel - rotulo do botao novo (ex.: 'Nova natureza')
  * @param {string} [config.keyField='code'] - campo chave do registro
  * @param {string} [config.labelField='nome'] - campo usado nas mensagens de confirmacao
@@ -41,7 +45,10 @@ export function createDominioSection(config) {
   }, [svgIcon(ICONS.add, 16), config.novoLabel]);
 
   const table = createDataTable({
-    columns: config.columns,
+    // A coluna "Em uso" vale para os TRES dominios e mora aqui, e nao na config
+    // de cada um: e ela que decide se o botao de excluir aparece, e as duas
+    // coisas tem de contar a mesma historia.
+    columns: [...config.columns, COLUNA_EM_USO],
     rows: [],
     searchable: true,
     pageSize: 10,
@@ -57,6 +64,11 @@ export function createDominioSection(config) {
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
+        // AVISO ANTES DO CLIQUE. O banco ja recusa (as FKs nao declaram ON
+        // DELETE) e o backend traduz o 23503 num 409, mas isso so chega DEPOIS
+        // de a pessoa confirmar "esta acao nao pode ser desfeita". Sem o botao,
+        // a coluna "Em uso" ao lado diz o motivo.
+        visible: (row) => !estaEmUso(row),
         onClick: (row) => handleDelete(row),
       },
     ],
@@ -83,6 +95,13 @@ export function createDominioSection(config) {
 
   async function handleDelete(row) {
     const id = row[keyField];
+    // Guarda para a linha desatualizada: o botao ja nao aparece quando ha uso,
+    // mas a contagem e da ultima carga, e alguem pode ter lancado desde entao.
+    if (estaEmUso(row)) {
+      const n = Number(row.em_uso);
+      showError(`Não é possível excluir: ${n} lançamento${n > 1 ? 's' : ''} usa${n > 1 ? 'm' : ''} este código`);
+      return;
+    }
     const rotulo = row[labelField] || id;
     const ok = await confirmDialog({
       title: `Excluir ${config.singular}`,
@@ -93,7 +112,7 @@ export function createDominioSection(config) {
     if (!ok) return;
     try {
       await config.remove(id);
-      showSuccess(`${capitalize(config.singular)} excluída com sucesso`);
+      showSuccess(`${capitalize(config.singular)} excluíd${vogal(config)} com sucesso`);
       await load();
     } catch (err) {
       // O backend bloqueia com 409 quando ha lancamento vinculado; mostra a mensagem.
@@ -102,6 +121,25 @@ export function createDominioSection(config) {
   }
 
   return { element: section, load, cleanup: () => table._cleanup() };
+}
+
+// Quantos lancamentos apontam para o codigo. Vem do SELECT das tres listagens
+// de dominio (dominio_ctrl.js), e e o mesmo numero que esconde a exclusao.
+const COLUNA_EM_USO = {
+  key: 'em_uso',
+  label: 'Em uso',
+  sortable: true,
+  sortValue: (row) => Number(row.em_uso ?? 0),
+  render: (row) => (row.em_uso == null ? '-' : String(row.em_uso)),
+};
+
+function estaEmUso(row) {
+  return Number(row?.em_uso ?? 0) > 0;
+}
+
+// Vogal do participio: 'o' no masculino, 'a' no feminino.
+function vogal(config) {
+  return config.genero === 'm' ? 'o' : 'a';
 }
 
 function capitalize(s) {
@@ -136,7 +174,29 @@ function openDominioDialog(config, entry, onSaved) {
     return { def, field };
   });
 
-  const content = el('div', { className: 'form-grid' }, built.map((b) => b.field.element));
+  // O HISTORICO da alteracao de maior alcance do modulo. Mudar o nome ou o GND
+  // de uma ND RECLASSIFICA toda NC e toda NE ja lancadas com aquele codigo. O
+  // servidor registra essas escritas desde 2026-08-02, e ate aqui a tela nao
+  // mostrava o registro. As tres tabelas dividem a entidade 'dominio', com o
+  // `code` como id. Recolhido: quem abriu para corrigir um nome nao paga a
+  // consulta.
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'dominio',
+      id: entry[keyField],
+      titulo: 'Histórico do código',
+      subtitulo: 'Alterar este código reclassifica os lançamentos que já o usam',
+      recolhido: true,
+    })
+    : null;
+
+  const content = el('div', { className: 'form-grid' }, [
+    ...built.map((b) => b.field.element),
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 
@@ -177,10 +237,10 @@ function openDominioDialog(config, entry, onSaved) {
           try {
             if (isEdit) {
               await config.update(entry[keyField], body);
-              showSuccess(`${capitalize(config.singular)} atualizada com sucesso`);
+              showSuccess(`${capitalize(config.singular)} atualizad${vogal(config)} com sucesso`);
             } else {
               await config.create(body);
-              showSuccess(`${capitalize(config.singular)} criada com sucesso`);
+              showSuccess(`${capitalize(config.singular)} criad${vogal(config)} com sucesso`);
             }
             close();
             if (onSaved) onSaved();
