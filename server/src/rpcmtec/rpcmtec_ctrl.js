@@ -558,13 +558,18 @@ const gerarRpnp = async ano => {
 }
 
 // 4.4 (GCALC DSG) e 4.5 (demais licitações da atividade-fim).
-const gerarLicitacoes = async (ano, tipoId) => {
+// `tipos` e uma LISTA: a 4.5 ("Demais Licitacoes da atividade-fim") recebe a
+// propria E a participante (chefe, 2026-08-04). Participante nao tem subsecao
+// propria; ela e uma licitacao da atividade-fim como a propria. Enquanto so a
+// propria entrava, uma licitacao participante cadastrada sumia do relatorio em
+// silencio, e a UI ainda oferecia o tipo.
+const gerarLicitacoes = async (ano, tipos) => {
   const linhas = await db.conn.any(
     `SELECT l.objeto, l.fase_atual, l.valor_total_estimado, l.valor_final_homologado
      FROM orcamento.licitacao AS l
-     WHERE l.ano = $<ano> AND l.tipo_id = $<tipoId>
+     WHERE l.ano = $<ano> AND l.tipo_id IN ($<tipos:csv>)
      ORDER BY l.id`,
-    { ano, tipoId }
+    { ano, tipos }
   )
 
   return linhas.map(l => [
@@ -980,8 +985,8 @@ controller.calcular = async ({ ano, mes }) => {
     gerarExecucaoPorNd(ano, inicio, cutoff),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.PDR),
     gerarRpnp(ano),
-    gerarLicitacoes(ano, TIPO_LICITACAO.GCALC_DSG),
-    gerarLicitacoes(ano, TIPO_LICITACAO.PROPRIA),
+    gerarLicitacoes(ano, [TIPO_LICITACAO.GCALC_DSG]),
+    gerarLicitacoes(ano, [TIPO_LICITACAO.PROPRIA, TIPO_LICITACAO.PARTICIPANTE]),
     gerarRecebimentoMaterial(ano),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR),
     efetivoCtrl.resumoMensal(ano, mes),

@@ -4,14 +4,15 @@ import { rotuloMetaPit } from '@services/plataforma-service.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
+import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   getNotasCredito,
   deleteNotaCredito,
   getClassificacaoNc,
+  getAnos,
   downloadArquivo,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getAno, onAnoChange } from '@modules/orcamento/store/year-store.js';
 import { permissoes } from '@store/auth-store.js';
 import { openNotaCreditoDialog } from './nota-credito-dialog.js';
 
@@ -50,8 +51,8 @@ function prazoVencido(nc) {
 }
 
 /**
- * Lista de Notas de Credito (#/notas-credito). Filtra pelo ano de contexto
- * global (navbar). Filtro no topo: classificacao (PDR / Extra-PDR).
+ * Lista de Notas de Credito (#/notas-credito). Filtros no topo: ano da tela e
+ * classificacao (PDR / Extra-PDR).
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
@@ -64,10 +65,19 @@ export async function renderNotasCreditoList(container, _ctx) {
   const newBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => openNotaCreditoDialog({ onSaved: load }),
+    onClick: () => openNotaCreditoDialog({ ano: filtroAno.getAno(), onSaved: load }),
   }, [svgIcon(ICONS.add, 16), 'Nova nota de crédito']);
 
   // ---- Filtros ----
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
+  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE a NC e cadastrada:
+  // abrir um exercicio novo passa por escolher um ano ainda vazio.
+  const filtroAno = criarFiltroAno({
+    carregarAnos: getAnos,
+    permitirOutroAno: true,
+    onChange: () => load(),
+  });
+
   const classificacaoFilter = createSelectField({
     label: 'Classificação',
     options: [],
@@ -250,7 +260,11 @@ export async function renderNotasCreditoList(container, _ctx) {
       ...(pode.operador ? [{
         icon: ICONS.edit,
         title: 'Editar',
-        onClick: (row) => openNotaCreditoDialog({ ncId: row.id, onSaved: load }),
+        onClick: (row) => openNotaCreditoDialog({
+          ncId: row.id,
+          ano: filtroAno.getAno(),
+          onSaved: load,
+        }),
       }] : []),
       ...(pode.gerente ? [{
         icon: ICONS.delete,
@@ -270,6 +284,7 @@ export async function renderNotasCreditoList(container, _ctx) {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
     }, [
+      filtroAno.element,
       classificacaoFilter.element,
     ]),
     summaryCard,
@@ -298,7 +313,7 @@ export async function renderNotasCreditoList(container, _ctx) {
     table.update({ loading: true });
     try {
       const dados = await getNotasCredito({
-        ano: getAno(),
+        ano: filtroAno.getAno(),
         classificacao_id: filtroClassificacao ?? undefined,
       });
       if (disposed) return;
@@ -336,14 +351,11 @@ export async function renderNotasCreditoList(container, _ctx) {
     }
   }
 
-  const offAno = onAnoChange(() => load());
-
   await loadFilterOptions();
   await load();
 
   return () => {
     disposed = true;
-    offAno();
     table._cleanup();
   };
 }

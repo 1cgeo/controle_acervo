@@ -24,8 +24,6 @@ import { renderNotaEmpenhoDetails } from './pages/notas-empenho/details.js';
 import { renderLicitacoesList } from './pages/licitacoes/list.js';
 import { renderRpnpList } from './pages/rpnp/list.js';
 
-import { criarSeletorAno } from './components/seletor-ano.js';
-
 export default {
   id: 'orcamento',
   icon: ICONS.dataUsage,
@@ -67,7 +65,10 @@ export default {
     { path: '/rpnp', render: renderRpnpList, perfil: 'consulta' },
   ],
 
-  // O ano de referencia e contexto de TODAS as telas do orcamento, entao o
-  // seletor mora na navbar. Some quando a pessoa troca de modulo.
-  navbarExtras: criarSeletorAno,
+  // SEM `navbarExtras`. O seletor de ano da navbar saiu em 2026-08-04 (chefe).
+  // Ele era um so para o modulo inteiro, guardava a escolha no localStorage e
+  // tinha um ano padrao configuravel. Abrir o PDR de 2025 mudava calado a lista
+  // de notas de credito, e voltar semanas depois abria num ano antigo sem aviso.
+  // Agora cada tela monta o seu filtro (@components/filtro-ano.js), sempre no
+  // ano atual.
 };

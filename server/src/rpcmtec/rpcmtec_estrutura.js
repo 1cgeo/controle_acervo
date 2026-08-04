@@ -224,7 +224,7 @@ const SECOES = [
         numero: '4.5',
         titulo: 'Demais Licitações da atividade-fim',
         origem: ORIGEM.CALCULADA,
-        fonte: 'orcamento.licitacao, tipo Própria',
+        fonte: 'orcamento.licitacao, tipos Própria e Participante',
         cabecalhos: COLUNAS_LICITACAO,
         grade: [2535, 2955, 2145, 2205]
       },

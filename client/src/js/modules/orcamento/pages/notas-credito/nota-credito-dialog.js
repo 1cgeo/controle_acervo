@@ -23,7 +23,6 @@ import {
   getPdrItens,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
-import { getAno } from '@modules/orcamento/store/year-store.js';
 
 // UG emitente default: 160089 (DSG).
 const UG_DSG = '160089';
@@ -51,9 +50,16 @@ function rotuloNc(nc) {
  * registrada a parte; este campo permanece o valor original recebido).
  * @param {Object} options
  * @param {number|null} [options.ncId] - id da NC existente para editar (null cria nova)
+ * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
+ *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
+ *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
  */
-export async function openNotaCreditoDialog({ ncId = null, onSaved = null } = {}) {
+export async function openNotaCreditoDialog({
+  ncId = null,
+  ano = new Date().getFullYear(),
+  onSaved = null,
+} = {}) {
   const isEdit = ncId !== null && ncId !== undefined;
 
   let naturezas = [];

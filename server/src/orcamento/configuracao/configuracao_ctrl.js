@@ -8,9 +8,9 @@ const controller = {}
 
 // Tabelas que carregam o campo `ano`, usadas para listar os anos com dado.
 const TABELAS_ANO = [
-  // pit.meta entra mesmo morando fora do schema: o seletor de ano do orcamento
-  // tem de oferecer o ano em que so existe meta cadastrada, que e o primeiro
-  // registro de todo exercicio novo.
+  // pit.meta entra mesmo morando fora do schema: o filtro de ano das telas do
+  // orcamento tem de oferecer o ano em que so existe meta cadastrada, que e o
+  // primeiro registro de todo exercicio novo.
   'pit.meta',
   'orcamento.dfd',
   'orcamento.pdr_item',
@@ -21,26 +21,28 @@ const TABELAS_ANO = [
   'orcamento.relatorio_rpcmtec'
 ]
 
-// Configuracao geral (linha unica id=1). Se ano_referencia estiver vazio,
-// devolve o ano corrente como default.
+// Configuracao geral (linha unica id=1).
+//
+// O `ano_referencia` SAIU em 2026-08-04 (chefe). Ele era o ano padrao de todas
+// as telas do modulo, e cada tela agora tem o seu filtro, sempre no ano atual.
+// A COLUNA continua no banco, e o DROP vai em migracao propria: o codigo apenas
+// parou de ler e de gravar. Nao confundir com
+// `orcamento.recebimento_material.ano_referencia`, que diz em que RPCMTec o
+// material consta e permanece em uso.
 //
 // O NOME de quem alterou vem junto desde 2026-08-04. A rota ja devolvia
 // `usuario_modificacao_uuid`, e UUID cru nao serve a ninguem: a tela precisa
 // dizer "Alterado em DD/MM/AAAA por Fulano". LEFT JOIN porque a linha nasce no
 // DDL sem autor, e porque a pessoa pode ter sido apagada depois.
 controller.get = async () => {
-  const cfg = await db.conn.one(
-    `SELECT c.id, c.uasg, c.codom, c.ano_referencia,
+  return db.conn.one(
+    `SELECT c.id, c.uasg, c.codom,
             c.data_modificacao, c.usuario_modificacao_uuid,
             u.nome AS usuario_modificacao
      FROM orcamento.configuracao AS c
      LEFT JOIN dgeo.usuario AS u ON u.uuid = c.usuario_modificacao_uuid
      WHERE c.id = 1`
   )
-  if (cfg.ano_referencia == null) {
-    cfg.ano_referencia = new Date().getFullYear()
-  }
-  return cfg
 }
 
 // Singleton (`CHECK (id = 1)`): a linha nasce no DDL e aqui so ha UPDATE.
@@ -60,14 +62,13 @@ controller.atualizar = async (dados, usuarioUuid, contexto) => {
 
     const depois = await t.one(
       `UPDATE orcamento.configuracao SET
-         uasg = $<uasg>, codom = $<codom>, ano_referencia = $<anoReferencia>,
+         uasg = $<uasg>, codom = $<codom>,
          data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = 1
        RETURNING *`,
       {
         uasg: dados.uasg != null ? dados.uasg : null,
         codom: dados.codom != null ? dados.codom : null,
-        anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
         dataModificacao: new Date(),
         usuarioUuid
       }
@@ -84,13 +85,12 @@ controller.atualizar = async (dados, usuarioUuid, contexto) => {
     })
 
     // O `RETURNING *` existe para o rastro (os dois lados do diff saem do
-    // BANCO), e a ROTA continua devolvendo o que devolvia: o carimbo de
-    // escrituracao nao e resposta de API.
+    // BANCO), e a ROTA devolve so os campos de negocio: o carimbo de
+    // escrituracao nao e resposta de API, e o `ano_referencia` saiu.
     return {
       id: depois.id,
       uasg: depois.uasg,
-      codom: depois.codom,
-      ano_referencia: depois.ano_referencia
+      codom: depois.codom
     }
   })
 }

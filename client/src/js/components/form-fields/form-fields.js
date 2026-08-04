@@ -187,7 +187,13 @@ export function createSelectField({
 
   function renderOptions() {
     select.innerHTML = '';
-    select.appendChild(el('option', { value: '', textContent: placeholder }));
+    // `placeholder: null` DISPENSA a opcao vazia, para o select que sempre tem um
+    // valor (o filtro de ano, por exemplo: nao existe "nenhum ano"). String
+    // vazia continua criando a opcao, porque e assim que os filtros oferecem o
+    // "todos" -- trocar isso mudaria o comportamento de quem ja usa.
+    if (placeholder !== null) {
+      select.appendChild(el('option', { value: '', textContent: placeholder }));
+    }
     for (const opt of currentOptions) {
       select.appendChild(el('option', { value: String(opt.value), textContent: opt.label }));
     }

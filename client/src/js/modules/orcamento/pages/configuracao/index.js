@@ -1,6 +1,6 @@
 import { el } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { createTextField, createNumberField } from '@components/form-fields/form-fields.js';
+import { createTextField } from '@components/form-fields/form-fields.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import { formatDateTime } from '@utils/format.js';
 import {
@@ -9,29 +9,31 @@ import {
   getPlanoInterno, createPlanoInterno, updatePlanoInterno, deletePlanoInterno,
   getUg, createUg, updateUg, deleteUg,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { setAno } from '@modules/orcamento/store/year-store.js';
 import { createDominioSection } from './dominio-section.js';
 
 /**
- * Pagina de Configuracao geral (#/configuracao): UASG, CODOM e o ano de
- * referencia padrao das telas, mais a gestao dos dominios editaveis (natureza
- * de despesa, plano interno e UG emitente).
+ * Pagina de Configuracao geral (#/configuracao): UASG e CODOM, mais a gestao
+ * dos dominios editaveis (natureza de despesa, plano interno e UG emitente).
+ *
+ * O campo "Ano de referencia" saiu em 2026-08-04 (chefe). Ele definia o ano
+ * padrao de todas as telas do modulo, e salvar aqui trocava o contexto de quem
+ * estava trabalhando. Agora cada tela tem o seu filtro de ano e comeca no ano
+ * atual.
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */
 export async function renderConfiguracao(container) {
   let disposed = false;
 
-  // ---- Dados gerais (UASG, CODOM, ano de referencia) ----
+  // ---- Dados gerais (UASG, CODOM) ----
   const uasg = createTextField({ label: 'UASG', maxLength: 10, helpText: 'Unidade Administrativa de Serviços Gerais (ex.: 160382)' });
   const codom = createTextField({ label: 'CODOM', maxLength: 10 });
-  const anoRef = createNumberField({ label: 'Ano de referência', min: 2000, max: 2100, helpText: 'Ano padrão ao abrir o sistema' });
 
   const saveBtn = el('button', { className: 'btn btn--primary', type: 'submit', textContent: 'Salvar' });
 
   // Quem alterou por ultimo. A rota ja devolvia a data e o UUID, e a pagina
   // descartava os dois: numa tela que qualquer perfil `consulta` abre, e que
-  // muda o ano de referencia de todo o modulo, "quem mexeu nisto" e a pergunta
+  // define a UASG e o CODOM de todo o modulo, "quem mexeu nisto" e a pergunta
   // seguinte. Fica vazio enquanto a linha nunca foi salva.
   const alteradoEm = el('p', { className: 'page__subtitle', hidden: true });
 
@@ -48,7 +50,6 @@ export async function renderConfiguracao(container) {
   const form = el('form', { className: 'form-grid', style: { maxWidth: '480px' } }, [
     uasg.element,
     codom.element,
-    anoRef.element,
     el('div', { className: 'page__actions' }, [saveBtn]),
   ]);
 
@@ -59,14 +60,12 @@ export async function renderConfiguracao(container) {
       const body = {
         uasg: uasg.getValue() || null,
         codom: codom.getValue() || null,
-        ano_referencia: anoRef.getValue(),
       };
-      const dados = await updateConfig(body);
+      await updateConfig(body);
       showSuccess('Configuração salva com sucesso');
-      if (dados && dados.ano_referencia) setAno(dados.ano_referencia);
-      // O PUT devolve so os tres campos de negocio, sem o carimbo de
-      // escrituracao. A releitura traz a data e o autor recem-gravados, e o
-      // historico ganha a linha da alteracao que acabou de acontecer.
+      // O PUT devolve so os campos de negocio, sem o carimbo de escrituracao. A
+      // releitura traz a data e o autor recem-gravados, e o historico ganha a
+      // linha da alteracao que acabou de acontecer.
       recarregarCarimbo();
       historico.recarregar();
     } catch (err) {
@@ -162,16 +161,16 @@ export async function renderConfiguracao(container) {
     remove: deleteUg,
   });
 
-  // O rastro da tela de MAIOR ALCANCE do modulo. Mudar o ano de referencia
-  // troca o contexto de todas as telas, e mudar o nome ou o GND de uma ND
-  // reclassifica NC e NE ja lancadas. O servidor registra as duas escritas
-  // desde 2026-08-02, e ate aqui nenhuma tela mostrava o registro.
+  // O rastro da tela de MAIOR ALCANCE do modulo. Mudar o nome ou o GND de uma
+  // ND reclassifica NC e NE ja lancadas, e a UASG sai em todo documento gerado.
+  // O servidor registra as duas escritas desde 2026-08-02, e ate aqui nenhuma
+  // tela mostrava o registro.
   const historico = criarHistorico({
     modulo: 'orcamento',
     entidade: 'configuracao',
     id: 1,
     titulo: 'Histórico da configuração',
-    subtitulo: 'Quem mudou a UASG, o CODOM ou o ano de referência',
+    subtitulo: 'Quem mudou a UASG ou o CODOM',
   });
 
   const page = el('div', { className: 'page' }, [
@@ -194,7 +193,6 @@ export async function renderConfiguracao(container) {
     if (disposed) return;
     uasg.setValue(cfg.uasg || '');
     codom.setValue(cfg.codom || '');
-    anoRef.setValue(cfg.ano_referencia);
     pintarAlteracao(cfg);
   } catch (err) {
     if (!disposed) showError(err.message || 'Erro ao carregar configuração');

@@ -1,12 +1,15 @@
 import { describe, test, expect, vi } from 'vitest';
 
-// Smoke test da pagina de Configuracao geral (UASG, CODOM, ano de referencia) e
-// das secoes de dominios editaveis (natureza de despesa, plano interno, UG).
+// Smoke test da pagina de Configuracao geral (UASG e CODOM) e das secoes de
+// dominios editaveis (natureza de despesa, plano interno, UG).
 // Mocka o service: getConfig devolve os dados atuais, updateConfig salva e os
 // list() dos dominios devolvem vazio.
+//
+// O `ano_referencia` fica no retorno do getConfig de proposito: a coluna so sai
+// do banco depois, e a tela tem de IGNORAR o campo que ainda chega.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getConfig: vi.fn(() => Promise.resolve({ uasg: '160382', codom: '12345', ano_referencia: 2026 })),
-  updateConfig: vi.fn(() => Promise.resolve({ uasg: '160382', codom: '12345', ano_referencia: 2026 })),
+  updateConfig: vi.fn(() => Promise.resolve({ uasg: '160382', codom: '12345' })),
   getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
   createNaturezaDespesa: vi.fn(() => Promise.resolve()),
   updateNaturezaDespesa: vi.fn(() => Promise.resolve()),
@@ -43,7 +46,8 @@ describe('renderConfiguracao', () => {
     const valores = inputs.map(i => i.value);
     expect(valores).toContain('160382');
     expect(valores).toContain('12345');
-    expect(valores).toContain('2026');
+    // O campo "Ano de referência" saiu em 2026-08-04: o ano e de cada tela.
+    expect(valores).not.toContain('2026');
 
     if (typeof cleanup === 'function') cleanup();
   });
