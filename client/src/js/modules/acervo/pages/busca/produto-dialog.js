@@ -5,6 +5,7 @@ import { formatDate, formatNumber } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import {
   getProdutoDetalhado,
   getMiniaturaVersao,
@@ -901,6 +902,31 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
           className: 'produto-ficha__vazio',
           textContent: 'Este produto ainda não tem versão cadastrada.',
         })]),
+      // HISTÓRICO do produto, RECOLHIDO (2026-08-04).
+      //
+      // Ele faltava, e era o maior buraco de entrega do sistema: medido em
+      // produção, o agregado 'produto' tinha 388 eventos em 170 fichas, e
+      // nenhum deles se alcançava de dentro da ficha. Registrar o evento não
+      // é entregar o histórico.
+      //
+      // O agregado reúne QUATRO tabelas -- produto, versão, arquivo e
+      // relacionamento --, e é por isso que ele responde "quem trocou o
+      // arquivo desta folha" sem que a pessoa precise saber em qual delas o
+      // dado mora.
+      //
+      // RECOLHIDO porque a ficha já é longa (identificação, descrição e uma
+      // seção por versão): aberto, ele cobraria uma consulta de quem veio ver
+      // qual é a última edição.
+      el('div', { className: 'produto-ficha__historico' }, [
+        criarHistorico({
+          modulo: 'acervo',
+          entidade: 'produto',
+          id: d.id,
+          titulo: 'Histórico do produto',
+          subtitulo: 'Alterações no produto, nas versões, nos arquivos e nos relacionamentos',
+          recolhido: true,
+        }).element,
+      ]),
     ].filter(Boolean));
   }
 

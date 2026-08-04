@@ -51,18 +51,55 @@ const NOME_MODULO = {
 };
 
 /**
- * A ficha de cada agregado, quando ela existe.
+ * Para onde cada agregado leva.
  *
  * Sem isto a coluna "Onde" dizia "pedido #58" e parava ali: quem quisesse ver o
  * pedido tinha de ir procurá-lo na mão, que é justamente o passo que a tela
- * deveria poupar. Entidade sem rota de detalhe (volume, material, plotter, e o
- * usuário, cuja ficha é um diálogo dentro da lista) fica em TEXTO, e não vira
- * link para lugar nenhum: link que não leva a nada é pior do que texto.
+ * deveria poupar. Medido em 2026-08-04, o mapa cobria TRÊS dos 23 agregados, e
+ * um dos três (o DFD) apontava `#/orcamento/dfd/:id`, rota que NÃO EXISTE: o
+ * link levava ao 404. Os outros 20 saíam como texto morto, entre eles o
+ * produto do acervo, que sozinho responde por 388 eventos em 170 fichas.
+ *
+ * DOIS DESTINOS, e a diferença é dita ao usuário:
+ *
+ *   'ficha'  vai direto ao registro. Só existe onde há rota de detalhe.
+ *   'lista'  vai à tela onde o registro mora, porque ali a ficha é um diálogo
+ *            aberto de dentro da lista (usuário, material do orçamento, meta).
+ *
+ * A regra antiga continua valendo, e é o que impede o caso do DFD de voltar:
+ * link que não leva a nada é pior do que texto. Por isso nenhuma entrada aqui
+ * inventa rota -- todas foram conferidas contra `router.add` e contra o
+ * `path:` de cada módulo.
  */
-const FICHA = {
-  'mapoteca:pedido': (id) => `#/mapoteca/pedidos/${id}`,
-  'orcamento:nota_empenho': (id) => `#/orcamento/notas_empenho/${id}`,
-  'orcamento:dfd': (id) => `#/orcamento/dfd/${id}`,
+const DESTINO = {
+  // --- ficha própria (rota com :id) -----------------------------------------
+  'mapoteca:pedido': { tipo: 'ficha', href: (id) => `#/mapoteca/pedidos/${id}` },
+  'mapoteca:cliente': { tipo: 'ficha', href: (id) => `#/mapoteca/clientes/${id}` },
+  'mapoteca:material': { tipo: 'ficha', href: (id) => `#/mapoteca/materiais/${id}` },
+  'mapoteca:plotter': { tipo: 'ficha', href: (id) => `#/mapoteca/plotters/${id}` },
+  'orcamento:nota_empenho': { tipo: 'ficha', href: (id) => `#/orcamento/notas_empenho/${id}` },
+  'plataforma:edicao': { tipo: 'ficha', href: (id) => `#/rpcmtec/${id}` },
+  // O produto do acervo abre em DIÁLOGO, de dentro da busca, e por isso não tem
+  // rota própria. A busca passou a honrar `?produto_id=` em 2026-08-04
+  // justamente para este link existir: é o agregado com mais evento órfão.
+  'acervo:produto': { tipo: 'ficha', href: (id) => `#/acervo/busca?produto_id=${id}` },
+
+  // --- a tela onde o registro mora ------------------------------------------
+  'acervo:projeto': { tipo: 'lista', href: () => '#/acervo/administracao' },
+  'acervo:volume': { tipo: 'lista', href: () => '#/acervo/administracao' },
+  'acervo:ponto': { tipo: 'lista', href: () => '#/acervo/ponto_controle' },
+  'orcamento:dfd': { tipo: 'lista', href: () => '#/orcamento/dfd' },
+  'orcamento:nota_credito': { tipo: 'lista', href: () => '#/orcamento/notas_credito' },
+  'orcamento:licitacao': { tipo: 'lista', href: () => '#/orcamento/licitacoes' },
+  'orcamento:rpnp': { tipo: 'lista', href: () => '#/orcamento/rpnp' },
+  'orcamento:pdr': { tipo: 'lista', href: () => '#/orcamento/pdr' },
+  'orcamento:configuracao': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
+  'orcamento:dominio': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
+  'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
+  'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },
+  'plataforma:exercicio': { tipo: 'lista', href: () => '#/metas' },
+  'plataforma:extra_pit': { tipo: 'lista', href: () => '#/extra_pit' },
+  'plataforma:capacitacao': { tipo: 'lista', href: () => '#/capacitacao_ministrada' },
 };
 
 /**
@@ -169,17 +206,21 @@ export async function renderRastreabilidade(container, _ctx) {
           className: 'rastro-col-onde',
           render: (r) => {
             const rotulo = `${r.entidade} #${r.entidade_id}`;
-            const href = FICHA[`${r.modulo}:${r.entidade}`];
+            const destino = DESTINO[`${r.modulo}:${r.entidade}`];
             return el('div', {}, [
               el('span', {
                 className: 'rastro-onde__modulo',
                 textContent: NOME_MODULO[r.modulo] || r.modulo,
               }),
-              href
+              destino
                 ? el('a', {
                   className: 'rastro-onde__registro',
-                  href: href(r.entidade_id),
-                  title: 'Abrir a ficha',
+                  href: destino.href(r.entidade_id),
+                  // O título diz para ONDE vai. Prometer "abrir a ficha" e
+                  // cair numa lista faz o usuário achar que se perdeu.
+                  title: destino.tipo === 'ficha'
+                    ? 'Abrir a ficha'
+                    : 'Abrir a tela onde este registro mora',
                 }, [rotulo])
                 : el('span', { className: 'rastro-onde__registro', textContent: rotulo }),
             ]);

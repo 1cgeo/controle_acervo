@@ -497,3 +497,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* O historico dentro da ficha do produto do acervo (2026-08-04). Ele fecha o
+   maior buraco de entrega do rastro: 388 eventos em 170 fichas que so se
+   alcancavam pela varredura geral. */
+.produto-ficha__historico {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-color);
+}

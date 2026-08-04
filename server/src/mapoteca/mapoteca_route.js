@@ -357,6 +357,28 @@ router.post(
   })
 )
 
+// Corrige a DATA de um registro de impressao ja gravado.
+//
+// GERENTE, e nao operador: registrar impressao e operacao do dia, mas mudar
+// QUANDO um gasto aconteceu muda o numero que o RPCMTec reporta naquele mes. E
+// PUT numa rota propria, e nao um campo do POST, porque nao e o mesmo ato --
+// mesma razao que separa a correcao de transcricao da alteracao do PIT.
+router.put(
+  '/impressao/:id/data',
+  verifyPerfil('gerente', 'mapoteca'),
+  schemaValidation({
+    params: mapotecaSchema.impressaoId,
+    body: mapotecaSchema.corrigirImpressao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.corrigirDataImpressao(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
+    const msg = 'Data da impressão corrigida com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
 // Histórico de impressão de um item do pedido
 router.get(
   '/produto_pedido/:id/impressao',

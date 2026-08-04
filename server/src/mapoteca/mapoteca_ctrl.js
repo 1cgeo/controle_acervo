@@ -1365,14 +1365,29 @@ controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
       existentes.map(e => [Number(e.id), e.pedido_id])
     );
 
+    // `data_impressao` OMITIDA cai no default da coluna (agora), que e o caso
+    // do plugin registrando o que acabou de sair da plotter. Informada, ela
+    // manda: registrar na segunda o que se imprimiu na sexta tem de contar na
+    // sexta, senao o consumo do papel cai no mes errado.
     const cs = new db.pgp.helpers.ColumnSet([
       'produto_pedido_id', 'quantidade',
       { name: 'observacao', def: null },
+      'data_impressao',
       'usuario_uuid'
     ]);
 
+    // A data se resolve AQUI, e nao por `skip` na ColumnSet: num insert de
+    // varias linhas o pg-promise exige a MESMA lista de colunas em todas, e
+    // pular a coluna numa delas fazia a consulta inteira devolver zero linha.
+    // `new Date()` e o mesmo instante que o default da coluna daria.
+    const agora = new Date();
+
     const query = db.pgp.helpers.insert(
-      registros.map(r => ({ ...r, usuario_uuid: usuarioUuid })),
+      registros.map(r => ({
+        ...r,
+        data_impressao: r.data_impressao || agora,
+        usuario_uuid: usuarioUuid
+      })),
       cs,
       { table: 'impressao_item', schema: 'mapoteca' }
     ) + ' RETURNING *';
@@ -1392,6 +1407,68 @@ controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
         entidadeId: pedidoDoItem.get(Number(registro.produto_pedido_id))
       });
     }
+  });
+};
+
+/**
+ * Corrige a DATA de um registro de impressao ja gravado.
+ *
+ * NAO e alterar o que foi impresso: a quantidade e o item nao passam por aqui.
+ * E consertar QUANDO, que e transcricao, e a distincao e a mesma que separa
+ * `corrigirTranscricao` de uma revisao do PIT.
+ *
+ * POR QUE A ROTA EXISTE. Em 2026-08-04, 1.751 das 1.753 impressoes de producao
+ * guardavam a data da CARGA (tres dias de julho) e cobriam pedidos de novembro
+ * de 2025 a julho de 2026. Com o consumo de papel derivado da impressao, o
+ * RPCMTec de julho reportaria a impressao de sete meses. Sem esta rota, a
+ * correcao exigiria apagar e recriar cada linha, o que perde o registro e o
+ * rastro dele.
+ *
+ * O MOTIVO e obrigatorio e vai para o evento: mudar quando um gasto aconteceu
+ * muda o numero que o relatorio reporta naquele mes.
+ */
+controller.corrigirDataImpressao = async (id, dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    // As DUAS leituras sao separadas de proposito. O `pedido_id` vem do JOIN e
+    // NAO e coluna de `impressao_item`: junto no `antes`, ele apareceria em
+    // `campos_alterados` como campo que mudou, porque o `depois` (RETURNING *)
+    // nao o tem. O diff compara linha com linha, e a linha tem de ser a mesma.
+    const antes = await t.oneOrNone(
+      'SELECT * FROM mapoteca.impressao_item WHERE id = $<id>', { id }
+    );
+
+    if (!antes) {
+      throw new AppError('Registro de impressão não encontrado', httpCode.NotFound);
+    }
+
+    const dono = await t.one(
+      'SELECT pedido_id FROM mapoteca.produto_pedido WHERE id = $<id>',
+      { id: antes.produto_pedido_id }
+    );
+
+    const depois = await t.one(
+      `UPDATE mapoteca.impressao_item
+       SET data_impressao = $<dataImpressao>
+       WHERE id = $<id>
+       RETURNING *`,
+      { id, dataImpressao: dados.data_impressao }
+    );
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.impressao_item',
+      registroId: id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto,
+      motivo: dados.motivo,
+      // O agregado e o PEDIDO: o registro nasce no item, e quem le o historico
+      // procura pelo pedido dono dele.
+      entidadeId: dono.pedido_id
+    });
+
+    return { id, data_impressao: depois.data_impressao };
   });
 };
 
@@ -1807,6 +1884,11 @@ controller.getTiposMaterial = async () => {
   return db.conn.any(`
     SELECT tm.id, tm.nome, tm.descricao,
            tm.categoria_id, cm.nome AS categoria,
+           -- A MIDIA cuja impressao gasta este material: e dela que sai o
+           -- consumo da 7.2 do RPCMTec. Sem esta coluna na leitura, o
+           -- formulario abriria sempre com o campo vazio e apagaria o vinculo
+           -- no primeiro salvamento.
+           tm.tipo_midia_id, tmi.nome AS tipo_midia,
            tm.estoque_minimo, tm.meta_anual, tm.ativo,
            COALESCE(est.estoque_total, 0) AS estoque_total,
            COALESCE(est.localizacoes_armazenadas, 0) AS localizacoes_armazenadas,
@@ -1816,6 +1898,7 @@ controller.getTiposMaterial = async () => {
            ) AS abaixo_minimo
     FROM mapoteca.tipo_material AS tm
     JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
+    LEFT JOIN mapoteca.tipo_midia AS tmi ON tmi.code = tm.tipo_midia_id
     LEFT JOIN (
       SELECT tipo_material_id,
              SUM(quantidade) AS estoque_total,
@@ -1833,9 +1916,11 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
     const tipoMaterial = await t.oneOrNone(`
       SELECT tm.id, tm.nome, tm.descricao,
              tm.categoria_id, cm.nome AS categoria,
+             tm.tipo_midia_id, tmi.nome AS tipo_midia,
              tm.estoque_minimo, tm.meta_anual, tm.ativo
       FROM mapoteca.tipo_material AS tm
       JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
+      LEFT JOIN mapoteca.tipo_midia AS tmi ON tmi.code = tm.tipo_midia_id
       WHERE tm.id = $1
     `, [tipoMaterialId]);
 
@@ -1905,6 +1990,34 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
 
 // `mapoteca.tipo_material` tambem nao tem coluna de escrituracao, e esta funcao
 // recebia `usuarioUuid` e o ignorava. O autor passa a viver no evento.
+// SQLSTATE de violacao de CHECK (23514) e de UNIQUE (23505). As duas guardas
+// novas do material dizem coisas que o usuario pode consertar, e um 500 cru
+// diria "erro no servidor" para quem so escolheu a categoria errada.
+const CHECK_VIOLATION = '23514';
+const UNIQUE_VIOLATION_MATERIAL = '23505';
+
+const traduzirErroMaterial = err => {
+  if (err && err.code === CHECK_VIOLATION && /midia_so_para_papel/.test(err.message || '')) {
+    throw new AppError(
+      'Só material da categoria Papel pode apontar uma mídia. ' +
+      'Tinta não se deriva de folha impressa: quanto de cartucho uma folha ' +
+      'gasta depende do que está desenhado nela.',
+      httpCode.BadRequest,
+      err
+    );
+  }
+  if (err && err.code === UNIQUE_VIOLATION_MATERIAL &&
+      /unique_material_por_midia/.test(err.message || '')) {
+    throw new AppError(
+      'Já existe outro material apontando esta mídia. ' +
+      'Duas linhas na mesma mídia fariam a mesma folha baixar dois estoques.',
+      httpCode.Conflict,
+      err
+    );
+  }
+  throw err;
+};
+
 controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
@@ -1915,6 +2028,9 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
       { name: 'categoria_id', def: 3 },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
+      // A MIDIA cuja impressao gasta este material (2026-08-04). E o que faz o
+      // consumo de papel sair da impressao em vez de ficar zerado.
+      { name: 'tipo_midia_id', def: null },
       { name: 'ativo', def: true }
     ]);
 
@@ -1926,7 +2042,7 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
       schema: 'mapoteca'
     }) + ' RETURNING *';
 
-    const criado = await t.one(query);
+    const criado = await t.one(query).catch(traduzirErroMaterial);
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'mapoteca.tipo_material',
@@ -1954,7 +2070,7 @@ controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) =>
       schema: 'mapoteca',
       table: 'tipo_material',
       id: tipoMaterial.id,
-      fields: ['ativo', 'categoria_id'],
+      fields: ['ativo', 'categoria_id', 'tipo_midia_id'],
       body: tipoMaterial
     });
 
@@ -1964,12 +2080,13 @@ controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) =>
       { name: 'categoria_id', def: 3 },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
+      { name: 'tipo_midia_id', def: null },
       { name: 'ativo', def: true }
     ], { table: { table: 'tipo_material', schema: 'mapoteca' } });
 
     const query = db.pgp.helpers.update(tipoMaterial, cs) + ' WHERE id = $1 RETURNING *';
 
-    const depois = await t.one(query, [tipoMaterial.id]);
+    const depois = await t.one(query, [tipoMaterial.id]).catch(traduzirErroMaterial);
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'mapoteca.tipo_material',
@@ -2362,6 +2479,34 @@ controller.getConsumoMaterial = async (filtros = null) => {
   return db.conn.any(query, queryParams);
 };
 
+/**
+ * Consumo de material por mês, de DUAS fontes que se somam.
+ *
+ * O QUE MUDOU EM 2026-08-04, e por quê. Até aqui esta consulta lia só
+ * `mapoteca.consumo_material`, que tem ZERO linhas em produção. O resultado é
+ * que as subseções 7.2 e 7.3 do RPCMTec imprimiam "Consumo no mês = 0" nas
+ * dezessete linhas, com etiqueta "Calculada", enquanto `impressao_item`
+ * guardava 1.753 impressões e 6.493 exemplares. O número não estava faltando:
+ * estava ERRADO, e a etiqueta convidava a acreditar nele.
+ *
+ * As duas fontes, e o que separa uma da outra:
+ *
+ *   IMPRESSÃO   derivada. Cada exemplar impresso gasta uma folha da mídia, e a
+ *               mídia aponta o papel em `tipo_material.tipo_midia_id`. Não se
+ *               grava nada: o evento é a impressão, e duplicá-lo numa linha de
+ *               consumo criaria duas verdades que divergem na primeira
+ *               correção.
+ *   DECLARADO   `consumo_material`, onde alguém lança o que a impressão não
+ *               explica: a folha perdida, o material transferido e -- o caso
+ *               principal -- a TROCA DE CARTUCHO. Tinta não se deriva de folha
+ *               impressa, porque quanto ela gasta depende do que está
+ *               desenhado. Por isso a 7.3 continua vindo só daqui, e continua
+ *               zerada enquanto ninguém declarar. Ali o número está VAZIO, que
+ *               é diferente de errado.
+ *
+ * A mídia FORNECIDA manda sobre a pedida (`COALESCE`): quem pediu tyvek e
+ * recebeu sulfite gastou sulfite, e é o estoque do sulfite que baixou.
+ */
 controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
   return db.conn.any(`
     WITH meses AS (
@@ -2370,24 +2515,40 @@ controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
     tipos_material AS (
       SELECT id, nome FROM mapoteca.tipo_material
     ),
-    consumo_mensal AS (
-      SELECT 
+    declarado AS (
+      SELECT
         tipo_material_id,
         EXTRACT(MONTH FROM data_consumo) AS mes,
         SUM(quantidade) AS quantidade
       FROM mapoteca.consumo_material
       WHERE EXTRACT(YEAR FROM data_consumo) = $1
       GROUP BY tipo_material_id, EXTRACT(MONTH FROM data_consumo)
+    ),
+    impresso AS (
+      SELECT
+        tm.id AS tipo_material_id,
+        EXTRACT(MONTH FROM ii.data_impressao) AS mes,
+        SUM(ii.quantidade) AS quantidade
+      FROM mapoteca.impressao_item ii
+      INNER JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
+      INNER JOIN mapoteca.tipo_material tm
+        ON tm.tipo_midia_id = COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)
+      WHERE EXTRACT(YEAR FROM ii.data_impressao) = $1
+      GROUP BY tm.id, EXTRACT(MONTH FROM ii.data_impressao)
     )
-    SELECT 
-      tm.id AS tipo_material_id, 
+    SELECT
+      tm.id AS tipo_material_id,
       tm.nome AS tipo_material_nome,
       m.mes,
-      COALESCE(cm.quantidade, 0) AS quantidade
+      COALESCE(d.quantidade, 0) + COALESCE(i.quantidade, 0) AS quantidade,
+      COALESCE(i.quantidade, 0) AS quantidade_impressa,
+      COALESCE(d.quantidade, 0) AS quantidade_declarada
     FROM tipos_material tm
     CROSS JOIN meses m
-    LEFT JOIN consumo_mensal cm 
-      ON cm.tipo_material_id = tm.id AND cm.mes = m.mes
+    LEFT JOIN declarado d
+      ON d.tipo_material_id = tm.id AND d.mes = m.mes
+    LEFT JOIN impresso i
+      ON i.tipo_material_id = tm.id AND i.mes = m.mes
     ORDER BY tm.nome, m.mes
   `, [ano]);
 };

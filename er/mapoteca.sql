@@ -356,8 +356,32 @@ CREATE TABLE mapoteca.tipo_material (
     -- seguem a regra do estoque e do consumo (chefe, 2026-07-30).
     estoque_minimo INTEGER,
     meta_anual INTEGER,
-    ativo BOOLEAN NOT NULL DEFAULT TRUE
+    -- A MIDIA cuja impressao gasta este material (2026-08-04). Existe porque o
+    -- consumo saia so de `consumo_material`, que ninguem preenche, e as
+    -- subsecoes 7.2 e 7.3 do RPCMTec reportavam "Consumo no mes = 0" nas
+    -- dezessete linhas enquanto havia 1.753 impressoes registradas: o numero
+    -- nao faltava, estava ERRADO, com etiqueta de calculado.
+    --
+    -- UM PARA UM, e por isso e coluna e nao tabela de ligacao: uma midia gasta
+    -- um papel, e um papel serve a uma midia. Ligacao admitiria dois papeis
+    -- para a mesma midia, e nada diria qual baixar.
+    --
+    -- SO PAPEL. Tinta nao se deriva de folha impressa: quanto de cartucho uma
+    -- folha gasta depende do que esta desenhado nela. O consumo de tinta
+    -- continua vindo de `consumo_material`, onde alguem declara a troca.
+    tipo_midia_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    -- SO PAPEL aponta midia (categoria 1). Sem isto, um cartucho poderia
+    -- reivindicar 'Sulfite 120g' e o consumo de tinta passaria a ser derivado
+    -- de folha impressa, que e o que nao se faz.
+    CONSTRAINT midia_so_para_papel CHECK (tipo_midia_id IS NULL OR categoria_id = 1)
 );
+
+-- UM material por midia: duas linhas apontando a mesma midia fariam a mesma
+-- folha baixar dois estoques.
+CREATE UNIQUE INDEX unique_material_por_midia
+  ON mapoteca.tipo_material (tipo_midia_id)
+  WHERE tipo_midia_id IS NOT NULL;
 
 COMMENT ON COLUMN mapoteca.tipo_material.categoria_id IS
     'Papel (7.2 do RPCMTec), Tinta (7.3) ou Outro (fora das duas). Dado, e nao regra sobre o nome.';
@@ -366,6 +390,8 @@ COMMENT ON COLUMN mapoteca.tipo_material.estoque_minimo IS
     'Limiar para alertar estoque baixo na UI (badge). NULL = sem alerta.';
 COMMENT ON COLUMN mapoteca.tipo_material.meta_anual IS
     'Consumo anual previsto. Usado em relatório Consumo × Necessário × Pendente.';
+COMMENT ON COLUMN mapoteca.tipo_material.tipo_midia_id IS
+    'A mídia cuja impressão gasta este material. Só papel: tinta não se deriva de folha impressa.';
 
 -- Seed do controle de material de impressão (referência: planilha "Controle de
 -- Material de Impressão" da Seção; dados de implantação no CLAUDE.md raiz)

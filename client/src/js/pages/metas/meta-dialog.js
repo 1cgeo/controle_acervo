@@ -8,6 +8,8 @@ import {
   createSelectField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { criarHistorico } from '@components/historico/historico.js';
+import { isAdmin } from '@store/auth-store.js';
 import { createMetaPit, updateMetaPit } from '@services/plataforma-service.js';
 
 /**
@@ -91,6 +93,35 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     helpText: 'Sai como "AGO 26" no relatório.',
   });
 
+  // HISTÓRICO da meta, RECOLHIDO e só na edição (2026-08-04).
+  //
+  // Ele faltava, e era a lacuna mais aguda do sistema: o modelo de revisão do
+  // PIT nasceu em 2026-08-04 para responder "por que a 4.2 virou 252", e a
+  // resposta só se lia pela varredura geral, filtrando. A pergunta se faz com
+  // a meta aberta na frente, e é aqui que ela agora se responde.
+  //
+  // O agregado 'meta' reúne quatro tabelas: a identidade (`pit.meta`), o que
+  // cada revisão declarou (`pit.meta_revisao`), a execução lançada
+  // (`pit.execucao`) e o de-para de mídia (`mapoteca.midia_meta_pit`). Por
+  // isso o subtítulo nomeia as quatro: quem abre não deve precisar adivinhar
+  // que "quantidade prevista" e "realizado" vivem em lugares diferentes.
+  //
+  // SÓ PARA ADMINISTRADOR, e não por escolha de tela: a rota do histórico de
+  // 'plataforma' é `verifyAdmin` (o mesmo agregado guarda evento de usuário,
+  // de perfil e de senha), enquanto esta tela abre para qualquer pessoa
+  // logada. Mostrar o painel a quem a rota vai recusar entregaria um 403 no
+  // meio do formulário.
+  const historico = isEdit && isAdmin()
+    ? criarHistorico({
+      modulo: 'plataforma',
+      entidade: 'meta',
+      id: meta.id,
+      titulo: 'Histórico da meta',
+      subtitulo: 'Identidade, o que cada revisão do PIT declarou, execução lançada e mídia',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     numeroMetaField.element,
     itemField.element,
@@ -99,7 +130,10 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     unidadeField.element,
     demandanteField.element,
     prazoField.element,
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

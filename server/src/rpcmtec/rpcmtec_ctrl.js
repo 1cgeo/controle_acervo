@@ -606,6 +606,16 @@ const gerarRecebimentoMaterial = async ano => {
 // que alguém cadastrar "Tinta preta 300ml": a tabela erraria de lado sem erro
 // nenhum. Ver migrations/2026-08-01_material_categoria.sql.
 //
+// O CONSUMO DO PAPEL sai da IMPRESSÃO desde 2026-08-04, somado ao que for
+// declarado à mão. Até então ele vinha só de `mapoteca.consumo_material`, que
+// tem zero linhas em produção: a coluna dizia 0 nas dezessete linhas enquanto
+// havia 1.753 impressões e 6.493 exemplares registrados. Ver
+// `getConsumoMensalPorTipo`, que soma as duas fontes.
+//
+// A TINTA continua vindo só do declarado, e é deliberado: quanto de cartucho
+// uma folha gasta depende do que está desenhado nela. Zero ali quer dizer
+// "ninguém declarou troca", que é diferente de errado.
+//
 // LACUNA CONHECIDA, e é do SCA, não desta tela: "Estoque mês anterior" sai '-'
 // porque `mapoteca.estoque_material` guarda só o saldo de HOJE, sem histórico.
 // Ele NÃO é derivável de estoque atual + consumo do mês: a conta ignora as

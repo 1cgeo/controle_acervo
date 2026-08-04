@@ -190,6 +190,27 @@ models.produtoPedidoId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
+// CORRECAO de um registro de impressao ja gravado (2026-08-04).
+//
+// Existe por um caso real: 1.751 das 1.753 impressoes de producao foram
+// CARREGADAS em tres dias de julho e cobrem pedidos de novembro de 2025 a
+// julho de 2026, entao a data que elas guardam e a da carga. Com o consumo de
+// papel derivado da impressao, isso jogaria a impressao de sete meses dentro de
+// julho.
+//
+// Sem esta rota, corrigir exigiria apagar e recriar, o que perde o registro e o
+// rastro dele. O MOTIVO e obrigatorio: mudar quando um gasto aconteceu muda o
+// numero que o RPCMTec reporta naquele mes, e quem le o historico depois
+// precisa saber por que.
+models.impressaoId = Joi.object().keys({
+  id: Joi.number().integer().required()
+})
+
+models.corrigirImpressao = Joi.object().keys({
+  data_impressao: Joi.date().iso().required(),
+  motivo: Joi.string().min(3).max(500).required()
+})
+
 // Esquemas para Impressão (plugin QGIS da mapoteca)
 models.registroImpressao = Joi.object().keys({
   registros: Joi.array()
@@ -197,7 +218,15 @@ models.registroImpressao = Joi.object().keys({
       Joi.object().keys({
         produto_pedido_id: Joi.number().integer().required(),
         quantidade: Joi.number().integer().min(1).required(),
-        observacao: Joi.string().allow(null, '')
+        observacao: Joi.string().allow(null, ''),
+        // QUANDO a impressao aconteceu (2026-08-04). Ate aqui a coluna sempre
+        // recebia `now()`, e quem registrava depois do fato gravava a data de
+        // hoje: registrar na segunda o que se imprimiu na sexta jogava o
+        // consumo para o mes errado. Omitido, continua sendo agora.
+        //
+        // TIMESTAMP, e nao dia: a coluna e `TIMESTAMP WITH TIME ZONE`, e duas
+        // impressoes do mesmo dia tem ordem.
+        data_impressao: Joi.date().iso().allow(null)
       })
     )
     .min(1)
@@ -282,6 +311,12 @@ const tipoMaterialBase = {
   // Inteiros: contam o MESMO material que o estoque e o consumo, em unidade.
   estoque_minimo: Joi.number().integer().min(0).allow(null),
   meta_anual: Joi.number().integer().min(0).allow(null),
+  // A MIDIA cuja impressao gasta este material (2026-08-04). E o que faz o
+  // consumo de papel sair da impressao, em vez de depender de alguem lancar
+  // consumo a mao -- que ninguem lanca. SO PAPEL: o CHECK do banco recusa a
+  // tinta apontando midia, porque quanto de cartucho uma folha gasta depende do
+  // que esta desenhado nela.
+  tipo_midia_id: Joi.number().integer().min(1).allow(null),
   ativo: Joi.boolean().default(true)
 }
 
@@ -297,7 +332,8 @@ models.tipoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   ...tipoMaterialBase,
   ativo: Joi.boolean(),
-  categoria_id: Joi.number().integer().valid(1, 2, 3)
+  categoria_id: Joi.number().integer().valid(1, 2, 3),
+  tipo_midia_id: Joi.number().integer().min(1).allow(null)
 })
 
 // Esquemas para Estoque de Material

@@ -4,7 +4,7 @@ import { showError } from '@utils/toast.js';
 import { chip } from '@components/status-chip.js';
 import {
   buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
-  getTiposProduto, getTiposEscala, getSubtiposProduto,
+  getTiposProduto, getTiposEscala, getSubtiposProduto, getProdutoDetalhado,
 } from '@modules/acervo/services/acervo-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { permissoes } from '@store/auth-store.js';
@@ -952,6 +952,33 @@ export async function renderBusca(container, ctx) {
   if (Number.isFinite(paginaUrl) && paginaUrl > 1) pagina = paginaUrl;
 
   await buscar();
+
+  // PRODUTO QUE VEIO NO LINK (2026-08-04). A ficha do produto e um DIALOGO
+  // aberto de dentro desta busca, e nao uma rota: sem isto, a varredura de
+  // rastreabilidade so conseguia escrever "produto #170" como texto morto, e
+  // esse agregado sozinho responde por 388 eventos em 170 fichas.
+  //
+  // Abre depois da busca, e nao no lugar dela: quando o dialogo fechar, a
+  // lista e o mapa ja estao atras dele, que e o mesmo comportamento de quem
+  // chegou clicando num cartao.
+  //
+  // Falha em silencio quando o id nao existe mais. O produto pode ter sido
+  // apagado depois do evento que trouxe a pessoa ate aqui, e nesse caso a
+  // busca e o que ela vai usar para procurar o que sobrou.
+  const produtoDoLink = parseInt(query.get('produto_id'), 10);
+  if (Number.isFinite(produtoDoLink) && produtoDoLink > 0) {
+    try {
+      const detalhado = await getProdutoDetalhado(produtoDoLink);
+      if (!disposed && detalhado) {
+        mapa.enquadrarProduto(produtoDoLink);
+        abrirProdutoDialog(detalhado, 0, {
+          onAlterado: () => buscar({ recarregarMapa: true }),
+        });
+      }
+    } catch {
+      // Produto inexistente: a busca fica aberta, sem dialogo.
+    }
+  }
 
   return () => {
     disposed = true;

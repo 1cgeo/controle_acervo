@@ -86,8 +86,12 @@ dotenv.config({
 // porque a leitura da edição passa a sair de `assinante_uuid`: num banco
 // 1.21.0 a coluna não existe, e a tela do relatório quebra inteira. É a mesma
 // lição da 1.21.0, e ela custou uma janela de indisponibilidade em 2026-08-04.
+// 1.23.0 liga a MÍDIA ao material (2026-08-04): `tipo_material.tipo_midia_id`.
+// Exigida porque o consumo de papel passa a sair da IMPRESSÃO, e num banco
+// 1.22.0 a coluna não existe: a consulta do consumo mensal quebra, e com ela a
+// tela de consumo da mapoteca e as subseções 7.2 e 7.3 do RPCMTec.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.22.0'
+const MIN_DATABASE_VERSION = '1.23.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

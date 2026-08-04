@@ -198,6 +198,11 @@ const COBERTAS = new Set([
   'PUT /produto_pedido',
   'DELETE /produto_pedido',
   'POST /impressao',
+  // CORRECAO da data de um registro ja gravado (2026-08-04). Rota propria, e
+  // nao campo do POST: registrar impressao e operacao do dia, e mudar QUANDO um
+  // gasto aconteceu muda o numero que o RPCMTec reporta naquele mes. O motivo e
+  // obrigatorio, e cai no evento.
+  'PUT /impressao/:id/data',
   'DELETE /impressao',
   // Escreve em mapoteca.etiqueta_envio e audita com
   // tabela = 'mapoteca.etiqueta_envio'. Os casos dela vivem em

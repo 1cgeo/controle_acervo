@@ -189,6 +189,9 @@ module.exports = {
       descricao: { rotulo: 'Descrição' },
       estoque_minimo: { rotulo: 'Estoque mínimo', tipo: 'numero' },
       meta_anual: { rotulo: 'Meta anual', tipo: 'numero' },
+      // Trocar a midia muda de onde sai o CONSUMO deste material na 7.2 do
+      // RPCMTec, entao a troca precisa aparecer no historico.
+      tipo_midia_id: { rotulo: 'Mídia que o consome', dominio: 'mapoteca.tipo_midia' },
       ativo: { rotulo: 'Ativo', tipo: 'booleano' }
     }
   },
