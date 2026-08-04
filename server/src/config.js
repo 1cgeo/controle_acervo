@@ -80,8 +80,14 @@ dotenv.config({
 // a leitura da meta passa a sair da view `pit.meta_vigente` e da funcao
 // `pit.meta_em(data)`: num banco 1.20.0 as duas nao existem, e a grade, a lista
 // de metas e a subsecao 2.1 do RPCMTec quebram juntas.
+// 1.22.0 guarda o RPCMTec INTEIRO (2026-08-05): a edição mensal ganha
+// `data_fechamento` e `assinante_uuid`, e nascem `rpcmtec.subsecao` (o conteúdo
+// dos 34 blocos, congelado no fechamento) e `rpcmtec.anexo_edicao`. Exigida
+// porque a leitura da edição passa a sair de `assinante_uuid`: num banco
+// 1.21.0 a coluna não existe, e a tela do relatório quebra inteira. É a mesma
+// lição da 1.21.0, e ela custou uma janela de indisponibilidade em 2026-08-04.
 const VERSION = '1.12.0'
-const MIN_DATABASE_VERSION = '1.21.0'
+const MIN_DATABASE_VERSION = '1.22.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()
