@@ -10,6 +10,7 @@ import {
   criarVolumeArmazenamento,
   atualizarVolumeArmazenamento,
 } from '@modules/acervo/services/admin-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Formulario de volume de armazenamento.
@@ -63,12 +64,26 @@ export function openVolumeDialog({ volume = null, onSaved = null } = {}) {
       + 'sem cópia. Deixe desmarcado para volume do acervo comum.',
   });
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'acervo',
+      entidade: 'volume',
+      id: volume.id,
+      titulo: 'Histórico do volume',
+      subtitulo: 'Alterações no volume e nos tipos de produto que ele aceita',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [nomeField.element]),
     el('div', { className: 'form-grid__full' }, [caminhoField.element]),
     capacidadeField.element,
     el('div', { className: 'form-grid__full' }, [layoutOrigemField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

@@ -7,6 +7,7 @@ import {
   getPonto, baixarArquivoDoPonto,
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { criarMapaDoPonto } from './ponto-mapa-mini.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Ficha do ponto de controle.
@@ -524,7 +525,22 @@ export async function abrirPontoDialog(codigos, indice = 0) {
     descartarMapa();
     const montado = corpo(ponto, mostrarVazios, barraVazios);
     mapaAtual = montado.destruir;
-    corpoEl.replaceChildren(montado.elemento);
+    // O HISTORICO do ponto, RECOLHIDO. Ele se remonta a cada navegacao porque a
+    // ficha e trocada por dentro: um painel preso no fechamento mostraria o
+    // historico do ponto anterior depois do primeiro "proxima".
+    corpoEl.replaceChildren(
+      montado.elemento,
+      el('div', { className: 'produto-ficha__historico' }, [
+        criarHistorico({
+          modulo: 'acervo',
+          entidade: 'ponto',
+          id: ponto.id,
+          titulo: 'Histórico do ponto',
+          subtitulo: 'Alterações no cadastro e nos arquivos do ponto',
+          recolhido: true,
+        }).element,
+      ])
+    );
   }
 
   async function irPara(novo) {

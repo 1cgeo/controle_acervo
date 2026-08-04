@@ -14,6 +14,7 @@ import {
   getTipoLicitacao,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 // Codigo do tipo Participante: so nesse tipo a OM gestora pode ser outra OM.
 const TIPO_PARTICIPANTE = 3;
@@ -94,6 +95,17 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
   }
   updateOmVisibility(lic?.tipo_id);
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'licitacao',
+      id: licId,
+      titulo: 'Histórico da licitação',
+      subtitulo: 'Objeto, fase e valores',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     tipoField.element,
     el('div', { className: 'form-grid__full' }, [objetoField.element]),
@@ -101,7 +113,10 @@ export async function openLicitacaoDialog({ licId = null, onSaved = null } = {})
     valorEstimadoField.element,
     valorHomologadoField.element,
     omWrapper,
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

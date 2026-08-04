@@ -14,6 +14,7 @@ import {
   getNotasEmpenho,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getAno } from '@modules/orcamento/store/year-store.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Abre o dialog de criar/editar RPNP (Restos a Pagar Não Processados).
@@ -73,13 +74,27 @@ export async function openRpnpDialog({ rpnpId = null, onSaved = null } = {}) {
     value: rpnp?.valor_a_liquidar ?? undefined,
   });
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'rpnp',
+      id: rpnpId,
+      titulo: 'Histórico do RPNP',
+      subtitulo: 'Empenho, finalidade e valores',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     notaEmpenhoField.element,
     el('div', { className: 'form-grid__full' }, [empenhoLabelField.element]),
     el('div', { className: 'form-grid__full' }, [finalidadeField.element]),
     valorEmpenhadoField.element,
     valorALiquidarField.element,
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

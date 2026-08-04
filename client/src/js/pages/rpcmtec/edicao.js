@@ -3,6 +3,7 @@ import { monthName, formatDateTime, formatDate } from '@utils/format.js';
 import { showError, showSuccess, showWarning } from '@utils/toast.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { criarHistorico } from '@components/historico/historico.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import {
   getDocumento, downloadRpcmtecPdf, fecharEdicao, reabrirEdicao, conferirHoje,
@@ -52,8 +53,19 @@ export async function renderRpcmtecEdicao(container, ctx) {
   const corpo = el('div');
   const areaAnexos = el('div', { className: 'dashboard-section' });
 
+  // O HISTORICO da edicao, RECOLHIDO. Fechar e reabrir sao os dois atos mais
+  // consequentes desta tela -- um congela o documento que o chefe assina, o
+  // outro o descongela --, e "quem reabriu a de julho" e pergunta que se faz
+  // depois. O agregado `edicao` reune a edicao, as subsecoes digitadas e o
+  // anexo assinado.
+  //
+  // A tela ja e admin-only (`adminLoader`), que e a mesma guarda da rota do
+  // historico de 'plataforma': aqui nao ha o descasamento que obrigou a esconder
+  // o painel na meta e na capacitacao.
+  const areaHistorico = el('div', { className: 'dashboard-section' });
+
   const page = el('div', { className: 'page' }, [
-    cabecalho, barra, avisos, areaAnexos, corpo,
+    cabecalho, barra, avisos, areaAnexos, corpo, areaHistorico,
   ]);
   container.appendChild(page);
 
@@ -551,6 +563,17 @@ export async function renderRpcmtecEdicao(container, ctx) {
       desenharAvisos();
       desenharCorpo();
       await desenharAnexos();
+      // Remontado a cada carga porque a edicao muda de estado por baixo (fechar,
+      // reabrir, anexar), e o painel tem de trazer o evento que acabou de sair.
+      clearChildren(areaHistorico);
+      areaHistorico.appendChild(criarHistorico({
+        modulo: 'plataforma',
+        entidade: 'edicao',
+        id: edicaoId,
+        titulo: 'Histórico da edição',
+        subtitulo: 'Metadados, subseções digitadas, fechamento, reabertura e anexo assinado',
+        recolhido: true,
+      }).element);
     } catch (err) {
       if (disposed) return;
       clearChildren(corpo);

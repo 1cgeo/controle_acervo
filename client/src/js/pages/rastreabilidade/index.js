@@ -88,6 +88,9 @@ const DESTINO = {
   'acervo:projeto': { tipo: 'lista', href: () => '#/acervo/administracao' },
   'acervo:volume': { tipo: 'lista', href: () => '#/acervo/administracao' },
   'acervo:ponto': { tipo: 'lista', href: () => '#/acervo/ponto_controle' },
+  // A "manutencao" e o refresh das views materializadas, um ato do sistema
+  // sobre si mesmo: ela nao tem ficha, tem a aba de onde se dispara.
+  'acervo:manutencao': { tipo: 'lista', href: () => '#/acervo/administracao' },
   'orcamento:dfd': { tipo: 'lista', href: () => '#/orcamento/dfd' },
   'orcamento:nota_credito': { tipo: 'lista', href: () => '#/orcamento/notas_credito' },
   'orcamento:licitacao': { tipo: 'lista', href: () => '#/orcamento/licitacoes' },

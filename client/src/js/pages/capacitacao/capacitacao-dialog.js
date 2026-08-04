@@ -9,6 +9,8 @@ import {
 import { createSeletorMilitares } from '@components/form-fields/seletor-militares.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createCapacitacao, updateCapacitacao } from '@services/plataforma-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
+import { isAdmin } from '@store/auth-store.js';
 
 // dominio.tipo_capacitacao e dominio.situacao_capacitacao. Códigos iguais aos do
 // SAP, de propósito: na fusão a linha migrada não precisa de tradução.
@@ -143,6 +145,20 @@ export function openCapacitacaoDialog({
     ? [el('div', { className: 'form-grid__full' }, [efetivoField.element])]
     : [planoField.element];
 
+  // SÓ PARA ADMINISTRADOR: a rota do histórico de 'plataforma' é
+  // verifyAdmin, e esta tela abre para qualquer pessoa logada. Painel que
+  // entrega 403 no meio do formulário é pior que painel nenhum.
+  const historico = isEdit && isAdmin()
+    ? criarHistorico({
+      modulo: 'plataforma',
+      entidade: 'capacitacao',
+      id: capacitacao.id,
+      titulo: 'Histórico da capacitação',
+      subtitulo: 'Cadastro e quem da Divisão participou',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [nomeField.element]),
     situacaoField.element,
@@ -153,7 +169,10 @@ export function openCapacitacaoDialog({
     localField.element,
     ...especificos,
     el('div', { className: 'form-grid__full' }, [militaresField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

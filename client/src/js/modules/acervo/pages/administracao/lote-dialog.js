@@ -8,6 +8,7 @@ import {
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { criarLote, atualizarLote } from '@modules/acervo/services/admin-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Formulario de lote.
@@ -77,6 +78,17 @@ export function openLoteDialog({
     value: lote?.status_execucao_id,
   });
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'acervo',
+      entidade: 'projeto',
+      id: lote.projeto_id,
+      titulo: 'Histórico do projeto',
+      subtitulo: 'O agregado é o projeto: o histórico traz ele e todos os lotes dele',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [projetoField.element]),
     nomeField.element,
@@ -85,7 +97,10 @@ export function openLoteDialog({
     dataInicioField.element,
     dataFimField.element,
     el('div', { className: 'form-grid__full' }, [statusField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

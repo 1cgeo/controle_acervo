@@ -14,6 +14,7 @@ import {
   getNaturezaDespesa,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Abre o dialog de criar/editar um item do PDR. O PDR e o conjunto dos itens do
@@ -96,6 +97,17 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     value: item?.observacao ?? '',
   });
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'pdr',
+      id: anoItem,
+      titulo: 'Histórico do PDR do ano',
+      subtitulo: 'O agregado é o ANO: o histórico traz todos os itens do PDR do exercício',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [
       el('p', {
@@ -111,7 +123,10 @@ export async function openPdrItemDialog({ item = null, onSaved = null } = {}) {
     valorSolicitadoField.element,
     valorAutorizadoField.element,
     el('div', { className: 'form-grid__full' }, [observacaoField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

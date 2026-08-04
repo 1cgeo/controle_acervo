@@ -9,6 +9,8 @@ import {
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createExtraPit, updateExtraPit } from '@services/plataforma-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
+import { isAdmin } from '@store/auth-store.js';
 
 // dominio.situacao_extra_pit. Os códigos são os mesmos do SAP, de propósito:
 // quando os dois sistemas se fundirem, a linha migrada não precisa de tradução.
@@ -82,6 +84,20 @@ export function openExtraPitDialog({ demanda = null, ano = null, onSaved = null 
     value: demanda?.descricao ?? '',
   });
 
+  // SÓ PARA ADMINISTRADOR: a rota do histórico de 'plataforma' é
+  // verifyAdmin, e esta tela abre para qualquer pessoa logada. Painel que
+  // entrega 403 no meio do formulário é pior que painel nenhum.
+  const historico = isEdit && isAdmin()
+    ? criarHistorico({
+      modulo: 'plataforma',
+      entidade: 'extra_pit',
+      id: demanda.id,
+      titulo: 'Histórico da demanda',
+      subtitulo: 'Autorização, quantidade, situação e a versão que a materializou',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     demandanteField.element,
     tipoProdutoField.element,
@@ -90,7 +106,10 @@ export function openExtraPitDialog({ demanda = null, ano = null, onSaved = null 
     documentoField.element,
     dataEntregaField.element,
     el('div', { className: 'form-grid__full' }, [descricaoField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 

@@ -18,6 +18,8 @@ import {
   updateImpedimento,
   deleteImpedimento,
 } from '@services/plataforma-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
+import { isAdmin } from '@store/auth-store.js';
 
 const dia = (valor) => (valor
   ? String(valor).slice(0, 10).split('-').reverse().join('/')
@@ -422,7 +424,23 @@ export function openMilitarDialog({
           textContent: 'Novo',
         })
       ),
-    ]),
+      // O HISTORICO da PESSOA, RECOLHIDO. As passagens e os impedimentos caem
+      // no mesmo agregado `usuario`, e e por isso que um painel so responde as
+      // duas perguntas.
+      //
+      // SO PARA ADMINISTRADOR: a rota do historico de 'plataforma' e
+      // verifyAdmin, e esta tela abre para qualquer pessoa logada.
+      isAdmin()
+        ? criarHistorico({
+          modulo: 'plataforma',
+          entidade: 'usuario',
+          id: militar.usuario_uuid,
+          titulo: 'Histórico da pessoa',
+          subtitulo: 'Passagens pela DGEO, impedimentos, cadastro e perfis',
+          recolhido: true,
+        }).element
+        : null,
+    ].filter(Boolean)),
     actions: [
       { label: 'Fechar', variant: 'text', onClick: ({ close }) => recarregar({ close }) },
     ],

@@ -8,6 +8,7 @@ import {
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { criarProjeto, atualizarProjeto } from '@modules/acervo/services/admin-service.js';
+import { criarHistorico } from '@components/historico/historico.js';
 
 /**
  * Formulario de projeto do acervo.
@@ -56,13 +57,27 @@ export function openProjetoDialog({ projeto = null, statusExecucao = [], onSaved
     value: projeto?.status_execucao_id,
   });
 
+  const historico = isEdit
+    ? criarHistorico({
+      modulo: 'acervo',
+      entidade: 'projeto',
+      id: projeto.id,
+      titulo: 'Histórico do projeto',
+      subtitulo: 'Alterações no projeto e nos lotes dele',
+      recolhido: true,
+    })
+    : null;
+
   const content = el('div', { className: 'form-grid' }, [
     el('div', { className: 'form-grid__full' }, [nomeField.element]),
     el('div', { className: 'form-grid__full' }, [descricaoField.element]),
     dataInicioField.element,
     dataFimField.element,
     el('div', { className: 'form-grid__full' }, [statusField.element]),
-  ]);
+    historico
+      ? el('div', { className: 'form-grid__full' }, [historico.element])
+      : null,
+  ].filter(Boolean));
 
   let saving = false;
 
