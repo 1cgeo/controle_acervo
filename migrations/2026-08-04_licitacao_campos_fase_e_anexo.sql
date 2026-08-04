@@ -17,9 +17,9 @@
 -- Por isso a migração NÃO apaga nada: `fase_id` classifica, `fase_atual`
 -- narra. Quem classificar os registros antigos é o gestor, um a um, na tela.
 --
--- Os valores do domínio saem do texto REAL das subseções 3.4 e 3.5 do RPCMTec
--- de 2025 e de 2026, que é a fonte de onde os registros foram carregados. Ver a
--- lista comentada no bloco 2.
+-- Os valores do domínio saem dos `fase_atual` que os 11 registros REAIS da
+-- tabela exibem, e não da prosa do RPCMTec. São quatro. Ver a lista comentada
+-- no bloco 2, com o texto de origem de cada código.
 --
 -- O ANEXO PASSA A ACEITAR CINCO DONOS. O CHECK `arquivo_um_vinculo` só admitia
 -- NC, DFD e PDR, então não havia onde guardar o edital da licitação nem o
@@ -68,16 +68,6 @@ COMMENT ON COLUMN orcamento.licitacao.data_homologacao IS
 -- 2. Domínio da fase, no padrão de dominio.tipo_licitacao
 -- ---------------------------------------------------------------------------
 
--- De onde vem cada valor (fonte primária: RPCMTec, subseções 3.4 e 3.5):
---   1 Previsto      - o texto da maioria das linhas de 2026.
---   2 Em elaboração - MBA e ar condicionados, de fevereiro de 2026 em diante.
---   3 Homologado    - imagens satelitais, softwares, insumos, equipamentos, MBA,
---                     IA e acessórios de drone, em 2025 e 2026.
---   4 Fracassado    - softwares de TI de 2025, no texto de 103 caracteres.
---   5 Deserto       - pregão sem proponente. Ocorreu em 2025 (workstations),
---                     e o registro dessa vez ficou fora da tabela da licitação.
---   6 Anulado       - processo anulado antes do desfecho.
---
 -- A lista é CURTA de propósito. Fase intermediária de tramitação ("na SALC",
 -- "na AGU") não aparece em registro nenhum da tabela, e inventá-la aqui criaria
 -- código que ninguém usa. Acrescente quando o gestor pedir.
