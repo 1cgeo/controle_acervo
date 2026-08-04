@@ -264,6 +264,16 @@ const INVARIANTES = [
   // séries de edição dentro do mesmo registro, e compará-las entre si acusaria
   // erro onde há só duas numerações independentes.
   //
+  // Particiona também pela FAMÍLIA do rótulo, pela MESMA razão, e essa faltava.
+  // "Nª Edição" é o ordinal histórico e "N-SIGLA" é o contador próprio do órgão,
+  // que a produção moderna adotou justamente por NÃO continuar a sequência antiga
+  // (ver a wiki [[controle-acervo]] e a rota renumerar-versoes, que já recebe a
+  // familia como parâmetro). Comparar o 2 de "2ª Edição" com o 1 de "1-DSG" é erro
+  // de categoria: o vetor 1-DSG de 2025 é geração NOVA, e não uma primeira edição
+  // que deveria anteceder a segunda de 1980. Medido em 2026-08-04 contra produção:
+  // o invariante acusava 22 linhas, TODAS cruzando família e nenhuma dentro dela.
+  // Zero de sinal e 22 de ruído num check cuja regra é dar zero.
+  //
   // Compara por DIA de calendário, e não por instante, pela mesma razão que o 5i:
   // data de versão é dia, e duas edições cadastradas no mesmo dia em horas
   // diferentes não são incoerência nenhuma.
@@ -286,17 +296,24 @@ const INVARIANTES = [
     titulo: 'serie de edicao incoerente (edicao maior com data_edicao ANTERIOR a de uma menor)',
     sql: `with s as (
             select v.id,v.produto_id,v.versao,v.data_edicao,v.subtipo_produto_id,
-                   (substring(btrim(v.versao) from '^[0-9]+'))::int ord
+                   (substring(btrim(v.versao) from '^[0-9]+'))::int ord,
+                   -- O que sobra do rotulo depois do numero E a familia. Rotulo
+                   -- fora das duas formas aceitas cai num balde proprio, em vez
+                   -- de num generico: baldes que se fundem criam comparacao
+                   -- entre contadores que nunca conversaram.
+                   case when btrim(v.versao) ~ '^[0-9]+ª Edição$' then 'EDICAO'
+                        else upper(regexp_replace(btrim(v.versao), '^[0-9]+', '')) end familia
               from acervo.versao v
              where v.data_edicao is not null and btrim(v.versao) ~ '^[0-9]+')
           select distinct on (maior.id)
-                 maior.id versao_id,maior.produto_id,p.nome produto,
+                 maior.id versao_id,maior.produto_id,p.nome produto,maior.familia,
                  maior.versao versao_maior,maior.data_edicao data_maior,
                  menor.versao versao_menor,menor.data_edicao data_menor
             from s maior
             join s menor
               on menor.produto_id=maior.produto_id
              and menor.subtipo_produto_id is not distinct from maior.subtipo_produto_id
+             and menor.familia = maior.familia
              and menor.ord<maior.ord
             join acervo.produto p on p.id=maior.produto_id
            where date_trunc('day',maior.data_edicao)<date_trunc('day',menor.data_edicao)
