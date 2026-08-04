@@ -15,6 +15,18 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   atualizarVersao: vi.fn(() => Promise.resolve()),
 }));
 
+// O PIT e de PLATAFORMA, e a versao so aponta para a meta. Duble aqui porque o
+// que se prova e o CORPO enviado, e nao a rota do plano anual.
+vi.mock('@services/plataforma-service.js', () => ({
+  getMetasPit: vi.fn(() => Promise.resolve([
+    { id: 9, ano: 2026, numero_meta: 3, item: 2, descricao: 'Carta Topografica 25k' },
+    { id: 10, ano: 2025, numero_meta: 1, item: null, descricao: 'Ortoimagem' },
+  ])),
+  getExtraPit: vi.fn(() => Promise.resolve([
+    { id: 4, ano: 2026, descricao: 'Apoio a Operacao Agata' },
+  ])),
+}));
+
 // O assistente de carregamento entra por dublê: ele é OUTRA tela, e o que este
 // arquivo prova é que a Regular sai daqui para lá com o corpo pronto, e não o
 // que acontece depois.
@@ -569,6 +581,54 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
     expect(enviado.produto_id).toBe(Number(PRODUTO.id));
     expect(enviado.versao).toBe('1ª Edição');
     expect(enviado.uuid_versao).toBeNull();
+  });
+
+  // A META DO PIT. Sem este campo, a unica forma de ligar uma versao ao plano
+  // anual era o plugin do QGIS ou SQL na mao, e a grade do PIT conta por
+  // `INNER JOIN pit.meta ON mm.id = v.meta_pit_id`: versao sem meta nao conta.
+  // Medido em producao: das 278 versoes Regulares finalizadas em 2026, 163
+  // estavam prontas e fora da conta do plano.
+  test('a meta do PIT escolhida vai no corpo', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+    preencherHistorica();
+    preencher('Meta do PIT', '9');
+    clicar('Salvar');
+    await flush();
+
+    const [enviado] = svc.criarVersoesHistoricas.mock.calls[0][0];
+    expect(enviado.meta_pit_id).toBe(9);
+    expect(enviado.demanda_extra_id).toBeNull();
+  });
+
+  // O banco cobra a exclusividade (CHECK `versao_plano_ou_excecao`): a versao
+  // cumpre uma meta prometida, ou materializa uma demanda que entrou fora do
+  // plano. Marcar um limpa o outro AQUI, para o erro nao aparecer so no salvar.
+  test('escolher Extra-PIT limpa a meta, e vice-versa', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+    preencherHistorica();
+
+    preencher('Meta do PIT', '9');
+    preencher('Demanda Extra-PIT', '4');
+    clicar('Salvar');
+    await flush();
+
+    const [enviado] = svc.criarVersoesHistoricas.mock.calls[0][0];
+    expect(enviado.demanda_extra_id).toBe(4);
+    expect(enviado.meta_pit_id).toBeNull();
+  });
+
+  // O rotulo traz o ANO, porque a grade so conta a versao quando o ano da meta
+  // bate com o da data de edicao. Sem o ano a vista, escolher a meta do ano
+  // errado nao conta e nao avisa.
+  test('a lista de metas mostra o ano de cada uma', async () => {
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    const rotulos = [...inputDe('Meta do PIT').options].map(o => o.textContent);
+    expect(rotulos.some(r => r.includes('2026') && r.includes('Meta 3'))).toBe(true);
+    expect(rotulos.some(r => r.includes('2025'))).toBe(true);
   });
 
   // As duas rotas FIXAM o tipo no servidor. Mandar `tipo_versao_id` no corpo

@@ -19,6 +19,9 @@ import {
   criarProdutoComVersaoHistorica,
   atualizarVersao,
 } from '@modules/acervo/services/acervo-service.js';
+// O PIT e de PLATAFORMA, e nao do modulo acervo: a meta pertence ao plano anual
+// da divisao, e a versao so aponta para ela.
+import { getMetasPit, getExtraPit } from '@services/plataforma-service.js';
 import { abrirAssistenteUpload } from './upload-wizard.js';
 
 /**
@@ -235,11 +238,16 @@ export async function openVersaoDialog({
 
   // Os domínios não bloqueiam a tela: sem eles os `<select>` ficam vazios e a
   // pessoa vê por quê, o que é melhor do que um diálogo que não abre.
-  const [tipos, subtipos, lotes, projetos] = await Promise.all([
+  const [tipos, subtipos, lotes, projetos, metas, extras] = await Promise.all([
     getTiposVersao().catch(() => []),
     getSubtiposProduto().catch(() => []),
     getLotes().catch(() => []),
     getProjetos().catch(() => []),
+    // Sem `ano`: a lista traz todos os anos, e o rotulo mostra o ano de cada
+    // uma. Filtrar pelo ano corrente esconderia a meta certa de quem esta
+    // cadastrando uma carta finalizada em dezembro passado.
+    getMetasPit().catch(() => []),
+    getExtraPit().catch(() => []),
   ]);
 
   const nomeProjeto = new Map((projetos || []).map(p => [Number(p.id), p.nome]));
@@ -329,7 +337,52 @@ export async function openVersaoDialog({
     })),
     value: versao?.lote_id ?? '',
     placeholder: 'Sem lote',
-    helpText: 'O lote é o que liga a versão ao PIT',
+    helpText: 'O lote diz de que produção esta versão saiu',
+  });
+
+  // --- O que esta versão CUMPRE no plano anual ------------------------------
+  //
+  // Sem estes dois campos, a única forma de ligar uma versão ao PIT era o plugin
+  // do QGIS ou SQL na mão, e a grade do PIT conta por `INNER JOIN pit.meta ON
+  // mm.id = v.meta_pit_id`: versão sem meta não conta. Medido em 2026-08-04 no
+  // banco de produção: das 278 versões Regulares finalizadas em 2026, só 115
+  // tinham meta. As outras 163 estavam prontas e fora da conta do plano.
+  //
+  // Os dois são EXCLUSIVOS, e o banco cobra isso (CHECK
+  // `versao_plano_ou_excecao`): a versão cumpre uma meta prometida no PIT, ou
+  // materializa uma demanda que entrou fora dele. Marcar um limpa o outro aqui,
+  // para o erro não aparecer só no salvar.
+  const rotuloMeta = (m) => {
+    const partes = [`${m.ano}`, `Meta ${m.numero_meta}`];
+    if (m.item) partes.push(`item ${m.item}`);
+    const cabeca = partes.join(' · ');
+    return m.descricao ? `${cabeca} — ${m.descricao}` : cabeca;
+  };
+
+  const metaField = createSelectField({
+    label: 'Meta do PIT',
+    options: (metas || []).map(m => ({ value: m.id, label: rotuloMeta(m) })),
+    value: versao?.meta_pit_id ?? '',
+    placeholder: 'Não cumpre meta do PIT',
+    helpText: 'A grade do PIT conta esta versão na meta escolhida, pelo ANO da '
+      + 'data de edição. Meta de outro ano não entra na conta.',
+    onChange: () => {
+      if (metaField.getValue() !== null) extraField.setValue(null);
+    },
+  });
+
+  const extraField = createSelectField({
+    label: 'Demanda Extra-PIT',
+    options: (extras || []).map(e => ({
+      value: e.id,
+      label: `${e.ano} · ${e.descricao || `Demanda ${e.id}`}`,
+    })),
+    value: versao?.demanda_extra_id ?? '',
+    placeholder: 'Não é Extra-PIT',
+    helpText: 'Para a produção que entrou fora do plano anual. Exclui a meta do PIT.',
+    onChange: () => {
+      if (extraField.getValue() !== null) metaField.setValue(null);
+    },
   });
 
   const palavrasField = createChipInput({
@@ -451,6 +504,8 @@ export async function openVersaoDialog({
     subtipoField.element,
     orgaoField.element,
     loteField.element,
+    metaField.element,
+    extraField.element,
     criacaoField.element,
     edicaoField.element,
     el('div', { className: 'form-grid__full' }, [palavrasField.element]),
@@ -568,6 +623,14 @@ export async function openVersaoDialog({
             descricao: descricaoField.getValue(),
             metadado,
             lote_id: loteField.getValue() === null ? null : Number(loteField.getValue()),
+            // Os dois seguem SEMPRE, inclusive como null: no PUT o servidor
+            // preserva a chave OMITIDA (`preserveOmitted`), então omiti-los
+            // impediria desligar a versão de uma meta escolhida por engano.
+            // Mandar null explícito é o que desliga, e é o contrato da rota.
+            meta_pit_id: metaField.getValue() === null ? null : Number(metaField.getValue()),
+            demanda_extra_id: extraField.getValue() === null
+              ? null
+              : Number(extraField.getValue()),
             orgao_produtor: orgao,
             palavras_chave: palavrasField.getValue(),
             data_criacao: dataCriacao,
