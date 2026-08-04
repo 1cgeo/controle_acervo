@@ -1,31 +1,31 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { monthName } from '@utils/format.js';
-import { showError } from '@utils/toast.js';
+import { monthName, formatDateTime, formatDate } from '@utils/format.js';
+import { showError, showSuccess } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { createSelectField } from '@components/form-fields/form-fields.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { getUsuarios } from '@services/plataforma-service.js';
 import {
-  getRpcmtec,
-  downloadRpcmtecDocx,
-  downloadAnuarioOds,
-  downloadRtmOds,
+  listarEdicoes, getAnosEdicao, excluirEdicao,
 } from '@services/rpcmtec-service.js';
+import { abrirDialogoEdicao } from './edicao-dialog.js';
 
 /**
- * RPCMTec (#/rpcmtec): o relatorio mensal da Divisao, inteiro, numa tela so.
+ * RPCMTec (#/rpcmtec): a lista das edicoes mensais.
  *
- * TELA DE PLATAFORMA, como a de usuarios e a de metas do PIT. Ate 2026-08-01
- * eram DUAS, uma dentro da mapoteca (#/mapoteca/rpcmtec, com acervo e mapoteca)
- * e outra dentro do orcamento (#/orcamento/relatorio, com o PDR), cada uma
- * gerando um DOCX proprio com numeracao propria. Quem montava a edicao mensal
- * abria os dois arquivos e colava um no outro, no Word, todo mes.
+ * O QUE ESTA TELA VIROU EM 2026-08-05. Ate essa data ela era um GERADOR: o
+ * gestor escolhia ano e mes, o servidor calculava as dezoito subsecoes que sabe
+ * calcular, e saia um DOCX que alguem colava num documento mestre no Word, onde
+ * preenchia as outras doze e exportava o PDF. Nada disso ficava guardado, e a
+ * unica copia do relatorio era o arquivo no disco de quem o montou.
  *
- * O QUE ELA MOSTRA e exatamente o que vai para o arquivo: as secoes chegam do
- * servidor ja com as celulas em texto, e esta tela so as desenha. Nao ha
- * formatacao aqui de proposito -- com a tela arredondando por conta, ela e o
- * DOCX divergiam e quem conferia via diferenca onde nao havia.
+ * Agora a unidade de trabalho e a EDICAO do mes: ela guarda o que o gestor
+ * digita, congela tudo no fechamento e recebe o PDF assinado como anexo. Por
+ * isso a tela abre numa LISTA -- consultar o RPCMTec de um mes passado e a
+ * operacao mais comum, e ela nao existia.
  *
  * O ANO tem seletor PROPRIO, e nao o da navbar: aquele e contexto de MODULO
- * (`@sca-mapoteca-ano`, `@sca-orcamento-ano`) e nao existe fora deles. O mes
- * tambem e daqui, porque o RPCMTec e sempre de um mes especifico.
+ * (`@sca-mapoteca-ano`, `@sca-orcamento-ano`) e nao existe fora deles.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -33,236 +33,200 @@ import {
  */
 export async function renderRpcmtec(container, _ctx) {
   let disposed = false;
-  // Uma tabela por subsecao, indexada pelo numero ('2.7'). Elas sao criadas na
-  // PRIMEIRA geracao, e nao aqui: quais subsecoes existem e o servidor que diz.
-  const tabelas = new Map();
+  let usuarios = [];
+  let ano = new Date().getFullYear();
 
-  const hoje = new Date();
-  const anoCorrente = hoje.getFullYear();
-
-  const mesSelect = el('select', {
-    className: 'form-field__select',
-    id: 'rpcmtec-mes',
-    'aria-label': 'Selecionar mês',
-    onChange: () => {
-      // O rotulo do RTM carrega o mes, entao ele muda junto.
-      atualizarRotuloRtm();
-      gerar();
+  const anoField = createSelectField({
+    label: 'Ano',
+    options: [],
+    placeholder: 'Todos os anos',
+    value: ano,
+    onChange: (valor) => {
+      ano = valor === null ? null : Number(valor);
+      carregar();
     },
-  }, Array.from({ length: 12 }, (_, i) => el('option', {
-    value: String(i + 1),
-    textContent: monthName(i + 1),
-  })));
-  mesSelect.value = String(hoje.getMonth() + 1);
+  });
 
-  // Do ano corrente para tras. Cinco anos cobrem o que se reabre na pratica: a
-  // edicao mais antiga que alguem gera de novo e a do exercicio anterior.
-  const anoSelect = el('select', {
-    className: 'form-field__select',
-    id: 'rpcmtec-ano',
-    'aria-label': 'Selecionar ano',
-    onChange: () => gerar(),
-  }, Array.from({ length: 5 }, (_, i) => el('option', {
-    value: String(anoCorrente - i),
-    textContent: String(anoCorrente - i),
-  })));
-  anoSelect.value = String(anoCorrente);
-
-  const baixarBtn = el('button', {
+  const novaBtn = el('button', {
     className: 'btn btn--primary',
     type: 'button',
-    onClick: () => baixar(),
-  }, [svgIcon(ICONS.print, 16), 'Baixar DOCX']);
+    onClick: () => abrirDialogoEdicao({
+      usuarios,
+      onSaved: (criada) => {
+        if (criada && criada.id) {
+          location.hash = `/rpcmtec/${criada.id}`;
+          return;
+        }
+        carregar();
+      },
+    }),
+  }, [svgIcon(ICONS.add, 16), 'Nova edição']);
 
-  // O Anuario Estatistico sobe para a DSG no MESMO envio mensal que o RPCMTec, e
-  // por isso sai da mesma tela e do mesmo mes: e uma tarefa so.
-  //
-  // Ele e SO DOWNLOAD, sem previa em tela (chefe, 2026-08-01). O destino dele e
-  // uma aba de planilha, que se confere no proprio arquivo; e como o .ods sai da
-  // planilha-semente da DSG com os valores trocados, ele ja chega no formato
-  // final. Uma tabela aqui repetiria pior o que o arquivo mostra.
-  const anuarioBtn = el('button', {
-    className: 'btn',
-    type: 'button',
-    onClick: () => baixarAnuario(),
-  }, [svgIcon(ICONS.print, 16), 'Baixar Anuário (ODS)']);
+  // O ESTADO da edicao nao e uma coluna do banco: ele se le de duas colunas.
+  // Sem `data_fechamento` esta aberta; com ela e fechada; com anexo, o assinado
+  // ja voltou. Um enum diria a mesma coisa e poderia divergir das duas.
+  const estadoDe = (linha) => {
+    if (!linha.fechada) return { texto: 'Aberta', classe: 'status-chip--warning' };
+    if (linha.anexos > 0) return { texto: 'Assinada', classe: 'status-chip--success' };
+    return { texto: 'Fechada', classe: 'status-chip--info' };
+  };
 
-  // O RTM sobe para a DSG no mesmo envio, e por isso sai da mesma barra. Ele
-  // tambem passou a seguir o MES escolhido em 2026-08-02 (chefe), com uma
-  // diferenca que o rotulo precisa dizer: ele e ACUMULADO. Escolher marco traz
-  // janeiro, fevereiro e marco; o DOCX e o Anuario trazem so marco.
-  //
-  // Ate esta data ele era do ano inteiro e o `mes` que a tela mandava era
-  // ignorado pelo servidor: trocar o mes devolvia o mesmo arquivo.
-  //
-  // O rotulo carrega o mes escolhido porque o botao e o unico lugar em que essa
-  // diferenca aparece; "Baixar RTM (ODS)" ao lado dos outros dois se leria como
-  // se os tres fossem do mesmo periodo.
-  const rtmBtn = el('button', {
-    className: 'btn',
-    type: 'button',
-    title: 'Detalhamento da Meta 4 do PIT, acumulado de janeiro até o mês escolhido. '
-      + 'O DOCX e o Anuário trazem apenas o mês.',
-    onClick: () => baixarRtm(),
-  }, [svgIcon(ICONS.print, 16), el('span', { className: 'rpcm-rtm-rotulo' })]);
-
-  /** Mantem o rotulo do RTM em dia com o mes escolhido. */
-  function atualizarRotuloRtm() {
-    const nome = monthName(Number(mesSelect.value));
-    rtmBtn.querySelector('.rpcm-rtm-rotulo').textContent =
-      `Baixar RTM até ${nome} (ODS)`;
-  }
-
-  atualizarRotuloRtm();
-
-  const toolbar = el('div', { className: 'rpcm-toolbar' }, [
-    el('div', { className: 'rpcm-toolbar__field' }, [
-      el('label', { className: 'rpcm-toolbar__label', for: 'rpcmtec-mes', textContent: 'Mês' }),
-      mesSelect,
-    ]),
-    el('div', { className: 'rpcm-toolbar__field' }, [
-      el('label', { className: 'rpcm-toolbar__label', for: 'rpcmtec-ano', textContent: 'Ano' }),
-      anoSelect,
-    ]),
-    el('div', { className: 'rpcm-toolbar__spacer' }),
-    rtmBtn,
-    anuarioBtn,
-    baixarBtn,
-  ]);
-
-  const secoesArea = el('div');
+  const tabela = createDataTable({
+    columns: [
+      {
+        key: 'mes',
+        label: 'Edição',
+        sortable: true,
+        render: (linha) => `${monthName(linha.mes)}/${linha.ano}`,
+      },
+      {
+        key: 'fechada',
+        label: 'Estado',
+        sortable: true,
+        render: (linha) => {
+          const estado = estadoDe(linha);
+          return el('span', {
+            className: `status-chip ${estado.classe}`,
+            textContent: estado.texto,
+          });
+        },
+      },
+      {
+        key: 'assinante_nome',
+        label: 'Assinante',
+        render: (linha) => (linha.assinante_nome
+          ? `${linha.assinante_posto || ''} ${linha.assinante_nome}`.trim()
+          : '-'),
+      },
+      {
+        key: 'data_assinatura',
+        label: 'Assinada em',
+        sortable: true,
+        render: (linha) => formatDate(linha.data_assinatura) || '-',
+      },
+      {
+        key: 'data_fechamento',
+        label: 'Fechada em',
+        sortable: true,
+        render: (linha) => formatDateTime(linha.data_fechamento) || '-',
+      },
+      {
+        key: 'anexos',
+        label: 'Assinado anexado',
+        render: (linha) => (linha.anexos > 0 ? `${linha.anexos} arquivo(s)` : '-'),
+      },
+    ],
+    rows: [],
+    pageSize: 25,
+    loading: true,
+    emptyMessage: 'Nenhuma edição do RPCMTec cadastrada',
+    actions: [
+      {
+        icon: ICONS.visibility,
+        title: 'Abrir',
+        onClick: (linha) => { location.hash = `/rpcmtec/${linha.id}`; },
+      },
+      {
+        icon: ICONS.delete,
+        title: 'Excluir',
+        variant: 'danger',
+        onClick: (linha) => excluir(linha),
+      },
+    ],
+  });
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header page__header--column' }, [
       el('h1', { className: 'page__title', textContent: 'RPCMTec' }),
       el('p', {
         className: 'page__subtitle',
-        textContent: 'Relatório de Prestação de Contas Mensal Técnico. Acervo, mapoteca e orçamento numa geração só, na numeração e no formato do documento da Divisão.',
+        textContent: 'Relatório de Prestação de Contas Mensal Técnico. Uma edição por mês: '
+          + 'o sistema calcula o que sabe, o gestor preenche o resto, e o fechamento congela o documento.',
       }),
-      toolbar,
     ]),
-    secoesArea,
+    el('div', {
+      className: 'page__filters',
+      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' },
+    }, [
+      anoField.element,
+      el('div', { style: { flex: '1' } }),
+      novaBtn,
+    ]),
+    tabela.element,
   ]);
   container.appendChild(page);
 
-  /** Desenha a estrutura (uma tabela por subsecao) a partir do que o servidor mandou. */
-  function montarEstrutura(secoes) {
-    for (const tabela of tabelas.values()) tabela._cleanup();
-    tabelas.clear();
-    secoesArea.replaceChildren();
-
-    for (const secao of secoes) {
-      secoesArea.appendChild(el('h2', {
-        className: 'page__section-title',
-        textContent: secao.titulo,
-      }));
-
-      for (const sub of secao.subsecoes) {
-        // As colunas viram c0, c1, ... porque a celula chega POSICIONAL (uma
-        // lista por linha), do mesmo jeito que o DOCX a desenha. Dar nome de
-        // campo a cada uma exigiria um contrato por subsecao, duplicado entre
-        // servidor e tela, e e exatamente esse contrato duplicado que deixava as
-        // duas telas antigas divergirem do arquivo.
-        const columns = sub.cabecalhos.map((label, i) => ({
-          key: `c${i}`,
-          label,
-          render: (row) => row[`c${i}`] ?? '-',
-        }));
-
-        const tabela = createDataTable({
-          columns,
-          rows: [],
-          pageSize: 25,
-          emptyMessage: 'Sem dados no período',
-        });
-        tabelas.set(sub.numero, tabela);
-
-        secoesArea.appendChild(el('div', { className: 'dashboard-section' }, [
-          el('div', { className: 'dashboard-section__header' }, [
-            el('h3', {
-              className: 'dashboard-section__title',
-              textContent: `${sub.numero}. ${sub.titulo}`,
-            }),
-          ]),
-          tabela.element,
-        ]));
-      }
+  async function excluir(linha) {
+    if (linha.fechada) {
+      showError('Edição fechada não pode ser excluída. Reabra-a primeiro.');
+      return;
     }
-  }
+    const ok = await confirmDialog({
+      title: 'Excluir edição',
+      message: `Excluir o RPCMTec de ${monthName(linha.mes)}/${linha.ano}? `
+        + 'O que foi digitado nela some junto.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
 
-  function preencher(secoes) {
-    for (const secao of secoes) {
-      for (const sub of secao.subsecoes) {
-        const tabela = tabelas.get(sub.numero);
-        if (!tabela) continue;
-        const rows = sub.linhas.map((celulas) =>
-          Object.fromEntries(celulas.map((valor, i) => [`c${i}`, valor])));
-        tabela.update({ rows, loading: false });
-      }
-    }
-  }
-
-  function getParams() {
-    return {
-      ano: parseInt(anoSelect.value, 10),
-      mes: parseInt(mesSelect.value, 10),
-    };
-  }
-
-  async function gerar() {
-    for (const tabela of tabelas.values()) tabela.update({ loading: true });
     try {
-      const dados = await getRpcmtec(getParams());
+      await excluirEdicao(linha.id);
+      showSuccess('Edição excluída com sucesso');
+      await carregar();
+    } catch (err) {
+      showError(err.message || 'Erro ao excluir a edição');
+    }
+  }
+
+  async function carregarAnos() {
+    let anos = [];
+    try {
+      anos = await getAnosEdicao();
+    } catch {
+      anos = [];
+    }
+    if (disposed) return;
+
+    const corrente = new Date().getFullYear();
+    const lista = [...new Set([corrente, ...(anos || []).map(Number)])]
+      .sort((a, b) => b - a);
+    anoField.setOptions(lista.map((a) => ({ value: a, label: String(a) })));
+    anoField.setValue(ano);
+  }
+
+  async function carregarUsuarios() {
+    try {
+      const lista = await getUsuarios();
       if (disposed) return;
-      // A estrutura e remontada a cada geracao porque o servidor pode mudar o
-      // conjunto de subsecoes (uma subsecao nova entra sem tocar nesta tela).
-      montarEstrutura(dados.secoes);
-      preencher(dados.secoes);
+      usuarios = (lista || [])
+        .filter((u) => u.ativo)
+        .sort((a, b) => b.tipo_posto_grad_id - a.tipo_posto_grad_id
+          || a.nome_guerra.localeCompare(b.nome_guerra));
+    } catch {
+      usuarios = [];
+    }
+  }
+
+  async function carregar() {
+    tabela.update({ loading: true });
+    try {
+      const linhas = await listarEdicoes(ano);
+      if (disposed) return;
+      tabela.update({ rows: linhas || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      for (const tabela of tabelas.values()) tabela.update({ rows: [], loading: false });
-      showError(err.message || 'Erro ao gerar o RPCMTec');
+      tabela.update({ rows: [], loading: false });
+      showError(err.message || 'Erro ao carregar as edições do RPCMTec');
     }
   }
 
-  async function baixar() {
-    baixarBtn.disabled = true;
-    try {
-      await downloadRpcmtecDocx(getParams());
-    } catch (err) {
-      showError(err.message || 'Erro ao baixar o DOCX');
-    } finally {
-      baixarBtn.disabled = false;
-    }
-  }
-
-  async function baixarRtm() {
-    rtmBtn.disabled = true;
-    try {
-      await downloadRtmOds(getParams());
-    } catch (err) {
-      showError(err.message || 'Erro ao baixar o RTM');
-    } finally {
-      rtmBtn.disabled = false;
-    }
-  }
-
-  async function baixarAnuario() {
-    anuarioBtn.disabled = true;
-    try {
-      await downloadAnuarioOds(getParams());
-    } catch (err) {
-      showError(err.message || 'Erro ao baixar o Anuário');
-    } finally {
-      anuarioBtn.disabled = false;
-    }
-  }
-
-  await gerar();
+  await carregarUsuarios();
+  await carregarAnos();
+  await carregar();
 
   return () => {
     disposed = true;
-    for (const tabela of tabelas.values()) tabela._cleanup();
-    tabelas.clear();
+    tabela._cleanup();
   };
 }

@@ -15,10 +15,11 @@ const express = require('express')
 const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
 const { verifyAdmin } = require('../login')
 
-const rpcmtecCtrl = require('./rpcmtec_ctrl')
 const edicaoCtrl = require('./rpcmtec_edicao_ctrl')
+const subsecaoCtrl = require('./rpcmtec_subsecao_ctrl')
 const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
-const rpcmtecDocx = require('./rpcmtec_docx')
+const rpcmtecPdf = require('./rpcmtec_pdf')
+const uploadAnexoEdicao = require('./anexo_edicao_upload')
 const rpcmtecSchema = require('./rpcmtec_schema')
 const anuarioCtrl = require('../mapoteca/anuario_ctrl')
 const mapotecaRelatorioCtrl = require('../mapoteca/relatorio_ctrl')
@@ -28,47 +29,6 @@ const { gerarRtmOds } = require('./rtm_ods')
 const router = express.Router()
 
 const doisDigitos = mes => String(mes).padStart(2, '0')
-
-// ---------------------------------------------------------------------------
-// Geração. Declarada ANTES das rotas com parâmetro, senão '/docx' seria
-// capturado como um id pelo GET '/:id'.
-// ---------------------------------------------------------------------------
-
-// Prévia em tela: as MESMAS seções que vão para o arquivo, no envelope JSON
-// padrão. A tela não recalcula nada: se ela e o DOCX divergirem, é defeito.
-router.get(
-  '/gerar',
-  verifyAdmin,
-  schemaValidation({ query: rpcmtecSchema.gerarQuery }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await rpcmtecCtrl.gerar({
-      ano: req.query.ano,
-      mes: req.query.mes
-    })
-
-    return res.sendJsonAndLog(true, 'RPCMTec gerado com sucesso', httpCode.OK, dados)
-  })
-)
-
-// Download binário do DOCX, fora do envelope JSON: envia o arquivo direto.
-router.get(
-  '/gerar/docx',
-  verifyAdmin,
-  schemaValidation({ query: rpcmtecSchema.gerarQuery }),
-  asyncHandler(async (req, res, next) => {
-    const { ano, mes } = req.query
-    const dados = await rpcmtecCtrl.gerar({ ano, mes })
-    const buffer = await rpcmtecDocx.montarDocumento(dados)
-
-    const nome = `RPCMTec-${ano}-${doisDigitos(mes)}.docx`
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    )
-    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
-    return res.send(buffer)
-  })
-)
 
 // ---------------------------------------------------------------------------
 // Anuário Estatístico (Tabela 5.4.9)
@@ -256,7 +216,10 @@ router.delete(
 )
 
 // ---------------------------------------------------------------------------
-// CRUD da edição mensal (rpcmtec.edicao)
+// A edição mensal (rpcmtec.edicao)
+//
+// A ORDEM IMPORTA: '/anos' e '/anexo/...' são declaradas antes de '/:id',
+// senão 'anos' cairia na rota do id.
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -273,6 +236,48 @@ router.get(
 )
 
 router.get(
+  '/anos',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.anos()
+
+    return res.sendJsonAndLog(
+      true, 'Anos com edição retornados com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// Download do RPCMTec assinado, fora do envelope JSON.
+router.get(
+  '/anexo/:anexoId/download',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    const arquivo = await edicaoCtrl.getAnexoParaDownload(req.params.anexoId)
+
+    res.setHeader('Content-Type', arquivo.mimetype || 'application/octet-stream')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(arquivo.nome_original)}"`
+    )
+    return res.end(arquivo.conteudo)
+  })
+)
+
+router.delete(
+  '/anexo/:anexoId',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.anexoIdParams }),
+  asyncHandler(async (req, res, next) => {
+    await edicaoCtrl.deletarAnexo(
+      req.params.anexoId, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Anexo excluído com sucesso', httpCode.OK)
+  })
+)
+
+router.get(
   '/:id',
   verifyAdmin,
   schemaValidation({ params: rpcmtecSchema.idParams }),
@@ -281,6 +286,54 @@ router.get(
 
     return res.sendJsonAndLog(
       true, 'Edição do RPCMTec retornada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// O DOCUMENTO INTEIRO: os 34 blocos, com o calculado do banco (edição aberta)
+// ou o congelado (edição fechada). É o que a tela desenha e o que vira PDF, do
+// mesmo objeto -- com a tela lendo de um lugar e o arquivo de outro, os dois
+// divergiriam e quem confere veria diferença onde não há.
+router.get(
+  '/:id/documento',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.montar(req.params.id)
+
+    return res.sendJsonAndLog(
+      true, 'Documento do RPCMTec montado com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// Download binário do PDF, fora do envelope JSON.
+router.get(
+  '/:id/pdf',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const edicao = await edicaoCtrl.montar(req.params.id)
+    const buffer = await rpcmtecPdf.montarDocumento(edicao)
+
+    const nome = `RPCMTec-${edicao.ano}-${doisDigitos(edicao.mes)}.pdf`
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.end(buffer)
+  })
+)
+
+// O que o banco diria HOJE, ao lado do congelado. Só em edição fechada.
+router.get(
+  '/:id/conferir',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.conferirHoje(req.params.id)
+
+    return res.sendJsonAndLog(
+      true, 'Conferência realizada com sucesso', httpCode.OK, dados
     )
   })
 )
@@ -325,6 +378,137 @@ router.delete(
 
     return res.sendJsonAndLog(
       true, 'Edição do RPCMTec excluída com sucesso', httpCode.OK
+    )
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Fechamento e reabertura
+//
+// POST, e não PUT: fechar e reabrir são ATOS, e não a gravação de um campo. O
+// fechamento congela os 34 blocos e recusa a edição com subseção por
+// preencher; a reabertura descongela e preserva o digitado.
+// ---------------------------------------------------------------------------
+
+router.post(
+  '/:id/fechar',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.fechar(
+      req.params.id, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Edição fechada e congelada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/:id/reabrir',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.reabrir(
+      req.params.id, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Edição reaberta com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Subseções digitadas
+// ---------------------------------------------------------------------------
+
+router.put(
+  '/:id/subsecao/:numero',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.subsecaoParams,
+    body: rpcmtecSchema.gravarSubsecao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await subsecaoCtrl.gravar(
+      req.params.id, req.params.numero, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Subseção gravada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// Apaga o conteúdo digitado. A subseção volta a NÃO EXISTIR, que não é o mesmo
+// que ficar vazia: o fechamento a cobra de novo.
+router.delete(
+  '/:id/subsecao/:numero',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.subsecaoParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await subsecaoCtrl.limpar(
+      req.params.id, req.params.numero, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Subseção limpa com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/:id/copiar-mes-anterior',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.idParams,
+    body: rpcmtecSchema.copiarMesAnterior
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await subsecaoCtrl.copiarDoMesAnterior(
+      req.params.id, req.body.numero || null, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Conteúdo copiado do mês anterior', httpCode.OK, dados
+    )
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Anexo: o RPCMTec assinado
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/:id/anexos',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.listarAnexos(req.params.id)
+
+    return res.sendJsonAndLog(
+      true, 'Anexos retornados com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// O multer vem ANTES da validação do corpo: sem ele, `req.body` do multipart
+// chega vazio. Mesma ordem do anexo da revisão do PIT.
+router.post(
+  '/:id/anexos',
+  verifyAdmin,
+  schemaValidation({ params: rpcmtecSchema.idParams }),
+  uploadAnexoEdicao,
+  schemaValidation({ body: rpcmtecSchema.anexoUploadBody }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.criarAnexo(
+      req.params.id, req.file, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'RPCMTec assinado anexado com sucesso', httpCode.Created, dados
     )
   })
 )

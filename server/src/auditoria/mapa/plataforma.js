@@ -298,8 +298,45 @@ module.exports = {
       // Mesma razao do `ano` da meta.
       ano: { rotulo: 'Ano' },
       mes: { rotulo: 'Mês', tipo: 'numero' },
-      assinante: { rotulo: 'Assinante' },
-      data_assinatura: { rotulo: 'Data da assinatura', tipo: 'data' }
+      assinante_uuid: { rotulo: 'Assinante', entidade: 'usuario' },
+      data_assinatura: { rotulo: 'Data da assinatura', tipo: 'data' },
+      // FECHAR e REABRIR sao os dois atos mais consequentes da tela, e passam
+      // por estas duas colunas: fechar congela o documento que o chefe assina,
+      // reabrir descongela. "Quem reabriu a edicao de julho" e pergunta que se
+      // faz depois de o documento ter saido.
+      data_fechamento: { rotulo: 'Fechamento', tipo: 'data_hora' },
+      usuario_fechamento_uuid: { rotulo: 'Fechada por', entidade: 'usuario' }
+    }
+  },
+
+  // O CONTEUDO de um bloco do relatorio. O evento e do bloco, e nao da edicao,
+  // porque a pergunta que se faz e "quem mudou a 7.1", e nao "quantas vezes a
+  // edicao de julho foi tocada" -- esta ultima daria dezenas de linhas iguais.
+  'rpcmtec.subsecao': {
+    modulo: 'plataforma',
+    entidade: 'edicao',
+    agregado: (t, linha) => linha.edicao_id,
+    resumo: linha => `Subseção ${linha.numero}`,
+    campos: {
+      numero: { rotulo: 'Subseção' },
+      // A celula ja em TEXTO, como vai impressa: o rastro guarda o que o
+      // documento DISSE, e nao o dado normalizado.
+      linhas: { rotulo: 'Linhas', tipo: 'lista' },
+      texto: { rotulo: 'Texto' },
+      sem_ocorrencia: { rotulo: 'Sem ocorrência no mês', tipo: 'booleano' }
+    }
+  },
+
+  'rpcmtec.anexo_edicao': {
+    modulo: 'plataforma',
+    entidade: 'edicao',
+    agregado: (t, linha) => linha.edicao_id,
+    resumo: linha => `Anexo ${linha.nome_original}`,
+    campos: {
+      nome_original: { rotulo: 'Arquivo' },
+      extensao: { rotulo: 'Extensão' },
+      tamanho_bytes: { rotulo: 'Tamanho', tipo: 'numero' },
+      descricao: { rotulo: 'Descrição' }
     }
   },
 

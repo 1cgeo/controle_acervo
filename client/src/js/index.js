@@ -23,6 +23,7 @@ import {
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
+import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
 
 // Inicializa o tema (claro/escuro via data-theme, persistido em sca-theme-mode)
@@ -146,6 +147,10 @@ router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), { gua
 // empenho e de liquidacao, e liberar por perfil de um modulo entregaria o
 // orcamento a quem so cataloga carta. O backend cobra o mesmo com verifyAdmin.
 router.add('/rpcmtec', withLayout(renderRpcmtec), { guard: adminLoader });
+// A EDICAO de um mes. Rota propria, e nao estado dentro da lista, porque
+// consultar o RPCMTec de um mes passado e a operacao mais comum da tela e
+// precisa de endereco: quem manda "veja o de marco" manda um link.
+router.add('/rpcmtec/:id', withLayout(renderRpcmtecEdicao), { guard: adminLoader });
 
 // Consulta PUBLICA de pedido da mapoteca pelo localizador (RN04). Sem sessao e
 // sem guarda: quem pediu acompanha o pedido pelo codigo XXXX-XXXX-XXXX, sem

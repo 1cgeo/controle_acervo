@@ -828,6 +828,24 @@ const COBERTAS = new Set([
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
   'DELETE /rpcmtec/:id',
+  // O RPCMTec inteiro passou a ser preenchido e guardado no sistema em
+  // 2026-08-05. FECHAR e REABRIR sao rotas proprias porque sao ATOS, e nao a
+  // gravacao de um campo: fechar congela os 34 blocos do documento que o chefe
+  // assina, reabrir descongela. Os dois caem no agregado da EDICAO, que e onde
+  // se pergunta "quem reabriu a de julho".
+  'POST /rpcmtec/:id/fechar',
+  'POST /rpcmtec/:id/reabrir',
+  // O conteudo digitado. Auditado tambem no agregado da EDICAO: a pergunta e
+  // "quem mudou a 7.1 de julho", e ela se faz na ficha da edicao.
+  'PUT /rpcmtec/:id/subsecao/:numero',
+  'DELETE /rpcmtec/:id/subsecao/:numero',
+  // A copia do mes anterior grava subsecao por subsecao, e cada uma deixa o
+  // proprio rastro de insercao.
+  'POST /rpcmtec/:id/copiar-mes-anterior',
+  // O RPCMTec ASSINADO, em PDF. E a fonte primaria da edicao: o congelado tem
+  // de dizer o que ele diz.
+  'POST /rpcmtec/:id/anexos',
+  'DELETE /rpcmtec/anexo/:anexoId',
   // Capacitacao (2.6 e 6.2), absorvida do SAP em 2026-08-02.
   'POST /rpcmtec/capacitacao',
   'PUT /rpcmtec/capacitacao/:id',

@@ -68,11 +68,25 @@ const createVersao = async (produtoId, overrides = {}) => {
  * Creates an arquivo record in the database.
  * Requires an existing versao_id.
  */
+// O NOME FÍSICO É ÚNICO POR VOLUME desde a migração de 2026-07-29, e o índice
+// só chegou ao `er/` em 2026-08-03, pelo ensaio de convergência. A partir dali,
+// dois `createFullProduct()` no mesmo teste passaram a colidir: ambos gravavam
+// 'arquivo_teste.tif' no volume 1.
+//
+// O CONSERTO É DA FIXTURE, e não do índice. Ele está certo: dois arquivos com o
+// mesmo nome físico no mesmo volume disputam UM arquivo no disco, e um
+// sobrescreve o outro em silêncio. A fixture é que precisava gerar nome único,
+// como já fazia com o uuid e o checksum.
+//
+// O nome continua RECONHECÍVEL ('arquivo_teste_<8 hex>.tif'): teste que falha
+// mostrando um nome aleatório puro custa mais para ler.
+const nomeFisicoUnico = () => `arquivo_teste_${uuidv4().slice(0, 8)}.tif`
+
 const createArquivo = async (versaoId, overrides = {}) => {
   const defaults = {
     uuid_arquivo: uuidv4(),
     nome: 'Arquivo Teste',
-    nome_arquivo: 'arquivo_teste.tif',
+    nome_arquivo: nomeFisicoUnico(),
     versao_id: versaoId,
     tipo_arquivo_id: 1,
     volume_armazenamento_id: 1,

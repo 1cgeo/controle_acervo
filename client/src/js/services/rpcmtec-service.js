@@ -1,4 +1,6 @@
-import { apiGet, apiDownload } from '@services/api-client.js';
+import {
+  apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload,
+} from '@services/api-client.js';
 
 /**
  * Servico do RPCMTec, o relatorio mensal da Divisao.
@@ -8,30 +10,90 @@ import { apiGet, apiDownload } from '@services/api-client.js';
  * 2026-08-01 as chamadas viviam partidas entre `mapoteca-service` (a secao do
  * acervo) e `orcamento-service` (a do PDR), servindo duas telas que geravam dois
  * arquivos que alguem colava a mao.
+ *
+ * DESDE 2026-08-05 o relatorio INTEIRO e preenchido e guardado no sistema, e a
+ * unidade de trabalho e a EDICAO do mes, nao mais o par ano/mes solto. O DOCX
+ * saiu: o que o sistema emite agora e o PDF final, e o assinado volta como
+ * anexo.
  */
 
-/**
- * As secoes do RPCMTec do mes, ja com as celulas em texto. Sao as MESMAS que vao
- * para o DOCX: a tela nao formata nada por conta propria, senao ela e o arquivo
- * divergem no arredondamento e quem confere ve diferenca onde nao ha.
- *
- * @param {{ano:number, mes:number}} params
- * @returns {Promise<{ano:number, mes:number, secoes:Array}>}
- */
-export function getRpcmtec({ ano, mes }) {
-  return apiGet(`/rpcmtec/gerar?ano=${ano}&mes=${mes}`);
-}
+// --- A edicao mensal --------------------------------------------------------
+
+export const listarEdicoes = (ano) =>
+  apiGet(`/rpcmtec${ano ? `?ano=${ano}` : ''}`);
+
+export const getAnosEdicao = () => apiGet('/rpcmtec/anos');
+
+export const getEdicao = (id) => apiGet(`/rpcmtec/${id}`);
+
+export const criarEdicao = (body) => apiPost('/rpcmtec', body);
+
+export const atualizarEdicao = (id, body) => apiPut(`/rpcmtec/${id}`, body);
+
+export const excluirEdicao = (id) => apiDelete(`/rpcmtec/${id}`);
 
 /**
- * Baixa o DOCX do mes, no formato do RPCMTec da Divisao.
+ * O DOCUMENTO inteiro: os 34 blocos, com o calculado do banco (edicao aberta)
+ * ou o congelado (edicao fechada).
  *
- * @param {{ano:number, mes:number}} params
- * @returns {Promise<void>}
+ * A tela NAO formata nada por conta: a celula chega em texto, e e a mesma que
+ * vai para o PDF. Com a tela lendo numero cru e o arquivo formatando por conta,
+ * as duas divergiam no arredondamento e quem conferia via diferenca onde nao
+ * havia.
  */
-export function downloadRpcmtecDocx({ ano, mes }) {
-  const nome = `RPCMTec-${ano}-${String(mes).padStart(2, '0')}.docx`;
-  return apiDownload(`/rpcmtec/gerar/docx?ano=${ano}&mes=${mes}`, nome);
+export const getDocumento = (id) => apiGet(`/rpcmtec/${id}/documento`);
+
+/** Congela a edicao. Recusa com subsecao digitada por preencher. */
+export const fecharEdicao = (id) => apiPost(`/rpcmtec/${id}/fechar`);
+
+/** Descongela. Preserva o digitado; o calculado volta a sair do banco. */
+export const reabrirEdicao = (id) => apiPost(`/rpcmtec/${id}/reabrir`);
+
+/** O que o banco diria HOJE, ao lado do congelado. So em edicao fechada. */
+export const conferirHoje = (id) => apiGet(`/rpcmtec/${id}/conferir`);
+
+/**
+ * Baixa o PDF da edicao.
+ *
+ * Edicao aberta sai com a marca RASCUNHO em toda pagina: um PDF de edicao
+ * aberta pode ser assinado, e ai o documento assinado afirma numeros que ainda
+ * vao mudar.
+ */
+export function downloadRpcmtecPdf(id, ano, mes) {
+  const nome = `RPCMTec-${ano}-${String(mes).padStart(2, '0')}.pdf`;
+  return apiDownload(`/rpcmtec/${id}/pdf`, nome);
 }
+
+// --- Subsecoes digitadas ----------------------------------------------------
+
+export const gravarSubsecao = (id, numero, body) =>
+  apiPut(`/rpcmtec/${id}/subsecao/${numero}`, body);
+
+/**
+ * Apaga o conteudo digitado. A subsecao volta a NAO EXISTIR, que nao e o mesmo
+ * que ficar vazia: o fechamento a cobra de novo.
+ */
+export const limparSubsecao = (id, numero) =>
+  apiDelete(`/rpcmtec/${id}/subsecao/${numero}`);
+
+/** Sem `numero`, copia todas as digitadas que o mes anterior tinha. */
+export const copiarMesAnterior = (id, numero = null) =>
+  apiPost(`/rpcmtec/${id}/copiar-mes-anterior`, numero ? { numero } : {});
+
+// --- Anexo: o RPCMTec assinado ----------------------------------------------
+
+export const listarAnexos = (id) => apiGet(`/rpcmtec/${id}/anexos`);
+
+export const enviarAnexo = (id, formData) =>
+  apiUpload(`/rpcmtec/${id}/anexos`, formData);
+
+export const excluirAnexo = (anexoId) =>
+  apiDelete(`/rpcmtec/anexo/${anexoId}`);
+
+export const downloadAnexo = (anexoId, nome) =>
+  apiDownload(`/rpcmtec/anexo/${anexoId}/download`, nome);
+
+// --- Anuario e RTM ----------------------------------------------------------
 
 /**
  * Baixa o .ods do Anuario. O arquivo sai da planilha-semente da DSG com os
@@ -49,13 +111,11 @@ export function downloadAnuarioOds({ ano, mes }) {
 }
 
 /**
- * Baixa a aba META4_DETALHADA do RTM, do ANO inteiro.
+ * Baixa a aba META4_DETALHADA do RTM, ACUMULADA de janeiro ate o mes.
  *
- * Ela e o detalhamento da Meta 4 do PIT, e quem a cola no RTM cola o ano
- * corrente: o mes vai na query so porque a rota o exige, e e ignorado.
- *
- * O arquivo sai da planilha-semente da propria aba, entao ja abre com a largura
- * de coluna, o painel congelado e os estilos de sempre.
+ * Ela e o detalhamento da Meta 4 do PIT. O arquivo sai da planilha-semente da
+ * propria aba, entao ja abre com a largura de coluna, o painel congelado e os
+ * estilos de sempre.
  *
  * @param {{ano:number, mes:number}} params
  * @returns {Promise<void>}

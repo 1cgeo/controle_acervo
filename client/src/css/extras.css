@@ -102,6 +102,203 @@
   flex: 1 1 auto;
 }
 
+/* ---------------------------------------------------------------------------
+   A EDICAO do RPCMTec (#/rpcmtec/:id), desde 2026-08-05.
+   A divisao entre o que o sistema calcula e o que o gestor digita e VISUAL e
+   constante, e nao uma legenda escondida: sem ela, a tabela vazia de uma
+   subsecao calculada e a de uma esquecida se parecem, e so uma e problema.
+   --------------------------------------------------------------------------- */
+
+.rpcm-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+
+.rpcm-aviso {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--color-warning, #c58a00);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-paper);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.rpcm-aviso__nota {
+  margin-top: var(--space-xs);
+  color: var(--text-secondary);
+}
+
+.rpcm-secao {
+  margin-bottom: var(--space-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-paper);
+}
+
+.rpcm-secao__titulo {
+  padding: var(--space-md);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  list-style: revert;
+}
+
+.rpcm-subsecao {
+  padding: var(--space-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.rpcm-subsecao__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-sm);
+}
+
+.rpcm-subsecao__titulo {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.rpcm-subsecao__marcas,
+.rpcm-subsecao__acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.rpcm-etiqueta {
+  display: inline-block;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.rpcm-etiqueta--calculada {
+  background-color: rgba(25, 118, 210, 0.12);
+  color: #1565c0;
+}
+
+.rpcm-etiqueta--digitada {
+  background-color: rgba(245, 124, 0, 0.14);
+  color: #b45309;
+}
+
+.rpcm-etiqueta--fixa {
+  background-color: var(--bg-default);
+  color: var(--text-secondary);
+}
+
+.rpcm-etiqueta--vazia {
+  background-color: var(--bg-default);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.rpcm-etiqueta--pendente {
+  background-color: rgba(211, 47, 47, 0.12);
+  color: #c62828;
+}
+
+/* A grade: mesma marcacao no editor e na leitura, para o que se ve enquanto se
+   preenche ser o que sai no PDF. */
+.rpcm-grade__wrap {
+  overflow-x: auto;
+}
+
+.rpcm-grade {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.rpcm-grade th,
+.rpcm-grade td {
+  border: 1px solid var(--border-color);
+  padding: 4px var(--space-xs);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rpcm-grade th {
+  background-color: var(--bg-default);
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+.rpcm-grade--leitura td {
+  color: var(--text-primary);
+}
+
+.rpcm-grade__input {
+  width: 100%;
+  min-width: 90px;
+  padding: 2px var(--space-xs);
+  font-size: var(--font-size-sm);
+}
+
+.rpcm-grade__acao {
+  width: 44px;
+}
+
+.rpcm-grade__vazio,
+.rpcm-anexo__vazio {
+  padding: var(--space-sm) 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.rpcm-grade__rodape {
+  margin-top: var(--space-sm);
+}
+
+.rpcm-prosa {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+
+.rpcm-anexo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  font-size: var(--font-size-sm);
+}
+
+.rpcm-anexo__meta {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* A conferencia do congelado contra o banco de hoje, lado a lado. */
+.rpcm-conferencia {
+  margin-bottom: var(--space-lg);
+}
+
+.rpcm-conferencia__par {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+@media (max-width: 900px) {
+  .rpcm-conferencia__par {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Pagina de Configuracao: divisor e secoes de dominios editaveis */
 .config-divider {
   border: none;

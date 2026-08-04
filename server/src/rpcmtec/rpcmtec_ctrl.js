@@ -1,6 +1,6 @@
 'use strict'
 
-// O RPCMTec, inteiro, num gerador só.
+// O CÁLCULO das subseções do RPCMTec que o SCA sabe montar do banco.
 //
 // POR QUE FORA DOS MÓDULOS. O RPCMTec é o relatório mensal da DIVISÃO, e não de
 // acervo, mapoteca ou orçamento: a mesma edição fala das três coisas, e o chefe
@@ -12,68 +12,31 @@
 // `pit.meta` de dentro do orçamento em 2026-07-31: dado de que nenhum módulo é
 // dono mora fora deles.
 //
-// O QUE ELE GERA, e o que deliberadamente NÃO gera. A numeração é a do
-// documento que a Divisão usa (medida em "RPCM Técnico Julho_2026.docx"), para
-// que cada tabela seja colável na subseção de mesmo número. Só saem as
-// subseções que o SCA sabe preencher INTEIRAS:
+// O QUE ESTE ARQUIVO É, desde 2026-08-05. Ele calcula LINHAS, e só. Quais
+// subseções existem, com que título, cabeçalho e ordem, é o que
+// `rpcmtec_estrutura.js` diz; quem junta o calculado com o que o gestor digitou
+// é `rpcmtec_edicao_ctrl.js`. Antes desta data ele montava o documento inteiro
+// e as doze subseções que o SCA não calcula simplesmente não existiam em lugar
+// nenhum: quem fazia o relatório abria o Word e as preenchia lá.
 //
-//   2.1  Estado Atual do PIT             pit.meta e pit.execucao
-//   2.6  Capacitações externas           rpcmtec.capacitacao, tipo Ministrada
-//   2.7  Estado do Acervo                cobertura da ASC por escala x tipo
-//   3.1  Totais do Mês e do Ano          mapoteca.pedido
-//   3.2  Entregas da mapoteca            idem, uma linha por pedido militar
-//   3.3  Extra-PIT                       pit.demanda_extra
-//   3.4  LAI e órgãos públicos           idem, cliente civil
-//   4.1  Execução por ND                 orçamento, classificação PDR
-//   4.2  Situação dos créditos           idem
-//   4.3  Situação RPNP                   orcamento.rpnp
-//   4.4  GCALC DSG                       orcamento.licitacao, tipo 1
-//   4.5  Demais licitações               idem, tipo 2
-//   4.6  Recebimento de material         orcamento.recebimento_material
-//   4.7  Créditos Extra-PDR              orçamento, classificação Extra-PDR
-//   6.1  Aproveitamento do efetivo      dgeo.efetivo_periodo e dgeo.impedimento
-//   6.2  Capacitação do efetivo         rpcmtec.capacitacao, tipo Recebida
-//   7.2  Insumos de impressão, papel     mapoteca.tipo_material
-//   7.3  Insumos de impressão, tintas    idem
-//
-// O QUE ENTROU EM 2026-08-02, e por quê. A 2.1, a 2.6, a 3.3, a 6.1 e a 6.2
-// tinham dono no SAP, num dado que NÃO depende da produção: Extra-PIT, meta não
-// calculada, efetivo e capacitação se cadastram à mão, e nenhum deles lê
-// `macrocontrole`. É o critério que tirou `limites` do acervo em 2026-07-29 e
-// `pit.meta` do orçamento em 2026-07-31, aplicado entre SISTEMAS. Nada saiu do
-// SAP (decisão do chefe): lá as tabelas continuam, e o que impede as duas
-// cópias de brigarem é o SCA passar a ser quem GERA estas subseções.
+// AS DEZOITO QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a
+// fonte de cada uma ao lado. As doze restantes são digitadas na própria tela.
 //
 // A 2.1 sai INTEIRA daqui, inclusive as metas de produção, que hoje só têm
 // número se alguém lançar à mão. Uma tabela montada metade de um sistema e
-// metade de outro obrigaria quem a cola a descobrir todo mês quais linhas vêm
-// de onde.
-//
-// FICAM DE FORA, com o motivo, para ninguém procurar o que não existe:
-//   2.2  Totais do Mês e do Ano  decisão do chefe em 2026-08-01: por enquanto
-//                                não vem do SCA.
-//   2.4  Entregas detalhada      idem.
-//   2.3  Execução por Lote       o SCA conta os produtos do lote, mas não tem
-//                                operador nem percentual concluído.
-//   2.5  Atividades de campo     não há tabela de atividade de campo. É a única
-//                                das cinco do SAP que não veio junto, porque
-//                                `controle_campo` aponta `macrocontrole.produto`.
-//   5.   Desenvolvimento e TI    vem do painel do GitHub e do backup.
-//   7.1  Equipamento indisponível  não há cadastro de equipamento técnico.
-//   8.   Divulgação              não há cadastro de publicação em BI.
-//   9.   Boas práticas           é texto do chefe, não dado.
+// metade de outro obrigaria quem a lê a descobrir todo mês quais linhas vêm de
+// onde.
 //
 // AS TRÊS LINHAS DE TOTAL DA 2.6 não saem. No modelo elas ficam abaixo da
-// tabela, com o rótulo ocupando três colunas mescladas, e o desenhador daqui
-// não tem rodapé de tabela. Emiti-las como linha comum daria um total alinhado
-// errado, que é pior do que não ter: quem confere veria a tabela como se
-// estivesse formatada, e ela não estaria.
+// tabela, com o rótulo ocupando três colunas mescladas, e o desenhador não tem
+// rodapé de tabela. Emiti-las como linha comum daria um total alinhado errado,
+// que é pior do que não ter: quem confere veria a tabela como se estivesse
+// formatada, e ela não estaria.
 //
-// O MESMO OBJETO alimenta a tela e o arquivo. `gerar()` devolve as subseções já
-// com as células em texto, e o DOCX só as desenha. Foi assim de propósito: com
-// a tela lendo números crus e o arquivo formatando por conta, as duas divergiam
-// no arredondamento, e quem conferia o DOCX contra a tela via diferença onde
-// não havia.
+// A CÉLULA SAI EM TEXTO, já formatada, e é assim que a tela e o PDF a recebem.
+// Com a tela lendo número cru e o arquivo formatando por conta, as duas
+// divergiam no arredondamento, e quem conferia via diferença onde não havia. É
+// também o que se congela no fechamento: o que o documento DISSE.
 
 const { db } = require('../database')
 const acervoCtrl = require('../acervo/acervo_ctrl')
@@ -866,14 +829,18 @@ const montarAproveitamento = ({ efetivo }) =>
 // ---------------------------------------------------------------------------
 
 /**
- * Monta o RPCMTec do mês, seção a seção.
+ * Calcula as subseções que o SCA monta do banco.
+ *
+ * Devolve um MAPA de número para linhas, e não o documento: quem sabe o título,
+ * o cabeçalho e a ordem é `rpcmtec_estrutura.js`, e quem junta isto com o que o
+ * gestor digitou é `rpcmtec_edicao_ctrl.js`.
  *
  * @param {Object} params
  * @param {number} params.ano
  * @param {number} params.mes - 1 a 12
- * @returns {Promise<Object>} { ano, mes, secoes: [{ titulo, subsecoes: [...] }] }
+ * @returns {Promise<Object>} { '2.1': [[celula, ...], ...], ... }
  */
-controller.gerar = async ({ ano, mes }) => {
+controller.calcular = async ({ ano, mes }) => {
   const { inicio, cutoff } = recorteDoAno(ano, mes)
 
   const [
@@ -916,165 +883,35 @@ controller.gerar = async ({ ano, mes }) => {
     capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA)
   ])
 
-  const colunasCredito = ['NC', 'NE', 'ND', 'Finalidade', 'Valor NC',
-    'Valor Empenhado', 'Valor Liquidado', 'Valor Recolhido']
-  const colunasLicitacao = ['Objeto da Licitação', 'Fase Atual',
-    'Valor Total Estimado da Licitação', 'Valor Final Homologado']
-  const colunasInsumo = ['Insumo', 'Estoque atual', 'Estoque mês anterior',
-    'Consumo no mês', 'Previsão de falta de estoque']
-
-  const secoes = [
-    {
-      titulo: '2. EXECUÇÃO DO PIT',
-      subsecoes: [
-        {
-          numero: '2.1',
-          titulo: 'Estado Atual do PIT',
-          cabecalhos: ['Meta', 'Item', 'Produto ou serviço', 'Quantidade',
-            'Prontos no mês', 'Prontos', 'Previsão de término'],
-          linhas: montarEstadoPit({ metas: metasPit })
-        },
-        {
-          numero: '2.6',
-          titulo: 'Capacitações externas',
-          cabecalhos: ['Capacitação', 'Período', 'Instituições participantes',
-            'Efetivo capacitado'],
-          linhas: montarCapacitacaoMinistrada({ capacitacoes: capacitacaoMinistrada })
-        },
-        {
-          numero: '2.7',
-          titulo: 'Estado do Acervo',
-          cabecalhos: ['Escala', 'Tipo de produto', 'Total catalogado',
-            'Catalogo no mês', 'Universo da ASC', '% da ASC'],
-          linhas: montarEstadoAcervo({ estadoAcervo })
-        }
-      ]
-    },
-    {
-      titulo: '3. MAPOTECA',
-      subsecoes: [
-        {
-          numero: '3.1',
-          titulo: 'Totais do Mês e do Ano',
-          cabecalhos: ['Indicador', 'Total no mês', 'Total no ano'],
-          linhas: montarTotaisMapoteca({ pedidosMes, pedidosAno })
-        },
-        {
-          numero: '3.2',
-          titulo: 'Entregas da mapoteca',
-          cabecalhos: ['Solicitante', 'Documento de solicitação', 'Quantidade', 'Situação'],
-          linhas: montarEntregasMapoteca({ pedidosMes })
-        },
-        // A 3.3 saiu de `mapoteca.pedido` e virou `pit.demanda_extra` em
-        // 2026-08-02. A tentativa antiga derivava a tabela de `previsto_pit` e
-        // dava 23 linhas onde a edição real de julho/2026 traz 1: aquele campo é
-        // falso por omissão, e o que o relatório chama de Extra-PIT é a exceção
-        // AUTORIZADA, com documento. Agora o documento é obrigatório na origem.
-        {
-          numero: '3.3',
-          titulo: 'Extra-PIT',
-          cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd', 'Situação',
-            'Documento autorização', 'Descrição'],
-          linhas: montarExtraPit({ demandas: demandasExtra })
-        },
-        {
-          numero: '3.4',
-          titulo: 'LAI e atendimento à órgãos públicos',
-          cabecalhos: ['Solicitante', 'Código da LAI (NUP)', 'Descrição',
-            'Situação'],
-          linhas: montarLai({ pedidosMes })
-        }
-      ]
-    },
-    {
-      titulo: '4. EXECUÇÃO DO PDR',
-      subsecoes: [
-        {
-          numero: '4.1',
-          titulo: 'Execução por ND',
-          cabecalhos: ['ND', 'Valor previsto (Prioridade 1)', 'Valor recebido',
-            'Valor empenhado', 'Valor liquidado total', 'Valor Recolhido'],
-          linhas: execucaoPorNd
-        },
-        {
-          numero: '4.2',
-          titulo: 'Situação dos créditos recebidos',
-          cabecalhos: colunasCredito,
-          linhas: creditosPdr
-        },
-        {
-          numero: '4.3',
-          titulo: 'Situação RPNP',
-          cabecalhos: ['Empenho', 'Finalidade', 'Valor Empenhado', 'Valor a liquidar'],
-          linhas: rpnp
-        },
-        {
-          numero: '4.4',
-          titulo: 'GCALC DSG',
-          cabecalhos: colunasLicitacao,
-          linhas: licitacoesGcalc
-        },
-        {
-          numero: '4.5',
-          titulo: 'Demais Licitações da atividade-fim',
-          cabecalhos: colunasLicitacao,
-          linhas: licitacoesProprias
-        },
-        {
-          numero: '4.6',
-          titulo: 'Recebimento de material',
-          cabecalhos: ['Empenho', 'Material', 'Prazo de entrega', 'Situação'],
-          linhas: recebimentoMaterial
-        },
-        {
-          numero: '4.7',
-          titulo: 'Situação de créditos Extra-PDR',
-          cabecalhos: colunasCredito,
-          linhas: creditosExtraPdr
-        }
-      ]
-    },
-    {
-      titulo: '6. RECURSOS HUMANOS',
-      subsecoes: [
-        {
-          numero: '6.1',
-          titulo: 'Aproveitamento do efetivo',
-          cabecalhos: ['Militar', 'Atividades', 'Aproveitamento'],
-          linhas: montarAproveitamento({ efetivo })
-        },
-        {
-          numero: '6.2',
-          titulo: 'Capacitação do efetivo',
-          cabecalhos: ['Plano / Código', 'Capacitação', 'Instituição', 'Militar'],
-          linhas: montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida })
-        }
-      ]
-    },
-    {
-      titulo: '7. EQUIPAMENTO E MATERIAL',
-      subsecoes: [
-        {
-          numero: '7.2',
-          titulo: 'Estoque de Insumos de Impressão - Papel',
-          cabecalhos: colunasInsumo,
-          linhas: montarInsumos({
-            tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.PAPEL
-          })
-        },
-        {
-          numero: '7.3',
-          titulo: 'Estoque de Insumos de Impressão - Tintas',
-          cabecalhos: colunasInsumo,
-          linhas: montarInsumos({
-            tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.TINTA
-          })
-        }
-      ]
-    }
-  ]
-
-  return { ano, mes, secoes }
+  return {
+    '2.1': montarEstadoPit({ metas: metasPit }),
+    '2.6': montarCapacitacaoMinistrada({ capacitacoes: capacitacaoMinistrada }),
+    '2.7': montarEstadoAcervo({ estadoAcervo }),
+    '3.1': montarTotaisMapoteca({ pedidosMes, pedidosAno }),
+    '3.2': montarEntregasMapoteca({ pedidosMes }),
+    // A 3.3 saiu de `mapoteca.pedido` e virou `pit.demanda_extra` em
+    // 2026-08-02. A tentativa antiga derivava a tabela de `previsto_pit` e dava
+    // 23 linhas onde a edição real de julho/2026 traz 1: aquele campo é falso
+    // por omissão, e o que o relatório chama de Extra-PIT é a exceção
+    // AUTORIZADA, com documento. Agora o documento é obrigatório na origem.
+    '3.3': montarExtraPit({ demandas: demandasExtra }),
+    '3.4': montarLai({ pedidosMes }),
+    '4.1': execucaoPorNd,
+    '4.2': creditosPdr,
+    '4.3': rpnp,
+    '4.4': licitacoesGcalc,
+    '4.5': licitacoesProprias,
+    '4.6': recebimentoMaterial,
+    '4.7': creditosExtraPdr,
+    '6.1': montarAproveitamento({ efetivo }),
+    '6.2': montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida }),
+    '7.2': montarInsumos({
+      tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.PAPEL
+    }),
+    '7.3': montarInsumos({
+      tiposMaterial, consumoAno, mes, categoria: CATEGORIA_MATERIAL.TINTA
+    })
+  }
 }
 
 module.exports = controller

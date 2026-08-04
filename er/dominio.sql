@@ -438,4 +438,19 @@ INSERT INTO dominio.situacao_exercicio (code, nome) VALUES
 (2, 'Vigente'),
 (3, 'Encerrado');
 
+-- Quem preenche cada bloco do RPCMTec. É propriedade do NÚMERO da subseção, e
+-- ainda assim vai gravada em cada linha de `rpcmtec.subsecao`: uma subseção
+-- pode GRADUAR de digitada para calculada, e a edição fechada antes disso
+-- continua sendo o que foi.
+CREATE TABLE dominio.origem_subsecao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  descricao TEXT
+);
+
+INSERT INTO dominio.origem_subsecao (code, nome, descricao) VALUES
+(1, 'Calculada', 'O SCA a monta do banco. Recalcula enquanto a edição está aberta e congela no fechamento.'),
+(2, 'Digitada', 'O gestor a preenche na edição do mês. É o que o SCA não sabe calcular.'),
+(3, 'Fixa', 'Texto imutável do documento, igual em toda edição.');
+
 COMMIT;

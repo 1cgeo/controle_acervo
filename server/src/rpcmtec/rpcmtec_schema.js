@@ -4,7 +4,7 @@ const Joi = require('joi')
 
 const models = {}
 
-// Query do gerador: ano e mês de corte, sempre os dois.
+// Query do Anuário e do RTM: ano e mês de corte, sempre os dois.
 //
 // SEM a chave `cumulativo` que a antiga rota do orçamento tinha. Ela oferecia
 // escolher entre "só o mês" e "acumulado no ano", e o RPCMTec não tem essa
@@ -29,10 +29,15 @@ models.listarQuery = Joi.object().keys({
 })
 
 // Criação e atualização da edição mensal. A UNIQUE (ano, mes) vira 409 no ctrl.
+//
+// O ASSINANTE é o uuid do cadastro desde 2026-08-05, e não mais um nome
+// digitado: o bloco de assinatura do PDF sai de `dgeo.usuario`. É ANULÁVEL na
+// criação porque quem vai assinar nem sempre se sabe no dia 1º, e o fechamento
+// o cobra.
 const camposBase = {
   ano: Joi.number().integer().strict().required(),
   mes: Joi.number().integer().min(1).max(12).required(),
-  assinante: Joi.string().max(255).allow(null, ''),
+  assinante_uuid: Joi.string().uuid().allow(null, ''),
   // .raw() preserva 'YYYY-MM-DD' sem passar por Date UTC; sem ele, grava o dia
   // anterior em UTC-3.
   data_assinatura: Joi.date().raw().allow(null)
@@ -40,6 +45,46 @@ const camposBase = {
 
 models.criar = Joi.object().keys({ ...camposBase })
 models.atualizar = Joi.object().keys({ ...camposBase })
+
+// --- Subseção digitada ------------------------------------------------------
+
+// O número é rótulo do documento ('2.1', '9.3'), e não inteiro. O padrão
+// recusa o que a estrutura nunca teria, e o ctrl confere contra a estrutura de
+// verdade: aqui só se barra o disparate.
+models.subsecaoParams = Joi.object().keys({
+  id: Joi.number().integer().required(),
+  numero: Joi.string().pattern(/^\d{1,2}\.\d{1,2}$/).required()
+})
+
+// A CÉLULA CHEGA EM TEXTO, e as linhas são uma matriz. O número de colunas é
+// conferido no ctrl contra os cabeçalhos da estrutura: aqui não se sabe de qual
+// subseção se trata.
+//
+// `sem_ocorrencia` declara o vazio POR DECISÃO. Marcá-lo junto com conteúdo é
+// contradição, e quem a recusa é o CHECK do banco.
+models.gravarSubsecao = Joi.object().keys({
+  linhas: Joi.array().items(
+    Joi.array().items(Joi.string().allow('', null))
+  ),
+  texto: Joi.string().allow(null, ''),
+  sem_ocorrencia: Joi.boolean().default(false)
+})
+
+// Cópia do mês anterior: sem `numero`, copia todas as digitadas.
+models.copiarMesAnterior = Joi.object().keys({
+  numero: Joi.string().pattern(/^\d{1,2}\.\d{1,2}$/).allow(null, '')
+})
+
+// --- Anexo (o RPCMTec assinado) ---------------------------------------------
+
+models.anexoIdParams = Joi.object().keys({
+  anexoId: Joi.number().integer().required()
+})
+
+// O corpo vem em multipart, então todo campo chega como string.
+models.anexoUploadBody = Joi.object().keys({
+  descricao: Joi.string().allow(null, '')
+})
 
 // Dia de CALENDÁRIO: `.iso().raw()`. Sem o `.raw()` o Joi converte
 // 'AAAA-MM-DD' em meia-noite UTC e a coluna guarda o dia anterior em UTC-3; sem

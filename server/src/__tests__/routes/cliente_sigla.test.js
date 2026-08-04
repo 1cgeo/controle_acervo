@@ -126,8 +126,16 @@ describe('RPCMTec: solicitante pela sigla', () => {
     await criaPedido(omId, '2026-03-10')
     await criaPedido(civilId, '2026-03-11')
 
+    // A rota /gerar saiu em 2026-08-05: o relatorio inteiro passou a ser uma
+    // EDICAO guardada, e as subsecoes calculadas saem do documento dela.
+    const edicao = await request(app)
+      .post('/api/rpcmtec')
+      .set('Authorization', admin())
+      .send({ ano: 2026, mes: 3 })
+    expect(edicao.status).toBe(201)
+
     const res = await request(app)
-      .get('/api/rpcmtec/gerar?ano=2026&mes=3')
+      .get(`/api/rpcmtec/${edicao.body.dados.id}/documento`)
       .set('Authorization', admin())
     expect(res.status).toBe(200)
 
