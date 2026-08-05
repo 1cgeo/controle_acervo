@@ -1,10 +1,11 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency } from '@utils/format.js';
+import { formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import {
   getLicitacoes,
   deleteLicitacao,
@@ -59,8 +60,7 @@ export async function renderLicitacoesList(container, _ctx) {
   }, [svgIcon(ICONS.add, 16), 'Nova licitação']);
 
   // ---- Filtros ----
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE a licitacao e
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. `permitirOutroAno` porque o ano decide ONDE a licitacao e
   // cadastrada: abrir um exercicio novo passa por escolher um ano ainda vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
@@ -90,10 +90,14 @@ export async function renderLicitacoesList(container, _ctx) {
         render: (row) => row.numero_pregao || '-',
       },
       {
+        // O texto INTEIRO vai para a celula, e quem corta e a CSS. Cortar antes
+        // fazia o `title` do <td> repetir o texto ja cortado, entao passar o
+        // mouse nao revelava nada. A classe 'truncate' tambem nao existe: as
+        // reais sao `.text-truncate` e `.data-table__cell--truncate`.
         key: 'objeto',
         label: 'Objeto',
-        className: 'truncate',
-        render: (row) => truncar(row.objeto),
+        className: 'data-table__cell--truncate',
+        render: (row) => row.objeto || '-',
       },
       {
         key: 'tipo_nome',
@@ -103,19 +107,24 @@ export async function renderLicitacoesList(container, _ctx) {
       {
         key: 'fase_nome',
         label: 'Fase',
-        className: 'truncate',
+        className: 'data-table__cell--truncate',
         render: celulaFase,
       },
       {
         key: 'valor_total_estimado',
         label: 'Estimado',
         sortable: true,
+        // NUMERIC(15,2) chega como TEXTO no JSON (er/orcamento.sql:99-100), e a
+        // ordem por string mente: '900.00' passa a frente de '1000.00'. As irmas
+        // (DFD, PDR, notas de credito) ja passam por toNumber.
+        sortValue: (row) => toNumber(row.valor_total_estimado),
         render: (row) => formatCurrency(row.valor_total_estimado),
       },
       {
         key: 'valor_final_homologado',
         label: 'Homologado',
         sortable: true,
+        sortValue: (row) => toNumber(row.valor_final_homologado),
         render: (row) => formatCurrency(row.valor_final_homologado),
       },
     ],
@@ -139,6 +148,10 @@ export async function renderLicitacoesList(container, _ctx) {
     ],
   });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Licitações' }),
@@ -151,9 +164,24 @@ export async function renderLicitacoesList(container, _ctx) {
       filtroAno.element,
       tipoFilter.element,
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma licitação cadastrada": a
+   * falha da API lia-se como cadastro vazio, e as duas pedem acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   async function loadFilterOptions() {
     try {
@@ -167,6 +195,9 @@ export async function renderLicitacoesList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getLicitacoes({
@@ -177,7 +208,8 @@ export async function renderLicitacoesList(container, _ctx) {
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar licitações');
     }
   }

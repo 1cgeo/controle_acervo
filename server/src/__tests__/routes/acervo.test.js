@@ -122,9 +122,11 @@ describe('Acervo Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
-      expect(res.body.dados.total).toBeDefined()
+      // O produto semeado tem de APARECER: `total` definido e `dados` definido
+      // passam com zero resultado, que e o modo de falhar da busca.
+      expect(res.body.dados.total).toBe(1)
       expect(res.body.dados.page).toBe(1)
-      expect(res.body.dados.dados).toBeDefined()
+      expect(res.body.dados.dados).toHaveLength(1)
     })
 
     it('should return empty results for non-matching term', async () => {
@@ -166,6 +168,11 @@ describe('Acervo Routes', () => {
       const facetas = await request(app)
         .get('/api/acervo/busca/facetas?termo=Teste')
         .set('Authorization', generateUserToken())
+
+      expect(facetas.status).toBe(200)
+      // As DUAS opcoes, antes do laco: com a faceta vazia o corpo nunca roda e
+      // o caso fica verde justamente quando a faceta deixou de contar.
+      expect(facetas.body.dados.tipos_produto).toHaveLength(2)
 
       for (const t of facetas.body.dados.tipos_produto) {
         const busca = await request(app)
@@ -224,16 +231,9 @@ describe('Acervo Routes', () => {
     })
   })
 
-  describe('POST /api/acervo/refresh_materialized_views (admin)', () => {
-    it('should require admin', async () => {
-      const res = await request(app)
-        .post('/api/acervo/refresh_materialized_views')
-        .set('Authorization', generateUserToken())
-
-      expect(res.status).toBe(403)
-    })
-  })
-
+  // A GUARDA de `POST /refresh_materialized_views` nao se prova aqui: o caso
+  // era identico ao de routes/auth.test.js ('should reject non-admin users on
+  // admin endpoints'), com a mesma rota, o mesmo token e a mesma assercao.
   describe('POST /api/acervo/cleanup-expired-downloads (admin)', () => {
     it('should require admin', async () => {
       const res = await request(app)

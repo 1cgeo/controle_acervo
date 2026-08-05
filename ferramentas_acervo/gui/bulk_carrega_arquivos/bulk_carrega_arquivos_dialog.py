@@ -143,8 +143,8 @@ class LoadSystematicFilesDialog(UploadFlowMixin, QDialog, FORM_CLASS):
 
         A chave é o PAR, e não o nome sozinho: o mesmo `nome_arquivo` pode
         existir em versões diferentes, e casar só pelo nome mandaria o byte de
-        uma versão para o destino da outra -- sem erro, porque os dois caminhos
-        existem.
+        uma versão para o destino da outra, sem erro nenhum, porque os dois
+        caminhos existem.
         """
         return self.origens.get((arquivo_info.get('versao_id'), arquivo_info.get('nome_arquivo')))
 

@@ -1,4 +1,4 @@
-import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
+import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import { formatDate, formatNumber } from '@utils/format.js';
@@ -8,10 +8,12 @@ import {
   getImpressaoDoPedido,
   baixarCartaDoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
+import { estaRemetido } from '@modules/mapoteca/situacao-pedido.js';
+import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import { openEtiquetaEnvioDialog } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
 // O dialogo de registrar impressao mora em pedidos/ e serve as DUAS telas. Ele
-// era daqui ate 2026-07-30, quando o detalhe do pedido passou a registrar
-// impressao tambem: duas copias divergiriam no texto que evita o erro de somar.
+// serve tambem o detalhe do pedido: duas copias divergiriam no texto que evita
+// o erro de somar.
 import { openRegistrarImpressaoDialog } from '@modules/mapoteca/pages/pedidos/dialog-impressao.js';
 import { openModal } from '@components/modal/modal-base.js';
 
@@ -47,7 +49,7 @@ function repintarChip(no, novo) {
  * de envio. Antes elas moravam em lugares diferentes (a etiqueta no detalhe do
  * pedido, o registro de impressão só no plugin do QGIS, a carta em nenhum).
  *
- * AS TABELAS SE MONTAM UMA VEZ (2026-08-04). Aqui alguém trabalha o turno
+ * AS TABELAS SE MONTAM UMA VEZ. Aqui alguém trabalha o turno
  * inteiro, item após item, e era a tela que mais sofria com o remonte: cada
  * registro de impressão chamava `carregar()` e `pintar()`, e as duas jogavam
  * fora o objeto da tabela e montavam outro. Quem tinha buscado um cliente na
@@ -68,6 +70,7 @@ export async function renderAtendimento(container) {
 
   const contador = el('span', { className: 'page__meta' });
   const corpo = el('div');
+  const remetidos = el('div');
 
   const root = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
@@ -81,11 +84,12 @@ export async function renderAtendimento(container) {
         el('button', {
           className: 'btn btn--secondary',
           type: 'button',
-          onClick: () => carregar(),
+          onClick: () => recarregar(),
         }, [svgIcon(ICONS.dataUsage, 16), 'Atualizar']),
       ]),
     ]),
     corpo,
+    remetidos,
   ]);
   container.appendChild(root);
 
@@ -208,17 +212,16 @@ export async function renderAtendimento(container) {
             const novo = await getImpressaoDoPedido(pedido.id);
             if (disposed) return;
             pintar(novo);
-            carregar();
+            recarregar();
           }),
         },
       ],
     });
 
     // A observação do pedido entra AQUI, e não numa coluna da fila: ela é texto
-    // livre, e a fila já usa cinco colunas. Medido na produção em 2026-08-04:
-    // dos 25 pedidos em aberto, 14 têm observação e 22 têm observação interna.
-    // Sem isto o operador abria o detalhe do pedido só para ler a instrução, e a
-    // volta remontava a tela que este arquivo se esforça para preservar.
+    // livre, e a fila já usa cinco colunas. A maioria dos pedidos em aberto tem
+    // observação, e sem isto o operador abre o detalhe só para ler a instrução:
+    // a volta remonta a tela que este arquivo se esforça para preservar.
     //
     // A observação INTERNA aparece porque esta tela é de dentro (perfil
     // operador). Ela nunca sai na consulta pública do cliente.
@@ -352,19 +355,131 @@ export async function renderAtendimento(container) {
   });
   cleanups.push(() => tabelaFila._cleanup());
 
-  // O "Carregando" da primeira carga e o erro de carga moram aqui, fora da
-  // tabela: assim o erro esconde a fila e a devolve depois, em vez de apagá-la.
-  const aviso = el('div', { className: 'data-table__empty' });
-  aviso.hidden = true;
-  tabelaFila.element.hidden = true;
-  corpo.appendChild(aviso);
-  corpo.appendChild(tabelaFila.element);
+  // O "Carregando" da primeira carga e o erro de carga moram fora da tabela:
+  // assim o erro TIRA a fila da tela e a devolve depois, em vez de apagá-la.
+  //
+  // A fila sai do DOM, e não se esconde por CSS: escondida, "A fila está limpa"
+  // continuaria no texto da página, embaixo de um erro.
+  const avisoFila = criarAvisoDeErro(tabelaFila, carregar);
+  avisoFila.carregando('Carregando a fila...');
+  corpo.appendChild(avisoFila.element);
+
+  // ---------------------------------------------------------------------------
+  // Remetidos, aguardando conclusão
+  // ---------------------------------------------------------------------------
+  /**
+   * O BECO SEM SAÍDA QUE ESTA SEÇÃO FECHA.
+   *
+   * A fila mostra só Pré cadastramento, DIEx recebido e Em andamento (o
+   * `SITUACOES_EM_ABERTO` de server/src/mapoteca/query_fragments.js). Marcar o
+   * pedido como Remetido é a última ação de quem atende, e é ela que APAGA o
+   * pedido desta tela. Dali em diante ele depende de alguém abrir a lista de
+   * pedidos, achar o filtro "Remetido" e marcar Concluído. Nada nesta tela
+   * lembrava disso, e o pedido remetido ficava aberto por tempo indefinido.
+   *
+   * A seção não repete a fila: ela é o que a fila deixou para trás. Fica ABAIXO
+   * dela, de propósito, porque o trabalho de imprimir vem primeiro.
+   *
+   * DE ONDE VEM O DADO. Da MESMA rota da fila, com `?incluir_remetidos=true`:
+   * o servidor tem duas listas de situação em aberto, e essa query escolhe a de
+   * atendimento, que inclui o Remetido. A tela filtra o que a fila acima já
+   * mostra e fica só com o que sobrou.
+   *
+   * Antes isto varria GET /mapoteca/pedido?ano= no ano corrente e no anterior,
+   * porque não havia rota que devolvesse remetido. A janela de dois anos era
+   * arbitrária e escondia o pedido mais antigo; agora não há janela nenhuma.
+   */
+  const tabelaRemetidos = createDataTable({
+    columns: [
+      {
+        key: 'data_pedido',
+        label: 'Data do pedido',
+        sortable: true,
+        render: (p) => formatDate(p.data_pedido),
+      },
+      {
+        key: 'cliente_nome',
+        label: 'Cliente',
+        sortable: true,
+        render: (p) => el('div', {}, [
+          el('div', { textContent: p.cliente_nome || '-' }),
+          el('span', { className: 'detail-card__label', textContent: p.documento_solicitacao || '-' }),
+        ]),
+      },
+      {
+        key: 'quantidade_produtos',
+        label: 'Produtos',
+        sortable: true,
+        render: (p) => formatNumber(p.quantidade_produtos),
+      },
+      {
+        key: 'localizador_pedido',
+        label: 'Localizador',
+        render: (p) => chip(p.localizador_pedido || '-', 'secondary'),
+      },
+    ],
+    rows: [],
+    pageSize: 5,
+    defaultSort: { key: 'data_pedido', dir: 'asc' },
+    // Fila limpa aqui é o estado bom, e o texto diz isso: sem ele a seção
+    // pareceria quebrada nos dias em que não há nada a fechar.
+    emptyMessage: 'Nenhum pedido remetido esperando conclusão.',
+    actions: [
+      {
+        icon: ICONS.description,
+        title: 'Abrir o pedido',
+        onClick: (p) => { location.hash = `/mapoteca/pedidos/${p.id}`; },
+      },
+    ],
+  });
+  cleanups.push(() => tabelaRemetidos._cleanup());
+
+  const contadorRemetidos = el('span', { className: 'dashboard-section__meta', textContent: '' });
+  // "Tentar de novo" refaz a leitura ÚNICA, que alimenta as duas tabelas. Um
+  // recarregador só para esta seção repetiria a mesma requisição.
+  const avisoRemetidos = criarAvisoDeErro(tabelaRemetidos, () => recarregar());
+
+  remetidos.appendChild(el('div', { className: 'dashboard-section' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', {
+        className: 'dashboard-section__title',
+        textContent: 'Remetidos, aguardando conclusão',
+      }),
+      el('div', { className: 'dashboard-section__controls' }, [
+        contadorRemetidos,
+        el('a', {
+          className: 'btn btn--text btn--sm',
+          href: '#/mapoteca/pedidos?filtro=remetido',
+          textContent: 'Ver na lista de pedidos',
+        }),
+      ]),
+    ]),
+    el('p', {
+      className: 'dashboard__escopo',
+      textContent: 'O pedido remetido sai da fila acima. Marque Concluído para fechá-lo.'
+        + ' A lista cobre o ano corrente e o anterior.',
+    }),
+    avisoRemetidos.element,
+  ]));
+
+  /**
+   * UMA ida ao servidor alimenta as DUAS tabelas.
+   *
+   * `?incluir_remetidos=true` devolve a fila de atendimento inteira, e a de
+   * impressão é um subconjunto dela. Buscar duas vezes traria o mesmo pedido
+   * duas vezes pela rede, e abriria a janela em que a fila e os remetidos
+   * discordam entre si por vir de leituras diferentes.
+   *
+   * Registrar impressão e marcar como Remetido mexem nas duas listas: o que sai
+   * da fila entra aqui embaixo, e por isso as duas se repintam juntas.
+   */
+  async function recarregar() {
+    await carregar();
+  }
 
   async function carregar() {
     if (!montado) {
-      aviso.hidden = false;
-      aviso.textContent = 'Carregando a fila...';
-      tabelaFila.element.hidden = true;
+      avisoFila.carregando('Carregando a fila...');
     } else {
       // Recarga de uma fila JÁ na tela: as linhas ficam onde estão, e o
       // data-table só marca que está buscando. É o que faz o registro de
@@ -372,33 +487,47 @@ export async function renderAtendimento(container) {
       tabelaFila.update({ loading: true });
     }
 
+    tabelaRemetidos.update({ loading: true });
+
     try {
-      pedidos = await getPedidosEmAberto();
+      const todos = await getPedidosEmAberto(true);
       if (disposed) return;
+
+      // O Remetido sai da fila de impressão e vai para a seção de baixo. O
+      // corte é por SITUAÇÃO, e não por posição na resposta.
+      pedidos = todos.filter(p => !estaRemetido(p));
+      const remetidosLinhas = todos.filter(estaRemetido);
+
+      tabelaRemetidos.update({ rows: remetidosLinhas, loading: false });
+      contadorRemetidos.textContent = remetidosLinhas.length
+        ? `${formatNumber(remetidosLinhas.length)} pedido(s) a fechar`
+        : '';
+      avisoRemetidos.ok();
+
       const atrasados = pedidos.filter(p => Number(p.dias_para_prazo) < 0).length;
       contador.textContent = atrasados
         ? `${pedidos.length} pedido(s) em aberto, ${atrasados} com prazo vencido`
         : `${pedidos.length} pedido(s) em aberto`;
       montado = true;
-      aviso.hidden = true;
-      clearChildren(aviso);
-      tabelaFila.element.hidden = false;
       tabelaFila.update({ rows: pedidos, loading: false });
+      avisoFila.ok();
     } catch (err) {
       if (disposed) return;
       pedidos = [];
       contador.textContent = '';
       tabelaFila.update({ rows: [], loading: false });
-      // A fila SAI de vista no erro. Deixá-la ao lado da mensagem diria "a fila
+      // A fila SAI da tela no erro. Deixá-la ao lado da mensagem diria "a fila
       // está limpa", e fila limpa e erro de carga são fatos diferentes.
-      tabelaFila.element.hidden = true;
-      aviso.hidden = false;
-      aviso.textContent = err.message || 'Erro ao carregar a fila';
+      avisoFila.falhou(err.message || 'Erro ao carregar a fila');
+      // As duas tabelas vieram da MESMA leitura, então as duas falham juntas.
+      tabelaRemetidos.update({ loading: false });
+      contadorRemetidos.textContent = '';
+      avisoRemetidos.falhou(err.message || 'Erro ao carregar os pedidos remetidos');
       showError(err.message || 'Erro ao carregar a fila de atendimento');
     }
   }
 
-  await carregar();
+  await recarregar();
 
   return () => {
     disposed = true;

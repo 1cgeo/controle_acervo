@@ -40,8 +40,8 @@ describe('renderOverviewTab', () => {
     expect(valores).toContain('7.023');       // versoes
     expect(valores).toContain('5');           // downloads em 24h
 
-    // Saiu de proposito (chefe, 2026-07-29): a contagem de usuarios nao e
-    // acervo, e o total de projetos deu lugar ao que ENTROU no mes.
+    // Fora do painel de propósito: contagem de usuário não é acervo, e o lugar
+    // do total de projetos é do que ENTROU no mês.
     expect(valores).not.toContain('42');
     expect(valores).not.toContain('12');
 
@@ -80,6 +80,39 @@ describe('renderOverviewTab', () => {
 
     await aba.refresh();
     expect(acervoService.getSystemHealth.mock.calls.length).toBe(antes + 1);
+
+    aba.cleanup();
+  });
+});
+
+// O painel de alertas é o que o chefe olha para saber se há volume enchendo.
+// Antes, o ramo de falha do health NÃO o tocava: na primeira carga ele nem
+// aparecia (e ausência lê-se como "não há alerta"), e no auto-refresh de 60 s o
+// painel da carga anterior seguia afirmando "sistema saudável" horas depois de
+// o endpoint parar de responder. Dizer saúde sem saber é a falha mais cara.
+describe('renderOverviewTab: falha do system_health', () => {
+  test('o painel de alertas vira estado de erro, e nao "sistema saudavel"', async () => {
+    acervoService.getSystemHealth.mockRejectedValueOnce(new Error('sem rede'));
+    const container = document.createElement('div');
+    const aba = await renderOverviewTab(container);
+
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    expect(container.querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
+    expect(container.textContent).not.toContain('Nenhum alerta: sistema saudável');
+
+    aba.cleanup();
+  });
+
+  test('o painel VELHO nao fica na tela quando a carga seguinte falha', async () => {
+    const container = document.createElement('div');
+    const aba = await renderOverviewTab(container);
+    expect(container.textContent).toContain('Nenhum alerta: sistema saudável');
+
+    acervoService.getSystemHealth.mockRejectedValueOnce(new Error('caiu'));
+    await aba.refresh();
+
+    expect(container.textContent).not.toContain('Nenhum alerta: sistema saudável');
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
 
     aba.cleanup();
   });

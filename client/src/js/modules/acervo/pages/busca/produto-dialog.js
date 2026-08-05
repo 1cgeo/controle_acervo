@@ -1,6 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
 import { showError, showSuccess } from '@utils/toast.js';
@@ -17,6 +18,7 @@ import {
   excluirRelacionamentos,
   excluirProdutos,
   excluirVersoes,
+  excluirArquivos,
 } from '@modules/acervo/services/acervo-service.js';
 import { openProdutoDialogForm } from '@modules/acervo/pages/produto/produto-dialog-form.js';
 import { openVersaoDialog } from '@modules/acervo/pages/produto/versao-dialog.js';
@@ -26,11 +28,10 @@ import { abrirSeletorVersao } from '@modules/acervo/pages/produto/seletor-versao
 /**
  * Ficha do produto.
  *
- * O DESENHO, e o que ele corrige (chefe, 2026-07-31: "a UI e UX esta ruim").
- * A ficha anterior era uma pilha de linhas rotulo-valor, todas com o mesmo peso
- * visual, e sem CSS proprio: MI, INOM, escala, descricao e data de cadastro
- * saiam iguais, e cada versao repetia o mesmo bloco de metadado administrativo
- * ANTES dos arquivos, que e o que a pessoa veio buscar. Tres mudancas:
+ * O DESENHO, e o que ele evita: uma pilha de linhas rotulo-valor com o mesmo
+ * peso visual, em que MI, INOM, escala, descricao e data de cadastro saem
+ * iguais, e cada versao repete o metadado administrativo ANTES dos arquivos, que
+ * e o que a pessoa veio buscar. Tres regras:
  *
  *   1. IMAGEM. Quem procura carta reconhece a folha OLHANDO. A miniatura entra
  *      ao lado de cada versao, e a mais recente abre com a imagem maior. Sem
@@ -171,13 +172,46 @@ function botaoBaixar(a) {
 }
 
 /**
+ * Exclui UM arquivo, sem tocar na versao que o contem.
+ *
+ * A ficha ja deixava ACRESCENTAR arquivo a uma versao gravada, e nao deixava
+ * tirar nenhum: o arquivo mandado por engano so saia pelo plugin do QGIS, ou
+ * levando a versao inteira junto. Confirmacao e motivo pelo mesmo caminho das
+ * outras exclusoes, porque a lapide (`acervo.arquivo_deletado`) e a mesma.
+ */
+async function excluirArquivoDaFicha(a, recarregar) {
+  const nome = nomeFisico(a) || `arquivo ${a.id}`;
+
+  const ok = await confirmDialog({
+    title: `Excluir ${nome}`,
+    message: 'O arquivo sai do acervo e a versão continua. A linha fica na tabela de '
+      + 'exclusão e os bytes seguem no volume, mas o acervo deixa de enxergá-los.',
+    confirmLabel: 'Excluir',
+    danger: true,
+  });
+  if (!ok) return;
+
+  const motivo = await pedirMotivo(`Motivo da exclusão de ${nome}`);
+  if (motivo === null) return;
+
+  try {
+    await excluirArquivos([Number(a.id)], motivo);
+    showSuccess('Arquivo excluído com sucesso');
+    await recarregar();
+  } catch (erro) {
+    showError(erro.message || 'Erro ao excluir o arquivo');
+  }
+}
+
+/**
  * Uma linha de arquivo.
  *
  * O NOME que aparece e o fisico, e nao o rotulo do cadastro, porque e o nome
  * fisico que sai no download e que a pessoa vai procurar depois. O rotulo do
  * cadastro (`nome`) vira o titulo, para quem quiser conferir.
  */
-function linhaArquivo(a) {
+function linhaArquivo(a, ctx = {}) {
+  const { pode = {}, recarregar = null } = ctx;
   const tamanho = a.tamanho_mb != null
     ? `${formatNumber(Number(a.tamanho_mb).toFixed(1))} MB`
     : '';
@@ -202,6 +236,17 @@ function linhaArquivo(a) {
       })
       : null,
     botaoBaixar(a),
+    // Excluir e GERENTE, como a rota `DELETE /arquivo/arquivo`. O perfil aqui e
+    // ergonomia (nao oferecer o que voltaria 403); quem barra e o `verifyPerfil`.
+    pode.gerente && recarregar && a.id != null
+      ? el('button', {
+        className: 'btn btn--text btn--sm ficha-arquivo__excluir',
+        type: 'button',
+        title: `Excluir ${nomeFisico(a)} do acervo`,
+        'aria-label': `Excluir ${nomeFisico(a)} do acervo`,
+        onClick: () => excluirArquivoDaFicha(a, recarregar),
+      }, [svgIcon(ICONS.delete, 14)])
+      : null,
   ].filter(Boolean));
 }
 
@@ -301,8 +346,8 @@ async function acrescentarRelacao(versaoId, tipoRelacionamentoId, recarregar) {
  * insumo ou um conjunto e informacao de proveniencia: e o que responde "de onde
  * veio esta carta". Cada item leva para a ficha do produto relacionado.
  *
- * Desde 2026-08-02 o bloco tambem ESCREVE, atras do perfil: acrescentar e trocar
- * o tipo sao operador, remover e gerente, espelhando as rotas. O perfil no
+ * O bloco tambem ESCREVE, atras do perfil: acrescentar e trocar o tipo sao
+ * operador, remover e gerente, espelhando as rotas. O perfil no
  * client e ergonomia (esconder o que vai dar 403); quem barra e o `verifyPerfil`.
  *
  * Quando nao ha relacao nenhuma o bloco so aparece para quem pode acrescentar:
@@ -480,7 +525,7 @@ function painelMiniatura(v, destaque, registrarUrl) {
  * Uma versao do produto.
  *
  * Versao SEM arquivo aparece marcada, e nao escondida: "registrado, sem arquivo
- * digital" e informacao, e e o caso da versao historica (chefe, 2026-07-25).
+ * digital" e informacao, e e o caso da versao historica.
  * Esconder faria a ficha mentir sobre quantas versoes existem.
  */
 function blocoVersao(v, maisRecente, registrarUrl, ctx) {
@@ -569,7 +614,7 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
     : null;
 
   const listaArquivos = arquivos.length
-    ? el('ul', { className: 'ficha-arquivos' }, arquivos.map(linhaArquivo))
+    ? el('ul', { className: 'ficha-arquivos' }, arquivos.map(a => linhaArquivo(a, ctx)))
     : null;
 
   return el('div', {
@@ -772,21 +817,36 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
   }
 
   /**
-   * Recarrega a ficha do zero depois de uma gravacao.
+   * Recarrega a ficha depois de uma gravacao.
    *
    * Descarta o cache do produto na tela, e nao o cache inteiro: as outras fichas
    * da selecao nao mudaram, e joga-las fora faria "Anterior" custar rede a cada
    * salvamento. Avisa quem abriu a ficha na mesma passada, para a lista da busca
    * acompanhar.
+   *
+   * NAO pinta esqueleto e DEVOLVE a rolagem. Salvar uma versao no fim de uma
+   * ficha de oito versoes trocava tudo por barras cinzentas e jogava a pessoa
+   * de volta ao topo, longe do bloco em que ela estava trabalhando. O esqueleto
+   * e para o vao da PRIMEIRA carga; aqui ja ha ficha na tela, e ela continua
+   * legivel enquanto a resposta nova nao chega.
    */
   async function recarregar() {
     const produto = lista[indice];
     cache.delete(produto.id);
     if (onAlterado) onAlterado();
     if (fechado) return;
-    corpo.replaceChildren(esqueleto());
+    const rolagem = corpo.scrollTop;
+    corpo.setAttribute('aria-busy', 'true');
     const meuToken = ++requisicao;
-    await carregar(produto, meuToken);
+    try {
+      await carregar(produto, meuToken);
+    } finally {
+      corpo.removeAttribute('aria-busy');
+    }
+    if (fechado || meuToken !== requisicao) return;
+    // Depois da repintura: `pintarFicha` troca os filhos, e a rolagem so cabe
+    // quando a altura nova ja existe.
+    corpo.scrollTop = rolagem;
   }
 
   // Excluir e GERENTE, editar e nova versao sao OPERADOR: e o que as rotas
@@ -945,7 +1005,7 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
           className: 'produto-ficha__vazio',
           textContent: 'Este produto ainda não tem versão cadastrada.',
         })]),
-      // HISTÓRICO do produto, RECOLHIDO (2026-08-04).
+      // HISTÓRICO do produto, RECOLHIDO.
       //
       // Ele faltava, e era o maior buraco de entrega do sistema: medido em
       // produção, o agregado 'produto' tinha 388 eventos em 170 fichas, e
@@ -983,9 +1043,15 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
       })
       .catch((err) => {
         if (fechado || meuToken !== requisicao) return;
-        corpo.replaceChildren(el('p', {
-          className: 'produto-ficha__vazio',
-          textContent: err.message || 'Erro ao carregar a ficha do produto',
+        // Estado de ERRO, e nao a frase do produto sem versao. As duas moravam
+        // na mesma classe `produto-ficha__vazio`, e "este produto nao tem versao
+        // cadastrada" e "nao consegui carregar a ficha" pedem acoes opostas. O
+        // botao refaz a mesma pergunta, sem obrigar a fechar e reabrir a ficha.
+        fichaAtual = null;
+        corpo.replaceChildren(estadoErro(err, () => {
+          const outroToken = ++requisicao;
+          corpo.replaceChildren(esqueleto());
+          carregar(produto, outroToken);
         }));
         showError(err.message || 'Erro ao carregar a ficha do produto');
       });

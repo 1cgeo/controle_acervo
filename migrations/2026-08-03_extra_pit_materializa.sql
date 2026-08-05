@@ -6,7 +6,7 @@
 -- 'Concluido' por decisao de quem editava. A producao que atendeu a excecao
 -- estava no acervo, ao lado, sem nenhuma seta ligando as duas.
 --
--- O DESENHO (chefe, 2026-08-03): "Entrega nao faz sentido, se fosse so entrega
+-- O DESENHO: "Entrega nao faz sentido, se fosse so entrega
 -- entraria na mapoteca, o extra pit e a PRODUCAO". A demanda so fecha quando
 -- materializa, e materializar quer dizer versao registrada no acervo.
 --

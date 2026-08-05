@@ -14,7 +14,7 @@
 -- Texto livre nao soma, nao compara entre meses e nao responde "por que 70%". E
 -- retrato mensal nao sabe dizer o que aconteceu no dia 06 de marco.
 --
--- A SAIDA (chefe, 2026-08-02): dois intervalos. `dgeo.efetivo_periodo` diz
+-- A SAIDA: dois intervalos. `dgeo.efetivo_periodo` diz
 -- quando a pessoa esteve na Divisao, e `dgeo.impedimento` diz o que a tirou do
 -- trabalho sem tira-la da Divisao, e quanto. O mes deixa de ser DADO e vira
 -- CONSULTA: o aproveitamento de qualquer recorte sai de uma conta de dias.
@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_efetivo_periodo_inicio
 -- O que tira a pessoa do trabalho da Divisao sem tira-la da Divisao: funcao
 -- acumulada fora da DGEO, licenca de saude, curso, ferias, missao.
 --
--- A DESCRICAO E TEXTO LIVRE, sem catalogo de tipo (chefe, 2026-08-02). Um
+-- A DESCRICAO E TEXTO LIVRE, sem catalogo de tipo. Um
 -- catalogo obrigaria a classificar antes de escrever, e a lista de motivos nao
 -- fecha.
 --

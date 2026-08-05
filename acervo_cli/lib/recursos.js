@@ -40,7 +40,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/acervo/busca',
         query: 'buscaProdutos',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'paginado',
         colunas: COL_PRODUTO
       },
@@ -48,14 +48,14 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/acervo/produto/:produto_id',
         params: 'produtoByIdParams',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'registro'
       },
       'detalhar-produto': {
         metodo: 'GET',
         caminho: '/acervo/produto/detalhado/:produto_id',
         params: 'produtoByIdParams',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'registro',
         nota: 'traz produto + versoes + relacionamentos + arquivos aninhados (caro); ' +
           'o verbo `acervo produto` recorta isso'
@@ -64,13 +64,13 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/acervo/versao/:versao_id',
         params: 'versaoByIdParams',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'registro'
       },
       'listar-camadas': {
         metodo: 'GET',
         caminho: '/acervo/camadas_produto',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'lista',
         colunas: ['matviewname', 'tipo_produto', 'tipo_escala', 'quantidade_produtos'],
         nota: 'a resposta inclui credencial de leitura do banco (para o plugin QGIS); ' +
@@ -80,21 +80,21 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/acervo/prepare-download/arquivos',
         corpo: 'arquivosIds',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'registro'
       },
       'preparar-download-produtos': {
         metodo: 'POST',
         caminho: '/acervo/prepare-download/produtos',
         corpo: 'produtosIdsComTipos',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'registro'
       },
       'confirmar-download': {
         metodo: 'POST',
         caminho: '/acervo/confirm-download',
         corpo: 'downloadConfirmations',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'mensagem'
       },
       'atualizar-views': {
@@ -123,7 +123,7 @@ const RECURSOS = {
         metodo: 'PUT',
         caminho: '/produtos/produto',
         corpo: 'produtoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         objetoInteiro: true
       },
@@ -131,7 +131,7 @@ const RECURSOS = {
         metodo: 'PUT',
         caminho: '/produtos/versao',
         corpo: 'versaoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         objetoInteiro: true
       },
@@ -139,7 +139,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/versao/uuid',
         corpo: 'versaoUuidCorrecao',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'lista',
         confirmar: {
           campo: 'correcoes',
@@ -157,7 +157,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/produtos/produto',
         corpo: 'produtoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'produto_ids',
@@ -170,7 +170,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/produtos/versao',
         corpo: 'versaoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'versao_ids',
@@ -181,7 +181,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/produtos',
         corpo: 'produtos',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         nota: 'cria produto SEM versao e SEM arquivo (a casca). Para produto com ' +
           'arquivo, o caminho e o prepare-upload/product do recurso arquivo'
@@ -190,7 +190,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/versao_historica',
         corpo: 'versoesHistoricas',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         corpoArray: true
       },
@@ -198,15 +198,37 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/produto_versao_historica',
         corpo: 'produtosVersoesHistoricas',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         corpoArray: true
+      },
+      'criar-versoes-planejadas': {
+        metodo: 'POST',
+        caminho: '/produtos/versao_planejada',
+        corpo: 'versoesPlanejadas',
+        acesso: 'operador',
+        envelope: 'mensagem',
+        corpoArray: true,
+        nota: 'a versao PLANEJADA e a folha que ainda vai ser produzida: nasce sem ' +
+          'arquivo, para o item de pedido da mapoteca poder apontar para ela, e o ' +
+          'arquivo entra nesta MESMA versao quando a producao terminar. O corpo e o ' +
+          'mesmo de criar-versoes-historicas; quem separa e a rota'
+      },
+      'criar-produtos-planejados': {
+        metodo: 'POST',
+        caminho: '/produtos/produto_versao_planejada',
+        corpo: 'produtosVersoesPlanejadas',
+        acesso: 'operador',
+        envelope: 'mensagem',
+        corpoArray: true,
+        nota: 'como criar-produtos-historicos, mas a versao nasce PLANEJADA: aqui o ' +
+          'produto tambem nasce junto'
       },
       'mover-arquivos': {
         metodo: 'POST',
         caminho: '/produtos/mover-arquivos',
         corpo: 'moverArquivos',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         confirmar: {
           campo: 'arquivo_ids',
@@ -219,7 +241,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/renumerar-versoes',
         corpo: 'renumeraVersoes',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro',
         confirmar: {
           campo: 'produto_id',
@@ -228,10 +250,20 @@ const RECURSOS = {
             'edicao e nova (comparando o checksum) cria edicao-fantasma'
         }
       },
+      folha: {
+        metodo: 'GET',
+        caminho: '/produtos/folha',
+        query: 'folhaQuery',
+        acesso: 'consulta',
+        envelope: 'registro',
+        nota: 'a moldura de UMA folha da grade, por --inom ou por --mi. Os dois ' +
+          'juntos sao recusados; o MI nu resolve em 100k, e a folha de 250k exige ' +
+          '--tipo_escala_id'
+      },
       'listar-relacionamentos': {
         metodo: 'GET',
         caminho: '/produtos/versao_relacionamento',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'lista',
         colunas: ['id', 'versao_id_1', 'versao_id_2', 'tipo_relacionamento_id']
       },
@@ -239,21 +271,21 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/produtos/versao_relacionamento',
         corpo: 'versaoRelacionamento',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem'
       },
       'atualizar-relacionamentos': {
         metodo: 'PUT',
         caminho: '/produtos/versao_relacionamento',
         corpo: 'versaoRelacionamentoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem'
       },
       'excluir-relacionamentos': {
         metodo: 'DELETE',
         caminho: '/produtos/versao_relacionamento',
         corpo: 'versaoRelacionamentoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'versao_relacionamento_ids',
@@ -273,7 +305,7 @@ const RECURSOS = {
         metodo: 'PUT',
         caminho: '/arquivo/arquivo',
         corpo: 'arquivoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         objetoInteiro: true
       },
@@ -281,7 +313,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/arquivo/arquivo',
         corpo: 'arquivoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'arquivo_ids',
@@ -293,28 +325,28 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/arquivo/prepare-upload/files',
         corpo: 'prepareAddFiles',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro'
       },
       'preparar-versao': {
         metodo: 'POST',
         caminho: '/arquivo/prepare-upload/version',
         corpo: 'prepareAddVersion',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro'
       },
       'preparar-produto': {
         metodo: 'POST',
         caminho: '/arquivo/prepare-upload/product',
         corpo: 'prepareAddProduct',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro'
       },
       catalogar: {
         metodo: 'POST',
         caminho: '/arquivo/catalogar/product',
         corpo: 'catalogarProduto',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro',
         nota: 'produto que JA ESTA no volume: cadastra sem transferir nem renomear ' +
           'byte, e devolve os ids criados. So aceita volume marcado com ' +
@@ -327,7 +359,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/arquivo/prepare-upload/replace-files',
         corpo: 'prepareReplaceFiles',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro',
         nota: 'substitui o conteudo do slot (versao_id, nome_arquivo, extensao) sem ' +
           'criar versao nova'
@@ -336,27 +368,52 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/arquivo/confirm-upload',
         corpo: 'confirmUpload',
-        acesso: 'admin',
-        envelope: 'registro'
+        acesso: 'operador',
+        envelope: 'registro',
+        nota: 'fecha a sessao e devolve os ids REAIS do que entrou no acervo: em ' +
+          'add_version, versoes[].versao_id e versoes[].produto_id; em add_product, ' +
+          'produtos[].produto_id e produtos[].versoes[].versao_id. Status failed nao ' +
+          'traz id nenhum, so `detalhes` com o arquivo que reprovou'
       },
       'cancelar-upload': {
         metodo: 'POST',
         caminho: '/arquivo/cancel-upload',
         corpo: 'cancelUpload',
-        acesso: 'login',
+        acesso: 'operador',
         envelope: 'mensagem'
       },
       'listar-sessoes': {
         metodo: 'GET',
         caminho: '/arquivo/upload-sessions',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'lista'
       },
       'listar-problemas': {
         metodo: 'GET',
         caminho: '/arquivo/problem-uploads',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'lista'
+      },
+      'atualizar-checksum': {
+        metodo: 'POST',
+        caminho: '/arquivo/atualizar-checksum',
+        corpo: 'atualizarChecksum',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'para o arquivo que foi RECOMPRIMIDO sem perda no volume: os bytes ' +
+          'mudaram e o pixel nao. So a lista de ids viaja; quem rele o arquivo e ' +
+          'mede o checksum e o tamanho e o servidor'
+      },
+      'renomear-padrao': {
+        metodo: 'POST',
+        caminho: '/arquivo/renomear-padrao',
+        corpo: 'renomearPadrao',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'renomeia o arquivo fisico para o nome derivado dos metadados (a mesma ' +
+          'funcao que o invariante 7a audita). O corpo tem dry_run, que vem true por ' +
+          'DEFAULT: mande dry_run=false para renomear de verdade. Sem arquivo_ids ele ' +
+          'pega os divergentes ate `limite`; chame em laco ate `restantes` zerar'
       }
     }
   },
@@ -369,7 +426,7 @@ const RECURSOS = {
       listar: {
         metodo: 'GET',
         caminho: '/projetos/projeto',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'lista',
         colunas: ['id', 'nome', 'data_inicio', 'data_fim', 'status_execucao_id']
       },
@@ -377,14 +434,14 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/projetos/projeto',
         corpo: 'projeto',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro'
       },
       atualizar: {
         metodo: 'PUT',
         caminho: '/projetos/projeto',
         corpo: 'projetoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro',
         objetoInteiro: true
       },
@@ -392,7 +449,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/projetos/projeto',
         corpo: 'projetoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'registro',
         confirmar: {
           campo: 'projeto_ids',
@@ -403,7 +460,7 @@ const RECURSOS = {
       'listar-lotes': {
         metodo: 'GET',
         caminho: '/projetos/lote',
-        acesso: 'login',
+        acesso: 'consulta',
         envelope: 'lista',
         colunas: ['id', 'nome', 'pit', 'projeto_id', 'data_inicio', 'data_fim', 'status_execucao_id']
       },
@@ -411,14 +468,14 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/projetos/lote',
         corpo: 'lote',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro'
       },
       'atualizar-lote': {
         metodo: 'PUT',
         caminho: '/projetos/lote',
         corpo: 'loteAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'registro',
         objetoInteiro: true
       },
@@ -426,7 +483,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/projetos/lote',
         corpo: 'loteIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'registro',
         confirmar: {
           campo: 'lote_ids',
@@ -445,7 +502,7 @@ const RECURSOS = {
       listar: {
         metodo: 'GET',
         caminho: '/volumes/volume_armazenamento',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'lista',
         // `layout_origem` entra na projecao porque decide como o nome fisico do
         // arquivo se le. Sem ela na lista, quem opera nao tem como saber que o
@@ -462,14 +519,14 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/volumes/volume_armazenamento',
         corpo: 'volumeArmazenamento',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem'
       },
       atualizar: {
         metodo: 'PUT',
         caminho: '/volumes/volume_armazenamento',
         corpo: 'volumeArmazenamentoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         objetoInteiro: true
       },
@@ -477,7 +534,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/volumes/volume_armazenamento',
         corpo: 'volumeArmazenamentoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'volume_armazenamento_ids',
@@ -488,7 +545,7 @@ const RECURSOS = {
       'listar-tipos': {
         metodo: 'GET',
         caminho: '/volumes/volume_tipo_produto',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'lista',
         colunas: ['id', 'tipo_produto_id', 'volume_armazenamento_id', 'primario']
       },
@@ -496,14 +553,14 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/volumes/volume_tipo_produto',
         corpo: 'volumeTipoProduto',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem'
       },
       'atualizar-tipo': {
         metodo: 'PUT',
         caminho: '/volumes/volume_tipo_produto',
         corpo: 'volumeTipoProdutoAtualizacao',
-        acesso: 'admin',
+        acesso: 'operador',
         envelope: 'mensagem',
         objetoInteiro: true
       },
@@ -511,7 +568,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/volumes/volume_tipo_produto',
         corpo: 'volumeTipoProdutoIds',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'volume_tipo_produto_ids',
@@ -530,7 +587,7 @@ const RECURSOS = {
       'verificar-inconsistencias': {
         metodo: 'POST',
         caminho: '/gerencia/verificar_inconsistencias',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'registro',
         nota: 'so LE (o POST e por ser caro, nao por escrever). Rode ao fim de toda ' +
           'carga ou correcao em lote'
@@ -539,21 +596,21 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/gerencia/arquivos_deletados',
         query: 'paginationParams',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'lista'
       },
       'arquivos-incorretos': {
         metodo: 'GET',
         caminho: '/gerencia/arquivos_incorretos',
         query: 'paginationParams',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'lista'
       },
       'downloads-deletados': {
         metodo: 'GET',
         caminho: '/gerencia/downloads_deletados',
         query: 'paginationParams',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'lista'
       }
     }
@@ -568,38 +625,25 @@ const RECURSOS = {
     nome: 'paineis agregados (subconjunto util a agente)',
     schema: carregar('dashboard/dashboard_schema'),
     operacoes: {
-      'produtos-total': { metodo: 'GET', caminho: '/dashboard/produtos_total', acesso: 'login', envelope: 'registro' },
-      'produtos-tipo': { metodo: 'GET', caminho: '/dashboard/produtos_tipo', acesso: 'login', envelope: 'lista' },
-      'produtos-escala': { metodo: 'GET', caminho: '/dashboard/produtos_escala', acesso: 'login', envelope: 'lista' },
-      'arquivos-total-gb': { metodo: 'GET', caminho: '/dashboard/arquivos_total_gb', acesso: 'login', envelope: 'registro' },
-      'gb-volume': { metodo: 'GET', caminho: '/dashboard/gb_volume', acesso: 'login', envelope: 'lista' },
-      'situacao-carregamento': { metodo: 'GET', caminho: '/dashboard/situacao_carregamento', acesso: 'login', envelope: 'lista' },
-      'ultimos-carregamentos': { metodo: 'GET', caminho: '/dashboard/ultimos_carregamentos', query: 'totalQuery', acesso: 'login', envelope: 'lista' },
-      'ultimas-modificacoes': { metodo: 'GET', caminho: '/dashboard/ultimas_modificacoes', query: 'totalQuery', acesso: 'login', envelope: 'lista' },
-      'ultimos-deletes': { metodo: 'GET', caminho: '/dashboard/ultimos_deletes', query: 'totalQuery', acesso: 'login', envelope: 'lista' },
-      'ultimas-versoes': { metodo: 'GET', caminho: '/dashboard/ultimas_versoes', query: 'limitParam', acesso: 'login', envelope: 'lista' },
-      'saude-sistema': { metodo: 'GET', caminho: '/dashboard/system_health', acesso: 'login', envelope: 'registro' }
+      'produtos-total': { metodo: 'GET', caminho: '/dashboard/produtos_total', acesso: 'consulta', envelope: 'registro' },
+      'produtos-tipo': { metodo: 'GET', caminho: '/dashboard/produtos_tipo', acesso: 'consulta', envelope: 'lista' },
+      'produtos-escala': { metodo: 'GET', caminho: '/dashboard/produtos_escala', acesso: 'consulta', envelope: 'lista' },
+      'arquivos-total-gb': { metodo: 'GET', caminho: '/dashboard/arquivos_total_gb', acesso: 'consulta', envelope: 'registro' },
+      'gb-volume': { metodo: 'GET', caminho: '/dashboard/gb_volume', acesso: 'consulta', envelope: 'lista' },
+      'situacao-carregamento': { metodo: 'GET', caminho: '/dashboard/situacao_carregamento', acesso: 'consulta', envelope: 'lista' },
+      'ultimos-carregamentos': { metodo: 'GET', caminho: '/dashboard/ultimos_carregamentos', query: 'totalQuery', acesso: 'consulta', envelope: 'lista' },
+      'ultimas-modificacoes': { metodo: 'GET', caminho: '/dashboard/ultimas_modificacoes', query: 'totalQuery', acesso: 'consulta', envelope: 'lista' },
+      'ultimos-deletes': { metodo: 'GET', caminho: '/dashboard/ultimos_deletes', query: 'totalQuery', acesso: 'consulta', envelope: 'lista' },
+      'ultimas-versoes': { metodo: 'GET', caminho: '/dashboard/ultimas_versoes', query: 'limitParam', acesso: 'consulta', envelope: 'lista' },
+      'saude-sistema': { metodo: 'GET', caminho: '/dashboard/system_health', acesso: 'consulta', envelope: 'registro' }
     }
   },
 
   // -------------------------------------------------------------------------
-  // SEM recurso `usuarios`: identidade e do `auth_cli`, desde 2026-08-02.
-  //
-  // Ele existia aqui porque o SCA so sabia IMPORTAR gente do Auth Server, e
-  // isso cabia num canto do CLI do acervo. Com a autenticacao vindo para
-  // dentro, o assunto virou cadastro, senha e historico de acesso -- coisa de
-  // PLATAFORMA, como /metas e /rpcmtec, e nao do modulo acervo.
-  //
-  // O que ficou aqui envelheceu em SILENCIO, e e por isso que este comentario
-  // existe no lugar de um recurso remendado: `listar-auth` e `sincronizar`
-  // apontavam para `/usuarios/servico_autenticacao` e `/usuarios/sincronizar`,
-  // que sumiram na fusao, e `criar` mandava o corpo `listaUsuario` (a lista de
-  // uuid a importar) para um `POST /usuarios` que hoje espera um cadastro
-  // completo. Nada disso quebrou teste: `listaUsuario` continua existindo no
-  // schema, agora como corpo do reset de senha. Um registry que aponta rota
-  // morta e pior do que um registry incompleto, porque ele ANUNCIA a rota.
-  //
-  // Use: node auth_cli/auth.js usuario --help
+  // SEM recurso `usuarios` nem `efetivo`: os dois sao PLATAFORMA, e o CLI deles
+  // e o efetivo_cli (`node efetivo_cli/efetivo.js --ajuda`). Cadastro, senha,
+  // perfil por modulo, historico de acesso e quem esteve na Divisao nao
+  // pertencem ao modulo acervo.
 
   // -------------------------------------------------------------------------
   integracao: {
@@ -626,25 +670,97 @@ const RECURSOS = {
 
   // -------------------------------------------------------------------------
   // O RPCMTec e o relatorio mensal da DIVISAO, e nao do acervo: a mesma edicao
-  // fala de acervo, mapoteca e orcamento. Era `/relatorio/rpcmtec` (so acervo e
-  // mapoteca) ate 2026-08-01, quando as duas geracoes parciais viraram uma so.
+  // fala de acervo, mapoteca e orcamento.
+  //
+  // Nao ha rota que GERE o relatorio sob demanda. O documento pertence a uma
+  // EDICAO mensal (rpcmtec.edicao), que alguem cria uma vez por mes: primeiro se
+  // acha a edicao do ano/mes na listagem, depois se pede o documento dela pelo
+  // id. Edicao aberta calcula do banco; edicao fechada devolve o congelado.
   rpcmtec: {
     nome: 'RPCMTec (relatorio mensal da Divisao) e Anuario Estatistico',
     schema: carregar('rpcmtec/rpcmtec_schema'),
     operacoes: {
-      rpcmtec: {
+      listar: {
         metodo: 'GET',
-        caminho: '/rpcmtec/gerar',
-        query: 'gerarQuery',
+        caminho: '/rpcmtec/',
+        query: 'listarQuery',
+        acesso: 'admin',
+        envelope: 'lista',
+        colunas: ['id', 'ano', 'mes', 'fechada', 'assinante_uuid', 'data_assinatura'],
+        nota: 'e por aqui que se descobre o id da edicao de um mes; o verbo ' +
+          '`acervo rpcmtec --ano A --mes M` faz esse passo sozinho'
+      },
+      anos: {
+        metodo: 'GET',
+        caminho: '/rpcmtec/anos',
+        acesso: 'admin',
+        envelope: 'lista'
+      },
+      obter: {
+        metodo: 'GET',
+        caminho: '/rpcmtec/:id',
+        params: 'idParams',
         acesso: 'admin',
         envelope: 'registro'
+      },
+      documento: {
+        metodo: 'GET',
+        caminho: '/rpcmtec/:id/documento',
+        params: 'idParams',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'o documento INTEIRO, secao por secao. Edicao aberta calcula do ' +
+          'banco, edicao fechada devolve o congelado. E a mesma fonte do PDF'
+      },
+      conferir: {
+        metodo: 'GET',
+        caminho: '/rpcmtec/:id/conferir',
+        params: 'idParams',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'o que o banco diria HOJE ao lado do que foi congelado. So vale em ' +
+          'edicao FECHADA'
+      },
+      criar: {
+        metodo: 'POST',
+        caminho: '/rpcmtec/',
+        corpo: 'criar',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'abre a edicao do mes. O par (ano, mes) e unico, e repetir volta 409'
+      },
+      fechar: {
+        metodo: 'POST',
+        caminho: '/rpcmtec/:id/fechar',
+        params: 'idParams',
+        acesso: 'admin',
+        envelope: 'registro',
+        confirmar: {
+          campo: 'id',
+          motivo: 'CONGELA os 34 blocos da edicao: a partir dai o documento para ' +
+            'de acompanhar o banco. Reabrir e outra rota, e o congelado se perde'
+        }
+      },
+      reabrir: {
+        metodo: 'POST',
+        caminho: '/rpcmtec/:id/reabrir',
+        params: 'idParams',
+        acesso: 'admin',
+        envelope: 'registro',
+        confirmar: {
+          campo: 'id',
+          motivo: 'descongela a edicao, e o documento volta a calcular do banco. ' +
+            'O texto congelado que foi assinado deixa de ser o que a rota devolve'
+        }
       },
       anuario: {
         metodo: 'GET',
         caminho: '/rpcmtec/anuario',
         query: 'gerarQuery',
         acesso: 'admin',
-        envelope: 'registro'
+        envelope: 'registro',
+        nota: 'previa do Anuario Estatistico em JSON; o arquivo .ods sai por ' +
+          '`acervo rpcmtec --ano A --mes M --anuario`'
       }
     }
   },

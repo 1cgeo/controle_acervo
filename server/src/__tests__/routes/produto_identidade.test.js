@@ -12,8 +12,8 @@
  * nada ao operador e, no lote, derruba a transação inteira depois de tudo
  * preenchido.
  *
- * Desde 2026-08-04 a conferência mora em utils/identidade_produto.js e os três
- * caminhos a chamam.
+ * A conferência mora em utils/identidade_produto.js, e os três caminhos a
+ * chamam: regra em três lugares diverge.
  */
 
 const request = require('supertest')

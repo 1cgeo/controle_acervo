@@ -1,28 +1,17 @@
 # Path: core\upload_flow.py
 """A máquina de upload em duas fases, num lugar só.
 
-O SERVIDOR faz o upload em duas fases: `prepare-upload/*` reserva a sessão e
-devolve, para cada arquivo, o `destination_path` no volume; o cliente copia os
-bytes; `confirm-upload` fecha a transação. Seis diálogos do plugin faziam esse
-mesmo bailado, cada um com a sua cópia -- e a medição de 2026-08-01 mostrou
-`file_transfer_complete`, `calculate_checksum` e `_retry_failed_transfers`
-IDÊNTICOS (similaridade 1,00) nos três diálogos de lote, com `confirm_upload`,
-`setup_ui` e `initiate_load_process` acima de 0,97.
+O upload tem três passos: `prepare-upload/*` reserva a sessão e devolve o
+`destination_path` de cada arquivo; o cliente copia os bytes; `confirm-upload`
+fecha a transação. Todo diálogo de carga do plugin passa por aqui.
 
-Não era só repetição: as cópias já tinham DIVERGIDO, e nos dois pontos que mais
-custam.
+Duas regras que esta máquina faz cumprir para todos:
 
-  1. `FileTransferThread.ensure_smb_credentials()` era chamado em UM lugar, o
-     gerente de download. Nenhum caminho de upload o chamava, então no Linux
-     todo upload morria em "Credenciais de rede (SMB) não disponíveis" -- a
-     thread de trabalho não pode abrir o diálogo de senha, e ninguém o abria
-     antes. Aqui ele é chamado uma vez, na thread principal, antes de qualquer
-     transferência.
-
-  2. `arquivo/cancel-upload` era chamado por dois dos seis diálogos. Os outros
-     quatro abandonavam a sessão no servidor quando a cópia falhava e a pessoa
-     desistia. É por isso que "Gerenciar Sessões de Upload" vivia cheia de
-     sessão pendurada. Aqui, desistir CANCELA.
+  1. `FileTransferThread.ensure_smb_credentials()` roda UMA vez, na thread
+     principal, antes de existir qualquer thread de transferência. A thread de
+     trabalho não pode abrir o diálogo de senha.
+  2. Desistir CANCELA a sessão no servidor (`arquivo/cancel-upload`). Sessão
+     abandonada fica pendurada na tela "Gerenciar Sessões de Upload".
 
 O que muda de um diálogo para outro é só a FORMA da resposta do prepare (lista
 plana de arquivos, ou aninhada em produtos/versões) e como se acha o arquivo
@@ -43,9 +32,9 @@ from .dominios import eh_tileserver
 def calcular_checksum(caminho, bloco=1024 * 1024):
     """SHA-256 de um arquivo.
 
-    Blocos de 1 MB, e não de 4 KB como estava nas cópias: num arquivo de 8 GB a
-    diferença é entre duzentas mil e oito mil idas ao disco, e o hash é o que
-    faz a tela parecer travada antes de a transferência começar.
+    O bloco é de 1 MB: num arquivo de vários GB, bloco pequeno multiplica as
+    idas ao disco e o hash é o que faz a tela parecer travada antes de a
+    transferência começar.
     """
     h = hashlib.sha256()
     with open(caminho, 'rb') as f:
@@ -83,9 +72,8 @@ def achatar_arquivos(dados):
     As três rotas devolvem a mesma coisa em profundidades diferentes:
     `prepare-upload/files` traz `arquivos` na raiz, `prepare-upload/version`
     traz `versoes[].arquivos[]`, e `prepare-upload/product` traz
-    `produtos[].versoes[].arquivos[]`. Descer sozinho é o que permite um
-    chamador só, em vez de três leitores quase iguais que divergem quando a
-    resposta ganha um nível.
+    `produtos[].versoes[].arquivos[]`. Descer os três níveis aqui mantém UM
+    leitor para as três rotas.
     """
     if not dados:
         return []
@@ -212,9 +200,9 @@ class UploadFlowMixin:
                 continue
             a_copiar.append((origem, info))
 
-        # Resolver tudo primeiro é o que permite ABORTAR inteiro: antes, o
-        # diálogo copiava os que achou, avisava dos que faltaram e confirmava
-        # assim mesmo, gravando uma versão com menos arquivo do que se pediu.
+        # Resolver tudo antes de copiar é o que permite ABORTAR inteiro. Copiar
+        # só os que se acha e confirmar assim mesmo gravaria uma versão com
+        # menos arquivo do que se pediu.
         if nao_encontrados:
             self._abortar(
                 "Não foi possível localizar o arquivo de origem para:\n- "
@@ -241,14 +229,10 @@ class UploadFlowMixin:
         self._proximo()
         return True
 
-    # A transferência é SEQUENCIAL, um arquivo por vez.
-    #
-    # Três dos seis diálogos disparavam uma thread por arquivo de uma vez só. Num
-    # lote de cartas isso são dezenas de cópias simultâneas do mesmo share SMB,
-    # que disputam rede e disco e terminam mais devagar do que em fila -- e a
-    # barra de progresso vira ficção, porque mostra "3/40 concluídos" enquanto as
-    # quarenta estão pela metade. O `adicionar_produto` já fazia em fila; é essa
-    # a versão que ficou.
+    # A transferência é SEQUENCIAL, um arquivo por vez. Dezenas de cópias
+    # simultâneas do mesmo compartilhamento de rede disputam rede e disco, e
+    # terminam mais devagar que em fila. A barra de progresso também deixa de
+    # informar: ela mostraria "3/40 concluídos" com as quarenta pela metade.
     def _proximo(self):
         if not self._fila:
             self._acabou()
@@ -316,8 +300,8 @@ class UploadFlowMixin:
         if resposta == QMessageBox.StandardButton.Yes:
             self._retentar()
         else:
-            # Desistir CANCELA a sessão. Deixá-la aberta era o que enchia a tela
-            # de "Sessões de Upload" de sessão que ninguém ia retomar.
+            # Desistir CANCELA a sessão. Deixá-la aberta enche a tela de
+            # "Sessões de Upload" de sessão que ninguém vai retomar.
             self._abortar(
                 f"{self.arquivos_com_falha} arquivo(s) falharam. A sessão foi cancelada no servidor."
             )
@@ -339,6 +323,16 @@ class UploadFlowMixin:
     # --- fase 3 -------------------------------------------------------------
 
     def _confirmar(self):
+        """Fecha a sessão no servidor. Devolve True quando o acervo gravou.
+
+        O corpo da resposta traz os ids REAIS do que entrou: em `add_version`,
+        `dados.versoes[].versao_id` e `.produto_id`; em `add_product`,
+        `dados.produtos[].produto_id` e `.versoes[].versao_id`. Nenhum diálogo
+        deste plugin os lê hoje, e por isso esta função só devolve o booleano.
+        Quem passar a precisar do id da versão criada, leia daí: até 2026-08-05
+        o campo carregava o id da tabela temporária da sessão, que não aponta
+        para versão nenhuma do acervo.
+        """
         try:
             resposta = self.api_client.post(
                 'arquivo/confirm-upload', {'session_uuid': self.current_session_uuid}

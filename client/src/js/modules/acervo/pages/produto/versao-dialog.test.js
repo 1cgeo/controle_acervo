@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O formulário de versão espelha o gatilho `acervo.validate_version` ANTES de
 // enviar. Estes testes guardam o espelho: sem ele a Carta Topográfica Militar
@@ -43,8 +44,6 @@ import {
 } from '@modules/acervo/pages/produto/versao-dialog.js';
 import * as svc from '@modules/acervo/services/acervo-service.js';
 import * as assistente from '@modules/acervo/pages/produto/upload-wizard.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // 24 = Carta Topográfica Militar, o único subtipo com `define_produto` hoje.
 const SUBTIPOS = [
@@ -586,8 +585,7 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
   // A META DO PIT. Sem este campo, a unica forma de ligar uma versao ao plano
   // anual era o plugin do QGIS ou SQL na mao, e a grade do PIT conta por
   // `INNER JOIN pit.meta ON mm.id = v.meta_pit_id`: versao sem meta nao conta.
-  // Medido em producao: das 278 versoes Regulares finalizadas em 2026, 163
-  // estavam prontas e fora da conta do plano.
+  // Versão pronta sem meta fica fora da conta do plano, e ninguém percebe.
   test('a meta do PIT escolhida vai no corpo', async () => {
     await openVersaoDialog({ produto: PRODUTO });
     await flush();
@@ -768,7 +766,7 @@ describe('openVersaoDialog: produto e versao num passo so', () => {
   });
 });
 
-// AS DUAS DATAS PRECISAM DIZER O QUE SAO (2026-08-04).
+// AS DUAS DATAS PRECISAM DIZER O QUE SAO.
 //
 // `data_criacao` e `data_edicao` chegavam ao operador sem uma palavra, e
 // confundi-las e o erro classico do acervo. A de EDICAO e a que o
@@ -776,13 +774,6 @@ describe('openVersaoDialog: produto e versao num passo so', () => {
 // pela outra move a carta de mes na grade do PIT, sem erro nenhum na tela.
 // Seis outros campos deste mesmo formulario ja tinham helpText.
 describe('ajuda nas datas', () => {
-  beforeEach(() => {
-    svc.getTiposVersao.mockResolvedValue(TIPOS);
-    svc.getSubtiposProduto.mockResolvedValue(SUBTIPOS);
-  });
-
-  afterEach(() => { document.body.innerHTML = ''; });
-
   const ajudaDe = (rotulo) =>
     campoPorRotulo(rotulo)?.querySelector('.form-field__help')?.textContent || '';
 

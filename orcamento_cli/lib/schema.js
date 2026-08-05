@@ -16,14 +16,16 @@
 
 const { REGRAS } = require('./regras')
 
-// Mesmas opcoes do middleware do servidor (utils/schema_validation.js).
-// Divergir aqui produziria um CLI que aceita o que o servidor recusa, ou o
-// contrario, que e pior que nao validar.
+// SEM stripUnknown, e essa e a diferenca que separa este CLI do da mapoteca.
 //
-// Em 2026-07-25 o servidor DEIXOU de usar stripUnknown no corpo: chave
-// desconhecida virou 400 em vez de sumir calada. Este objeto acompanhou no
-// mesmo gesto. Se um dia voltarem a divergir, o sintoma sera o pior possivel: o
-// `--dry-run` aprova e o envio real leva 400, ou o inverso.
+// O SCA tem DOIS middlewares com o mesmo nome. As rotas do orcamento recebem o
+// ESTRITO (utils/schema_validation_estrito.js), escolhido em
+// server/src/orcamento/utils/index.js: chave desconhecida no corpo vira 400 com
+// sugestao do nome mais parecido, e nao some calada. O outro, que descarta,
+// serve o resto do sistema.
+//
+// Ligar stripUnknown aqui faz o `--dry-run` aprovar corpo que o envio real
+// recusa com 400, que e o pior sintoma possivel para quem automatiza.
 const OPCOES_CORPO = { abortEarly: false }
 const OPCOES_QUERY = { abortEarly: false }
 
@@ -202,10 +204,15 @@ function dependenciasDe (schemaJoi) {
   })
 }
 
-/** Nomes dos filtros aceitos numa listagem, lidos do listarQuery do proprio schema. */
-function filtrosDe (modulo) {
-  if (!modulo || !modulo.listarQuery) return []
-  return camposDe(modulo.listarQuery).map(c => ({
+/**
+ * Nomes dos filtros aceitos numa listagem, lidos do schema de query da propria
+ * feature. A chave e `listarQuery` na maioria dos recursos; o anexo usa
+ * `vinculoQuery`, e por isso ela e parametro em vez de literal.
+ */
+function filtrosDe (modulo, chaveQuery = 'listarQuery') {
+  const query = modulo && modulo[chaveQuery || 'listarQuery']
+  if (!query) return []
+  return camposDe(query).map(c => ({
     nome: c.nome,
     tipo: c.tipo
   }))
@@ -237,7 +244,12 @@ function contrato (chave, recurso) {
   // Rotas. O acesso e por perfil no modulo orcamento: consulta le, operador
   // cria e atualiza, gerente deleta. O CRUD de dominio exige administrador.
   linhas.push('rotas')
-  if (recurso.somenteLeitura) {
+  if (recurso.rotas) {
+    // Recurso cuja forma foge do CRUD por id. Sem a lista explicita, o CLI
+    // anunciaria o PUT e o GET por id que o registry assume por padrao, e o
+    // agente descobriria pelo 404.
+    linhas.push(...recurso.rotas.map(r => '  ' + r.replace('<base>', base)))
+  } else if (recurso.somenteLeitura) {
     // Recurso de LEITURA, sem CRUD: o painel calcula, ninguem escreve nele. Sem
     // esta ramificacao o CLI anunciava POST, PUT e DELETE que nao existem, e o
     // agente que acreditasse no contrato descobriria pelo 404.
@@ -255,7 +267,7 @@ function contrato (chave, recurso) {
     linhas.push(`  escrita so em: ${recurso.subEscrita.join(', ')}`)
     linhas.push(`  leitura em:    ${recurso.subLeitura.join(', ')}`)
   } else {
-    const filtros = filtrosDe(modulo)
+    const filtros = filtrosDe(modulo, recurso.queryListar)
     const sufixoFiltro = filtros.length
       ? `   filtros: ${filtros.map(f => `${f.nome} (${f.tipo})`).join(', ')}`
       : ''
@@ -281,11 +293,9 @@ function contrato (chave, recurso) {
       linhas.push('')
     }
 
-    // Ate 2026-07-25 o servidor descartava chave desconhecida em silencio
-    // (stripUnknown), e campo com nome errado simplesmente nao gravava. Agora
-    // ele RECUSA com 400 nomeando a chave, e o CLI pega isso antes, local.
+    // O servidor do orcamento RECUSA a chave desconhecida, e nao a descarta: o
+    // CLI a pega antes, local, e diz qual e.
     linhas.push('  campo fora desta lista e RECUSADO pelo servidor (400).')
-    linhas.push('  O CLI pega isso na validacao local, antes de enviar.')
     linhas.push('')
   }
 
@@ -316,11 +326,13 @@ function indice (RECURSOS) {
  * Valida o corpo contra o schema Joi ANTES de enviar. Devolve
  * { ok, valor, erros[], descartados[] }.
  *
- * `descartados` sao as chaves que o proprio SCHEMA remove de proposito, com
- * .strip(), e nao chave desconhecida (essa agora vira erro, desde que o servidor
- * parou de usar stripUnknown em 2026-07-25). O caso vivo e o pdr_item_id de uma
- * NC Extra-PDR: ele EXISTE no schema, e legitimo mandar, e mesmo assim e
- * descartado pela regra condicional. Sem este aviso o agente acha que gravou.
+ * `descartados` sao as chaves que sumiram do corpo validado por descarte
+ * DELIBERADO do schema, com `.strip()`. O caso vivo e o `pdr_item_id` de uma NC
+ * Extra-PDR: ele existe, e legitimo mandar, e mesmo assim nao grava. Sem este
+ * aviso, isso vira "achei que gravei".
+ *
+ * Nome FORA do schema nao cai aqui: ele vira erro, porque o servidor do
+ * orcamento o recusa com 400.
  */
 function validarCorpo (schemaJoi, corpo) {
   if (!schemaJoi || typeof schemaJoi.validate !== 'function') {

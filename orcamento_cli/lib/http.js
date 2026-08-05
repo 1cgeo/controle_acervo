@@ -175,7 +175,7 @@ function gravarSessao (cfg, token) {
     fs.writeFileSync(arquivo, JSON.stringify({ token, exp }), { mode: 0o600 })
   } catch (e) {
     // Cache e otimizacao, nunca requisito: se nao der para gravar, seguimos
-    // autenticando a cada chamada (comportamento antigo) em vez de falhar.
+    // autenticando a cada chamada em vez de falhar.
   }
 }
 
@@ -222,9 +222,9 @@ async function autenticar (cfg) {
     throw new Error('O login respondeu sem token.')
   }
   // O modulo orcamento NAO e admin-only: quem tem perfil no modulo opera pelo
-  // CLI (consulta le, operador lanca, gerente apaga). O administrador continua
-  // passando em tudo. Por isso aqui nao se barra mais ninguem; quem nao tiver
-  // perfil recebe 403 na rota, com a mensagem certa.
+  // CLI (consulta le, operador lanca, gerente apaga), e o administrador passa em
+  // tudo. Por isso o login nao barra ninguem aqui: quem nao tiver perfil recebe
+  // 403 na rota, com a mensagem certa.
   return {
     token: dados.token,
     administrador: dados.administrador === true,

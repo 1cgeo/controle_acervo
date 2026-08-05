@@ -5,7 +5,7 @@
 // direto ao INSERT na tx), atualizar (404 se nao existe) e deletar (409 quando
 // ha consumidor vinculado; 404 se inexistente).
 //
-// O controller saiu de src/orcamento/meta/ para src/pit/ em 2026-07-31: o PIT
+// O controller saiu de src/orcamento/meta/ para src/pit/: o PIT
 // virou dado de plataforma. O terceiro consumidor, mapoteca.pedido, entrou na
 // mesma data, e por isso o COUNT do deletar soma tres tabelas.
 
@@ -42,8 +42,8 @@ describe('pit_ctrl', () => {
     )
   })
 
-  // O exercicio VIGENTE e a revisao ABERTA, que toda escrita de meta consulta
-  // desde 2026-08-04.
+  // O exercício VIGENTE e a revisão ABERTA, que toda escrita de meta consulta
+  // antes de gravar. O dublê responde as duas leituras, nessa ordem.
   const comRevisaoAberta = () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 7, codigo: 'R1' })

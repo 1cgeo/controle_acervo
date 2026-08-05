@@ -30,8 +30,8 @@ const { desziparParaMapa, reescreverOds } = require('../utils/ods_export')
 
 const CAMINHO_SEMENTE = path.join(__dirname, 'modelos', 'rtm_meta4_detalhada.ods')
 
-// Os estilos que o modelo usa nas linhas de dados. Medidos em
-// "META4_DETALHADA.ods" (2026-08-01).
+// Os estilos que o modelo usa nas linhas de dados, medidos em
+// "META4_DETALHADA.ods".
 const ESTILO_LINHA = 'ro2'
 const ESTILO_CELULA = 'ce130'
 const ESTILO_DATA = 'ce156'

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Mesmo defeito de tipo de id das outras telas do modulo: o select devolve o
 // valor da opcao com o tipo original, os ids da API sao TEXTO, e o servidor
@@ -27,8 +28,6 @@ vi.mock('@components/historico/historico.js', () => ({
 }));
 
 import { openRpnpDialog } from '@modules/orcamento/pages/rpnp/rpnp-dialog.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function botao(rotulo) {
   return [...document.querySelectorAll('.modal__footer .btn')]

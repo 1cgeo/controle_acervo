@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import {
   getNotasEmpenho,
   deleteNotaEmpenho,
@@ -67,8 +68,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   }, [svgIcon(ICONS.add, 16), 'Nova nota de empenho']);
 
   // ---- Filtros ----
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). Trocar o ano tambem LIMPA o filtro de NC: as NCs sao do ano
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Trocar o ano tambem LIMPA o filtro de NC: as NCs sao do ano
   // anterior e a lista ficaria presa a uma NC que nao esta mais nas opcoes.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
@@ -131,7 +131,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
           : formatCurrency(row.total_liquidado)),
       },
       {
-        // Coluna NOVA, e o criterio de ordem da tela (chefe, 2026-07-31): o que
+        // Coluna NOVA, e o criterio de ordem da tela: o que
         // importa e o que ainda falta liquidar. Ela nao vem do backend, e sai da
         // conta empenhado menos anulado menos liquidado.
         key: 'a_liquidar',
@@ -148,7 +148,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
     pageSize: 25,
     loading: true,
     // Maior saldo a liquidar primeiro, e as 100% liquidadas no fim (chefe,
-    // 2026-07-31). A ordem antiga era ano e numero, que espalha o que precisa de
+    // Ordenar por ano e numero espalha o que precisa de
     // acao entre o que ja fechou.
     defaultSort: { key: 'a_liquidar', dir: 'desc' },
     rowClassName: (row) => (estaQuitada(row) ? 'data-table__row--quitada' : ''),
@@ -180,6 +180,10 @@ export async function renderNotasEmpenhoList(container, _ctx) {
     ],
   });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Notas de Empenho' }),
@@ -192,9 +196,25 @@ export async function renderNotasEmpenhoList(container, _ctx) {
       filtroAno.element,
       notaCreditoFilter.element,
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma nota de empenho
+   * cadastrada": a falha da API lia-se como ano sem empenho, e as duas pedem
+   * acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   async function loadFilterOptions() {
     try {
@@ -211,6 +231,9 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getNotasEmpenho({
@@ -221,7 +244,8 @@ export async function renderNotasEmpenhoList(container, _ctx) {
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar notas de empenho');
     }
   }

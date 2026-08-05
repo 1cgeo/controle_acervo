@@ -2,13 +2,14 @@
 
 // A EXPIRACAO DO DOWNLOAD VALE NA HORA DO USO.
 //
-// Ate 2026-08-04 o `confirmDownload` casava so por `status = 'pending'`, e quem
-// fechava o token vencido era um cron de hora em hora. Duas consequencias:
-//  - o token valia por ate uma hora DEPOIS de expirar;
-//  - com o cron parado, valia para sempre.
-// O chefe tirou todo cron da aplicacao, entao a regra passou a morar onde o
-// token e gasto. Este teste reprova o estado anterior: com a consulta antiga, o
-// token vencido confirma e o primeiro `expect` falha.
+// REGRESSÃO: o `confirmDownload` casava só por `status = 'pending'`, e quem
+// fechava o token vencido era uma rotina de limpeza. Duas consequências:
+//  - o token valia por até um ciclo de limpeza DEPOIS de expirar;
+//  - com a limpeza parada, valia para sempre.
+//
+// Não há rotina agendada na aplicação, então a regra mora onde o token é GASTO.
+// Este teste reprova o estado anterior: com a consulta antiga, o token vencido
+// confirma e o primeiro `expect` falha.
 
 const { db } = require('../../database')
 const { conn, cleanTestData, closeConnection } = require('../helpers/db')

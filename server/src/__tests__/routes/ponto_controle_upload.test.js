@@ -291,9 +291,9 @@ describe('Ponto de controle - confirmar a importação', () => {
   it('a GEOMETRIA fica com a posição de dupla precisão, e não com a do atributo', async () => {
     const lote = await criaLote()
     // O plugin manda a posição DUAS vezes: no topo, com a precisão da
-    // geometria, e dentro de `atributos`, nas colunas REAL dele. O canário de
-    // 2026-07-29 mostrou que o espalhamento de `atributos` sobrescrevia a
-    // primeira, e a geometria nascia com 12 cm de erro.
+    // geometria, e dentro de `atributos`, nas colunas REAL dele. Espalhar
+    // `atributos` sobre o objeto sobrescreve a primeira, e a geometria nasce
+    // com centímetros de erro.
     const prep = await preparar({
       lote_id: lote.id,
       pontos: [{
@@ -302,7 +302,7 @@ describe('Ponto de controle - confirmar a importação', () => {
         longitude: -53.61403358333334,
         atributos: {
           data_rastreio: '2026-05-12',
-          // Aprovado, porque desde 2026-07-29 e a unica situacao que entra.
+          // Aprovado, que e a unica situacao que entra no acervo.
           tipo_situacao: 3,
           // O que a coluna REAL do plugin guarda: a mesma posição, truncada.
           latitude: -28.635164,
@@ -705,7 +705,7 @@ describe('Ponto de controle - sessões de importação', () => {
 
 describe('Ponto de controle - só o APROVADO entra', () => {
   // O acervo é o que a tropa consulta para ajustar trabalho, e ponto não
-  // revisado ali é pior do que ponto nenhum. Regra do chefe, 2026-07-29.
+  // revisado ali é pior do que ponto nenhum.
   const comSituacao = (cod, situacao) =>
     pontoDe(cod, [], { tipo_situacao: situacao })
 

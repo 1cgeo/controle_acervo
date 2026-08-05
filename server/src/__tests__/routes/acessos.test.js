@@ -16,7 +16,7 @@
 //
 //  3. O DIA DE CALENDARIO. A serie sai em 'AAAA-MM-DD', pelo dia LOCAL. Foi o
 //     defeito que o `toLocalDateString` do original existia para evitar (e o
-//     mesmo D-1 da "Data de entrega" da mapoteca em 2026-07-27). A comparacao e
+//     mesmo D-1 da "Data de entrega" da mapoteca). A comparacao e
 //     contra `now()::date` LIDO DO BANCO, e nao contra um `new Date()` do Node:
 //     comparar com o relogio do processo testaria os dois relogios em vez da
 //     consulta.
@@ -47,8 +47,8 @@ beforeAll(async () => {
   app = await getApp()
 })
 
-// Quem zera `dgeo.login` entre os casos e o `cleanTestData()`, que a trunca
-// desde 2026-08-02 -- a regra mora la, e repeti-la aqui seria copia.
+// Quem zera `dgeo.login` entre os casos e o `cleanTestData()`, que a trunca: a
+// regra mora la, e repeti-la aqui seria copia.
 //
 // O `beforeEach` existe por outro motivo: TODA assercao deste arquivo e uma
 // CONTAGEM, entao uma unica linha vinda de fora muda o resultado sem tocar no
@@ -87,9 +87,7 @@ const ROTAS = [
   '/api/acessos/logados',
   '/api/acessos/resumo',
   '/api/acessos/logins/dia',
-  '/api/acessos/logins/mes',
-  '/api/acessos/logins/usuarios',
-  '/api/acessos/logins/clientes'
+  '/api/acessos/logins/usuarios'
 ]
 
 describe('Guarda: /api/acessos e admin-only', () => {
@@ -118,7 +116,7 @@ describe('Guarda: /api/acessos e admin-only', () => {
 })
 
 describe('GET /api/acessos/logados', () => {
-  // A linha passou a ser a PESSOA, e nao o par pessoa + cliente (2026-08-04). A
+  // A linha passou a ser a PESSOA, e nao o par pessoa + cliente. A
   // tela pergunta quem entrou hoje, e a mesma pessoa em dois clientes aparecia
   // duas vezes. O cliente desceu para uma coluna, que agrega os dois.
   test('traz uma linha por pessoa, com os clientes agregados', async () => {
@@ -170,7 +168,7 @@ describe('GET /api/acessos/logados', () => {
 })
 
 describe('GET /api/acessos/resumo', () => {
-  // O resumo passou a contar PESSOA, e nao evento de login (2026-08-04). Com
+  // O resumo passou a contar PESSOA, e nao evento de login. Com
   // token de 8 horas e dois clientes, a mesma pessoa contava varias vezes, e o
   // cartao respondia uma pergunta que ninguem faz.
   test('conta pessoas distintas, e nao eventos de login', async () => {
@@ -274,46 +272,6 @@ describe('GET /api/acessos/logins/dia', () => {
   })
 })
 
-describe('GET /api/acessos/logins/mes', () => {
-  test('o mes sem login sai como zero, e a data e o primeiro dia do mes', async () => {
-    const usuarioId = await idPorUuid(USER_UUID)
-
-    await inserirLogin(usuarioId, 'sca_web')
-    await inserirLogin(
-      usuarioId,
-      'sca_qgis',
-      "date_trunc('month', now()) - INTERVAL '2 months' + INTERVAL '5 days'"
-    )
-
-    const res = await request(app)
-      .get('/api/acessos/logins/mes?total=3')
-      .set('Authorization', admin())
-
-    expect(res.status).toBe(200)
-    expect(res.body.dados).toHaveLength(3)
-    expect(res.body.dados.map(d => d.logins)).toEqual([1, 0, 1])
-    for (const linha of res.body.dados) {
-      expect(linha.data).toMatch(/^\d{4}-\d{2}-01$/)
-    }
-  })
-
-  // O teto desta rota conta MESES (120), e nao dias (366) como a serie diaria:
-  // sao duas unidades, e um teto so faria "?total=200" significar 200 dias numa
-  // rota e 200 meses na outra.
-  test('recusa 121 meses e aceita 120', async () => {
-    const mes = await request(app)
-      .get('/api/acessos/logins/mes?total=121')
-      .set('Authorization', admin())
-    expect(mes.status).toBe(400)
-
-    const ok = await request(app)
-      .get('/api/acessos/logins/mes?total=120')
-      .set('Authorization', admin())
-    expect(ok.status).toBe(200)
-    expect(ok.body.dados).toHaveLength(120)
-  })
-})
-
 describe('GET /api/acessos/logins/usuarios', () => {
   test('ordena do que mais entrou para o que menos entrou', async () => {
     const usuarioId = await idPorUuid(USER_UUID)
@@ -392,44 +350,5 @@ describe('GET /api/acessos/logins/usuarios', () => {
       .set('Authorization', admin())
 
     expect(res.body.dados).toEqual([{ usuario: 'Civ User (test_user)', logins: 1 }])
-  })
-})
-
-describe('GET /api/acessos/logins/clientes', () => {
-  test('separa web de QGIS', async () => {
-    const usuarioId = await idPorUuid(USER_UUID)
-
-    await inserirLogin(usuarioId, 'sca_web')
-    await inserirLogin(usuarioId, 'sca_web')
-    await inserirLogin(usuarioId, 'sca_qgis')
-
-    const res = await request(app)
-      .get('/api/acessos/logins/clientes')
-      .set('Authorization', admin())
-
-    expect(res.status).toBe(200)
-    expect(res.body.dados).toEqual([
-      { cliente: 'sca_web', logins: 2 },
-      { cliente: 'sca_qgis', logins: 1 }
-    ])
-  })
-
-  test('sem login no periodo devolve lista vazia, e nao os clientes com zero', async () => {
-    const usuarioId = await idPorUuid(USER_UUID)
-    await inserirLogin(usuarioId, 'sca_web', "now() - INTERVAL '60 days'")
-
-    const res = await request(app)
-      .get('/api/acessos/logins/clientes?total=30')
-      .set('Authorization', admin())
-
-    expect(res.body.dados).toEqual([])
-  })
-
-  test('nao aceita ?max: a lista de clientes e fechada', async () => {
-    const res = await request(app)
-      .get('/api/acessos/logins/clientes?max=5')
-      .set('Authorization', admin())
-
-    expect(res.status).toBe(400)
   })
 })

@@ -1,4 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
+import { reconciliar } from '@utils/reconciliar.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
@@ -156,7 +157,11 @@ export function openPeriodoDialog({
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` mantém o modal aberto enquanto a gravação corre: Escape e
+        // clique no fundo fechavam o formulário com a requisição em voo, e a
+        // recusa do banco (a sobreposição de períodos) chegava a uma tela sem
+        // campo nenhum para corrigir.
+        onClick: async ({ close, setOcupado }) => {
           if (saving) return;
 
           inicioField.setError(null);
@@ -182,6 +187,7 @@ export function openPeriodoDialog({
           };
 
           saving = true;
+          setOcupado(true);
           try {
             if (isEdit) {
               await updatePeriodoEfetivo(periodo.id, payload);
@@ -193,10 +199,12 @@ export function openPeriodoDialog({
               });
               showSuccess('Passagem cadastrada com sucesso');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
             // A sobreposição vem do EXCLUDE do banco, já traduzida pelo servidor.
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar a passagem');
           } finally {
             saving = false;
@@ -210,7 +218,7 @@ export function openPeriodoDialog({
 /**
  * Cadastro de um IMPEDIMENTO.
  *
- * Descrição é texto LIVRE, sem catálogo (chefe, 2026-08-02): a lista de motivos
+ * Descrição é texto LIVRE, sem catálogo: a lista de motivos
  * não fecha, e classificar antes de escrever atrapalha.
  */
 export function openImpedimentoDialog({
@@ -265,7 +273,9 @@ export function openImpedimentoDialog({
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // Ver o comentário do diálogo de passagem: o modal não se fecha com a
+        // gravação em voo.
+        onClick: async ({ close, setOcupado }) => {
           if (saving) return;
 
           descricaoField.setError(null);
@@ -295,6 +305,7 @@ export function openImpedimentoDialog({
           };
 
           saving = true;
+          setOcupado(true);
           try {
             if (isEdit) {
               await updateImpedimento(impedimento.id, payload);
@@ -303,9 +314,11 @@ export function openImpedimentoDialog({
               await createImpedimento({ usuario_uuid: usuarioUuid, ...payload });
               showSuccess('Impedimento cadastrado com sucesso');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar o impedimento');
           } finally {
             saving = false;
@@ -324,11 +337,11 @@ export function openImpedimentoDialog({
  * ficha responde "por quê", que é a pergunta seguinte e a única que leva a uma
  * correção.
  *
- * A FICHA SE REPINTA SEM FECHAR. Até 2026-08-04 salvar recarregava a tela por
- * baixo e deixava a ficha aberta com a lista velha: quem acabou de lançar a
- * saída de um militar via a passagem antiga ali, e lançava de novo. O `onSaved`
- * agora DEVOLVE as listas novas daquela pessoa, e é com elas que a ficha se
- * repinta. Quem não devolver nada mantém a lista que tinha.
+ * A FICHA SE REPINTA SEM FECHAR. Recarregar a tela por baixo e deixar a ficha
+ * aberta com a lista velha faz quem acabou de lançar a saída de um militar ver a
+ * passagem antiga ali, e lançar de novo. O `onSaved` DEVOLVE as listas novas
+ * daquela pessoa, e é com elas que a ficha se repinta; quem não devolver nada
+ * mantém a lista que tinha.
  *
  * @param {Object} opcoes
  * @param {Object} opcoes.militar
@@ -360,24 +373,20 @@ export function openMilitarDialog({
     pintar();
   }
 
+  // A LINHA TEM CLASSE PRÓPRIA, e o estilo saiu do JS para o CSS.
+  //
+  // Não é só arrumação: com a lista reconciliada por chave, é preciso apontar UM
+  // registro sem esbarrar no container que o contém (o corpo da seção também é
+  // um `div` e o texto dele começa pelo texto da primeira linha). A classe é o
+  // que dá esse endereço, à tela e ao teste.
   const linha = (texto, secundario, acoes, aviso = null) => el('div', {
-    className: aviso ? 'impedimento--fora-da-passagem' : '',
-    style: {
-      display: 'flex', alignItems: 'center', gap: '8px',
-      padding: '8px 0', borderBottom: '1px solid var(--border-color)',
-    },
+    className: `ficha-militar__linha${aviso ? ' ficha-militar__linha--fora' : ''}`,
   }, [
-    el('div', { style: { flex: '1', minWidth: '0' } }, [
+    el('div', { className: 'ficha-militar__texto' }, [
       el('div', { textContent: texto }),
-      el('div', {
-        style: { fontSize: '0.8125rem', color: 'var(--text-secondary)' },
-        textContent: secundario,
-      }),
+      el('div', { className: 'ficha-militar__periodo', textContent: secundario }),
       aviso
-        ? el('div', {
-          style: { fontSize: '0.8125rem', color: 'var(--color-warning)' },
-          textContent: aviso,
-        })
+        ? el('div', { className: 'ficha-militar__aviso', textContent: aviso })
         : null,
     ].filter(Boolean)),
     ...acoes,
@@ -474,19 +483,73 @@ export function openMilitarDialog({
     );
   }
 
-  function pintar() {
-    corpoPassagens.innerHTML = '';
-    corpoPassagens.appendChild(
-      listaPeriodos.length
-        ? el('div', {}, listaPeriodos.map(linhaDaPassagem))
-        : vazio('Nenhuma passagem cadastrada neste ano.')
-    );
+  /**
+   * A ASSINATURA de uma linha: tudo que ela IMPRIME, e nada além.
+   *
+   * É o que decide se o nó existente serve. Fica num `WeakMap`, fora do DOM,
+   * pelo mesmo motivo do `reconciliar`: guardá-la num atributo exporia detalhe
+   * interno e quem o reescrevesse quebraria a comparação em silêncio.
+   */
+  const assinaturas = new WeakMap();
 
-    corpoImpedimentos.innerHTML = '';
-    corpoImpedimentos.appendChild(
-      listaImpedimentos.length
-        ? el('div', {}, listaImpedimentos.map(linhaDoImpedimento))
-        : vazio('Nenhum impedimento neste ano.')
+  const assinarPassagem = (p) => [
+    iso(p.data_inicio), iso(p.data_fim), p.observacao || '',
+  ].join('|');
+
+  // O AVISO ENTRA NA ASSINATURA. Ele depende das PASSAGENS, e não só do
+  // impedimento: lançar a saída do militar pode tirar um impedimento de dentro
+  // de qualquer passagem, e a linha dele tem de passar a avisar isso.
+  const assinarImpedimento = (i) => [
+    i.descricao, i.percentual, iso(i.data_inicio), iso(i.data_fim),
+    foraDaPassagem(i, listaPeriodos, ano) ? 'fora' : 'dentro',
+  ].join('|');
+
+  /**
+   * Repinta um corpo SEM recriar o que não mudou.
+   *
+   * REGRA DE OURO do projeto: salvar não reconstrói a tela. `innerHTML = ''`
+   * fazia o oposto dentro desta ficha, e ela se repinta depois de TODA gravação
+   * e exclusão: quem apagava o terceiro de oito impedimentos voltava ao topo da
+   * lista e perdia o foco do teclado com o nó que o continha.
+   *
+   * O ESTADO VAZIO É UM ITEM COM CHAVE PRÓPRIA. Assim ele entra e sai pelo mesmo
+   * caminho das linhas, e o container nunca precisa ser esvaziado por fora (o
+   * que invalidaria o mapa da reconciliação).
+   */
+  function pintarCorpo(corpo, itens, criarLinha, assinar, textoVazio) {
+    if (!itens.length) {
+      reconciliar(corpo, [textoVazio], {
+        chave: () => '__vazio__',
+        criar: (texto) => vazio(texto),
+      });
+      return;
+    }
+
+    reconciliar(corpo, itens, {
+      chave: (item) => item.id,
+      criar: (item) => {
+        const no = criarLinha(item);
+        assinaturas.set(no, assinar(item));
+        return no;
+      },
+      atualizar: (no, item) => {
+        const nova = assinar(item);
+        if (assinaturas.get(no) === nova) return undefined;
+        const trocado = criarLinha(item);
+        assinaturas.set(trocado, nova);
+        return trocado;
+      },
+    });
+  }
+
+  function pintar() {
+    pintarCorpo(
+      corpoPassagens, listaPeriodos, linhaDaPassagem, assinarPassagem,
+      'Nenhuma passagem cadastrada neste ano.'
+    );
+    pintarCorpo(
+      corpoImpedimentos, listaImpedimentos, linhaDoImpedimento, assinarImpedimento,
+      'Nenhum impedimento neste ano.'
     );
   }
 

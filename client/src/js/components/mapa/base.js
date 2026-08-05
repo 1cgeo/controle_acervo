@@ -2,7 +2,7 @@
 // lugar. O JS, nao: a biblioteca passa de meio megabyte, e um import de topo a
 // colocaria no pacote de TODA a interface, inclusive das telas que nao tem mapa
 // nenhum. Com o import() dinamico ela vira um pedaco proprio, buscado quando
-// alguem abre uma tela com mapa. Decisao do chefe em 2026-07-25.
+// alguem abre uma tela com mapa.
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 /**
@@ -15,7 +15,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
  */
 
 /**
- * Fundo OSM porque a rede e interna mas TEM internet (chefe, 2026-07-25). Sem
+ * Fundo OSM porque a rede e interna mas TEM internet. Sem
  * internet os poligonos continuam aparecendo: eles vem da nossa API, e o que
  * falta e so a imagem de fundo.
  */

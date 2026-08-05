@@ -27,18 +27,18 @@ Instruções de trabalho. Só o que muda o que você digita.
 - **Não introduza** ORM, TypeScript no servidor, framework de front, Docker ou biblioteca de UI sem
   registrar a decisão e o motivo em `docs/decisoes.md`.
 - **Não recrie** a SPA React da mapoteca nem os clients por módulo (`acervo_client` e
-  `mapoteca_client`), apagados de propósito em 2026-07-27. A interface é UMA.
+  `mapoteca_client`), apagados de propósito. A interface é UMA.
 - **Decisão de desenho não se "conserta" sozinho.** Se algo em `docs/decisoes.md` parece defeito,
   fale com o chefe antes.
 
 ## O sistema em um parágrafo
 
 O **SCA** gerencia o acervo geoespacial do 1º CGEO: produtos versionados (cartas, ortoimagens,
-modelos de elevação), seus arquivos, os volumes de armazenamento, a mapoteca física e, desde
-2026-07-27, o controle orçamentário. São **três módulos de autorização no mesmo servidor e na mesma
-interface**: `acervo`, `mapoteca` e `orcamento`. Desde 2026-08-02 ele é o **dono da identidade**
-(guarda o hash da senha e valida o login sozinho) e absorve do [SAP](https://github.com/1cgeo/sap) o
-que não depende da produção: execução do PIT, Extra-PIT, efetivo do mês e capacitação.
+modelos de elevação), seus arquivos, os volumes de armazenamento, a mapoteca física e o controle
+orçamentário. São **três módulos de autorização no mesmo servidor e na mesma interface**: `acervo`,
+`mapoteca` e `orcamento`. Ele é o **dono da identidade** (guarda o hash da senha e valida o login
+sozinho) e absorve do [SAP](https://github.com/1cgeo/sap) o que não depende da produção: execução do
+PIT, Extra-PIT, efetivo do mês e capacitação.
 
 ## Autorização
 
@@ -123,8 +123,8 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Rot
 
 ### Teste
 
-- `test:rapido` (3s) é o do dia a dia; `test:banco` (~180s) antes de commitar. Quem entra em qual
-  sai de LER O FONTE: `require` de `helpers/db` ou de `helpers/app`.
+- `test:rapido` (segundos) é o do dia a dia; `test:banco` (minutos) antes de commitar. Quem entra em
+  qual sai de LER O FONTE: `require` de `helpers/db` ou de `helpers/app`.
 - Teste de schema prova o MOTIVO da recusa, nunca só que houve recusa. Use
   `recusaPor(resultado, campo, tipo)` de `__tests__/helpers/joi.js`.
 - Cliente é vitest (`npm test` em `client/`), não jest.

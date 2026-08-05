@@ -7,7 +7,7 @@
 -- meta 4 (impressao) o SCA JA sabe somar pela mapoteca, o numero continua
 -- digitado, e os dois podem divergir sem que nada acuse.
 --
--- O DESENHO (chefe, 2026-08-03). A meta passa a declarar a ORIGEM do seu numero.
+-- O DESENHO. A meta passa a declarar a ORIGEM do seu numero.
 -- Manual e o que existe hoje e continua sendo o padrao. As outras tres calculam
 -- na LEITURA, sem gravar nada: dado derivado que se grava vira segunda verdade
 -- no primeiro que editar a copia a mao.
@@ -31,7 +31,7 @@
 -- esse valor e SOBRESCRITO quando a versao vira Regular. Sem coluna no lote, o
 -- plano desaparece no instante em que se cumpre.
 --
--- O lote NAO ganha `meta_pit_id` (chefe, 2026-08-03): ele seria so conveniencia
+-- O lote NAO ganha `meta_pit_id`: ele seria so conveniencia
 -- para preencher o da versao por padrao, e qualquer leitor passaria a achar que
 -- e ele quem conta.
 --

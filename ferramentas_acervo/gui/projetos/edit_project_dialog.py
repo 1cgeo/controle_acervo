@@ -1,7 +1,7 @@
 # Path: gui\projetos\edit_project_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QCheckBox
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 from qgis.PyQt.QtCore import QDate, QDateTime, Qt
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(

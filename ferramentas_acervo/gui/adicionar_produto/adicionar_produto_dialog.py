@@ -3,19 +3,17 @@ import os
 import json
 import uuid
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (
-    QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QComboBox, QTextEdit, QDateEdit, QFileDialog, 
-    QPushButton, QGroupBox, QWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QCheckBox, QTabWidget, QScrollArea, QSpinBox
-)
-from qgis.PyQt.QtCore import Qt, QDate, pyqtSignal, QThread, QObject, QSize, QSortFilterProxyModel
-from qgis.PyQt.QtGui import QColor
-from qgis.core import QgsGeometry, QgsFeature, QgsProject, QgsVectorLayer, Qgis, QgsWkbTypes, QgsPointXY
-from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
+from qgis.PyQt.QtWidgets import (QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel,
+                                 QLineEdit, QComboBox, QTextEdit, QDateEdit, QFileDialog,
+                                 QPushButton, QGroupBox, QWidget, QTableWidget,
+                                 QTableWidgetItem, QHeaderView)
+from qgis.PyQt.QtCore import Qt, QDate
+from qgis.core import Qgis
+from ...core.dominios import (SITUACAO_CARREGAMENTO_NAO_CARREGADO, TIPO_ARQUIVO_PRINCIPAL,
+                              TIPO_ESCALA_PERSONALIZADA)
 from ...core.upload_flow import UploadFlowMixin, calcular_checksum
 from ..campos_acervo import conferir_identidade
-from ...config import Config
+from ..mapa_utils import FerramentaPoligono
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'adicionar_produto_dialog.ui'))
@@ -97,9 +95,8 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         self.add_version()
     
     def add_version(self):
-        """Adicionar uma nova aba de versão."""
-        # Criar dados da versão
-        versao_data = {
+        """Acrescenta uma versão em branco e abre a aba dela."""
+        self.versoes.append({
             'uuid_versao': str(uuid.uuid4()),
             'nome': '',
             'versao': '',
@@ -108,211 +105,19 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             'lote_id': None,
             'metadado': {},
             'descricao': '',
-            'orgao_produtor': '',
+            # Espelha o texto que o campo mostra. Deixar em branco fazia a
+            # validação recusar "órgão produtor obrigatório" com o campo
+            # visivelmente preenchido, porque o setText roda antes do connect.
+            'orgao_produtor': 'DSG',
             'palavras_chave': [],
             'data_criacao': QDate.currentDate(),
             'data_edicao': QDate.currentDate(),
             'arquivos': []
-        }
-        
-        # Adicionar à lista de versões
-        self.versoes.append(versao_data)
-        version_index = len(self.versoes) - 1
-        
-        # Criar a aba de versão
-        version_tab = QWidget()
-        version_layout = QVBoxLayout(version_tab)
-        
-        # Criar formulário para a versão
-        form_group = QGroupBox("Informações da Versão")
-        form_layout = QVBoxLayout()
-        
-        # Layout para campos em linha
-        row1_layout = QHBoxLayout()
-        row2_layout = QHBoxLayout()
-        row3_layout = QHBoxLayout()
-        row4_layout = QHBoxLayout()
-        
-        # Nome
-        nome_layout = QVBoxLayout()
-        nome_label = QLabel("Nome da Versão:")
-        version_name_edit = QLineEdit()
-        nome_layout.addWidget(nome_label)
-        nome_layout.addWidget(version_name_edit)
-        row1_layout.addLayout(nome_layout)
-
-        # Número da versão
-        versao_layout = QVBoxLayout()
-        versao_label = QLabel("Número da Versão:")
-        version_number_edit = QLineEdit()
-        version_number_edit.setPlaceholderText("Ex: 1-DSG ('Xª Edição' só para registro histórico)")
-        versao_layout.addWidget(versao_label)
-        versao_layout.addWidget(version_number_edit)
-        row1_layout.addLayout(versao_layout)
-
-        # Tipo da versão
-        tipo_versao_layout = QVBoxLayout()
-        tipo_versao_label = QLabel("Tipo de Versão:")
-        version_type_combo = QComboBox()
-        for code, nome in self.tipos_versao.items():
-            version_type_combo.addItem(nome, code)
-        tipo_versao_layout.addWidget(tipo_versao_label)
-        tipo_versao_layout.addWidget(version_type_combo)
-        row2_layout.addLayout(tipo_versao_layout)
-
-        # Subtipo de produto
-        subtipo_layout = QVBoxLayout()
-        subtipo_label = QLabel("Subtipo de Produto:")
-        subtype_combo = QComboBox()
-        subtipo_layout.addWidget(subtipo_label)
-        subtipo_layout.addWidget(subtype_combo)
-        row2_layout.addLayout(subtipo_layout)
-
-        # Lote
-        lote_layout = QVBoxLayout()
-        lote_label = QLabel("Lote (opcional):")
-        lot_combo = QComboBox()
-        lot_combo.setEditable(False)
-        lot_combo.addItem("Nenhum", None)
-        lote_layout.addWidget(lote_label)
-        lote_layout.addWidget(lot_combo)
-        row3_layout.addLayout(lote_layout)
-
-        # Órgão produtor
-        orgao_layout = QVBoxLayout()
-        orgao_label = QLabel("Órgão Produtor:")
-        producer_edit = QLineEdit()
-        producer_edit.setText("DSG")
-        orgao_layout.addWidget(orgao_label)
-        orgao_layout.addWidget(producer_edit)
-        row3_layout.addLayout(orgao_layout)
-
-        # Palavras-chave
-        keywords_layout = QVBoxLayout()
-        keywords_label = QLabel("Palavras-chave (separadas por vírgula):")
-        keywords_edit = QLineEdit()
-        keywords_layout.addWidget(keywords_label)
-        keywords_layout.addWidget(keywords_edit)
-        row4_layout.addLayout(keywords_layout)
-
-        # Datas
-        dates_layout = QHBoxLayout()
-
-        creation_date_layout = QVBoxLayout()
-        creation_date_label = QLabel("Data de Criação:")
-        creation_date_edit = QDateEdit()
-        creation_date_edit.setCalendarPopup(True)
-        creation_date_edit.setDate(QDate.currentDate())
-        creation_date_layout.addWidget(creation_date_label)
-        creation_date_layout.addWidget(creation_date_edit)
-        dates_layout.addLayout(creation_date_layout)
-
-        edit_date_layout = QVBoxLayout()
-        edit_date_label = QLabel("Data de Edição:")
-        edit_date_edit = QDateEdit()
-        edit_date_edit.setCalendarPopup(True)
-        edit_date_edit.setDate(QDate.currentDate())
-        edit_date_layout.addWidget(edit_date_label)
-        edit_date_layout.addWidget(edit_date_edit)
-        dates_layout.addLayout(edit_date_layout)
-
-        row4_layout.addLayout(dates_layout)
-
-        # Descrição
-        descricao_label = QLabel("Descrição:")
-        description_edit = QTextEdit()
-        description_edit.setMaximumHeight(100)
-
-        # Metadados (JSON)
-        metadados_label = QLabel("Metadados (JSON):")
-        metadados_edit = QTextEdit()
-        metadados_edit.setMaximumHeight(100)
-        metadados_edit.setText("{}")
-
-        # Adicionar todos os layouts ao formulário
-        form_layout.addLayout(row1_layout)
-        form_layout.addLayout(row2_layout)
-        form_layout.addLayout(row3_layout)
-        form_layout.addLayout(row4_layout)
-        form_layout.addWidget(descricao_label)
-        form_layout.addWidget(description_edit)
-        form_layout.addWidget(metadados_label)
-        form_layout.addWidget(metadados_edit)
-
-        form_group.setLayout(form_layout)
-        version_layout.addWidget(form_group)
-
-        # Seção de arquivos
-        files_group = QGroupBox("Arquivos")
-        files_layout = QVBoxLayout()
-
-        # Botões para gerenciar arquivos
-        buttons_layout = QHBoxLayout()
-        add_file_button = QPushButton("Adicionar Arquivo")
-        add_file_button.clicked.connect(lambda: self.add_file(version_index))
-        remove_file_button = QPushButton("Remover Arquivo Selecionado")
-        remove_file_button.clicked.connect(lambda: self.remove_file(version_index))
-        buttons_layout.addWidget(add_file_button)
-        buttons_layout.addWidget(remove_file_button)
-
-        files_layout.addLayout(buttons_layout)
-
-        # Tabela de arquivos
-        files_table = QTableWidget()
-        files_table.setColumnCount(5)
-        files_table.setHorizontalHeaderLabels(["Nome", "Arquivo", "Tipo", "Tamanho (MB)", "Caminho"])
-        files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        files_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        files_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-
-        files_layout.addWidget(files_table)
-
-        files_group.setLayout(files_layout)
-        version_layout.addWidget(files_group)
-
-        # Botão para remover esta versão
-        remove_version_layout = QHBoxLayout()
-        remove_version_layout.addStretch(1)
-        remove_version_button = QPushButton("Remover esta Versão")
-        remove_version_button.setStyleSheet("background-color: #CF222E; color: white;")
-        remove_version_button.clicked.connect(lambda: self.remove_version(version_index))
-        remove_version_button.setEnabled(len(self.versoes) > 1)
-        remove_version_layout.addWidget(remove_version_button)
-
-        version_layout.addLayout(remove_version_layout)
-
-        # Adicionar a aba ao widget de abas
-        self.versionsTabWidget.addTab(version_tab, f"Versão {len(self.versoes)}")
-        self.versionsTabWidget.setCurrentIndex(version_index)
-
-        # Armazenar referências de widgets desta versão
-        self._version_widgets[version_index] = {
-            'subtype_combo': subtype_combo,
-            'version_type_combo': version_type_combo,
-            'lot_combo': lot_combo,
-            'files_table': files_table,
-            'remove_button': remove_version_button,
-        }
-
-        # Popupar subtipos filtrados para esta versão
-        self._populate_subtype_combo(subtype_combo)
-
-        # Popular combo de lotes para esta versão
-        self._populate_lot_combo(lot_combo)
-
-        # Conectar os campos desta versão
-        version_name_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'nome', text))
-        version_number_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'versao', text))
-        version_type_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'tipo_versao_id', version_type_combo.itemData(version_type_combo.currentIndex())))
-        subtype_combo.currentIndexChanged.connect(lambda idx: self._versao_trocou_subtipo(version_index, subtype_combo))
-        lot_combo.currentIndexChanged.connect(lambda idx: self.update_version_data(version_index, 'lote_id', lot_combo.itemData(lot_combo.currentIndex())))
-        producer_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'orgao_produtor', text))
-        keywords_edit.textChanged.connect(lambda text: self.update_version_data(version_index, 'palavras_chave', [keyword.strip() for keyword in text.split(',') if keyword.strip()]))
-        creation_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_criacao', date))
-        edit_date_edit.dateChanged.connect(lambda date: self.update_version_data(version_index, 'data_edicao', date))
-        description_edit.textChanged.connect(lambda: self.update_version_data(version_index, 'descricao', description_edit.toPlainText()))
-        metadados_edit.textChanged.connect(lambda: self._update_version_metadata(version_index, metadados_edit))
+        })
+        indice = len(self.versoes) - 1
+        self.add_version_tab(indice)
+        self.versionsTabWidget.setCurrentIndex(indice)
+        self.update_remove_buttons()
 
     def _versao_trocou_subtipo(self, version_index, subtype_combo):
         subtipo = subtype_combo.itemData(subtype_combo.currentIndex())
@@ -353,7 +158,13 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             self.update_remove_buttons()
     
     def add_version_tab(self, version_index):
-        """Adicionar uma aba de versão recriando a UI com dados existentes."""
+        """Monta a aba de UMA versão a partir de `self.versoes[version_index]`.
+
+        É o único construtor de aba: `add_version` cria os dados em branco e
+        chama daqui, e `remove_version` reconstrói todas as abas por aqui. Ter
+        um segundo construtor fazia as abas recriadas oferecerem os subtipos de
+        TODOS os tipos de produto e buscarem os lotes de novo no servidor.
+        """
         versao_data = self.versoes[version_index]
 
         # Criar a aba de versão
@@ -403,12 +214,12 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         tipo_versao_layout.addWidget(version_type_combo)
         row2_layout.addLayout(tipo_versao_layout)
 
-        # Subtipo de produto
+        # Subtipo de produto: SÓ os do tipo de produto escolhido, porque é o
+        # que o gatilho acervo.validate_version aceita.
         subtipo_layout = QVBoxLayout()
         subtipo_label = QLabel("Subtipo de Produto:")
         subtype_combo = QComboBox()
-        for code, nome in self.subtipos_produto.items():
-            subtype_combo.addItem(nome, code)
+        self._populate_subtype_combo(subtype_combo)
         if versao_data.get('subtipo_produto_id') is not None:
             idx = subtype_combo.findData(versao_data['subtipo_produto_id'])
             if idx >= 0:
@@ -422,14 +233,9 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         lote_label = QLabel("Lote (opcional):")
         lot_combo = QComboBox()
         lot_combo.setEditable(False)
-        lot_combo.addItem("Nenhum", None)
-        try:
-            response = self.api_client.get('projetos/lote')
-            if response and 'dados' in response:
-                for item in response['dados']:
-                    lot_combo.addItem(f"{item['nome']} ({item['pit']})", item['id'])
-        except Exception:
-            pass
+        # Lotes do cache da sessão (core/dominios.py). Buscar de novo aqui
+        # custava uma requisição por aba recriada.
+        self._populate_lot_combo(lot_combo)
         if versao_data.get('lote_id') is not None:
             idx = lot_combo.findData(versao_data['lote_id'])
             if idx >= 0:
@@ -442,7 +248,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         orgao_layout = QVBoxLayout()
         orgao_label = QLabel("Órgão Produtor:")
         producer_edit = QLineEdit()
-        producer_edit.setText(versao_data.get('orgao_produtor', 'DSG'))
+        producer_edit.setText(versao_data.get('orgao_produtor') or 'DSG')
         orgao_layout.addWidget(orgao_label)
         orgao_layout.addWidget(producer_edit)
         row3_layout.addLayout(orgao_layout)
@@ -623,7 +429,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         É o gatilho `acervo.validate_version` traduzido em affordance: aquele
         subtipo só existe em produto do mesmo subtipo, então deixar a pessoa
         escolher um e não o outro seria oferecer uma combinação que o servidor
-        vai recusar de qualquer jeito -- e recusar tarde, no confirm-upload.
+        vai recusar de qualquer jeito, e recusar tarde, no confirm-upload.
         """
         if subtipo_versao_id is None:
             return
@@ -682,12 +488,12 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             'nome': nome_base,
             'nome_arquivo': nome_base,
             'extensao': os.path.splitext(file_path)[1][1:],
-            'tipo_arquivo_id': 1,  # Arquivo principal por padrão
+            'tipo_arquivo_id': TIPO_ARQUIVO_PRINCIPAL,
             'tamanho_mb': os.path.getsize(file_path) / (1024 * 1024),
             'path': file_path,
             'checksum': checksum,
             'metadado': {},
-            'situacao_carregamento_id': 1,  # Não carregado por padrão
+            'situacao_carregamento_id': SITUACAO_CARREGAMENTO_NAO_CARREGADO,
             'descricao': '',
             'crs_original': ''
         }
@@ -819,7 +625,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     def toggle_denominador_field(self):
         """Ativar/desativar campo de denominador baseado na escala selecionada."""
         escala_id = self.get_combo_value(self.tipoEscalaComboBox)
-        is_custom_scale = escala_id == 5  # Escala personalizada (valor 5) requer denominador
+        is_custom_scale = escala_id == TIPO_ESCALA_PERSONALIZADA
         
         self.denominadorLabel.setVisible(is_custom_scale)
         self.denominadorSpinBox.setVisible(is_custom_scale)
@@ -834,7 +640,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     
     def start_map_selection(self):
         """Iniciar a seleção de geometria no mapa."""
-        self.iface.mapCanvas().setMapTool(PolygonMapTool(self.iface, self))
+        self.iface.mapCanvas().setMapTool(FerramentaPoligono(self.iface, self))
         self.iface.messageBar().pushMessage(
             "Informação", 
             "Clique no mapa para adicionar pontos ao polígono. Clique com o botão direito para finalizar.",
@@ -872,7 +678,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         
         # Validar denominador para escala personalizada
         escala_id = self.get_combo_value(self.tipoEscalaComboBox)
-        if escala_id == 5 and self.denominadorSpinBox.value() <= 0:
+        if escala_id == TIPO_ESCALA_PERSONALIZADA and self.denominadorSpinBox.value() <= 0:
             QMessageBox.warning(self, "Validação", "Para escala personalizada, o denominador é obrigatório.")
             return False
         
@@ -890,7 +696,7 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
         #
         # É o ponto inteiro desta validação: sem ela, uma Carta Topográfica
         # Militar passava por todo o formulário, o servidor reservava a sessão,
-        # o operador copiava os arquivos para o volume -- e só então o
+        # o operador copiava os arquivos para o volume, e só então o
         # confirm-upload batia no gatilho e devolvia 500 "tente novamente mais
         # tarde". Tentar de novo nunca ia funcionar.
         recado = conferir_identidade(
@@ -947,7 +753,11 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             'mi': self.miLineEdit.text() or None,
             'inom': self.inomLineEdit.text() or None,
             'tipo_escala_id': self.get_combo_value(self.tipoEscalaComboBox),
-            'denominador_escala_especial': self.denominadorSpinBox.value() if self.get_combo_value(self.tipoEscalaComboBox) == 5 else None,
+            'denominador_escala_especial': (
+                self.denominadorSpinBox.value()
+                if self.get_combo_value(self.tipoEscalaComboBox) == TIPO_ESCALA_PERSONALIZADA
+                else None
+            ),
             'tipo_produto_id': self.get_combo_value(self.tipoProdutoComboBox),
             # A IDENTIDADE do produto. Ficava de fora, e por isso todo produto
             # criado pelo plugin nascia como comum: o servidor grava `?? null` e
@@ -1031,48 +841,3 @@ class AddProductDialog(UploadFlowMixin, QDialog, FORM_CLASS):
     def upload_concluido(self, mensagem):
         QMessageBox.information(self, "Sucesso", "Produto e arquivos carregados com sucesso.")
         self.accept()
-
-
-class PolygonMapTool(QgsMapToolEmitPoint):
-    """Ferramenta de mapa para desenhar polígonos."""
-    def __init__(self, iface, parent):
-        self.iface = iface
-        self.canvas = iface.mapCanvas()
-        self.parent = parent
-        QgsMapToolEmitPoint.__init__(self, self.canvas)
-        self.points = []
-        
-        # Configurar rubber band para visualização
-        self.rubber_band = QgsRubberBand(self.canvas, QgsWkbTypes.PolygonGeometry)
-        self.rubber_band.setColor(QColor(255, 0, 0, 100))
-        self.rubber_band.setWidth(2)
-    
-    def canvasReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Adicionar ponto
-            point = self.toMapCoordinates(event.pos())
-            self.points.append(point)
-
-            # Atualizar rubber band
-            self.rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-            points = [QgsPointXY(p) for p in self.points]
-            if len(points) > 1:
-                self.rubber_band.setToGeometry(QgsGeometry.fromPolygonXY([points]), None)
-
-        elif event.button() == Qt.MouseButton.RightButton and len(self.points) >= 3:
-            # Finalizar polígono
-            points = [QgsPointXY(p) for p in self.points]
-            geometry = QgsGeometry.fromPolygonXY([points])
-            
-            # Definir a geometria no formulário
-            self.parent.set_geometry(geometry)
-            
-            # Limpar e resetar
-            self.points = []
-            self.rubber_band.reset()
-            self.canvas.unsetMapTool(self)
-            self.iface.actionPan().trigger()
-    
-    def reset(self):
-        self.points = []
-        self.rubber_band.reset()

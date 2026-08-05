@@ -8,8 +8,8 @@ const { loginCtrl, senha: senhaUtils } = require("../login");
 
 // A rastreabilidade desta feature nao e um detalhe de implementacao: promover
 // alguem a administrador global e conceder perfil num modulo sao os dois atos
-// que mudam o que TODAS as outras escritas do sistema podem fazer, e ate
-// 2026-08-02 nenhum dos dois deixava rastro. Ver auditoria/mapa/plataforma.js.
+// que mudam o que TODAS as outras escritas do sistema podem fazer. Ver
+// auditoria/mapa/plataforma.js.
 const { auditoriaCtrl } = require("../auditoria");
 
 const controller = {};
@@ -28,20 +28,17 @@ controller.getUsuarios = async () => {
   // como coluna por modulo, para a tela nao mudar quando surgir outro modulo.
   //
   // `senha_definida` e um BOOLEANO derivado, nunca o hash: a coluna `senha` nao
-  // sai desta feature por rota nenhuma. Ele existe porque a fusao de 2026-08-02
-  // deixou `dgeo.usuario.senha` anulavel e quem a preenche e o
-  // `scripts/copiar_usuarios_auth.js`, rodado por fora, uma vez. Sem esta
-  // coluna, quem ficasse de fora da copia so apareceria ao reclamar que nao
-  // consegue entrar.
+  // sai desta feature por rota nenhuma. Ela e anulavel, e sem esta marca quem
+  // esta sem senha so apareceria ao reclamar que nao consegue entrar.
   //
   // `na_dgeo_desde` sai do periodo ABERTO de `dgeo.efetivo_periodo`, que e
   // "esta na Divisao e sem previsao de saida". A subconsulta escalar e segura
   // porque o EXCLUDE da tabela proibe intervalos sobrepostos da mesma pessoa:
   // dois periodos abertos se cruzariam, entao no maximo um existe.
   //
-  // `ultimo_acesso` sai de `dgeo.login` SEM recorte de data. A tela de acessos
-  // pergunta "quem entrou hoje" (`data_login >= now()::date`), e por isso o
-  // ultimo acesso de quem nao entrou hoje nao aparecia em lugar nenhum.
+  // `ultimo_acesso` sai de `dgeo.login` SEM recorte de data: a tela de acessos
+  // pergunta "quem entrou hoje", e sem esta coluna o ultimo acesso de quem nao
+  // entrou hoje nao apareceria em lugar nenhum.
   //
   // `tem_registro` responde uma pergunta da TELA: mostrar ou nao o botao
   // "Excluir". Ele e VERDADEIRO quando a pessoa ja tem login, passagem ou
@@ -119,7 +116,7 @@ controller.getPostosGrad = async () => {
  * `autorUuid` e QUEM CONCEDE, e nunca o alvo -- o alvo entra por `usuarioId`.
  * Ele desce por parametro desde a rota, atravessando `criaUsuario`,
  * `atualizaUsuario` e `atualizaUsuarioLista`, porque esta funcao e a unica que
- * escreve `dgeo.usuario_perfil` e ate 2026-08-02 nao tinha como saber o autor.
+ * escreve `dgeo.usuario_perfil`.
  */
 const gravaPerfis = async (t, usuarioId, perfis, autorUuid, contexto) => {
   if (!perfis) return;
@@ -189,7 +186,7 @@ const gravaPerfis = async (t, usuarioId, perfis, autorUuid, contexto) => {
 };
 
 // Garante que a alteração não deixa o sistema sem nenhum administrador ativo
-// (lockout operacional — só recuperável via SQL direto no banco)
+// (lockout operacional, só recuperável via SQL direto no banco)
 const verificaUltimoAdmin = async (t, uuidsAlterados) => {
   const adminsRestantes = await t.one(
     `SELECT COUNT(*) AS n FROM dgeo.usuario
@@ -203,16 +200,9 @@ const verificaUltimoAdmin = async (t, uuidsAlterados) => {
 /**
  * Cria a pessoa NO SCA, com senha.
  *
- * Substitui, desde 2026-08-02, o par importar/sincronizar: ate ali o SCA nao
- * criava ninguem, so espelhava quem o Auth Server ja tinha
- * (`GET /usuarios/servico_autenticacao` mais `PUT /usuarios/sincronizar`), e
- * cadastrar gente era um trabalho em DOIS sistemas.
- *
- * O `uuid` nasce do default da coluna e NAO e aceito no corpo. O Auth Server
- * permitia informa-lo porque precisava casar com o uuid que os sistemas
- * clientes ja tinham importado; aqui nao existe esse "ja tinham". O unico
- * caminho legitimo de uuid vindo de fora e o `scripts/copiar_usuarios_auth.js`,
- * que escreve direto no banco, na migracao.
+ * O `uuid` nasce do default da coluna e NAO e aceito no corpo. O unico caminho
+ * legitimo de uuid vindo de fora e o `scripts/copiar_usuarios_auth.js`, que
+ * escreve direto no banco, na migracao.
  */
 controller.criaUsuario = async (dados, autorUuid, contexto) => {
   return db.conn.tx(async t => {
@@ -573,9 +563,8 @@ controller.resetaSenhas = async (uuids, autorUuid, contexto) => {
 };
 
 // ---------------------------------------------------------------------------
-// O PROPRIO cadastro (tela #/perfil). Guarda `verifyLogin`, e nao verifyAdmin:
-// e o unico caminho pelo qual alguem troca a propria senha, e ate 2026-08-02 o
-// SCA nao tinha nenhum, porque a senha vivia no Auth Server.
+// O PROPRIO cadastro (tela #/perfil). Guarda `verifyLogin`, e nao `verifyAdmin`:
+// e o unico caminho pelo qual alguem troca a propria senha.
 // ---------------------------------------------------------------------------
 
 controller.getPerfilProprio = async uuid => {

@@ -5,13 +5,13 @@ Componente da aba de Histórico de Versões para o diálogo de informações do 
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, 
-    QScrollArea, QSplitter, QListWidget, QListWidgetItem
+    QPushButton, QScrollArea, QSplitter, QListWidget, QListWidgetItem
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
 from qgis.gui import QgsCollapsibleGroupBox
-from .utils import format_date
+from .files_table import montar_tabela_arquivos, preencher_tabela_arquivos
+from .utils import bloco_html, campos_da_versao, format_date
 
 class VersionsTab(QWidget):
     def __init__(self, parent, is_admin=False):
@@ -19,6 +19,11 @@ class VersionsTab(QWidget):
         self.parent = parent
         self.is_admin = is_admin
         self.selected_version = None
+        # O diálogo dono põe aqui o que recarrega a TABELA DE ARQUIVOS ao
+        # trocar de versão. Sem isso a lista de arquivos fica na versão da
+        # primeira carga enquanto o painel ao lado mostra outra, e "Baixar
+        # Selecionados" baixaria o arquivo da versão errada.
+        self.ao_trocar_versao = None
         self.setup_ui()
         
     def setup_ui(self):
@@ -116,20 +121,9 @@ class VersionsTab(QWidget):
         layout.addWidget(self.version_files_header)
         
         # Tabela de arquivos
-        self.files_table = QTableWidget()
-        cols = 8 if self.is_admin else 7
-        self.files_table.setColumnCount(cols)
-        headers = ["", "Nome", "Tipo", "Tamanho (MB)", "Extensão", "Data", "Detalhes"]
-        if self.is_admin:
-            headers.append("Ações")
-        self.files_table.setHorizontalHeaderLabels(headers)
-        self.files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        if self.is_admin:
-            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        self.files_table = montar_tabela_arquivos(self.is_admin)
         layout.addWidget(self.files_table)
-        
+
         return widget
         
     def on_version_selected(self, current, previous):
@@ -140,6 +134,9 @@ class VersionsTab(QWidget):
         # Obter dados da versão selecionada
         self.selected_version = current.data(Qt.ItemDataRole.UserRole)
         self.populate_version_info(self.selected_version)
+        self.select_all_check.setChecked(False)
+        if self.ao_trocar_versao is not None:
+            self.ao_trocar_versao(self.selected_version)
     
     def populate_versions_list(self, versions):
         """Preenche a lista de versões."""
@@ -162,79 +159,14 @@ class VersionsTab(QWidget):
             self.files_table.setRowCount(0)
             return
             
-        # Preencher informações da versão
-        version_info = f"""
-        <b>UUID:</b> {version['uuid_versao']}
-        <b>Versão:</b> {version['versao']}
-        <b>Nome:</b> {version['nome_versao'] or 'N/A'}
-        <b>Tipo de Versão ID:</b> {version['tipo_versao_id']}
-        <b>Subtipo de Produto ID:</b> {version['subtipo_produto_id']}
-        <b>Lote:</b> {version['lote_nome'] or 'N/A'} ({version['lote_pit'] or 'N/A'})
-        <b>Projeto:</b> {version['projeto_nome'] or 'N/A'}
-        <b>Órgão Produtor:</b> {version['orgao_produtor']}
-        <b>Palavras-chave:</b> {', '.join(version['palavras_chave']) if version['palavras_chave'] else 'N/A'}
-        <b>Descrição:</b> {version['versao_descricao'] or 'N/A'}
-        <b>Data de Criação:</b> {format_date(version['versao_data_criacao'])}
-        <b>Data de Edição:</b> {format_date(version['versao_data_edicao'])}
-        <b>Data de Cadastramento:</b> {format_date(version['versao_data_cadastramento'])}
-        <b>Data de Modificação:</b> {format_date(version['versao_data_modificacao'])}
-        """
-        self.version_info_label.setText(version_info)
+        self.version_info_label.setText(bloco_html(campos_da_versao(version)))
     
-    def populate_files_table(self, files, create_actions_callback=None):
-        """Preenche a tabela de arquivos da versão selecionada."""
-        self.files_table.setRowCount(0)
-        
-        for row, file in enumerate(files):
-            self.files_table.insertRow(row)
-            
-            # Checkbox para seleção
-            checkbox = QTableWidgetItem()
-            checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            checkbox.setCheckState(Qt.CheckState.Unchecked)
-            self.files_table.setItem(row, 0, checkbox)
-            
-            # Informações básicas do arquivo
-            self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.setItem(row, 2, QTableWidgetItem(file['tipo_arquivo']))
-            
-            size_item = QTableWidgetItem()
-            if file['tamanho_mb']:
-                size_item.setText(f"{file['tamanho_mb']:.2f}")
-                size_item.setData(Qt.ItemDataRole.UserRole, float(file['tamanho_mb']))
-            else:
-                size_item.setText("N/A")
-            self.files_table.setItem(row, 3, size_item)
-            
-            self.files_table.setItem(row, 4, QTableWidgetItem(file['extensao'] or "N/A"))
-            self.files_table.setItem(row, 5, QTableWidgetItem(format_date(file['data_cadastramento'])))
-            
-            # Botão para mostrar detalhes
-            details_btn = QPushButton("Detalhes")
-            details_btn.setProperty("file_id", file['id'])
-            self.files_table.setCellWidget(row, 6, details_btn)
-            
-            # Armazenar o ID do arquivo para download posterior
-            self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.item(row, 1).setData(Qt.ItemDataRole.UserRole, file['id'])
-            
-            # Botões de ação para administradores - verificar se callback existe
-            if self.is_admin and create_actions_callback is not None:
-                try:
-                    actions_widget = create_actions_callback(file)
-                    if actions_widget:  # Verificar se o widget foi criado corretamente
-                        self.files_table.setCellWidget(row, 7, actions_widget)
-                except Exception as e:
-                    import logging
-                    logging.error(f"Erro ao criar widget de ações para arquivo {file['nome']}: {str(e)}")
-                    # Criar widget de erro como fallback
-                    error_widget = QWidget()
-                    error_layout = QHBoxLayout(error_widget)
-                    error_layout.setContentsMargins(0, 0, 0, 0)
-                    error_btn = QPushButton("Erro")
-                    error_btn.setDisabled(True)
-                    error_layout.addWidget(error_btn)
-                    self.files_table.setCellWidget(row, 7, error_widget)
-        
-        self.files_table.resizeColumnsToContents()
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    def populate_files_table(self, files, create_actions_callback=None,
+                             on_details=None):
+        """Preenche a tabela de arquivos. Ver gui/informacao_produto/files_table.py."""
+        preencher_tabela_arquivos(
+            self.files_table, files, self.is_admin,
+            criar_acoes=create_actions_callback,
+            ao_pedir_detalhes=on_details,
+            formatar_data=format_date,
+        )

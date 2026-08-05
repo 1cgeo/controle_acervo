@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O jsdom nao tem WebGL, entao o MapLibre real nao sobe. O dublê registra o que
 // a pagina PEDE ao mapa (produtos, enquadramento, selecao), que e o contrato de
@@ -98,6 +99,18 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
       { id: 4314902, nome: 'Porto Alegre', produtos: 2 },
     ],
   })),
+  // Projeto e lote NAO vem das facetas: a rota devolve tipo, escala, subtipo,
+  // estado e municipio. Os dois filtros novos leem o dominio, como o formulario
+  // de versao ja fazia.
+  getProjetos: vi.fn(() => Promise.resolve([
+    { id: 1, nome: 'Mapeamento RS' },
+    { id: 2, nome: 'Copa 2027' },
+  ])),
+  getLotes: vi.fn(() => Promise.resolve([
+    { id: 7, nome: 'Lote 1', projeto_id: 1 },
+    { id: 8, nome: 'Lote 2', projeto_id: 1 },
+    { id: 9, nome: 'Lote Único', projeto_id: 2 },
+  ])),
 }));
 
 vi.mock('@modules/acervo/services/limites-service.js', () => ({
@@ -109,8 +122,6 @@ import {
   buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
 } from '@modules/acervo/services/acervo-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const PRODUTOS = [
   {
@@ -141,15 +152,15 @@ const TRIANGULO = {
 };
 
 const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
-// Selecionar passou a ser o BOTAO do rodape (chefe, 2026-07-31); o cartao abre
-// a ficha. Os testes que so querem "marque este produto" usam este atalho, em
-// vez de repetir o seletor e ficarem presos ao gesto.
+// Quem seleciona é o BOTÃO do rodapé; o cartão abre a ficha. Os casos que só
+// querem "marque este produto" usam este atalho, em vez de repetir o seletor e
+// ficarem presos ao gesto.
 const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
   .querySelector('.busca-cartao__selecionar').click();
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
 const ultimaBusca = () => buscarProdutos.mock.calls[buscarProdutos.mock.calls.length - 1][0];
 
-// Os filtros de dominio viraram marcacao MULTIPLA em 2026-08-04. Os auxiliares
+// Os filtros de dominio viraram marcacao MULTIPLA. Os auxiliares
 // abaixo dirigem o componente pelo mesmo gesto de quem usa a tela: abrir o
 // painel, marcar a caixa, fechar.
 const filtro = (c, rotuloBotao) => c
@@ -201,7 +212,12 @@ async function montar(ctx = {}) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // `resetAllMocks`, e nao `clearAllMocks`: o `clear` zera as CHAMADAS e deixa
+  // de pe a fila de `mockResolvedValueOnce`. Um `Once` que o teste dono nao
+  // consumiu era servido ao teste seguinte, que recebia facetas parciais e
+  // falhava por um motivo que nao era o dele. O `reset` drena a fila e devolve
+  // a implementacao original do `vi.fn(impl)`, entao cada teste comeca igual.
+  vi.resetAllMocks();
   buscarProdutos.mockImplementation(() => resposta());
   buscarGeometrias.mockImplementation(() => Promise.resolve({
     total: PRODUTOS.length, truncado: false, dados: PRODUTOS,
@@ -245,10 +261,9 @@ describe('busca do acervo: montagem', () => {
     cleanup();
   });
 
-  // Regressao 2026-07-28: o grid ficou sem `grid-template-rows`, a linha
-  // implicita `auto` se dimensionou pelo max-content do painel de cartoes, e o
-  // mapa foi esticado para fora da tela. A altura do mapa TEM de vir do
-  // contêiner, nunca do conteudo da coluna vizinha.
+  // A altura do mapa vem do contêiner, nunca do conteúdo da coluna vizinha. Sem
+  // `grid-template-rows`, a linha implícita `auto` se dimensiona pelo
+  // max-content do painel de cartões e estica o mapa para fora da tela.
   test('as duas colunas ficam numa linha de altura definida', async () => {
     const { container, cleanup } = await montar();
 
@@ -402,17 +417,8 @@ describe('busca do acervo: resultados', () => {
     cleanup();
   });
 
-  test('o mapa enquadra a extensao de TODO o resultado, nao a da pagina', async () => {
-    const { cleanup } = await montar();
-
-    expect(mapaFalso.extent).toEqual([-51, -31, -50, -29]);
-
-    cleanup();
-  });
-
-  // Os dois gestos TROCARAM de papel em 2026-07-31 (chefe): o cartao abre a
-  // ficha e o botao do rodape seleciona. O par de testes cobre os dois lados,
-  // porque so o primeiro passaria se o botao nao fizesse nada.
+  // O cartão abre a ficha e o botão do rodapé seleciona. O par de casos cobre os
+  // dois lados, porque só o primeiro passaria se o botão não fizesse nada.
   test('clicar no cartao abre a FICHA, e nao seleciona', async () => {
     const { container, cleanup } = await montar();
 
@@ -636,7 +642,7 @@ describe('busca do acervo: filtros', () => {
   });
 });
 
-// Pedido do chefe em 2026-07-28: "mostrar a quantidade de produtos em cada
+// Pedido do chefe: "mostrar a quantidade de produtos em cada
 // escolha, e uma opcao preenchida deve filtrar as demais". O quantitativo vem
 // do servidor ja cruzado; a tela so pinta e decide o que fazer com a escolha
 // que zerou.
@@ -712,8 +718,8 @@ describe('busca do acervo: quantitativo nos filtros', () => {
 });
 
 // A sugestao de palavra-chave era um `<datalist>`, e o navegador escolhia
-// sozinho a altura: com vinte etiquetas ela abria cobrindo boa parte da tela
-// (chefe, 2026-07-28). Agora e um popover nosso, com altura no CSS.
+// sozinho a altura: com vinte etiquetas ela abria cobrindo boa parte da tela.
+// Agora e um popover nosso, com altura no CSS.
 describe('busca do acervo: palavra-chave', () => {
   const campo = (c) => c.querySelector('.busca-palavras-campo input');
   const itens = (c) => [...c.querySelectorAll('.busca-palavras__item')];
@@ -833,7 +839,7 @@ describe('busca do acervo: recorte espacial', () => {
   });
 
   // Existem produtos de cobertura NACIONAL no acervo, e eles intersectam
-  // qualquer retangulo. Medido em 2026-07-28: 22 produtos achados num quadrado
+  // qualquer retangulo.: 22 produtos achados num quadrado
   // de 15 km no RS devolveram `extent` do Brasil inteiro. Reenquadrar por esse
   // extent jogaria o mapa para o pais todo logo depois de desenhar a area.
   test('desenhar uma area NAO reenquadra o mapa, mesmo com extent gigante', async () => {
@@ -849,9 +855,12 @@ describe('busca do acervo: recorte espacial', () => {
     cleanup();
   });
 
-  test('sem area nenhuma, o mapa enquadra o resultado', async () => {
+  // O contraponto do caso acima: sem área, o `extent` da resposta manda na
+  // câmera. É ele que prova que a asserção de cima mede alguma coisa.
+  test('sem area nenhuma, o mapa enquadra a extensao de TODO o resultado', async () => {
     const { cleanup } = await montar();
 
+    // O extent é o do resultado inteiro, e não o da página.
     expect(mapaFalso.extent).toEqual([-51, -31, -50, -29]);
 
     cleanup();
@@ -972,18 +981,28 @@ describe('busca do acervo: limpeza', () => {
   });
 
   test('resposta que chega depois do cleanup nao pinta a tela', async () => {
+    // A busca da carga já respondeu e pintou. A tela fica com dois cartões.
+    buscarProdutos.mockImplementation(() => resposta({ total: 45 }));
+    const { container, cleanup } = await montar();
+    expect(cartoes(container)).toHaveLength(2);
+
+    // A SEGUNDA busca fica em voo, e a página sai antes de ela responder.
     let resolver;
     buscarProdutos.mockImplementation(() => new Promise((r) => { resolver = r; }));
-
-    const container = document.createElement('div');
-    const pronta = renderBusca(container, { params: {}, query: new URLSearchParams() });
+    [...container.querySelectorAll('.busca-paginacao button')]
+      .find(b => b.textContent.includes('Próxima')).click();
     await flush();
 
-    resolver({ total: 2, page: 1, limit: 20, extent: null, dados: PRODUTOS });
-    const cleanup = await pronta;
     cleanup();
 
-    // A pagina ja saiu: nada de erro, e nada pintado por engano.
+    const ATRASADO = [{ ...PRODUTOS[0], id: 99, nome: 'Chegou tarde' }];
+    resolver({ total: 45, page: 2, limit: 20, extent: [-1, -1, 1, 1], dados: ATRASADO });
+    await flush();
+
+    // O guard de descarte segurou a resposta: a lista não recebeu o produto
+    // atrasado, e o mapa destruído não foi reenquadrado por ela.
+    expect(container.textContent).not.toContain('Chegou tarde');
+    expect(mapaFalso.extent).not.toEqual([-1, -1, 1, 1]);
     expect(mapaFalso.limpo).toBe(true);
   });
 });
@@ -1072,8 +1091,7 @@ describe('busca do acervo: seleção múltipla', () => {
   test('a ficha de um produto só não mostra navegação', async () => {
     const { container, cleanup } = await montar();
 
-    // O botao "Ficha" do rodape virou "Selecionar" (chefe, 2026-07-31): quem
-    // abre a ficha agora e o cartao.
+    // Quem abre a ficha é o cartão; o botão do rodapé seleciona.
     cartoes(container)[0].click();
     await flush();
 
@@ -1120,20 +1138,11 @@ describe('busca do acervo: seleção múltipla', () => {
   });
 });
 
+// Que o clique no cartão enquadre o mapa está provado no caso 'clicar no cartao
+// abre a FICHA, e nao seleciona': repetir aqui seria o mesmo clique com a mesma
+// asserção.
 describe('busca do acervo: mapa e lista se acompanham', () => {
-  test('clicar no cartão leva o mapa até aquela carta', async () => {
-    const { container, cleanup } = await montar();
-
-    // O gesto do cartao virou "abrir a ficha", mas o enquadramento continua:
-    // fechada a ficha, o poligono esta la atras dela.
-    cartoes(container)[1].click();
-
-    expect(mapaFalso.enquadradoProduto).toBe(11);
-
-    cleanup();
-  });
-
-  test('apontar o cartão realça o polígono', async () => {
+  test('apontar o cartão realça o polígono, e tirar o mouse o apaga', async () => {
     const { container, cleanup } = await montar();
 
     cartoes(container)[0].dispatchEvent(new Event('mouseenter'));
@@ -1163,7 +1172,7 @@ describe('busca do acervo: exportar CSV', () => {
   const botaoPorTexto = (c, texto) => [...c.querySelectorAll('.busca__acoes button')]
     .find(b => b.textContent.includes(texto));
 
-  // Pedido do chefe em 2026-07-28. O que se exporta e o resultado dos filtros,
+  // Pedido do chefe. O que se exporta e o resultado dos filtros,
   // entao a acao pertence a linha deles; e o topo perde uma faixa, que vira
   // altura para a lista e o mapa.
   test('as acoes ficam na mesma linha dos filtros, e nao num cabecalho proprio', async () => {
@@ -1307,7 +1316,7 @@ describe('busca do acervo: altura da tela', () => {
   });
 });
 
-// --- Destaque do lugar filtrado (chefe, 2026-07-29) --------------------------
+// --- Destaque do lugar filtrado --------------------------
 //
 // O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista e
 // deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
@@ -1320,7 +1329,7 @@ describe('busca do acervo: destaque do lugar', () => {
     await flush();
 
     expect(getLimite).toHaveBeenCalledWith('estado', '43');
-    // Uma LISTA de limites desde 2026-08-04: o filtro marca varios estados.
+    // Uma LISTA de limites: o filtro marca varios estados.
     expect(mapaFalso.limiteDestacado[0].bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
     expect(mapaFalso.limiteEnquadrou).toBe(true);
   });
@@ -1434,5 +1443,185 @@ describe('busca do acervo: destaque do lugar', () => {
     // recorte e menor do que e.
     expect(mapaFalso.limiteDestacado).toHaveLength(2);
     expect(ultimaBusca().estado_id).toEqual(['43', '42']);
+  });
+});
+
+describe('busca do acervo: filtro por projeto e lote', () => {
+  // O servidor sempre aceitou `projeto_id` e `lote_id` (`filtrosBusca`, em
+  // server/src/acervo/acervo_schema.js) e a tela nao os oferecia: "que cartas
+  // sairam do lote 3" so tinha resposta pelo SQL ou pelo plugin.
+  test('marcar um projeto manda projeto_id na busca e no endereco', async () => {
+    const { container, cleanup } = await montar();
+
+    marcarFiltro(filtro(container, 'Projeto'), '1');
+    await flush();
+
+    expect(ultimaBusca().projeto_id).toEqual(['1']);
+    expect(location.hash).toContain('projeto_id=1');
+
+    cleanup();
+  });
+
+  test('o lote leva o nome do projeto, para "Lote 1" nao virar dois iguais', async () => {
+    const { container, cleanup } = await montar();
+
+    expect(opcoesFiltro(filtro(container, 'Lote'))).toEqual([
+      'Mapeamento RS · Lote 1',
+      'Mapeamento RS · Lote 2',
+      'Copa 2027 · Lote Único',
+    ]);
+
+    cleanup();
+  });
+
+  test('escolher o projeto estreita a lista de lotes', async () => {
+    const { container, cleanup } = await montar();
+
+    marcarFiltro(filtro(container, 'Projeto'), '2');
+    await flush();
+
+    // O lote de outro projeto SAI da lista, e nao fica com "(0)": ele deixou de
+    // fazer sentido, e mantido daria dois filtros que nunca se cruzam.
+    expect(opcoesFiltro(filtro(container, 'Lote'))).toEqual(['Copa 2027 · Lote Único']);
+
+    cleanup();
+  });
+
+  test('lote marcado que nao pertence ao projeto escolhido e descartado', async () => {
+    const { container, cleanup } = await montar();
+
+    marcarFiltro(filtro(container, 'Lote'), '7');
+    await flush();
+    expect(ultimaBusca().lote_id).toEqual(['7']);
+
+    marcarFiltro(filtro(container, 'Projeto'), '2');
+    await flush();
+
+    expect(ultimaBusca().lote_id).toEqual([]);
+    expect(marcados(filtro(container, 'Lote'))).toEqual([]);
+
+    cleanup();
+  });
+
+  test('o link traz projeto e lote ja marcados', async () => {
+    const { container, cleanup } = await montar({ query: 'projeto_id=1&lote_id=8' });
+
+    expect(ultimaBusca().projeto_id).toEqual(['1']);
+    expect(ultimaBusca().lote_id).toEqual(['8']);
+    expect(rotulo(filtro(container, 'Projeto'))).toBe('Mapeamento RS');
+
+    cleanup();
+  });
+
+  test('"Limpar filtros" apaga projeto e lote', async () => {
+    const { container, cleanup } = await montar({ query: 'projeto_id=1&lote_id=8' });
+
+    [...container.querySelectorAll('.btn--text')]
+      .find(b => b.textContent.includes('Limpar filtros')).click();
+    await flush();
+
+    expect(ultimaBusca().projeto_id).toEqual([]);
+    expect(ultimaBusca().lote_id).toEqual([]);
+
+    cleanup();
+  });
+});
+
+describe('busca do acervo: a recarga nao desmonta o que esta na tela', () => {
+  // A REGRA DE OURO do projeto: salvar nao pode reconstruir a tela. Antes, toda
+  // busca chamava `replaceChildren` na lista e pintava o esqueleto de novo:
+  // esvaziar a lista zera a altura rolavel, e o navegador prende a rolagem no
+  // topo. Salvar uma versao na ficha devolvia a busca ao primeiro cartao.
+  test('a segunda busca reaproveita os NOS dos cartoes que continuam no resultado', async () => {
+    const { container, cleanup } = await montar();
+
+    const antes = cartoes(container);
+    expect(antes).toHaveLength(2);
+
+    marcarFiltro(filtro(container, 'Tipo de produto'), '1');
+    await flush();
+
+    const depois = cartoes(container);
+    expect(depois).toHaveLength(2);
+    // Mesmos nos, e nao nos novos com o mesmo texto. E o que preserva a
+    // rolagem e o foco do teclado.
+    expect(depois[0]).toBe(antes[0]);
+    expect(depois[1]).toBe(antes[1]);
+
+    cleanup();
+  });
+
+  test('o cartao cujo conteudo mudou e repintado, e o vizinho nao', async () => {
+    const { container, cleanup } = await montar();
+    const antes = cartoes(container);
+
+    buscarProdutos.mockImplementation(() => resposta({
+      dados: [{ ...PRODUTOS[0], nome: 'Porto Alegre (revisado)' }, PRODUTOS[1]],
+    }));
+
+    marcarFiltro(filtro(container, 'Tipo de produto'), '1');
+    await flush();
+
+    const depois = cartoes(container);
+    expect(depois[0].querySelector('.busca-cartao__nome').textContent)
+      .toBe('Porto Alegre (revisado)');
+    expect(depois[1]).toBe(antes[1]);
+
+    cleanup();
+  });
+
+  test('o esqueleto nao volta depois da primeira carga', async () => {
+    const { container, cleanup } = await montar();
+    expect(container.querySelectorAll('.busca-esqueleto')).toHaveLength(0);
+
+    // Segura a segunda busca: e nela que o esqueleto reaparecia, apagando os
+    // cartoes que a pessoa estava lendo.
+    let liberar;
+    buscarProdutos.mockImplementation(() => new Promise((r) => { liberar = r; }));
+
+    marcarFiltro(filtro(container, 'Tipo de produto'), '1');
+    await flush();
+
+    expect(container.querySelectorAll('.busca-esqueleto')).toHaveLength(0);
+    expect(cartoes(container)).toHaveLength(2);
+    expect(contador(container)).toBe('Buscando...');
+
+    liberar({ total: 2, page: 1, limit: 20, extent: null, dados: PRODUTOS });
+    await flush();
+
+    cleanup();
+  });
+});
+
+describe('busca do acervo: falha da API', () => {
+  // "Nenhum produto encontrado" e "nao consegui perguntar" pedem acoes opostas:
+  // a primeira manda afrouxar o filtro, a segunda manda tentar de novo.
+  test('a falha vira estado de erro, e nao a frase do resultado vazio', async () => {
+    buscarProdutos.mockImplementation(() => Promise.reject(new Error('Falha de rede')));
+
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    expect(container.querySelector('.dashboard-erro__detalhe').textContent)
+      .toBe('Falha de rede');
+    // A frase do resultado vazio NAO pode aparecer aqui.
+    expect(container.querySelector('.busca-lista__vazio')).toBeNull();
+    expect(contador(container)).toBe('Não foi possível buscar');
+
+    cleanup();
+  });
+
+  test('"Tentar de novo" refaz a busca e devolve os cartoes', async () => {
+    buscarProdutos.mockImplementation(() => Promise.reject(new Error('Falha de rede')));
+    const { container, cleanup } = await montar();
+
+    buscarProdutos.mockImplementation(() => resposta());
+    container.querySelector('.dashboard-erro .btn').click();
+    await flush();
+
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+    expect(cartoes(container)).toHaveLength(2);
+
+    cleanup();
   });
 });

@@ -8,8 +8,7 @@
  * o conteudo da borda inferior e o padding do `.main-content`. Somadas, davam
  * 48 px de espaco morto no rodape, e como a margem colapsa para fora da
  * `.page`, os 24 px extras contavam na altura da pagina: em telas justas eram
- * suficientes para acender a barra de rolagem sozinhos (medido em 2026-07-28
- * na lista de clientes, 14 px de excesso numa janela de 781). */
+ * suficientes para acender a barra de rolagem sozinhos. */
 .page > :last-child {
   margin-bottom: 0;
 }
@@ -268,12 +267,6 @@
   margin-bottom: var(--space-md);
 }
 
-.chart-card__controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
 .chart-card__select {
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--border-color);
@@ -317,9 +310,8 @@
   grid-template-columns: 1fr 1fr;
 }
 
-.dashboard-grid--3col {
-  grid-template-columns: repeat(3, 1fr);
-}
+/* Sem `--3col`: as 11 telas que usam a grade sao de DOIS graficos lado a lado.
+   Tres numa linha de 1280px devolvem cartoes estreitos demais para o eixo. */
 
 /* Summary cards (small, annual analytics) */
 .summary-cards {
@@ -351,7 +343,7 @@
 
 /* Detail cards (ex.: detalhes do pedido)
  *
- * DUAS colunas, nao quatro (chefe, 2026-07-27). Em quatro, cada card ficava com
+ * DUAS colunas, nao quatro. Em quatro, cada card fica com
  * cerca de 330px e as linhas "rotulo ... valor" quebravam quase todas: nome de
  * OM, endereco e NUP nao cabem nessa largura. Os cards tambem tem alturas bem
  * diferentes (3 a 6 linhas), e quatro lado a lado deixavam a base irregular.
@@ -450,8 +442,7 @@
     grid-template-columns: 1fr;
   }
 
-  .dashboard-grid--2col,
-  .dashboard-grid--3col {
+  .dashboard-grid--2col {
     grid-template-columns: 1fr;
   }
 

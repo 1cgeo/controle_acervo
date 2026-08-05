@@ -7,8 +7,8 @@ import { isValidLocalizador, normalizeLocalizador } from '@utils/localizador.js'
 import { rotaRaiz } from '../router.js';
 
 /**
- * Porta de entrada da plataforma, com DOIS caminhos lado a lado (chefe,
- * 2026-07-27). Quem chega aqui e uma de duas pessoas, e cada uma precisa
+ * Porta de entrada da plataforma, com DOIS caminhos lado a lado. Quem chega
+ * aqui e uma de duas pessoas, e cada uma precisa
  * reconhecer o seu caminho sem ler instrucao:
  *
  *  - quem trabalha na DGEO entra com usuario e senha (POST /api/login com

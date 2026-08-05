@@ -10,20 +10,15 @@
 //   FECHADA                             tudo vem de `rpcmtec.subsecao`,
 //                                       congelado no instante do fechamento.
 //
-// Até 2026-08-05 nada era gravado, e a razão era boa: uma edição gravada
-// envelheceria em silêncio no primeiro pedido corrigido depois de fechada. Ela
-// continua valendo, e é por isso que o congelamento só acontece no fechamento.
-// Antes dele o banco manda; depois dele manda o que foi assinado. O RTM de
-// março de 2026 reportou 247 na meta 4.2 e o de julho reportou 252: sem
-// congelar, a edição de março regerada em agosto mostraria um número que
-// ninguém leu, e nada diria qual foi o assinado.
+// O CONGELAMENTO SÓ ACONTECE NO FECHAMENTO, e nunca antes: gravada cedo, a
+// edição envelheceria em silêncio no primeiro pedido corrigido. Antes do
+// fechamento o banco manda; depois dele manda o que foi assinado. Sem congelar,
+// uma edição antiga regerada hoje mostraria um número que ninguém leu, e nada
+// diria qual foi o assinado.
 //
-// `conferirHoje` existe por causa disso, e é o contrapeso: numa edição fechada
-// ele recalcula as subseções calculadas e mostra a diferença contra o
-// congelado. Sem ele, congelar seria esquecer.
-//
-// Esteve em `orcamento/relatorio/relatorio_ctrl.js` até 2026-08-01, misturado
-// com o gerador da seção do PDR.
+// `conferirHoje` é o contrapeso: numa edição fechada ele recalcula as subseções
+// calculadas e mostra a diferença contra o congelado. Sem ele, congelar seria
+// esquecer.
 
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
@@ -49,8 +44,8 @@ const tratarErroEdicao = err => {
   throw err
 }
 
-// O assinante sai do CADASTRO desde 2026-08-05, e não de um nome redigitado a
-// cada edição. O bloco de assinatura do PDF é montado destes três campos.
+// O assinante sai do CADASTRO, e não de um nome redigitado a cada edição. O
+// bloco de assinatura do PDF é montado destes três campos.
 const CAMPOS = `e.id, e.ano, e.mes, e.assinante_uuid, e.data_assinatura,
                 e.data_fechamento, e.usuario_fechamento_uuid,
                 u.nome AS assinante_nome, pg.nome_abrev AS assinante_posto,
@@ -193,11 +188,9 @@ controller.montar = async id => {
             // Subseção declarada calculada sem implementação no gerador é
             // lacuna, e aparece como tal em vez de sair como tabela vazia.
             semGerador,
-            // O GERADOR RODOU E NÃO ACHOU NADA. É a outra lacuna, e até
-            // 2026-08-04 ela saía como subseção em ordem: sem passagem de
-            // efetivo cadastrada, a 6.1 virava tabela vazia e a edição fechava
-            // sem apontar nada. Tabela vazia num documento assinado AFIRMA "não
-            // houve", e o que havia era ninguém ter cadastrado.
+            // O GERADOR RODOU E NÃO ACHOU NADA. É a outra lacuna, e tem de
+            // aparecer como lacuna: tabela vazia num documento assinado AFIRMA
+            // "não houve", quando o que houve foi ninguém ter cadastrado.
             //
             // As duas causas ficam SEPARADAS: sem gerador, não há tabela vazia
             // a reportar, porque a causa já está dita e o conserto é outro
@@ -435,6 +428,32 @@ controller.fechar = async (id, usuarioUuid, contexto) => {
       t, 'rpcmtec.edicao', id, 'Edição do RPCMTec'
     )
 
+    // A RECLAMAÇÃO DO FECHAMENTO, e ela vem PRIMEIRO.
+    //
+    // As conferências acima (fechada, pendentes, assinante) rodam FORA desta
+    // transação, porque `montar` faz cálculo pesado (18 consultas) e segurar a
+    // conexão por todo ele seria pior. O preço era um TOCTOU: dois pedidos
+    // simultâneos passavam os dois pela conferência, e o `ON CONFLICT DO UPDATE`
+    // abaixo escondia o estrago (a segunda regravava o mesmo). O que NÃO se
+    // escondia era o rastro: nasciam DOIS eventos de fechamento para um
+    // fechamento só, e o histórico passava a mentir sobre quem fechou.
+    //
+    // O `AND data_fechamento IS NULL` fecha o buraco sem mover o cálculo. Ele
+    // trava a LINHA: o segundo pedido espera o primeiro terminar, relê a linha e
+    // não casa mais nenhuma. `oneOrNone` devolve nulo, o erro sobe e a transação
+    // inteira volta atrás, inclusive as subseções que ela já tinha gravado.
+    const depois = await t.oneOrNone(
+      `UPDATE rpcmtec.edicao
+       SET data_fechamento = now(), usuario_fechamento_uuid = $<usuarioUuid>
+       WHERE id = $<id> AND data_fechamento IS NULL
+       RETURNING *`,
+      { id, usuarioUuid }
+    )
+
+    if (!depois) {
+      throw new AppError('A edição já está fechada', httpCode.BadRequest)
+    }
+
     for (const b of blocos) {
       await t.none(
         `INSERT INTO rpcmtec.subsecao
@@ -472,13 +491,6 @@ controller.fechar = async (id, usuarioUuid, contexto) => {
         }
       )
     }
-
-    const depois = await t.one(
-      `UPDATE rpcmtec.edicao
-       SET data_fechamento = now(), usuario_fechamento_uuid = $<usuarioUuid>
-       WHERE id = $<id> RETURNING *`,
-      { id, usuarioUuid }
-    )
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'rpcmtec.edicao',
@@ -520,13 +532,23 @@ controller.reabrir = async (id, usuarioUuid, contexto) => {
       { id, digitada: estrutura.ORIGEM.DIGITADA }
     )
 
-    const depois = await t.one(
+    // `AND data_fechamento IS NOT NULL`, o espelho da guarda de `fechar`. O
+    // `lerAntes` acima é um SELECT simples e não trava a linha: duas reaberturas
+    // simultâneas passavam as duas pelo `if`, e a segunda gerava um segundo
+    // evento de reabertura para uma reabertura só. A condição no UPDATE trava a
+    // linha e desempata no banco.
+    const depois = await t.oneOrNone(
       `UPDATE rpcmtec.edicao
        SET data_fechamento = NULL, usuario_fechamento_uuid = NULL,
            data_modificacao = now(), usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE id = $<id> RETURNING *`,
+       WHERE id = $<id> AND data_fechamento IS NOT NULL
+       RETURNING *`,
       { id, usuarioUuid }
     )
+
+    if (!depois) {
+      throw new AppError('A edição já está aberta', httpCode.BadRequest)
+    }
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'rpcmtec.edicao',

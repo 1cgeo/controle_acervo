@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da pagina de Notas de Empenho. Mocka o service (lista + dialog).
 // A tela tem o proprio filtro de ano e abre no ano ATUAL: nao ha mais ano global
@@ -19,8 +20,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderNotasEmpenhoList } from '@modules/orcamento/pages/notas-empenho/list.js';
 import { getNotasEmpenho } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 const ANO_ATUAL = new Date().getFullYear();
 
 describe('renderNotasEmpenhoList', () => {
@@ -28,7 +27,7 @@ describe('renderNotasEmpenhoList', () => {
     vi.clearAllMocks();
   });
 
-  // Chefe, 2026-08-04: o ano e de cada tela e comeca no ano ATUAL.
+  // O ano é de cada tela e começa no ano ATUAL.
   test('abre no ano atual e pede a lista desse ano', async () => {
     const container = document.createElement('div');
     const cleanup = await renderNotasEmpenhoList(container, { params: {}, query: new URLSearchParams() });
@@ -53,9 +52,9 @@ describe('renderNotasEmpenhoList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // Chefe, 2026-07-31: as 100% liquidadas vão para o fim e ficam visualmente
-  // distintas. A ordem é pelo saldo a liquidar, que a tela CALCULA (empenhado
-  // menos anulado menos liquidado); o backend não devolve essa coluna.
+  // As 100% liquidadas vão para o fim e ficam visualmente distintas. A ordem é
+  // pelo saldo a liquidar, que a tela CALCULA (empenhado menos anulado menos
+  // liquidado); o backend não devolve essa coluna.
   test('ordena pelo saldo a liquidar e joga a 100% liquidada para o fim', async () => {
     getNotasEmpenho.mockResolvedValueOnce([
       // Liquidada por inteiro: some do topo e ganha a marca.

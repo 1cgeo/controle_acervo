@@ -1,10 +1,9 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { criarFiltroMultiplo } from './filtro-multiplo.js';
 
-// O filtro de dominio com marcacao MULTIPLA substituiu o `<select>` de escolha
-// unica na busca do acervo e no ponto de controle (chefe, 2026-08-04). O que
-// estes testes protegem sao as tres regras que o combo antigo ja tinha e que
-// nao podem se perder na troca, mais as duas que nasceram com ele.
+// O filtro de dominio com marcacao MULTIPLA serve a busca do acervo e o ponto de
+// controle. Estes testes protegem as tres regras herdadas do combo de escolha
+// unica e as duas proprias da marcacao multipla.
 
 const ITENS = [
   { code: 1, nome: 'Carta Topográfica' },

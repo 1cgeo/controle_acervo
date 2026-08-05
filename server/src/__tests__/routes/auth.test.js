@@ -33,35 +33,30 @@ describe('Auth Routes', () => {
       expect(res.status).toBe(401)
     })
 
+    // Sem espera: o `generateExpiredToken` assina com `expiresIn: '0s'`, ou
+    // seja `exp === iat`, e ja nasce vencido. O `setTimeout` de 1,1 s que havia
+    // aqui era relogio parado na suite, e o caso 'rejeita token expirado tambem
+    // no endpoint de admin' ja provava isso sem esperar nada.
     it('should reject expired tokens', async () => {
-      // Wait a moment for the 0s token to expire
-      await new Promise(resolve => setTimeout(resolve, 1100))
       const res = await request(app)
         .get('/api/acervo/camadas_produto')
         .set('Authorization', generateExpiredToken())
       expect(res.status).toBe(401)
     })
 
-    it('should accept valid admin token', async () => {
+    // 200, e nao `not.toBe(401)`. Este arquivo roda no pacote de banco, entao o
+    // PostgreSQL existe e a rota RESPONDE: aceitar qualquer coisa que nao seja
+    // 401 deixava passar o 500 de excecao nao tratada.
+    it.each([
+      ['admin', () => generateAdminToken()],
+      ['usuario', () => generateUserToken()],
+      // O prefixo Bearer e outro ramo do parser do cabecalho, e nao outro token.
+      ['admin com prefixo Bearer', () => `Bearer ${generateAdminToken()}`]
+    ])('aceita o token de %s', async (_quem, token) => {
       const res = await request(app)
         .get('/api/acervo/camadas_produto')
-        .set('Authorization', generateAdminToken())
-      // May get 200 or a DB error, but NOT 401
-      expect(res.status).not.toBe(401)
-    })
-
-    it('should accept valid user token', async () => {
-      const res = await request(app)
-        .get('/api/acervo/camadas_produto')
-        .set('Authorization', generateUserToken())
-      expect(res.status).not.toBe(401)
-    })
-
-    it('should accept Bearer prefix', async () => {
-      const res = await request(app)
-        .get('/api/acervo/camadas_produto')
-        .set('Authorization', `Bearer ${generateAdminToken()}`)
-      expect(res.status).not.toBe(401)
+        .set('Authorization', token())
+      expect(res.status).toBe(200)
     })
   })
 

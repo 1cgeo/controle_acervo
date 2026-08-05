@@ -1,7 +1,7 @@
 'use strict'
 
 const produtoSchema = require('../../../produto/produto_schema')
-const { recusaPor, aceita } = require('../../helpers/joi')
+const { recusaPor, recusaRegraDeObjeto, aceita } = require('../../helpers/joi')
 
 describe('Schemas de produto', () => {
   describe('produtoAtualizacao', () => {
@@ -236,38 +236,43 @@ describe('Schemas de produto', () => {
       )
     })
 
+    // Quem barra o lote vazio é o `.min(1)`, e não o `.required()` do item: o
+    // item de `correcoes` não é `.required()`, ao contrário de `produto_ids`.
     it('recusa lote vazio', () => {
       recusaPor(
         produtoSchema.versaoUuidCorrecao.validate({ ...valido, correcoes: [] }),
-        'correcoes'
+        'correcoes',
+        'array.min'
       )
     })
 
+    // As DUAS regras de unicidade dão `array.unique` no mesmo caminho, então o
+    // campo e o tipo não separam uma da outra. Quem separa é o `context.path`,
+    // que nomeia o comparador. Sem ele, trocar as duas fixturas de lugar
+    // deixaria os dois casos verdes.
     it('recusa o mesmo uuid para duas versões (a UNIQUE do banco não permitiria)', () => {
       const mesmo = '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d'
-      recusaPor(
-        produtoSchema.versaoUuidCorrecao.validate({
-          ...valido,
-          correcoes: [
-            { versao_id: 6653, uuid_versao: mesmo },
-            { versao_id: 6654, uuid_versao: mesmo }
-          ]
-        }),
-        'correcoes'
-      )
+      const r = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido,
+        correcoes: [
+          { versao_id: 6653, uuid_versao: mesmo },
+          { versao_id: 6654, uuid_versao: mesmo }
+        ]
+      })
+      recusaPor(r, 'correcoes.1', 'array.unique')
+      expect(r.error.details[0].context.path).toBe('uuid_versao')
     })
 
     it('recusa a mesma versão duas vezes no lote', () => {
-      recusaPor(
-        produtoSchema.versaoUuidCorrecao.validate({
-          ...valido,
-          correcoes: [
-            { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
-            { versao_id: 6653, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
-          ]
-        }),
-        'correcoes'
-      )
+      const r = produtoSchema.versaoUuidCorrecao.validate({
+        ...valido,
+        correcoes: [
+          { versao_id: 6653, uuid_versao: '4fe8d788-dc4b-2f73-22c8-8d5e6090f06d' },
+          { versao_id: 6653, uuid_versao: '02e6980b-c052-4f1a-91b8-a2e839565b39' }
+        ]
+      })
+      recusaPor(r, 'correcoes.1', 'array.unique')
+      expect(r.error.details[0].context.path).toBe('versao_id')
     })
 
     it('recusa o que não é uuid', () => {
@@ -297,15 +302,19 @@ describe('Schemas de produto', () => {
 
     // Com os dois preenchidos a rota teria de escolher um em silencio.
     it('recusa INOM e MI juntos', () => {
-      recusaPor(
+      recusaRegraDeObjeto(
         produtoSchema.folhaQuery.validate({ inom: 'SF-22', mi: '2757' }),
-        'inom',
-        'object.xor'
+        'object.xor',
+        ['inom', 'mi']
       )
     })
 
     it('recusa a consulta sem nenhum dos dois', () => {
-      recusaPor(produtoSchema.folhaQuery.validate({}), 'inom', 'object.missing')
+      recusaRegraDeObjeto(
+        produtoSchema.folhaQuery.validate({}),
+        'object.missing',
+        ['inom', 'mi']
+      )
     })
 
     // O acervo grava o MI sem zero a esquerda, e sem o preenchimento 549 dos 563
@@ -328,10 +337,10 @@ describe('Schemas de produto', () => {
     // aceitar-e-descartar faria o cliente acreditar que pediu o que a rota nem
     // leu.
     it('recusa a dica de escala junto do INOM', () => {
-      recusaPor(
+      recusaRegraDeObjeto(
         produtoSchema.folhaQuery.validate({ inom: 'SF-22', tipo_escala_id: 3 }),
-        'tipo_escala_id',
-        'object.with'
+        'object.with',
+        ['tipo_escala_id', 'mi']
       )
     })
 
@@ -349,10 +358,10 @@ describe('Schemas de produto', () => {
 
 // Dia de calendário: o valor tem de sair do Joi como a STRING que entrou.
 //
-// Sem `.raw()`, o Joi devolvia um Date de meia-noite UTC, e a coluna
-// TIMESTAMP WITH TIME ZONE guardava 21:00 do DIA ANTERIOR em America/Sao_Paulo.
-// Medido em 2026-08-01 pela interface web (que manda o formato do
-// `<input type="date">`): edição pedida em 01/08 voltou 31/07 na ficha.
+// Sem `.raw()`, o Joi devolve um Date de meia-noite UTC, e a coluna
+// TIMESTAMP WITH TIME ZONE guarda 21:00 do DIA ANTERIOR em America/Sao_Paulo.
+// A interface web manda o formato do `<input type="date">`, então a edição
+// pedida em 01/08 volta 31/07 na ficha.
 //
 // O custo real não é a tela: `acervo.versao.data_edicao` é o que conta produto
 // entregue no MÊS, e por ele o RPCMTec. A carta editada no dia 1º entrava no
@@ -373,14 +382,13 @@ describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
   }
 
   it('versoesHistoricas devolve a string original, e nao um Date', () => {
-    const { value, error } = produtoSchema.versoesHistoricas.validate([versaoValida])
-    expect(error).toBeUndefined()
+    const value = aceita(produtoSchema.versoesHistoricas.validate([versaoValida]))
     expect(value[0].data_criacao).toBe('2026-07-01')
     expect(value[0].data_edicao).toBe('2026-08-01')
   })
 
   it('versaoAtualizacao devolve a string original', () => {
-    const { value, error } = produtoSchema.versaoAtualizacao.validate({
+    const value = aceita(produtoSchema.versaoAtualizacao.validate({
       id: 1,
       versao: '1-DSG',
       nome: null,
@@ -392,8 +400,7 @@ describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
       orgao_produtor: '1º CGEO',
       data_criacao: '2026-07-01',
       data_edicao: '2026-08-01'
-    })
-    expect(error).toBeUndefined()
+    }))
     expect(value.data_edicao).toBe('2026-08-01')
   })
 
@@ -404,7 +411,7 @@ describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
       produtoSchema.versoesHistoricas.validate([
         { ...versaoValida, data_criacao: 'nao e data' }
       ]),
-      'data_criacao',
+      '0.data_criacao',
       'date.format'
     )
   })
@@ -417,38 +424,21 @@ describe('data de versao e DIA DE CALENDARIO, e nao instante', () => {
       produtoSchema.versoesHistoricas.validate([
         { ...versaoValida, data_edicao: '01/08/2026' }
       ]),
-      'data_edicao',
+      '0.data_edicao',
       'date.format'
     )
   })
 
-  // O caminho do upload web passa por OUTRO schema (arquivo_schema), e ele tinha
-  // o mesmo defeito. Sem este caso, corrigir um e esquecer o outro nao apareceria.
-  it('o schema do upload tambem devolve a string original', () => {
-    const arquivoSchema = require('../../../arquivo/arquivo_schema')
-    const { value, error } = arquivoSchema.uploadWebVersao.validate({
-      produto_id: 1,
-      versao: {
-        versao: '1-DSG',
-        nome: null,
-        tipo_versao_id: 1,
-        subtipo_produto_id: 2,
-        orgao_produtor: '1º CGEO',
-        data_criacao: '2026-07-01',
-        data_edicao: '2026-08-01'
-      },
-      arquivos: [{ nome: 'Carta', tipo_arquivo_id: 1, situacao_carregamento_id: 1 }]
-    })
-    expect(error).toBeUndefined()
-    expect(value.versao.data_edicao).toBe('2026-08-01')
-  })
+  // O caminho do upload web passa por OUTRO schema, e a mesma regra vale la. O
+  // caso mora em unit/schemas/arquivo.test.js ('a data de versao volta como a
+  // string original'), com o dono do schema.
 
   it('continua cobrando data_edicao >= data_criacao', () => {
     recusaPor(
       produtoSchema.versoesHistoricas.validate([
         { ...versaoValida, data_criacao: '2026-08-01', data_edicao: '2026-07-01' }
       ]),
-      'data_edicao',
+      '0.data_edicao',
       'date.min'
     )
   })

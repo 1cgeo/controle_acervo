@@ -8,8 +8,8 @@
  *
  * POR QUE ESTE GRUPO E O MAIS SENSIVEL. Aqui mora a unica escrita do sistema que
  * muda o que as OUTRAS escritas podem fazer: promover alguem a administrador
- * global e conceder perfil num modulo. Ate 2026-08-02 nenhuma das duas deixava
- * rastro, e nao havia como saber quem concedeu.
+ * global e conceder perfil num modulo. Sem rastro delas nao ha como saber quem
+ * concedeu.
  *
  * O AGREGADO DE `usuario` E O UUID, e nao o `id` serial. E ele que aparece na
  * URL da tela (#/usuarios), e que as dezenas de tabelas dos tres modulos
@@ -59,10 +59,9 @@ module.exports = {
   // dezembro" sao a historia daquela pessoa, e e na ficha dela que se leem. Um
   // agregado proprio para cada um daria duas fichas que ninguem abre.
   //
-  // Eles substituiram `rpcmtec.aproveitamento_mes` em 2026-08-02, no mesmo dia
-  // em que ela nasceu: retrato mensal nao sabe dizer o que aconteceu no dia 06 de
-  // marco, e o rastro dele herdava o mesmo defeito -- editar o mes de marco
-  // aparecia como um evento por mes, e nunca como "a passagem mudou de data".
+  // O aproveitamento e INTERVALO, e nao retrato mensal, justamente por isto: com
+  // retrato, editar o mes de marco aparece como um evento por mes, e nunca como
+  // "a passagem mudou de data".
   'dgeo.efetivo_periodo': {
     modulo: 'plataforma',
     entidade: 'usuario',
@@ -86,8 +85,8 @@ module.exports = {
     resumo: linha => `${linha.descricao} (${linha.percentual}%)`,
     campos: {
       usuario_uuid: { rotulo: 'Militar', entidade: 'usuario' },
-      // TEXTO LIVRE, sem catalogo de tipo (chefe, 2026-08-02): a lista de
-      // motivos nao fecha, e classificar antes de escrever atrapalha.
+      // TEXTO LIVRE, sem catalogo de tipo: a lista de motivos nao fecha, e
+      // classificar antes de escrever atrapalha.
       descricao: { rotulo: 'Impedimento' },
       percentual: { rotulo: 'Percentual do tempo', tipo: 'numero' },
       data_inicio: { rotulo: 'Início', tipo: 'data' },
@@ -131,9 +130,9 @@ module.exports = {
       ano: { rotulo: 'Ano' },
       numero_meta: { rotulo: 'Número da meta', tipo: 'numero' },
       item: { rotulo: 'Item' },
-      // A DESCRICAO, A QUANTIDADE, O PRAZO E O DEMANDANTE NAO ESTAO AQUI desde
-      // 2026-08-04: eles sao o que a DSG declara, e mudam por REVISAO. O rastro
-      // deles esta em `pit.meta_revisao`, que cai na ficha desta mesma meta.
+      // A DESCRICAO, A QUANTIDADE, O PRAZO E O DEMANDANTE NAO ESTAO AQUI: eles
+      // sao o que a DSG declara, e mudam por REVISAO. O rastro deles esta em
+      // `pit.meta_revisao`, que cai na ficha desta mesma meta.
       //
       // O que sobrou e o que o SCA decide, e e por isso que muda sem revisao.
       unidade_id: { rotulo: 'Unidade', dominio: 'dominio.unidade_meta' },
@@ -225,9 +224,9 @@ module.exports = {
     campos: {
       meta_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
       mes: { rotulo: 'Mês', tipo: 'numero' },
-      // O PLANEJADO do mes entrou em 2026-08-02, junto com a grade: a planilha
-      // da Divisao tem duas abas com as mesmas linhas, e a diferenca entre elas
-      // e qual dos dois numeros a celula guarda.
+      // O PLANEJADO e o REALIZADO do mes sao colunas separadas: a planilha da
+      // Divisao tem duas abas com as mesmas linhas, e a diferenca entre elas e
+      // qual dos dois numeros a celula guarda.
       quantidade_planejada: { rotulo: 'Quantidade planejada', tipo: 'numero' },
       quantidade: { rotulo: 'Quantidade realizada', tipo: 'numero' },
       data_conclusao: { rotulo: 'Data de conclusão', tipo: 'data' },
@@ -360,7 +359,12 @@ module.exports = {
       efetivo_capacitado: { rotulo: 'Efetivo capacitado', tipo: 'numero' },
       // Só na RECEBIDA: sob que Plano/Código.
       plano_codigo: { rotulo: 'Plano/Código' },
-      documento: { rotulo: 'Documento' }
+      documento: { rotulo: 'Documento' },
+      // O VINCULO COM A META. Trocá-lo muda o número que a grade do PIT calcula
+      // quando a meta declara origem Capacitação, então é dos campos que mais
+      // pedem rastro legível. Sem a declaração ele saía no fim da lista, com o
+      // nome cru da coluna e sem o link para a ficha da meta.
+      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' }
     }
   },
 

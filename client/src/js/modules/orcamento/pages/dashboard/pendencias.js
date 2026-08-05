@@ -12,7 +12,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
  * Vale so para as pendencias de DATA. As demais (RPNP sem valor, NC sem meta)
  * continuam sendo pendencia de verdade em 2025, porque tem conserto.
  *
- * O alvo de ZERO vale para 2026 em diante (chefe, 2026-08-04).
+ * O alvo de ZERO vale para 2026 em diante.
  */
 const ANOS_CARGA_HISTORICA = new Set([2025]);
 
@@ -158,7 +158,7 @@ function linha(p) {
  * Bloco de pendencias de dado do ano.
  *
  * Existia so um aviso de uma linha sobre registro sem data. O chefe quer os
- * defeitos de dado A VISTA, para chamar a acao (2026-08-04): uma linha por
+ * defeitos de dado A VISTA, para chamar a acao: uma linha por
  * pendencia, com a contagem e o caminho do conserto.
  *
  * O bloco NAO some quando zera. Bloco que desaparece faz o usuario duvidar se

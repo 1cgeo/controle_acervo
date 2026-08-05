@@ -1,7 +1,7 @@
 'use strict'
 
 const { db } = require('../database')
-const { entradaDe, dominiosCitados } = require('./mapa')
+const { entradaDe, dominiosCitados, normalizarDominio } = require('./mapa')
 
 /**
  * O DIFF SAI PRONTO DO SERVIDOR, e o cliente nao traduz nada.
@@ -15,11 +15,9 @@ const { entradaDe, dominiosCitados } = require('./mapa')
  * tem API para ler o cache sem refazer a chamada. O servidor tem os 25 catalogos
  * a um SELECT de distancia.
  *
- * O QUE ISTO CORRIGE. Ate 2026-08-02 a tela do pedido mostrava
- * `campos_alterados.join(', ')`, ou seja o NOME DA COLUNA DO BANCO
- * ("situacao_pedido_id, prazo") e mais nada -- enquanto `dados_antes` e
- * `dados_depois` chegavam na resposta e eram jogados fora. Quem lia sabia que
- * algo mudou, sem saber de que para que.
+ * Sem isto a tela so tem o NOME DA COLUNA DO BANCO para mostrar
+ * ("situacao_pedido_id, prazo"): quem le sabe que algo mudou, sem saber de que
+ * para que.
  */
 
 // --- Cache dos catalogos de dominio -----------------------------------------
@@ -203,7 +201,14 @@ const montarMudancas = (evento, catalogosCarregados) => {
 
   return [...declarados, ...naoDeclarados].map(campo => {
     const decl = campos[campo] || { rotulo: campo, tipo: 'texto' }
-    const catalogo = decl.dominio ? catalogosCarregados[decl.dominio] : null
+    // O catalogo e indexado pelo NOME DA TABELA, e `dominio` aceita duas formas
+    // (a string e o objeto com coluna de rotulo propria). Sem normalizar, a
+    // forma de objeto vira a chave "[object Object]" e a traducao some em
+    // silencio: os dez campos de `ponto_controle.ponto` sairiam com o codigo
+    // cru, que e o mesmo resultado de nao ter declarado dominio nenhum.
+    const catalogo = decl.dominio
+      ? catalogosCarregados[normalizarDominio(decl.dominio).tabela]
+      : null
 
     return {
       campo,

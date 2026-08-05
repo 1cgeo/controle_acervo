@@ -14,7 +14,7 @@ const CONFIG_TESTE = path.join(__dirname, '..', '..', 'config_testing.env')
  * A ordem dos `er/` como o create_config.js a executa.
  *
  * LIDA do arquivo, e nao copiada. Esta lista ja foi copia, e a copia apodreceu:
- * ao entrar o `er/limites.sql` em 2026-07-29, a instalacao nova o criava e o
+ * ao entrar o `er/limites.sql`, a instalacao nova o criava e o
  * banco de TESTE nao, entao tres testes de faceta morriam com 500 e a mensagem
  * falava de uma relacao que nao existe, sem dizer que a lista daqui e que estava
  * velha. Mesmo remedio que o ensaiar_migracao.cjs ja usava.
@@ -114,7 +114,7 @@ const montarTemplate = async (master) => {
     VALUES ('Volume Teste', '/data/test', 1000)
   `)
 
-  // Os EXERCICIOS do PIT entram na semente desde 2026-08-04, quando `pit.meta` e
+  // Os EXERCICIOS do PIT entram na semente, quando `pit.meta` e
   // `pit.demanda_extra` passaram a apontar `pit.exercicio`. Sem eles, qualquer
   // teste que cadastre meta ou demanda em 2025/2026 morre na chave estrangeira,
   // e o defeito aparece como 500 num teste que nao fala de exercicio nenhum.

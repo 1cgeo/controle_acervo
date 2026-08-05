@@ -70,7 +70,7 @@ describe('GET /pdr/:id', () => {
 
 describe('POST /pdr', () => {
   test('cria um item e responde 201', async () => {
-    // `RETURNING *` desde 2026-08-02: os dois lados do diff saem do BANCO, e o
+    // `RETURNING *`: os dois lados do diff saem do BANCO, e o
     // `ano` esta na linha porque e dele que sai o agregado (nao ha cabecalho de
     // PDR: o PDR do ano E o conjunto dos itens daquele ano).
     mockDb.conn.one.mockResolvedValueOnce({ id: 12, ...itemValido })
@@ -117,9 +117,9 @@ describe('POST /pdr', () => {
 })
 
 describe('PUT /pdr/:id', () => {
-  // O 404 saia do `rowCount` do proprio UPDATE, e o estado anterior era
-  // destruido sem nunca ser lido. Desde 2026-08-02 quem produz as duas coisas e
-  // o `lerAntes` (oneOrNone), ANTES do UPDATE.
+  // O 404 e o `dados_antes` saem os DOIS do `lerAntes` (oneOrNone), ANTES do
+  // UPDATE. Tirando o 404 do `rowCount` do proprio UPDATE, o estado anterior
+  // seria destruido sem nunca ser lido.
   test('caminho feliz: atualiza item e responde 200', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 10,

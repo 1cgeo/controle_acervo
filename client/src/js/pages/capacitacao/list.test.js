@@ -1,11 +1,12 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// Capacitacao, em DUAS telas desde 2026-08-02 (chefe): a MINISTRADA em Producao
-// (subsecao 2.6 do RPCMTec) e a RECEBIDA em Efetivo (6.2).
+// Capacitação, em DUAS telas: a MINISTRADA em Produção (subseção 2.6 do
+// RPCMTec) e a RECEBIDA em Efetivo (6.2).
 //
-// O que estes casos FIXAM: cada tela pede ao servidor SO o seu tipo, e a coluna
-// da direita e a que interessa aquele tipo. Numa tela so, com filtro, metade da
-// tabela ficava vazia em qualquer escolha.
+// O que estes casos FIXAM: cada tela pede ao servidor SÓ o seu tipo, e a coluna
+// da direita é a que interessa àquele tipo. Numa tela só, com filtro, metade da
+// tabela ficaria vazia em qualquer escolha.
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {
@@ -23,8 +24,6 @@ import {
 } from '@pages/capacitacao/list.js';
 import { getCapacitacoes } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function montar(render) {
   const container = document.createElement('div');
@@ -103,8 +102,8 @@ describe('capacitação em duas telas', () => {
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
-    // A coluna sai pelo RÓTULO, e não pela posição: a tela ganhou a coluna Ano
-    // em 2026-08-04, e contar colunas quebra o caso a cada coluna nova.
+    // A coluna sai pelo RÓTULO, e não pela posição: a tela ganhou a coluna Ano,
+    // e contar colunas quebra o caso a cada coluna nova.
     const indice = [...container.querySelectorAll('thead th')]
       .findIndex(th => th.textContent.replace(/[▲▼]/g, '').trim() === 'Período');
     const periodos = [...container.querySelectorAll('tbody tr')]

@@ -15,10 +15,13 @@ const verifyAdmin = asyncHandler(async (req, res, next) => {
   const decoded = await validateToken(token)
 
   if (!('uuid' in decoded && decoded.uuid)) {
-    throw new AppError('Falta informação de usuário')
+    throw new AppError('Falta informação de usuário', httpCode.Unauthorized)
   }
+  // `id` junto do `administrador`, na MESMA ida ao banco, para `req.usuarioId`
+  // sair daqui e não do token. Os irmãos verifyPerfil e verifyGerente já fazem
+  // assim: o token diz quem a pessoa é, o banco diz o resto.
   const result = await db.conn.oneOrNone(
-    'SELECT administrador FROM dgeo.usuario WHERE uuid = $<usuarioUuid> and ativo IS TRUE',
+    'SELECT id, administrador FROM dgeo.usuario WHERE uuid = $<usuarioUuid> and ativo IS TRUE',
     { usuarioUuid: decoded.uuid }
   )
   if (!result) {
@@ -34,7 +37,7 @@ const verifyAdmin = asyncHandler(async (req, res, next) => {
     )
   }
   req.usuarioUuid = decoded.uuid
-  req.usuarioId = decoded.id
+  req.usuarioId = result.id
   req.administrador = true
 
   // Origem, rota e lote da rastreabilidade.

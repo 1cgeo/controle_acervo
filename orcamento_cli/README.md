@@ -8,15 +8,13 @@ Irmão do `acervo_cli` e do `mapoteca_cli`: mesmo servidor, mesmo login, mesma s
 node orcamento_cli/orcamento.js --ajuda
 ```
 
-## Fusão de 2026-07-27
+## O prefixo `/orcamento`
 
-O SCO foi absorvido pelo SCA como o módulo `orcamento`, code 3. Três coisas mudaram para quem usava o CLI antigo:
+O orçamento é o módulo `orcamento` do SCA, code 3. As rotas do módulo levam o prefixo `/api/orcamento/`; as de plataforma (`/api/login` e `/api/metas`, as metas do PIT) não levam.
 
-- O binário era `sco.js` (comando `sco`) e agora é `orcamento.js` (comando `orcamento`).
-- As rotas do módulo levam o prefixo `/api/orcamento/`. As exceções são `/api/login` e `/api/usuarios`, que são rotas de plataforma.
-- As variáveis de ambiente eram `ORCAMENTO_*` e agora são `SCA_*`. O `cliente` do login era `c_orcamentario` e agora é `sca_web`.
+O prefixo não é cosmético: `/arquivo` e `/relatorio` existem também no acervo, e uma chamada sem prefixo acerta a rota errada em vez de dar 404. Ele mora em `lib/recursos.js`, e só ali.
 
-O prefixo não é cosmético: `/arquivo` e `/relatorio` existem também no acervo, e uma chamada sem prefixo acerta a rota errada em vez de dar 404.
+Para cadastrar usuário, senha e perfil, o CLI é o `efetivo_cli` (`/api/usuarios`), não este.
 
 ## Por que existe
 
@@ -42,14 +40,18 @@ node orcamento_cli/orcamento.js schema nc   # campos, tipos, regras da NC
 # dia a dia
 orcamento saldo                       # quanto falta empenhar e liquidar (total do PDR)
 orcamento saldo --nd 339040           # o mesmo, por natureza de despesa
-# O RPCMTec saiu daqui em 2026-08-01: é gerado inteiro (acervo, mapoteca e
-# orçamento), fora dos módulos, por `acervo rpcmtec --ano 2026 --mes 7 --docx`.
+# O RPCMTec é gerado inteiro (acervo, mapoteca e orçamento), fora dos módulos,
+# por `acervo rpcmtec --ano 2026 --mes 7 --docx`.
 
 # CRUD
 orcamento nc listar --ano 2026 --campos numero,cod_nd,valor_nc
 orcamento nc criar --data '{...}' --dry-run       # valida offline, não envia
 orcamento nc lancar --data '{...}' --anexo nota.pdf   # cria e anexa numa invocação
 orcamento nc deletar --id 9 --confirmar 9
+
+# anexos
+orcamento arquivo listar --nota_credito_id 42     # os anexos de uma NC
+orcamento arquivo baixar --id 11 --para nc123.pdf # baixa e imprime o sha256
 
 # sessão
 orcamento status    # o SCA está no ar? há token em cache?
@@ -75,9 +77,9 @@ O módulo não é admin-only. O acesso é por perfil no módulo `orcamento`: con
 
 ## O que o CLI protege
 
-- **Validação local**: o corpo é conferido contra o Joi antes de sair da máquina. Corpo torto falha em milissegundos, com o contrato do campo errado impresso junto, em vez de custar um round-trip e um 400 genérico.
-- **Campo descartado em silêncio**: campo descartado por regra condicional (como o `pdr_item_id` de uma NC Extra-PDR) some sem erro. O CLI avisa. É a diferença entre "gravei" e "achei que gravei".
-- **Exclusão irreversível**: `deletar` exige `--confirmar` com o identificador repetido.
+- **Validação local**: o corpo é conferido contra o Joi antes de sair da máquina, com as **mesmas opções do middleware do servidor**. As rotas do orçamento recebem o `schemaValidation` ESTRITO, então chave desconhecida no corpo é **400**, e não descarte calado. Corpo torto falha em milissegundos, com o contrato do campo errado impresso junto, em vez de custar um round-trip. Divergir dessas opções produz o pior sintoma possível: o `--dry-run` aprova e o envio real recusa, ou o inverso.
+- **Campo descartado em silêncio**: o schema descarta por `.strip()` o campo que não se aplica àquele caso, como o `pdr_item_id` de uma NC Extra-PDR. Ele existe, é legítimo mandá-lo, e mesmo assim não grava. O CLI avisa. É a diferença entre "gravei" e "achei que gravei".
+- **Exclusão irreversível**: `deletar` exige `--confirmar` com o identificador repetido. O `--dry-run` não escreve e por isso **não** exige `--confirmar`: é ele que mostra o que a confirmação autorizaria.
 - **Falha parcial do `lancar`**: não há transação entre criar o registro e anexar o arquivo. Se o anexo falhar, o CLI diz explicitamente para não repetir o `lancar` (duplicaria) e dá o comando de reenviar só o anexo.
 - **429**: o SCA limita 200 requisições por minuto. O CLI traduz o 429 numa mensagem que manda retomar do ponto de parada, em vez de reenviar o lote.
 
@@ -87,7 +89,7 @@ O módulo não é admin-only. O acesso é por perfil no módulo `orcamento`: con
 cd orcamento_cli && npm test
 ```
 
-Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam **contra os schemas reais do `server/`**, não contra mocks: o valor do CLI é não ter cópia do contrato, e testar com schema falso testaria justamente a cópia. Em troca, eles quebram quando o contrato do módulo muda, que é exatamente o alarme que se quer ter. Há também um teste de regressão da fusão, que reprova qualquer recurso do módulo cujo caminho perca o prefixo `/orcamento`.
+Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam **contra os schemas reais do `server/`**, não contra mocks: o valor do CLI é não ter cópia do contrato, e testar com schema falso testaria justamente a cópia. Em troca, eles quebram quando o contrato do módulo muda, que é exatamente o alarme que se quer ter. Há também um teste que reprova qualquer recurso do módulo cujo caminho perca o prefixo `/orcamento`.
 
 ## Dependências
 
@@ -107,7 +109,7 @@ lib/saida.js        TSV, tabela, JSON, --campos
 comandos/           schema, crud, relatorio (saldo), dominio, sessao
 ```
 
-O prefixo `/orcamento` mora em `lib/recursos.js`, e só ali. Os comandos derivam o caminho da registry em vez de escrevê-lo à mão, para que a próxima mudança de rota seja de uma linha.
+Os comandos derivam o caminho da registry em vez de escrevê-lo à mão, para que a próxima mudança de rota seja de uma linha.
 
 ## Replicar noutro sistema
 

@@ -13,24 +13,13 @@ const { VERSION, PORT } = require('../config')
 /**
  * O SERVIDOR ANUNCIA UM DESFECHO SÓ, e o código de saída diz a verdade.
  *
- * Em 2026-08-04 um boot registrou "Servidor HTTP do Serviço iniciado" e "A porta
- * 3015 já está em uso" com 1 ms de diferença, saiu com código 1, e mesmo assim
- * atendeu a sessão inteira. Quem automatiza deploy lê o código de saída: nessa
- * forma ele deixa de ser sinal, e os dois enganos possíveis são silenciosos.
- *
- * A causa está no desenho antigo, e não no sistema operacional. O sucesso era
- * escrito dentro do callback do `listen`, sem trava, e o handler de `error` só
- * era registrado DEPOIS de o bind já ter começado. Nada tornava os dois
- * exclusivos: bastava o servidor emitir `listening` e falhar em seguida para as
- * duas linhas saírem.
- *
- * Duas mudanças resolvem, sem depender de descobrir o gatilho no Windows:
+ * Duas regras sustentam isso, e mexer numa delas devolve o log que anunciava
+ * "iniciado" e "porta em uso" no mesmo boot:
  *
  * 1. O `error` é registrado ANTES do `listen`, com o servidor criado à mão. Com
  *    `app.listen()` isso é impossível, porque ele já inicia o bind.
  * 2. Um sinalizador deixa `anunciar` acontecer uma vez só. O primeiro desfecho
- *    ganha, e o segundo é registrado como aviso, em vez de virar uma segunda
- *    verdade contraditória no log.
+ *    ganha, e o segundo vira aviso.
  */
 const criarServidorHttps = () => {
   const fs = require('fs')

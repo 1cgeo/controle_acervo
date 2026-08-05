@@ -122,10 +122,9 @@ export const getDashboardPontoControle = () => apiGet('/ponto_controle/dashboard
 /**
  * Códigos de ponto ainda livres, por UF e tipo.
  *
- * Era o P14 do plugin, e mudou de lado em 2026-07-29 por CORRETUDE: lá a
- * resposta saía da camada da missão aberta no QGIS, que conhece só os pontos
- * daquela missão, e por isso declarava livre um código que outra missão já
- * tinha usado. Aqui a base é o acervo inteiro.
+ * A base é o ACERVO INTEIRO, e não a camada da missão aberta no QGIS: aquela
+ * conhece só os pontos da própria missão, e declararia livre um código que outra
+ * missão já usou.
  *
  * Sem `uf`, devolve o resumo por grupo. Com `uf`, o `tipo` é obrigatório: HV e
  * BASE são numerações separadas.

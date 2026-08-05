@@ -1,6 +1,7 @@
 import { el } from '@utils/dom.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
+import { mostrarErroNoGrafico } from '@components/estado-erro.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 import { mesLabel } from './utils.js';
 
@@ -82,7 +83,10 @@ export async function renderMateriaisTab(container, getAno) {
         loading: false,
       });
     } else {
+      // Grafico vazio le-se como "estoque zerado", que manda comprar papel.
+      // Falha de carga pede a acao oposta: tentar de novo.
       stockBar.update({ data: [], loading: false });
+      mostrarErroNoGrafico(stockBar, stockRes.reason, load);
     }
 
     if (consumoRes.status === 'fulfilled') {
@@ -104,6 +108,8 @@ export async function renderMateriaisTab(container, getAno) {
     } else {
       consumoLine.update({ data: [], loading: false });
       topMateriaisBar.update({ data: [], loading: false });
+      mostrarErroNoGrafico(consumoLine, consumoRes.reason, load);
+      mostrarErroNoGrafico(topMateriaisBar, consumoRes.reason, load);
     }
   }
 

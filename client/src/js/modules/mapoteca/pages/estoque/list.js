@@ -17,6 +17,7 @@ import {
   getDominioTipoLocalizacao,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarAvisoDeErro } from '../aviso-carga.js';
 
 async function getSelectOptions() {
   const [materiais, localizacoes] = await Promise.all([
@@ -107,6 +108,8 @@ export async function renderEstoqueList(container, _ctx) {
     ] : [],
   });
 
+  const aviso = criarAvisoDeErro(table, load);
+
   // -------------------------------------------------------------------------
   // Data loading
   // -------------------------------------------------------------------------
@@ -121,13 +124,21 @@ export async function renderEstoqueList(container, _ctx) {
     if (estoqueRes.status === 'fulfilled') {
       const rows = estoqueRes.value.map(r => ({ ...r, quantidade: Number(r.quantidade) }));
       table.update({ rows, loading: false });
+      aviso.ok();
     } else {
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      aviso.falhou(estoqueRes.reason?.message || 'Erro ao carregar o estoque');
       showError(estoqueRes.reason?.message || 'Erro ao carregar o estoque');
     }
 
     if (localizacoesRes.status === 'fulfilled') {
       renderCards(localizacoesRes.value);
+    } else {
+      // Os cartoes de saldo por localizacao SAEM da tela quando a busca deles
+      // falha. Deixar os da carga anterior mostraria um saldo velho ao lado de
+      // uma tabela que acabou de mudar, e ninguem veria diferenca.
+      clearChildren(cardsGrid);
+      showError(localizacoesRes.reason?.message || 'Erro ao carregar o saldo por localização');
     }
   }
 
@@ -421,7 +432,7 @@ export async function renderEstoqueList(container, _ctx) {
       ]),
     ]),
     cardsGrid,
-    table.element,
+    aviso.element,
   ]);
   container.appendChild(page);
 

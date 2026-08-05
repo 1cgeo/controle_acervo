@@ -101,11 +101,10 @@ describe('mapoteca.cliente.sigla', () => {
   })
 })
 
-// A rota era /api/relatorio/rpcmtec ate 2026-08-01, quando as duas geracoes
-// parciais do RPCMTec viraram uma so, em /api/rpcmtec (ver
-// server/src/rpcmtec/). O que este teste protege nao mudou: a coluna de
-// solicitante mostra a SIGLA da OM, porque e o nome corrente para quem le o
-// relatorio, e cai no nome de quem nao tem sigla (orgao publico, cidadao da LAI).
+// A coluna de solicitante do RPCMTec mostra a SIGLA da OM, porque e o nome
+// corrente para quem le o relatorio, e cai no NOME de quem nao tem sigla (orgao
+// publico, cidadao da LAI). A geracao mora em /api/rpcmtec (ver
+// server/src/rpcmtec/).
 describe('RPCMTec: solicitante pela sigla', () => {
   // Um pedido de OM COM sigla e um de cliente SEM sigla, no mesmo mes. O
   // relatorio tem de mostrar a sigla no primeiro e o nome no segundo.
@@ -126,7 +125,7 @@ describe('RPCMTec: solicitante pela sigla', () => {
     await criaPedido(omId, '2026-03-10')
     await criaPedido(civilId, '2026-03-11')
 
-    // A rota /gerar saiu em 2026-08-05: o relatorio inteiro passou a ser uma
+    // A rota /gerar saiu: o relatorio inteiro passou a ser uma
     // EDICAO guardada, e as subsecoes calculadas saem do documento dela.
     const edicao = await request(app)
       .post('/api/rpcmtec')

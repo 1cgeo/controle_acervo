@@ -1,20 +1,15 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { toggleTheme, getTheme } from '@utils/theme.js';
 import { getUsername, logout } from '@store/auth-store.js';
-import { clearCache } from '@services/cache.js';
 
 /**
  * Navbar da interface unica: hamburger, titulo, tema, usuario e sair.
  *
  * A troca de modulo NAO fica aqui. Ela vive na sidebar, onde cada modulo e uma
- * seção colapsavel e o cabecalho leva para a home dele. O seletor em dropdown
- * que existia aqui foi removido em 2026-07-27, a pedido do chefe.
+ * seção colapsavel e o cabecalho leva para a home dele.
  *
- * A navbar tambem NAO tem mais area de extras do modulo. O unico extra que
- * existiu foi o seletor de ano, que saiu em 2026-08-04: o ano virou filtro de
- * cada tela. Com ele foram embora o `navbarExtras`, o slot e o `_setModulo`,
- * que so existiam para montar e desmontar esses extras. A navbar deixou de
- * depender do registro de modulos.
+ * A navbar tambem NAO tem area de extras do modulo, e por isso nao depende do
+ * registro de modulos. O ano e filtro de cada tela.
  *
  * @param {Object} options
  * @param {Function} options.onToggleSidebar
@@ -49,9 +44,8 @@ export function createNavbar({ onToggleSidebar }) {
     },
   }, [svgIcon(getTheme() === 'dark' ? ICONS.lightMode : ICONS.darkMode, 20)]);
 
-  // User dropdown. "Meu perfil" entrou em 2026-08-02, com a autenticacao vindo
-  // para dentro do SCA: e de la que a pessoa troca a PROPRIA senha, e sem esse
-  // caminho ninguem troca a senha de ninguem a nao ser o administrador.
+  // User dropdown. "Meu perfil" e o unico caminho pelo qual a pessoa troca a
+  // PROPRIA senha; sem ele, so o administrador troca senha, por reset.
   const dropdown = el('div', { className: 'navbar__dropdown hidden' }, [
     el('a', {
       className: 'navbar__dropdown-item',
@@ -61,10 +55,10 @@ export function createNavbar({ onToggleSidebar }) {
     el('button', {
       className: 'navbar__dropdown-item navbar__dropdown-item--danger',
       textContent: 'Sair',
-      onClick: () => {
-        clearCache();
-        logout();
-      },
+      // `logout()` ja apaga o cache junto com a sessao (ver clearAuth). O
+      // `clearCache()` que ficava aqui era a UNICA porta que limpava, e por isso
+      // o 401 e a tela de acesso negado deixavam dado da sessao anterior vivo.
+      onClick: () => logout(),
     }),
   ]);
 

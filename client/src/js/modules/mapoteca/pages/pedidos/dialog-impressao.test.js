@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O dialogo de REGISTRAR IMPRESSAO, compartilhado pela fila de atendimento e
 // pelo detalhe do pedido. Ele so escreve por uma rota (POST /mapoteca/impressao),
@@ -10,8 +11,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { openRegistrarImpressaoDialog } from '@modules/mapoteca/pages/pedidos/dialog-impressao.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // Item como a FILA o entrega (rota /pedido/:id/impressao): o id do item se chama
 // produto_pedido_id.
@@ -36,8 +35,14 @@ const ITEM_DO_DETALHE = {
 };
 
 const campoQuantidade = () => [...document.querySelectorAll('input[type="number"]')].pop();
+const campoData = () => [...document.querySelectorAll('input[type="date"]')].pop();
 const botao = (rotulo) => [...document.querySelectorAll('button')]
   .filter(b => b.textContent.trim() === rotulo).pop();
+
+const hojeIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 beforeEach(() => {
   svc.registrarImpressao.mockResolvedValue(null);
@@ -90,7 +95,7 @@ describe('openRegistrarImpressaoDialog', () => {
     await flush();
 
     expect(svc.registrarImpressao).toHaveBeenCalledWith([
-      { produto_pedido_id: 900, quantidade: 6, observacao: undefined },
+      { produto_pedido_id: 900, quantidade: 6, observacao: undefined, data_impressao: undefined },
     ]);
     expect(onDone).toHaveBeenCalled();
   });
@@ -105,7 +110,7 @@ describe('openRegistrarImpressaoDialog', () => {
     await flush();
 
     expect(svc.registrarImpressao).toHaveBeenCalledWith([
-      { produto_pedido_id: 900, quantidade: 6, observacao: undefined },
+      { produto_pedido_id: 900, quantidade: 6, observacao: undefined, data_impressao: undefined },
     ]);
   });
 
@@ -120,8 +125,63 @@ describe('openRegistrarImpressaoDialog', () => {
     await flush();
 
     expect(svc.registrarImpressao).toHaveBeenCalledWith([
-      { produto_pedido_id: 900, quantidade: 6, observacao: 'plotter 2, papel novo' },
+      { produto_pedido_id: 900, quantidade: 6, observacao: 'plotter 2, papel novo', data_impressao: undefined },
     ]);
+  });
+
+  // A DATA DA IMPRESSAO. O servidor sempre aceitou `data_impressao` em POST
+  // /mapoteca/impressao, e a tela nunca a oferecia: quem lancava na segunda o
+  // que imprimiu na sexta contava o papel no mes errado do RPCMTec.
+  test('o campo de data nasce em hoje e trava data futura', async () => {
+    openRegistrarImpressaoDialog(ITEM_DA_FILA, () => {});
+    await flush();
+
+    expect(campoData().value).toBe(hojeIso());
+    expect(campoData().max).toBe(hojeIso());
+  });
+
+  test('a data de HOJE nao vai no corpo', async () => {
+    // Sem o campo, o servidor grava o INSTANTE. Mandar a data de hoje jogaria
+    // toda impressao do dia para a meia-noite, e duas do mesmo dia perderiam a
+    // ordem entre si.
+    openRegistrarImpressaoDialog(ITEM_DA_FILA, () => {});
+    await flush();
+
+    botao('Registrar').click();
+    await flush();
+
+    const [[registros]] = svc.registrarImpressao.mock.calls;
+    expect(registros[0].data_impressao).toBeUndefined();
+  });
+
+  test('a data de outro dia vai no corpo', async () => {
+    openRegistrarImpressaoDialog(ITEM_DA_FILA, () => {});
+    await flush();
+
+    campoData().value = '2026-07-31';
+    botao('Registrar').click();
+    await flush();
+
+    expect(svc.registrarImpressao).toHaveBeenCalledWith([
+      {
+        produto_pedido_id: 900,
+        quantidade: 6,
+        observacao: undefined,
+        data_impressao: '2026-07-31',
+      },
+    ]);
+  });
+
+  test('data em branco barra o envio', async () => {
+    openRegistrarImpressaoDialog(ITEM_DA_FILA, () => {});
+    await flush();
+
+    campoData().value = '';
+    botao('Registrar').click();
+    await flush();
+
+    expect(svc.registrarImpressao).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Informe a data da impressão');
   });
 
   // Item ja concluido: o restante e 0, e 0 copia nao e sessao de impressao.

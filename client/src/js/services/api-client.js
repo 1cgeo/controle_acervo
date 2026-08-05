@@ -1,6 +1,37 @@
 import { getToken, clearAuth, atualizarSessao } from '@store/auth-store.js';
 
 /**
+ * Teto de espera de uma requisição de DADOS.
+ *
+ * Existe por causa da FILA de navegação (`client/src/js/router.js`): o router
+ * resolve uma rota por vez. Sem teto, um servidor pendurado prende a fila e a
+ * tela inteira para de navegar. Antes da fila ele prendia só a página que
+ * pediu, e dava para sair dela clicando no menu.
+ *
+ * 30 s é folga larga para leitura. O UPLOAD não usa este teto, e por isso a
+ * função dele não chama `buscar`: arquivo grande leva minutos, e cortar em 30 s
+ * quebraria o envio legítimo.
+ */
+const TIMEOUT_MS = 30000;
+
+/**
+ * `fetch` com prazo, e com o aborto traduzido para uma frase acionável.
+ *
+ * Sem a tradução o toast mostraria "signal is aborted without reason", que não
+ * diz nem o que houve nem o que fazer.
+ */
+async function buscar(url, options = {}) {
+  try {
+    return await fetch(url, { ...options, signal: options.signal ?? AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (erro) {
+    if (erro && (erro.name === 'TimeoutError' || erro.name === 'AbortError')) {
+      throw new Error('O servidor demorou demais para responder. Tente de novo.');
+    }
+    throw erro;
+  }
+}
+
+/**
  * All server responses follow { version, success, message, dados, error }.
  * On success the `dados` payload is returned; on failure an Error is thrown
  * with the server `message` verbatim (so toasts can show it as-is).
@@ -10,9 +41,8 @@ import { getToken, clearAuth, atualizarSessao } from '@store/auth-store.js';
  *   401 = a sessao acabou (token vencido, invalido, usuario inativo). Limpa e
  *         manda para o login.
  *   403 = a sessao esta viva e a pessoa nao tem perfil para AQUELA acao
- *         (verifyPerfil). Ate 2026-07-28 isto tambem deslogava, com a mensagem
- *         "Sessão expirada": quem clicava num botao que nao podia usar era
- *         expulso do sistema e perdia o que estava preenchendo.
+ *         (verifyPerfil). Deslogar aqui expulsa do sistema, no meio do
+ *         trabalho, quem so clicou num botao que a tela nao devia ter mostrado.
  *
  * No 403 a mensagem do servidor ja diz o que falta ("Usuário necessita do
  * perfil gerente no módulo mapoteca"), entao ela sobe para o toast como esta, e
@@ -64,7 +94,7 @@ export async function sincronizarSessao() {
 
   let response;
   try {
-    response = await fetch('/api/login/sessao', {
+    response = await buscar('/api/login/sessao', {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
@@ -140,7 +170,7 @@ async function apiRequest(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`/api${endpoint}`, options);
+  const response = await buscar(`/api${endpoint}`, options);
 
   // Sessao acabou: limpa e volta ao login. No proprio /login um 401 e so
   // credencial errada, entao segue para o tratamento comum de erro.
@@ -211,12 +241,10 @@ export function apiGetPaginado(endpoint) {
  * e o `dados` inteiro do lado -- com quantos renomearam, quantos faltam e, no
  * `detalhe`, QUAL arquivo falhou e por que.
  *
- * Lida pelo `apiPost`, essa resposta virava excecao e o `dados` era jogado fora
- * na linha seguinte. O efeito, medido em 2026-08-02: a tela de manutencao tinha
- * um ramo `if (d.falhas) { mostrarFalhasRenome(d) }` que NUNCA rodava, e o lote
- * com uma falha em quinhentos arquivos anunciava "0 renomeado(s)" (o contador
- * soma depois do `await` que lancou) sem dizer qual arquivo travou. O teste nao
- * pegava porque mockava o SERVICO, e o duble resolvia onde o real rejeitava.
+ * Lida pelo `apiPost`, essa resposta vira excecao e o `dados` e jogado fora na
+ * linha seguinte: o lote com uma falha em quinhentos arquivos anuncia
+ * "0 renomeado(s)" sem dizer qual arquivo travou. Teste que mocke o SERVICO nao
+ * pega isso, porque o duble resolve onde o real rejeita.
  *
  * A guarda de HTTP continua valendo: `!response.ok` lanca do mesmo jeito. O que
  * esta opcao tolera e so o `success: false` de uma resposta 200 com corpo.
@@ -274,6 +302,9 @@ export async function apiUpload(endpoint, formData) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // `fetch` CRU, sem o prazo do `buscar`: aqui o corpo é arquivo, e o envio
+  // legítimo leva minutos. Um teto de 30 s cortaria o upload no meio e o
+  // servidor ficaria com sessão pendente para a limpeza fechar depois.
   const response = await fetch(`/api${endpoint}`, {
     method: 'POST',
     headers,
@@ -453,7 +484,7 @@ export async function apiImagem(endpoint) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`/api${endpoint}`, { headers });
+  const response = await buscar(`/api${endpoint}`, { headers });
 
   if (response.status === 404) {
     return null;
@@ -489,7 +520,7 @@ export async function apiDownload(endpoint, fallbackFilename) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`/api${endpoint}`, { headers });
+  const response = await buscar(`/api${endpoint}`, { headers });
 
   if (response.status === 401) {
     handleSessaoExpirada();

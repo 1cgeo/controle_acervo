@@ -1,8 +1,9 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que estes testes protegem: EDITAR uma liquidacao ou um recebimento grava.
 //
-// O defeito medido em 2026-08-04: o corpo do PUT levava so os campos do
+// O defeito: o corpo do PUT levava so os campos do
 // formulario. O schema do servidor cobra nota_empenho_id no models.atualizar
 // (liquidacao_schema.js:22,33 e recebimento_schema.js:19,33), entao o PUT
 // devolvia 400 "nota_empenho_id is required" SEMPRE. O criar funcionava, porque
@@ -49,8 +50,6 @@ import {
   updateLiquidacao, updateRecebimento,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const NOTA = {
   id: 10,

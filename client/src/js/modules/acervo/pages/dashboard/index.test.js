@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
@@ -56,8 +57,7 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => {
 
 import { renderDashboard } from './index.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+import { instanciasChart } from '@components/charts/chart-stub.js';
 
 const rotulosAbas = (container) =>
   Array.from(container.querySelectorAll('.tabs > .tabs__item')).map(b => b.textContent);
@@ -135,10 +135,23 @@ describe('renderDashboard do acervo', () => {
     cleanup();
   });
 
-  test('o cleanup para o auto-refresh e limpa a aba ativa', async () => {
+  test('o cleanup para o auto-refresh e desmonta a aba ativa', async () => {
     vi.useFakeTimers();
+    const jaVivos = instanciasChart.length;
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container);
+
+    // A Visão Geral são cartões, sem gráfico. A Distribuição desenha, e é pelo
+    // gráfico dela que dá para ver se a aba ATIVA foi desmontada. Com lista
+    // vazia o cartão escreve "Sem dados" e nenhum Chart nasce: daí o dado.
+    acervoService.getProdutosTipo.mockResolvedValue([
+      { tipo_produto: 'Carta Topográfica', total: 12 },
+    ]);
+    Array.from(container.querySelectorAll('.tabs > .tabs__item'))[1].click();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const graficos = instanciasChart.slice(jaVivos);
+    expect(graficos.length).toBeGreaterThan(0);
 
     cleanup();
     const antes = acervoService.getProdutosTotal.mock.calls.length;
@@ -146,5 +159,7 @@ describe('renderDashboard do acervo', () => {
 
     expect(acervoService.invalidarDashboard).not.toHaveBeenCalled();
     expect(acervoService.getProdutosTotal.mock.calls.length).toBe(antes);
+    // A aba ativa saiu junto: os gráficos dela foram destruídos.
+    expect(graficos.every(g => g.destroyed)).toBe(true);
   });
 });

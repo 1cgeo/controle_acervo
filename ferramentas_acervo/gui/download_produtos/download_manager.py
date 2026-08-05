@@ -10,7 +10,7 @@ from ...core.file_transfer import FileTransferThread
 # Managers cujo shutdown() expirou com threads ainda em execução são retidos
 # aqui até as threads finalizarem. Sem isso, o GC do Python destruiria um
 # QThread em execução (junto com o manager), o que aborta o QGIS inteiro
-# ("QThread: Destroyed while thread is still running" — crash nativo).
+# ("QThread: Destroyed while thread is still running", crash nativo).
 _orphaned_managers = set()
 
 
@@ -46,7 +46,7 @@ class DownloadManager(QObject):
         self._completed_count = 0
         # True após shutdown(): callbacks atrasados (sinais enfileirados,
         # QTimer de retentativa) não devem mais confirmar com o servidor nem
-        # emitir sinais — o diálogo dono provavelmente já foi destruído
+        # emitir sinais, porque o diálogo dono provavelmente já foi destruído
         self._shutdown = False
         # Referências fortes a TODAS as threads de transferência até que cada
         # uma termine de fato (sinal finished). Se a única referência for
@@ -55,19 +55,39 @@ class DownloadManager(QObject):
         self._active_threads = []
 
     def prepare_download(self, product_ids, file_types):
-        """Prepare download by sending product IDs and file type IDs to server."""
-        try:
-            response = self.api_client.post('acervo/prepare-download/produtos', {
-                'produtos_ids': product_ids,
-                'tipos_arquivo': file_types
-            })
+        """Reserva no servidor o download da ÚLTIMA versão dos produtos."""
+        self._preparar('acervo/prepare-download/produtos', {
+            'produtos_ids': product_ids,
+            'tipos_arquivo': file_types,
+        })
 
-            if response and 'dados' in response:
-                self.prepare_complete.emit(response['dados'])
-            else:
-                self.download_error.emit("Não foi possível preparar o download. Resposta inválida do servidor.")
+    def prepare_download_arquivos(self, arquivo_ids):
+        """Reserva no servidor o download de arquivos escolhidos um a um."""
+        self._preparar('acervo/prepare-download/arquivos', {'arquivos_ids': arquivo_ids})
+
+    def _preparar(self, rota, corpo):
+        """Chama o prepare e emite `prepare_complete` ou `download_error`.
+
+        As duas rotas de prepare devolvem a MESMA lista (arquivo_id, nome,
+        download_path, download_token, checksum, tamanho_mb), e por isso têm um
+        leitor só. Cada chamada RESERVA tokens no servidor, com validade de 24
+        horas: chamar sem necessidade enche a tabela de download pendente.
+        """
+        try:
+            resposta = self.api_client.post(rota, corpo)
         except Exception as e:
-            self.download_error.emit(f"Erro ao preparar o download: {str(e)}")
+            self.download_error.emit(f"Erro ao preparar o download: {e}")
+            return
+
+        if resposta and 'dados' in resposta:
+            self.prepare_complete.emit(resposta['dados'])
+            return
+
+        # O api_client já mostrou a causa do 4xx com a mensagem do servidor.
+        self.download_error.emit(
+            "O servidor não preparou o download. Confira se os produtos ainda existem "
+            "e se os arquivos escolhidos estão marcados como carregados."
+        )
 
     def start_download(self, file_infos, destination_dir):
         """Start downloading files sequentially to the specified destination directory."""
@@ -115,8 +135,8 @@ class DownloadManager(QObject):
             return
 
         # Descartar entradas sem caminho de origem (ex: registro sem volume no
-        # servidor) sem iniciar thread — laço (e não recursão) para não estourar
-        # a pilha se houver muitas entradas inválidas
+        # servidor) sem iniciar thread. O laço (e não recursão) evita estourar
+        # a pilha quando há muitas entradas inválidas.
         while self._pending_files and not self._pending_files[0].get('download_path'):
             bad_info = self._pending_files.pop(0)
             self.download_results.append({
@@ -171,7 +191,7 @@ class DownloadManager(QObject):
         """Libera as threads de transferência que já finalizaram.
 
         Executa na thread principal (conexão enfileirada do sinal finished).
-        Só remove a referência depois que isFinished() é verdadeiro — destruir
+        Só remove a referência depois que isFinished() é verdadeiro. Destruir
         um QThread ainda em execução aborta o processo do QGIS.
         """
         for thread in list(self._active_threads):
@@ -318,8 +338,8 @@ class DownloadManager(QObject):
             if thread.isRunning():
                 thread.cancel()
             # A referência da thread permanece em _active_threads até finished:
-            # descartá-la aqui (como era feito) permitia que o GC destruísse o
-            # QThread ainda em execução — crash nativo do QGIS
+            # descartá-la aqui deixaria o GC destruir um QThread em execução,
+            # o que derruba o QGIS por crash nativo.
             self.current_transfer = None
 
         # Sempre concluir: cancelar antes do primeiro arquivo terminar deixava
@@ -336,7 +356,7 @@ class DownloadManager(QObject):
 
         Deve ser chamado antes de destruir o diálogo dono deste manager (os
         diálogos são criados com WA_DeleteOnClose). Não emite sinais nem
-        confirma com o servidor — apenas garante o encerramento seguro.
+        confirma com o servidor. Apenas garante o encerramento seguro.
 
         Retorna True se todas as threads finalizaram dentro do tempo limite.
         Caso contrário o manager é retido em _orphaned_managers (impedindo o

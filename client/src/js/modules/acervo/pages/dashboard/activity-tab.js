@@ -5,7 +5,7 @@ import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
 import { formatDateTime, formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
-import { mostrarErro } from '@components/estado-erro.js';
+import { mostrarErro, mostrarErroNoGrafico } from '@components/estado-erro.js';
 
 const DIAS_DA_SERIE = 30;
 
@@ -32,6 +32,11 @@ function tabelaTab({ columns, getData, mapData = null, emptyMessage = 'Sem dados
       try {
         const dados = await getData();
         if (disposed) return;
+        // `mostrarErro` TIROU a tabela do container na falha anterior, e o
+        // auto-refresh de 60 s chama esta mesma funcao. Sem devolve-la, a carga
+        // que deu certo pintaria um no fora do DOM: a caixa de erro ficaria na
+        // tela para sempre, e so o clique manual em "Tentar de novo" a tiraria.
+        if (!content.contains(tabela.element)) content.replaceChildren(tabela.element);
         const linhas = Array.isArray(dados) ? dados : [];
         tabela.update({ rows: mapData ? linhas.map(mapData) : linhas, loading: false });
       } catch (erro) {
@@ -195,9 +200,14 @@ export async function renderActivityTab(container) {
                 })),
                 loading: false,
               });
-            } catch {
+            } catch (erro) {
               if (fechada) return;
+              // Estado de ERRO, e não pizza vazia. Zerar a série faz o card
+              // dizer "Sem dados disponíveis", que é a frase do acervo sem
+              // arquivo: falha da API se leria como situação sem registro.
+              // "Não houve" e "não consegui saber" pedem ações opostas.
               grafico.update({ data: [], loading: false });
+              mostrarErroNoGrafico(grafico, erro, load);
             }
           };
 
@@ -233,10 +243,27 @@ export async function renderActivityTab(container) {
     ]);
     if (disposed) return;
 
+    // Falha vira ESTADO DE ERRO, e nao trinta dias de zero.
+    //
+    // A serie nasce preenchida com zero para o dia sem movimento aparecer no
+    // eixo. Com o endpoint fora do ar, esse mesmo zero deixava de ser "nada
+    // aconteceu neste dia" e passava a afirmar "nada aconteceu no mes": nem
+    // parecia vazio, nem parecia erro. E o modo de falhar mais caro do painel,
+    // porque a barra chata e uma resposta, e errada.
+    //
+    // Basta UMA das duas cair. As duas series dividem o mesmo grafico, e a que
+    // falhou sairia como uma linha reta no chao ao lado da que veio certa.
+    const falha = [arquivos, downloads].find(r => r.status === 'rejected');
+    if (falha) {
+      graficoDiario.update({ data: [], loading: false });
+      mostrarErroNoGrafico(graficoDiario, falha.reason, loadDiario);
+      return;
+    }
+
     const serie = serieVazia();
 
     const preencher = (resultado, campo) => {
-      if (resultado.status !== 'fulfilled' || !Array.isArray(resultado.value)) return;
+      if (!Array.isArray(resultado.value)) return;
       for (const item of resultado.value) {
         const chave = item.dia ? String(item.dia).split('T')[0] : null;
         if (chave && serie[chave]) serie[chave][campo] = Number(item.quantidade);

@@ -11,7 +11,7 @@ import {
   createPedido,
   createProdutoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
-import { formatDate } from '@utils/format.js';
+import { formatBoolean, formatDate } from '@utils/format.js';
 import { showSuccess, showError, showWarning } from '@utils/toast.js';
 import {
   createPedidoFormFields,
@@ -40,7 +40,7 @@ function buildItensSummaryTable(itens) {
   if (!itens.length) {
     return el('div', {
       className: 'data-table__empty',
-      textContent: 'Nenhum produto adicionado — o pedido será criado sem itens.',
+      textContent: 'Nenhum produto adicionado. O pedido será criado sem itens.',
     });
   }
 
@@ -82,7 +82,7 @@ function buildFalhasTable(falhas) {
 }
 
 /**
- * Novo pedido — 4-step wizard (#/pedidos/novo): básico, adicional, produtos
+ * Novo pedido, 4-step wizard (#/pedidos/novo): básico, adicional, produtos
  * (catalog search) and confirmação (createPedido, then one createProdutoPedido
  * per item, with a progress counter and a retry of the failed items only).
  * @param {HTMLElement} container
@@ -133,7 +133,7 @@ export async function renderPedidoWizard(container, _ctx) {
   const itens = []; // each: { payload, display }
 
   // ---------------------------------------------------------------------------
-  // Step 1 — Básico (with the LAI shortcut, RN06)
+  // Step 1, Básico (with the LAI shortcut, RN06)
   // ---------------------------------------------------------------------------
   // Escolha inicial: Militar ou Civil. Define os clientes ofertados e quais
   // campos aparecem (civil = LAI/órgão/empresa/pessoa, com canal/município/nº
@@ -174,9 +174,9 @@ export async function renderPedidoWizard(container, _ctx) {
   ]);
 
   // ---------------------------------------------------------------------------
-  // Step 2 — Adicional
+  // Step 2, Adicional
   // ---------------------------------------------------------------------------
-  // Seção civil (canal/município/nº imagens) — visível só no modo Civil.
+  // Seção civil (canal/município/nº imagens), visível só no modo Civil.
   const civilSection = el('div', { className: 'hidden' }, [
     el('div', {
       className: 'detail-card__title',
@@ -187,10 +187,9 @@ export async function renderPedidoWizard(container, _ctx) {
   ]);
 
   // A etapa tinha 14 campos em fila, e o operador atravessava todos em todo
-  // pedido. Medido na producao em 2026-08-04, sobre 164 pedidos: endereco de
-  // entrega preenchido em 3, previsto no PIT em 16, meta do PIT em 16,
-  // palavras-chave em 17, localizador de envio em 28. O motivo do cancelamento
-  // tem 0, e isso e NORMAL: nao ha pedido cancelado. Os frequentes ficam a
+  // pedido, e a maioria deles fica vazia: endereco de entrega, previsto no PIT,
+  // meta do PIT, palavras-chave e localizador de envio sao a excecao, e o motivo
+  // do cancelamento so existe em pedido cancelado. Os frequentes ficam a
   // vista (demandante 157, omds 123, observacao interna 106, observacao 82,
   // forma de entrega 89, ponto de contato 80).
   //
@@ -231,7 +230,7 @@ export async function renderPedidoWizard(container, _ctx) {
   }
 
   // ---------------------------------------------------------------------------
-  // Step 3 — Produtos
+  // Step 3, Produtos
   // ---------------------------------------------------------------------------
   const itensTable = createDataTable({
     columns: [
@@ -326,7 +325,7 @@ export async function renderPedidoWizard(container, _ctx) {
   ]);
 
   // ---------------------------------------------------------------------------
-  // Step 4 — Confirmação
+  // Step 4, Confirmação
   // ---------------------------------------------------------------------------
   const stepConfirmacao = el('div', { className: 'hidden' });
 
@@ -353,15 +352,15 @@ export async function renderPedidoWizard(container, _ctx) {
       infoRow('Ponto de contato do pedido', valores.ponto_contato),
       infoRow('Demandante', valores.demandante),
       infoRow('OM responsável (OMDS)', valores.omds),
-      infoRow('Previsto no PIT', valores.previsto_pit ? 'Sim' : 'Não'),
+      infoRow('Previsto no PIT', formatBoolean(valores.previsto_pit)),
       infoRow('Meta do PIT', rotuloMetaPit(
         (metas || []).find(m => m.id === valores.meta_pit_id)
       ) || '-'),
       infoRow('Endereço de entrega', valores.endereco_entrega),
       infoRow('Palavras-chave', valores.palavras_chave.length ? valores.palavras_chave.join(', ') : '-'),
       infoRow('Operação', valores.operacao),
-      // A forma de entrega e do pedido desde 2026-07-30, e nao mais do item.
-      // Ela tem de aparecer na revisao final, senao o usuario confirma sem ver
+      // A forma de entrega e do PEDIDO, e nao do item. Ela tem de aparecer na
+      // revisao final, senao o usuario confirma sem ver
       // como o material vai sair.
       infoRow('Forma de entrega',
         (formasEntrega.find(f => f.code === valores.forma_entrega_id) || {}).nome),

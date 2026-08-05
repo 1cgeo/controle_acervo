@@ -50,7 +50,7 @@ const ESCALAS_PADRAO = [
  * Classificação (segue a aba Mil): mídia Digital tem coluna própria; itens
  * impressos Topo/Orto fora das escalas padrão contam em "outros_produtos".
  * Difere de getEntregasPorMes (dashboard_ctrl), que classifica só por tipo de
- * produto — como a tabela-resumo mensal da aba Detalhado.
+ * produto, como a tabela-resumo mensal da aba Detalhado.
  */
 controller.getRelatorioPedidosMil = async (ano) => {
   return db.conn.any(
@@ -139,14 +139,10 @@ controller.getRelatorioPedidosMil = async (ano) => {
  * mesma aba META4_DETALHADA do RTM.
  *
  * O `mes` é OPCIONAL e ACUMULA: com mes = 3 saem os itens de janeiro, fevereiro
- * e março; sem mes, o ano inteiro. É o que o RTM exige (chefe, 2026-08-02) --
- * ele sobe para a DSG todo mês com o acumulado do exercício até ali, e antes
- * desta data o botão entregava sempre o ano inteiro, então trocar o mês na tela
- * do RPCMTec dava o mesmo arquivo.
+ * e março; sem mes, o ano inteiro. É o que o RTM exige, porque ele sobe para a
+ * DSG todo mês com o acumulado do exercício até ali.
  *
- * O recorte é por `p.data_pedido`, que é a MESMA coluna que o filtro de ano já
- * usava: acrescentar o corte de mês numa coluna e trocar a coluna são mudanças
- * diferentes, e a segunda mudaria em silêncio o que a aba conta.
+ * O recorte é por `p.data_pedido`, a MESMA coluna do filtro de ano.
  *
  * Sem `mes`, a consulta não muda em nada -- é o caminho de
  * `GET /api/mapoteca/relatorio/impressao_detalhada_ods`, que continua anual.
@@ -165,13 +161,12 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       c.nome AS om_destino,
       p.previsto_pit,
       -- A coluna "Meta" da aba guarda o CODIGO da meta do PIT ('4.1', '4.2'), e
-      -- so vem preenchida no item coberto pelo PIT: na aba de junho de 2026 sao
-      -- 86 linhas com 4.1/4.2, exatamente as 86 com "Previsto no PIT = sim".
-      -- Desde 2026-07-31 o pedido aponta a meta por CHAVE (pit.meta), e o codigo
-      -- sai do proprio cadastro do PIT. Antes era texto digitado a mao, e antes
-      -- disso, ate 2026-07-29, esta coluna trazia p.prazo: uma DATA sob o rotulo
-      -- "Meta". Nao se deriva do material (a correlacao 4.1 sulfite / 4.2 tyvek
-      -- / 4.3 glossy valeu so em 2026).
+      -- so vem preenchida no item coberto pelo PIT.
+      --
+      -- O pedido aponta a meta por CHAVE (pit.meta), e o codigo sai do proprio
+      -- cadastro do PIT: nunca texto digitado a mao, e nunca p.prazo, que
+      -- poria uma DATA sob o rotulo "Meta". Nao se deriva do material, porque a
+      -- correlacao entre midia e meta vale num ano e o PIT e reescrito todo ano.
       COALESCE(NULLIF(mp.item, '-'), mp.numero_meta::text) AS meta,
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
@@ -188,11 +183,9 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       tm.nome AS material_previsto,
       pp.quantidade_fornecida,
       tmf.nome AS material_fornecido,
-      -- As colunas "Data da Entrega" e "Forma da Entrega" da aba saem do PEDIDO
-      -- desde 2026-07-30. O nome da chave nao muda (data_entrega,
-      -- forma_entrega): e o rotulo da aba do RTM, e trocar o nome so quebraria a
-      -- exportacao sem ganhar nada. Antes elas vinham do item, e o COALESCE dos
-      -- relatorios ja as tratava como se fossem do pedido.
+      -- As colunas "Data da Entrega" e "Forma da Entrega" da aba saem do PEDIDO,
+      -- e nao do item. O nome da chave (data_entrega, forma_entrega) e o rotulo
+      -- da aba do RTM, e trocar o nome so quebraria a exportacao.
       p.data_atendimento AS data_entrega,
       fe.nome AS forma_entrega,
       pp.observacao,
@@ -203,11 +196,20 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       p.localizador_pedido
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido p ON p.id = pp.pedido_id
-    LEFT JOIN pit.meta mp ON mp.id = p.meta_pit_id
+    -- A VIEW pit.meta_vigente, e nao a tabela pit.meta. Esta consulta lia a
+    -- tabela, e era a unica do sistema a fazer isso: mapoteca_ctrl, pdr_ctrl,
+    -- nota_credito_ctrl e pit_ctrl leem todos a view. Hoje o resultado sai
+    -- igual, porque item e numero_meta sao colunas de identidade e a view as
+    -- repassa da tabela (er/pit.sql, definicao de pit.meta_vigente).
+    --
+    -- A troca e alinhamento, e nao conserto: quem acrescentar mp.descricao,
+    -- mp.quantidade_prevista ou mp.prazo aqui receberia NULO pela tabela,
+    -- porque esses campos mudaram de casa para pit.meta_revisao. Erro que nao
+    -- da erro: da coluna vazia no RTM.
+    LEFT JOIN pit.meta_vigente mp ON mp.id = p.meta_pit_id
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
-    -- LEFT, e não INNER: decisão do chefe de 2026-07-30 é que impressão avulsa
-    -- conta na Meta 4 como qualquer outra. Um INNER aqui apagaria da aba, sem
-    -- avisar, as 200 folhas de papel quadriculado de 2026.
+    -- LEFT, e não INNER: impressão avulsa conta na Meta 4 como qualquer outra, e
+    -- um INNER aqui a apagaria da aba sem avisar.
     ${JOIN_PRODUTO_ITEM}
     JOIN mapoteca.tipo_midia tm ON tm.code = pp.tipo_midia_id
     LEFT JOIN mapoteca.tipo_midia tmf ON tmf.code = pp.tipo_midia_fornecida_id
@@ -257,7 +259,7 @@ controller.getRelatorioPedidosCiv = async (ano) => {
 
 /**
  * Relatório anual de produção temática (reproduz a aba "Mapas Temáticos").
- * Itens com producao_especifica = TRUE (RN07 — marcador de produção sob demanda).
+ * Itens com producao_especifica = TRUE (RN07, marcador de produção sob demanda).
  * Seção/militar responsável vêm de acervo.versao (orgao_produtor e
  * metadado->>'responsavel'); tamanho é a soma dos arquivos carregados da versão.
  */
@@ -270,9 +272,8 @@ controller.getRelatorioTematicos = async (ano) => {
       c.nome AS demandante,
       tp.nome AS tipo_produto,
       p.observacao AS descricao_pedido,
-      -- O dia em que o material saiu daqui, que e do PEDIDO. Era
-      -- COALESCE(pp.data_entrega, p.data_atendimento) ate 2026-07-30, quando a
-      -- coluna do item saiu.
+      -- O dia em que o material saiu daqui, que e do PEDIDO: o item nao tem data
+      -- de entrega propria, entao nao ha COALESCE.
       p.data_atendimento AS data_entrega,
       COALESCE(v.descricao, prod.descricao) AS descricao_produto,
       v.orgao_produtor AS secao_responsavel,
@@ -505,11 +506,9 @@ controller.paraAbaMeta4 = (linhas) =>
       return 0;
     })
     .map((l) => {
-      // A coluna "Observações" da aba leva o DIEx do pedido, e só ele: em
-      // branco quando não há (chefe, 2026-08-01). Ela juntava o DIEx com a
-      // observação do ITEM, e a observação do item é anotação interna de quem
-      // imprimiu -- não é o que a aba do RTM documenta. Quem precisa dela tem o
-      // CSV, que traz a observação do item na coluna própria.
+      // A coluna "Observações" da aba leva o DIEx do pedido, e só ele: em branco
+      // quando não há. A observação do ITEM é anotação interna de quem imprimiu,
+      // e não é o que a aba do RTM documenta; quem precisa dela tem o CSV.
       const diex = l.documento_solicitacao == null
         ? ""
         : String(l.documento_solicitacao).trim();

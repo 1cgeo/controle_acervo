@@ -1,11 +1,8 @@
 # Path: gui\informacao_produto\add_files_to_version_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (
-    QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, 
-    QTableWidgetItem, QHeaderView, QFileDialog
-)
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
+from ...core.dominios import SITUACAO_CARREGAMENTO_NAO_CARREGADO
 from ...core.upload_flow import UploadFlowMixin, calcular_checksum
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -98,7 +95,7 @@ class AddFilesToVersionDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             "path": file_path,
             "checksum": checksum,
             "metadado": {},
-            "situacao_carregamento_id": 1,  # Não carregado por padrão
+            "situacao_carregamento_id": SITUACAO_CARREGAMENTO_NAO_CARREGADO,
             "descricao": self.descriptionTextEdit.toPlainText(),
             "crs_original": self.crsLineEdit.text()
         }

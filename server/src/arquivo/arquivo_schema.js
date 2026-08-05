@@ -2,7 +2,7 @@
 
 const Joi = require('joi')
 
-const { TIPO_ARQUIVO, TIPO_ESCALA, TIPO_VERSAO } = require('../utils/domain_constants')
+const { TIPO_ARQUIVO, TIPO_ESCALA } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -18,11 +18,12 @@ const VERSAO_HISTORICA_REGEX = /^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$/
 // RPCMTec, no cabeçalho de `produto/produto_schema.js`.
 const dataCalendario = () => Joi.date().iso().raw()
 
-const versaoSchema = Joi.alternatives().conditional('tipo_versao_id', {
-  is: TIPO_VERSAO.REGISTRO_HISTORICO,
-  then: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-  otherwise: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required()
-})
+// UM rótulo só, sem condicional por tipo de versão. Era um
+// `alternatives().conditional` cujos dois ramos eram idênticos, ou seja, um
+// desvio que não desviava nada: como o comentário acima já diz, os dois tipos
+// aceitam os dois formatos, e quem aplica as regras mais fundas (sequência,
+// ano) é o trigger `acervo.validate_version`.
+const versaoSchema = Joi.string().pattern(VERSAO_HISTORICA_REGEX).required()
 
 // Campos comuns de arquivo, espelhando os CHECKs de acervo.arquivo:
 // para Tileserver (tipo 9) nome_arquivo deve ser URL http(s) e
@@ -374,10 +375,9 @@ models.atualizarChecksum = Joi.object().keys({
 
 // Renomeia o arquivo fisico para o padrao derivado dos metadados.
 //
-// O cliente NAO manda nome nenhum: o nome sai de acervo.nome_arquivo_padrao, a
-// mesma funcao que o invariante 7a usa para auditar. Mandar o nome de fora foi o
-// que permitiu, ate 2026-07-29, que o acervo acumulasse sufixo improvisado por
-// carga (_mil, _1-esp, _st27_<hash>).
+// O cliente NAO manda nome nenhum: o nome sai de `acervo.nome_arquivo_padrao`,
+// a mesma funcao que o invariante 7a usa para auditar. Nome vindo de fora e o
+// que faz o acervo acumular sufixo improvisado por carga (_mil, _1-esp).
 //
 // `arquivo_ids` e opcional. Sem ele, a rota pega os divergentes por ordem de id,
 // ate `limite`. E para chamar em laco ate `restantes` zerar: uma passada inteira

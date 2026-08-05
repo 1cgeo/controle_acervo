@@ -4,6 +4,7 @@ import { showError, showSuccess } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import {
   listarEdicoes, getAnosEdicao, excluirEdicao,
@@ -13,19 +14,16 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
 /**
  * RPCMTec (#/rpcmtec): a lista das edicoes mensais.
  *
- * O QUE ESTA TELA VIROU EM 2026-08-05. Ate essa data ela era um GERADOR: o
- * gestor escolhia ano e mes, o servidor calculava as dezoito subsecoes que sabe
- * calcular, e saia um DOCX que alguem colava num documento mestre no Word, onde
- * preenchia as outras doze e exportava o PDF. Nada disso ficava guardado, e a
- * unica copia do relatorio era o arquivo no disco de quem o montou.
+ * ELA NAO E UM GERADOR. Gerando um DOCX para alguem colar num documento mestre
+ * no Word, nada fica guardado e a unica copia do relatorio e o arquivo no disco
+ * de quem o montou.
  *
  * Agora a unidade de trabalho e a EDICAO do mes: ela guarda o que o gestor
  * digita, congela tudo no fechamento e recebe o PDF assinado como anexo. Por
  * isso a tela abre numa LISTA -- consultar o RPCMTec de um mes passado e a
  * operacao mais comum, e ela nao existia.
  *
- * O ANO tem filtro PROPRIO, como toda tela desde 2026-08-04 (chefe). O seletor
- * de ano da navbar, que valia para um modulo inteiro, acabou.
+ * O ANO tem filtro PROPRIO, como toda tela. Nao ha seletor de ano por modulo.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -102,13 +100,15 @@ export async function renderRpcmtec(container, _ctx) {
         key: 'data_assinatura',
         label: 'Assinada em',
         sortable: true,
-        render: (linha) => formatDate(linha.data_assinatura) || '-',
+        // Sem `|| '-'`: `formatDate` já devolve '-' para o vazio e para o
+        // inválido, então o ramo nunca era alcançado.
+        render: (linha) => formatDate(linha.data_assinatura),
       },
       {
         key: 'data_fechamento',
         label: 'Fechada em',
         sortable: true,
-        render: (linha) => formatDateTime(linha.data_fechamento) || '-',
+        render: (linha) => formatDateTime(linha.data_fechamento),
       },
       {
         key: 'anexos',
@@ -135,6 +135,10 @@ export async function renderRpcmtec(container, _ctx) {
     ],
   });
 
+  // A tabela vive num nó próprio para o estado de ERRO poder tomar o lugar dela
+  // e devolvê-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [tabela.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header page__header--column' }, [
       el('h1', { className: 'page__title', textContent: 'RPCMTec' }),
@@ -152,9 +156,25 @@ export async function renderRpcmtec(container, _ctx) {
       el('div', { style: { flex: '1' } }),
       novaBtn,
     ]),
-    tabela.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma edição do RPCMTec
+   * cadastrada": a falha da API lia-se como ano sem relatório, e quem lesse isso
+   * criaria de novo a edição de um mês que já existe.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * nó: uma segunda falha guardaria o próprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(tabela.element);
+    mostrarErro(areaTabela, err, carregar);
+  }
 
   async function excluir(linha) {
     if (linha.fechada) {
@@ -209,6 +229,9 @@ export async function renderRpcmtec(container, _ctx) {
   }
 
   async function carregar() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(tabela.element)) areaTabela.replaceChildren(tabela.element);
+
     tabela.update({ loading: true });
     try {
       const linhas = await listarEdicoes(ano);
@@ -216,7 +239,8 @@ export async function renderRpcmtec(container, _ctx) {
       tabela.update({ rows: linhas || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      tabela.update({ rows: [], loading: false });
+      tabela.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar as edições do RPCMTec');
     }
   }

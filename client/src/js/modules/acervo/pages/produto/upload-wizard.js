@@ -15,10 +15,9 @@ import {
  * Assistente de carregamento: a versão REGULAR, que nasce com o arquivo.
  *
  * POR QUE ELE EXISTE. Versão Regular é a única que não se cadastra sozinha: o
- * arquivo é o que a define, e o servidor não tem rota que crie uma sem ele. Até
- * 2026-08-01 o único caminho era o plugin do QGIS, que copia os bytes para o
- * volume por SMB -- e isso exige QGIS instalado e acesso ao compartilhamento.
- * Quem não tinha os dois não catalogava nada.
+ * arquivo é o que a define, e o servidor não tem rota que crie uma sem ele. Sem
+ * esta tela, o único caminho seria o plugin do QGIS, que copia os bytes por SMB
+ * e exige QGIS instalado mais acesso ao compartilhamento.
  *
  * TRÊS MODOS, e o `modo` os separa:
  *
@@ -47,13 +46,37 @@ import {
  * O NOME NO VOLUME NÃO SAI DAQUI. Ele é derivado dos metadados pelo servidor,
  * por `acervo.nome_arquivo_padrao` -- a mesma função que o invariante `7a` usa
  * para auditar, e "auditor e escritor são a mesma regra" já estava escrito em
- * `renomearPadrao`. Enquanto o cliente nomeava, cada envio pela web criava uma
- * linha de DEFECT no `7a`: medido em 2026-08-02, um arquivo entrou como
- * `carta_ensaio` onde o padrão pedia `CT_s12_2757-1-NE_1dsg`.
+ * `renomearPadrao`. Com o cliente nomeando, cada envio pela web cria uma linha
+ * de DEFECT no `7a`.
  *
  * Também não saem daqui a extensão (vem do arquivo escolhido), o checksum nem o
  * tamanho (o servidor os mede enquanto grava). Mandá-los é 400.
  */
+
+// dominio.tipo_arquivo. Tileserver e URL de servico, e nao byte: nao ha o que
+// enviar por aqui.
+const TIPO_ARQUIVO_TILESERVER = 9;
+// dominio.tipo_arquivo: 1 = Arquivo principal, o caso da esmagadora maioria.
+const TIPO_ARQUIVO_PRINCIPAL = 1;
+// dominio.situacao_carregamento: 1 = Nao carregado. O arquivo entra no acervo, e
+// publica-lo no BDGEx e outro ato, feito depois e por outra pessoa.
+const SITUACAO_NAO_CARREGADO = 1;
+
+/**
+ * Plural de verdade, em vez de "1 arquivo(s)".
+ *
+ * Copia da funcao de mesmo nome em `busca/produto-dialog.js`, e nao um import:
+ * aquele modulo importa ESTE, e a volta fecharia um ciclo. Sao tres linhas, e o
+ * "(s)" existe para o programador nao pensar -- quem paga e quem le.
+ *
+ * @param {number} n
+ * @param {string} singular
+ * @param {string} plural_
+ */
+function plural(n, singular, plural_) {
+  const total = Number(n) || 0;
+  return `${total} ${total === 1 ? singular : plural_}`;
+}
 
 /** Nome sem extensão e extensão, a partir do arquivo escolhido. */
 export function partesDoArquivo(nomeCompleto) {
@@ -171,11 +194,8 @@ export function abrirAssistenteUpload({
         // O rótulo humano, que aparece na ficha. Não é o nome no volume.
         nome: semExtensao,
         extensao,
-        // 1 = Arquivo principal, que é o caso da esmagadora maioria.
-        tipoArquivoId: 1,
-        // 1 = Não carregado: o arquivo entra no acervo, e publicá-lo no BDGEx é
-        // outro ato, feito depois e por outra pessoa.
-        situacaoId: 1,
+        tipoArquivoId: TIPO_ARQUIVO_PRINCIPAL,
+        situacaoId: SITUACAO_NAO_CARREGADO,
       });
     }
     pintar();
@@ -199,8 +219,7 @@ export function abrirAssistenteUpload({
       label: 'Tipo de arquivo',
       value: String(item.tipoArquivoId),
       options: tiposArquivo
-        // Tileserver é URL, e não byte: não há o que enviar por aqui.
-        .filter(t => Number(t.code) !== 9)
+        .filter(t => Number(t.code) !== TIPO_ARQUIVO_TILESERVER)
         .map(t => ({ value: String(t.code), label: t.nome })),
       onChange: (v) => { item.tipoArquivoId = Number(v); },
     });
@@ -283,10 +302,11 @@ export function abrirAssistenteUpload({
       const resultado = await envio.promessa;
       if (fechado) return;
 
-      const quantos = `${resultado.arquivos.length} arquivo(s)`;
+      const total = resultado.arquivos.length;
+      const quantos = plural(total, 'arquivo', 'arquivos');
       showSuccess(modo === 'arquivos'
-        ? `${quantos} acrescentado(s) à versão ${rotulo}, no volume como `
-          + `"${resultado.nome_arquivo}"`
+        ? `${quantos} ${total === 1 ? 'acrescentado' : 'acrescentados'} à versão `
+          + `${rotulo}, no volume como "${resultado.nome_arquivo}"`
         : `Versão ${rotulo} criada com ${quantos}, no volume como `
           + `"${resultado.nome_arquivo}"`);
       if (onConcluido) onConcluido();
@@ -343,7 +363,7 @@ export function abrirAssistenteUpload({
         el('div', { className: 'envio-progresso' }, [
           el('div', { className: 'envio-progresso__topo' }, [
             el('span', {
-              textContent: `${itens.length} arquivo(s), `
+              textContent: `${plural(itens.length, 'arquivo', 'arquivos')}, `
                 + formatarBytes(itens.reduce((s, i) => s + i.arquivo.size, 0)),
             }),
             el('span', {

@@ -1,9 +1,9 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
 
-// O primeiro valor tambem e o piso que esconde a paginacao (lista menor que
-// ele cabe inteira na tela). O 100 entrou em 2026-07-27, para varrer os pedidos
-// do ano sem virar pagina.
+// O primeiro valor tambem e o piso que esconde a paginacao (lista menor que ele
+// cabe inteira na tela). O 100 existe para varrer uma lista de ano inteiro sem
+// virar pagina.
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50, 100];
 
 const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g');
@@ -228,18 +228,37 @@ export function createDataTable({
     for (const col of columns) {
       if (col.sortable) {
         const indicator = sortKey === col.key ? (sortDir === 1 ? '▲' : '▼') : '';
+
+        const ordenarPor = () => {
+          if (sortKey === col.key) {
+            sortDir = -sortDir;
+          } else {
+            sortKey = col.key;
+            sortDir = 1;
+          }
+          currentPage = 0;
+          render();
+        };
+
         cells.push(el('th', {
           className: 'data-table__th--sortable',
           'aria-sort': sortKey === col.key ? (sortDir === 1 ? 'ascending' : 'descending') : 'none',
-          onClick: () => {
-            if (sortKey === col.key) {
-              sortDir = -sortDir;
-            } else {
-              sortKey = col.key;
-              sortDir = 1;
+          // O cabeçalho que ordena é um CONTROLE, e por isso entra na ordem de
+          // tabulação e responde a Enter e a barra de espaço. Só o `onClick` num
+          // `<th>` deixava a ordenação fora do alcance de quem navega pelo
+          // teclado: a coluna anunciava `aria-sort` e não havia como acioná-la.
+          //
+          // O ouvinte fica no próprio `<th>`, e não num `<button>` dentro dele,
+          // para o clique continuar valendo na célula inteira, como já valia.
+          tabindex: '0',
+          role: 'columnheader',
+          onClick: ordenarPor,
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+              // A barra de espaço rola a página quando ninguém a consome.
+              e.preventDefault();
+              ordenarPor();
             }
-            currentPage = 0;
-            render();
           },
         }, [
           col.label,
@@ -496,6 +515,14 @@ export function createDataTable({
     // como estão, sem mexer no layout a cada gravação.
     const recarregando = isLoading && allRows.length > 0;
     wrapper.classList.toggle('data-table-wrapper--recarregando', recarregando);
+    // A recarga silenciosa não muda nada visível além de uma classe. Sem
+    // `aria-busy`, quem usa leitor de tela lê a tabela ANTIGA como se fosse a
+    // resposta pronta, e não sabe que os dados ainda estão vindo.
+    if (isLoading) {
+      wrapper.setAttribute('aria-busy', 'true');
+    } else {
+      wrapper.removeAttribute('aria-busy');
+    }
 
     clearChildren(paginationEl);
 
@@ -515,6 +542,9 @@ export function createDataTable({
       paintedRows = 0;
       tableScroll.appendChild(el('div', {
         className: 'data-table__empty',
+        // A busca filtra enquanto se digita, e a tabela some sem aviso nenhum
+        // para quem usa leitor de tela. `role="status"` faz a frase ser lida.
+        role: 'status',
         textContent: searchTerm ? 'Nenhum resultado para a busca' : emptyMessage,
       }));
       return;

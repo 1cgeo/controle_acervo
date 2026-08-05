@@ -1,15 +1,16 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // A ficha de UM militar, aberta pela linha do mapa.
 //
-// Tres defeitos medidos em 2026-08-04:
-//  - impedimento que nao cruza passagem nenhuma nao muda numero nenhum. O SQL o
-//    descarta em silencio (o `CASE WHEN p.id IS NULL THEN NULL` de
-//    efetivo_ctrl.js), e a ficha o mostrava como se ele contasse;
-//  - salvar recarregava a tela por BAIXO e deixava a ficha aberta com a lista
-//    velha, entao a correcao parecia nao ter valido;
-//  - o estado vazio afirmava "o militar rendeu 100% do tempo em que esteve", um
-//    resultado que a ficha nao conferiu.
+// Três invariantes:
+//  - impedimento que não cruza passagem nenhuma não muda número nenhum. O SQL o
+//    descarta em silêncio (o `CASE WHEN p.id IS NULL THEN NULL` de
+//    efetivo_ctrl.js), e a ficha tem de dizer isso;
+//  - salvar recarrega a ficha, e não só a tela por baixo, senão a correção
+//    parece não ter valido;
+//  - o estado vazio não afirma "o militar rendeu 100% do tempo em que esteve",
+//    resultado que a ficha não conferiu.
 
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
@@ -33,8 +34,6 @@ import { deleteImpedimento } from '@services/plataforma-service.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { saveAuth } from '@store/auth-store.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 const MILITAR = { usuario_uuid: 'u1', posto_abrev: '2º Sgt', nome_guerra: 'Beltrano' };
 
 const PASSAGEM = {
@@ -56,7 +55,10 @@ const FORA = {
 };
 
 const modalAberta = () => document.querySelector('.modal');
-const linhaDo = (descricao) => [...document.querySelectorAll('.modal__body div')]
+// A LINHA, e nao o container dela. `.modal__body div` pegava tambem o corpo da
+// secao, cujo texto comeca pelo texto da primeira linha: o teste que compara a
+// IDENTIDADE do no comparava sempre o mesmo container e passava por construcao.
+const linhaDo = (descricao) => [...document.querySelectorAll('.ficha-militar__linha')]
   .find(d => d.textContent.startsWith(descricao));
 
 describe('ficha do militar', () => {
@@ -81,7 +83,7 @@ describe('ficha do militar', () => {
       periodos: [PASSAGEM], impedimentos: [DENTRO, FORA],
     });
 
-    const marcadas = [...document.querySelectorAll('.impedimento--fora-da-passagem')];
+    const marcadas = [...document.querySelectorAll('.ficha-militar__linha--fora')];
     expect(marcadas.length).toBe(1);
     expect(marcadas[0].textContent).toContain('Curso PCE-EECN');
     expect(marcadas[0].textContent).not.toContain('Chefe do S5');
@@ -95,7 +97,7 @@ describe('ficha do militar', () => {
       periodos: [PASSAGEM], impedimentos: [DENTRO],
     });
 
-    expect(document.querySelectorAll('.impedimento--fora-da-passagem').length).toBe(0);
+    expect(document.querySelectorAll('.ficha-militar__linha--fora').length).toBe(0);
   });
 
   // 6. A ficha se atualiza sem fechar
@@ -124,6 +126,80 @@ describe('ficha do militar', () => {
     // ...e mostra a lista nova, e nao a velha.
     expect(modalAberta().textContent).not.toContain('Chefe do S5');
     expect(modalAberta().textContent).toContain('Curso PCE-EECN');
+  });
+
+  // REGRA DE OURO: salvar nao reconstroi a tela.
+  //
+  // `pintar()` fazia `innerHTML = ''` nos dois corpos, e e chamada depois de
+  // TODA gravacao e exclusao. Quem apagava o terceiro de oito impedimentos
+  // voltava ao topo da lista e perdia o foco com o no que o continha.
+  //
+  // O jsdom nao faz layout, entao `scrollTop` e sempre zero: o que estes casos
+  // medem e a CAUSA (a identidade dos nos e o foco), e nao a rolagem.
+  test('salvar nao recria a linha que nao mudou, e o foco sobrevive', async () => {
+    const onSaved = vi.fn(async () => ({
+      periodos: [PASSAGEM], impedimentos: [DENTRO],
+    }));
+
+    openMilitarDialog({
+      militar: MILITAR, ano: 2026,
+      periodos: [PASSAGEM], impedimentos: [DENTRO, FORA],
+      onSaved,
+    });
+
+    const linhaDentro = linhaDo('Chefe do S5');
+    const editarDentro = [...linhaDentro.querySelectorAll('button')]
+      .find(b => b.title === 'Editar');
+    editarDentro.focus();
+    expect(document.activeElement).toBe(editarDentro);
+
+    // Exclui o OUTRO impedimento. A linha do 'Chefe do S5' nao tem por que ser
+    // tocada.
+    const excluirFora = [...linhaDo('Curso PCE-EECN').querySelectorAll('button')]
+      .find(b => b.title === 'Excluir');
+    excluirFora.click();
+    await flush();
+    await flush();
+
+    expect(deleteImpedimento).toHaveBeenCalledWith(11);
+    // O MESMO no, e nao um igual: e a identidade que preserva rolagem e foco.
+    expect(linhaDo('Chefe do S5')).toBe(linhaDentro);
+    expect(document.activeElement).toBe(editarDentro);
+    // E o que saiu, saiu.
+    expect(linhaDo('Curso PCE-EECN')).toBeUndefined();
+  });
+
+  // CONTROLE NEGATIVO do caso acima: reaproveitar o no SEMPRE seria tao errado
+  // quanto recriar sempre, porque a linha alterada continuaria mostrando o
+  // numero velho. A que mudou tem de ser repintada, e so ela.
+  test('a linha que mudou e repintada, e a vizinha nao', async () => {
+    const DENTRO_NOVO = { ...DENTRO, percentual: 80 };
+    const onSaved = vi.fn(async () => ({
+      periodos: [PASSAGEM], impedimentos: [DENTRO_NOVO, FORA],
+    }));
+
+    openMilitarDialog({
+      militar: MILITAR, ano: 2026,
+      periodos: [PASSAGEM], impedimentos: [DENTRO, FORA],
+      onSaved,
+    });
+
+    const linhaDentro = linhaDo('Chefe do S5');
+    const linhaFora = linhaDo('Curso PCE-EECN');
+    expect(linhaDentro.textContent).toContain('50%');
+
+    // Uma exclusao de PASSAGEM dispara a mesma repintura da ficha.
+    const excluirPassagem = [...document.querySelectorAll('button')]
+      .find(b => b.title === 'Excluir');
+    excluirPassagem.click();
+    await flush();
+    await flush();
+
+    const depoisDentro = linhaDo('Chefe do S5');
+    expect(depoisDentro).not.toBe(linhaDentro);
+    expect(depoisDentro.textContent).toContain('80%');
+    // A vizinha nao mudou de conteudo, entao continua sendo o mesmo no.
+    expect(linhaDo('Curso PCE-EECN')).toBe(linhaFora);
   });
 
   // 9. Corte de texto

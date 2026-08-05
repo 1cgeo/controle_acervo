@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/admin-service.js', () => ({
   criarProjeto: vi.fn(() => Promise.resolve({})),
@@ -13,8 +14,6 @@ vi.mock('@utils/toast.js', () => ({
 
 import { openProjetoDialog } from '@modules/acervo/pages/administracao/projeto-dialog.js';
 import * as svc from '@modules/acervo/services/admin-service.js';
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 const STATUS = [{ code: 2, nome: 'Em execução' }];
 

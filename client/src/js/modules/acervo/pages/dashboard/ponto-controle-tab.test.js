@@ -70,16 +70,48 @@ describe('aba de ponto de controle do dashboard', () => {
     expect(linhas.some(l => l.includes('Concluída'))).toBe(true);
   });
 
-  test('erro do servidor não derruba a aba: os cartões dizem Erro', async () => {
+  // A aba inteira vem de UMA chamada: ou se sabe tudo, ou nao se sabe nada.
+  // Antes, a falha deixava quatro cartoes com a palavra "Erro" ao lado de duas
+  // tabelas dizendo "Nenhuma missao importada ainda" -- a frase de quem nunca
+  // importou. Endpoint fora do ar lia-se como missao nenhuma no acervo.
+  test('erro do servidor vira estado de erro, e nao tabela vazia', async () => {
     servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
     const container = document.createElement('div');
     await renderPontoControleTab(container);
 
-    expect(container.textContent).toContain('Erro');
-    // Sem linha nenhuma a tabela troca o <table> pela mensagem de vazio, mas a
-    // aba continua montada: o que nao pode e sumir do DOM.
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    // A mensagem do SERVIDOR: ela distingue "sem permissao" de "erro no banco".
+    expect(container.querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
+    // A frase do cadastro vazio NAO pode aparecer aqui.
+    expect(container.textContent).not.toContain('Nenhuma missão importada ainda.');
+    expect(container.querySelectorAll('.data-table__empty').length).toBe(0);
+  });
+
+  test('"Tentar de novo" devolve os paineis da aba', async () => {
+    servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
+    const container = document.createElement('div');
+    await renderPontoControleTab(container);
+
+    container.querySelector('.dashboard-erro .btn').click();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
     expect(container.querySelectorAll('.data-table-wrapper').length).toBe(2);
-    expect(container.querySelectorAll('.data-table__empty').length).toBe(2);
+  });
+
+  // O auto-refresh de 60 s chama a mesma carga. Sem devolver os nos ao
+  // container, a carga que desse certo pintaria elementos fora do DOM e a caixa
+  // de erro ficaria na tela para sempre.
+  test('a carga seguinte devolve os paineis sozinha, sem clique', async () => {
+    servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
+    const container = document.createElement('div');
+    const controle = await renderPontoControleTab(container);
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+
+    await controle.refresh();
+
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+    expect(container.querySelectorAll('table').length).toBeGreaterThan(0);
   });
 
   test('refresh recarrega sem remontar o DOM', async () => {

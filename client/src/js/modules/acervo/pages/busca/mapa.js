@@ -4,18 +4,18 @@ import { criarDesenhoDeArea } from '@components/mapa/desenho-area.js';
 import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 
 /**
- * Mapa da busca do acervo, sobre MapLibre GL (chefe, 2026-07-25).
+ * Mapa da busca do acervo, sobre MapLibre GL.
  *
  * O modulo isola TODO o contato com a biblioteca: a pagina fala em "mostre
  * estes produtos", "estes estao selecionados" e "me avise quando desenharem uma
  * area". Trocar de biblioteca, ou testar a pagina sem mapa nenhum, nao deveria
  * exigir mexer na busca.
  *
- * O desenho da area vive em @components/mapa/desenho-area.js desde 2026-07-29,
- * compartilhado com a tela de ponto de controle. Aqui fica so o que e do
+ * O desenho da area vive em @components/mapa/desenho-area.js, compartilhado com
+ * a tela de ponto de controle. Aqui fica so o que e do
  * ACERVO: os poligonos dos produtos, o realce e o enquadramento.
  *
- * Fundo OSM porque a rede e interna mas TEM internet (chefe, 2026-07-25). Sem
+ * Fundo OSM porque a rede e interna mas TEM internet. Sem
  * internet os poligonos continuam aparecendo: eles vem da nossa API, e o que
  * falta e so a imagem de fundo.
  */

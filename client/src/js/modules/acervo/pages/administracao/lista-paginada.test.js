@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@utils/toast.js', () => ({
   showSuccess: vi.fn(),
@@ -8,8 +9,6 @@ vi.mock('@utils/toast.js', () => ({
 
 import { montarListaPaginada } from '@modules/acervo/pages/administracao/lista-paginada.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 const COLUNAS = [
   { key: 'id', label: 'Id' },

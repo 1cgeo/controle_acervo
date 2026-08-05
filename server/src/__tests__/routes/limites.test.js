@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * Contorno do lugar filtrado (chefe, 2026-07-29).
+ * Contorno do lugar filtrado.
  *
  * A tela precisa de DUAS coisas para destacar o estado ou o município: a borda,
  * que ela pinta, e a caixa envolvente, que dá o zoom. A rota entrega as duas
@@ -111,16 +111,17 @@ describe('GET /api/limites/:tipo/:id', () => {
     // especificação (RFC 7946), que é sempre lon/lat. A malha está em 4674, que
     // difere de WGS84 por menos de um metro, então o membro só engordaria a
     // resposta com algo que o leitor pode recusar.
-    expect(geo.crs).toBeUndefined();
+    expect(geo.crs).toBeUndefined()
     expect(Array.isArray(geo.coordinates)).toBe(true)
     const primeiro = geo.type === 'Polygon'
       ? geo.coordinates[0][0]
       : geo.coordinates[0][0][0]
-    const [lon, lat] = primeiro
-    expect(lon).toBeGreaterThanOrEqual(-180)
-    expect(lon).toBeLessThanOrEqual(180)
-    expect(lat).toBeGreaterThanOrEqual(-90)
-    expect(lat).toBeLessThanOrEqual(90)
+
+    // O VERTICE EXATO do municipio semeado, e nao uma faixa. Conferir se a
+    // coordenada cabe no planeta aceita o poligono de OUTRO municipio, e aceita
+    // lon e lat trocados dentro da faixa: e justamente o defeito que o
+    // cabecalho deste arquivo teme, o mapa desenhando no lugar errado.
+    expect(primeiro).toEqual([-50, -15])
   })
 
   test('id que não existe é 404, e não uma resposta vazia com 200', async () => {

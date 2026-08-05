@@ -77,6 +77,33 @@ const gerar = (anuario = anuarioDeProva()) =>
 const conteudoDe = buffer =>
   desziparParaMapa(buffer).get('content.xml').toString('utf8')
 
+/**
+ * O CRC que o diretório central do ZIP declara para uma entrada.
+ *
+ * Percorre o diretório de trás para frente, como o `desziparParaMapa` faz, e
+ * para na entrada pedida. Existe porque o helper de leitura NÃO confere o CRC.
+ */
+const crcNoDiretorio = (buffer, alvo) => {
+  const FIM_DIRETORIO = 0x06054b50
+  let fim = -1
+  for (let i = buffer.length - 22; i >= 0; i--) {
+    if (buffer.readUInt32LE(i) === FIM_DIRETORIO) { fim = i; break }
+  }
+  expect(fim).toBeGreaterThan(-1)
+
+  const total = buffer.readUInt16LE(fim + 10)
+  let posicao = buffer.readUInt32LE(fim + 16)
+
+  for (let i = 0; i < total; i++) {
+    const tamanhoNome = buffer.readUInt16LE(posicao + 28)
+    const nome = buffer.toString('utf8', posicao + 46, posicao + 46 + tamanhoNome)
+    if (nome === alvo) return buffer.readUInt32LE(posicao + 16)
+    posicao += 46 + tamanhoNome +
+      buffer.readUInt16LE(posicao + 30) + buffer.readUInt16LE(posicao + 32)
+  }
+  throw new Error(`entrada "${alvo}" não existe no diretório central`)
+}
+
 describe('anuario_ods: a semente', () => {
   test('a semente está versionada e é um ODS de planilha', () => {
     expect(fs.existsSync(CAMINHO_SEMENTE)).toBe(true)
@@ -87,7 +114,10 @@ describe('anuario_ods: a semente', () => {
     expect(entradas.has('styles.xml')).toBe(true)
   })
 
-  test('os rótulos do controller são exatamente os da semente', () => {
+  // A geração é o que confere o casamento: rótulo que a semente não tem faz o
+  // gerador estourar, como o caso 'recusa gerar quando falta uma linha' prova.
+  // Sem aquele par, este `not.toThrow()` não valeria nada.
+  test('a geração casa todo rótulo do controller com uma linha da semente', () => {
     // Casar por rótulo é o que impede uma linha a mais na semente de deslocar a
     // matriz em silêncio, com o número da 1:50.000 indo para a 1:25.000. Mas o
     // casamento só funciona enquanto os dois lados escrevem o rótulo igual:
@@ -98,20 +128,29 @@ describe('anuario_ods: a semente', () => {
     // a semente parte alguns deles em <text:span> ("Downloads BDGEx" sai como
     // <text:span>Downloads</text:span> BDGEx), e o gerador os remonta antes de
     // comparar. Procurar o texto cru reprovaria um casamento que funciona.
-    const anuario = anuarioDeProva()
-    expect(() => gerar(anuario)).not.toThrow()
-    expect(anuarioCtrl.paraPlanilha(anuario)).toHaveLength(
-      CONVENCIONAL.length + DIGITAL.length + 2
-    )
+    expect(() => gerar(anuarioDeProva())).not.toThrow()
   })
 
-  test('os rótulos do controller são os mesmos que este teste declara', () => {
-    // Se o controller mudar um rótulo e a semente não, a geração passa a falhar
-    // -- e é este teste que diz onde. Ele compara o controller com a lista
-    // escrita aqui, que foi lida da semente à mão.
-    const anuario = anuarioDeProva()
-    expect(anuario.convencional.map(l => l.rotulo)).toEqual(CONVENCIONAL)
-    expect(anuario.digital.map(l => l.rotulo)).toEqual(DIGITAL)
+  // As duas listas do controller NÃO são exportadas, então a leitura é do
+  // FONTE. É o mesmo remédio de unit/entrega_do_rastro.test.js: varrer o código
+  // é o único jeito de comparar o que o controller declara com o que a semente
+  // traz, e é a comparação que impede um rótulo renomeado de um lado só.
+  const rotulosDeclarados = (nomeDaLista) => {
+    const fonte = fs.readFileSync(
+      require.resolve('../../mapoteca/anuario_ctrl'), 'utf8'
+    )
+    const inicio = fonte.indexOf(`const ${nomeDaLista} = [`)
+    expect(inicio).toBeGreaterThan(-1)
+    const bloco = fonte.slice(inicio, fonte.indexOf('];', inicio))
+    return [...bloco.matchAll(/rotulo:\s*"([^"]+)"/g)].map(m => m[1])
+  }
+
+  test('os rótulos do controller são os mesmos que a semente traz', () => {
+    // A lista deste arquivo foi lida da semente à mão; a do controller é a que
+    // vai para a geração. Divergindo, o Anuário sai com o mês anterior na linha
+    // que não casou, e é este caso que diz qual rótulo mudou.
+    expect(rotulosDeclarados('LINHAS_CONVENCIONAL')).toEqual(CONVENCIONAL)
+    expect(rotulosDeclarados('LINHAS_DIGITAL')).toEqual(DIGITAL)
   })
 
   test('as fórmulas da semente viram valor: Exército não é recalculado de RM+EE', () => {
@@ -206,8 +245,14 @@ describe('anuario_ods: o arquivo gerado', () => {
       l.rotulo === 'Escala 1:250 000' ? linha(l.rotulo, zeros(47)) : l)
 
     const xml = conteudoDe(gerar(anuario))
-    expect(xml).toContain('office:value="31"')
-    expect(xml).toContain('office:value="47"')
+
+    // A ordem se mede por `indexOf`, que devolve a PRIMEIRA ocorrência. Os dois
+    // valores têm de ser únicos no arquivo, senão a comparação passa a medir
+    // outra célula: 31 num estilo, 47 numa largura de coluna.
+    const ocorrencias = (valor) =>
+      (xml.match(new RegExp(`office:value="${valor}"`, 'g')) || []).length
+    expect(ocorrencias(31)).toBe(1)
+    expect(ocorrencias(47)).toBe(1)
 
     // E na ordem certa: a convencional vem antes da digital na planilha.
     expect(xml.indexOf('office:value="31"')).toBeLessThan(xml.indexOf('office:value="47"'))
@@ -226,8 +271,11 @@ describe('anuario_ods: o arquivo gerado', () => {
   })
 
   test('o arquivo gerado abre: todas as entradas descomprimem', () => {
+    const semente = desziparParaMapa(fs.readFileSync(CAMINHO_SEMENTE))
     const gerado = desziparParaMapa(gerar())
-    expect(gerado.size).toBeGreaterThan(10)
+    // O número de entradas é o da semente: o gerador reescreve uma delas e não
+    // acrescenta nem perde nenhuma.
+    expect(gerado.size).toBe(semente.size)
     // content.xml tem de continuar sendo XML bem formado o bastante para ter a
     // planilha fechada.
     const xml = gerado.get('content.xml').toString('utf8')
@@ -238,13 +286,14 @@ describe('anuario_ods: o arquivo gerado', () => {
     expect(abre).toBe(fecha)
   })
 
-  test('o content.xml gerado ainda é deflate válido dentro do ZIP', () => {
-    // A reescrita passa pelo `zipar`, que comprime com deflate cru. Um erro de
-    // CRC ou de tamanho aqui só apareceria quando alguém tentasse abrir.
+  test('o CRC gravado no ZIP bate com o content.xml reescrito', () => {
+    // O `desziparParaMapa` confere o TAMANHO e não o CRC, então um CRC errado
+    // atravessaria todos os casos acima e só apareceria no LibreOffice, como
+    // "arquivo corrompido". O `zipar` recalcula o CRC ao reescrever a entrada;
+    // é esse número que se confere aqui, contra o conteúdo de verdade.
     const buffer = gerar()
-    const entradas = desziparParaMapa(buffer)
-    const bruto = entradas.get('content.xml')
-    expect(zlib.deflateRawSync(bruto).length).toBeGreaterThan(0)
-    expect(bruto.length).toBeGreaterThan(10000)
+    const bruto = desziparParaMapa(buffer).get('content.xml')
+
+    expect(crcNoDiretorio(buffer, 'content.xml')).toBe(zlib.crc32(bruto))
   })
 })

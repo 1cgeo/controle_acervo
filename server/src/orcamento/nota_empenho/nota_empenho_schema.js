@@ -38,7 +38,7 @@ const camposBase = {
   numero: Joi.string().max(20).required(),
   ano: Joi.number().integer().strict().required(),
   // .raw() preserva 'YYYY-MM-DD' (sem Date UTC), senao grava o dia anterior em UTC-3.
-  data_empenho: Joi.date().raw().allow(null),
+  data_empenho: Joi.date().iso().raw().allow(null),
   finalidade: Joi.string().allow(null, ''),
   // forma legada (uma NC)
   nota_credito_id: Joi.number().integer().strict(),

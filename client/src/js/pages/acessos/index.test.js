@@ -1,31 +1,26 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// A aba ACESSOS de #/acessos: o historico de login, enxugado.
+// A aba ACESSOS de #/acessos, a SEGUNDA da tela, atrás do efetivo: o histórico
+// de login.
 //
-// A tela nasceu em 2026-08-02, com a fusao da autenticacao: ate ali o registro
-// de quem entrava no SCA morava no banco do Auth Server, e o painel que o lia
-// era de la. Em 2026-08-04 ela deixou de ser a tela inteira e virou a SEGUNDA
-// aba, atras do efetivo.
-//
-// O QUE MUDOU, e o que estes testes guardam:
-//   - o cartao conta PESSOA distinta, e nao linha de `dgeo.login`; com JWT de
-//     8 horas e dois clientes, a mesma pessoa contava varias vezes por dia
-//   - o cartao de conta habilitada se chama "conta", e nao "usuario": ele mede
-//     `dgeo.usuario.ativo`, que e permissao de entrar e nao gente na Divisao
-//   - a tela mostra quem NAO consegue entrar (`senha` nula)
-//   - a serie de 12 meses e o grafico "por onde se entra" sairam: os dois
-//     nasciam degenerados (dez meses em zero, e uma barra sobre dois valores)
-//   - o recorte do periodo agora e escolhido na tela
+// O que estes casos guardam:
+//   - o cartão conta PESSOA distinta, e não linha de `dgeo.login`; com JWT de
+//     8 horas e dois clientes, a mesma pessoa contaria várias vezes por dia
+//   - o cartão de conta habilitada se chama "conta", e não "usuário": ele mede
+//     `dgeo.usuario.ativo`, que é permissão de entrar e não gente na Divisão
+//   - a tela mostra quem NÃO consegue entrar (`senha` nula)
+//   - não há série de 12 meses nem gráfico "por onde se entra": os dois nascem
+//     degenerados
+//   - o recorte do período se escolhe na tela
 //   - a linha de quem entrou hoje leva ao aproveitamento daquela pessoa
-//   - falha de rota nao se escreve com o texto do vazio legitimo
+//   - falha de rota não se escreve com o texto do vazio legítimo
 
 vi.mock('@services/plataforma-service.js', () => ({
   getAcessosResumo: vi.fn(() => Promise.resolve({})),
   getAcessosLogados: vi.fn(() => Promise.resolve([])),
   getLoginsDia: vi.fn(() => Promise.resolve([])),
-  getLoginsMes: vi.fn(() => Promise.resolve([])),
   getLoginsUsuarios: vi.fn(() => Promise.resolve([])),
-  getLoginsClientes: vi.fn(() => Promise.resolve([])),
   getEfetivoDoMes: vi.fn(() => Promise.resolve([])),
   getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
   getUsuarios: vi.fn(() => Promise.resolve([])),
@@ -48,13 +43,9 @@ import {
   getAcessosResumo,
   getAcessosLogados,
   getLoginsDia,
-  getLoginsMes,
   getLoginsUsuarios,
-  getLoginsClientes,
 } from '@services/plataforma-service.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const RESUMO = {
   pessoas_hoje: 4,
@@ -63,9 +54,9 @@ const RESUMO = {
   contas_sem_senha: 3,
 };
 
-// UMA linha por pessoa, com os clientes dela ao lado. Ate 2026-08-04 era uma
-// linha por par pessoa + cliente, e quem abria a interface e o plugin no mesmo
-// dia aparecia duas vezes numa tabela que responde "quem esta no sistema".
+// UMA linha por pessoa, com os clientes dela ao lado. Uma linha por par
+// pessoa + cliente faria quem abre a interface e o plugin no mesmo dia aparecer
+// duas vezes numa tabela que responde "quem está no sistema".
 const LOGADOS = [
   {
     uuid: 'uuid-silva',
@@ -148,18 +139,38 @@ describe('aba Acessos: o cartao diz o que mede', () => {
     cleanup();
   });
 
-  // Os dois nasciam degenerados por construcao: `dgeo.login` comecou em
-  // 2026-08-02, entao dez dos doze meses eram zero; e "por onde se entra" e uma
-  // barra sobre um dominio de DOIS valores, fixado no Joi do login.
-  test('nao pede a serie de 12 meses nem o grafico de clientes', async () => {
+  // Os dois nascem degenerados por construção: `dgeo.login` é recente, então a
+  // maioria dos doze meses fica em zero; e "por onde se entra" é uma barra sobre
+  // um domínio de DOIS valores, fixado no Joi do login.
+  test('nao mostra a serie de 12 meses nem o grafico de clientes', async () => {
     const cleanup = await abrirAcessos();
 
-    expect(getLoginsMes).not.toHaveBeenCalled();
-    expect(getLoginsClientes).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain('Por onde se entra');
     expect(container.textContent).not.toContain('12 meses');
 
     cleanup();
+  });
+
+  // A DECISÃO ESTÁ NO SERVIÇO, e não só na tela.
+  //
+  // Aqui havia `expect(getLoginsMes).not.toHaveBeenCalled()`, que passava por
+  // construção: a página nem importava a função. Um teste que não pode reprovar
+  // não é teste. O servidor está removendo as duas rotas, então o que se prende
+  // agora é o CONTRATO do serviço: os embrulhos não existem mais, e quem tentar
+  // religar a pergunta descartada esbarra neste caso.
+  //
+  // `importActual` fura o mock deste arquivo de propósito: é o módulo de
+  // verdade que precisa ser medido.
+  test('o servico nao oferece mais os embrulhos das duas rotas descartadas', async () => {
+    const serviceReal = await vi.importActual('@services/plataforma-service.js');
+
+    expect(serviceReal.getLoginsMes).toBeUndefined();
+    expect(serviceReal.getLoginsClientes).toBeUndefined();
+    // CONTROLE POSITIVO: as duas que a tela USA continuam lá. Sem ele, um
+    // caminho de importação errado deixaria tudo indefinido e o caso passaria
+    // sem medir nada.
+    expect(typeof serviceReal.getLoginsDia).toBe('function');
+    expect(typeof serviceReal.getLoginsUsuarios).toBe('function');
   });
 });
 
@@ -251,7 +262,7 @@ describe('aba Acessos: falha nao e vazio', () => {
 
     const cleanup = await abrirAcessos();
 
-    // '-' se confunde com "nao ha", e ate 2026-08-04 era o que a tela escrevia.
+    // '-' se confunde com "não há", e falha de rota não é ausência de dado.
     expect(valorDoCard('Pessoas que entraram hoje')).toBe('Erro');
     expect(container.querySelectorAll('.stats-card--loading')).toHaveLength(0);
 

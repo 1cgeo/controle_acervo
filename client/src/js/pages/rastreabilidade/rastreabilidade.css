@@ -1,6 +1,6 @@
 /* Tela de Rastreabilidade (#/rastreabilidade).
  *
- * O que este CSS corrige, medido olhando a tela em 2026-08-02:
+ * O que este CSS corrige:
  *
  * 1. A barra de filtros nascia da `.filtro-barra` genérica, que é um flex de uma
  *    linha só. Com sete controles, dois deles com rótulo, o resultado era rótulo

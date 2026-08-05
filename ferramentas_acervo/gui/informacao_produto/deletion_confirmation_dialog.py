@@ -1,8 +1,7 @@
 # Path: gui\informacao_produto\deletion_confirmation_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QStyle
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QStyle
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'deletion_confirmation_dialog.ui'))

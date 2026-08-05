@@ -142,9 +142,9 @@ describe('api-client: 401 encerra a sessao, 403 nao', () => {
     expect(location.hash).toContain('from=');
   });
 
-  // 403 NAO e sessao expirada: e a pessoa sem perfil para AQUELA acao. Ate
-  // 2026-07-28 os dois casos deslogavam, e clicar num botao que a tela nao
-  // devia ter mostrado expulsava a pessoa do sistema no meio do trabalho.
+  // 403 NAO e sessao expirada: e a pessoa sem perfil para AQUELA acao. Deslogar
+  // aqui expulsa do sistema quem so clicou num botao que a tela nao devia ter
+  // mostrado.
   test('(d) 403 -> MANTEM a sessao, nao redireciona, e lanca a mensagem do servidor', async () => {
     saveAuth(
       { token: 'jwt-xyz', administrador: false, uuid: 'u-2', perfis: { orcamento: 1 } },
@@ -303,5 +303,43 @@ describe('api-client: falha parcial em rota de lote', () => {
     await expect(
       apiPostComFalhaParcial('/arquivo/renomear-padrao', {})
     ).rejects.toThrow('Erro interno');
+  });
+});
+
+// O PRAZO DA REQUISICAO, e por que ele passou a existir.
+//
+// O router virou FILA (uma navegacao por vez). Sem teto, um servidor pendurado
+// prende a fila e a tela inteira para de navegar; antes prendia so a pagina que
+// pediu. Estes casos guardam as duas metades: o sinal SAI na requisicao, e o
+// aborto vira frase que diz o que fazer.
+describe('api-client: o prazo da requisicao', () => {
+  test('toda leitura leva um AbortSignal', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({ success: true, dados: [] }),
+    });
+
+    await apiGet('/gerencia/arquivos_deletados');
+
+    const [, opcoes] = global.fetch.mock.calls[0];
+    expect(opcoes.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('estourado o prazo, a mensagem diz o que houve e o que fazer', async () => {
+    const estouro = new Error('The operation was aborted due to timeout');
+    estouro.name = 'TimeoutError';
+    global.fetch.mockRejectedValueOnce(estouro);
+
+    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow(
+      'O servidor demorou demais para responder'
+    );
+  });
+
+  // CONTROLE: falha de rede comum NAO vira a frase do prazo. Traduzir tudo
+  // esconderia o "Failed to fetch" de quem esta sem rede, que pede outra acao.
+  test('falha de rede comum sobe com a propria mensagem', async () => {
+    global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow('Failed to fetch');
   });
 });

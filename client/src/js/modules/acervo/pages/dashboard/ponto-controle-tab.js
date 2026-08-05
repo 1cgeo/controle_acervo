@@ -4,6 +4,7 @@ import { createStatsCard } from '@components/stats-card.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { chip } from '@components/status-chip.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { getDashboardPontoControle } from '@modules/acervo/services/ponto-controle-service.js';
 
 const VARIANTE_SESSAO = {
@@ -60,8 +61,8 @@ export async function renderPontoControleTab(container) {
     loading: true,
   });
 
-  // Sem o gráfico de SITUAÇÃO: desde 2026-07-29 só ponto aprovado entra no
-  // acervo, então ele seria uma pizza de uma fatia só.
+  // Sem o gráfico de SITUAÇÃO: só ponto aprovado entra no acervo, então ele seria
+  // uma pizza de uma fatia só.
   container.appendChild(barTipoArquivo);
 
   const barMes = createBarChart({
@@ -140,22 +141,33 @@ export async function renderPontoControleTab(container) {
   });
   container.appendChild(comTitulo('Últimas importações', tabelaImportacoes));
 
+  // Os paineis da aba, na ordem em que foram montados. Guardados para o estado
+  // de erro poder tira-los e devolve-los inteiros.
+  const paineis = [...container.childNodes];
+
   async function load() {
     let dados;
     try {
       dados = await getDashboardPontoControle();
-    } catch {
+    } catch (erro) {
       if (disposed) return;
-      for (const c of [cardPontos, cardMissoes, cardArquivos, cardGb]) {
-        c.update({ value: 'Erro', loading: false });
-      }
-      barTipoArquivo.update({ data: [], loading: false });
-      barMes.update({ data: [], loading: false });
-      tabelaMissoes.update({ rows: [], loading: false });
-      tabelaImportacoes.update({ rows: [], loading: false });
+      // Estado de ERRO da aba inteira, e nao quatro cartoes com a palavra "Erro"
+      // ao lado de duas tabelas dizendo "Nenhuma missao importada ainda".
+      //
+      // A aba vem de UMA chamada so, entao ou se sabe tudo ou nao se sabe nada:
+      // deixar as tabelas vazias afirmava que ninguem importou missao nenhuma, e
+      // essa e a leitura oposta da verdadeira. A mensagem do servidor entra no
+      // texto (ela distingue "sem permissao" de "erro no banco") e o botao refaz
+      // a pergunta sem obrigar a trocar de aba.
+      container.replaceChildren(estadoErro(erro, load));
       return;
     }
     if (disposed) return;
+
+    // Volta o que o estado de erro tirou. O auto-refresh de 60 s chama esta
+    // mesma funcao: sem isto, a carga que desse certo pintaria nos fora do DOM e
+    // a caixa de erro ficaria na tela para sempre.
+    if (!container.contains(cardPontos)) container.replaceChildren(...paineis);
 
     cardPontos.update({ value: formatNumber(dados.total_pontos ?? 0), loading: false });
     cardMissoes.update({ value: formatNumber(dados.total_missoes ?? 0), loading: false });

@@ -9,6 +9,8 @@ import {
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
+import { SITUACAO_PEDIDO } from '@modules/mapoteca/situacao-pedido.js';
+import { criarAvisoDeErro } from '../aviso-carga.js';
 
 /**
  * Pedidos list page (#/pedidos): table with search, status chips, printing
@@ -16,8 +18,13 @@ import { permissoes } from '@store/auth-store.js';
  *
  * Criar e excluir pedido sao gerente no servidor, entao quem tem consulta ou
  * operador ve a lista e o detalhe, e nada mais.
+ *
+ * A tela aceita `?filtro=<id>` na URL, com um dos ids de FILTROS. E por ele que
+ * a fila de atendimento manda quem clicou em "Ver na lista de pedidos" cair
+ * direto no recorte certo, em vez de chegar em "Todos" e ter de achar o botao.
+ * Valor desconhecido cai em "Todos", que e o que a tela ja mostrava.
  * @param {HTMLElement} container
- * @param {{params:Object, query:URLSearchParams}} _ctx
+ * @param {{params:Object, query:URLSearchParams}} ctx
  * @returns {Function} cleanup
  */
 // Militar e OM EB, OM Aeronautica e OM Marinha (tipo_cliente 1 a 3). Civil e o
@@ -25,23 +32,18 @@ import { permissoes } from '@store/auth-store.js';
 // fisica e LAI. O mesmo corte que o dashboard usa para "pedido militar".
 const TIPOS_MILITARES = [1, 2, 3];
 
-// Aguardando producao (situacao 7) saiu da fila de atendimento em 2026-07-30:
-// o pedido espera carta que ainda nao existe. Fora da fila, esses pedidos so
-// aparecem AQUI. Sem um filtro proprio eles viram esquecimento quando a
-// producao terminar, porque ninguem lembra de procurar linha a linha.
-const SITUACAO_AGUARDANDO_PRODUCAO = 7;
-
-// As duas situacoes que SAO o trabalho de atendimento, do dominio
-// mapoteca.situacao_pedido (codigos copiados do DDL, er/mapoteca.sql).
+// As situacoes vem de @modules/mapoteca/situacao-pedido.js, que copia os codigos
+// do DDL (er/mapoteca.sql). Antes elas eram tres numeros soltos aqui.
+//
+// Aguardando producao (7) fica fora da fila de atendimento: o pedido espera
+// carta que ainda nao existe. Fora da fila, esses pedidos so aparecem AQUI. Sem
+// um filtro proprio eles viram esquecimento quando a producao terminar, porque
+// ninguem lembra de procurar linha a linha.
 //
 // Militar e Civil sao o corte do DASHBOARD, e nao o de quem atende. Sem estes
 // dois filtros nao havia como chegar aos 25 pedidos em andamento nem ao unico
-// pedido Remetido (medidos na producao em 2026-08-04). O Remetido depende de
-// alguem marca-lo Concluido justamente aqui, e uma linha em 17 paginas de 10
-// nao e encontrada por quem nao a procura.
-const SITUACAO_EM_ANDAMENTO = 3;
-const SITUACAO_REMETIDO = 4;
-
+// pedido Remetido. O Remetido depende de alguem marca-lo Concluido justamente
+// aqui, e uma linha em 17 paginas de 10 nao e encontrada por quem nao a procura.
 const FILTROS = [
   { id: 'todos', label: 'Todos', casa: () => true },
   { id: 'militar', label: 'Militar', casa: (p) => TIPOS_MILITARES.includes(Number(p.tipo_cliente_id)) },
@@ -49,30 +51,31 @@ const FILTROS = [
   {
     id: 'em_andamento',
     label: 'Em andamento',
-    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_EM_ANDAMENTO,
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_PEDIDO.EM_ANDAMENTO,
   },
   {
     id: 'remetido',
     label: 'Remetido',
-    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_REMETIDO,
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_PEDIDO.REMETIDO,
   },
   {
     id: 'aguardando_producao',
     label: 'Aguardando produção',
-    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_AGUARDANDO_PRODUCAO,
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_PEDIDO.AGUARDANDO_PRODUCAO,
   },
 ];
 
-export async function renderPedidosList(container, _ctx) {
+export async function renderPedidosList(container, ctx) {
   let disposed = false;
   let todosPedidos = [];
-  let filtroAtual = 'todos';
+  const filtroPedido = ctx && ctx.query ? ctx.query.get('filtro') : null;
+  let filtroAtual = FILTROS.some(f => f.id === filtroPedido) ? filtroPedido : 'todos';
   // O ano da ultima carga, para o contador dizer de que ano e a contagem.
   let ano = null;
   const pode = permissoes('mapoteca');
 
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). Sem "+ Outro ano": aqui o ano so filtra o pedido que ja
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Sem "+ Outro
+  // ano": aqui o ano so filtra o pedido que ja
   // existe, e um ano sem pedido nenhum seria uma lista em branco.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnosMapoteca,
@@ -97,11 +100,16 @@ export async function renderPedidosList(container, _ctx) {
       if (disposed) return;
       todosPedidos = pedidos;
       aplicarFiltro();
+      aviso.ok();
     } catch (err) {
       if (disposed) return;
       todosPedidos = [];
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
       contador.textContent = '';
+      // A tabela SAI de vista. Deixa-la diria "Nenhum pedido neste ano. Troque
+      // o ano no filtro", que manda trocar o ano quando o problema foi a
+      // resposta que nao veio.
+      aviso.falhou(err.message || 'Erro ao carregar os pedidos');
       showError(err.message || 'Erro ao carregar os pedidos');
     }
   }
@@ -174,7 +182,7 @@ export async function renderPedidosList(container, _ctx) {
         // lista sempre traz.
         //
         // So a DATA, sem o autor: a migracao gravou um unico login em 164 de
-        // 164 pedidos (medido na producao em 2026-08-04), entao `usuario_criacao_nome`
+        // 164 pedidos, entao `usuario_criacao_nome`
         // chega na resposta e fica de fora de proposito, e nao por esquecimento.
         render: (row) => formatDate(row.data_atualizacao || row.data_criacao),
         sortValue: (row) => row.data_atualizacao || row.data_criacao || null,
@@ -219,13 +227,14 @@ export async function renderPedidosList(container, _ctx) {
     ],
   });
 
+  const aviso = criarAvisoDeErro(table, load);
+
   container.appendChild(el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Pedidos' }),
       el('div', { className: 'page__actions' }, [
-        // A planilha do RTM saiu daqui em 2026-08-02 (chefe). Ela morava nesta
-        // tela porque "a planilha sai dos pedidos"; agora ela sai da tela do
-        // RPCMTec, junto do Anuario e do DOCX, que e onde se monta o envio
+        // A planilha do RTM NAO sai daqui: ela sai da tela do
+        // RPCMTec, junto do Anuario, que e onde se monta o envio
         // mensal para a DSG -- e la ela passou a respeitar o MES escolhido, o
         // que aqui nao tinha como acontecer (esta tela so tem ano).
         ...(pode.gerente ? [
@@ -244,7 +253,7 @@ export async function renderPedidosList(container, _ctx) {
       el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar os pedidos' }, botoesFiltro),
       contador,
     ]),
-    table.element,
+    aviso.element,
   ]));
 
   await load();

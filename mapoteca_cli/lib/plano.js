@@ -48,10 +48,10 @@ function ler (caminho) {
 /**
  * Agrupa itens que colapsam no MESMO MI (ou no mesmo uuid_versao).
  *
- * Regra do dominio, registrada pelo chefe em 2026-07-24: duas linhas do
- * documento com o mesmo MI sao UM item, com a quantidade de UMA linha, nunca a
- * soma. A duplicata e erro de copia do solicitante, e o erro caro esta do lado
- * do gasto (imprimir o dobro), nao do lado da falta.
+ * Regra do dominio: duas linhas do documento com o mesmo MI sao UM item, com a
+ * quantidade de UMA linha, nunca a soma. A duplicata e erro de copia do
+ * solicitante, e o erro caro esta do lado do gasto (imprimir o dobro), nao do
+ * lado da falta.
  *
  * O CLI nao soma e nao apaga em silencio: ele funde, mantem a MAIOR quantidade
  * pedida entre as linhas repetidas e devolve o aviso para o agente conferir.
@@ -114,10 +114,10 @@ function partirItem (item) {
  * O caminho relativo resolve contra o PLANO, e nao contra o diretorio corrente.
  * O plano e um artefato revisavel que anda junto com os anexos (o DIEx e os
  * ofícios ficam na mesma pasta), entao "Oficio_1828.pdf" ao lado dele e o que
- * quem escreve o plano espera. Resolver contra o CWD reprovava um plano correto
- * so porque o comando foi chamado de outra pasta.
+ * quem escreve o plano espera. Resolver contra o diretorio corrente reprovaria
+ * um plano correto so porque o comando foi chamado de outra pasta.
  *
- * Caminho ABSOLUTO passa intacto, e sem `baseDir` o comportamento e o antigo.
+ * Caminho ABSOLUTO passa intacto; sem `baseDir`, o relativo resolve como veio.
  */
 function conferirAnexo (anexo, baseDir = null) {
   const erros = []

@@ -80,7 +80,7 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
         vinculos, invalidas = [], []
         total = 0
 
-        # Deduplicação no cliente, pela tupla EXATA -- que é o que a
+        # Deduplicação no cliente, pela tupla EXATA, que é o que a
         # `unique_versao_relacionamento` cobre: (versao_id_1, versao_id_2,
         # tipo). Uma linha repetida faria a transação INTEIRA falhar no
         # servidor, e o lote de 300 vínculos morreria por causa de uma.
@@ -89,8 +89,8 @@ class BulkCreateVersionRelationshipsDialog(QDialog, FORM_CLASS):
         # (A, B) e (B, A) são linhas diferentes, e as duas entram. Descartar
         # seria decidir por conta própria jogar fora um dado que o servidor
         # aceitaria. Mas a leitura casa por `versao_id_1 = X OR versao_id_2 = X`,
-        # então o vínculo apareceria DUAS vezes na ficha do produto -- por isso
-        # o aviso.
+        # então o vínculo apareceria DUAS vezes na ficha do produto, e por isso
+        # existe o aviso.
         vistos = set()
         invertidos = []
         repetidos = 0

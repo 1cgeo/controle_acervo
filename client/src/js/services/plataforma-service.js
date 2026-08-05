@@ -10,9 +10,8 @@ import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './ap
 
 // ---- Usuarios (administrador global) ----
 //
-// Em 2026-08-02 a autenticacao veio para dentro do SCA, e com ela o cadastro:
-// `criarUsuario` e `excluirUsuario` substituem o par importar/sincronizar, que
-// existia enquanto `dgeo.usuario` era um espelho do Auth Server.
+// O SCA e dono da identidade: `criarUsuario` e `excluirUsuario` cadastram de
+// verdade, e nao espelham nenhum servico externo.
 export const getUsuarios = () => apiGet('/usuarios');
 export const criarUsuario = (body) => apiPost('/usuarios', body);
 export const atualizarUsuario = (uuid, body) => apiPut(`/usuarios/${uuid}`, body);
@@ -35,9 +34,7 @@ export const getPostosGrad = () => apiGet('/usuarios/dominio/tipo_posto_grad');
 
 // ---- Acessos (administrador global) ----
 //
-// O historico de login, que nasceu com a fusao da autenticacao em 2026-08-02:
-// antes dela o registro de quem entrava ficava no banco do Auth Server, junto
-// do catalogo de aplicacoes que nao veio.
+// O historico de quem entrou no sistema.
 //
 // `total` e o RECORTE do periodo, e o default mora so no Joi do servidor
 // (`acessos_schema.js`). Por isso estas funcoes so mandam o parametro quando a
@@ -54,47 +51,66 @@ const comTotal = (caminho, total, extra = '') => {
 export const getAcessosResumo = () => apiGet('/acessos/resumo');
 export const getAcessosLogados = () => apiGet('/acessos/logados');
 export const getLoginsDia = (total) => comTotal('/acessos/logins/dia', total);
-export const getLoginsMes = (total) => comTotal('/acessos/logins/mes', total);
 export const getLoginsUsuarios = (total, max) => comTotal('/acessos/logins/usuarios', total, max);
-export const getLoginsClientes = (total) => comTotal('/acessos/logins/clientes', total);
+
+// SEM `getLoginsMes` e SEM `getLoginsClientes`. As duas series nascem
+// degeneradas: `dgeo.login` e recente, entao a serie de doze meses fica quase
+// toda em zero, e "por onde se entra" e uma barra sobre um dominio de DOIS
+// valores. A tela trocou as duas por uma COLUNA da tabela, e o servidor remove
+// as rotas. Embrulho sem chamador convida a religar uma pergunta que a Divisao
+// ja descartou.
 
 // ---- O PROPRIO cadastro (#/perfil), de qualquer pessoa logada ----
 //
 // `alterarMinhaSenha` e o unico caminho pelo qual alguem troca a propria senha.
-// Ate 2026-08-02 nao existia nenhum: a senha vivia no Auth Server.
 export const getMeuPerfil = () => apiGet('/usuarios/perfil');
 export const atualizarMeuPerfil = (body) => apiPut('/usuarios/perfil', body);
 export const alterarMinhaSenha = (body) => apiPut('/usuarios/perfil/senha', body);
 
 // ---- Metas do PIT ----
-// Saiu de '/orcamento/metas' em 2026-07-31: o PIT e o plano anual da Divisao, e
-// os tres modulos o consomem. LER e de qualquer pessoa logada; ESCREVER e do
+// Rota de plataforma, e nao do orcamento: o PIT e o plano anual da Divisao, e os
+// tres modulos o consomem. LER e de qualquer pessoa logada; ESCREVER e do
 // administrador global (o backend cobra, o cliente so evita oferecer o botao).
 export const getMetasPit = (ano) => apiGet(ano ? `/metas?ano=${ano}` : '/metas');
 export const getAnosMetaPit = () => apiGet('/metas/anos');
-export const getMetaPit = (id) => apiGet(`/metas/${id}`);
+// SEM `getMetaPit(id)`: nenhuma tela busca uma meta sozinha. A lista do ano ja
+// traz a linha inteira, e o dialogo de edicao recebe o objeto que a tabela tem.
 export const createMetaPit = (body) => apiPost('/metas', body);
 export const updateMetaPit = (id, body) => apiPut(`/metas/${id}`, body);
 export const deleteMetaPit = (id) => apiDelete(`/metas/${id}`);
 
+/**
+ * CORRIGIR A TRANSCRICAO da meta, e nao alterar o PIT.
+ *
+ * `updateMetaPit` muda o que a DSG PROMETE, e por isso o servidor exige uma
+ * revisao ABERTA. Esta rota e a outra porta: o gerente digitou 53 onde o
+ * documento assinado diz 35, e o conserto e da TRANSCRICAO, nao um ato da DSG.
+ * Ela reescreve a linha da revisao EM VIGOR e cobra `motivo`, que e o que separa
+ * "digitei errado" de "a DSG mudou".
+ *
+ * O corpo manda os CINCO campos da declaracao, inclusive `cancelada`. O
+ * servidor grava a declaracao inteira, e campo ausente vira o padrao: omitir
+ * `cancelada` DESCANCELARIA em silencio a meta que a DSG cancelou.
+ *
+ * @param {number} id
+ * @param {{descricao:string, quantidade_prevista:?number, prazo:?string,
+ *          demandante:?string, cancelada:boolean, motivo:string}} body
+ */
+export const corrigirTranscricaoMeta = (id, body) =>
+  apiPut(`/metas/${id}/transcricao`, body);
+
 // ---- O mes de cada meta: planejado e realizado (2.1 do RPCMTec) ----
-// Absorvida do SAP em 2026-08-02, junto com as colunas de PROMESSA da meta.
-//
 // UMA GRADE do ano, e nao um mes por vez: a planilha da Divisao tem duas abas
 // (PLANEJ_PIT e EXEC_PIT) com as MESMAS linhas e as mesmas doze colunas, e a
 // diferenca entre elas e qual dos dois numeros a celula guarda.
 //
-// LER passou a ser do gerente de qualquer modulo e do administrador (chefe,
-// 2026-08-02); ESCREVER continua sendo do administrador global.
+// LER e do gerente de qualquer modulo e do administrador; ESCREVER e do
+// administrador global.
 export const getGradePit = (ano) => apiGet(`/metas/execucao?ano=${ano}`);
-export const getResumoPit = (ano, mes) =>
-  apiGet(mes ? `/metas/execucao/resumo?ano=${ano}&mes=${mes}` : `/metas/execucao/resumo?ano=${ano}`);
-export const getExecucaoDaMeta = (metaId) => apiGet(`/metas/execucao/meta/${metaId}`);
 // UMA rota para criar e alterar: o par (meta, mes) e uma CELULA de grade, e quem
 // preenche nao sabe se aquele mes ja tinha linha. Quem separa e o servidor, e so
 // para o rastro.
 export const salvarExecucaoPit = (body) => apiPost('/metas/execucao', body);
-export const deleteExecucaoPit = (id) => apiDelete(`/metas/execucao/${id}`);
 
 // ---- Demanda Extra-PIT (3.3 do RPCMTec) ----
 export const getExtraPit = (ano) =>
@@ -105,7 +121,7 @@ export const updateExtraPit = (id, body) => apiPut(`/metas/extra/${id}`, body);
 export const deleteExtraPit = (id) => apiDelete(`/metas/extra/${id}`);
 
 // ---- Aproveitamento do efetivo (6.1) ----
-// INTERVALO, e nao retrato mensal (chefe, 2026-08-02). `dgeo.efetivo_periodo`
+// INTERVALO, e nao retrato mensal. `dgeo.efetivo_periodo`
 // diz quando a pessoa esteve na Divisao e `dgeo.impedimento` diz o que a tirou
 // do trabalho sem tira-la da Divisao. Mes, semana e ano sao consulta.
 //
@@ -166,12 +182,11 @@ export function rotuloMetaPit(meta) {
 }
 
 
-// ---- Exercicio e REVISOES do PIT (2026-08-04) ----
+// ---- Exercicio e REVISOES do PIT ----
 //
 // A DSG revisa o plano durante a execucao, e alterar o PIT e cancelar, alterar
 // e adicionar meta: as tres viram uma linha em `pit.meta_revisao`, esparsa, que
-// por isso E o historico. O modelo nasceu em 2026-08-04 e ficou sem tela ate
-// aqui: a revisao so se lia pela varredura geral de rastreabilidade.
+// por isso E o historico.
 //
 // RASCUNHO e a revisao sem `data_vigencia`. Publicar e preencher essa data, e e
 // so a partir dai que ela rege.
@@ -185,8 +200,6 @@ export const atualizarExercicio = (ano, body) =>
 
 export const listarRevisoes = (ano) =>
   apiGet(`/metas/revisoes${ano ? `?ano=${ano}` : ''}`);
-
-export const getRevisao = (id) => apiGet(`/metas/revisoes/${id}`);
 
 /**
  * O que a revisao FAZ, meta a meta, com o valor anterior ao lado.

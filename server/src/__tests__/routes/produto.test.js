@@ -3,7 +3,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
 const { createFullProduct, createProduto, createVersao } = require('../helpers/fixtures')
 
 let app
@@ -538,14 +538,30 @@ describe('Produto Routes', () => {
   })
 
   describe('GET /api/produtos/versao_relacionamento', () => {
-    it('should return relationships list with login token', async () => {
+    it('devolve o relacionamento gravado, e nao so uma lista vazia', async () => {
+      // Com o banco limpo a rota devolve `[]`, e `Array.isArray([])` e verdade
+      // para toda implementacao, certa ou errada. Semeando o relacionamento, a
+      // lista tem de TRAZE-LO.
+      const p1 = await createProduto({ nome: 'Rel A', mi: 'MI-REL-A', inom: 'INOM-REL-A' })
+      const p2 = await createProduto({ nome: 'Rel B', mi: 'MI-REL-B', inom: 'INOM-REL-B' })
+      const v1 = await createVersao(p1.id)
+      const v2 = await createVersao(p2.id)
+      await conn.none(
+        `INSERT INTO acervo.versao_relacionamento
+           (versao_id_1, versao_id_2, tipo_relacionamento_id, usuario_relacionamento_uuid)
+         VALUES ($1, $2, 1, $3)`,
+        [v1.id, v2.id, ADMIN_UUID]
+      )
+
       const res = await request(app)
         .get('/api/produtos/versao_relacionamento')
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
-      expect(Array.isArray(res.body.dados)).toBe(true)
+      const par = res.body.dados.find(r => Number(r.versao_id_1) === Number(v1.id))
+      expect(par).toBeDefined()
+      expect(Number(par.versao_id_2)).toBe(Number(v2.id))
     })
   })
 })

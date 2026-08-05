@@ -11,12 +11,12 @@ const path = require('path')
 // O require e preguicoso (funcao) para que um recurso com schema faltando
 // quebre so o comando daquele recurso, e nao o CLI inteiro.
 //
-// Desde a fusao de 2026-07-27 o orcamento e um MODULO do SCA, nao um sistema.
-// Duas consequencias moram neste arquivo, e so aqui:
+// O orcamento e um MODULO do SCA, nao um sistema. Duas consequencias moram neste
+// arquivo, e so aqui:
 //   1. as rotas do modulo levam o prefixo /orcamento (routes.js do server/);
 //   2. os schemas do modulo vivem em server/src/orcamento/<feature>/.
-// A excecao e /usuarios, que e rota de PLATAFORMA: fica sem prefixo e le o
-// schema de server/src/usuario/, o mesmo que o acervo e a mapoteca usam.
+// A excecao e a rota de PLATAFORMA, que fica sem prefixo e le o schema de fora
+// de server/src/orcamento/. Hoje a unica aqui e /metas, do PIT.
 
 const RAIZ_SERVER = path.join(__dirname, '..', '..', 'server', 'src')
 
@@ -80,10 +80,10 @@ const RECURSOS = {
     anexo: 'pdr_ano'
   },
 
-  // Meta do PIT: recurso de PLATAFORMA desde 2026-07-31. Saiu de
-  // /orcamento/metas para /metas, e o schema saiu de server/src/orcamento/meta/
-  // para server/src/pit/, porque o PIT e o plano anual da Divisao e os tres
-  // modulos o consomem. Ler pede so login; escrever pede administrador.
+  // Meta do PIT: recurso de PLATAFORMA. Mora em /metas (sem o prefixo do
+  // modulo) e le o schema de server/src/pit/, porque o PIT e o plano anual da
+  // Divisao e os tres modulos o consomem. Ler pede so login; escrever pede
+  // administrador.
   meta: {
     nome: 'meta do PIT',
     caminho: '/metas',
@@ -105,10 +105,10 @@ const RECURSOS = {
     colunas: ['id', 'ano', 'nota_empenho_numero', 'empenho_label', 'finalidade', 'valor_empenhado', 'valor_a_liquidar']
   },
 
-  // A edicao mensal do RPCMTec NAO e mais recurso do orcamento: ela saiu para
-  // /api/rpcmtec em 2026-08-01, com o relatorio inteiro, e quem a alcanca pelo
-  // terminal e o `acervo rpcmtec`. O que ficou aqui e o PAINEL: a execucao por
-  // ND, que e pergunta do orcamento e tem o perfil do orcamento.
+  // O RPCMTec nao e recurso do orcamento: ele mora em /api/rpcmtec, com o
+  // relatorio inteiro, e quem o alcanca pelo terminal e o `acervo rpcmtec`. Aqui
+  // fica o PAINEL: a execucao por ND, que e pergunta do orcamento e tem o perfil
+  // do orcamento.
   dashboard: {
     nome: 'execucao por ND (o painel do orcamento)',
     caminho: '/orcamento/dashboard',
@@ -130,18 +130,28 @@ const RECURSOS = {
     singleton: true
   },
 
+  // O anexo NAO segue o CRUD por id: a listagem e por VINCULO na query, o upload
+  // e multipart na colecao e nao existe PUT nenhum. Quem cria e o verbo `anexar`
+  // (ou o `lancar`), nunca `criar --data`.
   arquivo: {
     nome: 'anexo de documento',
     caminho: '/orcamento/arquivo',
     schema: carregar('arquivo/arquivo_schema'),
-    colunas: ['id', 'nome_original', 'tamanho_bytes', 'nota_credito_id', 'dfd_id', 'pdr_ano']
-  },
-
-  usuario: {
-    nome: 'usuario',
-    caminho: '/usuarios',
-    schema: carregarPlataforma('usuario/usuario_schema'),
-    colunas: ['id', 'uuid', 'login', 'nome', 'administrador', 'ativo']
+    // A query da listagem chama-se `vinculoQuery`, e nao `listarQuery`: sem
+    // dizer isso, o CLI descartava --dfd_id e a rota devolvia 400 pedindo o
+    // vinculo que o agente tinha passado.
+    queryListar: 'vinculoQuery',
+    // Nao ha GET por id nem PUT: os bytes so saem pelo /:id/download, e trocar
+    // um anexo e apagar e subir de novo.
+    semObter: true,
+    semAtualizar: true,
+    colunas: ['id', 'nome_original', 'tamanho_bytes', 'nota_credito_id', 'dfd_id', 'pdr_ano'],
+    rotas: [
+      'GET    <base>            query: nota_credito_id | dfd_id | pdr_ano (exatamente um)',
+      'POST   <base>            multipart; use o verbo `anexar` de nc, dfd ou pdr',
+      'GET    <base>/:id/download   verbo: orcamento arquivo baixar --id N',
+      'DELETE <base>/:id'
+    ]
   },
 
   dominio: {
@@ -150,10 +160,13 @@ const RECURSOS = {
     schema: carregar('dominio/dominio_schema'),
     colunas: ['code', 'nome'],
     // Somente estes tres tem CRUD admin; os demais dominios sao so leitura.
+    // A lista de leitura espelha os GET de orcamento/dominio/dominio_route.js:
+    // sub que falte aqui e sub que o CLI recusa antes de tentar a rota.
     subEscrita: ['natureza_despesa', 'plano_interno', 'ug'],
     subLeitura: [
       'tipo_posto_grad', 'natureza_despesa', 'plano_interno', 'ug',
-      'tipo_licitacao', 'classificacao_nc', 'tipo_item_dfd', 'grau_prioridade'
+      'tipo_licitacao', 'fase_licitacao', 'classificacao_nc', 'tipo_item_dfd',
+      'grau_prioridade'
     ]
   }
 }

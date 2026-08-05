@@ -100,7 +100,7 @@ describe('Contrato leitura/escrita', () => {
 
   // O domínio é lido para MONTAR o corpo, então ele também é contrato de
   // escrita: sem `define_produto`, quem escolhe o subtipo não tem como saber
-  // que aquele exige produto próprio, e a recusa só chega no gatilho — depois
+  // que aquele exige produto próprio, e a recusa só chega no gatilho, depois
   // de o operador já ter copiado os bytes para o volume.
   describe('GET /api/gerencia/dominio/subtipo_produto', () => {
     it('devolve define_produto, a regra que o gatilho vai cobrar', async () => {

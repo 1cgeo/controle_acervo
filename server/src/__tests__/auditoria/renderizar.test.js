@@ -2,12 +2,10 @@
 
 // O DIFF QUE A TELA MOSTRA.
 //
-// Este arquivo guarda a correcao do defeito que originou o trabalho de
-// rastreabilidade: ate 2026-08-02 a tela do pedido mostrava
-// `campos_alterados.join(', ')`, ou seja o NOME DA COLUNA DO BANCO
-// ("situacao_pedido_id, prazo"), enquanto `dados_antes` e `dados_depois`
-// chegavam na resposta e eram jogados fora. Quem lia sabia que algo mudou, sem
-// saber DE QUE PARA QUE.
+// REGRESSÃO: a tela do pedido mostrava `campos_alterados.join(', ')`, ou seja
+// o NOME DA COLUNA DO BANCO ("situacao_pedido_id, prazo"), enquanto
+// `dados_antes` e `dados_depois` chegavam na resposta e eram jogados fora. Quem
+// lia sabia que algo mudou, sem saber DE QUE PARA QUE.
 //
 // Nao toca o banco: o cache de dominios entra por injecao nos testes, e o que se
 // prova aqui e a REGRA de formatacao.

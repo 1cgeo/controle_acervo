@@ -9,10 +9,9 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE SCHEMA dgeo;
 
--- A pessoa. Desde 2026-08-02 o SCA e o DONO da identidade: ele guarda o hash da
--- senha e valida o login sozinho, sem o Auth Server externo que existia antes.
--- Por isso `senha` mora aqui e `uuid` ganhou default: ate a fusao esta tabela
--- era um ESPELHO, e todo uuid vinha importado de fora.
+-- A pessoa. O SCA e o DONO da identidade: ele guarda o hash da senha e valida o
+-- login sozinho, sem servico externo. Por isso `senha` mora aqui e `uuid` tem
+-- default -- esta tabela NAO e espelho de ninguem.
 CREATE TABLE dgeo.usuario(
   id SERIAL NOT NULL PRIMARY KEY,
   login VARCHAR(255) UNIQUE NOT NULL,
@@ -21,9 +20,9 @@ CREATE TABLE dgeo.usuario(
   -- usuario a omite de proposito.
   --
   -- ANULAVEL, e isso e deliberado. "Pessoa cadastrada que ainda nao tem senha
-  -- local" e um estado de VERDADE do sistema, nascido da fusao de 2026-08-02:
-  -- quem veio do Auth Server so ganha hash quando o
-  -- `scripts/copiar_usuarios_auth.js` rodar. O sistema inteiro o trata como
+  -- local" e um estado de VERDADE do sistema: quem foi importado so ganha hash
+  -- quando o `scripts/copiar_usuarios_auth.js` rodar. O sistema inteiro o trata
+  -- como
   -- caso proprio -- o login responde "procure um administrador" em vez de
   -- "senha invalida", e a tela de usuarios marca quem esta assim.
   --
@@ -77,7 +76,7 @@ CREATE TABLE dgeo.login(
 CREATE INDEX login_data_login_idx ON dgeo.login (data_login);
 
 -- ---------------------------------------------------------------------------
--- Aproveitamento do efetivo: INTERVALO, e não retrato mensal (chefe, 2026-08-02)
+-- Aproveitamento do efetivo: INTERVALO, e não retrato mensal
 -- ---------------------------------------------------------------------------
 --
 -- A subseção 6.1 do RPCMTec nasceu aqui como `rpcmtec.aproveitamento_mes`, uma
@@ -96,9 +95,9 @@ CREATE INDEX login_data_login_idx ON dgeo.login (data_login);
 -- sabe, e o mês passa a ser CONSULTA em vez de dado.
 --
 -- O QUE SE PERDE, e por que está aceito: o congelamento do posto. A linha do mês
--- guardava o posto da época, e agora ele vem do cadastro de hoje. Decisão do
--- chefe em 2026-08-02: o que importa é a associação com a PESSOA, e a promoção
--- não muda quem esteve na Divisão em março.
+-- guardaria o posto da época, e ele vem do cadastro de hoje: o que importa é a
+-- associação com a PESSOA, e a promoção não muda quem esteve na Divisão em
+-- março.
 
 -- Passagem pela DGEO. Uma linha por passagem, e a mesma pessoa pode ter várias:
 -- quem sai e volta tem duas, com o intervalo entre elas dizendo que ela não
@@ -140,7 +139,7 @@ CREATE INDEX idx_efetivo_periodo_inicio ON dgeo.efetivo_periodo (data_inicio);
 -- acumulada fora da DGEO, licença para tratamento de saúde, curso, férias,
 -- missão. `percentual` é quanto daquele tempo o impedimento consome.
 --
--- A DESCRIÇÃO É TEXTO LIVRE, sem catálogo de tipo (chefe, 2026-08-02). Um
+-- A DESCRIÇÃO É TEXTO LIVRE, sem catálogo de tipo. Um
 -- catálogo obrigaria a classificar antes de escrever, e a lista de motivos não
 -- fecha: "Chefe do S5", "LTSP", "Curso PCE-EECN" e "Fiscal administrativo" não
 -- pertencem a uma taxonomia que caiba num domínio de cinco linhas.

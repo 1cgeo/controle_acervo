@@ -30,21 +30,25 @@ CONTRATO (nao gasta rede, leia isto antes de montar um corpo)
   orcamento schema nc                   campos, tipos, obrigatorios e regras da NC
 
 DIA A DIA
-  orcamento saldo                       quanto falta empenhar e liquidar (total do PDR)
+  orcamento saldo [--ano 2026] [--mes 7]  quanto falta empenhar e liquidar (total do PDR)
   orcamento saldo --nd 339040           o mesmo, de uma natureza de despesa
   orcamento saldo --extra               a faixa Extra-PDR
-  (o RPCMTec saiu daqui em 2026-08-01: e gerado inteiro, fora dos modulos,
-   por: acervo rpcmtec --ano N --mes M --docx)
+  (o RPCMTec e gerado inteiro, fora dos modulos, por:
+   acervo rpcmtec --ano N --mes M --docx)
 
 RECURSOS  (${listarChaves().join(', ')})
   orcamento <recurso> listar [--ano 2026] [--campos a,b] [--formato tsv|tabela|json]
+      os filtros aceitos saem do schema de query do recurso; veja quais em
+      orcamento schema <recurso>
   orcamento <recurso> obter --id 42
   orcamento <recurso> criar --data '{...}'            [--dry-run]
   orcamento <recurso> lancar --data '{...}' --anexo nota.pdf     (cria e anexa de uma vez)
-  orcamento <recurso> atualizar --id 42 --data '{...}'
-  orcamento <recurso> deletar --id 42 --confirmar 42
-  orcamento <recurso> anexar --id 42 --file nota.pdf
+  orcamento <recurso> atualizar --id 42 --data '{...}'           [--dry-run]
+  orcamento <recurso> deletar --id 42 --confirmar 42             [--dry-run]
+  orcamento <recurso> anexar --id 42 --file nota.pdf      (so nc, dfd e pdr)
+  orcamento arquivo baixar --id 42 [--para nota.pdf]      (baixa e da o sha256)
   orcamento dominio natureza_despesa                  (exige perfil de consulta)
+  orcamento dominio ug criar|atualizar|deletar        (exige administrador)
 
 SESSAO
   orcamento status                      o SCA esta no ar? ha token em cache?
@@ -60,23 +64,23 @@ FLAGS GLOBAIS
   --json          saida crua e completa (para encadear)
   --formato       tsv (padrao) | tabela | json
   --campos a,b    recorta colunas na listagem
-  --dry-run       monta e mostra a requisicao, nao envia
+  --dry-run       monta e mostra a requisicao, nao envia (nao exige --confirmar)
   --server URL    sobrepoe SCA_URL
   --cliente       cliente de auth (padrao sca_web)
   --insecure      aceita HTTPS com certificado self-signed
   --sem-cache     nao le nem grava o token em cache
 
 As rotas do modulo ficam sob /api/orcamento/. As excecoes sao /api/login e
-/api/usuarios, que sao rotas de plataforma e nao levam prefixo.
+/api/metas (as metas do PIT), que sao de plataforma e nao levam prefixo.
+Para cadastrar usuario, senha e perfil, o CLI e o efetivo_cli (/api/usuarios).
 Leitura exige perfil de consulta no modulo orcamento. Criar e atualizar exigem
 operador. Deletar exige gerente. O administrador passa em tudo.`
 
 const ROTEADOR = {
   schema: './comandos/schema',
   saldo: './comandos/relatorio',
-  // Mantido no mapa so para o comando responder com a instrucao certa em vez
-  // de "comando desconhecido": quem tinha o verbo na memoria precisa saber para
-  // onde ele foi.
+  // `secao3` nao existe mais. Fica no mapa so para responder com o comando que o
+  // substituiu, em vez de "comando desconhecido".
   secao3: './comandos/relatorio',
   dominio: './comandos/dominio',
   login: './comandos/sessao',
@@ -125,16 +129,22 @@ async function principal () {
   return 0
 }
 
-principal()
-  .then(codigo => { process.exitCode = codigo })
-  .catch(err => {
-    // Erro ja formatado (validacao local com o contrato junto) sai limpo; o
-    // resto sai com o prefixo, sem stack: stack em CLI de agente e ruido.
-    for (const aviso of err.avisos || []) {
-      process.stderr.write('[aviso] ' + aviso + '\n')
-    }
-    process.stderr.write(
-      (err.jaFormatado ? err.message : '[erro] ' + err.message) + '\n'
-    )
-    process.exitCode = 1
-  })
+// So executa quando invocado como programa. Sob require (os testes importam o
+// roteamento) o arquivo apenas exporta, sem disparar nada.
+if (require.main === module) {
+  principal()
+    .then(codigo => { process.exitCode = codigo })
+    .catch(err => {
+      // Erro ja formatado (validacao local com o contrato junto) sai limpo; o
+      // resto sai com o prefixo, sem stack: stack em CLI de agente e ruido.
+      for (const aviso of err.avisos || []) {
+        process.stderr.write('[aviso] ' + aviso + '\n')
+      }
+      process.stderr.write(
+        (err.jaFormatado ? err.message : '[erro] ' + err.message) + '\n'
+      )
+      process.exitCode = 1
+    })
+}
+
+module.exports = { AJUDA, ROTEADOR }

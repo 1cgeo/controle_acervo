@@ -1,13 +1,8 @@
 # scripts/
 
 Ferramentas que rodam **fora** do serviço. Nada aqui é importado pelo servidor.
-
-| Script | O que faz |
-|---|---|
-| `fumaca.py` | Fumaça pós-deploy: os três módulos de ponta a ponta, só leitura, sai com 1 se algo falha |
-| `check_vazamento.py` | Guard de pre-commit: barra segredo, IP interno e caminho de máquina neste repositório PÚBLICO |
-| `gerar_miniaturas.cjs` | Carga em lote das miniaturas do acervo já existente |
-| `copiar_usuarios_auth.js` | Copia, UMA vez, os hashes de senha do banco do Auth Server para o do SCA |
+A lista do que cada uma faz está no [`README.md`](../README.md) da raiz; aqui
+fica o modo de uso.
 
 Testes: `npm run test-scripts` (na raiz). Eles usam `node:test`, e cobrem o que
 dá para provar sem banco: leitura dos argumentos, montagem do plano de cópia e o
@@ -17,12 +12,11 @@ relatório.
 
 ## `copiar_usuarios_auth.js`
 
-Em 2026-08-02 a autenticação veio do [Auth Server](https://github.com/1cgeo/auth_server)
-externo para dentro do SCA. Até ali `dgeo.usuario` era um **espelho**, sem senha;
-a migração `migrations/2026-08-02_autenticacao_local.sql` criou a coluna `senha`
-**anulável** justamente porque quem a preenche é este script, rodando uma vez,
-por fora do sistema. Enquanto ela é nula a pessoa não entra, e o login diz
-exatamente isso em vez de responder "senha inválida".
+Copia, UMA vez, os hashes de senha do banco do
+[Auth Server](https://github.com/1cgeo/auth_server) para o do SCA. A coluna
+`dgeo.usuario.senha` é **anulável** justamente porque quem a preenche é este
+script, rodando por fora do sistema. Enquanto ela é nula a pessoa não entra, e o
+login diz exatamente isso em vez de responder "senha inválida".
 
 O hash bcrypt é **portátil**: ele carrega o custo dentro de si, e o SCA usa o
 mesmo custo 10 do Auth Server (`server/src/login/senha.js`). O hash copiado vale
@@ -121,12 +115,9 @@ tela de usuários ou desativar quem não entra mais.
 
 Com a lista acima **vazia**, acabou: todo usuário do SCA consegue entrar.
 
-Não há `ALTER ... SET NOT NULL` a rodar. A coluna `dgeo.usuario.senha` é anulável
-tanto no `er/dgeo.sql` quanto na migração, de propósito: "cadastrada e ainda sem
-senha local" é um estado de verdade do sistema, e travar a coluna faria o caminho
-de atualização divergir do de instalação nova, que é o que o
-`migrations/ensaiar_migracao.cjs` existe para impedir.
+Não há `ALTER ... SET NOT NULL` a rodar: a coluna é anulável nos dois caminhos,
+de propósito (ver `docs/decisoes.md`).
 
 Quem sobrar na lista **não entra**, com mensagem própria no login ("Usuário sem
 senha cadastrada no sistema"), e aparece marcado na tela `#/usuarios`. Dê-lhe uma
-senha por ali (Resetar senha) ou pelo `auth_cli`.
+senha por ali (Resetar senha) ou pelo `efetivo_cli`.

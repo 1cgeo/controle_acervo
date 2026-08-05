@@ -22,7 +22,16 @@ const signJWT = (data, secret) => {
       },
       (err, token) => {
         if (err) {
-          reject(new AppError('Erro durante a assinatura do token', null, err))
+          // `null` no lugar do status deixava `statusCode` nulo: o default do
+          // AppError só vale para argumento AUSENTE, e quem salvava o 500 era o
+          // `||` do errorHandler, dois arquivos adiante.
+          return reject(
+            new AppError(
+              'Erro durante a assinatura do token',
+              httpCode.InternalError,
+              err
+            )
+          )
         }
         resolve(token)
       }
@@ -63,20 +72,11 @@ const lerModulos = async t =>
   t.any('SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code')
 
 /**
- * Autentica contra o PROPRIO banco.
- *
- * Ate 2026-08-02 esta funcao so conferia se a pessoa existia aqui e mandava a
- * senha para o Auth Server externo (`authentication/authenticate_user.js`), num
- * POST que atravessava a rede a cada login. Hoje o hash bcrypt mora em
- * `dgeo.usuario.senha` e a conferencia e local.
- *
- * O CONTRATO DA ROTA NAO MUDOU: o plugin do QGIS e os CLIs continuam mandando
- * { usuario, senha, cliente } e recebendo { token, administrador, uuid, perfis,
- * modulos }. A fusao nao pediu nada de quem ja e cliente desta rota.
+ * Autentica contra o próprio banco: o hash bcrypt mora em `dgeo.usuario.senha`.
  *
  * @param {string} login
  * @param {string} senha
- * @param {string} cliente - 'sca_web' ou 'sca_qgis' (o Joi ja restringiu)
+ * @param {string} cliente - 'sca_web' ou 'sca_qgis' (o Joi já restringiu)
  */
 controller.login = async (login, senha, cliente) => {
   return db.conn.tx(async t => {
@@ -116,19 +116,11 @@ controller.login = async (login, senha, cliente) => {
     const perfis = await lerPerfis(t, id)
     const modulos = await lerModulos(t)
 
-    // O `cliente` entra no token desde 2026-08-02, e e o que da a coluna
-    // `origem` da rastreabilidade: sem ele, o rastro nao sabe distinguir a carga
-    // em lote do plugin do trabalho feito na tela, e as duas se leem igual.
-    //
-    // Ele pode entrar, ao contrario dos PERFIS, porque e imutavel para aquele
-    // token: descreve por onde a pessoa entrou, e isso nao muda enquanto o token
-    // vive. O perfil muda, e por isso o verifyPerfil o rele do banco a cada
-    // requisicao.
-    //
-    // Token emitido ANTES desta mudanca nao tem o campo, e nesse caso a origem
-    // fica 'desconhecido' em vez de ser adivinhada. A janela dura no maximo o
-    // JWT_EXPIRACAO (8h por default), e adivinhar por User-Agent seria pior do
-    // que dizer que nao se sabe.
+    // O `cliente` alimenta a coluna `origem` da rastreabilidade, que separa a
+    // carga em lote do plugin do trabalho feito na tela. Ele pode viajar no
+    // token, ao contrário dos PERFIS, porque é imutável enquanto o token vive;
+    // o perfil muda, e por isso o `verifyPerfil` o relê do banco a cada
+    // requisição.
     const token = await signJWT({ id, uuid, administrador, cliente }, JWT_SECRET)
 
     // Historico de acesso, que alimenta a tela #/acessos. Fica DEPOIS da
@@ -144,17 +136,13 @@ controller.login = async (login, senha, cliente) => {
 }
 
 /**
- * Perfil ATUAL de quem ja esta logado, sem trocar o token.
+ * Perfil ATUAL de quem já está logado, sem trocar o token. O client reconfere a
+ * foto no boot e sempre que leva um 403, e aí o que a tela oferece volta a bater
+ * com o que o servidor aceita.
  *
- * O client guarda `perfis` desde o login, e ate 2026-07-28 essa foto so mudava
- * no login seguinte: rebaixar alguem valia na hora no servidor (verifyPerfil le
- * o banco a cada requisicao) e a tela continuava oferecendo o que a pessoa nao
- * podia mais. Com isto o client reconfere a foto no boot e sempre que leva um
- * 403, e ai o que ele mostra volta a bater com o que o servidor aceita.
- *
- * Le o BANCO, e nunca o proprio token. O `administrador` que viaja no token e
- * do momento do login e envelhece igual ao perfil. Usuario apagado ou inativo
- * cai em 401 de proposito, porque ai a sessao acabou mesmo e o client desloga.
+ * Lê o BANCO, e nunca o próprio token: o `administrador` que viaja no token é do
+ * momento do login e envelhece igual ao perfil. Usuário apagado ou inativo cai
+ * em 401 de propósito, porque aí a sessão acabou mesmo e o client desloga.
  */
 controller.sessao = async uuid => {
   return db.conn.task(async t => {

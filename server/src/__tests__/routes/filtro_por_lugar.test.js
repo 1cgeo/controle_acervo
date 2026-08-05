@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * Filtro por MUNICÍPIO e por ESTADO, nas duas telas (chefe, 2026-07-29).
+ * Filtro por MUNICÍPIO e por ESTADO, nas duas telas.
  *
  * O recorte é espacial contra o schema `limites`, e não um campo do produto nem
  * do ponto: nenhum dos dois guarda município, e guardar seria duas versões da
@@ -147,7 +147,7 @@ describe('Busca do acervo - filtro por lugar', () => {
     expect(res.body.dados.estados.map(e => e.sigla).sort()).toEqual(['AL', 'BE'])
   })
 
-  // --- Marcação MÚLTIPLA (chefe, 2026-08-04) --------------------------------
+  // --- Marcação MÚLTIPLA --------------------------------
   //
   // O filtro deixou de ser combo de escolha única. Responder "o que existe nos
   // dois estados" custava duas buscas e a soma na mão.

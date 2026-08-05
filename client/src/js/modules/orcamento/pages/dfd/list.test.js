@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da pagina de DFD. O load chama varias funcoes em Promise.all e o
 // dialog importa dominios; mockamos todas com retornos simples. A tela tem o
@@ -17,9 +18,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderDfdList } from '@modules/orcamento/pages/dfd/list.js';
 import { getDfds } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// Chefe, 2026-08-04: a tela abre sempre no ano ATUAL e nao guarda a escolha.
+// A tela abre sempre no ano ATUAL e não guarda a escolha.
 const ANO_ATUAL = new Date().getFullYear();
 
 describe('renderDfdList', () => {

@@ -13,6 +13,22 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 let fonteCriada = null;
 let camadas = [];
 let ouvintes = {};
+// A última coleção que a tela mandou para CADA fonte. `fonteCriada.data` é a
+// coleção vazia do momento da criação, e nunca o que `mostrar` monta. A chave
+// importa: a camada de realce escreve na fonte dela, e uma variável só guardaria
+// o realce vazio no lugar dos pontos.
+let dadosPorFonte = {};
+const fontesFalsas = {};
+
+const fonteFalsa = (nome) => {
+  if (!fontesFalsas[nome]) {
+    fontesFalsas[nome] = {
+      setData: vi.fn(dados => { dadosPorFonte[nome] = dados; }),
+      getClusterExpansionZoom: vi.fn(),
+    };
+  }
+  return fontesFalsas[nome];
+};
 
 const mapaFalso = {
   addControl: vi.fn(),
@@ -20,7 +36,7 @@ const mapaFalso = {
     if (nome === 'pontos') fonteCriada = opcoes;
   }),
   addLayer: vi.fn(l => camadas.push(l)),
-  getSource: vi.fn(() => ({ setData: vi.fn(), getClusterExpansionZoom: vi.fn() })),
+  getSource: vi.fn(nome => fonteFalsa(nome)),
   getCanvas: vi.fn(() => ({ style: {} })),
   on: vi.fn((evento, alvoOuFn, talvezFn) => {
     const chave = talvezFn ? `${evento}:${alvoOuFn}` : evento;
@@ -53,6 +69,7 @@ async function montar() {
   fonteCriada = null;
   camadas = [];
   ouvintes = {};
+  dadosPorFonte = {};
   const alternou = [];
   const apontou = [];
   const mapa = criarMapaPontos({
@@ -79,10 +96,13 @@ describe('mapa do ponto de controle', () => {
   test('cada feição leva o id NAS PROPRIEDADES, não só no topo', async () => {
     const { mapa } = await montar();
     mapa.mostrar(PONTOS);
-    const colecao = fonteCriada.data;
-    // `data` é a coleção do momento da criação; o que importa é a forma que
-    // `mostrar` monta, então conferimos pela coleção que ele produz.
+
+    // A prova tem de sair do que `mostrar` MANDA para a fonte 'pontos', e não da
+    // coleção vazia com que a fonte nasceu.
+    const colecao = dadosPorFonte.pontos;
     expect(colecao.type).toBe('FeatureCollection');
+    expect(colecao.features).toHaveLength(PONTOS.length);
+    expect(colecao.features.map(f => f.properties.id)).toEqual([7, 9]);
   });
 
   test('clicar num ponto devolve o id, e não NaN', async () => {
@@ -114,5 +134,73 @@ describe('mapa do ponto de controle', () => {
     await montar();
     const pontos = camadas.find(c => c.id === 'pontos');
     expect(pontos.filter).toEqual(['!', ['has', 'point_count']]);
+  });
+
+  /**
+   * A cor do ponto sai da SITUAÇÃO, e não é uma só.
+   *
+   * O mapa pintava tudo de verde alegando que "só ponto aprovado entra no
+   * acervo". A premissa é falsa: `getPosicoes` não filtra por situação, e
+   * `er/ponto_controle.sql` declara cinco (1 Não medido, 2 Aguardando revisão,
+   * 3 Aprovado, 4 Reprovado, 9999 A SER PREENCHIDO, que é o DEFAULT da coluna).
+   * O ponto REPROVADO aparecia na cor que significa aprovado, ao lado de um chip
+   * vermelho dizendo "Reprovado".
+   *
+   * CONTROLE NEGATIVO: no código anterior `circle-color` era a string
+   * '#22c55e'. O `Array.isArray` reprova, e a comparação entre 3 e 4 nem chega
+   * a existir.
+   */
+  test('a cor do ponto sai da situação, e aprovado difere de reprovado', async () => {
+    await montar();
+    const pontos = camadas.find(c => c.id === 'pontos');
+    const cor = pontos.paint['circle-color'];
+
+    // Expressão, e não cor fixa. Uma string aqui é o defeito antigo.
+    expect(Array.isArray(cor)).toBe(true);
+    expect(cor[0]).toBe('match');
+    expect(cor[1]).toEqual(['get', 'tipo_situacao']);
+
+    const corDe = (code) => {
+      const i = cor.indexOf(code, 2);
+      return i > 0 ? cor[i + 1] : null;
+    };
+    // O que o defeito confundia: os dois eram o MESMO verde.
+    expect(corDe(3)).not.toBe(corDe(4));
+    // E as quatro situações do domínio têm, cada uma, a sua cor.
+    const cores = [corDe(1), corDe(2), corDe(3), corDe(4)];
+    expect(cores.every(Boolean)).toBe(true);
+    expect(new Set(cores).size).toBe(4);
+
+    // O último item do `match` é o padrão, e cobre o 9999 sem declará-lo.
+    const padrao = cor[cor.length - 1];
+    expect(cores).not.toContain(padrao);
+  });
+
+  test('a legenda nomeia as quatro situações, com a cor de cada uma', async () => {
+    const { mapa } = await montar();
+    const itens = [...mapa.elemento.querySelectorAll('.pc-mapa__legenda-item')];
+    expect(itens.map(i => i.textContent)).toEqual([
+      'Não medido', 'Aguardando revisão', 'Aprovado', 'Reprovado',
+    ]);
+
+    // A bolinha da legenda tem de repetir a cor que a camada usa, senão a
+    // legenda explica um mapa que não existe.
+    const pontos = camadas.find(c => c.id === 'pontos');
+    const cor = pontos.paint['circle-color'];
+    const corDe = (code) => cor[cor.indexOf(code, 2) + 1];
+    // O jsdom normaliza cor de `style` para 'rgb(r, g, b)', e nunca devolve o
+    // hex que foi escrito. Comparar com o hex cru reprovaria sempre, e por um
+    // motivo que não é o defeito. Converter é o que torna a prova honesta.
+    const hexParaRgb = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+    const daLegenda = itens.map(
+      i => i.querySelector('.pc-mapa__legenda-cor').style.background
+    );
+    expect(daLegenda).toHaveLength(4);
+    [1, 2, 3, 4].forEach((code, i) => {
+      expect(daLegenda[i]).toBe(hexParaRgb(corDe(code)));
+    });
   });
 });

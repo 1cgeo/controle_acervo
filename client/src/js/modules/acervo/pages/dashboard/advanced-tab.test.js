@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
@@ -41,8 +42,6 @@ import {
 } from './advanced-tab.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 describe('renderAdvancedTab', () => {
   test('monta as duas linhas do tempo com seletor de periodo e as quatro sub-abas', async () => {
     const container = document.createElement('div');
@@ -52,7 +51,8 @@ describe('renderAdvancedTab', () => {
     expect(acervoService.getVersaoActivityTimeline).toHaveBeenCalledWith(6);
 
     const seletores = container.querySelectorAll('.chart-card__select');
-    expect(seletores.length).toBeGreaterThanOrEqual(2);
+    // Um por linha do tempo, e nada além disso.
+    expect(seletores).toHaveLength(2);
     expect(Array.from(seletores[0].options).map(o => o.value)).toEqual(['6', '12', '24']);
 
     // O titulo saiu do lugar padrao e entrou no cabecalho com o seletor.
@@ -142,20 +142,6 @@ describe('sub-aba: estatisticas de versoes', () => {
     sub.cleanup();
   });
 
-  // ESTE TESTE FIXAVA O DEFEITO: ele exigia os dois setores VAZIOS quando o
-  // endpoint falhava. O que ele cobrava era exatamente a leitura errada. A
-  // asercao virou "nao lanca", que e a parte legitima, e o estado de erro tem
-  // teste proprio no bloco do fim.
-  test('falha do endpoint nao lanca, e a sub-aba continua de pe', async () => {
-    acervoService.getVersionStatistics.mockRejectedValueOnce(new Error('500'));
-
-    const container = document.createElement('div');
-    const sub = await renderVersionStats(container);
-
-    expect(sub.cleanup).toBeTypeOf('function');
-    expect(container.querySelectorAll('.chart-card__empty')).toHaveLength(0);
-    sub.cleanup();
-  });
 });
 
 describe('sub-aba: tendencias de armazenamento', () => {
@@ -230,7 +216,7 @@ describe('sub-aba: atividade de usuarios', () => {
  * O painel nao pode dizer "nao ha" quando a resposta certa e "nao consegui
  * saber". Os seis carregamentos desta aba engoliam a falha no `catch` e
  * pintavam a serie com zero pontos, e o card entao mostrava "Sem dados
- * disponiveis", que e a frase do acervo sem producao (2026-08-04).
+ * disponiveis", que e a frase do acervo sem producao.
  */
 describe('endpoint que falha mostra ERRO, e nao grafico vazio', () => {
   const semDados = (container) =>
@@ -304,7 +290,11 @@ describe('endpoint que falha mostra ERRO, e nao grafico vazio', () => {
     const erro = container.querySelector('.dashboard-erro');
     expect(erro).not.toBeNull();
     expect(erro.textContent).toContain('sem permissão');
+    // Falhar NÃO é ficar sem dado: nenhum setor pode aparecer vazio no lugar do
+    // erro, e a sub-aba continua de pé, com o cleanup dela.
     expect(semDados(container)).toBe(false);
+    expect(container.querySelectorAll('.chart-card__empty')).toHaveLength(0);
+    expect(sub.cleanup).toBeTypeOf('function');
 
     sub.cleanup();
   });

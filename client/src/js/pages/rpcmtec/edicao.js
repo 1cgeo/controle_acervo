@@ -5,6 +5,7 @@ import { showError, showSuccess, showWarning } from '@utils/toast.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { criarHistorico } from '@components/historico/historico.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import {
   getDocumento, downloadRpcmtecPdf, fecharEdicao, reabrirEdicao, conferirHoje,
@@ -23,12 +24,12 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
  * nao ha.
  *
  * A DIVISAO ENTRE CALCULADO E DIGITADO e visual e constante, e nao uma legenda
- * escondida (pedido do chefe, 2026-08-05). Cada subseccao carrega uma etiqueta:
+ * escondida. Cada subseccao carrega uma etiqueta:
  * a calculada diz de onde sai, e a digitada diz que e o gestor quem a preenche.
  * Sem isso, a tabela vazia de uma subsecao calculada e a de uma esquecida se
  * parecem, e so uma delas e problema.
  *
- * A TELA NAO SE REMONTA (2026-08-04). Toda carga RECONCILIA: a secao, a
+ * A TELA NAO SE REMONTA. Toda carga RECONCILIA: a secao, a
  * subsecao, o botao e o anexo se procuram pela chave, e so o que mudou se
  * refaz. Antes cada carga jogava fora a tela inteira, e havia carga a cada
  * gravacao. O custo aparecia em tres lugares: o `details` nascia aberto e
@@ -68,6 +69,8 @@ export async function renderRpcmtecEdicao(container, ctx) {
   const cabecalho = el('div', { className: 'page__header page__header--column' });
   const barra = el('div', { className: 'rpcm-acoes' });
   const avisos = el('div');
+  // O aviso da carga que falhou. Fica no topo, e a carga boa seguinte o apaga.
+  const areaErro = el('div');
   const corpo = el('div');
   const areaAnexos = el('div', { className: 'dashboard-section' });
 
@@ -83,7 +86,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
   const areaHistorico = el('div', { className: 'dashboard-section' });
 
   const page = el('div', { className: 'page' }, [
-    cabecalho, barra, avisos, areaAnexos, corpo, areaHistorico,
+    cabecalho, areaErro, barra, avisos, areaAnexos, corpo, areaHistorico,
   ]);
   container.appendChild(page);
 
@@ -522,7 +525,9 @@ export async function renderRpcmtecEdicao(container, ctx) {
     el('span', { textContent: anexo.nome_original }),
     el('span', {
       className: 'rpcm-anexo__meta',
-      textContent: formatDateTime(anexo.data_cadastramento) || '',
+      // Sem `|| ''`: `formatDateTime` já devolve '-' para o vazio e para o
+      // inválido, então o ramo nunca era alcançado.
+      textContent: formatDateTime(anexo.data_cadastramento),
     }),
     el('button', {
       className: 'btn btn--icon',
@@ -545,12 +550,28 @@ export async function renderRpcmtecEdicao(container, ctx) {
       + 'O assinado é a fonte primária da edição: o congelado tem de dizer o que ele diz.',
   });
 
+  /**
+   * A LEITURA que falhou, escrita como falha.
+   *
+   * O `catch` engolia o erro e caía na lista vazia, que afirma "nenhum arquivo
+   * assinado anexado". Consulta que não respondeu virava afirmação sobre o
+   * servidor, e o gestor reanexava por cima achando que o arquivo se perdeu.
+   */
+  const avisoErroAnexo = (mensagem) => el('p', {
+    className: 'rpcm-anexo__vazio',
+    role: 'alert',
+    textContent: `${mensagem} A lista de anexos não foi lida, e isto não quer `
+      + 'dizer que não há anexo.',
+  });
+
   async function desenharAnexos() {
     let anexos = [];
+    let erroAnexos = null;
     try {
       anexos = await listarAnexos(edicaoId);
-    } catch {
+    } catch (err) {
       anexos = [];
+      erroAnexos = err.message || 'Erro ao carregar os anexos.';
     }
     if (disposed) return;
 
@@ -567,18 +588,29 @@ export async function renderRpcmtecEdicao(container, ctx) {
       );
     }
 
-    // O "nenhum anexo" é um item de chave própria. Assim o primeiro anexo troca
-    // só esse nó, em vez de refazer a área inteira.
-    const itens = (anexos || []).length
-      ? anexos.map((anexo) => ({ chave: `anexo-${anexo.id}`, anexo }))
-      : [{ chave: 'vazio', anexo: null }];
+    // O "nenhum anexo" e o "não consegui ler" são itens de chave própria. Assim
+    // o primeiro anexo troca só esse nó, em vez de refazer a área inteira.
+    let itens;
+    if (erroAnexos) {
+      itens = [{ chave: 'erro', anexo: null, erro: erroAnexos }];
+    } else if ((anexos || []).length) {
+      itens = anexos.map((anexo) => ({ chave: `anexo-${anexo.id}`, anexo, erro: null }));
+    } else {
+      itens = [{ chave: 'vazio', anexo: null, erro: null }];
+    }
 
     reconciliarPorAssinatura(listaAnexos, itens, {
       chave: (item) => item.chave,
-      assinatura: (item) => (item.anexo
-        ? `${item.anexo.nome_original}|${item.anexo.data_cadastramento}`
-        : 'vazio'),
-      criar: (item) => (item.anexo ? linhaDeAnexo(item.anexo) : avisoSemAnexo()),
+      assinatura: (item) => {
+        if (item.erro) return `erro|${item.erro}`;
+        return item.anexo
+          ? `${item.anexo.nome_original}|${item.anexo.data_cadastramento}`
+          : 'vazio';
+      },
+      criar: (item) => {
+        if (item.erro) return avisoErroAnexo(item.erro);
+        return item.anexo ? linhaDeAnexo(item.anexo) : avisoSemAnexo();
+      },
     });
   }
 
@@ -634,7 +666,14 @@ export async function renderRpcmtecEdicao(container, ctx) {
     }
   }
 
+  // Trava de duplo envio da cópia. Os dois botões que a disparam ("Copiar tudo
+  // do mês anterior" e o de cada subseção) não são de formulário e não somem no
+  // clique: sem a trava, dois cliques rápidos mandavam dois POST de cópia.
+  let copiando = false;
+
   async function copiar(numero) {
+    if (copiando) return;
+    copiando = true;
     try {
       const resposta = await copiarMesAnterior(edicaoId, numero);
       const copiadas = resposta.copiadas || [];
@@ -649,6 +688,8 @@ export async function renderRpcmtecEdicao(container, ctx) {
       await carregar();
     } catch (err) {
       showError(err.message || 'Erro ao copiar do mês anterior');
+    } finally {
+      copiando = false;
     }
   }
 
@@ -797,6 +838,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
     try {
       documento = await getDocumento(edicaoId);
       if (disposed) return;
+      clearChildren(areaErro);
       desenharCabecalho();
       desenharBarra();
       desenharAvisos();
@@ -805,7 +847,14 @@ export async function renderRpcmtecEdicao(container, ctx) {
       desenharHistorico();
     } catch (err) {
       if (disposed) return;
+      // O AVISO FICA NA TELA, e não só no toast.
+      //
+      // Falhando a PRIMEIRA carga, o cabeçalho, a barra e os anexos nunca foram
+      // desenhados: a rota `#/rpcmtec/:id` ficava numa página inteiramente em
+      // branco, e o toast some em seis segundos. A partir daí não havia nem o
+      // que ler nem o que clicar.
       clearChildren(corpo);
+      areaErro.replaceChildren(estadoErro(err, carregar));
       showError(err.message || 'Erro ao carregar a edição do RPCMTec');
     }
   }

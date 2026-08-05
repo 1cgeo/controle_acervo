@@ -41,9 +41,7 @@ describe('Schema das rotas de acessos: o default mora no Joi', () => {
   // resposta passa a depender de a query ter vindo vazia ou nao, e as duas
   // declaracoes divergem no primeiro ajuste.
   it.each([
-    ['loginsDiaQuery', 14],
-    ['loginsMesQuery', 12],
-    ['loginsClientesQuery', 30]
+    ['loginsDiaQuery', 14]
   ])('%s sem query aplica o default total=%i', (nome, esperado) => {
     const valor = aceita(acessosSchema[nome].validate({}))
     expect(valor.total).toBe(esperado)
@@ -97,15 +95,6 @@ describe('Schema das rotas de acessos: total e inteiro positivo com teto', () =>
     )
     aceita(acessosSchema.loginsDiaQuery.validate({ total: 366 }))
   })
-
-  it('a serie mensal tem teto proprio, em MESES e nao em dias', () => {
-    recusaPor(
-      acessosSchema.loginsMesQuery.validate({ total: 121 }),
-      'total',
-      'number.max'
-    )
-    aceita(acessosSchema.loginsMesQuery.validate({ total: 120 }))
-  })
 })
 
 describe('Schema das rotas de acessos: max do ranking', () => {
@@ -124,17 +113,6 @@ describe('Schema das rotas de acessos: max do ranking', () => {
       'number.max'
     )
     aceita(acessosSchema.loginsUsuariosQuery.validate({ max: 100 }))
-  })
-
-  // A lista de clientes e FECHADA (sca_web e sca_qgis, no Joi do login), entao
-  // a rota de clientes nao oferece teto. Aceitar `max` ali seria um campo
-  // descartado em silencio.
-  it('a rota de clientes nao aceita max', () => {
-    recusaPor(
-      acessosSchema.loginsClientesQuery.validate({ max: 10 }),
-      'max',
-      'object.unknown'
-    )
   })
 })
 
@@ -172,12 +150,10 @@ describe('Toda rota de acessos e verifyAdmin', () => {
   // 'router.get(' seguido, na linha de baixo, do caminho e da guarda.
   const rotas = [...codigo.matchAll(/router\.(get|post|put|delete)\(\s*'([^']+)',\s*([A-Za-z]+)/g)]
 
-  it('encontra as seis rotas declaradas', () => {
+  it('encontra as quatro rotas declaradas', () => {
     expect(rotas.map(r => r[2]).sort()).toEqual([
       '/logados',
-      '/logins/clientes',
       '/logins/dia',
-      '/logins/mes',
       '/logins/usuarios',
       '/resumo'
     ])

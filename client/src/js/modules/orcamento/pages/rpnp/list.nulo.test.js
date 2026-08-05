@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao: valor_a_liquidar NULO significa "nao informado", nunca "quitado".
 // toNumber(null) devolve 0 (utils/format.js:104), entao a linha nula recebia a
@@ -18,8 +19,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 
 import { renderRpnpList } from '@modules/orcamento/pages/rpnp/list.js';
 import { getRpnps } from '@modules/orcamento/services/orcamento-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function linhaPorTexto(container, texto) {
   return [...container.querySelectorAll('tbody tr')]

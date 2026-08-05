@@ -2,6 +2,8 @@
 
 const Joi = require('joi')
 
+const { CLASSIFICACAO_NC } = require('../../utils/domain_constants')
+
 const models = {}
 
 // Parametro de rota: id da NC (BIGSERIAL). Coercao numerica (vem como string na URL).
@@ -12,7 +14,9 @@ models.idParams = Joi.object().keys({
 // Query da listagem: filtros opcionais por ano e por classificacao.
 models.listarQuery = Joi.object().keys({
   ano: Joi.number().integer(),
-  classificacao_id: Joi.number().integer().valid(1, 2)
+  classificacao_id: Joi.number()
+    .integer()
+    .valid(...Object.values(CLASSIFICACAO_NC))
 })
 
 // Campos comuns de criacao/atualizacao da NC.
@@ -33,7 +37,7 @@ const camposBase = {
   ano: Joi.number().integer().strict().required(),
   // .raw() preserva a string 'YYYY-MM-DD' (sem converter para Date UTC), senao
   // o Postgres (sessao em UTC-3) gravaria o dia anterior ao informado.
-  data_emissao: Joi.date().raw().allow(null),
+  data_emissao: Joi.date().iso().raw().allow(null),
   cod_nd: Joi.string().max(6).required(),
   ptres: Joi.string().max(10).allow(null, ''),
   fonte: Joi.string().max(15).allow(null, ''),
@@ -54,8 +58,12 @@ const camposBase = {
     .strict()
     .allow(null),
   doc_ro: Joi.string().max(20).allow(null, ''),
-  prazo_empenho: Joi.date().raw().allow(null),
-  classificacao_id: Joi.number().integer().strict().valid(1, 2).required(),
+  prazo_empenho: Joi.date().iso().raw().allow(null),
+  classificacao_id: Joi.number()
+    .integer()
+    .strict()
+    .valid(...Object.values(CLASSIFICACAO_NC))
+    .required(),
   // pdr_item_id e condicional a classificacao_id (ver alternatives abaixo)
   nc_complementada_id: Joi.number().integer().strict().allow(null),
   marcador: Joi.string().max(8).allow(null, ''),
@@ -68,7 +76,7 @@ const camposBase = {
 const pdrItemIdCondicional = Joi.alternatives().conditional(
   Joi.ref('classificacao_id'),
   {
-    is: 1,
+    is: CLASSIFICACAO_NC.PDR,
     // PDR: pdr_item_id e recomendado, porem opcional (pode chegar depois).
     then: Joi.number().integer().strict().allow(null).default(null),
     // Extra-PDR (ou qualquer outro valor): forca null, descartando o que vier.

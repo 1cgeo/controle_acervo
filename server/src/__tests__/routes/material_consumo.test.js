@@ -2,15 +2,14 @@
 
 // O CONSUMO DE MATERIAL, e o defeito que ele existe para não deixar voltar.
 //
-// Medido em produção em 2026-08-04: as subseções 7.2 e 7.3 do RPCMTec saíam
-// marcadas "Calculada", com a fonte declarada, e imprimiam "Consumo no mês = 0"
-// nas dezessete linhas -- enquanto `mapoteca.impressao_item` guardava 1.753
-// impressões e 6.493 exemplares. O número não estava faltando: estava ERRADO,
-// e a etiqueta convidava a acreditar nele.
+// REGRESSÃO: as subseções 7.2 e 7.3 do RPCMTec saíam marcadas "Calculada", com
+// a fonte declarada, e imprimiam "Consumo no mês = 0" em toda linha, enquanto
+// `mapoteca.impressao_item` guardava milhares de impressões. O número não
+// faltava: estava ERRADO, e a etiqueta convidava a acreditar nele.
 //
-// A causa era que o consumo saía só de `mapoteca.consumo_material`, que tem
-// zero linhas, e nada ligava a impressão ao insumo. O conserto é
-// `tipo_material.tipo_midia_id`, e o que este arquivo protege é:
+// A causa era o consumo sair só de `mapoteca.consumo_material`, sem nada ligar
+// a impressão ao insumo. O elo é `tipo_material.tipo_midia_id`, e o que este
+// arquivo protege é:
 //
 //  1. imprimir na mídia BAIXA o papel dela, sem ninguém lançar nada;
 //  2. a mídia FORNECIDA manda sobre a pedida (quem pediu tyvek e recebeu
@@ -230,13 +229,18 @@ describe('Consumo de material: um material por mídia', () => {
   test('vários materiais SEM mídia convivem', async () => {
     // O índice é parcial (WHERE tipo_midia_id IS NOT NULL): sem isso, o segundo
     // material sem mídia seria recusado, e a maioria do catálogo não tem mídia.
-    await criarMaterial('Cartucho A', TINTA, null)
-    await criarMaterial('Cartucho B', TINTA, null)
+    const a = await criarMaterial('Cartucho A', TINTA, null)
+    const b = await criarMaterial('Cartucho B', TINTA, null)
 
-    const { count } = await conn.one(
-      "SELECT count(*)::int AS count FROM mapoteca.tipo_material WHERE tipo_midia_id IS NULL"
+    // OS DOIS QUE ESTE CASO CRIOU, e nao a contagem da tabela inteira: contar
+    // tudo satisfaz o caso com qualquer par de linhas ja existente, e a
+    // asserçao passa a valer mesmo se os dois INSERTs nao tivessem entrado.
+    const linhas = await conn.any(
+      `SELECT id FROM mapoteca.tipo_material
+        WHERE id IN ($1, $2) AND tipo_midia_id IS NULL`,
+      [a.id, b.id]
     )
-    expect(count).toBeGreaterThanOrEqual(2)
+    expect(linhas).toHaveLength(2)
   })
 })
 
@@ -274,10 +278,9 @@ describe('Consumo de material: o RPCMTec passa a dizer a verdade', () => {
 // ---------------------------------------------------------------------------
 // A DATA da impressão, e por que ela virou rota
 //
-// Medido em produção em 2026-08-04: 1.751 das 1.753 impressões guardavam a data
-// da CARGA (três dias de julho) e cobriam pedidos de novembro de 2025 a julho de
-// 2026. Com o consumo derivado da impressão, o RPCMTec de julho reportaria a
-// impressão de sete meses -- um número errado no lugar de outro, com a mesma
+// REGRESSÃO: a impressão herdava a data da CARGA, e não a data em que foi
+// impressa. Com o consumo derivado da impressão, o RPCMTec de um mês reportava
+// a impressão de vários meses, um número errado no lugar de outro, com a mesma
 // etiqueta "Calculada".
 //
 // Duas coisas faltavam ao sistema, e as duas são o que este bloco protege:

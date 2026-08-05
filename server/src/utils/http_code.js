@@ -22,15 +22,13 @@ const httpCode = {
   Created: 201,
   NoContent: 204,
   // Revalidação por etiqueta: o cliente já tem a versão atual e nada viaja.
-  // Existe desde 2026-07-31, com a miniatura da versão.
   NotModified: 304,
   BadRequest: 400,
   Unauthorized: 401,
   Forbidden: 403,
   NotFound: 404,
   Conflict: 409,
-  // Retomada de download que pede faixa de bytes fora do arquivo. Existe desde
-  // 2026-07-29, com o download de arquivo pelo navegador.
+  // Retomada de download que pede faixa de bytes fora do arquivo.
   RangeNotSatisfiable: 416,
   InternalError: 500
 }

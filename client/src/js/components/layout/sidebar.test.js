@@ -30,8 +30,8 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
     //
-    // Depois dos três módulos vêm PRODUÇÃO e EFETIVO, que desde 2026-08-02 se
-    // desenham como sistema sem ser módulo (chefe). A ordem é asserida inteira
+    // Depois dos três módulos vêm PRODUÇÃO e EFETIVO, que se desenham como
+    // sistema sem ser módulo. A ordem é asserida inteira
     // de propósito: a posição é metade do que ela comunica. Produção antes de
     // Efetivo porque é a que fala do TRABALHO, e Efetivo é quem o faz.
     expect(modulosNaTela(sidebar)).toEqual([
@@ -100,11 +100,10 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
   });
 });
 
-// A meta do PIT saiu do modulo orcamento em 2026-07-31 e virou item de
-// plataforma. O ponto do teste e o CONTRARIO do item de usuarios: este NAO leva
-// `admin: true`, porque quem so tem perfil na mapoteca precisa ler o plano
-// anual para amarrar o pedido a uma meta. Era exatamente isso que a tela dentro
-// do orcamento impedia.
+// A meta do PIT e item de PLATAFORMA, e nao do modulo orcamento. O ponto do
+// teste e o CONTRARIO do item de usuarios: este NAO leva `admin: true`, porque
+// quem so tem perfil na mapoteca precisa ler o plano anual para amarrar o pedido
+// a uma meta.
 describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () => {
   test('quem so tem perfil na mapoteca ve Metas do PIT', () => {
     logar({ perfis: { mapoteca: 3 } });
@@ -138,16 +137,12 @@ describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () =>
   });
 });
 
-// Em 2026-08-02 a autenticacao veio para dentro do SCA e administrar gente
-// deixou de ser UMA tela. No mesmo dia, a pedido do chefe, "Usuários" deixou de
-// ser um grupo colapsavel no meio das telas soltas de plataforma e virou uma
-// SEÇÃO DE SISTEMA, logo depois do orçamento: ela tem dashboard, tem cadastro, e
-// tem quem entre nela para trabalhar um turno inteiro.
+// EFETIVO é uma SEÇÃO DE SISTEMA, logo depois do orçamento, e não um grupo
+// colapsavel no meio das telas soltas de plataforma: ela tem dashboard, tem
+// cadastro, e tem quem entre nela para trabalhar um turno inteiro.
 //
-// No fim do mesmo dia ela passou a se chamar EFETIVO, junto com a entrada do
-// aproveitamento mensal: o grupo deixou de ser sobre CONTA de sistema e passou a
-// ser sobre quem serve na Divisão. A rota `#/usuarios` NÃO mudou de nome com o
-// rótulo, e é o que os casos abaixo guardam.
+// O grupo é sobre quem serve na Divisão, e não sobre CONTA de sistema. A rota
+// `#/usuarios` NÃO acompanha o rótulo, e é o que os casos abaixo guardam.
 describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
   test('o cabeçalho e um LINK para o dashboard, e nao so um botao que abre', () => {
     logar({ administrador: true });
@@ -172,8 +167,8 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
     )];
     expect(itens.map(i => i.dataset.id))
       .toEqual(['acessos', 'usuarios', 'aproveitamento', 'capacitacao_recebida']);
-    // A rota nao mudou de nome junto com o rotulo: `#/acessos` e o que le
-    // `dgeo.login`, e renomear a URL quebraria link guardado.
+    // A rota não segue o rótulo: `#/acessos` é o que lê `dgeo.login`, e
+    // renomear a URL quebraria link guardado.
     expect(itens[0].getAttribute('href')).toBe('#/acessos');
     expect(itens[0].textContent).toContain('Dashboard');
     expect(itens[1].getAttribute('href')).toBe('#/usuarios');
@@ -207,10 +202,9 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
   });
 });
 
-// PRODUÇÃO nasceu em 2026-08-02 (chefe), quando o SCA absorveu do SAP o que não
-// depende da produção controlada lá: a execução mensal das metas, o Extra-PIT e
-// a capacitação. "Metas do PIT" saiu do menu solto de plataforma e virou a
-// primeira tela da seção, porque as quatro se leem JUNTAS.
+// PRODUÇÃO reúne metas, execução mensal, Extra-PIT e capacitação. "Metas do
+// PIT" é a primeira tela da seção, e não um item solto de plataforma, porque as
+// quatro se leem JUNTAS.
 describe('sidebar: Produção reúne o plano anual e o que acontece com ele', () => {
   test('as quatro telas estão na seção, e o cabeçalho leva às metas', () => {
     logar({ administrador: true });
@@ -256,11 +250,10 @@ describe('sidebar: Produção reúne o plano anual e o que acontece com ele', ()
   });
 });
 
-// A Rastreabilidade (2026-08-02) e o TERCEIRO estado de visibilidade que a
-// sidebar passou a ter. Ate ela, um item de plataforma era "de todo mundo"
-// (Metas do PIT) ou "so do administrador" (RPCMTec, Usuários); esta e do
-// administrador global E do gerente de qualquer modulo, porque cada gerente ve o
-// recorte do modulo dele. O recorte de verdade e do servidor
+// A Rastreabilidade e o TERCEIRO estado de visibilidade da sidebar. Os outros
+// dois sao "de todo mundo" (Metas do PIT) e "so do administrador" (RPCMTec);
+// esta e do administrador global E do gerente de qualquer modulo, porque cada
+// gerente ve o recorte do modulo dele. O recorte de verdade e do servidor
 // (verifyRastreabilidade); o que se prova aqui e que o MENU nao oferece a tela a
 // quem levaria 403, nem a esconde de quem pode abri-la.
 describe('sidebar: Rastreabilidade e do administrador E do gerente', () => {

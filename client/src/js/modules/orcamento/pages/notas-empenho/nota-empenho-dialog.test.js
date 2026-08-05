@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao do bug de tipo de id: createSelectField devolve o valor da opcao com
 // o TIPO ORIGINAL (form-fields.js:198-201). Os ids chegam da API como TEXTO
@@ -33,8 +34,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 }));
 
 import { openNotaEmpenhoDialog } from '@modules/orcamento/pages/notas-empenho/nota-empenho-dialog.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function botao(rotulo) {
   return [...document.querySelectorAll('.modal__footer .btn')]

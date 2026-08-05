@@ -28,8 +28,8 @@ import './editor-geometria.css';
  * 7'30". Deixar alguem desenha-la a mao e o que produz os defeitos que a
  * auditoria hoje persegue DEPOIS do fato, em `server/src/acervo/invariantes.js`:
  * 1d (profundidade do INOM diverge da escala), 1e (a caixa casa outra escala),
- * 1g (MI sem INOM, ou o contrario), 1h (MI preenchido com o INOM, 29 produtos
- * errados achados em 2026-07-30) e 1i (MI fora da forma da escala).
+ * 1g (MI sem INOM, ou o contrario), 1h (MI preenchido com o INOM) e 1i (MI fora
+ * da forma da escala).
  *
  * Nascendo do identificador, geometria, MI, INOM e escala ficam coerentes POR
  * CONSTRUCAO, e esses cinco invariantes deixam de ter como falhar em produto

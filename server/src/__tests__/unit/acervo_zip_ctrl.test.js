@@ -5,8 +5,7 @@
 //   - getPlanilhaCSV:       um .csv por escala e tipo, no formato da planilha ASC
 //
 // Por que este arquivo existe: as duas rotas dependem do pacote `archiver`, e
-// ate 2026-07-27 NENHUM teste tocava nesse caminho. Isso apareceu na hora de
-// subir o archiver de 7 para 8, que e major: sem teste, o upgrade seria fe.
+// sem teste nesse caminho subir a versao maior dele e ato de fe.
 //
 // O teste NAO confia no tipo do retorno. Ele abre o ZIP na mao (fim do diretorio
 // central, entradas, cabecalho local) e DESCOMPRIME cada arquivo, conferindo que

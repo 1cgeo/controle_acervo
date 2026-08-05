@@ -1,6 +1,6 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
-import { formatCurrency, formatDate, formatDateTime } from '@utils/format.js';
+import { formatCurrency, formatDate, formatDateTime, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { openModal } from '@components/modal/modal-base.js';
@@ -58,7 +58,7 @@ function textoRateio(a) {
  * Cabecalho com os dados da NE e duas secoes com data-table:
  * liquidacoes e recebimentos de material, cada uma com criar/editar/excluir.
  *
- * A TELA SE MONTA UMA VEZ (2026-08-04). Ate aqui, `renderNota` limpava a raiz e
+ * A TELA SE MONTA UMA VEZ. Ate aqui, `renderNota` limpava a raiz e
  * criava as duas data-table dentro do `load()`. Como toda gravacao chama
  * `load()`, editar uma liquidacao trocava todos os nos da tela: a ordenacao
  * escolhida voltava ao padrao, o foco do teclado caia no body e o painel de
@@ -423,6 +423,9 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
         key: 'valor_liquidado',
         label: 'Valor liquidado',
         sortable: true,
+        // NUMERIC(15,2) chega como TEXTO no JSON (er/orcamento.sql:208), e a
+        // ordem por string mente: '900.00' passa a frente de '1000.00'.
+        sortValue: (row) => toNumber(row.valor_liquidado),
         render: (row) => formatCurrency(row.valor_liquidado),
       },
       {

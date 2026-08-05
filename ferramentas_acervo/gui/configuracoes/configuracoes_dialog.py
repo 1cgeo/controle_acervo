@@ -1,6 +1,5 @@
 # Path: gui\configuracoes\configuracoes_dialog.py
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QGroupBox, QCheckBox
-from qgis.PyQt.QtCore import Qt
 from ...core.settings import Settings
 
 class ConfiguracoesDialog(QDialog):

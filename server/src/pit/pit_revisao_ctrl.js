@@ -1,6 +1,6 @@
 'use strict'
 
-// O exercício do PIT e as revisões dele (2026-08-04).
+// O exercício do PIT e as revisões dele.
 //
 // O FLUXO, do jeito que o gerente o vive. Chega um DIEx da DSG com o PIT novo:
 //

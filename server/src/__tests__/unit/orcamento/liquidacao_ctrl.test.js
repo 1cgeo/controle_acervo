@@ -131,8 +131,7 @@ describe('liquidacao_ctrl.deletar', () => {
 
   test('remove quando existe, e o autor da exclusao chega ao controller', async () => {
     // A linha INTEIRA, e nao so o id: ela e o `dados_antes` do evento, o unico
-    // registro do que se perdeu. E `deletar` passou a receber o uuid de quem
-    // apaga: ate 2026-08-02 nenhuma exclusao do orcamento o recebia.
+    // registro do que se perdeu. E o `deletar` recebe o uuid de quem apaga.
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 1, nota_empenho_id: 1, valor_liquidado: '100'
     })

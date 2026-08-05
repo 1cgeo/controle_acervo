@@ -79,7 +79,7 @@ describe('Limpeza de downloads expirados', () => {
     const registrados = await eventos()
     expect(registrados).toHaveLength(1)
     expect(registrados[0].usuario_uuid).toBe(ADMIN_UUID)
-    // `uploads_fechados` entrou em 2026-08-04: a limpeza passou a fechar os dois
+    // `uploads_fechados` entrou: a limpeza passou a fechar os dois
     // lados num ato so, porque o cron que os rodava juntos saiu e separa-los
     // obrigaria o administrador a lembrar de duas rotas para a mesma ideia.
     expect(registrados[0].dados_depois).toEqual({ fechados: 1, uploads_fechados: 0 })

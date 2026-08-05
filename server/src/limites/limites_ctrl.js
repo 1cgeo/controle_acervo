@@ -27,11 +27,9 @@ const CASAS = 5
 /**
  * Terceiro argumento do `ST_AsGeoJSON`: ZERO, e nao o padrao.
  *
- * O padrao do PostGIS e 8, que embute um membro `crs` com o EPSG. O `crs` saiu
- * da especificacao do GeoJSON (RFC 7946), que e sempre lon/lat: quem le nao tem
- * de interpretar o membro, e nada garante que o leitor o ignore em vez de
- * recusar a feicao. Medido em 2026-07-29: com o padrao, a resposta vinha com
- * `{"type":"name","properties":{"name":"EPSG:4674"}}` em cada geometria.
+ * O padrao do PostGIS e 8, que embute em cada geometria um membro `crs` com o
+ * EPSG. O `crs` saiu da especificacao do GeoJSON (RFC 7946), que e sempre
+ * lon/lat: nada garante que o leitor o ignore em vez de recusar a feicao.
  */
 const SEM_CRS = 0
 

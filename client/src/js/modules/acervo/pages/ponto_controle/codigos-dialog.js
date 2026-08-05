@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { formatNumber } from '@utils/format.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { getCodigosDisponiveis } from '@modules/acervo/services/ponto-controle-service.js';
@@ -7,12 +8,10 @@ import { getCodigosDisponiveis } from '@modules/acervo/services/ponto-controle-s
 /**
  * Códigos de ponto ainda livres.
  *
- * Era o P14 do plugin ("14 - Verificar códigos de pontos disponíveis"), que
- * gravava um CSV a partir da camada da missão ABERTA no QGIS. Mudou de lado em
- * 2026-07-29 por CORRETUDE, e não por conveniência: aquela camada conhece só os
- * pontos daquela missão, então a lista dava por livre um código que outra missão
- * já tinha usado, e o erro só aparecia na importação, depois da medição feita em
- * campo. Aqui a base é o acervo inteiro.
+ * A base é o ACERVO INTEIRO, e não a camada da missão aberta no QGIS: aquela
+ * conhece só os pontos da própria missão, e daria por livre um código que outra
+ * missão já usou. O erro só apareceria na importação, depois da medição feita em
+ * campo.
  *
  * A tela separa duas coisas que o CSV misturava:
  *  - os BURACOS, números que ficaram para trás e fecham lacuna;
@@ -134,16 +133,19 @@ export function abrirCodigosDisponiveis() {
       );
     } catch (erro) {
       if (fechado) return;
-      corpo.replaceChildren(
-        el('p', { className: 'pc-codigos__vazio', textContent: erro.message || 'Erro ao consultar' })
-      );
+      // Estado de ERRO, e nao a classe do estado vazio. `pc-codigos__vazio` e o
+      // desenho de "Nao ha buraco: a numeracao esta continua", e as duas frases
+      // pedem acoes opostas: uma manda seguir numerando, a outra manda tentar de
+      // novo. Iguais na tela, quem le conclui que a UF nao tem lacuna.
+      resumo.textContent = '';
+      corpo.replaceChildren(estadoErro(erro, carregar));
     }
   }
 
   // A lista de UF sai do RESUMO por grupo, e não de uma lista fixa das 27:
   // mostrar UF sem ponto nenhum faria a tela oferecer escolha que não informa
   // nada, e o resumo já diz onde há acervo.
-  (async () => {
+  async function carregarUfs() {
     try {
       const { grupos } = await getCodigosDisponiveis({});
       if (fechado) return;
@@ -158,9 +160,16 @@ export function abrirCodigosDisponiveis() {
         resumo.textContent = 'O acervo ainda não tem ponto de controle.';
       }
     } catch (erro) {
-      if (!fechado) showError(erro.message || 'Erro ao listar as UFs');
+      if (fechado) return;
+      // Sem a lista de UF o dialogo nao tem o que consultar, e ficava com o
+      // combo vazio e o corpo em branco: lia-se como acervo sem ponto de
+      // controle, que e a mesma leitura da linha logo acima.
+      showError(erro.message || 'Erro ao listar as UFs');
+      corpo.replaceChildren(estadoErro(erro, carregarUfs));
     }
-  })();
+  }
+
+  carregarUfs();
 
   return modal;
 }

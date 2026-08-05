@@ -6,7 +6,7 @@
 //   * PUT /configuracao        -> atualiza e devolve a config (mock db.conn.one)
 //   * GET /configuracao/anos   -> devolve a lista de anos (mock db.conn.any)
 //
-// O `ano_referencia` saiu do contrato em 2026-08-04: o ano virou filtro de cada
+// O `ano_referencia` saiu do contrato: o ano virou filtro de cada
 // tela. A COLUNA ainda existe no banco (o DROP vai em migracao propria), entao
 // o que se prova aqui e que a rota nao le nem grava o campo.
 

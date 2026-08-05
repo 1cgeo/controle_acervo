@@ -564,7 +564,7 @@ export const formatarRelatorio = (plano, opcoes = {}, resultado = {}) => {
   l.push('--- passo final, do administrador ---')
   if (semSenha.length) {
     l.push('  AINDA NAO ACABOU. Cada pessoa da lista acima precisa de uma senha:')
-    l.push('  crie-a pela tela #/usuarios (Resetar senha) ou pelo auth_cli, ou')
+    l.push('  crie-a pela tela #/usuarios (Resetar senha) ou pelo efetivo_cli, ou')
     l.push('  desative quem nao entra mais. Ate la, ela nao consegue entrar.')
   } else if (!aplicado) {
     l.push('  Este foi um ENSAIO: nada foi escrito. Rode de novo com --aplicar.')

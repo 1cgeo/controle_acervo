@@ -114,8 +114,8 @@ class CamadaModelo:
         uma camada que funcionaria.
 
         Quando a operação precisa de geometria, a camada pode trazê-la de dois
-        jeitos -- polígono de verdade ou campo `geom` em texto --, então basta
-        UM dos dois. Ver `geometria_ewkt`.
+        jeitos (polígono de verdade, ou campo `geom` em texto), então basta UM
+        dos dois. Ver `geometria_ewkt`.
         """
         if camada is None:
             return False, "Selecione uma camada."
@@ -156,12 +156,11 @@ def geometria_ewkt(feature, presentes):
 
     DUAS ORIGENS, e a ordem importa. Primeiro a geometria DE VERDADE da feição:
     é o que permite digitalizar a folha no QGIS, que é o programa em que este
-    plugin roda. Antes só existia o segundo caminho -- um campo de texto chamado
-    `geom` em que a pessoa colava WKT à mão --, o que obrigava a produzir WKT
-    dentro do próprio QGIS para depois mandá-lo de volta como string.
+    plugin roda.
 
-    O campo de texto continua valendo, e por isso: as camadas que a equipe já
-    montou têm esse campo, e recusá-las agora quebraria o trabalho pronto.
+    O segundo caminho é o campo de texto `geom`, com WKT colado à mão. Ele
+    continua valendo porque as camadas que a equipe já montou têm esse campo, e
+    recusá-las quebraria o trabalho pronto.
     """
     if feature.hasGeometry() and not feature.geometry().isEmpty():
         wkt = feature.geometry().asWkt()

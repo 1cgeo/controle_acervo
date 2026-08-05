@@ -5,6 +5,8 @@ import { createStatsCard } from '@components/stats-card.js';
 import { createPieChart } from '@components/charts/pie-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { mostrarErroNoGrafico } from '@components/estado-erro.js';
+import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 import { mesLabel } from './utils.js';
 
@@ -22,13 +24,13 @@ const LIMITE_PARADOS = 10;
  * entregue em janeiro cai em anos diferentes nos dois, e os dois estao certos.
  * Por isso o subtitulo diz qual dos dois esta na tela.
  *
- * "Em Andamento" saiu em 2026-07-27. Ele nao era so redundante com "Pendentes":
- * era CONTIDO nele. O servidor conta como pendente todo pedido que nao fechou,
- * ou seja, tudo que nao e concluido nem cancelado, entao somar os cards
- * contava o mesmo pedido duas vezes. A regra por exclusao entrou em
- * 2026-08-04: a lista fixa anterior (pre-cadastramento, documento recebido, em
- * andamento) deixava "Aguardando producao" e "Remetido" fora de todo cartao, e
- * 6 dos 129 pedidos de 2026 nao apareciam em lugar nenhum. Hoje vale
+ * SEM cartao "Em Andamento": ele e CONTIDO em "Pendentes", porque o servidor
+ * conta como pendente todo pedido que nao fechou, e somar os dois contaria o
+ * mesmo pedido duas vezes.
+ *
+ * A regra e por EXCLUSAO, e nao por lista fixa de situacoes: com lista fixa,
+ * "Aguardando producao" e "Remetido" ficam fora de todo cartao e o pedido some
+ * da tela. Vale
  * total = concluidos + pendentes, fora o pedido cancelado, que so aparece no
  * grafico de situacoes.
  *
@@ -109,6 +111,10 @@ export async function renderPedidosTab(container, getAno) {
 
   const paradosMeta = el('span', { className: 'dashboard-section__meta', textContent: '' });
 
+  // Falha de carga NAO pode virar "Nenhum pedido em aberto": fila vazia e o
+  // estado bom, e falha de carga e o oposto dele.
+  const avisoParados = criarAvisoDeErro(paradosTable, load);
+
   container.appendChild(escopo);
   container.appendChild(el('div', { className: 'stats-grid' }, [cardTotal, cardConcluidos, cardPendentes]));
   container.appendChild(statusPie);
@@ -125,7 +131,7 @@ export async function renderPedidosTab(container, getAno) {
       textContent: `Pedidos abertos de qualquer ano, do mais antigo para o mais novo. `
         + `A tabela mostra até ${LIMITE_PARADOS} linhas.`,
     }),
-    paradosTable.element,
+    avisoParados.element,
   ]));
 
   async function load() {
@@ -159,6 +165,7 @@ export async function renderPedidosTab(container, getAno) {
       cardConcluidos.update({ value: 'Erro', loading: false });
       cardPendentes.update({ value: 'Erro', loading: false });
       statusPie.update({ data: [], loading: false });
+      mostrarErroNoGrafico(statusPie, statusRes.reason, load);
       showError(statusRes.reason?.message || 'Erro ao carregar situação dos pedidos');
     }
 
@@ -172,7 +179,11 @@ export async function renderPedidosTab(container, getAno) {
         loading: false,
       });
     } else {
+      // Grafico vazio le-se como "nao entrou pedido nenhum no ano", que e o
+      // oposto de "nao consegui saber". O card mostra o erro e o botao de
+      // tentar de novo, sem derrubar o resto da aba.
       timelineLine.update({ data: [], loading: false });
+      mostrarErroNoGrafico(timelineLine, timelineRes.reason, load);
     }
 
     if (paradosRes.status === 'fulfilled') {
@@ -182,9 +193,11 @@ export async function renderPedidosTab(container, getAno) {
       paradosMeta.textContent = abertos.length
         ? `${formatNumber(recorte.length)} mais antigos de ${formatNumber(abertos.length)} em aberto`
         : '';
+      avisoParados.ok();
     } else {
-      paradosTable.update({ rows: [], loading: false });
+      paradosTable.update({ loading: false });
       paradosMeta.textContent = '';
+      avisoParados.falhou(paradosRes.reason?.message || 'Erro ao carregar os pedidos parados');
     }
   }
 

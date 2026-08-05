@@ -65,7 +65,6 @@ controller.getPorId = async id => {
   return rpnp
 }
 
-// As tres ganharam TRANSACAO em 2026-08-02, com a rastreabilidade.
 controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
     .tx(async t => {

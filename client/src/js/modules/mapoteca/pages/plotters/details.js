@@ -201,7 +201,7 @@ export async function renderPlotterDetails(container, { params }) {
   /**
    * Monta a ficha UMA vez. Dai em diante o `load` so repinta.
    *
-   * O DEFEITO QUE ISTO CORRIGE (medido em 2026-08-04). Esta ficha tem TRES
+   * O DEFEITO QUE ISTO CORRIGE. Esta ficha tem TRES
    * gravacoes ligadas ao recarregador: editar o equipamento, salvar uma
    * manutencao e excluir uma manutencao. Cada uma zerava o container e montava
    * outra tabela. Iam junto a busca, a ordenacao, a pagina atual, a selecao e o

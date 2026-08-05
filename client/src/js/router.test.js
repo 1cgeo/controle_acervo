@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 import Router, { authLoader, adminLoader, perfilLoader, rotaRaiz } from './router.js';
 
@@ -11,8 +12,6 @@ const CATALOGO = [
 function logar({ administrador = false, perfis = {} } = {}) {
   saveAuth({ token: 't', administrador, uuid: 'u', perfis, modulos: CATALOGO }, 'x');
 }
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
   localStorage.clear();

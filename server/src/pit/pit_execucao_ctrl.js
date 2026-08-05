@@ -2,24 +2,11 @@
 
 // O MÊS de cada meta do PIT: o que ela planejou entregar e o que entregou.
 //
-// UMA GRADE, e não duas (chefe, 2026-08-02). A planilha que a Divisão preenche
-// tem duas abas, PLANEJ_PIT e EXEC_PIT, com as MESMAS linhas, as mesmas doze
-// colunas de mês e a mesma quantidade anual. A única diferença entre elas é qual
-// dos dois números a célula guarda, e por isso os dois moram na mesma linha:
-// separá-los deixaria a comparação, que é a razão de as duas existirem, a um
-// JOIN de distância.
-//
-// TUDO É LANÇADO À MÃO (chefe, 2026-08-02). No SAP a régua é `lote_id IS NULL`:
-// a meta de produção tem o realizado calculado das atividades, e só o resto se
-// digita. Aqui não existe essa régua, porque enquanto o SAP não for absorvido
-// não há de onde calcular. Quando ele entrar, é este arquivo que ganha o
-// caminho automático.
-//
-// O CUSTO ESTÁ ACEITO e vale repetir onde alguém vai ler: a meta 4 (impressão) o
-// SCA JÁ sabe somar, porque `mapoteca.pedido.meta_pit_id` liga o pedido à meta,
-// e é disso que sai o META4_DETALHADA do RTM. O número digitado aqui pode
-// divergir do calculado lá, e quando divergir a 2.1 e o RTM do mesmo mês vão se
-// contradizer.
+// UMA GRADE, e não duas. A planilha que a Divisão preenche tem duas abas,
+// PLANEJ_PIT e EXEC_PIT, com as MESMAS linhas, as mesmas doze colunas de mês e a
+// mesma quantidade anual. A única diferença entre elas é qual dos dois números a
+// célula guarda, e por isso os dois moram na mesma linha: separá-los deixaria a
+// comparação, que é a razão de as duas existirem, a um JOIN de distância.
 //
 // SÓ A FOLHA RECEBE LANÇAMENTO. Uma meta que se subdivide tem uma linha de
 // cabeçalho (`item` nulo) e uma linha por item, e quem entrega é o item. Deixar
@@ -28,17 +15,29 @@
 // "certas" cada uma por si. A meta indivisa (cabeçalho sem itens) É folha.
 //
 // NULO E ZERO SÃO COISAS DIFERENTES nos dois números: nulo é "ninguém lançou" e
-// zero é "conferi e não houve". Enquanto a linha só existia para o realizado, a
-// ausência dela dizia isso; agora que ela nasce no começo do ano para guardar o
-// plano, quem carrega o recado é o nulo.
+// zero é "conferi e não houve". A linha nasce no começo do ano para guardar o
+// plano, então quem carrega esse recado é o nulo, e não a ausência da linha.
 
 const { db } = require('../database')
 
-const { AppError, httpCode } = require('../utils')
+const {
+  AppError,
+  httpCode,
+  domainConstants: { TIPO_VERSAO, SITUACAO_CAPACITACAO }
+} = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
 
 const controller = {}
+
+// `dominio.origem_meta` (er/dominio.sql). Nao esta em `utils/domain_constants`
+// porque so o PIT o le; o valor vem do DDL, e nao do rotulo da tela.
+const ORIGEM_META = {
+  MANUAL: 1,
+  CAPACITACAO: 2,
+  PRODUCAO: 3,
+  IMPRESSAO: 4
+}
 
 // A condição de FOLHA, escrita uma vez. `m` é o apelido da meta na consulta que
 // a usa; repeti-la em três consultas é onde a divergência nasceria.
@@ -51,14 +50,12 @@ const EH_FOLHA = `(
 )`
 
 // ---------------------------------------------------------------------------
-// A GRADE CALCULADA (2026-08-03)
+// A GRADE CALCULADA
 //
 // A meta declara em `origem_id` de onde vem o seu numero, e quando a origem nao
 // e Manual a celula deixa de ser lida de `pit.execucao` e passa a ser CONTADA na
 // hora da leitura. Nada e gravado: dado derivado que se grava vira segunda
-// verdade no primeiro que editar a copia a mao, e e esse o defeito que a meta 4
-// ja tinha de olhos abertos (a mapoteca sabia somar, o numero era digitado, e o
-// DDL escrevia que um dia os dois se contradiriam).
+// verdade no primeiro que editar a copia a mao.
 //
 // QUAL COLUNA CADA ORIGEM SABE PROVAR, e esta e a parte que nao se adivinha:
 //
@@ -76,10 +73,9 @@ const EH_FOLHA = `(
 //                    encolhe quando se cumpre.
 //
 //   Impressao (4)    so o REALIZADO. A mapoteca nao planeja: a impressao e
-//                    puxada por demanda, e em 2026 a meta 4.1 prometeu 327 e
-//                    entregou mais de cinco mil. O PLANEJADO dela continua
-//                    vindo de `pit.execucao`, digitado da PLANEJ_PIT, porque
-//                    nao existe no sistema quem o prove.
+//                    puxada por demanda. O PLANEJADO dela vem de `pit.execucao`,
+//                    digitado da PLANEJ_PIT, porque nao existe no sistema quem
+//                    o prove.
 //
 // O CALCULO NAO OLHA `origem_id`, de proposito. Ele conta para TODA meta que
 // tenha vinculo, e quem escolhe entre o calculado e o digitado e a consulta que
@@ -98,7 +94,7 @@ const CELULAS_CALCULADAS = `
            count(*)::int AS realizada
     FROM acervo.versao AS v
     INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
-    WHERE v.tipo_versao_id = 1
+    WHERE v.tipo_versao_id = ${TIPO_VERSAO.REGULAR}
       AND EXTRACT(YEAR FROM v.data_edicao) = mm.ano
     GROUP BY 1, 2
 
@@ -125,7 +121,8 @@ const CELULAS_CALCULADAS = `
            count(*)::int
     FROM rpcmtec.capacitacao AS cap
     INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
-    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id = 3 AND cap.ano = mm.ano
+    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id = ${SITUACAO_CAPACITACAO.CONCLUIDA}
+      AND cap.ano = mm.ano
     GROUP BY 1, 2
 
     UNION ALL
@@ -137,7 +134,8 @@ const CELULAS_CALCULADAS = `
            NULL::int
     FROM rpcmtec.capacitacao AS cap
     INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
-    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id <> 4 AND cap.ano = mm.ano
+    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
+      AND cap.ano = mm.ano
     GROUP BY 1, 2
 
     UNION ALL
@@ -162,8 +160,18 @@ const CELULAS_CALCULADAS = `
 
 // Quais colunas a origem sabe provar. Escrito UMA vez: repetido em cada consulta
 // e onde a divergencia nasceria no dia em que uma origem nova entrasse.
-const ORIGEM_CALCULA_PLANEJADA = 'm.origem_id IN (2, 3)'
-const ORIGEM_CALCULA_REALIZADA = 'm.origem_id IN (2, 3, 4)'
+//
+// AS LISTAS SAO A FONTE, e os fragmentos de SQL saem delas. A guarda de
+// `salvar()` le as MESMAS listas: enquanto ela repetia [2, 3] e [2, 3, 4] a mao,
+// acrescentar uma origem calculada faria a leitura ignorar o digitado e a
+// escrita continuar aceitando-o, sem erro nenhum entre as duas.
+const ORIGENS_CALCULAM_PLANEJADA = [ORIGEM_META.CAPACITACAO, ORIGEM_META.PRODUCAO]
+const ORIGENS_CALCULAM_REALIZADA = [
+  ORIGEM_META.CAPACITACAO, ORIGEM_META.PRODUCAO, ORIGEM_META.IMPRESSAO
+]
+
+const ORIGEM_CALCULA_PLANEJADA = `m.origem_id IN (${ORIGENS_CALCULAM_PLANEJADA.join(', ')})`
+const ORIGEM_CALCULA_REALIZADA = `m.origem_id IN (${ORIGENS_CALCULAM_REALIZADA.join(', ')})`
 
 // A celula EFETIVA: para cada (meta, mes) que exista de um lado ou do outro,
 // escolhe entre o calculado e o digitado, coluna a coluna.
@@ -178,7 +186,7 @@ const CELULAS = `
                 ELSE e.quantidade_planejada END AS planejada,
            CASE WHEN ${ORIGEM_CALCULA_REALIZADA} THEN cc.soma_realizada
                 ELSE e.quantidade END AS realizada,
-           CASE WHEN m.origem_id = 1 THEN e.id ELSE NULL END AS id,
+           CASE WHEN m.origem_id = ${ORIGEM_META.MANUAL} THEN e.id ELSE NULL END AS id,
            e.data_conclusao, e.observacao
     FROM (
       SELECT meta_id, mes FROM pit.execucao
@@ -285,7 +293,7 @@ controller.resumoDoAno = async (ano, mes) => {
             COALESCE(SUM(e.planejada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
             ), 0)::int AS planejado_ate
-     -- A REVISAO VIGENTE NAQUELE MES, e nao a de hoje (2026-08-04). O RPCMTec
+     -- A REVISAO VIGENTE NAQUELE MES, e nao a de hoje. O RPCMTec
      -- de agosto tem de continuar reportando o que reportava depois de a DSG
      -- publicar uma revisao em setembro. Sem mes, vale a de hoje.
      FROM pit.meta_em(
@@ -410,7 +418,7 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
       throw new AppError('Meta do PIT não encontrada', httpCode.NotFound)
     }
 
-    // A COLUNA QUE A ORIGEM CALCULA NÃO SE DIGITA (2026-08-03).
+    // A COLUNA QUE A ORIGEM CALCULA NÃO SE DIGITA.
     //
     // Sem esta guarda, a gravação seria aceita, o número ficaria em
     // `pit.execucao` e a leitura o ignoraria: o cliente veria 200 e o valor não
@@ -421,10 +429,10 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
     // PLANEJ_PIT, porque a mapoteca não planeja nada.
     const rotuloMeta = `Meta ${meta.numero_meta}${meta.item ? ` (item ${meta.item})` : ''}`
     const calculadas = []
-    if ([2, 3].includes(meta.origem_id) && 'quantidade_planejada' in dados) {
+    if (ORIGENS_CALCULAM_PLANEJADA.includes(meta.origem_id) && 'quantidade_planejada' in dados) {
       calculadas.push('quantidade_planejada')
     }
-    if ([2, 3, 4].includes(meta.origem_id) && 'quantidade' in dados) {
+    if (ORIGENS_CALCULAM_REALIZADA.includes(meta.origem_id) && 'quantidade' in dados) {
       calculadas.push('quantidade')
     }
     if (calculadas.length > 0) {

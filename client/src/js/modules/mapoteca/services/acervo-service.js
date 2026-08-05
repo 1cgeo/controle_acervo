@@ -14,7 +14,7 @@ import { cachedFetch, TTL_DOMINIO, TTL_LISTA } from '@services/cache.js';
  */
 
 /**
- * Paginated product search (does NOT return uuid_versao — pick the version
+ * Paginated product search (does NOT return uuid_versao, pick the version
  * via getProdutoDetalhado afterwards).
  * @param {{termo?:string, tipo_produto_id?:number, tipo_escala_id?:number, page?:number, limit?:number}} [filtros]
  * @returns {Promise<{total:number, page:number, limit:number, dados:Array}>}

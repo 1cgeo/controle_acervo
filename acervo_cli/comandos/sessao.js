@@ -60,12 +60,14 @@ async function executar (args, cfg) {
 
   // login
   const { token, administrador, perfis } = await http.autenticar(cfg)
-  http.gravarSessao(cfg, token)
+  // --sem-cache pede para NAO tocar o disco. Gravar assim mesmo desmentia a
+  // flag e ainda anunciava "sessao em cache" que o usuario tinha recusado.
+  if (!cfg.semCache) http.gravarSessao(cfg, token)
   const exp = http.expiracaoDoToken(token)
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
-  // Desde 2026-07-25 o acesso e por PERFIL no modulo (consulta le, operador
-  // cataloga, gerente apaga). Administrador e global e passa em tudo.
+  // O acesso e por PERFIL no modulo: consulta le, operador cataloga, gerente
+  // apaga. Administrador e global e passa em tudo.
   const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }
   const nivel = NIVEL[perfis.acervo] || null
   const quem = administrador
@@ -87,10 +89,13 @@ async function executar (args, cfg) {
     )
   }
 
+  const cauda = cfg.semCache
+    ? '--sem-cache: o token NAO foi gravado, o proximo comando autentica de novo.'
+    : `Sessao em cache por ~${minutos} min; os proximos comandos nao pedem senha.`
+
   return {
     texto: `Autenticado em ${cfg.server} como ${cfg.usuario}, ${quem}, ` +
-      `cliente ${cfg.cliente}. ` +
-      `Sessao em cache por ~${minutos} min; os proximos comandos nao pedem senha.`,
+      `cliente ${cfg.cliente}. ${cauda}`,
     avisos
   }
 }

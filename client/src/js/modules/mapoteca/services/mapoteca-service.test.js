@@ -3,7 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 // Mocka o api-client: cada wrapper do service deve chamar apiGet/Post/Put/Delete
 // com o metodo HTTP e a URL corretos (incluindo a query string).
 //
-// A fusao com o SCA (2026-07-27) NAO mexeu nas rotas da mapoteca: elas seguem
+// A fusao com o SCA NAO mexeu nas rotas da mapoteca: elas seguem
 // em '/mapoteca/...' e '/mapoteca/dashboard/...'. Estes testes fazem isso
 // cumprir. Um prefixo a mais (ex.: '/mapoteca/mapoteca/pedido') cairia em 404.
 vi.mock('@services/api-client.js', () => ({
@@ -71,7 +71,7 @@ describe('mapoteca-service: clientes e pedidos', () => {
   });
 
   test('getPedidos, getPedido e deletePedidos', async () => {
-    // Do ANO: a lista passou a respeitar o contexto do modulo em 2026-07-28.
+    // A lista de pedidos é do ANO: ela respeita o contexto do módulo.
     await svc.getPedidos(2026);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido?ano=2026');
 
@@ -103,6 +103,28 @@ describe('mapoteca-service: clientes e pedidos', () => {
 
     await svc.getImpressaoItem(4);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/produto_pedido/4/impressao');
+  });
+
+  test('registrarImpressao leva a data quando ela vem', async () => {
+    // A data e opcional: sem ela o servidor grava agora. COM ela, registrar na
+    // segunda o que saiu na sexta conta na sexta, e o consumo de papel cai no
+    // mes certo do RPCMTec.
+    await svc.registrarImpressao([
+      { produto_pedido_id: 4, quantidade: 2, data_impressao: '2026-07-31' },
+    ]);
+    expect(apiPost).toHaveBeenCalledWith('/mapoteca/impressao', {
+      registros: [{ produto_pedido_id: 4, quantidade: 2, data_impressao: '2026-07-31' }],
+    });
+  });
+
+  test('corrigirDataImpressao e PUT numa rota propria, com motivo', async () => {
+    // Rota separada, e nao um campo do POST: no servidor ela e GERENTE, enquanto
+    // registrar e operador. O motivo e obrigatorio e vai para a auditoria.
+    await svc.corrigirDataImpressao(12, { data_impressao: '2026-07-31', motivo: 'lancado no dia errado' });
+    expect(apiPut).toHaveBeenCalledWith('/mapoteca/impressao/12/data', {
+      data_impressao: '2026-07-31',
+      motivo: 'lancado no dia errado',
+    });
   });
 
   test('anexos do pedido', async () => {
@@ -149,24 +171,18 @@ describe('mapoteca-service: material, estoque e consumo', () => {
 });
 
 describe('mapoteca-service: relatorios', () => {
-
-
-  // O RPCMTec NAO tem mais funcao aqui: ele saiu do modulo em 2026-08-01 para
-  // @services/rpcmtec-service.js, porque o relatorio e da Divisao inteira e
-  // este service gerava so a metade dele. O teste que sobrou e o inverso:
-  // garantir que ninguem o traga de volta para dentro da mapoteca.
+  // O RPCMTec não tem função aqui: o relatório é da Divisão inteira e mora em
+  // @services/rpcmtec-service.js. O caso é o inverso do comum, e guarda contra
+  // alguém trazer o relatório de volta para dentro da mapoteca.
   test('o service da mapoteca NAO expoe mais nada de RPCMTec', () => {
     const doRpcmtec = Object.keys(svc).filter(k => /rpcmtec/i.test(k));
     expect(doRpcmtec).toEqual([]);
   });
 
-  // A aba META4_DETALHADA do RTM saiu deste service em 2026-08-02 (chefe): o
-  // botao dela saiu da tela de pedidos e foi para a do RPCMTec, onde ela e
-  // baixada junto do Anuario e do DOCX -- que e onde se monta o envio mensal
-  // para a DSG, e onde ela passou a respeitar o MES escolhido.
-  //
-  // A ROTA `/mapoteca/relatorio/impressao_detalhada_ods` continua no servidor,
-  // anual, para agente e CLI. O que saiu foi o caminho do CLIENT.
+  // A aba META4_DETALHADA do RTM não sai deste service, e sim da tela do
+  // RPCMTec, onde ela é baixada junto do Anuário e do DOCX e respeita o MÊS
+  // escolhido. A ROTA `/mapoteca/relatorio/impressao_detalhada_ods` continua no
+  // servidor, anual, para agente e CLI: o que saiu foi o caminho do CLIENT.
   test('a aba META4 do RTM nao sai mais deste service', () => {
     expect(svc.downloadMeta4Ods).toBeUndefined();
     expect(svc.downloadMeta4Csv).toBeUndefined();
@@ -175,9 +191,8 @@ describe('mapoteca-service: relatorios', () => {
 
 describe('mapoteca-service: dashboard', () => {
   test('cada painel bate em /mapoteca/dashboard', async () => {
-    // As metricas de PEDIDO passaram a ser por ano em 2026-07-28, contadas pela
-    // data do pedido. A janela deslizante ("ultimos 6 meses") saiu junto: ela
-    // nao tem como respeitar um ano de contexto.
+    // As métricas de PEDIDO são por ano, contadas pela data do pedido. Não há
+    // janela deslizante ("últimos 6 meses"): ela não respeitaria o ano.
     await svc.getOrderStatus(2026);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/dashboard/order_status?ano=2026');
 
@@ -258,23 +273,44 @@ describe('mapoteca-service: cache', () => {
   });
 });
 
+// Exportações do service que NÃO batem numa rota quando chamadas com
+// `(1, {})`: `downloadDashboardCsv` monta a URL e delega, `uploadAnexoPedido`
+// precisa de um File de verdade, e `invalidateDashboardCache` só mexe no cache
+// em memória. Nomeadas de propósito, para função nova não sumir da varredura.
+const SEM_ROTA_PROPRIA = [
+  'downloadDashboardCsv', 'invalidateDashboardCache', 'uploadAnexoPedido',
+];
+
 describe('mapoteca-service: nenhum caminho escapa do namespace', () => {
   test('toda rota e /mapoteca/... ou o /relatorio do RPCMTec', async () => {
     // Toda funcao exportada e chamada com argumentos inofensivos; o api-client
     // esta mockado, entao nada sai para a rede. O que importa e o 1o argumento.
-    for (const fn of Object.values(svc)) {
-      if (typeof fn !== 'function') continue;
+    const espioes = [apiGet, apiPost, apiPut, apiDelete, apiDownload];
+    const totalDeChamadas = () => espioes.reduce((s, e) => s + e.mock.calls.length, 0);
+
+    const funcoes = Object.entries(svc).filter(([, v]) => typeof v === 'function');
+    const explodiram = [];
+    const semRota = [];
+    for (const [nome, fn] of funcoes) {
+      const antes = totalDeChamadas();
       try {
         const r = fn(1, {});
         if (r && typeof r.catch === 'function') await r.catch(() => {});
-      } catch {
-        continue;
+      } catch (err) {
+        explodiram.push(`${nome}: ${err.message}`);
       }
+      if (totalDeChamadas() === antes) semRota.push(nome);
     }
-    const caminhos = [apiGet, apiPost, apiPut, apiDelete, apiDownload]
-      .flatMap(spy => spy.mock.calls.map(args => args[0]));
+    // Engolir a exceção em silêncio tiraria a função que quebrou da varredura, e
+    // o caso seguiria verde justamente por causa do defeito.
+    expect(explodiram).toEqual([]);
+    // Toda função exportada bate em UMA rota. As poucas que não batem ficam
+    // nomeadas aqui: função nova que não chega ao servidor cai neste ponto, em
+    // vez de sumir da varredura sem aviso.
+    expect(semRota).toEqual(SEM_ROTA_PROPRIA);
 
-    expect(caminhos.length).toBeGreaterThan(20);
+    const caminhos = espioes.flatMap(spy => spy.mock.calls.map(args => args[0]));
+    expect(caminhos).toHaveLength(funcoes.length - SEM_ROTA_PROPRIA.length);
     for (const caminho of caminhos) {
       expect(
         caminho.startsWith('/mapoteca/') || caminho.startsWith('/relatorio/rpcmtec')

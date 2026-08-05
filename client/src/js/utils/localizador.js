@@ -1,7 +1,7 @@
 /**
  * Order tracking code format (RN04): XXXX-XXXX-XXXX, uppercase alphanumeric.
  */
-export const LOCALIZADOR_REGEX = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+const LOCALIZADOR_REGEX = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 /**
  * Normalize user input (trim + uppercase).

@@ -5,7 +5,7 @@ const { db } = require('../../database')
 const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
 const arquivoCtrl = require('../arquivo/arquivo_ctrl')
 
-const { AppError, httpCode } = require('../utils')
+const { AppError, httpCode, domainConstants: { CLASSIFICACAO_NC } } = require('../utils')
 
 const controller = {}
 
@@ -69,7 +69,7 @@ const tratarFk = err => {
 // aqui garantimos null explicito para o banco, e reforcamos o invariante
 // "classificacao = PDR (1) => pode ter pdr_item_id; senao => null".
 const normalizarPdrItemId = dados => {
-  if (dados.classificacao_id !== 1) {
+  if (dados.classificacao_id !== CLASSIFICACAO_NC.PDR) {
     return null
   }
   return dados.pdr_item_id == null ? null : dados.pdr_item_id
@@ -185,7 +185,6 @@ controller.getPorId = async id => {
   return nc
 }
 
-// GANHOU TRANSACAO em 2026-08-02, com a rastreabilidade.
 controller.criar = async (dados, usuarioUuid, contexto) => {
   const pdrItemId = normalizarPdrItemId(dados)
 
@@ -317,14 +316,11 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
 }
 
 /**
- * GANHOU TRANSACAO em 2026-08-02, e aqui isso NAO e so pela auditoria.
- *
- * Esta funcao fazia QUATRO comandos em QUATRO conexoes diferentes: o `SELECT
- * id`, as duas checagens de dependencia e o `DELETE`. Entre a checagem e o
- * DELETE cabia outra requisicao criando a NE que a checagem acabara de nao
- * encontrar, e a NC saia com empenho vinculado -- exatamente o que as duas
- * checagens existem para impedir. Envolve-las numa transacao conserta um defeito
- * de concorrencia que ja existia; a linha de rastro veio de carona.
+ * A TRANSACAO aqui nao e so pela auditoria. Sao quatro comandos (o `SELECT id`,
+ * as duas checagens de dependencia e o `DELETE`), e fora de transacao cabe entre
+ * a checagem e o DELETE outra requisicao criando a NE que a checagem acabara de
+ * nao encontrar: a NC sairia com empenho vinculado, que e exatamente o que as
+ * duas checagens existem para impedir.
  */
 controller.deletar = async (id, usuarioUuid, contexto) => {
   await db.conn.tx(async t => {

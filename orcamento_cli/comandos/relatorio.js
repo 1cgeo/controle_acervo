@@ -9,19 +9,17 @@
 // da MESMA rota que o painel usa: nao ha regra de negocio duplicada aqui, so
 // recorte de apresentacao.
 //
-// O COMANDO `secao3` SAIU em 2026-08-01. Ele gerava a secao do PDR do RPCMTec em
-// markdown e em DOCX, e quem montava a edicao mensal colava esse arquivo dentro
-// do que o outro CLI gerava. O RPCMTec passou a ser gerado inteiro num lugar so,
-// fora dos modulos: use `acervo rpcmtec --ano N --mes M --docx`.
+// `secao3` nao existe mais: o RPCMTec e gerado inteiro num lugar so, fora dos
+// modulos, por `acervo rpcmtec --ano N --mes M --docx`. O verbo fica aqui so
+// para dizer isso a quem o tinha na memoria.
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')
 const argsLib = require('../lib/args')
 const { obter } = require('../lib/recursos')
 
-// A base da rota sai da registry, nunca escrita a mao aqui: ela ganhou o
-// prefixo /orcamento na fusao de 2026-07-27, e um caminho literal neste arquivo
-// teria sobrevivido em silencio ate o primeiro 404.
+// A base da rota sai da registry, nunca escrita a mao aqui: um caminho literal
+// neste arquivo sobreviveria em silencio a uma mudanca de rota, ate o 404.
 const BASE = obter('dashboard').caminho
 
 function agora () {
@@ -29,14 +27,13 @@ function agora () {
   return { ano: d.getFullYear(), mes: d.getMonth() + 1 }
 }
 
-/** Le o campo com split PDR/Extra, caindo no total quando o servidor for antigo. */
+/**
+ * Le o campo da faixa pedida. O painel devolve o total E o split PDR/Extra
+ * (recebido, recebido_pdr, recebido_extra), e o saldo trabalha sempre numa
+ * faixa, nunca no total: somar as duas esconde a pergunta que o comando responde.
+ */
 function valor (linha, base, faixa) {
-  const especifico = linha[`${base}_${faixa}`]
-  if (especifico !== undefined && especifico !== null) return Number(especifico) || 0
-  // Servidor anterior a 2026-06-15 nao separava PDR de Extra-PDR, e o
-  // comportamento de entao era PDR-only: o total equivale ao PDR.
-  if (faixa === 'pdr') return Number(linha[base]) || 0
-  return 0
+  return Number(linha[`${base}_${faixa}`]) || 0
 }
 
 async function saldo (args, cfg) {
@@ -46,9 +43,8 @@ async function saldo (args, cfg) {
   const mes = argsLib.numero(flags, 'mes', hoje.mes)
   const faixa = flags.extra ? 'extra' : 'pdr'
 
-  // A rota do painel devolve a LISTA de linhas por ND direto. Ate 2026-08-01 ela
-  // era /orcamento/relatorio/secao3 e vinha embrulhada em { tabela_31 }, junto
-  // com as outras seis tabelas da secao 3, que este comando nunca leu.
+  // A rota do painel devolve a LISTA de linhas por ND direto, ja acumulada de
+  // 01-jan ate o mes pedido.
   const r = await http.autenticada(cfg, 'GET', BASE + '/execucao_nd' + http.query({
     ano, mes
   }))
@@ -111,11 +107,13 @@ async function executar (args, cfg) {
   if (comando === 'saldo') return saldo(args, cfg)
   if (comando === 'secao3') {
     throw new Error(
-      'O comando `secao3` saiu em 2026-08-01: o RPCMTec passou a ser gerado ' +
-      'inteiro num lugar so, fora dos modulos. Use: acervo rpcmtec --ano N --mes M --docx'
+      'O comando `secao3` nao existe mais: o RPCMTec e gerado inteiro num lugar ' +
+      'so, fora dos modulos. Use: acervo rpcmtec --ano N --mes M --docx'
     )
   }
-  throw new Error(`Comando de relatorio desconhecido: ${comando}`)
+  throw new Error(
+    `Comando de relatorio desconhecido: ${comando}. Use: orcamento saldo.`
+  )
 }
 
 module.exports = { executar, precisaServidor: true }

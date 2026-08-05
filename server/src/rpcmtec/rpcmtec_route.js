@@ -38,9 +38,8 @@ const doisDigitos = mes => String(mes).padStart(2, '0')
 // tem rota própria em vez de entrar no DOCX -- o destino dele é uma aba de
 // planilha, não um parágrafo.
 //
-// Os dados vêm de `mapoteca/anuario_ctrl`, que é onde a entrega é registrada; o
-// que mudou em 2026-08-01 foi só o ARQUIVO, que passou a sair da planilha-
-// semente da DSG em vez de ser redesenhado (ver rpcmtec/anuario_ods.js).
+// Os dados vêm de `mapoteca/anuario_ctrl`, que é onde a entrega é registrada, e
+// o arquivo sai da planilha-semente da DSG (ver rpcmtec/anuario_ods.js).
 // ---------------------------------------------------------------------------
 
 // Prévia em tela, no envelope JSON.
@@ -88,9 +87,8 @@ router.get(
 //
 // Sai daqui pelo mesmo motivo do Anuário: é a MESMA tarefa mensal, e os três
 // arquivos (RPCMTec, Anuário e RTM) sobem para a DSG no mesmo envio. O dado vem
-// de `mapoteca/relatorio_ctrl`, que é onde a impressão é registrada; o que
-// mudou em 2026-08-01 foi o ARQUIVO, que passou a sair da planilha-semente em
-// vez de ser redesenhado (ver rpcmtec/rtm_ods.js).
+// de `mapoteca/relatorio_ctrl`, que é onde a impressão é registrada, e o arquivo
+// sai da planilha-semente (ver rpcmtec/rtm_ods.js).
 //
 // A aba é do ANO inteiro, e não do mês: ela é o detalhamento da Meta 4 do PIT,
 // e quem a cola no RTM cola o ano corrente. Por isso o `mes` é ignorado aqui.
@@ -101,14 +99,9 @@ router.get(
   verifyAdmin,
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
-    // O RTM e ACUMULADO ate o mes escolhido (chefe, 2026-08-02): 2026 com marco
-    // traz janeiro, fevereiro e marco. Ate esta data o `mes` chegava aqui e era
-    // IGNORADO -- trocar o mes na tela devolvia sempre o mesmo arquivo do ano
-    // inteiro, e nada dizia isso.
-    //
-    // E o unico dos tres downloads desta tela que acumula: o DOCX e o Anuario
-    // sao do MES. Os tres sobem para a DSG no mesmo envio, e e assim que a DSG
-    // os espera.
+    // O RTM e ACUMULADO ate o mes escolhido: 2026 com marco traz janeiro,
+    // fevereiro e marco. E o unico download desta tela que acumula, e os outros
+    // sao do MES.
     const { ano, mes } = req.query
     const dados = await mapotecaRelatorioCtrl.getRelatorioPedidosDetalhado(ano, mes)
     const buffer = gerarRtmOds(mapotecaRelatorioCtrl.paraAbaMeta4(dados))

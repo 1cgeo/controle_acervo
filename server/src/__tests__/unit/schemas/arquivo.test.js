@@ -7,10 +7,9 @@
 // o espelho desalinhado deixa o erro estourar no trigger, ja dentro da
 // transacao, com mensagem do PostgreSQL em vez de 400 dizendo o campo.
 //
-// Ate 2026-08-01 os casos afirmavam so `expect(error).toBeDefined()`, o que
-// passava mesmo se a regra do titulo fosse removida (bastava o fixture falhar
-// por outro campo). Agora cada recusa prova o CAMPO e a REGRA, pelo helper
-// __tests__/helpers/joi.js.
+// Cada recusa prova o CAMPO e a REGRA, pelo helper __tests__/helpers/joi.js.
+// Afirmar só que houve erro passaria mesmo com a regra do título removida:
+// bastaria a fixtura falhar por outro campo.
 
 const arquivoSchema = require('../../../arquivo/arquivo_schema')
 const { recusaPor, aceita } = require('../../helpers/joi')
@@ -374,15 +373,15 @@ describe('Schemas de arquivo', () => {
       aceita(arquivoSchema.uploadWebProduto.validate(produto(arquivoWeb)))
     })
 
-    // O nome fisico sai de `acervo.nome_arquivo_padrao`, a mesma funcao que o
-    // invariante 7a audita. Aceito do cliente, cada envio pela web criava uma
-    // linha de DEFECT no 7a -- medido em 2026-08-02, com `carta_ensaio` onde o
-    // padrao pedia `CT_s12_2757-1-NE_1dsg`.
+    // O nome físico sai de `acervo.nome_arquivo_padrao`, a mesma função que o
+    // invariante 7a audita. Aceito do cliente, cada envio pela web cria uma
+    // linha de DEFECT no 7a: o rótulo humano vai para onde o padrão manda a
+    // chave derivada dos metadados.
     it('RECUSA nome_arquivo declarado pelo cliente', () => {
-      for (const [nome, montar] of [['versao', versao], ['produto', produto]]) {
-        const r = arquivoSchema[nome === 'versao' ? 'uploadWebVersao' : 'uploadWebProduto']
+      for (const [schema, montar] of [['uploadWebVersao', versao], ['uploadWebProduto', produto]]) {
+        const r = arquivoSchema[schema]
           .validate(montar({ ...arquivoWeb, nome_arquivo: 'nome_que_eu_quero' }))
-        expect(r.error).toBeDefined()
+        recusaPor(r, 'arquivos.0.nome_arquivo', 'any.unknown')
         expect(r.error.details[0].message).toContain('nome_arquivo_padrao')
       }
     })
@@ -393,7 +392,7 @@ describe('Schemas de arquivo', () => {
       const r = arquivoSchema.uploadWebVersao.validate(
         versao({ ...arquivoWeb, extensao: 'tif' })
       )
-      expect(r.error).toBeDefined()
+      recusaPor(r, 'arquivos.0.extensao', 'any.unknown')
       expect(r.error.details[0].message).toContain('nome do arquivo enviado')
     })
 
@@ -401,13 +400,13 @@ describe('Schemas de arquivo', () => {
       const comChecksum = arquivoSchema.uploadWebVersao.validate(
         versao({ ...arquivoWeb, checksum: 'a'.repeat(64) })
       )
-      expect(comChecksum.error).toBeDefined()
+      recusaPor(comChecksum, 'arquivos.0.checksum', 'any.unknown')
       expect(comChecksum.error.details[0].message).toContain('checksum é medido pelo servidor')
 
       const comTamanho = arquivoSchema.uploadWebVersao.validate(
         versao({ ...arquivoWeb, tamanho_mb: 12 })
       )
-      expect(comTamanho.error).toBeDefined()
+      recusaPor(comTamanho, 'arquivos.0.tamanho_mb', 'any.unknown')
       expect(comTamanho.error.details[0].message).toContain('tamanho é medido pelo servidor')
     })
 
@@ -436,8 +435,7 @@ describe('Schemas de arquivo', () => {
     // As datas seguem sendo dia de calendario aqui tambem: este schema tinha o
     // mesmo defeito de fuso que o de produto, e corrigir um so nao adiantaria.
     it('a data de versao volta como a string original', () => {
-      const { value, error } = arquivoSchema.uploadWebVersao.validate(versao(arquivoWeb))
-      expect(error).toBeUndefined()
+      const value = aceita(arquivoSchema.uploadWebVersao.validate(versao(arquivoWeb)))
       expect(value.versao.data_edicao).toBe('2026-08-01')
     })
   })

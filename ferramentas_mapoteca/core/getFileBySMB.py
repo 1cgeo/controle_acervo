@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 def main():
     if len(sys.argv) != 6:
-        logging.error(f"Uso: python3 getFileBySMB.py <smb_path> <local_path> <user> <password> <domain>")
+        logging.error("Uso: python3 getFileBySMB.py <smb_path> <local_path> <user> <password> <domain>")
         sys.exit(1)
 
     smb_file_path = sys.argv[1]
@@ -59,12 +59,13 @@ def main():
 
     except Exception as e:
         logging.error(f"Erro ao transferir arquivo via SMB: {e}")
-        # Limpar arquivo parcial se existir
+        # O arquivo parcial tem de sair: sobrando na pasta, ele passa por PDF
+        # baixado e vai truncado para a impressora.
         if os.path.exists(local_file_path):
             try:
                 os.remove(local_file_path)
-            except OSError:
-                pass
+            except OSError as erro_remocao:
+                logging.warning(f"Arquivo parcial não pôde ser apagado: {erro_remocao}")
         sys.exit(4)
 
 

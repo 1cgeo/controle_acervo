@@ -54,10 +54,9 @@ const somaAlocacoes = alocacoes =>
 // mesma classificacao (regra de negocio). NC unica dispensa a checagem (a FK ja
 // garante a existencia e "mesma ND" e trivial).
 //
-// RECEBE `t` desde 2026-08-02. Ela lia por `db.conn.any`, ou seja numa conexao
-// FORA da transacao que gravava a NE: entre a validacao e o INSERT cabia outra
-// requisicao mudando a ND de uma daquelas NCs, e a NE nascia violando a regra
-// que esta funcao existe para garantir.
+// RECEBE `t`, e nunca le por `db.conn`: fora da transacao que grava a NE, cabe
+// entre a validacao e o INSERT outra requisicao mudando a ND de uma daquelas
+// NCs, e a NE nasce violando a regra que esta funcao existe para garantir.
 const validarNcsHomogeneas = async (t, alocacoes) => {
   if (alocacoes.length <= 1) return
   const ids = alocacoes.map(a => a.nota_credito_id)
@@ -308,11 +307,9 @@ controller.getPorId = async id => {
   // Uma NE com nomes resolvidos, suas liquidacoes (array) e o saldo a
   // liquidar = valor_empenhado - valor_anulado - SUM(liquidado).
   //
-  // A conta do saldo mudou de lugar em 2026-08-04: era um `reduce` em Number
-  // sobre os NUMERIC do Postgres, e sobrava residuo de ponto flutuante. Dado
-  // real, a NE 2026NE000023: 2499.01 - 339.16 - 2159.85 dava 4.5e-13 em vez de
-  // zero, e a NE quitada aparecia em aberto. Somado no banco, o tipo e NUMERIC
-  // e a conta fecha exata.
+  // O SALDO E SOMADO NO BANCO, e nunca por `reduce` em Number sobre os NUMERIC
+  // do Postgres: em ponto flutuante sobra residuo (2499.01 - 339.16 - 2159.85 da
+  // 4.5e-13 em vez de zero), e a NE quitada aparece em aberto.
   //
   // O bloco `nc_*` existe para responder a pergunta da DECISAO: antes de emitir
   // uma NE nova, quanto resta do credito daquela NC. Sem ele a ficha mostrava
@@ -333,11 +330,18 @@ controller.getPorId = async id => {
             COALESCE((
               SELECT SUM(v.valor)
               FROM (
-                SELECT enc2.valor
+                SELECT enc2.valor - COALESCE(ne2.valor_anulado, 0)
+                         * (enc2.valor / NULLIF(tot.soma, 0)) AS valor
                 FROM orcamento.nota_empenho_nota_credito AS enc2
+                INNER JOIN orcamento.nota_empenho AS ne2 ON ne2.id = enc2.nota_empenho_id
+                INNER JOIN LATERAL (
+                  SELECT SUM(x.valor) AS soma
+                    FROM orcamento.nota_empenho_nota_credito AS x
+                   WHERE x.nota_empenho_id = enc2.nota_empenho_id
+                ) AS tot ON TRUE
                 WHERE enc2.nota_credito_id = nc.id
                 UNION ALL
-                SELECT ne2.valor_empenhado
+                SELECT ne2.valor_empenhado - COALESCE(ne2.valor_anulado, 0)
                 FROM orcamento.nota_empenho AS ne2
                 WHERE ne2.nota_credito_id = nc.id
                   AND NOT EXISTS (
@@ -395,10 +399,16 @@ controller.getPorId = async id => {
     { id }
   )
 
-  // Saldo da NC = valor da NC menos tudo o que ja se empenhou contra ela. E o
-  // MESMO teto que `validarTetoDasNcs` cobra na gravacao: a tela nao pode
-  // mostrar um saldo que a validacao nao reconhece.
-  ne.nc_saldo = Number(ne.nc_valor_nc) - Number(ne.nc_empenhado)
+  // Saldo da NC pela MESMA regua de `validarTetoDasNcs`: recebido, menos o
+  // recolhido, menos o empenhado LIQUIDO de anulacao. A tela nao pode mostrar um
+  // saldo que a validacao nao reconhece, e mostrava: a conta daqui somava o
+  // empenho BRUTO e ignorava o recolhido, enquanto o teto da gravacao ja fazia as
+  // duas coisas. Uma NE anulada por inteiro aparecia consumindo a NC, e a tela
+  // dizia "sem saldo" sobre credito que o servidor aceita empenhar.
+  ne.nc_saldo =
+    Number(ne.nc_valor_nc) -
+    Number(ne.nc_valor_recolhido || 0) -
+    Number(ne.nc_empenhado)
 
   return ne
 }
@@ -488,12 +498,10 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
 
   return db.conn
     .tx(async t => {
-      // AS TRES LEITURAS ENTRARAM PARA DENTRO DA TRANSACAO em 2026-08-02. Elas
-      // rodavam em conexoes avulsas ANTES do `tx`: o teste de existencia, a soma
-      // das liquidacoes e a validacao das NCs. Entre qualquer uma delas e o
-      // UPDATE cabia outra requisicao lancando uma liquidacao, e o
-      // valor_anulado passava a deixar o saldo negativo -- que e exatamente o
-      // que a checagem existe para impedir.
+      // AS TRES LEITURAS FICAM DENTRO DA TRANSACAO: o teste de existencia, a
+      // soma das liquidacoes e a validacao das NCs. Em conexao avulsa, cabe
+      // entre qualquer uma delas e o UPDATE outra requisicao lancando uma
+      // liquidacao, e o `valor_anulado` deixa o saldo negativo.
       const antes = await auditoriaCtrl.lerAntes(
         t,
         'orcamento.nota_empenho',
@@ -583,10 +591,9 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
     .catch(tratarFk)
 }
 
-// GANHOU TRANSACAO em 2026-08-02: eram QUATRO comandos em quatro conexoes (o
-// teste de existencia, as duas checagens de dependencia e o DELETE). Entre a
-// checagem e o DELETE cabia outra requisicao lancando a liquidacao que a
-// checagem acabara de nao encontrar.
+// EM TRANSACAO: sao quatro comandos (o teste de existencia, as duas checagens de
+// dependencia e o DELETE), e fora dela cabe entre a checagem e o DELETE outra
+// requisicao lancando a liquidacao que a checagem acabara de nao encontrar.
 controller.deletar = async (id, usuarioUuid, contexto) => {
   await db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(

@@ -5,20 +5,16 @@ const Joi = require('joi')
 /**
  * Filtro de domínio que aceita VÁRIOS códigos.
  *
- * Existe porque a tela passou a marcar mais de uma opção por filtro (chefe,
- * 2026-08-04): o combo de escolha única obrigava a refazer a busca uma vez por
- * escala para responder "o que existe em 25k e em 50k".
- *
  * Aceita as três formas em que o valor chega, e sempre devolve um ARRAY de
  * inteiros já sem repetição:
  *
  * - `?tipo_produto_id=1,3` (a tela, que junta com vírgula)
  * - `?tipo_produto_id=1&tipo_produto_id=3` (o Express monta array sozinho)
- * - `?tipo_produto_id=1` (o link antigo e o plugin, que mandam um só)
+ * - `?tipo_produto_id=1` (o plugin e o CLI, que mandam um só)
  *
- * A terceira forma é o que mantém compatível todo link já colado em documento e
- * o CLI: um valor solto continua valendo e vira lista de um elemento. Por isso
- * o controlador pode usar `IN (...)` sem tratar caso a caso.
+ * A terceira forma é o que mantém compatível o link já colado em documento: um
+ * valor solto vira lista de um elemento, e por isso o controlador pode usar
+ * `IN (...)` sem tratar caso a caso.
  *
  * A validação recusa a lista inteira quando UM item é inválido, em vez de
  * descartar o item ruim em silêncio. Descartar devolveria um resultado a mais,

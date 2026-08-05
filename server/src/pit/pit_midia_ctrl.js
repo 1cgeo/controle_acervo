@@ -2,35 +2,25 @@
 
 // O de-para da MIDIA impressa para a meta do PIT, por ano.
 //
-// POR QUE ELE EXISTE, e nao o `mapoteca.pedido.meta_pit_id` que ja existia. Os
-// dois campos respondem perguntas DIFERENTES, e a medicao de 2026-08-03 mostrou
-// isso com clareza.
+// POR QUE ELE EXISTE, e nao o `mapoteca.pedido.meta_pit_id`. Os dois campos
+// respondem perguntas DIFERENTES.
 //
-// O campo do pedido diz "este pedido estava previsto no PIT, sob esta meta". O
+// O campo do pedido diz "este pedido estava previsto no PIT, sob esta meta", e o
 // CHECK `pedido_meta_pit_id_exige_previsto` deixa isso explicito: so quem marca
-// `previsto_pit` e obrigado a dizer a meta. Em 2026, os 16 pedidos que o
-// preencheram sao exatamente os 16 marcados como previstos, de 160.
+// `previsto_pit` e obrigado a dizer a meta, e a maioria dos pedidos nao marca.
 //
-// A meta 4 do RTM conta o que SAIU, e o que saiu esta no ITEM: a midia
-// entregue, com a quantidade fornecida. Somando por `pedido.meta_pit_id` o ano
-// de 2026 daria 253 folhas na 4.1, onde o relatorio publica 5.664.
+// A meta 4 do RTM conta o que SAIU, e o que saiu esta no ITEM: a midia entregue,
+// com a quantidade fornecida. Somar por `pedido.meta_pit_id` devolve uma fracao
+// do que o relatorio publica.
 //
-// OS 16 PROVAM QUE OS DOIS CAMPOS NAO SE SUBSTITUEM. Por eles, a meta 4.2
-// (Tyvek) recebe 199 folhas em janeiro e fevereiro -- mas em 2026 NENHUMA folha
-// saiu em tyvek: as 6.481 entregues foram todas Sulfite 120g. Aqueles pedidos
-// foram planejados como tyvek e atendidos em sulfite, que e o padrao da casa
-// quando falta o material. O pedido guarda o prometido, o item guarda o
-// entregue, e o de-para daqui serve ao segundo.
+// OS DOIS CAMPOS NAO SE SUBSTITUEM nem quando ambos existem: pedido planejado em
+// tyvek e atendido em sulfite conta na meta do SULFITE, porque foi ele que saiu.
+// O pedido guarda o prometido, o item guarda o entregue, e o de-para daqui serve
+// ao segundo.
 //
-// NAO e porque o pedido misture midias: em 2026 os 97 pedidos atendidos tem UMA
-// midia cada. Essa justificativa apareceu num rascunho desta mesma feature e o
-// dado a desmentiu.
-//
-// POR QUE O ANO ESTA NA CHAVE. A numeracao do PIT e reescrita todo ano: a 4.1 de
-// 2026 e o sulfite, e pode ser outra coisa em 2027. A correlacao de 2026
-// (sulfite na 4.1, tyvek na 4.2, glossy na 4.3) valeu sem excecao, e mesmo assim
-// nao se fixa no codigo, pelo mesmo motivo pelo qual `mapoteca.pedido` nao
-// deriva a meta do material.
+// POR QUE O ANO ESTA NA CHAVE. A numeracao do PIT e reescrita todo ano, entao a
+// correlacao midia-meta nao se fixa no codigo, pelo mesmo motivo pelo qual
+// `mapoteca.pedido` nao deriva a meta do material.
 //
 // A TABELA MORA NO SCHEMA `mapoteca` e a ROTA mora aqui. A tabela e da mapoteca
 // porque a midia e dela, e a seta aponta do modulo para o `pit`, como todas as

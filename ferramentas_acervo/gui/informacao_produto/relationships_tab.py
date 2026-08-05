@@ -3,12 +3,9 @@
 Componente da aba de Relacionamentos para o diálogo de informações do produto.
 """
 
-from qgis.PyQt.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTreeWidget, QTreeWidgetItem, QHeaderView
-)
+from qgis.PyQt.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTreeWidget,
+                                 QTreeWidgetItem)
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtGui import QFont
 
 class RelationshipsTab(QWidget):
     def __init__(self, parent, is_admin=False):
@@ -34,7 +31,8 @@ class RelationshipsTab(QWidget):
             self.admin_widget = QWidget()
             admin_layout = QHBoxLayout(self.admin_widget)
             
-            # Não implementamos o botão de adicionar relação, conforme solicitado
+            # Não há botão de criar relacionamento aqui: quem cria é a tela
+            # "Criar Relacionamentos entre Versões em Lote".
             
             self.edit_relationship_btn = QPushButton("Editar Relacionamento")
             admin_layout.addWidget(self.edit_relationship_btn)

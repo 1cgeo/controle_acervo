@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { permissoes } from '@store/auth-store.js';
 import { getTiposProduto } from '@modules/acervo/services/acervo-service.js';
 import {
@@ -10,6 +11,7 @@ import {
   excluirVolumeTipoProduto,
 } from '@modules/acervo/services/admin-service.js';
 import { openVolumeTipoProdutoDialog } from './volume-tipo-produto-dialog.js';
+import { formatBoolean } from '@utils/format.js';
 
 /**
  * Aba "Tipo de produto": qual volume recebe cada tipo, e qual deles e o
@@ -48,7 +50,7 @@ export async function renderVolumeTipoProdutoTab(container) {
         key: 'primario',
         label: 'Primário',
         sortable: true,
-        render: (row) => (row.primario ? 'Sim' : 'Não'),
+        render: (row) => formatBoolean(row.primario),
       },
     ],
     rows: [],
@@ -73,6 +75,10 @@ export async function renderVolumeTipoProdutoTab(container) {
     ] : [],
   });
 
+  // A tabela num container proprio, para o estado de erro nao levar junto o
+  // texto de apoio nem o botao "Nova associacao".
+  const areaTabela = el('div', {}, [table.element]);
+
   const secao = el('div', {}, [
     el('div', { className: 'admin-aba__topo' }, [
       el('p', {
@@ -83,7 +89,7 @@ export async function renderVolumeTipoProdutoTab(container) {
       }),
       el('div', { className: 'page__actions' }, pode.operador ? [novoBtn] : []),
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(secao);
 
@@ -98,12 +104,22 @@ export async function renderVolumeTipoProdutoTab(container) {
         getVolumesArmazenamento(),
       ]);
       if (disposed) return;
+      if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
       tiposProduto = tipos;
       volumes = vols;
+      novoBtn.disabled = false;
+      novoBtn.title = '';
       table.update({ rows: assocs, loading: false });
     } catch (err) {
       if (disposed) return;
+      // Estado de ERRO, e nao "Nenhuma associacao": zero linhas afirmava que
+      // nenhum tipo de produto tem volume, e essa e a leitura oposta.
       table.update({ rows: [], loading: false });
+      // Os dois `<select>` do formulario (tipo de produto e volume) saem desta
+      // carga: sem ela, "Nova associacao" abriria com as duas listas vazias.
+      novoBtn.disabled = true;
+      novoBtn.title = 'As listas de tipo e de volume não carregaram. Tente de novo.';
+      mostrarErro(areaTabela, err, load);
       showError(err.message || 'Erro ao carregar as associações');
     }
   }

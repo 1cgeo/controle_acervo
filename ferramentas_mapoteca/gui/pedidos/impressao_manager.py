@@ -13,12 +13,9 @@ class ImpressaoManager(QObject):
 
     Os downloads são sequenciais, com verificação de checksum e retentativas, e
     confirmados com o servidor ao final. A confirmação sai por
-    `mapoteca/impressao/confirmar_download`, e NÃO por `acervo/confirm-download`:
+    `mapoteca/impressao/confirmar_download`, NUNCA por `acervo/confirm-download`:
     as duas escrevem na mesma `acervo.download`, mas a do acervo cobra perfil no
-    módulo ACERVO, e quem atende pedido tem operador na MAPOTECA e pode não ter
-    perfil nenhum no acervo. Pelo caminho antigo, o operador chegava ao fim de um
-    download bem-sucedido e levava 403: os PDFs ficavam na pasta, os tokens
-    ficavam pendentes e o servidor os marcava como falha 24h depois.
+    módulo ACERVO, e quem atende pedido pode não ter perfil nenhum lá.
 
     Ao concluir, grava um manifesto CSV com o que falta imprimir de cada item.
     """
@@ -28,7 +25,9 @@ class ImpressaoManager(QObject):
     download_progress = pyqtSignal(int, int)  # atual, total
     file_progress = pyqtSignal(int, int, str) # bytes_atuais, bytes_totais, nome
     download_complete = pyqtSignal(list, str) # resultados, caminho_manifesto
-    download_error = pyqtSignal(str)          # mensagem
+    # Mensagem vazia quer dizer "o api_client já mostrou a causa ao usuário":
+    # a tela só volta ao estado normal, sem empilhar um segundo diálogo.
+    download_error = pyqtSignal(str)
 
     MAX_CHECKSUM_RETRIES = 3
     CHECKSUM_RETRY_BASE_DELAY = 2  # segundos
@@ -65,9 +64,14 @@ class ImpressaoManager(QObject):
 
             if response and 'dados' in response:
                 self.prepare_complete.emit(response['dados'])
+            elif response is None:
+                # Erro de rede ou de HTTP: o api_client já mostrou a causa.
+                self.download_error.emit('')
             else:
                 self.download_error.emit(
-                    "Não foi possível preparar o download. Resposta inválida do servidor.")
+                    "O servidor respondeu sem os dados do download. "
+                    "Atualize a fila e tente de novo; se repetir, avise o "
+                    "gerente da mapoteca.")
         except Exception as e:
             self.download_error.emit(f"Erro ao preparar o download: {str(e)}")
 
@@ -86,8 +90,13 @@ class ImpressaoManager(QObject):
         self._total_files = len(file_infos)
         self._completed_count = 0
 
-        if not os.path.exists(destination_dir):
-            os.makedirs(destination_dir)
+        try:
+            os.makedirs(destination_dir, exist_ok=True)
+        except OSError as e:
+            self.download_error.emit(
+                f"Não foi possível usar a pasta de destino: {e}\n\n"
+                "Escolha outra pasta, em disco local, e tente de novo.")
+            return
 
         # Montar fila, evitando colisão de nomes de destino
         used_names = set()
@@ -225,8 +234,8 @@ class ImpressaoManager(QObject):
         try:
             if os.path.exists(caminho):
                 os.remove(caminho)
-        except OSError:
-            pass
+        except OSError as e:
+            logging.warning(f"Não foi possível apagar o arquivo {caminho}: {e}")
 
     def confirm_downloads(self):
         """Confirma os downloads com o servidor e grava o manifesto."""
@@ -247,15 +256,23 @@ class ImpressaoManager(QObject):
             for result in self.download_results
         ]
 
+        # O manifesto sai ANTES da confirmação: os PDFs já estão na pasta, e
+        # quem imprime precisa da lista mesmo que o servidor não responda.
+        manifesto_path = self._write_manifesto()
+
         try:
             response = self.api_client.post(
                 'mapoteca/impressao/confirmar_download', {'confirmations': confirmations})
 
             if not response:
-                self.download_error.emit("Falha ao confirmar os downloads com o servidor.")
+                self.download_error.emit(
+                    "Os PDFs foram baixados, mas o servidor não registrou a "
+                    "confirmação do download.\n\n"
+                    "Os arquivos na pasta de destino podem ser usados. Avise o "
+                    "gerente da mapoteca, porque o histórico de download deste "
+                    "pedido vai constar como falha.")
                 return
 
-            manifesto_path = self._write_manifesto()
             self.download_complete.emit(self.download_results, manifesto_path)
         except Exception as e:
             self.download_error.emit(f"Erro ao confirmar downloads: {str(e)}")
@@ -367,7 +384,7 @@ class ImpressaoManager(QObject):
 
     @staticmethod
     def calculate_checksum(file_path):
-        """Calcula o checksum SHA-256 de um arquivo."""
+        """Calcula o checksum SHA-256 de um arquivo, ou None se não conseguir ler."""
         sha256_hash = hashlib.sha256()
 
         try:
@@ -376,7 +393,11 @@ class ImpressaoManager(QObject):
                     sha256_hash.update(byte_block)
 
             return sha256_hash.hexdigest()
-        except Exception:
+        except OSError as e:
+            # None cai na comparação como checksum divergente, e a tela dirá
+            # "não corresponde". O log é o que separa arquivo corrompido de
+            # arquivo que nem pôde ser lido.
+            logging.error(f"Falha ao ler o arquivo para conferir o checksum: {file_path}: {e}")
             return None
 
     @staticmethod

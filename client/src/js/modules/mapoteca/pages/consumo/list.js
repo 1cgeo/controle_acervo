@@ -17,11 +17,12 @@ import {
   getAnosMapoteca,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarAvisoDeErro } from '../aviso-carga.js';
 
 /**
  * Consumo de material page (#/consumo).
  * Trigger errors (e.g. "Estoque insuficiente na Seção...") are shown verbatim
- * in the error toast — they guide the operator to transfer stock first.
+ * in the error toast, they guide the operator to transfer stock first.
  *
  * Consumo e o lancamento do dia a dia: registrar e editar sao OPERADOR. Só
  * EXCLUIR e gerente, porque apagar consumo devolve saldo ao estoque.
@@ -124,6 +125,8 @@ export async function renderConsumoList(container, _ctx) {
     ],
   });
 
+  const avisoTabela = criarAvisoDeErro(table, loadList);
+
   // -------------------------------------------------------------------------
   // Monthly consumption line chart (total per month, with year selector)
   // -------------------------------------------------------------------------
@@ -135,8 +138,8 @@ export async function renderConsumoList(container, _ctx) {
     loading: true,
   });
 
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). Ele mora no cabecalho da secao do grafico, e nao na barra de
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Ele mora no
+  // cabecalho da secao do grafico, e nao na barra de
   // filtros do topo: o ano recorta SO a tendencia anual, enquanto a barra do
   // topo recorta a tabela por data. Juntos, os dois pareceriam um filtro so.
   //
@@ -169,9 +172,11 @@ export async function renderConsumoList(container, _ctx) {
       if (disposed) return;
       const rows = dados.map(r => ({ ...r, quantidade: Number(r.quantidade) }));
       table.update({ rows, loading: false });
+      avisoTabela.ok();
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      avisoTabela.falhou(err.message || 'Erro ao carregar os registros de consumo');
       showError(err.message || 'Erro ao carregar os registros de consumo');
     }
   }
@@ -347,7 +352,7 @@ export async function renderConsumoList(container, _ctx) {
       el('div', { className: 'page__actions' }, pode.operador ? [registerBtn] : []),
     ]),
     filtersBar,
-    table.element,
+    avisoTabela.element,
     el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Tendência anual' }),

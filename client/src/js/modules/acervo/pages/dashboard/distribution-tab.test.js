@@ -18,9 +18,14 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getArquivosTipoArquivo: vi.fn(() => Promise.resolve([
     { tipo_arquivo: 'PDF', total_gb: '3.2', quantidade: '400' },
   ])),
+  // `nome_volume` vem de `va.nome`, que e NOT NULL em `acervo.volume_armazenamento`
+  // (er/acervo.sql). A tela nao tem recuo para `volume`: aquele campo e o CAMINHO
+  // no disco, e o eixo do grafico passaria a mostrar caminho de sistema de
+  // arquivos. A segunda linha usa mais do que a capacidade, que e o caso que o
+  // `Math.max(0, ...)` do disponivel existe para tratar.
   getGbVolume: vi.fn(() => Promise.resolve([
     { nome_volume: 'Volume 1', total_gb: '80', capacidade_gb_volume: '100' },
-    { volume: '/dados2', nome_volume: null, total_gb: '150', capacidade_gb_volume: '100' },
+    { nome_volume: 'Volume 2', total_gb: '150', capacidade_gb_volume: '100' },
   ])),
 }));
 
@@ -65,12 +70,51 @@ describe('renderDistributionTab', () => {
     aba.cleanup();
   });
 
-  test('depois do cleanup uma resposta atrasada nao mexe mais na tela', async () => {
+  test('refresh chamado depois do cleanup nao lanca e nao toca no DOM', async () => {
     const container = document.createElement('div');
     const aba = await renderDistributionTab(container);
+    const antes = container.innerHTML;
     aba.cleanup();
 
-    // Nao deve lancar: o load enxerga `disposed` e volta antes de tocar no DOM.
-    await expect(aba.refresh()).resolves.toBeUndefined();
+    // O que importa e nao lancar e nao pintar. O valor devolvido nao faz parte
+    // do contrato: `load` e `Promise.all` sobre os blocos, entao sempre resolve
+    // num ARRANJO, e cada bloco e que enxerga o `disposed` e volta cedo.
+    await aba.refresh();
+    expect(container.innerHTML).toBe(antes);
+  });
+});
+
+// Antes, a falha de qualquer endpoint virava lista vazia, e o card passava a
+// dizer "Sem dados disponíveis": a frase do acervo sem produto daquele tipo.
+// Endpoint fora do ar lia-se como acervo vazio, que é a leitura oposta.
+describe('renderDistributionTab: falha por gráfico', () => {
+  test('só o gráfico que falhou vira estado de erro; os outros quatro ficam', async () => {
+    acervoService.getProdutosTipo.mockRejectedValueOnce(new Error('sem rede'));
+
+    const container = document.createElement('div');
+    const aba = await renderDistributionTab(container);
+
+    const comErro = container.querySelectorAll('.chart-card .dashboard-erro');
+    expect(comErro).toHaveLength(1);
+    expect(comErro[0].querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
+    // Os cinco cards continuam montados: o que falhou foi a pergunta, não a aba.
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(5);
+
+    aba.cleanup();
+  });
+
+  test('"Tentar de novo" refaz SÓ a pergunta que falhou', async () => {
+    acervoService.getProdutosTipo.mockRejectedValueOnce(new Error('sem rede'));
+    const container = document.createElement('div');
+    const aba = await renderDistributionTab(container);
+
+    const outrosAntes = acervoService.getProdutosEscala.mock.calls.length;
+    container.querySelector('.chart-card .dashboard-erro .btn').click();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(container.querySelectorAll('.chart-card .dashboard-erro')).toHaveLength(0);
+    expect(acervoService.getProdutosEscala.mock.calls.length).toBe(outrosAntes);
+
+    aba.cleanup();
   });
 });

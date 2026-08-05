@@ -113,11 +113,12 @@ async function relatorio (args, cfg) {
         'Abas disponiveis: mapoteca relatorio <aba> [--ano 2026] [--csv arquivo.csv]',
         '',
         ...Object.entries(RELATORIOS).map(
-          ([k, v]) => `  ${k.padEnd(largura)}  ${v.nome}`
+          ([k, v]) => `  ${k.padEnd(largura)}  ${v.nome}${v.ods ? '  [tem --ods]' : ''}`
         ),
         '',
         'O padrao e TSV recortado no terminal; --csv grava o CSV do proprio servidor',
-        'em disco, com os rotulos de coluna da planilha de controle.'
+        'em disco, com os rotulos de coluna da planilha de controle. A aba marcada',
+        'com [tem --ods] tambem sai como planilha, no vocabulario da aba do RTM.'
       ].join('\n')
     }
   }
@@ -130,6 +131,26 @@ async function relatorio (args, cfg) {
   }
 
   const ano = argsLib.numero(flags, 'ano', anoCorrente())
+
+  // O .ods de uma aba tem rota propria, e nao um ?formato=ods: o conteudo nao e
+  // o mesmo do CSV. So a aba `impressao` tem essa rota hoje.
+  if (flags.ods) {
+    if (!alvo.ods) {
+      throw new Error(
+        `A aba "${aba}" nao tem versao .ods no servidor. Abas com .ods: ` +
+        `${Object.keys(RELATORIOS).filter(k => RELATORIOS[k].ods).join(', ')}. ` +
+        `Para as demais, use --csv.`
+      )
+    }
+    const destino = flags.ods === true ? `META4_DETALHADA_${ano}.ods` : flags.ods
+    const r = await http.autenticada(
+      cfg, 'GET', alvo.ods + http.query({ ano }), { binario: true }
+    )
+    fs.writeFileSync(destino, r.bytes)
+    return {
+      texto: `Aba "${aba}" de ${ano} salva em ${destino} (${r.bytes.length} bytes).`
+    }
+  }
 
   // CSV vai direto para o arquivo, nunca para o stdout: um relatorio detalhado
   // de um ano passa de mil linhas, e despeja-las na janela do agente gasta o
@@ -172,6 +193,12 @@ async function relatorio (args, cfg) {
 // para a DSG junto com o RTM. Nao entra no catalogo RELATORIOS porque nao e uma
 // aba da planilha de controle: e outro documento, com outro destinatario, e
 // exige o MES alem do ano.
+//
+// A rota mora sob /api/rpcmtec, e nao sob /api/mapoteca: o Anuario e o RPCMTec
+// sobem no mesmo envio mensal. O DADO e da mapoteca (o `anuario_ctrl` fica la),
+// e por isso o verbo vive neste CLI. Ela exige ADMINISTRADOR.
+const CAMINHO_ANUARIO = '/rpcmtec/anuario'
+
 async function anuario (args, cfg) {
   const flags = args.flags
   const ano = argsLib.numero(flags, 'ano', anoCorrente())
@@ -186,7 +213,7 @@ async function anuario (args, cfg) {
       ? `Anuario_Estatistico_1CGEO_${mm}_${NOME_MES[mes - 1]}_${ano}.ods`
       : flags.ods
     const r = await http.autenticada(
-      cfg, 'GET', '/mapoteca/relatorio/anuario_ods' + http.query({ ano, mes }),
+      cfg, 'GET', CAMINHO_ANUARIO + '/ods' + http.query({ ano, mes }),
       { binario: true }
     )
     fs.writeFileSync(destino, r.bytes)
@@ -194,7 +221,7 @@ async function anuario (args, cfg) {
   }
 
   const r = await http.autenticada(
-    cfg, 'GET', '/mapoteca/relatorio/anuario' + http.query({ ano, mes })
+    cfg, 'GET', CAMINHO_ANUARIO + http.query({ ano, mes })
   )
   const a = r.dados || {}
   if (flags.json) return { texto: JSON.stringify(a, null, 2) }
@@ -254,7 +281,7 @@ async function localizador (args, cfg) {
     campos: [
       'localizador_pedido', 'data_pedido', 'situacao_pedido_nome', 'cliente_nome',
       'prazo', 'localizador_envio', 'observacao_envio', 'motivo_cancelamento',
-      // A forma de entrega saiu do item e virou campo do PEDIDO em 2026-07-30.
+      // A forma de entrega e a data de atendimento sao do PEDIDO, nunca do item.
       'forma_entrega_nome', 'data_atendimento'
     ]
   })

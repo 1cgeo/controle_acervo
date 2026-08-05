@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// O REMONTE da ficha do cliente, medido em 2026-08-04.
+// O REMONTE da ficha do cliente.
 //
 // Cada gravação no diálogo de edição chamava `load()`, e `load()` esvaziava a
 // página inteira e montava tudo de novo. O que se perdia: a página da tabela de
@@ -35,8 +36,6 @@ import { renderClienteDetails } from '@modules/mapoteca/pages/clientes/details.j
 import { openClienteDialog } from './dialog-cliente.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // Oito pedidos, e não um: com pageSize 5 a tabela ganha duas páginas, e a
 // página atual passa a ser estado que pode se perder.
@@ -164,9 +163,9 @@ describe('ficha do cliente: o que sobrevive a uma gravação', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // O defeito mais grave do remonte antigo: `clearChildren(root)` tirava o
-  // histórico do DOM, e `renderCliente` só repunha os outros blocos. A seção
-  // sumia da tela até a pessoa navegar de novo.
+  // O remonte não pode tirar o histórico do DOM: um `clearChildren(root)`
+  // seguido de um `renderCliente` que só repõe os outros blocos faz a seção
+  // sumir da tela até a pessoa navegar de novo.
   test('a seção de histórico continua na tela depois de salvar', async () => {
     const { container, cleanup } = await montar();
 

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Testa o componente generico de gestao de dominio editavel (createDominioSection)
 // usado na pagina de Configuracao para natureza de despesa, plano interno e UG.
@@ -7,8 +8,6 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 // document.body; localizamos os botoes pelo texto.
 
 import { createDominioSection } from '@modules/orcamento/pages/configuracao/dominio-section.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // Acha um botao de rodape de modal (.modal__footer) pelo texto exato.
 function clickFooterButton(label) {

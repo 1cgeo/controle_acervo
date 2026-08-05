@@ -5,7 +5,7 @@ import { el } from '@utils/dom.js';
  * 1 Pré-cadastramento, 2 DIEx/Ofício recebido, 3 Em andamento, 4 Remetido,
  * 5 Concluído, 6 Cancelado, 7 Aguardando produção.
  */
-export const SITUACAO_PEDIDO_VARIANT = {
+const SITUACAO_PEDIDO_VARIANT = {
   1: 'default',
   2: 'info',
   3: 'primary',

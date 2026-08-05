@@ -1,10 +1,9 @@
 /**
  * Destaque do LUGAR filtrado: o contorno do estado ou do municipio escolhido
- * nos filtros, em vermelho, e o zoom nele (chefe, 2026-07-29).
+ * nos filtros, em vermelho, e o zoom nele.
  *
- * Existe porque o filtro por lugar era invisivel no mapa. Escolher "Rio Grande
- * do Sul" mudava a lista e deixava a camera onde estava, entao a tela nao dizia
- * ONDE o recorte caiu, e o resultado parecia ter encolhido sem motivo.
+ * Sem ele o filtro por lugar e invisivel no mapa: a lista muda, a camera fica
+ * onde estava, e o resultado parece ter encolhido sem motivo.
  *
  * So a BORDA, e sem preenchimento: o que interessa aqui e o produto e o ponto,
  * e uma mancha por cima competiria com eles. A cor e a unica do mapa que nao
@@ -53,9 +52,9 @@ export function criarDestaqueDeLimite() {
   /**
    * Caixa que cobre TODOS os limites destacados.
    *
-   * Existe desde 2026-08-04, com o filtro de marcacao multipla: escolher dois
-   * estados tem de enquadrar os dois. Enquadrar so o primeiro deixaria o outro
-   * fora da tela, dizendo que o recorte e menor do que e.
+   * Com marcacao multipla, escolher dois estados tem de enquadrar os dois:
+   * enquadrar so o primeiro deixa o outro fora da tela, dizendo que o recorte e
+   * menor do que e.
    */
   function caixaDaUniao(bboxes) {
     const validas = (bboxes || []).filter(b => Array.isArray(b) && b.length === 4);
@@ -115,9 +114,9 @@ export function criarDestaqueDeLimite() {
   /**
    * Desenha o contorno e, por padrao, leva a camera ate ele.
    *
-   * Aceita UM limite ou uma LISTA deles: o filtro por lugar passou a marcar
-   * varios estados ou municipios (chefe, 2026-08-04). Com lista, a camera
-   * enquadra a uniao das caixas, e nao a do primeiro.
+   * Aceita UM limite ou uma LISTA deles, porque o filtro por lugar marca varios
+   * estados ou municipios. Com lista, a camera enquadra a uniao das caixas, e
+   * nao a do primeiro.
    *
    * @param {Object|Array<Object>} limite - resposta de /api/limites/<tipo>/<id>,
    *   no formato {geometria, bbox}, ou um array delas

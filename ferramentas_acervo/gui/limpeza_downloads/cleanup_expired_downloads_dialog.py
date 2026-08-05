@@ -1,7 +1,7 @@
 # Path: gui\limpeza_downloads\cleanup_expired_downloads_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QPushButton
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 from qgis.PyQt.QtCore import Qt
 from qgis.core import Qgis
 
@@ -44,14 +44,17 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
             response = self.api_client.post('acervo/cleanup-expired-downloads')
 
             if response:
-                QMessageBox.information(
-                    self,
-                    "Sucesso",
-                    "Limpeza de downloads expirados realizada com sucesso."
-                )
+                # A rota devolve os contadores. Dizer só "sucesso" esconde a
+                # resposta que a pessoa veio buscar: quantos foram fechados.
+                dados = response.get('dados') or {}
+                fechados = dados.get('fechados', 0)
+                uploads = dados.get('uploads_fechados', 0)
+                resumo = (f"{fechados} download(s) expirado(s) fechado(s).\n"
+                          f"{uploads} sessão(ões) de upload expirada(s) fechada(s).")
+                QMessageBox.information(self, "Limpeza concluída", resumo)
                 self.iface.messageBar().pushMessage(
-                    "Sucesso",
-                    "Downloads expirados foram limpos com sucesso.",
+                    "Limpeza concluída",
+                    f"{fechados} download(s) e {uploads} sessão(ões) de upload fechados.",
                     level=Qgis.MessageLevel.Success
                 )
                 self.accept()

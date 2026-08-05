@@ -10,6 +10,32 @@ import { mostrarErro, mostrarErroNoGrafico } from '@components/estado-erro.js';
 const PERIODOS = [6, 12, 24];
 
 /**
+ * Guarda os paineis de uma sub-aba e sabe devolve-los.
+ *
+ * `mostrarErro` TIRA os paineis do container para pintar a caixa de erro. O
+ * auto-refresh de 60 s chama a mesma carga: sem devolver os nos, a carga que
+ * desse certo pintaria elementos fora do DOM, e a caixa de erro ficaria na tela
+ * ate alguem clicar em "Tentar de novo". Pior, na segunda falha seguida o
+ * `mostrarErro` guardaria como "anteriores" o proprio no de erro, e o botao
+ * passaria a restaurar uma caixa de erro velha.
+ *
+ * Chame `guardar()` depois de montar a sub-aba e `devolver()` no inicio de toda
+ * carga que deu certo.
+ *
+ * @param {HTMLElement} container
+ */
+function paineisDe(container) {
+  let nos = [];
+  return {
+    guardar: () => { nos = [...container.childNodes]; },
+    devolver: () => {
+      if (!nos.length || container.contains(nos[0])) return;
+      container.replaceChildren(...nos);
+    },
+  };
+}
+
+/**
  * Rotulo curto de um mes 'AAAA-MM' (ex.: 'mar. de 2026').
  * @param {string} mes
  * @returns {string}
@@ -78,22 +104,30 @@ export async function renderAdvancedTab(container) {
     onPeriodo: (meses) => loadProdutos(meses),
   });
 
+  // Trocar o periodo depressa deixa duas respostas na rede, e a que chega por
+  // ultimo pinta. Sem este contador, escolher 24 meses logo depois de 6 podia
+  // deixar o grafico de 6 na tela com o select marcando 24: o painel afirmaria
+  // um recorte que nao e o dele. E o mesmo guarda que a busca e a auditoria ja
+  // usam.
+  let pedidoProdutos = 0;
+
   async function loadProdutos(meses, silencioso = false) {
     if (!silencioso) produtos.card.update({ loading: true });
+    const meu = ++pedidoProdutos;
     try {
       const dados = await acervoService.getProdutoActivityTimeline(meses);
-      if (disposed) return;
+      if (disposed || meu !== pedidoProdutos) return;
       produtos.card.update({
         data: (Array.isArray(dados) ? dados : []).map(d => ({ ...d, mes_label: formatMes(d.month) })),
         loading: false,
       });
     } catch (erro) {
-      if (disposed) return;
+      if (disposed || meu !== pedidoProdutos) return;
       // Estado de ERRO, e nao grafico vazio. Zerar a serie fazia o card mostrar
       // "Sem dados disponiveis", que e a frase do acervo sem producao: a falha
       // da API lia-se como mes sem carta cadastrada. O painel e o que o chefe
       // olha para decidir, e "nao houve" e "nao consegui saber" pedem acoes
-      // opostas (2026-08-04, mesma correcao ja feita na aba de Atividade).
+      // opostas. Mesma regra da aba de Atividade.
       produtos.card.update({ data: [], loading: false });
       mostrarErroNoGrafico(produtos.card, erro, () => loadProdutos(produtos.getPeriodo()));
     }
@@ -110,11 +144,14 @@ export async function renderAdvancedTab(container) {
     onPeriodo: (meses) => loadVersoes(meses),
   });
 
+  let pedidoVersoes = 0;
+
   async function loadVersoes(meses, silencioso = false) {
     if (!silencioso) versoes.card.update({ loading: true });
+    const meu = ++pedidoVersoes;
     try {
       const dados = await acervoService.getVersaoActivityTimeline(meses);
-      if (disposed) return;
+      if (disposed || meu !== pedidoVersoes) return;
       versoes.card.update({
         data: (Array.isArray(dados) ? dados : []).map(d => ({
           ...d,
@@ -125,7 +162,7 @@ export async function renderAdvancedTab(container) {
         loading: false,
       });
     } catch (erro) {
-      if (disposed) return;
+      if (disposed || meu !== pedidoVersoes) return;
       versoes.card.update({ data: [], loading: false });
       mostrarErroNoGrafico(versoes.card, erro, () => loadVersoes(versoes.getPeriodo()));
     }
@@ -194,10 +231,14 @@ export async function renderVersionStats(container) {
   const pieTipo = createPieChart({ title: 'Tipos de Versão', loading: true });
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieDistribuicao, pieTipo]));
 
+  const paineis = paineisDe(container);
+  paineis.guardar();
+
   async function load() {
     try {
       const dados = await acervoService.getVersionStatistics();
       if (disposed) return;
+      paineis.devolver();
       const stats = (dados && dados.stats) || {};
 
       resumo.innerHTML = '';
@@ -263,11 +304,14 @@ export async function renderStorageTrends(container) {
   });
   container.appendChild(grafico.card);
 
+  let pedido = 0;
+
   async function load(meses, silencioso = false) {
     if (!silencioso) grafico.card.update({ loading: true });
+    const meu = ++pedido;
     try {
       const dados = await acervoService.getStorageGrowthTrends(meses);
-      if (disposed) return;
+      if (disposed || meu !== pedido) return;
       grafico.card.update({
         data: (Array.isArray(dados) ? dados : []).map(d => ({
           ...d,
@@ -278,7 +322,7 @@ export async function renderStorageTrends(container) {
         loading: false,
       });
     } catch (erro) {
-      if (disposed) return;
+      if (disposed || meu !== pedido) return;
       // No corpo do card, e nao no container: o cabecalho tem o seletor de
       // periodo, e quem ve o erro precisa dele para tentar outra janela.
       grafico.card.update({ data: [], loading: false });
@@ -312,10 +356,14 @@ export async function renderProjectStatus(container) {
   const pieLotes = createPieChart({ title: 'Status dos Lotes', loading: true });
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieProjetos, pieLotes]));
 
+  const paineis = paineisDe(container);
+  paineis.guardar();
+
   async function load() {
     try {
       const dados = await acervoService.getProjectStatusSummary();
       if (disposed) return;
+      paineis.devolver();
 
       resumo.innerHTML = '';
       resumo.appendChild(summaryCard(formatNumber(dados?.projects_without_lots ?? 0), 'Projetos sem Lotes'));
@@ -384,10 +432,14 @@ export async function renderUserActivity(container) {
   });
   container.appendChild(tabela.element);
 
+  const paineis = paineisDe(container);
+  paineis.guardar();
+
   async function load() {
     try {
       const dados = await acervoService.getUserActivityMetrics(10);
       if (disposed) return;
+      paineis.devolver();
       tabela.update({
         rows: (Array.isArray(dados) ? dados : []).map(row => ({
           ...row,

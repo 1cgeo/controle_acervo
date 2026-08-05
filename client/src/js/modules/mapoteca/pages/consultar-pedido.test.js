@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Consulta PUBLICA de pedido pelo localizador (RN04). E rota de PLATAFORMA, sem
 // sessao: quem pediu acompanha o pedido sem ter conta no SCA. A pagina mora no
@@ -10,8 +11,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const PEDIDO = {
   situacao_pedido_id: 3,

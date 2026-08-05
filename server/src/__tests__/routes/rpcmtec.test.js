@@ -19,10 +19,10 @@
 //     quinze o gestor preenche. Uma calculada que vire digitada por descuido
 //     faria alguém redigitar todo mês um número que o sistema tem.
 //
-//  4. O CICLO DE FECHAMENTO, que é o coração do desenho de 2026-08-05: aberta o
-//     calculado recalcula, fechada tudo congela, e o congelado não muda quando o
-//     banco mudar. Com a conferência mostrando a diferença, para congelar não
-//     virar esquecer.
+//  4. O CICLO DE FECHAMENTO, que é o coração do desenho: aberta o calculado
+//     recalcula, fechada tudo congela, e o congelado não muda quando o banco
+//     mudar. Com a conferência mostrando a diferença, para congelar não virar
+//     esquecer.
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
@@ -96,7 +96,7 @@ const SUBSECOES_CALCULADAS = [
 
 // As que o gestor digita. Onze vêm de outro sistema ou de fora (2.2 a 2.5 do
 // SAP, 5.1 do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em
-// lugar nenhum. Decisão do chefe em 2026-08-05: nada sai do SAP por enquanto, e
+// lugar nenhum. Decisão do chefe: nada sai do SAP por enquanto, e
 // o que o SCA não calcula o gestor preenche na própria tela.
 const SUBSECOES_DIGITADAS = [
   '2.2', '2.3', '2.4', '2.5',
@@ -605,8 +605,8 @@ describe('RPCMTec: o assinado', () => {
   })
 
   test('recusa extensão fora de PDF e P7S', async () => {
-    // O sistema é quem emite o documento agora: aceitar .docx reabriria a porta
-    // que a decisão de 2026-08-05 fechou.
+    // O sistema é quem emite o documento: aceitar .docx reabriria a porta de
+    // um documento montado fora dele.
     const id = await criarEdicao()
 
     const res = await request(app)
@@ -764,7 +764,7 @@ describe('RPCMTec: a edição mensal', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Rastreabilidade da edição mensal (2026-08-02)
+// Rastreabilidade da edição mensal
 //
 // É o relatório que o chefe assina, e as três escritas dele não tinham nem
 // transação: o `exigirExistente` era um `SELECT id` numa conexão e o DELETE

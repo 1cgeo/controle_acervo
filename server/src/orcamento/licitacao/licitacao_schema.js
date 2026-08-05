@@ -2,7 +2,12 @@
 
 const Joi = require('joi')
 
+const { TIPO_LICITACAO } = require('../../utils/domain_constants')
+
 const models = {}
+
+// GCALC DSG (4.4), Propria e Participante (as duas na 4.5).
+const TIPOS = Object.values(TIPO_LICITACAO)
 
 // Parametro de rota: id da licitacao (BIGSERIAL). Coercao numerica (vem como string na URL).
 models.idParams = Joi.object().keys({
@@ -14,7 +19,7 @@ models.idParams = Joi.object().keys({
 // ou 3 (Participante, tambem na 4.5).
 models.listarQuery = Joi.object().keys({
   ano: Joi.number().integer(),
-  tipo_id: Joi.number().integer().valid(1, 2, 3)
+  tipo_id: Joi.number().integer().valid(...TIPOS)
 })
 
 // Campos comuns de criacao/atualizacao da licitacao.
@@ -29,7 +34,7 @@ models.listarQuery = Joi.object().keys({
 //     guarda 103 caracteres explicando por que o pregao se tornou fracassado.
 const camposBase = {
   ano: Joi.number().integer().strict().required(),
-  tipo_id: Joi.number().integer().strict().valid(1, 2, 3).required(),
+  tipo_id: Joi.number().integer().strict().valid(...TIPOS).required(),
   objeto: Joi.string().required(),
   // Limites conferidos no DDL (er/orcamento.sql, orcamento.licitacao).
   numero_pregao: Joi.string().max(20).allow(null, ''),
@@ -47,7 +52,7 @@ const camposBase = {
   valor_final_homologado: Joi.number().min(0).strict().allow(null),
   // .raw() preserva a string 'YYYY-MM-DD' (sem converter para Date UTC), senao
   // o Postgres (sessao em UTC-3) gravaria o dia anterior ao informado.
-  data_homologacao: Joi.date().raw().allow(null),
+  data_homologacao: Joi.date().iso().raw().allow(null),
   fornecedor: Joi.string().max(255).allow(null, ''),
   om_gestora: Joi.string().max(60).allow(null, '')
 }

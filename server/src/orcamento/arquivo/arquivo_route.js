@@ -69,7 +69,8 @@ router.get(
   })
 )
 
-// Remove o anexo (linha + arquivo do disco).
+// Remove o anexo. Nao ha arquivo em disco: os bytes moram na coluna `conteudo`
+// (BYTEA), entao apagar a linha apaga o arquivo.
 router.delete(
   '/:id',
   verifyPerfil('gerente', 'orcamento'),

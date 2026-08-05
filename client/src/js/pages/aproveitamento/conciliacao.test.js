@@ -1,22 +1,20 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// O que a tela do aproveitamento AFIRMA, e que a versao de 2026-08-02 afirmava
-// errado. Medido na producao em 2026-08-04, no ano de 2027:
+// O que a tela do aproveitamento AFIRMA:
 //
-//  - tres militares desativados no cadastro contavam como presentes, porque
-//    `dgeo.usuario.ativo` e `dgeo.efetivo_periodo` respondem a mesma pergunta e
-//    nada comparava as duas. A tela passa a AVISAR da divergencia, e nunca a
-//    corrigi-la: `data_fim` nula e desenho (er/dgeo.sql:104), e quem fecha
-//    passagem e o chefe;
-//  - o ano a frente do corrente saia como medida, e e projecao de impedimento
-//    em aberto;
-//  - a media da Divisao era media simples de percentuais, entao quem ficou uma
-//    semana pesava igual a quem ficou o ano;
-//  - a semana confundia "nao estava" com "estava e nao rendeu": o denominador e
-//    a semana inteira, e quem chega na quarta sai 71,4%;
-//  - trocar o ano zerava a rolagem, deixava o mapa velho na tela como se fosse
-//    do ano novo, e no erro mantinha o resumo do ano anterior escrito;
-//  - o seletor de ano era fixo em quatro anos, sem olhar quem tem passagem.
+//  - `dgeo.usuario.ativo` e `dgeo.efetivo_periodo` respondem à mesma pergunta,
+//    e a tela AVISA da divergência sem nunca corrigi-la: `data_fim` nula é
+//    desenho (er/dgeo.sql:104), e quem fecha passagem é o chefe;
+//  - o ano à frente do corrente é projeção de impedimento em aberto, e não
+//    medida;
+//  - a média da Divisão é ponderada pelo tempo de cada um, e não média simples
+//    de percentuais, senão quem ficou uma semana pesaria igual a quem ficou o ano;
+//  - a semana separa "não estava" de "estava e não rendeu": o denominador é a
+//    semana inteira, e quem chega na quarta sai 71,4%;
+//  - trocar o ano preserva a rolagem, troca o mapa junto, e no erro não deixa o
+//    resumo do ano anterior escrito na tela;
+//  - o seletor de ano sai de quem tem passagem, e não de uma janela fixa.
 
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
@@ -36,8 +34,6 @@ import {
   getUsuarios,
 } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // O ano corrente e a regua de tudo aqui: "ano futuro" e "ano com passagem" so
 // existem em relacao a ele. Fixar 2026 no arquivo faria os casos passarem a
@@ -133,11 +129,9 @@ describe('aproveitamento: conciliacao, projecao e media ponderada', () => {
 
   // 1. Conciliar as duas respostas para "esta na DGEO"
   //
-  // ESTAR NA DGEO SEM ACESSO AO SCA NAO E DIVERGENCIA (chefe, 2026-08-04, ao
-  // acionar a tela com o dado real). `dgeo.usuario.ativo` e flag de LOGIN, e a
-  // maioria do efetivo nao usa o sistema: em agosto de 2026 eram 20 casos em 25
-  // militares. O aviso listava quase a Divisao inteira e escondia a linha que
-  // importava.
+  // ESTAR NA DGEO SEM ACESSO AO SCA NÃO É DIVERGÊNCIA: `dgeo.usuario.ativo` é
+  // flag de LOGIN, e a maioria do efetivo não usa o sistema. Avisar disso
+  // listaria quase a Divisão inteira e esconderia a linha que importa.
   test('nao avisa de quem esta na DGEO com o acesso desativado', async () => {
     comDadosDeSempre();
 

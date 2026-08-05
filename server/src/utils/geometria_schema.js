@@ -5,10 +5,9 @@ const Joi = require('joi')
 /**
  * Polígono desenhado no mapa, como GeoJSON em texto.
  *
- * Nasceu na busca do acervo e virou compartilhado em 2026-07-29, quando a tela
- * de ponto de controle ganhou a mesma ferramenta de desenho. Duas cópias do
- * validador divergiriam com o tempo, e o recorte que uma tela aceita e a outra
- * recusa é diferença sem razão para quem usa.
+ * Compartilhado pela busca do acervo e pelo ponto de controle, que desenham com
+ * a mesma ferramenta: duas cópias do validador divergiriam, e o recorte que uma
+ * tela aceita e a outra recusa é diferença sem razão para quem usa.
  *
  * O teto de vértices existe por DOIS motivos, e nenhum é estético: a consulta
  * espacial paga por vértice, e a busca inteira viaja na URL (o link tem de ser

@@ -14,26 +14,28 @@ const VERSAO_HISTORICA_REGEX = /^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$/;
 //
 // Sem o `.raw()`, o Joi converte 'AAAA-MM-DD' num Date de meia-noite UTC, e a
 // coluna é TIMESTAMP WITH TIME ZONE: em America/Sao_Paulo (UTC-3) isso vira
-// 21:00 do DIA ANTERIOR. Medido em 2026-08-01 cadastrando versão pela interface
-// web, que manda a data no formato do `<input type="date">`: pedi edição
-// 01/08/2026 e a ficha devolveu 31/07/2026.
+// 21:00 do DIA ANTERIOR, e a ficha devolve o dia anterior ao que se digitou.
 //
 // O custo não é só a data errada na tela. `acervo.versao.data_edicao` é o que
-// conta produto entregue no MÊS (integracao/integracaoCtrl.getProdutosFinalizados,
-// e por ele o RPCMTec): a carta editada no dia 1º entrava no relatório do mês
-// anterior, e ninguém confere um relatório contra a data de cada folha.
+// conta produto entregue no MÊS (`integracaoCtrl.getProdutosFinalizados`, e por
+// ele o RPCMTec): a carta editada no dia 1º entra no relatório do mês anterior,
+// e ninguém confere um relatório contra a data de cada folha.
 //
 // Com `.raw()` a validação continua sendo de data (o `.min` segue valendo), mas
 // o que sai do Joi é a STRING original, e o Postgres a converte no fuso dele.
 //
-// O `.iso()` fica JUNTO do `.raw()`, e não é preciosismo: sem ele a string
-// segue crua para o Postgres, e '01/08/2026' seria lido como 8 de JANEIRO,
-// porque o DateStyle padrão é MDY. O plugin já manda ISO (`campos_acervo.py`
-// documenta o campo como 'AAAA-MM-DD' e normaliza com `isoformat()`), e o
-// `<input type="date">` da web também.
-// Mesma solução de `projeto_schema.js` (pego em 2026-07-31, com dois lotes do
-// Convênio RS perdendo um dia cada) e de `mapoteca.pedido`. É o padrão da casa.
+// O `.iso()` fica JUNTO do `.raw()`, e não é preciosismo: sem ele a string segue
+// crua para o Postgres, e '01/08/2026' seria lido como 8 de JANEIRO, porque o
+// DateStyle padrão é MDY. É o padrão da casa, o mesmo de `projeto_schema.js` e
+// de `mapoteca.pedido`.
 const dataCalendario = () => Joi.date().iso().raw();
+
+// `nome`, `mi` e `inom` de `acervo.produto` e `nome` e `orgao_produtor` de
+// `acervo.versao` sao VARCHAR(255). Sem o teto aqui, string maior passava pelo
+// Joi e estourava no banco: quem chamou recebia 500 (o codigo de "o servidor
+// errou") em vez do 400 que diz qual campo esta grande demais. `descricao` fica
+// de fora nos dois porque a coluna e TEXT.
+const texto255 = () => Joi.string().max(255);
 
 // Espelha o CHECK de acervo.produto: denominador obrigatório apenas para
 // escala personalizada (tipo 5), NULL nos demais
@@ -45,9 +47,9 @@ const denominadorEscalaEspecial = Joi.alternatives().conditional('tipo_escala_id
 
 models.produtoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
-  nome: Joi.string().required(),
-  mi: Joi.string().allow(null, ''),
-  inom: Joi.string().allow(null, ''),
+  nome: texto255().required(),
+  mi: texto255().allow(null, ''),
+  inom: texto255().allow(null, ''),
   tipo_escala_id: Joi.number().integer().strict().required(),
   denominador_escala_especial: denominadorEscalaEspecial,
   tipo_produto_id: Joi.number().integer().strict().required(),
@@ -64,22 +66,21 @@ models.versaoAtualizacao = Joi.object().keys({
   id: Joi.number().integer().strict().required(),
   uuid_versao: Joi.string().uuid(),
   versao: Joi.string().required(),
-  nome: Joi.string().allow(null).required(),
+  nome: texto255().allow(null).required(),
   tipo_versao_id: Joi.number().integer().strict().required(),
   subtipo_produto_id: Joi.number().integer().strict().required(),
   descricao: Joi.string().allow('').required(),
   metadado: Joi.object().required(),
   lote_id: Joi.number().integer().strict().allow(null).required(),
-  // Meta do PIT que esta versão cumpre (2026-08-03). É o vínculo que CONTA na
-  // grade do PIT quando a meta for automática.
+  // Meta do PIT que esta versão cumpre. É o vínculo que CONTA na grade do PIT
+  // quando a meta for automática.
   //
   // SEM `.required()` e SEM default: chave ausente significa "não mexe" (o
   // controller preserva o valor gravado), e enviar null é como se desliga o
-  // vínculo. Sem isso, o cliente que ainda não conhece o campo apagaria a meta
-  // de toda versão que editasse, que é o bug que o preserve_omitted existe para
-  // matar.
+  // vínculo. Sem isso, o cliente que não conhece o campo apagaria a meta de toda
+  // versão que editasse, que é o que o `preserve_omitted` existe para impedir.
   meta_pit_id: Joi.number().integer().strict().allow(null),
-  // Demanda Extra-PIT que esta versão materializa (2026-08-03). Mesmas regras do
+  // Demanda Extra-PIT que esta versão materializa. Mesmas regras do
   // `meta_pit_id`: ausente preserva, null desliga.
   //
   // EXCLUSIVA com `meta_pit_id`, e o banco cobra pelo CHECK
@@ -88,7 +89,7 @@ models.versaoAtualizacao = Joi.object().keys({
   // manda só uma e preserva a outra, que é o uso normal. O controller confere
   // depois de resolver o que foi preservado.
   demanda_extra_id: Joi.number().integer().strict().allow(null),
-  orgao_produtor: Joi.string().required(),
+  orgao_produtor: texto255().required(),
   // SEM .default([]): na atualização isso zerava as palavras-chave gravadas de
   // quem apenas omitiu a chave. Ausente = preserva (ver o controller).
   palavras_chave: Joi.array().items(Joi.string()).allow(null),
@@ -210,13 +211,13 @@ models.versoesHistoricas = Joi.array().items(
   Joi.object().keys({
     uuid_versao: Joi.string().uuid().allow(null).required(),
     versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-    nome: Joi.string().allow(null).required(),
+    nome: texto255().allow(null).required(),
     produto_id: Joi.number().integer().strict().required(),
     subtipo_produto_id: Joi.number().integer().strict().required(),
     lote_id: Joi.number().integer().strict().allow(null).required(),
     metadado: Joi.object().required(),
     descricao: Joi.string().allow('').required(),
-    orgao_produtor: Joi.string().required(),
+    orgao_produtor: texto255().required(),
     palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
     data_criacao: dataCalendario().required(),
     data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
@@ -230,9 +231,9 @@ models.versoesPlanejadas = models.versoesHistoricas;
 
 models.produtosVersoesHistoricas = Joi.array().items(
   Joi.object().keys({
-    nome: Joi.string().allow(null).required(),
-    mi: Joi.string().allow(null),
-    inom: Joi.string().allow(null),
+    nome: texto255().allow(null).required(),
+    mi: texto255().allow(null),
+    inom: texto255().allow(null),
     tipo_escala_id: Joi.number().integer().strict().required(),
     denominador_escala_especial: denominadorEscalaEspecial,
     tipo_produto_id: Joi.number().integer().strict().required(),
@@ -245,12 +246,12 @@ models.produtosVersoesHistoricas = Joi.array().items(
       Joi.object().keys({
         uuid_versao: Joi.string().uuid().allow(null).required(),
         versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-        nome: Joi.string().allow(null).required(),
+        nome: texto255().allow(null).required(),
         subtipo_produto_id: Joi.number().integer().strict().required(),
         lote_id: Joi.number().integer().strict().allow(null).required(),
         metadado: Joi.object().required(),
         descricao: Joi.string().allow('').required(),
-        orgao_produtor: Joi.string().required(),
+        orgao_produtor: texto255().required(),
         palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
         data_criacao: dataCalendario().required(),
         data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
@@ -266,12 +267,12 @@ models.produtosVersoesPlanejadas = models.produtosVersoesHistoricas;
 models.produtos = Joi.object().keys({
   produtos: Joi.array().items(
     Joi.object().keys({
-      nome: Joi.string().allow(null).required(),
-      mi: Joi.string().allow(null, '').required(),
-      inom: Joi.string().allow(null, '').required(),
+      nome: texto255().allow(null).required(),
+      mi: texto255().allow(null, '').required(),
+      inom: texto255().allow(null, '').required(),
       tipo_escala_id: Joi.number().integer().strict().required(),
       denominador_escala_especial: denominadorEscalaEspecial,
-      tipo_produto_id: Joi.number().integer().required(),
+      tipo_produto_id: Joi.number().integer().strict().required(),
       subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
       descricao: Joi.string().allow(null, '').required(),
       geom: Joi.string().required()

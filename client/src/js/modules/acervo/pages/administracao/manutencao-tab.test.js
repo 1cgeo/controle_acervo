@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/admin-service.js', () => ({
   atualizarViewsMaterializadas: vi.fn(() => Promise.resolve({})),
@@ -6,6 +7,8 @@ vi.mock('@modules/acervo/services/admin-service.js', () => ({
   limparDownloadsExpirados: vi.fn(() => Promise.resolve({})),
   renomearPadrao: vi.fn(),
   atualizarChecksum: vi.fn(),
+  contarMiniaturasPendentes: vi.fn(() => Promise.resolve({ pendentes: 0, lote: 20 })),
+  varrerMiniaturas: vi.fn(),
 }));
 
 vi.mock('@components/modal/confirm-dialog.js', () => ({
@@ -22,8 +25,6 @@ import { renderManutencaoTab } from '@modules/acervo/pages/administracao/manuten
 import * as svc from '@modules/acervo/services/admin-service.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 let container;
 
@@ -42,6 +43,11 @@ const botao = (titulo, rotulo) =>
 
 const status = (titulo) => cartao(titulo).querySelector('.manutencao__status').textContent;
 
+// O cartao da fila tem DUAS linhas de estado: a primeira e o tamanho da fila,
+// a segunda e o desfecho da ultima passada.
+const fila = (titulo) => cartao(titulo).querySelectorAll('.manutencao__status')[0].textContent;
+const desfecho = (titulo) => cartao(titulo).querySelectorAll('.manutencao__status')[1].textContent;
+
 const preencher = (titulo, rotulo, valor) => {
   const campo = [...cartao(titulo).querySelectorAll('.manutencao__campo')]
     .find(l => l.querySelector('span').textContent.includes(rotulo));
@@ -52,13 +58,15 @@ const preencher = (titulo, rotulo, valor) => {
 
 const RENOME = 'Padronizar o nome físico dos arquivos';
 const CHECKSUM = 'Atualizar checksum por releitura';
+const MINIATURAS = 'Fila de miniaturas';
 
 beforeEach(() => {
   confirmDialog.mockResolvedValue(true);
+  svc.contarMiniaturasPendentes.mockResolvedValue({ pendentes: 0, lote: 20 });
 });
 
 describe('aba de Manutenção', () => {
-  test('monta os quatro cartões', async () => {
+  test('monta os cinco cartões, nesta ordem', async () => {
     await abrir();
 
     const titulos = [...container.querySelectorAll('.manutencao__titulo')]
@@ -66,6 +74,7 @@ describe('aba de Manutenção', () => {
     expect(titulos).toEqual([
       'Visões materializadas',
       'Downloads expirados',
+      MINIATURAS,
       RENOME,
       CHECKSUM,
     ]);
@@ -84,17 +93,21 @@ describe('aba de Manutenção', () => {
       .toContain('NADA é alterado');
   });
 
-  test('atualizar as visões materializadas não pergunta, e a criação pergunta', async () => {
+  // As DUAS perguntam. Atualizar dispara um REFRESH CONCURRENTLY em todas as
+  // `acervo.mv_produto_*`, que leva minutos numa base grande: um clique de
+  // passagem custava isso sem ninguem ter decidido nada. O botao irmao, ao lado
+  // no mesmo cartao, ja perguntava.
+  test('as duas ações das visões materializadas perguntam antes', async () => {
     await abrir();
 
-    botao('Visões materializadas', 'Atualizar todas').click();
+    botao('Visões materializadas', 'Atualizar todas as visões').click();
     await flush();
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
     expect(svc.atualizarViewsMaterializadas).toHaveBeenCalled();
-    expect(confirmDialog).not.toHaveBeenCalled();
 
     botao('Visões materializadas', 'Criar as que faltam').click();
     await flush();
-    expect(confirmDialog).toHaveBeenCalled();
+    expect(confirmDialog).toHaveBeenCalledTimes(2);
     expect(svc.criarViewsMaterializadas).toHaveBeenCalled();
   });
 
@@ -163,6 +176,16 @@ describe('aba de Manutenção', () => {
 
     expect(status(RENOME)).toContain('Nenhum arquivo divergente');
     expect(botao(RENOME, 'Aplicar').disabled).toBe(true);
+
+    // O OUTRO LADO: com divergente, o botão liga. Sem esta metade o caso
+    // passaria com o Aplicar travado para sempre.
+    svc.renomearPadrao.mockResolvedValueOnce({
+      dry_run: true, divergentes_total: 12, nesta_chamada: 12, restantes: 0, amostra: [],
+    });
+    botao(RENOME, 'Simular').click();
+    await flush();
+
+    expect(botao(RENOME, 'Aplicar').disabled).toBe(false);
   });
 
   // A ROTA TRABALHA POR LOTE, e é para chamar em laço até `restantes` zerar. Uma
@@ -326,5 +349,75 @@ describe('aba de Manutenção', () => {
     expect(status(CHECKSUM)).toContain('1 sem mudança');
     expect(cartao(CHECKSUM).textContent).toContain('CT_s12_2757.tif');
     expect(cartao(CHECKSUM).textContent).toContain('CT_s12_2758.tif');
+  });
+});
+
+// A FILA DE MINIATURAS PRECISA DE TELA. Não há agendamento no sistema: a versão
+// cuja miniatura falhou fica na fila até alguém varrer, e sem este cartão a
+// dívida é invisível -- o acervo acumula ficha sem imagem que ninguém vê.
+describe('fila de miniaturas', () => {
+  test('mostra quantas esperam e o teto de cada passada', async () => {
+    svc.contarMiniaturasPendentes.mockResolvedValue({ pendentes: 37, lote: 20 });
+    await abrir();
+    await flush();
+
+    expect(fila(MINIATURAS)).toContain('37');
+    expect(fila(MINIATURAS)).toContain('20');
+    expect(botao(MINIATURAS, 'Varrer a fila').disabled).toBe(false);
+  });
+
+  test('fila vazia desliga o botão, em vez de mandar varrer o nada', async () => {
+    svc.contarMiniaturasPendentes.mockResolvedValue({ pendentes: 0, lote: 20 });
+    await abrir();
+    await flush();
+
+    expect(fila(MINIATURAS)).toMatch(/Nenhuma vers[ãa]o aguarda miniatura/i);
+    expect(botao(MINIATURAS, 'Varrer a fila').disabled).toBe(true);
+  });
+
+  test('varrer conta o desfecho e RECONTA a fila', async () => {
+    svc.contarMiniaturasPendentes
+      .mockResolvedValueOnce({ pendentes: 37, lote: 20 })
+      .mockResolvedValueOnce({ pendentes: 17, lote: 20 });
+    svc.varrerMiniaturas.mockResolvedValue({ sucessos: 20, falhas: 0, restante: 17 });
+
+    await abrir();
+    await flush();
+
+    botao(MINIATURAS, 'Varrer a fila').click();
+    await flush();
+    await flush();
+
+    expect(svc.varrerMiniaturas).toHaveBeenCalledTimes(1);
+    expect(svc.contarMiniaturasPendentes).toHaveBeenCalledTimes(2);
+    expect(fila(MINIATURAS)).toContain('17');
+    expect(desfecho(MINIATURAS)).toContain('20 miniatura(s) gerada(s)');
+  });
+
+  // Anunciar sucesso numa varredura PULADA seria anunciar trabalho que não
+  // aconteceu: outra passada já está em curso.
+  test('varredura pulada diz que nada foi feito', async () => {
+    svc.contarMiniaturasPendentes.mockResolvedValue({ pendentes: 37, lote: 20 });
+    svc.varrerMiniaturas.mockResolvedValue({ pulada: true });
+
+    await abrir();
+    await flush();
+
+    botao(MINIATURAS, 'Varrer a fila').click();
+    await flush();
+
+    expect(desfecho(MINIATURAS)).toMatch(/j[áa] est[áa] em curso/i);
+  });
+
+  // Falhar ao CONTAR não é fila vazia: o botão fica de pé, e o que falta é o
+  // número. É a mesma distinção entre "não há" e "não sei" do estado de erro.
+  test('falha ao contar não desliga o botão', async () => {
+    svc.contarMiniaturasPendentes.mockRejectedValue(new Error('sem rede'));
+
+    await abrir();
+    await flush();
+
+    expect(fila(MINIATURAS)).toMatch(/n[ãa]o foi poss[íi]vel contar a fila/i);
+    expect(botao(MINIATURAS, 'Varrer a fila').disabled).toBe(false);
   });
 });

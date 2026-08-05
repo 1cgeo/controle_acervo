@@ -11,12 +11,9 @@
 // errada. Onde o CLI aceita apelido (--escala 50k), este comando e o dicionario;
 // onde nao aceita, e a fonte do numero.
 //
-// Os GET de dominio JA FORAM publicos, e nao sao mais: desde 2026-07-25 eles
-// exigem perfil `consulta` no modulo acervo (verifyPerfil em
-// server/src/gerencia/gerencia_route.js). Eram anonimos por omissao, nao por
-// escolha, e a reforma de perfil fechou isso. Este comentario dizia o contrario
-// e a listagem chamava sem token, o que dava 401 em vez de dado.
-// O indice OFFLINE (`acervo dominio` sem tabela) segue sem rede e sem login.
+// Ler a tabela viva exige perfil consulta no modulo acervo (o verifyPerfil de
+// server/src/gerencia/gerencia_route.js). O indice OFFLINE, que e este comando
+// sem nome de tabela, nao gasta rede nem login.
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')
@@ -97,4 +94,15 @@ async function executar (args, cfg) {
   return { texto: out.texto, avisos: out.avisos }
 }
 
-module.exports = { executar, precisaServidor: true }
+/**
+ * So a tabela VIVA gasta rede e credencial. O indice offline (`acervo dominio`
+ * sem nome de tabela) e conhecimento do repo, derivado de domain_constants.js:
+ * pedir SCA_URL para imprimi-lo seria trocar uma resposta pronta por uma
+ * exigencia de configuracao. Errar o nome da tabela idem.
+ */
+function precisaServidor (args) {
+  const tabela = args._[1]
+  return Boolean(tabela) && ROTAS.includes(tabela)
+}
+
+module.exports = { executar, precisaServidor, ROTAS }

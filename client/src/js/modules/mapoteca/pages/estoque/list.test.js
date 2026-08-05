@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -8,8 +9,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderEstoqueList } from '@modules/mapoteca/pages/estoque/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const ESTOQUE = [
   {
@@ -88,13 +87,18 @@ describe('renderEstoqueList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('erro na leitura do estoque nao derruba a pagina', async () => {
+  // ESTE TESTE JA EXISTIA COM A EXPECTATIVA CONTRARIA: ele exigia que o erro
+  // mostrasse "Nenhum registro de estoque". Estoque zerado manda comprar papel;
+  // erro de carga manda tentar de novo. A tela dizia a primeira coisa quando
+  // acontecia a segunda, e o toast que dizia a verdade sumia em segundos.
+  test('erro na leitura do estoque aparece como ERRO, e nao como estoque vazio', async () => {
     svc.getEstoqueMaterial.mockRejectedValueOnce(new Error('Erro de conexão'));
     const container = document.createElement('div');
     const cleanup = await renderEstoqueList(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(container.textContent).toContain('Nenhum registro de estoque');
+    expect(container.textContent).toContain('Erro de conexão');
+    expect(container.textContent).not.toContain('Nenhum registro de estoque');
 
     if (typeof cleanup === 'function') cleanup();
   });

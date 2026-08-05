@@ -4,6 +4,7 @@ import { createStatsCard } from '@components/stats-card.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { showError } from '@utils/toast.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 import { mesLabel } from './utils.js';
 
@@ -124,9 +125,13 @@ export async function renderAtendimentoTab(container, getAno) {
         loading: false,
       });
     } else {
+      // O traco no cartao e a linha vazia se leem como "nao houve atendimento",
+      // que e o oposto de "nao consegui saber". As outras abas do dashboard ja
+      // avisam por toast; esta falhava calada.
       cardTempoMedio.update({ value: '-', loading: false, suffix: '' });
       fulfillmentLine.update({ data: [], loading: false });
       fulfillmentTipoBar.update({ data: [], loading: false });
+      showError(avgRes.reason?.message || 'Erro ao carregar o tempo médio de atendimento');
     }
 
     if (clientesRes.status === 'fulfilled') {
@@ -139,6 +144,7 @@ export async function renderAtendimentoTab(container, getAno) {
     } else {
       clientesTable.update({ rows: [], loading: false });
       clientesTotal.textContent = '';
+      showError(clientesRes.reason?.message || 'Erro ao carregar os clientes mais ativos');
     }
   }
 

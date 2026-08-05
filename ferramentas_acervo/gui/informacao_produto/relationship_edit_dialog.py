@@ -5,8 +5,7 @@ Diálogo para edição de relacionamentos entre versões.
 
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QComboBox
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'relationship_edit_dialog.ui'))

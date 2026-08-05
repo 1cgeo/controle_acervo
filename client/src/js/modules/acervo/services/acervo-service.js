@@ -7,7 +7,7 @@ import { cachedFetch, invalidate, TTL_DASHBOARD, TTL_DOMINIO } from '@services/c
  * Camada de servico do modulo ACERVO: uma funcao por endpoint do backend.
  * Todas devolvem o payload `dados` (o api-client ja desembrulha o envelope).
  *
- * SEM PREFIXO: na fusao com o SCO (2026-07-27) so o orcamento ganhou prefixo.
+ * SEM PREFIXO: na fusao com o SCO so o orcamento ganhou prefixo.
  * As rotas do acervo continuam onde estavam ('/dashboard/...', '/acervo/...',
  * '/produtos', '/projetos', '/volumes', '/gerencia', '/arquivo'), conforme
  * server/src/routes.js. As rotas de PLATAFORMA ('/login', '/usuarios') moram em
@@ -84,7 +84,7 @@ export const EXPORTACOES_ACERVO = [
 ];
 
 // ---------------------------------------------------------------------------
-// Busca do acervo (fase 3 do portal do acervo, chefe 2026-07-25)
+// Busca do acervo
 // ---------------------------------------------------------------------------
 
 /**
@@ -131,8 +131,8 @@ export const buscarProdutos = (filtros = {}) =>
  * cartoes, mas o mapa nao pode paginar. Vinte poligonos numa tela de 800
  * resultados afirmam visualmente que o acervo tem vinte cartas ali.
  *
- * O acervo inteiro (5.741 produtos em 2026-07-28) sai em 1,39 MB, entao a
- * chamada e sempre a busca completa e nunca uma fatia.
+ * O acervo inteiro cabe em pouco mais de um megabyte de JSON, entao a chamada e
+ * sempre a busca completa e nunca uma fatia.
  *
  * @param {Object} filtros - os MESMOS da busca (sem page/limit)
  * @returns {Promise<{total:number, truncado:boolean, dados:Array<Object>}>}
@@ -412,6 +412,26 @@ export function atualizarVersao(versao) {
 export function excluirVersoes(ids, motivo) {
   invalidarEscrita();
   return apiDelete('/produtos/versao', { versao_ids: ids, motivo_exclusao: motivo });
+}
+
+/**
+ * Exclui ARQUIVOS, sem tocar na versao que os contem.
+ *
+ * A web ja acrescentava arquivo a uma versao que existe (`enviarArquivosEmVersao`)
+ * e nao tinha como tirar nenhum: o arquivo mandado por engano so saia pelo plugin
+ * do QGIS, ou levando a versao inteira junto. A rota e `verifyPerfil('gerente')`,
+ * como a exclusao de versao.
+ *
+ * O motivo e obrigatorio no servidor pela mesma razao das outras exclusoes: a
+ * linha vai para `acervo.arquivo_deletado`, e sem motivo a exclusao vira um
+ * registro sumido sem historia. Os bytes seguem no volume.
+ *
+ * @param {Array<number>} ids
+ * @param {string} motivo
+ */
+export function excluirArquivos(ids, motivo) {
+  invalidarEscrita();
+  return apiDelete('/arquivo/arquivo', { arquivo_ids: ids, motivo_exclusao: motivo });
 }
 
 /**

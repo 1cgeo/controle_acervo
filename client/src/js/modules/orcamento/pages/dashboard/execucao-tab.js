@@ -92,9 +92,9 @@ export async function renderExecucaoTab(container, store) {
     loading: true,
   });
 
-  // O h2 "Execução por Natureza de Despesa (3.1)" saiu em 2026-08-04: ele
-  // repetia o titulo do proprio grafico logo abaixo, sob um h1 que ja diz
-  // "Execução Orçamentária". Tres titulos para um grafico so.
+  // SEM um h2 "Execução por Natureza de Despesa": ele repetiria o titulo do
+  // proprio grafico logo abaixo, sob um h1 que ja diz "Execução Orçamentária".
+  // Tres titulos para um grafico so.
   const conteudo = el('div', {}, [
     el('div', { className: 'dashboard-cards' }, [
       grupoCards('Totais', [
@@ -121,9 +121,8 @@ export async function renderExecucaoTab(container, store) {
     execucaoChart.update({ loading: true });
 
     try {
-      // A rota do painel devolve { linhas, pendencias }; ate 2026-08-01 ela vinha
-      // embrulhada em { tabela_31 }, junto com as outras seis tabelas da secao 3
-      // do RPCMTec, que esta tela nunca leu.
+      // A rota do painel devolve { linhas, pendencias }, e nao o pacote de
+      // tabelas do RPCMTec: sao perguntas diferentes.
       const rows = getLinhas(await store.carregar());
       if (disposed) return;
       const total = getTotalRow(rows);

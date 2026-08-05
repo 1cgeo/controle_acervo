@@ -1,15 +1,21 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // A tela nao decide nada sobre o CONTEUDO da auditoria: os invariantes, a
 // severidade de cada um e a amostra vem todos do servidor. O que ela decide, e
 // o que estes testes protegem, e a LEITURA: a ordem, o que ganha cor, o que
 // aparece quando o total e zero, e o que acontece quando um invariante quebra.
-const servico = vi.hoisted(() => ({ resposta: [], chamadas: [], falha: null }));
+const servico = vi.hoisted(() => ({
+  resposta: [], chamadas: [], falha: null, adiar: false, resolver: null,
+}));
 
 vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getAuditoria: (opcoes) => {
     servico.chamadas.push(opcoes);
     if (servico.falha) return Promise.reject(servico.falha);
+    // `adiar` deixa a requisição EM VOO: é o único jeito de o teste sair da
+    // página com a resposta ainda por chegar.
+    if (servico.adiar) return new Promise((r) => { servico.resolver = r; });
     return Promise.resolve(servico.resposta);
   },
 }));
@@ -40,13 +46,13 @@ beforeEach(() => {
   servico.resposta = [];
   servico.chamadas = [];
   servico.falha = null;
+  servico.adiar = false;
+  servico.resolver = null;
   erros.length = 0;
   // O ultimo resultado sobrevive a troca de tela de proposito, entao ele
   // sobreviveria de um teste para o outro se ninguem o descartasse.
   esquecerUltimaAuditoria();
 });
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 /**
  * Abre a tela e APERTA o botao, que e como a auditoria roda: a montagem nao
@@ -76,7 +82,9 @@ describe('pagina de auditoria do acervo', () => {
     await abrirERodar();
 
     expect(servico.chamadas).toHaveLength(1);
-    expect(servico.chamadas[0].amostra).toBeGreaterThan(0);
+    // O tamanho da amostra é o de `AMOSTRA` na página (index.js:31). Um
+    // "maior que zero" passaria com a amostra reduzida a uma linha.
+    expect(servico.chamadas[0].amostra).toBe(50);
   });
 
   // ABRIR A TELA NAO MEDE NADA. Sao dezenas de consultas, e o 7a deriva o nome
@@ -265,9 +273,21 @@ describe('pagina de auditoria do acervo', () => {
   });
 
   test('o cleanup nao deixa a resposta atrasada pintar a tela', async () => {
-    servico.resposta = [inv('2c', 'DEFECT', 0)];
-    const cleanup = await abrirERodar();
+    servico.adiar = true;
+    const cleanup = await renderAuditoria(container);
+    container.querySelector('.btn--primary').click();
+    await flush();
 
-    expect(() => cleanup()).not.toThrow();
+    // A página sai com a auditoria ainda rodando no servidor.
+    cleanup();
+
+    servico.resolver([inv('2c', 'DEFECT', 3)]);
+    await flush();
+
+    // O guard de descarte segurou a resposta: a tabela continua vazia e o
+    // resumo não anuncia resultado nenhum.
+    expect(codigosNaTela()).toEqual([]);
+    expect(container.textContent).not.toContain('titulo de 2c');
+    expect(container.textContent).toContain('Rodando os invariantes no servidor');
   });
 });

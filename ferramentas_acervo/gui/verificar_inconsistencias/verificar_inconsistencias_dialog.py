@@ -8,8 +8,8 @@ from qgis.core import Qgis
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'verificar_inconsistencias_dialog.ui'))
 
-# A verificação lê e calcula o checksum de todo o acervo no servidor —
-# pode levar muito tempo em acervos grandes
+# A verificação lê e calcula o checksum de todo o acervo no servidor, e pode
+# levar muito tempo num acervo grande.
 VERIFICACAO_TIMEOUT = 3600
 
 
@@ -23,9 +23,9 @@ class VerificarInconsistenciasDialog(QDialog, FORM_CLASS):
         self.executarVerificacaoButton.clicked.connect(self.executar_verificacao)
 
         # O endpoint retorna contadores ({arquivos_atualizados,
-        # arquivos_deletados_atualizados}), não a lista de arquivos — a tabela
-        # e o CSV não se aplicam; os detalhes ficam em "Gerenciar Arquivos
-        # Incorretos"
+        # arquivos_deletados_atualizados}), e não a lista de arquivos. A tabela
+        # e o CSV não se aplicam. Os detalhes ficam em "Gerenciar Arquivos com
+        # Problemas".
         self.resultadosTable.setVisible(False)
         self.baixarCSVButton.setVisible(False)
 

@@ -9,7 +9,7 @@ CREATE SCHEMA orcamento;
 -- no exercicio. A linha id=1 e criada aqui; o backend so faz UPDATE.
 --
 -- NAO ha mais `ano_referencia` aqui. Ela era o ano PADRAO das telas, e o
--- seletor de ano global acabou (decisao do chefe, 2026-08-04): cada tela tem o
+-- seletor de ano global acabou: cada tela tem o
 -- seu filtro, comeca no ano atual e nao guarda nada. Em banco ja instalado a
 -- coluna sai pela secao 5 de
 -- migrations/2026-08-04_licitacao_campos_fase_e_anexo.sql, que o chefe aplica
@@ -32,10 +32,9 @@ INSERT INTO orcamento.configuracao (id, uasg, codom) VALUES (1, '160382', '04821
 -- exercicio). O par de auditoria segue em toda tabela de negocio.
 -- ---------------------------------------------------------------------------
 
--- A meta do PIT que o credito financia mora em `pit.meta`, e nao aqui. Ela
--- esteve neste schema ate 2026-07-31, quando saiu para schema proprio: o PIT e
+-- A meta do PIT que o credito financia mora em `pit.meta`, e nao aqui: o PIT e
 -- o plano anual da Divisao, que a mapoteca tambem consome, e nao um artefato
--- orcamentario. Ver er/pit.sql e a migracao 2026-07-31_meta_pit_schema_proprio.
+-- orcamentario. Ver er/pit.sql.
 -- O orcamento continua sendo consumidor, pelas FKs de pdr_item e nota_credito.
 
 -- DFD: documento de formalizacao da demanda, amarrado no ano. Nao ha mais
@@ -78,8 +77,8 @@ CREATE TABLE orcamento.dfd_item(
 
 -- Licitacao (4.4 GCALC DSG / 4.5 demais). Antes de nota_empenho (FK).
 -- Os TRES tipos saem no RPCMTec: o tipo 1 (GCALC DSG) alimenta a subsecao 4.4,
--- e os tipos 2 (Propria) e 3 (Participante) alimentam a 4.5 (decisao do chefe,
--- 2026-08-04). Uma licitacao pode cobrir varios DFDs, entao nao guardamos um
+-- e os tipos 2 (Propria) e 3 (Participante) alimentam a 4.5. Uma licitacao pode
+-- cobrir varios DFDs, entao nao guardamos um
 -- vinculo direto com um DFD unico aqui.
 --
 -- `fase_atual` e `fase_id` convivem por decisao. O codigo classifica (filtra e
@@ -246,11 +245,9 @@ CREATE TABLE orcamento.rpnp(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
--- A edicao mensal do RPCMTec NAO mora mais aqui. Ela era
--- `orcamento.relatorio_rpcmtec` ate 2026-08-01, quando saiu para `rpcmtec.edicao`
--- (ver er/rpcmtec.sql e migrations/2026-08-01_rpcmtec_schema_proprio.sql): o
--- relatorio e da Divisao inteira, e enquanto morava neste schema quem so tinha
--- perfil na mapoteca nao alcancava a edicao do proprio relatorio. O orcamento
+-- A edicao mensal do RPCMTec NAO mora aqui, e sim em `rpcmtec.edicao` (ver
+-- er/rpcmtec.sql): o relatorio e da Divisao inteira, e neste schema quem so tem
+-- perfil na mapoteca nao alcancaria a edicao do proprio relatorio. O orcamento
 -- continua sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
 
 -- Arquivos anexados (documentos originais). Vinculo polimorfico: cada arquivo
@@ -304,7 +301,6 @@ CREATE UNIQUE INDEX uniq_nota_credito_num_nd_ug
   ON orcamento.nota_credito (ano, numero, cod_nd, COALESCE(ug_emitente, ''));
 
 -- Indices uteis para as agregacoes do relatorio
-CREATE INDEX idx_nota_credito_ano ON orcamento.nota_credito (ano);
 CREATE INDEX idx_nota_credito_nd ON orcamento.nota_credito (cod_nd);
 CREATE INDEX idx_nota_credito_classificacao ON orcamento.nota_credito (classificacao_id);
 CREATE INDEX idx_nota_empenho_nc ON orcamento.nota_empenho (nota_credito_id);

@@ -4,11 +4,10 @@
 // bytes ficam em memória e o controller grava no banco (coluna `conteudo`
 // BYTEA), no mesmo padrão do anexo da revisão do PIT e do pedido da mapoteca.
 //
-// A LISTA É MENOR que a do anexo da revisão do PIT, e de propósito: lá chega o
+// A LISTA É MENOR que a do anexo da revisão do PIT, e de propósito: lá chegam o
 // PIT assinado e a planilha de impressão; aqui chega UMA coisa, o relatório
 // assinado. O sistema é quem emite o PDF, então aceitar .docx aqui reabriria a
-// porta que a decisão de 2026-08-05 fechou -- o documento não passa mais pelo
-// Word.
+// passagem pelo Word.
 //
 // O .p7s entra porque é como a assinatura digital destacada volta de alguns
 // fluxos: o PDF vai junto, e o pacote é o que se guarda.

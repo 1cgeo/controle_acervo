@@ -26,16 +26,13 @@ const router = express.Router()
 
 // Metas do PIT: rota de PLATAFORMA, sem prefixo de modulo, como /usuarios.
 //
-// LER e de qualquer pessoa logada (verifyLogin), e nao de um perfil no
-// orcamento. Todo modulo precisa oferecer a lista: o orcamento amarra a NC e o
-// item do PDR a meta que financiam, e a mapoteca amarra o pedido de impressao a
-// meta que ele cumpre. Exigir perfil no orcamento deixava a mapoteca de fora, e
-// foi por isso que o pedido guardou o codigo da meta como texto livre ate
-// 2026-07-31.
+// LER e de qualquer pessoa logada (`verifyLogin`), e nao de um perfil de modulo.
+// Todo modulo precisa oferecer a lista: o orcamento amarra a NC e o item do PDR
+// a meta que financiam, e a mapoteca amarra o pedido de impressao a meta que ele
+// cumpre.
 //
-// ESCREVER e do administrador global (verifyAdmin). O PIT muda uma vez por ano,
-// vem de documento assinado, e errar nele contamina os tres modulos. Decisao do
-// chefe, 2026-07-31.
+// ESCREVER e do administrador global (`verifyAdmin`): o PIT muda uma vez por
+// ano, vem de documento assinado, e errar nele contamina os tres modulos.
 
 router.get(
   '/',
@@ -65,17 +62,15 @@ router.get(
 // ANTES de '/:id', como '/anos': o Express casa na ordem de declaração, e
 // 'execucao' cairia na rota do id e reprovaria na validação de parâmetro.
 //
-// LER é do GERENTE de qualquer módulo e do administrador global (chefe,
-// 2026-08-02). Era de qualquer pessoa logada até essa data: o PIT é o
+// LER é do GERENTE de qualquer módulo e do administrador global: o PIT é o
 // compromisso do ano, e quem responde por ele é quem responde pelo módulo.
-// ESCREVER continua sendo do administrador global. Não há perfil de PIT, porque
-// não há módulo PIT.
+// ESCREVER é do administrador global. Não há perfil de PIT, porque não há
+// módulo PIT.
 // ---------------------------------------------------------------------------
 
 // A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
-// cada um. Substituiu o `GET /execucao?ano&mes` em 2026-08-02, quando o mês
-// deixou de ser filtro e virou coluna: o trabalho é anual, e "estou atrasado?"
-// não se responde um mês por vez.
+// cada um. O mês é COLUNA, e não filtro: o trabalho é anual, e "estou
+// atrasado?" não se responde um mês por vez.
 router.get(
   '/execucao',
   verifyGerente,
@@ -239,10 +234,12 @@ router.delete(
 // para virar uma meta de Manual para automática, e responde inclusive na meta
 // que ainda está Manual, que é justamente a que interessa olhar.
 //
-// LER é de qualquer pessoa logada, como o resto da grade.
+// LER é do GERENTE e do administrador, como o resto da grade. O ensaio devolve o
+// planejado e o realizado meta a meta, ou seja, o MESMO dado de `/execucao`:
+// uma guarda mais fraca aqui seria o caminho de volta para quem a grade barra.
 router.get(
   '/execucao/ensaio',
-  verifyLogin,
+  verifyGerente,
   schemaValidation({ query: pitSchema.ensaioQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.ensaio(req.query.ano, req.query.meta_id)
@@ -313,7 +310,7 @@ router.delete(
 )
 
 // ---------------------------------------------------------------------------
-// Exercício e revisão do PIT (2026-08-04).
+// Exercício e revisão do PIT.
 //
 // Ficam antes de '/:id' pela mesma razão de '/anos': o Express casa na ordem de
 // declaração, e 'exercicios' cairia na rota do id.

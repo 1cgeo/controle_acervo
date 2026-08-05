@@ -47,7 +47,9 @@ const RECURSOS = {
   pedido: {
     nome: 'pedido da mapoteca',
     caminho: '/mapoteca/pedido',
-    schema: modulo('pedido', 'pedidoAtualizacao', 'pedidoIds'),
+    // A listagem e SEMPRE de um ano so: sem `ano` na query o servidor cai no ano
+    // corrente. Declarar o `anoQuery` aqui e o que faz `--ano` chegar la.
+    schema: modulo('pedido', 'pedidoAtualizacao', 'pedidoIds', 'anoQuery'),
     chaveIds: 'pedido_ids',
     // Colunas padrao da listagem compacta. O listar do backend devolve tambem
     // os campos de auditoria e os contadores de impressao, que sao ruido para
@@ -84,7 +86,6 @@ const RECURSOS = {
       'tipo_midia_nome', 'quantidade_impressa', 'quantidade_restante'
     ]
   },
-
 
   plotter: {
     nome: 'plotter',
@@ -127,9 +128,9 @@ const RECURSOS = {
   }
 }
 
-// Os dominios da mapoteca sao GET publicos (servem para popular os selects do
-// client web) e ficam sob /api/mapoteca/dominio/<sub>. Nao ha CRUD: sao tabelas
-// fixas do banco, alteradas por migracao.
+// Os dominios da mapoteca ficam sob /api/mapoteca/dominio/<sub> e exigem perfil
+// de consulta no modulo (nao sao publicos). Nao ha CRUD: sao tabelas fixas do
+// banco, alteradas por migracao.
 const DOMINIOS = [
   'tipo_cliente',
   'situacao_pedido',
@@ -180,7 +181,13 @@ const RELATORIOS = {
   detalhado: { caminho: '/mapoteca/relatorio/pedidos_detalhado', nome: 'entregas item a item' },
   civ: { caminho: '/mapoteca/relatorio/pedidos_civ', nome: 'pedidos civis e LAI' },
   tematicos: { caminho: '/mapoteca/relatorio/tematicos', nome: 'producao tematica' },
-  impressao: { caminho: '/mapoteca/relatorio/impressao_detalhada', nome: 'impressao detalhada (recorte do detalhado)' },
+  // O .ods desta aba tem rota PROPRIA, e nao um ?formato=ods: o CSV traz o dado
+  // cru do banco e o .ods traz o vocabulario da aba META4_DETALHADA do RTM.
+  impressao: {
+    caminho: '/mapoteca/relatorio/impressao_detalhada',
+    nome: 'impressao detalhada (recorte do detalhado)',
+    ods: '/mapoteca/relatorio/impressao_detalhada_ods'
+  },
   resumo: { caminho: '/mapoteca/relatorio/pedidos_resumo', nome: 'uma linha por pedido, com o entregue consolidado' },
   entregas_produto: { caminho: '/mapoteca/dashboard/entregas_por_tipo_produto', nome: 'entregas por tipo de produto e escala' },
   entregas_midia: { caminho: '/mapoteca/dashboard/entregas_por_midia', nome: 'entregas por tipo de midia' },

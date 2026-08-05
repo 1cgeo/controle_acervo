@@ -32,17 +32,13 @@ controller.getTipoPostoGrad = async () => {
   return db.conn.any('SELECT code, nome, nome_abrev FROM dominio.tipo_posto_grad ORDER BY code')
 }
 
-// AS TRES LISTAGENS DEVOLVEM `em_uso` (2026-08-04): quantos lancamentos apontam
-// para cada codigo. E o que permite a tela avisar ANTES do clique.
+// AS TRES LISTAGENS DEVOLVEM `em_uso`: quantos lancamentos apontam para cada
+// codigo. E o que permite a tela avisar ANTES do clique, em vez de deixar a
+// pessoa confirmar "esta acao nao pode ser desfeita" para so entao levar o 409
+// do `tratarDeletar`.
 //
-// Ate aqui o unico aviso era o 409 que o `tratarDeletar` acima produz, e ele so
-// chega DEPOIS de a pessoa confirmar "Esta acao nao pode ser desfeita". As FKs
-// nao declaram ON DELETE, entao o banco de fato bloqueia; o defeito era a ordem,
-// nao o resultado.
-//
-// As FKs contadas sao as do DDL (er/orcamento.sql:98,120,123,124), e sao TODAS
-// as que existem para as tres tabelas. O ::integer evita o BIGINT do COUNT
-// chegar como texto no JSON.
+// As FKs contadas sao TODAS as que o DDL declara para as tres tabelas. O
+// `::integer` evita o BIGINT do COUNT chegar como texto no JSON.
 controller.getNaturezaDespesa = async () => {
   return db.conn.any(
     `SELECT nd.code, nd.nome, nd.gnd, nd.grupo,
@@ -97,13 +93,9 @@ controller.getGrauPrioridade = async () => {
 // CRUD dos dominios editaveis pela Configuracao: natureza de despesa, plano
 // interno e UG emitente. O `code` e a chave (informado pelo usuario).
 //
-// AS NOVE FUNCOES ABAIXO PASSARAM A AUDITAR EM 2026-08-02, e ate ali este
-// cabecalho dizia "Nao ha auditoria nessas tabelas de dominio". Elas sao a
+// AS NOVE FUNCOES ABAIXO AUDITAM, DENTRO DE TRANSACAO E COM AUTOR. Elas sao a
 // alteracao de MAIOR ALCANCE do modulo: mudar o nome ou o GND de uma ND
-// RECLASSIFICA toda NC e toda NE ja lancadas com aquele codigo, e o rastro
-// disso nao existia em lugar nenhum. Junto vieram as duas coisas que faltavam:
-// a TRANSACAO (nenhuma das nove tinha) e o AUTOR (nenhuma das nove o recebia,
-// embora `req.usuarioUuid` ja existisse na rota).
+// RECLASSIFICA toda NC e toda NE ja lancadas com aquele codigo.
 //
 // As tres tabelas moram no schema `dominio`, e nao em `orcamento`, mas o CRUD e
 // do orcamento e o mapa de auditoria as declara com `modulo: 'orcamento'`: quem

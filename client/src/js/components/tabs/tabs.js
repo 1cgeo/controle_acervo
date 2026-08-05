@@ -19,6 +19,8 @@ import './tabs.css';
  * @returns {{element:HTMLElement, ready:Promise, setActive:(id:string)=>Promise,
  *            getActive:()=>string, refreshActive:()=>Promise, _cleanup:()=>void}}
  */
+let contadorDeAbas = 0;
+
 export function createTabs({ tabs = [], activeId = null, className = 'tabs', ariaLabel = 'Abas' }) {
   let currentId = activeId || (tabs[0] && tabs[0].id) || null;
   let currentCleanup = null;
@@ -27,22 +29,68 @@ export function createTabs({ tabs = [], activeId = null, className = 'tabs', ari
   // invalida o resultado que estiver a caminho.
   let token = 0;
 
+  // Identidade unica desta instancia. A pagina monta abas de nivel 1 e de nivel
+  // 2 ao mesmo tempo, e `id` repetido faria o `aria-controls` de uma apontar
+  // para o painel da outra.
+  const uid = `tabs-${++contadorDeAbas}`;
+
   const tabBar = el('div', { className, role: 'tablist', 'aria-label': ariaLabel });
-  const content = el('div', { className: 'tabs__content', role: 'tabpanel' });
+  const content = el('div', {
+    className: 'tabs__content',
+    role: 'tabpanel',
+    id: `${uid}-painel`,
+    // O painel entra na ordem de tabulacao: o conteudo da aba pode nao ter
+    // controle nenhum, e sem isto o teclado pula direto para depois dele, sem
+    // caminho para o texto que a aba mostrou.
+    tabindex: '0',
+  });
 
   const tabButtons = {};
+  const ordemDosIds = tabs.map(t => t.id);
+
   for (const tab of tabs) {
     const ativo = tab.id === currentId;
     const btn = el('button', {
       className: `${className}__item${ativo ? ` ${className}__item--active` : ''}`,
       type: 'button',
       role: 'tab',
+      id: `${uid}-aba-${tab.id}`,
       'aria-selected': String(ativo),
+      'aria-controls': `${uid}-painel`,
+      // TABULACAO ITINERANTE, que e o padrao de `tablist`: uma parada de Tab
+      // para o grupo inteiro, e as SETAS andam entre as abas. Sem isto, uma
+      // barra de seis abas cobrava seis Tabs para chegar ao conteudo.
+      tabindex: ativo ? '0' : '-1',
       textContent: tab.label,
       onClick: () => { setActive(tab.id); },
+      onKeyDown: (e) => aoTeclarNaAba(e, tab.id),
     });
     tabButtons[tab.id] = btn;
     tabBar.appendChild(btn);
+  }
+
+  // Lista de abas vazia nao tem cabecalho para apontar, e um id inventado
+  // deixaria o painel rotulado por um elemento que nao existe.
+  if (currentId && tabButtons[currentId]) {
+    content.setAttribute('aria-labelledby', `${uid}-aba-${currentId}`);
+  }
+
+  /** Setas andam, Home e End vao aos extremos. A aba que recebe foco e ativada. */
+  function aoTeclarNaAba(e, id) {
+    const atual = ordemDosIds.indexOf(id);
+    if (atual === -1) return;
+
+    let alvo = null;
+    if (e.key === 'ArrowRight') alvo = (atual + 1) % ordemDosIds.length;
+    else if (e.key === 'ArrowLeft') alvo = (atual - 1 + ordemDosIds.length) % ordemDosIds.length;
+    else if (e.key === 'Home') alvo = 0;
+    else if (e.key === 'End') alvo = ordemDosIds.length - 1;
+    else return;
+
+    e.preventDefault();
+    const idAlvo = ordemDosIds[alvo];
+    setActive(idAlvo);
+    tabButtons[idAlvo].focus();
   }
 
   const element = el('div', { className: 'tabs-wrapper' }, [tabBar, content]);
@@ -70,7 +118,9 @@ export function createTabs({ tabs = [], activeId = null, className = 'tabs', ari
       const ativo = tabId === id;
       btn.classList.toggle(`${className}__item--active`, ativo);
       btn.setAttribute('aria-selected', String(ativo));
+      btn.tabIndex = ativo ? 0 : -1;
     }
+    if (tabButtons[id]) content.setAttribute('aria-labelledby', `${uid}-aba-${id}`);
 
     clearChildren(content);
 

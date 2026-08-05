@@ -1,8 +1,9 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatNumber } from '@utils/format.js';
+import { formatBoolean, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { permissoes } from '@store/auth-store.js';
 import {
   getVolumesArmazenamento,
@@ -13,9 +14,8 @@ import { openVolumeDialog } from './volume-dialog.js';
 /**
  * Aba "Armazenamento": os volumes onde o acervo grava arquivo.
  *
- * Ate 2026-08-02 este cadastro so existia no plugin do QGIS
- * (`ManageVolumesDialog`), o que exigia QGIS instalado para uma tarefa que nao
- * tem nada de espacial.
+ * Ela existe na WEB porque a tarefa nao tem nada de espacial: so no plugin, o
+ * cadastro exigiria QGIS instalado.
  *
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
@@ -51,7 +51,7 @@ export async function renderVolumesTab(container) {
         key: 'layout_origem',
         label: 'Layout de origem',
         sortable: true,
-        render: (row) => (row.layout_origem ? 'Sim' : 'Não'),
+        render: (row) => formatBoolean(row.layout_origem),
       },
     ],
     rows: [],
@@ -77,6 +77,10 @@ export async function renderVolumesTab(container) {
     ] : [],
   });
 
+  // A tabela mora num container proprio para o estado de erro poder toma-lo sem
+  // levar junto o texto de apoio e o botao "Novo volume".
+  const areaTabela = el('div', {}, [table.element]);
+
   const secao = el('div', {}, [
     el('div', { className: 'admin-aba__topo' }, [
       el('p', {
@@ -86,7 +90,7 @@ export async function renderVolumesTab(container) {
       }),
       el('div', { className: 'page__actions' }, pode.operador ? [novoBtn] : []),
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(secao);
 
@@ -95,11 +99,17 @@ export async function renderVolumesTab(container) {
     try {
       const dados = await getVolumesArmazenamento();
       if (disposed) return;
+      // Devolve a tabela que uma falha anterior tirou daqui.
+      if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
       const rows = dados.map(v => ({ ...v, capacidade_gb: Number(v.capacidade_gb) }));
       table.update({ rows, loading: false });
     } catch (err) {
       if (disposed) return;
+      // Estado de ERRO, e nao tabela zerada. Com zero linhas a tabela dizia
+      // "Nenhum volume de armazenamento cadastrado", e esta e a tela em que
+      // alguem leria isso e cadastraria de novo um volume que ja existe.
       table.update({ rows: [], loading: false });
+      mostrarErro(areaTabela, err, load);
       showError(err.message || 'Erro ao carregar os volumes de armazenamento');
     }
   }

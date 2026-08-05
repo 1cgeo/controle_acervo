@@ -15,8 +15,8 @@
 // Ao mudar uma regra de negocio no server/, atualize a linha correspondente.
 
 const GERAL = [
-  'O orcamento e um MODULO do SCA (code 3) desde a fusao de 2026-07-27, nao um sistema.',
-  'As rotas ficam sob /api/orcamento/; /api/login e /api/usuarios sao de plataforma e',
+  'O orcamento e um MODULO do SCA (code 3), nao um sistema.',
+  'As rotas ficam sob /api/orcamento/; /api/login e /api/metas sao de plataforma e',
   'nao levam prefixo.',
   'Acesso por perfil no modulo orcamento: consulta le, operador cria e atualiza, gerente',
   'deleta. O administrador passa em tudo. So /api (health) e /api/login sao publicos.',
@@ -103,8 +103,10 @@ const REGRAS = {
     'Registro sem data entra no acumulado do ano: credito ainda sem data de',
     'emissao e credito do ano, e some-lo fora faria o painel mostrar menos do que',
     'o banco tem.',
-    'O RPCMTec NAO sai daqui desde 2026-08-01: ele e gerado inteiro, fora dos',
-    'modulos, por `acervo rpcmtec --ano N --mes M --docx`.'
+    'Cada linha traz o total E o split PDR/Extra (recebido, recebido_pdr,',
+    'recebido_extra). O `orcamento saldo` trabalha numa faixa por vez.',
+    'O RPCMTec NAO sai daqui: ele e gerado inteiro, fora dos modulos, por',
+    '`acervo rpcmtec --ano N --mes M --docx`.'
   ],
 
   arquivo: [
@@ -122,16 +124,9 @@ const REGRAS = {
   ],
 
   dominio: [
-    'GET exige perfil de consulta no modulo orcamento (nao e publico, ao contrario do',
-    'que a prosa antiga do SCO dizia); POST, PUT e DELETE exigem administrador.',
+    'GET exige perfil de consulta no modulo orcamento; nao e publico. POST, PUT e',
+    'DELETE exigem administrador.',
     'So natureza_despesa, plano_interno e ug tem CRUD; os demais sao so leitura.'
-  ],
-
-  usuario: [
-    'Rota de PLATAFORMA (/api/usuarios), compartilhada com o acervo e a mapoteca:',
-    'fica fora do prefixo /api/orcamento.',
-    'Desde 2026-08-02 o SCA e o dono da identidade: ele guarda o hash da senha e',
-    'valida o login sozinho. Cadastro, senha e acesso ficam no auth_cli.'
   ]
 }
 

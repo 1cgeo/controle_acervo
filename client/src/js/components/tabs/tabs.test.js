@@ -1,7 +1,6 @@
 import { describe, test, expect, vi } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 import { createTabs } from './tabs.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function abasSimples() {
   return [

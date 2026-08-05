@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Tela de ATENDER PEDIDOS: a fila de trabalho da mapoteca. Ela junta as tres
 // acoes de quem esta com o pedido na mao (baixar a carta, registrar o que
@@ -9,8 +10,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 });
 import { renderAtendimento } from '@modules/mapoteca/pages/atendimento/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // Tres pedidos: um atrasado, um sem prazo e um remetido (que fica na fila porque
 // ainda falta fechar).
@@ -32,7 +31,7 @@ const PEDIDOS = [
   },
   {
     id: 57, localizador_pedido: 'QQ11-WW22-EE33', cliente_nome: '3º RCC',
-    situacao_pedido_id: 4, situacao_pedido_nome: 'Remetido',
+    situacao_pedido_id: 2, situacao_pedido_nome: 'DIEx recebido',
     data_pedido: '2026-07-20', prazo: '2026-08-30', dias_para_prazo: 31,
     documento_solicitacao: 'DIEx 789', total_itens: 1, itens_impressos: 1,
     quantidade_pedida: 5, quantidade_impressa: 5,
@@ -91,9 +90,11 @@ describe('renderAtendimento: a fila', () => {
 
     // Sem argumento: a fila nao tem recorte de ano, ao contrario da lista de
     // pedidos. O pedido de dezembro ainda aberto e trabalho em janeiro.
-    expect(svc.getPedidosEmAberto).toHaveBeenCalledWith();
-    // O titulo NAO repete o rotulo do menu ("Atender pedidos"), decisao de
-    // 2026-08-04: rotulo repetido gasta a primeira linha da tela sem informar.
+    // Com a query: a tela de atendimento quer a fila que INCLUI o Remetido,
+    // porque e ela quem mostra o que falta fechar.
+    expect(svc.getPedidosEmAberto).toHaveBeenCalledWith(true);
+    // O título NÃO repete o rótulo do menu ("Atender pedidos"): rótulo repetido
+    // gasta a primeira linha da tela sem informar.
     expect(container.querySelector('.page__title').textContent).toBe('Fila de atendimento');
     expect(container.textContent).toContain('18º BI Mtz');
     expect(container.textContent).toContain('6º RCB');
@@ -212,7 +213,7 @@ describe('renderAtendimento: atender um pedido', () => {
     await flush();
 
     expect(svc.registrarImpressao).toHaveBeenCalledWith([
-      { produto_pedido_id: 900, quantidade: 2, observacao: undefined },
+      { produto_pedido_id: 900, quantidade: 2, observacao: undefined, data_impressao: undefined },
     ]);
     // Depois de registrar, a fila e o painel voltam a buscar: o numero na tela
     // tem de bater com o que a pessoa acabou de lancar.
@@ -235,6 +236,99 @@ describe('renderAtendimento: atender um pedido', () => {
     expect(valores).toContain('18º BI Mtz');
     expect(valores.some(v => v.includes('Rua A, 1'))).toBe(true);
     expect(svc.getPedido).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// A SEÇÃO "REMETIDOS, AGUARDANDO CONCLUSÃO".
+//
+// O pedido Remetido (situação 4 no DDL, er/mapoteca.sql) chega pela MESMA
+// leitura da fila, com `?incluir_remetidos=true`. O servidor tem duas listas de
+// situação em aberto: a de IMPRESSÃO (1, 2 e 3), que o plugin do QGIS espera, e
+// a de ATENDIMENTO (1, 2, 3 e 4), que esta tela pede.
+//
+// Marcar Remetido é a última ação de quem atende, e era ela que apagava o pedido
+// desta tela sem nada lembrar que faltava fechá-lo.
+describe('renderAtendimento: os remetidos que a fila deixou para trás', () => {
+  const REMETIDO = {
+    id: 81, localizador_pedido: 'RR11-TT22-YY33', cliente_nome: '4º BE Cmb',
+    situacao_pedido_id: 4, situacao_pedido_nome: 'Remetido',
+    data_pedido: '2026-05-02', documento_solicitacao: 'DIEx 900',
+    quantidade_produtos: 3,
+  };
+  const CONCLUIDO = {
+    id: 82, localizador_pedido: 'AA11-BB22-CC33', cliente_nome: '9º BE Cmb',
+    situacao_pedido_id: 5, situacao_pedido_nome: 'Concluído',
+    data_pedido: '2026-05-03', documento_solicitacao: 'DIEx 901',
+    quantidade_produtos: 1,
+  };
+
+  const secaoRemetidos = (container) => [...container.querySelectorAll('.dashboard-section')]
+    .find(s => s.textContent.includes('Remetidos, aguardando conclusão'));
+
+  test('lista o remetido e ignora o que já foi concluído', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([REMETIDO, CONCLUIDO]);
+    const { container, cleanup } = await montar();
+
+    const secao = secaoRemetidos(container);
+    expect(secao).toBeTruthy();
+    expect(secao.textContent).toContain('4º BE Cmb');
+    expect(secao.textContent).not.toContain('9º BE Cmb');
+    // Diz quantos faltam fechar: sem o número a seção seria só mais uma lista.
+    expect(secao.textContent).toContain('1 pedido(s) a fechar');
+    // E diz por que ele não está na fila acima.
+    expect(secao.textContent).toContain('sai da fila acima');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // UMA leitura alimenta as DUAS tabelas. Antes esta seção varria
+  // GET /pedido?ano= no ano corrente e no anterior, porque não havia rota que
+  // devolvesse Remetido: a janela de dois anos era arbitrária e escondia o
+  // pedido mais antigo. Duas leituras também abriam a janela em que a fila e os
+  // remetidos discordavam por virem de consultas diferentes.
+  test('uma leitura só alimenta a fila e os remetidos', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([REMETIDO]);
+    const { cleanup } = await montar();
+
+    expect(svc.getPedidosEmAberto).toHaveBeenCalledTimes(1);
+    expect(svc.getPedidosEmAberto).toHaveBeenCalledWith(true);
+    expect(svc.getPedidos).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('nada a fechar é dito com palavras, e não com tabela vazia', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([CONCLUIDO]);
+    const { container, cleanup } = await montar();
+
+    expect(secaoRemetidos(container).textContent)
+      .toContain('Nenhum pedido remetido esperando conclusão');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Erro de carga NÃO pode virar "nenhum pedido remetido": as duas frases pedem
+  // ações opostas.
+  test('erro na busca aparece como erro, e não como lista vazia', async () => {
+    svc.getPedidosEmAberto.mockRejectedValue(new Error('Falha ao consultar os pedidos'));
+    const { container, cleanup } = await montar();
+
+    const secao = secaoRemetidos(container);
+    expect(secao.textContent).toContain('Falha ao consultar os pedidos');
+    expect(secao.textContent).not.toContain('Nenhum pedido remetido esperando conclusão');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o link leva à lista de pedidos já no filtro Remetido', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([]);
+    const { container, cleanup } = await montar();
+
+    const link = secaoRemetidos(container).querySelector('a[href*="filtro=remetido"]');
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href')).toBe('#/mapoteca/pedidos?filtro=remetido');
 
     if (typeof cleanup === 'function') cleanup();
   });

@@ -8,16 +8,6 @@
   margin-bottom: var(--space-lg);
 }
 
-.data-table-wrapper__header {
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
 .data-table-wrapper__title {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
@@ -69,11 +59,6 @@
   border-color: var(--color-primary);
 }
 
-.data-table-toolbar__info {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -99,6 +84,15 @@
 }
 
 .data-table th.data-table__th--sortable:hover {
+  color: var(--text-primary);
+}
+
+/* O cabecalho que ordena e um controle de teclado (tabindex + Enter/Espaco).
+ * `outline-offset` NEGATIVO: o anel padrao fica por FORA da celula e a borda da
+ * tabela o corta pela metade. Puxado para dentro, ele aparece inteiro. */
+.data-table th.data-table__th--sortable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
   color: var(--text-primary);
 }
 

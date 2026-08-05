@@ -11,8 +11,7 @@ from .authSMB import AuthSMB
 class FileTransferThread(QThread):
     progress_update = pyqtSignal(int, int)
     # bool sucesso, str caminho_destino, str identificador, str mensagem_erro
-    # (mensagem_erro vazia em caso de sucesso). Slots que aceitam só 3 args
-    # continuam funcionando — PyQt descarta o argumento extra.
+    # (mensagem_erro vazia em caso de sucesso).
     file_transferred = pyqtSignal(bool, str, str, str)
 
     # Cache de credenciais SMB por sessão (compartilhado entre instâncias)
@@ -29,14 +28,9 @@ class FileTransferThread(QThread):
         self.retry_delay = 2  # segundos iniciais
         self.cancelled = False
 
-    @classmethod
-    def clear_cached_credentials(cls):
-        """Limpa as credenciais SMB cacheadas."""
-        cls._cached_smb_credentials = None
-
     def run(self):
         # IMPORTANTE: este método executa na thread de trabalho. Nunca criar
-        # widgets/diálogos ou tocar na GUI aqui — apenas emitir sinais.
+        # widgets ou diálogos aqui, e nunca tocar na GUI. Só emitir sinais.
 
         # Falha imediata (sem retentativas) para origens que não são caminhos de
         # arquivo copiáveis: vazio/None ou URL (ex: volume do tipo tileserver)
@@ -64,10 +58,9 @@ class FileTransferThread(QThread):
                     self.file_transferred.emit(True, self.destination_path, self.identifier, "")
                     return  # Transferência bem-sucedida, retornar
                 else:
-                    # Transferência falhou, mas sem exceção. Não emitir
-                    # progress_update(0, 100) aqui: zerar a barra a cada tentativa
-                    # faz o progresso "recuar" e parece travamento. A causa é
-                    # guardada e enviada no emit final.
+                    # Falha sem exceção. Não zerar a barra entre tentativas: o
+                    # progresso "recuando" parece travamento. A causa vai
+                    # guardada e sai no emit final.
                     last_error = error or last_error
                     logging.warning(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {last_error}")
 
@@ -86,7 +79,9 @@ class FileTransferThread(QThread):
                 if self.cancelled:
                     last_error = "Transferência cancelada."
                 self.file_transferred.emit(False, self.destination_path, self.identifier, last_error)
-                return  # Sem este return o laço continuava e emitia file_transferred em duplicidade
+                # O return é obrigatório: sem ele o laço segue e o sinal
+                # file_transferred sai duas vezes para o mesmo arquivo.
+                return
 
     def _interruptible_sleep(self, seconds):
         """Aguarda em pequenos incrementos, abortando rapidamente se cancelado.
@@ -122,13 +117,24 @@ class FileTransferThread(QThread):
             logging.error(msg)
             return False, msg
 
-        # Usar cópia Python com progresso para todos os tamanhos de arquivo
         try:
             return self._copy_file_with_progress(source_path, dest_path)
         except Exception as e:
+            # O arquivo parcial tem de sair: sobrando na pasta, ele passa por
+            # PDF baixado e vai para a impressora truncado.
+            self._descartar_parcial(dest_path)
             msg = f"Erro ao copiar o arquivo: {e}"
             logging.error(msg)
             return False, msg
+
+    @staticmethod
+    def _descartar_parcial(caminho):
+        """Apaga o arquivo de destino incompleto de uma cópia interrompida."""
+        try:
+            if os.path.exists(caminho):
+                os.remove(caminho)
+        except OSError as e:
+            logging.warning(f"Não foi possível apagar o arquivo parcial {caminho}: {e}")
 
     @classmethod
     def ensure_smb_credentials(cls, parent=None):
@@ -217,33 +223,34 @@ class FileTransferThread(QThread):
                     buffer = src.read(buffer_size)
 
         if self.cancelled:
+            self._descartar_parcial(dest_path)
             return False, "Transferência cancelada."
         return True, None
 
     def run_system_command(self, command):
-        """Executa o comando de cópia SMB. Retorna (sucesso, mensagem_erro|None)."""
-        try:
-            if isinstance(command, list):
-                result = subprocess.run(command, check=True, capture_output=True, text=True)
-            else:
-                result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+        """Executa o comando de cópia SMB (lista de argumentos).
 
-            if result.returncode == 0:
-                logging.info(f"Comando executado com sucesso: {command if isinstance(command, str) else ' '.join(command)}")
-                # Emitir progresso 100% para indicar sucesso
-                self.progress_update.emit(100, 100)
-                return True, None
-            else:
-                msg = (result.stderr or '').strip() or f"Comando falhou (código {result.returncode})"
-                logging.error(f"Comando falhou com código de retorno {result.returncode}: {result.stderr}")
-                return False, msg
+        Retorna (sucesso, mensagem_erro|None). Com `check=True`, código de
+        retorno diferente de zero vira CalledProcessError.
+        """
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            logging.info(f"Comando executado com sucesso: {' '.join(command)}")
+            # Progresso 100% para indicar sucesso
+            self.progress_update.emit(100, 100)
+            return True, None
 
         except subprocess.CalledProcessError as e:
             # getFileBySMB.py escreve mensagens claras em stderr (biblioteca
-            # ausente, credenciais incompletas, erro de transferência) —
-            # propagá-las à UI em vez do genérico "Falha na transferência"
+            # ausente, credenciais incompletas, erro de transferência). Elas vão
+            # para a UI no lugar do genérico "Falha na transferência".
             msg = (e.stderr or '').strip() or str(e)
             logging.error(f"Erro ao executar comando: {str(e)}, saída: {e.stderr}")
+            return False, msg
+        except FileNotFoundError:
+            msg = ("Interpretador 'python3' não encontrado. Instale o Python 3 "
+                   "e a biblioteca pysmbc para copiar arquivos por SMB.")
+            logging.error(msg)
             return False, msg
         except Exception as e:
             msg = str(e)

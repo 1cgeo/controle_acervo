@@ -8,25 +8,16 @@ const validateToken = require('./validate_token')
 const { montarContexto } = require('./contexto')
 
 /**
- * Passa o ADMINISTRADOR GLOBAL e o GERENTE de qualquer modulo.
+ * Passa o ADMINISTRADOR GLOBAL e o GERENTE de qualquer módulo. Fora ficam
+ * operador e consulta.
  *
- * POR QUE NAO `verifyPerfil`. Ele le o perfil de UM modulo por vez (o `moduloId`
- * entra na consulta), e o que ele guarda aqui nao e de modulo nenhum: o PIT e o
- * plano anual da DIVISAO, e os tres modulos o consomem. Encadear tres guardas
- * daria "passa se tiver perfil em algum", que e outra pergunta.
+ * Não é `verifyPerfil` porque aquele lê UM módulo por vez, e o PIT é o plano
+ * anual da Divisão, que os três consomem. Não é `verifyLogin` porque aquele lê
+ * `administrador` do TOKEN, que envelhece até o JWT_EXPIRACAO; aqui o perfil sai
+ * do BANCO a cada requisição.
  *
- * POR QUE NAO `verifyLogin`. Ele le `administrador` do TOKEN, que envelhece por
- * ate 8 horas (JWT_EXPIRACAO). Rebaixar alguem nao tiraria a tela dele hoje.
- * Aqui, como no `verifyPerfil`, o perfil sai do BANCO a cada requisicao.
- *
- * QUEM FICA DE FORA: operador e consulta. O PIT e o compromisso do ano, e quem
- * responde por ele e quem responde pelo modulo. Ate 2026-08-02 a leitura era de
- * qualquer pessoa logada; o chefe fechou para gerente e administrador.
- *
- * IRMAO DE `auditoria/verify_rastreabilidade.js`, que faz a mesma pergunta e
- * ainda devolve QUAIS modulos a pessoa ve. Aquele fica onde esta: o recorte por
- * modulo so interessa a quem varre os tres, e trazer o recorte para ca daria a
- * esta rota um campo que ela nao usa.
+ * Irmão de `auditoria/verify_rastreabilidade.js`, que faz a mesma pergunta e
+ * ainda devolve QUAIS módulos a pessoa vê.
  */
 
 // 3 = gerente, em dominio.tipo_perfil.

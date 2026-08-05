@@ -64,13 +64,16 @@ describe('schemaValidation', () => {
     )
   })
 
-  it('should strip unknown keys from body', () => {
+  it('tira a chave desconhecida do corpo que segue para o controlador', () => {
     const middleware = schemaValidation({ body: testSchema })
     const req = { body: { name: 'Test', age: 25, extra: 'field' } }
     const next = jest.fn()
 
     middleware(req, {}, next)
-    expect(next).toHaveBeenCalledWith()
+
+    // O `req.body` REESCRITO é o que importa: só ele diz que a chave saiu. O
+    // `next()` sem erro passaria igual com a chave intacta no corpo.
+    expect(req.body).toEqual({ name: 'Test', age: 25 })
   })
 
   // O strip continua, mas não em silêncio: a chave descartada é registrada em

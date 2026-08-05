@@ -3,9 +3,7 @@
 // Execução orçamentária por natureza de despesa: a fonte das três abas do
 // dashboard do orçamento (cards, gráfico por ND e as duas tabelas).
 //
-// POR QUE ELA NÃO FOI PARA O RPCMTec junto com o resto. Esta consulta esteve em
-// `orcamento/relatorio/relatorio_ctrl.js` como "tabela 3.1" até 2026-08-01, e
-// era usada por DUAS telas com necessidades diferentes:
+// POR QUE ELA NÃO MORA NO RPCMTec. São DUAS telas com necessidades diferentes:
 //
 //   o RPCMTec  quer a visão do PDR, em texto já formatado, sem linha de total
 //              (o modelo da Divisão não tem uma), e é lido por quem administra
@@ -71,8 +69,7 @@ const EMPENHADO_LIQUIDO_DA_NC = `
 /**
  * As pendências de dado do ano, cada uma com o total do seu fluxo.
  *
- * O painel mostra estes defeitos À VISTA, para chamar a ação (chefe,
- * 2026-08-04). Antes havia só um aviso de uma linha sobre registro sem data.
+ * O painel mostra estes defeitos À VISTA, para chamar a ação.
  *
  * As três pendências de DATA existem por causa do `IS NULL` que cada filtro da
  * consulta principal carrega: o registro sem data entra em TODOS os meses,

@@ -188,11 +188,11 @@ export function conferirVersaoContraTrigger({
 }
 
 /**
- * Opcoes do `<select>` de tipo.
+ * Opcoes do `<select>` de tipo: as de `TIPOS_OFERECIDOS`, MAIS o tipo ja gravado
+ * quando ele nao esta entre elas.
  *
- * Sao Regular e Planejada, MAIS o tipo ja gravado quando ele nao e nenhum dos
- * dois. Sem essa terceira entrada, abrir a edicao de uma versao historica
- * mostraria o campo vazio e salvar a converteria em silencio para outro tipo.
+ * A entrada extra e o que impede a edicao de uma versao de tipo fora da lista de
+ * abrir com o campo vazio e, ao salvar, converte-la em silencio para outro tipo.
  */
 function montarOpcoesTipo(tipos, tipoAtual) {
   const nome = (code) => {
@@ -344,9 +344,8 @@ export async function openVersaoDialog({
   //
   // Sem estes dois campos, a única forma de ligar uma versão ao PIT era o plugin
   // do QGIS ou SQL na mão, e a grade do PIT conta por `INNER JOIN pit.meta ON
-  // mm.id = v.meta_pit_id`: versão sem meta não conta. Medido em 2026-08-04 no
-  // banco de produção: das 278 versões Regulares finalizadas em 2026, só 115
-  // tinham meta. As outras 163 estavam prontas e fora da conta do plano.
+  // mm.id = v.meta_pit_id`: versão sem meta não conta, e fica pronta fora da
+  // conta do plano.
   //
   // Os dois são EXCLUSIVOS, e o banco cobra isso (CHECK
   // `versao_plano_ou_excecao`): a versão cumpre uma meta prometida no PIT, ou
@@ -391,7 +390,7 @@ export async function openVersaoDialog({
     helpText: 'Enter ou vírgula confirma cada etiqueta',
   });
 
-  // AS DUAS DATAS PRECISAM DIZER O QUE SAO (2026-08-04). Elas chegavam ao
+  // AS DUAS DATAS PRECISAM DIZER O QUE SAO. Elas chegavam ao
   // operador sem uma palavra, e confundi-las e o erro classico do acervo: a de
   // EDICAO e a que o `pit_execucao_ctrl` usa para decidir o mes e o ano da
   // producao, entao trocar uma pela outra move a carta de mes na grade do PIT

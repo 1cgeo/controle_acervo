@@ -68,13 +68,11 @@ test('a leitura de versao cobre todos os campos com default do PUT', () => {
   assert.deepStrictEqual(esquema.defaultsAusentes(ALVOS.versao.schema(), base), [])
 })
 
-// Este teste ja exigiu o contrario, e estava certo enquanto o bug existia: o
-// GET de produto nao trazia subtipo_produto_id e o PUT o gravava como null,
-// entao QUALQUER edicao despinava a Carta Militar com 200. O conserto de
-// 2026-07-25 atacou os dois lados (o GET passou a devolver o campo, o PUT
-// perdeu o default), e aqui o guardrail deixou de ter o que acusar. Se ele
-// voltar a acusar, o servidor regrediu.
-test('a leitura de produto passou a cobrir o subtipo, e o guardrail se cala', () => {
+// O GET de produto devolve subtipo_produto_id e o PUT nao tem default nele, os
+// dois lados do mesmo modo de falha: sem qualquer um deles, QUALQUER edicao
+// despinaria a Carta Militar com 200. Se o guardrail voltar a acusar aqui, o
+// servidor regrediu.
+test('a leitura de produto cobre o subtipo, e o guardrail se cala', () => {
   const base = {
     // exatamente o SELECT de acervo_ctrl.getProdutoById, ja com o subtipo
     id: 4211,

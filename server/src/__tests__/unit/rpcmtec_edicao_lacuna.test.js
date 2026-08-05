@@ -148,13 +148,60 @@ describe('rpcmtec_edicao_ctrl.fechar: aponta a lacuna ao congelar', () => {
       }]
     })
 
+    // Duas leituras por `oneOrNone`, NESTA ordem:
+    //   1. o `lerAntes` da auditoria (a edicao como estava);
+    //   2. o UPDATE que RECLAMA o fechamento.
+    //
+    // O UPDATE virou `oneOrNone` porque leva `AND data_fechamento IS NULL`: ele
+    // devolve zero linhas quando outro pedido fechou primeiro, e e assim que o
+    // TOCTOU se resolve. Antes era `t.one`, que nao tinha como devolver nada.
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, ano: 2026, mes: 7 })
-    mockDb.conn.one.mockResolvedValueOnce({
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 1, ano: 2026, mes: 7, data_fechamento: '2026-08-04T12:00:00Z'
     })
 
     const resultado = await ctrl.fechar(1, 'uuid-1')
 
     expect(resultado).toEqual({ id: 1, subsecoes: 1, lacunas: ['6.1'] })
+  })
+
+  // O outro lado da guarda, e o que prova que ela e uma guarda: quando o UPDATE
+  // condicional nao casa linha nenhuma (outro pedido fechou a edicao entre a
+  // conferencia e a gravacao), o fechamento RECUSA em vez de gravar de novo.
+  //
+  // Sem este caso, o `oneOrNone` acima seria so uma troca de metodo.
+  test('recusa quando outro pedido fechou a edicao antes (TOCTOU)', async () => {
+    jest.spyOn(ctrl, 'montar').mockResolvedValueOnce({
+      ...edicaoAberta,
+      pendentes: [],
+      lacunasCalculadas: [],
+      secoes: [{
+        titulo: '6. RECURSOS HUMANOS',
+        subsecoes: [{
+          numero: '6.1',
+          ordem: 22,
+          secaoTitulo: '6. RECURSOS HUMANOS',
+          titulo: 'Aproveitamento do efetivo',
+          origem: estrutura.ORIGEM.CALCULADA,
+          cabecalhos: ['Militar'],
+          linhas: [['x']],
+          semGerador: false,
+          semLinhas: false,
+          preenchida: true
+        }]
+      }]
+    })
+
+    // 1. lerAntes acha a edicao; 2. o UPDATE condicional nao casa nada.
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, ano: 2026, mes: 7 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+
+    await expect(ctrl.fechar(1, 'uuid-1')).rejects.toThrow('A edição já está fechada')
+
+    // E nao gravou subsecao nenhuma: a reclamacao vem ANTES do laco de INSERT,
+    // entao o perdedor da corrida nem chega a escrever.
+    const inserts = mockDb.conn.none.mock.calls
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO rpcmtec.subsecao'))
+    expect(inserts).toHaveLength(0)
   })
 })

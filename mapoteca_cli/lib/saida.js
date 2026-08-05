@@ -96,11 +96,10 @@ function lista (dados, opcoes = {}) {
   if (!Array.isArray(dados)) {
     return { texto: JSON.stringify(dados, null, 2), avisos }
   }
-  // O FORMATO decide antes de a lista vazia decidir. Ao contrário, `--json` sem
-  // resultado imprimia `(nenhum registro)`, que não é JSON: quem processa em
-  // lote quebrava no `JSON.parse`, e quebrava justamente no caso mais comum de
-  // automação, que é a consulta que não achou nada. Valia para TODO comando de
-  // lista do CLI, e não só para os anexos.
+  // O FORMATO decide antes de a lista vazia decidir: com `--json`, resultado
+  // vazio sai como `[]`, e nunca como `(nenhum registro)`, que quebraria o
+  // `JSON.parse` de quem encadeia justamente no caso mais comum, a consulta que
+  // nao achou nada.
   const formato = opcoes.formato || 'tsv'
 
   if (!dados.length) {

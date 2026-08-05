@@ -1,122 +1,135 @@
 'use strict'
 
-const { conn, cleanTestData } = require('../helpers/db')
-const { createFullProduct } = require('../helpers/fixtures')
+// A FUNÇÃO DE LIMPEZA DE UPLOAD, no banco, contra o banco.
+//
+// `acervo.cleanup_expired_uploads()` é PL/pgSQL, e o controller a chama sem ler
+// resultado nenhum (ele conta as sessões antes, porque a função não devolve
+// contagem). Quem confere o número, então, confere a contagem do JavaScript, e
+// não o que a função fez: se ela parasse de escrever, `uploads_fechados`
+// continuaria certo e ninguém saberia.
+//
+// O QUE SÓ AQUI SE PROVA, e por isso este arquivo existe:
+//
+//   1. a sessão vencida vira 'failed' COM a mensagem, que é o que a tela mostra;
+//   2. o efeito DESCE para `upload_arquivo_temp`, o segundo UPDATE da função;
+//   3. a sessão dentro do prazo não é tocada.
+//
+// O item 3 é o que dá sentido aos outros dois: sem uma sessão viva no cenário,
+// uma função que marcasse TUDO como 'failed' passaria igual.
+//
+// O CONTRATO EM NÚMERO (quantas sessões e quantos downloads a rotina fecha) é do
+// controller, e está em routes/cleanup_downloads.test.js. Aqui se prova o efeito
+// no banco, e lá o número que a rota devolve.
+
+const { conn, cleanTestData, closeConnection } = require('../helpers/db')
 const { ADMIN_UUID } = require('../helpers/auth')
 
 afterEach(async () => {
   await cleanTestData()
 })
 
-describe('Acervo Integration', () => {
-  describe('Downloads', () => {
-    it('should create a download record with token', async () => {
-      const chain = await createFullProduct()
+afterAll(async () => {
+  await closeConnection()
+})
 
-      const download = await conn.one(`
-        INSERT INTO acervo.download (arquivo_id, usuario_uuid, status, expiration_time)
-        VALUES ($1, $2, 'pending', NOW() + INTERVAL '24 hours')
-        RETURNING id, download_token, status
-      `, [chain.arquivo.id, ADMIN_UUID])
+const MENSAGEM_SESSAO = 'Upload expired - client never confirmed completion'
+const MENSAGEM_ARQUIVO = 'Upload session expired'
 
-      expect(download.download_token).toBeDefined()
-      expect(download.status).toBe('pending')
-    })
+/**
+ * Sessão de upload com um arquivo temporário pendente dentro.
+ *
+ * `expiracaoSql` entra como SQL para o prazo ser calculado pelo relógio do
+ * BANCO, que é o mesmo `NOW()` que a função compara. Um `new Date()` do Node
+ * abriria uma diferença de fuso entre o cenário e a regra sob teste.
+ */
+const criarSessao = async (expiracaoSql) => {
+  const sessao = await conn.one(
+    `INSERT INTO acervo.upload_session
+       (operation_type, status, expiration_time, usuario_uuid)
+     VALUES ('add_files', 'pending', ${expiracaoSql}, $1)
+     RETURNING id, uuid_session`,
+    [ADMIN_UUID]
+  )
 
-    it('should update download status to completed', async () => {
-      const chain = await createFullProduct()
-      const download = await conn.one(`
-        INSERT INTO acervo.download (arquivo_id, usuario_uuid, status, expiration_time)
-        VALUES ($1, $2, 'pending', NOW() + INTERVAL '24 hours')
-        RETURNING id, download_token
-      `, [chain.arquivo.id, ADMIN_UUID])
+  await conn.none(
+    `INSERT INTO acervo.upload_arquivo_temp
+       (session_id, nome, nome_arquivo, destination_path, tipo_arquivo_id,
+        situacao_carregamento_id, status)
+     VALUES ($1, 'Arquivo pendente', 'arquivo_pendente.tif',
+             '/tmp/arquivo_pendente.tif', 1, 1, 'pending')`,
+    [sessao.id]
+  )
 
-      await conn.none(`
-        UPDATE acervo.download SET status = 'completed' WHERE download_token = $1
-      `, [download.download_token])
+  return sessao
+}
 
-      const updated = await conn.one('SELECT status FROM acervo.download WHERE id = $1', [download.id])
-      expect(updated.status).toBe('completed')
-    })
+const limpar = () => conn.any('SELECT acervo.cleanup_expired_uploads()')
 
-    it('should cleanup expired downloads', async () => {
-      const chain = await createFullProduct()
+const lerSessao = (id) =>
+  conn.one(
+    'SELECT status, error_message FROM acervo.upload_session WHERE id = $1',
+    [id]
+  )
 
-      await conn.none(`
-        INSERT INTO acervo.download (arquivo_id, usuario_uuid, status, expiration_time)
-        VALUES ($1, $2, 'pending', NOW() - INTERVAL '1 hour')
-      `, [chain.arquivo.id, ADMIN_UUID])
+const lerArquivos = (sessaoId) =>
+  conn.any(
+    `SELECT status, error_message FROM acervo.upload_arquivo_temp
+      WHERE session_id = $1`,
+    [sessaoId]
+  )
 
-      try {
-        await conn.none('SELECT acervo.cleanup_expired_downloads()')
-      } catch (e) {
-        // Function may not exist, just verify expiration_time is in the past
-        const result = await conn.one(`
-          SELECT expiration_time < NOW() as is_expired FROM acervo.download WHERE arquivo_id = $1
-        `, [chain.arquivo.id])
-        expect(result.is_expired).toBe(true)
-      }
-    })
+describe('acervo.cleanup_expired_uploads()', () => {
+  it('marca a sessão vencida como failed, com a mensagem que a tela mostra', async () => {
+    const vencida = await criarSessao("NOW() - INTERVAL '1 hour'")
+
+    await limpar()
+
+    const depois = await lerSessao(vencida.id)
+    expect(depois.status).toBe('failed')
+    expect(depois.error_message).toBe(MENSAGEM_SESSAO)
   })
 
-  describe('Upload sessions', () => {
-    it('should create an upload session', async () => {
-      const session = await conn.one(`
-        INSERT INTO acervo.upload_session (operation_type, usuario_uuid)
-        VALUES ('add_files', $1)
-        RETURNING id, uuid_session, status
-      `, [ADMIN_UUID])
+  // O SEGUNDO UPDATE da função. Sem ele o arquivo temporário fica 'pending'
+  // para sempre, apontando uma sessão que já morreu.
+  it('desce o fechamento para os arquivos temporários da sessão', async () => {
+    const vencida = await criarSessao("NOW() - INTERVAL '1 hour'")
 
-      expect(session.uuid_session).toBeDefined()
-      expect(session.status).toBe('pending')
-    })
+    await limpar()
 
-    it('should cleanup expired upload sessions', async () => {
-      await conn.none(`
-        INSERT INTO acervo.upload_session (operation_type, status, expiration_time, usuario_uuid)
-        VALUES ('add_files', 'pending', NOW() - INTERVAL '1 hour', $1)
-      `, [ADMIN_UUID])
-
-      try {
-        await conn.none('SELECT acervo.cleanup_expired_uploads()')
-        const result = await conn.one(`
-          SELECT status, error_message FROM acervo.upload_session WHERE usuario_uuid = $1
-        `, [ADMIN_UUID])
-        expect(result.status).toBe('failed')
-      } catch (e) {
-        // Function may not exist, verify session was created
-        const result = await conn.one(`
-          SELECT expiration_time < NOW() as is_expired FROM acervo.upload_session WHERE usuario_uuid = $1
-        `, [ADMIN_UUID])
-        expect(result.is_expired).toBe(true)
-      }
-    })
+    const arquivos = await lerArquivos(vencida.id)
+    expect(arquivos).toHaveLength(1)
+    expect(arquivos[0].status).toBe('failed')
+    expect(arquivos[0].error_message).toBe(MENSAGEM_ARQUIVO)
   })
 
-  describe('Product search', () => {
-    it('should find products by nome', async () => {
-      await createFullProduct()
+  // A VARIÂNCIA que dá sentido aos dois casos acima: com as duas sessões na
+  // mesma tabela, uma função que marcasse tudo como 'failed' cai aqui.
+  it('não toca a sessão que ainda está no prazo', async () => {
+    const vencida = await criarSessao("NOW() - INTERVAL '1 hour'")
+    const viva = await criarSessao("NOW() + INTERVAL '24 hours'")
 
-      const result = await conn.any(`
-        SELECT p.id, p.nome FROM acervo.produto p WHERE p.nome ILIKE '%Teste%'
-      `)
-      expect(result.length).toBeGreaterThan(0)
-      expect(result[0].nome).toContain('Teste')
-    })
+    await limpar()
 
-    it('should support pagination', async () => {
-      for (let i = 0; i < 3; i++) {
-        await conn.one(`
-          INSERT INTO acervo.produto (nome, mi, inom, tipo_escala_id, tipo_produto_id, descricao, geom, usuario_cadastramento_uuid)
-          VALUES ($1, $2, $3, 2, 1, 'desc', ST_GeomFromEWKT('SRID=4674;POLYGON((-50 -25, -49 -25, -49 -24, -50 -24, -50 -25))'), $4) RETURNING id
-        `, ['Prod ' + i, 'MI-' + i, 'INOM-' + i, ADMIN_UUID])
-      }
+    expect((await lerSessao(vencida.id)).status).toBe('failed')
 
-      const page1 = await conn.any('SELECT id FROM acervo.produto ORDER BY nome LIMIT 2 OFFSET 0')
-      const page2 = await conn.any('SELECT id FROM acervo.produto ORDER BY nome LIMIT 2 OFFSET 2')
+    const depois = await lerSessao(viva.id)
+    expect(depois.status).toBe('pending')
+    expect(depois.error_message).toBeNull()
 
-      expect(page1).toHaveLength(2)
-      expect(page2).toHaveLength(1)
-    })
+    const arquivos = await lerArquivos(viva.id)
+    expect(arquivos[0].status).toBe('pending')
+  })
+
+  // Rodar duas vezes seguidas não é erro, e a segunda passada não reescreve o
+  // que a primeira fechou: a função filtra por `status = 'pending'`.
+  it('rodar de novo não muda o que já foi fechado', async () => {
+    const vencida = await criarSessao("NOW() - INTERVAL '1 hour'")
+
+    await limpar()
+    await limpar()
+
+    const depois = await lerSessao(vencida.id)
+    expect(depois.status).toBe('failed')
+    expect(depois.error_message).toBe(MENSAGEM_SESSAO)
   })
 })

@@ -1,8 +1,9 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que estes testes protegem: a ficha da NE NAO se remonta a cada gravacao.
 //
-// O defeito medido em 2026-08-04: `renderNota` limpava a raiz inteira e criava
+// O defeito: `renderNota` limpava a raiz inteira e criava
 // as duas data-table de novo dentro do `load()`. Gravar uma liquidacao trocava
 // todos os nos da tela. A ordenacao escolhida voltava ao padrao, o foco do
 // teclado caia no `body`, e o painel de historico saia da tela, porque o
@@ -51,8 +52,6 @@ import {
   getNotaEmpenho, getLiquidacoes, getRecebimentos, deleteLiquidacao,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const NOTA = {
   id: 10,

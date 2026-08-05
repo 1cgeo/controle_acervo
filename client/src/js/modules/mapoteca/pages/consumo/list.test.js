@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -9,9 +10,7 @@ import { renderConsumoList } from '@modules/mapoteca/pages/consumo/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// A tela tem o proprio filtro de ano e abre no ano ATUAL (chefe, 2026-08-04).
+// A tela tem o proprio filtro de ano e abre no ano ATUAL.
 // Nao ha mais ano global do modulo nem nada guardado no localStorage.
 const ANO_ATUAL = new Date().getFullYear();
 const ANO_ANTERIOR = ANO_ATUAL - 1;

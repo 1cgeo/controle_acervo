@@ -2,10 +2,15 @@
 
 const { listaDeInteiros, temValor } = require('../../../utils/lista_schema')
 
-// O filtro de dominio passou a aceitar VARIOS codigos em 2026-08-04, com a
-// marcacao multipla na tela. O que estes testes protegem e o contrato com quem
-// ja consome a rota: link antigo colado em documento, `acervo_cli` e plugin do
-// QGIS mandam UM valor solto, e tem de continuar funcionando.
+// O filtro de domínio aceita VÁRIOS códigos, pela marcação múltipla na tela.
+// O que estes testes protegem é o contrato com quem já consome a rota: link
+// antigo colado em documento, `acervo_cli` e plugin do QGIS mandam UM valor
+// solto, e tem de continuar funcionando.
+//
+// AS RECUSAS SÃO TODAS `any.invalid` COM A MESMA MENSAGEM, porque saem do mesmo
+// `custom`. Não há campo nem tipo para prender, então cada caso prova a recusa
+// pelo PAR: o valor de dentro da regra é aceito, e o de fora é recusado. Sem o
+// lado aceito, um schema que recusasse tudo passaria.
 
 describe('listaDeInteiros', () => {
   const validar = (schema, valor) => schema.validate(valor)
@@ -44,23 +49,31 @@ describe('listaDeInteiros', () => {
     expect(value).toBeUndefined()
   })
 
-  test('UM item invalido recusa a lista INTEIRA', () => {
+  test('UM item invalido recusa a lista INTEIRA, e nao descarta so ele', () => {
     // Descartar so o item ruim devolveria um resultado a mais, plausivel e
     // errado, para quem nao teria como perceber.
-    expect(validar(listaDeInteiros(), '1,abc,3').error).toBeDefined()
-    expect(validar(listaDeInteiros(), '1,2.5').error).toBeDefined()
+    expect(validar(listaDeInteiros(), '1,3').value).toEqual([1, 3])
+
+    for (const comLixo of ['1,abc,3', '1,2.5']) {
+      const { value, error } = validar(listaDeInteiros(), comLixo)
+      expect(error).toBeDefined()
+      // O que separa "recusou" de "aceitou filtrando": a lista boa NAO sai.
+      expect(value).not.toEqual([1, 3])
+    }
   })
 
-  test('o limite por item vale item a item', () => {
-    const estado = listaDeInteiros({ min: 10, max: 99 })
-    expect(validar(estado, '43,42').value).toEqual([43, 42])
-    expect(validar(estado, '43,9').error).toBeDefined()
-    expect(validar(estado, '43,100').error).toBeDefined()
+  test('o limite por item vale item a item, nas duas bordas', () => {
+    // A faixa e a do codigo de UF, e as bordas entram: 10 e 99 valem, 9 e 100
+    // nao. So o par prova que o limite esta onde se pensa que esta.
+    const doisDigitos = listaDeInteiros({ min: 10, max: 99 })
+    expect(validar(doisDigitos, '10,99').value).toEqual([10, 99])
+    expect(validar(doisDigitos, '43,9').error).toBeDefined()
+    expect(validar(doisDigitos, '43,100').error).toBeDefined()
   })
 
   test('o teto de itens impede uma URL de montar um IN gigante', () => {
     const curto = listaDeInteiros({ maxItens: 3 })
-    expect(validar(curto, '1,2,3').error).toBeUndefined()
+    expect(validar(curto, '1,2,3').value).toEqual([1, 2, 3])
     expect(validar(curto, '1,2,3,4').error).toBeDefined()
   })
 })

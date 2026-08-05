@@ -4,6 +4,11 @@ const { db } = require('../database')
 
 const controller = {}
 
+// `ponto_controle.tipo_situacao`, code 3 = 'Aprovado' (er/ponto_controle.sql).
+// Fica com nome porque `tipo_situacao = 3` no meio do SQL não se lê, e o número
+// solto é o que faz um domínio mudar sem ninguém achar quem o usava.
+const SITUACAO_APROVADO = 3
+
 /**
  * Números do ponto de controle para a aba do dashboard do acervo.
  *
@@ -40,7 +45,7 @@ controller.getResumo = async () => {
     const porMissao = await t.any(`
       SELECT l.id AS lote_id, l.nome AS lote, l.pit, pr.nome AS projeto,
              COUNT(p.id)::int AS pontos,
-             COUNT(*) FILTER (WHERE p.tipo_situacao = 3)::int AS aprovados,
+             COUNT(*) FILTER (WHERE p.tipo_situacao = ${SITUACAO_APROVADO})::int AS aprovados,
              MIN(p.data_rastreio) AS primeiro_rastreio,
              MAX(p.data_rastreio) AS ultimo_rastreio
       FROM ponto_controle.ponto AS p

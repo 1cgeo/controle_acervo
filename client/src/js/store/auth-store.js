@@ -3,6 +3,8 @@
 // o prefixo '@sca-'. Antes cada client tinha o seu ('@mapoteca-*', '@orcamento-*'),
 // o que obrigava a mesma pessoa a logar duas vezes no mesmo navegador.
 
+import { clearCache } from '@services/cache.js';
+
 const AUTH_KEYS = {
   TOKEN: '@sca-Token',
   EXPIRY: '@sca-Token-Expiry',
@@ -48,7 +50,7 @@ export function isAdmin() {
   return localStorage.getItem(AUTH_KEYS.AUTHORIZATION) === 'ADMIN';
 }
 
-export const NIVEL = { consulta: 1, operador: 2, gerente: 3 };
+const NIVEL = { consulta: 1, operador: 2, gerente: 3 };
 
 function lerJson(chave, padrao) {
   try {
@@ -65,7 +67,7 @@ function lerJson(chave, padrao) {
  * Mapa modulo -> nivel devolvido pelo POST /api/login, fora do token de proposito.
  * @returns {Object}
  */
-export function getPerfis() {
+function getPerfis() {
   return lerJson(AUTH_KEYS.PERFIS, {});
 }
 
@@ -112,7 +114,7 @@ export function temPerfil(minimo, modulo) {
 /**
  * O perfil da pessoa neste modulo esta na LISTA? Nao e hierarquico.
  *
- * Existe porque nivel minimo nao descreve a mapoteca (chefe, 2026-07-30): la o
+ * Existe porque nivel minimo nao descreve a mapoteca: la o
  * OPERADOR tem duas telas proprias (atender pedidos e consumo de material) e NAO
  * ve as telas de leitura, embora seja um nivel acima de consulta. Com
  * `temPerfil('consulta')` ele veria o dashboard, os clientes e os pedidos, que e
@@ -186,21 +188,13 @@ export function permissoes(modulo) {
 }
 
 /**
- * Save auth data after a successful login.
- * Token expiry is stored as now + 1h (JWT lifetime).
- * @param {Object} data - { token, administrador, uuid, perfis, modulos }
- * @param {string} username
- */
-/**
  * Momento em que o token expira, LIDO DO PROPRIO TOKEN (claim `exp`).
  *
- * Ate 2026-07-27 isto era `agora + 1 hora`, fixo no codigo, duplicando um valor
- * que so o servidor conhece. Quando a duracao do servidor virou 8h (chave
- * JWT_EXPIRACAO), o client continuaria deslogando em 1h: o conserto pela metade
- * pareceria pronto e a pessoa seguiria caindo fora no meio do trabalho.
+ * NUNCA calcule `agora + N`: a duracao e do servidor (chave JWT_EXPIRACAO), e um
+ * valor fixo aqui duplica o que so ele conhece. Quando os dois divergem, a
+ * pessoa cai fora no meio do trabalho e o defeito parece consertado.
  *
- * Lendo o `exp`, os dois lados nunca mais divergem. Se o token nao trouxer
- * `exp`, cai em 1 hora, que e o comportamento antigo e conservador.
+ * Sem o claim `exp`, cai em 1 hora, que e o padrao conservador.
  * @param {string} token
  * @returns {Date}
  */
@@ -218,6 +212,11 @@ function expiracaoDoToken(token) {
   return padrao;
 }
 
+/**
+ * Guarda a autenticacao depois de um login bem-sucedido.
+ * @param {Object} data - { token, administrador, uuid, perfis, modulos }
+ * @param {string} username
+ */
 export function saveAuth(data, username) {
   const expiry = expiracaoDoToken(data.token);
 
@@ -259,10 +258,22 @@ export function atualizarSessao(data) {
 }
 
 /**
- * Clear all auth data (does not redirect).
+ * Apaga a sessao inteira: o que esta no localStorage E o que o
+ * `services/cache.js` guardou em memoria. Nao redireciona.
+ *
+ * O CACHE SAI JUNTO, e essa e a parte que faltava. As chaves do cache
+ * ('pedidos:list', 'dominio:...') nao levam o dono, e as entradas duram ate 30
+ * minutos. Quem saisse e entrasse como OUTRA pessoa na mesma aba recebia a lista
+ * da anterior, sem chamada nenhuma ao servidor. So o botao "Sair" da navbar
+ * limpava, e ele e uma das TRES portas: o 401 (`handleSessaoExpirada`) e a tela
+ * de acesso negado passavam direto.
+ *
+ * A limpeza mora aqui, e nao em cada porta, porque encerrar sessao e UM fato: a
+ * porta que se criar amanha ja nasce limpando.
  */
 export function clearAuth() {
   Object.values(AUTH_KEYS).forEach(key => localStorage.removeItem(key));
+  clearCache();
 }
 
 /**

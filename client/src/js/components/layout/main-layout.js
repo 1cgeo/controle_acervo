@@ -39,8 +39,8 @@ export function createMainLayout() {
     contentArea,
   ]);
 
-  // Mantem o modulo ativo e o item da sidebar em dia com o hash. A navbar saiu
-  // daqui em 2026-08-04: sem os extras de modulo, ela nao muda com a rota.
+  // Mantem o modulo ativo e o item da sidebar em dia com o hash. A navbar fica
+  // de fora: sem extras de modulo, ela nao muda com a rota.
   const sync = () => {
     const path = location.hash.slice(1) || '/';
     sidebarCtrl.setModulo(moduloDaRota(path));

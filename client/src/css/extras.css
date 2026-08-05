@@ -1,8 +1,7 @@
-/* Ajustes do refactor: barra do RPCMTec, barra de filtro e cabecalho de pagina.
+/* Barra do RPCMTec, barra de filtro e cabecalho de pagina.
  *
- * A regra `.navbar__year` saiu em 2026-08-04, com o seletor de ano da navbar.
- * O ano agora e filtro de cada tela (@components/filtro-ano.js) e usa o estilo
- * de campo de formulario, como os demais filtros ao lado dele. */
+ * SEM `.navbar__year`: o ano e filtro de cada tela (@components/filtro-ano.js) e
+ * usa o estilo de campo de formulario, como os demais filtros ao lado dele. */
 
 /* Faz os selects nativos (popup e seta) seguirem o tema no modo escuro */
 [data-theme="dark"] select {
@@ -39,48 +38,8 @@
   white-space: nowrap;
 }
 
-/* Barra de ferramentas do RPCMTec (mes, cumulativo, baixar DOCX) */
-.rpcm-toolbar {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  padding: var(--space-md);
-  background-color: var(--bg-paper);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.rpcm-toolbar__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.rpcm-toolbar__label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  font-weight: var(--font-weight-medium);
-}
-
-.rpcm-toolbar__field .form-field__select {
-  min-width: 160px;
-}
-
-.rpcm-toolbar__check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  cursor: pointer;
-  padding-bottom: 6px;
-}
-
-.rpcm-toolbar__spacer {
-  flex: 1 1 auto;
-}
+/* A familia `.rpcm-toolbar` saiu daqui: a barra do RPCMTec e montada por
+   `.rpcm-acoes` e pelos campos padrao, e nenhum JS citava as cinco classes. */
 
 /* ---------------------------------------------------------------------------
    A EDICAO do RPCMTec (#/rpcmtec/:id), desde 2026-08-05.
@@ -478,7 +437,7 @@
   }
 }
 
-/* O historico dentro da ficha do produto do acervo (2026-08-04). Ele fecha o
+/* O historico dentro da ficha do produto do acervo. Ele fecha o
    maior buraco de entrega do rastro: 388 eventos em 170 fichas que so se
    alcancavam pela varredura geral. */
 .produto-ficha__historico {

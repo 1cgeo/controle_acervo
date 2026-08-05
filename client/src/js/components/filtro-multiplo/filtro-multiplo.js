@@ -4,12 +4,11 @@ import './filtro-multiplo.css';
 
 /**
  * Filtro de dominio com MARCACAO MULTIPLA, no lugar do `<select>` de escolha
- * unica (chefe, 2026-08-04).
+ * unica.
  *
- * O combo antigo respondia uma pergunta por vez. "O que existe em 25k e em 50k"
- * exigia duas buscas e a soma na mao, e nao havia como perguntar por dois tipos
- * de produto de uma vez. Aqui cada opcao e uma caixa de marcacao, e o conjunto
- * marcado vira uma lista so na consulta.
+ * Escolha unica responde uma pergunta por vez: "o que existe em 25k e em 50k"
+ * exige duas buscas e a soma na mao. Aqui cada opcao e uma caixa de marcacao, e
+ * o conjunto marcado vira uma lista so na consulta.
  *
  * Tres decisoes que valem registro:
  *

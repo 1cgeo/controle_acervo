@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber, formatCurrency } from '@utils/format.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
+import { mostrarErroNoGrafico } from '@components/estado-erro.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 
 /** Card simples de numero, sem icone: aqui o que importa e o valor. */
@@ -57,11 +58,11 @@ function pivotEntregasPorTipo(rows) {
 /**
  * Aba "Resumo Anual": o numero de que a DGEO presta contas.
  *
- * Abre o dashboard (chefe, 2026-07-27), e por isso e a PRIMEIRA aba: e o que se
+ * Abre o dashboard, e por isso e a PRIMEIRA aba: e o que se
  * quer ver ao entrar, antes do movimento do dia a dia.
  *
- * O ano vem do filtro da PAGINA do dashboard, que vale para as cinco abas
- * (chefe, 2026-08-04). Um filtro por aba faria a mesma escolha ser refeita a
+ * O ano vem do filtro da PAGINA do dashboard, que vale para as cinco abas.
+ * Um filtro por aba faria a mesma escolha ser refeita a
  * cada troca de aba.
  *
  * @param {HTMLElement} container
@@ -148,9 +149,8 @@ export async function renderResumoAnualTab(container, getAno) {
       cards.operacoesDistintas.setValue(formatNumber(resumo.operacoes_distintas_count));
       // Ausência de fonte não é zero. O servidor manda null quando o ano não
       // tem NENHUM registro de manutenção, e o cartão diz "Sem registro". O
-      // R$ 0,00 fica reservado para registro que soma zero. A tabela
-      // mapoteca.manutencao_plotter está vazia na produção desde 2024-09-07,
-      // e o cartão mostrava R$ 0,00 como se fosse custo medido.
+      // R$ 0,00 fica reservado para registro que soma zero. Com
+      // `mapoteca.manutencao_plotter` vazia, R$ 0,00 se leria como custo medido.
       cards.custoManutencao.setValue(
         resumo.custo_manutencao_total == null
           ? 'Sem registro'
@@ -165,6 +165,7 @@ export async function renderResumoAnualTab(container, getAno) {
       entregasTipoChart.update({ data, series, loading: false });
     } else {
       entregasTipoChart.update({ data: [], loading: false });
+      mostrarErroNoGrafico(entregasTipoChart, tipoRes.reason, load);
     }
 
     if (operacoesRes.status === 'fulfilled') {
@@ -178,6 +179,7 @@ export async function renderResumoAnualTab(container, getAno) {
       });
     } else {
       operacoesChart.update({ data: [], loading: false });
+      mostrarErroNoGrafico(operacoesChart, operacoesRes.reason, load);
     }
   }
 

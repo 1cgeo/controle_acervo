@@ -9,9 +9,6 @@
 //
 // A lista de invariantes NAO mora aqui: mora em server/src/acervo/invariantes.js,
 // ao lado do schema que eles descrevem. Este comando so pede, ordena e imprime.
-// Ate 2026-07-25 as 33 consultas viviam num script do vault, com credencial de
-// banco propria; fora do sistema, elas apodreciam a cada dominio novo sem que
-// nada acusasse.
 
 const http = require('../lib/http')
 const saida = require('../lib/saida')

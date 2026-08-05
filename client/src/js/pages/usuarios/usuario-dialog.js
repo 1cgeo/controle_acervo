@@ -11,19 +11,15 @@ import { criarUsuario, atualizarUsuario } from '@services/plataforma-service.js'
 /**
  * Criar ou editar uma pessoa (#/usuarios), do administrador global.
  *
- * Existe desde 2026-08-02, quando a autenticação veio para dentro do SCA: até
- * ali o SCA não criava ninguém, só espelhava o Auth Server pelo par
- * importar/sincronizar, e cadastrar gente era trabalho em DOIS sistemas.
- *
  * A SENHA só aparece na criação. Trocar senha depois tem dois caminhos, e
  * nenhum deles é este: o dono troca a dele em #/perfil (informando a vigente), e
  * o administrador usa "Resetar senha" na lista, que a devolve para o login. Um
  * campo de senha aqui seria um terceiro caminho, sem a senha atual e sem o aviso
  * de que a nova é adivinhável.
  *
- * O HISTÓRICO saiu daqui em 2026-08-04. Ele vivia no rodapé, recolhido, e
- * cobrava um clique de quem só veio corrigir um campo. Agora é ação de linha
- * própria na lista, dentro da ficha da pessoa, e abre aberto.
+ * O HISTÓRICO NÃO mora aqui: no rodapé, recolhido, ele cobra um clique de quem
+ * só veio corrigir um campo. Ele é ação de linha própria na lista, e abre
+ * aberto.
  *
  * @param {Object} opts
  * @param {Object|null} [opts.usuario] - linha da lista para editar (null cria)

@@ -11,31 +11,17 @@ const {
 } = require('./miniatura_fila')
 
 /**
- * Varre a fila de miniaturas, sob comando.
+ * Varre a fila de miniaturas, SOB COMANDO: a rota de administrador
+ * POST /api/produtos/varrer-miniaturas, ou o script de lote no servidor. Não há
+ * agendamento na aplicação.
  *
- * Era um cron de meia em meia hora ate 2026-08-04, quando o chefe tirou todo
- * agendamento da aplicacao. Agora quem varre e o administrador, pela rota
- * POST /api/produtos/varrer-miniaturas, ou o script de lote no servidor.
+ * A miniatura NÃO é gerada no `confirmUpload` de propósito (ver
+ * `miniatura_fila.js`): renderizar custa segundos e roda processo externo, e a
+ * confirmação acontece dentro de uma transação. Por isso a fila é DÍVIDA
+ * VISÍVEL: `contarPendentes` existe para a tela mostrar quantas versões esperam.
  *
- * A carga do acervo antigo e um script a parte, rodado uma vez. Esta varredura
- * cobre o que ENTRA depois: versao nova por upload, por plugin ou por carga
- * direta. A miniatura NAO e gerada no `confirmUpload` de proposito (ver
- * miniatura_fila.js): renderizar custa segundos e roda processo externo, e a
- * confirmacao acontece dentro de uma transacao.
- *
- * Por isso a fila e DIVIDA VISIVEL, e nao automatica: `contarPendentes` existe
- * para a tela mostrar quantas versoes esperam, em vez de o acervo acumular
- * buraco que ninguem ve.
- *
- * TETO POR PASSADA. Cada arquivo custa segundos e um processo externo, entao a
- * passada leva no maximo `LOTE` versoes. Com fila vazia nao faz nada, e com
- * fila cheia (o acervo inteiro, se ninguem rodar a carga) ela anda devagar sem
- * ocupar o servidor. Um acervo em ritmo normal cadastra poucas versoes por dia,
- * e o teto nunca e alcancado.
- *
- * SEM CONCORRENCIA. O lote usa quatro trabalhadores porque e uma carga
- * dedicada. Aqui o servidor esta atendendo gente, e uma miniatura por vez basta
- * para a fila normal.
+ * A passada leva no máximo `LOTE` versões, e uma por vez: aqui o servidor está
+ * atendendo gente. O lote dedicado é que usa quatro trabalhadores.
  */
 
 const LOTE = 20

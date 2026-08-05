@@ -134,10 +134,10 @@
 
 /* Painel de informacao, FIXO no canto superior direito do mapa.
  *
- * Substituiu o balao do MapLibre em 2026-07-28. O balao e ancorado na
- * coordenada apontada, entao perto da borda do quadro ele saia da area visivel
- * -- e a carta perto da borda e justamente a que se aponta quando se esta
- * olhando uma regiao. Num lugar fixo, a informacao troca e a moldura fica.
+ * NAO e o balao do MapLibre, que ancora na coordenada apontada e sai da area
+ * visivel perto da borda do quadro -- e a carta perto da borda e justamente a
+ * que se aponta quando se esta olhando uma regiao. Num lugar fixo, a informacao
+ * troca e a moldura fica.
  *
  * O `max-height` para antes do rodape de proposito: e o que deixa livre a barra
  * de escala, que este mapa poe embaixo a direita. A legenda fica no canto

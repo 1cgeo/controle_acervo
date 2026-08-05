@@ -1,15 +1,11 @@
 # Path: gui\auditoria\auditoria_dialog.py
 """Auditoria dos invariantes LÓGICOS do acervo.
 
-Não confundir com "Verificar Inconsistências", que é outra pergunta: aquela
+Não confundir com "Verificar Arquivos no Volume", que é outra pergunta: aquela
 compara o banco com o DISCO (arquivo registrado que sumiu do volume, tamanho
-diferente). Esta roda os invariantes de COERÊNCIA -- MI que não bate com o INOM,
+diferente). Esta roda os invariantes de COERÊNCIA (MI que não bate com o INOM,
 nome físico divergente do padrão, versão sem arquivo, arquivo vivo com o nome de
-um deletado -- e nenhum deles olha o disco.
-
-O plugin só tinha a primeira. A rota veio do vault da DGEO em 2026-07-25 e
-cresceu até os invariantes de hoje; três deles (a família P7) nasceram do mesmo
-problema que o plugin causava, o nome físico fora do padrão.
+um deletado), e nenhum deles olha o disco.
 
 A severidade é do SERVIDOR: DEFECT é o que está errado, REVISAR é o que merece
 olho humano, INFO é contagem. A tela não reclassifica nada.
@@ -19,8 +15,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
-from qgis.PyQt.QtWidgets import (QDialog, QHeaderView, QMessageBox, QTableWidgetItem,
-                                 QTreeWidgetItem)
+from qgis.PyQt.QtWidgets import QDialog, QHeaderView, QTableWidgetItem, QTreeWidgetItem
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'auditoria_dialog.ui'))
@@ -97,7 +92,7 @@ class AuditoriaDialog(QDialog, FORM_CLASS):
             if r.get('erro'):
                 texto_total = "erro"
             elif total == 0:
-                texto_total = "—"
+                texto_total = "-"
             else:
                 texto_total = f"{total}{'+' if r.get('truncada') else ''}"
 

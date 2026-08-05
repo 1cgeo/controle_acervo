@@ -66,7 +66,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       svgIcon(ICONS.localShipping, 32),
     ]),
     resultArea,
-    // Este rotulo e a UNICA instrucao da tela (chefe, 2026-08-04). Antes a
+    // Este rotulo e a UNICA instrucao da tela. Antes a
     // mesma frase saia tres vezes acima do mesmo campo: o rotulo, a mensagem da
     // area de resultado e o exemplo de formato. Ficaram o rotulo e o exemplo,
     // que mostra o formato e nao repete a frase.
@@ -116,15 +116,14 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     if (pedido.observacao) {
       rows.push(infoRow('Observação', pedido.observacao));
     }
-    // A forma de entrega e do PEDIDO desde 2026-07-30, e o servidor a devolve no
-    // objeto do pedido. Ela saia no laco do ITEM, onde nenhum item traz o campo:
-    // a linha "Entrega" simplesmente nunca aparecia para o cliente.
+    // A forma de entrega e do PEDIDO, e o servidor a devolve no objeto do
+    // pedido. No laco do ITEM ela nao sai, porque nenhum item traz o campo: a
+    // linha "Entrega" some para o cliente sem aviso nenhum.
     if (pedido.forma_entrega_nome) {
       rows.push(infoRow('Forma de entrega', pedido.forma_entrega_nome));
     }
     // A data que o cliente quer ver e a do envio, e ela e a data_atendimento:
-    // o pedido fecha no dia em que o material sai (51 de 52 pedidos concluidos
-    // com item datado, medido na producao em 2026-07-29). Nao existe coluna
+    // o pedido fecha no dia em que o material sai. Nao existe coluna
     // "data_envio" de proposito. O rotulo aqui e o do CLIENTE ("envio/
     // entrega"), e nao o interno ("atendimento"), porque quem le esta tela nao
     // fala a lingua do nosso cadastro.
@@ -155,7 +154,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   }
 
   function showItens(produtos) {
-    // Pedido SEM item cadastrado nao mostra bloco nenhum (chefe, 2026-07-29).
+    // Pedido SEM item cadastrado nao mostra bloco nenhum.
     // O colapsavel vazio era um convite a clicar para nao achar nada, e no
     // pre-cadastramento (situacao 1) e no pedido de LAI, que nao usa folha MI,
     // essa e a situacao NORMAL, nao um cadastro pela metade.

@@ -35,7 +35,7 @@ O `orcamento_cli` tem um `crud.js` genérico porque o SCO é CRUD uniforme (`/re
 acervo schema                    # os recursos e suas operações
 acervo schema produtos           # campos, tipos, obrigatórios e regras da escrita
 acervo dominio                   # os ids de domínio e os apelidos aceitos
-acervo dominio tipo_escala       # a tabela viva (GET público, sem login)
+acervo dominio tipo_escala       # a tabela viva (exige perfil consulta)
 
 # os verbos de intenção
 acervo cobertura --mi 2965-2,2965-4 --escala 50k --anos 10   # já temos essa carta?
@@ -43,7 +43,7 @@ acervo cobertura --escala 250k --so-faltantes
 acervo produto 2965-2                                        # as edições da folha
 acervo produto --id 4211 --arquivos --caminho                # os arquivos, com o caminho
 acervo finalizados --ano 2026 --mes 7                        # o que foi finalizado
-acervo rpcmtec --ano 2026 --mes 7 --docx                     # o RPCMTec inteiro, em DOCX
+acervo rpcmtec --ano 2026 --mes 7 --pdf                      # o RPCMTec do mês, em PDF
 acervo rpcmtec --ano 2026 --mes 7 --anuario                  # o Anuário Estatístico, em ODS
 
 # escrita guardada
@@ -69,7 +69,7 @@ Cada verbo colapsa um encadeamento que hoje se repete no dia a dia da DGEO (as s
 | `cobertura` | "já temos essa carta?". Uma chamada pública, mas a resposta é uma FeatureCollection por escala com os anos de edição em arrays: raciocinar folha a folha sobre isso custa a janela inteira. Aqui sai uma linha por folha, com o ano mais recente e o veredito, e **a folha que o acervo nem conhece vira aviso** em vez de sumir da lista. |
 | `produto` | "que edições tem essa folha?" e "qual é o arquivo mais recente do MI X?". Faz `busca` → `produto/detalhado` → (com `--caminho`) `volumes` e recorta. Termo ambíguo devolve os candidatos em vez de escolher o primeiro: a mesma folha costuma ter carta topográfica, ortoimagem e a versão militar. |
 | `editar` | o read-modify-write de um `PUT` de objeto inteiro. Ver abaixo. |
-| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo delega a montagem ao servidor, que já sabe fazer o relatório inteiro (acervo, mapoteca e orçamento), em JSON, DOCX ou, com `--anuario`, o ODS do Anuário Estatístico. O CLI não remonta tabela nenhuma. |
+| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo acha a **edição mensal** daquele ano/mês e pede o documento dela ao servidor, que já sabe montar o relatório inteiro (acervo, mapoteca e orçamento), em JSON, em PDF (`--pdf`) ou, com `--anuario`, o ODS do Anuário Estatístico. O CLI não remonta tabela nenhuma. |
 | `dominio` | o dicionário dos ids. O acervo é todo dirigido por id numérico, e trocar 50k (code 2) por 250k (code 4) de cabeça já custou uma auditoria rodada na escala errada. |
 
 Ficaram **fora** de propósito: a carga em si (o `prepare-upload` não transfere byte, e a cópia acontece fora da API), a mapoteca (é do `mapoteca_cli`), e qualquer verbo que precisasse de regra de negócio nova.
@@ -108,7 +108,7 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 
 O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. `--sem-cache` desliga.
 
-Acesso: sem login são `/api` (health), `/api/integracao/*` e os GET de `/api/gerencia/dominio/*`. Leitura de acervo exige login; **toda escrita exige administrador**. O cliente de auth padrão é `sca_web`; a lista de clientes aceitos é lida do `login_schema.js` do `server/`, não copiada.
+Acesso: sem login são apenas `/api` (health) e `/api/integracao/*`. Todo o resto exige **perfil no módulo acervo**, inclusive os GET de `/api/gerencia/dominio/*`: consulta lê, operador cataloga, gerente exclui. O administrador é global e passa em tudo. O cliente de auth padrão é `sca_web`; a lista de clientes aceitos é lida do `login_schema.js` do `server/`, não copiada.
 
 ## Testes
 

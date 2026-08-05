@@ -1,0 +1,119 @@
+'use strict'
+
+// Guarda contra a falha SILENCIOSA da autorizacao por modulo.
+//
+// `verifyPerfil(minimo, modulo)` tem o modulo 'acervo' como DEFAULT. Uma rota do
+// orcamento ou da mapoteca que chame `verifyPerfil('operador')` sem o segundo
+// argumento passa a cobrar perfil no ACERVO. Ela nao quebra, nao loga nada, e
+// responde 403 para quem deveria entrar ou 200 para quem nao deveria. Nenhum
+// teste funcional pega isso rota por rota.
+//
+// Este teste le o FONTE das rotas e exige o modulo explicito em toda chamada.
+// E varredura de texto de proposito: cobre a rota que ninguem lembrou de
+// testar, e a rota nova de amanha.
+//
+// O modulo ACERVO fica de fora, e isso e deliberado: la o default e o valor
+// certo, e cobrar o argumento explicito custaria 110 edicoes sem mudar
+// comportamento nenhum. O risco mora nos OUTROS modulos, que sao estes.
+//
+// COMENTARIO SAI ANTES DA VARREDURA. `mapoteca_route.js` documenta a rota gemea
+// do acervo citando `verifyPerfil('consulta')` sem modulo, e uma varredura crua
+// reprovaria por causa de uma frase explicativa. Prosa que descreve a armadilha
+// nao e a armadilha.
+
+const fs = require('fs')
+const path = require('path')
+
+const SRC = path.resolve(__dirname, '..', '..')
+
+// Piso, e nao contagem exata. Subir e normal (rota nova). CAIR quer dizer que
+// uma rota perdeu a protecao, e ai o piso so se abaixa de proposito.
+//
+// O piso do orcamento ja foi abaixado uma vez com razao: a meta do PIT e o
+// RPCMTec sairam do modulo e viraram rotas de plataforma, com verifyLogin ou
+// verifyAdmin no lugar do verifyPerfil. Quem prova a guarda delas e
+// routes/pit_route.test.js e routes/rpcmtec.test.js.
+const MODULOS = [
+  { nome: 'orcamento', piso: 55 },
+  { nome: 'mapoteca', piso: 80 }
+]
+
+const arquivosDeRota = dir =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
+    e.isDirectory()
+      ? arquivosDeRota(path.join(dir, e.name))
+      : e.name.endsWith('_route.js')
+        ? [path.join(dir, e.name)]
+        : []
+  )
+
+/** Tira bloco `/* *\/` e linha `//`, para a varredura ver so codigo. */
+const semComentario = fonte =>
+  fonte
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n')
+    .map(linha => linha.replace(/(^|[^:])\/\/.*$/, '$1'))
+    .join('\n')
+
+// verifyPerfil('nivel', 'modulo') em uma linha so, que e como o projeto escreve
+const CHAMADA = /verifyPerfil\(\s*'([a-z]+)'\s*(?:,\s*'([a-z]+)'\s*)?\)/g
+
+describe.each(MODULOS.map(m => [m.nome, m]))(
+  'Toda rota do modulo %s passa o modulo para o verifyPerfil',
+  (nome, modulo) => {
+    const raiz = path.join(SRC, nome)
+    const arquivos = arquivosDeRota(raiz)
+
+    it('encontra os arquivos de rota do modulo', () => {
+      expect(arquivos.length).toBeGreaterThan(0)
+    })
+
+    it.each(arquivos.map(f => [path.relative(raiz, f), f]))(
+      '%s',
+      (_nome, arquivo) => {
+        const fonte = semComentario(fs.readFileSync(arquivo, 'utf8'))
+        const semModulo = []
+        const moduloErrado = []
+
+        for (const achado of fonte.matchAll(CHAMADA)) {
+          const [trecho, , mod] = achado
+          if (!mod) semModulo.push(trecho)
+          else if (mod !== nome) moduloErrado.push(trecho)
+        }
+
+        expect(semModulo).toEqual([])
+        expect(moduloErrado).toEqual([])
+      }
+    )
+
+    it('o total de rotas protegidas por perfil nao caiu sem aviso', () => {
+      const total = arquivos.reduce((soma, arquivo) => {
+        const fonte = semComentario(fs.readFileSync(arquivo, 'utf8'))
+        return soma + [...fonte.matchAll(CHAMADA)].length
+      }, 0)
+
+      expect(total).toBeGreaterThanOrEqual(modulo.piso)
+    })
+  }
+)
+
+// CONTROLE NEGATIVO da limpeza de comentario. Sem ele, a varredura poderia
+// estar cega para tudo (um `semComentario` que apagasse o arquivo inteiro
+// deixaria os casos acima verdes por vacuidade).
+describe('a limpeza de comentario nao come codigo', () => {
+  it('apaga a chamada citada em comentario e mantem a chamada de verdade', () => {
+    const fonte = [
+      "// a irma do acervo e `verifyPerfil('consulta')` SEM modulo",
+      "router.get('/x', verifyPerfil('operador', 'mapoteca'), handler)",
+      "/* verifyPerfil('gerente') num bloco */"
+    ].join('\n')
+
+    const achados = [...semComentario(fonte).matchAll(CHAMADA)].map(a => a[0])
+    expect(achados).toEqual(["verifyPerfil('operador', 'mapoteca')"])
+  })
+
+  it('nao confunde o // de uma URL com comentario', () => {
+    const fonte = "const u = 'http://exemplo/x'\nverifyPerfil('consulta', 'mapoteca')"
+    expect([...semComentario(fonte).matchAll(CHAMADA)]).toHaveLength(1)
+  })
+})

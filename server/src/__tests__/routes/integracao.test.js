@@ -36,7 +36,7 @@ const criaCliente = async (overrides = {}) => {
   return row.id
 }
 
-// A meta do PIT virou linha em pit.meta em 2026-07-31, com chave estrangeira no
+// A meta do PIT virou linha em pit.meta, com chave estrangeira no
 // pedido. Insere direto no banco: o que se prova aqui e a rota de integracao.
 const criaMetaPit = async (item = '4.1', ano = 2026) => {
   const row = await conn.one(
@@ -47,7 +47,7 @@ const criaMetaPit = async (item = '4.1', ano = 2026) => {
     [ano, parseInt(String(item).split('.')[0], 10), item]
   )
 
-  // A DESCRICAO mora na revisao desde 2026-08-04. A fixtura cria a R0 do ano e
+  // A DESCRICAO mora na revisao. A fixtura cria a R0 do ano e
   // declara a meta nela, que e o que a migracao fez em producao.
   const revisao = await conn.one(
     `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
@@ -311,8 +311,8 @@ describe('Integracao Routes (públicas)', () => {
       const omId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
       const pedidoMil = await criaPedido(omId, { previsto_pit: true, meta_pit_id: await criaMetaPit('4.1'), operacao: 'Operação Junho' })
       await criaProdutoPedido({
-        // O atendimento se data pela data_atendimento do PEDIDO desde
-        // 2026-07-30. O helper criaPedido já a põe em 2026-06-20.
+        // O atendimento se data pela `data_atendimento` do PEDIDO. O helper
+        // criaPedido já a põe.
         uuid_versao: versao.uuid_versao,
         pedido_id: pedidoMil.id,
         quantidade: 10,

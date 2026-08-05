@@ -1,7 +1,7 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
-import { createNumberField, createTextareaField } from '@components/form-fields/form-fields.js';
-import { formatNumber } from '@utils/format.js';
+import { createNumberField, createTextareaField, createDateField } from '@components/form-fields/form-fields.js';
+import { formatNumber, toIsoDate } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { registrarImpressao } from '@modules/mapoteca/services/mapoteca-service.js';
 
@@ -27,7 +27,7 @@ function nomeDoItem(item) {
  * Dialogo de REGISTRAR IMPRESSAO, usado pela fila de atendimento e pelo detalhe
  * do pedido.
  *
- * A impressao e LIVRO-CAIXA (decisao do chefe, 2026-07-30): ninguem edita a
+ * A impressao e LIVRO-CAIXA: ninguem edita a
  * quantidade impressa, quem imprimiu ADICIONA uma sessao. E por isso que o chefe
  * consegue ver que uma pessoa imprimiu 40 e outra imprimiu 10. Nao existe rota
  * de atualizacao de impressao, so POST e DELETE.
@@ -59,6 +59,21 @@ export function openRegistrarImpressaoDialog(item, onDone) {
     helpText: 'Ex.: plotter 2, papel novo, reimpressão da folha rasgada.',
   });
 
+  // QUANDO a impressão saiu do plotter. O servidor sempre aceitou este campo
+  // (`data_impressao` em POST /mapoteca/impressao), e a tela nunca o oferecia:
+  // quem lançava na segunda o que imprimiu na sexta contava o papel no mês
+  // errado, e o RPCMTec reporta por mês. Nasce em HOJE, que é o caso comum.
+  //
+  // `max` trava data futura: impressão que ainda não aconteceu não se registra.
+  const hoje = toIsoDate(new Date()) || '';
+  const dataImpressao = createDateField({
+    label: 'Data da impressão',
+    value: hoje,
+    max: hoje,
+    required: true,
+    helpText: 'Mude só quando estiver lançando uma impressão de outro dia.',
+  });
+
   // O aviso repetido em destaque, fora do texto de ajuda do campo: o erro que ele
   // evita (lancar o total acumulado) nao aparece como erro em tela nenhuma.
   const aviso = el('div', {
@@ -83,6 +98,7 @@ export function openRegistrarImpressaoDialog(item, onDone) {
     title: `Registrar impressão: ${nomeDoItem(item)}`,
     content: el('div', { className: 'form-grid' }, [
       quantidade.element,
+      dataImpressao.element,
       observacao.element,
       aviso,
     ]),
@@ -95,9 +111,19 @@ export function openRegistrarImpressaoDialog(item, onDone) {
         onClick: async ({ close }) => {
           if (enviando) return;
           quantidade.setError(null);
+          dataImpressao.setError(null);
           const qtd = quantidade.getValue();
           if (!qtd || qtd < 1) {
             quantidade.setError('Informe quantas cópias saíram');
+            return;
+          }
+          const data = dataImpressao.getValue();
+          if (!data) {
+            dataImpressao.setError('Informe a data da impressão');
+            return;
+          }
+          if (data > hoje) {
+            dataImpressao.setError('A data não pode ser futura');
             return;
           }
           enviando = true;
@@ -106,6 +132,10 @@ export function openRegistrarImpressaoDialog(item, onDone) {
               produto_pedido_id: idDoItem(item),
               quantidade: qtd,
               observacao: observacao.getValue() || undefined,
+              // HOJE não vai no corpo: sem o campo o servidor grava o instante
+              // exato, e duas impressões do mesmo dia mantêm a ordem entre si.
+              // Mandar '2026-08-05' as jogaria as duas para a meia-noite.
+              data_impressao: data === hoje ? undefined : data,
             }]);
             showSuccess('Impressão registrada');
             close();

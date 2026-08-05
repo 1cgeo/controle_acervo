@@ -60,7 +60,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
 
 // Aceita UMA migracao ou uma CADEIA separada por virgula, na ordem de
 // aplicacao. A cadeia existe porque uma funcionalidade pode entrar em mais de um
-// passo por boa razao: a rastreabilidade (2026-08-02) veio em dois, o primeiro
+// passo por boa razao: a rastreabilidade veio em dois, o primeiro
 // criando o schema (reversivel por um DROP) e o segundo movendo dado que ja
 // existia. Ensaiar so o primeiro reprovaria na versao, e ensaiar cada um
 // isolado nao provaria o que interessa -- que a SEQUENCIA chega onde a
@@ -134,7 +134,7 @@ const recriar = async nome => {
 /**
  * Le um er/*.sql, opcionalmente de uma REVISAO do git.
  *
- * O `--er-de` existe por um erro real (2026-07-29): a migracao trocava o
+ * O `--er-de` existe por um erro real: a migracao trocava o
  * dominio de nove codigos para dois, e o ensaio montou o banco "anterior" com o
  * er/ de HOJE, que ja tinha os dois. A migracao virou no-op e o ensaio aprovou
  * sem exercitar nada. Versao o script ja forcava; o CONTEUDO, nao.

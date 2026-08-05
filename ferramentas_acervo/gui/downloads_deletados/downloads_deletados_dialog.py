@@ -1,10 +1,9 @@
 # Path: gui\downloads_deletados\downloads_deletados_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
-from ..ui_utils import sortable_item, sortable_int_item
-import csv
+from ..ui_utils import exportar_tabela_csv, sortable_item, sortable_int_item
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'downloads_deletados_dialog.ui'))
@@ -142,25 +141,11 @@ class DownloadsDeletadosDialog(QDialog, FORM_CLASS):
         self.load_downloads_deletados()
 
     def export_csv(self):
-        if self.downloadsTable.rowCount() == 0:
-            QMessageBox.warning(self, "Aviso", "Não há dados para exportar.")
-            return
-        filename, _ = QFileDialog.getSaveFileName(self, "Exportar para CSV", "", "Arquivos CSV (*.csv)")
-        if not filename:
-            return
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                headers = []
-                for column in range(self.downloadsTable.columnCount()):
-                    headers.append(self.downloadsTable.horizontalHeaderItem(column).text())
-                writer.writerow(headers)
-                for row in range(self.downloadsTable.rowCount()):
-                    row_data = []
-                    for column in range(self.downloadsTable.columnCount()):
-                        item = self.downloadsTable.item(row, column)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
-            QMessageBox.information(self, "Sucesso", f"Dados exportados com sucesso para {filename}")
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Erro ao exportar dados: {str(e)}")
+        """Exporta a PÁGINA ATUAL para CSV. Não há rota de CSV para esta lista."""
+        QMessageBox.information(
+            self, "Exportar CSV",
+            f"O arquivo terá os {self.downloadsTable.rowCount()} registro(s) da página atual, "
+            f"de um total de {self.total_items}.\n\n"
+            "Aumente os itens por página para exportar mais de uma vez só."
+        )
+        exportar_tabela_csv(self, self.downloadsTable, 'downloads-excluidos.csv')

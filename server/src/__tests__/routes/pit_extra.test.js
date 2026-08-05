@@ -8,7 +8,7 @@
 // CHECK do PostgreSQL (`versao_plano_ou_excecao` e
 // `demanda_extra_origem_manual_ou_producao`), e nenhum dos dois existe num mock.
 //
-// A LIÇÃO QUE ORIGINOU ESTE ARQUIVO (2026-08-03): o guard da grade do PIT foi
+// A LIÇÃO QUE ORIGINOU ESTE ARQUIVO: o guard da grade do PIT foi
 // "testado" mandando escrita na PRODUÇÃO, e duas linhas reais foram alteradas
 // antes de alguém perceber. Guard se exercita contra banco de ensaio.
 
@@ -203,7 +203,7 @@ describe('A folha cumpre o plano OU é a exceção', () => {
   test('o banco recusa meta e demanda na mesma versão', async () => {
     const criada = await criar({ origem_id: PRODUCAO })
     const meta = await conn.one(
-      // Só a IDENTIDADE: a descrição mora em pit.meta_revisao desde 2026-08-04,
+      // Só a IDENTIDADE: a descrição mora em pit.meta_revisao,
       // e este caso não precisa dela. O que se prova aqui é o CHECK do banco.
       `INSERT INTO pit.meta (ano, numero_meta, item, usuario_cadastramento_uuid)
        VALUES (2026, 1, '1.1', (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))

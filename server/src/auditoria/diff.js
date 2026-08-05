@@ -1,14 +1,8 @@
 'use strict'
 
 /**
- * A regra do diff da auditoria.
- *
- * Este arquivo NAO e codigo novo: e o miolo de `mapoteca/auditoria_ctrl.js`
- * (2026-07-30) movido para o modulo comum, sem mudanca de regra nenhuma. Ele
- * subiu porque a auditoria deixou de ser do pedido e passou a valer para os tres
- * modulos; deixar a regra na mapoteca e copia-la para o resto seria a divergencia
- * esperando acontecer, que e a mesma licao da lapide do arquivo (o bloco de 55
- * linhas que vivia copiado em tres controllers e so um tinha teste).
+ * A regra do diff da auditoria, UMA, para os tres modulos. Copiar esta regra
+ * por modulo e a divergencia esperando acontecer.
  */
 
 // Colunas de escrituracao, que mudam em TODA atualizacao (o carimbo de quem

@@ -2,11 +2,10 @@
 
 // A REGRA DO DIFF, isolada.
 //
-// Ela e o que decide o conteudo de `campos_alterados`, que por sua vez e o que a
-// tela mostra como "o que mudou". Ate 2026-08-02 ela so era exercitada de lado,
-// por testes de rota da mapoteca: um caso de rota prova a contagem e nao a
-// regra, e a regra e o que envelhece em silencio quando alguem acrescenta uma
-// coluna de carimbo com nome novo.
+// Ela é o que decide o conteúdo de `campos_alterados`, que por sua vez é o que
+// a tela mostra como "o que mudou". A regra vive AQUI, e não de lado num teste
+// de rota: caso de rota prova a contagem, e a regra é o que envelhece em
+// silêncio quando alguém acrescenta uma coluna de carimbo com nome novo.
 
 const { diffCampos, normalizar, CAMPOS_DE_ESCRITURACAO } = require('../../auditoria/diff')
 

@@ -6,9 +6,8 @@ import { createDataTable } from './data-table.js';
 // data-table.test.js (render e vazio) e o data-table.behavior.test.js (busca,
 // ordem e paginacao).
 //
-// O caso real que os motivou (medido em 2026-08-04): gravar a 40a pessoa de uma
-// lista de 54 jogava quem edita de volta para a pagina 1, e o esqueleto de 5
-// linhas fixas encolhia a tela em ~840 px e a devolvia em seguida.
+// O invariante: gravar uma linha de página adiantada não devolve quem edita
+// para a página 1, e o esqueleto de linhas fixas não encolhe a tela.
 
 const columns = [
   { key: 'nome', label: 'Nome', sortable: true },

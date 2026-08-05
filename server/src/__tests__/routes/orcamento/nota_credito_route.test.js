@@ -78,8 +78,8 @@ describe('POST /notas_credito', () => {
     })
   })
 
-  // A pergunta mais provavel deste modulo e "qual era o valor antes". Ate
-  // 2026-08-02 a resposta nao existia: o `SELECT id` lia so a chave.
+  // A pergunta mais provavel deste modulo e "qual era o valor antes", e quem a
+  // responde e o `lerAntes`: um `SELECT id` le so a chave e perde o resto.
   test('a alteracao guarda o valor ANTERIOR da NC', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 10,
@@ -133,9 +133,13 @@ describe('POST /notas_credito', () => {
   })
 })
 
-// As quatro consultas desta rota rodavam em QUATRO CONEXOES diferentes ate
-// 2026-08-02 (o `SELECT id`, as duas checagens de dependencia e o DELETE). Hoje
-// e uma transacao so, e o `SELECT id` virou `lerAntes`.
+// AS QUATRO CONSULTAS DESTA ROTA CORREM NUMA TRANSACAO SO (a leitura anterior,
+// as duas checagens de dependencia e o DELETE), e a leitura anterior e o
+// `lerAntes`, que produz o 404 e o `dados_antes` de uma vez.
+//
+// A ATOMICIDADE NAO SE PROVA AQUI: no dublê, `tx` roda o callback com a própria
+// conexão, então quatro comandos soltos passariam igual. Quem a prova é
+// integration/orcamento.test.js.
 describe('DELETE /notas_credito/:id', () => {
   test('409 quando ha nota de empenho vinculada', async () => {
     mockDb.conn.oneOrNone

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/admin-service.js', () => ({
   verificarInconsistencias: vi.fn(),
@@ -18,8 +19,6 @@ import { renderVerificarVolumeTab } from '@modules/acervo/pages/administracao/ve
 import * as svc from '@modules/acervo/services/admin-service.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 let container;
 

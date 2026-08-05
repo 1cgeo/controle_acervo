@@ -3,6 +3,7 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import {
   createTextField,
@@ -20,8 +21,8 @@ import {
  * @param {string} config.title - titulo da secao (ex.: 'Naturezas de despesa')
  * @param {string} config.singular - nome no singular para mensagens (ex.: 'natureza de despesa')
  * @param {'m'|'f'} [config.genero='f'] - genero do `singular`, para o participio
- *   das mensagens. Ate 2026-08-04 o feminino estava fixo, e "plano interno" saia
- *   como "Plano interno excluida com sucesso".
+ *   das mensagens. Com o feminino fixo, "plano interno" sai como "Plano interno
+ *   excluida com sucesso".
  * @param {string} config.novoLabel - rotulo do botao novo (ex.: 'Nova natureza')
  * @param {string} [config.keyField='code'] - campo chave do registro
  * @param {string} [config.labelField='nome'] - campo usado nas mensagens de confirmacao
@@ -74,21 +75,45 @@ export function createDominioSection(config) {
     ],
   });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const section = el('section', { className: 'config-section' }, [
     el('div', { className: 'page__header' }, [
       el('h2', { className: 'config-section__title', textContent: config.title }),
       el('div', { className: 'page__actions' }, [newBtn]),
     ]),
-    table.element,
+    areaTabela,
   ]);
 
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma natureza de despesa
+   * cadastrada": a falha da API lia-se como dominio vazio, e quem lesse isso
+   * cadastraria de novo um codigo que ja existe.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
+
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await config.list();
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || `Erro ao carregar ${config.title}`);
     }
   }
@@ -176,8 +201,8 @@ function openDominioDialog(config, entry, onSaved) {
 
   // O HISTORICO da alteracao de maior alcance do modulo. Mudar o nome ou o GND
   // de uma ND RECLASSIFICA toda NC e toda NE ja lancadas com aquele codigo. O
-  // servidor registra essas escritas desde 2026-08-02, e ate aqui a tela nao
-  // mostrava o registro. As tres tabelas dividem a entidade 'dominio', com o
+  // servidor registra essas escritas, e esta secao e onde a tela as mostra. As
+  // tres tabelas dividem a entidade 'dominio', com o
   // `code` como id. Recolhido: quem abriu para corrigir um nome nao paga a
   // consulta.
   const historico = isEdit

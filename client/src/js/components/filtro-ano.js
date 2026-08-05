@@ -9,17 +9,11 @@ const OUTRO_ANO = '__outro__';
 /**
  * Filtro de ano DA TELA, montado na barra de filtros junto com os demais.
  *
- * Substitui o seletor de ano da navbar, que era um so para o modulo inteiro,
- * guardava a escolha no localStorage e ainda tinha um ano padrao configuravel
- * (chefe, 2026-08-04: "nao quero isso"). Tres defeitos vinham dali:
- *  - a escolha sobrevivia a sessao, entao voltar semanas depois abria num ano
- *    antigo sem nada avisar;
- *  - o ano era global ao modulo, e olhar o PDR de 2025 mudava calado a lista de
- *    notas de credito;
- *  - a tela de metas, que e de PLATAFORMA, precisou importar o store de um
- *    MODULO para nao abrir num ano diferente do resto.
- *
- * Agora cada tela tem o seu, comeca sempre no ANO ATUAL e nao guarda nada.
+ * O ano e DA TELA, e nunca do modulo: cada tela tem o seu, comeca sempre no ANO
+ * ATUAL e nao guarda nada. Um seletor global guardado no localStorage traz tres
+ * defeitos: a escolha sobrevive a sessao e reabre num ano antigo sem avisar;
+ * olhar o PDR de um ano muda calado a lista de notas de credito; e a tela de
+ * PLATAFORMA passa a depender do store de um MODULO.
  *
  * @param {Object} opts
  * @param {() => Promise<Array<number>>} [opts.carregarAnos] - anos com dado

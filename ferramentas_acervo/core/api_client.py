@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import requests
-from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
+from requests.exceptions import ConnectionError, Timeout, HTTPError
 from qgis.PyQt.QtCore import QThread
 from qgis.PyQt.QtWidgets import QApplication, QMessageBox
 from urllib.parse import unquote, urljoin
@@ -221,10 +221,9 @@ class APIClient:
     def _nome_do_cabecalho(response):
         """Nome do arquivo declarado no Content-Disposition, ou None.
 
-        O servidor manda os DOIS parâmetros de propósito: `filename` em ASCII,
-        para cliente antigo, e `filename*` na RFC 5987, com o nome de verdade.
-        O segundo tem precedência justamente porque é o que preserva acento --
-        ler só o primeiro traria "Monografia RS-HV-1.pdf" sem os acentos.
+        O servidor manda os DOIS parâmetros: `filename` em ASCII e `filename*`
+        na RFC 5987. O `filename*` tem precedência porque é o único que preserva
+        o acento do nome.
         """
         bruto = response.headers.get('content-disposition') or ''
 
@@ -244,13 +243,11 @@ class APIClient:
         """Baixa um arquivo binário do servidor.
 
         `dest_path` pode ser um arquivo ou uma PASTA. Sendo pasta, o nome vem do
-        `Content-Disposition` da resposta -- que é o nome real, com a extensão
-        certa. Isso importa no download em lote: sem ele, quem baixa trinta
-        pacotes fica com trinta arquivos sem extensão, e ninguém sabe se o de
-        um ponto é .zip e o de outro é .7z.
+        `Content-Disposition` da resposta, que traz o nome real com a extensão
+        certa. É o que evita que um download em lote grave dezenas de arquivos
+        sem extensão.
 
-        Devolve o CAMINHO escrito, ou None se falhou. O valor continua sendo
-        falsy no erro, então `if not ok:` segue valendo para quem já usava.
+        Devolve o CAMINHO escrito, ou None se falhou.
         """
         if not self.base_url:
             self.show_error("Erro de Configuração", "URL do servidor não configurada.")

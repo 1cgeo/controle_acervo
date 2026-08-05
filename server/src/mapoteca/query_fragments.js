@@ -1,7 +1,7 @@
 "use strict";
 
 const {
-  domainConstants: { TIPO_ESCALA }
+  domainConstants: { TIPO_ESCALA, SITUACAO_PEDIDO }
 } = require("../utils");
 
 /**
@@ -18,18 +18,17 @@ const QTD_EFETIVA = "COALESCE(pp.quantidade_fornecida, pp.quantidade)";
 // Mídia efetivamente usada: fornecida com fallback na prevista
 const MIDIA_EFETIVA = "COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)";
 
-// NAO existe mais fragmento de "data efetiva de entrega". Ele era
-// COALESCE(pp.data_entrega, ped.data_atendimento), e em 2026-07-30 a coluna do
-// item saiu: a data de entrega e do PEDIDO, e chama-se data_atendimento. Quem
-// precisa dela escreve `ped.data_atendimento`, sem COALESCE e sem fragmento.
+// NAO existe fragmento de "data efetiva de entrega": a data de entrega e do
+// PEDIDO, e chama-se `data_atendimento`. Quem precisa dela escreve
+// `ped.data_atendimento`, sem COALESCE e sem fragmento.
 
 // ---------------------------------------------------------------------------
 // A identidade do item do pedido
 // ---------------------------------------------------------------------------
 //
-// Desde 2026-07-30 o item aponta o acervo OU um produto avulso, nunca os dois
-// (CHECK produto_pedido_um_destino). Avulso é o que a mapoteca imprime sem ser
-// nosso: papel quadriculado, carta de outro CGEO, impresso de ocasião.
+// O item aponta o acervo OU um produto avulso, nunca os dois (CHECK
+// `produto_pedido_um_destino`). Avulso é o que a mapoteca imprime sem ser nosso:
+// papel quadriculado, carta de outro CGEO, impresso de ocasião.
 //
 // ATENÇÃO, e é a razão de estes fragmentos existirem: `JOIN acervo.versao` é
 // INNER, e num item avulso `pp.uuid_versao` é NULO. Todo INNER JOIN daquele
@@ -70,39 +69,54 @@ const ESCALA_DISPLAY = `CASE WHEN prod.tipo_escala_id = ${TIPO_ESCALA.ESCALA_PER
 // Idem, para consultas que partem do ITEM do pedido, com uma diferenca: o item
 // AVULSO nao tem escala, e aqui isso vira 'Sem escala' em vez de NULO.
 //
-// O avulso e impresso de ocasiao (papel quadriculado, impresso de uma vez so), e
-// o que houver de dimensao vai na descricao dele. Como ele nao aponta produto do
-// acervo, `prod.tipo_escala_id` e nulo e o CASE acima devolvia NULO -- que a tela
-// mostrava como a palavra "null". Foi assim que apareceu, em 2026-08-01, uma
-// fatia chamada `null` no grafico "Entregas por Tipo de Produto x Escala" do
-// dashboard da mapoteca, com 4 pedidos e 252 produtos: o tipo ja caia num balde
-// explicito ('Impressao avulsa') e a escala tinha ficado sem o dela.
+// O avulso e impresso de ocasiao, e o que houver de dimensao vai na descricao
+// dele. Como ele nao aponta produto do acervo, `prod.tipo_escala_id` e nulo e o
+// CASE acima devolveria NULO, que a tela mostra como a palavra "null" (foi assim
+// que nasceu uma fatia chamada `null` no grafico do dashboard).
 //
 // O COALESCE mora AQUI, e nao em cada consulta, porque a pergunta e sempre a
-// mesma: como se ESCREVE a escala deste item. Deixar para o chamador foi o que
-// permitiu quatro consultas acertarem e uma esquecer.
+// mesma: como se ESCREVE a escala deste item. Deixar para o chamador e o que
+// permite quatro consultas acertarem e uma esquecer.
 const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 
-// Situações que contam como pedido EM ABERTO: a fila de trabalho da tela de
-// atendimento. Ficam de fora Concluído (5), Cancelado (6), Aguardando
-// produção (7) e Remetido (4).
+// AS DUAS FILAS DO PEDIDO, e por que não é uma só.
 //
-// A régua é uma só: a fila mostra o que a mapoteca AINDA TEM DE FAZER. As duas
-// exclusões vieram do chefe, por esse mesmo critério.
+// Havia aqui um `SITUACOES_EM_ABERTO` único, com 1, 2 e 3. O nome não dizia EM
+// ABERTO PARA QUEM, e a mesma lista respondia a duas perguntas diferentes. As
+// situações vêm de `mapoteca.situacao_pedido` (er/mapoteca.sql, linhas 26 a 33):
+// 1 Pré cadastramento, 2 DIEx/Ofício recebido, 3 Em andamento, 4 Remetido,
+// 5 Concluído, 6 Cancelado, 7 Aguardando produção.
 //
-// Aguardando produção (7) saiu em 2026-07-30. O pedido nessa situação espera
-// carta que AINDA NÃO EXISTE. Não é trabalho de quem imprime, e fila que mostra
-// o impossível deixa de ser fila. Na produção eram 2 pedidos assim (ids 127 e
-// 128, com 33 e 16 itens), sempre no topo da tela e nunca atendíveis.
+// A pergunta de quem IMPRIME: o que ainda falta imprimir?
+// A pergunta de quem ATENDE: o que ainda falta FECHAR?
 //
-// Remetido (4) saiu em 2026-07-31. O pedido já foi impresso, etiquetado e
-// despachado: as três ações que esta tela oferece já foram feitas, e a linha só
-// ocupava a fila. Na produção era 1 pedido, contra 20 Em andamento.
+// Remetido (4) separa as duas. O pedido remetido já foi impresso, etiquetado e
+// despachado, então some da fila de impressão com razão. Mas ele ainda espera a
+// marca de Concluído, e quem atende é quem a dá. Numa lista só, ou o impressor
+// via trabalho já feito, ou o atendente perdia o pedido de vista.
 //
-// O PREÇO, que é real: pedido Remetido some da fila e depende de alguém marcar
-// Concluído pela lista de pedidos, sem nada aqui lembrando disso. Os dois
-// continuam visíveis lá, pelo filtro de situação.
-const SITUACOES_EM_ABERTO = [1, 2, 3];
+// Fora das DUAS listas ficam Concluído (5), Cancelado (6) e Aguardando
+// produção (7). Aguardando produção fica fora porque o pedido espera carta que
+// AINDA NÃO EXISTE: fila que mostra o impossível deixa de ser fila.
+
+// A fila de IMPRESSÃO: o que a mapoteca ainda tem de imprimir. É o que o plugin
+// do QGIS lê (ferramentas_mapoteca/gui/pedidos/pedidos_dialog.py), e ele monta a
+// lista de download a partir dela. Remetido NÃO entra: reimprimir o que já saiu
+// é o erro que esta lista existe para evitar.
+const SITUACOES_FILA_IMPRESSAO = [
+  SITUACAO_PEDIDO.PRE_CADASTRAMENTO,
+  SITUACAO_PEDIDO.DOCUMENTO_RECEBIDO,
+  SITUACAO_PEDIDO.EM_ANDAMENTO
+];
+
+// A fila de ATENDIMENTO: o que ainda tem de ser fechado. É a de impressão mais
+// Remetido (4). Sem o Remetido aqui, o pedido despachado sumia da tela de
+// atendimento e dependia de alguém achá-lo na lista de pedidos, pelo filtro de
+// situação, para marcar Concluído. Ele ficava aberto por tempo indefinido.
+const SITUACOES_FILA_ATENDIMENTO = [
+  ...SITUACOES_FILA_IMPRESSAO,
+  SITUACAO_PEDIDO.REMETIDO
+];
 
 // O arquivo IMPRIMÍVEL de uma versão: o PDF do produto cartográfico em si.
 //
@@ -182,7 +196,8 @@ module.exports = {
   PRODUTO_ESCALA_ID,
   ITEM_E_AVULSO,
   PIVO_TIPO_ESCALA,
-  SITUACOES_EM_ABERTO,
+  SITUACOES_FILA_IMPRESSAO,
+  SITUACOES_FILA_ATENDIMENTO,
   JOIN_ARQUIVO_IMPRIMIVEL,
   filtroAno,
   filtroPeriodoMes

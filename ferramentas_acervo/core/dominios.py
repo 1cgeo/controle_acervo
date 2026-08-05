@@ -1,43 +1,24 @@
 # Path: core\dominios.py
 """Códigos de domínio e o cache das listas que vêm do servidor.
 
-DUAS COISAS MORAM AQUI, e por motivos diferentes.
+As CONSTANTES espelham `server/src/utils/domain_constants.js`. Use a constante,
+nunca o número na mão: número mágico espalhado deixa um domínio novo entrar no
+servidor e a interface continuar concordando com o anterior, sem erro nenhum.
 
-As CONSTANTES espelham `server/src/utils/domain_constants.js`. Antes desta
-tabela o plugin escrevia o número na mão em dezoito lugares (`== 9` para
-tileserver, `== 5` para escala personalizada, `== 1` para situação de
-carregamento), e número mágico espalhado é o que faz um domínio novo entrar no
-servidor e a interface continuar concordando com o anterior sem erro nenhum.
-
-O CACHE existe porque as listas de domínio são as mesmas em todo diálogo e não
-mudam durante uma sessão. Cada diálogo pedia as suas: abrir "Adicionar Produto"
-custava cinco requisições, e abrir cinco diálogos custava vinte e cinco. Aqui
-elas são buscadas uma vez por sessão. `invalidar()` existe para quando o próprio
-plugin altera um domínio (não acontece hoje) e para o teste.
+O CACHE guarda as listas de domínio, iguais em todo diálogo e imutáveis durante
+a sessão. Elas são buscadas uma vez por sessão. `invalidar()` serve para quando
+o plugin altera um domínio e para o teste.
 """
 
 # dominio.tipo_arquivo
 TIPO_ARQUIVO_PRINCIPAL = 1
 TIPO_ARQUIVO_TILESERVER = 9
 
-# dominio.tipo_versao
-TIPO_VERSAO_REGULAR = 1
-TIPO_VERSAO_REGISTRO_HISTORICO = 2
-# Folha que ainda vai ser produzida: nasce sem arquivo, e o arquivo entra na
-# MESMA versão quando a produção terminar.
-TIPO_VERSAO_PLANEJADA = 3
-
 # dominio.tipo_escala
 TIPO_ESCALA_PERSONALIZADA = 5
 
 # dominio.situacao_carregamento
 SITUACAO_CARREGAMENTO_NAO_CARREGADO = 1
-
-# dominio.tipo_status_arquivo
-STATUS_ARQUIVO_CARREGADO = 1
-
-# dominio.subtipo_produto
-SUBTIPO_CARTA_TOPOGRAFICA_MILITAR = 24
 
 # dominio.tipo_perfil
 PERFIL_CONSULTA = 1
@@ -53,8 +34,7 @@ NOME_PERFIL = {
 
 def eh_tileserver(tipo_arquivo_id):
     """Tileserver é URL, não byte em volume: não tem extensão, tamanho,
-    checksum, volume nem arquivo para transferir. A pergunta aparecia como
-    ``== 9`` em sete arquivos."""
+    checksum, volume nem arquivo para transferir."""
     return tipo_arquivo_id == TIPO_ARQUIVO_TILESERVER
 
 
@@ -128,10 +108,9 @@ class Dominios:
         """Diz se o subtipo obriga o PRODUTO a ter esse mesmo subtipo.
 
         É o `dominio.subtipo_produto.define_produto` do servidor, e é a regra que
-        o gatilho `acervo.validate_version` cobra. Perguntar aqui, ANTES de
-        montar o corpo, é o que evita descobrir a incompatibilidade no
-        confirm-upload -- ou seja, depois de os bytes já terem sido copiados
-        para o volume, e como erro 500 sem explicação.
+        o gatilho `acervo.validate_version` cobra. Pergunte ANTES de montar o
+        corpo. A incompatibilidade descoberta no confirm-upload chega como erro
+        500 sem explicação, com os bytes já copiados para o volume.
         """
         linha = self.subtipo(subtipo_produto_id)
         return bool(linha and linha.get('define_produto'))

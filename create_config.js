@@ -22,13 +22,6 @@ const verifyDotEnv = () => {
   return existsSync(join(__dirname, 'server', 'config.env'));
 };
 
-// Ate 2026-08-02 este arquivo falava com o Auth Server externo por HTTP: ele
-// conferia se o servico respondia, fazia login com as credenciais do futuro
-// administrador e LIA de la o cadastro dele (nome, nome de guerra, posto e
-// uuid) para inserir no SCA. Nada disso existe mais -- a autenticacao veio para
-// dentro, entao o primeiro administrador se CADASTRA aqui, com senha, e o axios
-// saiu junto do `server/package.json`.
-
 const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, dbUserReadonly, dbPasswordReadonly) => {
   const secret = randomBytes(64).toString('hex');
 
@@ -64,7 +57,7 @@ const giveReadonlyPermission = async ({ dbUser, dbPassword, dbPort, dbServer, db
     await connection.none('CREATE ROLE $1:name LOGIN PASSWORD $2', [roUser, roPassword]);
   } else {
     console.log(
-      chalk.yellow(`O usuário ${roUser} já existe no PostgreSQL. A senha atual foi mantida — garanta que a senha informada corresponde à do usuário.`)
+      chalk.yellow(`O usuário ${roUser} já existe no PostgreSQL. A senha atual foi mantida. Garanta que a senha informada corresponde à do usuário.`)
     );
   }
 
@@ -72,18 +65,14 @@ const giveReadonlyPermission = async ({ dbUser, dbPassword, dbPort, dbServer, db
 };
 
 /**
- * Cria o PRIMEIRO administrador, com senha.
+ * Cria o PRIMEIRO administrador, com senha. O `uuid` sai do default da coluna.
  *
- * O `uuid` sai do default da coluna, e nao vem de fora: ate a fusao de
- * 2026-08-02 ele era copiado do Auth Server, porque `dgeo.usuario` era um
- * espelho e o uuid precisava casar com o de la.
- *
- * O codigo de posto/graduacao e conferido contra `dominio.tipo_posto_grad`
- * LIDO DO BANCO, dentro da mesma transacao que acabou de carregar o
- * `er/dominio.sql`. A lista NAO e copiada para ca de proposito: copia apodrece,
- * e o dia em que um posto entrar no dominio o instalador estaria mentindo. Sem
- * a conferencia, o codigo errado morreria numa violacao de chave estrangeira
- * que nao diz a ninguem qual era o valor certo.
+ * O codigo de posto/graduacao e conferido contra `dominio.tipo_posto_grad` LIDO
+ * DO BANCO, dentro da mesma transacao que acabou de carregar o dominio. A lista
+ * NAO se copia para ca: copia apodrece, e o dia em que um posto entrar no
+ * dominio o instalador estaria mentindo. Sem a conferencia, o codigo errado
+ * morreria numa violacao de chave estrangeira que nao diz qual era o valor
+ * certo.
  */
 const insertAdminUser = async (admin, connection) => {
   const { login, senha, nome, nomeGuerra, tipoPostoGradId } = admin;
@@ -125,15 +114,14 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admi
     await t.none(readSqlFile('./er/versao.sql'));
     await t.none(readSqlFile('./er/dominio.sql'));
     await t.none(readSqlFile('./er/dgeo.sql'));
-    // Logo depois de dgeo, e sem depender de ninguem: a auditoria NAO tem chave
-    // estrangeira nenhuma, de proposito (o rastro sobrevive ao registro e ao
-    // usuario apagados). Fica aqui porque o lugar logico e junto do schema da
-    // identidade, que e de quem ela guarda o nome.
+    // A auditoria nao tem chave estrangeira nenhuma, de proposito (o rastro
+    // sobrevive ao registro e ao usuario apagados). Fica junto do schema da
+    // identidade, de quem ela guarda o nome.
     await t.none(readSqlFile('./er/auditoria.sql'));
-    // Antes de acervo: o `limites` nao referencia ninguem, e o filtro por
-    // municipio do acervo e do ponto de controle o consulta.
+    // Antes de acervo: o filtro por municipio do acervo e do ponto de controle
+    // consulta `limites`, que e tambem o primeiro arquivo com geometria.
     await t.none(readSqlFile('./er/limites.sql'));
-    // Antes de mapoteca e de orcamento: os dois referenciam pit.meta. Depois de
+    // Antes de mapoteca e de orcamento, que referenciam pit.meta. Depois de
     // dgeo, porque a meta guarda o usuario de cadastramento.
     await t.none(readSqlFile('./er/pit.sql'));
     await t.none(readSqlFile('./er/acervo.sql'));
@@ -143,9 +131,9 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admi
     await t.none(readSqlFile('./er/acompanhamento.sql'));
     await t.none(readSqlFile('./er/mapoteca.sql'));
     await t.none(readSqlFile('./er/orcamento.sql'));
-    // Depois de dgeo, que a edicao referencia pelo usuario de cadastramento. O
-    // RPCMTec e da Divisao inteira e nao depende de nenhum dos tres modulos:
-    // ele os CONSULTA em tempo de geracao, sem chave estrangeira para eles.
+    // Depois de dgeo e de dominio, que a edicao referencia. O RPCMTec e da
+    // Divisao inteira e nao depende dos tres modulos: ele os CONSULTA em tempo
+    // de geracao, sem chave estrangeira para eles.
     await t.none(readSqlFile('./er/rpcmtec.sql'));
     await givePermission({ dbUser, connection: t });
     await insertAdminUser(admin, t);
@@ -168,9 +156,15 @@ const handleError = (error) => {
   } else if (error.message?.includes('password authentication failed')) {
     console.log(chalk.red('Senha inválida para o usuário'));
   } else {
+    // NUNCA imprima o objeto de erro inteiro. O erro do pg-promise carrega
+    // `query` e `values`, e as duas consultas que este arquivo monta levam a
+    // senha do banco (a string de conexao) e a do administrador (o CREATE ROLE
+    // do usuario somente leitura). Impresso no terminal, o segredo vai parar no
+    // scrollback e no log do deploy.
     console.log(chalk.red(error.message));
-    console.log('-------------------------------------------------');
-    console.log(error);
+    if (error.code) console.log(chalk.red(`codigo: ${error.code}`));
+    if (error.detail) console.log(chalk.red(`detalhe: ${error.detail}`));
+    if (error.hint) console.log(chalk.red(`dica: ${error.hint}`));
   }
   process.exit(1);
 };
@@ -390,6 +384,14 @@ const createConfig = async (options) => {
       adminPostoGrad
     } = { ...options, ...(await inquirer.prompt(questions)) };
 
+    // As perguntas interativas passam por `validatePort`; as FLAGS nao passavam
+    // por nada, entao `--port abc` escrevia PORT=abc no config.env e o servico
+    // so reclamava no boot seguinte, longe de quem digitou.
+    for (const [nome, valor] of [['--port', port], ['--db-port', dbPort]]) {
+      const validacao = validatePort(valor);
+      if (validacao !== true) throw new Error(`${nome}: ${validacao}`);
+    }
+
     const readonlyConfigured = Boolean(dbUserReadonly && dbPasswordReadonly);
 
     if (dbCreate) {
@@ -404,8 +406,15 @@ const createConfig = async (options) => {
       // Falha ANTES de criar o banco. Descobrir que falta o nome de guerra
       // depois do CREATE DATABASE deixaria uma base pela metade, e a proxima
       // tentativa esbarraria em "o banco ja existe".
+      //
+      // O NaN entra na lista porque `Number(undefined)` e NaN, e nao undefined:
+      // sem ele, o posto ausente passava por aqui e morria depois, no banco ja
+      // criado, com a mensagem "Posto/graduacao NaN nao existe".
       const faltando = Object.entries(admin)
-        .filter(([, v]) => v === undefined || v === null || v === '')
+        .filter(
+          ([, v]) =>
+            v === undefined || v === null || v === '' || Number.isNaN(v)
+        )
         .map(([k]) => k);
       if (faltando.length) {
         throw new Error(

@@ -7,25 +7,24 @@ BEGIN;
 -- a Divisão se comprometeu a entregar no ano, e todo módulo tem trabalho que
 -- atende uma meta dele. O orçamento amarra a NC e o item do PDR à meta que
 -- financiam; a mapoteca amarra o pedido de impressão à meta que ele cumpre.
--- Nenhum dos dois é dono. Mesmo critério do schema `limites` (2026-07-29).
+-- Nenhum dos dois é dono. Mesmo critério do schema `limites`.
 --
--- Enquanto morava em `orcamento`, a mapoteca não podia usá-la: em 2026-07-30 o
--- pedido ganhou um `meta_pit VARCHAR(10)` de texto livre, com o código digitado
--- à mão. Duas verdades sobre a mesma coisa, e o banco não cobrava nenhuma.
--- Mudou de casa em 2026-07-31, por decisão do chefe.
+-- Dentro de `orcamento`, a mapoteca não a alcançaria, e o pedido guardaria o
+-- código da meta como texto livre: duas verdades sobre a mesma coisa, e o banco
+-- sem cobrar nenhuma.
 --
 -- PERMISSÃO. Ler é de qualquer pessoa logada, porque todo módulo precisa
 -- oferecer a lista. Escrever é do administrador global: o PIT muda uma vez por
 -- ano e errar nele contamina os três módulos.
 --
--- O QUE ENTROU EM 2026-08-02. A meta deixou de ser só um rótulo e passou a
--- guardar o que o PIT promete (quantidade, unidade, demandante, prazo), e
--- nasceram a execução mensal e a demanda Extra-PIT. As três coisas existiam no
--- SAP e vieram para cá porque nenhuma delas depende da produção: são cadastro à
+-- A META NÃO É SÓ UM RÓTULO: ela guarda o que o PIT promete (quantidade,
+-- unidade, demandante, prazo), e ao lado dela vivem a execução mensal e a
+-- demanda Extra-PIT. As três vieram do SAP porque nenhuma depende da produção:
+-- são cadastro à
 -- mão. Com elas o SCA passa a gerar a subseção 2.1 do RPCMTec, que até então
 -- ficava de fora justamente por falta de quantidade prevista e de prazo.
 --
--- Nada saiu do SAP (decisão do chefe, 2026-08-02): a fusão é por ADIÇÃO aqui, e
+-- Nada saiu do SAP: a fusão é por ADIÇÃO aqui, e
 -- não por remoção lá. Enquanto os dois existirem há duas cópias vivas do mesmo
 -- fato, e o que as impede de brigar não é o banco: é o SCA passar a ser quem
 -- gera essas subseções do relatório.
@@ -35,7 +34,7 @@ CREATE SCHEMA pit;
 COMMENT ON SCHEMA pit IS
     'Plano Interno de Trabalho: o plano anual da Divisão. Dado de referência que orçamento, mapoteca e acervo consomem, e do qual nenhum é dono.';
 
--- O ANO do PIT (2026-08-04). Existe para o ano deixar de ser um SMALLINT solto
+-- O ANO do PIT. Existe para o ano deixar de ser um SMALLINT solto
 -- em quatro tabelas, e para o encerramento do exercício ser um ATO: em ano
 -- Encerrado o servidor recusa lançamento, e hoje nada impede alguém corrigir
 -- 2025 em 2027.
@@ -72,8 +71,8 @@ CREATE TABLE pit.meta(
   ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
   numero_meta SMALLINT NOT NULL,
   item VARCHAR(20),
-  -- A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE NÃO MORAM AQUI
-  -- (2026-08-04). Eles são o que a DSG DECLARA, e a DSG revisa o PIT durante a
+  -- A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE NÃO MORAM AQUI.
+  -- Eles são o que a DSG DECLARA, e a DSG revisa o PIT durante a
   -- execução: o R0 de 2026 avisa que "o EM/DSG realizará a revisão do PIT nos
   -- meses de ABR e AGO 26". Os quatro vivem em `pit.meta_revisao`, uma linha
   -- por revisão que os mudou.
@@ -82,15 +81,14 @@ CREATE TABLE pit.meta(
   -- nenhuma muda (ano, número, item). É por isso que o id é ESTÁVEL, e é nele
   -- que os seis vínculos de outros schemas se penduram.
   --
-  -- O QUE A META CONTA. Domínio fechado desde 2026-08-04, e antes era texto
-  -- livre com 13 valores: 'carta' e 'folha' para a mesma coisa, e 12 itens SEM
-  -- unidade nenhuma, incluindo as duas metas que já calculam sozinhas. A grade
-  -- assume que uma versão do acervo vale UMA unidade da meta, e nada declarava
-  -- isso.
+  -- O QUE A META CONTA. Domínio FECHADO: em texto livre viram treze valores
+  -- para cinco coisas ('carta' e 'folha' para a mesma) e itens sem unidade
+  -- nenhuma. A grade assume que uma versão do acervo vale UMA unidade da meta, e
+  -- o domínio é quem declara isso.
   --
   -- ANULÁVEL só para a linha de cabeçalho: o que ela agrupa é que conta.
   unidade_id SMALLINT REFERENCES dominio.unidade_meta (code),
-  -- DE ONDE VEM O NÚMERO desta meta (2026-08-03). Manual é o lançamento à mão em
+  -- DE ONDE VEM O NÚMERO desta meta. Manual é o lançamento à mão em
   -- `pit.execucao`, e é o padrão: toda meta nasce assim, inclusive as que já
   -- existiam. As outras três são calculadas na LEITURA, e a gravação nelas é
   -- recusada com 400.
@@ -106,7 +104,7 @@ CREATE TABLE pit.meta(
   -- vezes, uma nos itens e outra nela. Quem cobra isso é o controlador: o CHECK
   -- não enxerga "tem item abaixo", que é outra linha desta mesma tabela.
   origem_id SMALLINT NOT NULL DEFAULT 1 REFERENCES dominio.origem_meta (code),
-  -- NÃO HÁ `situacao_id` (2026-08-04). Ela existiu por um dia, com quatro
+  -- NÃO HÁ `situacao_id`. Ela existiu por um dia, com quatro
   -- estados. Dos quatro, só 'Cancelada' era ato da DSG, e por isso virou
   -- `pit.meta_revisao.cancelada`; 'Em andamento' e 'Concluída' a grade calcula
   -- do que foi lançado, e status digitado ao lado de status calculado é a
@@ -124,7 +122,7 @@ COMMENT ON TABLE pit.meta IS
 CREATE INDEX idx_meta_ano ON pit.meta (ano);
 
 -- ---------------------------------------------------------------------------
--- A REVISÃO do PIT, e a meta como cada uma a declara (2026-08-04).
+-- A REVISÃO do PIT, e a meta como cada uma a declara.
 --
 -- POR QUE ELA EXISTE. A DSG revisa o PIT durante a execução, e o próprio R0 de
 -- 2026 avisa disso. Com uma linha por meta, a revisão ou SOBRESCREVIA a promessa
@@ -132,12 +130,12 @@ CREATE INDEX idx_meta_ano ON pit.meta (ano);
 -- seis vínculos que apontam para `pit.meta` ficavam órfãos). Os dois estão
 -- errados, e é o que motivou separar identidade de declaração.
 --
--- ALTERAR O PIT É CANCELAR, ALTERAR E ADICIONAR META (chefe, 2026-08-04). Só
+-- ALTERAR O PIT É CANCELAR, ALTERAR E ADICIONAR META. Só
 -- isso, e uma forma só cobre as três: adicionar é a primeira linha da meta em
 -- `meta_revisao`; alterar é uma linha nova com o número novo; cancelar é uma
 -- linha nova com `cancelada`. Nenhum caso especial, e nenhum DELETE.
 --
--- NÃO HÁ RENUMERAÇÃO de item (chefe, 2026-08-04), e é por isso que `item` pode
+-- NÃO HÁ RENUMERAÇÃO de item, e é por isso que `item` pode
 -- ficar na identidade.
 -- ---------------------------------------------------------------------------
 
@@ -311,7 +309,7 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 
 -- O MÊS de uma meta: o que ela PLANEJOU entregar e o que ENTREGOU.
 --
--- DOIS NÚMEROS NA MESMA LINHA, e não duas tabelas (chefe, 2026-08-02). A
+-- DOIS NÚMEROS NA MESMA LINHA, e não duas tabelas. A
 -- planilha que a Divisão preenche tem duas abas, PLANEJ_PIT e EXEC_PIT, com as
 -- MESMAS linhas, as mesmas doze colunas de mês e a mesma quantidade anual: a
 -- única diferença entre elas é qual dos dois números a célula guarda. Duas
@@ -334,7 +332,7 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- O REALIZADO PODE PASSAR DO PLANEJADO, e passa: a meta 4.1 de 2026 planejou
 -- 327 e já entregou mais de cinco mil. Não há teto em lugar nenhum.
 --
--- LANÇAMENTO À MÃO, para TODA meta (chefe, 2026-08-02). No SAP a régua era
+-- LANÇAMENTO À MÃO, para TODA meta. No SAP a régua era
 -- `lote_id IS NULL`: meta de produção tinha o realizado calculado das
 -- atividades, e só o resto se digitava. Aqui não existe essa régua, porque
 -- enquanto o SAP não for absorvido não há de onde calcular.
@@ -345,8 +343,8 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- lá podem divergir, e quando divergirem a 2.1 e o RTM do mesmo mês vão se
 -- contradizer.
 --
--- O NOME `execucao` FICOU, embora a tabela guarde as duas coisas desde
--- 2026-08-02. Renomeá-la orfanaria o rastro: `auditoria.evento` guarda o nome da
+-- O NOME `execucao` FICA, embora a tabela guarde as duas coisas. Renomeá-la
+-- orfanaria o rastro: `auditoria.evento` guarda o nome da
 -- tabela em cada linha, e o schema `auditoria` não tem UPDATE nem DELETE para a
 -- aplicação, de propósito. O nome imperfeito custa menos do que uma trilha que
 -- deixa de casar com o mapa de entidades.
@@ -392,7 +390,7 @@ CREATE INDEX idx_execucao_meta ON pit.execucao (meta_id);
 -- 3.3 de `mapoteca.pedido.previsto_pit`: aquele campo é falso por omissão, e a
 -- conta deu 23 linhas onde a edição real de julho/2026 traz 1.
 --
--- O EXTRA-PIT É PRODUÇÃO (chefe, 2026-08-03): "se fosse só entrega entraria na
+-- O EXTRA-PIT É PRODUÇÃO: "se fosse só entrega entraria na
 -- mapoteca". Por isso a demanda materializa, e o vínculo vive em
 -- `acervo.versao.demanda_extra_id`, exclusivo com `meta_pit_id`. Essa exclusão
 -- é o que impede a contagem dupla, e é a mesma regra que no SAP vivia em
@@ -419,7 +417,7 @@ CREATE TABLE pit.demanda_extra(
   tipo_produto VARCHAR(255) NOT NULL,
   quantidade INTEGER NOT NULL CHECK (quantidade > 0),
   situacao_id SMALLINT NOT NULL REFERENCES dominio.situacao_extra_pit (code),
-  -- De onde vem a PROVA desta linha (2026-08-03). Reusa `dominio.origem_meta` e
+  -- De onde vem a PROVA desta linha. Reusa `dominio.origem_meta` e
   -- aceita só Manual (1) e Produção (3): um domínio próprio criaria um segundo
   -- código chamado 'Produção', diferente do da meta, e quem lesse os dois lados
   -- teria de traduzir. A pergunta é a mesma que a meta responde.

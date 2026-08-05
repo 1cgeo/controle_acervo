@@ -113,7 +113,9 @@ const lerLinhaDosItens = async (t, dfdId) => {
 
 // So registra quando a lista MUDOU. Salvar o cabecalho sem mexer nos itens nao
 // pode produzir uma linha de historico dizendo que os itens mudaram.
-const registrarItens = async (t, dfdId, antes, depois, usuarioUuid, contexto) => {
+// Sem `dfdId` na assinatura: a linha sintetica ja o carrega em `antes.dfd_id` e
+// `depois.dfd_id`, e o argumento nunca era lido aqui.
+const registrarItens = async (t, antes, depois, usuarioUuid, contexto) => {
   if (JSON.stringify(antes.itens) === JSON.stringify(depois.itens)) {
     return
   }
@@ -130,8 +132,8 @@ const registrarItens = async (t, dfdId, antes, depois, usuarioUuid, contexto) =>
 }
 
 // O NOME de quem cadastrou e de quem alterou sai junto com o uuid: a tela nao
-// resolve uuid, e o historico de alteracoes so comeca em 2026-07-30. Para o DFD
-// gravado antes disso, a data de cadastro e o nome sao a unica rastreabilidade.
+// resolve uuid, e para o DFD anterior ao historico de alteracoes a data de
+// cadastro e o nome sao a unica rastreabilidade.
 controller.listar = async ano => {
   return db.conn.any(
     `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto, d.justificativa,
@@ -290,7 +292,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
     await inserirItens(t, id, dados.itens, usuarioUuid)
 
     const itensDepois = await lerLinhaDosItens(t, id)
-    await registrarItens(t, id, itensAntes, itensDepois, usuarioUuid, contexto)
+    await registrarItens(t, itensAntes, itensDepois, usuarioUuid, contexto)
 
     return { id: dfd.id }
   })

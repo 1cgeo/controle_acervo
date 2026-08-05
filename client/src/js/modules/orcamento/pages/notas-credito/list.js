@@ -6,6 +6,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import {
   getNotasCredito,
   deleteNotaCredito,
@@ -69,8 +70,7 @@ export async function renderNotasCreditoList(container, _ctx) {
   }, [svgIcon(ICONS.add, 16), 'Nova nota de crédito']);
 
   // ---- Filtros ----
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE a NC e cadastrada:
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. `permitirOutroAno` porque o ano decide ONDE a NC e cadastrada:
   // abrir um exercicio novo passa por escolher um ano ainda vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
@@ -275,6 +275,10 @@ export async function renderNotasCreditoList(container, _ctx) {
     ],
   });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Notas de Crédito' }),
@@ -288,9 +292,25 @@ export async function renderNotasCreditoList(container, _ctx) {
       classificacaoFilter.element,
     ]),
     summaryCard,
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma nota de crédito
+   * cadastrada": a falha da API lia-se como ano sem credito recebido, e as duas
+   * pedem acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   async function loadFilterOptions() {
     try {
@@ -310,6 +330,9 @@ export async function renderNotasCreditoList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getNotasCredito({
@@ -323,7 +346,8 @@ export async function renderNotasCreditoList(container, _ctx) {
     } catch (err) {
       if (disposed) return;
       limparSummary();
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar notas de crédito');
     }
   }

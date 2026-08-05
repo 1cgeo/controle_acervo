@@ -2,15 +2,12 @@
 
 // O RPCMTec em PDF, pronto para assinar.
 //
-// SUBSTITUIU O DOCX em 2026-08-05 (decisão do chefe). Até então o sistema
-// emitia um .docx com as tabelas que sabia calcular, e alguém as colava num
-// documento mestre no Word, preenchia as doze subseções restantes e exportava
-// dali. Agora o documento inteiro é preenchido no sistema, e o que sai é o
-// arquivo final: não há mais etapa no Word, e por isso não há mais DOCX.
+// NÃO HÁ DOCX: o documento inteiro é preenchido no sistema, e o que sai daqui é
+// o arquivo final. Não existe etapa no Word.
 //
-// AS MEDIDAS SÃO DO DOCUMENTO DA DIVISÃO, lidas do OOXML da edição de
-// julho/2026 e convertidas de twip para ponto (1 pt = 20 twip). O PDF tem de
-// ser reconhecível como o mesmo relatório de sempre por quem o assina.
+// AS MEDIDAS SÃO DO DOCUMENTO DA DIVISÃO, lidas do OOXML de uma edição real e
+// convertidas de twip para ponto (1 pt = 20 twip). O PDF tem de ser
+// reconhecível como o mesmo relatório de sempre por quem o assina.
 //
 //   página        Letter (612 x 792 pt), margens 49,5 topo / 72 nos outros
 //   cabeçalho     a 36 pt do topo

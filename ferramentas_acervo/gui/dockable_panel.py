@@ -1,7 +1,7 @@
 # Path: gui\dockable_panel.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDockWidget, QTreeWidgetItem, QLabel
+from qgis.PyQt.QtWidgets import QDockWidget, QTreeWidgetItem
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.core import Qgis
 from ..config import Config
@@ -80,8 +80,8 @@ class DockablePanel(QDockWidget, FORM_CLASS):
                 self.open_dialogs[panel_name] = dialog
                 dialog.show()
                 # Trazer para frente e dar foco APÓS o event loop processar o
-                # show() e o clique no painel — senão o foco volta ao QGIS e o
-                # usuário precisa clicar na janela para ativá-la
+                # show() e o clique no painel. Sem isso o foco volta ao QGIS
+                # e o usuário precisa clicar na janela para ativá-la.
                 QTimer.singleShot(0, lambda d=dialog: (d.raise_(), d.activateWindow()))
             except Exception as e:
                 self.iface.messageBar().pushMessage(

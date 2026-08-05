@@ -15,10 +15,9 @@ import { createDominioSection } from './dominio-section.js';
  * Pagina de Configuracao geral (#/configuracao): UASG e CODOM, mais a gestao
  * dos dominios editaveis (natureza de despesa, plano interno e UG emitente).
  *
- * O campo "Ano de referencia" saiu em 2026-08-04 (chefe). Ele definia o ano
- * padrao de todas as telas do modulo, e salvar aqui trocava o contexto de quem
- * estava trabalhando. Agora cada tela tem o seu filtro de ano e comeca no ano
- * atual.
+ * SEM "Ano de referencia": um ano padrao do modulo faz salvar aqui trocar o
+ * contexto de quem esta trabalhando. Cada tela tem o seu filtro de ano e comeca
+ * no ano atual.
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */
@@ -29,7 +28,32 @@ export async function renderConfiguracao(container) {
   const uasg = createTextField({ label: 'UASG', maxLength: 10, helpText: 'Unidade Administrativa de Serviços Gerais (ex.: 160382)' });
   const codom = createTextField({ label: 'CODOM', maxLength: 10 });
 
+  // NASCE DESABILITADO, e só a carga bem-sucedida o libera.
+  //
+  // `orcamento.configuracao` é singleton e o backend só faz UPDATE: salvar com
+  // os dois campos em branco APAGA a UASG e o CODOM do módulo inteiro. Falhando
+  // a carga, o formulário fica vazio e parece um cadastro novo, e um clique em
+  // "Salvar" grava esse vazio por cima do que estava lá.
   const saveBtn = el('button', { className: 'btn btn--primary', type: 'submit', textContent: 'Salvar' });
+  saveBtn.disabled = true;
+
+  // O aviso de que a carga falhou, com o caminho de volta. Fica ao lado do
+  // botão travado: botão desabilitado sem explicação lê-se como falta de perfil.
+  //
+  // A classe `hidden` (base.css, `display: none !important`), e nao o atributo
+  // `hidden`: `.btn` declara `display: inline-flex`, que ganha do atributo e
+  // deixaria o botao a vista.
+  const falhaCarga = el('p', {
+    className: 'form-field__error hidden',
+    role: 'alert',
+  });
+
+  const tentarDeNovoBtn = el('button', {
+    className: 'btn btn--secondary hidden',
+    type: 'button',
+    textContent: 'Tentar de novo',
+    onClick: () => carregarConfiguracao(),
+  });
 
   // Quem alterou por ultimo. A rota ja devolvia a data e o UUID, e a pagina
   // descartava os dois: numa tela que qualquer perfil `consulta` abre, e que
@@ -50,7 +74,8 @@ export async function renderConfiguracao(container) {
   const form = el('form', { className: 'form-grid', style: { maxWidth: '480px' } }, [
     uasg.element,
     codom.element,
-    el('div', { className: 'page__actions' }, [saveBtn]),
+    falhaCarga,
+    el('div', { className: 'page__actions' }, [saveBtn, tentarDeNovoBtn]),
   ]);
 
   form.addEventListener('submit', async (e) => {
@@ -82,6 +107,29 @@ export async function renderConfiguracao(container) {
       pintarAlteracao(cfg);
     } catch (err) {
       // Falhar aqui nao desfaz o que ja foi salvo: o carimbo e acessorio.
+    }
+  }
+
+  /** A carga da configuracao. Só ela destrava o botao de salvar. */
+  async function carregarConfiguracao() {
+    falhaCarga.classList.add('hidden');
+    tentarDeNovoBtn.classList.add('hidden');
+    try {
+      const cfg = await getConfig();
+      if (disposed) return;
+      uasg.setValue(cfg.uasg || '');
+      codom.setValue(cfg.codom || '');
+      pintarAlteracao(cfg);
+      saveBtn.disabled = false;
+    } catch (err) {
+      if (disposed) return;
+      saveBtn.disabled = true;
+      falhaCarga.textContent = `${err.message || 'Erro ao carregar configuração'}. `
+        + 'O formulário está em branco porque nada foi lido, e não porque nada '
+        + 'está cadastrado. Salvar agora apagaria a UASG e o CODOM.';
+      falhaCarga.classList.remove('hidden');
+      tentarDeNovoBtn.classList.remove('hidden');
+      showError(err.message || 'Erro ao carregar configuração');
     }
   }
 
@@ -163,8 +211,7 @@ export async function renderConfiguracao(container) {
 
   // O rastro da tela de MAIOR ALCANCE do modulo. Mudar o nome ou o GND de uma
   // ND reclassifica NC e NE ja lancadas, e a UASG sai em todo documento gerado.
-  // O servidor registra as duas escritas desde 2026-08-02, e ate aqui nenhuma
-  // tela mostrava o registro.
+  // O servidor registra as duas escritas, e esta e a tela que as mostra.
   const historico = criarHistorico({
     modulo: 'orcamento',
     entidade: 'configuracao',
@@ -188,15 +235,7 @@ export async function renderConfiguracao(container) {
   ]);
   container.appendChild(page);
 
-  try {
-    const cfg = await getConfig();
-    if (disposed) return;
-    uasg.setValue(cfg.uasg || '');
-    codom.setValue(cfg.codom || '');
-    pintarAlteracao(cfg);
-  } catch (err) {
-    if (!disposed) showError(err.message || 'Erro ao carregar configuração');
-  }
+  await carregarConfiguracao();
 
   // Carrega as tabelas dos dominios em paralelo.
   naturezaSection.load();

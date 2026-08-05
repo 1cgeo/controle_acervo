@@ -13,6 +13,7 @@ import {
   deleteProdutosPedido,
   getImpressaoItem,
   deleteImpressoes,
+  corrigirDataImpressao,
   getClientes,
   getDominioSituacaoPedido,
   getDominioCanalRecebimento,
@@ -22,11 +23,11 @@ import {
   downloadAnexoPedido,
   deleteAnexoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
-// O histórico deixou de ser código desta tela em 2026-08-02: ele é o mesmo nas
-// seis fichas que o mostram, e a versão daqui escondia os valores (ver o
-// comentário do bloco do histórico, mais abaixo).
+// O histórico NÃO é código desta tela: ele é o mesmo nas seis fichas que o
+// mostram (ver o comentário do bloco do histórico, mais abaixo).
 import { criarHistorico } from '@components/historico/historico.js';
-import { formatDate, formatDateTime, formatNumber } from '@utils/format.js';
+import { createDateField, createTextField } from '@components/form-fields/form-fields.js';
+import { formatBoolean, formatDate, formatDateTime, formatNumber, toIsoDate } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
 import {
@@ -85,7 +86,7 @@ function repintarChip(no, novo) {
  * A decisao e AUTOMATICA, pelo tamanho do texto, e nao marcada campo a campo.
  * Marcar a mao errava nos dois sentidos: o campo vazio ficava empilhado gastando
  * duas linhas para mostrar um traco, e o campo nao marcado com texto longo
- * seguia espremido. Medido na tela em 2026-07-27.
+ * seguia espremido.
  *
  * `temValor()` diz se o ultimo `definir` recebeu alguma coisa. Quem monta card
  * usa isso para TIRAR do DOM a linha vazia (ver criarCard). O traco continua
@@ -159,7 +160,7 @@ const dataHoraOuNada = (valor) => (valor ? formatDateTime(valor) : '');
  * 4 info cards, cancellation reason, items table with add/edit/delete and
  * printing history, plus the order printing summary.
  *
- * A TELA MONTA UMA VEZ E SE REPINTA (2026-08-04). Antes, cada gravacao passava
+ * A TELA MONTA UMA VEZ E SE REPINTA. Antes, cada gravacao passava
  * por `clearChildren(root)` e remontava tudo: as tres tabelas eram criadas
  * DENTRO do `load()`, e com elas iam embora a busca, a ordenacao, a pagina, a
  * selecao e o foco. O container colapsava e esticava a cada salvamento, e o
@@ -414,6 +415,97 @@ export async function renderPedidoDetails(container, { params }) {
 
     let mutated = false;
 
+    /**
+     * Corrige a DATA de uma sessão de impressão já gravada.
+     *
+     * A INTERAÇÃO QUE FALTAVA. PUT /mapoteca/impressao/:id/data existe no
+     * servidor e nenhuma tela a chamava. Sem ela, a sessão lançada no dia errado
+     * só se conserta excluindo e lançando de novo, e a exclusão apaga quem
+     * imprimiu e a observação junto.
+     *
+     * A QUANTIDADE não entra aqui: a impressão é livro-caixa, e o servidor só
+     * aceita POST e DELETE dela. Este diálogo corrige QUANDO, e nada mais.
+     *
+     * O `motivo` é obrigatório no servidor (mínimo 3 caracteres) e vai para a
+     * auditoria: mudar o mês de um gasto muda o número que o RPCMTec reporta.
+     */
+    function corrigirData(registro) {
+      const hoje = toIsoDate(new Date()) || '';
+      const dataField = createDateField({
+        label: 'Data da impressão',
+        value: toIsoDate(registro.data_impressao) || '',
+        max: hoje,
+        required: true,
+      });
+      const motivoField = createTextField({
+        label: 'Motivo da correção',
+        required: true,
+        maxLength: 500,
+        placeholder: 'Ex.: lançado na segunda, mas a impressão saiu na sexta',
+        helpText: 'Fica no histórico do pedido, junto com quem corrigiu.',
+      });
+
+      let salvando = false;
+      openModal({
+        title: 'Corrigir a data da impressão',
+        content: el('div', { className: 'form-grid' }, [
+          dataField.element,
+          el('div', { className: 'form-grid__full' }, [motivoField.element]),
+          el('div', {
+            className: 'form-grid__full form-field__help',
+            textContent: `Sessão de ${formatNumber(registro.quantidade)} cópia(s),`
+              + ` registrada por ${registro.usuario_nome || 'usuário desconhecido'}.`
+              + ' A quantidade não muda aqui.',
+          }),
+        ]),
+        width: '520px',
+        actions: [
+          { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+          {
+            label: 'Salvar',
+            variant: 'primary',
+            onClick: async ({ close }) => {
+              if (salvando) return;
+              dataField.setError(null);
+              motivoField.setError(null);
+
+              const data = dataField.getValue();
+              const motivo = motivoField.getValue();
+              let valido = true;
+              if (!data) {
+                dataField.setError('Informe a data da impressão');
+                valido = false;
+              } else if (data > hoje) {
+                dataField.setError('A data não pode ser futura');
+                valido = false;
+              }
+              // O mesmo mínimo do servidor (Joi: min 3). Sem ele o 400 chegava
+              // como toast, depois de a pessoa achar que tinha gravado.
+              if (motivo.length < 3) {
+                motivoField.setError('Escreva o motivo, com pelo menos 3 letras');
+                valido = false;
+              }
+              if (!valido) return;
+
+              salvando = true;
+              try {
+                await corrigirDataImpressao(registro.id, { data_impressao: data, motivo });
+                showSuccess('Data da impressão corrigida');
+                mutated = true;
+                close();
+                pintarHistorico(await getImpressaoItem(row.id));
+              } catch (err) {
+                // O formulário FICA ABERTO com o que a pessoa escreveu: fechar
+                // no erro faria digitar o motivo de novo.
+                salvando = false;
+                showError(err.message || 'Erro ao corrigir a data da impressão');
+              }
+            },
+          },
+        ],
+      });
+    }
+
     async function excluirRegistro(registro) {
       const confirmado = await confirmDialog({
         title: 'Excluir registro de impressão',
@@ -451,7 +543,7 @@ export async function renderPedidoDetails(container, { params }) {
     ]);
 
     // Quem imprimiu quanto, ANTES da lista. E o que o chefe pediu para
-    // enxergar (2026-07-30): uma pessoa imprimiu 40 e outra imprimiu 10.
+    // enxergar: uma pessoa imprimiu 40 e outra imprimiu 10.
     const pessoasTexto = el('div', { className: 'detail-card__value' });
     const pessoasTotal = el('div', { className: 'detail-card__label' });
     const cardPessoas = el('div', { className: 'detail-card', style: { marginBottom: 'var(--space-md)' } }, [
@@ -482,9 +574,15 @@ export async function renderPedidoDetails(container, { params }) {
       rows: [],
       pageSize: 5,
       emptyMessage: 'Nenhuma sessão de impressão registrada',
-      // DELETE /impressao e gerente, embora REGISTRAR impressao seja operador:
-      // o operador lanca o que imprimiu e nao desfaz o historico.
+      // DELETE /impressao e PUT /impressao/:id/data sao gerente, embora
+      // REGISTRAR impressao seja operador: o operador lanca o que imprimiu e nao
+      // desfaz nem remarca o historico.
       actions: pode.gerente ? [
+        {
+          icon: ICONS.schedule,
+          title: 'Corrigir a data',
+          onClick: (registro) => corrigirData(registro),
+        },
         {
           icon: ICONS.delete,
           title: 'Excluir registro',
@@ -681,10 +779,9 @@ export async function renderPedidoDetails(container, { params }) {
   /**
    * Card de detalhe cujas linhas ENTRAM E SAEM conforme o valor do campo.
    *
-   * Ate 2026-08-04 as 21 linhas dos quatro cards eram fixas, e a linha sem
-   * valor escrevia um traco. Medido na producao: das 14 linhas opcionais, so
-   * 39% das posicoes tinham valor, e o endereco de entrega tinha 3 em 164. O
-   * traco nao informa nada e empurra para baixo o que informa. E o mesmo
+   * Com linhas fixas, a que nao tem valor escreve um traco. A maioria das
+   * posicoes opcionais e vazia, e o traco nao informa nada: ele so empurra para
+   * baixo o que informa. E o mesmo
    * defeito que a docstring de `criarInfoRow` ja registrava dentro da linha:
    * ele parava na fronteira do card.
    *
@@ -743,7 +840,7 @@ export async function renderPedidoDetails(container, { params }) {
    * confundir o contato do pedido com o da OM faz alguem ligar para a pessoa
    * errada.
    *
-   * O chefe pediu (2026-08-04) que a subsecao vazia sumisse com titulo e tudo,
+   * O chefe pediu que a subsecao vazia sumisse com titulo e tudo,
    * para nao gastar linha a toa. NAO FOI FEITO, e a razao esta na regra que o
    * teste desta tela fixa: o pedido do teste nao tem contato nenhum, nem o
    * proprio nem o da OM, e ainda assim exige os dois titulos na tela
@@ -771,7 +868,7 @@ export async function renderPedidoDetails(container, { params }) {
   // Quatro cards, SEMPRE visiveis. Antes havia um card "Resumo" fixo mais um
   // bloco "Detalhes do pedido" colapsado, e os dois repetiam cliente, DIEx,
   // NUP, data e prazo. Cada dado aparece UMA vez, e nada fica escondido atras
-  // de um clique (chefe, 2026-07-27). O card fica; a LINHA vazia dele some.
+  // de um clique. O card fica; a LINHA vazia dele some.
   const cardsEl = el('div', { className: 'detail-cards', style: { marginBottom: 'var(--space-md)' } }, [
     criarCard('Pedido', [
       ['dataPedido', 'Data do pedido'],
@@ -782,9 +879,8 @@ export async function renderPedidoDetails(container, { params }) {
       // agosto so aparece com as duas datas lado a lado. O "alterado em" tambem
       // e o que mostra qual pedido em aberto esta parado.
       //
-      // SO A DATA, sem o autor. A migracao gravou um unico login em 164 de 164
-      // pedidos na criacao e em 159 de 164 na atualizacao (medido na producao
-      // em 2026-08-04), entao "quem" hoje e ruido, e nao dado. Nao foi
+      // SO A DATA, sem o autor. A carga inicial gravou um unico login em quase
+      // todos os pedidos, entao "quem" hoje e ruido, e nao dado. Nao e
       // esquecimento: `usuario_criacao_nome` e `usuario_atualizacao_nome`
       // chegam na resposta e ficam de fora de proposito. Quando os pedidos
       // cadastrados a mao forem a maioria, a linha do autor entra aqui.
@@ -798,9 +894,8 @@ export async function renderPedidoDetails(container, { params }) {
       ['enderecoEntrega', 'Endereço de entrega'],
       // DOIS contatos, de proposito, e cada um debaixo do proprio titulo. O do
       // pedido costuma vir no DIEx e vale so para ele; o da OM e o geral, usado
-      // quando o pedido nao traz um. Ate 2026-08-04 os dois eram uma linha
-      // cada, e o rotulo da linha era quem dizia de quem era o telefone: com a
-      // linha vazia saindo do DOM, o titulo passa a ser quem separa os dois.
+      // quando o pedido nao traz um. Com a linha vazia saindo do DOM, o TITULO
+      // e quem separa os dois: o rotulo da linha sozinho nao daria conta.
       subsecao('Contato do pedido', [
         ['contatoPedido', 'Ponto de contato'],
       ]),
@@ -818,7 +913,7 @@ export async function renderPedidoDetails(container, { params }) {
       ['metaPit', 'Meta do PIT'],
     ]),
     // A forma e a data de entrega deixaram de ser do ITEM e passaram a ser do
-    // PEDIDO (decisao do chefe, 2026-07-30): o pedido inteiro sai numa remessa
+    // PEDIDO: o pedido inteiro sai numa remessa
     // so. Por isso as duas colunas sairam da tabela de itens e viram estas
     // duas linhas.
     //
@@ -880,14 +975,13 @@ export async function renderPedidoDetails(container, { params }) {
         label: 'Produto',
         sortable: true,
         // O nome LEVA a ficha do produto no acervo. Quem le o pedido pergunta
-        // "que carta e essa" e ate 2026-08-04 tinha de sair da tela e buscar o
-        // nome a mao. A rota #/acervo/busca?produto_id= e a mesma que a tela de
+        // "que carta e essa", e sem o link tem de sair da tela e buscar o nome a
+        // mao. A rota #/acervo/busca?produto_id= e a mesma que a tela de
         // rastreabilidade usa para o agregado acervo:produto: a ficha do
         // produto abre em dialogo, de dentro da busca, e nao tem rota propria.
         //
-        // Item AVULSO nao tem produto do acervo (6 dos 2.423 itens, medidos na
-        // producao em 2026-08-04) e fica como texto: link que nao leva a nada e
-        // pior do que texto.
+        // Item AVULSO nao tem produto do acervo, e fica como texto: link que
+        // nao leva a nada e pior do que texto.
         render: (row) => {
           const nome = row.produto_nome || '-';
           if (!row.produto_id) return nome;
@@ -921,13 +1015,12 @@ export async function renderPedidoDetails(container, { params }) {
         key: 'quantidade_fornecida',
         label: 'Qtd. fornecida',
         // Fornecida e IMPRESSA sao coisas diferentes, e as duas ficam na
-        // tabela por decisao do chefe (2026-07-30): a fornecida e o que foi
+        // tabela por decisao do chefe: a fornecida e o que foi
         // ENTREGUE, e faz par com tipo_midia_fornecida_id; a impressa e o que
         // saiu do plotter.
         //
-        // Divergir entre as duas e ALARME de dado errado, nao caso comum:
-        // medido na producao em 2026-07-30, os 1.928 itens do acervo nunca
-        // divergiram. Por isso a marca so aparece quando ha diferenca.
+        // Divergir entre as duas e ALARME de dado errado, e nao caso comum. Por
+        // isso a marca so aparece quando ha diferenca.
         render: (row) => {
           if (row.quantidade_fornecida == null) return '-';
           const fornecida = Number(row.quantidade_fornecida);
@@ -1096,11 +1189,10 @@ export async function renderPedidoDetails(container, { params }) {
 
   // --- Histórico do pedido ---------------------------------------------------
   /**
-   * A seção de histórico virou o componente compartilhado `components/historico/`
-   * em 2026-08-02, e com ela foi embora um defeito que esta tela carregava desde
-   * que o histórico nasceu.
+   * A seção de histórico é o componente compartilhado `components/historico/`, e
+   * não código daqui.
    *
-   * O QUE HAVIA AQUI. Cinco colunas montadas à mão, sendo a última um
+   * O QUE NÃO SE FAZ AQUI: cinco colunas montadas à mão, sendo a última um
    * `campos_alterados.join(', ')`: a tela mostrava o NOME DA COLUNA DO BANCO
    * ("situacao_pedido_id, prazo") e mais nada. Quem lia sabia que algo mudou,
    * sem saber DE QUÊ PARA QUÊ, enquanto `dados_antes` e `dados_depois` chegavam
@@ -1188,7 +1280,7 @@ export async function renderPedidoDetails(container, { params }) {
     L.palavrasChave.definir((pedido.palavras_chave || []).join(', '));
     L.demandante.definir(pedido.demandante);
     L.omds.definir(pedido.omds);
-    L.previstoPit.definir(pedido.previsto_pit ? 'Sim' : 'Não');
+    L.previstoPit.definir(formatBoolean(pedido.previsto_pit));
     L.metaPit.definir(pedido.meta_pit_codigo);
 
     L.formaEntrega.definir(pedido.forma_entrega_nome);
@@ -1231,7 +1323,7 @@ export async function renderPedidoDetails(container, { params }) {
   async function load() {
     // A ROLAGEM MORRE NO QUE AINDA SE REMONTA. O histórico troca a tabela dele
     // por dentro a cada `recarregar()`, o documento encolhe e o navegador prende
-    // a rolagem no topo. Medido na tela vizinha em 2026-08-04: 304 px viravam 0.
+    // a rolagem no topo.
     const recarga = montado;
     const rolagem = typeof window !== 'undefined' ? (window.scrollY || 0) : 0;
 
@@ -1254,8 +1346,8 @@ export async function renderPedidoDetails(container, { params }) {
       avisar(err.message || 'Pedido não encontrado', true);
 
       // O pedido some, o histórico NÃO. Registrar quem removeu é metade do que o
-      // chefe pediu (item 8, 2026-07-30), e sem isto essa metade ficava gravada
-      // e inalcançável: `auditoria.evento` não tem chave estrangeira nenhuma,
+      // sistema registra, e sem isto essa metade fica gravada e inalcançável:
+      // `auditoria.evento` não tem chave estrangeira nenhuma,
       // justamente para sobreviver à exclusão, e a rota do histórico não exige
       // que o registro exista. Quem chega aqui por link antigo vê quem apagou e
       // quando.

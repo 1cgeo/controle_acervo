@@ -53,11 +53,20 @@ class EditLoteDialog(QDialog, FORM_CLASS):
 
     def load_projects(self):
         response = self.api_client.get('projetos/projeto')
-        if response and 'dados' in response:
-            projects = response['dados']
-            self.projectComboBox.clear()
-            for project in projects:
-                self.projectComboBox.addItem(project['nome'], project['id'])
+        if not response or 'dados' not in response:
+            # Sem projeto no combo não há como salvar o lote, e o campo em
+            # branco não explica por quê.
+            QMessageBox.warning(
+                self, "Projetos indisponíveis",
+                "Não foi possível carregar a lista de projetos.\n\n"
+                "Todo lote pertence a um projeto, então feche esta janela, "
+                "confira a conexão com o servidor e tente de novo."
+            )
+            return
+
+        self.projectComboBox.clear()
+        for project in response['dados']:
+            self.projectComboBox.addItem(project['nome'], project['id'])
 
     def update_end_date_minimum(self, new_start_date):
         self.endDateEdit.setMinimumDate(new_start_date)
@@ -68,7 +77,6 @@ class EditLoteDialog(QDialog, FORM_CLASS):
     def load_lote(self):
         self.nameLineEdit.setText(self.lote_data.get('nome') or '')
         self.pitLineEdit.setText(self.lote_data.get('pit') or '')
-        # `or ''` cobre descricao nula (coluna nulável no banco)
         self.descriptionTextEdit.setPlainText(self.lote_data.get('descricao') or '')
 
         self.startDateEdit.setDate(QDateTime.fromString(self.lote_data['data_inicio'], Qt.DateFormat.ISODate).date())

@@ -77,7 +77,7 @@ controller.getGbPorVolume = async () => {
   );
 }
 
-controller.getUltimosCarregamentos = async () => {
+controller.getUltimosCarregamentos = async (total = 10) => {
   return db.conn.any(`
     SELECT 
       a.id, a.uuid_arquivo, a.nome, a.nome_arquivo, a.versao_id, a.tipo_arquivo_id,
@@ -88,11 +88,11 @@ controller.getUltimosCarregamentos = async () => {
       v.orgao_produtor
     FROM acervo.arquivo a
     LEFT JOIN acervo.versao v ON a.versao_id = v.id
-    ORDER BY a.data_cadastramento DESC 
-    LIMIT 10`);
+    ORDER BY a.data_cadastramento DESC
+    LIMIT $<total>`, { total });
 };
 
-controller.getUltimasModificacoes = async () => {
+controller.getUltimasModificacoes = async (total = 10) => {
   return db.conn.any(`
     SELECT 
       a.id, a.uuid_arquivo, a.nome, a.nome_arquivo, a.versao_id, a.tipo_arquivo_id,
@@ -104,12 +104,13 @@ controller.getUltimasModificacoes = async () => {
     FROM acervo.arquivo a
     LEFT JOIN acervo.versao v ON a.versao_id = v.id
     WHERE a.data_modificacao IS NOT NULL 
-    ORDER BY a.data_modificacao DESC 
-    LIMIT 10`
+    ORDER BY a.data_modificacao DESC
+    LIMIT $<total>`,
+    { total }
   );
 };
 
-controller.getUltimosDeletes = async () => {
+controller.getUltimosDeletes = async (total = 10) => {
   return db.conn.any(`
     SELECT 
       id, uuid_arquivo, nome, nome_arquivo, motivo_exclusao, versao_id, 
@@ -118,8 +119,9 @@ controller.getUltimosDeletes = async () => {
       crs_original, descricao, data_cadastramento, usuario_cadastramento_uuid, 
       data_modificacao, usuario_modificacao_uuid, data_delete, usuario_delete_uuid
     FROM acervo.arquivo_deletado 
-    ORDER BY data_delete DESC 
-    LIMIT 10`
+    ORDER BY data_delete DESC
+    LIMIT $<total>`,
+    { total }
   );
 };
 
@@ -227,15 +229,14 @@ controller.getVersionStatistics = async () => {
 /**
  * Crescimento do armazenamento, mês a mês.
  *
- * O ACUMULADO INCLUI O SALDO ANTERIOR À JANELA, desde 2026-08-04. Antes, a soma
- * corrente começava do zero no primeiro mês mostrado, então a série "GB
- * Acumulados" terminava no total dos últimos 12 meses e o cartão "Armazenamento
- * Total" mostrava o acervo inteiro. Dois números com o mesmo nome, na mesma
- * tela, discordando, e nenhum dos dois dizia qual era qual.
+ * O ACUMULADO INCLUI O SALDO ANTERIOR À JANELA. Somando a partir do zero no
+ * primeiro mês mostrado, a série "GB Acumulados" termina no total dos últimos 12
+ * meses enquanto o cartão "Armazenamento Total" mostra o acervo inteiro: dois
+ * números com o mesmo nome, na mesma tela, discordando.
  *
- * O recorte também passou a nascer no INÍCIO DO MÊS (`date_trunc`), e não em
- * "hoje menos N meses": o mês mais antigo da série vinha pela metade, e o
- * primeiro ponto do gráfico ficava sistematicamente menor sem razão visível.
+ * O recorte nasce no INÍCIO DO MÊS (`date_trunc`), e não em "hoje menos N
+ * meses", senão o mês mais antigo vem pela metade e o primeiro ponto do gráfico
+ * fica sistematicamente menor sem razão visível.
  */
 controller.getStorageGrowthTrends = async (months = 12) => {
   return db.conn.any(`
@@ -390,7 +391,7 @@ controller.getSystemHealth = async () => {
       SELECT
         (SELECT COUNT(*) FROM acervo.versao) AS total_versoes,
         (SELECT COUNT(*) FROM acervo.projeto) AS total_projetos,
-        -- Janela de 30 DIAS, e não de 24 horas (chefe, 2026-07-30). Em 24 horas o
+        -- Janela de 30 DIAS, e não de 24 horas. Em 24 horas o
         -- cartão passava a maior parte do tempo em zero: download de acervo aqui
         -- é evento de dias, não de hora. O nome do campo acompanha a janela, para
         -- a tela não poder mostrar "30 dias" sobre um número de 24 horas.
@@ -455,10 +456,10 @@ controller.getSituacaoCarregamento = async () => {
 /**
  * Versões criadas, mês a mês.
  *
- * Mesma correção do `getStorageGrowthTrends` (2026-08-04): o "Acumulado" soma o
- * SALDO ANTERIOR à janela, senão ele termina no total dos últimos 12 meses
- * enquanto o cartão "Total de Versões" mostra o acervo inteiro. E o recorte
- * nasce no início do mês, para o primeiro ponto não vir pela metade.
+ * Mesma regra do `getStorageGrowthTrends`: o "Acumulado" soma o SALDO ANTERIOR à
+ * janela, senão ele termina no total dos últimos 12 meses enquanto o cartão
+ * "Total de Versões" mostra o acervo inteiro. E o recorte nasce no início do
+ * mês, para o primeiro ponto não vir pela metade.
  */
 controller.getVersaoActivityTimeline = async (months = 12) => {
   return db.conn.any(`

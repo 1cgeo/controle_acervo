@@ -8,9 +8,8 @@ module.exports = {
   verifyLogin: require('./verify_login'),
   verifyAdmin: require('./verify_admin'),
   verifyPerfil: require('./verify_perfil'),
-  // Administrador global OU gerente de qualquer modulo, lendo o perfil do BANCO.
-  // Nasceu em 2026-08-02 para a leitura do PIT, que nao e de modulo nenhum e
-  // deixou de ser de qualquer pessoa logada (chefe).
+  // Administrador global OU gerente de qualquer módulo, lendo o perfil do BANCO.
+  // Guarda a leitura do PIT, que não é de módulo nenhum.
   verifyGerente: require('./verify_gerente'),
   // `senha` e `loginCtrl.conferirSenha` saem daqui porque autenticar e o que
   // ESTA feature faz. `usuario/` importa dos dois em vez de chamar o bcrypt por

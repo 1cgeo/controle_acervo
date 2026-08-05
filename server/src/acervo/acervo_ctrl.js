@@ -12,7 +12,7 @@ const { temValor } = require('../utils/lista_schema');
 const { Readable } = require('stream');
 const { db } = require("../database");
 const invariantes = require("./invariantes");
-const { AppError, httpCode, domainConstants: { SUBTIPO_PRODUTO, TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, TIPO_VERSAO, STATUS_ARQUIVO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { TIPO_ESCALA, TIPO_ARQUIVO, TIPO_PRODUTO, TIPO_VERSAO, STATUS_ARQUIVO } } = require("../utils");
 const { auditoriaCtrl } = require("../auditoria");
 
 const {
@@ -459,7 +459,7 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
     );
   }
 
-  // Tileserver (tipo 9) é uma URL, sem arquivo físico em volume — não é baixável.
+  // Tileserver (tipo 9) é uma URL, sem arquivo físico em volume. Não é baixável.
   // Sem esta checagem seriam criados registros de download órfãos (sem token retornado).
   const tileserver = existingArquivos.filter(a => a.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER);
   if (tileserver.length > 0) {
@@ -523,15 +523,9 @@ controller.confirmDownload = async (downloadConfirmations) => {
       const { download_token, success, error_message } = confirmation;
       
       // A EXPIRAÇÃO VALE AQUI, na hora do uso, e não só quando alguém limpa.
-      //
-      // Antes esta consulta casava só por `status = 'pending'`, e quem fechava o
-      // token vencido era o cron de hora em hora. Duas consequências: o token
-      // valia por até uma hora depois de expirar, e com o cron parado valia para
-      // sempre. O cron saiu em 2026-08-04, então a regra precisa morar onde o
-      // token é gasto. É o mesmo padrão de `ponto_controle/upload_ctrl.js:413`.
-      //
-      // A limpeza continua existindo, e virou arrumação: ela troca o status para
-      // 'failed' e faz o vencido parar de aparecer como pendente nas contagens.
+      // Não há agendamento que feche o token vencido, então a regra mora onde
+      // ele é gasto. Mesmo padrão de `ponto_controle/upload_ctrl.js`. A limpeza
+      // é ARRUMAÇÃO: ela troca o status e tira o vencido das contagens.
       const download = await t.oneOrNone(
         `SELECT d.id, d.arquivo_id, a.nome
          FROM acervo.download d
@@ -640,37 +634,19 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
   return filePaths;
 };
 
-// Cleanup function that can be called by a scheduled job
-// SELECT de função retorna 1 linha — usar .any(), nunca .none()
 /**
- * Fecha os downloads pendentes cuja validade venceu, e DIZ QUANTOS.
+ * Fecha o que expirou, downloads E uploads, num ato só, e DIZ QUANTOS.
  *
- * Duas coisas mudaram em 2026-08-04, e as duas eram sobre prova.
+ * Isto é ARRUMAÇÃO, e não a regra de expiração: download vencido já é recusado
+ * no `confirmDownload`, tenha a limpeza rodado ou não.
  *
- * 1. A operação passa a registrar QUEM mandou rodar. Ela era a única das quatro
- *    operações de manutenção sem autor no rastro, apesar de o comentário de
- *    `auditoria_ctrl.registrarOperacao` afirmar que as quatro registravam.
- * 2. Ela devolve a contagem. Antes o SQL era uma função `RETURNS void`, então a
- *    tela anunciava "downloads expirados marcados como falhos" sem número
- *    nenhum: a confirmação era eco da própria chamada, e não medida. Agora o
- *    UPDATE é daqui e o `RETURNING` conta as linhas que ele mesmo mexeu.
+ * O UPDATE é daqui, e não a função do banco, para o `RETURNING` contar as linhas
+ * que ele mesmo mexeu: "limpou" sem número é eco da chamada, e não medida.
  *
- * A função `acervo.cleanup_expired_downloads()` continua no banco, e o CRON
- * passou a chamar ESTE controlador em vez dela: a regra de quando um download
- * vence vive num lugar só, e as duas cópias divergiriam com o tempo.
- *
- * @param {string|null} usuarioUuid - nulo quando é o cron que roda
+ * @param {string|null} usuarioUuid
  * @param {Object|null} contexto
- * @returns {Promise<{fechados:number}>}
+ * @returns {Promise<{fechados:number, uploads_fechados:number}>}
  */
-// Limpa o que expirou: downloads E uploads, num ato só.
-//
-// Os dois andavam juntos no cron de hora em hora, e separá-los agora obrigaria
-// o administrador a lembrar de duas rotas para a mesma ideia. Desde 2026-08-04
-// não há cron: alguém manda rodar, e o retorno diz o que fechou dos dois lados.
-//
-// Isto é ARRUMAÇÃO, e não a regra de expiração. Download vencido já é recusado
-// no `confirmDownload`, tenha a limpeza rodado ou não.
 controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null) => {
   return db.conn.tx(async t => {
     const fechados = await t.any(`
@@ -695,8 +671,7 @@ controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null)
 
     const resultado = { fechados: fechados.length, uploads_fechados: pendentes };
 
-    // Quem mandou rodar sempre é registrado, mesmo sem nada a fazer: sem cron,
-    // toda execução tem uma pessoa por trás, e "rodei e não havia nada" é
+    // Toda execução tem uma pessoa por trás, e "rodei e não havia nada" é
     // informação de auditoria legítima.
     if (usuarioUuid || resultado.fechados > 0 || resultado.uploads_fechados > 0) {
       await auditoriaCtrl.registrarOperacao(t, {
@@ -807,19 +782,15 @@ controller.getSituacaoGeralJSON = async (scaleOptions = {}) => {
       archive.on('end', () => resolve(Buffer.concat(chunks)));
       archive.on('error', (err) => reject(err));
       
-      const allScales = [
-        { id: TIPO_ESCALA.ESCALA_25K, name: '25k', description: '1:25.000' },
-        { id: TIPO_ESCALA.ESCALA_50K, name: '50k', description: '1:50.000' },
-        { id: TIPO_ESCALA.ESCALA_100K, name: '100k', description: '1:100.000' },
-        { id: TIPO_ESCALA.ESCALA_250K, name: '250k', description: '1:250.000' }
-      ];
-      
-      const selectedScales = allScales.filter(scale => 
+      // A lista sai de SITUACAO_GERAL_ESCALAS, e não de uma cópia local: eram
+      // três cópias do mesmo par (código do domínio, sufixo de arquivo) neste
+      // arquivo, e escala nova entraria numa e não nas outras.
+      const selectedScales = SITUACAO_GERAL_ESCALAS.filter(scale =>
         scaleOptions[scale.name] === true
       );
-      
+
       // If no scales selected, use all scales
-      const scalesToUse = selectedScales.length > 0 ? selectedScales : allScales;
+      const scalesToUse = selectedScales.length > 0 ? selectedScales : SITUACAO_GERAL_ESCALAS;
       
       for (const scale of scalesToUse) {
         const data = await generateGeoJSONForScale(scale.id);
@@ -851,12 +822,9 @@ controller.getPlanilhaCSV = async (scaleOptions = {}) => {
       archive.on('end', () => resolve(Buffer.concat(chunks)));
       archive.on('error', (e) => reject(e));
 
-      const todasEscalas = [
-        { id: TIPO_ESCALA.ESCALA_250K, name: '250k' },
-        { id: TIPO_ESCALA.ESCALA_100K, name: '100k' },
-        { id: TIPO_ESCALA.ESCALA_50K, name: '50k' },
-        { id: TIPO_ESCALA.ESCALA_25K, name: '25k' }
-      ];
+      // A MESMA lista da situação geral, só que da maior escala para a menor,
+      // que é a ordem das abas da planilha de referência da ASC.
+      const todasEscalas = [...SITUACAO_GERAL_ESCALAS].reverse();
       const selecionadas = todasEscalas.filter(e => scaleOptions[e.name] === true);
       const escalas = selecionadas.length > 0 ? selecionadas : todasEscalas;
       const tipos = [
@@ -881,7 +849,8 @@ controller.getPlanilhaCSV = async (scaleOptions = {}) => {
               v.nome,
               v.orgao_produtor,
               (SELECT a.crs_original FROM acervo.arquivo a
-                 WHERE a.versao_id = v.id AND a.tipo_arquivo_id = 1 LIMIT 1) AS epsg,
+                 WHERE a.versao_id = v.id
+                   AND a.tipo_arquivo_id = ${TIPO_ARQUIVO.ARQUIVO_PRINCIPAL} LIMIT 1) AS epsg,
               EXTRACT(YEAR FROM v.data_criacao)::int AS ano_dados,
               EXTRACT(YEAR FROM v.data_edicao)::int AS ano_edicao,
               v.versao,
@@ -939,20 +908,18 @@ const situacaoEdicoes = (edicoes) => {
 // com os anos de edição vindos de v.data_edicao (finalização).
 //
 // Só entra versão REGULAR. O Registro Histórico (tipo_versao_id = 2) documenta
-// que uma edição existiu, e por definição não tem arquivo: em 2026-07-30 eram
-// 408 no acervo, todas Carta Topográfica e todas sem nenhum arquivo. Contá-lo
-// pintava de "Concluído" folha que o acervo não entrega, e respondia "já temos"
-// no roteamento de demanda para carta que ninguém pode baixar nem imprimir.
-// Por isso o corte fica aqui, no núcleo, e vale para as duas rotas.
+// que uma edição existiu e por definição não tem arquivo: contá-lo pintava de
+// "Concluído" folha que o acervo não entrega, e respondia "já temos" no
+// roteamento de demanda para carta que ninguém pode baixar nem imprimir. Por
+// isso o corte fica aqui, no núcleo, e vale para as duas rotas.
 //   - incluirGeom: inclui a geometria (cara); a rota pública omite por padrão.
 //   - filtroIds: Set de MI/INOM normalizados; quando presente, limita às folhas
 //     pedidas (modo por identificador da skill consultar-produtos).
 //   - intersecta: lista de geometrias GeoJSON (EPSG:4326) da área de interesse.
 //     Quando presente, só entram as folhas cuja fração coberta pela área supera
-//     `limiar`. O recorte roda no PostGIS, onde a grade já está indexada: antes
-//     disso o vault baixava a grade inteira e cruzava com geopandas, o que além
-//     de lento punha uma segunda implementação do predicado espacial fora do
-//     sistema, livre para divergir dele.
+//     `limiar`. O recorte roda no PostGIS, onde a grade já está indexada, e não
+//     fora do sistema: uma segunda implementação do predicado espacial fica
+//     livre para divergir desta.
 controller.getSituacaoGeralCells = async (
   scaleId,
   { incluirGeom = true, filtroIds = null, intersecta = null, limiar = 0.01 } = {}
@@ -1092,9 +1059,8 @@ async function generateGeoJSONForScale(scaleId) {
 //    refina o que sobrou. Só o ST_Intersects também funciona, mas paga
 //    geometria exata em linha que a caixa já teria descartado.
 // 3. O subtipo casa no PRODUTO ou em QUALQUER VERSÃO. `produto.subtipo_produto_id`
-//    só é preenchido quando o subtipo DEFINE o produto (367 de 5.741 em
-//    2026-07-28); o subtipo do dia a dia (T34-700, ET-RDG, EDGV) vive na versão,
-//    e sozinho o T34-700 responde por 1.765 produtos.
+//    só é preenchido quando o subtipo DEFINE o produto; o subtipo do dia a dia
+//    (T34-700, ET-RDG, EDGV) vive na versão, e é a maioria do acervo.
 //
 // `exceto` PULA um filtro. É o que faz as listas de opção serem facetadas: a
 // lista de escalas aplica tipo, subtipo, termo e recorte, mas nunca a própria
@@ -1105,8 +1071,8 @@ function montarFiltrosBusca(f, exceto = null) {
   const conditions = [];
   const params = {};
   // `temValor` e nao a verdade do JavaScript: os filtros de dominio chegam como
-  // ARRAY desde 2026-08-04, e array vazio e verdadeiro. Sem isto, desmarcar a
-  // ultima opcao montaria `IN ()` e derrubaria a consulta.
+  // ARRAY, e array vazio e verdadeiro. Sem isto, desmarcar a ultima opcao
+  // montaria `IN ()` e derrubaria a consulta.
   const usa = (chave) => chave !== exceto && temValor(f[chave]);
 
   if (f.termo) {
@@ -1193,12 +1159,10 @@ function montarFiltrosBusca(f, exceto = null) {
     }
   }
 
-  // Filtro por LUGAR (chefe, 2026-07-29). O recorte e espacial e nao um campo
-  // do produto: nenhum produto guarda municipio, e guardar seria duplicar o que
-  // a geometria ja diz. Medido em producao com os 5.743 produtos: 6 ms por
-  // municipio e 11 ms por estado, com o indice GIST de `limites`. Por isso NAO
-  // ha tabela de associacao materializada: ela custaria manutencao para poupar
-  // milissegundos.
+  // Filtro por LUGAR. O recorte e espacial e nao um campo do produto: nenhum
+  // produto guarda municipio, e guardar seria duplicar o que a geometria ja diz.
+  // Com o indice GIST de `limites` a consulta custa milissegundos, entao NAO ha
+  // tabela de associacao materializada.
   //
   // Produto que cruza a divisa aparece nos DOIS municipios, de proposito: a
   // pergunta e "o que existe em X", e a folha que cobre metade de X existe la.
@@ -1241,11 +1205,10 @@ function montarFiltrosBusca(f, exceto = null) {
   };
 }
 
-// Busca paginada de produtos (fase 3 do portal do acervo, chefe 2026-07-25).
+// Busca paginada de produtos.
 //
-// Recebe UM objeto, e não uma fila de argumentos posicionais. Eram onze, e a
-// ordem já custou um 500 em produção quando um parâmetro novo entrou no meio:
-// com objeto, acrescentar filtro não desloca nada.
+// Recebe UM objeto, e não uma fila de argumentos posicionais: são mais de dez
+// filtros, e com objeto acrescentar um não desloca os outros.
 //
 // O `extent` devolvido é a caixa de TODO o resultado, não a da página: é o que
 // deixa o mapa enquadrar a busca inteira, mesmo listando 20 de 800.
@@ -1292,7 +1255,8 @@ controller.buscaProdutos = async (filtros = {}) => {
         -- Subtipo QUE DEFINE O PRODUTO, e não o da versão. Ele é o que separa
         -- dois produtos que, sem ele, saem idênticos na lista: a mesma folha
         -- tem a carta padrão e a Carta Topográfica Militar como produtos
-        -- distintos (51 pares em 2026-07-28, dos 52 que repetem MI+tipo+escala).
+        -- distintos, e sao a quase totalidade dos pares que repetem
+        -- MI+tipo+escala.
         -- Sem esta coluna, os dois cartões ficavam indistinguíveis, e a lista
         -- parecia estar mostrando versões do mesmo produto.
         sp.nome AS subtipo_produto,
@@ -1351,7 +1315,11 @@ controller.buscaProdutos = async (filtros = {}) => {
 // `truncado` avisa quando o teto cortou o conjunto. Truncar em silêncio seria
 // repetir, em escala maior, o mesmo defeito que esta rota veio corrigir.
 controller.buscaGeometrias = async (filtros = {}) => {
-  const limit = filtros.limit || 5000;
+  // O padrão é o MESMO de `acervo_schema.buscaGeometrias`. Ficaram divergentes
+  // (5.000 aqui contra 20.000 lá), e a rota nunca chegava neste ramo porque o
+  // Joi já preenche o `limit`: quem chamasse o controlador direto pegava um teto
+  // que o acervo inteiro estoura, e a camada do mapa voltaria truncada.
+  const limit = filtros.limit || 20000;
 
   return db.conn.task(async t => {
     const { whereClause, params } = montarFiltrosBusca(filtros);
@@ -1368,7 +1336,7 @@ controller.buscaGeometrias = async (filtros = {}) => {
               -- padrão. Ele é resquício de uma versão antiga do GeoJSON, a RFC
               -- 7946 o removeu e o MapLibre o ignora. Medido no PostGIS 3.4.1:
               -- 172 bytes por geometria contra 116, num corpo que traz o acervo
-              -- INTEIRO (5.741 produtos em 2026-07-28).
+              -- INTEIRO.
               ST_AsGeoJSON(p.geom, 9, 0) AS geom,
               -- Ponto de rótulo, calculado aqui e não no navegador.
               --

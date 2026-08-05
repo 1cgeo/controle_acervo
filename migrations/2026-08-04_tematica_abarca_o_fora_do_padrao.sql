@@ -1,6 +1,6 @@
 -- Migracao 2026-08-04: Carta tematica passa a abarcar o que foge do padrao.
 --
--- Decisao do chefe (2026-08-04). O tipo de produto passa a nomear a LINHA DE
+-- Decisao do chefe. O tipo de produto passa a nomear a LINHA DE
 -- PRODUCAO padrao, e o tipo 7 (Carta tematica) vira a prateleira do que nao cabe
 -- nela. Tres movimentos:
 --
@@ -116,7 +116,7 @@ UPDATE acervo.versao
 -- ---------------------------------------------------------------------------
 -- 3c. Split: 19 produtos empilham DUAS naturezas na mesma folha
 -- ---------------------------------------------------------------------------
--- Achado no ensaio da migracao sobre o dado real (2026-08-04). Estes 19
+-- Achado no ensaio da migracao sobre o dado real. Estes 19
 -- produtos tem DUAS versoes, ambas rotuladas "1ª Edição", que nao sao edicoes
 -- uma da outra:
 --   - subtipo 3, Carta Ortoimagem de verdade (backfill do BDGEx ostensivo de

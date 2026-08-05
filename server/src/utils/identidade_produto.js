@@ -13,9 +13,7 @@ const httpCode = require('./http_code')
  * O problema que esta função resolve é outro. Estourar o índice devolve erro
  * genérico de restrição, sem dizer QUAL produto já ocupa a identidade nem o que
  * fazer em seguida; e num cadastro em lote, o estouro no último item derruba a
- * transação inteira depois de o operador ter preenchido tudo. Antes de 2026-08-04
- * só o assistente de carregamento conferia isto antes, então a mensagem dependia
- * do botão que a pessoa tinha apertado.
+ * transação inteira depois de o operador ter preenchido tudo.
  *
  * O `COALESCE(...,0)` e o recorte `mi IS NOT NULL` são os MESMOS do índice, e
  * têm de continuar sendo: carta especial e campo de instrução têm `mi` nulo e

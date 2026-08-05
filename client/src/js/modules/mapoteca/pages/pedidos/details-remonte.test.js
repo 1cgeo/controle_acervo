@@ -1,11 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O QUE ESTE ARQUIVO GUARDA.
 //
 // O detalhe do pedido remontava a tela INTEIRA a cada gravacao: o `load()`
 // limpava o `root` e montava tudo de novo, as tres tabelas inclusive. Quem
 // gravava perdia a busca, a ordenacao, a pagina, a selecao e o foco, e a tela
-// encolhia e esticava. O chefe mediu isso em 2026-08-04: "quando edita a UI
+// encolhia e esticava. O chefe mediu isso: "quando edita a UI
 // reconstroi que torna muito chato ficar editando pois a tela fica se movendo".
 //
 // Nenhum teste daqui afirma layout nem regra de negocio: os outros quatro
@@ -35,8 +36,6 @@ vi.mock('@services/rastreabilidade-service.js', () => ({
 import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /**
  * Itens do pedido. Sao 25 para a paginacao existir (a pagina e de 10), e o

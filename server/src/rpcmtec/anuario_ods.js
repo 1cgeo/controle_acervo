@@ -3,23 +3,22 @@
 // O Anuário Estatístico (Tabela 5.4.9) gerado A PARTIR DA PLANILHA-SEMENTE que
 // a DSG recebe, e não redesenhado.
 //
-// O PROBLEMA que isto resolve. Até 2026-08-01 o .ods era montado do zero, por um
-// construtor em `utils/ods_export`: cabeçalho de coluna nosso, largura de coluna
-// nossa, formato de número nosso. O resultado tinha os números certos e não era
-// o arquivo da DSG -- e o destino dele é uma aba de uma planilha que já existe,
-// conferida linha a linha por quem recebe. "Parecido" ali não serve.
+// O PROBLEMA que isto resolve. Montado do zero, o .ods sai com cabeçalho,
+// largura de coluna e formato de número NOSSOS: números certos num arquivo que
+// não é o da DSG. O destino dele é uma aba de uma planilha que já existe,
+// conferida linha a linha por quem recebe, e "parecido" ali não serve.
 //
-// COMO FUNCIONA. `modelos/anuario_estatistico_5_4_9.ods` é o arquivo real de
-// junho de 2026, versionado como SEMENTE. Gerar é abrir esse ZIP, trocar SÓ o
+// COMO FUNCIONA. `modelos/anuario_estatistico_5_4_9.ods` é um arquivo real,
+// versionado como SEMENTE. Gerar é abrir esse ZIP, trocar SÓ o
 // texto e o valor das células da matriz dentro de `content.xml`, e reescrever o
 // resto byte a byte. Estilo, largura de coluna, célula mesclada, fonte, nota de
 // rodapé e o formato numérico que mostra zero como '-' continuam sendo os do
 // arquivo original, porque nunca são tocados.
 //
 // TODA célula de valor da matriz é reescrita, inclusive as que dão zero. Não é
-// zelo: deixar de escrever uma célula deixaria ali o número de JUNHO DE 2026, a
-// semente, num relatório de outro mês. É o modo de falhar mais perigoso deste
-// arquivo, e a única defesa é escrever todas.
+// zelo: deixar de escrever uma célula deixaria ali o número DA SEMENTE num
+// relatório de outro mês. É o modo de falhar mais perigoso deste arquivo, e a
+// única defesa é escrever todas.
 //
 // O CASAMENTO É POR RÓTULO, e o número de linhas é conferido. Casar por posição
 // faria uma linha a mais na semente deslocar a matriz inteira em silêncio, com
@@ -31,8 +30,7 @@
 // estão preenchidas, e são justamente as duas colunas que o SCA não sabe
 // preencher: mantida, a fórmula zeraria a coluna Exército de toda linha que
 // tivesse entrega. Quem preenche o arquivo à mão já digita por cima dessas
-// fórmulas (na edição de junho de 2026, toda linha com número tem literal, e só
-// as zeradas mantiveram o `=SUM`), então escrever valor é o que a Seção faz.
+// fórmulas, então escrever valor é o que a Seção faz.
 //
 // O QUE ISSO CUSTA, e é real: o arquivo entregue fica todo literal, então
 // corrigir uma linha à mão depois NÃO atualiza a linha de total. Quem corrigir

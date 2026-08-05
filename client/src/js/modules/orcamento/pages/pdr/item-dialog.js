@@ -19,8 +19,8 @@ import { criarHistorico } from '@components/historico/historico.js';
 /**
  * Bloco de fatos de auditoria do registro: quando e por quem.
  *
- * O historico de alteracoes so tem linha a partir de 2026-07-30, e os itens do
- * PDR foram gravados em 2026-06-15: para todas as pecas atuais o historico abre
+ * O historico de alteracoes e mais novo que os itens do PDR ja gravados: para
+ * eles ele abre
  * vazio, e a data de cadastro e a unica rastreabilidade em tela.
  *
  * @param {Object} registro - linha com as quatro colunas de auditoria

@@ -26,9 +26,8 @@ export const TIPO_CLIENTE_LAI = 9;
 // 3 Marinha. Todo o resto (órgão público, empresa, pessoa física, LAI) é civil.
 export const TIPOS_CLIENTE_MILITAR = [1, 2, 3];
 
-// Campos que só o pedido militar usa. Medido na produção em 2026-07-30:
-// demandante preenchido em 100 de 100 militares e 0 de 33 civis; operação em
-// 33 militares e 0 civis; previsto no PIT em 3 militares e 0 civis.
+// Campos que só o pedido militar usa: demandante, OMDS, operação e o vínculo
+// com o PIT. Em pedido civil eles ficam vazios.
 const CAMPOS_SO_MILITAR = ['demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit_id'];
 
 // Campos que só o pedido de civil usa. Canal de recebimento preenchido em 33 de
@@ -68,10 +67,9 @@ function campoVazio(field) {
 /**
  * Mostra só os campos do modo, escondendo o campo do OUTRO modo que está VAZIO.
  *
- * O campo PREENCHIDO nunca some, mesmo fora do modo. Medido na produção em
- * 2026-07-30: os 33 pedidos civis têm omds gravado com o valor constante
- * "1º CGEO". Esconder às cegas deixaria dado gravado e invisível, e ninguém
- * conseguiria corrigi-lo.
+ * O campo PREENCHIDO nunca some, mesmo fora do modo: há pedido civil com OMDS
+ * gravado, e esconder às cegas deixaria dado gravado e invisível, sem ninguém
+ * conseguir corrigi-lo.
  *
  * A visibilidade não muda o payload: getValues lê todos os campos, então o
  * campo escondido continua enviando o valor que já tinha.
@@ -130,7 +128,7 @@ export function createPedidoFormFields({
   metas = [],
 }) {
   const fields = {
-    // Etapa 1 — Básico
+    // Etapa 1, Básico
     cliente_id: createSelectField({
       label: 'Cliente',
       required: true,
@@ -150,9 +148,8 @@ export function createPedidoFormFields({
     }),
     // Esta data e a que o cliente ve na consulta publica, como "data de
     // envio/entrega": na pratica o pedido fecha no dia em que o material sai
-    // (medido em 2026-07-29: 51 de 52 pedidos com item datado tem esta data
-    // igual a maior data de entrega dos itens). Por isso NAO existe um campo
-    // separado de data de envio.
+    // e essa data casa com a maior data de entrega dos itens. Por isso NAO
+    // existe um campo separado de data de envio.
     data_atendimento: createDateField({
       label: 'Data de atendimento (envio/entrega)',
       value: isoDateOrEmpty(pedido && pedido.data_atendimento),
@@ -173,7 +170,7 @@ export function createPedidoFormFields({
       maxLength: 255,
     }),
 
-    // Etapa 2 — Adicional
+    // Etapa 2, Adicional
     // Contato DESTE pedido, que costuma vir no DIEx. E diferente do contato
     // geral da OM (mapoteca.cliente.ponto_contato_principal), que fica no
     // cadastro do cliente e vale para todos os pedidos dela.
@@ -200,9 +197,8 @@ export function createPedidoFormFields({
       value: (pedido && pedido.operacao) || '',
     }),
     // A forma de entrega e do PEDIDO, nao do item: o pedido inteiro sai numa
-    // remessa so. Medido na producao em 2026-07-30: dos 91 pedidos com item, so
-    // 1 tinha itens com formas diferentes. O campo saiu do item por decisao do
-    // chefe na mesma data.
+    // remessa so. Item com forma propria e caso raro o bastante para nao pagar
+    // uma coluna.
     forma_entrega_id: createSelectField({
       label: 'Forma de entrega',
       options: formasEntrega.map(f => ({ value: f.code, label: f.nome })),
@@ -218,9 +214,8 @@ export function createPedidoFormFields({
       label: 'Previsto no PIT',
       checked: Boolean(pedido && pedido.previsto_pit),
     }),
-    // Lista do PIT do ano, e não texto digitado: até 2026-07-31 este campo era
-    // um código à mão ('4.1') porque a tabela de metas morava no schema do
-    // orçamento e a mapoteca não a alcançava. A meta NÃO se deriva do material
+    // Lista do PIT do ano, e não texto digitado: código à mão ('4.1') não casa
+    // com a meta e apodrece na virada do ano. A meta NÃO se deriva do material
     // do item: a correlação 4.1 sulfite / 4.2 tyvek / 4.3 glossy valeu só em
     // 2026, e o PIT é reescrito todo ano.
     meta_pit_id: createSelectField({
@@ -266,7 +261,7 @@ export function createPedidoFormFields({
       helpText: 'Obrigatório quando a situação é Cancelado (RN03)',
     }),
 
-    // Dados de pedido de CIVIL (LAI/órgão/empresa/pessoa) — opcionais; deixe
+    // Dados de pedido de CIVIL (LAI/órgão/empresa/pessoa), opcionais. Deixe
     // em branco para pedido de OM.
     canal_recebimento_id: createSelectField({
       label: 'Canal de recebimento (civil)',

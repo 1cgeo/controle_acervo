@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O jsdom devolve null em canvas.getContext('2d'), e o Chart real estoura no
 // primeiro update com dado. Sem este dublê o try/catch do load() engolia a
@@ -9,15 +10,12 @@ vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js')
 // Smoke test do dashboard. A carga chama getExecucaoNd e popula os
 // cards/grafico/tabela a partir da LISTA de linhas por ND (com a linha TOTAL).
 //
-// A rota era /orcamento/relatorio/secao3 e devolvia { tabela_31, ..., tabela_37 }
-// ate 2026-08-01, quando o RPCMTec saiu do modulo. Das sete tabelas o painel so
-// lia a 3.1, entao a rota nova devolve a lista direto. Desde 2026-08-04 ela vem
-// em { linhas, pendencias }: as pendencias de dado do ano andam junto porque o
-// registro sem data entra em TODOS os meses.
+// A rota devolve { linhas, pendencias }: as pendências de dado do ano andam
+// junto da execução porque o registro sem data entra em TODOS os meses.
 //
-// `getAnos` alimenta o filtro de ano DA TELA. O ano saiu da navbar e do
-// localStorage em 2026-08-04 (chefe): cada tela tem o seu, comeca no ano atual
-// e nao guarda nada. Por isso nenhum teste aqui escreve em localStorage.
+// `getAnos` alimenta o filtro de ano DA TELA. Cada tela tem o seu, começa no
+// ano atual e não guarda nada. Por isso nenhum caso aqui escreve em
+// localStorage.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getExecucaoNd: vi.fn(),
   getAnos: vi.fn(),
@@ -26,8 +24,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderDashboard } from '@modules/orcamento/pages/dashboard/index.js';
 import { getExecucaoNd, getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { instanciasChart } from '@components/charts/chart-stub.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const ANO_ATUAL = new Date().getFullYear();
 
@@ -40,7 +36,7 @@ const LINHAS = [
   { cod_nd: 'TOTAL', nd_nome: 'TOTAL', previsto: 100, recebido: 50, recebido_pdr: 35, recebido_extra: 15, recolhido: 8, recolhido_pdr: 5, recolhido_extra: 3, empenhado: 40, empenhado_pdr: 25, empenhado_extra: 15, liquidado: 30, liquidado_pdr: 18, liquidado_extra: 12 },
 ];
 
-// Os numeros reais de 2026 em 2026-08-04. A NC sem data ja esta zerada, e serve
+// Os numeros reais de 2026. A NC sem data ja esta zerada, e serve
 // para provar que a pendencia sem ocorrencia NAO vira linha.
 const PENDENCIAS = {
   ne_sem_data: { n: 25, total: 30 },
@@ -204,9 +200,8 @@ describe('renderDashboard: as tres abas', () => {
 });
 
 describe('renderDashboard: o filtro de ano da tela', () => {
-  // O ano saiu da navbar e do localStorage: cada tela tem o seu e comeca no ano
-  // atual. Sem esta assercao, o painel poderia voltar a ler um ano guardado sem
-  // que nada avisasse.
+  // O painel tem filtro de ano próprio e começa no ano atual. Sem esta
+  // asserção, ele poderia passar a ler um ano guardado sem que nada avisasse.
   test('abre no ano atual e oferece os anos com dado', async () => {
     const { container, cleanup } = await montar();
 

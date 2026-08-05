@@ -2,7 +2,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO, CATEGORIA_MATERIAL } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -66,11 +66,11 @@ const pedidoBase = {
   // raw(): preserva a string 'AAAA-MM-DD' que o formulario manda. As colunas
   // sao DATE, entao nenhum fuso entra no caminho (nem o do Node, nem o da
   // sessao do banco). Sem raw(), o Joi converteria para Date e o D-1 voltaria.
-  data_pedido: Joi.date().raw().required(),
+  data_pedido: Joi.date().iso().raw().required(),
   data_atendimento: Joi.when('situacao_pedido_id', {
     is: SITUACAO_PEDIDO.CONCLUIDO,
-    then: Joi.date().raw().min(Joi.ref('data_pedido')).required(),
-    otherwise: Joi.date().raw().min(Joi.ref('data_pedido')).allow(null)
+    then: Joi.date().iso().raw().min(Joi.ref('data_pedido')).required(),
+    otherwise: Joi.date().iso().raw().min(Joi.ref('data_pedido')).allow(null)
   }),
   cliente_id: Joi.number().integer().required(),
   situacao_pedido_id: Joi.number().integer().valid(...Object.values(SITUACAO_PEDIDO)).required(),
@@ -78,21 +78,17 @@ const pedidoBase = {
   documento_solicitacao: Joi.string().max(255).allow(null, ''),
   documento_solicitacao_nup: Joi.string().max(255).allow(null, ''),
   endereco_entrega: Joi.string().allow(null, ''),
-  // Como o material sai daqui. Era campo do ITEM até 2026-07-30, e subiu para o
-  // pedido: 1 pedido em 91 tinha mais de uma forma entre os itens.
+  // Como o material sai daqui. É campo do PEDIDO, e não do item.
   forma_entrega_id: Joi.number().integer().valid(...Object.values(FORMA_ENTREGA)).allow(null),
   palavras_chave: Joi.array().items(Joi.string()).default([]),
   operacao: Joi.string().allow(null, ''),
-  prazo: Joi.date().raw().allow(null),
+  prazo: Joi.date().iso().raw().allow(null),
   demandante: Joi.string().max(255).allow(null, ''),
   omds: Joi.string().max(255).allow(null, ''),
   previsto_pit: Joi.boolean().default(false),
-  // Meta do PIT que o pedido atende, por CHAVE ESTRANGEIRA para pit.meta. Era o
-  // código digitado à mão ('4.1') até 2026-07-31, quando a tabela de metas saiu
-  // do schema `orcamento` e passou a ser dado de plataforma. NÃO se deriva do
-  // material: em 2026 a Meta 4 é impressão e os sub-itens são o material (4.1
-  // sulfite, 4.2 tyvek, 4.3 glossy), mas o PIT é reescrito todo ano e a
-  // numeração muda com ele.
+  // Meta do PIT que o pedido atende, por CHAVE ESTRANGEIRA para `pit.meta`, e
+  // nunca pelo código digitado à mão. NÃO se deriva do material: a numeração das
+  // metas é reescrita todo ano.
   meta_pit_id: Joi.when('previsto_pit', {
     is: true,
     then: Joi.number().integer().strict().required(),
@@ -145,12 +141,10 @@ models.produtoPedidoIds = Joi.object().keys({
     .required()
 })
 
-// RN08: todo item de pedido referencia EXATAMENTE UM produto identificado.
-//
-// Até 2026-07-30 isso queria dizer "uma versão do acervo", e uuid_versao era
-// obrigatório. Hoje o destino pode ser o acervo OU um produto avulso, e o
-// .xor() abaixo é o que garante o "exatamente um": sem ele passaria item sem
-// destino nenhum, e o CHECK do banco viraria erro 500 em vez de 400 limpo.
+// RN08: todo item de pedido referencia EXATAMENTE UM produto identificado, que
+// pode ser uma versão do acervo OU um produto avulso. O `.xor()` abaixo é o que
+// garante o "exatamente um": sem ele passaria item sem destino nenhum, e o CHECK
+// do banco viraria erro 500 em vez de 400 limpo.
 const produtoPedidoBase = {
   uuid_versao: Joi.string().guid().allow(null),
   // O avulso se descreve no proprio item, sem catalogo: ele e impresso de
@@ -163,10 +157,9 @@ const produtoPedidoBase = {
   quantidade_fornecida: Joi.number().integer().min(0).allow(null),
   tipo_midia_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).required(),
   tipo_midia_fornecida_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).allow(null),
-  // Sem forma_entrega_id e sem data_entrega: as duas são do PEDIDO desde
-  // 2026-07-30. Corpo antigo que ainda as mande cai no stripUnknown do
-  // schemaValidation, que descarta a chave e devolve o aviso no envelope. É o
-  // que se quer: o campo mudou de lugar, e o cliente velho fica sabendo.
+  // Sem `forma_entrega_id` e sem `data_entrega`: as duas são do PEDIDO. Corpo
+  // que ainda as mande cai no `stripUnknown` do `schemaValidation`, que descarta
+  // a chave e devolve o aviso no envelope.
   observacao: Joi.string().allow(null, ''),
   producao_especifica: Joi.boolean().default(false)
 }
@@ -190,18 +183,12 @@ models.produtoPedidoId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
-// CORRECAO de um registro de impressao ja gravado (2026-08-04).
+// CORRECAO de um registro de impressao ja gravado.
 //
-// Existe por um caso real: 1.751 das 1.753 impressoes de producao foram
-// CARREGADAS em tres dias de julho e cobrem pedidos de novembro de 2025 a
-// julho de 2026, entao a data que elas guardam e a da carga. Com o consumo de
-// papel derivado da impressao, isso jogaria a impressao de sete meses dentro de
-// julho.
-//
-// Sem esta rota, corrigir exigiria apagar e recriar, o que perde o registro e o
-// rastro dele. O MOTIVO e obrigatorio: mudar quando um gasto aconteceu muda o
-// numero que o RPCMTec reporta naquele mes, e quem le o historico depois
-// precisa saber por que.
+// Com o consumo de papel derivado da impressao, data errada joga o gasto no mes
+// errado do RPCMTec. Sem esta rota, corrigir exigiria apagar e recriar, o que
+// perde o registro e o rastro dele. O MOTIVO e obrigatorio: quem le o historico
+// depois precisa saber por que o numero do mes mudou.
 models.impressaoId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
@@ -219,10 +206,8 @@ models.registroImpressao = Joi.object().keys({
         produto_pedido_id: Joi.number().integer().required(),
         quantidade: Joi.number().integer().min(1).required(),
         observacao: Joi.string().allow(null, ''),
-        // QUANDO a impressao aconteceu (2026-08-04). Ate aqui a coluna sempre
-        // recebia `now()`, e quem registrava depois do fato gravava a data de
-        // hoje: registrar na segunda o que se imprimiu na sexta jogava o
-        // consumo para o mes errado. Omitido, continua sendo agora.
+        // QUANDO a impressao aconteceu. Sem ele, registrar na segunda o que se
+        // imprimiu na sexta joga o consumo para o mes errado. Omitido, e agora.
         //
         // TIMESTAMP, e nao dia: a coluna e `TIMESTAMP WITH TIME ZONE`, e duas
         // impressoes do mesmo dia tem ordem.
@@ -256,7 +241,7 @@ models.plotter = Joi.object().keys({
   ativo: Joi.boolean().default(true),
   nr_serie: Joi.string().max(255).required(),
   modelo: Joi.string().max(255).required(),
-  data_aquisicao: Joi.date().raw().allow(null),
+  data_aquisicao: Joi.date().iso().raw().allow(null),
   vida_util: Joi.number().integer().allow(null).description('Vida útil em meses')
 })
 
@@ -265,7 +250,7 @@ models.plotterAtualizacao = Joi.object().keys({
   ativo: Joi.boolean().required(),
   nr_serie: Joi.string().max(255).required(),
   modelo: Joi.string().max(255).required(),
-  data_aquisicao: Joi.date().raw().allow(null),
+  data_aquisicao: Joi.date().iso().raw().allow(null),
   vida_util: Joi.number().integer().allow(null).description('Vida útil em meses')
 })
 
@@ -279,7 +264,7 @@ models.manutencaoPlotterIds = Joi.object().keys({
 
 models.manutencaoPlotter = Joi.object().keys({
   plotter_id: Joi.number().integer().required(),
-  data_manutencao: Joi.date().raw().required(),
+  data_manutencao: Joi.date().iso().raw().required(),
   valor: Joi.number().precision(2).positive().required(),
   descricao: Joi.string().allow(null, '')
 })
@@ -287,7 +272,7 @@ models.manutencaoPlotter = Joi.object().keys({
 models.manutencaoPlotterAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   plotter_id: Joi.number().integer().required(),
-  data_manutencao: Joi.date().raw().required(),
+  data_manutencao: Joi.date().iso().raw().required(),
   valor: Joi.number().precision(2).positive().required(),
   descricao: Joi.string().allow(null, '')
 })
@@ -303,19 +288,21 @@ models.tipoMaterialIds = Joi.object().keys({
 const tipoMaterialBase = {
   nome: Joi.string().max(100).required(),
   descricao: Joi.string().allow(null, ''),
-  // Papel (1), Tinta (2) ou Outro (3), de dominio.categoria_material. É o que
-  // separa as tabelas 7.2 e 7.3 do RPCMTec. O default 3 é deliberado: material
-  // sem categoria escolhida fica FORA das duas tabelas, e faltar de uma tabela
-  // é visível, ao contrário de aparecer na errada.
-  categoria_id: Joi.number().integer().valid(1, 2, 3).default(3),
+  // Papel, Tinta ou Outro, de dominio.categoria_material. É o que separa as
+  // tabelas 7.2 e 7.3 do RPCMTec. O default Outro é deliberado: material sem
+  // categoria escolhida fica FORA das duas tabelas, e faltar de uma tabela é
+  // visível, ao contrário de aparecer na errada.
+  categoria_id: Joi.number()
+    .integer()
+    .valid(...Object.values(CATEGORIA_MATERIAL))
+    .default(CATEGORIA_MATERIAL.OUTRO),
   // Inteiros: contam o MESMO material que o estoque e o consumo, em unidade.
   estoque_minimo: Joi.number().integer().min(0).allow(null),
   meta_anual: Joi.number().integer().min(0).allow(null),
-  // A MIDIA cuja impressao gasta este material (2026-08-04). E o que faz o
-  // consumo de papel sair da impressao, em vez de depender de alguem lancar
-  // consumo a mao -- que ninguem lanca. SO PAPEL: o CHECK do banco recusa a
-  // tinta apontando midia, porque quanto de cartucho uma folha gasta depende do
-  // que esta desenhado nela.
+  // A MIDIA cuja impressao gasta este material. E o que faz o consumo de papel
+  // sair da impressao, em vez de depender de alguem lancar consumo a mao. SO
+  // PAPEL: o CHECK do banco recusa a tinta apontando midia, porque quanto de
+  // cartucho uma folha gasta depende do que esta desenhado nela.
   tipo_midia_id: Joi.number().integer().min(1).allow(null),
   ativo: Joi.boolean().default(true)
 }
@@ -332,7 +319,7 @@ models.tipoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   ...tipoMaterialBase,
   ativo: Joi.boolean(),
-  categoria_id: Joi.number().integer().valid(1, 2, 3),
+  categoria_id: Joi.number().integer().valid(...Object.values(CATEGORIA_MATERIAL)),
   tipo_midia_id: Joi.number().integer().min(1).allow(null)
 })
 
@@ -347,9 +334,9 @@ models.estoqueMaterialIds = Joi.object().keys({
 // quantidade aceita 0 (CHECK do banco é >= 0; consumo/transferência podem
 // zerar o estoque e correções manuais precisam poder registrar zero).
 //
-// INTEIRA desde 2026-07-30 (chefe): material conta-se em UNIDADE, e meia folha
-// não existe. As colunas do banco também são INTEGER, então aceitar 1,5 aqui só
-// produziria um 400 mais adiante, ou um arredondamento silencioso.
+// INTEIRA: material conta-se em UNIDADE, e meia folha não existe. As colunas do
+// banco também são INTEGER, então aceitar 1,5 aqui só produziria um 400 mais
+// adiante, ou um arredondamento silencioso.
 models.estoqueMaterial = Joi.object().keys({
   tipo_material_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().min(0).required(),
@@ -374,14 +361,14 @@ models.consumoMaterialIds = Joi.object().keys({
 models.consumoMaterial = Joi.object().keys({
   tipo_material_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().positive().required(),
-  data_consumo: Joi.date().raw().required()
+  data_consumo: Joi.date().iso().raw().required()
 })
 
 models.consumoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   tipo_material_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().positive().required(),
-  data_consumo: Joi.date().raw().required()
+  data_consumo: Joi.date().iso().raw().required()
 })
 
 // Esquemas para GET by ID (sem .strict(): params de URL chegam como string
@@ -404,8 +391,8 @@ models.tipoMaterialId = Joi.object().keys({
 
 // Esquemas para filtragem de consumo
 models.consumoMaterialFiltro = Joi.object().keys({
-  data_inicio: Joi.date().raw(),
-  data_fim: Joi.date().raw(),
+  data_inicio: Joi.date().iso().raw(),
+  data_fim: Joi.date().iso().raw(),
   tipo_material_id: Joi.number().integer()
 })
 
@@ -431,13 +418,19 @@ models.transferenciaEstoque = Joi.object()
     return value
   })
 
-// Esquemas de query para dashboards legados
-models.mesesQuery = Joi.object().keys({
-  meses: Joi.number().integer().min(1).max(60)
-})
-
-models.limiteQuery = Joi.object().keys({
-  limite: Joi.number().integer().min(1).max(100)
+// Query da fila de pedidos abertos (GET /pedido/em_aberto). Escolhe QUAL fila:
+// falso é a de impressão (o que falta imprimir), verdadeiro é a de atendimento
+// (o que falta fechar, com o pedido Remetido junto). As duas listas moram em
+// `query_fragments.js`.
+//
+// O default é falso porque o plugin do QGIS já instalado chama a rota sem query
+// nenhuma, e ele quer a fila de impressão. Quem quiser a outra pede.
+//
+// Sem `.strict()`, e de propósito: o valor vem da URL, e ali `true` é a STRING
+// 'true'. O Joi converte por padrão, que é a única forma pela qual o parâmetro
+// pode chegar. Exercitado: '' vira 400, 'true' vira true, ausente vira false.
+models.filaQuery = Joi.object().keys({
+  incluir_remetidos: Joi.boolean().default(false)
 })
 
 // Esquema de query para consultas anuais (dashboards sem export)
@@ -470,10 +463,9 @@ models.relatorioQuery = models.anoQuery.keys({
   formato: Joi.string().valid('json', 'csv').default('json')
 })
 
-// O esquema do Anuário Estatístico saiu daqui em 2026-08-01, junto com a rota,
-// para server/src/rpcmtec/. Lá ele é o mesmo `gerarQuery` do relatório (ano e
-// mês, os dois obrigatórios): o Anuário e o RPCMTec são sempre do mesmo mês, e
-// deixá-los com esquemas separados só permitiria gerar os dois desencontrados.
+// O esquema do Anuário Estatístico vive em server/src/rpcmtec/, e é o mesmo
+// `gerarQuery` do relatório: o Anuário e o RPCMTec são sempre do mesmo mês, e
+// esquemas separados só permitiriam gerar os dois desencontrados.
 
 // --- Anexos do pedido -------------------------------------------------------
 
@@ -519,11 +511,10 @@ models.etiquetaEnvio = Joi.object().keys({
 })
 
 // --- Auditoria do pedido ----------------------------------------------------
-
-// Parâmetro de rota do pedido (id) para ler o histórico dele. Não exige que o
-// pedido ainda exista: a auditoria sobrevive ao pedido apagado.
-models.auditoriaPedidoParams = Joi.object().keys({
-  id: Joi.number().integer().required()
-})
+//
+// O `auditoriaPedidoParams` saiu junto com a rota `GET /pedido/:id/auditoria`
+// que o usava. O histórico do pedido sai por
+// `GET /api/auditoria/mapoteca/pedido/:id`, e os parâmetros dela moram em
+// `auditoria/auditoria_schema.js`.
 
 module.exports = models

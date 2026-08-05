@@ -300,10 +300,17 @@ function blocoCampos (schemaJoi, titulo, avisarStrip) {
   return linhas
 }
 
+// O nivel vem do guard da rota no server/ (verifyPerfil no modulo acervo, ou
+// verifyAdmin). Os perfis sao hierarquicos: gerente alcanca o que operador
+// alcanca, e operador o que consulta alcanca. O administrador e global e passa
+// em qualquer um.
 const ACESSO = {
   publico: 'publico (sem login)',
   login: 'exige login',
-  admin: 'exige ADMIN'
+  consulta: 'exige perfil CONSULTA no modulo acervo',
+  operador: 'exige perfil OPERADOR no modulo acervo',
+  gerente: 'exige perfil GERENTE no modulo acervo',
+  admin: 'exige ADMINISTRADOR'
 }
 
 /** Texto completo do contrato de um recurso: uma secao por operacao real. */
@@ -491,17 +498,10 @@ module.exports = {
   indice,
   camposDe,
   ehArrayNoTopo,
-  dependenciasDe,
-  descreverCampo,
-  tipoDe,
   sufixoValores,
-  alinhar,
-  blocoCampos,
   validarCorpo,
   validarQuery,
   defaultsAusentes,
   numerosStrict,
-  explicarErro,
-  OPCOES_CORPO,
-  OPCOES_QUERY
+  explicarErro
 }

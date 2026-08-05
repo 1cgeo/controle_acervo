@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -8,8 +9,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderMateriaisList } from '@modules/mapoteca/pages/materiais/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const MATERIAIS = [
   {

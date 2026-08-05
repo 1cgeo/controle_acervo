@@ -1,12 +1,10 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// A forma de entrega e a data de entrega deixaram de ser do ITEM e passaram a
-// ser do PEDIDO (decisao do chefe, 2026-07-30). Medido na producao no mesmo dia:
-// dos 91 pedidos com item, so 1 tinha itens com formas diferentes e NENHUM tinha
-// datas diferentes.
+// A forma de entrega e a data de entrega são do PEDIDO, nunca do ITEM.
 //
-// Este arquivo prova o lado CLIENTE da mudanca nas quatro telas: o dialogo do
-// item, o formulario do pedido, o detalhe e o wizard.
+// Este arquivo prova o lado CLIENTE da regra nas quatro telas: o diálogo do
+// item, o formulário do pedido, o detalhe e o wizard.
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockMapotecaService();
@@ -26,8 +24,6 @@ import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js'
 import { renderPedidoWizard } from '@modules/mapoteca/pages/pedidos/wizard.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import * as acervo from '@modules/mapoteca/services/acervo-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const FORMAS = [{ code: 1, nome: 'Correios' }, { code: 2, nome: 'Entrega em mãos' }];
 const CLIENTES = [{ id: 1, nome: '1º CGEO', tipo_cliente_id: 1 }];

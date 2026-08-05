@@ -32,7 +32,7 @@ function escreverValor(no, seletor, valor) {
  * Cliente details page (#/clientes/:id): statistics cards, contact info,
  * recent orders (link to order details) and the edit dialog.
  *
- * A PÁGINA SE MONTA UMA VEZ, e a carga só repinta (2026-08-04). Antes, cada
+ * A PÁGINA SE MONTA UMA VEZ, e a carga só repinta. Antes, cada
  * gravação no diálogo chamava `load()`, e `load()` esvaziava a página inteira e
  * montava tudo de novo. Custava três coisas: a tabela de pedidos voltava para a
  * página 1 (o estado dela mora no OBJETO da tabela, que era jogado fora), o foco
@@ -285,9 +285,8 @@ export async function renderClienteDetails(container, { params }) {
   // isso que ele existe: a seção que o chefe gostou lá vale em toda ficha, e
   // copiá-la seria a segunda versão a divergir na primeira correção.
   //
-  // Fica FORA do `load()` de propósito, e desde 2026-08-04 isso vale de fato: o
-  // `load()` não esvazia mais o `root`, então a seção continua na tela depois de
-  // salvar, em vez de sumir.
+  // Fica FORA do `load()` de propósito: o `load()` não esvazia o `root`, então a
+  // seção continua na tela depois de salvar, em vez de sumir.
   historico = criarHistorico({
     modulo: 'mapoteca',
     entidade: 'cliente',

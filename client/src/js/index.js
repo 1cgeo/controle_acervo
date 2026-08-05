@@ -3,7 +3,7 @@ import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
 import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
 import Router, {
-  adminLoader, authLoader, gerenteLoader, perfilLoader, rastreabilidadeLoader, rotaRaiz,
+  adminLoader, authLoader, gerenteLoader, perfilLoader, rotaRaiz,
 } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
@@ -78,8 +78,8 @@ router.add('/login', standalone(renderLogin), {
 // Tela unica de usuarios: uma coluna por modulo. Administrador global.
 router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 
-// Acessos: o historico de login (dgeo.login), que nasceu com a fusao da
-// autenticacao em 2026-08-02. E a outra metade da area "Usuarios" da sidebar.
+// Acessos: o historico de login (`dgeo.login`), a outra metade da area
+// "Usuarios" da sidebar.
 //
 // `adminLoader` como a de cima, e pela mesma razao: quem entrou e quando nao e
 // dado de modulo nenhum, e nao existe perfil de "acessos". O servidor cobra o
@@ -90,28 +90,27 @@ router.add('/acessos', withLayout(renderAcessos), { guard: adminLoader });
 // pergunta de #/acessos, que registra quem ENTROU e nao o que a pessoa fez
 // depois de entrar.
 //
-// `rastreabilidadeLoader`, e nao `adminLoader`: a tela e do administrador global
-// (que ve os tres modulos e a plataforma) E do gerente de qualquer modulo (que
-// ve o dele). O recorte de verdade vem do servidor, no verifyRastreabilidade,
-// que le o perfil do BANCO a cada requisicao -- este guarda so evita abrir uma
-// tela que responderia 403.
+// `gerenteLoader`, e nao `adminLoader`: a tela e do administrador global (que ve
+// os tres modulos e a plataforma) E do gerente de qualquer modulo (que ve o
+// dele). O recorte de verdade vem do servidor, no verifyRastreabilidade, que le
+// o perfil do BANCO a cada requisicao -- este guarda so evita abrir uma tela que
+// responderia 403.
 //
 // NAO confundir com #/acervo/auditoria: aquela roda os invariantes do acervo,
 // mede a coerencia entre tabelas HOJE e nao diz quem produziu a incoerencia.
 router.add('/rastreabilidade', withLayout(renderRastreabilidade), {
-  guard: rastreabilidadeLoader,
+  guard: gerenteLoader,
 });
 
 // Meu perfil: os proprios dados e a troca da PROPRIA senha. `authLoader`, e nao
-// adminLoader: e a unica tela de plataforma que serve a todo mundo, e sem ela
-// ninguem troca a senha de ninguem a nao ser o administrador (por reset). Ela
-// nasceu em 2026-08-02, quando a autenticacao veio do Auth Server para o SCA.
+// `adminLoader`: e a unica tela de plataforma que serve a todo mundo, e sem ela
+// so o administrador troca senha, por reset.
 router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 
-// Metas do PIT: o plano anual da Divisao, que os tres modulos consomem. Saiu do
-// modulo orcamento em 2026-07-31 justamente porque quem so tem perfil na
-// mapoteca nao conseguia nem ver a lista. Sem `adminLoader`: LER e de qualquer
-// pessoa logada, e o backend cobra o administrador so na escrita.
+// Metas do PIT: o plano anual da Divisao, que os tres modulos consomem. Nao e
+// tela de modulo, senao quem so tem perfil na mapoteca nao veria a lista. Sem
+// `adminLoader`: LER e de qualquer pessoa logada, e o backend cobra o
+// administrador so na escrita.
 router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
 // As REVISOES do PIT. `authLoader` como as metas ao lado: qualquer pessoa
 // logada LE o plano anual e o que a DSG mudou nele, e o servidor cobra o
@@ -119,12 +118,11 @@ router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
 router.add('/revisoes_pit', withLayout(renderRevisoesPit), { guard: authLoader });
 
 // Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
-// Absorvida do SAP em 2026-08-02.
 //
-// `gerenteLoader`, e nao `authLoader`: a leitura passou a ser do gerente de
-// qualquer modulo e do administrador (chefe, 2026-08-02). O PIT e o compromisso
-// do ano, e quem responde por ele e quem responde pelo modulo. O servidor cobra
-// o mesmo, com verifyGerente, lendo o perfil do BANCO.
+// `gerenteLoader`, e nao `authLoader`: a leitura e do gerente de qualquer modulo
+// e do administrador. O PIT e o compromisso do ano, e quem responde por ele e
+// quem responde pelo modulo. O servidor cobra o mesmo, com `verifyGerente`,
+// lendo o perfil do BANCO.
 router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: gerenteLoader });
 
 // Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3). Mesma guarda,
@@ -136,7 +134,7 @@ router.add('/extra_pit', withLayout(renderExtraPitList), { guard: authLoader });
 // verifyAdmin no servidor. Com authLoader a tela abriria para levar 403.
 router.add('/aproveitamento', withLayout(renderAproveitamento), { guard: adminLoader });
 
-// A capacitacao e DUAS telas, em dois lugares do menu (chefe, 2026-08-02). A
+// A capacitacao e DUAS telas, em dois lugares do menu. A
 // MINISTRADA e servico que a Divisao presta, e fica em Producao; a RECEBIDA e
 // gente nossa em curso, e fica em Efetivo. A tabela do banco continua UMA: o que
 // muda entre as duas sao tres colunas.
@@ -145,8 +143,7 @@ router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), { gua
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de
 // PLATAFORMA porque a mesma edicao fala de acervo, mapoteca e orcamento, e o
-// chefe assina uma so; ela substituiu, em 2026-08-01, as duas telas que
-// geravam metade do relatorio cada (#/mapoteca/rpcmtec e #/orcamento/relatorio).
+// chefe assina uma so.
 //
 // `adminLoader`, e nao `authLoader`: o relatorio traz valor de credito, de
 // empenho e de liquidacao, e liberar por perfil de um modulo entregaria o

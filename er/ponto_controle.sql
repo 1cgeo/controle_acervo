@@ -226,7 +226,7 @@ CREATE TABLE ponto_controle.tipo_arquivo (
     maximo_por_ponto SMALLINT
 );
 
--- DOIS tipos, e nao nove (decisao do chefe, 2026-07-29). O acervo guarda a
+-- DOIS tipos, e nao nove. O acervo guarda a
 -- missao em dois arquivos por ponto: um pacote com tudo o que so se le junto, e
 -- a monografia, que e o documento que se busca sozinho. Sao tambem os dois
 -- unicos downloads que a tela oferece.

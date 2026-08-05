@@ -7,8 +7,8 @@ import { getPalavrasChave } from '@modules/acervo/services/acervo-service.js';
  *
  * O datalist nativo era o desenho anterior, e o problema dele e de altura: o
  * navegador escolhe sozinho quantas linhas mostrar, sem CSS que o alcance, e com
- * as vinte etiquetas que a rota devolve a lista abria cobrindo boa parte da tela
- * (chefe, 2026-07-28). Um popover nosso limita a altura, rola por dentro e
+ * as vinte etiquetas que a rota devolve a lista abria cobrindo boa parte da tela.
+ * Um popover nosso limita a altura, rola por dentro e
  * mantem o resto da tela visivel.
  *
  * O que se ganha junto, e que o datalist nao dava: a contagem de usos aparece

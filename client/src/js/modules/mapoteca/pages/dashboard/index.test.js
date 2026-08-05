@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O jsdom devolve null em canvas.getContext('2d'), e o Chart real estoura no
 // primeiro update com dado. Com o dublê os gráficos passam a receber dado de
@@ -13,10 +14,8 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderDashboard } from '@modules/mapoteca/pages/dashboard/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// O dashboard tem UM filtro de ano, no nivel da pagina, e abre no ano ATUAL
-// (chefe, 2026-08-04). O seletor da navbar acabou, e nada fica no localStorage.
+// O dashboard tem UM filtro de ano, no nivel da pagina, e abre no ano ATUAL.
+// O seletor da navbar acabou, e nada fica no localStorage.
 const ANO_ATUAL = new Date().getFullYear();
 const ANO_ANTERIOR = ANO_ATUAL - 1;
 
@@ -62,7 +61,7 @@ describe('renderDashboard da mapoteca', () => {
     });
     // DEZ clientes, porque a rota devolve um Top 10. Com dois, o teste de
     // paginacao ficava VAZIO: o rodape se esconde sozinho abaixo de 5 linhas,
-    // entao ele passava com ou sem `paginated: false`. Medido em 2026-07-27,
+    // entao ele passava com ou sem `paginated: false`.,
     // reintroduzindo o defeito de proposito.
     svc.getClientActivity.mockResolvedValue([
       { id: 7, nome: '1º CGEO', tipo_cliente: 'OM EB', total_pedidos: 12, pedidos_concluidos: 10, total_produtos: 340, total_impressoes: 1200, ultimo_pedido: '2026-06-10' },
@@ -94,7 +93,7 @@ describe('renderDashboard da mapoteca', () => {
     cleanup();
   });
 
-  // O Resumo Anual abre a pagina (chefe, 2026-07-27): e o numero de que a DGEO
+  // O Resumo Anual abre a pagina: e o numero de que a DGEO
   // presta contas. Virou a PRIMEIRA aba, e nao a primeira secao, mas a ordem
   // continua sendo uma decisao, e nao acaso.
   test('abre no Resumo Anual, e so ele busca dado', async () => {
@@ -127,7 +126,7 @@ describe('renderDashboard da mapoteca', () => {
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    // Todas as abas passaram a levar o ANO da pagina (2026-07-28). As janelas
+    // Todas as abas passaram a levar o ANO da pagina. As janelas
     // deslizantes ("ultimos 6 meses", "ultimos 12 meses") sairam junto: elas nao
     // tinham como respeitar um ano escolhido, porque continuariam terminando
     // hoje.
@@ -148,7 +147,7 @@ describe('renderDashboard da mapoteca', () => {
     cleanup();
   });
 
-  // As quatro secoes que o chefe mandou sair em 2026-07-27. O teste guarda a
+  // As quatro secoes que o chefe mandou sair. O teste guarda a
   // AUSENCIA, senao elas voltam em silencio numa refatoracao futura. Vale para a
   // tela e para a requisicao: painel removido nao pode seguir pedindo dado.
   test('nao monta os paineis removidos, nem pede o dado deles, em aba nenhuma', async () => {
@@ -162,10 +161,9 @@ describe('renderDashboard da mapoteca', () => {
       expect(container.textContent).not.toContain('Tipo de Mídia');
     }
 
-    // getPendingOrders SAIU desta lista em 2026-08-04. A rota existia desde
-    // sempre e nenhuma tela a chamava; agora a aba Pedidos a consome no bloco
-    // "Pedidos parados", que lista os pedidos abertos mais antigos. O laco
-    // acima abre a aba Pedidos, entao aqui ela ja foi chamada.
+    // A aba Pedidos consome getPendingOrders no bloco "Pedidos parados", que
+    // lista os pedidos abertos mais antigos. O laço acima abre aquela aba,
+    // então aqui a rota já foi chamada.
     expect(svc.getPendingOrders).toHaveBeenCalled();
     expect(svc.getPlotterStatus).not.toHaveBeenCalled();
     expect(svc.getEntregasPorMidia).not.toHaveBeenCalled();

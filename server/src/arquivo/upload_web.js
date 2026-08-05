@@ -7,22 +7,18 @@
 // cobre uma janela real: ali o servidor reserva o destino, o cliente copia os
 // bytes por SMB por conta própria, e volta depois para confirmar. Aqui os bytes
 // vêm DENTRO da requisição -- não há janela entre reservar e gravar, e portanto
-// não há o que a sessão cobrir. É o mesmo raciocínio que `/catalogar/product` já
-// registrou ("uma requisição, sem sessão"), e o custo de ignorá-lo era real:
-// sessão aberta que ninguém fecha vira linha pendurada em `upload_session` e
-// `.parcial` no volume, esperando o cron de 24 h.
+// não há o que a sessão cobrir. Com sessão, todo envio abandonado vira linha
+// pendurada em `upload_session` e `.parcial` no volume.
 //
 // O que se perde: reenviar SÓ o arquivo que falhou. Com uma chamada, a queda no
 // meio custa o envio inteiro. É aceitável porque o teto do caminho web é de
-// poucos GB (`UPLOAD_WEB_MAX_GB`) e a mediana em produção é de 6 a 11 MB; acima
-// disso o caminho continua sendo o plugin, que copia direto para o volume.
+// poucos GB (`UPLOAD_WEB_MAX_GB`); acima disso o caminho continua sendo o
+// plugin, que copia direto para o volume.
 //
 // O NOME FÍSICO NÃO VEM DO CLIENTE. Ele sai de `acervo.nome_arquivo_padrao`, a
-// mesma função que o invariante `7a` usa para auditar -- auditor e escritor são
-// a mesma regra, como já está escrito no cabeçalho de `renomearPadrao`. Deixar o
-// cliente nomear produzia uma linha de DEFECT no `7a` a cada envio: medido em
-// 2026-08-02, um arquivo subiu como `carta_ensaio` onde o padrão pedia
-// `CT_s12_2757-1-NE_1dsg`.
+// mesma função que o invariante `7a` usa para auditar: auditor e escritor são a
+// mesma regra. Deixar o cliente nomear produz uma linha de DEFECT no `7a` a
+// cada envio.
 //
 // ORDEM DAS PARTES DO MULTIPART: o campo `dados` tem de vir ANTES dos arquivos.
 // O destino de cada byte sai dos metadados, e eles são lidos enquanto o corpo
@@ -150,12 +146,9 @@ const construirPlano = async (dados, contexto) => {
       versao = dados.versao
 
       // Identidade do produto: espelha `unique_produto_identidade` com erro
-      // legível, em vez de deixar o índice estourar depois dos bytes.
-      //
-      // A regra mora em utils/identidade_produto.js desde 2026-08-04, e não mais
-      // aqui: ela existia SÓ neste caminho, então cadastrar pelo assistente dava
-      // 409 com instrução e cadastrar pelo formulário estourava o índice. A
-      // mesma regra escrita em dois lugares volta a divergir.
+      // legível, em vez de deixar o índice estourar depois dos bytes. A regra
+      // mora em `utils/identidade_produto.js` porque vale para TODO caminho de
+      // cadastro, e não só para este.
       await conferirIdentidadeLivre(t, produto)
     }
 
@@ -527,13 +520,14 @@ const limparParciais = async (plano, contexto = {}) => {
   }
 }
 
+// Só o que `arquivo_route.js` consome. Saíram daqui `extensaoDe` e
+// `SUFIXO_PARCIAL`, que nunca tiveram chamador fora deste arquivo, e o
+// reexporte de `TIPO_ARQUIVO`, que é constante de domínio: quem precisa dela a
+// importa de `utils/domain_constants`, e não deste módulo de upload.
 module.exports = {
   uploadWebVersao,
   uploadWebProduto,
   uploadWebArquivos,
   planoDaRequisicao,
-  limparParciais,
-  extensaoDe,
-  SUFIXO_PARCIAL,
-  TIPO_ARQUIVO
+  limparParciais
 }

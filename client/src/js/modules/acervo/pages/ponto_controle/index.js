@@ -3,6 +3,7 @@ import { reconciliar } from '@utils/reconciliar.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { chip } from '@components/status-chip.js';
+import { estadoErro } from '@components/estado-erro.js';
 import {
   buscarPontos, buscarPosicoes, getFacetas, baixarPontosCsv,
 } from '@modules/acervo/services/ponto-controle-service.js';
@@ -109,6 +110,15 @@ export async function renderPontoControle(container, ctx) {
 
   const query = ctx && ctx.query ? ctx.query : new URLSearchParams();
 
+  /**
+   * Caixa que veio no LINK, como 'minx,miny,maxx,maxy'.
+   *
+   * Vale so enquanto o mapa nao souber a propria area visivel: `caixaVisivel`
+   * devolve null ate ele terminar de carregar, e a primeira consulta sai antes
+   * disso. Sem ela, um link com `bbox` abria o acervo inteiro.
+   */
+  let bboxDoLink = query.get('bbox') || '';
+
   /** @type {Map<number, HTMLElement>} id -> cartao, para o realce cruzado. */
   const cartoesPorId = new Map();
   /**
@@ -142,7 +152,7 @@ export async function renderPontoControle(container, ctx) {
   /** Lista de codigos que veio na URL, como '1,3'. */
   const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
 
-  // Marcacao MULTIPLA (chefe, 2026-08-04), igual a busca do acervo: as duas
+  // Marcacao MULTIPLA, igual a busca do acervo: as duas
   // telas andam juntas, e um filtro que se usa de um jeito aqui e de outro la
   // seria a pessoa reaprendendo a interface ao trocar de aba.
   const projetoFiltro = criarFiltroMultiplo({
@@ -474,7 +484,11 @@ export async function renderPontoControle(container, ctx) {
       municipio_id: municipioFiltro.valores(),
       // O desenho VENCE a área visível: quem desenhou pediu aquele recorte, e
       // mandar os dois traria a interseção dos dois.
-      bbox: !areaDesenhada && seguirMapa ? mapa.caixaVisivel() : '',
+      // `caixaVisivel` devolve null ate o mapa terminar de carregar. Na
+      // primeira consulta de um link com `bbox`, isso descartava o recorte que
+      // o link trazia: a tela abria o acervo inteiro e a URL era reescrita sem
+      // ele. A caixa do link vale ate o mapa saber a propria.
+      bbox: !areaDesenhada && seguirMapa ? (mapa.caixaVisivel() || bboxDoLink) : '',
       geometria: areaDesenhada ? JSON.stringify(areaDesenhada) : '',
     };
   }
@@ -521,7 +535,12 @@ export async function renderPontoControle(container, ctx) {
       if (disposed || meu !== requisicao) return;
       showError(erro.message || 'Não foi possível consultar os pontos de controle');
       contador.textContent = 'A consulta falhou.';
-      lista.replaceChildren();
+      // Estado de ERRO, e nao lista em branco. A lista vazia ja tem uma frase
+      // propria ("Nenhum ponto de controle com esses filtros"), e apagar tudo
+      // era ainda pior: nao restava nem a frase nem um botao, e o toast some em
+      // segundos. Sem um caminho de volta, a unica saida era mexer num filtro.
+      cartoesPorId.clear();
+      lista.replaceChildren(estadoErro(erro, consultar));
       paginacao.replaceChildren();
     } finally {
       lista.removeAttribute('aria-busy');
@@ -591,7 +610,7 @@ export async function renderPontoControle(container, ctx) {
    * ANTERIOR, e a tela nao mostraria nada de errado.
    */
   function cartaoPonto(p) {
-    // Clicar no cartao ABRE A FICHA (chefe, 2026-07-31), igual a busca de
+    // Clicar no cartao ABRE A FICHA, igual a busca de
     // produtos. O cartao mostra um resumo, e o gesto natural sobre um resumo e
     // "quero ver o resto". Selecionar virou o botao do rodape, que diz o que faz.
     //
@@ -740,7 +759,7 @@ export async function renderPontoControle(container, ctx) {
     posicoesPorId.clear();
     for (const p of posicoes.pontos || []) posicoesPorId.set(Number(p.id), p);
 
-    // A lista se RECONCILIA (2026-08-04). Antes ela era refeita inteira a cada
+    // A lista se RECONCILIA. Antes ela era refeita inteira a cada
     // consulta, e a consulta dispara a cada tecla digitada e a cada arrasto do
     // mapa com "só na área do mapa": vinte cartões trocados de meio em meio
     // segundo. O foco do teclado morria com o nó, e a rolagem voltava ao topo.
@@ -807,9 +826,20 @@ export async function renderPontoControle(container, ctx) {
   // Os filtros ja nascem marcados com o que veio na URL (`valorInicial`), e por
   // isso a PRIMEIRA consulta ja os aplica. O nome de cada um chega depois, com
   // as facetas, e ate la o botao mostra o codigo.
-  if (query.get('bbox')) {
+  if (bboxDoLink) {
     seguirMapa = true;
     areaCheck.checked = true;
+    // Leva a camera ate a caixa do link. Sem isto, o mapa abriria no
+    // enquadramento padrao ao lado de uma lista filtrada por outra area.
+    const numeros = bboxDoLink.split(',').map(Number);
+    if (numeros.length === 4 && numeros.every(Number.isFinite)) {
+      mapa.enquadrar(numeros);
+    } else {
+      bboxDoLink = '';
+      seguirMapa = false;
+      areaCheck.checked = false;
+      showError('A área do link não pôde ser lida. A consulta seguiu sem ela.');
+    }
   }
 
   // Área que veio no link. GeoJSON quebrado no endereço não pode derrubar a

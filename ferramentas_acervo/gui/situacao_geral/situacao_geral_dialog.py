@@ -5,7 +5,6 @@ import zipfile
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QFileDialog
 from qgis.PyQt.QtCore import Qt
-from qgis.core import Qgis
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'situacao_geral_dialog.ui'))
@@ -32,6 +31,20 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
 
     def download_situacao(self):
         """Baixa os arquivos GeoJSON da situação geral."""
+        escalas = {
+            'scale25k': self.scale25kCheckBox,
+            'scale50k': self.scale50kCheckBox,
+            'scale100k': self.scale100kCheckBox,
+            'scale250k': self.scale250kCheckBox,
+        }
+        if not any(caixa.isChecked() for caixa in escalas.values()):
+            QMessageBox.warning(
+                self, "Escolha a escala",
+                "Marque pelo menos uma escala.\n\n"
+                "Sem escala marcada o servidor devolve um pacote vazio."
+            )
+            return
+
         temp_file_path = None
         try:
             # Obter diretório de destino
@@ -52,16 +65,11 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             self.downloadButton.setEnabled(False)
             self.setCursor(Qt.CursorShape.WaitCursor)
 
-            # Obter estados dos checkboxes
-            # Nota: o Joi do servidor converte a query para boolean; enviamos
-            # 'true'/'false' lowercase porque requests serializaria Python True
-            # como 'True', que o Joi.boolean() não aceita.
-            params = {
-                'scale25k': str(self.scale25kCheckBox.isChecked()).lower(),
-                'scale50k': str(self.scale50kCheckBox.isChecked()).lower(),
-                'scale100k': str(self.scale100kCheckBox.isChecked()).lower(),
-                'scale250k': str(self.scale250kCheckBox.isChecked()).lower()
-            }
+            # O Joi do servidor converte a query para boolean. Mande
+            # 'true'/'false' em minúsculas: o requests serializa o True do
+            # Python como 'True', que o Joi.boolean() não aceita.
+            params = {chave: str(caixa.isChecked()).lower()
+                      for chave, caixa in escalas.items()}
 
             self.progressBar.setValue(0)
             self.progressBar.setMaximum(100)
@@ -86,7 +94,9 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
             )
 
             if not success:
-                raise Exception("Falha no download do arquivo")
+                # O api_client já mostrou a causa (rede, 401, 403, 500).
+                self.statusLabel.setText("O download não foi concluído.")
+                return
 
             self.progressBar.setValue(90)
             self.statusLabel.setText("Extraindo arquivos...")
@@ -119,4 +129,5 @@ class DownloadSituacaoGeralDialog(QDialog, FORM_CLASS):
                 except OSError:
                     pass
             self.downloadButton.setEnabled(True)
+            self.progressBar.setVisible(False)
             self.setCursor(Qt.CursorShape.ArrowCursor)

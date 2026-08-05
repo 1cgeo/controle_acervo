@@ -1,10 +1,9 @@
 # Path: gui\ponto_controle\ponto_ficha_dialog.py
 """Ficha do ponto de controle.
 
-Segue a MESMA hierarquia da ficha web (`ponto-dialog.js`), e pelo mesmo motivo
-que ela foi refeita em 2026-07-31: a versão anterior era uma pilha de 56 linhas
-rótulo-valor com o mesmo peso, em que a latitude de oito casas saía igual ao
-"Fuso" e os arquivos ficavam no fim, depois de sete blocos.
+Segue a MESMA hierarquia da ficha web (`ponto-dialog.js`). A ordem é a resposta
+a uma pilha de 56 linhas rótulo-valor com o mesmo peso, em que a latitude de
+oito casas sai igual ao "Fuso":
 
   1. O que IDENTIFICA o ponto (coordenada, altitude, método, data) vem no topo.
   2. Os ARQUIVOS vêm logo depois, porque são o que a pessoa veio buscar.
@@ -13,11 +12,10 @@ rótulo-valor com o mesmo peso, em que a latitude de oito casas saía igual ao
 Duas coisas que a versão QGIS faz e a web não:
 
   - **Levar o mapa até o ponto.** Onde a web desenha um mapinha, aqui o mapa já
-    existe: o botão voa o canvas até a coordenada. É a mesma resposta ("onde
-    fica"), dada com o que o programa tem.
-  - **Copiar a coordenada** continua existindo, e continua copiando o par CRU,
-    com todas as casas e ponto decimal. Quem cola isto cola noutro programa, e
-    vírgula decimal ou casa perdida viram erro de posição de metros.
+    existe: o botão voa o canvas até a coordenada.
+  - **Copiar a coordenada** CRUA, com todas as casas e ponto decimal. Quem cola
+    isto cola noutro programa, e vírgula decimal ou casa perdida viram erro de
+    posição de metros.
 """
 import os
 
@@ -88,8 +86,7 @@ def _dominio(ponto, chave):
     """Valor de um campo de domínio, já resolvido pelo servidor.
 
     O servidor devolve o código em `<dominio>` e o nome em `<dominio>_nome`. A
-    ficha mostra o NOME, e nunca o código cru: era isso que fazia "9999"
-    aparecer na tela.
+    ficha mostra o NOME, e nunca o código cru, senão "9999" aparece na tela.
     """
     if ponto.get(chave) == NAO_PREENCHIDO:
         return None
@@ -345,7 +342,7 @@ class PontoFichaDialog(QDialog, FORM_CLASS):
             fonte.setBold(True)
             grupo.setFont(0, fonte)
             for rotulo, valor in visiveis:
-                QTreeWidgetItem(grupo, [rotulo, '—' if _vazio(valor) else str(valor)])
+                QTreeWidgetItem(grupo, [rotulo, '-' if _vazio(valor) else str(valor)])
             self.detalheTree.addTopLevelItem(grupo)
 
         self.detalheTree.expandAll()

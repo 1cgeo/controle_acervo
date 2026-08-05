@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Mapoteca — Fila de Impressão</string>
+   <string>Mapoteca: Fila de Impressão</string>
   </property>
   <layout class="QVBoxLayout" name="mainLayout">
    <item>
@@ -129,6 +129,13 @@
       <widget class="QPushButton" name="historicoButton">
        <property name="text">
         <string>Histórico do item...</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="baixarItemButton">
+       <property name="text">
+        <string>Baixar PDF do item</string>
        </property>
       </widget>
      </item>

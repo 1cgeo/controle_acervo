@@ -26,14 +26,18 @@ const { resolver } = require('./lib/config')
 const { RECURSOS, DOMINIOS, RELATORIOS, listarChaves } = require('./lib/recursos')
 
 // Subcomandos de `pedido` que sao verbo de intencao, e nao o CRUD generico.
-const VERBOS_PEDIDO = new Set(['cadastrar', 'itens', 'situacao', 'corrigir', 'anexar', 'anexos'])
+// `anexo` e o roteador de `pedido anexo baixar|apagar`: fora desta lista ele
+// cairia no CRUD e responderia "acao desconhecida".
+const VERBOS_PEDIDO = new Set([
+  'cadastrar', 'itens', 'situacao', 'corrigir', 'anexar', 'anexos', 'anexo'
+])
 
 const AJUDA = `mapoteca - CLI da Mapoteca do SCA (pedidos de cartas), para agentes
 
 CONTRATO (nao gasta rede; leia isto antes de montar um corpo)
   mapoteca schema                 lista os recursos e as regras gerais
   mapoteca schema pedido          campos, tipos, obrigatorios e regras do pedido
-  mapoteca dominio                quais dominios existem (GET publico)
+  mapoteca dominio                quais dominios existem
   mapoteca dominio situacao_pedido    os codes de um deles
 
 RESOLVER (o passo caro do dia a dia: documento -> identificador da API)
@@ -58,6 +62,11 @@ PEDIDO (verbos de intencao)
       fornecida, data de entrega e observacao. Sem --ids, move todos.
   mapoteca pedido anexar   --id 42 --file DIEx_123_6RCB.pdf [--tipo-anexo 1]
   mapoteca pedido anexos   --id 42
+  mapoteca pedido anexo baixar --id 7 [--para conferir.pdf]
+      baixa UM anexo pelo id DELE (nao o do pedido) e imprime o sha256, que e o
+      que prova o conteudo. Nao sobrescreve arquivo existente.
+  mapoteca pedido anexo apagar --ids 7 --confirmar 7
+      irreversivel: o byte do anexo mora no banco.
   mapoteca imprimir --item 88 --qtd 5       registra a impressao de um item
 
 ACOMPANHAMENTO
@@ -65,11 +74,14 @@ ACOMPANHAMENTO
   mapoteca painel [--ano 2026]    resumo do ano (pedidos, entregas, OMs, custo)
   mapoteca relatorio              as abas da planilha de controle
   mapoteca relatorio detalhado --ano 2026 --csv    grava o CSV do servidor
+  mapoteca relatorio impressao --ano 2026 --ods    grava a aba META4_DETALHADA
   mapoteca anuario --ano 2026 --mes 7 [--ods]      Anuario Estatistico (Tab 5.4.9)
   mapoteca localizador ABCD-EFGH-IJKL   consulta publica de um pedido
 
 RECURSOS  (${listarChaves().join(', ')})
   mapoteca <recurso> listar [--campos a,b] [--formato tsv|tabela|json]
+      os filtros aceitos saem do schema de query do recurso; a lista de pedidos
+      e sempre de UM ano, e sem --ano vem o ano corrente
   mapoteca <recurso> obter     --id 42
   mapoteca <recurso> criar     --data '{...}'              [--dry-run]
   mapoteca <recurso> atualizar --data '{...}'              [--dry-run]
@@ -95,9 +107,13 @@ FLAGS GLOBAIS
   --server URL    sobrepoe SCA_URL
   --insecure      aceita HTTPS com certificado self-signed
   --sem-cache     nao le nem grava o token em cache
+  --novo          em pedido cadastrar: cria outro pedido mesmo achando duplicata
+  --sem-verificacao   em pedido cadastrar: pula a releitura de conferencia
 
-Leitura exige login; toda ESCRITA exige administrador. Publicos: /api (health),
-/api/login, os GET de /api/mapoteca/dominio e a consulta por localizador.`
+O acesso e por PERFIL no modulo mapoteca: consulta le, operador imprime e da
+baixa em material, gerente cadastra pedido, cliente e anexo. O administrador
+passa em tudo. Publicos, sem login: /api (health), /api/login e a consulta por
+localizador. Os GET de dominio exigem perfil de consulta.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

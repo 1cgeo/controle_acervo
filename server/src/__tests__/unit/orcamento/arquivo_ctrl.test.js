@@ -37,7 +37,7 @@ describe('listarPorVinculo', () => {
   })
 })
 
-// A FORMA do INSERT mudou em 2026-08-02: ele passou de `none` para `one`, com
+// A FORMA do INSERT mudou: ele passou de `none` para `one`, com
 // `RETURNING` das colunas de METADADO. Nao e `RETURNING *` de proposito -- isso
 // devolveria o BYTEA recem-gravado so para joga-lo fora.
 describe('criar (single NC) substitui o anexo anterior', () => {
@@ -110,8 +110,8 @@ describe('criar (multi PDR)', () => {
     )
 
     expect(mockDb.conn.oneOrNone).not.toHaveBeenCalled() // PDR nao tem dono
-    // O ramo do PDR nao tinha transacao nenhuma ate 2026-08-02. Ele passou a ter
-    // porque o rastro cai JUNTO com a escrita, ou nao cai.
+    // O ramo do PDR tambem abre transacao: o rastro cai JUNTO com a escrita,
+    // ou nao cai.
     expect(mockDb.conn.tx).toHaveBeenCalledTimes(1)
     // multi nao substitui: nenhum DELETE. (O `none` e chamado, sim, mas para
     // gravar o evento de auditoria.)

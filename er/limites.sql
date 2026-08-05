@@ -67,9 +67,8 @@ CREATE INDEX municipio_estado_idx ON limites.municipio (estado_id);
 --
 -- POR QUE ELA PRECISA EXISTIR. A 2.7 mede a fração da ASC já catalogada. Sem o
 -- polígono, o numerador contava o acervo INTEIRO, que inclui folha de fora da
--- área, e a conta passava de 100 por cento. Medido em 2026-08-01, contra
--- produção: a 1:50.000 Carta Topográfica dava 943 sobre 927, porque o acervo
--- guarda 943 folhas distintas nessa escala e só 927 são da ASC. Com o recorte dá
+-- área, e a conta passa de 100 por cento: o acervo guarda mais folhas por escala
+-- do que a ASC tem. Com o recorte dá
 -- 927 sobre 927, e a 1:250.000 dá 49 sobre 49 -- os dois fecham EXATAMENTE com o
 -- universo do RT 11/2025, e é essa coincidência que prova que o polígono e o
 -- critério (ST_Intersects) são os certos.
@@ -79,7 +78,7 @@ CREATE INDEX municipio_estado_idx ON limites.municipio (estado_id);
 -- por isso a tabela dela nasce vazia. Deixar esta vazia faria toda instalação
 -- nova nascer com a 2.7 errada, e ninguém perceberia.
 --
--- Origem: banco `asc_insumos`, tabela `asc1cgeo.area_suprimento`, em 2026-08-01.
+-- Origem: banco `asc_insumos`, tabela `asc1cgeo.area_suprimento`.
 -- Só o 1º CGEO é semeado: é a única área que este sistema mede. As outras quatro
 -- existem na fonte e entram por carga, se um dia fizerem falta.
 CREATE TABLE limites.area_suprimento (

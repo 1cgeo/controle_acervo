@@ -2,9 +2,7 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 // Interface unica do SCA. Um client so, com os tres modulos (acervo, mapoteca e
-// orcamento), servido na raiz pelo Express. Os clients antigos (acervo_client e
-// mapoteca_client) foram apagados em 2026-07-27, quando os tres modulos
-// terminaram de ser portados.
+// orcamento), servido na raiz pelo Express. Nao existe client por modulo.
 //
 // As duas portas saem do ambiente, com o padrao de sempre. Existe para levantar
 // uma SEGUNDA instancia de desenvolvimento em paralelo (outro par de portas,

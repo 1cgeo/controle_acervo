@@ -128,7 +128,7 @@ SELECT acervo.criar_views_materializadas();
 -- Função para atualizar com base em uma lista de produtos
 -- produto.id é BIGSERIAL: o parâmetro precisa ser bigint[].
 -- Views inexistentes (ex: code novo de tipo/escala sem criar_views_materializadas)
--- são ignoradas — mesmo comportamento de atualizar_mv_por_tipo_escala.
+-- são ignoradas, mesmo comportamento de atualizar_mv_por_tipo_escala.
 CREATE OR REPLACE FUNCTION acervo.atualizar_mv_por_produtos(produto_ids bigint[]) RETURNS void AS $$
 DECLARE
     tipo_id integer;

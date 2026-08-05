@@ -33,8 +33,7 @@ export default {
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'configuracao', label: 'Configuração', icon: ICONS.category, path: '/configuracao' },
     { id: 'dfd', label: 'DFD', icon: ICONS.description, path: '/dfd' },
-    // O grupo "Orçamento" saiu em 2026-07-31 (chefe). Ele tinha dois filhos, e
-    // um deles (Metas do PIT) deixou o módulo. Grupo colapsável com um item só
+    // SEM um grupo "Orçamento" aqui dentro: grupo colapsável com um item só
     // esconde a tela atrás de um clique e nomeia o módulo dentro do módulo.
     { id: 'pdr', label: 'PDR', icon: ICONS.dataUsage, path: '/pdr' },
     {
@@ -48,9 +47,8 @@ export default {
         { id: 'rpnp', label: 'RPNP', icon: ICONS.schedule, path: '/rpnp' },
       ],
     },
-    // SEM item de RPCMTec: ele virou tela de PLATAFORMA em 2026-08-01
-    // (#/rpcmtec, na secao de plataforma da sidebar). Esta tela gerava so a
-    // secao do PDR, que alguem colava a mao no arquivo da outra.
+    // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). Daqui sairia
+    // so a secao do PDR, e o relatorio e da Divisao inteira.
   ],
 
   rotas: [
@@ -65,10 +63,10 @@ export default {
     { path: '/rpnp', render: renderRpnpList, perfil: 'consulta' },
   ],
 
-  // SEM `navbarExtras`. O seletor de ano da navbar saiu em 2026-08-04 (chefe).
-  // Ele era um so para o modulo inteiro, guardava a escolha no localStorage e
-  // tinha um ano padrao configuravel. Abrir o PDR de 2025 mudava calado a lista
-  // de notas de credito, e voltar semanas depois abria num ano antigo sem aviso.
+  // SEM `navbarExtras`. Nao ha seletor de ano na navbar: um so para o modulo
+  // inteiro, guardado no localStorage, faz abrir o PDR de um ano mudar calado a
+  // lista de notas de credito, e faz voltar semanas depois abrir num ano antigo
+  // sem aviso.
   // Agora cada tela monta o seu filtro (@components/filtro-ano.js), sempre no
   // ano atual.
 };

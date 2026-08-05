@@ -4,6 +4,7 @@ const Joi = require('joi')
 
 const { geometriaSchema } = require('../utils/geometria_schema')
 const { listaDeInteiros } = require('../utils/lista_schema')
+const { SEVERIDADES } = require('./invariantes')
 
 const models = {}
 
@@ -108,11 +109,9 @@ const bboxSchema = Joi.string().custom((valor, helpers) => {
   return partes;
 });
 
-// Poligono desenhado no mapa, como GeoJSON em texto.
-//
-// O validador vive em utils/geometria_schema.js desde 2026-07-29: a tela de
-// ponto de controle desenha area com a MESMA ferramenta, e duas copias do
-// validador divergiriam com o tempo.
+// Poligono desenhado no mapa, como GeoJSON em texto. O validador vive em
+// utils/geometria_schema.js: a tela de ponto de controle desenha area com a
+// MESMA ferramenta, e duas copias do validador divergiriam com o tempo.
 
 // Filtros compartilhados entre a busca paginada e a camada do mapa.
 //
@@ -120,9 +119,9 @@ const bboxSchema = Joi.string().custom((valor, helpers) => {
 // se divergirem, o mapa passa a mostrar um conjunto e a lista outro, que e pior
 // do que nao ter mapa. Espalhar (`...filtrosBusca`) e o que impede um filtro
 // novo de entrar so num lado.
-// Os filtros de dominio aceitam VARIOS codigos desde 2026-08-04 (chefe). Um
-// valor solto continua valendo, entao link antigo, CLI e plugin nao quebram;
-// ver utils/lista_schema.js.
+// Os filtros de dominio aceitam VARIOS codigos. Um valor solto continua
+// valendo, entao link antigo, CLI e plugin nao quebram; ver
+// utils/lista_schema.js.
 const filtrosBusca = {
   termo: Joi.string().allow(''),
   tipo_produto_id: listaDeInteiros(),
@@ -164,9 +163,9 @@ models.buscaProdutos = Joi.object().keys({
 // de 800 resultados, o mapa parece dizer que o acervo tem 20 cartas ali. O teto
 // protege o navegador; passando dele, a resposta avisa que truncou em vez de
 // mentir por omissao.
-// O padrao cabe o acervo INTEIRO com folga (5.741 produtos em 2026-07-28, que
-// saem em 29 ms e 1,39 MB de JSON). Buscar sem filtro nenhum e o pior caso, e
-// ele precisa caber: e justamente quando a pessoa quer ver a cobertura toda.
+// O padrao cabe o acervo INTEIRO com folga. Buscar sem filtro nenhum e o pior
+// caso, e ele precisa caber: e justamente quando a pessoa quer ver a cobertura
+// toda.
 models.buscaGeometrias = Joi.object().keys({
   ...filtrosBusca,
   limit: Joi.number().integer().min(1).max(50000).default(20000)
@@ -198,7 +197,9 @@ models.palavrasChave = Joi.object().keys({
 
 // Auditoria de invariantes lógicos do acervo.
 models.auditoriaQuery = Joi.object().keys({
-  severidade: Joi.string().valid('DEFECT', 'REVISAR', 'INFO'),
+  // A lista sai de `invariantes.js`, e não escrita de novo aqui: severidade que
+  // entrasse lá e não aqui seria recusada com 400 pela própria rota que a expõe.
+  severidade: Joi.string().valid(...SEVERIDADES),
   // csv de códigos (ex.: 1a,2c,4b). Sem isso, roda todos.
   codigos: Joi.string().pattern(/^[0-9a-z_]+(,[0-9a-z_]+)*$/),
   // Quantas linhas de AMOSTRA por invariante. O total vem sempre inteiro; a

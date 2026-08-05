@@ -41,7 +41,7 @@ const criaCliente = async (overrides = {}) => {
   return row.id
 }
 
-// A meta do PIT deixou de ser texto no pedido em 2026-07-31: virou linha em
+// A meta do PIT deixou de ser texto no pedido: virou linha em
 // pit.meta, com chave estrangeira. O teste precisa da meta antes do pedido.
 // Insere direto no banco porque POST /api/metas e outro modulo, e o que se
 // prova aqui e o pedido, nao a rota de metas.
@@ -54,7 +54,7 @@ const criaMeta = async (item = '4.1', ano = 2026) => {
     [ano, parseInt(String(item).split('.')[0], 10), item]
   )
 
-  // A DESCRICAO mora na revisao desde 2026-08-04. A fixtura cria a R0 do ano e
+  // A DESCRICAO mora na revisao. A fixtura cria a R0 do ano e
   // declara a meta nela, que e o que a migracao fez em producao.
   const revisao = await conn.one(
     `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
@@ -442,8 +442,7 @@ describe('Mapoteca Routes', () => {
   })
 
   describe('Pedidos', () => {
-    // A lista era do acervo inteiro e passou a respeitar o ano de contexto em
-    // 2026-07-28 (decisao do chefe, revertendo a de horas antes). O custo, que
+    // A lista respeita o ANO DE CONTEXTO, e nao traz o acervo inteiro. O custo
     // e deliberado: o pedido de dezembro concluido em janeiro so aparece
     // trocando o ano na navbar.
     it('GET /api/mapoteca/pedido devolve so os pedidos do ano', async () => {
@@ -598,7 +597,7 @@ describe('Mapoteca Routes', () => {
       const clienteId = await criaCliente()
       const pedido = await criaPedido(clienteId, {
         observacao: 'Pedido urgente para exercício',
-        // A forma de entrega é do PEDIDO desde 2026-07-30, e não mais do item.
+        // A forma de entrega é do PEDIDO, e não mais do item.
         forma_entrega_id: 1
       })
 
@@ -610,7 +609,7 @@ describe('Mapoteca Routes', () => {
         observacao: 'Plotagem em papel A0'
       })
 
-      // Sem autenticação — rota pública de acompanhamento (RN04)
+      // Sem autenticação, rota pública de acompanhamento (RN04)
       const res = await request(app)
         .get(`/api/mapoteca/pedido/localizador/${pedido.localizador_pedido}`)
 
@@ -692,6 +691,11 @@ describe('Mapoteca Routes', () => {
         .get('/api/mapoteca/pedido/em_aberto')
         .set('Authorization', token)
 
+      // A segunda fila, pedida por query. Ver o describe do fim deste bloco.
+      const filaAtendimento = (token = generateAdminToken()) => request(app)
+        .get('/api/mapoteca/pedido/em_aberto?incluir_remetidos=true')
+        .set('Authorization', token)
+
       it('traz o pedido em aberto e deixa de fora concluído e cancelado', async () => {
         const clienteId = await criaCliente()
         const aberto = await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null })
@@ -711,17 +715,81 @@ describe('Mapoteca Routes', () => {
         expect(ids).not.toContain(Number(cancelado.id))
       })
 
-      // Remetido (4) SAI da fila desde 2026-07-31 (chefe). O pedido já foi
-      // impresso, etiquetado e despachado: as três ações que a tela oferece já
-      // foram feitas, e a linha só ocupava a fila. Ele continua visível na
-      // lista de pedidos, pelo filtro de situação.
-      it('tira da fila o pedido Remetido', async () => {
+      // Remetido (4) NÃO entra na fila PADRÃO, que é a de IMPRESSÃO. O pedido já
+      // foi impresso, etiquetado e despachado: pô-lo de volta é oferecer ao
+      // plugin do QGIS um trabalho já feito. Ele entra na fila de ATENDIMENTO,
+      // logo abaixo, porque ali a pergunta é outra: o que falta FECHAR.
+      it('tira da fila PADRÃO (impressão) o pedido Remetido', async () => {
         const clienteId = await criaCliente()
         const remetido = await criaPedido(clienteId, { situacao_pedido_id: 4 })
 
         const res = await emAberto()
 
         expect(res.body.dados.map(p => Number(p.id))).not.toContain(Number(remetido.id))
+      })
+
+      // A FILA DE ATENDIMENTO, por `?incluir_remetidos=true`.
+      //
+      // O beco sem saída que ela fecha: marcar Remetido é a última ação de quem
+      // atende, e era ela que apagava o pedido da tela. Dali em diante o pedido
+      // dependia de alguém abrir a lista de pedidos, achar o filtro "Remetido" e
+      // marcar Concluído. Ficava aberto por tempo indefinido.
+      //
+      // Situação 4 = Remetido, conferido em er/mapoteca.sql (INSERT de
+      // mapoteca.situacao_pedido).
+      it('com incluir_remetidos=true traz o Remetido, e segue sem Concluído nem Cancelado', async () => {
+        const clienteId = await criaCliente()
+        const remetido = await criaPedido(clienteId, { situacao_pedido_id: 4 })
+        const emAndamento = await criaPedido(clienteId, {
+          situacao_pedido_id: 3, data_atendimento: null
+        })
+        const concluido = await criaPedido(clienteId, {
+          situacao_pedido_id: 5, data_atendimento: '2026-03-20'
+        })
+        const cancelado = await criaPedido(clienteId, {
+          situacao_pedido_id: 6, data_atendimento: null, motivo_cancelamento: 'desistência'
+        })
+
+        const res = await filaAtendimento()
+
+        expect(res.status).toBe(200)
+        const ids = res.body.dados.map(p => Number(p.id))
+        expect(ids).toContain(Number(remetido.id))
+        expect(ids).toContain(Number(emAndamento.id))
+        // O corte que continua valendo: a fila de atendimento é do que falta
+        // fechar, e o que já fechou não volta.
+        expect(ids).not.toContain(Number(concluido.id))
+        expect(ids).not.toContain(Number(cancelado.id))
+      })
+
+      // O controle NEGATIVO da mudança: a mesma base, as duas filas, e a
+      // diferença tem de ser exatamente o pedido Remetido. Sem esta comparação o
+      // teste acima passaria mesmo se a query fosse ignorada e as duas filas
+      // fossem a mesma lista.
+      it('a fila de atendimento é a de impressão MAIS o Remetido', async () => {
+        const clienteId = await criaCliente()
+        const remetido = await criaPedido(clienteId, { situacao_pedido_id: 4 })
+        await criaPedido(clienteId, { situacao_pedido_id: 3, data_atendimento: null })
+
+        const impressao = (await emAberto()).body.dados.map(p => Number(p.id))
+        const atendimento = (await filaAtendimento()).body.dados.map(p => Number(p.id))
+
+        expect(atendimento.length).toBe(impressao.length + 1)
+        const soNaDeAtendimento = atendimento.filter(id => !impressao.includes(id))
+        expect(soNaDeAtendimento).toEqual([Number(remetido.id)])
+      })
+
+      // Query desconhecida vira 400: a validação de query não descarta chave, ao
+      // contrário da de corpo. Vale registrar porque quem errar o nome do
+      // parâmetro recebe erro, e não a fila errada em silêncio.
+      it('recusa query desconhecida e valor não booleano', async () => {
+        expect((await request(app)
+          .get('/api/mapoteca/pedido/em_aberto?incluir_remetido=true')
+          .set('Authorization', generateAdminToken())).status).toBe(400)
+
+        expect((await request(app)
+          .get('/api/mapoteca/pedido/em_aberto?incluir_remetidos=talvez')
+          .set('Authorization', generateAdminToken())).status).toBe(400)
       })
 
       // O pedido de dezembro ainda não atendido é trabalho em janeiro.
@@ -1000,7 +1068,7 @@ describe('Mapoteca Routes', () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente()
-      // A forma e a data de entrega sao do PEDIDO desde 2026-07-30. O item so
+      // A forma e a data de entrega sao do PEDIDO. O item so
       // descreve O QUE se imprime.
       const pedido = await criaPedido(clienteId, {
         forma_entrega_id: 1,
@@ -1256,13 +1324,13 @@ describe('Mapoteca Routes', () => {
         previsto_pit: true,
         meta_pit_id: metaId,
         operacao: 'Operação Teste',
-        // O prazo existe no cenário de propósito: até 2026-07-29 ele saía na
-        // coluna "Meta" do relatório, e um teste do .ods guarda essa correção.
+        // O prazo existe no cenário de propósito: ele NÃO pode sair na coluna
+        // "Meta" do relatório, e um caso do .ods guarda isso.
         prazo: '2026-04-10',
         documento_solicitacao: 'DIEx 123-S3/3º RCC',
         // As colunas "Data da Entrega" e "Forma da Entrega" das abas saem do
-        // PEDIDO desde 2026-07-30. A data é a data_atendimento, que o helper
-        // criaPedido já põe em 2026-03-20.
+        // PEDIDO. A data é a data_atendimento, que o helper
+        // criaPedido já põe.
         forma_entrega_id: 1
       })
       await criaProdutoPedido({
@@ -1414,9 +1482,9 @@ describe('Mapoteca Routes', () => {
 
         // previsto_pit = true no cenário
         expect(content).toContain('<text:p>sim</text:p>')
-        // A coluna "Meta" traz o código da meta apontada pelo pedido, como TEXTO.
-        // Ate 2026-07-29 ela trazia p.prazo (uma DATA sob o rótulo "Meta"), e o
-        // prazo 2026-04-10 continua no cenário justamente para guardar isso.
+        // A coluna "Meta" traz o CÓDIGO da meta apontada pelo pedido, como
+        // texto, e nunca o `p.prazo` (uma data sob o rótulo "Meta"). O prazo
+        // está no cenário justamente para guardar essa distinção.
         expect(content).toContain('<text:p>4.1</text:p>')
         expect(content).not.toContain('office:date-value="2026-04-10"')
         // 'Sulfite 90g' no banco vira 'sulfite' na aba (que nunca teve gramatura)
@@ -1435,7 +1503,7 @@ describe('Mapoteca Routes', () => {
         const content = lerZip((await baixar()).body)['content.xml'].toString('utf8')
 
         // Le a PRIMEIRA linha da tabela, sem citar nome de estilo. O arquivo
-        // passou a sair da planilha-semente da propria aba em 2026-08-01, e com
+        // passou a sair da planilha-semente da propria aba, e com
         // ele mudou o estilo do cabecalho (era `ceCab`, do gerador que montava o
         // arquivo do zero; hoje e o `ce1` do modelo). O que este teste protege
         // sao os ROTULOS e a ORDEM deles, e amarra-lo ao estilo fazia a troca de
@@ -1463,11 +1531,10 @@ describe('Mapoteca Routes', () => {
       })
     })
 
-    // O RTM (a mesma aba META4_DETALHADA) passou a ser ACUMULADO ATE O MES em
-    // 2026-08-02, a pedido do chefe: escolher marco traz janeiro, fevereiro e
-    // marco. Ate ali o `mes` chegava a rota e era IGNORADO -- trocar o mes na
-    // tela do RPCMTec devolvia sempre o mesmo arquivo do ano inteiro, e nada
-    // dizia isso.
+    // O RTM (a mesma aba META4_DETALHADA) e ACUMULADO ATE O MES: escolher marco
+    // traz janeiro, fevereiro e marco. O `mes` tem de CHEGAR a consulta;
+    // ignorado, a tela do RPCMTec devolve sempre o mesmo arquivo do ano inteiro
+    // e nada diz isso.
     //
     // O teste bate no CONTROLLER, e nao no .ods: a regra e o recorte, e o
     // formato do arquivo tem teste proprio em unit/rtm_ods.test.js. Contar
@@ -1976,8 +2043,8 @@ describe('Mapoteca Routes', () => {
       const produto = await createProduto({ tipo_produto_id: 2, tipo_escala_id: 2 })
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente()
-      // O dashboard conta a entrega pela data_atendimento do PEDIDO desde
-      // 2026-07-30. O helper criaPedido já a põe em 2026-03-20.
+      // O dashboard conta a entrega pela `data_atendimento` do PEDIDO. O helper
+      // criaPedido já a põe.
       const pedido = await criaPedido(clienteId, { operacao: 'Operação Dash' })
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
@@ -1987,9 +2054,9 @@ describe('Mapoteca Routes', () => {
       })
     }
 
-    // O ano de contexto passou a valer para as metricas de PEDIDO em
-    // 2026-07-28, contadas pela data do pedido. E um recorte diferente do
-    // resumo anual e do mapa, que contam por data de ENTREGA.
+    // O ano de contexto vale para as metricas de PEDIDO, contadas pela DATA DO
+    // PEDIDO. E um recorte diferente do resumo anual e do mapa, que contam por
+    // data de ENTREGA.
     describe('o ano de contexto vale para as metricas de pedido', () => {
       const doisAnos = async () => {
         const clienteId = await criaCliente({ nome: 'OM Ano', tipo_cliente_id: 1 })
@@ -2052,22 +2119,27 @@ describe('Mapoteca Routes', () => {
 
       // Estoque e o saldo de HOJE, nao um acumulado de periodo: mandar ano para
       // ele sugeriria que existe "estoque de 2025".
-      it('GET /dashboard/stock_by_location recusa o parametro ano', async () => {
-        const res = await request(app)
-          .get('/api/mapoteca/dashboard/stock_by_location?ano=2025')
+      it('GET /dashboard/stock_by_location IGNORA o parametro ano', async () => {
+        const pedir = (query) => request(app)
+          .get(`/api/mapoteca/dashboard/stock_by_location${query}`)
           .set('Authorization', generateUserToken())
 
-        // O schema_validation do SCA descarta chave desconhecida em silencio,
-        // entao o que se guarda aqui e que a rota responde sem o ano mudar nada.
-        expect(res.status).toBe(200)
+        const semAno = await pedir('')
+        const comAno = await pedir('?ano=2025')
+
+        // O `schema_validation` descarta chave desconhecida, entao a rota
+        // responde 200 nos dois casos. O que se prova e que a RESPOSTA e a
+        // mesma: so ela separa "ignorou o ano" de "filtrou por ele".
+        expect(semAno.status).toBe(200)
+        expect(comAno.status).toBe(200)
+        expect(comAno.body.dados).toEqual(semAno.body.dados)
       })
     })
 
     // O dashboard de pedido e a visao de PRODUCAO (OM); o civil tem o relatorio
     // Civ proprio. As tres linhas do cartao de tempo medio (geral, por tipo de
-    // cliente e mensal) precisam contar a MESMA populacao, senao o painel se
-    // contradiz na propria tela. Ate 2026-07-27 a quebra por tipo somava o civil
-    // e as outras duas nao.
+    // cliente e mensal) contam a MESMA populacao, senao o painel se contradiz
+    // na propria tela.
     it('GET /dashboard/avg_fulfillment_time conta so militar nas tres linhas', async () => {
       const militarId = await criaCliente({ nome: 'OM Militar Dash', tipo_cliente_id: 1 })
       const civilId = await criaCliente({ nome: 'Prefeitura Dash', tipo_cliente_id: 6 })
@@ -2102,11 +2174,10 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.total_entregas).toBe(7)
       expect(res.body.dados.oms_distintas_count).toBe(1)
       expect(res.body.dados.operacoes_distintas_count).toBe(1)
-      // NULL, e nao 0, quando nao ha nenhuma linha de manutencao no ano
-      // (mudanca de 2026-08-04). O cartao da tela distingue os dois casos: sem
-      // registro ele escreve "Sem registro", e com registro somando zero ele
-      // escreve R$ 0,00. Antes os dois apareciam iguais, e o chefe lia
-      // "gastamos R$ 0,00 em manutencao" quando o certo era "ninguem lancou".
+      // NULL, e nao 0, quando nao ha nenhuma linha de manutencao no ano. O
+      // cartao da tela distingue os dois casos: sem registro ele escreve "Sem
+      // registro", e com registro somando zero ele escreve R$ 0,00. Iguais, os
+      // dois leem como "gastamos R$ 0,00" onde o certo e "ninguem lancou".
       expect(res.body.dados.custo_manutencao_total).toBeNull()
       expect(res.body.dados.manutencoes_count).toBe(0)
     })
@@ -2241,7 +2312,7 @@ describe('Mapoteca Routes', () => {
 
     // As escalas PARTICIONAM as entregas do ano: cada produto tem uma só. Se a
     // soma dos recortes não fechar com o total, algum filtro está perdendo ou
-    // duplicando linha. Medido também contra produção em 2026-07-28 (3119).
+    // duplicando linha.
     it('GET /dashboard/entregas_geo: a soma por escala fecha com o total do ano', async () => {
       await setupEntrega()
 

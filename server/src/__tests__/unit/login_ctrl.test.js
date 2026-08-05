@@ -1,10 +1,8 @@
 'use strict'
 
 // Teste unitario do controller de login, com o BANCO mockado e o bcrypt DE
-// VERDADE. Ate 2026-08-02 ele mockava tambem `../authentication`, o modulo que
-// falava com o Auth Server externo; com a fusao esse modulo deixou de existir e
-// a conferencia da senha passou a ser local. Mockar o bcrypt aqui provaria a
-// consulta e nao a conferencia, que e justamente o que mudou de lugar.
+// VERDADE. A conferencia da senha e LOCAL, e e o que este arquivo prova:
+// mockar o bcrypt provaria a consulta, e nao a conferencia.
 //
 // O que ele protege, alem da senha: a resposta do login carrega, FORA do token,
 // o que o client precisa para montar a interface unica dos tres modulos.
@@ -131,7 +129,7 @@ describe('login_ctrl.login', () => {
   })
 
   // -------------------------------------------------------------------------
-  // A senha, que ate 2026-08-02 era conferida por outro servico
+  // A senha, conferida aqui e nao por um servico externo
   // -------------------------------------------------------------------------
 
   test('senha errada e recusada, mesmo com o usuario existindo', async () => {

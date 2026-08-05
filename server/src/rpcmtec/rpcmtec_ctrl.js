@@ -4,20 +4,12 @@
 //
 // POR QUE FORA DOS MÓDULOS. O RPCMTec é o relatório mensal da DIVISÃO, e não de
 // acervo, mapoteca ou orçamento: a mesma edição fala das três coisas, e o chefe
-// assina uma só. Até 2026-08-01 ele era gerado em DOIS lugares que não se
-// conheciam (`server/src/relatorio/`, com acervo e mapoteca, e
-// `server/src/orcamento/relatorio/`, com o PDR), cada um com a própria
-// numeração de seção e o próprio DOCX, e quem montava a edição juntava os dois
-// arquivos à mão. Os dois foram substituídos por este. Mesmo critério que tirou
-// `pit.meta` de dentro do orçamento em 2026-07-31: dado de que nenhum módulo é
-// dono mora fora deles.
+// assina uma só. Mesmo critério de `pit.meta`: dado de que nenhum módulo é dono
+// mora fora deles.
 //
-// O QUE ESTE ARQUIVO É, desde 2026-08-05. Ele calcula LINHAS, e só. Quais
-// subseções existem, com que título, cabeçalho e ordem, é o que
-// `rpcmtec_estrutura.js` diz; quem junta o calculado com o que o gestor digitou
-// é `rpcmtec_edicao_ctrl.js`. Antes desta data ele montava o documento inteiro
-// e as doze subseções que o SCA não calcula simplesmente não existiam em lugar
-// nenhum: quem fazia o relatório abria o Word e as preenchia lá.
+// O QUE ESTE ARQUIVO É. Ele calcula LINHAS, e só. Quais subseções existem, com
+// que título, cabeçalho e ordem, é o que `rpcmtec_estrutura.js` diz; quem junta
+// o calculado com o que o gestor digitou é `rpcmtec_edicao_ctrl.js`.
 //
 // AS DEZOITO QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a
 // fonte de cada uma ao lado. As doze restantes são digitadas na própria tela.
@@ -34,9 +26,9 @@
 // formatada, e ela não estaria.
 //
 // A CÉLULA SAI EM TEXTO, já formatada, e é assim que a tela e o PDF a recebem.
-// Com a tela lendo número cru e o arquivo formatando por conta, as duas
-// divergiam no arredondamento, e quem conferia via diferença onde não havia. É
-// também o que se congela no fechamento: o que o documento DISSE.
+// Com a tela lendo número cru e o arquivo formatando por conta, as duas divergem
+// no arredondamento. É também o que se congela no fechamento: o que o documento
+// DISSE.
 
 const { db } = require('../database')
 const acervoCtrl = require('../acervo/acervo_ctrl')
@@ -60,6 +52,9 @@ const {
   }
 } = require('../utils')
 const { QTD_EFETIVA, JOIN_PRODUTO_ITEM, filtroPeriodoMes } = require('../mapoteca/query_fragments')
+// O mês anterior, virando o ano em janeiro. Mora em periodo.js porque a mesma
+// regra vale para rpcmtec_subsecao_ctrl, e duas cópias divergiram uma vez.
+const { mesAnterior } = require('./periodo')
 
 const controller = {}
 
@@ -76,13 +71,11 @@ const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 
 // Universo de folhas da ASC (Área Sob Coordenação do 1º CGEO, 694.301 km²) por
 // escala, o DENOMINADOR da 2.7. Fonte: RT 11/2025 (proposta de base contínua),
-// confirmado pelo chefe da DGEO em 2026-07-01 (o RT registrava 250 para
-// 1:100.000; o valor correto é 249).
+// com a correção do chefe da DGEO para a 1:100.000, que o RT registrava como
+// 250 e são 249.
 //
-// O numerador vem de `limites.area_suprimento` (ver buscarEstadoAcervo): os dois
-// TÊM de falar da mesma área, senão a fração não quer dizer nada. Que falam está
-// medido -- a 1:50.000 e a 1:250.000 dão exatamente 927 e 49, os números desta
-// tabela.
+// O numerador vem de `limites.area_suprimento` (ver `buscarEstadoAcervo`): os
+// dois TÊM de falar da mesma área, senão a fração não quer dizer nada.
 const UNIVERSO_ASC = {
   '1:25.000': 3556,
   '1:50.000': 927,
@@ -141,22 +134,19 @@ const moeda = valor => (valor == null ? '-' : formatadorMoeda.format(Number(valo
 // ---------------------------------------------------------------------------
 
 // A 2.2 (Totais do Mês e do Ano) e a 2.4 (Entregas detalhada de produtos
-// finais) NÃO saem daqui, por decisão do chefe em 2026-08-01: por enquanto elas
-// não vêm do SCA. Elas chegaram a existir, e mediam `acervo.versao` por
-// `data_edicao`; o que as tirou foi o escopo, não defeito.
+// finais) NÃO saem daqui, por decisão de escopo: elas ficam no SAP.
 //
 // 2.7: folhas catalogadas DENTRO DA ASC, por escala x tipo de produto.
 //
 // O RECORTE PELA ASC é o que faz a coluna "% da ASC" dizer a verdade. Sem ele o
-// numerador era o acervo INTEIRO, que guarda folha de fora da nossa área, e a
-// conta passava de 100: medido em 2026-08-01 contra produção, a 1:50.000 Carta
-// Topográfica dava 943 sobre 927, ou seja 101,7%. Com o recorte ela dá 927 sobre
-// 927 e a 1:250.000 dá 49 sobre 49 -- os dois fecham EXATAMENTE com o universo
-// do RT 11/2025, e é essa coincidência que prova que o polígono está certo.
+// numerador é o acervo INTEIRO, que guarda folha de fora da nossa área, e a
+// conta passa de 100. Com o recorte, a 1:50.000 e a 1:250.000 fecham EXATAMENTE
+// com o universo do RT 11/2025, e é essa coincidência que prova que o polígono
+// está certo.
 //
-// ST_Intersects, e não "centro dentro da área": medido, o centro
-// (ST_PointOnSurface) devolve 43 na 1:250.000 contra as 49 do universo, porque a
-// folha de borda tem o centro fora. Folha que TOCA a ASC é folha da ASC.
+// ST_Intersects, e não "centro dentro da área": pelo centro
+// (`ST_PointOnSurface`) a folha de borda fica de fora e a contagem não fecha.
+// Folha que TOCA a ASC é folha da ASC.
 //
 // "Catalogado" exige versão REGULAR, o mesmo critério da cobertura do acervo: o
 // Registro Histórico documenta que uma edição existiu e por definição não tem
@@ -321,18 +311,13 @@ const totaisDoGrupo = pedidos => {
 
 // 3.1: os cinco indicadores que o SCA sabe apurar, na ordem do modelo.
 //
-// AS DUAS LINHAS DE EXTRA-PIT DO MODELO NÃO SAEM DAQUI, e a subseção 3.3
-// (Extra-PIT) também não. Elas existiram por algumas horas em 2026-08-01,
-// derivadas de `previsto_pit = false`, e estavam ERRADAS: medido contra
-// produção, 142 dos 158 pedidos têm esse campo falso, porque FALSE é o default
-// da coluna e quase ninguém o preenche. A 3.3 saía com 23 pedidos em julho
-// onde a edição real traz 1, e esta tabela dizia 485 produtos Extra-PIT onde a
-// real diz 0.
+// AS DUAS LINHAS DE EXTRA-PIT DO MODELO NÃO SAEM DAQUI. Derivá-las de
+// `previsto_pit = false` dá número ERRADO: FALSE é o default da coluna e quase
+// ninguém a preenche, então quase todo pedido contaria como Extra-PIT.
 //
-// O Extra-PIT do RPCMTec é uma exceção autorizada -- o modelo tem coluna
-// "Documento autorização" --, e o SCA não guarda o que a distingue de um pedido
-// comum fora do PIT. Enquanto não guardar, a 3.3 continua sendo escrita à mão, e
-// a tela declara isso na lista de lacunas. Decisão do chefe em 2026-08-01.
+// O Extra-PIT do RPCMTec é a exceção AUTORIZADA (o modelo tem coluna "Documento
+// autorização"), e quem a guarda é `pit.demanda_extra`. A subseção 3.3 sai de
+// lá, e não daqui.
 const montarTotaisMapoteca = ({ pedidosMes, pedidosAno }) => {
   const grupo = (pedidos, filtro) => totaisDoGrupo(pedidos.filter(filtro))
 
@@ -365,14 +350,13 @@ const montarEntregasMapoteca = ({ pedidosMes }) =>
 // 3.4: cliente civil, órgão público e LAI. SEM coluna de quantidade, como o
 // modelo: o que se acompanha aqui é o atendimento, não o volume impresso.
 //
-// AS COLUNAS SÃO AS DO CHEFE (2026-08-01), e não as três do modelo. Saiu o
-// "Documento de solicitação" e entraram o código da LAI e a descrição:
+// AS COLUNAS DIVERGEM DO MODELO, por decisão: saiu o "Documento de solicitação"
+// e entraram o código da LAI e a descrição.
 //
-//   Código da LAI  o NUP do Fala.BR ('60143.003284/2026-31'), que identifica a
-//                  manifestação na Ouvidoria e é por onde se responde ao
-//                  cidadão. Vive em `documento_solicitacao_nup`, separado do
-//                  DIEx da DSG que encaminhou o pedido. Em produção, 27 dos 33
-//                  pedidos civis o têm; quem chegou por outro canal (e-mail,
+//   Código da LAI  o NUP do Fala.BR, que identifica a manifestação na Ouvidoria
+//                  e é por onde se responde ao cidadão. Vive em
+//                  `documento_solicitacao_nup`, separado do DIEx da DSG que
+//                  encaminhou o pedido. Quem chegou por outro canal (e-mail,
 //                  ofício) sai '-'.
 //   Descrição      o que a pessoa pediu, de `pedido.observacao`.
 //
@@ -559,10 +543,8 @@ const gerarRpnp = async ano => {
 
 // 4.4 (GCALC DSG) e 4.5 (demais licitações da atividade-fim).
 // `tipos` e uma LISTA: a 4.5 ("Demais Licitacoes da atividade-fim") recebe a
-// propria E a participante (chefe, 2026-08-04). Participante nao tem subsecao
-// propria; ela e uma licitacao da atividade-fim como a propria. Enquanto so a
-// propria entrava, uma licitacao participante cadastrada sumia do relatorio em
-// silencio, e a UI ainda oferecia o tipo.
+// propria E a participante. Participante nao tem subsecao propria, e sem ela na
+// lista a licitacao participante cadastrada some do relatorio em silencio.
 const gerarLicitacoes = async (ano, tipos) => {
   const linhas = await db.conn.any(
     `SELECT l.objeto, l.fase_atual, l.valor_total_estimado, l.valor_final_homologado
@@ -609,20 +591,18 @@ const gerarRecebimentoMaterial = async ano => {
 // `mapoteca.tipo_material.categoria`, uma COLUNA, e não do nome do material.
 // Derivar de "começa com Cartucho" funcionaria hoje e quebraria calado no dia em
 // que alguém cadastrar "Tinta preta 300ml": a tabela erraria de lado sem erro
-// nenhum. Ver migrations/2026-08-01_material_categoria.sql.
+// nenhum.
 //
-// O CONSUMO DO PAPEL sai da IMPRESSÃO desde 2026-08-04, somado ao que for
-// declarado à mão. Até então ele vinha só de `mapoteca.consumo_material`, que
-// tem zero linhas em produção: a coluna dizia 0 nas dezessete linhas enquanto
-// havia 1.753 impressões e 6.493 exemplares registrados. Ver
+// O CONSUMO DO PAPEL sai da IMPRESSÃO, somado ao que for declarado à mão. Só de
+// `mapoteca.consumo_material`, que quase ninguém preenche, a coluna sai zerada
+// mesmo havendo milhares de exemplares impressos. Ver
 // `getConsumoMensalPorTipo`, que soma as duas fontes.
 //
 // A TINTA continua vindo só do declarado, e é deliberado: quanto de cartucho
 // uma folha gasta depende do que está desenhado nela. Zero ali quer dizer
 // "ninguém declarou troca", que é diferente de errado.
 //
-// AS DUAS COLUNAS QUE SAÍAM '-' foram fechadas em 2026-08-04, e nenhuma delas
-// pediu tabela nova:
+// AS DUAS COLUNAS QUE PARECEM PEDIR TABELA NOVA, e não pedem:
 //
 //   "Estoque mês anterior"  vem da EDIÇÃO FECHADA do mês anterior, que
 //                           congelou a própria 7.2. `estoque_material` guarda
@@ -630,16 +610,11 @@ const gerarRecebimentoMaterial = async ano => {
 //                           consumo" ignoraria as ENTRADAS (compra,
 //                           transferência) e erraria calado todo mês com
 //                           reposição.
-//   "Previsão de falta"     vem do ritmo dos meses JÁ FECHADOS, que passou a
-//                           existir quando o consumo do papel virou derivado da
-//                           impressão.
+//   "Previsão de falta"     vem do ritmo dos meses JÁ FECHADOS.
 //
 // As duas continuam saindo '-' quando não há base: mês anterior não fechado, ou
 // menos de três meses com consumo. Traço é a resposta honesta; número inventado
 // a partir do saldo de hoje pareceria apurado e não seria.
-// O mês anterior ao do recorte, virando o ano em janeiro.
-const mesAnterior = (ano, mes) =>
-  (mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 })
 
 /**
  * O ESTOQUE que a edição do mês anterior reportou, por nome de insumo.
@@ -659,7 +634,7 @@ const mesAnterior = (ano, mes) =>
  * hoje daria uma coluna que parece apurada e não é.
  */
 const buscarEstoqueDoMesAnterior = async ({ ano, mes, numero }) => {
-  const anterior = mesAnterior(ano, mes)
+  const anterior = mesAnterior({ ano, mes })
 
   const gravada = await db.conn.oneOrNone(
     `SELECT s.linhas
@@ -741,10 +716,6 @@ const montarInsumos = ({ tiposMaterial, consumoAno, mes, ano, categoria, estoque
 
 // ---------------------------------------------------------------------------
 // 2.1 Estado Atual do PIT
-//
-// Entrou em 2026-08-02, quando `pit.meta` passou a guardar o que o PIT PROMETE
-// (quantidade e prazo) e nasceu `pit.execucao`. Até então esta subseção ficava
-// de fora por falta das duas coisas, e não por falta de tabela.
 //
 // A tabela sai INTEIRA daqui, inclusive as metas de produção. Elas hoje só têm
 // número se alguém lançar à mão, porque o SCA não calcula produção -- e é essa a
@@ -854,9 +825,9 @@ const montarCapacitacaoMinistrada = ({ capacitacoes }) =>
     numero(c.efetivo_capacitado)
   ])
 
-// 'Cap Fulano, 2º Sgt Beltrano'. Os nomes vêm do CADASTRO desde 2026-08-02, e
-// não de um texto digitado: `rpcmtec.capacitacao_militar` liga a capacitação a
-// `dgeo.usuario`, e a coluna "Militar" do modelo é montada aqui.
+// 'Cap Fulano, 2º Sgt Beltrano'. Os nomes vêm do CADASTRO, e não de um texto
+// digitado: `rpcmtec.capacitacao_militar` liga a capacitação a `dgeo.usuario`, e
+// a coluna "Militar" do modelo é montada aqui.
 //
 // A 2.6 (ministrada) NÃO ganhou coluna de instrutor, embora o vínculo exista
 // para ela também. O modelo tem quatro colunas naquela subseção, e quem
@@ -896,15 +867,12 @@ const montarExtraPit = ({ demandas }) =>
 // ---------------------------------------------------------------------------
 // 6.1 Aproveitamento do efetivo
 //
-// A coluna "Atividades" do modelo de 2026 é DERIVADA dos impedimentos, e não
-// digitada. Ela existia como texto livre até 2026-08-02, e era isso que impedia
-// a subseção de dizer quanto do efetivo esteve disponível -- que é a pergunta
-// que ela existe para responder, e que o modelo de 2025 respondia com três
-// colunas de número.
+// A coluna "Atividades" é DERIVADA dos impedimentos, e não digitada: em texto
+// livre a subseção não sabe dizer quanto do efetivo esteve disponível, que é a
+// pergunta que ela existe para responder.
 //
-// A COLUNA DE PERCENTUAL É NOSSA, e não do modelo de 2026. Ele tem duas colunas;
-// nós emitimos três, porque uma tabela de aproveitamento sem o aproveitamento é
-// a tabela que o documento tinha e que o chefe pediu para desfazer. Quem cola no
+// A COLUNA DE PERCENTUAL É NOSSA, e não do modelo de 2026, que tem duas: uma
+// tabela de aproveitamento sem o aproveitamento não responde nada. Quem cola no
 // Word apaga a coluna se não quiser, o que é barato; recuperar um número que não
 // saiu não é.
 // ---------------------------------------------------------------------------
@@ -924,13 +892,14 @@ const montarAproveitamento = ({ efetivo }) =>
 
     // Quem passou o mês inteiro fora da Divisão não entra: a 6.1 é a lista de
     // quem esteve nela. Quem esteve parte do mês entra, com o percentual
-    // dizendo quanto.
+    // dizendo quanto. QUEM RECORTA É A CONSULTA (`efetivoCtrl.resumoMensal` só
+    // devolve quem tem passagem cruzando o mês), e não um filtro aqui.
     return [
       nomeMilitar(e),
       texto(impedimentos),
       `${Number(e.aproveitamento).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
     ]
-  }).filter(Boolean)
+  })
 
 // ---------------------------------------------------------------------------
 // Orquestrador
@@ -1004,11 +973,9 @@ controller.calcular = async ({ ano, mes }) => {
     '2.7': montarEstadoAcervo({ estadoAcervo }),
     '3.1': montarTotaisMapoteca({ pedidosMes, pedidosAno }),
     '3.2': montarEntregasMapoteca({ pedidosMes }),
-    // A 3.3 saiu de `mapoteca.pedido` e virou `pit.demanda_extra` em
-    // 2026-08-02. A tentativa antiga derivava a tabela de `previsto_pit` e dava
-    // 23 linhas onde a edição real de julho/2026 traz 1: aquele campo é falso
-    // por omissão, e o que o relatório chama de Extra-PIT é a exceção
-    // AUTORIZADA, com documento. Agora o documento é obrigatório na origem.
+    // A 3.3 sai de `pit.demanda_extra`, e nunca de `mapoteca.pedido`: o que o
+    // relatório chama de Extra-PIT é a exceção AUTORIZADA, e o documento é
+    // obrigatório na origem.
     '3.3': montarExtraPit({ demandas: demandasExtra }),
     '3.4': montarLai({ pedidosMes }),
     '4.1': execucaoPorNd,

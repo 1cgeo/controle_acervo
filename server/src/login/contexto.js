@@ -38,10 +38,8 @@ const ORIGEM_POR_CLIENTE = {
  * @param {object} decoded - o payload do JWT
  */
 const montarContexto = (req, decoded) => {
-  // Token emitido antes de o `cliente` entrar no payload (2026-08-02) nao tem o
-  // campo. 'desconhecido' e a resposta honesta: adivinhar por User-Agent daria
-  // um valor plausivel e errado, e o rastro perde o sentido no dia em que o
-  // valor plausivel for tomado por verdade. A janela dura o JWT_EXPIRACAO.
+  // Token sem o campo `cliente` vira 'desconhecido', e não um palpite por
+  // User-Agent: valor plausível e errado estraga o rastro.
   const cliente = decoded && decoded.cliente
   const origem = cliente ? (ORIGEM_POR_CLIENTE[cliente] || cliente) : 'desconhecido'
 

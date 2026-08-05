@@ -3,6 +3,7 @@ import { formatDate } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { permissoes } from '@store/auth-store.js';
 import {
   getProjetos,
@@ -67,6 +68,10 @@ export async function renderProjetosTab(container) {
     ] : [],
   });
 
+  // A tabela num container proprio, para o estado de erro nao levar junto o
+  // texto de apoio nem o botao "Novo projeto".
+  const areaTabela = el('div', {}, [table.element]);
+
   const secao = el('div', {}, [
     el('div', { className: 'admin-aba__topo' }, [
       el('p', {
@@ -76,7 +81,7 @@ export async function renderProjetosTab(container) {
       }),
       el('div', { className: 'page__actions' }, pode.operador ? [novoBtn] : []),
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(secao);
 
@@ -85,11 +90,21 @@ export async function renderProjetosTab(container) {
     try {
       const [projetos, status] = await Promise.all([getProjetos(), getStatusExecucao()]);
       if (disposed) return;
+      if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
       statusExecucao = status;
+      novoBtn.disabled = false;
+      novoBtn.title = '';
       table.update({ rows: projetos, loading: false });
     } catch (err) {
       if (disposed) return;
+      // Estado de ERRO, e nao "Nenhum projeto cadastrado": a falha da carga
+      // lia-se como cadastro vazio.
       table.update({ rows: [], loading: false });
+      // "Status de execucao" e obrigatorio no formulario e vem desta carga: com
+      // ela falhando, abrir o dialogo daria um campo impossivel de preencher.
+      novoBtn.disabled = true;
+      novoBtn.title = 'A lista de status não carregou. Tente de novo antes de cadastrar.';
+      mostrarErro(areaTabela, err, load);
       showError(err.message || 'Erro ao carregar os projetos');
     }
   }

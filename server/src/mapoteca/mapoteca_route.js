@@ -15,11 +15,10 @@ const mapotecaSchema = require('./mapoteca_schema')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const acervoSchema = require('../acervo/acervo_schema')
 const anexoPedidoCtrl = require('./anexo_pedido_ctrl')
-// O rastro do pedido saiu de `mapoteca.pedido_auditoria` para `auditoria.evento`
-// em 2026-08-02. A URL desta rota NAO mudou junto, de proposito: ver o
-// comentario dela, no fim do arquivo.
-const auditoriaCtrl = require('../auditoria/auditoria_ctrl')
-const { enriquecer } = require('../auditoria/renderizar')
+// O rastro do pedido mora em `auditoria.evento`, e nao numa tabela da mapoteca.
+// Este router nao o LE: quem le e GET /api/auditoria/mapoteca/pedido/:id. Ver o
+// bloco "Auditoria do pedido" no fim do arquivo. Quem GRAVA o rastro sao os
+// controladores, cada um com o auditoriaCtrl que ja importa.
 const etiquetaEnvioCtrl = require('./etiqueta_envio_ctrl')
 const uploadAnexoPedido = require('./anexo_pedido_upload')
 
@@ -184,7 +183,7 @@ router.get(
   })
 )
 
-// A FILA de atendimento: pedidos em aberto, do mais urgente para o menos.
+// A FILA de pedidos abertos, do mais urgente para o menos.
 //
 // ANTES de '/pedido/:id', e não junto das outras: '/pedido/em_aberto' casaria com
 // ':id' e o erro apareceria como "id de pedido inválido", que não diz nada a quem
@@ -192,11 +191,20 @@ router.get(
 //
 // Perfil OPERADOR, e não consulta: esta é a tela de quem executa o atendimento
 // (imprimir, etiquetar, registrar). Quem só consulta usa a lista de pedidos.
+//
+// DUAS FILAS, e `?incluir_remetidos=true` escolhe a segunda. Sem a query a rota
+// devolve a fila de IMPRESSÃO (1, 2 e 3), que é o contrato que o plugin do QGIS
+// já instalado espera. Com ela devolve a fila de ATENDIMENTO, que traz também o
+// pedido Remetido (4), ainda à espera da marca de Concluído. Ver
+// `query_fragments.js` para a razão de as duas listas serem diferentes.
 router.get(
   '/pedido/em_aberto',
   verifyPerfil('operador', 'mapoteca'),
+  schemaValidation({ query: mapotecaSchema.filaQuery }),
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getPedidosEmAberto()
+    const dados = await mapotecaCtrl.getPedidosEmAberto({
+      incluirRemetidos: req.query.incluir_remetidos
+    })
     const msg = 'Pedidos em aberto retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -319,15 +327,14 @@ router.post(
 // Existe pela MESMA razão de '/pedido/:id/arquivo/:uuid_arquivo/download': a
 // permissão segue o MÓDULO do trabalho, e não o do dado. A rota gêmea do acervo
 // (POST /acervo/confirm-download) é `verifyPerfil('consulta')` SEM módulo, ou
-// seja, consulta no ACERVO — e quem atende pedido tem operador na mapoteca e
+// seja, consulta no ACERVO, e quem atende pedido tem operador na mapoteca e
 // pode não ter perfil nenhum no acervo.
 //
 // O que isso custava, medido no plugin: o prepare passava (mapoteca), os PDFs
 // eram copiados do volume, e o confirm levava 403. O operador via dois diálogos
-// de erro em cima de um download que tinha dado certo, os tokens ficavam
-// 'pending' e `acervo.cleanup_expired_downloads()` os marcava como 'failed' 24h
-// depois. O histórico de download passava a registrar falha em toda impressão
-// bem-sucedida.
+// de erro em cima de um download que tinha dado certo, e os tokens ficavam
+// 'pending' até alguém rodar a limpeza pela tela de Manutenção. O histórico de
+// download passava a registrar falha em toda impressão bem-sucedida.
 //
 // O controlador é o MESMO do acervo, de propósito: `acervo.download` é uma
 // tabela só, e duas implementações de "confirmar download" divergiriam na
@@ -343,7 +350,7 @@ router.post(
   })
 )
 
-// Registra sessões de impressão (log operacional — qualquer usuário logado)
+// Registra sessões de impressão (log operacional, qualquer usuário logado)
 router.post(
   '/impressao',
   verifyPerfil('operador', 'mapoteca'),
@@ -724,12 +731,10 @@ router.delete(
   })
 )
 
-// Rotas para Consumo de Material
-//
-// A LISTA de lancamentos e OPERADOR desde 2026-07-30 (chefe): consumo de material
-// e a segunda tela do perfil de operador da mapoteca, junto do atendimento. Nao
-// bastava esconder o item no menu, porque o perfil do client e so ergonomia: quem
-// barra leitura e este verifyPerfil.
+// A LISTA de lancamentos e OPERADOR: consumo de material e a segunda tela do
+// perfil de operador da mapoteca, junto do atendimento. Nao basta esconder o
+// item no menu, porque o perfil do client e so ergonomia: quem barra leitura e
+// este `verifyPerfil`.
 //
 // O que fica em CONSULTA de proposito: '/consumo_mensal' (abaixo) e o
 // '/dashboard/material_consumption', que sao o AGREGADO. O total do mes e
@@ -931,12 +936,9 @@ router.get(
   })
 )
 
-// O Anuário Estatístico NÃO tem mais rota aqui. Ele saiu em 2026-08-01 para
-// /api/rpcmtec/anuario, junto com o RPCMTec: os dois sobem para a DSG no mesmo
-// envio mensal, e agora saem da mesma tela. O `anuario_ctrl` continua NESTE
-// módulo, que é onde a entrega é registrada -- o que mudou de casa foi a rota e
-// o desenho do arquivo, que passou a sair da planilha-semente da DSG em vez de
-// ser redesenhado (ver server/src/rpcmtec/anuario_ods.js).
+// O Anuário Estatístico NÃO tem rota aqui: ele sai por /api/rpcmtec/anuario,
+// porque os dois sobem para a DSG no mesmo envio mensal e da mesma tela. O
+// `anuario_ctrl` fica NESTE módulo, que é onde a entrega é registrada.
 
 // Resumo de pedidos: uma linha por pedido (todos os clientes) com dados de envio
 // e o consolidado de produtos entregues por tipo e escala.
@@ -1085,40 +1087,17 @@ router.put(
 )
 
 // --- Auditoria do pedido ----------------------------------------------------
-
-// Histórico de quem alterou, adicionou e removeu o pedido e os itens dele.
-// Perfil de CONSULTA: quem lê o pedido lê o histórico dele. Responde mesmo para
-// pedido já apagado, que é justamente o caso que a auditoria existe para
-// registrar (ver o comentário em auditoriaCtrl.listarPorEntidade).
 //
-// A URL CONTINUA A MESMA depois de a tabela mudar de casa (2026-08-02), e isso
-// é deliberado: existe `GET /api/auditoria/mapoteca/pedido/:id`, que serve o
-// mesmo conteúdo pelo caminho geral, e trocar as duas coisas no mesmo commit
-// mexeria na tela do pedido, no `mapoteca-service.js` e nos seis casos de
-// `details-impressao-historico.test.js` junto com a migração dos dados. Uma
-// coisa por vez: se algo quebrar, se sabe o quê.
+// NÃO MORA MAIS AQUI, e não é para voltar. Havia um
+// `GET /pedido/:id/auditoria` que servia o MESMO conteúdo de
+// `GET /api/auditoria/mapoteca/pedido/:id`, pelo caminho antigo. O comentário
+// dele dizia que a tela do pedido o consumia, e não consumia mais: o histórico
+// das seis fichas do sistema saiu para `@components/historico/` do client, que
+// lê a rota de plataforma. Nem o plugin nem o mapoteca_cli chamavam o caminho
+// antigo. Duas rotas para o mesmo dado divergem na primeira que alguém corrigir.
 //
-// O que MUDOU na resposta, e ninguém do cliente ainda lê: `tabela` vem
-// qualificada (`mapoteca.pedido`, e não `pedido`), e cada evento traz `resumo` e
-// `mudancas` -- o diff já renderizado, com o rótulo em português e os dois
-// valores em texto. A tela ainda mostra `campos_alterados.join(', ')`, que é o
-// defeito que a fase 2 do plano corrige.
-router.get(
-  '/pedido/:id/auditoria',
-  verifyPerfil('consulta', 'mapoteca'),
-  schemaValidation({ params: mapotecaSchema.auditoriaPedidoParams }),
-  asyncHandler(async (req, res, next) => {
-    const eventos = await auditoriaCtrl.listarPorEntidade(
-      'mapoteca',
-      'pedido',
-      req.params.id
-    )
-    const dados = await enriquecer(eventos)
-
-    const msg = 'Auditoria do pedido retornada com sucesso'
-
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+// A rota de plataforma tem a MESMA guarda: quem lê o pedido lê o histórico dele
+// (o `guardaDoHistorico` de auditoria_route.js tira o módulo do próprio
+// caminho, e para 'mapoteca' cobra perfil de consulta na mapoteca).
 
 module.exports = router

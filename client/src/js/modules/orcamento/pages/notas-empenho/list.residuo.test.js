@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao: o saldo a liquidar e somado em Number sobre NUMERIC(15,2) do
 // Postgres, e sobra residuo de ponto flutuante. Dado real de producao, a NE
@@ -24,8 +25,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 
 import { renderNotasEmpenhoList } from '@modules/orcamento/pages/notas-empenho/list.js';
 import { getNotasEmpenho } from '@modules/orcamento/services/orcamento-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function linhaPorTexto(container, texto) {
   return [...container.querySelectorAll('tbody tr')]

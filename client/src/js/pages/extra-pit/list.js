@@ -3,6 +3,7 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import {
   getExtraPit,
   getAnosExtraPit,
@@ -86,6 +87,10 @@ export async function renderExtraPitList(container, _ctx) {
     ] : [],
   });
 
+  // A tabela vive num nó próprio para o estado de ERRO poder tomar o lugar dela
+  // e devolvê-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Extra-PIT' }),
@@ -95,9 +100,25 @@ export async function renderExtraPitList(container, _ctx) {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
     }, [anoFilter.element]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma demanda Extra-PIT
+   * cadastrada": a falha da API lia-se como ano sem exceção autorizada, e as
+   * duas pedem ações opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * nó: uma segunda falha guardaria o próprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   async function loadAnos() {
     let anos = [];
@@ -114,6 +135,9 @@ export async function renderExtraPitList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getExtraPit(anoSelecionado);
@@ -121,7 +145,8 @@ export async function renderExtraPitList(container, _ctx) {
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar as demandas Extra-PIT');
     }
   }

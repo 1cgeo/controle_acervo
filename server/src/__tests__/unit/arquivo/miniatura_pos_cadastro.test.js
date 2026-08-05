@@ -2,10 +2,9 @@
 
 // TODO PONTO DE ENTRADA DE ARQUIVO DISPARA A MINIATURA.
 //
-// Ate 2026-08-04 quem gerava era um cron de meia em meia hora, e ele nao
-// precisava saber por onde a versao entrou: varria a fila inteira. Sem cron, o
-// disparo mora em cada ponto de entrada, e esquecer um e o modo de falhar que
-// nao da erro: a versao entra no acervo e a ficha dela fica sem imagem, calada.
+// Nao ha rotina agendada varrendo a fila, entao o disparo mora em CADA ponto de
+// entrada. Esquecer um e o modo de falhar que nao da erro: a versao entra no
+// acervo e a ficha dela fica sem imagem, calada.
 //
 // Sao TRES pontos, e o comentario de `registrarArquivoCriado` os enumera: o
 // envio pela web, a catalogacao in-place e o confirm-upload. Este teste varre o

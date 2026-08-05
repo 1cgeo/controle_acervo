@@ -257,9 +257,6 @@ async function anexos (args, cfg) {
 // anexo baixar / anexo apagar
 // ---------------------------------------------------------------------------
 //
-// As duas rotas existiam desde 2026-07-30 e o CLI nao as alcancava, entao
-// conferir um anexo exigia sair dele e chamar HTTP na mao com o token do cache.
-//
 // Sem o download nao se prova o CONTEUDO do que subiu, so o TAMANHO, e tamanho e
 // prova fraca: dois PDF diferentes com o mesmo numero de bytes passam. Por isso
 // o baixar imprime o sha256 do que chegou.
@@ -267,9 +264,10 @@ async function anexos (args, cfg) {
 /**
  * `mapoteca pedido anexo baixar --id <anexoId> [--para <arquivo>]`
  *
- * Sem `--para`, grava com o nome que o servidor devolve no Content-Disposition,
- * e recusa sobrescrever arquivo que ja existe: baixar para conferir nao pode
- * apagar o original com que se compara.
+ * Sem `--para`, grava como `anexo_<id>`, sem extensao: o nome original vem no
+ * Content-Disposition, e esta camada HTTP nao devolve cabecalho. Use `--para`
+ * quando o nome importar. Recusa sobrescrever arquivo que ja existe: baixar
+ * para conferir nao pode apagar o original com que se compara.
  */
 async function anexoBaixar (args, cfg) {
   const flags = args.flags
@@ -335,6 +333,19 @@ async function anexoApagar (args, cfg) {
     throw erro
   }
 
+  // O --dry-run nao escreve, entao ele nao exige a confirmacao: e ele que mostra
+  // o que a confirmacao autorizaria.
+  if (flags['dry-run']) {
+    return {
+      texto: [
+        `[dry-run] nada foi apagado. Seriam ${ids.length}: ` +
+          ids.map(i => `DELETE /api${CAMINHO}/anexo/${i}`).join(', '),
+        'Para apagar de fato:',
+        `  mapoteca pedido anexo apagar --ids ${ids.join(',')} --confirmar ${ids.join(',')}`
+      ].join('\n')
+    }
+  }
+
   const confirmacao = argsLib.lista(flags.confirmar) || []
   const bate = confirmacao.length === ids.length &&
     confirmacao.every((v, i) => Number(v) === ids[i])
@@ -349,13 +360,6 @@ async function anexoApagar (args, cfg) {
     ].join('\n'))
     erro.jaFormatado = true
     throw erro
-  }
-
-  if (flags['dry-run']) {
-    return {
-      texto: `[dry-run] nada foi apagado. Seriam ${ids.length}: ` +
-        ids.map(i => `DELETE /api${CAMINHO}/anexo/${i}`).join(', ')
-    }
   }
 
   const apagados = []
@@ -498,19 +502,29 @@ async function acharOuCriarCliente (cfg, cliente, avisos) {
   return { id: novo.id, criado: true }
 }
 
+/** Ano de calendario de uma data 'YYYY-MM-DD', sem passar por Date (que muda o dia no fuso). */
+function anoDaData (valor) {
+  const casa = String(valor || '').match(/^(\d{4})-\d{2}-\d{2}/)
+  return casa ? Number(casa[1]) : null
+}
+
 async function acharPedidoExistente (cfg, pedido, clienteId) {
   const nup = pedido.documento_solicitacao_nup
   const doc = pedido.documento_solicitacao
   if (!nup && !doc) return null
 
-  const r = await http.autenticada(cfg, 'GET', CAMINHO)
+  // A listagem do servidor e de UM ano so, e sem `ano` na query ela cai no ano
+  // corrente. Procurar a duplicata de um pedido de 2025 na lista de 2026 nunca
+  // acha nada, e o comando recria o pedido em silencio. O ano sai da data do
+  // proprio pedido que se vai cadastrar.
+  const ano = anoDaData(pedido.data_pedido)
+  const r = await http.autenticada(cfg, 'GET', CAMINHO + http.query({ ano }))
   const todos = Array.isArray(r.dados) ? r.dados : []
 
   // A deduplicacao e por (documento, CLIENTE), nunca so pelo documento. Um DIEx
   // que encaminha a demanda de varias OM gera um pedido POR CLIENTE, sob o mesmo
   // NUP: sem o recorte por cliente, o 2o pedido cairia dentro do 1o e os itens de
-  // todas as OM virariam um pedido so, em silencio. Medido em 2026-08-03 com o
-  // DIEx 7234-E4/Cmdo CMS, que trazia tres unidades num NUP unico.
+  // todas as OM virariam um pedido so, em silencio.
   // O cliente_id da listagem volta como STRING; comparar como texto.
   const pedidos = clienteId == null
     ? todos

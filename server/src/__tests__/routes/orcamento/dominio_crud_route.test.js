@@ -5,7 +5,7 @@
 // Cobre: criar (201, grupo derivado do GND, 409 codigo duplicado, 400 validacao),
 // atualizar (200, 404) e excluir (200, 404, 409 em uso).
 //
-// A ORDEM DAS CONSULTAS MUDOU em 2026-08-02, com a rastreabilidade, e e por isso
+// A ORDEM DAS CONSULTAS MUDOU, com a rastreabilidade, e e por isso
 // que os mocks deste arquivo nao sao os de antes:
 //   * criar   -> `one` (INSERT ... RETURNING *), e nao mais `none`. O rastro
 //                precisa da linha que o BANCO gravou, e nao do corpo enviado.
@@ -150,8 +150,8 @@ describe('PUT /dominio/natureza_despesa/:code', () => {
   })
 
   // O caso que motiva auditar dominio: mudar o GND de uma ND RECLASSIFICA toda
-  // NC e toda NE ja lancadas com aquele codigo, e ate 2026-08-02 isso nao
-  // deixava rastro nenhum.
+  // NC e toda NE ja lancadas com aquele codigo, e sem evento isso nao deixa
+  // rastro nenhum.
   test('o evento guarda o valor ANTERIOR do GND', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       code: '339030',

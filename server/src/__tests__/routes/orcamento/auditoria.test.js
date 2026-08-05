@@ -5,9 +5,8 @@
 // Este arquivo e a TROCA por nao usar gatilho de banco. A insercao do evento
 // mora no backend, porque o gatilho nao conhece o usuario da sessao HTTP (o
 // Postgres ve so a conexao do pool). O preco dessa escolha e a rota nova que
-// esquece de auditar, e quem cobra o preco e uma varredura como esta -- no molde
-// de `routes/mapoteca_auditoria.test.js`, que ja guarda o pedido desde
-// 2026-07-30.
+// esquece de auditar, e quem cobra o preco e uma varredura como esta, no molde
+// de `routes/mapoteca_auditoria.test.js`.
 //
 // O QUE ELA COBRA, em tres camadas:
 //
@@ -15,10 +14,10 @@
 //      escopo COM MOTIVO). A lista de rotas sai do router de VERDADE, entao a
 //      rota nova de amanha cai aqui.
 //   2. Todo handler de escrita repassa `req.usuarioUuid` E `req.contexto` ao
-//      controller. Este e o defeito mais provavel do modulo: ate 2026-08-02
-//      onze funcoes de escrita simplesmente NAO recebiam o autor, embora
-//      `req.usuarioUuid` ja existisse na rota. Um evento com autor nulo nao
-//      quebra nada e responde "migração" na tela, que e mentira.
+//      controller. Este e o defeito mais provavel do modulo: a funcao de
+//      escrita deixa de receber o autor embora `req.usuarioUuid` exista na
+//      rota, e um evento com autor nulo nao quebra nada, so responde
+//      "migração" na tela, que e mentira.
 //   3. Todo controller de escrita importa o `auditoria_ctrl` e registra as tres
 //      operacoes que ele executa.
 //
@@ -191,8 +190,8 @@ describe('Rastreabilidade do orcamento - varredura das rotas de escrita', () => 
     expect(orfas).toEqual([])
   })
 
-  // As 36 de 2026-08-02. Subir e normal (rota nova); cair quer dizer que uma
-  // rota de escrita sumiu, e ai o numero tem que ser revisto de proposito.
+  // PISO, e nao contagem exata. Subir e normal (rota nova); cair quer dizer que
+  // uma rota de escrita sumiu, e ai o piso so se abaixa de proposito.
   it('o total de rotas de escrita nao caiu sem aviso', () => {
     expect(rotasDeEscrita().length).toBeGreaterThanOrEqual(36)
   })
@@ -250,10 +249,9 @@ describe('Rastreabilidade do orcamento - os controllers registram', () => {
     }
   )
 
-  // Toda escrita abre transacao. Nao e so pela auditoria: `nota_credito.deletar`
-  // fazia QUATRO comandos em QUATRO conexoes, e uma falha no meio (ou outra
-  // requisicao entre a checagem e o DELETE) deixava estado parcial. Vinte e sete
-  // funcoes do modulo nao tinham transacao nenhuma antes de 2026-08-02.
+  // Toda escrita abre transacao. Nao e so pela auditoria: uma exclusao que faca
+  // quatro comandos em quatro conexoes deixa estado parcial se falhar no meio,
+  // ou se outra requisicao entrar entre a checagem e o DELETE.
   it.each(arquivos.map(f => [path.relative(RAIZ, f), f]))(
     '%s nao escreve fora de transacao',
     (nome, arquivo) => {

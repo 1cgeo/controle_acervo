@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Dois defeitos fixados aqui:
 // 1) Tipo do id. createSelectField devolve o valor da opcao com o tipo original
@@ -38,8 +39,6 @@ vi.mock('@components/historico/historico.js', () => ({
 }));
 
 import { openPdrItemDialog } from '@modules/orcamento/pages/pdr/item-dialog.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function botao(rotulo) {
   return [...document.querySelectorAll('.modal__footer .btn')]

@@ -35,11 +35,7 @@ const { caminhoNoVolume } = require('./caminho_volume')
 //
 //   TIF depois, que e o GeoTIFF da carta e do modelo de elevacao.
 //
-//   IMG por ultimo, que e o ERDAS da Ortoimagem. Ele entrou em 2026-07-31:
-//   antes disso os 6 produtos de Ortoimagem nao tinham miniatura nenhuma,
-//   porque nenhum arquivo deles e PDF ou TIF. O `.img` pesa quase nada (os
-//   pixels moram num `.ige` ao lado, de 7,4 GB), entao a ordem por tamanho
-//   sozinha ja o escolheria na frente do `.ecw`; a preferencia explicita
+//   IMG por ultimo, que e o ERDAS da Ortoimagem. A preferencia explicita
 //   existe porque o driver de ECW e proprietario e nem sempre esta presente.
 //
 //   O menor entre os iguais, e o id so para desempatar de forma estavel. Sem o

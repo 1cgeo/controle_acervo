@@ -64,7 +64,7 @@ async function resolverProduto (args, cfg) {
   return { id: Number(achados[0].id), avisos: [] }
 }
 
-/** Mapa volume_armazenamento_id -> caminho do volume (uma chamada, admin). */
+/** Mapa volume_armazenamento_id -> caminho do volume (uma chamada, operador). */
 async function mapaVolumes (cfg) {
   const r = await http.autenticada(cfg, 'GET', '/volumes/volume_armazenamento')
   const mapa = new Map()

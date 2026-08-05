@@ -2,8 +2,9 @@
 import os
 import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QComboBox
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+
+from ...core.dominios import TIPO_ARQUIVO_TILESERVER, eh_tileserver
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'file_edit_dialog.ui'))
@@ -43,12 +44,12 @@ class FileEditDialog(QDialog, FORM_CLASS):
             # Carregar tipos de arquivo. O servidor não permite alterar um
             # arquivo de/para Tileserver (os CHECKs do banco tornariam o
             # UPDATE impossível), então o combo só oferece tipos compatíveis
-            era_tileserver = self.arquivo_data.get('tipo_arquivo_id') == 9
+            era_tileserver = eh_tileserver(self.arquivo_data.get('tipo_arquivo_id'))
             tipo_arquivo_response = self.api_client.get('gerencia/dominio/tipo_arquivo')
             if tipo_arquivo_response and 'dados' in tipo_arquivo_response:
                 self.tipoArquivoComboBox.clear()
                 for tipo in tipo_arquivo_response['dados']:
-                    if (tipo['code'] == 9) != era_tileserver:
+                    if (tipo['code'] == TIPO_ARQUIVO_TILESERVER) != era_tileserver:
                         continue
                     self.tipoArquivoComboBox.addItem(tipo['nome'], tipo['code'])
             
@@ -85,7 +86,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
         self.idLineEdit.setText(str(self.arquivo_data.get('id') or ''))
         self.nomeLineEdit.setText(self.arquivo_data.get('nome') or '')
         # O endpoint de atualização não aceita alterar nome_arquivo
-        # (renomearia o arquivo físico) — exibição apenas
+        # (renomearia o arquivo físico). O campo é só de exibição.
         self.nomeArquivoLineEdit.setText(self.arquivo_data.get('nome_arquivo') or '')
         self.nomeArquivoLineEdit.setReadOnly(True)
         self.crsLineEdit.setText(self.arquivo_data.get('crs_original') or '')
@@ -125,7 +126,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
                 else:
                     metadado_texto = json.dumps(self.arquivo_data['metadado'], indent=2)
                 self.metadadoTextEdit.setPlainText(metadado_texto)
-            except:
+            except (TypeError, ValueError):
                 self.metadadoTextEdit.setPlainText(str(self.arquivo_data['metadado']))
                 
         # Atualizar visibilidade dos campos baseado no tipo
@@ -133,8 +134,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
             
     def toggle_fields_by_type(self):
         """Ativa/desativa campos baseado no tipo de arquivo."""
-        # Tipo 9 (Tileserver) tem tratamento especial
-        is_tileserver = self.tipoArquivoComboBox.currentData() == 9
+        is_tileserver = eh_tileserver(self.tipoArquivoComboBox.currentData())
         
         self.volumeLabel.setVisible(not is_tileserver)
         self.volumeComboBox.setVisible(not is_tileserver)
@@ -152,7 +152,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
             return False
             
         # Volume é obrigatório para arquivos não-tileserver
-        is_tileserver = self.tipoArquivoComboBox.currentData() == 9
+        is_tileserver = eh_tileserver(self.tipoArquivoComboBox.currentData())
         if not is_tileserver and self.volumeComboBox.currentIndex() < 0:
             QMessageBox.warning(self, "Validação", "O volume de armazenamento é obrigatório.")
             return False
@@ -180,7 +180,7 @@ class FileEditDialog(QDialog, FORM_CLASS):
             
             # Tipo de arquivo
             tipo_arquivo_id = self.tipoArquivoComboBox.currentData()
-            is_tileserver = tipo_arquivo_id == 9
+            is_tileserver = eh_tileserver(tipo_arquivo_id)
                 
             # Preparar dados
             arquivo = {

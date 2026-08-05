@@ -11,8 +11,8 @@ from .authSMB import AuthSMB
 class FileTransferThread(QThread):
     progress_update = pyqtSignal(int, int)
     # bool sucesso, str caminho_destino, str identificador, str mensagem_erro
-    # (mensagem_erro vazia em caso de sucesso). Slots que aceitam só 3 args
-    # continuam funcionando — PyQt descarta o argumento extra.
+    # (mensagem_erro vazia em caso de sucesso). Slot que aceite só 3 argumentos
+    # também funciona, porque o PyQt descarta o argumento extra.
     file_transferred = pyqtSignal(bool, str, str, str)
 
     # Cache de credenciais SMB por sessão (compartilhado entre instâncias)
@@ -35,8 +35,8 @@ class FileTransferThread(QThread):
         cls._cached_smb_credentials = None
 
     def run(self):
-        # IMPORTANTE: este método executa na thread de trabalho. Nunca criar
-        # widgets/diálogos ou tocar na GUI aqui — apenas emitir sinais.
+        # IMPORTANTE: este método executa na thread de trabalho. Nunca crie
+        # widget nem diálogo aqui, e nunca toque na GUI. Apenas emita sinais.
 
         # Falha imediata (sem retentativas) para origens que não são caminhos de
         # arquivo copiáveis: vazio/None ou URL (ex: volume do tipo tileserver)
@@ -64,10 +64,10 @@ class FileTransferThread(QThread):
                     self.file_transferred.emit(True, self.destination_path, self.identifier, "")
                     return  # Transferência bem-sucedida, retornar
                 else:
-                    # Transferência falhou, mas sem exceção. Não emitir
-                    # progress_update(0, 100) aqui: zerar a barra a cada tentativa
-                    # faz o progresso "recuar" e parece travamento. A causa é
-                    # guardada e enviada no emit final.
+                    # Transferência falhou, mas sem exceção. Não emita
+                    # progress_update(0, 100) aqui: zerar a barra a cada
+                    # tentativa faz o progresso recuar e parece travamento. A
+                    # causa fica guardada e vai no emit final.
                     last_error = error or last_error
                     logging.warning(f"Tentativa {attempt}/{self.max_retries} falhou ao transferir arquivo: {last_error}")
 
@@ -86,7 +86,9 @@ class FileTransferThread(QThread):
                 if self.cancelled:
                     last_error = "Transferência cancelada."
                 self.file_transferred.emit(False, self.destination_path, self.identifier, last_error)
-                return  # Sem este return o laço continuava e emitia file_transferred em duplicidade
+                # O return é obrigatório: sem ele o laço segue e emite
+                # file_transferred em duplicidade.
+                return
 
     def _interruptible_sleep(self, seconds):
         """Aguarda em pequenos incrementos, abortando rapidamente se cancelado.
@@ -202,10 +204,10 @@ class FileTransferThread(QThread):
 
         with open(source_path, 'rb') as src:
             with open(dest_path, 'wb') as dst:
-                # Chunks de 1MB: menos overhead de I/O e, principalmente, menos
-                # sinais emitidos. Emitir progresso a cada 8KB inundava a fila de
-                # eventos da thread principal (centenas de milhares de eventos
-                # enfileirados em arquivos grandes travavam a interface do QGIS).
+                # Blocos de 1 MB: menos ida ao disco e, principalmente, menos
+                # sinais emitidos. Emitir progresso a cada 8 KB inunda a fila de
+                # eventos da thread principal e trava a interface do QGIS em
+                # arquivos grandes.
                 buffer_size = 1024 * 1024
                 buffer = src.read(buffer_size)
 
@@ -240,8 +242,8 @@ class FileTransferThread(QThread):
 
         except subprocess.CalledProcessError as e:
             # getFileBySMB.py escreve mensagens claras em stderr (biblioteca
-            # ausente, credenciais incompletas, erro de transferência) —
-            # propagá-las à UI em vez do genérico "Falha na transferência"
+            # ausente, credenciais incompletas, erro de transferência).
+            # Propague-as à UI, em vez do genérico "Falha na transferência".
             msg = (e.stderr or '').strip() or str(e)
             logging.error(f"Erro ao executar comando: {str(e)}, saída: {e.stderr}")
             return False, msg

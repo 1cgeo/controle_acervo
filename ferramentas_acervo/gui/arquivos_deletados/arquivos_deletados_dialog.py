@@ -1,11 +1,9 @@
 # Path: gui\arquivos_deletados\arquivos_deletados_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
-from qgis.core import Qgis
-from ..ui_utils import sortable_item, sortable_int_item
-import csv
+from ..ui_utils import exportar_tabela_csv, sortable_item, sortable_int_item
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'arquivos_deletados_dialog.ui'))
@@ -123,7 +121,7 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
 
         for row, file in enumerate(files):
             # `get(chave, '')` não cobre valor None vindo do servidor (colunas
-            # nuláveis e LEFT JOINs) — usar `or ''` para não passar None ao Qt
+            # nuláveis e LEFT JOINs). Use `or ''` para não passar None ao Qt.
             self.filesTable.setItem(row, 0, sortable_int_item(file.get('id')))
             self.filesTable.setItem(row, 1, QTableWidgetItem(file.get('nome') or ''))
             self.filesTable.setItem(row, 2, QTableWidgetItem(file.get('nome_arquivo') or ''))
@@ -197,52 +195,15 @@ class ArquivosDeletedDialog(QDialog, FORM_CLASS):
         self.load_arquivos_deletados()
         
     def export_csv(self):
-        """Export the table data to a CSV file."""
-        if self.filesTable.rowCount() == 0:
-            QMessageBox.warning(
-                self,
-                "Aviso",
-                "Não há dados para exportar."
-            )
-            return
-            
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Exportar para CSV",
-            "",
-            "Arquivos CSV (*.csv)"
+        """Exporta a PÁGINA ATUAL para CSV.
+
+        O servidor não oferece rota de CSV para arquivos deletados, então o que
+        sai é o que está na tela. O aviso deixa isso claro para quem exporta.
+        """
+        QMessageBox.information(
+            self, "Exportar CSV",
+            f"O arquivo terá os {self.filesTable.rowCount()} registro(s) da página atual, "
+            f"de um total de {self.total_items}.\n\n"
+            "Aumente os itens por página para exportar mais de uma vez só."
         )
-        
-        if not filename:
-            return
-            
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                
-                # Write header
-                headers = []
-                for column in range(self.filesTable.columnCount()):
-                    headers.append(self.filesTable.horizontalHeaderItem(column).text())
-                writer.writerow(headers)
-                
-                # Write data
-                for row in range(self.filesTable.rowCount()):
-                    row_data = []
-                    for column in range(self.filesTable.columnCount()):
-                        item = self.filesTable.item(row, column)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
-                    
-            QMessageBox.information(
-                self,
-                "Sucesso",
-                f"Dados exportados com sucesso para {filename}"
-            )
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erro",
-                f"Erro ao exportar dados: {str(e)}"
-            )
+        exportar_tabela_csv(self, self.filesTable, 'arquivos-deletados.csv')

@@ -1,9 +1,11 @@
 # Path: gui\pedidos\pedidos_dialog.py
 import os
+import logging
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (QDialog, QMessageBox, QFileDialog,
                                  QTableWidgetItem, QHeaderView, QVBoxLayout,
-                                 QLabel, QTableWidget, QPushButton, QHBoxLayout)
+                                 QLabel, QTableWidget, QPushButton, QHBoxLayout,
+                                 QApplication)
 from qgis.PyQt.QtCore import Qt, QDir
 from qgis.PyQt.QtGui import QColor
 from .impressao_manager import ImpressaoManager
@@ -71,18 +73,18 @@ class PedidosDialog(QDialog, FORM_CLASS):
     """
     A tela do plugin da mapoteca: a FILA de pedidos a atender, os itens de cada
     um com o quantitativo de impressão (pedida / impressa / restante), o
-    download dos PDFs das cartas e o registro do que foi impresso -- para que
+    download dos PDFs das cartas e o registro do que foi impresso, para que
     operadores diferentes continuem o trabalho de onde o outro parou.
 
     TODA rota que esta tela chama é do módulo MAPOTECA, e isso é requisito, não
     coincidência: quem atende pedido tem operador na mapoteca e pode não ter
-    perfil nenhum no acervo. Até 2026-08-01 a confirmação do download saía por
-    `/acervo/confirm-download`, que cobra perfil no ACERVO, e esse usuário levava
-    403 no fim de todo download bem-sucedido.
+    perfil nenhum no acervo. Rota de acervo aqui devolve 403 para o usuário
+    certo, no fim de um trabalho que deu certo.
     """
 
     def __init__(self, iface, api_client, settings, parent=None):
-        super(PedidosDialog, self).__init__(parent)
+        # Sem pai, a janela some atrás do QGIS e sobrevive ao fechamento dele.
+        super(PedidosDialog, self).__init__(parent or iface.mainWindow())
         self.setupUi(self)
         self.iface = iface
         self.api_client = api_client
@@ -137,12 +139,16 @@ class PedidosDialog(QDialog, FORM_CLASS):
 
     def setup_signals(self):
         self.refreshButton.clicked.connect(self.load_pedidos)
-        self.filtroLineEdit.textChanged.connect(self._preencher_fila)
+        # O lambda descarta o texto que `textChanged` manda. Ligado direto, esse
+        # texto caía no parâmetro `recarregar_itens` e a tela pedia os itens do
+        # pedido ao servidor A CADA TECLA digitada no filtro.
+        self.filtroLineEdit.textChanged.connect(lambda _: self._preencher_fila())
         self.pedidosTable.itemSelectionChanged.connect(self.handle_pedido_selecionado)
         self.itensTable.itemSelectionChanged.connect(self._atualizar_botoes)
         self.itensTable.itemDoubleClicked.connect(lambda _: self.mostrar_historico())
         self.registrarButton.clicked.connect(self.registrar_impressao)
         self.historicoButton.clicked.connect(self.mostrar_historico)
+        self.baixarItemButton.clicked.connect(self.baixar_pdf_item)
         self.browseButton.clicked.connect(self.browse_destination)
         self.downloadButton.clicked.connect(self.start_download)
         self.cancelButton.clicked.connect(self.cancel_download)
@@ -156,25 +162,44 @@ class PedidosDialog(QDialog, FORM_CLASS):
 
     # --- Fila de atendimento -------------------------------------------------
 
+    def _aguardar(self, mensagem):
+        """Mostra a mensagem e o cursor de espera ANTES de uma chamada de rede.
+
+        As chamadas são síncronas e travam a interface enquanto duram. O
+        `processEvents` obriga a tela a pintar o aviso antes de bloquear; sem
+        ele o operador vê a janela congelada, sem nada escrito.
+        """
+        self.statusLabel.setText(mensagem)
+        self.refreshButton.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+
+    def _fim_da_espera(self):
+        QApplication.restoreOverrideCursor()
+        self.refreshButton.setEnabled(True)
+
     def load_pedidos(self):
         """Carrega a fila de atendimento do servidor.
 
-        `/pedido/em_aberto`, e não `/pedido`: a lista de pedidos passou a ser do
-        ANO consultado (o `ano` da query cai no ano corrente quando não vem), e
-        o plugin não tem seletor de ano. Pelo caminho antigo, o pedido de
-        dezembro que continuava aberto em janeiro sumia da tela sem aviso. A
-        fila também já exclui no SERVIDOR o que não é trabalho de quem imprime
-        (Concluído, Cancelado, Remetido e Aguardando produção), então a régua
-        deixou de estar duplicada aqui em Python.
+        `/pedido/em_aberto`, e nunca `/pedido`: a lista de pedidos é do ANO
+        consultado (o `ano` da query cai no ano corrente quando não vem), e o
+        plugin não tem seletor de ano. Por ela, o pedido de dezembro ainda
+        aberto em janeiro some da tela sem aviso.
+
+        A fila já exclui no SERVIDOR o que não é trabalho de quem imprime
+        (Concluído, Cancelado, Remetido e Aguardando produção). Não duplique
+        essa régua aqui em Python.
         """
-        self.setCursor(Qt.CursorShape.WaitCursor)
+        self._aguardar("Carregando a fila de atendimento...")
         try:
             response = self.api_client.get('mapoteca/pedido/em_aberto')
         finally:
-            self.unsetCursor()
+            self._fim_da_espera()
 
         if not response or 'dados' not in response:
-            self.statusLabel.setText("Não foi possível carregar a fila de atendimento.")
+            self.statusLabel.setText(
+                "Não foi possível carregar a fila de atendimento. "
+                "Verifique a conexão e use Atualizar para tentar de novo.")
             return
 
         self.pedidos = response['dados']
@@ -235,14 +260,18 @@ class PedidosDialog(QDialog, FORM_CLASS):
         elif linha is not None and recarregar_itens:
             self.load_itens()
 
+        self._atualizar_status_fila()
+        self._atualizar_botoes()
+
+    def _atualizar_status_fila(self):
+        """Escreve na barra de status quantos pedidos a fila tem agora."""
         if not self.pedidos:
             self.statusLabel.setText("Nenhum pedido em aberto no momento.")
-        elif termo:
+        elif len(self.pedidos_visiveis) != len(self.pedidos):
             self.statusLabel.setText(
                 f"{len(self.pedidos_visiveis)} de {len(self.pedidos)} pedido(s) em aberto.")
         else:
             self.statusLabel.setText(f"{len(self.pedidos)} pedido(s) em aberto.")
-        self._atualizar_botoes()
 
     @staticmethod
     def _casa_filtro(pedido, termo):
@@ -258,6 +287,10 @@ class PedidosDialog(QDialog, FORM_CLASS):
     def handle_pedido_selecionado(self):
         row = self.pedidosTable.currentRow()
         if row < 0 or row >= len(self.pedidos_visiveis):
+            # Seleção desfeita: a tabela de itens tem de esvaziar junto, senão
+            # os botões de trabalho seguem agindo sobre o pedido anterior.
+            self._limpar_itens()
+            self._atualizar_botoes()
             return
         self.pedido_selecionado = self.pedidos_visiveis[row]
         self.load_itens()
@@ -284,14 +317,16 @@ class PedidosDialog(QDialog, FORM_CLASS):
             return
 
         pedido_id = self.pedido_selecionado['id']
-        self.setCursor(Qt.CursorShape.WaitCursor)
+        self._aguardar("Carregando os itens do pedido...")
         try:
             response = self.api_client.get(f"mapoteca/pedido/{pedido_id}/impressao")
         finally:
-            self.unsetCursor()
+            self._fim_da_espera()
 
         if not response or 'dados' not in response:
-            self.statusLabel.setText("Não foi possível carregar os itens do pedido.")
+            self.statusLabel.setText(
+                "Não foi possível carregar os itens do pedido. "
+                "Selecione o pedido de novo ou use Atualizar.")
             return
 
         self.detalhe = response['dados']
@@ -325,6 +360,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
         self.itensTable.blockSignals(False)
 
         self._atualizar_cabecalho_itens()
+        self._atualizar_status_fila()
         self._atualizar_botoes()
 
     @staticmethod
@@ -335,7 +371,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
         # O avulso não aponta produto do acervo: ele NUNCA terá PDF, e dizer
         # "sem PDF no acervo" mandaria o operador procurar o que não existe.
         if item.get('item_avulso'):
-            return 'Avulso — imprimir do original'
+            return 'Avulso, imprimir do original'
         return 'Sem PDF no acervo'
 
     @staticmethod
@@ -360,7 +396,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
         concluidos = impressao.get('itens_concluidos', 0)
         total = impressao.get('total_itens', 0)
         self.itensLabel.setText(
-            f"Itens do pedido {localizador} — {concluidos}/{total} itens impressos")
+            f"Itens do pedido {localizador} ({concluidos}/{total} itens impressos)")
 
         pedido = self.pedido_selecionado or {}
         info = [pedido.get('cliente_nome') or '-']
@@ -375,7 +411,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
         if sem_arquivo:
             info.append(f"{sem_arquivo} item(ns) sem PDF para baixar")
         if total > 0 and concluidos >= total:
-            info.append("impressão concluída — marque o pedido como Remetido no sistema")
+            info.append("impressão concluída, marque o pedido como Remetido no SCA")
 
         self.pedidoInfoLabel.setText('  ·  '.join(info))
 
@@ -426,15 +462,23 @@ class PedidosDialog(QDialog, FORM_CLASS):
         if item is None:
             return
 
-        response = self.api_client.get(
-            f"mapoteca/produto_pedido/{item['produto_pedido_id']}/impressao")
+        self._aguardar("Carregando o histórico do item...")
+        try:
+            response = self.api_client.get(
+                f"mapoteca/produto_pedido/{item['produto_pedido_id']}/impressao")
+        finally:
+            self._fim_da_espera()
+
         if not response or 'dados' not in response:
+            self.statusLabel.setText(
+                "Não foi possível carregar o histórico deste item. Tente de novo.")
             return
         dados = response['dados']
+        self._atualizar_status_fila()
 
         dialog = QDialog(self)
         dialog.setWindowTitle(
-            f"Histórico de impressão — {item.get('produto_nome') or item.get('mi') or ''}")
+            f"Histórico de impressão: {item.get('produto_nome') or item.get('mi') or ''}")
         dialog.resize(680, 400)
         layout = QVBoxLayout(dialog)
 
@@ -492,6 +536,116 @@ class PedidosDialog(QDialog, FORM_CLASS):
             self.settings.set('pasta_impressao', directory)
             self.settings.sync()
             self._atualizar_botoes()
+
+    def baixar_pdf_item(self):
+        """Baixa o PDF de UM item, pelo servidor.
+
+        Usa `mapoteca/pedido/:id/arquivo/:uuid_arquivo/download`, que faz o
+        stream do arquivo. É o caminho para reimprimir uma carta sozinha e para
+        a máquina que não enxerga o volume de armazenamento, que é de onde o
+        download do pedido inteiro copia.
+        """
+        item = self._item_selecionado()
+        if item is None or not self.pedido_selecionado:
+            return
+
+        if not item.get('uuid_arquivo'):
+            QMessageBox.information(
+                self, "Item sem PDF",
+                "Este item não tem PDF no acervo para baixar.\n\n"
+                "Item avulso se imprime do original. Item do acervo sem "
+                "arquivo depende de alguém carregar o PDF no SCA."
+            )
+            return
+
+        destino_dir = self.destinationLineEdit.text()
+        if not destino_dir or not os.path.isdir(destino_dir):
+            QMessageBox.warning(
+                self, "Pasta de destino",
+                "Escolha uma pasta de destino válida antes de baixar o PDF."
+            )
+            return
+
+        nome = os.path.basename(
+            item.get('arquivo_nome_fisico') or item.get('arquivo_nome') or 'carta.pdf')
+        destino = os.path.join(destino_dir, nome)
+
+        if os.path.exists(destino):
+            reply = QMessageBox.question(
+                self, "Arquivo já existe",
+                f"O arquivo \"{nome}\" já está na pasta de destino e será "
+                "substituído.\n\nDeseja continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        # Baixa para um arquivo temporário e só depois renomeia. Escrevendo direto
+        # no destino, uma queda no meio deixaria meio PDF com o nome do bom, ou
+        # destruiria a cópia que já estava lá.
+        parcial = f"{destino}.parcial"
+
+        self.download_in_progress = True
+        self.progressGroupBox.setVisible(True)
+        self.currentFileLabel.setText(f"Baixando: {nome}")
+        self.fileProgressBar.setValue(0)
+        self.overallProgressBar.setMaximum(1)
+        self.overallProgressBar.setValue(0)
+        self.overallProgressLabel.setText("Progresso total: 0/1 arquivos")
+        self.closeButton.setEnabled(False)
+        self._atualizar_botoes()
+        self._aguardar(f"Baixando o PDF de {nome}...")
+        try:
+            baixou = self.api_client.download_file(
+                f"mapoteca/pedido/{self.pedido_selecionado['id']}"
+                f"/arquivo/{item['uuid_arquivo']}/download",
+                parcial,
+                progress_callback=self._progresso_pdf_item
+            )
+        finally:
+            self._fim_da_espera()
+            self.download_in_progress = False
+            self.progressGroupBox.setVisible(False)
+            self.closeButton.setEnabled(True)
+            self._atualizar_botoes()
+
+        if baixou:
+            try:
+                os.replace(parcial, destino)
+            except OSError as e:
+                self._descartar_parcial(parcial)
+                QMessageBox.warning(
+                    self, "Falha ao salvar",
+                    f"O PDF foi baixado, mas não pôde ser salvo como \"{nome}\": {e}\n\n"
+                    "Feche o arquivo se ele estiver aberto, ou escolha outra pasta."
+                )
+                return
+            self.overallProgressBar.setValue(1)
+            self.statusLabel.setText(f"PDF salvo em {destino}")
+            QMessageBox.information(
+                self, "PDF baixado", f"O arquivo foi salvo em:\n{destino}")
+            return
+
+        # A causa da falha o api_client já mostrou.
+        self._descartar_parcial(parcial)
+        self.statusLabel.setText(
+            "Não foi possível baixar o PDF deste item. Tente de novo ou baixe "
+            "o pedido inteiro.")
+
+    def _progresso_pdf_item(self, baixados, total):
+        """Pinta o progresso do download de um item, que é síncrono."""
+        if total > 0:
+            self.fileProgressBar.setValue(int(baixados * 100 / total))
+        QApplication.processEvents()
+
+    @staticmethod
+    def _descartar_parcial(caminho):
+        try:
+            if os.path.exists(caminho):
+                os.remove(caminho)
+        except OSError as e:
+            logging.warning(f"Não foi possível apagar o arquivo parcial {caminho}: {e}")
 
     def start_download(self):
         """Prepara e inicia o download dos PDFs do pedido selecionado."""
@@ -587,7 +741,11 @@ class PedidosDialog(QDialog, FORM_CLASS):
             detalhes = "\n".join(
                 f"- {r['nome']}: {r['error_message']}" for r in results if not r['success']
             )
-            mensagem = f"{sucessos} PDF(s) baixado(s), {falhas} falha(s):\n\n{detalhes}"
+            mensagem = (
+                f"{sucessos} PDF(s) baixado(s), {falhas} falha(s):\n\n{detalhes}\n\n"
+                "Baixe o pedido de novo para tentar os que faltaram, ou use "
+                "\"Baixar PDF do item\" em cada um deles."
+            )
 
         if manifesto_path:
             mensagem += (
@@ -607,6 +765,15 @@ class PedidosDialog(QDialog, FORM_CLASS):
         self.closeButton.setEnabled(True)
         self.progressGroupBox.setVisible(False)
         self._atualizar_botoes()
+
+        # Mensagem vazia é o combinado com o ImpressaoManager: o api_client já
+        # mostrou a causa, e um segundo diálogo só empilharia em cima dela.
+        if not error_message:
+            self.statusLabel.setText(
+                "O download não pôde ser preparado. Veja a mensagem de erro e "
+                "tente de novo.")
+            return
+
         self.statusLabel.setText(f"Erro: {error_message}")
         QMessageBox.critical(self, "Erro de Download", error_message)
 
@@ -629,6 +796,8 @@ class PedidosDialog(QDialog, FORM_CLASS):
         tem_itens = bool(self.itens)
         tem_destino = bool(self.destinationLineEdit.text())
         tem_baixavel = any(i.get('uuid_arquivo') for i in self.itens)
+        item = self._item_selecionado()
+        item_com_pdf = item is not None and bool(item.get('uuid_arquivo'))
 
         self.registrarButton.setEnabled(tem_itens and not ocupado)
         self.registrarButton.setToolTip(
@@ -636,10 +805,18 @@ class PedidosDialog(QDialog, FORM_CLASS):
             "Selecione um pedido" if not tem_itens else
             "Registrar as cópias impressas nesta sessão")
 
-        self.historicoButton.setEnabled(self._item_selecionado() is not None)
+        self.historicoButton.setEnabled(item is not None)
         self.historicoButton.setToolTip(
-            "Selecione um item na tabela" if self._item_selecionado() is None else
+            "Selecione um item na tabela" if item is None else
             "Quem imprimiu, quando e quantas cópias")
+
+        self.baixarItemButton.setEnabled(item_com_pdf and tem_destino and not ocupado)
+        self.baixarItemButton.setToolTip(
+            "Aguarde o download terminar" if ocupado else
+            "Selecione um item na tabela" if item is None else
+            "Este item não tem PDF no acervo" if not item_com_pdf else
+            "Escolha a pasta de destino" if not tem_destino else
+            "Baixar só o PDF deste item, direto do servidor")
 
         self.downloadButton.setEnabled(tem_baixavel and tem_destino and not ocupado)
         self.downloadButton.setToolTip(

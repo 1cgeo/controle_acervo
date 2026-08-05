@@ -8,9 +8,8 @@ const { auditoriaCtrl } = require("../auditoria");
 const controller = {};
 
 // As SEIS funcoes deste controlador trabalham em LOTE (o corpo das rotas e um
-// array), e nenhuma delas recebia o usuario ate 2026-08-02: quem mexeu no volume
-// nao existia em lugar nenhum. Agora as seis recebem `usuarioUuid` e `contexto`,
-// e gravam UM evento por LINHA, com o `loteId` da requisicao amarrando os N.
+// array), recebem `usuarioUuid` e `contexto`, e gravam UM evento por LINHA, com
+// o `loteId` da requisicao amarrando os N.
 //
 // Um evento por linha, e nao um com a contagem, porque a pergunta que este
 // cadastro produz e "quem mudou o caminho do volume X" -- e o caminho e o que
@@ -113,10 +112,10 @@ controller.atualizaVolumeArmazenamento = async (volumeArmazenamento, usuarioUuid
       )).map(v => [String(v.id), v])
     )
 
-    // layout_origem e o unico campo opcional deste PUT. Sem isto, o cliente que
-    // nao manda a chave (a tela do dashboard, que nem conhece o campo) apagaria a
-    // marca ao editar o nome do volume, com 200 e sem aviso. E a armadilha do PUT
-    // corrigida em 2026-07-25: ausente preserva, null explicito ainda limpa.
+    // `layout_origem` e o unico campo opcional deste PUT. Sem isto, o cliente
+    // que nao manda a chave (a tela do dashboard, que nem conhece o campo)
+    // apagaria a marca ao editar o nome do volume, com 200 e sem aviso. Ausente
+    // preserva, null explicito ainda limpa.
     for (const volume of volumeArmazenamento) {
       await preserveOmitted(t, {
         table: 'volume_armazenamento',

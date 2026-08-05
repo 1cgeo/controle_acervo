@@ -11,10 +11,9 @@
 // reprova a rota nova que ninguem lembrou de auditar, e nao seis meses depois em
 // producao.
 //
-// O ALCANCE CRESCEU em 2026-08-02. Ate entao a varredura filtrava as rotas por
-// /\s\/(pedido|produto_pedido|impressao)\b/, e as de cliente, plotter,
-// manutencao, tipo de material, estoque e consumo NUNCA entravam nela: nao havia
-// rede nenhuma para elas. O filtro saiu, e agora vale o router inteiro.
+// O ALCANCE E O ROUTER INTEIRO. Filtrar as rotas por caminho (so pedido,
+// produto_pedido e impressao) deixa cliente, plotter, manutencao, tipo de
+// material, estoque e consumo fora da rede, sem que nada diga isso.
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
@@ -158,16 +157,13 @@ const criaConsumo = async (tipoMaterialId, quantidade, token = generateUserToken
   return Number(res.body.dados.id)
 }
 
-// Le o historico do PEDIDO pela rota de sempre, que nao mudou de URL quando a
-// tabela mudou de casa: assim a varredura tambem exercita o contrato de leitura
-// que a tela do pedido ja consome.
-const auditoria = async pedidoId => {
-  const res = await request(app)
-    .get(`/api/mapoteca/pedido/${pedidoId}/auditoria`)
-    .set('Authorization', generateAdminToken())
-  expect(res.status).toBe(200)
-  return res.body.dados
-}
+// Le o historico do PEDIDO pela rota de PLATAFORMA, a mesma que a tela usa.
+//
+// Havia aqui um `GET /api/mapoteca/pedido/:id/auditoria`, que servia este mesmo
+// conteudo pelo caminho antigo. Ele foi removido por ser rota orfa: nenhuma
+// tela, plugin ou CLI o chamava, so este teste. O `historico` abaixo faz o
+// mesmo, e agora as duas leituras deste arquivo usam a MESMA rota.
+const auditoria = pedidoId => historico('pedido', pedidoId)
 
 // Historico de qualquer outra ficha, pela rota geral de rastreabilidade. Cliente,
 // plotter e material nao tem rota propria de historico: a de plataforma serve
@@ -198,7 +194,7 @@ const COBERTAS = new Set([
   'PUT /produto_pedido',
   'DELETE /produto_pedido',
   'POST /impressao',
-  // CORRECAO da data de um registro ja gravado (2026-08-04). Rota propria, e
+  // CORRECAO da data de um registro ja gravado. Rota propria, e
   // nao campo do POST: registrar impressao e operacao do dia, e mudar QUANDO um
   // gasto aconteceu muda o numero que o RPCMTec reporta naquele mes. O motivo e
   // obrigatorio, e cai no evento.
@@ -208,9 +204,8 @@ const COBERTAS = new Set([
   // tabela = 'mapoteca.etiqueta_envio'. Os casos dela vivem em
   // mapoteca_etiqueta.test.js.
   'PUT /pedido/:id/etiqueta',
-  // Saiu de FORA_DO_ESCOPO em 2026-08-02. O motivo que estava escrito la ("tem
-  // historico proprio na tabela") descrevia o CARIMBO do ultimo que mexeu, que
-  // a alteracao seguinte sobrescreve, e nao historico nenhum.
+  // O anexo AUDITA, e nao se apoia no carimbo da propria tabela: carimbo diz
+  // quem mexeu por ultimo, e a alteracao seguinte o sobrescreve.
   'POST /pedido/:id/anexos',
   'DELETE /pedido/anexo/:anexoId',
   'POST /plotter',
@@ -258,8 +253,8 @@ const rotasDeEscrita = () => {
     }
   }
 
-  // SEM FILTRO de caminho. Ate 2026-08-02 havia um, e ele deixava seis grupos de
-  // rotas de escrita fora da rede sem que nada dissesse isso.
+  // SEM FILTRO de caminho: filtrar deixa grupos inteiros de rotas de escrita
+  // fora da rede, sem que nada diga isso.
   return chaves
 }
 
@@ -584,8 +579,18 @@ describe('Rastreabilidade da mapoteca - pedido', () => {
   })
 
   it('exige autenticacao na rota de auditoria', async () => {
-    const semToken = await request(app).get('/api/mapoteca/pedido/1/auditoria')
+    const semToken = await request(app).get('/api/auditoria/mapoteca/pedido/1')
     expect(semToken.status).toBe(401)
+  })
+
+  // O caminho antigo `GET /mapoteca/pedido/:id/auditoria` foi REMOVIDO por ser
+  // rota orfa. Este caso reprova quem o recriar em silencio: duas rotas para o
+  // mesmo dado divergem na primeira que alguem corrigir.
+  it('o caminho antigo do historico do pedido nao existe mais', async () => {
+    const res = await request(app)
+      .get('/api/mapoteca/pedido/1/auditoria')
+      .set('Authorization', generateAdminToken())
+    expect(res.status).toBe(404)
   })
 })
 
@@ -639,8 +644,8 @@ describe('Rastreabilidade da mapoteca - anexo do pedido', () => {
 
     expect(exclusao).toHaveLength(1)
     expect(Number(exclusao[0].registro_id)).toBe(anexoId)
-    // A rota nao recebia o usuario ate 2026-08-02, e a exclusao de anexo era o
-    // unico ato da mapoteca sem autor nenhum.
+    // A exclusao de anexo tambem carrega o AUTOR: nenhum ato da mapoteca fica
+    // sem quem o fez.
     expect(exclusao[0].usuario_uuid).toBe(ADMIN_UUID)
     expect(exclusao[0].dados_antes.nome_original).toBe('diex_134.pdf')
     expect(exclusao[0].dados_depois).toBeNull()
@@ -657,8 +662,8 @@ describe('Rastreabilidade da mapoteca - cliente', () => {
     expect(criacao).toHaveLength(1)
     expect(Number(criacao[0].entidade_id)).toBe(clienteId)
     expect(Number(criacao[0].registro_id)).toBe(clienteId)
-    // A tabela nao tem coluna de escrituracao: ate 2026-08-02 NADA registrava
-    // quem cadastrou um cliente. O `usuarioId` era calculado e descartado.
+    // A tabela nao tem coluna de escrituracao, entao o EVENTO e o unico lugar
+    // que responde quem cadastrou o cliente.
     expect(criacao[0].usuario_uuid).toBe(ADMIN_UUID)
     expect(criacao[0].dados_depois.nome).toBe('OM Teste Auditoria')
   })

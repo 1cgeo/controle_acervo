@@ -5,6 +5,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { isAdmin } from '@store/auth-store.js';
 import {
   listarExercicios, listarRevisoes, excluirRevisao,
@@ -12,20 +13,16 @@ import {
 } from '@services/plataforma-service.js';
 import { abrirDialogoRevisao } from './revisao-dialog.js';
 import { abrirAlteracoesRevisao } from './alteracoes-dialog.js';
+import { abrirDialogoExercicio } from './exercicio-dialog.js';
 
 /**
  * REVISOES DO PIT (#/revisoes_pit).
  *
- * POR QUE ESTA TELA EXISTE. O modelo de revisao nasceu em 2026-08-04, para
- * responder "por que a 4.2 virou 252": a meta se separou entre IDENTIDADE (o
- * que o SCA decide) e DECLARACAO (o que a DSG declara em cada revisao), e
- * `pit.meta_revisao` e esparsa, entao as linhas de uma revisao SAO as
- * alteracoes dela.
- *
- * Ele ficou sem tela nenhuma ate 2026-08-04, e foi o unico agregado auditado
- * nessa situacao: a revisao existia, registrava evento, e so se lia pela
- * varredura geral de rastreabilidade, filtrando. Era a lacuna de CLASSE C do
- * sistema.
+ * POR QUE ESTA TELA EXISTE. Ela responde "por que a 4.2 virou 252": a meta se
+ * separa entre IDENTIDADE (o que o SCA decide) e DECLARACAO (o que a DSG declara
+ * em cada revisao), e `pit.meta_revisao` e esparsa, entao as linhas de uma
+ * revisao SAO as alteracoes dela. Sem esta tela, a revisao so se leria pela
+ * varredura geral de rastreabilidade, filtrando.
  *
  * RASCUNHO E PUBLICADA sao os dois estados, e a diferenca e uma coluna nula:
  * `data_vigencia`. Nada de enum. Rascunho nao rege; publicar e preencher a data,
@@ -68,6 +65,19 @@ export async function renderRevisoesPit(container) {
     type: 'button',
     onClick: () => abrirDialogoRevisao({ ano, onSaved: carregar }),
   }, [svgIcon(ICONS.add, 16), 'Nova revisão']);
+
+  // O EXERCÍCIO É O PRIMEIRO PASSO, e por isso tem botão próprio: `pit.meta`,
+  // `pit.revisao` e `pit.demanda_extra` referenciam `pit.exercicio(ano)`, e sem
+  // ele o ano não aceita revisão nem meta. Sem este botão, um ano novo só se
+  // abria por fora da interface.
+  const exercicioBtn = el('button', {
+    className: 'btn btn--secondary',
+    type: 'button',
+    onClick: () => {
+      const ex = exercicios.find((e) => Number(e.ano) === Number(ano));
+      abrirDialogoExercicio({ exercicio: ex || null, ano, onSaved: carregarExercicios });
+    },
+  }, [svgIcon(ICONS.add, 16), 'Exercício']);
 
   const infoExercicio = el('p', { className: 'page__subtitle' });
 
@@ -141,6 +151,10 @@ export async function renderRevisoesPit(container) {
     ],
   });
 
+  // A tabela vive num nó próprio para o estado de ERRO poder tomar o lugar dela
+  // e devolvê-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [tabela.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header page__header--column' }, [
       el('h1', { className: 'page__title', textContent: 'Revisões do PIT' }),
@@ -158,16 +172,45 @@ export async function renderRevisoesPit(container) {
     }, [
       anoField.element,
       el('div', { style: { flex: '1' } }),
-      ...(pode ? [novaBtn] : []),
+      ...(pode ? [exercicioBtn, novaBtn] : []),
     ]),
-    tabela.element,
+    areaTabela,
   ]);
   container.appendChild(page);
 
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhuma revisão neste exercício. O
+   * R0 é a primeira, e é o PIT original.": a falha da API lia-se como convite a
+   * cadastrar o R0, e criar um R0 que já existe é o erro que essa frase induz.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * nó: uma segunda falha guardaria o próprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(tabela.element);
+    mostrarErro(areaTabela, err, carregar);
+  }
+
   function desenharExercicio() {
     const ex = exercicios.find((e) => Number(e.ano) === Number(ano));
+
+    // SEM EXERCÍCIO, "Nova revisão" só levaria um 400 do servidor. O botão sai
+    // do caminho e a frase diz o que fazer, em vez de deixar a pessoa descobrir
+    // pelo erro.
+    exercicioBtn.textContent = '';
+    exercicioBtn.append(
+      svgIcon(ICONS.add, 16),
+      ex ? 'Editar exercício' : 'Abrir exercício',
+    );
+    novaBtn.disabled = !ex;
+    novaBtn.title = ex ? '' : 'Abra o exercício deste ano antes de criar uma revisão';
+
     if (!ex) {
-      infoExercicio.textContent = 'Este ano não tem exercício cadastrado.';
+      infoExercicio.textContent = `${ano} ainda não tem exercício. Abra o exercício `
+        + 'para poder cadastrar meta e revisão neste ano.';
       return;
     }
     const partes = [`Exercício ${ex.ano}`, ex.situacao || ''];
@@ -334,6 +377,9 @@ export async function renderRevisoesPit(container) {
   }
 
   async function carregar() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(tabela.element)) areaTabela.replaceChildren(tabela.element);
+
     tabela.update({ loading: true });
     try {
       const linhas = await listarRevisoes(ano);
@@ -341,7 +387,8 @@ export async function renderRevisoesPit(container) {
       tabela.update({ rows: linhas || [], loading: false });
     } catch (err) {
       if (disposed) return;
-      tabela.update({ rows: [], loading: false });
+      tabela.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar as revisões do PIT');
     }
   }

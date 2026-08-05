@@ -1,21 +1,17 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// A tela de GESTAO do efetivo (#/usuarios), depois da revisao de 2026-08-04.
-//
-// O defeito visto na producao: 54 pessoas e quatro colunas repetindo
-// "Sem acesso / Sem acesso / Sem acesso / Nao". Sem filtro de situacao, com a
-// busca que nao achava o perfil nem a palavra "Ativo", e com a lista em ordem
-// alfabetica de nome completo, misturando quem serve com quem ja saiu.
+// A tela de GESTÃO do efetivo (#/usuarios).
 //
 // O que estes casos guardam:
-//   - o filtro de situacao do login, com ATIVO por padrao
-//   - a busca achando o que a tela MOSTRA (perfil de modulo, situacao)
-//   - a ordem hierarquica, pelo CODIGO do posto e nunca pela abreviatura
+//   - o filtro de situação do login, com ATIVO por padrão
+//   - a busca achando o que a tela MOSTRA (perfil de módulo, situação)
+//   - a ordem hierárquica, pelo CÓDIGO do posto e nunca pela abreviatura
 //   - a identidade: posto mais nome de guerra
-//   - as colunas que o banco ja tinha e a tela nao mostrava
-//   - as acoes de linha, e o Excluir escondido de quem tem registro
+//   - as colunas que o banco tem e a tela precisa mostrar
+//   - as ações de linha, e o Excluir escondido de quem tem registro
 //   - os saltos para as outras telas da pessoa
-//   - o estado de erro do catalogo, que antes virava tabela sem colunas
+//   - o estado de erro do catálogo, que não pode virar tabela sem colunas
 
 vi.mock('@services/plataforma-service.js', () => ({
   getUsuarios: vi.fn(() => Promise.resolve([])),
@@ -46,8 +42,6 @@ import { renderUsuariosList } from '@pages/usuarios/list.js';
 import {
   getUsuarios, getModulos, getTiposPerfil, getPostosGrad,
 } from '@services/plataforma-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const MODULOS = [
   { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
@@ -209,10 +203,17 @@ describe('usuarios: busca', () => {
   });
 
   test('acha "Sem acesso", que e o que a celula do modulo diz', async () => {
+    // O Cabo só tem o acervo, então dois módulos dele dizem "Sem acesso". O
+    // administrador passa nos três e não tem a palavra em célula nenhuma. Sem
+    // esse contraste, a busca não separaria ninguém e o caso passaria quebrada.
+    getUsuarios.mockResolvedValue([CABO, { ...CAPITAO, administrador: true }]);
     const { container, cleanup } = await montar();
+    expect(linhas(container)).toHaveLength(2);
 
     buscar(container, 'Sem acesso');
-    expect(linhas(container).length).toBeGreaterThan(0);
+    const achadas = linhas(container);
+    expect(achadas).toHaveLength(1);
+    expect(textoDaLinha(achadas[0]).join(' ')).toContain('cb.souza');
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -327,6 +328,11 @@ describe('usuarios: colunas', () => {
     const titulos = cabecalhos(container);
     expect(titulos).toContain('Situação do login');
     expect(titulos).not.toContain('Ativo');
+
+    // O cabeçalho diz o que a coluna mede, e a CÉLULA repete a palavra, em vez
+    // de um "Sim" solto que só se entende pelo título.
+    const celulas = textoDaLinha(linhas(container)[0]);
+    expect(celulas.filter(c => c === 'Ativo')).toHaveLength(1);
 
     if (typeof cleanup === 'function') cleanup();
   });

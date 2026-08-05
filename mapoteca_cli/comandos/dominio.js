@@ -5,10 +5,9 @@
 //   mapoteca dominio                     lista quais dominios existem
 //   mapoteca dominio situacao_pedido     lista os codigos de um deles
 //
-// Sao os unicos GET publicos da mapoteca (servem para popular os selects do
-// client web), entao a listagem funciona mesmo sem credencial. Nao ha CRUD: sao
-// tabelas fixas, alteradas por migracao do banco, e um CLI que oferecesse
-// "dominio criar" prometeria uma rota que nao existe.
+// O GET exige perfil de consulta no modulo mapoteca; nao e publico. Nao ha
+// CRUD: sao tabelas fixas, alteradas por migracao do banco, e um CLI que
+// oferecesse "dominio criar" prometeria uma rota que nao existe.
 
 const { DOMINIOS } = require('../lib/recursos')
 const saida = require('../lib/saida')
@@ -46,7 +45,6 @@ async function executar (args, cfg) {
     padrao: ['code', 'nome']
   }
 
-  // GET de dominio e publico: nao gasta login nem token.
   const r = await http.autenticada(cfg, 'GET', `/mapoteca/dominio/${sub}`)
   const out = saida.lista(r.dados, opcoesSaida)
   return { texto: out.texto, avisos: out.avisos }

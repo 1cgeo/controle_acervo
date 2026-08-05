@@ -1,10 +1,9 @@
 # Path: gui\arquivos_incorretos\manage_incorrect_files_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
-from qgis.core import Qgis
-import csv
+from ..ui_utils import exportar_tabela_csv
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'manage_incorrect_files_dialog.ui'))
@@ -121,7 +120,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             if file.get('volume_nome') or file.get('volume'):
                 volume_info = f"{file.get('volume_nome') or ''} ({file.get('volume') or ''})"
             else:
-                volume_info = "—"
+                volume_info = "-"
             self.filesTable.setItem(row, 4, QTableWidgetItem(volume_info))
             
             # Get status type based on tipo_status_id
@@ -133,7 +132,7 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
             elif tipo_status_id is not None:
                 status_type = f"Outro (código {tipo_status_id})"
             else:
-                status_type = "—"
+                status_type = "-"
 
             self.filesTable.setItem(row, 5, QTableWidgetItem(status_type))
             
@@ -189,52 +188,15 @@ class ManageIncorrectFilesDialog(QDialog, FORM_CLASS):
         self.load_incorrect_files()
         
     def export_csv(self):
-        """Export the table data to a CSV file."""
-        if self.filesTable.rowCount() == 0:
-            QMessageBox.warning(
-                self,
-                "Aviso",
-                "Não há dados para exportar."
-            )
-            return
-            
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Exportar para CSV",
-            "",
-            "Arquivos CSV (*.csv)"
+        """Exporta a PÁGINA ATUAL para CSV.
+
+        O servidor não oferece rota de CSV para arquivos com problema, então o
+        que sai é o que está na tela.
+        """
+        QMessageBox.information(
+            self, "Exportar CSV",
+            f"O arquivo terá os {self.filesTable.rowCount()} registro(s) da página atual, "
+            f"de um total de {self.total_items}.\n\n"
+            "Aumente os itens por página para exportar mais de uma vez só."
         )
-        
-        if not filename:
-            return
-            
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                
-                # Write header
-                headers = []
-                for column in range(self.filesTable.columnCount()):
-                    headers.append(self.filesTable.horizontalHeaderItem(column).text())
-                writer.writerow(headers)
-                
-                # Write data
-                for row in range(self.filesTable.rowCount()):
-                    row_data = []
-                    for column in range(self.filesTable.columnCount()):
-                        item = self.filesTable.item(row, column)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
-                    
-            QMessageBox.information(
-                self,
-                "Sucesso",
-                f"Dados exportados com sucesso para {filename}"
-            )
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erro",
-                f"Erro ao exportar dados: {str(e)}"
-            )
+        exportar_tabela_csv(self, self.filesTable, 'arquivos-com-problema.csv')

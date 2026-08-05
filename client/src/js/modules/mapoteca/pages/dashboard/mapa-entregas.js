@@ -10,8 +10,8 @@ import './mapa-entregas.css';
  * saiu no ano. É a pergunta "onde a gente entregou", que nenhum dos gráficos
  * respondia: eles somam por tipo, por mídia e por operação, todos sem lugar.
  *
- * As faixas saem da distribuição real de 2026 (banco de produção, 2026-07-28):
- * mediana 4, p75 13, p90 25, máximo 81. Faixas iguais espremeriam quase tudo na
+ * As faixas saem da distribuição real das entregas, e não de cortes iguais:
+ * a cauda é longa e a base enorme, então faixas iguais espremeriam quase tudo na
  * primeira cor, porque a cauda é longa e a base é enorme (99 produtos com um
  * exemplar só).
  */
@@ -66,7 +66,7 @@ export function criarMapaEntregas() {
    * Painel FIXO no canto do mapa, em vez do balao que seguia o ponteiro.
    *
    * O balao do MapLibre e ancorado na coordenada, entao perto da borda ele saia
-   * da area visivel e ficava ilegivel (chefe, 2026-07-28) -- e a carta perto da
+   * da area visivel e ficava ilegivel -- e a carta perto da
    * borda e justamente a que se aponta quando se esta olhando uma regiao. Um
    * lugar fixo nao tem esse problema: a informacao troca, a moldura fica.
    *
@@ -135,10 +135,8 @@ export function criarMapaEntregas() {
 
     mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     // A escala vai para a DIREITA, explicitamente. O padrao do MapLibre e baixo
-    // a esquerda, que e onde mora a legenda: medido em 2026-07-28, a barra
-    // ficava inteira ATRAS dela (legenda 318-455 x 586-724, escala 320-433 x
-    // 700-722) e nunca se via. Defeito antigo, so visivel quando se foi conferir
-    // se o painel novo atrapalhava algo. A direita ela empilha com a atribuicao,
+    // a esquerda, que e onde mora a legenda: ali a barra fica inteira ATRAS dela
+    // e nunca se ve. A direita ela empilha com a atribuicao,
     // e o painel para de crescer antes de chegar la (ver o `max-height` de
     // .mapa-entregas__painel).
     mapa.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');

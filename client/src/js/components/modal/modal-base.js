@@ -10,9 +10,8 @@ const FOCUSABLE_SELECTOR =
  * "Nova versão" e "Editar" por cima de si mesma, e o editor de geometria abre por
  * cima do formulário.
  *
- * Sem a pilha, cada modal registrava o proprio `keydown` no `document`, e um
- * unico Escape fechava TODOS de uma vez. Medido em 2026-08-01, com a ficha e o
- * diálogo de versão abertos: dois modais, um Escape, zero modais.
+ * Sem a pilha, cada modal registra o proprio `keydown` no `document`, e um unico
+ * Escape fecha TODOS de uma vez.
  *
  * O `stopPropagation` que ja estava ali nao resolve: ele barra a propagacao para
  * OUTROS elementos, e nao os demais ouvintes registrados no MESMO elemento (isso
@@ -29,15 +28,26 @@ const pilha = [];
 /**
  * Open an accessible modal dialog (role="dialog", ESC closes, focus trap).
  *
+ * OCUPADO: o modal que esta GRAVANDO nao se fecha.
+ *
+ * Escape e o clique no fundo fechavam o dialogo com a requisicao em voo, e o
+ * erro do servidor chegava a uma tela sem formulario: quem perdeu o que digitou
+ * nao tinha onde ler o motivo nem o que corrigir. E o botao clicado nao mudava
+ * de aparencia, entao nada na tela dizia que a gravacao comecou.
+ *
+ * `setOcupado(true)` desabilita o rodape inteiro e o X, marca `aria-busy` no
+ * dialogo, poe o botao clicado em `.btn--ocupado` e barra Escape e fundo.
+ * `setOcupado(false)` desfaz tudo. E OPT-IN: quem nao chama continua como antes.
+ *
  * @param {Object} options
  * @param {string} options.title
  * @param {HTMLElement|string} options.content - body content (Element or text)
- * @param {Array<{label:string, variant?:'primary'|'secondary'|'danger'|'text', onClick:(ctx:{close:Function})=>void}>} [options.actions]
- *        - footer buttons; each onClick receives { close }
+ * @param {Array<{label:string, variant?:'primary'|'secondary'|'danger'|'text', onClick:(ctx:{close:Function, setOcupado:Function, botao:HTMLElement})=>void}>} [options.actions]
+ *        - footer buttons; each onClick receives { close, setOcupado, botao }
  * @param {string} [options.width] - CSS max-width (e.g. '720px')
  * @param {Function} [options.onClose] - called once when the modal closes
  * @param {boolean} [options.closeOnBackdrop] - default true
- * @returns {{close:Function, element:HTMLElement}}
+ * @returns {{close:Function, element:HTMLElement, setOcupado:Function}}
  */
 export function openModal({
   title,
@@ -49,12 +59,21 @@ export function openModal({
 }) {
   const previouslyFocused = document.activeElement;
   let closed = false;
+  // Gravacao em voo. Enquanto for verdadeiro, o modal nao se fecha por Escape,
+  // por clique no fundo nem pelo X.
+  let ocupado = false;
+  // O botao do rodape que disparou a acao em curso, e o unico que recebe a marca
+  // visual. Os demais so ficam desabilitados.
+  let botaoEmAcao = null;
 
   const closeBtn = el('button', {
     className: 'modal__close',
     type: 'button',
     'aria-label': 'Fechar',
-    onClick: () => close(),
+    onClick: () => {
+      if (ocupado) return;
+      close();
+    },
   }, [svgIcon(ICONS.close, 20)]);
 
   const header = el('div', { className: 'modal__header' }, [
@@ -69,16 +88,26 @@ export function openModal({
     body.appendChild(el('p', { className: 'modal__message', textContent: String(content) }));
   }
 
+  const botoes = [];
+
   let footer = null;
   if (actions.length) {
-    footer = el('div', { className: 'modal__footer' }, actions.map(action =>
-      el('button', {
+    footer = el('div', { className: 'modal__footer' }, actions.map(action => {
+      const botao = el('button', {
         className: `btn btn--${action.variant || 'primary'}`,
         type: 'button',
         textContent: action.label,
-        onClick: () => action.onClick({ close }),
-      })
-    ));
+        onClick: () => {
+          // Clique no botao desabilitado nao chega aqui, mas a guarda vale para
+          // quem dispare o `click()` por codigo (teste, atalho de teclado).
+          if (ocupado) return;
+          botaoEmAcao = botao;
+          action.onClick({ close, setOcupado, botao });
+        },
+      });
+      botoes.push(botao);
+      return botao;
+    }));
   }
 
   const dialog = el('div', {
@@ -96,8 +125,35 @@ export function openModal({
 
   if (closeOnBackdrop) {
     overlay.addEventListener('mousedown', (e) => {
+      if (ocupado) return;
       if (e.target === overlay) close();
     });
+  }
+
+  /**
+   * Liga e desliga o estado de GRAVACAO EM VOO.
+   *
+   * @param {boolean} valor
+   */
+  function setOcupado(valor) {
+    ocupado = Boolean(valor);
+
+    if (ocupado) dialog.setAttribute('aria-busy', 'true');
+    else dialog.removeAttribute('aria-busy');
+
+    closeBtn.disabled = ocupado;
+    for (const b of botoes) b.disabled = ocupado;
+
+    // A marca visual fica so no botao clicado: e ele que representa a acao em
+    // curso. Os outros ficam desabilitados, que ja diz "agora nao".
+    for (const b of botoes) b.classList.remove('btn--ocupado');
+    if (ocupado && botaoEmAcao) {
+      botaoEmAcao.classList.add('btn--ocupado');
+      botaoEmAcao.setAttribute('aria-busy', 'true');
+    } else if (botaoEmAcao) {
+      botaoEmAcao.removeAttribute('aria-busy');
+      botaoEmAcao = null;
+    }
   }
 
   function onKeyDown(e) {
@@ -106,6 +162,9 @@ export function openModal({
 
     if (e.key === 'Escape') {
       e.stopPropagation();
+      // Gravando: o Escape morre aqui. Fechar agora jogaria fora o formulario
+      // com a requisicao em voo, e o erro do servidor nao teria onde chegar.
+      if (ocupado) return;
       close();
       return;
     }
@@ -152,5 +211,5 @@ export function openModal({
   const firstFocusable = body.querySelector(FOCUSABLE_SELECTOR);
   (firstFocusable || closeBtn).focus();
 
-  return { close, element: dialog };
+  return { close, element: dialog, setOcupado };
 }

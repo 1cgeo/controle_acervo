@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // A GRADE do PIT nao se remonta.
 //
@@ -23,8 +24,6 @@ vi.mock('@services/plataforma-service.js', async () => {
 import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
 import { getGradePit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const GRADE = [
   {

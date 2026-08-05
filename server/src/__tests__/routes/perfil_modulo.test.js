@@ -4,10 +4,9 @@
 // mapoteca e orcamento sao compartimentos separados. E o teste que justifica a
 // tabela dgeo.usuario_perfil existir em vez de uma coluna unica no usuario.
 //
-// O usuario semeado (test_user) e consulta no acervo e operador na mapoteca,
-// que e exatamente o que ele podia antes do controle por perfil. No orcamento
-// ele nasce SEM linha, que e como o modulo absorvido em 2026-07-27 entra: sem
-// acesso ate alguem conceder.
+// O usuario semeado (test_user) e consulta no acervo e operador na mapoteca. No
+// orcamento ele nasce SEM linha, e e assim que todo modulo entra: sem acesso
+// nenhum ate alguem conceder, nem de leitura.
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
@@ -62,7 +61,7 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     expect(res.body.message).toMatch(/perfil operador no módulo acervo/i)
   })
 
-  // As DUAS telas do perfil de OPERADOR da mapoteca (chefe, 2026-07-30): atender
+  // As DUAS telas do perfil de OPERADOR da mapoteca: atender
   // pedidos e consumo de material. Este teste guarda a fronteira nos dois
   // sentidos, porque esconder o item no menu nao barra nada: o perfil do client e
   // ergonomia, e quem barra leitura e o verifyPerfil.

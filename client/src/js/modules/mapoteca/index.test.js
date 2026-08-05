@@ -17,11 +17,9 @@ describe('manifesto do modulo mapoteca', () => {
   });
 
   test('as 13 telas estao registradas, cada uma com render e perfil', () => {
-    // 13 ate 2026-07-30, quando entrou a tela de atendimento (a fila de pedidos);
-    // 15 no mesmo dia, com a tela de produtos avulsos (o que a mapoteca imprime
-    // sem ser do acervo). Voltou a 13 em 2026-08-01, quando o RPCMTec saiu do
-    // modulo: o relatorio e da Divisao inteira, e esta tela gerava so a metade
-    // dele. Ele agora e rota de plataforma (#/rpcmtec).
+    // O RPCMTec não é tela da mapoteca: o relatório é da Divisão inteira, e
+    // este módulo gerava só a metade dele. Ele é rota de plataforma
+    // (#/rpcmtec), fora desta contagem.
     expect(mapoteca.rotas).toHaveLength(13);
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
@@ -34,7 +32,7 @@ describe('manifesto do modulo mapoteca', () => {
     }
   });
 
-  // O perfil de OPERADOR da mapoteca tem DUAS telas (chefe, 2026-07-30): atender
+  // O perfil de OPERADOR da mapoteca tem DUAS telas: atender
   // pedidos e consumo de material. As duas sao execucao; o resto do modulo e
   // consulta (ou gerente, no caso do wizard). O perfil na rota tambem decide o
   // menu, pelo registry.podeAbrirRota, entao este campo e o que esconde o item de
@@ -85,7 +83,7 @@ describe('manifesto do modulo mapoteca', () => {
     expect(JSON.stringify(mapoteca.menu)).not.toContain('/usuarios');
   });
 
-  // Ordem e agrupamento sao decisao do chefe (2026-07-30), nao acidente de
+  // Ordem e agrupamento sao decisao do chefe, nao acidente de
   // edicao: Dashboard abre, Atender pedidos vem logo depois, e Consumo mora
   // dentro de Materiais. Sem este teste, um item novo inserido no meio da lista
   // desfaz a ordem sem ninguem notar.
@@ -99,7 +97,7 @@ describe('manifesto do modulo mapoteca', () => {
 
   // NAO existe "pedido avulso", nem tela de produto avulso. O que existe e um
   // ITEM cujo produto nao vem do acervo, descrito no proprio item, dentro da
-  // tela do pedido (chefe, 2026-07-30). Pedidos e item solto, sem grupo.
+  // tela do pedido. Pedidos e item solto, sem grupo.
   test('Pedidos e item solto: nao ha grupo nem tela de produto avulso', () => {
     expect(mapoteca.menu.find(i => i.id === 'pedidos-group')).toBeUndefined();
     const pedidos = mapoteca.menu.find(i => i.id === 'pedidos');
@@ -125,14 +123,9 @@ describe('manifesto do modulo mapoteca', () => {
       .filter(c => (rotaDe(c.path).perfis || []).includes('operador'))
       .map(c => c.id);
     expect(visiveisParaOperador).toEqual(['consumo']);
-
-    // E o operador continua com as duas telas de sempre, uma no topo e outra
-    // dentro do grupo.
-    const doOperador = mapoteca.rotas
-      .filter(r => (r.perfis || []).includes('operador'))
-      .map(r => r.path)
-      .sort();
-    expect(doOperador).toEqual(['/atendimento', '/consumo']);
+    // O conjunto das rotas de operador é do caso 'as telas de operador sao
+    // exatamente atendimento e consumo': repeti-lo aqui provaria a mesma coisa
+    // pelo mesmo caminho.
   });
 
   test('todo item de menu aponta para uma rota registrada', () => {

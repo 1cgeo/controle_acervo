@@ -11,7 +11,7 @@
 --     nao tem versao, e catalogar isso no acervo seria mentira.
 --   * carta de OUTRO CGEO. A mapoteca distribui produto de todo o SGEx, e a
 --     folha de outra area nao entra no nosso acervo so porque passou pela nossa
---     impressora (decisao do chefe, 2026-07-30).
+--     impressora.
 --
 -- Em 2026 isso deixou 842 copias sem como serem registradas: 200 de papel
 -- quadriculado, 52 de outros especiais e 493 de folha SCN nao catalogada.

@@ -2,18 +2,14 @@
 """Reconciliar o nome FÍSICO dos arquivos com o padrão derivado dos metadados.
 
 O nome do arquivo no volume é DERIVADO: sai de `acervo.nome_arquivo_padrao`, a
-partir do tipo, do subtipo, do MI/INOM, da escala e do rótulo da versão. Derivado
-envelhece -- renumerar uma edição ou corrigir um subtipo muda o nome esperado e
-não toca no arquivo --, e é por isso que o invariante 7a existe.
+partir do tipo, do subtipo, do MI/INOM, da escala e do rótulo da versão. Nome
+derivado envelhece, porque renumerar uma edição ou corrigir um subtipo muda o
+nome esperado e não toca no arquivo. É o que o invariante 7a acusa.
 
-O plugin era uma das FONTES da divergência: ele mandava como `nome_arquivo` o
-nome do arquivo que a pessoa escolheu no disco. Toda carga feita por aqui nascia
-divergente, e a diferença só aparecia no dia em que alguém fosse baixar.
-
-Esta tela é o outro lado: chama `POST /api/arquivo/renomear-padrao`, que deriva o
-nome do MESMO jeito que o auditor. Ela começa em simulação, e o laço é dela
-porque a rota trabalha por lotes de propósito: uma passada inteira numa
-requisição só seguraria a conexão por dezenas de minutos.
+Esta tela chama `POST /api/arquivo/renomear-padrao`, que deriva o nome do MESMO
+jeito que o auditor. Ela SEMPRE começa em simulação. O laço de lotes é daqui
+porque a rota trabalha por lotes: uma passada inteira numa requisição só
+seguraria a conexão por dezenas de minutos.
 """
 import os
 

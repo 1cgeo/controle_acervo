@@ -218,7 +218,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
     })
 }
 
-// GANHOU TRANSACAO em 2026-08-02: eram dois comandos em duas conexoes.
 controller.deletar = async (id, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(

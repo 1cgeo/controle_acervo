@@ -1,6 +1,6 @@
 'use strict'
 
-// A LACUNA QUE ESTE ARQUIVO FECHA (2026-08-01).
+// A LACUNA QUE ESTE ARQUIVO FECHA.
 //
 // Ate hoje NENHUM SQL do modulo orcamento era executado em teste. As 55 rotas e
 // os 13 controllers tinham cobertura, mas toda ela contra `helpers/orcamento/
@@ -165,21 +165,11 @@ describe('Orcamento contra o banco de verdade', () => {
       ).rejects.toMatchObject({ statusCode: 400 })
     })
 
-    // A NE nasce numa transacao (INSERT na NE mais as alocacoes). Se a segunda
-    // parte falha, a primeira NAO pode ficar gravada -- e so o banco prova isso.
-    it('NC inexistente nao deixa NE orfa: a transacao volta inteira', async () => {
-      await expect(
-        neCtrl.criar(
-          { numero: 'NE-004', ano: ANO, nota_credito_id: 999999, valor_empenhado: 100 },
-          ADMIN_UUID
-        )
-      ).rejects.toMatchObject({ statusCode: 400 })
-
-      const sobrou = await db.conn.one(
-        "SELECT COUNT(*)::int AS n FROM orcamento.nota_empenho WHERE numero = 'NE-004'"
-      )
-      expect(sobrou.n).toBe(0)
-    })
+    // A NE nasce numa transacao (INSERT na NE mais as alocacoes), e se a segunda
+    // parte falha a primeira NAO pode ficar gravada. Quem prova isso e o caso
+    // 'ROLLBACK derruba o evento junto com a escrita', mais abaixo: mesma
+    // entrada (a FK inexistente), mesmo 400 e a mesma consulta de sobra, mais o
+    // evento. O caso que existia aqui era subconjunto estrito dele.
   })
 
   // -------------------------------------------------------------------------
@@ -207,12 +197,10 @@ describe('Orcamento contra o banco de verdade', () => {
       expect(liq.id).toBeDefined()
     })
 
-    it('recusa a liquidacao que SOZINHA passa do empenhado', async () => {
-      const ne = await prepara()
-      await expect(
-        liqCtrl.criar({ nota_empenho_id: ne.id, valor_liquidado: 1500 }, ADMIN_UUID)
-      ).rejects.toMatchObject({ statusCode: 400 })
-    })
+    // A liquidacao que SOZINHA passa do empenhado tem prova em 'a regra de
+    // negocio que recusa dentro da transacao nao deixa evento': mesmo ramo
+    // (valor maior que o empenhado, sem liquidacao anterior), mesmo 400, e la
+    // ainda se confere que nenhum evento ficou.
 
     // O caso que so o banco pega: cada liquidacao cabe, a SOMA nao.
     it('recusa a liquidacao que passa do empenhado SOMADA as anteriores', async () => {

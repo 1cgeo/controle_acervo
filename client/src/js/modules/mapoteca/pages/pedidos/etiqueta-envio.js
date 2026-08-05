@@ -18,10 +18,10 @@ import { getEtiquetaEnvio, salvarEtiquetaEnvio } from '@modules/mapoteca/service
  * manda conferir o endereço antes de imprimir. Imprimir direto do cadastro
  * transformaria erro de digitação em pacote devolvido.
  *
- * Até 2026-07-30 a etiqueta era DESCARTÁVEL: o diálogo montava o HTML, imprimia
- * e esquecia a correção digitada. Quem imprimia a segunda via redigitava o mesmo
- * conserto. Agora ela é gravada em mapoteca.etiqueta_envio (uma por pedido) e o
- * botão Imprimir só libera quando a tela bate com o que está salvo.
+ * A etiqueta NÃO é descartável: ela é gravada em `mapoteca.etiqueta_envio` (uma
+ * por pedido), e o botão Imprimir só libera quando a tela bate com o que está
+ * salvo. Montando o HTML e imprimindo sem gravar, quem tira a segunda via
+ * redigita a mesma correção.
  */
 
 /**
@@ -254,8 +254,8 @@ export function openEtiquetaEnvioDialog(pedido = {}) {
 
   // --- A trava do botão Imprimir --------------------------------------------
   //
-  // A trava vale SEMPRE, inclusive na primeira abertura e sem edição nenhuma
-  // (decisão do chefe, 2026-07-30). Liberar a primeira impressão "porque nada
+  // A trava vale SEMPRE, inclusive na primeira abertura e sem edição nenhuma.
+  // Liberar a primeira impressão "porque nada
   // mudou" criaria a exceção que ninguém lembra: o papel colado no pacote
   // deixaria de ter registro, e a segunda via sairia de outra fonte. Com a trava
   // sem exceção, o que foi impresso é sempre o que está registrado.

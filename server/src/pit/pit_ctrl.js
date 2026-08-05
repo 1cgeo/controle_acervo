@@ -1,19 +1,17 @@
 'use strict'
 
-// A meta do PIT, separada entre IDENTIDADE e DECLARAÇÃO (2026-08-04).
+// A meta do PIT, separada entre IDENTIDADE e DECLARAÇÃO.
 //
-// A DSG revisa o PIT durante a execução, e o próprio R0 de 2026 avisa: "o EM/DSG
-// realizará a revisão do PIT nos meses de ABR e AGO 26". Alterar o PIT é
-// cancelar, alterar e adicionar meta (chefe, 2026-08-04). Só isso, e as três são
-// atos DELA.
+// A DSG revisa o PIT durante a execução, e alterar o PIT é cancelar, alterar e
+// adicionar meta. Só isso, e as três são atos DELA.
 //
 //   pit.meta          o que o SCA decide (unidade, origem) e o que revisão
 //                     nenhuma muda (ano, número, item). Id ESTÁVEL, e é nele que
 //                     os seis vínculos de outros schemas se penduram.
 //   pit.meta_revisao  o que a DSG declara. Uma linha por revisão que mudou algo.
 //
-// A LEITURA sai de `pit.meta_vigente`, que devolve os mesmos nomes de coluna de
-// sempre com a promessa em vigor. Quem lia `pit.meta` trocou uma palavra.
+// A LEITURA sai de `pit.meta_vigente`, que devolve os nomes de coluna de sempre
+// com a promessa em vigor.
 //
 // A ESCRITA DA DECLARAÇÃO EXIGE REVISÃO ABERTA. É o que faz o histórico ficar
 // completo POR CONSTRUÇÃO: não dá para mudar o que o PIT promete sem dizer qual
@@ -140,10 +138,9 @@ const gravarDeclaracao = async (t, { metaId, revisaoId, dados, usuarioUuid, cont
   return linha
 }
 
-// O CAMINHO DE VOLTA do orcamento para o PIT (2026-08-04). A tela de metas
-// dizia o que a Divisao promete e nada do que financia a promessa: "quanto
-// credito a meta 3 recebeu" nao tinha resposta na interface, embora a NC e o
-// item do PDR apontem a meta desde sempre.
+// O CAMINHO DE VOLTA do orcamento para o PIT: quanto credito cada meta recebeu.
+// A NC e o item do PDR apontam a meta, e sem isto a tela diria o que a Divisao
+// promete sem dizer o que financia a promessa.
 //
 // SUBSELECT, e nao JOIN: a meta SEM credito tem de continuar na lista, e um
 // INNER JOIN a apagaria. Sao essas as metas que interessam ao chefe.

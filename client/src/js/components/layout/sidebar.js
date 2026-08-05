@@ -7,18 +7,15 @@ import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modul
  *
  * `admin: true` esconde o item de quem nao e administrador global. As Metas do
  * PIT NAO levam a marca: qualquer pessoa logada le o plano anual da Divisao, e o
- * backend cobra o administrador so na escrita. Elas moraram dentro do modulo
- * orcamento ate 2026-07-31, e era justamente isso que impedia quem so tem perfil
- * na mapoteca de ver a lista.
+ * backend cobra o administrador so na escrita. Dentro de um modulo, elas
+ * ficariam invisiveis para quem so tem perfil em outro.
  */
 const MENU_PLATAFORMA = [
-  // "Metas do PIT" saiu daqui em 2026-08-02 e virou a primeira tela da seção
-  // Produção: ela deixou de ser um cadastro solto quando ganhou a execução
-  // mensal e o Extra-PIT ao lado.
+  // SEM "Metas do PIT": ela e a primeira tela da seção Produção, ao lado da
+  // execução mensal e do Extra-PIT.
   //
-  // O RPCMTec LEVA a marca de administrador: ele cruza os tres modulos numa
-  // peca so, com valor de credito e de empenho dentro. Esteve partido em dois
-  // itens de modulo ate 2026-08-01, um na mapoteca e outro no orcamento.
+  // O RPCMTec LEVA a marca de administrador: ele cruza os tres modulos numa peca
+  // so, com valor de credito e de empenho dentro.
   { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec', admin: true },
   // Rastreabilidade: o que foi alterado nos modulos, quando e por quem. NAO leva
   // `admin: true`, e nao e esquecimento: ela e do administrador global E do
@@ -40,28 +37,21 @@ const MENU_PLATAFORMA = [
 ];
 
 /**
- * EFETIVO como SEÇÃO DE SISTEMA, e não como grupo do menu de plataforma
- * (chefe, 2026-08-02).
+ * EFETIVO como SEÇÃO DE SISTEMA, e não como grupo do menu de plataforma.
  *
- * Chamava-se "Usuários" até 2026-08-02, e o nome mudou junto com o conteúdo: o
- * aproveitamento mensal entrou aqui, e ele não é sobre CONTA de sistema, é sobre
- * quem serve na Divisão e o que cada um faz. "Usuários" descreveria bem duas das
- * três telas e mal a terceira. A rota `#/usuarios` continua a mesma, porque
- * renomear URL quebra link guardado.
+ * O nome não é "Usuários" porque o aproveitamento mensal mora aqui, e ele não é
+ * sobre CONTA de sistema: é sobre quem serve na Divisão e o que cada um faz. As
+ * rotas `#/usuarios` e `#/acessos` NÃO acompanham o rótulo, porque renomear URL
+ * quebra link guardado.
  *
  * Ele fica logo depois do orçamento, ACIMA do separador, e se desenha como os
  * três módulos: cabeçalho que é LINK para a home, com o chevron ao lado abrindo
- * a lista sem navegar. A razão é que administrar gente virou um sistema de
- * verdade quando a autenticação veio para dentro do SCA: tem dashboard, tem
- * cadastro, e tem quem entre nele para trabalhar um turno inteiro. Como grupo
- * colapsável no meio de "Metas do PIT" e "RPCMTec" ele se lia como um item de
- * configuração.
+ * a lista sem navegar. Administrar gente é um sistema de verdade: tem dashboard,
+ * tem cadastro, e tem quem entre nele para trabalhar um turno inteiro.
  *
  * O DASHBOARD VEM PRIMEIRO, e é o que o cabeçalho abre. É a mesma regra dos
- * módulos, e a mesma razão: quem clica no nome de um sistema quer a visão geral,
- * não a primeira tela em ordem alfabética. Ele se chamava "Acessos" e virou
- * "Dashboard" no menu; a rota continua `#/acessos`, porque `dgeo.login` é o que
- * ela lê e renomear a URL quebraria link guardado.
+ * módulos: quem clica no nome de um sistema quer a visão geral, não a primeira
+ * tela em ordem alfabética.
  *
  * Não é um módulo de verdade: não está em `dominio.modulo`, não tem perfil e não
  * entra no `registry.js`. Por isso o `id` daqui não pode ser 'usuarios' -- a
@@ -102,14 +92,11 @@ const SISTEMA_EFETIVO = {
 };
 
 /**
- * PRODUÇÃO: o plano anual da Divisão e o que acontece com ele (chefe,
- * 2026-08-02).
+ * PRODUÇÃO: o plano anual da Divisão e o que acontece com ele.
  *
- * Nasceu quando o SCA absorveu do SAP o que não depende da produção controlada
- * lá: a execução mensal das metas, o Extra-PIT e a capacitação. As "Metas do
- * PIT" vieram do menu de plataforma para cá, porque as quatro telas se leem
- * JUNTAS -- a execução não faz sentido sem a meta, e o Extra-PIT é a exceção
- * a ela.
+ * Reúne metas, execução mensal, Extra-PIT e capacitação, porque as quatro telas
+ * se leem JUNTAS: a execução não faz sentido sem a meta, e o Extra-PIT é a
+ * exceção a ela.
  *
  * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. Metas e execução são
  * `authLoader`: qualquer pessoa logada LÊ o plano anual, e o servidor cobra o
@@ -136,7 +123,7 @@ const SISTEMA_PRODUCAO = {
       icon: ICONS.swapHoriz,
       path: '/revisoes_pit',
     },
-    // A execução do PIT é do GERENTE e do administrador (chefe, 2026-08-02), e
+    // A execução do PIT é do GERENTE e do administrador, e
     // não de qualquer pessoa logada como as metas ao lado. Por isso ela leva
     // `visivel` em vez de `admin: true`: nenhuma das duas marcas descreve
     // "administrador OU gerente", que é a regra que o servidor cobra.

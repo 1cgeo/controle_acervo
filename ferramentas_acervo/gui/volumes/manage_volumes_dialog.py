@@ -2,7 +2,6 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QTableWidget, QTableWidgetItem, QMessageBox
-from qgis.PyQt.QtCore import Qt
 from ..ui_utils import wire_single_selection_buttons
 from .edit_volume_dialog import EditVolumeDialog
 

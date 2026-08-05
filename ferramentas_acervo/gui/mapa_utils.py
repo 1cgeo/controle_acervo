@@ -9,9 +9,12 @@ fazem exatamente o mesmo gesto.
 """
 import json
 
-from qgis.core import (QgsCategorizedSymbolRenderer, QgsCoordinateReferenceSystem,
-                       QgsCoordinateTransform, QgsJsonUtils, QgsProject,
-                       QgsRendererCategory, QgsSymbol, QgsVectorLayer)
+from qgis.core import (Qgis, QgsCategorizedSymbolRenderer, QgsCoordinateReferenceSystem,
+                       QgsCoordinateTransform, QgsDataSourceUri, QgsGeometry, QgsJsonUtils,
+                       QgsPointXY, QgsProject, QgsRendererCategory, QgsSymbol, QgsVectorLayer,
+                       QgsWkbTypes)
+from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import QMessageBox
 
@@ -23,10 +26,9 @@ def bbox_do_canvas(iface, dialogo=None):
     """'minLon,minLat,maxLon,maxLat' da área visível, em graus, ou None.
 
     REPROJETA sempre que preciso. O canvas pode estar em qualquer projeção e as
-    rotas esperam coordenadas geográficas: num projeto em UTM, mandar o extent
+    rotas esperam coordenadas geográficas. Num projeto em UTM, mandar o extent
     cru enviaria metros, e o servidor recusaria por estar fora do intervalo de
-    latitude e longitude -- com uma mensagem que não explica que o problema é o
-    CRS do projeto.
+    latitude e longitude, com uma mensagem que não aponta o CRS do projeto.
     """
     canvas = iface.mapCanvas()
     extensao = canvas.extent()
@@ -92,9 +94,9 @@ def adicionar_ao_projeto(iface, camada, enquadrar=True):
         canvas = iface.mapCanvas()
         destino = camada.extent()
 
-        # A extensão da camada está no CRS DELA; o canvas pode estar noutro.
-        # Sem converter, o "enquadrar" manda a câmera para o lugar errado --
-        # tipicamente para perto de (0, 0), que num projeto em UTM fica no mar.
+        # A extensão da camada está no CRS DELA, e o canvas pode estar noutro.
+        # Sem converter, o enquadramento manda a câmera para perto de (0, 0),
+        # que num projeto em UTM fica no mar.
         crs_canvas = canvas.mapSettings().destinationCrs()
         if crs_canvas.isValid() and crs_canvas != camada.crs():
             try:
@@ -132,3 +134,92 @@ def categorizar(camada, campo, categorias, tipo_simbolo=None):
 
     camada.setRenderer(QgsCategorizedSymbolRenderer(campo, itens))
     camada.triggerRepaint()
+
+
+def carregar_camadas_matview(dialogo, camadas):
+    """Publica no projeto as views materializadas devolvidas por `camadas_produto`.
+
+    A conexão vem do próprio servidor, no campo `banco_dados` da resposta. Ela
+    NUNCA é escrita aqui: o plugin não conhece host, porta nem senha.
+
+    Devolve (carregadas, falhas), com `falhas` sendo os rótulos que não abriram.
+    """
+    carregadas, falhas = 0, []
+    for camada in camadas:
+        banco = camada['banco_dados']
+        rotulo = f"{camada['tipo_produto']} - {camada['tipo_escala']}"
+
+        uri = QgsDataSourceUri()
+        uri.setConnection(banco['servidor'], str(banco['porta']), banco['nome_db'],
+                          banco['login'], banco['senha'])
+        uri.setDataSource('acervo', camada['matviewname'], 'geom', "", 'id')
+        uri.setSrid(str(SRID_ACERVO))
+
+        vetorial = QgsVectorLayer(uri.uri(), rotulo, "postgres")
+        if vetorial.isValid():
+            QgsProject.instance().addMapLayer(vetorial)
+            carregadas += 1
+        else:
+            falhas.append(rotulo)
+
+    if falhas:
+        QMessageBox.warning(
+            dialogo, "Camadas não carregadas",
+            f"{len(falhas)} camada(s) não abriram:\n- " + "\n- ".join(falhas)
+            + "\n\nConfira se esta máquina alcança o banco do acervo e se as visões "
+              "materializadas já foram criadas no servidor."
+        )
+    return carregadas, falhas
+
+
+class FerramentaPoligono(QgsMapToolEmitPoint):
+    """Desenha um polígono no canvas e o entrega ao diálogo que a criou.
+
+    Clique esquerdo acrescenta vértice; clique direito com três ou mais
+    vértices fecha o polígono, chama `dialogo.set_geometry(geometria)` e devolve
+    o controle à ferramenta de navegação.
+    """
+
+    def __init__(self, iface, dialogo):
+        self.iface = iface
+        self.canvas = iface.mapCanvas()
+        self.dialogo = dialogo
+        QgsMapToolEmitPoint.__init__(self, self.canvas)
+        self.pontos = []
+
+        self.faixa = QgsRubberBand(self.canvas, QgsWkbTypes.PolygonGeometry)
+        self.faixa.setColor(QColor(255, 0, 0, 100))
+        self.faixa.setWidth(2)
+
+    def canvasReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.pontos.append(QgsPointXY(self.toMapCoordinates(event.pos())))
+            self.faixa.reset(QgsWkbTypes.PolygonGeometry)
+            if len(self.pontos) > 1:
+                self.faixa.setToGeometry(QgsGeometry.fromPolygonXY([self.pontos]), None)
+            return
+
+        if event.button() == Qt.MouseButton.RightButton:
+            if len(self.pontos) < 3:
+                self.iface.messageBar().pushMessage(
+                    "Polígono incompleto",
+                    "Marque pelo menos três pontos antes de fechar o polígono.",
+                    level=Qgis.MessageLevel.Warning
+                )
+                return
+            geometria = QgsGeometry.fromPolygonXY([self.pontos])
+            self.dialogo.set_geometry(geometria)
+            self.limpar()
+            self.canvas.unsetMapTool(self)
+            # `actionPan()` devolve uma QAction, e não uma QgsMapTool: quem
+            # volta ao modo de navegação é o trigger dela.
+            self.iface.actionPan().trigger()
+
+    def limpar(self):
+        self.pontos = []
+        self.faixa.reset(QgsWkbTypes.PolygonGeometry)
+
+    def deactivate(self):
+        """Apaga o rascunho quando o QGIS troca de ferramenta."""
+        self.limpar()
+        super().deactivate()

@@ -44,7 +44,7 @@ describe('dfd_ctrl', () => {
     )
     // Os itens viram um insert em lote (db.pgp.helpers.insert) -> t.none(query).
     //
-    // Contagem crua de `none` deixou de dizer isto em 2026-08-02: a auditoria
+    // Contagem crua de `none` deixou de dizer isto: a auditoria
     // grava o evento pelo MESMO `none`, entao o numero passa a somar as duas
     // coisas e muda toda vez que alguem acrescenta um evento. Asserir o SQL diz
     // o que aconteceu e continua valendo.

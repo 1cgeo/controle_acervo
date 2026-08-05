@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('maplibre-gl', async () => await import('@components/mapa/maplibre-stub.js'));
 
@@ -11,10 +12,8 @@ import { renderMapaTab } from '@modules/mapoteca/pages/dashboard/mapa-tab.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { instanciasMapa } from '@components/mapa/maplibre-stub.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 // A aba NAO tem filtro proprio: ela recebe o ano da pagina do dashboard, que
-// tem um filtro so para as cinco abas (chefe, 2026-08-04). Quem prova que a
+// tem um filtro so para as cinco abas. Quem prova que a
 // pagina abre no ano ATUAL e o teste do index. Aqui o ano e injetado, e por
 // isso os anos abaixo sao fixos e nao dependem da data de hoje.
 let ano = 2026;

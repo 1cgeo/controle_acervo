@@ -4,7 +4,7 @@
 // Cobre: listar (envelope), criar (sem validar exercicio), validacao Joi (400),
 // e a regressao do 409 ao deletar com consumidor vinculado.
 //
-// A rota saiu de /api/orcamento/metas para /api/metas em 2026-07-31: virou
+// A rota saiu de /api/orcamento/metas para /api/metas: virou
 // PLATAFORMA. Ler pede so login; escrever pede administrador global.
 
 const { createMockDb } = require('../helpers/orcamento/mockDb')
@@ -38,9 +38,8 @@ const eventosAuditados = () =>
     .filter(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento'))
     .map(c => c[1])
 
-// Desde 2026-08-04 uma escrita de meta gera DOIS eventos: a identidade
-// (`pit.meta`) e o que a revisao declara (`pit.meta_revisao`). `tabela` diz de
-// qual deles se quer falar.
+// Uma escrita de meta gera DOIS eventos: a identidade (`pit.meta`) e o que a
+// revisao declara (`pit.meta_revisao`). O `tabela` diz de qual deles se fala.
 const eventoAuditado = (tabela = 'pit.meta') => {
   const chamadas = eventosAuditados().filter(e => e.tabela === tabela)
   expect(chamadas).toHaveLength(1)
@@ -200,23 +199,11 @@ describe('PUT /metas/:id', () => {
 })
 
 describe('DELETE /metas/:id', () => {
-  test('409 quando ha pdr_item/nota_credito vinculados', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1 }) // existe
-    mockDb.conn.one.mockResolvedValueOnce({ n: 1 }) // ha dependentes
-    const res = await request(app).delete('/metas/1')
-    expect(res.status).toBe(409)
-    expect(res.body.success).toBe(false)
-  })
-
-  test('exclui quando nao ha dependentes', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1 })
-    mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
-    mockDb.conn.none.mockResolvedValueOnce(undefined)
-    const res = await request(app).delete('/metas/1')
-    expect(res.status).toBe(200)
-    expect(res.body.success).toBe(true)
-  })
-
+  // O 409 por dependente tem prova em 'a exclusao barrada por dependente nao
+  // registra nada': mesmos mocks, mesma requisicao, mesmo status, mais a
+  // contagem de eventos.
+  // O caminho feliz do DELETE tem prova em 'DELETE registra o que se perdeu',
+  // com os mesmos mocks, a mesma requisicao e o mesmo status 200, mais o evento.
   test('404 quando a meta nao existe', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app).delete('/metas/99')
@@ -226,7 +213,7 @@ describe('DELETE /metas/:id', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Rastreabilidade (2026-08-02)
+// Rastreabilidade
 //
 // A meta do PIT e rota de PLATAFORMA e alimenta o RPCMTec: o PDR, a NC e o
 // pedido de impressao apontam para ela, entao mudar uma meta muda o que os tres
@@ -291,7 +278,7 @@ describe('Rastreabilidade da meta do PIT', () => {
     expect(evento.operacao).toBe('D')
     expect(evento.dadosDepois).toBeNull()
     expect(JSON.parse(evento.dadosAntes).numero_meta).toBe(7)
-    // A rota nao passava o usuario para o `deletar` ate 2026-08-02.
+    // A exclusao carrega o AUTOR do token, e nao um autor nulo.
     expect(evento.usuarioUuid).toBe(TEST_USER.uuid)
   })
 

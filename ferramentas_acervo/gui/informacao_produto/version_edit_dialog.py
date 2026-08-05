@@ -2,8 +2,8 @@
 import os
 import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QComboBox
-from qgis.PyQt.QtCore import Qt, QDate, QDateTime
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+from qgis.PyQt.QtCore import Qt, QDateTime
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'version_edit_dialog.ui'))
@@ -70,7 +70,7 @@ class VersionEditDialog(QDialog, FORM_CLASS):
             return
             
         # `get(chave, '')` não cobre valor None vindo do servidor (colunas
-        # nuláveis) — usar `or ''` para não passar None ao Qt
+        # nuláveis). Use `or ''` para não passar None ao Qt.
         self.idLineEdit.setText(str(self.versao_data.get('versao_id') or ''))
         self.uuidLineEdit.setText(self.versao_data.get('uuid_versao') or '')
         self.versaoLineEdit.setText(self.versao_data.get('versao') or '')
@@ -119,7 +119,7 @@ class VersionEditDialog(QDialog, FORM_CLASS):
                 else:
                     metadado_texto = json.dumps(self.versao_data['versao_metadado'], indent=2)
                 self.metadadoTextEdit.setPlainText(metadado_texto)
-            except:
+            except (TypeError, ValueError):
                 self.metadadoTextEdit.setPlainText(str(self.versao_data['versao_metadado']))
             
     def validate_inputs(self):

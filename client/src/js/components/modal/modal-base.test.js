@@ -3,14 +3,13 @@ import { describe, test, expect, afterEach } from 'vitest';
 /**
  * Modal empilhado.
  *
- * MODAL SOBRE MODAL e caso real desde 2026-08-01: a ficha do produto do acervo
- * abre "Nova versão" e "Editar" por cima de si mesma, e o editor de geometria
- * abre por cima do formulário de produto.
+ * MODAL SOBRE MODAL e caso real: a ficha do produto do acervo abre "Nova
+ * versão" e "Editar" por cima de si mesma, e o editor de geometria abre por cima
+ * do formulário de produto.
  *
- * O defeito que estas provas guardam foi MEDIDO no navegador antes de existir
- * correção: com a ficha e o diálogo de versão abertos, um único Escape fechava os
- * DOIS. A causa é que cada modal registra o próprio `keydown` no `document`, e o
- * `stopPropagation` não alcança os demais ouvintes do mesmo elemento.
+ * O defeito que estas provas guardam: com dois modais abertos, um único Escape
+ * fecha os DOIS, porque cada modal registra o próprio `keydown` no `document` e
+ * o `stopPropagation` não alcança os demais ouvintes do mesmo elemento.
  *
  * Sem este arquivo, a próxima pessoa a mexer no `onKeyDown` reintroduz o defeito
  * sem perceber: ele não aparece com um modal só, que é como quase toda tela usa.
@@ -94,6 +93,83 @@ describe('Escape com modais empilhados', () => {
     openModal({ title: 'Outro', content: 'b' });
     escape();
 
+    expect(abertos()).toBe(0);
+  });
+});
+
+describe('OCUPADO: o modal que esta gravando', () => {
+  /** Abre um modal cuja ação liga o estado de ocupado e o devolve. */
+  function comAcao() {
+    let controle = null;
+    const modal = openModal({
+      title: 'Formulário',
+      content: 'a',
+      actions: [
+        { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+        {
+          label: 'Salvar',
+          onClick: ({ setOcupado }) => { controle = setOcupado; setOcupado(true); },
+        },
+      ],
+    });
+    const botao = (texto) => [...modal.element.querySelectorAll('.modal__footer .btn')]
+      .find(b => b.textContent === texto);
+    return { modal, botao, liberar: () => controle(false) };
+  }
+
+  test('Escape, fundo e o X nao fecham durante a gravacao', () => {
+    const { modal, botao } = comAcao();
+    botao('Salvar').click();
+
+    escape();
+    expect(abertos()).toBe(1);
+
+    // Clique no fundo.
+    modal.element.parentElement.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true })
+    );
+    expect(abertos()).toBe(1);
+
+    modal.element.querySelector('.modal__close').click();
+    expect(abertos()).toBe(1);
+  });
+
+  test('o rodape inteiro fica desabilitado, e so o botao clicado leva a marca', () => {
+    const { botao } = comAcao();
+    botao('Salvar').click();
+
+    expect(botao('Salvar').disabled).toBe(true);
+    expect(botao('Cancelar').disabled).toBe(true);
+    expect(botao('Salvar').classList.contains('btn--ocupado')).toBe(true);
+    // CONTROLE NEGATIVO: uma marca posta em TODO botao passaria no caso acima e
+    // nao diria qual acao esta em curso.
+    expect(botao('Cancelar').classList.contains('btn--ocupado')).toBe(false);
+  });
+
+  test('terminada a gravacao, tudo volta ao normal', () => {
+    const { modal, botao, liberar } = comAcao();
+    botao('Salvar').click();
+    liberar();
+
+    expect(botao('Salvar').disabled).toBe(false);
+    expect(botao('Salvar').classList.contains('btn--ocupado')).toBe(false);
+    expect(modal.element.hasAttribute('aria-busy')).toBe(false);
+
+    escape();
+    expect(abertos()).toBe(0);
+  });
+
+  // CONTROLE POSITIVO: quem NAO chama `setOcupado` continua como sempre. A trava
+  // e opt-in, e um modal que nascesse travado quebraria todos os dialogos.
+  test('o modal que nao usa o recurso fecha por Escape como antes', () => {
+    openModal({
+      title: 'Sem trava',
+      content: 'a',
+      actions: [{ label: 'Salvar', onClick: () => {} }],
+    });
+    [...document.querySelectorAll('.modal__footer .btn')].pop().click();
+
+    escape();
     expect(abertos()).toBe(0);
   });
 });

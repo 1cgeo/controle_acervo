@@ -20,7 +20,7 @@
 -- O QUE NAO MUDA, e e o essencial: o item continua apontando EXATAMENTE UM
 -- produto identificado, agora acervo OU descricao avulsa. Pedido pode ter item
 -- de acervo, item avulso, ou os dois misturados, porque a escolha e de cada
--- ITEM (chefe, 2026-07-30). O CHECK, o JOIN_PRODUTO_ITEM e as ~30 consultas
+-- ITEM. O CHECK, o JOIN_PRODUTO_ITEM e as ~30 consultas
 -- revisadas seguem valendo; muda so de onde sai o nome.
 --
 -- Sem colunas de mi, tipo e escala no avulso: acrescentar campo "por via das

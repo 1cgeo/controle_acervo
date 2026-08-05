@@ -63,7 +63,7 @@ test('MI invalido nunca casa com nada', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Duplicata de MI: a regra do dominio de 2026-07-24
+// Duplicata de MI: uma linha, nunca a soma
 // ---------------------------------------------------------------------------
 
 test('duas linhas com o mesmo MI viram UM item, e a quantidade NAO e somada', () => {

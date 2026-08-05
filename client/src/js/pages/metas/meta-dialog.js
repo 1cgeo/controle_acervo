@@ -41,7 +41,7 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     placeholder: 'Ex.: 4.1 (use - quando a meta não se subdivide)',
     value: meta?.item ?? '',
   });
-  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão do PIT declara, e
+  // OBRIGATÓRIA: ela é a frase que a revisão do PIT declara, e
   // a coluna de `pit.meta_revisao` é NOT NULL.
   const descricaoField = createTextareaField({
     label: 'Descrição',
@@ -49,8 +49,8 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     value: meta?.descricao ?? '',
   });
 
-  // O que o PIT PROMETE no item. Entrou em 2026-08-02, e é o que faltava para a
-  // subseção 2.1 do RPCMTec sair: ela pede "Quantidade" e "Previsão de término".
+  // O que o PIT PROMETE no item, e o que a subseção 2.1 do RPCMTec pede:
+  // "Quantidade" e "Previsão de término".
   //
   // Os quatro ficam VAZIOS na linha de cabeçalho da meta, e a ajuda diz isso:
   // quem promete são os itens que ela agrupa, e uma quantidade na meta e outra
@@ -62,10 +62,10 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     value: meta?.quantidade_prevista ?? undefined,
     helpText: 'Deixe vazio na meta que se subdivide: quem promete são os itens.',
   });
-  // DOMÍNIO FECHADO desde 2026-08-04. Era texto livre, e o resultado foram 13
-  // valores para cinco coisas ('carta' e 'folha' para a mesma), mais 12 itens
-  // sem unidade nenhuma. A grade assume que uma versão do acervo vale UMA
-  // unidade da meta, e nada declarava isso.
+  // DOMÍNIO FECHADO. Em texto livre viram treze valores para cinco coisas
+  // ('carta' e 'folha' para a mesma) e itens sem unidade nenhuma. A grade assume
+  // que uma versão do acervo vale UMA unidade da meta, e o domínio é quem
+  // declara isso.
   //
   // A coerência com a origem é cobrada no servidor: origem Produção e Impressão
   // exigem Folha, e Capacitação exige Capacitação.
@@ -93,12 +93,11 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
     helpText: 'Sai como "AGO 26" no relatório.',
   });
 
-  // HISTÓRICO da meta, RECOLHIDO e só na edição (2026-08-04).
+  // HISTÓRICO da meta, RECOLHIDO e só na edição.
   //
-  // Ele faltava, e era a lacuna mais aguda do sistema: o modelo de revisão do
-  // PIT nasceu em 2026-08-04 para responder "por que a 4.2 virou 252", e a
-  // resposta só se lia pela varredura geral, filtrando. A pergunta se faz com
-  // a meta aberta na frente, e é aqui que ela agora se responde.
+  // A pergunta "por que a 4.2 virou 252" se faz com a meta aberta na frente, e
+  // é aqui que ela se responde. Sem isto, a resposta só sai da varredura geral
+  // de rastreabilidade, filtrando.
   //
   // O agregado 'meta' reúne quatro tabelas: a identidade (`pit.meta`), o que
   // cada revisão declarou (`pit.meta_revisao`), a execução lançada
@@ -146,7 +145,11 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o modal enquanto a gravação corre. Escape ou
+        // clique no fundo fechavam o formulário com a requisição em voo, e a
+        // recusa do servidor ("é preciso abrir a revisão que autoriza a
+        // mudança") chegava a uma tela sem nada para corrigir.
+        onClick: async ({ close, setOcupado }) => {
           if (saving) return;
 
           numeroMetaField.setError(null);
@@ -166,7 +169,7 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
           }
 
           // A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE são o que a DSG
-          // DECLARA, e desde 2026-08-04 eles caem na revisão ABERTA do ano.
+          // DECLARA, e eles caem na revisão ABERTA do ano.
           // Mudar qualquer um deles sem revisão aberta volta 400, e a mensagem
           // do servidor diz o que fazer. A unidade e a origem são classificação
           // nossa, e mudam sem revisão.
@@ -182,6 +185,7 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
           };
 
           saving = true;
+          setOcupado(true);
           try {
             if (isEdit) {
               await updateMetaPit(meta.id, payload);
@@ -190,9 +194,11 @@ export function openMetaDialog({ meta = null, ano = null, onSaved = null } = {})
               await createMetaPit(payload);
               showSuccess('Meta criada com sucesso');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar meta');
           } finally {
             saving = false;

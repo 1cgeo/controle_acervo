@@ -2,7 +2,7 @@
 
 // Cadastro de usuario e senha, pela API.
 //
-// O SCA passou a ser o dono da identidade em 2026-08-02. Ate ali `dgeo.usuario`
+// O SCA passou a ser o dono da identidade. Ate ali `dgeo.usuario`
 // era um espelho do Auth Server e esta feature so sabia LER e conceder perfil;
 // criar, editar, excluir e trocar senha nao existiam em lugar nenhum do SCA.
 //
@@ -443,12 +443,12 @@ describe('/api/usuarios/perfil (o proprio cadastro)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Rastreabilidade (auditoria.evento), 2026-08-02
+// Rastreabilidade (auditoria.evento)
 //
-// Este e o grupo mais sensivel do sistema e era o MENOS rastreado: promover
-// alguem a administrador global nao deixava rastro nenhum, e nao havia como
-// saber quem concedeu. `req.usuarioUuid` existia em toda rota desta feature e
-// simplesmente nao era repassado ao controller.
+// E o grupo mais sensivel do sistema: promover alguem a administrador global
+// sem rastro deixa "quem concedeu" sem resposta. O `req.usuarioUuid` existe em
+// toda rota desta feature, e o que se cobra aqui e que ele CHEGUE ao
+// controller.
 // ---------------------------------------------------------------------------
 
 describe('Rastreabilidade: a senha nunca entra no rastro', () => {
@@ -526,7 +526,7 @@ describe('Rastreabilidade: o cadastro do usuario', () => {
 
     const promocao = await umEventoDe('dgeo.usuario', uuid, 'U')
 
-    // Era a pergunta sem resposta ate 2026-08-02: quem promoveu.
+    // A pergunta que so o evento responde: quem promoveu.
     expect(promocao.usuario_uuid).toBe(ADMIN_UUID)
     expect(promocao.entidade_id).toBe(uuid)
     expect(promocao.modulo).toBe('plataforma')
@@ -788,7 +788,7 @@ const COBERTAS = new Set([
   'POST /metas/',
   'PUT /metas/:id',
   'DELETE /metas/:id',
-  // Execucao mensal e Extra-PIT, absorvidos do SAP em 2026-08-02. O POST de
+  // Execucao mensal e Extra-PIT, absorvidos do SAP. O POST de
   // execucao e UMA rota para criar e alterar, porque o par (meta, mes) e uma
   // CELULA de grade; quem separa a insercao da alteracao e o controller, e so
   // para o rastro dizer "lancou 12" contra "trocou 12 por 30".
@@ -797,14 +797,14 @@ const COBERTAS = new Set([
   'POST /metas/extra',
   'PUT /metas/extra/:id',
   'DELETE /metas/extra/:id',
-  // De-para da MIDIA impressa para a meta, por ano (2026-08-03). E a fonte da
+  // De-para da MIDIA impressa para a meta, por ano. E a fonte da
   // meta 4 quando ela for automatica. Auditado no agregado da META, e nao no
   // dele proprio: a pergunta que se faz deste dado e "por que a 4.1 passou a
   // contar sulfite", e ela se faz na ficha da meta.
   'POST /metas/midia',
   'PUT /metas/midia/:id',
   'DELETE /metas/midia/:id',
-  // Exercicio e REVISAO do PIT (2026-08-04). A DSG revisa o plano durante a
+  // Exercicio e REVISAO do PIT. A DSG revisa o plano durante a
   // execucao, e alterar o PIT e cancelar, alterar e adicionar meta: as tres
   // caem em `pit.meta_revisao`, dentro da revisao aberta.
   //
@@ -832,11 +832,10 @@ const COBERTAS = new Set([
   'POST /rpcmtec/',
   'PUT /rpcmtec/:id',
   'DELETE /rpcmtec/:id',
-  // O RPCMTec inteiro passou a ser preenchido e guardado no sistema em
-  // 2026-08-05. FECHAR e REABRIR sao rotas proprias porque sao ATOS, e nao a
-  // gravacao de um campo: fechar congela os 34 blocos do documento que o chefe
-  // assina, reabrir descongela. Os dois caem no agregado da EDICAO, que e onde
-  // se pergunta "quem reabriu a de julho".
+  // FECHAR e REABRIR sao rotas proprias porque sao ATOS, e nao a gravacao de um
+  // campo: fechar congela os blocos do documento que o chefe assina, e reabrir
+  // descongela. Os dois caem no agregado da EDICAO, que e onde se pergunta
+  // "quem reabriu a de julho".
   'POST /rpcmtec/:id/fechar',
   'POST /rpcmtec/:id/reabrir',
   // O conteudo digitado. Auditado tambem no agregado da EDICAO: a pergunta e
@@ -850,7 +849,7 @@ const COBERTAS = new Set([
   // de dizer o que ele diz.
   'POST /rpcmtec/:id/anexos',
   'DELETE /rpcmtec/anexo/:anexoId',
-  // Capacitacao (2.6 e 6.2), absorvida do SAP em 2026-08-02.
+  // Capacitacao (2.6 e 6.2), absorvida do SAP.
   'POST /rpcmtec/capacitacao',
   'PUT /rpcmtec/capacitacao/:id',
   'DELETE /rpcmtec/capacitacao/:id',

@@ -126,12 +126,10 @@ controller.getParaDownload = async id => {
 /**
  * Remove um anexo do pedido.
  *
- * GANHOU TRANSAÇÃO em 2026-08-02. Eram dois comandos soltos, em duas conexões
- * do pool: entre a conferência e o DELETE, outra requisição podia apagar o mesmo
- * anexo, e o segundo comando saía sem erro nenhum sobre uma linha que já não
- * existia. Com o evento de rastreabilidade a transação passa a ser obrigatória
- * por outra razão: a linha do rastro tem de cair junto com a exclusão que ela
- * descreve, ou não cair.
+ * A TRANSAÇÃO É OBRIGATÓRIA por duas razões: entre a conferência e o DELETE,
+ * outra requisição pode apagar o mesmo anexo, e o segundo comando sairia sem
+ * erro sobre uma linha que já não existe; e a linha do rastro tem de cair junto
+ * com a exclusão que ela descreve, ou não cair.
  *
  * @param {number|string} id
  * @param {string} [usuarioUuid] - uuid do usuário do token

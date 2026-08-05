@@ -12,7 +12,7 @@ TRÊS DIFERENÇAS, e todas vêm de estar dentro do QGIS:
   1. **O mapa não é embutido, é o canvas.** A web precisa desenhar um mapa
      porque o navegador não tem um; aqui ele já existe. "Ver no mapa" entrega
      uma CAMADA categorizada por situação, que a pessoa filtra, estiliza e
-     cruza com o resto do projeto -- coisa que o mapa da web não permite.
+     cruza com o resto do projeto, coisa que o mapa da web não permite.
   2. **O download é em LOTE.** Na web se baixa um arquivo por vez, porque é o
      que um navegador faz bem. Aqui a pergunta real é "me dá o pacote destes
      trinta pontos", e a tela responde isso numa pasta.
@@ -101,7 +101,7 @@ class PontoControleDialog(QDialog, FORM_CLASS):
         self.resultsTable.itemDoubleClicked.connect(lambda _: self.abrir_ficha())
 
         # Trocar projeto refaz a lista de lotes, e trocar estado refaz a de
-        # municípios: a opção que não pertence ao pai deixou de fazer sentido.
+        # municípios: a opção que não pertence ao pai sai da lista.
         for combo in (self.projetoComboBox, self.estadoComboBox,
                       self.loteComboBox, self.municipioComboBox):
             combo.currentIndexChanged.connect(self.carregar_facetas)
@@ -311,7 +311,7 @@ class PontoControleDialog(QDialog, FORM_CLASS):
         """Traz TODOS os pontos do filtro como camada, e não a página.
 
         `/posicoes` existe justamente para isso: a lista pagina porque ninguém
-        lê 500 cartões, mas o mapa não pode paginar -- cinquenta pontos numa
+        lê 500 cartões, mas o mapa não pode paginar. Cinquenta pontos numa
         consulta de quinhentos afirmam visualmente que a missão tem cinquenta.
         """
         self.setCursor(Qt.CursorShape.WaitCursor)

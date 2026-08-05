@@ -48,7 +48,7 @@ export default {
   icon: ICONS.print,
   home: '/dashboard',
 
-  // Ordem e agrupamento decididos pelo chefe em 2026-07-30: Dashboard abre o
+  // Ordem e agrupamento: Dashboard abre o
   // modulo, Atender pedidos vem logo depois, e Consumo de material mora dentro
   // de Materiais, junto do catalogo e do estoque.
   //
@@ -69,8 +69,8 @@ export default {
     { id: 'clientes', label: 'Clientes', icon: ICONS.people, path: '/clientes' },
     // NAO existe "pedido avulso", nem tela de produto avulso. O que existe e um
     // ITEM cujo produto nao vem do acervo, descrito no proprio item, na tela do
-    // pedido. Um pedido pode misturar item de acervo e item avulso a vontade
-    // (chefe, 2026-07-30).
+    // pedido. Um pedido pode misturar item de acervo e item avulso a vontade.
+    //
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
     {
       id: 'materiais-group',
@@ -83,17 +83,16 @@ export default {
       ],
     },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
-    // SEM item de RPCMTec: ele virou tela de PLATAFORMA em 2026-08-01
-    // (#/rpcmtec, na secao de plataforma da sidebar). O relatorio e da
-    // Divisao inteira, e esta tela gerava so a metade dele.
+    // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). O relatorio e
+    // da Divisao inteira, e daqui sairia so metade dele.
   ],
 
   // Rota estatica ANTES da rota com ':id' ('/pedidos/novo' antes de
   // '/pedidos/:id'), senao o wizard cai no detalhe do pedido 'novo'.
   //
   // O perfil aqui e LISTA (`perfis`), e nao nivel minimo (`perfil`): na mapoteca o
-  // OPERADOR nao e "consulta com mais poder", e um papel com duas telas proprias
-  // (chefe, 2026-07-30). Com nivel minimo ele veria dashboard, clientes, pedidos e
+  // OPERADOR nao e "consulta com mais poder", e um papel com duas telas proprias.
+  // Com nivel minimo ele veria dashboard, clientes, pedidos e
   // o resto, porque operador e um nivel acima de consulta.
   rotas: [
     { path: '/dashboard', render: renderDashboard, perfis: LEITURA },
@@ -114,9 +113,9 @@ export default {
     { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
   ],
 
-  // SEM `navbarExtras`. O seletor de ano da navbar saiu em 2026-08-04 (chefe).
-  // Ele era um so para o modulo inteiro e guardava a escolha no localStorage:
-  // olhar o mapa de 2025 mudava calado a lista de pedidos, e voltar semanas
-  // depois abria num ano antigo sem aviso. Agora cada tela monta o seu filtro
+  // SEM `navbarExtras`. Nao ha seletor de ano na navbar: um so para o modulo
+  // inteiro, guardado no localStorage, faz olhar o mapa de um ano mudar calado a
+  // lista de pedidos, e faz voltar semanas depois abrir num ano antigo sem
+  // aviso. Cada tela monta o seu filtro
   // (@components/filtro-ano.js), sempre no ano atual.
 };

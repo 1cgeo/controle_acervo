@@ -97,7 +97,6 @@ class ManageLotesDialog(QDialog, FORM_CLASS):
         selected_rows = self.lotesTable.selectionModel().selectedRows()
         if len(selected_rows) == 1:
             id = int(self.lotesTable.item(selected_rows[0].row(), 0).text())
-            # Correção: usando self.lotes em vez de self.projects
             lote_data = next((item for item in self.lotes if str(item['id']) == str(id)), None)
 
             if lote_data:

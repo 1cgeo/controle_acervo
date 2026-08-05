@@ -1,11 +1,12 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatNumber } from '@utils/format.js';
+import { formatBoolean, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { badgeAbaixoMinimo } from '@components/status-chip.js';
 import { getTiposMaterial, deleteTiposMaterial } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarAvisoDeErro } from '../aviso-carga.js';
 import { openMaterialDialog } from './material-dialog.js';
 
 /**
@@ -77,7 +78,7 @@ export async function renderMateriaisList(container, _ctx) {
         sortable: true,
         render: (row) => formatNumber(row.meta_anual),
       },
-      { key: 'ativo', label: 'Ativo', render: (row) => (row.ativo ? 'Sim' : 'Não') },
+      { key: 'ativo', label: 'Ativo', render: (row) => formatBoolean(row.ativo) },
     ],
     rows: [],
     searchable: true,
@@ -114,12 +115,14 @@ export async function renderMateriaisList(container, _ctx) {
     ],
   });
 
+  const aviso = criarAvisoDeErro(table, load);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Tipos de Material' }),
       el('div', { className: 'page__actions' }, pode.gerente ? [bulkDeleteBtn, newBtn] : []),
     ]),
-    table.element,
+    aviso.element,
   ]);
   container.appendChild(page);
 
@@ -136,9 +139,11 @@ export async function renderMateriaisList(container, _ctx) {
         meta_anual: r.meta_anual === null ? null : Number(r.meta_anual),
       }));
       table.update({ rows, loading: false });
+      aviso.ok();
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      aviso.falhou(err.message || 'Erro ao carregar tipos de material');
       showError(err.message || 'Erro ao carregar tipos de material');
     }
   }

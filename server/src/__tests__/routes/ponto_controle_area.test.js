@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * Recorte por ÁREA DESENHADA na tela de ponto de controle (chefe, 2026-07-29).
+ * Recorte por ÁREA DESENHADA na tela de ponto de controle.
  *
  * A tela já tinha o "só na área do mapa", que é um retângulo. O desenho responde
  * a outra pergunta: "que pontos existem DENTRO deste polígono", que é o recorte

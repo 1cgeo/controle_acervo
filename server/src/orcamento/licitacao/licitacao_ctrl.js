@@ -93,8 +93,8 @@ controller.getPorId = async id => {
   return licitacao
 }
 
-// As tres funcoes de escrita GANHARAM TRANSACAO em 2026-08-02, com a
-// rastreabilidade: a linha do rastro cai junto com a mudanca ou nao cai.
+// As tres funcoes de escrita rodam em TRANSACAO: a linha do rastro cai junto
+// com a mudanca ou nao cai.
 controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
     .tx(async t => {

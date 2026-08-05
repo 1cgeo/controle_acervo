@@ -110,7 +110,7 @@ describe('Ponto de controle - consulta', () => {
       .set('Authorization', generateAdminToken())
     expect(porProjeto.body.dados.total).toBe(2)
 
-    // O filtro por SITUACAO nao existe mais (2026-07-29): so ponto aprovado
+    // O filtro por SITUACAO nao existe mais: so ponto aprovado
     // entra no acervo, entao a coluna e constante e o filtro nao discriminava.
     // Quem mandar o parametro antigo leva 400, e nao um resultado calado: link
     // guardado com o filtro velho AVISA em vez de devolver o acervo inteiro
@@ -223,18 +223,26 @@ describe('Ponto de controle - consulta', () => {
     expect(res.status).toBe(200)
 
     // A rota /dominios tem de ganhar de /:cod_ponto, senão cairia no detalhe.
-    expect(res.body.dados.tipo_situacao.length).toBeGreaterThan(0)
-    // DOIS tipos desde 2026-07-29: o pacote e a monografia. Sao os dois
+    // Quem prova o conteúdo de `tipo_situacao` é o caso anterior, com a lista
+    // inteira; aqui basta que a rota tenha casado.
+    expect(Object.keys(res.body.dados).length).toBeGreaterThan(0)
+    // DOIS tipos: o pacote e a monografia. Sao os dois
     // unicos downloads que a tela oferece.
     expect(res.body.dados.tipo_arquivo).toEqual([
       { code: 1, nome: 'Pacote do ponto' },
       { code: 2, nome: 'Monografia' }
     ])
-    for (const dominio of Object.values(res.body.dados)) {
+    // TODO domínio traz item, e todo item traz código e nome. Sem a checagem de
+    // tamanho, um domínio que voltasse vazio faria o laço não rodar e o caso
+    // passar verde, que é o modo de falhar da consulta.
+    for (const [nome, dominio] of Object.entries(res.body.dados)) {
+      expect(dominio.length).toBeGreaterThan(0)
       for (const item of dominio) {
         expect(typeof item.code).toBe('number')
-        expect(item.nome).toBeTruthy()
+        expect(typeof item.nome).toBe('string')
+        expect(item.nome.length).toBeGreaterThan(0)
       }
+      expect(nome).toMatch(/^[a-z_]+$/)
     }
   })
 })

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -9,9 +10,7 @@ import { renderPedidosList } from '@modules/mapoteca/pages/pedidos/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE, CONSULTA } from '@/__tests__/helpers/sessao.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// A tela tem o proprio filtro de ano e abre no ano ATUAL (chefe, 2026-08-04).
+// A tela tem o proprio filtro de ano e abre no ano ATUAL.
 // O seletor da navbar acabou, e nada fica guardado no localStorage.
 const ANO_ATUAL = new Date().getFullYear();
 const ANO_ANTERIOR = ANO_ATUAL - 1;
@@ -158,10 +157,9 @@ describe('renderPedidosList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // O pedido em Aguardando producao saiu da fila de atendimento em 2026-07-30
-  // (decisao do chefe): ele espera carta que ainda nao existe. Fora da fila,
-  // esta lista e o unico lugar onde ele aparece, e sem filtro proprio ele vira
-  // esquecimento quando a producao terminar.
+  // O pedido em Aguardando produção fica fora da fila de atendimento: ele
+  // espera carta que ainda não existe. Esta lista é o único lugar onde ele
+  // aparece, e sem filtro próprio ele vira esquecimento.
   test('o filtro "Aguardando produção" isola a situação 7', async () => {
     svc.getPedidos.mockResolvedValue([...PEDIDOS, PEDIDO_AGUARDANDO]);
     const container = document.createElement('div');
@@ -198,10 +196,8 @@ describe('renderPedidosList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A planilha do RTM SAIU desta tela em 2026-08-02 (chefe) e foi para a do
-  // RPCMTec, onde ela e baixada junto do Anuario e do DOCX -- que e onde se monta
-  // o envio mensal para a DSG. La ela respeita o MES escolhido; aqui nao tinha
-  // como, porque esta tela so tem o seletor de ano.
+  // A planilha do RTM sai da tela do RPCMTec, junto do Anuário e do DOCX, e lá
+  // respeita o MÊS escolhido. Aqui não teria como: esta tela só filtra por ano.
   test('a planilha do RTM nao sai mais desta tela', async () => {
     logarComo({ mapoteca: CONSULTA });
     const container = document.createElement('div');
@@ -221,6 +217,65 @@ describe('renderPedidosList', () => {
 
     container.querySelector('.btn--primary').click();
     expect(location.hash).toBe('#/mapoteca/pedidos/novo');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A URL escolhe o filtro. A fila de atendimento manda quem clicou em "Ver na
+  // lista de pedidos" cair direto no recorte Remetido, em vez de chegar em
+  // "Todos" e ter de achar o botao entre seis.
+  test('?filtro=remetido abre a tela ja no recorte Remetido', async () => {
+    const REMETIDO = {
+      id: 59, data_pedido: '2026-06-14', cliente_nome: '4º BE Cmb',
+      tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+      documento_solicitacao: 'DIEx 900', situacao_pedido_id: 4,
+      situacao_pedido_nome: 'Remetido', prazo: null,
+      quantidade_produtos: 3, itens_impressos: 3, localizador_pedido: 'RR11-TT22-YY33',
+    };
+    svc.getPedidos.mockResolvedValue([...PEDIDOS, REMETIDO]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(
+      container, { params: {}, query: new URLSearchParams('filtro=remetido') }
+    );
+    await flush();
+
+    const linhas = corpo(container);
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain('4º BE Cmb');
+    // O botao do filtro nasce marcado, senao a tela mostraria um recorte que
+    // nenhum botao explica.
+    const botaoRemetido = [...container.querySelectorAll('.filtro-barra__grupo button')]
+      .find(b => b.textContent === 'Remetido');
+    expect(botaoRemetido.className).toContain('btn--primary');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('filtro desconhecido na URL cai em Todos', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(
+      container, { params: {}, query: new URLSearchParams('filtro=inventado') }
+    );
+    await flush();
+
+    expect(corpo(container)).toHaveLength(3);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // "Nenhum pedido neste ano. Troque o ano no filtro" manda trocar o ano; o erro
+  // manda tentar de novo. Mostrar a primeira frase quando aconteceu a segunda
+  // faz a pessoa procurar o pedido em anos onde ele nunca esteve.
+  test('erro de carga nao vira "nenhum pedido neste ano"', async () => {
+    svc.getPedidos.mockRejectedValue(new Error('Falha ao consultar os pedidos'));
+
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Falha ao consultar os pedidos');
+    expect(container.textContent).not.toContain('Nenhum pedido neste ano');
 
     if (typeof cleanup === 'function') cleanup();
   });

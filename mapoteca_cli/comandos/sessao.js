@@ -60,10 +60,10 @@ async function executar (args, cfg) {
   const exp = http.expiracaoDoToken(token)
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
-  // Desde 2026-07-25 o acesso e por PERFIL no modulo mapoteca: consulta ve,
-  // operador imprime e da baixa no material, gerente cadastra pedido e exclui.
-  // Administrador e global e passa em tudo. Dizer isso agora e mais barato que
-  // descobrir no 403 depois de montar um plano inteiro.
+  // O acesso e por PERFIL no modulo mapoteca: consulta ve, operador imprime e da
+  // baixa no material, gerente cadastra pedido e exclui. Administrador e global
+  // e passa em tudo. Dizer isso agora e mais barato que descobrir no 403 depois
+  // de montar um plano inteiro.
   const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }
   const nivel = NIVEL[perfis.mapoteca] || null
   const quem = administrador

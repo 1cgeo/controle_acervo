@@ -4,6 +4,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { criarHistorico } from '@components/historico/historico.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { formatDate, formatDateTime } from '@utils/format.js';
 import {
@@ -42,13 +43,11 @@ function identidade(u) {
  * Salvar manda PUT /api/usuarios/:uuid com `perfis` (nivel 1 a 3, ou null para
  * revogar o acesso naquele modulo).
  *
- * Em 2026-08-02 a autenticacao veio para dentro do SCA, e esta tela mudou de
- * natureza: sairam "Importar do serviço de autenticação" e "Sincronizar", que
- * espelhavam o Auth Server, e entrou o CADASTRO (criar, editar, excluir e
- * resetar senha). O SCA passou a ser a fonte das pessoas, e nao mais a copia.
+ * E uma tela de CADASTRO (criar, editar, excluir e resetar senha), e nao um
+ * espelho: o SCA e a fonte das pessoas.
  *
- * REVISAO DE 2026-08-04. Na producao a grade trazia 54 pessoas e repetia a
- * mesma palavra em 85% das celulas. Tres causas, e as tres estao consertadas:
+ * TRES REGRAS QUE A GRADE SEGUE, e sem as quais ela repete a mesma palavra na
+ * maioria das celulas:
  * quem ja saiu vinha misturado com quem serve (agora ha filtro de situacao, com
  * os ativos por padrao); a busca comparava `row[col.key]` e as colunas de
  * modulo usavam chave que a linha nao tinha (agora a linha CARREGA o texto que
@@ -122,9 +121,8 @@ export async function renderUsuariosList(container, ctx) {
   // Aviso de quem esta sem senha
   //
   // `senha_definida: false` e, literalmente, a lista de quem NAO CONSEGUE ENTRAR:
-  // a fusao de 2026-08-02 deixou `dgeo.usuario.senha` anulavel e quem preencheu
-  // foi um script rodado uma vez, por fora. Sem isto na tela, quem ficou de fora
-  // da copia so apareceria ao reclamar que o login nao funciona.
+  // `dgeo.usuario.senha` e anulavel. Sem isto na tela, quem esta sem senha so
+  // apareceria ao reclamar que o login nao funciona.
   //
   // `role="status"` porque o aviso nasce DEPOIS da carga: sem ele, o leitor de
   // tela nao anuncia nada.
@@ -315,6 +313,10 @@ export async function renderUsuariosList(container, ctx) {
     ],
   });
 
+  // A grade vive num nó próprio para o estado de ERRO poder tomar o lugar dela
+  // e devolvê-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Usuários' }),
@@ -325,14 +327,33 @@ export async function renderUsuariosList(container, ctx) {
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
     }, [situacaoFiltro.element]),
     aviso,
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da grade.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhum usuário nesta situação",
+   * numa tela onde essa frase é uma afirmação forte: quem a lê conclui que
+   * ninguém está ativo, e o passo seguinte seria cadastrar gente que já existe.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * nó: uma segunda falha guardaria o próprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   // ---------------------------------------------------------------------------
   // Carga e filtro
   // ---------------------------------------------------------------------------
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getUsuarios();
@@ -343,8 +364,11 @@ export async function renderUsuariosList(container, ctx) {
     } catch (err) {
       if (disposed) return;
       pessoas = [];
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      // O aviso de "sem senha" também sai: ele conta a partir da lista, e uma
+      // lista que não chegou não autoriza afirmar que ninguém está sem senha.
       atualizarAviso([]);
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar usuários');
     }
   }

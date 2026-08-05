@@ -3,10 +3,10 @@
 // A marca `layout_origem` do volume, pela API.
 //
 // O teste que importa e o do PUT PARCIAL. A tela do dashboard edita nome,
-// caminho e capacidade, e nao conhece este campo. Se a ausencia da chave gravasse
-// o default, editar o nome do volume apagaria a marca, com 200 e sem aviso, e o
-// renomear-padrao passaria a mover 1,9 TB de entrega. E exatamente a armadilha do
-// PUT corrigida em 2026-07-25 (server/src/utils/preserve_omitted.js).
+// caminho e capacidade, e nao conhece este campo. Se a ausencia da chave
+// gravasse o default, editar o nome do volume apagaria a marca, com 200 e sem
+// aviso, e o renomear-padrao passaria a mover terabytes de entrega. E a
+// armadilha do PUT que `server/src/utils/preserve_omitted.js` fecha.
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')

@@ -72,7 +72,7 @@ controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
           produto.geom, produto.data_modificacao, produto.usuario_modificacao_uuid,
           produto.subtipo_produto_id === undefined ? null : produto.subtipo_produto_id])
     } else {
-      // mi/inom são opcionais no Joi — def evita "Property doesn't exist" do pgp
+      // mi/inom são opcionais no Joi, def evita "Property doesn't exist" do pgp
       const colunasProduto = [
         'nome',
         { name: 'mi', def: null },
@@ -129,10 +129,9 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
     await preserveOmitted(t, {
       table: 'versao',
       id: versao.id,
-      // `meta_pit_id` entra aqui (2026-08-03) pela mesma razão: ele é opcional
-      // no schema, e o cliente que ainda não conhece o campo desligaria da meta
-      // do PIT toda versão que editasse. Enviar null continua desligando de
-      // propósito.
+      // `meta_pit_id` entra aqui pela mesma razão: ele é opcional no schema, e o
+      // cliente que não conhece o campo desligaria da meta do PIT toda versão
+      // que editasse. Enviar null continua desligando de propósito.
       fields: ['palavras_chave', 'meta_pit_id', 'demanda_extra_id'],
       body: versao
     });
@@ -210,8 +209,7 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
  * Aqui a troca é o propósito declarado, com motivo obrigatório.
  *
  * O item de pedido que aponta a versão acompanha, pela cascata da chave
- * estrangeira (migração 2026-07-31_uuid_versao_corrigivel.sql). Sem ela, o
- * UPDATE falharia por integridade referencial.
+ * estrangeira. Sem ela, o UPDATE falharia por integridade referencial.
  *
  * @param {Array<{versao_id: number, uuid_versao: string}>} correcoes
  * @param {string} motivo - de onde saiu o identificador novo
@@ -345,7 +343,7 @@ controller.deleteProdutos = async (produtoIds, motivo_exclusao, usuarioUuid, con
     );
 
     if (existingProducts.length !== produtoIds.length) {
-      // BIGSERIAL retorna como string no driver — normalizar para número
+      // BIGSERIAL retorna como string no driver, normalizar para número
       const existingIds = existingProducts.map(p => Number(p.id));
       const missingIds = produtoIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes produtos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
@@ -535,22 +533,34 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid, conte
       }
     }
 
-    for (let id of versaoIds) {
-      const versao = versoesAntes.get(Number(id));
+    // Produto não pode ficar SEM VERSÃO NENHUMA.
+    //
+    // A conta é sobre o que SOBRA, e não sobre o que existe hoje. Contando o que
+    // existe, apagar as DUAS versões de um produto de duas passava: cada volta
+    // via `count = 2`, nenhuma reprovava, e o produto terminava sem versão -- o
+    // estado exato que esta guarda existe para impedir. A guarda só pegava o
+    // caso de uma versão só, que é o caso fácil.
+    const produtosAfetados = [
+      ...new Set([...versoesAntes.values()].map(v => String(v.produto_id)))
+    ];
 
-      // Verificar se é a única versão do produto
-      const countVersions = await t.one(
-        `SELECT COUNT(*) as count FROM acervo.versao WHERE produto_id = $1`,
-        [versao.produto_id]
+    for (const produtoId of produtosAfetados) {
+      const restantes = await t.one(
+        `SELECT COUNT(*)::int AS n FROM acervo.versao
+         WHERE produto_id = $<produtoId> AND id NOT IN ($<versaoIds:csv>)`,
+        { produtoId, versaoIds }
       );
 
-      if (parseInt(countVersions.count) === 1) {
+      if (restantes.n === 0) {
+        const rotulos = [...versoesAntes.values()]
+          .filter(v => String(v.produto_id) === produtoId)
+          .map(v => v.versao)
+          .join(', ');
         throw new AppError(
-          `Não é possível excluir a versão ${versao.versao} pois é a única versão do produto. Delete o produto inteiro.`,
+          `Não é possível excluir a versão ${rotulos} pois é a única versão do produto. Delete o produto inteiro.`,
           httpCode.BadRequest
         );
       }
-
     }
 
     const arquivoIds = await idsDosArquivosDasVersoes(t, versaoIds);
@@ -843,7 +853,7 @@ async function verificaCicloRelacionamento(t, versaoId1, versaoId2, tipoRelacion
     );
     
     for (const rel of relacionamentos) {
-      // BIGINT chega como string do driver — normalizar para comparar
+      // BIGINT chega como string do driver, normalizar para comparar
       const vizinho = Number(rel.versao_id_2);
 
       // Se encontramos a versão que queremos adicionar, há um ciclo
@@ -958,7 +968,7 @@ controller.atualizaVersaoRelacionamento = async (versaoRelacionamentos, usuarioU
       }
 
       // Se estiver mudando as versões ou tipo, fazer as mesmas validações
-      // (BIGINT retorna como string no driver — comparar como número)
+      // (BIGINT retorna como string no driver, comparar como número)
       if (Number(relacionamentoAtual.versao_id_1) !== Number(item.versao_id_1) ||
           Number(relacionamentoAtual.versao_id_2) !== Number(item.versao_id_2) ||
           Number(relacionamentoAtual.tipo_relacionamento_id) !== Number(item.tipo_relacionamento_id)) {
@@ -1064,7 +1074,11 @@ controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioU
       );
     }
 
-    const apagados = await t.any(
+    // `t.none`, e não `t.any`: o DELETE sem RETURNING não devolve linha nenhuma,
+    // então o valor devolvido era sempre um array vazio, e devolvê-lo como se
+    // fosse a lista dos apagados afirmava o contrário do que acontecia. Quem
+    // chama já ignora o retorno; a lista de verdade é `exists`.
+    await t.none(
       `DELETE FROM acervo.versao_relacionamento
       WHERE id in ($<versaoRelacionamentoIds:csv>)`,
       { versaoRelacionamentoIds }
@@ -1080,8 +1094,6 @@ controller.deleteVersaoRelacionamento = async (versaoRelacionamentoIds, usuarioU
         contexto
       });
     }
-
-    return apagados;
   });
 };
 
@@ -1109,8 +1121,15 @@ const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId, contexto
 
   return db.conn.tx(async t => {
     // Espelha a UNIQUE unique_version_per_product com erro amigável
-    // (duplicatas dentro do payload e contra o banco)
-    const chaves = versoesPreparadas.map(v => `${v.produto_id}|${v.versao}`);
+    // (duplicatas dentro do payload e contra o banco).
+    //
+    // O SUBTIPO faz PARTE da chave: a constraint é
+    // (produto_id, versao, subtipo_produto_id). Omitindo-o aqui, esta guarda era
+    // mais rígida que a constraint que ela diz espelhar, e recusava com 409 o
+    // caso legítimo do produto que tem a Carta Ortoimagem SCN e a Especial, as
+    // duas rotuladas "1ª Edição". É o mesmo defeito já corrigido em
+    // `atualizaVersao`; ele tinha sobrado neste caminho.
+    const chaves = versoesPreparadas.map(v => `${v.produto_id}|${v.versao}|${v.subtipo_produto_id}`);
     const duplicadas = chaves.filter((c, i) => chaves.indexOf(c) !== i);
     if (duplicadas.length > 0) {
       throw new AppError(
@@ -1146,12 +1165,13 @@ const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId, contexto
 
     for (const v of versoesPreparadas) {
       const versaoExistente = await t.oneOrNone(
-        `SELECT id FROM acervo.versao WHERE produto_id = $1 AND versao = $2`,
-        [v.produto_id, v.versao]
+        `SELECT id FROM acervo.versao
+         WHERE produto_id = $1 AND versao = $2 AND subtipo_produto_id = $3`,
+        [v.produto_id, v.versao, v.subtipo_produto_id]
       );
       if (versaoExistente) {
         throw new AppError(
-          `Já existe a versão "${v.versao}" para o produto ${v.produto_id}`,
+          `Já existe a versão "${v.versao}" (subtipo ${v.subtipo_produto_id}) para o produto ${v.produto_id}`,
           httpCode.Conflict
         );
       }
@@ -1204,8 +1224,6 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId, contex
   const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
-    const produtosIds = []
-
     for (const produto of produtos) {
       // A identidade é conferida ANTES do INSERT, e não deixada para o índice
       // único estourar: o estouro não diz qual produto já ocupa a identidade,
@@ -1218,8 +1236,6 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId, contex
         VALUES($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), $10, $11)
         RETURNING id
       `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
-
-      produtosIds.push(novoProduto.id)
 
       await auditoriaCtrl.registrar(t, {
         tabela: 'acervo.produto',
@@ -1277,8 +1293,6 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid, contexto) => {
   const data_cadastramento = new Date();
 
   return db.conn.tx(async t => {
-    const produtosIds = [];
-
     for (const produto of produtos) {
       // Mesma conferência do outro caminho de criação: a regra da identidade
       // não pode depender do botão que a pessoa apertou.
@@ -1289,8 +1303,6 @@ controller.bulkCreateProducts = async (produtos, usuarioUuid, contexto) => {
         VALUES($1, $2, $3, $4, $5, $6, $7, $8, ST_GeomFromEWKT($9), $10, $11)
         RETURNING id
       `, [produto.nome, produto.mi, produto.inom, produto.tipo_escala_id, produto.denominador_escala_especial, produto.tipo_produto_id, produto.subtipo_produto_id ?? null, produto.descricao, produto.geom, data_cadastramento, usuarioUuid]);
-
-      produtosIds.push(novoProduto.id);
 
       await auditoriaCtrl.registrar(t, {
         tabela: 'acervo.produto',

@@ -117,11 +117,13 @@ beforeEach(() => {
 });
 
 describe('mapa da busca: clique sobre poligonos sobrepostos', () => {
-  test('devolve TODOS os poligonos sob o cursor, e nao so o de cima', async () => {
+  test('devolve TODOS os poligonos sob o cursor, na ordem de cima para baixo', async () => {
     const { recebido } = await montar();
     const clique = ouvintes['click:produtos-preenchimento'];
     expect(clique).toBeTypeOf('function');
 
+    // Entram com o de cima primeiro, e os três ids são distintos: a comparação
+    // abaixo reprova tanto perder feição quanto embaralhar a pilha.
     clique({
       features: [
         { id: 12, properties: { id: 12 } },
@@ -130,19 +132,9 @@ describe('mapa da busca: clique sobre poligonos sobrepostos', () => {
       ],
     });
 
+    // A ordem não é detalhe: a página usa a PRIMEIRA para decidir que cartão
+    // destacar na lista.
     expect(recebido).toEqual([[12, 11, 10]]);
-  });
-
-  test('preserva a ordem de cima para baixo que o MapLibre entrega', async () => {
-    const { recebido } = await montar();
-
-    ouvintes['click:produtos-preenchimento']({
-      features: [{ id: 11, properties: {} }, { id: 10, properties: {} }],
-    });
-
-    // A pagina usa a PRIMEIRA para decidir que cartao destacar na lista, entao a
-    // ordem nao e detalhe.
-    expect(recebido[0][0]).toBe(11);
   });
 
   test('deduplica a feicao que aparece em mais de um ladrilho', async () => {
@@ -182,7 +174,7 @@ describe('mapa da busca: clique sobre poligonos sobrepostos', () => {
 describe('mapa da busca: rotulo em fonte de PONTOS', () => {
   // O defeito: rotulando o POLIGONO, o MapLibre corta o GeoJSON em ladrilhos e
   // ancora o texto por pedaco, entao a folha que cruza a borda de um ladrilho
-  // aparece rotulada DUAS vezes. Foi visto na tela em 2026-08-02, com um produto
+  // aparece rotulada DUAS vezes. Foi visto na tela, com um produto
   // so no mapa. Um ponto cabe num ladrilho so.
   test('a camada de rotulo nao le a fonte dos poligonos', async () => {
     await montar();

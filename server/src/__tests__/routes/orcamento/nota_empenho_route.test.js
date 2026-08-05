@@ -54,7 +54,7 @@ describe('POST /notas_empenho', () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 7, ...bodyValido })
     // Despacho por CONTEUDO da consulta, e nao por ordem de chamada. A transacao
     // de `criar` faz quatro `any`: a homogeneidade das NCs, as duas do teto (que
-    // entrou em 2026-08-04) e a releitura do rateio. Com `mockResolvedValueOnce`
+    // entrou) e a releitura do rateio. Com `mockResolvedValueOnce`
     // em fila, acrescentar uma validacao no controller desloca todos os mocks e
     // o teste passa a medir outra coisa, calado.
     mockDb.conn.any.mockImplementation(async (sql) => {
@@ -161,7 +161,7 @@ describe('POST /notas_empenho', () => {
 })
 
 describe('GET /notas_empenho/:id', () => {
-  // O saldo e somado no BANCO desde 2026-08-04, e nao mais em JS: NUMERIC em vez
+  // O saldo e somado no BANCO, e nao mais em JS: NUMERIC em vez
   // de ponto flutuante (ver o teste irmao em unit/orcamento/nota_empenho_ctrl).
   // A rota entrega o que a consulta calculou, como TEXTO, que e o que o driver
   // devolve para NUMERIC.
@@ -188,9 +188,12 @@ describe('GET /notas_empenho/:id', () => {
   })
 })
 
-// Eram QUATRO comandos em quatro conexoes ate 2026-08-02 (o `SELECT id`, as duas
-// checagens de dependencia e o DELETE). Hoje e uma transacao so, e o `SELECT id`
-// virou `lerAntes`.
+// OS QUATRO COMANDOS DESTA ROTA CORREM NUMA TRANSACAO SO (a leitura anterior,
+// as duas checagens de dependencia e o DELETE), e a leitura anterior e o
+// `lerAntes`.
+//
+// A ATOMICIDADE NAO SE PROVA AQUI, pelo mesmo motivo do arquivo da NC: quem a
+// prova e integration/orcamento.test.js.
 describe('DELETE /notas_empenho/:id', () => {
   test('409 quando ha liquidacao vinculada', async () => {
     mockDb.conn.oneOrNone

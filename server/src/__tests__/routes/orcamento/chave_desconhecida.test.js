@@ -35,8 +35,8 @@ const logger = require('../../../utils/logger')
 const { buildTestApp } = require('../../helpers/orcamento/testApp')
 const { dfdRoute } = require('../../../orcamento/dfd')
 const { notaCreditoRoute } = require('../../../orcamento/nota_credito')
-// A meta do PIT saiu do modulo em 2026-07-31 e virou plataforma, mas o
-// contrato de chave desconhecida vale igual: o router entra daqui.
+// A meta do PIT e rota de PLATAFORMA, e nao do modulo, mas o contrato de chave
+// desconhecida vale igual: o router entra daqui.
 const { pitRoute } = require('../../../pit')
 const { dominioRoute } = require('../../../orcamento/dominio')
 

@@ -92,11 +92,17 @@ function lista (dados, opcoes = {}) {
   if (!Array.isArray(dados)) {
     return { texto: JSON.stringify(dados, null, 2), avisos }
   }
+
+  // O FORMATO decide antes de a lista vazia decidir: com `--json`, resultado
+  // vazio sai como `[]`, e nunca como `(nenhum registro)`, que quebraria o
+  // `JSON.parse` de quem encadeia justamente no caso mais comum, a consulta que
+  // nao achou nada.
+  const formato = opcoes.formato || 'tsv'
+
   if (!dados.length) {
-    return { texto: '(nenhum registro)', avisos }
+    return { texto: formato === 'json' ? '[]' : '(nenhum registro)', avisos }
   }
 
-  const formato = opcoes.formato || 'tsv'
   if (formato === 'json') {
     return { texto: JSON.stringify(dados, null, 2), avisos }
   }

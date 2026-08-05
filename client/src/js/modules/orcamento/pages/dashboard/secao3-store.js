@@ -3,11 +3,9 @@ import { getExecucaoNd } from '@modules/orcamento/services/orcamento-service.js'
 /**
  * Fonte unica da execucao por ND para as abas do dashboard do orcamento.
  *
- * Chamava-se "secao 3" porque a consulta era a tabela 3.1 do RPCMTec, servida
- * por /orcamento/relatorio/secao3. Em 2026-08-01 o RPCMTec saiu do modulo e
- * virou tela de plataforma, e esta consulta ficou como rota do PAINEL: sao
- * perguntas diferentes, para publicos diferentes. O nome do arquivo continua o
- * mesmo para nao espalhar a mudanca por seis arquivos de aba.
+ * O nome vem da tabela 3.1 do RPCMTec, de onde a consulta nasceu. Ela e rota do
+ * PAINEL, e nao do relatorio: sao perguntas diferentes, para publicos
+ * diferentes.
  *
  * As tres abas saem do MESMO payload (`getExecucaoNd`): os cards, o grafico por
  * ND e as duas tabelas sao recortes da mesma lista de linhas. Sem isto, trocar
@@ -15,7 +13,7 @@ import { getExecucaoNd } from '@modules/orcamento/services/orcamento-service.js'
  * refaria a consulta inteira para reexibir dado que ja estava na mao, e o
  * usuario pagaria um round-trip por clique de aba.
  *
- * O payload e { linhas, pendencias } desde 2026-08-04. Era a lista crua; as
+ * O payload e { linhas, pendencias }, e nao a lista crua: as
  * pendencias de dado do ano entraram junto porque o registro sem data entra em
  * TODOS os meses, e so a contagem torna isso visivel (ver pendencias.js).
  *
@@ -23,7 +21,7 @@ import { getExecucaoNd } from '@modules/orcamento/services/orcamento-service.js'
  * abas montando ao mesmo tempo esperam a mesma requisicao em vez de disparar
  * duas. Trocar o mes ou o ano invalida, e ai a proxima leitura busca de novo.
  *
- * O ano vem de FORA, por funcao: o seletor de ano e da TELA desde 2026-08-04, e
+ * O ano vem de FORA, por funcao: o seletor de ano e da TELA, e
  * nao mais do modulo inteiro. O store nao le store global nenhum.
  *
  * @param {{getAno:() => number}} opts
@@ -88,7 +86,7 @@ export function getLinhas(payload) {
 }
 
 // A frase de uma linha sobre registro sem data (`avisoSemData`) saiu em
-// 2026-08-04. Ela virou o BLOCO de pendencias (pendencias.js), com uma linha
+// Ela e o BLOCO de pendencias (pendencias.js), com uma linha
 // por defeito, a contagem e o caminho do conserto: o chefe quer os defeitos de
 // dado A VISTA, e um paragrafo sob o titulo nao chama acao nenhuma.
 

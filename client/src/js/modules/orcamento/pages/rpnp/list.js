@@ -4,17 +4,12 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { getRpnps, deleteRpnp, getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openRpnpDialog } from './rpnp-dialog.js';
 
 // O RPNP (Restos a Pagar Não Processados) alimenta a subseção 4.3 do RPCMTec.
-const COMPRIMENTO_TRUNCAR = 80;
-
-function truncar(texto) {
-  if (!texto) return '-';
-  return texto.length > COMPRIMENTO_TRUNCAR ? `${texto.slice(0, COMPRIMENTO_TRUNCAR)}…` : texto;
-}
 
 // Nulo nao e zero. `valor_a_liquidar` nulo quer dizer NAO INFORMADO, e
 // toNumber(null) devolve 0 (utils/format.js): a linha nula era pintada de
@@ -35,8 +30,7 @@ export async function renderRpnpList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('orcamento');
 
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o RPNP e
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. `permitirOutroAno` porque o ano decide ONDE o RPNP e
   // cadastrado: a virada de exercicio comeca num ano ainda vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
@@ -58,10 +52,14 @@ export async function renderRpnpList(container, _ctx) {
         render: (row) => row.empenho_label || row.nota_empenho_numero || '-',
       },
       {
+        // O texto INTEIRO vai para a celula, e quem corta e a CSS. Cortar antes
+        // fazia o `title` do <td> repetir o texto ja cortado, entao passar o
+        // mouse nao revelava nada. A classe 'truncate' tambem nao existe no CSS:
+        // as reais sao `.text-truncate` e `.data-table__cell--truncate`.
         key: 'finalidade',
         label: 'Finalidade',
-        className: 'truncate',
-        render: (row) => truncar(row.finalidade),
+        className: 'data-table__cell--truncate',
+        render: (row) => row.finalidade || '-',
       },
       {
         key: 'valor_empenhado',
@@ -88,7 +86,7 @@ export async function renderRpnpList(container, _ctx) {
     searchable: true,
     pageSize: 25,
     loading: true,
-    // A lista abre pelo maior valor a liquidar (chefe, 2026-07-31). O RPNP que
+    // A lista abre pelo maior valor a liquidar. O RPNP que
     // importa e o que ainda deve dinheiro; o de saldo zero ja e historico e
     // desce para o fim. Antes a ordem era ano e id de cadastro, que nao diz nada
     // sobre o que precisa de acao.
@@ -118,6 +116,10 @@ export async function renderRpnpList(container, _ctx) {
 
   const resumo = el('p', { className: 'page__subtitle', textContent: '' });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('div', {}, [
@@ -132,9 +134,24 @@ export async function renderRpnpList(container, _ctx) {
     }, [
       filtroAno.element,
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhum RPNP cadastrado": a falha da
+   * API lia-se como ano sem resto a pagar, e as duas pedem acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   // O total soma SO as linhas com valor informado, e diz quantas ficaram de
   // fora. Somar o nulo como zero daria um total menor que o real, com cara de
@@ -152,6 +169,9 @@ export async function renderRpnpList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const dados = await getRpnps(filtroAno.getAno());
@@ -160,8 +180,9 @@ export async function renderRpnpList(container, _ctx) {
       atualizarResumo(dados);
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
       resumo.textContent = '';
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar RPNP');
     }
   }

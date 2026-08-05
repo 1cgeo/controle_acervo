@@ -1,10 +1,9 @@
 # Path: gui\versao_relacionamento\versao_relacionamento_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from qgis.PyQt.QtCore import Qt, QDateTime
-from ..ui_utils import sortable_item, sortable_int_item
-import csv
+from ..ui_utils import exportar_tabela_csv, sortable_item, sortable_int_item
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'versao_relacionamento_dialog.ui'))
@@ -96,25 +95,5 @@ class VersaoRelacionamentoDialog(QDialog, FORM_CLASS):
         self.load_relacionamentos()
 
     def export_csv(self):
-        if self.relationshipsTable.rowCount() == 0:
-            QMessageBox.warning(self, "Aviso", "Não há dados para exportar.")
-            return
-        filename, _ = QFileDialog.getSaveFileName(self, "Exportar para CSV", "", "Arquivos CSV (*.csv)")
-        if not filename:
-            return
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                headers = []
-                for column in range(self.relationshipsTable.columnCount()):
-                    headers.append(self.relationshipsTable.horizontalHeaderItem(column).text())
-                writer.writerow(headers)
-                for row in range(self.relationshipsTable.rowCount()):
-                    row_data = []
-                    for column in range(self.relationshipsTable.columnCount()):
-                        item = self.relationshipsTable.item(row, column)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
-            QMessageBox.information(self, "Sucesso", f"Dados exportados com sucesso para {filename}")
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Erro ao exportar dados: {str(e)}")
+        """Exporta a tabela para CSV. A lista não é paginada: sai inteira."""
+        exportar_tabela_csv(self, self.relationshipsTable, 'relacionamentos-entre-versoes.csv')

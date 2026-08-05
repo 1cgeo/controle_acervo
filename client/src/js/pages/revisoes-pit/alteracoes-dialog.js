@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { toIsoDate } from '@utils/format.js';
 import { createDateField } from '@components/form-fields/form-fields.js';
 import {
   getAlteracoesRevisao, removerDeclaracao, publicarRevisao,
@@ -131,12 +132,24 @@ export async function abrirAlteracoesRevisao({ revisao, onAlterado = null } = {}
 
     try {
       await removerDeclaracao(revisao.id, l.meta_id);
-      showSuccess(`Meta ${codigo} tirada do rascunho`);
-      linhas = await getAlteracoesRevisao(revisao.id);
-      desenhar();
-      if (onAlterado) onAlterado();
     } catch (err) {
       showError(err.message || 'Erro ao tirar a meta do rascunho');
+      return;
+    }
+
+    showSuccess(`Meta ${codigo} tirada do rascunho`);
+    if (onAlterado) onAlterado();
+
+    // A RELEITURA fica FORA do try da escrita. Juntas, uma releitura que
+    // falhasse pintava "Meta X tirada do rascunho" e "Erro ao tirar a meta do
+    // rascunho" em sequência, sobre uma tabela que ainda mostrava a meta: duas
+    // mensagens contraditórias sobre uma escrita que já aconteceu.
+    try {
+      linhas = await getAlteracoesRevisao(revisao.id);
+      desenhar();
+    } catch (err) {
+      showError(`A meta saiu do rascunho, mas a lista não foi relida: ${
+        err.message || 'erro ao reler as alterações'}. Reabra este diálogo.`);
     }
   }
 
@@ -149,7 +162,12 @@ export async function abrirAlteracoesRevisao({ revisao, onAlterado = null } = {}
    * ATO. Como campo, alguem publicaria sem perceber ao corrigir o assinante.
    */
   function publicar(fecharLista) {
-    const hoje = new Date().toISOString().slice(0, 10);
+    // `toIsoDate`, e NUNCA `new Date().toISOString()`: o ISO é em UTC, e em
+    // UTC-3 toda hora a partir das 21:00 devolve o dia SEGUINTE. Aqui isso é o
+    // dia em que a revisão do PIT passa a reger: publicar às 21h30 de 4 de
+    // agosto propunha 5 de agosto, e o relatório do dia 4 continuaria reportando
+    // a revisão anterior.
+    const hoje = toIsoDate(new Date());
     const vigenciaField = createDateField({
       label: 'Rege a partir de',
       required: true,

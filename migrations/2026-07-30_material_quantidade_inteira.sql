@@ -1,6 +1,6 @@
 -- Quantidade de material passa de DECIMAL(10,2) para INTEGER.
 --
--- POR QUE. Material da mapoteca conta-se em UNIDADE (chefe, 2026-07-30): folha de
+-- POR QUE. Material da mapoteca conta-se em UNIDADE: folha de
 -- sulfite, cartucho, rolo. Meia folha e meio cartucho nao existem, e a casa
 -- decimal so criava tres problemas: o estoque exibia "150,00" onde a pessoa
 -- escreveu 150, o formulario aceitava 1,5 sem reclamar, e a soma de fracoes

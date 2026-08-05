@@ -2,13 +2,11 @@ BEGIN;
 
 -- Relatório de Prestação de Contas Mensal Técnico: a edição mensal.
 --
--- Dado da DIVISÃO, e não de um módulo. A tabela nasceu em `orcamento` porque o
--- primeiro consumidor foi a seção do PDR, mas o RPCMTec não é artefato
--- orçamentário: a mesma edição fala de acervo, mapoteca e orçamento, e o chefe
--- assina uma só. Enquanto morava lá, quem só tinha perfil na mapoteca não
--- alcançava a edição do próprio relatório. Mudou de casa em 2026-08-01, pelo
--- mesmo critério que tirou `pit.meta` do orçamento em 2026-07-31 e `limites` do
--- acervo em 2026-07-29: dado de que nenhum módulo é dono mora fora deles.
+-- Dado da DIVISÃO, e não de um módulo. O RPCMTec não é artefato orçamentário: a
+-- mesma edição fala de acervo, mapoteca e orçamento, e o chefe assina uma só.
+-- Dentro do orçamento, quem só tem perfil na mapoteca não alcançaria a edição do
+-- próprio relatório. Mesmo critério de `pit.meta` e de `limites`: dado de que
+-- nenhum módulo é dono mora fora deles.
 --
 -- O QUE ELA GUARDA é o metadado da edição (ano, mês, quem assina, quando
 -- assinou) e o ESTADO dela: aberta ou fechada. O conteúdo do relatório vive em
@@ -18,13 +16,10 @@ BEGIN;
 --                                       e só o digitado persiste;
 --   FECHADA                             tudo congela, inclusive o calculado.
 --
--- Até 2026-08-05 nada era gravado, e a razão escrita aqui era que uma edição
--- gravada envelheceria em silêncio no primeiro pedido corrigido depois de
--- fechada. Ela continua verdadeira, e é justamente por isso que o congelamento
--- só acontece no fechamento: antes dele o banco manda, depois dele manda o que
--- foi assinado. O RTM de março de 2026 reportou 247 na meta 4.2 e o de julho
--- reportou 252; sem congelar, a edição de março regerada em agosto mostraria um
--- número que ninguém leu.
+-- O CONGELAMENTO SÓ ACONTECE NO FECHAMENTO, e nunca antes: gravada cedo, a
+-- edição envelhece em silêncio no primeiro pedido corrigido. Antes do
+-- fechamento o banco manda; depois dele manda o que foi assinado. Sem congelar,
+-- uma edição antiga regerada hoje mostraria um número que ninguém leu.
 --
 -- `capacitacao` NÃO CONTRADIZ O PARÁGRAFO ACIMA, e a diferença é a que separa
 -- entrada de saída. Ela não é recalculável: ninguém a deriva do banco, alguém a
@@ -32,9 +27,9 @@ BEGIN;
 -- prima das subseções 2.6 e 6.2, e mora aqui porque não existe por outra razão
 -- que não o relatório.
 --
--- `aproveitamento_mes` morou aqui por algumas horas em 2026-08-02 e saiu no
--- mesmo dia: ela media a coisa errada, e virou `dgeo.efetivo_periodo` mais
--- `dgeo.impedimento`. A razão está escrita em er/dgeo.sql.
+-- NÃO EXISTE `aproveitamento_mes` aqui: retrato mensal mede a coisa errada, e o
+-- aproveitamento é `dgeo.efetivo_periodo` mais `dgeo.impedimento`. A razão está
+-- escrita em er/dgeo.sql.
 --
 -- PERMISSÃO. Ler e gerar é de quem administra: o RPCMTec cruza os três módulos,
 -- inclusive valor de crédito e de empenho, e liberá-lo por perfil de um módulo
@@ -185,7 +180,7 @@ CREATE INDEX idx_anexo_edicao_edicao ON rpcmtec.anexo_edicao (edicao_id);
 -- ano.
 --
 -- DATA, e não TIMESTAMP como no SAP. Início e fim de curso são dia de
--- calendário, e é o padrão da casa desde 2026-08-01: com timestamp, o Joi
+-- calendário, e é o padrão da casa: com timestamp, o Joi
 -- converteria 'AAAA-MM-DD' em meia-noite UTC e a coluna guardaria 21:00 do dia
 -- anterior em UTC-3.
 CREATE TABLE rpcmtec.capacitacao(
@@ -203,7 +198,7 @@ CREATE TABLE rpcmtec.capacitacao(
   efetivo_capacitado INTEGER CHECK (efetivo_capacitado IS NULL OR efetivo_capacitado >= 0),
   plano_codigo VARCHAR(255),
   documento VARCHAR(255),
-  -- Meta do PIT que esta capacitação cumpre (2026-08-03). Quando a meta declara
+  -- Meta do PIT que esta capacitação cumpre. Quando a meta declara
   -- origem Capacitação, é daqui que sai o número da grade: Prevista e Em
   -- execução alimentam o planejado, Concluída alimenta o realizado, e o mês vem
   -- de `data_fim`. Cancelada não entra em nenhum dos dois.
@@ -225,10 +220,10 @@ COMMENT ON TABLE rpcmtec.capacitacao IS
 CREATE INDEX idx_capacitacao_ano ON rpcmtec.capacitacao (ano);
 CREATE INDEX idx_capacitacao_meta_pit ON rpcmtec.capacitacao (meta_pit_id);
 
--- Quem da DIVISÃO participou da capacitação, ligado ao cadastro (chefe,
--- 2026-08-02). Era um `militares TEXT` até então, e texto livre não casa com
--- pessoa: "Cap Fulano" e "Fulano" são a mesma pessoa e duas strings, e nenhuma
--- das duas responde "de quais capacitações o Fulano participou".
+-- Quem da DIVISÃO participou da capacitação, ligado ao cadastro. Texto livre
+-- não casa com pessoa: "Cap Fulano" e "Fulano" são a mesma pessoa e duas
+-- strings, e nenhuma das duas responde "de quais capacitações o Fulano
+-- participou".
 --
 -- O PAPEL NÃO É COLUNA: ele vem do `tipo_id` da capacitação. Na MINISTRADA quem
 -- está aqui é instrutor ou monitor (nós ensinamos); na RECEBIDA é quem foi

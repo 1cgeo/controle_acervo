@@ -9,7 +9,7 @@
 // perca não quebra nada, não dá erro, e chega ao chefe como uma aba que abre
 // diferente de todo mês.
 //
-// Os valores esperados foram medidos em "META4_DETALHADA.ods" (2026-08-01).
+// Os valores esperados foram medidos em "META4_DETALHADA.ods".
 
 const fs = require('fs')
 
@@ -46,7 +46,7 @@ describe('rtm_ods: a semente', () => {
       .toBe('application/vnd.oasis.opendocument.spreadsheet')
 
     const xml = entradas.get('content.xml').toString('utf8')
-    // Uma linha só: o cabeçalho. As 1.628 de dados foram removidas ao montar a
+    // Uma linha só: o cabeçalho. As de dados foram removidas ao montar a
     // semente, o que também tirou nome de OM e quantidade entregue de um
     // arquivo que vai para repositório PÚBLICO.
     expect((xml.match(/<table:table-row/g) || [])).toHaveLength(1)
@@ -67,18 +67,25 @@ describe('rtm_ods: a semente', () => {
     const xml = desziparParaMapa(fs.readFileSync(CAMINHO_SEMENTE))
       .get('content.xml').toString('utf8')
 
-    const esperados = [
+    // A leitura é por CÉLULA, e não por procurar cada rótulo solto no XML.
+    // "Mat Previsto" está partido em dois `<text:p>` na semente, então quem
+    // procura o texto cru não o acha e sai da lista sem ninguém notar: era o
+    // que fazia esta conferência pular a 10ª coluna, e com ela a checagem de
+    // ordem entre a 9ª e a 11ª.
+    const cabecalho = xml.match(/<table:table-row[\s\S]*?<\/table:table-row>/)[0]
+    const celulas = [...cabecalho.matchAll(/<table:table-cell[\s\S]*?(?:\/>|<\/table:table-cell>)/g)]
+      .map(([celula]) =>
+        [...celula.matchAll(/<text:p>([^<]*)<\/text:p>/g)].map(m => m[1]).join(' '))
+      .filter(texto => texto !== '')
+
+    expect(celulas).toEqual([
       'OMDS', 'Demandante', 'OM Destino', 'Previsto no PIT', 'Meta', 'Produto',
-      'MI', 'Escala', 'Qnt Prevista', 'Qnt Fornecida', 'Material Fornecido',
-      'Data da Entrega', 'Forma da Entrega', 'Observações'
-    ]
-    let posicao = -1
-    for (const rotulo of esperados) {
-      const nova = xml.indexOf(`<text:p>${rotulo}</text:p>`)
-      expect(nova).toBeGreaterThan(posicao)
-      posicao = nova
-    }
-    expect(COLUNAS).toHaveLength(15)
+      'MI', 'Escala', 'Qnt Prevista', 'Mat Previsto', 'Qnt Fornecida',
+      'Material Fornecido', 'Data da Entrega', 'Forma da Entrega', 'Observações'
+    ])
+    // E o gerador escreve UMA célula por cabeçalho: sobrando ou faltando uma, a
+    // linha de dado sai deslocada em relação ao título.
+    expect(COLUNAS).toHaveLength(celulas.length)
   })
 })
 
@@ -89,8 +96,10 @@ describe('rtm_ods: o arquivo gerado', () => {
 
     expect([...gerado.keys()].sort()).toEqual([...semente.keys()].sort())
     for (const [nome, conteudo] of semente) {
-      if (nome === 'content.xml') continue
-      expect(gerado.get(nome).equals(conteudo)).toBe(true)
+      // O `content.xml` tem de MUDAR: pular a comparação dele deixava o caso
+      // verde também no dia em que o gerador devolvesse a semente intocada,
+      // que é o oposto do que o nome promete.
+      expect(gerado.get(nome).equals(conteudo)).toBe(nome !== 'content.xml')
     }
   })
 

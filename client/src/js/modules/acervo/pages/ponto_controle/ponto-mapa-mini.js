@@ -11,7 +11,7 @@ import { ESTILO_OSM, carregarMapLibre } from '@components/mapa/base.js';
  * do acervo.
  *
  * ELE NAO CUSTA DOWNLOAD EXTRA. O `maplibre-gl` pesa cerca de 1 MB e por isso
- * entra por `import()` dinamico (decisao do chefe, 2026-07-25). A ficha do ponto
+ * entra por `import()` dinamico. A ficha do ponto
  * so abre a partir da tela de pontos, que JA tem o mapa da lista carregado,
  * entao aqui o modulo vem do cache.
  *

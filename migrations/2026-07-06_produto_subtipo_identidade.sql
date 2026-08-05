@@ -78,7 +78,7 @@ BEGIN
         RAISE EXCEPTION 'Subtipo % exige produto proprio (produto.subtipo_produto_id = %); nao pode ser versao de um produto de outro subtipo', NEW.subtipo_produto_id, NEW.subtipo_produto_id;
     END IF;
 
-    -- Em UPDATE, validar o formato da versao apenas quando o campo versao mudou — senao
+    -- Em UPDATE, validar o formato da versao apenas quando o campo versao mudou, senao
     -- registros legados ("Xª Edição") ficam imutaveis apos 2024 (qualquer UPDATE falharia)
     IF TG_OP = 'UPDATE' AND NEW.versao IS NOT DISTINCT FROM OLD.versao THEN
         RETURN NEW;

@@ -4,29 +4,21 @@ import { openModal } from '@components/modal/modal-base.js';
 import { chip } from '@components/status-chip.js';
 import { formatDate, formatDateTime } from '@utils/format.js';
 import { getHistorico } from '@services/rastreabilidade-service.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import './historico.css';
 
 /**
  * Histórico de alterações de UM registro.
  *
- * O DEFEITO QUE ESTE COMPONENTE CORRIGE (2026-08-02). A seção "Histórico do
- * pedido" que existia em `pedidos/details.js` mostrava, na coluna "O que mudou",
- * um `campos_alterados.join(', ')`: ou seja, o NOME DA COLUNA DO BANCO. Quem lia
- * via
+ * O DEFEITO QUE ESTE COMPONENTE EVITA: mostrar na coluna "O que mudou" um
+ * `campos_alterados.join(', ')`, ou seja o NOME DA COLUNA DO BANCO
+ * ("situacao_pedido_id, prazo"). Quem lê sabe que algo mudou sem saber DE QUÊ
+ * PARA QUÊ.
  *
- *     Cap Silva · Alterou · Pedido #312 · situacao_pedido_id, prazo
- *
- * e sabia que alguma coisa mudou, sem saber DE QUÊ PARA QUÊ. Três defeitos num
- * lugar só: `dados_antes` e `dados_depois` já chegavam na resposta e eram
- * jogados fora; `situacao_pedido_id` não é português; e, mesmo que os valores
- * aparecessem, seriam números. O próprio arquivo já tinha reconhecido esse
- * problema para a TABELA e o resolvido com um mapa de nomes, e nunca aplicou o
- * mesmo raciocínio aos CAMPOS.
- *
- * A CORREÇÃO. O servidor passou a mandar o diff PRONTO (`mudancas`, com rótulo
- * em português e os dois valores em texto), e este componente o mostra INLINE:
- * com uma ou duas mudanças, `Situação: Em produção → Concluído` cabe na própria
- * linha e resolve a pergunta sem nenhum clique.
+ * O servidor manda o diff PRONTO (`mudancas`, com rótulo em português e os dois
+ * valores em texto), e este componente o mostra INLINE: com uma ou duas
+ * mudanças, `Situação: Em produção → Concluído` cabe na própria linha e resolve
+ * a pergunta sem nenhum clique.
  *
  * POR QUE O SERVIDOR TRADUZ, e não o cliente: são cerca de 60 tabelas auditadas
  * e 25 tabelas de domínio. Para traduzir `situacao_pedido_id: 3` o cliente
@@ -52,11 +44,9 @@ export const OPERACAO = {
 /**
  * Por onde a mudança entrou, em português.
  *
- * Ela aparece no detalhe de cada evento, e vinha CRUA ('web', 'qgis'): quem lê o
- * histórico não decorou os valores da coluna. Mora aqui, e não na tela de
- * rastreabilidade, porque quem desenha o detalhe é este componente -- a tela
- * deixou de ter o filtro de origem em 2026-08-02, quando ele deu lugar a Sistema
- * e Subsistema.
+ * Ela aparece no detalhe de cada evento, e crua ('web', 'qgis') não diz nada a
+ * quem lê o histórico. Mora aqui, e não na tela de rastreabilidade, porque quem
+ * desenha o detalhe é este componente.
  */
 export const NOME_ORIGEM = {
   web: 'Interface web',
@@ -73,8 +63,7 @@ export const NOME_ORIGEM = {
  *
  * A troca é por PALAVRA, e não por tabela: tabela nova reaproveita o que já
  * está aqui, e palavra que falta sai sem acento, nunca em branco. As entradas
- * saem das tabelas declaradas em server/src/auditoria/mapa/ (conferido em
- * 2026-08-04).
+ * saem das tabelas declaradas em server/src/auditoria/mapa/.
  */
 const PALAVRA_ACENTUADA = {
   capacitacao: 'capacitação',
@@ -132,16 +121,12 @@ const MUDANCAS_INLINE = 2;
 /**
  * Quando o registro unificado de alterações passou a existir.
  *
- * Medido no banco de produção em 2026-08-04: o primeiro `auditoria.evento` é de
- * 2026-07-30. Antes dessa data não há rastro de coisa nenhuma, e o acervo é bem
- * mais velho que ela: 7.025 das 7.572 versões (92,8%) e 5.743 dos 6.309 produtos
- * (91,0%) foram cadastrados antes do corte.
+ * O primeiro `auditoria.evento` é desta data, e o acervo é bem mais velho: mais
+ * de nove em cada dez versões e produtos foram cadastrados antes do corte.
  *
  * POR QUE ISSO VAI PARA A TELA. A frase "Nenhuma alteração registrada", sozinha,
- * se lê como "este registro nunca mudou", e ela aparece em mais de nove de cada
- * dez fichas do acervo. É a mesma confusão que o estado de erro do painel
- * corrige: "não houve" e "não sei" são respostas opostas, e o histórico vazio
- * estava dando a primeira quando a verdadeira é a segunda.
+ * se lê como "este registro nunca mudou". É a mesma confusão que o estado de
+ * erro do painel corrige: "não houve" e "não sei" são respostas opostas.
  */
 const INICIO_DO_REGISTRO = '2026-07-30';
 
@@ -214,7 +199,7 @@ export function autor(evento) {
 /**
  * O texto que a busca da tabela varre, montado por evento.
  *
- * POR QUE ELE EXISTE (2026-08-04). A busca do data-table casa contra
+ * POR QUE ELE EXISTE. A busca do data-table casa contra
  * `row[col.key]`, o valor CRU da coluna, e não contra o que o `render` desenhou.
  * Das quatro colunas daqui, uma é um array de objetos (vira "[object Object]"),
  * outra é a letra do banco ('U') e a terceira é a data em ISO. Ligar a busca sem
@@ -350,6 +335,10 @@ export function criarHistorico({
   let disposed = false;
   let tabela = null;
   let carregado = false;
+  // Sequencia da carga. Seis fichas chamam `recarregar()` depois de gravar, e
+  // gravar duas vezes seguidas deixa duas buscas correndo: sem o numero, a
+  // resposta LENTA chega por ultimo e repoe a lista ANTERIOR por cima da nova.
+  let carga = 0;
 
   const corpo = el('div', {
     className: 'data-table__empty',
@@ -357,8 +346,8 @@ export function criarHistorico({
   });
 
   // O aviso de falha mora FORA do corpo, e some quando a carga volta a dar
-  // certo. Ele existe porque a recarga que falha não pode apagar o histórico
-  // que a pessoa já está lendo (2026-08-04).
+  // certo: a recarga que falha não pode apagar o histórico que a pessoa já está
+  // lendo.
   const aviso = el('div', { className: 'data-table__empty', hidden: true });
 
   function mostrarAviso(texto) {
@@ -367,14 +356,11 @@ export function criarHistorico({
   }
 
   /**
-   * OS DOIS FILTROS (2026-08-04).
+   * OS DOIS FILTROS.
    *
-   * O histórico de um agregado junta as tabelas dele. No pedido 68 são 235
-   * eventos em 24 páginas, e os 2 eventos da própria tabela `mapoteca.pedido`
-   * caem nas posições 78 e 156, ou seja, nas páginas 8 e 16. As 12 primeiras
-   * linhas dizem todas "Alterou · Data da impressão". No módulo inteiro, evento
-   * do próprio pedido é 6,7% do total. "Quem mudou a situação e quando" custava
-   * dezenas de cliques.
+   * O histórico de um agregado junta as tabelas dele, e as linhas da tabela-pai
+   * somem no meio das dezenas de linhas das filhas. Sem os filtros, "quem mudou
+   * a situação e quando" custa dezenas de cliques.
    *
    * O FILTRO NÃO MOSTRA NOME DE TABELA. A tela traduz o diff para português
    * ("Situação: Em produção → Concluído") para quem lê não precisar saber o
@@ -488,11 +474,12 @@ export function criarHistorico({
 
   async function carregar() {
     carregado = true;
+    const minhaCarga = ++carga;
     let eventos;
     try {
       eventos = await getHistorico(modulo, entidade, id);
     } catch (err) {
-      if (disposed) return;
+      if (disposed || minhaCarga !== carga) return;
       const texto = err.message || 'Erro ao carregar o histórico';
       // O erro no histórico NÃO derruba o resto da ficha: o histórico é
       // acessório, a ficha é o trabalho. Regra herdada da tela do pedido.
@@ -502,12 +489,25 @@ export function criarHistorico({
         mostrarAviso(texto);
         return;
       }
-      clearChildren(corpo);
-      corpo.className = 'data-table__empty';
-      corpo.textContent = texto;
+      // Sem tabela ainda: o painel inteiro vira o estado de ERRO padrão, com o
+      // botão "Tentar de novo". Antes daqui saía só a frase, na mesma classe do
+      // estado VAZIO (`data-table__empty`), e sem nenhum caminho de volta: a
+      // falha na primeira carga se lia como "este registro nunca mudou", e a
+      // única saída era recarregar a página inteira.
+      //
+      // O "Carregando..." entra ANTES: o `mostrarErro` guarda o que está no
+      // container para o "Tentar de novo" devolver, e é ele que a pessoa vê
+      // enquanto a segunda tentativa corre.
+      corpo.className = '';
+      corpo.replaceChildren(el('div', {
+        className: 'data-table__empty',
+        textContent: 'Carregando o histórico...',
+      }));
+      mostrarErro(corpo, err, carregar);
       return;
     }
-    if (disposed) return;
+    // Chegou tarde: outra carga já entrou e a lista dela é a mais nova.
+    if (disposed || minhaCarga !== carga) return;
     aviso.hidden = true;
 
     // O texto de busca entra numa CÓPIA da linha, e o evento original segue
@@ -515,11 +515,10 @@ export function criarHistorico({
     linhas = (eventos || []).map((e) => ({ ...e, busca: textoDeBusca(e) }));
     sincronizarFiltros();
 
-    // A TABELA SOBREVIVE À RECARGA (2026-08-04). Seis fichas chamam
-    // `recarregar()` depois de gravar. Recriar a tabela jogava fora a
-    // ordenação e a página em que a pessoa estava, e mudava a altura da seção
-    // debaixo do cursor. O `update` do data-table preserva as duas, e reconcilia
-    // as linhas pelo `id` do evento.
+    // A TABELA SOBREVIVE À RECARGA. Seis fichas chamam `recarregar()` depois de
+    // gravar, e recriar a tabela jogaria fora a ordenação e a página em que a
+    // pessoa está, mudando a altura da seção debaixo do cursor. O `update` do
+    // data-table preserva as duas, e reconcilia as linhas pelo `id` do evento.
     if (tabela) {
       tabela.update({ rows: visiveis() });
       return;
@@ -550,7 +549,7 @@ export function criarHistorico({
           },
         },
         {
-          // A CHAVE É O TEXTO DE BUSCA, e não 'mudancas' (2026-08-04). A busca
+          // A CHAVE É O TEXTO DE BUSCA, e não 'mudancas'. A busca
           // do data-table lê row[col.key], e o array de mudanças vira
           // "[object Object]". A célula continua saindo do render, que lê
           // r.mudancas direto, e a coluna não ordena: a chave só governa o que a
@@ -563,7 +562,7 @@ export function criarHistorico({
       ],
       rows: visiveis(),
       pageSize: 10,
-      // BUSCA LIGADA (2026-08-04). Ela varre o texto montado por textoDeBusca,
+      // BUSCA LIGADA. Ela varre o texto montado por `textoDeBusca`,
       // que traz o diff, o campo alterado e a tabela. Sem esse texto a busca não
       // acharia nada: o data-table casa contra o valor cru da coluna, e o valor
       // que interessa aqui mora dentro do diff.

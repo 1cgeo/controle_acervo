@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que estes casos FIXAM na tela de rastreabilidade:
 //
@@ -39,8 +40,6 @@ import {
   getFiltrosRastreabilidade,
 } from '@services/rastreabilidade-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function montar(busca = '') {
   const container = document.createElement('div');
@@ -213,12 +212,22 @@ describe('rastreabilidade: rota, destino e filtro', () => {
     expect(Object.keys(NOME_ENTIDADE).sort()).toEqual([...DO_SERVIDOR].sort());
   });
 
-  test('a barra ainda é montada quando as opções falham', async () => {
+});
+
+// A falha do catálogo de opções não pode levar a barra junto: quem abriu a tela
+// ainda precisa do recorte por data, que não depende daquele catálogo.
+describe('rastreabilidade: o catálogo de opções fora do ar', () => {
+  test('a barra continua de pé, com os campos que não dependem do catálogo', async () => {
     getFiltrosRastreabilidade.mockRejectedValueOnce(new Error('sem opções'));
 
     const { container, cleanup } = await montar();
 
-    expect(container.querySelector('.rastro-filtros')).toBeTruthy();
+    expect(container.querySelector('.rastro-filtros')).not.toBeNull();
+    // Os campos de período seguem utilizáveis, e o de usuário nasce vazio em
+    // vez de sumir da barra.
+    expect(selectDoRotulo(container, 'De')).not.toBeNull();
+    expect(selectDoRotulo(container, 'Até')).not.toBeNull();
+    expect(selectDoRotulo(container, 'Usuário').value).toBe('');
 
     if (typeof cleanup === 'function') cleanup();
   });

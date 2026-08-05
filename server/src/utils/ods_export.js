@@ -12,10 +12,8 @@ const zlib = require('zlib')
  * do arquivo original, byte a byte. Quem monta o `content.xml` novo é cada
  * gerador, em `rpcmtec/anuario_ods.js` e `rpcmtec/rtm_ods.js`.
  *
- * Este módulo já soube montar um .ods do ZERO (`criarOds`, com estilo, cabeçalho
- * e faixa de filtro próprios). Isso saiu em 2026-08-01, quando as duas planilhas
- * passaram a sair de semente: o arquivo desenhado por nós tinha os números certos
- * sem ser o arquivo que a DSG confere linha a linha. Sobrou o ZIP.
+ * NÃO monte a planilha do zero aqui: o arquivo desenhado por nós tem os números
+ * certos sem ser o arquivo que a DSG confere linha a linha.
  *
  * O `archiver` do projeto não serve aqui: ele é stream de arquivo, e o que se
  * precisa é buffer em memória com controle da ORDEM e da compressão de cada

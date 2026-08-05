@@ -9,20 +9,11 @@ const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_A
 const { auditoriaCtrl } = require("../auditoria");
 const miniaturaVarredura = require('../utils/miniatura_varredura');
 const { v4: uuidv4 } = require('uuid');
-const { pipeline } = require('stream');
-const { promisify } = require('util');
-const pipelineAsync = promisify(pipeline);
 
-// Blocos de 8 MB, e não os 64 KB padrão do Node.
-//
-// O acervo mora num volume SMB, e ali o custo por leitura é de rede, não de
-// disco: quanto menor o bloco, mais viagens. Medido em 2026-07-31 contra o
-// volume de produção, sobre arquivos de 440 MB: 64 KB deu 80 MB/s, 1 MB deu 86 e
-// 8 MB deu 89. Ganho de 11%, não de ordem de grandeza. A carga do LOTE_1 do
-// Convênio RS (362 GB relidos pelo confirm-upload) variou de 31 a 81 MB/s entre
-// requisições, então a maior parte da variação é contenção do share, não o
-// buffer. O ajuste é barato e ajuda em toda carga; não é a solução de um
-// gargalo, e registrar isso evita que alguém volte aqui esperando milagre.
+// Blocos de 8 MB, e não os 64 KB padrão do Node: o acervo mora num volume SMB,
+// e ali o custo por leitura é de rede, não de disco. Vale cerca de 11% sobre o
+// padrão, e não uma ordem de grandeza: a maior parte da variação de velocidade
+// numa carga grande é contenção do share, não o buffer.
 const BLOCO_LEITURA = 8 * 1024 * 1024;
 
 // O INSERT do arquivo na tabela principal, um so para os cinco pontos que
@@ -62,9 +53,9 @@ RETURNING *`;
  * Existe como funcao, e nao como tres chamadas soltas, pela mesma razao do
  * `SQL_INSERT_ARQUIVO`: sao TRES os pontos de entrada de arquivo no acervo (o
  * envio pela web, a catalogacao in-place e o confirm-upload, este ultimo com
- * quatro caminhos internos). Ate 2026-08-04 quem cobria os tres era um cron de
- * meia em meia hora; sem ele, esquecer um ponto e o modo de falhar que nao da
- * erro: a versao entra no acervo e a ficha dela fica sem imagem, calada.
+ * quatro caminhos internos). Nao ha varredura automatica atras deles, entao
+ * esquecer um ponto e o modo de falhar que nao da erro: a versao entra no
+ * acervo e a ficha dela fica sem imagem, calada.
  *
  * @param {Array<number|string>} versaoIds
  */
@@ -120,7 +111,7 @@ function calculateChecksumStream(filePath) {
  * volume. Recusar aqui (no prepare) evita corrupção silenciosa do acervo.
  *
  * @param {object} t            tarefa/transação pg-promise
- * @param {number} volumeId     volume_armazenamento_id (null para Tileserver — ignorado)
+ * @param {number} volumeId     volume_armazenamento_id (null para Tileserver, ignorado)
  * @param {string} nomeArquivo  nome físico sem extensão
  * @param {string} extensao     extensão sem o ponto
  * @param {Set<string>} usados  chaves já reservadas neste mesmo lote
@@ -129,7 +120,15 @@ async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados)
   // Tileserver não tem arquivo físico em volume
   if (volumeId === null || volumeId === undefined) return;
 
-  const chave = `${volumeId}/${nomeArquivo}.${extensao}`;
+  // A comparação IGNORA CAIXA, e é o banco quem manda: além do índice único
+  // `unique_nome_fisico_por_volume`, o schema tem
+  // `unique_nome_fisico_por_volume_ci`, sobre `lower(nome_arquivo)` e
+  // `lower(extensao)`. Ele existe porque o SMB do volume não distingue caixa, e
+  // "CT_s02_2834-1_ed1.tif" e "ct_s02_2834-1_ed1.TIF" disputam UM arquivo no
+  // disco. Comparando com caixa, esta guarda deixava passar o par que o índice
+  // recusa depois: o cliente copiava os bytes e só tomava o erro cru do banco no
+  // confirm-upload, em vez do 409 que diz qual arquivo colidiu.
+  const chave = `${volumeId}/${nomeArquivo}.${extensao}`.toLowerCase();
 
   if (usados && usados.has(chave)) {
     throw new AppError(
@@ -141,7 +140,8 @@ async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados)
 
   const existente = await t.oneOrNone(
     `SELECT id FROM acervo.arquivo
-     WHERE volume_armazenamento_id = $1 AND nome_arquivo = $2 AND extensao = $3
+     WHERE volume_armazenamento_id = $1
+       AND lower(nome_arquivo) = lower($2) AND lower(extensao) = lower($3)
      LIMIT 1`,
     [volumeId, nomeArquivo, extensao]
   );
@@ -159,13 +159,11 @@ async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados)
 /**
  * Recusa produto cuja identidade já exista, no banco ou dentro do próprio lote.
  *
- * A mesma MI/INOM pode gerar produtos distintos por TIPO (ex.: Carta
- * Topográfica e o CDGV de mesma folha são produtos separados — ver
- * regras_carga_produtos.md 2.4). Desde 2026-07-06 a identidade também
- * considera o SUBTIPO quando ele exige produto próprio (define_produto),
- * p.ex. a Carta Topográfica Militar (24) coexiste com a civil na mesma
- * folha como produto separado (ver acervo.validate_version). Logo a
- * unicidade é por (INOM, tipo_produto_id, subtipo_produto_id).
+ * A mesma MI/INOM pode gerar produtos distintos por TIPO (a Carta Topográfica e
+ * o CDGV da mesma folha são produtos separados) e também por SUBTIPO, quando
+ * ele exige produto próprio (`define_produto`): a Carta Topográfica Militar
+ * coexiste com a civil na mesma folha. Logo a unicidade é por
+ * (INOM, tipo_produto_id, subtipo_produto_id).
  *
  * Compartilhada entre o prepare-upload/product e o catalogar/product: as duas
  * rotas criam produto, e identidade que valesse numa e não na outra deixaria a
@@ -233,12 +231,11 @@ function assertSequenciaVersoes(produtos) {
 /**
  * Recusa nome fisico que sairia da raiz do volume.
  *
- * Roda no prepare do envio pela WEB, e nao no do plugin, porque sao dois graus
- * de confianca diferentes: o plugin monta o nome a partir dos metadados e copia
- * ele mesmo os bytes, enquanto no caminho da web e o SERVIDOR que abre o arquivo
- * para escrita, com o nome que veio do navegador. `path.join` nao protege contra
- * `..` (ver utils/caminho_volume.js), entao sem esta chamada o corpo da
- * requisicao escolheria qualquer caminho da maquina para gravar.
+ * Roda em TODO prepare que monta um caminho a partir de `nome_arquivo` vindo do
+ * cliente, e nao so no envio pela web. `path.join` nao protege contra `..` (ver
+ * utils/caminho_volume.js), e o `destination_path` que o prepare grava e o
+ * caminho que o confirm-upload ABRE para ler e conferir. Sem esta chamada o
+ * corpo da requisicao escolhe qualquer caminho da maquina.
  */
 function assertCaminhoSeguro(nomeArquivo) {
   const motivo = motivoCaminhoInseguro(nomeArquivo);
@@ -246,28 +243,6 @@ function assertCaminhoSeguro(nomeArquivo) {
     throw new AppError(`O caminho "${nomeArquivo}" ${motivo}.`, httpCode.BadRequest);
   }
 }
-
-/**
- * O que o navegador precisa saber de cada arquivo reservado.
- *
- * O `destination_path` fica de FORA de proposito: o browser nao tem o que fazer
- * com um caminho de volume, e caminho de rede nao deve sair para ele. O que ele
- * usa e o `temp_id`, que endereca o PUT dos bytes.
- */
-const descreverArquivoWeb = (tempId, arquivo) => ({
-  temp_id: Number(tempId),
-  nome: arquivo.nome,
-  nome_arquivo: arquivo.nome_arquivo,
-  extensao: arquivo.extensao
-});
-
-const {
-  DB_USER,
-  DB_PASSWORD,
-  DB_SERVER,
-  DB_PORT,
-  DB_NAME
-} = require('../config')
 
 const controller = {};
 
@@ -494,7 +469,7 @@ controller.deleteArquivos = async (arquivoIds, motivo_exclusao, usuarioUuid, con
       );
 
       if (existingFiles.length !== arquivoIds.length) {
-        // BIGSERIAL retorna como string no driver — normalizar para número
+        // BIGSERIAL retorna como string no driver, normalizar para número
         const existingIds = existingFiles.map(f => Number(f.id));
         const missingIds = arquivoIds.filter(id => !existingIds.includes(parseInt(id)));
         throw new AppError(`Os seguintes arquivos não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
@@ -645,10 +620,15 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
         const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
-          const destinationPath = isTileserver
-            ? arquivo.nome_arquivo
-            : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
+        // O nome vem do cliente e vira `destination_path`, que o confirm-upload
+        // abre para ler. `caminhoNoVolume` é `path.join` puro e NÃO barra `..`,
+        // então sem esta linha o corpo da requisição escolhe qualquer caminho da
+        // máquina. As rotas irmãs (prepararVersao, prepararProduto) já a tinham.
+        if (!isTileserver) assertCaminhoSeguro(arquivo.nome_arquivo);
+        // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
+        const destinationPath = isTileserver
+          ? arquivo.nome_arquivo
+          : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
 
         // Impede colisão de nome físico no volume (sobrescrita silenciosa)
         await assertNomeFisicoLivre(
@@ -774,6 +754,9 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
         const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
+        // Mesma razao do prepareAddFiles: o nome vem do cliente e vira o caminho
+        // que o confirm-upload abre.
+        if (!isTileserver) assertCaminhoSeguro(arquivo.nome_arquivo);
         const destinationPath = isTileserver
           ? arquivo.nome_arquivo
           : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
@@ -1010,7 +993,7 @@ const prepararVersao = async (requestData, usuarioUuid) => {
         for (const arquivo of item.arquivos) {
           const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
           assertCaminhoSeguro(arquivo.nome_arquivo);
-          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
+          // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
             : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
@@ -1211,7 +1194,7 @@ const prepararProduto = async (requestData, usuarioUuid) => {
           for (const arquivo of versao.arquivos) {
             const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
             assertCaminhoSeguro(arquivo.nome_arquivo);
-          // Tileserver é uma URL — sem arquivo físico, volume ou extensão
+          // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
             : caminhoNoVolume(volume.volume, `${arquivo.nome_arquivo}.${arquivo.extensao}`);
@@ -1498,9 +1481,9 @@ const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid, contexto) => {
 //      lido o arquivo inteiro, pelo mesmo share. Sao duas varreduras do mesmo
 //      byte para provar uma copia que nao houve. Aqui o servidor le UMA vez e
 //      grava o que ele mesmo mediu, como o /atualizar-checksum ja fazia.
-//   2. La a releitura roda DENTRO da transacao, que fica aberta por horas
-//      (362 GB do LOTE_1 a 31-81 MB/s). Aqui a leitura acontece FORA de
-//      transacao nenhuma, e a transacao abre so para os INSERTs.
+//   2. La a releitura roda DENTRO da transacao, que numa entrega grande fica
+//      aberta por horas. Aqui a leitura acontece FORA de transacao nenhuma, e a
+//      transacao abre so para os INSERTs.
 //   3. La o espaco livre e conferido contra a capacidade do volume. Os bytes
 //      catalogados ja estao no disco: o que falta e o REGISTRO. Num volume
 //      quase cheio aquela conta recusaria um cadastro que nao ocupa nada.
@@ -1509,7 +1492,7 @@ const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid, contexto) => {
 //
 // O que NAO afrouxa: a unicidade fisica (volume, nome_arquivo, extensao), a
 // identidade do produto, a sequencia de versao, os indices unicos do banco e a
-// existencia do arquivo. Ver migrations/2026-07-31_volume_layout_origem.sql.
+// existencia do arquivo.
 controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
   const { volume_armazenamento_id: volumeId, produtos } = requestData;
 
@@ -1809,6 +1792,11 @@ controller.getProblemUploads = async () => {
       };
       
       switch (session.operation_type) {
+        // `replace_files` entra JUNTO de `add_files`: as duas gravam
+        // `upload_arquivo_temp.versao_id`, e sem este caso a sessão de
+        // substituição que falhava aparecia na tela sem dizer QUAL arquivo
+        // falhou.
+        case 'replace_files':
         case 'add_files':
           const filesByVersion = {};
           
@@ -1927,6 +1915,11 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
   // o rollback desfaria um UPDATE de status feito dentro dela
   let processingFailure = null;
 
+  // As versões que de fato ganharam arquivo, para a miniatura depois do commit.
+  // Sai dos `process*`, que são quem grava, e não do corpo da resposta: aquele
+  // não devolve nada em caso de falha.
+  const versoesParaMiniatura = [];
+
   return db.conn.tx(async t => {
     try {
       const session = await t.oneOrNone(
@@ -2021,7 +2014,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
 
         try {
           if (isTileserver) {
-            // Tileserver é uma URL — não há arquivo físico para validar
+            // Tileserver é uma URL. Não há arquivo físico para validar
             await t.none(
               `UPDATE acervo.upload_arquivo_temp SET status = 'completed' WHERE id = $1`,
               [arquivo.id]
@@ -2084,21 +2077,30 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
       
       if (allValid) {
         try {
+          // O QUE OS `process*` CRIARAM DE VERDADE, em `add_version` e
+          // `add_product`: cada item liga o id da tabela temporária ao id REAL
+          // que o INSERT devolveu. O corpo da resposta sai daqui, e nunca de uma
+          // releitura das tabelas `*_temp`. As duas sequências são independentes,
+          // então o id temporário passa por id de acervo sem parecer errado.
+          let criadas = [];
+
           switch (session.operation_type) {
             case 'add_files':
-              await processAddFiles(t, session, contexto);
+              versoesParaMiniatura.push(...await processAddFiles(t, session, contexto));
               break;
             case 'replace_files':
-              await processReplaceFiles(t, session, contexto);
+              versoesParaMiniatura.push(...await processReplaceFiles(t, session, contexto));
               break;
             case 'add_version':
-              await processAddVersion(t, session, contexto);
+              criadas = await processAddVersion(t, session, contexto);
+              versoesParaMiniatura.push(...criadas.map(c => c.versao_id));
               break;
             case 'add_product':
-              await processAddProduct(t, session, contexto);
+              criadas = await processAddProduct(t, session, contexto);
+              versoesParaMiniatura.push(...criadas.map(c => c.versao_id));
               break;
           }
-          
+
           await t.none(
             `UPDATE acervo.upload_session 
              SET status = 'completed', completed_at = NOW() 
@@ -2121,59 +2123,48 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
               };
               break;
               
+            // O `versao_id` daqui é o id de `acervo.versao`, e o `produto_id` é o
+            // id de `acervo.produto`. Ele vem do INSERT que os `process*`
+            // acabaram de fazer, e não da linha de `upload_versao_temp`: aquela
+            // some quando o cron fecha a sessão, e o número dela cabe na mesma
+            // faixa do id real. Quem gravasse a resposta guardava um id que
+            // aponta para outra versão do acervo, ou para nenhuma.
             case 'add_version':
-              const versoesTemp = await t.any(
-                `SELECT v.*, p.id as produto_id 
-                 FROM acervo.upload_versao_temp v
-                 LEFT JOIN acervo.produto p ON v.produto_id = p.id
-                 WHERE v.session_id = $1`,
-                [session.id]
-              );
-              
               result = {
                 session_uuid: sessionUuid,
                 operation_type: session.operation_type,
                 status: 'completed',
-                versoes: versoesTemp.map(v => {
-                  const versaoResults = fileResults[`versao_temp_${v.id}`] || { files: [] };
-                  return {
-                    produto_id: v.produto_id,
-                    versao_id: v.id,
-                    files: versaoResults.files
-                  };
-                })
-              };
-              break;
-              
-            case 'add_product':
-              const produtosTemp = await t.any(
-                `SELECT * FROM acervo.upload_produto_temp WHERE session_id = $1`,
-                [session.id]
-              );
-              
-              result = {
-                session_uuid: sessionUuid,
-                operation_type: session.operation_type,
-                status: 'completed',
-                produtos: await Promise.all(produtosTemp.map(async p => {
-                  const versoesTemp = await t.any(
-                    `SELECT * FROM acervo.upload_versao_temp WHERE session_id = $1 AND produto_temp_id = $2`,
-                    [session.id, p.id]
-                  );
-                  
-                  return {
-                    produto_temp_id: p.id,
-                    versoes: versoesTemp.map(v => {
-                      const versaoResults = fileResults[`versao_temp_${v.id}`] || { files: [] };
-                      return {
-                        versao_temp_id: v.id,
-                        files: versaoResults.files
-                      };
-                    })
-                  };
+                versoes: criadas.map(c => ({
+                  produto_id: c.produto_id,
+                  versao_id: c.versao_id,
+                  files: (fileResults[`versao_temp_${c.versao_temp_id}`] || { files: [] }).files
                 }))
               };
               break;
+
+            case 'add_product': {
+              // Reagrupa por produto sem voltar ao banco. Todo produto do
+              // `prepare` tem ao menos uma versão (o schema exige `min(1)`),
+              // então nenhum produto se perde no agrupamento.
+              const porProduto = new Map();
+              for (const c of criadas) {
+                if (!porProduto.has(c.produto_temp_id)) {
+                  porProduto.set(c.produto_temp_id, { produto_id: c.produto_id, versoes: [] });
+                }
+                porProduto.get(c.produto_temp_id).versoes.push({
+                  versao_id: c.versao_id,
+                  files: (fileResults[`versao_temp_${c.versao_temp_id}`] || { files: [] }).files
+                });
+              }
+
+              result = {
+                session_uuid: sessionUuid,
+                operation_type: session.operation_type,
+                status: 'completed',
+                produtos: [...porProduto.values()]
+              };
+              break;
+            }
           }
           
           return result;
@@ -2221,19 +2212,16 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
     // Ela não pode entrar na transação acima: renderizar custa segundos e roda
     // um processo externo, e a transação já segura linhas do acervo. Também não
     // pode ser aguardada aqui, senão quem enviou o arquivo espera a renderização
-    // para receber a confirmação.
-    //
-    // Antes disso quem gerava era um cron de meia em meia hora, que saiu em
-    // 2026-08-04. Sem ele e sem esta chamada, versão nova ficaria sem miniatura
-    // até alguém varrer a fila à mão.
+    // para receber a confirmação. Sem esta chamada, versão nova só ganharia
+    // miniatura quando alguém varresse a fila à mão.
     //
     // O `.catch` é obrigatório: esta promessa não volta para o caminho da
     // requisição, então uma rejeição solta derrubaria o processo.
-    dispararMiniatura(
-      (resultado?.detalhes || [])
-        .filter(d => d.versao_id && d.files?.some(f => f.status === 'completed'))
-        .map(d => d.versao_id)
-    );
+    //
+    // A lista vem dos `process*`, e não do corpo da resposta. Lê-la da resposta
+    // acertava o caminho ERRADO: `detalhes` só existe quando a sessão FALHA.
+    // A miniatura disparava na falha e nunca no sucesso.
+    dispararMiniatura(versoesParaMiniatura);
 
     return resultado;
   });
@@ -2297,6 +2285,8 @@ async function processAddFiles(t, session, contexto) {
         contexto
       });
     }
+
+    return versaoIds;
   } catch (error) {
     throw new AppError(`Erro ao processar arquivos: ${error.message}`, httpCode.InternalError, error);
   }
@@ -2398,26 +2388,31 @@ async function processReplaceFiles(t, session, contexto) {
         contexto
       });
     }
+
+    return [...donos.keys()].map(Number);
   } catch (error) {
     throw new AppError(`Erro ao substituir arquivos: ${error.message}`, httpCode.InternalError, error);
   }
 }
 
 // Helper function for Scenario 2: Process add_version to main tables
+//
+// Devolve `[{ versao_temp_id, versao_id, produto_id }]`, e nao so a lista de
+// ids: quem monta a resposta do confirm precisa do id REAL da versao e do
+// vinculo com a linha temporaria que carrega o resultado dos arquivos. Sem esse
+// vinculo a resposta so tem o id da `upload_versao_temp`, que nao aponta para
+// versao nenhuma do acervo.
 async function processAddVersion(t, session, contexto) {
   try {
     const versoesTemp = await t.any(
-      `SELECT * FROM acervo.upload_versao_temp 
+      `SELECT * FROM acervo.upload_versao_temp
        WHERE session_id = $1 AND produto_id IS NOT NULL`,
       [session.id]
     );
-    
-    const produtoIds = [];
-    const versaoIds = [];
-    
+
+    const criadas = [];
+
     for (const versaoTemp of versoesTemp) {
-      produtoIds.push(versaoTemp.produto_id);
-      
       const versaoCriada = await t.one(
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
@@ -2444,7 +2439,11 @@ async function processAddVersion(t, session, contexto) {
       );
       
       const versaoId = versaoCriada.id;
-      versaoIds.push(versaoId);
+      criadas.push({
+        versao_temp_id: versaoTemp.id,
+        versao_id: versaoId,
+        produto_id: versaoTemp.produto_id
+      });
 
       await auditoriaCtrl.registrar(t, {
         tabela: 'acervo.versao',
@@ -2489,22 +2488,29 @@ async function processAddVersion(t, session, contexto) {
         });
       }
     }
+
+    return criadas;
   } catch (error) {
     throw new AppError(`Erro ao processar versões: ${error.message}`, httpCode.InternalError, error);
   }
 }
 
 // Helper function for Scenario 3: Process add_product to main tables
+//
+// Devolve `[{ produto_temp_id, produto_id, versao_temp_id, versao_id }]`, uma
+// entrada por VERSAO criada, pela mesma razao do `processAddVersion`: a resposta
+// do confirm precisa do id real do produto e da versao, e do vinculo com as
+// linhas temporarias que carregam o resultado dos arquivos.
 async function processAddProduct(t, session, contexto) {
   try {
     const produtosTemp = await t.any(
-      `SELECT * FROM acervo.upload_produto_temp 
+      `SELECT * FROM acervo.upload_produto_temp
        WHERE session_id = $1`,
       [session.id]
     );
-    
-    const produtoIds = [];
-    
+
+    const criadas = [];
+
     for (const produtoTemp of produtosTemp) {
       const { id: produtoId } = await t.one(
         `INSERT INTO acervo.produto(
@@ -2526,8 +2532,6 @@ async function processAddProduct(t, session, contexto) {
         ]
       );
       
-      produtoIds.push(produtoId);
-
       await auditoriaCtrl.registrar(t, {
         tabela: 'acervo.produto',
         registroId: produtoId,
@@ -2570,6 +2574,12 @@ async function processAddProduct(t, session, contexto) {
         );
         
         const versaoId = versaoCriada.id;
+        criadas.push({
+          produto_temp_id: produtoTemp.id,
+          produto_id: produtoId,
+          versao_temp_id: versaoTemp.id,
+          versao_id: versaoId
+        });
 
         await auditoriaCtrl.registrar(t, {
           tabela: 'acervo.versao',
@@ -2615,6 +2625,8 @@ async function processAddProduct(t, session, contexto) {
         }
       }
     }
+
+    return criadas;
   } catch (error) {
     throw new AppError(`Erro ao processar produtos: ${error.message}`, httpCode.InternalError, error);
   }

@@ -4,10 +4,9 @@ import { criarModeloDesenho, colecaoDoDesenho } from './poligono.js';
 /**
  * Desenho de área sobre um mapa MapLibre: o botão, os controles e a ligação.
  *
- * Saiu do mapa da busca do acervo em 2026-07-29, quando a tela de ponto de
- * controle pediu a mesma ferramenta. Duplicar as duzentas linhas faria as duas
- * telas desenharem área com gestos que divergem no dia em que uma delas mudar,
- * e o gesto é a parte que a pessoa aprende UMA vez.
+ * Compartilhado pela busca do acervo e pelo ponto de controle. Duplicar as
+ * duzentas linhas faria as duas telas desenharem área com gestos que divergem no
+ * dia em que uma delas mudar, e o gesto é a parte que a pessoa aprende UMA vez.
  *
  * O módulo não sabe o que há no mapa: ele recebe o mapa pronto, acrescenta a
  * fonte e as camadas do desenho, e avisa por callback quando a área fecha ou é

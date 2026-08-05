@@ -10,7 +10,7 @@
 -- 2026-07-29, `pit.meta` do orcamento em 2026-07-31 e o RPCMTec dos modulos em
 -- 2026-08-01, aplicado entre SISTEMAS.
 --
--- NADA SAI DO SAP (decisao do chefe, 2026-08-02). A fusao e por ADICAO aqui, e
+-- NADA SAI DO SAP. A fusao e por ADICAO aqui, e
 -- nao por remocao la. Durante a transicao ha duas copias vivas de cada um
 -- desses fatos, e o banco nao tem como reconcilia-las: o que impede as duas de
 -- brigarem e o SCA passar a ser quem GERA essas subsecoes do relatorio.
@@ -115,7 +115,7 @@ COMMENT ON COLUMN pit.meta.prazo IS
 -- ---------------------------------------------------------------------------
 -- 3. Execucao mensal
 -- ---------------------------------------------------------------------------
--- Lancamento a MAO para toda meta (chefe, 2026-08-02). No SAP a regua e
+-- Lancamento a MAO para toda meta. No SAP a regua e
 -- `lote_id IS NULL`, porque la a meta de producao tem o realizado calculado das
 -- atividades. Aqui nao existe essa regua, e nem teria de onde: enquanto o SAP
 -- nao for absorvido nao ha o que calcular. Quando ele entrar, e aqui que nasce

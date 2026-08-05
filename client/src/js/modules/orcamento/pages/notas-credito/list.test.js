@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da pagina de Notas de Credito. Mocka o service (lista + dialog).
 // A tela tem o proprio filtro de ano e abre no ano ATUAL: nao ha mais ano global
@@ -25,8 +26,6 @@ vi.mock('@services/plataforma-service.js', async () => {
 import { renderNotasCreditoList } from '@modules/orcamento/pages/notas-credito/list.js';
 import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 const ANO_ATUAL = new Date().getFullYear();
 
 describe('renderNotasCreditoList', () => {
@@ -46,8 +45,7 @@ describe('renderNotasCreditoList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // Chefe, 2026-08-04: o ano e de cada tela, comeca no ano ATUAL e nao guarda
-  // nada. O seletor da navbar acabou.
+  // O ano é de cada tela, começa no ano ATUAL e não se guarda em lugar nenhum.
   test('abre no ano atual e pede a lista desse ano', async () => {
     const container = document.createElement('div');
     const cleanup = await renderNotasCreditoList(container, { params: {}, query: new URLSearchParams() });

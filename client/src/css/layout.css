@@ -72,11 +72,6 @@
   color: var(--text-primary);
 }
 
-.navbar__center {
-  display: flex;
-  align-items: center;
-}
-
 .navbar__right {
   display: flex;
   align-items: center;

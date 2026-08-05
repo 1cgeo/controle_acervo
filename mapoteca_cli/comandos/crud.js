@@ -35,9 +35,12 @@ const saida = require('../lib/saida')
 const http = require('../lib/http')
 const argsLib = require('../lib/args')
 
+// Flags que nunca sao filtro de listagem: nao entram na query e nao viram aviso
+// de "filtro ignorado".
 const FLAGS_GLOBAIS = [
   'campos', 'formato', 'json', 'server', 'user', 'senha', 'token',
-  'insecure', 'sem-cache', 'dry-run', 'id', 'ids', 'confirmar', 'data', 'data-file'
+  'insecure', 'sem-cache', 'dry-run', 'id', 'ids', 'confirmar', 'data',
+  'data-file', 'ajuda', 'help'
 ]
 
 function lerCorpo (flags) {
@@ -235,6 +238,24 @@ async function executar (args, cfg) {
         return n
       })
 
+      const corpo = { [recurso.chaveIds]: numeros }
+
+      // O --dry-run nao escreve, entao ele NAO exige a confirmacao: e ele que
+      // mostra o que a confirmacao autorizaria. Cobrar --confirmar aqui
+      // desmentia a propria mensagem de erro, que manda usar --dry-run antes.
+      if (flags['dry-run']) {
+        return {
+          texto: [
+            '[dry-run] nada foi enviado. Seria:',
+            `  DELETE /api${recurso.caminho}`,
+            JSON.stringify(corpo, null, 2),
+            '',
+            'Para excluir de fato:',
+            `  mapoteca ${chave} deletar --ids ${numeros.join(',')} --confirmar ${numeros.join(',')}`
+          ].join('\n')
+        }
+      }
+
       // Guardrail de acao irreversivel na propria interface. A confirmacao repete
       // a lista inteira: confirmar "42" quando se pediu "42,43" e exatamente o
       // acidente que se quer impedir.
@@ -257,18 +278,6 @@ async function executar (args, cfg) {
         const erro = new Error(linhas.join('\n'))
         erro.jaFormatado = true
         throw erro
-      }
-
-      const corpo = { [recurso.chaveIds]: numeros }
-
-      if (flags['dry-run']) {
-        return {
-          texto: [
-            '[dry-run] nada foi enviado. Seria:',
-            `  DELETE /api${recurso.caminho}`,
-            JSON.stringify(corpo, null, 2)
-          ].join('\n')
-        }
       }
 
       const r = await http.autenticada(cfg, 'DELETE', recurso.caminho, { corpo })

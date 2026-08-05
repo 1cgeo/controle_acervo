@@ -91,7 +91,7 @@ class UploadSessionsDialog(QDialog, FORM_CLASS):
                     # ordena cronologicamente pela chave ISO
                     item = sortable_item(date_dt.toString('dd/MM/yyyy HH:mm:ss'), date)
                 else:
-                    item = sortable_item("—", "")
+                    item = sortable_item("-", "")
                 self.sessionsTable.setItem(row, col, item)
             self.sessionsTable.setItem(row, 7, QTableWidgetItem(session.get('usuario_nome', '')))
         self.sessionsTable.setSortingEnabled(True)

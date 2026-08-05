@@ -109,10 +109,10 @@ const fimDoMes = (ano, mes) => {
  * 100% dão a mesma célula que 7 de 7 dias a 71%, e só o denominador separa
  * "chegou na quarta" de "esteve e não rendeu".
  *
- * O QUE ESTA CONSULTA NÃO DEVOLVE, desde 2026-08-04: `u.nome`, `u.login` e o
- * nome por extenso do posto. A tela desenha `posto_abrev` e `nome_guerra`, e
- * mais nada. Dado de pessoal que trafega sem uso é vazamento à espera de um
- * log. Quem escreve o nome por extenso é a 6.1 do RPCMTec, por `resumoMensal`.
+ * O QUE ESTA CONSULTA NÃO DEVOLVE: `u.nome`, `u.login` e o nome por extenso do
+ * posto. A tela desenha `posto_abrev` e `nome_guerra`, e mais nada. Dado de
+ * pessoal que trafega sem uso é vazamento à espera de um log. Quem escreve o
+ * nome por extenso é a 6.1 do RPCMTec, por `resumoMensal`.
  */
 controller.mapaAnual = async ano => {
   return db.conn.any(

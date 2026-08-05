@@ -1,21 +1,21 @@
 'use strict'
 
-// REGRESSAO 2026-07-27: a "Data de entrega" aparecia como D-1 na tela.
+// REGRESSÃO: a data de entrega aparecia um dia antes na tela.
 //
-// A coluna e DATE. O driver do PostgreSQL a convertia para um objeto Date na
-// MEIA-NOITE LOCAL DO SERVIDOR, e o JSON.stringify da resposta serializava esse
-// Date em UTC. Com o servidor em UTC e o navegador em UTC-3, a data 2026-01-14
-// virava '2026-01-14T00:00:00.000Z' e a tela mostrava 13/01.
+// A coluna é DATE, e o driver do PostgreSQL a converte para um Date na
+// MEIA-NOITE LOCAL DO SERVIDOR. O `JSON.stringify` da resposta serializa esse
+// Date em UTC, e o navegador a oeste o puxa para o dia anterior. Com o servidor
+// em UTC e o navegador em UTC-3, a data sai um dia atrás.
 //
-// Rodando o servidor em UTC-3 o defeito SOME, e foi por isso que ele passou
-// despercebido: quem desenvolve esta em UTC-3, quem implanta esta em UTC.
+// O defeito SOME num servidor em UTC-3, e é por isso que ele atravessa o
+// desenvolvimento: desenvolve-se em UTC-3 e implanta-se em UTC.
 //
 // O conserto vive em database/db.js: um type parser para o OID 1082 (DATE) que
-// devolve a string crua. DATE nao tem hora nem fuso, entao converter para
-// instante e o erro de origem.
+// devolve a string crua. DATE não tem hora nem fuso, então converter para
+// instante é o erro de origem.
 //
-// Este teste NAO precisa de banco: ele afere o registro do parser e o que ele
-// devolve, que e exatamente o contrato que a tela consome.
+// Este teste NÃO precisa de banco: ele afere o que o parser devolve, que é
+// exatamente o contrato que a tela consome.
 
 // db.js so precisa de `errorHandler` e das chaves de conexao. O `../utils` real
 // arrasta o serialize-error, que e ESM-only e nao carrega dentro do Jest; nada
@@ -39,11 +39,10 @@ describe('type parser de DATE (defesa contra o D-1)', () => {
     db = require('../../database/db')
   })
 
-  test('o modulo registra um parser proprio para o OID 1082', () => {
-    const parser = db.pgp.pg.types.getTypeParser(OID_DATE)
-    expect(typeof parser).toBe('function')
-  })
-
+  // NAO se pergunta se `getTypeParser` devolve uma funcao: ele devolve sempre,
+  // e para OID sem registro entrega o parser embutido do pg. Quem separa o
+  // nosso do dele e o COMPORTAMENTO: o embutido para DATE devolve um Date, e o
+  // nosso devolve a string crua. Desregistrado o conserto, este caso cai.
   test('DATE volta como string AAAA-MM-DD, nunca como Date', () => {
     const parser = db.pgp.pg.types.getTypeParser(OID_DATE)
 
@@ -51,7 +50,6 @@ describe('type parser de DATE (defesa contra o D-1)', () => {
       const saida = parser(bruto)
       expect(typeof saida).toBe('string')
       expect(saida).toBe(bruto)
-      expect(saida instanceof Date).toBe(false)
     }
   })
 
@@ -66,20 +64,5 @@ describe('type parser de DATE (defesa contra o D-1)', () => {
     // O que a tela recebia antes, e que o fuso do navegador puxava para tras.
     expect(enviado.data_entrega).not.toContain('T')
     expect(enviado.data_entrega).not.toContain('Z')
-  })
-
-  test('o defeito antigo era real: Date de DATE muda o dia em UTC', () => {
-    // Documenta o mecanismo, para o conserto nao ser desfeito por engano.
-    // Um Date na meia-noite de um servidor em UTC, lido num navegador a oeste,
-    // cai no dia anterior.
-    const comoEra = new Date(Date.UTC(2026, 0, 14, 0, 0, 0))
-    const noNavegadorUtcMenos3 = comoEra.toLocaleDateString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-
-    expect(noNavegadorUtcMenos3).toBe('13/01/2026')
   })
 })

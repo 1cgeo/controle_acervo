@@ -7,8 +7,8 @@ const models = {}
 // Dia de CALENDÁRIO, e por isso `.iso().raw()`. Sem o `.raw()` o Joi converte
 // 'AAAA-MM-DD' em meia-noite UTC e a coluna guarda o dia anterior em UTC-3; sem
 // o `.iso()` a string segue crua para o Postgres, e '01/08/2026' vira 8 de
-// janeiro, porque o DateStyle padrão é MDY. É o padrão da casa desde
-// 2026-08-01, e vale para `prazo`, `data_conclusao` e `data_entrega`.
+// janeiro, porque o DateStyle padrão é MDY. É o padrão da casa, e vale para
+// `prazo`, `data_conclusao` e `data_entrega`.
 const dia = Joi.date().iso().raw()
 
 models.idParams = Joi.object().keys({
@@ -19,10 +19,9 @@ models.listarQuery = Joi.object().keys({
   ano: Joi.number().integer()
 })
 
-// O que a DSG DECLARA sobre o item, e que vai para a linha da revisão
-// (2026-08-04). Os quatro primeiros são OPCIONAIS, e omitir vale nulo: a linha
-// de cabeçalho da meta não promete quantidade nenhuma (quem promete são os itens
-// que ela agrupa), e o PIT de 2025 foi cadastrado só no nível da meta.
+// O que a DSG DECLARA sobre o item, e que vai para a linha da revisão. Os quatro
+// primeiros são OPCIONAIS, e omitir vale nulo: a linha de cabeçalho da meta não
+// promete quantidade nenhuma, porque quem promete são os itens que ela agrupa.
 //
 // `descricao` é a frase da DSG, e ela JÁ contém o demandante e a quantidade
 // ("Carta Topográfica 1:25.000. COTER, 24"): por isso os três andam juntos.
@@ -30,10 +29,9 @@ const promessa = {
   quantidade_prevista: Joi.number().integer().strict().min(0).allow(null),
   demandante: Joi.string().max(255).allow(null, ''),
   prazo: dia.allow(null, ''),
-  // O ÚNICO ato de situação que é da DSG (2026-08-04). Substituiu o
-  // `situacao_id` de quatro estados: 'Em execução' e 'Concluída' a grade calcula
-  // do que foi lançado, e status digitado ao lado de status calculado é a
-  // segunda verdade que este módulo vem eliminando.
+  // O ÚNICO ato de situação que é da DSG. Não há `situacao_id` digitado: 'Em
+  // execução' e 'Concluída' a grade calcula do que foi lançado, e status
+  // digitado ao lado de status calculado é uma segunda verdade.
   cancelada: Joi.boolean(),
   // O QUE A META CONTA: 1 Folha, 2 Marco, 3 Capacitação, 4 Item de acervo, 5
   // Atividade. Classificação NOSSA, não da DSG, e por isso muda sem revisão.
@@ -55,8 +53,8 @@ models.criar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão declara, e a
-  // coluna de `pit.meta_revisao` é NOT NULL.
+  // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
+  // `pit.meta_revisao` é NOT NULL.
   descricao: Joi.string().required(),
   ...promessa
 })
@@ -65,8 +63,8 @@ models.atualizar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  // OBRIGATÓRIA desde 2026-08-04: ela é a frase que a revisão declara, e a
-  // coluna de `pit.meta_revisao` é NOT NULL.
+  // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
+  // `pit.meta_revisao` é NOT NULL.
   descricao: Joi.string().required(),
   ...promessa
 })
@@ -121,8 +119,8 @@ const demandaExtra = {
   tipo_produto: Joi.string().max(255).required(),
   quantidade: Joi.number().integer().strict().min(1).required(),
   situacao_id: Joi.number().integer().strict().required(),
-  // De onde vem a prova da demanda (2026-08-03). Reusa `dominio.origem_meta` e
-  // aceita só Manual (1) e Produção (3); o banco cobra o mesmo pelo CHECK
+  // De onde vem a prova da demanda. Reusa `dominio.origem_meta` e aceita só
+  // Manual (1) e Produção (3); o banco cobra o mesmo pelo CHECK
   // `demanda_extra_origem_manual_ou_producao`.
   //
   // SEM `.required()`: ausente vira Manual no controller, que é o default da

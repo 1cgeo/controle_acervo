@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// Aproveitamento do efetivo (#/aproveitamento), por INTERVALO desde 2026-08-02.
+// Aproveitamento do efetivo (#/aproveitamento), por INTERVALO.
 //
 // O que estes casos FIXAM, e que nao se ve olhando a tela:
 //  - celula SEM cor e "fora da DGEO", e e diferente de celula vermelha, que e
@@ -10,7 +11,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 //    a grade e o ANO, e nao o periodo da pessoa;
 //  - o `title` de cada celula explica a cor, e e por onde os impedimentos
 //    aparecem sem ocupar espaco na tabela;
-//  - o aproveitamento da Divisao e PONDERADO por dias na DGEO desde 2026-08-04.
+//  - o aproveitamento da Divisao e PONDERADO por dias na DGEO.
 //    Media simples de percentuais dava a quem ficou uma semana o mesmo peso de
 //    quem ficou o ano. As duas ficam a vista, cada uma com o seu nome.
 vi.mock('@services/plataforma-service.js', async () => {
@@ -30,8 +31,6 @@ import {
   getImpedimentos,
 } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function montar() {
   const container = document.createElement('div');
@@ -139,19 +138,11 @@ describe('renderAproveitamento', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('o resumo da Divisao pondera por dias na DGEO, e nomeia as duas medias', async () => {
-    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
-
-    const { container, cleanup } = await montar();
-
-    // (0,50 x 365 + 0,825 x 365) / (365 + 301) = 72,6%.
-    expect(container.textContent).toContain('72,6%');
-    // A media simples continua a mesa, dita pelo nome: (50,0 + 82,5) / 2.
-    expect(container.textContent).toContain('66,3%');
-    expect(container.textContent).toContain('2 militares');
-
-    if (typeof cleanup === 'function') cleanup();
-  });
+  // O resumo ponderado da Divisão (72,6% contra 66,3%, e o plural de "2
+  // militares") é dos casos 'a media da Divisao e ponderada por dias na DGEO' e
+  // 'plural tratado' em conciliacao.test.js, sobre a MESMA fixture anual. Lá as
+  // asserções ainda checam os rótulos "ponderad" e "simples", e ficam escopadas
+  // ao `.efetivo-resumo` em vez do texto da página inteira.
 
   test('ano sem ninguem convida ao primeiro cadastro, e nao mostra tabela vazia', async () => {
     const { container, cleanup } = await montar();

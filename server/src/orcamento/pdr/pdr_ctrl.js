@@ -26,10 +26,9 @@ const normaliza = item => {
   return out
 }
 
-// O NOME de quem cadastrou e de quem alterou sai junto com o uuid. A tela nao
-// tem como resolver um uuid, e o historico de alteracoes so comeca em
-// 2026-07-30: para os itens gravados antes disso, a data de cadastro e o nome
-// sao a unica rastreabilidade que existe.
+// O NOME de quem cadastrou e de quem alterou sai junto com o uuid: a tela nao
+// resolve uuid, e para o item anterior ao historico de alteracoes a data de
+// cadastro e o nome sao a unica rastreabilidade que existe.
 const SELECT = `
   SELECT i.id, i.ano, i.cod_nd, nd.nome AS nd_nome,
          i.meta_pit_id, mp.numero_meta AS meta_numero, mp.item AS meta_item,
@@ -66,8 +65,6 @@ controller.getPorId = async id => {
   return item
 }
 
-// GANHOU TRANSACAO em 2026-08-02: a linha de rastro tem de cair junto com a
-// mudanca que ela descreve, e no INSERT solto isso nao era possivel.
 controller.criar = async (item, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const criado = await t.one(

@@ -4,37 +4,45 @@
 //
 // O QUE ELA É, e o que ela não é. O relatório não chama de Extra-PIT todo
 // trabalho fora do plano: chama a exceção AUTORIZADA, e o modelo tem uma coluna
-// "Documento autorização" para provar. É por isso que `documento_autorizacao` é
-// obrigatório aqui, e é exatamente o que faltava quando o SCA tentou derivar a
-// 3.3 de `mapoteca.pedido.previsto_pit`: aquele campo é falso por omissão, e a
-// conta deu 23 linhas onde a edição real de julho/2026 traz 1.
+// "Documento autorização" para provar. Por isso `documento_autorizacao` é
+// obrigatório aqui, e por isso a 3.3 NÃO se deriva de
+// `mapoteca.pedido.previsto_pit`, que é falso por omissão.
 //
 // MORA NO SCHEMA `pit` porque é a exceção AO PIT, e só se lê ao lado dele.
 //
-// Veio do SAP em 2026-08-02 (`macrocontrole.extra_pit`) sem o `lote_id`: lá ele
-// serve para a 2.1 não contar duas vezes o mesmo trabalho, e aqui não há o que
-// descontar, porque a 2.1 do SCA soma o que foi lançado em `pit.execucao` e o
-// Extra-PIT não é lançado lá.
+// SEM `lote_id`: a 2.1 do SCA soma o que foi lançado em `pit.execucao`, e o
+// Extra-PIT não é lançado lá, então não há o que descontar.
 
-// A MATERIALIZAÇÃO (2026-08-03). O chefe fechou a definição: "se fosse só
-// entrega entraria na mapoteca, o Extra-PIT é a PRODUÇÃO". A demanda de origem
+// A MATERIALIZAÇÃO. O Extra-PIT é PRODUÇÃO, e não entrega: a demanda de origem
 // Produção só fecha quando existe versão no acervo apontando para ela.
 //
 // O vínculo mora em `acervo.versao.demanda_extra_id`, exclusivo com
-// `meta_pit_id`, e não no lote. Foi medido: o lote 2026-1a tem seis cartas
-// topográficas, quatro da meta 1.1 e duas (2966-1-NE e 2966-1-SE) das demandas
-// do CMS para a Op. Arandu. A produção Extra-PIT mora DENTRO de um lote do PIT.
+// `meta_pit_id`, e NÃO no lote: a produção Extra-PIT mora dentro de um lote do
+// PIT, ao lado das versões que cumprem meta.
 
 const { db } = require('../database')
 
-const { AppError, httpCode } = require('../utils')
+const {
+  AppError,
+  httpCode,
+  domainConstants: { SITUACAO_EXTRA_PIT }
+} = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
 
 const controller = {}
 
-// Situações que AFIRMAM que a demanda saiu: Enviado (3) e Concluído (4).
-const SITUACOES_QUE_AFIRMAM_ENTREGA = [3, 4]
+// Situações que AFIRMAM que a demanda saiu. Vêm de `utils/domain_constants`, e
+// não repetidas como número aqui: `dominio.situacao_extra_pit` é o mesmo domínio
+// que a tela e o relatório leem, e uma segunda cópia dos códigos divergiria da
+// primeira que fosse corrigida.
+const SITUACOES_QUE_AFIRMAM_ENTREGA = [
+  SITUACAO_EXTRA_PIT.ENVIADO,
+  SITUACAO_EXTRA_PIT.CONCLUIDO
+]
+
+// `dominio.origem_meta`, reusado pela demanda extra (só Manual e Produção; o
+// CHECK `demanda_extra_origem_manual_ou_producao` cobra o mesmo no banco).
 const ORIGEM_PRODUCAO = 3
 
 // CALCULADA NA LEITURA, nunca gravada. Mesma doutrina da grade do PIT: número
@@ -108,14 +116,13 @@ const paraBanco = (dados, usuarioUuid) => ({
   usuarioUuid
 })
 
-// A demanda de PRODUÇÃO não fecha sem materializar. É a regra que o chefe pediu
-// em 2026-08-03, e ela vale para Enviado e para Concluído: as duas afirmam que
-// alguma coisa saiu daqui.
+// A demanda de PRODUÇÃO não fecha sem materializar, e a regra vale para Enviado
+// e para Concluído: as duas afirmam que alguma coisa saiu daqui.
 //
 // A régua é "pelo menos uma versão", e NÃO `materializada >= quantidade`. A
-// `quantidade` da 3.3 muda de unidade por linha: a demanda 6 de 2026 promete 74
-// (as MIs cobertas pelo mosaico) e tem 26 versões, e a exigência de igualdade
-// travaria um fechamento legítimo. A tela mostra 26 de 74, e quem lê decide.
+// `quantidade` da 3.3 muda de unidade por linha (uma demanda pode prometer as
+// MIs cobertas por um mosaico), e a exigência de igualdade travaria um
+// fechamento legítimo. A tela mostra o par, e quem lê decide.
 //
 // LÊ DO BANCO, e não do corpo: o número de versões é a única prova que existe, e
 // ela não vem de quem está editando.
@@ -212,9 +219,9 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
 // Excluível de propósito: a demanda cancelada tem situação própria
 // ('Cancelado'), e o DELETE fica para o cadastro errado.
 //
-// Desde 2026-08-03 `acervo.versao.demanda_extra_id` aponta para cá, e o DELETE
-// passa a esbarrar nele. NÃO cascateia: apagar a demanda não pode apagar a
-// versão, que é o produto. A mensagem diz quantas folhas seguram.
+// `acervo.versao.demanda_extra_id` aponta para cá, e o DELETE esbarra nele. NÃO
+// cascateia: apagar a demanda não pode apagar a versão, que é o produto. A
+// mensagem diz quantas folhas seguram.
 controller.deletar = async (id, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(

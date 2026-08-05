@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { formatDate, formatDateTime } from '@utils/format.js';
 import { chip } from '@components/status-chip.js';
 import { showError, showSuccess } from '@utils/toast.js';
@@ -12,10 +13,10 @@ import { criarHistorico } from '@components/historico/historico.js';
 /**
  * Ficha do ponto de controle.
  *
- * O DESENHO, refeito em 2026-07-31 na mesma linguagem da ficha do acervo (pedido
- * do chefe). A ficha anterior era uma pilha de 56 linhas rotulo-valor, todas com
- * o mesmo peso: a latitude com oito casas decimais saia igual ao "Fuso", e os
- * arquivos ficavam no fim, depois de sete blocos. Tres mudancas:
+ * O DESENHO segue a mesma linguagem da ficha do acervo. Uma pilha de dezenas de
+ * linhas rotulo-valor com o mesmo peso e o que ele evita: ali a latitude com
+ * oito casas decimais sai igual ao "Fuso", e os arquivos ficam no fim, depois de
+ * sete blocos. Tres regras:
  *
  *   1. LUGAR. Um ponto de controle E um lugar, e a ficha nao mostrava onde. Um
  *      mapinha abre junto do resumo. E o que a miniatura da carta e para o
@@ -181,9 +182,9 @@ function botaoCopiar(p) {
 /**
  * Os DOIS arquivos do ponto, cada um com seu botao de baixar.
  *
- * Desde 2026-07-29 o acervo guarda dois por ponto (decisao do chefe): o PACOTE,
- * com tudo o que so se le junto, e a MONOGRAFIA, que e o documento que alguem
- * busca sozinho. Nao ha mais agrupamento por tipo porque nao ha mais nove tipos.
+ * O acervo guarda dois por ponto: o PACOTE, com tudo o que so se le junto, e a
+ * MONOGRAFIA, que e o documento que alguem busca sozinho. Nao ha agrupamento por
+ * tipo porque sao so dois.
  *
  * A MONOGRAFIA vem primeiro, invertendo a ordem do banco: e ela que se abre para
  * conferir o ponto, e o pacote de 20 MB e o que se baixa quando ja se decidiu.
@@ -268,8 +269,7 @@ function esqueleto() {
  * A ordem dos blocos de detalhe segue o CICLO do ponto, e nao a ordem das
  * colunas na tabela: identificacao, onde ele esta, como foi medido, com o que,
  * como foi processado, o marco no terreno. E a ordem em que alguem confere um
- * ponto de apoio. O que mudou em 2026-07-31 foi o que vem ANTES deles: o resumo,
- * o mapa e os arquivos.
+ * ponto de apoio. Antes deles vem o resumo, o mapa e os arquivos.
  *
  * `lote_nome` e `projeto_nome` sao as ENTIDADES do acervo; `p.lote` e
  * `p.projeto` sao texto livre que o medidor digitou em campo, e por isso
@@ -417,11 +417,10 @@ function corpo(p, mostrarVazios, barraVazios) {
       : null,
 
     // O interruptor fica logo ACIMA dos blocos que ele governa, e rola com
-    // eles. Ele ficava grudado no topo da ficha inteira, e ao rolar passava por
-    // cima do conteudo com o fundo cobrindo so parte da largura (chefe,
-    // 2026-07-31: "fica voando quando da scroll down"). Grudar exigiria sangrar
-    // o fundo ate as bordas da area rolavel; aqui nao precisa, porque ele nao
-    // governa nem os arquivos nem o resumo, que agora vem antes.
+    // eles. Grudado no topo da ficha, ele passa por cima do conteudo ao rolar,
+    // com o fundo cobrindo so parte da largura; sangrar o fundo ate as bordas da
+    // area rolavel nao compensa, porque ele nao governa os arquivos nem o
+    // resumo, que vem antes.
     barraVazios,
 
     ...blocos.map(([titulo, campos]) => bloco(titulo, campos, mostrarVazios)),
@@ -570,7 +569,15 @@ export async function abrirPontoDialog(codigos, indice = 0) {
     } catch (erro) {
       if (fechado) return;
       showError(erro.message || 'Não foi possível carregar o ponto de controle');
-      if (lista.length === 1) modal.close();
+      if (lista.length === 1) {
+        modal.close();
+        return;
+      }
+      // Com MAIS DE UM ponto na selecao o modal fica aberto, e o esqueleto
+      // posto acima ficava na tela para sempre: a falha virava carregamento
+      // eterno. O estado de erro diz o que aconteceu e refaz a pergunta sem
+      // obrigar a fechar e reabrir a ficha.
+      corpoEl.replaceChildren(estadoErro(erro, () => irPara(atual)));
     }
   }
 

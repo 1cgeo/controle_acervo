@@ -6,7 +6,7 @@ const {
   podeGerar
 } = require('../../../utils/miniatura')
 
-// As sete formas de raster medidas no acervo em 2026-07-31, sobre os 292
+// As sete formas de raster medidas no acervo, sobre os 292
 // arquivos que o gerador escolhe. Testar sobre elas, e nao sobre um caso
 // inventado, e o que faz o teste valer alguma coisa.
 const RGB_JPEG = { bands: [

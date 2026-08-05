@@ -2,10 +2,7 @@
 import os
 import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (
-    QDialog, QMessageBox, QVBoxLayout, QHBoxLayout, QLabel, 
-    QTableWidgetItem, QHeaderView, QFileDialog
-)
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QTableWidgetItem, QHeaderView, QFileDialog
 from qgis.PyQt.QtCore import Qt, QDate
 from ...core.upload_flow import UploadFlowMixin, marcar_e_medir
 from ..campos_acervo import conferir_identidade

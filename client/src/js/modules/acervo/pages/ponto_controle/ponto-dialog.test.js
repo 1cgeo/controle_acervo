@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   getPonto: vi.fn(),
@@ -22,8 +23,6 @@ import {
   getPonto, baixarArquivoDoPonto,
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /**
  * O ponto como o servidor o entrega: dominio em DOIS campos, o codigo em
@@ -63,7 +62,7 @@ const PONTO = {
   orbita_nome: 'A SER PREENCHIDO',
   situacao_marco: 9999,
   situacao_marco_nome: 'A SER PREENCHIDO',
-  // DOIS arquivos por ponto desde 2026-07-29: o pacote e a monografia.
+  // DOIS arquivos por ponto: o pacote e a monografia.
   arquivos: [
     {
       id: 1, tipo_arquivo_id: 1, tipo_arquivo: 'Pacote do ponto',
@@ -128,7 +127,7 @@ describe('ficha do ponto: domínios', () => {
   });
 });
 
-describe('ficha do ponto: campos', () => {
+describe('ficha do ponto: campos e ordem dos blocos', () => {
   test('separa a entidade do acervo do texto que o medidor digitou', async () => {
     getPonto.mockResolvedValue(PONTO);
     abrirPontoDialog('RS-HV-1');
@@ -180,14 +179,13 @@ describe('ficha do ponto: campos', () => {
     expect(texto()).not.toContain('123.456.789-00');
   });
 
-  test('os blocos seguem o ciclo do ponto', async () => {
+  test('os blocos da ficha aparecem na ordem do ciclo do ponto', async () => {
     getPonto.mockResolvedValue(PONTO);
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    // Arquivos e Observacao vem ANTES dos blocos de conferencia desde
-    // 2026-07-31: sao o que a pessoa veio buscar, e ficavam depois de sete
-    // blocos. Os blocos de detalhe seguem o ciclo do ponto, como antes.
+    // Arquivos e Observação vêm ANTES dos blocos de conferência: são o que a
+    // pessoa veio buscar. Os blocos de detalhe seguem o ciclo do ponto.
     expect(titulos()).toEqual([
       'Arquivos', 'Observação',
       'Identificação', 'Posição', 'Rastreio', 'Equipamento',
@@ -235,7 +233,7 @@ describe('ficha do ponto: os dois downloads', () => {
     abrirPontoDialog('RS-HV-1');
     await flush();
 
-    // A MONOGRAFIA vem primeiro desde 2026-07-31: e ela que se abre para
+    // A MONOGRAFIA vem primeiro: e ela que se abre para
     // conferir o ponto, e o pacote de 20 MB e o que se baixa depois de decidir.
     const [mono, pacote] = [...document.querySelectorAll('.ficha-arquivo button')];
     pacote.click();
@@ -372,17 +370,27 @@ describe('ficha do ponto: navegação e falha', () => {
   });
 
   test('falha num de vários avisa e MANTÉM o modal, para poder navegar', async () => {
-    getPonto.mockRejectedValue(new Error('sem rede'));
+    getPonto.mockRejectedValueOnce(new Error('sem rede'));
+    getPonto.mockImplementation(cod => Promise.resolve({ ...PONTO, cod_ponto: cod }));
     abrirPontoDialog(['RS-HV-1', 'RS-HV-2'], 0);
     await flush();
 
     expect(showError).toHaveBeenCalled();
     // Fechar aqui tiraria da pessoa os outros pontos que ela selecionou.
     expect(modal()).not.toBeNull();
+
+    // E a navegação tem de FUNCIONAR depois da falha: o modal aberto sem o
+    // botão "Próxima" respondendo não serviria para nada.
+    const [, proxima] = document.querySelectorAll('.produto-ficha__nav button');
+    proxima.click();
+    await flush();
+
+    expect(document.querySelector('.modal__title').textContent).toBe('RS-HV-2');
+    expect(texto()).toContain('2 de 2');
   });
 });
 
-// O que entrou em 2026-07-31, na mesma reforma da ficha do acervo: o LUGAR
+// O que entrou, na mesma reforma da ficha do acervo: o LUGAR
 // (mapa e coordenada copiavel) e o RESUMO com os fatos que identificam o ponto.
 describe('ficha do ponto: o lugar', () => {
   test('o resumo traz coordenada, altitude, método e data', async () => {

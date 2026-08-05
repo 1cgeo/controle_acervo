@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao do bug: ao EDITAR uma NC, o select de classificacao vinha vazio
 // porque as opcoes eram montadas com c.id (inexistente) em vez de c.code. Este
@@ -33,8 +34,6 @@ vi.mock('@services/plataforma-service.js', async () => {
 });
 
 import { openNotaCreditoDialog } from '@modules/orcamento/pages/notas-credito/nota-credito-dialog.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // Acha o select cujo .form-field tem o label com o texto dado.
 function selectByLabel(label) {

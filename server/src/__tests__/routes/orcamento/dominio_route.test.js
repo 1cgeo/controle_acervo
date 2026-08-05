@@ -1,8 +1,11 @@
 'use strict'
 
-// Teste de rota (supertest) dos dominios. Os GET exigem perfil de consulta
-// desde 2026-07-25 (antes eram publicos, sem guarda), entao aqui se mocka o
-// ../../login junto com o banco.
+// Teste de rota (supertest) dos dominios. Os GET exigem perfil de consulta, e
+// nao sao publicos, entao aqui se mocka o ../../login junto com o banco.
+//
+// A GUARDA EM SI NAO SE PROVA AQUI: com o login dublado, `verifyPerfil` vira
+// passagem livre. Quem a prova e routes/orcamento/verify_perfil.test.js, contra
+// o middleware de verdade, e modulo_em_toda_rota.test.js, lendo o fonte.
 
 const { createMockDb } = require('../../helpers/orcamento/mockDb')
 

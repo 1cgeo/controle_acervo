@@ -1,8 +1,9 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que esta tela NAO pode fazer: jogar a pagina fora a cada carga.
 //
-// O chefe mediu o defeito em 2026-08-04: "quando edita a UI reconstroi, que
+// O chefe mediu o defeito: "quando edita a UI reconstroi, que
 // torna muito chato ficar editando pois a tela fica se movendo". A causa era o
 // `load()` recriar tudo, inclusive as duas tabelas.
 //
@@ -20,9 +21,7 @@ import { renderMaterialDetails } from '@modules/mapoteca/pages/materiais/details
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// O filtro e desta tela e abre no ano ATUAL (chefe, 2026-08-04).
+// O filtro e desta tela e abre no ano ATUAL.
 const ANO_ATUAL = new Date().getFullYear();
 const ANO_ANTERIOR = ANO_ATUAL - 1;
 

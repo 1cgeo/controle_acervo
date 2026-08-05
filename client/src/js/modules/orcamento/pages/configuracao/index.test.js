@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da pagina de Configuracao geral (UASG e CODOM) e das secoes de
 // dominios editaveis (natureza de despesa, plano interno, UG).
@@ -27,8 +28,6 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderConfiguracao } from '@modules/orcamento/pages/configuracao/index.js';
 import { getConfig } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 describe('renderConfiguracao', () => {
   test('monta o titulo Configuracao e carrega os valores do service', async () => {
     const container = document.createElement('div');
@@ -46,7 +45,7 @@ describe('renderConfiguracao', () => {
     const valores = inputs.map(i => i.value);
     expect(valores).toContain('160382');
     expect(valores).toContain('12345');
-    // O campo "Ano de referência" saiu em 2026-08-04: o ano e de cada tela.
+    // O campo "Ano de referência" saiu: o ano e de cada tela.
     expect(valores).not.toContain('2026');
 
     if (typeof cleanup === 'function') cleanup();

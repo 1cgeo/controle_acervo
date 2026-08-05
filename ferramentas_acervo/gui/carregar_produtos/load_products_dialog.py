@@ -1,12 +1,11 @@
 # Path: gui\carregar_produtos\load_products_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton, QMessageBox, QLabel,
-    QGroupBox, QGridLayout, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox
-)
+from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, QPushButton,
+                                 QMessageBox, QLabel, QGroupBox, QGridLayout, QDialogButtonBox)
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsVectorLayer, QgsProject, QgsDataSourceUri
+
+from ..mapa_utils import carregar_camadas_matview
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'load_products_dialog.ui'))
@@ -28,11 +27,14 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
         self.load_layers()
 
     def setup_ui(self):
-        self.setWindowTitle("Carregar Camadas de Produtos")
+        # Título distinto do de "Carregar Camadas de Produtos": as duas telas
+        # convivem no painel, e o mesmo título deixava impossível saber qual
+        # janela está na frente.
+        self.setWindowTitle("Carregar Produtos (filtrando por tipo e escala)")
         
         # Clear existing layout in scrollAreaWidgetContents
-        # Nota: não usar truthiness aqui — no PyQt6, QLayout implementa __len__
-        # (= count()), então um layout vazio é avaliado como False.
+        # Compare com None: no PyQt6 o QLayout implementa __len__ (= count()),
+        # então um layout vazio é avaliado como False.
         existing_layout = self.scrollAreaWidgetContents.layout()
         if existing_layout is not None:
             self.mainLayout = existing_layout
@@ -232,29 +234,6 @@ class LoadProductsDialog(QDialog, FORM_CLASS):
             QMessageBox.warning(self, "Aviso", "Nenhuma camada selecionada.")
             return
 
-        for layer in selected_layers:
-            uri = QgsDataSourceUri()
-            uri.setConnection(
-                layer['banco_dados']['servidor'],
-                str(layer['banco_dados']['porta']),
-                layer['banco_dados']['nome_db'],
-                layer['banco_dados']['login'],
-                layer['banco_dados']['senha']
-            )
-            uri.setDataSource(
-                'acervo',
-                layer['matviewname'],
-                'geom',
-                "",
-                'id'
-            )
-            uri.setSrid('4674')
-
-            vector_layer = QgsVectorLayer(uri.uri(), f"{layer['tipo_produto']} - {layer['tipo_escala']}", "postgres")
-            
-            if vector_layer.isValid():
-                QgsProject.instance().addMapLayer(vector_layer)
-            else:
-                QMessageBox.warning(self, "Erro", f"Não foi possível carregar a camada: {layer['tipo_produto']} - {layer['tipo_escala']}")
-
-        self.accept()
+        carregadas, _ = carregar_camadas_matview(self, selected_layers)
+        if carregadas:
+            self.accept()

@@ -305,7 +305,7 @@ export function abrirSeletorVersao({
     });
 
     // O foco começa no campo de busca: é sempre o primeiro passo, e o modal
-    // sozinho focaria o primeiro elemento focável, que aqui é o mesmo — mas isto
+    // sozinho focaria o primeiro elemento focável, que aqui é o mesmo, mas isto
     // continua valendo se um campo entrar antes dele.
     input.focus();
   });

@@ -2,6 +2,7 @@ import { el, clearChildren } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
+import { estadoErro } from '@components/estado-erro.js';
 import {
   getGradePit,
   getAnosMetaPit,
@@ -24,10 +25,9 @@ const numero = (v) => (v == null ? '·' : String(v));
 /**
  * Execução do PIT (#/execucao_pit): a grade do ano.
  *
- * O QUE ELA SUBSTITUIU. Até 2026-08-02 a tela era ano MAIS mês, com uma lista de
- * 37 linhas e um campo por linha. Para saber se a meta 4.2 estava atrasada era
- * preciso trocar o mês sete vezes e somar de cabeça, e o mês vazio não se
- * distinguia do mês zerado. O trabalho é anual, então o mês virou coluna.
+ * O MÊS É COLUNA, e não filtro. Com ano MAIS mês, saber se uma meta está
+ * atrasada exige trocar o mês sete vezes e somar de cabeça, e o mês vazio não se
+ * distingue do mês zerado. O trabalho é anual.
  *
  * DOIS NÚMEROS POR CÉLULA, e é isso que desfaz as duas abas da planilha. A
  * PLANEJ_PIT e a EXEC_PIT têm as MESMAS linhas, as mesmas doze colunas e a mesma
@@ -43,7 +43,7 @@ const numero = (v) => (v == null ? '·' : String(v));
  * `·` É VAZIO E `0` É ZERO. "Ninguém lançou" e "conferi e não houve" são coisas
  * diferentes, e é a mesma honestidade de três estados do mapa do efetivo.
  *
- * A GRADE NÃO SE REMONTA (2026-08-04). Cada desenho reconcilia as linhas por
+ * A GRADE NÃO SE REMONTA. Cada desenho reconcilia as linhas por
  * chave e só repinta a que mudou de assinatura. Antes a tabela inteira era
  * jogada fora a cada desenho, e trocar o modo bastava para isso: a tela pulava e
  * o campo aberto numa célula morria com a linha que o continha.
@@ -568,10 +568,15 @@ até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`;
   function desenhar() {
     if (!linhas.length) {
       descartarGrade();
+      // O estado vazio LEVA à tela que o resolve. Ele nomeava "Metas do PIT" e
+      // deixava a pessoa procurar o item no menu.
       grade.appendChild(el('p', {
         style: { padding: '24px', color: 'var(--text-secondary)' },
-        textContent: 'Nenhuma meta cadastrada neste ano. Comece pela tela Metas do PIT.',
-      }));
+      }, [
+        `Nenhuma meta cadastrada em ${anoSelecionado}. Comece pela tela `,
+        el('a', { href: '#/metas', textContent: 'Metas do PIT' }),
+        '.',
+      ]));
       resumo.textContent = '';
       return;
     }
@@ -646,9 +651,15 @@ até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`;
       if (disposed) return;
       // A grade some inteira: mostrar a do ano anterior ao lado do erro faria
       // o número velho passar por número do ano pedido.
+      //
+      // NO LUGAR DELA FICA O ERRO, e não a área em branco. O toast some em seis
+      // segundos, e a partir daí a tela vazia se lia como ano sem meta nenhuma,
+      // que é exatamente a afirmação oposta. O aviso fica, e traz o caminho de
+      // volta.
       linhas = [];
       descartarGrade();
       resumo.textContent = '';
+      grade.appendChild(estadoErro(err, load));
       showError(err.message || 'Erro ao carregar a grade do PIT');
     }
   }

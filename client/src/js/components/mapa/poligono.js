@@ -1,9 +1,9 @@
 // Geometria e maquina de estados do desenho de area.
 //
-// Portado do repositorio `fotos_aereas` (src/tools/polygon-query/), a pedido do
-// chefe em 2026-07-28, para que desenhar area no SCA seja o MESMO gesto que a
-// pessoa ja aprendeu no portal de fotos aereas: clicar vertice a vertice,
-// fechar no primeiro vertice, Enter conclui, Backspace desfaz, Escape cancela.
+// Portado do repositorio `fotos_aereas` (src/tools/polygon-query/), para que
+// desenhar area no SCA seja o MESMO gesto do portal de fotos aereas: clicar
+// vertice a vertice, fechar no primeiro vertice, Enter conclui, Backspace
+// desfaz, Escape cancela.
 //
 // Copiado em vez de importado porque sao dois repositorios independentes, sem
 // pacote comum. O que veio junto foi a VALIDACAO, que e a parte que ninguem

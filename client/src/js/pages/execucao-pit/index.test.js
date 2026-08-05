@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// Execucao do PIT (#/execucao_pit): a GRADE do ano, desde 2026-08-02.
+// Execucao do PIT (#/execucao_pit): a GRADE do ano,.
 //
 // O que estes casos FIXAM, e que nao se ve olhando a tela:
 //  - dois numeros por celula, o realizado em cima e o planejado embaixo. A
@@ -28,8 +29,6 @@ vi.mock('@services/plataforma-service.js', async () => {
 import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
 import { getGradePit, salvarExecucaoPit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function logar({ administrador = false, perfis = {} } = {}) {
   saveAuth({ token: 't', administrador, uuid: 'u', perfis, modulos: [] }, 'x');

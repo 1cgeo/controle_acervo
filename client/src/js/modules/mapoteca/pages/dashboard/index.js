@@ -23,14 +23,13 @@ const REFRESH_MS = 60 * 1000;
  * que o chefe aprovou: uma aba por pergunta, so a aba ativa existe no DOM, e o
  * auto-refresh de 60 s recarrega apenas ela.
  *
- * A ordem das abas nao e cosmetica. O Resumo Anual abre a pagina (chefe,
- * 2026-07-27), porque e o numero que a DGEO presta contas; o movimento do dia a
- * dia vem depois. O Mapa (2026-07-28) fica logo em seguida: e a leitura
+ * A ordem das abas nao e cosmetica. O Resumo Anual abre a pagina, porque e o
+ * numero de que a DGEO presta contas; o movimento do dia a
+ * dia vem depois. O Mapa fica logo em seguida: e a leitura
  * espacial do MESMO numero do resumo, e nao um assunto novo.
  *
- * As cinco abas recortam o mesmo ANO. O ano e DESTA TELA desde 2026-08-04
- * (chefe): comeca sempre no ano atual e nao guarda nada. Antes vinha do seletor
- * da navbar, que valia para o modulo inteiro. Trocar o ano recarrega a aba
+ * As cinco abas recortam o mesmo ANO, e ele e DESTA TELA: comeca sempre no ano
+ * atual e nao guarda nada. Trocar o ano recarrega a aba
  * aberta; as demais buscam sozinhas quando forem montadas.
  *
  * @param {HTMLElement} container

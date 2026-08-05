@@ -3,12 +3,10 @@
 // O contrato de CONTAGEM das rotas de /api/acessos: elas contam PESSOAS, e o
 // que continua contando evento diz isso no nome.
 //
-// POR QUE ESTE ARQUIVO EXISTE. Medido na producao em 2026-08-04, o painel
-// respondia 102 logins em 30 dias, dos quais 98 eram da conta de servico
-// `claude`. Nenhum dos numeros do topo dizia quantas PESSOAS entraram, porque as
-// tres contagens eram de linha de `dgeo.login`: com JWT de 8 horas e dois
-// clientes, a mesma pessoa entra varias vezes por dia. "Logins hoje" respondia a
-// pergunta errada com precisao.
+// POR QUE ESTE ARQUIVO EXISTE. Contar linha de `dgeo.login` não responde
+// quantas PESSOAS entraram: com JWT de 8 horas e dois clientes, a mesma pessoa
+// entra várias vezes por dia, e uma conta de serviço sozinha domina o total.
+// Contagem de linha responde a pergunta errada com precisão.
 //
 // O QUE ELE GUARDA, consulta a consulta:
 //   1. o topo conta pessoa distinta, e nao linha de login
@@ -82,9 +80,9 @@ describe('resumo: o topo conta PESSOA, e nao evento', () => {
   it('conta quem NAO consegue entrar: senha nula', async () => {
     await ctrl.resumo()
 
-    // `dgeo.usuario.senha` e anulavel de proposito desde a fusao de 2026-08-02:
-    // quem veio do Auth Server so ganha hash quando o script de copia rodar.
-    // Sem esta contagem, quem ficou de fora so aparece ao reclamar.
+    // `dgeo.usuario.senha` e anulavel de proposito: quem foi importado so ganha
+    // hash quando o script de copia rodar. Sem esta contagem, quem ficou de
+    // fora so aparece ao reclamar.
     const sql = sqlDe(mockDb.conn.one)
     expect(sql).toContain('senha IS NULL')
     expect(sql).toContain('AS contas_sem_senha')

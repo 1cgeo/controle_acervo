@@ -20,7 +20,7 @@ import { renderManutencaoTab } from './manutencao-tab.js';
  * nada de espacial. As rotas sempre estiveram no servidor ('/volumes',
  * '/projetos'); o que faltava era tela.
  *
- * UMA ROTA, e nao um item de menu por assunto (decisao de 2026-08-02). Sao
+ * UMA ROTA, e nao um item de menu por assunto. Sao
  * cadastros que se leem juntos: a associacao volume x tipo so faz sentido ao
  * lado da lista de volumes, e o lote nao existe sem o projeto. Quatro itens
  * soltos na sidebar dariam quatro telas de uma linha cada.

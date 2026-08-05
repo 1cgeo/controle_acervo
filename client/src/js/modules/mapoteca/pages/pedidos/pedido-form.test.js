@@ -20,7 +20,7 @@ const CLIENTES = [
 ];
 const SITUACOES = [{ code: 3, nome: 'Em andamento' }, { code: 5, nome: 'Concluído' }];
 const CANAIS = [{ code: 1, nome: 'Ouvidoria/LAI' }];
-// A meta do PIT virou lista desde 2026-07-31: sem opção cadastrada, o select
+// A meta do PIT virou lista: sem opção cadastrada, o select
 // nasce vazio e o teste do campo PREENCHIDO não teria o que selecionar.
 const METAS = [
   { id: 8, ano: 2026, numero_meta: 4, item: '4.1', descricao: 'Impressão em sulfite' },
@@ -79,7 +79,7 @@ describe('aplicarModoPedido', () => {
     expect(civilElement.classList.contains('hidden')).toBe(false);
   });
 
-  // A regra que protege o dado gravado. Medido na produção em 2026-07-30: os 33
+  // A regra que protege o dado gravado.: os 33
   // pedidos civis têm omds com o valor constante "1º CGEO".
   test('o modo civil NÃO esconde o campo militar PREENCHIDO', () => {
     const { form, civilElement } = montar({

@@ -39,7 +39,7 @@ const TIPO_PRODUTO = 4 // Ortoimagem, o mesmo do teste de catalogacao
 const SUBTIPO = 4      // Ortoimagem, subtipo do tipo 4
 const TETO_PADRAO = config.UPLOAD_WEB_MAX_GB
 
-// O TIMEOUT do hook vai EXPLÍCITO (2026-08-04). O `testTimeout: 30000` do
+// O TIMEOUT do hook vai EXPLÍCITO. O `testTimeout: 30000` do
 // jest.config vale para o teste e NÃO para o `beforeAll`, que fica nos 5.000 ms
 // padrão. Este arquivo é dos mais pesados da suíte, e o `getApp()` abre conexão
 // de banco: com a suíte inteira em paralelo, o arranque passa dos 5 s e os 24
@@ -587,13 +587,13 @@ describe('POST /api/arquivo/upload-web/arquivos', () => {
       [{ conteudo: Buffer.from('x'), nome: 'a.xml' }]
     )
 
-    // `stripUnknown` descarta a chave e o envio segue, mas a versao NAO muda.
-    if (res.status === 201) {
-      const v = await conn.one('SELECT versao FROM acervo.versao WHERE id = $1', [versaoId])
-      expect(v.versao).toBe('1-DSG')
-    } else {
-      expect(res.status).toBe(400)
-    }
+    // O CONTRATO E UM SO, e o caso o afirma: o `stripUnknown` descarta a chave,
+    // o envio SEGUE (201) e a versao NAO muda. O `if/else` que aceitava 201 ou
+    // 400 passava nos dois desfechos, e nao acusaria a troca de um pelo outro.
+    expect(res.status).toBe(201)
+
+    const v = await conn.one('SELECT versao FROM acervo.versao WHERE id = $1', [versaoId])
+    expect(v.versao).toBe('1-DSG')
   })
 
   it('exige perfil de operador', async () => {

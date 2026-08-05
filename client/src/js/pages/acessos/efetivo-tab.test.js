@@ -1,8 +1,9 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // A aba EFETIVO de #/acessos, e a casca de duas abas que a contem.
 //
-// POR QUE ELA EXISTE. Medido na producao em 2026-08-04, a tela media login e nao
+// POR QUE ELA EXISTE., a tela media login e nao
 // gente: "quem mais entrou" trazia a conta de servico `claude` com 98 dos 102
 // logins, e dois dos quatro graficos nasciam degenerados. O chefe nao pergunta
 // quem entrou no sistema; ele pergunta quem esta na Divisao, quanto rendeu, quem
@@ -23,9 +24,7 @@ vi.mock('@services/plataforma-service.js', () => ({
   getAcessosResumo: vi.fn(() => Promise.resolve({})),
   getAcessosLogados: vi.fn(() => Promise.resolve([])),
   getLoginsDia: vi.fn(() => Promise.resolve([])),
-  getLoginsMes: vi.fn(() => Promise.resolve([])),
   getLoginsUsuarios: vi.fn(() => Promise.resolve([])),
-  getLoginsClientes: vi.fn(() => Promise.resolve([])),
   getEfetivoDoMes: vi.fn(() => Promise.resolve([])),
   getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
   getUsuarios: vi.fn(() => Promise.resolve([])),
@@ -49,8 +48,6 @@ import {
   getPeriodosEfetivo,
   getUsuarios,
 } from '@services/plataforma-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // O mes de referencia e o de HOJE, e os fixtures se montam em cima dele. Datas
 // fixas no arquivo fariam o teste passar em agosto e falhar em setembro.
@@ -278,7 +275,7 @@ describe('aba Efetivo: o que o chefe pergunta', () => {
     cleanup();
   });
 
-  // Impedimento e TEXTO LIVRE por decisao do chefe (2026-08-02): nao ha catalogo
+  // Impedimento e TEXTO LIVRE por decisao do chefe: nao ha catalogo
   // de tipo, e a tela nao inventa um. Ela lista o que esta escrito, e o curso
   // aparece pela propria descricao.
   test('lista quem esta impedido no mes, com o motivo escrito', async () => {
@@ -292,16 +289,15 @@ describe('aba Efetivo: o que o chefe pergunta', () => {
     cleanup();
   });
 
-  // Os tres numeros de "quantas pessoas" do modulo (contas ativas, pessoas
-  // cadastradas, militares no mapa) nunca batem, e ate aqui nenhuma tela dizia
-  // por que. Esta secao nomeia cada desencontro.
-  // ESTAR NA DGEO COM A CONTA DESATIVADA NAO E DIVERGENCIA (chefe, 2026-08-04,
-  // ao acionar a tela com o dado real). `dgeo.usuario.ativo` e flag de LOGIN, e
-  // a maioria do efetivo nao usa o SCA: eram 20 casos em 25 militares, contra 7
-  // contas ativas em 54 pessoas. A lista virava ruido.
+  // Os três números de "quantas pessoas" do módulo (contas ativas, pessoas
+  // cadastradas, militares no mapa) não batem, e esta seção nomeia o desencontro.
   //
-  // Sobra a divergencia que aponta trabalho: quem PODE ENTRAR no sistema e nao
-  // consta na Divisao. Ou a passagem nao foi lancada, ou a pessoa saiu e o
+  // ESTAR NA DGEO COM A CONTA DESATIVADA NÃO É DIVERGÊNCIA: `dgeo.usuario.ativo`
+  // é flag de LOGIN, e a maioria do efetivo não usa o SCA. Apontar isso listaria
+  // quase a Divisão inteira.
+  //
+  // Sobra a divergência que aponta trabalho: quem PODE ENTRAR no sistema e não
+  // consta na Divisão. Ou a passagem não foi lançada, ou a pessoa saiu e o
   // acesso ficou aberto.
   test('so aponta conta ativa sem passagem no mes', async () => {
     const cleanup = await renderAcessos(container, {});

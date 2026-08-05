@@ -1,4 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
+import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -16,8 +18,6 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 const CLIENTES = [
   { id: 7, nome: '1º CGEO', tipo_cliente_id: 1 },
   { id: 8, nome: 'Prefeitura de Porto Alegre', tipo_cliente_id: 5 },
@@ -26,7 +26,7 @@ const SITUACOES = [{ code: 3, nome: 'Em andamento' }, { code: 5, nome: 'Concluí
 const CANAIS = [{ code: 1, nome: 'Ouvidoria/LAI' }];
 
 // Pedido militar. O omds preenchido reproduz a produção: os 33 pedidos civis
-// também têm este campo gravado com "1º CGEO" (medido em 2026-07-30).
+// também têm este campo gravado com "1º CGEO".
 const PEDIDO_MILITAR = {
   id: 55,
   cliente_id: 7,
@@ -73,8 +73,8 @@ async function abrirEdicao(pedido) {
 
 describe('modo do pedido na edição', () => {
   beforeEach(() => {
-    // Editar o pedido é gerente. O ADMIN passa em todos os módulos.
-    localStorage.setItem('@sca-User-Authorization', 'ADMIN');
+    // Editar o pedido é gerente na mapoteca.
+    logarComo({ mapoteca: GERENTE });
     svc.getAnexosPedido.mockResolvedValue([]);
     svc.getClientes.mockResolvedValue(CLIENTES);
     svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);

@@ -7,7 +7,7 @@
 -- ou criava meta nova (e os seis vinculos que apontam para `pit.meta` ficavam
 -- orfaos). Os dois caminhos estao errados.
 --
--- O DESENHO (chefe, 2026-08-04). Alterar o PIT e cancelar, alterar e adicionar
+-- O DESENHO. Alterar o PIT e cancelar, alterar e adicionar
 -- meta. So isso. Essas tres operacoes tem um dono unico, a DSG, e isso divide a
 -- meta em duas naturezas:
 --

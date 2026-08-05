@@ -21,9 +21,8 @@ import { criarNdTab } from './nd-tab.js';
  * trocar de aba nao refaz a consulta, e trocar o mes ou o ano invalida uma vez
  * so, para todas.
  *
- * O ano e DESTA TELA desde 2026-08-04 (chefe): comeca sempre no ano atual e nao
- * guarda nada. Antes vinha do seletor da navbar, que valia para o modulo
- * inteiro. O mes tambem e desta tela, porque so ela le a execucao por ND de
+ * O ano e DESTA TELA: comeca sempre no ano atual e nao guarda nada. O mes
+ * tambem e desta tela, porque so ela le a execucao por ND de
  * forma cumulativa.
  *
  * As abas se chamavam "PDR (3.2)" e "Extra-PDR (3.7)". A numeracao era do

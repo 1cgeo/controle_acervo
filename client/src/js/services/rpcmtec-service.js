@@ -6,15 +6,10 @@ import {
  * Servico do RPCMTec, o relatorio mensal da Divisao.
  *
  * Fica em `services/`, e nao em `modules/<algum>/services/`, porque a tela e de
- * PLATAFORMA: o relatorio cruza acervo, mapoteca e orcamento numa peca so. Ate
- * 2026-08-01 as chamadas viviam partidas entre `mapoteca-service` (a secao do
- * acervo) e `orcamento-service` (a do PDR), servindo duas telas que geravam dois
- * arquivos que alguem colava a mao.
+ * PLATAFORMA: o relatorio cruza acervo, mapoteca e orcamento numa peca so.
  *
- * DESDE 2026-08-05 o relatorio INTEIRO e preenchido e guardado no sistema, e a
- * unidade de trabalho e a EDICAO do mes, nao mais o par ano/mes solto. O DOCX
- * saiu: o que o sistema emite agora e o PDF final, e o assinado volta como
- * anexo.
+ * A unidade de trabalho e a EDICAO do mes, e nao o par ano/mes solto. O sistema
+ * emite o PDF final, e o assinado volta como anexo. Nao ha DOCX.
  */
 
 // --- A edicao mensal --------------------------------------------------------
@@ -23,8 +18,6 @@ export const listarEdicoes = (ano) =>
   apiGet(`/rpcmtec${ano ? `?ano=${ano}` : ''}`);
 
 export const getAnosEdicao = () => apiGet('/rpcmtec/anos');
-
-export const getEdicao = (id) => apiGet(`/rpcmtec/${id}`);
 
 export const criarEdicao = (body) => apiPost('/rpcmtec', body);
 
@@ -121,9 +114,9 @@ export function downloadAnuarioOds({ ano, mes }) {
  * @returns {Promise<void>}
  */
 export function downloadRtmOds({ ano, mes }) {
-  // O nome leva o mes porque o CONTEUDO depende dele desde 2026-08-02: o RTM e
-  // acumulado ate o mes escolhido. Dois arquivos de 2026 com o mesmo nome e
-  // conteudo diferente e o jeito certo de mandar o errado para a DSG.
+  // O nome leva o mes porque o CONTEUDO depende dele: o RTM e acumulado ate o
+  // mes escolhido. Dois arquivos do mesmo ano com o mesmo nome e conteudo
+  // diferente e o jeito certo de mandar o errado para a DSG.
   const nome = `META4_DETALHADA_${ano}_ate_${String(mes).padStart(2, '0')}.ods`;
   return apiDownload(`/rpcmtec/rtm/ods?ano=${ano}&mes=${mes}`, nome);
 }

@@ -5,13 +5,15 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 // `vi.hoisted` sobe junto dos `vi.mock`, entao a fabrica do dublê tem de morar
 // dentro dele: declarada fora, ela ainda nao existiria quando o mock rodasse.
 const h = vi.hoisted(() => {
-  const montadas = { lista: [], limpas: [], recarregadas: [] };
+  const montadas = { lista: [], limpas: [] };
   const dubleAba = (nome) => async (content) => {
     montadas.lista.push(nome);
     content.appendChild(document.createElement('div')).textContent = `conteudo:${nome}`;
+    // `refresh` existe porque o componente de abas o chama; nenhum caso daqui
+    // mede recarga, então ele não registra nada.
     return {
       cleanup: () => { montadas.limpas.push(nome); },
-      refresh: () => { montadas.recarregadas.push(nome); },
+      refresh: () => {},
     };
   };
   return { montadas, dubleAba };
@@ -59,7 +61,6 @@ describe('renderAdministracao', () => {
   beforeEach(() => {
     montadas.lista = [];
     montadas.limpas = [];
-    montadas.recarregadas = [];
   });
 
   test('monta o titulo e os dois grupos de aba', async () => {

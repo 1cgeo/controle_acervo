@@ -1,13 +1,14 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que estes casos FIXAM: a lista de capacitacao responde "quem", e nao so
 // "que curso". A busca tem de achar pelo NOME DO MILITAR, o filtro por pessoa
 // tem de existir, o link de fora tem de chegar filtrado, e falha de carga NAO
 // pode se ler como lista vazia.
+// A tela usa só estes dois (capacitacao/list.js:2).
 vi.mock('@utils/toast.js', () => ({
   showSuccess: vi.fn(),
   showError: vi.fn(),
-  showInfo: vi.fn(),
 }));
 
 vi.mock('@services/plataforma-service.js', async () => {
@@ -27,8 +28,6 @@ import {
 } from '@pages/capacitacao/list.js';
 import { getCapacitacoes, getUsuarios } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function montar(render, busca = '') {
   const container = document.createElement('div');
@@ -236,14 +235,28 @@ describe('capacitação: a lista responde por pessoa', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('instituições, local e plano ordenam', async () => {
-    getCapacitacoes.mockResolvedValueOnce([DO_FULANO]);
+  test('instituições, local e plano ordenam a tabela ao clicar no cabeçalho', async () => {
+    getCapacitacoes.mockResolvedValueOnce([
+      CURSO({ id: 1, nome: 'C', instituicoes: 'IME', local_realizacao: 'Santa Maria', plano_codigo: 'C25/DCT003' }),
+      CURSO({ id: 2, nome: 'A', instituicoes: 'EsIME', local_realizacao: 'Brasília', plano_codigo: 'A25/DCT001' }),
+      CURSO({ id: 3, nome: 'B', instituicoes: 'UFRGS', local_realizacao: 'Rio de Janeiro', plano_codigo: 'B25/DCT002' }),
+    ]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
-    for (const rotulo of ['Instituições', 'Local', 'Plano / Código']) {
-      expect(cabecalho(container, rotulo).className)
-        .toContain('data-table__th--sortable');
+    // As três colunas entram FORA de ordem. Sem essa variância, a comparação de
+    // baixo passaria com a tabela sem ordenar coisa nenhuma.
+    expect(celulas(container, 'Instituições')).toEqual(['IME', 'EsIME', 'UFRGS']);
+
+    const esperado = [
+      ['Instituições', ['EsIME', 'IME', 'UFRGS']],
+      ['Local', ['Brasília', 'Rio de Janeiro', 'Santa Maria']],
+      ['Plano / Código', ['A25/DCT001', 'B25/DCT002', 'C25/DCT003']],
+    ];
+    for (const [rotulo, ordenado] of esperado) {
+      cabecalho(container, rotulo).click();
+      await flush();
+      expect(celulas(container, rotulo)).toEqual(ordenado);
     }
 
     if (typeof cleanup === 'function') cleanup();

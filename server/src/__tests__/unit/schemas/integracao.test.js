@@ -52,15 +52,20 @@ describe('Schemas da integracao (rotas publicas)', () => {
   })
 
   describe('produtosFinalizadosQuery', () => {
-    // O default e o mes CORRENTE. O teste calcula o esperado uma vez e o usa nos
-    // dois campos, para nao virar duas leituras de relogio que discordam se a
-    // suite atravessar a virada do mes.
+    // O default e o mes CORRENTE, e quem o calcula e o schema, no `validate`.
+    // Sao portanto DUAS leituras de relogio: a do schema e a do teste. Na virada
+    // do mes elas discordam e o caso reprovaria sem defeito nenhum, entao o
+    // relogio fica CONGELADO num instante conhecido.
     it('sem parametro, ano e mes correntes e cumulativo ligado', () => {
-      const agora = new Date()
-      const value = aceita(integracaoSchema.produtosFinalizadosQuery.validate({}))
-      expect(value.ano).toBe(agora.getFullYear())
-      expect(value.mes).toBe(agora.getMonth() + 1)
-      expect(value.cumulativo).toBe(true)
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-15T12:00:00Z'))
+      try {
+        const value = aceita(integracaoSchema.produtosFinalizadosQuery.validate({}))
+        expect(value.ano).toBe(2026)
+        expect(value.mes).toBe(6)
+        expect(value.cumulativo).toBe(true)
+      } finally {
+        jest.useRealTimers()
+      }
     })
 
     it('aceita ano, mes e cumulativo explicitos', () => {
@@ -70,8 +75,22 @@ describe('Schemas da integracao (rotas publicas)', () => {
       expect(value).toMatchObject({ ano: 2026, mes: 6, cumulativo: false })
     })
 
-    it.each([0, 13])('recusa mes %s, fora de 1..12', (mes) => {
-      recusaPor(integracaoSchema.produtosFinalizadosQuery.validate({ mes }), 'mes')
+    // As bordas VALIDAS entram no mesmo caso: sem elas, um schema que recusasse
+    // qualquer mes passaria nos dois valores de fora.
+    it('mes vai de 1 a 12, e as bordas de fora sao recusadas pelo limite', () => {
+      expect(aceita(integracaoSchema.produtosFinalizadosQuery.validate({ mes: 1 })).mes).toBe(1)
+      expect(aceita(integracaoSchema.produtosFinalizadosQuery.validate({ mes: 12 })).mes).toBe(12)
+
+      recusaPor(
+        integracaoSchema.produtosFinalizadosQuery.validate({ mes: 0 }),
+        'mes',
+        'number.min'
+      )
+      recusaPor(
+        integracaoSchema.produtosFinalizadosQuery.validate({ mes: 13 }),
+        'mes',
+        'number.max'
+      )
     })
 
     it('aceita os filtros de dominio', () => {
@@ -83,10 +102,14 @@ describe('Schemas da integracao (rotas publicas)', () => {
 
   describe('atendimentosQuery', () => {
     it('sem parametro, mes corrente e cumulativo ligado', () => {
-      const agora = new Date()
-      const value = aceita(integracaoSchema.atendimentosQuery.validate({}))
-      expect(value.cumulativo).toBe(true)
-      expect(value.mes).toBe(agora.getMonth() + 1)
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-15T12:00:00Z'))
+      try {
+        const value = aceita(integracaoSchema.atendimentosQuery.validate({}))
+        expect(value.cumulativo).toBe(true)
+        expect(value.mes).toBe(6)
+      } finally {
+        jest.useRealTimers()
+      }
     })
 
     it('recusa chave desconhecida: e rota sem autenticacao', () => {

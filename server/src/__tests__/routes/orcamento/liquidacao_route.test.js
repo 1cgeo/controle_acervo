@@ -39,7 +39,7 @@ describe('POST /liquidacoes', () => {
     })
     mockDb.conn.one
       .mockResolvedValueOnce({ total: '100' }) // outras
-      // `RETURNING *` desde 2026-08-02, e `nota_empenho_id` esta na linha porque
+      // `RETURNING *`, e `nota_empenho_id` esta na linha porque
       // e dele que sai o agregado: a liquidacao aparece na ficha da NE, que e a
       // ficha que a pessoa abre.
       .mockResolvedValueOnce({ id: 4, nota_empenho_id: 1, valor_liquidado: '500' })

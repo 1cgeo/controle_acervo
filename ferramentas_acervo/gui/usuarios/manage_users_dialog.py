@@ -1,29 +1,19 @@
 # Path: gui\usuarios\manage_users_dialog.py
 """Gerência de usuários: quem é administrador, quem está ativo e o PERFIL POR MÓDULO.
 
-O perfil por módulo entrou no servidor em 2026-07-25 e esta tela não o
-acompanhou. O efeito não era um erro visível, era pior: o `perfis` é opcional no
-schema do PUT, então salvar sem ele passava com 200 e não mexia em nada, e a
-importação criava o usuário SEM nenhuma linha em `dgeo.usuario_perfil`. Como não
-ter linha para um módulo é o mesmo que não acessar aquele módulo, todo usuário
-importado pelo QGIS ficava sem acesso a coisa nenhuma -- e não havia nesta tela
-nem o diagnóstico nem o conserto: era preciso abrir a interface web.
+O `perfis` é OPCIONAL no schema do PUT, e omiti-lo passa com 200 sem mexer em
+nada. Por isso o corpo daqui manda o mapa SEMPRE, com nível nulo para o módulo
+sem acesso. Quem não tem linha em `dgeo.usuario_perfil` não acessa aquele
+módulo, e a falta é invisível para quem olha só Administrador e Ativo.
 
 As colunas de módulo são MONTADAS a partir de `dominio.modulo`, e não escritas
-aqui: módulo novo no servidor aparece sozinho, que é a razão de o servidor
-devolver `perfis` como mapa em vez de uma coluna por módulo.
+aqui: módulo novo no servidor aparece sozinho. É a razão de o servidor devolver
+`perfis` como mapa, em vez de uma coluna por módulo.
 
 Esta tela EDITA quem já existe: privilégio, estado e perfil por módulo. Ela não
-CRIA ninguém, e os botões "Importar Usuários" e "Sincronizar Usuários" saíram em
-2026-08-02. Eles falavam com `GET /usuarios/servico_autenticacao` e
-`PUT /usuarios/sincronizar`, que existiam enquanto `dgeo.usuario` era um espelho
-do Auth Server externo: importar era copiar de lá para cá, e sincronizar era
-buscar nome e posto atualizados. Com a autenticação dentro do SCA não há de onde
-importar nem com quem sincronizar -- o cadastro nasce aqui.
-
-Criar usuário exige definir SENHA, e por isso mora na interface web (#/usuarios)
-e no `auth_cli`, não no plugin: o QGIS não é lugar de digitar senha de terceiro,
-e o plugin não tem tela de senha nenhuma.
+CRIA ninguém. Criar usuário exige definir SENHA, e por isso mora na interface
+web (#/usuarios) e no `efetivo_cli`. O QGIS não é lugar de digitar senha de
+terceiro, e o plugin não tem tela de senha nenhuma.
 """
 import os
 
@@ -38,7 +28,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'manage_users_dialog.ui'))
 
 COLUNAS_FIXAS = ['Posto/Grad', 'Nome', 'Login', 'Administrador', 'Ativo']
-SEM_ACESSO = "— sem acesso"
+SEM_ACESSO = "(sem acesso)"
 
 
 class ManageUsersDialog(QDialog, FORM_CLASS):
@@ -135,9 +125,9 @@ class ManageUsersDialog(QDialog, FORM_CLASS):
     def avisar_sem_acesso(self):
         """Diz quantos usuários ativos não acessam módulo nenhum.
 
-        É o estado em que a importação por esta tela deixava todo mundo, e ele é
-        INVISÍVEL para quem olha só Administrador e Ativo: a pessoa aparece
-        cadastrada e ativa, e mesmo assim o login não a leva a lugar nenhum.
+        O estado é INVISÍVEL para quem olha só Administrador e Ativo: a pessoa
+        aparece cadastrada e ativa, e mesmo assim o login não a leva a lugar
+        nenhum.
         """
         orfaos = [u for u in self.users
                   if u.get('ativo') and not u.get('administrador') and not (u.get('perfis') or {})]

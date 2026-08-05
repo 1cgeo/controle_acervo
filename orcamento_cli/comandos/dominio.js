@@ -2,7 +2,7 @@
 
 // `orcamento dominio <sub> [acao]` - as tabelas de dominio, que tem forma propria
 // (<base>/<sub> e <base>/<sub>/<code>, chave por `code` e nao por id). A base sai
-// de recursos.js, nunca escrita a mao: ela mudou na fusao de 2026-07-27.
+// de recursos.js, nunca escrita a mao.
 //
 //   orcamento dominio                          lista quais dominios existem
 //   orcamento dominio natureza_despesa         lista os codigos de um dominio
@@ -11,7 +11,7 @@
 //   orcamento dominio ug deletar --code 160067 --confirmar 160067
 //
 // O GET NAO e publico: exige perfil de consulta no modulo orcamento
-// (dominio_route.js). A prosa antiga do SCO dizia "publico" e estava errada.
+// (dominio_route.js). Escrever exige administrador.
 
 const { obter } = require('../lib/recursos')
 const saida = require('../lib/saida')
@@ -100,15 +100,20 @@ async function executar (args, cfg) {
 
   if (acao === 'deletar') {
     const code = argsLib.exigir(flags, 'code', `code do item de ${sub}`)
+    // O --dry-run nao escreve, entao ele nao exige a confirmacao.
+    if (flags['dry-run']) {
+      return {
+        texto: `[dry-run] nada foi enviado. Seria: DELETE /api${recurso.caminho}/${sub}/${code}\n` +
+          `Para excluir de fato: orcamento dominio ${sub} deletar --code ${code} --confirmar ${code}`
+      }
+    }
     if (flags.confirmar !== String(code)) {
       throw new Error(
         'Exclusao e irreversivel e nao foi confirmada.\n' +
         `  orcamento dominio ${sub} deletar --code ${code} --confirmar ${code}\n` +
+        'Para so ver o que aconteceria: acrescente --dry-run.\n' +
         'Atencao: dominio costuma ser referenciado por FK; excluir um code em uso volta 400.'
       )
-    }
-    if (flags['dry-run']) {
-      return { texto: `[dry-run] DELETE /api${recurso.caminho}/${sub}/${code}` }
     }
     const r = await http.autenticada(cfg, 'DELETE', `${recurso.caminho}/${sub}/${encodeURIComponent(code)}`)
     return { texto: r.message || 'excluido' }

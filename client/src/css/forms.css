@@ -267,3 +267,33 @@
   padding: 4px 10px;
   font-size: var(--font-size-xs);
 }
+
+/* O botao que disparou uma GRAVACAO em voo (ver `setOcupado` do modal-base).
+ *
+ * Ele ja fica `disabled`, e opacidade sozinha se le como "indisponivel", que e
+ * o oposto do que esta acontecendo. O disco girando diz que a acao COMECOU e
+ * ainda nao terminou.
+ *
+ * O ROTULO NAO MUDA. Trocar "Salvar" por "Salvando..." reescreveria o nome do
+ * controle no meio do clique, e quem procura o botao pelo texto o perde.
+ * `currentColor` mantem o disco legivel nos quatro variantes do botao.
+ *
+ * A animacao `spin` e declarada em charts.css e vale para a folha inteira (o
+ * style.css importa as duas). Quem apagar aquela declaracao para este disco. */
+.btn--ocupado::after {
+  content: '';
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Quem pediu menos animacao ve o disco parado, e nao um disco ausente: a marca
+ * continua distinguindo o botao ocupado do botao apenas desabilitado. */
+@media (prefers-reduced-motion: reduce) {
+  .btn--ocupado::after {
+    animation: none;
+  }
+}

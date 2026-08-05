@@ -6,6 +6,7 @@ import { getClientes, deleteClientes } from '@modules/mapoteca/services/mapoteca
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
+import { criarAvisoDeErro } from '../aviso-carga.js';
 import { openClienteDialog } from './dialog-cliente.js';
 
 /**
@@ -34,9 +35,11 @@ export async function renderClientesList(container, _ctx) {
       if (disposed) return;
       clientesCarregados = clientes;
       table.update({ rows: clientes, loading: false });
+      aviso.ok();
     } catch (err) {
       if (disposed) return;
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      aviso.falhou(err.message || 'Erro ao carregar os clientes');
       showError(err.message || 'Erro ao carregar os clientes');
     }
   }
@@ -169,12 +172,14 @@ export async function renderClientesList(container, _ctx) {
     ],
   });
 
+  const aviso = criarAvisoDeErro(table, load);
+
   container.appendChild(el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Clientes' }),
       el('div', { className: 'page__actions' }, pode.gerente ? [deleteSelectedBtn, novoBtn] : []),
     ]),
-    table.element,
+    aviso.element,
   ]));
 
   await load();

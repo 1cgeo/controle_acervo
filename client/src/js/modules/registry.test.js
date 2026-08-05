@@ -53,11 +53,14 @@ describe('registry: o que a pessoa ve', () => {
     expect(modulosAcessiveis().map(m => m.id)).toEqual(['orcamento']);
   });
 
-  test('perfil so em modulo ainda nao portado nao abre nada', () => {
-    const esqueleto = MODULOS.find(m => !Array.isArray(m.rotas) || m.rotas.length === 0);
-    // Enquanto sobrar um esqueleto, perfil nele nao abre tela nenhuma.
-    if (!esqueleto) return;
-    logar({ perfis: { [esqueleto.id]: 3 } });
+  test('perfil em modulo sem rota registrada nao abre nada', () => {
+    // Quem manda é a rota registrada, e não a linha de perfil. Um módulo sem
+    // rota (esqueleto, ou nome que o registry não conhece) não abre tela.
+    //
+    // O caso não procura um esqueleto no MODULOS: quando não houvesse nenhum,
+    // ele saía sem asserção nenhuma e passava sem provar coisa alguma.
+    expect(MODULOS.map(m => m.id)).not.toContain('producao');
+    logar({ perfis: { producao: 3 } });
     expect(modulosAcessiveis()).toEqual([]);
     expect(primeiroModuloAcessivel()).toBeNull();
   });
@@ -69,7 +72,10 @@ describe('registry: o que a pessoa ve', () => {
 
   test('administrador global ve todos os modulos PORTADOS', () => {
     logar({ administrador: true, perfis: {} });
-    expect(modulosAcessiveis().map(m => m.id)).toEqual(modulosPortados().map(m => m.id));
+    // Lista FIXA de propósito: comparar com `modulosPortados()` seria comparar
+    // a função com ela mesma, e um módulo que sumisse dos dois lados passaria.
+    expect(modulosAcessiveis().map(m => m.id))
+      .toEqual(['acervo', 'mapoteca', 'orcamento']);
   });
 });
 
@@ -120,7 +126,7 @@ describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
     expect(podeAbrirRota('orcamento', '/dfd')).toBe(true);
   });
 
-  // CONJUNTO de perfis (`perfis`) e o modelo da MAPOTECA desde 2026-07-30: la o
+  // CONJUNTO de perfis (`perfis`) e o modelo da MAPOTECA: la o
   // operador nao e "consulta com mais poder", e um papel com duas telas proprias.
   // Com nivel minimo ele veria dashboard, clientes e pedidos, que e o que o chefe
   // recusou.

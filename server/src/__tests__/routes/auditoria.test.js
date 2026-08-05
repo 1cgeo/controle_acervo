@@ -115,6 +115,10 @@ describe('GET /api/acervo/auditoria', () => {
     const res = await auditar('?severidade=DEFECT')
 
     expect(res.status).toBe(200)
+    // A VARIANCIA vem primeiro: `[].every(...)` e verdadeiro, e `0 < N` tambem,
+    // entao um filtro que devolvesse NADA (o modo de falhar mais provavel)
+    // passaria nas duas linhas seguintes.
+    expect(res.body.dados.length).toBeGreaterThan(0)
     expect(res.body.dados.every(d => d.severidade === 'DEFECT')).toBe(true)
     expect(res.body.dados.length).toBeLessThan(INVARIANTES.length)
   })

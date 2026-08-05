@@ -19,7 +19,7 @@ describe('Schemas da mapoteca', () => {
   // -------------------------------------------------------------------------
   // Material se conta em UNIDADE
   // -------------------------------------------------------------------------
-  // Decisao do chefe em 2026-07-30: as colunas de quantidade viraram INTEGER.
+  // Decisao do chefe: as colunas de quantidade viraram INTEGER.
   // Aceitar 100,5 aqui produziria erro mais adiante, no banco, ou um
   // arredondamento silencioso -- que e pior, porque some do relatorio sem
   // avisar. Vale para o estoque e para o consumo, entao os dois entram juntos.

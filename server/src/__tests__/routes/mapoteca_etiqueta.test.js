@@ -80,9 +80,12 @@ const ler = (pedidoId, token = generateUserToken()) =>
     .get(`/api/mapoteca/pedido/${pedidoId}/etiqueta`)
     .set('Authorization', token)
 
+// O historico do pedido sai da rota de PLATAFORMA. O caminho antigo
+// `/mapoteca/pedido/:id/auditoria` servia o mesmo conteudo e foi removido por
+// ser rota orfa.
 const auditoria = async pedidoId => {
   const res = await request(app)
-    .get(`/api/mapoteca/pedido/${pedidoId}/auditoria`)
+    .get(`/api/auditoria/mapoteca/pedido/${pedidoId}`)
     .set('Authorization', generateAdminToken())
   expect(res.status).toBe(200)
   return res.body.dados.filter(l => l.tabela === 'mapoteca.etiqueta_envio')

@@ -3,14 +3,12 @@
 
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");
-const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO, CATEGORIA_MATERIAL } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
-// A rastreabilidade e do SISTEMA, e nao da mapoteca: `mapoteca/auditoria_ctrl.js`
-// existiu entre 2026-07-30 e 2026-08-02 e subiu para `../auditoria` quando o
-// rastro deixou de ser do pedido. O `modulo`, a `entidade` e o `entidade_id` de
-// cada evento saem do mapa (`../auditoria/mapa/mapoteca.js`), e nao daqui: dois
-// controllers escrevendo na mesma tabela com entidades diferentes seria
-// divergencia que nada acusa.
+// A rastreabilidade e do SISTEMA, e nao da mapoteca. O `modulo`, a `entidade` e
+// o `entidade_id` de cada evento saem do mapa (`../auditoria/mapa/mapoteca.js`),
+// e nao daqui: dois controllers escrevendo na mesma tabela com entidades
+// diferentes seria divergencia que nada acusa.
 const auditoriaCtrl = require("../auditoria/auditoria_ctrl");
 const {
   ESCALA_DISPLAY,
@@ -20,7 +18,8 @@ const {
   PRODUTO_MI,
   ITEM_E_AVULSO,
   filtroAno,
-  SITUACOES_EM_ABERTO,
+  SITUACOES_FILA_IMPRESSAO,
+  SITUACOES_FILA_ATENDIMENTO,
   JOIN_ARQUIVO_IMPRIMIVEL
 } = require("./query_fragments");
 
@@ -57,8 +56,7 @@ const PEDIDO_COLS = [
   { name: 'documento_solicitacao', def: null },
   { name: 'documento_solicitacao_nup', def: null },
   { name: 'endereco_entrega', def: null },
-  // Como o material saiu. Subiu do item para o pedido em 2026-07-30: 1 pedido
-  // em 91 tinha mais de uma forma entre os itens.
+  // Como o material saiu. É do PEDIDO, e não do item.
   { name: 'forma_entrega_id', def: null },
   'palavras_chave',
   { name: 'operacao', def: null },
@@ -89,8 +87,8 @@ const PRODUTO_PEDIDO_COLS = [
   { name: 'quantidade_fornecida', def: null },
   'tipo_midia_id',
   { name: 'tipo_midia_fornecida_id', def: null },
-  // Sem forma_entrega_id e sem data_entrega: as duas sao do PEDIDO desde
-  // 2026-07-30. O item so descreve O QUE se imprime, nunca como sai daqui.
+  // Sem `forma_entrega_id` e sem `data_entrega`: as duas sao do PEDIDO. O item
+  // so descreve O QUE se imprime, nunca como sai daqui.
   { name: 'observacao', def: null },
   // O def aqui é só rede de segurança para id inexistente: no caminho normal o
   // preserveOmitted já preencheu a chave com o valor gravado (na criação o
@@ -260,12 +258,10 @@ controller.getClienteById = async (clienteId) => {
   });
 };
 
-// `mapoteca.cliente` NAO tem coluna de escrituracao (nem usuario_criacao_id nem
-// data_criacao), e por isso as tres funcoes abaixo nao resolvem o id inteiro do
-// usuario: ele nao teria onde ser gravado. Ate 2026-08-02 elas o resolviam
-// mesmo assim, numa variavel que nunca era usada -- uma ida ao banco por
-// cadastro, sem efeito nenhum. Quem responde "quem mexeu" aqui e o evento de
-// rastreabilidade, que grava o UUID do token.
+// `mapoteca.cliente` NAO tem coluna de escrituracao (nem `usuario_criacao_id`
+// nem `data_criacao`), e por isso as tres funcoes abaixo nao resolvem o id
+// inteiro do usuario: ele nao teria onde ser gravado. Quem responde "quem mexeu"
+// aqui e o evento de rastreabilidade, que grava o UUID do token.
 controller.criaCliente = async (cliente, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
@@ -307,8 +303,8 @@ controller.atualizaCliente = async (cliente, usuarioUuid, contexto) => {
     );
 
     // A tela de cliente ainda nao conhece `sigla`. Sem isto, editar o endereco
-    // pela tela apagaria a sigla carregada, com 200 e sem aviso: e a armadilha
-    // do PUT de 2026-07-25. Ausente preserva; null explicito ainda limpa.
+    // pela tela apagaria a sigla carregada, com 200 e sem aviso. Ausente
+    // preserva; null explicito ainda limpa.
     await preserveOmitted(t, {
       schema: 'mapoteca',
       table: 'cliente',
@@ -352,7 +348,7 @@ controller.deleteClientes = async (clienteIds, usuarioUuid, contexto) => {
     );
 
     if (existingClients.length !== clienteIds.length) {
-      // BIGSERIAL retorna como string no driver — normalizar para número
+      // BIGSERIAL retorna como string no driver, normalizar para número
       const existingIds = existingClients.map(c => Number(c.id));
       const missingIds = clienteIds.filter(id => !existingIds.includes(parseInt(id)));
       throw new AppError(`Os seguintes clientes não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
@@ -393,15 +389,12 @@ controller.deleteClientes = async (clienteIds, usuarioUuid, contexto) => {
   });
 };
 
-// Funções para Pedido
 // Pedidos do ANO consultado, pela data do pedido.
 //
-// A lista era do acervo inteiro, e o ano de contexto do módulo não valia aqui
-// (decisão de 2026-07-28, revista pelo chefe no mesmo dia). O que ela custa, e
-// vale saber: um pedido de dezembro que só se conclui em janeiro deixa de
-// aparecer quando vira o ano, e é preciso trocar o ano na navbar para achá-lo.
-// Em troca, a lista para de crescer indefinidamente e passa a casar com o
-// Dashboard, que conta pedido pelo mesmo critério.
+// O que isso custa, e vale saber: um pedido de dezembro que só se conclui em
+// janeiro deixa de aparecer quando vira o ano, e é preciso trocar o ano do
+// filtro para achá-lo. Em troca, a lista para de crescer indefinidamente e casa
+// com o Dashboard, que conta pedido pelo mesmo critério.
 controller.getPedidos = async (ano) => {
   return db.conn.any(`
     SELECT p.id, p.data_pedido, p.data_atendimento,
@@ -412,17 +405,16 @@ controller.getPedidos = async (ano) => {
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
            p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
-           -- A meta e chave estrangeira desde 2026-07-31 (era o codigo digitado
-           -- a mao). O id serve a escrita; o codigo serve a tela e a planilha.
+           -- A meta e chave estrangeira, e nunca o codigo digitado a mao. O id
+           -- serve a escrita; o codigo serve a tela e a planilha.
            p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            u.nome AS usuario_criacao_nome,
            -- As duas datas do REGISTRO, distintas da data_pedido, que e a data
            -- do DIEx. A lista mostra a alteracao para quem procura o pedido
-           -- parado; sem data_atualizacao ela caia para a criacao e dizia que
-           -- todo pedido era recente. Medido em 2026-08-04: 130 dos 164 pedidos
-           -- tem data_atualizacao, com variancia real.
+           -- parado; sem data_atualizacao ela cai para a criacao e diz que
+           -- todo pedido e recente.
            p.data_criacao, p.data_atualizacao,
            (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE pedido_id = p.id) AS quantidade_produtos,
            (SELECT COUNT(*) FROM mapoteca.produto_pedido pp
@@ -442,17 +434,22 @@ controller.getPedidos = async (ano) => {
 };
 
 /**
- * A FILA de atendimento: pedidos em aberto, do mais urgente para o menos.
+ * A FILA de pedidos abertos, do mais urgente para o menos.
+ *
+ * DUAS FILAS, UMA CONSULTA. O parâmetro `incluirRemetidos` escolhe qual. Falso
+ * devolve a fila de IMPRESSÃO (o que falta imprimir), que é o que o plugin do
+ * QGIS lê. Verdadeiro devolve a fila de ATENDIMENTO (o que falta FECHAR), que
+ * acrescenta o pedido Remetido. As duas listas, e a razão de cada corte, estão
+ * em `SITUACOES_FILA_IMPRESSAO` e `SITUACOES_FILA_ATENDIMENTO`.
+ *
+ * O default é a fila de impressão porque é o contrato que o plugin já instalado
+ * espera. Quem quer o Remetido pede por `?incluir_remetidos=true`.
  *
  * NÃO filtra por ano, ao contrário da lista de pedidos. É deliberado: o pedido de
  * dezembro que ainda não foi atendido continua sendo trabalho em janeiro, e uma
- * fila que esconde o atrasado é pior que fila nenhuma. Em aberto é toda situação
- * menos Concluído, Cancelado e Aguardando produção (ver SITUACOES_EM_ABERTO).
+ * fila que esconde o atrasado é pior que fila nenhuma.
  *
- * Aguardando produção saiu da fila em 2026-07-30: o pedido espera carta que
- * ainda não existe, então quem imprime não tem o que fazer com ele.
- *
- * A ordem tem DOIS trechos (2026-08-04). Primeiro quem tem prazo, do mais
+ * A ordem tem DOIS trechos. Primeiro quem tem prazo, do mais
  * próximo ao mais distante, porque data marcada decide o dia de quem atende.
  * Depois quem NÃO tem prazo, do pedido mais ANTIGO para o mais novo, porque
  * idade é o único sinal de urgência que sobra. O `dias_para_prazo` vem calculado
@@ -461,7 +458,11 @@ controller.getPedidos = async (ano) => {
  * Traz o endereço e o contato porque a etiqueta de envio sai desta tela: sem eles
  * seria uma segunda requisição por pedido só para imprimir um endereço.
  */
-controller.getPedidosEmAberto = async () => {
+controller.getPedidosEmAberto = async ({ incluirRemetidos = false } = {}) => {
+  const situacoes = incluirRemetidos
+    ? SITUACOES_FILA_ATENDIMENTO
+    : SITUACOES_FILA_IMPRESSAO;
+
   return db.conn.any(`
     SELECT p.id, p.localizador_pedido, p.data_pedido, p.prazo,
            (p.prazo - CURRENT_DATE)::int AS dias_para_prazo,
@@ -498,7 +499,7 @@ controller.getPedidosEmAberto = async () => {
       WHERE pp.pedido_id = p.id
     ) i ON TRUE
     WHERE p.situacao_pedido_id IN ($<situacoes:csv>)
-    -- A regua da fila (2026-08-04): quem TEM prazo vem primeiro, do mais proximo
+    -- A regua da fila: quem TEM prazo vem primeiro, do mais proximo
     -- ao mais distante; depois vem quem NAO tem prazo, do mais antigo para o
     -- mais novo. A ordem antiga era so "prazo ASC NULLS LAST", e ela punha o
     -- pedido menos urgente no topo: medido na producao, dos 25 pedidos da fila
@@ -510,7 +511,7 @@ controller.getPedidosEmAberto = async () => {
              p.prazo ASC,
              p.data_pedido ASC NULLS LAST,
              p.id ASC
-  `, { situacoes: SITUACOES_EM_ABERTO });
+  `, { situacoes });
 };
 
 /**
@@ -530,9 +531,7 @@ controller.getPedidosEmAberto = async () => {
 controller.getImpressaoDoPedido = async (pedidoId) => {
   return db.conn.task(async t => {
     const pedido = await t.oneOrNone(
-      // A forma de entrega vem do PEDIDO desde 2026-07-30. Ela ficava no item, e
-      // saia repetida em cada linha da tela de impressao dizendo sempre a mesma
-      // coisa.
+      // A forma de entrega vem do PEDIDO, e não do item.
       `SELECT p.id, p.localizador_pedido, p.situacao_pedido_id,
               p.forma_entrega_id, fe.nome AS forma_entrega_nome
        FROM mapoteca.pedido p
@@ -607,9 +606,8 @@ controller.getImpressaoDoPedido = async (pedidoId) => {
  *
  * Existe porque a permissão segue o MÓDULO do trabalho, e não o do dado: quem
  * atende pedido tem operador na MAPOTECA e pode não ter perfil nenhum no acervo.
- * Pela rota do acervo (`/acervo/arquivo/:uuid/download`) ele levava 403 no meio da
- * tela feita para ele (medido em 2026-07-30, quando o operador passou a ver só as
- * duas telas dele).
+ * Pela rota do acervo (`/acervo/arquivo/:uuid/download`) ele leva 403 no meio da
+ * tela feita para ele.
  *
  * O par (pedido, arquivo) é conferido no banco: o uuid tem de ser o PDF imprimível
  * de um item daquele pedido. Sem isso, esta rota viraria um download de acervo
@@ -681,7 +679,7 @@ controller.getPedidoById = async (pedidoId) => {
              -- envio da tela de detalhe cai no segundo quando o pedido nao traz
              -- endereco nenhum.
              p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
-             -- Do PEDIDO desde 2026-07-30, e nao mais de cada item.
+             -- Do PEDIDO, e nao de cada item.
              p.forma_entrega_id, fe.nome AS forma_entrega_nome,
              p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit,
@@ -723,9 +721,9 @@ controller.getPedidoById = async (pedidoId) => {
              v.versao, v.data_edicao, v.produto_id,
              -- Os fragmentos, e nao SQL proprio: esta era a QUINTA consulta que
              -- parte do item do pedido, e a unica que escrevia a escala a mao
-             -- (te.nome). Resultado, ate 2026-08-01: a mesma carta de escala
-             -- personalizada saia "Escala personalizada" aqui e "1:30.000" no
-             -- /pedido/:id/download_impressao, e o item avulso saia com escala
+             -- (te.nome). Escrevendo a escala a mao, a mesma carta sai
+             -- "Escala personalizada" aqui e "1:30.000" no
+             -- /pedido/:id/download_impressao, e o item avulso sai com escala
              -- NULA aqui e "Sem escala" la. Duas telas do mesmo pedido nao podem
              -- escrever a mesma carta de dois jeitos.
              ${PRODUTO_NOME} AS produto_nome,
@@ -908,9 +906,8 @@ controller.getPedidoByLocalizador = async (localizador) => {
     // p.observacao_envio SAEM de proposito; p.observacao_interna NAO sai, e e
     // justamente para isso que aquela coluna existe. Coberto por teste de rota.
     //
-    // p.data_atendimento entra desde 2026-07-29: e o dia em que o material
-    // saiu, e a tela a mostra como "data de envio/entrega". Nao existe coluna
-    // de data de envio (ver a migracao 2026-07-29_pedido_observacao_interna).
+    // `p.data_atendimento` e o dia em que o material saiu, e a tela a mostra
+    // como "data de envio/entrega": nao existe coluna de data de envio.
     const pedido = await t.oneOrNone(`
       SELECT
         p.id,
@@ -924,8 +921,8 @@ controller.getPedidoByLocalizador = async (localizador) => {
         p.data_atendimento,
         p.localizador_envio,
         p.observacao_envio,
-        -- A forma de entrega e do pedido desde 2026-07-30, e sai aqui pelo nome.
-        -- O cliente ja a via, uma vez por item; agora a ve uma vez so.
+        -- A forma de entrega e do PEDIDO, e sai aqui pelo nome: uma vez so, e
+        -- nao uma vez por item.
         fe.nome AS forma_entrega_nome,
         p.motivo_cancelamento
       FROM mapoteca.pedido AS p
@@ -939,14 +936,13 @@ controller.getPedidoByLocalizador = async (localizador) => {
       throw new AppError('Pedido não encontrado', httpCode.NotFound);
     }
 
-    // Itens do pedido — apenas campos seguros para consulta pública
+    // Itens do pedido, apenas campos seguros para consulta pública
     // (o que foi pedido + observação do item; sem dados internos/usuários).
     //
     // O item AVULSO (papel quadriculado, carta de outro CGEO) sai aqui como
-    // qualquer outro, por decisão do chefe de 2026-07-30. Os LEFT JOIN já o
-    // traziam, mas com todas as colunas de identificação nulas: o cliente veria
-    // uma linha em branco com uma quantidade ao lado. Os COALESCE abaixo é que
-    // dão nome a ele.
+    // qualquer outro. Os LEFT JOIN o trazem com todas as colunas de
+    // identificação nulas, e sem os COALESCE abaixo o cliente veria uma linha em
+    // branco com uma quantidade ao lado.
     //
     // descricao_avulso É PÚBLICA: ela guarda a descrição física do impresso ("80
     // x 68 cm, quadrícula de 4 x 4 cm"), que é justamente o que o cliente precisa
@@ -1356,7 +1352,7 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
 
 /**
  * Registra sessões de impressão (uma por item, com a quantidade impressa).
- * Qualquer usuário logado pode registrar — é log operacional, não gestão de
+ * Qualquer usuário logado pode registrar. É log operacional, e não gestão de
  * catálogo. O total impresso por item é a soma dos registros.
  */
 controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
@@ -1435,12 +1431,9 @@ controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
  * E consertar QUANDO, que e transcricao, e a distincao e a mesma que separa
  * `corrigirTranscricao` de uma revisao do PIT.
  *
- * POR QUE A ROTA EXISTE. Em 2026-08-04, 1.751 das 1.753 impressoes de producao
- * guardavam a data da CARGA (tres dias de julho) e cobriam pedidos de novembro
- * de 2025 a julho de 2026. Com o consumo de papel derivado da impressao, o
- * RPCMTec de julho reportaria a impressao de sete meses. Sem esta rota, a
- * correcao exigiria apagar e recriar cada linha, o que perde o registro e o
- * rastro dele.
+ * POR QUE A ROTA EXISTE: com o consumo de papel derivado da impressao, data
+ * errada joga o gasto no mes errado do RPCMTec. Sem ela, corrigir exigiria
+ * apagar e recriar a linha, o que perde o registro e o rastro dele.
  *
  * O MOTIVO e obrigatorio e vai para o evento: mudar quando um gasto aconteceu
  * muda o numero que o relatorio reporta naquele mes.
@@ -1527,7 +1520,7 @@ controller.getImpressoesItem = async (produtoPedidoId) => {
   });
 };
 
-// Remove registros de impressão (correções — somente admin)
+// Remove registros de impressão (correções, somente admin)
 controller.deleteImpressoes = async (impressaoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // A linha inteira, mais o pedido dono: e o dados_antes da auditoria, e
@@ -1666,10 +1659,8 @@ controller.getPlotterById = async (plotterId) => {
   });
 };
 
-// Como `mapoteca.cliente`, `mapoteca.plotter` nao tem coluna de escrituracao.
-// As duas primeiras funcoes recebiam `usuarioUuid` e o IGNORAVAM por completo
-// ate 2026-08-02: nem "quem mexeu por ultimo" existia. Agora ele vai para o
-// evento de rastreabilidade, que e onde o autor cabe.
+// Como `mapoteca.cliente`, `mapoteca.plotter` nao tem coluna de escrituracao: o
+// `usuarioUuid` vai para o evento de rastreabilidade, que e onde o autor cabe.
 controller.criaPlotter = async (plotter, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const cs = new db.pgp.helpers.ColumnSet([
@@ -2041,13 +2032,13 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
-      // 3 = Outro, o mesmo default da coluna. Material sem categoria escolhida
-      // não sai em nenhuma das duas tabelas de insumo do RPCMTec.
-      { name: 'categoria_id', def: 3 },
+      // Outro, o mesmo default da coluna. Material sem categoria escolhida não
+      // sai em nenhuma das duas tabelas de insumo do RPCMTec.
+      { name: 'categoria_id', def: CATEGORIA_MATERIAL.OUTRO },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
-      // A MIDIA cuja impressao gasta este material (2026-08-04). E o que faz o
-      // consumo de papel sair da impressao em vez de ficar zerado.
+      // A MIDIA cuja impressao gasta este material. E o que faz o consumo de
+      // papel sair da impressao em vez de ficar zerado.
       { name: 'tipo_midia_id', def: null },
       { name: 'ativo', def: true }
     ]);
@@ -2095,7 +2086,7 @@ controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) =>
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
-      { name: 'categoria_id', def: 3 },
+      { name: 'categoria_id', def: CATEGORIA_MATERIAL.OUTRO },
       { name: 'estoque_minimo', def: null },
       { name: 'meta_anual', def: null },
       { name: 'tipo_midia_id', def: null },
@@ -2370,8 +2361,8 @@ controller.transferirMaterial = async (data, usuarioUuid, contexto) => {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
-    // Travar origem e destino em ordem determinística de localizacao_id —
-    // transferências opostas simultâneas (A→B e B→A) não deadlockam.
+    // Travar origem e destino em ordem determinística de localizacao_id.
+    // Transferências opostas simultâneas (A→B e B→A) não deadlockam.
     //
     // SELECT * porque estas MESMAS linhas sao o `dados_antes` dos dois eventos:
     // a transferencia escreve DUAS linhas de estoque, e cada uma tem o seu.
@@ -2500,12 +2491,10 @@ controller.getConsumoMaterial = async (filtros = null) => {
 /**
  * Consumo de material por mês, de DUAS fontes que se somam.
  *
- * O QUE MUDOU EM 2026-08-04, e por quê. Até aqui esta consulta lia só
- * `mapoteca.consumo_material`, que tem ZERO linhas em produção. O resultado é
- * que as subseções 7.2 e 7.3 do RPCMTec imprimiam "Consumo no mês = 0" nas
- * dezessete linhas, com etiqueta "Calculada", enquanto `impressao_item`
- * guardava 1.753 impressões e 6.493 exemplares. O número não estava faltando:
- * estava ERRADO, e a etiqueta convidava a acreditar nele.
+ * Lendo só `mapoteca.consumo_material`, as subseções 7.2 e 7.3 do RPCMTec saem
+ * com "Consumo no mês = 0" e etiqueta "Calculada", enquanto `impressao_item`
+ * guarda o gasto real. O número não fica faltando: fica ERRADO, e a etiqueta
+ * convida a acreditar nele.
  *
  * As duas fontes, e o que separa uma da outra:
  *
@@ -2673,7 +2662,7 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) 
     try {
       criado = await t.one(query);
     } catch (error) {
-      // Sob corrida, a pré-verificação pode passar e o trigger rejeitar — 400 amigável
+      // Sob corrida, a pré-verificação pode passar e o trigger rejeitar, 400 amigável
       if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
         throw new AppError(error.message, httpCode.BadRequest, error);
       }

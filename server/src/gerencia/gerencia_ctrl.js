@@ -1,22 +1,10 @@
 "use strict";
 const fs = require('fs').promises;
-const path = require('path');
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const crypto = require('crypto');
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
+const { domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const { auditoriaCtrl } = require("../auditoria");
-const { pipeline } = require('stream');
-const { promisify } = require('util');
-const pipelineAsync = promisify(pipeline);
-
-const {
-  DB_USER,
-  DB_PASSWORD,
-  DB_SERVER,
-  DB_PORT,
-  DB_NAME
-} = require('../config')
 
 const controller = {};
 
@@ -298,7 +286,7 @@ controller.verificarConsistencia = async (usuarioUuid, contexto) => {
           await fs.access(deletedFilePath);
           
           // Verificar se está associado a um arquivo existente
-          // (comparação por componentes — concatenar caminhos divergiria do
+          // (comparação por componentes, concatenar caminhos divergiria do
           // path.join do Node, que usa backslash no Windows)
           const existingArquivo = await db.conn.oneOrNone(`
             SELECT a.id
@@ -353,7 +341,7 @@ controller.verificarConsistencia = async (usuarioUuid, contexto) => {
     }
 
     // Verificar e atualizar arquivos classificados incorretamente como incorretos
-    // (restrito ao universo verificado acima — tileserver não é verificado,
+    // (restrito ao universo verificado acima, tileserver não é verificado,
     // então seu status não pode ser resetado aqui)
     await t.none(`
       UPDATE acervo.arquivo

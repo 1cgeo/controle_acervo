@@ -91,11 +91,15 @@ router.get(
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
 }));
 
+// As tres abaixo aceitam `total`, e o `acervo_cli` ja o oferece
+// (`recursos.js`, query: 'totalQuery'). Sem a validacao e sem o repasse ao
+// controlador, quem pedia 50 recebia 10 com 200 e sem aviso.
 router.get(
   '/ultimos_carregamentos',
   verifyPerfil('consulta'),
+  schemaValidation({ query: dashboardSchema.totalQuery }),
   asyncHandler(async (req, res, next) => {
-  const dados = await dashboardCtrl.getUltimosCarregamentos();
+  const dados = await dashboardCtrl.getUltimosCarregamentos(req.query.total);
   const msg = 'Ultimos carregamentos de arquivo retornados com sucesso'
 
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
@@ -104,8 +108,9 @@ router.get(
 router.get(
   '/ultimas_modificacoes',
   verifyPerfil('consulta'),
+  schemaValidation({ query: dashboardSchema.totalQuery }),
   asyncHandler(async (req, res, next) => {
-  const dados = await dashboardCtrl.getUltimasModificacoes();
+  const dados = await dashboardCtrl.getUltimasModificacoes(req.query.total);
   const msg = 'Ultimas modificações de arquivo retornadas com sucesso'
 
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
@@ -114,8 +119,9 @@ router.get(
 router.get(
   '/ultimos_deletes',
   verifyPerfil('consulta'),
+  schemaValidation({ query: dashboardSchema.totalQuery }),
   asyncHandler(async (req, res, next) => {
-  const dados = await dashboardCtrl.getUltimosDeletes();
+  const dados = await dashboardCtrl.getUltimosDeletes(req.query.total);
   const msg = 'Ultimos delete de arquivo retornados com sucesso'
 
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);

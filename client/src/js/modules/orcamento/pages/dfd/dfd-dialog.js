@@ -36,8 +36,8 @@ function cpfNoFormato(texto) {
 /**
  * Bloco de fatos de auditoria do registro: quando e por quem.
  *
- * O historico de alteracoes so tem linha a partir de 2026-07-30, e os DFDs
- * atuais foram gravados em 2026-06-15: para todas as pecas de hoje o historico
+ * O historico de alteracoes e mais novo que os DFDs ja gravados: para elas o
+ * historico
  * abre vazio, e a data de cadastro e a unica rastreabilidade em tela.
  *
  * @param {Object} registro - linha com as quatro colunas de auditoria
@@ -554,17 +554,28 @@ export function openDfdDialog({
           } else {
             const criado = await svc.createDfd(body);
             // Envia o anexo retido (se houver) agora que o DFD tem id.
+            //
+            // O SUCESSO SÓ SAI SE O ANEXO SUBIU. A mensagem de falha vinha
+            // primeiro e o "DFD criado com sucesso" logo depois, por cima dela:
+            // o último toast dizia sucesso, o diálogo fechava e o PDF escolhido
+            // ia junto. Quem confiasse no aviso final acharia que o anexo está
+            // no servidor.
+            let anexoFalhou = null;
             if (anexo.hasPending() && criado && criado.id != null) {
               try {
                 await anexo.flush({ dfd_id: criado.id });
               } catch (errAnexo) {
-                showError(
-                  'DFD criado, mas houve falha ao anexar o PDF: ' +
-                    (errAnexo.message || 'erro desconhecido')
-                );
+                anexoFalhou = errAnexo.message || 'erro desconhecido';
               }
             }
-            showSuccess('DFD criado com sucesso');
+            if (anexoFalhou) {
+              showError(
+                `O DFD ${body.numero} foi criado, mas o PDF NÃO foi anexado: ${
+                  anexoFalhou}. Abra o DFD em Editar e anexe o arquivo de novo.`
+              );
+            } else {
+              showSuccess('DFD criado com sucesso');
+            }
           }
           close();
           if (onSaved) onSaved();

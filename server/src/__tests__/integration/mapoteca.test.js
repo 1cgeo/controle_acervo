@@ -1,139 +1,127 @@
 'use strict'
 
-const { conn, cleanTestData } = require('../helpers/db')
+// AS REGRAS DA MAPOTECA QUE MORAM NO BANCO, e só nele.
+//
+// O que este arquivo NÃO faz: exercitar CRUD por SQL cru. `INSERT ... RETURNING
+// id` seguido de `expect(id).toBeDefined()` prova que o PostgreSQL devolve o
+// que se mandou gravar, e não que o sistema funciona. O CRUD de cliente,
+// pedido, plotter, manutenção e estoque passa por controller e tem prova em
+// `routes/mapoteca.test.js`, pelas rotas de verdade.
+//
+// O que sobra aqui é o que só o banco decide, e que nenhum teste de rota
+// alcança sem duplicar o cenário:
+//
+//   1. o gatilho que BAIXA o estoque da Seção quando entra um consumo;
+//   2. a RN01, que recusa consumo sem saldo na Seção;
+//   3. a restrição que impede apagar cliente que tem pedido.
+
+const { conn, cleanTestData, closeConnection } = require('../helpers/db')
 
 afterEach(async () => {
   await cleanTestData()
 })
 
-describe('Mapoteca Integration', () => {
-  async function createCliente () {
-    return conn.one(`
-      INSERT INTO mapoteca.cliente (nome, tipo_cliente_id)
-      VALUES ('Cliente Teste', 1) RETURNING id
-    `)
-  }
+afterAll(async () => {
+  await closeConnection()
+})
 
-  async function createPedido (clienteId) {
-    return conn.one(`
-      INSERT INTO mapoteca.pedido (data_pedido, cliente_id, situacao_pedido_id, usuario_criacao_id, usuario_atualizacao_id)
-      VALUES (NOW(), $1, 1, 1, 1) RETURNING id
-    `, [clienteId])
-  }
+const criarCliente = () =>
+  conn.one(
+    `INSERT INTO mapoteca.cliente (nome, tipo_cliente_id)
+     VALUES ('Cliente Teste', 1) RETURNING id`
+  )
 
-  describe('Clientes', () => {
-    it('should create a client', async () => {
-      const cliente = await createCliente()
-      expect(cliente.id).toBeDefined()
-    })
+const criarPedido = (clienteId) =>
+  conn.one(
+    `INSERT INTO mapoteca.pedido
+       (data_pedido, cliente_id, situacao_pedido_id, usuario_criacao_id, usuario_atualizacao_id)
+     VALUES (NOW(), $1, 1, 1, 1) RETURNING id`,
+    [clienteId]
+  )
 
-    it('should update a client', async () => {
-      const cliente = await createCliente()
-      await conn.none(`
-        UPDATE mapoteca.cliente SET nome = 'Atualizado' WHERE id = $1
-      `, [cliente.id])
+const criarMaterial = (nome) =>
+  conn.one(
+    'INSERT INTO mapoteca.tipo_material (nome) VALUES ($1) RETURNING id',
+    [nome]
+  )
 
-      const found = await conn.one('SELECT nome FROM mapoteca.cliente WHERE id = $1', [cliente.id])
-      expect(found.nome).toBe('Atualizado')
-    })
+const semearEstoqueNaSecao = (materialId, quantidade) =>
+  conn.none(
+    `INSERT INTO mapoteca.estoque_material
+       (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
+     VALUES ($1, $2, 1, 1, 1)`,
+    [materialId, quantidade]
+  )
 
-    it('should delete a client without orders', async () => {
-      const cliente = await createCliente()
-      await conn.none('DELETE FROM mapoteca.cliente WHERE id = $1', [cliente.id])
+const consumir = (materialId, quantidade) =>
+  conn.one(
+    `INSERT INTO mapoteca.consumo_material
+       (tipo_material_id, quantidade, data_consumo, usuario_criacao_id, usuario_atualizacao_id)
+     VALUES ($1, $2, NOW(), 1, 1) RETURNING id`,
+    [materialId, quantidade]
+  )
 
-      const count = await conn.one('SELECT COUNT(*)::int as count FROM mapoteca.cliente WHERE id = $1', [cliente.id])
-      expect(count.count).toBe(0)
-    })
+const saldoNaSecao = async (materialId) => {
+  const linha = await conn.one(
+    `SELECT quantidade FROM mapoteca.estoque_material
+      WHERE tipo_material_id = $1 AND localizacao_id = 1`,
+    [materialId]
+  )
+  return Number(linha.quantidade)
+}
+
+describe('O gatilho de consumo de material', () => {
+  it('baixa do estoque da Seção exatamente o que foi consumido', async () => {
+    const tinta = await criarMaterial('Tinta')
+    await semearEstoqueNaSecao(tinta.id, 50)
+
+    // O SALDO ANTES entra na prova: sem ele, um gatilho que ZERASSE a linha
+    // também deixaria o caso verde, porque 40 seria só o número esperado sem
+    // relação com o que havia.
+    expect(await saldoNaSecao(tinta.id)).toBe(50)
+
+    await consumir(tinta.id, 10)
+
+    expect(await saldoNaSecao(tinta.id)).toBe(40)
   })
 
-  describe('Pedidos', () => {
-    it('should create an order linked to a client', async () => {
-      const cliente = await createCliente()
-      const pedido = await createPedido(cliente.id)
-      expect(pedido.id).toBeDefined()
-    })
+  // RN01: consumo só sai da Seção, e o material tem de ter sido transferido
+  // para lá antes. Sem esta recusa, o estoque ficaria negativo em silêncio.
+  it('recusa o consumo sem saldo na Seção, com a mensagem da regra', async () => {
+    const tinta = await criarMaterial('Tinta sem estoque')
 
-    it('should prevent deleting a client with orders', async () => {
-      const cliente = await createCliente()
-      await createPedido(cliente.id)
+    await expect(consumir(tinta.id, 10)).rejects.toThrow(/Não há estoque na Seção/)
+  })
+})
 
-      await expect(
-        conn.none('DELETE FROM mapoteca.cliente WHERE id = $1', [cliente.id])
-      ).rejects.toThrow()
-    })
+describe('A restrição entre cliente e pedido', () => {
+  it('impede apagar o cliente que tem pedido', async () => {
+    const cliente = await criarCliente()
+    await criarPedido(cliente.id)
+
+    // A MENSAGEM entra na asserção: `rejects.toThrow()` nu aceitaria qualquer
+    // erro, inclusive um de sintaxe no SQL do próprio caso.
+    await expect(
+      conn.none('DELETE FROM mapoteca.cliente WHERE id = $1', [cliente.id])
+    ).rejects.toThrow(/pedido/)
+
+    // E o cliente continua lá: recusar sem apagar é o contrato inteiro.
+    const { total } = await conn.one(
+      'SELECT COUNT(*)::int AS total FROM mapoteca.cliente WHERE id = $1',
+      [cliente.id]
+    )
+    expect(total).toBe(1)
   })
 
-  describe('Plotters', () => {
-    it('should create a plotter', async () => {
-      const plotter = await conn.one(`
-        INSERT INTO mapoteca.plotter (nr_serie, modelo)
-        VALUES ('SN-001', 'HP DesignJet') RETURNING id
-      `)
-      expect(plotter.id).toBeDefined()
-    })
+  it('deixa apagar o cliente que não tem pedido', async () => {
+    const cliente = await criarCliente()
 
-    it('should create plotter maintenance record', async () => {
-      const plotter = await conn.one(`
-        INSERT INTO mapoteca.plotter (nr_serie, modelo)
-        VALUES ('SN-002', 'Canon') RETURNING id
-      `)
+    await conn.none('DELETE FROM mapoteca.cliente WHERE id = $1', [cliente.id])
 
-      const manutencao = await conn.one(`
-        INSERT INTO mapoteca.manutencao_plotter (plotter_id, data_manutencao, valor, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES ($1, NOW(), 500.00, 1, 1) RETURNING id
-      `, [plotter.id])
-      expect(manutencao.id).toBeDefined()
-    })
-  })
-
-  describe('Material stock', () => {
-    it('should create material type and stock', async () => {
-      const tipo = await conn.one(`
-        INSERT INTO mapoteca.tipo_material (nome, descricao)
-        VALUES ('Papel A0', 'Papel para plotagem A0') RETURNING id
-      `)
-
-      const estoque = await conn.one(`
-        INSERT INTO mapoteca.estoque_material (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES ($1, 100, 1, 1, 1) RETURNING id
-      `, [tipo.id])
-      expect(estoque.id).toBeDefined()
-    })
-
-    it('should track material consumption', async () => {
-      const tipo = await conn.one(`
-        INSERT INTO mapoteca.tipo_material (nome) VALUES ('Tinta') RETURNING id
-      `)
-
-      // RN01: consumo exige estoque na Seção (localizacao_id = 1)
-      await conn.none(`
-        INSERT INTO mapoteca.estoque_material (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES ($1, 50, 1, 1, 1)
-      `, [tipo.id])
-
-      const consumo = await conn.one(`
-        INSERT INTO mapoteca.consumo_material (tipo_material_id, quantidade, data_consumo, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES ($1, 10, NOW(), 1, 1) RETURNING id
-      `, [tipo.id])
-      expect(consumo.id).toBeDefined()
-
-      // O trigger decrementa o estoque da Seção automaticamente
-      const estoque = await conn.one(`
-        SELECT quantidade FROM mapoteca.estoque_material
-        WHERE tipo_material_id = $1 AND localizacao_id = 1
-      `, [tipo.id])
-      expect(parseFloat(estoque.quantidade)).toBe(40)
-    })
-
-    it('should reject consumption without stock in Seção (RN01)', async () => {
-      const tipo = await conn.one(`
-        INSERT INTO mapoteca.tipo_material (nome) VALUES ('Tinta sem estoque') RETURNING id
-      `)
-
-      await expect(conn.one(`
-        INSERT INTO mapoteca.consumo_material (tipo_material_id, quantidade, data_consumo, usuario_criacao_id, usuario_atualizacao_id)
-        VALUES ($1, 10, NOW(), 1, 1) RETURNING id
-      `, [tipo.id])).rejects.toThrow(/Não há estoque na Seção/)
-    })
+    const { total } = await conn.one(
+      'SELECT COUNT(*)::int AS total FROM mapoteca.cliente WHERE id = $1',
+      [cliente.id]
+    )
+    expect(total).toBe(0)
   })
 })

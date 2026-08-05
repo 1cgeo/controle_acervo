@@ -399,17 +399,29 @@ export async function openNotaCreditoDialog({
             } else {
               const criada = await createNotaCredito(body);
               // Envia o anexo retido (se houver) agora que a NC tem id.
+              //
+              // O SUCESSO SÓ SAI SE O ANEXO SUBIU. A mensagem de falha vinha
+              // primeiro e o "Nota de crédito criada com sucesso" logo depois,
+              // por cima dela: o último toast dizia sucesso, o diálogo fechava e
+              // o PDF escolhido ia junto. O extrato do SIAFI é a prova do
+              // crédito, e quem confiasse no aviso final não voltaria para
+              // anexá-lo.
+              let anexoFalhou = null;
               if (anexo.hasPending() && criada && criada.id != null) {
                 try {
                   await anexo.flush({ nota_credito_id: criada.id });
                 } catch (errAnexo) {
-                  showError(
-                    'NC criada, mas houve falha ao anexar o PDF: ' +
-                      (errAnexo.message || 'erro desconhecido')
-                  );
+                  anexoFalhou = errAnexo.message || 'erro desconhecido';
                 }
               }
-              showSuccess('Nota de crédito criada com sucesso');
+              if (anexoFalhou) {
+                showError(
+                  `A NC ${numero} foi criada, mas o PDF do SIAFI NÃO foi anexado: ${
+                    anexoFalhou}. Abra a NC em Editar e anexe o arquivo de novo.`
+                );
+              } else {
+                showSuccess('Nota de crédito criada com sucesso');
+              }
             }
             close();
             if (onSaved) onSaved();

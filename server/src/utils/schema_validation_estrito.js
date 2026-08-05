@@ -4,11 +4,8 @@
 // declarado mais parecido. O irmao schema_validation.js DESCARTA a chave e so
 // avisa no envelope.
 //
-// Nasceu dentro de src/orcamento/utils/ na fusao de 2026-07-27, e mudou para ca
-// em 2026-07-31: nada nele e do orcamento, e a rota /metas, que saiu daquele
-// modulo, precisava do mesmo contrato sem que a plataforma passasse a depender
-// de um modulo. As rotas do orcamento continuam recebendo este arquivo, agora
-// reexportado por src/orcamento/utils/index.js.
+// Mora aqui, e nao no orcamento, porque nada nele e do orcamento: as rotas do
+// modulo o recebem reexportado por src/orcamento/utils/index.js.
 
 const AppError = require('./app_error')
 const httpCode = require('./http_code')
@@ -149,7 +146,8 @@ const chavesDescartadas = (original, validado, prefixo = '') => {
   return encontradas
 }
 
-const middleware = ({
+// NOME PRÓPRIO, e não `middleware`: ver a nota gêmea em `schema_validation.js`.
+const schemaValidationEstrito = ({
   body: bodySchema,
   query: querySchema,
   params: paramsSchema
@@ -205,4 +203,4 @@ const middleware = ({
   }
 }
 
-module.exports = middleware
+module.exports = schemaValidationEstrito

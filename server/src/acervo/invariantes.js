@@ -93,14 +93,10 @@ const INVARIANTES = [
     codigo: '1h',
     severidade: 'DEFECT',
     titulo: 'MI preenchido com INOM',
-    // Achado em 2026-07-30, ao atualizar o site de produtos: 29 produtos tinham
-    // no `mi` uma COPIA literal do `inom` (`mi` = `inom`, string por string).
-    // O 1g nao pega, porque os dois campos estao preenchidos.
-    //
-    // Nenhum invariante que compare produto com produto pega, tampouco: cada um
-    // desses 29 e o UNICO produto da sua folha, entao nao ha vizinho com o MI
-    // certo para divergir. Foi preciso uma grade externa para achar. Este teste
-    // e de FORMA, e por isso independe de vizinho.
+    // Produto com o `mi` guardando uma COPIA literal do `inom`. O 1g nao pega,
+    // porque os dois campos estao preenchidos, e nenhum invariante que compare
+    // produto com produto pega tampouco: o infrator costuma ser o UNICO produto
+    // da folha, sem vizinho com quem divergir. Este teste e de FORMA.
     //
     // Custa caro em duas frentes: a folha aparece duas vezes no mapa de
     // cobertura (uma na celula da grade, outra como celula solta), e o nome
@@ -201,12 +197,10 @@ const INVARIANTES = [
     codigo: '3c',
     severidade: 'DEFECT',
     titulo: 'data_edicao < data_criacao',
-    // Hoje o banco JÁ impede: acervo.versao nasce com CHECK (data_edicao >=
+    // O banco JÁ impede: `acervo.versao` nasce com CHECK (data_edicao >=
     // data_criacao) no er/acervo.sql. Este invariante nunca dispara, e fica de
     // propósito: ele é a rede que sobra se a constraint cair numa migração
-    // futura, e custa uma consulta trivial. Descoberto em 2026-07-25, ao trazer
-    // os invariantes do vault para cá: no script antigo ninguém sabia que ele
-    // era redundante, porque nunca houve um teste que tentasse violá-lo.
+    // futura, e custa uma consulta trivial.
     sql: 'select id,versao,data_criacao,data_edicao from acervo.versao where data_edicao<data_criacao'
   },
   {
@@ -227,9 +221,8 @@ const INVARIANTES = [
     codigo: '3f',
     severidade: 'DEFECT',
     titulo: 'colisao: 2+ versoes REGULARES com mesmo rotulo E mesmo subtipo no produto',
-    // O subtipo entra no GROUP BY porque entrou na IDENTIDADE em 2026-07-06
-    // (migration 2026-07-06_produto_subtipo_identidade.sql). A restricao do banco
-    // e unique_version_per_product sobre (produto_id, versao, subtipo_produto_id):
+    // O subtipo entra no GROUP BY porque entra na IDENTIDADE. A restricao do
+    // banco e unique_version_per_product sobre (produto_id, versao, subtipo_produto_id):
     // a Carta Ortoimagem (3) e a Ortoimagem Especial (27) da mesma folha podem
     // ambas ser "1ª Edição" porque sao produtos distintos dentro do mesmo registro.
     // Sem o subtipo aqui, o invariante afirmava uma unicidade que o banco nao exige
@@ -264,15 +257,14 @@ const INVARIANTES = [
   // séries de edição dentro do mesmo registro, e compará-las entre si acusaria
   // erro onde há só duas numerações independentes.
   //
-  // Particiona também pela FAMÍLIA do rótulo, pela MESMA razão, e essa faltava.
-  // "Nª Edição" é o ordinal histórico e "N-SIGLA" é o contador próprio do órgão,
-  // que a produção moderna adotou justamente por NÃO continuar a sequência antiga
-  // (ver a wiki [[controle-acervo]] e a rota renumerar-versoes, que já recebe a
-  // familia como parâmetro). Comparar o 2 de "2ª Edição" com o 1 de "1-DSG" é erro
-  // de categoria: o vetor 1-DSG de 2025 é geração NOVA, e não uma primeira edição
-  // que deveria anteceder a segunda de 1980. Medido em 2026-08-04 contra produção:
-  // o invariante acusava 22 linhas, TODAS cruzando família e nenhuma dentro dela.
-  // Zero de sinal e 22 de ruído num check cuja regra é dar zero.
+  // Particiona também pela FAMÍLIA do rótulo, pela MESMA razão. "Nª Edição" é o
+  // ordinal histórico e "N-SIGLA" é o contador próprio do órgão, que a produção
+  // moderna adotou justamente por NÃO continuar a sequência antiga (ver a rota
+  // renumerar-versoes, que já recebe a família como parâmetro). Comparar o 2 de
+  // "2ª Edição" com o 1 de "1-DSG" é erro de categoria: o vetor 1-DSG é geração
+  // NOVA, e não uma primeira edição que deveria anteceder a segunda de 1980.
+  // Sem a partição, o invariante só acusa cruzamento de família: zero de sinal
+  // num check cuja regra é dar zero.
   //
   // Compara por DIA de calendário, e não por instante, pela mesma razão que o 5i:
   // data de versão é dia, e duas edições cadastradas no mesmo dia em horas
@@ -342,12 +334,9 @@ const INVARIANTES = [
   //
   // O TILESERVER (tipo_arquivo_id = 9) fica de fora de 4a, 4f e 4g. Ele não é
   // byte no volume, é URL: `er/acervo.sql` EXIGE dele `checksum`, `tamanho_mb` e
-  // `volume_armazenamento_id` nulos, por CHECK. Sem o filtro, os três acusavam
+  // `volume_armazenamento_id` nulos, por CHECK. Sem o filtro, os três acusam
   // DEFECT em todo tileserver do acervo -- um DEFECT que não pode zerar, porque
-  // zerá-lo violaria o schema. Achado em 2026-08-02, ao levar a auditoria para a
-  // web. O 7a e o 7b já traziam o mesmo `<> 9` desde que nasceram; estes três
-  // vieram do script do vault sem ele, e nada acusava porque ninguém tinha uma
-  // tela onde a contagem ficasse na cara.
+  // zerá-lo violaria o schema. O 7a e o 7b trazem o mesmo `<> 9`.
   {
     codigo: '4a',
     severidade: 'DEFECT',
@@ -401,10 +390,10 @@ const INVARIANTES = [
   // com um só dos dois é entrega pela metade. O 4d não pega: ele confere se a
   // extensão do PRINCIPAL está no conjunto aceito, e um PDF sozinho passa nele.
   //
-  // Nasce REVISAR e não DEFECT de propósito (decisão de 2026-08-02): ninguém
-  // mediu ainda quantas folhas do acervo legado têm só um dos dois, e DEFECT que
-  // não zera envenena a auditoria inteira (ver a nota do 3f). Promover a DEFECT
-  // é commit próprio, depois de rodar contra produção.
+  // É REVISAR e não DEFECT de propósito: ninguém mediu ainda quantas folhas do
+  // acervo legado têm só um dos dois, e DEFECT que não zera envenena a auditoria
+  // inteira (ver a nota do 3f). Promover a DEFECT é commit próprio, depois de
+  // rodar contra produção.
   //
   // Só entra `tipo_arquivo_id` 1 (principal) e 2 (formato alternativo), que é
   // onde a entrega vive: um PDF que fosse Documentos(6) ou Insumo(3) contaria
@@ -508,8 +497,7 @@ const INVARIANTES = [
      where r.versao_id_1 is null`
   },
   // Mesma edição com data ou rótulo divergente entre carta e vetor. Não é erro
-  // de ligação, é desalinhamento a corrigir: a carta manda, o vetor segue
-  // (decisão do chefe, 2026-07-04).
+  // de ligação, é desalinhamento a corrigir: a carta manda, o vetor segue.
   {
     codigo: '5i',
     severidade: 'REVISAR',
@@ -546,18 +534,16 @@ const INVARIANTES = [
   // O nome fisico e DERIVADO (tipo, subtipo, MI/INOM, escala, edicao). Derivado
   // envelhece: renumerar uma edicao ou corrigir um subtipo muda o nome esperado e
   // NAO mexe no arquivo. Sem estes tres, a divergencia so apareceria no dia em que
-  // alguem fosse baixar. A regra vive em acervo.nome_arquivo_padrao (migration
-  // 2026-07-29_nome_arquivo_padrao.sql), a MESMA que a rota de renome usa: auditor
-  // e escritor nao podem divergir porque sao a mesma funcao.
+  // alguem fosse baixar. A regra vive em `acervo.nome_arquivo_padrao`, a MESMA
+  // que a rota de renome usa: auditor e escritor sao a mesma funcao.
   {
     codigo: '7a',
     severidade: 'DEFECT',
-    // Volume com layout_origem fica de FORA. Ele guarda a entrega no layout do
-    // fornecedor por decisao (Convenio RS, 2026-07-31), e o nome fisico ali e o
-    // caminho relativo de origem. Sem o filtro este invariante acusaria milhares
-    // de DEFECT permanentes, e DEFECT que nunca zera apaga o valor de sinal do
-    // auditor. O renomear-padrao aplica o MESMO filtro: auditor e escritor nao
-    // podem divergir. Ver migrations/2026-07-31_volume_layout_origem.sql.
+    // Volume com `layout_origem` fica de FORA. Ele guarda a entrega no layout do
+    // fornecedor por decisao, e o nome fisico ali e o caminho relativo de
+    // origem. Sem o filtro este invariante acusaria milhares de DEFECT
+    // permanentes, e DEFECT que nunca zera apaga o valor de sinal do auditor. O
+    // renomear-padrao aplica o MESMO filtro.
     titulo: 'nome fisico divergente do padrao derivado dos metadados',
     sql: `select a.id,a.nome_arquivo,a.extensao,
             acervo.nome_arquivo_padrao(p.tipo_produto_id,v.subtipo_produto_id,p.mi,p.inom,

@@ -1,6 +1,7 @@
 'use strict'
 
 const { db } = require('../../database')
+const { preserveOmitted } = require('../utils')
 
 const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
 
@@ -18,22 +19,24 @@ const TABELAS_ANO = [
   'orcamento.nota_empenho',
   'orcamento.licitacao',
   'orcamento.rpnp',
-  'orcamento.relatorio_rpcmtec'
+  // `rpcmtec.edicao` e a antiga `orcamento.relatorio_rpcmtec`, renomeada e
+  // movida de schema pela migracao 2026-08-01. O nome velho ficou aqui e a
+  // consulta passou a falhar inteira: um `SELECT` de tabela inexistente derruba
+  // a UNION, e o seletor de ano de todas as telas do orcamento levava 500.
+  'rpcmtec.edicao'
 ]
 
 // Configuracao geral (linha unica id=1).
 //
-// O `ano_referencia` SAIU em 2026-08-04 (chefe). Ele era o ano padrao de todas
-// as telas do modulo, e cada tela agora tem o seu filtro, sempre no ano atual.
-// A COLUNA continua no banco, e o DROP vai em migracao propria: o codigo apenas
-// parou de ler e de gravar. Nao confundir com
+// SEM `ano_referencia`: nao ha ano padrao do modulo, e cada tela tem o proprio
+// filtro, sempre no ano atual. A coluna segue no banco, orfa, e o DROP vai em
+// migracao propria. Nao confundir com
 // `orcamento.recebimento_material.ano_referencia`, que diz em que RPCMTec o
 // material consta e permanece em uso.
 //
-// O NOME de quem alterou vem junto desde 2026-08-04. A rota ja devolvia
-// `usuario_modificacao_uuid`, e UUID cru nao serve a ninguem: a tela precisa
-// dizer "Alterado em DD/MM/AAAA por Fulano". LEFT JOIN porque a linha nasce no
-// DDL sem autor, e porque a pessoa pode ter sido apagada depois.
+// O NOME de quem alterou vem junto do uuid, porque a tela precisa dizer
+// "Alterado em DD/MM/AAAA por Fulano". LEFT JOIN porque a linha nasce no DDL sem
+// autor, e porque a pessoa pode ter sido apagada depois.
 controller.get = async () => {
   return db.conn.one(
     `SELECT c.id, c.uasg, c.codom,
@@ -47,10 +50,17 @@ controller.get = async () => {
 
 // Singleton (`CHECK (id = 1)`): a linha nasce no DDL e aqui so ha UPDATE.
 //
-// GANHOU TRANSACAO em 2026-08-02, com a rastreabilidade. A linha do rastro tem
-// de cair JUNTO com a mudanca que ela descreve, ou nao cair: com conexao
-// propria, um erro depois do UPDATE deixaria para tras o registro de uma
-// alteracao que nao aconteceu.
+// A TRANSACAO e obrigatoria: a linha do rastro tem de cair JUNTO com a mudanca
+// que ela descreve, ou nao cair.
+//
+// CHAVE AUSENTE PRESERVA, e `null` explicito limpa. E a semantica de PUT de toda
+// a casa (`utils/preserve_omitted.js`), e aqui ela faltava: o `!= null` antigo
+// nao distinguia "nao mandei o campo" de "mandei nulo", e os dois viravam NULL.
+// Quem enviasse so `{uasg}` apagava o `codom` gravado, com 200 e sem aviso.
+//
+// A conta e no lugar CERTO: o formulario de hoje tem dois campos e manda os
+// dois juntos, entao a troca nao muda nada agora. Ela existe para o dia em que
+// um terceiro campo entrar na tabela, ou em que um CLI mandar so um campo.
 controller.atualizar = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
@@ -60,6 +70,18 @@ controller.atualizar = async (dados, usuarioUuid, contexto) => {
       'Configuração'
     )
 
+    // Le da MESMA transacao o valor gravado de quem o corpo omitiu, e o escreve
+    // em `dados` antes do UPDATE. Nao ha `.default()` nos dois campos do
+    // `configuracao_schema`, que e o pre-requisito da funcao.
+    const corpo = { ...dados }
+    await preserveOmitted(t, {
+      schema: 'orcamento',
+      table: 'configuracao',
+      id: 1,
+      fields: ['uasg', 'codom'],
+      body: corpo
+    })
+
     const depois = await t.one(
       `UPDATE orcamento.configuracao SET
          uasg = $<uasg>, codom = $<codom>,
@@ -67,8 +89,8 @@ controller.atualizar = async (dados, usuarioUuid, contexto) => {
        WHERE id = 1
        RETURNING *`,
       {
-        uasg: dados.uasg != null ? dados.uasg : null,
-        codom: dados.codom != null ? dados.codom : null,
+        uasg: corpo.uasg != null ? corpo.uasg : null,
+        codom: corpo.codom != null ? corpo.codom : null,
         dataModificacao: new Date(),
         usuarioUuid
       }

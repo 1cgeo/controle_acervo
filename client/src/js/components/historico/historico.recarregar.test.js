@@ -2,9 +2,6 @@
 // fichas chamam `recarregar()` no `onSaved`. Se cada chamada refizesse a tabela,
 // a pessoa perderia a ordenacao e a pagina em que estava, e a secao mudaria de
 // altura debaixo do cursor. Este arquivo prova que a tabela SOBREVIVE.
-//
-// Nasceu em 2026-08-04, quando tres agentes independentes apontaram o mesmo
-// ponto ao consertar o re-render das telas que consomem este componente.
 
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
@@ -130,13 +127,12 @@ describe('criarHistorico: recarregar nao remonta a tabela', () => {
   });
 });
 
-// O HISTORICO VAZIO NAO PODE DIZER "NADA MUDOU" (2026-08-04).
+// O HISTORICO VAZIO NAO PODE DIZER "NADA MUDOU".
 //
-// O registro unificado de alteracoes so passou a existir em 2026-07-30, e o
-// acervo e muito mais velho: 92,8% das versoes e 91,0% dos produtos foram
-// cadastrados antes do corte (medido no banco de producao em 2026-08-04). A
-// frase "Nenhuma alteracao registrada", sozinha, aparecia em mais de nove de
-// cada dez fichas e se lia como "este registro nunca mudou".
+// O registro unificado de alteracoes e muito mais novo que o acervo: mais de
+// nove em cada dez versoes e produtos foram cadastrados antes do corte. A frase
+// "Nenhuma alteracao registrada", sozinha, se le como "este registro nunca
+// mudou".
 describe('historico sem eventos', () => {
   test('a mensagem de vazio diz quando o registro comecou', async () => {
     getHistorico.mockImplementation(() => Promise.resolve([]));

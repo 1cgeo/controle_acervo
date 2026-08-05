@@ -1,7 +1,7 @@
 'use strict'
 
 // O bug que estes testes guardam derrubou TODO download pelo navegador quando o
-// servidor subiu em Linux (chefe, 2026-07-30): o volume esta gravado como UNC do
+// servidor subiu em Linux: o volume esta gravado como UNC do
 // Windows e o `path.join` do POSIX trata `\\host\share` como nome de arquivo.
 // Nao dava erro no deploy nem no log de subida; dava 404 em cada arquivo.
 //

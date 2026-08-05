@@ -78,8 +78,8 @@ test('reconhece guid, pattern e array com minimo', () => {
   const item = Object.fromEntries(
     esquema.camposDe(models.produtoPedido).map(c => [c.nome, c])
   )
-  // Anulavel desde 2026-07-30: o item aponta o acervo OU um produto avulso, e
-  // quem garante o "exatamente um" e o .xor() do schema, nao o required.
+  // Os dois sao anulaveis: o item aponta o acervo OU um produto avulso, e quem
+  // garante o "exatamente um" e o .xor() do schema, nao o required.
   assert.strictEqual(item.uuid_versao.tipo, 'uuid |null')
   assert.strictEqual(item.nome_avulso.tipo, "string(<=255) |null|''")
 
@@ -122,8 +122,12 @@ test('soData recorta o timestamp ISO que o servidor devolve', () => {
 test('deriva os filtros de listagem do proprio schema de query', () => {
   const filtros = esquema.filtrosDe(obter('consumo').schema()).map(f => f.nome)
   assert.deepStrictEqual(filtros.sort(), ['data_fim', 'data_inicio', 'tipo_material_id'])
-  // Pedido nao tem filtro no servidor: dizer "nenhum" e melhor que inventar um.
-  assert.deepStrictEqual(esquema.filtrosDe(obter('pedido').schema()), [])
+  // A listagem de pedidos e de UM ano so, e o servidor cai no ano corrente
+  // quando a query nao traz `ano`. Sem declarar o filtro, o --ano do agente
+  // virava aviso de "filtro ignorado" e a resposta vinha do ano errado.
+  assert.deepStrictEqual(
+    esquema.filtrosDe(obter('pedido').schema()).map(f => f.nome), ['ano']
+  )
 })
 
 test('validarCorpo recusa corpo incompleto sem tocar a rede', () => {

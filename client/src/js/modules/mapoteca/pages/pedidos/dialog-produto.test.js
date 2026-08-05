@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Dialogo de item do pedido: busca no catalogo do ACERVO (RN08) e campos do
 // produto_pedido. Os dois services sao mockados; nada sai para a rede.
@@ -14,8 +15,6 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 import { openProdutoPedidoDialog } from '@modules/mapoteca/pages/pedidos/dialog-produto.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import * as acervo from '@modules/mapoteca/services/acervo-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
   svc.getDominioTipoMidia.mockResolvedValue([{ code: 1, nome: 'Papel' }]);
@@ -82,23 +81,40 @@ describe('openProdutoPedidoDialog', () => {
     expect(document.body.textContent).toContain('Selecione o produto e a versão no catálogo do acervo');
   });
 
-  test('modo edicao pre-seleciona o produto e busca as outras versoes', async () => {
+  test('modo edicao pre-seleciona o produto e devolve o item no Salvar', async () => {
     acervo.getProdutoDetalhado.mockResolvedValue({
       id: 42, nome: 'Porto Alegre', mi: '2987-2', inom: 'SH-22', escala: '1:25.000',
       versoes: [{ uuid_versao: 'u1', versao: '1', versao_data_edicao: '2025-01-10' }],
     });
+    const onSubmit = vi.fn();
 
     await openProdutoPedidoDialog({
       item: {
         produto_id: 42, produto_nome: 'Porto Alegre', mi: '2987-2', inom: 'SH-22',
         escala: '1:25.000', uuid_versao: 'u1', versao: '1', quantidade: 5, tipo_midia_id: 1,
       },
-      onSubmit: vi.fn(),
+      onSubmit,
     });
     await flush();
 
     expect(acervo.getProdutoDetalhado).toHaveBeenCalledWith(42);
     expect(document.body.textContent).toContain('Produto selecionado');
     expect(document.body.textContent).toContain('Porto Alegre');
+
+    // Em edição o botão se chama Salvar (dialog-produto.js:485). A pré-seleção
+    // só vale se ela CHEGA ao pedido: sem apertar o botão, o caso provaria a
+    // pintura da tela e nada do que ela devolve.
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Salvar').click();
+    await flush();
+
+    // O diálogo devolve os dois lados: `payload` é o que vai ao servidor, e
+    // `display` é o que a tabela do pedido escreve sem ir buscar de novo.
+    const [devolvido] = onSubmit.mock.calls[0];
+    // No payload o item se identifica pela VERSÃO, e não pelo produto.
+    expect(devolvido.payload).toMatchObject({ uuid_versao: 'u1', quantidade: 5 });
+    expect(devolvido.payload.produto_id).toBeUndefined();
+    expect(devolvido.display).toMatchObject({
+      produto_id: 42, produto_nome: 'Porto Alegre', versao: '1',
+    });
   });
 });

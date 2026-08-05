@@ -1,6 +1,7 @@
 'use strict'
 
 const logger = require('./logger')
+const httpCode = require('./http_code')
 const { VERSION } = require('../config')
 
 const truncate = dados => {
@@ -31,13 +32,19 @@ const sendJsonAndLogMiddleware = (req, res, next) => {
       error
     })
 
-    const userMessage = status === 500 ? 'Erro no servidor' : message
+    // O 500 esconde a causa DO CLIENTE, e o campo `error` tem de acompanhar a
+    // mensagem. Sem isto a máscara não valia nada: o `errorHandler` entrega aqui
+    // o erro já serializado, e a frase crua do PostgreSQL (nome de tabela, texto
+    // da consulta) saía no envelope ao lado de "Erro no servidor". O trace
+    // inteiro continua indo para o log do servidor, na chamada acima.
+    const interno = status === httpCode.InternalError
+    const userMessage = interno ? 'Erro no servidor' : message
     const jsonData = {
       version: VERSION,
       success: success,
       message: userMessage,
       dados,
-      error: error ? (error.message || String(error)) : null,
+      error: interno || !error ? null : (error.message || String(error)),
       ...metadata
     }
 

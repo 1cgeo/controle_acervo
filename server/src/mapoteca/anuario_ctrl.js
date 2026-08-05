@@ -15,7 +15,7 @@
 //
 // A fonte é a mapoteca do próprio SCA, que é onde a entrega é registrada. O
 // recorte é por DATA DE ATENDIMENTO do pedido (a entrega, e não o pedido), e o
-// padrão é o MÊS, que é o que o arquivo de junho de 2026 trazia.
+// padrão é o MÊS.
 //
 // ---------------------------------------------------------------------------
 // O QUE ESTA TABELA NÃO SABE PREENCHER, e por quê
@@ -24,7 +24,7 @@
 //    outra Força, mas NÃO separa Região Militar de Estabelecimento de Ensino
 //    dentro do EB. As duas colunas saem vazias, com a lacuna declarada no rodapé
 //    do arquivo. Preenchê-las exige valor novo de domínio e reclassificar os
-//    clientes já cadastrados (decisão do chefe em 2026-07-31: por ora, sinalizar).
+//    clientes já cadastrados.
 // 2. Carta de orientação, Mapa Índice, Mosaico, Ortofocarta. Não há tipo de
 //    produto correspondente em `dominio.tipo_produto`. Item impresso que não
 //    case com nenhuma linha cai em "Produtos Diversos", e nunca some.

@@ -149,10 +149,9 @@ router.get(
 // volume e faz stream, e o navegador nunca vê caminho de rede. Nenhum volume
 // precisa de servidor HTTP: volume é caminho de sistema de arquivos.
 //
-// Não há pasta temporária no caminho: um arquivo do acervo tem mediana de 6 a
-// 11 MB e máximo de 500 MB (medido na produção em 2026-07-29), então copiar para
-// servir dobraria I/O e criaria lixo para limpar. Pacote de VÁRIOS arquivos é
-// outro problema, e aí sim pede preparo assíncrono.
+// Não há pasta temporária no caminho: copiar para servir dobraria I/O e criaria
+// lixo para limpar. Pacote de VÁRIOS arquivos é outro problema, e aí sim pede
+// preparo assíncrono.
 router.get(
   '/arquivo/:uuid_arquivo/download',
   verifyPerfil('consulta'),
@@ -242,10 +241,8 @@ router.post(
   })
 )
 
-// Limpeza do que expirou: downloads E uploads. Era o cron de hora em hora, que
-// saiu em 2026-08-04; agora tem sempre uma pessoa por trás, e ela aparece no
-// rastro. `verifyAdmin` UMA vez: estava duplicado, o que não protegia mais e
-// sugeria uma segunda checagem que não existe.
+// Limpeza do que expirou: downloads E uploads, sob comando. Sempre há uma
+// pessoa por trás, e ela aparece no rastro.
 router.post(
   '/cleanup-expired-downloads',
   verifyAdmin,
@@ -323,7 +320,6 @@ router.post(
 router.post(
   '/refresh_materialized_views',
   verifyAdmin,
-  verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.refreshAllMaterializedViews(req.usuarioUuid, req.contexto);
     const msg = 'Atualização de views materializadas concluída com sucesso';
@@ -335,7 +331,6 @@ router.post(
 router.post(
   '/create_materialized_views',
   verifyAdmin,
-  verifyAdmin,  // Apenas administradores podem executar esta operação
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.createMaterializedViews(req.usuarioUuid, req.contexto);
     const msg = 'Criação de views materializadas concluída com sucesso';

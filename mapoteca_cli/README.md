@@ -52,12 +52,15 @@ mapoteca pedido cadastrar --plano pedido.json
 mapoteca pendentes --dias 15              # a fila, ordenada pelo prazo
 mapoteca pedido itens --id 116            # só os itens, recortados
 mapoteca pedido situacao --id 116 --situacao 5 --data-atendimento 2026-07-30
+mapoteca pedido anexo baixar --id 7 --para conferir.pdf   # baixa e dá o sha256
 mapoteca imprimir --item 881 --qtd 5      # registra a impressão de um item
 mapoteca painel --ano 2026                # resumo do ano
 mapoteca relatorio detalhado --ano 2026 --csv
+mapoteca relatorio impressao --ano 2026 --ods   # a aba META4_DETALHADA
+mapoteca anuario --ano 2026 --mes 7 --ods       # Anuário Estatístico (exige admin)
 
 # CRUD, quando o verbo de intenção não cobre
-mapoteca pedido listar --campos id,prazo,cliente_nome
+mapoteca pedido listar --ano 2025 --campos id,prazo,cliente_nome
 mapoteca cliente criar --data '{...}' --dry-run
 mapoteca pedido deletar --ids 116 --confirmar 116
 
@@ -123,7 +126,9 @@ O comando é **idempotente**: rodá-lo de novo com o mesmo plano completa o que 
 
 É **offline** (não toca a rede, não usa credencial, não precisa de `SCA_URL`) em `criar`, `atualizar`, `deletar`, `pedido cadastrar`, `pedido anexar` e `imprimir`.
 
-A única exceção é `pedido situacao --dry-run`, que faz **um GET** do pedido para montar o corpo completo. Ele avisa isso na saída. Nenhuma escrita ocorre.
+As exceções são `pedido situacao`, `pedido corrigir` e `item mover`, que fazem um **GET** para montar o corpo completo antes de mostrá-lo. Eles avisam isso na saída. Nenhuma escrita ocorre.
+
+Como o `--dry-run` não escreve, ele **não** exige `--confirmar`: é ele que mostra o que a confirmação autorizaria.
 
 ## Ambiente
 
@@ -138,7 +143,7 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 
 O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção; e no diretório do SCA, não da mapoteca, porque o token vale para a API inteira. `--sem-cache` desliga.
 
-Leitura exige login; toda **escrita** exige administrador. Públicos, sem login: `/api` (health), `/api/login`, os GET de `/api/mapoteca/dominio` e a consulta por localizador.
+O acesso é por **perfil** no módulo `mapoteca`: consulta lê, operador imprime e dá baixa em material, gerente cadastra pedido, cliente e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
 
 ## Testes
 

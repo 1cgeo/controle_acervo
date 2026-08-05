@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatNumber } from '@utils/format.js';
+import { formatBoolean, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
@@ -8,10 +8,12 @@ import {
   limparDownloadsExpirados,
   renomearPadrao,
   atualizarChecksum,
+  contarMiniaturasPendentes,
+  varrerMiniaturas,
 } from '@modules/acervo/services/admin-service.js';
 
 /**
- * Aba "Manutenção": as quatro ações de ADMINISTRADOR GLOBAL do acervo.
+ * Aba "Manutenção": as ações de ADMINISTRADOR GLOBAL do acervo.
  *
  * Não é uma tabela, e sim um cartão por ação, porque não são registros que se
  * leem: são operações que se disparam, e o que cada uma precisa dizer não é uma
@@ -22,9 +24,9 @@ import {
  * NÃO faz (que é onde mora o susto), e o acompanhamento. Sem a terceira, ações
  * que levam minutos pareceriam travadas, e a pessoa apertaria de novo.
  *
- * Guarda: `verifyAdmin` nas quatro rotas. A aba só é montada para o administrador
- * global (ver `pages/administracao/index.js`), e quem barra continua sendo o
- * servidor.
+ * Guarda: `verifyAdmin` em todas as rotas. A aba só é montada para o
+ * administrador global (ver `pages/administracao/index.js`), e quem barra
+ * continua sendo o servidor.
  *
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function}>}
@@ -59,17 +61,35 @@ export async function renderManutencaoTab(container) {
     ].filter(Boolean));
   }
 
-  /** Tabela simples a partir de uma lista de objetos (as colunas saem dela). */
-  function tabelaDe(linhas, colunas) {
+  /**
+   * Tabela simples a partir de uma lista de objetos (as colunas saem dela).
+   *
+   * Lista vazia devolve UMA linha dizendo isso, e nao um cabecalho orfao. As
+   * tres chamadas podem receber vazio (amostra do plano, detalhe das falhas,
+   * arquivos do checksum), e o cabecalho sozinho sob uma legenda que anuncia um
+   * numero parecia tabela que nao carregou.
+   *
+   * @param {Array<Object>} linhas
+   * @param {Array<{label:string, valor:Function}>} colunas
+   * @param {string} [vazio]
+   */
+  function tabelaDe(linhas, colunas, vazio = 'Nada a mostrar.') {
+    const corpo = linhas.length
+      ? linhas.map(linha => el('tr', {}, colunas.map(c => el('td', {
+        textContent: c.valor(linha) ?? '',
+      }))))
+      : [el('tr', {}, [el('td', {
+        className: 'manutencao__tabela-vazia',
+        colSpan: String(colunas.length),
+        textContent: vazio,
+      })])];
+
     return el('div', { className: 'manutencao__tabela-scroll' }, [
       el('table', { className: 'data-table' }, [
         el('thead', {}, [
           el('tr', {}, colunas.map(c => el('th', { textContent: c.label }))),
         ]),
-        el('tbody', {}, linhas.map(linha =>
-          el('tr', {}, colunas.map(c => el('td', {
-            textContent: c.valor(linha) ?? '',
-          }))))),
+        el('tbody', {}, corpo),
       ]),
     ]);
   }
@@ -89,8 +109,9 @@ export async function renderManutencaoTab(container) {
     try {
       const dados = await executar();
       if (disposed) return;
-      status.textContent = feito(dados);
-      showSuccess(feito(dados));
+      const resumo = feito(dados);
+      status.textContent = resumo;
+      showSuccess(resumo);
     } catch (err) {
       if (disposed) return;
       status.textContent = `Falhou: ${err.message || 'erro desconhecido'}`;
@@ -109,10 +130,20 @@ export async function renderManutencaoTab(container) {
     className: 'btn btn--primary',
     type: 'button',
     onClick: () => acaoSimples(atualizarViewsBtn, statusViews, {
+      // Pergunta antes, como o botão irmão ao lado. É um REFRESH CONCURRENTLY
+      // em todas as `acervo.mv_produto_*`, e um clique de passagem custava
+      // minutos de banco sem ninguém ter decidido nada.
+      confirmar: {
+        title: 'Atualizar todas as visões materializadas',
+        message: 'Reprocessa todas as visões acervo.mv_produto_<tipo>_<escala>. '
+          + 'Numa base grande leva minutos e pesa no banco. Nada é apagado. '
+          + 'Continuar?',
+        confirmLabel: 'Atualizar',
+      },
       executar: atualizarViewsMaterializadas,
       feito: () => 'Visões materializadas atualizadas.',
     }),
-  }, [svgIcon(ICONS.dataUsage, 16), 'Atualizar todas']);
+  }, [svgIcon(ICONS.dataUsage, 16), 'Atualizar todas as visões']);
 
   const criarViewsBtn = el('button', {
     className: 'btn btn--secondary',
@@ -489,7 +520,7 @@ export async function renderManutencaoTab(container) {
         tabelaDe(d.arquivos || [], [
           { label: 'Id', valor: r => String(r.id) },
           { label: 'Arquivo', valor: r => `${r.nome_arquivo}.${r.extensao}` },
-          { label: 'Mudou', valor: r => (r.alterado ? 'Sim' : 'Não') },
+          { label: 'Mudou', valor: r => formatBoolean(r.alterado) },
           { label: 'MB antes', valor: r => formatNumber(r.tamanho_mb_anterior) },
           { label: 'MB agora', valor: r => formatNumber(r.tamanho_mb_novo) },
         ]),
@@ -538,6 +569,78 @@ export async function renderManutencaoTab(container) {
     saida: saidaChecksum,
   });
 
+  // -------------------------------------------------------------------------
+  // 5. Fila de miniaturas
+  // -------------------------------------------------------------------------
+  //
+  // NAO HA AGENDAMENTO no sistema: a miniatura de uma versao nova é disparada no
+  // ponto de entrada do arquivo, e a que falhou ali fica na fila até alguém
+  // varrer. Sem este cartão a fila é dívida INVISÍVEL, e o acervo acumula ficha
+  // sem imagem que ninguém vê.
+  const statusMiniaturas = criarStatus();
+
+  // DUAS LINHAS, e não uma: o TAMANHO da fila e o DESFECHO da última passada são
+  // fatos distintos, e numa linha só a recontagem apagaria o que a varredura
+  // acabou de anunciar -- inclusive o "nada foi feito" de uma passada pulada.
+  const filaMiniaturas = el('p', {
+    className: 'manutencao__status',
+    role: 'status',
+    'aria-live': 'polite',
+  });
+
+  const varrerBtn = el('button', {
+    className: 'btn btn--primary',
+    type: 'button',
+  }, [svgIcon(ICONS.dataUsage, 16), 'Varrer a fila']);
+
+  async function contarPendentes() {
+    try {
+      const d = await contarMiniaturasPendentes();
+      if (disposed) return;
+      filaMiniaturas.textContent = d.pendentes === 0
+        ? 'Nenhuma versão aguarda miniatura.'
+        : `${formatNumber(d.pendentes)} versão(ões) na fila. `
+          + `Cada passada renderiza até ${formatNumber(d.lote)}.`;
+      varrerBtn.disabled = d.pendentes === 0;
+    } catch (err) {
+      if (disposed) return;
+      // Falha ao CONTAR não é fila vazia, e o botão fica de pé: o número é que
+      // não se sabe.
+      filaMiniaturas.textContent = `Não foi possível contar a fila: ${err.message || 'erro desconhecido'}`;
+      varrerBtn.disabled = false;
+    }
+  }
+
+  varrerBtn.addEventListener('click', () => acaoSimples(varrerBtn, statusMiniaturas, {
+    executar: varrerMiniaturas,
+    feito: (d) => {
+      if (d.pulada) return 'Uma varredura já está em curso. Nada foi feito agora.';
+      if (d.abortada) {
+        return `Interrompida: ${d.abortada}. `
+          + `${formatNumber(d.sucessos)} miniatura(s) gerada(s) antes disso.`;
+      }
+      return `${formatNumber(d.sucessos)} miniatura(s) gerada(s), `
+        + `${formatNumber(d.falhas)} falha(s), ${formatNumber(d.restante)} na fila.`;
+    },
+  }).then(contarPendentes));
+
+  const cartaoMiniaturas = cartao({
+    titulo: 'Fila de miniaturas',
+    descricao: 'A miniatura é a imagem que a ficha do produto mostra, e serve para '
+      + 'reconhecer a folha de relance. A versão que entra no acervo dispara a dela; a '
+      + 'que falhou fica nesta fila.',
+    avisos: [
+      'Renderizar custa segundos e roda processo externo (poppler e GDAL), então a '
+        + 'passada é limitada. Chame de novo até a fila zerar.',
+      'Nada é apagado nem recriado: a versão que já tem miniatura não é tocada.',
+      'Duas varreduras não correm juntas. Com uma em curso, esta responde "pulada" e '
+        + 'não faz nada.',
+    ],
+    corpo: [filaMiniaturas],
+    acoes: [varrerBtn],
+    status: statusMiniaturas,
+  });
+
   container.appendChild(el('div', {}, [
     el('p', {
       className: 'page__subtitle',
@@ -547,10 +650,13 @@ export async function renderManutencaoTab(container) {
     el('div', { className: 'manutencao' }, [
       cartaoViews,
       cartaoDownloads,
+      cartaoMiniaturas,
       cartaoRenome,
       cartaoChecksum,
     ]),
   ]));
+
+  contarPendentes();
 
   return {
     cleanup: () => { disposed = true; },

@@ -13,13 +13,12 @@ class RegistrarImpressaoDialog(QDialog):
     Diálogo para registrar quantas cópias de cada item foram impressas.
 
     Cada linha é um item PENDENTE do pedido, com um campo de quantidade já
-    preenchido com o restante a imprimir -- o caso comum é imprimir tudo o que
+    preenchido com o restante a imprimir. O caso comum é imprimir tudo o que
     falta, e quem imprimiu menos ajusta. Linhas em zero são ignoradas.
 
     A observação é uma só, da SESSÃO de impressão, e vai em todos os registros.
-    É como ela é usada de verdade ("Plotter 2", "papel Tyvek"): o servidor a
-    aceita por item, mas anotar plotter diferente em cada linha da mesma sessão
-    nunca aconteceu, e um campo por linha só tornaria a tela mais cara de usar.
+    É como ela é usada de verdade ("Plotter 2", "papel Tyvek"): o servidor
+    aceita uma por item, mas um campo por linha só tornaria a tela mais cara.
     """
 
     def __init__(self, itens, parent=None):
@@ -33,7 +32,7 @@ class RegistrarImpressaoDialog(QDialog):
 
         layout.addWidget(QLabel(
             "Informe quantas cópias de cada item foram impressas nesta sessão.\n"
-            "O campo já vem preenchido com o restante a imprimir — ajuste se necessário."
+            "O campo já vem preenchido com o restante a imprimir. Ajuste se necessário."
         ))
 
         self.table = QTableWidget(self)

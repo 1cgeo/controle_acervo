@@ -1,10 +1,12 @@
 # Path: gui\login_dialog.py
-from qgis.PyQt.QtWidgets import QDialog
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QApplication
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt import uic
 import os
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'ui', 'login.ui'))
+
 
 class LoginDialog(QDialog, FORM_CLASS):
     def __init__(self, api_client, settings, version, parent=None):
@@ -13,14 +15,11 @@ class LoginDialog(QDialog, FORM_CLASS):
         self.api_client = api_client
         self.settings = settings
 
-        # Set version in the UI
         self.version_text.setText(f"v{version}")
 
-        # Connect the buttons
         self.submitBtn.clicked.connect(self.attempt_login)
         self.cancelBtn.clicked.connect(self.reject)
 
-        # Load saved credentials and proxy setting
         self.load_credentials()
         self.load_proxy_setting()
 
@@ -64,17 +63,36 @@ class LoginDialog(QDialog, FORM_CLASS):
         self.api_client._configure_proxy()
 
     def attempt_login(self):
-        server = self.server.text()
-        username = self.user.text()
+        # O strip evita o espaço colado no fim do endereço, que quebra a URL
+        # montada pelo cliente sem dizer por quê.
+        server = self.server.text().strip()
+        username = self.user.text().strip()
         password = self.password.text()
 
-        # Aplicar configuração de proxy antes de tentar login
-        self.save_proxy_setting()
+        if not server:
+            QMessageBox.warning(
+                self, "Servidor não informado",
+                "Informe o endereço do servidor do SCA, no formato "
+                "http://servidor:porta. Peça o endereço ao gerente da mapoteca."
+            )
+            self.server.setFocus()
+            return
 
-        # Update server URL in api_client
+        self.server.setText(server)
+        self.save_proxy_setting()
         self.api_client.base_url = server
 
-        if self.api_client.login(username, password):
+        # O login é síncrono. Sem desabilitar o botão, o duplo clique dispara
+        # duas autenticações e duas mensagens de erro.
+        self.submitBtn.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            autenticou = self.api_client.login(username, password)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.submitBtn.setEnabled(True)
+
+        # A mensagem de falha sai do api_client, que sabe a causa.
+        if autenticou:
             self.save_credentials()
             self.accept()
-        # Error handling is done in api_client.login()

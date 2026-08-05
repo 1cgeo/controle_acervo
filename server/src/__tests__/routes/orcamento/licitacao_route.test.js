@@ -91,7 +91,7 @@ describe('POST /licitacao', () => {
 })
 
 describe('DELETE /licitacao/:id', () => {
-  // O `SELECT id` que existia so para o 404 virou `lerAntes` em 2026-08-02:
+  // O `SELECT id` que existia so para o 404 virou `lerAntes`:
   // mesma ida ao banco, e o estado anterior deixa de se perder.
   test('exclui a licitacao (nada referencia a licitacao)', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({

@@ -93,11 +93,11 @@ test('validarCorpo aceita corpo completo', () => {
   assert.deepStrictEqual(r.descartados, [])
 })
 
-test('RECUSA campo com nome errado, espelhando o 400 do servidor', () => {
-  // Ate 2026-07-25 o servidor descartava (stripUnknown) e este teste fixava o
-  // aviso. O servidor passou a recusar com 400, e o CLI acompanhou no mesmo
-  // gesto: a validacao local tem que reprovar o que o servidor reprovaria,
-  // senao o --dry-run aprova e o envio real leva 400.
+test('RECUSA campo com nome errado, como o servidor do orcamento faz', () => {
+  // As rotas do orcamento recebem o schemaValidation ESTRITO (escolhido em
+  // server/src/orcamento/utils/index.js): chave desconhecida no corpo vira 400
+  // com sugestao do nome mais parecido, e NAO some calada. A validacao local
+  // tem de fazer o mesmo, senao o --dry-run aprova o que o envio real recusa.
   const r = esquema.validarCorpo(schemaNc.criar, {
     numero: '2026NC000123',
     ano: 2026,
@@ -106,11 +106,22 @@ test('RECUSA campo com nome errado, espelhando o 400 do servidor', () => {
     classificacao_id: 1,
     valor: 999
   })
-  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.ok, false, 'o servidor recusaria: a validacao local tambem tem de recusar')
+  // O erro tem de NOMEAR a chave: "recusou" sem dizer qual campo obriga a pessoa
+  // a comparar o corpo com o schema na mao.
   assert.ok(
-    r.erros.some(e => /valor/.test(e.mensagem) && /not allowed/.test(e.mensagem)),
-    'o erro precisa NOMEAR a chave sobrando'
+    r.erros.some(e => e.campo === 'valor'),
+    'o erro tem de nomear a chave desconhecida'
   )
+  assert.deepStrictEqual(r.descartados, [], 'chave desconhecida e ERRO, nao descarte')
+})
+
+test('o corpo NAO valida com stripUnknown, porque o servidor do orcamento e estrito', () => {
+  // O que este teste tranca: ligar stripUnknown aqui faz o --dry-run aprovar
+  // corpo que o envio real recusa com 400. O SCA tem dois middlewares com o
+  // mesmo nome, e o do orcamento e o ESTRITO.
+  assert.strictEqual(esquema.OPCOES_CORPO.stripUnknown, undefined)
+  assert.strictEqual(esquema.OPCOES_CORPO.abortEarly, false)
 })
 
 test('acusa o pdr_item_id descartado por regra quando a NC e Extra-PDR', () => {
@@ -145,19 +156,13 @@ test('todo recurso da registry renderiza contrato sem quebrar', () => {
   }
 })
 
-test('todo recurso do modulo leva o prefixo /orcamento; usuarios nao', () => {
-  // Regressao da fusao de 2026-07-27. Rota sem prefixo bate em 404, ou pior:
-  // /arquivo e /relatorio existem TAMBEM no acervo, e sem o prefixo o CLI
-  // acertaria a rota errada e responderia com dados de outro modulo.
+test('todo recurso do modulo leva o prefixo /orcamento; o de plataforma nao', () => {
+  // Rota sem prefixo bate em 404, ou pior: /arquivo e /relatorio existem TAMBEM
+  // no acervo, e sem o prefixo o CLI acertaria a rota errada e responderia com
+  // dados de outro modulo.
   const { RECURSOS } = require('../lib/recursos')
   // Recurso de PLATAFORMA: mora fora dos tres modulos, entao NAO leva prefixo.
-  //
-  // `meta` entrou nesta lista em 2026-08-01. As metas do PIT sairam do modulo
-  // orcamento em 2026-07-31 (viraram /api/metas, schema `pit`), o
-  // lib/recursos.js acompanhou e este teste nao: ele vinha falhando desde
-  // entao, sozinho, porque a suite dos CLIs nao entra no `npm test` do servidor
-  // nem no do client -- so roda por `node --test`, a mao.
-  const PLATAFORMA = new Set(['usuario', 'meta'])
+  const PLATAFORMA = new Set(['meta'])
 
   for (const [chave, recurso] of Object.entries(RECURSOS)) {
     if (PLATAFORMA.has(chave)) {
@@ -174,9 +179,23 @@ test('todo recurso do modulo leva o prefixo /orcamento; usuarios nao', () => {
   }
 })
 
+test('o anexo declara as rotas que TEM, e nao o CRUD por id que o registry supoe', () => {
+  // O anexo lista por VINCULO na query, sobe por multipart e nao tem PUT nem GET
+  // por id. Anunciar o CRUD padrao mandaria o agente para um 404.
+  const { RECURSOS } = require('../lib/recursos')
+  const texto = esquema.contrato('arquivo', RECURSOS.arquivo)
+
+  assert.ok(texto.includes('/download'), 'falta a rota de download')
+  assert.ok(!/PUT\s+\/api\/orcamento\/arquivo/.test(texto), 'anunciou um PUT que nao existe')
+  assert.deepStrictEqual(
+    esquema.filtrosDe(RECURSOS.arquivo.schema(), RECURSOS.arquivo.queryListar)
+      .map(f => f.nome).sort(),
+    ['dfd_id', 'nota_credito_id', 'pdr_ano']
+  )
+})
+
 test('o cliente de auth padrao e aceito pelo login vivo do SCA', () => {
-  // Nao copia a lista: le o .valid() do login_schema.js do server/. O valor
-  // antigo do SCO ('c_orcamentario') nao passa mais.
+  // Nao copia a lista: le o .valid() do login_schema.js do server/.
   const { clientesAceitos, CLIENTE_PADRAO } = require('../lib/config')
   const aceitos = clientesAceitos()
 

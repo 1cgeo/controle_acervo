@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Meu perfil (#/perfil): o proprio cadastro e a troca da PROPRIA senha, que so
-// passaram a existir em 2026-08-02, com a autenticacao vindo para dentro do SCA.
+// passaram a existir, com a autenticacao vindo para dentro do SCA.
 vi.mock('@services/plataforma-service.js', () => ({
   getMeuPerfil: vi.fn(() => Promise.resolve({})),
   atualizarMeuPerfil: vi.fn(() => Promise.resolve(null)),
@@ -22,8 +23,6 @@ import {
   getMeuPerfil, atualizarMeuPerfil, alterarMinhaSenha, getPostosGrad,
 } from '@services/plataforma-service.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const POSTOS = [
   { code: 11, nome: 'Terceiro Sargento', nome_abrev: '3 Sgt' },

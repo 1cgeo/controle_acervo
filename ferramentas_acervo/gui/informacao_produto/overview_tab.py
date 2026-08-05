@@ -5,12 +5,13 @@ Componente da aba de Visão Geral para o diálogo de informações do produto.
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
+    QPushButton, QScrollArea, QSplitter
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
 from qgis.gui import QgsCollapsibleGroupBox
-from .utils import format_date
+from .files_table import montar_tabela_arquivos, preencher_tabela_arquivos
+from .utils import bloco_html, campos_da_versao, format_date, get_total_size
 
 class OverviewTab(QWidget):
     def __init__(self, parent, is_admin=False):
@@ -24,7 +25,6 @@ class OverviewTab(QWidget):
         layout = QVBoxLayout(self)
         
         # Splitter para dividir informações e arquivos
-        from qgis.PyQt.QtWidgets import QSplitter
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         layout.addWidget(self.splitter)
         
@@ -121,20 +121,9 @@ class OverviewTab(QWidget):
         layout.addWidget(header)
         
         # Tabela de arquivos
-        self.files_table = QTableWidget()
-        cols = 8 if self.is_admin else 7
-        self.files_table.setColumnCount(cols)
-        headers = ["", "Nome", "Tipo", "Tamanho (MB)", "Extensão", "Data", "Detalhes"]
-        if self.is_admin:
-            headers.append("Ações")
-        self.files_table.setHorizontalHeaderLabels(headers)
-        self.files_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.files_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        if self.is_admin:
-            self.files_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        self.files_table = montar_tabela_arquivos(self.is_admin)
         layout.addWidget(self.files_table)
-        
+
         return widget
     
     def populate_product_info(self, product_data):
@@ -142,21 +131,22 @@ class OverviewTab(QWidget):
         if not product_data:
             return
             
-        product_info = f"""
-        <b>ID:</b> {product_data['id']}
-        <b>Nome:</b> {product_data['nome'] or 'N/A'}
-        <b>MI:</b> {product_data['mi'] or 'N/A'}
-        <b>INOM:</b> {product_data['inom'] or 'N/A'}
-        <b>Escala:</b> {product_data['escala']}
-        <b>Denominador de Escala Especial:</b> {product_data['denominador_escala_especial'] or 'N/A'}
-        <b>Tipo de Produto ID:</b> {product_data['tipo_produto_id']}
-        <b>Descrição:</b> {product_data['descricao'] or 'N/A'}
-        <b>Data de Cadastramento:</b> {format_date(product_data['data_cadastramento'])}
-        <b>Usuário de Cadastramento:</b> {product_data['usuario_cadastramento']}
-        <b>Data de Modificação:</b> {format_date(product_data['data_modificacao'])}
-        <b>Usuário de Modificação:</b> {product_data['usuario_modificacao']}
-        """
-        self.product_info_label.setText(product_info)
+        self.product_info_label.setText(bloco_html([
+            ('ID', product_data['id']),
+            ('Nome', product_data['nome']),
+            ('MI', product_data['mi']),
+            ('INOM', product_data['inom']),
+            ('Escala', product_data['escala']),
+            ('Denominador de escala especial', product_data['denominador_escala_especial']),
+            ('Tipo de produto', product_data.get('tipo_produto')
+             or product_data['tipo_produto_id']),
+            ('Subtipo de produto', product_data.get('subtipo_produto')),
+            ('Descrição', product_data['descricao']),
+            ('Data de cadastramento', format_date(product_data['data_cadastramento'])),
+            ('Usuário de cadastramento', product_data['usuario_cadastramento']),
+            ('Data de modificação', format_date(product_data['data_modificacao'])),
+            ('Usuário de modificação', product_data['usuario_modificacao']),
+        ]))
     
     def populate_version_info(self, version_data):
         """Preenche informações da versão atual."""
@@ -164,23 +154,7 @@ class OverviewTab(QWidget):
             self.version_info_label.setText("Nenhuma versão disponível para este produto.")
             return
             
-        version_info = f"""
-        <b>UUID:</b> {version_data['uuid_versao']}
-        <b>Versão:</b> {version_data['versao']}
-        <b>Nome:</b> {version_data['nome_versao'] or 'N/A'}
-        <b>Tipo de Versão ID:</b> {version_data['tipo_versao_id']}
-        <b>Subtipo de Produto ID:</b> {version_data['subtipo_produto_id']}
-        <b>Lote:</b> {version_data['lote_nome'] or 'N/A'} ({version_data['lote_pit'] or 'N/A'})
-        <b>Projeto:</b> {version_data['projeto_nome'] or 'N/A'}
-        <b>Órgão Produtor:</b> {version_data['orgao_produtor']}
-        <b>Palavras-chave:</b> {', '.join(version_data['palavras_chave']) if version_data['palavras_chave'] else 'N/A'}
-        <b>Descrição:</b> {version_data['versao_descricao'] or 'N/A'}
-        <b>Data de Criação:</b> {format_date(version_data['versao_data_criacao'])}
-        <b>Data de Edição:</b> {format_date(version_data['versao_data_edicao'])}
-        <b>Data de Cadastramento:</b> {format_date(version_data['versao_data_cadastramento'])}
-        <b>Data de Modificação:</b> {format_date(version_data['versao_data_modificacao'])}
-        """
-        self.version_info_label.setText(version_info)
+        self.version_info_label.setText(bloco_html(campos_da_versao(version_data)))
         
     def populate_stats(self, product_data, current_version):
         """Preenche estatísticas do produto."""
@@ -188,60 +162,19 @@ class OverviewTab(QWidget):
             self.stats_label.setText("Sem dados para exibir estatísticas.")
             return
             
-        num_versions = len(product_data['versoes'])
-        num_files = len(current_version['arquivos'])
+        self.stats_label.setText(bloco_html([
+            ('Número total de versões', len(product_data['versoes'])),
+            ('Número de arquivos na última versão', len(current_version['arquivos'])),
+            ('Tamanho total dos arquivos da última versão',
+             f"{get_total_size(current_version['arquivos'])} MB"),
+        ]))
         
-        from .utils import get_total_size
-        total_size = get_total_size(current_version['arquivos'])
-        
-        stats_info = f"""
-        <b>Número total de versões:</b> {num_versions}
-        <b>Número de arquivos na última versão:</b> {num_files}
-        <b>Tamanho total dos arquivos da última versão:</b> {total_size} MB
-        """
-        self.stats_label.setText(stats_info)
-        
-    def populate_files_table(self, files, create_actions_callback=None):
-        """Preenche a tabela de arquivos."""
-        self.files_table.setRowCount(0)
-        
-        for row, file in enumerate(files):
-            self.files_table.insertRow(row)
-            
-            # Checkbox para seleção
-            checkbox = QTableWidgetItem()
-            checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            checkbox.setCheckState(Qt.CheckState.Unchecked)
-            self.files_table.setItem(row, 0, checkbox)
-            
-            # Informações básicas do arquivo
-            self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.setItem(row, 2, QTableWidgetItem(file['tipo_arquivo']))
-            
-            size_item = QTableWidgetItem()
-            if file['tamanho_mb']:
-                size_item.setText(f"{file['tamanho_mb']:.2f}")
-                size_item.setData(Qt.ItemDataRole.UserRole, float(file['tamanho_mb']))
-            else:
-                size_item.setText("N/A")
-            self.files_table.setItem(row, 3, size_item)
-            
-            self.files_table.setItem(row, 4, QTableWidgetItem(file['extensao'] or "N/A"))
-            self.files_table.setItem(row, 5, QTableWidgetItem(format_date(file['data_cadastramento'])))
-            
-            # Botão para mostrar detalhes
-            details_btn = QPushButton("Detalhes")
-            details_btn.setProperty("file_id", file['id'])
-            self.files_table.setCellWidget(row, 6, details_btn)
-            
-            # Armazenar o ID do arquivo para download posterior
-            self.files_table.setItem(row, 1, QTableWidgetItem(file['nome']))
-            self.files_table.item(row, 1).setData(Qt.ItemDataRole.UserRole, file['id'])
-            
-            # Botões de ação para administradores
-            if self.is_admin and create_actions_callback:
-                actions_widget = create_actions_callback(file)
-                self.files_table.setCellWidget(row, 7, actions_widget)
-        
-        self.files_table.resizeColumnsToContents()
-        self.files_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    def populate_files_table(self, files, create_actions_callback=None,
+                             on_details=None):
+        """Preenche a tabela de arquivos. Ver gui/informacao_produto/files_table.py."""
+        preencher_tabela_arquivos(
+            self.files_table, files, self.is_admin,
+            criar_acoes=create_actions_callback,
+            ao_pedir_detalhes=on_details,
+            formatar_data=format_date,
+        )

@@ -3,7 +3,8 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QPushButton, QMessageBox, QLabel, QDialogButtonBox
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsVectorLayer, QgsProject, QgsDataSourceUri
+
+from ..mapa_utils import carregar_camadas_matview
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'load_product_layers_dialog.ui'))
@@ -68,29 +69,6 @@ class LoadProductLayersDialog(QDialog, FORM_CLASS):
             QMessageBox.warning(self, "Aviso", "Nenhuma camada selecionada.")
             return
 
-        for layer in selected_layers:
-            uri = QgsDataSourceUri()
-            uri.setConnection(
-                layer['banco_dados']['servidor'],
-                str(layer['banco_dados']['porta']),
-                layer['banco_dados']['nome_db'],
-                layer['banco_dados']['login'],
-                layer['banco_dados']['senha']
-            )
-            uri.setDataSource(
-                'acervo',
-                layer['matviewname'],
-                'geom',
-                "",
-                'id'
-            )
-            uri.setSrid('4674')
-
-            vector_layer = QgsVectorLayer(uri.uri(), f"{layer['tipo_produto']} - {layer['tipo_escala']}", "postgres")
-            
-            if vector_layer.isValid():
-                QgsProject.instance().addMapLayer(vector_layer)
-            else:
-                QMessageBox.warning(self, "Erro", f"Não foi possível carregar a camada: {layer['tipo_produto']} - {layer['tipo_escala']}")
-
-        self.accept()
+        carregadas, _ = carregar_camadas_matview(self, selected_layers)
+        if carregadas:
+            self.accept()

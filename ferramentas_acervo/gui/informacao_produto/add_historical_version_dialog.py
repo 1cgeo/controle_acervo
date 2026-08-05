@@ -1,12 +1,17 @@
 # Path: gui\informacao_produto\add_historical_version_dialog.py
-import os
 import json
+import os
+import re
+
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QMessageBox
 from qgis.PyQt.QtCore import Qt, QDate
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'add_historical_version_dialog.ui'))
+
+# Espelha o `versao` de produtoSchema.versoesHistoricas no servidor.
+PADRAO_VERSAO = re.compile(r'^([0-9]+-[A-Z]{1,5}|[0-9]+ª Edição)$')
 
 class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
     def __init__(self, api_client, produto_data, parent=None):
@@ -39,6 +44,10 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
         
         # Configurar valor padrão para órgão produtor
         self.orgaoProdutorLineEdit.setText("DSG")
+
+        # O servidor cobra o padrão `1-DSG` ou `2ª Edição` (sigla de até cinco
+        # letras MAIÚSCULAS). Sem a dica, o 400 chega depois de preencher tudo.
+        self.versaoLineEdit.setPlaceholderText("Ex.: 1-DSG ou 2ª Edição")
         
         # Conectar botões
         self.saveButton.clicked.connect(self.save_historical_version)
@@ -76,6 +85,15 @@ class AddHistoricalVersionDialog(QDialog, FORM_CLASS):
             QMessageBox.warning(self, "Validação", "O número da versão é obrigatório.")
             return False
             
+        if not PADRAO_VERSAO.match(self.versaoLineEdit.text().strip()):
+            QMessageBox.warning(
+                self, "Validação",
+                "O número da versão não está no padrão que o servidor aceita.\n\n"
+                "Use '1-DSG' (número, hífen e sigla de até cinco letras maiúsculas) "
+                "ou '2ª Edição'."
+            )
+            return False
+
         if self.subtipoProdutoComboBox.currentIndex() < 0:
             QMessageBox.warning(self, "Validação", "Selecione um subtipo de produto.")
             return False

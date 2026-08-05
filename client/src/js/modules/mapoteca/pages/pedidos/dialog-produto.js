@@ -14,7 +14,7 @@ import { showError, showWarning } from '@utils/toast.js';
 
 /**
  * Shared dialog for adding/editing an order item: catalog search in the
- * acervo (RN08 — every item references acervo.versao), version picker and
+ * acervo (RN08, every item references acervo.versao), version picker and
  * the produto_pedido fields. Used by the wizard (step 3) and by the order
  * details page (add/edit item).
  */
@@ -153,10 +153,8 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
   }
 
   // A versão certa é a mais recente COM ARQUIVO. Versão sem arquivo não se
-  // entrega: a mapoteca não tem o que imprimir. Medido na produção em
-  // 2026-08-04: 424 das 7.572 versões do acervo não têm arquivo, e 17 itens de
-  // pedido apontaram versão vazia havendo outra versão do mesmo produto com
-  // arquivo. Os 17 foram impressos.
+  // entrega: a mapoteca não tem o que imprimir. Sem esta regra, o item aponta
+  // versão vazia havendo outra versão do mesmo produto com arquivo.
   //
   // O servidor manda a lista em versao.arquivos (getProdutoDetalhado). Campo
   // ausente significa "não sei", nunca "está vazio": nesse caso não se marca
@@ -309,7 +307,7 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
   // Item fields
   // ---------------------------------------------------------------------------
   // A forma de entrega e a data de entrega SAIRAM do item e subiram para o
-  // pedido (decisao do chefe, 2026-07-30). Medido na producao no mesmo dia: dos
+  // pedido. Medido na producao no mesmo dia: dos
   // 91 pedidos com item, so 1 tinha mais de uma forma de entrega e NENHUM tinha
   // mais de uma data. O pedido inteiro sai numa remessa so.
   //

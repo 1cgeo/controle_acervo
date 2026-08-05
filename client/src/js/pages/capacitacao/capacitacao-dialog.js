@@ -27,7 +27,7 @@ const SITUACOES = [
 /**
  * Criar ou editar uma capacitação.
  *
- * O TIPO vem da TELA, e não de um campo (chefe, 2026-08-02). Ministrada e
+ * O TIPO vem da TELA, e não de um campo. Ministrada e
  * recebida viraram duas telas, em dois lugares do menu, e quem abre este
  * formulário já decidiu qual das duas está cadastrando. Com o tipo como campo, a
  * pessoa escolhia de que lado estava antes de saber o que ia digitar, e trocá-lo
@@ -37,8 +37,8 @@ const SITUACOES = [
  * treinamos, recebida pergunta sob que Plano/Código.
  *
  * OS MILITARES DA DIVISÃO valem para os DOIS tipos, e o rótulo é o que muda: na
- * ministrada são os instrutores e monitores, na recebida são os capacitados
- * (chefe, 2026-08-02). Eles vêm do CADASTRO, e não de um texto: "Cap Fulano" e
+ * ministrada são os instrutores e monitores, na recebida são os capacitados.
+ * Eles vêm do CADASTRO, e não de um texto: "Cap Fulano" e
  * "Fulano" eram a mesma pessoa e duas strings, e nenhuma das duas respondia "de
  * quais capacitações o Fulano participou".
  *
@@ -109,8 +109,8 @@ export function openCapacitacaoDialog({
     value: capacitacao?.plano_codigo ?? '',
   });
   // OS MILITARES DA DIVISÃO valem para os DOIS tipos, e só o rótulo muda: na
-  // ministrada são quem ensinou, na recebida quem aprendeu. Vêm do CADASTRO
-  // desde 2026-08-02, e não de um texto digitado.
+  // ministrada são quem ensinou, na recebida quem aprendeu. Vêm do CADASTRO, e
+  // não de um texto digitado.
   //
   // Quem já está marcado continua na lista mesmo se tiver sido desativado no
   // cadastro: quem participou em março e saiu da Divisão em julho não pode sumir
@@ -224,7 +224,7 @@ export function openCapacitacaoDialog({
             // A lista vale para os DOIS tipos, ao contrário dos dois acima.
             militares: militaresField.getValue(),
             documento: documentoField.getValue() || null,
-            // SEM `meta_pit_id`, e a omissão é deliberada (2026-08-04). Este
+            // SEM `meta_pit_id`, e a omissão é deliberada. Este
             // formulário não tem o campo, e a chave AUSENTE manda o servidor
             // preservar o vínculo gravado. Mandar `meta_pit_id: null` aqui
             // desligaria o vínculo com a meta do PIT a cada salvamento, que é

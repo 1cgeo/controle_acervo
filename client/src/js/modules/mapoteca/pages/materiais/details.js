@@ -111,7 +111,7 @@ export async function renderMaterialDetails(container, { params }) {
   /**
    * Monta a ficha UMA vez. Dai em diante o `load` so repinta.
    *
-   * O DEFEITO QUE ISTO CORRIGE (medido em 2026-08-04). O `createDataTable`
+   * O DEFEITO QUE ISTO CORRIGE. O `createDataTable`
    * rodava dentro do `load`, e cada gravacao jogava fora o objeto da tabela.
    * Iam junto a busca, a ordenacao, a pagina atual, a selecao e o foco do
    * teclado, porque esse estado mora no OBJETO da tabela, e nao no DOM. O chefe

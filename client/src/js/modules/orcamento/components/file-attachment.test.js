@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Mock do service: o componente importa as 4 funcoes de anexo. Usa vi.hoisted
 // porque a factory do vi.mock e icada para o topo do arquivo.
@@ -17,8 +18,6 @@ vi.mock('@utils/toast.js', () => ({
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
 import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 function fileInputOf(root) {
   return root.querySelector('input[type="file"]');
 }
@@ -27,6 +26,22 @@ function setFile(input, file) {
   Object.defineProperty(input, 'files', { value: [file], configurable: true });
   input.dispatchEvent(new Event('change'));
 }
+
+/**
+ * O botao do modal de confirmacao, pelo ROTULO.
+ *
+ * O `confirmDialog` pendura o modal no `document.body`, e nao dentro do widget:
+ * procurar dentro de `w.element` nao o acha.
+ */
+function botaoDoDialogo(rotulo) {
+  const botao = [...document.querySelectorAll('.modal__footer .btn')]
+    .find((b) => b.textContent.trim() === rotulo);
+  if (!botao) throw new Error(`Botão "${rotulo}" não está no diálogo de confirmação`);
+  return botao;
+}
+
+const confirmarNoDialogo = () => botaoDoDialogo('Remover').click();
+const cancelarNoDialogo = () => botaoDoDialogo('Cancelar').click();
 
 function names(root) {
   return [...root.querySelectorAll('.file-attach__name')].map((n) => n.textContent);
@@ -98,8 +113,34 @@ describe('createFileAttachment', () => {
     removeBtn.click();
     await flush();
 
+    // O DELETE so sai depois da confirmacao: o arquivo sai do servidor, e o
+    // lixo fica a um pixel do botao de baixar.
+    expect(svc.deleteArquivo).not.toHaveBeenCalled();
+    confirmarNoDialogo();
+    await flush();
+
     expect(svc.deleteArquivo).toHaveBeenCalledWith(9);
     expect(names(w.element)).toEqual([]);
+  });
+
+  // O CONTROLE NEGATIVO da confirmacao: cancelar tem de deixar o arquivo onde
+  // esta. Sem este caso, um `confirmDialog` que sempre resolvesse `true`
+  // passaria no teste acima.
+  test('single edicao: cancelar a confirmacao NAO remove o anexo', async () => {
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'extrato.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 3 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    w.element.querySelector('.data-table__action-btn--danger').click();
+    await flush();
+
+    cancelarNoDialogo();
+    await flush();
+
+    expect(svc.deleteArquivo).not.toHaveBeenCalled();
+    expect(names(w.element)).toEqual(['extrato.pdf']);
   });
 });
 

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O jsdom nao tem WebGL, entao o MapLibre real nao sobe. O duble registra o que
 // a pagina PEDE ao mapa (quais pontos, o que esta selecionado, o que foi
@@ -81,8 +82,6 @@ import {
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { abrirPontoDialog } from '@modules/acervo/pages/ponto_controle/ponto-dialog.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
 const PONTOS = [
   {
     id: 1, cod_ponto: 'RS-HV-1', lote_id: 70, lote: 'Missão 1', pit: 'PIT-01',
@@ -127,14 +126,14 @@ const resposta = ({ pontos = PONTOS, total = 2, pagina = 1 } = {}) =>
   Promise.resolve({ total, pagina, pontos });
 
 const cartoes = (c) => [...c.querySelectorAll('.busca-cartao')];
-// Selecionar passou a ser o BOTAO do rodape (chefe, 2026-07-31); o cartao abre
-// a ficha. As duas telas do acervo andam juntas: mesmo cartao, mesmo gesto.
+// Quem seleciona é o BOTÃO do rodapé; o cartão abre a ficha. As duas telas do
+// acervo andam juntas: mesmo cartão, mesmo gesto.
 const marcar = (c, i) => c.querySelectorAll('.busca-cartao')[i]
   .querySelector('.busca-cartao__selecionar').click();
 const contador = (c) => c.querySelector('.busca-resultados__contador').textContent;
 const ultimaBusca = () => buscarPontos.mock.calls[buscarPontos.mock.calls.length - 1][0];
 
-// Os filtros de dominio viraram marcacao MULTIPLA em 2026-08-04. Os auxiliares
+// Os filtros de dominio viraram marcacao MULTIPLA. Os auxiliares
 // abaixo dirigem o componente pelo mesmo gesto de quem usa a tela: abrir o
 // painel, marcar a caixa, fechar.
 const filtros = (c) => [...c.querySelectorAll('.filtro-multiplo')];
@@ -353,7 +352,7 @@ describe('tela de ponto de controle: lista e mapa', () => {
 describe('tela de ponto de controle: facetas', () => {
   test('a opcao mostra o quantitativo, e o botao mostra o total', async () => {
     const { container } = await montar();
-    // Nao ha filtro de SITUACAO desde 2026-07-29: so ponto aprovado entra no
+    // Nao ha filtro de SITUACAO: so ponto aprovado entra no
     // acervo, entao a coluna e constante e o filtro nao discriminava nada.
     const projeto = filtro(container, 'Projeto');
     const lote = filtro(container, 'Lote (missão)');
@@ -362,7 +361,9 @@ describe('tela de ponto de controle: facetas', () => {
     expect(opcoes(lote)).toContain('Missão 1 (PIT-01) (2)');
     // Sem nada marcado, o botao diz quantos pontos a consulta devolve.
     expect(rotulo(projeto)).toBe('Todos os projetos (2)');
-    expect(filtro(container, 'Estado')).toBeTruthy();
+    // O total do botão é o da CONSULTA, e vale para todo filtro da barra,
+    // inclusive o de Estado, que não recebe faceta do servidor.
+    expect(rotulo(filtro(container, 'Estado'))).toBe('Todos os estados (2)');
   });
 
   test('opcao SEM ponto nao aparece', async () => {
@@ -415,7 +416,7 @@ describe('tela de ponto de controle: facetas', () => {
   });
 
   test('marcar DOIS projetos pergunta pelos dois de uma vez', async () => {
-    // A razao de o filtro ter deixado de ser combo (chefe, 2026-08-04): antes,
+    // A razao de o filtro ter deixado de ser combo: antes,
     // responder "o que existe nos dois projetos" custava duas consultas.
     const { container } = await montar();
     const projeto = filtro(container, 'Projeto');
@@ -489,7 +490,9 @@ describe('tela de ponto de controle: facetas', () => {
     expect(opcoes(projeto)).toEqual([]);
     expect(projeto.querySelector('.filtro-multiplo__vazio').classList.contains('hidden'))
       .toBe(false);
-    expect(filtros(container).length).toBeGreaterThan(0);
+    // Faceta vazia não apaga a barra: os quatro filtros continuam montados, e o
+    // de Projeto é que diz que não há o que marcar.
+    expect(filtros(container)).toHaveLength(4);
   });
 });
 
@@ -571,9 +574,11 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
     container.querySelector('.busca__acoes .btn--text').click();
     await flush();
 
-    const filtros = ultimaBusca();
-    expect(filtros.projeto_id).toEqual([]);
-    expect(filtros.cod_ponto).toBe('');
+    // Nome próprio: `filtros` é o auxiliar de módulo que lê os filtros da tela,
+    // e sombreá-lo aqui confundiria quem leu o resto do arquivo.
+    const filtrosEnviados = ultimaBusca();
+    expect(filtrosEnviados.projeto_id).toEqual([]);
+    expect(filtrosEnviados.cod_ponto).toBe('');
     expect(container.querySelector('.busca-selecao').classList.contains('hidden')).toBe(true);
   });
 
@@ -763,7 +768,7 @@ describe('tela de ponto de controle: robustez', () => {
     expect(cartoes(container)).toHaveLength(1);
   });
 
-  // --- Destaque do lugar filtrado (chefe, 2026-07-29) ------------------------
+  // --- Destaque do lugar filtrado ------------------------
   //
   // O filtro por lugar era invisivel no mapa: escolher um estado mudava a lista
   // e deixava a camera onde estava, entao a tela nao dizia ONDE o recorte caiu.
@@ -776,7 +781,7 @@ describe('tela de ponto de controle: robustez', () => {
     await flush();
 
     expect(getLimite).toHaveBeenCalledWith('estado', '43');
-    // Uma LISTA de limites desde 2026-08-04: o filtro marca varios estados.
+    // Uma LISTA de limites: o filtro marca varios estados.
     expect(mapaFalso.limiteDestacado[0].bbox).toEqual([-57.6, -33.7, -49.6, -27.0]);
     expect(mapaFalso.limiteEnquadrou).toBe(true);
   });

@@ -1,6 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber } from '@utils/format.js';
 import { createStatsCard } from '@components/stats-card.js';
+import { estadoErro } from '@components/estado-erro.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
 
 /**
@@ -109,7 +110,7 @@ export async function renderOverviewTab(container) {
     suffix: 'GB',
   });
   // Saiu "Total de Usuários" e entrou "Pontos de Controle"; saiu "Total de
-  // Projetos" e entrou "Carregamento no mês" (chefe, 2026-07-29). A visão geral
+  // Projetos" e entrou "Carregamento no mês". A visão geral
   // do acervo responde o que existe e o que ENTROU, e a contagem de usuários
   // não é acervo: ela vive na tela de usuários da plataforma.
   const cardPontosControle = mkCard('Pontos de Controle', ICONS.place, 'success');
@@ -173,6 +174,15 @@ export async function renderOverviewTab(container) {
       cardCarregamentoMes.update({ value: 'Erro', loading: false });
       cardVersoes.update({ value: 'Erro', loading: false });
       cardDownloads.update({ value: 'Erro', loading: false });
+      // O painel de alertas TEM de mudar quando o health falha.
+      //
+      // Antes o ramo de falha nao o tocava, e o auto-refresh de 60 s deixava na
+      // tela o painel da carga anterior: "Nenhum alerta: sistema saudavel"
+      // seguia afirmando saude horas depois de o endpoint parar de responder.
+      // Na primeira carga era pior ainda, porque nao aparecia painel nenhum, e
+      // a ausencia se le como "nao ha alerta". E o painel que o chefe olha para
+      // saber se ha volume enchendo: dizer saude sem saber e a falha mais cara.
+      alertContainer.replaceChildren(estadoErro(health.reason, load));
     }
   }
 

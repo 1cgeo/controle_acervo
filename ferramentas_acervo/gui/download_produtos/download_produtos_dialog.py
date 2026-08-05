@@ -1,10 +1,10 @@
 # Path: gui\download_produtos\download_produtos_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (QDialog, QMessageBox, QFileDialog, 
-                                QCheckBox, QVBoxLayout, QHBoxLayout, QLabel)
-from qgis.PyQt.QtCore import Qt, QDir
-from qgis.core import QgsProject, QgsVectorLayer, QgsMapLayerType
+from qgis.PyQt.QtWidgets import (QDialog, QMessageBox, QFileDialog, QCheckBox, QLabel,
+                                 QVBoxLayout, QHBoxLayout)
+from qgis.PyQt.QtCore import QDir, QTimer
+from qgis.core import QgsMapLayerType
 from .download_manager import DownloadManager
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -26,7 +26,12 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         self.file_infos = []
         self.file_type_checkboxes = {}
         self.download_in_progress = False
-        
+
+        # Um disparo só depois da última caixa marcada. Ver agendar_resumo.
+        self._resumo_timer = QTimer(self)
+        self._resumo_timer.setSingleShot(True)
+        self._resumo_timer.timeout.connect(self.update_file_summary)
+
         # Setup UI
         self.setup_ui()
         
@@ -92,40 +97,41 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
                     
                     checkbox = QCheckBox(file_type["nome"])
                     checkbox.setChecked(True)  # Default to checked
-                    checkbox.stateChanged.connect(self.update_file_summary)
+                    checkbox.stateChanged.connect(self.agendar_resumo)
                     self.file_type_checkboxes[str(file_type["code"])] = checkbox
                     row_layout.addWidget(checkbox)
-                    
+
                     if i % 3 == 2 or i == len(file_types) - 1:
                         # Add stretch to fill remaining space in the row
                         row_layout.addStretch()
             else:
-                self.create_default_file_types(layout)
-                QMessageBox.warning(self, "Aviso", "Não foi possível carregar os tipos de arquivo do servidor.")
+                self.sem_tipos_de_arquivo(layout)
         except Exception as e:
-            self.create_default_file_types(layout)
-            QMessageBox.warning(self, "Aviso", f"Erro ao carregar tipos de arquivo: {str(e)}")
-            
-    def create_default_file_types(self, layout):
-        """Create default file types as fallback."""
-        file_types = [
-            {"code": "1", "nome": "Arquivo principal"},
-            {"code": "2", "nome": "Formato alternativo"},
-            {"code": "4", "nome": "Metadados"}
-        ]
-        
-        row_layout = QHBoxLayout()
-        layout.addLayout(row_layout)
-        
-        for file_type in file_types:
-            checkbox = QCheckBox(file_type["nome"])
-            checkbox.setChecked(True)
-            checkbox.stateChanged.connect(self.update_file_summary)
-            self.file_type_checkboxes[file_type["code"]] = checkbox
-            row_layout.addWidget(checkbox)
-        
-        row_layout.addStretch()
-    
+            self.sem_tipos_de_arquivo(layout, str(e))
+
+    def sem_tipos_de_arquivo(self, layout, detalhe=''):
+        """Diz que a lista de tipos não veio, em vez de inventar uma.
+
+        NÃO existe lista de reserva escrita aqui. Os códigos de tipo de arquivo
+        são domínio do servidor, e uma lista fixa no cliente faria a tela pedir
+        o download de um código que pode ter mudado de significado.
+        """
+        aviso = QLabel(
+            "Não foi possível carregar os tipos de arquivo do servidor.\n"
+            "Feche esta janela, confira a conexão e abra de novo."
+        )
+        aviso.setWordWrap(True)
+        layout.addWidget(aviso)
+        self.downloadButton.setEnabled(False)
+        QMessageBox.warning(
+            self, "Tipos de arquivo indisponíveis",
+            "A lista de tipos de arquivo não veio do servidor, e sem ela o download "
+            "não sabe o que pedir."
+            + (f"\n\nCausa: {detalhe}" if detalhe else "")
+            + "\n\nConfira a conexão com o servidor e abra a janela de novo."
+        )
+
+
     def load_selected_products(self):
         """Load selected products from the active layer."""
         # Get active layer
@@ -133,21 +139,25 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         
         if not active_layer or active_layer.type() != QgsMapLayerType.VectorLayer:
             QMessageBox.warning(
-                self,
-                "Aviso",
-                "Selecione uma camada de produtos válida."
+                self, "Selecione a camada",
+                "Nenhuma camada de produtos está ativa.\n\n"
+                "Carregue as camadas por 'Carregar Camadas de Produtos', clique na "
+                "camada no painel de camadas para deixá-la ativa, selecione os produtos "
+                "no mapa e abra esta janela de novo."
             )
+            self.statusLabel.setText("Nenhuma camada de produtos ativa.")
             return
-            
+
         # Get selected features
         selected_features = active_layer.selectedFeatures()
-        
+
         if not selected_features:
             QMessageBox.warning(
-                self,
-                "Aviso",
-                "Selecione pelo menos um produto para download."
+                self, "Selecione os produtos",
+                f"Nenhuma feição está selecionada na camada '{active_layer.name()}'.\n\n"
+                "Selecione no mapa os produtos que quer baixar e abra esta janela de novo."
             )
+            self.statusLabel.setText("Nenhum produto selecionado.")
             return
             
         # Extract product IDs (assuming 'id' field exists)
@@ -203,9 +213,18 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         has_files = len(self.file_infos) > 0
         self.downloadButton.setEnabled(has_destination and has_files and not self.download_in_progress)
 
+    def agendar_resumo(self):
+        """Adia o re-prepare até a pessoa parar de marcar caixas.
+
+        Cada `prepare-download` RESERVA tokens de 24 horas no servidor e é uma
+        chamada de rede na thread da interface. Marcar oito tipos de arquivo em
+        seguida dispararia oito chamadas, e sete conjuntos de token que ninguém
+        vai confirmar.
+        """
+        self._resumo_timer.start(500)
+
     def update_file_summary(self):
-        """Update file count and size summary based on selected file types.
-        Chamado quando checkboxes de tipo de arquivo mudam."""
+        """Refaz o resumo (contagem, tamanho) para os tipos marcados."""
         # Não re-preparar a lista durante um download em andamento: isso
         # substituiria file_infos/tokens no meio do processo
         if self.download_in_progress:
@@ -374,7 +393,7 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
     def handle_close(self):
         """Handle close button click.
 
-        Apenas dispara o fechamento — a confirmação e a parada segura das
+        Apenas dispara o fechamento. A confirmação e a parada segura das
         threads acontecem em closeEvent, que também cobre o X da janela.
         """
         self.close()
@@ -405,7 +424,3 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         # cobre threads que ainda estão encerrando após o último arquivo)
         self.download_manager.shutdown()
         super().closeEvent(event)
-
-    def showEvent(self, event):
-        """Handle show event."""
-        super().showEvent(event)

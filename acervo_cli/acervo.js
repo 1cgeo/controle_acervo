@@ -48,8 +48,10 @@ DIA A DIA
                                    os arquivos, com o caminho no volume
   acervo finalizados --ano 2026 --mes 7
                                    o que foi finalizado no periodo (rota publica)
-  acervo rpcmtec --ano 2026 --mes 7 [--docx] [--anuario]
-                                   o RPCMTec inteiro (e o Anuario Estatistico)
+  acervo rpcmtec --ano 2026 --mes 7 [--pdf] [--anuario]
+                                   o RPCMTec do mes (e o Anuario Estatistico).
+                                   Le a EDICAO mensal daquele ano/mes; se ela
+                                   nao existir, o comando diz como abri-la
 
 ESCRITA GUARDADA (acervo de PRODUCAO)
   acervo editar versao  --id 7244 --set data_edicao=2019-05-01 --dry-run
@@ -84,13 +86,20 @@ FLAGS GLOBAIS
   --campos a,b    recorta colunas na saida
   --dry-run       valida contra o Joi e mostra a requisicao; NAO toca a rede,
                   nao precisa de servidor nem de credencial
+  --confirmar ID  libera acao irreversivel, repetindo os identificadores que ela
+                  atinge (a operacao diz quais, e recusa ate baterem)
   --server URL    sobrepoe SCA_URL
   --cliente       aplicacao no servico de auth (padrao sca_web)
   --insecure      aceita HTTPS com certificado self-signed
   --sem-cache     nao le nem grava o token em cache
 
-Sem login: /api (health), /api/integracao/* e os GET de /api/gerencia/dominio/*.
-Leitura exige perfil de consulta no modulo acervo; catalogar exige operador; excluir exige gerente. O administrador passa em tudo.`
+CODIGO DE SAIDA
+  0 tudo certo
+  1 erro, ou acervo auditar com invariante DEFECT ou que nao rodou
+
+Sem login so /api (health) e /api/integracao/*. Todo o resto exige perfil no
+modulo acervo, inclusive os GET de dominio: consulta le, operador cataloga,
+gerente exclui. O administrador passa em tudo.`
 
 const ROTEADOR = {
   schema: './comandos/schema',
@@ -121,8 +130,7 @@ async function principal () {
   if (!modulo && RECURSOS[comando]) modulo = './comandos/api'
 
   // Comando que traz ajuda PROPRIA responde por ela; os outros caem no mapa
-  // geral, como sempre. Sem isto, `acervo auditar --ajuda` imprimia o mapa
-  // geral e a ajuda especifica ficava inalcancavel, escrita e morta.
+  // geral.
   if (pediuAjuda) {
     const proprio = modulo && require(modulo).ajudaPropria
     if (!proprio) {
@@ -162,7 +170,12 @@ async function principal () {
     process.stderr.write('[aviso] ' + aviso + '\n')
   }
   if (resultado.texto) process.stdout.write(resultado.texto + '\n')
-  return 0
+
+  // O comando escolhe o codigo de saida quando o DESFECHO importa a quem chama:
+  // `acervo auditar` devolve 1 com invariante DEFECT ou que nao rodou, para
+  // poder falhar dentro de uma rotina. Sem propagar isto aqui, a rotina sempre
+  // via sucesso.
+  return typeof resultado.codigo === 'number' ? resultado.codigo : 0
 }
 
 principal()

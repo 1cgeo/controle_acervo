@@ -11,10 +11,9 @@ O QUE MUDA NO CONTRATO, e as duas coisas vêm de não haver transferência:
     já está. No upload o volume é o primário do tipo de produto, já que lá quem
     escolhe o destino é o servidor.
   - `checksum` e `tamanho_mb` são RECUSADOS pelo servidor (400). Quem mede é ele,
-    lendo o arquivo uma vez. Por isso esta tela NÃO calcula hash: o
-    `prepare-upload` cobrava do cliente uma leitura do arquivo inteiro só para
-    declarar um número que o `confirm-upload` reconferia lendo tudo de novo --
-    362 GB relidos no LOTE_1, de 1h20 a 3h.
+    lendo o arquivo uma vez. Por isso esta tela NÃO calcula hash: fazê-lo aqui
+    obrigaria a ler o arquivo inteiro duas vezes, uma no cliente e outra na
+    conferência do servidor.
 
 O `nome_arquivo` aqui é o caminho RELATIVO à raiz do volume, com barra normal e
 subpasta inclusa (`LOTE_1/IMAGENS/Ortoimagem_MI 2965-1`), e não um nome solto.
@@ -81,6 +80,12 @@ class CatalogarVolumeDialog(QDialog, FORM_CLASS):
     def setup_ui(self):
         self.setWindowTitle("Catalogar produtos já no volume")
 
+        # Os botões são ligados ANTES de qualquer saída antecipada. Ligá-los no
+        # fim deixava "Criar camada modelo" clicável e inerte sempre que não
+        # houvesse volume de origem.
+        self.catalogarButton.clicked.connect(self.catalogar)
+        self.createModelLayerButton.clicked.connect(self.criar_camada_modelo)
+
         # SÓ volume com layout de origem. É a porta que impede esta rota de virar
         # atalho para pular a validação de transferência do acervo comum: o
         # servidor recusa qualquer outro, e oferecê-los aqui seria convidar ao 400.
@@ -92,6 +97,7 @@ class CatalogarVolumeDialog(QDialog, FORM_CLASS):
         if not volumes:
             self.volumeComboBox.setEnabled(False)
             self.catalogarButton.setEnabled(False)
+            self.createModelLayerButton.setEnabled(False)
             self.statusLabel.setText(
                 "Nenhum volume marcado como 'layout de origem'. Marque a opção em "
                 "Gerenciar Volumes antes de catalogar."
@@ -104,9 +110,6 @@ class CatalogarVolumeDialog(QDialog, FORM_CLASS):
             self.statusLabel.setText(
                 "Nenhuma camada compatível no projeto. Crie a camada modelo para começar."
             )
-
-        self.catalogarButton.clicked.connect(self.catalogar)
-        self.createModelLayerButton.clicked.connect(self.criar_camada_modelo)
 
     def criar_camada_modelo(self):
         if MODELO.criar(self, self.layerComboBox, self.iface):

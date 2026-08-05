@@ -75,8 +75,7 @@ router.put(
   })
 )
 
-// Trocar a PROPRIA senha. Ate 2026-08-02 o SCA nao tinha como oferecer isto: a
-// senha vivia no Auth Server, e a tela dela era de la.
+// Trocar a PROPRIA senha.
 router.put(
   '/perfil/senha',
   verifyLogin,
@@ -103,9 +102,7 @@ router.post(
   verifyAdmin,
   schemaValidation({ body: usuarioSchema.listaUsuario }),
   asyncHandler(async (req, res, next) => {
-    // `req.usuarioUuid` e quem RESETA, e nunca o alvo. Ele existia em toda rota
-    // desta feature e simplesmente nao era repassado, e por isso nenhum ato de
-    // administracao de usuario deixava rastro ate 2026-08-02.
+    // `req.usuarioUuid` e quem RESETA, e nunca o alvo.
     const dados = await usuarioCtrl.resetaSenhas(
       req.body.usuarios, req.usuarioUuid, req.contexto
     )

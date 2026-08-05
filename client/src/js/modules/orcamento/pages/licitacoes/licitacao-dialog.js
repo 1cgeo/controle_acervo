@@ -25,7 +25,7 @@ const TIPO_PARTICIPANTE = 3;
  * Abre o dialog de criar/editar Licitacao.
  * O tipo da licitacao decide a subsecao do RPCMTec: tipo 1 (GCALC DSG) alimenta
  * a 4.4, e os tipos 2 (Própria) e 3 (Participante) alimentam a 4.5 (decisao do
- * chefe, 2026-08-04; ver gerarLicitacoes em rpcmtec_ctrl.js). Uma licitacao
+ * ver `gerarLicitacoes` em rpcmtec_ctrl.js). Uma licitacao
  * pode cobrir varios DFDs, entao nao ha vinculo direto a um DFD. Em GCALC DSG
  * e Própria a OM gestora e a propria OM; so em Participante a OM gestora pode
  * ser outra.
@@ -65,7 +65,7 @@ export async function openLicitacaoDialog({
     options: tipoOptions,
     value: lic?.tipo_id ?? undefined,
     // Os TRES tipos saem no RPCMTec. O aviso anterior dizia que Participante
-    // ficava de fora, e deixou de ser verdade em 2026-08-04.
+    // ficaria de fora do relatorio.
     helpText: 'Os três tipos entram no RPCMTec. GCALC DSG vai para a subseção 4.4. Própria e Participante vão para a 4.5, "Demais Licitações da atividade-fim".',
     onChange: (v) => updateOmVisibility(v),
   });

@@ -1,8 +1,7 @@
 # Path: gui\volume_tipo_produto\manage_volume_tipo_produto_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QPushButton, QMessageBox, QTableWidgetItem
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QTableWidget, QMessageBox, QTableWidgetItem
 from ..ui_utils import wire_single_selection_buttons
 from .edit_volume_tipo_produto_dialog import EditVolumeTipoProdutoDialog
 

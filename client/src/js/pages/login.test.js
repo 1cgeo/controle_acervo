@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@services/api-client.js', () => ({
   apiPost: vi.fn(),
@@ -11,8 +12,6 @@ vi.mock('@utils/backgrounds.js', () => ({
 
 import { renderLogin } from './login.js';
 import { apiPost } from '@services/api-client.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Monta a tela e devolve o container. */
 async function montar() {
@@ -35,7 +34,7 @@ describe('tela de entrada da plataforma', () => {
     location.hash = '';
   });
 
-  // O pedido do chefe (2026-07-27): quem chega tem que reconhecer o seu caminho
+  // O pedido do chefe: quem chega tem que reconhecer o seu caminho
   // sem ler instrucao. Por isso os dois ficam visiveis DE UMA VEZ, e cada um diz
   // para quem serve. Se um deles voltar a se esconder atras de aba ou clique,
   // este teste reprova.
@@ -116,11 +115,17 @@ describe('tela de entrada da plataforma', () => {
     });
   });
 
-  test('o foco comeca no usuario: o caminho do dia a dia e o login', async () => {
-    const container = await montar();
+  test('o foco comeca no campo de usuario, e nao no localizador do pedido', async () => {
+    // `focus()` só pega com o nó na árvore, então o container entra no
+    // documento ANTES do render, e não depois.
+    const container = document.createElement('div');
     document.body.appendChild(container);
-    // O foco so vale com o no na arvore; a intencao esta no codigo da tela.
-    expect(container.querySelector('#usuario')).toBeTruthy();
+    await renderLogin(container);
+    await flush();
+
+    expect(document.activeElement).toBe(container.querySelector('#usuario'));
+    expect(document.activeElement).not.toBe(container.querySelector('#localizador'));
+
     document.body.removeChild(container);
   });
 });

@@ -142,7 +142,7 @@ COMMIT;
 --
 -- NÃO RODA POR PADRÃO. Descomente as duas linhas abaixo para aplicar.
 --
--- O seletor de ano da navbar acabou (decisão do chefe, 2026-08-04). Cada tela
+-- O seletor de ano da navbar acabou. Cada tela
 -- passa a ter o seu, começa sempre no ano atual e não guarda nada. Com isso
 -- `orcamento.configuracao.ano_referencia` perde a razão de existir: ela era o
 -- ano PADRÃO das telas, e não há mais padrão a configurar.

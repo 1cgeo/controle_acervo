@@ -13,10 +13,10 @@ const router = express.Router()
 
 /**
  * Contorno de um estado ou municipio, para a tela DESTACAR o lugar filtrado e
- * dar zoom nele (chefe, 2026-07-29).
+ * dar zoom nele.
  *
- * Rota propria, e nao mais um endpoint do acervo ou do ponto de controle: o
- * schema `limites` e dado de REFERENCIA, que os dois consultam e nenhum e dono.
+ * Rota propria, e nao um endpoint do acervo ou do ponto de controle: o schema
+ * `limites` e dado de REFERENCIA, que os dois consultam e nenhum e dono.
  * Pendurada em um deles, a outra tela teria de chamar a rota do vizinho.
  *
  * Perfil de consulta do ACERVO, o mesmo das duas telas que a usam. Nao ha o que

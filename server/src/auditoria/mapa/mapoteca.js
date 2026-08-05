@@ -6,8 +6,7 @@
  * O contrato de uma entrada esta em `../index.js`.
  *
  * O agregado `pedido` reune quatro tabelas (pedido, item, impressao e etiqueta),
- * e e o desenho que `mapoteca.pedido_auditoria` ja tinha desde 2026-07-30: e o
- * que faz o historico do pedido trazer tudo que aconteceu com ele, itens
+ * e e o que faz o historico do pedido trazer tudo que aconteceu com ele, itens
  * inclusive. As demais tabelas sao cadastros com ficha propria.
  */
 

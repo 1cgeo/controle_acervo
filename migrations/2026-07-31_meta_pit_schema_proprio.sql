@@ -7,8 +7,8 @@
 -- texto livre, justamente porque a tabela morava no vizinho. Duas verdades sobre
 -- a mesma coisa, uma sem cobranca nenhuma do banco.
 --
--- A SAIDA. Schema proprio `pit`, pelo mesmo criterio do schema `limites`
--- (2026-07-29): dado que varios consomem e nenhum e dono nao mora dentro de um
+-- A SAIDA. Schema proprio `pit`, pelo mesmo criterio do schema `limites`:
+-- dado que varios consomem e nenhum e dono nao mora dentro de um
 -- consumidor. O nome da tabela perde o sufixo redundante (`pit.meta`, nao
 -- `pit.meta_pit`). Decisao do chefe, 2026-07-31.
 --

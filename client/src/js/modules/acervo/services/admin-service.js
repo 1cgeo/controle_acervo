@@ -6,11 +6,11 @@ import { cachedFetch, invalidate, TTL_DOMINIO } from '@services/cache.js';
  *
  * Separada de `acervo-service.js` de proposito: aquele e o servico das telas de
  * LEITURA e de cadastro de produto, e ja passa de 550 linhas. Aqui moram os
- * quatro cadastros estruturantes que ate 2026-08-02 so existiam no plugin do
- * QGIS -- volume de armazenamento, volume x tipo de produto, projeto e lote.
+ * quatro cadastros estruturantes que fora daqui so existiriam no plugin do QGIS:
+ * volume de armazenamento, volume x tipo de produto, projeto e lote.
  *
- * SEM PREFIXO: as rotas do acervo nao mudaram na fusao de 2026-07-27
- * ('/volumes', '/projetos', '/gerencia'). Ver server/src/routes.js.
+ * SEM PREFIXO de modulo: as rotas do acervo sao '/volumes', '/projetos' e
+ * '/gerencia'. Ver server/src/routes.js.
  *
  * CORPO EM ARRAY, ATE PARA UM. As rotas de volume recebem `{ volume_...: [...] }`
  * e as de exclusao recebem `{ ..._ids: [...] }`, porque nasceram para a carga em
@@ -226,6 +226,30 @@ export const criarViewsMaterializadas = () =>
  */
 export const limparDownloadsExpirados = () =>
   apiPost('/acervo/cleanup-expired-downloads');
+
+/**
+ * Quantas versoes esperam miniatura, e quantas cabem numa passada.
+ *
+ * A fila e DIVIDA VISIVEL: nao ha agendamento que a esvazie sozinha, entao sem
+ * este numero na tela o acervo acumula ficha sem imagem e ninguem ve.
+ *
+ * @returns {Promise<{pendentes:number, lote:number}>}
+ */
+export const contarMiniaturasPendentes = () =>
+  apiGet('/acervo/miniaturas/pendentes');
+
+/**
+ * Renderiza a miniatura de ate `lote` versoes da fila.
+ *
+ * Cada arquivo custa segundos e roda processo externo, entao a passada e
+ * limitada e se chama em laco ate `restante` zerar. `pulada` quer dizer que
+ * outra varredura esta em curso, e `abortada` que ela parou no meio: nos dois
+ * casos, anunciar sucesso seria anunciar trabalho que nao aconteceu.
+ *
+ * @returns {Promise<{pulada?:boolean, abortada?:string, sucessos:number,
+ *   falhas:number, restante:number}>}
+ */
+export const varrerMiniaturas = () => apiPost('/acervo/miniaturas/varrer');
 
 /**
  * Reconcilia o nome FISICO do arquivo com o padrao derivado dos metadados.

@@ -5,7 +5,7 @@ import { cachedFetch, invalidate, TTL_DOMINIO, TTL_LISTA, TTL_DASHBOARD } from '
  * Camada de servico do modulo MAPOTECA: uma funcao por endpoint do backend.
  * Todas devolvem o payload `dados` (o api-client ja desembrulha o envelope).
  *
- * PREFIXO: a fusao com o SCA (2026-07-27) NAO mexeu nas rotas da mapoteca. Elas
+ * PREFIXO: a fusao com o SCA NAO mexeu nas rotas da mapoteca. Elas
  * seguem em '/mapoteca/...' e '/mapoteca/dashboard/...', como em
  * server/src/routes.js. So o orcamento ganhou prefixo, porque os nomes dele
  * colidiam com os do acervo. As rotas de PLATAFORMA ('/login', '/usuarios')
@@ -147,13 +147,13 @@ export function deletePedidos(ids) {
 // ---------------------------------------------------------------------------
 
 /**
- * Add an item to an order. `uuid_versao` is required (RN08 — no loose items).
+ * Add an item to an order. `uuid_versao` is required (RN08, no loose items).
  * @param {{uuid_versao:string, pedido_id:number, quantidade:number, tipo_midia_id:number,
  *   producao_especifica?:boolean, quantidade_fornecida?:number, tipo_midia_fornecida_id?:number,
  *   observacao?:string}} item
  *
- * A forma de entrega e a data de entrega saíram do item em 2026-07-30 e agora
- * são do pedido (forma_entrega_id e data_atendimento).
+ * A forma de entrega e a data de entrega são do PEDIDO (`forma_entrega_id` e
+ * `data_atendimento`), e não do item.
  */
 export function createProdutoPedido(item) {
   invalidate('pedidos');
@@ -188,16 +188,21 @@ export function deleteProdutosPedido(ids) {
  * Sem cache: é a tela de quem está trabalhando, e o número tem de bater com o que
  * a pessoa acabou de registrar.
  */
-export function getPedidosEmAberto() {
-  return apiGet(`${BASE}/pedido/em_aberto`);
+export function getPedidosEmAberto(incluirRemetidos = false) {
+  // Sem a query o servidor devolve a fila de IMPRESSÃO (1, 2 e 3), que é o
+  // contrato que o plugin do QGIS já instalado espera. Com ela devolve a fila de
+  // ATENDIMENTO, que traz também o Remetido (4), ainda à espera do Concluído.
+  const sufixo = incluirRemetidos ? '?incluir_remetidos=true' : '';
+  return apiGet(`${BASE}/pedido/em_aberto${sufixo}`);
 }
 
 /**
  * O que imprimir de um pedido: um item por linha, com a carta (uuid_arquivo) e o
  * que falta imprimir.
  *
- * Leitura pura. Não confundir com prepararDownloadImpressao, que cria token de
- * download e devolve caminho de volume para o plugin do QGIS.
+ * Leitura pura. Não confundir com POST /pedido/:id/download_impressao, que cria
+ * token de download e devolve caminho de volume para o plugin do QGIS (ver o
+ * comentário logo abaixo de `baixarCartaDoPedido`).
  * @param {number} pedidoId
  */
 export function getImpressaoDoPedido(pedidoId) {
@@ -223,17 +228,42 @@ export function baixarCartaDoPedido(pedidoId, uuidArquivo, nomeArquivo) {
   );
 }
 
-export function prepararDownloadImpressao(pedidoId) {
-  return apiPost(`${BASE}/pedido/${pedidoId}/download_impressao`);
-}
+// SEM `prepararDownloadImpressao`: POST /mapoteca/pedido/:id/download_impressao
+// cria token de download e devolve CAMINHO DE VOLUME, que só serve ao plugin do
+// QGIS (ferramentas_mapoteca/gui/pedidos/impressao_manager.py). O plugin chama a
+// rota pelo cliente Python dele, e nunca por aqui. Um navegador não abre caminho
+// de volume: a tela de atendimento baixa o PDF por `baixarCartaDoPedido`.
 
 /**
  * Register printing sessions.
- * @param {Array<{produto_pedido_id:number, quantidade:number, observacao?:string}>} registros
+ *
+ * `data_impressao` é QUANDO a impressão aconteceu, e é opcional: omitida, o
+ * servidor grava agora. Ela existe porque registrar na segunda o que saiu na
+ * sexta jogaria o consumo de papel para o mês errado, e o RPCMTec reporta por
+ * mês.
+ * @param {Array<{produto_pedido_id:number, quantidade:number, observacao?:string,
+ *   data_impressao?:string}>} registros
  */
 export function registrarImpressao(registros) {
   invalidate('pedidos');
   return apiPost(`${BASE}/impressao`, { registros });
+}
+
+/**
+ * Corrige a DATA de uma sessão de impressão já gravada.
+ *
+ * GERENTE no servidor, ao contrário de registrar, que é operador: mudar QUANDO
+ * um gasto aconteceu muda o número que o RPCMTec reporta naquele mês. Por isso o
+ * `motivo` é obrigatório, e vai para a auditoria.
+ *
+ * A quantidade NÃO se corrige: a impressão é livro-caixa (só POST e DELETE).
+ * Lançou a mais, exclui a sessão e lança de novo.
+ * @param {number} impressaoId
+ * @param {{data_impressao:string, motivo:string}} dados
+ */
+export function corrigirDataImpressao(impressaoId, dados) {
+  invalidate('pedidos');
+  return apiPut(`${BASE}/impressao/${impressaoId}/data`, dados);
 }
 
 /** Printing history for an order item (with quantidade_impressa/restante). */
@@ -286,14 +316,16 @@ export function deletePlotters(ids) {
   return apiDelete(`${BASE}/plotter`, { plotter_ids: ids });
 }
 
-/** All maintenance records with plotter details. */
+/**
+ * Toda manutenção da frota, com o plotter de cada uma. Alimenta a seção
+ * "Manutenções da frota" da lista de plotters.
+ *
+ * SEM `getManutencao(id)`: GET /manutencao_plotter/:id devolve uma linha que a
+ * lista acima e a ficha do plotter já trazem inteira. Buscar de novo o que já
+ * está na mão só criaria uma segunda cópia para divergir.
+ */
 export function getManutencoes() {
   return cachedFetch('plotters:manutencao:list', () => apiGet(`${BASE}/manutencao_plotter`), TTL_LISTA);
-}
-
-/** Single maintenance record. */
-export function getManutencao(id) {
-  return cachedFetch(`plotters:manutencao:item:${id}`, () => apiGet(`${BASE}/manutencao_plotter/${id}`), TTL_LISTA);
 }
 
 /** @param {{plotter_id:number, data_manutencao:string, valor:number, descricao?:string}} manutencao */
@@ -365,10 +397,9 @@ export function getEstoquePorLocalizacao() {
   return cachedFetch('estoque:por_localizacao', () => apiGet(`${BASE}/estoque_por_localizacao`), TTL_LISTA);
 }
 
-/** Single stock record. */
-export function getEstoqueMaterialItem(id) {
-  return cachedFetch(`estoque:item:${id}`, () => apiGet(`${BASE}/estoque_material/${id}`), TTL_LISTA);
-}
+// SEM `getEstoqueMaterialItem(id)`: a lista de estoque e a ficha do material já
+// trazem a linha inteira (material, localização, quantidade, quem alterou e
+// quando). O diálogo de editar abre com a linha que a tabela tem na mão.
 
 /**
  * Create/upsert a stock record (unique key material + location).
@@ -433,14 +464,12 @@ export function getConsumoMensal(ano) {
   return cachedFetch(`consumo:mensal:${anoParam}`, () => apiGet(`${BASE}/consumo_mensal?ano=${anoParam}`), TTL_LISTA);
 }
 
-/** Single consumption record. */
-export function getConsumoMaterialItem(id) {
-  return cachedFetch(`consumo:item:${id}`, () => apiGet(`${BASE}/consumo_material/${id}`), TTL_LISTA);
-}
+// SEM `getConsumoMaterialItem(id)`: mesma razão do estoque acima. A lista de
+// consumo traz a linha inteira, e é dela que o diálogo de editar parte.
 
 /**
  * Register consumption (always taken from Seção; the DB trigger enforces stock
- * and returns a verbatim pt-BR message on insufficient balance — show it in a toast).
+ * and returns a verbatim pt-BR message on insufficient balance, show it in a toast).
  * @param {{tipo_material_id:number, quantidade:number, data_consumo:string}} consumo
  */
 export function createConsumoMaterial(consumo) {
@@ -469,10 +498,9 @@ export function deleteConsumoMaterial(ids) {
   return apiDelete(`${BASE}/consumo_material`, { consumo_material_ids: ids });
 }
 
-// SEM as chamadas do RPCMTec: elas sairam daqui em 2026-08-01 para
-// @services/rpcmtec-service.js, junto com a tela. Estas geravam so a secao do
-// acervo e da mapoteca, e o PDR vinha de outro servico, de outra tela e de
-// outro arquivo, que alguem colava a mao; hoje o relatorio inteiro sai de
+// SEM as chamadas do RPCMTec: elas vivem em @services/rpcmtec-service.js, junto
+// com a tela. Daqui sairia so a secao do acervo e da mapoteca, e o relatorio
+// inteiro sai de
 // /api/rpcmtec.
 
 // ---------------------------------------------------------------------------
@@ -480,10 +508,8 @@ export function deleteConsumoMaterial(ids) {
 // ---------------------------------------------------------------------------
 
 
-// O Anuario Estatistico NAO tem mais chamada aqui: as rotas dele sairam do
-// modulo em 2026-08-01 para /api/rpcmtec/anuario, junto com o RPCMTec, e quem as
-// consome e @services/rpcmtec-service.js. As duas funcoes que ficaram apontavam
-// para caminhos que ja nao existiam, e ninguem as chamava.
+// O Anuario Estatistico NAO tem chamada aqui: as rotas dele sao
+// /api/rpcmtec/anuario, e quem as consome e @services/rpcmtec-service.js.
 
 // ---------------------------------------------------------------------------
 // Dashboard (cache 1 min)
@@ -725,17 +751,10 @@ export function salvarEtiquetaEnvio(pedidoId, dados) {
 // ---------------------------------------------------------------------------
 // Histórico do pedido (auditoria)
 // ---------------------------------------------------------------------------
-
-/**
- * Quem alterou, adicionou e removeu o pedido, os itens e as impressões dele.
- * Mais novo primeiro.
- *
- * SEM cache, de propósito: é a tela onde a pessoa confere o que ACABOU de
- * mudar, e um histórico de 5 minutos atrás não mostraria a própria edição.
- * @param {number} pedidoId
- * @returns {Promise<Array<{data_evento:string, tabela:string, operacao:string,
- *   campos_alterados:string[], usuario_nome:string}>>}
- */
-export function getAuditoriaPedido(pedidoId) {
-  return apiGet(`${BASE}/pedido/${pedidoId}/auditoria`);
-}
+//
+// NÃO MORA MAIS AQUI. O histórico das seis fichas do sistema sai de
+// `@components/historico/`, que lê `/auditoria/<modulo>/<entidade>/<id>` por
+// `@services/rastreabilidade-service.js`. Aquela rota devolve o diff pronto
+// ("Situação: Em andamento → Concluído"); a antiga
+// `/mapoteca/pedido/:id/auditoria` devolvia só o NOME DA COLUNA que mudou, e
+// nenhuma tela a consumia.

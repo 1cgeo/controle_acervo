@@ -3,10 +3,8 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 /**
  * Desenho de área sobre o mapa.
  *
- * O código saiu do mapa da busca em 2026-07-29 para ser usado também no ponto de
- * controle, e saiu SEM prova nenhuma: as duas telas testam o mapa por dublê, e
- * o desenho ficava de fora. Estas provas guardam o contrato da extração, que é o
- * que as duas telas passaram a depender.
+ * As duas telas que o usam testam o mapa por dublê, e o desenho ficaria sem
+ * prova nenhuma. Estas provas guardam o contrato de que as duas dependem.
  */
 
 import { criarDesenhoDeArea } from './desenho-area.js';

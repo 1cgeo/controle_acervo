@@ -77,9 +77,6 @@ export function formatCurrency(value) {
  * alterações precisa distinguir os dois para não afirmar que alguém desmarcou
  * uma caixa que nunca esteve marcada.
  *
- * A versão de três estados existia local em ponto-dialog.js desde 2026-07-28;
- * ela subiu para cá quando o histórico passou a precisar dela.
- *
  * @param {boolean|null|undefined} value
  * @returns {string} 'Sim', 'Não' ou '-'
  */

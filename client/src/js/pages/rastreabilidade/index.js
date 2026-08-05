@@ -55,10 +55,8 @@ const NOME_MODULO = {
  *
  * Sem isto a coluna "Onde" dizia "pedido #58" e parava ali: quem quisesse ver o
  * pedido tinha de ir procurá-lo na mão, que é justamente o passo que a tela
- * deveria poupar. Medido em 2026-08-04, o mapa cobria TRÊS dos 23 agregados, e
- * um dos três (o DFD) apontava `#/orcamento/dfd/:id`, rota que NÃO EXISTE: o
- * link levava ao 404. Os outros 20 saíam como texto morto, entre eles o
- * produto do acervo, que sozinho responde por 388 eventos em 170 fichas.
+ * deveria poupar. O mapa tem de cobrir os 23 agregados: o que falta sai como
+ * texto morto, e o que aponta rota inexistente leva a 404.
  *
  * DOIS DESTINOS, e a diferença é dita ao usuário:
  *
@@ -80,8 +78,8 @@ const DESTINO = {
   'orcamento:nota_empenho': { tipo: 'ficha', href: (id) => `#/orcamento/notas_empenho/${id}` },
   'plataforma:edicao': { tipo: 'ficha', href: (id) => `#/rpcmtec/${id}` },
   // O produto do acervo abre em DIÁLOGO, de dentro da busca, e por isso não tem
-  // rota própria. A busca passou a honrar `?produto_id=` em 2026-08-04
-  // justamente para este link existir: é o agregado com mais evento órfão.
+  // rota própria. A busca honra `?produto_id=` justamente para este link
+  // existir: é o agregado com mais evento órfão.
   'acervo:produto': { tipo: 'ficha', href: (id) => `#/acervo/busca?produto_id=${id}` },
 
   // --- a tela onde o registro mora ------------------------------------------
@@ -112,7 +110,7 @@ const CAPACITACAO_RECEBIDA = 2;
 /**
  * De qual das DUAS telas de capacitação este evento é.
  *
- * A tabela `rpcmtec.capacitacao` é UMA, e as telas são duas desde 2026-08-02:
+ * A tabela `rpcmtec.capacitacao` é UMA, e as telas são duas:
  * a ministrada em Produção, a recebida em Efetivo. O destino fixo mandava toda
  * capacitação recebida para a tela de Produção, onde ela não está.
  *
@@ -147,7 +145,7 @@ function telaDaCapacitacao(evento) {
  * novo aparece no combo enquanto ninguem o traduziu, em vez de sumir.
  *
  * AS CHAVES SAO AS DO SERVIDOR, uma a uma: o `entidade:` de cada entrada de
- * server/src/auditoria/mapa/*.js. Conferido em 2026-08-04, e o caso de
+ * server/src/auditoria/mapa/*.js. Chave a mais
  * `index.test.js` guarda a igualdade. Chave a mais e entidade FANTASMA, que
  * oferece no combo um filtro que sempre volta vazio -- era o caso de
  * 'aproveitamento', removido: passagem pela DGEO e impedimento sao eventos do
@@ -400,8 +398,15 @@ export async function renderRastreabilidade(container, ctx) {
       opcoes = await getFiltrosRastreabilidade();
     } catch (err) {
       // Sem as opcoes a tela ainda serve: a lista aparece sem os combos, em vez
-      // de nao aparecer.
-      opcoes = { modulos: [], origens: [], usuarios: [] };
+      // de nao aparecer. As QUATRO chaves entram, e nao tres: quem le adiante
+      // espera a mesma FORMA do sucesso, e chave a menos so nao quebra hoje
+      // porque cada leitura carrega um `|| []` de sobra.
+      opcoes = { modulos: [], origens: [], usuarios: [], entidades: [] };
+      // E A FALHA AVISA. Calada, ela deixava os combos com "Todos" e mais nada:
+      // quem quisesse filtrar por pessoa concluia que o filtro nao existe, em
+      // vez de tentar de novo.
+      showError(`${err.message || 'Erro ao carregar as opções de filtro'}. `
+        + 'Os filtros ficaram vazios. Recarregue a página para tentar de novo.');
     }
     if (disposed) return null;
 
@@ -451,7 +456,7 @@ export async function renderRastreabilidade(container, ctx) {
 
     const barra = el('div', { className: 'rastro-filtros' }, [
       // SISTEMA e SUBSISTEMA respondem "o que foi alterado", que era a pergunta
-      // sem controle na tela (chefe, 2026-08-02). Entraram no lugar do combo de
+      // sem controle na tela. Entraram no lugar do combo de
       // ORIGEM, que respondia "por qual porta a mudanca entrou": e uma pergunta
       // de quem depura o sistema, e nao de quem procura uma alteracao. A origem
       // continua no rastro e aparece no detalhe de cada evento.

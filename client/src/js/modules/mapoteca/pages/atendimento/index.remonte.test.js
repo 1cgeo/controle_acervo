@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// O REMONTE da tela de ATENDER PEDIDOS, medido em 2026-08-04.
+// O REMONTE da tela de ATENDER PEDIDOS.
 //
 // É a tela onde alguém trabalha o turno inteiro, item após item. Cada registro
 // de impressão chamava `carregar()` e `pintar()`, e as duas esvaziavam o
@@ -15,8 +16,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderAtendimento } from '@modules/mapoteca/pages/atendimento/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const FILA = [
   {
@@ -79,9 +78,18 @@ const montar = async () => {
 };
 
 const buscaDaFila = (container) => container.querySelector('.data-table-toolbar__search-input');
-const linhasDaFila = (container) => [...container.querySelectorAll('tbody tr')];
+// A tela tem DUAS tabelas: a fila em cima e os remetidos embaixo, dentro de uma
+// `.dashboard-section`. Os auxiliares precisam olhar so a de cima.
+//
+// Eles varriam o container inteiro, e passavam por sorte: a secao de remetidos
+// vivia vazia nos testes. Quando ela ganhou linha, a busca digitada na fila
+// passou a "achar" tambem a linha da outra tabela, que a busca nem filtra.
+const soDaFila = (nos) => nos.filter(no => !no.closest('.dashboard-section'));
+
+const linhasDaFila = (container) =>
+  soDaFila([...container.querySelectorAll('tbody tr')]);
 const infoDaFila = (container) => {
-  const info = container.querySelector('.pagination__info span');
+  const info = soDaFila([...container.querySelectorAll('.pagination__info span')])[0];
   return info ? info.textContent : null;
 };
 const botaoAtualizar = (container) => container.querySelector('.page__actions button');

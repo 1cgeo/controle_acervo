@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { gravarSubsecao } from '@services/rpcmtec-service.js';
 
@@ -120,9 +121,44 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
     conteudo = el('div', { className: 'form-field' }, [campoTexto]);
   }
 
+  /**
+   * O que "Sem ocorrência no mês" APAGA, se apagar alguma coisa.
+   *
+   * A gravação manda `linhas: []` e `texto: null`, e o UPSERT do servidor
+   * sobrescreve o que estava lá. Numa subseção com doze linhas preenchidas, um
+   * clique errado no botão vizinho de "Salvar" as leva embora.
+   *
+   * @returns {number} quantas linhas somem; 1 quando é a prosa preenchida
+   */
+  function conteudoQueSeriaApagado() {
+    if (ehTabela) return corpo.children.length;
+    return (campoTexto.value || '').trim() ? 1 : 0;
+  }
+
   /** Grava, com `semOcorrencia` decidindo se o conteudo vai junto. */
   async function salvar(semOcorrencia, fechar) {
     if (salvando) return;
+
+    // CONFIRMA quando há o que perder. Sem conteúdo nenhum a marcação é o gesto
+    // esperado, e uma pergunta ali só atrapalharia quem preenche as 18
+    // subseções do mês.
+    if (semOcorrencia) {
+      const quantas = conteudoQueSeriaApagado();
+      if (quantas > 0) {
+        const oQueSai = ehTabela
+          ? `as ${quantas} linha(s) já preenchidas`
+          : 'o texto já preenchido';
+        const ok = await confirmDialog({
+          title: `Marcar ${subsecao.numero} como sem ocorrência`,
+          message: `Isto apaga ${oQueSai} desta subseção do RPCMTec. `
+            + 'Para guardar o que está na tela, use "Salvar".',
+          confirmLabel: 'Apagar e marcar',
+          danger: true,
+        });
+        if (!ok) return;
+      }
+    }
+
     salvando = true;
     try {
       const linhas = ehTabela && !semOcorrencia

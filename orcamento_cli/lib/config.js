@@ -19,11 +19,9 @@ function clientesAceitos () {
   }
 }
 
-// O CLI nao e o QGIS: entre os dois clientes registrados no servico de
-// autenticacao, 'sca_web' e o honesto para uma ferramenta que fala com a API
-// pela rede, e e o que os CLIs irmaos (acervo, mapoteca) ja usam.
-// O valor antigo do SCO ('c_orcamentario') morreu com a fusao de 2026-07-27:
-// o login do SCA so aceita 'sca_qgis' ou 'sca_web'.
+// O CLI nao e o QGIS: entre os clientes que o login do SCA aceita ('sca_qgis' e
+// 'sca_web'), 'sca_web' e o honesto para uma ferramenta que fala com a API pela
+// rede, e e o que os CLIs irmaos ja usam.
 const CLIENTE_PADRAO = 'sca_web'
 
 // Onde o token fica em cache entre invocacoes. Fora do repo e fora do vault:
@@ -50,9 +48,8 @@ function caminhoSessao (server) {
  *   SCA_SENHA   senha (preferir esta a passar --senha na linha de comando)
  *   SCA_TOKEN   JWT pronto (pula o login)
  *
- * As chaves ORCAMENTO_* do SCO foram aposentadas na fusao de 2026-07-27. O CLI
- * so as consulta para dizer com todas as letras que elas apontam para o
- * servidor errado. Ver env-guia.md do vault.
+ * As chaves ORCAMENTO_* estao aposentadas. O CLI so as consulta para dizer com
+ * todas as letras que elas apontam para o servidor errado.
  */
 function resolver (flags, exigirServidor = true) {
   const server = flags.server || process.env.SCA_URL || process.env.SCA_SERVER
@@ -63,8 +60,8 @@ function resolver (flags, exigirServidor = true) {
   // um corpo antes de tentar de verdade.
   if (!server && exigirServidor) {
     const pista = process.env.ORCAMENTO_SERVER
-      ? ' Ha um ORCAMENTO_SERVER no ambiente, mas ele aponta para o SCO, ' +
-        'que saiu do ar na fusao de 2026-07-27. Use SCA_URL.'
+      ? ' Ha um ORCAMENTO_SERVER no ambiente, mas ele aponta para o SCO, que ' +
+        'nao existe mais. Use SCA_URL.'
       : ''
     throw new Error(
       'Informe --server ou a variavel de ambiente SCA_URL (ex.: http://IP:porta).' + pista

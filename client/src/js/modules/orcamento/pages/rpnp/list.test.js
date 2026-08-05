@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da pagina de RPNP. Mocka o service (lista + dialog).
 // A tela tem o proprio filtro de ano e abre no ano ATUAL: nao ha mais ano global
@@ -16,9 +17,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderRpnpList } from '@modules/orcamento/pages/rpnp/list.js';
 import { getRpnps } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// Chefe, 2026-08-04: a tela abre sempre no ano ATUAL e nao guarda a escolha.
+// A tela abre sempre no ano ATUAL e não guarda a escolha.
 const ANO_ATUAL = new Date().getFullYear();
 
 describe('renderRpnpList', () => {
@@ -60,8 +59,8 @@ describe('renderRpnpList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // Chefe, 2026-07-31: o RPNP que importa é o que ainda deve dinheiro. A lista
-  // abre pelo maior valor a liquidar, e o de saldo zero desce e fica esmaecido.
+  // O RPNP que importa é o que ainda deve dinheiro. A lista abre pelo maior
+  // valor a liquidar, e o de saldo zero desce e fica esmaecido.
   // Os valores chegam como STRING (NUMERIC do PostgreSQL), que é justamente onde
   // a ordenação por texto erraria: '900.00' antes de '1000.00'.
   test('abre pelo maior valor a liquidar e esmaece o de saldo zero', async () => {

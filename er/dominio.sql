@@ -142,7 +142,7 @@ CREATE TABLE dominio.subtipo_produto (
 	-- Marca os subtipos que DEFINEM a identidade de um produto proprio (ex.: Carta
 	-- Topografica Militar). Um subtipo assim so pode existir como produto proprio
 	-- (acervo.produto.subtipo_produto_id), nunca como versao de um produto de outro
-	-- subtipo. Ver acervo.validate_version e DECISIONS 2026-07-06.
+	-- subtipo. Ver acervo.validate_version.
 	define_produto BOOLEAN NOT NULL DEFAULT false
 );
 
@@ -179,14 +179,13 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (30, 'CDGV Especial', 8);
 
 -- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
--- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo (chefe 2026-07-06).
+-- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo.
 UPDATE dominio.subtipo_produto SET define_produto = true WHERE code = 24;
 
 -- ---------------------------------------------------------------------------
--- Dominios do modulo orcamento (absorvidos do SCO em 2026-07-27). Ficam aqui,
--- e nao em orcamento.sql, porque o schema dominio e unico na plataforma.
--- tipo_posto_grad, tipo_perfil e modulo NAO foram duplicados: ja existiam aqui,
--- identicos.
+-- Dominios do modulo orcamento. Ficam aqui, e nao em orcamento.sql, porque o
+-- schema dominio e unico na plataforma. tipo_posto_grad, tipo_perfil e modulo
+-- NAO se duplicam por modulo.
 -- ---------------------------------------------------------------------------
 
 -- Natureza de Despesa (ND). code = ND sem pontos (ex.: 339015). gnd: 3 custeio, 4 capital.
@@ -341,8 +340,7 @@ INSERT INTO dominio.tipo_perfil (code, nome) VALUES
 -- absorver outros modulos (producao): acrescentar um passa a ser INSERT, nao
 -- migracao de constraint. Acervo, mapoteca e orcamento sao modulos distintos de
 -- proposito: quem atende a mapoteca nao cataloga o acervo, e quem lanca empenho
--- nao precisa de nenhum dos dois. O codigo 3 e o SCO absorvido em 2026-07-27
--- (no repo de origem ele era o codigo 1).
+-- nao precisa de nenhum dos dois.
 CREATE TABLE dominio.modulo(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL,
@@ -355,14 +353,12 @@ INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (3, 'Controle Orçamentário', 'orcamento');
 
 -- ---------------------------------------------------------------------------
--- Domínios do PIT e do efetivo (absorvidos do SAP em 2026-08-02).
+-- Domínios do PIT e do efetivo, absorvidos do SAP.
 --
--- Eles vieram porque as subseções 2.1, 2.6, 3.3, 6.1 e 6.2 do RPCMTec não
--- tinham dono no SCA e tinham no SAP, num dado que NÃO depende da produção: o
--- Extra-PIT, a execução manual de meta e o efetivo se cadastram à mão e não
--- olham `macrocontrole` nenhum. Nada saiu do SAP (decisão do chefe,
--- 2026-08-02): lá as tabelas continuam, e o SCA passa a ser quem gera essas
--- subseções.
+-- Eles estão aqui porque as subseções 2.1, 2.6, 3.3, 6.1 e 6.2 do RPCMTec saem
+-- de dado que NÃO depende da produção: o Extra-PIT, a execução manual de meta e
+-- o efetivo se cadastram à mão e não olham `macrocontrole` nenhum. Nada SAIU do
+-- SAP: lá as tabelas continuam, e o SCA é quem gera essas subseções.
 --
 -- Os códigos são os MESMOS do SAP, e isso é deliberado: quando os dois sistemas
 -- se fundirem, a linha migrada não precisa de tradução de código. O que mudou
@@ -406,7 +402,7 @@ INSERT INTO dominio.situacao_capacitacao (code, nome) VALUES
 (3, 'Concluída'),
 (4, 'Cancelada');
 
--- De onde vem o número de uma meta do PIT (2026-08-03). Manual é o lançamento à
+-- De onde vem o número de uma meta do PIT. Manual é o lançamento à
 -- mão em `pit.execucao`, que foi o único jeito até esta data. Os outros três são
 -- calculados na LEITURA, a partir do módulo que já registra o trabalho: nada é
 -- gravado, porque dado derivado que se grava vira segunda verdade no primeiro
@@ -422,18 +418,18 @@ INSERT INTO dominio.origem_meta (code, nome) VALUES
 (3, 'Produção'),
 (4, 'Impressão');
 
--- NÃO EXISTE `dominio.situacao_meta`. Ela existiu por um dia, em 2026-08-03,
--- com quatro estados. Dos quatro, só 'Cancelada' era ato da DSG, e por isso
--- virou o booleano `pit.meta_revisao.cancelada`; 'Em execução' e 'Concluída' a
+-- NÃO EXISTE `dominio.situacao_meta`. Dos quatro estados que ela teria, só
+-- 'Cancelada' é ato da DSG, e por isso ele é o booleano
+-- `pit.meta_revisao.cancelada`; 'Em execução' e 'Concluída' a
 -- grade calcula do que foi lançado, e status digitado ao lado de status
 -- calculado é a segunda verdade que este banco vem eliminando.
 
--- O QUE A META DO PIT CONTA (2026-08-04). Antes era texto livre em
+-- O QUE A META DO PIT CONTA. Antes era texto livre em
 -- `pit.meta.unidade`, com 13 valores: 'carta' e 'folha' para a mesma coisa, e 12
 -- itens SEM unidade nenhuma, incluindo as duas metas que já calculam sozinhas.
 --
--- Cinco códigos, e o corte é por como se conta. Folha absorve carta e CDGV
--- (decisão do chefe, 2026-08-04). Marco é entregável único, e Atividade é o que
+-- Cinco códigos, e o corte é por como se conta. Folha absorve carta e CDGV.
+-- Marco é entregável único, e Atividade é o que
 -- se repete no ano (12 atualizações de conteúdo). Item de acervo é o que a APHC
 -- cataloga ou digitaliza.
 --

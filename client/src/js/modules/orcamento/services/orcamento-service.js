@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiDelete, apiDownload, apiUpload } from '@ser
  * Camada de servico do modulo ORCAMENTO: uma funcao por endpoint do backend.
  * Todas devolvem o payload `dados` (o api-client ja desembrulha o envelope).
  *
- * PREFIXO: na fusao com o SCA (2026-07-27) toda rota deste modulo ganhou
+ * PREFIXO: na fusao com o SCA toda rota deste modulo ganhou
  * '/orcamento' ('/dfd' virou '/orcamento/dfd'), o que resolve as colisoes de
  * nome com o acervo (/dominio, /relatorio, /arquivo). A lista real esta em
  * server/src/routes.js. As rotas de PLATAFORMA ('/login', '/usuarios')
@@ -31,7 +31,6 @@ export const getFaseLicitacao = () => apiGet(`${API}/dominio/fase_licitacao`);
 export const getClassificacaoNc = () => apiGet(`${API}/dominio/classificacao_nc`);
 export const getTipoItemDfd = () => apiGet(`${API}/dominio/tipo_item_dfd`);
 export const getGrauPrioridade = () => apiGet(`${API}/dominio/grau_prioridade`);
-export const getTipoPostoGrad = () => apiGet(`${API}/dominio/tipo_posto_grad`);
 
 // ---- Dominios editaveis (CRUD admin, geridos pela Configuracao) ----
 export const createNaturezaDespesa = (body) => apiPost(`${API}/dominio/natureza_despesa`, body);
@@ -52,7 +51,7 @@ export const updateConfig = (body) => apiPut(`${API}/configuracao`, body);
 export const getAnos = () => apiGet(`${API}/configuracao/anos`);
 
 // ---- Meta do PIT ----
-// As metas do PIT sairam deste modulo em 2026-07-31: viraram dado de
+// As metas do PIT NAO sao deste modulo: elas sao dado de
 // plataforma, em '@services/plataforma-service.js' (getMetasPit). O orcamento
 // continua CONSUMINDO, nos dialogos de item do PDR e de nota de credito.
 
@@ -65,7 +64,9 @@ export const deleteDfd = (id) => apiDelete(`${API}/dfd/${id}`);
 
 // ---- PDR (itens; o PDR e o conjunto dos itens do ano) ----
 export const getPdrItens = (ano) => apiGet(`${API}/pdr${qs({ ano })}`);
-export const getPdrItem = (id) => apiGet(`${API}/pdr/${id}`);
+// SEM `getPdrItem`: a lista ja devolve o item inteiro, e o dialogo de edicao
+// recebe a linha da tabela. O embrulho de `GET /orcamento/pdr/:id` nao tinha
+// chamador nenhum, e embrulho sem chamador vira contrato que ninguem confere.
 export const createPdrItem = (body) => apiPost(`${API}/pdr`, body);
 export const updatePdrItem = (id, body) => apiPut(`${API}/pdr/${id}`, body);
 export const deletePdrItem = (id) => apiDelete(`${API}/pdr/${id}`);
@@ -112,7 +113,7 @@ export const deleteRpnp = (id) => apiDelete(`${API}/rpnp/${id}`);
 
 // ---- Painel ----
 // A execucao por ND que alimenta as tres abas do dashboard. Era
-// /orcamento/relatorio/secao3, e virou rota propria do painel em 2026-08-01,
+// /orcamento/relatorio/secao3, e e rota propria do painel,
 // quando o RPCMTec saiu do modulo: o painel quer NUMEROS quebrados em PDR e
 // Extra-PDR, com linha de TOTAL, e e lido por quem tem consulta no orcamento; o
 // relatorio quer a visao do PDR ja formatada e e admin-only. Servir os dois da
@@ -122,7 +123,7 @@ export const deleteRpnp = (id) => apiDelete(`${API}/rpnp/${id}`);
 // outras seis tabelas da antiga secao 3 nunca foram lidas por esta tela.
 export const getExecucaoNd = (params = {}) => apiGet(`${API}/dashboard/execucao_nd${qs(params)}`);
 
-// SEM as chamadas do RPCMTec: elas sairam daqui em 2026-08-01 para
+// SEM as chamadas do RPCMTec: elas vivem em
 // @services/rpcmtec-service.js, junto com a tela. Este modulo gerava so a secao
 // do PDR, e o CRUD da edicao mensal vivia sob /api/orcamento/relatorio; hoje as
 // duas coisas estao em /api/rpcmtec, porque o relatorio e da Divisao inteira.

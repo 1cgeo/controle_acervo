@@ -16,7 +16,7 @@
 //       { path: '/configuracao', render: renderConfig, admin: true },
 //       // LISTA de perfis, em vez de nivel minimo: a tela vale SO para quem tem
 //       // um desses perfis. Na mapoteca o operador tem telas proprias e nao ve as
-//       // de leitura, embora seja um nivel acima de consulta (chefe, 2026-07-30).
+//       // de leitura, embora seja um nivel acima de consulta.
 //       { path: '/atendimento', render: renderFila, perfis: ['operador', 'gerente'] },
 //     ],
 //   }
@@ -95,8 +95,8 @@ export function podeAbrirRota(moduloId, path) {
   if (rota.admin) return isAdmin();
   // `perfis` (LISTA) tem precedencia sobre `perfil` (nivel MINIMO). A lista existe
   // porque na mapoteca o operador tem telas PROPRIAS e nao ve as de leitura, mesmo
-  // sendo um nivel acima de consulta (chefe, 2026-07-30). Onde o minimo descreve a
-  // realidade (acervo, orcamento), a rota segue declarando `perfil`.
+  // sendo um nivel acima de consulta. Onde o minimo descreve a realidade (acervo,
+  // orcamento), a rota segue declarando `perfil`.
   if (Array.isArray(rota.perfis)) return ehDeAlgumPerfil(rota.perfis, moduloId);
   return temPerfil(rota.perfil || 'consulta', moduloId);
 }
@@ -122,10 +122,9 @@ export function rotaInicial(modulo) {
   if (!mod) return '/404';
 
   const home = mod.home || '/dashboard';
-  // A home do modulo pode nao ser da pessoa. O operador da mapoteca nao ve o
-  // dashboard (chefe, 2026-07-30), e entrar no modulo o jogava em /unauthorized:
-  // o guarda estava certo e a porta estava errada. Sem perfil nenhum a lista sai
-  // vazia e a home volta como estava, que e o que os testes de rota esperam.
+  // A home do modulo pode nao ser da pessoa: o operador da mapoteca nao ve o
+  // dashboard, e sem isto entrar no modulo o jogaria em /unauthorized. Sem perfil
+  // nenhum a lista sai vazia e a home volta como estava.
   if (podeAbrirRota(mod.id, home)) return `/${mod.id}${home}`;
 
   const primeira = (mod.rotas || [])

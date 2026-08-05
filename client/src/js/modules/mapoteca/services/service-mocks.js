@@ -28,13 +28,12 @@ const LISTAS = [
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
   'getAnexosPedido', 'uploadAnexoPedido', 'getAnosMapoteca',
-  'getAuditoriaPedido',
 ];
 
 /** Leituras que devolvem objeto. O default e `{}`. */
 const OBJETOS = [
-  'getCliente', 'getPedido', 'getPedidoPorLocalizador', 'getPlotter', 'getManutencao',
-  'getTipoMaterial', 'getEstoqueMaterialItem', 'getConsumoMaterialItem',
+  'getCliente', 'getPedido', 'getPedidoPorLocalizador', 'getPlotter',
+  'getTipoMaterial',
   'getImpressaoItem', 'getOrderStatus', 'getAvgFulfillmentTime',
   'getMaterialConsumption', 'getPlotterStatus', 'getResumoAnual',
 ];
@@ -44,7 +43,7 @@ const ACOES = [
   'createCliente', 'updateCliente', 'deleteClientes',
   'createPedido', 'updatePedido', 'deletePedidos',
   'createProdutoPedido', 'updateProdutoPedido', 'deleteProdutosPedido',
-  'prepararDownloadImpressao', 'registrarImpressao', 'deleteImpressoes',
+  'registrarImpressao', 'corrigirDataImpressao', 'deleteImpressoes',
   'createPlotter', 'updatePlotter', 'deletePlotters',
   'createManutencao', 'updateManutencao', 'deleteManutencoes',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',
@@ -98,7 +97,7 @@ export function mockMapotecaService() {
 }
 
 /**
- * Mock de plataforma-service.js, que o pedido passou a usar em 2026-07-31: a
+ * Mock de plataforma-service.js, que o pedido usa porque a
  * meta do PIT saiu do modulo orcamento e virou dado de plataforma.
  *
  * As duas funcoes de ROTULO nao sao mockadas, e sim reexportadas de verdade:

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
@@ -8,8 +9,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderClientesList } from '@modules/mapoteca/pages/clientes/list.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, CONSULTA, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const CLIENTES = [
   {
@@ -55,21 +54,44 @@ describe('renderClientesList', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('erro do service esvazia a tabela sem derrubar a pagina', async () => {
+  // ESTE TESTE JA EXISTIA COM A EXPECTATIVA CONTRARIA: ele exigia que o erro
+  // mostrasse "Nenhum cliente cadastrado". Aquilo era o defeito, escrito como
+  // regra. "Nao ha cliente" manda cadastrar; "nao consegui saber" manda tentar
+  // de novo. A tela dizia a primeira frase quando acontecia a segunda.
+  test('erro do service aparece como ERRO, e nao como lista vazia', async () => {
     svc.getClientes.mockRejectedValueOnce(new Error('Erro de conexão'));
     const container = document.createElement('div');
     const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    expect(container.textContent).toContain('Nenhum cliente cadastrado');
+    expect(container.textContent).toContain('Erro de conexão');
+    expect(container.textContent).not.toContain('Nenhum cliente cadastrado');
+    // E oferece o caminho de saida, que a mensagem de vazio nao oferecia.
+    expect([...container.querySelectorAll('button')]
+      .some(b => b.textContent.includes('Tentar de novo'))).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('tentar de novo devolve a lista, sem remontar a pagina', async () => {
+    svc.getClientes.mockRejectedValueOnce(new Error('Erro de conexão'));
+    const container = document.createElement('div');
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Tentar de novo')).click();
+    await flush();
+
+    expect(container.textContent).not.toContain('Erro de conexão');
+    expect(container.textContent).toContain('1º CGEO');
 
     if (typeof cleanup === 'function') cleanup();
   });
 });
 
-// Criar, editar e excluir cliente sao gerente no servidor. Antes a tela
-// mostrava os tres para qualquer perfil, e o clique levava 403 (que ate
-// 2026-07-28 ainda deslogava a pessoa).
+// Criar, editar e excluir cliente exigem gerente no servidor. A tela esconde as
+// três ações de quem não é gerente, para o clique não levar 403.
 describe('renderClientesList: o que cada perfil ve', () => {
   beforeEach(() => {
     svc.getClientes.mockResolvedValue(CLIENTES);

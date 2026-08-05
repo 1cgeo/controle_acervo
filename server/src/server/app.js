@@ -5,7 +5,6 @@ const path = require('path')
 const fs = require('fs')
 const cors = require('cors')
 const helmet = require('helmet')
-const hpp = require('hpp')
 const rateLimit = require('express-rate-limit')
 const swaggerUi = require('swagger-ui-express')
 const swaggerJSDoc = require('swagger-jsdoc')
@@ -31,23 +30,12 @@ app.use(sendJsonAndLogMiddleware)
 // CORS antes do rate limit: respostas 429 também precisam dos headers CORS
 app.use(cors())
 
-// O teto de 200/minuto foi calibrado para NAVEGADOR: uma tela do dashboard faz
-// dezenas de chamadas e nunca chega perto. Mas o SCA tambem e operado por CLIENTE
-// DE LOTE (o acervo_cli, os carregadores de carga), e ali a unidade de trabalho
-// nao e a tela, e o acervo inteiro. Mover 348 versoes de lote sao 696 chamadas
-// (um GET e um PUT por versao), e a operacao morria no terceiro minuto com 429,
-// pela metade, deixando parte das versoes migradas e parte nao (2026-07-31).
-//
-// Estado partido no meio e pior que lentidao: quem retoma precisa reler o estado
-// real para saber onde parou, e nem todo script faz isso.
-//
-// 3.000/minuto (50/s) e ordens de grandeza acima de qualquer uso humano e ainda
-// limita um flood. E aplicacao de INTRANET, atras da rede da OM, entao o
-// limitador nao e a defesa principal: ele existe para conter cliente com laco
-// desgovernado, e para isso 3.000 serve tao bem quanto 200.
-//
-// `standardHeaders` publica RateLimit-Limit/Remaining/Reset. Sem eles o cliente
-// de lote so descobre o teto batendo nele; com eles, da para pausar antes.
+// O teto é dimensionado para CLIENTE DE LOTE, não para navegador: o acervo_cli
+// move o acervo inteiro, e um teto de tela partia a operação no meio com 429,
+// deixando parte das versões migradas e parte não. É aplicação de intranet, e o
+// limitador só existe para conter cliente com laço desgovernado.
+// `standardHeaders` publica RateLimit-Limit/Remaining/Reset, para o cliente de
+// lote pausar antes de bater no teto.
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
   max: 3000,
@@ -70,17 +58,30 @@ const limiter = rateLimit({
 app.use(limiter)
 
 app.use(express.json({ limit: '50mb' })) // parsear POST em JSON
-app.use(hpp()) // protection against parameter polution
 
-// Helmet Protection (CSP desabilitado: o Express serve o client SPA e o Swagger UI,
-// que usam scripts/estilos inline; aplicação de intranet)
+// SEM hpp (proteção contra poluição de parâmetro). Foi removido de propósito.
+// NÃO recoloque numa próxima auditoria de segurança. Duas razões, nesta ordem:
 //
-// COOP e Origin-Agent-Cluster saem em 2026-07-29. O serviço responde em http
-// por IP, em dev e em produção (`http://HOST:3015`), e o navegador só respeita
-// os dois em origem confiável (https ou localhost). Fora dela ele IGNORA os
-// headers e escreve dois avisos no console a cada carga da página. O custo era
-// só ruído: o console do client fica sujo na depuração do mapa, e nada é
-// protegido em troca. Se o serviço um dia ficar atrás de https, reative os dois.
+// 1. Sob Express 5 ele não faz nada. O req.query virou getter sem cache: cada
+//    acesso reparseia a URL e devolve um objeto NOVO. O hpp lê o objeto, colapsa
+//    o array dentro dele e devolve o controle. O objeto que ele escreveu morre
+//    ali, e o handler recebe o array intacto do acesso seguinte.
+// 2. Se voltasse a funcionar, quebraria a busca do acervo. Os filtros de domínio
+//    aceitam VÁRIOS códigos de propósito, na forma tipo_produto_id=1 repetida na
+//    URL, e utils/lista_schema.js existe para tratar essa lista. O hpp colapsa o
+//    array para o ÚLTIMO valor. O filtro passaria a devolver resultado a mais,
+//    plausível e errado, sem erro nenhum na tela.
+//
+// A proteção de verdade já existe e é mais forte: toda rota que lê req.query tem
+// schema de query no Joi. Campo escalar recusa o array com 400; campo de lista o
+// aceita porque é o contrato dele. Prova em __tests__/unit/server/hpp_removido.
+
+// Helmet, com CSP desligado: o Express serve o client SPA e o Swagger UI, que
+// usam script e estilo inline, e é aplicação de intranet.
+//
+// COOP e Origin-Agent-Cluster ficam DESLIGADOS enquanto o serviço responder em
+// http por IP: fora de origem confiável o navegador ignora os dois e escreve
+// aviso no console a cada carga. Ligue-os de volta se o serviço for para https.
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginOpenerPolicy: false,
@@ -132,7 +133,8 @@ app.use('/logs', (req, res) => {
 // Serve SwaggerDoc
 app.use('/api/api_docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec))
 
-// JSON 404 for API routes — must come before static/SPA fallback
+// 404 em JSON para rota de API. Tem de vir ANTES do estático e do
+// fallback da SPA, que respondem qualquer caminho.
 app.use('/api', (req, res, next) => {
   const err = new AppError(
     `URL não encontrada para o método ${req.method}`,
@@ -141,11 +143,9 @@ app.use('/api', (req, res, next) => {
   return next(err)
 })
 
-// Interface UNICA do SCA, com os tres modulos (acervo, mapoteca e orcamento)
-// dentro dela. Um build so, em build/, servido na raiz. A troca de modulo e
-// troca de rota (#/acervo/..., #/mapoteca/..., #/orcamento/...), sem recarregar
-// e sem novo login. Os mounts /app e /mapoteca sairam em 2026-07-27, junto com
-// os clients antigos.
+// Interface ÚNICA do SCA, com os três módulos dentro dela. Um build só, em
+// build/, servido na raiz. Trocar de módulo é trocar de rota (#/acervo/...,
+// #/mapoteca/..., #/orcamento/...), sem recarregar e sem novo login.
 app.use(express.static(path.join(__dirname, "..", "build")));
 
 app.get("/{*path}", (req, res) => {

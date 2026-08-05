@@ -1,9 +1,10 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatCurrency, toNumber } from '@utils/format.js';
+import { formatBoolean, formatCurrency, toNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import * as svc from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openDfdDialog } from './dfd-dialog.js';
@@ -55,8 +56,7 @@ export async function renderDfdList(container, _ctx) {
   // Valores padrao do DFD novo, medidos nas linhas do ano carregado.
   let padroes = {};
 
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o DFD e cadastrado:
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. `permitirOutroAno` porque o ano decide ONDE o DFD e cadastrado:
   // montar o PCA do exercicio seguinte comeca num ano vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: svc.getAnos,
@@ -117,7 +117,7 @@ export async function renderDfdList(container, _ctx) {
       {
         key: 'consta_pca',
         label: 'Consta PCA',
-        render: (row) => (row.consta_pca ? 'Sim' : 'Não'),
+        render: (row) => formatBoolean(row.consta_pca),
       },
     ],
     rows: [],
@@ -156,6 +156,10 @@ export async function renderDfdList(container, _ctx) {
     ],
   });
 
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('div', {}, [
@@ -170,9 +174,24 @@ export async function renderDfdList(container, _ctx) {
     }, [
       filtroAno.element,
     ]),
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhum DFD cadastrado": a falha da
+   * API lia-se como ano sem PCA, e as duas pedem acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
 
   function atualizarResumo(dfds) {
     const total = (dfds || []).reduce((soma, d) => soma + (Number(d.valor_estimado) || 0), 0);
@@ -181,6 +200,9 @@ export async function renderDfdList(container, _ctx) {
   }
 
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     const ano = filtroAno.getAno();
     title.textContent = `DFD ${ano}`;
     table.update({ loading: true });
@@ -203,7 +225,8 @@ export async function renderDfdList(container, _ctx) {
       // O resumo TAMBEM cai. Sem isto a tela mantinha "PCA 2026: 8 DFDs" sobre
       // uma tabela vazia, depois de a carga falhar.
       resumo.textContent = '';
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar DFD');
     }
   }

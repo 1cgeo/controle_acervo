@@ -8,8 +8,7 @@
  * ESTE E O MODULO EM QUE "qual era o valor antes" E A PERGUNTA MAIS PROVAVEL:
  * todas as tabelas daqui carregam valor financeiro. Por isso TODA coluna de
  * valor sai com `tipo: 'dinheiro'` e toda data com `tipo: 'data'` -- sem isso a
- * tela mostraria "1000.00 -> 1500.00" e "2026-08-02T00:00:00.000Z", que e
- * exatamente o que fazia o historico do pedido nao responder a pergunta.
+ * tela mostra "1000.00 -> 1500.00" e "2026-08-02T00:00:00.000Z".
  *
  * OS OITO AGREGADOS. A regra e a da casa: o agregado e a FICHA QUE A PESSOA
  * ABRE. Ninguem abre "liquidacao n.o 812"; abre a nota de empenho e olha as
@@ -302,9 +301,8 @@ module.exports = {
     campos: {
       uasg: { rotulo: 'UASG' },
       codom: { rotulo: 'CODOM' }
-      // `ano_referencia` saiu daqui em 2026-08-04: era o ano PADRAO das telas, e
-      // o seletor de ano global acabou. Cada tela tem o seu filtro, comeca no
-      // ano atual e nao guarda nada. Nao confunda com o `ano_referencia` do
+      // SEM `ano_referencia`: nao existe ano padrao guardado. Cada tela tem o
+      // seu filtro e comeca no ano atual. Nao confunda com o `ano_referencia` do
       // recebimento_material, logo acima, que decide em que RPCMTec o item
       // aparece e PERMANECE.
     }

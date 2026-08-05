@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@services/api-client.js', () => ({
   apiDownload: vi.fn(() => Promise.resolve()),
@@ -18,8 +19,6 @@ const ITENS = [
   { label: 'Exportar planilha (CSV)', title: 'CSVs zipados', endpoint: '/acervo/export-planilha-csv', filename: 'planilha-acervo.zip' },
   { label: 'Exportar GeoJSON', endpoint: '/acervo/situacao-geral', filename: 'situacao-geral.zip' },
 ];
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe('createExportBar', () => {
   test('monta um botao por exportacao, com titulo e icone', () => {

@@ -101,10 +101,10 @@ const COBERTAS = new Set([
   // gerencia/ e acervo/, como evento de OPERACAO
   'POST /verificar_inconsistencias',
   'POST /refresh_materialized_views', 'POST /create_materialized_views',
-  // Varredura da fila de miniaturas. Era um cron ate 2026-08-04; sem
-  // agendamento, toda passada tem uma pessoa por tras, e e ela que o rastro
-  // guarda. Mesmo formato do refresh das views: evento de OPERACAO, porque nao
-  // ha par de linhas para comparar.
+  // Varredura da fila de miniaturas. Nao ha agendamento na aplicacao, entao
+  // toda passada tem uma pessoa por tras, e e ela que o rastro guarda. Mesmo
+  // formato do refresh das views: evento de OPERACAO, porque nao ha par de
+  // linhas para comparar.
   'POST /miniaturas/varrer',
   // ponto_controle/
   'POST /confirm-upload (ponto_controle)'

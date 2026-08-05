@@ -1,11 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Etiqueta de endereco do envio por Correios, montada a partir do pedido. O
 // documento impresso e HTML autossuficiente, entao os testes leem a STRING que
 // sai de montarEtiquetaHtml, e nao a arvore da pagina.
 //
-// Desde 2026-07-30 a etiqueta e SALVA (GET e PUT /mapoteca/pedido/:id/etiqueta),
-// entao o dialogo fala com o service e o mock e obrigatorio.
+// A etiqueta é SALVA (GET e PUT /mapoteca/pedido/:id/etiqueta), então o diálogo
+// fala com o service e o mock é obrigatório.
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockMapotecaService();
@@ -19,8 +20,6 @@ import {
   openEtiquetaEnvioDialog,
 } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const botao = (rotulo) => [...document.querySelectorAll('.modal__footer button')]
   .find(b => b.textContent.trim() === rotulo);
@@ -187,9 +186,9 @@ describe('openEtiquetaEnvioDialog', () => {
   });
 });
 
-// A TRAVA: o que sai impresso e sempre o que esta registrado. A regra vale
-// SEMPRE, inclusive na primeira abertura e sem edicao nenhuma (decisao do chefe,
-// 2026-07-30), para nao existir a excecao que ninguem lembra.
+// A TRAVA: o que sai impresso é sempre o que está registrado. A regra vale
+// SEMPRE, inclusive na primeira abertura e sem edição nenhuma, para não existir
+// a exceção que ninguém lembra.
 describe('openEtiquetaEnvioDialog - trava do botao Imprimir', () => {
   const PEDIDO = {
     id: 42,

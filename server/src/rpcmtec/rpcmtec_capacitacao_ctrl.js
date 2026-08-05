@@ -14,9 +14,9 @@
 // quem decide o que SAI é o gerador, que lê a coluna certa para cada subseção.
 //
 // QUEM DA DIVISÃO PARTICIPOU sai de `rpcmtec.capacitacao_militar`, ligado ao
-// cadastro (chefe, 2026-08-02), e vale para os dois tipos: na MINISTRADA são os
-// instrutores e monitores, na RECEBIDA são os capacitados. O papel não é coluna
-// -- ele vem do `tipo_id` da própria capacitação.
+// cadastro, e vale para os dois tipos: na MINISTRADA são os instrutores e
+// monitores, na RECEBIDA são os capacitados. O papel não é coluna: ele vem do
+// `tipo_id` da própria capacitação.
 //
 // A LISTA é regravada INTEIRA a cada salvamento, e por isso o rastro dela é UM
 // evento do PAI com a lista descrita em texto dos dois lados. Auditar linha a
@@ -24,6 +24,8 @@
 // abrisse e salvasse. É o mesmo desenho dos itens do DFD.
 
 const { db } = require('../database')
+
+const { domainConstants: { SITUACAO_CAPACITACAO } } = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
 
@@ -74,12 +76,6 @@ controller.listar = async (ano, tipoId) => {
   )
 }
 
-// A situação CANCELADA de `dominio.situacao_capacitacao` (er/dominio.sql:381).
-// O código vem do DDL, e não do rótulo da tela: o domínio tem 1 Prevista,
-// 2 Em execução, 3 Concluída e 4 Cancelada. É o mesmo 4 que
-// `pit_execucao_ctrl` já exclui do planejado da meta.
-const SITUACAO_CANCELADA = 4
-
 /**
  * As capacitações que ACONTECERAM no mês, que é o recorte das subseções 2.6 e
  * 6.2.
@@ -90,7 +86,7 @@ const SITUACAO_CANCELADA = 4
  * resposta certa: uma capacitação prevista sem período marcado não aconteceu em
  * mês nenhum.
  *
- * A CANCELADA SAI SEMPRE, e a PREVISTA entra (chefe, 2026-08-04). A 2.6
+ * A CANCELADA SAI SEMPRE, e a PREVISTA entra. A 2.6
  * descreve o que a Divisão planejou para o mês, então prever e executar contam
  * do mesmo jeito. O que a Divisão cancelou não é atividade nenhuma, e listá-lo
  * num documento assinado afirma trabalho que não houve.
@@ -109,7 +105,11 @@ controller.listarDoMes = async (ano, mes, tipoId) => {
      ORDER BY c.data_inicio, c.nome`,
     {
       tipoId,
-      cancelada: SITUACAO_CANCELADA,
+      // A CANCELADA sai sempre. O código vem de `utils/domain_constants`, que é
+      // a mesma fonte que `pit_execucao_ctrl` lê para excluí-la do planejado da
+      // meta: dois números iguais escritos em dois lugares divergem no primeiro
+      // que alguém corrigir.
+      cancelada: SITUACAO_CAPACITACAO.CANCELADA,
       inicioDoMes: `${ano}-${dois(mes)}-01`,
       fimDoMes: `${ano}-${dois(mes)}-${dois(ultimoDia)}`
     }
@@ -190,19 +190,35 @@ const lerLinhaDosMilitares = async (t, capacitacaoId) => {
 }
 
 // Regrava a lista inteira. `ON CONFLICT DO NOTHING` não é usado de propósito: o
-// DELETE mais INSERT é o que faz remover alguém funcionar, e a lista é pequena.
+// DELETE mais INSERT é o que faz remover alguém funcionar.
+//
+// UM insert em lote, e não um por militar. O laço anterior gastava uma ida ao
+// banco por uuid, dentro da transação: a lista é limitada pelo efetivo da
+// Divisão (dezenas), mas cada ida segura a conexão e o custo cresce com o
+// efetivo. `db.pgp.helpers.insert` é o mesmo caminho que mapoteca_ctrl e
+// acervo_ctrl já usam para lote.
+//
+// A lista vazia NÃO chega ao insert: o helper lança se receber array vazio, e
+// nesse caso o DELETE acima já é a gravação inteira (a pessoa tirou todo mundo).
 const gravarMilitares = async (t, capacitacaoId, uuids) => {
   await t.none(
     'DELETE FROM rpcmtec.capacitacao_militar WHERE capacitacao_id = $<capacitacaoId>',
     { capacitacaoId }
   )
-  for (const uuid of uuids || []) {
-    await t.none(
-      `INSERT INTO rpcmtec.capacitacao_militar (capacitacao_id, usuario_uuid)
-       VALUES ($<capacitacaoId>, $<uuid>)`,
-      { capacitacaoId, uuid }
-    )
-  }
+
+  const lista = uuids || []
+  if (!lista.length) return
+
+  const cs = new db.pgp.helpers.ColumnSet(
+    ['capacitacao_id', 'usuario_uuid'],
+    { table: { table: 'capacitacao_militar', schema: 'rpcmtec' } }
+  )
+  const linhas = lista.map(uuid => ({
+    capacitacao_id: capacitacaoId,
+    usuario_uuid: uuid
+  }))
+
+  await t.none(db.pgp.helpers.insert(linhas, cs))
 }
 
 // Só registra quando a lista MUDOU. Salvar o cabeçalho sem mexer nos militares

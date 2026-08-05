@@ -76,19 +76,15 @@ controller.getSituacaoGeral = async ({
 // consulta. Ela é a folha que o acervo ainda VAI produzir, cadastrada para o
 // item do pedido da mapoteca poder apontar para ela; como `acervo.versao` exige
 // `data_edicao` e uma folha não produzida não tem data de edição, grava-se a
-// data do CADASTRO (ver migrations/2026-07-30_tipo_versao_planejada.sql, que
-// diz isso com todas as letras: "quem carrega a verdade é o tipo_versao_id = 3
-// mais a ausência de arquivo, nunca a data").
+// data do CADASTRO. Quem carrega a verdade é o `tipo_versao_id = 3` mais a
+// ausência de arquivo, nunca a data.
 //
-// Sem este corte, uma promessa de produção entrava como produto ENTREGUE, pela
-// data em que alguém a cadastrou. Medido em 2026-08-01 contra produção: das 24
-// versões com data_edicao em julho/2026, 16 eram planejadas -- o RPCMTec do mês
-// anunciava 24 produtos entregues onde foram 8, e o ano ia a 294 em vez de 278.
-// As 16 não têm NENHUM arquivo, contra 7.148 de 7.148 das regulares.
+// Sem este corte, uma promessa de produção entra como produto ENTREGUE, pela
+// data em que alguém a cadastrou, e o relatório do mês anuncia entrega que não
+// houve.
 //
 // O Registro Histórico (tipo 2) CONTINUA entrando: ele documenta uma edição que
-// de fato existiu e foi finalizada, e a data dele é a de verdade. Em produção a
-// mais recente é de 2013, então ele não toca nenhum relatório do ano corrente.
+// de fato existiu e foi finalizada, e a data dele é a de verdade.
 controller.getProdutosFinalizados = async ({
   ano,
   mes,
@@ -192,8 +188,8 @@ controller.getMapotecaAtendimentos = async ({ ano, mes, cumulativo = true } = {}
         ped.previsto_pit,
         ped.operacao,
         COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS quantidade,
-        -- Sem queda na data do item: a coluna saiu de produto_pedido em
-        -- 2026-07-30, e a data de entrega do pedido e esta. Pedido remetido sem
+        -- Sem queda na data do item: produto_pedido nao tem data de entrega, e
+        -- a do pedido e esta. Pedido remetido sem
         -- data_atendimento nao entra no periodo, e e o certo: enquanto ninguem
         -- data o fechamento, nao ha atendimento a declarar no RPCMTec.
         ped.data_atendimento

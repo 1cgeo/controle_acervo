@@ -28,9 +28,8 @@ MODELO = CamadaModelo(
                 "entra em produto do mesmo subtipo.")
 )
 
-# `tipo_versao_id` não entra: a rota é a de versão histórica, então o tipo é
-# decidido por ela. Ter a coluna convidava a preenchê-la e a acreditar que ela
-# muda alguma coisa.
+# `tipo_versao_id` não entra: a rota é a de versão histórica, e o tipo é
+# decidido por ela. A coluna só convidaria a preencher um campo sem efeito.
 MODELO.campos = [c for c in MODELO.campos if c.nome != 'tipo_versao_id']
 
 

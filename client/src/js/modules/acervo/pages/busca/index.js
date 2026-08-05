@@ -2,9 +2,12 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showError } from '@utils/toast.js';
 import { chip } from '@components/status-chip.js';
+import { estadoErro } from '@components/estado-erro.js';
+import { reconciliar } from '@utils/reconciliar.js';
 import {
   buscarProdutos, buscarGeometrias, baixarBuscaCsv, getBuscaFacetas,
   getTiposProduto, getTiposEscala, getSubtiposProduto, getProdutoDetalhado,
+  getProjetos, getLotes,
 } from '@modules/acervo/services/acervo-service.js';
 import { getLimite } from '@modules/acervo/services/limites-service.js';
 import { permissoes } from '@store/auth-store.js';
@@ -61,6 +64,9 @@ export async function renderBusca(container, ctx) {
   let pagina = 1;
   // Buscas voltam fora de ordem; so a mais recente pode pintar a tela.
   let requisicao = 0;
+  // Verdadeiro ate a primeira resposta pintar a lista. E o que autoriza o
+  // esqueleto: da segunda busca em diante ja ha resultado na tela.
+  let primeiraCarga = true;
   // 'nenhum' | 'mapa' | 'desenho'
   let modoArea = 'nenhum';
   let areaDesenhada = null;
@@ -95,7 +101,7 @@ export async function renderBusca(container, ctx) {
   /** Lista de codigos que veio na URL, como '1,3'. */
   const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
 
-  // Os filtros de dominio marcam VARIAS opcoes (chefe, 2026-08-04). Antes eram
+  // Os filtros de dominio marcam VARIAS opcoes. Antes eram
   // `<select>` de escolha unica, e perguntar "o que existe em 25k e em 50k"
   // custava duas buscas e a soma na mao.
   const tipoFiltro = criarFiltroMultiplo({
@@ -128,7 +134,7 @@ export async function renderBusca(container, ctx) {
     onMudar: () => buscar({ reiniciarPagina: true }),
   });
 
-  // Lugar (chefe, 2026-07-29). O municipio depende do ESTADO: sem estado
+  // Lugar. O municipio depende do ESTADO: sem estado
   // escolhido o servidor devolve lista vazia, porque um combo com os 5.572
   // municipios do pais nao ajuda a escolher. Trocar de estado zera o municipio,
   // senao a busca levaria um municipio de outro estado.
@@ -150,6 +156,36 @@ export async function renderBusca(container, ctx) {
     ariaLabel: 'Município',
     valorInicial: daUrl('municipio_id'),
     onMudar: () => { destacarLugar(); buscar({ reiniciarPagina: true }); },
+  });
+
+  // Projeto e lote. O servidor sempre aceitou os dois (`filtrosBusca`, em
+  // acervo_schema.js) e a tela nao os oferecia: "que cartas sairam do lote 3"
+  // so tinha resposta pelo SQL ou pelo plugin. Os dois montam UM `EXISTS` no
+  // servidor, entao marcar os dois quer dizer "o lote X, dentro do projeto Y".
+  //
+  // Sem quantitativo cruzado: a rota de facetas devolve tipo, escala, subtipo,
+  // estado e municipio, e nao projeto nem lote. A lista vem do dominio, e o
+  // filtro aceita `contagem` nula.
+  const projetoFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os projetos',
+    nomePlural: 'projetos',
+    ariaLabel: 'Projeto',
+    valorInicial: daUrl('projeto_id'),
+    onMudar: () => {
+      // Trocar de projeto estreita a lista de lotes. O lote que nao pertence a
+      // nenhum projeto marcado e descartado, senao a busca ficaria com dois
+      // filtros que nunca se cruzam e devolveria zero sem dizer por que.
+      atualizarLotes();
+      buscar({ reiniciarPagina: true });
+    },
+  });
+
+  const loteFiltro = criarFiltroMultiplo({
+    rotuloTodos: 'Todos os lotes',
+    nomePlural: 'lotes',
+    ariaLabel: 'Lote',
+    valorInicial: daUrl('lote_id'),
+    onMudar: () => buscar({ reiniciarPagina: true }),
   });
 
   // Sugestao propria em vez de `<datalist>`: a lista nativa escolhia sozinha
@@ -195,7 +231,7 @@ export async function renderBusca(container, ctx) {
     // Refaz a busca depois de criar: o produto novo pode não casar com os
     // filtros da tela, e nesse caso não aparecer é a resposta certa. Recarregar
     // é o que impede a lista de ficar afirmando um total que mudou.
-    onClick: () => openProdutoDialogForm({ onSaved: () => buscar({ recarregarMapa: true }) }),
+    onClick: () => openProdutoDialogForm({ onSaved: () => buscar({ recarregarMapa: true, manterVista: true }) }),
   }, [svgIcon(ICONS.add, 16), 'Novo produto']);
 
   /**
@@ -234,7 +270,7 @@ export async function renderBusca(container, ctx) {
   }, [svgIcon(ICONS.download, 16), 'Exportar selecionados']);
 
   // Exportar fica na MESMA linha dos filtros, depois do espacador, e nao num
-  // cabecalho separado (chefe, 2026-07-28). O que se exporta e o resultado dos
+  // cabecalho separado. O que se exporta e o resultado dos
   // filtros que estao ali do lado, entao a acao pertence a essa linha; alem
   // disso, uma faixa a menos no topo e altura a mais para a lista e o mapa, que
   // e onde esta o conteudo.
@@ -248,6 +284,8 @@ export async function renderBusca(container, ctx) {
     escalaFiltro.element,
     estadoFiltro.element,
     municipioFiltro.element,
+    projetoFiltro.element,
+    loteFiltro.element,
     campoPalavra.element,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
@@ -272,7 +310,7 @@ export async function renderBusca(container, ctx) {
       );
     },
     onVerFichas: (produtos, indice) => abrirProdutoDialog(produtos, indice, {
-      onAlterado: () => buscar({ recarregarMapa: true }),
+      onAlterado: () => buscar({ recarregarMapa: true, manterVista: true }),
     }),
   });
 
@@ -506,6 +544,8 @@ export async function renderBusca(container, ctx) {
       tipo_escala_id: escalaFiltro.valores(),
       estado_id: estadoFiltro.valores(),
       municipio_id: municipioFiltro.valores(),
+      projeto_id: projetoFiltro.valores(),
+      lote_id: loteFiltro.valores(),
       palavra_chave: campoPalavra.valor(),
       geometria: recorte.geometria,
       bbox: recorte.bbox,
@@ -533,6 +573,8 @@ export async function renderBusca(container, ctx) {
     lista('estado_id', f.estado_id);
     lista('municipio_id', f.municipio_id);
     lista('tipo_escala_id', f.tipo_escala_id);
+    lista('projeto_id', f.projeto_id);
+    lista('lote_id', f.lote_id);
     if (f.palavra_chave) params.set('palavra_chave', f.palavra_chave);
     if (f.geometria) params.set('geometria', f.geometria);
     if (f.bbox) params.set('bbox', f.bbox.map(n => n.toFixed(5)).join(','));
@@ -547,7 +589,15 @@ export async function renderBusca(container, ctx) {
   /** Produtos da pagina atual, por id. */
   const cartoesPorId = new Map();
 
-  async function buscar({ reiniciarPagina = false, enquadrar = true, recarregarMapa = true } = {}) {
+  /**
+   * @param {Object} [opcoes]
+   * @param {boolean} [opcoes.manterVista=false] - recarga que NAO e uma pergunta
+   *   nova: veio de uma gravacao feita na ficha. Preserva a rolagem da lista e
+   *   nao pinta esqueleto. Ver `mostrarEsqueleto`.
+   */
+  async function buscar({
+    reiniciarPagina = false, enquadrar = true, recarregarMapa = true, manterVista = false,
+  } = {}) {
     if (disposed) return;
     if (reiniciarPagina) pagina = 1;
 
@@ -572,6 +622,11 @@ export async function renderBusca(container, ctx) {
       if (disposed || meuToken !== requisicao) return;
 
       renderResultados(resposta.dados || []);
+      // Pergunta NOVA volta ao topo; recarga depois de uma gravacao, nao. Quem
+      // salvou na ficha estava lendo o resultado, e devolver a lista ao topo
+      // custaria a rolagem que ele ja tinha feito.
+      if (!manterVista) lista.scrollTop = 0;
+      primeiraCarga = false;
       atualizarContador(resposta, camada);
       if (facetas) aplicarFacetas(facetas);
 
@@ -588,7 +643,7 @@ export async function renderBusca(container, ctx) {
       // O caso que tornou isto obrigatorio: existem produtos de cobertura
       // NACIONAL no acervo, e eles intersectam qualquer recorte. O `extent` de
       // 22 produtos achados num quadrado de 15 km no RS vinha sendo o Brasil
-      // inteiro (medido em 2026-07-28).
+      // inteiro.
       // Com lugar destacado, quem manda na camera e o contorno dele: o extent
       // por cima tiraria a borda vermelha da vista logo depois de ela aparecer.
       if (enquadrar && modoArea === 'nenhum' && !lugarComandaCamera && resposta.extent) {
@@ -596,11 +651,14 @@ export async function renderBusca(container, ctx) {
       }
     } catch (err) {
       if (disposed || meuToken !== requisicao) return;
-      lista.replaceChildren(el('p', {
-        className: 'busca-lista__vazio',
-        textContent: err.message || 'Erro ao buscar no acervo',
-      }));
-      contador.textContent = '';
+      // Estado de ERRO, e nao a frase do resultado vazio. "Nenhum produto
+      // encontrado" e "nao consegui perguntar" pedem acoes opostas: a primeira
+      // manda afrouxar o filtro, a segunda manda tentar de novo. Pintadas
+      // iguais, quem olha conclui que o acervo nao tem a carta.
+      cartoes.clear();
+      cartoesPorId.clear();
+      lista.replaceChildren(estadoErro(err, () => buscar({ recarregarMapa })));
+      contador.textContent = 'Não foi possível buscar';
       paginacao.classList.add('hidden');
       showError(err.message || 'Erro ao buscar no acervo');
     } finally {
@@ -637,10 +695,19 @@ export async function renderBusca(container, ctx) {
   // ---------------------------------------------------------------------------
   // Cartoes
   // ---------------------------------------------------------------------------
+  /**
+   * Esqueleto SO na primeira carga.
+   *
+   * Ele existe para o vao entre a montagem da tela e a primeira resposta. Da
+   * segunda busca em diante ja ha resultado na tela, e troca-lo por barras
+   * cinzentas apaga o que a pessoa estava lendo, joga a rolagem para o topo e
+   * mata o foco. Quem avisa que a busca esta correndo e o contador ("Buscando
+   * ...") mais o `aria-busy` da lista, que o leitor de tela anuncia.
+   */
   function mostrarEsqueleto() {
-    const quantos = Math.min(Math.max(cartoes.size || 4, 3), 6);
+    if (!primeiraCarga) return;
     lista.replaceChildren(
-      ...Array.from({ length: quantos }, () => el('div', { className: 'busca-esqueleto' }))
+      ...Array.from({ length: 4 }, () => el('div', { className: 'busca-esqueleto' }))
     );
   }
 
@@ -648,7 +715,7 @@ export async function renderBusca(container, ctx) {
     const identificacao = [p.mi, p.inom].filter(Boolean).join(' · ');
     const palavras = (p.palavras_chave || []).slice(0, 3);
 
-    // Clicar no cartao ABRE A FICHA (chefe, 2026-07-31). O cartao mostra um
+    // Clicar no cartao ABRE A FICHA. O cartao mostra um
     // resumo, e o gesto natural sobre um resumo e "quero ver o resto", nao
     // "marque isto". Selecionar virou o botao do rodape, que diz o que faz.
     //
@@ -659,7 +726,7 @@ export async function renderBusca(container, ctx) {
       // Editar ou excluir na ficha muda o que a lista mostra: a busca refaz o
       // resultado e a camada do mapa junto, senão o cartão continuaria anunciando
       // a última edição de um produto que acabou de ganhar outra.
-      abrirProdutoDialog(p, 0, { onAlterado: () => buscar({ recarregarMapa: true }) });
+      abrirProdutoDialog(p, 0, { onAlterado: () => buscar({ recarregarMapa: true, manterVista: true }) });
     };
 
     const alternarSelecao = () => {
@@ -708,7 +775,7 @@ export async function renderBusca(container, ctx) {
             ? `${p.ultima_versao} · ${formatDate(p.ultima_data_edicao)} · ${plural(p.num_versoes, 'versão', 'versões')}`
             : 'Sem versão cadastrada',
         }),
-        // O botao que era "Ficha" virou o de SELECAO (chefe, 2026-07-31), agora
+        // O botao que era "Ficha" virou o de SELECAO, agora
         // que o cartao inteiro abre a ficha. Ele carrega `aria-pressed` porque e
         // um botao de estado: sem isso o leitor de tela anuncia "Selecionar" tanto
         // no item marcado quanto no desmarcado. O rotulo e o icone saem de
@@ -728,6 +795,29 @@ export async function renderBusca(container, ctx) {
     ]);
   }
 
+  /**
+   * O que o cartao MOSTRA, como texto.
+   *
+   * Serve para decidir se o cartao precisa ser refeito. Sem isto, toda recarga
+   * trocaria os vinte nos e levaria junto o foco de quem navega pelo teclado,
+   * mesmo quando nada mudou na linha.
+   */
+  function assinaturaCartao(p) {
+    return JSON.stringify([
+      p.nome, p.mi, p.inom, p.escala, p.tipo_produto, p.subtipo_produto,
+      p.palavras_chave, p.ultima_versao, p.ultima_data_edicao, p.num_versoes,
+    ]);
+  }
+
+  /** no -> assinatura com que ele foi pintado. Fora do DOM, como no reconciliar. */
+  const assinaturas = new WeakMap();
+
+  function montarCartao(p) {
+    const cartao = cartaoProduto(p);
+    assinaturas.set(cartao, assinaturaCartao(p));
+    return cartao;
+  }
+
   function renderResultados(produtos) {
     cartoes.clear();
     cartoesPorId.clear();
@@ -745,13 +835,22 @@ export async function renderBusca(container, ctx) {
       return;
     }
 
-    const elementos = produtos.map((p) => {
-      const cartao = cartaoProduto(p);
-      cartoes.set(Number(p.id), cartao);
-      cartoesPorId.set(Number(p.id), p);
-      return cartao;
+    for (const p of produtos) cartoesPorId.set(Number(p.id), p);
+
+    // Reconciliacao por id, e nao `replaceChildren`. Esvaziar a lista zera a
+    // altura rolavel, e o navegador prende a rolagem no topo: salvar uma versao
+    // na ficha devolvia a busca ao primeiro cartao. Aqui o no que nao mudou nao
+    // e tocado, entao a rolagem e o foco sobrevivem.
+    const montados = reconciliar(lista, produtos, {
+      chave: (p) => Number(p.id),
+      criar: montarCartao,
+      atualizar: (no, p) => {
+        if (assinaturas.get(no) === assinaturaCartao(p)) return undefined;
+        return montarCartao(p);
+      },
     });
-    lista.replaceChildren(...elementos);
+
+    for (const [id, no] of montados) cartoes.set(Number(id), no);
     marcarCartoes();
   }
 
@@ -800,6 +899,9 @@ export async function renderBusca(container, ctx) {
     subtipoFiltro.limpar();
     atualizarSubtipos();
     escalaFiltro.limpar();
+    projetoFiltro.limpar();
+    loteFiltro.limpar();
+    atualizarLotes([]);
     campoPalavra.limpar();
     areaCheck.checked = false;
     modoArea = 'nenhum';
@@ -826,6 +928,7 @@ export async function renderBusca(container, ctx) {
   let todosSubtipos = [];
   let tiposDominio = [];
   let escalasDominio = [];
+  let todosLotes = [];
   /** Ultimo quantitativo por opcao. Null ate a primeira resposta chegar. */
   let contagens = { tipos: null, escalas: null, subtipos: null };
 
@@ -881,11 +984,32 @@ export async function renderBusca(container, ctx) {
     subtipoFiltro.definirVisivel(visiveis.length > 0);
   }
 
+  /**
+   * Lotes do projeto escolhido, ou todos quando nenhum esta marcado.
+   *
+   * Mesma regra do subtipo: lote de outro projeto e DESCARTADO, e nao mantido
+   * com "(0)". Mantido, a busca ficaria com dois filtros que nunca se cruzam.
+   *
+   * O rotulo leva o projeto na frente: "Lote 3" sozinho nao distingue os lotes
+   * de dois projetos, e e o par que quem trabalha conhece.
+   *
+   * @param {Array<string>} [preferidos] - marcacao a manter. Sem isto, a atual.
+   */
+  function atualizarLotes(preferidos = loteFiltro.valores()) {
+    const projetos = projetoFiltro.valores();
+    const visiveis = projetos.length
+      ? todosLotes.filter(l => projetos.includes(String(l.projeto_id)))
+      : todosLotes;
+
+    const manter = preferidos.filter(p => visiveis.some(l => String(l.code) === p));
+    loteFiltro.preencher(visiveis, null, null, manter);
+  }
+
   // Os dominios nao bloqueiam a busca: se um deles falhar, o filtro fica so com
   // "Todos", e procurar por texto continua funcionando. Eles dao o CONJUNTO de
   // opcoes; o quantitativo de cada uma vem depois, com a primeira busca.
-  const [tipos, escalas, subtipos] = await Promise.allSettled([
-    getTiposProduto(), getTiposEscala(), getSubtiposProduto(),
+  const [tipos, escalas, subtipos, projetos, lotes] = await Promise.allSettled([
+    getTiposProduto(), getTiposEscala(), getSubtiposProduto(), getProjetos(), getLotes(),
   ]);
   if (disposed) return () => {};
 
@@ -900,6 +1024,29 @@ export async function renderBusca(container, ctx) {
   if (escalas.status === 'fulfilled') {
     escalasDominio = escalas.value || [];
     escalaFiltro.preencher(escalasDominio, null, null, daUrl('tipo_escala_id'));
+  }
+  // Projeto e lote vem de `/projetos/*`, e nao das facetas: a rota de facetas
+  // devolve tipo, escala, subtipo, estado e municipio. O `code` e montado aqui
+  // porque as duas listas usam `id`, e o filtro trabalha com `code`.
+  if (projetos.status === 'fulfilled') {
+    projetoFiltro.preencher(
+      (projetos.value || []).map(p => ({ code: p.id, nome: p.nome })),
+      null, null, daUrl('projeto_id')
+    );
+  }
+  if (lotes.status === 'fulfilled') {
+    const nomeProjeto = new Map(
+      (projetos.status === 'fulfilled' ? projetos.value || [] : [])
+        .map(p => [Number(p.id), p.nome])
+    );
+    todosLotes = (lotes.value || []).map(l => ({
+      code: l.id,
+      projeto_id: l.projeto_id,
+      nome: nomeProjeto.has(Number(l.projeto_id))
+        ? `${nomeProjeto.get(Number(l.projeto_id))} · ${l.nome}`
+        : l.nome,
+    }));
+    atualizarLotes(daUrl('lote_id'));
   }
 
   // Estado e municipio do link ja nasceram marcados no `valorInicial`, e por
@@ -934,7 +1081,7 @@ export async function renderBusca(container, ctx) {
 
   await buscar();
 
-  // PRODUTO QUE VEIO NO LINK (2026-08-04). A ficha do produto e um DIALOGO
+  // PRODUTO QUE VEIO NO LINK. A ficha do produto e um DIALOGO
   // aberto de dentro desta busca, e nao uma rota: sem isto, a varredura de
   // rastreabilidade so conseguia escrever "produto #170" como texto morto, e
   // esse agregado sozinho responde por 388 eventos em 170 fichas.
@@ -953,7 +1100,7 @@ export async function renderBusca(container, ctx) {
       if (!disposed && detalhado) {
         mapa.enquadrarProduto(produtoDoLink);
         abrirProdutoDialog(detalhado, 0, {
-          onAlterado: () => buscar({ recarregarMapa: true }),
+          onAlterado: () => buscar({ recarregarMapa: true, manterVista: true }),
         });
       }
     } catch {
@@ -970,7 +1117,10 @@ export async function renderBusca(container, ctx) {
     campoPalavra._cleanup();
     // Os filtros ouvem o DOCUMENTO (clique fora, Escape). Sem isto, a tela
     // seguinte herdaria o ouvinte de uma tela que ja morreu.
-    for (const f of [tipoFiltro, subtipoFiltro, escalaFiltro, estadoFiltro, municipioFiltro]) {
+    for (const f of [
+      tipoFiltro, subtipoFiltro, escalaFiltro, estadoFiltro, municipioFiltro,
+      projetoFiltro, loteFiltro,
+    ]) {
       f._cleanup();
     }
     mapa._cleanup();

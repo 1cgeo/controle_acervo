@@ -14,9 +14,8 @@ import {
 /**
  * Meu perfil (#/perfil). Tela de PLATAFORMA de qualquer pessoa logada.
  *
- * Nasceu em 2026-08-02, com a autenticação vindo para dentro do SCA: enquanto a
- * senha vivia no Auth Server, NINGUÉM trocava a própria senha por aqui, e o
- * único caminho era o administrador resetar a de todo mundo.
+ * É o Único caminho pelo qual alguém troca a PRÓPRIA senha. Sem ela, o único
+ * jeito seria o administrador resetar a de todo mundo.
  *
  * São DOIS formulários separados, e não um só com um botão. O cadastro
  * (`PUT /usuarios/perfil`) e a senha (`PUT /usuarios/perfil/senha`) são rotas

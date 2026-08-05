@@ -11,6 +11,9 @@
 //   -- encerra as flags (tudo depois vira posicional)
 
 // Flags que NAO consomem o proximo argumento (sao booleanas).
+//
+// `--csv` e `--ods` ficam FORA de proposito: elas aceitam valor opcional (o nome
+// do arquivo de destino). Sem valor, o parser ja as devolve como `true`.
 const BOOLEANAS = new Set([
   'dry-run',
   'json',
@@ -18,8 +21,6 @@ const BOOLEANAS = new Set([
   'help',
   'insecure',
   'sem-cache',
-  'versao',
-  'todos',
   'novo',
   'sem-verificacao'
 ])

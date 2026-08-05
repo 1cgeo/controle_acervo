@@ -72,8 +72,7 @@ router.get(
  * QUEM VE O HISTORICO DE UM REGISTRO E QUEM VE O REGISTRO. O historico nao mostra
  * nada que a ficha ja nao mostre: mostra QUANDO e POR QUEM. Fecha-lo num perfil
  * acima criaria o caso em que a pessoa le o valor atual e nao pode saber que ele
- * mudou ontem. E a regra que `GET /api/mapoteca/pedido/:id/auditoria` ja segue
- * desde 2026-07-30 (consulta), e aqui ela vira geral.
+ * mudou ontem.
  *
  * 'plataforma' e a excecao, e por uma razao de conteudo: la moram os eventos de
  * usuario, de perfil e de senha, que so o administrador global ve na tela que os

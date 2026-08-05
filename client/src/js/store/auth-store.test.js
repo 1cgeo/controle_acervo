@@ -22,11 +22,9 @@ describe('auth-store: sessao', () => {
     expect(isAdmin()).toBe(true);
   });
 
-  // REGRESSAO 2026-07-27: a duracao da sessao estava escrita DUAS vezes, no
-  // servidor (expiresIn) e aqui (agora + 1 hora, fixo). Quando o servidor passou
-  // para 8h, o client continuaria deslogando em 1h, e o conserto pareceria
-  // pronto enquanto a pessoa seguia caindo fora no meio do trabalho. Agora a
-  // expiracao sai do claim `exp` do proprio token, e os dois lados nao divergem.
+  // REGRESSAO: com a duracao da sessao escrita duas vezes, no servidor
+  // (expiresIn) e aqui, os dois divergem e a pessoa cai fora no meio do
+  // trabalho. A expiracao sai do claim `exp` do proprio token.
   test('a expiracao vem do claim exp do token, nao de um valor fixo', () => {
     const emOitoHoras = Math.floor(Date.now() / 1000) + 8 * 3600;
     const payload = btoa(JSON.stringify({ exp: emOitoHoras }));

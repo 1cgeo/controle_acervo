@@ -2,16 +2,13 @@
 
 // A ENTREGA do rastro, e não a gravação dele.
 //
-// POR QUE ESTE ARQUIVO EXISTE. Em 2026-08-04 uma revisão do sistema mediu que o
-// rastro de ESCRITA estava fechado (das 123 funções de controller que escrevem,
-// duas não auditam e as duas estão certas), e que o problema era outro: dos 23
-// agregados, apenas 8 tinham painel de histórico na própria ficha, e o mapa de
-// destino da varredura cobria TRÊS. Os outros 20 saíam como texto morto, e um
-// dos três (o DFD) apontava rota que não existe.
+// POR QUE ESTE ARQUIVO EXISTE. Registrar o evento não é entregar o histórico.
+// O rastro de escrita pode estar fechado no servidor e mesmo assim a maior
+// parte dos agregados sair como texto morto na tela, sem painel na própria
+// ficha e sem destino na varredura.
 //
-// Registrar o evento não é entregar o histórico. Nada acusava isso, porque
-// nenhum teste olhava para o lado do cliente: agregado novo nascia órfão e
-// ninguém percebia. Foi o que aconteceu com os 20.
+// Nada acusava isso, porque nenhum teste olhava para o lado do cliente:
+// agregado novo nascia órfão e ninguém percebia.
 //
 // O QUE ESTE TESTE COBRA, para cada agregado do mapa de auditoria:
 //
@@ -53,9 +50,8 @@ const SEM_PAINEL_JUSTIFICADO = {
 //
 // Cada entrada aponta onde o plano está escrito.
 //
-// ESTÁ VAZIA desde 2026-08-04, quando a revisão do PIT ganhou tela
-// (`pages/revisoes-pit/`). Ela era a única, e era a última lacuna de CLASSE C
-// do sistema: agregado que registra evento e não tem tela nenhuma.
+// ESTÁ VAZIA. Entrada aqui é lacuna de CLASSE C: agregado que registra evento
+// e não tem tela nenhuma.
 const PENDENTE_COM_PLANO = {}
 
 /** Todo arquivo .js do cliente, menos teste. */
@@ -108,10 +104,17 @@ const agregados = () => {
 }
 
 describe('A entrega do rastro', () => {
-  test('o mapa de auditoria expõe agregados legíveis', () => {
-    // Rede contra o falso verde: se a leitura do mapa mudar de forma e devolver
-    // vazio, os testes abaixo passariam sem cobrar nada.
+  // REDE CONTRA O FALSO VERDE, e ela cobre as TRÊS leituras.
+  //
+  // As três varrem texto: o mapa, os arquivos do cliente e o bloco `DESTINO`.
+  // Qualquer uma devolvendo vazio deixa os casos abaixo verdes sem cobrar nada,
+  // e a mais frágil é a do `DESTINO`, que recorta por `indexOf`: renomeada a
+  // constante, o recorte vira string vazia e "todo destino aponta um agregado
+  // que existe" passa com zero destinos.
+  test('as três varreduras acham alguma coisa', () => {
     expect(agregados().size).toBeGreaterThanOrEqual(20)
+    expect(entidadesComPainel().size).toBeGreaterThanOrEqual(8)
+    expect(destinosDaVarredura().size).toBeGreaterThanOrEqual(20)
   })
 
   test('todo agregado tem painel de histórico numa tela, ou exceção justificada', () => {
@@ -153,23 +156,25 @@ describe('A entrega do rastro', () => {
     expect(inventados).toEqual([])
   })
 
-  test('a dívida declarada é pequena, e cada entrada aponta o plano', () => {
-    // Ela é o que ainda falta, com endereço. Entrada sem plano escrito é
-    // lacuna disfarçada de decisão.
-    expect(Object.keys(PENDENTE_COM_PLANO).length).toBeLessThanOrEqual(3)
+  // AS DUAS LISTAS, num caso só. Elas são a medida do que falta, e o que se
+  // guarda é que nenhuma das duas cresça em silêncio.
+  //
+  // O conjunto das exceções vai por IGUALDADE, e não por um teto: teto deixa
+  // acrescentar sem ninguém olhar até bater no número, que é justamente como a
+  // exceção vira regra. Entrada nova aqui derruba o caso e obriga a decisão.
+  test('as listas de exceção e de dívida não crescem sem decisão', () => {
+    expect(Object.keys(SEM_PAINEL_JUSTIFICADO).sort())
+      .toEqual(['configuracao', 'dominio', 'manutencao'])
+
+    for (const motivo of Object.values(SEM_PAINEL_JUSTIFICADO)) {
+      expect(motivo.length).toBeGreaterThan(20)
+    }
+
+    // A dívida está zerada. Entrada aqui é agregado que registra evento e não
+    // tem tela nenhuma, e tem de vir com o plano por escrito.
+    expect(Object.keys(PENDENTE_COM_PLANO)).toEqual([])
     for (const plano of Object.values(PENDENTE_COM_PLANO)) {
       expect(plano).toMatch(/01-Projects/)
-    }
-  })
-
-  test('a lista de exceção é pequena, e cada uma tem motivo escrito', () => {
-    // Ela é a medida do que falta. Crescer sem justificativa é como a lacuna
-    // volta.
-    expect(Object.keys(SEM_PAINEL_JUSTIFICADO).length).toBeLessThanOrEqual(5)
-    for (const [entidade, motivo] of Object.entries(SEM_PAINEL_JUSTIFICADO)) {
-      expect(typeof motivo).toBe('string')
-      expect(motivo.length).toBeGreaterThan(20)
-      expect(entidade).toMatch(/^[a-z_]+$/)
     }
   })
 })

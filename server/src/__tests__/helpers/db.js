@@ -72,17 +72,16 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE orcamento.dfd_item CASCADE')
     await t.none('TRUNCATE orcamento.dfd CASCADE')
     // A REVISAO vem ANTES da meta, e ela nao cai por CASCADE de `pit.meta`:
-    // `pit.revisao` aponta `pit.exercicio`, e nao a meta. Sem esta linha, o
-    // rascunho de um teste sobrevivia ao proximo e o segundo `POST /revisoes`
-    // batia no indice parcial `unique_rascunho_por_ano` -- 409 num teste que
-    // nao fala de revisao nenhuma. Ficou de fora quando o modelo nasceu, em
-    // 2026-08-04.
+    // `pit.revisao` aponta `pit.exercicio`, e nao a meta. Sem esta linha o
+    // rascunho de um teste sobrevive ao proximo, e o segundo `POST /revisoes`
+    // bate no indice parcial `unique_rascunho_por_ano`: 409 num teste que nao
+    // fala de revisao nenhuma.
     await t.none('TRUNCATE pit.revisao CASCADE')
     await t.none('TRUNCATE pit.meta CASCADE')
 
-    // A edicao mensal do RPCMTec. Era `orcamento.relatorio_rpcmtec` ate
-    // 2026-08-01; saiu para schema proprio quando o relatorio deixou de ser do
-    // modulo orcamento (ver migrations/2026-08-01_rpcmtec_schema_proprio.sql).
+    // A edicao mensal do RPCMTec. Mora em schema proprio, e nao no orcamento: o
+    // relatorio cruza os tres modulos (ver
+    // migrations/2026-08-01_rpcmtec_schema_proprio.sql).
     await t.none('TRUNCATE rpcmtec.edicao CASCADE')
 
     // Mapoteca tables.
@@ -138,18 +137,16 @@ const cleanTestData = async () => {
 
     // As duas linhas da semente voltam ao estado do setup.js.
     //
-    // Apagar quem sobrou nunca bastou: o que o teste MUDA nos dois usuarios da
-    // semente sobrevivia ao clean e vazava para o arquivo seguinte. Medido em
-    // 2026-08-02, com o cadastro de usuario pela API: um teste rebaixava o
-    // `test_admin` para provar que o sistema deixa rebaixar administrador
-    // quando ha outro ativo, e dali em diante TODO teste que usasse o token de
-    // admin levava 403 -- inclusive em arquivo que ninguem tinha tocado, e com
-    // a falha aparecendo longe da causa. E a mesma classe de defeito que o
-    // rate limit desligado sob NODE_ENV=test evita: suite que depende de ordem.
+    // Apagar quem sobrou nao basta: o que o teste MUDA nos dois usuarios da
+    // semente sobrevive ao clean e vaza para o arquivo seguinte. Um teste que
+    // rebaixe o `test_admin` para provar que o sistema deixa rebaixar
+    // administrador faz TODO teste seguinte que use o token de admin levar 403,
+    // inclusive em arquivo que ninguem tocou, e com a falha aparecendo longe da
+    // causa. E a mesma classe de defeito que o rate limit desligado sob
+    // NODE_ENV=test evita: suite que depende de ordem.
     //
-    // A senha e regravada junto porque a troca de senha e testavel agora (ela
-    // nao existia enquanto a senha morava no Auth Server), e uma senha trocada
-    // e invisivel ate o proximo teste que tente logar.
+    // A senha e regravada junto porque a troca de senha e testavel, e uma senha
+    // trocada e invisivel ate o proximo teste que tente logar.
     const [hashAdmin, hashUser] = await hashesDaSemente()
     await t.none(
       `UPDATE dgeo.usuario SET

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Extra-PIT (#/extra_pit), a subsecao 3.3 do RPCMTec.
 //
@@ -18,8 +19,6 @@ vi.mock('@services/plataforma-service.js', async () => {
 import { renderExtraPitList } from '@pages/extra-pit/list.js';
 import { getExtraPit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function logar({ administrador = false, perfis = {} } = {}) {
   saveAuth({ token: 't', administrador, uuid: 'u', perfis, modulos: [] }, 'x');

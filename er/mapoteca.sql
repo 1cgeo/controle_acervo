@@ -47,15 +47,14 @@ INSERT INTO mapoteca.tipo_midia (code, nome) VALUES
 (7, 'Digital'),
 (8, 'Tyvek');
 
--- De-para da MIDIA impressa para a meta do PIT, por ano (2026-08-03). E a fonte
+-- De-para da MIDIA impressa para a meta do PIT, por ano. E a fonte
 -- da meta 4 quando ela declara origem Impressao: o realizado do mes e a soma do
 -- fornecido, agrupada pela midia entregue e mapeada aqui.
 --
--- POR QUE NAO PELO PEDIDO. `mapoteca.pedido.meta_pit_id` existe desde
--- 2026-07-31 e responde outra pergunta: "este pedido estava previsto no PIT,
--- sob esta meta". O CHECK `pedido_meta_pit_id_exige_previsto` diz isso, e o
--- dado confirma: em 2026 os 16 pedidos que o preencheram sao exatamente os 16
--- marcados como previstos, de 160.
+-- POR QUE NAO PELO PEDIDO. `mapoteca.pedido.meta_pit_id` responde outra
+-- pergunta: "este pedido estava previsto no PIT, sob esta meta". O CHECK
+-- `pedido_meta_pit_id_exige_previsto` diz isso, e so a minoria dos pedidos o
+-- preenche.
 --
 -- A meta 4 conta o que SAIU, e o que saiu esta no ITEM (midia entregue,
 -- quantidade fornecida). Somando pelo campo do pedido, 2026 daria 253 folhas na
@@ -158,7 +157,7 @@ CREATE TABLE mapoteca.pedido(
 	data_pedido DATE NOT NULL,
     -- Dia em que o pedido FECHOU, e na pratica o dia em que o material saiu
     -- daqui: em 51 de 52 pedidos concluidos com item datado ela e igual a maior
-    -- data_entrega dos itens (medido na producao em 2026-07-29). Por isso NAO
+    -- data_entrega dos itens. Por isso NAO
     -- existe coluna "data_envio", e a consulta publica mostra esta data como
     -- "envio/entrega". Coluna separada nasceria duplicada, porque a mapoteca
     -- fecha o pedido no dia da postagem e nunca usa a situacao 4 (Remetido).
@@ -169,8 +168,8 @@ CREATE TABLE mapoteca.pedido(
     documento_solicitacao VARCHAR(255),
     documento_solicitacao_nup VARCHAR(255),
 	endereco_entrega TEXT,
-    -- Como o material saiu daqui. E do PEDIDO, e nao do item, desde 2026-07-30:
-    -- em 91 pedidos com item, so 1 tinha mais de uma forma (medido na producao).
+    -- Como o material saiu daqui. E do PEDIDO, e nao do item: o pedido inteiro
+    -- sai numa remessa so, e item com forma propria e caso raro.
     -- Item entregue por outra forma se anota em observacao_envio, que o cliente
     -- le. Instalacao existente chega aqui pela migracao
     -- 2026-07-30_entrega_no_pedido.sql, que aplica a maioria por contagem.
@@ -181,11 +180,9 @@ CREATE TABLE mapoteca.pedido(
     demandante VARCHAR(255),
     omds VARCHAR(255),
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Meta do PIT que o pedido atende. Chave estrangeira para pit.meta desde
-    -- 2026-07-31; antes disso era o codigo digitado a mao ('4.1'), porque a
-    -- tabela de metas morava dentro do schema `orcamento` e a mapoteca nao a
-    -- alcancava. NAO se deriva do material: em 2026 a correlacao (4.1 sulfite,
-    -- 4.2 tyvek, 4.3 glossy) valeu sem excecao, mas o PIT e reescrito todo ano
+    -- Meta do PIT que o pedido atende, por chave estrangeira para `pit.meta` e
+    -- nunca por codigo digitado a mao ('4.1'). NAO se deriva do material: a
+    -- correlacao entre midia e meta vale num ano e o PIT e reescrito todo ano
     -- e a numeracao muda com ele.
     meta_pit_id BIGINT REFERENCES pit.meta (id),
     -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
@@ -254,9 +251,8 @@ EXECUTE FUNCTION mapoteca.trg_localizador_imutavel();
 -- temáticos e imagens devem ser cadastrados no acervo antes do pedido.
 CREATE TABLE mapoteca.produto_pedido(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
-    -- RN08: todo item aponta EXATAMENTE UM produto identificado. Ate 2026-07-30
-    -- isso queria dizer "uma versao do acervo", e uuid_versao era NOT NULL; hoje
-    -- o destino pode ser o acervo OU um impresso avulso descrito aqui mesmo
+    -- RN08: todo item aponta EXATAMENTE UM produto identificado. O destino pode
+    -- ser o acervo OU um impresso avulso descrito aqui mesmo
     -- (papel quadriculado, impresso de ocasiao). Quem garante o "um" e o CHECK
     -- produto_pedido_um_destino, no fim desta tabela.
     --
@@ -279,10 +275,9 @@ CREATE TABLE mapoteca.produto_pedido(
         CHECK (quantidade_fornecida IS NULL OR quantidade_fornecida >= 0),
     tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
     tipo_midia_fornecida_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
-    -- SEM forma_entrega_id e SEM data_entrega: as duas subiram para o PEDIDO em
-    -- 2026-07-30 (ver mapoteca.pedido.forma_entrega_id e data_atendimento). Elas
-    -- prometiam remessa por item, e a producao nunca usou: 1 pedido em 91 tinha
-    -- duas formas e NENHUM tinha duas datas.
+    -- SEM forma_entrega_id e SEM data_entrega: as duas sao do PEDIDO (ver
+    -- mapoteca.pedido.forma_entrega_id e data_atendimento). No item elas
+    -- prometeriam remessa por item, e o pedido inteiro sai numa remessa so.
     observacao TEXT,
     producao_especifica BOOLEAN NOT NULL DEFAULT FALSE,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -353,10 +348,10 @@ CREATE TABLE mapoteca.tipo_material (
     -- aparecer na errada.
     categoria_id SMALLINT NOT NULL DEFAULT 3 REFERENCES dominio.categoria_material (code),
     -- INTEIROS: sao quantidades do MESMO material contado em unidade, entao
-    -- seguem a regra do estoque e do consumo (chefe, 2026-07-30).
+    -- seguem a regra do estoque e do consumo.
     estoque_minimo INTEGER,
     meta_anual INTEGER,
-    -- A MIDIA cuja impressao gasta este material (2026-08-04). Existe porque o
+    -- A MIDIA cuja impressao gasta este material. Existe porque o
     -- consumo saia so de `consumo_material`, que ninguem preenche, e as
     -- subsecoes 7.2 e 7.3 do RPCMTec reportavam "Consumo no mes = 0" nas
     -- dezessete linhas enquanto havia 1.753 impressoes registradas: o numero
@@ -436,9 +431,8 @@ CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
     -- INTEGER de proposito: material da mapoteca conta-se em UNIDADE (folha,
-    -- cartucho, rolo), e meia folha nao existe. Era DECIMAL(10,2) ate
-    -- 2026-07-30, o que exibia "150,00" onde a pessoa escreveu 150 e deixava
-    -- saldo de 0,01 que nunca fecha.
+    -- cartucho, rolo), e meia folha nao existe. Em DECIMAL, a tela exibe
+    -- "150,00" onde a pessoa escreveu 150 e sobra saldo de 0,01 que nunca fecha.
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
     data_consumo DATE NOT NULL,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -496,10 +490,9 @@ CREATE INDEX idx_anexo_pedido_pedido ON mapoteca.anexo_pedido(pedido_id);
 
 -- Etiqueta de envio por Correios do pedido, agora SALVA.
 --
--- Ate 2026-07-30 a etiqueta era descartavel: o dialogo montava o endereco a
--- partir do pedido, imprimia e esquecia a correcao que a pessoa digitou. Quem
--- imprimia a segunda via redigitava o mesmo conserto, e nada provava o que foi
--- colado no pacote.
+-- Etiqueta descartavel (montar o endereco a partir do pedido, imprimir e
+-- esquecer a correcao digitada) faz quem tira a segunda via redigitar o mesmo
+-- conserto, e nada prova o que foi colado no pacote.
 --
 -- UMA etiqueta por pedido (UNIQUE em pedido_id): ela e o endereco corrigido
 -- daquele envio, e nao um historico de tentativas. Quem mudou o que, e quando,
@@ -528,19 +521,18 @@ CREATE TABLE mapoteca.etiqueta_envio(
     CONSTRAINT unique_etiqueta_por_pedido UNIQUE (pedido_id)
 );
 
--- mapoteca.pedido_auditoria NAO mora mais aqui. Ela existiu entre 2026-07-30 e
--- 2026-08-02 e virou `auditoria.evento` (er/auditoria.sql, schema proprio).
+-- NAO EXISTE `mapoteca.pedido_auditoria`. O rastro do pedido e `auditoria.evento`
+-- (er/auditoria.sql, schema proprio).
 --
--- A razao da mudanca esta na coluna que ela tinha: `pedido_id BIGINT NOT NULL`
--- amarrava o historico ao pedido, e cliente, plotter, tipo de material, produto
--- do acervo, nota de empenho e usuario nao tem pedido nenhum. A tabela nova
--- troca o pedido por (modulo, entidade, entidade_id), e o pedido passa a ser um
--- agregado entre outros -- o historico dele continua trazendo item, impressao e
--- etiqueta juntos, pelo mapa de `server/src/auditoria/mapa/mapoteca.js`.
+-- A razao esta na coluna que ela teria: `pedido_id BIGINT NOT NULL` amarra o
+-- historico ao pedido, e cliente, plotter, tipo de material, produto do acervo,
+-- nota de empenho e usuario nao tem pedido nenhum. A tabela comum troca o pedido
+-- por (modulo, entidade, entidade_id), e o pedido e um agregado entre outros --
+-- o historico dele traz item, impressao e etiqueta juntos, pelo mapa de
+-- `server/src/auditoria/mapa/mapoteca.js`.
 --
--- O que NAO mudou: a linha nasce no BACKEND, nunca em gatilho de banco (decisao
--- do chefe, 2026-07-30), e quem cobra o esquecimento continua sendo o teste de
--- varredura mapoteca_auditoria.test.js.
+-- A linha nasce no BACKEND, nunca em gatilho de banco, e quem cobra o
+-- esquecimento e o teste de varredura mapoteca_auditoria.test.js.
 
 -- Indexes para mapoteca
 CREATE INDEX idx_pedido_situacao ON mapoteca.pedido(situacao_pedido_id);
@@ -591,7 +583,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Helper: devolve quantidade ao estoque da Seção, criando a linha se não
--- existir (upsert atômico — sem o check-then-insert que perdia estoque ou
+-- existir (upsert atômico, sem o check-then-insert que perdia estoque ou
 -- violava a UNIQUE sob concorrência)
 CREATE OR REPLACE FUNCTION mapoteca.devolver_estoque_secao(
     p_tipo_material_id INTEGER,
@@ -652,7 +644,7 @@ BEGIN
         END IF;
     ELSE
         -- Tipo de material mudou: devolver o antigo e consumir o novo
-        -- Devolver estoque do material antigo (upsert — idem acima)
+        -- Devolver estoque do material antigo (upsert, idem acima)
         PERFORM mapoteca.devolver_estoque_secao(OLD.tipo_material_id, OLD.quantidade, NEW.usuario_atualizacao_id);
 
         -- Verificar e consumir do novo material

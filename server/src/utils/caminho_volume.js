@@ -6,22 +6,20 @@ const path = require('path')
  * Monta o caminho FÍSICO de um arquivo dentro de um volume de armazenamento.
  *
  * O PROBLEMA QUE ISTO RESOLVE. `acervo.volume_armazenamento.volume` guarda um
- * caminho UNC do Windows (`\\host\share\...`), porque foi de máquina Windows que
- * o acervo nasceu. Quinze pontos do servidor montavam o caminho com
- * `path.join(volume, nome)`, e isso funciona no Windows e SILENCIOSAMENTE FALHA
- * no Linux: o `path` do Node é o da plataforma corrente, e no POSIX ele trata
- * `\\host\share` como um nome de arquivo único, com barras invertidas literais.
- * O `fs.access` não acha nada e a rota responde 404 dizendo que o arquivo está
- * registrado mas não está no volume. Foi o que derrubou TODO download pelo
- * navegador quando o servidor subiu em Linux (chefe, 2026-07-30).
+ * caminho UNC do Windows (`\\host\share\...`). Montar o caminho com
+ * `path.join(volume, nome)` funciona no Windows e SILENCIOSAMENTE FALHA no
+ * Linux, onde o POSIX trata `\\host\share` como nome de arquivo único: o
+ * `fs.access` não acha nada e todo download responde 404.
  *
  * Detectar a plataforma, sozinho, NÃO resolve. Um caminho UNC não existe em
  * forma nenhuma no Linux: o share precisa estar montado, e o ponto de montagem
  * não se deduz da UNC. Por isso a tradução precisa de configuração.
  *
  * COMO TRADUZ, em Linux:
- *   1. Se houver `VOLUME_<id>_CAMINHO` no ambiente, ele MANDA. É o escape para
- *      o volume que não segue convenção nenhuma.
+ *   1. Se houver `VOLUME_<SHARE>_CAMINHO` no ambiente, ele MANDA. O <SHARE> e o
+ *      nome do share da UNC em caixa alta, com o que nao for letra ou digito
+ *      virando `_` (ver `chaveDoShare`). E o escape para o volume que nao segue
+ *      convencao nenhuma.
  *   2. Senão, e havendo `VOLUMES_RAIZ`, a UNC `\\host\share\sub` vira
  *      `<VOLUMES_RAIZ>/share/sub`. É a convenção do mount por share.
  *   3. Sem nenhum dos dois, devolve o valor cru. Vai falhar, e deve mesmo: o

@@ -1,8 +1,9 @@
 # Path: gui\informacao_produto\product_edit_dialog.py
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QMessageBox, QComboBox
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QMessageBox
+
+from ...core.dominios import TIPO_ESCALA_PERSONALIZADA
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'product_edit_dialog.ui'))
@@ -92,9 +93,8 @@ class ProductEditDialog(QDialog, FORM_CLASS):
         
     def toggle_denominador_field(self):
         """Ativa/desativa o campo de denominador baseado na escala selecionada."""
-        # Escala personalizada (valor 5) requer denominador
         escala_id = self.tipoEscalaComboBox.currentData()
-        is_custom_scale = escala_id == 5
+        is_custom_scale = escala_id == TIPO_ESCALA_PERSONALIZADA
         
         self.denominadorLabel.setVisible(is_custom_scale)
         self.denominadorSpinBox.setVisible(is_custom_scale)
@@ -110,7 +110,7 @@ class ProductEditDialog(QDialog, FORM_CLASS):
             return False
             
         escala_id = self.tipoEscalaComboBox.currentData()
-        is_custom_scale = escala_id == 5
+        is_custom_scale = escala_id == TIPO_ESCALA_PERSONALIZADA
         
         if is_custom_scale and self.denominadorSpinBox.value() <= 0:
             QMessageBox.warning(self, "Validação", "Para escala personalizada, o denominador é obrigatório.")
@@ -131,7 +131,11 @@ class ProductEditDialog(QDialog, FORM_CLASS):
                 'mi': self.miLineEdit.text(),
                 'inom': self.inomLineEdit.text(),
                 'tipo_escala_id': self.tipoEscalaComboBox.currentData(),
-                'denominador_escala_especial': self.denominadorSpinBox.value() if self.tipoEscalaComboBox.currentData() == 5 else None,
+                'denominador_escala_especial': (
+                    self.denominadorSpinBox.value()
+                    if self.tipoEscalaComboBox.currentData() == TIPO_ESCALA_PERSONALIZADA
+                    else None
+                ),
                 'tipo_produto_id': self.tipoProdutoComboBox.currentData(),
                 'descricao': self.descricaoTextEdit.toPlainText(),
                 'geom': self.produto_data.get('geom')

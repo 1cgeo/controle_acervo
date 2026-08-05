@@ -1,11 +1,12 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Tela de GESTÃO de usuarios: uma coluna por modulo. Mocka o service de
 // plataforma.
 //
-// Desde 2026-08-02 o SCA CRIA usuario, com senha: o par importar/sincronizar
-// saiu junto com o Auth Server, e por isso nenhuma das duas funcoes existe mais
-// aqui -- se voltarem ao service, este mock nao as devolve e a tela quebra.
+// O SCA CRIA a pessoa e define a senha dela. Não existe importar nem
+// sincronizar, e se as duas voltarem ao service este mock não as devolve e a
+// tela quebra.
 vi.mock('@services/plataforma-service.js', () => ({
   getUsuarios: vi.fn(() => Promise.resolve([])),
   criarUsuario: vi.fn(() => Promise.resolve({ uuid: 'u-novo' })),
@@ -31,8 +32,6 @@ import {
   atualizarUsuario, criarUsuario, excluirUsuario, resetarSenhas,
 } from '@services/plataforma-service.js';
 import { showError } from '@utils/toast.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const MODULOS = [
   { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
@@ -150,9 +149,8 @@ describe('renderUsuariosList', () => {
 
     expect(linha.querySelectorAll('.usuarios__chip-admin')).toHaveLength(1);
     expect(celulas.filter(c => c === 'Administrador')).toHaveLength(0);
-    // Desde 2026-08-04 a coluna do booleano diz o que mede: a situacao do
-    // LOGIN, com a propria palavra na celula (antes era um "Sim" solto).
-    expect(celulas.filter(c => c === 'Ativo')).toHaveLength(1);
+    // A célula da situação do login é assunto do caso 'a coluna do booleano diz
+    // que mede o LOGIN', em list.gestao.test.js.
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -193,7 +191,7 @@ describe('renderUsuariosList', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A tela deixou de espelhar o Auth Server e passou a CADASTRAR (2026-08-02)
+// A tela deixou de espelhar o Auth Server e passou a CADASTRAR
 // ---------------------------------------------------------------------------
 describe('usuarios: o cadastro e do SCA, e nao mais uma importacao', () => {
   test('o topo oferece "Novo usuário", e nenhum caminho de importar ou sincronizar', async () => {
@@ -302,9 +300,8 @@ describe('usuarios: o cadastro e do SCA, e nao mais uma importacao', () => {
 });
 
 describe('usuarios: senha', () => {
-  // `senha_definida: false` e a lista de quem NAO CONSEGUE ENTRAR depois da
-  // migracao de 2026-08-02. Sem marca na tela, essa gente so apareceria ao
-  // reclamar que o login nao funciona.
+  // `senha_definida: false` é quem NÃO CONSEGUE ENTRAR. Sem marca na tela, essa
+  // gente só apareceria ao reclamar que o login não funciona.
   test('quem esta sem senha leva marca na linha e entra na contagem do aviso', async () => {
     getUsuarios.mockResolvedValue([
       { ...USUARIO, senha_definida: false },

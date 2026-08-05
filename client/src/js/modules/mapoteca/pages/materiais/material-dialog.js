@@ -15,12 +15,10 @@ import {
 /**
  * Open the create/edit dialog for a tipo de material.
  *
- * DOIS CAMPOS ENTRARAM EM 2026-08-04, e os dois consertam defeito medido:
+ * DOIS CAMPOS QUE O FORMULARIO NAO PODE OMITIR:
  *
- *  - CATEGORIA. Ela existe no banco desde 2026-08-01 e este formulario nunca a
- *    mandava, entao todo material criado pela tela caia no default 3 (Outro) e
- *    sumia das DUAS tabelas de insumo do RPCMTec. Os 21 materiais de hoje so
- *    tem categoria porque a migracao a preencheu.
+ *  - CATEGORIA. Sem ela, todo material criado pela tela cai no default 3 (Outro)
+ *    e some das DUAS tabelas de insumo do RPCMTec.
  *  - MIDIA QUE O CONSOME. E o que faz o consumo de papel sair da IMPRESSAO. Sem
  *    ela, o consumo saia so de lancamento manual, que ninguem faz: as 7.2 e 7.3
  *    imprimiam "Consumo no mes = 0" nas dezessete linhas com 1.753 impressoes

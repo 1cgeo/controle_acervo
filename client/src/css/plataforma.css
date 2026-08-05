@@ -79,12 +79,76 @@
   color: var(--color-warning);
 }
 
-/* Nota do formulario de usuario: criar nao concede acesso a modulo nenhum. */
-.usuario-dialog__nota {
-  margin: 0;
-  color: var(--text-secondary);
+/* ---------------------------------------------------------------------------
+ * Correcao de TRANSCRICAO da meta do PIT (#/metas).
+ *
+ * A operacao reescreve o que uma revisao ASSINADA declarou, entao a tela carrega
+ * duas coisas que um formulario comum nao carrega: o aviso que separa o que muda
+ * do que fica, e o painel que lista campo a campo a mudanca pendente.
+ *
+ * O aviso usa o contorno de ATENCAO, e nao o azul de informacao: ele nao esta
+ * explicando um campo, esta dizendo o peso do que o botao faz.
+ * ------------------------------------------------------------------------- */
+.transcricao__aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
   font-size: var(--font-size-sm);
   line-height: var(--line-height);
+}
+
+.transcricao__aviso svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-warning);
+}
+
+.transcricao__aviso p {
+  margin: 0 0 var(--space-xs);
+}
+
+.transcricao__aviso p:last-child {
+  margin-bottom: 0;
+}
+
+.transcricao__aviso-titulo {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* O painel do "o que muda" e o resumo do que o botao vai gravar, entao fica
+ * junto do rodape e nao no topo: e a ultima coisa lida antes de confirmar. */
+.transcricao__painel {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+.transcricao__painel-titulo {
+  margin: 0 0 var(--space-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.transcricao__mudancas {
+  margin: 0;
+  padding-left: var(--space-lg);
+  color: var(--text-primary);
+}
+
+/* Sem mudanca pendente o painel nao some: some-lo faria o formulario pular a
+ * cada tecla. Ele fica, apagado, dizendo que ainda nao ha o que gravar. */
+.transcricao__mudancas-vazio {
+  list-style: none;
+  margin-left: calc(var(--space-lg) * -1);
+  color: var(--text-secondary);
 }
 
 /* ---------------------------------------------------------------------------
@@ -125,8 +189,8 @@
   color: var(--text-secondary);
 }
 
-/* O item de menu do usuario virou link em 2026-08-02 ("Meu perfil"), e o
- * sublinhado padrao de <a> nao combina com uma linha de menu. */
+/* O item "Meu perfil" e um link, e o sublinhado padrao de <a> nao combina com
+ * uma linha de menu. */
 .navbar__dropdown-item:hover {
   text-decoration: none;
 }
@@ -272,8 +336,8 @@
 .seletor-nivel__item--n2.seletor-nivel__item--ativo { color: var(--color-primary); }
 .seletor-nivel__item--n3.seletor-nivel__item--ativo { color: var(--color-warning); }
 
-/* O modal de importacao do Auth Server saiu em 2026-08-02, com o CSS dele: a
- * autenticacao veio para dentro do SCA e nao ha mais de onde importar. */
+/* SEM modal de importacao de usuario: o SCA e dono da identidade, e nao ha de
+ * onde importar. */
 
 /* ---------------------------------------------------------------------------
  * Mapa do efetivo (#/aproveitamento)
@@ -371,6 +435,38 @@
   border: 1px solid var(--border-color);
   vertical-align: middle;
   margin-right: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Ficha de UM militar, aberta pela linha do mapa do efetivo.
+ *
+ * Uma linha por passagem e uma por impedimento. A lista se RECONCILIA por chave
+ * a cada gravacao, em vez de ser recriada: e por isso que cada linha precisa de
+ * classe, e nao de estilo escrito no JS.
+ * ------------------------------------------------------------------------- */
+.ficha-militar__linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ficha-militar__texto {
+  flex: 1;
+  min-width: 0;
+}
+
+.ficha-militar__periodo {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* O impedimento que nao cruza passagem nenhuma no ano. O SQL do mapa o descarta
+ * em silencio, entao ele nao muda numero nenhum, e a ficha precisa dizer isso. */
+.ficha-militar__aviso {
+  font-size: 0.8125rem;
+  color: var(--color-warning);
 }
 
 /* ---------------------------------------------------------------------------

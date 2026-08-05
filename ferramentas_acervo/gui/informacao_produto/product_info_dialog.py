@@ -3,20 +3,21 @@
 Diálogo principal para visualização e edição de informações detalhadas de produtos.
 """
 
+import logging
 import os
+
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (
-    QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout, QWidget, QHeaderView,
-    QPushButton, QHBoxLayout, QLabel, QFileDialog, QScrollArea
-)
+from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout, QWidget,
+                                 QPushButton, QHBoxLayout, QLabel, QFileDialog, QScrollArea)
 from qgis.PyQt.QtCore import Qt
-from qgis.core import QgsProject, QgsMapLayerType, Qgis, QgsDataSourceUri
+from qgis.core import QgsMapLayerType, Qgis, QgsDataSourceUri
 from qgis.gui import QgsCollapsibleGroupBox
 
 from .overview_tab import OverviewTab
 from .versions_tab import VersionsTab
 from .relationships_tab import RelationshipsTab
-from .utils import format_date
+from .files_table import ids_marcados, marcar_todos
+from .utils import bloco_html, format_date, format_metadata
 from .admin_actions import AdminActions
 from .deletion_confirmation_dialog import DeletionConfirmationDialog
 from .relationship_edit_dialog import RelationshipEditDialog
@@ -42,6 +43,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         # esta para nao espalhar a mudanca pelas abas.
         self.is_admin = api_client.pode('operador')
         self.download_manager = DownloadManager(api_client)
+        self._destino_do_download = ''
 
         self.setup_ui()
         self.loadButton.clicked.connect(self.load_product_info)
@@ -131,15 +133,11 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             
         self.overview_tab.select_all_check.stateChanged.connect(self.toggle_select_all_files)
         self.overview_tab.download_btn.clicked.connect(lambda: self.download_selected_files("overview"))
-        
-        # Configurar botões de detalhes dos arquivos
-        for row in range(self.overview_tab.files_table.rowCount()):
-            if self.overview_tab.files_table.cellWidget(row, 6):
-                details_btn = self.overview_tab.files_table.cellWidget(row, 6)
-                details_btn.clicked.connect(lambda _, r=row: self.show_file_details(
-                    self.get_file_from_table(self.overview_tab.files_table, r)
-                ))
-        
+
+        # O botão "Detalhes" de cada linha é ligado em preencher_tabela_arquivos,
+        # e não aqui: neste ponto a tabela ainda está vazia, e o laço que
+        # existia sobre rowCount() nunca ligava nada.
+
         # Aba de Histórico de Versões
         self.versions_tab = VersionsTab(self, self.is_admin)
         layout = QVBoxLayout(self.versionsTab)
@@ -169,6 +167,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             
         self.versions_tab.select_all_check.stateChanged.connect(self.toggle_select_all_version_files)
         self.versions_tab.download_btn.clicked.connect(lambda: self.download_selected_files("versions"))
+        self.versions_tab.ao_trocar_versao = self._arquivos_da_versao_selecionada
         
         # Aba de Relacionamentos
         self.relationships_tab = RelationshipsTab(self, self.is_admin)
@@ -214,7 +213,7 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
 
         # Verificar se a camada é uma view materializada de produto.
         # A validação olha a FONTE de dados (tabela mv_produto_*), não o nome
-        # de exibição — o carregador usa nomes amigáveis ("Carta Topográfica - 1:25.000")
+        # de exibição. O carregador usa nomes amigáveis ("Carta Topográfica - 1:25.000").
         table_name = QgsDataSourceUri(active_layer.source()).table()
         if not table_name.startswith('mv_produto_'):
             self.iface.messageBar().pushMessage("Erro", "A camada selecionada não é uma camada de produto válida", level=Qgis.MessageLevel.Warning)
@@ -274,31 +273,18 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.overview_tab.populate_stats(self.product_data, self.current_version)
             
             # Preencher a tabela de arquivos com ações de admin se necessário
-            if self.is_admin:
-                self.overview_tab.populate_files_table(
-                    self.current_version['arquivos'],
-                    lambda file: AdminActions.create_file_actions_widget(
-                        self, file, self.edit_file, self.delete_file
-                    )
-                )
-            else:
-                self.overview_tab.populate_files_table(self.current_version['arquivos'])
-            
+            self.overview_tab.populate_files_table(
+                self.current_version['arquivos'],
+                create_actions_callback=self._acoes_do_arquivo,
+                on_details=self.show_file_details,
+            )
+
             # Preencher a aba de histórico de versões
             self.versions_tab.populate_versions_list(versoes)
-            
-            # Configurar detalhes para a versão selecionada inicialmente
-            if self.versions_tab.selected_version:
-                if self.is_admin:
-                    self.versions_tab.populate_files_table(
-                        self.versions_tab.selected_version['arquivos'],
-                        lambda file: AdminActions.create_file_actions_widget(
-                            self, file, self.edit_file, self.delete_file
-                        )
-                    )
-                else:
-                    self.versions_tab.populate_files_table(self.versions_tab.selected_version['arquivos'])
-            
+
+            # A tabela da aba de histórico é preenchida pelo próprio gancho de
+            # troca de versão, que populate_versions_list já disparou.
+
             # Preparar relacionamentos para a aba de relacionamentos
             relationships = self.extract_relationships(versoes)
             self.relationships_tab.populate_relationships(relationships, self.get_version_product_info)
@@ -313,6 +299,22 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             self.overview_tab.stats_label.setText("Sem versões para exibir estatísticas.")
             self.tabWidget.setTabEnabled(1, False)
             self.tabWidget.setTabEnabled(2, False)
+
+    def _arquivos_da_versao_selecionada(self, versao):
+        """Recarrega a tabela de arquivos da aba de histórico."""
+        self.versions_tab.populate_files_table(
+            (versao or {}).get('arquivos') or [],
+            create_actions_callback=self._acoes_do_arquivo,
+            on_details=self.show_file_details,
+        )
+
+    def _acoes_do_arquivo(self, arquivo):
+        """Widget de Editar/Excluir de uma linha, ou None fora do perfil operador."""
+        if not self.is_admin:
+            return None
+        return AdminActions.create_file_actions_widget(
+            self, arquivo, self.edit_file, self.delete_file
+        )
 
     def extract_relationships(self, versions):
         """Extrai os relacionamentos de todas as versões."""
@@ -375,20 +377,6 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             )
             tree_item.setText(2, "Erro ao carregar informações")
 
-    def get_file_from_table(self, table, row):
-        """Obtém dados de um arquivo da tabela pelo índice da linha."""
-        file_id = table.item(row, 1).data(Qt.ItemDataRole.UserRole)
-        if not file_id:
-            return None
-            
-        # Buscar o arquivo pelo ID
-        for version in self.product_data['versoes']:
-            for file in version['arquivos']:
-                if file['id'] == file_id:
-                    return file
-                    
-        return None
-
     def show_file_details(self, file):
         """Exibe um diálogo com detalhes completos do arquivo."""
         if not file:
@@ -410,27 +398,25 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         basic_group = QgsCollapsibleGroupBox("Informações Básicas")
         basic_layout = QVBoxLayout()
         
-        basic_info = f"""
-        <b>ID:</b> {file['id']}
-        <b>UUID:</b> {file['uuid_arquivo']}
-        <b>Nome:</b> {file['nome']}
-        <b>Nome do Arquivo:</b> {file['nome_arquivo']}
-        <b>Tipo:</b> {file['tipo_arquivo']} (ID: {file['tipo_arquivo_id']})
-        <b>Volume de Armazenamento ID:</b> {file['volume_armazenamento_id'] or 'N/A'}
-        <b>Extensão:</b> {file['extensao'] or 'N/A'}
-        <b>Tamanho (MB):</b> {file['tamanho_mb'] if file['tamanho_mb'] else 'N/A'}
-        <b>Checksum:</b> {file['checksum'] or 'N/A'}
-        <b>Tipo de Status ID:</b> {file['tipo_status_id']}
-        <b>Situação de Carregamento ID:</b> {file['situacao_carregamento_id']}
-        <b>Descrição:</b> {file['descricao'] or 'N/A'}
-        <b>CRS Original:</b> {file['crs_original'] or 'N/A'}
-        <b>Data de Cadastramento:</b> {format_date(file['data_cadastramento'])}
-        <b>UUID do Usuário de Cadastramento:</b> {file['usuario_cadastramento_uuid']}
-        <b>Data de Modificação:</b> {format_date(file['data_modificacao'])}
-        <b>UUID do Usuário de Modificação:</b> {file['usuario_modificacao_uuid'] or 'N/A'}
-        """
-        
-        basic_label = QLabel(basic_info)
+        basic_label = QLabel(bloco_html([
+            ('ID', file['id']),
+            ('UUID', file['uuid_arquivo']),
+            ('Nome', file['nome']),
+            ('Nome do arquivo', file['nome_arquivo']),
+            ('Tipo', f"{file['tipo_arquivo']} (código {file['tipo_arquivo_id']})"),
+            ('Volume de armazenamento', file['volume_armazenamento_id']),
+            ('Extensão', file['extensao']),
+            ('Tamanho (MB)', file['tamanho_mb']),
+            ('Checksum', file['checksum']),
+            ('Código do status', file['tipo_status_id']),
+            ('Código da situação de carregamento', file['situacao_carregamento_id']),
+            ('Descrição', file['descricao']),
+            ('CRS original', file['crs_original']),
+            ('Data de cadastramento', format_date(file['data_cadastramento'])),
+            ('UUID do usuário de cadastramento', file['usuario_cadastramento_uuid']),
+            ('Data de modificação', format_date(file['data_modificacao'])),
+            ('UUID do usuário de modificação', file['usuario_modificacao_uuid']),
+        ]))
         basic_label.setWordWrap(True)
         basic_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         basic_layout.addWidget(basic_label)
@@ -443,9 +429,9 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
             metadata_layout = QVBoxLayout()
             
             try:
-                from .utils import format_metadata
                 metadata_text = format_metadata(file['metadado'])
-            except:
+            except Exception:
+                logging.exception("Falha ao formatar o metadado do arquivo %s", file.get('id'))
                 metadata_text = str(file['metadado'])
                 
             metadata_label = QLabel(metadata_text)
@@ -607,36 +593,23 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     # Métodos para controle de seleção e download de arquivos
     def toggle_select_all_files(self, state):
         """Seleciona ou desseleciona todos os arquivos na tabela principal."""
-        for row in range(self.overview_tab.files_table.rowCount()):
-            item = self.overview_tab.files_table.item(row, 0)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked if state else Qt.CheckState.Unchecked)
-    
+        marcar_todos(self.overview_tab.files_table, bool(state))
+
     def toggle_select_all_version_files(self, state):
         """Seleciona ou desseleciona todos os arquivos na tabela de versão."""
-        for row in range(self.versions_tab.files_table.rowCount()):
-            item = self.versions_tab.files_table.item(row, 0)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked if state else Qt.CheckState.Unchecked)
-    
+        marcar_todos(self.versions_tab.files_table, bool(state))
+
     def download_selected_files(self, source_tab):
         """Inicia o download dos arquivos selecionados."""
-        table = None
         if source_tab == "overview":
             table = self.overview_tab.files_table
         elif source_tab == "versions":
             table = self.versions_tab.files_table
         else:
             return
-            
-        # Coletar IDs dos arquivos selecionados
-        selected_file_ids = []
-        for row in range(table.rowCount()):
-            if table.item(row, 0).checkState() == Qt.CheckState.Checked:
-                file_id = table.item(row, 1).data(Qt.ItemDataRole.UserRole)
-                if file_id:
-                    selected_file_ids.append(file_id)
-        
+
+        selected_file_ids = ids_marcados(table)
+
         if not selected_file_ids:
             QMessageBox.warning(self, "Aviso", "Nenhum arquivo selecionado para download.")
             return
@@ -660,29 +633,25 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
         self.prepare_download_arquivos(selected_file_ids, destination_dir)
     
     def prepare_download_arquivos(self, arquivo_ids, destination_dir):
-        """Prepara o download de arquivos específicos pelos IDs."""
-        # Armazenar diretório para uso posterior
-        self.download_manager.destination_dir = destination_dir
-        
-        try:
-            response = self.api_client.post('acervo/prepare-download/arquivos', {
-                'arquivos_ids': arquivo_ids
-            })
-            
-            if response and 'dados' in response:
-                self.download_manager.prepare_complete.emit(response['dados'])
-            else:
-                self.download_manager.download_error.emit("Não foi possível preparar o download. Resposta inválida do servidor.")
-        except Exception as e:
-            self.download_manager.download_error.emit(f"Erro ao preparar o download: {str(e)}")
+        """Prepara o download dos arquivos escolhidos. Quem chama a rota é o gerente."""
+        self._destino_do_download = destination_dir
+        self.download_manager.prepare_download_arquivos(arquivo_ids)
 
     def handle_download_prepare(self, file_infos):
         """Manipula o evento de preparação de download concluída."""
+        if not file_infos:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.statusLabel.setText("O servidor não devolveu arquivo nenhum para baixar.")
+            QMessageBox.warning(
+                self, "Nada a baixar",
+                "Nenhum dos arquivos selecionados está disponível para download.\n\n"
+                "Arquivo de tileserver não tem byte para baixar, e arquivo que ainda "
+                "não terminou de carregar fica de fora."
+            )
+            return
+
         self.statusLabel.setText(f"Iniciando download de {len(file_infos)} arquivo(s)...")
-        
-        # Iniciar o download efetivo
-        destination_dir = getattr(self.download_manager, 'destination_dir', '')
-        self.download_manager.start_download(file_infos, destination_dir)
+        self.download_manager.start_download(file_infos, self._destino_do_download)
 
     def handle_download_complete(self, results):
         """Manipula o evento de download concluído."""

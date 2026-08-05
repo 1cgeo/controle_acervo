@@ -1,6 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showError } from '@utils/toast.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
+import { estadoErro } from '@components/estado-erro.js';
 import {
   getMapaEfetivo,
   getPeriodosEfetivo,
@@ -8,7 +9,7 @@ import {
   getUsuarios,
 } from '@services/plataforma-service.js';
 // SEM `openImpedimentoDialog` aqui: impedimento se cadastra a partir do MILITAR,
-// na ficha que a linha do mapa abre (chefe, 2026-08-02). Um botao geral pediria
+// na ficha que a linha do mapa abre. Um botao geral pediria
 // a pessoa primeiro, que e a pergunta que a tela ja respondeu.
 import { openPeriodoDialog, openMilitarDialog } from './militar-dialog.js';
 
@@ -73,9 +74,9 @@ const nomeCurto = (r) => `${r.posto_abrev || ''} ${r.nome_guerra || ''}`.trim();
  * Aproveitamento do efetivo (#/aproveitamento).
  *
  * O QUE ELA RESPONDE: quanto do efetivo esteve disponível para a finalidade da
- * Divisão, e por que o resto não esteve. Até 2026-08-02 a tela era um retrato
- * mensal com um texto livre de atividades, que não somava, não comparava entre
- * meses e não sabia dizer o que aconteceu no dia 06 de março.
+ * Divisão, e por que o resto não esteve. Retrato mensal com texto livre de
+ * atividades não soma, não compara entre meses e não sabe dizer o que aconteceu
+ * num dia: por isso o modelo é INTERVALO.
  *
  * O MAPA É A TELA, e o cadastro é o que se abre a partir dele. A pergunta que se
  * faz aqui é visual ("quem está vermelho?"), e a resposta seguinte é sempre a
@@ -88,8 +89,8 @@ const nomeCurto = (r) => `${r.posto_abrev || ''} ${r.nome_guerra || ''}`.trim();
  *
  * DUAS TABELAS RESPONDEM "ESTÁ NA DGEO", e elas discordam. `dgeo.usuario.ativo`
  * decide quem aparece no seletor de militar; `dgeo.efetivo_periodo` decide quem
- * entra no mapa. Em 2026-08-04 três militares desativados no cadastro contavam
- * como presentes em 2027, com passagem aberta. A tela AVISA da divergência no
+ * entra no mapa, e militar desativado no cadastro pode contar como presente com
+ * passagem aberta. A tela AVISA da divergência no
  * rodapé e nunca a corrige: `data_fim` nula é desenho, e quem fecha passagem é o
  * chefe.
  *
@@ -401,11 +402,10 @@ export async function renderAproveitamento(container, ctx) {
     // `periodos` já vem recortado pelo ano da tela.
     const doAno = periodos;
 
-    // PASSAGEM ABERTA COM CADASTRO INATIVO NÃO É DIVERGÊNCIA (chefe,
-    // 2026-08-04, ao acionar a tela com o dado real). `dgeo.usuario.ativo` é
-    // flag de LOGIN, e a maioria do efetivo não usa o SCA: em agosto de 2026
-    // eram 20 casos em 25 militares. O aviso listava quase a Divisão inteira e
-    // escondia a linha que importava.
+    // PASSAGEM ABERTA COM CADASTRO INATIVO NÃO É DIVERGÊNCIA.
+    // `dgeo.usuario.ativo` é flag de LOGIN, e a maioria do efetivo não usa o
+    // SCA: contando isso, o aviso lista quase a Divisão inteira e esconde a
+    // linha que importa.
     //
     // Sobra a divergência que aponta trabalho de verdade: ativo no cadastro e
     // SEM passagem no ano. Quem chegou e não foi lançado fica fora do mapa, e o
@@ -460,8 +460,8 @@ export async function renderAproveitamento(container, ctx) {
 
   async function load() {
     // A ROLAGEM MORRE NO REMONTE. A tela reconstrói o mapa à mão, o documento
-    // encolhe e o navegador prende a rolagem no topo: medido em 2026-08-04,
-    // trocar o ano levava `window.scrollY` de 304 px para 0.
+    // encolhe e o navegador prende a rolagem no topo: sem guardar a posicao,
+    // trocar o ano joga a pessoa de volta ao começo da página.
     const rolagem = typeof window !== 'undefined' ? (window.scrollY || 0) : 0;
 
     // CARREGANDO, e não o mapa velho. Sem isso o mapa do ano anterior fica na
@@ -524,7 +524,13 @@ export async function renderAproveitamento(container, ctx) {
       if (disposed) return;
       // NADA DO ANO VELHO SOBREVIVE AO ERRO. O resumo que ficava escrito dizia
       // um percentual e um número de militares de um ano que não é o da tela.
+      //
+      // NO LUGAR DELE FICA O ERRO, e não a área em branco. O toast some em seis
+      // segundos, e a partir daí a tela vazia se lia como "ninguém teve passagem
+      // neste ano", que é a afirmação oposta. O aviso fica, e traz o caminho de
+      // volta.
       limparTela();
+      mapa.appendChild(estadoErro(err, load));
       showError(err.message || 'Erro ao carregar o aproveitamento do efetivo');
     }
   }

@@ -1,7 +1,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO, TIPO_CLIENTE } } = require("../utils");
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
@@ -14,12 +14,25 @@ const {
 
 const controller = {};
 
+// Os tipos de cliente MILITARES. Pelas constantes, e não pelos códigos crus:
+// `IN (1, 2, 3)` não diz quais são, e a mesma lista já vive nomeada em
+// `relatorio_ctrl.TIPOS_CLIENTE_MILITAR`, que separa a aba Mil da aba Civ. Dois
+// lugares escrevendo a mesma régua com números soltos divergem no dia em que o
+// domínio ganhar um tipo de OM.
+const TIPOS_CLIENTE_MILITAR = [
+  TIPO_CLIENTE.OM_EB,
+  TIPO_CLIENTE.OM_AERONAUTICA,
+  TIPO_CLIENTE.OM_MARINHA
+];
+
+const LISTA_TIPOS_MILITAR = TIPOS_CLIENTE_MILITAR.join(", ");
+
 // As métricas de PEDIDO do dashboard são a visão de produção (OM). O civil
 // (LAI/órgão/empresa) tem o relatório Civ próprio; incluí-lo aqui distorce
 // clientes, tempo médio e pendentes. Este predicado limita o pedido a cliente
 // MILITAR (OM EB/Aeronáutica/Marinha). Usa subconsulta -> vale com qualquer alias.
 const PEDIDO_MILITAR = (colId) =>
-  `${colId} IN (SELECT id FROM mapoteca.cliente WHERE tipo_cliente_id IN (1, 2, 3))`;
+  `${colId} IN (SELECT id FROM mapoteca.cliente WHERE tipo_cliente_id IN (${LISTA_TIPOS_MILITAR}))`;
 
 // Situações que contam como entrega efetuada
 const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO];
@@ -28,11 +41,21 @@ const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 // no ano consultado. Requer o alias ped e os parâmetros
 // $<situacoesEntregue:csv> e $<ano>.
 //
-// A data é a do PEDIDO (data_atendimento) desde 2026-07-30. Era
-// COALESCE(pp.data_entrega, ped.data_atendimento), e a coluna do item saiu:
-// nenhum dos 91 pedidos da produção tinha mais de uma data de entrega.
+// A data é a do PEDIDO (`data_atendimento`). O item não tem data de entrega
+// própria.
+//
+// Sargável, pelo `filtroAno`, e não por `EXTRACT(YEAR FROM col) = ano`. O
+// EXTRACT envolve a coluna numa função e o Postgres deixa de usar o índice
+// `idx_pedido_data_atendimento` (er/mapoteca.sql, linha 541): ele varre a tabela
+// inteira. O `filtroAno` compara a coluna CRUA com
+// duas datas, e é a razão de ele existir. As onze consultas abaixo usam este
+// filtro, então a diferença aparece em onze lugares.
+//
+// A mudança preserva o recorte, inclusive nos nulos: pedido sem
+// `data_atendimento` não passava (NULL = ano dá NULL) e continua sem passar
+// (NULL >= data dá NULL). Requer os parâmetros $<situacoesEntregue:csv> e $<ano>.
 const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>)
-      AND EXTRACT(YEAR FROM ped.data_atendimento) = $<ano>`;
+      AND ${filtroAno("ped.data_atendimento")}`;
 
 // Filtro "pedido do ano": pedido cuja DATA DE PEDIDO cai no ano consultado.
 //
@@ -165,11 +188,9 @@ controller.getAverageFulfillmentTime = async (ano) => {
     const overallAvg = await t.oneOrNone(`
       SELECT 
         -- Diferenca em DIAS INTEIROS, sem passar por epoch.
-        -- O ::date e o que faz esta conta valer ANTES e DEPOIS da migracao
-        -- 2026-07-26_pedido_datas_calendario.sql, que passa as duas colunas de
-        -- TIMESTAMPTZ para DATE. Sem ele, uma versao quebraria a outra, porque
-        -- EXTRACT(EPOCH FROM (date - date)) nao existe: date menos date ja e
-        -- um inteiro. Assim a ordem entre migrar e implantar deixa de importar.
+        -- O ::date faz esta conta valer com a coluna em TIMESTAMPTZ e em DATE.
+        -- Sem ele, uma forma quebra a outra: EXTRACT(EPOCH FROM (date - date))
+        -- nao existe, porque date menos date ja e um inteiro.
         -- (Sem crase aqui: a consulta e um template literal.)
         AVG(data_atendimento::date - data_pedido::date) AS media_dias
       FROM mapoteca.pedido p
@@ -266,12 +287,18 @@ controller.getClientActivity = async (limite = 10, ano) => {
     FROM mapoteca.cliente c
     JOIN mapoteca.pedido p ON c.id = p.cliente_id
     JOIN mapoteca.tipo_cliente tc ON c.tipo_cliente_id = tc.code
-    WHERE c.tipo_cliente_id IN (1, 2, 3)
+    -- Mesma régua militar do resto do arquivo, agora pela mesma lista nomeada.
+    -- Aqui o filtro é direto (o cliente já está no JOIN), e não pelo subselect
+    -- do PEDIDO_MILITAR, que existe para quem não tem o alias.
+    WHERE c.tipo_cliente_id IN (${LISTA_TIPOS_MILITAR})
       AND ${FILTRO_ANO_PEDIDO()}
     GROUP BY c.id, c.nome, c.tipo_cliente_id, tc.nome
     ORDER BY total_pedidos DESC
-    LIMIT ${limite}
-  `, { ano });
+    -- Parâmetro, e não interpolação: o limite vem da query da requisição, e o
+    -- único valor de usuário que entrava na consulta por template literal era
+    -- este. O Joi já o restringe a 1..100; o parâmetro tira a dependência disso.
+    LIMIT $<limite>
+  `, { ano, limite });
 };
 
 // Pending Orders (not completed and not canceled)
@@ -290,8 +317,7 @@ controller.getPendingOrders = async () => {
       -- Idade do pedido em dias. E o criterio de ordem desta lista (ver o
       -- ORDER BY), e sai como coluna para a tela mostrar o mesmo numero que
       -- ordenou, em vez de recalcular a data no navegador.
-      -- O ::date vale antes e depois da migracao 2026-07-26, que passa a
-      -- coluna de TIMESTAMPTZ para DATE.
+      -- O ::date vale com a coluna em TIMESTAMPTZ e em DATE.
       (current_date - p.data_pedido::date)::int AS dias_aberto,
       CASE
         WHEN p.prazo IS NULL THEN NULL
@@ -555,9 +581,8 @@ controller.getResumoAnual = async (ano) => {
       -- A CONTAGEM de linhas sai junto da soma, e o COALESCE saiu de proposito.
       -- Ano sem nenhuma manutencao registrada devolve NULL, e a tela diz "sem
       -- registro"; ano com registro somando zero devolve 0 e mostra R$ 0,00.
-      -- Sao coisas diferentes: mapoteca.manutencao_plotter esta VAZIA na
-      -- producao desde 2024-09-07, entao o R$ 0,00 do cartao era ausencia de
-      -- fonte, e nao custo medido.
+      -- Sao coisas diferentes: com mapoteca.manutencao_plotter vazia, o
+      -- R$ 0,00 do cartao e ausencia de fonte, e nao custo medido.
       SELECT COUNT(*)::int AS manutencoes_count,
              SUM(valor)::float8 AS custo_manutencao_total
       FROM mapoteca.manutencao_plotter
@@ -666,9 +691,8 @@ const paramsDeFiltro = (ano, filtros = {}) => ({
 //
 // Uma linha por PRODUTO do acervo, com o quanto dele saiu no ano. É a mesma
 // população do cartão "Produtos entregues" do resumo anual (mesmo filtro de
-// situação e mesma data efetiva), agregada por produto em vez de somada: em
-// 2026-07-28, contra o banco de produção, o total das feições fechou exatamente
-// com o cartão (3119 exemplares em 325 produtos).
+// situação e mesma data efetiva), agregada por produto em vez de somada: o total
+// das feições tem de fechar com o cartão.
 //
 // `sem_geometria` sai junto de propósito. O produto do acervo sempre tem
 // geometria hoje, mas se um dia não tiver, o mapa mostraria menos entregas do
@@ -894,10 +918,8 @@ controller.getEntregasFiltros = async (ano, filtros = {}) => {
 //
 // Considera a data do PEDIDO e a data de entrega, que não caem necessariamente
 // no mesmo ano: pedido de dezembro entregue em janeiro tem de aparecer nos
-// dois, senão um dos dois anos some do seletor.
-//
-// As duas datas saem da MESMA tabela desde 2026-07-30, quando data_entrega
-// deixou o item: a consulta não precisa mais visitar produto_pedido.
+// dois, senão um dos dois anos some do seletor. As duas datas saem da MESMA
+// tabela, então a consulta não visita `produto_pedido`.
 controller.getAnosComDados = async () => {
   const linhas = await db.conn.any(
     `

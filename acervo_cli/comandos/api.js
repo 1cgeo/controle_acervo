@@ -36,7 +36,7 @@ const argsLib = require('../lib/args')
 // Flags do proprio CLI, que nunca viram filtro de query.
 const FLAGS_CLI = new Set([
   'campos', 'formato', 'json', 'server', 'user', 'senha', 'token', 'cliente',
-  'insecure', 'sem-cache', 'dry-run', 'data', 'data-file', 'confirmar', 'saida'
+  'insecure', 'sem-cache', 'dry-run', 'data', 'data-file', 'confirmar'
 ])
 
 function lerCorpo (flags) {
@@ -103,7 +103,12 @@ function exigirConfirmacao (op, corpo, chave, acao, flags) {
   // confirmar para poder OLHAR, que e o contrario do guardrail.
   if (flags['dry-run']) return
 
-  const valor = corpo ? corpo[op.confirmar.campo] : undefined
+  // O identificador sai do corpo quando a operacao leva corpo, e da flag de
+  // rota quando ela nao leva (o fechar do RPCMTec so tem :id no caminho). Sem
+  // o segundo caso, `confirmar` numa rota sem corpo nao guardava nada.
+  const valor = corpo && op.confirmar.campo in corpo
+    ? corpo[op.confirmar.campo]
+    : flags[op.confirmar.campo]
   const bruto = Array.isArray(valor) ? valor : (valor === undefined ? [] : [valor])
   // Campo em lote de OBJETOS (uma correcao por linha, e nao um id solto): o
   // identificador esta dentro de cada objeto. Sem isto a confirmacao pediria
@@ -113,17 +118,24 @@ function exigirConfirmacao (op, corpo, chave, acao, flags) {
     : bruto
   const esperado = alvos.join(',')
 
+  if (esperado === '') {
+    throw new Error(
+      `${chave} ${acao} e irreversivel e o CLI nao achou o identificador em ` +
+      `${op.confirmar.campo}. Informe-o antes de confirmar.`
+    )
+  }
+
   const dado = flags.confirmar === undefined || flags.confirmar === true
     ? null
     : String(flags.confirmar)
 
-  if (dado === esperado && esperado !== '') return
+  if (dado === esperado) return
 
   throw new Error(
     `Operacao irreversivel e nao confirmada: ${op.confirmar.motivo}.\n` +
     `Atinge ${alvos.length} registro(s) via ${op.confirmar.campo}.\n` +
     'Para executar de fato, repita os identificadores em --confirmar:\n' +
-    `  acervo ${chave} ${acao} --data '...' --confirmar ${esperado}\n` +
+    `  acervo ${chave} ${acao} ${op.confirmar.campo === 'id' ? '--id ' + esperado : "--data '...'"} --confirmar ${esperado}\n` +
     'Para so ver a requisicao que sairia: acrescente --dry-run.'
   )
 }
@@ -175,10 +187,13 @@ async function executar (args, cfg) {
     const r = validar(modulo[operacao.corpo], bruto, chave, acao)
     corpo = r.corpo
     avisos.push(...r.avisos)
-    exigirConfirmacao(operacao, corpo, chave, acao, flags)
   } else if (flags.data || flags['data-file']) {
     avisos.push(`${chave} ${acao} nao leva corpo; --data foi ignorado.`)
   }
+
+  // Fora do bloco acima: a operacao irreversivel que nao leva corpo (o fechar do
+  // RPCMTec identifica o alvo pelo :id da rota) tambem precisa do guardrail.
+  exigirConfirmacao(operacao, corpo, chave, acao, flags)
 
   // ---- query -------------------------------------------------------------
   let sufixo = ''

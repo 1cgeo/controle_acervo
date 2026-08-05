@@ -161,7 +161,7 @@ class LoadProductsDialog(UploadFlowMixin, QDialog, FORM_CLASS):
             )
             return None
 
-        # O corpo do prepare-upload/product é ANINHADO -- {produto, versoes} --,
+        # O corpo do prepare-upload/product é ANINHADO ({produto, versoes}),
         # ao contrário do produto_versao_historica, que traz os campos do
         # produto na raiz. O agrupador devolve a forma plana, e é aqui que ela
         # vira a forma que esta rota pede.

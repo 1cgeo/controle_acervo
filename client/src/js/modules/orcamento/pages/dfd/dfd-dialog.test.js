@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao: o DFD tem coluna "Valor estimado" na lista e no total do PCA, e
 // nenhuma tela permitia informa-la. O corpo nunca levava valor_estimado, entao
@@ -28,8 +29,6 @@ vi.mock('@components/historico/historico.js', () => ({
 }));
 
 import { openDfdDialog } from '@modules/orcamento/pages/dfd/dfd-dialog.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function botao(rotulo) {
   return [...document.querySelectorAll('.modal__footer .btn')]

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Smoke test da tela de PDR. O PDR e o conjunto dos seus itens amarrados num
 // ano: a pagina lista os itens (CRUD) e mostra um cartao-resumo com os totais
@@ -6,7 +7,6 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 // guardado no localStorage.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getPdrItens: vi.fn(() => Promise.resolve([])),
-  getPdrItem: vi.fn(() => Promise.resolve({})),
   createPdrItem: vi.fn(() => Promise.resolve({})),
   updatePdrItem: vi.fn(() => Promise.resolve({})),
   deletePdrItem: vi.fn(() => Promise.resolve()),
@@ -22,9 +22,7 @@ vi.mock('@services/plataforma-service.js', async () => {
 import { renderPdrList } from '@modules/orcamento/pages/pdr/list.js';
 import { getPdrItens } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// Chefe, 2026-08-04: a tela abre sempre no ano ATUAL e nao guarda a escolha.
+// A tela abre sempre no ano ATUAL e não guarda a escolha.
 const ANO_ATUAL = new Date().getFullYear();
 
 describe('renderPdrList', () => {

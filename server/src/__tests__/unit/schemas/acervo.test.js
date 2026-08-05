@@ -15,10 +15,9 @@ describe('Schemas do acervo', () => {
       aceita(acervoSchema.arquivosIds.validate({ arquivos_ids: [1, 2, 3] }))
     })
 
-    // O tipo NAO e `array.min`, apesar do `.min(1)` estar no schema: o item
-    // declarado com `.required()` faz o Joi cobrar "pelo menos um item" ANTES
-    // de chegar ao min. Descoberto ao trocar o `toBeDefined()` por esta
-    // assercao, em 2026-08-01, e anotado para o proximo leitor nao "corrigir".
+    // O tipo NÃO é `array.min`, apesar do `.min(1)` estar no schema: o item
+    // declarado com `.required()` faz o Joi cobrar "pelo menos um item" antes
+    // de chegar ao min. Anotado para o próximo leitor não "corrigir".
     it('recusa lista vazia, que pediria download de nada', () => {
       recusaPor(
         acervoSchema.arquivosIds.validate({ arquivos_ids: [] }),
@@ -82,17 +81,24 @@ describe('Schemas do acervo', () => {
   // As escalas nascem FALSE: sem default, `undefined` entraria no SQL como
   // "escala nao pedida" num caminho e como "todas" noutro.
   describe('situacaoGeralQuery', () => {
+    // AS QUATRO, e não duas: o schema declara scale25k, scale50k, scale100k e
+    // scale250k, e provar só as duas primeiras deixa o default das outras duas
+    // livre para sumir.
     it('toda escala nasce false quando nada e pedido', () => {
-      const value = aceita(acervoSchema.situacaoGeralQuery.validate({}))
-      expect(value.scale25k).toBe(false)
-      expect(value.scale50k).toBe(false)
+      expect(aceita(acervoSchema.situacaoGeralQuery.validate({}))).toEqual({
+        scale25k: false,
+        scale50k: false,
+        scale100k: false,
+        scale250k: false
+      })
     })
 
-    it('aceita a escala ligada explicitamente', () => {
+    it('a escala ligada explicitamente chega ligada, e as outras seguem false', () => {
       const value = aceita(acervoSchema.situacaoGeralQuery.validate({
-        scale25k: true, scale50k: false
+        scale25k: true
       }))
       expect(value.scale25k).toBe(true)
+      expect(value.scale50k).toBe(false)
     })
   })
 })

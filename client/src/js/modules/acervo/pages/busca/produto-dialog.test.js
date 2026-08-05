@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Ficha do produto: identificacao, versoes e os arquivos de cada versao, cada um
 // com botao de baixar. O download vai por stream do servidor, que le o volume: o
@@ -9,12 +10,25 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   // Devolve null: versao sem miniatura e o caso normal, e e o unico que o jsdom
   // consegue exercitar (ele nao tem a API de blob URL).
   getMiniaturaVersao: vi.fn(() => Promise.resolve(null)),
+  excluirArquivos: vi.fn(() => Promise.resolve()),
+  // Os relacionamentos so sao pedidos a quem PODE escrever. Sem estes dublês, o
+  // caso que loga como administrador quebraria na primeira pintura da ficha.
+  getTiposRelacionamento: vi.fn(() => Promise.resolve([
+    { code: 1, nome: 'Insumo' },
+    { code: 2, nome: 'Complementar' },
+    { code: 3, nome: 'Conjunto' },
+  ])),
+  getRelacionamentos: vi.fn(() => Promise.resolve([])),
+  criarRelacionamentos: vi.fn(() => Promise.resolve()),
+  atualizarRelacionamentos: vi.fn(() => Promise.resolve()),
+  excluirRelacionamentos: vi.fn(() => Promise.resolve()),
+  excluirProdutos: vi.fn(() => Promise.resolve()),
+  excluirVersoes: vi.fn(() => Promise.resolve()),
 }));
 
+import { saveAuth, clearAuth } from '@store/auth-store.js';
 import { abrirProdutoDialog } from '@modules/acervo/pages/busca/produto-dialog.js';
 import * as svc from '@modules/acervo/services/acervo-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const PRODUTO = { id: 12, nome: 'Porto Alegre', mi: '2987-2' };
 
@@ -318,5 +332,123 @@ describe('abrirProdutoDialog: versao sem arquivo diz QUAL e o caso', () => {
     await flush();
 
     expect(document.body.textContent).toContain('Registro histórico, sem arquivo');
+  });
+});
+
+// A ficha ja deixava ACRESCENTAR arquivo a uma versao gravada e nao deixava
+// tirar nenhum: o arquivo mandado por engano so saia pelo plugin do QGIS, ou
+// levando a versao inteira junto. A rota `DELETE /arquivo/arquivo` e gerente, e
+// exige motivo, como as outras exclusoes.
+describe('abrirProdutoDialog: excluir UM arquivo', () => {
+  const COM_ID = {
+    ...FICHA,
+    versoes: [{
+      ...FICHA.versoes[0],
+      arquivos: FICHA.versoes[0].arquivos.map((a, i) => ({ ...a, id: 500 + i })),
+    }],
+  };
+
+  const excluirBotoes = () => [...document.querySelectorAll('.ficha-arquivo__excluir')];
+  const rodape = () => [...document.querySelectorAll('.modal__footer .btn')];
+  const clicar = (texto) => rodape().reverse().find(b => b.textContent === texto).click();
+
+  beforeEach(() => {
+    svc.getProdutoDetalhado.mockResolvedValue(COM_ID);
+    // Administrador satisfaz qualquer perfil: e o caminho mais curto para
+    // exercitar a acao de gerente sem montar a tabela de perfis.
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+  });
+
+  afterEach(() => {
+    clearAuth();
+  });
+
+  test('quem nao e gerente nao ve o botao', async () => {
+    clearAuth();
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(excluirBotoes()).toHaveLength(0);
+    // CONTROLE: a ficha carregou, e o que falta e so o botao de excluir.
+    expect(botoesBaixar()).toHaveLength(3);
+  });
+
+  test('o gerente ve um botao de excluir por arquivo', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(excluirBotoes()).toHaveLength(3);
+  });
+
+  test('desistir da confirmacao nao chama o servidor', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    excluirBotoes()[0].click();
+    await flush();
+    clicar('Cancelar');
+    await flush();
+
+    expect(svc.excluirArquivos).not.toHaveBeenCalled();
+  });
+
+  test('confirmar sem motivo nao chama o servidor', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    excluirBotoes()[0].click();
+    await flush();
+    clicar('Excluir');
+    await flush();
+
+    // O segundo passo pede o motivo. Sem preencher, o botao nao fecha nem grava:
+    // o servidor recusa motivo vazio, e descobrir isso depois seria refazer os
+    // dois passos.
+    clicar('Excluir');
+    await flush();
+
+    expect(svc.excluirArquivos).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Informe o motivo da exclusão');
+  });
+
+  test('confirmado e com motivo, exclui SO aquele arquivo e recarrega a ficha', async () => {
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(svc.getProdutoDetalhado).toHaveBeenCalledTimes(1);
+
+    excluirBotoes()[1].click();
+    await flush();
+    clicar('Excluir');
+    await flush();
+
+    document.querySelector('.form-field__textarea').value = 'Subiu duplicado';
+    clicar('Excluir');
+    await flush();
+
+    // O id do SEGUNDO arquivo, e nao o do primeiro nem o da versao.
+    expect(svc.excluirArquivos).toHaveBeenCalledWith([501], 'Subiu duplicado');
+    // A ficha volta do servidor: sem isto, o arquivo apagado continuaria na
+    // lista ate alguem fechar e reabrir.
+    expect(svc.getProdutoDetalhado).toHaveBeenCalledTimes(2);
+  });
+
+  test('falha do servidor mostra a mensagem dele e nao recarrega', async () => {
+    svc.excluirArquivos.mockRejectedValueOnce(
+      new Error('O arquivo é o único da versão. Exclua a versão.')
+    );
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    excluirBotoes()[0].click();
+    await flush();
+    clicar('Excluir');
+    await flush();
+    document.querySelector('.form-field__textarea').value = 'Engano';
+    clicar('Excluir');
+    await flush();
+
+    expect(document.body.textContent).toContain('é o único da versão');
+    expect(svc.getProdutoDetalhado).toHaveBeenCalledTimes(1);
   });
 });

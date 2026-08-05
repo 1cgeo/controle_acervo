@@ -254,10 +254,10 @@ controller.atualizaLote = async (lote, usuarioUuid, contexto) => {
     await preserveOmitted(t, {
       table: 'lote',
       id: lote.id,
-      // `data_fim_prevista` entra aqui (2026-08-03) pelo mesmo motivo da
-      // `descricao`: ela e opcional no schema e tem `def: null` no ColumnSet,
-      // entao um cliente que nao a envie apagaria em silencio a data prometida
-      // do lote, e com ela o mes do planejado da grade do PIT.
+      // `data_fim_prevista` entra aqui pelo mesmo motivo da `descricao`: ela e
+      // opcional no schema e tem `def: null` no ColumnSet, entao um cliente que
+      // nao a envie apagaria em silencio a data prometida do lote, e com ela o
+      // mes do planejado da grade do PIT.
       fields: ['descricao', 'data_fim_prevista'],
       body: lote
     });

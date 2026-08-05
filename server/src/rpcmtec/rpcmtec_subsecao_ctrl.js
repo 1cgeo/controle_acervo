@@ -2,8 +2,8 @@
 
 // O que o GESTOR digita no RPCMTec.
 //
-// Quinze dos 34 blocos do documento o SCA não sabe calcular, e desde
-// 2026-08-05 eles são preenchidos aqui, e não no Word. Onze vêm de outro
+// Quinze dos 34 blocos do documento o SCA não sabe calcular, e eles são
+// preenchidos aqui, e não no Word. Onze vêm de outro
 // sistema ou de fora (2.2 a 2.5 do SAP, 5.1 do painel do GitHub, 8.3 do
 // doc_dgeo) e quatro não têm cadastro em lugar nenhum (5.2, 7.1, 8.1 a 8.5,
 // 9.1 a 9.3).
@@ -27,6 +27,9 @@ const { AppError, httpCode } = require('../utils')
 const { auditoriaCtrl } = require('../auditoria')
 
 const estrutura = require('./rpcmtec_estrutura')
+// O mês anterior, virando o ano em janeiro. Mora em periodo.js porque a mesma
+// regra vale para rpcmtec_ctrl, e duas cópias divergiram uma vez.
+const { mesAnterior } = require('./periodo')
 
 const controller = {}
 
@@ -201,10 +204,6 @@ controller.limpar = async (edicaoId, numero, usuarioUuid, contexto) => {
     return { numero, removida: true }
   })
 }
-
-// O mês anterior ao da edição, virando o ano em janeiro.
-const mesAnterior = ({ ano, mes }) =>
-  mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 }
 
 /**
  * Copia o digitado da edição do mês anterior.

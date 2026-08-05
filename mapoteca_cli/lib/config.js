@@ -36,9 +36,8 @@ function caminhoSessao (server) {
  *   SCA_TOKEN  JWT pronto (pula o login)
  */
 function resolver (flags, exigirServidor = true) {
-  // A ordem e a mesma dos CLIs irmaos (acervo_cli e orcamento_cli): sem isso o
-  // mesmo ambiente serve dois CLIs e falha no terceiro, que foi o que
-  // aconteceu em 2026-07-27 com SCA_SERVER exportado.
+  // A ordem e a mesma dos CLIs irmaos (acervo_cli e orcamento_cli): divergir
+  // faz o mesmo ambiente servir dois CLIs e falhar no terceiro.
   const server = flags.server ||
     process.env.SCA_URL ||
     process.env.SCA_SERVER ||

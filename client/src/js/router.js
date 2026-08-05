@@ -20,6 +20,11 @@ class Router {
   #routes = [];
   #container;
   #currentCleanup = null;
+  // Fila de navegacao: uma resolucao por vez, na ordem dos cliques.
+  #emCurso = Promise.resolve();
+  // Ordem de chegada dos pedidos. Quem espera na fila e ja foi ultrapassado
+  // desiste, em vez de desenhar o mesmo hash duas vezes.
+  #ultimoPedido = 0;
 
   /** @param {HTMLElement} container - root container passed to handlers */
   constructor(container) {
@@ -65,7 +70,50 @@ class Router {
     return null;
   }
 
+  /**
+   * Resolve o hash atual, uma navegacao POR VEZ.
+   *
+   * O handler da pagina e quem pinta, e ele ja pintou quando o `await` dele
+   * retorna. Enquanto duas resolucoes corriam juntas, o router via tarde demais
+   * que tinha perdido a corrida: dava para descartar a limpeza da rota
+   * abandonada, nao dava para despintar a tela dela.
+   *
+   * A fila fecha isso na raiz. Cada pedido espera o anterior TERMINAR antes de
+   * comecar, entao nunca ha dois handlers escrevendo. O ultimo hash e o que
+   * fica na tela.
+   *
+   * O QUE ISSO CUSTA, e e preciso dizer: responsividade. Clicar no menu durante
+   * uma carga lenta faz a navegacao nova esperar a carga em curso. A espera e
+   * de UMA carga, nunca da fila inteira: quem foi ultrapassado desiste sem
+   * desenhar. A tela ainda pisca a pagina abandonada antes de trocar, porque o
+   * handler dela pinta ao terminar.
+   */
   async resolve() {
+    const meuPedido = ++this.#ultimoPedido;
+    // O hash e lido AGORA, e nao depois da espera: cada pedido resolve o
+    // destino que existia quando ele foi feito.
+    const hash = location.hash.slice(1) || '/';
+    const anterior = this.#emCurso;
+    let liberar;
+    this.#emCurso = new Promise((resolver) => { liberar = resolver; });
+
+    try {
+      await anterior;
+      // Outro pedido entrou na fila enquanto este esperava. Quem chegou depois
+      // desenha o destino mais novo, e carregar este aqui seria trabalho jogado
+      // fora.
+      if (meuPedido !== this.#ultimoPedido) return;
+      return await this.#executar(hash);
+    } finally {
+      liberar();
+    }
+  }
+
+  /**
+   * O trabalho de uma navegacao, ja com a vez na fila.
+   * @param {string} hash - destino sem o '#' (ex.: '/orcamento/dfd?ano=2026')
+   */
+  async #executar(hash) {
     // Cleanup previous page
     if (typeof this.#currentCleanup === 'function') {
       try {
@@ -76,18 +124,17 @@ class Router {
       this.#currentCleanup = null;
     }
 
-    const hash = location.hash.slice(1) || '/';
     const [pathname, queryString = ''] = hash.split('?');
     const query = new URLSearchParams(queryString);
 
     // Raiz: manda para o primeiro modulo em que a pessoa tem acesso.
     if (pathname === '/' || pathname === '') {
-      return this.navigate(rotaRaiz());
+      return this.#redirecionar(rotaRaiz());
     }
 
     const matched = this.#match(pathname);
     if (!matched) {
-      return this.navigate('/404');
+      return this.#redirecionar('/404');
     }
 
     const { route, params } = matched;
@@ -95,12 +142,23 @@ class Router {
     if (route.guard) {
       const result = route.guard({ params, query });
       if (result !== true) {
-        return this.navigate(typeof result === 'string' ? result : '/login');
+        return this.#redirecionar(typeof result === 'string' ? result : '/login');
       }
     }
 
     // Render page
     this.#currentCleanup = await route.handler(this.#container, { params, query });
+  }
+
+  /**
+   * Desvio decidido DENTRO da fila (raiz, 404, guarda que reprova).
+   * Passar por `navigate()` aqui esperaria a propria vez e travaria a fila.
+   * @param {string} path
+   */
+  #redirecionar(path) {
+    if (location.hash === `#${path}`) return this.#executar(path);
+    location.hash = path;
+    return undefined;
   }
 
   /**
@@ -159,26 +217,16 @@ export function adminLoader() {
 }
 
 /**
- * Guard da tela de RASTREABILIDADE: administrador global OU gerente de algum
- * modulo.
- *
- * Nao cabe no `adminLoader` nem no `authLoader`, que sao os dois que a
- * plataforma tinha: a tela e do administrador (que ve tudo) e do gerente (que ve
- * o modulo dele). O recorte de verdade e do servidor, no
- * `verifyRastreabilidade`, que le o perfil do BANCO -- este guarda so evita
- * abrir uma tela que responderia 403, e le a foto do login, que envelhece.
- * @returns {true|string}
- */
-/**
  * Guard: administrador global OU gerente de qualquer modulo.
  *
- * MESMA pergunta do `rastreabilidadeLoader`, e por isso ele passou a chamar
- * este: a resposta e uma so, e duas copias divergiriam no dia em que o criterio
- * mudasse. Nasceu em 2026-08-02 para o PIT, cuja leitura deixou de ser de
- * qualquer pessoa logada (chefe).
+ * Guarda as duas telas que fazem a MESMA pergunta: a execucao do PIT e a
+ * rastreabilidade. Nenhuma cabe no `adminLoader` nem no `authLoader`: elas sao
+ * do administrador (que ve tudo) e do gerente (que ve o modulo dele).
  *
- * O servidor cobra o mesmo, em `login/verify_gerente.js`, lendo o perfil do
- * BANCO. Aqui e so ergonomia: evita abrir uma tela que responderia 403.
+ * O recorte de verdade e do servidor (`verify_gerente.js` e
+ * `verifyRastreabilidade`), que le o perfil do BANCO a cada requisicao. Aqui e
+ * so ergonomia: evita abrir uma tela que responderia 403, lendo a foto do login,
+ * que envelhece.
  * @returns {true|string}
  */
 export function gerenteLoader() {
@@ -186,10 +234,6 @@ export function gerenteLoader() {
   if (auth !== true) return auth;
   if (!isAdmin() && !ehGerenteDeAlgumModulo()) return '/unauthorized';
   return true;
-}
-
-export function rastreabilidadeLoader() {
-  return gerenteLoader();
 }
 
 /**
@@ -207,7 +251,7 @@ export function perfilLoader(modulo, minimo = 'consulta') {
     if (!temAcessoModulo(modulo)) return '/unauthorized';
     // LISTA de perfis: a tela vale so para quem tem um daqueles perfis, e nao
     // "aquele nivel ou acima". Na mapoteca o operador tem telas proprias e nao ve
-    // as de leitura, mesmo sendo um nivel acima de consulta (chefe, 2026-07-30).
+    // as de leitura, mesmo sendo um nivel acima de consulta.
     // O menu decide pelo MESMO campo, em registry.podeAbrirRota: sem isso, a
     // pessoa nao veria o item e ainda assim abriria a tela pela URL.
     if (Array.isArray(minimo)) {

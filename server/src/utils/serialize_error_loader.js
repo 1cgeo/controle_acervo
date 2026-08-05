@@ -3,19 +3,15 @@
 // `serialize-error` e ESM PURO desde a versao 9. Este modulo existe so para
 // carrega-lo de dentro do nosso CommonJS, e tenta duas vias, nesta ordem:
 //
-//  1. `require()` sincrono. O Node passou a aceitar `require()` de ESM sem flag
-//     na 22.12, e e o que roda hoje (medido na 24.13 em 2026-07-28). O pacote
-//     nao tem top-level await, entao a via sincrona vale.
+//  1. `require()` sincrono, que o Node aceita para ESM sem flag desde a 22.12.
+//     O pacote nao tem top-level await, entao a via sincrona vale.
 //  2. `import()` dinamico, para Node anterior a 22.12, onde a via 1 estoura
 //     ERR_REQUIRE_ESM.
 //
-// A ordem NAO e cosmetica: era o `import()` dinamico que impedia a suite do
-// servidor de rodar. Jest executa o codigo num contexto de VM, e ali o
+// A ORDEM NAO E COSMETICA. O Jest executa o codigo num contexto de VM, e ali o
 // `import()` so funciona com NODE_OPTIONS=--experimental-vm-modules; com a
-// flag, o Jest 30 no Node 24 quebra antes, em ERR_VM_MODULE_NOT_MODULE. Sem
-// saida pelos dois lados, e a suite inteira falhava no `require` do arquivo,
-// antes de qualquer teste. Com o `require()` na frente, o `import()` nunca e
-// alcancado em teste e a flag deixa de ser necessaria.
+// flag, o Jest 30 no Node 24 quebra antes, em ERR_VM_MODULE_NOT_MODULE. Com o
+// `require()` na frente, o `import()` nunca e alcancado em teste.
 
 let serializeError = null
 

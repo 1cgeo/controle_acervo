@@ -312,7 +312,8 @@ describe('editar geometria que ja existe', () => {
   test('geometria ilegivel nao derruba a tela', () => {
     const editor = criarEditorGeometria({ tipoEscalaId: 5, ewktAtual: 'lixo' });
 
-    expect(editor.element).toBeTruthy();
+    // Chegar aqui já prova que a montagem não lançou. O que falta provar é que
+    // o editor não inventa geometria a partir do lixo.
     expect(editor.resultado()).toBeNull();
 
     editor._cleanup();

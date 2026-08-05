@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/admin-service.js', () => ({
   criarVolumeArmazenamento: vi.fn(() => Promise.resolve({})),
@@ -13,8 +14,6 @@ vi.mock('@utils/toast.js', () => ({
 
 import { openVolumeDialog } from '@modules/acervo/pages/administracao/volume-dialog.js';
 import * as svc from '@modules/acervo/services/admin-service.js';
-
-const flush = () => new Promise(r => setTimeout(r, 0));
 
 const salvar = () =>
   [...document.querySelectorAll('.modal .btn')].find(b => b.textContent === 'Salvar');

@@ -1,6 +1,7 @@
 import { el } from '@utils/dom.js';
 import { createPieChart } from '@components/charts/pie-chart.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
+import { mostrarErroNoGrafico } from '@components/estado-erro.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
 
 /**
@@ -48,54 +49,71 @@ export async function renderDistributionTab(container) {
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barGbTipo, barTipoArquivo]));
   container.appendChild(barVolume);
 
-  async function load() {
-    const [tipo, escala, gbTipo, tipoArquivo, gbVolume] = await Promise.allSettled([
-      acervoService.getProdutosTipo(),
-      acervoService.getProdutosEscala(),
-      acervoService.getGbTipoProduto(),
-      acervoService.getArquivosTipoArquivo(),
-      acervoService.getGbVolume(),
-    ]);
-    if (disposed) return;
-
-    const lista = (resultado) =>
-      (resultado.status === 'fulfilled' && Array.isArray(resultado.value)) ? resultado.value : [];
-
-    pieTipo.update({
-      data: lista(tipo).map(d => ({ label: d.tipo_produto, value: Number(d.quantidade) })),
-      loading: false,
-    });
-
-    pieEscala.update({
-      data: lista(escala).map(d => ({ label: d.tipo_escala, value: Number(d.quantidade) })),
-      loading: false,
-    });
-
-    barGbTipo.update({
-      data: lista(gbTipo).map(d => ({ ...d, total_gb: Number(d.total_gb) })),
-      loading: false,
-    });
-
-    barTipoArquivo.update({
-      data: lista(tipoArquivo).map(d => ({
+  // Um bloco por grafico, e nao uma carga so.
+  //
+  // Antes, a falha de qualquer endpoint virava lista vazia, e o card passava a
+  // dizer "Sem dados disponiveis": a frase do acervo sem produto daquele tipo.
+  // Endpoint fora do ar lia-se como acervo vazio, que e a leitura oposta.
+  //
+  // Cada bloco cai sozinho, e por isso o "tentar de novo" refaz SO a pergunta
+  // que falhou: os quatro graficos que vieram certos ficam na tela.
+  const blocos = [
+    {
+      card: pieTipo,
+      buscar: acervoService.getProdutosTipo,
+      dados: (linhas) => linhas.map(d => ({
+        label: d.tipo_produto, value: Number(d.quantidade),
+      })),
+    },
+    {
+      card: pieEscala,
+      buscar: acervoService.getProdutosEscala,
+      dados: (linhas) => linhas.map(d => ({
+        label: d.tipo_escala, value: Number(d.quantidade),
+      })),
+    },
+    {
+      card: barGbTipo,
+      buscar: acervoService.getGbTipoProduto,
+      dados: (linhas) => linhas.map(d => ({ ...d, total_gb: Number(d.total_gb) })),
+    },
+    {
+      card: barTipoArquivo,
+      buscar: acervoService.getArquivosTipoArquivo,
+      dados: (linhas) => linhas.map(d => ({
         ...d,
         total_gb: Number(d.total_gb),
         quantidade: Number(d.quantidade),
       })),
-      loading: false,
-    });
-
-    // O disponivel e a capacidade do volume menos o usado, nunca negativo.
-    barVolume.update({
-      data: lista(gbVolume).map(d => ({
+    },
+    {
+      card: barVolume,
+      buscar: acervoService.getGbVolume,
+      // O disponivel e a capacidade do volume menos o usado, nunca negativo.
+      dados: (linhas) => linhas.map(d => ({
         ...d,
-        nome_volume: d.nome_volume || d.volume,
         total_gb: Number(d.total_gb),
         available_gb: Math.max(0, Number(d.capacidade_gb_volume || 0) - Number(d.total_gb)),
       })),
-      loading: false,
-    });
+    },
+  ];
+
+  async function carregarBloco(bloco) {
+    try {
+      const resposta = await bloco.buscar();
+      if (disposed) return;
+      bloco.card.update({
+        data: bloco.dados(Array.isArray(resposta) ? resposta : []),
+        loading: false,
+      });
+    } catch (erro) {
+      if (disposed) return;
+      bloco.card.update({ data: [], loading: false });
+      mostrarErroNoGrafico(bloco.card, erro, () => carregarBloco(bloco));
+    }
   }
+
+  const load = () => Promise.all(blocos.map(carregarBloco));
 
   await load();
 

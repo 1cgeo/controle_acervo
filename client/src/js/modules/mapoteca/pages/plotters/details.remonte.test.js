@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que esta tela NAO pode fazer: jogar a pagina fora a cada gravacao.
 //
@@ -18,8 +19,6 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderPlotterDetails } from '@modules/mapoteca/pages/plotters/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const MANUTENCAO_A = { id: 90, data_manutencao: '2026-04-10', valor: 1600, descricao: 'Troca de cabeçote' };
 const MANUTENCAO_B = { id: 91, data_manutencao: '2026-05-20', valor: 900, descricao: 'Limpeza geral' };

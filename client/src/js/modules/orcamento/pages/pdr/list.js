@@ -6,6 +6,7 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { createFileAttachment } from '@modules/orcamento/components/file-attachment.js';
 import { getPdrItens, deletePdrItem, getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
@@ -24,8 +25,7 @@ export async function renderPdrList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('orcamento');
 
-  // O ano e DESTA tela, comeca no ano atual e nao guarda nada (chefe,
-  // 2026-08-04). `permitirOutroAno` porque o ano decide ONDE o item e
+  // O ano e DESTA tela, comeca no ano atual e nao guarda nada. `permitirOutroAno` porque o ano decide ONDE o item e
   // cadastrado: montar o PDR do exercicio seguinte comeca num ano vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
@@ -227,7 +227,7 @@ export async function renderPdrList(container, _ctx) {
     emptyMessage: 'Nenhum item de PDR cadastrado',
     // O PDR e a EXCECAO do orcamento: aqui criar e editar tambem sao gerente,
     // e nao operador como no resto do modulo. Um operador via os botoes, era
-    // recusado pelo servidor e (antes de 2026-07-28) ainda levava logout.
+    // recusado pelo servidor.
     actions: pode.gerente ? [
       {
         icon: ICONS.edit,
@@ -242,6 +242,10 @@ export async function renderPdrList(container, _ctx) {
       },
     ] : [],
   });
+
+  // A tabela vive num no proprio para o estado de ERRO poder tomar o lugar dela
+  // e devolve-lo depois, sem recriar a tabela. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
@@ -260,11 +264,29 @@ export async function renderPdrList(container, _ctx) {
       filtroAno.element,
     ]),
     summaryCard,
-    table.element,
+    areaTabela,
   ]);
   container.appendChild(page);
 
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhum item de PDR cadastrado": a
+   * falha da API lia-se como ano sem PDR, e as duas pedem acoes opostas.
+   *
+   * A tabela volta ANTES do aviso porque `mostrarErro` guarda o que estava no
+   * no: uma segunda falha guardaria o proprio aviso, e "Tentar de novo" pararia
+   * de devolver a tabela.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, load);
+  }
+
   async function load() {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     const ano = filtroAno.getAno();
     title.textContent = `PDR ${ano}`;
     table.update({ loading: true });
@@ -279,7 +301,8 @@ export async function renderPdrList(container, _ctx) {
       // Lista vazia agora pinta "-" nos quatro cartoes. Depois de uma falha de
       // carga a tela nao pode afirmar "R$ 0,00", que se le como dado real.
       renderSummary([]);
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar os itens do PDR');
     }
   }

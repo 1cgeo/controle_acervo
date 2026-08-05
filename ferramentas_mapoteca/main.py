@@ -40,14 +40,11 @@ class Main(QObject):
         self.showPedidosDialog()
 
     def temPerfilParaOperar(self):
-        """Este plugin inteiro exige OPERADOR na mapoteca.
+        """Este plugin inteiro exige OPERADOR no módulo mapoteca.
 
-        Não é ergonomia: as três rotas que a tela usa para trabalhar -- a fila de
-        atendimento, a lista de impressão e o preparo do download -- são
-        `verifyPerfil('operador', 'mapoteca')`. Sem o perfil, quem entrasse veria
-        a janela abrir vazia e um diálogo de 403 atrás do outro, sem nada
-        dizendo o que faltava. Quem decide de verdade continua sendo o servidor,
-        que relê o banco a cada requisição.
+        As rotas de trabalho (fila, lista de impressão, preparo do download) são
+        `verifyPerfil('operador', 'mapoteca')`. Quem decide é o servidor, que
+        relê o banco a cada requisição; aqui só se explica o que falta.
         """
         if self.api_client.pode('operador'):
             return True
@@ -63,10 +60,9 @@ class Main(QObject):
         return False
 
     def showPedidosDialog(self):
-        # Um diálogo NOVO a cada abertura, de propósito: reaproveitar a instância
-        # trazia junto o estado da sessão anterior (fila carregada, pedido
-        # selecionado, gerenciador de download já encerrado), e cada um desses
-        # já foi origem de tela que abre desatualizada.
+        # Um diálogo NOVO a cada abertura: reaproveitar a instância traz o
+        # estado da sessão anterior (fila carregada, pedido selecionado,
+        # gerenciador de download encerrado) e a tela abre desatualizada.
         self._descartarDialogo()
         self.pedidos_dialog = PedidosDialog(self.iface, self.api_client, self.settings)
         self.pedidos_dialog.show()

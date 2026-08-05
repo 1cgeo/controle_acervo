@@ -2,11 +2,9 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { saveAuth } from '@store/auth-store.js';
 import { createMainLayout } from './main-layout.js';
 
-// POR QUE ESTE ARQUIVO EXISTE: o layout autenticado (navbar + sidebar) nao
-// tinha teste nenhum. Em 2026-07-27, ao remover o seletor de modulo da navbar,
-// sobrou uma referencia orfa a ele na montagem, e o ReferenceError so apareceu
-// no navegador, depois do build. Montar o layout inteiro num teste e o que pega
-// esse tipo de erro antes.
+// POR QUE ESTE ARQUIVO EXISTE: sem ele, uma referencia orfa deixada na montagem
+// do layout autenticado (navbar + sidebar) so aparece como ReferenceError no
+// navegador, depois do build. Montar o layout inteiro num teste pega isso antes.
 
 function logar({ administrador = true, perfis = {} } = {}) {
   saveAuth({
@@ -45,15 +43,15 @@ describe('createMainLayout', () => {
     expect(ctrl.contentArea).not.toBeNull();
   });
 
-  test('a navbar NAO tem mais seletor de modulo em dropdown', () => {
+  test('a troca de modulo mora na sidebar, e nao num dropdown da navbar', () => {
     logar();
     ctrl = createMainLayout();
 
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
     // A troca de modulo mora na sidebar, uma seção por modulo. São CINCO
-    // seções: os três módulos, mais Produção e Efetivo, que desde 2026-08-02 se
-    // desenham como sistema sem ser módulo (ver sidebar.js).
+    // seções: os três módulos, mais Produção e Efetivo, que se desenham como
+    // sistema sem ser módulo (ver sidebar.js).
     expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
   });
 
@@ -93,22 +91,32 @@ describe('createMainLayout', () => {
     location.hash = '#/usuarios';
     window.dispatchEvent(new Event('hashchange'));
 
-    // Era o defeito relatado: o menu do modulo sumia ao abrir Usuarios.
+    // Rota de plataforma não apaga o menu do módulo: as cinco seções ficam.
     expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
     expect(ctrl.layout.querySelector('[data-id="acervo:dashboard"]')).not.toBeNull();
     expect(ctrl.layout.querySelector('[data-id="usuarios"]')
       .classList.contains('sidebar__item--active')).toBe(true);
   });
 
-  test('cleanup solta o listener de hashchange', () => {
+  test('depois do cleanup, o hashchange nao mexe mais no item ativo da sidebar', () => {
     logar();
+    location.hash = '#/acervo/dashboard';
     ctrl = createMainLayout();
+
+    const ativo = (id) => ctrl.layout.querySelector(`[data-id="${id}"]`)
+      .classList.contains('sidebar__item--active');
+
+    expect(ativo('acervo:dashboard')).toBe(true);
+
     ctrl.cleanup();
-    // Depois do cleanup, mudar o hash nao pode mais estourar.
-    expect(() => {
-      location.hash = '#/mapoteca/pedidos';
-      window.dispatchEvent(new Event('hashchange'));
-    }).not.toThrow();
+    location.hash = '#/usuarios';
+    window.dispatchEvent(new Event('hashchange'));
+
+    // Solto o ouvinte, a sidebar para de acompanhar a rota. O caso acima, com o
+    // ouvinte de pé, prova o contrário sobre o mesmo par de rotas: é essa
+    // diferença que mostra que o cleanup fez algo.
+    expect(ativo('usuarios')).toBe(false);
+    expect(ativo('acervo:dashboard')).toBe(true);
     ctrl = null;
   });
 });

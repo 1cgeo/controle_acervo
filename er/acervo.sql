@@ -50,8 +50,8 @@ CREATE TABLE acervo.lote (
     descricao TEXT,
     data_inicio DATE NOT NULL,
     data_fim DATE,
-    -- Quando o lote PROMETE terminar, e daqui sai o MES DO PLANEJADO do PIT
-    -- (2026-08-03). Coluna propria, e nao `data_fim`, porque as duas dizem
+    -- Quando o lote PROMETE terminar, e daqui sai o MES DO PLANEJADO do PIT.
+    -- Coluna propria, e nao `data_fim`, porque as duas dizem
     -- coisas diferentes: esta e a promessa e aquela e o que aconteceu. Em todos
     -- os 16 lotes de 2026 as duas datas existentes sao IGUAIS, o que mostra que
     -- `data_fim` vinha sendo preenchida so no fim, com o fato consumado.
@@ -81,7 +81,7 @@ CREATE TABLE acervo.produto(
     tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
 	denominador_escala_especial INTEGER,
 	tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
-	-- Refina a identidade do produto pelo SUBTIPO (chefe 2026-07-06). NULL = identidade
+	-- Refina a identidade do produto pelo SUBTIPO. NULL = identidade
 	-- so por (mi, escala, tipo): e o caso do produto civil, que abrange subtipos 2
 	-- (T34-700) e 12 (ET-RDG) nas versoes. Preenchido quando o subtipo define o produto
 	-- (ex.: 24 = Carta Topografica Militar), tornando-o distinto do civil no mesmo MI.
@@ -120,7 +120,7 @@ CREATE TABLE acervo.versao(
 	subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
 	produto_id BIGINT NOT NULL REFERENCES acervo.produto (id),
 	lote_id BIGINT REFERENCES acervo.lote (id),
-	-- Meta do PIT que esta versao cumpre (2026-08-03). E o vinculo que CONTA na
+	-- Meta do PIT que esta versao cumpre. E o vinculo que CONTA na
 	-- grade do PIT: a versao vale uma unidade da meta quando vira Regular.
 	--
 	-- FICA NA VERSAO, E NAO NO LOTE, e isso foi medido antes de decidir. Todo
@@ -135,7 +135,7 @@ CREATE TABLE acervo.versao(
 	-- tipo e escala engoliria 22 Carta Ortoimagem 1:25.000 do lote Extra-PIT de
 	-- 2026 e mais 16 sem lote nenhum, todas na meta 1.3.
 	meta_pit_id BIGINT REFERENCES pit.meta (id),
-	-- Demanda Extra-PIT que esta versao materializa (2026-08-03). O Extra-PIT e
+	-- Demanda Extra-PIT que esta versao materializa. O Extra-PIT e
 	-- PRODUCAO, e nao entrega: a demanda so fecha quando a versao existe.
 	--
 	-- EXCLUSIVA COM meta_pit_id, pelo CHECK abaixo. A folha cumpre o plano OU e
@@ -156,7 +156,7 @@ CREATE TABLE acervo.versao(
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
 	usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-    -- Inclui subtipo por robustez historica. Desde 2026-07-06 a Carta Topografica Militar
+    -- Inclui subtipo por robustez historica. A Carta Topografica Militar
     -- (subtipo 24) vive num PRODUTO proprio (acervo.produto.subtipo_produto_id = 24), entao
     -- o cenario "1ª Edição civil e militar" ocorre entre DOIS produtos, nao dentro de um.
     CONSTRAINT unique_version_per_product UNIQUE (produto_id, versao, subtipo_produto_id),
@@ -176,7 +176,7 @@ DECLARE
     prod_subtipo SMALLINT;
     subtipo_exige_proprio BOOLEAN;
 BEGIN
-    -- Coerencia produto<->subtipo (identidade do produto pelo subtipo, chefe 2026-07-06).
+    -- Coerencia produto<->subtipo (identidade do produto pelo subtipo).
     -- Antes do early-return para valer inclusive quando so muda produto_id (mover versao).
     SELECT subtipo_produto_id INTO prod_subtipo FROM acervo.produto WHERE id = NEW.produto_id;
     SELECT define_produto INTO subtipo_exige_proprio FROM dominio.subtipo_produto WHERE code = NEW.subtipo_produto_id;
@@ -188,7 +188,7 @@ BEGIN
         RAISE EXCEPTION 'Subtipo % exige produto proprio (produto.subtipo_produto_id = %); nao pode ser versao de um produto de outro subtipo', NEW.subtipo_produto_id, NEW.subtipo_produto_id;
     END IF;
 
-    -- Em UPDATE, validar o formato da versao apenas quando o campo versao mudou — senão
+    -- Em UPDATE, validar o formato da versao apenas quando o campo versao mudou, senão
     -- registros legados ("Xª Edição") ficam imutáveis após 2024 (qualquer UPDATE falharia)
     IF TG_OP = 'UPDATE' AND NEW.versao IS NOT DISTINCT FROM OLD.versao THEN
         RETURN NEW;
@@ -302,9 +302,8 @@ CREATE INDEX idx_arquivo_versao ON acervo.arquivo(versao_id);
 -- Tileserver (tipo_arquivo_id = 9) fica de fora: ali nome_arquivo e uma URL e
 -- volume_armazenamento_id e NULL, por arquivo_check1.
 --
--- Vieram da migracao 2026-07-29_nome_fisico_unico.sql e ficaram fora daqui ate
--- 2026-08-03, quando o ensaio de convergencia os achou: o banco ATUALIZADO os
--- tinha e a INSTALACAO NOVA nascia sem eles.
+-- Vem da migracao 2026-07-29_nome_fisico_unico.sql, e TEM de estar aqui: sem
+-- eles, o banco ATUALIZADO os tem e a INSTALACAO NOVA nasce sem.
 CREATE UNIQUE INDEX unique_nome_fisico_por_volume
   ON acervo.arquivo (volume_armazenamento_id, nome_arquivo, extensao)
   WHERE tipo_arquivo_id <> 9;
@@ -335,7 +334,7 @@ CREATE INDEX idx_versao_demanda_extra ON acervo.versao(demanda_extra_id);
 -- mentindo, entao ela morre junto.
 --
 -- Produto so vetorial (zip/sqlite) nao tem raster para renderizar, e por isso
--- simplesmente nao tem linha aqui (chefe, 2026-07-31).
+-- simplesmente nao tem linha aqui.
 CREATE TABLE acervo.miniatura_versao(
     versao_id BIGINT NOT NULL PRIMARY KEY REFERENCES acervo.versao (id) ON DELETE CASCADE,
     arquivo_id BIGINT REFERENCES acervo.arquivo (id) ON DELETE CASCADE,
@@ -406,17 +405,6 @@ CREATE TABLE acervo.download(
 
 CREATE INDEX idx_download_token ON acervo.download(download_token);
 CREATE INDEX idx_download_arquivo ON acervo.download(arquivo_id);
-
--- Create a function to clean up expired download records
-CREATE OR REPLACE FUNCTION acervo.cleanup_expired_downloads() RETURNS void AS $$
-BEGIN
-    -- Mark expired pending downloads as failed
-    UPDATE acervo.download 
-    SET status = 'failed'
-    WHERE status = 'pending' 
-    AND (expiration_time IS NOT NULL AND expiration_time < NOW());
-END;
-$$ LANGUAGE plpgsql;
 
 CREATE TABLE acervo.download_deletado(
 	id BIGSERIAL NOT NULL PRIMARY KEY,
@@ -555,7 +543,7 @@ $$ LANGUAGE plpgsql;
 -- lugares diverge, e o auditor passaria a aprovar o que o renomeador escreve,
 -- qualquer coisa que ele escreva.
 --
--- Entrou em er/ ao lado da migration 2026-07-29_nome_arquivo_padrao.sql: a
+-- Fica em er/ ao lado da migration 2026-07-29_nome_arquivo_padrao.sql: a
 -- migration atualiza o banco que existe e este arquivo instala o novo. Estar so
 -- na migration deixava a INSTALACAO NOVA sem a funcao, e a auditoria quebrava
 -- num banco recem-criado.

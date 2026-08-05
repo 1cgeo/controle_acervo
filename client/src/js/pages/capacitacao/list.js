@@ -38,7 +38,7 @@ function paraLinha(capacitacao) {
 const VAZIO = 'Nenhum registro para estes filtros';
 
 /**
- * Capacitação, em DUAS telas (chefe, 2026-08-02).
+ * Capacitação, em DUAS telas.
  *
  * MINISTRADA fica em Produção: é serviço que a Divisão presta, e alimenta a
  * subseção 2.6. RECEBIDA fica em Efetivo: é gente nossa em curso, e alimenta a
@@ -153,7 +153,7 @@ function criarTela(tipoId, textos) {
           render: (row) => row.local_realizacao || '-',
         },
         textos.coluna,
-        // Os militares vêm do CADASTRO desde 2026-08-02, e a célula mostra o
+        // Os militares vêm do CADASTRO, e a célula mostra o
         // texto que `paraLinha` montou: quem monta a frase do relatório é o
         // gerador, e a busca da tabela só enxerga texto.
         {

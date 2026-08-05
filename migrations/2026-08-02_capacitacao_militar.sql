@@ -6,7 +6,7 @@
 -- Fulano participou". Era o mesmo defeito do `atividades` do efetivo, que saiu
 -- horas antes por intervalo.
 --
--- A SAIDA (chefe, 2026-08-02): `rpcmtec.capacitacao_militar`, ligando a
+-- A SAIDA: `rpcmtec.capacitacao_militar`, ligando a
 -- capacitacao a `dgeo.usuario`. Vale para os DOIS tipos, e o PAPEL vem do
 -- `tipo_id` da capacitacao em vez de ser coluna:
 --

@@ -79,7 +79,12 @@ const validationError = (error, context) => {
  * @param {object} [schema.params] - Schema do Joi para validação dos params
  * @returns {RequestHandler} Middleware de validação utilizando Joi
  */
-const middleware = ({
+// NOME PRÓPRIO, e não `middleware`. O irmão `schema_validation_estrito.js` tem
+// contrato OPOSTO no corpo (recusa a chave desconhecida com 400, em vez de
+// descartá-la), e os dois eram exportados como uma função anônima chamada
+// `middleware`: no rastro de pilha e no `fn.name` eles se liam iguais, e trocar
+// um pelo outro num `require` não deixava marca nenhuma.
+const schemaValidationTolerante = ({
   body: bodySchema,
   query: querySchema,
   params: paramsSchema
@@ -138,4 +143,4 @@ const middleware = ({
   }
 }
 
-module.exports = middleware
+module.exports = schemaValidationTolerante

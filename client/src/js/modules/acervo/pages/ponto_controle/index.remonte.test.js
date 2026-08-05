@@ -1,9 +1,10 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que estes testes protegem: a tela de ponto de controle nao se remonta a
 // cada consulta.
 //
-// O defeito medido em 2026-08-04: `pintar` fazia `lista.replaceChildren(...)`
+// O defeito: `pintar` fazia `lista.replaceChildren(...)`
 // com vinte cartoes novos, e `pintarPaginacao` criava os botoes de novo. Cada
 // tecla digitada, cada arrasto do mapa com "so na area do mapa" e cada virada de
 // pagina trocavam TODOS os nos. O foco do teclado morria junto, e a rolagem da
@@ -90,7 +91,6 @@ import {
 } from '@modules/acervo/services/ponto-controle-service.js';
 import { abrirPontoDialog } from '@modules/acervo/pages/ponto_controle/ponto-dialog.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 /** A consulta por digitacao espera 350 ms; a do mapa, 500 ms. */
 const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 

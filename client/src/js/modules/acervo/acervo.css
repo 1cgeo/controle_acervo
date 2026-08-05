@@ -630,11 +630,10 @@
 
 /* ---- Ficha do produto ----
  *
- * Reescrita em 2026-07-31 (chefe: "a UI e UX esta ruim"). O bloco anterior
- * (`.versao-bloco*`) desenhava uma pilha de linhas rotulo-valor todas com o
- * mesmo peso, sem imagem e sem hierarquia. Aqui a identificacao vira uma faixa
- * de fatos com o VALOR grande, cada versao ganha a miniatura ao lado, e os
- * ARQUIVOS sobem na ordem de leitura, na frente do metadado administrativo.
+ * A identificacao e uma faixa de fatos com o VALOR grande, cada versao ganha a
+ * miniatura ao lado, e os ARQUIVOS sobem na ordem de leitura, na frente do
+ * metadado administrativo. Uma pilha de linhas rotulo-valor com o mesmo peso,
+ * sem imagem e sem hierarquia, e o que este bloco existe para evitar.
  *
  * Tudo sai dos tokens de design-tokens.css, entao o tema escuro vem de graca:
  * nenhuma cor literal, so variaveis. A excecao e o fundo branco da miniatura,
@@ -955,6 +954,23 @@
   flex-shrink: 0;
 }
 
+/* Excluir o arquivo. Fica ao lado de Baixar, e nao no cabecalho da versao: a
+ * versao tem varios arquivos, e um botao no cabecalho nao diria qual. Cor de
+ * perigo so no ponteiro em cima, para a linha nao ficar gritando em vermelho. */
+.ficha-arquivo__excluir {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.ficha-arquivo__excluir:hover:not(:disabled),
+.ficha-arquivo__excluir:focus-visible {
+  color: var(--color-error);
+}
+
+.ficha-arquivo__excluir:hover svg {
+  color: inherit;
+}
+
 /* ---- Relacionamentos ---- */
 
 .ficha-relacionamentos {
@@ -1218,7 +1234,7 @@
   flex-wrap: wrap;
 }
 
-/* Limpar e exportar, no fim da LINHA DOS FILTROS (chefe, 2026-07-28). O que se
+/* Limpar e exportar, no fim da LINHA DOS FILTROS. O que se
  * exporta e o resultado dos filtros que estao ali do lado, entao a acao
  * pertence a essa linha; e uma faixa a menos no topo e altura a mais para a
  * lista e o mapa, que e onde esta o conteudo.
@@ -1345,6 +1361,7 @@
   bottom: var(--space-sm);
   z-index: 2;
   display: flex;
+  list-style: none;
   flex-wrap: wrap;
   gap: var(--space-sm);
   padding: var(--space-xs) var(--space-sm);
@@ -1444,12 +1461,10 @@
 
 /* O interruptor dos campos vazios, logo acima dos blocos que ele governa.
  *
- * Ele ja foi GRUDADO no topo (position: sticky), e o resultado era ele passar
- * por cima do conteudo ao rolar, com o fundo cobrindo so parte da largura
- * (chefe, 2026-07-31: "fica voando quando da scroll down"). Grudar dentro de uma
- * area rolavel com padding exige sangrar o fundo ate as bordas dela; aqui nao
- * compensa, porque desde a reforma o interruptor nao governa mais o resumo nem
- * os arquivos, que vem antes. Onde ele esta, ja se ve o que ele faz. */
+ * NAO o gruda no topo (`position: sticky`): ali ele passa por cima do conteudo
+ * ao rolar, com o fundo cobrindo so parte da largura. Grudar dentro de uma area
+ * rolavel com padding exige sangrar o fundo ate as bordas dela, e aqui nao
+ * compensa: o interruptor nao governa o resumo nem os arquivos, que vem antes. */
 .pc-ficha__vazios-toggle {
   display: flex;
   align-items: center;
@@ -2163,4 +2178,13 @@
   overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+}
+
+/* A linha do resultado vazio. Sem ela sobrava o cabecalho sozinho, que parece
+ * tabela que nao carregou. */
+.manutencao__tabela-vazia {
+  text-align: center;
+  padding: var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }

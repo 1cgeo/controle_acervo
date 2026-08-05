@@ -88,7 +88,7 @@ describe('pdr_ctrl.criar', () => {
   })
 })
 
-// A FORMA destas duas mudou em 2026-08-02, com a rastreabilidade: o 404 saia do
+// A FORMA destas duas mudou, com a rastreabilidade: o 404 saia do
 // `rowCount` do proprio UPDATE, e o estado anterior era destruido sem nunca ser
 // lido. Hoje `lerAntes` faz as DUAS coisas -- le a linha inteira (que vira o
 // `dados_antes` do evento) e lanca o mesmo 404 -- e o UPDATE devolve

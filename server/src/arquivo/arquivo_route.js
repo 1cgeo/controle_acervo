@@ -97,28 +97,23 @@ router.post(
 // Envio pelo NAVEGADOR. O byte sobe por HTTP e quem o grava no volume e o
 // SERVIDOR, e numa requisicao so.
 //
-// Ate 2026-08-01 nenhuma rota gravava byte em volume: o prepare-upload reservava
-// o destino, o PLUGIN copiava por SMB e o confirm-upload conferia o checksum que
-// o cliente declarara. Quem nao tem o volume montado (e nao tem o QGIS aberto)
-// ficava de fora do cadastro. O servidor ja ALCANCA o volume -- o download faz
-// createReadStream e pipe --, entao o que faltava era o sentido contrario.
+// E o caminho de quem nao tem o volume montado nem o QGIS aberto.
 //
 // SEM SESSAO, e isso e o ponto. O par prepare/confirm existe para cobrir a
 // janela em que o cliente sai para copiar os bytes por conta propria. Aqui os
 // bytes vem DENTRO da requisicao: nao ha janela, e portanto nao ha o que a
-// sessao cobrir -- o mesmo raciocinio que `/catalogar/product` ja registrou. O
-// desenho anterior usava a sessao mesmo assim, e cobrava por isso: linha
-// pendurada em `upload_session` e `.parcial` no volume a cada envio abandonado.
+// sessao cobrir -- o mesmo raciocinio de `/catalogar/product`. Com sessao, todo
+// envio abandonado deixa linha pendurada em `upload_session` e `.parcial` no
+// volume.
 //
 // O que se perde e reenviar SO o arquivo que falhou. Aceitavel: o teto do
-// caminho web e de poucos GB e a mediana em producao e de 6 a 11 MB; acima
-// disso o caminho continua sendo o plugin.
+// caminho web e de poucos GB; acima disso o caminho continua sendo o plugin.
 //
 // O CLIENTE NAO NOMEIA, NAO DECLARA EXTENSAO E NAO DECLARA CHECKSUM. O nome
 // fisico sai de `acervo.nome_arquivo_padrao`, a mesma funcao que o invariante
 // `7a` audita; a extensao sai do arquivo enviado; o checksum sai do mesmo passo
-// que grava. Deixar o cliente nomear produzia uma linha de DEFECT no `7a` a cada
-// envio -- medido em 2026-08-02.
+// que grava. Deixar o cliente nomear produz uma linha de DEFECT no `7a` a cada
+// envio.
 //
 // O campo `dados` (JSON) tem de vir ANTES dos arquivos no multipart: e dele que
 // sai o destino de cada byte.

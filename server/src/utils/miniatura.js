@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile)
  *
  * Ela serve para RECONHECER o produto de relance (o desenho da folha, a mancha
  * urbana, o relevo), nunca para ler o texto dele. Por isso a pagina inteira, e
- * nao um recorte da area do mapa (chefe, 2026-07-31).
+ * nao um recorte da area do mapa.
  *
  * DOIS CAMINHOS, porque o acervo tem duas naturezas de arquivo.
  *
@@ -22,25 +22,18 @@ const execFileAsync = promisify(execFile)
  *   RASTER -> `gdalinfo` + `gdal_translate` para ABRIR o formato, e `sharp`
  *             para reduzir e codificar.
  *
- * POR QUE O GDAL NAO SAI (medido em 2026-07-31). Ele e a unica coisa que le o
- * que o acervo esta passando a receber. A Ortoimagem chega em ERDAS `.img` de
- * 43064x48311, com os pixels num `.ige` de 7,4 GB ao lado e dez niveis de
- * piramide: o GDAL entrega a miniatura em 7 s lendo a piramide, e o `sharp`
- * sequer abre o formato. MDS e MDT chegam em GeoTIFF Float32 de 150 MB.
+ * O GDAL NAO SAI: ele e a unica coisa que abre o que o acervo recebe. A
+ * Ortoimagem chega em ERDAS `.img` de 43064x48311, com os pixels num `.ige` de
+ * 7,4 GB ao lado, e o `sharp` sequer abre o formato.
  *
- * POR QUE O POPPLER TAMBEM NAO SAI. Foram testados dois substitutos permissivos
- * (PDFium em WASM e pdf.js). Nas cartas topograficas os tres motores discordam
- * do preenchimento (vegetacao, sombreado) em AMBOS os sentidos, arquivo a
- * arquivo: em 9 cartas medidas, o PDFium desenhou mais em 4 e o poppler em 2.
- * Sem um visualizador de referencia nao da para dizer qual acerta, e trocar o
- * motor de 4.091 cartas para economizar um pacote de sistema e troca ruim.
+ * O POPPLER TAMBEM NAO SAI. Os substitutos permissivos (PDFium em WASM, pdf.js)
+ * discordam do preenchimento da carta topografica em ambos os sentidos, arquivo
+ * a arquivo, e sem visualizador de referencia nao da para dizer qual acerta.
  * (O mupdf, tecnicamente o melhor, e AGPL-3.0 e este repositorio e MIT.)
  *
- * POR QUE O SHARP ENTRA MESMO ASSIM. O `-outsize` do GDAL decima por vizinho
- * mais proximo: numa carta, o texto da legenda vira papa e a grade serrilha. O
- * GDAL passa a extrair ao DOBRO do alvo e o `sharp` faz a reducao final com
- * reamostragem de verdade. Medido: o texto volta a ser legivel e o arquivo sai
- * cerca de 20% menor.
+ * O SHARP ENTRA MESMO ASSIM porque o `-outsize` do GDAL decima por vizinho mais
+ * proximo, e ai o texto da legenda vira papa e a grade serrilha. O GDAL extrai
+ * ao DOBRO do alvo e o `sharp` faz a reducao final com reamostragem de verdade.
  *
  * Os caminhos dos binarios saem do ambiente (`MINIATURA_PDFTOPPM`,
  * `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO`), com o nome no PATH como

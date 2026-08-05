@@ -27,10 +27,10 @@ const PERIODO_PADRAO = 30;
 const MAX_RANKING = 10;
 
 /**
- * Falha e VAZIO sao coisas diferentes, e ate 2026-08-04 esta tela escrevia as
- * duas igual: rota fora do ar virava '-' no cartao e 'Sem dados disponíveis' no
- * grafico, o mesmo texto do zero legitimo. O chefe lia "ninguém está impedido"
- * quando a verdade era "não deu para saber".
+ * Falha e VAZIO sao coisas diferentes, e escrever as duas igual e o defeito que
+ * isto evita: rota fora do ar virando '-' no cartao e 'Sem dados disponiveis' no
+ * grafico se le como zero legitimo, e "ninguem esta impedido" no lugar de "nao
+ * deu para saber".
  */
 const TEXTO_FALHA = 'Falha ao carregar. O dado não foi lido.';
 const VALOR_FALHA = 'Erro';
@@ -155,8 +155,8 @@ function seletor({ rotulo, aria, opcoes, valor, onChange }) {
  * Aba "Efetivo": quem esta na Divisao neste mes, quanto rendeu, quem chegou,
  * quem saiu, quem esta impedido e o que nao bate entre cadastro e passagem.
  *
- * ELA ABRE A TELA, e essa e a mudanca de 2026-08-04. O painel de login media a
- * plataforma; o chefe pergunta pela tropa.
+ * ELA ABRE A TELA: o painel de login mede a plataforma, e o chefe pergunta pela
+ * tropa.
  *
  * A FONTE JA EXISTIA E NAO TINHA TELA: `controller.resumoMensal` e a rota
  * `/efetivo/mes` nasceram para a subsecao 6.1 do RPCMTec, e nenhuma pagina do
@@ -439,11 +439,9 @@ async function renderEfetivoTab(container) {
     const usuarios = usuariosOk ? (usuariosRes.value || []) : [];
     const divergenciasOk = usuariosOk && efetivoOk;
 
-    // ESTAR NA DGEO COM A CONTA DESATIVADA NÃO É DIVERGÊNCIA (chefe, 2026-08-04,
-    // ao acionar a tela com o dado real). `dgeo.usuario.ativo` é flag de LOGIN,
-    // e a maioria do efetivo não usa o SCA: em agosto de 2026 eram 20 casos em
-    // 25 militares, contra 7 contas ativas em 54 pessoas cadastradas. Listar
-    // isso enchia a tela de ruído e afogava as duas linhas que importavam.
+    // ESTAR NA DGEO COM A CONTA DESATIVADA NÃO É DIVERGÊNCIA.
+    // `dgeo.usuario.ativo` é flag de LOGIN, e a maioria do efetivo não usa o
+    // SCA: listar isso enche a tela de ruído e afoga as linhas que importam.
     //
     // A divergência que importa é a outra: quem PODE ENTRAR no sistema e não
     // consta na Divisão. Ou a passagem não foi lançada, ou a pessoa saiu e o
@@ -490,11 +488,11 @@ async function renderEfetivoTab(container) {
 // =============================================================================
 
 /**
- * Aba "Acessos": o historico de `dgeo.login`, enxugado em 2026-08-04.
+ * Aba "Acessos": o historico de `dgeo.login`.
  *
- * O QUE SAIU, e por que:
- *   - a serie de 12 meses: `dgeo.login` nasceu em 2026-08-02, entao dez dos doze
- *     pontos eram zero por construcao
+ * O QUE FICA DE FORA, e por que:
+ *   - a serie de 12 meses: sem um ano de historico acumulado, quase todos os
+ *     pontos sao zero por construcao
  *   - "por onde se entra": barra sobre um dominio de DOIS valores. O dado virou
  *     COLUNA da tabela de quem entrou hoje
  *   - o subtitulo: descrevia o schema da tabela, e nao a pergunta da tela
@@ -693,15 +691,13 @@ async function renderAcessosTab(container) {
 /**
  * Dashboard do efetivo (#/acessos), do administrador global.
  *
- * DUAS ABAS NA MESMA ROTA: Efetivo (abre a tela) e Acessos. A rota continua
- * `#/acessos` e o rotulo no menu continua "Dashboard", por decisao do chefe em
- * 2026-08-02: renomear URL quebra link guardado.
+ * DUAS ABAS NA MESMA ROTA: Efetivo (abre a tela) e Acessos. A rota e `#/acessos`
+ * e o rotulo no menu e "Dashboard": renomear URL quebra link guardado.
  *
- * POR QUE O EFETIVO ABRE. Ate 2026-08-04 esta tela media LOGIN, e nao gente.
- * Medido na producao naquele dia: "quem mais entrou" trazia a conta de serviço
- * `claude` com 98 dos 102 logins do mês, e dois dos quatro graficos nasciam
- * degenerados. O chefe pergunta quem esta na Divisao, quanto rendeu, quem chegou
- * e quem saiu. O historico de login continua, uma aba atras.
+ * POR QUE O EFETIVO ABRE. Medir LOGIN nao e medir gente: uma conta de servico
+ * domina o ranking e os graficos nascem degenerados. O chefe pergunta quem esta
+ * na Divisao, quanto rendeu, quem chegou e quem saiu. O historico de login
+ * continua, uma aba atras.
  *
  * `verifyAdmin` no servidor e `adminLoader` na rota: nem o historico de acesso
  * nem o efetivo sao dado de modulo, e a aba Efetivo mostra licença de saúde e

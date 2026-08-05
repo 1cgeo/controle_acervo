@@ -69,8 +69,8 @@ const montarFiltros = (filtros, exceto) => {
   const condicoes = []
   const valores = {}
   // `temValor` e nao a verdade do JavaScript: os filtros de dominio chegam como
-  // ARRAY desde 2026-08-04, e array vazio e verdadeiro. Sem isto, desmarcar a
-  // ultima opcao montaria `IN ()` e derrubaria a consulta.
+  // ARRAY, e array vazio e verdadeiro. Sem isto, desmarcar a ultima opcao
+  // montaria `IN ()` e derrubaria a consulta.
   const usar = chave => chave !== exceto && temValor(filtros[chave])
 
   // `IN` e nao `=`: marcar dois lotes pergunta por um OU o outro. O cruzamento
@@ -94,7 +94,7 @@ const montarFiltros = (filtros, exceto) => {
     )
     Object.assign(valores, { minx, miny, maxx, maxy })
   }
-  // Área DESENHADA no mapa (chefe, 2026-07-29). O `&&` usa o índice GIST e o
+  // Área DESENHADA no mapa. O `&&` usa o índice GIST e o
   // `ST_Intersects` decide de verdade; sozinho, o `&&` compararia retângulos
   // envolventes e traria ponto de fora do desenho. O `ST_MakeValid` é cinto de
   // segurança: o desenho da tela já barra autointerseção, mas geometria inválida
@@ -110,10 +110,9 @@ const montarFiltros = (filtros, exceto) => {
     condicoes.push('p.id IN ($<ids:csv>)')
     valores.ids = filtros.ids
   }
-  // Filtro por LUGAR (chefe, 2026-07-29). Recorte espacial contra `limites`, e
-  // nao coluna do ponto: o ponto tem geometria, e guardar o municipio nela seria
-  // duas versoes da mesma verdade, que divergem quando a malha muda. Medido em
-  // producao com os 3.490 pontos: 19 ms por municipio e 11 ms por estado.
+  // Filtro por LUGAR. Recorte espacial contra `limites`, e nao coluna do ponto:
+  // o ponto tem geometria, e guardar o municipio nela seria duas versoes da
+  // mesma verdade, que divergem quando a malha muda.
   if (usar('municipio_id')) {
     condicoes.push(`EXISTS (
       SELECT 1 FROM limites.municipio AS mu
@@ -140,14 +139,19 @@ const DE = `
   INNER JOIN acervo.lote AS l ON l.id = p.lote_id
   INNER JOIN acervo.projeto AS pr ON pr.id = l.projeto_id`
 
+// Dezesseis consultas, e por isso numa `task` só: em `db.conn.any` solto cada
+// volta do laço pega e devolve uma conexão do pool, dezesseis vezes por chamada.
+// Na task o laço inteiro usa uma conexão.
 controller.getDominios = async () => {
-  const dados = {}
-  for (const { tabela, campo } of DOMINIOS) {
-    dados[tabela] = await db.conn.any(
-      `SELECT code, ${campo} AS nome FROM ponto_controle.${tabela} ORDER BY code`
-    )
-  }
-  return dados
+  return db.conn.task(async t => {
+    const dados = {}
+    for (const { tabela, campo } of DOMINIOS) {
+      dados[tabela] = await t.any(
+        `SELECT code, ${campo} AS nome FROM ponto_controle.${tabela} ORDER BY code`
+      )
+    }
+    return dados
+  })
 }
 
 /**
@@ -434,11 +438,10 @@ const MAIOR_NUMERO = 9999
 /**
  * Códigos de ponto ainda livres, por UF e tipo.
  *
- * Era o P14 do plugin (`verificarcodigos`), e mudou de lado em 2026-07-29 por um
- * motivo de CORRETUDE, não de conveniência: lá a resposta saía da camada da
- * missão ABERTA no QGIS, que conhece só os pontos daquela missão. Ela declarava
- * livre o código que outra missão já tinha usado, e o erro só aparecia na
- * importação, depois da medição em campo. Aqui a base é o acervo INTEIRO.
+ * A resposta sai do SERVIDOR, e não da camada aberta no QGIS, por CORRETUDE: a
+ * camada conhece só os pontos da missão aberta, e declararia livre o código que
+ * outra missão já usou. O erro só apareceria na importação, depois da medição em
+ * campo. Aqui a base é o acervo INTEIRO.
  *
  * Devolve duas listas, e a diferença importa:
  *  - `buracos`: números que ficaram para trás, abaixo do maior já usado. São os
@@ -503,5 +506,7 @@ controller.getCodigosDisponiveis = async ({ uf, tipo, quantidade = 50 }) => {
   }
 }
 
+// `DOMINIOS` NÃO sai daqui: a lista é interna, e nenhum módulo do servidor, do
+// client, do CLI ou do plugin a importava. Quem precisa dos domínios pede a
+// rota `/api/ponto_controle/dominios`, que os lê do banco.
 module.exports = controller
-module.exports.DOMINIOS = DOMINIOS

@@ -6,8 +6,8 @@
 // verifyPerfil(nivel, 'acervo'): o guarda de client so evita a pessoa abrir uma
 // tela que nao vai poder usar.
 //
-// CAMINHOS DE API: as rotas do acervo NAO mudaram na fusao de 2026-07-27. So o
-// orcamento ganhou prefixo. Ver server/src/routes.js.
+// CAMINHOS DE API: as rotas do acervo NAO levam prefixo de modulo; so as do
+// orcamento levam. Ver server/src/routes.js.
 //
 // A tela de usuarios NAO mora aqui: e de PLATAFORMA ('#/usuarios'), unica para
 // os tres modulos, e so o administrador global a ve.

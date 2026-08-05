@@ -5,14 +5,6 @@
   height: 300px;
 }
 
-.chart-container--sm {
-  height: 250px;
-}
-
-.chart-container--lg {
-  height: 400px;
-}
-
 /* Spinner for chart loading */
 .spinner {
   display: inline-block;
@@ -28,36 +20,8 @@
   to { transform: rotate(360deg); }
 }
 
-/* Chart legend (custom, if needed) */
-.chart-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-  justify-content: center;
-}
-
-.chart-legend__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.chart-legend__color {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
 @media (max-width: 900px) {
   .chart-container {
     height: 250px;
-  }
-
-  .chart-container--lg {
-    height: 300px;
   }
 }

@@ -2,9 +2,9 @@
 
 Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográfico do Exército Brasileiro (DSG/1CGEO). Gerencia produtos geográficos versionados (cartas, ortoimagens, modelos digitais de elevação), seus arquivos, volumes de armazenamento, a mapoteca física e o controle orçamentário da divisão.
 
-Desde 2026-07-27 o SCA absorveu o antigo SCO (Sistema de Controle Orçamentário). São **três módulos na mesma plataforma**: `acervo`, `mapoteca` e `orcamento`, com um servidor, um banco e uma interface web.
+São **três módulos na mesma plataforma**: `acervo`, `mapoteca` e `orcamento`, com um servidor, um banco e uma interface web.
 
-Desde 2026-08-02 a **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. O [Serviço de Autenticação](https://github.com/1cgeo/auth_server) externo, de que o sistema dependia até então, saiu — e com ele a exigência de subir um segundo serviço para alguém conseguir entrar.
+A **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. Não há serviço de autenticação externo, e por isso não há um segundo serviço a subir para alguém conseguir entrar.
 
 > Regras de projeto e padrões que todo código novo segue estão em **[`CLAUDE.md`](CLAUDE.md)**. O **porquê** de cada escolha que parece estranha, e o que custou a alternativa, em **[`docs/decisoes.md`](docs/decisoes.md)**. Para subir o ambiente, veja **[`levantar_servico.md`](levantar_servico.md)**.
 
@@ -16,7 +16,7 @@ Desde 2026-08-02 a **autenticação é do próprio SCA**: ele guarda o hash bcry
 | **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os três módulos |
 | **Plugin QGIS do Acervo** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Catalogação, carga e diagnóstico |
 | **Plugin QGIS da Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Pedidos ativos, download de PDF e quantitativo impresso |
-| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/`, `auth_cli/` | Node (dependência zero) | Um por módulo, mais o de identidade |
+| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/`, `producao_cli/`, `efetivo_cli/` | Node (dependência zero) | Um por módulo, mais os dois de plataforma |
 
 Os CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
 
@@ -26,7 +26,8 @@ Os CLIs são irmãos do client web, não scripts auxiliares: o client serve huma
 
 ### Requisitos
 
-- Node.js >= 16.15
+- Node.js >= 22.12. O servidor carrega dependência ESM pura por `require()`
+  (`utils/serialize_error_loader.js`), que só existe sem flag a partir dessa versão.
 - PostgreSQL com extensão PostGIS
 
 ### Instalação
@@ -36,7 +37,7 @@ npm run install-all   # dependências do servidor e da interface
 npm run config        # configuração interativa (cria banco e config.env)
 ```
 
-A configuração pergunta os dados do **primeiro administrador** (login, senha, nome, nome de guerra e posto/graduação) e o cria no banco: é com ele que se entra no sistema pela primeira vez. Até 2026-08-02 essas perguntas eram as credenciais de uma conta que já existisse no Auth Server, de onde o cadastro era lido por HTTP.
+A configuração pergunta os dados do **primeiro administrador** (login, senha, nome, nome de guerra e posto/graduação) e o cria no banco: é com ele que se entra no sistema pela primeira vez.
 
 O `create_config.js` também aceita flags de linha de comando (`--db-server`, `--db-port`, `--db-name`, `--db-create`, `--admin-login`, `--admin-senha`, ...); rode-o sem argumento para o modo interativo.
 
@@ -55,8 +56,8 @@ A suíte do servidor é dividida em **dois pacotes**, para nem toda mudança cob
 
 ```bash
 cd server
-npm run test:rapido       # ~3s: tudo que NÃO toca o banco (47 suítes, em paralelo)
-npm run test:banco        # ~3min: o que precisa de PostgreSQL (29 suítes)
+npm run test:rapido       # segundos: tudo que NÃO toca o banco, em paralelo
+npm run test:banco        # minutos: o que precisa de PostgreSQL
 npm test                  # os dois
 npm run test:coverage     # cobertura
 ```
@@ -81,20 +82,21 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 | `JWT_EXPIRACAO` | Não | Duração da sessão no formato do jsonwebtoken (default `8h`) |
 | `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
 | `UPLOAD_WEB_MAX_GB` | Não | Teto do arquivo que o NAVEGADOR envia ao volume (default 2). Acima dele, o caminho é o plugin |
+| `VOLUMES_RAIZ` | Não | Onde os shares do acervo estão MONTADOS nesta máquina. Só importa fora do Windows (`utils/caminho_volume.js`) |
 
 ### Endpoints da API
 
 Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 
-Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio, que antes eram anônimos. Endpoints de plataforma (usuários, views materializadas, limpeza de download) exigem `verifyAdmin`. As únicas rotas sem autenticação são `/api/integracao/*` e a consulta de pedido por localizador, as duas por decisão registrada em `docs/decisoes.md`.
+**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. Os de plataforma usam outras três guardas: `verifyAdmin` (usuários, RPCMTec, efetivo, views materializadas, limpeza de download, escrita do PIT), `verifyGerente` (a grade de execução do PIT) e `verifyLogin` (leitura de meta e o próprio cadastro). Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
 | `/api/login` | plataforma | Autenticação local por bcrypt (JWT, `JWT_EXPIRACAO`, default 8h). Devolve `perfis` e `modulos`, e grava `dgeo.login` |
 | `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login |
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
-| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`) e as demandas Extra-PIT (`/extra`). Ler exige só login; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | RPCMTec inteiro (DOCX), Anuário Estatístico e RTM/META4 (ODS), a edição mensal e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
+| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; escrever exige administrador |
+| `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS), e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
 | `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano (admin, inclusive na leitura) |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
@@ -118,11 +120,11 @@ Desde 2026-07-25 **todo endpoint exige perfil no seu módulo**, por `verifyPerfi
 | `/api/orcamento/rpnp` | orcamento | Restos a pagar não processados |
 | `/api/orcamento/dashboard` | orcamento | Execução por ND para as abas do painel (números por PDR/Extra-PDR, com linha de total) |
 | `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
-| `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet) |
+| `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet). O `POST /acervo/situacao_geral` é POST pelo tamanho da geometria no corpo, e não por mutar estado |
 
-Desde 2026-08-01 o acervo também se **escreve pela interface web**: produto, versão e relacionamento.
-A geometria do produto sai do MI/INOM quando a folha é do SCN, e dos cantos quando não é; a versão
-Regular entra pelo assistente de carregamento, que manda metadados e bytes numa requisição só
+O acervo também se **escreve pela interface web**: produto, versão e relacionamento. A geometria do
+produto sai do MI/INOM quando a folha é do SCN, e dos cantos quando não é; a versão Regular entra
+pelo assistente de carregamento, que manda metadados e bytes numa requisição só
 (`POST /api/arquivo/upload-web/versao`): o servidor grava no volume, mede o checksum e NOMEIA o
 arquivo pelo padrão do acervo. O plugin do QGIS continua sendo o caminho da carga em lote e do
 arquivo grande. Ver `docs/decisoes.md`.
@@ -132,18 +134,18 @@ arquivo grande. Ver `docs/decisoes.md`.
 **Formato padrão de resposta:**
 
 ```json
-{ "version": "1.7.0", "success": true, "message": "...", "dados": { }, "error": null }
+{ "version": "1.26.0", "success": true, "message": "...", "dados": { }, "error": null }
 ```
 
 ### Segurança
 
-Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP, proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com expiração de 1 hora e o perfil relido do banco a cada requisição.
+Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP (desligado sob `NODE_ENV=test`), proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com a expiração de `JWT_EXPIRACAO` (default 8h) e o perfil relido do banco a cada requisição.
 
 ### Tarefas de manutenção
 
-**Não há cron.** O agendamento saiu em 2026-08-04: duas instâncias do app contra o mesmo banco rodavam os mesmos jobs em dobro, e o de miniatura escreve. O que os dois faziam continua acontecendo, por outro caminho.
+**Não há cron, e não se deve reintroduzir um.** Duas instâncias do app contra o mesmo banco rodariam os mesmos jobs em dobro, e o de miniatura ESCREVE. O que um agendamento faria acontece por outro caminho, descrito abaixo.
 
-**Expiração de download.** O token vencido é recusado no momento do uso (`confirmDownload`), tenha alguém limpado ou não. Antes, só o cron fechava, então o token valia até a passada seguinte, ou para sempre com o cron parado.
+**Expiração de download.** O token vencido é recusado no momento do uso (`confirmDownload`), tenha alguém limpado ou não. A regra é essa, e não a passada de uma limpeza.
 
 **Limpeza do que expirou.** `POST /api/acervo/cleanup-expired-downloads` (administrador) fecha downloads e sessões de upload vencidos, e devolve a contagem dos dois. É arrumação, e não a regra de expiração.
 
@@ -162,7 +164,7 @@ Dois binários e uma biblioteca, e cada um faz o que só ele faz bem:
 | Abrir formato geo | `gdal_translate` + `gdalinfo` | é o único que lê ERDAS `.img` (Ortoimagem, 7,4 GB com pirâmides) e GeoTIFF Float32 (MDS/MDT) |
 | Reduzir e codificar | `sharp` (npm) | o `-outsize` do GDAL decima por vizinho mais próximo e serrilha o texto da legenda |
 
-Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final, com reamostragem de verdade. Em Linux é `apt install poppler-utils gdal-bin`; em Windows o GDAL vem dentro do QGIS. Sem os binários, a rota da miniatura responde 404 e o job aborta a passada com um erro no log; nada mais quebra.
+Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final, com reamostragem de verdade. Em Linux é `apt install poppler-utils gdal-bin`; em Windows o GDAL vem dentro do QGIS. Sem os binários a varredura aborta a passada com um erro no log, nenhuma miniatura nova é gravada e a rota da miniatura responde 404 por não haver o que servir; nada mais quebra.
 
 **Raster de medida é esticado, não cortado.** MDS e MDT guardam ALTITUDE na banda, não intensidade de pixel. Convertidos direto para 8 bits, toda cota acima de 255 m vira branco e a miniatura sai vazia. O gerador detecta a banda que não é de 8 bits e estica por média ± 2,5 desvios, presa ao intervalo real. O `GDAL_PAM_ENABLED=NO` é forçado: sem ele, pedir estatística grava um `.aux.xml` **ao lado do arquivo lido**, dentro do volume do acervo.
 
@@ -192,7 +194,7 @@ server/src/
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
 ├── limites/              # Limite político-administrativo (referência)
 ├── integracao/           # Rotas públicas para o vault da DGEO
-├── orcamento/            # Módulo orçamento (13 features + utils próprio)
+├── orcamento/            # Módulo orçamento (9 features + utils próprio, 12 routers)
 └── utils/                # Utilitários compartilhados
 ```
 
@@ -258,11 +260,15 @@ A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas 
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.18.0**, e é ela que `MIN_DATABASE_VERSION` (em `server/src/config.js`) exige no boot. `VERSION` é o número da APLICAÇÃO e anda por conta própria.
+A versão do schema é **1.26.0**, carimbada em `public.versao` por `er/versao.sql`. O piso que o boot exige, `MIN_DATABASE_VERSION` (em `server/src/config.js`), é **1.25.0**.
+
+Os dois divergem de propósito. O piso só sobe quando uma migração ACRESCENTA schema, tabela ou coluna que o código passa a ler. A 1.26.0 apenas removeu uma função e um índice que nada usava, então um banco em 1.25.0 roda esta versão sem faltar nada, e ninguém precisa migrar por obrigação.
 
 ### Atualização de banco existente
 
-`er/` descreve só a instalação nova. O caminho de atualização vive em `migrations/`, um arquivo por mudança, nomeado por data e aplicado em ordem. As migrações são aditivas e idempotentes.
+`er/` descreve só a instalação nova. O caminho de atualização vive em `migrations/`, um arquivo por mudança. As migrações são aditivas e idempotentes.
+
+**A ordem de aplicação é a da VERSÃO que cada arquivo carimba** (`UPDATE public.versao`, no fim do arquivo), e não a do nome. Duas migrações do mesmo dia saem em ordem alfabética que não é a de dependência: `2026-08-02_capacitacao_militar.sql` (1.17.0) precisa da tabela que `2026-08-02_pit_execucao_e_efetivo.sql` (1.15.0) cria. Aplicar por nome também termina com um carimbo abaixo do piso, e aí o serviço recusa subir.
 
 ### Modelo principal
 
@@ -301,30 +307,31 @@ O login pede URL do servidor, usuário e senha, envia `POST /api/login` e guarda
 
 **`ferramentas_acervo/`** cobre funções gerais (carregar camadas, informações do produto, download, situação geral, busca, relacionamentos entre versões), funções de administrador (adicionar produto, versão histórica, carregar produtos), administração avançada (volumes, projetos, lotes, usuários), operações em lote e diagnóstico (inconsistências, limpeza de downloads, visões materializadas, arquivos com problema, sessões de upload).
 
-Transferência de arquivo: no **download**, prepara pela API (recebe token e caminho), o `FileTransferThread` copia (cópia direta no Windows, `smbclient` no Linux), 3 tentativas com espera exponencial (2s, 4s, 8s), confere o SHA-256 e confirma pela API. No **upload**, valida a camada tabular no QGIS, calcula SHA-256 e tamanho, prepara pela API (recebe `session_uuid` e destino), copia e confirma.
+Transferência de arquivo: no **download**, prepara pela API (recebe token e caminho), o `FileTransferThread` copia (cópia direta no Windows, `smbclient` no Linux), até 3 tentativas com espera dobrando entre elas (2s e 4s), confere o SHA-256 e confirma pela API. No **upload**, valida a camada tabular no QGIS, calcula SHA-256 e tamanho, prepara pela API (recebe `session_uuid` e destino), copia e confirma.
 
 **`ferramentas_mapoteca/`** é voltado à operação de impressão: a fila de atendimento (`GET /api/mapoteca/pedido/em_aberto`, ordenada por prazo), os itens de cada pedido com o que falta imprimir, o download dos PDFs das cartas (sequencial, com verificação SHA-256, gravando o manifesto `impressao_<localizador>.csv`) e o registro de impressão por item (quem, quando, quantas cópias), com histórico, para que operadores diferentes continuem o trabalho em dias distintos. Ele usa grupo próprio de `QgsSettings`, com as mesmas chaves do plugin do acervo, mais a pasta de destino dos PDFs.
 
-Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa são de `/api/mapoteca` — inclusive a confirmação do download (`POST /api/mapoteca/impressao/confirmar_download`), que existe porque a gêmea do acervo cobra perfil no módulo acervo. Ver a seção do plugin em `docs/decisoes.md`.
+Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa são de `/api/mapoteca`, inclusive a confirmação do download (`POST /api/mapoteca/impressao/confirmar_download`), que existe porque a gêmea do acervo cobra perfil no módulo acervo. Ver a seção do plugin em `docs/decisoes.md`.
 
 ---
 
 ## CLIs de agente
 
-Um por módulo, mais o `auth_cli` (identidade, que é de plataforma e não de módulo). Todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
+Um por módulo, mais dois de PLATAFORMA: o `producao_cli` (PIT e RPCMTec) e o `efetivo_cli` (identidade e efetivo). Todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
 
 ```bash
 node acervo_cli/acervo.js --help
 node mapoteca_cli/mapoteca.js --help
 node orcamento_cli/orcamento.js --help
-node auth_cli/auth.js --help
+node efetivo_cli/efetivo.js --help
+node producao_cli/producao.js --help
 node orcamento_cli/orcamento.js schema nc             # contrato formatado, do Joi vivo
 ```
 
 Todos compartilham o cache de sessão em `~/.sca`: um login serve todos. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
 
 ```bash
-npm run test-cli      # os quatro (node:test, sem dependência)
+npm run test-cli      # os cinco (node:test, sem dependência)
 ```
 
 Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o teste também.

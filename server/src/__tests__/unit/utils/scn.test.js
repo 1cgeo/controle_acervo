@@ -72,7 +72,7 @@ describe('scn: decomposição do INOM', () => {
     expect([r('NO').xmin, r('NO').ymax]).toEqual([-51.75, -23.25])
     expect([r('NE').xmin, r('NE').ymax]).toEqual([-51.625, -23.25])
     expect([r('SO').xmin, r('SO').ymax]).toEqual([-51.75, -23.375])
-    expect([r('SE').xmin, r('SE').ymax]).toEqual([-51.5 - 0.125, -23.375])
+    expect([r('SE').xmin, r('SE').ymax]).toEqual([-51.625, -23.375])
   })
 
   // Prova independente da conta: três cidades cujo par (folha, coordenada) é
@@ -259,8 +259,8 @@ describe('scn: MI x INOM', () => {
     expect(scn.inomDoMi(' 02757 4 NE ')).toBe('SF-22-Y-D-II-4-NE')
   })
 
-  // O sufixo de letra é legítimo (invariante 1i), e sem ele o normalizador de MI
-  // devolvia null para 42 folhas que existem.
+  // O sufixo de letra é legítimo (invariante 1i): sem ele o normalizador de MI
+  // devolve null para folha que existe.
   it('resolve MI com sufixo de letra', () => {
     expect(scn.inomDoMi('2A')).toBe('NB-21-Y-A-IV')
     expect(scn.inomDoMi('0002A')).toBe('NB-21-Y-A-IV')
@@ -294,10 +294,10 @@ describe('scn: folha sem MI é resposta, e não erro', () => {
     expect(scn.poligonoDoInom('SF-32-Y-D').bbox).toEqual({ xmin: 7.5, ymin: -24, xmax: 9, ymax: -23 })
   })
 
-  // As duas listas de exclusão do DSGTools são COMPLEMENTARES, e a interseção
-  // entre elas é vazia (medido: 0 de 856). Quem consultasse só a de 1:25.000
-  // devolveria MI inventado para as 1.712 folhas que descem dos 428 quadrantes
-  // excluídos, e o número sairia perfeitamente formado.
+  // As duas listas de exclusão do DSGTools são COMPLEMENTARES: a interseção
+  // entre elas é vazia. Quem consultasse só a de 1:25.000 devolveria MI
+  // inventado para toda folha que desce de um quadrante excluído, e o número
+  // sairia perfeitamente formado.
   it('folha de 1:50.000 da lista de exclusão não tem MI, e os quatro filhos também não', () => {
     const r = scn.miDoInom('NA-19-X-C-VI-1')
     expect(r.sem_mi).toBe(true)
@@ -312,19 +312,25 @@ describe('scn: folha sem MI é resposta, e não erro', () => {
   it('folha de 1:25.000 da lista de exclusão não tem MI, mesmo com o quadrante tendo', () => {
     // O quadrante NA-19-X-C-VI-3 TEM MI; só três das quatro folhas dele é que
     // não têm. É este caso que uma lista aninhada não pegaria.
-    expect(scn.miDoInom('NA-19-X-C-VI-3').mi).toBeDefined()
+    //
+    // Os MIs vão LITERAIS. Montar o esperado chamando a própria função sob
+    // teste faz os dois lados errarem juntos, e o caso segue verde com o
+    // número trocado.
+    expect(scn.miDoInom('NA-19-X-C-VI-3')).toEqual({ mi: '64-3' })
     expect(scn.miDoInom('NA-19-X-C-VI-3-NE').sem_mi).toBe(true)
-    expect(scn.miDoInom('NA-19-X-C-VI-3-SE')).toEqual({ mi: scn.miDoInom('NA-19-X-C-VI-3').mi + '-SE' })
+    expect(scn.miDoInom('NA-19-X-C-VI-3-SE')).toEqual({ mi: '64-3-SE' })
   })
 
   // O caminho de volta obedece à MESMA exclusão da ida. Sem isso as duas funções
   // do módulo se contradiriam: uma afirmando que a folha tem aquele MI, e a
   // outra negando.
   it('inomDoMi não devolve folha cujo MI a tabela nega', () => {
-    const semMi = scn.miDoInom('NA-19-X-C-VI-1')
-    expect(semMi.sem_mi).toBe(true)
-    const mi100 = scn.miDoInom('NA-19-X-C-VI').mi
-    expect(scn.inomDoMi(`${mi100}-1`)).toBeNull()
+    // O MI da folha de 1:100.000 vai LITERAL: derivado da função, um dia em que
+    // ele viesse `undefined` montaria a chave 'undefined-1', que `inomDoMi`
+    // devolve null de qualquer jeito, e o caso passaria provando o contrário.
+    expect(scn.miDoInom('NA-19-X-C-VI')).toEqual({ mi: '64' })
+    expect(scn.miDoInom('NA-19-X-C-VI-1').sem_mi).toBe(true)
+    expect(scn.inomDoMi('64-1')).toBeNull()
   })
 })
 

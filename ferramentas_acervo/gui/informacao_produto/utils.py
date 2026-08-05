@@ -14,7 +14,7 @@ def format_date(date_str):
     try:
         date_dt = QDateTime.fromString(date_str, Qt.DateFormat.ISODate)
         return date_dt.toString('dd/MM/yyyy HH:mm:ss')
-    except:
+    except (TypeError, ValueError):
         return date_str
 
 def format_metadata(metadata):
@@ -45,3 +45,59 @@ def get_total_size(files):
     """Calcula o tamanho total dos arquivos em MB."""
     total = sum(file.get('tamanho_mb', 0) or 0 for file in files)
     return f"{total:.2f}"
+
+
+def campos_da_versao(versao):
+    """Os pares rótulo/valor de uma versão, na ordem em que a ficha os mostra.
+
+    A aba "Visão Geral" e a aba "Histórico de Versões" mostram a MESMA versão
+    com os mesmos campos. Duas listas divergiriam ao primeiro campo novo.
+    """
+    palavras = versao.get('palavras_chave')
+    lote = versao.get('lote_nome')
+    if lote and versao.get('lote_pit'):
+        lote = f"{lote} ({versao['lote_pit']})"
+
+    return [
+        ('UUID', versao.get('uuid_versao')),
+        ('Versão', versao.get('versao')),
+        ('Nome', versao.get('nome_versao')),
+        ('Tipo de versão', versao.get('tipo_versao') or versao.get('tipo_versao_id')),
+        ('Subtipo de produto', versao.get('subtipo_produto')
+         or versao.get('subtipo_produto_id')),
+        ('Lote', lote),
+        ('Projeto', versao.get('projeto_nome')),
+        ('Órgão produtor', versao.get('orgao_produtor')),
+        ('Palavras-chave', ', '.join(palavras) if palavras else None),
+        ('Descrição', versao.get('versao_descricao')),
+        ('Data de criação', format_date(versao.get('versao_data_criacao'))),
+        ('Data de edição', format_date(versao.get('versao_data_edicao'))),
+        ('Data de cadastramento', format_date(versao.get('versao_data_cadastramento'))),
+        ('Data de modificação', format_date(versao.get('versao_data_modificacao'))),
+    ]
+
+
+def bloco_html(pares):
+    """Monta o texto rótulo/valor de um QLabel, uma linha por par.
+
+    O `<br>` é obrigatório: o QLabel trata como HTML qualquer texto que traga
+    uma etiqueta (o `<b>` do rótulo), e em HTML a quebra de linha do fonte é só
+    um espaço. Sem o `<br>`, os catorze campos da versão saem grudados num
+    parágrafo só.
+
+    Valor None ou vazio vira "N/A", que é o que as fichas do plugin já usam.
+    """
+    linhas = []
+    for rotulo, valor in pares:
+        texto = 'N/A' if valor is None or valor == '' else escapar_html(valor)
+        linhas.append(f"<b>{escapar_html(rotulo)}:</b> {texto}")
+    return "<br>".join(linhas)
+
+
+def escapar_html(valor):
+    """Neutraliza `&`, `<` e `>` de um valor que vai para um QLabel em HTML.
+
+    Descrição de produto e metadado são texto livre: um `<` cru some da tela,
+    porque o Qt o lê como início de etiqueta.
+    """
+    return (str(valor).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))

@@ -11,16 +11,10 @@
 //   o PDF          sabe a ordem, os títulos e a grade de coluna;
 //   o FECHAMENTO   sabe o que exigir antes de congelar.
 //
-// Até 2026-08-05 os títulos e os cabeçalhos estavam escritos dentro do
-// `gerar()` e as grades dentro do gerador de DOCX, e as subseções que o SCA não
-// calculava não existiam em lugar nenhum -- quem montava o relatório abria o
-// Word e preenchia as doze restantes lá. Agora o documento inteiro é
-// preenchido e guardado no sistema (decisão do chefe, 2026-08-05).
-//
-// MEDIDO no OOXML da edição de julho/2026, que é a primeira no padrão de nove
-// seções. Título, cabeçalho de tabela e grade de coluna são valores LIDOS
-// daquele arquivo, não escolhas nossas: o PDF que o sistema emite tem de ser o
-// documento que a Divisão já usa.
+// MEDIDO no OOXML de uma edição real, no padrão de nove seções. Título,
+// cabeçalho de tabela e grade de coluna são valores LIDOS daquele arquivo, e não
+// escolhas nossas: o PDF que o sistema emite tem de ser o documento que a
+// Divisão já usa.
 //
 // AS TRÊS DIVERGÊNCIAS DELIBERADAS em relação ao modelo estão marcadas nas
 // subseções 3.4, 6.1 e 7.3, cada uma com a razão ao lado.
@@ -173,11 +167,11 @@ const SECOES = [
         titulo: 'LAI e atendimento à órgãos públicos',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido, cliente civil e órgão público',
-        // QUATRO colunas, e o modelo tem três (decisão do chefe, 2026-08-01):
-        // saiu o "Documento de solicitação", que é o DIEx de encaminhamento da
-        // DSG e não identifica a manifestação, e entraram o NUP do Fala.BR e a
-        // descrição do que a pessoa pediu. A largura total continua a do
-        // modelo, 9825, para a tabela nascer do tamanho das vizinhas.
+        // QUATRO colunas, e o modelo tem três: saiu o "Documento de
+        // solicitação", que é o DIEx de encaminhamento da DSG e não identifica
+        // a manifestação, e entraram o NUP do Fala.BR e a descrição do que a
+        // pessoa pediu. A largura total continua a do modelo, 9825, para a
+        // tabela nascer do tamanho das vizinhas.
         cabecalhos: ['Solicitante', 'Código da LAI (NUP)', 'Descrição', 'Situação'],
         grade: [2040, 2400, 3200, 2185]
       }
@@ -279,11 +273,9 @@ const SECOES = [
         titulo: 'Aproveitamento do efetivo',
         origem: ORIGEM.CALCULADA,
         fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
-        // TRÊS colunas, e o modelo tem duas: a de "Aproveitamento" entrou em
-        // 2026-08-02, porque uma tabela de aproveitamento sem o aproveitamento
-        // é a que o documento tinha e que o chefe pediu para desfazer. A
-        // largura total continua a do modelo, e a coluna do meio cede o espaço
-        // porque é a única que é prosa.
+        // TRÊS colunas, e o modelo tem duas: uma tabela de aproveitamento sem
+        // o aproveitamento não responde nada. A largura total continua a do
+        // modelo, e a coluna do meio cede o espaço porque é a única que é prosa.
         cabecalhos: ['Militar', 'Atividades', 'Aproveitamento'],
         grade: [2310, 6015, 1500]
       },
@@ -313,10 +305,9 @@ const SECOES = [
         numero: '7.2',
         titulo: 'Estoque de Insumos de Impressão - Papel',
         origem: ORIGEM.CALCULADA,
-        // O consumo do papel é DERIVADO da impressão desde 2026-08-04: cada
-        // exemplar gasta uma folha da mídia, e a mídia aponta o papel. Antes
-        // disso ele saía só de `consumo_material`, que ninguém preenche, e a
-        // coluna dizia 0 com 1.753 impressões registradas.
+        // O consumo do papel é DERIVADO da impressão: cada exemplar gasta uma
+        // folha da mídia, e a mídia aponta o papel. Só de `consumo_material`,
+        // que ninguém preenche, a coluna sai zerada.
         fonte: 'estoque atual e do mês anterior, consumo das impressões, projeção pelo ritmo',
         cabecalhos: COLUNAS_INSUMO,
         grade: [3374, 1554, 1554, 1491, 1896]
@@ -424,12 +415,15 @@ const NUMEROS_DIGITADOS = BLOCOS
   .filter(b => b.origem === ORIGEM.DIGITADA)
   .map(b => b.numero)
 
+// `SECOES` e `TEXTO_FINALIDADE` saíram daqui: eram exportados e ninguém os lia
+// fora deste arquivo, nem em teste. `SECOES` é a fonte de que `BLOCOS` deriva
+// (o laço logo acima), e `BLOCOS` é o que o resto do sistema consome;
+// `TEXTO_FINALIDADE` é usado uma vez, dentro da própria declaração de `SECOES`.
+// Export sem leitor é contrato que ninguém honra e que trava a refatoração.
 module.exports = {
   ORIGEM,
-  SECOES,
   BLOCOS,
   NUMEROS_CALCULADOS,
   NUMEROS_DIGITADOS,
-  TEXTO_FINALIDADE,
   bloco
 }

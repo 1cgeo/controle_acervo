@@ -193,7 +193,7 @@ controller.prepararMissao = async (
         aceitos[chave] = valor
       }
 
-      // SÓ PONTO APROVADO ENTRA NO ACERVO (chefe, 2026-07-29).
+      // SÓ PONTO APROVADO ENTRA NO ACERVO.
       //
       // O acervo é o que a tropa consulta para AJUSTAR trabalho, e ponto não
       // revisado ali é pior do que ponto nenhum: quem consulta não distingue
@@ -546,10 +546,8 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid, contexto) => {
           ...aceitos,
           // A posicao vem DEPOIS do espalhamento, e nunca antes. O `atributos`
           // costuma trazer as colunas `latitude` e `longitude` do plugin, que
-          // sao REAL; se elas vierem por ultimo, a GEOMETRIA nasce com o valor
-          // de float4. Medido no canario de 2026-07-29: a latitude entrou com
-          // -28.63516511111111 e a geometria ficou -28.635164, 12 cm de erro
-          // num ponto de apoio de campo.
+          // sao REAL; se elas vierem por ultimo, a GEOMETRIA nasce com a
+          // precisao de float4, o que custa cerca de 12 cm num ponto de apoio.
           latitude: pontoTemp.latitude,
           longitude: pontoTemp.longitude
         }

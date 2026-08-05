@@ -8,9 +8,9 @@
 module.exports = {
   dominioRoute: require('./dominio').dominioRoute,
   configuracaoRoute: require('./configuracao').configuracaoRoute,
-  // A meta do PIT saiu daqui em 2026-07-31: virou feature de plataforma, em
-  // server/src/pit/, servida por /api/metas. O orcamento continua consumindo,
-  // pelas FKs de pdr_item e nota_credito.
+  // SEM a meta do PIT: ela e feature de plataforma, em server/src/pit/, servida
+  // por /api/metas. O orcamento a consome pelas FKs de `pdr_item` e
+  // `nota_credito`.
   dfdRoute: require('./dfd').dfdRoute,
   pdrRoute: require('./pdr').pdrRoute,
   notaCreditoRoute: require('./nota_credito').notaCreditoRoute,
@@ -25,11 +25,8 @@ module.exports = {
   // quem tem consulta no modulo -- o relatorio pede a visao do PDR formatada e
   // e admin-only. Ver orcamento/dashboard/dashboard_ctrl.js.
   dashboardRoute: require('./dashboard').dashboardRoute,
-  // O RPCMTec saiu daqui em 2026-08-01, pelo mesmo motivo que a meta do PIT:
-  // virou feature de plataforma, em server/src/rpcmtec/, servida por
-  // /api/rpcmtec. Ele gerava a "secao 3" (o PDR) num DOCX proprio, que alguem
-  // colava a mao no arquivo gerado pelo outro gerador. O orcamento continua
-  // sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
-  arquivoRoute: require('./arquivo').arquivoRoute,
-  arquivoCtrl: require('./arquivo').arquivoCtrl
+  // SEM o RPCMTec, pelo mesmo motivo: ele e feature de plataforma, em
+  // server/src/rpcmtec/, servida por /api/rpcmtec. O orcamento e FONTE das
+  // subsecoes 4.1 a 4.7, e nao dono do relatorio.
+  arquivoRoute: require('./arquivo').arquivoRoute
 }

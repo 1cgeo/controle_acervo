@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Regressao: o filtro de Classificacao montava as opcoes com c.id, e o dominio
 // devolve c.code (GET /api/orcamento/dominio/classificacao_nc responde
@@ -31,11 +32,9 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 import { renderNotasCreditoList } from '@modules/orcamento/pages/notas-credito/list.js';
 import { getNotasCredito } from '@modules/orcamento/services/orcamento-service.js';
 
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// A barra de filtros agora tem DOIS selects, e o de ano vem primeiro (contrato do
-// ano, 2026-08-04). Buscar por rotulo evita que o teste passe a medir o campo
-// errado quando outro filtro entrar na barra.
+// A barra de filtros tem DOIS selects, e o de ano vem primeiro. Buscar pelo
+// rótulo evita que o caso passe a medir o campo errado quando outro filtro
+// entrar na barra.
 function selectPorRotulo(container, rotulo) {
   const campos = [...container.querySelectorAll('.page__filters .form-field')];
   const campo = campos.find(f => f.querySelector('.form-field__label')?.textContent.includes(rotulo));

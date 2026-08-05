@@ -14,9 +14,9 @@ import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
  * busca pinta poligono, aqui se pinta circulo, e o "enquadrar" vira um zoom com
  * nivel fixo, porque um ponto nao tem extensao para caber na tela.
  *
- * O desenho de area chegou em 2026-07-29 (chefe), pelo mesmo modulo da busca
- * (@components/mapa/desenho-area.js). Antes so havia o recorte pela area
- * VISIVEL, que e um retangulo. A pergunta de campo raramente e retangular: e
+ * O desenho de area vem do mesmo modulo da busca
+ * (@components/mapa/desenho-area.js). So o recorte pela area VISIVEL nao basta,
+ * porque ele e um retangulo e a pergunta de campo raramente e retangular: e
  * "que pontos existem NESTE vale", "nesta faixa de fronteira", "nesta area de
  * trabalho". O retangulo continua, para quem so quer o que esta na tela.
  */
@@ -46,16 +46,49 @@ const CLUSTER_RAIO = 45;
 const CLUSTER_ZOOM_MAX = 13;
 
 /**
- * Cor do ponto: UMA so, e nao uma por situacao.
+ * Cor do ponto, POR SITUACAO, na mesma leitura de cor dos chips da lista.
  *
- * Desde 2026-07-29 so ponto APROVADO entra no acervo (o `prepare-upload` recusa
- * o resto). Pintar por `tipo_situacao` daria um mapa de uma cor so com uma
- * legenda de cinco, ou seja, a tela prometeria uma distincao que o dado nao tem.
+ * ANTES o mapa pintava tudo de verde, alegando que "so ponto APROVADO entra no
+ * acervo". A premissa e falsa, e tres fontes primarias a derrubam:
+ *   - `er/ponto_controle.sql` declara CINCO situacoes (1 Nao medido,
+ *     2 Aguardando revisao, 3 Aprovado, 4 Reprovado, 9999 A SER PREENCHIDO), e
+ *     o 9999 e o DEFAULT da coluna `ponto.tipo_situacao`.
+ *   - `getPosicoes`, em `ponto_controle_ctrl.js`, NAO filtra por situacao: manda
+ *     ao mapa todo ponto que casa o filtro, e ja traz `tipo_situacao` no SELECT.
+ *   - o comentario da propria lista, em `index.js`, diz que "a situacao muda de
+ *     verdade entre duas consultas (o ponto e revisado)".
  *
- * O verde e o mesmo que ja significava aprovado, entao quem conhece a tela nao
- * reaprende nada.
+ * O que o `prepare-upload` recusa e o ARQUIVO de ponto nao aprovado. O PONTO
+ * existe no cadastro em qualquer situacao, e o mapa mostra o cadastro.
+ *
+ * O custo do verde unico: o ponto REPROVADO aparecia na cor que significa
+ * aprovado, na mesma tela em que o chip ao lado dizia "Reprovado" em vermelho.
+ *
+ * As cores saem das variantes de chip (`chips.css`), para o mapa e a lista
+ * falarem a mesma lingua. Quem ja leu o chip nao reaprende nada.
  */
-const COR_PONTO = '#22c55e';
+const COR_POR_SITUACAO = {
+  1: '#ed6c02',   // Nao medido          (chip--warning)
+  2: '#0288d1',   // Aguardando revisao  (chip--info)
+  3: '#2e7d32',   // Aprovado            (chip--success)
+  4: '#d32f2f',   // Reprovado           (chip--error)
+};
+
+// Cobre o 9999 ('A SER PREENCHIDO', o DEFAULT da coluna) e qualquer codigo novo
+// que entre no dominio antes de esta tela saber dele. Cinza neutro nao afirma
+// nada, e e melhor que herdar por engano a cor de "aprovado".
+const COR_SITUACAO_INDEFINIDA = '#6b7280';
+
+// Expressao do MapLibre: le `tipo_situacao` da propria feicao, que o `mostrar()`
+// ja poe nas propriedades. O ultimo item e o padrao do `match`.
+const COR_PONTO = [
+  'match', ['get', 'tipo_situacao'],
+  1, COR_POR_SITUACAO[1],
+  2, COR_POR_SITUACAO[2],
+  3, COR_POR_SITUACAO[3],
+  4, COR_POR_SITUACAO[4],
+  COR_SITUACAO_INDEFINIDA,
+];
 
 /**
  * @param {Object} opts
@@ -91,15 +124,29 @@ export function criarMapaPontos({
   const container = el('div', { className: 'pc-mapa__canvas' });
   const aviso = el('div', { className: 'pc-mapa__aviso hidden' });
 
-  // Sem legenda: com uma cor so ela nao explicaria nada, e uma legenda de cinco
-  // estados sobre um mapa de um estado so seria pior do que legenda nenhuma.
+  // COM legenda, agora que a cor carrega informacao. Enquanto o mapa era de uma
+  // cor so, uma legenda nao explicaria nada; com a cor por situacao, sem legenda
+  // o ponto vermelho nao se le. A ordem e a do dominio, e nao a alfabetica.
   //
   // As classes do desenho sao as mesmas da busca (`busca-mapa__controles`,
   // `desenho-controles`): mesmo gesto, mesma aparencia, uma folha de estilo so.
+  const legenda = el('ul', { className: 'pc-mapa__legenda' },
+    [[1, 'Não medido'], [2, 'Aguardando revisão'], [3, 'Aprovado'], [4, 'Reprovado']]
+      .map(([code, nome]) => el('li', { className: 'pc-mapa__legenda-item' }, [
+        el('span', {
+          className: 'pc-mapa__legenda-cor',
+          style: { background: COR_POR_SITUACAO[code] },
+          'aria-hidden': 'true',
+        }),
+        nome,
+      ]))
+  );
+
   const raiz = el('div', { className: 'pc-mapa' }, [
     container,
     el('div', { className: 'busca-mapa__controles' }, [desenho.botao]),
     desenho.controles,
+    legenda,
     aviso,
   ]);
 

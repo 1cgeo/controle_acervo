@@ -5,9 +5,8 @@
  * `height` (de proposito, senao um pixel de arredondamento acende a barra de
  * rolagem numa pagina que caberia). Altura minima nao torna a altura definida:
  * a do `#app` continua sendo `auto`, e porcentagem de altura contra pai `auto`
- * resolve para `auto` tambem. Foi o que quebrou a foto de fundo em 2026-07-28:
- * a pagina encolhia ate a altura do cartao, e o fundo, que e absoluto dentro
- * dela, encolhia junto e aparecia so atras do cartao.
+ * resolve para `auto` tambem, e ai a pagina encolhe ate a altura do cartao e o
+ * fundo, que e absoluto dentro dela, aparece so atras do cartao.
  *
  * `min-height`, e nao `height`, para o cartao alto (o duplo, em tela baixa)
  * fazer a pagina crescer em vez de ser cortado pelo `overflow: hidden`.
@@ -71,7 +70,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Porta de entrada com DOIS caminhos (2026-07-27): entrar no sistema e
+ * Porta de entrada com DOIS caminhos: entrar no sistema e
  * acompanhar um pedido pela chave. Os dois ficam visiveis ao mesmo tempo, cada
  * um dizendo para quem serve, para ninguem precisar adivinhar onde se encaixa.
  * ------------------------------------------------------------------------- */
@@ -155,17 +154,8 @@
   }
 }
 
-.login-card__avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin: 0 auto var(--space-md);
-  border-radius: var(--radius-full);
-  background: var(--color-secondary);
-  color: #ffffff;
-}
+/* Sem `.login-card__avatar`: sobra do desenho anterior do cartao de login, que
+   abria com um circulo acima do titulo. Nenhum JS o montava. */
 
 .login-card__title {
   font-size: var(--font-size-2xl);

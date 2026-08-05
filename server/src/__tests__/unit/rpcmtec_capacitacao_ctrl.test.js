@@ -128,7 +128,7 @@ describe('rpcmtec_capacitacao_ctrl: a listagem do mês do RPCMTec', () => {
   test('listarDoMes NÃO exige situação: a Prevista entra na 2.6', async () => {
     await ctrl.listarDoMes(2026, 7, 1)
 
-    // A 2.6 descreve o que a Divisão planejou para o mês (chefe, 2026-08-04).
+    // A 2.6 descreve o que a Divisão planejou para o mês.
     // Um filtro de igualdade aqui deixaria de fora a Prevista e a Em execução.
     const [sql] = mockDb.conn.any.mock.calls[0]
     expect(sql).not.toMatch(/situacao_id\s*=/)

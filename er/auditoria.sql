@@ -7,8 +7,8 @@ BEGIN;
 -- registra quem ENTROU no sistema) e não é o log do winston (que guarda o corpo
 -- da requisição por 14 dias, sem usuário e sem estado anterior).
 --
--- POR QUE NÃO É GATILHO. Decisão do chefe, 2026-07-30, repetida em 2026-08-02.
--- O gatilho não conhece o usuário da sessão HTTP: o Postgres vê a conexão do
+-- POR QUE NÃO É GATILHO. O gatilho não conhece o usuário da sessão HTTP: o
+-- Postgres vê a conexão do
 -- pool, e a saída seria um SET LOCAL em toda transação do servidor. No backend o
 -- usuarioUuid já chega em cada função de controller. O preço dessa escolha é a
 -- rota nova que esquece de auditar, e quem cobra o preço é um teste de varredura
@@ -19,7 +19,7 @@ BEGIN;
 -- nenhum. Com quatro tabelas ela vira UNION ALL de quatro consultas que
 -- precisariam ficar em sincronia para sempre.
 --
--- Substitui `mapoteca.pedido_auditoria` (2026-07-30), cujo `pedido_id NOT NULL`
+-- Substitui `mapoteca.pedido_auditoria`, cujo `pedido_id NOT NULL`
 -- amarrava o histórico ao pedido: cliente, plotter, produto do acervo, nota de
 -- empenho e usuário não têm pedido nenhum.
 CREATE SCHEMA auditoria;
@@ -98,7 +98,7 @@ CREATE TABLE auditoria.evento(
     -- DE ONDE VEIO ---------------------------------------------------------
     -- O SCA tem quatro portas de escrita, e "quem mudou" muda de resposta
     -- conforme a porta. 'web' e 'qgis' saem do `cliente` do token (que passou a
-    -- ser assinado no JWT em 2026-08-02, justamente para isto); 'cli' vem dos
+    -- ser assinado no JWT justamente para isto); 'cli' vem dos
     -- CLIs; 'gatilho' é efeito de gatilho de banco capturado pelo backend (o
     -- estoque da mapoteca); 'sistema' é o que roda sem pessoa por trás;
     -- 'migracao' é carga histórica; 'desconhecido' é token emitido antes de o
@@ -140,10 +140,10 @@ CREATE INDEX idx_evento_lote ON auditoria.evento(lote_id) WHERE lote_id IS NOT N
 
 -- SEM EXPURGO AUTOMÁTICO, e é deliberado.
 --
--- `acervo.cleanup_expired_downloads()` e a rotação do winston apagam sozinhos
--- porque o que eles guardam perde valor com o tempo. Aqui é o contrário: o
--- rastro é procurado justamente quando alguém pergunta sobre uma mudança
--- antiga, e um expurgo automático falharia exatamente quando é necessário.
+-- A rotação do winston apaga sozinha porque o log perde valor com o tempo.
+-- Aqui é o contrário. O rastro é procurado justamente quando alguém pergunta
+-- sobre uma mudança antiga, e um expurgo automático falharia exatamente
+-- quando é necessário.
 --
 -- A tabela também NÃO nasce particionada. Se o crescimento pedir, o
 -- particionamento por ano de `data_evento` não muda o contrato de escrita nem o

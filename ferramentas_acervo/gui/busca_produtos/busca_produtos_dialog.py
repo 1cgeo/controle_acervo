@@ -1,5 +1,4 @@
 # Path: gui\busca_produtos\busca_produtos_dialog.py
-import csv
 import os
 
 from qgis.core import Qgis, QgsFeature
@@ -57,9 +56,8 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
         # Connect buttons
         self.searchButton.clicked.connect(self.search_produtos)
         self.carregarCamadaButton.clicked.connect(self.carregar_camada)
-        # Trocar o tipo de produto refaz a lista de subtipos: subtipo que não
-        # pertence ao tipo escolhido deixou de fazer sentido, e mantê-lo daria
-        # uma busca que nunca acha nada.
+        # Trocar o tipo de produto refaz a lista de subtipos. Subtipo que não
+        # pertence ao tipo escolhido daria uma busca que nunca acha nada.
         self.tipoProdutoComboBox.currentIndexChanged.connect(self.load_subtipos)
         # Botão padrão: Enter dispara a busca a partir de qualquer filtro
         self.searchButton.setDefault(True)
@@ -160,9 +158,9 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
     def montar_filtros(self):
         """Os filtros da tela, no formato da API.
 
-        UM lugar só, porque as duas rotas que os consomem -- a lista paginada e a
-        camada de geometrias -- respondem à MESMA pergunta. Montá-los duas vezes
-        é o que faria o mapa mostrar um conjunto e a tabela outro.
+        UM lugar só. A lista paginada, a camada de geometrias e o CSV respondem
+        à MESMA pergunta, e montar os filtros em três lugares faria o mapa
+        mostrar um conjunto, a tabela outro e o arquivo um terceiro.
         """
         params = {}
 
@@ -205,9 +203,8 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
     def carregar_camada(self):
         """Traz a geometria de TODOS os produtos filtrados como camada no QGIS.
 
-        Não é a página atual: a rota de geometrias existe justamente porque
-        paginar o mapa engana -- vinte polígonos numa busca de oitocentos fazem
-        parecer que o acervo tem vinte cartas ali.
+        Não é a página atual: paginar o mapa engana. Vinte polígonos numa busca
+        de oitocentos fazem parecer que o acervo tem vinte cartas ali.
         """
         self.setCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -256,8 +253,8 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
 
         recado = f"{len(feicoes)} produto(s) carregados na camada 'Busca no acervo'."
         if dados.get('truncado'):
-            # O servidor avisa quando cortou em vez de mentir por omissão, e o
-            # aviso tem que chegar a quem está olhando o mapa.
+            # O servidor avisa quando corta o resultado, e o aviso tem que
+            # chegar a quem está olhando o mapa.
             recado += (f"\n\nA busca tem {dados.get('total')} produtos e o servidor "
                        "truncou o resultado. Refine os filtros para ver o conjunto inteiro.")
         if sem_geometria:
@@ -421,37 +418,35 @@ class BuscaProdutosDialog(QDialog, FORM_CLASS):
             pass
 
     def export_csv(self):
-        """Export the table data to a CSV file."""
-        if self.resultsTable.rowCount() == 0:
-            QMessageBox.warning(self, "Aviso", "Não há dados para exportar.")
-            return
+        """Exporta o conjunto INTEIRO dos filtros, e não a página.
 
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Exportar para CSV", "", "Arquivos CSV (*.csv)"
-        )
-
-        if not filename:
-            return
-
-        try:
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-
-                headers = []
-                for column in range(self.resultsTable.columnCount()):
-                    headers.append(self.resultsTable.horizontalHeaderItem(column).text())
-                writer.writerow(headers)
-
-                for row in range(self.resultsTable.rowCount()):
-                    row_data = []
-                    for column in range(self.resultsTable.columnCount()):
-                        item = self.resultsTable.item(row, column)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
-
-            QMessageBox.information(
-                self, "Sucesso", f"Dados exportados com sucesso para {filename}"
+        Quem monta o arquivo é o servidor, por `acervo/busca/csv`. Exportar a
+        tabela da tela daria vinte linhas numa busca de oitocentas, com o mesmo
+        engano que a paginação causa no mapa.
+        """
+        if self.total_items == 0:
+            QMessageBox.warning(
+                self, "Nada a exportar",
+                "A busca atual não tem resultado. Ajuste os filtros e busque de novo."
             )
+            return
 
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Erro ao exportar dados: {str(e)}")
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Salvar CSV", "busca-no-acervo.csv", "Arquivos CSV (*.csv)"
+        )
+        if not caminho:
+            return
+
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            gravado = self.api_client.download_file(
+                'acervo/busca/csv', caminho, params=self.montar_filtros()
+            )
+        finally:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+        if gravado:
+            QMessageBox.information(
+                self, "CSV salvo",
+                f"{self.total_items} produto(s) exportados para:\n{gravado}"
+            )

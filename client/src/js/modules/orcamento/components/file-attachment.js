@@ -6,6 +6,7 @@ import {
   deleteArquivo,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { showError, showSuccess } from '@utils/toast.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { permissoes } from '@store/auth-store.js';
 
 const ACCEPT_PDF = '.pdf';
@@ -48,8 +49,19 @@ export function createFileAttachment({
   let arquivos = [];
   let pendingFile = null;
   let busy = false;
+  // A mensagem da falha de LEITURA da lista, quando houve. Ver `emptyEl`.
+  let erroLeitura = null;
 
   const listEl = el('div', { className: 'file-attach__list' });
+
+  /**
+   * O estado da lista sem itens, em DUAS leituras.
+   *
+   * "Nenhum arquivo anexado" e uma afirmacao sobre o servidor. Quando a consulta
+   * FALHA a lista tambem fica vazia, e a mesma frase passava a mentir: em modo
+   * `single` o botao voltava a dizer "Selecionar PDF" em vez de "Substituir", e
+   * quem anexasse ali sobrescreveria o extrato que ja estava la.
+   */
   const emptyEl = el('div', {
     className: 'file-attach__empty',
     textContent: 'Nenhum arquivo anexado.',
@@ -74,7 +86,7 @@ export function createFileAttachment({
   ]);
 
   function actionBtn(icon, title, onClick, danger = false) {
-    return el(
+    const btn = el(
       'button',
       {
         type: 'button',
@@ -84,6 +96,11 @@ export function createFileAttachment({
       },
       [svgIcon(icon, 18)]
     );
+    // Os botoes de linha se REFAZEM a cada `render`, entao o `busy` tem de ser
+    // aplicado aqui: sem isto o `render({busy:true})` so travava o botao de
+    // anexar, e dois cliques no lixo disparavam dois DELETE do mesmo id.
+    btn.disabled = busy;
+    return btn;
   }
 
   /**
@@ -108,6 +125,9 @@ export function createFileAttachment({
     if (isMulti) return 'Adicionar arquivo';
     const temArquivo = arquivos.length > 0 || pendingFile;
     if (temArquivo) return 'Substituir';
+    // Com a leitura falhada nao se sabe se ha anexo, e "Substituir" e o rotulo
+    // que NAO promete apagar nada por engano.
+    if (erroLeitura) return 'Substituir';
     return buttonLabel || 'Selecionar arquivo';
   }
 
@@ -140,6 +160,9 @@ export function createFileAttachment({
     }
 
     const vazio = listEl.children.length === 0;
+    emptyEl.textContent = erroLeitura
+      ? `${erroLeitura} A lista de anexos não foi lida, e isto não quer dizer que não há anexo.`
+      : 'Nenhum arquivo anexado.';
     emptyEl.classList.toggle('hidden', !vazio);
 
     pickBtn.replaceChildren(svgIcon(ICONS.add, 16), document.createTextNode(' ' + pickLabel()));
@@ -155,7 +178,10 @@ export function createFileAttachment({
       busy = true;
       render();
       try {
+        // A resposta do upload é a lista AUTORITATIVA: ela desfaz a leitura que
+        // havia falhado antes.
         arquivos = await uploadArquivo(vinculo, file);
+        erroLeitura = null;
         showSuccess('Arquivo anexado com sucesso');
       } catch (err) {
         showError(err.message || 'Erro ao anexar arquivo');
@@ -170,6 +196,18 @@ export function createFileAttachment({
   }
 
   async function onRemoveExisting(a) {
+    // CONFIRMA ANTES. O clique apagava o arquivo do servidor sem pergunta
+    // nenhuma, e o lixo fica a um pixel do botao de baixar. A mesma operacao no
+    // anexo do RPCMTec ja passa por confirmacao.
+    const ok = await confirmDialog({
+      title: 'Remover anexo',
+      message: `Remover "${a.nome_original}"? O arquivo sai do servidor e esta `
+        + 'ação não pode ser desfeita.',
+      confirmLabel: 'Remover',
+      danger: true,
+    });
+    if (!ok) return;
+
     busy = true;
     render();
     try {
@@ -197,9 +235,12 @@ export function createFileAttachment({
     getArquivos(vinculo)
       .then((lista) => {
         arquivos = lista || [];
+        erroLeitura = null;
         render();
       })
       .catch((err) => {
+        erroLeitura = err.message || 'Erro ao carregar anexos.';
+        render();
         showError(err.message || 'Erro ao carregar anexos');
       });
   }

@@ -1,22 +1,15 @@
 # Path: gui\campos_acervo.py
 """Os campos do acervo e os construtores de corpo, num lugar só.
 
-POR QUE ISTO EXISTE, e não é organização por organização.
+Cinco telas criam produto (a avulsa, a histórica e três de lote). O dicionário
+do produto sai TODO daqui, e não de cada uma delas: campo novo em
+`acervo.produto` entra nos cinco caminhos de uma vez.
 
-Quatro diálogos criam produto (o avulso, o histórico e três em lote) e cada um
-montava o dicionário do produto na mão. Quando `acervo.produto` ganhou
-`subtipo_produto_id` em 2026-07-06 -- a identidade do produto, o que separa uma
-Carta Topográfica Militar de uma civil --, os QUATRO ficaram para trás. E não
-falharam: o servidor grava `?? null`, então todo produto criado pelo plugin
-nascia sem identidade, em silêncio.
-
-O preço só aparecia depois. O gatilho `acervo.validate_version` recusa versão de
-subtipo 24 num produto sem o mesmo subtipo, e ele roda no `confirm-upload`, isto
-é, DEPOIS de o operador ter copiado os bytes para o volume. Como é exceção do
-PostgreSQL, chegava como 500 e a tela dizia "tente novamente mais tarde".
-
-Um construtor só não conserta o passado, mas garante que o próximo campo de
-produto entre nos quatro caminhos de uma vez.
+O que se perde montando o corpo à mão é silencioso. O servidor grava `?? null`
+no campo que não veio, então um produto sem `subtipo_produto_id` nasce sem
+identidade e sem erro. A conta chega no `confirm-upload`, quando o gatilho
+`acervo.validate_version` recusa a versão: como é exceção do PostgreSQL, ela
+volta como 500 genérico, e os bytes já foram copiados para o volume.
 """
 import datetime
 import json
@@ -63,14 +56,6 @@ CAMPOS_VERSAO = [
     Campo('metadado_versao', 'string', False, 'JSON'),
 ]
 
-# Na camada que só tem versões não há com o que colidir, e os nomes curtos são os
-# que a equipe já usa nas planilhas montadas. `montar_versao(versao_sozinha=True)`
-# lê os dois, então camada antiga e camada nova funcionam.
-CURTO = {'nome_versao': 'nome', 'descricao_versao': 'descricao', 'metadado_versao': 'metadado'}
-CAMPOS_VERSAO_SOZINHA = [
-    Campo(CURTO.get(c.nome, c.nome), c.tipo, c.obrigatorio, c.ajuda) for c in CAMPOS_VERSAO
-]
-
 CAMPOS_ARQUIVO = [
     Campo('nome', 'string', True, 'nome descritivo do arquivo'),
     Campo('nome_arquivo', 'string', True, 'nome do arquivo no volume, SEM extensão'),
@@ -84,25 +69,16 @@ CAMPOS_ARQUIVO = [
 ]
 
 
-def com_prefixo(campos, prefixo, exceto=()):
-    """Copia os campos com um prefixo, para quando duas entidades convivem na
-    mesma camada (produto e versão, versão e arquivo) e os nomes colidiriam."""
-    return [Campo(c.nome if c.nome in exceto else f'{prefixo}{c.nome}',
-                  c.tipo, c.obrigatorio, c.ajuda)
-            for c in campos]
-
-
 # --- conversões que toda camada precisa --------------------------------------
 
 def data_iso(valor):
     """Data em 'AAAA-MM-DD'. Levanta ValueError quando não dá para ler.
 
-    A versão anterior tinha um buraco silencioso: `QDate.fromString` NÃO levanta
-    exceção com texto inválido, devolve um QDate inválido, e `toString` de um
-    QDate inválido é a string VAZIA. O `try/except` em volta nunca disparava,
-    então "12 de março" virava data em branco e seguia para o servidor, que
-    respondia 400 falando de um campo que a pessoa jurava ter preenchido.
-    Aqui a validade é conferida.
+    Confira a validade SEMPRE, e nunca confie no `try/except` em volta de
+    `QDate.fromString`: com texto inválido ela não levanta exceção, devolve um
+    QDate inválido, e o `toString` dele é a string VAZIA. Sem esta conferência,
+    "12 de março" vira data em branco e segue para o servidor, que responde 400
+    falando de um campo que a pessoa jurava ter preenchido.
     """
     if valor in (None, ''):
         raise ValueError("data em branco")
@@ -213,9 +189,9 @@ def montar_versao(feature, presentes, sufixo='', versao_sozinha=False):
 
     # `tipo_versao_id` só quando a camada o tem, e a diferença é de ROTA, não de
     # gosto: as rotas de upload (`prepare-upload/version` e `/product`) o
-    # EXIGEM, e as de versão histórica não o aceitam -- lá o tipo é decidido
-    # pela rota. Mandar a chave onde ela não cabe faria o servidor responder 200
-    # com um aviso de campo descartado, o que é pior do que não mandar.
+    # EXIGEM, e as de versão histórica não o aceitam, porque lá o tipo é
+    # decidido pela rota. Mandar a chave onde ela não cabe faz o servidor
+    # responder 200 avisando que descartou o campo.
     if 'tipo_versao_id' in presentes:
         versao['tipo_versao_id'] = sem_null(feature['tipo_versao_id'])
 
@@ -277,13 +253,13 @@ def montar_produto(feature, presentes, dominios, nome_campo='nome', descricao_ca
 def agrupar_produtos_versoes(camada, dominios, com_arquivos=False):
     """Lê a camada COMBINADA e devolve (produtos, invalidas, total).
 
-    A camada é PLANA -- uma linha por arquivo, ou por versão quando não há
-    arquivo -- e `produto_grupo_id` / `versao_grupo_id` dizem quais linhas são o
-    mesmo produto e a mesma versão. Reconstruir a árvore era código idêntico em
-    dois diálogos, com a mesma armadilha nos dois: a primeira linha de cada
-    grupo definia o produto e as demais eram ignoradas em SILÊNCIO, então uma
-    escala digitada errado na linha 2 sumia sem aviso. Aqui a divergência é
-    relatada.
+    A camada é PLANA (uma linha por arquivo, ou por versão quando não há
+    arquivo), e `produto_grupo_id` / `versao_grupo_id` dizem quais linhas são o
+    mesmo produto e a mesma versão.
+
+    A divergência dentro de um grupo é RELATADA, e nunca ignorada: deixar a
+    primeira linha definir o produto faria uma escala digitada errada na linha
+    2 sumir sem aviso.
     """
     presentes = {f.name() for f in camada.fields()}
     produtos, invalidas = {}, []

@@ -32,12 +32,8 @@ html, body {
  * dentro dele. O #app continuava com uma tela inteira de altura minima, entao o
  * documento ficava com 56 + 781 = 837 numa janela de 781.
  *
- * Medido em 2026-07-28: com `height: 100%` (como era antes de o `min-height`
- * entrar) o excesso era exatamente o mesmo, ou seja, isto nunca dependeu
- * daquela troca, e tambem nao veio da correcao da tela de login, que nem monta
- * o `.app-layout`. Era uma segunda fonte de barra, que sobreviveu a primeira
- * limpeza. `flow-root` e a forma de dizer "contenha as margens dos meus
- * filhos" sem os efeitos colaterais de `overflow: hidden`. */
+ * `flow-root` e a forma de dizer "contenha as margens dos meus filhos" sem os
+ * efeitos colaterais de `overflow: hidden`. */
 #app {
   min-height: 100%;
   width: 100%;
@@ -60,6 +56,26 @@ button {
   border: none;
   background: none;
   color: inherit;
+}
+
+/* FOCO VISIVEL, uma regra para o aplicativo inteiro.
+ *
+ * Fora do formulario (que ja tinha o seu, em forms.css), tudo dependia do anel
+ * padrao do navegador: o item da barra lateral, o botao de acao da tabela, a
+ * seta da paginacao, a aba, o botao de exportar. Esse anel e fino, muda de
+ * navegador e some contra o fundo escuro do tema noturno, e quem navega pelo
+ * teclado perdia a posicao.
+ *
+ * `:focus-visible`, e nao `:focus`: o anel aparece para o teclado e nao acende
+ * a cada clique de mouse.
+ *
+ * So `outline`. Mexer em `box-shadow` ou em `border-radius` aqui repintaria a
+ * sombra e a FORMA de qualquer elemento enquanto ele tem foco (o avatar redondo
+ * da barra superior viraria um quadrado arredondado). O `outline` desenha por
+ * fora, sem tocar na caixa. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 input, select, textarea {
@@ -128,11 +144,6 @@ img {
   display: flex;
 }
 
-.flex-col {
-  display: flex;
-  flex-direction: column;
-}
-
 .flex-center {
   display: flex;
   align-items: center;
@@ -147,14 +158,6 @@ img {
 
 .gap-sm {
   gap: var(--space-sm);
-}
-
-.gap-md {
-  gap: var(--space-md);
-}
-
-.gap-lg {
-  gap: var(--space-lg);
 }
 
 /* Skeleton loading animation */

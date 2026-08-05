@@ -1,6 +1,6 @@
 'use strict'
 
-// A LACUNA QUE ESTE ARQUIVO FECHA (2026-08-01).
+// A LACUNA QUE ESTE ARQUIVO FECHA.
 //
 // Excluir no acervo nao apaga: move para LAPIDE. O arquivo vira uma linha em
 // `acervo.arquivo_deletado` com as suas 21 colunas copiadas, e os downloads dele

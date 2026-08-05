@@ -143,6 +143,32 @@ describe('renderActivityTab', () => {
     aba.cleanup();
   });
 
+  // FALHA E VAZIO SAO COISAS DIFERENTES. Zerando a serie no catch, o card diz
+  // "Sem dados disponiveis", que e a frase do acervo sem arquivo: rota fora do
+  // ar se leria como situacao sem registro. "Nao houve" e "nao consegui saber"
+  // pedem acoes opostas, e o painel e o que o chefe olha para decidir.
+  test('falha na situacao de carregamento pinta ERRO, e nao pizza vazia', async () => {
+    acervoService.getSituacaoCarregamento.mockRejectedValueOnce(
+      new Error('Falha ao consultar o acervo'),
+    );
+
+    const container = document.createElement('div');
+    const aba = await renderActivityTab(container);
+
+    const botoes = Array.from(container.querySelectorAll('.sub-tabs__item'));
+    botoes.find(b => b.textContent === 'Situação de Carregamento').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const erro = container.querySelector('.tabs__content .dashboard-erro');
+    expect(erro).not.toBeNull();
+    // A mensagem do SERVIDOR, e nao uma frase generica: ela e o que decide se a
+    // pessoa tenta de novo ou chama alguem.
+    expect(erro.textContent).toContain('Falha ao consultar o acervo');
+    expect(container.textContent).not.toContain('Sem dados disponíveis');
+
+    aba.cleanup();
+  });
+
   test('refresh recarrega a serie diaria e a sub-aba ativa', async () => {
     const container = document.createElement('div');
     const aba = await renderActivityTab(container);
@@ -190,6 +216,54 @@ describe('renderActivityTab', () => {
     await new Promise(r => setTimeout(r, 0));
 
     expect(container.querySelector('.dashboard-erro')).toBeNull();
+    aba.cleanup();
+  });
+});
+
+// A série nasce com zero em cada dia para o dia sem movimento aparecer no eixo.
+// Com o endpoint fora do ar, esse mesmo zero deixava de dizer "nada aconteceu
+// neste dia" e passava a afirmar "nada aconteceu no mês": não parecia vazio nem
+// erro, parecia resposta. É o modo de falhar mais caro do painel, porque a barra
+// chata é uma resposta, e errada.
+describe('renderActivityTab: falha da série diária', () => {
+  test('endpoint fora do ar vira estado de erro, e nao 30 dias de zero', async () => {
+    acervoService.getArquivosDia.mockRejectedValueOnce(new Error('sem rede'));
+
+    const container = document.createElement('div');
+    const aba = await renderActivityTab(container);
+
+    const erro = container.querySelector('.chart-card .dashboard-erro');
+    expect(erro).not.toBeNull();
+    expect(erro.querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
+
+    aba.cleanup();
+  });
+
+  test('basta UMA das duas cair: a série que veio não sai como linha reta', async () => {
+    // As duas dividem o mesmo gráfico. Desenhar só a que voltou deixaria a
+    // outra como uma reta no chão ao lado dela, afirmando zero download no mês.
+    acervoService.getDownloadsDia.mockRejectedValueOnce(new Error('500'));
+
+    const container = document.createElement('div');
+    const aba = await renderActivityTab(container);
+
+    expect(container.querySelector('.chart-card .dashboard-erro')).not.toBeNull();
+
+    aba.cleanup();
+  });
+
+  test('"Tentar de novo" refaz as duas chamadas', async () => {
+    acervoService.getArquivosDia.mockRejectedValueOnce(new Error('sem rede'));
+    const container = document.createElement('div');
+    const aba = await renderActivityTab(container);
+
+    const antes = acervoService.getDownloadsDia.mock.calls.length;
+    container.querySelector('.chart-card .dashboard-erro .btn').click();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(acervoService.getDownloadsDia.mock.calls.length).toBe(antes + 1);
+    expect(container.querySelector('.chart-card .dashboard-erro')).toBeNull();
+
     aba.cleanup();
   });
 });

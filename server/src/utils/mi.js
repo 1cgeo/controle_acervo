@@ -76,15 +76,14 @@ function iguais (a, b) {
  *
  * Existe porque a situacao geral do acervo (`acervo_ctrl.getSituacaoGeralCells`
  * e a rota publica de integracao) recebe as duas coisas na MESMA lista e
- * compara por igualdade de string. Ate 2026-08-01 cada uma tinha a propria
- * copia de tres linhas (`normIdentificador`), que so tirava caixa e espaco:
- * quem escrevia `0155` nao achava a folha gravada como `155`, sem erro nenhum,
- * so uma resposta "nao mapeado" falsa.
+ * compara por igualdade de string. Sem canonizar o MI, quem escreve `0155` nao
+ * acha a folha gravada como `155`, sem erro nenhum: so uma resposta "nao
+ * mapeado" falsa.
  *
- * O MI vem primeiro porque so ele tem forma canonica. Nao casando o MI, cai no
- * tratamento antigo (caixa alta sem espaco), que e o que o INOM precisa: `SF-22`
- * e `sf 22` viram a mesma chave, e nenhum INOM casa o PADRAO do MI (todo INOM
- * comeca por letra), entao nao ha como um virar o outro por acidente.
+ * O MI vem primeiro porque so ele tem forma canonica. Nao casando o MI, cai em
+ * caixa alta sem espaco, que e o que o INOM precisa: `SF-22` e `sf 22` viram a
+ * mesma chave, e nenhum INOM casa o PADRAO do MI (todo INOM comeca por letra),
+ * entao nao ha como um virar o outro por acidente.
  *
  * Devolve string vazia para nulo, e nao null, porque o chamador usa o resultado
  * como chave de Set.

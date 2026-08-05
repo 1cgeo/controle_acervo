@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
-// O que o detalhe do pedido ganhou em 2026-07-30: registrar impressao de dentro
+// O que o detalhe do pedido ganhou: registrar impressao de dentro
 // do pedido, o resumo de QUEM imprimiu quanto, e o historico do pedido (a rota
 // de auditoria).
 //
@@ -15,14 +16,13 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
   const { mockAcervoService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockAcervoService();
 });
-// O historico saiu do service da mapoteca em 2026-08-02: ele virou
-// `/api/auditoria`, rota de PLATAFORMA, porque o rastro dos tres modulos vive
-// numa tabela so.
+// O histórico é `/api/auditoria`, rota de PLATAFORMA: o rastro dos três módulos
+// vive numa tabela só.
 //
-// O service dele e PROPRIO e pequeno (tres funcoes), e por isso o mock aqui e
-// ele INTEIRO, em tres linhas. Se as funcoes morassem em `plataforma-service.js`,
-// que tem dezenas, este arquivo teria de manter a fabrica daquele service em dia
-// por causa de tres nomes que nao tem nada a ver com o pedido.
+// O service dele é PRÓPRIO e pequeno (três funções), e por isso o mock aqui é
+// ele INTEIRO, em três linhas. Se as funções morassem em `plataforma-service.js`,
+// que tem dezenas, este arquivo teria de manter a fábrica daquele service em dia
+// por causa de três nomes que não têm nada a ver com o pedido.
 vi.mock('@services/rastreabilidade-service.js', () => ({
   getHistorico: vi.fn(() => Promise.resolve([])),
   getRastreabilidade: vi.fn(() => Promise.resolve({ dados: [], pagination: null })),
@@ -35,8 +35,6 @@ import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js'
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import * as rastro from '@services/rastreabilidade-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const PEDIDO = {
   id: 55,
@@ -71,7 +69,7 @@ const HISTORICO_ITEM = {
   ],
 };
 
-// O evento como o SERVIDOR o devolve desde 2026-08-02: com o `resumo` do
+// O evento como o SERVIDOR o devolve: com o `resumo` do
 // registro e o diff JA RENDERIZADO (`mudancas`), em vez de só a lista de nomes
 // de coluna. Ver server/src/auditoria/renderizar.js.
 const AUDITORIA = [
@@ -159,7 +157,7 @@ describe('detalhe do pedido: registrar impressao', () => {
     await flush();
 
     expect(svc.registrarImpressao).toHaveBeenCalledWith([
-      { produto_pedido_id: 900, quantidade: 3, observacao: undefined },
+      { produto_pedido_id: 900, quantidade: 3, observacao: undefined, data_impressao: undefined },
     ]);
 
     if (typeof cleanup === 'function') cleanup();
@@ -248,12 +246,9 @@ describe('detalhe do pedido: historico do pedido', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // ESTE E O CASO QUE O TRABALHO DE RASTREABILIDADE EXISTIU PARA CRIAR.
-  //
-  // Ate 2026-08-02 a coluna "O que mudou" era `campos_alterados.join(', ')`: a
-  // tela mostrava "quantidade_fornecida" -- o nome da coluna do banco -- e mais
-  // nada, enquanto `dados_antes` e `dados_depois` chegavam na resposta e eram
-  // jogados fora. Quem lia sabia que algo mudou, sem saber DE QUE PARA QUE.
+  // A coluna "O que mudou" lê `dados_antes` e `dados_depois`, e escreve o
+  // rótulo de tela com o valor de antes e o de agora. `campos_alterados`
+  // sozinho diria que algo mudou, sem dizer DE QUE PARA QUE.
   test('mostra o valor ANTERIOR e o ATUAL, e nao o nome da coluna', async () => {
     const { container, cleanup } = await montar();
     const texto = container.textContent;
@@ -353,7 +348,7 @@ describe('detalhe do pedido: historico do pedido', () => {
 });
 
 describe('detalhe do pedido: fornecida x impressa', () => {
-  // Medido na producao em 2026-07-30: nos 1.928 itens as duas nunca divergiram.
+  // Medido na producao: nos 1.928 itens as duas nunca divergiram.
   // A marca e alarme de dado errado, e por isso nao aparece no caso normal.
   test('iguais, mostra so o numero, sem marca', async () => {
     const { container, cleanup } = await montar();
@@ -383,6 +378,83 @@ describe('detalhe do pedido: fornecida x impressa', () => {
     const { container, cleanup } = await montar();
 
     expect(container.textContent).not.toContain('difere da impressa');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// PUT /mapoteca/impressao/:id/data existia no servidor e nenhuma tela o chamava.
+// Sem ele, a sessao lancada no dia errado so se conserta excluindo e lancando de
+// novo, e a exclusao apaga quem imprimiu e a observacao junto.
+describe('detalhe do pedido: corrigir a data de uma sessao de impressao', () => {
+  const abrirHistorico = async (container) => {
+    acaoDoItem(container, 'Histórico de impressão').click();
+    await flush();
+  };
+
+  const acaoDoRegistro = (titulo, indice = 0) => {
+    const linha = [...document.querySelectorAll('.modal tbody tr')][indice];
+    return [...linha.querySelectorAll('button')].find(b => (b.title || '').includes(titulo));
+  };
+
+  beforeEach(() => {
+    svc.corrigirDataImpressao.mockResolvedValue(null);
+  });
+
+  test('grava a data nova com o motivo, pelo id do registro', async () => {
+    const { container, cleanup } = await montar();
+    await abrirHistorico(container);
+
+    acaoDoRegistro('Corrigir a data').click();
+    await flush();
+
+    // O campo nasce com a data que o registro ja tem.
+    const campoData = [...document.querySelectorAll('input[type="date"]')].pop();
+    expect(campoData.value).toBe('2026-07-28');
+    campoData.value = '2026-07-25';
+
+    const campoMotivo = [...document.querySelectorAll('.modal input[type="text"]')].pop();
+    campoMotivo.value = 'lancado no dia errado';
+
+    [...document.querySelectorAll('button')]
+      .filter(b => b.textContent.trim() === 'Salvar').pop().click();
+    await flush();
+
+    expect(svc.corrigirDataImpressao).toHaveBeenCalledWith(1, {
+      data_impressao: '2026-07-25',
+      motivo: 'lancado no dia errado',
+    });
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O servidor exige motivo com 3 caracteres no minimo (Joi). Sem a checagem
+  // aqui, o 400 chegava como toast depois de a pessoa achar que tinha gravado.
+  test('motivo em branco barra a gravacao', async () => {
+    const { container, cleanup } = await montar();
+    await abrirHistorico(container);
+
+    acaoDoRegistro('Corrigir a data').click();
+    await flush();
+
+    [...document.querySelectorAll('button')]
+      .filter(b => b.textContent.trim() === 'Salvar').pop().click();
+    await flush();
+
+    expect(svc.corrigirDataImpressao).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Escreva o motivo');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // PUT /impressao/:id/data e GERENTE, embora REGISTRAR seja operador: mudar
+  // QUANDO um gasto aconteceu muda o numero que o RPCMTec reporta naquele mes.
+  test('quem so consulta nao ve a acao de corrigir', async () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u-3', perfis: { mapoteca: 1 } }, 'ciclano');
+    const { container, cleanup } = await montar();
+    await abrirHistorico(container);
+
+    expect(acaoDoRegistro('Corrigir a data')).toBeUndefined();
 
     if (typeof cleanup === 'function') cleanup();
   });

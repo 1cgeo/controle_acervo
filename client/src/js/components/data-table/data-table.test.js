@@ -39,8 +39,8 @@ describe('createDataTable', () => {
   });
 });
 
-// As três opções que entraram em 2026-07-31, para as listas de empenho e de RPNP
-// abrirem pelo maior saldo a liquidar e marcarem o que já fechou.
+// As três opções que fazem as listas de empenho e de RPNP abrirem pelo maior
+// saldo a liquidar e marcarem o que já fechou.
 describe('createDataTable: ordem inicial, sortValue e classe de linha', () => {
   const nomes = (element) =>
     [...element.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent);

@@ -2,7 +2,7 @@
 
 // A forma de entrega e a data de entrega sao do PEDIDO, e nao do item.
 //
-// Decisao do chefe em 2026-07-30, depois de medir a producao: de 91 pedidos com
+// Decisao do chefe, depois de medir a producao: de 91 pedidos com
 // item, so 1 tinha mais de uma forma de entrega e NENHUM tinha mais de uma data.
 // A forma virou mapoteca.pedido.forma_entrega_id; a data ja existia com outro
 // nome (data_atendimento, o dia em que o material saiu daqui) e nao ganhou
@@ -172,7 +172,7 @@ describe('A forma de entrega vive no PEDIDO', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.dados.forma_entrega_nome).toBe('Entrega em mãos')
-    // E NAO repetida em cada item, que era o formato ate 2026-07-30.
+    // E NAO repetida em cada item: a forma de entrega e do PEDIDO.
     expect(res.body.dados.produtos[0].forma_entrega_nome).toBeUndefined()
   })
 })

@@ -3,10 +3,8 @@
 // Teste de rota (supertest) do recebimento de material. Mocka banco e
 // autenticacao.
 //
-// A FEATURE NAO TINHA ARQUIVO DE TESTE ate 2026-08-02: as tres rotas dela
-// existiam desde a fusao e nenhuma era exercitada. Ele nasceu com a
-// rastreabilidade, entao cobre o basico (caminho feliz, 404 e a validacao Joy)
-// junto do evento.
+// O arquivo cobre o basico das tres rotas (caminho feliz, 404 e a validacao do
+// Joi) junto do EVENTO de cada escrita.
 //
 // O agregado e a NOTA DE EMPENHO, e nao o recebimento: ninguem abre "recebimento
 // n.o 812"; abre a ficha da NE e olha o que foi recebido contra ela.

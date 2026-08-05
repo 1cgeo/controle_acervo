@@ -11,16 +11,16 @@
 //   -- encerra as flags (tudo depois vira posicional)
 
 // Flags que NAO consomem o proximo argumento (sao booleanas).
+//
+// `--para` fica FORA: ela leva o nome do arquivo de destino. `--extra` tambem,
+// porque sem valor o parser ja a devolve como `true`.
 const BOOLEANAS = new Set([
   'dry-run',
   'json',
   'ajuda',
   'help',
   'insecure',
-  'mes-apenas',
-  'docx',
-  'sem-cache',
-  'versao'
+  'sem-cache'
 ])
 
 /**

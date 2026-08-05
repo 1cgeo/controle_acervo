@@ -12,6 +12,10 @@
 //   -- encerra as flags (tudo depois vira posicional)
 
 // Flags que NAO consomem o proximo argumento (sao booleanas).
+//
+// Flag que aceita valor OPCIONAL (--pdf e --anuario, que levam o nome do arquivo
+// de destino) fica de FORA desta lista: declarada aqui, o valor viraria
+// posicional e o destino escolhido seria ignorado em silencio.
 const BOOLEANAS = new Set([
   'dry-run',
   'json',
@@ -19,11 +23,9 @@ const BOOLEANAS = new Set([
   'help',
   'insecure',
   'sem-cache',
-  'versao',
   'geom',
   'arquivos',
   'caminho',
-  'docx',
   'mes-apenas',
   'so-faltantes'
 ])

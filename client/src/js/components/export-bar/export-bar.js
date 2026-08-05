@@ -29,6 +29,9 @@ export function createExportBar({ items = [], ariaLabel = 'Exportações' }) {
         btn.disabled = true;
         const original = labelSpan.textContent;
         labelSpan.textContent = 'Exportando...';
+        // O botao desabilitado perde o foco do teclado, e sem isto a pessoa nao
+        // sabe que a exportacao esta correndo.
+        btn.setAttribute('aria-busy', 'true');
         showInfo('Gerando a exportação...');
         try {
           await apiDownload(cfg.endpoint, cfg.filename);
@@ -37,6 +40,7 @@ export function createExportBar({ items = [], ariaLabel = 'Exportações' }) {
           showError(err.message || 'Falha na exportação');
         } finally {
           labelSpan.textContent = original;
+          btn.removeAttribute('aria-busy');
           btn.disabled = false;
         }
       },
@@ -45,5 +49,8 @@ export function createExportBar({ items = [], ariaLabel = 'Exportações' }) {
     return btn;
   });
 
-  return el('div', { className: 'export-bar', 'aria-label': ariaLabel }, buttons);
+  // `role="group"` junto do `aria-label`: num `<div>` sem papel nenhum, o
+  // `aria-label` e IGNORADO, e a barra chegava ao leitor de tela como uma fila
+  // de botoes soltos, sem dizer do que eram.
+  return el('div', { className: 'export-bar', role: 'group', 'aria-label': ariaLabel }, buttons);
 }

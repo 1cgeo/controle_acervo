@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { flush } from '@/__tests__/helpers/flush.js';
 
 // Wizard de 4 passos do novo pedido. Os dois services sao mockados: NENHUMA
 // chamada sai para o servidor, entao o teste nunca cria pedido de verdade.
@@ -17,8 +18,6 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 
 import { renderPedidoWizard } from '@modules/mapoteca/pages/pedidos/wizard.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const CLIENTES = [
   { id: 1, nome: '1º CGEO', tipo_cliente_id: 1 },
@@ -141,6 +140,38 @@ describe('renderPedidoWizard', () => {
 
     // Nada foi gravado: o wizard so escreve no clique do Confirmar.
     expect(svc.createPedido).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O caso acima prova que o botão APARECE. Este aperta: botão que ninguém
+  // clica não diz se o wizard grava, e criar pedido é o que esta tela existe
+  // para fazer.
+  test('Confirmar grava o pedido e mostra o localizador na tela de sucesso', async () => {
+    svc.createPedido.mockResolvedValue({ id: 99, localizador_pedido: 'AB12-CD34-EF56' });
+    const { container, cleanup } = await montar();
+
+    const selects = [...container.querySelectorAll('select')];
+    selects[0].value = '1';
+    selects[0].dispatchEvent(new Event('change'));
+    selects[1].value = '3';
+    selects[1].dispatchEvent(new Event('change'));
+
+    const avancar = [...container.querySelectorAll('button')].find(b => b.textContent === 'Avançar');
+    avancar.click(); await flush();
+    avancar.click(); await flush();
+    avancar.click(); await flush();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Confirmar pedido')).click();
+    await flush();
+
+    expect(svc.createPedido).toHaveBeenCalledWith(
+      expect.objectContaining({ cliente_id: 1, situacao_pedido_id: 3 }),
+    );
+    // Pedido sem item: nenhum POST de item sai junto.
+    expect(svc.createProdutoPedido).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('AB12-CD34-EF56');
 
     if (typeof cleanup === 'function') cleanup();
   });

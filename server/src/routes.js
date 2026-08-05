@@ -62,9 +62,6 @@ router.use("/usuarios", usuarioRoute);
 // Histórico de acesso (dgeo.login). Rota de PLATAFORMA, sem prefixo de módulo,
 // como /usuarios e /rpcmtec: quem entrou no sistema não é dado do acervo, da
 // mapoteca nem do orçamento. Todas as rotas são verifyAdmin.
-//
-// Existe desde 2026-08-02, com a fusão da autenticação: é o porte do dashboard
-// do Auth Server externo, que era quem lia essa tabela.
 router.use("/acessos", acessosRoute);
 
 // Rastreabilidade: o que foi mudado, quando, por quem e qual era o estado
@@ -82,7 +79,6 @@ router.use("/auditoria", auditoriaRoute);
 
 // Metas do PIT. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios:
 // os três módulos consomem o plano anual da Divisão e nenhum é dono dele.
-// Esteve em /api/orcamento/metas até 2026-07-31.
 router.use("/metas", pitRoute);
 
 // Aproveitamento do efetivo: quem esteve na Divisão, quando, e o que o impediu.
@@ -122,10 +118,6 @@ router.use("/integracao", integracaoRoute);
 // RPCMTec: o relatório mensal da Divisão, inteiro, num gerador só. Rota de
 // PLATAFORMA, sem prefixo de módulo, como /usuarios e /metas: a mesma edição
 // fala de acervo, mapoteca e orçamento, e o chefe assina uma só.
-//
-// Substitui, desde 2026-08-01, as duas gerações que existiam e não se
-// conheciam: /api/relatorio/rpcmtec (acervo e mapoteca) e
-// /api/orcamento/relatorio/secao3 (o PDR). Ver server/src/rpcmtec/.
 router.use("/rpcmtec", rpcmtecRoute);
 
 // Módulo orçamento (antigo SCO). Todas as features do sistema absorvido ficam
@@ -151,10 +143,9 @@ router.use("/orcamento/licitacoes", orcamentoLicitacaoRoute);
 
 router.use("/orcamento/rpnp", orcamentoRpnpRoute);
 
-// SEM /orcamento/relatorio: a geração da seção do PDR e o CRUD da edição mensal
-// saíram daqui em 2026-08-01 para /api/rpcmtec. O orçamento continua sendo
-// FONTE das subseções 4.1 a 4.7, e não dono do relatório. O que ficou é o
-// painel, que pergunta outra coisa e é lido por outro perfil.
+// SEM /orcamento/relatorio: o relatório inteiro vive em /api/rpcmtec. O
+// orçamento é FONTE das subseções 4.1 a 4.7, e não dono do relatório. O que
+// fica aqui é o painel, que pergunta outra coisa e é lido por outro perfil.
 router.use("/orcamento/dashboard", orcamentoDashboardRoute);
 
 router.use("/orcamento/arquivo", orcamentoArquivoRoute);

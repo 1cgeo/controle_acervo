@@ -10,15 +10,13 @@ from urllib.parse import urljoin
 class APIClient:
     """Cliente HTTP do SCA.
 
-    ESTE ARQUIVO É GÊMEO de `ferramentas_acervo/core/api_client.py`, e as duas
+    Este arquivo é GÊMEO de `ferramentas_acervo/core/api_client.py`. As duas
     diferenças são deliberadas: o default de `pode()` é `mapoteca`, e aqui não
-    existe o cache de domínios (`core/dominios.py`). O cache do outro plugin só
-    guarda rota de acervo -- `gerencia/dominio/*`, `projetos/*`, `volumes/*` --,
-    e quem atende pedido pode não ter perfil nenhum no acervo: seria um cache
-    que só sabe buscar o que este usuário levaria 403 para pedir.
+    existe o cache de domínios (ele só guarda rota do acervo, e quem atende
+    pedido pode não ter perfil nenhum no acervo).
 
-    Toda correção de comportamento (thread da mensagem de erro, re-login,
-    timeout) vale para os dois. Ao mexer aqui, veja o outro.
+    Correção de comportamento (thread da mensagem de erro, re-login, timeout)
+    vale para os dois. Ao mexer aqui, veja o outro.
     """
 
     REQUEST_TIMEOUT = 30  # segundos para requisições normais
@@ -36,17 +34,17 @@ class APIClient:
         self.session = requests.Session()
         self._configure_proxy()
 
-    # Niveis por modulo (dominio.tipo_perfil no servidor). O administrador e
-    # GLOBAL: passa em qualquer modulo e qualquer nivel, e nao existe
-    # administrador de modulo.
+    # Níveis por módulo (dominio.tipo_perfil no servidor). O administrador é
+    # GLOBAL: passa em qualquer módulo e qualquer nível, e não existe
+    # administrador de módulo.
     NIVEIS = {"consulta": 1, "operador": 2, "gerente": 3}
 
     def pode(self, nivel_minimo, modulo="mapoteca"):
-        """Diz se o usuario satisfaz o nivel minimo naquele modulo.
+        """Diz se o usuário satisfaz o nível mínimo naquele módulo.
 
-        'admin' pede o administrador global; os demais sao hierarquicos
+        'admin' pede o administrador global; os demais são hierárquicos
         (gerente satisfaz operador e consulta). O servidor decide de verdade;
-        isto so evita oferecer na tela o que voltaria 403.
+        isto só evita oferecer na tela o que voltaria 403.
         """
         if self.is_admin:
             return True
@@ -113,7 +111,6 @@ class APIClient:
             self.show_error("Erro de Configuração", "URL do servidor não configurada.")
             return None
 
-        # Corrigir a concatenação de URLs
         url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         timeout = timeout or self.REQUEST_TIMEOUT
@@ -134,7 +131,7 @@ class APIClient:
             return response.json()
 
         except ConnectionError:
-            self.show_error("Falha na Conexão", "Não foi possível conectar ao servidor. Verifique sua conexão de internet.")
+            self.show_error("Falha na Conexão", "Não foi possível conectar ao servidor. Confira o endereço informado no login e a conexão com a rede.")
         except Timeout:
             self.show_error("Tempo Esgotado", "O servidor demorou muito para responder. Tente novamente mais tarde.")
         except HTTPError as e:
@@ -152,20 +149,35 @@ class APIClient:
         """Extrai a mensagem de erro padronizada ({success:false, message}) da resposta, se houver."""
         try:
             body = response.json()
-            msg = body.get("message") if isinstance(body, dict) else None
-            if isinstance(msg, str) and msg.strip():
-                return msg
-        except Exception:
-            pass
+        except ValueError:
+            # Corpo que não é JSON (HTML de proxy, resposta vazia). Não é erro:
+            # a mensagem genérica de quem chamou cobre o caso.
+            return None
+        msg = body.get("message") if isinstance(body, dict) else None
+        if isinstance(msg, str) and msg.strip():
+            return msg
         return None
 
     def _handle_http_error(self, e, method):
         """Método interno para lidar com erros HTTP."""
+        if e.response is None:
+            self.show_error(
+                "Erro de HTTP",
+                f"A requisição {method} falhou sem resposta do servidor. "
+                "Verifique a conexão com a rede e tente novamente."
+            )
+            return
+
         server_msg = self._extract_server_message(e.response)
         if e.response.status_code == 401:
             self.show_error("Não Autorizado", "Sua sessão expirou e não foi possível reconectar. Feche o plugin e faça login novamente.")
         elif e.response.status_code == 403:
-            self.show_error("Acesso Negado", "Você não tem permissão para realizar esta ação.")
+            self.show_error(
+                "Acesso Negado",
+                "Você não tem permissão para esta ação no módulo Mapoteca.\n\n"
+                "Peça ao gerente da mapoteca o perfil Operador, ou faça a "
+                "operação pela interface web do SCA."
+            )
         elif e.response.status_code == 404:
             if server_msg:
                 self.show_error("Não Encontrado", server_msg)
@@ -202,6 +214,14 @@ class APIClient:
                 self._username = username
                 self._password = password
                 return True
+            if response is not None:
+                # Respondeu, mas fora do envelope esperado: o _make_request só
+                # avisa quando há erro de HTTP, e sem isto a tela ficava muda.
+                self.show_error(
+                    "Falha no Login",
+                    "O servidor respondeu sem os dados da sessão. Confira o "
+                    "endereço do servidor e tente novamente."
+                )
         except Exception as e:
             self.show_error("Falha no Login", f"Não foi possível fazer login: {str(e)}")
         return False
@@ -223,13 +243,13 @@ class APIClient:
         return self._make_request('DELETE', endpoint, data=data, params=params, timeout=timeout)
 
     def download_file(self, endpoint, dest_path, params=None, progress_callback=None):
-        """Baixa um arquivo binário do servidor.
+        """Baixa um arquivo binário do servidor. Devolve True ou False.
 
         Args:
-            endpoint: Endpoint da API
-            dest_path: Caminho de destino do arquivo
-            params: Parâmetros da query string
-            progress_callback: Função opcional callback(bytes_baixados, total_bytes)
+            endpoint: endpoint da API, sem o prefixo 'api/'
+            dest_path: caminho COMPLETO do arquivo de destino
+            params: parâmetros da query string
+            progress_callback: função opcional callback(bytes_baixados, total_bytes)
         """
         if not self.base_url:
             self.show_error("Erro de Configuração", "URL do servidor não configurada.")
