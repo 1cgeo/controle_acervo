@@ -262,30 +262,6 @@ module.exports = {
     }
   },
 
-  // --- Agregado: de-para da midia para a meta --------------------------------
-  // A TABELA e do schema `mapoteca` e a entrada esta neste arquivo, que e o do
-  // modulo `plataforma`. Nao e descuido: o arquivo se organiza por MODULO da
-  // tela, e nao por schema do banco. Quem preenche este de-para e quem configura
-  // a meta do PIT, e e na ficha da meta que o rastro dele precisa aparecer.
-  //
-  // Agregado e a META, e nao a propria linha: o de-para nao e entidade que
-  // alguem procure por si, e a pergunta que se faz dele e "por que a meta 4.1
-  // passou a contar sulfite". Pendurado na meta, o evento aparece exatamente
-  // onde essa pergunta e feita.
-  'mapoteca.midia_meta_pit': {
-    modulo: 'plataforma',
-    entidade: 'meta',
-    agregado: (t, linha) => linha.meta_pit_id,
-    resumo: linha => `Mídia ${linha.tipo_midia_id} para a meta em ${linha.ano}`,
-    campos: {
-      // Mesma razao do `ano` da meta: sem `tipo: 'numero'`, senao 2026 sairia
-      // como "2.026".
-      ano: { rotulo: 'Ano' },
-      tipo_midia_id: { rotulo: 'Mídia', dominio: 'mapoteca.tipo_midia' },
-      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' }
-    }
-  },
-
   // --- Agregado: edicao do RPCMTec -------------------------------------------
 
   'rpcmtec.edicao': {

@@ -69,16 +69,16 @@ const EH_FOLHA = `(
 //                    nao encolhe quando se cumpre, e `data_prevista` nao e
 //                    sobrescrita na virada.
 //
-//   Impressao (4)    planejado pela soma de `produto_pedido.quantidade` dos
-//                    pedidos ligados a meta, no mes de `pedido.data_prevista`,
-//                    fora o Cancelado; realizado pela MIDIA que saiu, no mes de
-//                    `pedido.data_atendimento`.
+//   Impressao (4)    as duas pelos itens dos pedidos ligados a meta, fora o
+//                    Cancelado: planejado no mes de `pedido.data_prevista` e
+//                    realizado no mes de `pedido.data_atendimento`.
 //
-// AS DUAS FONTES DA IMPRESSAO SAO DELIBERADAS, e nao um resto de transicao. O
-// prometido esta no ITEM do pedido que aponta a meta, e o entregue esta na midia
-// pelo de-para de `mapoteca.midia_meta_pit`. Sao duas perguntas diferentes:
-// somar o realizado pelo pedido derrubaria a 4.1 de 5.664 folhas para 253, e
-// daria 199 folhas de tyvek na 4.2 num ano em que nenhuma saiu em tyvek.
+// A IMPRESSAO TEM UMA FONTE SO desde 2026-08-05. O realizado saia de um de-para
+// de midia para meta (`mapoteca.midia_meta_pit`, removido), e a MEDICAO o
+// reprovou: ele contava o TIPO DE PAPEL e nao a meta. A 4.1 de 2026 recebia
+// 6.493 folhas contra 327 prometidas, porque todo sulfite do ano entrava ali; e
+// a 4.2 recebia ZERO, porque nenhuma folha saiu em tyvek e as dela foram
+// atendidas em sulfite, indo parar na 4.1.
 //
 // POR QUE O PLANEJADO DEIXOU DE VIR DO LOTE (medido em 2026-08-05). Ele saia de
 // `acervo.lote.data_fim_prevista`, e nos 19 lotes que a tem ela e IGUAL a
@@ -177,24 +177,27 @@ const CELULAS_CALCULADAS = `
 
     UNION ALL
 
-    -- Impressao, realizado: folha ENTREGUE, pela midia que saiu, somada pelo
-    -- de-para do ano. A quantidade FORNECIDA manda sobre a pedida porque o que a
-    -- meta conta e o que saiu. (Sem crase aqui: template literal.)
+    -- Impressao, realizado: folha ENTREGUE pelo pedido ligado a meta, no mes em
+    -- que o pedido fechou. A quantidade FORNECIDA manda sobre a pedida porque o
+    -- que a meta conta e o que saiu. (Sem crase aqui: template literal.)
     --
-    -- POR MIDIA, e nao pelo pedido que o planejado acima usa. Sao duas perguntas:
-    -- o pedido guarda o que se prometeu e a midia guarda o que saiu. Somar o
-    -- realizado pelo pedido daria 253 folhas na 4.1 de 2026, onde o RTM publica
-    -- 5.664, e daria 199 na 4.2 num ano em que nenhuma folha saiu em tyvek.
-    SELECT dm.meta_pit_id,
+    -- MESMA FONTE DO PLANEJADO ACIMA, e so a data muda. Ate 2026-08-05 o
+    -- realizado saia de um de-para de midia para meta, e a MEDICAO o reprovou:
+    -- ele contava o TIPO DE PAPEL, e nao a meta. A 4.1 de 2026 recebia 6.493
+    -- folhas contra 327 prometidas, porque todo sulfite entregue no ano entrava
+    -- ali, inclusive de pedido sem nenhuma relacao com o PIT. E a 4.2 recebia
+    -- ZERO, porque nenhuma folha saiu em tyvek: as dela foram atendidas em
+    -- sulfite e foram contadas na 4.1.
+    SELECT p.meta_pit_id,
            EXTRACT(MONTH FROM p.data_atendimento)::smallint,
            NULL::int,
            SUM(COALESCE(pp.quantidade_fornecida, pp.quantidade))::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN mapoteca.midia_meta_pit AS dm
-            ON dm.tipo_midia_id = COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)
-           AND dm.ano = EXTRACT(YEAR FROM p.data_atendimento)
+    INNER JOIN pit.meta AS mm ON mm.id = p.meta_pit_id
     WHERE p.data_atendimento IS NOT NULL
+      AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
+      AND EXTRACT(YEAR FROM p.data_atendimento) = mm.ano
     GROUP BY 1, 2
   ) AS c
   GROUP BY c.meta_id, c.mes

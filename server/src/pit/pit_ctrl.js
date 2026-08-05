@@ -669,8 +669,7 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
          (SELECT COUNT(*) FROM orcamento.nota_credito WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM mapoteca.pedido WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM acervo.versao WHERE meta_pit_id = $<id>) +
-         (SELECT COUNT(*) FROM rpcmtec.capacitacao WHERE meta_pit_id = $<id>) +
-         (SELECT COUNT(*) FROM mapoteca.midia_meta_pit WHERE meta_pit_id = $<id>) AS n`,
+         (SELECT COUNT(*) FROM rpcmtec.capacitacao WHERE meta_pit_id = $<id>) AS n`,
       { id }
     )
     if (parseInt(dependentes.n, 10) > 0) {

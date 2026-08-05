@@ -801,9 +801,6 @@ const COBERTAS = new Set([
   // meta 4 quando ela for automatica. Auditado no agregado da META, e nao no
   // dele proprio: a pergunta que se faz deste dado e "por que a 4.1 passou a
   // contar sulfite", e ela se faz na ficha da meta.
-  'POST /metas/midia',
-  'PUT /metas/midia/:id',
-  'DELETE /metas/midia/:id',
   // Exercicio e REVISAO do PIT. A DSG revisa o plano durante a
   // execucao, e alterar o PIT e cancelar, alterar e adicionar meta: as tres
   // caem em `pit.meta_revisao`, dentro da revisao aberta.

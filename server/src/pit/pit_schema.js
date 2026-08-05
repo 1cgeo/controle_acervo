@@ -234,25 +234,6 @@ models.candidatasQuery = Joi.object().keys({
   termo: Joi.string().max(255).allow('')
 })
 
-// --- De-para da mídia impressa para a meta (fonte da meta 4) ----------------
-
-models.midiaQuery = Joi.object().keys({
-  ano: Joi.number().integer()
-})
-
-// O `ano` vem no corpo e TAMBÉM está na meta, e a duplicata é deliberada: a
-// restrição UNIQUE (ano, tipo_midia_id) do banco não enxerga coluna de outra
-// tabela. O controlador confere que os dois casam antes de gravar.
-const midiaMeta = {
-  ano: Joi.number().integer().strict().required(),
-  tipo_midia_id: Joi.number().integer().strict().required(),
-  meta_pit_id: Joi.number().integer().strict().required()
-}
-
-models.criarMidiaMeta = Joi.object().keys({ ...midiaMeta })
-
-models.atualizarMidiaMeta = Joi.object().keys({ ...midiaMeta })
-
 // --- Exercício e revisão do PIT ---------------------------------------------
 
 models.anoParams = Joi.object().keys({

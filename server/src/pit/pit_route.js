@@ -15,7 +15,6 @@ const { verifyLogin, verifyAdmin, verifyGerente } = require('../login')
 const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
 const extraCtrl = require('./pit_extra_ctrl')
-const midiaCtrl = require('./pit_midia_ctrl')
 const revisaoCtrl = require('./pit_revisao_ctrl')
 
 const uploadAnexoRevisao = require('./anexo_revisao_upload')
@@ -347,67 +346,6 @@ router.get(
     const dados = await execucaoCtrl.ensaio(req.query.ano, req.query.meta_id)
 
     return res.sendJsonAndLog(true, 'Ensaio da grade retornado com sucesso', httpCode.OK, dados)
-  })
-)
-
-// ---------------------------------------------------------------------------
-// De-para da MÍDIA impressa para a meta, por ano. É a fonte da meta 4 quando ela
-// for automática, e a razão de não bastar `mapoteca.pedido.meta_pit_id` está no
-// topo de pit_midia_ctrl.js.
-//
-// LER é de qualquer pessoa logada, como o resto do PIT: a mapoteca precisa
-// mostrar a que meta o material atende. ESCREVER é do administrador global, pelo
-// mesmo motivo da meta: errar aqui muda o número que a 2.1 e o EXEC_PIT
-// publicam.
-// ---------------------------------------------------------------------------
-
-router.get(
-  '/midia',
-  verifyLogin,
-  schemaValidation({ query: pitSchema.midiaQuery }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await midiaCtrl.listar(req.query.ano)
-
-    return res.sendJsonAndLog(
-      true, 'De-para de mídia retornado com sucesso', httpCode.OK, dados
-    )
-  })
-)
-
-router.post(
-  '/midia',
-  verifyAdmin,
-  schemaValidation({ body: pitSchema.criarMidiaMeta }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await midiaCtrl.criar(req.body, req.usuarioUuid, req.contexto)
-
-    return res.sendJsonAndLog(
-      true, 'De-para de mídia criado com sucesso', httpCode.Created, dados
-    )
-  })
-)
-
-router.put(
-  '/midia/:id',
-  verifyAdmin,
-  schemaValidation({ params: pitSchema.idParams, body: pitSchema.atualizarMidiaMeta }),
-  asyncHandler(async (req, res, next) => {
-    await midiaCtrl.atualizar(
-      req.params.id, req.body, req.usuarioUuid, req.contexto
-    )
-
-    return res.sendJsonAndLog(true, 'De-para de mídia atualizado com sucesso', httpCode.OK)
-  })
-)
-
-router.delete(
-  '/midia/:id',
-  verifyAdmin,
-  schemaValidation({ params: pitSchema.idParams }),
-  asyncHandler(async (req, res, next) => {
-    await midiaCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
-
-    return res.sendJsonAndLog(true, 'De-para de mídia excluído com sucesso', httpCode.OK)
   })
 )
 
