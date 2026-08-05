@@ -80,7 +80,11 @@ module.exports = {
       globalSetup: '<rootDir>/__tests__/setup.js',
       globalTeardown: '<rootDir>/__tests__/teardown.js',
       // Escolhe o banco DESTE worker antes de qualquer require do config.
-      setupFiles: ['<rootDir>/__tests__/worker_db.js']
+      setupFiles: ['<rootDir>/__tests__/worker_db.js'],
+      // `setupFilesAfterEnv`, e nao `setupFiles`: o `jest` global so existe
+      // depois que o framework carrega. Sem isto, o `afterEach` que limpa o
+      // banco herda o teto de 5 s do Jest, e nao os 30 s do `testTimeout`.
+      setupFilesAfterEnv: ['<rootDir>/__tests__/helpers/timeout_hooks.js']
     }
   ],
   coverageDirectory: '../coverage',

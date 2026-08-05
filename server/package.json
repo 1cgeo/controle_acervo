@@ -20,7 +20,6 @@
   "dependencies": {
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
-    "better-queue": "^3.8.12",
     "bluebird": "^3.7.2",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
@@ -53,10 +52,7 @@
     "supertest": "^7.2.2"
   },
   "overrides": {
-    "better-queue": {
-      "uuid": "$uuid"
-    },
-    "brace-expansion": "^5.0.8",
+    "brace-expansion": "^5.0.9",
     "readdir-glob": {
       "minimatch": "^10.2.5"
     }
