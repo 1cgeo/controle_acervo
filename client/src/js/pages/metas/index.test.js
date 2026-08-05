@@ -23,6 +23,7 @@ vi.mock('@services/plataforma-service.js', async () => {
     listarExercicios: vi.fn(() => Promise.resolve([])),
     listarRevisoes: vi.fn(() => Promise.resolve([])),
     getAlteracoesRevisao: vi.fn(() => Promise.resolve([])),
+    getDiagnosticoPit: vi.fn(() => Promise.resolve([])),
   };
 });
 vi.mock('@components/historico/historico.js', () => ({
@@ -37,7 +38,7 @@ vi.mock('@components/modal/confirm-dialog.js', () => ({
 import { renderPitAno } from '@pages/metas/index.js';
 import {
   getMetasPit, getAnosMetaPit, listarExercicios, listarRevisoes, getAlteracoesRevisao,
-  deleteMetaPit,
+  deleteMetaPit, getDiagnosticoPit,
 } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
@@ -513,6 +514,105 @@ describe('PIT do ano: quem não é administrador', () => {
     expect(rotulos.some((r) => r.includes('Abrir exercício'))).toBe(false);
     expect(rotulos.some((r) => r.includes('Editar exercício'))).toBe(false);
     expect(rotulos.some((r) => r.includes('Publicar'))).toBe(false);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// O AVISO DO CADASTRO. O que ele existe para pegar é um erro SILENCIOSO: numa
+// meta automática o número é contado das entidades ligadas a ela, então esquecer
+// de cadastrar não dá erro, dá ZERO, e zero é indistinguível de "o mês ainda não
+// chegou". O painel é a única coisa que torna isso visível.
+describe('PIT do ano: o aviso do cadastro', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    getAnosMetaPit.mockResolvedValue([ANO]);
+    listarExercicios.mockResolvedValue([]);
+    listarRevisoes.mockResolvedValue([]);
+    getMetasPit.mockResolvedValue([]);
+    getAlteracoesRevisao.mockResolvedValue([]);
+    getDiagnosticoPit.mockResolvedValue([]);
+  });
+
+  const aviso = (container) => container.querySelector('.pit-aviso');
+
+  test('sem nada a dizer, o painel NÃO aparece', async () => {
+    logar({ administrador: true });
+    getDiagnosticoPit.mockResolvedValue([
+      {
+        meta_id: 1, numero_meta: 5, item: '5.1', origem_id: 2, origem: 'Capacitação',
+        quantidade_prevista: 1, previstas: 1, sem_data: 0, registros: 1, faltam: 0,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    // Aviso permanente vira moldura, e moldura não se lê.
+    expect(aviso(container)).toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('conta o que falta cadastrar, e leva à tela que cadastra', async () => {
+    logar({ administrador: true });
+    getDiagnosticoPit.mockResolvedValue([
+      {
+        meta_id: 7, numero_meta: 4, item: '4.1', origem_id: 4, origem: 'Impressão',
+        quantidade_prevista: 327, previstas: 325, sem_data: 0, registros: 10, faltam: 2,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    const texto = aviso(container).textContent;
+    expect(texto).toContain('Meta 4.1');
+    expect(texto).toContain('faltam 2 de 327');
+
+    // O link leva à tela DE SEMPRE, e não a um formulário paralelo do PIT.
+    const link = container.querySelector('.pit-aviso__link');
+    expect(link.getAttribute('href')).toBe('#/mapoteca/pedidos');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A SEGUNDA FALTA, e é a pior das duas: a entidade existe e está ligada, mas
+  // não diz em que mês promete. O total do ano fecha e a curva mensal mente.
+  test('a entidade sem data prevista é acusada mesmo com a conta fechada', async () => {
+    logar({ administrador: true });
+    getDiagnosticoPit.mockResolvedValue([
+      {
+        meta_id: 3, numero_meta: 1, item: '1.3', origem_id: 3, origem: 'Produção',
+        quantidade_prevista: 72, previstas: 0, sem_data: 72, registros: 72, faltam: 72,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    const texto = aviso(container).textContent;
+    expect(texto).toContain('72 sem data prevista');
+    expect(container.querySelector('.pit-aviso__link').getAttribute('href'))
+      .toBe('#/acervo');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A tela LÊ para qualquer pessoa logada, e a rota do diagnóstico é do gerente
+  // para cima. O 403 dela não pode derrubar o PIT inteiro para quem só quer ler.
+  test('o diagnóstico fora do alcance não derruba a tela', async () => {
+    logar({ perfis: { mapoteca: 3 } });
+    getDiagnosticoPit.mockRejectedValue(new Error('sem permissão'));
+    getMetasPit.mockResolvedValue([
+      {
+        id: 1, ano: ANO, numero_meta: 1, item: null, descricao: 'Uma meta',
+        quantidade_prevista: 10,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    expect(aviso(container)).toBeNull();
+    expect(container.querySelectorAll('tbody tr').length).toBe(1);
 
     if (typeof cleanup === 'function') cleanup();
   });

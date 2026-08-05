@@ -132,7 +132,16 @@ const capacitacao = {
   // Meta do PIT que esta capacitação cumpre. ANULÁVEL, e a maioria
   // fica nula: em 2026 o PIT só promete capacitação MINISTRADA (a meta 5), e as
   // Recebidas não têm meta que as prometa. Exigir uma inventaria compromisso.
-  meta_pit_id: Joi.number().integer().strict().allow(null)
+  meta_pit_id: Joi.number().integer().strict().allow(null),
+  // O mês em que esta capacitação PROMETE terminar, e de onde a grade do PIT
+  // tira o PLANEJADO. Antes o planejado saía de `data_fim`, e concluir com
+  // atraso movia o mês que a capacitação havia planejado.
+  //
+  // SEM `.default(...)`, e isso é regra e não descuido: o controlador distingue
+  // "chave ausente" (preserva o gravado) de "null explícito" (apaga), e um
+  // default injetaria a chave e mataria a preservação. É a mesma cobrança que
+  // vale para `meta_pit_id`, e os dois formam o vínculo com o PIT.
+  data_prevista: Joi.date().iso().raw().allow(null)
 }
 
 models.criarCapacitacao = Joi.object().keys({ ...capacitacao })

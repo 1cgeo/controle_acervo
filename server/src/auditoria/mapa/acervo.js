@@ -108,6 +108,10 @@ module.exports = {
       data_criacao: { rotulo: 'Data de criação', tipo: 'data' },
       // Dia de calendario, e e ela que conta produto entregue no MES.
       data_edicao: { rotulo: 'Data de edição', tipo: 'data' },
+      // O mes PROMETIDO, de onde sai o planejado do PIT. Mexer nela move a
+      // coluna com que o realizado se compara, entao ela precisa de rastro
+      // nomeado tanto quanto a `meta_pit_id` acima.
+      data_prevista: { rotulo: 'Data prevista', tipo: 'data' },
       palavras_chave: { rotulo: 'Palavras-chave', tipo: 'lista' },
       descricao: { rotulo: 'Descrição' },
       metadado: { rotulo: 'Metadado' },

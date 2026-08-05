@@ -28,7 +28,12 @@ export const TIPOS_CLIENTE_MILITAR = [1, 2, 3];
 
 // Campos que só o pedido militar usa: demandante, OMDS, operação e o vínculo
 // com o PIT. Em pedido civil eles ficam vazios.
-const CAMPOS_SO_MILITAR = ['demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit_id'];
+const CAMPOS_SO_MILITAR = [
+  'demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit_id',
+  // A data prevista acompanha a meta: ela só existe para dizer em que mês o
+  // pedido entra no planejado do PIT, e pedido civil não cumpre meta.
+  'data_prevista',
+];
 
 // Campos que só o pedido de civil usa. Canal de recebimento preenchido em 33 de
 // 33 civis e 0 de 100 militares (mesma medição).
@@ -158,6 +163,7 @@ export function createPedidoFormFields({
     prazo: createDateField({
       label: 'Prazo',
       value: isoDateOrEmpty(pedido && pedido.prazo),
+      helpText: 'O limite que o CLIENTE impôs. Não confunda com a data prevista, que é o mês em que nós planejamos imprimir.',
     }),
     documento_solicitacao: createTextField({
       label: 'Documento de solicitação (DIEx/Ofício)',
@@ -223,6 +229,21 @@ export function createPedidoFormFields({
       options: (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) })),
       value: (pedido && pedido.meta_pit_id) || undefined,
       placeholder: 'Selecione a meta...',
+    }),
+    // O MÊS EM QUE NÓS PROMETEMOS IMPRIMIR, e é daqui que sai o PLANEJADO da
+    // meta 4 do PIT: a soma dos itens dos pedidos ligados à meta, agrupada por
+    // este mês.
+    //
+    // NÃO é o `prazo` acima, que é o limite do cliente. Medido em 2026-08-05:
+    // `prazo` estava preenchido em 33 dos 164 pedidos e em NENHUM dos 16 ligados
+    // a meta, ou seja, os dois campos nunca foram a mesma coisa.
+    //
+    // Fica ao lado da meta, e não das outras datas, porque só faz sentido junto
+    // dela: pedido sem meta não entra em plano nenhum.
+    data_prevista: createDateField({
+      label: 'Data prevista de impressão',
+      value: isoDateOrEmpty(pedido && pedido.data_prevista),
+      helpText: 'O mês em que NÓS planejamos imprimir. É daqui que sai o planejado do PIT.',
     }),
     endereco_entrega: createTextareaField({
       label: 'Endereço de entrega',
@@ -309,6 +330,7 @@ export function createPedidoFormFields({
     fields.localizador_envio.element,
     fields.previsto_pit.element,
     fields.meta_pit_id.element,
+    fields.data_prevista.element,
     fields.endereco_entrega.element,
     fields.palavras_chave.element,
     fields.observacao_envio.element,
@@ -402,6 +424,7 @@ export function createPedidoFormFields({
       omds: orNull(fields.omds.getValue()),
       previsto_pit: fields.previsto_pit.getValue(),
       meta_pit_id: fields.meta_pit_id.getValue(),
+      data_prevista: fields.data_prevista.getValue() || null,
       observacao: orNull(fields.observacao.getValue()),
       forma_entrega_id: fields.forma_entrega_id.getValue(),
       localizador_envio: orNull(fields.localizador_envio.getValue()),

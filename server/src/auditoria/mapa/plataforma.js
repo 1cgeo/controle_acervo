@@ -364,7 +364,10 @@ module.exports = {
       // quando a meta declara origem Capacitação, então é dos campos que mais
       // pedem rastro legível. Sem a declaração ele saía no fim da lista, com o
       // nome cru da coluna e sem o link para a ficha da meta.
-      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' }
+      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      // O MES PROMETIDO, de onde a grade tira o planejado. Anda com o campo
+      // acima, e mexer nela move a coluna com que o realizado se compara.
+      data_prevista: { rotulo: 'Data prevista', tipo: 'data' }
     }
   },
 

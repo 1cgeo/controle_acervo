@@ -39,6 +39,9 @@ module.exports = {
       qtd_imagens: { rotulo: 'Quantidade de imagens', tipo: 'numero' },
       previsto_pit: { rotulo: 'Previsto no PIT', tipo: 'booleano' },
       meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      // O mes PROMETIDO para imprimir, de onde sai o planejado da meta 4 do
+      // PIT. Distinto do `prazo` acima, que e o limite do cliente.
+      data_prevista: { rotulo: 'Data prevista', tipo: 'data' },
       palavras_chave: { rotulo: 'Palavras-chave', tipo: 'lista' },
       observacao: { rotulo: 'Observação' },
       observacao_envio: { rotulo: 'Observação de envio' },

@@ -265,7 +265,15 @@ SELECT m.id, m.ano, m.numero_meta, m.item, m.unidade_id, m.origem_id,
        m.data_modificacao, m.usuario_modificacao_uuid
 FROM pit.meta m
 LEFT JOIN dominio.unidade_meta u ON u.code = m.unidade_id
-LEFT JOIN LATERAL (
+-- INNER, e nao LEFT. A meta que revisao PUBLICADA nenhuma declarou ainda nao
+-- esta no plano: ela nao e uma meta de valores desconhecidos, e uma meta que nao
+-- existe. Com LEFT ela saia da view com tudo nulo, uma linha em branco no PIT do
+-- ano. Foi o que aconteceu com os itens 1.9, 1.10 e 1.11 de 2026, que sairam da
+-- R0 (onde estavam por erro de transcricao) e foram para o rascunho da R2.
+--
+-- Isso tambem mata um remendo: a meta 6.9 de 2026 teve de entrar no R0 marcada
+-- `cancelada` por nao haver como deixa-la AUSENTE. Agora ausente e o caminho.
+INNER JOIN LATERAL (
   SELECT x.* FROM pit.meta_revisao x
   INNER JOIN pit.revisao rr ON rr.id = x.revisao_id
   WHERE x.meta_id = m.id AND rr.data_vigencia IS NOT NULL
@@ -275,7 +283,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN pit.revisao r ON r.id = mr.revisao_id;
 
 COMMENT ON VIEW pit.meta_vigente IS
-    'A meta com a promessa da revisão em vigor hoje. Rascunho (data_vigencia nula) não entra: ele ainda não rege nada.';
+    'A meta com a promessa da revisão em vigor hoje. Rascunho não entra, e meta que revisão publicada nenhuma declarou também não: ela ainda não está no plano.';
 
 -- A mesma coisa NUMA DATA, que é o que o RPCMTec de um mês precisa: a edição de
 -- março reporta contra a revisão que vigia em março, e não contra a de hoje. É
@@ -292,7 +300,9 @@ RETURNS TABLE (
          mr.cancelada, mr.revisao_id, r.codigo
   FROM pit.meta m
   LEFT JOIN dominio.unidade_meta u ON u.code = m.unidade_id
-  LEFT JOIN LATERAL (
+  -- INNER pela mesma razao da view acima: a meta que nao havia sido declarada
+  -- NAQUELA data nao disse nada, e o relatorio daquele mes nao pode reporta-la.
+  INNER JOIN LATERAL (
     SELECT x.* FROM pit.meta_revisao x
     INNER JOIN pit.revisao rr ON rr.id = x.revisao_id
     WHERE x.meta_id = m.id
@@ -305,7 +315,7 @@ RETURNS TABLE (
 $$ LANGUAGE SQL STABLE;
 
 COMMENT ON FUNCTION pit.meta_em(DATE) IS
-    'A meta com a promessa que vigia na data pedida. A meta ainda não declarada naquela data sai com quantidade nula.';
+    'A meta com a promessa que vigia na data pedida. A meta ainda não declarada por revisão publicada naquela data NÃO sai: ela não estava no plano.';
 
 -- O MÊS de uma meta: o que ela PLANEJOU entregar e o que ENTREGOU.
 --
@@ -332,16 +342,18 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- O REALIZADO PODE PASSAR DO PLANEJADO, e passa: a meta 4.1 de 2026 planejou
 -- 327 e já entregou mais de cinco mil. Não há teto em lugar nenhum.
 --
--- LANÇAMENTO À MÃO, para TODA meta. No SAP a régua era
--- `lote_id IS NULL`: meta de produção tinha o realizado calculado das
--- atividades, e só o resto se digitava. Aqui não existe essa régua, porque
--- enquanto o SAP não for absorvido não há de onde calcular.
+-- LANÇAMENTO À MÃO SÓ NA META MANUAL. A meta declara em `pit.meta.origem_id` de
+-- onde vem o seu número, e as três origens calculadas (Capacitação, Produção,
+-- Impressão) não gravam nada aqui: os dois números são CONTADOS na leitura, das
+-- entidades que cumprem a meta. Escrever nelas é recusado com 400.
 --
--- O CUSTO ESTÁ ACEITO, e vale escrever: a meta 4 (impressão) o SCA JÁ sabe
--- somar, porque `mapoteca.pedido.meta_pit_id` liga o pedido à meta e é disso
--- que sai o META4_DETALHADA do RTM. O número digitado aqui e o número calculado
--- lá podem divergir, e quando divergirem a 2.1 e o RTM do mesmo mês vão se
--- contradizer.
+-- CADA NÚMERO TEM A SUA DATA, e nenhuma origem usa a mesma para os dois. O
+-- planejado sai da promessa (`acervo.versao.data_prevista`,
+-- `rpcmtec.capacitacao.data_prevista`, `mapoteca.pedido.data_prevista`) e o
+-- realizado sai do fato (`data_edicao`, `data_fim`, `data_atendimento`).
+-- Enquanto os dois saíam da mesma data, o plano era reescrito pelo que
+-- aconteceu: a meta 1.3 prometia 48 folhas em agosto e a grade mostrava 49 em
+-- junho, que foi quando o lote terminou.
 --
 -- O NOME `execucao` FICA, embora a tabela guarde as duas coisas. Renomeá-la
 -- orfanaria o rastro: `auditoria.evento` guarda o nome da

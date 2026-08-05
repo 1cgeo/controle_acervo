@@ -94,6 +94,19 @@ const pedidoBase = {
     then: Joi.number().integer().strict().required(),
     otherwise: Joi.number().integer().strict().allow(null)
   }),
+  // O mês em que este pedido PROMETE ser impresso. É de onde sai o PLANEJADO da
+  // meta 4 do PIT: a soma dos itens dos pedidos ligados à meta, pelo mês daqui.
+  //
+  // DISTINTO DE `prazo`, que é o limite imposto pelo CLIENTE. Medido em
+  // 2026-08-05: `prazo` estava preenchido em 33 dos 164 pedidos e em nenhum dos
+  // 16 ligados a meta, ou seja, os dois campos nunca foram a mesma coisa.
+  //
+  // NÃO é obrigatório quando `previsto_pit`, ao contrário de `meta_pit_id`. O
+  // pedido que chega de um cliente real e por acaso cumpre meta é cadastrado no
+  // meio do ano, já com data de pedido: forçar uma promessa retroativa ali faria
+  // inventar mês. Quem cobra a ausência é o diagnóstico do PIT, que a MOSTRA em
+  // vez de recusar o cadastro.
+  data_prevista: Joi.date().iso().raw().allow(null),
   // Campos de pedido de CIVIL (opcionais; NULL para OM)
   canal_recebimento_id: Joi.number().integer().valid(...Object.values(CANAL_RECEBIMENTO)).allow(null),
   municipio: Joi.string().max(255).allow(null, ''),

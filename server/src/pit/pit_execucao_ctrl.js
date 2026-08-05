@@ -23,7 +23,7 @@ const { db } = require('../database')
 const {
   AppError,
   httpCode,
-  domainConstants: { TIPO_VERSAO, SITUACAO_CAPACITACAO }
+  domainConstants: { TIPO_VERSAO, SITUACAO_CAPACITACAO, SITUACAO_PEDIDO }
 } = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
@@ -57,25 +57,34 @@ const EH_FOLHA = `(
 // hora da leitura. Nada e gravado: dado derivado que se grava vira segunda
 // verdade no primeiro que editar a copia a mao.
 //
-// QUAL COLUNA CADA ORIGEM SABE PROVAR, e esta e a parte que nao se adivinha:
+// O PLANEJADO SAI DA ENTIDADE PLANEJADA, E O REALIZADO SAI DO FATO. Cada uma
+// das tres origens tem DUAS datas, e nunca a mesma para os dois numeros:
 //
-//   Capacitacao (2)  as duas. Prevista, Em execucao e Concluida entram no
-//                    planejado; so Concluida entra no realizado; Cancelada nao
-//                    entra em nenhum. O mes e `data_fim` nos dois casos, e essa
-//                    e a imperfeicao conhecida: a capacitacao nao tem data
-//                    prevista propria, entao concluir com atraso MOVE o mes que
-//                    ela havia planejado.
+//   Capacitacao (2)  planejado por `capacitacao.data_prevista`, tudo menos a
+//                    Cancelada; realizado por `data_fim`, so a Concluida.
 //
-//   Producao (3)     as duas. O realizado conta a versao que ja e Regular, no
-//                    mes de `data_edicao`; o planejado conta TODA versao ligada
-//                    a meta cujo lote tem `data_fim_prevista`, no mes dela, e
-//                    inclui de proposito a que ja virou Regular: plano nao
-//                    encolhe quando se cumpre.
+//   Producao (3)     planejado por `versao.data_prevista`; realizado por
+//                    `versao.data_edicao`, so a que ja e Regular. O planejado
+//                    inclui de proposito a versao que ja virou Regular: plano
+//                    nao encolhe quando se cumpre, e `data_prevista` nao e
+//                    sobrescrita na virada.
 //
-//   Impressao (4)    so o REALIZADO. A mapoteca nao planeja: a impressao e
-//                    puxada por demanda. O PLANEJADO dela vem de `pit.execucao`,
-//                    digitado da PLANEJ_PIT, porque nao existe no sistema quem
-//                    o prove.
+//   Impressao (4)    planejado pela soma de `produto_pedido.quantidade` dos
+//                    pedidos ligados a meta, no mes de `pedido.data_prevista`,
+//                    fora o Cancelado; realizado pela MIDIA que saiu, no mes de
+//                    `pedido.data_atendimento`.
+//
+// AS DUAS FONTES DA IMPRESSAO SAO DELIBERADAS, e nao um resto de transicao. O
+// prometido esta no ITEM do pedido que aponta a meta, e o entregue esta na midia
+// pelo de-para de `mapoteca.midia_meta_pit`. Sao duas perguntas diferentes:
+// somar o realizado pelo pedido derrubaria a 4.1 de 5.664 folhas para 253, e
+// daria 199 folhas de tyvek na 4.2 num ano em que nenhuma saiu em tyvek.
+//
+// POR QUE O PLANEJADO DEIXOU DE VIR DO LOTE (medido em 2026-08-05). Ele saia de
+// `acervo.lote.data_fim_prevista`, e nos 19 lotes que a tem ela e IGUAL a
+// `data_fim`: a previsao era preenchida no fim, junto com o fato. A meta 1.3
+// prometia 48 folhas em agosto e a grade mostrava 49 em JUNHO, porque foi em
+// junho que o lote terminou. O plano nao sumia, era reescrito pelo fato.
 //
 // O CALCULO NAO OLHA `origem_id`, de proposito. Ele conta para TODA meta que
 // tenha vinculo, e quem escolhe entre o calculado e o digitado e a consulta que
@@ -100,21 +109,25 @@ const CELULAS_CALCULADAS = `
 
     UNION ALL
 
-    -- Producao, planejado: o mes prometido pelo LOTE da versao.
+    -- Producao, planejado: o mes que a PROPRIA versao promete.
+    --
+    -- Nao filtra por tipo de versao, de proposito. A Planejada conta porque e o
+    -- plano; a que ja virou Regular tambem, porque plano nao encolhe quando se
+    -- cumpre, e a data prevista sobrevive a virada justamente para isso.
+    -- (Sem crase neste comentario: ele vive dentro de um template literal.)
     SELECT v.meta_pit_id,
-           EXTRACT(MONTH FROM l.data_fim_prevista)::smallint,
+           EXTRACT(MONTH FROM v.data_prevista)::smallint,
            count(*)::int,
            NULL::int
     FROM acervo.versao AS v
-    INNER JOIN acervo.lote AS l ON l.id = v.lote_id
     INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
-    WHERE l.data_fim_prevista IS NOT NULL
-      AND EXTRACT(YEAR FROM l.data_fim_prevista) = mm.ano
+    WHERE v.data_prevista IS NOT NULL
+      AND EXTRACT(YEAR FROM v.data_prevista) = mm.ano
     GROUP BY 1, 2
 
     UNION ALL
 
-    -- Capacitacao, realizado: so a Concluida.
+    -- Capacitacao, realizado: so a Concluida, no mes em que terminou.
     SELECT cap.meta_pit_id,
            EXTRACT(MONTH FROM cap.data_fim)::smallint,
            NULL::int,
@@ -127,15 +140,39 @@ const CELULAS_CALCULADAS = `
 
     UNION ALL
 
-    -- Capacitacao, planejado: tudo menos a Cancelada.
+    -- Capacitacao, planejado: tudo menos a Cancelada, no mes PROMETIDO.
+    --
+    -- O mes vem da data prevista, e nao da data de fim: enquanto os dois numeros
+    -- saiam da mesma data, concluir com atraso movia o mes que a capacitacao
+    -- havia planejado, e o plano seguia o fato.
     SELECT cap.meta_pit_id,
-           EXTRACT(MONTH FROM cap.data_fim)::smallint,
+           EXTRACT(MONTH FROM cap.data_prevista)::smallint,
            count(*)::int,
            NULL::int
     FROM rpcmtec.capacitacao AS cap
     INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
-    WHERE cap.data_fim IS NOT NULL AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
-      AND cap.ano = mm.ano
+    WHERE cap.data_prevista IS NOT NULL
+      AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
+      AND EXTRACT(YEAR FROM cap.data_prevista) = mm.ano
+    GROUP BY 1, 2
+
+    UNION ALL
+
+    -- Impressao, planejado: folha PROMETIDA, pelo pedido que aponta a meta.
+    --
+    -- A quantidade PEDIDA, e nao a fornecida: aqui se conta o que se prometeu
+    -- imprimir, e a fornecida so existe depois de imprimir. O Cancelado sai,
+    -- porque pedido cancelado deixou de ser plano.
+    SELECT p.meta_pit_id,
+           EXTRACT(MONTH FROM p.data_prevista)::smallint,
+           SUM(pp.quantidade)::int,
+           NULL::int
+    FROM mapoteca.pedido AS p
+    INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
+    INNER JOIN pit.meta AS mm ON mm.id = p.meta_pit_id
+    WHERE p.data_prevista IS NOT NULL
+      AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
+      AND EXTRACT(YEAR FROM p.data_prevista) = mm.ano
     GROUP BY 1, 2
 
     UNION ALL
@@ -143,6 +180,11 @@ const CELULAS_CALCULADAS = `
     -- Impressao, realizado: folha ENTREGUE, pela midia que saiu, somada pelo
     -- de-para do ano. A quantidade FORNECIDA manda sobre a pedida porque o que a
     -- meta conta e o que saiu. (Sem crase aqui: template literal.)
+    --
+    -- POR MIDIA, e nao pelo pedido que o planejado acima usa. Sao duas perguntas:
+    -- o pedido guarda o que se prometeu e a midia guarda o que saiu. Somar o
+    -- realizado pelo pedido daria 253 folhas na 4.1 de 2026, onde o RTM publica
+    -- 5.664, e daria 199 na 4.2 num ano em que nenhuma folha saiu em tyvek.
     SELECT dm.meta_pit_id,
            EXTRACT(MONTH FROM p.data_atendimento)::smallint,
            NULL::int,
@@ -165,7 +207,14 @@ const CELULAS_CALCULADAS = `
 // `salvar()` le as MESMAS listas: enquanto ela repetia [2, 3] e [2, 3, 4] a mao,
 // acrescentar uma origem calculada faria a leitura ignorar o digitado e a
 // escrita continuar aceitando-o, sem erro nenhum entre as duas.
-const ORIGENS_CALCULAM_PLANEJADA = [ORIGEM_META.CAPACITACAO, ORIGEM_META.PRODUCAO]
+//
+// AS TRES CALCULAM AS DUAS COLUNAS desde 2026-08-05. A impressao entrou no
+// planejado quando `mapoteca.pedido.data_prevista` passou a existir: antes dela
+// a mapoteca nao tinha como dizer em que mes prometia imprimir, e o planejado da
+// meta 4 ficava digitado da PLANEJ_PIT.
+const ORIGENS_CALCULAM_PLANEJADA = [
+  ORIGEM_META.CAPACITACAO, ORIGEM_META.PRODUCAO, ORIGEM_META.IMPRESSAO
+]
 const ORIGENS_CALCULAM_REALIZADA = [
   ORIGEM_META.CAPACITACAO, ORIGEM_META.PRODUCAO, ORIGEM_META.IMPRESSAO
 ]
@@ -370,6 +419,113 @@ controller.listarDaMeta = async metaId => {
   )
 }
 
+// O que cada origem conta como ENTIDADE PLANEJADA, e por qual coluna. Uma
+// consulta por origem, unidas: as tres moram em schemas diferentes e nenhuma
+// junta com as outras.
+//
+// A UNIDADE MUDA POR ORIGEM, e e por isso que `previstas` nao e sempre count(*).
+// A versao vale UMA folha e a capacitacao vale UMA capacitacao, entao ali a
+// conta e contar linhas. O pedido vale o que ele PEDE, entao ali a conta e somar
+// `produto_pedido.quantidade`: um pedido de 121 folhas e uma linha e cento e
+// vinte e uma unidades da meta. Contar pedidos daria 10 onde a meta promete 327.
+const ENTIDADES_PLANEJADAS = `
+  SELECT meta_id,
+         SUM(previstas)::int AS previstas,
+         SUM(sem_data)::int AS sem_data,
+         SUM(registros)::int AS registros
+  FROM (
+    -- Producao: uma versao vale uma folha.
+    SELECT v.meta_pit_id AS meta_id,
+           count(*) FILTER (WHERE v.data_prevista IS NOT NULL)::int AS previstas,
+           count(*) FILTER (WHERE v.data_prevista IS NULL)::int AS sem_data,
+           count(*)::int AS registros
+    FROM acervo.versao AS v
+    WHERE v.meta_pit_id IS NOT NULL
+    GROUP BY 1
+
+    UNION ALL
+
+    -- Capacitacao: uma capacitacao vale uma unidade. A Cancelada nao conta, pelo
+    -- mesmo motivo que ela nao entra no planejado da grade.
+    SELECT cap.meta_pit_id,
+           count(*) FILTER (WHERE cap.data_prevista IS NOT NULL)::int,
+           count(*) FILTER (WHERE cap.data_prevista IS NULL)::int,
+           count(*)::int
+    FROM rpcmtec.capacitacao AS cap
+    WHERE cap.meta_pit_id IS NOT NULL
+      AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
+    GROUP BY 1
+
+    UNION ALL
+
+    -- Impressao: o pedido vale o que ele PEDE, somando os itens.
+    SELECT p.meta_pit_id,
+           COALESCE(SUM(pp.quantidade) FILTER (WHERE p.data_prevista IS NOT NULL), 0)::int,
+           COALESCE(SUM(pp.quantidade) FILTER (WHERE p.data_prevista IS NULL), 0)::int,
+           count(DISTINCT p.id)::int
+    FROM mapoteca.pedido AS p
+    LEFT JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
+    WHERE p.meta_pit_id IS NOT NULL
+      AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
+    GROUP BY 1
+  ) AS x
+  GROUP BY meta_id
+`
+
+/**
+ * O DIAGNÓSTICO do cadastro do PIT: o que a meta automática promete contra o que
+ * existe cadastrado para cumpri-la.
+ *
+ * POR QUE ELE EXISTE. Numa meta automática o número não se digita: ele é contado
+ * das versões, das capacitações e dos pedidos ligados a ela. A consequência é
+ * que ESQUECER de cadastrar a entidade não dá erro nenhum, dá ZERO. E zero na
+ * grade é indistinguível de "o mês ainda não chegou". O erro fica invisível
+ * justamente onde ninguém o procura, que é no plano do ano.
+ *
+ * Medido em 2026-08-05, antes desta rota existir: a meta 4.1 prometia 327 folhas
+ * e tinha 325 nos pedidos, a 4.2 prometia 252 e tinha 229, e as metas 1.3 e 1.4
+ * tinham as 74 versões ligadas e nenhuma com data prevista.
+ *
+ * SÓ A FOLHA ENTRA. O cabeçalho de meta subdividida não recebe lançamento nem
+ * cadastro próprio, e cobrar entidade dele acusaria o trabalho dos itens como se
+ * faltasse duas vezes.
+ *
+ * A META MANUAL FICA DE FORA, e não por descuido: ela não tem entidade que a
+ * cumpra, e o número dela é o lançamento. Cobrar cadastro ali seria inventar
+ * regra que o PIT não tem.
+ */
+controller.diagnostico = async ano => {
+  return db.conn.any(
+    `WITH calculada AS (${CELULAS_CALCULADAS}), entidade AS (${ENTIDADES_PLANEJADAS})
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+            m.unidade, m.quantidade_prevista,
+            m.origem_id,
+            (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
+            COALESCE(en.previstas, 0) AS previstas,
+            COALESCE(en.sem_data, 0) AS sem_data,
+            COALESCE(en.registros, 0) AS registros,
+            COALESCE(cal.planejado, 0) AS planejado_calculado,
+            -- O QUE FALTA CADASTRAR, ja em numero, para a tela nao ter de fazer
+            -- a conta e chegar noutro valor. Nunca negativo: cadastrar A MAIS do
+            -- que o PIT promete tambem e divergencia, e quem a mostra e o
+            -- proprio par (prometido, previstas), nao um numero que fica
+            -- negativo e confunde.
+            GREATEST(COALESCE(m.quantidade_prevista, 0) - COALESCE(en.previstas, 0), 0) AS faltam
+     FROM pit.meta_vigente AS m
+     LEFT JOIN entidade AS en ON en.meta_id = m.id
+     LEFT JOIN LATERAL (
+       SELECT SUM(c.soma_planejada)::int AS planejado
+       FROM calculada AS c WHERE c.meta_id = m.id
+     ) AS cal ON TRUE
+     WHERE m.ano = $<ano>
+       AND m.cancelada IS NOT TRUE
+       AND m.origem_id <> ${ORIGEM_META.MANUAL}
+       AND ${EH_FOLHA}
+     ORDER BY m.numero_meta, m.item NULLS FIRST`,
+    { ano }
+  )
+}
+
 /**
  * O ENSAIO: o digitado e o calculado lado a lado, sem escrever nada.
  *
@@ -453,9 +609,10 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
     // `pit.execucao` e a leitura o ignoraria: o cliente veria 200 e o valor não
     // mudaria na tela, sem erro nenhum. É pior do que recusar, porque some.
     //
-    // A recusa é POR COLUNA, e não pela meta inteira: a meta de Impressão
-    // calcula só o realizado, e o planejado dela continua sendo digitado da
-    // PLANEJ_PIT, porque a mapoteca não planeja nada.
+    // A recusa é POR COLUNA, e não pela meta inteira. Hoje as três origens
+    // calculam as duas colunas, então a distinção não muda nada na prática; ela
+    // fica porque a próxima origem a entrar pode saber provar só uma, como a
+    // Impressão sabia até `mapoteca.pedido.data_prevista` existir.
     const rotuloMeta = `Meta ${meta.numero_meta}${meta.item ? ` (item ${meta.item})` : ''}`
     const calculadas = []
     if (ORIGENS_CALCULAM_PLANEJADA.includes(meta.origem_id) && 'quantidade_planejada' in dados) {

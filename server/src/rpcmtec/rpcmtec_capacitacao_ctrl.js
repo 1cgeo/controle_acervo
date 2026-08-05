@@ -34,8 +34,9 @@ const controller = {}
 const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
   c.situacao_id, s.nome AS situacao, c.instituicoes, c.local_realizacao,
   c.data_inicio::text AS data_inicio, c.data_fim::text AS data_fim,
+  c.data_prevista::text AS data_prevista,
   c.efetivo_capacitado, c.plano_codigo, c.documento,
-  c.meta_pit_id, mp.item AS meta_pit_item,
+  c.meta_pit_id, mp.item AS meta_pit_item, mp.numero_meta AS meta_pit_numero,
   COALESCE(mil.lista, '[]'::json) AS militares,
   c.data_cadastramento, c.usuario_cadastramento_uuid,
   c.data_modificacao, c.usuario_modificacao_uuid`
@@ -130,7 +131,13 @@ controller.anos = async () => {
 const nulo = v => (v === undefined || v === '' ? null : v)
 
 /**
- * O vínculo com a meta do PIT que o UPDATE deve gravar.
+ * O vínculo com o PIT que o UPDATE deve gravar: a meta e o mês prometido.
+ *
+ * OS DOIS CAMPOS ANDAM JUNTOS, e por isso a mesma regra vale para os dois.
+ * `meta_pit_id` diz QUAL meta a capacitação cumpre e `data_prevista` diz em que
+ * mês ela promete terminar, que é de onde a grade tira o planejado. Preservar um
+ * e apagar o outro deixaria a capacitação ligada à meta sem mês, que conta zero
+ * no plano e não acusa nada.
  *
  * A CHAVE AUSENTE PRESERVA, o `null` explícito desliga. São coisas diferentes,
  * e tratá-las igual apagava o vínculo em silêncio: o formulário da tela não tem
@@ -150,10 +157,11 @@ const nulo = v => (v === undefined || v === '' ? null : v)
  *
  * @param {Object} dados - o corpo já validado
  * @param {Object} antes - a linha como está no banco
- * @returns {number|null} o valor a gravar
+ * @param {string} campo - o nome da coluna
+ * @returns {*} o valor a gravar
  */
-const metaPitParaGravar = (dados, antes) =>
-  dados.meta_pit_id === undefined ? antes.meta_pit_id : nulo(dados.meta_pit_id)
+const preservarSeAusente = (dados, antes, campo) =>
+  dados[campo] === undefined ? antes[campo] : nulo(dados[campo])
 
 const paraBanco = (dados, usuarioUuid) => ({
   ano: dados.ano,
@@ -168,6 +176,7 @@ const paraBanco = (dados, usuarioUuid) => ({
   planoCodigo: nulo(dados.plano_codigo),
   documento: nulo(dados.documento),
   metaPitId: nulo(dados.meta_pit_id),
+  dataPrevista: nulo(dados.data_prevista),
   usuarioUuid
 })
 
@@ -242,10 +251,10 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       `INSERT INTO rpcmtec.capacitacao
          (ano, nome, tipo_id, situacao_id, instituicoes, local_realizacao,
           data_inicio, data_fim, efetivo_capacitado, plano_codigo,
-          documento, meta_pit_id, usuario_cadastramento_uuid)
+          documento, meta_pit_id, data_prevista, usuario_cadastramento_uuid)
        VALUES ($<ano>, $<nome>, $<tipoId>, $<situacaoId>, $<instituicoes>, $<localRealizacao>,
                $<dataInicio>, $<dataFim>, $<efetivoCapacitado>, $<planoCodigo>,
-               $<documento>, $<metaPitId>, $<usuarioUuid>)
+               $<documento>, $<metaPitId>, $<dataPrevista>, $<usuarioUuid>)
        RETURNING *`,
       paraBanco(dados, usuarioUuid)
     )
@@ -284,16 +293,17 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            data_inicio = $<dataInicio>, data_fim = $<dataFim>,
            efetivo_capacitado = $<efetivoCapacitado>,
            plano_codigo = $<planoCodigo>, documento = $<documento>,
-           meta_pit_id = $<metaPitId>,
+           meta_pit_id = $<metaPitId>, data_prevista = $<dataPrevista>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,
       {
         ...paraBanco(dados, usuarioUuid),
-        // O ÚNICO campo que a ausência preserva em vez de apagar. Ver
-        // `metaPitParaGravar`: a tela não manda a chave, e o UPDATE escreve a
-        // coluna inteira a cada salvamento.
-        metaPitId: metaPitParaGravar(dados, antes),
+        // Os DOIS campos que a ausência preserva em vez de apagar. Ver
+        // `preservarSeAusente`: a tela pode não mandar a chave, e o UPDATE
+        // escreve a coluna inteira a cada salvamento.
+        metaPitId: preservarSeAusente(dados, antes, 'meta_pit_id'),
+        dataPrevista: preservarSeAusente(dados, antes, 'data_prevista'),
         id,
         dataModificacao: new Date()
       }

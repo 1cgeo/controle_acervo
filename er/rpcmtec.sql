@@ -207,6 +207,16 @@ CREATE TABLE rpcmtec.capacitacao(
   -- MINISTRADA (a meta 5): as Recebidas (pós-graduação, curso de SARP, ISO 9001)
   -- não têm meta que as prometa, e forçar uma inventaria compromisso.
   meta_pit_id BIGINT REFERENCES pit.meta (id),
+  -- O MES EM QUE ESTA CAPACITACAO PROMETE TERMINAR, e de onde sai o PLANEJADO
+  -- do PIT.
+  --
+  -- COLUNA PROPRIA, e nao `data_fim`. Enquanto os dois numeros saiam da mesma
+  -- data, concluir com atraso MOVIA o mes que a capacitacao havia planejado: o
+  -- plano seguia o fato, que e o contrario do que um plano faz.
+  --
+  -- ANULAVEL: capacitacao que nao cumpre meta nao promete mes. Na que cumpre, a
+  -- ausencia e erro de cadastro do PIT, e GET /pit/execucao/diagnostico acusa.
+  data_prevista DATE,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,

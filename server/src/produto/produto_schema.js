@@ -95,7 +95,19 @@ models.versaoAtualizacao = Joi.object().keys({
   palavras_chave: Joi.array().items(Joi.string()).allow(null),
   data_criacao: dataCalendario().required(),
   // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
-  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
+  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+  // O mês em que esta versão PROMETE ficar pronta, e de onde sai o PLANEJADO da
+  // grade do PIT.
+  //
+  // MESMAS REGRAS DO `meta_pit_id`, e pelo mesmo motivo: ausente preserva, null
+  // apaga. Os dois andam juntos, e o cliente que conhece um e não o outro
+  // apagaria metade do vínculo.
+  //
+  // SEM `.min(Joi.ref('data_criacao'))`, ao contrário de `data_edicao`. Ela é a
+  // PROMESSA, e prometer para antes de a versão ter sido criada é atraso, não
+  // erro de digitação: o PIT prometeu abril e o trabalho começou em maio. O
+  // banco não tem CHECK aqui pela mesma razão.
+  data_prevista: dataCalendario().allow(null)
 });
 
 models.produtoIds = Joi.object().keys({
@@ -205,60 +217,93 @@ models.versaoRelacionamentoIds = Joi.object().keys({
     .min(1)
 });
 
-// .required().min(1) no ARRAY (no objeto-item, min(1) validaria número de chaves
+// O VINCULO COM O PLANO ANUAL, aceito nas DUAS rotas de criacao sem arquivo.
+//
+// ELE FALTAVA, e o efeito era silencioso: o formulario de versao ja oferecia os
+// tres campos e o `schemaValidation` tolerante os DESCARTAVA. A pessoa escolhia
+// a meta, recebia 201, e a versao nascia fora da conta do PIT. O descarte ia
+// para o log e para os "avisos" do envelope, que ninguem le num 201.
+//
+// AS DUAS ROTAS, e nao so a planejada. A tentacao era restringir o registro
+// historico ("o passado nao promete mes"), mas isso ESTREITA o que o time ja
+// tinha decidido: os casos de `versao-dialog.test.js` fixam que a historica leva
+// a meta, e nada impede registrar como historica uma folha do ano corrente que
+// cumpre meta. O ANO continua sendo o filtro real: a grade so conta a versao
+// quando o ano da data bate com o da meta, entao uma folha de 1978 apontando
+// meta de 2026 simplesmente nao entra na conta.
+//
+// `data_prevista` NAO leva `.default(null)`, e isso nao e descuido. Medido: em
+// `Joi.date().iso().raw()` o default nulo NAO aplica, e a chave simplesmente nao
+// aparece no valor validado (sem `.raw()` ela apareceria). Um default que nao
+// aplica e pior que default nenhum, porque quem le o schema conta com ele. Quem
+// resolve a ausencia e o `def: null` do ColumnSet, no controlador.
+const vinculoComOPlano = {
+  meta_pit_id: Joi.number().integer().strict().allow(null).default(null),
+  // EXCLUSIVA com `meta_pit_id`, e o banco cobra pelo CHECK
+  // `versao_plano_ou_excecao`. A exclusao nao se declara aqui: a tela ja limpa um
+  // ao escolher o outro, e o CHECK e a rede que pega o resto.
+  demanda_extra_id: Joi.number().integer().strict().allow(null).default(null),
+  data_prevista: dataCalendario().allow(null)
+};
+
+const versaoSemArquivo = Joi.object().keys({
+  uuid_versao: Joi.string().uuid().allow(null).required(),
+  versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
+  nome: texto255().allow(null).required(),
+  produto_id: Joi.number().integer().strict().required(),
+  subtipo_produto_id: Joi.number().integer().strict().required(),
+  lote_id: Joi.number().integer().strict().allow(null).required(),
+  metadado: Joi.object().required(),
+  descricao: Joi.string().allow('').required(),
+  orgao_produtor: texto255().required(),
+  palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+  data_criacao: dataCalendario().required(),
+  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+  ...vinculoComOPlano
+});
+
+// .required().min(1) no ARRAY (no objeto-item, min(1) validaria numero de chaves
 // e um array vazio passaria, quebrando depois no insert)
-models.versoesHistoricas = Joi.array().items(
-  Joi.object().keys({
-    uuid_versao: Joi.string().uuid().allow(null).required(),
-    versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-    nome: texto255().allow(null).required(),
-    produto_id: Joi.number().integer().strict().required(),
-    subtipo_produto_id: Joi.number().integer().strict().required(),
-    lote_id: Joi.number().integer().strict().allow(null).required(),
-    metadado: Joi.object().required(),
-    descricao: Joi.string().allow('').required(),
-    orgao_produtor: texto255().required(),
-    palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
-    data_criacao: dataCalendario().required(),
-    data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
-  })
-).required().min(1)
+models.versoesHistoricas = Joi.array().items(versaoSemArquivo).required().min(1)
 
 // A versao planejada aceita o MESMO corpo da historica: as duas criam versao sem
 // arquivo num produto que ja existe, e o formato do rotulo que o gatilho aceita e
 // o mesmo (nenhuma das duas e Regular). Quem separa e a ROTA, e nao o corpo.
 models.versoesPlanejadas = models.versoesHistoricas;
 
-models.produtosVersoesHistoricas = Joi.array().items(
-  Joi.object().keys({
-    nome: texto255().allow(null).required(),
-    mi: texto255().allow(null),
-    inom: texto255().allow(null),
-    tipo_escala_id: Joi.number().integer().strict().required(),
-    denominador_escala_especial: denominadorEscalaEspecial,
-    tipo_produto_id: Joi.number().integer().strict().required(),
-    // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
-    // Militar). NULL = produto comum, identidade so por (mi, escala, tipo).
-    subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
-    descricao: Joi.string().allow('').required(),
-    geom: Joi.string().required(),
-    versoes: Joi.array().items(
-      Joi.object().keys({
-        uuid_versao: Joi.string().uuid().allow(null).required(),
-        versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
-        nome: texto255().allow(null).required(),
-        subtipo_produto_id: Joi.number().integer().strict().required(),
-        lote_id: Joi.number().integer().strict().allow(null).required(),
-        metadado: Joi.object().required(),
-        descricao: Joi.string().allow('').required(),
-        orgao_produtor: texto255().required(),
-        palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
-        data_criacao: dataCalendario().required(),
-        data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
-      })
-    ).min(1).required()
-  })
-).required().min(1);
+// A versao DENTRO do produto novo: sem `produto_id`, que ainda nao existe.
+const versaoEmProdutoNovo = Joi.object().keys({
+  uuid_versao: Joi.string().uuid().allow(null).required(),
+  versao: Joi.string().pattern(VERSAO_HISTORICA_REGEX).required(),
+  nome: texto255().allow(null).required(),
+  subtipo_produto_id: Joi.number().integer().strict().required(),
+  lote_id: Joi.number().integer().strict().allow(null).required(),
+  metadado: Joi.object().required(),
+  descricao: Joi.string().allow('').required(),
+  orgao_produtor: texto255().required(),
+  palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
+  data_criacao: dataCalendario().required(),
+  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+  ...vinculoComOPlano
+});
+
+const produtoNovo = versoes => Joi.object().keys({
+  nome: texto255().allow(null).required(),
+  mi: texto255().allow(null),
+  inom: texto255().allow(null),
+  tipo_escala_id: Joi.number().integer().strict().required(),
+  denominador_escala_especial: denominadorEscalaEspecial,
+  tipo_produto_id: Joi.number().integer().strict().required(),
+  // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+  // Militar). NULL = produto comum, identidade so por (mi, escala, tipo).
+  subtipo_produto_id: Joi.number().integer().strict().allow(null).default(null),
+  descricao: Joi.string().allow('').required(),
+  geom: Joi.string().required(),
+  versoes: Joi.array().items(versoes).min(1).required()
+});
+
+models.produtosVersoesHistoricas =
+  Joi.array().items(produtoNovo(versaoEmProdutoNovo)).required().min(1);
 
 // A versao planejada aceita o MESMO corpo da historica: os dois criam produto
 // mais versao sem arquivo. Quem separa e a ROTA, e nao o corpo.

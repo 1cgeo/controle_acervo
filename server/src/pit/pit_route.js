@@ -110,6 +110,28 @@ router.get(
   })
 )
 
+// O DIAGNÓSTICO do cadastro: o que cada meta automática promete contra o que
+// existe cadastrado para cumpri-la. É o que alimenta o aviso da tela de metas.
+//
+// Numa meta automática, esquecer de cadastrar a versão, a capacitação ou o
+// pedido não dá erro: dá ZERO na grade, indistinguível de "o mês não chegou".
+// Esta rota é quem torna esse silêncio visível.
+//
+// MESMA GUARDA da grade, e pelo mesmo motivo do ensaio: ela devolve o planejado
+// meta a meta, que é o dado de `/execucao`.
+router.get(
+  '/execucao/diagnostico',
+  verifyGerente,
+  schemaValidation({ query: pitSchema.gradeQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await execucaoCtrl.diagnostico(req.query.ano)
+
+    return res.sendJsonAndLog(
+      true, 'Diagnóstico do cadastro do PIT retornado com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
 // UMA rota para criar, alterar e APAGAR, porque o par (meta, mês) é uma CÉLULA
 // de grade: quem preenche não sabe (nem deveria saber) se aquele mês já tinha
 // linha. Quem separa criação de alteração é o controlador, e só para o rastro; e

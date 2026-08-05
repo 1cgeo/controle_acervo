@@ -25,6 +25,29 @@ const dataCalendario = () => Joi.date().iso().raw()
 // ano) é o trigger `acervo.validate_version`.
 const versaoSchema = Joi.string().pattern(VERSAO_HISTORICA_REGEX).required()
 
+// O VÍNCULO COM O PIT: a meta que a folha cumpre e o mês em que ela prometeu
+// ficar pronta.
+//
+// ELE FALTAVA AQUI, e o efeito era silencioso. O formulário de versão já
+// oferecia a meta do PIT, e ao criar uma versão REGULAR (a que nasce com o
+// arquivo, por estas rotas) o `schemaValidation` tolerante DESCARTAVA a chave:
+// a pessoa escolhia a meta, recebia 201 e a versão ficava fora da conta do
+// plano. O descarte ia para o log e para os "avisos" do envelope, que ninguém lê
+// num cadastro bem-sucedido.
+//
+// `data_prevista` entra junto porque os dois são o mesmo vínculo. Numa versão
+// Regular ela costuma vir vazia (a folha nasceu pronta, e o plano dela não foi
+// declarado antes), e é legítimo: quem cobra a ausência é o diagnóstico do PIT.
+//
+// `demanda_extra_id` NÃO entra, e a omissão é deliberada: ele é exclusivo com a
+// meta pelo CHECK `versao_plano_ou_excecao`, e aceitar os dois aqui obrigaria a
+// espelhar a exclusão nesta árvore, que já é a mais funda do repositório. O
+// Extra-PIT se liga pela tela de Extra-PIT, que existe para isso.
+const vinculoComOPit = {
+  meta_pit_id: Joi.number().integer().strict().allow(null),
+  data_prevista: dataCalendario().allow(null)
+}
+
 // Campos comuns de arquivo, espelhando os CHECKs de acervo.arquivo:
 // para Tileserver (tipo 9) nome_arquivo deve ser URL http(s) e
 // extensao/tamanho_mb/checksum devem ser NULL; para os demais são obrigatórios
@@ -119,7 +142,8 @@ const versaoDeProduto = camposArquivo => Joi.object().keys({
     palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
     data_criacao: dataCalendario().required(),
     // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
-    data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
+    data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+    ...vinculoComOPit
   }).required(),
   arquivos: Joi.array().items(
     Joi.object().keys(camposArquivo)
@@ -168,6 +192,7 @@ const produtoComVersoes = camposArquivo => Joi.object().keys({
       data_criacao: dataCalendario().required(),
       // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
       data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+      ...vinculoComOPit,
       arquivos: Joi.array().items(
         Joi.object().keys(camposArquivo)
       ).min(1).required()

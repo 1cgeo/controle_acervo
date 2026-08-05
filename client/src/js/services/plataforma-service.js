@@ -135,6 +135,16 @@ export const getGradePit = (ano) => apiGet(`/metas/execucao?ano=${ano}`);
 // para o rastro.
 export const salvarExecucaoPit = (body) => apiPost('/metas/execucao', body);
 
+// O DIAGNOSTICO do cadastro: o que cada meta automatica promete contra o que
+// existe cadastrado para cumpri-la.
+//
+// Numa meta automatica o numero nao se digita, ele e contado das versoes, das
+// capacitacoes e dos pedidos ligados a ela. Entao ESQUECER de cadastrar a
+// entidade nao da erro: da ZERO, indistinguivel de "o mes ainda nao chegou".
+// Esta rota e quem torna esse silencio visivel.
+export const getDiagnosticoPit = (ano) =>
+  apiGet(`/metas/execucao/diagnostico?ano=${ano}`);
+
 // ---- Demanda Extra-PIT (3.3 do RPCMTec) ----
 export const getExtraPit = (ano) =>
   apiGet(ano ? `/metas/extra?ano=${ano}` : '/metas/extra');
@@ -223,6 +233,29 @@ export function rotuloMetaPit(meta) {
   if (!meta) return '';
   const codigo = codigoMetaPit(meta);
   return meta.descricao ? `Meta ${codigo} - ${meta.descricao}` : `Meta ${codigo}`;
+}
+
+/**
+ * A meta e FOLHA, ou seja, e nela que o trabalho se cadastra e se lanca.
+ *
+ * Uma meta que se subdivide tem uma linha de CABECALHO (`item` nulo) e uma linha
+ * por item, e quem entrega e o item. O cabecalho e o texto que abre o bloco, e
+ * ligar trabalho a ele contaria o mesmo duas vezes, uma nos itens e outra nele.
+ * A meta indivisa (cabecalho sem itens) E folha.
+ *
+ * MESMA REGRA do `EH_FOLHA` de `server/src/pit/pit_execucao_ctrl.js`. As duas
+ * existem porque o servidor decide o que conta e a tela decide o que oferecer, e
+ * divergir faria a tela oferecer uma meta que a gravacao recusa.
+ *
+ * @param {Object} meta
+ * @param {Array<Object>} todas - as metas do MESMO ano
+ * @returns {boolean}
+ */
+export function ehFolhaMetaPit(meta, todas) {
+  if (!meta) return false;
+  if (meta.item != null && meta.item !== '' && meta.item !== '-') return true;
+  return !(todas || []).some(outra => outra.numero_meta === meta.numero_meta
+    && outra.item != null && outra.item !== '' && outra.item !== '-');
 }
 
 

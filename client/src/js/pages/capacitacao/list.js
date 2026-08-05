@@ -9,6 +9,7 @@ import {
   getAnosCapacitacao,
   deleteCapacitacao,
   getUsuarios,
+  getMetasPit,
 } from '@services/plataforma-service.js';
 import { openCapacitacaoDialog, MINISTRADA, RECEBIDA } from './capacitacao-dialog.js';
 
@@ -77,6 +78,12 @@ function criarTela(tipoId, textos) {
     // vez: ele não muda entre uma capacitação e outra.
     let usuarios = [];
 
+    // As metas do PIT do ano, para o formulário oferecer a que a capacitação
+    // cumpre. Recarregadas quando o ano do filtro muda: a numeração do PIT é
+    // reescrita todo ano, e oferecer a meta 5.1 de 2025 num cadastro de 2026
+    // ligaria a capacitação ao plano do ano errado.
+    let metas = [];
+
     // uuid -> "Cap Fulano", do cadastro E das linhas. A união cobre os dois
     // buracos: quem está no cadastro sem capacitação no ano, e quem participou
     // de uma e já saiu da Divisão.
@@ -86,7 +93,7 @@ function criarTela(tipoId, textos) {
       className: 'btn btn--primary',
       type: 'button',
       onClick: () => openCapacitacaoDialog({
-        ano: anoSelecionado, tipoId, usuarios, onSaved: load,
+        ano: anoSelecionado, tipoId, usuarios, metas, onSaved: load,
       }),
     }, [svgIcon(ICONS.add, 16), textos.rotuloNovo]);
 
@@ -97,6 +104,8 @@ function criarTela(tipoId, textos) {
       value: anoSelecionado,
       onChange: (valor) => {
         anoSelecionado = valor === null ? null : Number(valor);
+        // As metas acompanham o ano: a numeração do PIT é reescrita todo ano.
+        loadMetas();
         load();
       },
     });
@@ -176,7 +185,7 @@ function criarTela(tipoId, textos) {
           icon: ICONS.edit,
           title: 'Editar',
           onClick: (row) => openCapacitacaoDialog({
-            capacitacao: row, tipoId, usuarios, onSaved: load,
+            capacitacao: row, tipoId, usuarios, metas, onSaved: load,
           }),
         },
         {
@@ -224,6 +233,19 @@ function criarTela(tipoId, textos) {
         // Sem o cadastro a tela continua listando; só o seletor do formulário
         // nasce vazio. Não vale interromper a leitura por isto.
         usuarios = [];
+      }
+    }
+
+    // As metas do ANO SELECIONADO. Falha aqui não derruba a tela: o formulário
+    // nasce sem a lista, e cadastrar a capacitação sem declarar a meta continua
+    // sendo o caso normal (a maioria não cumpre meta nenhuma).
+    async function loadMetas() {
+      try {
+        const lista = await getMetasPit(anoSelecionado);
+        if (disposed) return;
+        metas = lista || [];
+      } catch (err) {
+        metas = [];
       }
     }
 
@@ -348,6 +370,7 @@ function criarTela(tipoId, textos) {
 
     await loadUsuarios();
     await loadAnos();
+    await loadMetas();
     await load();
 
     return () => {

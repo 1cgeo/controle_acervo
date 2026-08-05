@@ -8,7 +8,9 @@ import {
 } from '@components/form-fields/form-fields.js';
 import { createSeletorMilitares } from '@components/form-fields/seletor-militares.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { createCapacitacao, updateCapacitacao } from '@services/plataforma-service.js';
+import {
+  createCapacitacao, updateCapacitacao, rotuloMetaPit, ehFolhaMetaPit,
+} from '@services/plataforma-service.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import { isAdmin } from '@store/auth-store.js';
 
@@ -46,11 +48,19 @@ const SITUACOES = [
  * @param {Object|null} [options.capacitacao]
  * @param {number} [options.ano]
  * @param {number} options.tipoId - MINISTRADA ou RECEBIDA, fixo pela tela
+ * A META DO PIT e o MÊS PROMETIDO são um par, e por isso ficam juntos no
+ * formulário. Quando a meta declara origem Capacitação, é daqui que sai o número
+ * da grade: a data prevista dá o mês do PLANEJADO e a conclusão dá o mês do
+ * REALIZADO. Ligar à meta sem dizer o mês faz a capacitação contar zero no
+ * plano, sem erro nenhum, e é isso que o diagnóstico do PIT acusa.
+ *
  * @param {Array<Object>} [options.usuarios] - o cadastro, para o seletor
+ * @param {Array<Object>} [options.metas] - as metas do PIT do ano
  * @param {Function} [options.onSaved]
  */
 export function openCapacitacaoDialog({
-  capacitacao = null, ano = null, tipoId = MINISTRADA, usuarios = [], onSaved = null,
+  capacitacao = null, ano = null, tipoId = MINISTRADA, usuarios = [], metas = [],
+  onSaved = null,
 } = {}) {
   const isEdit = Boolean(capacitacao);
   const anoAlvo = isEdit ? capacitacao.ano : (ano || new Date().getFullYear());
@@ -90,6 +100,30 @@ export function openCapacitacaoDialog({
     label: 'Documento',
     maxLength: 255,
     value: capacitacao?.documento ?? '',
+  });
+
+  // O VÍNCULO COM O PIT: a meta que esta capacitação cumpre e o mês em que ela
+  // promete terminar.
+  //
+  // SÓ A FOLHA entra na lista. O cabeçalho de meta subdividida não recebe
+  // lançamento nem cadastro: o que ele agrupa é que conta, e ligar a ele somaria
+  // o mesmo trabalho duas vezes.
+  //
+  // A meta CANCELADA também sai: ela deixou de ser trabalho a fazer, e oferecê-la
+  // convidaria a cadastrar contra um plano que a DSG revogou.
+  const metasOferecidas = (metas || [])
+    .filter(m => !m.cancelada && ehFolhaMetaPit(m, metas));
+  const metaField = createSelectField({
+    label: 'Meta do PIT',
+    placeholder: 'Não cumpre meta do PIT',
+    options: metasOferecidas.map(m => ({ value: m.id, label: rotuloMetaPit(m) })),
+    value: capacitacao?.meta_pit_id ?? null,
+    helpText: 'A maioria das capacitações não cumpre meta. Em 2026 o PIT só promete as ministradas.',
+  });
+  const previstaField = createDateField({
+    label: 'Data prevista',
+    value: capacitacao?.data_prevista ?? '',
+    helpText: 'O mês em que ela PROMETE terminar. É daqui que sai o planejado do PIT.',
   });
 
   // Só da MINISTRADA.
@@ -167,6 +201,10 @@ export function openCapacitacaoDialog({
     fimField.element,
     instituicoesField.element,
     localField.element,
+    // O par do PIT fica JUNTO, e logo depois das datas do fato: a data prevista
+    // só faz sentido ao lado da meta que ela promete cumprir.
+    metaField.element,
+    previstaField.element,
     ...especificos,
     el('div', { className: 'form-grid__full' }, [militaresField.element]),
     historico
@@ -224,12 +262,19 @@ export function openCapacitacaoDialog({
             // A lista vale para os DOIS tipos, ao contrário dos dois acima.
             militares: militaresField.getValue(),
             documento: documentoField.getValue() || null,
-            // SEM `meta_pit_id`, e a omissão é deliberada. Este
-            // formulário não tem o campo, e a chave AUSENTE manda o servidor
-            // preservar o vínculo gravado. Mandar `meta_pit_id: null` aqui
-            // desligaria o vínculo com a meta do PIT a cada salvamento, que é
-            // o defeito que a preservação matou. Ao acrescentar o campo,
-            // mande-o SÓ quando a pessoa escolher, e nunca vazio por padrão.
+            // O PAR DO PIT. Agora o formulário TEM os dois campos, então
+            // mandá-los é correto: o que a pessoa vê na tela é o que fica
+            // gravado, inclusive quando ela limpa a meta de propósito.
+            //
+            // Enquanto o formulário não os tinha, eles eram OMITIDOS, porque a
+            // chave ausente manda o servidor preservar o gravado e mandar null
+            // desligaria o vínculo a cada salvamento. Essa preservação continua
+            // valendo para quem edita por outra porta (CLI, importação), e é por
+            // isso que o servidor ainda distingue ausente de nulo.
+            meta_pit_id: metaField.getValue() === null
+              ? null
+              : Number(metaField.getValue()),
+            data_prevista: previstaField.getValue() || null,
           };
 
           saving = true;

@@ -10,7 +10,7 @@ import { isAdmin } from '@store/auth-store.js';
 import {
   getMetasPit, getAnosMetaPit, deleteMetaPit, codigoMetaPit,
   listarExercicios, listarRevisoes, getAlteracoesRevisao,
-  removerDeclaracao, excluirRevisao,
+  removerDeclaracao, excluirRevisao, getDiagnosticoPit,
 } from '@services/plataforma-service.js';
 import { abrirDeclaracaoDialog } from '@pages/revisoes-pit/declaracao-dialog.js';
 import { abrirDialogoRevisao } from '@pages/revisoes-pit/revisao-dialog.js';
@@ -95,6 +95,7 @@ export async function renderPitAno(container, _ctx) {
   const blocoExercicio = el('div', { className: 'pit-exercicio' });
   const faixaRevisoes = el('div', { className: 'pit-revisoes' });
   const detalheRevisao = el('div');
+  const painelDiagnostico = el('div');
 
   const table = createDataTable({
     columns: [
@@ -254,6 +255,10 @@ export async function renderPitAno(container, _ctx) {
     blocoExercicio,
     faixaRevisoes,
     detalheRevisao,
+    // O aviso fica ACIMA da tabela, e não numa coluna dela. Ele fala de um
+    // buraco no CADASTRO, e não de uma propriedade da meta: quem abre o PIT
+    // precisa ver que faltam folhas antes de ler os números que já estão lá.
+    painelDiagnostico,
     cabecalhoTabela,
     areaTabela,
   ]);
@@ -489,6 +494,9 @@ export async function renderPitAno(container, _ctx) {
   /** As linhas que a tabela tem hoje, para repintar sem ir ao servidor de novo. */
   let metasDoAno = [];
 
+  /** O que falta cadastrar em cada meta automática. Ver `desenharDiagnostico`. */
+  let diagnostico = [];
+
   async function selecionarRevisao(r) {
     // Clicar de novo na mesma revisão a DESMARCA. É o caminho de volta para o
     // modo de leitura, e sem ele a tela nunca voltaria a dizer "escolha uma
@@ -505,6 +513,80 @@ export async function renderPitAno(container, _ctx) {
     novaMetaBtn.title = revisaoSel
       ? `A meta nova entra na revisão ${revisaoSel.codigo}`
       : 'Escolha a revisão que acrescenta a meta';
+  }
+
+  // Onde se cadastra a entidade que cumpre cada origem. A rota é a MESMA que o
+  // menu abre: o aviso leva à tela de sempre, e não a um formulário paralelo que
+  // só o PIT conhece.
+  const ONDE_CADASTRAR = {
+    2: { rota: '#/capacitacao_ministrada', o_que: 'a capacitação' },
+    3: { rota: '#/acervo', o_que: 'a versão do acervo' },
+    4: { rota: '#/mapoteca/pedidos', o_que: 'o pedido da mapoteca' },
+  };
+
+  /**
+   * O AVISO DO CADASTRO, e a razão dele é que o erro aqui é SILENCIOSO.
+   *
+   * Numa meta automática o número não se digita: ele é contado das versões, das
+   * capacitações e dos pedidos ligados a ela. Esquecer de cadastrar não dá erro,
+   * dá ZERO, e zero na grade é indistinguível de "o mês ainda não chegou". O
+   * plano do ano é justamente onde ninguém procura defeito.
+   *
+   * DUAS FALTAS, e elas são diferentes:
+   *   FALTA CADASTRAR   a soma do que existe não chega ao que o PIT promete.
+   *   FALTA A DATA      a entidade existe e está ligada, mas não diz em que mês
+   *                     promete. Ela conta no total do ano e some do planejado
+   *                     mensal, que é o pior dos dois: o número fecha e a curva
+   *                     mente.
+   *
+   * O PAINEL SOME QUANDO NÃO HÁ NADA A DIZER. Aviso permanente vira moldura, e
+   * moldura não se lê.
+   */
+  function desenharDiagnostico() {
+    const problemas = (diagnostico || []).filter(
+      (d) => Number(d.faltam) > 0 || Number(d.sem_data) > 0
+    );
+
+    if (problemas.length === 0) {
+      painelDiagnostico.replaceChildren();
+      return;
+    }
+
+    const linhas = problemas.map((d) => {
+      const destino = ONDE_CADASTRAR[Number(d.origem_id)];
+      const partes = [];
+
+      if (Number(d.faltam) > 0) {
+        partes.push(`faltam ${d.faltam} de ${d.quantidade_prevista}`);
+      }
+      if (Number(d.sem_data) > 0) {
+        partes.push(`${d.sem_data} sem data prevista`);
+      }
+
+      return el('li', { className: 'pit-aviso__item' }, [
+        el('strong', { textContent: `Meta ${codigoMetaPit(d)}` }),
+        ` (${d.origem}): ${partes.join(', ')}. `,
+        destino
+          ? el('a', {
+            className: 'pit-aviso__link',
+            href: destino.rota,
+            textContent: `Cadastrar ${destino.o_que}`,
+          })
+          : null,
+      ].filter(Boolean));
+    });
+
+    painelDiagnostico.replaceChildren(el('div', { className: 'pit-aviso' }, [
+      el('div', { className: 'pit-aviso__titulo' }, [
+        svgIcon(ICONS.warning, 16),
+        'O cadastro não cobre o que o PIT promete',
+      ]),
+      el('p', { className: 'pit-aviso__texto' }, [
+        'Estas metas contam sozinhas, das entidades ligadas a elas. ',
+        'O que não estiver cadastrado conta ZERO na execução, sem erro nenhum.',
+      ]),
+      el('ul', { className: 'pit-aviso__lista' }, linhas),
+    ]));
   }
 
   async function carregar() {
@@ -548,6 +630,27 @@ export async function renderPitAno(container, _ctx) {
     desenharDetalheRevisao();
     atualizarNovaMeta();
     await carregarAlteracoes(metasDoAno);
+    await carregarDiagnostico(ano);
+  }
+
+  /**
+   * O diagnóstico do cadastro, em requisição PRÓPRIA e tolerante à falha.
+   *
+   * FORA do `Promise.all` da carga, de propósito. Esta tela LÊ para qualquer
+   * pessoa logada, e a rota do diagnóstico é do gerente para cima (ela devolve o
+   * planejado meta a meta, que é o dado da grade). Junto das outras três, o 403
+   * de quem não é gerente derrubaria o PIT inteiro para todo mundo, e o aviso
+   * vale menos que a tela.
+   */
+  async function carregarDiagnostico(ano) {
+    try {
+      const dados = await getDiagnosticoPit(ano);
+      if (disposed) return;
+      diagnostico = dados || [];
+    } catch (err) {
+      diagnostico = [];
+    }
+    desenharDiagnostico();
   }
 
   /** Relê tudo depois de uma gravação, mantendo a revisão escolhida. */

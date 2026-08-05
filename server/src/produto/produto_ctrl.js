@@ -132,7 +132,12 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
       // `meta_pit_id` entra aqui pela mesma razão: ele é opcional no schema, e o
       // cliente que não conhece o campo desligaria da meta do PIT toda versão
       // que editasse. Enviar null continua desligando de propósito.
-      fields: ['palavras_chave', 'meta_pit_id', 'demanda_extra_id'],
+      //
+      // `data_prevista` anda junto com ele: os dois formam o vínculo com o PIT
+      // (a meta e o mês prometido), e preservar um sem o outro deixaria a versão
+      // ligada à meta sem dizer em que mês, que é o buraco que o diagnóstico
+      // acusa.
+      fields: ['palavras_chave', 'meta_pit_id', 'demanda_extra_id', 'data_prevista'],
       body: versao
     });
 
@@ -174,6 +179,9 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
       'descricao', 'metadado', 'lote_id', 'meta_pit_id', 'demanda_extra_id',
       'orgao_produtor', 'palavras_chave',
       'data_criacao', 'data_edicao',
+      // `def: null` porque a chave pode chegar ausente do schema, e o
+      // `preserveOmitted` acima só a repõe quando ela já existia gravada.
+      { name: 'data_prevista', cast: 'date', def: null },
       'data_modificacao', 'usuario_modificacao_uuid'
     ];
 
@@ -1177,10 +1185,23 @@ const criaVersoesEmProduto = async (versoes, usuarioUuid, tipoVersaoId, contexto
       }
     }
 
+    // O VÍNCULO COM O PLANO ANUAL entra já na criação, e não numa edição
+    // depois. É o que faz o fluxo guiado da tela de metas ser um passo só: a
+    // folha nasce cumprindo a meta e prometendo o mês.
+    //
+    // As três GRAVAM aqui desde 2026-08-05. Antes o schema nem as aceitava, e o
+    // `schemaValidation` tolerante as descartava: a pessoa escolhia a meta,
+    // recebia 201, e a versão nascia fora da conta do PIT.
+    //
+    // `def: null` nas três porque elas são opcionais no schema, e o corpo que as
+    // omite não pode estourar o "Property doesn't exist" do pg-promise.
     const cs = new db.pgp.helpers.ColumnSet([
       'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
       'orgao_produtor', 'palavras_chave',
       'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
+      { name: 'meta_pit_id', def: null },
+      { name: 'demanda_extra_id', def: null },
+      { name: 'data_prevista', cast: 'date', def: null },
       'data_cadastramento', 'usuario_cadastramento_uuid'
     ], { table: { table: 'versao', schema: 'acervo' } });
 
@@ -1258,10 +1279,14 @@ const criaProdutoComVersoes = async (produtos, usuarioUuid, tipoVersaoId, contex
         tipo_versao_id: tipoVersaoId
       }));
 
+      // Mesmo trio do outro caminho de criação, e pelo mesmo motivo: a folha
+      // nasce já cumprindo a meta e prometendo o mês.
       const cs = new db.pgp.helpers.ColumnSet([
         'uuid_versao', 'versao', 'nome', 'produto_id', 'lote_id', 'metadado', 'descricao',
         'orgao_produtor', 'palavras_chave',
         'data_criacao', 'data_edicao', 'tipo_versao_id', 'subtipo_produto_id',
+        { name: 'meta_pit_id', def: null },
+        { name: 'data_prevista', cast: 'date', def: null },
         'data_cadastramento', 'usuario_cadastramento_uuid'
       ], { table: { table: 'versao', schema: 'acervo' } });
 

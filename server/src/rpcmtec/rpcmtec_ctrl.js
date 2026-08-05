@@ -11,8 +11,13 @@
 // que título, cabeçalho e ordem, é o que `rpcmtec_estrutura.js` diz; quem junta
 // o calculado com o que o gestor digitou é `rpcmtec_edicao_ctrl.js`.
 //
-// AS DEZOITO QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a
-// fonte de cada uma ao lado. As doze restantes são digitadas na própria tela.
+// AS VINTE QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a fonte
+// de cada uma ao lado. As dez restantes são digitadas na própria tela.
+//
+// A 2.2 e a 2.4 entraram em 2026-08-05: elas reportam a produção do mês, que o
+// acervo sabe contar, e estavam digitadas com fonte 'SAP' sem precisar. A 2.3
+// (lote) e a 2.5 (campo) continuam digitadas, e a diferença é real: aquelas duas
+// são do SAP e não têm entidade no SCA que as prove.
 //
 // A 2.1 sai INTEIRA daqui, inclusive as metas de produção, que hoje só têm
 // número se alguém lançar à mão. Uma tabela montada metade de um sistema e
@@ -51,7 +56,9 @@ const {
     TIPO_CAPACITACAO
   }
 } = require('../utils')
-const { QTD_EFETIVA, JOIN_PRODUTO_ITEM, filtroPeriodoMes } = require('../mapoteca/query_fragments')
+const {
+  QTD_EFETIVA, JOIN_PRODUTO_ITEM, filtroPeriodoMes, filtroAno
+} = require('../mapoteca/query_fragments')
 // O mês anterior, virando o ano em janeiro. Mora em periodo.js porque a mesma
 // regra vale para rpcmtec_subsecao_ctrl, e duas cópias divergiram uma vez.
 const { mesAnterior } = require('./periodo')
@@ -133,8 +140,10 @@ const moeda = valor => (valor == null ? '-' : formatadorMoeda.format(Number(valo
 // 2.2 / 2.4 / 2.7 - acervo
 // ---------------------------------------------------------------------------
 
-// A 2.2 (Totais do Mês e do Ano) e a 2.4 (Entregas detalhada de produtos
-// finais) NÃO saem daqui, por decisão de escopo: elas ficam no SAP.
+// A 2.2 e a 2.4 PASSARAM A SAIR DAQUI em 2026-08-05. Elas eram digitadas com
+// `fonte: 'SAP'`, e não precisavam ser: as duas reportam a versão REGULAR que
+// ficou pronta no mês, e isso o acervo sabe sozinho. Ver as consultas logo
+// abaixo de `buscarEstadoAcervo`.
 //
 // 2.7: folhas catalogadas DENTRO DA ASC, por escala x tipo de produto.
 //
@@ -186,6 +195,84 @@ const buscarEstadoAcervo = async ({ ano, mes }) => {
     }
   )
 }
+
+// ---------------------------------------------------------------------------
+// 2.2 e 2.4: a produção do mês, do ACERVO e não do SAP.
+//
+// AS DUAS ERAM DIGITADAS, com `fonte: 'SAP'`, e não precisavam ser: o que elas
+// reportam é a versão REGULAR que ficou pronta no mês, e isso o acervo sabe
+// sozinho desde sempre. Enquanto foram digitadas, o número do relatório e o do
+// acervo podiam divergir sem nada acusar, que é o mesmo defeito que a grade do
+// PIT tinha antes das origens calculadas.
+//
+// O CRITÉRIO É O MESMO DA 2.7 e o mesmo do PIT: versão REGULAR, no mês de
+// `data_edicao`. O Registro Histórico documenta que uma edição existiu e por
+// definição não tem arquivo; contá-lo pintaria de pronta uma folha que ninguém
+// baixa. A versão Planejada, pela mesma razão, também fica de fora.
+//
+// A 2.3 e a 2.5 CONTINUAM DIGITADAS, e a diferença é real: lote e atividade de
+// campo são do SAP e não têm entidade no SCA que as prove.
+
+// 2.2: quantos produtos de cada tipo ficaram prontos no mês e no ano.
+const buscarTotaisProducao = async ({ ano, mes }) => {
+  return db.conn.any(
+    `SELECT tp.nome AS tipo_produto,
+            count(*) FILTER (
+              WHERE ${filtroPeriodoMes('v.data_edicao', { cumulativo: false })}
+            )::int AS no_mes,
+            count(*)::int AS no_ano
+     FROM acervo.versao AS v
+     JOIN acervo.produto AS p ON p.id = v.produto_id
+     JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+     WHERE v.tipo_versao_id = $<versaoRegular>
+       AND ${filtroAno('v.data_edicao')}
+     GROUP BY tp.nome
+     ORDER BY tp.nome`,
+    { ano, mes, versaoRegular: TIPO_VERSAO.REGULAR }
+  )
+}
+
+const montarTotaisProducao = ({ totais }) =>
+  totais.map(t => [t.tipo_produto, numero(t.no_mes), numero(t.no_ano)])
+
+// 2.4: uma linha por folha entregue no mês, com o identificador que o BDGEx usa.
+//
+// O `uuid_versao` É O MESMO com que o produto é publicado no BDGEx, e por isso a
+// coluna se chama "UUID BDGEx": não há um segundo identificador a guardar.
+//
+// A META sai do vínculo da versão, e nunca de código digitado. Vem em branco na
+// folha que não cumpre meta (registro fora do plano, produção Extra-PIT), e isso
+// é uma afirmação: o relatório distingue o que estava no plano do que não estava.
+const buscarEntregasDetalhadas = async ({ ano, mes }) => {
+  return db.conn.any(
+    `SELECT tp.nome AS tipo_produto, te.nome AS escala,
+            v.uuid_versao::text AS uuid_versao,
+            COALESCE(p.mi, p.inom, p.nome) AS identificador,
+            COALESCE(NULLIF(m.item, '-'), m.numero_meta::text) AS meta,
+            l.pit AS lote
+     FROM acervo.versao AS v
+     JOIN acervo.produto AS p ON p.id = v.produto_id
+     JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+     JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
+     LEFT JOIN pit.meta AS m ON m.id = v.meta_pit_id
+     LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
+     WHERE v.tipo_versao_id = $<versaoRegular>
+       AND ${filtroPeriodoMes('v.data_edicao', { cumulativo: false })}
+     ORDER BY tp.nome, te.code, identificador`,
+    { ano, mes, versaoRegular: TIPO_VERSAO.REGULAR }
+  )
+}
+
+const montarEntregasDetalhadas = ({ entregas }) =>
+  entregas.map(e => [
+    e.tipo_produto,
+    // Sem o "1:", como o modelo escreve.
+    String(e.escala || '').replace('1:', ''),
+    e.uuid_versao,
+    e.identificador || '-',
+    e.meta || '-',
+    e.lote || '-'
+  ])
 
 // O modelo escreve a escala sem o "1:" ("25.000"), e a ordem é tipo x escala:
 // as quatro escalas da Carta Topográfica e depois as quatro da Carta Ortoimagem.
@@ -922,6 +1009,8 @@ controller.calcular = async ({ ano, mes }) => {
 
   const [
     estadoAcervo,
+    totaisProducao,
+    entregasDetalhadas,
     metasPit,
     capacitacaoMinistrada,
     pedidosMes,
@@ -942,13 +1031,20 @@ controller.calcular = async ({ ano, mes }) => {
     estoqueAnteriorTinta
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
+    // A 2.2 e a 2.4 saem do ACERVO desde 2026-08-05, e nao mais do SAP: as duas
+    // reportam a versao Regular que ficou pronta no mes, que o acervo ja sabe.
+    buscarTotaisProducao({ ano, mes }),
+    buscarEntregasDetalhadas({ ano, mes }),
     // O `mes` recorta o acumulado: `realizado` vira janeiro até aqui, e
     // `realizado_mes`, só este mês. São as duas colunas da 2.1.
     pitExecucaoCtrl.resumoDoAno(ano, mes),
     capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.MINISTRADA),
     buscarPedidos({ ano, mes, cumulativo: false }),
     buscarPedidos({ ano, mes, cumulativo: true }),
-    pitExtraCtrl.listar(ano),
+    // SÓ O MÊS, como a 3.4 ao lado. Enquanto era `listar(ano)`, a 3.3 de agosto
+    // repetia tudo o que a de julho já reportara, e somar as doze edições
+    // contaria cada demanda doze vezes.
+    pitExtraCtrl.listarDoMes(ano, mes),
     mapotecaCtrl.getTiposMaterial(),
     mapotecaCtrl.getConsumoMensalPorTipo(ano),
     gerarExecucaoPorNd(ano, inicio, cutoff),
@@ -969,6 +1065,8 @@ controller.calcular = async ({ ano, mes }) => {
 
   return {
     '2.1': montarEstadoPit({ metas: metasPit }),
+    '2.2': montarTotaisProducao({ totais: totaisProducao }),
+    '2.4': montarEntregasDetalhadas({ entregas: entregasDetalhadas }),
     '2.6': montarCapacitacaoMinistrada({ capacitacoes: capacitacaoMinistrada }),
     '2.7': montarEstadoAcervo({ estadoAcervo }),
     '3.1': montarTotaisMapoteca({ pedidosMes, pedidosAno }),

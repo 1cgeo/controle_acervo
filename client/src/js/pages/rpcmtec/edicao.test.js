@@ -92,6 +92,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
             titulo: 'Aproveitamento do efetivo',
             origem: 1,
             fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
+            pendencia: PENDENCIA_6_1,
             cabecalhos: ['Militar', 'Atividades', 'Aproveitamento'],
             linhas: [],
             semGerador: false,
@@ -103,6 +104,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
             titulo: 'Capacitação do efetivo',
             origem: 1,
             fonte: 'rpcmtec.capacitacao, tipo Recebida',
+            pendencia: PENDENCIA_6_2,
             cabecalhos: ['Plano / Código', 'Capacitação'],
             linhas: [['PCEG', 'QSMS']],
             semGerador: false,
@@ -114,6 +116,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
             titulo: 'Subseção sem gerador',
             origem: 1,
             fonte: 'algum lugar',
+            pendencia: PENDENCIA_6_3,
             cabecalhos: ['Coluna'],
             linhas: [],
             semGerador: true,
@@ -139,6 +142,12 @@ const subsecao = (container, numero) => [...container.querySelectorAll('.rpcm-su
 
 const marcas = (no) => [...no.querySelectorAll('.rpcm-etiqueta')].map(e => e.textContent);
 
+// A pendência que cada subseção declara, na palavra da Divisão. Vem do servidor
+// em `pendencia`, e o fixture abaixo a reproduz.
+const PENDENCIA_6_1 = 'Nenhum período de efetivo cadastrado';
+const PENDENCIA_6_2 = 'Nenhuma capacitação recebida concluída no mês';
+const PENDENCIA_6_3 = 'Nenhuma passagem de efetivo no mês';
+
 const botaoPor = (container, rotulo) => [...container.querySelectorAll('button')]
   .find(b => b.textContent.trim() === rotulo);
 
@@ -153,16 +162,37 @@ describe('renderRpcmtecEdicao', () => {
   // A etiqueta da subsecao calculada vazia
   // -------------------------------------------------------------------------
 
-  test('a subseção calculada VAZIA diz o que fazer, e não o que o sistema achou', async () => {
+  // A ETIQUETA NOMEIA A COISA. Ela dizia "Falta cadastrar o dado de origem", que
+  // não diz O QUE cadastrar nem ONDE: o chefe leu isso na 2.6 e não soube o que
+  // era, justamente numa subseção que ele sabia ser automática. Agora cada
+  // subseção declara a sua pendência na palavra que a Divisão usa, e o servidor
+  // a manda em `pendencia` (ver rpcmtec_estrutura.js).
+  test('a subseção calculada VAZIA nomeia o que falta, na palavra da Divisão', async () => {
     const { container, cleanup } = await montar();
 
     const seis1 = subsecao(container, '6.1');
-    expect(marcas(seis1)).toContain('Falta cadastrar o dado de origem');
+    expect(marcas(seis1)).toContain(PENDENCIA_6_1);
 
-    // O texto de apoio nomeia a origem e diz a consequência de deixar assim.
+    // NOME de tabela do banco não aparece na tela: quem lê o relatório não tem
+    // por que saber como o dado está guardado.
     const etiqueta = [...seis1.querySelectorAll('.rpcm-etiqueta')]
-      .find(e => e.textContent === 'Falta cadastrar o dado de origem');
-    expect(etiqueta.title).toContain('dgeo.efetivo_periodo e dgeo.impedimento');
+      .find(e => e.textContent === PENDENCIA_6_1);
+    expect(etiqueta.title).not.toContain('dgeo.efetivo_periodo');
+    expect(etiqueta.title).toMatch(/cadastre/i);
+
+    cleanup();
+  });
+
+  // A etiqueta de ORIGEM também parou de citar tabela. Ela dizia
+  // "Calculada: pit.meta_vigente e pit.execucao"; agora diz só "Calculada".
+  test('a etiqueta de origem não cita tabela do banco', async () => {
+    const { container, cleanup } = await montar();
+
+    const todas = [...container.querySelectorAll('.rpcm-etiqueta--calculada')]
+      .map(e => e.textContent);
+    expect(todas.length).toBeGreaterThan(0);
+    expect(todas.every(t => t === 'Calculada')).toBe(true);
+    expect(todas.some(t => t.includes('.'))).toBe(false);
 
     cleanup();
   });
@@ -171,13 +201,13 @@ describe('renderRpcmtecEdicao', () => {
     const { container, cleanup } = await montar();
 
     expect(marcas(subsecao(container, '6.2')))
-      .not.toContain('Falta cadastrar o dado de origem');
+      .not.toContain(PENDENCIA_6_2);
 
     // As duas lacunas são EXCLUSIVAS: sem gerador não há tabela vazia a
     // reportar, porque a causa já está dita e o conserto é outro.
     const seis3 = marcas(subsecao(container, '6.3'));
     expect(seis3).toContain('Lacuna do gerador');
-    expect(seis3).not.toContain('Falta cadastrar o dado de origem');
+    expect(seis3).not.toContain(PENDENCIA_6_3);
 
     cleanup();
   });

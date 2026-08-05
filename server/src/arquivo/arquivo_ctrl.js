@@ -967,8 +967,9 @@ const prepararVersao = async (requestData, usuarioUuid) => {
           `INSERT INTO acervo.upload_versao_temp(
             session_id, uuid_versao, versao, nome, tipo_versao_id, 
             subtipo_produto_id, lote_id, metadado, descricao, 
-            data_criacao, data_edicao, produto_id, orgao_produtor, palavras_chave
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            data_criacao, data_edicao, produto_id, orgao_produtor, palavras_chave,
+            meta_pit_id, data_prevista
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
           RETURNING id`,
           [
             sessionId,
@@ -984,7 +985,11 @@ const prepararVersao = async (requestData, usuarioUuid) => {
             item.versao.data_edicao,
             item.produto_id,
             item.versao.orgao_produtor,
-            item.versao.palavras_chave || []
+            item.versao.palavras_chave || [],
+            // O vinculo com o PIT atravessa o rascunho do envio: sem isto a meta
+            // escolhida no formulario morre entre o preparo e a finalizacao.
+            item.versao.meta_pit_id ?? null,
+            item.versao.data_prevista ?? null
           ]
         );
         
@@ -1168,8 +1173,9 @@ const prepararProduto = async (requestData, usuarioUuid) => {
             `INSERT INTO acervo.upload_versao_temp(
               session_id, uuid_versao, versao, nome, tipo_versao_id, 
               subtipo_produto_id, lote_id, metadado, descricao, 
-              data_criacao, data_edicao, produto_temp_id, orgao_produtor, palavras_chave
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+              data_criacao, data_edicao, produto_temp_id, orgao_produtor, palavras_chave,
+              meta_pit_id, data_prevista
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             RETURNING id`,
             [
               sessionId,
@@ -1185,7 +1191,10 @@ const prepararProduto = async (requestData, usuarioUuid) => {
               versao.data_edicao,
               produtoTempId,
               versao.orgao_produtor,
-              versao.palavras_chave || []
+              versao.palavras_chave || [],
+              // Mesmo par do outro rascunho: o vinculo com o PIT atravessa o envio.
+              versao.meta_pit_id ?? null,
+              versao.data_prevista ?? null
             ]
           );
           
@@ -1439,17 +1448,22 @@ const inserirProdutoDoEnvio = async (t, p, usuarioUuid, contexto) => {
  */
 const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid, contexto) => {
   const criada = await t.one(
+    // `meta_pit_id` e `data_prevista` GRAVAM aqui desde 2026-08-05. Antes o
+    // schema nem os aceitava, e a meta escolhida no formulário era descartada em
+    // silêncio: a versão nascia pronta e fora da conta do PIT.
     `INSERT INTO acervo.versao(
       uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
       lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
-      data_edicao, usuario_cadastramento_uuid, data_cadastramento
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+      data_edicao, meta_pit_id, data_prevista,
+      usuario_cadastramento_uuid, data_cadastramento
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
     RETURNING *`,
     [
       v.uuid_versao || uuidv4(), v.versao, v.nome, v.tipo_versao_id,
       v.subtipo_produto_id, produtoId, v.lote_id ?? null, v.metadado || {},
       v.descricao || '', v.orgao_produtor, v.palavras_chave || [],
-      v.data_criacao, v.data_edicao, usuarioUuid
+      v.data_criacao, v.data_edicao,
+      v.meta_pit_id ?? null, v.data_prevista ?? null, usuarioUuid
     ]
   );
 
@@ -1641,11 +1655,13 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
 
         for (const versao of item.versoes) {
           const versaoCriada = await t.one(
+            // Mesmo par do outro caminho de envio: ver `inserirVersaoDoEnvio`.
             `INSERT INTO acervo.versao(
               uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
               lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
-              data_edicao, usuario_cadastramento_uuid, data_cadastramento
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+              data_edicao, meta_pit_id, data_prevista,
+              usuario_cadastramento_uuid, data_cadastramento
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
             RETURNING *`,
             [
               versao.uuid_versao || uuidv4(),
@@ -1661,6 +1677,8 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
               versao.palavras_chave || [],
               versao.data_criacao,
               versao.data_edicao,
+              versao.meta_pit_id ?? null,
+              versao.data_prevista ?? null,
               usuarioUuid
             ]
           );
@@ -2417,8 +2435,8 @@ async function processAddVersion(t, session, contexto) {
         `INSERT INTO acervo.versao(
           uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
           lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
-          usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+          meta_pit_id, data_prevista, usuario_cadastramento_uuid, data_cadastramento
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
         RETURNING *`,
         [
           versaoTemp.uuid_versao,
@@ -2434,6 +2452,8 @@ async function processAddVersion(t, session, contexto) {
           versaoTemp.palavras_chave || [],
           versaoTemp.data_criacao,
           versaoTemp.data_edicao,
+          versaoTemp.meta_pit_id,
+          versaoTemp.data_prevista,
           session.usuario_uuid
         ]
       );
@@ -2551,9 +2571,9 @@ async function processAddProduct(t, session, contexto) {
         const versaoCriada = await t.one(
           `INSERT INTO acervo.versao(
             uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
-            lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao, 
-            usuario_cadastramento_uuid, data_cadastramento
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+            lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
+            meta_pit_id, data_prevista, usuario_cadastramento_uuid, data_cadastramento
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
           RETURNING *`,
           [
             versaoTemp.uuid_versao,
@@ -2569,6 +2589,8 @@ async function processAddProduct(t, session, contexto) {
             versaoTemp.palavras_chave || [],
             versaoTemp.data_criacao,
             versaoTemp.data_edicao,
+            versaoTemp.meta_pit_id,
+            versaoTemp.data_prevista,
             session.usuario_uuid
           ]
         );

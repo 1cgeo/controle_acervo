@@ -416,6 +416,21 @@ export async function openVersaoDialog({
       + 'que contam no PIT e nos relatórios.',
   });
 
+  // A TERCEIRA DATA, e a única que fala do FUTURO. As duas acima são o que
+  // aconteceu; esta é o que se prometeu, e é dela que sai o PLANEJADO da grade
+  // do PIT.
+  //
+  // Ela NÃO é sobrescrita quando a versão fica pronta, e é isso que impede o
+  // plano de ser reescrito pelo fato. Antes o planejado saía da data prometida
+  // pelo LOTE, e nos 19 lotes que a tinham ela era igual à data de fim: a meta
+  // 1.3 prometia 48 folhas em agosto e a grade mostrava 49 em junho.
+  const previstaField = createDateField({
+    label: 'Data prevista',
+    value: soData(versao?.data_prevista),
+    helpText: 'O mês em que esta folha PROMETE ficar pronta. É daqui que sai o '
+      + 'planejado do PIT, e ela não muda quando a versão fica pronta.',
+  });
+
   const descricaoField = createTextareaField({
     label: 'Descrição',
     value: versao?.versao_descricao ?? versao?.descricao ?? '',
@@ -521,6 +536,10 @@ export async function openVersaoDialog({
     extraField.element,
     criacaoField.element,
     edicaoField.element,
+    // A data prometida fica LOGO DEPOIS das duas do fato, e não ao lado da meta:
+    // as três são datas da mesma folha, e a comparação entre o prometido e o
+    // acontecido é o que a pessoa precisa ver de uma vez.
+    previstaField.element,
     el('div', { className: 'form-grid__full' }, [palavrasField.element]),
     el('div', { className: 'form-grid__full' }, [descricaoField.element]),
     el('div', { className: 'form-grid__full' }, [metadadoField.element]),
@@ -648,6 +667,9 @@ export async function openVersaoDialog({
             palavras_chave: palavrasField.getValue(),
             data_criacao: dataCriacao,
             data_edicao: dataEdicao,
+            // Mesma regra dos dois vínculos acima: segue SEMPRE, inclusive como
+            // null, senão não haveria como apagar uma promessa digitada errada.
+            data_prevista: previstaField.getValue() || null,
           };
 
           // Versão REGULAR não se grava aqui: ela nasce com o arquivo, e o
@@ -694,6 +716,10 @@ export async function openVersaoDialog({
               // Corpo em ARRAY: as rotas aceitam lote, e mandar um item é o caso
               // de uma tela que cadastra uma versão de cada vez.
               const historica = tipoVersaoId === TIPO_VERSAO_HISTORICA;
+
+              // O CORPO É O MESMO NAS DUAS ROTAS, inclusive o vínculo com o
+              // plano anual (meta, Extra-PIT e data prevista). Quem separa é a
+              // rota, e não o corpo.
               const versaoNova = { uuid_versao: null, ...corpo };
 
               if (produtoPendente) {

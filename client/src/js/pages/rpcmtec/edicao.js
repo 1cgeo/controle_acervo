@@ -320,13 +320,21 @@ export async function renderRpcmtecEdicao(container, ctx) {
     });
   }
 
-  /** A etiqueta que diz quem preenche a subseção. */
+  /**
+   * A etiqueta que diz quem preenche a subseção.
+   *
+   * A ETIQUETA NÃO CITA TABELA DO BANCO. Ela dizia "Calculada: pit.meta_vigente
+   * e pit.execucao", e quem lê o relatório não tem por que saber o nome das
+   * tabelas: o que ele precisa saber é que aquilo sai sozinho. O nome da fonte
+   * continua existindo na estrutura, para o `title` de quem passa o mouse e para
+   * a mensagem de quando o cálculo não acha nada.
+   */
   function etiqueta(sub) {
     if (sub.origem === ORIGEM.CALCULADA) {
       return el('span', {
         className: 'rpcm-etiqueta rpcm-etiqueta--calculada',
-        title: sub.fonte ? `Sai de ${sub.fonte}` : 'Calculada pelo sistema',
-        textContent: sub.fonte ? `Calculada: ${sub.fonte}` : 'Calculada',
+        title: 'O sistema monta esta subseção sozinho, do que está cadastrado.',
+        textContent: 'Calculada',
       });
     }
     if (sub.origem === ORIGEM.FIXA) {
@@ -402,13 +410,19 @@ export async function renderRpcmtecEdicao(container, ctx) {
     // O CÁLCULO RODOU E NÃO ACHOU NADA. A etiqueta diz o que a pessoa faz, e não
     // o que o sistema encontrou: uma 6.1 vazia quer dizer que falta cadastrar
     // passagem de efetivo, e não que ninguém passou pela Divisão no mês.
+    //
+    // ELA NOMEIA A COISA. Dizia "Falta cadastrar o dado de origem", que não diz
+    // O QUE cadastrar nem ONDE: o chefe leu isso na 2.6 e não soube o que era,
+    // justamente numa subseção que ele sabia ser automática. Agora cada subseção
+    // declara a sua pendência em `pendencia`, na palavra que a Divisão usa
+    // ("Nenhuma capacitação ministrada concluída no mês").
     if (sub.semLinhas) {
       marcas.push(el('span', {
         className: 'rpcm-etiqueta rpcm-etiqueta--pendente',
-        title: `O cálculo rodou e não achou nada${sub.fonte ? ` em ${sub.fonte}` : ''}. `
-          + 'Cadastre o dado na origem. '
-          + 'Sem isso a tabela sai vazia, e o documento assinado afirma que não houve nada.',
-        textContent: 'Falta cadastrar o dado de origem',
+        title: 'O cálculo rodou e não achou nada. Se houve, cadastre na tela dessa '
+          + 'atividade. Sem isso a tabela sai vazia, e o documento assinado afirma '
+          + 'que não houve nada.',
+        textContent: sub.pendencia || 'Nada cadastrado no mês',
       }));
     }
 

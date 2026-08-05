@@ -15,8 +15,8 @@
 //     Divisão. Uma subseção que muda de número, ou some, quebra o documento sem
 //     dar erro nenhum.
 //
-//  3. A DIVISÃO ENTRE CALCULADO E DIGITADO. Dezoito subseções saem do banco e
-//     quinze o gestor preenche. Uma calculada que vire digitada por descuido
+//  3. A DIVISÃO ENTRE CALCULADO E DIGITADO. Vinte subseções saem do banco e
+//     treze o gestor preenche. Uma calculada que vire digitada por descuido
 //     faria alguém redigitar todo mês um número que o sistema tem.
 //
 //  4. O CICLO DE FECHAMENTO, que é o coração do desenho: aberta o calculado
@@ -87,19 +87,26 @@ const preencherTudo = async id => {
 // A numeração do documento da Divisão, medida no OOXML da edição de
 // julho/2026. São 34 blocos: 30 tabelas mais a 1.1 e as três da seção 9.
 const SUBSECOES_CALCULADAS = [
-  '2.1', '2.6', '2.7',
+  // A 2.2 e a 2.4 entraram em 2026-08-05, por decisao do chefe: as duas
+  // reportam a versao Regular que ficou pronta no mes, e isso o acervo sabe
+  // sozinho. Estavam digitadas com fonte 'SAP' sem precisar, e enquanto
+  // estiveram o numero do relatorio e o do acervo podiam divergir calados.
+  '2.1', '2.2', '2.4', '2.6', '2.7',
   '3.1', '3.2', '3.3', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
   '6.1', '6.2',
   '7.2', '7.3'
 ]
 
-// As que o gestor digita. Onze vêm de outro sistema ou de fora (2.2 a 2.5 do
+// As que o gestor digita. Nove vêm de outro sistema ou de fora (2.3 e 2.5 do
 // SAP, 5.1 do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em
-// lugar nenhum. Decisão do chefe: nada sai do SAP por enquanto, e
-// o que o SCA não calcula o gestor preenche na própria tela.
+// lugar nenhum.
+//
+// A 2.3 (lote) e a 2.5 (campo) FICAM digitadas, e a diferença para as duas que
+// saíram é real: as duas são do SAP e não têm entidade no SCA que as prove. A
+// régua não é "veio do SAP", é "o SCA sabe provar".
 const SUBSECOES_DIGITADAS = [
-  '2.2', '2.3', '2.4', '2.5',
+  '2.3', '2.5',
   '5.1', '5.2',
   '7.1',
   '8.1', '8.2', '8.3', '8.4', '8.5',
@@ -128,7 +135,7 @@ describe('RPCMTec: a estrutura do documento', () => {
     expect(blocos(doc).filter(b => b.cabecalhos)).toHaveLength(30)
   })
 
-  test('dezoito subseções são calculadas e quinze são digitadas', async () => {
+  test('vinte subseções são calculadas e treze são digitadas', async () => {
     const id = await criarEdicao()
     const doc = await documento(id)
 
@@ -503,7 +510,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
 
   test('reabrir descongela o calculado e PRESERVA o digitado', async () => {
     // Reabrir para corrigir um número do banco não é razão para o gestor
-    // redigitar as quinze subseções que são dele.
+    // redigitar as treze subseções que são dele.
     const id = await criarEdicao()
     await preencherTudo(id)
     await request(app)
@@ -520,7 +527,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const restantes = await conn.any(
       'SELECT numero, origem_id FROM rpcmtec.subsecao WHERE edicao_id = $1', [id]
     )
-    // Só as digitadas sobrevivem, e são as 15.
+    // Só as digitadas sobrevivem, e são as 13.
     expect(restantes).toHaveLength(SUBSECOES_DIGITADAS.length)
     expect(restantes.every(r => r.origem_id === 2)).toBe(true)
 

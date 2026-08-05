@@ -65,6 +65,9 @@ const PEDIDO_COLS = [
   { name: 'omds', def: null },
   { name: 'previsto_pit', def: false },
   { name: 'meta_pit_id', def: null },
+  // O mês em que este pedido PROMETE ser impresso, e de onde a meta 4 do PIT
+  // tira o PLANEJADO. Não é `prazo`, que é o limite imposto pelo cliente.
+  { name: 'data_prevista', def: null },
   { name: 'canal_recebimento_id', def: null },
   { name: 'municipio', def: null },
   { name: 'qtd_imagens', def: null },
@@ -408,6 +411,9 @@ controller.getPedidos = async (ano) => {
            -- A meta e chave estrangeira, e nunca o codigo digitado a mao. O id
            -- serve a escrita; o codigo serve a tela e a planilha.
            p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
+           -- O mes PROMETIDO, de onde sai o planejado da meta 4. Distinto do
+           -- prazo, que e o limite do cliente. (Sem crase: template literal.)
+           p.data_prevista,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            p.forma_entrega_id, fe.nome AS forma_entrega_nome,
            u.nome AS usuario_criacao_nome,
@@ -685,6 +691,7 @@ controller.getPedidoById = async (pedidoId) => {
              p.demandante, p.omds, p.previsto_pit,
              p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
              mp.descricao AS meta_pit_descricao,
+             p.data_prevista,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
              p.municipio, p.qtd_imagens,
              p.observacao, p.localizador_envio, p.observacao_envio,
@@ -852,7 +859,10 @@ controller.atualizaPedido = async (pedido, usuarioUuid, contexto) => {
       schema: 'mapoteca',
       table: 'pedido',
       id: pedido.id,
-      fields: ['palavras_chave', 'previsto_pit', 'meta_pit_id'],
+      // `data_prevista` anda com `meta_pit_id`: os dois formam o vínculo com o
+      // PIT (a meta e o mês prometido). Preservar um e apagar o outro deixaria o
+      // pedido ligado à meta sem mês, que conta zero no plano sem acusar nada.
+      fields: ['palavras_chave', 'previsto_pit', 'meta_pit_id', 'data_prevista'],
       body: pedido
     });
 

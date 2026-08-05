@@ -36,11 +36,15 @@ const nome255 = () => Joi.string().max(255);
 //
 // `data_fim` espelha o CHECK data_fim >= data_inicio do banco.
 //
-// `data_fim_prevista` e quando o lote PROMETE terminar, e dali sai o mes do
-// PLANEJADO da grade do PIT. E coluna separada de `data_fim` porque aquela e o
-// que aconteceu e esta e o que se prometeu, e a primeira sobrescreveria a
-// segunda no dia em que o lote fechasse. OPCIONAL, e nao `required`: os lotes
-// que ja existem nasceram sem ela, e exigi-la recusaria a edicao de qualquer um.
+// `data_fim_prevista` e quando o LOTE promete terminar. E coluna separada de
+// `data_fim` porque aquela e o que aconteceu e esta e o que se prometeu, e a
+// primeira sobrescreveria a segunda no dia em que o lote fechasse. OPCIONAL, e
+// nao `required`: os lotes que ja existem nasceram sem ela, e exigi-la recusaria
+// a edicao de qualquer um.
+//
+// JA NAO ALIMENTA O PIT. Ate 2026-08-05 o mes do planejado da grade saia daqui,
+// e o planejado passou a sair de `acervo.versao.data_prevista`, uma promessa por
+// folha. Ver o comentario da coluna em er/acervo.sql.
 const periodo = () => ({
   data_inicio: dataCalendario().required(),
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),

@@ -69,6 +69,34 @@ const de = `FROM pit.demanda_extra AS d
   INNER JOIN dominio.situacao_extra_pit AS s ON s.code = d.situacao_id
   INNER JOIN dominio.origem_meta AS o ON o.code = d.origem_id`
 
+/**
+ * As demandas Extra-PIT ENTREGUES num mês. É o que a 3.3 do RPCMTec reporta.
+ *
+ * SÓ O MÊS, e é por isso que ela não é `listar(ano)`. A 3.3 estava saindo com o
+ * ano inteiro em toda edição, então a de agosto repetia tudo o que a de julho já
+ * havia reportado, e quem somasse as doze edições contaria cada demanda doze
+ * vezes. É o mesmo recorte que a 3.4 já usava (`filtroPeriodoMes` sobre
+ * `mapoteca.pedido.data_pedido`), e as duas são irmãs no documento.
+ *
+ * O MÊS É O DA ENTREGA, e não o do cadastro. `data_entrega` é quando a exceção
+ * autorizada se cumpriu, e é isso que o relatório do mês afirma ter acontecido.
+ * A demanda sem `data_entrega` não entra em mês nenhum: ela ainda não aconteceu,
+ * e reportá-la seria dizer que a Divisão entregou o que não entregou.
+ *
+ * @param {number} ano
+ * @param {number} mes - 1 a 12
+ */
+controller.listarDoMes = async (ano, mes) => {
+  return db.conn.any(
+    `SELECT ${colunas} ${de}
+     WHERE d.ano = $<ano>
+       AND d.data_entrega >= make_date($<ano>, $<mes>, 1)
+       AND d.data_entrega < (make_date($<ano>, $<mes>, 1) + interval '1 month')
+     ORDER BY d.data_entrega, d.demandante, d.tipo_produto`,
+    { ano, mes }
+  )
+}
+
 controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
     return db.conn.any(

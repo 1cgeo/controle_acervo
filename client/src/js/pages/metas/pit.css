@@ -149,3 +149,56 @@
 .pit-tabela__acoes {
   margin-left: auto;
 }
+
+/* O AVISO DO CADASTRO: o que as metas automáticas prometem e ninguém cadastrou.
+ *
+ * Usa os MESMOS tokens do resto do sistema (--color-warning e a mesma
+ * transparência dos chips), e não uma cor própria: aviso com paleta só dele lê
+ * como elemento de outra aplicação.
+ *
+ * Ele SOME quando não há nada a dizer, e por isso não precisa de estado neutro.
+ */
+.pit-aviso {
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  background: rgba(237, 108, 2, 0.12);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+}
+
+[data-theme="dark"] .pit-aviso {
+  background: rgba(255, 167, 38, 0.15);
+}
+
+.pit-aviso__titulo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-warning);
+  margin-bottom: var(--space-xs);
+}
+
+.pit-aviso__texto {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pit-aviso__lista {
+  margin: 0;
+  padding-left: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.pit-aviso__item {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.pit-aviso__link {
+  color: var(--color-primary);
+  text-decoration: underline;
+}

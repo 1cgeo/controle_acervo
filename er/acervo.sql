@@ -50,17 +50,22 @@ CREATE TABLE acervo.lote (
     descricao TEXT,
     data_inicio DATE NOT NULL,
     data_fim DATE,
-    -- Quando o lote PROMETE terminar, e daqui sai o MES DO PLANEJADO do PIT.
-    -- Coluna propria, e nao `data_fim`, porque as duas dizem
-    -- coisas diferentes: esta e a promessa e aquela e o que aconteceu. Em todos
-    -- os 16 lotes de 2026 as duas datas existentes sao IGUAIS, o que mostra que
-    -- `data_fim` vinha sendo preenchida so no fim, com o fato consumado.
+    -- Quando o LOTE promete terminar. Coluna propria, e nao `data_fim`, porque
+    -- as duas dizem coisas diferentes: esta e a promessa e aquela e o que
+    -- aconteceu.
     --
-    -- Ela precisa existir porque a versao Planejada guarda hoje a data prevista
-    -- no proprio `data_edicao` (o invariante 3j da auditoria cobra a "Planejada
-    -- VENCIDA" por ali), e esse valor e SOBRESCRITO quando a versao vira
-    -- Regular. Sem coluna no lote, o plano desapareceria no instante em que se
-    -- cumpre, e a grade do PIT perderia a coluna com que se compara.
+    -- JA NAO E A FONTE DO PLANEJADO DO PIT, e a troca vale escrever porque a
+    -- razao dela foi medida. Ate 2026-08-05 o mes do planejado saia daqui, e nos
+    -- 19 lotes que tinham a coluna ela era IGUAL a `data_fim`: a previsao vinha
+    -- sendo preenchida no fim, junto com o fato consumado. A meta 1.3 prometia
+    -- 48 folhas em agosto e a grade mostrava 49 em junho, porque foi em junho
+    -- que o lote acabou. Alem disso o lote e a granularidade errada: a meta 1.1
+    -- promete 4 em abril, 1 em maio, 16 em julho e 3 em agosto, e uma data de
+    -- lote nao expressa quatro meses. Hoje o planejado sai de
+    -- `acervo.versao.data_prevista`, uma promessa por folha.
+    --
+    -- A coluna FICA, porque a promessa do lote continua sendo um fato do lote, e
+    -- e o que a tela de projetos mostra.
     data_fim_prevista DATE,
     status_execucao_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -152,6 +157,25 @@ CREATE TABLE acervo.versao(
     palavras_chave TEXT[],
 	data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
 	data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
+	-- O MES EM QUE ESTA VERSAO PROMETE FICAR PRONTA, e de onde sai o PLANEJADO
+	-- do PIT.
+	--
+	-- COLUNA PROPRIA, e nao `data_edicao`. A versao Planejada guardava a data
+	-- prevista no proprio `data_edicao`, e esse valor e SOBRESCRITO quando ela
+	-- vira Regular: o plano desaparecia no instante em que se cumpria.
+	--
+	-- E NAO E `lote.data_fim_prevista`, que foi a primeira tentativa e falhou
+	-- por duas razoes medidas em 2026-08-05. A primeira: nos 19 lotes que a tem,
+	-- ela e IGUAL a `data_fim`, ou seja, a previsao vinha sendo preenchida no
+	-- fim junto com o fato, e o planejado da grade era uma copia do realizado. A
+	-- segunda: o lote e a granularidade errada, porque a meta 1.1 promete 4 em
+	-- abril, 1 em maio, 16 em julho e 3 em agosto, e uma data de lote nao
+	-- expressa quatro meses.
+	--
+	-- ANULAVEL, e a maioria fica nula: registro historico e produto de fora do
+	-- plano nao prometem mes nenhum. Na versao que cumpre meta, a ausencia dela e
+	-- erro de cadastro do PIT, e quem acusa e GET /pit/execucao/diagnostico.
+	data_prevista DATE,
 	data_cadastramento timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
 	data_modificacao  timestamp with time zone,
@@ -477,7 +501,12 @@ CREATE TABLE acervo.upload_versao_temp (
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
     data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
     produto_id BIGINT, -- Used for add_version scenario (acervo.produto.id é BIGSERIAL)
-    produto_temp_id BIGINT REFERENCES acervo.upload_produto_temp (id) ON DELETE CASCADE -- Used for add_product scenario
+    produto_temp_id BIGINT REFERENCES acervo.upload_produto_temp (id) ON DELETE CASCADE, -- Used for add_product scenario
+    -- O VINCULO COM O PIT atravessa o envio. Sem as duas aqui, a meta escolhida
+    -- no formulario morre entre o preparo e a finalizacao: o schema aceita, o
+    -- rascunho nao guarda, e a versao final nasce fora da conta do plano.
+    meta_pit_id BIGINT REFERENCES pit.meta (id) ON DELETE SET NULL,
+    data_prevista DATE
 );
 
 CREATE INDEX idx_upload_versao_temp_produto_temp ON acervo.upload_versao_temp(produto_temp_id);

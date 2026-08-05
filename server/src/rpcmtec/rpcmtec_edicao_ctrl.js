@@ -245,6 +245,11 @@ const paraSaida = b => ({
   titulo: b.titulo,
   origem: b.origem,
   fonte: b.fonte || null,
+  // O QUE A TELA DIZ quando o cálculo roda e não acha nada, na palavra que a
+  // Divisão usa ("Nenhuma capacitação ministrada concluída no mês"). Antes a
+  // tela dizia "Falta cadastrar o dado de origem", que não nomeia o que
+  // cadastrar nem onde: o chefe leu isso na 2.6 e não soube o que era.
+  pendencia: b.pendencia || null,
   cabecalhos: b.cabecalhos || null,
   ehTexto: Boolean(b.texto)
 })

@@ -33,9 +33,19 @@ dotenv.config({
 // MIGRAÇÃO QUE SÓ REMOVE NÃO SOBE O PISO. A 1.26.0 apaga uma função e um índice
 // que o código nunca leu, então um banco carimbado 1.25.0 roda esta versão sem
 // faltar nada. Subir o piso obrigaria toda instalação a migrar para não ganhar
-// nada. Por isso os dois números divergem aqui, e a divergência é deliberada.
-const VERSION = '1.26.0'
-const MIN_DATABASE_VERSION = '1.25.0'
+// nada.
+//
+// A 1.27.0 SOBE O PISO, porque é o caso oposto: ela acrescenta `data_prevista`
+// em `acervo.versao`, `rpcmtec.capacitacao` e `mapoteca.pedido`, e o cálculo do
+// planejado do PIT passa a LER as três. Num banco 1.26.0 a grade quebraria com
+// "coluna data_prevista não existe", que é erro de 500 sem explicação.
+//
+// A 1.28.0 SOBE O PISO por um motivo diferente: ela não acrescenta coluna, ela
+// muda o que `pit.meta_vigente` DEVOLVE. A meta que revisão publicada nenhuma
+// declarou deixa de sair da view. Num banco 1.27.0 o serviço rodaria sem erro e
+// mostraria linha em branco no PIT do ano, que é pior do que falhar.
+const VERSION = '1.28.0'
+const MIN_DATABASE_VERSION = '1.28.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

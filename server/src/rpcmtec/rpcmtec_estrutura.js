@@ -74,6 +74,7 @@ const SECOES = [
         titulo: 'Estado Atual do PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.meta_vigente e pit.execucao',
+        pendencia: 'Nenhum lançamento de meta no mês',
         cabecalhos: ['Meta', 'Item', 'Produto ou serviço', 'Quantidade',
           'Prontos no mês', 'Prontos', 'Previsão de término'],
         grade: [1665, 825, 2835, 1425, 1005, 1035, 1365]
@@ -81,8 +82,13 @@ const SECOES = [
       {
         numero: '2.2',
         titulo: 'Totais do Mês e do Ano',
-        origem: ORIGEM.DIGITADA,
-        fonte: 'SAP',
+        // CALCULADA desde 2026-08-05. Ela era digitada com fonte 'SAP', e nao
+        // precisava ser: o que ela conta e a versao REGULAR que ficou pronta no
+        // mes, e isso o acervo sabe sozinho. Enquanto foi digitada, o numero do
+        // relatorio e o do acervo podiam divergir sem nada acusar.
+        origem: ORIGEM.CALCULADA,
+        fonte: 'acervo.versao, tipo Regular, por mes de edicao',
+        pendencia: 'Nenhum produto concluído no mês',
         cabecalhos: ['Tipo de produto', 'Quantidade no mês', 'Quantidade no ano'],
         grade: [4965, 2370, 2520]
       },
@@ -98,8 +104,12 @@ const SECOES = [
       {
         numero: '2.4',
         titulo: 'Entregas detalhada de produtos finais (BDGEx, IGW, EBGeo) no mês',
-        origem: ORIGEM.DIGITADA,
-        fonte: 'SAP',
+        // CALCULADA desde 2026-08-05, pela mesma razao da 2.2. O identificador
+        // que a coluna 'UUID BDGEx' pede E o `uuid_versao`: e com ele que o
+        // produto e publicado la, e nao ha um segundo identificador a guardar.
+        origem: ORIGEM.CALCULADA,
+        fonte: 'acervo.versao, tipo Regular, por mes de edicao',
+        pendencia: 'Nenhuma entrega no mês',
         cabecalhos: ['Tipo produto', 'Escala', 'UUID BDGEx', 'Identificador',
           'Meta PIT', 'Lote SAP'],
         grade: [1740, 1050, 2535, 1560, 1440, 1485]
@@ -117,6 +127,7 @@ const SECOES = [
         titulo: 'Capacitações externas',
         origem: ORIGEM.CALCULADA,
         fonte: 'rpcmtec.capacitacao, tipo Ministrada',
+        pendencia: 'Nenhuma capacitação ministrada concluída no mês',
         cabecalhos: ['Capacitação', 'Período', 'Instituições participantes',
           'Efetivo capacitado'],
         grade: [2160, 2385, 3015, 2205]
@@ -126,6 +137,7 @@ const SECOES = [
         titulo: 'Estado do Acervo',
         origem: ORIGEM.CALCULADA,
         fonte: 'acervo.produto recortado pela área de suprimento',
+        pendencia: 'Nenhum produto no acervo',
         cabecalhos: ['Escala', 'Tipo de produto', 'Total catalogado',
           'Catalogo no mês', 'Universo da ASC', '% da ASC'],
         grade: [1380, 1755, 2070, 1515, 1515, 1515]
@@ -141,6 +153,7 @@ const SECOES = [
         titulo: 'Totais do Mês e do Ano',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido',
+        pendencia: 'Nenhum pedido da mapoteca no mês',
         cabecalhos: ['Indicador', 'Total no mês', 'Total no ano'],
         grade: [5010, 2580, 2175]
       },
@@ -149,6 +162,7 @@ const SECOES = [
         titulo: 'Entregas da mapoteca',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido, cliente militar',
+        pendencia: 'Nenhuma entrega a OM no mês',
         cabecalhos: ['Solicitante', 'Documento de solicitação', 'Quantidade',
           'Situação'],
         grade: [2040, 3345, 2010, 2415]
@@ -158,6 +172,7 @@ const SECOES = [
         titulo: 'Extra-PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.demanda_extra',
+        pendencia: 'Nenhuma demanda Extra-PIT no mês',
         cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd', 'Situação',
           'Documento autorização', 'Descrição'],
         grade: [1590, 1575, 630, 1215, 1455, 3360]
@@ -167,6 +182,7 @@ const SECOES = [
         titulo: 'LAI e atendimento à órgãos públicos',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido, cliente civil e órgão público',
+        pendencia: 'Nenhum pedido de LAI ou de órgão público no mês',
         // QUATRO colunas, e o modelo tem três: saiu o "Documento de
         // solicitação", que é o DIEx de encaminhamento da DSG e não identifica
         // a manifestação, e entraram o NUP do Fala.BR e a descrição do que a
@@ -186,6 +202,7 @@ const SECOES = [
         titulo: 'Execução por ND',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.pdr_item e orcamento.nota_credito',
+        pendencia: 'Nenhum item de PDR com crédito',
         cabecalhos: ['ND', 'Valor previsto (Prioridade 1)', 'Valor recebido',
           'Valor empenhado', 'Valor liquidado total', 'Valor Recolhido'],
         grade: [1388, 2151, 1388, 1638, 1638, 1638]
@@ -195,6 +212,7 @@ const SECOES = [
         titulo: 'Situação dos créditos recebidos',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.nota_credito, classificação PDR',
+        pendencia: 'Nenhuma nota de crédito do PDR',
         cabecalhos: COLUNAS_CREDITO,
         grade: [855, 855, 840, 2865, 1125, 1170, 1140, 945]
       },
@@ -203,6 +221,7 @@ const SECOES = [
         titulo: 'Situação RPNP',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.rpnp',
+        pendencia: 'Nenhum RPNP cadastrado',
         cabecalhos: ['Empenho', 'Finalidade', 'Valor Empenhado', 'Valor a liquidar'],
         grade: [2040, 2670, 2100, 3000]
       },
@@ -211,6 +230,7 @@ const SECOES = [
         titulo: 'GCALC DSG',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.licitacao, tipo GCALC DSG',
+        pendencia: 'Nenhuma licitação GCALC DSG cadastrada',
         cabecalhos: COLUNAS_LICITACAO,
         grade: [2340, 3150, 2145, 2205]
       },
@@ -219,6 +239,7 @@ const SECOES = [
         titulo: 'Demais Licitações da atividade-fim',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.licitacao, tipos Própria e Participante',
+        pendencia: 'Nenhuma licitação própria ou como participante',
         cabecalhos: COLUNAS_LICITACAO,
         grade: [2535, 2955, 2145, 2205]
       },
@@ -227,6 +248,7 @@ const SECOES = [
         titulo: 'Recebimento de material',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.recebimento_material',
+        pendencia: 'Nenhum recebimento de material no mês',
         cabecalhos: ['Empenho', 'Material', 'Prazo de entrega', 'Situação'],
         grade: [1965, 2685, 1755, 3435]
       },
@@ -235,6 +257,7 @@ const SECOES = [
         titulo: 'Situação de créditos Extra-PDR',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.nota_credito, classificação Extra-PDR',
+        pendencia: 'Nenhuma nota de crédito Extra-PDR',
         cabecalhos: COLUNAS_CREDITO,
         grade: [855, 870, 840, 2295, 1185, 1245, 1485, 1050]
       }
@@ -273,6 +296,7 @@ const SECOES = [
         titulo: 'Aproveitamento do efetivo',
         origem: ORIGEM.CALCULADA,
         fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
+        pendencia: 'Nenhum período de efetivo cadastrado',
         // TRÊS colunas, e o modelo tem duas: uma tabela de aproveitamento sem
         // o aproveitamento não responde nada. A largura total continua a do
         // modelo, e a coluna do meio cede o espaço porque é a única que é prosa.
@@ -284,6 +308,7 @@ const SECOES = [
         titulo: 'Capacitação do efetivo',
         origem: ORIGEM.CALCULADA,
         fonte: 'rpcmtec.capacitacao, tipo Recebida',
+        pendencia: 'Nenhuma capacitação recebida concluída no mês',
         cabecalhos: ['Plano / Código', 'Capacitação', 'Instituição', 'Militar'],
         grade: [2310, 2415, 2325, 2835]
       }
@@ -305,6 +330,7 @@ const SECOES = [
         numero: '7.2',
         titulo: 'Estoque de Insumos de Impressão - Papel',
         origem: ORIGEM.CALCULADA,
+        pendencia: 'Nenhum papel em estoque',
         // O consumo do papel é DERIVADO da impressão: cada exemplar gasta uma
         // folha da mídia, e a mídia aponta o papel. Só de `consumo_material`,
         // que ninguém preenche, a coluna sai zerada.
@@ -316,6 +342,7 @@ const SECOES = [
         numero: '7.3',
         titulo: 'Estoque de Insumos de Impressão - Tintas',
         origem: ORIGEM.CALCULADA,
+        pendencia: 'Nenhuma tinta em estoque',
         // A tinta NÃO se deriva da impressão: quanto de cartucho uma folha
         // gasta depende do que está desenhado nela. O consumo vem da troca
         // DECLARADA, e fica zerado enquanto ninguém a declarar -- o que é

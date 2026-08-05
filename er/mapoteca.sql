@@ -185,6 +185,20 @@ CREATE TABLE mapoteca.pedido(
     -- correlacao entre midia e meta vale num ano e o PIT e reescrito todo ano
     -- e a numeracao muda com ele.
     meta_pit_id BIGINT REFERENCES pit.meta (id),
+    -- O MES EM QUE ESTE PEDIDO PROMETE SER IMPRESSO, e de onde sai o PLANEJADO
+    -- da meta 4 do PIT: a soma de `produto_pedido.quantidade` dos pedidos
+    -- ligados a meta, agrupada pelo mes daqui.
+    --
+    -- O PLANEJADO E O PEDIDO E O REALIZADO E A MIDIA, e as duas fontes convivem
+    -- de proposito. O prometido esta no ITEM do pedido; o entregue esta na midia
+    -- que SAIU, pelo de-para de `mapoteca.midia_meta_pit`. Somar o realizado
+    -- pelo pedido derrubaria a 4.1 de 5.664 folhas para 253.
+    --
+    -- NAO E `prazo`, que e o limite imposto pelo CLIENTE. Medido em 2026-08-05:
+    -- `prazo` esta preenchido em 33 dos 164 pedidos e em NENHUM dos 16 ligados a
+    -- meta. Mesma razao pela qual `lote.data_fim_prevista` nasceu separada de
+    -- `data_fim`.
+    data_prevista DATE,
     -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
     canal_recebimento_id SMALLINT REFERENCES mapoteca.canal_recebimento (code),
     municipio VARCHAR(255),
