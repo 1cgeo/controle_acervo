@@ -52,6 +52,31 @@ RETURNING *`;
  * quem grava arquivo acabou de criar (ou de ler) a versao e ja sabe o produto,
  * e deixar o mapa resolver custaria um SELECT por arquivo numa carga de lote.
  */
+/**
+ * Dispara a miniatura das versoes, em segundo plano.
+ *
+ * Chame SEMPRE depois do commit e NUNCA com `await`. Renderizar custa segundos e
+ * roda um processo externo: dentro da transacao prenderia linhas do acervo, e
+ * aguardado aqui faria quem enviou o arquivo esperar a imagem ficar pronta.
+ *
+ * Existe como funcao, e nao como tres chamadas soltas, pela mesma razao do
+ * `SQL_INSERT_ARQUIVO`: sao TRES os pontos de entrada de arquivo no acervo (o
+ * envio pela web, a catalogacao in-place e o confirm-upload, este ultimo com
+ * quatro caminhos internos). Ate 2026-08-04 quem cobria os tres era um cron de
+ * meia em meia hora; sem ele, esquecer um ponto e o modo de falhar que nao da
+ * erro: a versao entra no acervo e a ficha dela fica sem imagem, calada.
+ *
+ * @param {Array<number|string>} versaoIds
+ */
+const dispararMiniatura = (versaoIds) => {
+  const ids = (versaoIds || []).filter(Boolean);
+  if (!ids.length) return;
+
+  miniaturaVarredura
+    .gerarParaVersoes(ids)
+    .catch(error => logger.error('Falha ao gerar miniatura apos o cadastro', { error }));
+};
+
 const registrarArquivoCriado = async (t, arquivo, { produtoId, usuarioUuid, contexto }) => {
   await auditoriaCtrl.registrar(t, {
     tabela: 'acervo.arquivo',
@@ -1307,7 +1332,7 @@ controller.enviarWeb = async (plano, usuarioUuid, contexto) => {
   const promovidos = [];
 
   try {
-    return await db.conn.tx(async t => {
+    const resultado = await db.conn.tx(async t => {
       let produtoId;
       let versaoId;
 
@@ -1379,6 +1404,13 @@ controller.enviarWeb = async (plano, usuarioUuid, contexto) => {
         }))
       };
     });
+
+    // Miniatura depois do commit e sem esperar. Ver o comentario longo no fim de
+    // `confirmUpload`: renderizar custa segundos e roda processo externo, entao
+    // nao pode entrar na transacao nem segurar a resposta de quem enviou.
+    dispararMiniatura([resultado.versao_id]);
+
+    return resultado;
   } catch (erro) {
     // Desfaz a promocao dos que ja tinham mudado de nome. A transacao ja abortou
     // sozinha; o disco nao tem rollback, entao ele e desfeito aqui.
@@ -1729,6 +1761,17 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
       }
       throw error;
     }
+  }).then(resultado => {
+    // Miniatura depois do commit e sem esperar, como nos outros dois pontos de
+    // entrada. Aqui a lista pode ser LONGA: a catalogacao in-place varre um
+    // volume inteiro. A geracao e sequencial de proposito (uma versao por vez,
+    // dentro de `gerarParaVersoes`), senao uma catalogacao de lote dispararia
+    // centenas de processos externos de uma vez.
+    dispararMiniatura(
+      (resultado?.produtos || []).flatMap(p => (p.versoes || []).map(v => v.versao_id))
+    );
+
+    return resultado;
   });
 };
 
@@ -2186,15 +2229,11 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
     //
     // O `.catch` é obrigatório: esta promessa não volta para o caminho da
     // requisição, então uma rejeição solta derrubaria o processo.
-    const versoes = (resultado?.detalhes || [])
-      .filter(d => d.versao_id && d.files?.some(f => f.status === 'completed'))
-      .map(d => d.versao_id);
-
-    if (versoes.length) {
-      miniaturaVarredura
-        .gerarParaVersoes(versoes)
-        .catch(error => logger.error('Falha ao gerar miniatura após o upload', { error }));
-    }
+    dispararMiniatura(
+      (resultado?.detalhes || [])
+        .filter(d => d.versao_id && d.files?.some(f => f.status === 'completed'))
+        .map(d => d.versao_id)
+    );
 
     return resultado;
   });
