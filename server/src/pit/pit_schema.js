@@ -15,32 +15,52 @@ models.idParams = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
+// DE QUE REVISÃO A TELA ESTÁ APAGANDO A META.
+//
+// OPCIONAL, porque a regra tem duas metades e o servidor cobra a primeira
+// sozinho: a meta com mais de uma declaração não se apaga de lugar nenhum. A
+// segunda metade ("você está noutra revisão, aí só cabe cancelar") precisa saber
+// de onde veio o pedido, e é isso que este parâmetro diz. O CLI não o manda, e
+// continua barrado pela primeira metade.
+models.excluirMetaQuery = Joi.object().keys({
+  revisao_id: Joi.number().integer()
+})
+
 models.listarQuery = Joi.object().keys({
   ano: Joi.number().integer()
 })
 
-// O que a DSG DECLARA sobre o item, e que vai para a linha da revisão. Os quatro
-// primeiros são OPCIONAIS, e omitir vale nulo: a linha de cabeçalho da meta não
-// promete quantidade nenhuma, porque quem promete são os itens que ela agrupa.
+// O que a DSG DECLARA sobre o item, e que vai para a linha da revisão. Os
+// quatro últimos são OPCIONAIS, e omitir vale nulo: a linha de cabeçalho da meta
+// não promete quantidade nenhuma, porque quem promete são os itens que ela
+// agrupa.
 //
 // `descricao` é a frase da DSG, e ela JÁ contém o demandante e a quantidade
 // ("Carta Topográfica 1:25.000. COTER, 24"): por isso os três andam juntos.
-const promessa = {
+const declaracao = {
+  // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
+  // `pit.meta_revisao` é NOT NULL.
+  descricao: Joi.string().required(),
   quantidade_prevista: Joi.number().integer().strict().min(0).allow(null),
   demandante: Joi.string().max(255).allow(null, ''),
   prazo: dia.allow(null, ''),
   // O ÚNICO ato de situação que é da DSG. Não há `situacao_id` digitado: 'Em
   // execução' e 'Concluída' a grade calcula do que foi lançado, e status
   // digitado ao lado de status calculado é uma segunda verdade.
-  cancelada: Joi.boolean(),
+  cancelada: Joi.boolean()
+}
+
+// O que o SCA decide sobre a meta, e que revisão nenhuma menciona. Por isso muda
+// sem revisão, na tela de metas.
+const classificacao = {
   // O QUE A META CONTA: 1 Folha, 2 Marco, 3 Capacitação, 4 Item de acervo, 5
-  // Atividade. Classificação NOSSA, não da DSG, e por isso muda sem revisão.
+  // Atividade. Classificação NOSSA, não da DSG.
   //
   // A coerência com a origem é cobrada no controller: Produção e Impressão
   // exigem Folha, e Capacitação exige Capacitação.
   unidade_id: Joi.number().integer().strict().min(1).max(5).allow(null),
   // De onde vem o NÚMERO da meta: 1 Manual, 2 Capacitação, 3 Produção, 4
-  // Impressão. Omitir vale 1, que é o que toda meta já é.
+  // Impressão. Omitir é NÃO MEXER, e o controller guarda o valor que já estava.
   //
   // Virar uma meta para automática é ato deliberado, e o portão dele é a rota
   // `/metas/execucao/ensaio`: ela mostra o digitado e o calculado lado a lado
@@ -49,24 +69,79 @@ const promessa = {
   origem_id: Joi.number().integer().strict().min(1).max(4)
 }
 
+// O CAMPO QUE SÓ ENTRA PELA REVISÃO, e a mensagem que diz por onde ir.
+//
+// `forbidden()` em vez de silêncio: o campo descartado sem aviso é meia meta
+// gravada, e quem mandou acha que gravou. Aqui o 400 ENSINA o modelo, que é o
+// que a interface sozinha não conseguia fazer.
+const soNaRevisao = campo => Joi.any().forbidden().messages({
+  'any.unknown':
+    `"${campo}" é o que o PIT PROMETE, e isso só muda dentro de uma revisão da ` +
+    'DSG. Abra a revisão do ano na tela de Revisões do PIT e altere a meta por ' +
+    'lá. Para consertar um erro de cópia do documento assinado, use a correção ' +
+    'de transcrição.'
+})
+
+// A REVISÃO EM QUE O ATO CAI, e o MOTIVO quando essa revisão já foi publicada.
+//
+// `revisao_id` OPCIONAL: omitir cai no rascunho do ano, que é o caminho do CLI e
+// da carga. A tela sempre manda, porque ela sabe qual revisão está aberta nela,
+// e o servidor não deve adivinhar.
+//
+// `motivo` OPCIONAL AQUI, e obrigatório no controller quando a revisão está
+// publicada. O Joi não enxerga o estado da revisão: quem sabe se o ato é
+// correção de transcrição ou alteração de rascunho é quem lê `data_vigencia`.
+const ondeCai = {
+  revisao_id: Joi.number().integer().strict(),
+  motivo: Joi.string().min(5)
+}
+
 models.criar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
-  // `pit.meta_revisao` é NOT NULL.
-  descricao: Joi.string().required(),
-  ...promessa
+  // ACRESCENTAR META É ATO DA DSG, como alterar e cancelar: o controller exige
+  // uma revisão e a declaração cai dentro dela.
+  ...declaracao,
+  ...classificacao,
+  ...ondeCai
 })
 
+// SÓ A IDENTIDADE. A declaração saiu daqui: ela era a segunda porta para mudar o
+// que a DSG promete, ao lado da revisão, e nenhuma tela conseguia explicar duas
+// portas para o mesmo ato.
 models.atualizar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
   item: Joi.string().max(20).allow(null, ''),
-  // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
-  // `pit.meta_revisao` é NOT NULL.
-  descricao: Joi.string().required(),
-  ...promessa
+  ...classificacao,
+  descricao: soNaRevisao('descricao'),
+  quantidade_prevista: soNaRevisao('quantidade_prevista'),
+  demandante: soNaRevisao('demandante'),
+  prazo: soNaRevisao('prazo'),
+  cancelada: soNaRevisao('cancelada')
+})
+
+// A META COMO ESTA REVISÃO A DECLARA. Os dois ids vêm no caminho
+// (`declaracaoParams`), então o corpo é a declaração mais o que a tela edita no
+// mesmo formulário.
+//
+// A CLASSIFICAÇÃO ENTRA AQUI, e é OPCIONAL. Ela continua sendo nossa, e revisão
+// nenhuma a menciona; o que mudou foi a tela, que deixou de ter um botão
+// "Corrigir cadastro" ao lado do de alterar a meta. Ninguém distinguia os dois,
+// e a decisão do chefe é que tudo se faça dentro da revisão. `numero_meta`
+// presente é o sinal de que o bloco da identidade veio junto; omitir os quatro
+// é "não mexer", que é o que o CLI e a carga fazem.
+//
+// `motivo` é cobrado pelo controller quando a revisão já foi publicada: aí a
+// edição conserta a TRANSCRIÇÃO do texto assinado, e o motivo diz em que a cópia
+// divergia.
+models.declararNaRevisao = Joi.object().keys({
+  ...declaracao,
+  numero_meta: Joi.number().integer().strict(),
+  item: Joi.string().max(20).allow(null, ''),
+  ...classificacao,
+  motivo: Joi.string().min(5)
 })
 
 // --- Execução mensal --------------------------------------------------------
@@ -136,6 +211,28 @@ const demandaExtra = {
 models.criarDemandaExtra = Joi.object().keys({ ...demandaExtra })
 
 models.atualizarDemandaExtra = Joi.object().keys({ ...demandaExtra })
+
+// --- Versões do acervo que materializam a demanda ---------------------------
+//
+// O vínculo mora em `acervo.versao.demanda_extra_id` e é exclusivo com
+// `meta_pit_id` (CHECK `versao_plano_ou_excecao`). Aqui só entra o id da versão:
+// o corpo NÃO repete o id da demanda, que já vem no caminho, e duas fontes para
+// a mesma chave abririam a chance de discordarem.
+
+models.versaoDemandaExtraParams = Joi.object().keys({
+  id: Joi.number().integer().required(),
+  versao_id: Joi.number().integer().required()
+})
+
+models.associarVersaoDemandaExtra = Joi.object().keys({
+  versao_id: Joi.number().integer().strict().required()
+})
+
+// O termo da busca de candidatas. Vazio devolve as primeiras do acervo, dentro
+// do teto do controller.
+models.candidatasQuery = Joi.object().keys({
+  termo: Joi.string().max(255).allow('')
+})
 
 // --- De-para da mídia impressa para a meta (fonte da meta 4) ----------------
 

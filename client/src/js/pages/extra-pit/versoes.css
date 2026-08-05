@@ -1,0 +1,58 @@
+/*
+ * As listas de versão do diálogo de acervo da demanda Extra-PIT.
+ *
+ * ARQUIVO PRÓPRIO, ao lado da tela que o usa, e não em css/forms.css: o padrão
+ * já existe no vault (rastreabilidade.css, historico.css), e a folha global
+ * cresce com regra que só uma tela lê.
+ *
+ * ROLAGEM COM TETO nas duas listas: a busca devolve até 50 folhas, e sem o teto
+ * o diálogo cresceria para fora da tela e o rodapé com "Fechar" sairia de vista.
+ */
+
+.lista-versoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: var(--space-md);
+}
+
+.lista-versoes__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.lista-versoes__item:hover {
+  background: var(--bg-hover);
+}
+
+/* A folha que o CHECK do banco recusa. Fica visível de propósito, com o motivo
+   escrito e sem botão: escondê-la faria procurar para sempre uma versão que
+   existe. */
+.lista-versoes__item--bloqueado {
+  background: var(--bg-secondary);
+  border-style: dashed;
+}
+
+.lista-versoes__texto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lista-versoes__detalhe {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.lista-versoes__motivo {
+  color: var(--color-warning);
+  font-size: 0.85em;
+}

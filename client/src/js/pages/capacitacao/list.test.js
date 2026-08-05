@@ -55,11 +55,32 @@ const RECEBIDA = {
   ],
 };
 
-// [Capacitacao, Situacao, Periodo, Instituicoes, Local, <do tipo>, Militares, acoes]
-const colunaDoTipo = (container) => [...container.querySelectorAll('tbody tr')]
-  .map(tr => [...tr.querySelectorAll('td')].slice(-3, -2)[0]?.textContent);
-const colunaMilitares = (container) => [...container.querySelectorAll('tbody tr')]
-  .map(tr => [...tr.querySelectorAll('td')].slice(-2, -1)[0]?.textContent);
+// A coluna se acha pelo CABECALHO, e nao por posicao a partir do fim.
+//
+// A conta antiga (`slice(-3, -2)`) quebrou no dia em que a ministrada ganhou a
+// coluna "Meta do PIT": ela nao dizia QUAL coluna se queria, so onde ela estava,
+// e a proxima coluna quebra de novo.
+const colunaPorRotulo = (container, rotulo) => {
+  const cabecalhos = [...container.querySelectorAll('thead th')];
+  const i = cabecalhos.findIndex(th => th.textContent.trim().startsWith(rotulo));
+  if (i < 0) throw new Error(`coluna "${rotulo}" nao existe na tabela`);
+  return [...container.querySelectorAll('tbody tr')]
+    .map(tr => tr.querySelectorAll('td')[i]?.textContent);
+};
+
+const colunaDoTipo = (container) => {
+  // O rotulo muda com a tela: "Efetivo capacitado" na ministrada, "Plano /
+  // Codigo" na recebida.
+  const th = [...container.querySelectorAll('thead th')]
+    .find(t => /Efetivo capacitado|Plano/.test(t.textContent));
+  return colunaPorRotulo(container, th.textContent.trim());
+};
+const colunaMilitares = (container) => {
+  const th = [...container.querySelectorAll('thead th')]
+    .find(t => /Instrutores|Militares/.test(t.textContent));
+  return colunaPorRotulo(container, th.textContent.trim());
+};
+const colunaMeta = (container) => colunaPorRotulo(container, 'Meta do PIT');
 
 describe('capacitação em duas telas', () => {
   beforeEach(() => {
@@ -79,6 +100,22 @@ describe('capacitação em duas telas', () => {
     // coexistem numa ministrada, e o relatório pede as duas.
     expect(colunaDoTipo(container)).toEqual(['18']);
     expect(colunaMilitares(container)).toEqual(['Cap Fulano']);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A coluna responde "esta capacitação CONTA no PIT?". Com meta ligada, e daqui
+  // que sai o numero da grade quando a meta declara origem Capacitação; sem
+  // meta, e trabalho real que o plano nao promete. As duas leituras pedem acoes
+  // diferentes, e por isso a ausencia sai por escrito e nao como um traco.
+  test('a ministrada diz se a capacitação conta no PIT', async () => {
+    getCapacitacoes.mockResolvedValueOnce([
+      { ...MINISTRADA, id: 1, meta_pit_id: 7, meta_pit_item: '5.1' },
+      { ...MINISTRADA, id: 2, meta_pit_id: null, meta_pit_item: null },
+    ]);
+    const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
+
+    expect(colunaMeta(container)).toEqual(['Meta 5.1', 'Fora do PIT']);
 
     if (typeof cleanup === 'function') cleanup();
   });

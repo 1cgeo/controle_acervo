@@ -75,16 +75,39 @@ export const getMetasPit = (ano) => apiGet(ano ? `/metas?ano=${ano}` : '/metas')
 export const getAnosMetaPit = () => apiGet('/metas/anos');
 // SEM `getMetaPit(id)`: nenhuma tela busca uma meta sozinha. A lista do ano ja
 // traz a linha inteira, e o dialogo de edicao recebe o objeto que a tabela tem.
+// ACRESCENTAR META E ATO DA DSG, como alterar e cancelar: o servidor exige a
+// revisao em rascunho e a declaracao cai dentro dela. Por isso "Nova meta" mora
+// na tela de revisoes, e nao na de metas.
 export const createMetaPit = (body) => apiPost('/metas', body);
+/**
+ * SO A IDENTIDADE da meta: ano, numero, item, unidade e origem.
+ *
+ * O que a DSG PROMETE (descricao, quantidade, prazo, demandante, cancelada) NAO
+ * entra aqui, e o servidor recusa com 400 quem mandar: isso muda dentro de uma
+ * revisao, por `declararNaRevisao`.
+ */
 export const updateMetaPit = (id, body) => apiPut(`/metas/${id}`, body);
-export const deleteMetaPit = (id) => apiDelete(`/metas/${id}`);
+/**
+ * APAGAR A META, e so a partir da revisao que a CRIOU.
+ *
+ * A primeira criacao pode ter nascido errada, e o documento assinado talvez nem
+ * tenha a meta: por isso ela se apaga. Da segunda declaracao em diante o plano
+ * ja contou com ela, e o que cabe e CANCELAR dentro de uma revisao. O servidor
+ * cobra a contagem sozinho; `revisaoId` e o que diz de ONDE se esta apagando, e
+ * sem ele a segunda metade da regra ficaria so na tela.
+ *
+ * @param {number} id
+ * @param {number} [revisaoId] - a revisao aberta na tela.
+ */
+export const deleteMetaPit = (id, revisaoId) =>
+  apiDelete(`/metas/${id}${revisaoId ? `?revisao_id=${revisaoId}` : ''}`);
 
 /**
  * CORRIGIR A TRANSCRICAO da meta, e nao alterar o PIT.
  *
- * `updateMetaPit` muda o que a DSG PROMETE, e por isso o servidor exige uma
- * revisao ABERTA. Esta rota e a outra porta: o gerente digitou 53 onde o
- * documento assinado diz 35, e o conserto e da TRANSCRICAO, nao um ato da DSG.
+ * `declararNaRevisao` muda o que a DSG PROMETE, e por isso exige uma revisao em
+ * rascunho. Esta rota e a outra porta: o gerente digitou 53 onde o documento
+ * assinado diz 35, e o conserto e da TRANSCRICAO, nao um ato da DSG.
  * Ela reescreve a linha da revisao EM VIGOR e cobra `motivo`, que e o que separa
  * "digitei errado" de "a DSG mudou".
  *
@@ -119,6 +142,27 @@ export const getAnosExtraPit = () => apiGet('/metas/extra/anos');
 export const createExtraPit = (body) => apiPost('/metas/extra', body);
 export const updateExtraPit = (id, body) => apiPut(`/metas/extra/${id}`, body);
 export const deleteExtraPit = (id) => apiDelete(`/metas/extra/${id}`);
+
+// AS VERSÕES QUE MATERIALIZAM A DEMANDA. O Extra-PIT é produção, e o vínculo
+// mora em `acervo.versao.demanda_extra_id`, exclusivo com `meta_pit_id` pelo
+// CHECK `versao_plano_ou_excecao`. Até aqui a tela só via a CONTAGEM
+// (`quantidade_materializada`), e nunca quais folhas.
+//
+// LER é de qualquer pessoa logada; LIGAR e DESLIGAR são do administrador, como o
+// resto da escrita da 3.3.
+export const getVersoesExtraPit = (id) => apiGet(`/metas/extra/${id}/versoes`);
+
+// As candidatas trazem `meta_pit_id` preenchido quando a folha já cumpre meta do
+// PIT. A tela recusa essa antes de chamar o servidor, para a pessoa ler o motivo
+// em vez da violação do CHECK.
+export const getVersoesCandidatasExtraPit = (id, termo) =>
+  apiGet(`/metas/extra/${id}/versoes/candidatas${termo ? `?termo=${encodeURIComponent(termo)}` : ''}`);
+
+export const associarVersaoExtraPit = (id, versaoId) =>
+  apiPost(`/metas/extra/${id}/versoes`, { versao_id: versaoId });
+
+export const desassociarVersaoExtraPit = (id, versaoId) =>
+  apiDelete(`/metas/extra/${id}/versoes/${versaoId}`);
 
 // ---- Aproveitamento do efetivo (6.1) ----
 // INTERVALO, e nao retrato mensal. `dgeo.efetivo_periodo`
@@ -230,6 +274,38 @@ export const publicarRevisao = (id, body) =>
  */
 export const removerDeclaracao = (revisaoId, metaId) =>
   apiDelete(`/metas/revisoes/${revisaoId}/meta/${metaId}`);
+
+/**
+ * A META COMO ESTA REVISAO A DECLARA: a porta unica para mudar o que o PIT
+ * promete.
+ *
+ * OS DOIS IDS NO CAMINHO. A alteracao entrava por `updateMetaPit`, e o servidor
+ * descobria sozinho em que revisao gravar, procurando o rascunho do ano: quem
+ * estivesse olhando o R0 publicado e mudasse um numero via a mudanca cair no R1,
+ * sem nada dizer. Aqui a revisao e escolhida por quem chama, e a revisao
+ * publicada e RECUSADA em vez de desviada.
+ *
+ * AS TRES OPERACOES cabem nesta chamada, porque `pit.meta_revisao` e esparsa:
+ * acrescentar e a primeira linha da meta, alterar e a linha com o numero novo,
+ * cancelar e a linha com `cancelada`. Tirar a meta da revisao e
+ * `removerDeclaracao`.
+ *
+ * A REVISAO PUBLICADA ACEITA A EDICAO, com `motivo`. O texto assinado e o rei, e
+ * o que esta no sistema e transcricao dele: editar o R0 publicado conserta a
+ * nossa COPIA, e nao o plano. O servidor recusa sem o motivo.
+ *
+ * A IDENTIDADE VIAJA JUNTO, e e opcional: `numero_meta`, `item` e `unidade_id`
+ * gravam em `pit.meta` na MESMA transacao. Era o botao "Corrigir cadastro" ao
+ * lado do de alterar, e ninguem distinguia os dois.
+ *
+ * @param {number} revisaoId
+ * @param {number} metaId
+ * @param {{descricao:string, quantidade_prevista:?number, prazo:?string,
+ *          demandante:?string, cancelada:boolean, motivo:?string,
+ *          numero_meta:?number, item:?string, unidade_id:?number}} body
+ */
+export const declararNaRevisao = (revisaoId, metaId, body) =>
+  apiPut(`/metas/revisoes/${revisaoId}/meta/${metaId}`, body);
 
 export const listarAnexosRevisao = (id) => apiGet(`/metas/revisoes/${id}/anexos`);
 

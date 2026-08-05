@@ -113,16 +113,16 @@ const SISTEMA_PRODUCAO = {
   prefixo: '',
   chavePrefixo: '',
   menu: [
-    { id: 'metas', label: 'Metas do PIT', icon: ICONS.category, path: '/metas' },
-    // Logo abaixo das metas, e nao no fim: a revisao e o que EXPLICA o numero
-    // que a grade mostra, e as duas se leem juntas. Sem `admin: true` pelo
-    // mesmo motivo das metas -- ler o plano e de qualquer pessoa logada.
-    {
-      id: 'revisoes_pit',
-      label: 'Revisões do PIT',
-      icon: ICONS.swapHoriz,
-      path: '/revisoes_pit',
-    },
+    // O PIT DO ANO: uma entrada so, no lugar de "Metas do PIT" e "Revisoes do
+    // PIT". Os dois itens separados escondiam a relacao entre eles: quem
+    // procurava o botao de editar nas metas nao descobria que ele tinha virado
+    // um ato da revisao. A tela unica poe o exercicio, as revisoes e o
+    // consolidado na mesma pagina.
+    //
+    // A ROTA continua '/metas', e nao um '#/pit' novo: e o endereco que a grade
+    // de execucao e a rastreabilidade apontam, e renomear so por simetria
+    // quebraria link guardado sem ganho nenhum.
+    { id: 'metas', label: 'PIT do ano', icon: ICONS.category, path: '/metas' },
     // A execução do PIT é do GERENTE e do administrador, e
     // não de qualquer pessoa logada como as metas ao lado. Por isso ela leva
     // `visivel` em vez de `admin: true`: nenhuma das duas marcas descreve

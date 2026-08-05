@@ -350,9 +350,13 @@ export async function renderRastreabilidade(container, ctx) {
   // some quando a tela estreita, e foi o que deixou a barra com "De" grudado no
   // seletor de data e "Campo alterado" escrito duas vezes (rotulo mais
   // placeholder).
+  // `.form-field` e `.form-field__select` sao as classes do SISTEMA. Antes daqui
+  // saia `form-control`, uma classe que NAO EXISTE em folha nenhuma: os combos
+  // desta tela ficavam com o estilo padrao do navegador, e por isso destoavam de
+  // todos os outros combos do SCA. Era classe fantasma, usada so neste arquivo.
   function campo(rotulo, controle) {
-    return el('div', { className: 'rastro-filtros__campo' }, [
-      el('span', { className: 'rastro-filtros__rotulo', textContent: rotulo }),
+    return el('div', { className: 'form-field' }, [
+      el('span', { className: 'form-field__label', textContent: rotulo }),
       controle,
     ]);
   }
@@ -366,7 +370,7 @@ export async function renderRastreabilidade(container, ctx) {
   }
 
   function selectDe(nome, rotulo, opcoes, aoMudar = null) {
-    const select = el('select', { className: 'form-control', 'aria-label': rotulo }, [
+    const select = el('select', { className: 'form-field__select', 'aria-label': rotulo }, [
       el('option', { value: '', textContent: 'Todos' }),
       ...opcoes.map((o) => el('option', { value: o.valor, textContent: o.texto })),
     ]);
@@ -382,7 +386,7 @@ export async function renderRastreabilidade(container, ctx) {
   }
 
   function inputDe(nome, rotulo, tipo = 'text', dica = '') {
-    const attrs = { className: 'form-control', type: tipo, 'aria-label': rotulo };
+    const attrs = { className: 'form-field__input', type: tipo, 'aria-label': rotulo };
     if (dica) attrs.placeholder = dica;
     const input = el('input', attrs);
     // `change`, e nao `input`: com `input` cada tecla de "valor_empenhado"
@@ -454,7 +458,7 @@ export async function renderRastreabilidade(container, ctx) {
       inputDe('data_fim', 'Até', 'date'),
     ]);
 
-    const barra = el('div', { className: 'rastro-filtros' }, [
+    const barra = el('div', { className: 'page__filters rastro-filtros' }, [
       // SISTEMA e SUBSISTEMA respondem "o que foi alterado", que era a pergunta
       // sem controle na tela. Entraram no lugar do combo de
       // ORIGEM, que respondia "por qual porta a mudanca entrou": e uma pergunta

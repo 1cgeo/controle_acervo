@@ -284,10 +284,7 @@ export async function renderNotasCreditoList(container, _ctx) {
       el('h1', { className: 'page__title', textContent: 'Notas de Crédito' }),
       el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [
+    el('div', { className: 'page__filters' }, [
       filtroAno.element,
       classificacaoFilter.element,
     ]),

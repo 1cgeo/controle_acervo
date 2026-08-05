@@ -51,7 +51,19 @@ const eventoAuditado = (tabela = 'pit.meta') => {
 // desejado e tem teste proprio.
 const comRevisaoAberta = () => {
   mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-  mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 7, codigo: 'R1' })
+  // O duble copia as colunas do SELECT real. `data_vigencia` nula e o que define
+  // o RASCUNHO: sem ela o controller pediria o motivo da correcao.
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({
+    id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
+  })
+}
+
+// A META que o DELETE le, mais o exercicio VIGENTE. As declaracoes saem do
+// `t.any`, que no duble responde lista vazia por padrao: meta sem declaracao
+// nenhuma passa as duas metades da regra de apagar.
+const metaApagavel = (meta = { id: 1, ano: 2026, numero_meta: 7 }) => {
+  mockDb.conn.oneOrNone.mockResolvedValueOnce(meta)
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
 }
 
 describe('GET /metas', () => {
@@ -139,6 +151,90 @@ describe('POST /metas', () => {
 
   // A coerencia entre a origem e a unidade: a origem Producao conta versao do
   // acervo, e uma versao e uma FOLHA.
+  // A REVISAO E ESCOLHIDA POR QUEM CHAMA, e nao adivinhada. A tela sempre manda
+  // `revisao_id`, porque ela sabe qual revisao esta aberta nela; o CLI omite e
+  // cai no rascunho do ano.
+  test('com revisao_id, a meta entra na revisao escolhida', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 12, ano: 2026, codigo: 'R2', data_vigencia: null
+    })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 1 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 12 })
+
+    const res = await request(app)
+      .post('/metas')
+      .send({
+        ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1', revisao_id: 12
+      })
+
+    expect(res.status).toBe(201)
+    // CONTROLE NEGATIVO: sem esta passagem a declaracao cairia no rascunho que o
+    // servidor achasse sozinho, e nao no 12 que veio no corpo.
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO pit.meta_revisao'),
+      expect.objectContaining({ revisaoId: 12 })
+    )
+  })
+
+  // ACRESCENTAR A META QUE A COPIA ESQUECEU, numa revisao ja PUBLICADA. O texto
+  // assinado e o rei: se o R0 tem uma meta que nunca foi transcrita, ela entra
+  // no R0, com motivo, e nao numa revisao inventada.
+  test('meta nova em revisao PUBLICADA sem motivo recusa com 400', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 2, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
+    })
+
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 6, item: '6.9', descricao: 'Meta 6.9', revisao_id: 2 })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/motivo/i)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
+  test('meta nova em revisao PUBLICADA com motivo grava', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 2, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
+    })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 6 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 2 })
+
+    const res = await request(app)
+      .post('/metas')
+      .send({
+        ano: 2026,
+        numero_meta: 6,
+        item: '6.9',
+        descricao: 'Meta 6.9',
+        revisao_id: 2,
+        motivo: 'A 6.9 esta no R0 assinado e nao foi transcrita'
+      })
+
+    expect(res.status).toBe(201)
+    expect(eventoAuditado('pit.meta').motivo)
+      .toBe('A 6.9 esta no R0 assinado e nao foi transcrita')
+  })
+
+  // A revisao de um ano so declara meta DAQUELE ano.
+  test('revisao_id de outro ano recusa com 400', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 2, ano: 2025, codigo: 'R0', data_vigencia: null
+    })
+
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta 1', revisao_id: 2 })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/2025/)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
   test('origem Producao com unidade que nao e Folha recusa com 400', async () => {
     const res = await request(app)
       .post('/metas')
@@ -151,39 +247,43 @@ describe('POST /metas', () => {
   })
 })
 
+// PUT /metas/:id: SO A IDENTIDADE.
+//
+// A declaracao saiu daqui. Ela entrava por esta rota e o servidor descobria
+// sozinho em que revisao gravar, procurando o rascunho do ano: era a segunda
+// porta para mudar o que a DSG promete, ao lado da revisao, e nenhuma tela
+// conseguia explicar duas portas para o mesmo ato.
 describe('PUT /metas/:id', () => {
-  // A DECLARACAO nao mudou (a mesma descricao e a mesma quantidade), entao esta
-  // edicao NAO precisa de revisao aberta: ela so mexe na identidade.
-  test('atualiza so a identidade sem exigir revisao', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2 })
+  test('atualiza so a identidade, sem revisao nenhuma', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2, origem_id: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({
-      descricao: 'Meta 2', quantidade_prevista: null, prazo: null,
-      demandante: null, cancelada: false
-    })
     const res = await request(app)
       .put('/metas/5')
-      .send({ ano: 2026, numero_meta: 2, item: '2.1', descricao: 'Meta 2' })
+      .send({ ano: 2026, numero_meta: 2, item: '2.1', unidade_id: 1 })
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
   })
 
-  test('mudar a quantidade sem revisao aberta recusa com 400', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2 })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({
-      descricao: 'Meta 2', quantidade_prevista: 24, prazo: null,
-      demandante: null, cancelada: false
-    })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+  // CONTROLE NEGATIVO do desenho novo: ate aqui este mesmo corpo respondia 200 e
+  // gravava a quantidade nova na revisao aberta. Agora ele para na porta, e a
+  // mensagem diz por onde ir.
+  test('a quantidade nao entra pela meta: 400 que manda para a revisao', async () => {
     const res = await request(app)
       .put('/metas/5')
       .send({
-        ano: 2026, numero_meta: 2, item: '2.1', descricao: 'Meta 2',
-        quantidade_prevista: 20
+        ano: 2026, numero_meta: 2, item: '2.1', quantidade_prevista: 20
       })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/revis/i)
+    // Nada foi ao banco: a recusa e do Joi, antes do controller.
+    expect(mockDb.conn.tx).not.toHaveBeenCalled()
+  })
+
+  test('a descricao tambem nao entra pela meta', async () => {
+    const res = await request(app)
+      .put('/metas/5')
+      .send({ ano: 2026, numero_meta: 2, descricao: 'Meta 2' })
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/revis/i)
   })
@@ -192,9 +292,101 @@ describe('PUT /metas/:id', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app)
       .put('/metas/99')
-      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta 1' })
+      .send({ ano: 2026, numero_meta: 1 })
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
+  })
+})
+
+// A META DENTRO DE UMA REVISAO: a porta unica para mudar o que o PIT promete.
+// Os dois ids vao no caminho, e a revisao PUBLICADA e recusada em vez de
+// desviada para o rascunho.
+describe('PUT /metas/revisoes/:revisaoId/meta/:metaId', () => {
+  test('grava a declaracao no rascunho e responde 200', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
+    })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 5, revisao_id: 7 })
+
+    const res = await request(app)
+      .put('/metas/revisoes/7/meta/5')
+      .send({ descricao: 'Carta Topografica 1:25.000', quantidade_prevista: 24 })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO pit.meta_revisao'),
+      expect.objectContaining({ metaId: 5, revisaoId: 7, quantidade_prevista: 24 })
+    )
+  })
+
+  // A REVISAO PUBLICADA ACEITA A EDICAO, e o MOTIVO e o portao. O texto assinado
+  // e o rei: editar o R0 publicado conserta a nossa COPIA dele, e nao o plano.
+  test('a revisao PUBLICADA sem motivo recusa com 400, e nao grava nada', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 7, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
+    })
+
+    const res = await request(app)
+      .put('/metas/revisoes/7/meta/5')
+      .send({ descricao: 'Carta Topografica 1:25.000' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/motivo/i)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
+  // CONTROLE NEGATIVO do teste acima: com o motivo, a MESMA requisicao passa.
+  // Ate aqui ela era recusada sempre, e esta asercao reprova aquele estado.
+  test('a revisao PUBLICADA com motivo grava, e o rastro leva o motivo', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 7, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
+    })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 53
+    })
+    mockDb.conn.one.mockResolvedValueOnce({
+      id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 35
+    })
+
+    const res = await request(app)
+      .put('/metas/revisoes/7/meta/5')
+      .send({
+        descricao: 'Carta Topografica 1:25.000',
+        quantidade_prevista: 35,
+        motivo: 'O R0 assinado diz 35, e a transcricao ficou 53'
+      })
+
+    expect(res.status).toBe(200)
+    const evento = eventoAuditado('pit.meta_revisao')
+    expect(evento.motivo).toBe('O R0 assinado diz 35, e a transcricao ficou 53')
+    expect(evento.operacao).toBe('U')
+    expect(JSON.parse(evento.dadosAntes).quantidade_prevista).toBe(53)
+    expect(JSON.parse(evento.dadosDepois).quantidade_prevista).toBe(35)
+  })
+
+  // O MOTIVO CURTO nao vale: o minimo e o mesmo do Joi da correcao de
+  // transcricao, e quem o cobra aqui e o proprio Joi da rota.
+  test('motivo com menos de 5 caracteres reprova no Joi', async () => {
+    const res = await request(app)
+      .put('/metas/revisoes/7/meta/5')
+      .send({ descricao: 'Carta', motivo: 'oi' })
+
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.tx).not.toHaveBeenCalled()
+  })
+
+  test('sem descricao recusa com 400: a coluna e NOT NULL', async () => {
+    const res = await request(app)
+      .put('/metas/revisoes/7/meta/5')
+      .send({ quantidade_prevista: 24 })
+
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.tx).not.toHaveBeenCalled()
   })
 })
 
@@ -209,6 +401,37 @@ describe('DELETE /metas/:id', () => {
     const res = await request(app).delete('/metas/99')
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
+  })
+
+  // APAGAR SO NA REVISAO QUE CRIOU. `?revisao_id=` diz de onde a tela esta
+  // apagando, e o controller recusa quando nao e a criadora: la o que cabe e
+  // CANCELAR a meta.
+  test('apagar de uma revisao que nao criou a meta recusa com 400', async () => {
+    metaApagavel()
+    mockDb.conn.any.mockResolvedValueOnce([{ revisao_id: 7, codigo: 'R0' }])
+
+    const res = await request(app).delete('/metas/1?revisao_id=9')
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/R0/)
+    expect(mockDb.conn.none).not.toHaveBeenCalled()
+  })
+
+  // CONTROLE NEGATIVO do teste acima: a MESMA meta, apagada da revisao que a
+  // criou, sai. Sem esta prova o 400 acima passaria com uma guarda que barra
+  // tudo.
+  test('apagar da revisao criadora passa', async () => {
+    metaApagavel()
+    mockDb.conn.any.mockResolvedValueOnce([{ revisao_id: 7, codigo: 'R0' }])
+    mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
+
+    const res = await request(app).delete('/metas/1?revisao_id=7')
+
+    expect(res.status).toBe(200)
+    expect(mockDb.conn.none).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM pit.meta'),
+      { id: 1 }
+    )
   })
 })
 
@@ -245,16 +468,18 @@ describe('Rastreabilidade da meta do PIT', () => {
   })
 
   test('PUT registra os dois lados, lidos do BANCO', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 2 })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 4 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
-      descricao: 'Meta 4', quantidade_prevista: null, prazo: null,
-      demandante: null, cancelada: false
+      id: 5, ano: 2026, numero_meta: 2, origem_id: 1
+    })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    // O `RETURNING *` traz a linha inteira, e a origem vem junto: sem ela no
+    // duble, o diff acusaria uma mudanca de origem que nao houve.
+    mockDb.conn.one.mockResolvedValueOnce({
+      id: 5, ano: 2026, numero_meta: 4, origem_id: 1
     })
 
     await request(app).put('/metas/5')
-      .send({ ano: 2026, numero_meta: 4, descricao: 'Meta 4' })
+      .send({ ano: 2026, numero_meta: 4 })
 
     const evento = eventoAuditado()
 
@@ -267,7 +492,7 @@ describe('Rastreabilidade da meta do PIT', () => {
   })
 
   test('DELETE registra o que se perdeu', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, ano: 2026, numero_meta: 7 })
+    metaApagavel()
     mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
 
     const res = await request(app).delete('/metas/1')
@@ -283,7 +508,7 @@ describe('Rastreabilidade da meta do PIT', () => {
   })
 
   test('a exclusao barrada por dependente nao registra nada', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1 })
+    metaApagavel({ id: 1, ano: 2026 })
     mockDb.conn.one.mockResolvedValueOnce({ n: 1 })
 
     const res = await request(app).delete('/metas/1')

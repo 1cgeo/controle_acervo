@@ -297,3 +297,72 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   BARRA DE FILTRO, uma so para o sistema inteiro.
+
+   Existia em TRES versoes, e por isso quatro telas do mesmo sistema nao
+   pareciam do mesmo sistema:
+     - o dashboard da mapoteca punha o `filtro-ano` solto na pagina;
+     - a execucao orcamentaria usava o `filtro-ano` (rotulo ACIMA) e, ao lado,
+       montava o mes a mao, com `<span>Mes:</span>` INLINE e estilo no
+       JavaScript;
+     - a rastreabilidade ignorava as duas e tinha o proprio `rastro-filtros`.
+
+   A que ficou e a da rastreabilidade, que era a melhor das tres: grid que se
+   ajusta sozinho, rotulo acima do campo e os filtros agrupados num painel
+   discreto, que os separa do conteudo sem pesar.
+
+   Os filhos sao `.form-field` (o que `createSelectField` ja devolve), entao a
+   barra nao inventa marcacao: ela so posiciona.
+   --------------------------------------------------------------------------- */
+.page__filters {
+  /* FLEX, e nao grid com `1fr`.
+     O grid com `repeat(auto-fit, minmax(160px, 1fr))` reparte a linha INTEIRA
+     entre as colunas: com sete filtros (a rastreabilidade) o resultado era bom,
+     com DOIS (o ano e o mes do orcamento) cada campo virava meia tela de
+     largura, e um `<select>` de 700px para escolher "Agosto" fica ridiculo.
+     Em flex o campo tem a largura que se declara, e a barra so alinha. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-sm) var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+}
+
+/* LARGURA PADRAO do filtro. Cabe "Setembro", "Todos os subsistemas" e um ano,
+   que e o que estes campos guardam. Quem precisa de mais pede pelo modificador
+   abaixo, em vez de a barra inteira esticar. */
+.page__filters > .form-field {
+  flex: 0 0 200px;
+  min-width: 0;
+}
+
+/* Campo que precisa de mais espaco (busca por texto livre, nome de campo). */
+.page__filters > .form-field--largo {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.page__filters select,
+.page__filters input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Acao (Limpar, Nova revisao) e contagem ficam na linha, alinhadas pela base
+   dos campos e encostadas na DIREITA da propria celula.
+
+   No layout antigo, em flex, o empurrao vinha de um `<div style="flex:1">`
+   vazio no meio da barra. Em grid esse espacador nao faz nada (ele viraria mais
+   uma coluna), entao quem alinha e o `justify-self`. */
+.page__filters-acoes {
+  display: flex;
+  align-items: flex-end;
+  justify-self: end;
+  gap: var(--space-sm);
+}

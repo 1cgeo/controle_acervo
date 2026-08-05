@@ -2,56 +2,43 @@
  *
  * O que este CSS corrige:
  *
- * 1. A barra de filtros nascia da `.filtro-barra` genérica, que é um flex de uma
- *    linha só. Com sete controles, dois deles com rótulo, o resultado era rótulo
- *    colado no campo ("De" grudado no seletor de data), larguras diferentes e
- *    quebra em lugar arbitrário. Aqui ela é uma GRADE, com o rótulo acima do
- *    campo e largura mínima igual para todos.
+ * 1. A barra de filtros nascia da `.filtro-barra` genérica, com o rótulo ao lado
+ *    do campo ("De" grudado no seletor de data) e larguras diferentes. Hoje ela
+ *    e a `.page__filters` do sistema (forms.css), com rótulo acima do campo e
+ *    largura igual para todos.
  * 2. A coluna "O que mudou" engolia a tabela: uma observação longa fazia a linha
  *    ter sete linhas de altura, e a tela deixava de ser varrível, que é o que
  *    ela existe para ser. O valor agora é recortado por CSS, com o texto inteiro
  *    no `title` e no detalhe.
  */
 
-.rastro-filtros {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-sm) var(--space-md);
-  align-items: end;
-  padding: var(--space-md);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--space-md);
-}
+/* O CONTAINER vem de `.page__filters` (forms.css), que e a barra de filtro do
+   sistema inteiro. Esta tela foi a ORIGEM do padrao: das quatro que o chefe
+   apontou, era a unica com a barra bem resolvida, entao ela subiu para o
+   compartilhado em vez de ser achatada para caber nas outras.
 
-.rastro-filtros__campo {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
+   Aqui ficam so os pedacos PROPRIOS da rastreabilidade: o par de datas e a
+   contagem.
 
-/* Rótulo ACIMA do campo, e não ao lado: ao lado ele rouba a largura do controle
-   e some quando a tela estreita. */
-.rastro-filtros__rotulo {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
+   O CAMPO e o ROTULO sairam daqui. Eles duplicavam o `.form-field` do sistema, e
+   os controles carregavam a classe `form-control`, que NAO EXISTE em folha
+   nenhuma: os combos desta tela ficavam com o estilo padrao do navegador e
+   destoavam de todos os outros do SCA. Agora usam as classes de verdade. */
 
-.rastro-filtros__campo select,
-.rastro-filtros__campo input {
-  width: 100%;
-  min-width: 0;
-}
+/* O periodo sao dois campos que se leem juntos: "de" nao quer dizer nada
+   sozinho, e separados eles caiam em linhas diferentes.
 
-/* O período são dois campos que se leem juntos: "de" não quer dizer nada sozinho.
-   Ocupa duas colunas da grade para os dois caberem lado a lado. */
+   Largura de DOIS filtros mais o gap, porque a barra virou flex e o
+   `grid-column: span 2` de antes nao vale mais ali. */
 .rastro-filtros__periodo {
-  grid-column: span 2;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: var(--space-sm);
+  flex: 0 0 calc(200px * 2 + var(--space-sm));
+}
+
+.rastro-filtros__periodo > .form-field {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .rastro-filtros__acoes {
@@ -147,6 +134,8 @@ a.rastro-onde__registro:hover {
 }
 
 @media (max-width: 900px) {
-  .rastro-filtros__periodo { grid-column: span 1; }
+  /* Em tela estreita o par de datas deixa de reservar a largura de dois filtros
+     e passa a ocupar a linha, com os dois campos dividindo o que houver. */
+  .rastro-filtros__periodo { flex: 1 1 100%; }
   .rastro-col-mudou { max-width: none; }
 }

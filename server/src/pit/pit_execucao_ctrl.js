@@ -223,6 +223,18 @@ controller.grade = async ano => {
             m.prazo::text AS prazo,
             m.origem_id,
             (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
+            -- QUAL COLUNA A TELA NAO PODE OFERECER PARA DIGITAR.
+            --
+            -- A regra de quem calcula o que mora AQUI, e nao no cliente. Sem
+            -- estas duas flags a tela abria o campo de digitacao em qualquer
+            -- celula: a pessoa escrevia o numero e so entao a gravacao recusava.
+            -- Pedir e recusar depois e pior do que nao pedir, porque o trabalho
+            -- ja foi feito quando a recusa chega.
+            --
+            -- Sao os MESMOS fragmentos que a leitura usa para escolher entre o
+            -- calculado e o digitado, entao a tela e o calculo nunca divergem.
+            ${ORIGEM_CALCULA_PLANEJADA} AS planejada_calculada,
+            ${ORIGEM_CALCULA_REALIZADA} AS realizada_calculada,
             m.cancelada, m.revisao, m.revisao_id,
             ${EH_FOLHA} AS folha,
             COALESCE(mes.lista, '[]'::json) AS meses,
@@ -254,7 +266,24 @@ controller.grade = async ano => {
        FROM celula AS t
        WHERE t.meta_id = m.id
      ) AS tot ON TRUE
-     WHERE m.ano = $<ano>
+     -- A META CANCELADA SAI DA GRADE.
+     --
+     -- Cancelar e o UNICO ato de situacao que e da DSG (er/pit.sql, na coluna
+     -- cancelada de pit.meta_revisao): o andamento e a conclusao a grade
+     -- calcula, mas o cancelamento e decisao declarada numa revisao. A R1 de
+     -- 2026 cancelou a 5.2 e a 5.3, e elas seguiam nesta tela pedindo
+     -- lancamento mensal, como se ainda fossem trabalho a fazer.
+     --
+     -- SAI DAQUI, e nao do sistema. Esta e a grade de EXECUCAO, onde se lanca o
+     -- mes; a meta cancelada nao se lanca. Ela continua na tela de Metas do PIT,
+     -- que e o plano consolidado depois de todas as revisoes, e la aparece
+     -- marcada como cancelada: apagar o fato faria o R0 e o R1 parecerem iguais.
+     --
+     -- IS NOT TRUE, e nao NOT cancelada. A view meta_vigente traz a revisao por
+     -- LEFT JOIN LATERAL, entao a meta que revisao nenhuma declarou vem com
+     -- cancelada NULA, e NOT NULL nao e verdadeiro: com NOT, essas metas
+     -- sumiriam da grade em silencio, que e o oposto do que se quer.
+     WHERE m.ano = $<ano> AND m.cancelada IS NOT TRUE
      ORDER BY m.numero_meta, m.item NULLS FIRST`,
     { ano }
   )

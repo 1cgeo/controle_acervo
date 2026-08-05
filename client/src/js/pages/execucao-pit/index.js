@@ -195,8 +195,26 @@ export async function renderExecucaoPit(container, _ctx) {
    * montar um `<input>` em cada uma pesaria o DOM sem nenhum ganho: só se edita
    * uma célula de cada vez.
    */
+  /**
+   * A coluna que a ORIGEM calcula nao se digita.
+   *
+   * Quem decide e o servidor, que manda `planejada_calculada` e
+   * `realizada_calculada` por linha. Repetir a regra aqui faria a tela e o
+   * calculo divergirem no dia em que uma origem nova entrasse.
+   */
+  function calculada(linha) {
+    return modo === PLANEJAR ? !!linha.planejada_calculada : !!linha.realizada_calculada;
+  }
+
   function editar(td, linha, mes) {
     if (!podeEscrever || !linha.folha) return;
+    // A celula CALCULADA nao abre para digitar. Antes ela abria, a pessoa
+    // escrevia o numero e so entao a gravacao recusava: pedir e recusar depois e
+    // pior do que nao pedir, porque o trabalho ja foi feito quando a recusa
+    // chega. O numero desta celula vem do estado do que a origem conta (a
+    // situacao da capacitacao, a versao que virou Regular, a impressao
+    // entregue), e muda sozinho quando aquilo muda.
+    if (calculada(linha)) return;
     if (td.querySelector('input')) return;
 
     const atual = valorDoMes(linha, mes, modo);
@@ -309,14 +327,24 @@ export async function renderExecucaoPit(container, _ctx) {
     if (!linha.__acumulado) linha.__acumulado = acumuladoDaLinha(linha);
     const ate = linha.__acumulado[mes];
 
+    // A celula CALCULADA ganha marca propria: sem ela, a celula que nao abre e
+    // indistinguivel da que abre, e a pessoa clica achando que a tela travou.
+    const ehCalculada = calculada(linha);
     td.className = `grade-pit__celula${ate.classe}`
-      + (atual ? ' grade-pit__celula--mes-atual' : '');
+      + (atual ? ' grade-pit__celula--mes-atual' : '')
+      + (ehCalculada ? ' grade-pit__celula--calculada' : '');
     // O `title` mostra as DUAS contas: o mês, que é o que a célula escreve, e o
     // acumulado, que é o que a cor diz. Sem ele, uma célula verde com realizado
     // zero se leria como erro.
     td.title = `${MESES[mes - 1]}: planejado ${numero(planejada)}, realizado ${numero(realizada)}`
       + `
-até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`;
+até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`
+      // O `title` diz DE ONDE vem o numero e por que a celula nao abre. Sem a
+      // frase, a celula que nao responde ao clique parece defeito.
+      + (ehCalculada
+        ? `
+Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero muda quando aquilo muda.`
+        : '');
     // OS DOIS `<span>` FICAM VIVOS, e só o texto muda. Trocá-los por nós novos
     // repintaria a célula inteira sem nenhum ganho. Eles se refazem só quando a
     // célula não os tem: é o caso da que está com o campo de edição aberto.

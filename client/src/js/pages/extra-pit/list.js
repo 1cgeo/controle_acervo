@@ -11,6 +11,7 @@ import {
 } from '@services/plataforma-service.js';
 import { isAdmin } from '@store/auth-store.js';
 import { openExtraPitDialog } from './extra-dialog.js';
+import { openVersoesDialog } from './versoes-dialog.js';
 
 /**
  * Extra-PIT (#/extra_pit): a subseção 3.3 do RPCMTec.
@@ -55,6 +56,21 @@ export async function renderExtraPitList(container, _ctx) {
       { key: 'demandante', label: 'Demandante', sortable: true },
       { key: 'tipo_produto', label: 'Tipo de produto', sortable: true },
       { key: 'quantidade', label: 'Qtd', sortable: true },
+      // O QUE JÁ MATERIALIZOU, ao lado do que a demanda promete. O Extra-PIT é
+      // produção: a demanda só fecha quando existe versão no acervo apontando
+      // para ela, e o servidor recusa fechar uma de origem Produção sem nenhuma.
+      // O número é calculado na leitura (`quantidade_materializada`), nunca
+      // gravado.
+      //
+      // A régua do servidor é "pelo menos uma", e NÃO materializada >=
+      // quantidade: a quantidade da 3.3 muda de unidade por linha. Por isso a
+      // coluna mostra o par e quem lê decide, em vez de pintar um veredito.
+      {
+        key: 'quantidade_materializada',
+        label: 'No acervo',
+        sortable: true,
+        render: (row) => String(row.quantidade_materializada ?? 0),
+      },
       { key: 'situacao', label: 'Situação', sortable: true },
       { key: 'documento_autorizacao', label: 'Documento autorização' },
       {
@@ -72,19 +88,30 @@ export async function renderExtraPitList(container, _ctx) {
     pageSize: 25,
     loading: true,
     emptyMessage: 'Nenhuma demanda Extra-PIT cadastrada',
-    actions: podeEscrever ? [
+    // O ACERVO DA DEMANDA abre para QUALQUER pessoa logada, e não só para quem
+    // escreve: ler as versões é `verifyLogin` no servidor, e a pergunta "quais
+    // folhas cumpriram esta demanda" é de quem monta o relatório. O diálogo é
+    // que esconde os botões de ligar e desligar de quem não é administrador.
+    actions: [
       {
-        icon: ICONS.edit,
-        title: 'Editar',
-        onClick: (row) => openExtraPitDialog({ demanda: row, onSaved: load }),
+        icon: ICONS.layers,
+        title: 'Versões do acervo',
+        onClick: (row) => openVersoesDialog({ demanda: row, onChanged: load }),
       },
-      {
-        icon: ICONS.delete,
-        title: 'Excluir',
-        variant: 'danger',
-        onClick: (row) => handleDelete(row),
-      },
-    ] : [],
+      ...(podeEscrever ? [
+        {
+          icon: ICONS.edit,
+          title: 'Editar',
+          onClick: (row) => openExtraPitDialog({ demanda: row, onSaved: load }),
+        },
+        {
+          icon: ICONS.delete,
+          title: 'Excluir',
+          variant: 'danger',
+          onClick: (row) => handleDelete(row),
+        },
+      ] : []),
+    ],
   });
 
   // A tabela vive num nó próprio para o estado de ERRO poder tomar o lugar dela
@@ -96,10 +123,7 @@ export async function renderExtraPitList(container, _ctx) {
       el('h1', { className: 'page__title', textContent: 'Extra-PIT' }),
       el('div', { className: 'page__actions' }, podeEscrever ? [newBtn] : []),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [anoFilter.element]),
+    el('div', { className: 'page__filters' }, [anoFilter.element]),
     areaTabela,
   ]);
   container.appendChild(page);

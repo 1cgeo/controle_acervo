@@ -230,6 +230,86 @@ router.delete(
   })
 )
 
+// --- As versões do acervo que materializam a demanda ------------------------
+//
+// O Extra-PIT é PRODUÇÃO, e a demanda só fecha quando a versão existe. O vínculo
+// mora em `acervo.versao.demanda_extra_id`, exclusivo com `meta_pit_id` pelo
+// CHECK `versao_plano_ou_excecao`.
+//
+// POR QUE AQUI, e não no módulo produto. `PUT /produtos/versao` já grava a
+// coluna, mas exige o corpo INTEIRO da versão (nome, tipo, lote, datas, todos
+// `.required()`): ligar uma folha por lá obriga a ler a versão, devolver tudo de
+// volta e torcer para nada se perder no caminho. Estas rotas mexem em UM campo.
+//
+// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER é do
+// administrador, como as outras escritas da demanda: o vínculo é o que faz a
+// folha CONTAR como exceção autorizada em vez de meta do plano.
+
+// Antes de '/extra/:id/versoes/:versao_id', pela mesma razão de '/anos'.
+router.get(
+  '/extra/:id/versoes/candidatas',
+  verifyLogin,
+  schemaValidation({
+    params: pitSchema.idParams,
+    query: pitSchema.candidatasQuery
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await extraCtrl.listarVersoesCandidatas(
+      req.params.id, req.query.termo
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Versões candidatas retornadas com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.get(
+  '/extra/:id/versoes',
+  verifyLogin,
+  schemaValidation({ params: pitSchema.idParams }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await extraCtrl.listarVersoes(req.params.id)
+
+    return res.sendJsonAndLog(
+      true, 'Versões da demanda Extra-PIT retornadas com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.post(
+  '/extra/:id/versoes',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.idParams,
+    body: pitSchema.associarVersaoDemandaExtra
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await extraCtrl.associarVersao(
+      req.params.id, req.body.versao_id, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Versão ligada à demanda Extra-PIT com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.delete(
+  '/extra/:id/versoes/:versao_id',
+  verifyAdmin,
+  schemaValidation({ params: pitSchema.versaoDemandaExtraParams }),
+  asyncHandler(async (req, res, next) => {
+    await extraCtrl.desassociarVersao(
+      req.params.id, req.params.versao_id, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Versão desligada da demanda Extra-PIT com sucesso', httpCode.OK
+    )
+  })
+)
+
 // O ENSAIO: o digitado e o calculado lado a lado, sem escrever nada. É o portão
 // para virar uma meta de Manual para automática, e responde inclusive na meta
 // que ainda está Manual, que é justamente a que interessa olhar.
@@ -463,6 +543,40 @@ router.post(
   })
 )
 
+// ALTERA A META DENTRO DA REVISAO, que e o unico jeito de mudar o que o PIT
+// PROMETE. Antes de '/revisoes/:id' pela ordem de declaracao.
+//
+// POR QUE OS DOIS IDS NO CAMINHO. A alteracao entrava por 'PUT /metas/:id', e o
+// servidor descobria sozinho em que revisao gravar, procurando o rascunho do
+// ano: quem estivesse olhando o R0 publicado e mudasse um numero via a mudanca
+// cair no R1, sem nada dizer. Aqui a revisao e escolhida por quem chama.
+//
+// A REVISAO PUBLICADA ACEITA A EDICAO, com MOTIVO. O texto assinado e o rei, e o
+// que esta no sistema e transcricao dele: editar o R0 publicado conserta a nossa
+// COPIA, e nao o plano. O controller cobra o motivo e ele desce para o rastro.
+//
+// AS TRES OPERACOES cabem nesta rota, porque `pit.meta_revisao` e esparsa:
+// acrescentar e a primeira linha da meta, alterar e a linha com o numero novo,
+// cancelar e a linha com `cancelada`. Tirar a meta da revisao e o DELETE abaixo.
+router.put(
+  '/revisoes/:revisaoId/meta/:metaId',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.declaracaoParams,
+    body: pitSchema.declararNaRevisao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await pitCtrl.declararNaRevisao(
+      req.params.revisaoId, req.params.metaId, req.body,
+      req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true, 'Meta declarada na revisão do PIT', httpCode.OK, dados
+    )
+  })
+)
+
 // REMOVE a declaracao de UMA meta do RASCUNHO. Antes de '/revisoes/:id' pela
 // ordem de declaracao.
 //
@@ -619,12 +733,26 @@ router.put(
   })
 )
 
+// APAGAR A META, e só a partir da revisão que a CRIOU.
+//
+// A primeira criação pode ter nascido errada, e o documento assinado talvez nem
+// tenha a meta: por isso ela se apaga. Da segunda declaração em diante o plano
+// já contou com ela, e o que cabe é CANCELAR, dentro de uma revisão.
+//
+// `?revisao_id=` diz de onde a tela está apagando, e o controller recusa quando
+// não é a revisão criadora. Sem o parâmetro sobra a guarda da contagem, que é a
+// que basta para o CLI.
 router.delete(
   '/:id',
   verifyAdmin,
-  schemaValidation({ params: pitSchema.idParams }),
+  schemaValidation({
+    params: pitSchema.idParams,
+    query: pitSchema.excluirMetaQuery
+  }),
   asyncHandler(async (req, res, next) => {
-    await pitCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
+    await pitCtrl.deletar(
+      req.params.id, req.query.revisao_id, req.usuarioUuid, req.contexto
+    )
 
     return res.sendJsonAndLog(true, 'Meta do PIT excluída com sucesso', httpCode.OK)
   })

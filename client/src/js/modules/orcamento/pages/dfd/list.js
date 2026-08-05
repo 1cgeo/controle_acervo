@@ -168,10 +168,7 @@ export async function renderDfdList(container, _ctx) {
       ]),
       el('div', { className: 'page__actions' }, pode.operador ? [newBtn] : []),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [
+    el('div', { className: 'page__filters' }, [
       filtroAno.element,
     ]),
     areaTabela,

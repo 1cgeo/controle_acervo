@@ -18,10 +18,11 @@ const OUTRO_ANO = '__outro__';
  * @param {Object} opts
  * @param {() => Promise<Array<number>>} [opts.carregarAnos] - anos com dado
  * @param {boolean} [opts.permitirOutroAno=false] - oferece ano fora da lista.
- *   Verdadeiro no orcamento, onde o ano decide ONDE se cadastra: comecar um
- *   exercicio novo passa por escolher um ano ainda vazio. Falso na mapoteca e
- *   nas metas, onde o ano so filtra o que ja aconteceu, e um ano vazio seria
- *   oferecer uma tela em branco.
+ *   Verdadeiro onde o ano decide ONDE se cadastra: comecar um exercicio novo
+ *   passa por escolher um ano ainda vazio. E o caso do orcamento e o do PIT, em
+ *   que o PIT de 2027 se monta durante 2026 e o exercicio nasce SEM meta
+ *   nenhuma. Falso na mapoteca, onde o ano so filtra o que ja aconteceu e um ano
+ *   vazio seria oferecer uma tela em branco.
  * @param {(ano:number) => void} opts.onChange - chamado a cada troca
  * @param {string} [opts.label='Ano']
  * @returns {{element:HTMLElement, getAno:Function, setAno:Function}}

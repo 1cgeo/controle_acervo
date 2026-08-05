@@ -149,10 +149,7 @@ export async function renderAproveitamento(container, ctx) {
       el('h1', { className: 'page__title', textContent: 'Aproveitamento do efetivo' }),
       el('div', { className: 'page__actions' }, [novaPassagemBtn]),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [anoFilter.element]),
+    el('div', { className: 'page__filters' }, [anoFilter.element]),
     avisoProjecao,
     resumoDivisao,
     mapa,

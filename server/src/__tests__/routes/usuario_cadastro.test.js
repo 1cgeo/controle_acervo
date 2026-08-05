@@ -862,7 +862,17 @@ const COBERTAS = new Set([
   'DELETE /efetivo/periodos/:id',
   'POST /efetivo/impedimentos',
   'PUT /efetivo/impedimentos/:id',
-  'DELETE /efetivo/impedimentos/:id'
+  'DELETE /efetivo/impedimentos/:id',
+
+  // O vinculo Extra-PIT x acervo. As duas gravam em acervo.versao
+  // (demanda_extra_id) e registram o evento, cada uma no seu controlador.
+  'POST /metas/extra/:id/versoes',
+  'DELETE /metas/extra/:id/versoes/:versao_id',
+
+  // A DECLARACAO da meta dentro de uma revisao, que e por onde o PIT passa a
+  // ser alterado. O rastro sai de gravarDeclaracao, e nao da funcao de rota:
+  // a que a rota chama delega, e o registro mora no gravador comum.
+  'PUT /metas/revisoes/:revisaoId/meta/:metaId'
 ])
 
 describe('Rastreabilidade: varredura das rotas de escrita da plataforma', () => {

@@ -140,9 +140,20 @@
 }
 
 .dashboard-cards-group .stats-grid {
-  /* auto-fit: cada grupo preenche a linha por igual (3 ou 4 cards), sem celula
-     vazia sobrando, e quebra sozinho em telas estreitas. */
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* auto-fit: o grupo preenche a linha por igual e quebra sozinho em tela
+     estreita.
+
+     O PISO E 300px, e o numero sai de medir o pior caso REAL, nao de gosto.
+     O `Intl` do BRL separa `R$` do valor com ESPACO INSECAVEL (U+00A0), entao
+     `R$ 660.520,50` e um token unico que nao quebra em lugar nenhum. Ele mede
+     ~190px em 1.5rem negrito, e o cartao ainda gasta 48px de icone, 16px de
+     gap e 48px de padding. Com o piso antigo de 200px sobravam ~90px para o
+     numero: ele transbordava e a tela mostrava `R$ 660.520,5`, que parece um
+     valor valido e nao e.
+
+     De quebra, o piso maior conserta a linha orfa: com 7 cartoes o piso de
+     200px cabia 6 e deixava 1 sozinho embaixo; com 300px cabem 4, e sai 4 + 3. */
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   margin-bottom: var(--space-md);
 }
 
@@ -224,6 +235,14 @@
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
   line-height: 1.2;
+  /* REDE CONTRA O CORTE SILENCIOSO. O piso do grid ja faz o valor caber, e isto
+     e o que sobra para o caso patologico (fonte maior no navegador, valor na
+     casa do bilhao). Sem a reticencia, o excesso era cortado no meio do numero
+     e `R$ 660.520,5` passava por valor inteiro. Com ela o corte se ANUNCIA, e o
+     `title` que o componente poe guarda o numero completo. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stats-card__title {

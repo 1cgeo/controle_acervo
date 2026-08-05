@@ -101,6 +101,199 @@ controller.anos = async () => {
   return linhas.map(l => l.ano)
 }
 
+// --- As versões que materializam a demanda -----------------------------------
+//
+// O VÍNCULO MORA NA VERSÃO (acervo.versao.demanda_extra_id, er/acervo.sql:148) e
+// é EXCLUSIVO com meta_pit_id, pelo CHECK versao_plano_ou_excecao
+// (er/acervo.sql:163). A folha cumpre o plano OU é a exceção autorizada, nunca
+// as duas, e essa exclusão é o que impede a contagem dupla.
+//
+// POR QUE NÃO PELO LOTE: a produção Extra-PIT mora DENTRO de um lote do PIT. O
+// lote 2026-1a tem seis cartas, quatro da meta 1.1 e duas do CMS para a Op.
+// Arandu. Só a versão tem a granularidade que separa as duas.
+//
+// ATÉ AQUI SÓ EXISTIA A CONTAGEM. `quantidade_materializada` dizia QUANTAS
+// versões apontam para a demanda, e nunca QUAIS: a única forma de ver as folhas
+// era SQL direto, e a única forma de ligar uma era o PUT /produtos/versao, que
+// exige o corpo inteiro da versão. A mensagem de `conferirMaterializacao` manda
+// "ligue as versões que a cumprem" e não havia onde.
+
+// A IDENTIDADE HUMANA DA FOLHA. MI e INOM antes do nome, que é como a folha do
+// SCN é chamada; o nome só identifica o produto especial, que é o que não tem
+// MI. Mesma ordem do resumo de auditoria (auditoria/mapa/acervo.js:65).
+const colunasVersao = `v.id::integer AS id, v.versao, v.nome,
+  v.data_edicao::text AS data_edicao,
+  v.produto_id::integer AS produto_id,
+  p.mi, p.inom, p.nome AS produto,
+  l.nome AS lote,
+  v.meta_pit_id,
+  m.ano AS meta_ano, m.numero_meta AS meta_numero, m.item AS meta_item`
+
+const deVersao = `FROM acervo.versao AS v
+  INNER JOIN acervo.produto AS p ON p.id = v.produto_id
+  LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
+  LEFT JOIN pit.meta AS m ON m.id = v.meta_pit_id`
+
+controller.listarVersoes = async id => {
+  return db.conn.any(
+    `SELECT ${colunasVersao} ${deVersao}
+     WHERE v.demanda_extra_id = $<id>
+     ORDER BY p.mi NULLS LAST, p.nome, v.versao`,
+    { id }
+  )
+}
+
+// AS CANDIDATAS A LIGAR, com o motivo do bloqueio JUNTO.
+//
+// A versão que já cumpre meta do PIT vem na lista, e não some dela: some-a e a
+// pessoa procuraria para sempre uma folha que existe. Ela vem com
+// `bloqueio` preenchido, e a tela recusa antes de chamar o servidor. Sem isso o
+// CHECK do banco responderia com "violates check constraint
+// versao_plano_ou_excecao", que não diz a ninguém o que fazer.
+//
+// TETO DE 50 LINHAS: o acervo tem folha demais para uma lista de escolha, e uma
+// busca sem teto viraria despejo. Quem não achou refina o termo.
+const LIMITE_CANDIDATAS = 50
+
+controller.listarVersoesCandidatas = async (id, termo) => {
+  const busca = termo ? `%${termo}%` : null
+
+  return db.conn.any(
+    `SELECT ${colunasVersao},
+       v.demanda_extra_id::integer AS demanda_extra_id
+     ${deVersao}
+     WHERE (v.demanda_extra_id IS NULL OR v.demanda_extra_id <> $<id>)
+       AND ($<busca> IS NULL OR
+            p.mi ILIKE $<busca> OR p.inom ILIKE $<busca> OR
+            p.nome ILIKE $<busca> OR v.nome ILIKE $<busca> OR
+            l.nome ILIKE $<busca>)
+     ORDER BY p.mi NULLS LAST, p.nome, v.versao
+     LIMIT ${LIMITE_CANDIDATAS}`,
+    { id, busca }
+  )
+}
+
+// A frase que a tela e o servidor usam quando a folha já cumpre meta do PIT. Uma
+// só, porque a tela recusa antes de chamar e o servidor recusa de novo: duas
+// redações da mesma regra divergiriam na primeira que fosse corrigida.
+const RECUSA_META_PIT =
+  'A versão já cumpre uma meta do PIT, e a mesma folha não conta nos dois ' +
+  'lugares. Desligue a meta na tela do produto antes de ligá-la à demanda ' +
+  'Extra-PIT.'
+
+// O portão da demanda: as duas escritas confirmam que ela existe antes de mexer
+// na versão. Sem isto, ligar a uma demanda apagada tomaria erro de chave
+// estrangeira, que nomeia a constraint e não o problema.
+const exigirDemanda = async (t, id) => {
+  const demanda = await t.oneOrNone(
+    'SELECT id FROM pit.demanda_extra WHERE id = $<id>',
+    { id }
+  )
+  if (!demanda) {
+    throw new AppError('Demanda Extra-PIT não encontrada', httpCode.NotFound)
+  }
+  return demanda
+}
+
+// LIGAR uma versão à demanda.
+//
+// IDEMPOTENTE: ligar de novo o que já está ligado devolve OK sem gravar. Dois
+// cliques na mesma linha são acidente comum, e o segundo não é erro.
+controller.associarVersao = async (id, versaoId, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    await exigirDemanda(t, id)
+
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'acervo.versao', versaoId, 'Versão do acervo'
+    )
+
+    if (antes.demanda_extra_id !== null && Number(antes.demanda_extra_id) === Number(id)) {
+      return { id: Number(versaoId), jaEstava: true }
+    }
+
+    // A ordem importa: o CHECK do banco recusaria as duas juntas, e a mensagem
+    // dele nomeia a constraint. Aqui a recusa diz o que fazer.
+    if (antes.meta_pit_id !== null) {
+      throw new AppError(RECUSA_META_PIT, httpCode.BadRequest)
+    }
+
+    if (antes.demanda_extra_id !== null) {
+      throw new AppError(
+        'A versão já materializa outra demanda Extra-PIT. Desligue-a de lá ' +
+        'antes de ligá-la a esta.',
+        httpCode.BadRequest
+      )
+    }
+
+    const depois = await t.one(
+      `UPDATE acervo.versao
+       SET demanda_extra_id = $<id>,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<versaoId>
+       RETURNING *`,
+      { id, versaoId, usuarioUuid, dataModificacao: new Date() }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.versao',
+      registroId: depois.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: Number(versaoId), jaEstava: false }
+  })
+}
+
+// DESLIGAR a versão da demanda.
+//
+// Só desliga a versão que aponta para ESTA demanda. Sem a conferência, um id
+// errado apagaria em silêncio o vínculo de outra demanda, e o UPDATE devolveria
+// sucesso do mesmo jeito.
+controller.desassociarVersao = async (id, versaoId, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    await exigirDemanda(t, id)
+
+    const antes = await auditoriaCtrl.lerAntes(
+      t, 'acervo.versao', versaoId, 'Versão do acervo'
+    )
+
+    if (antes.demanda_extra_id === null ||
+        Number(antes.demanda_extra_id) !== Number(id)) {
+      throw new AppError(
+        'A versão não materializa esta demanda Extra-PIT.',
+        httpCode.BadRequest
+      )
+    }
+
+    const depois = await t.one(
+      `UPDATE acervo.versao
+       SET demanda_extra_id = NULL,
+           data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<versaoId>
+       RETURNING *`,
+      { versaoId, usuarioUuid, dataModificacao: new Date() }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'acervo.versao',
+      registroId: depois.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: Number(versaoId) }
+  })
+}
+
 const paraBanco = (dados, usuarioUuid) => ({
   ano: dados.ano,
   demandante: dados.demandante,

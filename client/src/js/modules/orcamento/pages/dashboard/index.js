@@ -2,6 +2,7 @@ import { el } from '@utils/dom.js';
 import { monthName } from '@utils/format.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
+import { createSelectField } from '@components/form-fields/form-fields.js';
 import { getAnos } from '@modules/orcamento/services/orcamento-service.js';
 import { criarSecao3Store } from './secao3-store.js';
 import { criarBlocoPendencias } from './pendencias.js';
@@ -46,19 +47,22 @@ export async function renderDashboard(container, _ctx) {
 
   const store = criarSecao3Store({ getAno: filtroAno.getAno });
 
-  const mesSelect = el('select', {
-    className: 'chart-card__select',
-    'aria-label': 'Selecionar mês',
-    onChange: (e) => {
-      store.setMes(parseInt(e.target.value, 10));
+  // O MES PELO MESMO COMPONENTE DO ANO. Antes era um `<select>` solto com
+  // `<span>Mês:</span>` ao lado, rótulo INLINE onde o do Ano fica ACIMA: dois
+  // padrões de campo na mesma linha, alinhados no olho por um `flex-end`.
+  const filtroMes = createSelectField({
+    label: 'Mês',
+    placeholder: null,
+    options: Array.from({ length: 12 }, (_, i) => (
+      { value: String(i + 1), label: monthName(i + 1) }
+    )),
+    value: String(store.getMes()),
+    onChange: (valor) => {
+      store.setMes(parseInt(valor, 10));
       abas.refreshActive();
       atualizarPendencias();
     },
-  }, Array.from({ length: 12 }, (_, i) => {
-    const m = i + 1;
-    return el('option', { value: String(m), textContent: monthName(m) });
-  }));
-  mesSelect.value = String(store.getMes());
+  });
 
   // O recorte do painel aceita registro sem data, que entra em TODOS os meses.
   // Este bloco e o que denuncia isso, e mais cinco defeitos de dado do ano.
@@ -84,7 +88,7 @@ export async function renderDashboard(container, _ctx) {
     // o usuario lia um total menor que o real sem nada avisar.
     if (filtroAno.getAno() < new Date().getFullYear()) {
       store.setMes(12);
-      mesSelect.value = '12';
+      filtroMes.setValue('12');
     }
     store.invalidar();
     abas.refreshActive();
@@ -107,21 +111,12 @@ export async function renderDashboard(container, _ctx) {
     // O ano vem PRIMEIRO na barra de filtros, e o mes ao lado dele: os dois
     // recortam a mesma consulta, e separa-los faria procurar o ano em outro
     // canto da tela.
-    el('div', {
-      className: 'page__filters',
-      style: {
-        display: 'flex',
-        gap: '16px',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-        marginBottom: '16px',
-      },
-    }, [
+    // `.page__filters`: a MESMA barra da rastreabilidade e do dashboard da
+    // mapoteca. O layout saiu do JavaScript e virou classe, e os dois campos
+    // passam a ter o rótulo no mesmo lugar.
+    el('div', { className: 'page__filters' }, [
       filtroAno.element,
-      el('div', { className: 'dashboard-section__controls' }, [
-        el('span', { textContent: 'Mês:' }),
-        mesSelect,
-      ]),
+      filtroMes.element,
     ]),
     pendencias.element,
     abas.element,

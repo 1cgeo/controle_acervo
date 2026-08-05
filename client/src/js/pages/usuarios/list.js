@@ -322,10 +322,7 @@ export async function renderUsuariosList(container, ctx) {
       el('h1', { className: 'page__title', textContent: 'Usuários' }),
       el('div', { className: 'page__actions' }, [novoBtn]),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [situacaoFiltro.element]),
+    el('div', { className: 'page__filters' }, [situacaoFiltro.element]),
     aviso,
     areaTabela,
   ]);

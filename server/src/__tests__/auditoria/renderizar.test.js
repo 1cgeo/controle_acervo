@@ -222,3 +222,44 @@ describe('textoDoValor: as regras de formatacao', () => {
     expect(textoDoValor(null, { tipo: 'texto' }, null)).toBeNull()
   })
 })
+
+// O `metadado` do acervo e JSONB, e no mapa ele so declara rotulo, sem `tipo`.
+// Sem tipo o valor caia no ramo PADRAO, que fazia `String(valor)`: a tela de
+// rastreabilidade mostrava "Metadado: [object Object] -> [object Object]", que
+// avisa que algo mudou e esconde exatamente o que mudou.
+describe('textoDoValor: objeto sem tipo declarado', () => {
+  it('objeto sai em JSON, e nao como [object Object]', () => {
+    const texto = textoDoValor({ escala: '1:25.000', folhas: 4 }, {}, null)
+
+    expect(texto).not.toContain('[object Object]')
+    expect(texto).toBe('{"escala":"1:25.000","folhas":4}')
+  })
+
+  it('arranjo sem tipo tambem sai legivel', () => {
+    expect(textoDoValor([1, 2, 3], {}, null)).toBe('[1,2,3]')
+  })
+
+  // O corte por tamanho vale para o JSON como vale para o texto: um metadado
+  // grande quebraria a tabela, e a contagem diz que ha mais do que se ve.
+  it('JSON longo e recortado, com o tamanho ao lado', () => {
+    const grande = { nota: 'x'.repeat(400) }
+    const texto = textoDoValor(grande, {}, null)
+
+    expect(texto).toContain('... (')
+    expect(texto).toContain('caracteres)')
+    expect(texto.length).toBeLessThan(360)
+  })
+
+  // CONTROLE: o ramo novo nao pode engolir o que ja funcionava. Objeto
+  // SANITIZADO tem frase propria, e string segue string.
+  it('nao atropela o objeto ja substituido pelo sanitizar', () => {
+    expect(textoDoValor({ _omitido: true, bytes: 2048 }, {}, null))
+      .toBe('(2048 bytes, não guardado)')
+    expect(textoDoValor({ _truncado: true, resumo: 'geometria com 900 pontos' }, {}, null))
+      .toBe('geometria com 900 pontos')
+  })
+
+  it('texto simples segue saindo como texto', () => {
+    expect(textoDoValor('Carta encartada', {}, null)).toBe('Carta encartada')
+  })
+})

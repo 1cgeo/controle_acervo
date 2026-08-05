@@ -18,9 +18,11 @@ import { criarRevisao, atualizarRevisao } from '@services/plataforma-service.js'
  * O CODIGO e livre ('R0', 'R1', '2a revisao'): quem o define e o DIEx da DSG, e
  * inventar uma sequencia nossa criaria um segundo nome para a mesma coisa.
  *
- * A REVISAO PUBLICADA continua editavel AQUI, e so aqui. Corrigir o nome de
- * quem assinou e transcricao, nao mudanca de plano; o que ela DECLARA (as
- * metas) e que nao se toca depois de publicada.
+ * A REVISAO PUBLICADA e editavel aqui, e nao e excecao: o texto assinado e o
+ * rei, e o que esta no sistema e transcricao dele. Corrigir o nome de quem
+ * assinou e conserto da COPIA, e nao mudanca de plano. O que ela DECLARA (as
+ * metas) tambem se corrige, no formulario da meta, exigindo MOTIVO -- este
+ * formulario nao pede motivo porque nada aqui move um numero do plano.
  */
 export function abrirDialogoRevisao({
   revisao = null, ano = null, onSaved = null,

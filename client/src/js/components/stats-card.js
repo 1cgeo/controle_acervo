@@ -23,9 +23,14 @@ export function createStatsCard({ title, value, icon, color = 'primary', loading
 
   const displayValue = loading ? '' : `${value}${suffix ? ' ' + suffix : ''}`;
 
+  // O `title` guarda o valor INTEIRO. O CSS corta com reticencia quando ele nao
+  // cabe, e sem isto o numero completo se perderia: o `Intl` do BRL usa espaco
+  // insecavel, entao `R$ 660.520,50` nao quebra em lugar nenhum e so tem duas
+  // saidas, caber ou sumir.
   const valueEl = el('div', {
     className: `stats-card__value${loading ? ' skeleton' : ''}`,
     textContent: displayValue,
+    title: displayValue,
   });
 
   const titleEl = el('div', {
@@ -50,12 +55,15 @@ export function createStatsCard({ title, value, icon, color = 'primary', loading
       valueEl.classList.add('skeleton');
       titleEl.classList.add('skeleton');
       valueEl.textContent = '';
+      valueEl.title = '';
       titleEl.textContent = '';
     } else {
       card.classList.remove('stats-card--loading');
       valueEl.classList.remove('skeleton');
       titleEl.classList.remove('skeleton');
-      valueEl.textContent = `${newValue}${newSuffix ? ' ' + newSuffix : ''}`;
+      const texto = `${newValue}${newSuffix ? ' ' + newSuffix : ''}`;
+      valueEl.textContent = texto;
+      valueEl.title = texto;
       titleEl.textContent = title;
     }
   };

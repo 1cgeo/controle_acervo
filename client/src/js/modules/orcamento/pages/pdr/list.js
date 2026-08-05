@@ -257,10 +257,7 @@ export async function renderPdrList(container, _ctx) {
         ...(pode.gerente ? [newBtn] : []),
       ]),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, [
+    el('div', { className: 'page__filters' }, [
       filtroAno.element,
     ]),
     summaryCard,

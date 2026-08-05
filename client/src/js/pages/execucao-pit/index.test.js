@@ -207,3 +207,73 @@ describe('renderExecucaoPit', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+// A CELULA QUE A ORIGEM CALCULA NAO ABRE PARA DIGITAR.
+//
+// Quem decide e o SERVIDOR, que manda `planejada_calculada` e
+// `realizada_calculada` por linha (pit_execucao_ctrl.js). Antes a tela abria o
+// campo em qualquer celula, a pessoa escrevia o numero e so entao a gravacao
+// recusava: pedir e recusar depois e pior do que nao pedir.
+describe('execucao do PIT: a celula calculada nao se digita', () => {
+  // Sai da FOLHA que a amostra ja tem (a Meta 1.1), e nao de um objeto novo:
+  // assim ela carrega os meses e o `folha: true` de verdade.
+  const folha = GRADE.find(l => l.folha);
+  const linhaCalculada = {
+    ...folha,
+    meta_id: '91',
+    origem: 'Capacitação',
+    origem_id: 2,
+    planejada_calculada: true,
+    realizada_calculada: true,
+  };
+
+  test('clicar numa celula calculada nao abre campo de edicao', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([linhaCalculada]);
+    const { container, cleanup } = await montar();
+
+    const celula = celulas(linhas(container)[0])[3];
+    celula.click();
+    await flush();
+
+    expect(celula.querySelector('input')).toBeNull();
+    // E nada foi mandado ao servidor: a recusa nem chega a ser necessaria.
+    expect(salvarExecucaoPit).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a celula calculada se distingue, e diz de onde vem o numero', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([linhaCalculada]);
+    const { container, cleanup } = await montar();
+
+    const celula = celulas(linhas(container)[0])[3];
+    expect(celula.className).toContain('grade-pit__celula--calculada');
+    expect(celula.title).toContain('Calculado pelo sistema');
+    // A ORIGEM entra na frase: "vem do sistema" sem dizer de onde nao ajuda
+    // ninguem a achar onde mexer.
+    expect(celula.title).toContain('Capacitação');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // CONTROLE: a celula MANUAL continua abrindo. Sem este caso, um guarda que
+  // bloqueasse tudo passaria nos dois acima.
+  test('a celula manual segue abrindo para digitar', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([
+      { ...folha, origem: 'Manual', origem_id: 1, planejada_calculada: false, realizada_calculada: false },
+    ]);
+    const { container, cleanup } = await montar();
+
+    const celula = celulas(linhas(container)[0])[3];
+    celula.click();
+    await flush();
+
+    expect(celula.querySelector('input')).not.toBeNull();
+    expect(celula.className).not.toContain('grade-pit__celula--calculada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});

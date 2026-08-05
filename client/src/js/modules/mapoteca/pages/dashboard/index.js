@@ -69,16 +69,9 @@ export async function renderDashboard(container, _ctx) {
     ]),
     // O filtro fica ACIMA das abas, e nao dentro delas: ele vale para as cinco,
     // e trocar de aba nao pode mudar o ano na tela.
-    el('div', {
-      className: 'page__filters',
-      style: {
-        display: 'flex',
-        gap: '16px',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-        marginBottom: '16px',
-      },
-    }, [filtroAno.element]),
+    // `.page__filters`: a mesma barra das outras telas, no lugar do layout que
+    // vivia em estilo inline aqui dentro.
+    el('div', { className: 'page__filters' }, [filtroAno.element]),
     abas.element,
   ]);
   container.appendChild(page);

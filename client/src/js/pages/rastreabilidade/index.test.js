@@ -82,9 +82,13 @@ const umaPagina = (eventos) => ({
 
 const registroOnde = (container) => container.querySelector('.rastro-onde__registro');
 
+// `.form-field`, e nao `.rastro-filtros__campo`: os filtros desta tela passaram
+// a usar as classes do SISTEMA. Antes eles tinham marcacao propria, e os
+// controles carregavam `form-control`, uma classe que nao existe em folha
+// nenhuma, o que deixava os combos daqui com o estilo cru do navegador.
 const selectDoRotulo = (container, rotulo) =>
-  [...container.querySelectorAll('.rastro-filtros__campo')]
-    .find(c => c.querySelector('.rastro-filtros__rotulo')?.textContent === rotulo)
+  [...container.querySelectorAll('.form-field')]
+    .find(c => c.querySelector('.form-field__label')?.textContent === rotulo)
     ?.querySelector('select, input');
 
 describe('rastreabilidade: rota, destino e filtro', () => {

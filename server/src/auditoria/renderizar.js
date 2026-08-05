@@ -165,7 +165,18 @@ const textoDoValor = (valor, decl, catalogo) => {
     case 'lista': return comoLista(valor)
     case 'booleano': return valor === true ? 'Sim' : valor === false ? 'Não' : String(valor)
     default: {
-      const texto = String(valor)
+      // OBJETO E ARRANJO saem em JSON, e nao por `String(valor)`.
+      //
+      // `String({...})` devolve "[object Object]", e era isso que a tela de
+      // rastreabilidade mostrava no `metadado` do acervo: "Metadado: [object
+      // Object] -> [object Object]", que diz que algo mudou e esconde o que.
+      //
+      // O conserto e aqui, no ramo PADRAO, e nao num tipo novo so para o
+      // `metadado`: qualquer coluna JSONB que alguem esquecer de declarar cai
+      // neste ramo, e `String` de objeto nunca informa nada em campo nenhum.
+      const texto = (typeof valor === 'object')
+        ? JSON.stringify(valor)
+        : String(valor)
       // Texto longo e recortado com o tamanho ao lado: o inteiro quebraria a
       // tabela e nao informaria mais.
       return texto.length > 300 ? `${texto.slice(0, 300)}... (${texto.length} caracteres)` : texto

@@ -148,13 +148,11 @@ export async function renderRpcmtec(container, _ctx) {
           + 'o sistema calcula o que sabe, o gestor preenche o resto, e o fechamento congela o documento.',
       }),
     ]),
-    el('div', {
-      className: 'page__filters',
-      style: { display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' },
-    }, [
+    el('div', { className: 'page__filters' }, [
       anoField.element,
-      el('div', { style: { flex: '1' } }),
-      novaBtn,
+      el('div', { className: 'page__filters-acoes' }, [
+        novaBtn,
+      ]),
     ]),
     areaTabela,
   ]);

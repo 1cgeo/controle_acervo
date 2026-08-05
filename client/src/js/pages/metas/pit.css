@@ -1,0 +1,151 @@
+/*
+ * A TELA DO PIT DO ANO (#/metas).
+ *
+ * Folha ao lado da tela, e não na global: só esta página desenha a faixa de
+ * revisões e o cartão do exercício. O padrão já existe no vault
+ * (rastreabilidade.css, versoes.css), e a folha global fica para o que se repete.
+ *
+ * As cores saem dos tokens de design-tokens.css. Nada de valor fixo aqui: o tema
+ * claro e o escuro trocam as variáveis, e um hexadecimal cravado só aparece
+ * errado num dos dois.
+ */
+
+/* O EXERCÍCIO, em cima de tudo. Ele é o primeiro passo do fluxo: sem ele o ano
+ * não aceita meta nem revisão. */
+.pit-exercicio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+.pit-exercicio__titulo {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.pit-exercicio__resumo {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pit-exercicio__acoes {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* A FAIXA DE REVISÕES. Cada revisão é um botão, e a selecionada é a que a tela
+ * está editando. Escolher a revisão é o primeiro ato de quem vai mexer numa
+ * meta, e por isso ela fica ACIMA da tabela, e não dentro de um modal. */
+.pit-revisoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.pit-revisao {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 152px;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: border-color var(--transition-fast);
+}
+
+.pit-revisao:hover {
+  border-color: var(--color-primary);
+}
+
+/* A SELECIONADA se distingue por BORDA e por FUNDO, e não só por cor de texto:
+ * quem enxerga mal a diferença de matiz precisa da forma. */
+.pit-revisao--selecionada {
+  border: 2px solid var(--color-primary);
+  padding: 7px 15px;
+  background: var(--bg-selected);
+}
+
+.pit-revisao__codigo {
+  font-weight: var(--font-weight-bold);
+}
+
+.pit-revisao__estado,
+.pit-revisao__altera {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+/* O DETALHE da revisão escolhida: a nota que ensina o modelo, mais as ações que
+ * valem só nela. */
+.pit-revisao-detalhe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+.pit-revisao-detalhe__texto {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+  color: var(--text-secondary);
+}
+
+.pit-revisao-detalhe__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* O aviso de que NENHUMA revisão está escolhida. É a frase no lugar certo: ela
+ * nasce olhando a tabela, que é onde a pergunta aparece. */
+.pit-sem-revisao {
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pit-tabela__cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.pit-tabela__titulo {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.pit-tabela__acoes {
+  margin-left: auto;
+}

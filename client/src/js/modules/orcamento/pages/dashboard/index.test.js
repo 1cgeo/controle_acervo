@@ -82,6 +82,21 @@ beforeEach(() => {
   instanciasChart.length = 0;
 });
 
+/**
+ * O select de um campo, achado pelo ROTULO.
+ *
+ * Antes o mês era um `<select>` solto com a classe `chart-card__select`, e o
+ * ano vinha do componente de campo: dava para pegá-los por classes diferentes.
+ * Agora os dois são `.form-field`, então a classe não discrimina e a POSIÇÃO
+ * quebraria no dia em que a barra ganhasse um filtro novo.
+ */
+function selectDoCampo (container, rotulo) {
+  const campo = [...container.querySelectorAll('.form-field')]
+    .find(f => f.querySelector('.form-field__label')?.textContent.trim() === rotulo);
+  if (!campo) throw new Error(`campo "${rotulo}" nao existe na tela`);
+  return campo.querySelector('select');
+}
+
 describe('renderDashboard', () => {
   test('monta o dashboard e carrega a execucao por ND do ano da tela', async () => {
     const { container, cleanup } = await montar();
@@ -187,7 +202,7 @@ describe('renderDashboard: as tres abas', () => {
 
     expect(getExecucaoNd).toHaveBeenCalledTimes(1);
 
-    const select = container.querySelector('.chart-card__select');
+    const select = selectDoCampo(container, 'Mês');
     select.value = '3';
     select.dispatchEvent(new Event('change'));
     await flush();
@@ -223,7 +238,7 @@ describe('renderDashboard: o filtro de ano da tela', () => {
 
     await trocarAno(container, ANO_ATUAL - 1);
 
-    expect(container.querySelector('.chart-card__select').value).toBe('12');
+    expect(selectDoCampo(container, 'Mês').value).toBe('12');
     expect(getExecucaoNd).toHaveBeenLastCalledWith({ ano: ANO_ATUAL - 1, mes: 12 });
 
     cleanup();

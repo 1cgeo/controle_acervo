@@ -14,7 +14,7 @@ import { renderUsuariosList } from '@pages/usuarios/list.js';
 import { renderAcessos } from '@pages/acessos/index.js';
 import { renderRastreabilidade } from '@pages/rastreabilidade/index.js';
 import { renderPerfil } from '@pages/perfil/index.js';
-import { renderMetasList } from '@pages/metas/list.js';
+import { renderPitAno } from '@pages/metas/index.js';
 import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
 import { renderExtraPitList } from '@pages/extra-pit/list.js';
 import { renderAproveitamento } from '@pages/aproveitamento/index.js';
@@ -22,7 +22,6 @@ import {
   renderCapacitacaoMinistrada,
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
-import { renderRevisoesPit } from '@pages/revisoes-pit/index.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
@@ -107,15 +106,31 @@ router.add('/rastreabilidade', withLayout(renderRastreabilidade), {
 // so o administrador troca senha, por reset.
 router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 
-// Metas do PIT: o plano anual da Divisao, que os tres modulos consomem. Nao e
+// O PIT DO ANO: o plano anual da Divisao, que os tres modulos consomem. Nao e
 // tela de modulo, senao quem so tem perfil na mapoteca nao veria a lista. Sem
 // `adminLoader`: LER e de qualquer pessoa logada, e o backend cobra o
 // administrador so na escrita.
-router.add('/metas', withLayout(renderMetasList), { guard: authLoader });
-// As REVISOES do PIT. `authLoader` como as metas ao lado: qualquer pessoa
-// logada LE o plano anual e o que a DSG mudou nele, e o servidor cobra o
-// administrador so na escrita.
-router.add('/revisoes_pit', withLayout(renderRevisoesPit), { guard: authLoader });
+//
+// UMA TELA SO, no lugar de '/metas' e '/revisoes_pit'. As duas se liam juntas e
+// ninguem descobria pela interface que alterar o PIT e abrir uma revisao: o
+// botao de editar tinha virado um ato da OUTRA tela, e nada dizia isso. Agora o
+// exercicio, as revisoes e o consolidado moram na mesma pagina.
+router.add('/metas', withLayout(renderPitAno), { guard: authLoader });
+
+// A ROTA VELHA DAS REVISOES continua respondendo, e DESVIA. Renomear URL quebra
+// link guardado, e '#/revisoes_pit' esta em favorito e em mensagem antiga. O
+// guarda devolve o caminho novo, que e como o router ja faz o desvio da raiz.
+//
+// '/metas' ABSORVEU '/revisoes_pit', e nao o contrario: '#/metas' e o endereco
+// que a grade de execucao e a rastreabilidade apontam, e um '#/pit' novo
+// obrigaria a mexer nas duas para nada. O nome da rota fica imperfeito, e custa
+// menos que dois desvios.
+router.add('/revisoes_pit', withLayout(renderPitAno), {
+  guard: () => {
+    const auth = authLoader();
+    return auth === true ? '/metas' : auth;
+  },
+});
 
 // Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
 //

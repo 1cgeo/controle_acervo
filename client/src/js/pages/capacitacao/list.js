@@ -1,6 +1,7 @@
 import { el, clearChildren, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { chip } from '@components/status-chip.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
@@ -153,6 +154,9 @@ function criarTela(tipoId, textos) {
           render: (row) => row.local_realizacao || '-',
         },
         textos.coluna,
+        // A coluna da META so existe onde ela significa alguma coisa (ver a
+        // configuracao da ministrada, no fim do arquivo).
+        ...(textos.colunaMeta ? [textos.colunaMeta] : []),
         // Os militares vêm do CADASTRO, e a célula mostra o
         // texto que `paraLinha` montou: quem monta a frase do relatório é o
         // gerador, e a busca da tabela só enxerga texto.
@@ -193,10 +197,7 @@ function criarTela(tipoId, textos) {
         el('h1', { className: 'page__title', textContent: textos.titulo }),
         el('div', { className: 'page__actions' }, [newBtn]),
       ]),
-      el('div', {
-        className: 'page__filters',
-        style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-      }, [anoFilter.element, militarFilter.element]),
+      el('div', { className: 'page__filters' }, [anoFilter.element, militarFilter.element]),
       areaTabela,
     ]);
     container.appendChild(page);
@@ -367,6 +368,30 @@ export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
     label: 'Efetivo capacitado',
     sortable: true,
     render: (row) => (row.efetivo_capacitado == null ? '-' : String(row.efetivo_capacitado)),
+  },
+  // ESTA CAPACITAÇÃO CONTA NO PIT?
+  //
+  // A coluna existe porque a resposta muda o que a capacitação é. Com meta
+  // ligada e a meta declarando origem Capacitação, e daqui que sai o numero da
+  // grade do PIT: Prevista e Em execução alimentam o planejado, Concluída
+  // alimenta o realizado, e o mês vem de `data_fim` (er/rpcmtec.sql, na coluna
+  // `meta_pit_id`). Sem meta, ela e trabalho real que o plano nao promete.
+  //
+  // So na MINISTRADA. A recebida quase nunca tem meta, e em 2026 nenhuma tem: o
+  // PIT so promete capacitação ministrada, e por isso a coluna ali seria uma
+  // fila de traços.
+  colunaMeta: {
+    key: 'meta_pit_item',
+    label: 'Meta do PIT',
+    sortable: true,
+    // Ordena por quem TEM meta primeiro, e depois pelo codigo dela. Pelo texto
+    // cru, as sem meta se misturariam no meio.
+    sortValue: (row) => (row.meta_pit_id == null ? null : String(row.meta_pit_item || '')),
+    render: (row) => (row.meta_pit_id == null
+      // "Fora do PIT" e nao um traço: traço se le como "campo nao preenchido", e
+      // aqui a ausência e um FATO sobre a capacitação, nao um dado que falta.
+      ? chip('Fora do PIT', 'default')
+      : chip(`Meta ${row.meta_pit_item || row.meta_pit_id}`, 'success')),
   },
   colunaMilitares: 'Instrutores',
   // Aqui a pessoa da Divisão é quem ENSINOU. O filtro tem o mesmo nome da

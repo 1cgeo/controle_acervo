@@ -549,6 +549,20 @@
 
 .grade-pit__celula:hover { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 
+/* A CELULA CALCULADA. O numero dela vem do estado do que a origem conta (a
+   situacao da capacitacao, a versao que virou Regular, a impressao entregue), e
+   nao se digita.
+
+   O cursor volta ao normal e o realce de clique some: os dois PROMETEM edicao, e
+   a celula que promete e nao cumpre se le como tela travada. O tracejado diz que
+   ela e diferente das vizinhas, e o `title` diz de onde vem o numero. */
+.grade-pit__celula--calculada {
+  cursor: default;
+  border-style: dashed;
+}
+
+.grade-pit__celula--calculada:hover { outline: none; }
+
 .grade-pit__realizado { display: block; }
 
 /* O planejado e o numero de referencia, nao o dado: menor e apagado. */
@@ -607,4 +621,11 @@
   border: 1px solid var(--border-color);
   vertical-align: middle;
   margin-right: 4px;
+}
+
+/* A descricao da meta CANCELADA, ao lado do chip. Riscada, para o cancelamento
+   se ler na varredura da tabela e nao so em quem parar para ler o chip. */
+.meta-cancelada {
+  text-decoration: line-through;
+  color: var(--text-secondary);
 }
