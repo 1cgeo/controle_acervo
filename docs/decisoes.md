@@ -579,7 +579,7 @@ que exige QGIS instalado e acesso SMB ao volume. Quem não tinha os dois não ca
   copiar os bytes por conta própria; no navegador os bytes vêm DENTRO da requisição, então não há
   janela e não há o que a sessão cubra — é o mesmo raciocínio que `/catalogar/product` já
   registrava. Usá-la mesmo assim cobrava caro: sessão abandonada virava linha pendurada em
-  `upload_session` e `.parcial` no volume até o cron de 24 h. Hoje são
+  `upload_session` e `.parcial` no volume até a limpeza (cron de 24 h à época; manual desde 2026-08-04). Hoje são
   `POST /api/arquivo/upload-web/{produto,versao}`, multipart, e ou tudo entra ou nada entra. O que
   se perde é reenviar só o arquivo que falhou; vale, porque o teto é de poucos GB
   (`UPLOAD_WEB_MAX_GB`, default 2) e a mediana em produção é de 6 a 11 MB.

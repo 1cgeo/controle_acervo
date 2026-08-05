@@ -7,7 +7,8 @@ const { caminhoNoVolume } = require('./caminho_volume')
  * A fila de miniaturas: quem falta, e o que fazer com cada um.
  *
  * Existe para o LOTE (`scripts/gerar_miniaturas.cjs`, a carga do acervo antigo)
- * e o CRON (`miniatura_job.js`, que apanha o que entrou depois) rodarem a mesma
+ * e a VARREDURA (`miniatura_varredura.js`, que gera apos o upload e tem a rota
+ * manual de reforco) rodarem a mesma
  * politica. Duplicar a consulta faria os dois divergirem no dia em que um
  * mudasse, e a divergencia seria silenciosa: nenhum dos dois quebra, eles so
  * passam a escolher arquivos diferentes.

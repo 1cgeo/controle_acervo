@@ -139,11 +139,20 @@ arquivo grande. Ver `docs/decisoes.md`.
 
 Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP, proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com expiração de 1 hora e o perfil relido do banco a cada requisição.
 
-### Jobs agendados
+### Tarefas de manutenção
 
-Um cron de hora em hora limpa tokens de download e sessões de upload expiradas.
+**Não há cron.** O agendamento saiu em 2026-08-04: duas instâncias do app contra o mesmo banco rodavam os mesmos jobs em dobro, e o de miniatura escreve. O que os dois faziam continua acontecendo, por outro caminho.
 
-Outro, na meia hora, gera as **miniaturas** que faltam (até 20 por passada). A miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da versão, ou o raster quando não há PDF. Produto só vetorial não tem miniatura.
+**Expiração de download.** O token vencido é recusado no momento do uso (`confirmDownload`), tenha alguém limpado ou não. Antes, só o cron fechava, então o token valia até a passada seguinte, ou para sempre com o cron parado.
+
+**Limpeza do que expirou.** `POST /api/acervo/cleanup-expired-downloads` (administrador) fecha downloads e sessões de upload vencidos, e devolve a contagem dos dois. É arrumação, e não a regra de expiração.
+
+**Miniaturas.** A geração dispara sozinha **depois** do upload, fora da transação e sem segurar a resposta: renderizar custa segundos e roda processo externo. A miniatura é a imagem que a ficha do produto mostra: a página inteira do PDF da versão, ou o raster quando não há PDF. Produto só vetorial não tem miniatura.
+
+Para o que entra por outros caminhos (carga direta no banco, arquivo trocado no volume), há a varredura manual, com teto de 20 por passada:
+
+- `GET /api/acervo/miniaturas/pendentes` diz quantas versões esperam;
+- `POST /api/acervo/miniaturas/varrer` (administrador) paga um lote.
 
 Dois binários e uma biblioteca, e cada um faz o que só ele faz bem:
 
@@ -157,7 +166,7 @@ Os dois binários extraem ao **dobro** do alvo e o `sharp` faz a redução final
 
 **Raster de medida é esticado, não cortado.** MDS e MDT guardam ALTITUDE na banda, não intensidade de pixel. Convertidos direto para 8 bits, toda cota acima de 255 m vira branco e a miniatura sai vazia. O gerador detecta a banda que não é de 8 bits e estica por média ± 2,5 desvios, presa ao intervalo real. O `GDAL_PAM_ENABLED=NO` é forçado: sem ele, pedir estatística grava um `.aux.xml` **ao lado do arquivo lido**, dentro do volume do acervo.
 
-Para carregar o acervo já existente de uma vez, em vez de esperar o cron:
+Para carregar o acervo já existente de uma vez, em vez de varrer de 20 em 20:
 
 ```bash
 node scripts/gerar_miniaturas.cjs --limite 50 --embaralhar --dry-run   # ensaio real

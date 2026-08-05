@@ -1,6 +1,6 @@
 # Levantar o Controle do Acervo (SCA)
 
-Desde 2026-08-02 o SCA **nao depende de servico externo para subir**: a autenticacao veio para dentro (`dgeo.usuario.senha`, hash bcrypt), e o `verifyAuthServer` saiu do boot (`main.js`: `db -> versao -> cron -> startServer`). Basta o PostgreSQL.
+Desde 2026-08-02 o SCA **nao depende de servico externo para subir**: a autenticacao veio para dentro (`dgeo.usuario.senha`, hash bcrypt), e o `verifyAuthServer` saiu do boot (`main.js`: `db -> versao -> startServer`; o cron saiu em 2026-08-04). Basta o PostgreSQL.
 
 ## Componentes e portas
 

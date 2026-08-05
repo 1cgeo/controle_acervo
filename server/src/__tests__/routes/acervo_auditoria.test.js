@@ -101,6 +101,11 @@ const COBERTAS = new Set([
   // gerencia/ e acervo/, como evento de OPERACAO
   'POST /verificar_inconsistencias',
   'POST /refresh_materialized_views', 'POST /create_materialized_views',
+  // Varredura da fila de miniaturas. Era um cron ate 2026-08-04; sem
+  // agendamento, toda passada tem uma pessoa por tras, e e ela que o rastro
+  // guarda. Mesmo formato do refresh das views: evento de OPERACAO, porque nao
+  // ha par de linhas para comparar.
+  'POST /miniaturas/varrer',
   // ponto_controle/
   'POST /confirm-upload (ponto_controle)'
 ])
@@ -111,8 +116,8 @@ const FORA_DO_ESCOPO = new Map([
   // Sessao de upload do PLUGIN. Reservar destino nao muda o acervo: a linha so
   // entra em produto/versao/arquivo no confirm-upload, e e la que o evento
   // nasce. Registrar a reserva faria a trilha contar duas vezes o que aconteceu
-  // uma, e a sessao abandonada (que o cron fecha em 24 h) viraria cadastro no
-  // historico.
+  // uma, e a sessao abandonada (fechada pela limpeza, hoje manual) viraria
+  // cadastro no historico.
   ['POST /prepare-upload/files', 'reserva destino; o evento nasce no confirm-upload'],
   ['POST /prepare-upload/version', 'reserva destino; o evento nasce no confirm-upload'],
   ['POST /prepare-upload/product', 'reserva destino; o evento nasce no confirm-upload'],

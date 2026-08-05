@@ -8,6 +8,7 @@ const { verifyAdmin, verifyPerfil } = require('../login')
 
 const acervoCtrl = require('./acervo_ctrl')
 const acervoSchema = require('./acervo_schema')
+const miniaturaVarredura = require('../utils/miniatura_varredura')
 
 const router = express.Router()
 
@@ -241,18 +242,79 @@ router.post(
   })
 )
 
+// Limpeza do que expirou: downloads E uploads. Era o cron de hora em hora, que
+// saiu em 2026-08-04; agora tem sempre uma pessoa por trás, e ela aparece no
+// rastro. `verifyAdmin` UMA vez: estava duplicado, o que não protegia mais e
+// sugeria uma segunda checagem que não existe.
 router.post(
   '/cleanup-expired-downloads',
   verifyAdmin,
-  verifyAdmin, // Only admin users can access this endpoint
   asyncHandler(async (req, res, next) => {
     // O retorno era DESCARTADO, e a tela anunciava sucesso sem número: a
     // confirmação era eco da chamada, e não medida do que mudou.
     const dados = await acervoCtrl.cleanupExpiredDownloads(req.usuarioUuid, req.contexto)
 
-    const msg = dados.fechados === 1
-      ? '1 download expirado foi fechado'
-      : `${dados.fechados} downloads expirados foram fechados`
+    const parte = (n, um, varios) => (n === 1 ? `1 ${um}` : `${n} ${varios}`)
+    const msg = `${parte(dados.fechados, 'download expirado fechado', 'downloads expirados fechados')}`
+      + `, ${parte(dados.uploads_fechados, 'sessão de upload expirada fechada', 'sessões de upload expiradas fechadas')}`
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// Varredura da fila de miniaturas. Era o cron da meia hora.
+//
+// A miniatura NÃO é gerada no cadastro de propósito: renderizar custa segundos e
+// roda processo externo, dentro da transação que confirma o upload. Então a fila
+// existe, e desde que o cron saiu ela é dívida VISÍVEL: o GET diz quantas
+// versões esperam, e o POST paga um lote.
+router.get(
+  '/miniaturas/pendentes',
+  verifyPerfil('consulta'),
+  asyncHandler(async (req, res, next) => {
+    const pendentes = await miniaturaVarredura.contarPendentes()
+
+    return res.sendJsonAndLog(
+      true,
+      pendentes === 1
+        ? '1 versão aguarda miniatura'
+        : `${pendentes} versões aguardam miniatura`,
+      httpCode.OK,
+      { pendentes, lote: miniaturaVarredura.LOTE }
+    )
+  })
+)
+
+router.post(
+  '/miniaturas/varrer',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    // Pelo controller, e não direto pelo util: é ele que registra quem mandou
+    // rodar, do mesmo jeito que o refresh das views materializadas.
+    const dados = await acervoCtrl.varrerMiniaturas(req.usuarioUuid, req.contexto)
+
+    // Três desfechos distintos, e a tela precisa saber qual foi. "Pulada" é
+    // outra varredura em curso, e anunciar sucesso ali seria anunciar trabalho
+    // que não aconteceu.
+    if (dados.pulada) {
+      return res.sendJsonAndLog(
+        true,
+        'Uma varredura já está em curso. Nada foi feito agora.',
+        httpCode.OK,
+        dados
+      )
+    }
+    if (dados.abortada) {
+      return res.sendJsonAndLog(
+        true,
+        `Varredura interrompida: ${dados.abortada}. ${dados.sucessos} miniatura(s) gerada(s) antes disso.`,
+        httpCode.OK,
+        dados
+      )
+    }
+
+    const msg = `${dados.sucessos} miniatura(s) gerada(s), ${dados.falhas} falha(s)`
+      + `, ${dados.restante} na fila`
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

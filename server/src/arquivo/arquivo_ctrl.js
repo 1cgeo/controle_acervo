@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
 const { auditoriaCtrl } = require("../auditoria");
+const miniaturaVarredura = require('../utils/miniatura_varredura');
 const { v4: uuidv4 } = require('uuid');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
@@ -2171,6 +2172,31 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
     }
 
     throw error;
+  }).then(resultado => {
+    // MINIATURA, DEPOIS DO COMMIT E SEM ESPERAR.
+    //
+    // Ela não pode entrar na transação acima: renderizar custa segundos e roda
+    // um processo externo, e a transação já segura linhas do acervo. Também não
+    // pode ser aguardada aqui, senão quem enviou o arquivo espera a renderização
+    // para receber a confirmação.
+    //
+    // Antes disso quem gerava era um cron de meia em meia hora, que saiu em
+    // 2026-08-04. Sem ele e sem esta chamada, versão nova ficaria sem miniatura
+    // até alguém varrer a fila à mão.
+    //
+    // O `.catch` é obrigatório: esta promessa não volta para o caminho da
+    // requisição, então uma rejeição solta derrubaria o processo.
+    const versoes = (resultado?.detalhes || [])
+      .filter(d => d.versao_id && d.files?.some(f => f.status === 'completed'))
+      .map(d => d.versao_id);
+
+    if (versoes.length) {
+      miniaturaVarredura
+        .gerarParaVersoes(versoes)
+        .catch(error => logger.error('Falha ao gerar miniatura após o upload', { error }));
+    }
+
+    return resultado;
   });
 };
 

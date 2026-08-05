@@ -7,6 +7,7 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 // nenhum, só um "Não mapeado" falso. Hoje é `utils/mi.js`, o mesmo normalizador
 // do `mapoteca_cli`.
 const { normalizarIdentificador } = require('../utils/mi');
+const miniaturaVarredura = require('../utils/miniatura_varredura');
 const { temValor } = require('../utils/lista_schema');
 const { Readable } = require('stream');
 const { db } = require("../database");
@@ -521,11 +522,22 @@ controller.confirmDownload = async (downloadConfirmations) => {
     for (const confirmation of downloadConfirmations) {
       const { download_token, success, error_message } = confirmation;
       
+      // A EXPIRAÇÃO VALE AQUI, na hora do uso, e não só quando alguém limpa.
+      //
+      // Antes esta consulta casava só por `status = 'pending'`, e quem fechava o
+      // token vencido era o cron de hora em hora. Duas consequências: o token
+      // valia por até uma hora depois de expirar, e com o cron parado valia para
+      // sempre. O cron saiu em 2026-08-04, então a regra precisa morar onde o
+      // token é gasto. É o mesmo padrão de `ponto_controle/upload_ctrl.js:413`.
+      //
+      // A limpeza continua existindo, e virou arrumação: ela troca o status para
+      // 'failed' e faz o vencido parar de aparecer como pendente nas contagens.
       const download = await t.oneOrNone(
-        `SELECT d.id, d.arquivo_id, a.nome 
-         FROM acervo.download d 
+        `SELECT d.id, d.arquivo_id, a.nome
+         FROM acervo.download d
          JOIN acervo.arquivo a ON d.arquivo_id = a.id
-         WHERE d.download_token = $1 AND d.status = 'pending'`,
+         WHERE d.download_token = $1 AND d.status = 'pending'
+           AND (d.expiration_time IS NULL OR d.expiration_time > NOW())`,
         [download_token]
       );
       
@@ -651,6 +663,14 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
  * @param {Object|null} contexto
  * @returns {Promise<{fechados:number}>}
  */
+// Limpa o que expirou: downloads E uploads, num ato só.
+//
+// Os dois andavam juntos no cron de hora em hora, e separá-los agora obrigaria
+// o administrador a lembrar de duas rotas para a mesma ideia. Desde 2026-08-04
+// não há cron: alguém manda rodar, e o retorno diz o que fechou dos dois lados.
+//
+// Isto é ARRUMAÇÃO, e não a regra de expiração. Download vencido já é recusado
+// no `confirmDownload`, tenha a limpeza rodado ou não.
 controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null) => {
   return db.conn.tx(async t => {
     const fechados = await t.any(`
@@ -662,12 +682,23 @@ controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null)
       RETURNING id
     `);
 
-    const resultado = { fechados: fechados.length };
+    // A função do banco não devolve contagem, então medimos antes de chamá-la:
+    // "limpou" sem número é eco da chamada, e não medida do que mudou.
+    const { pendentes } = await t.one(`
+      SELECT COUNT(*)::int AS pendentes
+        FROM acervo.upload_session
+       WHERE status = 'pending'
+         AND expiration_time IS NOT NULL
+         AND expiration_time < NOW()
+    `);
+    await t.any(`SELECT acervo.cleanup_expired_uploads()`);
 
-    // Quem mandou rodar sempre é registrado. O CRON só entra no rastro quando
-    // FEZ alguma coisa: um evento por hora dizendo "não havia nada" faria a
-    // auditoria crescer mais rápido que o acervo, para não contar nada.
-    if (usuarioUuid || resultado.fechados > 0) {
+    const resultado = { fechados: fechados.length, uploads_fechados: pendentes };
+
+    // Quem mandou rodar sempre é registrado, mesmo sem nada a fazer: sem cron,
+    // toda execução tem uma pessoa por trás, e "rodei e não havia nada" é
+    // informação de auditoria legítima.
+    if (usuarioUuid || resultado.fechados > 0 || resultado.uploads_fechados > 0) {
       await auditoriaCtrl.registrarOperacao(t, {
         tabela: 'acervo.download_expirado',
         resultado,
@@ -688,6 +719,33 @@ controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null)
 // O `task` virou `tx` nas duas: o evento tem de cair JUNTO com a operação que
 // ele descreve, e num `task` cada comando é uma transação própria -- o registro
 // sobreviveria a uma falha da operação, afirmando que ela aconteceu.
+/**
+ * Varre a fila de miniaturas sob comando, e registra quem mandou.
+ *
+ * A varredura em si vive em `utils/miniatura_varredura`, junto da geração
+ * automática que roda após o upload. Aqui ela ganha o RASTRO, pelo mesmo motivo
+ * do refresh das views: não há par de linhas para comparar, e a pergunta que a
+ * ação produz na prática é "quem mandou rodar isso, e quando".
+ *
+ * O registro fica FORA da renderização: gravar dentro da transação prenderia
+ * linhas do acervo pelos segundos que cada arquivo custa. Aqui a operação já
+ * terminou, e o evento só descreve o que ela fez.
+ */
+controller.varrerMiniaturas = async (usuarioUuid, contexto) => {
+  const resultado = await miniaturaVarredura.varrerFila();
+
+  return db.conn.tx(async t => {
+    await auditoriaCtrl.registrarOperacao(t, {
+      tabela: 'acervo.miniatura_versao',
+      resultado,
+      usuarioUuid,
+      contexto
+    });
+
+    return resultado;
+  });
+};
+
 controller.refreshAllMaterializedViews = async (usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     try {
