@@ -22,16 +22,21 @@ const { executar, formatar } = require('../comandos/api')
 
 // O guard da rota no server/ e o `acesso` da registry falam a mesma coisa com
 // nomes diferentes. Este e o unico ponto de traducao.
+//
+// Sao DUAS FORMAS de guard, e nao uma: `verifyAdmin` sozinho, e
+// `verifyPerfil('nivel')` com o nivel entre parenteses. Ler so a primeira faria
+// a rota de consulta cair como guard desconhecido.
 const GUARD = { verifyAdmin: 'admin' }
+const traduzirGuard = ({ guard, nivel }) => (guard === 'verifyPerfil' ? nivel : GUARD[guard])
 
 /** Le a declaracao da rota no arquivo de rota do server/. */
 function declaracaoDeRota (arquivoRota, rota) {
   const texto = fs.readFileSync(path.join(RAIZ_SERVER, arquivoRota), 'utf8')
   const re = new RegExp(
-    `router\\.(get|post|put|delete)\\(\\s*['"]${rota}['"]\\s*,\\s*(\\w+)`
+    `router\\.(get|post|put|delete)\\(\\s*['"]${rota}['"]\\s*,\\s*(\\w+)(?:\\(\\s*'([^']*)')?`
   )
   const m = texto.match(re)
-  return m ? { metodo: m[1].toUpperCase(), guard: m[2] } : null
+  return m ? { metodo: m[1].toUpperCase(), guard: m[2], nivel: m[3] } : null
 }
 
 /** Onde o routes.js monta o roteador daquele modulo (ex.: arquivo -> /arquivo). */
@@ -55,6 +60,8 @@ const MANUTENCAO = [
     moduloDir: 'acervo',
     arquivoRota: 'acervo/acervo_route.js',
     rota: '/cleanup-expired-downloads',
+    metodo: 'POST',
+    acesso: 'admin',
     // A forma exata da resposta do controller, medida em 06/08/2026:
     // acervo_ctrl.cleanupExpiredDownloads devolve { fechados } e mais nada.
     resposta: { fechados: 3 }
@@ -65,9 +72,37 @@ const MANUTENCAO = [
     moduloDir: 'arquivo',
     arquivoRota: 'arquivo/arquivo_route.js',
     rota: '/cleanup-expired-uploads',
+    metodo: 'POST',
+    acesso: 'admin',
     // arquivo_ctrl.cleanupExpiredUploads devolve { fechadas, apagadas }, os dois
     // numeros vindos de SELECT ... FROM acervo.cleanup_expired_uploads().
     resposta: { fechadas: 2, apagadas: 5 }
+  },
+  {
+    recurso: 'acervo',
+    acao: 'miniaturas-pendentes',
+    moduloDir: 'acervo',
+    arquivoRota: 'acervo/acervo_route.js',
+    rota: '/miniaturas/pendentes',
+    // CONSULTA, e nao admin: contar a fila nao muda nada. E a variancia deste
+    // arquivo: com as quatro rotas em `admin`, a traducao de guard passaria
+    // mesmo lendo o nivel errado.
+    metodo: 'GET',
+    acesso: 'consulta',
+    resposta: { pendentes: 12, lote: 5 }
+  },
+  {
+    recurso: 'acervo',
+    acao: 'varrer-miniaturas',
+    moduloDir: 'acervo',
+    arquivoRota: 'acervo/acervo_route.js',
+    rota: '/miniaturas/varrer',
+    metodo: 'POST',
+    acesso: 'admin',
+    // O desfecho NORMAL. Os outros dois (`pulada` e `abortada`) tem caso
+    // proprio mais abaixo, porque anunciar sucesso numa varredura pulada seria
+    // anunciar trabalho que nao aconteceu.
+    resposta: { sucessos: 4, falhas: 1, restante: 7 }
   }
 ]
 
@@ -75,11 +110,13 @@ const MANUTENCAO = [
 // resto do arquivo viraria um teste que nao pode falhar no dia em que a rota
 // sair do server/: ele so compararia registry com registry.
 for (const alvo of MANUTENCAO) {
-  test(`a rota ${alvo.rota} existe no server/ e e de administrador`, () => {
+  test(`a rota ${alvo.rota} existe no server/, com o metodo e a guarda esperados`, () => {
     const decl = declaracaoDeRota(alvo.arquivoRota, alvo.rota)
     assert.ok(decl, `${alvo.arquivoRota} nao declara ${alvo.rota}`)
-    assert.strictEqual(decl.metodo, 'POST')
-    assert.strictEqual(GUARD[decl.guard], 'admin', `guard inesperado: ${decl.guard}`)
+    assert.strictEqual(decl.metodo, alvo.metodo)
+    assert.strictEqual(
+      traduzirGuard(decl), alvo.acesso, `guard inesperado: ${decl.guard}`
+    )
   })
 
   test(`a registry conhece ${alvo.recurso} ${alvo.acao}`, () => {
@@ -90,7 +127,7 @@ for (const alvo of MANUTENCAO) {
     assert.ok(montagem, `routes.js nao monta o roteador de ${alvo.moduloDir}`)
     assert.strictEqual(operacao.metodo, decl.metodo)
     assert.strictEqual(operacao.caminho, montagem + alvo.rota)
-    assert.strictEqual(operacao.acesso, GUARD[decl.guard])
+    assert.strictEqual(operacao.acesso, traduzirGuard(decl))
   })
 
   test(`${alvo.acao} imprime os contadores, e nao so a mensagem do servidor`, () => {
@@ -159,4 +196,35 @@ test('a limpeza de download nao promete apagar nada', () => {
     !/APAGA/.test(operacao.destrutivo),
     'esta rota so faz UPDATE de status; prometer apagar seria mentir'
   )
+})
+
+// A VARREDURA PULADA nao pode sair com cara de varredura feita. Quando outra ja
+// esta em curso, o servidor responde 200 com `pulada: true` e NADA foi
+// renderizado. Com envelope `mensagem` o CLI imprimiria so a prosa e quem
+// chamou concluiria que a fila andou.
+test('varrer-miniaturas mostra que a passada foi PULADA, e nao so a mensagem', () => {
+  const { operacao } = obterOperacao('acervo', 'varrer-miniaturas')
+  const texto = formatar(
+    { message: 'Uma varredura ja esta em curso. Nada foi feito agora.', dados: { pulada: true } },
+    operacao,
+    { formato: 'tsv' },
+    []
+  )
+  assert.ok(texto.includes('pulada'), `o desfecho sumiu da saida: ${texto}`)
+})
+
+// A fila de miniatura e DIVIDA VISIVEL: nao ha cron que a esvazie. O CLI so
+// consegue mostrar o tamanho dela se conhecer as duas rotas, e ate 06/08/2026
+// nao conhecia nenhuma das duas.
+test('as duas rotas da fila de miniatura estao na registry, e sao GET e POST', () => {
+  const contar = obterOperacao('acervo', 'miniaturas-pendentes').operacao
+  const varrer = obterOperacao('acervo', 'varrer-miniaturas').operacao
+
+  assert.strictEqual(contar.metodo, 'GET')
+  assert.strictEqual(varrer.metodo, 'POST')
+  // Contar nao muda nada, e pagar a fila e caro. Guardas diferentes de
+  // proposito: se as duas casassem, o `acesso` teria virado enfeite.
+  assert.notStrictEqual(contar.acesso, varrer.acesso)
+  assert.ok(varrer.pesado, 'a varredura renderiza imagem e precisa avisar o custo')
+  assert.ok(!varrer.destrutivo, 'a varredura nao apaga nada; o aviso seria falso')
 })

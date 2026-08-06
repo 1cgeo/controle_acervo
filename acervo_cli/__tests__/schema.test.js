@@ -281,27 +281,31 @@ test('explicarErro acha o campo mesmo com array no topo (path com indice)', () =
 })
 
 // O campo RECUSADO tem que APARECER como recusado, e nao sumir nem passar por
-// opcional. `data_fim_prevista` e do lote: a coluna existe em `acervo.lote` e
-// nao em `acervo.projeto`. Ate 06/08/2026 o schema de projeto a aceitava e o
-// INSERT a descartava calado.
+// opcional. `acervo.lote.data_fim_prevista` foi podada em 06/08/2026, e
+// `acervo.projeto` nunca teve a coluna: hoje os quatro modelos a recusam.
 //
 // O Joi entrega `.forbidden()` como `type: 'any'` sem regra nenhuma. Sem o ramo
 // que o traduz, o contrato imprimiria `data_fim_prevista  any`, que o agente le
 // como "campo opcional que aceita qualquer coisa": a leitura OPOSTA da verdade.
-test('o contrato de projeto marca data_fim_prevista como RECUSADO', () => {
+test('o contrato marca data_fim_prevista como RECUSADO nos quatro modelos', () => {
   const texto = esquema.contrato('projetos', RECURSOS.projetos)
   const linhas = texto.split('\n').filter(l => l.includes('data_fim_prevista'))
 
-  // Variancia primeiro: sem as linhas do lote a comparacao abaixo nao discrimina
-  // nada, porque um contrato que marcasse TUDO como recusado passaria igual.
-  const recusadas = linhas.filter(l => l.includes('RECUSADO (400)'))
-  const aceitas = linhas.filter(l => l.includes('date'))
-  assert.ok(recusadas.length > 0, 'o projeto nao marcou a recusa')
-  assert.ok(aceitas.length > 0, 'o lote perdeu o campo, e ele e valido la')
+  // VARIANCIA primeiro. Um contrato que marcasse TUDO como recusado satisfaria a
+  // comparacao abaixo, entao prove antes que o mesmo texto ainda entrega campo
+  // de data normal: `data_inicio` e `data_fim` continuam la, como `date`.
+  const datasNormais = texto.split('\n')
+    .filter(l => /\bdata_(inicio|fim)\b/.test(l) && l.includes('date'))
+  assert.ok(datasNormais.length > 0, 'o contrato parou de renderizar data comum')
 
+  assert.ok(linhas.length > 0, 'o campo sumiu do contrato em vez de ser recusado')
   assert.ok(
-    recusadas.every(l => /acervo\.lote/.test(l)),
-    'a recusa nao diz ONDE o campo vale, entao nao ensina o conserto'
+    linhas.every(l => l.includes('RECUSADO (400)')),
+    `sobrou modelo que ainda aceita o campo: ${linhas.join(' | ')}`
+  )
+  assert.ok(
+    linhas.every(l => /data_prevista/.test(l)),
+    'a recusa nao diz ONDE a data mora hoje, entao nao ensina o conserto'
   )
 })
 

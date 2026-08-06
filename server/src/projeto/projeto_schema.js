@@ -39,39 +39,31 @@ const periodo = () => ({
   data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required()
 });
 
-// `data_fim_prevista` e quando o LOTE promete terminar. E coluna separada de
-// `data_fim` porque aquela e o que aconteceu e esta e o que se prometeu, e a
-// primeira sobrescreveria a segunda no dia em que o lote fechasse. OPCIONAL, e
-// nao `required`: os lotes que ja existem nasceram sem ela, e exigi-la recusaria
-// a edicao de qualquer um.
+// O CAMPO NÃO EXISTE MAIS, em projeto NEM em lote, e recusá-lo é o único jeito
+// de dizer isso a quem ainda o manda.
 //
-// JA NAO ALIMENTA O PIT. Ate 2026-08-05 o mes do planejado da grade saia daqui,
-// e o planejado passou a sair de `acervo.versao.data_prevista`, uma promessa por
-// folha. Ver o comentario da coluna em er/acervo.sql.
-const dataFimPrevistaDoLote = () => ({
-  data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null)
-});
-
-// O CAMPO NÃO É DO PROJETO, e recusá-lo é o único jeito de dizer isso.
+// A coluna `acervo.lote.data_fim_prevista` foi podada em 2026-08-06 (migração
+// 1.35.0). Ela virou cópia de `data_fim`: nos 19 lotes que a tinham, as 19 datas
+// eram idênticas, porque a previsão vinha sendo preenchida no fim, junto com o
+// fato. A promessa hoje mora em `acervo.versao.data_prevista`, uma data por
+// FOLHA, que é a granularidade que o PIT cobra.
 //
-// `acervo.projeto` não tem a coluna: ela existe só em `acervo.lote`. Até
-// 2026-08-06 os quatro modelos herdavam o campo do mesmo helper de período, e o
-// projeto respondia 201 descartando o valor. Não havia nem aviso, porque a chave
-// era DECLARADA: o `chavesDescartadas` do middleware não a via sumir, e o
-// ColumnSet de `criaProjeto` simplesmente não a montava no INSERT.
+// `forbidden()`, e não apagar a chave. Estas rotas usam o middleware TOLERANTE
+// (`utils/schema_validation.js`, com `stripUnknown`), então chave apagada do
+// schema vira chave desconhecida, e chave desconhecida é descartada em silêncio.
+// Declarada como proibida, ela é conhecida, escapa do `stripUnknown` e a recusa
+// chega a quem chamou, com o lugar certo no texto. Mesmo padrão de
+// `arquivo_schema.js` e `pit_schema.js`.
 //
-// `forbidden()`, e não apagar a chave. A rota de projeto usa o middleware
-// TOLERANTE (`utils/schema_validation.js`, com `stripUnknown`), então chave
-// apagada do schema vira chave desconhecida, e chave desconhecida é descartada:
-// o servidor trocaria o silêncio total por um descarte avisado, nunca por um
-// 400. Declarada como proibida, ela é conhecida, escapa do `stripUnknown` e a
-// recusa chega a quem chamou. Mesmo padrão de `arquivo_schema.js` e
-// `pit_schema.js`.
+// Antes da 1.35.0 o projeto aceitava o campo e o INSERT o descartava sem nem
+// avisar, porque a chave era DECLARADA: o `chavesDescartadas` do middleware não
+// a via sumir. Este helper existe para que essa classe de silêncio não volte.
 const dataFimPrevistaRecusada = () => ({
   data_fim_prevista: Joi.any().forbidden().messages({
     'any.unknown':
-      '"data_fim_prevista" é do LOTE, e não do projeto: a coluna existe em ' +
-      'acervo.lote e não em acervo.projeto. Informe a data prometida no lote.'
+      '"data_fim_prevista" não existe mais: a coluna do lote foi removida em ' +
+      '2026-08-06, porque repetia a data_fim. A data prometida hoje é da ' +
+      'VERSÃO planejada, em data_prevista.'
   })
 });
 
@@ -106,7 +98,7 @@ models.lote = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').optional(),
   ...periodo(),
-  ...dataFimPrevistaDoLote(),
+  ...dataFimPrevistaRecusada(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -117,7 +109,7 @@ models.loteAtualizacao = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').optional(),
   ...periodo(),
-  ...dataFimPrevistaDoLote(),
+  ...dataFimPrevistaRecusada(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 

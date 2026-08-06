@@ -101,6 +101,12 @@ const ROTAS = [
   ['post', '/api/metas/extra', 'producao', 'operador', {}],
   ['put', '/api/metas/extra/1', 'producao', 'operador', {}],
   ['delete', '/api/metas/extra/1', 'producao', 'operador', null],
+  // O VINCULO com a folha do acervo entra AQUI desde 2026-08-06. A 1.33.0 o
+  // deixou com o administrador global, e o resultado era meia tarefa: quem
+  // cadastrava a demanda nao podia dizer quais folhas a cumprem, e demanda sem
+  // folha ligada nao conta nada na grade do PIT.
+  ['post', '/api/metas/extra/1/versoes', 'producao', 'operador', { versao_id: 1 }],
+  ['delete', '/api/metas/extra/1/versoes/1', 'producao', 'operador', null],
 
   // --- PRODUCAO: a capacitacao MINISTRADA (subsecao 2.6) ---
   ['get', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'operador', null],
@@ -263,10 +269,6 @@ describe('O operador de Producao NAO alcanca o que continua sendo do administrad
     ['put', '/api/rpcmtec/1', {}],
     ['post', '/api/rpcmtec/1/fechar', null],
     ['put', '/api/rpcmtec/1/subsecao/2.1', {}],
-    // O vinculo Extra-PIT x acervo: ele grava em `acervo.versao`, e quem manda
-    // no acervo e o modulo acervo.
-    ['post', '/api/metas/extra/1/versoes', { versao_id: 1 }],
-    ['delete', '/api/metas/extra/1/versoes/1', null],
     // O cadastro de usuarios, que e a porta que da a flag global a alguem.
     ['put', `/api/usuarios/${USER_UUID}`, { administrador: true, ativo: true }]
   ]

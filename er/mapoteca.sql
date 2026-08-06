@@ -161,8 +161,8 @@ CREATE TABLE mapoteca.pedido(
     --
     -- NAO E `prazo`, que e o limite imposto pelo CLIENTE. Medido em 2026-08-05:
     -- `prazo` esta preenchido em 33 dos 164 pedidos e em NENHUM dos 16 ligados a
-    -- meta. Mesma razao pela qual `lote.data_fim_prevista` nasceu separada de
-    -- `data_fim`.
+    -- meta. A promessa que a DGEO faz e a exigencia que o cliente impoe sao
+    -- coisas diferentes, e uma nao serve de substituta da outra.
     data_prevista DATE,
     -- Campos de pedido de CIVIL (LAI/órgão/empresa/pessoa); NULL para OM.
     canal_recebimento_id SMALLINT REFERENCES mapoteca.canal_recebimento (code),

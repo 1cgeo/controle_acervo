@@ -50,39 +50,29 @@ CREATE TABLE acervo.lote (
     descricao TEXT,
     data_inicio DATE NOT NULL,
     data_fim DATE,
-    -- Quando o LOTE promete terminar. Coluna propria, e nao `data_fim`, porque
-    -- as duas dizem coisas diferentes: esta e a promessa e aquela e o que
-    -- aconteceu.
+    -- SEM `data_fim_prevista`. Ela existiu entre 2026-08-03 e 2026-08-06, para
+    -- dar o mes do PLANEJADO do PIT, e foi podada porque virou copia de
+    -- `data_fim`.
     --
-    -- JA NAO E A FONTE DO PLANEJADO DO PIT, e a troca vale escrever porque a
-    -- razao dela foi medida. Ate 2026-08-05 o mes do planejado saia daqui, e nos
-    -- 19 lotes que tinham a coluna ela era IGUAL a `data_fim`: a previsao vinha
-    -- sendo preenchida no fim, junto com o fato consumado. A meta 1.3 prometia
-    -- 48 folhas em agosto e a grade mostrava 49 em junho, porque foi em junho
-    -- que o lote acabou. Alem disso o lote e a granularidade errada: a meta 1.1
+    -- Duas razoes medidas, e as duas continuam valendo. A primeira: a previsao
+    -- vinha sendo preenchida NO FIM, junto com o fato, e nos 19 lotes que a
+    -- tinham ela era identica a `data_fim`. A meta 1.3 prometia 48 folhas em
+    -- agosto e a grade mostrava 49 em junho, porque foi em junho que o lote
+    -- acabou. A segunda: o lote e a granularidade errada, porque a meta 1.1
     -- promete 4 em abril, 1 em maio, 16 em julho e 3 em agosto, e uma data de
-    -- lote nao expressa quatro meses. Hoje o planejado sai de
-    -- `acervo.versao.data_prevista`, uma promessa por folha.
+    -- lote nao expressa quatro meses.
     --
-    -- A COLUNA FICA, E HOJE ELA NÃO TEM LEITOR. Nenhuma tela mostra este campo:
-    -- a aba de lotes do cliente web não tem a coluna e o diálogo de lote não
-    -- envia o campo. O servidor ainda o devolve em GET /projetos/lote, e nada
-    -- consome esse valor. Ela guarda 19 linhas preenchidas (medido em
-    -- 2026-08-05), e todas as 19 repetem a `data_fim`. Apagar coluna com dado é
-    -- decisão do chefe da DGEO, ainda não tomada.
+    -- Hoje o planejado sai de `acervo.versao.data_prevista`, uma promessa por
+    -- FOLHA. Quem procura "quando isto fica pronto" tem UM lugar para olhar.
     --
-    -- ELA É DO LOTE, E SÓ DO LOTE. `acervo.projeto` não tem esta coluna. Até
-    -- 2026-08-06 o schema Joi do projeto a aceitava e o INSERT a descartava sem
-    -- aviso; hoje o projeto a RECUSA com 400. Ver `projeto_schema.js`.
-    data_fim_prevista DATE,
+    -- Ver migrations/2026-08-06_poda_data_fim_prevista_do_lote.sql, que guarda
+    -- as 19 linhas lidas da producao antes do DROP.
     status_execucao_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
     data_modificacao TIMESTAMP WITH TIME ZONE,
     usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
     CHECK (data_fim IS NULL OR data_fim >= data_inicio),
-    CONSTRAINT lote_data_fim_prevista_check
-        CHECK (data_fim_prevista IS NULL OR data_fim_prevista >= data_inicio),
     CONSTRAINT unique_pit_per_project UNIQUE (projeto_id, pit)
 );
 
@@ -174,13 +164,14 @@ CREATE TABLE acervo.versao(
 	-- prevista no proprio `data_edicao`, e esse valor e SOBRESCRITO quando ela
 	-- vira Regular: o plano desaparecia no instante em que se cumpria.
 	--
-	-- E NAO E `lote.data_fim_prevista`, que foi a primeira tentativa e falhou
-	-- por duas razoes medidas em 2026-08-05. A primeira: nos 19 lotes que a tem,
-	-- ela e IGUAL a `data_fim`, ou seja, a previsao vinha sendo preenchida no
-	-- fim junto com o fato, e o planejado da grade era uma copia do realizado. A
-	-- segunda: o lote e a granularidade errada, porque a meta 1.1 promete 4 em
-	-- abril, 1 em maio, 16 em julho e 3 em agosto, e uma data de lote nao
-	-- expressa quatro meses.
+	-- E NAO UMA DATA DE LOTE, que foi a primeira tentativa. `lote.
+	-- data_fim_prevista` existiu de 2026-08-03 a 2026-08-06 e falhou por duas
+	-- razoes medidas. A primeira: nos 19 lotes que a tinham, ela era IGUAL a
+	-- `data_fim`, ou seja, a previsao vinha sendo preenchida no fim junto com o
+	-- fato, e o planejado da grade era uma copia do realizado. A segunda: o lote
+	-- e a granularidade errada, porque a meta 1.1 promete 4 em abril, 1 em maio,
+	-- 16 em julho e 3 em agosto, e uma data de lote nao expressa quatro meses.
+	-- Aquela coluna foi podada, e esta ficou como fonte unica.
 	--
 	-- ANULAVEL, e a maioria fica nula: registro historico e produto de fora do
 	-- plano nao prometem mes nenhum. Na versao que cumpre meta, a ausencia dela e

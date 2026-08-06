@@ -177,9 +177,10 @@ router.delete(
 // 1.33.0, e era do administrador global: o Extra-PIT é a exceção AUTORIZADA ao
 // plano, e quem a cadastra é quem toca a produção.
 //
-// AS ROTAS DE VERSÃO, mais abaixo, NÃO acompanharam, e é decisão e não descuido:
-// elas gravam em `acervo.versao`, e quem manda no acervo é o módulo acervo. Ver
-// o comentário delas.
+// AS ROTAS DE VERSÃO, mais abaixo, acompanham desde 2026-08-06. Elas ligam a
+// folha do acervo à demanda, e sem elas o operador entregava meia tarefa: uma
+// demanda Extra-PIT sem folha ligada não conta nada na grade. Ver o comentário
+// delas.
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -280,12 +281,19 @@ router.delete(
 // `.required()`): ligar uma folha por lá obriga a ler a versão, devolver tudo de
 // volta e torcer para nada se perder no caminho. Estas rotas mexem em UM campo.
 //
-// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER continua do
-// ADMINISTRADOR GLOBAL, e as outras escritas da demanda passaram para o operador
-// de Produção na 1.33.0: a diferença é o que a escrita TOCA. Estas duas gravam
-// `acervo.versao.demanda_extra_id`, e quem manda no acervo é o módulo acervo.
-// Dar a folha do acervo por um perfil de Produção seria abrir a porta lateral
-// que `verifyPerfil('operador', 'acervo')` fecha na porta da frente.
+// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER é do operador
+// de PRODUÇÃO, igual às outras escritas da demanda Extra-PIT.
+//
+// A 1.33.0 deixou estas duas com o administrador global, pelo argumento de que
+// elas gravam `acervo.versao.demanda_extra_id` e quem manda no acervo é o módulo
+// acervo. O argumento cai diante do que ele produzia: o operador de Produção
+// cadastrava a demanda e parava ali, sem poder dizer QUAIS folhas a cumprem. Uma
+// demanda Extra-PIT sem folha ligada não conta nada na grade do PIT, então a
+// permissão entregava metade de uma tarefa.
+//
+// A fronteira que importa não é a tabela, é o CAMPO. Estas rotas mexem em UM
+// campo de UMA linha que já existe, e não criam, apagam nem movem produto,
+// versão ou arquivo. Nada do que o perfil de acervo protege passa por aqui.
 
 // Antes de '/extra/:id/versoes/:versao_id', pela mesma razão de '/anos'.
 router.get(
@@ -321,7 +329,7 @@ router.get(
 
 router.post(
   '/extra/:id/versoes',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({
     params: pitSchema.idParams,
     body: pitSchema.associarVersaoDemandaExtra
@@ -339,7 +347,7 @@ router.post(
 
 router.delete(
   '/extra/:id/versoes/:versao_id',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({ params: pitSchema.versaoDemandaExtraParams }),
   asyncHandler(async (req, res, next) => {
     await extraCtrl.desassociarVersao(

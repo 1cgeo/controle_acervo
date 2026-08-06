@@ -90,8 +90,18 @@ dotenv.config({
 // tela de Configuração, chamaria o `GET /`, tomaria "relação não existe" e
 // mostraria a falha de carga. Pior, o `PUT /` daria o mesmo erro DEPOIS de o
 // administrador digitar. Piso cobrado para o par ficar sempre casado.
-const VERSION = '1.34.0'
-const MIN_DATABASE_VERSION = '1.34.0'
+//
+// A 1.35.0 SOBE O PISO, e também por REMOÇÃO. `acervo.lote.data_fim_prevista`
+// sai, e este código deixa de lê-la e de escrevê-la: ela some do SELECT de
+// `getLotes`, dos dois ColumnSet e da lista do `preserveOmitted`.
+//
+// Um servidor 1.34.0 contra um banco 1.35.0 quebra em toda listagem de lote,
+// com "coluna data_fim_prevista não existe", e a tela de projetos fica sem a
+// aba. O contrário não quebra, mas mente: este código nunca mais grava a coluna,
+// então num banco 1.34.0 ela congelaria com os valores de hoje, e quem a
+// consultasse por fora leria promessa velha como se fosse atual.
+const VERSION = '1.35.0'
+const MIN_DATABASE_VERSION = '1.35.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

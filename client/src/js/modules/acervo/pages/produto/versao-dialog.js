@@ -342,10 +342,16 @@ export async function openVersaoDialog({
 
   // --- O que esta versão CUMPRE no plano anual ------------------------------
   //
-  // Sem estes dois campos, a única forma de ligar uma versão ao PIT era o plugin
-  // do QGIS ou SQL na mão, e a grade do PIT conta por `INNER JOIN pit.meta ON
-  // mm.id = v.meta_pit_id`: versão sem meta não conta, e fica pronta fora da
-  // conta do plano.
+  // Sem estes dois campos, a única forma de ligar uma versão ao PIT era SQL na
+  // mão, e a grade do PIT conta por `INNER JOIN pit.meta ON mm.id =
+  // v.meta_pit_id`: versão sem meta não conta, e fica pronta fora da conta do
+  // plano.
+  //
+  // E NÃO PELO PLUGIN DO QGIS, como este comentário afirmou até 2026-08-06. O
+  // plugin não conhece `meta_pit_id`, `data_prevista` nem `demanda_extra_id`, e
+  // nunca conheceu: os identificadores não aparecem uma vez sequer em
+  // `ferramentas_acervo`. Esta tela é o único lugar do sistema onde se liga a
+  // folha à meta, e é por isso que os campos vivem aqui.
   //
   // Os dois são EXCLUSIVOS, e o banco cobra isso (CHECK
   // `versao_plano_ou_excecao`): a versão cumpre uma meta prometida no PIT, ou

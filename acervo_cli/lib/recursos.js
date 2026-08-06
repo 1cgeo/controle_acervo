@@ -126,6 +126,34 @@ const RECURSOS = {
           'e apagado) e a trilha continua em /gerencia/downloads_deletados. Devolve ' +
           '{ fechados }, contado pelo proprio UPDATE. Nao ha cron: quem roda e uma ' +
           'pessoa, e ela aparece no rastro de auditoria'
+      },
+      // A FILA DE MINIATURA, que e DIVIDA VISIVEL. A miniatura nao e gerada no
+      // cadastro de proposito: renderizar custa segundos e roda processo
+      // externo, dentro da transacao que confirma o envio. Desde que o cron
+      // saiu, nada esvazia a fila sozinho: o GET diz o tamanho dela e o POST
+      // paga um lote.
+      'miniaturas-pendentes': {
+        metodo: 'GET',
+        caminho: '/acervo/miniaturas/pendentes',
+        // CONSULTA, e nao admin: o GET so conta. Quem paga a fila e o admin.
+        acesso: 'consulta',
+        envelope: 'registro',
+        nota: 'devolve { pendentes, lote }: quantas versoes esperam miniatura, e ' +
+          'quantas cabem numa passada de `varrer-miniaturas`. Numero grande e ' +
+          'parado significa que ninguem esta rodando a varredura'
+      },
+      'varrer-miniaturas': {
+        metodo: 'POST',
+        caminho: '/acervo/miniaturas/varrer',
+        acesso: 'admin',
+        envelope: 'registro',
+        pesado: 'renderiza um LOTE de miniaturas; cada uma custa segundos e roda ' +
+          'processo externo, entao a chamada demora e pesa na maquina do servidor',
+        nota: 'tres desfechos, e o envelope os distingue. Normal devolve ' +
+          '{ sucessos, falhas, restante }. `pulada: true` significa que outra ' +
+          'varredura ja estava em curso e NADA foi feito agora. `abortada` traz o ' +
+          'motivo da parada, com os sucessos obtidos antes dela. Repetir a chamada ' +
+          'ate `restante` chegar a zero e o uso normal'
       }
     }
   },
