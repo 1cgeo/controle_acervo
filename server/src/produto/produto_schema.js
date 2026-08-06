@@ -59,7 +59,16 @@ models.produtoAtualizacao = Joi.object().keys({
   // explicitamente continua sendo a forma de despinar o produto.
   subtipo_produto_id: Joi.number().integer().strict().allow(null),
   descricao: Joi.string().allow('').required(),
-  geom: Joi.string().allow(null)
+  geom: Joi.string().allow(null),
+  // TROCA CONJUNTA de produto e versoes. Sem ele, corrigir o subtipo de um
+  // produto ja cadastrado era impossivel pela API: mudar o produto batia na
+  // guarda das versoes, e mudar a versao batia no gatilho do banco. Nenhum dos
+  // dois podia ir primeiro.
+  //
+  // OPCIONAL e sem `.default(true)`: mudar o subtipo do produto reescreve a
+  // identidade de TODA versao dele, e isso nao pode acontecer por descuido de
+  // quem so queria corrigir o nome. Quem quer, diz.
+  migrar_subtipo_das_versoes: Joi.boolean().default(false)
 })
 
 models.versaoAtualizacao = Joi.object().keys({

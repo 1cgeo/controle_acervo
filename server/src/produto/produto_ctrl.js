@@ -10,6 +10,28 @@ const { v4: uuidv4 } = require('uuid');
 
 const controller = {};
 
+// SQLSTATE de `RAISE EXCEPTION` em PL/pgSQL. O gatilho `acervo.validate_version`
+// usa isso para recusar a versao incoerente com o produto.
+const RAISE_EXCEPTION = 'P0001';
+
+/**
+ * Traduz a recusa do gatilho em 400 com a frase dele.
+ *
+ * Sem isto a excecao subia crua e o cliente via "Erro no servidor", 500. O
+ * gatilho ja escreve a razao ("Versao (subtipo X) incompativel com o produto,
+ * que e do subtipo Y"), e ela e exatamente o que quem chamou precisa ler: 500
+ * diz "o sistema quebrou", e o que houve foi o sistema RECUSAR, com motivo.
+ *
+ * So o P0001 vira 400. Erro de conexao, de restricao ou de sintaxe continua
+ * subindo como esta: transformar tudo em 400 esconderia defeito de verdade.
+ */
+const traduzirErroDoGatilho = err => {
+  if (err && err.code === RAISE_EXCEPTION && err.message) {
+    throw new AppError(err.message, httpCode.BadRequest, err);
+  }
+  throw err;
+};
+
 // A GEOMETRIA do produto é lida por `lerAntes`/`lerDepois`, e nunca por um
 // `RETURNING *` cru. `SELECT *` numa coluna geométrica devolve o WKB em
 // hexadecimal, ilegível e longo; as duas funções trocam a coluna pelo EWKT, que
@@ -38,6 +60,10 @@ controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
       body: produto
     })
 
+    // Quando a troca conjunta foi pedida, e o subtipo para onde as versoes vao
+    // DEPOIS da gravacao do produto. Nulo = nao ha o que migrar.
+    let migrarVersoesPara = null
+
     // O trigger acervo.validate_version recusa versão cujo subtipo divirja do subtipo do
     // produto. Fixar o produto num subtipo conflitante não falha aqui: falha na próxima
     // carga, longe da causa. Por isso valida-se contra as versões que já existem.
@@ -51,10 +77,38 @@ controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
       `, [produto.id, produto.subtipo_produto_id])
 
       if (conflito && conflito.subtipos) {
-        throw new AppError(
-          `Produto tem versões de subtipo ${conflito.subtipos}; não pode ser fixado no subtipo ${produto.subtipo_produto_id}`,
-          httpCode.BadRequest
-        )
+        // TROCAR OS DOIS DE UMA VEZ, quando quem chama pede.
+        //
+        // Corrigir o subtipo de um produto ja cadastrado era IMPOSSIVEL pela
+        // API, e o impasse era circular: mudar o produto batia nesta guarda, e
+        // mudar a versao batia no gatilho `acervo.validate_version`. Nenhum dos
+        // dois podia ir primeiro. Medido em 2026-08-06 num produto real, a
+        // "Porto Alegre - S", cadastrada como Carta Topografica quando e
+        // Ortoimagem.
+        //
+        // O campo e EXPLICITO e opcional. Sem ele a guarda continua recusando,
+        // que e o comportamento certo por padrao: mudar o subtipo do produto
+        // reescreve a identidade de toda versao dele, e isso nao pode acontecer
+        // por descuido de quem so queria corrigir o nome.
+        //
+        // TUDO NA MESMA TRANSACAO: se a gravacao do produto falhar depois, as
+        // versoes voltam junto. Meia troca deixaria o produto e as versoes
+        // discordando, que e exatamente o que a guarda existe para impedir.
+        if (!produto.migrar_subtipo_das_versoes) {
+          throw new AppError(
+            `Produto tem versões de subtipo ${conflito.subtipos}; não pode ser ` +
+            `fixado no subtipo ${produto.subtipo_produto_id}. Para trocar o ` +
+            'produto E as versões dele de uma vez, mande ' +
+            '"migrar_subtipo_das_versoes": true.',
+            httpCode.BadRequest
+          )
+        }
+
+        // SO A DECISAO AQUI. A migracao roda DEPOIS de o produto ser gravado, e
+        // a ordem nao e detalhe: o gatilho `acervo.validate_version` compara a
+        // versao com o subtipo do PRODUTO. Migrando antes, ele veria o produto
+        // ainda no subtipo velho e recusaria a propria correcao.
+        migrarVersoesPara = produto.subtipo_produto_id
       }
     }
 
@@ -87,6 +141,47 @@ controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
       const query = db.pgp.helpers.update(produto, cs) + ' WHERE id = $1'
 
       await t.none(query, [produto.id])
+    }
+
+    // A MIGRACAO DAS VERSOES, e ela vem DEPOIS da gravacao do produto.
+    //
+    // A ordem e o coracao disto: o gatilho `acervo.validate_version` compara a
+    // versao com o subtipo do PRODUTO. Migrando antes, ele veria o produto ainda
+    // no subtipo velho e recusaria a propria correcao, com 400. Foi o primeiro
+    // desenho, e o teste o reprovou.
+    //
+    // Mesma transacao do UPDATE acima: falhando aqui, o produto volta junto.
+    if (migrarVersoesPara !== null) {
+      const versoesAfetadas = await t.any(
+        `SELECT id FROM acervo.versao
+         WHERE produto_id = $1 AND subtipo_produto_id <> $2
+         ORDER BY id`,
+        [produto.id, migrarVersoesPara]
+      )
+
+      for (const { id } of versoesAfetadas) {
+        const antesVersao = await auditoriaCtrl.lerAntes(t, 'acervo.versao', id, 'Versão')
+        await t.none(
+          `UPDATE acervo.versao
+           SET subtipo_produto_id = $2,
+               data_modificacao = $3,
+               usuario_modificacao_uuid = $4
+           WHERE id = $1`,
+          [id, migrarVersoesPara, produto.data_modificacao, usuarioUuid]
+        ).catch(traduzirErroDoGatilho)
+        const depoisVersao = await auditoriaCtrl.lerDepois(t, 'acervo.versao', id)
+        // CADA VERSAO DEIXA O PROPRIO RASTRO. Registrar so o produto esconderia
+        // que N versoes mudaram de identidade no mesmo ato.
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.versao',
+          registroId: id,
+          operacao: 'U',
+          antes: antesVersao,
+          depois: depoisVersao,
+          usuarioUuid,
+          contexto
+        })
+      }
     }
 
     const depois = await auditoriaCtrl.lerDepois(t, 'acervo.produto', produto.id)
@@ -188,7 +283,11 @@ controller.atualizaVersao = async (versao, usuarioUuid, contexto) => {
     const cs = new db.pgp.helpers.ColumnSet(colunasVersao, { table: { table: 'versao', schema: 'acervo' } });
     const query = db.pgp.helpers.update(versao, cs) + ' WHERE id = $1 RETURNING *';
 
-    const depois = await t.one(query, [versao.id]);
+    // O gatilho `acervo.validate_version` recusa aqui, e a recusa dele e um
+    // `RAISE EXCEPTION`. Sem esta traducao ela subia crua e o cliente via
+    // "Erro no servidor", 500: a tela dizia que o sistema quebrou, quando o que
+    // houve foi o sistema RECUSAR, com motivo escrito.
+    const depois = await t.one(query, [versao.id]).catch(traduzirErroDoGatilho);
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'acervo.versao',
