@@ -20,6 +20,8 @@
 // calculadas e mostra a diferença contra o congelado. Sem ele, congelar seria
 // esquecer.
 
+const crypto = require('crypto')
+
 const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 const { auditoriaCtrl } = require('../auditoria')
@@ -122,6 +124,57 @@ const gradeDe = (numero, cabecalhos) => {
   return null
 }
 
+// ---------------------------------------------------------------------------
+// A marca de revisão, e a impressão digital que a mantém honesta
+// ---------------------------------------------------------------------------
+
+// O SHA-256 do CONTEÚDO de um bloco, e só dele.
+//
+// Entram as quatro coisas que o documento imprime: cabeçalhos, linhas, prosa e
+// a declaração de "sem ocorrência". Fica de fora tudo o que é apresentação ou
+// metadado (título, ordem, grade de coluna, etiqueta de origem): mudar o título
+// de uma subseção na estrutura não desfaz a conferência dos números dela.
+//
+// A ordem das chaves é FIXA porque `JSON.stringify` a preserva, e a impressão
+// tem de ser a mesma nas duas pontas: a gravada no instante da revisão e a
+// calculada agora.
+const impressaoDoBloco = bloco => crypto
+  .createHash('sha256')
+  .update(JSON.stringify({
+    cabecalhos: bloco.cabecalhos ?? null,
+    linhas: bloco.linhas ?? null,
+    texto: bloco.texto ?? null,
+    semOcorrencia: Boolean(bloco.semOcorrencia)
+  }))
+  .digest('hex')
+
+// As marcas de uma edição, indexadas pelo número da subseção.
+const lerRevisoes = async (conexao, edicaoId) => {
+  const linhas = await conexao.any(
+    `SELECT r.numero, r.impressao, r.data_revisao,
+            u.nome_guerra, u.nome, p.nome_abrev AS posto
+     FROM rpcmtec.subsecao_revisao AS r
+     INNER JOIN dgeo.usuario AS u ON u.uuid = r.usuario_uuid
+     LEFT JOIN dominio.tipo_posto_grad AS p ON p.code = u.tipo_posto_grad_id
+     WHERE r.edicao_id = $<edicaoId>`,
+    { edicaoId }
+  )
+  return new Map(linhas.map(l => [l.numero, l]))
+}
+
+// A marca como a tela a mostra: quem, quando, e se o conteúdo mudou depois.
+const revisaoDoBloco = (bloco, marca) => {
+  if (!marca) return null
+  return {
+    por: [marca.posto, marca.nome_guerra || marca.nome].filter(Boolean).join(' '),
+    em: marca.data_revisao,
+    // O CAMPO QUE FAZ A MARCA VALER. Sem ele, "revisado" diria só que alguém
+    // clicou um dia: a subseção digitada muda quando alguém a edita, e a
+    // calculada muda sozinha quando se cadastra uma versão ou uma capacitação.
+    desatualizada: marca.impressao !== impressaoDoBloco(bloco)
+  }
+}
+
 // Uma subseção DIGITADA está preenchida quando alguém a visitou: gravou linha,
 // escreveu prosa ou declarou que não houve ocorrência. A AUSÊNCIA é
 // informação, e é o que o fechamento recusa.
@@ -214,7 +267,22 @@ controller.montar = async id => {
         }
       })
 
+  // A marca de conferência entra DEPOIS de o bloco estar montado, porque a
+  // impressão digital se calcula sobre o conteúdo final: é o que o revisor viu.
+  const marcas = await lerRevisoes(db.conn, id)
+  for (const b of blocos) b.revisao = revisaoDoBloco(b, marcas.get(b.numero))
+
   const pendentes = blocos.filter(b => !b.preenchida).map(b => b.numero)
+
+  // O QUE FALTA CONFERIR, em duas listas separadas pela mesma razão de sempre:
+  // o conserto é diferente. `porRevisar` pede um olhar que ninguém deu;
+  // `revisaoVencida` pede um SEGUNDO olhar, porque o conteúdo mudou depois do
+  // primeiro. Juntá-las esconderia a segunda, que é a mais fácil de passar
+  // batida: a subseção aparece marcada.
+  const porRevisar = blocos.filter(b => !b.revisao).map(b => b.numero)
+  const revisaoVencida = blocos
+    .filter(b => b.revisao && b.revisao.desatualizada)
+    .map(b => b.numero)
 
   // AS DUAS LISTAS SÃO DIFERENTES, e a diferença é quem conserta.
   //
@@ -233,6 +301,8 @@ controller.montar = async id => {
     ...edicao,
     pendentes,
     lacunasCalculadas,
+    porRevisar,
+    revisaoVencida,
     secoes: agruparPorSecao(blocos)
   }
 }
@@ -402,7 +472,7 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
  * causa dela: o gestor não tem como preenchê-la à mão, e o conserto é cadastrar
  * o dado na origem.
  */
-controller.fechar = async (id, usuarioUuid, contexto) => {
+controller.fechar = async (id, usuarioUuid, contexto, cienteDaRevisao = false) => {
   const montada = await controller.montar(id)
 
   if (montada.fechada) {
@@ -415,6 +485,35 @@ controller.fechar = async (id, usuarioUuid, contexto) => {
       '. Preencha cada uma ou marque "sem ocorrência no mês".',
       httpCode.BadRequest
     )
+  }
+
+  // A CONFERÊNCIA AVISA, E NÃO RECUSA (decisão do chefe, 2026-08-06).
+  //
+  // Subseção por preencher é buraco no DOCUMENTO, e por isso o bloco acima
+  // recusa. Faltar conferência é outra coisa: o documento está inteiro, e quem
+  // assina decide se quer assinar sem ter olhado. Recusar aqui tomaria dele um
+  // julgamento que é dele.
+  //
+  // O AVISO É DO SERVIDOR, e não da tela. Posto só no cliente web, o CLI e
+  // qualquer outro chamador fechariam calados, e a marca viraria enfeite de uma
+  // tela só. Quem manda `ciente_revisao` está dizendo que leu a lista.
+  if (!cienteDaRevisao) {
+    const faltando = []
+    if (montada.porRevisar.length > 0) {
+      faltando.push('nunca conferidas: ' + montada.porRevisar.join(', '))
+    }
+    if (montada.revisaoVencida.length > 0) {
+      faltando.push(
+        'conferidas ANTES de mudarem: ' + montada.revisaoVencida.join(', ')
+      )
+    }
+    if (faltando.length > 0) {
+      throw new AppError(
+        'Esta edição tem subseções sem conferência (' + faltando.join('; ') +
+        '). Confira cada uma ou confirme o fechamento assim mesmo.',
+        httpCode.Conflict
+      )
+    }
   }
 
   // Sem assinante, o PDF sairia com o bloco de assinatura em branco. Quem vai
@@ -724,6 +823,103 @@ controller.deletarAnexo = async (id, usuarioUuid, contexto) => {
       usuarioUuid,
       contexto
     })
+  })
+}
+
+/**
+ * Marca ou desmarca uma subseção como conferida.
+ *
+ * MARCAR É INSERIR, DESMARCAR É APAGAR. A linha ausente já diz "não conferida",
+ * e guardar um `revisado = false` com carimbo produziria um "não conferido por
+ * Fulano às 14h", que não é fato nenhum.
+ *
+ * A IMPRESSÃO DIGITAL SE CALCULA AQUI, sobre o bloco montado AGORA, e não sobre
+ * o que o cliente mandou. É o que impede a marca de afirmar conferência de um
+ * conteúdo que o revisor não viu: o cliente diria o que quisesse.
+ *
+ * @param {number} id edição
+ * @param {string} numero subseção ('2.1')
+ * @param {boolean} revisado
+ * @returns {Promise<Object>} a marca resultante, ou `{ revisao: null }`
+ */
+controller.revisar = async (id, numero, revisado, usuarioUuid, contexto) => {
+  const montada = await controller.montar(id)
+
+  // Numa edição FECHADA o documento já foi congelado e assinado. Conferir
+  // depois disso não muda nada, e a marca sugeriria que mudou. As marcas
+  // existentes continuam VISÍVEIS: elas contam quem conferiu antes de assinar.
+  if (montada.fechada) {
+    throw new AppError(
+      'A edição está fechada. A conferência é o passo ANTES do fechamento.',
+      httpCode.BadRequest
+    )
+  }
+
+  const bloco = montada.secoes
+    .flatMap(s => s.subsecoes)
+    .find(b => b.numero === numero)
+
+  if (!bloco) {
+    throw new AppError(
+      `A subseção ${numero} não existe nesta edição`, httpCode.NotFound
+    )
+  }
+
+  return db.conn.tx(async t => {
+    const antes = await t.oneOrNone(
+      `SELECT id, edicao_id, numero, impressao, data_revisao, usuario_uuid
+       FROM rpcmtec.subsecao_revisao
+       WHERE edicao_id = $<id> AND numero = $<numero>`,
+      { id, numero }
+    )
+
+    if (!revisado) {
+      if (!antes) return { numero, revisao: null }
+
+      await t.none(
+        'DELETE FROM rpcmtec.subsecao_revisao WHERE id = $<registroId>',
+        { registroId: antes.id }
+      )
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'rpcmtec.subsecao_revisao',
+        registroId: antes.id,
+        operacao: 'D',
+        antes,
+        usuarioUuid,
+        contexto
+      })
+      return { numero, revisao: null }
+    }
+
+    // `ON CONFLICT DO UPDATE`: reconferir depois de o conteúdo mudar é o gesto
+    // normal, e ele tem de trocar a impressão E o carimbo. Sem isso a segunda
+    // conferência não teria efeito e a subseção seguiria marcada como vencida.
+    const depois = await t.one(
+      `INSERT INTO rpcmtec.subsecao_revisao
+         (edicao_id, numero, impressao, usuario_uuid)
+       VALUES ($<id>, $<numero>, $<impressao>, $<usuarioUuid>)
+       ON CONFLICT (edicao_id, numero) DO UPDATE
+         SET impressao = EXCLUDED.impressao,
+             usuario_uuid = EXCLUDED.usuario_uuid,
+             data_revisao = now()
+       RETURNING id, edicao_id, numero, impressao, data_revisao, usuario_uuid`,
+      { id, numero, impressao: impressaoDoBloco(bloco), usuarioUuid }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.subsecao_revisao',
+      registroId: depois.id,
+      operacao: antes ? 'U' : 'I',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return {
+      numero,
+      revisao: { em: depois.data_revisao, desatualizada: false }
+    }
   })
 }
 

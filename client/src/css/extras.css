@@ -115,6 +115,59 @@
   flex-wrap: wrap;
 }
 
+/* A CONFERENCIA por subsecao.
+ *
+ * A subsecao conferida ganha uma barra a esquerda, e nao um fundo colorido: numa
+ * tela de 34 blocos, o fundo empilhado vira listra e cansa. A barra deixa o
+ * progresso legivel de relance ao rolar, que e o uso real. */
+.rpcm-subsecao--conferida {
+  border-left: 3px solid var(--color-success);
+}
+
+.rpcm-revisao {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-color);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.rpcm-revisao__caixa {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rpcm-revisao__caixa:disabled {
+  cursor: progress;
+}
+
+.rpcm-revisao__rotulo {
+  cursor: pointer;
+}
+
+.rpcm-revisao--feita .rpcm-revisao__rotulo {
+  color: var(--text-primary);
+}
+
+/* Numa edicao FECHADA a marca vira texto: ela conta quem conferiu antes de
+ * assinar, e nao ha o que clicar. */
+.rpcm-revisao--lida {
+  color: var(--text-secondary);
+}
+
+.rpcm-revisao--lida svg {
+  width: 16px;
+  height: 16px;
+  color: var(--color-success);
+  flex-shrink: 0;
+}
+
 .rpcm-etiqueta {
   display: inline-block;
   padding: 2px var(--space-sm);

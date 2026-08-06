@@ -100,8 +100,13 @@ dotenv.config({
 // aba. O contrário não quebra, mas mente: este código nunca mais grava a coluna,
 // então num banco 1.34.0 ela congelaria com os valores de hoje, e quem a
 // consultasse por fora leria promessa velha como se fosse atual.
-const VERSION = '1.35.0'
-const MIN_DATABASE_VERSION = '1.35.0'
+//
+// A 1.36.0 SOBE O PISO, e é o caso simples: ela ACRESCENTA
+// `rpcmtec.subsecao_revisao`, e este código passa a ler e escrever a tabela em
+// toda montagem de edição e no fechamento. Num banco 1.35.0 a tela do RPCMTec
+// falharia com "relação não existe" logo na abertura.
+const VERSION = '1.36.0'
+const MIN_DATABASE_VERSION = '1.36.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

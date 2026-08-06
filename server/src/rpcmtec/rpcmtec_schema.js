@@ -82,6 +82,27 @@ models.gravarSubsecao = Joi.object().keys({
   sem_ocorrencia: Joi.boolean().default(false)
 })
 
+// O fechamento AVISA sobre a conferência que falta, e deixa fechar. Este campo
+// é o "eu li a lista": sem ele a rota devolve 409 com o que falta, com ele
+// fecha. `default(false)` para o chamador antigo, que não o conhece, continuar
+// recebendo o aviso em vez de fechar calado.
+models.fecharEdicao = Joi.object().keys({
+  ciente_revisao: Joi.boolean().default(false)
+})
+
+// --- Conferência por subseção -----------------------------------------------
+
+// UM campo, e ele é obrigatório. `revisado` sem valor não tem padrão razoável:
+// assumir `true` marcaria por engano quem quis desmarcar, e assumir `false`
+// desmarcaria quem quis marcar. Quem chama diz o que quer.
+//
+// A IMPRESSÃO DIGITAL NÃO ENTRA AQUI, de propósito. Ela é calculada no servidor
+// sobre o bloco montado na hora: se o cliente a mandasse, poderia afirmar
+// conferência de um conteúdo que ninguém viu.
+models.revisarSubsecao = Joi.object().keys({
+  revisado: Joi.boolean().required()
+})
+
 // Cópia do mês anterior: sem `numero`, copia todas as digitadas.
 models.copiarMesAnterior = Joi.object().keys({
   numero: Joi.string().pattern(/^\d{1,2}\.\d{1,2}$/).allow(null, '')

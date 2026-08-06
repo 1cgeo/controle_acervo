@@ -20,6 +20,7 @@ vi.mock('@services/rpcmtec-service.js', async () => {
     listarAnexos: vi.fn(() => Promise.resolve([])),
     copiarMesAnterior: vi.fn(() => Promise.resolve({ de: '05/2026', copiadas: ['3.1'] })),
     fecharEdicao: vi.fn(() => Promise.resolve({ id: 7, subsecoes: 34, lacunas: [] })),
+    revisarSubsecao: vi.fn(() => Promise.resolve({ numero: '6.1', revisao: null })),
   };
 });
 
@@ -45,9 +46,10 @@ vi.mock('@components/modal/confirm-dialog.js', () => ({
 
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import {
-  getDocumento, copiarMesAnterior, fecharEdicao,
+  getDocumento, copiarMesAnterior, fecharEdicao, revisarSubsecao,
 } from '@services/rpcmtec-service.js';
 import { showWarning } from '@utils/toast.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 
 const flush = async () => {
   for (let i = 0; i < 4; i += 1) await new Promise(resolve => setTimeout(resolve, 0));
@@ -56,7 +58,9 @@ const flush = async () => {
 // O documento de uma edicao ABERTA, com as tres situacoes de subsecao calculada
 // lado a lado: a que veio com linha, a que saiu VAZIA (6.1) e a que o gerador
 // nem produz (6.3).
-function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
+function doc({ pendentes = ['3.1'], preenchida31 = false, revisoes = {} } = {}) {
+  const revisaoDe = (numero) => revisoes[numero] || null;
+  const numeros = ['3.1', '6.1', '6.2', '6.3'];
   return {
     id: 7,
     ano: 2026,
@@ -69,11 +73,16 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
     data_fechamento: null,
     pendentes,
     lacunasCalculadas: ['6.1', '6.3'],
+    // As duas listas da CONFERENCIA (1.36.0), montadas do mesmo fixture para
+    // nao poderem discordar do que cada subsecao diz de si.
+    porRevisar: numeros.filter(n => !revisaoDe(n)),
+    revisaoVencida: numeros.filter(n => revisaoDe(n) && revisaoDe(n).desatualizada),
     secoes: [
       {
         titulo: '3. ATIVIDADES DA DIVISÃO',
         subsecoes: [{
           numero: '3.1',
+          revisao: revisaoDe('3.1'),
           titulo: 'Atividades realizadas',
           origem: 2,
           fonte: null,
@@ -89,6 +98,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
         subsecoes: [
           {
             numero: '6.1',
+            revisao: revisaoDe('6.1'),
             titulo: 'Aproveitamento do efetivo',
             origem: 1,
             fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
@@ -101,6 +111,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
           },
           {
             numero: '6.2',
+            revisao: revisaoDe('6.2'),
             titulo: 'Capacitação do efetivo',
             origem: 1,
             fonte: 'rpcmtec.capacitacao, tipo Recebida',
@@ -113,6 +124,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false } = {}) {
           },
           {
             numero: '6.3',
+            revisao: revisaoDe('6.3'),
             titulo: 'Subseção sem gerador',
             origem: 1,
             fonte: 'algum lugar',
@@ -284,6 +296,139 @@ describe('renderRpcmtecEdicao', () => {
 
     expect(container.querySelector('.historico')).toBe(historico);
     expect(container.querySelector('input[type="file"]')).toBe(arquivo);
+
+    cleanup();
+  });
+  // -------------------------------------------------------------------------
+  // A conferencia por subsecao
+  // -------------------------------------------------------------------------
+
+  // A CAIXA APARECE NAS TRES ORIGENS. E a diferenca entre esta marca e a
+  // etiqueta "Por preencher": preencher e digitar o que falta, conferir e olhar
+  // o que esta la e responder por ele. A calculada nasce preenchida e e
+  // justamente a que mais precisa do olho, porque o numero pode estar certo e o
+  // cadastro que o alimenta, errado.
+  test('toda subsecao ganha a caixa de conferencia, calculada inclusive', async () => {
+    const { container, cleanup } = await montar();
+
+    for (const numero of ['3.1', '6.1', '6.2', '6.3']) {
+      const caixa = subsecao(container, numero).querySelector('.rpcm-revisao__caixa');
+      expect(caixa, `a ${numero} ficou sem caixa`).not.toBeNull();
+      expect(caixa.checked).toBe(false);
+    }
+
+    cleanup();
+  });
+
+  test('a subsecao conferida mostra QUEM conferiu e QUANDO', async () => {
+    getDocumento.mockImplementation(() => Promise.resolve(doc({
+      revisoes: {
+        '6.2': {
+          por: 'Cap Fulano',
+          em: '2026-08-06T14:32:00.000Z',
+          desatualizada: false,
+        },
+      },
+    })));
+
+    const { container, cleanup } = await montar();
+
+    const seis2 = subsecao(container, '6.2');
+    expect(seis2.querySelector('.rpcm-revisao__caixa').checked).toBe(true);
+    expect(seis2.textContent).toContain('Cap Fulano');
+    // Marca sem nome nem hora responderia "alguem ja olhou", que nao serve para
+    // quem precisa saber a quem perguntar.
+    expect(seis2.querySelector('.rpcm-revisao__rotulo').textContent).toMatch(/06\/08\/2026/);
+
+    // VARIANCIA: a nao conferida continua sem nada disso, senao o caso acima
+    // passaria com a tela mostrando o mesmo texto em todo bloco.
+    const seis1 = subsecao(container, '6.1');
+    expect(seis1.querySelector('.rpcm-revisao__caixa').checked).toBe(false);
+    expect(seis1.textContent).not.toContain('Cap Fulano');
+
+    cleanup();
+  });
+
+  // O CASO QUE JUSTIFICA A IMPRESSAO DIGITAL. A marca continua la, com quem e
+  // quando, e a tela avisa que o conteudo mudou depois dela.
+  test('a marca que envelheceu avisa que o conteudo mudou depois', async () => {
+    getDocumento.mockImplementation(() => Promise.resolve(doc({
+      revisoes: {
+        '6.2': {
+          por: 'Cap Fulano',
+          em: '2026-08-06T14:32:00.000Z',
+          desatualizada: true,
+        },
+      },
+    })));
+
+    const { container, cleanup } = await montar();
+
+    const seis2 = subsecao(container, '6.2');
+    expect(seis2.querySelector('.rpcm-revisao__caixa').checked).toBe(true);
+    expect(marcas(seis2)).toContain('mudou depois da conferência');
+    // Ela NAO recebe a barra de conferida: o verde diria que aquilo esta
+    // resolvido, e nao esta.
+    expect(seis2.classList.contains('rpcm-subsecao--conferida')).toBe(false);
+
+    cleanup();
+  });
+
+  test('marcar a caixa manda a subsecao e o valor para o servidor', async () => {
+    const { container, cleanup } = await montar();
+
+    subsecao(container, '6.1').querySelector('.rpcm-revisao__caixa').click();
+    await flush();
+
+    expect(revisarSubsecao).toHaveBeenCalledWith(7, '6.1', true);
+
+    cleanup();
+  });
+
+  // A TELA NAO PODE AFIRMAR O QUE O BANCO NAO TEM. Falhando a gravacao, a caixa
+  // volta ao estado real; deixa-la marcada seria a tela mentindo.
+  test('gravacao que falha devolve a caixa ao estado anterior', async () => {
+    revisarSubsecao.mockRejectedValueOnce(new Error('sem rede'));
+
+    const { container, cleanup } = await montar();
+    const caixa = subsecao(container, '6.1').querySelector('.rpcm-revisao__caixa');
+
+    caixa.click();
+    await flush();
+
+    expect(caixa.checked).toBe(false);
+
+    cleanup();
+  });
+
+  // O AVISO ENTRA NA MESMA CONFIRMACAO do fechamento, e nao numa segunda caixa:
+  // duas seguidas treinam quem le a clicar sem ler.
+  test('o fechamento avisa da conferencia que falta, e deixa fechar', async () => {
+    const { container, cleanup } = await montar();
+
+    botaoPor(container, 'Fechar e congelar').click();
+    await flush();
+
+    const pedido = confirmDialog.mock.calls.at(-1)[0];
+    expect(pedido.message).toMatch(/AINDA FALTA CONFERIR/);
+    expect(pedido.message).toContain('6.1');
+    expect(fecharEdicao).toHaveBeenCalledWith(7, true);
+
+    cleanup();
+  });
+
+  test('conferido tudo, o fechamento nao fala em conferencia', async () => {
+    const feita = { por: 'Cap Fulano', em: '2026-08-06T14:32:00.000Z', desatualizada: false };
+    getDocumento.mockImplementation(() => Promise.resolve(doc({
+      revisoes: { '3.1': feita, '6.1': feita, '6.2': feita, '6.3': feita },
+    })));
+
+    const { container, cleanup } = await montar();
+
+    botaoPor(container, 'Fechar e congelar').click();
+    await flush();
+
+    expect(confirmDialog.mock.calls.at(-1)[0].message).not.toMatch(/AINDA FALTA CONFERIR/);
 
     cleanup();
   });

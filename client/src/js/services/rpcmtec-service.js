@@ -36,8 +36,29 @@ export const excluirEdicao = (id) => apiDelete(`/rpcmtec/${id}`);
  */
 export const getDocumento = (id) => apiGet(`/rpcmtec/${id}/documento`);
 
-/** Congela a edicao. Recusa com subsecao digitada por preencher. */
-export const fecharEdicao = (id) => apiPost(`/rpcmtec/${id}/fechar`);
+/**
+ * Congela a edicao. RECUSA com subsecao digitada por preencher.
+ *
+ * AVISA, com 409, quando ha subsecao sem conferencia (nunca marcada, ou marcada
+ * antes de o conteudo mudar). O aviso mora no SERVIDOR: posto so aqui, o CLI
+ * fecharia calado e a marca viraria enfeite de uma tela so. Passe
+ * `cienteRevisao` depois de a pessoa ler a lista e confirmar.
+ */
+export const fecharEdicao = (id, cienteRevisao = false) =>
+  apiPost(`/rpcmtec/${id}/fechar`, { ciente_revisao: cienteRevisao });
+
+/**
+ * Marca ou desmarca uma subsecao como CONFERIDA.
+ *
+ * Vale para as tres origens, e nao so para a digitada: a calculada nasce
+ * preenchida e continua precisando de olho humano, porque o numero pode estar
+ * certo e o cadastro que o alimenta, errado.
+ *
+ * O servidor guarda junto uma impressao digital do conteudo conferido. Se ele
+ * mudar depois, a marca volta como `desatualizada`.
+ */
+export const revisarSubsecao = (id, numero, revisado) =>
+  apiPut(`/rpcmtec/${id}/subsecao/${numero}/revisao`, { revisado });
 
 /** Descongela. Preserva o digitado; o calculado volta a sair do banco. */
 export const reabrirEdicao = (id) => apiPost(`/rpcmtec/${id}/reabrir`);

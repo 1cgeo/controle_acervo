@@ -132,6 +132,51 @@ COMMENT ON COLUMN rpcmtec.subsecao.linhas IS
 CREATE INDEX idx_subsecao_edicao ON rpcmtec.subsecao (edicao_id);
 
 -- ---------------------------------------------------------------------------
+-- rpcmtec.subsecao_revisao: "eu já olhei esta subseção"
+-- ---------------------------------------------------------------------------
+
+-- TABELA PRÓPRIA, e não colunas em `rpcmtec.subsecao`. A revisão vale para as
+-- TRÊS origens, e a `subsecao` só tem linha para a DIGITADA: enquanto a edição
+-- está aberta, a calculada e a fixa não existem como registro. Guardar a marca
+-- lá obrigaria a criar linha vazia para poder marcá-la, e aí "existe linha"
+-- deixaria de significar "alguém preencheu", que é o que o fechamento cobra.
+--
+-- A chave é (edicao_id, numero), que é o par que identifica um bloco nos dois
+-- mundos: na edição aberta ele vem da estrutura, na fechada vem do congelado.
+--
+-- MARCAR É INSERIR, DESMARCAR É APAGAR. Sem coluna booleana: a linha ausente já
+-- diz "não revisada", e uma linha com `revisado = false` mais o carimbo de quem
+-- guardaria um "não revisado por Fulano às 14h", que não quer dizer nada.
+CREATE TABLE rpcmtec.subsecao_revisao(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  edicao_id BIGINT NOT NULL REFERENCES rpcmtec.edicao (id) ON DELETE CASCADE,
+  -- MESMO formato de `subsecao.numero`, e sem chave estrangeira para ela: a
+  -- subseção calculada não tem linha lá enquanto a edição está aberta.
+  numero VARCHAR(10) NOT NULL,
+  -- A IMPRESSÃO DIGITAL DO CONTEÚDO no instante da revisão (SHA-256 do bloco
+  -- montado). É o que faz a marca não mentir.
+  --
+  -- Sem ela, "revisado" diria apenas que alguém clicou um dia. A subseção
+  -- DIGITADA muda quando alguém a edita, e a CALCULADA muda sozinha, quando se
+  -- cadastra uma versão, uma capacitação ou um pedido: o número que o revisor
+  -- viu deixa de ser o número que vai para o documento assinado, sem que nada
+  -- na tela avise. Comparando esta impressão com a do conteúdo de agora, a tela
+  -- mostra "revisada, MAS mudou depois".
+  impressao CHAR(64) NOT NULL,
+  data_revisao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+  CONSTRAINT unique_revisao_por_subsecao UNIQUE (edicao_id, numero)
+);
+
+COMMENT ON TABLE rpcmtec.subsecao_revisao IS
+    'Marca de conferência de um bloco do RPCMTec: quem olhou, quando, e a impressão digital do que ele viu.';
+
+COMMENT ON COLUMN rpcmtec.subsecao_revisao.impressao IS
+    'SHA-256 do bloco montado (cabeçalhos, linhas, texto e sem ocorrência). Diferente do atual = o conteúdo mudou depois da revisão.';
+
+CREATE INDEX idx_subsecao_revisao_edicao ON rpcmtec.subsecao_revisao (edicao_id);
+
+-- ---------------------------------------------------------------------------
 -- rpcmtec.anexo_edicao: o PDF assinado
 -- ---------------------------------------------------------------------------
 

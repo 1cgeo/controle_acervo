@@ -10,7 +10,7 @@ import { getUsuarios } from '@services/plataforma-service.js';
 import {
   getDocumento, downloadRpcmtecPdf, fecharEdicao, reabrirEdicao, conferirHoje,
   copiarMesAnterior, limparSubsecao, listarAnexos, enviarAnexo, excluirAnexo,
-  downloadAnexo, downloadAnuarioOds, downloadRtmOds,
+  downloadAnexo, downloadAnuarioOds, downloadRtmOds, revisarSubsecao,
 } from '@services/rpcmtec-service.js';
 import { abrirEditorSubsecao } from './subsecao-editor.js';
 import { abrirDialogoEdicao } from './edicao-dialog.js';
@@ -371,6 +371,98 @@ export async function renderRpcmtecEdicao(container, ctx) {
     ]);
   }
 
+  /**
+   * O CHECKBOX DE CONFERÊNCIA, e a linha que diz quem conferiu e quando.
+   *
+   * VALE PARA AS TRÊS ORIGENS, e é a diferença entre esta marca e a etiqueta
+   * "Por preencher". Preencher é digitar o que falta; conferir é olhar o que
+   * está lá e responder por ele. A subseção calculada nasce preenchida e é
+   * justamente a que mais precisa do olho: o número pode estar certo e o
+   * cadastro que o alimenta, errado.
+   *
+   * NUMA EDIÇÃO FECHADA ele vira só texto. A marca continua VISÍVEL, porque ela
+   * conta quem conferiu antes de assinar, e deixa de ser clicável, porque
+   * conferir depois do congelamento não muda documento nenhum.
+   */
+  function conferencia(sub) {
+    const r = sub.revisao;
+
+    if (documento.fechada) {
+      if (!r) return null;
+      return el('div', { className: 'rpcm-revisao rpcm-revisao--lida' }, [
+        svgIcon(ICONS.check),
+        el('span', {
+          textContent: `Conferida por ${r.por} em ${formatDateTime(r.em)}`,
+        }),
+      ]);
+    }
+
+    // `checked` e `htmlFor` são PROPRIEDADES, e o `el` cai em `setAttribute`
+    // para o que não conhece. Passados ali, `checked: false` viraria
+    // `checked="false"`, e o atributo PRESENTE marca a caixa: toda subseção
+    // nasceria conferida. `htmlFor` viraria um atributo inexistente, e o rótulo
+    // deixaria de clicar na caixa.
+    const caixa = el('input', {
+      type: 'checkbox',
+      className: 'rpcm-revisao__caixa',
+      id: `revisao-${sub.numero}`,
+    });
+    caixa.checked = Boolean(r);
+
+    caixa.addEventListener('change', async () => {
+      const querMarcar = caixa.checked;
+      // Trava enquanto o servidor responde: dois cliques rápidos mandariam duas
+      // chamadas e a segunda desfaria a primeira sem ninguém entender.
+      caixa.disabled = true;
+      try {
+        await revisarSubsecao(edicaoId, sub.numero, querMarcar);
+        // RECARREGA em vez de mexer no DOM daqui. A marca traz quem e quando,
+        // que só o servidor sabe, e a lista de pendências do cabeçalho muda
+        // junto. A tela reconcilia, então isso não perde scroll nem seção
+        // aberta.
+        await carregar();
+      } catch (e) {
+        // Devolve a caixa ao estado real: deixá-la marcada depois de a gravação
+        // falhar é a pior saída, porque a tela passaria a afirmar uma
+        // conferência que o banco não tem.
+        caixa.checked = !querMarcar;
+        showError(e.message || 'Não foi possível gravar a conferência');
+      } finally {
+        caixa.disabled = false;
+      }
+    });
+
+    const texto = r
+      ? `Conferida por ${r.por} em ${formatDateTime(r.em)}`
+      : 'Marque quando tiver conferido esta subseção';
+
+    const rotulo = el('label', {
+      className: 'rpcm-revisao__rotulo',
+      textContent: texto,
+    });
+    rotulo.htmlFor = `revisao-${sub.numero}`;
+
+    const linha = [caixa, rotulo];
+
+    // O AVISO QUE FAZ A MARCA VALER. Sem ele, "conferida" diria apenas que
+    // alguém clicou um dia: a digitada muda quando alguém a edita, e a calculada
+    // muda sozinha quando se cadastra uma versão, uma capacitação ou um pedido.
+    if (r && r.desatualizada) {
+      linha.push(el('span', {
+        className: 'rpcm-etiqueta rpcm-etiqueta--pendente',
+        title: 'O conteúdo desta subseção mudou depois da conferência. '
+          + 'Olhe de novo e marque outra vez.',
+        textContent: 'mudou depois da conferência',
+      }));
+    }
+
+    return el('div', {
+      className: r && !r.desatualizada
+        ? 'rpcm-revisao rpcm-revisao--feita'
+        : 'rpcm-revisao',
+    }, linha);
+  }
+
   function desenharSubsecao(sub) {
     const acoes = [];
 
@@ -436,7 +528,10 @@ export async function renderRpcmtecEdicao(container, ctx) {
       });
     }
 
-    return el('div', { className: 'rpcm-subsecao' }, [
+    // A conferência fica ABAIXO do conteúdo, e não no cabeçalho junto das
+    // etiquetas. Marcar é o gesto que se faz DEPOIS de ler a subseção, e o
+    // caminho do olho é título, conteúdo, marca.
+    const partes = [
       el('div', { className: 'rpcm-subsecao__cabecalho' }, [
         el('h3', {
           className: 'rpcm-subsecao__titulo',
@@ -447,7 +542,16 @@ export async function renderRpcmtecEdicao(container, ctx) {
         el('div', { className: 'rpcm-subsecao__acoes' }, acoes),
       ]),
       conteudo,
-    ]);
+    ];
+
+    const marcaRevisao = conferencia(sub);
+    if (marcaRevisao) partes.push(marcaRevisao);
+
+    return el('div', {
+      className: sub.revisao && !sub.revisao.desatualizada
+        ? 'rpcm-subsecao rpcm-subsecao--conferida'
+        : 'rpcm-subsecao',
+    }, partes);
   }
 
   /**
@@ -726,18 +830,52 @@ export async function renderRpcmtecEdicao(container, ctx) {
     }
   }
 
+  /**
+   * O AVISO DA CONFERÊNCIA, montado a partir do que a tela já tem.
+   *
+   * Ele NÃO substitui o do servidor: quem recusa o fechamento sem confirmação é
+   * a rota, e isso vale para o CLI também. Este texto só evita uma ida e volta
+   * quando a pessoa já pode ver o que falta.
+   */
+  function faltaConferir() {
+    const nunca = documento.porRevisar || [];
+    const vencidas = documento.revisaoVencida || [];
+    if (!nunca.length && !vencidas.length) return null;
+
+    const partes = [];
+    if (nunca.length) {
+      partes.push(`${nunca.length} nunca conferida(s): ${nunca.join(', ')}`);
+    }
+    if (vencidas.length) {
+      partes.push(
+        `${vencidas.length} conferida(s) ANTES de mudar(em): ${vencidas.join(', ')}`,
+      );
+    }
+    return partes.join('. ');
+  }
+
   async function fechar() {
+    const pendencia = faltaConferir();
+
     const ok = await confirmDialog({
       title: 'Fechar e congelar a edição',
       message: 'Os 34 blocos são gravados como estão AGORA, inclusive os calculados. '
         + 'A partir daí o documento não muda quando o banco mudar, que é o que torna '
-        + 'a edição reproduzível. Reabrir depois é possível e fica no rastro.',
-      confirmLabel: 'Fechar e congelar',
+        + 'a edição reproduzível. Reabrir depois é possível e fica no rastro.'
+        // A pendência de conferência entra na MESMA confirmação, e não numa
+        // segunda: duas caixas seguidas treinam quem lê a clicar sem ler.
+        + (pendencia
+          ? `\n\nAINDA FALTA CONFERIR. ${pendencia}. `
+            + 'Fechar assim mesmo é decisão sua, e ela fica no rastro.'
+          : ''),
+      confirmLabel: pendencia ? 'Fechar sem conferir tudo' : 'Fechar e congelar',
     });
     if (!ok) return;
 
     try {
-      const resposta = await fecharEdicao(edicaoId);
+      // `true` porque a pessoa acabou de ler a lista e confirmar. Sem isso o
+      // servidor responde 409, que é o que ele faz com quem não passou por aqui.
+      const resposta = await fecharEdicao(edicaoId, true);
       showSuccess(`Edição fechada. ${resposta.subsecoes} blocos congelados.`);
 
       // AS LACUNAS NÃO PARAM O FECHAMENTO, e por isso o aviso vem depois dele.

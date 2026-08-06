@@ -456,13 +456,18 @@ router.delete(
 // preencher; a reabertura descongela e preserva o digitado.
 // ---------------------------------------------------------------------------
 
+// O corpo carrega SÓ o "eu li o aviso da conferência". Sem ele, a rota responde
+// 409 listando as subseções nunca conferidas e as conferidas antes de mudarem.
 router.post(
   '/:id/fechar',
   verifyAdmin,
-  schemaValidation({ params: rpcmtecSchema.idParams }),
+  schemaValidation({
+    params: rpcmtecSchema.idParams,
+    body: rpcmtecSchema.fecharEdicao
+  }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.fechar(
-      req.params.id, req.usuarioUuid, req.contexto
+      req.params.id, req.usuarioUuid, req.contexto, req.body.ciente_revisao
     )
 
     return res.sendJsonAndLog(
@@ -504,6 +509,36 @@ router.put(
 
     return res.sendJsonAndLog(
       true, 'Subseção gravada com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+// A MARCA DE CONFERÊNCIA, e ela vale para as TRÊS origens.
+//
+// Não é a mesma pergunta que "preenchida". Uma subseção calculada nasce
+// preenchida e continua precisando de olho humano: o número pode estar certo e
+// o CADASTRO que o alimenta, errado. Quem confere o relatório antes de assinar
+// percorre os 34 blocos, e até aqui não tinha onde registrar por onde já passou.
+router.put(
+  '/:id/subsecao/:numero/revisao',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.subsecaoParams,
+    body: rpcmtecSchema.revisarSubsecao
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await edicaoCtrl.revisar(
+      req.params.id, req.params.numero, req.body.revisado,
+      req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true,
+      req.body.revisado
+        ? `Subseção ${req.params.numero} marcada como conferida`
+        : `Conferência da subseção ${req.params.numero} desfeita`,
+      httpCode.OK,
+      dados
     )
   })
 )

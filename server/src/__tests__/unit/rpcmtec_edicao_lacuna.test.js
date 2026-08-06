@@ -57,6 +57,10 @@ const doGerador = ({ vazias = [], semGerador = [] } = {}) => {
 const montarAberta = async (opcoes) => {
   rpcmtecCtrl.calcular.mockResolvedValueOnce(doGerador(opcoes))
   mockDb.conn.oneOrNone.mockResolvedValueOnce(edicaoAberta)
+  // DUAS consultas, nesta ordem: as subsecoes gravadas e as marcas de
+  // conferencia (`rpcmtec.subsecao_revisao`, 1.36.0). Sem a segunda, `montar`
+  // recebe `undefined` no lugar da lista e quebra ao indexa-la.
+  mockDb.conn.any.mockResolvedValueOnce([])
   mockDb.conn.any.mockResolvedValueOnce([])
   return ctrl.montar(1)
 }
@@ -131,6 +135,11 @@ describe('rpcmtec_edicao_ctrl.fechar: aponta a lacuna ao congelar', () => {
       ...edicaoAberta,
       pendentes: [],
       lacunasCalculadas: ['6.1'],
+      // Vazias: o que este arquivo testa e a LACUNA, e nao a conferencia. Com
+      // subsecao por conferir, o fechamento pararia antes com 409 (ver
+      // rpcmtec_revisao.test.js).
+      porRevisar: [],
+      revisaoVencida: [],
       secoes: [{
         titulo: '6. RECURSOS HUMANOS',
         subsecoes: [{
@@ -175,6 +184,8 @@ describe('rpcmtec_edicao_ctrl.fechar: aponta a lacuna ao congelar', () => {
       ...edicaoAberta,
       pendentes: [],
       lacunasCalculadas: [],
+      porRevisar: [],
+      revisaoVencida: [],
       secoes: [{
         titulo: '6. RECURSOS HUMANOS',
         subsecoes: [{

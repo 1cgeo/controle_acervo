@@ -325,6 +325,31 @@ module.exports = {
     }
   },
 
+  // QUEM CONFERIU CADA BLOCO, e quando. Mesmo agregado da subsecao: a pergunta
+  // e "o que aconteceu com a edicao de julho", e conferencia e parte disso.
+  //
+  // O rastro aqui e o que sobrevive ao DESMARCAR. A marca e uma linha so, e
+  // desmarcar a APAGA: sem o evento, "conferido e depois desconferido" ficaria
+  // indistinguivel de "nunca conferido".
+  'rpcmtec.subsecao_revisao': {
+    modulo: 'plataforma',
+    entidade: 'edicao',
+    agregado: (t, linha) => linha.edicao_id,
+    resumo: linha => `Conferência da subseção ${linha.numero}`,
+    // O VALOR da impressao digital nao entra no rastro, e o FATO de ela ter
+    // mudado entra. Sao 64 caracteres de hash: ler "de a3f... para 9c1..." nao
+    // ensina nada a ninguem, e o que importa e que a conferencia foi REFEITA
+    // sobre outro conteudo. Omitida, ela vira nula nos dois lados e continua
+    // aparecendo em `campos_alterados`.
+    omitir: ['impressao'],
+    campos: {
+      numero: { rotulo: 'Subseção' },
+      impressao: { rotulo: 'Conteúdo conferido' },
+      data_revisao: { rotulo: 'Conferida em', tipo: 'data_hora' },
+      usuario_uuid: { rotulo: 'Conferida por', entidade: 'usuario' }
+    }
+  },
+
   'rpcmtec.anexo_edicao': {
     modulo: 'plataforma',
     entidade: 'edicao',
