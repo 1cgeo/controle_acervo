@@ -22,7 +22,7 @@ vi.mock('@services/plataforma-service.js', async () => {
 });
 
 import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
-import { getGradePit } from '@services/plataforma-service.js';
+import { getGradePit, salvarExecucaoPit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
 // UMA LINHA POR ITEM desde 1.30.0. A linha de grupo da Meta 1 é sintetizada pela
@@ -95,7 +95,17 @@ describe('a grade do PIT não se remonta', () => {
     cleanup();
   });
 
-  test('o campo aberto sobrevive à troca de modo', async () => {
+  // O CAMPO ABERTO FECHA na troca de modo, e isso MUDOU em 2026-08-06.
+  //
+  // Antes ele sobrevivia, e era um defeito escondido: o campo não carrega o modo
+  // em que foi aberto, e `gravar` lê o modo VIGENTE. Quem digitava 9 no
+  // realizado de abril, trocava para Planejar e saía da célula gravava 9 no
+  // PLANEJADO de abril, sem erro nenhum e sem nada na tela dizendo isso.
+  //
+  // Fechar sem gravar é a saída segura: o que se perde é uma digitação que a
+  // pessoa acabou de fazer e vê desaparecer, e não um número gravado na coluna
+  // errada, que ninguém vê.
+  test('o campo aberto fecha na troca de modo, sem gravar na coluna errada', async () => {
     getGradePit.mockResolvedValueOnce(GRADE);
     const { container, cleanup } = await montar();
 
@@ -110,9 +120,13 @@ describe('a grade do PIT não se remonta', () => {
     trocarModo(container, 'quantidade_planejada');
     await flush();
 
-    // O MESMO campo, com o que já estava digitado.
-    expect(container.querySelector('.grade-pit__edicao')).toBe(input);
-    expect(input.value).toBe('9');
+    expect(container.querySelector('.grade-pit__edicao')).toBeNull();
+    // E NADA foi para o servidor: o `9` era do realizado, e o modo agora é
+    // outro. Gravar aqui seria gravar no campo que a pessoa não escolheu.
+    expect(salvarExecucaoPit).not.toHaveBeenCalled();
+    // A célula continua sendo o MESMO nó, com os números de antes: fechar o
+    // campo não pode custar a reconciliação.
+    expect(celulas(linhas(container)[1])[3]).toBe(abril);
 
     cleanup();
   });

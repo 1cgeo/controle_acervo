@@ -629,6 +629,37 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
       )
     }
 
+    // NÃO SE LANÇA REALIZADO DE MÊS QUE AINDA NÃO CHEGOU.
+    //
+    // Realizado é o que a Divisão ENTREGOU, e novembro não entregou nada em
+    // agosto. O número lançado adiantado entra na grade, soma no acumulado e
+    // vai para a subseção 2.1 do RPCMTec como produção do mês: o documento
+    // assinado passa a afirmar entrega que não houve.
+    //
+    // O PLANEJADO NÃO ENTRA NESTA GUARDA, e a diferença é o ponto. Planejar
+    // novembro em agosto é o trabalho normal de quem distribui a meta pelos
+    // meses do ano; proibir isso quebraria o planejamento.
+    //
+    // O MÊS CORRENTE PASSA. Ele está acontecendo, e quem entrega no dia 3 lança
+    // no dia 3: exigir a virada do mês empurraria todo lançamento para depois,
+    // que é quando ele é esquecido.
+    if ('quantidade' in dados && dados.quantidade !== null && dados.quantidade !== '') {
+      const agora = new Date()
+      const anoAtual = agora.getFullYear()
+      const mesAtual = agora.getMonth() + 1
+      const noFuturo = meta.ano > anoAtual ||
+        (meta.ano === anoAtual && dados.mes > mesAtual)
+
+      if (noFuturo) {
+        throw new AppError(
+          `${rotuloMeta}: ${String(dados.mes).padStart(2, '0')}/${meta.ano} ` +
+          'ainda não chegou, e realizado é o que já foi entregue. Lance o ' +
+          'planejado agora e o realizado quando o mês chegar.',
+          httpCode.BadRequest
+        )
+      }
+    }
+
     // A GUARDA DO CABEÇALHO SAIU DAQUI, e não foi afrouxamento. Ela recusava o
     // lançamento na linha de cabeçalho de uma meta subdividida, porque isso
     // contaria o mesmo trabalho duas vezes. Hoje `pit.execucao.meta_id` aponta

@@ -557,11 +557,54 @@
    a celula que promete e nao cumpre se le como tela travada. O tracejado diz que
    ela e diferente das vizinhas, e o `title` diz de onde vem o numero. */
 .grade-pit__celula--calculada {
-  cursor: default;
+  cursor: not-allowed;
   border-style: dashed;
+  /* O HACHURADO faz a faixa inteira ler como "nao e sua" de relance. O
+     tracejado sozinho, numa grade de 37 linhas por 12 meses, some entre as
+     bordas vizinhas: o chefe pediu a distincao mais clara em 2026-08-06. */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--text-secondary) 12%, transparent) 4px 6px
+  );
 }
 
 .grade-pit__celula--calculada:hover { outline: none; }
+
+/* O MES QUE AINDA NAO CHEGOU, so no modo Executar. Nao e o mesmo caso da
+   calculada, e por isso nao e a mesma marca: aqui a celula ABRE no mes que vem,
+   e o que falta e o tempo passar. Apagada, e nao hachurada. */
+.grade-pit__celula--futuro {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+  background-color: color-mix(in srgb, var(--border-color) 25%, transparent);
+}
+
+.grade-pit__celula--futuro:hover { outline: none; }
+
+/* A ETIQUETA DE ORIGEM, na linha da meta. Ela responde de uma vez o que a
+   celula responderia doze vezes: nesta coluna, esta linha e minha ou do
+   sistema? */
+.grade-pit__origem {
+  display: inline-block;
+  margin-left: var(--space-sm);
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.grade-pit__origem--calculada {
+  background-color: color-mix(in srgb, var(--color-info) 16%, transparent);
+  color: var(--color-info);
+}
+
+.grade-pit__origem--manual {
+  background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+}
 
 .grade-pit__realizado { display: block; }
 

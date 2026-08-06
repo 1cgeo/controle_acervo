@@ -1,6 +1,6 @@
 import { el, clearChildren } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
-import { showSuccess, showError } from '@utils/toast.js';
+import { showSuccess, showError, showWarning } from '@utils/toast.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { estadoErro } from '@components/estado-erro.js';
 import {
@@ -92,9 +92,9 @@ export async function renderExecucaoPit(container, _ctx) {
     onChange: (valor) => {
       if (valor === null) return;
       modo = valor;
-      // O modo NÃO muda número nenhum da grade: os dois ficam sempre à vista, e
-      // ele só decide qual deles o clique edita. O desenho passa pela
-      // reconciliação e, com as assinaturas iguais, não toca em nó nenhum.
+      // O modo NÃO muda número nenhum: os dois ficam sempre à vista, e ele só
+      // decide qual deles o clique edita. Mas muda o que a tela DIZ sobre poder
+      // escrever, então ele entra na assinatura da linha e a grade se repinta.
       desenhar();
     },
   });
@@ -210,15 +210,56 @@ export async function renderExecucaoPit(container, _ctx) {
     return modo === PLANEJAR ? !!linha.planejada_calculada : !!linha.realizada_calculada;
   }
 
+  /**
+   * O mês que ainda não chegou, no ano que está na tela.
+   *
+   * SÓ IMPORTA NO REALIZADO. Realizado é o que a Divisão ENTREGOU, e novembro
+   * não entregou nada em agosto: o número lançado adiantado soma no acumulado e
+   * vai para a subseção 2.1 do RPCMTec como produção do mês, e o documento
+   * assinado passa a afirmar entrega que não houve.
+   *
+   * PLANEJAR MÊS FUTURO É O TRABALHO NORMAL de quem distribui a meta pelo ano,
+   * então o modo PLANEJAR ignora esta regra.
+   *
+   * O MÊS CORRENTE NÃO É FUTURO. Ele está acontecendo, e quem entrega no dia 3
+   * lança no dia 3.
+   */
+  function mesNoFuturo(mes) {
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth() + 1;
+    if (anoSelecionado > anoAtual) return true;
+    if (anoSelecionado < anoAtual) return false;
+    return mes > mesAtual;
+  }
+
+  // A célula que não abre, e o porquê de cada caso. Uma função só, para a tela e
+  // a mensagem não poderem discordar.
+  function motivoDeNaoEditar(linha, mes) {
+    if (calculada(linha)) {
+      return `Calculado pelo sistema, a partir de ${linha.origem}. `
+        + 'Não se digita: o número muda quando aquilo muda.';
+    }
+    if (modo === EXECUTAR && mesNoFuturo(mes)) {
+      return `${MESES[mes - 1]} ainda não chegou. Realizado é o que já foi `
+        + 'entregue; para prever, use o modo Planejar.';
+    }
+    return null;
+  }
+
   function editar(td, linha, mes) {
     if (!podeEscrever || linha.grupo) return;
-    // A celula CALCULADA nao abre para digitar. Antes ela abria, a pessoa
-    // escrevia o numero e so entao a gravacao recusava: pedir e recusar depois e
-    // pior do que nao pedir, porque o trabalho ja foi feito quando a recusa
-    // chega. O numero desta celula vem do estado do que a origem conta (a
-    // situacao da capacitacao, a versao que virou Regular, a impressao
-    // entregue), e muda sozinho quando aquilo muda.
-    if (calculada(linha)) return;
+    // A celula que nao se digita nao ABRE para digitar. Antes ela abria, a
+    // pessoa escrevia o numero e so entao a gravacao recusava: pedir e recusar
+    // depois e pior do que nao pedir, porque o trabalho ja foi feito quando a
+    // recusa chega.
+    //
+    // Sao dois casos, e a mensagem diz QUAL. Calada, a celula que nao responde
+    // ao clique se le como tela travada.
+    const motivo = motivoDeNaoEditar(linha, mes);
+    if (motivo) {
+      showWarning(motivo);
+      return;
+    }
     if (td.querySelector('input')) return;
 
     const atual = valorDoMes(linha, mes, modo);
@@ -331,24 +372,37 @@ export async function renderExecucaoPit(container, _ctx) {
     if (!linha.__acumulado) linha.__acumulado = acumuladoDaLinha(linha);
     const ate = linha.__acumulado[mes];
 
-    // A celula CALCULADA ganha marca propria: sem ela, a celula que nao abre e
-    // indistinguivel da que abre, e a pessoa clica achando que a tela travou.
-    const ehCalculada = calculada(linha);
+    // A celula que NAO SE DIGITA ganha marca propria, e as duas razoes tem marca
+    // DIFERENTE. Sem isso, a celula que nao abre e indistinguivel da que abre, e
+    // a pessoa clica achando que a tela travou.
+    //
+    //   --calculada  o numero vem da origem, e nunca sera digitado aqui;
+    //   --futuro     o mes ainda nao chegou, e no mes que vem esta mesma celula
+    //                abre. Sao situacoes diferentes e conselhos diferentes.
+    //
+    // Linha de GRUPO nao e editavel em situacao nenhuma, e nao recebe nenhuma
+    // das duas: ela e subtotal, e marca-la sugeriria que um dia abriria.
+    const ehCalculada = !linha.grupo && calculada(linha);
+    const ehFuturo = !linha.grupo && !ehCalculada
+      && modo === EXECUTAR && mesNoFuturo(mes);
     td.className = `grade-pit__celula${ate.classe}`
       + (atual ? ' grade-pit__celula--mes-atual' : '')
-      + (ehCalculada ? ' grade-pit__celula--calculada' : '');
+      + (ehCalculada ? ' grade-pit__celula--calculada' : '')
+      + (ehFuturo ? ' grade-pit__celula--futuro' : '');
+
     // O `title` mostra as DUAS contas: o mês, que é o que a célula escreve, e o
     // acumulado, que é o que a cor diz. Sem ele, uma célula verde com realizado
     // zero se leria como erro.
+    //
+    // E, quando a célula não abre, diz POR QUE, na mesma frase que o clique
+    // mostraria: a fonte da explicação é uma só, então a etiqueta e o aviso não
+    // podem discordar.
+    const motivo = linha.grupo ? null : motivoDeNaoEditar(linha, mes);
     td.title = `${MESES[mes - 1]}: planejado ${numero(planejada)}, realizado ${numero(realizada)}`
       + `
 até ${MESES[mes - 1]}: planejado ${ate.plan}, realizado ${ate.real}`
-      // O `title` diz DE ONDE vem o numero e por que a celula nao abre. Sem a
-      // frase, a celula que nao responde ao clique parece defeito.
-      + (ehCalculada
-        ? `
-Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero muda quando aquilo muda.`
-        : '');
+      + (motivo ? `
+${motivo}` : '');
     // OS DOIS `<span>` FICAM VIVOS, e só o texto muda. Trocá-los por nós novos
     // repintaria a célula inteira sem nenhum ganho. Eles se refazem só quando a
     // célula não os tem: é o caso da que está com o campo de edição aberto.
@@ -378,15 +432,55 @@ Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero mud
     anoSelecionado, linha.descricao, linha.item, linha.numero_meta,
     linha.quantidade_prevista, linha.unidade,
     linha.realizado, linha.planejado, linha.meses,
+    // O MODO ENTRA, e antes não entrava. Ele não muda número nenhum, mas muda
+    // TUDO o que a tela diz sobre poder escrever: a etiqueta da linha, a marca
+    // da célula calculada e a do mês que ainda não chegou. Sem ele, trocar de
+    // Executar para Planejar deixava as marcas do modo anterior na tela, e a
+    // pessoa lia "automática" numa linha que naquele modo ela digita.
+    modo,
+    // As duas origens vêm do servidor por linha, e decidem a etiqueta.
+    linha.planejada_calculada, linha.realizada_calculada,
   ]);
 
   const assinaturaDoGrupo = (linha) => JSON.stringify([
     linha.descricao, subtotalDoGrupo(linha.numero_meta),
   ]);
 
+  /**
+   * A ETIQUETA DE ORIGEM, na linha e não na célula.
+   *
+   * "O que eu digito e o que o sistema calcula" é propriedade da META, e não de
+   * cada um dos doze meses dela. Dito só na célula, o aviso obrigava a passar o
+   * mouse casa a casa para descobrir onde se pode escrever; dito na linha, a
+   * pessoa lê uma vez e sabe a faixa inteira.
+   *
+   * ELA SEGUE O MODO. A mesma meta pode ter o planejado calculado e o realizado
+   * digitado, então a etiqueta responde à pergunta de AGORA: nesta coluna, esta
+   * linha é minha ou do sistema?
+   */
+  const etiquetaDeOrigem = (linha) => {
+    if (linha.grupo) return null;
+
+    if (calculada(linha)) {
+      return el('span', {
+        className: 'grade-pit__origem grade-pit__origem--calculada',
+        title: `Calculado pelo sistema, a partir de ${linha.origem}. `
+          + 'Não se digita: o número muda quando aquilo muda.',
+        textContent: 'automática',
+      });
+    }
+
+    return el('span', {
+      className: 'grade-pit__origem grade-pit__origem--manual',
+      title: 'Você lança este número à mão, mês a mês.',
+      textContent: 'à mão',
+    });
+  };
+
   const rotuloDaMeta = (linha) => el('td', { className: 'grade-pit__rotulo' }, [
     el('span', { className: 'grade-pit__codigo', textContent: codigoMetaPit(linha) }),
     linha.descricao || '',
+    etiquetaDeOrigem(linha),
   ]);
 
   /**

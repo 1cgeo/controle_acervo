@@ -67,6 +67,34 @@ const GRADE = [
 const linhas = (c) => [...c.querySelectorAll('tbody tr')];
 const celulas = (tr) => [...tr.querySelectorAll('.grade-pit__celula')];
 
+/** Troca o alternador Planejar/Executar como a pessoa o troca. */
+function trocarModo(container, valor) {
+  const seletores = [...container.querySelectorAll('select')];
+  const modo = seletores[seletores.length - 1];
+  modo.value = valor;
+  modo.dispatchEvent(new Event('change'));
+}
+
+const origem = (tr) => tr.querySelector('.grade-pit__origem');
+
+// A MESMA grade com uma linha CALCULADA ao lado da manual. As duas juntas sao a
+// variancia: um teste com so uma delas passaria numa tela que marcasse tudo
+// igual.
+const GRADE_MISTA = () => [
+  ...GRADE,
+  {
+    meta_id: '3', ano: 2026, numero_meta: 2, nome: 'Capacitacao',
+    item: '2.1',
+    descricao: 'Capacitar o efetivo',
+    quantidade_prevista: 10, unidade: 'militar',
+    origem: 'as capacitacoes cadastradas',
+    planejada_calculada: true,
+    realizada_calculada: true,
+    meses: [{ id: '20', mes: 5, planejada: 2, realizada: 2 }],
+    realizado: 2, planejado: 2,
+  },
+];
+
 describe('renderExecucaoPit', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -275,6 +303,144 @@ describe('execucao do PIT: a celula calculada nao se digita', () => {
 
     expect(celula.querySelector('input')).not.toBeNull();
     expect(celula.className).not.toContain('grade-pit__celula--calculada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+  // -------------------------------------------------------------------------
+  // O que se digita e o que o sistema calcula
+  // -------------------------------------------------------------------------
+
+  // A DISTINCAO MORA NA LINHA, e nao na celula. Ela e propriedade da META, e
+  // dita so no `title` da celula obrigava a passar o mouse casa a casa para
+  // descobrir onde se pode escrever.
+  test('a linha diz se o numero e dela ou do sistema', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_MISTA());
+
+    const { container, cleanup } = await montar();
+
+    const manual = linhas(container).find(tr => tr.textContent.includes('1.1'));
+    const automatica = linhas(container).find(tr => tr.textContent.includes('2.1'));
+
+    expect(origem(manual).textContent).toBe('à mão');
+    expect(origem(automatica).textContent).toBe('automática');
+    // A etiqueta da automatica diz DE ONDE vem o numero.
+    expect(origem(automatica).title).toContain('as capacitacoes cadastradas');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a celula calculada nao abre para digitar, e a manual abre', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_MISTA());
+
+    const { container, cleanup } = await montar();
+
+    const automatica = linhas(container).find(tr => tr.textContent.includes('2.1'));
+    const manual = linhas(container).find(tr => tr.textContent.includes('1.1'));
+
+    celulas(automatica)[4].click();
+    await flush();
+    expect(celulas(automatica)[4].querySelector('input')).toBeNull();
+    expect(celulas(automatica)[4].className).toContain('grade-pit__celula--calculada');
+
+    // VARIANCIA: a manual do mesmo mes abre.
+    celulas(manual)[4].click();
+    await flush();
+    expect(celulas(manual)[4].querySelector('input')).not.toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A ETIQUETA SEGUE O MODO. A mesma meta pode ter o planejado calculado e o
+  // realizado digitado, e ate 2026-08-06 a troca de modo nao repintava a linha:
+  // as marcas do modo anterior ficavam na tela.
+  test('trocar de modo repinta a etiqueta da linha', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([{
+      ...GRADE[0],
+      origem: 'as versoes do acervo',
+      planejada_calculada: true,
+      realizada_calculada: false,
+    }]);
+
+    const { container, cleanup } = await montar();
+    const linha = linhas(container).find(tr => tr.textContent.includes('1.1'));
+
+    // Modo Executar: o realizado e digitado.
+    expect(origem(linha).textContent).toBe('à mão');
+
+    trocarModo(container, 'quantidade_planejada');
+    await flush();
+
+    // Modo Planejar: o planejado sai da origem.
+    expect(origem(linhas(container).find(tr => tr.textContent.includes('1.1'))).textContent)
+      .toBe('automática');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // -------------------------------------------------------------------------
+  // O mes que ainda nao chegou
+  // -------------------------------------------------------------------------
+
+  // Realizado e o que a Divisao ENTREGOU. Lancado adiantado ele soma no
+  // acumulado e vai para a subsecao 2.1 do RPCMTec como producao do mes: o
+  // documento assinado passa a afirmar entrega que nao houve.
+  //
+  // O relogio destes casos esta em 02/08/2026: agosto e o mes corrente.
+  test('no modo Executar, o mes futuro nao abre e diz por que', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE);
+
+    const { container, cleanup } = await montar();
+    const item = linhas(container)[1];
+
+    // Setembro (indice 8) ainda nao chegou.
+    celulas(item)[8].click();
+    await flush();
+
+    expect(celulas(item)[8].querySelector('input')).toBeNull();
+    expect(celulas(item)[8].className).toContain('grade-pit__celula--futuro');
+    expect(celulas(item)[8].title).toMatch(/ainda n(ã|a)o chegou/i);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // VARIANCIA, e ela e o coracao deste bloco: sem estes dois, um teste que
+  // travasse a grade INTEIRA passaria igual.
+  test('o mes CORRENTE e o passado continuam abrindo no modo Executar', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE);
+
+    const { container, cleanup } = await montar();
+    const item = linhas(container)[1];
+
+    // Agosto e o mes corrente: quem entrega no dia 3 lanca no dia 3.
+    celulas(item)[7].click();
+    await flush();
+    expect(celulas(item)[7].querySelector('input')).not.toBeNull();
+    expect(celulas(item)[7].className).not.toContain('grade-pit__celula--futuro');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // PLANEJAR MES FUTURO E O TRABALHO NORMAL de quem distribui a meta pelo ano.
+  test('no modo Planejar, o mes futuro abre normalmente', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE);
+
+    const { container, cleanup } = await montar();
+
+    trocarModo(container, 'quantidade_planejada');
+    await flush();
+
+    const item = linhas(container)[1];
+    celulas(item)[8].click();
+    await flush();
+
+    expect(celulas(item)[8].querySelector('input')).not.toBeNull();
+    expect(celulas(item)[8].className).not.toContain('grade-pit__celula--futuro');
 
     if (typeof cleanup === 'function') cleanup();
   });
