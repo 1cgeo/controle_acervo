@@ -83,14 +83,12 @@ export async function renderPitAno(container, _ctx) {
     onChange: () => { revisaoSel = null; carregar(); },
   });
 
-  // A FRASE QUE ENSINA O MODELO. Uma no lugar certo vale mais que um manual, e
-  // este é o lugar: ela é a primeira coisa que se lê antes de procurar o botão
-  // que não existe mais.
-  const avisoModelo = el('p', { className: 'page__subtitle' }, [
-    'O PIT é o texto assinado pela DSG, e o que está aqui é a transcrição dele. ',
-    'Para acrescentar, alterar ou cancelar uma meta, escolha a revisão que ',
-    'declara a mudança e edite dentro dela.',
-  ]);
+  // SEM SUBTÍTULO EXPLICANDO O MODELO, desde 2026-08-06. A frase ensinava que o
+  // PIT é o texto assinado pela DSG e que meta se edita dentro da revisão. Quem
+  // usa esta tela já sabe, e a tela mostra o mesmo pela FORMA: a faixa de
+  // revisões vem antes da grade, e os botões de meta só aparecem com uma revisão
+  // escolhida. Texto que repete o que o layout já diz vira ruído que se aprende
+  // a pular, e empurra a grade para baixo da dobra.
 
   const blocoExercicio = el('div', { className: 'pit-exercicio' });
   const faixaRevisoes = el('div', { className: 'pit-revisoes' });
@@ -247,9 +245,8 @@ export async function renderPitAno(container, _ctx) {
   const areaTabela = el('div', {}, [table.element]);
 
   const page = el('div', { className: 'page' }, [
-    el('div', { className: 'page__header page__header--column' }, [
+    el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'PIT do ano' }),
-      avisoModelo,
     ]),
     el('div', { className: 'page__filters' }, [filtroAno.element]),
     blocoExercicio,
@@ -388,16 +385,22 @@ export async function renderPitAno(container, _ctx) {
 
     const r = revisaoSel;
 
-    // A NOTA MUDA COM O ESTADO DA REVISÃO, porque as duas perguntas são
-    // diferentes: no rascunho é "isto já vale?", e na publicada é "posso mexer?".
+    // A NOTA SÓ EXISTE NO RASCUNHO, desde 2026-08-06.
+    //
+    // A da revisão PUBLICADA saiu inteira. A primeira metade ("R2 publicada,
+    // regendo desde tal dia") repetia o botão da revisão escolhida, logo acima,
+    // que já traz o código e o "Rege desde". A segunda metade explicava o
+    // modelo, e quem usa esta tela já o conhece.
+    //
+    // A DO RASCUNHO FICA, e não é o mesmo caso: ela avisa que NADA ali rege
+    // ainda. Quem altera metas num rascunho e sai da tela pode concluir que já
+    // mudou o plano, e a diferença entre rascunho e publicada é a única coisa
+    // nesta tela que o layout não mostra sozinho.
     const nota = r.rascunho
       ? `RASCUNHO ${r.codigo}: nada aqui rege ainda. Altere, cancele e acrescente `
         + 'meta, confira contra o documento da DSG e publique. A coluna "Pelo" só '
         + 'passa a mostrar esta revisão depois de publicada.'
-      : `${r.codigo} publicada, regendo desde ${formatDate(r.data_vigencia)}. `
-        + 'Editar uma meta aqui NÃO muda o PIT: conserta a transcrição do texto '
-        + 'assinado, que é o rei. O SCA exige o motivo e guarda o rastro. Se foi a '
-        + 'DSG que mudou o plano, abra a revisão seguinte.';
+      : '';
 
     const acoes = [];
     acoes.push(el('button', {
@@ -430,8 +433,11 @@ export async function renderPitAno(container, _ctx) {
       }
     }
 
+    // O parágrafo só entra QUANDO HÁ TEXTO. Um `<p>` vazio na revisão publicada
+    // ocuparia a mesma altura, e o espaço em branco entre a faixa e os botões
+    // leria como carregamento que não terminou.
     detalheRevisao.replaceChildren(el('div', { className: 'pit-revisao-detalhe' }, [
-      el('p', { className: 'pit-revisao-detalhe__texto', textContent: nota }),
+      nota ? el('p', { className: 'pit-revisao-detalhe__texto', textContent: nota }) : null,
       el('div', { className: 'pit-revisao-detalhe__acoes' }, acoes),
     ]));
   }

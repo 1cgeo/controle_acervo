@@ -148,13 +148,18 @@ describe('PIT do ano: o exercício e as revisões em cima', () => {
   // CONTROLE NEGATIVO: as duas telas antigas diziam "abra a revisão do ano" com
   // um LINK para outra rota. Esta asserção reprova aquele estado, porque exige a
   // frase sem sair da página.
-  test('o cabeçalho ensina o modelo, e sem link para outra tela', async () => {
+  // O SUBTÍTULO SAIU em 2026-08-06. Ele explicava que o PIT é o texto assinado
+  // pela DSG e que meta se edita dentro da revisão. A tela diz o mesmo pela
+  // FORMA: a faixa de revisões vem antes da grade, e ação de linha só aparece
+  // com uma revisão escolhida (o caso seguinte prende isso).
+  test('o cabeçalho não explica mais o modelo, e não leva a outra tela', async () => {
     logar({ administrador: true });
 
     const { container, cleanup } = await montar();
 
-    expect(container.querySelector('.page__subtitle').textContent)
-      .toMatch(/transcri(ç|c)(ã|a)o/i);
+    expect(container.querySelector('.page__subtitle')).toBeNull();
+    // A ausência do parágrafo não pode ter levado o título junto.
+    expect(container.querySelector('.page__title').textContent).toBe('PIT do ano');
     expect(container.querySelector('.page__header a[href="#/revisoes_pit"]')).toBeNull();
 
     if (typeof cleanup === 'function') cleanup();
@@ -331,7 +336,10 @@ describe('PIT do ano: o que a revisão escolhida diz', () => {
   //
   // CONTROLE NEGATIVO: a tela antiga escrevia "O que ela declara não se altera
   // mais" na revisão publicada, e esta asserção reprova aquele texto.
-  test('a revisão publicada explica que editar conserta a transcrição', async () => {
+  // A NOTA DA REVISÃO PUBLICADA SAIU em 2026-08-06. A primeira metade repetia o
+  // botão da revisão escolhida, logo acima, que já traz o código e o "Rege
+  // desde"; a segunda explicava o modelo.
+  test('a revisão publicada não escreve nota nenhuma', async () => {
     logar({ administrador: true });
 
     const { container, cleanup } = await montar();
@@ -339,9 +347,12 @@ describe('PIT do ano: o que a revisão escolhida diz', () => {
     revisaoBtn(container, 'R0').click();
     await flush();
 
-    const nota = container.querySelector('.pit-revisao-detalhe__texto').textContent;
-    expect(nota).toMatch(/transcri(ç|c)(ã|a)o/i);
-    expect(nota).not.toMatch(/n(ã|a)o se altera mais/i);
+    // Nem parágrafo vazio: espaço em branco entre a faixa e os botões leria
+    // como carregamento que não terminou.
+    expect(container.querySelector('.pit-revisao-detalhe__texto')).toBeNull();
+    // O QUE A NOTA DIZIA continua na tela, no botão da revisão: sem isto o caso
+    // acima passaria com a informação perdida, e não só com o texto removido.
+    expect(revisaoBtn(container, 'R0').textContent).toMatch(/rege desde/i);
     // Publicar e excluir só existem no rascunho.
     expect([...container.querySelectorAll('button')].some((b) => b.textContent.includes('Publicar')))
       .toBe(false);

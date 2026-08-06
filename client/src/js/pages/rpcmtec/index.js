@@ -140,13 +140,12 @@ export async function renderRpcmtec(container, _ctx) {
   const areaTabela = el('div', {}, [tabela.element]);
 
   const page = el('div', { className: 'page' }, [
-    el('div', { className: 'page__header page__header--column' }, [
+    // SEM SUBTÍTULO, desde 2026-08-06. Ele abria a sigla e resumia o ciclo
+    // (calcula, preenche, congela). Quem chega a esta tela trabalha no relatório
+    // todo mês e não precisa da definição; a lista de edições e os botões dizem
+    // o resto.
+    el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'RPCMTec' }),
-      el('p', {
-        className: 'page__subtitle',
-        textContent: 'Relatório de Prestação de Contas Mensal Técnico. Uma edição por mês: '
-          + 'o sistema calcula o que sabe, o gestor preenche o resto, e o fechamento congela o documento.',
-      }),
     ]),
     el('div', { className: 'page__filters' }, [
       anoField.element,

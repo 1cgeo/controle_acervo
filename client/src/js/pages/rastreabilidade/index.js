@@ -550,41 +550,20 @@ export async function renderRastreabilidade(container, ctx) {
 
   // --- Montagem -------------------------------------------------------------
 
-  // O subtítulo fica FORA do `page__header`, que é um flex de uma linha: dentro
-  // dele a frase ia para a direita do título e ficava órfã no canto da tela. É o
-  // arranjo que `#/acessos` já usa.
   const cabecalho = el('div', { className: 'page__header' }, [
     el('h1', { className: 'page__title', textContent: 'Rastreabilidade' }),
   ]);
-  const subtitulo = el('p', {
-    className: 'page__subtitle',
-    textContent: 'O que foi alterado nos módulos, quando e por quem.',
-  });
 
-  // As duas frases que a tela diz sobre si mesma. Elas PRECISAM existir: sem
-  // elas, a ausencia de registro se le como "ninguem mexeu", e nao como "o
-  // sistema nao estava olhando". Mas como dois paragrafos permanentes no topo
-  // elas competiam com o titulo e empurravam a tabela para baixo da dobra, entao
-  // ficam recolhidas: quem ja sabe nao paga por elas toda vez, e quem estranhou
-  // um resultado vazio tem a resposta a um clique.
-  const avisos = el('details', { className: 'rastro-aviso' }, [
-    el('summary', {}, [
-      svgIcon(ICONS.info, 16),
-      el('span', { textContent: 'O que esta tela não registra' }),
-    ]),
-    el('p', {
-      textContent: 'Ela registra alterações a partir da entrada desta tela em produção. '
-        + 'Alteração anterior a ela não foi gravada, e a ausência aqui não quer dizer que nada mudou.',
-    }),
-    el('p', {
-      textContent: 'Não registra consultas nem downloads. Quem entrou no sistema está no '
-        + 'dashboard de usuários; quem baixou arquivo está no histórico de download do acervo.',
-    }),
-  ]);
+  // SEM SUBTÍTULO E SEM O BLOCO "O que esta tela não registra", desde
+  // 2026-08-06. O subtítulo dizia o que a tabela mostra por si (módulo, data,
+  // usuário), e o bloco recolhido explicava dois limites do registro.
+  //
+  // O QUE SE PERDEU, e vale saber: o rastro começa na data em que esta tela
+  // entrou em produção, então resultado vazio para período anterior a ela não
+  // prova que nada mudou. Quem precisar dessa ressalva a encontra no schema
+  // (`er/auditoria.sql`) e na migração que criou o registro.
 
   root.appendChild(cabecalho);
-  root.appendChild(subtitulo);
-  root.appendChild(avisos);
 
   const barra = await montarBarra();
   if (disposed) return () => {};

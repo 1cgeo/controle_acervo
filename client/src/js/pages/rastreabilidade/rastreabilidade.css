@@ -57,29 +57,6 @@
   white-space: nowrap;
 }
 
-/* --- O aviso do que a tela NÃO registra ---------------------------------- */
-
-/* Recolhido por padrão. As duas frases precisam existir (sem elas, a ausência de
-   registro se lê como "ninguém mexeu"), mas como dois parágrafos permanentes no
-   topo elas competiam com o título e empurravam a tabela para baixo da dobra. */
-.rastro-aviso {
-  margin-bottom: var(--space-md);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.rastro-aviso > summary {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  color: var(--text-secondary);
-}
-
-.rastro-aviso > p {
-  margin: var(--space-xs) 0 0 var(--space-lg);
-}
-
 /* --- A tabela ------------------------------------------------------------ */
 
 /* A coluna do diff é a que carrega a resposta, então ela leva a largura; as
