@@ -45,7 +45,8 @@ INSERT INTO mapoteca.tipo_midia (code, nome) VALUES
 (5, 'Sulfite 90g'),
 (6, 'Sulfite 120g'),
 (7, 'Digital'),
-(8, 'Tyvek');
+(8, 'Tyvek'),
+(9, 'Sulfite 75g');
 
 CREATE TABLE mapoteca.forma_entrega(
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -254,6 +255,26 @@ CREATE TABLE mapoteca.produto_pedido(
         CHECK (quantidade_fornecida IS NULL OR quantidade_fornecida >= 0),
     tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
     tipo_midia_fornecida_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
+    -- A meta do PIT que ESTE item cumpre, quando difere da declarada no pedido.
+    --
+    --     NULL       -> o item cumpre a meta do pedido;
+    --     preenchida -> o item cumpre esta, e nao a do pedido.
+    --
+    -- O NULL nunca e ambiguo, porque quem diz se o pedido e do PIT continua
+    -- sendo `pedido.previsto_pit`. Quem le usa
+    -- COALESCE(pp.meta_pit_id, p.meta_pit_id).
+    --
+    -- POR QUE O ITEM PRECISA DISTO. A Meta 4 de 2026 se divide por MATERIAL
+    -- (sulfite 327 na 4.1, tyvek 247 na 4.2, glossy 36 na 4.3), e o material e
+    -- `tipo_midia_id`, que e do item. Dos 16 pedidos ligados a Meta 4, dois sao
+    -- MISTOS: o 140 tem 8 folhas em tyvek e 32 em sulfite, e o 154 tem 4 e 20.
+    -- Com a meta so no pedido, as 12 folhas de tyvek caiam na 4.1.
+    --
+    -- NAO SE DERIVA DO MATERIAL, e a distincao importa: o de-para de midia para
+    -- meta existiu e foi removido em 2026-08-05 por medicao (contava o TIPO DE
+    -- PAPEL, e jogava na 4.1 todo sulfite do ano). O vinculo continua
+    -- DECLARADO; o material so explica por que ele cabe no item.
+    meta_pit_id BIGINT REFERENCES pit.meta_item (id),
     -- SEM forma_entrega_id e SEM data_entrega: as duas sao do PEDIDO (ver
     -- mapoteca.pedido.forma_entrega_id e data_atendimento). No item elas
     -- prometeriam remessa por item, e o pedido inteiro sai numa remessa so.
@@ -272,6 +293,12 @@ CREATE TABLE mapoteca.produto_pedido(
 
 COMMENT ON COLUMN mapoteca.produto_pedido.quantidade_fornecida IS
     'Quantidade efetivamente entregue, quando diverge da prevista.';
+COMMENT ON COLUMN mapoteca.produto_pedido.meta_pit_id IS
+    'Item do PIT que ESTE item cumpre, quando difere do declarado no pedido (pit.meta_item). NULL significa "o mesmo do pedido", e não "fora do PIT": quem diz isso é pedido.previsto_pit. Existe porque a Meta 4 se divide por material e o material é do item: o pedido 140 tem 8 folhas em tyvek (4.2) e 32 em sulfite (4.1).';
+
+-- A leitura da execução do PIT filtra por esta coluna em toda consulta da
+-- impressão (planejado, realizado e diagnóstico do cadastro).
+CREATE INDEX idx_produto_pedido_meta_pit ON mapoteca.produto_pedido(meta_pit_id);
 COMMENT ON COLUMN mapoteca.produto_pedido.tipo_midia_fornecida_id IS
     'Mídia efetivamente usada, quando diverge da prevista.';
 
@@ -399,12 +426,19 @@ INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
 -- Papéis (categoria 1 = Papel, tabela 7.2 do RPCMTec). O banner de tecido entra
 -- aqui: o RPCMTec o lista como "Papel Tecido" na mesma tabela, porque o que ela
 -- controla é a MÍDIA em que se imprime, e não a fibra.
-INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
-('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter', 1),
-('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter', 1),
-('Papel Glossy',        'Papel glossy para plotter', 1),
-('Banner (tecido)',     'Banner em tecido', 1),
-('Tyvek',               'Papel sintético Tyvek para plotter', 1);
+--
+-- A MÍDIA VEM NA PRÓPRIA LINHA, e não por um UPDATE depois. Até 2026-08-06 este
+-- seed inseria os papéis sem `tipo_midia_id` e quem os ligava era a migração
+-- 2026-08-04_material_da_midia.sql: instalação nova ficava com os cinco papéis
+-- em NULL e instalação migrada com os cinco ligados. O `ensaiar_migracao.cjs`
+-- compara DDL e não compara DADO, então a divergência passava sem alarme.
+INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id, tipo_midia_id) VALUES
+('Papel Sulfite 75g',   'Papel sulfite 75g/m² para plotter', 1, 9),
+('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter', 1, 5),
+('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter', 1, 6),
+('Papel Glossy',        'Papel glossy para plotter', 1, 2),
+('Banner (tecido)',     'Banner em tecido', 1, 1),
+('Tyvek',               'Papel sintético Tyvek para plotter', 1, 8);
 
 CREATE TABLE mapoteca.consumo_material (
     id SERIAL PRIMARY KEY,

@@ -105,8 +105,17 @@ dotenv.config({
 // `rpcmtec.subsecao_revisao`, e este código passa a ler e escrever a tabela em
 // toda montagem de edição e no fechamento. Num banco 1.35.0 a tela do RPCMTec
 // falharia com "relação não existe" logo na abertura.
-const VERSION = '1.36.0'
-const MIN_DATABASE_VERSION = '1.36.0'
+// A 1.37.0 SOBE O PISO. Ela acrescenta `mapoteca.produto_pedido.meta_pit_id`, e
+// as três consultas da impressão passam a ler a coluna em todo cálculo da
+// execução do PIT. Num banco 1.36.0 a grade da meta 4 falharia com "coluna não
+// existe" na abertura da tela do PIT.
+//
+// A 1.38.0 SOBE O PISO pelo mesmo motivo, com um detalhe a mais: ela acrescenta
+// a mídia Sulfite 75g (code 9), e o code entra no `TIPO_MIDIA` que o Joi usa
+// para validar. Num banco 1.37.0 este código ACEITARIA o 9 no corpo e o banco o
+// recusaria pela chave estrangeira, ou seja, 500 onde deveria haver cadastro.
+const VERSION = '1.38.0'
+const MIN_DATABASE_VERSION = '1.38.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

@@ -4,9 +4,11 @@ import {
   createTextField,
   createNumberField,
   createSelectField,
+  createComboBoxField,
   createTextareaField,
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
+import { rotuloMetaPit } from '@services/plataforma-service.js';
 import { buscarProdutos, getProdutoDetalhado, getTiposProduto, getTiposEscala } from '@modules/mapoteca/services/acervo-service.js';
 import { getDominioTipoMidia } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate } from '@utils/format.js';
@@ -38,8 +40,14 @@ const PAGE_LIMIT = 5;
  * @param {(result:{payload:Object, display:Object})=>Promise<void>|void} options.onSubmit
  *   - called on submit; when it throws, the dialog stays open and the error
  *     message is shown verbatim in a toast
+ * @param {Object|null} [options.pedido] - o pedido dono do item, de onde saem
+ *   `previsto_pit` e a meta herdada. Sem ele o campo de meta do item nem
+ *   aparece, que é o certo: fora do PIT não há meta a declarar.
+ * @param {Array} [options.metasPit] - metas do PIT do ano, para o combo
  */
-export async function openProdutoPedidoDialog({ item = null, title, submitLabel, onSubmit }) {
+export async function openProdutoPedidoDialog({
+  item = null, title, submitLabel, onSubmit, pedido = null, metasPit = [],
+}) {
   let tiposMidia, tiposProduto, tiposEscala;
   try {
     [tiposMidia, tiposProduto, tiposEscala] = await Promise.all([
@@ -352,8 +360,36 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
     rows: 2,
   });
 
+  // A META DESTE ITEM, quando ela difere da do pedido.
+  //
+  // SÓ APARECE EM PEDIDO DO PIT, porque fora dele não há meta a declarar. Vazio
+  // significa "o item cumpre a meta do pedido", e o texto de ajuda diz QUAL é
+  // ela: sem isso, o campo em branco parece "sem meta" e convida a preencher
+  // sempre, transformando a exceção em regra.
+  //
+  // POR QUE A EXCEÇÃO EXISTE. A Meta 4 se divide por MATERIAL, e o material é
+  // deste item. Um pedido pode ter folhas em tyvek (4.2) e em sulfite (4.1)
+  // dentro dele, e os pedidos 140 e 154 de 2026 são exatamente isso.
+  const pedidoEhDoPit = Boolean(pedido && pedido.previsto_pit);
+  const metaDoPedido = pedido
+    ? (metasPit || []).find(m => m.id === pedido.meta_pit_id)
+    : null;
+
+  const metaItemField = createComboBoxField({
+    label: 'Meta do PIT deste item',
+    options: (metasPit || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) })),
+    value: (item && item.meta_pit_id) || undefined,
+    placeholder: metaDoPedido
+      ? `A mesma do pedido (${rotuloMetaPit(metaDoPedido)})`
+      : 'A mesma do pedido',
+    helpText:
+      'Preencha só quando este item cumpre uma meta diferente da do pedido, ' +
+      'como a folha em tyvek dentro de um pedido de sulfite. Vazio = a do pedido.',
+  });
+
   producaoField.element.classList.add('form-grid__full');
   observacaoField.element.classList.add('form-grid__full');
+  metaItemField.element.classList.add('form-grid__full');
 
   const itemSection = el('div', { style: { marginTop: 'var(--space-md)' } }, [
     el('div', { className: 'detail-card__title', textContent: 'Dados do item' }),
@@ -362,6 +398,7 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
       quantidadeField.element,
       qtdFornecidaField.element,
       midiaFornecidaField.element,
+      ...(pedidoEhDoPit ? [metaItemField.element] : []),
       producaoField.element,
       observacaoField.element,
     ]),
@@ -549,6 +586,10 @@ export async function openProdutoPedidoDialog({ item = null, title, submitLabel,
             tipo_midia_fornecida_id: midiaFornecidaField.getValue(),
             observacao: observacaoField.getValue() || null,
             producao_especifica: producaoField.getValue(),
+            // Fora do PIT a chave vai NULA, e não omitida: omitir faria a
+            // atualização preservar uma declaração antiga num pedido que
+            // deixou de ser do PIT, e o vínculo ficaria órfão sem ninguém ver.
+            meta_pit_id: pedidoEhDoPit ? metaItemField.getValue() : null,
           };
 
           const tipoMidiaSel = tiposMidia.find(t => t.code === payload.tipo_midia_id);

@@ -82,6 +82,21 @@ const ORIGEM_META = {
 // o consome. E isso que permite ao ensaio comparar os dois lados ANTES de virar
 // a meta: filtrar aqui deixaria o ensaio cego justamente na meta que interessa,
 // que e a que ainda esta Manual.
+
+// A META QUE O ITEM DO PEDIDO CUMPRE: a declarada no proprio item quando ela
+// existe, senao a do pedido.
+//
+// Escrito UMA vez porque as TRES consultas da impressao (planejado, realizado e
+// diagnostico do cadastro) tem de concordar. Enquanto elas repetiam
+// `p.meta_pit_id` a mao, bastava uma esquecer a sobreposicao para o planejado e
+// o realizado da mesma meta sairem de universos diferentes, sem erro nenhum.
+//
+// POR QUE A SOBREPOSICAO EXISTE, medido em 2026-08-06: a Meta 4 se divide por
+// MATERIAL, e o material e do ITEM. Os pedidos 140 e 154 sao mistos (tyvek da
+// 4.2 e sulfite da 4.1 no mesmo pedido), e com a meta so no pedido as 12 folhas
+// de tyvek deles caiam na 4.1. Ver o comentario da coluna em er/mapoteca.sql.
+const META_DO_ITEM = 'COALESCE(pp.meta_pit_id, p.meta_pit_id)'
+
 const CELULAS_CALCULADAS = `
   SELECT c.meta_id, c.mes,
          SUM(c.planejada)::int AS soma_planejada,
@@ -153,18 +168,18 @@ const CELULAS_CALCULADAS = `
 
     UNION ALL
 
-    -- Impressao, planejado: folha PROMETIDA, pelo pedido que aponta a meta.
+    -- Impressao, planejado: folha PROMETIDA, pelo item que aponta a meta.
     --
     -- A quantidade PEDIDA, e nao a fornecida: aqui se conta o que se prometeu
     -- imprimir, e a fornecida so existe depois de imprimir. O Cancelado sai,
     -- porque pedido cancelado deixou de ser plano.
-    SELECT p.meta_pit_id,
+    SELECT ${META_DO_ITEM},
            EXTRACT(MONTH FROM p.data_prevista)::smallint,
            SUM(pp.quantidade)::int,
            NULL::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = ${META_DO_ITEM}
     INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE p.data_prevista IS NOT NULL
       AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
@@ -184,13 +199,13 @@ const CELULAS_CALCULADAS = `
     -- ali, inclusive de pedido sem nenhuma relacao com o PIT. E a 4.2 recebia
     -- ZERO, porque nenhuma folha saiu em tyvek: as dela foram atendidas em
     -- sulfite e foram contadas na 4.1.
-    SELECT p.meta_pit_id,
+    SELECT ${META_DO_ITEM},
            EXTRACT(MONTH FROM p.data_atendimento)::smallint,
            NULL::int,
            SUM(COALESCE(pp.quantidade_fornecida, pp.quantidade))::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = ${META_DO_ITEM}
     INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE p.data_atendimento IS NOT NULL
       AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
@@ -490,7 +505,12 @@ const ENTIDADES_PLANEJADAS = `
 
     -- Impressao: o pedido vale o que ele PEDE, somando os itens. Contar pedidos
     -- daria 11 onde a meta promete 327.
-    SELECT p.meta_pit_id,
+    --
+    -- A coluna de registros conta o pedido UMA VEZ POR META, e nao uma vez ao
+    -- todo: o pedido misto aparece nas duas metas que ele cumpre, porque em cada
+    -- uma ele e mesmo um registro que responde por folhas dela. (Sem crase aqui:
+    -- template literal.)
+    SELECT ${META_DO_ITEM},
            COALESCE(SUM(pp.quantidade) FILTER (
              WHERE p.data_prevista IS NOT NULL
                AND EXTRACT(YEAR FROM p.data_prevista) = mm.ano), 0)::int,
@@ -501,7 +521,7 @@ const ENTIDADES_PLANEJADAS = `
            count(DISTINCT p.id)::int
     FROM mapoteca.pedido AS p
     LEFT JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = ${META_DO_ITEM}
     INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
     GROUP BY 1

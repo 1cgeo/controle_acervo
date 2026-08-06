@@ -325,8 +325,28 @@ export async function renderPedidoDetails(container, { params }) {
   // ---------------------------------------------------------------------------
   // Items (produto_pedido)
   // ---------------------------------------------------------------------------
-  function adicionarItem() {
+  // As metas do ano DO PEDIDO, e não do ano corrente, pela mesma razão da edição
+  // do pedido: um pedido de 2025 tem de oferecer o PIT de 2025, cuja numeração
+  // não é a de 2026.
+  //
+  // Falha na busca NÃO impede o cadastro do item: sem as metas o diálogo abre
+  // com o combo vazio, e perder a exceção é muito melhor que não conseguir
+  // cadastrar o item.
+  async function metasDoPedido() {
+    if (!pedidoAtual || !pedidoAtual.previsto_pit) return [];
+    try {
+      const ano = new Date(`${pedidoAtual.data_pedido}T00:00:00`).getFullYear();
+      return await getMetasPit(ano);
+    } catch {
+      return [];
+    }
+  }
+
+  async function adicionarItem() {
+    const metasPit = await metasDoPedido();
     openProdutoPedidoDialog({
+      pedido: pedidoAtual,
+      metasPit,
       onSubmit: async ({ payload }) => {
         await createProdutoPedido({ ...payload, pedido_id: pedidoId });
         showSuccess('Item adicionado ao pedido');
@@ -335,9 +355,12 @@ export async function renderPedidoDetails(container, { params }) {
     });
   }
 
-  function editarItem(row) {
+  async function editarItem(row) {
+    const metasPit = await metasDoPedido();
     openProdutoPedidoDialog({
       item: row,
+      pedido: pedidoAtual,
+      metasPit,
       onSubmit: async ({ payload }) => {
         await updateProdutoPedido({ ...payload, id: row.id, pedido_id: pedidoId });
         showSuccess('Item atualizado com sucesso');
@@ -1004,7 +1027,23 @@ export async function renderPedidoDetails(container, { params }) {
           return row.versao ? `${data} (${row.versao})` : data;
         },
       },
-      { key: 'tipo_midia_nome', label: 'Mídia' },
+      {
+        key: 'tipo_midia_nome',
+        label: 'Mídia',
+        // A META PRÓPRIA DO ITEM APARECE AQUI, junto da mídia, porque é a mídia
+        // que a explica: a folha em tyvek dentro de um pedido de sulfite cumpre
+        // outra meta. Sem mostrar, a exceção fica invisível na tela e só quem
+        // abrisse o item saberia que aquelas folhas contam noutro lugar.
+        //
+        // Só o item que DECLAROU aparece marcado. O que herda a meta do pedido
+        // fica limpo, senão a marca estaria em toda linha e não diria nada.
+        render: (row) => (row.meta_pit_codigo
+          ? el('span', {}, [
+            el('span', { textContent: row.tipo_midia_nome || '-' }),
+            chip(`PIT ${row.meta_pit_codigo}`, 'info'),
+          ])
+          : (row.tipo_midia_nome || '-')),
+      },
       {
         key: 'quantidade',
         label: 'Qtd.',

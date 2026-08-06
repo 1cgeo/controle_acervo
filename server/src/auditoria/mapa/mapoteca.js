@@ -68,6 +68,9 @@ module.exports = {
       quantidade_fornecida: { rotulo: 'Quantidade fornecida', tipo: 'numero' },
       tipo_midia_id: { rotulo: 'Mídia', dominio: 'mapoteca.tipo_midia' },
       tipo_midia_fornecida_id: { rotulo: 'Mídia fornecida', dominio: 'mapoteca.tipo_midia' },
+      // O rótulo diz "deste item" porque o pedido TAMBÉM tem um "Item do PIT", e
+      // no histórico do pedido os dois eventos aparecem lado a lado.
+      meta_pit_id: { rotulo: 'Item do PIT deste item', entidade: 'meta' },
       uuid_versao: { rotulo: 'Versão do acervo' },
       nome_avulso: { rotulo: 'Nome do item avulso' },
       descricao_avulso: { rotulo: 'Descrição do item avulso' },

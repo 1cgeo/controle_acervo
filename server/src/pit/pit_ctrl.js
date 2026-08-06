@@ -779,9 +779,15 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
     // O ORCAMENTO SAIU DA LISTA, e nao por descuido: a NC e o item do PDR apontam
     // a META (`pit.meta`), e nao o item. Apagar a 1.1 nao os deixa orfaos, porque
     // eles nunca apontaram para ela.
+    //
+    // O ITEM DO PEDIDO ENTRA NA LISTA desde 2026-08-06, quando ele passou a poder
+    // declarar meta propria. Sem esta linha, apagar a 4.2 passaria pela guarda
+    // (nenhum PEDIDO aponta a 4.2) e so estouraria depois, como 500 da chave
+    // estrangeira das 6 linhas de itens que apontam.
     const dependentes = await t.one(
       `SELECT
          (SELECT COUNT(*) FROM mapoteca.pedido WHERE meta_pit_id = $<id>) +
+         (SELECT COUNT(*) FROM mapoteca.produto_pedido WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM acervo.versao WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM rpcmtec.capacitacao WHERE meta_pit_id = $<id>) AS n`,
       { id }

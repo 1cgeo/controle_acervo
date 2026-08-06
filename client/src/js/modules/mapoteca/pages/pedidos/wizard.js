@@ -262,8 +262,23 @@ export async function renderPedidoWizard(container, _ctx) {
     itensTable.update({ rows: [...itens], loading: false });
   }
 
+  // O pedido do wizard ainda NÃO existe no banco, então ele se lê do formulário
+  // do passo anterior, ao vivo. Ler uma cópia congelada na montagem daria a
+  // meta velha para quem voltasse ao passo 1 e a trocasse antes de adicionar o
+  // item.
+  function pedidoEmEdicao() {
+    const valores = form.getValues();
+    return {
+      previsto_pit: valores.previsto_pit,
+      meta_pit_id: valores.meta_pit_id,
+      data_pedido: valores.data_pedido,
+    };
+  }
+
   function adicionarItem() {
     openProdutoPedidoDialog({
+      pedido: pedidoEmEdicao(),
+      metasPit: metas || [],
       onSubmit: (novoItem) => {
         itens.push(novoItem);
         refreshItens();
@@ -277,6 +292,8 @@ export async function renderPedidoWizard(container, _ctx) {
     if (idx === -1) return;
     openProdutoPedidoDialog({
       item: { ...row.display, ...row.payload },
+      pedido: pedidoEmEdicao(),
+      metasPit: metas || [],
       onSubmit: (novoItem) => {
         itens[idx] = novoItem;
         refreshItens();

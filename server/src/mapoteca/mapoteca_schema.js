@@ -170,6 +170,11 @@ const produtoPedidoBase = {
   quantidade_fornecida: Joi.number().integer().min(0).allow(null),
   tipo_midia_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).required(),
   tipo_midia_fornecida_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).allow(null),
+  // A meta do PIT que ESTE item cumpre, quando difere da declarada no pedido.
+  // NULL significa "a mesma do pedido", e não "fora do PIT": quem diz isso é
+  // `pedido.previsto_pit`. O controller reprova a declaração em item de pedido
+  // que não é do PIT, porque o Postgres não tem CHECK entre tabelas.
+  meta_pit_id: Joi.number().integer().strict().allow(null),
   // Sem `forma_entrega_id` e sem `data_entrega`: as duas são do PEDIDO. Corpo
   // que ainda as mande cai no `stripUnknown` do `schemaValidation`, que descarta
   // a chave e devolve o aviso no envelope.

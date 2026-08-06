@@ -93,6 +93,9 @@ const PRODUTO_PEDIDO_COLS = [
   { name: 'quantidade_fornecida', def: null },
   'tipo_midia_id',
   { name: 'tipo_midia_fornecida_id', def: null },
+  // A meta do PIT que ESTE item cumpre, quando difere da do pedido. NULL = a
+  // mesma do pedido (ver o comentário da coluna em er/mapoteca.sql).
+  { name: 'meta_pit_id', def: null },
   // Sem `forma_entrega_id` e sem `data_entrega`: as duas sao do PEDIDO. O item
   // so descreve O QUE se imprime, nunca como sai daqui.
   { name: 'observacao', def: null },
@@ -102,6 +105,38 @@ const PRODUTO_PEDIDO_COLS = [
   // omitindo a chave viraria erro do pgp em vez do 404 do controller.
   { name: 'producao_especifica', def: false }
 ];
+
+/**
+ * O item só declara meta própria dentro de um pedido que É do PIT.
+ *
+ * POR QUE ISTO VIVE AQUI, e não num CHECK. A regra atravessa duas tabelas (a
+ * meta está no item, `previsto_pit` está no pedido) e o Postgres não tem CHECK
+ * que atravesse tabela. O que o banco garante é a chave estrangeira: a meta
+ * apontada existe. Quem garante que ela FAZ SENTIDO ali é esta função, e ela
+ * devolve 400 limpo em vez de deixar passar um vínculo órfão.
+ *
+ * SEM ELA o dado ficaria invisível: um item com meta declarada num pedido fora
+ * do PIT não aparece em nenhuma consulta da execução (todas partem do vínculo do
+ * pedido), então o erro não daria número errado, daria número ausente.
+ *
+ * `null` é sempre válido: significa "este item cumpre a meta do pedido".
+ */
+const conferirMetaDoItem = async (t, pedidoId, metaPitId) => {
+  if (metaPitId === null || metaPitId === undefined) return;
+
+  const pedido = await t.oneOrNone(
+    `SELECT previsto_pit FROM mapoteca.pedido WHERE id = $1`,
+    [pedidoId]
+  );
+
+  if (pedido && !pedido.previsto_pit) {
+    throw new AppError(
+      'Item só declara meta do PIT própria em pedido previsto no PIT. ' +
+      'Marque o pedido como previsto no PIT antes, ou deixe a meta do item vazia.',
+      httpCode.BadRequest
+    );
+  }
+};
 
 // Funções para Domínios
 controller.getTipoCliente = async () => {
@@ -122,6 +157,7 @@ controller.getTipoMidia = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM mapoteca.tipo_midia
+    ORDER BY code
   `);
 };
 
@@ -725,6 +761,12 @@ controller.getPedidoById = async (pedidoId) => {
       SELECT pp.id, pp.pedido_id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
+             -- A meta que o item declara por conta própria, e NÃO a que ele
+             -- cumpre: quem quiser a segunda faz o COALESCE com a do pedido, que
+             -- vem na mesma resposta. Devolver aqui o valor já resolvido faria o
+             -- formulário reenviar como declaração do item o que era herança do
+             -- pedido, e a exceção viraria a regra em toda edição.
+             pp.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
              pp.observacao, pp.producao_especifica,
              pp.nome_avulso, pp.descricao_avulso,
              ${ITEM_E_AVULSO} AS item_avulso,
@@ -749,6 +791,7 @@ controller.getPedidoById = async (pedidoId) => {
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
       LEFT JOIN mapoteca.tipo_midia AS tmf ON tmf.code = pp.tipo_midia_fornecida_id
+      LEFT JOIN pit.meta_vigente AS mp ON mp.id = pp.meta_pit_id
       ${JOIN_PRODUTO_ITEM}
       LEFT JOIN LATERAL (
         SELECT SUM(ii.quantidade) AS quantidade_impressa
@@ -1108,6 +1151,8 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) => {
       throw new AppError('Pedido não encontrado', httpCode.NotFound);
     }
 
+    await conferirMetaDoItem(t, produtoPedido.pedido_id, produtoPedido.meta_pit_id);
+
     produtoPedido.usuario_criacao_id = usuarioId;
     produtoPedido.usuario_atualizacao_id = usuarioId;
 
@@ -1155,6 +1200,13 @@ controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) 
       fields: ['producao_especifica'],
       body: produtoPedido
     });
+
+    // O pedido vem do BANCO, e não do corpo: quem edita a partir da lista manda
+    // o pedido_id de volta, e conferir contra o que ele mandou deixaria mover o
+    // item e declarar a meta na mesma requisição sem ninguém validar o par.
+    if (itemAtual) {
+      await conferirMetaDoItem(t, itemAtual.pedido_id, produtoPedido.meta_pit_id);
+    }
 
     produtoPedido.usuario_atualizacao_id = usuarioId;
     produtoPedido.data_atualizacao = new Date();

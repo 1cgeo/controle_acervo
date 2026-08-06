@@ -111,7 +111,8 @@ const TIPO_MIDIA = {
   SULFITE_90G: 5,
   SULFITE_120G: 6,
   DIGITAL: 7,
-  TYVEK: 8
+  TYVEK: 8,
+  SULFITE_75G: 9
 }
 
 // mapoteca.forma_entrega

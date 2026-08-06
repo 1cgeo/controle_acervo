@@ -45,12 +45,29 @@ const TINTA = 2
 const MIDIA_SULFITE = 6
 const MIDIA_TYVEK = 8
 
-const criarMaterial = async (nome, categoria, midia = null) =>
-  conn.one(
+// REUSA o papel que já reivindica a mídia, em vez de inserir outro.
+//
+// `unique_material_por_midia` garante UM material por mídia, e desde 2026-08-06
+// o seed do `er/` já entrega os papéis ligados (antes ele os deixava com a mídia
+// nula e só a migração de 2026-08-04 os ligava, então instalação nova divergia
+// da migrada). Inserir aqui colidia com o seed no PRIMEIRO teste do arquivo e
+// passava nos demais, porque o `cleanTestData` trunca a tabela entre eles.
+//
+// Sem mídia, insere sempre: material de tinta não reivindica nada, e o teste do
+// índice parcial precisa de duas linhas com a coluna nula.
+const criarMaterial = async (nome, categoria, midia = null) => {
+  if (midia !== null) {
+    const existente = await conn.oneOrNone(
+      'SELECT id FROM mapoteca.tipo_material WHERE tipo_midia_id = $1', [midia]
+    )
+    if (existente) return existente
+  }
+  return conn.one(
     `INSERT INTO mapoteca.tipo_material (nome, categoria_id, tipo_midia_id, ativo)
      VALUES ($1, $2, $3, TRUE) RETURNING id`,
     [nome, categoria, midia]
   )
+}
 
 // Um pedido com um item avulso, que é o caminho mais curto até a impressão:
 // item de acervo exigiria produto, versão e arquivo, e o que se mede aqui é a
@@ -218,12 +235,25 @@ describe('Consumo de material: a tinta fica fora da derivação', () => {
 
 describe('Consumo de material: um material por mídia', () => {
   test('duas linhas na mesma mídia são recusadas', async () => {
-    // Duas fariam a mesma folha baixar dois estoques.
-    await criarMaterial('Papel Sulfite 120g', PAPEL, MIDIA_SULFITE)
+    // INSERT DIRETO, e não `criarMaterial`: aquele REUSA o papel que já
+    // reivindica a mídia, e reusar nunca colide. O que se prova aqui é a recusa
+    // do índice, então o segundo INSERT tem de ser um INSERT de verdade.
+    const inserir = (nome) => conn.one(
+      `INSERT INTO mapoteca.tipo_material (nome, categoria_id, tipo_midia_id, ativo)
+       VALUES ($1, $2, $3, TRUE) RETURNING id`,
+      [nome, PAPEL, MIDIA_SULFITE]
+    )
 
-    await expect(
-      criarMaterial('Sulfite 120g importado', PAPEL, MIDIA_SULFITE)
-    ).rejects.toThrow(/unique_material_por_midia/)
+    // Duas fariam a mesma folha baixar dois estoques. A primeira só entra se o
+    // seed já não tiver ocupado a mídia, e é indiferente qual delas ocupou: o
+    // que importa é que a SEGUNDA seja recusada.
+    const jaOcupada = await conn.oneOrNone(
+      'SELECT id FROM mapoteca.tipo_material WHERE tipo_midia_id = $1', [MIDIA_SULFITE]
+    )
+    if (!jaOcupada) await inserir('Papel Sulfite 120g')
+
+    await expect(inserir('Sulfite 120g importado'))
+      .rejects.toThrow(/unique_material_por_midia/)
   })
 
   test('vários materiais SEM mídia convivem', async () => {
