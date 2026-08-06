@@ -7,13 +7,22 @@ import { flush } from '@/__tests__/helpers/flush.js';
 // O que estes casos FIXAM: cada tela pede ao servidor SÓ o seu tipo, e a coluna
 // da direita é a que interessa àquele tipo. Numa tela só, com filtro, metade da
 // tabela ficaria vazia em qualquer escolha.
+//
+// O TIPO DEIXOU DE SER ARGUMENTO e virou a ROTA (1.33.0): cada tela chama uma
+// FUNÇÃO DE SERVIÇO diferente, porque a permissão é por tipo e a guarda do
+// servidor não enxerga um filtro na query. Os casos ficaram mais fortes: antes
+// eles conferiam o segundo argumento de uma função só, agora conferem QUAL
+// função a tela chamou, e que a do outro tipo não foi chamada.
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {
     ...real,
-    getCapacitacoes: vi.fn(() => Promise.resolve([])),
-    getAnosCapacitacao: vi.fn(() => Promise.resolve([2026])),
-    deleteCapacitacao: vi.fn(() => Promise.resolve()),
+    getCapacitacoesMinistradas: vi.fn(() => Promise.resolve([])),
+    getAnosCapacitacaoMinistrada: vi.fn(() => Promise.resolve([2026])),
+    deleteCapacitacaoMinistrada: vi.fn(() => Promise.resolve()),
+    getCapacitacoesRecebidas: vi.fn(() => Promise.resolve([])),
+    getAnosCapacitacaoRecebida: vi.fn(() => Promise.resolve([2026])),
+    deleteCapacitacaoRecebida: vi.fn(() => Promise.resolve()),
     getUsuarios: vi.fn(() => Promise.resolve([])),
   };
 });
@@ -22,7 +31,10 @@ import {
   renderCapacitacaoMinistrada,
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
-import { getCapacitacoes } from '@services/plataforma-service.js';
+import {
+  getCapacitacoesMinistradas,
+  getCapacitacoesRecebidas,
+} from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
 async function montar(render) {
@@ -90,11 +102,14 @@ describe('capacitação em duas telas', () => {
   });
 
   test('a tela de MINISTRADA pede só o tipo 1 e mostra o efetivo capacitado', async () => {
-    getCapacitacoes.mockResolvedValueOnce([MINISTRADA]);
+    getCapacitacoesMinistradas.mockResolvedValueOnce([MINISTRADA]);
 
     const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
 
-    expect(getCapacitacoes).toHaveBeenCalledWith(new Date().getFullYear(), 1);
+    expect(getCapacitacoesMinistradas).toHaveBeenCalledWith(new Date().getFullYear());
+    // E a rota do OUTRO tipo nao foi tocada. Sem esta linha, uma tela que
+    // chamasse as duas satisfaria o caso acima.
+    expect(getCapacitacoesRecebidas).not.toHaveBeenCalled();
     expect(container.querySelector('.page__title').textContent).toBe('Capacitação ministrada');
     // Quantos de FORA nós treinamos, contra quem NOSSO ministrou. As duas coisas
     // coexistem numa ministrada, e o relatório pede as duas.
@@ -109,7 +124,7 @@ describe('capacitação em duas telas', () => {
   // meta, e trabalho real que o plano nao promete. As duas leituras pedem acoes
   // diferentes, e por isso a ausencia sai por escrito e nao como um traco.
   test('a ministrada diz se a capacitação conta no PIT', async () => {
-    getCapacitacoes.mockResolvedValueOnce([
+    getCapacitacoesMinistradas.mockResolvedValueOnce([
       { ...MINISTRADA, id: 1, meta_pit_id: 7, meta_pit_item: '5.1' },
       { ...MINISTRADA, id: 2, meta_pit_id: null, meta_pit_item: null },
     ]);
@@ -121,11 +136,12 @@ describe('capacitação em duas telas', () => {
   });
 
   test('a tela de RECEBIDA pede só o tipo 2 e mostra os militares', async () => {
-    getCapacitacoes.mockResolvedValueOnce([RECEBIDA]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([RECEBIDA]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
-    expect(getCapacitacoes).toHaveBeenCalledWith(new Date().getFullYear(), 2);
+    expect(getCapacitacoesRecebidas).toHaveBeenCalledWith(new Date().getFullYear());
+    expect(getCapacitacoesMinistradas).not.toHaveBeenCalled();
     expect(container.querySelector('.page__title').textContent).toBe('Capacitação recebida');
     expect(colunaDoTipo(container)).toEqual(['C25/DCT003']);
     // Os nomes saem do CADASTRO, e a célula os junta.
@@ -135,7 +151,7 @@ describe('capacitação em duas telas', () => {
   });
 
   test('o periodo sem termino sai como a data unica, e nao como intervalo aberto', async () => {
-    getCapacitacoes.mockResolvedValueOnce([RECEBIDA]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([RECEBIDA]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 

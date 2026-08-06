@@ -117,16 +117,58 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
   })
 
   test('modulo desconhecido estoura do mesmo jeito', () => {
-    // 'acervo' servia de exemplo no repo de origem, onde so existia o modulo
-    // orcamento. Depois da fusao ele e valido, entao o exemplo passa a ser um
-    // modulo que a plataforma ainda nao tem.
-    expect(() => verifyPerfil('consulta', 'producao')).toThrow(/Módulo desconhecido/)
+    // O EXEMPLO JA MUDOU DUAS VEZES, e isso conta uma historia: era 'acervo' no
+    // repo de origem (onde so havia orcamento), virou 'producao' na fusao, e
+    // 'producao' virou modulo de verdade na 1.33.0. O exemplo agora e um nome
+    // que nao descreve nenhum trabalho da Divisao, para nao virar modulo amanha.
+    expect(() => verifyPerfil('consulta', 'jabuticaba')).toThrow(/Módulo desconhecido/)
   })
 
-  test('os tres modulos da plataforma sao aceitos', () => {
+  test('os cinco modulos da plataforma sao aceitos', () => {
     expect(() => verifyPerfil('consulta', 'acervo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'mapoteca')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'orcamento')).not.toThrow()
-    expect(verifyPerfil.MODULO).toEqual({ acervo: 1, mapoteca: 2, orcamento: 3 })
+    expect(() => verifyPerfil('consulta', 'producao')).not.toThrow()
+    expect(() => verifyPerfil('consulta', 'efetivo')).not.toThrow()
+    expect(verifyPerfil.MODULO).toEqual({
+      acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5
+    })
+  })
+})
+
+// O MAPA DO CODIGO CONTRA O DDL.
+//
+// `MODULO` traduz nome para `dominio.modulo.code`, e o numero esta escrito a mao
+// nos DOIS lugares. O teste acima congela o mapa, mas congelar os dois lados
+// separadamente nao os obriga a CONCORDAR: um modulo novo so no DDL faria toda
+// concessao nele cair no `Módulo desconhecido`, e um modulo novo so aqui faria a
+// consulta procurar um `modulo_id` que a chave estrangeira recusa.
+//
+// Le o er/dominio.sql, que e a instalacao nova, e nao a migracao: as duas TEM de
+// convergir, e quem prova isso e o `migrations/ensaiar_migracao.cjs`.
+describe('MODULO espelha dominio.modulo', () => {
+  test('os mesmos nomes e os mesmos codigos, nos dois lados', () => {
+    const fs = require('fs')
+    const path = require('path')
+
+    const ddl = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', '..', '..', '..', 'er', 'dominio.sql'),
+      'utf8'
+    )
+
+    const bloco = ddl.match(
+      /INSERT INTO dominio\.modulo \(code, nome, nome_abrev\) VALUES([\s\S]*?);/
+    )
+    expect(bloco).not.toBeNull()
+
+    const doDdl = {}
+    for (const linha of bloco[1].matchAll(/\((\d+),\s*'[^']*',\s*'([a-z_]+)'\)/g)) {
+      doDdl[linha[2]] = Number(linha[1])
+    }
+
+    // A variancia primeiro: um bloco vazio satisfaria a comparacao abaixo sem
+    // provar nada.
+    expect(Object.keys(doDdl).length).toBeGreaterThanOrEqual(5)
+    expect(verifyPerfil.MODULO).toEqual(doDdl)
   })
 })

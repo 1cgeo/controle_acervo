@@ -846,10 +846,16 @@ const COBERTAS = new Set([
   // de dizer o que ele diz.
   'POST /rpcmtec/:id/anexos',
   'DELETE /rpcmtec/anexo/:anexoId',
-  // Capacitacao (2.6 e 6.2), absorvida do SAP.
-  'POST /rpcmtec/capacitacao',
-  'PUT /rpcmtec/capacitacao/:id',
-  'DELETE /rpcmtec/capacitacao/:id',
+  // Capacitacao (2.6 e 6.2), absorvida do SAP. DUAS rotas desde a 1.33.0, uma
+  // por tipo: a MINISTRADA e do operador de Producao e a RECEBIDA e do operador
+  // de Efetivo, e a guarda de rota nao enxerga o `tipo_id` no corpo. A tabela
+  // continua uma, e as seis escritas caem no agregado da CAPACITACAO.
+  'POST /rpcmtec/capacitacao/ministrada',
+  'PUT /rpcmtec/capacitacao/ministrada/:id',
+  'DELETE /rpcmtec/capacitacao/ministrada/:id',
+  'POST /rpcmtec/capacitacao/recebida',
+  'PUT /rpcmtec/capacitacao/recebida/:id',
+  'DELETE /rpcmtec/capacitacao/recebida/:id',
   // Efetivo por INTERVALO. Ele nasceu sob /rpcmtec como retrato mensal e mudou
   // para /efetivo no mesmo dia: "quem esteve na Divisao" nao existe por causa do
   // relatorio, e o relatorio e um leitor. As duas tabelas sao auditadas no

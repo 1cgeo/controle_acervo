@@ -2,10 +2,26 @@
 
 // Capacitação: MINISTRADA alimenta a subseção 2.6 e RECEBIDA a 6.2.
 //
-// UM cadastro para as duas, porque a linha é o mesmo fato visto dos dois lados:
+// UMA TABELA para as duas, porque a linha é o mesmo fato visto dos dois lados:
 // um curso tem nome, instituição, local e período em qualquer dos casos. O que
 // muda são três colunas, e é o `tipo_id` que diz quais valem. Duas tabelas com
 // dez colunas iguais divergiriam na primeira que fosse acrescentada a uma só.
+//
+// O TIPO VEM DA ROTA, e não do corpo, desde a 1.33.0. Toda função pública daqui
+// recebe `tipoId` e opera SÓ dentro dele: quem pede uma capacitação ministrada
+// pelo caminho da recebida recebe 404, e não a linha do outro tipo.
+//
+// POR QUE ISSO É GUARDA, e não organização. A permissão passou a ser POR TIPO
+// (ministrada é do operador de Produção, recebida é do operador de Efetivo), e a
+// guarda da rota não enxerga o corpo da requisição. Sem o recorte aqui, o
+// operador de Efetivo apagaria uma capacitação MINISTRADA mandando o id dela
+// para `DELETE /capacitacao/recebida/:id`: a guarda o aprovaria, porque a rota é
+// a dele, e o controlador apagaria a linha do outro tipo. O tipo tem de ser
+// cobrado onde o dado está, e não só onde a rota está.
+//
+// `tipoId` é POSICIONAL E OBRIGATÓRIO de propósito, e vem antes do corpo:
+// esquecê-lo faz a chamada quebrar, em vez de gravar a linha no tipo errado em
+// silêncio.
 //
 // O SERVIDOR NÃO RECUSA a coluna que não pertence ao tipo, e isso é deliberado.
 // Ele não sabe se a linha está sendo montada aos poucos, e recusar
@@ -25,7 +41,9 @@
 
 const { db } = require('../database')
 
-const { domainConstants: { SITUACAO_CAPACITACAO } } = require('../utils')
+const {
+  AppError, httpCode, domainConstants: { SITUACAO_CAPACITACAO }
+} = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
 
@@ -66,18 +84,17 @@ const de = `FROM rpcmtec.capacitacao AS c
     WHERE cm.capacitacao_id = c.id
   ) AS mil ON TRUE`
 
-// `tipo_id` é filtro OPCIONAL: a tela lista as duas juntas com uma coluna que as
-// separa, e o gerador pede uma de cada vez.
+// `tipoId` é OBRIGATÓRIO e vem da ROTA. Era filtro opcional de `req.query`, e
+// aí a mesma rota devolvia ministrada, recebida ou as duas conforme o que o
+// cliente pedisse: com a permissão por tipo, isso vira um caminho de leitura da
+// área alheia. O `ano` continua opcional, porque ele não é permissão.
 controller.listar = async (ano, tipoId) => {
   return db.conn.any(
     `SELECT ${colunas} ${de}
      WHERE ($<ano>::smallint IS NULL OR c.ano = $<ano>::smallint)
-       AND ($<tipoId>::smallint IS NULL OR c.tipo_id = $<tipoId>::smallint)
+       AND c.tipo_id = $<tipoId>
      ORDER BY c.ano DESC, c.data_inicio NULLS LAST, c.nome`,
-    {
-      ano: ano === undefined ? null : ano,
-      tipoId: tipoId === undefined ? null : tipoId
-    }
+    { ano: ano === undefined ? null : ano, tipoId }
   )
 }
 
@@ -121,13 +138,25 @@ controller.listarDoMes = async (ano, mes, tipoId) => {
   )
 }
 
-controller.getPorId = async id => {
-  return db.conn.oneOrNone(`SELECT ${colunas} ${de} WHERE c.id = $<id>`, { id })
+// Recortado pelo TIPO: um id do outro tipo não é "achado e recusado", ele
+// simplesmente NÃO EXISTE por este caminho, e a rota responde 404.
+controller.getPorId = async (id, tipoId) => {
+  return db.conn.oneOrNone(
+    `SELECT ${colunas} ${de} WHERE c.id = $<id> AND c.tipo_id = $<tipoId>`,
+    { id, tipoId }
+  )
 }
 
-controller.anos = async () => {
+// OS ANOS DO TIPO, e não os anos da tabela. Ele alimenta o filtro de ano da
+// tela, e a lista única oferecia ano vazio: em 2026-08-06 a produção tinha
+// MINISTRADA em oito anos (2013, 2018, 2019, 2022, 2023, 2024, 2025 e 2026) e
+// RECEBIDA só em 2026. A tela da recebida oferecia os oito, e sete deles
+// respondiam "nenhum registro para estes filtros".
+controller.anos = async tipoId => {
   const linhas = await db.conn.any(
-    'SELECT DISTINCT ano FROM rpcmtec.capacitacao ORDER BY ano DESC'
+    `SELECT DISTINCT ano FROM rpcmtec.capacitacao
+     WHERE tipo_id = $<tipoId> ORDER BY ano DESC`,
+    { tipoId }
   )
   return linhas.map(l => l.ano)
 }
@@ -167,10 +196,11 @@ const nulo = v => (v === undefined || v === '' ? null : v)
 const preservarSeAusente = (dados, antes, campo) =>
   dados[campo] === undefined ? antes[campo] : nulo(dados[campo])
 
-const paraBanco = (dados, usuarioUuid) => ({
+// `tipoId` vem da ROTA, e não de `dados`: o corpo não carrega mais `tipo_id`.
+const paraBanco = (dados, tipoId, usuarioUuid) => ({
   ano: dados.ano,
   nome: dados.nome,
-  tipoId: dados.tipo_id,
+  tipoId,
   situacaoId: dados.situacao_id,
   instituicoes: nulo(dados.instituicoes),
   localRealizacao: nulo(dados.local_realizacao),
@@ -249,7 +279,7 @@ const registrarMilitares = async (t, antes, depois, usuarioUuid, contexto) => {
   })
 }
 
-controller.criar = async (dados, usuarioUuid, contexto) => {
+controller.criar = async (dados, tipoId, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const criada = await t.one(
       `INSERT INTO rpcmtec.capacitacao
@@ -260,7 +290,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
                $<dataInicio>, $<dataFim>, $<efetivoCapacitado>, $<planoCodigo>,
                $<documento>, $<metaPitId>, $<dataPrevista>, $<usuarioUuid>)
        RETURNING *`,
-      paraBanco(dados, usuarioUuid)
+      paraBanco(dados, tipoId, usuarioUuid)
     )
 
     await auditoriaCtrl.registrar(t, {
@@ -283,11 +313,28 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
   })
 }
 
-controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
+/**
+ * A linha existe E é do tipo desta rota?
+ *
+ * Vale 404, e não 403, de propósito: pela rota da recebida, a capacitação
+ * ministrada não é um registro proibido, é um registro que não está lá. Dizer
+ * "proibido" confirmaria a existência dela a quem não pode vê-la.
+ *
+ * @param {Object} antes - a linha lida na mesma transação
+ * @param {number} tipoId - o tipo que a ROTA fixou
+ */
+const exigirDoTipo = (antes, tipoId) => {
+  if (Number(antes.tipo_id) !== Number(tipoId)) {
+    throw new AppError('Capacitação não encontrada', httpCode.NotFound)
+  }
+}
+
+controller.atualizar = async (id, tipoId, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'rpcmtec.capacitacao', id, 'Capacitação'
     )
+    exigirDoTipo(antes, tipoId)
     const militaresAntes = await lerLinhaDosMilitares(t, id)
 
     const depois = await t.one(
@@ -302,7 +349,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
        WHERE id = $<id>
        RETURNING *`,
       {
-        ...paraBanco(dados, usuarioUuid),
+        ...paraBanco(dados, tipoId, usuarioUuid),
         // Os DOIS campos que a ausência preserva em vez de apagar. Ver
         // `preservarSeAusente`: a tela pode não mandar a chave, e o UPDATE
         // escreve a coluna inteira a cada salvamento.
@@ -331,11 +378,12 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   })
 }
 
-controller.deletar = async (id, usuarioUuid, contexto) => {
+controller.deletar = async (id, tipoId, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'rpcmtec.capacitacao', id, 'Capacitação'
     )
+    exigirDoTipo(antes, tipoId)
     const militaresAntes = await lerLinhaDosMilitares(t, id)
 
     // Os vínculos saem por ON DELETE CASCADE, mas o rastro deles é registrado

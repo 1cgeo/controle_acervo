@@ -132,9 +132,9 @@ const REGRAS = {
   ],
 
   configuracao: [
-    'Singleton: linha unica id = 1, com CHECK (id = 1). So aceita PUT; nunca POST nem',
-    'DELETE. A linha ja nasce com o banco.',
-    'Guarda uasg, codom e ano_referencia (o ano padrao do seletor das telas).'
+    'So sobrou GET /anos, que devolve os anos com dado para o seletor das telas.',
+    'A tabela orcamento.configuracao foi podada em 2026-08-06: ela guardava uasg e',
+    'codom, preenchidas, corretas e sem um unico leitor fora da propria tela.'
   ],
 
   dominio: [

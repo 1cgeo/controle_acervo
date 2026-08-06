@@ -228,9 +228,14 @@ const RECURSOS = {
   // sobre a MESMA base por dia: o mapa por semana, o fechamento por ano e o
   // resumo por mes (a subsecao 6.1 do RPCMTec).
   //
-  // Guarda: verifyAdmin em TUDO, inclusive na leitura. A resposta traz licenca
-  // de saude e funcao acumulada de cada militar, nominalmente, e isso e dado de
-  // pessoal. E a mesma regua de /api/acessos.
+  // Guarda: o modulo EFETIVO, desde a 1.33.0. Ate ali era verifyAdmin em TUDO, e
+  // a razao continua de pe: a resposta traz licenca de saude e funcao acumulada
+  // de cada militar, nominalmente, e isso e dado de pessoal. O que mudou e que
+  // agora ha um compartimento para esse dado, em vez de so a flag global.
+  //
+  // OPERADOR na passagem e no impedimento (o cadastro do aproveitamento).
+  // GERENTE no mapa anual e no resumo mensal, que agregam a Divisao inteira num
+  // quadro so. O administrador global passa nos dois niveis.
   efetivo: {
     nome: 'aproveitamento do efetivo (passagem pela DGEO e impedimento)',
     schema: carregar('efetivo/efetivo_schema'),
@@ -239,7 +244,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/mapa',
         query: 'anoObrigatorioQuery',
-        acesso: 'admin',
+        acesso: 'efetivo_gerente',
         envelope: 'registro',
         nota: 'devolve { ano, semanas, anual }: o mapa semana a semana e o ' +
           'fechamento do ano, da mesma base. O verbo `efetivo mapa` recorta isso'
@@ -248,7 +253,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/mes',
         query: 'anoMesQuery',
-        acesso: 'admin',
+        acesso: 'efetivo_gerente',
         envelope: 'lista',
         nota: 'o recorte que vira a subsecao 6.1 do RPCMTec'
       },
@@ -256,7 +261,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/periodos',
         query: 'anoQuery',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'lista',
         colunas: ['id', 'usuario_uuid', 'tipo_posto_grad', 'nome_guerra', 'data_inicio', 'data_fim', 'observacao']
       },
@@ -264,7 +269,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/efetivo/periodos',
         corpo: 'criarPeriodo',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'registro',
         nota: 'a passagem NAO sobrepoe outra da mesma pessoa: quem cobra e um ' +
           'EXCLUDE no banco, e a colisao volta como recusa. data_fim nula e ' +
@@ -275,7 +280,7 @@ const RECURSOS = {
         caminho: '/efetivo/periodos/:id',
         corpo: 'atualizarPeriodo',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'registro',
         nota: 'o MILITAR nao entra no corpo: trocar de dono reescreveria de quem ' +
           'e o periodo. Para isso, exclua e cadastre de novo'
@@ -284,7 +289,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/efetivo/periodos/:id',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'mensagem',
         confirmar: {
           campo: 'id',
@@ -297,7 +302,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/impedimentos',
         query: 'anoQuery',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'lista',
         colunas: ['id', 'usuario_uuid', 'tipo_posto_grad', 'nome_guerra', 'descricao', 'percentual', 'data_inicio', 'data_fim']
       },
@@ -305,7 +310,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/efetivo/impedimentos',
         corpo: 'criarImpedimento',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'registro',
         nota: 'impedimento SOBREPOE outro (ao contrario da passagem), e os ' +
           'percentuais somam ate 100. `descricao` e texto livre e vale o que TIRA ' +
@@ -316,7 +321,7 @@ const RECURSOS = {
         caminho: '/efetivo/impedimentos/:id',
         corpo: 'atualizarImpedimento',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'registro',
         nota: 'como no periodo, o MILITAR nao entra no corpo'
       },
@@ -324,7 +329,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/efetivo/impedimentos/:id',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'efetivo_operador',
         envelope: 'mensagem',
         confirmar: {
           campo: 'id',

@@ -5,27 +5,30 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE SCHEMA orcamento;
 
 -- ---------------------------------------------------------------------------
--- Configuracao geral (linha unica). UASG e CODOM. Substitui o que antes morava
--- no exercicio. A linha id=1 e criada aqui; o backend so faz UPDATE.
+-- NAO EXISTE `orcamento.configuracao`, e a ausencia e a modelagem.
 --
--- NAO ha mais `ano_referencia` aqui. Ela era o ano PADRAO das telas, e o
--- seletor de ano global acabou: cada tela tem o
--- seu filtro, comeca no ano atual e nao guarda nada. Em banco ja instalado a
--- coluna sai pela secao 5 de
--- migrations/2026-08-04_licitacao_campos_fase_e_anexo.sql, que o chefe aplica
--- quando quiser. Nao confunda com `recebimento_material.ano_referencia`, que
--- diz em que RPCMTec o material recebido consta e PERMANECE.
+-- Ela guardava `uasg` (codigo SIAFI da propria unidade) e `codom` (Codigo de
+-- Organizacao Militar). As duas vieram do sistema absorvido em 2026-07-27, onde
+-- eram atributo do `exercicio` e chave de agrupamento do `pca`. As duas
+-- entidades foram apagadas e as colunas foram realocadas para uma tabela de
+-- linha unica, sem que nenhum consumidor fosse junto, porque nao havia.
+--
+-- MEDIDO EM 2026-08-06, antes de podar: elas estavam PREENCHIDAS e CORRETAS
+-- (160382 e 048215), e mesmo assim sem leitor. Zero views, zero funcoes, zero
+-- chaves estrangeiras, zero ocorrencias nos modelos ODS, e ZERO eventos em
+-- `auditoria.evento` contra 4.994 no total. O RPCMTec identifica a OM por texto
+-- fixo no gerador do PDF.
+--
+-- NAO CONFUNDIR COM `dominio.ug`, que fica e decide: ela alimenta
+-- `nota_credito.ug_emitente`, que e quem EMITE o credito para nos. O 160382
+-- nunca aparece como emitente, e e coerente, porque o credito vem de fora.
+--
+-- A ROTA `/api/orcamento/configuracao/anos` SOBREVIVEU a poda: ela le o `ano`
+-- das tabelas de negocio e alimenta o seletor de ano de todas as telas do
+-- modulo. Some a tabela, fica o caminho com o nome dela.
+--
+-- Ver migrations/2026-08-06_poda_configuracao_orcamento.sql.
 -- ---------------------------------------------------------------------------
-CREATE TABLE orcamento.configuracao(
-  id SMALLINT NOT NULL PRIMARY KEY DEFAULT 1,
-  uasg VARCHAR(10),
-  codom VARCHAR(10),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  CONSTRAINT configuracao_singleton CHECK (id = 1)
-);
-
-INSERT INTO orcamento.configuracao (id, uasg, codom) VALUES (1, '160382', '048215');
 
 -- ---------------------------------------------------------------------------
 -- Tudo e amarrado no ANO (SMALLINT simples, sem FK; nao ha mais entidade

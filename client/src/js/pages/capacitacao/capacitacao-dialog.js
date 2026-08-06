@@ -9,7 +9,9 @@ import {
 import { createSeletorMilitares } from '@components/form-fields/seletor-militares.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import {
-  createCapacitacao, updateCapacitacao, rotuloMetaPit, ehFolhaMetaPit,
+  createCapacitacaoMinistrada, updateCapacitacaoMinistrada,
+  createCapacitacaoRecebida, updateCapacitacaoRecebida,
+  rotuloMetaPit, ehFolhaMetaPit,
 } from '@services/plataforma-service.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import { isAdmin } from '@store/auth-store.js';
@@ -18,6 +20,21 @@ import { isAdmin } from '@store/auth-store.js';
 // SAP, de propósito: na fusão a linha migrada não precisa de tradução.
 export const MINISTRADA = 1;
 export const RECEBIDA = 2;
+
+// A ROTA DE CADA TIPO. Desde a 1.33.0 a capacitação são duas rotas, com guardas
+// diferentes: a ministrada é do operador de Produção, a recebida é do de
+// Efetivo. O tipo deixou de ser um campo do corpo e virou o caminho, e quem o
+// fixa é o servidor.
+const SERVICOS = {
+  [MINISTRADA]: {
+    criar: createCapacitacaoMinistrada,
+    atualizar: updateCapacitacaoMinistrada,
+  },
+  [RECEBIDA]: {
+    criar: createCapacitacaoRecebida,
+    atualizar: updateCapacitacaoRecebida,
+  },
+};
 
 const SITUACOES = [
   { value: 1, label: 'Prevista' },
@@ -66,6 +83,11 @@ export function openCapacitacaoDialog({
   const anoAlvo = isEdit ? capacitacao.ano : (ano || new Date().getFullYear());
   const tipo = capacitacao?.tipo_id ?? tipoId;
   const ministrada = Number(tipo) === MINISTRADA;
+  // A rota do tipo. `SERVICOS[tipo]` nunca falha na prática, porque cada tela
+  // fixa o seu, mas cair no da ministrada em silêncio gravaria na subseção
+  // errada: melhor quebrar aqui.
+  const servico = SERVICOS[Number(tipo)];
+  if (!servico) throw new Error(`Tipo de capacitação desconhecido: ${tipo}`);
 
   const nomeField = createTextField({
     label: 'Capacitação',
@@ -249,7 +271,9 @@ export function openCapacitacaoDialog({
           const payload = {
             ano: anoAlvo,
             nome,
-            tipo_id: Number(tipo),
+            // SEM `tipo_id`. Quem fixa o tipo é a ROTA, no servidor, e o
+            // schema dele nem o declara mais: mandá-lo aqui seria descartado
+            // em silêncio, e daria a impressão de que a tela o controla.
             situacao_id: Number(situacao),
             instituicoes: instituicoesField.getValue() || null,
             local_realizacao: localField.getValue() || null,
@@ -280,10 +304,10 @@ export function openCapacitacaoDialog({
           saving = true;
           try {
             if (isEdit) {
-              await updateCapacitacao(capacitacao.id, payload);
+              await servico.atualizar(capacitacao.id, payload);
               showSuccess('Capacitação atualizada com sucesso');
             } else {
-              await createCapacitacao(payload);
+              await servico.criar(payload);
               showSuccess('Capacitação criada com sucesso');
             }
             close();

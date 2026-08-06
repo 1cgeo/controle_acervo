@@ -144,17 +144,32 @@ router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: gerenteLoade
 // pela mesma razao.
 router.add('/extra_pit', withLayout(renderExtraPitList), { guard: authLoader });
 
-// Aproveitamento do efetivo (6.1) e capacitacao (2.6 e 6.2). `adminLoader`, e
-// nao authLoader: as duas sao ENTRADA do RPCMTec, moram sob /api/rpcmtec e sao
-// verifyAdmin no servidor. Com authLoader a tela abriria para levar 403.
-router.add('/aproveitamento', withLayout(renderAproveitamento), { guard: adminLoader });
+// Aproveitamento do efetivo (6.1): o cadastro de quem esteve na Divisao e do que
+// impediu cada um.
+//
+// `perfilLoader('efetivo', 'operador')` desde a 1.33.0, e era `adminLoader`. O
+// servidor cobra o MESMO em /api/efetivo/periodos e /impedimentos. Ate a 1.32.0
+// so havia a flag global para guardar isto, e foi por isso que 5 das 7 contas
+// que trabalham no sistema viraram administradoras.
+router.add('/aproveitamento', withLayout(renderAproveitamento), {
+  guard: perfilLoader('efetivo', 'operador'),
+});
 
-// A capacitacao e DUAS telas, em dois lugares do menu. A
-// MINISTRADA e servico que a Divisao presta, e fica em Producao; a RECEBIDA e
-// gente nossa em curso, e fica em Efetivo. A tabela do banco continua UMA: o que
-// muda entre as duas sao tres colunas.
-router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), { guard: adminLoader });
-router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), { guard: adminLoader });
+// A capacitacao e DUAS telas, em dois lugares do menu, e agora tambem DUAS
+// ROTAS no servidor, com guardas diferentes. A MINISTRADA e servico que a
+// Divisao presta, e fica em Producao; a RECEBIDA e gente nossa em curso, e fica
+// em Efetivo. A tabela do banco continua UMA: o que muda entre as duas sao tres
+// colunas.
+//
+// A GUARDA DAQUI ESPELHA A DO SERVIDOR, e nao e ela que decide: quem barra e o
+// `verifyPerfil`, lendo o perfil do BANCO a cada requisicao. Isto so evita abrir
+// uma tela que responderia 403.
+router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), {
+  guard: perfilLoader('producao', 'operador'),
+});
+router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
+  guard: perfilLoader('efetivo', 'operador'),
+});
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de
 // PLATAFORMA porque a mesma edicao fala de acervo, mapoteca e orcamento, e o

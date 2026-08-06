@@ -5,9 +5,12 @@ import { chip } from '@components/status-chip.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
-  getCapacitacoes,
-  getAnosCapacitacao,
-  deleteCapacitacao,
+  getCapacitacoesMinistradas,
+  getAnosCapacitacaoMinistrada,
+  deleteCapacitacaoMinistrada,
+  getCapacitacoesRecebidas,
+  getAnosCapacitacaoRecebida,
+  deleteCapacitacaoRecebida,
   getUsuarios,
   getMetasPit,
 } from '@services/plataforma-service.js';
@@ -50,11 +53,18 @@ const VAZIO = 'Nenhum registro para estes filtros';
  * A TABELA continua UMA no banco. O que muda entre os dois tipos são três
  * colunas, e uma tabela por tipo divergiria na primeira coluna nova.
  *
- * @param {number} tipoId - MINISTRADA ou RECEBIDA
- * @param {{titulo:string, rotuloNovo:string, coluna:Object}} textos
+ * AS ROTAS, ESSAS, SÃO DUAS, desde a 1.33.0, e por isso cada tela recebe as
+ * FUNÇÕES DE SERVIÇO dela em vez de passar um filtro de tipo. A permissão é por
+ * tipo (ministrada é do operador de Produção, recebida é do de Efetivo), e a
+ * guarda do servidor não enxerga um filtro na query.
+ *
+ * @param {number} tipoId - MINISTRADA ou RECEBIDA, para o formulário
+ * @param {{titulo:string, rotuloNovo:string, coluna:Object,
+ *   servicos:{listar:Function, anos:Function, excluir:Function}}} textos
  * @returns {Function} o renderizador da página
  */
 function criarTela(tipoId, textos) {
+  const { listar, anos: listarAnos, excluir } = textos.servicos;
   return async function render(container, ctx) {
     let disposed = false;
 
@@ -252,7 +262,10 @@ function criarTela(tipoId, textos) {
     async function loadAnos() {
       let anos = [];
       try {
-        anos = await getAnosCapacitacao();
+        // SÓ os anos DESTE tipo. A rota única de antes devolvia os anos da
+        // tabela inteira, e a tela da recebida oferecia ano que só tinha
+        // ministrada: sete dos oito anos respondiam "nenhum registro".
+        anos = await listarAnos();
       } catch (err) {
         anos = [];
       }
@@ -336,7 +349,7 @@ function criarTela(tipoId, textos) {
     async function load() {
       table.update({ loading: true });
       try {
-        const dados = await getCapacitacoes(anoSelecionado, tipoId);
+        const dados = await listar(anoSelecionado);
         if (disposed) return;
         erro = null;
         linhas = (dados || []).map(paraLinha);
@@ -360,7 +373,7 @@ function criarTela(tipoId, textos) {
       });
       if (!ok) return;
       try {
-        await deleteCapacitacao(row.id);
+        await excluir(row.id);
         showSuccess('Capacitação excluída com sucesso');
         await load();
       } catch (err) {
@@ -380,10 +393,18 @@ function criarTela(tipoId, textos) {
   };
 }
 
-/** Capacitação MINISTRADA (#/capacitacao_ministrada), em Produção. Subseção 2.6. */
+/**
+ * Capacitação MINISTRADA (#/capacitacao_ministrada), em Produção. Subseção 2.6.
+ * Rotas de `/rpcmtec/capacitacao/ministrada`, do módulo PRODUÇÃO.
+ */
 export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
   titulo: 'Capacitação ministrada',
   rotuloNovo: 'Nova capacitação',
+  servicos: {
+    listar: getCapacitacoesMinistradas,
+    anos: getAnosCapacitacaoMinistrada,
+    excluir: deleteCapacitacaoMinistrada,
+  },
   // Quantas pessoas DE FORA nós treinamos. Quem MINISTROU é gente nossa, e sai
   // na coluna ao lado.
   coluna: {
@@ -423,10 +444,18 @@ export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
   todosMilitares: 'Todos os instrutores',
 });
 
-/** Capacitação RECEBIDA (#/capacitacao_recebida), em Efetivo. Subseção 6.2. */
+/**
+ * Capacitação RECEBIDA (#/capacitacao_recebida), em Efetivo. Subseção 6.2.
+ * Rotas de `/rpcmtec/capacitacao/recebida`, do módulo EFETIVO.
+ */
 export const renderCapacitacaoRecebida = criarTela(RECEBIDA, {
   titulo: 'Capacitação recebida',
   rotuloNovo: 'Nova capacitação',
+  servicos: {
+    listar: getCapacitacoesRecebidas,
+    anos: getAnosCapacitacaoRecebida,
+    excluir: deleteCapacitacaoRecebida,
+  },
   // Sob que Plano/Código. Quem foi sai na coluna ao lado.
   coluna: {
     key: 'plano_codigo',

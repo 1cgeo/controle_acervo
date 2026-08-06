@@ -1,10 +1,5 @@
 import { el } from '@utils/dom.js';
-import { showSuccess, showError } from '@utils/toast.js';
-import { createTextField } from '@components/form-fields/form-fields.js';
-import { criarHistorico } from '@components/historico/historico.js';
-import { formatDateTime } from '@utils/format.js';
 import {
-  getConfig, updateConfig,
   getNaturezaDespesa, createNaturezaDespesa, updateNaturezaDespesa, deleteNaturezaDespesa,
   getPlanoInterno, createPlanoInterno, updatePlanoInterno, deletePlanoInterno,
   getUg, createUg, updateUg, deleteUg,
@@ -12,126 +7,33 @@ import {
 import { createDominioSection } from './dominio-section.js';
 
 /**
- * Pagina de Configuracao geral (#/configuracao): UASG e CODOM, mais a gestao
- * dos dominios editaveis (natureza de despesa, plano interno e UG emitente).
+ * Pagina de Configuracao geral (#/configuracao): a gestao dos dominios
+ * editaveis do modulo (natureza de despesa, plano interno e UG emitente).
+ *
+ * SEM "Dados gerais". Ela tinha um formulario de UASG e CODOM, e a tabela que o
+ * sustentava foi podada em 2026-08-06: as duas estavam preenchidas, corretas e
+ * sem um unico leitor fora desta tela.
  *
  * SEM "Ano de referencia": um ano padrao do modulo faz salvar aqui trocar o
  * contexto de quem esta trabalhando. Cada tela tem o seu filtro de ano e comeca
  * no ano atual.
+ *
+ * E A ULTIMA DO MENU do modulo, desde 2026-08-06. Ela e a tela que menos se
+ * visita, e so o administrador a abre; em cima, ocupava o lugar do trabalho do
+ * dia, que e o DFD e o PDR.
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */
 export async function renderConfiguracao(container) {
   let disposed = false;
 
-  // ---- Dados gerais (UASG, CODOM) ----
-  const uasg = createTextField({ label: 'UASG', maxLength: 10, helpText: 'Unidade Administrativa de Serviços Gerais (ex.: 160382)' });
-  const codom = createTextField({ label: 'CODOM', maxLength: 10 });
-
-  // NASCE DESABILITADO, e só a carga bem-sucedida o libera.
+  // SEM "Dados gerais". A tela tinha um formulario de UASG e CODOM, e a tabela
+  // que o sustentava foi podada em 2026-08-06: as duas estavam preenchidas,
+  // corretas e sem um unico leitor fora desta propria tela. Ver
+  // migrations/2026-08-06_poda_configuracao_orcamento.sql.
   //
-  // `orcamento.configuracao` é singleton e o backend só faz UPDATE: salvar com
-  // os dois campos em branco APAGA a UASG e o CODOM do módulo inteiro. Falhando
-  // a carga, o formulário fica vazio e parece um cadastro novo, e um clique em
-  // "Salvar" grava esse vazio por cima do que estava lá.
-  const saveBtn = el('button', { className: 'btn btn--primary', type: 'submit', textContent: 'Salvar' });
-  saveBtn.disabled = true;
-
-  // O aviso de que a carga falhou, com o caminho de volta. Fica ao lado do
-  // botão travado: botão desabilitado sem explicação lê-se como falta de perfil.
-  //
-  // A classe `hidden` (base.css, `display: none !important`), e nao o atributo
-  // `hidden`: `.btn` declara `display: inline-flex`, que ganha do atributo e
-  // deixaria o botao a vista.
-  const falhaCarga = el('p', {
-    className: 'form-field__error hidden',
-    role: 'alert',
-  });
-
-  const tentarDeNovoBtn = el('button', {
-    className: 'btn btn--secondary hidden',
-    type: 'button',
-    textContent: 'Tentar de novo',
-    onClick: () => carregarConfiguracao(),
-  });
-
-  // Quem alterou por ultimo. A rota ja devolvia a data e o UUID, e a pagina
-  // descartava os dois: numa tela que qualquer perfil `consulta` abre, e que
-  // define a UASG e o CODOM de todo o modulo, "quem mexeu nisto" e a pergunta
-  // seguinte. Fica vazio enquanto a linha nunca foi salva.
-  const alteradoEm = el('p', { className: 'page__subtitle', hidden: true });
-
-  function pintarAlteracao(cfg) {
-    if (!cfg || !cfg.data_modificacao) {
-      alteradoEm.hidden = true;
-      return;
-    }
-    const autor = cfg.usuario_modificacao || 'autor não identificado';
-    alteradoEm.textContent = `Alterado em ${formatDateTime(cfg.data_modificacao)} por ${autor}`;
-    alteradoEm.hidden = false;
-  }
-
-  const form = el('form', { className: 'form-grid', style: { maxWidth: '480px' } }, [
-    uasg.element,
-    codom.element,
-    falhaCarga,
-    el('div', { className: 'page__actions' }, [saveBtn, tentarDeNovoBtn]),
-  ]);
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    saveBtn.disabled = true;
-    try {
-      const body = {
-        uasg: uasg.getValue() || null,
-        codom: codom.getValue() || null,
-      };
-      await updateConfig(body);
-      showSuccess('Configuração salva com sucesso');
-      // O PUT devolve so os campos de negocio, sem o carimbo de escrituracao. A
-      // releitura traz a data e o autor recem-gravados, e o historico ganha a
-      // linha da alteracao que acabou de acontecer.
-      recarregarCarimbo();
-      historico.recarregar();
-    } catch (err) {
-      showError(err.message || 'Erro ao salvar configuração');
-    } finally {
-      saveBtn.disabled = false;
-    }
-  });
-
-  async function recarregarCarimbo() {
-    try {
-      const cfg = await getConfig();
-      if (disposed) return;
-      pintarAlteracao(cfg);
-    } catch (err) {
-      // Falhar aqui nao desfaz o que ja foi salvo: o carimbo e acessorio.
-    }
-  }
-
-  /** A carga da configuracao. Só ela destrava o botao de salvar. */
-  async function carregarConfiguracao() {
-    falhaCarga.classList.add('hidden');
-    tentarDeNovoBtn.classList.add('hidden');
-    try {
-      const cfg = await getConfig();
-      if (disposed) return;
-      uasg.setValue(cfg.uasg || '');
-      codom.setValue(cfg.codom || '');
-      pintarAlteracao(cfg);
-      saveBtn.disabled = false;
-    } catch (err) {
-      if (disposed) return;
-      saveBtn.disabled = true;
-      falhaCarga.textContent = `${err.message || 'Erro ao carregar configuração'}. `
-        + 'O formulário está em branco porque nada foi lido, e não porque nada '
-        + 'está cadastrado. Salvar agora apagaria a UASG e o CODOM.';
-      falhaCarga.classList.remove('hidden');
-      tentarDeNovoBtn.classList.remove('hidden');
-      showError(err.message || 'Erro ao carregar configuração');
-    }
-  }
+  // A PAGINA CONTINUA, e nao virou casca: o que ela faz de util e manter os tres
+  // dominios do modulo, e isso nao mudou.
 
   // ---- Secoes de dominios editaveis ----
   // O `genero` acerta o participio das mensagens ("Plano interno excluido", e
@@ -209,33 +111,25 @@ export async function renderConfiguracao(container) {
     remove: deleteUg,
   });
 
-  // O rastro da tela de MAIOR ALCANCE do modulo. Mudar o nome ou o GND de uma
-  // ND reclassifica NC e NE ja lancadas, e a UASG sai em todo documento gerado.
-  // O servidor registra as duas escritas, e esta e a tela que as mostra.
-  const historico = criarHistorico({
-    modulo: 'orcamento',
-    entidade: 'configuracao',
-    id: 1,
-    titulo: 'Histórico da configuração',
-    subtitulo: 'Quem mudou a UASG ou o CODOM',
-  });
+  // SEM PAINEL DE HISTORICO NO PE DA PAGINA. Ele existia, pedia a entidade
+  // 'configuracao' com id 1, e ficou sem fonte quando a tabela foi podada em
+  // 2026-08-06: o painel e de UM registro, e aquele registro sumiu.
+  //
+  // O rastro dos DOMINIOS nao passava por ali e continua inteiro: cada codigo
+  // tem o seu, dentro da propria linha, montado pelo `dominio-section.js` com a
+  // entidade 'dominio'. Mudar o nome ou o GND de uma natureza de despesa
+  // reclassifica NC e NE ja lancadas, e e a mudanca de maior alcance que esta
+  // tela permite.
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Configuração' }),
     ]),
-    form,
-    alteradoEm,
-    el('hr', { className: 'config-divider' }),
     naturezaSection.element,
     planoSection.element,
     ugSection.element,
-    el('hr', { className: 'config-divider' }),
-    historico.element,
   ]);
   container.appendChild(page);
-
-  await carregarConfiguracao();
 
   // Carrega as tabelas dos dominios em paralelo.
   naturezaSection.load();
@@ -247,6 +141,5 @@ export async function renderConfiguracao(container) {
     naturezaSection.cleanup();
     planoSection.cleanup();
     ugSection.cleanup();
-    historico.cleanup();
   };
 }

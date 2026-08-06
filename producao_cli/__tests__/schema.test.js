@@ -167,8 +167,12 @@ test('todo recurso renderiza contrato sem quebrar, com rota e guarda', () => {
     const texto = esquema.contrato(chave, RECURSOS[chave])
     assert.ok(texto.length > 0, `${chave} devolveu contrato vazio`)
     assert.ok(texto.includes('/api/'), `${chave} nao imprimiu rota nenhuma`)
+    // As guardas em maiusculas, como o mapa ACESSO de lib/schema.js as escreve.
+    // OPERADOR entrou na 1.33.0, com os modulos Producao e Efetivo: sem ele, os
+    // dois recursos de capacitacao passariam a nao imprimir guarda nenhuma e o
+    // caso reprovaria por um motivo que nao e o dele.
     assert.ok(
-      /exige (LOGIN|GERENTE|ADMINISTRADOR)/.test(texto),
+      /exige (LOGIN|GERENTE|OPERADOR|ADMINISTRADOR)/.test(texto),
       `${chave} nao imprimiu a guarda de nenhuma operacao`
     )
   }
@@ -268,16 +272,51 @@ test('o modo de validacao de cada grupo bate com o middleware do server/', () =>
 })
 
 test('a guarda declarada bate com a do fonte nas rotas que destoam', () => {
-  // Tres afirmacoes que o CLI faz e que valem trancar, porque nao se deduzem do
+  // Afirmacoes que o CLI faz e que valem trancar, porque nao se deduzem do
   // vizinho: ler a meta e de qualquer pessoa logada; ler a EXECUCAO e do
-  // gerente; e o RPCMTec inteiro, ate a leitura, e do administrador.
+  // gerente; LANCAR a execucao e do operador de PRODUCAO; alterar a META e do
+  // administrador; e a EDICAO do RPCMTec, ate a leitura, e do administrador.
+  //
+  // A LINHA ENTRE LANCAR E ALTERAR e a decisao da 1.33.0, e e a que este caso
+  // existe para trancar: a meta e o que a DSG PROMETEU (transcricao de documento
+  // assinado), a execucao e o que a Divisao ENTREGOU.
   assert.strictEqual(RECURSOS.meta.operacoes.listar.acesso, 'login')
   assert.strictEqual(RECURSOS.meta.operacoes.criar.acesso, 'admin')
   assert.strictEqual(RECURSOS.execucao.operacoes.grade.acesso, 'gerente')
-  assert.strictEqual(RECURSOS.execucao.operacoes.lancar.acesso, 'admin')
+  assert.strictEqual(RECURSOS.execucao.operacoes.lancar.acesso, 'producao_operador')
+  assert.strictEqual(RECURSOS.extra.operacoes.criar.acesso, 'producao_operador')
   for (const op of Object.values(RECURSOS.edicao.operacoes)) {
-    assert.strictEqual(op.acesso, 'admin', 'o RPCMTec inteiro e do administrador')
+    assert.strictEqual(op.acesso, 'admin', 'a EDICAO do RPCMTec e do administrador')
   }
+})
+
+// A CAPACITACAO e a excecao dentro de /api/rpcmtec, e o CLI tem de dizer isso:
+// ela e cadastro, e nao relatorio, e a permissao e por TIPO. Um recurso so, com
+// o tipo numa flag, faria o `producao schema` mentir sobre quem entra em que.
+test('as duas capacitacoes sao recursos distintos, com guardas distintas', () => {
+  const m = RECURSOS['capacitacao-ministrada']
+  const r = RECURSOS['capacitacao-recebida']
+
+  assert.ok(m && r, 'faltou um dos dois recursos de capacitacao')
+
+  // A VARIANCIA primeiro: os dois tem as seis operacoes. Um objeto vazio
+  // satisfaria os lacos abaixo sem provar nada.
+  const SEIS = ['listar', 'anos', 'obter', 'criar', 'atualizar', 'excluir']
+  assert.deepStrictEqual(Object.keys(m.operacoes).sort(), [...SEIS].sort())
+  assert.deepStrictEqual(Object.keys(r.operacoes).sort(), [...SEIS].sort())
+
+  for (const op of Object.values(m.operacoes)) {
+    assert.strictEqual(op.acesso, 'producao_operador')
+    assert.ok(op.caminho.startsWith('/rpcmtec/capacitacao/ministrada'), op.caminho)
+  }
+  for (const op of Object.values(r.operacoes)) {
+    assert.strictEqual(op.acesso, 'efetivo_operador')
+    assert.ok(op.caminho.startsWith('/rpcmtec/capacitacao/recebida'), op.caminho)
+  }
+
+  // E `tipo_id` NAO esta mais no corpo: quem fixa o tipo e a rota, no servidor.
+  const corpo = m.schema().criarCapacitacao.describe().keys
+  assert.ok(!('tipo_id' in corpo), 'tipo_id voltou ao corpo da capacitacao')
 })
 
 test('o cliente de auth padrao e aceito pelo login vivo do SCA', () => {

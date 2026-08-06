@@ -61,12 +61,16 @@ const MONTAGENS = [
   ['/orcamento/arquivo', orcamento.arquivoRoute]
 ]
 
-// As 36 rotas de escrita do modulo, TODAS auditadas, sem excecao: todas as
+// As 35 rotas de escrita do modulo, TODAS auditadas, sem excecao: todas as
 // tabelas daqui carregam valor financeiro, e este e o modulo em que "qual era o
 // valor antes" e a pergunta mais provavel.
+//
+// ERAM 36 ate 2026-08-06. A que saiu foi `PUT /orcamento/configuracao`, junto
+// com a tabela `orcamento.configuracao`, que guardava `uasg` e `codom` sem um
+// unico leitor fora da propria tela. Ela era a unica rota de escrita do modulo
+// com ZERO eventos em `auditoria.evento`, contra 4.994 no total: auditada e
+// nunca exercida.
 const COBERTAS = new Set([
-  'PUT /orcamento/configuracao',
-
   'POST /orcamento/dfd',
   'PUT /orcamento/dfd/:id',
   'DELETE /orcamento/dfd/:id',
@@ -193,7 +197,9 @@ describe('Rastreabilidade do orcamento - varredura das rotas de escrita', () => 
   // PISO, e nao contagem exata. Subir e normal (rota nova); cair quer dizer que
   // uma rota de escrita sumiu, e ai o piso so se abaixa de proposito.
   it('o total de rotas de escrita nao caiu sem aviso', () => {
-    expect(rotasDeEscrita().length).toBeGreaterThanOrEqual(36)
+    // Piso baixado de 36 para 35 em 2026-08-06, DE PROPOSITO, junto com a poda
+    // da `orcamento.configuracao`.
+    expect(rotasDeEscrita().length).toBeGreaterThanOrEqual(35)
   })
 })
 
@@ -233,7 +239,14 @@ describe('Rastreabilidade do orcamento - o autor e o contexto chegam ao controll
 
 describe('Rastreabilidade do orcamento - os controllers registram', () => {
   // O dashboard e 100% leitura; os demais controllers do modulo escrevem.
-  const SOMENTE_LEITURA = new Set(['dashboard/dashboard_ctrl.js'])
+  //
+  // A `configuracao` entrou nesta lista em 2026-08-06: dela so sobrou o
+  // `getAnos`, que le o `ano` das tabelas de negocio para o seletor das telas.
+  // O `atualizar`, que era a escrita, saiu com a tabela que ele gravava.
+  const SOMENTE_LEITURA = new Set([
+    'dashboard/dashboard_ctrl.js',
+    'configuracao/configuracao_ctrl.js'
+  ])
 
   const arquivos = arquivosDeControlador(RAIZ).filter(
     f => !SOMENTE_LEITURA.has(path.relative(RAIZ, f).split(path.sep).join('/'))

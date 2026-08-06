@@ -40,15 +40,19 @@ const linhaGravada = (extra = {}) => ({
 })
 
 // O corpo que a tela manda hoje: sem `meta_pit_id`, porque o formulário não tem
-// o campo.
+// o campo, e SEM `tipo_id`, porque desde a 1.33.0 quem fixa o tipo é a ROTA.
 const corpoDaTela = (extra = {}) => ({
   ano: 2026,
   nome: 'Curso de Geoinformação',
-  tipo_id: 1,
   situacao_id: 3,
   militares: [],
   ...extra
 })
+
+// O tipo que a ROTA passa. `MINISTRADA`, que é o da linha gravada acima: as
+// funções recusam o id de tipo diferente, e isso tem teste próprio em
+// routes/capacitacao_permissao.test.js.
+const MINISTRADA = 1
 
 // O objeto de parâmetros do UPDATE da capacitação, entre as chamadas de `one`.
 const paramsDoUpdate = () => {
@@ -69,7 +73,7 @@ describe('rpcmtec_capacitacao_ctrl: o vínculo com a meta do PIT', () => {
   test('atualizar SEM a chave meta_pit_id preserva o vínculo gravado', async () => {
     prepararAtualizar(linhaGravada({ meta_pit_id: 7 }))
 
-    await ctrl.atualizar(5, corpoDaTela(), 'uuid-1')
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela(), 'uuid-1')
 
     expect(paramsDoUpdate()).toEqual(
       expect.objectContaining({ metaPitId: 7 })
@@ -79,7 +83,7 @@ describe('rpcmtec_capacitacao_ctrl: o vínculo com a meta do PIT', () => {
   test('atualizar com meta_pit_id NULO explícito desliga o vínculo', async () => {
     prepararAtualizar(linhaGravada({ meta_pit_id: 7 }))
 
-    await ctrl.atualizar(5, corpoDaTela({ meta_pit_id: null }), 'uuid-1')
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela({ meta_pit_id: null }), 'uuid-1')
 
     expect(paramsDoUpdate()).toEqual(
       expect.objectContaining({ metaPitId: null })
@@ -89,7 +93,7 @@ describe('rpcmtec_capacitacao_ctrl: o vínculo com a meta do PIT', () => {
   test('atualizar com meta_pit_id NOVO troca o vínculo', async () => {
     prepararAtualizar(linhaGravada({ meta_pit_id: 7 }))
 
-    await ctrl.atualizar(5, corpoDaTela({ meta_pit_id: 9 }), 'uuid-1')
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela({ meta_pit_id: 9 }), 'uuid-1')
 
     expect(paramsDoUpdate()).toEqual(
       expect.objectContaining({ metaPitId: 9 })
@@ -101,7 +105,7 @@ describe('rpcmtec_capacitacao_ctrl: o vínculo com a meta do PIT', () => {
   test('criar sem meta_pit_id grava nulo', async () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 11, ano: 2026 })
 
-    await ctrl.criar(corpoDaTela(), 'uuid-1')
+    await ctrl.criar(corpoDaTela(), MINISTRADA, 'uuid-1')
 
     const chamada = mockDb.conn.one.mock.calls.find(
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO rpcmtec.capacitacao')

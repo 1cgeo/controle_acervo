@@ -94,7 +94,9 @@ const DESTINO = {
   'orcamento:licitacao': { tipo: 'lista', href: () => '#/orcamento/licitacoes' },
   'orcamento:rpnp': { tipo: 'lista', href: () => '#/orcamento/rpnp' },
   'orcamento:pdr': { tipo: 'lista', href: () => '#/orcamento/pdr' },
-  'orcamento:configuracao': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
+  // SEM 'orcamento:configuracao', desde 2026-08-06: a tabela foi podada, e com
+  // ela o agregado. Ela nunca gerou um evento, entao nenhum rastro antigo perde
+  // o destino.
   'orcamento:dominio': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
   'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
   'plataforma:capacitacao': { tipo: 'lista', href: (id, evento) => telaDaCapacitacao(evento) },
@@ -167,7 +169,6 @@ export const NOME_ENTIDADE = {
   nota_empenho: 'Empenhos, liquidações e recebimentos',
   licitacao: 'Licitações',
   rpnp: 'RPNP',
-  configuracao: 'Configuração',
   dominio: 'Tabelas de domínio',
   manutencao: 'Manutenção das visões do acervo',
   usuario: 'Usuários, perfis e passagens',

@@ -52,7 +52,7 @@ PIT  (/api/metas)
   producao extra listar --ano 2026
   producao midia listar --ano 2026
 
-RPCMTec  (/api/rpcmtec, tudo exige administrador)
+RPCMTec  (/api/rpcmtec; a EDIÇÃO exige administrador, a capacitação não)
   producao edicao listar --ano 2026
   producao edicao documento --id 7                   (os 34 blocos; resposta grande)
   producao edicao pdf --id 7 [--saida RPCMTec.pdf]
@@ -62,7 +62,8 @@ RPCMTec  (/api/rpcmtec, tudo exige administrador)
   producao edicao anexar --id 7 --file rpcmtec.pdf
   producao subsecao gravar --id 7 --numero 7.1 --data '{...}'
   producao subsecao copiar-mes-anterior --id 7
-  producao capacitacao listar --ano 2026
+  producao capacitacao-ministrada listar --ano 2026   (2.6; módulo Produção)
+  producao capacitacao-recebida listar --ano 2026     (6.2; módulo Efetivo)
   producao anuario ods --ano 2026 --mes 7 [--saida anuario.ods]
   producao anuario rtm-ods --ano 2026 --mes 7
 
@@ -95,8 +96,18 @@ GUARDA  (confira o detalhe por operação em: producao schema <recurso>)
   ler a meta, o Extra-PIT, a mídia, o exercício e a revisão   exige só LOGIN
   ler a execução mensal (grade e resumo)                      exige GERENTE de
                                                               qualquer módulo
-  escrever qualquer coisa do PIT                              exige ADMINISTRADOR
-  o /api/rpcmtec inteiro, inclusive a leitura                  exige ADMINISTRADOR
+  lançar a execução mensal e o Extra-PIT                      exige OPERADOR em
+                                                              Produção
+  a capacitação MINISTRADA (2.6), inteira                     exige OPERADOR em
+                                                              Produção
+  a capacitação RECEBIDA (6.2), inteira                       exige OPERADOR em
+                                                              Efetivo
+  a META e a REVISÃO do PIT, e a mídia                        exige ADMINISTRADOR
+  a EDIÇÃO do RPCMTec, inclusive a leitura                    exige ADMINISTRADOR
+
+Produção e Efetivo viraram módulos na 1.33.0, para haver como dar menos que a
+flag global. Alterar a META continua sendo do administrador: mudar o PIT é ato
+da DSG, e o que está no sistema é transcrição do documento assinado.
 
 /api/metas e /api/rpcmtec são rotas de PLATAFORMA: sem prefixo de módulo, como
 /api/usuarios. O efetivo (passagens, impedimentos, mapa) fica no efetivo_cli.`

@@ -1,16 +1,15 @@
 import { describe, test, expect, vi } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
-// Smoke test da pagina de Configuracao geral (UASG e CODOM) e das secoes de
-// dominios editaveis (natureza de despesa, plano interno, UG).
-// Mocka o service: getConfig devolve os dados atuais, updateConfig salva e os
+// Smoke test da pagina de Configuracao: hoje ela e SO as secoes de dominios
+// editaveis (natureza de despesa, plano interno, UG). Mocka o service, e os
 // list() dos dominios devolvem vazio.
 //
-// O `ano_referencia` fica no retorno do getConfig de proposito: a coluna so sai
-// do banco depois, e a tela tem de IGNORAR o campo que ainda chega.
+// A secao "Dados gerais" (UASG e CODOM) saiu em 2026-08-06, junto com a tabela
+// orcamento.configuracao que a sustentava. O mock NAO exporta getConfig nem
+// updateConfig de proposito: se a tela voltar a chamar qualquer um dos dois, o
+// import quebra o teste em vez de passar em silencio.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
-  getConfig: vi.fn(() => Promise.resolve({ uasg: '160382', codom: '12345', ano_referencia: 2026 })),
-  updateConfig: vi.fn(() => Promise.resolve({ uasg: '160382', codom: '12345' })),
   getNaturezaDespesa: vi.fn(() => Promise.resolve([])),
   createNaturezaDespesa: vi.fn(() => Promise.resolve()),
   updateNaturezaDespesa: vi.fn(() => Promise.resolve()),
@@ -26,27 +25,36 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 }));
 
 import { renderConfiguracao } from '@modules/orcamento/pages/configuracao/index.js';
-import { getConfig } from '@modules/orcamento/services/orcamento-service.js';
+import { getNaturezaDespesa } from '@modules/orcamento/services/orcamento-service.js';
 
 describe('renderConfiguracao', () => {
-  test('monta o titulo Configuracao e carrega os valores do service', async () => {
+  test('monta o titulo Configuracao e carrega os tres dominios', async () => {
     const container = document.createElement('div');
     const cleanup = await renderConfiguracao(container);
     await flush();
-
-    expect(getConfig).toHaveBeenCalled();
 
     const titulo = container.querySelector('.page__title');
     expect(titulo).not.toBeNull();
     expect(titulo.textContent).toContain('Configura');
 
-    // Os valores carregados pelo getConfig caem nos inputs do formulario.
-    const inputs = Array.from(container.querySelectorAll('input'));
-    const valores = inputs.map(i => i.value);
-    expect(valores).toContain('160382');
-    expect(valores).toContain('12345');
-    // O campo "Ano de referência" saiu: o ano e de cada tela.
-    expect(valores).not.toContain('2026');
+    // O que a pagina faz de util e manter os dominios, e isso continua.
+    expect(getNaturezaDespesa).toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // REPROVA o estado anterior a 2026-08-06: antes, a tela montava dois inputs
+  // ja preenchidos com a UASG (160382) e o CODOM (048215) da propria OM.
+  test('nao monta mais o formulario de UASG e CODOM', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderConfiguracao(container);
+    await flush();
+
+    const texto = container.textContent;
+    expect(texto).not.toContain('Dados gerais');
+    expect(texto).not.toContain('UASG');
+    expect(texto).not.toContain('CODOM');
+    expect(container.querySelector('form')).toBeNull();
 
     if (typeof cleanup === 'function') cleanup();
   });

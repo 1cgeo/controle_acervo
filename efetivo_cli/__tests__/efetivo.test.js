@@ -53,12 +53,26 @@ test('toda operacao de efetivo aponta uma chave que existe no schema vivo', () =
   }
 })
 
-// A guarda de /api/efetivo e verifyAdmin em TUDO, inclusive na leitura: a
-// resposta traz licenca de saude e funcao acumulada, nominalmente. Anunciar
-// "exige login" numa delas faria o agente concluir que um usuario comum le.
-test('nenhuma rota de efetivo se anuncia com menos que administrador', () => {
-  for (const [acao, op] of Object.entries(obter('efetivo').operacoes)) {
-    assert.strictEqual(op.acesso, 'admin', `${acao} anuncia acesso ${op.acesso}`)
+// A guarda de /api/efetivo e o modulo EFETIVO desde a 1.33.0, e vale INCLUSIVE
+// na leitura: a resposta traz licenca de saude e funcao acumulada, nominalmente.
+// Anunciar "exige login" numa delas faria o agente concluir que um usuario comum
+// le, e e esse o modo de falha que este caso tranca.
+//
+// GERENTE nas duas leituras AGREGADAS (mapa anual e resumo mensal), que resumem
+// a Divisao inteira num quadro so; OPERADOR nas oito do cadastro. O
+// administrador global passa nas dez, pelo proprio verifyPerfil.
+test('nenhuma rota de efetivo se anuncia com menos que operador no modulo', () => {
+  const AGREGADAS = { mapa: 'efetivo_gerente', mes: 'efetivo_gerente' }
+  const operacoes = Object.entries(obter('efetivo').operacoes)
+
+  // A VARIANCIA primeiro: as dez estao la, e as duas agregadas entre elas. Um
+  // objeto vazio, ou sem o mapa, satisfaria o laco abaixo sem provar nada.
+  assert.strictEqual(operacoes.length, 10)
+  assert.ok(operacoes.some(([acao]) => acao === 'mapa'))
+
+  for (const [acao, op] of operacoes) {
+    const esperado = AGREGADAS[acao] || 'efetivo_operador'
+    assert.strictEqual(op.acesso, esperado, `${acao} anuncia acesso ${op.acesso}`)
   }
 })
 

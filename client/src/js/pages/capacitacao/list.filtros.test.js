@@ -15,9 +15,12 @@ vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {
     ...real,
-    getCapacitacoes: vi.fn(() => Promise.resolve([])),
-    getAnosCapacitacao: vi.fn(() => Promise.resolve([2025, 2026])),
-    deleteCapacitacao: vi.fn(() => Promise.resolve()),
+    getCapacitacoesMinistradas: vi.fn(() => Promise.resolve([])),
+    getAnosCapacitacaoMinistrada: vi.fn(() => Promise.resolve([2025, 2026])),
+    deleteCapacitacaoMinistrada: vi.fn(() => Promise.resolve()),
+    getCapacitacoesRecebidas: vi.fn(() => Promise.resolve([])),
+    getAnosCapacitacaoRecebida: vi.fn(() => Promise.resolve([2025, 2026])),
+    deleteCapacitacaoRecebida: vi.fn(() => Promise.resolve()),
     getUsuarios: vi.fn(() => Promise.resolve([])),
   };
 });
@@ -26,7 +29,13 @@ import {
   renderCapacitacaoMinistrada,
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
-import { getCapacitacoes, getUsuarios } from '@services/plataforma-service.js';
+// Cada tela chama a funcao do SEU tipo, e nao uma funcao unica com filtro: o
+// tipo virou a ROTA na 1.33.0, porque a permissao e por tipo.
+import {
+  getCapacitacoesMinistradas,
+  getCapacitacoesRecebidas,
+  getUsuarios,
+} from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
 async function montar(render, busca = '') {
@@ -110,7 +119,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('a busca acha a capacitação pelo nome do militar', async () => {
-    getCapacitacoes.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
     await buscar(container, 'Beltrano');
@@ -123,7 +132,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   test('a situação ordena pelo ciclo de vida, e não pelo alfabeto', async () => {
     // dominio.situacao_capacitacao: 1 Prevista, 2 Em execução, 3 Concluída,
     // 4 Cancelada. A ordem do código é a do ciclo de vida.
-    getCapacitacoes.mockResolvedValueOnce([
+    getCapacitacoesRecebidas.mockResolvedValueOnce([
       CURSO({ id: 1, nome: 'A', situacao_id: 4, situacao: 'Cancelada' }),
       CURSO({ id: 2, nome: 'B', situacao_id: 1, situacao: 'Prevista' }),
       CURSO({ id: 3, nome: 'C', situacao_id: 3, situacao: 'Concluída' }),
@@ -141,7 +150,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('a tabela mostra o ano, que separa duas edições do mesmo curso', async () => {
-    getCapacitacoes.mockResolvedValueOnce([
+    getCapacitacoesRecebidas.mockResolvedValueOnce([
       CURSO({ id: 1, nome: 'Curso de SARP', ano: 2025, data_inicio: null, data_fim: null }),
       CURSO({ id: 2, nome: 'Curso de SARP', ano: 2026, data_inicio: null, data_fim: null }),
     ]);
@@ -154,7 +163,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('o filtro por militar limita a lista à pessoa escolhida', async () => {
-    getCapacitacoes.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
     const filtro = selectDoRotulo(container, 'Militar');
@@ -168,7 +177,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('o parâmetro usuario_uuid da rota já chega filtrado, e em todos os anos', async () => {
-    getCapacitacoes.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([DO_FULANO, DO_BELTRANO, DOS_DOIS]);
 
     const { container, cleanup } = await montar(
       renderCapacitacaoRecebida, 'usuario_uuid=u2'
@@ -176,7 +185,7 @@ describe('capacitação: a lista responde por pessoa', () => {
 
     // O link aponta uma PESSOA, e não um ano: preso ao ano corrente ele
     // esconderia a capacitação dela dos anos anteriores.
-    expect(getCapacitacoes).toHaveBeenCalledWith(null, 2);
+    expect(getCapacitacoesRecebidas).toHaveBeenCalledWith(null);
     expect(nomes(container)).toEqual(['ISO 9001', 'Pós-graduação']);
     expect(selectDoRotulo(container, 'Militar').value).toBe('u2');
 
@@ -190,7 +199,7 @@ describe('capacitação: a lista responde por pessoa', () => {
         tipo_posto_grad: '1º Ten', tipo_posto_grad_id: 8, ativo: true,
       },
     ]);
-    getCapacitacoes.mockResolvedValueOnce([DO_BELTRANO]);
+    getCapacitacoesRecebidas.mockResolvedValueOnce([DO_BELTRANO]);
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
     const valores = [...selectDoRotulo(container, 'Militar').options].map(o => o.value);
@@ -203,7 +212,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('a falha de carga não se lê como lista vazia', async () => {
-    getCapacitacoes.mockRejectedValueOnce(new Error('Falha de rede'));
+    getCapacitacoesRecebidas.mockRejectedValueOnce(new Error('Falha de rede'));
 
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
@@ -217,7 +226,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('a falha de carga oferece nova tentativa, e ela devolve a tabela', async () => {
-    getCapacitacoes
+    getCapacitacoesRecebidas
       .mockRejectedValueOnce(new Error('Falha de rede'))
       .mockResolvedValueOnce([DO_FULANO]);
 
@@ -236,7 +245,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('instituições, local e plano ordenam a tabela ao clicar no cabeçalho', async () => {
-    getCapacitacoes.mockResolvedValueOnce([
+    getCapacitacoesRecebidas.mockResolvedValueOnce([
       CURSO({ id: 1, nome: 'C', instituicoes: 'IME', local_realizacao: 'Santa Maria', plano_codigo: 'C25/DCT003' }),
       CURSO({ id: 2, nome: 'A', instituicoes: 'EsIME', local_realizacao: 'Brasília', plano_codigo: 'A25/DCT001' }),
       CURSO({ id: 3, nome: 'B', instituicoes: 'UFRGS', local_realizacao: 'Rio de Janeiro', plano_codigo: 'B25/DCT002' }),
@@ -263,7 +272,7 @@ describe('capacitação: a lista responde por pessoa', () => {
   });
 
   test('a tela ministrada busca pelo instrutor e ordena o efetivo', async () => {
-    getCapacitacoes.mockResolvedValueOnce([
+    getCapacitacoesMinistradas.mockResolvedValueOnce([
       CURSO({
         id: 1, nome: 'Estágio de Geoinformação', tipo_id: 1, tipo: 'Ministrada',
         efetivo_capacitado: 18, plano_codigo: null, militares: [FULANO],

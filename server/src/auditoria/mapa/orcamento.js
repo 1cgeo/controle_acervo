@@ -299,22 +299,6 @@ module.exports = {
 
   // --- Agregado: configuracao -----------------------------------------------
 
-  'orcamento.configuracao': {
-    modulo: 'orcamento',
-    entidade: 'configuracao',
-    // Singleton (`CHECK (id = 1)`): a linha nasce no DDL e o backend so faz
-    // UPDATE. O agregado e sempre 1, e a ficha e a propria pagina Configuração.
-    agregado: () => 1,
-    resumo: () => 'Configuração do módulo orçamento',
-    campos: {
-      uasg: { rotulo: 'UASG' },
-      codom: { rotulo: 'CODOM' }
-      // SEM `ano_referencia`: nao existe ano padrao guardado. Cada tela tem o
-      // seu filtro e comeca no ano atual. Nao confunda com o `ano_referencia` do
-      // recebimento_material, logo acima, que decide em que RPCMTec o item
-      // aparece e PERMANECE.
-    }
-  },
 
   // --- Agregado: dominio ----------------------------------------------------
   // Tabelas de DOMINIO com CRUD por tela e `verifyAdmin`. Elas entram no rastro

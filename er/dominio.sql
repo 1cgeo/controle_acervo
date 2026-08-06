@@ -336,11 +336,20 @@ INSERT INTO dominio.tipo_perfil (code, nome) VALUES
 (2, 'Operador'),
 (3, 'Gerente');
 
--- Modulo funcional. E tabela, e nao CHECK na coluna, porque a plataforma vai
--- absorver outros modulos (producao): acrescentar um passa a ser INSERT, nao
--- migracao de constraint. Acervo, mapoteca e orcamento sao modulos distintos de
--- proposito: quem atende a mapoteca nao cataloga o acervo, e quem lanca empenho
--- nao precisa de nenhum dos dois.
+-- Modulo funcional. E tabela, e nao CHECK na coluna, e a promessa ja foi
+-- cobrada: producao e efetivo entraram na 1.33.0 por INSERT, sem migracao de
+-- constraint. Os cinco sao compartimentos distintos de proposito: quem atende a
+-- mapoteca nao cataloga o acervo, quem lanca empenho nao precisa de nenhum dos
+-- dois, e quem lanca a execucao do PIT nao mexe em dinheiro.
+--
+-- PRODUCAO (4) e EFETIVO (5) nasceram para haver como dar MENOS que a flag
+-- global. Ate a 1.32.0 a execucao do PIT, o Extra-PIT, a capacitacao e o
+-- aproveitamento do efetivo so tinham `verifyAdmin`, e por isso 5 das 7 contas
+-- que trabalhavam no sistema eram administradoras (medido em 2026-08-06). Ver
+-- migrations/2026-08-06_modulos_producao_e_efetivo.sql.
+--
+-- O `code` E FIXO, e nao serial: `dgeo.usuario_perfil.modulo_id` o referencia, e
+-- o mapa `MODULO` de server/src/login/verify_perfil.js espelha estes numeros.
 CREATE TABLE dominio.modulo(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL,
@@ -350,7 +359,9 @@ CREATE TABLE dominio.modulo(
 INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (1, 'Controle do Acervo', 'acervo'),
 (2, 'Mapoteca', 'mapoteca'),
-(3, 'Controle Orçamentário', 'orcamento');
+(3, 'Controle Orçamentário', 'orcamento'),
+(4, 'Produção', 'producao'),
+(5, 'Efetivo', 'efetivo');
 
 -- ---------------------------------------------------------------------------
 -- Domínios do PIT e do efetivo, absorvidos do SAP.

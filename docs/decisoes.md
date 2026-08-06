@@ -32,6 +32,26 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## Autorização e superfície pública
 
+- **PRODUÇÃO e EFETIVO viraram módulos na 1.33.0** (`dominio.modulo` 4 e 5), na palavra do chefe: "Em
+  Gestão temos controle só de acervo, mapoteca, orçamentário, está faltando de produção e efetivo.
+  Acredito que o operador para Produção seja execução do pit, extra-pit e capacitação ministrada. E o
+  Operador para efetivo seja aproveitamento e capacitação recebida."
+  **O problema era medido**: a execução do PIT, o Extra-PIT, a capacitação e o aproveitamento eram
+  TODOS `verifyAdmin`, porque não existia módulo para eles. Em 2026-08-06, das 28 contas ativas 7
+  conseguiam fazer alguma coisa, e 5 dessas 7 carregavam a flag global. Não era descuido de quem
+  concedeu: não havia como dar menos. A mesma flag que libera lançar um mês do PIT libera o orçamento
+  inteiro e o cadastro de usuários.
+  **O que NÃO entrou, e continua `verifyAdmin`**: a META e a REVISÃO do PIT (alterar o PIT é ato da
+  DSG, e o que está no sistema é transcrição de documento assinado), a EDIÇÃO do RPCMTec (o relatório
+  que o chefe assina), o de-para de mídia, o cadastro de usuários e o orçamento. Também ficaram de
+  fora `POST` e `DELETE /metas/extra/:id/versoes`: elas gravam em `acervo.versao`, e quem manda no
+  acervo é o módulo acervo.
+  **A leitura do efetivo se partiu em dois níveis**: operador no cadastro (passagem e impedimento) e
+  GERENTE no mapa anual e no resumo mensal, que agregam a Divisão inteira num quadro só. É a mesma
+  régua da grade do PIT, que também é agregada e também é de gerente.
+  O código do módulo é fixo nos DOIS lados (`dominio.modulo` e o mapa `MODULO` de
+  `verify_perfil.js`), e um teste compara os dois lendo o DDL: um módulo novo só num deles faria toda
+  concessão cair em "Módulo desconhecido", ou a consulta procurar um `modulo_id` que a FK recusa.
 - **`/api/integracao/*` não tem autenticação.** Somente leitura, para o vault da DGEO consumir o SCA
   sem credencial; expõe cobertura, produtos concluídos no mês e o agregado da mapoteca, sem endereço,
   contato nem observação de impressão.
@@ -146,6 +166,24 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **O RPCMTec é UM gerador só, fora dos três módulos, com guarda `verifyAdmin`.** É o relatório da
   DIVISÃO e o chefe assina uma edição só; gerado em dois lugares, alguém colava um DOCX no outro todo
   mês. Não é `verifyPerfil` porque ele traz valor de crédito, empenho e liquidação.
+- **A CAPACITAÇÃO virou DUAS rotas, `/capacitacao/ministrada` e `/capacitacao/recebida`** (1.33.0),
+  e é a única parte de `/api/rpcmtec` que não é `verifyAdmin`. Ela mora ali por endereço, e não por
+  natureza: capacitação é CADASTRO, e não relatório. A ministrada (2.6) é serviço que a Divisão presta
+  e pede operador em **produção**; a recebida (6.2) é gente nossa em curso e pede operador em
+  **efetivo**.
+  A separação é a única forma possível: a permissão é por TIPO, e a guarda de rota não enxerga o corpo
+  nem a query. `POST /capacitacao` criava qualquer uma das duas, porque `tipo_id` vinha no corpo.
+  Agora o tipo é o CAMINHO, e quem o fixa é o servidor. É a mesma forma do par
+  `/produto_versao_historica` e `/produto_versao_planejada`.
+  **A LEITURA também se separou**, e não só a escrita, por três razões: `GET /capacitacao` sem
+  `tipo_id` devolvia as duas (uma guarda por tipo numa rota que responde os dois não guarda nada);
+  `/capacitacao/:id` respondia qualquer id; e `/capacitacao/anos` mentia (em 2026-08-06 havia
+  ministrada em oito anos e recebida só em 2026, e a tela da recebida oferecia os oito).
+  **O CONTROLADOR recorta por tipo, e não só a rota.** Sem isso o operador de Efetivo apagaria uma
+  capacitação MINISTRADA mandando o id dela para `DELETE /capacitacao/recebida/:id`: a guarda o
+  aprovaria, porque a rota é a dele. O id do outro tipo responde 404, e não 403: por aquele caminho
+  ele não existe.
+  A TABELA continua UMA (`rpcmtec.capacitacao`): o que se separou foi o endereço, não o dado.
 - **A execução por ND do painel NÃO foi junto:** é `/api/orcamento/dashboard/execucao_nd`, com
   `verifyPerfil('consulta','orcamento')`. O painel pede números quebrados em PDR e Extra-PDR, e servir
   os dois da mesma rota faria a guarda mais fraca valer para as duas.
@@ -320,11 +358,19 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **Tela de cadastro não explica o sistema** (chefe). Quem abre vem cadastrar, não estudar o modelo.
   Regra de preenchimento vira `helpText` do CAMPO que ela governa, que é onde a pessoa olha na hora de
   errar.
-- **A sidebar tem CINCO seções de sistema, e duas não são módulos** (chefe): **Produção** e **Efetivo**
-  vêm depois dos três, nessa ordem porque a primeira fala do TRABALHO. A rota `#/usuarios` NÃO mudou
-  junto com o rótulo "Efetivo", senão link guardado quebraria. **Produção não leva `admin: true` e o
-  item Capacitação leva**, porque o servidor cobra administrador só na escrita das metas, e a
-  capacitação inteira é `verifyAdmin`.
+- **A sidebar tem CINCO seções de sistema, e nenhuma delas é módulo do `registry.js`** (chefe):
+  **Produção** e **Efetivo** vêm depois dos três, nessa ordem porque a primeira fala do TRABALHO. A
+  rota `#/usuarios` NÃO mudou junto com o rótulo "Efetivo", senão link guardado quebraria.
+  Desde a 1.33.0 Produção e Efetivo SÃO módulos de PERMISSÃO (`dominio.modulo` 4 e 5), mas continuam
+  sem manifesto e sem prefixo de rota: as telas deles são de plataforma. Por isso a visibilidade dos
+  itens sai de `temPerfil(nivel, modulo)` escrito no item, e não do `podeAbrirRota` que os módulos
+  usam. A `rotaRaiz` do router precisou de resposta própria pelo mesmo motivo: quem tem perfil só num
+  deles entraria e cairia em /unauthorized.
+- **A seção Efetivo perdeu o `admin: true` e a marca desceu para os itens.** Dashboard e Gestão são
+  CONTA DE SISTEMA e continuam do administrador; o Aproveitamento e a Capacitação recebida são do
+  operador do módulo Efetivo. A `home` da seção virou função pela mesma razão: o cabeçalho é um link
+  para `#/acessos`, que é do administrador, e mandar o operador para lá o jogaria em /unauthorized ao
+  clicar no nome da seção que é dele.
 - **A troca de módulo mora na SIDEBAR, não num dropdown na navbar** (chefe), e a sidebar é montada uma
   vez e **nunca se desmonta**, senão entrar numa rota de plataforma apaga o menu do módulo.
 - **O administrador global não é coluna da tabela de usuários.** Ele é propriedade da pessoa; uma

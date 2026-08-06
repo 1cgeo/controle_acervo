@@ -10,7 +10,7 @@ const { asyncHandler, httpCode, AppError } = require('../utils')
 // de carga, onde um nome de campo errado descartado em silencio grava meia meta.
 const schemaValidation = require('../utils/schema_validation_estrito')
 
-const { verifyLogin, verifyAdmin, verifyGerente } = require('../login')
+const { verifyLogin, verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
 
 const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
@@ -62,9 +62,19 @@ router.get(
 // 'execucao' cairia na rota do id e reprovaria na validação de parâmetro.
 //
 // LER é do GERENTE de qualquer módulo e do administrador global: o PIT é o
-// compromisso do ano, e quem responde por ele é quem responde pelo módulo.
-// ESCREVER é do administrador global. Não há perfil de PIT, porque não há
-// módulo PIT.
+// compromisso do ano, e quem responde por ele é quem responde pelo módulo. Com
+// o módulo PRODUÇÃO (1.33.0), o Gerente de Produção passa a satisfazer o
+// `verifyGerente` sem nenhuma mudança aqui, que é exatamente o desenho pedido.
+//
+// ESCREVER é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e era do administrador
+// global. Lançar quanto uma meta entregou em março é o trabalho de quem toca a
+// produção, e exigir para isso a mesma flag que libera o orçamento e o cadastro
+// de usuários é o que fez 5 das 7 contas que trabalham no sistema virarem
+// administradoras (medido em 2026-08-06).
+//
+// A ESCRITA DA META continua `verifyAdmin`, mais abaixo neste arquivo, e a
+// distinção é o ponto: a meta é o que a DSG PROMETEU, e o que está no sistema é
+// transcrição de documento assinado. A execução é o que a Divisão ENTREGOU.
 // ---------------------------------------------------------------------------
 
 // A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
@@ -138,7 +148,7 @@ router.get(
 // guardar uma que não diz nada.
 router.post(
   '/execucao',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({ body: pitSchema.salvarExecucao }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.salvar(req.body, req.usuarioUuid, req.contexto)
@@ -151,7 +161,7 @@ router.post(
 
 router.delete(
   '/execucao/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await execucaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
@@ -162,6 +172,14 @@ router.delete(
 
 // ---------------------------------------------------------------------------
 // Demanda Extra-PIT (subseção 3.3 do RPCMTec)
+//
+// LER é de qualquer pessoa logada. ESCREVER é do OPERADOR DE PRODUÇÃO desde a
+// 1.33.0, e era do administrador global: o Extra-PIT é a exceção AUTORIZADA ao
+// plano, e quem a cadastra é quem toca a produção.
+//
+// AS ROTAS DE VERSÃO, mais abaixo, NÃO acompanharam, e é decisão e não descuido:
+// elas gravam em `acervo.versao`, e quem manda no acervo é o módulo acervo. Ver
+// o comentário delas.
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -209,7 +227,7 @@ router.get(
 
 router.post(
   '/extra',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({ body: pitSchema.criarDemandaExtra }),
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.criar(req.body, req.usuarioUuid, req.contexto)
@@ -222,7 +240,7 @@ router.post(
 
 router.put(
   '/extra/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({
     params: pitSchema.idParams,
     body: pitSchema.atualizarDemandaExtra
@@ -240,7 +258,7 @@ router.put(
 
 router.delete(
   '/extra/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'producao'),
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await extraCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
@@ -262,9 +280,12 @@ router.delete(
 // `.required()`): ligar uma folha por lá obriga a ler a versão, devolver tudo de
 // volta e torcer para nada se perder no caminho. Estas rotas mexem em UM campo.
 //
-// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER é do
-// administrador, como as outras escritas da demanda: o vínculo é o que faz a
-// folha CONTAR como exceção autorizada em vez de meta do plano.
+// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER continua do
+// ADMINISTRADOR GLOBAL, e as outras escritas da demanda passaram para o operador
+// de Produção na 1.33.0: a diferença é o que a escrita TOCA. Estas duas gravam
+// `acervo.versao.demanda_extra_id`, e quem manda no acervo é o módulo acervo.
+// Dar a folha do acervo por um perfil de Produção seria abrir a porta lateral
+// que `verifyPerfil('operador', 'acervo')` fecha na porta da frente.
 
 // Antes de '/extra/:id/versoes/:versao_id', pela mesma razão de '/anos'.
 router.get(

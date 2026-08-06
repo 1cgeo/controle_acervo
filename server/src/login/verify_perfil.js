@@ -17,13 +17,27 @@ const PERFIL = {
   gerente: 3
 };
 
-// Espelha dominio.modulo. Acervo, mapoteca e orcamento sao modulos distintos de
-// proposito: quem atende a mapoteca nao precisa catalogar o acervo, e quem
-// lanca empenho nao precisa de nenhum dos dois.
+// Espelha dominio.modulo, code a code. Os cinco sao compartimentos distintos de
+// proposito: quem atende a mapoteca nao precisa catalogar o acervo, quem lanca
+// empenho nao precisa de nenhum dos dois, e quem lanca a execucao do PIT nao
+// mexe em dinheiro.
+//
+// PRODUCAO e EFETIVO entraram na 1.33.0 para haver como dar MENOS que a flag
+// global. Ate ali a execucao do PIT, o Extra-PIT, a capacitacao e o
+// aproveitamento so tinham `verifyAdmin`, e por isso 5 das 7 contas que
+// trabalhavam no sistema eram administradoras (medido em 2026-08-06).
+//
+// PRODUCAO cobre a execucao do PIT, o Extra-PIT e a capacitacao MINISTRADA (2.6
+// do RPCMTec). EFETIVO cobre a passagem pela DGEO, o impedimento e a capacitacao
+// RECEBIDA (6.2). As METAS do PIT ficaram de fora, e nao por esquecimento:
+// altera-las e ato da DSG, e o que esta no sistema e transcricao de documento
+// assinado.
 const MODULO = {
   acervo: 1,
   mapoteca: 2,
-  orcamento: 3
+  orcamento: 3,
+  producao: 4,
+  efetivo: 5
 };
 
 // Uso: verifyPerfil('operador') no acervo, verifyPerfil('gerente', 'mapoteca')

@@ -192,13 +192,64 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
     expect(item.closest('.sidebar__module').classList.contains('sidebar__module--open')).toBe(true);
   });
 
-  test('a seção inteira e do administrador global', () => {
+  test('sem perfil em Efetivo, a seção inteira some', () => {
     logar({ perfis: { mapoteca: 3 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
     expect(ids(sidebar)).not.toContain('usuarios');
     expect(ids(sidebar)).not.toContain('acessos');
     expect(ids(sidebar)).not.toContain('aproveitamento');
+    expect(ids(sidebar)).not.toContain('capacitacao_recebida');
+  });
+
+  // O QUE MUDOU NA 1.33.0. A seção era `admin: true` INTEIRA, então o operador
+  // de Efetivo não veria nada, embora o servidor já o aceite em
+  // `/api/efetivo/periodos` e em `/rpcmtec/capacitacao/recebida`. A marca desceu
+  // para os dois itens que continuam sendo conta de sistema.
+  test('operador de Efetivo ve o aproveitamento e a capacitação recebida', () => {
+    logar({ perfis: { efetivo: 2 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const lista = ids(sidebar);
+    expect(lista).toContain('aproveitamento');
+    expect(lista).toContain('capacitacao_recebida');
+    // E NAO ve o que e conta de sistema: quem entrou e quando, e quem tem
+    // acesso a que. As duas sao verifyAdmin no servidor.
+    expect(lista).not.toContain('acessos');
+    expect(lista).not.toContain('usuarios');
+  });
+
+  // O cabeçalho é um LINK, e a home da seção é `#/acessos`, que é do
+  // administrador. Sem calcular a home, clicar no nome da seção que é dele
+  // jogaria o operador em /unauthorized.
+  test('para o operador, o cabeçalho leva ao aproveitamento, e nao ao dashboard', () => {
+    logar({ perfis: { efetivo: 2 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const efetivo = [...sidebar.querySelectorAll('.sidebar__module-header')]
+      .find(h => h.textContent.includes('Efetivo'));
+    expect(efetivo.getAttribute('href')).toBe('#/aproveitamento');
+  });
+
+  // A hierarquia vale: o GERENTE do efetivo satisfaz o operador. Sem este caso,
+  // um `visivel` que comparasse o nível por igualdade passaria despercebido.
+  test('gerente de Efetivo tambem ve as duas telas', () => {
+    logar({ perfis: { efetivo: 3 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(ids(sidebar)).toContain('aproveitamento');
+    expect(ids(sidebar)).toContain('capacitacao_recebida');
+  });
+
+  // CONSULTA em Efetivo não abre tela nenhuma da seção: a mais baixa dela é o
+  // aproveitamento, que exige operador. A seção inteira some, e é a resposta
+  // certa, e não um menu que abre para levar 403.
+  test('consulta em Efetivo nao ve tela nenhuma da seção', () => {
+    logar({ perfis: { efetivo: 1 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(ids(sidebar)).not.toContain('aproveitamento');
+    expect(ids(sidebar)).not.toContain('capacitacao_recebida');
   });
 });
 
@@ -223,12 +274,13 @@ describe('sidebar: Produção reúne o plano anual e o que acontece com ele', ()
     expect(itens[1].getAttribute('href')).toBe('#/execucao_pit');
   });
 
-  // A seção NÃO leva `admin: true`, e o item de capacitação leva. A diferença
-  // não é descuido: metas e execução são `authLoader` (o servidor cobra o
-  // administrador só na escrita), e a capacitação é entrada do RPCMTec, guardada
-  // com verifyAdmin. Oferecê-la a quem levaria 403 é o desencontro que o
-  // `podeAbrirRota` existe para evitar do lado dos módulos.
-  test('quem nao e administrador ve o plano, e nao ve a capacitação', () => {
+  // A seção NÃO se restringe, e o item de capacitação sim. A diferença não é
+  // descuido: metas e Extra-PIT são `authLoader` (o servidor cobra o perfil só
+  // na escrita), e a capacitação ministrada é rota própria, guardada por
+  // `verifyPerfil('operador', 'producao')` desde a 1.33.0. Oferecê-la a quem
+  // levaria 403 é o desencontro que o `podeAbrirRota` existe para evitar do lado
+  // dos módulos.
+  test('quem nao tem perfil em Producao ve o plano, e nao ve a capacitação', () => {
     logar({ perfis: { mapoteca: 3 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
@@ -237,6 +289,28 @@ describe('sidebar: Produção reúne o plano anual e o que acontece com ele', ()
     expect(lista).toContain('execucao_pit');
     expect(lista).toContain('extra_pit');
     expect(lista).not.toContain('capacitacao_ministrada');
+  });
+
+  // O QUE MUDOU NA 1.33.0. O item era `admin: true`, e agora ele segue o módulo
+  // PRODUÇÃO. Sem este caso, a mudança poderia ter apenas escondido o item de
+  // todo mundo e os casos acima continuariam verdes.
+  test('operador de Producao ve a capacitação ministrada', () => {
+    logar({ perfis: { producao: 2 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(ids(sidebar)).toContain('capacitacao_ministrada');
+    // E NAO a recebida, que e do modulo Efetivo: as duas saem da mesma tabela e
+    // so o modulo as separa.
+    expect(ids(sidebar)).not.toContain('capacitacao_recebida');
+  });
+
+  test('consulta em Producao nao ve a capacitação ministrada', () => {
+    logar({ perfis: { producao: 1 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(ids(sidebar)).not.toContain('capacitacao_ministrada');
+    // Mas ve o plano anual, que e de qualquer pessoa logada.
+    expect(ids(sidebar)).toContain('metas');
   });
 
   test('setActive marca a execução e ABRE a seção que a contem', () => {

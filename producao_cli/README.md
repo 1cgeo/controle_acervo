@@ -88,10 +88,19 @@ O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do p
 |---|---|
 | ler a meta, o Extra-PIT, a mídia, o exercício e a revisão | `verifyLogin` (qualquer pessoa autenticada) |
 | ler a execução mensal (grade, resumo, lançamentos de uma meta) | `verifyGerente` (gerente de **qualquer** módulo, ou administrador) |
-| escrever qualquer coisa do PIT | `verifyAdmin` |
-| o `/api/rpcmtec` inteiro, **inclusive a leitura** | `verifyAdmin` |
+| lançar a execução mensal e cadastrar o Extra-PIT | `verifyPerfil('operador', 'producao')` |
+| a capacitação **MINISTRADA** (2.6), inteira | `verifyPerfil('operador', 'producao')` |
+| a capacitação **RECEBIDA** (6.2), inteira | `verifyPerfil('operador', 'efetivo')` |
+| a **meta** e a **revisão** do PIT, e o de-para de mídia | `verifyAdmin` |
+| a **edição** do `/api/rpcmtec`, inclusive a leitura | `verifyAdmin` |
 
-`verifyGerente` lê o banco a cada requisição, e não o token: rebaixar perfil vale na hora. O `producao login` diz, numa linha, o que a pessoa alcança, para o 403 não ser lido como rota quebrada.
+A linha entre as duas últimas é a decisão que importa: a **meta** é o que a DSG prometeu, e o que está no sistema é transcrição de documento assinado; a **execução** é o que a Divisão entregou.
+
+**Produção e Efetivo viraram módulos na 1.33.0**, para haver como dar menos que a flag global. Até ali a única guarda disponível para esse trabalho era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06).
+
+**A capacitação são DOIS recursos**, `capacitacao-ministrada` e `capacitacao-recebida`, porque a permissão é por tipo e a guarda de rota não enxerga o corpo. O `tipo_id` deixou de ir no corpo: quem o fixa é a rota, no servidor.
+
+`verifyGerente` e `verifyPerfil` leem o banco a cada requisição, e não o token: rebaixar perfil vale na hora. O `producao login` diz, numa linha, o que a pessoa alcança, para o 403 não ser lido como rota quebrada.
 
 ## O que o CLI protege
 

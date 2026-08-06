@@ -53,14 +53,12 @@ describe('orcamento-service: GET com query string', () => {
 });
 
 describe('orcamento-service: configuracao e anos', () => {
-  test('getConfig faz GET /orcamento/configuracao', () => {
-    svc.getConfig();
-    expect(apiGet).toHaveBeenCalledWith('/orcamento/configuracao');
-  });
-
-  test('updateConfig faz PUT /orcamento/configuracao com o corpo', () => {
-    svc.updateConfig({ uasg: '160382', codom: '12345', ano_referencia: 2026 });
-    expect(apiPut).toHaveBeenCalledWith('/orcamento/configuracao', { uasg: '160382', codom: '12345', ano_referencia: 2026 });
+  // REPROVA o estado anterior a 2026-08-06: o service tinha getConfig e
+  // updateConfig, que liam e gravavam a UASG e o CODOM da propria OM. A tabela
+  // orcamento.configuracao foi podada, e as duas rotas sairam com ela.
+  test('getConfig e updateConfig nao existem mais', () => {
+    expect(svc.getConfig).toBeUndefined();
+    expect(svc.updateConfig).toBeUndefined();
   });
 
   test('getAnos faz GET /orcamento/configuracao/anos', () => {

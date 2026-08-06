@@ -311,7 +311,11 @@ function blocoCampos (schemaJoi, titulo, avisarStrip) {
 const ACESSO = {
   publico: 'publico (sem login)',
   login: 'exige login (qualquer pessoa autenticada)',
-  admin: 'exige ADMINISTRADOR'
+  admin: 'exige ADMINISTRADOR',
+  // O modulo EFETIVO, criado na 1.33.0 para haver como dar menos que a flag
+  // global. O administrador continua passando nos dois niveis.
+  efetivo_operador: 'exige OPERADOR no modulo Efetivo, ou administrador',
+  efetivo_gerente: 'exige GERENTE no modulo Efetivo, ou administrador'
 }
 
 const PROGRAMA = 'efetivo'

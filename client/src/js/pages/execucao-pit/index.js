@@ -9,7 +9,7 @@ import {
   salvarExecucaoPit,
   codigoMetaPit,
 } from '@services/plataforma-service.js';
-import { isAdmin } from '@store/auth-store.js';
+import { temPerfil } from '@store/auth-store.js';
 
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
   'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -58,7 +58,11 @@ const numero = (v) => (v == null ? '·' : String(v));
  */
 export async function renderExecucaoPit(container, _ctx) {
   let disposed = false;
-  const podeEscrever = isAdmin();
+  // ESCREVER a célula da grade é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e era
+  // do administrador global. `temPerfil` já devolve true para o administrador.
+  // O servidor cobra o mesmo em POST e DELETE /metas/execucao; aqui é só
+  // ergonomia, para o botão não existir só para levar 403.
+  const podeEscrever = temPerfil('operador', 'producao');
 
   const hoje = new Date();
   let anoSelecionado = hoje.getFullYear();

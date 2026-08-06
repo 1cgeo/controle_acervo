@@ -2,18 +2,23 @@
 
 // Rotas do RPCMTec, o relatório mensal da Divisão.
 //
-// GUARDA: `verifyAdmin`, e não `verifyPerfil`. O relatório cruza os TRÊS
-// módulos numa peça só, e traz valor de crédito, de empenho e de liquidação. Um
-// `verifyPerfil('consulta', 'acervo')` entregaria o orçamento inteiro a quem só
-// cataloga carta; e não existe "perfil de RPCMTec", porque não existe módulo
-// RPCMTec -- ele é rota de PLATAFORMA, como usuários e views materializadas
-// (ver CLAUDE.md, modelo de autorização). Quem assina o relatório é o chefe, e
-// quem o gera administra o sistema.
+// GUARDA DA EDIÇÃO: `verifyAdmin`, e não `verifyPerfil`. O relatório cruza os
+// TRÊS módulos numa peça só, e traz valor de crédito, de empenho e de
+// liquidação. Um `verifyPerfil('consulta', 'acervo')` entregaria o orçamento
+// inteiro a quem só cataloga carta; e não existe "perfil de RPCMTec", porque não
+// existe módulo RPCMTec -- ele é rota de PLATAFORMA, como usuários e views
+// materializadas (ver CLAUDE.md, modelo de autorização). Quem assina o relatório
+// é o chefe, e quem o gera administra o sistema.
+//
+// A CAPACITAÇÃO É A EXCEÇÃO, desde a 1.33.0, e ela mora aqui por endereço e não
+// por natureza: capacitação é CADASTRO, e não relatório. Ela virou duas rotas,
+// uma por tipo, com guardas diferentes. Ver o bloco dela mais abaixo.
 
 const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
-const { verifyAdmin } = require('../login')
+const { domainConstants: { TIPO_CAPACITACAO } } = require('../utils')
+const { verifyAdmin, verifyPerfil } = require('../login')
 
 const edicaoCtrl = require('./rpcmtec_edicao_ctrl')
 const subsecaoCtrl = require('./rpcmtec_subsecao_ctrl')
@@ -118,94 +123,162 @@ router.get(
 )
 
 // ---------------------------------------------------------------------------
-// Capacitação (2.6 ministrada, 6.2 recebida)
+// Capacitação: DUAS rotas, uma por tipo (2.6 ministrada, 6.2 recebida)
+//
+// POR QUE SEPARADAS. A permissão é POR TIPO, e a guarda de rota não enxerga o
+// corpo nem a query. Um `POST /capacitacao` só criava qualquer uma das duas,
+// porque o `tipo_id` vinha no corpo: com a ministrada sendo do operador de
+// Produção e a recebida do de Efetivo, não havia guarda que soubesse qual das
+// duas estava chegando. O tipo virou o CAMINHO, e é o servidor que o fixa.
+//
+// É a mesma forma do par `/produto_versao_historica` e
+// `/produto_versao_planejada`, no módulo produto, e pela mesma razão escrita
+// lá: um nome por coisa evita o corpo que muda de significado por um inteiro
+// escondido.
+//
+// A LEITURA TAMBÉM SE SEPARA, e não só a escrita. Três razões, nesta ordem:
+//   1. `GET /capacitacao` SEM `tipo_id` devolvia as duas. Uma guarda por tipo
+//      numa rota que responde os dois tipos não guarda nada.
+//   2. `/capacitacao/:id` respondia qualquer id. Ler a ministrada pelo caminho
+//      da recebida seria a porta lateral da guarda nova.
+//   3. `/capacitacao/anos` mentia. Em 2026-08-06 a produção tinha MINISTRADA em
+//      oito anos e RECEBIDA só em 2026: a tela da recebida oferecia os oito, e
+//      sete deles respondiam "nenhum registro para estes filtros".
+//
+// A TABELA CONTINUA UMA. O que se separou foi o endereço, não o dado: os dois
+// tipos dividem `rpcmtec.capacitacao`, e duas tabelas com dez colunas iguais
+// divergiriam na primeira que fosse acrescentada a uma só.
+//
+// O CONTROLADOR RECORTA POR TIPO, e a guarda da rota não basta sozinha: sem
+// isso, o operador de Efetivo apagaria uma capacitação ministrada mandando o id
+// dela para o caminho da recebida. Ver `rpcmtec_capacitacao_ctrl.js`.
 // ---------------------------------------------------------------------------
 
-router.get(
-  '/capacitacao',
-  verifyAdmin,
-  schemaValidation({ query: rpcmtecSchema.capacitacaoQuery }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await capacitacaoCtrl.listar(req.query.ano, req.query.tipo_id)
+/**
+ * As seis rotas de um tipo de capacitação, num molde só.
+ *
+ * MOLDE, e não doze blocos escritos à mão: o que muda entre ministrada e
+ * recebida é o caminho, o `tipo_id` e a guarda. Doze cópias divergiriam na
+ * primeira correção aplicada a uma só, e o preço dessa divergência aqui é uma
+ * das duas ficar sem recorte de tipo.
+ *
+ * A ORDEM IMPORTA: '/anos' é declarada antes de '/:id', senão 'anos' cairia na
+ * rota do id e reprovaria na validação de parâmetro.
+ *
+ * @param {string} caminho - 'ministrada' ou 'recebida'
+ * @param {number} tipoId - dominio.tipo_capacitacao
+ * @param {Function} guarda - o middleware de autorização daquele tipo
+ */
+const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
+  const base = `/capacitacao/${caminho}`
 
-    return res.sendJsonAndLog(
-      true, 'Capacitações retornadas com sucesso', httpCode.OK, dados
-    )
-  })
+  router.get(
+    base,
+    guarda,
+    schemaValidation({ query: rpcmtecSchema.capacitacaoQuery }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.listar(req.query.ano, tipoId)
+
+      return res.sendJsonAndLog(
+        true, 'Capacitações retornadas com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  router.get(
+    `${base}/anos`,
+    guarda,
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.anos(tipoId)
+
+      return res.sendJsonAndLog(
+        true, 'Anos com capacitação retornados com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  router.get(
+    `${base}/:id`,
+    guarda,
+    schemaValidation({ params: rpcmtecSchema.idParams }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.getPorId(req.params.id, tipoId)
+
+      // Vale para o id que não existe E para o id do OUTRO tipo: por este
+      // caminho, a capacitação do outro tipo não está lá.
+      if (!dados) {
+        throw new AppError('Capacitação não encontrada', httpCode.NotFound)
+      }
+
+      return res.sendJsonAndLog(
+        true, 'Capacitação retornada com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  router.post(
+    base,
+    guarda,
+    schemaValidation({ body: rpcmtecSchema.criarCapacitacao }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.criar(
+        req.body, tipoId, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(
+        true, 'Capacitação criada com sucesso', httpCode.Created, dados
+      )
+    })
+  )
+
+  router.put(
+    `${base}/:id`,
+    guarda,
+    schemaValidation({
+      params: rpcmtecSchema.idParams,
+      body: rpcmtecSchema.atualizarCapacitacao
+    }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.atualizar(
+        req.params.id, tipoId, req.body, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(
+        true, 'Capacitação atualizada com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  router.delete(
+    `${base}/:id`,
+    guarda,
+    schemaValidation({ params: rpcmtecSchema.idParams }),
+    asyncHandler(async (req, res, next) => {
+      await capacitacaoCtrl.deletar(
+        req.params.id, tipoId, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(
+        true, 'Capacitação excluída com sucesso', httpCode.OK
+      )
+    })
+  )
+}
+
+// MINISTRADA é serviço que a Divisão PRESTA, e alimenta a 2.6: é trabalho de
+// produção, e o módulo é Produção.
+rotasDeCapacitacao(
+  'ministrada',
+  TIPO_CAPACITACAO.MINISTRADA,
+  verifyPerfil('operador', 'producao')
 )
 
-// Antes de '/capacitacao/:id', senão 'anos' cai na rota do id.
-router.get(
-  '/capacitacao/anos',
-  verifyAdmin,
-  asyncHandler(async (req, res, next) => {
-    const dados = await capacitacaoCtrl.anos()
-
-    return res.sendJsonAndLog(
-      true, 'Anos com capacitação retornados com sucesso', httpCode.OK, dados
-    )
-  })
-)
-
-router.get(
-  '/capacitacao/:id',
-  verifyAdmin,
-  schemaValidation({ params: rpcmtecSchema.idParams }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await capacitacaoCtrl.getPorId(req.params.id)
-
-    if (!dados) {
-      throw new AppError('Capacitação não encontrada', httpCode.NotFound)
-    }
-
-    return res.sendJsonAndLog(
-      true, 'Capacitação retornada com sucesso', httpCode.OK, dados
-    )
-  })
-)
-
-router.post(
-  '/capacitacao',
-  verifyAdmin,
-  schemaValidation({ body: rpcmtecSchema.criarCapacitacao }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await capacitacaoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
-
-    return res.sendJsonAndLog(
-      true, 'Capacitação criada com sucesso', httpCode.Created, dados
-    )
-  })
-)
-
-router.put(
-  '/capacitacao/:id',
-  verifyAdmin,
-  schemaValidation({
-    params: rpcmtecSchema.idParams,
-    body: rpcmtecSchema.atualizarCapacitacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await capacitacaoCtrl.atualizar(
-      req.params.id, req.body, req.usuarioUuid, req.contexto
-    )
-
-    return res.sendJsonAndLog(
-      true, 'Capacitação atualizada com sucesso', httpCode.OK, dados
-    )
-  })
-)
-
-router.delete(
-  '/capacitacao/:id',
-  verifyAdmin,
-  schemaValidation({ params: rpcmtecSchema.idParams }),
-  asyncHandler(async (req, res, next) => {
-    await capacitacaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
-
-    return res.sendJsonAndLog(
-      true, 'Capacitação excluída com sucesso', httpCode.OK
-    )
-  })
+// RECEBIDA é gente nossa EM CURSO, e alimenta a 6.2: é dado de pessoal, e o
+// módulo é Efetivo.
+rotasDeCapacitacao(
+  'recebida',
+  TIPO_CAPACITACAO.RECEBIDA,
+  verifyPerfil('operador', 'efetivo')
 )
 
 // ---------------------------------------------------------------------------

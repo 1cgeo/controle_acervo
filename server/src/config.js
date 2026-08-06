@@ -69,8 +69,29 @@ dotenv.config({
 // "coluna payload não existe". O contrário quebra igual, e mais tarde: um
 // servidor 1.31.0 contra um banco 1.32.0 gravaria a sessão e procuraria as
 // tabelas espelho, que lá não existem mais.
-const VERSION = '1.32.0'
-const MIN_DATABASE_VERSION = '1.32.0'
+//
+// A 1.33.0 SOBE O PISO, e ela só acrescenta duas linhas de domínio
+// (`dominio.modulo` ganha 4 Produção e 5 Efetivo). Sobe porque este código passa
+// a LER esses códigos: o mapa `MODULO` de `login/verify_perfil.js` traduz
+// 'producao' para 4 e 'efetivo' para 5, e as rotas da execução do PIT, do
+// Extra-PIT, da capacitação e do efetivo trocaram `verifyAdmin` por
+// `verifyPerfil(..., 'producao')` e `verifyPerfil(..., 'efetivo')`.
+//
+// Num banco 1.32.0 nada quebraria com erro, e é justamente esse o motivo de
+// cobrar o piso: sem as linhas 4 e 5, a chave estrangeira
+// `dgeo.usuario_perfil.modulo_id` recusa toda concessão nesses módulos, e
+// ninguém além do administrador global consegue entrar naquelas telas. O
+// sistema subiria, a tela de usuários mostraria três colunas em vez de cinco, e
+// o chefe concluiria que a permissão nova não funciona.
+// A 1.34.0 SOBE O PISO por REMOÇÃO, como a 1.31.0. `orcamento.configuracao`
+// some, e com ela as rotas `GET /` e `PUT /` do módulo. Este código nunca mais
+// consulta a tabela, então ele roda inteiro num banco 1.33.0; o que quebra é o
+// contrário, e sem barulho: um servidor 1.33.0 contra um banco 1.34.0 abriria a
+// tela de Configuração, chamaria o `GET /`, tomaria "relação não existe" e
+// mostraria a falha de carga. Pior, o `PUT /` daria o mesmo erro DEPOIS de o
+// administrador digitar. Piso cobrado para o par ficar sempre casado.
+const VERSION = '1.34.0'
+const MIN_DATABASE_VERSION = '1.34.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

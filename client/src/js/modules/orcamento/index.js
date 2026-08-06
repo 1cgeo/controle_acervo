@@ -31,7 +31,6 @@ export default {
 
   menu: [
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
-    { id: 'configuracao', label: 'Configuração', icon: ICONS.category, path: '/configuracao' },
     { id: 'dfd', label: 'DFD', icon: ICONS.description, path: '/dfd' },
     // SEM um grupo "Orçamento" aqui dentro: grupo colapsável com um item só
     // esconde a tela atrás de um clique e nomeia o módulo dentro do módulo.
@@ -49,6 +48,12 @@ export default {
     },
     // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). Daqui sairia
     // so a secao do PDR, e o relatorio e da Divisao inteira.
+    //
+    // CONFIGURACAO POR ULTIMO, e nao em segundo lugar. Ela e a tela que menos se
+    // visita: mantem os dominios do modulo (natureza de despesa, plano interno,
+    // unidade gestora), e so o administrador a abre. Em cima ela ocupava o lugar
+    // do trabalho do dia, que e o DFD e o PDR.
+    { id: 'configuracao', label: 'Configuração', icon: ICONS.category, path: '/configuracao' },
   ],
 
   rotas: [

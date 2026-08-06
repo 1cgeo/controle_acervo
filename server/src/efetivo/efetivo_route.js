@@ -7,14 +7,30 @@
 // RPCMTec, mas não mora sob `/api/rpcmtec` porque "quem esteve na Divisão" não
 // existe por causa do relatório -- o relatório é um leitor.
 //
-// GUARDA: `verifyAdmin` em tudo, inclusive na leitura. A tela mostra licença de
-// saúde e função acumulada de cada militar, nominalmente, e isso é dado de
-// pessoal. É a mesma régua de `/api/acessos`.
+// GUARDA: o módulo EFETIVO, desde a 1.33.0. Antes era `verifyAdmin` nas dez
+// rotas, inclusive na leitura, e a razão está de pé: a resposta traz licença de
+// saúde e função acumulada de cada militar, nominalmente. O que mudou é que
+// agora existe um compartimento para esse dado, em vez de só a flag global.
+//
+// OPERADOR na passagem pela DGEO e no impedimento, que é o cadastro do
+// aproveitamento (subseção 6.1 do RPCMTec). Quem preenche o aproveitamento
+// precisava da MESMA flag que libera o orçamento e o cadastro de usuários, e foi
+// isso que fez 5 das 7 contas que trabalham no sistema virarem administradoras
+// (medido em 2026-08-06).
+//
+// GERENTE no mapa anual e no resumo mensal. As duas leituras AGREGAM a Divisão
+// inteira num quadro só, e responder "quem esteve disponível em cada semana do
+// ano" é pergunta de quem responde pelo efetivo, não de quem digita a licença de
+// uma pessoa. É a mesma régua da grade do PIT, que também é agregada e também é
+// de gerente.
+//
+// O administrador global continua passando nas dez, porque o `verifyPerfil` o
+// aceita antes de olhar perfil nenhum.
 
 const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode } = require('../utils')
-const { verifyAdmin } = require('../login')
+const { verifyPerfil } = require('../login')
 
 const efetivoCtrl = require('./efetivo_ctrl')
 const efetivoSchema = require('./efetivo_schema')
@@ -28,7 +44,7 @@ const router = express.Router()
 
 router.get(
   '/mapa',
-  verifyAdmin,
+  verifyPerfil('gerente', 'efetivo'),
   schemaValidation({ query: efetivoSchema.anoObrigatorioQuery }),
   asyncHandler(async (req, res, next) => {
     const [semanas, anual] = await Promise.all([
@@ -45,7 +61,7 @@ router.get(
 
 router.get(
   '/mes',
-  verifyAdmin,
+  verifyPerfil('gerente', 'efetivo'),
   schemaValidation({ query: efetivoSchema.anoMesQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await efetivoCtrl.resumoMensal(req.query.ano, req.query.mes)
@@ -62,7 +78,7 @@ router.get(
 
 router.get(
   '/periodos',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ query: efetivoSchema.anoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await efetivoCtrl.listarPeriodos(req.query.ano)
@@ -75,7 +91,7 @@ router.get(
 
 router.post(
   '/periodos',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ body: efetivoSchema.criarPeriodo }),
   asyncHandler(async (req, res, next) => {
     const dados = await efetivoCtrl.criarPeriodo(
@@ -90,7 +106,7 @@ router.post(
 
 router.put(
   '/periodos/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({
     params: efetivoSchema.idParams,
     body: efetivoSchema.atualizarPeriodo
@@ -108,7 +124,7 @@ router.put(
 
 router.delete(
   '/periodos/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ params: efetivoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await efetivoCtrl.deletarPeriodo(req.params.id, req.usuarioUuid, req.contexto)
@@ -123,7 +139,7 @@ router.delete(
 
 router.get(
   '/impedimentos',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ query: efetivoSchema.anoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await efetivoCtrl.listarImpedimentos(req.query.ano)
@@ -136,7 +152,7 @@ router.get(
 
 router.post(
   '/impedimentos',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ body: efetivoSchema.criarImpedimento }),
   asyncHandler(async (req, res, next) => {
     const dados = await efetivoCtrl.criarImpedimento(
@@ -151,7 +167,7 @@ router.post(
 
 router.put(
   '/impedimentos/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({
     params: efetivoSchema.idParams,
     body: efetivoSchema.atualizarImpedimento
@@ -169,7 +185,7 @@ router.put(
 
 router.delete(
   '/impedimentos/:id',
-  verifyAdmin,
+  verifyPerfil('operador', 'efetivo'),
   schemaValidation({ params: efetivoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await efetivoCtrl.deletarImpedimento(req.params.id, req.usuarioUuid, req.contexto)

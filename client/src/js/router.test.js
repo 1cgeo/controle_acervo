@@ -68,6 +68,35 @@ describe('router: rota raiz', () => {
     logar({ perfis: {} });
     expect(rotaRaiz()).toBe('/unauthorized');
   });
+
+  // PRODUCAO e EFETIVO nao sao modulos do registry: eles existem em
+  // `dominio.modulo` e guardam rotas do servidor, mas as telas deles sao de
+  // PLATAFORMA, sem manifesto. Sem tratamento proprio na `rotaRaiz`, quem
+  // tivesse perfil SO num deles entraria e cairia em /unauthorized, com o perfil
+  // novo funcionando em toda rota menos na porta de entrada.
+  test('so com perfil em Producao, a raiz abre o plano anual', () => {
+    logar({ perfis: { producao: 2 } });
+    expect(rotaRaiz()).toBe('/metas');
+  });
+
+  test('so com perfil de operador em Efetivo, a raiz abre o aproveitamento', () => {
+    logar({ perfis: { efetivo: 2 } });
+    expect(rotaRaiz()).toBe('/aproveitamento');
+  });
+
+  // CONSULTA em Efetivo nao abre tela nenhuma: a mais baixa da seção exige
+  // operador. O /unauthorized aqui e a resposta certa, e nao uma lacuna.
+  test('consulta em Efetivo continua sem porta de entrada', () => {
+    logar({ perfis: { efetivo: 1 } });
+    expect(rotaRaiz()).toBe('/unauthorized');
+  });
+
+  // O modulo do registry VENCE: quem tem os dois entra pelo modulo, que e onde
+  // ele tem tela propria com dashboard.
+  test('com modulo do registry E perfil em Producao, o modulo ganha', () => {
+    logar({ perfis: { orcamento: 1, producao: 2 } });
+    expect(rotaRaiz()).toBe('/orcamento/dashboard');
+  });
 });
 
 describe('router: resolucao', () => {

@@ -40,7 +40,6 @@ const SEM_PAINEL_JUSTIFICADO = {
   // `orcamento.configuracao` e os domínios editáveis do orçamento vivem numa
   // tela de configuração que é uma lista de campos, e não uma ficha por
   // registro. O histórico deles se lê pela varredura, filtrando por entidade.
-  configuracao: 'Tela de campos, sem ficha por registro',
   dominio: 'Tabela de domínio editável, sem ficha por registro'
 }
 
@@ -164,7 +163,7 @@ describe('A entrega do rastro', () => {
   // exceção vira regra. Entrada nova aqui derruba o caso e obriga a decisão.
   test('as listas de exceção e de dívida não crescem sem decisão', () => {
     expect(Object.keys(SEM_PAINEL_JUSTIFICADO).sort())
-      .toEqual(['configuracao', 'dominio', 'manutencao'])
+      .toEqual(['dominio', 'manutencao'])
 
     for (const motivo of Object.values(SEM_PAINEL_JUSTIFICADO)) {
       expect(motivo.length).toBeGreaterThan(20)

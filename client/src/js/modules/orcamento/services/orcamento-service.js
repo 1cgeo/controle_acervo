@@ -46,8 +46,6 @@ export const updateUg = (code, body) => apiPut(`${API}/dominio/ug/${encodeURICom
 export const deleteUg = (code) => apiDelete(`${API}/dominio/ug/${encodeURIComponent(code)}`);
 
 // ---- Configuracao geral e anos ----
-export const getConfig = () => apiGet(`${API}/configuracao`);
-export const updateConfig = (body) => apiPut(`${API}/configuracao`, body);
 export const getAnos = () => apiGet(`${API}/configuracao/anos`);
 
 // ---- Meta do PIT ----

@@ -206,8 +206,9 @@ describe('rastreabilidade: rota, destino e filtro', () => {
   test('o combo nomeia todas as entidades do servidor, e nenhuma a mais', async () => {
     // Fonte: o `entidade:` de cada entrada de server/src/auditoria/mapa/*.js.
     // 'aproveitamento' NÃO está lá: passagem e impedimento caem em 'usuario'.
+    // 'configuracao' saiu em 2026-08-06, com a poda da orcamento.configuracao.
     const DO_SERVIDOR = [
-      'capacitacao', 'cliente', 'configuracao', 'dfd', 'dominio', 'edicao',
+      'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao',
       'exercicio', 'extra_pit', 'licitacao', 'manutencao', 'material', 'meta',
       'nota_credito', 'nota_empenho', 'pdr', 'pedido', 'plotter', 'ponto',
       'produto', 'projeto', 'rpnp', 'usuario', 'volume',

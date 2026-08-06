@@ -180,8 +180,13 @@ export const desassociarVersaoExtraPit = (id, versaoId) =>
 // do trabalho sem tira-la da Divisao. Mes, semana e ano sao consulta.
 //
 // Sob /efetivo, e nao /rpcmtec: "quem esteve na Divisao" nao existe por causa do
-// relatorio. Todas sao verifyAdmin no servidor, inclusive a leitura, porque a
-// tela mostra licenca de saude e funcao acumulada, nominalmente.
+// relatorio.
+//
+// GUARDA, desde a 1.33.0: o modulo EFETIVO. O cadastro (periodos e impedimentos)
+// exige OPERADOR, e o mapa anual e o resumo mensal exigem GERENTE, porque eles
+// agregam a Divisao inteira num quadro so. A leitura tambem e guardada, e a
+// razao continua a mesma de quando tudo era verifyAdmin: a tela mostra licenca
+// de saude e funcao acumulada, nominalmente.
 export const getMapaEfetivo = (ano) => apiGet(`/efetivo/mapa?ano=${ano}`);
 export const getEfetivoDoMes = (ano, mes) => apiGet(`/efetivo/mes?ano=${ano}&mes=${mes}`);
 
@@ -197,18 +202,46 @@ export const createImpedimento = (body) => apiPost('/efetivo/impedimentos', body
 export const updateImpedimento = (id, body) => apiPut(`/efetivo/impedimentos/${id}`, body);
 export const deleteImpedimento = (id) => apiDelete(`/efetivo/impedimentos/${id}`);
 
-// ---- Capacitacao (2.6 ministrada e 6.2 recebida) ----
-export const getCapacitacoes = (ano, tipoId) => {
-  const q = new URLSearchParams();
-  if (ano) q.set('ano', ano);
-  if (tipoId) q.set('tipo_id', tipoId);
-  const busca = q.toString();
-  return apiGet(busca ? `/rpcmtec/capacitacao?${busca}` : '/rpcmtec/capacitacao');
+// ---- Capacitacao: DUAS rotas, uma por tipo ----
+//
+// A MINISTRADA (2.6) e a RECEBIDA (6.2) eram a MESMA rota, com o tipo num filtro
+// e num campo do corpo. Desde a 1.33.0 o tipo e o CAMINHO, porque a permissao e
+// por tipo: a ministrada e do operador de PRODUCAO (servico que a Divisao
+// presta), a recebida e do operador de EFETIVO (gente nossa em curso). A guarda
+// da rota nao enxerga o corpo, entao um POST so nao tinha como ser guardado.
+//
+// `tipo_id` NAO vai mais no corpo: quem o fixa e o servidor.
+//
+// A tabela do banco continua UMA. O que se separou foi o endereco.
+const caminhoCapacitacao = (tipo) => `/rpcmtec/capacitacao/${tipo}`;
+
+// Molde, e nao dez funcoes escritas a mao: o que muda entre os dois tipos e uma
+// palavra do caminho, e dez copias divergiriam na primeira correcao.
+const listarCapacitacao = (tipo) => (ano) => {
+  const base = caminhoCapacitacao(tipo);
+  return apiGet(ano ? `${base}?ano=${ano}` : base);
 };
-export const getAnosCapacitacao = () => apiGet('/rpcmtec/capacitacao/anos');
-export const createCapacitacao = (body) => apiPost('/rpcmtec/capacitacao', body);
-export const updateCapacitacao = (id, body) => apiPut(`/rpcmtec/capacitacao/${id}`, body);
-export const deleteCapacitacao = (id) => apiDelete(`/rpcmtec/capacitacao/${id}`);
+const anosCapacitacao = (tipo) => () => apiGet(`${caminhoCapacitacao(tipo)}/anos`);
+const criarCapacitacao = (tipo) => (body) => apiPost(caminhoCapacitacao(tipo), body);
+const atualizarCapacitacao = (tipo) => (id, body) =>
+  apiPut(`${caminhoCapacitacao(tipo)}/${id}`, body);
+const excluirCapacitacao = (tipo) => (id) =>
+  apiDelete(`${caminhoCapacitacao(tipo)}/${id}`);
+
+export const getCapacitacoesMinistradas = listarCapacitacao('ministrada');
+// SO os anos com capacitacao MINISTRADA. A lista unica de antes oferecia ano
+// vazio: em 2026-08-06 a producao tinha ministrada em oito anos e recebida so em
+// 2026, e a tela da recebida oferecia os oito.
+export const getAnosCapacitacaoMinistrada = anosCapacitacao('ministrada');
+export const createCapacitacaoMinistrada = criarCapacitacao('ministrada');
+export const updateCapacitacaoMinistrada = atualizarCapacitacao('ministrada');
+export const deleteCapacitacaoMinistrada = excluirCapacitacao('ministrada');
+
+export const getCapacitacoesRecebidas = listarCapacitacao('recebida');
+export const getAnosCapacitacaoRecebida = anosCapacitacao('recebida');
+export const createCapacitacaoRecebida = criarCapacitacao('recebida');
+export const updateCapacitacaoRecebida = atualizarCapacitacao('recebida');
+export const deleteCapacitacaoRecebida = excluirCapacitacao('recebida');
 
 /**
  * Rotulo curto da meta, como a planilha e as telas a escrevem: '4.1' quando a

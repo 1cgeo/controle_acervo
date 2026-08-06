@@ -290,10 +290,13 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .send({ administrador: false, ativo: true, perfis: { acervo: 9 } })
     expect(nivelInvalido.status).toBe(400)
 
+    // 'producao' era o exemplo de modulo inexistente aqui, e virou modulo de
+    // verdade na 1.33.0. O exemplo passa a ser um nome que nao descreve trabalho
+    // nenhum da Divisao, para nao virar modulo amanha e apagar este caso.
     const moduloInvalido = await request(app)
       .put(`/api/usuarios/${USER_UUID}`)
       .set('Authorization', generateAdminToken())
-      .send({ administrador: false, ativo: true, perfis: { producao: 2 } })
+      .send({ administrador: false, ativo: true, perfis: { jabuticaba: 2 } })
     expect(moduloInvalido.status).toBe(400)
   })
 
@@ -302,10 +305,14 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .get('/api/usuarios/dominio/modulo')
       .set('Authorization', generateAdminToken())
     expect(modulos.status).toBe(200)
+    // CINCO desde a 1.33.0. A tela de usuarios monta uma coluna por linha deste
+    // catalogo, entao os dois modulos novos aparecem la sozinhos.
     expect(modulos.body.dados.map(m => m.nome_abrev)).toEqual([
       'acervo',
       'mapoteca',
-      'orcamento'
+      'orcamento',
+      'producao',
+      'efetivo'
     ])
 
     const perfis = await request(app)

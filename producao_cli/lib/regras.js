@@ -26,11 +26,23 @@ const GERAL = [
   '  ler a execução mensal (a grade e o resumo)                 exige GERENTE de',
   '  qualquer módulo, ou administrador (verifyGerente lê o BANCO a cada',
   '  requisição, e não o token: rebaixar perfil vale na hora);',
-  '  ESCREVER qualquer coisa do PIT                             exige',
+  '  LANÇAR a execução mensal e o Extra-PIT                     exige OPERADOR',
+  '  no módulo PRODUÇÃO;',
+  '  alterar a META e a REVISÃO                                 exige',
   '  ADMINISTRADOR global.',
-  'O /api/rpcmtec inteiro exige ADMINISTRADOR, inclusive a leitura: a edição',
-  'cruza os três módulos numa peça só e traz valor de crédito, empenho e',
-  'liquidação.',
+  'A linha entre as duas últimas é a decisão que importa: a META é o que a DSG',
+  'PROMETEU, e o que está no sistema é transcrição de documento assinado; a',
+  'EXECUÇÃO é o que a Divisão ENTREGOU.',
+  '',
+  'A EDIÇÃO do /api/rpcmtec exige ADMINISTRADOR, inclusive a leitura: ela cruza',
+  'os três módulos numa peça só e traz valor de crédito, empenho e liquidação.',
+  'A CAPACITAÇÃO é a exceção, e mora ali por endereço e não por natureza: ela é',
+  'cadastro, não relatório. A MINISTRADA (2.6) exige operador em PRODUÇÃO e a',
+  'RECEBIDA (6.2) exige operador em EFETIVO.',
+  '',
+  'PRODUÇÃO e EFETIVO viraram módulos na 1.33.0. Até ali a única guarda',
+  'disponível para esse trabalho era a flag global, e por isso 5 das 7 contas',
+  'que trabalhavam no sistema eram administradoras (medido em 2026-08-06).',
   '',
   'O corpo do /api/metas passa por validação ESTRITA: chave desconhecida vira',
   '400 com sugestão de nome. O do /api/rpcmtec passa pela validação padrão, que',
@@ -42,6 +54,30 @@ const GERAL = [
   '',
   'O efetivo (passagens, impedimentos e o mapa de aproveitamento) não está aqui:',
   'use o efetivo_cli.'
+]
+
+// As DUAS capacitacoes compartilham a regra, porque compartilham a TABELA. Elas
+// sao dois recursos por causa da PERMISSAO (a ministrada e de Producao, a
+// recebida e de Efetivo), e nao porque o dado seja diferente. Duas copias deste
+// bloco divergiriam na primeira correcao aplicada a uma so.
+const CAPACITACAO = [
+  'UMA TABELA para os dois lados do mesmo fato, e DUAS ROTAS. `tipo_id` 1 e 2',
+  'separam a MINISTRADA (subseção 2.6) da RECEBIDA (6.2), e desde a 1.33.0 o',
+  'tipo vem do CAMINHO, e não do corpo: a permissão é por tipo, e a guarda de',
+  'rota não enxerga o corpo. Mandar tipo_id não muda nada, o servidor o descarta.',
+  'O id do OUTRO tipo responde 404 em obter, atualizar e excluir: por este',
+  'caminho ele não existe. Isso é guarda, e não organização: sem ele o operador',
+  'de Efetivo apagaria uma capacitação ministrada pelo caminho da recebida.',
+  'O servidor NÃO recusa a coluna que não pertence ao tipo, e é deliberado: ele',
+  'não sabe se a linha está sendo montada aos poucos. Quem decide o que aparece',
+  'é o formulário, e quem decide o que SAI é o gerador.',
+  '`militares` é a lista de quem da Divisão participou, por uuid do cadastro, e',
+  'vale para os DOIS tipos: na ministrada são os instrutores, na recebida os',
+  'capacitados. O papel vem do tipo, e não de um campo.',
+  'A lista é REGRAVADA INTEIRA a cada salvamento. Omiti-la manda lista vazia',
+  '(o default do Joi) e apaga quem estava lá.',
+  'meta_pit_id é anulável, e a maioria fica nula: em 2026 o PIT só promete',
+  'capacitação MINISTRADA (a meta 5).'
 ]
 
 const REGRAS = {
@@ -179,21 +215,8 @@ const REGRAS = {
     'Tudo aqui só funciona com a edição ABERTA.'
   ],
 
-  capacitacao: [
-    'UM cadastro para os dois lados do mesmo fato: tipo_id 1 e 2 separam a',
-    'MINISTRADA (subseção 2.6) da RECEBIDA (6.2). Duas tabelas com dez colunas',
-    'iguais divergiriam na primeira que fosse acrescentada a uma só.',
-    'O servidor NÃO recusa a coluna que não pertence ao tipo, e é deliberado: ele',
-    'não sabe se a linha está sendo montada aos poucos. Quem decide o que aparece',
-    'é o formulário, e quem decide o que SAI é o gerador.',
-    '`militares` é a lista de quem da Divisão participou, por uuid do cadastro, e',
-    'vale para os DOIS tipos: na ministrada são os instrutores, na recebida os',
-    'capacitados. O papel vem do tipo_id, e não de um campo.',
-    'A lista é REGRAVADA INTEIRA a cada salvamento. Omiti-la manda lista vazia',
-    '(o default do Joi) e apaga quem estava lá.',
-    'meta_pit_id é anulável, e a maioria fica nula: em 2026 o PIT só promete',
-    'capacitação MINISTRADA (a meta 5).'
-  ],
+  'capacitacao-ministrada': CAPACITACAO,
+  'capacitacao-recebida': CAPACITACAO,
 
   anuario: [
     'O Anuário e a aba META4_DETALHADA saem junto do RPCMTec porque são a MESMA',

@@ -180,14 +180,32 @@ class Router {
 }
 
 /**
- * Rota de entrada: o primeiro modulo acessivel. Sem sessao vai para o login;
- * com sessao mas sem nenhum modulo, a pessoa nao entra em lugar nenhum.
+ * Rota de entrada: o primeiro modulo acessivel. Sem sessao vai para o login.
+ *
+ * PRODUCAO E EFETIVO NAO SAO MODULOS DO REGISTRY, e por isso precisam de resposta
+ * propria aqui. Eles existem em `dominio.modulo` desde a 1.33.0 e guardam rotas
+ * do servidor, mas as telas deles sao de PLATAFORMA (#/metas, #/aproveitamento),
+ * sem manifesto e sem prefixo. Sem este trecho, quem tivesse perfil SO em
+ * Producao ou SO em Efetivo entraria no sistema e cairia em /unauthorized, com o
+ * perfil novo funcionando em toda rota menos na porta de entrada.
+ *
+ * A ORDEM segue a da sidebar: Producao antes de Efetivo.
+ *
+ * Com sessao e sem nada disso, a pessoa nao entra em lugar nenhum, que continua
+ * sendo a resposta certa para quem ainda nao recebeu perfil.
  * @returns {string}
  */
 export function rotaRaiz() {
   if (!isAuthenticated()) return '/login';
   const modulo = primeiroModuloAcessivel();
-  return modulo ? rotaInicial(modulo) : '/unauthorized';
+  if (modulo) return rotaInicial(modulo);
+  // '/metas' abre para qualquer pessoa logada, entao qualquer nivel em Producao
+  // basta para entrar por ela.
+  if (temPerfil('consulta', 'producao')) return '/metas';
+  // Em Efetivo a tela mais baixa e o aproveitamento, que exige operador. Quem so
+  // tem consulta nao tem tela nenhuma, e cai no /unauthorized abaixo.
+  if (temPerfil('operador', 'efetivo')) return '/aproveitamento';
+  return '/unauthorized';
 }
 
 /**

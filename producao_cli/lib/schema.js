@@ -292,7 +292,11 @@ function blocoCampos (schemaJoi, titulo) {
 const ACESSO = {
   login: 'exige LOGIN (qualquer pessoa autenticada)',
   gerente: 'exige GERENTE de qualquer módulo, ou administrador',
-  admin: 'exige ADMINISTRADOR global'
+  admin: 'exige ADMINISTRADOR global',
+  // Módulos criados na 1.33.0, para haver como dar menos que a flag global.
+  // O administrador global continua passando nos dois.
+  producao_operador: 'exige OPERADOR no módulo Produção, ou administrador',
+  efetivo_operador: 'exige OPERADOR no módulo Efetivo, ou administrador'
 }
 
 /** A linha que ensina como preencher os `:param` da rota. */

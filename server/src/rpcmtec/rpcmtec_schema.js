@@ -100,15 +100,24 @@ models.anexoUploadBody = Joi.object().keys({
 
 // --- Capacitação (2.6 ministrada / 6.2 recebida) ----------------------------
 
+// SEM `tipo_id`, desde a 1.33.0: o tipo virou o CAMINHO
+// (`/capacitacao/ministrada` e `/capacitacao/recebida`), e não um filtro que o
+// cliente escolhe. A guarda da rota não enxerga a query nem o corpo, e a
+// permissão da ministrada (Produção) é diferente da recebida (Efetivo).
 models.capacitacaoQuery = Joi.object().keys({
-  ano: Joi.number().integer(),
-  tipo_id: Joi.number().integer().min(1).max(2)
+  ano: Joi.number().integer()
 })
 
 const capacitacao = {
   ano: Joi.number().integer().strict().required(),
   nome: Joi.string().max(255).required(),
-  tipo_id: Joi.number().integer().strict().required(),
+  // `tipo_id` NÃO ESTÁ AQUI, e é regra, não esquecimento. Ele é fixado pela
+  // ROTA, no servidor, e mandá-lo no corpo não muda nada: o `stripUnknown` do
+  // schemaValidation o descarta. É o mesmo motivo do par
+  // `/produto_versao_historica` e `/produto_versao_planejada` no módulo produto:
+  // um nome por coisa evita o corpo que muda de significado por um inteiro
+  // escondido. Acrescentá-lo de volta reabriria o caminho de escrever numa
+  // subseção do relatório a que a pessoa não tem acesso.
   situacao_id: Joi.number().integer().strict().required(),
   instituicoes: Joi.string().allow(null, ''),
   local_realizacao: Joi.string().max(255).allow(null, ''),

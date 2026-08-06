@@ -70,6 +70,82 @@ const COL_ANEXO_EDICAO = [
   'id', 'edicao_id', 'nome_original', 'extensao', 'tamanho_bytes', 'descricao'
 ]
 
+/**
+ * As seis operacoes de UM tipo de capacitacao.
+ *
+ * Molde, e nao dois blocos copiados: o que muda entre ministrada e recebida e o
+ * caminho, a guarda e as colunas que fazem sentido em cada uma (a ministrada tem
+ * `efetivo_capacitado`, a recebida tem `plano_codigo`). Duas copias divergiriam
+ * na primeira correcao aplicada a uma so.
+ *
+ * `tipo_id` NAO entra no corpo: o servidor o fixa pela rota, e o schema do
+ * server ja nao o declara.
+ *
+ * @param {string} tipo - 'ministrada' ou 'recebida'
+ * @param {string} acesso - a chave da guarda (ver ACESSO em lib/schema.js)
+ * @param {Array<string>} colunas - a saida padrao do listar
+ */
+function capacitacaoDoTipo (tipo, acesso, colunas) {
+  const base = `/rpcmtec/capacitacao/${tipo}`
+
+  return {
+    listar: {
+      metodo: 'GET',
+      caminho: base,
+      query: 'capacitacaoQuery',
+      acesso,
+      envelope: 'lista',
+      colunas
+    },
+    anos: {
+      metodo: 'GET',
+      caminho: `${base}/anos`,
+      acesso,
+      envelope: 'lista',
+      nota: 'so os anos DESTE tipo. A lista unica de antes oferecia ano vazio: ' +
+        'em 2026-08-06 havia ministrada em oito anos e recebida so em 2026'
+    },
+    obter: {
+      metodo: 'GET',
+      caminho: `${base}/:id`,
+      params: 'idParams',
+      acesso,
+      envelope: 'registro',
+      nota: 'o id do OUTRO tipo responde 404: por este caminho ele nao existe'
+    },
+    criar: {
+      metodo: 'POST',
+      caminho: base,
+      corpo: 'criarCapacitacao',
+      acesso,
+      envelope: 'registro',
+      nota: 'sem tipo_id no corpo: quem fixa o tipo e a ROTA, no servidor'
+    },
+    atualizar: {
+      metodo: 'PUT',
+      caminho: `${base}/:id`,
+      params: 'idParams',
+      corpo: 'atualizarCapacitacao',
+      acesso,
+      envelope: 'registro',
+      nota: 'a lista militares é regravada INTEIRA: omiti-la manda lista vazia ' +
+        '(o default do Joi), e isso apaga quem estava lá'
+    },
+    excluir: {
+      metodo: 'DELETE',
+      caminho: `${base}/:id`,
+      params: 'idParams',
+      acesso,
+      envelope: 'mensagem',
+      confirmar: {
+        param: 'id',
+        motivo: 'a capacitação alimenta a 2.6 ou a 6.2, e pode ser a que ' +
+          'cumpre uma meta do PIT'
+      }
+    }
+  }
+}
+
 const RECURSOS = {
   // =========================================================================
   // PIT  -  /api/metas  (server/src/pit/)
@@ -216,7 +292,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/metas/execucao',
         corpo: 'salvarExecucao',
-        acesso: 'admin',
+        acesso: 'producao_operador',
         envelope: 'registro',
         nota: 'UMA rota cria, altera e APAGA a célula (meta, mês). Omitir um ' +
           'campo é NÃO MEXER; mandar nulo é APAGAR; e a célula sem nenhum dos ' +
@@ -226,7 +302,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/metas/execucao/:id',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'producao_operador',
         envelope: 'mensagem',
         confirmar: {
           param: 'id',
@@ -438,7 +514,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/metas/extra',
         corpo: 'criarDemandaExtra',
-        acesso: 'admin',
+        acesso: 'producao_operador',
         envelope: 'registro'
       },
       atualizar: {
@@ -446,14 +522,14 @@ const RECURSOS = {
         caminho: '/metas/extra/:id',
         params: 'idParams',
         corpo: 'atualizarDemandaExtra',
-        acesso: 'admin',
+        acesso: 'producao_operador',
         envelope: 'registro'
       },
       excluir: {
         metodo: 'DELETE',
         caminho: '/metas/extra/:id',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'producao_operador',
         envelope: 'mensagem',
         confirmar: {
           param: 'id',
@@ -706,66 +782,37 @@ const RECURSOS = {
     }
   },
 
-  capacitacao: {
-    nome: 'capacitação (2.6 ministrada, 6.2 recebida)',
+  // A CAPACITAÇÃO É DOIS RECURSOS, desde a 1.33.0, e não um com filtro de tipo.
+  //
+  // O servidor separou as rotas por tipo porque a PERMISSÃO é por tipo: a
+  // ministrada é do operador de Produção (ela é serviço que a Divisão presta), a
+  // recebida é do operador de Efetivo (é gente nossa em curso). A guarda de rota
+  // não enxerga o corpo, então `tipo_id` deixou de vir nele e virou o caminho.
+  //
+  // O CLI acompanha porque ele documenta o CONTRATO: um recurso só, com o tipo
+  // numa flag, faria o `producao schema` mentir sobre quem entra em quê.
+  //
+  // A tabela do banco continua UMA (`rpcmtec.capacitacao`): o que se separou foi
+  // o endereço, não o dado.
+  'capacitacao-ministrada': {
+    nome: 'capacitação MINISTRADA (subseção 2.6), do módulo Produção',
     schema: carregar('rpcmtec/rpcmtec_schema'),
     validacao: VALIDACAO.STRIP,
-    operacoes: {
-      listar: {
-        metodo: 'GET',
-        caminho: '/rpcmtec/capacitacao',
-        query: 'capacitacaoQuery',
-        acesso: 'admin',
-        envelope: 'lista',
-        colunas: [
-          'id', 'ano', 'nome', 'tipo', 'situacao', 'instituicoes',
-          'local_realizacao', 'data_inicio', 'data_fim', 'efetivo_capacitado',
-          'militares'
-        ]
-      },
-      anos: {
-        metodo: 'GET',
-        caminho: '/rpcmtec/capacitacao/anos',
-        acesso: 'admin',
-        envelope: 'lista'
-      },
-      obter: {
-        metodo: 'GET',
-        caminho: '/rpcmtec/capacitacao/:id',
-        params: 'idParams',
-        acesso: 'admin',
-        envelope: 'registro'
-      },
-      criar: {
-        metodo: 'POST',
-        caminho: '/rpcmtec/capacitacao',
-        corpo: 'criarCapacitacao',
-        acesso: 'admin',
-        envelope: 'registro'
-      },
-      atualizar: {
-        metodo: 'PUT',
-        caminho: '/rpcmtec/capacitacao/:id',
-        params: 'idParams',
-        corpo: 'atualizarCapacitacao',
-        acesso: 'admin',
-        envelope: 'registro',
-        nota: 'a lista militares é regravada INTEIRA: omiti-la manda lista vazia ' +
-          '(o default do Joi), e isso apaga quem estava lá'
-      },
-      excluir: {
-        metodo: 'DELETE',
-        caminho: '/rpcmtec/capacitacao/:id',
-        params: 'idParams',
-        acesso: 'admin',
-        envelope: 'mensagem',
-        confirmar: {
-          param: 'id',
-          motivo: 'a capacitação alimenta a 2.6 ou a 6.2, e pode ser a que ' +
-            'cumpre uma meta do PIT'
-        }
-      }
-    }
+    operacoes: capacitacaoDoTipo('ministrada', 'producao_operador', [
+      'id', 'ano', 'nome', 'situacao', 'instituicoes', 'local_realizacao',
+      'data_inicio', 'data_fim', 'efetivo_capacitado', 'meta_pit_item',
+      'militares'
+    ])
+  },
+
+  'capacitacao-recebida': {
+    nome: 'capacitação RECEBIDA (subseção 6.2), do módulo Efetivo',
+    schema: carregar('rpcmtec/rpcmtec_schema'),
+    validacao: VALIDACAO.STRIP,
+    operacoes: capacitacaoDoTipo('recebida', 'efetivo_operador', [
+      'id', 'ano', 'nome', 'situacao', 'instituicoes', 'local_realizacao',
+      'data_inicio', 'data_fim', 'plano_codigo', 'militares'
+    ])
   },
 
   anuario: {

@@ -9,7 +9,7 @@ import {
   getAnosExtraPit,
   deleteExtraPit,
 } from '@services/plataforma-service.js';
-import { isAdmin } from '@store/auth-store.js';
+import { temPerfil } from '@store/auth-store.js';
 import { openExtraPitDialog } from './extra-dialog.js';
 import { openVersoesDialog } from './versoes-dialog.js';
 
@@ -31,7 +31,12 @@ import { openVersoesDialog } from './versoes-dialog.js';
  */
 export async function renderExtraPitList(container, _ctx) {
   let disposed = false;
-  const podeEscrever = isAdmin();
+  // CADASTRAR a demanda Extra-PIT é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e
+  // era do administrador global. O servidor cobra o mesmo em POST, PUT e DELETE
+  // /metas/extra. LIGAR uma VERSÃO do acervo à demanda continua do
+  // administrador, e por isso `versoes-dialog.js` segue com `isAdmin`: aquilo
+  // grava em `acervo.versao`, e quem manda no acervo é o módulo acervo.
+  const podeEscrever = temPerfil('operador', 'producao');
   let anoSelecionado = new Date().getFullYear();
 
   const newBtn = el('button', {

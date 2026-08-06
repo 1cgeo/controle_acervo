@@ -88,16 +88,16 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 
 Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 
-**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. Os de plataforma usam outras três guardas: `verifyAdmin` (usuários, RPCMTec, efetivo, views materializadas, limpeza de download, escrita do PIT), `verifyGerente` (a grade de execução do PIT) e `verifyLogin` (leitura de meta e o próprio cadastro). Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
+**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. São **cinco** módulos desde a 1.33.0: acervo, mapoteca, orçamento, **produção** e **efetivo**. Os dois últimos nasceram para haver como dar menos que a flag global no trabalho de produção e de pessoal, e guardam rotas que são de PLATAFORMA no endereço (`/api/metas/execucao`, `/api/metas/extra`, `/api/rpcmtec/capacitacao/*`, `/api/efetivo/*`). Antes deles a única guarda disponível ali era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). As outras três guardas de plataforma continuam: `verifyAdmin` (usuários, edição do RPCMTec, views materializadas, limpeza de download, meta e revisão do PIT), `verifyGerente` (a grade de execução do PIT) e `verifyLogin` (leitura de meta e o próprio cadastro). Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
 | `/api/login` | plataforma | Autenticação local por bcrypt (JWT, `JWT_EXPIRACAO`, default 8h). Devolve `perfis` e `modulos`, e grava `dgeo.login` |
 | `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login |
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
-| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; escrever exige administrador |
-| `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS), e a capacitação (`/capacitacao`). Admin: cruza os três módulos e traz valor de crédito |
-| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano (admin, inclusive na leitura) |
+| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; LANÇAR a execução e cadastrar Extra-PIT exige operador em **produção**; alterar a META e a REVISÃO exige administrador, porque mudar o PIT é ato da DSG |
+| `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS): tudo admin, porque cruza os três módulos e traz valor de crédito. A **capacitação** é a exceção, e são DUAS rotas: `/capacitacao/ministrada` (operador em **produção**, subseção 2.6) e `/capacitacao/recebida` (operador em **efetivo**, 6.2). O `tipo_id` não vai no corpo: quem o fixa é a rota |
+| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: operador no cadastro, gerente no mapa anual e no resumo mensal |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
@@ -109,7 +109,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
-| `/api/orcamento/configuracao` | orcamento | Singleton: UASG, CODOM, ano de referência |
+| `/api/orcamento/configuracao/anos` | orcamento | Anos com dado, para o seletor de ano das telas |
 | `/api/orcamento/dfd` | orcamento | DFD e itens (o PCA do ano é o conjunto de DFDs do ano) |
 | `/api/orcamento/pdr` | orcamento | Itens do PDR do ano |
 | `/api/orcamento/notas_credito` | orcamento | Notas de crédito (NC) |

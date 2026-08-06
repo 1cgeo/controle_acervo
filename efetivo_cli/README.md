@@ -1,6 +1,6 @@
 # efetivo_cli
 
-Interface de linha de comando de **identidade** e de **efetivo** do SCA, desenhada para **agentes**. Duas perguntas, o mesmo dono do dado (a pessoa) e a mesma guarda (`verifyAdmin`):
+Interface de linha de comando de **identidade** e de **efetivo** do SCA, desenhada para **agentes**. Duas perguntas e o mesmo dono do dado (a pessoa); a guarda deixou de ser a mesma na 1.33.0, e a seção **Acesso** a detalha:
 
 | Pergunta | O que responde |
 |---|---|
@@ -125,9 +125,19 @@ O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do p
 
 ## Acesso
 
-Quase tudo aqui é **admin-only**, e isso é diferente dos CLIs irmãos: lá o que barra é a falta de perfil no módulo, aqui é a falta do **administrador global**, que não se resolve ganhando perfil em módulo nenhum. `/api/usuarios`, `/api/acessos` e `/api/efetivo` são rotas de plataforma, sem prefixo, guardadas por `verifyAdmin`.
+As três áreas são rotas de plataforma, sem prefixo de módulo, e a guarda **não é a mesma nas três** desde a 1.33.0:
 
-Em `/api/efetivo` a guarda vale **inclusive na leitura**, e é deliberado: a resposta traz licença de saúde e função acumulada de cada militar, nominalmente. É a mesma régua de `/api/acessos`.
+| Área | Guarda |
+|---|---|
+| `/api/usuarios` e `/api/acessos` | `verifyAdmin` (administrador global) |
+| `/api/efetivo/periodos` e `/impedimentos` | `verifyPerfil('operador', 'efetivo')` |
+| `/api/efetivo/mapa` e `/mes` | `verifyPerfil('gerente', 'efetivo')` |
+
+O módulo **Efetivo** (`dominio.modulo` code 5) nasceu na 1.33.0 para haver como dar menos que a flag global: até ali `/api/efetivo` era `verifyAdmin` nas dez rotas, e 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). O administrador global continua passando em tudo.
+
+Em `/api/efetivo` a guarda vale **inclusive na leitura**, e é deliberado: a resposta traz licença de saúde e função acumulada de cada militar, nominalmente. É a mesma régua de `/api/acessos`. O mapa anual e o resumo mensal exigem **gerente** porque agregam a Divisão inteira num quadro só.
+
+`/api/usuarios` e `/api/acessos` continuam **admin-only**, e isso é diferente dos CLIs irmãos: lá o que barra é a falta de perfil no módulo, aqui é a falta do **administrador global**, que não se resolve ganhando perfil em módulo nenhum.
 
 As exceções, que bastam login: `efetivo usuario meu-perfil`, `efetivo usuario trocar-senha` e o domínio `tipo_posto_grad`.
 

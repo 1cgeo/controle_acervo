@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { isAdmin, nomeModulo, ehGerenteDeAlgumModulo } from '@store/auth-store.js';
+import { isAdmin, nomeModulo, ehGerenteDeAlgumModulo, temPerfil } from '@store/auth-store.js';
 import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modules/registry.js';
 
 /**
@@ -53,40 +53,61 @@ const MENU_PLATAFORMA = [
  * módulos: quem clica no nome de um sistema quer a visão geral, não a primeira
  * tela em ordem alfabética.
  *
- * Não é um módulo de verdade: não está em `dominio.modulo`, não tem perfil e não
- * entra no `registry.js`. Por isso o `id` daqui não pode ser 'usuarios' -- a
- * chave do item ativo sai do primeiro segmento da rota (`activeIdFromPath`), e
- * o FILHO '/usuarios' precisa dela.
+ * A SEÇÃO NÃO É UM MÓDULO DO REGISTRY: ela não tem manifesto, não tem prefixo de
+ * rota e as telas dela são de plataforma. Mas EFETIVO virou módulo de PERMISSÃO
+ * na 1.33.0 (`dominio.modulo` code 5), e é dele que sai a visibilidade dos dois
+ * itens de baixo. Por isso o `id` daqui não pode ser 'usuarios' -- a chave do
+ * item ativo sai do primeiro segmento da rota (`activeIdFromPath`), e o FILHO
+ * '/usuarios' precisa dela.
+ *
+ * A SEÇÃO PERDEU o `admin: true`, e a marca desceu para os itens que continuam
+ * sendo do administrador global (Dashboard e Gestão, que são conta de sistema).
+ * O aproveitamento e a capacitação recebida passaram a ser do OPERADOR do módulo
+ * Efetivo, e com a marca na seção o operador não veria seção nenhuma.
+ *
+ * A HOME É CALCULADA pelo mesmo motivo: o cabeçalho é um link, e mandar o
+ * operador para '#/acessos' o jogaria em /unauthorized ao clicar no nome da
+ * seção que é dele.
  */
 const SISTEMA_EFETIVO = {
   id: 'efetivo-area',
   label: 'Efetivo',
   icon: ICONS.people,
-  admin: true,
-  home: '/acessos',
+  visivel: () => isAdmin() || temPerfil('operador', 'efetivo'),
+  home: () => (isAdmin() ? '/acessos' : '/aproveitamento'),
   // Sem prefixo: são rotas de PLATAFORMA, e não '/efetivo-area/...'.
   prefixo: '',
   chavePrefixo: '',
   menu: [
-    { id: 'acessos', label: 'Dashboard', icon: ICONS.dashboard, path: '/acessos' },
-    { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios' },
+    // As duas de cima são CONTA DE SISTEMA, e não efetivo: quem entrou e quando,
+    // e quem tem acesso a quê. Continuam do administrador global, e o servidor
+    // cobra o mesmo com verifyAdmin em /api/acessos e /api/usuarios.
+    { id: 'acessos', label: 'Dashboard', icon: ICONS.dashboard, path: '/acessos', admin: true },
+    { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios', admin: true },
     // O retrato mensal do efetivo, que alimenta a subseção 6.1 do RPCMTec.
     // Fica aqui, e não junto do relatório, porque quem o preenche vem procurar
     // por PESSOA: é a mesma lista de gente da tela ao lado, num mês.
+    //
+    // `visivel`, e não `admin`: o servidor cobra
+    // `verifyPerfil('operador', 'efetivo')` desde a 1.33.0, e o menu tem de
+    // dizer a mesma coisa que a rota.
     {
       id: 'aproveitamento',
       label: 'Aproveitamento',
       icon: ICONS.assignment,
       path: '/aproveitamento',
+      visivel: () => temPerfil('operador', 'efetivo'),
     },
     // A capacitação RECEBIDA é gente nossa em curso, então mora aqui. A
     // MINISTRADA é serviço que a Divisão presta, e mora em Produção. As duas
-    // saem da mesma tabela, e em subseções diferentes do relatório.
+    // saem da mesma tabela, e em subseções diferentes do relatório; as rotas,
+    // essas, são duas, porque a permissão é por tipo.
     {
       id: 'capacitacao_recebida',
       label: 'Capacitação recebida',
       icon: ICONS.description,
       path: '/capacitacao_recebida',
+      visivel: () => temPerfil('operador', 'efetivo'),
     },
   ],
 };
@@ -100,10 +121,10 @@ const SISTEMA_EFETIVO = {
  *
  * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. Metas e execução são
  * `authLoader`: qualquer pessoa logada LÊ o plano anual, e o servidor cobra o
- * administrador só na escrita. A capacitação leva a marca no ITEM, porque ela é
- * entrada do RPCMTec e o servidor a guarda com verifyAdmin -- oferecê-la a quem
- * levaria 403 é o desencontro que `podeAbrirRota` existe para evitar do lado
- * dos módulos.
+ * perfil só na escrita. A capacitação ministrada leva `visivel` no ITEM, porque
+ * o servidor a guarda com `verifyPerfil('operador', 'producao')` desde a 1.33.0
+ * -- oferecê-la a quem levaria 403 é o desencontro que `podeAbrirRota` existe
+ * para evitar do lado dos módulos.
  */
 const SISTEMA_PRODUCAO = {
   id: 'producao-area',
@@ -135,12 +156,15 @@ const SISTEMA_PRODUCAO = {
       visivel: () => isAdmin() || ehGerenteDeAlgumModulo(),
     },
     { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
+    // A capacitação MINISTRADA é serviço que a Divisão presta, e por isso mora
+    // em Produção. `visivel`, e não `admin: true`: ela virou rota própria
+    // (`/rpcmtec/capacitacao/ministrada`) guardada pelo módulo Produção.
     {
       id: 'capacitacao_ministrada',
       label: 'Capacitação ministrada',
       icon: ICONS.description,
       path: '/capacitacao_ministrada',
-      admin: true,
+      visivel: () => temPerfil('operador', 'producao'),
     },
   ],
 };
@@ -273,15 +297,22 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    * manifesto (`rotaInicial`), e a area de Usuarios os declara, porque nao esta
    * em `dominio.modulo` nem no registry.
    *
+   * A HOME PODE SER FUNÇÃO, e não só string. O cabeçalho é um LINK, e a home de
+   * uma seção nem sempre é da pessoa: em Efetivo o Dashboard é do administrador
+   * global, e mandar o operador para lá o jogaria em /unauthorized ao clicar no
+   * nome da seção que é dele. Os módulos resolvem o mesmo problema em
+   * `registry.rotaInicial`, lendo o manifesto.
+   *
    * @param {Object} sistema
    * @param {string} sistema.id
    * @param {string} sistema.label
-   * @param {string} sistema.home - rota completa, com o '/' inicial
+   * @param {string|Function} sistema.home - rota completa, com o '/' inicial
    * @param {Array} sistema.menu
    * @param {string} sistema.prefixo - '' quando os caminhos ja sao completos
    * @param {string} sistema.chavePrefixo - '' quando a chave nao leva modulo
    */
   function buildSystemSection(sistema) {
+    const home = typeof sistema.home === 'function' ? sistema.home() : sistema.home;
     const itensContainer = el('div', { className: 'sidebar__module-items' });
     buildMenu(sistema.menu || [], sistema.prefixo, sistema.chavePrefixo, itensContainer);
 
@@ -300,7 +331,7 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
     const header = el('a', {
       className: 'sidebar__module-header',
-      href: `#${sistema.home}`,
+      href: `#${home}`,
       title: sistema.label,
       onClick: () => setMobileOpen(false),
     }, [
