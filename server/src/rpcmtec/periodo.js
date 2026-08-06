@@ -10,12 +10,16 @@
  * quem lesse uma e chamasse a outra receberia `NaN` no ano, sem erro nenhum.
  *
  * As duas cópias serviam ao mesmo mês: o RPCMTec compara sempre o mês do
- * recorte com o imediatamente anterior (o estoque que a edição passada
- * reportou, o digitado que se copia). É uma regra só, e agora mora num lugar só.
+ * recorte com o imediatamente anterior. É uma regra só, e mora num lugar só.
  *
- * A ASSINATURA é o objeto `{ ano, mes }`, e não `(ano, mes)`. É a forma que os
- * dois chamadores já tinham em mãos (a edição vem do banco com as duas
- * colunas), e ela não deixa inverter a ordem dos argumentos em silêncio.
+ * HOJE SOBRA UM CHAMADOR, o `rpcmtec_ctrl`, que reporta o estoque que a edição
+ * passada declarou. O outro era a cópia do digitado do mês passado, removida em
+ * 2026-08-06 (ver rpcmtec_subsecao_ctrl.js). O arquivo fica: a regra continua
+ * valendo, e a duplicação que ele desfez custou uma depuração.
+ *
+ * A ASSINATURA é o objeto `{ ano, mes }`, e não `(ano, mes)`. É a forma que o
+ * chamador já tem em mãos (a edição vem do banco com as duas colunas), e ela
+ * não deixa inverter a ordem dos argumentos em silêncio.
  */
 
 /**

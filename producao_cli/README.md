@@ -59,7 +59,6 @@ producao edicao listar --ano 2026
 producao edicao conferir --id 7                    # o congelado x o banco de hoje
 producao edicao pdf --id 7                         # grava com o nome que o servidor manda
 producao edicao fechar --id 7 --confirmar 7
-producao subsecao copiar-mes-anterior --id 7
 producao anuario rtm-ods --ano 2026 --mes 7 --saida META4.ods
 
 # sessão

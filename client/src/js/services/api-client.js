@@ -194,7 +194,14 @@ async function apiRequest(
   }
 
   if (!response.ok || (!json.success && !aceitaFalhaParcial)) {
-    throw new Error(json.message || 'Erro na requisição');
+    const erro = new Error(json.message || 'Erro na requisição');
+    // O STATUS SOBREVIVE AO THROW. Sem ele, quem chama nao distingue a recusa
+    // que se CONFIRMA (409, como a importacao da 5.1 que apagaria um Resumo
+    // escrito) de um erro de verdade, e teria de casar o texto da mensagem --
+    // que muda no dia em que alguem melhora a frase. E acrescimo: quem so le
+    // `err.message` continua igual.
+    erro.status = response.status;
+    throw erro;
   }
 
   return envelope ? json : json.dados;

@@ -757,6 +757,23 @@ const RECURSOS = {
           'fixas: o servidor confere o tamanho de cada linha contra os ' +
           'cabeçalhos da estrutura. Só com a edição ABERTA'
       },
+      // A IMPORTACAO do CSV do github_dashboard para a 5.1. O numero esta no
+      // CAMINHO, e nao numa flag: o formato lido e o do painel do GitHub, e o
+      // painel so alimenta a 5.1.
+      importar: {
+        metodo: 'POST',
+        caminho: '/rpcmtec/:id/subsecao/5.1/importar',
+        params: 'idParams',
+        corpo: 'importarRepositorios',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'o corpo leva o CSV inteiro em `csv`, entao monte o JSON a partir ' +
+          'do arquivo (`node -e "..."` gravando corpo.json) e use --data-file. ' +
+          'O Resumo NAO vem do CSV: o servidor o preserva casando pelo nome do ' +
+          'repositorio. Repositorio ausente do CSV SAI da tabela, e sair com ' +
+          'Resumo escrito exige confirmar_remocao (senao a rota responde 409 ' +
+          'listando quais sao)'
+      },
       limpar: {
         metodo: 'DELETE',
         caminho: '/rpcmtec/:id/subsecao/:numero',
@@ -768,17 +785,12 @@ const RECURSOS = {
           motivo: 'a subseção volta a NÃO EXISTIR, que não é o mesmo que ficar ' +
             'vazia: o fechamento a cobra de novo'
         }
-      },
-      'copiar-mes-anterior': {
-        metodo: 'POST',
-        caminho: '/rpcmtec/:id/copiar-mes-anterior',
-        params: 'idParams',
-        corpo: 'copiarMesAnterior',
-        acesso: 'admin',
-        envelope: 'registro',
-        nota: 'sem numero no corpo, copia TODAS as digitadas. Não sobrescreve: ' +
-          'a subseção já preenchida volta em "preservadas"'
       }
+      // NÃO HÁ OPERAÇÃO QUE TRAGA O MÊS PASSADO, desde 2026-08-06. Havia aqui
+      // uma que chamava a rota de cópia do servidor, e as duas saíram juntas. O
+      // RPCMTec é o relatório DAQUELE mês: a linha que chega pronta não é
+      // relida, e o documento assinado passava a afirmar sobre agosto o que
+      // aconteceu em julho.
     }
   },
 

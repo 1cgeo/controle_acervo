@@ -209,9 +209,15 @@ const REGRAS = {
     'recusa.',
     'Limpar faz a subseção voltar a NÃO EXISTIR, que não é ficar vazia: o',
     'fechamento a cobra de novo.',
-    'copiar-mes-anterior NÃO sobrescreve: a subseção já preenchida volta em',
-    '"preservadas". As linhas copiadas são reconferidas contra a estrutura de',
-    'HOJE, que pode ter ganhado coluna desde o mês passado.',
+    'NÃO EXISTE trazer o conteúdo do mês passado, desde 2026-08-06. A ação foi',
+    'removida do servidor e daqui: o RPCMTec é o relatório DAQUELE mês, e a',
+    'linha que chega pronta não é relida. Preencha pelo mês que a edição',
+    'reporta.',
+    'A 5.1 IMPORTA o CSV do github_dashboard, e é a única que importa: mande o',
+    'arquivo inteiro em `csv` e o servidor lê. Ele casa as linhas pelo NOME DO',
+    'REPOSITÓRIO e preserva o Resumo já escrito, que é a quarta coluna e não vem',
+    'no CSV. Repositório ausente do CSV SAI da tabela; sair com Resumo escrito',
+    'exige confirmar_remocao, e sem ele a rota responde 409 dizendo quais são.',
     'Tudo aqui só funciona com a edição ABERTA.'
   ],
 

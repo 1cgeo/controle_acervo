@@ -82,6 +82,27 @@ models.gravarSubsecao = Joi.object().keys({
   sem_ocorrencia: Joi.boolean().default(false)
 })
 
+// --- Importação do CSV do github_dashboard (subseção 5.1) -------------------
+
+// O ARQUIVO CHEGA COMO TEXTO, e não como upload multipart. As duas entradas
+// reais são o arquivo escolhido na tela e o texto COLADO por quem rodou o
+// `dashboard_cli --formato csv` no terminal, e a segunda não tem arquivo nenhum
+// para enviar. Um CSV de quarenta repositórios tem uns dois quilobytes.
+//
+// `allow('')` de propósito: o CSV vazio é um dos casos que o importador RECUSA
+// com a frase que ensina o conserto ("baixe os Dados Consolidados..."), e um 400
+// genérico do Joi diria só "não pode ser vazio".
+//
+// O TETO existe para o corpo não virar um caminho de despejar megabyte na rota:
+// 200 mil caracteres são umas cinco mil linhas, muito além de qualquer mês.
+models.importarRepositorios = Joi.object().keys({
+  csv: Joi.string().allow('').max(200000).required(),
+  // O "eu li a lista", como o `ciente_revisao` do fechamento. Sem ele a rota
+  // responde 409 quando a importação apagaria um Resumo já escrito.
+  // `default(false)` para quem não o conhece continuar recebendo o aviso.
+  confirmar_remocao: Joi.boolean().default(false)
+})
+
 // O fechamento AVISA sobre a conferência que falta, e deixa fechar. Este campo
 // é o "eu li a lista": sem ele a rota devolve 409 com o que falta, com ele
 // fecha. `default(false)` para o chamador antigo, que não o conhece, continuar
@@ -103,10 +124,11 @@ models.revisarSubsecao = Joi.object().keys({
   revisado: Joi.boolean().required()
 })
 
-// Cópia do mês anterior: sem `numero`, copia todas as digitadas.
-models.copiarMesAnterior = Joi.object().keys({
-  numero: Joi.string().pattern(/^\d{1,2}\.\d{1,2}$/).allow(null, '')
-})
+// NÃO HÁ SCHEMA DE CÓPIA DO MÊS PASSADO, desde 2026-08-06. Havia aqui um corpo
+// com o `numero` opcional, que servia à rota de trazer o digitado da edição
+// anterior. A rota saiu (ver rpcmtec_route.js): o RPCMTec é o relatório DAQUELE
+// mês, e o documento assinado não pode afirmar sobre agosto o que houve em
+// julho.
 
 // --- Anexo (o RPCMTec assinado) ---------------------------------------------
 

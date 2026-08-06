@@ -146,9 +146,8 @@ function resolverCorpo (modulo, operacao, recurso, flags, chave, acao) {
   const schemaJoi = modulo[operacao.corpo]
   const bruto = lerCorpo(flags)
 
-  // Corpo AUSENTE num schema que so tem campos opcionais e legitimo: o
-  // copiar-mes-anterior sem numero copia todas as digitadas, e o anexo sem
-  // descricao e o caso comum.
+  // Corpo AUSENTE num schema que so tem campos opcionais e legitimo: o anexo
+  // sem descricao e o caso comum.
   const campos = esquema.camposDe(schemaJoi)
   const exigeAlgo = campos.some(c => c.obrigatorio)
   if (!bruto && exigeAlgo) {

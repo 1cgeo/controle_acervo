@@ -517,6 +517,39 @@ router.put(
   })
 )
 
+// A IMPORTAÇÃO DO CSV DO github_dashboard, para a subseção 5.1.
+//
+// O NÚMERO ESTÁ NO CAMINHO, e não num parâmetro. O formato lido é o do painel do
+// GitHub (repositório, commits, efetivo), e o painel só alimenta a 5.1: um
+// `:numero` aqui ofereceria despejar essa tabela em qualquer uma das dezoito
+// subseções digitadas, e a 9.3 aceitaria três colunas de commits sem reclamar.
+// É a mesma escolha do par `/capacitacao/ministrada` e `/capacitacao/recebida`:
+// quem fixa o alvo é a rota, no servidor.
+//
+// POST, e não PUT: a importação não grava o corpo que recebeu. Ela LÊ o CSV,
+// cruza com o que já está na tabela e decide o que muda. O Resumo, que é a
+// coluna escrita por pessoa, não vem no corpo e não se perde.
+router.post(
+  '/:id/subsecao/5.1/importar',
+  verifyAdmin,
+  schemaValidation({
+    params: rpcmtecSchema.idParams,
+    body: rpcmtecSchema.importarRepositorios
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await subsecaoCtrl.importarRepositorios(
+      req.params.id, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(
+      true,
+      `Subseção 5.1 importada: ${dados.total} repositório(s)`,
+      httpCode.OK,
+      dados
+    )
+  })
+)
+
 // A MARCA DE CONFERÊNCIA, e ela vale para as TRÊS origens.
 //
 // Não é a mesma pergunta que "preenchida". Uma subseção calculada nasce
@@ -564,23 +597,16 @@ router.delete(
   })
 )
 
-router.post(
-  '/:id/copiar-mes-anterior',
-  verifyAdmin,
-  schemaValidation({
-    params: rpcmtecSchema.idParams,
-    body: rpcmtecSchema.copiarMesAnterior
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await subsecaoCtrl.copiarDoMesAnterior(
-      req.params.id, req.body.numero || null, req.usuarioUuid, req.contexto
-    )
-
-    return res.sendJsonAndLog(
-      true, 'Conteúdo copiado do mês anterior', httpCode.OK, dados
-    )
-  })
-)
+// NÃO EXISTE ROTA QUE TRAGA O CONTEÚDO DO MÊS PASSADO, e isso é decisão de
+// 2026-08-06. Havia aqui um POST que trazia as subseções digitadas da edição
+// anterior para esta. Ele saiu inteiro, com o schema e o controlador.
+//
+// A RAZÃO: o RPCMTec é o relatório DAQUELE mês. O que a cópia produzia era pior
+// que digitar de novo, porque o documento assinado passava a afirmar sobre
+// agosto o que aconteceu em julho, e ninguém revisava linha que já chegou
+// preenchida. Cada subseção se preenche pelo mês que ela reporta.
+//
+// Foi PODA, e não desativação: quem chamar esse endereço recebe 404.
 
 // ---------------------------------------------------------------------------
 // Anexo: o RPCMTec assinado

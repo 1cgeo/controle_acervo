@@ -334,55 +334,52 @@ describe('RPCMTec: o que o gestor digita', () => {
   })
 })
 
-describe('RPCMTec: copiar do mês anterior', () => {
-  test('traz o digitado do mês passado sem sobrescrever o já preenchido', async () => {
-    // A edição de julho/2026 traz um GPS indisponível desde 26/07/2023,
-    // redigitado mês a mês. É o trabalho que esta ação apaga.
+// A EDIÇÃO NÃO RECEBE NADA DA ANTERIOR, desde 2026-08-06.
+//
+// Aqui moravam dois casos que exercitavam a ação de trazer o digitado do mês
+// passado. Ela saiu do servidor inteiro (rota, schema e controlador), porque o
+// RPCMTec é o relatório DAQUELE mês: a linha que chega pronta não é relida, e o
+// documento assinado passava a afirmar sobre agosto o que aconteceu em julho.
+//
+// Os casos abaixo REPROVAM o estado anterior. Com a ação viva, a 7.1 de julho
+// nascia com a linha de junho e o POST respondia 200.
+describe('RPCMTec: a edição de julho não recebe nada de junho', () => {
+  test('o digitado de junho não aparece na edição de julho', async () => {
     const junho = await criarEdicao({ mes: 6 })
     await request(app)
       .put(`/api/rpcmtec/${junho}/subsecao/7.1`)
       .set('Authorization', admin())
       .send({ linhas: [['GPS de Navegação', '26/07/2023', 'Conector serial', '-']] })
-    await request(app)
-      .put(`/api/rpcmtec/${junho}/subsecao/5.2`)
-      .set('Authorization', admin())
-      .send({ linhas: [['PostgreSQL', '30/06/2026', '120', '400']] })
+
+    // VARIÂNCIA: junho tem mesmo a linha. Sem esta conferência, "julho está
+    // vazio" passaria com as duas edições vazias.
+    expect(blocos(await documento(junho)).find(b => b.numero === '7.1').linhas)
+      .toEqual([['GPS de Navegação', '26/07/2023', 'Conector serial', '-']])
 
     const julho = await criarEdicao({ mes: 7 })
-    // A 5.2 de julho já foi preenchida à mão: a cópia não pode passar por cima.
-    await request(app)
-      .put(`/api/rpcmtec/${julho}/subsecao/5.2`)
-      .set('Authorization', admin())
-      .send({ linhas: [['PostgreSQL', '31/07/2026', '131', '389']] })
 
-    const res = await request(app)
-      .post(`/api/rpcmtec/${julho}/copiar-mes-anterior`)
-      .set('Authorization', admin())
-      .send({})
-
-    expect(res.status).toBe(200)
-    expect(res.body.dados.de).toBe('06/2026')
-    expect(res.body.dados.copiadas).toContain('7.1')
-    expect(res.body.dados.copiadas).not.toContain('5.2')
-    expect(res.body.dados.preservadas).toContain('5.2')
-
-    const doc = await documento(julho)
-    expect(blocos(doc).find(b => b.numero === '7.1').linhas)
-      .toEqual([['GPS de Navegação', '26/07/2023', 'Conector serial', '-']])
-    // A preenchida à mão continua como estava.
-    expect(blocos(doc).find(b => b.numero === '5.2').linhas[0][1]).toBe('31/07/2026')
+    const bloco = blocos(await documento(julho)).find(b => b.numero === '7.1')
+    expect(bloco.preenchida).toBe(false)
+    // `null`, e nao `[]`: a subsecao DIGITADA sem linha gravada nao existe como
+    // registro, e `montar` devolve nulo. Cobrar `[]` aqui seria uma assercao
+    // mais estrita que o contrato, e ela reprovaria o comportamento certo.
+    //
+    // O poder de reprovar continua inteiro: com a copia viva, este campo trazia
+    // a linha de junho.
+    expect(bloco.linhas).toBeNull()
   })
 
-  test('sem edição no mês anterior, responde 404 com o mês que faltou', async () => {
+  test('não existe rota que traga o mês anterior', async () => {
     const id = await criarEdicao({ mes: 7 })
 
+    // 404 do Express, porque nenhuma rota casa. Antes esta chamada respondia
+    // 200 com a lista das subseções copiadas.
     const res = await request(app)
       .post(`/api/rpcmtec/${id}/copiar-mes-anterior`)
       .set('Authorization', admin())
       .send({})
 
     expect(res.status).toBe(404)
-    expect(res.body.message).toMatch(/06\/2026/)
   })
 })
 
@@ -701,7 +698,8 @@ describe('RPCMTec: a guarda', () => {
   const escritas = [
     ['post', '/api/rpcmtec/1/fechar'],
     ['post', '/api/rpcmtec/1/reabrir'],
-    ['post', '/api/rpcmtec/1/copiar-mes-anterior'],
+    // A rota de trazer o mês anterior saiu da lista em 2026-08-06, com a
+    // própria rota: sem ela, a guarda testaria um 404 e não um 403.
     ['put', '/api/rpcmtec/1/subsecao/7.1'],
     ['delete', '/api/rpcmtec/1/subsecao/7.1']
   ]

@@ -255,6 +255,24 @@
   margin-top: var(--space-sm);
 }
 
+/* A barra de importação do CSV, só na subseção 5.1. Fica ACIMA da grade porque
+   ela é o primeiro gesto de quem preenche a 5.1: importa, e depois escreve o
+   Resumo linha a linha. */
+.rpcm-grade__importar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.rpcm-grade__importar .form-field__help {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .rpcm-prosa {
   margin: 0;
   white-space: pre-wrap;

@@ -10,7 +10,14 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 //  - a subsecao CALCULADA que saiu vazia mostra o que a pessoa precisa FAZER. A
 //    6.1 vazia quer dizer que falta cadastrar passagem de efetivo, e nao que nao
 //    houve passagem nenhuma;
-//  - o fechamento avisa das lacunas congeladas, pela chave `lacunas`.
+//  - o fechamento avisa das lacunas congeladas, pela chave `lacunas`;
+//  - a tela NAO oferece trazer o conteudo do mes passado (poda de 2026-08-06).
+//
+// A PODA DA COPIA. Havia dois botoes que traziam o digitado da edicao anterior:
+// um por subsecao e um geral, na barra. Os dois sairam, com o servico do cliente
+// e a rota do servidor. O RPCMTec e o relatorio DAQUELE mes, e a linha que chega
+// pronta nao e relida. Os casos de reconciliacao abaixo usavam o botao geral
+// como gatilho de recarga, e hoje usam a caixa de conferencia.
 
 vi.mock('@services/rpcmtec-service.js', async () => {
   const real = await vi.importActual('@services/rpcmtec-service.js');
@@ -18,7 +25,6 @@ vi.mock('@services/rpcmtec-service.js', async () => {
     ...real,
     getDocumento: vi.fn(),
     listarAnexos: vi.fn(() => Promise.resolve([])),
-    copiarMesAnterior: vi.fn(() => Promise.resolve({ de: '05/2026', copiadas: ['3.1'] })),
     fecharEdicao: vi.fn(() => Promise.resolve({ id: 7, subsecoes: 34, lacunas: [] })),
     revisarSubsecao: vi.fn(() => Promise.resolve({ numero: '6.1', revisao: null })),
   };
@@ -46,7 +52,7 @@ vi.mock('@components/modal/confirm-dialog.js', () => ({
 
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import {
-  getDocumento, copiarMesAnterior, fecharEdicao, revisarSubsecao,
+  getDocumento, fecharEdicao, revisarSubsecao,
 } from '@services/rpcmtec-service.js';
 import { showWarning } from '@utils/toast.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
@@ -241,8 +247,41 @@ describe('renderRpcmtecEdicao', () => {
   });
 
   // -------------------------------------------------------------------------
+  // A poda da copia do mes anterior (2026-08-06)
+  // -------------------------------------------------------------------------
+
+  // O CASO QUE REPROVA O ESTADO ANTERIOR. Ate 2026-08-06 esta tela montava dois
+  // botoes de copia: "Copiar tudo do mes anterior" na barra e "Copiar do mes
+  // anterior" em cada subsecao digitada. Hoje nenhum botao da tela oferece
+  // trazer o mes passado.
+  test('a tela não monta nenhum botão de copiar', async () => {
+    const { container, cleanup } = await montar();
+
+    const rotulos = [...container.querySelectorAll('button')]
+      .map(b => b.textContent.trim());
+
+    // VARIANCIA: a tela montou botoes de verdade, senao o filtro abaixo
+    // passaria sobre uma lista vazia.
+    expect(rotulos.length).toBeGreaterThan(3);
+    expect(rotulos).toContain('Fechar e congelar');
+    // A 3.1 e digitada e continua com o botao de preencher: o que saiu foi a
+    // copia, e nao a edicao da subsecao.
+    expect(rotulos).toContain('Preencher');
+
+    expect(rotulos.filter(r => /copiar/i.test(r))).toEqual([]);
+
+    cleanup();
+  });
+
+  // -------------------------------------------------------------------------
   // O remonte
   // -------------------------------------------------------------------------
+
+  // O GATILHO DE RECARGA destes tres casos era o botao "Copiar tudo do mes
+  // anterior", removido em 2026-08-06. Hoje e a caixa de conferencia da 6.1,
+  // que tambem grava no servidor e recarrega a tela inteira.
+  const gravar = (container) => subsecao(container, '6.1')
+    .querySelector('.rpcm-revisao__caixa').click();
 
   test('a seção que a pessoa fechou continua fechada depois de uma gravação', async () => {
     const { container, cleanup } = await montar();
@@ -251,10 +290,10 @@ describe('renderRpcmtecEdicao', () => {
     expect(secoes.length).toBe(2);
     secoes[1].open = false;
 
-    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    gravar(container);
     await flush();
 
-    expect(copiarMesAnterior).toHaveBeenCalled();
+    expect(revisarSubsecao).toHaveBeenCalled();
     const depois = [...container.querySelectorAll('.rpcm-secao')];
     // O MESMO nó, e ainda fechado. Recriar o `details` com `open: true` reabria
     // tudo o que a pessoa tinha fechado.
@@ -274,7 +313,7 @@ describe('renderRpcmtecEdicao', () => {
     getDocumento.mockImplementation(
       () => Promise.resolve(doc({ pendentes: [], preenchida31: true })),
     );
-    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    gravar(container);
     await flush();
 
     expect(subsecao(container, '3.1')).not.toBe(antes31);
@@ -291,7 +330,7 @@ describe('renderRpcmtecEdicao', () => {
     expect(historico).not.toBeNull();
     expect(arquivo).not.toBeNull();
 
-    botaoPor(container, 'Copiar tudo do mês anterior').click();
+    gravar(container);
     await flush();
 
     expect(container.querySelector('.historico')).toBe(historico);

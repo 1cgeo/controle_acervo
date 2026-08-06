@@ -9,7 +9,7 @@ import { estadoErro } from '@components/estado-erro.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import {
   getDocumento, downloadRpcmtecPdf, fecharEdicao, reabrirEdicao, conferirHoje,
-  copiarMesAnterior, limparSubsecao, listarAnexos, enviarAnexo, excluirAnexo,
+  limparSubsecao, listarAnexos, enviarAnexo, excluirAnexo,
   downloadAnexo, downloadAnuarioOds, downloadRtmOds, revisarSubsecao,
 } from '@services/rpcmtec-service.js';
 import { abrirEditorSubsecao } from './subsecao-editor.js';
@@ -194,14 +194,13 @@ export async function renderRpcmtecEdicao(container, ctx) {
         : 'A edição está aberta: o PDF sai com a marca RASCUNHO.',
     }];
 
+    // A BARRA NÃO TEM BOTÃO DE TRAZER O MÊS PASSADO, desde 2026-08-06. Havia
+    // aqui um botão que copiava as subseções digitadas da edição anterior, e a
+    // rota que o servia saiu do servidor. O RPCMTec é o relatório DAQUELE mês:
+    // a linha que chega pronta não é relida, e o documento assinado passava a
+    // afirmar sobre agosto o que aconteceu em julho.
     if (!documento.fechada) {
       itens.push({
-        chave: 'copiar',
-        rotulo: 'Copiar tudo do mês anterior',
-        icone: ICONS.contentCopy,
-        aoClicar: () => copiar(null),
-        titulo: 'Traz o que foi digitado no mês passado, sem sobrescrever o que você já preencheu.',
-      }, {
         chave: 'fechar', rotulo: 'Fechar e congelar', icone: ICONS.lock, aoClicar: fechar,
       });
     } else {
@@ -472,8 +471,9 @@ export async function renderRpcmtecEdicao(container, ctx) {
         ICONS.edit,
         () => abrirEditorSubsecao({ edicaoId, subsecao: sub, onSaved: carregar }),
       ));
-      acoes.push(botao('Copiar do mês anterior', ICONS.contentCopy,
-        () => copiar(sub.numero)));
+      // A subseção também perdeu o botão de trazer o mês passado, em
+      // 2026-08-06. Mesma razão do botão geral da barra: cada subseção se
+      // preenche pelo mês que ela reporta.
       if (sub.preenchida) {
         acoes.push(botao('Limpar', ICONS.delete, () => limpar(sub)));
       }
@@ -784,32 +784,10 @@ export async function renderRpcmtecEdicao(container, ctx) {
     }
   }
 
-  // Trava de duplo envio da cópia. Os dois botões que a disparam ("Copiar tudo
-  // do mês anterior" e o de cada subseção) não são de formulário e não somem no
-  // clique: sem a trava, dois cliques rápidos mandavam dois POST de cópia.
-  let copiando = false;
-
-  async function copiar(numero) {
-    if (copiando) return;
-    copiando = true;
-    try {
-      const resposta = await copiarMesAnterior(edicaoId, numero);
-      const copiadas = resposta.copiadas || [];
-      if (!copiadas.length) {
-        showWarning(
-          `Nada foi copiado de ${resposta.de}. `
-          + 'Ou o mês anterior não tinha essas subseções, ou elas já estão preenchidas aqui.',
-        );
-      } else {
-        showSuccess(`Copiadas de ${resposta.de}: ${copiadas.join(', ')}`);
-      }
-      await carregar();
-    } catch (err) {
-      showError(err.message || 'Erro ao copiar do mês anterior');
-    } finally {
-      copiando = false;
-    }
-  }
+  // NÃO HÁ AÇÃO DE TRAZER O MÊS PASSADO, desde 2026-08-06. Aqui morava a
+  // função que chamava a rota de cópia, com a trava de duplo envio que os dois
+  // botões exigiam. Os botões, a função e a rota saíram juntos. O RPCMTec é o
+  // relatório DAQUELE mês, e cada subseção se preenche pelo mês que reporta.
 
   async function limpar(sub) {
     const ok = await confirmDialog({

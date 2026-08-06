@@ -844,9 +844,21 @@ const COBERTAS = new Set([
   // so, e desmarcar a APAGA. Sem o evento, "conferido e depois desconferido"
   // ficaria indistinguivel de "nunca conferido".
   'PUT /rpcmtec/:id/subsecao/:numero/revisao',
-  // A copia do mes anterior grava subsecao por subsecao, e cada uma deixa o
-  // proprio rastro de insercao.
-  'POST /rpcmtec/:id/copiar-mes-anterior',
+  // A IMPORTACAO do CSV do github_dashboard para a 5.1. Ela nao grava o corpo
+  // que recebeu: le o CSV, cruza com a tabela e decide o que muda, preservando
+  // o Resumo escrito a mao. Auditada no agregado da EDICAO, como o resto do
+  // conteudo digitado, e o rastro guarda a linha ANTERIOR inteira -- que e o
+  // unico lugar onde o Resumo de um repositorio removido sobrevive.
+  'POST /rpcmtec/:id/subsecao/5.1/importar',
+  // ESTA LISTA CAIU DE 51 PARA 50 CHAVES EM 2026-08-06, e voltou a 51 no mesmo
+  // dia com a importacao do CSV acima. A troca nao e simetria: saiu a rota que
+  // trazia o mes ANTERIOR e entrou a que traz o mes CORRENTE de uma fonte
+  // primaria. Saiu daqui a rota que
+  // trazia o digitado da edicao anterior, junto com a rota, o schema e o
+  // controlador que a serviam. O RPCMTec e o relatorio DAQUELE mes: a linha que
+  // chega pronta nao e relida, e o documento assinado passava a afirmar sobre
+  // agosto o que aconteceu em julho. Quem prova a ausencia e
+  // routes/rpcmtec_sem_copia.test.js, que exercita o 404.
   // O RPCMTec ASSINADO, em PDF. E a fonte primaria da edicao: o congelado tem
   // de dizer o que ele diz.
   'POST /rpcmtec/:id/anexos',

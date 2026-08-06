@@ -90,9 +90,37 @@ export const gravarSubsecao = (id, numero, body) =>
 export const limparSubsecao = (id, numero) =>
   apiDelete(`/rpcmtec/${id}/subsecao/${numero}`);
 
-/** Sem `numero`, copia todas as digitadas que o mes anterior tinha. */
-export const copiarMesAnterior = (id, numero = null) =>
-  apiPost(`/rpcmtec/${id}/copiar-mes-anterior`, numero ? { numero } : {});
+/**
+ * Importa o CSV do github_dashboard para a subsecao 5.1.
+ *
+ * QUEM LE O CSV E O SERVIDOR, e nao esta funcao. Aqui so passa o texto: o
+ * arquivo escolhido, lido como string, ou o que a pessoa colou. Ler o CSV decide
+ * o que se APAGA (casar por repositorio e preservar o Resumo escrito a mao), e
+ * essa regra posta no cliente nao valeria para o `producao_cli`.
+ *
+ * O RESUMO NAO VAI NO CORPO. Ele e a unica coluna da 5.1 escrita por pessoa, e
+ * quem o preserva e o servidor, cruzando com o que ja esta gravado.
+ *
+ * `confirmarRemocao` e o "eu li a lista". Sem ele o servidor responde 409
+ * quando a importacao removeria um repositorio que ja tem Resumo escrito.
+ *
+ * @param {number} id - a edicao mensal
+ * @param {string} csv - o conteudo do arquivo, cru
+ * @param {boolean} [confirmarRemocao]
+ */
+export const importarRepositorios51 = (id, csv, confirmarRemocao = false) =>
+  apiPost(`/rpcmtec/${id}/subsecao/5.1/importar`, {
+    csv,
+    confirmar_remocao: confirmarRemocao,
+  });
+
+// ESTE SERVICO NAO TRAZ CONTEUDO DO MES PASSADO, desde 2026-08-06. Havia aqui
+// uma chamada que copiava as subsecoes digitadas da edicao anterior. Ela saiu
+// junto com a rota do servidor, que hoje responde 404.
+//
+// A RAZAO: o RPCMTec e o relatorio DAQUELE mes. A linha que chega pronta nao e
+// relida, e o documento assinado passava a afirmar sobre agosto o que houve em
+// julho. Cada subsecao se preenche pelo mes que ela reporta.
 
 // --- Anexo: o RPCMTec assinado ----------------------------------------------
 

@@ -184,6 +184,33 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   aprovaria, porque a rota é a dele. O id do outro tipo responde 404, e não 403: por aquele caminho
   ele não existe.
   A TABELA continua UMA (`rpcmtec.capacitacao`): o que se separou foi o endereço, não o dado.
+- **NÃO EXISTE copiar o mês anterior, desde 2026-08-06.** Havia dois botões na edição (um por
+  subseção e um geral), o serviço do cliente, a rota `POST /rpcmtec/:id/copiar-mes-anterior`, o schema
+  do corpo e o controlador. Tudo saiu junto. O RPCMTec é o relatório DAQUELE mês, e o que a cópia
+  produzia era pior que redigitar: ninguém relê a linha que chega pronta, e o documento assinado
+  passava a afirmar sobre agosto o que aconteceu em julho. **Foi PODA, e não desativação**: o endereço
+  responde 404, e a ausência é provada em `routes/rpcmtec_sem_copia.test.js` (servidor) e em
+  `services/rpcmtec-service.test.js` (cliente). A tabela `rpcmtec.subsecao` não mudou: a cópia nunca
+  teve dado próprio.
+- **A 5.1 IMPORTA o CSV do github_dashboard, e a leitura do CSV é do SERVIDOR.** A rota é
+  `POST /rpcmtec/:id/subsecao/5.1/importar`, com o número no CAMINHO: o formato é o do painel do
+  GitHub, e o painel só alimenta a 5.1. Ler o CSV é regra de DADO, e é ela que decide o que se apaga.
+  Posta no cliente, ela não valeria para o `producao_cli`, e a segunda implementação divergiria da
+  primeira. Não houve migração: a 5.1 grava em `rpcmtec.subsecao.linhas`, que é JSONB.
+- **O CSV tem três colunas e a tabela tem quatro. A importação NUNCA toca o `Resumo`.** Ela casa as
+  linhas pelo nome do repositório, sem caixa, e o Resumo vem do que já está gravado. Reimportar no fim
+  do mês é o uso normal: uma importação que zerasse o Resumo destruiria, calada, o único conteúdo da
+  tabela que não existe em lugar nenhum mais.
+- **O repositório que sumiu do CSV SAI da tabela, e sair com Resumo escrito exige
+  `confirmar_remocao`.** Mantê-lo faria o documento assinado afirmar commits que o painel não conta
+  mais naquele mês. Sem a confirmação a rota responde 409 NOMEANDO quem perde o texto, como o
+  `ciente_revisao` do fechamento e pela mesma razão: a recusa mora no servidor, então vale para o CLI.
+- **O importador RECUSA o que não entendeu, com a frase que ensina o conserto.** Sem cabeçalho, com
+  coluna a mais ou a menos, com commits que não é número, com repositório repetido ou separado por
+  ponto e vírgula (o CSV do Excel em português), ele não grava nada. Adivinhar o separador é o pior
+  caso: o ponto e vírgula é o que separa os militares DENTRO da coluna `Efetivo`. Só o cabeçalho sem
+  linha nenhuma também é recusa, e a mensagem manda usar "Sem ocorrência no mês": aceitar gravaria a
+  tabela vazia, e a tabela vazia apagaria todo Resumo escrito.
 - **A execução por ND do painel NÃO foi junto:** é `/api/orcamento/dashboard/execucao_nd`, com
   `verifyPerfil('consulta','orcamento')`. O painel pede números quebrados em PDR e Extra-PDR, e servir
   os dois da mesma rota faria a guarda mais fraca valer para as duas.

@@ -13,11 +13,18 @@
 // uma coluna diferente por mês, e o RPCMTec deixaria de ser comparável consigo
 // mesmo.
 //
-// DUAS AÇÕES cobrem o trabalho repetitivo, e existem por medição no documento
-// real: `copiarDoMesAnterior` (a edição de julho/2026 traz um GPS indisponível
-// desde 26/07/2023, redigitado mês a mês) e `sem_ocorrencia`, que separa "não
-// houve" de "ninguém preencheu" -- distinção que o documento em Word não fazia,
-// porque as duas saíam como célula vazia.
+// DUAS AÇÕES cobrem o trabalho repetitivo. `sem_ocorrencia` separa "não houve"
+// de "ninguém preencheu" -- distinção que o documento em Word não fazia, porque
+// as duas saíam como célula vazia. E a IMPORTAÇÃO DO CSV da 5.1, que traz do
+// github_dashboard o repositório, o número de commits e o efetivo, em vez de
+// transcrever à mão o que a máquina já sabe. Ela preserva o Resumo já escrito.
+//
+// NÃO SE TRAZ CONTEÚDO DA EDIÇÃO ANTERIOR, desde 2026-08-06. Havia aqui uma
+// ação que copiava as subseções digitadas do mês passado para esta edição. Ela
+// saiu inteira, com a rota e o schema. O RPCMTec é o relatório DAQUELE mês, e o
+// que a cópia produzia era pior que redigitar: o documento assinado afirmava
+// sobre agosto o que aconteceu em julho, e a linha que chega pronta não é
+// relida. Cada subseção se preenche pelo mês que ela reporta.
 //
 // SÓ COM A EDIÇÃO ABERTA. Fechada, o documento é o que foi assinado; para
 // mudá-lo, reabre-se primeiro, e isso fica no rastro.
@@ -27,9 +34,7 @@ const { AppError, httpCode } = require('../utils')
 const { auditoriaCtrl } = require('../auditoria')
 
 const estrutura = require('./rpcmtec_estrutura')
-// O mês anterior, virando o ano em janeiro. Mora em periodo.js porque a mesma
-// regra vale para rpcmtec_ctrl, e duas cópias divergiram uma vez.
-const { mesAnterior } = require('./periodo')
+const csvRepositorios = require('./rpcmtec_csv_repositorios')
 
 const controller = {}
 
@@ -171,6 +176,104 @@ controller.gravar = async (edicaoId, numero, dados, usuarioUuid, contexto) => {
 }
 
 /**
+ * Importa o CSV do github_dashboard para a subseção 5.1.
+ *
+ * POR QUE NO SERVIDOR, e não na tela que oferece o botão. Ler o CSV é REGRA DE
+ * DADO, e ela decide o que se apaga: casar linha por repositório e preservar o
+ * Resumo é o que separa "atualizar os commits" de "destruir o texto que alguém
+ * escreveu". Posta só no cliente, a regra não valeria para o `producao_cli`, que
+ * é por onde um agente com o CSV na mão faria a mesma coisa, e a segunda
+ * implementação divergiria da primeira na primeira correção aplicada a uma só.
+ * Aqui a leitura, o cruzamento e a gravação cabem numa transação: ninguém lê o
+ * estado, pensa, e grava por cima do que mudou no meio.
+ *
+ * O RESUMO NÃO VEM DO CSV, e sim do que já está gravado. Ver
+ * `rpcmtec_csv_repositorios.js`, que faz a conta sem tocar no banco.
+ *
+ * `confirmar_remocao` é o "eu li a lista". Sem ele, a rota responde 409 quando a
+ * importação removeria um repositório com Resumo escrito. É a mesma forma do
+ * `ciente_revisao` do fechamento, e existe pela mesma razão: a recusa mora no
+ * servidor, então ela vale para o CLI também, e não só para quem passa pela
+ * tela.
+ */
+controller.importarRepositorios = async (edicaoId, dados, usuarioUuid, contexto) => {
+  const numero = csvRepositorios.NUMERO
+
+  let leitura
+  try {
+    leitura = csvRepositorios.analisar(dados.csv)
+  } catch (erro) {
+    // A falha do arquivo é da PESSOA, e a frase já ensina o conserto: ela sobe
+    // como 400 com o texto inteiro, e não vira 500 com "erro interno".
+    if (erro instanceof csvRepositorios.ErroCsv) {
+      throw new AppError(erro.message, httpCode.BadRequest)
+    }
+    throw erro
+  }
+
+  return db.conn.tx(async t => {
+    const { bloco } = await conferirAlvo(t, edicaoId, numero)
+
+    const antes = await t.oneOrNone(
+      `SELECT id, edicao_id, numero, linhas, texto, sem_ocorrencia
+       FROM rpcmtec.subsecao WHERE edicao_id = $<edicaoId> AND numero = $<numero>`,
+      { edicaoId, numero }
+    )
+
+    const plano = csvRepositorios.planejar(
+      (antes && antes.linhas) || [], leitura.repositorios
+    )
+
+    const comResumo = plano.removidos.filter(r => r.resumo)
+    if (comResumo.length && !dados.confirmar_remocao) {
+      throw new AppError(
+        `Este CSV não traz ${comResumo.length} repositório(s) que já têm ` +
+        `Resumo escrito na 5.1: ${comResumo.map(r => r.repo || '(linha sem nome)').join(', ')}. ` +
+        'Importar assim apaga esse texto, que não existe em lugar nenhum mais. ' +
+        'Confira o mês escolhido na exportação. Para importar mesmo assim, ' +
+        'confirme a remoção.',
+        httpCode.Conflict
+      )
+    }
+
+    // A importação DESMARCA "sem ocorrência no mês": a tabela passa a ter
+    // conteúdo, e o CHECK do banco recusa as duas coisas juntas.
+    const depois = await gravarLinha(t, {
+      edicaoId,
+      bloco,
+      linhas: conferirLinhas(bloco, plano.linhas),
+      texto: null,
+      semOcorrencia: false,
+      usuarioUuid
+    })
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.subsecao',
+      registroId: depois.id,
+      operacao: antes ? 'U' : 'I',
+      antes: antes || undefined,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return {
+      numero,
+      total: plano.linhas.length,
+      novos: plano.novos,
+      atualizados: plano.atualizados,
+      // O TEXTO do Resumo removido não volta na resposta: quem precisa dele é a
+      // confirmação, que já o citou pelo nome do repositório.
+      removidos: plano.removidos.map(r => ({
+        repositorio: r.repo, tinha_resumo: Boolean(r.resumo)
+      })),
+      resumos_preservados: plano.resumosPreservados,
+      avisos: leitura.avisos
+    }
+  })
+}
+
+/**
  * Apaga o conteúdo digitado de uma subseção.
  *
  * A subseção volta a NÃO EXISTIR, que não é o mesmo que ficar vazia: sem linha,
@@ -202,105 +305,6 @@ controller.limpar = async (edicaoId, numero, usuarioUuid, contexto) => {
     })
 
     return { numero, removida: true }
-  })
-}
-
-/**
- * Copia o digitado da edição do mês anterior.
- *
- * Com `numero`, copia só aquela subseção; sem ele, copia todas as digitadas que
- * o mês anterior tinha. NÃO sobrescreve o que já foi preenchido nesta edição:
- * quem já digitou a 7.1 de agosto não quer a de julho por cima.
- *
- * O QUE ISTO RESOLVE é redigitação, não cadastro. As linhas que atravessam
- * meses (o equipamento parado, os itens de backup, os lotes em produção)
- * chegam prontas e se corrige o que mudou. Uma subseção cujo conteúdo é sempre
- * o mesmo é candidata a virar cadastro e GRADUAR para calculada, e a espinha
- * deixa isso ser uma mudança de `origem_id` mais tarde.
- */
-controller.copiarDoMesAnterior = async (edicaoId, numero, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
-    const edicao = await t.oneOrNone(
-      'SELECT id, ano, mes, data_fechamento FROM rpcmtec.edicao WHERE id = $<edicaoId>',
-      { edicaoId }
-    )
-    if (!edicao) {
-      throw new AppError('Edição do RPCMTec não encontrada', httpCode.NotFound)
-    }
-    if (edicao.data_fechamento) {
-      throw new AppError(
-        'A edição está fechada. Reabra-a para alterar o conteúdo.',
-        httpCode.BadRequest
-      )
-    }
-
-    const anterior = mesAnterior(edicao)
-    const origem = await t.oneOrNone(
-      'SELECT id FROM rpcmtec.edicao WHERE ano = $<ano> AND mes = $<mes>',
-      anterior
-    )
-    if (!origem) {
-      throw new AppError(
-        `Não existe edição de ${String(anterior.mes).padStart(2, '0')}/${anterior.ano} para copiar`,
-        httpCode.NotFound
-      )
-    }
-
-    const alvos = numero
-      ? [numero]
-      : estrutura.NUMEROS_DIGITADOS
-
-    const jaPreenchidas = new Set(
-      (await t.any(
-        'SELECT numero FROM rpcmtec.subsecao WHERE edicao_id = $<edicaoId>',
-        { edicaoId }
-      )).map(l => l.numero)
-    )
-
-    const copiadas = []
-    for (const alvo of alvos) {
-      const bloco = estrutura.bloco(alvo)
-      if (!bloco || bloco.origem !== estrutura.ORIGEM.DIGITADA) continue
-      if (jaPreenchidas.has(alvo)) continue
-
-      const fonte = await t.oneOrNone(
-        `SELECT linhas, texto, sem_ocorrencia FROM rpcmtec.subsecao
-         WHERE edicao_id = $<origemId> AND numero = $<alvo>`,
-        { origemId: origem.id, alvo }
-      )
-      if (!fonte) continue
-
-      const depois = await gravarLinha(t, {
-        edicaoId,
-        bloco,
-        // Reconferido contra a estrutura de HOJE: a subseção pode ter ganhado
-        // coluna desde o mês passado, e copiar linha curta gravaria no banco o
-        // que a grade de agora não sabe desenhar.
-        linhas: bloco.cabecalhos ? conferirLinhas(bloco, fonte.linhas || []) : [],
-        texto: fonte.texto,
-        semOcorrencia: fonte.sem_ocorrencia,
-        usuarioUuid
-      })
-
-      await auditoriaCtrl.registrar(t, {
-        tabela: 'rpcmtec.subsecao',
-        registroId: depois.id,
-        operacao: 'I',
-        depois,
-        usuarioUuid,
-        contexto
-      })
-
-      copiadas.push(alvo)
-    }
-
-    return {
-      de: `${String(anterior.mes).padStart(2, '0')}/${anterior.ano}`,
-      copiadas,
-      // Quem já estava preenchida NÃO foi tocada, e dizer isso evita que
-      // alguém conclua que a cópia falhou.
-      preservadas: alvos.filter(a => jaPreenchidas.has(a))
-    }
   })
 }
 
