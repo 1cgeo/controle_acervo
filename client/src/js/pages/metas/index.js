@@ -149,7 +149,7 @@ export async function renderPitAno(container, _ctx) {
         sortable: true,
         render: (row) => row.revisao || '-',
       },
-      // O QUE A REVISÃO ESCOLHIDA FAZ COM ESTA LINHA. A tabela `pit.meta_revisao`
+      // O QUE A REVISÃO ESCOLHIDA FAZ COM ESTA LINHA. A tabela `pit.meta_item_revisao`
       // é esparsa, então a meta que a revisão não toca simplesmente não tem linha
       // nela: aqui isso vira um '-', e a que ela toca ganha a etiqueta do ato.
       {

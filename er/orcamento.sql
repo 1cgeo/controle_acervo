@@ -117,6 +117,12 @@ CREATE TABLE orcamento.pdr_item(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,
   cod_nd VARCHAR(6) NOT NULL REFERENCES dominio.natureza_despesa (code),
+  -- A META, e nao o item. Foi medido em 2026-08-05: os 17 itens do PDR com
+  -- vinculo apontam a meta inteira, e nenhum aponta um item dela. O credito e
+  -- autorizado para a Meta 1, e nao para a 1.1; qual dos 11 itens ele financia
+  -- e informacao que o PDR nao tem. `acervo.versao`, `mapoteca.pedido` e
+  -- `rpcmtec.capacitacao` apontam `pit.meta_item`, porque essas tres sao
+  -- TRABALHO, e trabalho cumpre item.
   meta_pit_id BIGINT REFERENCES pit.meta (id),
   item_label VARCHAR(10),
   descricao TEXT,
@@ -148,6 +154,8 @@ CREATE TABLE orcamento.nota_credito(
   cod_pi VARCHAR(20) REFERENCES dominio.plano_interno (code),
   ug_emitente VARCHAR(10) REFERENCES dominio.ug (code),
   finalidade_historico TEXT,
+  -- A META, e nao o item, pela mesma razao de `pdr_item` acima: as 50 NCs com
+  -- vinculo apontam a meta inteira, e nenhuma aponta item.
   meta_pit_id BIGINT REFERENCES pit.meta (id),
   -- valor_nc = valor recebido; NUNCA muda por devolucao (a devolucao corta empenhado/liquidado)
   valor_nc NUMERIC(15,2) NOT NULL,

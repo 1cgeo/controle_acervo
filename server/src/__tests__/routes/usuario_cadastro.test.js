@@ -803,7 +803,7 @@ const COBERTAS = new Set([
   // contar sulfite", e ela se faz na ficha da meta.
   // Exercicio e REVISAO do PIT. A DSG revisa o plano durante a
   // execucao, e alterar o PIT e cancelar, alterar e adicionar meta: as tres
-  // caem em `pit.meta_revisao`, dentro da revisao aberta.
+  // caem em `pit.meta_item_revisao`, dentro da revisao aberta.
   //
   // O exercicio e a revisao sao auditados no agregado do EXERCICIO, e a linha de
   // declaracao no da META: a pergunta "o que mudou no PIT de 2026" e diferente

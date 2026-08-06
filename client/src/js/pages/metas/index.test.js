@@ -202,7 +202,7 @@ describe('PIT do ano: o exercício e as revisões em cima', () => {
   });
 
   // A COLUNA "NESTA REVISÃO" diz o que a revisão escolhida faz com cada linha. A
-  // tabela `pit.meta_revisao` é esparsa: a meta que a revisão não toca não tem
+  // tabela `pit.meta_item_revisao` é esparsa: a meta que a revisão não toca não tem
   // linha nela, e aqui isso vira um '-'.
   test('a coluna "Nesta revisão" marca só a meta que a revisão altera', async () => {
     logar({ administrador: true });

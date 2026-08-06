@@ -135,11 +135,14 @@ CREATE TABLE mapoteca.pedido(
     demandante VARCHAR(255),
     omds VARCHAR(255),
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Meta do PIT que o pedido atende, por chave estrangeira para `pit.meta` e
-    -- nunca por codigo digitado a mao ('4.1'). NAO se deriva do material: a
-    -- correlacao entre midia e meta vale num ano e o PIT e reescrito todo ano
-    -- e a numeracao muda com ele.
-    meta_pit_id BIGINT REFERENCES pit.meta (id),
+    -- Item do PIT que o pedido atende, por chave estrangeira para
+    -- `pit.meta_item` e nunca por codigo digitado a mao ('4.1'). NAO se deriva
+    -- do material: a correlacao entre midia e meta vale num ano e o PIT e
+    -- reescrito todo ano e a numeracao muda com ele.
+    --
+    -- O ITEM, e nao o grupo: o pedido cumpre a 4.1 ou a 4.2, e a Meta 4
+    -- sozinha nao diz em que papel nem quanto.
+    meta_pit_id BIGINT REFERENCES pit.meta_item (id),
     -- O MES EM QUE ESTE PEDIDO PROMETE SER IMPRESSO, e de onde sai o PLANEJADO
     -- da meta 4 do PIT: a soma de `produto_pedido.quantidade` dos pedidos
     -- ligados a meta, agrupada pelo mes daqui.
@@ -199,7 +202,7 @@ COMMENT ON COLUMN mapoteca.pedido.omds IS
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
 COMMENT ON COLUMN mapoteca.pedido.meta_pit_id IS
-    'Meta do PIT que o pedido atende (pit.meta). Obrigatória quando previsto_pit é verdadeiro, nula caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
+    'Item do PIT que o pedido atende (pit.meta_item). Obrigatório quando previsto_pit é verdadeiro, nulo caso contrário. NÃO se deriva do material: a correlação valeu só em 2026.';
 COMMENT ON COLUMN mapoteca.pedido.observacao_interna IS
     'Anotação da equipe. NUNCA sai na consulta pública por localizador; ao contrário de observacao e observacao_envio, que saem.';
 COMMENT ON COLUMN mapoteca.pedido.forma_entrega_id IS

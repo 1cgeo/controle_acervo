@@ -20,7 +20,7 @@ import { declararNaRevisao, createMetaPit } from '@services/plataforma-service.j
  * está no sistema é TRANSCRIÇÃO dele. Por isso todo ato sobre uma meta acontece
  * DENTRO de uma revisão, que é o documento que o autoriza.
  *
- * AS QUATRO OPERAÇÕES CABEM AQUI, porque `pit.meta_revisao` é esparsa
+ * AS QUATRO OPERAÇÕES CABEM AQUI, porque `pit.meta_item_revisao` é esparsa
  * (er/pit.sql:219) e as linhas de uma revisão SÃO as alterações dela:
  *
  *   ACRESCENTA  sem `meta`: cria a identidade e a primeira declaração.
@@ -79,10 +79,24 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
 
   const itemField = createTextField({
     label: 'Item',
+    required: true,
     maxLength: 20,
-    placeholder: 'Ex.: 4.1 (vazio quando a meta não se subdivide)',
+    placeholder: 'Ex.: 4.1',
     value: antes.item,
+    helpText: 'O código da linha no documento. Toda meta do plano tem um.',
   });
+
+  // O NOME DO GRUPO, e só ao criar. O documento abre cada bloco com "Meta 4 -
+  // Serviço de Impressão de Produtos de Geoinformação", e esse nome é do GRUPO,
+  // não da linha. Ele só é usado quando a meta daquele número ainda não existe:
+  // existindo, o servidor a reaproveita e ignora este campo, para a última linha
+  // digitada não mandar no nome do bloco inteiro.
+  const nomeField = criando ? createTextField({
+    label: 'Nome da meta',
+    maxLength: 255,
+    placeholder: 'Ex.: Produção de Geoinformação',
+    helpText: 'Só é usado quando a meta deste número ainda não existe no ano.',
+  }) : null;
 
   // DOMÍNIO FECHADO (`dominio.unidade_meta`). Em texto livre viram treze valores
   // para cinco coisas ('carta' e 'folha' para a mesma). A coerência com a origem
@@ -97,7 +111,8 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
       { value: 5, label: 'Atividade' },
     ],
     value: antes.unidade_id ?? undefined,
-    helpText: 'O que a meta conta. Vazio só na linha de cabeçalho.',
+    required: criando,
+    helpText: 'O que o item conta. Obrigatória: a coluna do banco é NOT NULL.',
   });
 
   // --- A DECLARAÇÃO: o que a DSG promete ------------------------------------
@@ -106,7 +121,8 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
     required: true,
     rows: 3,
     value: antes.descricao,
-    helpText: 'A frase como o documento assinado a escreve.',
+    helpText: 'Só o Produto ou Serviço, sem o solicitante nem a quantidade: '
+      + 'os dois têm campo próprio abaixo.',
   });
 
   const quantidadeField = createNumberField({
@@ -114,7 +130,7 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
     min: 0,
     step: 1,
     value: antes.quantidade_prevista ?? undefined,
-    helpText: 'Vazio na meta que se subdivide: quem promete são os itens.',
+    helpText: 'Vazio quando esta revisão só cancela o item.',
   });
 
   const prazoField = createDateField({
@@ -310,6 +326,11 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
       numeroField.element,
       itemField.element,
       unidadeField.element,
+      // O nome do GRUPO só aparece ao criar, e ocupa a linha inteira: ele é do
+      // bloco, e não da linha ao lado.
+      nomeField
+        ? el('div', { className: 'form-grid__full' }, [nomeField.element])
+        : null,
       el('div', { className: 'form-grid__full' }, [descricaoField.element]),
       quantidadeField.element,
       prazoField.element,
@@ -347,12 +368,29 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
           if (salvando) return;
 
           numeroField.setError(null);
+          itemField.setError(null);
+          unidadeField.setError(null);
           descricaoField.setError(null);
           if (motivoField) motivoField.setError(null);
 
           const numeroMeta = numeroField.getValue();
           if (numeroMeta === null || numeroMeta <= 0) {
             numeroField.setError('Informe o número da meta');
+            return;
+          }
+
+          // O ITEM É OBRIGATÓRIO. A coluna `pit.meta_item.item` é NOT NULL, e o
+          // item vazio era a linha de cabeçalho, que deixou de ser uma meta.
+          const item = itemField.getValue();
+          if (!item) {
+            itemField.setError('Informe o item (ex.: 4.1)');
+            return;
+          }
+
+          // A UNIDADE também, e só ao criar: em alteração, omitir é não mexer.
+          const unidadeId = unidadeField.getValue();
+          if (criando && unidadeId == null) {
+            unidadeField.setError('Escolha o que este item conta');
             return;
           }
 
@@ -379,8 +417,8 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
           // DSG cancelou.
           const corpo = {
             numero_meta: numeroMeta,
-            item: itemField.getValue() || null,
-            unidade_id: unidadeField.getValue(),
+            item,
+            unidade_id: unidadeId,
             descricao,
             quantidade_prevista: quantidadeField.getValue(),
             prazo: prazoField.getValue(),
@@ -393,7 +431,13 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
           setOcupado(true);
           try {
             if (criando) {
-              await createMetaPit({ ...corpo, ano: revisao.ano, revisao_id: revisao.id });
+              const nome = nomeField ? (nomeField.getValue() || '').trim() : '';
+              await createMetaPit({
+                ...corpo,
+                ...(nome ? { nome } : {}),
+                ano: revisao.ano,
+                revisao_id: revisao.id,
+              });
               showSuccess(`Meta acrescentada à revisão ${revisao.codigo}`);
             } else {
               await declararNaRevisao(revisao.id, meta.metaId, corpo);

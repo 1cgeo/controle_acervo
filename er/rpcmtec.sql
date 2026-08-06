@@ -198,15 +198,15 @@ CREATE TABLE rpcmtec.capacitacao(
   efetivo_capacitado INTEGER CHECK (efetivo_capacitado IS NULL OR efetivo_capacitado >= 0),
   plano_codigo VARCHAR(255),
   documento VARCHAR(255),
-  -- Meta do PIT que esta capacitação cumpre. Quando a meta declara
-  -- origem Capacitação, é daqui que sai o número da grade: Prevista e Em
+  -- Item do PIT que esta capacitação cumpre (a 5.1, e não a Meta 5). Quando o
+  -- item declara origem Capacitação, é daqui que sai o número da grade: Prevista e Em
   -- execução alimentam o planejado, Concluída alimenta o realizado, e o mês vem
   -- de `data_fim`. Cancelada não entra em nenhum dos dois.
   --
   -- ANULÁVEL, e a maioria fica nula. Em 2026 o PIT só promete capacitação
   -- MINISTRADA (a meta 5): as Recebidas (pós-graduação, curso de SARP, ISO 9001)
   -- não têm meta que as prometa, e forçar uma inventaria compromisso.
-  meta_pit_id BIGINT REFERENCES pit.meta (id),
+  meta_pit_id BIGINT REFERENCES pit.meta_item (id),
   -- O MES EM QUE ESTA CAPACITACAO PROMETE TERMINAR, e de onde sai o PLANEJADO
   -- do PIT.
   --

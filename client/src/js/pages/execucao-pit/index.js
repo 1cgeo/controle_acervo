@@ -207,7 +207,7 @@ export async function renderExecucaoPit(container, _ctx) {
   }
 
   function editar(td, linha, mes) {
-    if (!podeEscrever || !linha.folha) return;
+    if (!podeEscrever || linha.grupo) return;
     // A celula CALCULADA nao abre para digitar. Antes ela abria, a pessoa
     // escrevia o numero e so entao a gravacao recusava: pedir e recusar depois e
     // pior do que nao pedir, porque o trabalho ja foi feito quando a recusa
@@ -518,7 +518,7 @@ Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero mud
   }
 
   function subtotalDoGrupo(numeroMeta) {
-    const doGrupo = linhas.filter(l => l.numero_meta === numeroMeta && l.folha);
+    const doGrupo = linhas.filter(l => l.numero_meta === numeroMeta);
     const realizado = doGrupo.reduce((t, l) => t + Number(l.realizado || 0), 0);
     const previsto = doGrupo.reduce((t, l) => t + Number(l.quantidade_prevista || 0), 0);
     return {
@@ -570,12 +570,43 @@ Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero mud
   /**
    * A CHAVE de cada linha da grade.
    *
-   * A meta e o cabeçalho dela nunca colidem, porque os dois prefixos são
-   * diferentes: uma linha nunca troca de tipo sem trocar de chave.
+   * O item e o cabeçalho do grupo dele nunca colidem, porque os dois prefixos
+   * são diferentes: uma linha nunca troca de tipo sem trocar de chave.
    */
-  const chaveDaLinha = (linha) => (linha.folha
-    ? `meta-${linha.meta_id}`
-    : `grupo-${linha.numero_meta}`);
+  const chaveDaLinha = (linha) => (linha.grupo
+    ? `grupo-${linha.numero_meta}`
+    : `meta-${linha.meta_id}`);
+
+  /**
+   * A grade DESENHADA: o cabeçalho de cada meta, seguido dos itens dela.
+   *
+   * A LINHA DE GRUPO É SINTÉTICA, e passou a ser em 1.30.0. Até ali o servidor
+   * mandava o cabeçalho como se fosse uma meta (`item` nulo) e a tela o separava
+   * dos itens pela flag `folha`. Hoje `pit.meta_vigente` só devolve item, e o
+   * nome do grupo viaja em `nome` na linha de cada um: montar o cabeçalho aqui é
+   * a leitura fiel, e some a flag que a tela tinha de saber interpretar.
+   *
+   * A ORDEM VEM DO SERVIDOR (numero_meta, item), então o primeiro item de cada
+   * meta é onde o cabeçalho dela entra.
+   */
+  function comCabecalhosDeGrupo(itens) {
+    const saida = [];
+    let numeroAtual = null;
+    for (const item of itens) {
+      if (item.numero_meta !== numeroAtual) {
+        numeroAtual = item.numero_meta;
+        saida.push({
+          grupo: true,
+          numero_meta: item.numero_meta,
+          // `descricao` é o nome que a linha de grupo imprime. Ele vem de
+          // `pit.meta.nome`, e não da declaração de revisão nenhuma.
+          descricao: item.nome || '',
+        });
+      }
+      saida.push(item);
+    }
+    return saida;
+  }
 
   const cabecalhoDaGrade = () => el('tr', {}, [
     el('th', { className: 'grade-pit__rotulo', textContent: 'Meta' }),
@@ -626,22 +657,23 @@ Calculado pelo sistema, a partir de ${linha.origem}. Nao se digita: o numero mud
     // pode deixar para trás um `tr` que não está mais na tela.
     gruposPorNumero.clear();
 
-    // As linhas vêm ordenadas por (numero_meta, item NULLS FIRST), então o
-    // cabeçalho de cada meta chega antes dos itens dela. O subtotal do grupo sai
+    // As linhas vêm ordenadas por (numero_meta, item), e o cabeçalho de cada
+    // meta é INSERIDO aqui, antes do primeiro item dela. O subtotal do grupo sai
     // do array `linhas`, e não do DOM, então a ordem não o afeta.
-    reconciliar(corpoTabela, linhas, {
+    reconciliar(corpoTabela, comCabecalhosDeGrupo(linhas), {
       chave: chaveDaLinha,
-      criar: (linha) => (linha.folha ? linhaDaMeta(linha) : linhaDeGrupo(linha)),
-      atualizar: (tr, linha) => (linha.folha
-        ? atualizarLinhaDaMeta(tr, linha)
-        : atualizarLinhaDeGrupo(tr, linha)),
+      criar: (linha) => (linha.grupo ? linhaDeGrupo(linha) : linhaDaMeta(linha)),
+      atualizar: (tr, linha) => (linha.grupo
+        ? atualizarLinhaDeGrupo(tr, linha)
+        : atualizarLinhaDaMeta(tr, linha)),
     });
 
     montarResumo();
   }
 
   function montarResumo() {
-    const folhas = linhas.filter(l => l.folha);
+    // TODA linha é um item desde 1.30.0: o cabeçalho deixou de vir do servidor.
+    const folhas = linhas;
     const semPrevisto = folhas.filter(l => l.quantidade_prevista == null).length;
     const divergentes = folhas.filter(l => l.quantidade_prevista != null
       && (l.planejado ?? 0) !== l.quantidade_prevista).length;

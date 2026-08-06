@@ -38,9 +38,10 @@ const eventosAuditados = () =>
     .filter(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento'))
     .map(c => c[1])
 
-// Uma escrita de meta gera DOIS eventos: a identidade (`pit.meta`) e o que a
-// revisao declara (`pit.meta_revisao`). O `tabela` diz de qual deles se fala.
-const eventoAuditado = (tabela = 'pit.meta') => {
+// Uma escrita de meta gera DOIS eventos: a identidade (`pit.meta_item`) e o que
+// a revisao declara (`pit.meta_item_revisao`). O `tabela` diz de qual deles se
+// fala. O GRUPO (`pit.meta`) so gera evento quando ele mesmo e criado.
+const eventoAuditado = (tabela = 'pit.meta_item') => {
   const chamadas = eventosAuditados().filter(e => e.tabela === tabela)
   expect(chamadas).toHaveLength(1)
   return chamadas[0]
@@ -56,13 +57,25 @@ const comRevisaoAberta = () => {
   mockDb.conn.oneOrNone.mockResolvedValueOnce({
     id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
   })
+  // O GRUPO, que `resolverMeta` acha por (ano, numero_meta). Existindo, ele nao
+  // e criado: o item so pendura nele.
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 40, ano: 2026, numero_meta: 1 })
 }
+
+// O corpo minimo de um cadastro de item. `unidade_id` entrou na lista porque a
+// coluna virou NOT NULL em 1.30.0.
+const corpoMeta = (extra = {}) => ({
+  ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Carta 1:25.000.',
+  unidade_id: 1, ...extra
+})
 
 // A META que o DELETE le, mais o exercicio VIGENTE. As declaracoes saem do
 // `t.any`, que no duble responde lista vazia por padrao: meta sem declaracao
 // nenhuma passa as duas metades da regra de apagar.
-const metaApagavel = (meta = { id: 1, ano: 2026, numero_meta: 7 }) => {
+const metaApagavel = (meta = { id: 1, meta_id: 40, item: '7.1' }) => {
   mockDb.conn.oneOrNone.mockResolvedValueOnce(meta)
+  // O ANO vem do GRUPO: `pit.meta_item` nao o guarda.
+  mockDb.conn.oneOrNone.mockResolvedValueOnce({ ano: 2026 })
   mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
 }
 
@@ -102,7 +115,27 @@ describe('POST /metas', () => {
   test('rejeita body sem descricao com 400: ela e a frase que a revisao declara', async () => {
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2026, numero_meta: 1, item: '1.1' })
+      .send({ ano: 2026, numero_meta: 1, item: '1.1', unidade_id: 1 })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+  })
+
+  // O ITEM E OBRIGATORIO desde 1.30.0: `pit.meta_item.item` e NOT NULL, e o item
+  // nulo era a linha de CABECALHO, que virou `pit.meta.nome`.
+  test('rejeita body sem item com 400', async () => {
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 1, descricao: 'Carta', unidade_id: 1 })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+  })
+
+  // A UNIDADE TAMBEM. Sem esta recusa o corpo chegaria ao INSERT e o banco
+  // devolveria 500 cru pelo NOT NULL.
+  test('rejeita body sem unidade_id com 400', async () => {
+    const res = await request(app)
+      .post('/metas')
+      .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Carta' })
     expect(res.status).toBe(400)
     expect(res.body.success).toBe(false)
   })
@@ -110,10 +143,8 @@ describe('POST /metas', () => {
   test('cria meta e responde com sucesso', async () => {
     comRevisaoAberta()
     mockDb.conn.one.mockResolvedValueOnce({ id: 9 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9 })
-    const res = await request(app)
-      .post('/metas')
-      .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9 })
+    const res = await request(app).post('/metas').send(corpoMeta())
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
     expect(res.body.dados).toEqual({ id: 9 })
@@ -123,7 +154,7 @@ describe('POST /metas', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2031, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+      .send(corpoMeta({ ano: 2031 }))
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/exerc/i)
   })
@@ -135,7 +166,7 @@ describe('POST /metas', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+      .send(corpoMeta())
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/revis/i)
   })
@@ -144,7 +175,7 @@ describe('POST /metas', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 3 })
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2025, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+      .send(corpoMeta({ ano: 2025 }))
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/encerrado/i)
   })
@@ -159,20 +190,19 @@ describe('POST /metas', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 12, ano: 2026, codigo: 'R2', data_vigencia: null
     })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 1 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 12 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 40, ano: 2026, numero_meta: 1 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9, meta_id: 40, item: '1.1' })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9, revisao_id: 12 })
 
     const res = await request(app)
       .post('/metas')
-      .send({
-        ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1', revisao_id: 12
-      })
+      .send(corpoMeta({ revisao_id: 12 }))
 
     expect(res.status).toBe(201)
     // CONTROLE NEGATIVO: sem esta passagem a declaracao cairia no rascunho que o
     // servidor achasse sozinho, e nao no 12 que veio no corpo.
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO pit.meta_revisao'),
+      expect.stringContaining('INSERT INTO pit.meta_item_revisao'),
       expect.objectContaining({ revisaoId: 12 })
     )
   })
@@ -188,7 +218,7 @@ describe('POST /metas', () => {
 
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2026, numero_meta: 6, item: '6.9', descricao: 'Meta 6.9', revisao_id: 2 })
+      .send(corpoMeta({ numero_meta: 6, item: '6.9', revisao_id: 2 }))
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/motivo/i)
@@ -200,22 +230,21 @@ describe('POST /metas', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 2, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
     })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 6 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 46, ano: 2026, numero_meta: 6 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9, meta_id: 46, item: '6.9' })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9, revisao_id: 2 })
 
     const res = await request(app)
       .post('/metas')
-      .send({
-        ano: 2026,
+      .send(corpoMeta({
         numero_meta: 6,
         item: '6.9',
-        descricao: 'Meta 6.9',
         revisao_id: 2,
         motivo: 'A 6.9 esta no R0 assinado e nao foi transcrita'
-      })
+      }))
 
     expect(res.status).toBe(201)
-    expect(eventoAuditado('pit.meta').motivo)
+    expect(eventoAuditado('pit.meta_item').motivo)
       .toBe('A 6.9 esta no R0 assinado e nao foi transcrita')
   })
 
@@ -228,7 +257,7 @@ describe('POST /metas', () => {
 
     const res = await request(app)
       .post('/metas')
-      .send({ ano: 2026, numero_meta: 1, descricao: 'Meta 1', revisao_id: 2 })
+      .send(corpoMeta({ revisao_id: 2 }))
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/2025/)
@@ -238,10 +267,7 @@ describe('POST /metas', () => {
   test('origem Producao com unidade que nao e Folha recusa com 400', async () => {
     const res = await request(app)
       .post('/metas')
-      .send({
-        ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1',
-        origem_id: 3, unidade_id: 2
-      })
+      .send(corpoMeta({ origem_id: 3, unidade_id: 2 }))
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/Folha/)
   })
@@ -255,8 +281,9 @@ describe('POST /metas', () => {
 // conseguia explicar duas portas para o mesmo ato.
 describe('PUT /metas/:id', () => {
   test('atualiza so a identidade, sem revisao nenhuma', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, numero_meta: 2, origem_id: 1 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, meta_id: 41, origem_id: 1, unidade_id: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 41, numero_meta: 2 })
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
     const res = await request(app)
       .put('/metas/5')
@@ -283,7 +310,7 @@ describe('PUT /metas/:id', () => {
   test('a descricao tambem nao entra pela meta', async () => {
     const res = await request(app)
       .put('/metas/5')
-      .send({ ano: 2026, numero_meta: 2, descricao: 'Meta 2' })
+      .send({ ano: 2026, numero_meta: 2, item: '2.1', descricao: 'Meta 2' })
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/revis/i)
   })
@@ -292,7 +319,7 @@ describe('PUT /metas/:id', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
     const res = await request(app)
       .put('/metas/99')
-      .send({ ano: 2026, numero_meta: 1 })
+      .send({ ano: 2026, numero_meta: 1, item: '1.1' })
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
   })
@@ -306,9 +333,9 @@ describe('PUT /metas/revisoes/:revisaoId/meta/:metaId', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
     })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 5, revisao_id: 7 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 5, revisao_id: 7 })
 
     const res = await request(app)
       .put('/metas/revisoes/7/meta/5')
@@ -317,7 +344,7 @@ describe('PUT /metas/revisoes/:revisaoId/meta/:metaId', () => {
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO pit.meta_revisao'),
+      expect.stringContaining('INSERT INTO pit.meta_item_revisao'),
       expect.objectContaining({ metaId: 5, revisaoId: 7, quantidade_prevista: 24 })
     )
   })
@@ -344,13 +371,13 @@ describe('PUT /metas/revisoes/:revisaoId/meta/:metaId', () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       id: 7, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
     })
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
-      id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 53
+      id: 3, meta_item_id: 5, revisao_id: 7, quantidade_prevista: 53
     })
     mockDb.conn.one.mockResolvedValueOnce({
-      id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 35
+      id: 3, meta_item_id: 5, revisao_id: 7, quantidade_prevista: 35
     })
 
     const res = await request(app)
@@ -362,7 +389,7 @@ describe('PUT /metas/revisoes/:revisaoId/meta/:metaId', () => {
       })
 
     expect(res.status).toBe(200)
-    const evento = eventoAuditado('pit.meta_revisao')
+    const evento = eventoAuditado('pit.meta_item_revisao')
     expect(evento.motivo).toBe('O R0 assinado diz 35, e a transcricao ficou 53')
     expect(evento.operacao).toBe('U')
     expect(JSON.parse(evento.dadosAntes).quantidade_prevista).toBe(53)
@@ -429,7 +456,7 @@ describe('DELETE /metas/:id', () => {
 
     expect(res.status).toBe(200)
     expect(mockDb.conn.none).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM pit.meta'),
+      expect.stringContaining('DELETE FROM pit.meta_item'),
       { id: 1 }
     )
   })
@@ -447,12 +474,10 @@ describe('DELETE /metas/:id', () => {
 describe('Rastreabilidade da meta do PIT', () => {
   test('POST registra a criacao, com o autor do token', async () => {
     comRevisaoAberta()
-    mockDb.conn.one.mockResolvedValueOnce({ id: 9, ano: 2026, numero_meta: 1 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9, revisao_id: 7 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9, meta_id: 40, item: '1.1' })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9, revisao_id: 7 })
 
-    await request(app)
-      .post('/metas')
-      .send({ ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' })
+    await request(app).post('/metas').send(corpoMeta())
 
     const evento = eventoAuditado()
 
@@ -461,7 +486,7 @@ describe('Rastreabilidade da meta do PIT', () => {
     expect(evento.modulo).toBe('plataforma')
     expect(evento.entidade).toBe('meta')
     expect(evento.entidadeId).toBe('9')
-    expect(evento.tabela).toBe('pit.meta')
+    expect(evento.tabela).toBe('pit.meta_item')
     expect(evento.operacao).toBe('I')
     expect(evento.usuarioUuid).toBe(TEST_USER.uuid)
     expect(evento.dadosAntes).toBeNull()
@@ -469,26 +494,30 @@ describe('Rastreabilidade da meta do PIT', () => {
 
   test('PUT registra os dois lados, lidos do BANCO', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
-      id: 5, ano: 2026, numero_meta: 2, origem_id: 1
+      id: 5, meta_id: 42, item: '2.1', origem_id: 1, unidade_id: 1
     })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 44, numero_meta: 4 })
     // O `RETURNING *` traz a linha inteira, e a origem vem junto: sem ela no
     // duble, o diff acusaria uma mudanca de origem que nao houve.
     mockDb.conn.one.mockResolvedValueOnce({
-      id: 5, ano: 2026, numero_meta: 4, origem_id: 1
+      id: 5, meta_id: 44, item: '2.1', origem_id: 1, unidade_id: 1
     })
 
     await request(app).put('/metas/5')
-      .send({ ano: 2026, numero_meta: 4 })
+      .send({ ano: 2026, numero_meta: 4, item: '2.1' })
 
     const evento = eventoAuditado()
 
     expect(evento.operacao).toBe('U')
     // O `lerAntes` substituiu o `SELECT id` que existia so para o 404: sem ele o
-    // rastro diria que a meta mudou, sem dizer de que para que.
-    expect(JSON.parse(evento.dadosAntes).numero_meta).toBe(2)
-    expect(JSON.parse(evento.dadosDepois).numero_meta).toBe(4)
-    expect(evento.camposAlterados).toEqual(['numero_meta'])
+    // rastro diria que o item mudou, sem dizer de que para que.
+    //
+    // O QUE MUDA E `meta_id`, e nao `numero_meta`: mover a 2.1 para a Meta 4 e
+    // pendura-la noutro GRUPO. O numero da meta deixou de ser coluna do item.
+    expect(JSON.parse(evento.dadosAntes).meta_id).toBe(42)
+    expect(JSON.parse(evento.dadosDepois).meta_id).toBe(44)
+    expect(evento.camposAlterados).toEqual(['meta_id'])
   })
 
   test('DELETE registra o que se perdeu', async () => {
@@ -502,13 +531,13 @@ describe('Rastreabilidade da meta do PIT', () => {
 
     expect(evento.operacao).toBe('D')
     expect(evento.dadosDepois).toBeNull()
-    expect(JSON.parse(evento.dadosAntes).numero_meta).toBe(7)
+    expect(JSON.parse(evento.dadosAntes).item).toBe('7.1')
     // A exclusao carrega o AUTOR do token, e nao um autor nulo.
     expect(evento.usuarioUuid).toBe(TEST_USER.uuid)
   })
 
   test('a exclusao barrada por dependente nao registra nada', async () => {
-    metaApagavel({ id: 1, ano: 2026 })
+    metaApagavel({ id: 1, meta_id: 40, item: '7.1' })
     mockDb.conn.one.mockResolvedValueOnce({ n: 1 })
 
     const res = await request(app).delete('/metas/1')

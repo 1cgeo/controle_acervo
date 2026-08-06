@@ -420,12 +420,12 @@ INSERT INTO dominio.origem_meta (code, nome) VALUES
 
 -- NÃO EXISTE `dominio.situacao_meta`. Dos quatro estados que ela teria, só
 -- 'Cancelada' é ato da DSG, e por isso ele é o booleano
--- `pit.meta_revisao.cancelada`; 'Em execução' e 'Concluída' a
+-- `pit.meta_item_revisao.cancelada`; 'Em execução' e 'Concluída' a
 -- grade calcula do que foi lançado, e status digitado ao lado de status
 -- calculado é a segunda verdade que este banco vem eliminando.
 
 -- O QUE A META DO PIT CONTA. Antes era texto livre em
--- `pit.meta.unidade`, com 13 valores: 'carta' e 'folha' para a mesma coisa, e 12
+-- `pit.meta.unidade`, com 13 valores (a coluna e hoje `pit.meta_item.unidade_id`): 'carta' e 'folha' para a mesma coisa, e 12
 -- itens SEM unidade nenhuma, incluindo as duas metas que já calculam sozinhas.
 --
 -- Cinco códigos, e o corte é por como se conta. Folha absorve carta e CDGV.

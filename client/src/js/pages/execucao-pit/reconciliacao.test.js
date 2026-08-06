@@ -25,15 +25,14 @@ import { renderExecucaoPit } from '@pages/execucao-pit/index.js';
 import { getGradePit } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
+// UMA LINHA POR ITEM desde 1.30.0. A linha de grupo da Meta 1 é sintetizada pela
+// tela a partir de `numero_meta` e `nome`, e por isso não está aqui: o que este
+// arquivo mede é o nó do ITEM sobreviver à recarga.
 const GRADE = [
   {
-    meta_id: '1', ano: 2026, numero_meta: 1, item: null,
-    descricao: 'Produção de Geoinformação', folha: false,
-    quantidade_prevista: null, unidade: null, meses: [], realizado: 0, planejado: 0,
-  },
-  {
-    meta_id: '2', ano: 2026, numero_meta: 1, item: '1.1',
-    descricao: 'Produzir Carta Topográfica 1:25.000', folha: true,
+    meta_id: '2', ano: 2026, numero_meta: 1, nome: 'Produção de Geoinformação',
+    item: '1.1',
+    descricao: 'Produzir Carta Topográfica 1:25.000',
     quantidade_prevista: 24, unidade: 'carta',
     meses: [
       { id: '10', mes: 4, planejada: 4, realizada: null },
@@ -127,8 +126,7 @@ describe('a grade do PIT não se remonta', () => {
     // O ano muda, e a meta 1.1 continua lá com outro número. Só o que mudou se
     // repinta; o nó da linha fica.
     const outroAno = [
-      GRADE[0],
-      { ...GRADE[1], meses: [{ id: '10', mes: 4, planejada: 4, realizada: 4 }], realizado: 4 },
+      { ...GRADE[0], meses: [{ id: '10', mes: 4, planejada: 4, realizada: 4 }], realizado: 4 },
     ];
     getGradePit.mockResolvedValueOnce(outroAno);
     const ano = container.querySelector('select');

@@ -31,15 +31,16 @@ models.listarQuery = Joi.object().keys({
 })
 
 // O que a DSG DECLARA sobre o item, e que vai para a linha da revisão. Os
-// quatro últimos são OPCIONAIS, e omitir vale nulo: a linha de cabeçalho da meta
-// não promete quantidade nenhuma, porque quem promete são os itens que ela
-// agrupa.
+// quatro últimos são OPCIONAIS, e omitir vale nulo: a revisão pode declarar só o
+// cancelamento, e o PIT de 2025 foi transcrito sem quantidade nenhuma.
 //
-// `descricao` é a frase da DSG, e ela JÁ contém o demandante e a quantidade
-// ("Carta Topográfica 1:25.000. COTER, 24"): por isso os três andam juntos.
+// `descricao` é SÓ o Produto ou Serviço, que é a primeira coluna da tabela do
+// documento. Até 1.29.0 ela vinha com o Solicitante e a Quantidade colados
+// ("Carta Topográfica 1:25.000. COTER, 24"), e o efeito era que `demandante`
+// existia e ninguém preenchia. A migração 1.30.0 partiu as três.
 const declaracao = {
   // OBRIGATÓRIA: ela é a frase que a revisão declara, e a coluna de
-  // `pit.meta_revisao` é NOT NULL.
+  // `pit.meta_item_revisao` é NOT NULL.
   descricao: Joi.string().required(),
   quantidade_prevista: Joi.number().integer().strict().min(0).allow(null),
   demandante: Joi.string().max(255).allow(null, ''),
@@ -50,16 +51,21 @@ const declaracao = {
   cancelada: Joi.boolean()
 }
 
-// O que o SCA decide sobre a meta, e que revisão nenhuma menciona. Por isso muda
+// O que o SCA decide sobre o item, e que revisão nenhuma menciona. Por isso muda
 // sem revisão, na tela de metas.
 const classificacao = {
-  // O QUE A META CONTA: 1 Folha, 2 Marco, 3 Capacitação, 4 Item de acervo, 5
+  // O QUE O ITEM CONTA: 1 Folha, 2 Marco, 3 Capacitação, 4 Item de acervo, 5
   // Atividade. Classificação NOSSA, não da DSG.
+  //
+  // NÃO ACEITA MAIS NULO: `pit.meta_item.unidade_id` é NOT NULL desde 1.30.0.
+  // Ela era anulável só porque a linha de cabeçalho morava na mesma tabela e não
+  // contava nada; o cabeçalho saiu, e a exceção com ele. Medido: os 42 itens de
+  // 2026 têm unidade.
   //
   // A coerência com a origem é cobrada no controller: Produção e Impressão
   // exigem Folha, e Capacitação exige Capacitação.
-  unidade_id: Joi.number().integer().strict().min(1).max(5).allow(null),
-  // De onde vem o NÚMERO da meta: 1 Manual, 2 Capacitação, 3 Produção, 4
+  unidade_id: Joi.number().integer().strict().min(1).max(5),
+  // De onde vem o NÚMERO do item: 1 Manual, 2 Capacitação, 3 Produção, 4
   // Impressão. Omitir é NÃO MEXER, e o controller guarda o valor que já estava.
   //
   // Virar uma meta para automática é ato deliberado, e o portão dele é a rota
@@ -96,15 +102,36 @@ const ondeCai = {
   motivo: Joi.string().min(5)
 }
 
+// O NOME DO GRUPO. Só é usado quando a meta (ano, numero_meta) ainda NÃO existe:
+// aí ela é criada com este nome. Quando ela já existe, o campo é ignorado, e é
+// deliberado (ver `resolverMeta` no controller): corrigir o nome da Meta 1 de
+// carona no cadastro de um item deixaria a última linha digitada mandando no
+// nome do bloco inteiro.
+const nomeDaMeta = {
+  nome: Joi.string().max(255)
+}
+
 models.criar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
-  item: Joi.string().max(20).allow(null, ''),
-  // ACRESCENTAR META É ATO DA DSG, como alterar e cancelar: o controller exige
+  // OBRIGATÓRIO desde 1.30.0, e não aceita vazio: `pit.meta_item.item` é NOT
+  // NULL. O item nulo era a linha de CABEÇALHO, e ela virou `pit.meta.nome`.
+  item: Joi.string().max(20).required(),
+  // ACRESCENTAR ITEM É ATO DA DSG, como alterar e cancelar: o controller exige
   // uma revisão e a declaração cai dentro dela.
   ...declaracao,
   ...classificacao,
-  ...ondeCai
+  ...nomeDaMeta,
+  ...ondeCai,
+  // OBRIGATÓRIA SÓ NO CADASTRO. A coluna `pit.meta_item.unidade_id` é NOT NULL
+  // desde 1.30.0, e sem esta linha o corpo sem unidade chegaria ao INSERT e
+  // voltaria 500 cru em vez de 400 explicado. Em `atualizar` e
+  // `declararNaRevisao` ela segue opcional, porque lá omitir é "não mexer" e o
+  // controller guarda o valor que já estava.
+  //
+  // DEPOIS dos espalhamentos, de propósito: `classificacao` traz a versão
+  // opcional, e a última chave do objeto é a que vale.
+  unidade_id: Joi.number().integer().strict().min(1).max(5).required()
 })
 
 // SÓ A IDENTIDADE. A declaração saiu daqui: ela era a segunda porta para mudar o
@@ -113,8 +140,9 @@ models.criar = Joi.object().keys({
 models.atualizar = Joi.object().keys({
   ano: Joi.number().integer().strict().required(),
   numero_meta: Joi.number().integer().strict().required(),
-  item: Joi.string().max(20).allow(null, ''),
+  item: Joi.string().max(20).required(),
   ...classificacao,
+  ...nomeDaMeta,
   descricao: soNaRevisao('descricao'),
   quantidade_prevista: soNaRevisao('quantidade_prevista'),
   demandante: soNaRevisao('demandante'),
@@ -139,8 +167,9 @@ models.atualizar = Joi.object().keys({
 models.declararNaRevisao = Joi.object().keys({
   ...declaracao,
   numero_meta: Joi.number().integer().strict(),
-  item: Joi.string().max(20).allow(null, ''),
+  item: Joi.string().max(20),
   ...classificacao,
+  ...nomeDaMeta,
   motivo: Joi.string().min(5)
 })
 
@@ -298,7 +327,7 @@ models.revisaoIdParams = Joi.object().keys({
 })
 
 // A declaracao de UMA meta dentro de UMA revisao. Os dois ids na rota, porque a
-// linha e a interseccao dos dois: `pit.meta_revisao` nao tem id que alguem
+// linha e a interseccao dos dois: `pit.meta_item_revisao` nao tem id que alguem
 // conheca de fora.
 models.declaracaoParams = Joi.object().keys({
   revisaoId: Joi.number().integer().required(),

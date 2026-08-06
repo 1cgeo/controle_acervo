@@ -44,8 +44,16 @@ dotenv.config({
 // muda o que `pit.meta_vigente` DEVOLVE. A meta que revisão publicada nenhuma
 // declarou deixa de sair da view. Num banco 1.27.0 o serviço rodaria sem erro e
 // mostraria linha em branco no PIT do ano, que é pior do que falhar.
-const VERSION = '1.28.0'
-const MIN_DATABASE_VERSION = '1.28.0'
+//
+// A 1.29.0 SÓ REMOVE (`mapoteca.midia_meta_pit`) e não subiria o piso sozinha.
+// Ela entra de carona na 1.30.0, que é a maior mudança de schema do PIT: a meta
+// vira GRUPO, o item vira `pit.meta_item` e a declaração vira
+// `pit.meta_item_revisao`. O piso SOBE porque não há como o código servir os
+// dois formatos: num banco 1.29.0 toda consulta do PIT falharia com "relação
+// pit.meta_item não existe", e as cinco chaves estrangeiras de trabalho ainda
+// apontariam a tabela errada. Aqui o piso é o próprio contrato.
+const VERSION = '1.30.0'
+const MIN_DATABASE_VERSION = '1.30.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

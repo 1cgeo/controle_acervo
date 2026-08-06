@@ -36,7 +36,8 @@ const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
   c.data_inicio::text AS data_inicio, c.data_fim::text AS data_fim,
   c.data_prevista::text AS data_prevista,
   c.efetivo_capacitado, c.plano_codigo, c.documento,
-  c.meta_pit_id, mp.item AS meta_pit_item, mp.numero_meta AS meta_pit_numero,
+  c.meta_pit_id, mp.item AS meta_pit_item, mg.numero_meta AS meta_pit_numero,
+  mg.nome AS meta_pit_nome,
   COALESCE(mil.lista, '[]'::json) AS militares,
   c.data_cadastramento, c.usuario_cadastramento_uuid,
   c.data_modificacao, c.usuario_modificacao_uuid`
@@ -48,7 +49,10 @@ const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
 const de = `FROM rpcmtec.capacitacao AS c
   INNER JOIN dominio.tipo_capacitacao AS t ON t.code = c.tipo_id
   INNER JOIN dominio.situacao_capacitacao AS s ON s.code = c.situacao_id
-  LEFT JOIN pit.meta AS mp ON mp.id = c.meta_pit_id
+  -- O ITEM, e nao o grupo: a capacitacao cumpre a 5.1, e o numero da meta vem
+  -- do grupo dela.
+  LEFT JOIN pit.meta_item AS mp ON mp.id = c.meta_pit_id
+  LEFT JOIN pit.meta AS mg ON mg.id = mp.meta_id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object(
              'usuario_uuid', u.uuid,

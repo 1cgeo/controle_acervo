@@ -117,22 +117,43 @@ module.exports = {
   },
 
   // --- Agregado: meta do PIT -------------------------------------------------
+  //
+  // DUAS TABELAS, UM AGREGADO SO. `pit.meta` e o GRUPO numerado e
+  // `pit.meta_item` e a linha que promete, mas a pergunta que se faz depois e
+  // sempre "o que mudou na 4.2", e ela se faz na ficha do item. Por isso as duas
+  // caem na entidade `meta`, e o rastro do grupo aparece junto com o dos itens
+  // dele.
 
   'pit.meta': {
     modulo: 'plataforma',
     entidade: 'meta',
+    // O GRUPO NAO TEM FICHA PROPRIA. O agregado e o proprio id: quem abre o
+    // rastro de uma meta ve a criacao dela e a mudanca de nome.
     agregado: (t, linha) => linha.id,
-    resumo: linha =>
-      `Meta ${linha.numero_meta}${linha.item ? ` (item ${linha.item})` : ''} de ${linha.ano}`,
+    resumo: linha => `Meta ${linha.numero_meta} de ${linha.ano} (${linha.nome})`,
     campos: {
       // SEM `tipo: 'numero'` de proposito: o formatador de numero e o pt-BR, e
       // 2026 sairia como "2.026". Ano nao e quantidade.
       ano: { rotulo: 'Ano' },
       numero_meta: { rotulo: 'Número da meta', tipo: 'numero' },
+      // O NOME DO GRUPO. Ele era a `descricao` de uma declaracao de revisao ate
+      // 1.29.0, e por isso o rastro dele caia na tabela de declaracao; desde
+      // 1.30.0 ele e identidade, e muda sem revisao.
+      nome: { rotulo: 'Nome da meta' }
+    }
+  },
+
+  'pit.meta_item': {
+    modulo: 'plataforma',
+    entidade: 'meta',
+    agregado: (t, linha) => linha.id,
+    resumo: linha => `Item ${linha.item} do PIT`,
+    campos: {
+      meta_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
       item: { rotulo: 'Item' },
       // A DESCRICAO, A QUANTIDADE, O PRAZO E O DEMANDANTE NAO ESTAO AQUI: eles
       // sao o que a DSG declara, e mudam por REVISAO. O rastro deles esta em
-      // `pit.meta_revisao`, que cai na ficha desta mesma meta.
+      // `pit.meta_item_revisao`, que cai na ficha deste mesmo item.
       //
       // O que sobrou e o que o SCA decide, e e por isso que muda sem revisao.
       unidade_id: { rotulo: 'Unidade', dominio: 'dominio.unidade_meta' },
@@ -194,14 +215,16 @@ module.exports = {
     }
   },
 
-  'pit.meta_revisao': {
+  'pit.meta_item_revisao': {
     modulo: 'plataforma',
     entidade: 'meta',
-    agregado: (t, linha) => linha.meta_id,
-    resumo: linha => `Declaração da meta na revisão ${linha.revisao_id}`,
+    agregado: (t, linha) => linha.meta_item_id,
+    resumo: linha => `Declaração do item na revisão ${linha.revisao_id}`,
     campos: {
-      meta_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      meta_item_id: { rotulo: 'Item do PIT', entidade: 'meta' },
       revisao_id: { rotulo: 'Revisão do PIT' },
+      // SO o Produto ou Servico do documento. O Solicitante e a Quantidade tem
+      // campo proprio desde 1.30.0; ate entao os tres vinham colados aqui.
       descricao: { rotulo: 'Descrição' },
       quantidade_prevista: { rotulo: 'Quantidade prevista', tipo: 'numero' },
       demandante: { rotulo: 'Demandante' },
@@ -336,11 +359,12 @@ module.exports = {
       // Só na RECEBIDA: sob que Plano/Código.
       plano_codigo: { rotulo: 'Plano/Código' },
       documento: { rotulo: 'Documento' },
-      // O VINCULO COM A META. Trocá-lo muda o número que a grade do PIT calcula
-      // quando a meta declara origem Capacitação, então é dos campos que mais
-      // pedem rastro legível. Sem a declaração ele saía no fim da lista, com o
-      // nome cru da coluna e sem o link para a ficha da meta.
-      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      // O VINCULO COM O ITEM DO PIT (a 5.1, e não a Meta 5). Trocá-lo muda o
+      // número que a grade do PIT calcula quando o item declara origem
+      // Capacitação, então é dos campos que mais pedem rastro legível. Sem a
+      // declaração ele saía no fim da lista, com o nome cru da coluna e sem o
+      // link para a ficha do item.
+      meta_pit_id: { rotulo: 'Item do PIT', entidade: 'meta' },
       // O MES PROMETIDO, de onde a grade tira o planejado. Anda com o campo
       // acima, e mexer nela move a coluna com que o realizado se compara.
       data_prevista: { rotulo: 'Data prevista', tipo: 'data' }

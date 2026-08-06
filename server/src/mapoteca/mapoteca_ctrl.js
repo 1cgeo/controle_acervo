@@ -44,7 +44,10 @@ const getUsuarioId = async (usuarioUuid) => {
 // NULLIF cobre também o '-' literal, caso alguém o digite no cadastro.
 // Uma expressão só, usada em toda consulta que devolve pedido, para as três não
 // divergirem. A tabela pit.meta é de plataforma (er/pit.sql).
-const ROTULO_META = "COALESCE(NULLIF(mp.item, '-'), mp.numero_meta::text)";
+// O CODIGO DO ITEM ('4.1'). O NULLIF para '-' era defesa contra um sentinela
+// textual que o cadastro antigo gravava no lugar do nulo; desde 1.30.0
+// `pit.meta_item.item` e NOT NULL, e o COALESCE so cobre o pedido SEM meta.
+const ROTULO_META = 'COALESCE(mp.item, mp.numero_meta::text)';
 
 // Colunas de pedido/produto_pedido compartilhadas entre criação e atualização
 // (pgp ColumnSet). `def` permite que o cliente omita campos opcionais.

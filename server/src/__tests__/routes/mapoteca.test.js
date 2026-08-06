@@ -41,21 +41,34 @@ const criaCliente = async (overrides = {}) => {
   return row.id
 }
 
-// A meta do PIT deixou de ser texto no pedido: virou linha em
-// pit.meta, com chave estrangeira. O teste precisa da meta antes do pedido.
+// A meta do PIT deixou de ser texto no pedido: virou linha em pit.meta_item,
+// com chave estrangeira. O teste precisa do item antes do pedido.
 // Insere direto no banco porque POST /api/metas e outro modulo, e o que se
 // prova aqui e o pedido, nao a rota de metas.
 const criaMeta = async (item = '4.1', ano = 2026) => {
-  const row = await conn.one(
-    `INSERT INTO pit.meta (ano, numero_meta, item, usuario_cadastramento_uuid)
+  const numeroMeta = parseInt(String(item).split('.')[0], 10)
+
+  // O GRUPO primeiro. Ele tem NOME proprio desde a 1.30.0, e nao promete nada:
+  // quem promete e o item.
+  const grupo = await conn.one(
+    `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
      VALUES ($1, $2, $3, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
-     ON CONFLICT (ano, numero_meta, item) DO UPDATE SET ano = EXCLUDED.ano
+     ON CONFLICT (ano, numero_meta) DO UPDATE SET ano = EXCLUDED.ano
      RETURNING id`,
-    [ano, parseInt(String(item).split('.')[0], 10), item]
+    [ano, numeroMeta, `Meta ${numeroMeta}`]
+  )
+
+  // O ITEM, que e o alvo de `meta_pit_id`. `unidade_id` e NOT NULL: 1 e Folha.
+  const row = await conn.one(
+    `INSERT INTO pit.meta_item (meta_id, item, unidade_id, usuario_cadastramento_uuid)
+     VALUES ($1, $2, 1, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+     ON CONFLICT (meta_id, item) DO UPDATE SET item = EXCLUDED.item
+     RETURNING id`,
+    [grupo.id, item]
   )
 
   // A DESCRICAO mora na revisao. A fixtura cria a R0 do ano e
-  // declara a meta nela, que e o que a migracao fez em producao.
+  // declara o item nela, que e o que a migracao fez em producao.
   const revisao = await conn.one(
     `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
      VALUES ($1, 'R0', make_date($1, 1, 1), (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
@@ -64,10 +77,10 @@ const criaMeta = async (item = '4.1', ano = 2026) => {
     [ano]
   )
   await conn.none(
-    `INSERT INTO pit.meta_revisao
-       (meta_id, revisao_id, descricao, usuario_cadastramento_uuid)
+    `INSERT INTO pit.meta_item_revisao
+       (meta_item_id, revisao_id, descricao, usuario_cadastramento_uuid)
      VALUES ($1, $2, $3, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
-     ON CONFLICT (meta_id, revisao_id) DO UPDATE SET descricao = EXCLUDED.descricao`,
+     ON CONFLICT (meta_item_id, revisao_id) DO UPDATE SET descricao = EXCLUDED.descricao`,
     [row.id, revisao.id, `Meta ${item}`]
   )
   // BIGSERIAL volta como STRING no driver, e o Joi do pedido pede number strict.

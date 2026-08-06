@@ -41,16 +41,15 @@ async function montar() {
   return { container, cleanup };
 }
 
+// A grade traz UMA LINHA POR ITEM desde 1.30.0. O cabeçalho da Meta 1 não vem
+// do servidor: a tela o sintetiza a partir de `numero_meta` e `nome`, que viajam
+// na linha do próprio item. A fixtura não tem mais a linha de `item` nulo, e é
+// isso que este arquivo passou a provar.
 const GRADE = [
-  // Cabeçalho da Meta 1: não é folha, então vira linha de grupo sem meses.
   {
-    meta_id: '1', ano: 2026, numero_meta: 1, item: null,
-    descricao: 'Produção de Geoinformação', folha: false,
-    quantidade_prevista: null, unidade: null, meses: [], realizado: 0, planejado: 0,
-  },
-  {
-    meta_id: '2', ano: 2026, numero_meta: 1, item: '1.1',
-    descricao: 'Produzir Carta Topográfica 1:25.000', folha: true,
+    meta_id: '2', ano: 2026, numero_meta: 1, nome: 'Produção de Geoinformação',
+    item: '1.1',
+    descricao: 'Produzir Carta Topográfica 1:25.000',
     quantidade_prevista: 24, unidade: 'carta',
     // O caso real do chefe, em 2026: planejou 4/1/1/1 de abril a julho e
     // entregou nada/6/2/0. Julho tem plano e realizado ZERO, mas o que ele pedia
@@ -216,8 +215,8 @@ describe('renderExecucaoPit', () => {
 // recusava: pedir e recusar depois e pior do que nao pedir.
 describe('execucao do PIT: a celula calculada nao se digita', () => {
   // Sai da FOLHA que a amostra ja tem (a Meta 1.1), e nao de um objeto novo:
-  // assim ela carrega os meses e o `folha: true` de verdade.
-  const folha = GRADE.find(l => l.folha);
+  // assim ela carrega os meses de verdade.
+  const folha = GRADE[0];
   const linhaCalculada = {
     ...folha,
     meta_id: '91',
@@ -232,7 +231,8 @@ describe('execucao do PIT: a celula calculada nao se digita', () => {
     getGradePit.mockResolvedValueOnce([linhaCalculada]);
     const { container, cleanup } = await montar();
 
-    const celula = celulas(linhas(container)[0])[3];
+    // O indice 1: a linha 0 e o cabecalho do grupo, que a tela sintetiza.
+    const celula = celulas(linhas(container)[1])[3];
     celula.click();
     await flush();
 
@@ -248,7 +248,8 @@ describe('execucao do PIT: a celula calculada nao se digita', () => {
     getGradePit.mockResolvedValueOnce([linhaCalculada]);
     const { container, cleanup } = await montar();
 
-    const celula = celulas(linhas(container)[0])[3];
+    // O indice 1: a linha 0 e o cabecalho do grupo, que a tela sintetiza.
+    const celula = celulas(linhas(container)[1])[3];
     expect(celula.className).toContain('grade-pit__celula--calculada');
     expect(celula.title).toContain('Calculado pelo sistema');
     // A ORIGEM entra na frase: "vem do sistema" sem dizer de onde nao ajuda
@@ -267,7 +268,8 @@ describe('execucao do PIT: a celula calculada nao se digita', () => {
     ]);
     const { container, cleanup } = await montar();
 
-    const celula = celulas(linhas(container)[0])[3];
+    // O indice 1: a linha 0 e o cabecalho do grupo, que a tela sintetiza.
+    const celula = celulas(linhas(container)[1])[3];
     celula.click();
     await flush();
 

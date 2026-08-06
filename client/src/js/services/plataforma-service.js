@@ -212,8 +212,9 @@ export const deleteCapacitacao = (id) => apiDelete(`/rpcmtec/capacitacao/${id}`)
 
 /**
  * Rotulo curto da meta, como a planilha e as telas a escrevem: '4.1' quando a
- * meta se subdivide, e o numero da meta quando ela e indivisa (`item` NULO; o
- * '-' literal tambem cai aqui, caso alguem o digite).
+ * item ('4.1'). Desde a 1.30.0 toda meta do plano E um item, e `item` e NOT
+ * NULL: o `numero_meta` sozinho so aparece quando a linha vem sem item nenhum,
+ * que e o caso do registro sem vinculo com o PIT.
  * Mesma regra do SQL em mapoteca_ctrl (ROTULO_META), para as duas nao divergirem.
  * @param {Object} meta
  * @returns {string}
@@ -236,34 +237,32 @@ export function rotuloMetaPit(meta) {
 }
 
 /**
- * A meta e FOLHA, ou seja, e nela que o trabalho se cadastra e se lanca.
+ * A meta a que o trabalho se pode ligar.
  *
- * Uma meta que se subdivide tem uma linha de CABECALHO (`item` nulo) e uma linha
- * por item, e quem entrega e o item. O cabecalho e o texto que abre o bloco, e
- * ligar trabalho a ele contaria o mesmo duas vezes, uma nos itens e outra nele.
- * A meta indivisa (cabecalho sem itens) E folha.
+ * SEMPRE VERDADEIRO desde a 1.30.0, e a funcao fica so como ponto unico da
+ * regra. Ate a 1.29.0 uma meta subdividida tinha uma linha de CABECALHO (`item`
+ * nulo) e uma linha por item, e ligar trabalho ao cabecalho contaria o mesmo
+ * duas vezes; a tela precisava filtrar isso sozinha, com a mesma conta que o
+ * servidor fazia em `EH_FOLHA`.
  *
- * MESMA REGRA do `EH_FOLHA` de `server/src/pit/pit_execucao_ctrl.js`. As duas
- * existem porque o servidor decide o que conta e a tela decide o que oferecer, e
- * divergir faria a tela oferecer uma meta que a gravacao recusa.
+ * Hoje o cabecalho nao e mais uma meta: ele e `pit.meta.nome`, e a lista que
+ * chega da API ja tem so item. A funcao continua exportada porque as telas a
+ * chamam, e o dia em que voltar a haver linha que nao recebe trabalho e aqui que
+ * a regra entra, num lugar so.
  *
  * @param {Object} meta
- * @param {Array<Object>} todas - as metas do MESMO ano
  * @returns {boolean}
  */
-export function ehFolhaMetaPit(meta, todas) {
-  if (!meta) return false;
-  if (meta.item != null && meta.item !== '' && meta.item !== '-') return true;
-  return !(todas || []).some(outra => outra.numero_meta === meta.numero_meta
-    && outra.item != null && outra.item !== '' && outra.item !== '-');
+export function ehFolhaMetaPit(meta) {
+  return Boolean(meta);
 }
 
 
 // ---- Exercicio e REVISOES do PIT ----
 //
 // A DSG revisa o plano durante a execucao, e alterar o PIT e cancelar, alterar
-// e adicionar meta: as tres viram uma linha em `pit.meta_revisao`, esparsa, que
-// por isso E o historico.
+// e adicionar item: as tres viram uma linha em `pit.meta_item_revisao`, esparsa,
+// que por isso E o historico.
 //
 // RASCUNHO e a revisao sem `data_vigencia`. Publicar e preencher essa data, e e
 // so a partir dai que ela rege.
@@ -318,7 +317,7 @@ export const removerDeclaracao = (revisaoId, metaId) =>
  * sem nada dizer. Aqui a revisao e escolhida por quem chama, e a revisao
  * publicada e RECUSADA em vez de desviada.
  *
- * AS TRES OPERACOES cabem nesta chamada, porque `pit.meta_revisao` e esparsa:
+ * AS TRES OPERACOES cabem nesta chamada, porque `pit.meta_item_revisao` e esparsa:
  * acrescentar e a primeira linha da meta, alterar e a linha com o numero novo,
  * cancelar e a linha com `cancelada`. Tirar a meta da revisao e
  * `removerDeclaracao`.

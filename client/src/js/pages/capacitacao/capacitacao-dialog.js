@@ -112,7 +112,7 @@ export function openCapacitacaoDialog({
   // A meta CANCELADA também sai: ela deixou de ser trabalho a fazer, e oferecê-la
   // convidaria a cadastrar contra um plano que a DSG revogou.
   const metasOferecidas = (metas || [])
-    .filter(m => !m.cancelada && ehFolhaMetaPit(m, metas));
+    .filter(m => !m.cancelada && ehFolhaMetaPit(m));
   const metaField = createSelectField({
     label: 'Meta do PIT',
     placeholder: 'Não cumpre meta do PIT',

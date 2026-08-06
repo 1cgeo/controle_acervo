@@ -73,8 +73,13 @@ const REGRAS = {
   ],
 
   meta: [
-    'Meta do PIT do ano. A NC aponta a meta que ela financia (meta_pit_id), e e assim',
-    'que o credito se liga a producao.'
+    'Meta do PIT do ano, o GRUPO numerado (pit.meta). A NC e o item do PDR apontam',
+    'a META por meta_pit_id, e e assim que o credito se liga a producao.',
+    'A META, E NAO O ITEM. O PIT tem dois niveis desde a 1.30.0: o grupo ("Meta 1 -',
+    'Producao de Geoinformacao") e o item que promete ("1.1"). O trabalho (versao,',
+    'pedido, capacitacao) aponta o ITEM; o credito aponta o GRUPO, porque e para o',
+    'grupo que ele e autorizado. Medido em 2026-08-05: os 50 vinculos de NC e os 17',
+    'de pdr_item apontam meta, e nenhum aponta item.'
   ],
 
   dfd: [

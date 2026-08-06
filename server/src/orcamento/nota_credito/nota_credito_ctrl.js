@@ -99,7 +99,12 @@ controller.listar = async (filtros = {}) => {
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
             nc.pdr_item_id, nc.meta_pit_id,
-            mp.numero_meta, mp.item AS meta_item, mp.descricao AS meta_descricao,
+            mp.numero_meta,
+            -- O ITEM SAI NULO, e e o dado: a NC aponta a META inteira
+            -- (pit.meta), e nao um item dela. A coluna fica na resposta
+            -- porque a tela e o CLI a leem, e sai na tela como '-'.
+            -- (Sem crase neste comentario: template literal.)
+            NULL::varchar AS meta_item, mp.nome AS meta_descricao,
             nc.marcador, nc.nc_complementada_id,
             -- Empenhado LIQUIDO contra esta NC, nas duas formas de vinculo: as
             -- linhas do rateio e as NEs antigas, que apontam a NC direto. Sem
@@ -133,10 +138,11 @@ controller.listar = async (filtros = {}) => {
      INNER JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
-     -- meta_vigente, e nao pit.meta: a descricao da meta mora em meta_revisao e
-     -- so sai pela view. Sem ela a tela escreve o algarismo "3" solto, e a mesma
-     -- meta aparece com nome no PDR e sem nome aqui. O pdr_ctrl ja usa a view.
-     LEFT JOIN pit.meta_vigente AS mp ON mp.id = nc.meta_pit_id
+     -- A TABELA pit.meta, e nao a view. O nome da meta era a descricao de uma
+     -- declaracao de revisao e so saia por meta_vigente; desde 1.30.0 ele e
+     -- pit.meta.nome. A view virou do ITEM, e a NC aponta a META: juntar por ela
+     -- devolveria zero linha para toda NC. (Sem crase: template literal.)
+     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
      LEFT JOIN orcamento.arquivo AS af ON af.nota_credito_id = nc.id
      WHERE ($<ano> IS NULL OR nc.ano = $<ano>)
        AND ($<classificacaoId> IS NULL OR nc.classificacao_id = $<classificacaoId>)
@@ -159,7 +165,12 @@ controller.getPorId = async id => {
             nc.ug_emitente,
             ug.nome AS ug_nome,
             nc.finalidade_historico, nc.meta_pit_id,
-            mp.numero_meta, mp.item AS meta_item, mp.descricao AS meta_descricao,
+            mp.numero_meta,
+            -- O ITEM SAI NULO, e e o dado: a NC aponta a META inteira
+            -- (pit.meta), e nao um item dela. A coluna fica na resposta
+            -- porque a tela e o CLI a leem, e sai na tela como '-'.
+            -- (Sem crase neste comentario: template literal.)
+            NULL::varchar AS meta_item, mp.nome AS meta_descricao,
             nc.valor_nc, nc.valor_recolhido, nc.doc_ro, nc.prazo_empenho,
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
@@ -172,8 +183,8 @@ controller.getPorId = async id => {
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.plano_interno AS pi ON pi.code = nc.cod_pi
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
-     -- Ver o comentario do listar: a descricao da meta so sai pela view.
-     LEFT JOIN pit.meta_vigente AS mp ON mp.id = nc.meta_pit_id
+     -- Ver o comentario do listar: a NC aponta a META, e o nome dela e coluna.
+     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
      WHERE nc.id = $<id>`,
     { id }
   )

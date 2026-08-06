@@ -155,12 +155,13 @@ const colunasVersao = `v.id::integer AS id, v.versao, v.nome,
   p.mi, p.inom, p.nome AS produto,
   l.nome AS lote,
   v.meta_pit_id,
-  m.ano AS meta_ano, m.numero_meta AS meta_numero, m.item AS meta_item`
+  g.ano AS meta_ano, g.numero_meta AS meta_numero, mi.item AS meta_item`
 
 const deVersao = `FROM acervo.versao AS v
   INNER JOIN acervo.produto AS p ON p.id = v.produto_id
   LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
-  LEFT JOIN pit.meta AS m ON m.id = v.meta_pit_id`
+  LEFT JOIN pit.meta_item AS mi ON mi.id = v.meta_pit_id
+  LEFT JOIN pit.meta AS g ON g.id = mi.meta_id`
 
 controller.listarVersoes = async id => {
   return db.conn.any(

@@ -167,11 +167,12 @@ const RECURSOS = {
         acesso: 'gerente',
         envelope: 'lista',
         colunas: [
-          'meta_id', 'numero_meta', 'item', 'descricao', 'unidade',
-          'quantidade_prevista', 'planejado', 'realizado', 'origem', 'folha'
+          'meta_id', 'numero_meta', 'nome', 'item', 'descricao', 'unidade',
+          'quantidade_prevista', 'planejado', 'realizado', 'origem'
         ],
-        nota: 'o ano inteiro, uma linha por meta. Os doze meses vêm no campo ' +
-          'meses, que só aparece com --json ou --campos meses'
+        nota: 'o ano inteiro, uma linha por ITEM do PIT. `nome` e o nome da ' +
+          'meta que agrupa o item. Os doze meses vêm no campo meses, que só ' +
+          'aparece com --json ou --campos meses'
       },
       resumo: {
         metodo: 'GET',
@@ -180,8 +181,8 @@ const RECURSOS = {
         acesso: 'gerente',
         envelope: 'lista',
         colunas: [
-          'meta_id', 'numero_meta', 'item', 'descricao', 'quantidade_prevista',
-          'planejado_ate', 'realizado', 'realizado_mes', 'folha'
+          'meta_id', 'numero_meta', 'nome', 'item', 'descricao',
+          'quantidade_prevista', 'planejado_ate', 'realizado', 'realizado_mes'
         ],
         nota: 'sem --mes o realizado é o ano inteiro; com --mes são as duas ' +
           'colunas da 2.1 (acumulado até o mês, e o mês)'

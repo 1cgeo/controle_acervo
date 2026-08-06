@@ -102,7 +102,7 @@ module.exports = {
       // `versao_plano_ou_excecao`: a folha cumpre o plano ou e a excecao
       // autorizada. Trocar uma pela outra move o numero de uma subsecao do
       // RPCMTec para outra, entao as duas precisam de rastro nomeado.
-      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      meta_pit_id: { rotulo: 'Item do PIT', entidade: 'meta' },
       demanda_extra_id: { rotulo: 'Demanda Extra-PIT', entidade: 'extra_pit' },
       orgao_produtor: { rotulo: 'Órgão produtor' },
       data_criacao: { rotulo: 'Data de criação', tipo: 'data' },

@@ -1,14 +1,23 @@
 'use strict'
 
-// A meta do PIT, separada entre IDENTIDADE e DECLARAÇÃO.
+// O item do PIT, separado entre IDENTIDADE e DECLARAÇÃO.
 //
 // A DSG revisa o PIT durante a execução, e alterar o PIT é cancelar, alterar e
-// adicionar meta. Só isso, e as três são atos DELA.
+// adicionar item. Só isso, e as três são atos DELA.
 //
-//   pit.meta          o que o SCA decide (unidade, origem) e o que revisão
-//                     nenhuma muda (ano, número, item). Id ESTÁVEL, e é nele que
-//                     os seis vínculos de outros schemas se penduram.
-//   pit.meta_revisao  o que a DSG declara. Uma linha por revisão que mudou algo.
+//   pit.meta               o GRUPO numerado, com nome. Não promete nada, e por
+//                          isso não tem declaração.
+//   pit.meta_item          o que o SCA decide (unidade, origem) e o que revisão
+//                          nenhuma muda (o código do item). Id ESTÁVEL, e é nele
+//                          que os vínculos de TRABALHO de outros schemas se
+//                          penduram.
+//   pit.meta_item_revisao  o que a DSG declara. Uma linha por revisão que mudou
+//                          algo.
+//
+// O QUE ESTE CONTROLADOR CHAMA DE "META" É O ITEM, e é deliberado. A rota, o CLI
+// e a tela sempre chamaram assim a linha que promete, e o `id` que eles guardam
+// continua sendo o mesmo número. O GRUPO aparece como `numero_meta` e `nome`,
+// que é como o documento assinado o apresenta.
 //
 // A LEITURA sai de `pit.meta_vigente`, que devolve os nomes de coluna de sempre
 // com a promessa em vigor.
@@ -63,14 +72,14 @@ const controller = {}
 // `revisao_id` da view: aquela é a revisão em VIGOR, que ignora rascunho. A meta
 // recém-acrescentada a um rascunho tem `revisao_id` nulo e mesmo assim precisa
 // poder ser apagada de lá.
-const colunas = `id, ano, numero_meta, item, descricao,
+const colunas = `id, ano, numero_meta, nome, meta_id, item, descricao,
   quantidade_prevista, unidade_id, unidade, demandante, prazo::text AS prazo,
   cancelada, revisao_id, revisao,
   origem_id,
   (SELECT nome FROM dominio.origem_meta WHERE code = pit.meta_vigente.origem_id) AS origem,
-  (SELECT count(*)::int FROM pit.meta_revisao d WHERE d.meta_id = pit.meta_vigente.id) AS declaracoes,
-  (SELECT d.revisao_id FROM pit.meta_revisao d
-    WHERE d.meta_id = pit.meta_vigente.id ORDER BY d.id LIMIT 1) AS revisao_criadora_id,
+  (SELECT count(*)::int FROM pit.meta_item_revisao d WHERE d.meta_item_id = pit.meta_vigente.id) AS declaracoes,
+  (SELECT d.revisao_id FROM pit.meta_item_revisao d
+    WHERE d.meta_item_id = pit.meta_vigente.id ORDER BY d.id LIMIT 1) AS revisao_criadora_id,
   data_cadastramento, usuario_cadastramento_uuid, data_modificacao, usuario_modificacao_uuid`
 
 // A unidade que cada origem SABE contar. É o que impede virar automática uma
@@ -165,6 +174,54 @@ const motivoDaCorrecao = (revisao, motivo) => {
   )
 }
 
+// O GRUPO a que o item pertence, achado por (ano, número) ou CRIADO na hora.
+//
+// POR QUE ELE É RESOLVIDO AQUI, e não numa rota própria. Quem cadastra o PIT
+// transcreve o documento linha a linha, e a linha traz "1.1" junto com "Meta 1 -
+// Produção de Geoinformação": exigir dois passos faria a tela pedir o grupo
+// antes do item, e o CLI teria de descobrir sozinho se ele já existe. O corpo é
+// o mesmo de sempre (`ano` e `numero_meta`), mais um `nome` que só é OBRIGATÓRIO
+// quando o grupo ainda não existe.
+//
+// O NOME NÃO SE SOBRESCREVE quando o grupo já existe. Corrigir o nome da Meta 1
+// é ato próprio, e fazê-lo de carona no cadastro de um item deixaria a última
+// linha digitada mandando no nome do bloco inteiro.
+const resolverMeta = async (t, { ano, numeroMeta, nome, usuarioUuid, contexto }) => {
+  const existente = await t.oneOrNone(
+    `SELECT * FROM pit.meta WHERE ano = $<ano> AND numero_meta = $<numeroMeta>`,
+    { ano, numeroMeta }
+  )
+  if (existente) return existente
+
+  const texto = nome === undefined || nome === null ? '' : String(nome).trim()
+  if (texto.length === 0) {
+    throw new AppError(
+      `A Meta ${numeroMeta} de ${ano} ainda não existe, e toda meta do PIT tem ` +
+      'nome no documento assinado ("Produção de Geoinformação"). Mande o nome ' +
+      'da meta junto para criá-la, ou escolha uma meta que já exista.',
+      httpCode.BadRequest
+    )
+  }
+
+  const criada = await t.one(
+    `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
+     VALUES ($<ano>, $<numeroMeta>, $<nome>, $<usuarioUuid>)
+     RETURNING *`,
+    { ano, numeroMeta, nome: texto, usuarioUuid }
+  )
+
+  await auditoriaCtrl.registrar(t, {
+    tabela: 'pit.meta',
+    registroId: criada.id,
+    operacao: 'I',
+    depois: criada,
+    usuarioUuid,
+    contexto
+  })
+
+  return criada
+}
+
 // Recusa mexer em ano fechado. O exercício encerrado é um ato do chefe, e é o
 // que impede alguém corrigir 2025 em 2027.
 const conferirExercicio = async (t, ano) => {
@@ -186,8 +243,8 @@ const conferirExercicio = async (t, ano) => {
 }
 
 // O que a DSG declara, e que vai para a linha da revisão. `undefined` vira nulo:
-// a linha de cabeçalho não promete quantidade, e o PIT de 2025 foi cadastrado
-// sem nenhum deles.
+// a revisão pode declarar só o cancelamento, e o PIT de 2025 foi cadastrado sem
+// nenhum deles.
 const declaracao = dados => ({
   descricao: dados.descricao,
   quantidade_prevista: dados.quantidade_prevista === undefined ? null : dados.quantidade_prevista,
@@ -208,18 +265,18 @@ const gravarDeclaracao = async (
   t, { metaId, revisaoId, dados, usuarioUuid, contexto, motivo = null }
 ) => {
   const antes = await t.oneOrNone(
-    `SELECT * FROM pit.meta_revisao
-     WHERE meta_id = $<metaId> AND revisao_id = $<revisaoId>`,
+    `SELECT * FROM pit.meta_item_revisao
+     WHERE meta_item_id = $<metaId> AND revisao_id = $<revisaoId>`,
     { metaId, revisaoId }
   )
 
   const linha = await t.one(
-    `INSERT INTO pit.meta_revisao
-       (meta_id, revisao_id, descricao, quantidade_prevista, prazo, demandante,
+    `INSERT INTO pit.meta_item_revisao
+       (meta_item_id, revisao_id, descricao, quantidade_prevista, prazo, demandante,
         cancelada, usuario_cadastramento_uuid)
      VALUES ($<metaId>, $<revisaoId>, $<descricao>, $<quantidade_prevista>,
              $<prazo>, $<demandante>, $<cancelada>, $<usuarioUuid>)
-     ON CONFLICT (meta_id, revisao_id) DO UPDATE
+     ON CONFLICT (meta_item_id, revisao_id) DO UPDATE
        SET descricao = EXCLUDED.descricao,
            quantidade_prevista = EXCLUDED.quantidade_prevista,
            prazo = EXCLUDED.prazo,
@@ -232,7 +289,7 @@ const gravarDeclaracao = async (
   )
 
   await auditoriaCtrl.registrar(t, {
-    tabela: 'pit.meta_revisao',
+    tabela: 'pit.meta_item_revisao',
     registroId: linha.id,
     operacao: antes ? 'U' : 'I',
     antes: antes || undefined,
@@ -249,6 +306,16 @@ const gravarDeclaracao = async (
 // A NC e o item do PDR apontam a meta, e sem isto a tela diria o que a Divisao
 // promete sem dizer o que financia a promessa.
 //
+// O CREDITO E DA META, E NAO DO ITEM, e por isso a soma casa por `meta_id` e nao
+// por `id`. Foi medido em 2026-08-05: as 50 NCs e os 17 itens do PDR com vinculo
+// apontam todos a meta inteira, e nenhum aponta um item. O credito e autorizado
+// para a Meta 1; qual dos 11 itens dela ele financia e informacao que o
+// orcamento nao tem.
+//
+// A CONSEQUENCIA NA TELA e que os 11 itens da Meta 1 mostram o MESMO credito, e
+// isso e o que o dado diz. Somar por item exigiria ratear, e rateio inventado
+// vira numero plausivel e falso.
+//
 // SUBSELECT, e nao JOIN: a meta SEM credito tem de continuar na lista, e um
 // INNER JOIN a apagaria. Sao essas as metas que interessam ao chefe.
 //
@@ -258,9 +325,9 @@ const gravarDeclaracao = async (
 // informado", que a tela pinta como '-'. Afirmar zero ali seria mentir.
 const agregadosDoOrcamento = `
   COALESCE((SELECT SUM(nc.valor_nc) FROM orcamento.nota_credito AS nc
-             WHERE nc.meta_pit_id = pit.meta_vigente.id), 0) AS credito_nc,
+             WHERE nc.meta_pit_id = pit.meta_vigente.meta_id), 0) AS credito_nc,
   (SELECT SUM(pi.valor_autorizado) FROM orcamento.pdr_item AS pi
-    WHERE pi.meta_pit_id = pit.meta_vigente.id) AS pdr_autorizado`
+    WHERE pi.meta_pit_id = pit.meta_vigente.meta_id) AS pdr_autorizado`
 
 controller.listar = async ano => {
   if (ano !== undefined && ano !== null) {
@@ -322,9 +389,9 @@ controller.historico = async id => {
             r.assinante, mr.descricao, mr.quantidade_prevista,
             mr.prazo::text AS prazo, mr.demandante, mr.cancelada,
             mr.data_cadastramento, mr.usuario_cadastramento_uuid
-     FROM pit.meta_revisao mr
+     FROM pit.meta_item_revisao mr
      INNER JOIN pit.revisao r ON r.id = mr.revisao_id
-     WHERE mr.meta_id = $<id>
+     WHERE mr.meta_item_id = $<id>
      ORDER BY r.data_vigencia NULLS LAST, r.id`,
     { id }
   )
@@ -347,25 +414,34 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     // transcrever, e o motivo é o que diz que foi disso que se tratou.
     const motivo = motivoDaCorrecao(revisao, dados.motivo)
 
+    // O GRUPO PRIMEIRO. Ele pode já existir (o caso comum: acrescentar a 1.12 à
+    // Meta 1) ou nascer aqui, com o nome que veio no corpo.
+    const meta = await resolverMeta(t, {
+      ano: dados.ano,
+      numeroMeta: dados.numero_meta,
+      nome: dados.nome,
+      usuarioUuid,
+      contexto
+    })
+
     // RETURNING *, e nao `RETURNING id`: a linha gravada e o `dados_depois`, e o
     // que se audita e o que o banco GRAVOU.
     const criada = await t.one(
-      `INSERT INTO pit.meta
-         (ano, numero_meta, item, unidade_id, origem_id, usuario_cadastramento_uuid)
-       VALUES ($<ano>, $<numero_meta>, $<item>, $<unidade_id>, $<origem_id>, $<usuarioUuid>)
+      `INSERT INTO pit.meta_item
+         (meta_id, item, unidade_id, origem_id, usuario_cadastramento_uuid)
+       VALUES ($<metaId>, $<item>, $<unidade_id>, $<origem_id>, $<usuarioUuid>)
        RETURNING *`,
       {
-        ano: dados.ano,
-        numero_meta: dados.numero_meta,
+        metaId: meta.id,
         item: dados.item,
-        unidade_id: dados.unidade_id === undefined ? null : dados.unidade_id,
+        unidade_id: dados.unidade_id,
         origem_id: dados.origem_id === undefined ? 1 : dados.origem_id,
         usuarioUuid
       }
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.meta',
+      tabela: 'pit.meta_item',
       registroId: criada.id,
       operacao: 'I',
       depois: criada,
@@ -386,6 +462,11 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
 // SÓ A IDENTIDADE. Ano, número, item, unidade e origem são classificação NOSSA,
 // e revisão nenhuma as menciona: por isso mudam sem revisão.
 //
+// MUDAR `ano` OU `numero_meta` É MUDAR O ITEM DE GRUPO, e é o que `resolverMeta`
+// resolve: a 1.5 que vira 2.2 passa a pendurar na Meta 2. O grupo antigo NÃO é
+// apagado quando fica vazio, de propósito: ele continua sendo o que o documento
+// nomeia, e apagá-lo levaria junto os créditos do orçamento que o apontam.
+//
 // O QUE ELA NÃO FAZ MAIS: gravar declaração. Ela gravava, e era a segunda porta
 // para mudar o que a DSG promete, ao lado da revisão. Duas portas para o mesmo
 // ato é o que a tela não conseguia explicar, e o que o chefe não conseguiu
@@ -395,31 +476,39 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // Substitui o `SELECT id`, que existia so para o 404: a linha inteira sai
     // pela mesma ida ao banco e vira o `dados_antes`.
-    const antes = await auditoriaCtrl.lerAntes(t, 'pit.meta', id, 'Meta do PIT')
+    const antes = await auditoriaCtrl.lerAntes(t, 'pit.meta_item', id, 'Item do PIT')
 
     // OMITIR `origem_id` É "NÃO MEXER", e não "vira Manual". A regra anterior
     // zerava para Manual toda vez que alguém salvasse o formulário, que não tem
-    // campo de origem nenhum: uma meta que contava sozinha voltava a exigir
+    // campo de origem nenhum: um item que contava sozinho voltava a exigir
     // lançamento à mão, em silêncio.
     const origemAtual = antes.origem_id == null ? 1 : antes.origem_id
     const origemId = dados.origem_id === undefined ? origemAtual : dados.origem_id
+    const unidadeId = dados.unidade_id === undefined ? antes.unidade_id : dados.unidade_id
 
-    conferirCoerencia(origemId, dados.unidade_id)
+    conferirCoerencia(origemId, unidadeId)
     await conferirExercicio(t, dados.ano)
 
+    const meta = await resolverMeta(t, {
+      ano: dados.ano,
+      numeroMeta: dados.numero_meta,
+      nome: dados.nome,
+      usuarioUuid,
+      contexto
+    })
+
     const depois = await t.one(
-      `UPDATE pit.meta
-       SET ano = $<ano>, numero_meta = $<numero_meta>, item = $<item>,
+      `UPDATE pit.meta_item
+       SET meta_id = $<metaId>, item = $<item>,
            unidade_id = $<unidade_id>, origem_id = $<origem_id>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE id = $<id>
        RETURNING *`,
       {
         id,
-        ano: dados.ano,
-        numero_meta: dados.numero_meta,
+        metaId: meta.id,
         item: dados.item,
-        unidade_id: dados.unidade_id === undefined ? null : dados.unidade_id,
+        unidade_id: unidadeId,
         origem_id: origemId,
         dataModificacao: new Date(),
         usuarioUuid
@@ -427,7 +516,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.meta',
+      tabela: 'pit.meta_item',
       registroId: id,
       operacao: 'U',
       antes,
@@ -481,19 +570,26 @@ controller.declararNaRevisao = async (revisaoId, metaId, dados, usuarioUuid, con
 
     const motivo = motivoDaCorrecao(revisao, dados.motivo)
 
+    // O ITEM COM O ANO JUNTO. O ano é do GRUPO, e o item sozinho não o tem: sem
+    // o JOIN a guarda abaixo compararia `undefined` com o ano da revisão e
+    // deixaria passar tudo.
     const meta = await t.oneOrNone(
-      'SELECT * FROM pit.meta WHERE id = $<metaId>', { metaId }
+      `SELECT mi.*, m.ano, m.numero_meta
+       FROM pit.meta_item mi
+       INNER JOIN pit.meta m ON m.id = mi.meta_id
+       WHERE mi.id = $<metaId>`,
+      { metaId }
     )
     if (!meta) {
-      throw new AppError('Meta do PIT não encontrada', httpCode.NotFound)
+      throw new AppError('Item do PIT não encontrado', httpCode.NotFound)
     }
-    // A revisão de um ano só declara meta DAQUELE ano. Sem esta guarda, a
-    // restrição UNIQUE (meta_id, revisao_id) aceitaria a meta de 2025 dentro da
-    // revisão de 2026, e `pit.meta_vigente` passaria a mostrá-la.
+    // A revisão de um ano só declara item DAQUELE ano. Sem esta guarda, a
+    // restrição UNIQUE (meta_item_id, revisao_id) aceitaria o item de 2025
+    // dentro da revisão de 2026, e `pit.meta_vigente` passaria a mostrá-lo.
     if (Number(meta.ano) !== Number(revisao.ano)) {
       throw new AppError(
-        `A meta é de ${meta.ano} e a revisão ${revisao.codigo} é de ${revisao.ano}. ` +
-        'A revisão de um ano só declara meta daquele ano.',
+        `O item é de ${meta.ano} e a revisão ${revisao.codigo} é de ${revisao.ano}. ` +
+        'A revisão de um ano só declara item daquele ano.',
         httpCode.BadRequest
       )
     }
@@ -511,18 +607,28 @@ controller.declararNaRevisao = async (revisaoId, metaId, dados, usuarioUuid, con
 
       conferirCoerencia(origemId, unidadeId)
 
+      // Trocar `numero_meta` move o item de grupo. O grupo de destino tem de
+      // existir, ou vir com nome: ver `resolverMeta`.
+      const grupo = await resolverMeta(t, {
+        ano: meta.ano,
+        numeroMeta: dados.numero_meta,
+        nome: dados.nome,
+        usuarioUuid,
+        contexto
+      })
+
       const identidade = await t.one(
-        `UPDATE pit.meta
-         SET numero_meta = $<numero_meta>, item = $<item>,
+        `UPDATE pit.meta_item
+         SET meta_id = $<grupoId>, item = $<item>,
              unidade_id = $<unidade_id>, origem_id = $<origem_id>,
              data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<metaId>
          RETURNING *`,
         {
           metaId,
-          numero_meta: dados.numero_meta,
+          grupoId: grupo.id,
           item: dados.item === undefined ? meta.item : dados.item,
-          unidade_id: unidadeId === undefined ? null : unidadeId,
+          unidade_id: unidadeId,
           origem_id: origemId,
           dataModificacao: new Date(),
           usuarioUuid
@@ -530,9 +636,12 @@ controller.declararNaRevisao = async (revisaoId, metaId, dados, usuarioUuid, con
       )
 
       await auditoriaCtrl.registrar(t, {
-        tabela: 'pit.meta',
+        tabela: 'pit.meta_item',
         registroId: metaId,
         operacao: 'U',
+        // `meta` traz `ano` e `numero_meta` do JOIN, que nao sao colunas de
+        // pit.meta_item: o diff da auditoria as ignora porque o mapa de campos
+        // so declara as da tabela.
         antes: meta,
         depois: identidade,
         usuarioUuid,
@@ -545,7 +654,7 @@ controller.declararNaRevisao = async (revisaoId, metaId, dados, usuarioUuid, con
       metaId, revisaoId, dados, usuarioUuid, contexto, motivo
     })
 
-    return { id: linha.id, meta_id: linha.meta_id, revisao_id: linha.revisao_id }
+    return { id: linha.id, meta_id: linha.meta_item_id, revisao_id: linha.revisao_id }
   })
 }
 
@@ -565,24 +674,24 @@ controller.corrigirTranscricao = async (id, dados, usuarioUuid, contexto) => {
     )
     if (!vigente || !vigente.revisao_id) {
       throw new AppError(
-        'A meta não tem declaração em revisão nenhuma, então não há transcrição a corrigir.',
+        'O item não tem declaração em revisão nenhuma, então não há transcrição a corrigir.',
         httpCode.BadRequest
       )
     }
     await conferirExercicio(t, vigente.ano)
 
     const antes = await t.one(
-      `SELECT * FROM pit.meta_revisao
-       WHERE meta_id = $<id> AND revisao_id = $<revisaoId>`,
+      `SELECT * FROM pit.meta_item_revisao
+       WHERE meta_item_id = $<id> AND revisao_id = $<revisaoId>`,
       { id, revisaoId: vigente.revisao_id }
     )
 
     const depois = await t.one(
-      `UPDATE pit.meta_revisao
+      `UPDATE pit.meta_item_revisao
        SET descricao = $<descricao>, quantidade_prevista = $<quantidade_prevista>,
            prazo = $<prazo>, demandante = $<demandante>, cancelada = $<cancelada>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
-       WHERE meta_id = $<id> AND revisao_id = $<revisaoId>
+       WHERE meta_item_id = $<id> AND revisao_id = $<revisaoId>
        RETURNING *`,
       {
         id, revisaoId: vigente.revisao_id, ...declaracao(dados),
@@ -591,7 +700,7 @@ controller.corrigirTranscricao = async (id, dados, usuarioUuid, contexto) => {
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.meta_revisao',
+      tabela: 'pit.meta_item_revisao',
       registroId: depois.id,
       operacao: 'U',
       antes,
@@ -623,17 +732,26 @@ controller.corrigirTranscricao = async (id, dados, usuarioUuid, contexto) => {
 // só, a revisão que a criou é única e não há como estar "na outra".
 controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    const antes = await auditoriaCtrl.lerAntes(t, 'pit.meta', id, 'Meta do PIT')
+    const antes = await auditoriaCtrl.lerAntes(t, 'pit.meta_item', id, 'Item do PIT')
 
-    await conferirExercicio(t, antes.ano)
+    // O ANO vem do GRUPO: `pit.meta_item` não o guarda, de propósito, e uma
+    // cópia aqui deixaria lançar 2025 num item de 2026 sem nada acusar.
+    //
+    // `oneOrNone`, e não `one`: o grupo existe sempre (a chave estrangeira o
+    // exige), e a leitura só precisa do ano. Usar `one` aqui misturaria esta ida
+    // ao banco com as duas CONTAGENS abaixo, que também são `one`.
+    const grupo = await t.oneOrNone(
+      'SELECT ano FROM pit.meta WHERE id = $<metaId>', { metaId: antes.meta_id }
+    )
+    await conferirExercicio(t, grupo ? grupo.ano : null)
 
-    // AS DECLARAÇÕES DA META, que são as revisões em que ela aparece. A tabela é
-    // esparsa: cada linha aqui é uma revisão que disse alguma coisa sobre ela.
+    // AS DECLARAÇÕES DO ITEM, que são as revisões em que ele aparece. A tabela é
+    // esparsa: cada linha aqui é uma revisão que disse alguma coisa sobre ele.
     const declaracoes = await t.any(
       `SELECT mr.revisao_id, r.codigo
-       FROM pit.meta_revisao mr
+       FROM pit.meta_item_revisao mr
        INNER JOIN pit.revisao r ON r.id = mr.revisao_id
-       WHERE mr.meta_id = $<id>
+       WHERE mr.meta_item_id = $<id>
        ORDER BY mr.id`,
       { id }
     )
@@ -641,9 +759,9 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
     if (declaracoes.length > 1) {
       const codigos = declaracoes.map(d => d.codigo).join(', ')
       throw new AppError(
-        `A meta é declarada por ${declaracoes.length} revisões (${codigos}), e por ` +
-        'isso não se apaga: apagá-la reescreveria o que o relatório dos meses ' +
-        'anteriores reportou. Para tirá-la do plano, CANCELE a meta na revisão ' +
+        `O item é declarado por ${declaracoes.length} revisões (${codigos}), e por ` +
+        'isso não se apaga: apagá-lo reescreveria o que o relatório dos meses ' +
+        'anteriores reportou. Para tirá-lo do plano, CANCELE o item na revisão ' +
         'que autoriza o cancelamento.',
         httpCode.Conflict
       )
@@ -654,19 +772,21 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
     if (revisaoId !== undefined && revisaoId !== null && criadora &&
         Number(criadora.revisao_id) !== Number(revisaoId)) {
       throw new AppError(
-        `A meta foi criada pela revisão ${criadora.codigo}, e só de lá ela se ` +
-        'apaga. Nesta revisão o que cabe é CANCELAR a meta.',
+        `O item foi criado pela revisão ${criadora.codigo}, e só de lá ele se ` +
+        'apaga. Nesta revisão o que cabe é CANCELAR o item.',
         httpCode.BadRequest
       )
     }
 
-    // Bloqueia a exclusao quando algum consumidor aponta para esta meta. Os tres
+    // Bloqueia a exclusao quando algum consumidor aponta para este item. Os tres
     // vivem em schemas diferentes, e a lista cresce quando um modulo novo passar a
     // amarrar trabalho ao PIT. Sem isto o erro chegaria como 500 do banco (FK).
+    //
+    // O ORCAMENTO SAIU DA LISTA, e nao por descuido: a NC e o item do PDR apontam
+    // a META (`pit.meta`), e nao o item. Apagar a 1.1 nao os deixa orfaos, porque
+    // eles nunca apontaram para ela.
     const dependentes = await t.one(
       `SELECT
-         (SELECT COUNT(*) FROM orcamento.pdr_item WHERE meta_pit_id = $<id>) +
-         (SELECT COUNT(*) FROM orcamento.nota_credito WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM mapoteca.pedido WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM acervo.versao WHERE meta_pit_id = $<id>) +
          (SELECT COUNT(*) FROM rpcmtec.capacitacao WHERE meta_pit_id = $<id>) AS n`,
@@ -674,40 +794,40 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
     )
     if (parseInt(dependentes.n, 10) > 0) {
       throw new AppError(
-        'Meta do PIT possui registros vinculados e não pode ser excluída',
+        'Item do PIT possui registros vinculados e não pode ser excluído',
         httpCode.Conflict
       )
     }
 
     // Lançamento de execução é caso à parte, e por isso tem mensagem própria.
     // A chave estrangeira é ON DELETE CASCADE -- e é isso que torna a guarda
-    // necessária, não dispensável: sem ela, apagar a meta levaria junto os doze
+    // necessária, não dispensável: sem ela, apagar o item levaria junto os doze
     // meses lançados, em silêncio e SEM evento de auditoria para eles, porque
     // quem apaga é o banco. O remédio aqui é do alcance de quem chamou (apagar
-    // os lançamentos), ao contrário do PDR e do pedido de impressão.
+    // os lançamentos), ao contrário do pedido de impressão.
     const { lancamentos } = await t.one(
       'SELECT COUNT(*)::int AS lancamentos FROM pit.execucao WHERE meta_id = $<id>',
       { id }
     )
     if (lancamentos > 0) {
       throw new AppError(
-        `Meta do PIT possui ${lancamentos} lançamento(s) de execução. Exclua os lançamentos antes de excluir a meta.`,
+        `Item do PIT possui ${lancamentos} lançamento(s) de execução. Exclua os lançamentos antes de excluir o item.`,
         httpCode.Conflict
       )
     }
 
-    await t.none('DELETE FROM pit.meta WHERE id = $<id>', { id })
+    await t.none('DELETE FROM pit.meta_item WHERE id = $<id>', { id })
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.meta',
+      tabela: 'pit.meta_item',
       registroId: id,
       operacao: 'D',
       antes,
       usuarioUuid,
       contexto,
       motivo: criadora
-        ? `Apagada a partir da revisão ${criadora.codigo}, a única que a declara.`
-        : 'Apagada: revisão nenhuma a declara.'
+        ? `Apagado a partir da revisão ${criadora.codigo}, a única que o declara.`
+        : 'Apagado: revisão nenhuma o declara.'
     })
   })
 }

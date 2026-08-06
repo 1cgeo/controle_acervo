@@ -86,7 +86,7 @@ const pedidoBase = {
   demandante: Joi.string().max(255).allow(null, ''),
   omds: Joi.string().max(255).allow(null, ''),
   previsto_pit: Joi.boolean().default(false),
-  // Meta do PIT que o pedido atende, por CHAVE ESTRANGEIRA para `pit.meta`, e
+  // Item do PIT que o pedido atende, por CHAVE ESTRANGEIRA para `pit.meta_item`, e
   // nunca pelo código digitado à mão. NÃO se deriva do material: a numeração das
   // metas é reescrita todo ano.
   meta_pit_id: Joi.when('previsto_pit', {

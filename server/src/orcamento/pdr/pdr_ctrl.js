@@ -31,8 +31,13 @@ const normaliza = item => {
 // cadastro e o nome sao a unica rastreabilidade que existe.
 const SELECT = `
   SELECT i.id, i.ano, i.cod_nd, nd.nome AS nd_nome,
-         i.meta_pit_id, mp.numero_meta AS meta_numero, mp.item AS meta_item,
-         mp.descricao AS meta_descricao,
+         i.meta_pit_id, mp.numero_meta AS meta_numero,
+         -- O ITEM SAI NULO, e e o dado. O item do PDR aponta a META inteira
+         -- (pit.meta), e nao um item dela: medido em 2026-08-05, os 17 vinculos
+         -- apontam meta. A coluna fica na resposta porque a tela e o CLI a leem,
+         -- e sai na tela como '-'. (Sem crase: template literal.)
+         NULL::varchar AS meta_item,
+         mp.nome AS meta_descricao,
          i.item_label, i.descricao, i.gnd,
          i.valor_solicitado, i.valor_autorizado, i.observacao,
          i.data_cadastramento, i.usuario_cadastramento_uuid,
@@ -41,7 +46,12 @@ const SELECT = `
          um.nome AS usuario_modificacao
   FROM orcamento.pdr_item AS i
   INNER JOIN dominio.natureza_despesa AS nd ON nd.code = i.cod_nd
-  LEFT JOIN pit.meta_vigente AS mp ON mp.id = i.meta_pit_id
+  -- A TABELA pit.meta, e nao a view pit.meta_vigente. Ate 1.29.0 o nome da meta
+  -- so existia como descricao de uma declaracao de revisao, e a view era o unico
+  -- caminho; desde 1.30.0 ele e pit.meta.nome, coluna da propria tabela. A view
+  -- hoje e do ITEM, e juntar por ela devolveria zero linha para todo item do
+  -- PDR. (Sem crase neste comentario: template literal.)
+  LEFT JOIN pit.meta AS mp ON mp.id = i.meta_pit_id
   LEFT JOIN dgeo.usuario AS uc ON uc.uuid = i.usuario_cadastramento_uuid
   LEFT JOIN dgeo.usuario AS um ON um.uuid = i.usuario_modificacao_uuid`
 

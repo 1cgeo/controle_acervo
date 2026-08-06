@@ -248,13 +248,18 @@ const buscarEntregasDetalhadas = async ({ ano, mes }) => {
     `SELECT tp.nome AS tipo_produto, te.nome AS escala,
             v.uuid_versao::text AS uuid_versao,
             COALESCE(p.mi, p.inom, p.nome) AS identificador,
-            COALESCE(NULLIF(m.item, '-'), m.numero_meta::text) AS meta,
+            -- O CODIGO DO ITEM ('1.1'). O NULLIF para '-' era defesa contra um
+            -- sentinela textual que o cadastro antigo gravava; pit.meta_item
+            -- exige item NOT NULL, entao o COALESCE so cobre a versao SEM meta.
+            -- (Sem crase neste comentario: template literal.)
+            COALESCE(m.item, g.numero_meta::text) AS meta,
             l.pit AS lote
      FROM acervo.versao AS v
      JOIN acervo.produto AS p ON p.id = v.produto_id
      JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
      JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
-     LEFT JOIN pit.meta AS m ON m.id = v.meta_pit_id
+     LEFT JOIN pit.meta_item AS m ON m.id = v.meta_pit_id
+     LEFT JOIN pit.meta AS g ON g.id = m.meta_id
      LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
      WHERE v.tipo_versao_id = $<versaoRegular>
        AND ${filtroPeriodoMes('v.data_edicao', { cumulativo: false })}
@@ -832,11 +837,17 @@ const formatPrazo = valor => {
 }
 
 /**
- * Uma linha por meta-FOLHA, agrupada por meta.
+ * Uma linha por ITEM do PIT, agrupada por meta.
  *
  * O rótulo da meta é escrito só na PRIMEIRA linha do bloco, como o documento
  * faz: repeti-lo em todas encheria a coluna mais estreita da tabela com o mesmo
  * texto.
+ *
+ * O RÓTULO SAI DE `nome`, e não mais de uma linha de cabeçalho. Enquanto o nome
+ * do grupo era a `descricao` de uma linha de meta com `item` nulo, esta função
+ * tinha de achar essa linha, separar os itens dela e ainda distinguir a meta
+ * indivisa (que era a própria folha). Com `pit.meta.nome` os três casos viram
+ * um: toda linha é um item, e o nome do grupo viaja nela.
  *
  * A `unidade` da meta NÃO sai. O modelo tem uma coluna "Quantidade" e nenhuma de
  * unidade, e enfiar 'carta' dentro do número faria a coluna deixar de ser
@@ -853,20 +864,10 @@ const montarEstadoPit = ({ metas }) => {
   const numerosOrdenados = [...porNumero.keys()].sort((a, b) => a - b)
 
   for (const numeroMeta of numerosOrdenados) {
-    const doGrupo = porNumero.get(numeroMeta)
-    const cabecalho = doGrupo.find(m => m.item === null)
-    const itens = doGrupo.filter(m => m.item !== null)
+    const daTabela = porNumero.get(numeroMeta)
+    const nome = daTabela.length > 0 ? daTabela[0].nome : null
 
-    // Meta subdividida: as linhas são os ITENS, e o nome da meta vira o rótulo
-    // do bloco. Meta indivisa: a própria linha de cabeçalho é a folha, e a
-    // descrição dela é o produto -- pô-la também no rótulo a escreveria duas
-    // vezes na mesma linha.
-    const subdividida = itens.length > 0
-    const daTabela = subdividida ? itens : doGrupo.filter(m => m.folha)
-
-    const rotulo = subdividida && cabecalho && cabecalho.descricao
-      ? `Meta ${numeroMeta} - ${cabecalho.descricao}`
-      : `Meta ${numeroMeta}`
+    const rotulo = nome ? `Meta ${numeroMeta} - ${nome}` : `Meta ${numeroMeta}`
 
     daTabela.forEach((m, i) => {
       linhas.push([

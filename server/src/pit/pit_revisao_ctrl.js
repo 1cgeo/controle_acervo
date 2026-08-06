@@ -29,7 +29,9 @@ const controller = {}
 // --- Exercício --------------------------------------------------------------
 
 const colunasExercicio = `e.ano, e.situacao_id, s.nome AS situacao, e.observacao,
-  (SELECT count(*)::int FROM pit.meta m WHERE m.ano = e.ano) AS metas,
+  (SELECT count(*)::int FROM pit.meta_item mi
+    INNER JOIN pit.meta m ON m.id = mi.meta_id
+    WHERE m.ano = e.ano) AS metas,
   (SELECT count(*)::int FROM pit.revisao r WHERE r.ano = e.ano) AS revisoes,
   e.data_cadastramento, e.usuario_cadastramento_uuid,
   e.data_modificacao, e.usuario_modificacao_uuid`
@@ -140,7 +142,7 @@ const colunasRevisao = `r.id, r.ano, r.codigo, r.data_documento::text AS data_do
   r.data_vigencia::text AS data_vigencia,
   (r.data_vigencia IS NULL) AS rascunho,
   r.observacao,
-  (SELECT count(*)::int FROM pit.meta_revisao mr WHERE mr.revisao_id = r.id) AS alteracoes,
+  (SELECT count(*)::int FROM pit.meta_item_revisao mr WHERE mr.revisao_id = r.id) AS alteracoes,
   (SELECT count(*)::int FROM pit.anexo_revisao a WHERE a.revisao_id = r.id) AS anexos,
   r.data_cadastramento, r.usuario_cadastramento_uuid,
   r.data_modificacao, r.usuario_modificacao_uuid`
@@ -177,26 +179,28 @@ controller.alteracoes = async id => {
     `WITH alvo AS (
        SELECT r.id, r.ano, r.data_vigencia FROM pit.revisao r WHERE r.id = $<id>
      )
-     SELECT mr.meta_id, m.item, m.numero_meta, mr.descricao, mr.quantidade_prevista,
+     SELECT mr.meta_item_id AS meta_id, mi.item, g.numero_meta, g.nome,
+            mr.descricao, mr.quantidade_prevista,
             mr.prazo::text AS prazo, mr.demandante, mr.cancelada,
             ant.quantidade_prevista AS quantidade_anterior,
             ant.prazo::text AS prazo_anterior,
             ant.cancelada AS cancelada_anterior,
-            (ant.meta_id IS NULL) AS meta_nova
-     FROM pit.meta_revisao mr
+            (ant.meta_item_id IS NULL) AS meta_nova
+     FROM pit.meta_item_revisao mr
      INNER JOIN alvo ON alvo.id = mr.revisao_id
-     INNER JOIN pit.meta m ON m.id = mr.meta_id
+     INNER JOIN pit.meta_item mi ON mi.id = mr.meta_item_id
+     INNER JOIN pit.meta g ON g.id = mi.meta_id
      LEFT JOIN LATERAL (
-       SELECT x.* FROM pit.meta_revisao x
+       SELECT x.* FROM pit.meta_item_revisao x
        INNER JOIN pit.revisao rr ON rr.id = x.revisao_id
-       WHERE x.meta_id = mr.meta_id
+       WHERE x.meta_item_id = mr.meta_item_id
          AND rr.id <> alvo.id
          AND rr.data_vigencia IS NOT NULL
          AND (alvo.data_vigencia IS NULL OR rr.data_vigencia <= alvo.data_vigencia)
        ORDER BY rr.data_vigencia DESC, rr.id DESC
        LIMIT 1
      ) ant ON TRUE
-     ORDER BY m.numero_meta, m.item`,
+     ORDER BY g.numero_meta, mi.item`,
     { id }
   )
 }
@@ -322,7 +326,7 @@ controller.publicar = async (id, dados, usuarioUuid, contexto) => {
     // Revisão que não altera nada não é revisão. Publicá-la só sujaria a lista e
     // deslocaria a leitura para uma linha que repete a anterior.
     const { alteracoes } = await t.one(
-      'SELECT count(*)::int AS alteracoes FROM pit.meta_revisao WHERE revisao_id = $<id>',
+      'SELECT count(*)::int AS alteracoes FROM pit.meta_item_revisao WHERE revisao_id = $<id>',
       { id }
     )
     if (alteracoes === 0) {
@@ -362,22 +366,21 @@ controller.publicar = async (id, dados, usuarioUuid, contexto) => {
 }
 
 /**
- * Tira a declaração de UMA meta de uma revisão em RASCUNHO.
+ * Tira a declaração de UM ITEM de uma revisão em RASCUNHO.
  *
- * POR QUE ELA EXISTE. A tabela `pit.meta_revisao` é esparsa: a linha só nasce
- * quando algo muda, e por isso as linhas de uma revisão SÃO as alterações dela.
- * Faltava o caminho de volta: quem acrescentasse uma meta por engano ao
+ * POR QUE ELA EXISTE. A tabela `pit.meta_item_revisao` é esparsa: a linha só
+ * nasce quando algo muda, e por isso as linhas de uma revisão SÃO as alterações
+ * dela. Faltava o caminho de volta: quem acrescentasse um item por engano ao
  * rascunho só saía publicando o erro, e revisão publicada não se apaga.
  *
- * A lacuna apareceu na carga do PIT de 2026: a meta 6.9 não existe no R0, e
- * teve de entrar nele marcada `cancelada` porque não havia como deixá-la
- * AUSENTE.
+ * A lacuna apareceu na carga do PIT de 2026: a 6.9 não existe no R0, e teve de
+ * entrar nele marcada `cancelada` porque não havia como deixá-la AUSENTE.
  *
  * SÓ NO RASCUNHO. Na revisão publicada esta linha é o que o relatório de um mês
  * passado reporta; removê-la reescreveria esse passado.
  *
- * O evento cai no agregado da META, e não no do exercício: a pergunta que se
- * faz depois é "por que a 4.2 voltou a 247", e ela se faz na ficha da meta.
+ * O evento cai no agregado do ITEM, e não no do exercício: a pergunta que se
+ * faz depois é "por que a 4.2 voltou a 247", e ela se faz na ficha do item.
  */
 controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
@@ -397,22 +400,22 @@ controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) 
     }
 
     const antes = await t.oneOrNone(
-      `SELECT * FROM pit.meta_revisao
-       WHERE revisao_id = $<revisaoId> AND meta_id = $<metaId>`,
+      `SELECT * FROM pit.meta_item_revisao
+       WHERE revisao_id = $<revisaoId> AND meta_item_id = $<metaId>`,
       { revisaoId, metaId }
     )
     if (!antes) {
       throw new AppError(
-        'Esta meta não é alterada por esta revisão', httpCode.NotFound
+        'Este item não é alterado por esta revisão', httpCode.NotFound
       )
     }
 
     await t.none(
-      'DELETE FROM pit.meta_revisao WHERE id = $<id>', { id: antes.id }
+      'DELETE FROM pit.meta_item_revisao WHERE id = $<id>', { id: antes.id }
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.meta_revisao',
+      tabela: 'pit.meta_item_revisao',
       registroId: antes.id,
       operacao: 'D',
       antes,

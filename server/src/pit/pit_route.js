@@ -515,7 +515,7 @@ router.post(
 // que esta no sistema e transcricao dele: editar o R0 publicado conserta a nossa
 // COPIA, e nao o plano. O controller cobra o motivo e ele desce para o rastro.
 //
-// AS TRES OPERACOES cabem nesta rota, porque `pit.meta_revisao` e esparsa:
+// AS TRES OPERACOES cabem nesta rota, porque `pit.meta_item_revisao` e esparsa:
 // acrescentar e a primeira linha da meta, alterar e a linha com o numero novo,
 // cancelar e a linha com `cancelada`. Tirar a meta da revisao e o DELETE abaixo.
 router.put(
@@ -540,7 +540,7 @@ router.put(
 // REMOVE a declaracao de UMA meta do RASCUNHO. Antes de '/revisoes/:id' pela
 // ordem de declaracao.
 //
-// Existe porque `pit.meta_revisao` e esparsa -- as linhas de uma revisao SAO as
+// Existe porque `pit.meta_item_revisao` e esparsa -- as linhas de uma revisao SAO as
 // alteracoes dela --, e faltava o caminho de volta: quem acrescentasse uma meta
 // por engano so saia publicando o erro. A lacuna apareceu na carga do PIT de
 // 2026, onde a meta 6.9 teve de entrar no R0 marcada `cancelada` por nao haver

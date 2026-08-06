@@ -55,85 +55,124 @@ CREATE TABLE pit.exercicio(
 COMMENT ON TABLE pit.exercicio IS
     'O ano do PIT. Existe para o ano deixar de ser um SMALLINT solto e para o encerramento ser um ato.';
 
--- Meta do ano. `numero_meta` é a meta (1 a 7 em 2026) e `item` é o sub-item
--- quando ela se subdivide ('4.1'). A meta indivisa fica com `item` NULO. O '-'
--- que aparece na tela e no CLI é como eles IMPRIMEM o nulo, não o valor gravado.
+-- A META DO ANO: o GRUPO numerado que o documento assinado nomeia.
+--
+-- O PIT NÃO É UMA LISTA PLANA, e o documento diz isso na cara: "Meta 1 -
+-- Produção de Geoinformação" abre um bloco, e dentro dele vem uma TABELA cujas
+-- linhas são o trabalho ("1.1. Carta Topográfica 1:25.000. | COTER/DECEX | 24").
+-- São dois níveis. Esta tabela é o de cima, e `pit.meta_item` é o de baixo.
+--
+-- ATÉ 1.29.0 OS DOIS MORAVAM AQUI, achatados. A linha de cabeçalho entrava como
+-- se fosse uma meta, com `item` NULO, e o nome do grupo ia parar na `descricao`
+-- de uma declaração de revisão. Custava três coisas: todo consumidor tinha de
+-- saber excluir o cabeçalho sozinho (era o que a constante EH_FOLHA fazia, em
+-- três consultas), o nome do grupo só existia se alguma revisão o declarasse, e
+-- não havia como distinguir "aponta a Meta 4" de "aponta a 4.1".
 --
 -- A numeração NÃO é estável entre anos: o PIT é reescrito todo ano e a Meta 4 de
 -- 2026 (impressão) pode ser outra coisa em 2027. Por isso `ano` entra na chave
 -- única e todo consumidor guarda o `id`, nunca o código.
--- NÃO existe coluna de "nome da meta". No SAP ela é repetida em toda linha da
--- mesma meta; aqui a linha de cabeçalho (a de `item` nulo) JÁ é esse nome, e é
--- dela que a 2.1 tira o texto que abre o bloco. Duas colunas para a mesma frase
--- divergiriam na primeira correção de português.
+--
+-- O QUE APONTA PARA CÁ, e foi medido em 2026-08-05: as duas colunas do
+-- orçamento (`orcamento.pdr_item.meta_pit_id` e
+-- `orcamento.nota_credito.meta_pit_id`). Os 67 vínculos delas apontam a META, e
+-- nenhum aponta item, porque o crédito é autorizado para a meta inteira. O
+-- TRABALHO (versão, pedido, capacitação) aponta `pit.meta_item`.
 CREATE TABLE pit.meta(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
   numero_meta SMALLINT NOT NULL,
-  item VARCHAR(20),
-  -- A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE NÃO MORAM AQUI.
-  -- Eles são o que a DSG DECLARA, e a DSG revisa o PIT durante a
-  -- execução: o R0 de 2026 avisa que "o EM/DSG realizará a revisão do PIT nos
-  -- meses de ABR e AGO 26". Os quatro vivem em `pit.meta_revisao`, uma linha
-  -- por revisão que os mudou.
+  -- O NOME DO GRUPO, como o documento o escreve. É IDENTIDADE, e não declaração:
+  -- a tabela de itens do documento não o repete, e revisão nenhuma o altera.
+  -- Enquanto ele morava numa `descricao` de revisão, o grupo só tinha nome
+  -- depois que alguma revisão o declarasse, e o nome de uma coisa não depende de
+  -- ela ter sido revisada.
+  nome VARCHAR(255) NOT NULL,
+  -- A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE NÃO MORAM AQUI, e agora
+  -- nem no mesmo nível: eles são o que a DSG declara SOBRE UM ITEM, e vivem em
+  -- `pit.meta_item_revisao`, uma linha por revisão que os mudou.
   --
-  -- O QUE FICA AQUI é o que o SCA decide (unidade e origem) mais o que revisão
-  -- nenhuma muda (ano, número, item). É por isso que o id é ESTÁVEL, e é nele
-  -- que os seis vínculos de outros schemas se penduram.
+  -- `unidade_id` E `origem_id` TAMBÉM SAÍRAM. As duas são propriedade do ITEM: o
+  -- grupo não conta nada e não tem de onde calcular. Enquanto moravam aqui,
+  -- `unidade_id` precisava ser anulável só para o cabeçalho aceitar nulo.
   --
-  -- O QUE A META CONTA. Domínio FECHADO: em texto livre viram treze valores
-  -- para cinco coisas ('carta' e 'folha' para a mesma) e itens sem unidade
-  -- nenhuma. A grade assume que uma versão do acervo vale UMA unidade da meta, e
-  -- o domínio é quem declara isso.
-  --
-  -- ANULÁVEL só para a linha de cabeçalho: o que ela agrupa é que conta.
-  unidade_id SMALLINT REFERENCES dominio.unidade_meta (code),
-  -- DE ONDE VEM O NÚMERO desta meta. Manual é o lançamento à mão em
-  -- `pit.execucao`, e é o padrão: toda meta nasce assim, inclusive as que já
-  -- existiam. As outras três são calculadas na LEITURA, e a gravação nelas é
-  -- recusada com 400.
-  --
-  -- A DIVISÃO É PERMANENTE, e não uma fase de transição. Das 42 folhas do PIT de
-  -- 2026, no máximo 17 têm de onde calcular (as metas 1, 4 e 5). As metas 6
-  -- (Programa Memória) e 7 (TI) são catalogação, digitalização e marco: não
-  -- existe entidade no SCA para contar, e nunca vai existir só por causa disto.
-  -- É por isso que a origem se declara na meta, em vez de ser adivinhada.
-  --
-  -- SÓ A FOLHA pode ser automática. A linha de cabeçalho de uma meta subdividida
-  -- não recebe lançamento, e deixá-la calcular somaria o mesmo trabalho duas
-  -- vezes, uma nos itens e outra nela. Quem cobra isso é o controlador: o CHECK
-  -- não enxerga "tem item abaixo", que é outra linha desta mesma tabela.
-  origem_id SMALLINT NOT NULL DEFAULT 1 REFERENCES dominio.origem_meta (code),
   -- NÃO HÁ `situacao_id`. Ela existiu por um dia, com quatro
   -- estados. Dos quatro, só 'Cancelada' era ato da DSG, e por isso virou
-  -- `pit.meta_revisao.cancelada`; 'Em andamento' e 'Concluída' a grade calcula
-  -- do que foi lançado, e status digitado ao lado de status calculado é a
-  -- segunda verdade que este schema vem eliminando.
+  -- `pit.meta_item_revisao.cancelada`; 'Em andamento' e 'Concluída' a grade
+  -- calcula do que foi lançado, e status digitado ao lado de status calculado é
+  -- a segunda verdade que este schema vem eliminando.
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  UNIQUE (ano, numero_meta, item)
+  CONSTRAINT unique_meta_por_ano UNIQUE (ano, numero_meta)
 );
 
 COMMENT ON TABLE pit.meta IS
-    'Meta do PIT do ano. `item` guarda o sub-item quando a meta se subdivide (ex.: 4.1), e é NULO quando a meta é indivisa.';
+    'Meta do PIT do ano: o GRUPO numerado que o documento assinado nomeia. O trabalho que ela promete vive em pit.meta_item.';
 
 CREATE INDEX idx_meta_ano ON pit.meta (ano);
 
+-- A UNIDADE DE TRABALHO: uma linha da tabela que o documento traz dentro da
+-- meta. É o que PROMETE, e por isso é aqui que os vínculos de trabalho se
+-- penduram.
+--
+-- O ID É ESTÁVEL, e é nele que `acervo.versao`, `mapoteca.pedido`,
+-- `rpcmtec.capacitacao` e `pit.execucao` se amarram. O que revisão nenhuma muda
+-- (o código do item) fica aqui; o que ela muda (quantidade, prazo, demandante,
+-- descrição) fica em `pit.meta_item_revisao`.
+--
+-- NÃO HÁ RENUMERAÇÃO de item, e é por isso que `item` pode ficar na identidade.
+CREATE TABLE pit.meta_item(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  meta_id BIGINT NOT NULL REFERENCES pit.meta (id) ON DELETE CASCADE,
+  -- O código do documento ('1.1', '4.2'). TEXTO, e não dois inteiros: o
+  -- documento escreve '1.10' depois de '1.9', e quem precisa da ordem numérica
+  -- resolve na consulta.
+  item VARCHAR(20) NOT NULL,
+  -- O QUE ESTE ITEM CONTA. Domínio FECHADO: em texto livre viraram treze valores
+  -- para cinco coisas ('carta' e 'folha' para a mesma) e itens sem unidade
+  -- nenhuma. A grade assume que uma versão do acervo vale UMA unidade, e o
+  -- domínio é quem declara isso.
+  --
+  -- NOT NULL, e a medição sustenta: os 42 itens de 2026 têm unidade. Ela era
+  -- anulável só porque o cabeçalho morava na mesma tabela e não contava nada.
+  unidade_id SMALLINT NOT NULL REFERENCES dominio.unidade_meta (code),
+  -- DE ONDE VEM O NÚMERO deste item. Manual é o lançamento à mão em
+  -- `pit.execucao`, e é o padrão: todo item nasce assim. As outras três são
+  -- calculadas na LEITURA, e a gravação nelas é recusada com 400.
+  --
+  -- A DIVISÃO É PERMANENTE, e não uma fase de transição. Dos 42 itens do PIT de
+  -- 2026, no máximo 17 têm de onde calcular (as metas 1, 4 e 5). As metas 6
+  -- (Programa Memória) e 7 (TI) são catalogação, digitalização e marco: não
+  -- existe entidade no SCA para contar, e nunca vai existir só por causa disto.
+  -- É por isso que a origem se declara no item, em vez de ser adivinhada.
+  origem_id SMALLINT NOT NULL DEFAULT 1 REFERENCES dominio.origem_meta (code),
+  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+  data_modificacao TIMESTAMP WITH TIME ZONE,
+  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+  CONSTRAINT unique_item_por_meta UNIQUE (meta_id, item)
+);
+
+COMMENT ON TABLE pit.meta_item IS
+    'A unidade de trabalho do PIT: uma linha da tabela que o documento traz dentro de cada meta. É o alvo dos vínculos de trabalho (versão, pedido, capacitação) e da execução mensal.';
+
+CREATE INDEX idx_meta_item_meta ON pit.meta_item (meta_id);
+
 -- ---------------------------------------------------------------------------
--- A REVISÃO do PIT, e a meta como cada uma a declara.
+-- A REVISÃO do PIT, e o item como cada uma o declara.
 --
 -- POR QUE ELA EXISTE. A DSG revisa o PIT durante a execução, e o próprio R0 de
--- 2026 avisa disso. Com uma linha por meta, a revisão ou SOBRESCREVIA a promessa
--- (e o relatório de março deixava de ser reproduzível) ou criava meta nova (e os
--- seis vínculos que apontam para `pit.meta` ficavam órfãos). Os dois estão
+-- 2026 avisa disso. Com uma linha por item, a revisão ou SOBRESCREVIA a promessa
+-- (e o relatório de março deixava de ser reproduzível) ou criava item novo (e os
+-- vínculos que apontam para `pit.meta_item` ficavam órfãos). Os dois estão
 -- errados, e é o que motivou separar identidade de declaração.
 --
--- ALTERAR O PIT É CANCELAR, ALTERAR E ADICIONAR META. Só
--- isso, e uma forma só cobre as três: adicionar é a primeira linha da meta em
--- `meta_revisao`; alterar é uma linha nova com o número novo; cancelar é uma
--- linha nova com `cancelada`. Nenhum caso especial, e nenhum DELETE.
+-- ALTERAR O PIT É CANCELAR, ALTERAR E ADICIONAR ITEM. Só
+-- isso, e uma forma só cobre as três: adicionar é a primeira linha do item em
+-- `meta_item_revisao`; alterar é uma linha nova com o número novo; cancelar é
+-- uma linha nova com `cancelada`. Nenhum caso especial, e nenhum DELETE.
 --
 -- NÃO HÁ RENUMERAÇÃO de item, e é por isso que `item` pode
 -- ficar na identidade.
@@ -207,33 +246,42 @@ CREATE TABLE pit.anexo_revisao(
 
 CREATE INDEX idx_anexo_revisao_revisao ON pit.anexo_revisao (revisao_id);
 
--- A meta como uma revisão a declara.
+-- O ITEM como uma revisão o declara.
 --
 -- ESPARSA, E POR ISSO ELA É O HISTÓRICO. Só se grava linha quando algo muda,
 -- então as linhas de uma revisão SÃO as alterações dela, sem diff e sem cálculo,
--- e "em que revisão a meta 4.2 mudou" é a lista de revisões em que ela tem
--- linha. Medido no R0 e no R1 assinados de 2026: cinco mudanças em 38 itens (a
--- 4.2 de 247 para 252, a 6.8 de 73 para 61, a 6.9 aparecendo, a 5.2 e a 5.3
--- canceladas). Um instantâneo por revisão gravaria 49 linhas para registrar as
--- cinco, e convidaria as 44 cópias a divergirem.
-CREATE TABLE pit.meta_revisao(
+-- e "em que revisão a 4.2 mudou" é a lista de revisões em que ela tem linha.
+-- Medido no R0 e no R1 assinados de 2026: cinco mudanças em 39 itens (a 4.2 de
+-- 247 para 252, a 6.8 de 73 para 61, a 6.9 aparecendo, a 5.2 e a 5.3
+-- canceladas). Um instantâneo por revisão gravaria 39 linhas para registrar as
+-- cinco, e convidaria as 34 cópias a divergirem.
+--
+-- SÓ O ITEM TEM DECLARAÇÃO. O grupo não promete nada: o que ele agrupa é que
+-- promete, e o nome dele é identidade (`pit.meta.nome`).
+CREATE TABLE pit.meta_item_revisao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
-  meta_id BIGINT NOT NULL REFERENCES pit.meta (id) ON DELETE CASCADE,
+  meta_item_id BIGINT NOT NULL REFERENCES pit.meta_item (id) ON DELETE CASCADE,
   revisao_id BIGINT NOT NULL REFERENCES pit.revisao (id) ON DELETE CASCADE,
-  -- A frase da DSG. Ela JÁ contém o demandante e a quantidade ("Carta
-  -- Topográfica 1:25.000. COTER, 24"), e por isso desce junto com os dois: se
-  -- ficasse na identidade, uma revisão que mudasse o número deixaria o texto
-  -- mentindo.
+  -- SÓ o Produto ou Serviço, que é a primeira coluna da tabela do documento
+  -- ("Carta Topográfica 1:25.000."). O Solicitante e a Quantidade têm coluna
+  -- própria aqui, como têm no documento.
+  --
+  -- ATÉ 1.29.0 OS TRÊS VINHAM COLADOS num texto só ("Carta Topográfica
+  -- 1:25.000. COTER/DECEX, 24"), e a consequência era que `demandante` existia e
+  -- ninguém preenchia: nos 42 itens de 2026 ele estava NULO, porque o valor
+  -- morava dentro da frase. A migração 1.30.0 partiu as 44 linhas que tinham o
+  -- sufixo.
   descricao TEXT NOT NULL,
-  -- ANULÁVEL para a linha de cabeçalho, que não promete quantidade: o que ela
-  -- agrupa é que promete.
+  -- ANULÁVEL porque o PIT de 2025 foi transcrito sem quantidade nenhuma, e
+  -- porque a revisão pode declarar só o cancelamento.
   quantidade_prevista INTEGER CHECK (quantidade_prevista IS NULL OR quantidade_prevista >= 0),
   -- Previsão de término. DATA, e não texto: o documento escreve 'AGO 26' e
   -- '1º trim 2026', e quem formata é o gerador.
   prazo DATE,
-  -- Quem pediu ('COTER/DECEX', 'APHC/DSG'). Texto, e não tabela de OM: o
-  -- demandante do PIT é sigla composta escrita no documento assinado, e casá-la
-  -- com o catálogo de clientes da mapoteca acertaria alguns e inventaria outros.
+  -- O SOLICITANTE do documento ('COTER/DECEX', 'APHC/DSG'). Texto, e não tabela
+  -- de OM: o demandante do PIT é sigla composta escrita no documento assinado, e
+  -- casá-la com o catálogo de clientes da mapoteca acertaria alguns e
+  -- inventaria outros.
   demandante VARCHAR(255),
   -- O ÚNICO ato de situação que é da DSG. O andamento e a conclusão a grade
   -- calcula do que foi lançado.
@@ -242,70 +290,80 @@ CREATE TABLE pit.meta_revisao(
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  CONSTRAINT unique_meta_por_revisao UNIQUE (meta_id, revisao_id)
+  CONSTRAINT unique_item_por_revisao UNIQUE (meta_item_id, revisao_id)
 );
 
-COMMENT ON TABLE pit.meta_revisao IS
-    'A meta como uma revisão do PIT a declara. ESPARSA: só há linha quando a revisão muda alguma coisa, e por isso as linhas de uma revisão SÃO as alterações dela.';
+COMMENT ON TABLE pit.meta_item_revisao IS
+    'O item do PIT como uma revisão o declara. ESPARSA: só há linha quando a revisão muda alguma coisa, e por isso as linhas de uma revisão SÃO as alterações dela.';
 
-CREATE INDEX idx_meta_revisao_meta ON pit.meta_revisao (meta_id);
-CREATE INDEX idx_meta_revisao_revisao ON pit.meta_revisao (revisao_id);
+CREATE INDEX idx_meta_item_revisao_item ON pit.meta_item_revisao (meta_item_id);
+CREATE INDEX idx_meta_item_revisao_revisao ON pit.meta_item_revisao (revisao_id);
 
--- A meta com a promessa EM VIGOR.
+-- O ITEM com a promessa EM VIGOR.
 --
--- Devolve os MESMOS nomes de coluna que `pit.meta` tinha, para quem lia a tabela
--- trocar uma palavra e não vinte. `revisao` vai junto porque a tela precisa
--- dizer de onde o número veio: "24 folhas, pelo R1".
+-- UMA LINHA POR ITEM, e o grupo entra por JOIN: `numero_meta` e `nome` vêm de
+-- `pit.meta`, então quem lia a meta continua achando as duas colunas no mesmo
+-- lugar. `revisao` vai junto porque a tela precisa dizer de onde o número veio:
+-- "24 folhas, pelo R1".
+--
+-- O CABEÇALHO NÃO ESTÁ MAIS AQUI, e é a mudança que interessa. A view devolvia
+-- 46 linhas para 2026 (39 itens declarados mais os 7 cabeçalhos) e devolve 39:
+-- quem quer o nome do grupo lê `nome`, e não uma linha falsa de meta.
 CREATE OR REPLACE VIEW pit.meta_vigente AS
-SELECT m.id, m.ano, m.numero_meta, m.item, m.unidade_id, m.origem_id,
+SELECT mi.id, m.ano, m.numero_meta, m.nome, mi.meta_id, mi.item,
+       mi.unidade_id, mi.origem_id,
        u.nome AS unidade,
        mr.descricao, mr.quantidade_prevista, mr.prazo, mr.demandante,
        mr.cancelada, mr.revisao_id, r.codigo AS revisao,
-       m.data_cadastramento, m.usuario_cadastramento_uuid,
-       m.data_modificacao, m.usuario_modificacao_uuid
-FROM pit.meta m
-LEFT JOIN dominio.unidade_meta u ON u.code = m.unidade_id
--- INNER, e nao LEFT. A meta que revisao PUBLICADA nenhuma declarou ainda nao
--- esta no plano: ela nao e uma meta de valores desconhecidos, e uma meta que nao
--- existe. Com LEFT ela saia da view com tudo nulo, uma linha em branco no PIT do
+       mi.data_cadastramento, mi.usuario_cadastramento_uuid,
+       mi.data_modificacao, mi.usuario_modificacao_uuid
+FROM pit.meta_item mi
+INNER JOIN pit.meta m ON m.id = mi.meta_id
+LEFT JOIN dominio.unidade_meta u ON u.code = mi.unidade_id
+-- INNER, e nao LEFT. O item que revisao PUBLICADA nenhuma declarou ainda nao
+-- esta no plano: ele nao e um item de valores desconhecidos, e um item que nao
+-- existe. Com LEFT ele saia da view com tudo nulo, uma linha em branco no PIT do
 -- ano. Foi o que aconteceu com os itens 1.9, 1.10 e 1.11 de 2026, que sairam da
 -- R0 (onde estavam por erro de transcricao) e foram para o rascunho da R2.
 --
--- Isso tambem mata um remendo: a meta 6.9 de 2026 teve de entrar no R0 marcada
+-- Isso tambem mata um remendo: a 6.9 de 2026 teve de entrar no R0 marcada
 -- `cancelada` por nao haver como deixa-la AUSENTE. Agora ausente e o caminho.
 INNER JOIN LATERAL (
-  SELECT x.* FROM pit.meta_revisao x
+  SELECT x.* FROM pit.meta_item_revisao x
   INNER JOIN pit.revisao rr ON rr.id = x.revisao_id
-  WHERE x.meta_id = m.id AND rr.data_vigencia IS NOT NULL
+  WHERE x.meta_item_id = mi.id AND rr.data_vigencia IS NOT NULL
   ORDER BY rr.data_vigencia DESC, rr.id DESC
   LIMIT 1
 ) mr ON TRUE
 LEFT JOIN pit.revisao r ON r.id = mr.revisao_id;
 
 COMMENT ON VIEW pit.meta_vigente IS
-    'A meta com a promessa da revisão em vigor hoje. Rascunho não entra, e meta que revisão publicada nenhuma declarou também não: ela ainda não está no plano.';
+    'O item do PIT com a promessa da revisão em vigor hoje. Rascunho não entra, e item que revisão publicada nenhuma declarou também não: ele ainda não está no plano.';
 
 -- A mesma coisa NUMA DATA, que é o que o RPCMTec de um mês precisa: a edição de
 -- março reporta contra a revisão que vigia em março, e não contra a de hoje. É
 -- o que faz a revisão retroativa não reescrever o passado por acidente.
 CREATE OR REPLACE FUNCTION pit.meta_em(data_ref DATE)
 RETURNS TABLE (
-  id BIGINT, ano SMALLINT, numero_meta SMALLINT, item VARCHAR,
+  id BIGINT, ano SMALLINT, numero_meta SMALLINT, nome VARCHAR,
+  meta_id BIGINT, item VARCHAR,
   unidade_id SMALLINT, origem_id SMALLINT, unidade VARCHAR,
   descricao TEXT, quantidade_prevista INTEGER, prazo DATE,
   demandante VARCHAR, cancelada BOOLEAN, revisao_id BIGINT, revisao VARCHAR
 ) AS $$
-  SELECT m.id, m.ano, m.numero_meta, m.item, m.unidade_id, m.origem_id,
-         u.nome, mr.descricao, mr.quantidade_prevista, mr.prazo, mr.demandante,
+  SELECT mi.id, m.ano, m.numero_meta, m.nome, mi.meta_id, mi.item,
+         mi.unidade_id, mi.origem_id, u.nome,
+         mr.descricao, mr.quantidade_prevista, mr.prazo, mr.demandante,
          mr.cancelada, mr.revisao_id, r.codigo
-  FROM pit.meta m
-  LEFT JOIN dominio.unidade_meta u ON u.code = m.unidade_id
-  -- INNER pela mesma razao da view acima: a meta que nao havia sido declarada
-  -- NAQUELA data nao disse nada, e o relatorio daquele mes nao pode reporta-la.
+  FROM pit.meta_item mi
+  INNER JOIN pit.meta m ON m.id = mi.meta_id
+  LEFT JOIN dominio.unidade_meta u ON u.code = mi.unidade_id
+  -- INNER pela mesma razao da view acima: o item que nao havia sido declarado
+  -- NAQUELA data nao disse nada, e o relatorio daquele mes nao pode reporta-lo.
   INNER JOIN LATERAL (
-    SELECT x.* FROM pit.meta_revisao x
+    SELECT x.* FROM pit.meta_item_revisao x
     INNER JOIN pit.revisao rr ON rr.id = x.revisao_id
-    WHERE x.meta_id = m.id
+    WHERE x.meta_item_id = mi.id
       AND rr.data_vigencia IS NOT NULL
       AND rr.data_vigencia <= data_ref
     ORDER BY rr.data_vigencia DESC, rr.id DESC
@@ -315,7 +373,7 @@ RETURNS TABLE (
 $$ LANGUAGE SQL STABLE;
 
 COMMENT ON FUNCTION pit.meta_em(DATE) IS
-    'A meta com a promessa que vigia na data pedida. A meta ainda não declarada por revisão publicada naquela data NÃO sai: ela não estava no plano.';
+    'O item do PIT com a promessa que vigia na data pedida. O item ainda não declarado por revisão publicada naquela data NÃO sai: ele não estava no plano.';
 
 -- O MÊS de uma meta: o que ela PLANEJOU entregar e o que ENTREGOU.
 --
@@ -326,8 +384,8 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- tabelas repetiriam a chave (meta, mês) e deixariam a comparação, que é a
 -- razão de as duas existirem, a um JOIN de distância.
 --
--- O PLANEJAMENTO É MENSAL, e isso é o que `pit.meta.quantidade_prevista`
--- sozinha não dizia: a meta 1.1 promete 24 no ano, distribuídos em abril 4,
+-- O PLANEJAMENTO É MENSAL, e isso é o que a `quantidade_prevista` da
+-- declaração sozinha não dizia: o item 1.1 promete 24 no ano, distribuídos em abril 4,
 -- maio 1, julho 16 e agosto 3. A soma do planejado TEM de bater com a
 -- quantidade prevista, e é a tela que confere -- na planilha essa conferência é
 -- a coluna "Total" ao lado da "Qnt", feita com o olho.
@@ -342,10 +400,11 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- O REALIZADO PODE PASSAR DO PLANEJADO, e passa: a meta 4.1 de 2026 planejou
 -- 327 e já entregou mais de cinco mil. Não há teto em lugar nenhum.
 --
--- LANÇAMENTO À MÃO SÓ NA META MANUAL. A meta declara em `pit.meta.origem_id` de
--- onde vem o seu número, e as três origens calculadas (Capacitação, Produção,
--- Impressão) não gravam nada aqui: os dois números são CONTADOS na leitura, das
--- entidades que cumprem a meta. Escrever nelas é recusado com 400.
+-- LANÇAMENTO À MÃO SÓ NO ITEM MANUAL. O item declara em
+-- `pit.meta_item.origem_id` de onde vem o seu número, e as três origens
+-- calculadas (Capacitação, Produção, Impressão) não gravam nada aqui: os dois
+-- números são CONTADOS na leitura, das entidades que cumprem o item. Escrever
+-- nelas é recusado com 400.
 --
 -- CADA NÚMERO TEM A SUA DATA, e nenhuma origem usa a mesma para os dois. O
 -- planejado sai da promessa (`acervo.versao.data_prevista`,
@@ -361,11 +420,18 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- aplicação, de propósito. O nome imperfeito custa menos do que uma trilha que
 -- deixa de casar com o mapa de entidades.
 --
--- SEM COLUNA `ano`: ele vem da meta. Uma cópia aqui permitiria lançar 2025 numa
--- meta de 2026, e nada acusaria.
+-- SEM COLUNA `ano`: ele vem do item, pela meta. Uma cópia aqui permitiria lançar
+-- 2025 num item de 2026, e nada acusaria.
+--
+-- O LANÇAMENTO É DO ITEM, e não do grupo. O nome `meta_id` fica, porque
+-- `auditoria.evento` guarda o nome do campo em cada linha e a coluna já é lida
+-- em toda a grade; o que mudou é o ALVO. Antes o cabeçalho podia receber
+-- lançamento, e o controlador tinha de recusá-lo à mão para o total da meta não
+-- ser contado duas vezes. Agora o cabeçalho não é uma linha desta chave, e a
+-- recusa deixa de ser código.
 CREATE TABLE pit.execucao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
-  meta_id BIGINT NOT NULL REFERENCES pit.meta (id) ON DELETE CASCADE,
+  meta_id BIGINT NOT NULL REFERENCES pit.meta_item (id) ON DELETE CASCADE,
   mes SMALLINT NOT NULL CHECK (mes BETWEEN 1 AND 12),
   quantidade_planejada INTEGER CHECK (quantidade_planejada IS NULL OR quantidade_planejada >= 0),
   quantidade INTEGER CHECK (quantidade IS NULL OR quantidade >= 0),
@@ -377,7 +443,7 @@ CREATE TABLE pit.execucao(
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
-  -- Uma linha por meta por mês. Duas seriam duas verdades sobre o mesmo mês, e
+  -- Uma linha por item por mês. Duas seriam duas verdades sobre o mesmo mês, e
   -- a soma do ano contaria as duas.
   UNIQUE (meta_id, mes),
   CONSTRAINT execucao_diz_alguma_coisa CHECK (
@@ -389,7 +455,7 @@ CREATE TABLE pit.execucao(
 );
 
 COMMENT ON TABLE pit.execucao IS
-    'O mês de uma meta do PIT: o que ela planejou entregar e o que entregou. Uma linha por (meta, mês); o ano vem da meta.';
+    'O mês de um item do PIT: o que ele planejou entregar e o que entregou. Uma linha por (item, mês); o ano vem da meta do item.';
 
 CREATE INDEX idx_execucao_meta ON pit.execucao (meta_id);
 

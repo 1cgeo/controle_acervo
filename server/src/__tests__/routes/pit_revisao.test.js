@@ -9,7 +9,7 @@
 //
 // O QUE ESTE ARQUIVO PROTEGE, e a lacuna que o originou:
 //
-//   1. TIRAR uma meta do rascunho. `pit.meta_revisao` é esparsa, e as linhas de
+//   1. TIRAR uma meta do rascunho. `pit.meta_item_revisao` é esparsa, e as linhas de
 //      uma revisão SÃO as alterações dela: faltava o caminho de volta, e quem
 //      acrescentasse uma meta por engano só saía publicando o erro. A lacuna
 //      apareceu na carga do PIT de 2026, onde a meta 6.9 teve de entrar no R0
@@ -36,15 +36,23 @@ afterEach(async () => {
 
 const admin = () => generateAdminToken()
 
-// Uma meta com identidade, sem declaração nenhuma: a declaração é o que a
-// revisão traz.
-const criarMeta = async (numeroMeta, item) =>
-  conn.one(
-    `INSERT INTO pit.meta (ano, numero_meta, item, unidade_id, origem_id,
-                           usuario_cadastramento_uuid)
-     VALUES (2026, $1, $2, 1, 1, $3) RETURNING id`,
-    [numeroMeta, item, ADMIN_UUID]
+// Um ITEM com identidade, sem declaração nenhuma: a declaração é o que a
+// revisão traz. O GRUPO nasce junto, porque o item pendura nele.
+const criarMeta = async (numeroMeta, item) => {
+  const grupo = await conn.one(
+    `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
+     VALUES (2026, $1, $2, $3)
+     ON CONFLICT (ano, numero_meta) DO UPDATE SET nome = pit.meta.nome
+     RETURNING id`,
+    [numeroMeta, `Meta ${numeroMeta}`, ADMIN_UUID]
   )
+  return conn.one(
+    `INSERT INTO pit.meta_item (meta_id, item, unidade_id, origem_id,
+                                usuario_cadastramento_uuid)
+     VALUES ($1, $2, 1, 1, $3) RETURNING id`,
+    [grupo.id, item, ADMIN_UUID]
+  )
+}
 
 const criarRevisao = async (codigo) => {
   const res = await request(app)
@@ -59,8 +67,8 @@ const criarRevisao = async (codigo) => {
 // metas, e o que se mede aqui é a REVISÃO, não o caminho de escrita da meta.
 const declarar = async (revisaoId, metaId, dados = {}) =>
   conn.one(
-    `INSERT INTO pit.meta_revisao
-       (revisao_id, meta_id, descricao, quantidade_prevista, prazo, demandante,
+    `INSERT INTO pit.meta_item_revisao
+       (revisao_id, meta_item_id, descricao, quantidade_prevista, prazo, demandante,
         cancelada, usuario_cadastramento_uuid)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
@@ -172,7 +180,7 @@ describe('Revisão do PIT: tirar uma meta do rascunho', () => {
 
     const evento = await conn.one(
       `SELECT * FROM auditoria.evento
-       WHERE tabela = 'pit.meta_revisao' AND operacao = 'D'`
+       WHERE tabela = 'pit.meta_item_revisao' AND operacao = 'D'`
     )
     expect(evento.entidade).toBe('meta')
     expect(evento.entidade_id).toBe(String(meta.id))

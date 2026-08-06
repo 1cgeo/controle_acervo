@@ -1,13 +1,17 @@
 'use strict'
 
 // Teste unitario do controller de Meta do PIT (banco mockado).
-// Cobre: listar (com e sem filtro de ano), criar (NAO valida exercicio: vai
-// direto ao INSERT na tx), atualizar (404 se nao existe) e deletar (409 quando
-// ha consumidor vinculado; 404 se inexistente).
+// Cobre: listar (com e sem filtro de ano), criar, atualizar (404 se nao existe)
+// e deletar (409 quando ha consumidor vinculado; 404 se inexistente).
 //
-// O controller saiu de src/orcamento/meta/ para src/pit/: o PIT
-// virou dado de plataforma. O terceiro consumidor, mapoteca.pedido, entrou na
-// mesma data, e por isso o COUNT do deletar soma tres tabelas.
+// O QUE O CONTROLLER CHAMA DE "META" E O ITEM (`pit.meta_item`) desde 1.30.0. O
+// grupo numerado e `pit.meta`, tem nome proprio e e resolvido por (ano,
+// numero_meta): por isso quase toda escrita ganhou UMA leitura a mais, a do
+// grupo. As sequencias de duble abaixo refletem essa ordem.
+//
+// O DEPENDENTE QUE BLOQUEIA O DELETE sao TRES tabelas, e nao cinco: o pedido, a
+// versao e a capacitacao apontam o ITEM. A NC e o item do PDR apontam a META, e
+// apagar a 1.1 nao os deixa orfaos.
 
 const { createMockDb, eventosDeAuditoria } = require('../helpers/orcamento/mockDb')
 
@@ -53,28 +57,73 @@ describe('pit_ctrl', () => {
     })
   }
 
-  test('criar insere a IDENTIDADE e declara a meta na revisao aberta', async () => {
+  test('criar insere a IDENTIDADE e declara o item na revisao aberta', async () => {
     comRevisaoAberta()
+    // O GRUPO ja existe: `resolverMeta` o acha e nao cria nada.
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 40, ano: 2026, numero_meta: 1 })
     mockDb.conn.one.mockResolvedValueOnce({ id: 9 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 9 })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9 })
 
     const r = await ctrl.criar(
-      { ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Meta 1' },
+      { ano: 2026, numero_meta: 1, item: '1.1', descricao: 'Carta 1:25.000.', unidade_id: 1 },
       'uuid-1'
     )
 
     expect(r).toEqual({ id: 9 })
     expect(mockDb.conn.tx).toHaveBeenCalledTimes(1)
-    // A identidade: sem descricao, sem quantidade, sem prazo.
+    // A identidade do ITEM: sem descricao, sem quantidade, sem prazo. O item
+    // pendura no grupo achado, e nao guarda `ano` nem `numero_meta`.
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO pit.meta'),
-      expect.objectContaining({ ano: 2026, numero_meta: 1, usuarioUuid: 'uuid-1' })
+      expect.stringContaining('INSERT INTO pit.meta_item'),
+      expect.objectContaining({ metaId: 40, item: '1.1', usuarioUuid: 'uuid-1' })
     )
     // A declaracao, na revisao que a autoriza.
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO pit.meta_revisao'),
-      expect.objectContaining({ revisaoId: 7, descricao: 'Meta 1' })
+      expect.stringContaining('INSERT INTO pit.meta_item_revisao'),
+      expect.objectContaining({ revisaoId: 7, descricao: 'Carta 1:25.000.' })
     )
+  })
+
+  // O GRUPO NASCE JUNTO quando ainda nao existe, e so entao o `nome` e cobrado.
+  // Esta asercao reprova o desenho anterior, em que `pit.meta` guardava `item` e
+  // nao tinha nome nenhum.
+  test('criar cria o GRUPO quando ele nao existe, com o nome do documento', async () => {
+    comRevisaoAberta()
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null) // o grupo nao existe
+    mockDb.conn.one.mockResolvedValueOnce({ id: 40 }) // INSERT do grupo
+    mockDb.conn.one.mockResolvedValueOnce({ id: 9 }) // INSERT do item
+    mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 9 })
+
+    await ctrl.criar(
+      {
+        ano: 2026,
+        numero_meta: 1,
+        nome: 'Produção de Geoinformação',
+        item: '1.1',
+        descricao: 'Carta 1:25.000.',
+        unidade_id: 1
+      },
+      'uuid-1'
+    )
+
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO pit.meta '),
+      expect.objectContaining({ ano: 2026, numeroMeta: 1, nome: 'Produção de Geoinformação' })
+    )
+  })
+
+  // SEM O NOME o grupo inexistente recusa, e nada e gravado. O grupo sem nome
+  // era exatamente o que o desenho antigo permitia.
+  test('criar recusa o grupo inexistente sem nome, e nao grava nada', async () => {
+    comRevisaoAberta()
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
+
+    await expect(ctrl.criar(
+      { ano: 2026, numero_meta: 9, item: '9.1', descricao: 'X', unidade_id: 1 },
+      'uuid-1'
+    )).rejects.toThrow(/nome/i)
+
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
   })
 
   test('criar sem revisao aberta recusa, e nao grava nada', async () => {
@@ -92,8 +141,9 @@ describe('pit_ctrl', () => {
   // ATUALIZAR SO MEXE NA IDENTIDADE, e esta e a regra que o desenho novo fixa: o
   // que a DSG promete muda dentro de uma revisao, e nao por aqui.
   test('atualizar mexe so na identidade, e NAO grava declaracao nenhuma', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, origem_id: 1 }) // meta existe
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, origem_id: 1, unidade_id: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 41, numero_meta: 2 }) // o grupo
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 }) // UPDATE RETURNING id
 
     const r = await ctrl.atualizar(
@@ -101,18 +151,20 @@ describe('pit_ctrl', () => {
     )
 
     expect(r).toEqual({ id: 5 })
+    // O ITEM MUDA DE GRUPO pelo `meta_id`, e nao por `ano`/`numero_meta`: as duas
+    // colunas saíram de `pit.meta_item` e vivem no grupo.
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE pit.meta'),
-      expect.objectContaining({ id: 5, numero_meta: 2 })
+      expect.stringContaining('UPDATE pit.meta_item'),
+      expect.objectContaining({ id: 5, metaId: 41, item: '2.1' })
     )
 
     // CONTROLE NEGATIVO. Ate aqui esta mesma chamada lia `pit.meta_vigente`,
-    // comparava a declaracao e escrevia em `pit.meta_revisao` quando algo
+    // comparava a declaracao e escrevia na tabela de declaracao quando algo
     // divergia. Com o comportamento antigo estas duas asercoes reprovam.
     const sqls = mockDb.conn.one.mock.calls
       .concat(mockDb.conn.oneOrNone.mock.calls)
       .map(([sql]) => String(sql))
-    expect(sqls.some(s => s.includes('pit.meta_revisao'))).toBe(false)
+    expect(sqls.some(s => s.includes('meta_item_revisao'))).toBe(false)
     expect(sqls.some(s => s.includes('pit.meta_vigente'))).toBe(false)
   })
 
@@ -120,8 +172,9 @@ describe('pit_ctrl', () => {
   // formulario da tela nao tem campo de origem: salvar uma correcao de item
   // desligava, em silencio, a meta que contava sozinha.
   test('atualizar sem origem_id guarda a origem que ja estava', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, origem_id: 3 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, origem_id: 3, unidade_id: 1 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 41 }) // o grupo
     mockDb.conn.one.mockResolvedValueOnce({ id: 5 })
 
     await ctrl.atualizar(
@@ -129,7 +182,7 @@ describe('pit_ctrl', () => {
     )
 
     expect(mockDb.conn.one).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE pit.meta'),
+      expect.stringContaining('UPDATE pit.meta_item'),
       expect.objectContaining({ origem_id: 3 })
     )
   })
@@ -150,15 +203,16 @@ describe('pit_ctrl', () => {
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ // a revisao
         id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
       })
-      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 }) // a meta
+      // O ITEM com o ano do GRUPO, que vem pelo JOIN da consulta.
+      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 1 })
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
-      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 5, revisao_id: 7 })
+      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 5, revisao_id: 7 })
 
       const r = await ctrl.declararNaRevisao(7, 5, declaracao, 'uuid')
 
       expect(r).toEqual({ id: 3, meta_id: 5, revisao_id: 7 })
       expect(mockDb.conn.one).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO pit.meta_revisao'),
+        expect.stringContaining('INSERT INTO pit.meta_item_revisao'),
         expect.objectContaining({
           metaId: 5, revisaoId: 7, descricao: 'Carta 1:25.000', quantidade_prevista: 24
         })
@@ -201,14 +255,14 @@ describe('pit_ctrl', () => {
       mockDb.conn.oneOrNone.mockResolvedValueOnce({
         id: 7, ano: 2026, codigo: 'R0', data_vigencia: '2026-01-15'
       })
-      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 }) // a meta
+      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 1 })
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
       // A linha que JA existia na revisao: e o `dados_antes` do evento.
       mockDb.conn.oneOrNone.mockResolvedValueOnce({
-        id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 53
+        id: 3, meta_item_id: 5, revisao_id: 7, quantidade_prevista: 53
       })
       mockDb.conn.one.mockResolvedValueOnce({
-        id: 3, meta_id: 5, revisao_id: 7, quantidade_prevista: 35
+        id: 3, meta_item_id: 5, revisao_id: 7, quantidade_prevista: 35
       })
 
       const r = await ctrl.declararNaRevisao(
@@ -220,7 +274,7 @@ describe('pit_ctrl', () => {
       expect(r).toEqual({ id: 3, meta_id: 5, revisao_id: 7 })
 
       const evento = eventosDeAuditoria(mockDb)
-        .find(e => e.tabela === 'pit.meta_revisao')
+        .find(e => e.tabela === 'pit.meta_item_revisao')
       expect(evento).toBeDefined()
       expect(evento.motivo).toBe('O R0 assinado diz 35')
       // A linha ja existia, entao o rastro e ALTERACAO e nao insercao.
@@ -233,14 +287,14 @@ describe('pit_ctrl', () => {
       mockDb.conn.oneOrNone.mockResolvedValueOnce({
         id: 7, ano: 2026, codigo: 'R1', data_vigencia: null
       })
-      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026 })
+      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 5, ano: 2026, numero_meta: 1 })
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 5, revisao_id: 7 })
+      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 5, revisao_id: 7 })
 
       await ctrl.declararNaRevisao(7, 5, declaracao, 'uuid')
 
       const sqls = mockDb.conn.one.mock.calls.map(([sql]) => String(sql))
-      expect(sqls.some(s => s.includes('UPDATE pit.meta'))).toBe(false)
+      expect(sqls.some(s => s.includes('UPDATE pit.meta_item'))).toBe(false)
     })
 
     test('com numero_meta no corpo, a identidade muda na mesma transacao', async () => {
@@ -251,21 +305,22 @@ describe('pit_ctrl', () => {
         id: 5, ano: 2026, numero_meta: 4, item: '4.1', unidade_id: 1, origem_id: 1
       })
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 })
-      mockDb.conn.one.mockResolvedValueOnce({ id: 5, numero_meta: 4, item: '4.3' })
-      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_id: 5, revisao_id: 7 })
+      mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 44, numero_meta: 4 }) // o grupo
+      mockDb.conn.one.mockResolvedValueOnce({ id: 5, item: '4.3' })
+      mockDb.conn.one.mockResolvedValueOnce({ id: 3, meta_item_id: 5, revisao_id: 7 })
 
       await ctrl.declararNaRevisao(
         7, 5, { ...declaracao, numero_meta: 4, item: '4.3' }, 'uuid'
       )
 
       expect(mockDb.conn.one).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE pit.meta'),
-        expect.objectContaining({ metaId: 5, numero_meta: 4, item: '4.3' })
+        expect.stringContaining('UPDATE pit.meta_item'),
+        expect.objectContaining({ metaId: 5, grupoId: 44, item: '4.3' })
       )
       // E a declaracao sai junto, na mesma tx: uma so chamada de tx.
       expect(mockDb.conn.tx).toHaveBeenCalledTimes(1)
       expect(mockDb.conn.one).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO pit.meta_revisao'),
+        expect.stringContaining('INSERT INTO pit.meta_item_revisao'),
         expect.objectContaining({ metaId: 5, revisaoId: 7 })
       )
     })
@@ -311,15 +366,19 @@ describe('pit_ctrl', () => {
   // nem tenha a meta. Da segunda declaracao em diante o plano ja contou com ela,
   // e o que cabe e CANCELAR.
   //
-  // A ordem das leituras: a meta (lerAntes), o exercicio, as declaracoes, os
-  // dependentes e os lancamentos.
+  // A ordem das leituras: o item (lerAntes), o GRUPO (de onde vem o ano), o
+  // exercicio, as declaracoes, os dependentes e os lancamentos.
   const metaApagavel = ({ declaracoes = [{ revisao_id: 7, codigo: 'R0' }] } = {}) => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, ano: 2026 }) // a meta
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, meta_id: 40 }) // o item
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ ano: 2026 }) // o grupo
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
     mockDb.conn.any.mockResolvedValueOnce(declaracoes)
   }
 
-  test('deletar bloqueia com 409 quando ha pdr_item/nota_credito vinculados', async () => {
+  // O DEPENDENTE QUE BLOQUEIA sao o pedido, a versao e a capacitacao, que
+  // apontam o ITEM. A NC e o item do PDR SAIRAM da conta em 1.30.0: eles apontam
+  // a META (`pit.meta`), e apagar a 1.1 nao os deixa orfaos.
+  test('deletar bloqueia com 409 quando ha versao/pedido/capacitacao vinculados', async () => {
     metaApagavel()
     mockDb.conn.one.mockResolvedValueOnce({ n: 2 }) // COUNT dependentes > 0
     await expect(ctrl.deletar(1, 7)).rejects.toMatchObject({
@@ -328,13 +387,35 @@ describe('pit_ctrl', () => {
     expect(mockDb.conn.none).not.toHaveBeenCalled()
   })
 
+  // CONTROLE NEGATIVO da decisao acima: a contagem NAO pode mais somar as duas
+  // tabelas do orcamento. Com a consulta antiga esta asercao reprova.
+  test('a contagem de dependentes NAO soma nota_credito nem pdr_item', async () => {
+    metaApagavel()
+    mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
+    mockDb.conn.one.mockResolvedValueOnce({ lancamentos: 0 })
+    mockDb.conn.none.mockResolvedValueOnce(undefined)
+
+    await ctrl.deletar(1, 7)
+
+    const contagem = mockDb.conn.one.mock.calls
+      .map(([sql]) => String(sql))
+      .find(s => s.includes('AS n'))
+    expect(contagem).toBeDefined()
+    expect(contagem).toContain('acervo.versao')
+    expect(contagem).toContain('mapoteca.pedido')
+    expect(contagem).toContain('rpcmtec.capacitacao')
+    expect(contagem).not.toContain('nota_credito')
+    expect(contagem).not.toContain('pdr_item')
+  })
+
   test('deletar remove quando nao ha vinculados (n:0)', async () => {
     metaApagavel()
     mockDb.conn.one.mockResolvedValueOnce({ n: 0 }) // sem dependentes
+    mockDb.conn.one.mockResolvedValueOnce({ lancamentos: 0 })
     mockDb.conn.none.mockResolvedValueOnce(undefined)
     await ctrl.deletar(1, 7)
     expect(mockDb.conn.none).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM pit.meta'),
+      expect.stringContaining('DELETE FROM pit.meta_item'),
       { id: 1 }
     )
   })
@@ -369,18 +450,20 @@ describe('pit_ctrl', () => {
   test('deletar sem revisao passa quando ha uma declaracao so', async () => {
     metaApagavel()
     mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
+    mockDb.conn.one.mockResolvedValueOnce({ lancamentos: 0 })
     mockDb.conn.none.mockResolvedValueOnce(undefined)
 
     await ctrl.deletar(1, undefined)
 
     expect(mockDb.conn.none).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM pit.meta'),
+      expect.stringContaining('DELETE FROM pit.meta_item'),
       { id: 1 }
     )
   })
 
   test('deletar recusa o exercicio ENCERRADO', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, ano: 2025 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, meta_id: 40 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ ano: 2025 })
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 3 })
 
     await expect(ctrl.deletar(1, 7)).rejects.toThrow(/encerrado/i)

@@ -202,13 +202,21 @@ describe('A demanda de Produção não fecha sem materializar', () => {
 describe('A folha cumpre o plano OU é a exceção', () => {
   test('o banco recusa meta e demanda na mesma versão', async () => {
     const criada = await criar({ origem_id: PRODUCAO })
-    const meta = await conn.one(
-      // Só a IDENTIDADE: a descrição mora em pit.meta_revisao,
-      // e este caso não precisa dela. O que se prova aqui é o CHECK do banco.
-      `INSERT INTO pit.meta (ano, numero_meta, item, usuario_cadastramento_uuid)
-       VALUES (2026, 1, '1.1', (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
-       ON CONFLICT (ano, numero_meta, item) DO UPDATE SET ano = EXCLUDED.ano
+    // Só a IDENTIDADE: a descrição mora em pit.meta_item_revisao, e este caso
+    // não precisa dela. O que se prova aqui é o CHECK do banco.
+    const grupo = await conn.one(
+      `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
+       VALUES (2026, 1, 'Produção de Geoinformação',
+               (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+       ON CONFLICT (ano, numero_meta) DO UPDATE SET ano = EXCLUDED.ano
        RETURNING id`
+    )
+    const meta = await conn.one(
+      `INSERT INTO pit.meta_item (meta_id, item, unidade_id, usuario_cadastramento_uuid)
+       VALUES ($1, '1.1', 1, (SELECT uuid FROM dgeo.usuario ORDER BY id LIMIT 1))
+       ON CONFLICT (meta_id, item) DO UPDATE SET item = EXCLUDED.item
+       RETURNING id`,
+      [grupo.id]
     )
     const produto = await produtoNovo()
     const versao = await createVersao(produto.id)
@@ -220,7 +228,7 @@ describe('A folha cumpre o plano OU é a exceção', () => {
       )
     ).rejects.toThrow(/versao_plano_ou_excecao/)
 
-    await conn.none('DELETE FROM pit.meta WHERE id = $1', [meta.id])
+    await conn.none('DELETE FROM pit.meta_item WHERE id = $1', [meta.id])
   })
 })
 

@@ -160,14 +160,14 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       p.demandante,
       c.nome AS om_destino,
       p.previsto_pit,
-      -- A coluna "Meta" da aba guarda o CODIGO da meta do PIT ('4.1', '4.2'), e
+      -- A coluna "Meta" da aba guarda o CODIGO do item do PIT ('4.1', '4.2'), e
       -- so vem preenchida no item coberto pelo PIT.
       --
-      -- O pedido aponta a meta por CHAVE (pit.meta), e o codigo sai do proprio
-      -- cadastro do PIT: nunca texto digitado a mao, e nunca p.prazo, que
+      -- O pedido aponta o item por CHAVE (pit.meta_item), e o codigo sai do
+      -- proprio cadastro do PIT: nunca texto digitado a mao, e nunca p.prazo, que
       -- poria uma DATA sob o rotulo "Meta". Nao se deriva do material, porque a
       -- correlacao entre midia e meta vale num ano e o PIT e reescrito todo ano.
-      COALESCE(NULLIF(mp.item, '-'), mp.numero_meta::text) AS meta,
+      COALESCE(mp.item, mp.numero_meta::text) AS meta,
       -- O DIEx alimenta a coluna "Observações" da aba META4_DETALHADA, que na
       -- planilha do chefe traz quase sempre o número do documento.
       p.documento_solicitacao,
@@ -196,16 +196,15 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       p.localizador_pedido
     FROM mapoteca.produto_pedido pp
     JOIN mapoteca.pedido p ON p.id = pp.pedido_id
-    -- A VIEW pit.meta_vigente, e nao a tabela pit.meta. Esta consulta lia a
-    -- tabela, e era a unica do sistema a fazer isso: mapoteca_ctrl, pdr_ctrl,
-    -- nota_credito_ctrl e pit_ctrl leem todos a view. Hoje o resultado sai
-    -- igual, porque item e numero_meta sao colunas de identidade e a view as
-    -- repassa da tabela (er/pit.sql, definicao de pit.meta_vigente).
+    -- A VIEW pit.meta_vigente, e nao a tabela pit.meta_item. A view junta o
+    -- grupo (numero_meta, nome) com o item e com a declaracao em vigor, entao
+    -- mp.descricao, mp.quantidade_prevista e mp.prazo saem preenchidos; pela
+    -- tabela do item viriam NULOS, porque esses tres mudaram de casa para
+    -- pit.meta_item_revisao. Erro que nao da erro: da coluna vazia no RTM.
     --
-    -- A troca e alinhamento, e nao conserto: quem acrescentar mp.descricao,
-    -- mp.quantidade_prevista ou mp.prazo aqui receberia NULO pela tabela,
-    -- porque esses campos mudaram de casa para pit.meta_revisao. Erro que nao
-    -- da erro: da coluna vazia no RTM.
+    -- O PEDIDO SEM DECLARACAO PUBLICADA sai com meta nula, e isso e deliberado:
+    -- a view usa INNER JOIN LATERAL, e o item que revisao publicada nenhuma
+    -- declarou ainda nao esta no plano.
     LEFT JOIN pit.meta_vigente mp ON mp.id = p.meta_pit_id
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
     -- LEFT, e não INNER: impressão avulsa conta na Meta 4 como qualquer outra, e

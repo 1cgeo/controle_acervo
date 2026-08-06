@@ -8,11 +8,12 @@
 // célula guarda, e por isso os dois moram na mesma linha: separá-los deixaria a
 // comparação, que é a razão de as duas existirem, a um JOIN de distância.
 //
-// SÓ A FOLHA RECEBE LANÇAMENTO. Uma meta que se subdivide tem uma linha de
-// cabeçalho (`item` nulo) e uma linha por item, e quem entrega é o item. Deixar
-// lançar no cabeçalho faria o total da meta ser contado duas vezes, uma na soma
-// dos itens e outra no cabeçalho, e nada acusaria -- as duas contas continuariam
-// "certas" cada uma por si. A meta indivisa (cabeçalho sem itens) É folha.
+// O LANÇAMENTO É DO ITEM, e agora isso é o schema que garante. Até 1.29.0 a
+// linha de cabeçalho da meta morava na mesma tabela dos itens, e podia receber
+// lançamento: o total da meta era contado duas vezes, uma na soma dos itens e
+// outra no cabeçalho, e nada acusava. A constante EH_FOLHA existia só para essa
+// defesa, repetida em três consultas. Com `pit.meta_item`, o cabeçalho não é uma
+// linha desta chave, e a defesa deixa de ser código.
 //
 // NULO E ZERO SÃO COISAS DIFERENTES nos dois números: nulo é "ninguém lançou" e
 // zero é "conferi e não houve". A linha nasce no começo do ano para guardar o
@@ -38,16 +39,6 @@ const ORIGEM_META = {
   PRODUCAO: 3,
   IMPRESSAO: 4
 }
-
-// A condição de FOLHA, escrita uma vez. `m` é o apelido da meta na consulta que
-// a usa; repeti-la em três consultas é onde a divergência nasceria.
-const EH_FOLHA = `(
-  m.item IS NOT NULL
-  OR NOT EXISTS (
-    SELECT 1 FROM pit.meta AS f
-    WHERE f.ano = m.ano AND f.numero_meta = m.numero_meta AND f.item IS NOT NULL
-  )
-)`
 
 // ---------------------------------------------------------------------------
 // A GRADE CALCULADA
@@ -102,7 +93,8 @@ const CELULAS_CALCULADAS = `
            NULL::int AS planejada,
            count(*)::int AS realizada
     FROM acervo.versao AS v
-    INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = v.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE v.tipo_versao_id = ${TIPO_VERSAO.REGULAR}
       AND EXTRACT(YEAR FROM v.data_edicao) = mm.ano
     GROUP BY 1, 2
@@ -120,7 +112,8 @@ const CELULAS_CALCULADAS = `
            count(*)::int,
            NULL::int
     FROM acervo.versao AS v
-    INNER JOIN pit.meta AS mm ON mm.id = v.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = v.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE v.data_prevista IS NOT NULL
       AND EXTRACT(YEAR FROM v.data_prevista) = mm.ano
     GROUP BY 1, 2
@@ -133,7 +126,8 @@ const CELULAS_CALCULADAS = `
            NULL::int,
            count(*)::int
     FROM rpcmtec.capacitacao AS cap
-    INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = cap.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE cap.data_fim IS NOT NULL AND cap.situacao_id = ${SITUACAO_CAPACITACAO.CONCLUIDA}
       AND cap.ano = mm.ano
     GROUP BY 1, 2
@@ -150,7 +144,8 @@ const CELULAS_CALCULADAS = `
            count(*)::int,
            NULL::int
     FROM rpcmtec.capacitacao AS cap
-    INNER JOIN pit.meta AS mm ON mm.id = cap.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = cap.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE cap.data_prevista IS NOT NULL
       AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
       AND EXTRACT(YEAR FROM cap.data_prevista) = mm.ano
@@ -169,7 +164,8 @@ const CELULAS_CALCULADAS = `
            NULL::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN pit.meta AS mm ON mm.id = p.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE p.data_prevista IS NOT NULL
       AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
       AND EXTRACT(YEAR FROM p.data_prevista) = mm.ano
@@ -194,7 +190,8 @@ const CELULAS_CALCULADAS = `
            SUM(COALESCE(pp.quantidade_fornecida, pp.quantidade))::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    INNER JOIN pit.meta AS mm ON mm.id = p.meta_pit_id
+    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     WHERE p.data_atendimento IS NOT NULL
       AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
       AND EXTRACT(YEAR FROM p.data_atendimento) = mm.ano
@@ -258,10 +255,11 @@ const COM_CELULAS = `WITH calculada AS (${CELULAS_CALCULADAS}), ${CELULAS}`
  * A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
  * cada um.
  *
- * O CABEÇALHO DA META ENTRA no resultado, com `folha = false` e sem meses. Ele é
- * o texto que abre o bloco na tela e no documento, e a tela soma os itens dele.
- * Somá-lo no servidor criaria um total que só existe aqui, e a soma da tela e a
- * do relatório passariam a ser duas.
+ * UMA LINHA POR ITEM. O cabeçalho da meta NÃO entra mais: ele deixou de ser uma
+ * linha de meta e virou `pit.meta.nome`, que sai em `nome` na mesma linha do
+ * item. Quem monta o bloco na tela e no documento agrupa por `numero_meta` e usa
+ * esse nome como rótulo; o total do grupo continua sendo a soma dos itens, feita
+ * por quem exibe. Somá-lo no servidor criaria um total que só existe aqui.
  *
  * Os meses saem como OBJETO indexado pelo número do mês, e não como doze
  * colunas: doze colunas repetidas para dois números cada dariam vinte e quatro
@@ -270,7 +268,7 @@ const COM_CELULAS = `WITH calculada AS (${CELULAS_CALCULADAS}), ${CELULAS}`
 controller.grade = async ano => {
   return db.conn.any(
     `${COM_CELULAS}
-     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
             m.origem_id,
@@ -288,7 +286,6 @@ controller.grade = async ano => {
             ${ORIGEM_CALCULA_PLANEJADA} AS planejada_calculada,
             ${ORIGEM_CALCULA_REALIZADA} AS realizada_calculada,
             m.cancelada, m.revisao, m.revisao_id,
-            ${EH_FOLHA} AS folha,
             COALESCE(mes.lista, '[]'::json) AS meses,
             COALESCE(tot.realizado, 0) AS realizado,
             COALESCE(tot.planejado, 0) AS planejado
@@ -321,7 +318,7 @@ controller.grade = async ano => {
      -- A META CANCELADA SAI DA GRADE.
      --
      -- Cancelar e o UNICO ato de situacao que e da DSG (er/pit.sql, na coluna
-     -- cancelada de pit.meta_revisao): o andamento e a conclusao a grade
+     -- cancelada de pit.meta_item_revisao): o andamento e a conclusao a grade
      -- calcula, mas o cancelamento e decisao declarada numa revisao. A R1 de
      -- 2026 cancelou a 5.2 e a 5.3, e elas seguiam nesta tela pedindo
      -- lancamento mensal, como se ainda fossem trabalho a fazer.
@@ -336,7 +333,7 @@ controller.grade = async ano => {
      -- cancelada NULA, e NOT NULL nao e verdadeiro: com NOT, essas metas
      -- sumiriam da grade em silencio, que e o oposto do que se quer.
      WHERE m.ano = $<ano> AND m.cancelada IS NOT TRUE
-     ORDER BY m.numero_meta, m.item NULLS FIRST`,
+     ORDER BY m.numero_meta, m.item`,
     { ano }
   )
 }
@@ -357,12 +354,11 @@ controller.grade = async ano => {
 controller.resumoDoAno = async (ano, mes) => {
   return db.conn.any(
     `${COM_CELULAS}
-     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
             m.origem_id,
             m.cancelada, m.revisao, m.revisao_id,
-            ${EH_FOLHA} AS folha,
             COALESCE(SUM(e.realizada) FILTER (
               WHERE $<mes>::smallint IS NULL OR e.mes <= $<mes>::smallint
             ), 0)::int AS realizado,
@@ -388,10 +384,10 @@ controller.resumoDoAno = async (ano, mes) => {
      -- TODAS as colunas, e não só m.id: pit.meta_em é FUNÇÃO, e o PostgreSQL só
      -- dispensa as demais quando o agrupamento é pela chave primária de uma
      -- TABELA. Com pit.meta isso funcionava; aqui não.
-     GROUP BY m.id, m.ano, m.numero_meta, m.item, m.descricao, m.unidade,
+     GROUP BY m.id, m.ano, m.numero_meta, m.nome, m.item, m.descricao, m.unidade,
               m.demandante, m.quantidade_prevista, m.prazo, m.origem_id,
               m.cancelada, m.revisao, m.revisao_id
-     ORDER BY m.numero_meta, m.item NULLS FIRST`,
+     ORDER BY m.numero_meta, m.item`,
     { ano, mes: mes === undefined ? null : mes }
   )
 }
@@ -489,18 +485,18 @@ const ENTIDADES_PLANEJADAS = `
  * e tinha 325 nos pedidos, a 4.2 prometia 252 e tinha 229, e as metas 1.3 e 1.4
  * tinham as 74 versões ligadas e nenhuma com data prevista.
  *
- * SÓ A FOLHA ENTRA. O cabeçalho de meta subdividida não recebe lançamento nem
- * cadastro próprio, e cobrar entidade dele acusaria o trabalho dos itens como se
- * faltasse duas vezes.
+ * SÓ O ITEM ENTRA, e agora isso é grátis: o cabeçalho deixou de ser uma linha de
+ * meta. Enquanto ele estava na mesma tabela, cobrar entidade dele acusaria o
+ * trabalho dos itens como se faltasse duas vezes.
  *
- * A META MANUAL FICA DE FORA, e não por descuido: ela não tem entidade que a
- * cumpra, e o número dela é o lançamento. Cobrar cadastro ali seria inventar
+ * O ITEM MANUAL FICA DE FORA, e não por descuido: ele não tem entidade que o
+ * cumpra, e o número dele é o lançamento. Cobrar cadastro ali seria inventar
  * regra que o PIT não tem.
  */
 controller.diagnostico = async ano => {
   return db.conn.any(
     `WITH calculada AS (${CELULAS_CALCULADAS}), entidade AS (${ENTIDADES_PLANEJADAS})
-     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.unidade, m.quantidade_prevista,
             m.origem_id,
             (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
@@ -523,8 +519,7 @@ controller.diagnostico = async ano => {
      WHERE m.ano = $<ano>
        AND m.cancelada IS NOT TRUE
        AND m.origem_id <> ${ORIGEM_META.MANUAL}
-       AND ${EH_FOLHA}
-     ORDER BY m.numero_meta, m.item NULLS FIRST`,
+     ORDER BY m.numero_meta, m.item`,
     { ano }
   )
 }
@@ -544,7 +539,7 @@ controller.diagnostico = async ano => {
 controller.ensaio = async (ano, metaId) => {
   return db.conn.any(
     `WITH calculada AS (${CELULAS_CALCULADAS})
-     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.item, m.descricao,
+     SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.origem_id,
             (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
             ms.mes,
@@ -564,7 +559,7 @@ controller.ensaio = async (ano, metaId) => {
      LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
      WHERE m.ano = $<ano>
        AND ($<metaId>::bigint IS NULL OR m.id = $<metaId>::bigint)
-     ORDER BY m.numero_meta, m.item NULLS FIRST, ms.mes`,
+     ORDER BY m.numero_meta, m.item, ms.mes`,
     { ano, metaId: metaId === undefined ? null : metaId }
   )
 }
@@ -595,15 +590,16 @@ const vazia = linha =>
 controller.salvar = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const meta = await t.oneOrNone(
-      `SELECT m.id, m.ano, m.numero_meta, m.item, m.origem_id,
+      `SELECT mi.id, g.ano, g.numero_meta, mi.item, mi.origem_id,
               o.nome AS origem
-       FROM pit.meta AS m
-       INNER JOIN dominio.origem_meta AS o ON o.code = m.origem_id
-       WHERE m.id = $<metaId>`,
+       FROM pit.meta_item AS mi
+       INNER JOIN pit.meta AS g ON g.id = mi.meta_id
+       INNER JOIN dominio.origem_meta AS o ON o.code = mi.origem_id
+       WHERE mi.id = $<metaId>`,
       { metaId: dados.meta_id }
     )
     if (!meta) {
-      throw new AppError('Meta do PIT não encontrada', httpCode.NotFound)
+      throw new AppError('Item do PIT não encontrado', httpCode.NotFound)
     }
 
     // A COLUNA QUE A ORIGEM CALCULA NÃO SE DIGITA.
@@ -616,7 +612,7 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
     // calculam as duas colunas, então a distinção não muda nada na prática; ela
     // fica porque a próxima origem a entrar pode saber provar só uma, como a
     // Impressão sabia até `mapoteca.pedido.data_prevista` existir.
-    const rotuloMeta = `Meta ${meta.numero_meta}${meta.item ? ` (item ${meta.item})` : ''}`
+    const rotuloMeta = `Meta ${meta.numero_meta} (item ${meta.item})`
     const calculadas = []
     if (ORIGENS_CALCULAM_PLANEJADA.includes(meta.origem_id) && 'quantidade_planejada' in dados) {
       calculadas.push('quantidade_planejada')
@@ -633,22 +629,11 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
       )
     }
 
-    // Cabeçalho de meta subdividida não recebe lançamento (ver o topo).
-    if (meta.item === null) {
-      const { tem } = await t.one(
-        `SELECT EXISTS (
-           SELECT 1 FROM pit.meta
-           WHERE ano = $<ano> AND numero_meta = $<numeroMeta> AND item IS NOT NULL
-         ) AS tem`,
-        { ano: meta.ano, numeroMeta: meta.numero_meta }
-      )
-      if (tem) {
-        throw new AppError(
-          `A Meta ${meta.numero_meta} se divide em itens, e o lançamento é feito em cada item. O total da meta é a soma deles.`,
-          httpCode.BadRequest
-        )
-      }
-    }
+    // A GUARDA DO CABEÇALHO SAIU DAQUI, e não foi afrouxamento. Ela recusava o
+    // lançamento na linha de cabeçalho de uma meta subdividida, porque isso
+    // contaria o mesmo trabalho duas vezes. Hoje `pit.execucao.meta_id` aponta
+    // `pit.meta_item`, e cabeçalho não é item: a chave estrangeira recusa antes
+    // de o controlador ser chamado.
 
     const antes = await t.oneOrNone(
       'SELECT * FROM pit.execucao WHERE meta_id = $<metaId> AND mes = $<mes>',

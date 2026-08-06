@@ -139,7 +139,9 @@ CREATE TABLE acervo.versao(
 	-- produto de fora do plano nao cumprem meta. Sem esta coluna, contar por
 	-- tipo e escala engoliria 22 Carta Ortoimagem 1:25.000 do lote Extra-PIT de
 	-- 2026 e mais 16 sem lote nenhum, todas na meta 1.3.
-	meta_pit_id BIGINT REFERENCES pit.meta (id),
+	-- Aponta o ITEM (pit.meta_item), e nao o grupo: quem cumpre a 1.1 e a
+	-- versao, e a Meta 1 sozinha nao promete folha nenhuma.
+	meta_pit_id BIGINT REFERENCES pit.meta_item (id),
 	-- Demanda Extra-PIT que esta versao materializa. O Extra-PIT e
 	-- PRODUCAO, e nao entrega: a demanda so fecha quando a versao existe.
 	--
@@ -505,7 +507,7 @@ CREATE TABLE acervo.upload_versao_temp (
     -- O VINCULO COM O PIT atravessa o envio. Sem as duas aqui, a meta escolhida
     -- no formulario morre entre o preparo e a finalizacao: o schema aceita, o
     -- rascunho nao guarda, e a versao final nasce fora da conta do plano.
-    meta_pit_id BIGINT REFERENCES pit.meta (id) ON DELETE SET NULL,
+    meta_pit_id BIGINT REFERENCES pit.meta_item (id) ON DELETE SET NULL,
     data_prevista DATE
 );
 
