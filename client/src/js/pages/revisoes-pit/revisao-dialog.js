@@ -107,7 +107,6 @@ export function abrirDialogoRevisao({
           if (!codigo) return codigoField.setError('Informe o código da revisão');
 
           const body = {
-            ano: Number(anoAlvo),
             codigo,
             data_documento: documentoField.getValue() || null,
             data_assinatura: assinaturaField.getValue() || null,
@@ -118,10 +117,20 @@ export function abrirDialogoRevisao({
           salvando = true;
           try {
             if (editando) {
+              // SEM `ano` na edição, e o servidor cobra com 400. O ano é
+              // IDENTIDADE da revisão: ela pertence ao exercício e nunca muda
+              // de ano. Por isso `atualizarRevisao` do servidor não o aceita, e
+              // a validação daquelas rotas é ESTRITA (campo desconhecido vira
+              // 400 com sugestão, em vez de sumir no stripUnknown).
+              //
+              // Enquanto o corpo era um só para os dois casos, editar qualquer
+              // revisão respondia 'campo desconhecido "ano"'.
               await atualizarRevisao(revisao.id, body);
               showSuccess('Revisão atualizada com sucesso');
             } else {
-              await criarRevisao(body);
+              // O ano entra SÓ na criação: é ele que diz a que exercício a
+              // revisão nova pertence.
+              await criarRevisao({ ano: Number(anoAlvo), ...body });
               showSuccess('Revisão criada como RASCUNHO');
             }
             close();
