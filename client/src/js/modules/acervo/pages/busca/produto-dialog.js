@@ -133,6 +133,43 @@ function linhaMeta(partes) {
 }
 
 /**
+ * Copia o UUID da versao para a area de transferencia.
+ *
+ * O texto do botao MUDA por dois segundos, e nao ha aviso flutuante: a pessoa
+ * esta olhando para o botao que acabou de clicar, e um toast no canto da tela
+ * pede que ela procure a confirmacao noutro lugar.
+ *
+ * O `navigator.clipboard` nao existe fora de contexto seguro (http sem TLS).
+ * Nesse caso o botao nao aparece, em vez de aparecer e falhar calado: o UUID
+ * continua selecionavel com o mouse, que e o caminho de sempre.
+ */
+function botaoCopiarUuid(uuid) {
+  if (!navigator.clipboard) return null;
+
+  const botao = el('button', {
+    className: 'btn btn--text btn--sm ficha-uuid__copiar',
+    type: 'button',
+    title: 'Copiar o UUID desta versao',
+    textContent: 'Copiar',
+  });
+
+  botao.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(uuid);
+      botao.textContent = 'Copiado';
+      setTimeout(() => { botao.textContent = 'Copiar'; }, 2000);
+    } catch {
+      // Falhou copiar: diz isso, em vez de fingir que copiou. O valor segue na
+      // tela para a pessoa selecionar a mao.
+      botao.textContent = 'Nao deu';
+      setTimeout(() => { botao.textContent = 'Copiar'; }, 2000);
+    }
+  });
+
+  return botao;
+}
+
+/**
  * Botao de baixar UM arquivo do acervo.
  *
  * O servidor le o volume e faz stream, entao o navegador nunca ve caminho de
@@ -609,6 +646,22 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
     { rotulo: 'Projeto', valor: v.projeto_nome },
   ]);
 
+  // O UUID DA VERSÃO, para poder referenciá-la fora daqui.
+  //
+  // Ele é a chave que o plugin do QGIS, o `acervo_cli` e o item do pedido da
+  // mapoteca usam (`produto_pedido.uuid_versao`). Sem ele na ficha, ligar uma
+  // folha a um pedido ou pedir "esta versão" a alguém exigia ir ao banco.
+  //
+  // FICA NUMA LINHA PRÓPRIA, e não junto do resto: são 36 caracteres, e no meio
+  // da linha de metadados ele empurraria o Órgão e o Lote para fora da vista.
+  const uuid = v.uuid_versao
+    ? el('div', { className: 'ficha-uuid' }, [
+      el('span', { className: 'ficha-meta__rotulo', textContent: 'UUID ' }),
+      el('code', { className: 'ficha-uuid__valor', textContent: v.uuid_versao }),
+      botaoCopiarUuid(v.uuid_versao),
+    ])
+    : null;
+
   const palavras = (v.palavras_chave || []).length
     ? el('div', { className: 'ficha-palavras' }, v.palavras_chave.map(p => chip(p, 'secondary')))
     : null;
@@ -624,6 +677,7 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
     el('div', { className: 'ficha-versao__corpo' }, [
       cabecalho,
       meta,
+      uuid,
       v.versao_descricao
         ? el('p', { className: 'ficha-versao__descricao', textContent: v.versao_descricao })
         : null,

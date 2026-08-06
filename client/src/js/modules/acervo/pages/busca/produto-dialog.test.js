@@ -47,6 +47,7 @@ const FICHA = {
     {
       versao_id: 90,
       versao: '1',
+      uuid_versao: 'bbbbbbbb-1111-2222-3333-555555555555',
       versao_data_edicao: '2026-01-10',
       arquivos: [
         {
@@ -450,5 +451,54 @@ describe('abrirProdutoDialog: excluir UM arquivo', () => {
 
     expect(document.body.textContent).toContain('é o único da versão');
     expect(svc.getProdutoDetalhado).toHaveBeenCalledTimes(1);
+  });
+  // -------------------------------------------------------------------------
+  // O UUID DA VERSAO na ficha
+  // -------------------------------------------------------------------------
+
+  // Ele e a chave que o plugin do QGIS, o `acervo_cli` e o item do pedido da
+  // mapoteca usam (`produto_pedido.uuid_versao`). Sem ele aqui, ligar uma folha
+  // a um pedido, ou pedir "esta versao" a alguem, exigia ir ao banco.
+  test('a ficha mostra o UUID da versao', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue(FICHA);
+    await abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    const uuid = document.querySelector('.ficha-uuid__valor');
+    expect(uuid).not.toBeNull();
+    expect(uuid.textContent).toBe('bbbbbbbb-1111-2222-3333-555555555555');
+  });
+
+  test('o botao copia o UUID para a area de transferencia', async () => {
+    const escrever = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: escrever }, configurable: true,
+    });
+
+    svc.getProdutoDetalhado.mockResolvedValue(FICHA);
+    await abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    const botao = document.querySelector('.ficha-uuid__copiar');
+    botao.click();
+    await flush();
+
+    expect(escrever).toHaveBeenCalledWith('bbbbbbbb-1111-2222-3333-555555555555');
+    // O texto do BOTAO confirma, e nao um aviso no canto da tela: a pessoa esta
+    // olhando para o que acabou de clicar.
+    expect(botao.textContent).toBe('Copiado');
+  });
+
+  // VARIANCIA: sem este caso, os dois acima passariam numa ficha que mostrasse
+  // a linha do UUID sempre, inclusive vazia.
+  test('versao sem uuid nao ganha a linha', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue({
+      ...FICHA,
+      versoes: [{ ...FICHA.versoes[0], uuid_versao: null }],
+    });
+    await abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    expect(document.querySelector('.ficha-uuid')).toBeNull();
   });
 });

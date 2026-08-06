@@ -2188,3 +2188,25 @@
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
+
+/* O UUID DA VERSAO na ficha. Linha propria porque sao 36 caracteres: no meio da
+   linha de metadados ele empurraria o Orgao e o Lote para fora da vista. */
+.ficha-uuid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+}
+
+.ficha-uuid__valor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  /* Selecionavel com um duplo clique: quem nao usa o botao ainda copia a mao. */
+  user-select: all;
+}
+
+.ficha-uuid__copiar {
+  padding: 0 var(--space-xs);
+  font-size: var(--font-size-xs);
+}
