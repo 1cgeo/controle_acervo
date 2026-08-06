@@ -176,7 +176,18 @@ const EMPENHADO_DESTA_NE = `
 //    empenho, e ja nascem acima do teto estrito. Barrar por valor absoluto
 //    impediria de corrigir a finalidade ou a data dessas NEs para sempre.
 // Corrigir, reduzir ou manter o valor continua livre. Crescer, nao.
-const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
+//
+// O `valorAnulado` DESTA NE entra na conta, e sem ele a barreira comparava duas
+// grandezas diferentes. Medido em 2026-08-06 na 2026NE000002: ela vale 1.728,00,
+// esta anulada por INTEIRO, e a NC 2026NC400137 teve os mesmos 1.728,00
+// recolhidos. O `antes` saia LIQUIDO da consulta (1.728 menos 1.728 = zero) e o
+// `desta` saia BRUTO das alocacoes do formulario (1.728), entao `cresce` dava
+// verdadeiro comparando 1.728 contra 0. Resultado: nao se conseguia corrigir a
+// data de uma NE que nao consome credito nenhum.
+//
+// A anulacao entra PROPORCIONAL a fatia de cada NC, a mesma regra do
+// EMPENHADO_POR_NC: a NE anula no total e o rateio e por NC.
+const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null, valorAnulado = 0) => {
   const ids = alocacoes.map(a => a.nota_credito_id)
   const ncs = await t.any(
     `SELECT id, numero, valor_nc, valor_recolhido
@@ -204,11 +215,18 @@ const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
     jaEmpenhado.map(l => [String(l.nota_credito_id), Number(l.empenhado)])
   )
 
+  // O BRUTO DE TODAS AS NCs, que e a base do rateio da anulacao.
+  const totalBruto = alocacoes.reduce((s, a) => s + Number(a.valor), 0)
+  const anulado = Number(valorAnulado || 0)
+
   for (const nc of ncs) {
     const outras = empenhadoPorNc.get(String(nc.id)) || 0
-    const desta = alocacoes
+    const bruto = alocacoes
       .filter(a => String(a.nota_credito_id) === String(nc.id))
       .reduce((s, a) => s + Number(a.valor), 0)
+    // LIQUIDO, na mesma unidade do `antes` e do `outras`: o que consome o
+    // credito da NC e o empenho menos a anulacao, nunca o bruto.
+    const desta = totalBruto > 0 ? bruto - anulado * (bruto / totalBruto) : 0
     // Teto = recebido menos devolvido. Credito recolhido voltou e nao se empenha.
     const teto = Number(nc.valor_nc) - Number(nc.valor_recolhido || 0)
     const antes = anteriorPorNc.get(String(nc.id)) || 0
@@ -224,7 +242,10 @@ const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null) => {
           `Valor da NC: ${Number(nc.valor_nc).toFixed(2)}; ` +
           `recolhido: ${Number(nc.valor_recolhido || 0).toFixed(2)}; ` +
           `ja empenhado: ${outras.toFixed(2)}; ` +
-          `saldo: ${(teto - outras).toFixed(2)}; tentativa: ${desta.toFixed(2)}`,
+          `saldo: ${(teto - outras).toFixed(2)}; ` +
+          // LIQUIDO, e o rotulo diz isso: sem ele, o numero da mensagem nao bate
+          // com o que o usuario digitou na tela quando ha anulacao.
+          `tentativa (liquida de anulacao): ${desta.toFixed(2)}`,
         httpCode.BadRequest
       )
     }
@@ -431,7 +452,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       // A validacao entrou PARA DENTRO da transacao (era `db.conn.any`): ver o
       // comentario de `validarNcsHomogeneas`.
       await validarNcsHomogeneas(t, alocacoes)
-      await validarTetoDasNcs(t, alocacoes, null)
+      await validarTetoDasNcs(t, alocacoes, null, valorAnulado)
 
       const ne = await t.one(
         `INSERT INTO orcamento.nota_empenho
@@ -530,7 +551,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       await validarNcsHomogeneas(t, alocacoes)
       // `id` entra como `ignorarNeId`: a NE que esta sendo salva nao conta
       // contra o proprio teto, senao salvar sem mudar valor ja estouraria.
-      await validarTetoDasNcs(t, alocacoes, id)
+      await validarTetoDasNcs(t, alocacoes, id, valorAnulado)
 
       const ne = await t.one(
         `UPDATE orcamento.nota_empenho SET
