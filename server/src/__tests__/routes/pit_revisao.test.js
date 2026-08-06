@@ -116,8 +116,17 @@ describe('Revisão do PIT: tirar uma meta do rascunho', () => {
     expect(await alteracoes(rascunho)).toHaveLength(0)
   })
 
-  test('a REVISÃO PUBLICADA recusa, e diz o que fazer', async () => {
-    // O que ela declara é o que o relatório daquele mês reporta.
+  // A REVISÃO PUBLICADA passou a ACEITAR a remoção, desde 2026-08-06, e só com
+  // MOTIVO. A assimetria anterior não se justificava: a mesma rota que
+  // acrescenta a meta que a cópia esqueceu de transcrever, e que edita a que ela
+  // copiou errado, recusava remover a que ela INVENTOU. As três são a correção
+  // da transcrição, e o motivo é o que separa "transcrevi errado" de "a DSG
+  // mudou".
+  //
+  // O caso real: o R1 de 2026 declarava a 4.2 em 252, e o documento assinado não
+  // toca essa meta. Sem a remoção, a única saída era editar o R1 para repetir o
+  // 247 do R0, deixando no histórico uma alteração que nunca existiu.
+  test('a REVISÃO PUBLICADA recusa SEM motivo, e ensina o que fazer', async () => {
     const meta = await criarMeta(4, '4.2')
     const r0 = await criarRevisao('R0')
     await declarar(r0, meta.id, { quantidade: 247 })
@@ -128,8 +137,50 @@ describe('Revisão do PIT: tirar uma meta do rascunho', () => {
       .set('Authorization', admin())
 
     expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/revisão nova/)
+    expect(res.body.message).toMatch(/motivo/i)
+    // E nada foi removido: recusa que remove metade é pior que recusa.
     expect(await alteracoes(r0)).toHaveLength(1)
+  })
+
+  test('a REVISÃO PUBLICADA aceita COM motivo, e o rastro diz que foi transcrição', async () => {
+    const meta = await criarMeta(4, '4.2')
+    const r0 = await criarRevisao('R0')
+    await declarar(r0, meta.id, { quantidade: 247 })
+    await publicar(r0, '2026-01-01')
+
+    const res = await request(app)
+      .delete(`/api/metas/revisoes/${r0}/meta/${meta.id}`)
+      .set('Authorization', admin())
+      .send({ motivo: 'O documento assinado nao toca esta meta; o RTM confirma.' })
+
+    expect(res.status).toBe(200)
+    expect(await alteracoes(r0)).toHaveLength(0)
+
+    // O rastro tem de dizer QUAL dos dois casos foi. "Removida do rascunho" numa
+    // revisão publicada seria falso, e o histórico é onde alguém vai procurar
+    // por que a 4.2 voltou a 247.
+    const evento = await conn.oneOrNone(
+      `SELECT motivo FROM auditoria.evento
+       WHERE tabela = 'pit.meta_item_revisao' AND operacao = 'D'
+       ORDER BY id DESC LIMIT 1`
+    )
+    expect(evento.motivo).toMatch(/transcrição/i)
+    expect(evento.motivo).toMatch(/RTM/)
+  })
+
+  // VARIÂNCIA: o rascunho NÃO cobra motivo. Exigi-lo ali obrigaria a justificar
+  // o desfazer de um erro que ainda não rege nada.
+  test('o RASCUNHO continua removendo sem motivo nenhum', async () => {
+    const meta = await criarMeta(4, '4.2')
+    const rascunho = await criarRevisao('R1')
+    await declarar(rascunho, meta.id, { quantidade: 252 })
+
+    const res = await request(app)
+      .delete(`/api/metas/revisoes/${rascunho}/meta/${meta.id}`)
+      .set('Authorization', admin())
+
+    expect(res.status).toBe(200)
+    expect(await alteracoes(rascunho)).toHaveLength(0)
   })
 
   test('meta que a revisão não altera responde 404', async () => {

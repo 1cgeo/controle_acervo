@@ -329,6 +329,13 @@ models.revisaoIdParams = Joi.object().keys({
 // A declaracao de UMA meta dentro de UMA revisao. Os dois ids na rota, porque a
 // linha e a interseccao dos dois: `pit.meta_item_revisao` nao tem id que alguem
 // conheca de fora.
+// O MOTIVO da remocao numa revisao PUBLICADA. Opcional no schema, e cobrado
+// pelo controlador: no RASCUNHO ele nao faz sentido, e exigi-lo ali obrigaria a
+// justificar o desfazer de um erro que ainda nao rege nada.
+models.removerDeclaracao = Joi.object().keys({
+  motivo: Joi.string().allow(null, '')
+})
+
 models.declaracaoParams = Joi.object().keys({
   revisaoId: Joi.number().integer().required(),
   metaId: Joi.number().integer().required()

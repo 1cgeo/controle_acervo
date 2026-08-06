@@ -577,14 +577,20 @@ router.put(
 router.delete(
   '/revisoes/:revisaoId/meta/:metaId',
   verifyAdmin,
-  schemaValidation({ params: pitSchema.declaracaoParams }),
+  schemaValidation({
+    params: pitSchema.declaracaoParams,
+    body: pitSchema.removerDeclaracao
+  }),
   asyncHandler(async (req, res, next) => {
+    // `req.body?.` porque a remocao no RASCUNHO nao leva corpo, e ali `req.body`
+    // vem indefinido. A leitura direta viraria 500 no caminho mais comum.
     const dados = await revisaoCtrl.removerDeclaracao(
-      req.params.revisaoId, req.params.metaId, req.usuarioUuid, req.contexto
+      req.params.revisaoId, req.params.metaId, req.usuarioUuid, req.contexto,
+      req.body?.motivo
     )
 
     return res.sendJsonAndLog(
-      true, 'Meta removida do rascunho da revisão', httpCode.OK, dados
+      true, 'Declaração removida da revisão do PIT', httpCode.OK, dados
     )
   })
 )

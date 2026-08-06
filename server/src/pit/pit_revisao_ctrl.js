@@ -23,6 +23,7 @@ const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 
 const { auditoriaCtrl } = require('../auditoria')
+const { motivoDaCorrecao } = require('./motivo_correcao')
 
 const controller = {}
 
@@ -376,13 +377,21 @@ controller.publicar = async (id, dados, usuarioUuid, contexto) => {
  * A lacuna apareceu na carga do PIT de 2026: a 6.9 não existe no R0, e teve de
  * entrar nele marcada `cancelada` porque não havia como deixá-la AUSENTE.
  *
- * SÓ NO RASCUNHO. Na revisão publicada esta linha é o que o relatório de um mês
- * passado reporta; removê-la reescreveria esse passado.
+ * NA REVISÃO PUBLICADA, EXIGE MOTIVO, e antes era proibida. A assimetria não se
+ * justificava: a mesma rota que ACRESCENTA a meta que a cópia esqueceu de
+ * transcrever, e que EDITA a que ela copiou errado, recusava remover a que ela
+ * inventou. As três são a mesma correção, a da TRANSCRIÇÃO, e a regra do motivo
+ * (`motivo_correcao.js`) é o que separa "transcrevi errado" de "a DSG mudou".
+ *
+ * O caso que a abriu, em 2026-08-06: o R1 de 2026 declarava a 4.2 em 252, e o
+ * documento assinado não toca essa meta. O RTM confirmou 247, o mesmo do R0. Sem
+ * a remoção, a única saída era editar o R1 para repetir o 247 do R0, deixando no
+ * histórico uma alteração que nunca existiu.
  *
  * O evento cai no agregado do ITEM, e não no do exercício: a pergunta que se
  * faz depois é "por que a 4.2 voltou a 247", e ela se faz na ficha do item.
  */
-controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) => {
+controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto, motivoPedido) => {
   return db.conn.tx(async t => {
     const revisao = await t.oneOrNone(
       'SELECT id, ano, codigo, data_vigencia FROM pit.revisao WHERE id = $<revisaoId>',
@@ -391,13 +400,8 @@ controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) 
     if (!revisao) {
       throw new AppError('Revisão do PIT não encontrada', httpCode.NotFound)
     }
-    if (revisao.data_vigencia !== null) {
-      throw new AppError(
-        'A revisão já foi publicada, e o que ela declara é o que o relatório ' +
-        'daquele mês reporta. Para corrigir, emita uma revisão nova.',
-        httpCode.BadRequest
-      )
-    }
+    // Rascunho devolve nulo; publicada cobra o motivo e o devolve para o rastro.
+    const motivo = motivoDaCorrecao(revisao, motivoPedido)
 
     const antes = await t.oneOrNone(
       `SELECT * FROM pit.meta_item_revisao
@@ -421,7 +425,12 @@ controller.removerDeclaracao = async (revisaoId, metaId, usuarioUuid, contexto) 
       antes,
       usuarioUuid,
       contexto,
-      motivo: `Removida do rascunho da revisão ${revisao.codigo} de ${revisao.ano}.`
+      // O motivo do RASTRO diz qual dos dois casos foi. "Removida do rascunho"
+      // numa revisao publicada seria falso, e o historico e onde alguem vai
+      // procurar por que a 4.2 voltou a 247.
+      motivo: motivo
+        ? `Correção da transcrição do ${revisao.codigo} de ${revisao.ano}: ${motivo}`
+        : `Removida do rascunho da revisão ${revisao.codigo} de ${revisao.ano}.`
     })
 
     return { revisaoId, metaId, removida: true }
