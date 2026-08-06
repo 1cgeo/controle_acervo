@@ -237,6 +237,101 @@ describe('RPCMTec: a estrutura do documento', () => {
   })
 })
 
+describe('RPCMTec: a 4.4 e a 4.5 dizem a MESMA fase que a tela de Licitações', () => {
+  // O DEFEITO, relatado pelo chefe em 2026-08-06: "o item 4.4 GCALC DSG não
+  // está aparecendo a mesma coisa de licitações, pois fornecimento de imagens
+  // está homologado".
+  //
+  // A MEDIÇÃO NA PRODUÇÃO, no mesmo dia: a licitação id 1 (ano 2026, tipo 1,
+  // "licenciamento e fornecimento de imagens satelitais") tem `fase_id = 3`
+  // (Homologado) e `fase_atual = 'Renovando o contrato vigente'`. A tela lê
+  // `fase_nome || fase_atual` (`licitacoes/list.js`) e mostrava "Homologado". O
+  // gerador lia só o `fase_atual` e mostrava a outra coisa, para a MESMA linha.
+  //
+  // O código classifica e o texto narra, por decisão registrada no DDL. Quem
+  // tem os dois manda pelo código, nos dois lugares.
+  const semear = async ({
+    ano = 2026, tipoId = 1, objeto = 'Objeto', faseId = null, faseAtual = null,
+    estimado = null, homologado = null
+  }) => conn.none(
+    `INSERT INTO orcamento.licitacao
+       (ano, tipo_id, objeto, fase_id, fase_atual, valor_total_estimado,
+        valor_final_homologado, usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [ano, tipoId, objeto, faseId, faseAtual, estimado, homologado, ADMIN_UUID]
+  )
+
+  const linhasDa = async (id, numero) => {
+    const doc = await documento(id)
+    return blocos(doc).find(b => b.numero === numero).linhas
+  }
+
+  test('com fase_id, a 4.4 mostra o nome do CÓDIGO, e não o texto livre', async () => {
+    await semear({
+      objeto: 'Contratação de serviço de licenciamento e fornecimento de imagens satelitais',
+      faseId: 3,
+      faseAtual: 'Renovando o contrato vigente',
+      estimado: 739875.0,
+      homologado: 739875.0
+    })
+    const id = await criarEdicao()
+
+    const linhas = await linhasDa(id, '4.4')
+    expect(linhas).toHaveLength(1)
+    expect(linhas[0][0]).toContain('imagens satelitais')
+    expect(linhas[0][1]).toBe('Homologado')
+    // O BLOCO INTEIRO, e não só a coluna do defeito: os dois valores continuam
+    // saindo com o símbolo, como a 4.4 do modelo escreve.
+    expect(linhas[0][2]).toContain('739.875,00')
+    expect(linhas[0][3]).toContain('739.875,00')
+  })
+
+  test('sem fase_id, a 4.4 continua narrando pelo texto livre', async () => {
+    // VARIÂNCIA: sem este caso, um gerador que lesse SÓ o código passaria no
+    // caso acima e apagaria os 103 caracteres que explicam o processo. Metade
+    // das licitações da produção tem `fase_id` nulo.
+    const narrativa = 'Homologado. Vencedor não entregou os softwares licitados, '
+      + 'o que implica que o pregão se tornou fracassado'
+    await semear({ objeto: 'Contratação de Softwares (TI)', faseAtual: narrativa })
+    const id = await criarEdicao()
+
+    const linhas = await linhasDa(id, '4.4')
+    expect(linhas[0][1]).toBe(narrativa)
+  })
+
+  test('sem código e sem texto, a fase sai como traço', async () => {
+    await semear({ objeto: 'Licitação recém-cadastrada' })
+    const id = await criarEdicao()
+
+    expect((await linhasDa(id, '4.4'))[0][1]).toBe('-')
+  })
+
+  test('a mesma regra vale na 4.5, e as duas subseções não se misturam', async () => {
+    await semear({ tipoId: 1, objeto: 'GCALC', faseId: 3 })
+    await semear({ tipoId: 2, objeto: 'Insumos de impressão', faseId: 1 })
+    await semear({ tipoId: 3, objeto: 'Pregão como participante', faseId: 4 })
+    const id = await criarEdicao()
+
+    const gcalc = await linhasDa(id, '4.4')
+    const demais = await linhasDa(id, '4.5')
+
+    expect(gcalc.map(l => [l[0], l[1]])).toEqual([['GCALC', 'Homologado']])
+    expect(demais.map(l => [l[0], l[1]])).toEqual([
+      ['Insumos de impressão', 'Previsto'],
+      ['Pregão como participante', 'Fracassado']
+    ])
+  })
+
+  test('a licitação de OUTRO ano não entra na edição deste', async () => {
+    await semear({ ano: 2025, objeto: 'Imagens de 2025', faseId: 3 })
+    await semear({ ano: 2026, objeto: 'Imagens de 2026', faseId: 3 })
+    const id = await criarEdicao()
+
+    const linhas = await linhasDa(id, '4.4')
+    expect(linhas.map(l => l[0])).toEqual(['Imagens de 2026'])
+  })
+})
+
 describe('RPCMTec: o que o gestor digita', () => {
   test('grava linhas e as devolve no documento', async () => {
     const id = await criarEdicao()

@@ -1,4 +1,46 @@
 /**
+ * Chaves que o DOM guarda em PROPRIEDADE, e que `setAttribute` NAO alcanca.
+ *
+ * Cada uma ja custou um defeito nesta casa:
+ *
+ *   value          num `<textarea>` o conteudo e no filho de texto, e nao no
+ *                  atributo. O atributo era gravado, ignorado, e o editor da
+ *                  prosa (9.1 a 9.3 do RPCMTec) abria em branco por cima do
+ *                  texto ja escrito.
+ *   checked        o que marca a caixa e o atributo ESTAR presente, e nao o
+ *                  valor dele. `checked: false` virava `checked="false"` e
+ *                  marcava tudo.
+ *   htmlFor        o atributo se chama `for`. `htmlFor` virava um atributo que
+ *                  o navegador nao conhece, e o rotulo parava de clicar.
+ *   selected       mesma armadilha do `checked`, no `<option>`.
+ *   disabled       mesma armadilha do `checked`, em qualquer campo.
+ *   indeterminate  nao existe como atributo, so como propriedade.
+ *
+ * `open`, `multiple`, `readOnly` e `required` entram pela MESMA razao: as quatro
+ * sao booleanas puras, e hoje o repositorio so passa `true` nelas. Estao aqui
+ * para o dia em que alguem passar `false`, que e quando a armadilha morde.
+ *
+ * `hidden` fica DE FORA de proposito. Ele aceita a string 'until-found', que
+ * nao e "verdadeiro" nem "falso", e trata-lo como booleano jogaria esse valor
+ * fora. Como atributo ele funciona, e ninguem aqui passa `false`.
+ *
+ * Elas entram numa SEGUNDA passada, depois das demais chaves. A ordem importa:
+ * `element.value = '2026-06-15'` num `<input>` que ainda nao recebeu
+ * `type="date"` seria aceito como texto e depois recusado pela troca de tipo.
+ */
+const PROPRIEDADES_NAO_ATRIBUTOS = new Set([
+  'value', 'checked', 'selected', 'disabled', 'htmlFor', 'indeterminate',
+  'open', 'multiple', 'readOnly', 'required',
+]);
+
+/** As booleanas puras: o que chega como string vale pela presenca, como o
+ * atributo valia. So `false` e a string 'false' desligam. */
+const BOOLEANAS = new Set([
+  'checked', 'selected', 'disabled', 'indeterminate',
+  'open', 'multiple', 'readOnly', 'required',
+]);
+
+/**
  * Create a DOM element with attributes and children.
  * @param {string} tag
  * @param {Object} attrs - className, textContent, on* event listeners, or HTML attributes
@@ -7,6 +49,8 @@
  */
 export function el(tag, attrs = {}, children = []) {
   const element = document.createElement(tag);
+
+  const propriedades = [];
 
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null) continue;
@@ -22,9 +66,17 @@ export function el(tag, attrs = {}, children = []) {
       element.addEventListener(key.slice(2).toLowerCase(), value);
     } else if (key === 'dataset' && typeof value === 'object') {
       Object.assign(element.dataset, value);
+    } else if (PROPRIEDADES_NAO_ATRIBUTOS.has(key)) {
+      propriedades.push([key, value]);
     } else {
       element.setAttribute(key, value);
     }
+  }
+
+  for (const [key, value] of propriedades) {
+    element[key] = BOOLEANAS.has(key)
+      ? (value !== false && value !== 'false')
+      : value;
   }
 
   const childArray = Array.isArray(children) ? children : [children];

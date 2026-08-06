@@ -471,4 +471,182 @@ describe('renderRpcmtecEdicao', () => {
 
     cleanup();
   });
+
+  // -------------------------------------------------------------------------
+  // A CAIXA QUE ESCONDE O QUE JA FOI CONFERIDO
+  //
+  // A edicao tem 34 blocos. Conferidos 30, a tela continuava com os 34 e achar
+  // os quatro que faltam era rolar o documento inteiro. A caixa deixa na tela
+  // so o que pede olho.
+  //
+  // O QUE ELA NAO ESCONDE e o que faz ela valer: a marca DESATUALIZADA (o
+  // conteudo mudou depois da conferencia) e a subsecao nunca conferida.
+  // -------------------------------------------------------------------------
+
+  const FEITA = { por: 'Cap Fulano', em: '2026-08-06T14:32:00.000Z', desatualizada: false };
+  const VENCIDA = { por: 'Cap Fulano', em: '2026-08-06T14:32:00.000Z', desatualizada: true };
+
+  const caixaEsconder = (container) => container.querySelector('.rpcm-filtro__caixa');
+  const numerosNaTela = (container) => [...container.querySelectorAll('.rpcm-subsecao__titulo')]
+    .map(no => no.textContent.split('.')[0] + '.' + no.textContent.split('.')[1].trim());
+  const secoesNaTela = (container) => [...container.querySelectorAll('.rpcm-secao__titulo')]
+    .map(no => no.textContent);
+
+  describe('esconder as subseções já conferidas', () => {
+    test('a caixa nasce desmarcada, e a tela mostra tudo', async () => {
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '6.1': FEITA, '6.2': FEITA },
+      })));
+
+      const { container, cleanup } = await montar();
+
+      expect(caixaEsconder(container).checked).toBe(false);
+      expect(container.querySelectorAll('.rpcm-subsecao')).toHaveLength(4);
+      // Desmarcada, a contagem não fala nada: não há nada escondido.
+      expect(container.querySelector('.rpcm-filtro__contagem').textContent).toBe('');
+
+      cleanup();
+    });
+
+    test('marcada, some a conferida e FICA a que mudou depois', async () => {
+      // A VARIÂNCIA QUE IMPORTA: `6.1` está resolvida e `6.2` está marcada com o
+      // conteúdo mudado depois. Esconder as duas derrotaria o propósito da
+      // caixa, porque a segunda é justamente a que passa batido.
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '6.1': FEITA, '6.2': VENCIDA },
+      })));
+
+      const { container, cleanup } = await montar();
+      caixaEsconder(container).click();
+      await flush();
+
+      const visiveis = numerosNaTela(container);
+      expect(visiveis).not.toContain('6.1');
+      expect(visiveis).toContain('6.2');
+      // A nunca conferida também fica: ninguém olhou para ela ainda.
+      expect(visiveis).toContain('3.1');
+      expect(visiveis).toContain('6.3');
+
+      cleanup();
+    });
+
+    test('a contagem diz quantas sumiram', async () => {
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '6.1': FEITA, '6.2': FEITA, '6.3': VENCIDA },
+      })));
+
+      const { container, cleanup } = await montar();
+      caixaEsconder(container).click();
+      await flush();
+
+      // Duas resolvidas. A `6.3` está marcada e desatualizada, e não conta.
+      expect(container.querySelector('.rpcm-filtro__contagem').textContent)
+        .toBe('2 conferida(s) escondida(s)');
+
+      cleanup();
+    });
+
+    test('a seção que fica sem subseção visível SOME', async () => {
+      // Sem isto restaria o cabeçalho "3. ATIVIDADES DA DIVISÃO" com a gaveta
+      // vazia, e a tela ficaria pior do que antes de filtrar.
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '3.1': FEITA },
+      })));
+
+      const { container, cleanup } = await montar();
+      expect(secoesNaTela(container)).toHaveLength(2);
+
+      caixaEsconder(container).click();
+      await flush();
+
+      const secoes = secoesNaTela(container);
+      expect(secoes).toHaveLength(1);
+      expect(secoes[0]).toContain('RECURSOS HUMANOS');
+
+      cleanup();
+    });
+
+    test('desmarcar traz tudo de volta', async () => {
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '3.1': FEITA, '6.1': FEITA },
+      })));
+
+      const { container, cleanup } = await montar();
+      const caixa = caixaEsconder(container);
+
+      caixa.click();
+      await flush();
+      expect(container.querySelectorAll('.rpcm-subsecao')).toHaveLength(2);
+
+      caixa.click();
+      await flush();
+      expect(container.querySelectorAll('.rpcm-subsecao')).toHaveLength(4);
+      expect(container.querySelector('.rpcm-filtro__contagem').textContent).toBe('');
+
+      cleanup();
+    });
+
+    test('a escolha SOBREVIVE à recarga que marcar uma subseção dispara', async () => {
+      // Marcar "conferida" recarrega o documento. Com a caixa desmarcando
+      // sozinha ali, o trabalho de esconder se desfazia a cada clique.
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '6.1': FEITA },
+      })));
+
+      const { container, cleanup } = await montar();
+      const caixa = caixaEsconder(container);
+      caixa.click();
+      await flush();
+      expect(container.querySelectorAll('.rpcm-subsecao')).toHaveLength(3);
+
+      // A gravação da conferência da 6.2 recarrega a tela.
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '6.1': FEITA, '6.2': FEITA },
+      })));
+      subsecao(container, '6.2').querySelector('.rpcm-revisao__caixa').click();
+      await flush();
+
+      expect(revisarSubsecao).toHaveBeenCalledWith(7, '6.2', true);
+      expect(caixaEsconder(container).checked).toBe(true);
+      expect(numerosNaTela(container)).toEqual(['3.1', '6.3']);
+
+      cleanup();
+    });
+
+    test('esconder RECONCILIA, e não destrói a seção que ficou na tela', async () => {
+      // O desenho daquele arquivo. Refazer o corpo inteiro fecharia a gaveta que
+      // a pessoa abriu e jogaria a rolagem para o topo.
+      getDocumento.mockImplementation(() => Promise.resolve(doc({
+        revisoes: { '3.1': FEITA },
+      })));
+
+      const { container, cleanup } = await montar();
+      const antes = subsecao(container, '6.2');
+
+      caixaEsconder(container).click();
+      await flush();
+
+      expect(subsecao(container, '6.2')).toBe(antes);
+
+      cleanup();
+    });
+
+    test('na edição FECHADA a caixa esconde do mesmo jeito', async () => {
+      const fechado = doc({ revisoes: { '6.1': FEITA, '6.2': FEITA } });
+      fechado.fechada = true;
+      fechado.data_fechamento = '2026-08-06T18:00:00.000Z';
+      getDocumento.mockImplementation(() => Promise.resolve(fechado));
+
+      const { container, cleanup } = await montar();
+      // Fechada, a marca é só leitura: não há caixa por subseção.
+      expect(container.querySelector('.rpcm-revisao__caixa')).toBeNull();
+
+      caixaEsconder(container).click();
+      await flush();
+
+      expect(numerosNaTela(container)).toEqual(['3.1', '6.3']);
+
+      cleanup();
+    });
+  });
 });

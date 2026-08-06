@@ -1,5 +1,6 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import {
   createNumberField, createSelectField, createComboBoxField, createDateField,
@@ -72,16 +73,45 @@ export function abrirDialogoEdicao({
 
   let salvando = false;
 
-  openModal({
+  /** O formulario como texto, para saber se a pessoa mexeu em alguma coisa. */
+  const instantaneo = () => JSON.stringify([
+    anoField.getValue(), mesField.getValue(),
+    assinanteField.getValue(), dataField.getValue(),
+  ]);
+  const inicial = instantaneo();
+
+  /**
+   * A GUARDA DO DESCARTE, para Escape, X, fundo e "Cancelar".
+   *
+   * Fechar o dialogo jogava fora o formulario sem dizer nada.
+   */
+  const podeFechar = async () => {
+    if (instantaneo() === inicial) return true;
+    return confirmDialog({
+      title: 'Sair sem salvar',
+      message: 'Você alterou este formulário e ainda não salvou. Fechar agora '
+        + 'descarta o que está na tela.',
+      confirmLabel: 'Descartar e fechar',
+      cancelLabel: 'Continuar editando',
+      danger: true,
+    });
+  };
+
+  const modal = openModal({
     title: editando ? 'Editar edição do RPCMTec' : 'Nova edição do RPCMTec',
     content: conteudo,
     width: '620px',
+    podeFechar,
     actions: [
-      { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+      {
+        label: 'Cancelar',
+        variant: 'text',
+        onClick: () => modal.fecharComGuarda(),
+      },
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        onClick: async ({ close, setOcupado }) => {
           if (salvando) return;
           anoField.setError(null);
           mesField.setError(null);
@@ -89,6 +119,12 @@ export function abrirDialogoEdicao({
           const ano = anoField.getValue();
           const mes = mesField.getValue();
           if (!ano) return anoField.setError('Informe o ano');
+          // O ANO IMPOSSÍVEL PARA AQUI, e não no servidor. Um dígito a mais no
+          // campo virava um 400 cru depois do clique, e a mensagem falava de
+          // esquema, e não do RPCMTec.
+          if (ano < 2000 || ano > 2100) {
+            return anoField.setError('O ano do RPCMTec fica entre 2000 e 2100');
+          }
           if (mes === null) return mesField.setError('Escolha o mês');
 
           const body = {
@@ -99,6 +135,9 @@ export function abrirDialogoEdicao({
           };
 
           salvando = true;
+          // O diálogo não se fecha com a gravação em voo, e o botão diz que ela
+          // começou.
+          if (setOcupado) setOcupado(true);
           try {
             if (editando) {
               await atualizarEdicao(edicao.id, body);
@@ -113,9 +152,12 @@ export function abrirDialogoEdicao({
             close();
             if (onSaved) onSaved();
           } catch (err) {
-            showError(err.message || 'Erro ao salvar a edição');
+            showError(err.message
+              || 'Não foi possível salvar a edição. Confira o ano e o mês e '
+              + 'tente de novo.');
           } finally {
             salvando = false;
+            if (setOcupado) setOcupado(false);
           }
         },
       },

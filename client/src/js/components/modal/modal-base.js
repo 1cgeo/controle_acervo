@@ -39,6 +39,18 @@ const pilha = [];
  * dialogo, poe o botao clicado em `.btn--ocupado` e barra Escape e fundo.
  * `setOcupado(false)` desfaz tudo. E OPT-IN: quem nao chama continua como antes.
  *
+ * DESCARTE: `podeFechar` e a guarda do trabalho nao salvo.
+ *
+ * O formulario com alteracao pendente perdia tudo por um Escape, um clique no
+ * fundo ou um X. `podeFechar` e uma funcao (pode devolver Promise) chamada
+ * ANTES de fechar por esses tres caminhos; devolvendo falso, o modal fica.
+ *
+ * O `close` que as ACOES recebem NAO passa por ela, de proposito: quem acabou de
+ * gravar chama `close()`, e uma pergunta ali cobraria confirmacao do que ja foi
+ * salvo. O botao "Cancelar" que quiser a guarda chama `fecharComGuarda`.
+ *
+ * E OPT-IN: sem `podeFechar`, nada muda.
+ *
  * @param {Object} options
  * @param {string} options.title
  * @param {HTMLElement|string} options.content - body content (Element or text)
@@ -47,7 +59,8 @@ const pilha = [];
  * @param {string} [options.width] - CSS max-width (e.g. '720px')
  * @param {Function} [options.onClose] - called once when the modal closes
  * @param {boolean} [options.closeOnBackdrop] - default true
- * @returns {{close:Function, element:HTMLElement, setOcupado:Function}}
+ * @param {Function} [options.podeFechar] - guarda de DESCARTE; ver abaixo
+ * @returns {{close:Function, fecharComGuarda:Function, element:HTMLElement, setOcupado:Function}}
  */
 export function openModal({
   title,
@@ -56,6 +69,7 @@ export function openModal({
   width,
   onClose,
   closeOnBackdrop = true,
+  podeFechar = null,
 }) {
   const previouslyFocused = document.activeElement;
   let closed = false;
@@ -72,7 +86,7 @@ export function openModal({
     'aria-label': 'Fechar',
     onClick: () => {
       if (ocupado) return;
-      close();
+      fecharComGuarda();
     },
   }, [svgIcon(ICONS.close, 20)]);
 
@@ -126,8 +140,29 @@ export function openModal({
   if (closeOnBackdrop) {
     overlay.addEventListener('mousedown', (e) => {
       if (ocupado) return;
-      if (e.target === overlay) close();
+      if (e.target === overlay) fecharComGuarda();
     });
+  }
+
+  /**
+   * Fecha CONSULTANDO a guarda de descarte, quando ela existe.
+   *
+   * `perguntando` barra a reentrada: com a pergunta na tela, um segundo Escape
+   * abriria uma segunda pergunta por cima da primeira.
+   */
+  let perguntando = false;
+  async function fecharComGuarda() {
+    if (closed || perguntando) return;
+    if (!podeFechar) {
+      close();
+      return;
+    }
+    perguntando = true;
+    try {
+      if (await podeFechar()) close();
+    } finally {
+      perguntando = false;
+    }
   }
 
   /**
@@ -165,7 +200,7 @@ export function openModal({
       // Gravando: o Escape morre aqui. Fechar agora jogaria fora o formulario
       // com a requisicao em voo, e o erro do servidor nao teria onde chegar.
       if (ocupado) return;
-      close();
+      fecharComGuarda();
       return;
     }
     if (e.key === 'Tab') {
@@ -211,5 +246,5 @@ export function openModal({
   const firstFocusable = body.querySelector(FOCUSABLE_SELECTOR);
   (firstFocusable || closeBtn).focus();
 
-  return { close, element: dialog, setOcupado };
+  return { close, fecharComGuarda, element: dialog, setOcupado };
 }

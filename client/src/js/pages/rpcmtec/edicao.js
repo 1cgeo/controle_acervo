@@ -74,6 +74,47 @@ export async function renderRpcmtecEdicao(container, ctx) {
   const corpo = el('div');
   const areaAnexos = el('div', { className: 'dashboard-section' });
 
+  // -------------------------------------------------------------------------
+  // O FILTRO DE CONFERÊNCIA
+  // -------------------------------------------------------------------------
+
+  /**
+   * Esconder o que ja foi conferido, para sobrar na tela so o que pede olho.
+   *
+   * A escolha mora AQUI, no estado da pagina, e nao no documento: marcar uma
+   * subsecao como conferida recarrega o documento, e um filtro guardado nele se
+   * desmarcaria sozinho a cada clique.
+   */
+  let esconderConferidas = false;
+
+  const caixaEsconder = el('input', {
+    type: 'checkbox',
+    className: 'rpcm-filtro__caixa',
+    id: 'rpcm-esconder-conferidas',
+    checked: false,
+    onChange: () => {
+      esconderConferidas = caixaEsconder.checked;
+      if (documento) {
+        desenharCorpo();
+        desenharContagemEscondida();
+      }
+    },
+  });
+
+  const contagemEscondida = el('span', { className: 'rpcm-filtro__contagem' });
+
+  const filtros = el('div', { className: 'rpcm-filtro' }, [
+    caixaEsconder,
+    el('label', {
+      className: 'rpcm-filtro__rotulo',
+      htmlFor: 'rpcm-esconder-conferidas',
+      textContent: 'Esconder as subseções já conferidas',
+      title: 'A que mudou DEPOIS da conferência continua na tela: é justamente '
+        + 'a que passa batido.',
+    }),
+    contagemEscondida,
+  ]);
+
   // O HISTORICO da edicao, RECOLHIDO. Fechar e reabrir sao os dois atos mais
   // consequentes desta tela -- um congela o documento que o chefe assina, o
   // outro o descongela --, e "quem reabriu a de julho" e pergunta que se faz
@@ -86,7 +127,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
   const areaHistorico = el('div', { className: 'dashboard-section' });
 
   const page = el('div', { className: 'page' }, [
-    cabecalho, areaErro, barra, avisos, areaAnexos, corpo, areaHistorico,
+    cabecalho, areaErro, barra, avisos, areaAnexos, filtros, corpo, areaHistorico,
   ]);
   container.appendChild(page);
 
@@ -396,17 +437,16 @@ export async function renderRpcmtecEdicao(container, ctx) {
       ]);
     }
 
-    // `checked` e `htmlFor` são PROPRIEDADES, e o `el` cai em `setAttribute`
-    // para o que não conhece. Passados ali, `checked: false` viraria
-    // `checked="false"`, e o atributo PRESENTE marca a caixa: toda subseção
-    // nasceria conferida. `htmlFor` viraria um atributo inexistente, e o rótulo
-    // deixaria de clicar na caixa.
+    // `checked` e `htmlFor` são PROPRIEDADES, e não atributos. O `el` já as
+    // trata assim (ver `PROPRIEDADES_NAO_ATRIBUTOS` em `utils/dom.js`); enquanto
+    // ele caía em `setAttribute`, `checked: false` virava `checked="false"` e o
+    // atributo PRESENTE marcava a caixa, então toda subseção nascia conferida.
     const caixa = el('input', {
       type: 'checkbox',
       className: 'rpcm-revisao__caixa',
       id: `revisao-${sub.numero}`,
+      checked: Boolean(r),
     });
-    caixa.checked = Boolean(r);
 
     caixa.addEventListener('change', async () => {
       const querMarcar = caixa.checked;
@@ -437,9 +477,9 @@ export async function renderRpcmtecEdicao(container, ctx) {
 
     const rotulo = el('label', {
       className: 'rpcm-revisao__rotulo',
+      htmlFor: `revisao-${sub.numero}`,
       textContent: texto,
     });
-    rotulo.htmlFor = `revisao-${sub.numero}`;
 
     const linha = [caixa, rotulo];
 
@@ -590,10 +630,58 @@ export async function renderRpcmtecEdicao(container, ctx) {
     return bloco;
   }
 
+  /**
+   * A subseção RESOLVIDA: conferida, e nada mudou desde a conferência.
+   *
+   * A que tem `desatualizada: true` NÃO é resolvida. Ela está marcada, e o
+   * conteúdo mudou depois: é o caso que passa batido, e escondê-lo derrotaria o
+   * propósito da caixa.
+   */
+  const conferidaResolvida = (sub) => Boolean(sub.revisao) && !sub.revisao.desatualizada;
+
+  /** Quantas subseções a caixa esconde, marcada ou não. */
+  function quantasResolvidas() {
+    return (documento.secoes || [])
+      .reduce((total, secao) => total + secao.subsecoes.filter(conferidaResolvida).length, 0);
+  }
+
+  /**
+   * As seções como a tela as desenha, já sem o que a caixa esconde.
+   *
+   * A SEÇÃO QUE FICA SEM SUBSEÇÃO VISÍVEL SAI JUNTO. Sem isso restariam
+   * cabeçalhos de gaveta vazia, e a tela ficaria pior do que antes de filtrar.
+   */
+  function secoesVisiveis() {
+    const secoes = documento.secoes || [];
+    if (!esconderConferidas) return secoes;
+    return secoes
+      .map((secao) => ({
+        ...secao,
+        subsecoes: secao.subsecoes.filter((sub) => !conferidaResolvida(sub)),
+      }))
+      .filter((secao) => secao.subsecoes.length > 0);
+  }
+
+  /**
+   * O NÚMERO DO QUE SUMIU, ao lado da caixa.
+   *
+   * Tela que encolhe sem explicar parece tela que perdeu dado.
+   */
+  function desenharContagemEscondida() {
+    if (!esconderConferidas) {
+      contagemEscondida.textContent = '';
+      return;
+    }
+    const quantas = quantasResolvidas();
+    contagemEscondida.textContent = quantas
+      ? `${quantas} conferida(s) escondida(s)`
+      : 'Nenhuma subseção conferida ainda';
+  }
+
   function desenharCorpo() {
     // A chave da seção é o TÍTULO: é o que o servidor manda, e ele não repete.
     // O número da subseção é a chave de dentro.
-    reconciliar(corpo, documento.secoes, {
+    reconciliar(corpo, secoesVisiveis(), {
       chave: (secao) => secao.titulo,
       criar: criarSecao,
       atualizar: (bloco, secao) => { preencherSecao(bloco, secao); },
@@ -973,6 +1061,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
       desenharBarra();
       desenharAvisos();
       desenharCorpo();
+      desenharContagemEscondida();
       await desenharAnexos();
       desenharHistorico();
     } catch (err) {

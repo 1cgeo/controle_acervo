@@ -637,10 +637,23 @@ const gerarRpnp = async ano => {
 // `tipos` e uma LISTA: a 4.5 ("Demais Licitacoes da atividade-fim") recebe a
 // propria E a participante. Participante nao tem subsecao propria, e sem ela na
 // lista a licitacao participante cadastrada some do relatorio em silencio.
+//
+// A FASE SAI PELA MESMA REGRA DA TELA DE LICITACOES: o nome do codigo
+// (`fase_id`) quando ele existe, e o texto livre (`fase_atual`) quando nao.
+// `licitacao_ctrl.listar` devolve os dois e `licitacoes/list.js` escolhe assim.
+//
+// Ler so o `fase_atual` fazia a 4.4 contradizer a tela. Medicao de 2026-08-06
+// na producao: a licitacao id 1 (2026, GCALC DSG, "licenciamento e fornecimento
+// de imagens satelitais") tem `fase_id = 3` (Homologado) e `fase_atual =
+// 'Renovando o contrato vigente'`. A tela mostrava "Homologado" e a 4.4
+// mostrava "Renovando o contrato vigente", para a MESMA licitacao.
 const gerarLicitacoes = async (ano, tipos) => {
   const linhas = await db.conn.any(
-    `SELECT l.objeto, l.fase_atual, l.valor_total_estimado, l.valor_final_homologado
+    `SELECT l.objeto,
+            COALESCE(fl.nome, l.fase_atual) AS fase,
+            l.valor_total_estimado, l.valor_final_homologado
      FROM orcamento.licitacao AS l
+     LEFT JOIN dominio.fase_licitacao AS fl ON fl.code = l.fase_id
      WHERE l.ano = $<ano> AND l.tipo_id IN ($<tipos:csv>)
      ORDER BY l.id`,
     { ano, tipos }
@@ -648,7 +661,7 @@ const gerarLicitacoes = async (ano, tipos) => {
 
   return linhas.map(l => [
     texto(l.objeto),
-    texto(l.fase_atual),
+    texto(l.fase),
     moeda(l.valor_total_estimado),
     moeda(l.valor_final_homologado)
   ])

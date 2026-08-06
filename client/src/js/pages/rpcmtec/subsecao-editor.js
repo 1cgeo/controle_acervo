@@ -33,18 +33,33 @@ import { gravarSubsecao, importarRepositorios51 } from '@services/rpcmtec-servic
  */
 const SUBSECAO_COM_CSV = '5.1';
 
-/** Uma linha da grade: um input por coluna, mais o botao de remover. */
-function criarLinha(cabecalhos, valores, aoRemover) {
+/**
+ * Uma linha da grade: um input por coluna, mais o botao de remover.
+ *
+ * `aoTeclar` e `aoColar` chegam de fora porque as duas acoes SAEM da linha:
+ * descer do fim da tabela cria linha nova, e colar uma planilha de cinco linhas
+ * cria quatro. Quem sabe fazer isso e a grade, e nao a linha.
+ */
+function criarLinha(cabecalhos, valores, aoRemover, aoTeclar, aoColar) {
   const inputs = cabecalhos.map((_, i) => el('input', {
     className: 'form-field__input rpcm-grade__input',
     type: 'text',
+    // O rotulo da coluna vai no campo: na grade nao ha `<label>`, e sem isto o
+    // leitor de tela anuncia "caixa de texto" oito vezes por linha.
+    'aria-label': cabecalhos[i],
     value: valores[i] ?? '',
   }));
+
+  inputs.forEach((input, coluna) => {
+    input.addEventListener('keydown', (e) => aoTeclar(e, linha, coluna));
+    input.addEventListener('paste', (e) => aoColar(e, linha, coluna));
+  });
 
   const remover = el('button', {
     className: 'btn btn--icon btn--danger-text',
     type: 'button',
-    title: 'Remover linha',
+    title: 'Remover esta linha',
+    'aria-label': 'Remover esta linha',
     onClick: () => aoRemover(linha),
   }, [svgIcon(ICONS.delete, 16)]);
 
@@ -54,7 +69,22 @@ function criarLinha(cabecalhos, valores, aoRemover) {
   ]);
 
   linha._valores = () => inputs.map((input) => input.value);
+  linha._inputs = inputs;
+  /** A linha so com espaco em branco sai sem pergunta: nao ha o que perder. */
+  linha._vazia = () => inputs.every((input) => !input.value.trim());
   return linha;
+}
+
+/** A grade como texto, para comparar o que esta na tela com o que veio. */
+function comoTexto(linhas) {
+  return JSON.stringify(linhas.map((l) => l.map((c) => String(c ?? ''))));
+}
+
+/** O primeiro campo preenchido da linha, para a pergunta nomear o que sai. */
+function resumoDaLinha(linha) {
+  const primeiro = linha._valores().find((v) => v.trim());
+  if (!primeiro) return '';
+  return primeiro.length > 60 ? `${primeiro.slice(0, 60)}...` : primeiro;
 }
 
 /**
@@ -80,11 +110,6 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
   if (ehTabela) {
     corpo = el('tbody');
 
-    const aoRemover = (linha) => {
-      linha.remove();
-      atualizarVazio();
-    };
-
     const vazio = el('p', {
       className: 'rpcm-grade__vazio',
       textContent: 'Nenhuma linha. Use "Adicionar linha" ou marque "sem ocorrência no mês".',
@@ -94,22 +119,152 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
       vazio.classList.toggle('hidden', corpo.children.length > 0);
     }
 
-    /** A grade como texto, para comparar o que esta na tela com o que veio. */
-    function comoTexto(linhas) {
-      return JSON.stringify(linhas.map((l) => l.map((c) => String(c ?? ''))));
+    /** Poe o foco na mesma coluna de outra linha. Falso quando nao ha linha. */
+    function focarCelula(linha, coluna) {
+      if (!linha || !linha._inputs) return false;
+      const alvo = linha._inputs[Math.min(coluna, linha._inputs.length - 1)];
+      if (!alvo) return false;
+      alvo.focus();
+      return true;
+    }
+
+    /** Acrescenta uma linha em branco no fim e devolve a linha criada. */
+    function acrescentarLinha() {
+      const nova = criarLinha(
+        subsecao.cabecalhos, subsecao.cabecalhos.map(() => ''),
+        aoRemover, aoTeclar, aoColar,
+      );
+      corpo.appendChild(nova);
+      atualizarVazio();
+      return nova;
     }
 
     /**
-     * A pessoa mexeu na grade sem salvar?
+     * Remove a linha, PERGUNTANDO quando ha o que perder.
      *
-     * A importacao grava no SERVIDOR, e o servidor cruza com o que esta GRAVADO.
-     * Um Resumo digitado agora, ainda nao salvo, nao existe para ele: importar
-     * por cima o levaria embora. Quem sabe disso e esta tela, entao e ela que
-     * avisa.
+     * A linha em branco sai calada: e a que a pessoa acabou de criar por
+     * engano, e uma pergunta ali so atrapalharia. A preenchida se confirma,
+     * porque o botao fica a um pixel do campo do lado.
      */
-    function gradeMudou() {
-      const naTela = Array.from(corpo.children).map((l) => l._valores());
-      return comoTexto(naTela) !== comoTexto(subsecao.linhas || []);
+    async function aoRemover(linha) {
+      if (!linha._vazia()) {
+        const ok = await confirmDialog({
+          title: `Remover a linha da ${subsecao.numero}`,
+          message: `Isto tira da tabela a linha "${resumoDaLinha(linha)}". `
+            + 'A remoção só chega ao relatório quando você salvar.',
+          confirmLabel: 'Remover a linha',
+          danger: true,
+        });
+        if (!ok) return;
+      }
+
+      // O FOCO NÃO CAI NO CORPO DA PÁGINA. Quem removeu com o teclado ficava
+      // sem lugar nenhum, e o Tab seguinte recomeçava do topo do diálogo.
+      const seguinte = linha.nextElementSibling || linha.previousElementSibling;
+      linha.remove();
+      atualizarVazio();
+      if (!focarCelula(seguinte, 0)) adicionar.focus();
+    }
+
+    /**
+     * O teclado da grade: digitar a tabela inteira sem tocar no mouse.
+     *
+     * Enter desce uma linha na mesma coluna, e no fim da tabela CRIA a próxima.
+     * As setas andam entre as linhas. O Tab continua o do navegador, andando
+     * célula a célula, e passa pelo botão de remover de propósito: ele é o
+     * único caminho de teclado para tirar uma linha.
+     */
+    function aoTeclar(e, linha, coluna) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const proxima = linha.nextElementSibling;
+        if (proxima) focarCelula(proxima, coluna);
+        else focarCelula(acrescentarLinha(), 0);
+        return;
+      }
+      if (e.key === 'ArrowDown' && linha.nextElementSibling) {
+        e.preventDefault();
+        focarCelula(linha.nextElementSibling, coluna);
+        return;
+      }
+      if (e.key === 'ArrowUp' && linha.previousElementSibling) {
+        e.preventDefault();
+        focarCelula(linha.previousElementSibling, coluna);
+      }
+    }
+
+    /**
+     * COLAR DA PLANILHA preenche a matriz a partir da célula atual.
+     *
+     * O Excel e o Calc põem TAB entre as colunas e quebra de linha entre as
+     * linhas. Sem isto, a planilha de doze linhas que o gestor já tem pronta
+     * caía inteira dentro de UMA célula, e ele redigitava tudo.
+     *
+     * Texto de uma célula só (sem TAB e sem quebra) segue o caminho do
+     * navegador: colar um nome dentro de um campo tem de continuar sendo colar
+     * um nome dentro de um campo.
+     */
+    async function aoColar(e, linha, coluna) {
+      const bruto = e.clipboardData && e.clipboardData.getData('text/plain');
+      if (!bruto) return;
+      if (!bruto.includes('\t') && !/\r?\n/.test(bruto.trim())) return;
+      e.preventDefault();
+
+      const matriz = bruto.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+        .split('\n').map((l) => l.split('\t'));
+
+      // O QUE A COLAGEM APAGA, dito antes. Ela escreve por cima das linhas que
+      // já estão abaixo do cursor, e sem a pergunta isso some calado.
+      let porCima = 0;
+      let conferida = linha;
+      for (const celulas of matriz) {
+        if (!conferida) break;
+        for (let i = 0; i < celulas.length; i++) {
+          const alvo = conferida._inputs[coluna + i];
+          if (alvo && alvo.value.trim()) porCima += 1;
+        }
+        conferida = conferida.nextElementSibling;
+      }
+      if (porCima > 0) {
+        const ok = await confirmDialog({
+          title: 'Colar por cima do que já está preenchido',
+          message: `A colagem escreve ${matriz.length} linha(s) a partir daqui. `
+            + `Isso substitui ${porCima} célula(s) já preenchida(s).`,
+          confirmLabel: 'Colar e substituir',
+          danger: true,
+        });
+        if (!ok) return;
+      }
+
+      let destino = linha;
+      let criadas = 0;
+      for (const celulas of matriz) {
+        if (!destino) {
+          destino = acrescentarLinha();
+          criadas += 1;
+        }
+        for (let i = 0; i < celulas.length; i++) {
+          const alvo = destino._inputs[coluna + i];
+          if (alvo) alvo.value = celulas[i];
+        }
+        destino = destino.nextElementSibling;
+      }
+      atualizarVazio();
+
+      const sobra = Math.max(...matriz.map((l) => l.length)) + coluna
+        - subsecao.cabecalhos.length;
+      showSuccess(
+        `${matriz.length} linha(s) coladas, ${criadas} criada(s). `
+        + 'Confira e use "Salvar".',
+      );
+      // COLUNA A MAIS NÃO SOME CALADA: a tabela tem cabeçalho fixo, e a planilha
+      // de fora quase sempre traz uma coluna que o documento não tem.
+      if (sobra > 0) {
+        showWarning(
+          `${sobra} coluna(s) da planilha ficaram de fora: a ${subsecao.numero} `
+          + `tem ${subsecao.cabecalhos.length} colunas, e elas são fixas.`,
+        );
+      }
     }
 
     /**
@@ -127,7 +282,7 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
         return;
       }
 
-      if (gradeMudou()) {
+      if (mudou()) {
         const ok = await confirmDialog({
           title: 'Importar por cima do que está na tela',
           message: 'Você mexeu na tabela e ainda não salvou. A importação lê o '
@@ -271,25 +426,31 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
     }
 
     for (const valores of (subsecao.linhas || [])) {
-      corpo.appendChild(criarLinha(subsecao.cabecalhos, valores, aoRemover));
+      corpo.appendChild(criarLinha(
+        subsecao.cabecalhos, valores, aoRemover, aoTeclar, aoColar,
+      ));
     }
     atualizarVazio();
 
     const adicionar = el('button', {
       className: 'btn',
       type: 'button',
-      onClick: () => {
-        corpo.appendChild(criarLinha(
-          subsecao.cabecalhos, subsecao.cabecalhos.map(() => ''), aoRemover,
-        ));
-        atualizarVazio();
-        const inputs = corpo.lastChild.querySelectorAll('input');
-        if (inputs.length) inputs[0].focus();
-      },
+      onClick: () => focarCelula(acrescentarLinha(), 0),
     }, [svgIcon(ICONS.add, 16), 'Adicionar linha']);
 
     conteudo = el('div', {}, [
       ...(subsecao.numero === SUBSECAO_COM_CSV ? [barraCsv()] : []),
+      // O QUE CADA BOTÃO FAZ, ANTES DO CLIQUE. "Sem ocorrência no mês" apaga a
+      // tabela, e quem descobria isso descobria pela pergunta de confirmação,
+      // com a mão já no botão.
+      el('p', {
+        className: 'form-field__help rpcm-grade__ajuda',
+        textContent: 'As colunas são fixas e vêm do documento da Divisão. '
+          + 'Enter desce uma linha, e no fim da tabela cria a próxima. '
+          + 'Colar da planilha preenche várias linhas de uma vez. '
+          + '"Salvar" grava a tabela. "Sem ocorrência no mês" apaga o conteúdo '
+          + 'e declara que não houve nada a relatar.',
+      }),
       el('div', { className: 'rpcm-grade__wrap' }, [
         el('table', { className: 'rpcm-grade' }, [
           el('thead', {}, [
@@ -308,9 +469,48 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
     campoTexto = el('textarea', {
       className: 'form-field__textarea',
       rows: 8,
+      'aria-label': `${subsecao.numero}. ${subsecao.titulo}`,
+      // O `value` do `<textarea>` é PROPRIEDADE, e não atributo. Ver a lista
+      // `PROPRIEDADES_NAO_ATRIBUTOS` em `utils/dom.js`: enquanto o `el()`
+      // gravava isto como atributo, este campo abria em branco por cima do
+      // texto já escrito, e salvar apagava a subseção.
       value: subsecao.texto ?? '',
     });
-    conteudo = el('div', { className: 'form-field' }, [campoTexto]);
+    conteudo = el('div', { className: 'form-field' }, [
+      el('p', {
+        className: 'form-field__help',
+        textContent: '"Salvar" grava este texto. "Sem ocorrência no mês" apaga '
+          + 'o texto e declara que não houve nada a relatar.',
+      }),
+      campoTexto,
+    ]);
+  }
+
+  /** A pessoa mexeu e ainda não salvou? */
+  function mudou() {
+    if (ehTabela) {
+      const naTela = Array.from(corpo.children).map((l) => l._valores());
+      return comoTexto(naTela) !== comoTexto(subsecao.linhas || []);
+    }
+    return (campoTexto.value || '') !== (subsecao.texto ?? '');
+  }
+
+  /**
+   * A GUARDA DO DESCARTE, para Escape, X, fundo e "Cancelar".
+   *
+   * Fechar o diálogo jogava fora o que estava na tela sem dizer nada. Numa
+   * subseção de doze linhas, um Escape distraído custava a digitação inteira.
+   */
+  async function podeFechar() {
+    if (!mudou()) return true;
+    return confirmDialog({
+      title: `Sair da ${subsecao.numero} sem salvar`,
+      message: 'Você alterou esta subseção e ainda não salvou. Fechar agora '
+        + 'descarta o que está na tela.',
+      confirmLabel: 'Descartar e fechar',
+      cancelLabel: 'Continuar editando',
+      danger: true,
+    });
   }
 
   /**
@@ -328,7 +528,7 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
   }
 
   /** Grava, com `semOcorrencia` decidindo se o conteudo vai junto. */
-  async function salvar(semOcorrencia, fechar) {
+  async function salvar(semOcorrencia, fechar, setOcupado) {
     if (salvando) return;
 
     // CONFIRMA quando há o que perder. Sem conteúdo nenhum a marcação é o gesto
@@ -352,6 +552,10 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
     }
 
     salvando = true;
+    // O DIÁLOGO NÃO SE FECHA COM A GRAVAÇÃO EM VOO, e o botão clicado mostra
+    // que ela começou. Sem isto nada na tela mudava, e um Escape no meio jogava
+    // fora o formulário para onde o erro do servidor voltaria.
+    if (setOcupado) setOcupado(true);
     try {
       const linhas = ehTabela && !semOcorrencia
         ? Array.from(corpo.children).map((linha) => linha._valores())
@@ -369,12 +573,24 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
           ? `${subsecao.numero} marcada como sem ocorrência no mês`
           : `${subsecao.numero} gravada com sucesso`,
       );
+      // GRAVOU: o que está na tela passa a ser o que está no servidor. Sem esta
+      // linha a guarda de descarte continuaria vendo alteração pendente, e
+      // perguntaria se pode descartar o que ela mesma acabou de salvar.
+      if (ehTabela) subsecao.linhas = linhas;
+      else subsecao.texto = texto;
+
       fechar();
       if (onSaved) onSaved();
     } catch (err) {
-      showError(err.message || 'Erro ao gravar a subseção');
+      // A MENSAGEM DO SERVIDOR VEM PRIMEIRO: ela nomeia a linha e a coluna que
+      // não fecham, na palavra do documento. A queda diz o que fazer, e não só
+      // que algo deu errado.
+      showError(err.message
+        || 'Não foi possível gravar a subseção. Confira se a edição do '
+        + 'RPCMTec continua aberta e tente de novo.');
     } finally {
       salvando = false;
+      if (setOcupado) setOcupado(false);
     }
   }
 
@@ -382,17 +598,25 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
     title: `${subsecao.numero}. ${subsecao.titulo}`,
     content: conteudo,
     width: '960px',
+    podeFechar,
     actions: [
-      { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
+      {
+        label: 'Cancelar',
+        variant: 'text',
+        // `fecharComGuarda`, e não o `close` da ação: "Cancelar" é o caminho
+        // mais provável do descarte acidental, e é o que mais precisa da
+        // pergunta.
+        onClick: () => modal.fecharComGuarda(),
+      },
       {
         label: 'Sem ocorrência no mês',
         variant: 'secondary',
-        onClick: ({ close }) => salvar(true, close),
+        onClick: ({ close, setOcupado }) => salvar(true, close, setOcupado),
       },
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: ({ close }) => salvar(false, close),
+        onClick: ({ close, setOcupado }) => salvar(false, close, setOcupado),
       },
     ],
   });

@@ -37,7 +37,9 @@ vi.mock('@components/modal/confirm-dialog.js', () => ({
 }));
 
 const { abrirEditorSubsecao } = await import('./subsecao-editor.js');
-const { importarRepositorios51 } = await import('@services/rpcmtec-service.js');
+const {
+  importarRepositorios51, gravarSubsecao,
+} = await import('@services/rpcmtec-service.js');
 const { showError, showSuccess, showWarning } = await import('@utils/toast.js');
 const { confirmDialog } = await import('@components/modal/confirm-dialog.js');
 
@@ -105,6 +107,8 @@ const erroComStatus = (mensagem, status) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  gravarSubsecao.mockReset();
+  gravarSubsecao.mockResolvedValue({});
   // `mockReset`, e nao so `clearAllMocks`: este ultimo zera a CONTAGEM e deixa a
   // fila de `mockResolvedValueOnce` de pe. Um caso que enfileira duas respostas
   // e consome uma so entrega a sobra ao caso SEGUINTE, e ele passa a provar
@@ -261,6 +265,268 @@ describe('o 409: a importação apagaria Resumo já escrito', () => {
 
     expect(importarRepositorios51).toHaveBeenCalledTimes(1);
     expect(showSuccess).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O EDITOR DA PROSA (9.1 a 9.3), e o defeito que apagava o que já estava lá.
+// ---------------------------------------------------------------------------
+
+const subsecao91 = (texto) => ({
+  numero: '9.1', titulo: 'Boas práticas', texto,
+});
+
+/** O bloco de uma tabela qualquer, com três colunas e o que vier de linha. */
+const subsecaoTabela = (linhas = []) => ({
+  numero: '8.1',
+  titulo: 'Manutenção',
+  cabecalhos: ['Equipamento', 'Situação', 'Providência'],
+  linhas,
+});
+
+/** Um `paste` com `clipboardData`, que o jsdom não monta sozinho. */
+function colarNaCelula(input, texto) {
+  const evento = new Event('paste', { bubbles: true, cancelable: true });
+  evento.clipboardData = { getData: () => texto };
+  input.dispatchEvent(evento);
+  return evento;
+}
+
+const celulas = () => Array.from(document.querySelectorAll('.rpcm-grade__input'));
+const linhasNaTela = () => document.querySelectorAll('.rpcm-grade tbody tr');
+
+describe('a prosa da seção 9 abre COM o texto já gravado', () => {
+  test('o campo mostra o texto, e não abre em branco', () => {
+    // O DEFEITO: `el()` gravava `value` como ATRIBUTO, e num `<textarea>` o
+    // conteúdo é filho de texto. A caixa abria vazia por cima do texto escrito,
+    // e salvar apagava a subseção do relatório que o chefe assina.
+    abrirEditorSubsecao({
+      edicaoId: 7,
+      subsecao: subsecao91('A Divisão adotou revisão cruzada das cartas.'),
+    });
+
+    const area = document.querySelector('.form-field__textarea');
+    expect(area.value).toBe('A Divisão adotou revisão cruzada das cartas.');
+  });
+
+  test('salvar sem tocar no campo devolve o MESMO texto ao servidor', () => {
+    // A consequência do defeito, medida no que sai pela rede: enquanto o campo
+    // abria vazio, este salvamento mandava `texto: null`.
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao91('Texto de junho') });
+
+    botaoPorTexto('Salvar').click();
+
+    expect(gravarSubsecao).toHaveBeenCalledWith(7, '9.1', {
+      linhas: [], texto: 'Texto de junho', sem_ocorrencia: false,
+    });
+  });
+
+  test('subseção de prosa ainda vazia continua abrindo vazia', () => {
+    // VARIÂNCIA: sem este caso, um campo que sempre trouxesse texto passaria
+    // nos dois casos acima.
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao91(null) });
+
+    expect(document.querySelector('.form-field__textarea').value).toBe('');
+  });
+});
+
+describe('fechar sem salvar não descarta calado', () => {
+  test('a prosa MEXIDA pergunta antes de fechar, e recusada não fecha', async () => {
+    confirmDialog.mockResolvedValue(false);
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao91('Texto de junho') });
+
+    document.querySelector('.form-field__textarea').value = 'Texto reescrito';
+    botaoPorTexto('Cancelar').click();
+    await assentar();
+
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    expect(confirmDialog.mock.calls[0][0].title).toContain('sem salvar');
+    // O diálogo continua de pé, com o que foi digitado.
+    expect(document.querySelector('.form-field__textarea').value)
+      .toBe('Texto reescrito');
+  });
+
+  test('confirmada, fecha e o texto vai embora', async () => {
+    confirmDialog.mockResolvedValue(true);
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao91('Texto de junho') });
+
+    document.querySelector('.form-field__textarea').value = 'Texto reescrito';
+    botaoPorTexto('Cancelar').click();
+    await assentar();
+
+    expect(document.querySelector('.form-field__textarea')).toBeNull();
+    expect(gravarSubsecao).not.toHaveBeenCalled();
+  });
+
+  test('a tela INTOCADA fecha direto, sem pergunta nenhuma', async () => {
+    // VARIÂNCIA: uma guarda que perguntasse sempre passaria nos casos acima e
+    // atrapalharia as 18 subseções do mês.
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao91('Texto de junho') });
+
+    botaoPorTexto('Cancelar').click();
+    await assentar();
+
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(document.querySelector('.form-field__textarea')).toBeNull();
+  });
+
+  test('a GRADE mexida também pergunta, e o Escape passa pela mesma guarda', async () => {
+    confirmDialog.mockResolvedValue(false);
+    abrirEditorSubsecao({
+      edicaoId: 7, subsecao: subsecaoTabela([['Plotter', 'Parada', '']]),
+    });
+
+    celulas()[2].value = 'Chamado aberto';
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await assentar();
+
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    expect(linhasNaTela()).toHaveLength(1);
+  });
+
+  test('salvar e fechar NÃO pergunta, porque não há o que perder', async () => {
+    abrirEditorSubsecao({
+      edicaoId: 7, subsecao: subsecaoTabela([['Plotter', 'Parada', '']]),
+    });
+
+    celulas()[2].value = 'Chamado aberto';
+    botaoPorTexto('Salvar').click();
+    await assentar();
+
+    expect(gravarSubsecao).toHaveBeenCalledTimes(1);
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(document.querySelector('.rpcm-grade')).toBeNull();
+  });
+});
+
+describe('a grade: teclado, linha e colagem', () => {
+  const teclar = (input, key) => input.dispatchEvent(
+    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+  );
+
+  test('Enter desce uma linha na MESMA coluna', () => {
+    abrirEditorSubsecao({
+      edicaoId: 7,
+      subsecao: subsecaoTabela([['a', 'b', 'c'], ['d', 'e', 'f']]),
+    });
+
+    const campos = celulas();
+    campos[1].focus();
+    teclar(campos[1], 'Enter');
+
+    // Coluna 1 (Situação) da segunda linha.
+    expect(document.activeElement).toBe(campos[4]);
+  });
+
+  test('Enter na ÚLTIMA linha cria a próxima e vai para o começo dela', () => {
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecaoTabela([['a', 'b', 'c']]) });
+
+    teclar(celulas()[2], 'Enter');
+
+    expect(linhasNaTela()).toHaveLength(2);
+    expect(document.activeElement).toBe(celulas()[3]);
+  });
+
+  test('as setas andam entre as linhas, e param nas pontas', () => {
+    abrirEditorSubsecao({
+      edicaoId: 7,
+      subsecao: subsecaoTabela([['a', 'b', 'c'], ['d', 'e', 'f']]),
+    });
+
+    const campos = celulas();
+    campos[0].focus();
+    teclar(campos[0], 'ArrowUp');
+    expect(document.activeElement).toBe(campos[0]);
+
+    teclar(campos[0], 'ArrowDown');
+    expect(document.activeElement).toBe(campos[3]);
+
+    teclar(campos[3], 'ArrowUp');
+    expect(document.activeElement).toBe(campos[0]);
+    // A seta NÃO cria linha: só o Enter no fim faz isso.
+    expect(linhasNaTela()).toHaveLength(2);
+  });
+
+  test('remover linha PREENCHIDA pergunta, e recusada a linha fica', async () => {
+    confirmDialog.mockResolvedValue(false);
+    abrirEditorSubsecao({
+      edicaoId: 7, subsecao: subsecaoTabela([['Plotter', 'Parada', 'Chamado']]),
+    });
+
+    document.querySelector('.rpcm-grade__acao .btn').click();
+    await assentar();
+
+    expect(confirmDialog.mock.calls[0][0].message).toContain('Plotter');
+    expect(linhasNaTela()).toHaveLength(1);
+  });
+
+  test('remover linha VAZIA sai calado, e o foco não cai no vazio', async () => {
+    // VARIÂNCIA: sem este caso, perguntar em toda remoção passaria no caso
+    // acima e cobraria confirmação da linha que a pessoa acabou de criar.
+    abrirEditorSubsecao({
+      edicaoId: 7, subsecao: subsecaoTabela([['Plotter', 'Parada', 'x'], ['', '', '']]),
+    });
+
+    document.querySelectorAll('.rpcm-grade__acao .btn')[1].click();
+    await assentar();
+
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(linhasNaTela()).toHaveLength(1);
+    // O foco foi para a linha vizinha, e não para o corpo da página.
+    expect(document.activeElement).toBe(celulas()[0]);
+  });
+
+  test('colar da planilha preenche a matriz e CRIA as linhas que faltam', async () => {
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecaoTabela([['', '', '']]) });
+
+    colarNaCelula(
+      celulas()[0],
+      'Plotter\tParada\tChamado\nScanner\tOK\t-\nGPS\tEm uso\t-',
+    );
+    await assentar();
+
+    expect(linhasNaTela()).toHaveLength(3);
+    expect(celulas().map((c) => c.value)).toEqual([
+      'Plotter', 'Parada', 'Chamado',
+      'Scanner', 'OK', '-',
+      'GPS', 'Em uso', '-',
+    ]);
+    expect(showSuccess).toHaveBeenCalled();
+  });
+
+  test('colar avisa a coluna que a tabela não tem, e não a inventa', async () => {
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecaoTabela([['', '', '']]) });
+
+    colarNaCelula(celulas()[0], 'Plotter\tParada\tChamado\tSobra');
+    await assentar();
+
+    expect(celulas()).toHaveLength(3);
+    expect(showWarning.mock.calls[0][0]).toContain('1 coluna(s)');
+  });
+
+  test('colar POR CIMA de célula preenchida pergunta, e recusado nada muda', async () => {
+    confirmDialog.mockResolvedValue(false);
+    abrirEditorSubsecao({
+      edicaoId: 7, subsecao: subsecaoTabela([['Plotter', 'Parada', 'Chamado']]),
+    });
+
+    colarNaCelula(celulas()[0], 'Scanner\tOK\t-');
+    await assentar();
+
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    expect(celulas().map((c) => c.value)).toEqual(['Plotter', 'Parada', 'Chamado']);
+  });
+
+  test('texto de uma célula só continua sendo colagem normal do navegador', async () => {
+    // VARIÂNCIA: sem este caso, tratar TODO paste como planilha passaria nos
+    // casos acima e quebraria colar um nome dentro de um campo.
+    abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecaoTabela([['', '', '']]) });
+
+    const evento = colarNaCelula(celulas()[0], 'Plotter HP T2600');
+    await assentar();
+
+    expect(evento.defaultPrevented).toBe(false);
+    expect(linhasNaTela()).toHaveLength(1);
   });
 });
 
