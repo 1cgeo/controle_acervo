@@ -83,6 +83,7 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
             operation_type = session.get('operation_type', '')
             operation_type_display = {
                 'add_files': 'Adicionar Arquivos',
+                'replace_files': 'Substituir Arquivos',
                 'add_version': 'Adicionar Versão',
                 'add_product': 'Adicionar Produto'
             }.get(operation_type, operation_type)
@@ -146,8 +147,14 @@ class ProblemUploadsDialog(QDialog, FORM_CLASS):
         
         operation_type = session.get('operation_type', '')
         
-        if operation_type == 'add_files':
-            # Handle add_files operation type
+        if operation_type in ('add_files', 'replace_files'):
+            # `replace_files` entra JUNTO de `add_files`, e não é enfeite: desde
+            # 06/08/2026 o servidor devolve `versoes_com_problema` também para a
+            # substituição (arquivo_ctrl.getProblemUploads). Sem este ramo a
+            # sessão de substituição que falhava aparecia na lista e abria uma
+            # árvore VAZIA, ou seja, a tela dizia que algo falhou e não dizia o
+            # quê. As duas operações gravam o `versao_id` no próprio arquivo do
+            # rascunho, então a forma da resposta é a mesma.
             versoes = session.get('versoes_com_problema', [])
             for versao in versoes:
                 versao_item = QTreeWidgetItem(self.problemFilesTree)

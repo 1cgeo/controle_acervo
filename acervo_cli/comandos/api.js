@@ -172,6 +172,10 @@ async function executar (args, cfg) {
 
   const avisos = []
   if (operacao.pesado) avisos.push(`Operacao pesada: ${operacao.pesado}.`)
+  // Avisa antes de enviar, e tambem no --dry-run. E o unico guardrail possivel
+  // para a operacao que muda ou apaga SEM levar corpo: o --confirmar pede os
+  // identificadores atingidos, e a rota de limpeza nao os tem para oferecer.
+  if (operacao.destrutivo) avisos.push(`Operacao destrutiva: ${operacao.destrutivo}.`)
 
   // ---- corpo -------------------------------------------------------------
   let corpo = null
@@ -292,4 +296,6 @@ function precisaServidor (args) {
   return true
 }
 
-module.exports = { executar, precisaServidor }
+// `formatar` sai daqui para o teste poder medir a escolha de envelope sem rede:
+// e ela que decide se a resposta vira contador legivel ou so a prosa do servidor.
+module.exports = { executar, precisaServidor, formatar }

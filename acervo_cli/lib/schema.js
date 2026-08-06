@@ -176,9 +176,39 @@ function renderCondicional (desc) {
   return casos
 }
 
+/**
+ * O campo declarado `forbidden()`: o servidor responde 400 se ele vier no corpo.
+ *
+ * Ele precisa de tratamento proprio porque o `describe()` o entrega como
+ * `type: 'any'` sem regra nenhuma, e ele sairia impresso como `campo any`. O
+ * agente leria isso como "campo opcional que aceita qualquer coisa", que e a
+ * leitura exatamente oposta. A mensagem do `.messages()` entra junto porque e
+ * nela que mora o motivo da recusa e o caminho certo (`data_fim_prevista` e do
+ * lote, o `checksum` e medido pelo servidor).
+ */
+function ehRecusado (desc) {
+  return !!(desc && desc.flags && desc.flags.presence === 'forbidden')
+}
+
+function motivoDaRecusa (desc) {
+  const mensagens = desc.preferences && desc.preferences.messages
+  const texto = mensagens && mensagens['any.unknown']
+  return texto ? [texto] : []
+}
+
 /** Um campo vira { nome, obrigatorio, tipo, notas[], filhos[] }. */
 function descreverCampo (nome, desc, profundidade = 0) {
   const obrigatorio = !!(desc.flags && desc.flags.presence === 'required')
+
+  if (ehRecusado(desc)) {
+    return {
+      nome,
+      obrigatorio: false,
+      tipo: 'RECUSADO (400)',
+      notas: motivoDaRecusa(desc),
+      filhos: []
+    }
+  }
 
   if (desc.type === 'alternatives') {
     return { nome, obrigatorio, tipo: 'condicional', notas: renderCondicional(desc), filhos: [] }
@@ -330,6 +360,11 @@ function contrato (chave, recurso) {
       linhas.push('  que mudou. Use `acervo editar` para nao errar isto.')
     }
     if (op.pesado) linhas.push(`  operacao pesada: ${op.pesado}`)
+    // `destrutivo` e o aviso da operacao que muda ou apaga sem levar corpo. O
+    // `confirmar` nao alcanca esse caso: ele exige repetir os identificadores
+    // atingidos, e a rota de limpeza nao tem corpo nem :param de onde tira-los.
+    // Exigi-lo ali travaria a operacao para sempre, em vez de guarda-la.
+    if (op.destrutivo) linhas.push(`  operacao destrutiva: ${op.destrutivo}`)
     if (op.confirmar) {
       linhas.push(`  IRREVERSIVEL, exige --confirmar com os valores de ${op.confirmar.campo}:`)
       linhas.push(`    ${op.confirmar.motivo}`)

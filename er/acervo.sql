@@ -64,8 +64,16 @@ CREATE TABLE acervo.lote (
     -- lote nao expressa quatro meses. Hoje o planejado sai de
     -- `acervo.versao.data_prevista`, uma promessa por folha.
     --
-    -- A coluna FICA, porque a promessa do lote continua sendo um fato do lote, e
-    -- e o que a tela de projetos mostra.
+    -- A COLUNA FICA, E HOJE ELA NÃO TEM LEITOR. Nenhuma tela mostra este campo:
+    -- a aba de lotes do cliente web não tem a coluna e o diálogo de lote não
+    -- envia o campo. O servidor ainda o devolve em GET /projetos/lote, e nada
+    -- consome esse valor. Ela guarda 19 linhas preenchidas (medido em
+    -- 2026-08-05), e todas as 19 repetem a `data_fim`. Apagar coluna com dado é
+    -- decisão do chefe da DGEO, ainda não tomada.
+    --
+    -- ELA É DO LOTE, E SÓ DO LOTE. `acervo.projeto` não tem esta coluna. Até
+    -- 2026-08-06 o schema Joi do projeto a aceitava e o INSERT a descartava sem
+    -- aviso; hoje o projeto a RECUSA com 400. Ver `projeto_schema.js`.
     data_fim_prevista DATE,
     status_execucao_id SMALLINT NOT NULL REFERENCES dominio.tipo_status_execucao (code),
     data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,

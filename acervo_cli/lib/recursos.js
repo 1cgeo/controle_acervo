@@ -110,6 +110,22 @@ const RECURSOS = {
         acesso: 'admin',
         envelope: 'lista',
         pesado: 'recria as views materializadas de TODO o acervo; leva minutos e pesa no banco'
+      },
+      'limpar-downloads-expirados': {
+        metodo: 'POST',
+        caminho: '/acervo/cleanup-expired-downloads',
+        acesso: 'admin',
+        // Envelope `registro`: a resposta e um OBJETO de contadores, e nao lista
+        // nem mensagem. Com `mensagem` o CLI imprimiria so a prosa do servidor e
+        // o numero medido pelo UPDATE se perderia, que e justamente o que a rota
+        // passou a devolver em 06/08/2026.
+        envelope: 'registro',
+        destrutivo: 'muda o status do download de `pending` para `failed`. Nao ha ' +
+          'rota que desfaca: o pedido reprovado se refaz com um prepare-download novo',
+        nota: 'so o download que ja passou da expiration_time. A linha FICA (nada ' +
+          'e apagado) e a trilha continua em /gerencia/downloads_deletados. Devolve ' +
+          '{ fechados }, contado pelo proprio UPDATE. Nao ha cron: quem roda e uma ' +
+          'pessoa, e ela aparece no rastro de auditoria'
       }
     }
   },
@@ -393,6 +409,24 @@ const RECURSOS = {
         caminho: '/arquivo/problem-uploads',
         acesso: 'operador',
         envelope: 'lista'
+      },
+      'limpar-uploads-expirados': {
+        metodo: 'POST',
+        caminho: '/arquivo/cleanup-expired-uploads',
+        acesso: 'admin',
+        // Mesmo motivo do limpar-downloads-expirados: sao DOIS contadores, e o
+        // envelope `mensagem` jogaria os dois fora.
+        envelope: 'registro',
+        destrutivo: 'APAGA a sessao de envio ja encerrada (completed, failed ou ' +
+          'cancelled) cuja expiration_time passou ha mais de 30 dias. O DELETE e ' +
+          'definitivo, e com a linha some o destination_path que `listar-problemas` ' +
+          'mostra. Rode `listar-problemas` antes, se ainda for investigar algum envio',
+        nota: 'faz duas coisas e devolve as duas contagens: `fechadas` e a sessao ' +
+          'vencida que virou failed (a linha fica), `apagadas` e a encerrada ha mais ' +
+          'de 30 dias que saiu da tabela. Os dois numeros vem da funcao do banco ' +
+          'acervo.cleanup_expired_uploads(). ROTA PROPRIA desde 06/08/2026: antes ' +
+          'esta limpeza pegava carona em /acervo/cleanup-expired-downloads, e quem ' +
+          'procurasse a limpeza de ENVIO nao a achava atras de um nome de download'
       },
       'atualizar-checksum': {
         metodo: 'POST',

@@ -51,7 +51,12 @@ const REGRAS = {
     'O GET de versao devolve o nome da versao na coluna nome_versao, enquanto o PUT',
     'de versao espera nome. Read-modify-write ingenuo quebra nesse alias.',
     'O GET de produto NAO devolve subtipo_produto_id, que o PUT de produto grava com',
-    'default null: montar o PUT so com o que o GET devolveu APAGA o subtipo.'
+    'default null: montar o PUT so com o que o GET devolveu APAGA o subtipo.',
+    'A manutencao do acervo nao tem CRON: refresh das views, criacao das views e',
+    'limpar-downloads-expirados rodam sob comando, e o rastro guarda quem mandou.',
+    'A limpeza de downloads so fecha o pedido vencido (pending -> failed) e nao',
+    'apaga linha. A limpeza das SESSOES DE ENVIO e outra rota, no recurso arquivo:',
+    'ate 06/08/2026 ela pegava carona nesta, e quem a procurava aqui nao a achava.'
   ],
 
   produtos: [
@@ -98,7 +103,13 @@ const REGRAS = {
     'Arquivo de Tileserver nao tem byte: e URL. Por isso extensao, tamanho e',
     'checksum ficam nulos nele.',
     'A situacao de carregamento fala do BDGEx, nao do volume: "nao carregado" e o',
-    'estado normal de um arquivo recem-cadastrado e presente no acervo.'
+    'estado normal de um arquivo recem-cadastrado e presente no acervo.',
+    'A sessao de envio pendente nao vence sozinha: nao ha cron. Quem fecha a',
+    'vencida (pending -> failed, e a linha fica) e apaga a ja encerrada ha mais de',
+    '30 dias e a operacao limpar-uploads-expirados, sob comando. O apagar e',
+    'definitivo: antes de rodar, veja o que listar-problemas mostra, porque o',
+    'destination_path do envio apagado some junto.',
+    'Sessao aberta trava o renomear-padrao, que recusa correr por baixo dela.'
   ],
 
   projetos: [

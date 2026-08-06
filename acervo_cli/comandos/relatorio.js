@@ -31,6 +31,25 @@ function agora () {
   return { ano: d.getFullYear(), mes: d.getMonth() + 1 }
 }
 
+/**
+ * A LISTA DE PRODUTOS DA ROTA DE FINALIZADOS, PELO NOME DA CHAVE.
+ *
+ * Aqui havia "pega o primeiro array que vier", e ele pegava o array ERRADO: a
+ * rota devolve `{ ano, mes, cumulativo, total, resumo, produtos }`, e `resumo`
+ * vem ANTES de `produtos`. O verbo entao imprimia o agregado sob o titulo
+ * "Produtos finalizados". Medido em 06/08/2026 contra 2024, na copia local: 12
+ * linhas de resumo (escala e tipo, com a coluna `quantidade` cortada pelo
+ * `padrao`) no lugar dos 157 produtos, e nada na tela dizia que era outra coisa.
+ *
+ * Heuristica de nome de campo nao e tolerancia, e chute: quando ela erra, o erro
+ * sai com cara de resposta certa. O nome fixo falha alto se a rota mudar.
+ */
+function listaDeProdutos (dados) {
+  if (Array.isArray(dados)) return dados
+  if (dados && Array.isArray(dados.produtos)) return dados.produtos
+  return []
+}
+
 async function finalizados (args, cfg) {
   const flags = args.flags
   const hoje = agora()
@@ -49,11 +68,7 @@ async function finalizados (args, cfg) {
 
   if (flags.json) return { texto: JSON.stringify(dados, null, 2) }
 
-  // A rota devolve um agregado alem da lista; qual chave carrega a lista pode
-  // variar, entao pegamos o primeiro array que vier em vez de fixar o nome.
-  const lista = Array.isArray(dados)
-    ? dados
-    : (Object.values(dados).find(v => Array.isArray(v)) || [])
+  const lista = listaDeProdutos(dados)
 
   const periodo = params.cumulativo
     ? `${params.ano}, acumulado ate o mes ${String(params.mes).padStart(2, '0')}`
@@ -188,4 +203,4 @@ async function executar (args, cfg) {
   throw new Error(`Comando de relatorio desconhecido: ${comando}`)
 }
 
-module.exports = { executar, precisaServidor: true }
+module.exports = { executar, precisaServidor: true, listaDeProdutos }

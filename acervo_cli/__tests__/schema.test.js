@@ -279,3 +279,40 @@ test('explicarErro acha o campo mesmo com array no topo (path com indice)', () =
   assert.ok(texto.includes('contrato dos campos citados'), 'nao casou o path "0.versao" com o campo')
   assert.ok(texto.includes('versao'))
 })
+
+// O campo RECUSADO tem que APARECER como recusado, e nao sumir nem passar por
+// opcional. `data_fim_prevista` e do lote: a coluna existe em `acervo.lote` e
+// nao em `acervo.projeto`. Ate 06/08/2026 o schema de projeto a aceitava e o
+// INSERT a descartava calado.
+//
+// O Joi entrega `.forbidden()` como `type: 'any'` sem regra nenhuma. Sem o ramo
+// que o traduz, o contrato imprimiria `data_fim_prevista  any`, que o agente le
+// como "campo opcional que aceita qualquer coisa": a leitura OPOSTA da verdade.
+test('o contrato de projeto marca data_fim_prevista como RECUSADO', () => {
+  const texto = esquema.contrato('projetos', RECURSOS.projetos)
+  const linhas = texto.split('\n').filter(l => l.includes('data_fim_prevista'))
+
+  // Variancia primeiro: sem as linhas do lote a comparacao abaixo nao discrimina
+  // nada, porque um contrato que marcasse TUDO como recusado passaria igual.
+  const recusadas = linhas.filter(l => l.includes('RECUSADO (400)'))
+  const aceitas = linhas.filter(l => l.includes('date'))
+  assert.ok(recusadas.length > 0, 'o projeto nao marcou a recusa')
+  assert.ok(aceitas.length > 0, 'o lote perdeu o campo, e ele e valido la')
+
+  assert.ok(
+    recusadas.every(l => /acervo\.lote/.test(l)),
+    'a recusa nao diz ONDE o campo vale, entao nao ensina o conserto'
+  )
+})
+
+test('o campo recusado nao e anunciado como aceitando qualquer coisa', () => {
+  const texto = esquema.contrato('projetos', RECURSOS.projetos)
+  for (const linha of texto.split('\n')) {
+    if (!linha.includes('data_fim_prevista')) continue
+    if (linha.includes('RECUSADO (400)')) continue
+    assert.ok(
+      !/\bany\b/.test(linha),
+      `o campo recusado saiu como "any": ${linha.trim()}`
+    )
+  }
+})

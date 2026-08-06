@@ -32,10 +32,13 @@ const dataCalendario = () => Joi.date().iso().raw();
 // campo esta grande demais. `descricao` fica de fora porque a coluna e TEXT.
 const nome255 = () => Joi.string().max(255);
 
-// O periodo de projeto e de lote, identico nos quatro modelos abaixo.
-//
-// `data_fim` espelha o CHECK data_fim >= data_inicio do banco.
-//
+// O período COMUM às duas entidades, e só ele. `acervo.projeto` e `acervo.lote`
+// têm as duas colunas, com o mesmo CHECK data_fim >= data_inicio.
+const periodo = () => ({
+  data_inicio: dataCalendario().required(),
+  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required()
+});
+
 // `data_fim_prevista` e quando o LOTE promete terminar. E coluna separada de
 // `data_fim` porque aquela e o que aconteceu e esta e o que se prometeu, e a
 // primeira sobrescreveria a segunda no dia em que o lote fechasse. OPCIONAL, e
@@ -45,16 +48,38 @@ const nome255 = () => Joi.string().max(255);
 // JA NAO ALIMENTA O PIT. Ate 2026-08-05 o mes do planejado da grade saia daqui,
 // e o planejado passou a sair de `acervo.versao.data_prevista`, uma promessa por
 // folha. Ver o comentario da coluna em er/acervo.sql.
-const periodo = () => ({
-  data_inicio: dataCalendario().required(),
-  data_fim: dataCalendario().min(Joi.ref('data_inicio')).allow(null).required(),
+const dataFimPrevistaDoLote = () => ({
   data_fim_prevista: dataCalendario().min(Joi.ref('data_inicio')).allow(null)
+});
+
+// O CAMPO NÃO É DO PROJETO, e recusá-lo é o único jeito de dizer isso.
+//
+// `acervo.projeto` não tem a coluna: ela existe só em `acervo.lote`. Até
+// 2026-08-06 os quatro modelos herdavam o campo do mesmo helper de período, e o
+// projeto respondia 201 descartando o valor. Não havia nem aviso, porque a chave
+// era DECLARADA: o `chavesDescartadas` do middleware não a via sumir, e o
+// ColumnSet de `criaProjeto` simplesmente não a montava no INSERT.
+//
+// `forbidden()`, e não apagar a chave. A rota de projeto usa o middleware
+// TOLERANTE (`utils/schema_validation.js`, com `stripUnknown`), então chave
+// apagada do schema vira chave desconhecida, e chave desconhecida é descartada:
+// o servidor trocaria o silêncio total por um descarte avisado, nunca por um
+// 400. Declarada como proibida, ela é conhecida, escapa do `stripUnknown` e a
+// recusa chega a quem chamou. Mesmo padrão de `arquivo_schema.js` e
+// `pit_schema.js`.
+const dataFimPrevistaRecusada = () => ({
+  data_fim_prevista: Joi.any().forbidden().messages({
+    'any.unknown':
+      '"data_fim_prevista" é do LOTE, e não do projeto: a coluna existe em ' +
+      'acervo.lote e não em acervo.projeto. Informe a data prometida no lote.'
+  })
 });
 
 models.projeto = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').required(),
   ...periodo(),
+  ...dataFimPrevistaRecusada(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -63,6 +88,7 @@ models.projetoAtualizacao = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').required(),
   ...periodo(),
+  ...dataFimPrevistaRecusada(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -80,6 +106,7 @@ models.lote = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').optional(),
   ...periodo(),
+  ...dataFimPrevistaDoLote(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
@@ -90,6 +117,7 @@ models.loteAtualizacao = Joi.object().keys({
   nome: nome255().required(),
   descricao: Joi.string().allow('').optional(),
   ...periodo(),
+  ...dataFimPrevistaDoLote(),
   status_execucao_id: Joi.number().integer().strict().required()
 });
 
