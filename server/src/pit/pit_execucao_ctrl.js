@@ -427,19 +427,44 @@ controller.listarDaMeta = async metaId => {
 // conta e contar linhas. O pedido vale o que ele PEDE, entao ali a conta e somar
 // `produto_pedido.quantidade`: um pedido de 121 folhas e uma linha e cento e
 // vinte e uma unidades da meta. Contar pedidos daria 10 onde a meta promete 327.
+//
+// SAO TRES ESTADOS, e nao dois. A entidade so entra no PLANEJADO da grade quando
+// tem as DUAS coisas: o vinculo com o item do PIT e a `data_prevista` no ANO
+// daquele PIT. Sozinho, cada um responde meia pergunta:
+//
+//   `previstas`     ligada E com data no ano da meta -> conta no planejado;
+//   `sem_data`      ligada e SEM data -> cadastrada, ainda sem mes prometido;
+//   `fora_do_ano`   ligada e com data de OUTRO ano -> ela existe, e o planejado
+//                   da grade nao a ve, porque a grade filtra por ano.
+//
+// A DATA EM BRANCO E O PADRAO, por decisao do chefe em 2026-08-06: ela e
+// preenchida conforme os PITs vao chegando, e a maior parte do acervo nunca sera
+// do PIT (115 versoes de 7.572, e 16 pedidos de 165, medido no mesmo dia). Por
+// isso `sem_data` NAO pode significar "nao cadastrado", que era o defeito.
+//
+// `fora_do_ano` existe porque as entidades podem ser de PITs DISTINTOS. O
+// vinculo ja amarra a entidade a um item, e o item a um ano; a data que cai
+// noutro ano e uma contradicao entre os dois, e ela ficava invisivel.
 const ENTIDADES_PLANEJADAS = `
   SELECT meta_id,
          SUM(previstas)::int AS previstas,
          SUM(sem_data)::int AS sem_data,
+         SUM(fora_do_ano)::int AS fora_do_ano,
          SUM(registros)::int AS registros
   FROM (
     -- Producao: uma versao vale uma folha.
     SELECT v.meta_pit_id AS meta_id,
-           count(*) FILTER (WHERE v.data_prevista IS NOT NULL)::int AS previstas,
+           count(*) FILTER (
+             WHERE v.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM v.data_prevista) = mm.ano)::int AS previstas,
            count(*) FILTER (WHERE v.data_prevista IS NULL)::int AS sem_data,
+           count(*) FILTER (
+             WHERE v.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM v.data_prevista) <> mm.ano)::int AS fora_do_ano,
            count(*)::int AS registros
     FROM acervo.versao AS v
-    WHERE v.meta_pit_id IS NOT NULL
+    INNER JOIN pit.meta_item AS mi ON mi.id = v.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
     GROUP BY 1
 
     UNION ALL
@@ -447,25 +472,38 @@ const ENTIDADES_PLANEJADAS = `
     -- Capacitacao: uma capacitacao vale uma unidade. A Cancelada nao conta, pelo
     -- mesmo motivo que ela nao entra no planejado da grade.
     SELECT cap.meta_pit_id,
-           count(*) FILTER (WHERE cap.data_prevista IS NOT NULL)::int,
+           count(*) FILTER (
+             WHERE cap.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM cap.data_prevista) = mm.ano)::int,
            count(*) FILTER (WHERE cap.data_prevista IS NULL)::int,
+           count(*) FILTER (
+             WHERE cap.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM cap.data_prevista) <> mm.ano)::int,
            count(*)::int
     FROM rpcmtec.capacitacao AS cap
-    WHERE cap.meta_pit_id IS NOT NULL
-      AND cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
+    INNER JOIN pit.meta_item AS mi ON mi.id = cap.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
+    WHERE cap.situacao_id <> ${SITUACAO_CAPACITACAO.CANCELADA}
     GROUP BY 1
 
     UNION ALL
 
-    -- Impressao: o pedido vale o que ele PEDE, somando os itens.
+    -- Impressao: o pedido vale o que ele PEDE, somando os itens. Contar pedidos
+    -- daria 11 onde a meta promete 327.
     SELECT p.meta_pit_id,
-           COALESCE(SUM(pp.quantidade) FILTER (WHERE p.data_prevista IS NOT NULL), 0)::int,
+           COALESCE(SUM(pp.quantidade) FILTER (
+             WHERE p.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM p.data_prevista) = mm.ano), 0)::int,
            COALESCE(SUM(pp.quantidade) FILTER (WHERE p.data_prevista IS NULL), 0)::int,
+           COALESCE(SUM(pp.quantidade) FILTER (
+             WHERE p.data_prevista IS NOT NULL
+               AND EXTRACT(YEAR FROM p.data_prevista) <> mm.ano), 0)::int,
            count(DISTINCT p.id)::int
     FROM mapoteca.pedido AS p
     LEFT JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
-    WHERE p.meta_pit_id IS NOT NULL
-      AND p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
+    INNER JOIN pit.meta_item AS mi ON mi.id = p.meta_pit_id
+    INNER JOIN pit.meta AS mm ON mm.id = mi.meta_id
+    WHERE p.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}
     GROUP BY 1
   ) AS x
   GROUP BY meta_id
@@ -502,14 +540,32 @@ controller.diagnostico = async ano => {
             (SELECT nome FROM dominio.origem_meta WHERE code = m.origem_id) AS origem,
             COALESCE(en.previstas, 0) AS previstas,
             COALESCE(en.sem_data, 0) AS sem_data,
+            COALESCE(en.fora_do_ano, 0) AS fora_do_ano,
             COALESCE(en.registros, 0) AS registros,
             COALESCE(cal.planejado, 0) AS planejado_calculado,
+            -- TUDO O QUE ESTA LIGADO a este item, na unidade da meta.
+            COALESCE(en.previstas, 0) + COALESCE(en.sem_data, 0)
+              + COALESCE(en.fora_do_ano, 0) AS cadastradas,
             -- O QUE FALTA CADASTRAR, ja em numero, para a tela nao ter de fazer
-            -- a conta e chegar noutro valor. Nunca negativo: cadastrar A MAIS do
-            -- que o PIT promete tambem e divergencia, e quem a mostra e o
-            -- proprio par (prometido, previstas), nao um numero que fica
-            -- negativo e confunde.
-            GREATEST(COALESCE(m.quantidade_prevista, 0) - COALESCE(en.previstas, 0), 0) AS faltam
+            -- a conta e chegar noutro valor.
+            --
+            -- DESCONTA TUDO O QUE ESTA LIGADO, e nao so o que tem data. Ate
+            -- 2026-08-06 ele descontava apenas as com data, e como a data em
+            -- branco e o PADRAO, o resultado era a promessa inteira: a meta 1.3
+            -- tinha as 72 folhas cadastradas e o painel dizia "faltam 72". Tres
+            -- das cinco linhas que ele mostrava acusavam meta com cadastro
+            -- COMPLETO. Alarme que dispara na maioria treina quem olha a
+            -- ignora-lo, e ai ele para de servir quando estiver certo.
+            --
+            -- Nunca negativo: cadastrar A MAIS do que o PIT promete tambem e
+            -- divergencia, e ela sai em cadastradas ao lado de
+            -- quantidade_prevista, nao num numero que fica negativo.
+            GREATEST(
+              COALESCE(m.quantidade_prevista, 0)
+                - (COALESCE(en.previstas, 0) + COALESCE(en.sem_data, 0)
+                   + COALESCE(en.fora_do_ano, 0)),
+              0
+            ) AS faltam
      FROM pit.meta_vigente AS m
      LEFT JOIN entidade AS en ON en.meta_id = m.id
      LEFT JOIN LATERAL (

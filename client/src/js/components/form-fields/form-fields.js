@@ -566,7 +566,14 @@ export function createComboBoxField({
       const passo = e.key === 'ArrowDown' ? 1 : -1;
       ativo = (ativo + passo + itens.length) % itens.length;
       desenharLista();
-      lista.querySelector('.combo__item--ativo')?.scrollIntoView({ block: 'nearest' });
+      // O `?.` protege o nó AUSENTE, e não o método ausente: `scrollIntoView`
+      // não existe no jsdom, e a chamada estourava DENTRO do handler das setas.
+      // Num ambiente sem ele, navegar com o teclado quebrava por causa de um
+      // enfeite de rolagem. A checagem do tipo é o que separa os dois casos.
+      const noAtivo = lista.querySelector('.combo__item--ativo');
+      if (noAtivo && typeof noAtivo.scrollIntoView === 'function') {
+        noAtivo.scrollIntoView({ block: 'nearest' });
+      }
       return;
     }
     if (e.key === 'Enter') {

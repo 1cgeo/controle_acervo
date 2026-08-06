@@ -540,17 +540,29 @@ export async function renderPitAno(container, _ctx) {
    *
    * DUAS FALTAS, e elas são diferentes:
    *   FALTA CADASTRAR   a soma do que existe não chega ao que o PIT promete.
-   *   FALTA A DATA      a entidade existe e está ligada, mas não diz em que mês
-   *                     promete. Ela conta no total do ano e some do planejado
-   *                     mensal, que é o pior dos dois: o número fecha e a curva
-   *                     mente.
+   *   DATA DE OUTRO ANO a entidade está ligada a um item DESTE PIT e promete um
+   *                     mês de outro. O planejado da grade filtra por ano e não
+   *                     a vê: ela some da curva sem nada dizer.
+   *
+   * A DATA EM BRANCO NÃO ENTRA, e é o padrão do sistema: ela é preenchida
+   * conforme os PITs chegam. Enquanto ela contava como pendência, toda meta
+   * automática aparecia aqui, inclusive as três com o cadastro COMPLETO.
    *
    * O PAINEL SOME QUANDO NÃO HÁ NADA A DIZER. Aviso permanente vira moldura, e
    * moldura não se lê.
    */
   function desenharDiagnostico() {
+    // A DATA EM BRANCO NAO E PENDENCIA, desde 2026-08-06. Ela e o padrao: a
+    // `data_prevista` vai sendo preenchida conforme os PITs chegam, e quase nada
+    // do acervo e do PIT (115 versoes de 7.572, e 16 pedidos de 165). Enquanto
+    // ela entrava aqui, TODA meta automatica aparecia como pendencia, e o painel
+    // acusava meta com o cadastro completo.
+    //
+    // `fora_do_ano` ENTRA, e e outra coisa: a entidade esta ligada a um item
+    // deste PIT e promete um mes de OUTRO ano. O planejado da grade filtra por
+    // ano e nao a ve, entao ela some da curva sem nada dizer.
     const problemas = (diagnostico || []).filter(
-      (d) => Number(d.faltam) > 0 || Number(d.sem_data) > 0
+      (d) => Number(d.faltam) > 0 || Number(d.fora_do_ano) > 0
     );
 
     if (problemas.length === 0) {
@@ -563,10 +575,17 @@ export async function renderPitAno(container, _ctx) {
       const partes = [];
 
       if (Number(d.faltam) > 0) {
-        partes.push(`faltam ${d.faltam} de ${d.quantidade_prevista}`);
+        // O QUE JA ESTA CADASTRADO entra na frase. "faltam 2 de 327" sozinho
+        // nao diz se ha 325 ou nenhum, e as duas situacoes pedem acoes opostas.
+        partes.push(
+          `faltam ${d.faltam} de ${d.quantidade_prevista} `
+          + `(${d.cadastradas} ja cadastrado(s))`
+        );
       }
-      if (Number(d.sem_data) > 0) {
-        partes.push(`${d.sem_data} sem data prevista`);
+      if (Number(d.fora_do_ano) > 0) {
+        partes.push(
+          `${d.fora_do_ano} com data prevista de OUTRO ano, fora do planejado deste PIT`
+        );
       }
 
       return el('li', { className: 'pit-aviso__item' }, [

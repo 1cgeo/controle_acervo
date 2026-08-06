@@ -587,23 +587,73 @@ describe('PIT do ano: o aviso do cadastro', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
-  // A SEGUNDA FALTA, e é a pior das duas: a entidade existe e está ligada, mas
-  // não diz em que mês promete. O total do ano fecha e a curva mensal mente.
-  test('a entidade sem data prevista é acusada mesmo com a conta fechada', async () => {
+  // A DATA EM BRANCO NAO E PENDENCIA, desde 2026-08-06.
+  //
+  // Ela e o padrao do sistema: a `data_prevista` vai sendo preenchida conforme os
+  // PITs chegam, e quase nada do acervo e do PIT. Enquanto ela contava como
+  // falta, o painel acusava meta com o cadastro COMPLETO: esta fixtura e o caso
+  // real da meta 1.3, que promete 72 folhas, tem as 72 ligadas, e o painel dizia
+  // "faltam 72".
+  test('meta com o cadastro completo e sem data prevista NAO aparece', async () => {
     logar({ administrador: true });
     getDiagnosticoPit.mockResolvedValue([
       {
         meta_id: 3, numero_meta: 1, item: '1.3', origem_id: 3, origem: 'Produção',
-        quantidade_prevista: 72, previstas: 0, sem_data: 72, registros: 72, faltam: 72,
+        quantidade_prevista: 72,
+        previstas: 0, sem_data: 72, fora_do_ano: 0, registros: 72,
+        cadastradas: 72, faltam: 0,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    expect(aviso(container)).toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A DATA DE OUTRO ANO ENTRA, e e outra coisa: a entidade esta ligada a um item
+  // DESTE PIT e promete um mes de outro. O planejado da grade filtra por ano e
+  // nao a ve, entao ela some da curva sem nada dizer.
+  test('entidade com data prevista de OUTRO ano e acusada', async () => {
+    logar({ administrador: true });
+    getDiagnosticoPit.mockResolvedValue([
+      {
+        meta_id: 3, numero_meta: 1, item: '1.3', origem_id: 3, origem: 'Produção',
+        quantidade_prevista: 72,
+        previstas: 60, sem_data: 0, fora_do_ano: 12, registros: 72,
+        cadastradas: 72, faltam: 0,
       },
     ]);
 
     const { container, cleanup } = await montar();
 
     const texto = aviso(container).textContent;
-    expect(texto).toContain('72 sem data prevista');
+    expect(texto).toMatch(/12 com data prevista de OUTRO ano/);
     expect(container.querySelector('.pit-aviso__link').getAttribute('href'))
       .toBe('#/acervo');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O QUE JA ESTA CADASTRADO entra na frase: "faltam 2 de 327" sozinho nao diz
+  // se ha 325 ou nenhum, e as duas situacoes pedem acoes opostas.
+  test('a acusacao diz quanto JA esta cadastrado', async () => {
+    logar({ administrador: true });
+    getDiagnosticoPit.mockResolvedValue([
+      {
+        meta_id: 9, numero_meta: 4, item: '4.1', origem_id: 4, origem: 'Impressão',
+        quantidade_prevista: 327,
+        previstas: 0, sem_data: 325, fora_do_ano: 0, registros: 11,
+        cadastradas: 325, faltam: 2,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    const texto = aviso(container).textContent;
+    expect(texto).toContain('faltam 2 de 327');
+    expect(texto).toContain('325');
 
     if (typeof cleanup === 'function') cleanup();
   });
