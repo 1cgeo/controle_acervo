@@ -217,6 +217,45 @@ export async function renderNotasCreditoList(container, _ctx) {
           : formatCurrency(row.valor_recolhido)),
       },
       {
+        // O SALDO: quanto ainda dá para empenhar contra esta NC. É o recebido,
+        // menos o devolvido, menos o empenhado LÍQUIDO de anulação.
+        //
+        // VEM DO SERVIDOR, e não de conta feita aqui. É a mesma régua que barra
+        // o empenho acima do saldo, e derivá-la na tela abriria a porta para a
+        // tela prometer crédito que o servidor recusa.
+        //
+        // NEGATIVO É DADO, e não erro: a NC cujo crédito foi devolvido DEPOIS do
+        // empenho fica mesmo abaixo de zero, e é a que precisa de atenção. Sai
+        // em vermelho por isso. Zero sai apagado, porque NC esgotada não é
+        // problema, é o fim normal da vida dela.
+        key: 'saldo',
+        label: 'Saldo',
+        sortable: true,
+        sortValue: (row) => toNumber(row.saldo),
+        render: (row) => {
+          const saldo = toNumber(row.saldo);
+          if (saldo < -CENTAVO) {
+            return el('span', {
+              className: 'chip chip--error',
+              textContent: formatCurrency(row.saldo),
+              title: 'Empenhado acima do crédito disponível, em geral porque o crédito foi devolvido depois do empenho',
+            });
+          }
+          if (saldo <= CENTAVO) {
+            return el('span', {
+              // O token do tema, e não uma classe utilitária: `text-muted` não
+              // existe neste CSS, e classe inventada não pinta nada. O nome é
+              // `--text-secondary` (design-tokens.css), com valor próprio no
+              // tema claro e no escuro.
+              style: { color: 'var(--text-secondary)' },
+              textContent: formatCurrency(row.saldo),
+              title: 'Crédito totalmente empenhado ou devolvido',
+            });
+          }
+          return formatCurrency(row.saldo);
+        },
+      },
+      {
         // Coluna NOVA: a data limite para empenhar o credito. Vencida, ela vira
         // chip de erro, porque o prazo perdido custa o credito inteiro.
         key: 'prazo_empenho',

@@ -116,28 +116,46 @@ controller.listar = async (filtros = {}) => {
             -- A anulacao desconta, e proporcional a fatia de cada NC: anular
             -- devolve o valor a NC. Mesma conta de EMPENHADO_POR_NC em
             -- nota_empenho_ctrl.js, e mesmo criterio liquido do painel.
-            COALESCE((
-              SELECT SUM(v.valor) FROM (
-                SELECT enc.valor - COALESCE(ne.valor_anulado, 0)
-                         * (enc.valor / NULLIF(tot.soma, 0)) AS valor
-                  FROM orcamento.nota_empenho_nota_credito AS enc
-                  INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
-                  INNER JOIN LATERAL (
-                    SELECT SUM(x.valor) AS soma
-                      FROM orcamento.nota_empenho_nota_credito AS x
-                     WHERE x.nota_empenho_id = enc.nota_empenho_id
-                  ) AS tot ON TRUE
-                 WHERE enc.nota_credito_id = nc.id
-                UNION ALL
-                SELECT ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
-                  FROM orcamento.nota_empenho AS ne
-                 WHERE ne.nota_credito_id = nc.id
-                   AND NOT EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
-                                    WHERE x.nota_empenho_id = ne.id)
-              ) AS v
-            ), 0) AS empenhado,
+            COALESCE(emp.total, 0) AS empenhado,
+            -- O SALDO SAI DAQUI, e nao de conta feita na tela. Ele e o numero da
+            -- decisao de empenhar, e a MESMA regua que a validacao do teto das
+            -- NCs usa para barrar: recebido, menos o devolvido, menos o
+            -- empenhado liquido. Se a tela o derivasse por conta, o dia em que a
+            -- regua mudasse produziria uma tela que promete saldo e um servidor
+            -- que recusa o empenho, sem erro nenhum entre os dois.
+            -- (Sem crase neste comentario: template literal.)
+            --
+            -- PODE FICAR NEGATIVO, de proposito: duas NCs reais de 2026
+            -- (2026NC400698 e 2026NC400702) tiveram o credito devolvido DEPOIS
+            -- do empenho, e estao mesmo abaixo de zero. Zerar aqui esconderia
+            -- exatamente a NC que precisa de atencao.
+            nc.valor_nc - COALESCE(nc.valor_recolhido, 0)
+              - COALESCE(emp.total, 0) AS saldo,
             af.id AS arquivo_id, af.nome_original AS arquivo_nome
      FROM orcamento.nota_credito AS nc
+     -- LATERAL, e nao subconsulta repetida: o empenhado e o saldo saem do MESMO
+     -- calculo, e escreve-lo duas vezes deixaria os dois numeros da mesma linha
+     -- livres para discordar.
+     LEFT JOIN LATERAL (
+       SELECT SUM(v.valor) AS total FROM (
+         SELECT enc.valor - COALESCE(ne.valor_anulado, 0)
+                  * (enc.valor / NULLIF(tot.soma, 0)) AS valor
+           FROM orcamento.nota_empenho_nota_credito AS enc
+           INNER JOIN orcamento.nota_empenho AS ne ON ne.id = enc.nota_empenho_id
+           INNER JOIN LATERAL (
+             SELECT SUM(x.valor) AS soma
+               FROM orcamento.nota_empenho_nota_credito AS x
+              WHERE x.nota_empenho_id = enc.nota_empenho_id
+           ) AS tot ON TRUE
+          WHERE enc.nota_credito_id = nc.id
+         UNION ALL
+         SELECT ne.valor_empenhado - COALESCE(ne.valor_anulado, 0)
+           FROM orcamento.nota_empenho AS ne
+          WHERE ne.nota_credito_id = nc.id
+            AND NOT EXISTS (SELECT 1 FROM orcamento.nota_empenho_nota_credito AS x
+                             WHERE x.nota_empenho_id = ne.id)
+       ) AS v
+     ) AS emp ON TRUE
      INNER JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
