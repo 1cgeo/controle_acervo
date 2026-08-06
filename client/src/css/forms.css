@@ -366,3 +366,82 @@
   justify-self: end;
   gap: var(--space-sm);
 }
+
+/* --- COMBO BUSCÁVEL ------------------------------------------------------- */
+
+/* O `<select>` nativo para de servir quando a lista cresce: escolher a nota de
+   crédito ao lançar um empenho é rolar 95 opções sem poder digitar nada. Este
+   combo é campo de texto mais lista filtrada, e a lista fica ANCORADA nele. */
+.combo {
+  position: relative;
+}
+
+/* A seta que diz "isto abre", como no `<select>`. Sem ela o campo se parece com
+   um campo de texto comum, e ninguém tenta clicar para ver a lista. */
+.combo::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -2px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-secondary);
+  pointer-events: none;
+}
+
+.combo__campo {
+  /* Espaço para a seta não ficar por cima do texto digitado. */
+  padding-right: 30px;
+}
+
+/* ABSOLUTA, e não no fluxo: dentro de um diálogo, uma lista que empurra os
+   campos de baixo faz o formulário inteiro pular a cada tecla. */
+.combo__lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  /* Teto de altura com rolagem por dentro: com 95 opções, a lista sem teto abre
+     cobrindo a tela inteira e esconde o próprio campo. */
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-md);
+}
+
+.combo__item {
+  padding: 8px var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  /* O rótulo da NC é longo ("2026NC000123 - 339030 (Material de consumo)"): sem
+     isto ele quebra em três linhas e a lista vira um bloco de texto. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* O item sob as setas do teclado. Ele e o `:hover` usam a MESMA marca: quem
+   navega com o teclado e quem navega com o mouse procuram a mesma coisa. */
+.combo__item--ativo,
+.combo__item:hover {
+  background: var(--bg-hover);
+}
+
+/* O que já está escolhido, para quem reabre a lista se localizar. */
+.combo__item--escolhido {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+}
+
+.combo__vazio {
+  padding: 8px var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}

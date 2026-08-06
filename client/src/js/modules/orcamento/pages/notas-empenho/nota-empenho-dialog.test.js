@@ -45,6 +45,30 @@ function preencherTexto(input, valor) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+/**
+ * Escolhe uma NC no combo BUSCAVEL, como a pessoa a escolhe.
+ *
+ * A NC deixou de ser um `<select>` em 2026-08-06: sao 95 delas em producao, e o
+ * select nativo so casa o PREFIXO do rotulo. O teste passa pelo mesmo caminho da
+ * pessoa (foca o campo, digita, clica no item), e nao por uma API interna: e o
+ * que faz ele reprovar se o combo parar de filtrar ou de commitar a escolha.
+ *
+ * `mousedown`, e nao `click`: e nele que o item commita, porque o `blur` do
+ * campo dispara antes do clique.
+ */
+function escolherNoCombo(combo, termo) {
+  const campo = combo.querySelector('.combo__campo');
+  campo.dispatchEvent(new Event('focus'));
+  campo.value = termo;
+  campo.dispatchEvent(new Event('input', { bubbles: true }));
+
+  const item = combo.querySelector('.combo__item');
+  item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  return item;
+}
+
+const combos = () => [...document.querySelectorAll('.modal__body .combo')];
+
 describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -59,9 +83,9 @@ describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
     const numero = document.querySelector('.modal__body input[type="text"]');
     preencherTexto(numero, '2026NE000099');
 
-    const ncSelect = document.querySelector('.modal__body select');
-    ncSelect.value = '3';
-    ncSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    // Busca pela NATUREZA DE DESPESA, que e o meio do rotulo: com o `<select>`
+    // nativo isso nao achava nada, porque ele so casa o comeco.
+    escolherNoCombo(combos()[0], '400136');
 
     const valor = [...document.querySelectorAll('.modal__body input[type="number"]')][0];
     preencherTexto(valor, '1000');
@@ -88,10 +112,8 @@ describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
     addBtn.click();
     await flush();
 
-    const selects = [...document.querySelectorAll('.modal__body select')];
-    expect(selects).toHaveLength(2);
-    selects[1].value = '7';
-    selects[1].dispatchEvent(new Event('change', { bubbles: true }));
+    expect(combos()).toHaveLength(2);
+    escolherNoCombo(combos()[1], '400137');
 
     const valores = [...document.querySelectorAll('.modal__body input[type="number"]')];
     preencherTexto(valores[1], '500');
@@ -104,5 +126,45 @@ describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
     for (const alocacao of corpo.notas_credito) {
       expect(typeof alocacao.nota_credito_id).toBe('number');
     }
+  });
+  // O QUE O COMBO ENTREGA que o `<select>` nativo nao entregava.
+  test('a busca casa o MEIO do rotulo, e nao so o comeco', async () => {
+    await openNotaEmpenhoDialog({ ano: 2026 });
+    await flush();
+
+    const campo = combos()[0].querySelector('.combo__campo');
+    campo.dispatchEvent(new Event('focus'));
+    // "Servicos" esta no fim do rotulo das duas NCs, e o select nativo, que casa
+    // prefixo, nao acharia nenhuma. Sem acento de proposito: a busca normaliza.
+    campo.value = 'servicos';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const itens = [...combos()[0].querySelectorAll('.combo__item')];
+    expect(itens).toHaveLength(2);
+
+    // VARIANCIA: um termo que so uma delas tem recorta a lista. Sem isto, o caso
+    // acima passaria num combo que ignorasse o texto e mostrasse tudo.
+    campo.value = '400137';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    const so1 = [...combos()[0].querySelectorAll('.combo__item')];
+    expect(so1).toHaveLength(1);
+    expect(so1[0].textContent).toContain('2026NC400137');
+
+    botao('Cancelar').click();
+  });
+
+  test('a lista chega ORDENADA, e nao na ordem em que a API mandou', async () => {
+    await openNotaEmpenhoDialog({ ano: 2026 });
+    await flush();
+
+    const campo = combos()[0].querySelector('.combo__campo');
+    campo.dispatchEvent(new Event('focus'));
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const rotulos = [...combos()[0].querySelectorAll('.combo__item')]
+      .map(i => i.textContent);
+    expect(rotulos).toEqual([...rotulos].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })));
+
+    botao('Cancelar').click();
   });
 });

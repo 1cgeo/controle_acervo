@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
+import { escolherNoCombo } from '@/__tests__/helpers/combo.js';
 
 // A forma de entrega e a data de entrega são do PEDIDO, nunca do ITEM.
 //
@@ -36,11 +37,25 @@ function campoPorRotulo(raiz, rotulo) {
   return label ? label.closest('.form-field') : null;
 }
 
+/**
+ * Escolhe num campo pelo ROTULO dele, seja `<select>` ou combo buscavel.
+ *
+ * O Cliente virou combo em 2026-08-06 (a lista cresce a cada pedido de fora), e
+ * os demais continuam `<select>`. O helper trata os dois para o caso nao ter de
+ * saber qual e qual: o que ele testa e o pedido, e nao o widget.
+ *
+ * No combo o VALOR nao serve, porque ele nao expoe atributo de valor: passa-se o
+ * texto que a pessoa digitaria, e o helper aceita os dois pelo tipo.
+ */
 function selecionar(raiz, rotulo, valor) {
-  const select = campoPorRotulo(raiz, rotulo).querySelector('select');
-  select.value = String(valor);
-  select.dispatchEvent(new Event('change', { bubbles: true }));
-  return select;
+  const campo = campoPorRotulo(raiz, rotulo);
+  const select = campo.querySelector('select');
+  if (select) {
+    select.value = String(valor);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return select;
+  }
+  return escolherNoCombo(campo.querySelector('.combo'), valor);
 }
 
 beforeEach(() => {
@@ -189,7 +204,7 @@ describe('wizard do novo pedido', () => {
     const cleanup = await renderPedidoWizard(container, { params: {}, query: new URLSearchParams() });
     await flush();
 
-    selecionar(container, 'Cliente', 1);
+    selecionar(container, 'Cliente', 'CGEO');
     selecionar(container, 'Situação', 3);
     selecionar(container, 'Forma de entrega', 1);
 

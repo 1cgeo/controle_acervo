@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
+import { combos, opcoesDoCombo, escolherNoCombo } from '@/__tests__/helpers/combo.js';
 
 // Wizard de 4 passos do novo pedido. Os dois services sao mockados: NENHUMA
 // chamada sai para o servidor, entao o teste nunca cria pedido de verdade.
@@ -91,8 +92,7 @@ describe('renderPedidoWizard', () => {
     btnCivil.click();
     await flush();
 
-    const opcoes = [...container.querySelectorAll('select')][0].options;
-    const nomes = [...opcoes].map(o => o.textContent);
+    const nomes = opcoesDoCombo(combos(container)[0]);
     expect(nomes).toContain('Prefeitura de Porto Alegre');
     expect(nomes).not.toContain('1º CGEO');
 
@@ -102,8 +102,7 @@ describe('renderPedidoWizard', () => {
   test('o modo Militar so oferece cliente de OM', async () => {
     const { container, cleanup } = await montar();
 
-    const opcoes = [...container.querySelectorAll('select')][0].options;
-    const nomes = [...opcoes].map(o => o.textContent);
+    const nomes = opcoesDoCombo(combos(container)[0]);
     expect(nomes).toContain('1º CGEO');
     expect(nomes).not.toContain('Prefeitura de Porto Alegre');
 
@@ -113,11 +112,11 @@ describe('renderPedidoWizard', () => {
   test('com o basico preenchido, Avançar caminha ate a confirmacao', async () => {
     const { container, cleanup } = await montar();
 
+    // O CLIENTE virou combo buscavel: a lista cresce a cada pedido de fora.
+    escolherNoCombo(combos(container)[0], 'CGEO');
     const selects = [...container.querySelectorAll('select')];
-    selects[0].value = '1';                                  // cliente
+    selects[0].value = '3';                                  // situacao
     selects[0].dispatchEvent(new Event('change'));
-    selects[1].value = '3';                                  // situacao
-    selects[1].dispatchEvent(new Event('change'));
 
     const avancar = [...container.querySelectorAll('button')].find(b => b.textContent === 'Avançar');
     avancar.click(); await flush();
@@ -151,11 +150,10 @@ describe('renderPedidoWizard', () => {
     svc.createPedido.mockResolvedValue({ id: 99, localizador_pedido: 'AB12-CD34-EF56' });
     const { container, cleanup } = await montar();
 
+    escolherNoCombo(combos(container)[0], 'CGEO');
     const selects = [...container.querySelectorAll('select')];
-    selects[0].value = '1';
+    selects[0].value = '3';
     selects[0].dispatchEvent(new Event('change'));
-    selects[1].value = '3';
-    selects[1].dispatchEvent(new Event('change'));
 
     const avancar = [...container.querySelectorAll('button')].find(b => b.textContent === 'Avançar');
     avancar.click(); await flush();

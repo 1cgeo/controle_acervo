@@ -4,6 +4,7 @@ import {
   createNumberField,
   createTextField,
   createSelectField,
+  createComboBoxField,
   createDateField,
 } from '@components/form-fields/form-fields.js';
 import { createSeletorMilitares } from '@components/form-fields/seletor-militares.js';
@@ -135,7 +136,7 @@ export function openCapacitacaoDialog({
   // convidaria a cadastrar contra um plano que a DSG revogou.
   const metasOferecidas = (metas || [])
     .filter(m => !m.cancelada && ehFolhaMetaPit(m));
-  const metaField = createSelectField({
+  const metaField = createComboBoxField({
     label: 'Meta do PIT',
     placeholder: 'Não cumpre meta do PIT',
     options: metasOferecidas.map(m => ({ value: m.id, label: rotuloMetaPit(m) })),

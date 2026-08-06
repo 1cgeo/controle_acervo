@@ -6,7 +6,7 @@ import {
   createTextField,
   createNumberField,
   createDateField,
-  createSelectField,
+  createComboBoxField,
   createTextareaField,
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
@@ -116,7 +116,7 @@ export function openPeriodoDialog({
   // uma opção só, e o nome já está no título.
   const escolhePessoa = !isEdit && !usuarioUuid;
 
-  const pessoaField = escolhePessoa ? createSelectField({
+  const pessoaField = escolhePessoa ? createComboBoxField({
     label: 'Militar',
     required: true,
     options: usuarios.map(u => ({

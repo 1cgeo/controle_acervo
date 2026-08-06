@@ -1,4 +1,4 @@
-import { el } from '@utils/dom.js';
+import { el, clearChildren } from '@utils/dom.js';
 
 /**
  * Form field builders. Every builder returns:
@@ -393,6 +393,219 @@ export function createChipInput({
     setValue: (newValues) => {
       chips = Array.isArray(newValues) ? [...newValues] : [];
       renderChips();
+    },
+    setError,
+  };
+}
+
+/**
+ * COMBO BUSCÁVEL: um `<select>` com campo de busca e lista filtrada.
+ *
+ * POR QUE ELE EXISTE. O `createSelectField` é um `<select>` nativo, e ele para
+ * de servir quando a lista cresce: escolher a nota de crédito ao lançar um
+ * empenho é rolar 95 opções sem poder digitar nada. O navegador só casa o
+ * PREFIXO do rótulo, e o rótulo aqui começa pelo número da NC, então quem lembra
+ * da natureza de despesa e não do número não tem por onde começar.
+ *
+ * A MESMA API DO `createSelectField`, de propósito: `element`, `input`,
+ * `getValue`, `setValue`, `setOptions` e `setError`. Trocar um pelo outro numa
+ * tela é trocar o nome da função, e nada mais. Foi isso que permitiu adotá-lo em
+ * um lugar por vez, em vez de reescrever 115 campos de uma vez.
+ *
+ * A BUSCA É POR SUBSTRING, e não por prefixo: é a diferença que faz o campo
+ * valer. Ela ignora acento e caixa, então "credito" acha "Crédito".
+ *
+ * ORDENA POR PADRÃO, com comparação NUMÉRICA: a NC 2 vem antes da 10, e não
+ * depois, que é onde a ordenação por texto a colocaria. `ordenar: false` mantém
+ * a ordem recebida, para a lista que já tem ordem própria (um fluxo de situação,
+ * os meses do ano).
+ *
+ * @param {{label?:string, options?:Array<{value:*,label:string}>, value?:*,
+ *   required?:boolean, placeholder?:string, helpText?:string, ordenar?:boolean,
+ *   onChange?:(value:*)=>void}} opcoes
+ */
+export function createComboBoxField({
+  label,
+  options = [],
+  value,
+  required = false,
+  placeholder = 'Selecione...',
+  helpText,
+  ordenar = true,
+  onChange,
+} = {}) {
+  /** Sem acento e em minúscula, para a busca casar "credito" com "Crédito". */
+  const normalizar = (texto) => String(texto ?? '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+
+  const ordenarOpcoes = (lista) => (ordenar
+    ? [...lista].sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR', {
+      // `numeric` é o que põe a NC 2 antes da 10. Sem ele a ordem é a do
+      // dicionário, e "10" vem antes de "2" porque '1' < '2'.
+      numeric: true,
+      sensitivity: 'base',
+    }))
+    : [...lista]);
+
+  let opcoes = ordenarOpcoes(options);
+  let selecionado = value === undefined ? null : value;
+  let ativo = -1;
+  let aberto = false;
+
+  const input = el('input', {
+    className: 'form-field__input combo__campo',
+    type: 'text',
+    role: 'combobox',
+    autocomplete: 'off',
+    'aria-expanded': 'false',
+    'aria-autocomplete': 'list',
+    placeholder,
+  });
+
+  const lista = el('div', { className: 'combo__lista hidden', role: 'listbox' });
+  const caixa = el('div', { className: 'combo' }, [input, lista]);
+
+  const achar = (v) => opcoes.find(o => String(o.value) === String(v)) || null;
+
+  /** O texto do campo quando ele NÃO está sendo editado: o rótulo escolhido. */
+  function mostrarSelecionado() {
+    const o = achar(selecionado);
+    input.value = o ? o.label : '';
+  }
+
+  function filtradas() {
+    const termo = normalizar(input.value);
+    // Campo igual ao rótulo escolhido significa "acabei de abrir", e não "filtre
+    // por este texto": mostrar uma opção só ali esconderia as outras 94.
+    const o = achar(selecionado);
+    if (o && input.value === o.label) return opcoes;
+    if (!termo) return opcoes;
+    return opcoes.filter(x => normalizar(x.label).includes(termo));
+  }
+
+  function desenharLista() {
+    const itens = filtradas();
+    clearChildren(lista);
+
+    if (!itens.length) {
+      lista.appendChild(el('div', {
+        className: 'combo__vazio',
+        textContent: 'Nada encontrado',
+      }));
+      return;
+    }
+
+    itens.forEach((o, i) => {
+      const item = el('div', {
+        className: `combo__item${i === ativo ? ' combo__item--ativo' : ''}`
+          + (String(o.value) === String(selecionado) ? ' combo__item--escolhido' : ''),
+        role: 'option',
+        'aria-selected': String(o.value) === String(selecionado) ? 'true' : 'false',
+        textContent: o.label,
+      });
+      // `mousedown`, e não `click`: o `blur` do campo dispara ANTES do clique e
+      // fecharia a lista, e o clique cairia no vazio.
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        escolher(o.value);
+      });
+      lista.appendChild(item);
+    });
+  }
+
+  function abrir() {
+    if (aberto) return;
+    aberto = true;
+    ativo = filtradas().findIndex(o => String(o.value) === String(selecionado));
+    lista.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
+    desenharLista();
+  }
+
+  function fechar() {
+    if (!aberto) return;
+    aberto = false;
+    lista.classList.add('hidden');
+    input.setAttribute('aria-expanded', 'false');
+    // O campo volta ao rótulo escolhido: texto digitado e não commitado não pode
+    // ficar na tela parecendo seleção.
+    mostrarSelecionado();
+  }
+
+  function escolher(v) {
+    const mudou = String(v) !== String(selecionado);
+    selecionado = v;
+    fechar();
+    if (!mudou) return;
+
+    // DISPARA O `change` NATIVO, e não só o callback.
+    //
+    // A promessa deste componente é ser troca direta do `createSelectField`, e
+    // parte das telas não usa a opção `onChange`: elas fazem
+    // `campo.input.addEventListener('change', ...)` no `<select>` de fora. O
+    // `details.js` do pedido faz isso para reaplicar o modo civil/militar quando
+    // o cliente muda, e sem este disparo a troca de cliente deixava o formulário
+    // no modo do cliente anterior.
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (onChange) onChange(selecionado);
+  }
+
+  input.addEventListener('focus', abrir);
+  input.addEventListener('input', () => {
+    if (!aberto) abrir();
+    ativo = 0;
+    desenharLista();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    const itens = filtradas();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!aberto) { abrir(); return; }
+      if (!itens.length) return;
+      const passo = e.key === 'ArrowDown' ? 1 : -1;
+      ativo = (ativo + passo + itens.length) % itens.length;
+      desenharLista();
+      lista.querySelector('.combo__item--ativo')?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (!aberto) return;
+      e.preventDefault();
+      if (itens[ativo]) escolher(itens[ativo].value);
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (!aberto) return;
+      e.preventDefault();
+      fechar();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Sai do campo sem escolher: volta ao que estava. Aceitar o texto digitado
+    // gravaria uma opção que a pessoa não confirmou.
+    setTimeout(fechar, 0);
+  });
+
+  mostrarSelecionado();
+
+  const { element, setError } = buildField({ label, required, helpText }, caixa);
+
+  return {
+    element,
+    input,
+    getValue: () => (selecionado === '' || selecionado === undefined ? null : selecionado),
+    setValue: (v) => {
+      selecionado = (v === null || v === undefined) ? null : v;
+      mostrarSelecionado();
+    },
+    /** Troca a lista, mantendo a escolha quando ela sobrevive. */
+    setOptions: (novas) => {
+      opcoes = ordenarOpcoes(novas);
+      if (selecionado !== null && !achar(selecionado)) selecionado = null;
+      mostrarSelecionado();
+      if (aberto) desenharLista();
     },
     setError,
   };

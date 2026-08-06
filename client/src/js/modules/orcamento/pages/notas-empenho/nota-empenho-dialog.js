@@ -4,7 +4,7 @@ import {
   createTextField,
   createNumberField,
   createDateField,
-  createSelectField,
+  createComboBoxField,
   createTextareaField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
@@ -197,9 +197,14 @@ export async function openNotaEmpenhoDialog({
   }
 
   function addLinha(ncId, valor) {
-    const ncField = createSelectField({
+    // COMBO BUSCÁVEL, e não `<select>`. São 95 NCs em produção, e o `<select>`
+    // nativo só casa o PREFIXO do rótulo: como o rótulo começa pelo número da
+    // NC, quem lembra da natureza de despesa e não do número tinha de rolar a
+    // lista inteira. O combo filtra por substring, sem acento e sem caixa, e
+    // chega ordenado (a NC 2 antes da 10, e não depois).
+    const ncField = createComboBoxField({
       options: ncOptions,
-      placeholder: 'Selecione a NC...',
+      placeholder: 'Digite para buscar a NC...',
       value: ncId ?? undefined,
       onChange: recompute,
     });

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { escolherNoCombo, opcoesDoCombo } from '@/__tests__/helpers/combo.js';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 // O formulário de versão espelha o gatilho `acervo.validate_version` ANTES de
@@ -253,10 +254,29 @@ const clicar = (rotulo) => {
   botao.click();
 };
 
+/**
+ * Preenche pelo ROTULO, seja `<input>`, `<select>` ou combo buscavel.
+ *
+ * A Meta do PIT virou combo em 2026-08-06 (sao 42 itens, e o rotulo comeca pelo
+ * ano). No combo digita-se o texto e confirma-se a escolha, que e o caminho da
+ * pessoa; o valor bruto nao a alcanca.
+ */
 const preencher = (rotulo, valor) => {
+  const combo = campoPorRotulo(rotulo).querySelector('.combo');
+  if (combo) {
+    escolherNoCombo(combo, valor);
+    return;
+  }
   const campo = inputDe(rotulo);
   campo.value = valor;
   campo.dispatchEvent(new Event('change'));
+};
+
+/** Os rotulos que um campo oferece, seja `<select>` ou combo. */
+const opcoesDe = (rotulo) => {
+  const combo = campoPorRotulo(rotulo).querySelector('.combo');
+  if (combo) return opcoesDoCombo(combo);
+  return [...inputDe(rotulo).options].map((o) => o.textContent);
 };
 
 const PRODUTO = { id: 7, nome: 'Arapongas-NE', subtipo_produto_id: null };
@@ -590,7 +610,7 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
     await openVersaoDialog({ produto: PRODUTO });
     await flush();
     preencherHistorica();
-    preencher('Meta do PIT', '9');
+    preencher('Meta do PIT', 'Meta 3');
     clicar('Salvar');
     await flush();
 
@@ -607,7 +627,7 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
     await flush();
     preencherHistorica();
 
-    preencher('Meta do PIT', '9');
+    preencher('Meta do PIT', 'Meta 3');
     preencher('Demanda Extra-PIT', '4');
     clicar('Salvar');
     await flush();
@@ -624,7 +644,7 @@ describe('openVersaoDialog: a historica grava na rota dela', () => {
     await openVersaoDialog({ produto: PRODUTO });
     await flush();
 
-    const rotulos = [...inputDe('Meta do PIT').options].map(o => o.textContent);
+    const rotulos = opcoesDe('Meta do PIT');
     expect(rotulos.some(r => r.includes('2026') && r.includes('Meta 3'))).toBe(true);
     expect(rotulos.some(r => r.includes('2025'))).toBe(true);
   });

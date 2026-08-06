@@ -2,7 +2,7 @@ import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import {
-  createNumberField, createSelectField, createDateField,
+  createNumberField, createSelectField, createComboBoxField, createDateField,
 } from '@components/form-fields/form-fields.js';
 import { criarEdicao, atualizarEdicao } from '@services/rpcmtec-service.js';
 
@@ -46,7 +46,7 @@ export function abrirDialogoEdicao({
     value: edicao?.mes ?? (hoje.getMonth() + 1),
   });
 
-  const assinanteField = createSelectField({
+  const assinanteField = createComboBoxField({
     label: 'Assinante',
     placeholder: 'A definir',
     options: usuarios.map((u) => ({

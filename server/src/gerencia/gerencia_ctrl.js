@@ -12,6 +12,7 @@ controller.getTipoPostoGrad = async () => {
   return db.conn.any(`
     SELECT code, nome, nome_abrev
     FROM dominio.tipo_posto_grad
+    ORDER BY code
     `);
 };
 
@@ -19,6 +20,7 @@ controller.getTipoProduto = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_produto
+    ORDER BY code
     `);
 };
 
@@ -26,6 +28,7 @@ controller.getSituacaoCarregamento = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.situacao_carregamento
+    ORDER BY code
     `);
 };
 
@@ -33,6 +36,7 @@ controller.getTipoArquivo = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_arquivo
+    ORDER BY code
     `);
 };
 
@@ -40,6 +44,7 @@ controller.getTipoRelacionamento = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_relacionamento
+    ORDER BY code
     `);
 };
 
@@ -47,6 +52,7 @@ controller.getTipoStatusArquivo = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_status_arquivo
+    ORDER BY code
     `);
 };
 
@@ -54,6 +60,7 @@ controller.getTipoVersao = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_versao
+    ORDER BY code
     `);
 };
 
@@ -61,6 +68,7 @@ controller.getTipoStatusExecucao = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_status_execucao
+    ORDER BY code
     `);
 };
 
@@ -68,6 +76,7 @@ controller.getTipoEscala = async () => {
   return db.conn.any(`
     SELECT code, nome
     FROM dominio.tipo_escala
+    ORDER BY code
     `);
 };
 

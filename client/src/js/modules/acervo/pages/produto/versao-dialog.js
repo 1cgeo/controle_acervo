@@ -4,6 +4,7 @@ import {
   createTextField,
   createTextareaField,
   createSelectField,
+  createComboBoxField,
   createDateField,
   createChipInput,
 } from '@components/form-fields/form-fields.js';
@@ -364,7 +365,7 @@ export async function openVersaoDialog({
     return m.descricao ? `${cabeca} — ${m.descricao}` : cabeca;
   };
 
-  const metaField = createSelectField({
+  const metaField = createComboBoxField({
     label: 'Meta do PIT',
     options: (metas || []).map(m => ({ value: m.id, label: rotuloMeta(m) })),
     value: versao?.meta_pit_id ?? '',

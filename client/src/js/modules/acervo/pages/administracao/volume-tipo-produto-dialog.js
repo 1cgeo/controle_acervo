@@ -1,6 +1,8 @@
 import { el } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
-import { createSelectField, createCheckboxField } from '@components/form-fields/form-fields.js';
+import {
+  createSelectField, createComboBoxField, createCheckboxField,
+} from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import {
   criarVolumeTipoProduto,
@@ -40,7 +42,7 @@ export function openVolumeTipoProdutoDialog({
 
   // O rotulo traz nome E caminho: dois volumes de nomes parecidos apontando
   // para lugares diferentes e exatamente o caso em que a escolha erra.
-  const volumeField = createSelectField({
+  const volumeField = createComboBoxField({
     label: 'Volume de armazenamento',
     required: true,
     options: volumes.map(v => ({ value: v.id, label: `${v.nome} (${v.volume})` })),

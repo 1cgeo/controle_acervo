@@ -5,6 +5,7 @@ import {
   createTextareaField,
   createDateField,
   createSelectField,
+  createComboBoxField,
 } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { criarLote, atualizarLote } from '@modules/acervo/services/admin-service.js';
@@ -34,7 +35,7 @@ export function openLoteDialog({
 } = {}) {
   const isEdit = Boolean(lote);
 
-  const projetoField = createSelectField({
+  const projetoField = createComboBoxField({
     label: 'Projeto',
     required: true,
     options: projetos.map(p => ({ value: p.id, label: p.nome })),

@@ -121,7 +121,11 @@ controller.getPostosGrad = async () => {
 const gravaPerfis = async (t, usuarioId, perfis, autorUuid, contexto) => {
   if (!perfis) return;
 
-  const modulos = await t.any("SELECT code, nome_abrev FROM dominio.modulo");
+  // ORDER BY code: a ordem do modulo e semantica (acervo, mapoteca, orcamento,
+  // producao, efetivo), e sem ele o Postgres nao promete ordem nenhuma.
+  const modulos = await t.any(
+    "SELECT code, nome_abrev FROM dominio.modulo ORDER BY code"
+  );
   const porNome = {};
   modulos.forEach(m => { porNome[m.nome_abrev] = m.code; });
 

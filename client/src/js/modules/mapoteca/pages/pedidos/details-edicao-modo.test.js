@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
+import { escolherNoCombo } from '@/__tests__/helpers/combo.js';
 import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
@@ -122,9 +123,8 @@ describe('modo do pedido na edição', () => {
 
     expect(modal.querySelector('.chip').textContent).toBe('Pedido militar');
 
-    const selectCliente = modal.querySelector('select');
-    selectCliente.value = '8';
-    selectCliente.dispatchEvent(new Event('change'));
+    // O CLIENTE virou combo buscavel: a lista cresce a cada pedido de fora.
+    escolherNoCombo(modal.querySelector('.combo'), 'Prefeitura');
     await flush();
 
     expect(modal.querySelector('.chip').textContent).toBe('Pedido civil');

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { escolherNoCombo } from '@/__tests__/helpers/combo.js';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/acervo/services/admin-service.js', () => ({
@@ -27,7 +28,21 @@ const campo = (rotulo) => {
   return label.parentElement.querySelector('input, select, textarea');
 };
 
+/**
+ * Preenche pelo ROTULO, seja `<input>`, `<select>` ou combo buscavel.
+ *
+ * O Projeto virou combo em 2026-08-06 (a lista cresce a cada ano de producao).
+ * No combo o valor bruto nao serve: digita-se o texto e confirma-se a escolha,
+ * que e o caminho da pessoa.
+ */
 const preencher = (rotulo, valor) => {
+  const label = [...document.querySelectorAll('.modal label')]
+    .find(l => l.textContent.replace('*', '').trim() === rotulo);
+  const combo = label.parentElement.querySelector('.combo');
+  if (combo) {
+    escolherNoCombo(combo, valor);
+    return;
+  }
   const input = campo(rotulo);
   input.value = valor;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -46,7 +61,7 @@ describe('openLoteDialog', () => {
   test('grava o lote com o projeto a que ele pertence e o PIT', async () => {
     openLoteDialog({ projetos: PROJETOS, statusExecucao: STATUS });
 
-    preencher('Projeto', '5');
+    preencher('Projeto', 'Convênio');
     preencher('Nome', 'LOTE_1');
     preencher('PIT', 'PIT-2026');
     preencher('Data de início', '2026-01-05');
@@ -87,7 +102,7 @@ describe('openLoteDialog', () => {
   test('data de fim anterior a de inicio e recusada na tela', async () => {
     openLoteDialog({ projetos: PROJETOS, statusExecucao: STATUS });
 
-    preencher('Projeto', '5');
+    preencher('Projeto', 'Convênio');
     preencher('Nome', 'LOTE_1');
     preencher('PIT', 'PIT-2026');
     preencher('Data de início', '2026-06-01');

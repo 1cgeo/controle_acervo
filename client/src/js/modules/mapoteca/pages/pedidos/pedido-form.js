@@ -3,6 +3,7 @@ import {
   createTextField,
   createNumberField,
   createSelectField,
+  createComboBoxField,
   createDateField,
   createTextareaField,
   createCheckboxField,
@@ -134,7 +135,7 @@ export function createPedidoFormFields({
 }) {
   const fields = {
     // Etapa 1, Básico
-    cliente_id: createSelectField({
+    cliente_id: createComboBoxField({
       label: 'Cliente',
       required: true,
       options: clientes.map(c => ({ value: c.id, label: c.nome })),
@@ -224,7 +225,7 @@ export function createPedidoFormFields({
     // com a meta e apodrece na virada do ano. A meta NÃO se deriva do material
     // do item: a correlação 4.1 sulfite / 4.2 tyvek / 4.3 glossy valeu só em
     // 2026, e o PIT é reescrito todo ano.
-    meta_pit_id: createSelectField({
+    meta_pit_id: createComboBoxField({
       label: 'Meta do PIT',
       options: (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) })),
       value: (pedido && pedido.meta_pit_id) || undefined,
