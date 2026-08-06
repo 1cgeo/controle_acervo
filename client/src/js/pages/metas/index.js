@@ -781,10 +781,16 @@ export async function renderPitAno(container, _ctx) {
  * outro, e os dois querem dizer a mesma coisa: nada a declarar.
  *
  * A CONDIÇÃO TEM DUAS PARTES, e a segunda é o que impede a tela de mentir.
- * Crédito com valor e PDR nulo NÃO é resíduo: é a NC Extra-PDR, classificação 2
- * de `dominio.classificacao_nc`, a subseção 4.7 do RPCMTec. É dinheiro que a
- * Divisão recebeu para a meta sem que o PDR o previsse. Apagá-lo atrás de '-'
+ * Crédito com valor e PDR nulo NÃO é resíduo: é o item do PDR que aponta a meta
+ * e recebeu crédito sem ter `valor_autorizado` preenchido, coisa que acontece
+ * enquanto o PDR do ano ainda está sendo transcrito. Apagá-lo atrás de '-'
  * sumiria com crédito real do relatório do chefe.
+ *
+ * A JUSTIFICATIVA MUDOU NA 1.31.0, e o caso velho já não existe. Antes esta
+ * segunda parte defendia a NC Extra-PDR, que apontava meta sem passar pelo PDR.
+ * Ela não chega mais a `credito_nc`: a meta da NC agora vem do item do PDR, e
+ * Extra-PDR é justamente a NC sem item. A guarda continua valendo, pelo motivo
+ * novo acima.
  *
  * O zero com PDR autorizado também continua 'R$ 0,00': ali o zero é notícia (a
  * meta foi autorizada e o crédito não chegou), e não ausência.

@@ -266,6 +266,28 @@ router.get(
   })
 );
 
+// Limpeza das sessoes de envio vencidas, sob comando.
+//
+// ROTA PROPRIA desde 06/08/2026. Antes disso, `acervo.cleanup_expired_uploads()`
+// era chamada de dentro de `POST /api/acervo/cleanup-expired-downloads`: a
+// limpeza do ENVIO pegava carona numa rota de DOWNLOAD, e nada a agendava.
+//
+// NAO HA CRON. Esta rota, como a varredura de miniaturas, e divida VISIVEL: quem
+// aperta e uma pessoa, e o numero que volta e o que a funcao do banco mediu.
+router.post(
+  '/cleanup-expired-uploads',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.cleanupExpiredUploads(req.usuarioUuid, req.contexto);
+
+    const parte = (n, um, varios) => (n === 1 ? `1 ${um}` : `${n} ${varios}`);
+    const msg = `${parte(dados.fechadas, 'sessão de envio vencida fechada', 'sessões de envio vencidas fechadas')}`
+      + `, ${parte(dados.apagadas, 'sessão encerrada apagada', 'sessões encerradas apagadas')}`;
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 router.post(
   '/cancel-upload',
   verifyPerfil('operador'),

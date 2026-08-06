@@ -227,6 +227,29 @@ module.exports = {
     }
   },
 
+  // A limpeza das sessoes de envio, como evento de OPERACAO. Irma da de cima, e
+  // separada dela porque a operacao se separou: ate 06/08/2026 as duas rodavam
+  // na mesma rota, e o numero do envio entrava no evento do download.
+  //
+  // Duas contagens, porque sao dois efeitos: `fechadas` sao as sessoes que
+  // venceram sem ninguem confirmar (viram `failed` e ficam para diagnostico), e
+  // `apagadas` sao as encerradas ha mais de 30 dias, que saem da tabela.
+  'acervo.upload_expirado': {
+    pseudoTabela: true,
+    modulo: 'acervo',
+    entidade: 'manutencao',
+    agregado: () => 'operacao',
+    resumo: linha => {
+      const fechadas = (linha && linha.fechadas) || 0
+      const apagadas = (linha && linha.apagadas) || 0
+      return `${fechadas} sessão(ões) de envio fechada(s), ${apagadas} apagada(s)`
+    },
+    campos: {
+      fechadas: { rotulo: 'Sessões vencidas fechadas', tipo: 'numero' },
+      apagadas: { rotulo: 'Sessões encerradas apagadas', tipo: 'numero' }
+    }
+  },
+
   // --- Agregado: projeto ----------------------------------------------------
 
   'acervo.projeto': {

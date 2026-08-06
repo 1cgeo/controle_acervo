@@ -92,7 +92,12 @@ describe('confirmDownload: o token vencido nao vale', () => {
   })
 })
 
-describe('cleanupExpiredDownloads: arruma os dois lados', () => {
+// SÓ DOWNLOAD. Até 06/08/2026 esta rotina chamava de carona
+// `acervo.cleanup_expired_uploads()`, e devolvia `uploads_fechados` junto. A
+// limpeza do ENVIO tem rota própria desde então, e a prova dela está em
+// routes/upload_sessao_ciclo.test.js: uma rotina de download que ainda mexesse
+// no envio cai no `toEqual` abaixo.
+describe('cleanupExpiredDownloads: fecha o download vencido', () => {
   it('fecha o download vencido e conta o que fechou', async () => {
     const chain = await createFullProduct()
     const vencido = await criarDownload(chain.arquivo.id, "NOW() - INTERVAL '1 minute'")
@@ -100,8 +105,7 @@ describe('cleanupExpiredDownloads: arruma os dois lados', () => {
 
     const r = await acervoCtrl.cleanupExpiredDownloads(ADMIN_UUID, null)
 
-    expect(r.fechados).toBe(1)
-    expect(r).toHaveProperty('uploads_fechados')
+    expect(r).toEqual({ fechados: 1 })
 
     const depois = await conn.one(
       'SELECT status FROM acervo.download WHERE download_token = $1',

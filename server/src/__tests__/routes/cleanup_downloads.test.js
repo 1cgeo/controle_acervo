@@ -79,10 +79,11 @@ describe('Limpeza de downloads expirados', () => {
     const registrados = await eventos()
     expect(registrados).toHaveLength(1)
     expect(registrados[0].usuario_uuid).toBe(ADMIN_UUID)
-    // `uploads_fechados` entrou: a limpeza passou a fechar os dois
-    // lados num ato so, porque o cron que os rodava juntos saiu e separa-los
-    // obrigaria o administrador a lembrar de duas rotas para a mesma ideia.
-    expect(registrados[0].dados_depois).toEqual({ fechados: 1, uploads_fechados: 0 })
+    // `uploads_fechados` SAIU em 06/08/2026. Esta rota fechava os dois lados num
+    // ato so, e a limpeza do ENVIO ficava escondida atras de um nome de
+    // download: quem a procurasse nao a achava. Ela tem rota propria, e a prova
+    // do numero dela esta em routes/upload_sessao_ciclo.test.js.
+    expect(registrados[0].dados_depois).toEqual({ fechados: 1 })
   })
 
   it('sem nada a fechar, devolve zero e registra a tentativa da pessoa', async () => {

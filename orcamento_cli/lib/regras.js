@@ -35,6 +35,11 @@ const REGRAS = {
     'orcamentaria: 1 = PDR (vai para a tabela 3.2), 2 = Extra-PDR (tabela 3.7).',
     'pdr_item_id so existe quando classificacao_id = 1; com Extra-PDR o campo e',
     'descartado. Ele casa o item previsto (rotulo 1D, 1E, ...).',
+    'A NC NAO TEM meta_pit_id desde a 1.31.0. Mandar o campo NAO da erro: ele e',
+    'descartado pelo servidor e volta listado em "avisos" na resposta. A meta que',
+    'a NC financia e a meta do pdr_item dela, e a leitura ja a devolve resolvida',
+    'em meta_pit_id e numero_meta. Logo: NC Extra-PDR nao tem meta, porque nao tem',
+    'item, e isso e a definicao dela, nao uma pendencia.',
     'Unica por (ano, numero, cod_nd, ug_emitente): a numeracao do SIAFI e por UG',
     'emitente, entao o mesmo numero e ND podem existir para emitentes distintos.',
     'Colisao volta 409.',
@@ -73,13 +78,17 @@ const REGRAS = {
   ],
 
   meta: [
-    'Meta do PIT do ano, o GRUPO numerado (pit.meta). A NC e o item do PDR apontam',
-    'a META por meta_pit_id, e e assim que o credito se liga a producao.',
+    'Meta do PIT do ano, o GRUPO numerado (pit.meta). SO o item do PDR aponta a',
+    'META, por meta_pit_id, e e assim que o credito se liga a producao. A cadeia e',
+    'nota_credito -> pdr_item -> pit.meta, e desde a 1.31.0 ela e a unica: em',
+    'orcamento a ligacao com o PIT e o PDR.',
     'A META, E NAO O ITEM. O PIT tem dois niveis desde a 1.30.0: o grupo ("Meta 1 -',
     'Producao de Geoinformacao") e o item que promete ("1.1"). O trabalho (versao,',
     'pedido, capacitacao) aponta o ITEM; o credito aponta o GRUPO, porque e para o',
-    'grupo que ele e autorizado. Medido em 2026-08-05: os 50 vinculos de NC e os 17',
-    'de pdr_item apontam meta, e nenhum aponta item.'
+    'grupo que ele e autorizado. Medido em 2026-08-06: em 2026 a meta 3 tem 6 itens',
+    'de PDR para 2 itens de PIT, e a meta 5 tem 5 para 3. O item do PDR e uma linha',
+    'por natureza de despesa (diarias, passagens, pecas), e nao um recorte do',
+    'trabalho: ele nao caberia dentro de um item do PIT.'
   ],
 
   dfd: [

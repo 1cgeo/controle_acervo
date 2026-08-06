@@ -106,6 +106,10 @@ const COBERTAS = new Set([
   // formato do refresh das views: evento de OPERACAO, porque nao ha par de
   // linhas para comparar.
   'POST /miniaturas/varrer',
+  // Limpeza das sessoes de envio vencidas. Mesmo formato: evento de OPERACAO,
+  // com as duas contagens que a funcao do banco mediu. Ela era carona da rota de
+  // download ate 06/08/2026, e o numero dela entrava no evento daquela.
+  'POST /cleanup-expired-uploads',
   // ponto_controle/
   'POST /confirm-upload (ponto_controle)'
 ])

@@ -228,6 +228,18 @@ export const limparDownloadsExpirados = () =>
   apiPost('/acervo/cleanup-expired-downloads');
 
 /**
+ * Fecha a sessao de envio vencida e apaga a que ja encerrou ha mais de 30 dias.
+ *
+ * Rota PROPRIA. Ate 06/08/2026 esta limpeza rodava de carona na de downloads, e
+ * quem a procurasse nao a achava. A sessao de envio e do caminho do PLUGIN: o
+ * envio pela web nao abre sessao.
+ *
+ * @returns {Promise<{fechadas:number, apagadas:number}>}
+ */
+export const limparSessoesEnvioExpiradas = () =>
+  apiPost('/arquivo/cleanup-expired-uploads');
+
+/**
  * Quantas versoes esperam miniatura, e quantas cabem numa passada.
  *
  * A fila e DIVIDA VISIVEL: nao ha agendamento que a esvazie sozinha, entao sem

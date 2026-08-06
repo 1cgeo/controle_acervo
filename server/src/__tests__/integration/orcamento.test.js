@@ -34,6 +34,7 @@ const neCtrl = require('../../orcamento/nota_empenho/nota_empenho_ctrl')
 const liqCtrl = require('../../orcamento/nota_empenho/liquidacao_ctrl')
 const pdrCtrl = require('../../orcamento/pdr/pdr_ctrl')
 const dfdCtrl = require('../../orcamento/dfd/dfd_ctrl')
+const pitCtrl = require('../../pit/pit_ctrl')
 
 const ANO = 2026
 const ND_CONSUMO = '339030'
@@ -256,6 +257,154 @@ describe('Orcamento contra o banco de verdade', () => {
 
       const lida = await ncCtrl.getPorId(nc.id)
       expect(lida.pdr_item_id).toBe(item.id)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // A cadeia nota_credito -> pdr_item -> pit.meta (1.31.0)
+  // -------------------------------------------------------------------------
+  // POR QUE ISTO SO O BANCO PROVA. A meta da NC deixou de ser coluna e virou o
+  // resultado de dois LEFT JOIN. Contra o mock, a consulta poderia estar
+  // inteiramente errada e o teste passaria do mesmo jeito.
+  describe('A meta da NC vem do item do PDR', () => {
+    // Duas metas do mesmo ano, para que "a meta certa" seja uma ESCOLHA entre
+    // duas e nao a unica que existe: com uma so, qualquer JOIN acerta.
+    const duasMetas = async () => {
+      await db.conn.none(
+        `INSERT INTO pit.exercicio (ano, usuario_cadastramento_uuid)
+         VALUES ($<ano>, $<uuid>) ON CONFLICT (ano) DO NOTHING`,
+        { ano: ANO, uuid: ADMIN_UUID }
+      )
+      return db.conn.many(
+        `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
+         VALUES ($<ano>, 1, 'Producao de Geoinformacao', $<uuid>),
+                ($<ano>, 3, 'Producao para o EBGeo', $<uuid>)
+         RETURNING id, numero_meta`,
+        { ano: ANO, uuid: ADMIN_UUID }
+      )
+    }
+
+    const itemDoPdr = (metaId, extra = {}) => pdrCtrl.criar(
+      {
+        ano: ANO,
+        cod_nd: ND_CONSUMO,
+        item_label: '1',
+        descricao: 'Papel A0',
+        gnd: 3,
+        meta_pit_id: metaId,
+        ...extra
+      },
+      ADMIN_UUID
+    )
+
+    it('a NC herda a meta do seu item do PDR', async () => {
+      const [meta1] = await duasMetas()
+      const item = await itemDoPdr(meta1.id)
+      const nc = await novaNc({ pdr_item_id: item.id })
+
+      const lida = await ncCtrl.getPorId(nc.id)
+      expect(String(lida.meta_pit_id)).toBe(String(meta1.id))
+      expect(Number(lida.numero_meta)).toBe(1)
+    })
+
+    // O TESTE QUE REPROVA O DESENHO ANTERIOR, e a razao de ele existir. Ate a
+    // 1.30.0 a NC guardava a propria meta, e este corpo gravaria a Meta 3
+    // enquanto o item dela financia a Meta 1: a contradicao que o chefe mandou
+    // matar. Agora `meta_pit_id` nao e campo de entrada da NC, entao o valor e
+    // descartado pelo stripUnknown e a resposta diz a meta DO ITEM.
+    it('a meta mandada no corpo da NC nao manda: quem manda e o item', async () => {
+      const [meta1, meta3] = await duasMetas()
+      const item = await itemDoPdr(meta1.id)
+      const nc = await novaNc({ pdr_item_id: item.id, meta_pit_id: meta3.id })
+
+      const lida = await ncCtrl.getPorId(nc.id)
+      expect(String(lida.meta_pit_id)).toBe(String(meta1.id))
+      expect(Number(lida.numero_meta)).toBe(1)
+    })
+
+    it('a NC sem item do PDR nao tem meta', async () => {
+      await duasMetas()
+      const nc = await novaNc()
+
+      const lida = await ncCtrl.getPorId(nc.id)
+      expect(lida.meta_pit_id).toBeNull()
+      expect(lida.numero_meta).toBeNull()
+    })
+
+    // O item do PDR de um ano transcrito sem vinculo com o PIT. E o caso real de
+    // 2025 em producao: os 8 itens daquele ano tem meta nula, e por isso as NCs
+    // que apontam para eles seguem sem meta.
+    it('a NC cujo item do PDR nao tem meta tambem nao tem', async () => {
+      await duasMetas()
+      const item = await itemDoPdr(null)
+      const nc = await novaNc({ pdr_item_id: item.id })
+
+      const lida = await ncCtrl.getPorId(nc.id)
+      expect(lida.meta_pit_id).toBeNull()
+    })
+
+    // A LISTAGEM E O DETALHE TEM DE CONCORDAR: sao duas consultas diferentes, e
+    // a de listar ja divergiu da de ler antes neste modulo.
+    it('a listagem devolve a mesma meta que o detalhe', async () => {
+      const [meta1] = await duasMetas()
+      const item = await itemDoPdr(meta1.id)
+      const nc = await novaNc({ pdr_item_id: item.id })
+
+      const [naLista] = await ncCtrl.listar({ ano: ANO })
+      const lida = await ncCtrl.getPorId(nc.id)
+      expect(String(naLista.meta_pit_id)).toBe(String(lida.meta_pit_id))
+      expect(String(naLista.numero_meta)).toBe(String(lida.numero_meta))
+    })
+
+    // A COLUNA `credito_nc` DA GRADE DO PIT, que e onde o chefe le quanto
+    // dinheiro chegou para cada meta. Ela somava por `nota_credito.meta_pit_id`
+    // e agora soma atravessando `orcamento.pdr_item`.
+    //
+    // O item do PIT so aparece em `pit.meta_vigente` se uma revisao PUBLICADA o
+    // declarar, dai o fixture completo (exercicio, meta, item, revisao,
+    // declaracao). Sem ele a grade volta vazia e a soma nao seria exercitada.
+    it('credito_nc soma o que chegou pelo item do PDR, e so a meta certa', async () => {
+      const [meta1, meta3] = await duasMetas()
+
+      const item1 = await db.conn.one(
+        `INSERT INTO pit.meta_item (meta_id, item, unidade_id, usuario_cadastramento_uuid)
+         VALUES ($<metaId>, '1.1', 1, $<uuid>) RETURNING id`,
+        { metaId: meta1.id, uuid: ADMIN_UUID }
+      )
+      const item3 = await db.conn.one(
+        `INSERT INTO pit.meta_item (meta_id, item, unidade_id, usuario_cadastramento_uuid)
+         VALUES ($<metaId>, '3.1', 1, $<uuid>) RETURNING id`,
+        { metaId: meta3.id, uuid: ADMIN_UUID }
+      )
+      const revisao = await db.conn.one(
+        `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
+         VALUES ($<ano>, 'R0', '2026-01-01', $<uuid>) RETURNING id`,
+        { ano: ANO, uuid: ADMIN_UUID }
+      )
+      for (const it of [item1, item3]) {
+        await db.conn.none(
+          `INSERT INTO pit.meta_item_revisao
+             (meta_item_id, revisao_id, descricao, usuario_cadastramento_uuid)
+           VALUES ($<itemId>, $<revisaoId>, 'Carta Topografica', $<uuid>)`,
+          { itemId: it.id, revisaoId: revisao.id, uuid: ADMIN_UUID }
+        )
+      }
+
+      // Meta 1 recebe 10.000 pelo item do PDR dela. Meta 3 recebe NADA, e e o
+      // contraste que impede um JOIN frouxo de passar: sem o filtro por meta, as
+      // duas linhas mostrariam o mesmo total.
+      const itemPdr1 = await itemDoPdr(meta1.id)
+      await novaNc({ pdr_item_id: itemPdr1.id })
+      // Uma segunda NC SEM item nenhum, para provar que ela nao entra em conta
+      // nenhuma. No desenho antigo ela entraria, bastando ter meta.
+      await novaNc({ numero: 'NC-002' })
+
+      const grade = await pitCtrl.listar(ANO)
+      const linha1 = grade.find(l => Number(l.numero_meta) === 1)
+      const linha3 = grade.find(l => Number(l.numero_meta) === 3)
+
+      expect(Number(linha1.credito_nc)).toBe(10000)
+      expect(Number(linha3.credito_nc)).toBe(0)
     })
   })
 

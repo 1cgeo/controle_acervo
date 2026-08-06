@@ -129,7 +129,15 @@ module.exports = {
       cod_pi: { rotulo: 'Plano interno', dominio: 'dominio.plano_interno' },
       ug_emitente: { rotulo: 'UG emitente', dominio: 'dominio.ug' },
       finalidade_historico: { rotulo: 'Finalidade / histórico' },
-      meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
+      // HISTORICO, e por isso FICA. A coluna saiu da tabela na 1.31.0 (a meta da
+      // NC passou a vir do item do PDR), mas `auditoria.evento` e append-only e
+      // nao tem UPDATE nem DELETE para a aplicacao: os eventos gravados antes
+      // ainda trazem este campo. Sem a declaracao, `renderizar.js` cai no
+      // fallback e a ficha de uma NC de 2025 passaria a exibir "meta_pit_id" cru
+      // onde hoje exibe "Meta do PIT". Nenhum evento NOVO traz este campo.
+      meta_pit_id: {
+        rotulo: 'Meta do PIT (até 1.30.0)', entidade: 'meta', historico: true
+      },
       // O recebido, que NUNCA muda por devolucao.
       valor_nc: { rotulo: 'Valor da NC', tipo: 'dinheiro' },
       // Informativo: nao altera valor_nc. Sem o rotulo, "valor_recolhido:

@@ -73,11 +73,18 @@ COMMENT ON TABLE pit.exercicio IS
 -- 2026 (impressão) pode ser outra coisa em 2027. Por isso `ano` entra na chave
 -- única e todo consumidor guarda o `id`, nunca o código.
 --
--- O QUE APONTA PARA CÁ, e foi medido em 2026-08-05: as duas colunas do
--- orçamento (`orcamento.pdr_item.meta_pit_id` e
--- `orcamento.nota_credito.meta_pit_id`). Os 67 vínculos delas apontam a META, e
--- nenhum aponta item, porque o crédito é autorizado para a meta inteira. O
--- TRABALHO (versão, pedido, capacitação) aponta `pit.meta_item`.
+-- O QUE APONTA PARA CÁ é UMA coluna só: `orcamento.pdr_item.meta_pit_id`. O
+-- crédito é autorizado para a meta inteira, e não para um item dela. Medido em
+-- 2026-08-06: nas metas 3 e 5 de 2026 os itens do PDR SOBRAM sobre os do PIT (6
+-- contra 2, e 5 contra 3), porque o item do PDR recorta a natureza da despesa
+-- (diárias, passagens, peças) e não o trabalho.
+--
+-- A NOTA DE CRÉDITO NÃO APONTA PARA CÁ, e desde a 1.31.0 não aponta mesmo: ela
+-- chega à meta pelo item do PDR. Enquanto tinha coluna própria, ela podia
+-- afirmar meta que o item dela não financia, e 4 das 29 NCs com os dois campos
+-- afirmavam.
+--
+-- O TRABALHO (versão, pedido, capacitação) aponta `pit.meta_item`.
 CREATE TABLE pit.meta(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),

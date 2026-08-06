@@ -635,7 +635,7 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
 };
 
 /**
- * Fecha o que expirou, downloads E uploads, num ato só, e DIZ QUANTOS.
+ * Fecha o DOWNLOAD que expirou, e DIZ QUANTOS.
  *
  * Isto é ARRUMAÇÃO, e não a regra de expiração: download vencido já é recusado
  * no `confirmDownload`, tenha a limpeza rodado ou não.
@@ -643,9 +643,14 @@ controller.prepareDownloadByProdutos = async (produtosIds, tiposArquivo, usuario
  * O UPDATE é daqui, e não a função do banco, para o `RETURNING` contar as linhas
  * que ele mesmo mexeu: "limpou" sem número é eco da chamada, e não medida.
  *
+ * SÓ DOWNLOAD. Até 06/08/2026 ela chamava `acervo.cleanup_expired_uploads()` de
+ * carona, e a limpeza do envio ficava escondida atrás de uma rota de download:
+ * quem procurasse por ela não a acharia. A sessão de envio tem rota própria em
+ * `POST /api/arquivo/cleanup-expired-uploads`.
+ *
  * @param {string|null} usuarioUuid
  * @param {Object|null} contexto
- * @returns {Promise<{fechados:number, uploads_fechados:number}>}
+ * @returns {Promise<{fechados:number}>}
  */
 controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null) => {
   return db.conn.tx(async t => {
@@ -658,22 +663,11 @@ controller.cleanupExpiredDownloads = async (usuarioUuid = null, contexto = null)
       RETURNING id
     `);
 
-    // A função do banco não devolve contagem, então medimos antes de chamá-la:
-    // "limpou" sem número é eco da chamada, e não medida do que mudou.
-    const { pendentes } = await t.one(`
-      SELECT COUNT(*)::int AS pendentes
-        FROM acervo.upload_session
-       WHERE status = 'pending'
-         AND expiration_time IS NOT NULL
-         AND expiration_time < NOW()
-    `);
-    await t.any(`SELECT acervo.cleanup_expired_uploads()`);
-
-    const resultado = { fechados: fechados.length, uploads_fechados: pendentes };
+    const resultado = { fechados: fechados.length };
 
     // Toda execução tem uma pessoa por trás, e "rodei e não havia nada" é
     // informação de auditoria legítima.
-    if (usuarioUuid || resultado.fechados > 0 || resultado.uploads_fechados > 0) {
+    if (usuarioUuid || resultado.fechados > 0) {
       await auditoriaCtrl.registrarOperacao(t, {
         tabela: 'acervo.download_expirado',
         resultado,

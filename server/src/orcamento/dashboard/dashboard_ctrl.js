@@ -118,9 +118,25 @@ const contarPendencias = async ano => {
        (SELECT COUNT(*)
         FROM orcamento.rpnp AS r
         WHERE r.ano = $<ano>) AS rpnp_total,
+       -- A PENDÊNCIA É O ITEM DO PDR QUE FALTA, e não a meta. Até a 1.30.0 esta
+       -- conta era "meta_pit_id IS NULL", e a coluna saiu: a meta da NC agora se
+       -- lê pelo item do PDR. (Sem crase neste comentário: template literal.)
+       --
+       -- TROCAR A CONTA POR "sem meta pelo JOIN" TRANSFORMARIA A PENDÊNCIA EM
+       -- RUÍDO. A NC Extra-PDR não tem item nem meta POR DEFINIÇÃO: ela é o
+       -- crédito que o PDR não previu. São 34 das 95 em produção, e nenhuma
+       -- delas é coisa a corrigir. Alerta que dispara para o caso normal não é
+       -- alerta.
+       --
+       -- O QUE SOBRA É A FALHA DE VERDADE: a NC classificada como PDR, ou seja,
+       -- a que alguém afirmou estar prevista no PDR autorizado, e que não diz em
+       -- qual item. Essa não tem como chegar ao PIT, e é a que o chefe precisa
+       -- ver.
        (SELECT COUNT(*)
         FROM orcamento.nota_credito AS nc
-        WHERE nc.ano = $<ano> AND nc.meta_pit_id IS NULL) AS nc_sem_meta,
+        WHERE nc.ano = $<ano>
+          AND nc.classificacao_id = $<classificacaoPdr>
+          AND nc.pdr_item_id IS NULL) AS nc_sem_pdr_item,
        (SELECT COUNT(*)
         FROM orcamento.nota_credito AS nc
         WHERE nc.ano = $<ano>
@@ -130,7 +146,7 @@ const contarPendencias = async ano => {
           -- uma NC empenhada por inteiro entraria na conta por um resíduo.
           AND nc.valor_nc - nc.valor_recolhido - ${EMPENHADO_LIQUIDO_DA_NC} > 0.005
        ) AS nc_prazo_vencido`,
-    { ano }
+    { ano, classificacaoPdr: CLASSIFICACAO_NC.PDR }
   )
 
   // COUNT do pg chega como string (BIGINT).
@@ -144,7 +160,7 @@ const contarPendencias = async ano => {
     liquidacao_sem_data: par('liquidacao_sem_data', 'liquidacao_total'),
     nc_sem_data: par('nc_sem_data', 'nc_total'),
     rpnp_sem_valor: par('rpnp_sem_valor', 'rpnp_total'),
-    nc_sem_meta: par('nc_sem_meta', 'nc_total'),
+    nc_sem_pdr_item: par('nc_sem_pdr_item', 'nc_total'),
     nc_prazo_vencido: par('nc_prazo_vencido', 'nc_total')
   }
 }

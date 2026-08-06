@@ -244,6 +244,119 @@ function assertCaminhoSeguro(nomeArquivo) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// O RASCUNHO DO ENVIO DO PLUGIN
+//
+// Ele vive inteiro em `acervo.upload_session.payload`, um JSONB, e nao mais em
+// tres tabelas espelho de `acervo.produto`, `acervo.versao` e `acervo.arquivo`.
+// A razao esta no cabecalho da tabela, em `er/acervo.sql`: espelho obriga toda
+// coluna nova da tabela real a ser duplicada no rascunho.
+//
+// Os tres montadores abaixo sao a UNICA declaracao dos campos do rascunho. Os
+// quatro caminhos do prepare passam por eles, e por isso nao ha como um ganhar
+// um campo e os outros nao.
+// ---------------------------------------------------------------------------
+
+/**
+ * Um arquivo do rascunho.
+ *
+ * `status` e `error_message` nascem aqui, e nao sao enfeite: e neles que o
+ * confirm escreve o desfecho de CADA arquivo, e e deles que a tela de uploads
+ * com problema le qual arquivo falhou. Sem eles a tela diria so que a sessao
+ * falhou.
+ *
+ * `vinculo` e o que amarra o arquivo ao destino, e muda por operacao:
+ * `{ versao_id }` em `add_files` e `replace_files`, nada nas outras duas (la o
+ * arquivo ja mora dentro da versao do rascunho).
+ */
+const arquivoDoRascunho = (arquivo, destinationPath, volumeId, vinculo = {}) => ({
+  nome: arquivo.nome,
+  nome_arquivo: arquivo.nome_arquivo,
+  destination_path: destinationPath,
+  tipo_arquivo_id: arquivo.tipo_arquivo_id,
+  volume_armazenamento_id: volumeId,
+  extensao: arquivo.extensao ?? null,
+  tamanho_mb: arquivo.tamanho_mb ?? null,
+  expected_checksum: arquivo.checksum ?? null,
+  metadado: arquivo.metadado || {},
+  situacao_carregamento_id: arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
+  descricao: arquivo.descricao || '',
+  crs_original: arquivo.crs_original || null,
+  status: 'pending',
+  error_message: null,
+  ...vinculo
+});
+
+/**
+ * Uma versao do rascunho, com a lista de arquivos dela dentro.
+ *
+ * As datas entram como o cliente as mandou, em texto. O Joi as valida com
+ * `Joi.date().iso().raw()`, e o `.raw()` existe justamente para AAAA-MM-DD nao
+ * virar instante UTC e recuar um dia. Converter aqui refaria aquele defeito.
+ *
+ * `vinculo` e `{ produto_id }` em `add_version` (o produto ja existe) e vazio em
+ * `add_product` (o produto tambem e do rascunho, e a versao mora dentro dele).
+ */
+const versaoDoRascunho = (versao, vinculo = {}) => ({
+  uuid_versao: versao.uuid_versao || uuidv4(),
+  versao: versao.versao,
+  nome: versao.nome ?? null,
+  tipo_versao_id: versao.tipo_versao_id,
+  subtipo_produto_id: versao.subtipo_produto_id,
+  lote_id: versao.lote_id ?? null,
+  metadado: versao.metadado || {},
+  descricao: versao.descricao || '',
+  orgao_produtor: versao.orgao_produtor,
+  palavras_chave: versao.palavras_chave || [],
+  data_criacao: versao.data_criacao,
+  data_edicao: versao.data_edicao,
+  // O VINCULO COM O PIT atravessa o envio. Sem as duas aqui, a meta escolhida no
+  // formulario morre entre o preparo e a finalizacao: o schema aceita, o
+  // rascunho nao guarda, e a versao final nasce fora da conta do plano.
+  meta_pit_id: versao.meta_pit_id ?? null,
+  data_prevista: versao.data_prevista ?? null,
+  ...vinculo,
+  arquivos: []
+});
+
+/** Um produto do rascunho, com as versoes dele dentro. */
+const produtoDoRascunho = (produto) => ({
+  nome: produto.nome ?? null,
+  mi: produto.mi ?? null,
+  inom: produto.inom ?? null,
+  tipo_escala_id: produto.tipo_escala_id,
+  denominador_escala_especial: produto.denominador_escala_especial ?? null,
+  tipo_produto_id: produto.tipo_produto_id,
+  // Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
+  // Militar); nulo = produto comum.
+  subtipo_produto_id: produto.subtipo_produto_id ?? null,
+  descricao: produto.descricao || '',
+  geom: produto.geom,
+  versoes: []
+});
+
+/**
+ * Todo arquivo do rascunho, em ordem, seja qual for a operacao.
+ *
+ * Devolve os objetos VIVOS do payload, e nao copias: quem marca um arquivo como
+ * falho escreve direto na arvore, e o UPDATE final grava o payload inteiro de
+ * uma vez. Era isso ou um UPDATE por arquivo, que e o que o desenho de tres
+ * tabelas fazia.
+ */
+const arquivosDoRascunho = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload.arquivos)) return payload.arquivos;
+  if (Array.isArray(payload.versoes)) {
+    return payload.versoes.flatMap(v => v.arquivos || []);
+  }
+  if (Array.isArray(payload.produtos)) {
+    return payload.produtos.flatMap(p =>
+      (p.versoes || []).flatMap(v => v.arquivos || [])
+    );
+  }
+  return [];
+};
+
 const controller = {};
 
 controller.atualizaArquivo = async (arquivo, usuarioUuid, contexto) => {
@@ -606,15 +719,9 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         }
       }
       
-      const { id: sessionId, uuid_session } = await t.one(
-        `INSERT INTO acervo.upload_session(
-          usuario_uuid, operation_type
-        ) VALUES ($1, $2) RETURNING id, uuid_session`,
-        [usuarioUuid, 'add_files']
-      );
-      
       const arquivosInfo = [];
       const nomesFisicosUsados = new Set();
+      const rascunho = [];
 
       for (const arquivo of arquivos) {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
@@ -637,31 +744,13 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
         );
 
-        await t.none(
-          `INSERT INTO acervo.upload_arquivo_temp(
-            session_id, nome, nome_arquivo, destination_path, 
-            tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb, 
-            expected_checksum, metadado, situacao_carregamento_id, 
-            descricao, crs_original, versao_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-          [
-            sessionId, 
-            arquivo.nome, 
-            arquivo.nome_arquivo, 
-            destinationPath, 
-            arquivo.tipo_arquivo_id,
-            isTileserver ? null : volume.volume_armazenamento_id,
-            arquivo.extensao, 
-            arquivo.tamanho_mb,
-            arquivo.checksum, 
-            arquivo.metadado || {}, 
-            arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
-            arquivo.descricao || '',
-            arquivo.crs_original || null,
-            arquivo.versao_id
-          ]
-        );
-        
+        rascunho.push(arquivoDoRascunho(
+          arquivo,
+          destinationPath,
+          isTileserver ? null : volume.volume_armazenamento_id,
+          { versao_id: arquivo.versao_id }
+        ));
+
         arquivosInfo.push({
           uuid_arquivo: arquivo.uuid_arquivo || null,
           nome: arquivo.nome,
@@ -672,7 +761,15 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
           checksum: arquivo.checksum
         });
       }
-      
+
+      // A sessao nasce DEPOIS do rascunho estar pronto: com o envio inteiro num
+      // documento so, nao ha id de sessao a distribuir por linha filha.
+      const { uuid_session } = await t.one(
+        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type, payload)
+         VALUES ($1, $2, $3) RETURNING uuid_session`,
+        [usuarioUuid, 'add_files', { arquivos: rascunho }]
+      );
+
       return {
         session_uuid: uuid_session,
         operation_type: 'add_files',
@@ -741,15 +838,9 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
         throw new AppError('A requisição contém arquivos com checksum duplicado para a mesma versão', httpCode.BadRequest);
       }
 
-      // Cria a sessao de upload
-      const { id: sessionId, uuid_session } = await t.one(
-        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type)
-         VALUES ($1, $2) RETURNING id, uuid_session`,
-        [usuarioUuid, 'replace_files']
-      );
-
       const arquivosInfo = [];
       const nomesFisicosUsados = new Set();
+      const rascunho = [];
       for (const arquivo of arquivos) {
         const versao = versoes.find(v => Number(v.id) === Number(arquivo.versao_id));
         const volume = volumeByProductType[versao.tipo_produto_id];
@@ -771,30 +862,12 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
           nomesFisicosUsados.add(chave);
         }
 
-        await t.none(
-          `INSERT INTO acervo.upload_arquivo_temp(
-            session_id, nome, nome_arquivo, destination_path,
-            tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
-            expected_checksum, metadado, situacao_carregamento_id,
-            descricao, crs_original, versao_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-          [
-            sessionId,
-            arquivo.nome,
-            arquivo.nome_arquivo,
-            destinationPath,
-            arquivo.tipo_arquivo_id,
-            isTileserver ? null : volume.volume_armazenamento_id,
-            arquivo.extensao,
-            arquivo.tamanho_mb,
-            arquivo.checksum,
-            arquivo.metadado || {},
-            arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
-            arquivo.descricao || '',
-            arquivo.crs_original || null,
-            arquivo.versao_id
-          ]
-        );
+        rascunho.push(arquivoDoRascunho(
+          arquivo,
+          destinationPath,
+          isTileserver ? null : volume.volume_armazenamento_id,
+          { versao_id: arquivo.versao_id }
+        ));
 
         arquivosInfo.push({
           uuid_arquivo: arquivo.uuid_arquivo || null,
@@ -806,6 +879,12 @@ controller.prepareReplaceFiles = async (requestData, usuarioUuid) => {
           checksum: arquivo.checksum
         });
       }
+
+      const { uuid_session } = await t.one(
+        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type, payload)
+         VALUES ($1, $2, $3) RETURNING uuid_session`,
+        [usuarioUuid, 'replace_files', { arquivos: rascunho }]
+      );
 
       return {
         session_uuid: uuid_session,
@@ -949,52 +1028,19 @@ const prepararVersao = async (requestData, usuarioUuid) => {
         }
       }
       
-      const { id: sessionId, uuid_session } = await t.one(
-        `INSERT INTO acervo.upload_session(
-          usuario_uuid, operation_type
-        ) VALUES ($1, $2) RETURNING id, uuid_session`,
-        [usuarioUuid, 'add_version']
-      );
-
       const result = [];
       const nomesFisicosUsados = new Set();
+      const rascunho = [];
 
       for (const item of versoes) {
         const produto = produtoMap[item.produto_id];
         const volume = volumeByProductType[produto.tipo_produto_id];
-        
-        const { id: versaoTempId } = await t.one(
-          `INSERT INTO acervo.upload_versao_temp(
-            session_id, uuid_versao, versao, nome, tipo_versao_id, 
-            subtipo_produto_id, lote_id, metadado, descricao, 
-            data_criacao, data_edicao, produto_id, orgao_produtor, palavras_chave,
-            meta_pit_id, data_prevista
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-          RETURNING id`,
-          [
-            sessionId,
-            item.versao.uuid_versao || uuidv4(),
-            item.versao.versao,
-            item.versao.nome,
-            item.versao.tipo_versao_id,
-            item.versao.subtipo_produto_id,
-            item.versao.lote_id,
-            item.versao.metadado || {},
-            item.versao.descricao || '',
-            item.versao.data_criacao,
-            item.versao.data_edicao,
-            item.produto_id,
-            item.versao.orgao_produtor,
-            item.versao.palavras_chave || [],
-            // O vinculo com o PIT atravessa o rascunho do envio: sem isto a meta
-            // escolhida no formulario morre entre o preparo e a finalizacao.
-            item.versao.meta_pit_id ?? null,
-            item.versao.data_prevista ?? null
-          ]
-        );
-        
+
+        const versaoRascunho = versaoDoRascunho(item.versao, { produto_id: item.produto_id });
+        rascunho.push(versaoRascunho);
+
         const arquivosInfo = [];
-        
+
         for (const arquivo of item.arquivos) {
           const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
           assertCaminhoSeguro(arquivo.nome_arquivo);
@@ -1010,31 +1056,11 @@ const prepararVersao = async (requestData, usuarioUuid) => {
             arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
           );
 
-          const { id: arquivoTempId } = await t.one(
-            `INSERT INTO acervo.upload_arquivo_temp(
-              session_id, nome, nome_arquivo, destination_path,
-              tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
-              expected_checksum, metadado, situacao_carregamento_id,
-              descricao, crs_original, versao_temp_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            RETURNING id`,
-            [
-              sessionId,
-              arquivo.nome,
-              arquivo.nome_arquivo,
-              destinationPath,
-              arquivo.tipo_arquivo_id,
-              isTileserver ? null : volume.volume_armazenamento_id,
-              arquivo.extensao,
-              arquivo.tamanho_mb,
-              arquivo.checksum,
-              arquivo.metadado || {},
-              arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
-              arquivo.descricao || '',
-              arquivo.crs_original || null,
-              versaoTempId
-            ]
-          );
+          versaoRascunho.arquivos.push(arquivoDoRascunho(
+            arquivo,
+            destinationPath,
+            isTileserver ? null : volume.volume_armazenamento_id
+          ));
 
           arquivosInfo.push({
             uuid_arquivo: arquivo.uuid_arquivo || null,
@@ -1052,7 +1078,13 @@ const prepararVersao = async (requestData, usuarioUuid) => {
           arquivos: arquivosInfo
         });
       }
-      
+
+      const { uuid_session } = await t.one(
+        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type, payload)
+         VALUES ($1, $2, $3) RETURNING uuid_session`,
+        [usuarioUuid, 'add_version', { versoes: rascunho }]
+      );
+
       return {
         session_uuid: uuid_session,
         operation_type: 'add_version',
@@ -1133,73 +1165,24 @@ const prepararProduto = async (requestData, usuarioUuid) => {
         }
       }
       
-      const { id: sessionId, uuid_session } = await t.one(
-        `INSERT INTO acervo.upload_session(
-          usuario_uuid, operation_type
-        ) VALUES ($1, $2) RETURNING id, uuid_session`,
-        [usuarioUuid, 'add_product']
-      );
-
       const result = [];
       const nomesFisicosUsados = new Set();
+      const rascunho = [];
 
       for (const item of produtos) {
         const volume = volumeByProductType[item.produto.tipo_produto_id];
-        
-        const { id: produtoTempId } = await t.one(
-          `INSERT INTO acervo.upload_produto_temp(
-            session_id, nome, mi, inom, tipo_escala_id,
-            denominador_escala_especial, tipo_produto_id, subtipo_produto_id, descricao, geom
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          RETURNING id`,
-          [
-            sessionId,
-            item.produto.nome,
-            item.produto.mi,
-            item.produto.inom,
-            item.produto.tipo_escala_id,
-            item.produto.denominador_escala_especial,
-            item.produto.tipo_produto_id,
-            item.produto.subtipo_produto_id ?? null,
-            item.produto.descricao || '',
-            item.produto.geom
-          ]
-        );
-        
+
+        const produtoRascunho = produtoDoRascunho(item.produto);
+        rascunho.push(produtoRascunho);
+
         const versoesInfo = [];
-        
+
         for (const versao of item.versoes) {
-          const { id: versaoTempId } = await t.one(
-            `INSERT INTO acervo.upload_versao_temp(
-              session_id, uuid_versao, versao, nome, tipo_versao_id, 
-              subtipo_produto_id, lote_id, metadado, descricao, 
-              data_criacao, data_edicao, produto_temp_id, orgao_produtor, palavras_chave,
-              meta_pit_id, data_prevista
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-            RETURNING id`,
-            [
-              sessionId,
-              versao.uuid_versao || uuidv4(),
-              versao.versao,
-              versao.nome,
-              versao.tipo_versao_id,
-              versao.subtipo_produto_id,
-              versao.lote_id,
-              versao.metadado || {},
-              versao.descricao || '',
-              versao.data_criacao,
-              versao.data_edicao,
-              produtoTempId,
-              versao.orgao_produtor,
-              versao.palavras_chave || [],
-              // Mesmo par do outro rascunho: o vinculo com o PIT atravessa o envio.
-              versao.meta_pit_id ?? null,
-              versao.data_prevista ?? null
-            ]
-          );
-          
+          const versaoRascunho = versaoDoRascunho(versao);
+          produtoRascunho.versoes.push(versaoRascunho);
+
           const arquivosInfo = [];
-          
+
           for (const arquivo of versao.arquivos) {
             const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
             assertCaminhoSeguro(arquivo.nome_arquivo);
@@ -1215,31 +1198,11 @@ const prepararProduto = async (requestData, usuarioUuid) => {
               arquivo.nome_arquivo, arquivo.extensao, nomesFisicosUsados
             );
 
-            const { id: arquivoTempId } = await t.one(
-              `INSERT INTO acervo.upload_arquivo_temp(
-                session_id, nome, nome_arquivo, destination_path,
-                tipo_arquivo_id, volume_armazenamento_id, extensao, tamanho_mb,
-                expected_checksum, metadado, situacao_carregamento_id,
-                descricao, crs_original, versao_temp_id
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-              RETURNING id`,
-              [
-                sessionId,
-                arquivo.nome,
-                arquivo.nome_arquivo,
-                destinationPath,
-                arquivo.tipo_arquivo_id,
-                isTileserver ? null : volume.volume_armazenamento_id,
-                arquivo.extensao,
-                arquivo.tamanho_mb,
-                arquivo.checksum,
-                arquivo.metadado || {},
-                arquivo.situacao_carregamento_id || SITUACAO_CARREGAMENTO.NAO_CARREGADO,
-                arquivo.descricao || '',
-                arquivo.crs_original || null,
-                versaoTempId
-              ]
-            );
+            versaoRascunho.arquivos.push(arquivoDoRascunho(
+              arquivo,
+              destinationPath,
+              isTileserver ? null : volume.volume_armazenamento_id
+            ));
 
             arquivosInfo.push({
               uuid_arquivo: arquivo.uuid_arquivo || null,
@@ -1262,7 +1225,13 @@ const prepararProduto = async (requestData, usuarioUuid) => {
           versoes: versoesInfo
         });
       }
-      
+
+      const { uuid_session } = await t.one(
+        `INSERT INTO acervo.upload_session(usuario_uuid, operation_type, payload)
+         VALUES ($1, $2, $3) RETURNING uuid_session`,
+        [usuarioUuid, 'add_product', { produtos: rascunho }]
+      );
+
       return {
         session_uuid: uuid_session,
         operation_type: 'add_product',
@@ -1776,30 +1745,57 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
   });
 };
 
+/**
+ * As sessoes de envio que FALHARAM, com o detalhe de qual arquivo caiu.
+ *
+ * Uma consulta so, e nao uma por sessao mais uma por produto: o rascunho inteiro
+ * vem no `payload`, e o unico dado que ele nao tem e o NOME do produto que ja
+ * existe no acervo (caso `add_version`), lido em bloco no fim.
+ *
+ * So sessao `failed` chega aqui. Sessao confirmada e sessao cancelada morrem no
+ * ato, entao a tabela nao guarda o que deu certo.
+ */
 controller.getProblemUploads = async () => {
   return db.conn.task(async t => {
     const failedSessions = await t.any(
-      `SELECT us.id, us.uuid_session, us.operation_type, us.status, 
-              us.error_message, us.created_at, us.completed_at, u.nome as usuario_nome
+      `SELECT us.uuid_session, us.operation_type, us.status,
+              us.error_message, us.created_at, us.completed_at, us.payload,
+              u.nome as usuario_nome
        FROM acervo.upload_session us
        JOIN dgeo.usuario u ON us.usuario_uuid = u.uuid
        WHERE us.status = 'failed'
        ORDER BY us.created_at DESC
        LIMIT 50`
     );
-    
-    const result = [];
-    
-    for (const session of failedSessions) {
-      const failedFiles = await t.any(
-        `SELECT uf.nome, uf.nome_arquivo, uf.destination_path, uf.status, 
-                uf.error_message, uf.versao_id, uf.versao_temp_id
-         FROM acervo.upload_arquivo_temp uf
-         WHERE uf.session_id = $1 AND uf.status = 'failed'`,
-        [session.id]
+
+    // O nome do produto de todas as sessoes `add_version` de uma vez.
+    const produtoIds = failedSessions
+      .filter(s => s.operation_type === 'add_version')
+      .flatMap(s => ((s.payload || {}).versoes || []).map(v => v.produto_id))
+      .filter(id => id != null);
+
+    const nomeDoProduto = new Map();
+    if (produtoIds.length > 0) {
+      const linhas = await t.any(
+        'SELECT id, nome FROM acervo.produto WHERE id IN ($<ids:csv>)',
+        { ids: [...new Set(produtoIds.map(Number))] }
       );
-      
-      let sessionDetails = {
+      for (const p of linhas) nomeDoProduto.set(String(p.id), p.nome);
+    }
+
+    /** So os arquivos que falharam, no formato que a tela do plugin le. */
+    const falhos = (arquivos) => (arquivos || [])
+      .filter(a => a.status === 'failed')
+      .map(a => ({
+        nome: a.nome,
+        nome_arquivo: a.nome_arquivo,
+        error_message: a.error_message
+      }));
+
+    return failedSessions.map(session => {
+      const payload = session.payload || {};
+
+      const sessionDetails = {
         session_uuid: session.uuid_session,
         operation_type: session.operation_type,
         status: session.status,
@@ -1808,126 +1804,149 @@ controller.getProblemUploads = async () => {
         completed_at: session.completed_at,
         usuario_nome: session.usuario_nome
       };
-      
+
       switch (session.operation_type) {
-        // `replace_files` entra JUNTO de `add_files`: as duas gravam
-        // `upload_arquivo_temp.versao_id`, e sem este caso a sessão de
-        // substituição que falhava aparecia na tela sem dizer QUAL arquivo
+        // `replace_files` entra JUNTO de `add_files`: as duas gravam o
+        // `versao_id` no proprio arquivo do rascunho, e sem este caso a sessao
+        // de substituicao que falhava aparecia na tela sem dizer QUAL arquivo
         // falhou.
         case 'replace_files':
-        case 'add_files':
-          const filesByVersion = {};
-          
-          for (const file of failedFiles) {
-            if (file.versao_id) {
-              if (!filesByVersion[file.versao_id]) {
-                filesByVersion[file.versao_id] = [];
-              }
-              filesByVersion[file.versao_id].push({
-                nome: file.nome,
-                nome_arquivo: file.nome_arquivo,
-                error_message: file.error_message
-              });
-            }
+        case 'add_files': {
+          const porVersao = new Map();
+
+          for (const arquivo of (payload.arquivos || [])) {
+            if (arquivo.status !== 'failed' || arquivo.versao_id == null) continue;
+            const chave = String(arquivo.versao_id);
+            if (!porVersao.has(chave)) porVersao.set(chave, []);
+            porVersao.get(chave).push({
+              nome: arquivo.nome,
+              nome_arquivo: arquivo.nome_arquivo,
+              error_message: arquivo.error_message
+            });
           }
-          
-          sessionDetails.versoes_com_problema = Object.entries(filesByVersion).map(([versao_id, files]) => ({
-            versao_id: parseInt(versao_id),
-            arquivos_com_problema: files
-          }));
-          break;
-          
-        case 'add_version':
-          const versoesTemp = await t.any(
-            `SELECT v.*, p.nome as produto_nome
-             FROM acervo.upload_versao_temp v
-             JOIN acervo.produto p ON v.produto_id = p.id
-             WHERE v.session_id = $1`,
-            [session.id]
+
+          sessionDetails.versoes_com_problema = [...porVersao.entries()].map(
+            ([versaoId, arquivos]) => ({
+              versao_id: parseInt(versaoId, 10),
+              arquivos_com_problema: arquivos
+            })
           );
-          
-          const filesByTempVersion = {};
-          
-          for (const file of failedFiles) {
-            if (file.versao_temp_id) {
-              if (!filesByTempVersion[file.versao_temp_id]) {
-                filesByTempVersion[file.versao_temp_id] = [];
-              }
-              filesByTempVersion[file.versao_temp_id].push({
-                nome: file.nome,
-                nome_arquivo: file.nome_arquivo,
-                error_message: file.error_message
-              });
-            }
-          }
-          
-          sessionDetails.versoes_com_problema = versoesTemp.map(versao => ({
+          break;
+        }
+
+        case 'add_version':
+          sessionDetails.versoes_com_problema = (payload.versoes || []).map(versao => ({
             produto_id: versao.produto_id,
-            produto_nome: versao.produto_nome,
+            produto_nome: nomeDoProduto.get(String(versao.produto_id)) || null,
             versao_info: {
               versao: versao.versao,
               nome: versao.nome
             },
-            arquivos_com_problema: filesByTempVersion[versao.id] || []
+            arquivos_com_problema: falhos(versao.arquivos)
           }));
           break;
-          
+
         case 'add_product':
-          const produtosTemp = await t.any(
-            `SELECT * FROM acervo.upload_produto_temp WHERE session_id = $1`,
-            [session.id]
-          );
-          
-          sessionDetails.produtos_com_problema = await Promise.all(produtosTemp.map(async produto => {
-            const versoesTemp = await t.any(
-              `SELECT * FROM acervo.upload_versao_temp 
-               WHERE session_id = $1 AND produto_temp_id = $2`,
-              [session.id, produto.id]
-            );
-            
-            return {
-              produto_info: {
-                nome: produto.nome,
-                inom: produto.inom,
-                mi: produto.mi
+          sessionDetails.produtos_com_problema = (payload.produtos || []).map(produto => ({
+            produto_info: {
+              nome: produto.nome,
+              inom: produto.inom,
+              mi: produto.mi
+            },
+            versoes_com_problema: (produto.versoes || []).map(versao => ({
+              versao_info: {
+                versao: versao.versao,
+                nome: versao.nome
               },
-              versoes_com_problema: await Promise.all(versoesTemp.map(async versao => {
-                const arquivosComProblema = failedFiles
-                  .filter(f => f.versao_temp_id === versao.id)
-                  .map(f => ({
-                    nome: f.nome,
-                    nome_arquivo: f.nome_arquivo,
-                    error_message: f.error_message
-                  }));
-                
-                return {
-                  versao_info: {
-                    versao: versao.versao,
-                    nome: versao.nome
-                  },
-                  arquivos_com_problema: arquivosComProblema
-                };
-              }))
-            };
+              arquivos_com_problema: falhos(versao.arquivos)
+            }))
           }));
           break;
       }
-      
-      result.push(sessionDetails);
-    }
-    
-    return result;
+
+      return sessionDetails;
+    });
   });
+};
+
+/** O desfecho de UM arquivo, como o cliente o lê. */
+const resumoDoArquivo = (a) => ({
+  nome: a.nome,
+  nome_arquivo: a.nome_arquivo,
+  status: a.status,
+  error_message: a.error_message
+});
+
+/**
+ * Os arquivos de `add_files` e `replace_files`, agrupados pela versão de destino.
+ *
+ * É a forma da resposta nas duas operações, e também a do `detalhes` quando elas
+ * falham. Sai do rascunho, e não de uma releitura: o rascunho é onde o confirm
+ * acabou de escrever o desfecho de cada arquivo.
+ */
+const porVersaoDeDestino = (payload) => {
+  const grupos = new Map();
+  for (const arquivo of (payload.arquivos || [])) {
+    // O `versao_id` sai como TEXTO, e nao como o numero que o rascunho guarda.
+    // E o que o corpo do confirm sempre respondeu: antes ele vinha de um SELECT,
+    // e o driver devolve BIGINT em texto. Os caminhos `add_version` e
+    // `add_product` continuam assim, porque o id deles vem do INSERT. Deixar
+    // este virar numero faria a MESMA rota responder dois tipos para o mesmo
+    // campo, dependendo da operacao.
+    const chave = String(arquivo.versao_id);
+    if (!grupos.has(chave)) {
+      grupos.set(chave, { versao_id: chave, files: [] });
+    }
+    grupos.get(chave).files.push(resumoDoArquivo(arquivo));
+  }
+  return [...grupos.values()];
+};
+
+/**
+ * O detalhe da FALHA, na forma que cada operação comporta.
+ *
+ * Em `add_version` e `add_product` não há id de acervo a citar (nada foi criado),
+ * então o que identifica o grupo é o rótulo que a pessoa digitou: a edição da
+ * versão e o nome do produto. O desenho antigo respondia aqui o id da linha
+ * temporária, que não apontava para registro nenhum.
+ */
+const detalhesDaFalha = (payload) => {
+  if (payload.arquivos) return porVersaoDeDestino(payload);
+
+  if (payload.versoes) {
+    return payload.versoes.map(v => ({
+      produto_id: v.produto_id,
+      versao: v.versao,
+      files: (v.arquivos || []).map(resumoDoArquivo)
+    }));
+  }
+
+  if (payload.produtos) {
+    return payload.produtos.flatMap(p => (p.versoes || []).map(v => ({
+      produto: p.nome || p.mi || p.inom,
+      versao: v.versao,
+      files: (v.arquivos || []).map(resumoDoArquivo)
+    })));
+  }
+
+  return [];
 };
 
 // O confirm-upload é onde o evento do caminho do PLUGIN nasce.
 //
 // O `prepare-upload` e o `cancel-upload` NÃO auditam, e é deliberado: sessão que
-// não virou arquivo não mudou o acervo. Ela vive em `upload_session` e nas três
-// `*_temp`, que são efêmeras por natureza (o cron de 24 h as fecha), e registrar
-// a reserva como se fosse cadastro faria a trilha contar duas vezes o que
-// aconteceu uma. É aqui que a linha entra em `acervo.produto`, `acervo.versao` e
-// `acervo.arquivo`, e é aqui que o rastro começa.
+// não virou arquivo não mudou o acervo. Ela vive só em `acervo.upload_session`,
+// que é efêmera por natureza, e registrar a reserva como se fosse cadastro faria
+// a trilha contar duas vezes o que aconteceu uma. É aqui que a linha entra em
+// `acervo.produto`, `acervo.versao` e `acervo.arquivo`, e é aqui que o rastro
+// começa.
+//
+// A SESSÃO MORRE AQUI, na MESMA transação que cria as linhas reais. Depois do
+// confirm ela não serve para nada: o histórico do que entrou já está em
+// `auditoria.evento`, que é append-only. Ou as linhas nascem e a sessão some
+// juntas, ou nenhuma das duas coisas acontece. Mantê-la transformava a tabela em
+// arquivo morto -- 2.555 sessões `completed` em produção em 06/08/2026, a mais
+// antiga de 10/06/2026, nenhuma delas lida por nada.
 controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
   // Falha de processamento precisa ser persistida fora da transação:
   // o rollback desfaria um UPDATE de status feito dentro dela
@@ -1944,188 +1963,98 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
         `SELECT * FROM acervo.upload_session WHERE uuid_session = $1 AND status = 'pending'`,
         [sessionUuid]
       );
-      
+
       if (!session) {
         throw new AppError('Sessão de upload não encontrada ou já processada', httpCode.NotFound);
       }
-      
+
       if (session.usuario_uuid !== usuarioUuid) {
         throw new AppError('Usuário não autorizado para esta sessão de upload', httpCode.Forbidden);
       }
-      
-      const arquivos = await t.any(
-        `SELECT * FROM acervo.upload_arquivo_temp WHERE session_id = $1`,
-        [session.id]
-      );
-      
+
+      const payload = session.payload || {};
+      // Os objetos são os do PRÓPRIO `payload`: marcar um arquivo como falho
+      // escreve na árvore, e o UPDATE do fim grava tudo de uma vez. Era isto ou
+      // um UPDATE por arquivo, que é o que o desenho de três tabelas fazia.
+      const arquivos = arquivosDoRascunho(payload);
+
       if (arquivos.length === 0) {
         throw new AppError('Nenhum arquivo encontrado para esta sessão', httpCode.BadRequest);
       }
-      
-      const fileResults = {};
+
       let allValid = true;
-      
+
       for (const arquivo of arquivos) {
         const filePath = arquivo.destination_path;
         const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-        let fileValid = true;
-        let errorMessage = null;
-        
-        if (arquivo.versao_id) {
-          if (!fileResults[`versao_${arquivo.versao_id}`]) {
-            fileResults[`versao_${arquivo.versao_id}`] = {
-              versao_id: arquivo.versao_id,
-              files: []
-            };
-          }
-        } else if (arquivo.versao_temp_id) {
-          if (!fileResults[`versao_temp_${arquivo.versao_temp_id}`]) {
-            fileResults[`versao_temp_${arquivo.versao_temp_id}`] = {
-              versao_temp_id: arquivo.versao_temp_id,
-              files: []
-            };
-          }
-        }
-        
-        // Linha JA MEDIDA na escrita: e o arquivo que chegou pelo upload web,
-        // cujo checksum e tamanho sairam do mesmo passo que gravou o byte, com
-        // ele passando pelo processo uma unica vez. Reler aqui seria refazer
-        // exatamente o custo que o cabecalho da catalogacao in-place documenta
-        // ter sido removido -- 362 GB relidos no LOTE_1 do Convenio RS, de 1h20
-        // a 3h -- e ainda por cima DENTRO desta transacao, que ficaria aberta o
-        // tempo todo. Conferir o checksum contra ele mesmo nao prova nada: o
-        // valor que esta no banco nao veio de cliente nenhum.
-        //
-        // O fluxo do PLUGIN nao passa por aqui: la a linha continua 'pending' e
-        // o checksum foi DECLARADO pelo cliente, entao a releitura e a unica
-        // coisa que prova que a copia por SMB chegou inteira.
-        if (arquivo.status === 'completed') {
-          // Nao se rele o CONTEUDO, mas se confere que o arquivo AINDA ESTA la.
-          // O `access` le so o metadado do diretorio: custa microssegundos,
-          // independe do tamanho, e fecha a janela entre o PUT e o confirm --
-          // sessao aberta vale 24 h, e nesse intervalo alguem pode ter mexido no
-          // volume. Sem esta linha o acervo passaria a apontar para um caminho
-          // vazio, e o defeito so apareceria quando alguem fosse baixar.
-          let sumiu = null;
-          try {
-            await fs.access(filePath);
-          } catch {
-            sumiu = `O arquivo ${arquivo.nome} foi gravado no volume, mas não está mais lá: ${filePath}`;
-          }
 
-          if (sumiu) {
-            allValid = false;
-            await t.none(
-              `UPDATE acervo.upload_arquivo_temp SET status = 'failed', error_message = $1 WHERE id = $2`,
-              [sumiu, arquivo.id]
-            );
-          }
-
-          fileResults[arquivo.versao_id ? `versao_${arquivo.versao_id}` : `versao_temp_${arquivo.versao_temp_id}`].files.push({
-            nome: arquivo.nome,
-            nome_arquivo: arquivo.nome_arquivo,
-            status: sumiu ? 'failed' : 'completed',
-            error_message: sumiu
-          });
-          continue;
-        }
-
+        // O CHECKSUM É DECLARADO PELO CLIENTE, e por isso o arquivo é relido
+        // aqui. Neste caminho quem copia os bytes é o plugin, por SMB, e o
+        // servidor não os viu passar: a releitura é a única coisa que prova que
+        // a cópia chegou inteira. O envio pelo NAVEGADOR não passa por aqui --
+        // lá o checksum sai do mesmo passo que grava o byte, e reler seria
+        // refazer o custo que a catalogação in-place documenta ter removido
+        // (362 GB relidos no LOTE_1 do Convênio RS, de 1h20 a 3h).
         try {
           if (isTileserver) {
             // Tileserver é uma URL. Não há arquivo físico para validar
-            await t.none(
-              `UPDATE acervo.upload_arquivo_temp SET status = 'completed' WHERE id = $1`,
-              [arquivo.id]
-            );
-            fileResults[arquivo.versao_id ? `versao_${arquivo.versao_id}` : `versao_temp_${arquivo.versao_temp_id}`].files.push({
-              nome: arquivo.nome,
-              nome_arquivo: arquivo.nome_arquivo,
-              status: 'completed',
-              error_message: null
-            });
-            continue;
-          }
-
-          await fs.access(filePath);
-
-          // Validate checksum via streaming (sem carregar arquivo inteiro em memória)
-          const { checksum: calculatedChecksum, fileSizeMB } = await calculateChecksumStream(filePath);
-
-          if (calculatedChecksum !== arquivo.expected_checksum) {
-            fileValid = false;
-            errorMessage = `Falha na validação do checksum para ${arquivo.nome}`;
-            allValid = false;
-          }
-
-          if (fileValid) {
-            await t.none(
-              `UPDATE acervo.upload_arquivo_temp SET tamanho_mb = $1, status = 'completed' WHERE id = $2`,
-              [fileSizeMB, arquivo.id]
-            );
+            arquivo.status = 'completed';
+            arquivo.error_message = null;
           } else {
-            await t.none(
-              `UPDATE acervo.upload_arquivo_temp SET status = 'failed', error_message = $1 WHERE id = $2`,
-              [errorMessage, arquivo.id]
-            );
+            await fs.access(filePath);
+
+            // Validate checksum via streaming (sem carregar arquivo inteiro em memória)
+            const { checksum: calculatedChecksum, fileSizeMB } = await calculateChecksumStream(filePath);
+
+            if (calculatedChecksum !== arquivo.expected_checksum) {
+              throw new AppError(
+                `Falha na validação do checksum para ${arquivo.nome}`,
+                httpCode.BadRequest
+              );
+            }
+
+            // O tamanho MEDIDO substitui o declarado, e é ele que segue para
+            // `acervo.arquivo`: quem grava o número é quem leu o arquivo.
+            arquivo.tamanho_mb = fileSizeMB;
+            arquivo.status = 'completed';
+            arquivo.error_message = null;
           }
         } catch (error) {
-          fileValid = false;
-          errorMessage = `Arquivo não encontrado: ${filePath}`;
           allValid = false;
-
-          await t.none(
-            `UPDATE acervo.upload_arquivo_temp SET status = 'failed', error_message = $1 WHERE id = $2`,
-            [errorMessage, arquivo.id]
-          );
-        }
-        
-        const fileResult = {
-          nome: arquivo.nome,
-          nome_arquivo: arquivo.nome_arquivo,
-          status: fileValid ? 'completed' : 'failed',
-          error_message: errorMessage
-        };
-        
-        if (arquivo.versao_id) {
-          fileResults[`versao_${arquivo.versao_id}`].files.push(fileResult);
-        } else if (arquivo.versao_temp_id) {
-          fileResults[`versao_temp_${arquivo.versao_temp_id}`].files.push(fileResult);
+          arquivo.status = 'failed';
+          arquivo.error_message = error instanceof AppError
+            ? error.message
+            : `Arquivo não encontrado: ${filePath}`;
         }
       }
-      
+
       if (allValid) {
         try {
           // O QUE OS `process*` CRIARAM DE VERDADE, em `add_version` e
-          // `add_product`: cada item liga o id da tabela temporária ao id REAL
-          // que o INSERT devolveu. O corpo da resposta sai daqui, e nunca de uma
-          // releitura das tabelas `*_temp`. As duas sequências são independentes,
-          // então o id temporário passa por id de acervo sem parecer errado.
+          // `add_product`: cada item traz o id REAL que o INSERT devolveu, mais
+          // os arquivos daquela versão. O corpo da resposta sai daqui.
           let criadas = [];
 
           switch (session.operation_type) {
             case 'add_files':
-              versoesParaMiniatura.push(...await processAddFiles(t, session, contexto));
+              versoesParaMiniatura.push(...await processAddFiles(t, session, payload, contexto));
               break;
             case 'replace_files':
-              versoesParaMiniatura.push(...await processReplaceFiles(t, session, contexto));
+              versoesParaMiniatura.push(...await processReplaceFiles(t, session, payload, contexto));
               break;
             case 'add_version':
-              criadas = await processAddVersion(t, session, contexto);
+              criadas = await processAddVersion(t, session, payload, contexto);
               versoesParaMiniatura.push(...criadas.map(c => c.versao_id));
               break;
             case 'add_product':
-              criadas = await processAddProduct(t, session, contexto);
+              criadas = await processAddProduct(t, session, payload, contexto);
               versoesParaMiniatura.push(...criadas.map(c => c.versao_id));
               break;
           }
 
-          await t.none(
-            `UPDATE acervo.upload_session 
-             SET status = 'completed', completed_at = NOW() 
-             WHERE id = $1`,
-            [session.id]
-          );
-          
+          // A SESSÃO SOME, na mesma transação dos INSERTs acima.
+          await t.none('DELETE FROM acervo.upload_session WHERE id = $1', [session.id]);
+
           let result;
           switch (session.operation_type) {
             case 'replace_files':
@@ -2134,19 +2063,15 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
                 session_uuid: sessionUuid,
                 operation_type: session.operation_type,
                 status: 'completed',
-                versoes: Object.values(fileResults).map(v => ({
-                  versao_id: v.versao_id,
-                  files: v.files
-                }))
+                versoes: porVersaoDeDestino(payload)
               };
               break;
-              
-            // O `versao_id` daqui é o id de `acervo.versao`, e o `produto_id` é o
-            // id de `acervo.produto`. Ele vem do INSERT que os `process*`
-            // acabaram de fazer, e não da linha de `upload_versao_temp`: aquela
-            // some quando o cron fecha a sessão, e o número dela cabe na mesma
-            // faixa do id real. Quem gravasse a resposta guardava um id que
-            // aponta para outra versão do acervo, ou para nenhuma.
+
+            // O `versao_id` daqui é o id de `acervo.versao`, e o `produto_id` é
+            // o id de `acervo.produto`. Ele vem do INSERT que os `process*`
+            // acabaram de fazer, e nunca de um id de linha do rascunho: aquele
+            // cabia na mesma faixa do id real, e quem gravasse a resposta
+            // guardava um ponteiro para outra versão do acervo, ou para nenhuma.
             case 'add_version':
               result = {
                 session_uuid: sessionUuid,
@@ -2155,7 +2080,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
                 versoes: criadas.map(c => ({
                   produto_id: c.produto_id,
                   versao_id: c.versao_id,
-                  files: (fileResults[`versao_temp_${c.versao_temp_id}`] || { files: [] }).files
+                  files: c.files
                 }))
               };
               break;
@@ -2163,15 +2088,17 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
             case 'add_product': {
               // Reagrupa por produto sem voltar ao banco. Todo produto do
               // `prepare` tem ao menos uma versão (o schema exige `min(1)`),
-              // então nenhum produto se perde no agrupamento.
+              // então nenhum produto se perde no agrupamento. A chave é a
+              // POSIÇÃO do produto no rascunho, que é o que dois produtos de
+              // mesmo nome ainda distingue.
               const porProduto = new Map();
               for (const c of criadas) {
-                if (!porProduto.has(c.produto_temp_id)) {
-                  porProduto.set(c.produto_temp_id, { produto_id: c.produto_id, versoes: [] });
+                if (!porProduto.has(c.produto_indice)) {
+                  porProduto.set(c.produto_indice, { produto_id: c.produto_id, versoes: [] });
                 }
-                porProduto.get(c.produto_temp_id).versoes.push({
+                porProduto.get(c.produto_indice).versoes.push({
                   versao_id: c.versao_id,
-                  files: (fileResults[`versao_temp_${c.versao_temp_id}`] || { files: [] }).files
+                  files: c.files
                 });
               }
 
@@ -2184,7 +2111,7 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
               break;
             }
           }
-          
+
           return result;
         } catch (error) {
           processingFailure = { sessionId: session.id, message: error.message };
@@ -2192,19 +2119,25 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
           throw error;
         }
       } else {
+        // O RASCUNHO VOLTA PARA O BANCO com o desfecho de cada arquivo dentro.
+        // É dele que a tela de uploads com problema lê QUAL arquivo falhou, e
+        // sem esta gravação ela só saberia que a sessão falhou.
         await t.none(
-          `UPDATE acervo.upload_session 
-           SET status = 'failed', error_message = 'Um ou mais arquivos falharam na validação', completed_at = NOW() 
-           WHERE id = $1`,
-          [session.id]
+          `UPDATE acervo.upload_session
+              SET status = 'failed',
+                  error_message = 'Um ou mais arquivos falharam na validação',
+                  completed_at = NOW(),
+                  payload = $2
+            WHERE id = $1`,
+          [session.id, payload]
         );
-        
+
         return {
           session_uuid: sessionUuid,
           operation_type: session.operation_type,
           status: 'failed',
           error_message: 'Um ou mais arquivos falharam na validação',
-          detalhes: Object.values(fileResults)
+          detalhes: detalhesDaFalha(payload)
         };
       }
     } catch (error) {
@@ -2262,14 +2195,62 @@ async function produtoPorVersao(t, versaoIds) {
   return new Map(linhas.map(v => [String(v.id), v.produto_id]));
 }
 
+/**
+ * Os parâmetros do INSERT em `acervo.arquivo`, a partir do arquivo do rascunho.
+ *
+ * Um lugar só para os quatro `process*`, porque a lista divergindo entre eles é
+ * o defeito que o rascunho em documento veio tirar. O `versaoId` entra à parte:
+ * em `add_files` e `replace_files` ele já está no arquivo, e nas outras duas ele
+ * só existe depois do INSERT da versão.
+ */
+const parametrosDoArquivo = (arquivo, versaoId, usuarioUuid) => ([
+  arquivo.nome,
+  arquivo.nome_arquivo,
+  versaoId,
+  arquivo.tipo_arquivo_id,
+  arquivo.volume_armazenamento_id,
+  arquivo.extensao,
+  arquivo.tamanho_mb,
+  arquivo.expected_checksum,
+  arquivo.metadado,
+  STATUS_ARQUIVO.CARREGADO, // tipo_status_id
+  arquivo.situacao_carregamento_id,
+  arquivo.descricao,
+  arquivo.crs_original,
+  usuarioUuid
+]);
+
+/** Os parâmetros do INSERT em `acervo.versao`, a partir da versão do rascunho. */
+const parametrosDaVersao = (versao, produtoId, usuarioUuid) => ([
+  versao.uuid_versao,
+  versao.versao,
+  versao.nome,
+  versao.tipo_versao_id,
+  versao.subtipo_produto_id,
+  produtoId,
+  versao.lote_id,
+  versao.metadado,
+  versao.descricao,
+  versao.orgao_produtor,
+  versao.palavras_chave || [],
+  versao.data_criacao,
+  versao.data_edicao,
+  versao.meta_pit_id,
+  versao.data_prevista,
+  usuarioUuid
+]);
+
+const SQL_INSERT_VERSAO = `INSERT INTO acervo.versao(
+  uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
+  lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
+  meta_pit_id, data_prevista, usuario_cadastramento_uuid, data_cadastramento
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+RETURNING *`;
+
 // Helper function for Scenario 1: Process add_files to main tables
-async function processAddFiles(t, session, contexto) {
+async function processAddFiles(t, session, payload, contexto) {
   try {
-    const arquivos = await t.any(
-      `SELECT * FROM acervo.upload_arquivo_temp
-       WHERE session_id = $1 AND versao_id IS NOT NULL`,
-      [session.id]
-    );
+    const arquivos = payload.arquivos || [];
 
     const versaoIds = [...new Set(arquivos.map(a => a.versao_id))];
     const donos = await produtoPorVersao(t, versaoIds);
@@ -2277,22 +2258,7 @@ async function processAddFiles(t, session, contexto) {
     for (const arquivo of arquivos) {
       const criado = await t.one(
         SQL_INSERT_ARQUIVO,
-        [
-          arquivo.nome, 
-          arquivo.nome_arquivo, 
-          arquivo.versao_id, 
-          arquivo.tipo_arquivo_id,
-          arquivo.volume_armazenamento_id, 
-          arquivo.extensao, 
-          arquivo.tamanho_mb,
-          arquivo.expected_checksum, 
-          arquivo.metadado, 
-          STATUS_ARQUIVO.CARREGADO, // tipo_status_id
-          arquivo.situacao_carregamento_id,
-          arquivo.descricao,
-          arquivo.crs_original,
-          session.usuario_uuid
-        ]
+        parametrosDoArquivo(arquivo, arquivo.versao_id, session.usuario_uuid)
       );
 
       // O usuário é o DONO DA SESSÃO, e não quem chamou o confirm: a sessão só
@@ -2314,13 +2280,9 @@ async function processAddFiles(t, session, contexto) {
 // confirm, faz soft-delete do arquivo que ocupa o slot (versao_id, nome_arquivo,
 // extensao) -- se houver -- e insere o novo. Atomico: sem meio-termo entre apagar
 // e recadastrar. Se o slot estiver vazio (upsert), apenas insere.
-async function processReplaceFiles(t, session, contexto) {
+async function processReplaceFiles(t, session, payload, contexto) {
   try {
-    const arquivos = await t.any(
-      `SELECT * FROM acervo.upload_arquivo_temp
-       WHERE session_id = $1 AND versao_id IS NOT NULL`,
-      [session.id]
-    );
+    const arquivos = payload.arquivos || [];
 
     const motivo = 'Substituído por nova versão do mesmo arquivo (replace-files)';
     const donos = await produtoPorVersao(t, arquivos.map(a => a.versao_id));
@@ -2382,22 +2344,7 @@ async function processReplaceFiles(t, session, contexto) {
       // Insere o novo arquivo no mesmo slot
       const criado = await t.one(
         SQL_INSERT_ARQUIVO,
-        [
-          arquivo.nome,
-          arquivo.nome_arquivo,
-          arquivo.versao_id,
-          arquivo.tipo_arquivo_id,
-          arquivo.volume_armazenamento_id,
-          arquivo.extensao,
-          arquivo.tamanho_mb,
-          arquivo.expected_checksum,
-          arquivo.metadado,
-          STATUS_ARQUIVO.CARREGADO,
-          arquivo.situacao_carregamento_id,
-          arquivo.descricao,
-          arquivo.crs_original,
-          session.usuario_uuid
-        ]
+        parametrosDoArquivo(arquivo, arquivo.versao_id, session.usuario_uuid)
       );
 
       await registrarArquivoCriado(t, criado, {
@@ -2415,54 +2362,26 @@ async function processReplaceFiles(t, session, contexto) {
 
 // Helper function for Scenario 2: Process add_version to main tables
 //
-// Devolve `[{ versao_temp_id, versao_id, produto_id }]`, e nao so a lista de
-// ids: quem monta a resposta do confirm precisa do id REAL da versao e do
-// vinculo com a linha temporaria que carrega o resultado dos arquivos. Sem esse
-// vinculo a resposta so tem o id da `upload_versao_temp`, que nao aponta para
-// versao nenhuma do acervo.
-async function processAddVersion(t, session, contexto) {
+// Devolve `[{ versao_id, produto_id, files }]`, e nao so a lista de ids: quem
+// monta a resposta do confirm precisa do id REAL da versao e do desfecho dos
+// arquivos DAQUELA versao. Nenhum id de rascunho sai daqui, e e de proposito: o
+// desenho antigo respondia o id da linha temporaria, que nao aponta para versao
+// nenhuma do acervo.
+async function processAddVersion(t, session, payload, contexto) {
   try {
-    const versoesTemp = await t.any(
-      `SELECT * FROM acervo.upload_versao_temp
-       WHERE session_id = $1 AND produto_id IS NOT NULL`,
-      [session.id]
-    );
-
     const criadas = [];
 
-    for (const versaoTemp of versoesTemp) {
+    for (const versaoRascunho of (payload.versoes || [])) {
       const versaoCriada = await t.one(
-        `INSERT INTO acervo.versao(
-          uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
-          lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
-          meta_pit_id, data_prevista, usuario_cadastramento_uuid, data_cadastramento
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
-        RETURNING *`,
-        [
-          versaoTemp.uuid_versao,
-          versaoTemp.versao,
-          versaoTemp.nome,
-          versaoTemp.tipo_versao_id,
-          versaoTemp.subtipo_produto_id,
-          versaoTemp.produto_id,
-          versaoTemp.lote_id,
-          versaoTemp.metadado,
-          versaoTemp.descricao,
-          versaoTemp.orgao_produtor,
-          versaoTemp.palavras_chave || [],
-          versaoTemp.data_criacao,
-          versaoTemp.data_edicao,
-          versaoTemp.meta_pit_id,
-          versaoTemp.data_prevista,
-          session.usuario_uuid
-        ]
+        SQL_INSERT_VERSAO,
+        parametrosDaVersao(versaoRascunho, versaoRascunho.produto_id, session.usuario_uuid)
       );
-      
+
       const versaoId = versaoCriada.id;
       criadas.push({
-        versao_temp_id: versaoTemp.id,
         versao_id: versaoId,
-        produto_id: versaoTemp.produto_id
+        produto_id: versaoRascunho.produto_id,
+        files: (versaoRascunho.arquivos || []).map(resumoDoArquivo)
       });
 
       await auditoriaCtrl.registrar(t, {
@@ -2474,35 +2393,14 @@ async function processAddVersion(t, session, contexto) {
         contexto
       });
 
-      const arquivos = await t.any(
-        `SELECT * FROM acervo.upload_arquivo_temp
-         WHERE session_id = $1 AND versao_temp_id = $2`,
-        [session.id, versaoTemp.id]
-      );
-
-      for (const arquivo of arquivos) {
+      for (const arquivo of (versaoRascunho.arquivos || [])) {
         const criado = await t.one(
           SQL_INSERT_ARQUIVO,
-          [
-            arquivo.nome,
-            arquivo.nome_arquivo,
-            versaoId,
-            arquivo.tipo_arquivo_id,
-            arquivo.volume_armazenamento_id, 
-            arquivo.extensao, 
-            arquivo.tamanho_mb,
-            arquivo.expected_checksum, 
-            arquivo.metadado, 
-            STATUS_ARQUIVO.CARREGADO, // tipo_status_id
-            arquivo.situacao_carregamento_id,
-            arquivo.descricao,
-            arquivo.crs_original,
-            session.usuario_uuid
-          ]
+          parametrosDoArquivo(arquivo, versaoId, session.usuario_uuid)
         );
 
         await registrarArquivoCriado(t, criado, {
-          produtoId: versaoTemp.produto_id,
+          produtoId: versaoRascunho.produto_id,
           usuarioUuid: session.usuario_uuid,
           contexto
         });
@@ -2517,21 +2415,19 @@ async function processAddVersion(t, session, contexto) {
 
 // Helper function for Scenario 3: Process add_product to main tables
 //
-// Devolve `[{ produto_temp_id, produto_id, versao_temp_id, versao_id }]`, uma
-// entrada por VERSAO criada, pela mesma razao do `processAddVersion`: a resposta
-// do confirm precisa do id real do produto e da versao, e do vinculo com as
-// linhas temporarias que carregam o resultado dos arquivos.
-async function processAddProduct(t, session, contexto) {
+// Devolve `[{ produto_indice, produto_id, versao_id, files }]`, uma entrada por
+// VERSAO criada, pela mesma razao do `processAddVersion`. O `produto_indice` e a
+// POSICAO do produto no rascunho, e serve so para reagrupar a resposta: dois
+// produtos de mesmo nome continuam distintos, e nenhum id de rascunho vaza para
+// o cliente.
+async function processAddProduct(t, session, payload, contexto) {
   try {
-    const produtosTemp = await t.any(
-      `SELECT * FROM acervo.upload_produto_temp
-       WHERE session_id = $1`,
-      [session.id]
-    );
-
     const criadas = [];
+    const produtos = payload.produtos || [];
 
-    for (const produtoTemp of produtosTemp) {
+    for (let indice = 0; indice < produtos.length; indice += 1) {
+      const produtoRascunho = produtos[indice];
+
       const { id: produtoId } = await t.one(
         `INSERT INTO acervo.produto(
           nome, mi, inom, tipo_escala_id, denominador_escala_especial, tipo_produto_id,
@@ -2539,19 +2435,19 @@ async function processAddProduct(t, session, contexto) {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9, ST_GeomFromEWKT($10))
         RETURNING id`,
         [
-          produtoTemp.nome,
-          produtoTemp.mi,
-          produtoTemp.inom,
-          produtoTemp.tipo_escala_id,
-          produtoTemp.denominador_escala_especial,
-          produtoTemp.tipo_produto_id,
-          produtoTemp.subtipo_produto_id ?? null,
-          produtoTemp.descricao,
+          produtoRascunho.nome,
+          produtoRascunho.mi,
+          produtoRascunho.inom,
+          produtoRascunho.tipo_escala_id,
+          produtoRascunho.denominador_escala_especial,
+          produtoRascunho.tipo_produto_id,
+          produtoRascunho.subtipo_produto_id ?? null,
+          produtoRascunho.descricao,
           session.usuario_uuid,
-          produtoTemp.geom
+          produtoRascunho.geom
         ]
       );
-      
+
       await auditoriaCtrl.registrar(t, {
         tabela: 'acervo.produto',
         registroId: produtoId,
@@ -2561,46 +2457,18 @@ async function processAddProduct(t, session, contexto) {
         contexto
       });
 
-      const versoesTemp = await t.any(
-        `SELECT * FROM acervo.upload_versao_temp
-         WHERE session_id = $1 AND produto_temp_id = $2`,
-        [session.id, produtoTemp.id]
-      );
-
-      for (const versaoTemp of versoesTemp) {
+      for (const versaoRascunho of (produtoRascunho.versoes || [])) {
         const versaoCriada = await t.one(
-          `INSERT INTO acervo.versao(
-            uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id, 
-            lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao, data_edicao,
-            meta_pit_id, data_prevista, usuario_cadastramento_uuid, data_cadastramento
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
-          RETURNING *`,
-          [
-            versaoTemp.uuid_versao,
-            versaoTemp.versao,
-            versaoTemp.nome,
-            versaoTemp.tipo_versao_id,
-            versaoTemp.subtipo_produto_id,
-            produtoId,  // Use the newly created produto ID
-            versaoTemp.lote_id,
-            versaoTemp.metadado,
-            versaoTemp.descricao,
-            versaoTemp.orgao_produtor,
-            versaoTemp.palavras_chave || [],
-            versaoTemp.data_criacao,
-            versaoTemp.data_edicao,
-            versaoTemp.meta_pit_id,
-            versaoTemp.data_prevista,
-            session.usuario_uuid
-          ]
+          SQL_INSERT_VERSAO,
+          parametrosDaVersao(versaoRascunho, produtoId, session.usuario_uuid)
         );
-        
+
         const versaoId = versaoCriada.id;
         criadas.push({
-          produto_temp_id: produtoTemp.id,
+          produto_indice: indice,
           produto_id: produtoId,
-          versao_temp_id: versaoTemp.id,
-          versao_id: versaoId
+          versao_id: versaoId,
+          files: (versaoRascunho.arquivos || []).map(resumoDoArquivo)
         });
 
         await auditoriaCtrl.registrar(t, {
@@ -2612,31 +2480,10 @@ async function processAddProduct(t, session, contexto) {
           contexto
         });
 
-        const arquivos = await t.any(
-          `SELECT * FROM acervo.upload_arquivo_temp
-           WHERE session_id = $1 AND versao_temp_id = $2`,
-          [session.id, versaoTemp.id]
-        );
-
-        for (const arquivo of arquivos) {
+        for (const arquivo of (versaoRascunho.arquivos || [])) {
           const criado = await t.one(
             SQL_INSERT_ARQUIVO,
-            [
-              arquivo.nome,
-              arquivo.nome_arquivo,
-              versaoId,
-              arquivo.tipo_arquivo_id,
-              arquivo.volume_armazenamento_id, 
-              arquivo.extensao, 
-              arquivo.tamanho_mb,
-              arquivo.expected_checksum, 
-              arquivo.metadado, 
-              STATUS_ARQUIVO.CARREGADO, // tipo_status_id
-              arquivo.situacao_carregamento_id,
-              arquivo.descricao,
-              arquivo.crs_original,
-              session.usuario_uuid
-            ]
+            parametrosDoArquivo(arquivo, versaoId, session.usuario_uuid)
           );
 
           await registrarArquivoCriado(t, criado, {
@@ -2669,19 +2516,21 @@ controller.getUploadSessions = async () => {
 /**
  * Cancela a sessao de upload do PLUGIN.
  *
+ * A SESSAO E APAGADA, pela mesma razao do confirm: cancelar e uma finalizacao, e
+ * a sessao cancelada nao e lida por nada. A tela de uploads com problema mostra
+ * so `failed`, e "a pessoa desistiu" nao e problema a investigar. Ate 06/08/2026
+ * ela virava `cancelled` e ficava para sempre.
+ *
  * Nao toca em disco, e isso e correto: nesta sessao quem copia os bytes e o
  * cliente, por SMB, e o servidor nunca escreveu nada que lhe caiba apagar. O
  * envio pelo NAVEGADOR nao passa por aqui (ele nao usa sessao), e o `.parcial`
  * dele e limpo na propria requisicao que falhou.
  *
- * So o `.parcial`. Arquivo ja renomeado para o nome definitivo NAO se apaga:
- * cancelar registra que a sessao nao vai virar cadastro, e nao autoriza destruir
- * byte que pode ser o de outra sessao ou de um confirm anterior.
- *
- * A limpeza acontece DEPOIS do commit, e falha nela vira log. Se rodasse dentro
- * da transacao, um `unlink` que falhasse derrubaria o cancelamento e deixaria a
- * sessao aberta -- trocando um arquivo temporario esquecido por uma sessao
- * pendurada, que e o problema maior.
+ * Arquivo ja copiado para o nome definitivo NAO se apaga: cancelar registra que
+ * a sessao nao vai virar cadastro, e nao autoriza destruir byte que pode ser o
+ * de outra sessao ou de um confirm anterior. O byte que o cliente copiou e nunca
+ * confirmou fica orfao no volume, e HOJE NINGUEM O RECOLHE: e defeito conhecido,
+ * e nao efeito desta funcao.
  */
 controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
   return db.conn.tx(async t => {
@@ -2706,25 +2555,51 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
       }
     }
 
-    await t.none(
-      `UPDATE acervo.upload_session
-       SET status = 'cancelled', error_message = 'Cancelado pelo usuário', completed_at = NOW()
-       WHERE id = $1`,
-      [session.id]
-    );
-
-    await t.none(
-      `UPDATE acervo.upload_arquivo_temp
-       SET status = 'cancelled', error_message = 'Sessão cancelada pelo usuário'
-       WHERE session_id = $1 AND status = 'pending'`,
-      [session.id]
-    );
+    await t.none('DELETE FROM acervo.upload_session WHERE id = $1', [session.id]);
 
     // Nao ha `.parcial` a apagar aqui. Ele so existe no envio pelo NAVEGADOR, e
     // aquele caminho nao usa sessao: metadados e bytes vao numa requisicao so, e
     // a limpeza do parcial acontece na propria requisicao que falhou. A sessao
     // cobre o caminho do PLUGIN, onde quem copia os bytes e o cliente e o
     // servidor nunca escreveu nada para limpar.
+  });
+};
+
+/**
+ * Fecha e apaga as sessoes de envio vencidas.
+ *
+ * ROTA PROPRIA, e nao mais carona na limpeza de DOWNLOAD. Ate 06/08/2026 esta
+ * limpeza rodava de dentro de `POST /api/acervo/cleanup-expired-downloads`, e
+ * quem quisesse limpar upload tinha de saber que a rota de download tambem fazia
+ * isso. Sao dois assuntos, e a sessao de envio mora aqui, ao lado do
+ * prepare-upload e do confirm-upload que a criam e a consomem.
+ *
+ * O NUMERO VEM DA FUNCAO DO BANCO, e nao de uma contagem feita antes de
+ * chama-la: contar antes conferia a aritmetica do JavaScript, e a funcao podia
+ * parar de escrever sem ninguem notar.
+ *
+ * @returns {Promise<{fechadas:number, apagadas:number}>}
+ */
+controller.cleanupExpiredUploads = async (usuarioUuid = null, contexto = null) => {
+  return db.conn.tx(async t => {
+    const { fechadas, apagadas } = await t.one(
+      'SELECT fechadas, apagadas FROM acervo.cleanup_expired_uploads()'
+    );
+
+    const resultado = { fechadas, apagadas };
+
+    // Toda execucao tem uma pessoa por tras, e "rodei e nao havia nada" e
+    // informacao de auditoria legitima.
+    if (usuarioUuid || fechadas > 0 || apagadas > 0) {
+      await auditoriaCtrl.registrarOperacao(t, {
+        tabela: 'acervo.upload_expirado',
+        resultado,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return resultado;
   });
 };
 

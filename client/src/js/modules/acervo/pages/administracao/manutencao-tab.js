@@ -6,6 +6,7 @@ import {
   atualizarViewsMaterializadas,
   criarViewsMaterializadas,
   limparDownloadsExpirados,
+  limparSessoesEnvioExpiradas,
   renomearPadrao,
   atualizarChecksum,
   contarMiniaturasPendentes,
@@ -210,7 +211,48 @@ export async function renderManutencaoTab(container) {
   });
 
   // -------------------------------------------------------------------------
-  // 3. Padronizar o nome físico dos arquivos
+  // 3. Sessões de envio expiradas
+  // -------------------------------------------------------------------------
+  //
+  // Cartão próprio desde 06/08/2026. Esta limpeza rodava de carona no botão de
+  // downloads, e o rótulo dele não dizia isso: quem quisesse limpar envio não
+  // tinha onde apertar.
+  const statusEnvios = criarStatus();
+
+  const limparEnviosBtn = el('button', {
+    className: 'btn btn--primary',
+    type: 'button',
+    onClick: () => acaoSimples(limparEnviosBtn, statusEnvios, {
+      confirmar: {
+        title: 'Limpar sessões de envio expiradas',
+        message: 'Fecha a sessão do plugin que venceu sem ninguém confirmar, e APAGA '
+          + 'a sessão já encerrada há mais de 30 dias. Nenhum arquivo é apagado, '
+          + 'nem no volume nem no acervo. Continuar?',
+        confirmLabel: 'Limpar',
+      },
+      executar: limparSessoesEnvioExpiradas,
+      feito: (dados) => `${dados.fechadas} sessão(ões) vencida(s) fechada(s), `
+        + `${dados.apagadas} encerrada(s) apagada(s).`,
+    }),
+  }, [svgIcon(ICONS.delete, 16), 'Limpar expiradas']);
+
+  const cartaoEnvios = cartao({
+    titulo: 'Sessões de envio expiradas',
+    descricao: 'O envio pelo plugin do QGIS abre uma sessão: o servidor reserva o destino, '
+      + 'o plugin copia os bytes por SMB e depois confirma. A sessão vale 24 horas.',
+    avisos: [
+      'Não apaga arquivo nenhum: se o plugin já copiou bytes para o volume e não '
+        + 'confirmou, eles continuam lá.',
+      'O envio pelo NAVEGADOR não abre sessão, e por isso não aparece aqui.',
+      'A sessão que o confirm fechou já foi apagada na hora. Aqui só sobram a que '
+        + 'venceu abandonada e a que falhou.',
+    ],
+    acoes: [limparEnviosBtn],
+    status: statusEnvios,
+  });
+
+  // -------------------------------------------------------------------------
+  // 4. Padronizar o nome físico dos arquivos
   // -------------------------------------------------------------------------
   //
   // A unica das quatro que nao e um clique. A rota trabalha por LOTE de
@@ -447,7 +489,7 @@ export async function renderManutencaoTab(container) {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Atualizar checksum por releitura
+  // 5. Atualizar checksum por releitura
   // -------------------------------------------------------------------------
   const statusChecksum = criarStatus();
   const saidaChecksum = el('div', { className: 'manutencao__saida' });
@@ -570,7 +612,7 @@ export async function renderManutencaoTab(container) {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Fila de miniaturas
+  // 6. Fila de miniaturas
   // -------------------------------------------------------------------------
   //
   // NAO HA AGENDAMENTO no sistema: a miniatura de uma versao nova é disparada no
@@ -650,6 +692,7 @@ export async function renderManutencaoTab(container) {
     el('div', { className: 'manutencao' }, [
       cartaoViews,
       cartaoDownloads,
+      cartaoEnvios,
       cartaoMiniaturas,
       cartaoRenome,
       cartaoChecksum,

@@ -34,12 +34,28 @@ vi.mock('@services/plataforma-service.js', async () => {
 });
 
 import { openNotaCreditoDialog } from '@modules/orcamento/pages/notas-credito/nota-credito-dialog.js';
+import {
+  updateNotaCredito,
+  getPdrItens,
+} from '@modules/orcamento/services/orcamento-service.js';
+import { getMetasPit } from '@services/plataforma-service.js';
 
 // Acha o select cujo .form-field tem o label com o texto dado.
 function selectByLabel(label) {
   const fields = [...document.querySelectorAll('.modal__body .form-field')];
   const field = fields.find(f => f.querySelector('.form-field__label')?.textContent.includes(label));
   return field ? field.querySelector('.form-field__select') : null;
+}
+
+// Todos os rotulos de campo do formulario aberto.
+function rotulos() {
+  return [...document.querySelectorAll('.modal__body .form-field__label')]
+    .map(l => l.textContent.trim());
+}
+
+function botao(texto) {
+  return [...document.querySelectorAll('button')]
+    .find(b => b.textContent.trim() === texto);
 }
 
 describe('openNotaCreditoDialog (edicao)', () => {
@@ -59,5 +75,43 @@ describe('openNotaCreditoDialog (edicao)', () => {
     expect(select.value).toBe('2');
     const selecionada = select.options[select.selectedIndex];
     expect(selecionada.textContent).toBe('Extra-PDR');
+  });
+
+  // A META SAIU DO FORMULARIO NA 1.31.0. Ela e a meta do item do PDR, e nao uma
+  // segunda escolha do operador: enquanto o campo existia, escolher uma meta
+  // diferente da do item gravava a contradicao sem aviso nenhum.
+  test('nao ha campo "Meta do PIT": ela vem do item do PDR', async () => {
+    await openNotaCreditoDialog({ ncId: 5, ano: 2026 });
+    await flush();
+    await flush();
+
+    // Rede contra o falso verde: o formulario tem de estar montado, senao a lista
+    // vazia satisfaria a assercao sem provar nada.
+    // 'Data de emissão' e opcional, entao o rotulo sai sem o '*' dos
+    // obrigatorios, do mesmo jeito que 'Meta do PIT' saia.
+    expect(rotulos()).toContain('Data de emissão');
+    expect(rotulos()).not.toContain('Meta do PIT');
+    expect(selectByLabel('Meta do PIT')).toBeNull();
+    // O dialog tambem nao busca mais a lista de metas.
+    expect(getMetasPit).not.toHaveBeenCalled();
+    // E continua buscando os itens do PDR, que e de onde a meta passa a vir.
+    expect(getPdrItens).toHaveBeenCalled();
+  });
+
+  test('salvar nao manda meta_pit_id no corpo', async () => {
+    await openNotaCreditoDialog({ ncId: 5, ano: 2026 });
+    await flush();
+    await flush();
+
+    botao('Salvar').click();
+    await flush();
+
+    expect(updateNotaCredito).toHaveBeenCalledTimes(1);
+    const corpo = updateNotaCredito.mock.calls[0][1];
+    // `in`, e nao `== null`: mandar a chave com null tambem seria mandar.
+    expect('meta_pit_id' in corpo).toBe(false);
+    // A NC lida e Extra-PDR (classificacao 2), entao nem item do PDR vai.
+    expect('pdr_item_id' in corpo).toBe(false);
+    expect(corpo.classificacao_id).toBe(2);
   });
 });

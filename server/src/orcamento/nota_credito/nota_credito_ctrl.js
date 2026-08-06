@@ -36,9 +36,9 @@ const mensagemFk = err => {
   if (detalhe.includes('(classificacao_id)')) {
     return 'A classificacao informada nao existe'
   }
-  if (detalhe.includes('(meta_pit_id)')) {
-    return 'A meta do PIT informada nao existe'
-  }
+  // Nao ha caso `(meta_pit_id)`: a NC nao tem essa coluna desde a 1.31.0. A meta
+  // dela vem do item do PDR, entao a referencia que pode ser invalida e a do
+  // item, logo abaixo.
   if (detalhe.includes('(pdr_item_id)')) {
     return 'O item do PDR informado nao existe'
   }
@@ -98,12 +98,15 @@ controller.listar = async (filtros = {}) => {
             nc.valor_nc, nc.valor_recolhido, nc.prazo_empenho,
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
-            nc.pdr_item_id, nc.meta_pit_id,
-            mp.numero_meta,
-            -- O ITEM SAI NULO, e e o dado: a NC aponta a META inteira
+            nc.pdr_item_id,
+            -- A META VEM DO ITEM DO PDR, e nao de coluna da NC. Ela continua
+            -- saindo com o mesmo nome de campo porque a tela, o CLI e o
+            -- relatorio a leem assim; o que mudou e a FONTE, que agora e uma so.
+            -- (Sem crase neste comentario: template literal.)
+            pdi.meta_pit_id, mp.numero_meta,
+            -- O ITEM SAI NULO, e e o dado: o item do PDR aponta a META inteira
             -- (pit.meta), e nao um item dela. A coluna fica na resposta
             -- porque a tela e o CLI a leem, e sai na tela como '-'.
-            -- (Sem crase neste comentario: template literal.)
             NULL::varchar AS meta_item, mp.nome AS meta_descricao,
             nc.marcador, nc.nc_complementada_id,
             -- Empenhado LIQUIDO contra esta NC, nas duas formas de vinculo: as
@@ -138,11 +141,16 @@ controller.listar = async (filtros = {}) => {
      INNER JOIN dominio.natureza_despesa AS nd ON nd.code = nc.cod_nd
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
+     -- A CADEIA nota_credito -> pdr_item -> pit.meta. Sao dois LEFT JOIN porque
+     -- os dois elos faltam legitimamente: a NC Extra-PDR nao tem item, e o item
+     -- do PDR de 2025 nao tem meta.
+     --
      -- A TABELA pit.meta, e nao a view. O nome da meta era a descricao de uma
      -- declaracao de revisao e so saia por meta_vigente; desde 1.30.0 ele e
-     -- pit.meta.nome. A view virou do ITEM, e a NC aponta a META: juntar por ela
+     -- pit.meta.nome. A view virou do ITEM, e o PDR aponta a META: juntar por ela
      -- devolveria zero linha para toda NC. (Sem crase: template literal.)
-     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
+     LEFT JOIN orcamento.pdr_item AS pdi ON pdi.id = nc.pdr_item_id
+     LEFT JOIN pit.meta AS mp ON mp.id = pdi.meta_pit_id
      LEFT JOIN orcamento.arquivo AS af ON af.nota_credito_id = nc.id
      WHERE ($<ano> IS NULL OR nc.ano = $<ano>)
        AND ($<classificacaoId> IS NULL OR nc.classificacao_id = $<classificacaoId>)
@@ -164,12 +172,10 @@ controller.getPorId = async id => {
             pi.nome AS pi_nome,
             nc.ug_emitente,
             ug.nome AS ug_nome,
-            nc.finalidade_historico, nc.meta_pit_id,
-            mp.numero_meta,
-            -- O ITEM SAI NULO, e e o dado: a NC aponta a META inteira
-            -- (pit.meta), e nao um item dela. A coluna fica na resposta
-            -- porque a tela e o CLI a leem, e sai na tela como '-'.
+            nc.finalidade_historico,
+            -- A meta vem do item do PDR; ver o comentario do listar.
             -- (Sem crase neste comentario: template literal.)
+            pdi.meta_pit_id, mp.numero_meta,
             NULL::varchar AS meta_item, mp.nome AS meta_descricao,
             nc.valor_nc, nc.valor_recolhido, nc.doc_ro, nc.prazo_empenho,
             nc.classificacao_id,
@@ -183,8 +189,9 @@ controller.getPorId = async id => {
      INNER JOIN dominio.classificacao_nc AS cl ON cl.code = nc.classificacao_id
      LEFT JOIN dominio.plano_interno AS pi ON pi.code = nc.cod_pi
      LEFT JOIN dominio.ug AS ug ON ug.code = nc.ug_emitente
-     -- Ver o comentario do listar: a NC aponta a META, e o nome dela e coluna.
-     LEFT JOIN pit.meta AS mp ON mp.id = nc.meta_pit_id
+     -- Ver o comentario do listar: a meta vem pelo item do PDR.
+     LEFT JOIN orcamento.pdr_item AS pdi ON pdi.id = nc.pdr_item_id
+     LEFT JOIN pit.meta AS mp ON mp.id = pdi.meta_pit_id
      WHERE nc.id = $<id>`,
     { id }
   )
@@ -204,12 +211,12 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       const criada = await t.one(
         `INSERT INTO orcamento.nota_credito
           (numero, ano, data_emissao, cod_nd, ptres, fonte, cod_pi, ug_emitente,
-           finalidade_historico, meta_pit_id, valor_nc, valor_recolhido, doc_ro, prazo_empenho,
+           finalidade_historico, valor_nc, valor_recolhido, doc_ro, prazo_empenho,
            classificacao_id, pdr_item_id, nc_complementada_id, marcador, observacao,
            usuario_cadastramento_uuid)
          VALUES
           ($<numero>, $<ano>, $<dataEmissao>, $<codNd>, $<ptres>, $<fonte>, $<codPi>,
-           $<ugEmitente>, $<finalidadeHistorico>, $<metaPitId>, $<valorNc>, $<valorRecolhido>, $<docRo>,
+           $<ugEmitente>, $<finalidadeHistorico>, $<valorNc>, $<valorRecolhido>, $<docRo>,
            $<prazoEmpenho>, $<classificacaoId>, $<pdrItemId>, $<ncComplementadaId>,
            $<marcador>, $<observacao>, $<usuarioUuid>)
          RETURNING *`,
@@ -223,7 +230,6 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
           codPi: dados.cod_pi || null,
           ugEmitente: dados.ug_emitente || null,
           finalidadeHistorico: dados.finalidade_historico || null,
-          metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
           valorNc: dados.valor_nc,
           valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
           docRo: dados.doc_ro || null,
@@ -275,7 +281,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            numero = $<numero>, ano = $<ano>, data_emissao = $<dataEmissao>,
            cod_nd = $<codNd>, ptres = $<ptres>, fonte = $<fonte>, cod_pi = $<codPi>,
            ug_emitente = $<ugEmitente>, finalidade_historico = $<finalidadeHistorico>,
-           meta_pit_id = $<metaPitId>, valor_nc = $<valorNc>,
+           valor_nc = $<valorNc>,
            valor_recolhido = $<valorRecolhido>, doc_ro = $<docRo>,
            prazo_empenho = $<prazoEmpenho>, classificacao_id = $<classificacaoId>,
            pdr_item_id = $<pdrItemId>, nc_complementada_id = $<ncComplementadaId>,
@@ -295,7 +301,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           codPi: dados.cod_pi || null,
           ugEmitente: dados.ug_emitente || null,
           finalidadeHistorico: dados.finalidade_historico || null,
-          metaPitId: dados.meta_pit_id != null ? dados.meta_pit_id : null,
           valorNc: dados.valor_nc,
           valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
           docRo: dados.doc_ro || null,

@@ -52,8 +52,25 @@ dotenv.config({
 // dois formatos: num banco 1.29.0 toda consulta do PIT falharia com "relação
 // pit.meta_item não existe", e as cinco chaves estrangeiras de trabalho ainda
 // apontariam a tabela errada. Aqui o piso é o próprio contrato.
-const VERSION = '1.30.0'
-const MIN_DATABASE_VERSION = '1.30.0'
+// A 1.31.0 SOBE O PISO, e por REMOÇÃO de coluna. É a exceção à regra do
+// parágrafo da 1.26.0: remover só não sobe o piso quando o código nunca leu o
+// que saiu, e aqui ele lia. `orcamento.nota_credito.meta_pit_id` sai, e a meta
+// da NC passa a ser lida por JOIN através de `orcamento.pdr_item`. Num banco
+// 1.30.0 este código gravaria a NC sem a coluna que lá ainda é a única fonte da
+// meta, e a grade do PIT somaria crédito por um caminho que lá não existe: a
+// tela mostraria zero onde há dinheiro. O contrário também quebra, e mais cedo:
+// um servidor 1.30.0 contra um banco 1.31.0 falha no INSERT da NC, porque a
+// coluna não está mais lá.
+//
+// A 1.32.0 SOBE O PISO. O rascunho do envio pelo plugin sai de três tabelas
+// espelho (`upload_produto_temp`, `upload_versao_temp`, `upload_arquivo_temp`) e
+// passa a viver em `acervo.upload_session.payload`, um JSONB. Este código lê e
+// escreve só a coluna nova: num banco 1.31.0 todo `prepare-upload` falharia com
+// "coluna payload não existe". O contrário quebra igual, e mais tarde: um
+// servidor 1.31.0 contra um banco 1.32.0 gravaria a sessão e procuraria as
+// tabelas espelho, que lá não existem mais.
+const VERSION = '1.32.0'
+const MIN_DATABASE_VERSION = '1.32.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

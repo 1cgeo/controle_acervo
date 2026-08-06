@@ -37,7 +37,8 @@ import {
  * destino e gravar, e portanto não há o que uma sessão cobrisse. É o mesmo
  * raciocínio que `/catalogar/product` já registrou. Ou tudo entra no acervo, ou
  * nada entra, e o que falha não deixa linha pendurada em `upload_session` nem
- * `.parcial` esperando o cron de 24 h.
+ * `.parcial` esperando alguém rodar a limpeza. Não há cron: a sessão vence em
+ * 24 h, e quem a fecha é o botão de manutenção.
  *
  * O custo, deliberado: a queda no meio custa o envio inteiro, e não só o arquivo
  * que falhou. Vale porque o teto do caminho web é de poucos GB e a mediana em

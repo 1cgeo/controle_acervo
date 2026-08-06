@@ -32,6 +32,10 @@ models.listarQuery = Joi.object().keys({
 //     NAO a celula orcamentaria. 1 = PDR (acao 3.2), 2 = Extra-PDR (acao 3.7).
 //     Quando classificacao = PDR, pdr_item_id casa o item previsto (rotulo 1D/1E...);
 //     quando Extra-PDR, pdr_item_id obrigatoriamente fica null.
+//   * O ITEM DO PDR E O UNICO ELO COM O PIT. A meta que a NC financia e a meta do
+//     item dela, lida por JOIN. A NC Extra-PDR nao tem item, logo nao tem meta:
+//     ela e o credito que o PDR nao previu, e o vinculo dela com o PIT nunca
+//     passou pelo PDR.
 const camposBase = {
   numero: Joi.string().max(20).required(),
   ano: Joi.number().integer().strict().required(),
@@ -44,7 +48,16 @@ const camposBase = {
   cod_pi: Joi.string().max(20).allow(null, ''),
   ug_emitente: Joi.string().max(10).allow(null, ''),
   finalidade_historico: Joi.string().allow(null, ''),
-  meta_pit_id: Joi.number().integer().strict().allow(null),
+  // NAO HA `meta_pit_id`. A NC nao declara meta desde a 1.31.0: ela declara o
+  // item do PDR, e a meta se le por ele. Enquanto os dois campos existiam lado a
+  // lado, o cliente podia mandar uma meta que o item nao financia, e nada
+  // acusava. Estava acontecendo: 4 das 29 NCs que tinham os dois discordavam.
+  // O campo tambem nao entra com `.strip()`, e nao precisa: quem continuar
+  // mandando `meta_pit_id` cai no stripUnknown de `utils/schema_validation.js`,
+  // que descarta a chave, registra no log e a devolve em `avisos` no envelope da
+  // resposta. O cliente antigo fica sabendo que o dado nao foi gravado, em vez
+  // de achar que gravou. Declara-lo aqui so para descartar seria uma segunda
+  // regra dizendo o que a primeira ja diz.
   // valor recebido; ver comentario acima sobre devolucao
   valor_nc: Joi.number().positive().strict().required(),
   // valor recolhido/devolvido do credito (informado na NC); informativo, nao altera valor_nc.

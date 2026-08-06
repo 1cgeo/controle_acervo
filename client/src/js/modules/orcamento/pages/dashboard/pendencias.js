@@ -54,8 +54,11 @@ export const PENDENCIAS = [
     destino: 'RPNP',
   },
   {
-    chave: 'nc_sem_meta',
-    rotulo: 'Notas de crédito sem meta do PIT',
+    // O ITEM DO PDR, E NÃO A META. A meta da NC vem do item desde a 1.31.0, e a
+    // NC Extra-PDR não tem item nem meta por definição: contá-la como pendência
+    // acusaria 34 das 95 NCs de produção sem que houvesse nada a corrigir.
+    chave: 'nc_sem_pdr_item',
+    rotulo: 'Notas de crédito do PDR sem item do PDR',
     deData: false,
     rota: '#/orcamento/notas_credito',
     destino: 'Notas de Crédito',

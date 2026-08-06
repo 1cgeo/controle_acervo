@@ -64,6 +64,23 @@
  * campo legitimo, ou (se afrouxado) deixaria passar o erro de digitacao num nome
  * de coluna de verdade, que e o que ele existe para pegar.
  *
+ * CAMPO HISTORICO (`historico: true`). O terceiro caso, e NAO se confunde com o
+ * sintetico: aqui a coluna EXISTIU e foi removida por uma migracao. Ninguem
+ * monta o campo, e evento NOVO nenhum o traz; os eventos JA GRAVADOS trazem, e
+ * `auditoria.evento` e append-only, sem UPDATE nem DELETE para a aplicacao.
+ * Apagar a declaracao faria a ficha daquele registro cair no fallback de
+ * `renderizar.js` e exibir o nome cru da coluna onde hoje exibe o rotulo. O
+ * primeiro caso e `orcamento.nota_credito.meta_pit_id`, que saiu na 1.31.0
+ * quando a meta da NC passou a vir do item do PDR.
+ *
+ * A MARCA E OBRIGATORIA pela mesma razao do `sintetico`, e a varredura tem as
+ * duas pontas: campo sem coluna e sem marca REPROVA, e campo marcado
+ * `historico` cuja coluna ainda existe TAMBEM reprova. A segunda metade e o que
+ * impede a marca de virar um jeito de calar o teste.
+ *
+ * COSTUME: o rotulo diz ate quando o campo valeu ('Meta do PIT (até 1.30.0)'),
+ * senao o leitor da ficha antiga nao tem como saber que aquilo nao existe mais.
+ *
  * POR QUE `entidade` NAO TRADUZ. O nome do cliente pode ter mudado depois do
  * evento. Mostrar "12o BE Cmb" ao lado de um evento de um ano atras afirma que o
  * pedido era daquele cliente com aquele nome, e pode ser falso. Dominio traduz

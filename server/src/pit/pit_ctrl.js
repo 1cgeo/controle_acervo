@@ -303,29 +303,39 @@ const gravarDeclaracao = async (
 }
 
 // O CAMINHO DE VOLTA do orcamento para o PIT: quanto credito cada meta recebeu.
-// A NC e o item do PDR apontam a meta, e sem isto a tela diria o que a Divisao
-// promete sem dizer o que financia a promessa.
+// O item do PDR aponta a meta, e sem isto a tela diria o que a Divisao promete
+// sem dizer o que financia a promessa.
 //
-// O CREDITO E DA META, E NAO DO ITEM, e por isso a soma casa por `meta_id` e nao
-// por `id`. Foi medido em 2026-08-05: as 50 NCs e os 17 itens do PDR com vinculo
-// apontam todos a meta inteira, e nenhum aponta um item. O credito e autorizado
-// para a Meta 1; qual dos 11 itens dela ele financia e informacao que o
-// orcamento nao tem.
+// O CREDITO CHEGA PELO ITEM DO PDR, E NAO POR COLUNA DA NC. Ate a 1.30.0 a NC
+// tinha `meta_pit_id` propria, e a soma daqui a lia direto. Eram duas afirmacoes
+// paralelas sobre a mesma coisa, e elas discordavam: medido em 2026-08-06, 4 das
+// 29 NCs que tinham os dois campos apontavam meta diferente da do seu item de
+// PDR. A coluna saiu, e agora ha um caminho so, o que o chefe da DGEO fixou: em
+// orcamento a ligacao com o PIT e o PDR.
+//
+// O CREDITO E DA META, E NAO DO ITEM DO PIT, e por isso a soma casa por
+// `meta_id` e nao por `id`. O item do PDR e uma linha por ND ('diarias',
+// 'passagens'), e nao um recorte do trabalho: nas metas 3 e 5 de 2026 ele SOBRA
+// sobre os itens do PIT (6 contra 2, e 5 contra 3), entao nao pode ser um
+// detalhamento deles.
 //
 // A CONSEQUENCIA NA TELA e que os 11 itens da Meta 1 mostram o MESMO credito, e
 // isso e o que o dado diz. Somar por item exigiria ratear, e rateio inventado
 // vira numero plausivel e falso.
 //
 // SUBSELECT, e nao JOIN: a meta SEM credito tem de continuar na lista, e um
-// INNER JOIN a apagaria. Sao essas as metas que interessam ao chefe.
+// INNER JOIN a apagaria. Sao essas as metas que interessam ao chefe. O JOIN com
+// `pdr_item` mora DENTRO do subselect pela mesma razao.
 //
 // `credito_nc` leva COALESCE para zero porque `valor_nc` e NOT NULL: nenhuma NC
-// apontando a meta significa credito zero, e isso e fato. `pdr_autorizado` NAO
+// chegando a meta significa credito zero, e isso e fato. `pdr_autorizado` NAO
 // leva COALESCE: `valor_autorizado` e anulavel, e a soma nula quer dizer "nao
 // informado", que a tela pinta como '-'. Afirmar zero ali seria mentir.
 const agregadosDoOrcamento = `
-  COALESCE((SELECT SUM(nc.valor_nc) FROM orcamento.nota_credito AS nc
-             WHERE nc.meta_pit_id = pit.meta_vigente.meta_id), 0) AS credito_nc,
+  COALESCE((SELECT SUM(nc.valor_nc)
+              FROM orcamento.nota_credito AS nc
+              INNER JOIN orcamento.pdr_item AS pin ON pin.id = nc.pdr_item_id
+             WHERE pin.meta_pit_id = pit.meta_vigente.meta_id), 0) AS credito_nc,
   (SELECT SUM(pi.valor_autorizado) FROM orcamento.pdr_item AS pi
     WHERE pi.meta_pit_id = pit.meta_vigente.meta_id) AS pdr_autorizado`
 

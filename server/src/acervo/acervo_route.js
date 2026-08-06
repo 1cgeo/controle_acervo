@@ -241,8 +241,12 @@ router.post(
   })
 )
 
-// Limpeza do que expirou: downloads E uploads, sob comando. Sempre há uma
-// pessoa por trás, e ela aparece no rastro.
+// Limpeza dos DOWNLOADS expirados, sob comando. Sempre há uma pessoa por trás, e
+// ela aparece no rastro.
+//
+// A limpeza das SESSÕES DE ENVIO saiu daqui em 06/08/2026 e tem rota própria,
+// `POST /api/arquivo/cleanup-expired-uploads`. Ela pegava carona nesta, e quem
+// procurasse a limpeza de envio não a encontrava atrás de um nome de download.
 router.post(
   '/cleanup-expired-downloads',
   verifyAdmin,
@@ -251,9 +255,9 @@ router.post(
     // confirmação era eco da chamada, e não medida do que mudou.
     const dados = await acervoCtrl.cleanupExpiredDownloads(req.usuarioUuid, req.contexto)
 
-    const parte = (n, um, varios) => (n === 1 ? `1 ${um}` : `${n} ${varios}`)
-    const msg = `${parte(dados.fechados, 'download expirado fechado', 'downloads expirados fechados')}`
-      + `, ${parte(dados.uploads_fechados, 'sessão de upload expirada fechada', 'sessões de upload expiradas fechadas')}`
+    const msg = dados.fechados === 1
+      ? '1 download expirado fechado'
+      : `${dados.fechados} downloads expirados fechados`
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

@@ -103,10 +103,8 @@ const cleanTestData = async () => {
     await t.none('TRUNCATE ponto_controle.arquivo CASCADE')
     await t.none('TRUNCATE ponto_controle.ponto CASCADE')
 
-    // Acervo upload temp tables
-    await t.none('TRUNCATE acervo.upload_arquivo_temp CASCADE')
-    await t.none('TRUNCATE acervo.upload_versao_temp CASCADE')
-    await t.none('TRUNCATE acervo.upload_produto_temp CASCADE')
+    // Sessão de envio do acervo. Uma tabela só: o rascunho inteiro mora no
+    // `payload` JSONB dela desde 06/08/2026.
     await t.none('TRUNCATE acervo.upload_session CASCADE')
 
     // Acervo main tables

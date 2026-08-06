@@ -1,18 +1,20 @@
 'use strict'
 
-// O `confirm-upload` DEVOLVE O ID DE `acervo.versao`, NUNCA O DA TABELA TEMPORARIA.
+// O `confirm-upload` DEVOLVE O ID DE `acervo.versao`, NUNCA UM ID DE RASCUNHO.
 //
 // CONTROLE NEGATIVO. Ate 2026-08-05 os caminhos `add_version` e `add_product`
 // respondiam com `upload_versao_temp.id` no campo `versao_id`, e com
 // `produto_temp_id`/`versao_temp_id` no lugar dos ids do acervo. As duas
-// sequencias sao independentes, entao o numero errado passa por id de acervo
+// sequencias eram independentes, entao o numero errado passava por id de acervo
 // sem parecer errado: quem gravasse a resposta guardava um ponteiro para outra
-// versao, ou para nenhuma. As linhas `*_temp` ainda somem quando o cron fecha a
-// sessao, e ai nao sobra nem de onde reconstruir.
+// versao, ou para nenhuma.
 //
-// Este teste falha com o codigo antigo: os ids temporarios aqui (70, 71, 40) sao
-// DIFERENTES dos reais (9001, 9002, 500), e a assercao cobra o real. Sem essa
-// diferenca a comparacao seria satisfeita pelos dois codigos e nao provaria nada.
+// Desde 06/08/2026 o rascunho e um JSONB em `acervo.upload_session.payload`, e
+// nao ha mais id de rascunho a vazar. O teste continua valendo, e o cenario
+// abaixo ainda prova o que interessa: os ids da RESPOSTA sao os que os INSERTs
+// devolveram, e nao a posicao do item no rascunho. As posicoes aqui (0, 1) sao
+// diferentes dos ids reais (9001, 9002, 500), e a assercao cobra o real. Sem
+// essa diferenca a comparacao seria satisfeita pelos dois codigos.
 //
 // Banco mockado de proposito: o pacote `rapido` roda sem PostgreSQL, e o que se
 // prova aqui e a MONTAGEM da resposta, nao o SQL.
@@ -61,10 +63,11 @@ const TILESERVER = 9
  *
  * Guarda os ids que "o banco" devolveu em cada INSERT, para o teste comparar a
  * resposta contra o que foi de fato gravado, e nao contra um numero digitado
- * duas vezes.
+ * duas vezes. Guarda tambem se a sessao foi APAGADA, que e o outro contrato do
+ * confirm.
  */
 function fazerTransacao (estado) {
-  const gravados = { produtos: [], versoes: [], arquivos: [] }
+  const gravados = { produtos: [], versoes: [], arquivos: [], sessoesApagadas: [] }
   let proximoProduto = 500
   let proximaVersao = 9001
   let proximoArquivo = 300
@@ -74,25 +77,7 @@ function fazerTransacao (estado) {
       if (/FROM acervo\.upload_session/.test(sql)) return estado.session
       throw new Error(`oneOrNone inesperado: ${sql}`)
     },
-    any: async (sql, params) => {
-      if (/FROM acervo\.upload_arquivo_temp/.test(sql)) {
-        if (/versao_temp_id = \$2/.test(sql)) {
-          return estado.arquivos.filter(a => a.versao_temp_id === params[1])
-        }
-        return estado.arquivos
-      }
-      if (/FROM acervo\.upload_versao_temp/.test(sql)) {
-        if (/produto_temp_id = \$2/.test(sql)) {
-          return estado.versoesTemp.filter(v => v.produto_temp_id === params[1])
-        }
-        if (/produto_id IS NOT NULL/.test(sql)) {
-          return estado.versoesTemp.filter(v => v.produto_id != null)
-        }
-        return estado.versoesTemp
-      }
-      if (/FROM acervo\.upload_produto_temp/.test(sql)) return estado.produtosTemp
-      throw new Error(`any inesperado: ${sql}`)
-    },
+    any: async () => [],
     one: async (sql) => {
       if (/INSERT INTO acervo\.produto\(/.test(sql)) {
         const linha = { id: proximoProduto++ }
@@ -111,7 +96,12 @@ function fazerTransacao (estado) {
       }
       throw new Error(`one inesperado: ${sql}`)
     },
-    none: async () => undefined
+    none: async (sql, params) => {
+      if (/DELETE FROM acervo\.upload_session/.test(sql)) {
+        gravados.sessoesApagadas.push(params[0])
+      }
+      return undefined
+    }
   }
 
   return { t, gravados }
@@ -123,14 +113,12 @@ function ligarTransacao (estado) {
   return gravados
 }
 
-const arquivoTemp = (id, versaoTempId) => ({
-  id,
-  versao_id: null,
-  versao_temp_id: versaoTempId,
-  nome: `Tileserver ${id}`,
-  nome_arquivo: `tile_${id}`,
+const arquivoDoRascunho = (marca) => ({
+  nome: `Tileserver ${marca}`,
+  nome_arquivo: `tile_${marca}`,
   tipo_arquivo_id: TILESERVER,
   status: 'pending',
+  error_message: null,
   destination_path: null,
   expected_checksum: null,
   metadado: {},
@@ -138,13 +126,13 @@ const arquivoTemp = (id, versaoTempId) => ({
   descricao: '',
   crs_original: null,
   volume_armazenamento_id: null,
+  extensao: null,
   tamanho_mb: null
 })
 
-const versaoTemp = (id, extra) => ({
-  id,
-  uuid_versao: `uuid-da-versao-${id}`,
-  versao: `1-DSG-${id}`,
+const versaoDoRascunho = (marca, extra = {}) => ({
+  uuid_versao: `uuid-da-versao-${marca}`,
+  versao: `1-DSG-${marca}`,
   nome: null,
   tipo_versao_id: 1,
   subtipo_produto_id: 24,
@@ -155,9 +143,23 @@ const versaoTemp = (id, extra) => ({
   palavras_chave: [],
   data_criacao: '2026-01-10',
   data_edicao: '2026-02-10',
-  produto_id: null,
-  produto_temp_id: null,
+  meta_pit_id: null,
+  data_prevista: null,
+  arquivos: [arquivoDoRascunho(marca)],
   ...extra
+})
+
+const produtoDoRascunho = (nome, mi, inom, versoes) => ({
+  nome,
+  mi,
+  inom,
+  tipo_escala_id: 1,
+  denominador_escala_especial: null,
+  tipo_produto_id: 2,
+  subtipo_produto_id: null,
+  descricao: '',
+  geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))',
+  versoes
 })
 
 beforeEach(() => {
@@ -166,26 +168,25 @@ beforeEach(() => {
 })
 
 describe('confirm-upload / add_version: o versao_id e o de acervo.versao', () => {
-  // DUAS versoes, com ids temporarios (70, 71) diferentes dos reais (9001,
-  // 9002). Uma so nao provaria a correspondencia, porque qualquer id certo
-  // casaria com qualquer outro id certo.
+  // DUAS versoes, para a correspondencia ser testavel: com uma so, qualquer id
+  // certo casaria com qualquer outro id certo.
   const estado = () => ({
     session: {
       id: 12,
       uuid_session: SESSAO,
       usuario_uuid: USUARIO,
       operation_type: 'add_version',
-      status: 'pending'
-    },
-    versoesTemp: [
-      versaoTemp(70, { produto_id: 8100 }),
-      versaoTemp(71, { produto_id: 8100 })
-    ],
-    produtosTemp: [],
-    arquivos: [arquivoTemp(1, 70), arquivoTemp(2, 71)]
+      status: 'pending',
+      payload: {
+        versoes: [
+          versaoDoRascunho('a', { produto_id: 8100 }),
+          versaoDoRascunho('b', { produto_id: 8100 })
+        ]
+      }
+    }
   })
 
-  it('devolve o id REAL da versao, e nunca o da upload_versao_temp', async () => {
+  it('devolve o id REAL da versao, e nunca a posicao no rascunho', async () => {
     const gravados = ligarTransacao(estado())
 
     const res = await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
@@ -197,10 +198,10 @@ describe('confirm-upload / add_version: o versao_id e o de acervo.versao', () =>
     expect(res.versoes.map(v => v.versao_id)).toEqual(gravados.versoes)
     expect(gravados.versoes).toEqual([9001, 9002])
 
-    // E o controle negativo explicito: o codigo antigo respondia 70 e 71.
-    expect(res.versoes.map(v => v.versao_id)).not.toEqual([70, 71])
+    // E o controle negativo explicito: nem a posicao no rascunho, nem os ids
+    // temporarios que o codigo antigo respondia.
     for (const v of res.versoes) {
-      expect([70, 71]).not.toContain(v.versao_id)
+      expect([0, 1, 70, 71]).not.toContain(v.versao_id)
     }
   })
 
@@ -212,13 +213,13 @@ describe('confirm-upload / add_version: o versao_id e o de acervo.versao', () =>
     expect(res.versoes.map(v => v.produto_id)).toEqual([8100, 8100])
   })
 
-  it('cada versao leva os arquivos da SUA linha temporaria', async () => {
+  it('cada versao leva os arquivos da SUA linha do rascunho', async () => {
     ligarTransacao(estado())
 
     const res = await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
 
-    expect(res.versoes[0].files.map(f => f.nome_arquivo)).toEqual(['tile_1'])
-    expect(res.versoes[1].files.map(f => f.nome_arquivo)).toEqual(['tile_2'])
+    expect(res.versoes[0].files.map(f => f.nome_arquivo)).toEqual(['tile_a'])
+    expect(res.versoes[1].files.map(f => f.nome_arquivo)).toEqual(['tile_b'])
   })
 
   it('a miniatura dispara com o id REAL da versao', async () => {
@@ -227,6 +228,16 @@ describe('confirm-upload / add_version: o versao_id e o de acervo.versao', () =>
     await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
 
     expect(mockMiniatura.gerarParaVersoes).toHaveBeenCalledWith([9001, 9002])
+  })
+
+  // A sessao morre no confirm. Sem esta assercao o teste passaria com a sessao
+  // ficando na tabela, que e o desenho que produziu 2.555 linhas mortas.
+  it('apaga a sessao na mesma transacao', async () => {
+    const gravados = ligarTransacao(estado())
+
+    await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
+
+    expect(gravados.sessoesApagadas).toEqual([12])
   })
 })
 
@@ -239,21 +250,22 @@ describe('confirm-upload / add_product: os ids sao os do acervo', () => {
       uuid_session: SESSAO,
       usuario_uuid: USUARIO,
       operation_type: 'add_product',
-      status: 'pending'
-    },
-    versoesTemp: [
-      versaoTemp(70, { produto_temp_id: 40 }),
-      versaoTemp(71, { produto_temp_id: 40 }),
-      versaoTemp(72, { produto_temp_id: 41 })
-    ],
-    produtosTemp: [
-      { id: 40, nome: 'Ortoimagem A', mi: '2965-2', inom: 'SH-22-Y-A-I-2', tipo_escala_id: 1, denominador_escala_especial: null, tipo_produto_id: 2, subtipo_produto_id: null, descricao: '', geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))' },
-      { id: 41, nome: 'Ortoimagem B', mi: '2965-3', inom: 'SH-22-Y-A-I-3', tipo_escala_id: 1, denominador_escala_especial: null, tipo_produto_id: 2, subtipo_produto_id: null, descricao: '', geom: 'SRID=4674;POLYGON((-50 -15, -49 -15, -49 -14, -50 -14, -50 -15))' }
-    ],
-    arquivos: [arquivoTemp(1, 70), arquivoTemp(2, 71), arquivoTemp(3, 72)]
+      status: 'pending',
+      payload: {
+        produtos: [
+          produtoDoRascunho('Ortoimagem A', '2965-2', 'SH-22-Y-A-I-2', [
+            versaoDoRascunho('a'),
+            versaoDoRascunho('b')
+          ]),
+          produtoDoRascunho('Ortoimagem B', '2965-3', 'SH-22-Y-A-I-3', [
+            versaoDoRascunho('c')
+          ])
+        ]
+      }
+    }
   })
 
-  it('devolve produto_id e versao_id do acervo, e nao os ids temporarios', async () => {
+  it('devolve produto_id e versao_id do acervo, e nao a posicao no rascunho', async () => {
     const gravados = ligarTransacao(estado())
 
     const res = await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
@@ -269,16 +281,18 @@ describe('confirm-upload / add_product: os ids sao os do acervo', () => {
     expect(gravados.versoes).toEqual([9001, 9002, 9003])
   })
 
-  it('o corpo NAO carrega mais nenhum campo de id temporario', async () => {
+  it('o corpo NAO carrega nenhum campo interno do rascunho', async () => {
     ligarTransacao(estado())
 
     const res = await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
     const corpo = JSON.stringify(res)
 
     // O codigo antigo respondia `produto_temp_id` e `versao_temp_id`. Sao ids de
-    // linha que o cliente NUNCA viu: o `prepare-upload` nao os devolve.
+    // linha que o cliente NUNCA viu: o `prepare-upload` nao os devolve. O
+    // `produto_indice` e o sucessor deles, e existe so para agrupar aqui dentro.
     expect(corpo).not.toContain('produto_temp_id')
     expect(corpo).not.toContain('versao_temp_id')
+    expect(corpo).not.toContain('produto_indice')
   })
 
   it('agrupa as versoes no produto certo', async () => {
@@ -296,5 +310,13 @@ describe('confirm-upload / add_product: os ids sao os do acervo', () => {
     await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
 
     expect(mockMiniatura.gerarParaVersoes).toHaveBeenCalledWith([9001, 9002, 9003])
+  })
+
+  it('apaga a sessao na mesma transacao', async () => {
+    const gravados = ligarTransacao(estado())
+
+    await arquivoCtrl.confirmUpload(SESSAO, USUARIO, {})
+
+    expect(gravados.sessoesApagadas).toEqual([13])
   })
 })

@@ -44,17 +44,21 @@ class CleanupExpiredDownloadsDialog(QDialog, FORM_CLASS):
             response = self.api_client.post('acervo/cleanup-expired-downloads')
 
             if response:
-                # A rota devolve os contadores. Dizer só "sucesso" esconde a
+                # A rota devolve o contador. Dizer só "sucesso" esconde a
                 # resposta que a pessoa veio buscar: quantos foram fechados.
+                #
+                # SÓ DOWNLOAD. Até 06/08/2026 esta rota também fechava as sessões
+                # de envio, e este diálogo mostrava `uploads_fechados`. A limpeza
+                # do envio tem rota própria desde então, e continuar lendo o
+                # campo aqui faria a tela anunciar "0 sessões fechadas" para
+                # sempre, que é pior do que não dizer nada.
                 dados = response.get('dados') or {}
                 fechados = dados.get('fechados', 0)
-                uploads = dados.get('uploads_fechados', 0)
-                resumo = (f"{fechados} download(s) expirado(s) fechado(s).\n"
-                          f"{uploads} sessão(ões) de upload expirada(s) fechada(s).")
+                resumo = f"{fechados} download(s) expirado(s) fechado(s)."
                 QMessageBox.information(self, "Limpeza concluída", resumo)
                 self.iface.messageBar().pushMessage(
                     "Limpeza concluída",
-                    f"{fechados} download(s) e {uploads} sessão(ões) de upload fechados.",
+                    f"{fechados} download(s) expirado(s) fechado(s).",
                     level=Qgis.MessageLevel.Success
                 )
                 self.accept()

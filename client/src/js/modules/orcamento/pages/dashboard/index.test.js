@@ -36,14 +36,18 @@ const LINHAS = [
   { cod_nd: 'TOTAL', nd_nome: 'TOTAL', previsto: 100, recebido: 50, recebido_pdr: 35, recebido_extra: 15, recolhido: 8, recolhido_pdr: 5, recolhido_extra: 3, empenhado: 40, empenhado_pdr: 25, empenhado_extra: 15, liquidado: 30, liquidado_pdr: 18, liquidado_extra: 12 },
 ];
 
-// Os numeros reais de 2026. A NC sem data ja esta zerada, e serve
-// para provar que a pendencia sem ocorrencia NAO vira linha.
+// Os numeros reais de 2026, com uma excecao declarada. A NC sem data ja esta
+// zerada, e serve para provar que a pendencia sem ocorrencia NAO vira linha.
+//
+// `nc_sem_pdr_item` traz 12, que e o numero de 2025 e nao o de 2026: em 2026
+// TODAS as 32 NCs do PDR ja apontam item, e a medida vale zero. Com zero a
+// pendencia sumiria da lista, e sao 5 linhas que estes testes conferem.
 const PENDENCIAS = {
   ne_sem_data: { n: 25, total: 30 },
   liquidacao_sem_data: { n: 10, total: 18 },
   nc_sem_data: { n: 0, total: 44 },
   rpnp_sem_valor: { n: 11, total: 15 },
-  nc_sem_meta: { n: 15, total: 44 },
+  nc_sem_pdr_item: { n: 12, total: 44 },
   nc_prazo_vencido: { n: 9, total: 44 },
 };
 
@@ -52,7 +56,7 @@ const SEM_PENDENCIA = {
   liquidacao_sem_data: { n: 0, total: 18 },
   nc_sem_data: { n: 0, total: 44 },
   rpnp_sem_valor: { n: 0, total: 15 },
-  nc_sem_meta: { n: 0, total: 44 },
+  nc_sem_pdr_item: { n: 0, total: 44 },
   nc_prazo_vencido: { n: 0, total: 44 },
 };
 
@@ -304,7 +308,7 @@ describe('renderDashboard: o painel de pendencias', () => {
 
     const linhas = linhasPendencia(container);
     const empenho = linhas.find(li => li.textContent.includes('Empenhos sem data'));
-    const meta = linhas.find(li => li.textContent.includes('sem meta do PIT'));
+    const meta = linhas.find(li => li.textContent.includes('sem item do PDR'));
 
     expect(empenho.textContent).toContain('carregado do RPCATec');
     expect(empenho.querySelector('.chip--default')).not.toBeNull();

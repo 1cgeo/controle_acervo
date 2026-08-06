@@ -22,7 +22,6 @@ import {
   getNotasCredito,
   getPdrItens,
 } from '@modules/orcamento/services/orcamento-service.js';
-import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
 
 // UG emitente default: 160089 (DSG).
 const UG_DSG = '160089';
@@ -68,11 +67,7 @@ export async function openNotaCreditoDialog({
   let classificacoes = [];
   let outrasNcs = [];
   let pdrItens = [];
-  let metas = [];
   let nc = null;
-
-  // Ano de contexto da NC: no edit segue o ano do registro; no create e o ano da tela.
-  const anoContexto = isEdit ? null : ano;
 
   try {
     [naturezas, planos, ugs, classificacoes, outrasNcs, pdrItens] = await Promise.all([
@@ -89,15 +84,8 @@ export async function openNotaCreditoDialog({
     return;
   }
 
-  const anoMetas = isEdit ? (nc?.ano ?? null) : anoContexto;
-  if (anoMetas !== null && anoMetas !== undefined) {
-    try {
-      metas = await getMetasPit(anoMetas);
-    } catch {
-      metas = [];
-    }
-  }
-
+  // A LISTA DE METAS NÃO É MAIS CARREGADA AQUI. O diálogo não escolhe meta: ela
+  // vem do item do PDR. Uma ida a /api/metas a menos por abertura.
   const ndOptions = (naturezas || []).map(nd => ({
     value: nd.codigo ?? nd.code ?? nd.cod_nd ?? nd.id,
     label: `${nd.codigo ?? nd.code ?? nd.cod_nd ?? nd.id} - ${nd.nome ?? nd.descricao ?? ''}`,
@@ -128,12 +116,6 @@ export async function openNotaCreditoDialog({
     const meta = it.meta_numero ? ` (Meta ${it.meta_numero})` : '';
     return { value: it.id, label: `${base}${descricao}${meta}` };
   });
-
-  // O rotulo sai de rotuloMetaPit, a mesma funcao que a tela de metas e a
-  // mapoteca usam: uma meta nao pode aparecer com nome diferente em cada tela.
-  function metaOptions() {
-    return (metas || []).map(m => ({ value: m.id, label: rotuloMetaPit(m) }));
-  }
 
   // ---- Campos ----
   // Os maxLength abaixo copiam o VARCHAR do banco (er/orcamento.sql). Campo que
@@ -183,11 +165,13 @@ export async function openNotaCreditoDialog({
     label: 'Finalidade / histórico',
     value: nc?.finalidade_historico ?? '',
   });
-  const metaField = createSelectField({
-    label: 'Meta do PIT',
-    options: metaOptions(),
-    value: nc?.meta_pit_id ?? undefined,
-  });
+  // NÃO HÁ CAMPO "Meta do PIT" AQUI, e a ausência é a regra de negócio. A meta
+  // que a NC financia é a meta do item do PDR dela, e o campo "Item do PDR"
+  // abaixo já mostra qual é, no próprio rótulo da opção ("... (Meta 3)").
+  //
+  // O CAMPO EXISTIU E MENTIA. Enquanto os dois conviviam, quem escolhesse uma
+  // meta diferente da do item gravava a contradição sem aviso: em produção,
+  // 4 das 29 NCs que tinham os dois preenchidos discordavam do próprio item.
   const valorNcField = createNumberField({
     label: 'Valor da NC',
     required: true,
@@ -295,7 +279,6 @@ export async function openNotaCreditoDialog({
     codPiField.element,
     ugEmitenteField.element,
     el('div', { className: 'form-grid__full' }, [finalidadeField.element]),
-    metaField.element,
     valorNcField.element,
     valorRecolhidoField.element,
     docRoField.element,
@@ -373,9 +356,8 @@ export async function openNotaCreditoDialog({
             cod_pi: codPiField.getValue(),
             ug_emitente: ugEmitenteField.getValue(),
             finalidade_historico: finalidadeField.getValue() || null,
-            // paraId nos tres ids de select: eles chegam da API como TEXTO e os
+            // paraId nos ids de select: eles chegam da API como TEXTO e os
             // schemas cobram Joi.number().integer().strict().
-            meta_pit_id: paraId(metaField.getValue()),
             valor_nc: valorNc,
             valor_recolhido: valorRecolhido ?? null,
             doc_ro: docRoField.getValue() || null,

@@ -101,11 +101,52 @@ describe('mapa de entidades: varredura contra os er/', () => {
         // esteja MARCADO -- e a marca e o que separa a convencao deliberada do
         // erro de digitacao num nome de coluna, que e o que este teste pega.
         if (decl.sintetico) continue
+        // Campo HISTORICO e a coluna que EXISTIU e uma migracao removeu. O
+        // evento ja gravado continua trazendo o campo, porque `auditoria.evento`
+        // e append-only; sem a declaracao a ficha antiga exibiria o nome cru.
+        // Passa marcado, e o teste logo abaixo cobra que a coluna tenha mesmo
+        // sumido.
+        if (decl.historico) continue
         if (!colunas.has(campo)) inexistentes.push(`${tabela}.${campo}`)
       }
     }
 
     expect(inexistentes).toEqual([])
+  })
+
+  it('campo marcado como HISTORICO NAO e mais coluna da tabela', () => {
+    // O caminho inverso, como o do sintetico: `historico: true` numa coluna que
+    // ainda existe e um jeito de calar a varredura sem precisar, e o proximo
+    // leitor acreditaria que aquele campo saiu do banco.
+    const marcadosSemPrecisar = []
+
+    for (const [tabela, entrada] of Object.entries(mapa)) {
+      const colunas = SCHEMAS.get(tabela.toLowerCase())
+      if (!colunas) continue
+      for (const [campo, decl] of Object.entries(entrada.campos || {})) {
+        if (decl.historico && colunas.has(campo)) {
+          marcadosSemPrecisar.push(`${tabela}.${campo}`)
+        }
+      }
+    }
+
+    expect(marcadosSemPrecisar).toEqual([])
+  })
+
+  it('ha ao menos um campo historico declarado', () => {
+    // Rede contra o falso verde: os dois testes acima passariam sem cobrar nada
+    // se ninguem usasse a marca. Ela nasceu com
+    // `orcamento.nota_credito.meta_pit_id` na 1.31.0; se o ultimo campo
+    // historico for removido um dia, este teste avisa para tirar a marca do
+    // contrato tambem, em vez de deixa-la apodrecer sem uso.
+    const historicos = []
+    for (const [tabela, entrada] of Object.entries(mapa)) {
+      for (const [campo, decl] of Object.entries(entrada.campos || {})) {
+        if (decl.historico) historicos.push(`${tabela}.${campo}`)
+      }
+    }
+
+    expect(historicos).toContain('orcamento.nota_credito.meta_pit_id')
   })
 
   it('campo marcado como sintetico NAO e coluna da tabela', () => {

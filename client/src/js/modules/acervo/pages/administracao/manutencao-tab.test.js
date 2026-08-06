@@ -5,6 +5,7 @@ vi.mock('@modules/acervo/services/admin-service.js', () => ({
   atualizarViewsMaterializadas: vi.fn(() => Promise.resolve({})),
   criarViewsMaterializadas: vi.fn(() => Promise.resolve({})),
   limparDownloadsExpirados: vi.fn(() => Promise.resolve({})),
+  limparSessoesEnvioExpiradas: vi.fn(() => Promise.resolve({ fechadas: 0, apagadas: 0 })),
   renomearPadrao: vi.fn(),
   atualizarChecksum: vi.fn(),
   contarMiniaturasPendentes: vi.fn(() => Promise.resolve({ pendentes: 0, lote: 20 })),
@@ -59,6 +60,7 @@ const preencher = (titulo, rotulo, valor) => {
 const RENOME = 'Padronizar o nome físico dos arquivos';
 const CHECKSUM = 'Atualizar checksum por releitura';
 const MINIATURAS = 'Fila de miniaturas';
+const ENVIOS = 'Sessões de envio expiradas';
 
 beforeEach(() => {
   confirmDialog.mockResolvedValue(true);
@@ -66,7 +68,9 @@ beforeEach(() => {
 });
 
 describe('aba de Manutenção', () => {
-  test('monta os cinco cartões, nesta ordem', async () => {
+  // O sexto cartão entrou em 06/08/2026: a limpeza das sessões de envio pegava
+  // carona no botão de downloads, e o rótulo dele não dizia isso.
+  test('monta os seis cartões, nesta ordem', async () => {
     await abrir();
 
     const titulos = [...container.querySelectorAll('.manutencao__titulo')]
@@ -74,10 +78,33 @@ describe('aba de Manutenção', () => {
     expect(titulos).toEqual([
       'Visões materializadas',
       'Downloads expirados',
+      ENVIOS,
       MINIATURAS,
       RENOME,
       CHECKSUM,
     ]);
+  });
+
+  test('o cartão de envios chama a rota própria, e não a de downloads', async () => {
+    await abrir();
+
+    botao(ENVIOS, 'Limpar expiradas').click();
+    await flush();
+
+    expect(svc.limparSessoesEnvioExpiradas).toHaveBeenCalledTimes(1);
+    expect(svc.limparDownloadsExpirados).not.toHaveBeenCalled();
+  });
+
+  // O número volta para a tela. "Limpou" sem número é eco do clique.
+  test('o cartão de envios mostra quantas fechou e quantas apagou', async () => {
+    svc.limparSessoesEnvioExpiradas.mockResolvedValue({ fechadas: 2, apagadas: 5 });
+    await abrir();
+
+    botao(ENVIOS, 'Limpar expiradas').click();
+    await flush();
+
+    expect(status(ENVIOS)).toContain('2');
+    expect(status(ENVIOS)).toContain('5');
   });
 
   // Cada cartão diz o que a ação NÃO faz, que é onde mora o susto. Sem isso,

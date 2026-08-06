@@ -35,7 +35,9 @@ INSERT INTO orcamento.configuracao (id, uasg, codom) VALUES (1, '160382', '04821
 -- A meta do PIT que o credito financia mora em `pit.meta`, e nao aqui: o PIT e
 -- o plano anual da Divisao, que a mapoteca tambem consome, e nao um artefato
 -- orcamentario. Ver er/pit.sql.
--- O orcamento continua sendo consumidor, pelas FKs de pdr_item e nota_credito.
+-- O orcamento continua sendo consumidor, por UMA chave estrangeira so:
+-- `pdr_item.meta_pit_id`. A nota de credito perdeu a dela na 1.31.0 e chega ao
+-- PIT pelo item do PDR, porque em orcamento a ligacao com o PIT e o PDR.
 
 -- DFD: documento de formalizacao da demanda, amarrado no ano. Nao ha mais
 -- entidade PCA: o "PCA do ano" e o conjunto de DFDs daquele ano. consta_pca
@@ -117,12 +119,30 @@ CREATE TABLE orcamento.pdr_item(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,
   cod_nd VARCHAR(6) NOT NULL REFERENCES dominio.natureza_despesa (code),
-  -- A META, e nao o item. Foi medido em 2026-08-05: os 17 itens do PDR com
-  -- vinculo apontam a meta inteira, e nenhum aponta um item dela. O credito e
-  -- autorizado para a Meta 1, e nao para a 1.1; qual dos 11 itens ele financia
-  -- e informacao que o PDR nao tem. `acervo.versao`, `mapoteca.pedido` e
-  -- `rpcmtec.capacitacao` apontam `pit.meta_item`, porque essas tres sao
-  -- TRABALHO, e trabalho cumpre item.
+  -- ESTE E O UNICO ELO ENTRE O ORCAMENTO E O PIT. A nota de credito NAO aponta
+  -- meta: ela aponta o item do PDR daqui, e a meta dela se le por este campo.
+  -- Ver o comentario de `nota_credito.pdr_item_id`.
+  --
+  -- A META, E NAO O ITEM DELA, e a medicao de 2026-08-06 fecha a questao pela
+  -- CONTAGEM. O item do PDR e uma linha de despesa por ND, e nao um recorte do
+  -- trabalho:
+  --
+  --   meta   itens do PDR   itens do PIT
+  --      1              5             11
+  --      3              6              2
+  --      4              1              3
+  --      5              5              3
+  --
+  -- Nas metas 3 e 5 os itens do PDR SOBRAM sobre os do PIT, entao eles nao
+  -- podem ser um detalhamento deles. O que eles detalham e a ND: a Meta 1 tem
+  -- diarias (339015), passagens (339033), manutencao de viatura (339039) e
+  -- pecas (339030), cada uma uma linha. A descricao gravada diz isso na letra:
+  -- 'Producao de Geoinformacao (diarias)' e o NOME DO GRUPO mais a natureza da
+  -- despesa. Qual dos 11 itens da Meta 1 a diaria financiou nao esta no
+  -- documento, e por isso nao esta aqui.
+  --
+  -- `acervo.versao`, `mapoteca.pedido` e `rpcmtec.capacitacao` apontam
+  -- `pit.meta_item`, porque essas tres sao TRABALHO, e trabalho cumpre item.
   meta_pit_id BIGINT REFERENCES pit.meta (id),
   item_label VARCHAR(10),
   descricao TEXT,
@@ -154,9 +174,18 @@ CREATE TABLE orcamento.nota_credito(
   cod_pi VARCHAR(20) REFERENCES dominio.plano_interno (code),
   ug_emitente VARCHAR(10) REFERENCES dominio.ug (code),
   finalidade_historico TEXT,
-  -- A META, e nao o item, pela mesma razao de `pdr_item` acima: as 50 NCs com
-  -- vinculo apontam a meta inteira, e nenhuma aponta item.
-  meta_pit_id BIGINT REFERENCES pit.meta (id),
+  -- NAO HA `meta_pit_id` AQUI, e a ausencia e a modelagem. Ate a 1.30.0 a NC
+  -- apontava `pit.meta` em PARALELO ao item do PDR, e as duas afirmacoes podiam
+  -- discordar sem nada acusar. Discordavam: medido em 2026-08-06, das 29 NCs que
+  -- tinham os dois campos preenchidos, 4 diziam uma meta que o item de PDR delas
+  -- nao financia (a 2026NC400706 dizia Meta 1 e o item 28 diz Meta 3; a
+  -- 2026NC400412 e a 2026NC401277 diziam Meta 4 e o item 16, Correios, nao tem
+  -- meta nenhuma; a 2026NC401276 dizia Meta 1 e o item 14 tambem nao tem).
+  --
+  -- A CADEIA E `nota_credito -> pdr_item -> pit.meta`. Em orcamento a ligacao com
+  -- o PIT e o PDR: o credito chega para executar o que o PDR previu, e a meta que
+  -- ele financia e a meta daquela previsao. Com um caminho so, a NC nao tem como
+  -- afirmar meta que o seu item de PDR nao afirma.
   -- valor_nc = valor recebido; NUNCA muda por devolucao (a devolucao corta empenhado/liquidado)
   valor_nc NUMERIC(15,2) NOT NULL,
   -- valor_recolhido = parte do credito recebido que foi devolvida/recolhida (informada na NC).
@@ -166,6 +195,22 @@ CREATE TABLE orcamento.nota_credito(
   prazo_empenho DATE,
   -- classificacao = regra de negocio (previsto no PDR autorizado?), nao a celula orcamentaria
   classificacao_id SMALLINT NOT NULL REFERENCES dominio.classificacao_nc (code),
+  -- O ITEM DO PDR QUE ESTE CREDITO EXECUTA, e desde a 1.31.0 tambem o unico
+  -- caminho ate a meta do PIT: quem quer a meta da NC le
+  -- `pdr_item.meta_pit_id` por JOIN daqui.
+  --
+  -- ANULAVEL, E O NULO E HONESTO. Duas situacoes legitimas o produzem, e as duas
+  -- foram medidas em 2026-08-06:
+  --   1. A NC Extra-PDR (classificacao 2). Ela e, por definicao, o credito que o
+  --      PDR nao previu, entao nao ha item para apontar. Sao 34 em producao. Sem
+  --      item ela nao tem meta, e isso e o que o dado diz: o vinculo dela com o
+  --      PIT nunca passou pelo PDR.
+  --   2. A NC de um ano cujo PDR foi transcrito sem vinculo com o PIT. Os 8
+  --      itens do PDR de 2025 tem `meta_pit_id` nulo, entao as 17 NCs de 2025
+  --      que apontam item nenhum ganham item pela ND e continuam sem meta.
+  -- O invariante "so classificacao = PDR (1) tem item" vive no schema Joi e no
+  -- controlador, e nao num CHECK: `classificacao_id` e editavel, e um CHECK
+  -- recusaria a correcao de uma NC mal classificada em vez de acompanha-la.
   pdr_item_id BIGINT REFERENCES orcamento.pdr_item (id),
   nc_complementada_id BIGINT REFERENCES orcamento.nota_credito (id),
   marcador VARCHAR(8),
@@ -311,6 +356,10 @@ CREATE UNIQUE INDEX uniq_nota_credito_num_nd_ug
 -- Indices uteis para as agregacoes do relatorio
 CREATE INDEX idx_nota_credito_nd ON orcamento.nota_credito (cod_nd);
 CREATE INDEX idx_nota_credito_classificacao ON orcamento.nota_credito (classificacao_id);
+-- A meta de toda NC passa por aqui desde a 1.31.0: a grade do PIT soma
+-- `credito_nc` juntando nota_credito -> pdr_item -> pit.meta, e sem indice a
+-- soma varre a tabela inteira uma vez por meta.
+CREATE INDEX idx_nota_credito_pdr_item ON orcamento.nota_credito (pdr_item_id);
 CREATE INDEX idx_nota_empenho_nc ON orcamento.nota_empenho (nota_credito_id);
 CREATE INDEX idx_liquidacao_ne ON orcamento.liquidacao (nota_empenho_id);
 CREATE INDEX idx_pdr_item_nd ON orcamento.pdr_item (cod_nd);

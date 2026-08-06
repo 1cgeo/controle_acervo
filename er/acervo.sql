@@ -456,113 +456,115 @@ CREATE TABLE acervo.versao_relacionamento(
 -- para os DELETEs por versão (WHERE versao_id_1 = X OR versao_id_2 = X)
 CREATE INDEX idx_versao_relacionamento_versao2 ON acervo.versao_relacionamento(versao_id_2);
 
--- Main upload session table
+-- O RASCUNHO DO ENVIO, NUMA TABELA SO.
+--
+-- A sessao cobre o caminho do PLUGIN, e so ele: la o cliente copia os bytes por
+-- SMB e o servidor nao os ve passar, entao existe uma janela entre reservar o
+-- destino e confirmar que a copia chegou. O envio pelo NAVEGADOR nao usa sessao
+-- de proposito (ver server/src/arquivo/arquivo_route.js): os bytes vem dentro
+-- da requisicao, e nao ha janela a cobrir.
+--
+-- O RASCUNHO E UM DOCUMENTO, e nao tres tabelas espelho. Ate 06/08/2026 ele
+-- morava em `upload_produto_temp`, `upload_versao_temp` e `upload_arquivo_temp`,
+-- que repetiam coluna a coluna `acervo.produto`, `acervo.versao` e
+-- `acervo.arquivo`. O custo nao era o espaco, era o ACOPLAMENTO: toda coluna
+-- nova da tabela real tinha de ser duplicada na espelho. Aconteceu em
+-- 05/08/2026, quando `data_prevista` e `meta_pit_id` precisaram atravessar a
+-- cadeia e obrigaram a tocar quatro INSERTs. Com o rascunho em JSONB, a coluna
+-- nova atravessa sozinha.
+--
+-- O QUE SE PERDE, E FOI ACEITO: as chaves estrangeiras do rascunho (`lote_id`,
+-- `tipo_versao_id`, `subtipo_produto_id`, `volume_armazenamento_id`). Elas eram
+-- redundantes: o Joi valida o codigo no preparo, e o INSERT em `acervo.versao` e
+-- `acervo.arquivo` valida de novo na finalizacao, contra as MESMAS tabelas de
+-- dominio. Nenhuma VALIDACAO existia so aqui.
+--
+-- UMA COISA MUDOU DE COMPORTAMENTO: `upload_versao_temp.lote_id` tinha
+-- `ON DELETE SET NULL`, e `acervo.versao.lote_id` nao tem. Lote apagado durante
+-- as 24 h de uma sessao aberta zerava o vinculo do rascunho em silencio, e a
+-- versao nascia sem lote. Agora o rascunho guarda o id e a finalizacao FALHA.
+--
+-- A TABELA E FILA, E NAO ARQUIVO. A sessao morre na finalizacao, junto com o
+-- confirm que a consumiu, porque o historico do que entrou no acervo ja esta em
+-- `auditoria.evento`, que e append-only. Medido em producao em 06/08/2026, antes
+-- da mudanca: 2.571 sessoes vivas (2.555 `completed`, 12 `failed`, 4
+-- `cancelled`, ZERO `pending`), a mais antiga de 10/06/2026, e 35.836 linhas com
+-- 11,9 MB nas quatro tabelas, contra 17,8 MB de acervo real. Nada as esvaziava.
 CREATE TABLE acervo.upload_session (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     uuid_session UUID UNIQUE NOT NULL DEFAULT uuid_generate_v4(),
     operation_type VARCHAR(20) NOT NULL CHECK (operation_type IN ('add_files', 'add_version', 'add_product', 'replace_files')),
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
     error_message TEXT,
+    -- A arvore inteira do envio. A forma acompanha o `operation_type`, e a raiz
+    -- tem UMA chave so:
+    --   add_files, replace_files -> {"arquivos": [ {..., "versao_id": N} ]}
+    --   add_version              -> {"versoes":  [ {..., "produto_id": N, "arquivos": [...]} ]}
+    --   add_product              -> {"produtos": [ {..., "versoes": [ {..., "arquivos": [...]} ]} ]}
+    -- Todo arquivo carrega `status` e `error_message` proprios: a tela de
+    -- uploads com problema mostra QUAL arquivo falhou, e nao so que a sessao
+    -- falhou.
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expiration_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '24 hours',
     completed_at TIMESTAMP WITH TIME ZONE,
     usuario_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
--- Temporary product metadata
-CREATE TABLE acervo.upload_produto_temp (
-    id BIGSERIAL NOT NULL PRIMARY KEY,
-    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
-    nome VARCHAR(255),
-    mi VARCHAR(255),
-    inom VARCHAR(255),
-    tipo_escala_id SMALLINT NOT NULL REFERENCES dominio.tipo_escala (code),
-    denominador_escala_especial INTEGER,
-    tipo_produto_id SMALLINT NOT NULL REFERENCES dominio.tipo_produto (code),
-    -- Subtipo que define a identidade do produto (ex.: 24 = Carta Topografica
-    -- Militar); NULL = produto comum. Espelha acervo.produto.subtipo_produto_id.
-    subtipo_produto_id SMALLINT REFERENCES dominio.subtipo_produto (code),
-    descricao TEXT,
-    geom TEXT NOT NULL -- Store as text to avoid geometry validation during prep
-);
-
--- Temporary version metadata
-CREATE TABLE acervo.upload_versao_temp (
-    id BIGSERIAL NOT NULL PRIMARY KEY,
-    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
-    uuid_versao UUID NOT NULL,
-    versao VARCHAR(255) NOT NULL,
-    nome VARCHAR(255),
-    tipo_versao_id SMALLINT NOT NULL REFERENCES dominio.tipo_versao (code),
-    subtipo_produto_id SMALLINT NOT NULL REFERENCES dominio.subtipo_produto (code),
-    lote_id BIGINT REFERENCES acervo.lote (id) ON DELETE SET NULL,
-    metadado JSONB,
-    descricao TEXT,
-    orgao_produtor VARCHAR(255) NOT NULL,
-    palavras_chave TEXT[],
-    data_criacao TIMESTAMP WITH TIME ZONE NOT NULL,
-    data_edicao TIMESTAMP WITH TIME ZONE NOT NULL,
-    produto_id BIGINT, -- Used for add_version scenario (acervo.produto.id é BIGSERIAL)
-    produto_temp_id BIGINT REFERENCES acervo.upload_produto_temp (id) ON DELETE CASCADE, -- Used for add_product scenario
-    -- O VINCULO COM O PIT atravessa o envio. Sem as duas aqui, a meta escolhida
-    -- no formulario morre entre o preparo e a finalizacao: o schema aceita, o
-    -- rascunho nao guarda, e a versao final nasce fora da conta do plano.
-    meta_pit_id BIGINT REFERENCES pit.meta_item (id) ON DELETE SET NULL,
-    data_prevista DATE
-);
-
-CREATE INDEX idx_upload_versao_temp_produto_temp ON acervo.upload_versao_temp(produto_temp_id);
-
--- Temporary file metadata
-CREATE TABLE acervo.upload_arquivo_temp (
-    id BIGSERIAL NOT NULL PRIMARY KEY,
-    session_id BIGINT NOT NULL REFERENCES acervo.upload_session (id) ON DELETE CASCADE,
-    nome VARCHAR(255) NOT NULL,
-    nome_arquivo TEXT NOT NULL,
-    destination_path TEXT NOT NULL,
-    tipo_arquivo_id SMALLINT NOT NULL REFERENCES dominio.tipo_arquivo (code),
-    volume_armazenamento_id INTEGER,
-    extensao VARCHAR(255),
-    tamanho_mb REAL,
-    expected_checksum VARCHAR(64),
-    metadado JSONB,
-    situacao_carregamento_id SMALLINT NOT NULL REFERENCES dominio.situacao_carregamento (code),
-    descricao TEXT,
-    crs_original VARCHAR(10),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
-    error_message TEXT,
-    versao_id BIGINT, -- Used for add_files scenario (acervo.versao.id é BIGSERIAL)
-    versao_temp_id BIGINT REFERENCES acervo.upload_versao_temp (id) ON DELETE CASCADE -- Used for add_version and add_product scenarios
-);
-
-CREATE INDEX idx_upload_arquivo_temp_versao_temp ON acervo.upload_arquivo_temp(versao_temp_id);
-
--- Create indexes
 CREATE INDEX idx_upload_session_status ON acervo.upload_session(status);
 CREATE INDEX idx_upload_session_expiration ON acervo.upload_session(expiration_time) WHERE status = 'pending';
-CREATE INDEX idx_upload_arquivo_temp_session ON acervo.upload_arquivo_temp(session_id);
-CREATE INDEX idx_upload_versao_temp_session ON acervo.upload_versao_temp(session_id);
 
--- Create cleanup function
-CREATE OR REPLACE FUNCTION acervo.cleanup_expired_uploads() RETURNS void AS $$
+-- A LIMPEZA APAGA, e o nome passa a dizer a verdade.
+--
+-- Ate 06/08/2026 esta funcao tinha dois comandos, e os dois eram UPDATE: ela
+-- marcava a sessao vencida como `failed` e nunca apagava linha nenhuma. O nome
+-- prometia limpeza e o corpo entregava rotulo, e por isso as 2.571 sessoes de
+-- producao seguiam la.
+--
+-- DOIS PASSOS, e eles sao diferentes:
+--
+--   1. A sessao PENDENTE que venceu vira `failed`. Ninguem confirmou, entao nada
+--      entrou no acervo, mas a linha FICA: ela e o unico registro do
+--      `destination_path` que o cliente ia gravar, e a tela de uploads com
+--      problema a mostra.
+--   2. A sessao ENCERRADA ha mais de 30 dias e APAGADA. O prazo conta pela
+--      `expiration_time`, que e NOT NULL, e nao pela `completed_at`, que e nula
+--      em 3 das 12 sessoes falhas de producao.
+--
+-- O prazo de 30 dias e o teto do diagnostico: passado um mes, ninguem vai voltar
+-- para investigar por que um envio falhou. Com a sessao morrendo na finalizacao,
+-- o que este passo alcanca e so a falha e o abandono, que somaram 16 linhas em
+-- dois meses de producao.
+--
+-- DEVOLVE AS DUAS CONTAGENS, medidas pela PROPRIA funcao. Ela devolvia `void`, e
+-- entao o controller contava as sessoes ANTES de chamar: quem conferia o numero
+-- conferia a contagem do JavaScript, e nao o que a funcao fez.
+CREATE OR REPLACE FUNCTION acervo.cleanup_expired_uploads()
+RETURNS TABLE (fechadas INTEGER, apagadas INTEGER) AS $$
 BEGIN
-    -- Mark expired pending uploads as failed
-    UPDATE acervo.upload_session 
-    SET status = 'failed', 
-        error_message = 'Upload expired - client never confirmed completion'
-    WHERE status = 'pending' 
-    AND expiration_time < NOW();
-    
-    -- Also update file statuses
-    UPDATE acervo.upload_arquivo_temp
-    SET status = 'failed',
-        error_message = 'Upload session expired'
-    WHERE status = 'pending'
-    AND session_id IN (
-        SELECT id FROM acervo.upload_session 
-        WHERE status = 'failed' 
-        AND error_message = 'Upload expired - client never confirmed completion'
-    );
+    -- 1. A sessao PENDENTE que venceu vira `failed`. Ninguem confirmou, entao
+    -- nada entrou no acervo, mas a linha FICA: ela e o unico registro do
+    -- `destination_path` que o cliente ia gravar, e a tela de uploads com
+    -- problema a mostra.
+    UPDATE acervo.upload_session
+       SET status = 'failed',
+           error_message = 'Upload expired - client never confirmed completion',
+           completed_at = NOW()
+     WHERE status = 'pending'
+       AND expiration_time < NOW();
+    GET DIAGNOSTICS fechadas = ROW_COUNT;
+
+    -- 2. A sessao ENCERRADA ha mais de 30 dias e APAGADA. O prazo conta pela
+    -- `expiration_time`, que e NOT NULL, e nao pela `completed_at`, que era nula
+    -- em 3 das 12 sessoes falhas de producao. Trinta dias e o teto do
+    -- diagnostico: passado um mes, ninguem volta para investigar um envio que
+    -- falhou.
+    DELETE FROM acervo.upload_session
+     WHERE status IN ('completed', 'failed', 'cancelled')
+       AND expiration_time < NOW() - INTERVAL '30 days';
+    GET DIAGNOSTICS apagadas = ROW_COUNT;
+
+    RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql;
 
