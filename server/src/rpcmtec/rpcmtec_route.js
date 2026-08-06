@@ -466,8 +466,12 @@ router.post(
     body: rpcmtecSchema.fecharEdicao
   }),
   asyncHandler(async (req, res, next) => {
+    // `req.body?.` e nao `req.body.`: quem chama sem corpo nenhum (o `curl -X
+    // POST` sem `Content-Type`, e o supertest sem `.send()`) chega aqui com
+    // `req.body` indefinido, e a leitura direta virava 500. O fechamento e a
+    // acao mais importante desta tela, e ela quebrava por um corpo ausente.
     const dados = await edicaoCtrl.fechar(
-      req.params.id, req.usuarioUuid, req.contexto, req.body.ciente_revisao
+      req.params.id, req.usuarioUuid, req.contexto, req.body?.ciente_revisao
     )
 
     return res.sendJsonAndLog(

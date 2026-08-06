@@ -487,6 +487,15 @@ controller.fechar = async (id, usuarioUuid, contexto, cienteDaRevisao = false) =
     )
   }
 
+  // Sem assinante, o PDF sairia com o bloco de assinatura em branco. Quem vai
+  // assinar se sabe antes de fechar.
+  if (!montada.assinante_uuid) {
+    throw new AppError(
+      'Informe o assinante da edição antes de fechá-la',
+      httpCode.BadRequest
+    )
+  }
+
   // A CONFERÊNCIA AVISA, E NÃO RECUSA (decisão do chefe, 2026-08-06).
   //
   // Subseção por preencher é buraco no DOCUMENTO, e por isso o bloco acima
@@ -514,15 +523,6 @@ controller.fechar = async (id, usuarioUuid, contexto, cienteDaRevisao = false) =
         httpCode.Conflict
       )
     }
-  }
-
-  // Sem assinante, o PDF sairia com o bloco de assinatura em branco. Quem vai
-  // assinar se sabe antes de fechar.
-  if (!montada.assinante_uuid) {
-    throw new AppError(
-      'Informe o assinante da edição antes de fechá-la',
-      httpCode.BadRequest
-    )
   }
 
   const blocos = montada.secoes.flatMap(s => s.subsecoes)

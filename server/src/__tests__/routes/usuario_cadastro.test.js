@@ -839,6 +839,11 @@ const COBERTAS = new Set([
   // "quem mudou a 7.1 de julho", e ela se faz na ficha da edicao.
   'PUT /rpcmtec/:id/subsecao/:numero',
   'DELETE /rpcmtec/:id/subsecao/:numero',
+  // A CONFERENCIA por subsecao (1.36.0). Ela e auditada no mesmo agregado da
+  // edicao, e o rastro aqui e o que sobrevive ao DESMARCAR: a marca e uma linha
+  // so, e desmarcar a APAGA. Sem o evento, "conferido e depois desconferido"
+  // ficaria indistinguivel de "nunca conferido".
+  'PUT /rpcmtec/:id/subsecao/:numero/revisao',
   // A copia do mes anterior grava subsecao por subsecao, e cada uma deixa o
   // proprio rastro de insercao.
   'POST /rpcmtec/:id/copiar-mes-anterior',

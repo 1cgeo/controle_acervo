@@ -393,6 +393,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const res = await request(app)
       .post(`/api/rpcmtec/${id}/fechar`)
       .set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/Faltam subseções/)
@@ -410,6 +411,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const res = await request(app)
       .post(`/api/rpcmtec/${id}/fechar`)
       .set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/assinante/i)
@@ -424,6 +426,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const fechada = await request(app)
       .post(`/api/rpcmtec/${id}/fechar`)
       .set('Authorization', admin())
+      .send({ ciente_revisao: true })
     expect(fechada.status).toBe(200)
     expect(fechada.body.dados.subsecoes).toBe(34)
 
@@ -443,6 +446,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const id = await criarEdicao()
     await preencherTudo(id)
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     const res = await request(app)
       .put(`/api/rpcmtec/${id}/subsecao/7.1`)
@@ -458,6 +462,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const id = await criarEdicao()
     await preencherTudo(id)
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     const res = await request(app)
       .delete(`/api/rpcmtec/${id}`)
@@ -473,6 +478,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const id = await criarEdicao()
     await preencherTudo(id)
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     const igual = await request(app)
       .get(`/api/rpcmtec/${id}/conferir`)
@@ -518,6 +524,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
       .set('Authorization', admin())
       .send({ linhas: [['GPS', '26/07/2023', 'Conector', '-']] })
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     const res = await request(app)
       .post(`/api/rpcmtec/${id}/reabrir`)
@@ -574,6 +581,7 @@ describe('RPCMTec: o PDF', () => {
 
     await preencherTudo(id)
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
 
     const definitivo = await comoBinario(request(app)
       .get(`/api/rpcmtec/${id}/pdf`).set('Authorization', admin()))
@@ -827,6 +835,7 @@ describe('RPCMTec: o rastro da edição mensal', () => {
     await preencherTudo(id)
 
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
     await request(app).post(`/api/rpcmtec/${id}/reabrir`).set('Authorization', admin())
 
     const alteracoes = (await eventos(id)).filter(e => e.operacao === 'U')

@@ -480,9 +480,13 @@ describe('Estoque do mês anterior e previsão de falta', () => {
         .set('Authorization', admin())
         .send({ sem_ocorrencia: true })
     }
+    // `ciente_revisao`: desde a 1.36.0 o fechamento AVISA quando ha subsecao sem
+    // conferencia e pede confirmacao (409). Aqui a edicao e cenario, e o que se
+    // testa e o estoque do mes anterior.
     const res = await request(app)
       .post(`/api/rpcmtec/${id}/fechar`)
       .set('Authorization', admin())
+      .send({ ciente_revisao: true })
     expect(res.status).toBe(200)
   }
 
