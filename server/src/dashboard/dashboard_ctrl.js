@@ -1,7 +1,9 @@
 'use strict'
 
 const { db } = require('../database')
-const { domainConstants: { STATUS_ARQUIVO } } = require('../utils')
+const {
+  domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, STATUS_EXECUCAO }
+} = require('../utils')
 
 const controller = {}
 
@@ -454,29 +456,40 @@ controller.getSituacaoCarregamento = async () => {
 }
 
 /**
- * Versões criadas, mês a mês.
+ * A PRODUÇÃO, mês a mês: quantas folhas ficaram prontas.
  *
- * Mesma regra do `getStorageGrowthTrends`: o "Acumulado" soma o SALDO ANTERIOR à
- * janela, senão ele termina no total dos últimos 12 meses enquanto o cartão
- * "Total de Versões" mostra o acervo inteiro. E o recorte nasce no início do
- * mês, para o primeiro ponto não vir pela metade.
+ * CONTA POR `data_edicao`, E NÃO POR `data_cadastramento`. Esta é a correção que
+ * muda o que o gráfico responde, e ela foi medida na produção em 2026-08-07: as
+ * versões de 2026 têm 26, 2, 65, 49, 25, 103 e 24 por mês de EDIÇÃO, de janeiro a
+ * julho, e 0, 0, 0, 0, 0, 4.513 e 2.645 por mês de CADASTRAMENTO. O segundo
+ * conjunto é o dia em que a linha entrou no SCA, ou seja, a MIGRAÇÃO: quem
+ * olhasse o painel via um pico de 4.513 folhas em junho, que não existiu.
+ *
+ * `data_edicao` é a data que a folha carrega como edição, e é a mesma de onde o
+ * PIT tira o realizado (ver `pit_execucao_ctrl.js`). Assim o painel do acervo e a
+ * grade do PIT param de contar coisas diferentes com o mesmo nome.
+ *
+ * SÓ A VERSÃO REGULAR. A Planejada é promessa (não saiu nada) e o Registro
+ * Histórico é catalogação de acervo antigo, com data_edicao de 1980: incluí-los
+ * encheria a série de trabalho que não é do mês.
+ *
+ * SEM O ACUMULADO, e isso foi visto na tela. As duas séries dividiam o mesmo eixo
+ * Y, e o acumulado (7.400) achatava as novas (dezenas) numa linha rente ao chão:
+ * o gráfico virava seis barras verdes iguais, que não respondem pergunta nenhuma.
+ * Quem quer o total do acervo tem o cartão "Total de Versões".
  */
 controller.getVersaoActivityTimeline = async (months = 12) => {
   return db.conn.any(`
     WITH janela AS (
       SELECT date_trunc('month', NOW() - INTERVAL '${months - 1} months') AS inicio
     ),
-    saldo_anterior AS (
-      SELECT COUNT(*) AS versoes
-      FROM acervo.versao, janela
-      WHERE data_criacao < janela.inicio
-    ),
     monthly AS (
       SELECT
-        TO_CHAR(date_trunc('month', data_criacao), 'YYYY-MM') AS month,
+        TO_CHAR(date_trunc('month', data_edicao), 'YYYY-MM') AS month,
         COUNT(*) AS novas_versoes
       FROM acervo.versao, janela
-      WHERE data_criacao >= janela.inicio
+      WHERE data_edicao >= janela.inicio
+        AND tipo_versao_id = ${TIPO_VERSAO.REGULAR}
       GROUP BY month
     ),
     months_series AS (
@@ -486,14 +499,107 @@ controller.getVersaoActivityTimeline = async (months = 12) => {
         '1 month'::interval
       ), 'YYYY-MM') AS month
     )
-    SELECT ms.month,
-      COALESCE(m.novas_versoes, 0) AS novas_versoes,
-      (SELECT versoes FROM saldo_anterior)
-        + SUM(COALESCE(m.novas_versoes, 0)) OVER (ORDER BY ms.month) AS acumulado
+    SELECT ms.month, COALESCE(m.novas_versoes, 0) AS novas_versoes
     FROM months_series ms
     LEFT JOIN monthly m ON ms.month = m.month
     ORDER BY ms.month
   `)
+}
+
+/**
+ * O PLANO DO ANO: o que o acervo ainda deve produzir, e quando prometeu.
+ *
+ * POR QUE UMA CONSULTA SÓ, ao contrário do resto deste arquivo. As outras abas
+ * do painel são assuntos independentes, e cada gráfico cai sozinho. Aqui é um
+ * assunto só: ou se sabe o estado do plano ou não se sabe nada, e três
+ * requisições pagariam três vezes a rede para montar uma tela que não faz
+ * sentido pela metade. Mesma regra da aba de ponto de controle.
+ *
+ * A FOLHA É A UNIDADE, e não o lote. `acervo.versao.data_prevista` é a promessa
+ * por folha, e é dela que sai o planejado do PIT (ver o comentário da coluna em
+ * er/acervo.sql). O lote entra como rótulo, para quem lê saber de que corrida a
+ * folha veio.
+ *
+ * O ATRASO SE CALCULA AQUI, e não na tela. A tela que subtrai datas erra o fuso
+ * (a coluna é DATE e chega como texto), e duas telas subtraindo a mesma coisa
+ * chegariam a dois números.
+ *
+ * NÃO INCLUI a meta do PIT nem a grade: quem responde isso é `pit.meta_vigente`,
+ * por `GET /metas/execucao`, que já existe e cobra gerente. Repetir a grade aqui
+ * criaria um segundo planejado, calculado de outro jeito, na mesma tela.
+ */
+controller.getPlanoDoAno = async (ano) => {
+  return db.conn.task(async t => {
+    // A PROMESSA EM ABERTO: a folha prometida que ainda não virou Regular.
+    //
+    // Filtra por tipo, e não por ausência de arquivo. "Sem arquivo" também é o
+    // estado do Registro Histórico (408 versões em 2026-08), que não é promessa
+    // nenhuma: é acervo antigo catalogado sem o digital.
+    const aProduzir = await t.any(`
+      SELECT v.id, v.uuid_versao, v.versao, p.id AS produto_id, p.nome AS produto,
+        p.mi, p.inom, tp.nome AS tipo_produto, te.nome AS tipo_escala,
+        v.data_prevista::text AS data_prevista,
+        l.pit AS lote, l.nome AS lote_nome,
+        mv.item AS meta, mv.descricao AS meta_descricao,
+        de.descricao AS demanda_extra,
+        -- Dias de atraso contra HOJE, nulo quando não há promessa e zero quando
+        -- o mês prometido ainda não venceu. O sinal negativo diria "faltam N
+        -- dias", e isso a tela resolve sozinha com a data_prevista.
+        CASE WHEN v.data_prevista IS NULL THEN NULL
+             ELSE GREATEST(0, (CURRENT_DATE - v.data_prevista))
+        END AS dias_atraso
+      FROM acervo.versao AS v
+      INNER JOIN acervo.produto AS p ON p.id = v.produto_id
+      INNER JOIN dominio.tipo_produto AS tp ON tp.code = p.tipo_produto_id
+      INNER JOIN dominio.tipo_escala AS te ON te.code = p.tipo_escala_id
+      LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
+      LEFT JOIN pit.meta_vigente AS mv ON mv.id = v.meta_pit_id
+      LEFT JOIN pit.demanda_extra AS de ON de.id = v.demanda_extra_id
+      WHERE v.tipo_versao_id = ${TIPO_VERSAO.PLANEJADA}
+      -- Sem promessa vem PRIMEIRO, e de propósito: a folha planejada sem
+      -- data_prevista é erro de cadastro, e esconder no fim da lista a faria
+      -- passar despercebida. Ver GET /metas/execucao/diagnostico.
+      ORDER BY v.data_prevista NULLS FIRST, p.mi, tp.nome
+    `)
+
+    // Os lotes que ainda correm, com o prazo que o lote declara.
+    const lotes = await t.any(`
+      SELECT l.id, l.pit, l.nome, pr.nome AS projeto,
+        l.data_inicio::text AS data_inicio, l.data_fim::text AS data_fim,
+        CASE WHEN l.data_fim IS NULL THEN NULL
+             ELSE GREATEST(0, (CURRENT_DATE - l.data_fim))
+        END AS dias_atraso,
+        (SELECT COUNT(*) FROM acervo.versao v WHERE v.lote_id = l.id)::int AS versoes,
+        (SELECT COUNT(*) FROM acervo.versao v
+          WHERE v.lote_id = l.id AND v.tipo_versao_id = ${TIPO_VERSAO.PLANEJADA})::int AS versoes_planejadas
+      FROM acervo.lote AS l
+      INNER JOIN acervo.projeto AS pr ON pr.id = l.projeto_id
+      -- Tudo que NÃO fechou, e não só o "Em execução". O lote Não iniciado e o
+      -- Pausado são trabalho que o ano ainda deve, e some-los de propósito faria
+      -- a tela dizer que só há uma corrida aberta quando há quatro.
+      WHERE l.status_execucao_id <> ${STATUS_EXECUCAO.CONCLUIDO}
+      ORDER BY l.data_fim NULLS LAST, l.pit
+    `)
+
+    // A exceção autorizada que ainda não virou folha.
+    //
+    // CONTA AS VERSÕES em vez de filtrar por elas: uma demanda com produção
+    // parcial (duas das seis folhas prontas) interessa mais do que uma sem nada,
+    // e a lista que só mostra as vazias esconde justamente essa.
+    const extraPit = await t.any(`
+      SELECT de.id, de.ano, de.descricao, de.tipo_produto, de.quantidade,
+        de.documento_autorizacao,
+        (SELECT COUNT(*) FROM acervo.versao v WHERE v.demanda_extra_id = de.id)::int AS versoes,
+        (SELECT COUNT(*) FROM acervo.versao v
+          WHERE v.demanda_extra_id = de.id
+            AND v.tipo_versao_id = ${TIPO_VERSAO.REGULAR})::int AS versoes_prontas
+      FROM pit.demanda_extra AS de
+      WHERE de.ano = $<ano>
+      ORDER BY de.id
+    `, { ano })
+
+    return { a_produzir: aProduzir, lotes_em_execucao: lotes, extra_pit: extraPit }
+  })
 }
 
 // Last 20 registered products

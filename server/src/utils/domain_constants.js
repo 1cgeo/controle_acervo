@@ -193,6 +193,15 @@ const TIPO_CAPACITACAO = {
   RECEBIDA: 2
 }
 
+// dominio.tipo_status_execucao (projeto e lote)
+const STATUS_EXECUCAO = {
+  NAO_INICIADO: 1,
+  EM_EXECUCAO: 2,
+  CONCLUIDO: 3,
+  CONCLUIDO_PARCIALMENTE: 4,
+  PAUSADO: 5
+}
+
 // dominio.situacao_capacitacao
 const SITUACAO_CAPACITACAO = {
   PREVISTA: 1,
@@ -222,5 +231,6 @@ module.exports = {
   CANAL_RECEBIMENTO,
   SITUACAO_EXTRA_PIT,
   TIPO_CAPACITACAO,
-  SITUACAO_CAPACITACAO
+  SITUACAO_CAPACITACAO,
+  STATUS_EXECUCAO
 }

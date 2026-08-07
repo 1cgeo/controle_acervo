@@ -24,30 +24,38 @@ export async function renderDistributionTab(container) {
     loading: true,
   });
 
-  const barTipoArquivo = createBarChart({
-    title: 'Arquivos por Tipo de Arquivo',
+  // UMA UNIDADE POR GRÁFICO. Antes GB e Quantidade dividiam o mesmo eixo Y: com
+  // 1.789 GB de arquivo complementar ao lado de 7.233 arquivos de formato
+  // alternativo, as duas séries não eram comparáveis e a barra menor virava uma
+  // linha no chão. Dois gráficos respondem as duas perguntas; um só não
+  // respondia nenhuma.
+  const barGbArquivo = createBarChart({
+    title: 'Armazenamento por Tipo de Arquivo',
     xKey: 'tipo_arquivo',
-    series: [
-      { dataKey: 'total_gb', label: 'GB' },
-      { dataKey: 'quantidade', label: 'Quantidade' },
-    ],
+    series: [{ dataKey: 'total_gb', label: 'GB' }],
     loading: true,
   });
 
+  const barQtdArquivo = createBarChart({
+    title: 'Quantidade por Tipo de Arquivo',
+    xKey: 'tipo_arquivo',
+    series: [{ dataKey: 'quantidade', label: 'Arquivos' }],
+    loading: true,
+  });
+
+  // PERCENTUAL, e não GB absoluto. A pergunta do volume é "qual está enchendo",
+  // e não "qual é maior". Em GB, o Acervo SCA (37.000 GB de capacidade) dominava
+  // o eixo e o volume que está em 76% aparecia como uma barra de dois pixels.
   const barVolume = createBarChart({
-    title: 'Armazenamento por Volume',
+    title: 'Uso dos volumes (% da capacidade)',
     xKey: 'nome_volume',
-    series: [
-      { dataKey: 'total_gb', label: 'Usado (GB)' },
-      { dataKey: 'available_gb', label: 'Disponível (GB)' },
-    ],
-    stacked: true,
+    series: [{ dataKey: 'percentual_uso', label: '% usado' }],
     loading: true,
   });
 
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieTipo, pieEscala]));
-  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barGbTipo, barTipoArquivo]));
-  container.appendChild(barVolume);
+  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barGbTipo, barGbArquivo]));
+  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barQtdArquivo, barVolume]));
 
   // Um bloco por grafico, e nao uma carga so.
   //
@@ -78,23 +86,29 @@ export async function renderDistributionTab(container) {
       dados: (linhas) => linhas.map(d => ({ ...d, total_gb: Number(d.total_gb) })),
     },
     {
-      card: barTipoArquivo,
+      card: barGbArquivo,
       buscar: acervoService.getArquivosTipoArquivo,
-      dados: (linhas) => linhas.map(d => ({
-        ...d,
-        total_gb: Number(d.total_gb),
-        quantidade: Number(d.quantidade),
-      })),
+      dados: (linhas) => linhas.map(d => ({ ...d, total_gb: Number(d.total_gb) })),
+    },
+    {
+      card: barQtdArquivo,
+      buscar: acervoService.getArquivosTipoArquivo,
+      dados: (linhas) => linhas.map(d => ({ ...d, quantidade: Number(d.quantidade) })),
     },
     {
       card: barVolume,
       buscar: acervoService.getGbVolume,
-      // O disponivel e a capacidade do volume menos o usado, nunca negativo.
-      dados: (linhas) => linhas.map(d => ({
-        ...d,
-        total_gb: Number(d.total_gb),
-        available_gb: Math.max(0, Number(d.capacidade_gb_volume || 0) - Number(d.total_gb)),
-      })),
+      // O percentual sai da MESMA conta do alerta de 80% (dashboard_ctrl,
+      // getSystemHealth), para o gráfico e o alerta nunca discordarem. Volume sem
+      // capacidade declarada fica em zero em vez de dividir por zero.
+      dados: (linhas) => linhas.map(d => {
+        const capacidade = Number(d.capacidade_gb_volume || 0);
+        const usado = Number(d.total_gb || 0);
+        return {
+          ...d,
+          percentual_uso: capacidade > 0 ? Number(((usado / capacidade) * 100).toFixed(1)) : 0,
+        };
+      }),
     },
   ];
 
@@ -120,7 +134,7 @@ export async function renderDistributionTab(container) {
   return {
     cleanup: () => {
       disposed = true;
-      [pieTipo, pieEscala, barGbTipo, barTipoArquivo, barVolume].forEach(c => c._cleanup && c._cleanup());
+      [pieTipo, pieEscala, barGbTipo, barGbArquivo, barQtdArquivo, barVolume].forEach(c => c._cleanup && c._cleanup());
     },
     refresh: load,
   };

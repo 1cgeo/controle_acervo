@@ -94,6 +94,31 @@
   background: var(--color-error);
 }
 
+/* NEUTRO, e nao uma quarta cor de julgamento. E a meta que ainda nao tem plano
+   acumulado no mes: sem planejado nao ha com o que comparar, e pintar de verde
+   ou de vermelho seria afirmar um veredito que ninguem calculou. */
+.progress-bar__fill--neutro {
+  background: var(--text-secondary);
+}
+
+/* O TRILHO PINTADO, para a barra dizer o estado mesmo com progresso ZERO.
+ *
+ * Com realizado zero o `__fill` tem largura 0% e desaparece: na tela, a meta que
+ * prometia 4.200 e entregou nada ficava com a barra cinza vazia, igual a meta
+ * sem plano nenhum. O pior caso era o unico que nao gritava. Agora o fundo
+ * carrega a cor esmaecida e o preenchimento carrega a cor cheia. */
+.progress-bar--error {
+  background: color-mix(in srgb, var(--color-error) 22%, transparent);
+}
+
+.progress-bar--warning {
+  background: color-mix(in srgb, var(--color-warning) 22%, transparent);
+}
+
+.progress-bar--success {
+  background: color-mix(in srgb, var(--color-success) 22%, transparent);
+}
+
 /* ---------------------------------------------------------------------------
  * Busca do acervo: lista e mapa lado a lado.
  *

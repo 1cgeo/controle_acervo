@@ -30,9 +30,6 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     { id: 1, arquivo_id: 10, data_download: '2026-07-06T10:00:00.000Z', apagado: false },
     { id: 2, arquivo_id: 11, data_download: '2026-07-06T11:00:00.000Z', apagado: true },
   ])),
-  getSituacaoCarregamento: vi.fn(() => Promise.resolve([
-    { situacao: 'Carregado', quantidade: '15346' },
-  ])),
 }));
 
 import { renderActivityTab } from './activity-tab.js';
@@ -53,7 +50,7 @@ describe('renderActivityTab', () => {
     expect(acervoService.getDownloadsDia).toHaveBeenCalled();
     expect(acervoService.getUltimosProdutos).toHaveBeenCalled();
 
-    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(7);
+    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(6);
     expect(container.querySelector('.sub-tabs__item--active').textContent).toBe('Produtos Recentes');
     expect(primeiraLinha(container)[0]).toBe('Carta X');
 
@@ -125,46 +122,6 @@ describe('renderActivityTab', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(primeiraLinha(container)[1]).toBe('-');
     expect(primeiraLinha(container)[2]).toBe('-');
-
-    aba.cleanup();
-  });
-
-  test('a sub-aba de situacao de carregamento monta um grafico de setores', async () => {
-    const container = document.createElement('div');
-    const aba = await renderActivityTab(container);
-
-    const botoes = Array.from(container.querySelectorAll('.sub-tabs__item'));
-    botoes.find(b => b.textContent === 'Situação de Carregamento').click();
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(acervoService.getSituacaoCarregamento).toHaveBeenCalled();
-    expect(container.querySelector('.tabs__content .chart-card')).not.toBeNull();
-
-    aba.cleanup();
-  });
-
-  // FALHA E VAZIO SAO COISAS DIFERENTES. Zerando a serie no catch, o card diz
-  // "Sem dados disponiveis", que e a frase do acervo sem arquivo: rota fora do
-  // ar se leria como situacao sem registro. "Nao houve" e "nao consegui saber"
-  // pedem acoes opostas, e o painel e o que o chefe olha para decidir.
-  test('falha na situacao de carregamento pinta ERRO, e nao pizza vazia', async () => {
-    acervoService.getSituacaoCarregamento.mockRejectedValueOnce(
-      new Error('Falha ao consultar o acervo'),
-    );
-
-    const container = document.createElement('div');
-    const aba = await renderActivityTab(container);
-
-    const botoes = Array.from(container.querySelectorAll('.sub-tabs__item'));
-    botoes.find(b => b.textContent === 'Situação de Carregamento').click();
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    const erro = container.querySelector('.tabs__content .dashboard-erro');
-    expect(erro).not.toBeNull();
-    // A mensagem do SERVIDOR, e nao uma frase generica: ela e o que decide se a
-    // pessoa tenta de novo ou chama alguem.
-    expect(erro.textContent).toContain('Falha ao consultar o acervo');
-    expect(container.textContent).not.toContain('Sem dados disponíveis');
 
     aba.cleanup();
   });

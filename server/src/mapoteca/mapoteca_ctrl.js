@@ -449,7 +449,8 @@ controller.getPedidos = async (ano) => {
            p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
            -- A meta e chave estrangeira, e nunca o codigo digitado a mao. O id
            -- serve a escrita; o codigo serve a tela e a planilha.
-           p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
+           -- O ::int pela mesma razao do detalhe: BIGINT sai do driver como texto.
+           p.meta_pit_id::int AS meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
            -- O mes PROMETIDO, de onde sai o planejado da meta 4. Distinto do
            -- prazo, que e o limite do cliente. (Sem crase: template literal.)
            p.data_prevista,
@@ -728,7 +729,15 @@ controller.getPedidoById = async (pedidoId) => {
              p.forma_entrega_id, fe.nome AS forma_entrega_nome,
              p.palavras_chave, p.operacao, p.prazo,
              p.demandante, p.omds, p.previsto_pit,
-             p.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
+             -- O ::int porque a coluna e BIGINT, e o driver devolve int8 como
+             -- TEXTO. O Joi da escrita e number().integer().strict(), sem
+             -- coercao: quem lia o pedido e o reenviava (o comando
+             -- mapoteca pedido corrigir, que e leitura-altera-reenvia) levava
+             -- '"meta_pit_id" must be a number' em TODO pedido ligado a meta, e
+             -- so neles. A tela escapava por acidente, porque o combo remonta o
+             -- valor da propria lista de opcoes em vez de devolver o que o GET
+             -- trouxe. Mesmo padrao das contagens deste arquivo.
+             p.meta_pit_id::int AS meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
              mp.descricao AS meta_pit_descricao,
              p.data_prevista,
              p.canal_recebimento_id, cr.nome AS canal_recebimento_nome,
@@ -766,7 +775,9 @@ controller.getPedidoById = async (pedidoId) => {
              -- vem na mesma resposta. Devolver aqui o valor já resolvido faria o
              -- formulário reenviar como declaração do item o que era herança do
              -- pedido, e a exceção viraria a regra em toda edição.
-             pp.meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
+             -- O ::int pela mesma razao do pedido: BIGINT sai do driver como
+             -- texto e o Joi do item tambem e strict.
+             pp.meta_pit_id::int AS meta_pit_id, ${ROTULO_META} AS meta_pit_codigo,
              pp.observacao, pp.producao_especifica,
              pp.nome_avulso, pp.descricao_avulso,
              ${ITEM_E_AVULSO} AS item_avulso,

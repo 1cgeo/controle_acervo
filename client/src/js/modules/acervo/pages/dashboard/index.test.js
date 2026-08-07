@@ -17,6 +17,21 @@ vi.mock('@modules/acervo/services/ponto-controle-service.js', () => ({
   })),
 }));
 
+// A aba Plano do Ano le a grade do PIT, que e rota de PLATAFORMA e cobra
+// gerente. O mock devolve gerente para a aba montar inteira sob teste; o caso
+// de quem NAO e gerente vive em plano-tab.test.js.
+vi.mock('@store/auth-store.js', async (importarOriginal) => ({
+  ...(await importarOriginal()),
+  ehGerenteDeAlgumModulo: vi.fn(() => true),
+}));
+
+vi.mock('@services/plataforma-service.js', async (importarOriginal) => ({
+  ...(await importarOriginal()),
+  getGradePit: vi.fn(() => Promise.resolve([])),
+  getDiagnosticoPit: vi.fn(() => Promise.resolve([])),
+  getAnosMetaPit: vi.fn(() => Promise.resolve([2026])),
+}));
+
 vi.mock('@modules/acervo/services/acervo-service.js', () => {
   const vazio = () => Promise.resolve([]);
   return {
@@ -25,6 +40,9 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => {
     { label: 'Exportar planilha (CSV)', endpoint: '/acervo/export-planilha-csv', filename: 'planilha-acervo.zip' },
     { label: 'Exportar GeoJSON (site de produtos)', endpoint: '/acervo/situacao-geral', filename: 'situacao-geral.zip' },
   ],
+  getPlanoDoAno: vi.fn(() => Promise.resolve({
+    a_produzir: [], lotes_em_execucao: [], extra_pit: [],
+  })),
   getProdutosTotal: vi.fn(() => Promise.resolve({ total_produtos: 5741 })),
   getArquivosTotalGb: vi.fn(() => Promise.resolve({ total_gb: 100 })),
   getUsuariosTotal: vi.fn(() => Promise.resolve({ total_usuarios: 10 })),
@@ -67,14 +85,16 @@ afterEach(() => {
 });
 
 describe('renderDashboard do acervo', () => {
-  test('monta o titulo, a barra de exportacao e as cinco abas', async () => {
+  test('monta o titulo, a barra de exportacao e as seis abas', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
 
     expect(container.querySelector('.dashboard__title').textContent).toBe('Dashboard do Acervo');
+    // O Plano do Ano vem PRIMEIRO: e a unica aba que responde o que o acervo
+    // DEVE, com prazo, e o resto responde o que ele tem.
     expect(rotulosAbas(container)).toEqual([
-      'Visão Geral', 'Distribuição', 'Atividade', 'Análises Avançadas',
-      'Ponto de Controle',
+      'Plano do Ano', 'Visão Geral', 'Distribuição', 'Atividade',
+      'Análises Avançadas', 'Ponto de Controle',
     ]);
 
     const botoesExport = container.querySelectorAll('.export-bar__btn');
@@ -84,13 +104,13 @@ describe('renderDashboard do acervo', () => {
     cleanup();
   });
 
-  test('abre na aba de visao geral e ja carrega os totais', async () => {
+  test('abre no plano do ano e ja carrega o plano, nao os totais', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container);
 
-    expect(acervoService.getProdutosTotal).toHaveBeenCalled();
-    expect(container.querySelectorAll('.stats-card')).toHaveLength(6);
-    // A aba de distribuicao ainda nao existe no DOM: so a ativa e montada.
+    expect(acervoService.getPlanoDoAno).toHaveBeenCalled();
+    // As outras abas nao existem no DOM: so a ativa e montada.
+    expect(acervoService.getProdutosTotal).not.toHaveBeenCalled();
     expect(acervoService.getProdutosTipo).not.toHaveBeenCalled();
 
     cleanup();
@@ -103,32 +123,46 @@ describe('renderDashboard do acervo', () => {
 
     botoes[1].click();
     await flush();
-    expect(acervoService.getProdutosTipo).toHaveBeenCalled();
-    expect(container.querySelectorAll('.tabs__content .chart-card')).toHaveLength(5);
+    expect(acervoService.getProdutosTotal).toHaveBeenCalled();
+    expect(container.querySelectorAll('.stats-card')).toHaveLength(6);
 
     botoes[2].click();
     await flush();
-    expect(acervoService.getArquivosDia).toHaveBeenCalled();
-    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(7);
+    expect(acervoService.getProdutosTipo).toHaveBeenCalled();
+    // SEIS: GB e quantidade por tipo de arquivo viraram dois gráficos, porque
+    // duas unidades no mesmo eixo Y não se comparam.
+    expect(container.querySelectorAll('.tabs__content .chart-card')).toHaveLength(6);
 
     botoes[3].click();
     await flush();
-    expect(acervoService.getProdutoActivityTimeline).toHaveBeenCalled();
-    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(4);
+    expect(acervoService.getArquivosDia).toHaveBeenCalled();
+    // SEIS: saiu "Situação de Carregamento", que era uma pizza de uma fatia só.
+    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(6);
+
+    botoes[4].click();
+    await flush();
+    expect(acervoService.getVersaoActivityTimeline).toHaveBeenCalled();
+    // DUAS: saíram "Status de Projetos" e "Atividade de Usuários".
+    expect(container.querySelectorAll('.sub-tabs__item')).toHaveLength(2);
 
     cleanup();
   });
 
-  test('o auto-refresh de 60 s derruba o cache e recarrega so a aba ativa', async () => {
+  test('o auto-refresh de 5 min derruba o cache e recarrega so a aba ativa', async () => {
     vi.useFakeTimers();
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container);
 
-    const antes = acervoService.getProdutosTotal.mock.calls.length;
+    const antes = acervoService.getPlanoDoAno.mock.calls.length;
+    // Um minuto NAO basta mais: e o que faz este teste reprovar o intervalo
+    // antigo em vez de passar nos dois.
     await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(acervoService.invalidarDashboard).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
 
     expect(acervoService.invalidarDashboard).toHaveBeenCalledTimes(1);
-    expect(acervoService.getProdutosTotal.mock.calls.length).toBe(antes + 1);
+    expect(acervoService.getPlanoDoAno.mock.calls.length).toBe(antes + 1);
     // A aba inativa continua sem ser buscada.
     expect(acervoService.getProdutosTipo).not.toHaveBeenCalled();
 
@@ -141,24 +175,25 @@ describe('renderDashboard do acervo', () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container);
 
-    // A Visão Geral são cartões, sem gráfico. A Distribuição desenha, e é pelo
-    // gráfico dela que dá para ver se a aba ATIVA foi desmontada. Com lista
-    // vazia o cartão escreve "Sem dados" e nenhum Chart nasce: daí o dado.
+    // O Plano do Ano e a Visão Geral são tabelas e cartões, sem gráfico. A
+    // Distribuição desenha, e é pelo gráfico dela que dá para ver se a aba ATIVA
+    // foi desmontada. Com lista vazia o cartão escreve "Sem dados" e nenhum
+    // Chart nasce: daí o dado.
     acervoService.getProdutosTipo.mockResolvedValue([
       { tipo_produto: 'Carta Topográfica', total: 12 },
     ]);
-    Array.from(container.querySelectorAll('.tabs > .tabs__item'))[1].click();
+    Array.from(container.querySelectorAll('.tabs > .tabs__item'))[2].click();
     await vi.advanceTimersByTimeAsync(0);
 
     const graficos = instanciasChart.slice(jaVivos);
     expect(graficos.length).toBeGreaterThan(0);
 
     cleanup();
-    const antes = acervoService.getProdutosTotal.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    const antes = acervoService.getProdutosTipo.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
 
     expect(acervoService.invalidarDashboard).not.toHaveBeenCalled();
-    expect(acervoService.getProdutosTotal.mock.calls.length).toBe(antes);
+    expect(acervoService.getProdutosTipo.mock.calls.length).toBe(antes);
     // A aba ativa saiu junto: os gráficos dela foram destruídos.
     expect(graficos.every(g => g.destroyed)).toBe(true);
   });

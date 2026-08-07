@@ -28,7 +28,12 @@ export function invalidarDashboard() {
   invalidate(CACHE);
 }
 
-// ---- Aba 1: Visao Geral ----
+// ---- Aba 1: Plano do Ano ----
+// A chave do cache leva o ANO, senao trocar o ano devolveria o plano do anterior.
+export const getPlanoDoAno = (ano) =>
+  cached(`plano_ano:${ano}`, `/dashboard/plano_ano?ano=${ano}`);
+
+// ---- Aba 2: Visao Geral ----
 export const getProdutosTotal = () => cached('produtos_total', '/dashboard/produtos_total');
 export const getArquivosTotalGb = () => cached('arquivos_total_gb', '/dashboard/arquivos_total_gb');
 export const getUsuariosTotal = () => cached('usuarios_total', '/dashboard/usuarios_total');

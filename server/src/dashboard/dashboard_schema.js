@@ -24,6 +24,17 @@ models.timelineParams = Joi.object().keys({
     .default(12)
 })
 
+// O ano do plano. DEFAULT no ano corrente, e nao obrigatorio: quem abre o painel
+// quer o ano que esta correndo, e obrigar o parametro so faria a tela repetir a
+// mesma conta do servidor.
+models.anoQuery = Joi.object().keys({
+  ano: Joi.number()
+    .integer()
+    .min(2000)
+    .max(2100)
+    .default(() => new Date().getFullYear())
+})
+
 models.limitParam = Joi.object().keys({
   limit: Joi.number()
     .integer()

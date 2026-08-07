@@ -1,7 +1,6 @@
 import { el } from '@utils/dom.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createPieChart } from '@components/charts/pie-chart.js';
-import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { formatNumber } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
@@ -85,23 +84,32 @@ function graficoComPeriodo({ title, xKey, series, onPeriodo }) {
 }
 
 /**
- * Aba "Análises Avançadas": duas linhas do tempo com seletor de periodo e
- * quatro sub-abas de detalhe (versoes, armazenamento, projetos e usuarios).
+ * Aba "Análises Avançadas": a produção mês a mês, com seletor de periodo, e duas
+ * sub-abas de detalhe (versoes e armazenamento).
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
 export async function renderAdvancedTab(container) {
   let disposed = false;
 
-  // --- Linha do tempo de produtos ---
-  const produtos = graficoComPeriodo({
-    title: 'Linha do Tempo de Produtos',
+  // --- A PRODUÇÃO, mês a mês ---
+  //
+  // SAIU a "Linha do Tempo de Produtos", e não foi poda de gosto. Ela contava
+  // `produto.data_cadastramento`, que é o dia em que a linha entrou no SCA, e não
+  // o dia em que a folha ficou pronta. Na produção, medido em 2026-08-07, ela
+  // desenhava 3.500 produtos em junho e 2.200 em julho: era a MIGRAÇÃO do acervo,
+  // e o painel a mostrava como se fosse produção da Divisão.
+  //
+  // Ficou UM gráfico, contado por `data_edicao`, que é a mesma data de onde o PIT
+  // tira o realizado. O painel do acervo e a grade do PIT param de contar coisas
+  // diferentes com o mesmo nome.
+  const versoes = graficoComPeriodo({
+    title: 'Produção por mês (data de edição)',
     xKey: 'mes_label',
     series: [
-      { dataKey: 'new_products', label: 'Novos Produtos' },
-      { dataKey: 'modified_products', label: 'Produtos Modificados' },
+      { dataKey: 'novas_versoes', label: 'Folhas editadas' },
     ],
-    onPeriodo: (meses) => loadProdutos(meses),
+    onPeriodo: (meses) => loadVersoes(meses),
   });
 
   // Trocar o periodo depressa deixa duas respostas na rede, e a que chega por
@@ -109,41 +117,6 @@ export async function renderAdvancedTab(container) {
   // deixar o grafico de 6 na tela com o select marcando 24: o painel afirmaria
   // um recorte que nao e o dele. E o mesmo guarda que a busca e a auditoria ja
   // usam.
-  let pedidoProdutos = 0;
-
-  async function loadProdutos(meses, silencioso = false) {
-    if (!silencioso) produtos.card.update({ loading: true });
-    const meu = ++pedidoProdutos;
-    try {
-      const dados = await acervoService.getProdutoActivityTimeline(meses);
-      if (disposed || meu !== pedidoProdutos) return;
-      produtos.card.update({
-        data: (Array.isArray(dados) ? dados : []).map(d => ({ ...d, mes_label: formatMes(d.month) })),
-        loading: false,
-      });
-    } catch (erro) {
-      if (disposed || meu !== pedidoProdutos) return;
-      // Estado de ERRO, e nao grafico vazio. Zerar a serie fazia o card mostrar
-      // "Sem dados disponiveis", que e a frase do acervo sem producao: a falha
-      // da API lia-se como mes sem carta cadastrada. O painel e o que o chefe
-      // olha para decidir, e "nao houve" e "nao consegui saber" pedem acoes
-      // opostas. Mesma regra da aba de Atividade.
-      produtos.card.update({ data: [], loading: false });
-      mostrarErroNoGrafico(produtos.card, erro, () => loadProdutos(produtos.getPeriodo()));
-    }
-  }
-
-  // --- Linha do tempo de versoes ---
-  const versoes = graficoComPeriodo({
-    title: 'Linha do Tempo de Versões Cadastradas',
-    xKey: 'mes_label',
-    series: [
-      { dataKey: 'novas_versoes', label: 'Novas Versões' },
-      { dataKey: 'acumulado', label: 'Acumulado' },
-    ],
-    onPeriodo: (meses) => loadVersoes(meses),
-  });
-
   let pedidoVersoes = 0;
 
   async function loadVersoes(meses, silencioso = false) {
@@ -157,36 +130,42 @@ export async function renderAdvancedTab(container) {
           ...d,
           mes_label: formatMes(d.month),
           novas_versoes: Number(d.novas_versoes),
-          acumulado: Number(d.acumulado),
         })),
         loading: false,
       });
     } catch (erro) {
       if (disposed || meu !== pedidoVersoes) return;
+      // Estado de ERRO, e nao grafico vazio. Zerar a serie fazia o card mostrar
+      // "Sem dados disponiveis", que e a frase do acervo sem producao: a falha
+      // da API lia-se como mes sem carta editada. O painel e o que o chefe olha
+      // para decidir, e "nao houve" e "nao consegui saber" pedem acoes opostas.
       versoes.card.update({ data: [], loading: false });
       mostrarErroNoGrafico(versoes.card, erro, () => loadVersoes(versoes.getPeriodo()));
     }
   }
 
-  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
-    produtos.card,
-    versoes.card,
-  ]));
+  container.appendChild(versoes.card);
 
+  // SAIU a sub-aba "Atividade de Usuários" e SAIU a "Status de Projetos".
+  //
+  // A primeira listava os dez usuários mais ativos, e na produção o acervo
+  // inteiro (17.499 arquivos) foi carregado por UM login de carga: a tabela era
+  // uma linha e nove zeros. A segunda desenhava duas pizzas para dizer que 17
+  // projetos de 18 e 98 lotes de 99 estão concluídos, e o único "em execução" é
+  // um projeto guarda-chuva aberto em 1982. O que interessa do lote agora tem
+  // lugar melhor: a aba Plano do Ano mostra o lote que ainda não fechou, com
+  // prazo e atraso.
   const subAbas = createTabs({
     className: 'sub-tabs',
     ariaLabel: 'Detalhe das análises',
     tabs: [
       { id: 'versoes', label: 'Estatísticas de Versões', render: renderVersionStats },
       { id: 'armazenamento', label: 'Tendências de Armazenamento', render: renderStorageTrends },
-      { id: 'projetos', label: 'Status de Projetos', render: renderProjectStatus },
-      { id: 'usuarios', label: 'Atividade de Usuários', render: renderUserActivity },
     ],
   });
   container.appendChild(subAbas.element);
 
   await Promise.all([
-    loadProdutos(PERIODOS[0]),
     loadVersoes(PERIODOS[0]),
     subAbas.ready,
   ]);
@@ -194,13 +173,11 @@ export async function renderAdvancedTab(container) {
   return {
     cleanup: () => {
       disposed = true;
-      if (produtos.card._cleanup) produtos.card._cleanup();
       if (versoes.card._cleanup) versoes.card._cleanup();
       subAbas._cleanup();
     },
     refresh: async () => {
       await Promise.all([
-        loadProdutos(produtos.getPeriodo(), true),
         loadVersoes(versoes.getPeriodo(), true),
         subAbas.refreshActive(),
       ]);
@@ -227,9 +204,13 @@ export async function renderVersionStats(container) {
   const resumo = el('div', { className: 'summary-cards' });
   container.appendChild(resumo);
 
-  const pieDistribuicao = createPieChart({ title: 'Distribuição de Versões por Produto', loading: true });
+  // SAIU a pizza "Distribuição de Versões por Produto". Na produção ela era uma
+  // fatia de 85% (5.356 produtos com uma versão) e quatro lascas: cauda longa em
+  // setor não se lê. E saíram dois cartões: "Total de Versões", que já é cartão
+  // da Visão Geral, e "Produtos com Versões", que vale 6.309, exatamente o total
+  // de produtos, porque todo produto tem versão.
   const pieTipo = createPieChart({ title: 'Tipos de Versão', loading: true });
-  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieDistribuicao, pieTipo]));
+  container.appendChild(pieTipo);
 
   const paineis = paineisDe(container);
   paineis.guardar();
@@ -242,18 +223,8 @@ export async function renderVersionStats(container) {
       const stats = (dados && dados.stats) || {};
 
       resumo.innerHTML = '';
-      resumo.appendChild(summaryCard(formatNumber(stats.total_versions), 'Total de Versões'));
-      resumo.appendChild(summaryCard(formatNumber(stats.products_with_versions), 'Produtos com Versões'));
-      resumo.appendChild(summaryCard(Number(stats.avg_versions_per_product || 0).toFixed(1), 'Média por Produto'));
-      resumo.appendChild(summaryCard(formatNumber(stats.max_versions_per_product), 'Máximo por Produto'));
-
-      pieDistribuicao.update({
-        data: (Array.isArray(dados?.distribution) ? dados.distribution : []).map(d => ({
-          label: `${d.versions_per_product} versões`,
-          value: Number(d.product_count),
-        })),
-        loading: false,
-      });
+      resumo.appendChild(summaryCard(Number(stats.avg_versions_per_product || 0).toFixed(1), 'Média de versões por produto'));
+      resumo.appendChild(summaryCard(formatNumber(stats.max_versions_per_product), 'Máximo por produto'));
 
       pieTipo.update({
         data: (Array.isArray(dados?.type_distribution) ? dados.type_distribution : []).map(d => ({
@@ -264,10 +235,9 @@ export async function renderVersionStats(container) {
       });
     } catch (erro) {
       if (disposed) return;
-      // Uma chamada so alimenta os quatro cartoes e os dois graficos desta
-      // sub-aba. Falhando ela, nada aqui tem valor, entao o erro toma a
-      // sub-aba inteira, e nao cada grafico.
-      pieDistribuicao.update({ data: [], loading: false });
+      // Uma chamada so alimenta os cartoes e o grafico desta sub-aba. Falhando
+      // ela, nada aqui tem valor, entao o erro toma a sub-aba inteira, e nao
+      // cada grafico.
       pieTipo.update({ data: [], loading: false });
       mostrarErro(container, erro, load);
     }
@@ -278,7 +248,6 @@ export async function renderVersionStats(container) {
   return {
     cleanup: () => {
       disposed = true;
-      if (pieDistribuicao._cleanup) pieDistribuicao._cleanup();
       if (pieTipo._cleanup) pieTipo._cleanup();
     },
     refresh: load,
@@ -338,126 +307,5 @@ export async function renderStorageTrends(container) {
       if (grafico.card._cleanup) grafico.card._cleanup();
     },
     refresh: () => load(grafico.getPeriodo(), true),
-  };
-}
-
-/**
- * Sub-aba "Status de Projetos".
- * @param {HTMLElement} container
- * @returns {Promise<{cleanup:Function, refresh:Function}>}
- */
-export async function renderProjectStatus(container) {
-  let disposed = false;
-
-  const resumo = el('div', { className: 'summary-cards' });
-  container.appendChild(resumo);
-
-  const pieProjetos = createPieChart({ title: 'Status dos Projetos', loading: true });
-  const pieLotes = createPieChart({ title: 'Status dos Lotes', loading: true });
-  container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieProjetos, pieLotes]));
-
-  const paineis = paineisDe(container);
-  paineis.guardar();
-
-  async function load() {
-    try {
-      const dados = await acervoService.getProjectStatusSummary();
-      if (disposed) return;
-      paineis.devolver();
-
-      resumo.innerHTML = '';
-      resumo.appendChild(summaryCard(formatNumber(dados?.projects_without_lots ?? 0), 'Projetos sem Lotes'));
-
-      pieProjetos.update({
-        data: (Array.isArray(dados?.project_status) ? dados.project_status : []).map(d => ({
-          label: d.status,
-          value: Number(d.project_count),
-        })),
-        loading: false,
-      });
-
-      pieLotes.update({
-        data: (Array.isArray(dados?.lot_status) ? dados.lot_status : []).map(d => ({
-          label: d.status,
-          value: Number(d.lot_count),
-        })),
-        loading: false,
-      });
-    } catch (erro) {
-      if (disposed) return;
-      pieProjetos.update({ data: [], loading: false });
-      pieLotes.update({ data: [], loading: false });
-      mostrarErro(container, erro, load);
-    }
-  }
-
-  await load();
-
-  return {
-    cleanup: () => {
-      disposed = true;
-      if (pieProjetos._cleanup) pieProjetos._cleanup();
-      if (pieLotes._cleanup) pieLotes._cleanup();
-    },
-    refresh: load,
-  };
-}
-
-/**
- * Sub-aba "Atividade de Usuários": os dez que mais mexeram no acervo.
- * @param {HTMLElement} container
- * @returns {Promise<{cleanup:Function, refresh:Function}>}
- */
-export async function renderUserActivity(container) {
-  let disposed = false;
-
-  container.appendChild(el('div', {
-    className: 'data-table-wrapper__title',
-    textContent: 'Dez usuários mais ativos',
-  }));
-
-  const tabela = createDataTable({
-    columns: [
-      { key: 'usuario', label: 'Usuário', sortable: true, className: 'data-table__cell--truncate' },
-      { key: 'uploads', label: 'Uploads', sortable: true, render: (row) => formatNumber(row.uploads) },
-      { key: 'modifications', label: 'Modificações', sortable: true, render: (row) => formatNumber(row.modifications) },
-      { key: 'downloads', label: 'Downloads', sortable: true, render: (row) => formatNumber(row.downloads) },
-      { key: 'total_activity', label: 'Total', sortable: true, render: (row) => formatNumber(row.total_activity) },
-    ],
-    rows: [],
-    loading: true,
-    pageSize: 10,
-    searchable: true,
-    emptyMessage: 'Sem atividade de usuário registrada',
-  });
-  container.appendChild(tabela.element);
-
-  const paineis = paineisDe(container);
-  paineis.guardar();
-
-  async function load() {
-    try {
-      const dados = await acervoService.getUserActivityMetrics(10);
-      if (disposed) return;
-      paineis.devolver();
-      tabela.update({
-        rows: (Array.isArray(dados) ? dados : []).map(row => ({
-          ...row,
-          usuario: row.usuario_nome || row.usuario_login || '-',
-        })),
-        loading: false,
-      });
-    } catch (erro) {
-      if (disposed) return;
-      tabela.update({ rows: [], loading: false });
-      mostrarErro(container, erro, load);
-    }
-  }
-
-  await load();
-
-  return {
-    cleanup: () => { disposed = true; tabela._cleanup(); },
-    refresh: load,
   };
 }

@@ -1,5 +1,4 @@
 import { createBarChart } from '@components/charts/bar-chart.js';
-import { createPieChart } from '@components/charts/pie-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
@@ -83,9 +82,10 @@ const COLUNAS_EXCLUSAO = [
   },
 ];
 
+// SAÍRAM as colunas `id` e `arquivo_id`. Eram duas chaves internas lado a lado, e
+// nenhuma das duas diz QUAL carta foi baixada, que é a única pergunta que esta
+// tabela existe para responder.
 const COLUNAS_DOWNLOAD = [
-  { key: 'id', label: 'ID', sortable: true },
-  { key: 'arquivo_id', label: 'Arquivo ID' },
   { key: 'data_download', label: 'Data do Download', sortable: true, render: (row) => formatDateTime(row.data_download) },
   {
     key: 'apagado',
@@ -178,46 +178,10 @@ export async function renderActivityTab(container) {
         label: 'Histórico de Downloads',
         render: tabelaTab({ columns: COLUNAS_DOWNLOAD, getData: acervoService.getDownloads }),
       },
-      {
-        id: 'carregamento',
-        label: 'Situação de Carregamento',
-        render: async (content) => {
-          let fechada = false;
-          const grafico = createPieChart({
-            title: 'Distribuição por Situação de Carregamento',
-            loading: true,
-          });
-          content.appendChild(grafico);
-
-          const load = async () => {
-            try {
-              const dados = await acervoService.getSituacaoCarregamento();
-              if (fechada) return;
-              grafico.update({
-                data: (Array.isArray(dados) ? dados : []).map(d => ({
-                  label: d.situacao,
-                  value: Number(d.quantidade),
-                })),
-                loading: false,
-              });
-            } catch (erro) {
-              if (fechada) return;
-              // Estado de ERRO, e não pizza vazia. Zerar a série faz o card
-              // dizer "Sem dados disponíveis", que é a frase do acervo sem
-              // arquivo: falha da API se leria como situação sem registro.
-              // "Não houve" e "não consegui saber" pedem ações opostas.
-              grafico.update({ data: [], loading: false });
-              mostrarErroNoGrafico(grafico, erro, load);
-            }
-          };
-
-          await load();
-          return {
-            cleanup: () => { fechada = true; if (grafico._cleanup) grafico._cleanup(); },
-            refresh: load,
-          };
-        },
-      },
+      // SAIU a sub-aba "Situação de Carregamento". Na produção, 17.499 dos 17.499
+      // arquivos estão em "Não carregado": era uma pizza de UMA fatia, ocupando
+      // uma sub-aba inteira para não dizer nada. Se a situação passar a variar,
+      // ela volta com dado que se lê.
     ],
   });
 

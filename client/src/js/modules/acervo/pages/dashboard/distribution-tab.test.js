@@ -3,7 +3,7 @@ import { describe, test, expect, vi } from 'vitest';
 // O jsdom nao tem canvas: sem o dublê, todo grafico com dado explodiria.
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
-// Aba de distribuicao: cinco endpoints em paralelo, dois setores e tres barras.
+// Aba de distribuicao: quatro endpoints em paralelo, dois setores e quatro barras (uma unidade por grafico).
 vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getProdutosTipo: vi.fn(() => Promise.resolve([
     { tipo_produto: 'Carta Topográfica', quantidade: '120' },
@@ -33,7 +33,7 @@ import { renderDistributionTab } from './distribution-tab.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
 
 describe('renderDistributionTab', () => {
-  test('chama os cinco endpoints e monta os cinco graficos', async () => {
+  test('chama os endpoints e monta os seis graficos', async () => {
     const container = document.createElement('div');
     const aba = await renderDistributionTab(container);
 
@@ -43,8 +43,8 @@ describe('renderDistributionTab', () => {
     expect(acervoService.getArquivosTipoArquivo).toHaveBeenCalled();
     expect(acervoService.getGbVolume).toHaveBeenCalled();
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(5);
-    expect(container.querySelectorAll('.dashboard-grid--2col')).toHaveLength(2);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
+    expect(container.querySelectorAll('.dashboard-grid--2col')).toHaveLength(3);
 
     aba.cleanup();
   });
@@ -66,7 +66,7 @@ describe('renderDistributionTab', () => {
     const container = document.createElement('div');
     const aba = await renderDistributionTab(container);
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(5);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
     aba.cleanup();
   });
 
@@ -88,7 +88,7 @@ describe('renderDistributionTab', () => {
 // dizer "Sem dados disponíveis": a frase do acervo sem produto daquele tipo.
 // Endpoint fora do ar lia-se como acervo vazio, que é a leitura oposta.
 describe('renderDistributionTab: falha por gráfico', () => {
-  test('só o gráfico que falhou vira estado de erro; os outros quatro ficam', async () => {
+  test('só o gráfico que falhou vira estado de erro; os outros cinco ficam', async () => {
     acervoService.getProdutosTipo.mockRejectedValueOnce(new Error('sem rede'));
 
     const container = document.createElement('div');
@@ -98,7 +98,7 @@ describe('renderDistributionTab: falha por gráfico', () => {
     expect(comErro).toHaveLength(1);
     expect(comErro[0].querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
     // Os cinco cards continuam montados: o que falhou foi a pergunta, não a aba.
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(5);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
 
     aba.cleanup();
   });

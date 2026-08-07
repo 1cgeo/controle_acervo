@@ -61,6 +61,22 @@
   color: var(--text-primary);
 }
 
+/* A BARRA DE ABAS DO DASHBOARD GRUDA NO TOPO ao rolar.
+ *
+ * A aba Distribuição tem seis gráficos e a Plano do Ano tem quatro tabelas: ao
+ * chegar no fim, o título e as abas já tinham saído da tela, e trocar de aba
+ * exigia rolar tudo de volta. Só o dashboard leva isto, e não o `.tabs` inteiro:
+ * dentro de um modal ou de uma sub-aba, `sticky` grudaria no lugar errado.
+ *
+ * O fundo é opaco de propósito: sem ele o conteúdo passa por baixo e se lê
+ * através das abas. */
+.dashboard > .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-default);
+}
+
 /* Linha de ESCOPO da aba: de que ano sao os numeros, e contados por qual data.
  *
  * Existe porque o dashboard da mapoteca tem DOIS recortes anuais legitimos e
@@ -276,6 +292,16 @@
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+  margin-bottom: var(--space-md);
+}
+
+/* A linha que diz O QUE a tabela abaixo responde. Existe porque o titulo
+   sozinho nomeia o bloco sem dizer a pergunta ("A produzir" nao diz que so
+   entra folha prometida que ainda nao virou edicao regular). */
+.chart-card__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: calc(var(--space-md) * -1);
   margin-bottom: var(--space-md);
 }
 

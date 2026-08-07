@@ -31,6 +31,24 @@ router.get(
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
 }));
 
+// O PLANO DO ANO: o que o acervo ainda deve produzir, e quando prometeu.
+//
+// CONSULTA, como o resto deste arquivo. A grade do PIT cobra gerente
+// (`GET /metas/execucao`, verifyGerente) porque ela e o plano da Divisao inteira;
+// aqui so sai o que ja e do ACERVO (versao planejada, lote, demanda extra), e
+// quem consulta o acervo ve o acervo. A aba do cliente mostra a faixa de metas so
+// para quem passa naquele guarda, e esta parte para todo mundo.
+router.get(
+  '/plano_ano',
+  verifyPerfil('consulta'),
+  schemaValidation({ query: dashboardSchema.anoQuery }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await dashboardCtrl.getPlanoDoAno(req.query.ano)
+    const msg = 'Plano do ano retornado com sucesso'
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  }))
+
 router.get(
   '/produtos_tipo',
   verifyPerfil('consulta'),
