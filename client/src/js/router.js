@@ -202,8 +202,10 @@ export function rotaRaiz() {
   // '/metas' abre para qualquer pessoa logada, entao qualquer nivel em Producao
   // basta para entrar por ela.
   if (temPerfil('consulta', 'producao')) return '/metas';
-  // Em Efetivo a tela mais baixa e o aproveitamento, que exige operador. Quem so
-  // tem consulta nao tem tela nenhuma, e cai no /unauthorized abaixo.
+  // Em Efetivo, a MESMA regua da home da secao na sidebar: o gerente entra pelo
+  // dashboard, e o operador pelo aproveitamento, que e a tela dele. Quem so tem
+  // consulta nao tem tela nenhuma, e cai no /unauthorized abaixo.
+  if (temPerfil('gerente', 'efetivo')) return '/acessos';
   if (temPerfil('operador', 'efetivo')) return '/aproveitamento';
   return '/unauthorized';
 }

@@ -138,7 +138,10 @@ const ROTAS = [
   // Elas resumem a Divisao inteira num quadro so, e responder "quem esteve
   // disponivel em cada semana do ano" e pergunta de quem responde pelo efetivo.
   ['get', '/api/efetivo/mapa?ano=2026', 'efetivo', 'gerente', null],
-  ['get', '/api/efetivo/mes?ano=2026&mes=3', 'efetivo', 'gerente', null]
+  ['get', '/api/efetivo/mes?ano=2026&mes=3', 'efetivo', 'gerente', null],
+  // A divergencia nasceu aqui, e nao em /api/usuarios (verifyAdmin), justamente
+  // para o dashboard do efetivo deixar de ser do administrador global.
+  ['get', '/api/efetivo/divergencias?ano=2026&mes=3', 'efetivo', 'gerente', null]
 ]
 
 const rotulo = ([metodo, caminho, modulo, nivel]) =>

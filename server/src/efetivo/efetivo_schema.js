@@ -27,6 +27,13 @@ models.anoMesQuery = Joi.object().keys({
   mes: Joi.number().integer().min(1).max(12).required()
 })
 
+// A 6.1 do RPCMTec e a tela leem JSON; o chefe que fecha o mes baixa CSV. Mesma
+// consulta, mesma guarda, mesmo recorte: um formato separado divergiria do que a
+// tela mostra na primeira regra nova.
+models.anoMesRelatorioQuery = models.anoMesQuery.keys({
+  formato: Joi.string().valid('json', 'csv').default('json')
+})
+
 // --- Passagem pela DGEO ------------------------------------------------------
 
 models.criarPeriodo = Joi.object().keys({

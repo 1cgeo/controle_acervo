@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
+import { logarComo } from '@/__tests__/helpers/sessao.js';
 
 // A aba ACESSOS de #/acessos, a SEGUNDA da tela, atrás do efetivo: o histórico
 // de login.
@@ -9,12 +10,14 @@ import { flush } from '@/__tests__/helpers/flush.js';
 //     8 horas e dois clientes, a mesma pessoa contaria várias vezes por dia
 //   - o cartão de conta habilitada se chama "conta", e não "usuário": ele mede
 //     `dgeo.usuario.ativo`, que é permissão de entrar e não gente na Divisão
-//   - a tela mostra quem NÃO consegue entrar (`senha` nula)
+//   - não há cartão de "contas sem senha": ele marcava zero de 53 contas, e  path-ok
+//     número que não pode mudar não é medida
 //   - não há série de 12 meses nem gráfico "por onde se entra": os dois nascem
 //     degenerados
 //   - o recorte do período se escolhe na tela
 //   - a linha de quem entrou hoje leva ao aproveitamento daquela pessoa
 //   - falha de rota não se escreve com o texto do vazio legítimo
+//   - a aba só existe para o ADMINISTRADOR GLOBAL: `/api/acessos` é verifyAdmin
 
 vi.mock('@services/plataforma-service.js', () => ({
   getAcessosResumo: vi.fn(() => Promise.resolve({})),
@@ -23,7 +26,8 @@ vi.mock('@services/plataforma-service.js', () => ({
   getLoginsUsuarios: vi.fn(() => Promise.resolve([])),
   getEfetivoDoMes: vi.fn(() => Promise.resolve([])),
   getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
-  getUsuarios: vi.fn(() => Promise.resolve([])),
+  getDivergenciasEfetivo: vi.fn(() => Promise.resolve([])),
+  exportacoesEfetivo: vi.fn(() => []),
 }));
 
 vi.mock('@utils/toast.js', () => ({
@@ -82,6 +86,10 @@ let container;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // A ABA ACESSOS SO EXISTE PARA O ADMINISTRADOR GLOBAL, e o setup global limpa
+  // o localStorage entre testes: sem entrar como administrador, a tela monta so
+  // a aba Efetivo e `abrirAcessos` nao acha o botao.
+  logarComo({}, { administrador: true });
   getAcessosResumo.mockResolvedValue(RESUMO);
   getAcessosLogados.mockResolvedValue(LOGADOS);
   getLoginsDia.mockResolvedValue([
@@ -128,13 +136,27 @@ describe('aba Acessos: o cartao diz o que mede', () => {
       'Pessoas que entraram hoje',
       'Pessoas que entraram em 30 dias',
       'Contas ativas',
-      'Contas sem senha',
     ]);
     expect(valorDoCard('Pessoas que entraram hoje')).toBe('4');
     expect(valorDoCard('Pessoas que entraram em 30 dias')).toBe('9');
     expect(valorDoCard('Contas ativas')).toBe('7');
-    // `dgeo.usuario.senha` nula e quem NAO consegue entrar.
-    expect(valorDoCard('Contas sem senha')).toBe('3');
+
+    cleanup();
+  });
+
+  // NUMERO QUE NAO PODE MUDAR NAO E MEDIDA. Em producao eram 0 de 53 contas, e
+  // sempre: a criacao de usuario gera o hash, entao `senha` nula nao acontece
+  // mais. O cartao ocupava um quarto da linha para dizer zero.
+  //
+  // A ROTA CONTINUA DEVOLVENDO `contas_sem_senha`, de proposito: a auditoria de
+  // conta orfa e pergunta legitima, e quem a fizer nao precisa de migracao. O
+  // que saiu foi o cartao, e este caso guarda a diferenca entre as duas coisas.
+  test('nao desenha cartao de contas sem senha, mesmo com a rota devolvendo o numero', async () => {
+    const cleanup = await abrirAcessos();
+
+    expect(RESUMO.contas_sem_senha).toBe(3);
+    expect(rotulosCards()).not.toContain('Contas sem senha');
+    expect(container.textContent).not.toContain('sem senha');
 
     cleanup();
   });
@@ -275,6 +297,36 @@ describe('aba Acessos: falha nao e vazio', () => {
     const cleanup = await abrirAcessos();
 
     expect(container.textContent).toContain('Falha ao carregar');
+
+    cleanup();
+  });
+});
+
+// A TELA DESCEU PARA O GERENTE DO EFETIVO, e as duas abas tem donos diferentes:
+// a aba Efetivo le `/efetivo/*` (gerente do modulo) e a aba Acessos le
+// `/acessos/*` (verifyAdmin). Uma aba que so sabe responder 403 e pior que uma
+// aba a menos.
+describe('aba Acessos: so para o administrador global', () => {
+  test('some para quem e gerente do efetivo e nao e administrador', async () => {
+    logarComo({ efetivo: 3 });
+
+    const cleanup = await renderAcessos(container, {});
+    await flush();
+
+    expect(abas().map(b => b.textContent)).toEqual(['Efetivo']);
+    // E nao busca o historico de login: a aba nem existe para montar.
+    expect(getAcessosResumo).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  test('aparece para o administrador global', async () => {
+    logarComo({}, { administrador: true });
+
+    const cleanup = await renderAcessos(container, {});
+    await flush();
+
+    expect(abas().map(b => b.textContent)).toEqual(['Efetivo', 'Acessos']);
 
     cleanup();
   });

@@ -74,15 +74,31 @@ const SISTEMA_EFETIVO = {
   label: 'Efetivo',
   icon: ICONS.people,
   visivel: () => isAdmin() || temPerfil('operador', 'efetivo'),
-  home: () => (isAdmin() ? '/acessos' : '/aproveitamento'),
+  // A home segue a MESMA régua do item Dashboard abaixo: quem alcança o
+  // dashboard entra por ele, e o operador entra pelo aproveitamento, que é a
+  // tela dele.
+  home: () => (isAdmin() || temPerfil('gerente', 'efetivo') ? '/acessos' : '/aproveitamento'),
   // Sem prefixo: são rotas de PLATAFORMA, e não '/efetivo-area/...'.
   prefixo: '',
   chavePrefixo: '',
   menu: [
-    // As duas de cima são CONTA DE SISTEMA, e não efetivo: quem entrou e quando,
-    // e quem tem acesso a quê. Continuam do administrador global, e o servidor
-    // cobra o mesmo com verifyAdmin em /api/acessos e /api/usuarios.
-    { id: 'acessos', label: 'Dashboard', icon: ICONS.dashboard, path: '/acessos', admin: true },
+    // O DASHBOARD É DO EFETIVO, e não conta de sistema: ele abre na aba Efetivo,
+    // e tudo o que ela lê sai de `/efetivo/*`, que cobra gerente do módulo. A
+    // aba Acessos, essa sim é do administrador global, e ela mesma se esconde de
+    // quem não é (`pages/acessos/index.js`).
+    //
+    // `visivel`, e não `admin`: com a marca, quem responde pelo efetivo via a
+    // seção "Efetivo" no menu e não via o dashboard dela.
+    {
+      id: 'acessos',
+      label: 'Dashboard',
+      icon: ICONS.dashboard,
+      path: '/acessos',
+      visivel: () => isAdmin() || temPerfil('gerente', 'efetivo'),
+    },
+    // A GESTÃO É CONTA DE SISTEMA: quem tem acesso a quê. Continua do
+    // administrador global, e o servidor cobra o mesmo com verifyAdmin em
+    // /api/usuarios.
     { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios', admin: true },
     // O retrato mensal do efetivo, que alimenta a subseção 6.1 do RPCMTec.
     // Fica aqui, e não junto do relatório, porque quem o preenche vem procurar
@@ -298,8 +314,8 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    * em `dominio.modulo` nem no registry.
    *
    * A HOME PODE SER FUNÇÃO, e não só string. O cabeçalho é um LINK, e a home de
-   * uma seção nem sempre é da pessoa: em Efetivo o Dashboard é do administrador
-   * global, e mandar o operador para lá o jogaria em /unauthorized ao clicar no
+   * uma seção nem sempre é da pessoa: em Efetivo o Dashboard é do gerente do
+   * módulo, e mandar o operador para lá o jogaria em /unauthorized ao clicar no
    * nome da seção que é dele. Os módulos resolvem o mesmo problema em
    * `registry.rotaInicial`, lendo o manifesto.
    *

@@ -178,6 +178,27 @@ controller.resumoAnual = async ano => {
  * ESTA MANTÉM `u.nome` E O POSTO POR EXTENSO, ao contrário das duas de cima. O
  * documento escreve "1º Ten Pedro Martins" por extenso, e cortar as colunas das
  * três de uma vez quebraria a 6.1 sem erro visível.
+ *
+ * O MÊS INTEIRO E O MÊS DECORRIDO SAEM JUNTOS, e os dois têm leitor:
+ *
+ *   `aproveitamento`            denominador = mês inteiro. É o número da 6.1, e
+ *                               não muda depois que o mês fecha.
+ *   `aproveitamento_decorrido`  denominador = os dias até HOJE. É o número do
+ *                               dashboard.
+ *
+ * A razão de existirem os dois é que a passagem em aberto (`data_fim` NULA)
+ * cobre o mês inteiro, inclusive o que não aconteceu: em 07 de agosto a conta do
+ * mês inteiro já dava 31 de 31 dias a 100%, e a tela publicava uma PROJEÇÃO com
+ * cara de medida. A 6.1 nunca sofreu com isso porque só se gera com o mês
+ * fechado, e aí as duas contas coincidem.
+ *
+ * Num mês inteiramente no futuro nada decorreu, e `aproveitamento_decorrido` sai
+ * NULO, e não zero: "não deu para medir" e "mediu zero" são coisas diferentes, e
+ * escrevê-las igual é o que faria a tela afirmar que ninguém rendeu nada.
+ *
+ * `dias_perdidos` É A MESMA CONTA VISTA AO CONTRÁRIO, em dias-militar: dos dias
+ * em que a pessoa esteve aqui, quantos o impedimento consumiu. É o número que
+ * responde "quanto custou", que o percentual médio não responde.
  */
 controller.resumoMensal = async (ano, mes) => {
   const inicio = inicioDoMes(ano, mes)
@@ -190,15 +211,61 @@ controller.resumoMensal = async (ano, mes) => {
          b.usuario_uuid,
          COUNT(*)::int AS dias_do_mes,
          COUNT(b.disponibilidade)::int AS dias_na_dgeo,
-         ROUND(COALESCE(SUM(b.disponibilidade), 0)::numeric / COUNT(*), 1) AS aproveitamento
+         ROUND(COALESCE(SUM(b.disponibilidade), 0)::numeric / COUNT(*), 1) AS aproveitamento,
+         COUNT(*) FILTER (WHERE b.dia <= CURRENT_DATE)::int AS dias_decorridos,
+         COUNT(b.disponibilidade) FILTER (WHERE b.dia <= CURRENT_DATE)::int
+           AS dias_na_dgeo_decorridos,
+         -- NULLIF, e nao COALESCE: mes inteiramente no futuro devolve NULO.
+         ROUND(
+           COALESCE(SUM(b.disponibilidade) FILTER (WHERE b.dia <= CURRENT_DATE), 0)::numeric
+           / NULLIF(COUNT(*) FILTER (WHERE b.dia <= CURRENT_DATE), 0), 1
+         ) AS aproveitamento_decorrido,
+         -- Dias de presenca menos dias de disponibilidade integral. Casa
+         -- exatamente com a soma dos \`dias_perdidos\` dos impedimentos abaixo.
+         ROUND(
+           COUNT(b.disponibilidade) FILTER (WHERE b.dia <= CURRENT_DATE)
+           - COALESCE(SUM(b.disponibilidade) FILTER (WHERE b.dia <= CURRENT_DATE), 0) / 100.0,
+           2
+         ) AS dias_perdidos
        FROM base AS b
        GROUP BY b.usuario_uuid
+     ),
+     -- Os dias que a pessoa ESTEVE aqui e que ja aconteceram. E a janela em que
+     -- faz sentido dizer que um impedimento consumiu alguma coisa.
+     presenca AS (
+       SELECT b.usuario_uuid, b.dia
+       FROM base AS b
+       WHERE b.disponibilidade IS NOT NULL AND b.dia <= CURRENT_DATE
+     ),
+     -- RATEIO PROPORCIONAL no dia em que os impedimentos somam mais de 100%.
+     -- A leitura trunca a perda em 100% (ninguem fica com -50% de
+     -- disponibilidade), e sem o rateio a soma das causas passaria do total: LTSP
+     -- integral mais chefia de secao dariam 1,5 dia perdido num dia de 1.
+     --
+     -- \`bruta\` nunca e zero: \`percentual\` e CHECK (1..100) no DDL.
+     imped_dia AS (
+       SELECT p.usuario_uuid, p.dia, i.id,
+              i.percentual::numeric AS percentual,
+              SUM(i.percentual) OVER (PARTITION BY p.usuario_uuid, p.dia)::numeric AS bruta
+       FROM presenca AS p
+       INNER JOIN dgeo.impedimento AS i
+         ON i.usuario_uuid = p.usuario_uuid
+        AND p.dia >= i.data_inicio
+        AND (i.data_fim IS NULL OR p.dia <= i.data_fim)
+     ),
+     perda_por_impedimento AS (
+       SELECT usuario_uuid, id,
+              SUM(percentual * LEAST(100::numeric, bruta) / bruta / 100) AS dias_perdidos
+       FROM imped_dia
+       GROUP BY usuario_uuid, id
      )
      SELECT
        r.usuario_uuid,
        u.nome, u.nome_guerra, u.login, u.ativo,
        pg.nome_abrev AS posto_abrev, pg.nome AS posto,
        r.dias_do_mes, r.dias_na_dgeo, r.aproveitamento,
+       r.dias_decorridos, r.dias_na_dgeo_decorridos, r.aproveitamento_decorrido,
+       r.dias_perdidos,
        COALESCE(imp.lista, '[]'::json) AS impedimentos
      FROM resumo AS r
      INNER JOIN dgeo.usuario AS u ON u.uuid = r.usuario_uuid
@@ -209,15 +276,56 @@ controller.resumoMensal = async (ano, mes) => {
                 'descricao', i.descricao,
                 'percentual', i.percentual,
                 'data_inicio', i.data_inicio::text,
-                'data_fim', i.data_fim::text
+                'data_fim', i.data_fim::text,
+                -- ZERO, e nao nulo, quando o impedimento cruza o mes mas ainda
+                -- nao consumiu dia nenhum: ele existe e nao custou nada.
+                'dias_perdidos', ROUND(COALESCE(pi.dias_perdidos, 0), 2)
               ) ORDER BY i.data_inicio) AS lista
        FROM dgeo.impedimento AS i
+       LEFT JOIN perda_por_impedimento AS pi
+         ON pi.usuario_uuid = i.usuario_uuid AND pi.id = i.id
        WHERE i.usuario_uuid = r.usuario_uuid
          AND i.data_inicio <= $<fim>::date
          AND (i.data_fim IS NULL OR i.data_fim >= $<inicio>::date)
      ) AS imp ON TRUE
      ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra`,
     { inicio, fim }
+  )
+}
+
+/**
+ * Quem PODE ENTRAR no SCA e não consta na Divisão no mês.
+ *
+ * Ou a passagem não foi lançada, e a pessoa fica fora do mapa fazendo o número
+ * da Divisão cair por ausência, ou ela saiu e o acesso ficou aberto, que é risco
+ * de acesso. Nos dois casos há trabalho a fazer, e é por isso que esta é a única
+ * divergência que a tela nomeia.
+ *
+ * O CONTRÁRIO NÃO É DIVERGÊNCIA, e não entra aqui: `dgeo.usuario.ativo` é flag
+ * de LOGIN, a maioria do efetivo não usa o SCA, e listar "está na Divisão e não
+ * tem conta" encheria a tela com quase a Divisão inteira.
+ *
+ * NASCEU DENTRO DO MÓDULO EFETIVO de propósito. A conta era feita no cliente a
+ * partir de `GET /usuarios`, que é `verifyAdmin` e devolve login, flag de
+ * administrador e o perfil em cada módulo de todo mundo: para contar três nomes,
+ * a tela pedia o cadastro inteiro e trancava o próprio dashboard do efetivo atrás
+ * do administrador global. Aqui sai `posto_abrev` e `nome_guerra`, que é o que a
+ * tela desenha, e mais nada.
+ */
+controller.divergenciasDoMes = async (ano, mes) => {
+  return db.conn.any(
+    `SELECT u.uuid AS usuario_uuid, u.nome_guerra, pg.nome_abrev AS posto_abrev
+     FROM dgeo.usuario AS u
+     INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
+     WHERE u.ativo IS TRUE
+       AND NOT EXISTS (
+         SELECT 1 FROM dgeo.efetivo_periodo AS p
+         WHERE p.usuario_uuid = u.uuid
+           AND p.data_inicio <= $<fim>::date
+           AND (p.data_fim IS NULL OR p.data_fim >= $<inicio>::date)
+       )
+     ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra`,
+    { inicio: inicioDoMes(ano, mes), fim: fimDoMes(ano, mes) }
   )
 }
 

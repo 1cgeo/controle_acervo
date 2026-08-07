@@ -190,6 +190,25 @@ export const desassociarVersaoExtraPit = (id, versaoId) =>
 export const getMapaEfetivo = (ano) => apiGet(`/efetivo/mapa?ano=${ano}`);
 export const getEfetivoDoMes = (ano, mes) => apiGet(`/efetivo/mes?ano=${ano}&mes=${mes}`);
 
+// Conta ativa sem passagem pela DGEO no mes. Mora sob /efetivo, e nao no
+// cliente: a conta antes era feita aqui, cruzando `getUsuarios` com o efetivo, e
+// `GET /usuarios` e verifyAdmin -- para contar tres nomes, a tela pedia o
+// cadastro inteiro (login, flag de administrador, perfil em cada modulo) e o
+// dashboard do efetivo ficava trancado atras do administrador global.
+export const getDivergenciasEfetivo = (ano, mes) =>
+  apiGet(`/efetivo/divergencias?ano=${ano}&mes=${mes}`);
+
+// A MESMA rota do resumo mensal, com `formato=csv`. Um endpoint separado
+// divergiria do que a tela mostra na primeira regra nova.
+export const exportacoesEfetivo = (ano, mes) => [
+  {
+    label: 'Efetivo do mês (CSV)',
+    title: 'Baixar o efetivo do mês, com aproveitamento, dias perdidos e impedimentos',
+    endpoint: `/efetivo/mes?ano=${ano}&mes=${mes}&formato=csv`,
+    filename: `efetivo_${ano}_${String(mes).padStart(2, '0')}.csv`,
+  },
+];
+
 export const getPeriodosEfetivo = (ano) =>
   apiGet(ano ? `/efetivo/periodos?ano=${ano}` : '/efetivo/periodos');
 export const createPeriodoEfetivo = (body) => apiPost('/efetivo/periodos', body);

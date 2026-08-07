@@ -121,6 +121,19 @@ const cleanTestData = async () => {
 
     await t.none('DELETE FROM acervo.volume_armazenamento WHERE id > 1')
 
+    // O EFETIVO SAI ANTES DOS USUARIOS, e as duas tabelas tem FK para
+    // `dgeo.usuario(uuid)` SEM cascade: passagem ou impedimento de um usuario
+    // que o clean apaga travaria o DELETE abaixo.
+    //
+    // ELAS PRECISAM ESTAR AQUI, e a ausencia era defeito: o `DELETE FROM
+    // dgeo.usuario` so alcanca quem NAO e da semente, entao a passagem lancada
+    // para `test_user` sobrevivia ao clean e vazava para o caso seguinte. Como
+    // `efetivo_periodo` tem EXCLUDE de sobreposicao por pessoa, o segundo teste
+    // que lancasse passagem para o mesmo militar levava 23P01 -- falha em
+    // arquivo que ninguem tocou, dependente da ordem.
+    await t.none('TRUNCATE dgeo.impedimento CASCADE')
+    await t.none('TRUNCATE dgeo.efetivo_periodo CASCADE')
+
     // Reset users to only seed rows (o perfil sai antes: FK para dgeo.usuario)
     await t.none(`DELETE FROM dgeo.usuario_perfil WHERE usuario_id IN (
       SELECT id FROM dgeo.usuario WHERE uuid NOT IN (

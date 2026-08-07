@@ -29,7 +29,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, csvExport } = require('../utils')
 const { verifyPerfil } = require('../login')
 
 const efetivoCtrl = require('./efetivo_ctrl')
@@ -59,15 +59,64 @@ router.get(
   })
 )
 
+// As colunas do CSV, na ordem em que o chefe as lê ao fechar o mês. O nome por
+// extenso entra porque a 6.1 o escreve, e é isso que faz o arquivo servir de
+// rascunho do documento em vez de só de espelho da tela.
+//
+// `impedimentos` é uma LISTA de objetos na resposta JSON, e o `toCsv` escreveria
+// '[object Object]'. A frase é montada aqui, no mesmo formato do gerador da 6.1.
+const COLUNAS_EFETIVO_MES = [
+  { key: 'posto_abrev', label: 'Posto' },
+  { key: 'nome_guerra', label: 'Nome de guerra' },
+  { key: 'nome', label: 'Nome completo' },
+  { key: 'dias_na_dgeo', label: 'Dias na DGEO' },
+  { key: 'dias_do_mes', label: 'Dias do mês' },
+  { key: 'aproveitamento', label: 'Aproveitamento no mês (%)' },
+  { key: 'dias_decorridos', label: 'Dias decorridos' },
+  { key: 'aproveitamento_decorrido', label: 'Aproveitamento até hoje (%)' },
+  { key: 'dias_perdidos', label: 'Dias-militar perdidos' },
+  { key: 'impedimentos', label: 'Impedimentos' }
+]
+
+const paraLinhaCsv = e => ({
+  ...e,
+  impedimentos: (e.impedimentos || [])
+    .map(i => `${i.descricao} (${i.percentual}%)`)
+    .join(', ')
+})
+
 router.get(
   '/mes',
   verifyPerfil('gerente', 'efetivo'),
+  schemaValidation({ query: efetivoSchema.anoMesRelatorioQuery }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, mes, formato } = req.query
+    const dados = await efetivoCtrl.resumoMensal(ano, mes)
+
+    return csvExport.sendReport(
+      res, formato, 'Efetivo do mês retornado com sucesso',
+      formato === 'csv' ? dados.map(paraLinhaCsv) : dados,
+      {
+        filename: `efetivo_${ano}_${String(mes).padStart(2, '0')}.csv`,
+        columns: COLUNAS_EFETIVO_MES
+      }
+    )
+  })
+)
+
+// Conta ativa sem passagem pela DGEO no mês. GERENTE, e não administrador
+// global: a resposta é do EFETIVO, e trancá-la atrás da flag global foi o que
+// obrigou o dashboard inteiro a ser de administrador (ver `divergenciasDoMes`).
+router.get(
+  '/divergencias',
+  verifyPerfil('gerente', 'efetivo'),
   schemaValidation({ query: efetivoSchema.anoMesQuery }),
   asyncHandler(async (req, res, next) => {
-    const dados = await efetivoCtrl.resumoMensal(req.query.ano, req.query.mes)
+    const dados = await efetivoCtrl.divergenciasDoMes(req.query.ano, req.query.mes)
 
     return res.sendJsonAndLog(
-      true, 'Efetivo do mês retornado com sucesso', httpCode.OK, dados
+      true, 'Divergências entre cadastro e efetivo retornadas com sucesso',
+      httpCode.OK, dados
     )
   })
 )

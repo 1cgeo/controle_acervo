@@ -77,13 +77,21 @@ router.add('/login', standalone(renderLogin), {
 // Tela unica de usuarios: uma coluna por modulo. Administrador global.
 router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 
-// Acessos: o historico de login (`dgeo.login`), a outra metade da area
-// "Usuarios" da sidebar.
+// Dashboard do efetivo: quem esta na Divisao no mes, quanto rendeu e quanto o
+// impedimento custou, mais o historico de login (`dgeo.login`) numa aba atras.
 //
-// `adminLoader` como a de cima, e pela mesma razao: quem entrou e quando nao e
-// dado de modulo nenhum, e nao existe perfil de "acessos". O servidor cobra o
-// mesmo, com verifyAdmin em todas as rotas de /api/acessos.
-router.add('/acessos', withLayout(renderAcessos), { guard: adminLoader });
+// GERENTE DO EFETIVO, e nao mais `adminLoader`. A tela ABRE na aba Efetivo, e
+// tudo o que ela le sai de `/efetivo/*`, que cobra `verifyPerfil('gerente',
+// 'efetivo')`. O que a prendia no administrador global era a conta de
+// divergencia, feita no cliente sobre `GET /usuarios`: quem responde pelo
+// efetivo via o menu "Efetivo" e levava /unauthorized no proprio dashboard.
+//
+// A ABA ACESSOS CONTINUA DO ADMINISTRADOR, e ela mesma se esconde de quem nao e
+// (`renderAcessos`). O servidor cobra verifyAdmin em todas as rotas de
+// /api/acessos, e a guarda daqui nao afrouxa isso.
+router.add('/acessos', withLayout(renderAcessos), {
+  guard: perfilLoader('efetivo', 'gerente'),
+});
 
 // Rastreabilidade: o que foi ALTERADO nos modulos, quando e por quem. E a outra
 // pergunta de #/acessos, que registra quem ENTROU e nao o que a pessoa fez

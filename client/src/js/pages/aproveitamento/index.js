@@ -435,9 +435,13 @@ export async function renderAproveitamento(container, ctx) {
     }
 
     rodape.appendChild(el('div', { className: 'efetivo-divergencias' }, [
+      // A JANELA VAI NO TÍTULO. O dashboard do efetivo tem um bloco com o mesmo
+      // nome e outro recorte (o MÊS), e os dois dão números diferentes: em
+      // 07/08/2026 eram 2 aqui e 3 lá, os dois certos. Sem a janela escrita, quem
+      // vê as duas telas na mesma sessão não tem como saber qual vale.
       el('h2', {
         style: { fontSize: '0.9375rem', margin: '0 0 8px' },
-        textContent: 'Divergências entre o cadastro e as passagens',
+        textContent: `Divergências entre o cadastro e as passagens em ${anoSelecionado}`,
       }),
       ...partes,
       el('p', {

@@ -1,11 +1,13 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showError } from '@utils/toast.js';
 import { formatNumber, monthName, toNumber } from '@utils/format.js';
+import { isAdmin } from '@store/auth-store.js';
 import { createStatsCard } from '@components/stats-card.js';
 import { createLineChart } from '@components/charts/line-chart.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
+import { createExportBar } from '@components/export-bar/export-bar.js';
 import {
   getAcessosResumo,
   getAcessosLogados,
@@ -13,7 +15,8 @@ import {
   getLoginsUsuarios,
   getEfetivoDoMes,
   getPeriodosEfetivo,
-  getUsuarios,
+  getDivergenciasEfetivo,
+  exportacoesEfetivo,
 } from '@services/plataforma-service.js';
 
 /** Intervalo do auto-refresh da aba ativa, como nos outros tres dashboards. */
@@ -34,6 +37,14 @@ const MAX_RANKING = 10;
  */
 const TEXTO_FALHA = 'Falha ao carregar. O dado não foi lido.';
 const VALOR_FALHA = 'Erro';
+
+/**
+ * "Não deu para medir", que é a TERCEIRA coisa, ao lado de falha e de zero.
+ *
+ * Um mês que ainda não começou não tem aproveitamento nem dia perdido. Escrever
+ * '0' ali afirmaria que a Divisão não rendeu nada, e '-' se leria como falha.
+ */
+const SEM_MEDIDA = 'Ainda não';
 
 /** Rotulo de um cliente de login. A lista e fechada (login/login_schema.js). */
 const NOME_CLIENTE = {
@@ -68,6 +79,15 @@ function instante(valor) {
 function percentual(valor) {
   const n = toNumber(valor);
   return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+}
+
+/**
+ * Dias-militar: '21,3 dias'. Uma casa decimal, porque a unidade é fracionária
+ * por construção -- um impedimento de 50% num dia custa meio dia-militar.
+ */
+function diasMilitar(valor) {
+  const n = toNumber(valor);
+  return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`;
 }
 
 /** Nome de guerra com o posto na frente: '3 Sgt Silva'. */
@@ -152,20 +172,36 @@ function seletor({ rotulo, aria, opcoes, valor, onChange }) {
 // =============================================================================
 
 /**
- * Aba "Efetivo": quem esta na Divisao neste mes, quanto rendeu, quem chegou,
- * quem saiu, quem esta impedido e o que nao bate entre cadastro e passagem.
+ * O mes anterior a (ano, mes). Dezembro do ano de tras quando o mes e janeiro.
+ * @returns {{ano:number, mes:number}}
+ */
+function mesAnterior(ano, mes) {
+  return mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 };
+}
+
+/**
+ * Aba "Efetivo": quem esta na Divisao neste mes, quanto rendeu, quanto o
+ * impedimento custou, quem chegou, quem saiu e o que nao bate entre cadastro e
+ * passagem.
  *
  * ELA ABRE A TELA: o painel de login mede a plataforma, e o chefe pergunta pela
  * tropa.
  *
- * A FONTE JA EXISTIA E NAO TINHA TELA: `controller.resumoMensal` e a rota
- * `/efetivo/mes` nasceram para a subsecao 6.1 do RPCMTec, e nenhuma pagina do
- * client consumia `getEfetivoDoMes`. Aqui nao ha consulta nova.
- *
- * TRES FONTES, e cada cartao diz de qual delas veio:
+ * TRES FONTES, todas do modulo EFETIVO:
  *   - `/efetivo/mes`: quem esteve, quantos dias, o aproveitamento, o impedimento
  *   - `/efetivo/periodos`: as passagens do ano, de onde saem entrada e saida
- *   - `/usuarios`: o cadastro, para confrontar com a passagem
+ *   - `/efetivo/divergencias`: conta ativa sem passagem no mes
+ *
+ * O MES CORRENTE E PARCIAL, e a tela diz isso. A passagem em aberto cobre o mes
+ * inteiro, INCLUSIVE o que nao aconteceu: em 07 de agosto a conta do mes inteiro
+ * ja dava 31 de 31 dias, e o cartao publicava projecao com cara de medida. Os
+ * numeros da tela saem dos campos `_decorrido`, e o aviso diz quantos dias
+ * correram. O campo do mes inteiro continua existindo, e e o da 6.1 do RPCMTec.
+ *
+ * A MEDIA E PONDERADA por dias na Divisao, como a da tela de Aproveitamento. A
+ * simples da o mesmo peso a quem ficou um dia e a quem ficou o mes, e era assim
+ * que uma chegada no fim do mes derrubava o numero da Divisao. As duas telas do
+ * modulo diziam medias diferentes com o mesmo nome.
  *
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
@@ -188,28 +224,21 @@ async function renderEfetivoTab(container) {
       loading: true,
     }),
     aproveitamento: createStatsCard({
-      title: 'Aproveitamento médio no mês',
+      title: 'Aproveitamento da Divisão, ponderado por dias na DGEO',
       value: '-',
       icon: svgIcon(ICONS.dataUsage, 24),
       color: 'success',
       loading: true,
     }),
-    entradas: createStatsCard({
-      title: 'Entradas no mês',
+    perdidos: createStatsCard({
+      title: 'Dias-militar perdidos para impedimento',
       value: '-',
-      icon: svgIcon(ICONS.add, 24),
-      color: 'info',
-      loading: true,
-    }),
-    saidas: createStatsCard({
-      title: 'Saídas no mês',
-      value: '-',
-      icon: svgIcon(ICONS.logout, 24),
+      icon: svgIcon(ICONS.schedule, 24),
       color: 'warning',
       loading: true,
     }),
     divergencias: createStatsCard({
-      title: 'Divergências entre cadastro e efetivo',
+      title: 'Contas ativas sem passagem no mês',
       value: '-',
       icon: svgIcon(ICONS.warning, 24),
       color: 'error',
@@ -217,15 +246,34 @@ async function renderEfetivoTab(container) {
     }),
   };
 
-  const TITULO_GRAFICO = 'Aproveitamento por militar no mês';
+  // O RECORTE E O QUE FAZ O GRAFICO DIZER ALGUMA COISA. Com 25 militares, 19
+  // deles a 100%, sobravam 19 barras identicas empurrando as 6 que importam para
+  // dentro de 300px de altura. Aqui entra so quem esta abaixo de 100%, e em
+  // ordem CRESCENTE: um grafico de barras existe para comparar grandeza, e o
+  // anterior vinha ordenado por hierarquia, que e outra coisa.
+  const TITULO_GRAFICO = 'Militares abaixo de 100% no mês';
   const grafico = createBarChart({
     title: TITULO_GRAFICO,
     xKey: 'militar',
     series: [{ dataKey: 'aproveitamento', label: 'Aproveitamento (%)' }],
     horizontal: true,
     loading: true,
+    emptyMessage: 'Todos os militares do mês estão a 100%',
   });
   const caixaGrafico = caixaComFalha(TITULO_GRAFICO, grafico);
+
+  // O custo por CAUSA, em dias-militar. E a pergunta que o percentual medio nao
+  // responde: 87,8% nao diz quanto o mes perdeu nem para que.
+  const TITULO_CAUSAS = 'Dias-militar perdidos, por causa';
+  const graficoCausas = createBarChart({
+    title: TITULO_CAUSAS,
+    xKey: 'causa',
+    series: [{ dataKey: 'dias', label: 'Dias-militar' }],
+    horizontal: true,
+    loading: true,
+    emptyMessage: 'Nenhum impedimento consumiu dia no mês',
+  });
+  const caixaCausas = caixaComFalha(TITULO_CAUSAS, graficoCausas);
 
   const tabelaEfetivo = createDataTable({
     columns: [
@@ -235,7 +283,16 @@ async function renderEfetivoTab(container) {
         sortable: true,
         render: (row) => linkMilitar(row.usuario_uuid, row.militar),
       },
-      { key: 'dias_na_dgeo', label: 'Dias na Divisão', sortable: true },
+      // O DENOMINADOR FICA A VISTA, como no mapa anual: '5 de 31' e '31 de 31'
+      // sao a diferenca entre "chegou dia 27" e "esteve o mes todo", e sem ele a
+      // coluna nao distingue "nao estava" de "nao rendeu".
+      {
+        key: 'dias_na_dgeo',
+        label: 'Dias na Divisão',
+        sortable: true,
+        sortValue: (row) => toNumber(row.dias_na_dgeo),
+        render: (row) => `${row.dias_na_dgeo} de ${row.dias_decorridos}`,
+      },
       {
         key: 'aproveitamento',
         label: 'Aproveitamento',
@@ -244,11 +301,17 @@ async function renderEfetivoTab(container) {
         render: (row) => percentual(row.aproveitamento),
       },
       {
+        key: 'dias_perdidos',
+        label: 'Dias perdidos',
+        sortable: true,
+        sortValue: (row) => toNumber(row.dias_perdidos),
+        render: (row) => diasMilitar(row.dias_perdidos),
+      },
+      {
         key: 'impedimentos',
         label: 'Impedimentos',
         render: (row) => row.impedimentos || 'Nenhum',
       },
-      { key: 'conta', label: 'Conta', render: (row) => (row.ativo ? 'Ativa' : 'Desativada') },
     ],
     rows: [],
     searchable: true,
@@ -272,7 +335,7 @@ async function renderEfetivoTab(container) {
     rows: [],
     pageSize: 10,
     loading: true,
-    emptyMessage: 'Ninguém entrou nem saiu neste mês',
+    emptyMessage: 'Ninguém entrou nem saiu neste ano',
   });
   const caixaMovimento = caixaComFalha(null, tabelaMovimento.element);
 
@@ -289,9 +352,21 @@ async function renderEfetivoTab(container) {
     rows: [],
     pageSize: 10,
     loading: true,
-    emptyMessage: 'O cadastro e o efetivo do mês batem',
+    emptyMessage: 'Toda conta ativa tem passagem pela DGEO neste mês',
   });
   const caixaDivergencias = caixaComFalha(null, tabelaDivergencias.element);
+
+  // O aviso de mes PARCIAL e o cabecalho do movimento anual mudam a cada carga,
+  // e por isso sao nos vazios preenchidos por `load`, e nao texto fixo.
+  const avisoParcial = el('div', { style: { margin: '0 0 12px' } });
+  const resumoMovimento = el('p', {
+    className: 'efetivo-resumo',
+    style: { margin: '0 0 8px', color: 'var(--text-secondary)' },
+  });
+  // O endpoint do CSV carrega ano e mes, entao a barra se refaz a cada troca de
+  // recorte, e SO nela (ver `recorteExportado` no `load`).
+  const barraExport = el('div', {});
+  let recorteExportado = null;
 
   const filtros = el('div', { className: 'dashboard-section__header' }, [
     el('h2', { className: 'dashboard-section__title', textContent: 'Efetivo do mês' }),
@@ -321,93 +396,217 @@ async function renderEfetivoTab(container) {
 
   container.appendChild(el('div', { className: 'dashboard-section' }, [
     filtros,
+    barraExport,
+    avisoParcial,
     el('div', { className: 'stats-grid' }, Object.values(cards)),
     caixaGrafico,
+    caixaCausas,
     secao('Militares no mês', caixaEfetivo),
-    secao('Entradas e saídas no mês', caixaMovimento),
-    secao('Divergências entre cadastro e efetivo', caixaDivergencias),
+    secao('Entradas e saídas no ano', el('div', {}, [resumoMovimento, caixaMovimento])),
+    secao('Contas ativas sem passagem no mês', caixaDivergencias),
   ]));
 
-  /** Primeiro e ultimo dia do mes escolhido, em 'AAAA-MM-DD'. */
-  const primeiroDia = () => `${ano}-${String(mes).padStart(2, '0')}-01`;
-  const ultimoDia = () => {
-    const ultimo = new Date(ano, mes, 0).getDate();
-    return `${ano}-${String(mes).padStart(2, '0')}-${String(ultimo).padStart(2, '0')}`;
-  };
-  const dentroDoMes = (data) => {
-    if (!data) return false;
-    const dia = String(data).slice(0, 10);
-    return dia >= primeiroDia() && dia <= ultimoDia();
-  };
+  /**
+   * O aviso de mes PARCIAL, com o delta contra o mes anterior.
+   *
+   * Ele nao e enfeite: sem ele, "87,8%" num dia 7 se le como o resultado do mes,
+   * e a comparacao com o mes fechado ao lado passa a ser entre coisas
+   * diferentes. Mes inteiramente no futuro nao tem numero nenhum, e a frase diz
+   * isso em vez de mostrar zero.
+   *
+   * @param {number} decorridos - dias do mes ja vividos
+   * @param {number} doMes - dias do mes
+   * @param {number|null} delta - pontos percentuais contra o mes anterior
+   */
+  function montarAvisoParcial(decorridos, doMes, delta) {
+    avisoParcial.innerHTML = '';
+
+    const partes = [];
+    if (decorridos === 0) {
+      partes.push(`${monthName(mes)} de ${ano} ainda não começou. Não há o que medir:`
+        + ' os números abaixo seriam projeção das passagens e dos impedimentos em'
+        + ' aberto, e não medida.');
+    } else if (decorridos < doMes) {
+      partes.push(`Mês em curso: os números abaixo cobrem ${decorridos} de ${doMes} dias.`);
+    }
+
+    if (delta !== null) {
+      const anterior = mesAnterior(ano, mes);
+      const sinal = delta > 0 ? '+' : '';
+      partes.push(`Aproveitamento ${sinal}${delta.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}`
+        + ` ponto percentual contra ${monthName(anterior.mes)} de ${anterior.ano}.`);
+    }
+
+    if (!partes.length) return;
+
+    avisoParcial.appendChild(el('p', {
+      className: 'efetivo-projecao',
+      style: {
+        margin: '0',
+        color: decorridos === 0 ? 'var(--color-warning)' : 'var(--text-secondary)',
+      },
+      textContent: partes.join(' '),
+    }));
+  }
+
+  /**
+   * O aproveitamento da DIVISAO, PONDERADO por dias na Divisao, sobre os dias
+   * DECORRIDOS. Mesma conta da tela de Aproveitamento, na janela do mes.
+   *
+   *   dias disponiveis = aproveitamento_decorrido_i x dias_decorridos_i / 100
+   *   ponderada        = SOMA(dias disponiveis) / SOMA(dias_na_dgeo_decorridos)
+   *
+   * Devolve NULO com denominador zero, e nao zero: ninguem com dia vivido na
+   * Divisao e "nao deu para medir", e nao "rendeu nada".
+   *
+   * @param {Array<Object>} efetivo
+   * @returns {number|null}
+   */
+  function aproveitamentoPonderado(efetivo) {
+    const diasNaDgeo = efetivo.reduce((t, p) => t + toNumber(p.dias_na_dgeo_decorridos), 0);
+    if (diasNaDgeo <= 0) return null;
+    const diasDisponiveis = efetivo.reduce(
+      (t, p) => t + (toNumber(p.aproveitamento_decorrido) * toNumber(p.dias_decorridos)) / 100, 0
+    );
+    return (diasDisponiveis / diasNaDgeo) * 100;
+  }
 
   async function load() {
     const pedido = `${ano}-${mes}`;
+    const anterior = mesAnterior(ano, mes);
 
-    const [efetivoRes, periodosRes, usuariosRes] = await Promise.allSettled([
+    const [efetivoRes, periodosRes, divergenciasRes, anteriorRes] = await Promise.allSettled([
       getEfetivoDoMes(ano, mes),
       getPeriodosEfetivo(ano),
-      getUsuarios(),
+      getDivergenciasEfetivo(ano, mes),
+      // SO PARA O DELTA. Falhar aqui nao estraga a tela: o aviso perde a frase de
+      // comparacao e o resto continua de pe, e por isso ele nao entra na lista de
+      // erros que vira toast.
+      getEfetivoDoMes(anterior.ano, anterior.mes),
     ]);
 
     // Trocar de mes no meio da carga invalida a resposta que estiver a caminho.
     if (disposed || pedido !== `${ano}-${mes}`) return;
 
+    // SO QUANDO O RECORTE MUDA. O auto-refresh de 60s passa por aqui, e trocar a
+    // barra a cada minuto arrancaria o botao no meio de um download em curso: o
+    // rotulo 'Exportando...' e o `aria-busy` moram no botao antigo.
+    if (recorteExportado !== pedido) {
+      recorteExportado = pedido;
+      barraExport.replaceChildren(createExportBar({
+        items: exportacoesEfetivo(ano, mes),
+        ariaLabel: 'Exportações do efetivo',
+      }));
+    }
+
     const efetivoOk = efetivoRes.status === 'fulfilled';
     const efetivo = efetivoOk ? (efetivoRes.value || []) : [];
 
+    // Todo mundo do mes tem o mesmo mes, entao os dois denominadores saem da
+    // primeira linha. Sem ninguem, cai no calendario, que e a mesma regua do
+    // servidor (`dias_do_mes` = todos os dias do mes).
+    const doMes = efetivo.length
+      ? toNumber(efetivo[0].dias_do_mes)
+      : new Date(ano, mes, 0).getDate();
+    const decorridos = efetivo.length ? toNumber(efetivo[0].dias_decorridos) : diasDecorridos();
+
+    const ponderada = efetivoOk ? aproveitamentoPonderado(efetivo) : null;
+
+    const anteriorOk = anteriorRes.status === 'fulfilled';
+    const ponderadaAnterior = anteriorOk
+      ? aproveitamentoPonderado(anteriorRes.value || [])
+      : null;
+    const delta = ponderada !== null && ponderadaAnterior !== null
+      ? ponderada - ponderadaAnterior
+      : null;
+
+    montarAvisoParcial(decorridos, doMes, efetivoOk ? delta : null);
+
+    const diasPerdidos = efetivo.reduce((t, p) => t + toNumber(p.dias_perdidos), 0);
+
     if (efetivoOk) {
-      const media = efetivo.length
-        ? efetivo.reduce((soma, p) => soma + toNumber(p.aproveitamento), 0) / efetivo.length
-        : 0;
       cards.presentes.update({ value: formatNumber(efetivo.length), loading: false });
-      cards.aproveitamento.update({ value: percentual(media), loading: false });
+      cards.aproveitamento.update({
+        value: ponderada === null ? SEM_MEDIDA : percentual(ponderada),
+        loading: false,
+      });
+      cards.perdidos.update({
+        value: decorridos === 0 ? SEM_MEDIDA : diasMilitar(diasPerdidos),
+        loading: false,
+      });
     } else {
       cards.presentes.update({ value: VALOR_FALHA, loading: false });
       cards.aproveitamento.update({ value: VALOR_FALHA, loading: false });
+      cards.perdidos.update({ value: VALOR_FALHA, loading: false });
     }
 
     const linhasEfetivo = efetivo.map(p => ({
       id: p.usuario_uuid,
       usuario_uuid: p.usuario_uuid,
       militar: nomeMilitar(p),
-      dias_na_dgeo: p.dias_na_dgeo,
-      aproveitamento: p.aproveitamento,
-      ativo: p.ativo,
+      dias_na_dgeo: p.dias_na_dgeo_decorridos,
+      dias_decorridos: p.dias_decorridos,
+      aproveitamento: p.aproveitamento_decorrido,
+      dias_perdidos: p.dias_perdidos,
       impedimentos: (p.impedimentos || [])
         .map(i => `${i.descricao} (${i.percentual}%)`)
         .join('; '),
     }));
 
+    // ABAIXO DE 100%, COM O PIOR EM CIMA. O Chart.js desenha o indice 0 no TOPO
+    // do eixo de categoria, entao a ordem que chega e CRESCENTE: quem menos
+    // rendeu e a primeira linha que o olho encontra.
+    //
+    // O corte e 99,95 e nao 100: `aproveitamento` vem do servidor arredondado em
+    // uma casa, e comparar igualdade com ponto flutuante deixaria passar quem
+    // esta a 99,96% desenhado como '100,0%'.
+    const abaixoDeCem = linhasEfetivo
+      .filter(p => toNumber(p.aproveitamento) < 99.95)
+      .sort((a, b) => toNumber(a.aproveitamento) - toNumber(b.aproveitamento))
+      .map(p => ({ militar: p.militar, aproveitamento: toNumber(p.aproveitamento) }));
+
     caixaGrafico.setFalha(!efetivoOk);
-    grafico.update({
-      data: linhasEfetivo.map(p => ({
-        militar: p.militar,
-        aproveitamento: toNumber(p.aproveitamento),
-      })),
-      loading: false,
-    });
+    grafico.update({ data: abaixoDeCem, loading: false });
+
+    // --- Custo por causa ---------------------------------------------------
+    //
+    // O servidor ja rateia a perda entre os impedimentos do dia quando eles
+    // somam mais de 100%, entao somar por descricao aqui nao passa do total.
+    const porCausa = new Map();
+    for (const p of efetivo) {
+      for (const i of p.impedimentos || []) {
+        porCausa.set(i.descricao, (porCausa.get(i.descricao) || 0) + toNumber(i.dias_perdidos));
+      }
+    }
+    // MAIOR CAUSA EM CIMA, pela mesma régua do gráfico acima: índice 0 no topo.
+    const causas = [...porCausa.entries()]
+      .filter(([, dias]) => dias > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([causa, dias]) => ({ causa, dias: Number(dias.toFixed(2)) }));
+
+    caixaCausas.setFalha(!efetivoOk);
+    graficoCausas.update({ data: causas, loading: false });
 
     caixaEfetivo.setFalha(!efetivoOk);
     tabelaEfetivo.update({ rows: linhasEfetivo, loading: false });
 
-    // --- Entradas e saidas -------------------------------------------------
+    // --- Entradas e saidas, no ANO -----------------------------------------
     //
-    // A passagem e um INTERVALO, e nao um retrato mensal: entrar no mes e ter
-    // `data_inicio` dentro dele, e sair e ter `data_fim` dentro dele. Quem
-    // atravessa o mes inteiro nao e nem uma coisa nem outra.
+    // MENSAL ERA ZERO QUASE SEMPRE: em 2026 houve entrada em 4 dos 12 meses e
+    // saida em 2, e 23 das 27 passagens sao a carga inicial de 1º de janeiro. Um
+    // cartao que marca zero onze meses por ano nao mede movimento, mede o
+    // recorte. No ano o dado tem sinal, e a lista cabe numa tela.
     const periodosOk = periodosRes.status === 'fulfilled';
     const periodos = periodosOk ? (periodosRes.value || []) : [];
 
-    const entradas = periodos.filter(p => dentroDoMes(p.data_inicio));
-    const saidas = periodos.filter(p => dentroDoMes(p.data_fim));
+    const doAno = (data) => Boolean(data) && String(data).slice(0, 4) === String(ano);
+    const entradas = periodos.filter(p => doAno(p.data_inicio));
+    const saidas = periodos.filter(p => doAno(p.data_fim));
 
-    if (periodosOk) {
-      cards.entradas.update({ value: formatNumber(entradas.length), loading: false });
-      cards.saidas.update({ value: formatNumber(saidas.length), loading: false });
-    } else {
-      cards.entradas.update({ value: VALOR_FALHA, loading: false });
-      cards.saidas.update({ value: VALOR_FALHA, loading: false });
-    }
+    resumoMovimento.textContent = periodosOk
+      ? `${entradas.length} ${entradas.length === 1 ? 'entrada' : 'entradas'}`
+        + ` e ${saidas.length} ${saidas.length === 1 ? 'saída' : 'saídas'} em ${ano}.`
+      : TEXTO_FALHA;
 
     caixaMovimento.setFalha(!periodosOk);
     tabelaMovimento.update({
@@ -432,29 +631,21 @@ async function renderEfetivoTab(container) {
 
     // --- Divergencias ------------------------------------------------------
     //
-    // Tres numeros de "quantas pessoas" convivem no modulo e nenhum media a
-    // mesma coisa: conta habilitada, pessoa cadastrada e militar com passagem.
-    // Esta secao nomeia CADA desencontro em vez de deixar os tres numeros no ar.
-    const usuariosOk = usuariosRes.status === 'fulfilled';
-    const usuarios = usuariosOk ? (usuariosRes.value || []) : [];
-    const divergenciasOk = usuariosOk && efetivoOk;
-
-    // ESTAR NA DGEO COM A CONTA DESATIVADA NÃO É DIVERGÊNCIA.
-    // `dgeo.usuario.ativo` é flag de LOGIN, e a maioria do efetivo não usa o
-    // SCA: listar isso enche a tela de ruído e afoga as linhas que importam.
+    // Quem PODE ENTRAR no sistema e nao consta na Divisao: ou a passagem nao foi
+    // lancada, ou a pessoa saiu e o acesso ficou aberto. Quem RECORTA e o
+    // servidor, sob o modulo efetivo; antes a tela cruzava `GET /usuarios`, que e
+    // do administrador global e devolve o cadastro inteiro para contar tres
+    // nomes.
     //
-    // A divergência que importa é a outra: quem PODE ENTRAR no sistema e não
-    // consta na Divisão. Ou a passagem não foi lançada, ou a pessoa saiu e o
-    // acesso ficou aberto.
-    const uuidsNoMes = new Set(efetivo.map(p => p.usuario_uuid));
-    const divergencias = usuarios
-      .filter(u => u.ativo && !uuidsNoMes.has(u.uuid))
-      .map(u => ({
-        id: `ativo:${u.uuid}`,
-        usuario_uuid: u.uuid,
-        militar: nomeMilitar(u),
-        situacao: 'Conta ativa, sem passagem pela DGEO no mês',
-      }));
+    // O CONTRARIO NAO E DIVERGENCIA: `dgeo.usuario.ativo` e flag de LOGIN, e a
+    // maioria do efetivo nao usa o SCA.
+    const divergenciasOk = divergenciasRes.status === 'fulfilled';
+    const divergencias = (divergenciasOk ? divergenciasRes.value || [] : []).map(u => ({
+      id: `ativo:${u.usuario_uuid}`,
+      usuario_uuid: u.usuario_uuid,
+      militar: nomeMilitar(u),
+      situacao: 'Conta ativa, sem passagem pela DGEO no mês',
+    }));
 
     cards.divergencias.update({
       value: divergenciasOk ? formatNumber(divergencias.length) : VALOR_FALHA,
@@ -463,10 +654,24 @@ async function renderEfetivoTab(container) {
     caixaDivergencias.setFalha(!divergenciasOk);
     tabelaDivergencias.update({ rows: divergencias, loading: false });
 
-    const falhou = [efetivoRes, periodosRes, usuariosRes].filter(r => r.status === 'rejected');
+    // `anteriorRes` FICA DE FORA: ele so alimenta a frase de comparacao, e um
+    // toast de erro por causa dela diria que a tela falhou quando ela nao
+    // falhou.
+    const falhou = [efetivoRes, periodosRes, divergenciasRes].filter(r => r.status === 'rejected');
     if (falhou.length) {
       showError(falhou[0].reason?.message || 'Erro ao carregar o efetivo do mês');
     }
+  }
+
+  /** Dias do mes escolhido ja vividos, pela mesma regua do servidor. */
+  function diasDecorridos() {
+    const agora = new Date();
+    const doMes = new Date(ano, mes, 0).getDate();
+    if (ano < agora.getFullYear() || (ano === agora.getFullYear() && mes < agora.getMonth() + 1)) {
+      return doMes;
+    }
+    if (ano === agora.getFullYear() && mes === agora.getMonth() + 1) return agora.getDate();
+    return 0;
   }
 
   await load();
@@ -475,6 +680,7 @@ async function renderEfetivoTab(container) {
     cleanup: () => {
       disposed = true;
       grafico._cleanup();
+      graficoCausas._cleanup();
       tabelaEfetivo._cleanup();
       tabelaMovimento._cleanup();
       tabelaDivergencias._cleanup();
@@ -534,13 +740,11 @@ async function renderAcessosTab(container) {
       color: 'primary',
       loading: true,
     }),
-    semSenha: createStatsCard({
-      title: 'Contas sem senha',
-      value: '-',
-      icon: svgIcon(ICONS.lock, 24),
-      color: 'warning',
-      loading: true,
-    }),
+    // SEM 'Contas sem senha'. `dgeo.usuario.senha` e NOT NULL na pratica desde
+    // que a criacao de usuario passou a gerar o hash, e o cartao marcava zero de
+    // 53 contas. Numero que nao pode mudar nao e medida, e ocupava um quarto da
+    // linha de cartoes. O `contas_sem_senha` continua saindo de `/acessos/resumo`
+    // para quem precisar auditar.
   };
 
   const TITULO_DIA = 'Logins por dia no período';
@@ -627,10 +831,6 @@ async function renderAcessosTab(container) {
       cards.hoje.update({ value: formatNumber(resumo.value.pessoas_hoje ?? 0), loading: false });
       cards.mes.update({ value: formatNumber(resumo.value.pessoas_30_dias ?? 0), loading: false });
       cards.contas.update({ value: formatNumber(resumo.value.contas_ativas ?? 0), loading: false });
-      cards.semSenha.update({
-        value: formatNumber(resumo.value.contas_sem_senha ?? 0),
-        loading: false,
-      });
     } else {
       for (const card of Object.values(cards)) {
         card.update({ value: VALOR_FALHA, loading: false });
@@ -689,7 +889,7 @@ async function renderAcessosTab(container) {
 // =============================================================================
 
 /**
- * Dashboard do efetivo (#/acessos), do administrador global.
+ * Dashboard do efetivo (#/acessos).
  *
  * DUAS ABAS NA MESMA ROTA: Efetivo (abre a tela) e Acessos. A rota e `#/acessos`
  * e o rotulo no menu e "Dashboard": renomear URL quebra link guardado.
@@ -699,9 +899,18 @@ async function renderAcessosTab(container) {
  * na Divisao, quanto rendeu, quem chegou e quem saiu. O historico de login
  * continua, uma aba atras.
  *
- * `verifyAdmin` no servidor e `adminLoader` na rota: nem o historico de acesso
- * nem o efetivo sao dado de modulo, e a aba Efetivo mostra licença de saúde e
- * função acumulada, nominalmente.
+ * AS DUAS ABAS TEM DONOS DIFERENTES, e por isso a segunda so aparece para o
+ * administrador global:
+ *
+ *   Efetivo  gerente do modulo EFETIVO. Tudo o que ela le sai de `/efetivo/*`,
+ *            que cobra `verifyPerfil('gerente', 'efetivo')`.
+ *   Acessos  administrador global. `/acessos/*` e `verifyAdmin`, e quem entrou
+ *            no sistema nao e dado do efetivo.
+ *
+ * Enquanto a aba Efetivo cruzava `GET /usuarios` para achar as divergencias, a
+ * tela INTEIRA era do administrador global: quem responde pelo efetivo via o
+ * menu "Efetivo" e nao alcancava o dashboard dele. A conta desceu para
+ * `/efetivo/divergencias`, e a guarda da rota desceu junto.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -712,7 +921,10 @@ export async function renderAcessos(container, _ctx) {
     ariaLabel: 'Painéis do efetivo',
     tabs: [
       { id: 'efetivo', label: 'Efetivo', render: renderEfetivoTab },
-      { id: 'acessos', label: 'Acessos', render: renderAcessosTab },
+      // A aba some para quem nao e administrador, em vez de aparecer e cair em
+      // erro: as quatro rotas dela respondem 403, e uma aba que so sabe falhar e
+      // pior que uma aba a menos.
+      ...(isAdmin() ? [{ id: 'acessos', label: 'Acessos', render: renderAcessosTab }] : []),
     ],
   });
 
