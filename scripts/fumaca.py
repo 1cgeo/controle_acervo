@@ -90,8 +90,14 @@ c, b = chamar('/api/login', 'POST', {'usuario': USUARIO, 'senha': SENHA, 'client
 dados = b.get('dados') or {}
 tok = dados.get('token')
 modulos = [m['nome_abrev'] for m in (dados.get('modulos') or [])]
-checa('login devolve token e o catalogo dos tres modulos',
-      c == 201 and bool(tok) and modulos == ['acervo', 'mapoteca', 'orcamento'],
+# O catalogo CRESCE: nasceu com tres modulos e em 2026-08 ja tinha cinco
+# (entraram producao e efetivo). Comparar com a lista exata reprovava a cada
+# modulo novo, com o login perfeito. O piso sao os tres modulos de autorizacao
+# do banco (dominio.modulo), que e o que a plataforma promete; o resto e
+# crescimento.
+NUCLEO = {'acervo', 'mapoteca', 'orcamento'}
+checa('login devolve token e o catalogo de modulos',
+      c == 201 and bool(tok) and NUCLEO.issubset(set(modulos)),
       f'HTTP {c}, modulos={modulos}')
 if not tok:
     print('\nSem token, o resto nao roda.')
@@ -144,10 +150,15 @@ lista([
     ('/api/orcamento/dominio/plano_interno', 'dominio PI', 1),
 ], tok)
 
-c, b = chamar('/api/orcamento/configuracao', token=tok)
-cfg = b.get('dados') or {}
-ano = cfg.get('ano_referencia')
-checa('configuracao singleton', c == 200 and bool(cfg), f'HTTP {c}, ano_referencia={ano}')
+# A configuracao SINGLETON foi podada em 2026-08-06 (guardava uasg e codom, sem
+# nenhum leitor). O que sobreviveu com o nome dela e /configuracao/anos, que le o
+# `ano` das tabelas de negocio e alimenta o seletor de ano de TODAS as telas do
+# modulo: se ela cair, o orcamento abre vazio sem erro nenhum.
+c, b = chamar('/api/orcamento/configuracao/anos', token=tok)
+anos = b.get('dados') or []
+checa('anos do orcamento (alimenta o seletor de todas as telas)',
+      c == 200 and len(anos) >= 1, f'HTTP {c}, {len(anos)} ano(s): {anos}')
+ano = max((int(x) for x in anos), default=None) if anos else None
 
 if ano:
     lista([
@@ -158,8 +169,14 @@ if ano:
         (f'/api/metas?ano={ano}', 'metas do PIT', 1),
     ], tok)
 
+    # A resposta e {linhas, pendencias}, e nao uma lista solta: ler `dados` como
+    # lista devolvia 0 e a checagem so nao reprovava porque ela estava DORMENTE
+    # (o `if ano` acima nunca era verdadeiro, porque a rota da configuracao
+    # singleton tinha sido podada e devolvia 404). Verificacao que nao pode
+    # falhar nao e verificacao.
     c, b = chamar(f'/api/orcamento/dashboard/execucao_nd?ano={ano}&mes=6', token=tok)
-    linhas = b.get('dados') or []
+    painel = b.get('dados') or {}
+    linhas = painel.get('linhas') or []
     checa('execucao por ND (o painel do orcamento)',
           c == 200 and isinstance(linhas, list) and len(linhas) >= 2,
           f'HTTP {c}, {len(linhas) if isinstance(linhas, list) else 0} linha(s)')
@@ -178,12 +195,24 @@ secao('RPCMTec (plataforma, fora dos tres modulos)')
 # ==. A igualdade travava a fumaca no numero de ontem: ela reprovava com 18
 # contra 13 enquanto o gerador estava certo, e portao que falha sempre ensina a
 # ignorar portao.
-c, b = chamar('/api/rpcmtec/gerar?ano=2026&mes=6', token=tok)
-secoes = (b.get('dados') or {}).get('secoes') or []
-subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
-checa('RPCMTec inteiro, na numeracao do documento da Divisao',
-      c == 200 and len(subsecoes) >= 18,
-      f'HTTP {c}, {len(secoes)} secoes / {len(subsecoes)} subsecoes (piso 18)')
+# O relatorio sai da EDICAO mensal cadastrada, e nao mais de ano/mes na query:
+# /api/rpcmtec?ano= lista as edicoes e /api/rpcmtec/<id>/documento monta o
+# documento. A fumaca pega a edicao MAIS RECENTE do ano, porque e a que o chefe
+# esta fechando.
+c, b = chamar('/api/rpcmtec?ano=2026', token=tok)
+edicoes = b.get('dados') or []
+edicao = max(edicoes, key=lambda e: e.get('mes') or 0) if edicoes else None
+if edicao is None:
+    checa('RPCMTec inteiro, na numeracao do documento da Divisao', False,
+          f'HTTP {c}, nenhuma edicao de 2026 cadastrada')
+else:
+    c, b = chamar(f"/api/rpcmtec/{edicao['id']}/documento", token=tok)
+    secoes = (b.get('dados') or {}).get('secoes') or []
+    subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
+    checa('RPCMTec inteiro, na numeracao do documento da Divisao',
+          c == 200 and len(subsecoes) >= 18,
+          f"HTTP {c}, edicao {edicao.get('mes')}/2026, "
+          f'{len(secoes)} secoes / {len(subsecoes)} subsecoes (piso 18)')
 
 c, b = chamar('/api/rpcmtec/anuario?ano=2026&mes=6', token=tok)
 d = b.get('dados') or {}
