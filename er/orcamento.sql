@@ -191,9 +191,17 @@ CREATE TABLE orcamento.nota_credito(
   -- afirmar meta que o seu item de PDR nao afirma.
   -- valor_nc = valor recebido; NUNCA muda por devolucao (a devolucao corta empenhado/liquidado)
   valor_nc NUMERIC(15,2) NOT NULL,
-  -- valor_recolhido = parte do credito recebido que foi devolvida/recolhida (informada na NC).
-  -- Informativo: NAO altera valor_nc (o recebido continua cheio). Default 0.
-  valor_recolhido NUMERIC(15,2) NOT NULL DEFAULT 0,
+  -- NAO HA `valor_recolhido` AQUI, e a ausencia e a modelagem. Ate a 1.38.0 ele
+  -- era um NUMERO digitado nesta linha, e o documento que produziu a devolucao
+  -- nao existia em lugar nenhum: nem numero, nem data, nem historico, nem PDF.
+  --
+  -- Medido em 2026-08-07 contra o SAG (espelho do SIAFI): o exercicio teve 23
+  -- notas de credito de anulacao, R$ 81.910,10, casando em 17 NCs alvo. No SCA,
+  -- 5 alvos estavam com 0,00 e nada acusava, porque a fonte do numero era a
+  -- memoria de quem digitou.
+  --
+  -- O recolhido agora e a SOMA de `orcamento.nota_credito_recolhimento`.
+  -- Ver a tabela adiante.
   doc_ro VARCHAR(20),
   prazo_empenho DATE,
   -- classificacao = regra de negocio (previsto no PDR autorizado?), nao a celula orcamentaria
@@ -238,6 +246,11 @@ CREATE TABLE orcamento.nota_empenho(
   finalidade TEXT,
   valor_empenhado NUMERIC(15,2) NOT NULL,
   valor_anulado NUMERIC(15,2) NOT NULL DEFAULT 0,
+  -- A UG que EMITE o empenho e a que recebeu o credito, e com a gestao, o ano e
+  -- o numero ela forma a chave do SIAFI (ex.: 160382000012026NE000005). Sem
+  -- ela, dois empenhos legitimos de unidades diferentes colidem.
+  ug VARCHAR(10),
+  gestao VARCHAR(5),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
@@ -256,6 +269,40 @@ CREATE TABLE orcamento.nota_empenho_nota_credito(
   nota_credito_id BIGINT NOT NULL REFERENCES orcamento.nota_credito (id),
   valor NUMERIC(15,2) NOT NULL CHECK (valor > 0),
   UNIQUE (nota_empenho_id, nota_credito_id)
+);
+
+-- Documento de recolhimento ou anulacao de credito (ND 339000 e 449000),
+-- apontando a NC que ele abate. A SOMA por NC e o que antes se digitava na
+-- coluna `valor_recolhido`, e o que sai nas colunas "Valor recolhido" da 4.1,
+-- 4.2 e 4.7 do RPCMTec.
+--
+-- ELE NAO E UMA NOTA DE CREDITO COMUM, e por isso nao mora la com uma
+-- classificacao propria: nao e credito recebido. Toda consulta que soma
+-- `valor_nc` teria de aprender a excluir uma classificacao, e a protecao viraria
+-- um filtro repetido em cada consulta, esquecido na quarta.
+--
+-- `numero` NAO e unico sozinho: uma NC de recolhimento pode abater DUAS NCs
+-- nossas, entrando uma vez por alvo com o valor rateado. Medido: a 2026NC401316
+-- recolhe R$ 0,98 da 400224 e R$ 0,99 da 400937, e o rateio esta no proprio
+-- texto do SIAFI. A unicidade e o par (numero, alvo).
+CREATE TABLE orcamento.nota_credito_recolhimento(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  nota_credito_id BIGINT NOT NULL REFERENCES orcamento.nota_credito (id) ON DELETE CASCADE,
+  numero VARCHAR(20) NOT NULL,
+  ano SMALLINT NOT NULL,
+  data_emissao DATE,
+  -- A ND aqui e a da ANULACAO (339000, 449000), e nao a da NC alvo. Sem ela o
+  -- documento nao se acha no SIAFI.
+  cod_nd VARCHAR(6) REFERENCES dominio.natureza_despesa (code),
+  ug_emitente VARCHAR(10) REFERENCES dominio.ug (code),
+  valor NUMERIC(15,2) NOT NULL CHECK (valor > 0),
+  finalidade_historico TEXT,
+  observacao TEXT,
+  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
+  data_modificacao TIMESTAMP WITH TIME ZONE,
+  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid),
+  CONSTRAINT uniq_recolhimento_por_alvo UNIQUE (ano, numero, nota_credito_id)
 );
 
 CREATE TABLE orcamento.liquidacao(
@@ -307,7 +354,7 @@ CREATE TABLE orcamento.rpnp(
 -- continua sendo FONTE das subsecoes 4.1 a 4.7, e nao dono do relatorio.
 
 -- Arquivos anexados (documentos originais). Vinculo polimorfico: cada arquivo
--- pertence a EXATAMENTE um de CINCO donos: uma NC (PDF do SIAFI), um DFD (PDF),
+-- pertence a EXATAMENTE um de SEIS donos: uma NC (PDF do SIAFI), um DFD (PDF),
 -- o PDR de um ano (XLSX/PDF; o PDR nao tem tabela, e o conjunto dos itens do
 -- ano, entao o vinculo e o proprio ano), uma licitacao (edital, ata, termo de
 -- homologacao) ou um RPNP (demonstrativo do SIAFI). NC e DFD admitem no maximo
@@ -322,6 +369,9 @@ CREATE TABLE orcamento.arquivo(
   pdr_ano SMALLINT,
   licitacao_id BIGINT REFERENCES orcamento.licitacao (id) ON DELETE CASCADE,
   rpnp_id BIGINT REFERENCES orcamento.rpnp (id) ON DELETE CASCADE,
+  -- O recolhimento admite varios: o extrato do SIAFI e o DIEx que pede a
+  -- devolucao sao dois documentos, e limitar a um obrigaria a escolher.
+  recolhimento_id BIGINT REFERENCES orcamento.nota_credito_recolhimento (id) ON DELETE CASCADE,
   nome_original VARCHAR(255) NOT NULL,
   extensao VARCHAR(10) NOT NULL,
   mimetype VARCHAR(150),
@@ -336,7 +386,8 @@ CREATE TABLE orcamento.arquivo(
     (dfd_id IS NOT NULL)::int +
     (pdr_ano IS NOT NULL)::int +
     (licitacao_id IS NOT NULL)::int +
-    (rpnp_id IS NOT NULL)::int = 1
+    (rpnp_id IS NOT NULL)::int +
+    (recolhimento_id IS NOT NULL)::int = 1
   )
 );
 
@@ -348,6 +399,7 @@ CREATE UNIQUE INDEX uniq_arquivo_dfd ON orcamento.arquivo (dfd_id) WHERE dfd_id 
 CREATE INDEX idx_arquivo_pdr_ano ON orcamento.arquivo (pdr_ano);
 CREATE INDEX idx_arquivo_licitacao ON orcamento.arquivo (licitacao_id);
 CREATE INDEX idx_arquivo_rpnp ON orcamento.arquivo (rpnp_id);
+CREATE INDEX idx_arquivo_recolhimento ON orcamento.arquivo (recolhimento_id);
 
 -- Unicidade da NC: (ano, numero, ND) POR UG emitente. A numeracao do SIAFI e por
 -- UG emitente, logo o mesmo numero+ND pode ocorrer para emitentes distintos.
@@ -364,6 +416,15 @@ CREATE INDEX idx_nota_credito_classificacao ON orcamento.nota_credito (classific
 -- soma varre a tabela inteira uma vez por meta.
 CREATE INDEX idx_nota_credito_pdr_item ON orcamento.nota_credito (pdr_item_id);
 CREATE INDEX idx_nota_empenho_nc ON orcamento.nota_empenho (nota_credito_id);
+-- A IDENTIDADE DO SIAFI, INTEIRA: UG, gestao, ano e numero. A NC sempre teve
+-- unicidade e a NE nunca teve, e custou 38 registros em 32 numeros na producao
+-- de 2026-08-07. Mas a unicidade NAO e (ano, numero): a UG 167382 e uma unidade
+-- gestora distinta da 160382, com numeracao propria comecando do 1, e as duas
+-- tem legitimamente uma 2026NE000005. Um indice sem a UG recusaria dado real.
+CREATE UNIQUE INDEX uniq_nota_empenho_chave_siafi
+  ON orcamento.nota_empenho (ug, gestao, ano, numero);
+CREATE INDEX idx_recolhimento_nc ON orcamento.nota_credito_recolhimento (nota_credito_id);
+CREATE INDEX idx_recolhimento_ano ON orcamento.nota_credito_recolhimento (ano);
 CREATE INDEX idx_liquidacao_ne ON orcamento.liquidacao (nota_empenho_id);
 CREATE INDEX idx_pdr_item_nd ON orcamento.pdr_item (cod_nd);
 CREATE INDEX idx_pdr_item_ano ON orcamento.pdr_item (ano);

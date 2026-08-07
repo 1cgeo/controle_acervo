@@ -31,6 +31,7 @@ const {
   dfdRoute: orcamentoDfdRoute,
   pdrRoute: orcamentoPdrRoute,
   notaCreditoRoute: orcamentoNotaCreditoRoute,
+  recolhimentoRoute: orcamentoRecolhimentoRoute,
   notaEmpenhoRoute: orcamentoNotaEmpenhoRoute,
   liquidacaoRoute: orcamentoLiquidacaoRoute,
   recebimentoRoute: orcamentoRecebimentoRoute,
@@ -132,6 +133,11 @@ router.use("/orcamento/dfd", orcamentoDfdRoute);
 router.use("/orcamento/pdr", orcamentoPdrRoute);
 
 router.use("/orcamento/notas_credito", orcamentoNotaCreditoRoute);
+
+// O documento de recolhimento de crédito. Rota própria, e não sub-rota da NC,
+// porque o fechamento do exercício pergunta pelo ANO inteiro; o vínculo com a
+// NC que ele abate vai no corpo e no filtro da listagem.
+router.use("/orcamento/recolhimentos", orcamentoRecolhimentoRoute);
 
 router.use("/orcamento/notas_empenho", orcamentoNotaEmpenhoRoute);
 

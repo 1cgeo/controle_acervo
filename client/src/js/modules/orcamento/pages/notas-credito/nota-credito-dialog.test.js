@@ -114,4 +114,33 @@ describe('openNotaCreditoDialog (edicao)', () => {
     expect('pdr_item_id' in corpo).toBe(false);
     expect(corpo.classificacao_id).toBe(2);
   });
+
+  // O VALOR RECOLHIDO SAIU DO FORMULARIO NA 1.40.0, pelo mesmo motivo da meta:
+  // ele era um numero digitado, e o documento que produziu a devolucao nao
+  // existia em lugar nenhum. Medido em 2026-08-07 contra o SAG: das 17 NCs alvo
+  // do ano, 5 estavam com 0,00 no SCA e nada acusava.
+  test('nao ha campo "Valor recolhido": ele e a soma dos documentos de recolhimento', async () => {
+    await openNotaCreditoDialog({ ncId: 5, ano: 2026 });
+    await flush();
+    await flush();
+
+    // Rede contra o falso verde: o formulario tem de estar montado. O asterisco
+    // e do campo obrigatorio, e faz parte do texto do rotulo.
+    expect(rotulos()).toContain('Valor da NC*');
+    expect(rotulos()).not.toContain('Valor recolhido');
+  });
+
+  test('salvar nao manda valor_recolhido no corpo', async () => {
+    await openNotaCreditoDialog({ ncId: 5, ano: 2026 });
+    await flush();
+    await flush();
+
+    botao('Salvar').click();
+    await flush();
+
+    const corpo = updateNotaCredito.mock.calls[0][1];
+    // `in`, e nao `== null`: o validador estrito do modulo recusa a chave
+    // desconhecida com 400, mesmo que o valor va nulo.
+    expect('valor_recolhido' in corpo).toBe(false);
+  });
 });

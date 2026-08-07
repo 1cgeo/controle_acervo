@@ -28,7 +28,6 @@ describe('nota_credito_ctrl.criar', () => {
         ano: 2026,
         cod_nd: '339030',
         valor_nc: 1000,
-        valor_recolhido: 150,
         classificacao_id: 1,
         pdr_item_id: 7
       },
@@ -40,11 +39,16 @@ describe('nota_credito_ctrl.criar', () => {
     // classificacao = PDR (1) com pdr_item_id => grava o item
     const params = mockDb.conn.one.mock.calls[0][1]
     expect(params.pdrItemId).toBe(7)
-    expect(params.valorRecolhido).toBe(150)
     expect(params.usuarioUuid).toBe('uuid')
   })
 
-  test('valor_recolhido ausente grava 0 (default informativo)', async () => {
+  // O RECOLHIDO SAIU DA ESCRITA DA NC na 1.40.0: a coluna foi apagada e a
+  // devolucao virou DOCUMENTO, em `orcamento.nota_credito_recolhimento`.
+  //
+  // Este caso prende as DUAS pontas, e sem a segunda ele passaria numa
+  // implementacao que apenas parou de ler o campo do corpo e continuou mandando
+  // a coluna no INSERT, o que quebraria no banco e nao aqui.
+  test('a escrita da NC nao toca mais o recolhido: nem parametro, nem coluna', async () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 43 })
 
     await ctrl.criar(
@@ -53,13 +57,17 @@ describe('nota_credito_ctrl.criar', () => {
         ano: 2026,
         cod_nd: '339030',
         valor_nc: 1000,
-        classificacao_id: 2
+        classificacao_id: 2,
+        // Mesmo que alguem insista em mandar o campo (cliente velho), ele nao
+        // pode chegar ao SQL. Quem o recusa antes e o schema, com 400.
+        valor_recolhido: 150
       },
       'uuid'
     )
 
-    const params = mockDb.conn.one.mock.calls[0][1]
-    expect(params.valorRecolhido).toBe(0)
+    const [sql, params] = mockDb.conn.one.mock.calls[0]
+    expect(params.valorRecolhido).toBeUndefined()
+    expect(String(sql)).not.toContain('valor_recolhido')
   })
 
   test('regra: classificacao Extra-PDR (2) forca pdrItemId a null mesmo se enviado', async () => {
@@ -119,6 +127,23 @@ describe('nota_credito_ctrl.listar', () => {
 
     const [, params] = mockDb.conn.any.mock.calls[0]
     expect(params).toEqual({ ano: null, classificacaoId: null })
+  })
+
+  // O CAMPO CONTINUA SAINDO COM O MESMO NOME, e a FONTE e que mudou: a tela, o
+  // CLI e o RPCMTec leem `valor_recolhido`, e trocar o nome quebraria os tres de
+  // uma vez. Este caso prende as duas metades da promessa.
+  test('o recolhido sai como SOMA da tabela de recolhimento, e nao de coluna', async () => {
+    mockDb.conn.any.mockResolvedValueOnce([])
+
+    await ctrl.listar({ ano: 2026 })
+
+    const sql = String(mockDb.conn.any.mock.calls[0][0])
+    expect(sql).toContain('AS valor_recolhido')
+    expect(sql).toContain('orcamento.nota_credito_recolhimento')
+    // E o SALDO usa a mesma soma, senao a lista mostraria um recolhido e
+    // descontaria outro.
+    expect(sql).toContain('AS saldo')
+    expect(sql).not.toContain('nc.valor_recolhido')
   })
 })
 

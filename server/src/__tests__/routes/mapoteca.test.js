@@ -515,7 +515,10 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.omds).toBe('1º CGEO')
       expect(res.body.dados.previsto_pit).toBe(true)
       // O id serve a escrita; o codigo derivado e o que a tela e a planilha leem.
-      expect(res.body.dados.meta_pit_id).toBe(String(metaId))
+      // NUMERO, e nao texto: as tres consultas de pedido trazem `meta_pit_id::int`
+      // desde 2026-08-07, porque o driver devolve int8 como string e o Joi da
+      // escrita e strict, o que recusava toda leitura-altera-reenvia.
+      expect(res.body.dados.meta_pit_id).toBe(metaId)
       expect(res.body.dados.meta_pit_codigo).toBe('4.1')
     })
 

@@ -344,7 +344,7 @@ async function executar (args, cfg) {
       if (!vinculo) {
         throw new Error(
           `O recurso ${chave} nao aceita anexo. Aceitam: nc (nota_credito_id), ` +
-          'dfd (dfd_id) e pdr (pdr_ano, por ano).'
+          'dfd (dfd_id), pdr (pdr_ano, por ano) e recolhimento (recolhimento_id).'
         )
       }
       const id = argsLib.exigir(flags, 'id', vinculo === 'pdr_ano' ? 'o ANO do PDR' : `id do ${chave}`)

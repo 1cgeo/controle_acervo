@@ -76,6 +76,17 @@ export const createNotaCredito = (body) => apiPost(`${API}/notas_credito`, body)
 export const updateNotaCredito = (id, body) => apiPut(`${API}/notas_credito/${id}`, body);
 export const deleteNotaCredito = (id) => apiDelete(`${API}/notas_credito/${id}`);
 
+// ---- Recolhimento de crédito ----
+// Uma linha por DOCUMENTO do SIAFI que devolve crédito, apontando a NC que ele
+// abate. Até a 1.39.0 isto era o campo `valor_recolhido` da própria NC, digitado
+// à mão. O `valor_recolhido` continua saindo nas LEITURAS da NC, agora como soma
+// destas linhas, e por isso a tela não mudou de nome para o número.
+export const getRecolhimentos = (params = {}) => apiGet(`${API}/recolhimentos${qs(params)}`);
+export const getRecolhimento = (id) => apiGet(`${API}/recolhimentos/${id}`);
+export const createRecolhimento = (body) => apiPost(`${API}/recolhimentos`, body);
+export const updateRecolhimento = (id, body) => apiPut(`${API}/recolhimentos/${id}`, body);
+export const deleteRecolhimento = (id) => apiDelete(`${API}/recolhimentos/${id}`);
+
 // ---- Nota de Empenho ----
 export const getNotasEmpenho = (params = {}) => apiGet(`${API}/notas_empenho${qs(params)}`);
 export const getNotaEmpenho = (id) => apiGet(`${API}/notas_empenho/${id}`);
@@ -126,8 +137,10 @@ export const getExecucaoNd = (params = {}) => apiGet(`${API}/dashboard/execucao_
 // do PDR, e o CRUD da edicao mensal vivia sob /api/orcamento/relatorio; hoje as
 // duas coisas estao em /api/rpcmtec, porque o relatorio e da Divisao inteira.
 
-// ---- Arquivos anexados (NC = 1 PDF, DFD = 1 PDF, PDR = varios por ano) ----
-// O vinculo e exatamente um entre { nota_credito_id } | { dfd_id } | { pdr_ano }.
+// ---- Arquivos anexados ----
+// NC = 1 PDF, DFD = 1 PDF, PDR = varios por ano, recolhimento = varios.
+// O vinculo e exatamente um entre { nota_credito_id } | { dfd_id } |
+// { pdr_ano } | { recolhimento_id }.
 export const getArquivos = (vinculo) => apiGet(`${API}/arquivo${qs(vinculo)}`);
 export const uploadArquivo = (vinculo, file) => {
   const fd = new FormData();

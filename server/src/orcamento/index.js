@@ -14,6 +14,9 @@ module.exports = {
   dfdRoute: require('./dfd').dfdRoute,
   pdrRoute: require('./pdr').pdrRoute,
   notaCreditoRoute: require('./nota_credito').notaCreditoRoute,
+  // O recolhimento de credito: um DOCUMENTO do SIAFI por linha, apontando a NC
+  // que ele abate. Ate a 1.39.0 isto era a coluna `nota_credito.valor_recolhido`.
+  recolhimentoRoute: require('./nota_credito').recolhimentoRoute,
   notaEmpenhoRoute: require('./nota_empenho').notaEmpenhoRoute,
   liquidacaoRoute: require('./nota_empenho').liquidacaoRoute,
   recebimentoRoute: require('./nota_empenho').recebimentoRoute,

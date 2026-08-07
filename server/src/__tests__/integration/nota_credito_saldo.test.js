@@ -22,6 +22,7 @@ const { ADMIN_UUID } = require('../helpers/auth')
 
 const ncCtrl = require('../../orcamento/nota_credito/nota_credito_ctrl')
 const neCtrl = require('../../orcamento/nota_empenho/nota_empenho_ctrl')
+const recolhimentoCtrl = require('../../orcamento/nota_credito/recolhimento_ctrl')
 
 const ANO = 2026
 const ND_CONSUMO = '339030'
@@ -59,6 +60,19 @@ const saldoDaLista = async (ncId) => {
   return { saldo: Number(linha.saldo), empenhado: Number(linha.empenhado) }
 }
 
+/**
+ * Devolve crédito lançando o DOCUMENTO de recolhimento.
+ *
+ * Desde a 1.40.0 não há campo `valor_recolhido` no corpo da NC: a devolução é
+ * uma linha em `orcamento.nota_credito_recolhimento`, e o recolhido da NC é a
+ * soma delas. `numero` varia porque a unicidade é (ano, numero, NC alvo): dois
+ * documentos distintos sobre a MESMA NC precisam de números distintos.
+ */
+const recolher = (ncId, valor, numero = 'NC-REC') => recolhimentoCtrl.criar(
+  { nota_credito_id: Number(ncId), numero, ano: ANO, valor },
+  ADMIN_UUID
+)
+
 const empenhar = (ncId, valor, extra = {}) => neCtrl.criar({
   numero: `NE-${valor}-${Math.round(Math.random() * 1e6)}`,
   ano: ANO,
@@ -80,10 +94,29 @@ describe('o saldo da nota de crédito', () => {
   })
 
   test('o recolhimento desconta do saldo', async () => {
-    const nc = await novaNc({ valor_recolhido: 250 })
+    const nc = await novaNc()
+    await recolher(nc.id, 250)
     await empenhar(nc.id, 400)
     // 1000 recebido, 250 devolvido, 400 empenhado.
     expect(await saldoDaLista(nc.id)).toEqual({ saldo: 350, empenhado: 400 })
+  })
+
+  /**
+   * O RECOLHIDO É SOMA, e não uma linha só.
+   *
+   * Sem este caso, os demais passariam numa implementação que lesse APENAS o
+   * primeiro documento de recolhimento da NC (um `LIMIT 1`, um `MIN`), e o erro
+   * ficaria invisível: o caso real de 2026 tem NC abatida por mais de um
+   * documento, e a 2026NC401316 abate duas NCs de uma vez.
+   */
+  test('dois documentos de recolhimento somam no recolhido e no saldo', async () => {
+    const nc = await novaNc()
+    await recolher(nc.id, 100, 'NC-REC-A')
+    await recolher(nc.id, 150, 'NC-REC-B')
+
+    const linha = await ncCtrl.getPorId(nc.id)
+    expect(Number(linha.valor_recolhido)).toBe(250)
+    expect(await saldoDaLista(nc.id)).toEqual({ saldo: 750, empenhado: 0 })
   })
 
   test('a anulação da NE devolve o valor ao saldo', async () => {
@@ -107,14 +140,7 @@ describe('o saldo da nota de crédito', () => {
     // exatamente a linha que precisa de atenção.
     const nc = await novaNc()
     await empenhar(nc.id, 900)
-    await ncCtrl.atualizar(nc.id, {
-      numero: 'NC-SALDO',
-      ano: ANO,
-      cod_nd: ND_CONSUMO,
-      valor_nc: 1000,
-      valor_recolhido: 400,
-      classificacao_id: PDR
-    }, ADMIN_UUID)
+    await recolher(nc.id, 400)
 
     const { saldo } = await saldoDaLista(nc.id)
     expect(saldo).toBe(-300)

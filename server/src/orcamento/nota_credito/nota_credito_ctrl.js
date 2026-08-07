@@ -4,6 +4,9 @@ const { db } = require('../../database')
 
 const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
 const arquivoCtrl = require('../arquivo/arquivo_ctrl')
+const recolhimentoCtrl = require('./recolhimento_ctrl')
+
+const { recolhidoDaNc } = require('./recolhido_sql')
 
 const { AppError, httpCode, domainConstants: { CLASSIFICACAO_NC } } = require('../utils')
 
@@ -95,7 +98,16 @@ controller.listar = async (filtros = {}) => {
             nd.nome AS nd_nome,
             nc.ug_emitente,
             ug.nome AS ug_nome,
-            nc.valor_nc, nc.valor_recolhido, nc.prazo_empenho,
+            nc.valor_nc,
+            -- O RECOLHIDO E SOMA, e nao mais coluna. Ate a 1.39.0 ele era um
+            -- numero digitado na propria NC; desde a 1.40.0 cada devolucao e um
+            -- DOCUMENTO em orcamento.nota_credito_recolhimento, e o recolhido da
+            -- NC e a soma das linhas que apontam para ela. O NOME do campo na
+            -- resposta nao mudou, porque a tela, o CLI e o relatorio o leem
+            -- assim; o que mudou e a FONTE.
+            -- (Sem crase neste comentario: template literal.)
+            ${recolhidoDaNc('nc')} AS valor_recolhido,
+            nc.prazo_empenho,
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
             nc.pdr_item_id,
@@ -129,7 +141,7 @@ controller.listar = async (filtros = {}) => {
             -- (2026NC400698 e 2026NC400702) tiveram o credito devolvido DEPOIS
             -- do empenho, e estao mesmo abaixo de zero. Zerar aqui esconderia
             -- exatamente a NC que precisa de atencao.
-            nc.valor_nc - COALESCE(nc.valor_recolhido, 0)
+            nc.valor_nc - ${recolhidoDaNc('nc')}
               - COALESCE(emp.total, 0) AS saldo,
             af.id AS arquivo_id, af.nome_original AS arquivo_nome
      FROM orcamento.nota_credito AS nc
@@ -195,7 +207,10 @@ controller.getPorId = async id => {
             -- (Sem crase neste comentario: template literal.)
             pdi.meta_pit_id, mp.numero_meta,
             NULL::varchar AS meta_item, mp.nome AS meta_descricao,
-            nc.valor_nc, nc.valor_recolhido, nc.doc_ro, nc.prazo_empenho,
+            nc.valor_nc,
+            -- Soma dos documentos de recolhimento; ver o comentario do listar.
+            ${recolhidoDaNc('nc')} AS valor_recolhido,
+            nc.doc_ro, nc.prazo_empenho,
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
             nc.pdr_item_id, nc.nc_complementada_id,
@@ -227,14 +242,16 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
   return db.conn
     .tx(async t => {
       const criada = await t.one(
+        // SEM `valor_recolhido`: a coluna saiu na 1.40.0. Quem grava devolucao e
+        // a rota /api/orcamento/recolhimentos, uma linha por DOCUMENTO do SIAFI.
         `INSERT INTO orcamento.nota_credito
           (numero, ano, data_emissao, cod_nd, ptres, fonte, cod_pi, ug_emitente,
-           finalidade_historico, valor_nc, valor_recolhido, doc_ro, prazo_empenho,
+           finalidade_historico, valor_nc, doc_ro, prazo_empenho,
            classificacao_id, pdr_item_id, nc_complementada_id, marcador, observacao,
            usuario_cadastramento_uuid)
          VALUES
           ($<numero>, $<ano>, $<dataEmissao>, $<codNd>, $<ptres>, $<fonte>, $<codPi>,
-           $<ugEmitente>, $<finalidadeHistorico>, $<valorNc>, $<valorRecolhido>, $<docRo>,
+           $<ugEmitente>, $<finalidadeHistorico>, $<valorNc>, $<docRo>,
            $<prazoEmpenho>, $<classificacaoId>, $<pdrItemId>, $<ncComplementadaId>,
            $<marcador>, $<observacao>, $<usuarioUuid>)
          RETURNING *`,
@@ -249,7 +266,6 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
           ugEmitente: dados.ug_emitente || null,
           finalidadeHistorico: dados.finalidade_historico || null,
           valorNc: dados.valor_nc,
-          valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
           docRo: dados.doc_ro || null,
           prazoEmpenho: dados.prazo_empenho || null,
           classificacaoId: dados.classificacao_id,
@@ -300,7 +316,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            cod_nd = $<codNd>, ptres = $<ptres>, fonte = $<fonte>, cod_pi = $<codPi>,
            ug_emitente = $<ugEmitente>, finalidade_historico = $<finalidadeHistorico>,
            valor_nc = $<valorNc>,
-           valor_recolhido = $<valorRecolhido>, doc_ro = $<docRo>,
+           doc_ro = $<docRo>,
            prazo_empenho = $<prazoEmpenho>, classificacao_id = $<classificacaoId>,
            pdr_item_id = $<pdrItemId>, nc_complementada_id = $<ncComplementadaId>,
            marcador = $<marcador>, observacao = $<observacao>,
@@ -320,7 +336,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           ugEmitente: dados.ug_emitente || null,
           finalidadeHistorico: dados.finalidade_historico || null,
           valorNc: dados.valor_nc,
-          valorRecolhido: dados.valor_recolhido != null ? dados.valor_recolhido : 0,
           docRo: dados.doc_ro || null,
           prazoEmpenho: dados.prazo_empenho || null,
           classificacaoId: dados.classificacao_id,
@@ -396,6 +411,12 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
     // CASCADE, e o anexo tem rastro proprio: sem esta chamada, o unico registro
     // de que o PDF do SIAFI existiu sumiria em silencio junto com a NC.
     await arquivoCtrl.auditarCascata(t, 'nota_credito_id', id, usuarioUuid, contexto)
+
+    // Os DOCUMENTOS DE RECOLHIMENTO caem pela mesma cascata, e cada um arrasta
+    // os proprios anexos. Sem esta chamada, apagar uma NC apagaria em silencio a
+    // prova de que o credito dela foi devolvido, que e exatamente o dado que a
+    // 1.40.0 existe para nao perder.
+    await recolhimentoCtrl.auditarCascata(t, id, usuarioUuid, contexto)
 
     await t.none('DELETE FROM orcamento.nota_credito WHERE id = $<id>', { id })
 

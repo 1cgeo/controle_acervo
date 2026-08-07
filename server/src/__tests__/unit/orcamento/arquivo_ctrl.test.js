@@ -33,7 +33,22 @@ describe('listarPorVinculo', () => {
     const dados = await arquivoCtrl.listarPorVinculo({ nota_credito_id: 5 })
     expect(dados).toHaveLength(1)
     const [, params] = mockDb.conn.any.mock.calls[0]
-    expect(params).toEqual({ notaCreditoId: 5, dfdId: null, pdrAno: null })
+    // Sao QUATRO vinculos desde a 1.40.0: o recolhimento de credito entrou como
+    // dono proprio do anexo (o CHECK `arquivo_um_vinculo` ganhou a sexta
+    // parcela; duas delas, licitacao e RPNP, ainda nao tem rota).
+    expect(params).toEqual({
+      notaCreditoId: 5, dfdId: null, pdrAno: null, recolhimentoId: null
+    })
+  })
+
+  test('normaliza o vinculo do RECOLHIMENTO', async () => {
+    mockDb.conn.any.mockResolvedValueOnce([{ id: 2 }])
+    await arquivoCtrl.listarPorVinculo({ recolhimento_id: 7 })
+    const [sql, params] = mockDb.conn.any.mock.calls[0]
+    expect(params).toEqual({
+      notaCreditoId: null, dfdId: null, pdrAno: null, recolhimentoId: 7
+    })
+    expect(String(sql)).toContain('recolhimento_id')
   })
 })
 

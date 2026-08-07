@@ -180,13 +180,19 @@ export async function openNotaCreditoDialog({
     value: nc?.valor_nc ?? undefined,
     helpText: 'Valor recebido na NC. Nunca muda por devolução.',
   });
-  const valorRecolhidoField = createNumberField({
-    label: 'Valor recolhido',
-    min: 0,
-    step: 0.01,
-    value: nc?.valor_recolhido ?? undefined,
-    helpText: 'Parte do crédito recebido que foi devolvida/recolhida. Informativo: não altera o valor recebido.',
-  });
+  // NÃO HÁ CAMPO "Valor recolhido" AQUI, e a ausência é a regra de negócio. Até
+  // a 1.39.0 ele era um número digitado nesta tela, e o documento que produziu a
+  // devolução não existia em lugar nenhum: nem o número da NC de recolhimento,
+  // nem a data, nem o histórico, nem o PDF.
+  //
+  // O CAMPO EXISTIU E MENTIA. Medido em 2026-08-07 contra o SAG (espelho do
+  // SIAFI): o exercício teve 23 notas de crédito de anulação, R$ 81.910,10,
+  // casando em 17 NCs alvo. No SCA, 5 alvos estavam com 0,00 e nada acusava,
+  // porque a fonte do número era a memória de quem digitou.
+  //
+  // Agora cada devolução é uma linha em `nota_credito_recolhimento`, lançada
+  // pela ação "Recolhimentos" da lista de NCs, e o recolhido da NC é a soma
+  // delas. A coluna "Recolhido" da lista continua no lugar, com o mesmo nome.
   const docRoField = createTextField({
     label: 'Documento RO',
     maxLength: 20,
@@ -280,7 +286,6 @@ export async function openNotaCreditoDialog({
     ugEmitenteField.element,
     el('div', { className: 'form-grid__full' }, [finalidadeField.element]),
     valorNcField.element,
-    valorRecolhidoField.element,
     docRoField.element,
     prazoEmpenhoField.element,
     classificacaoField.element,
@@ -312,13 +317,11 @@ export async function openNotaCreditoDialog({
           numeroField.setError(null);
           codNdField.setError(null);
           valorNcField.setError(null);
-          valorRecolhidoField.setError(null);
           classificacaoField.setError(null);
 
           const numero = numeroField.getValue();
           const codNd = codNdField.getValue();
           const valorNc = valorNcField.getValue();
-          const valorRecolhido = valorRecolhidoField.getValue();
           const classificacaoId = classificacaoField.getValue();
 
           let valid = true;
@@ -338,12 +341,11 @@ export async function openNotaCreditoDialog({
             classificacaoField.setError('Selecione a classificação');
             valid = false;
           }
-          // Nao se devolve credito que nao se recebeu. O schema do servidor cobra
-          // o mesmo teto; aqui o usuario ve o erro no campo, antes de enviar.
-          if (valorRecolhido !== null && valorNc !== null && valorRecolhido > valorNc) {
-            valorRecolhidoField.setError('O recolhido não pode passar do valor da NC');
-            valid = false;
-          }
+          // SEM a checagem "recolhido não passa do valor da NC": o recolhido não
+          // é mais campo deste formulário. O teto que valia aqui era do dígito;
+          // hoje cada devolução é um documento à parte, e a NC devolvida acima do
+          // recebido apareceria como saldo negativo na lista, que é onde ela
+          // precisa ser vista.
           if (!valid) return;
 
           const body = {
@@ -359,7 +361,8 @@ export async function openNotaCreditoDialog({
             // paraId nos ids de select: eles chegam da API como TEXTO e os
             // schemas cobram Joi.number().integer().strict().
             valor_nc: valorNc,
-            valor_recolhido: valorRecolhido ?? null,
+            // SEM `valor_recolhido`: a coluna saiu na 1.40.0, e o validador
+            // estrito do módulo devolve 400 para chave desconhecida.
             doc_ro: docRoField.getValue() || null,
             prazo_empenho: prazoEmpenhoField.getValue(),
             classificacao_id: classificacaoId,

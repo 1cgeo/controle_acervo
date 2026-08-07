@@ -190,7 +190,11 @@ test('o anexo declara as rotas que TEM, e nao o CRUD por id que o registry supoe
   assert.deepStrictEqual(
     esquema.filtrosDe(RECURSOS.arquivo.schema(), RECURSOS.arquivo.queryListar)
       .map(f => f.nome).sort(),
-    ['dfd_id', 'nota_credito_id', 'pdr_ano']
+    // SAO QUATRO desde a 1.40.0: o documento de recolhimento de credito entrou
+    // como dono proprio do anexo (o extrato do SIAFI e o DIEx que pede a
+    // devolucao). A lista sai do Joi VIVO do server, e nao de copia: se um
+    // vinculo novo entrar la sem entrar aqui, este caso reprova.
+    ['dfd_id', 'nota_credito_id', 'pdr_ano', 'recolhimento_id']
   )
 })
 

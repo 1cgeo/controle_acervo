@@ -28,6 +28,7 @@ const { ADMIN_UUID } = require('../helpers/auth')
 
 const ncCtrl = require('../../orcamento/nota_credito/nota_credito_ctrl')
 const neCtrl = require('../../orcamento/nota_empenho/nota_empenho_ctrl')
+const recolhimentoCtrl = require('../../orcamento/nota_credito/recolhimento_ctrl')
 
 const ANO = 2026
 const ND_CONSUMO = '339030'
@@ -57,6 +58,18 @@ const novaNc = (extra = {}) => ncCtrl.criar(
   ADMIN_UUID
 )
 
+/**
+ * Devolve crédito da NC lançando o DOCUMENTO de recolhimento.
+ *
+ * Desde a 1.40.0 não há campo `valor_recolhido` para passar no corpo da NC: a
+ * devolução é uma linha em `orcamento.nota_credito_recolhimento`, e o recolhido
+ * da NC é a soma delas. O teto do empenho lê a mesma soma.
+ */
+const recolher = (ncId, valor, numero = 'NC-REC-TETO') => recolhimentoCtrl.criar(
+  { nota_credito_id: Number(ncId), numero, ano: ANO, valor },
+  ADMIN_UUID
+)
+
 const corpoDaNe = (ncId, extra = {}) => ({
   numero: 'NE-TETO',
   ano: ANO,
@@ -71,7 +84,8 @@ describe('o teto da NC desconta a anulação da própria NE', () => {
    * o usuário só quer trocar a data.
    */
   test('a NE anulada por inteiro contra NC recolhida ainda edita a data', async () => {
-    const nc = await novaNc({ valor_recolhido: 1728 })
+    const nc = await novaNc()
+    await recolher(nc.id, 1728)
     const ne = await neCtrl.criar(
       corpoDaNe(nc.id, { valor_anulado: 1728 }), ADMIN_UUID
     )
@@ -101,7 +115,8 @@ describe('o teto da NC desconta a anulação da própria NE', () => {
    * inteira viraria enfeite.
    */
   test('sem anulação, o empenho acima do saldo continua recusado', async () => {
-    const nc = await novaNc({ valor_recolhido: 1728 })
+    const nc = await novaNc()
+    await recolher(nc.id, 1728)
 
     await expect(
       neCtrl.criar(corpoDaNe(nc.id), ADMIN_UUID)

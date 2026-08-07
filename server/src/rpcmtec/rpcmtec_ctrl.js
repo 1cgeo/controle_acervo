@@ -36,6 +36,11 @@
 // DISSE.
 
 const { db } = require('../database')
+// A soma dos documentos de recolhimento de uma NC, na FONTE UNICA. Ate a 1.39.0
+// isto era a coluna `nota_credito.valor_recolhido`, que a 1.40.0 apagou: a
+// coluna "Valor recolhido" da 4.1, da 4.2 e da 4.7 le a mesma expressao que a
+// tela e o teto do empenho leem.
+const { recolhidoDaNc } = require('../orcamento/nota_credito/recolhido_sql')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const mapotecaCtrl = require('../mapoteca/mapoteca_ctrl')
 // O PIT é dado de PLATAFORMA, e não de módulo: o gerador o lê como lê o acervo e
@@ -546,7 +551,13 @@ const gerarExecucaoPorNd = async (ano, inicio, cutoff) => {
            AND (lq.data IS NULL OR (lq.data >= $<inicio> AND lq.data <= $<cutoff>))
        ) AS liquidado,
        (
-         SELECT SUM(nc.valor_recolhido)
+         -- O COALESCE E POR NC, e o SUM de fora fica SEM ele, de proposito. E o
+         -- que preserva a distincao do modelo da 4.1: ND sem NC nenhuma nao tem
+         -- linha para somar e devolve NULO ('-'); ND com NCs e sem recolhimento
+         -- nenhum soma zeros e devolve 0,00. Sem o COALESCE de dentro, a segunda
+         -- tambem cairia em NULO, e a 4.1 passaria a escrever '-' onde o modelo
+         -- de julho/2026 escreve '0,00'.
+         SELECT SUM(${recolhidoDaNc('nc')})
          FROM orcamento.nota_credito AS nc
          WHERE nc.ano = $<ano> AND nc.classificacao_id = $<pdr> AND nc.cod_nd = nd.code
            AND (nc.data_emissao IS NULL
@@ -588,7 +599,10 @@ const gerarCreditosRecebidos = async (ano, inicio, cutoff, classificacaoId) => {
        nc.cod_nd,
        nc.finalidade_historico AS finalidade,
        nc.valor_nc,
-       nc.valor_recolhido,
+       -- Soma dos documentos de recolhimento desta NC (ver recolhido_sql.js).
+       -- Ate a 1.39.0 era a coluna nc.valor_recolhido, que a 1.40.0 apagou.
+       -- (Sem crase neste comentario: template literal.)
+       ${recolhidoDaNc('nc')} AS valor_recolhido,
        ROUND(COALESCE((
          SELECT SUM(enc.valor * (ne.valor_empenhado - ne.valor_anulado) / ne.valor_empenhado)
          FROM orcamento.nota_empenho_nota_credito AS enc

@@ -4,6 +4,8 @@ const { db } = require('../../database')
 
 const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
 
+const { recolhidoDaNc } = require('../nota_credito/recolhido_sql')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -190,9 +192,14 @@ const EMPENHADO_DESTA_NE = `
 const validarTetoDasNcs = async (t, alocacoes, ignorarNeId = null, valorAnulado = 0) => {
   const ids = alocacoes.map(a => a.nota_credito_id)
   const ncs = await t.any(
-    `SELECT id, numero, valor_nc, valor_recolhido
-     FROM orcamento.nota_credito
-     WHERE id IN ($<ids:csv>)`,
+    // O recolhido e SOMA dos documentos de recolhimento, e nao mais coluna (a
+    // 1.40.0 apagou `valor_recolhido`). A expressao sai de `recolhido_sql.js`,
+    // fonte unica: o teto que barra o empenho e a mesma regua que a lista de NCs
+    // mostra como saldo, e as duas nao podem divergir.
+    `SELECT nc.id, nc.numero, nc.valor_nc,
+            ${recolhidoDaNc('nc')} AS valor_recolhido
+     FROM orcamento.nota_credito AS nc
+     WHERE nc.id IN ($<ids:csv>)`,
     { ids }
   )
   const jaEmpenhado = await t.any(EMPENHADO_POR_NC, {
@@ -347,7 +354,8 @@ controller.getPorId = async id => {
             ne.finalidade,
             ne.valor_empenhado, ne.valor_anulado,
             nc.valor_nc AS nc_valor_nc,
-            nc.valor_recolhido AS nc_valor_recolhido,
+            -- Soma dos documentos de recolhimento da NC; ver recolhido_sql.js.
+            ${recolhidoDaNc('nc')} AS nc_valor_recolhido,
             COALESCE((
               SELECT SUM(v.valor)
               FROM (

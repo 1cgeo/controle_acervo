@@ -11,7 +11,8 @@ const uploadArquivo = require('./arquivo_upload')
 
 const router = express.Router()
 
-// Lista os anexos de um vinculo (?nota_credito_id= | ?dfd_id= | ?pdr_ano=).
+// Lista os anexos de um vinculo
+// (?nota_credito_id= | ?dfd_id= | ?pdr_ano= | ?recolhimento_id=).
 router.get(
   '/',
   verifyPerfil('consulta', 'orcamento'),

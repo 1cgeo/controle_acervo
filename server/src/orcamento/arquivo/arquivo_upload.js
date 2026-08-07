@@ -1,18 +1,19 @@
 'use strict'
 
 // Middleware de upload (multer) para um unico arquivo no campo "arquivo".
-// O vinculo vem na query (nota_credito_id | dfd_id | pdr_ano), ja validado e
-// coercido pelo schemaValidation que roda antes deste middleware. A extensao
-// aceita depende do tipo de vinculo: NC e DFD aceitam so PDF; o PDR aceita PDF
-// e planilhas. Os bytes ficam em memoria (file.buffer) e o controller grava no
-// banco (coluna conteudo BYTEA); o nome original do usuario fica nos metadados.
+// O vinculo vem na query (nota_credito_id | dfd_id | pdr_ano | recolhimento_id),
+// ja validado e coercido pelo schemaValidation que roda antes deste middleware.
+// A extensao aceita depende do tipo de vinculo: NC, DFD e recolhimento aceitam
+// so PDF (o extrato do SIAFI e o DIEx sao PDF); o PDR aceita PDF e planilhas.
+// Os bytes ficam em memoria (file.buffer) e o controller grava no banco (coluna
+// conteudo BYTEA); o nome original do usuario fica nos metadados.
 
 const multer = require('multer')
 const path = require('path')
 
 const { AppError, httpCode } = require('../utils')
 
-const EXT_NC_DFD = ['.pdf']
+const EXT_PDF = ['.pdf']
 const EXT_PDR = ['.pdf', '.xlsx', '.xls', '.csv', '.ods']
 const MAX_BYTES = 50 * 1024 * 1024 // 50 MB
 
@@ -20,10 +21,11 @@ const tipoDaQuery = query => {
   if (query.nota_credito_id != null) return 'nota_credito'
   if (query.dfd_id != null) return 'dfd'
   if (query.pdr_ano != null) return 'pdr'
+  if (query.recolhimento_id != null) return 'recolhimento'
   return null
 }
 
-const extensoesPermitidas = tipo => (tipo === 'pdr' ? EXT_PDR : EXT_NC_DFD)
+const extensoesPermitidas = tipo => (tipo === 'pdr' ? EXT_PDR : EXT_PDF)
 
 // Os bytes ficam em memoria; o controller os persiste no banco.
 const storage = multer.memoryStorage()

@@ -16,10 +16,16 @@ import {
 } from '@modules/orcamento/services/orcamento-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { openNotaCreditoDialog } from './nota-credito-dialog.js';
+import { openRecolhimentosDialog } from './recolhimentos-dialog.js';
 
 // Tolerancia de meio centavo. valor_nc e valor_recolhido sao NUMERIC(15,2) e
 // chegam como TEXTO; a comparacao exata reprova a devolucao integral por um
 // residuo de ponto flutuante que ninguem consegue ver na tela.
+//
+// `valor_recolhido` continua vindo do servidor com este nome, mas desde a 1.40.0
+// ele e a SOMA dos documentos de recolhimento da NC, e nao mais uma coluna
+// digitada. Quem edita a lista deles e o dialogo de recolhimentos, na acao da
+// linha; o formulario da NC nao tem mais o campo.
 const CENTAVO = 0.005;
 
 /**
@@ -202,8 +208,9 @@ export async function renderNotasCreditoList(container, _ctx) {
         render: (row) => formatCurrency(row.valor_nc),
       },
       {
-        // Coluna NOVA: o credito devolvido. A NC devolvida por inteiro ganha
-        // destaque na celula, alem da linha esmaecida.
+        // O credito devolvido: a SOMA dos documentos de recolhimento da NC. A NC
+        // devolvida por inteiro ganha destaque na celula, alem da linha
+        // esmaecida.
         key: 'valor_recolhido',
         label: 'Recolhido',
         sortable: true,
@@ -289,6 +296,16 @@ export async function renderNotasCreditoList(container, _ctx) {
     rowClassName: (row) => (recolhidaPorInteiro(row) ? 'data-table__row--quitada' : ''),
     emptyMessage: 'Nenhuma nota de crédito cadastrada',
     actions: [
+      {
+        // OS RECOLHIMENTOS ABREM PARA QUEM SÓ CONSULTA, e não só para o
+        // operador: desde a 1.40.0 a coluna "Recolhido" é a soma de documentos,
+        // e sem este caminho não haveria como ver QUAIS documentos produziram o
+        // número. Quem barra a escrita é o servidor; o diálogo esconde os botões
+        // de acrescentar e remover por perfil.
+        icon: ICONS.logout,
+        title: 'Recolhimentos (crédito devolvido)',
+        onClick: (row) => openRecolhimentosDialog({ nc: row, onChanged: load }),
+      },
       {
         icon: ICONS.download,
         title: 'Baixar anexo (PDF)',

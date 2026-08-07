@@ -51,6 +51,19 @@ const RECURSOS = {
     anexo: 'nota_credito_id'
   },
 
+  // O DOCUMENTO DE RECOLHIMENTO de credito. Recurso proprio, e nao um campo da
+  // NC: ate a 1.39.0 o recolhido era a coluna `nota_credito.valor_recolhido`,
+  // digitada a mao, e o documento que produziu a devolucao nao existia em lugar
+  // nenhum. O `valor_recolhido` da NC continua saindo na LEITURA, agora como a
+  // soma destas linhas.
+  recolhimento: {
+    nome: 'recolhimento de credito',
+    caminho: '/orcamento/recolhimentos',
+    schema: carregar('nota_credito/recolhimento_schema'),
+    colunas: ['id', 'numero', 'ano', 'data_emissao', 'cod_nd', 'ug_emitente', 'valor', 'nc_numero'],
+    anexo: 'recolhimento_id'
+  },
+
   ne: {
     nome: 'nota de empenho',
     caminho: '/orcamento/notas_empenho',
@@ -145,10 +158,10 @@ const RECURSOS = {
     // um anexo e apagar e subir de novo.
     semObter: true,
     semAtualizar: true,
-    colunas: ['id', 'nome_original', 'tamanho_bytes', 'nota_credito_id', 'dfd_id', 'pdr_ano'],
+    colunas: ['id', 'nome_original', 'tamanho_bytes', 'nota_credito_id', 'dfd_id', 'pdr_ano', 'recolhimento_id'],
     rotas: [
-      'GET    <base>            query: nota_credito_id | dfd_id | pdr_ano (exatamente um)',
-      'POST   <base>            multipart; use o verbo `anexar` de nc, dfd ou pdr',
+      'GET    <base>            query: nota_credito_id | dfd_id | pdr_ano | recolhimento_id (exatamente um)',
+      'POST   <base>            multipart; use o verbo `anexar` de nc, dfd, pdr ou recolhimento',
       'GET    <base>/:id/download   verbo: orcamento arquivo baixar --id N',
       'DELETE <base>/:id'
     ]
@@ -177,7 +190,10 @@ const RECURSOS = {
 const EXTENSOES_ANEXO = {
   nota_credito_id: ['.pdf'],
   dfd_id: ['.pdf'],
-  pdr_ano: ['.pdf', '.xlsx', '.xls', '.csv', '.ods']
+  pdr_ano: ['.pdf', '.xlsx', '.xls', '.csv', '.ods'],
+  // O extrato do SIAFI e o DIEx que pede a devolucao: os dois sao PDF, e o
+  // recolhimento aceita VARIOS, como o PDR.
+  recolhimento_id: ['.pdf']
 }
 
 function obter (chave) {

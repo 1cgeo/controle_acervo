@@ -29,8 +29,9 @@ const REGRAS = {
   nc: [
     'valor_nc e o valor RECEBIDO e nunca muda por devolucao: quem cai com a devolucao e',
     'o empenho (nota_empenho.valor_anulado), nao a NC.',
-    'valor_recolhido e a parte do credito devolvida, informada na propria NC. E',
-    'informativo (>= 0) e NAO altera valor_nc.',
+    'valor_recolhido NAO E CAMPO DE ESCRITA desde a 1.40.0: a coluna foi apagada.',
+    'Ele sai na LEITURA como a SOMA dos documentos de recolhimento da NC (recurso',
+    '`recolhimento`), e continua sem alterar valor_nc. Manda-lo no corpo volta 400.',
     'classificacao_id responde "esta previsto no PDR autorizado?", nao e a celula',
     'orcamentaria: 1 = PDR (vai para a tabela 3.2), 2 = Extra-PDR (tabela 3.7).',
     'pdr_item_id so existe quando classificacao_id = 1; com Extra-PDR o campo e',
@@ -44,6 +45,22 @@ const REGRAS = {
     'emitente, entao o mesmo numero e ND podem existir para emitentes distintos.',
     'Colisao volta 409.',
     'Aceita 1 anexo PDF; reenviar substitui o anterior.'
+  ],
+
+  recolhimento: [
+    'Uma linha por DOCUMENTO do SIAFI que devolve credito, apontando a NC que ele',
+    'abate (nota_credito_id obrigatorio). A soma por NC e o valor_recolhido que a',
+    'leitura da NC devolve, e o que sai nas subsecoes 4.1, 4.2 e 4.7 do RPCMTec.',
+    'O numero NAO e unico sozinho: uma NC de recolhimento pode abater DUAS NCs',
+    'nossas, entrando uma vez por alvo com o valor rateado (a 2026NC401316 recolhe',
+    'R$ 0,98 da 400224 e R$ 0,99 da 400937). A unicidade e (ano, numero,',
+    'nota_credito_id), e a colisao volta 409.',
+    'cod_nd e a ND da ANULACAO (339000, 449000), e nao a da NC alvo: e o que o',
+    'extrato mostra, e sem ela o documento nao se acha no SIAFI.',
+    'valor e estritamente positivo (CHECK no banco): recolhimento de zero nao e',
+    'documento nenhum.',
+    'Aceita VARIOS anexos PDF (extrato do SIAFI e DIEx que pede a devolucao).',
+    'Apagar a NC apaga os recolhimentos dela em cascata, com rastro na auditoria.'
   ],
 
   ne: [
@@ -124,11 +141,12 @@ const REGRAS = {
   ],
 
   arquivo: [
-    'Vinculo polimorfico a EXATAMENTE um dono: nota_credito_id, dfd_id ou pdr_ano.',
+    'Vinculo polimorfico a EXATAMENTE um dono: nota_credito_id, dfd_id, pdr_ano ou',
+    'recolhimento_id.',
     'Os bytes ficam no proprio banco (coluna conteudo BYTEA), nao no filesystem. A',
     'listagem nunca traz o conteudo: os bytes so saem no download.',
     'NC e DFD aceitam 1 PDF (reenviar substitui); o PDR aceita varios (pdf, xlsx, xls,',
-    'csv, ods).'
+    'csv, ods) e o recolhimento aceita varios PDF.'
   ],
 
   configuracao: [

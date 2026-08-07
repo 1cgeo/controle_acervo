@@ -617,10 +617,15 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   /**
    * O saldo da NC representativa, com as parcelas à vista.
    *
-   * É o MESMO teto que o servidor cobra ao gravar (valor da NC menos tudo o que
-   * já se empenhou contra ela). O `valor_recolhido` aparece ao lado, e NÃO
-   * desconta: ele é informativo na NC, e o servidor não o desconta do teto.
-   * Mostrar um saldo que a validação não reconhece seria pior que não mostrar.
+   * É o MESMO teto que o servidor cobra ao gravar: valor da NC, menos o crédito
+   * devolvido, menos tudo o que já se empenhou contra ela. O `nc_saldo` vem
+   * PRONTO do servidor, e as parcelas aparecem ao lado só para explicá-lo.
+   * Refazer a conta aqui abriria a porta para a tela prometer crédito que o
+   * servidor recusa.
+   *
+   * O `nc_valor_recolhido` DESCONTA, e a régua do servidor já o descontou. Desde
+   * a 1.40.0 ele é a soma dos documentos de recolhimento da NC, e não mais uma
+   * coluna digitada; o nome do campo na resposta não mudou.
    */
   function pintarSaldoNc(nota) {
     if (nota.nc_saldo === null || nota.nc_saldo === undefined) {

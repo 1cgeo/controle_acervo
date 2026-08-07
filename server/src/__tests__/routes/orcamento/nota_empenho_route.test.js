@@ -59,7 +59,11 @@ describe('POST /notas_empenho', () => {
     // o teste passa a medir outra coisa, calado.
     mockDb.conn.any.mockImplementation(async (sql) => {
       const texto = String(sql)
-      if (texto.includes('valor_recolhido')) {
+      // A consulta do TETO. Ela deixou de ler a coluna `valor_recolhido` (a
+      // 1.40.0 a apagou) e passou a somar `nota_credito_recolhimento`, entao o
+      // que a identifica agora e o APELIDO que ela dá à soma. O nome do campo na
+      // resposta continua o mesmo, e por isso o objeto devolvido não mudou.
+      if (texto.includes('AS valor_recolhido')) {
         return [{ id: 5, numero: 'NC-5', valor_nc: '5000.00', valor_recolhido: '0.00' }]
       }
       if (texto.includes('nota_empenho_nota_credito') && texto.includes('SUM')) {

@@ -21,6 +21,7 @@
 // é "quanto do crédito do ano já foi executado".
 
 const { db } = require('../../database')
+const { recolhidoDaNc } = require('../nota_credito/recolhido_sql')
 const { domainConstants: { CLASSIFICACAO_NC } } = require('../utils')
 
 const controller = {}
@@ -84,7 +85,7 @@ const EMPENHADO_LIQUIDO_DA_NC = `
  *
  * O prazo vencido usa o saldo LÍQUIDO da NC, e desconta também o recolhido:
  * crédito devolvido não se empenha, e empenhar sobre ele volta do SIAFI como
- * nota devolvida. É o mesmo critério do card "Saldo a empenhar" desta tela.
+ * nota devolvida. É o mesmo critério do card "Crédito a empenhar" desta tela.
  *
  * @param {number} ano
  * @returns {Promise<Object<string, {n:number, total:number}>>}
@@ -144,7 +145,7 @@ const contarPendencias = async ano => {
           AND nc.prazo_empenho < CURRENT_DATE
           -- Tolerância de meio centavo: os valores são NUMERIC(15,2), e sem ela
           -- uma NC empenhada por inteiro entraria na conta por um resíduo.
-          AND nc.valor_nc - nc.valor_recolhido - ${EMPENHADO_LIQUIDO_DA_NC} > 0.005
+          AND nc.valor_nc - ${recolhidoDaNc('nc')} - ${EMPENHADO_LIQUIDO_DA_NC} > 0.005
        ) AS nc_prazo_vencido`,
     { ano, classificacaoPdr: CLASSIFICACAO_NC.PDR }
   )
@@ -213,14 +214,14 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
                 OR (nc.data_emissao >= $<inicio> AND nc.data_emissao <= $<cutoff>))
        ), 0) AS recebido_extra,
        COALESCE((
-         SELECT SUM(nc.valor_recolhido)
+         SELECT SUM(${recolhidoDaNc('nc')})
          FROM orcamento.nota_credito AS nc
          WHERE nc.ano = $<ano> AND nc.classificacao_id = $<pdr> AND nc.cod_nd = nd.code
            AND (nc.data_emissao IS NULL
                 OR (nc.data_emissao >= $<inicio> AND nc.data_emissao <= $<cutoff>))
        ), 0) AS recolhido_pdr,
        COALESCE((
-         SELECT SUM(nc.valor_recolhido)
+         SELECT SUM(${recolhidoDaNc('nc')})
          FROM orcamento.nota_credito AS nc
          WHERE nc.ano = $<ano> AND nc.classificacao_id = $<extra> AND nc.cod_nd = nd.code
            AND (nc.data_emissao IS NULL
@@ -257,8 +258,43 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
          INNER JOIN orcamento.nota_credito AS ncne ON ncne.id = ne.nota_credito_id
          WHERE ncne.cod_nd = nd.code AND ncne.classificacao_id = $<extra> AND ne.ano = $<ano>
            AND (lq.data IS NULL OR (lq.data >= $<inicio> AND lq.data <= $<cutoff>))
-       ), 0) AS liquidado_extra
+       ), 0) AS liquidado_extra,
+       -- O SALDO SEPARADO EM DUAS METADES, e nao um liquido so.
+       --
+       -- O card unico somava as duas e cancelava uma com a outra. Medido em
+       -- 2026-08-07: ele mostrava R$ 428,73, que eram R$ 5.612,10 de credito
+       -- realmente por empenhar MENOS R$ 5.183,37 de saldo NEGATIVO. Saldo
+       -- negativo e impossivel (empenhado maior que o credito disponivel) e
+       -- sempre aponta defeito de lancamento; naquele dia eram dois empenhos
+       -- anulados no SIAFI que o SCA ainda contava. Um numero que esconde
+       -- defeito atras de compensacao e pior do que numero nenhum.
+       --
+       -- (Sem crase nestes comentarios: template literal.)
+       --
+       -- O SALDO E ESTADO, e nao fluxo, e por isso o empenhado que entra aqui e
+       -- o da VIDA INTEIRA da NC, sem a janela de data_empenho que as colunas
+       -- de fluxo carregam: a pergunta e "quanto ainda da para empenhar contra
+       -- esta NC hoje", e um empenho de dezembro consome o credito mesmo quando
+       -- o painel esta em agosto. E a mesma regua do saldo da lista de NCs, do
+       -- teto que barra o empenho e da pendencia de prazo vencido.
+       sld.positivo AS saldo_positivo,
+       sld.negativo AS saldo_negativo
      FROM dominio.natureza_despesa AS nd
+     -- LATERAL, e nao duas subconsultas iguais: as duas metades saem do MESMO
+     -- calculo por NC, e escreve-lo duas vezes deixaria os dois numeros da mesma
+     -- linha livres para discordar.
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(GREATEST(s.saldo, 0)), 0) AS positivo,
+              COALESCE(SUM(LEAST(s.saldo, 0)), 0) AS negativo
+         FROM (
+           SELECT nc.valor_nc - ${recolhidoDaNc('nc')}
+                    - ${EMPENHADO_LIQUIDO_DA_NC} AS saldo
+             FROM orcamento.nota_credito AS nc
+            WHERE nc.ano = $<ano> AND nc.cod_nd = nd.code
+              AND (nc.data_emissao IS NULL
+                   OR (nc.data_emissao >= $<inicio> AND nc.data_emissao <= $<cutoff>))
+         ) AS s
+     ) AS sld ON TRUE
      ORDER BY nd.code`,
     { ano, inicio, cutoff, pdr: CLASSIFICACAO_NC.PDR, extra: CLASSIFICACAO_NC.EXTRA_PDR }
   )
@@ -281,7 +317,16 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
       empenhado_extra: n('empenhado_extra'),
       liquidado: n('liquidado_pdr') + n('liquidado_extra'),
       liquidado_pdr: n('liquidado_pdr'),
-      liquidado_extra: n('liquidado_extra')
+      liquidado_extra: n('liquidado_extra'),
+      // As duas metades do saldo, somadas por ND. Cada NC tem UMA ND, entao
+      // somar as linhas devolve a soma sobre todas as NCs do ano, sem contar
+      // ninguem duas vezes.
+      saldo_positivo: n('saldo_positivo'),
+      // Sai NEGATIVO ou zero, e e assim que ele viaja ate a tela: o sinal e o
+      // dado. Tomar o modulo aqui obrigaria a tela a lembrar de recolocar o
+      // sinal, e a primeira tela que esquecesse mostraria inconsistencia como se
+      // fosse credito.
+      saldo_negativo: n('saldo_negativo')
     }
   })
 
@@ -289,7 +334,8 @@ controller.getExecucaoPorNd = async ({ ano, mes }) => {
     'previsto', 'recebido', 'recebido_pdr', 'recebido_extra',
     'recolhido', 'recolhido_pdr', 'recolhido_extra',
     'empenhado', 'empenhado_pdr', 'empenhado_extra',
-    'liquidado', 'liquidado_pdr', 'liquidado_extra'
+    'liquidado', 'liquidado_pdr', 'liquidado_extra',
+    'saldo_positivo', 'saldo_negativo'
   ]
   const total = norm.reduce((acc, l) => {
     for (const k of campos) acc[k] += l[k]

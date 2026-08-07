@@ -99,7 +99,11 @@ export function getTotalRow(rows) {
   const campos = ['previsto', 'recebido', 'recebido_pdr', 'recebido_extra',
     'recolhido', 'recolhido_pdr', 'recolhido_extra',
     'empenhado', 'empenhado_pdr', 'empenhado_extra',
-    'liquidado', 'liquidado_pdr', 'liquidado_extra'];
+    'liquidado', 'liquidado_pdr', 'liquidado_extra',
+    // As duas metades do saldo. Somar as METADES por ND é o único jeito de
+    // agregar sem cancelar uma com a outra; um campo `saldo` líquido não teria
+    // como se decompor de volta.
+    'saldo_positivo', 'saldo_negativo'];
   return rows.reduce((acc, r) => {
     for (const k of campos) acc[k] += Number(r[k] || 0);
     return acc;

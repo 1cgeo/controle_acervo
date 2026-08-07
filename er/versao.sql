@@ -6,7 +6,7 @@ CREATE TABLE public.versao(
 );
 
 INSERT INTO public.versao (code, nome) VALUES
-(1, '1.38.0');
+(1, '1.40.0');
 
 CREATE TABLE public.layer_styles(
   id serial NOT NULL PRIMARY KEY,

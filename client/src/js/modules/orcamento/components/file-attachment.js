@@ -13,17 +13,20 @@ const ACCEPT_PDF = '.pdf';
 const ACCEPT_PDR = '.pdf,.xlsx,.xls,.csv,.ods';
 
 /**
- * Widget de anexos reutilizavel para NC, DFD e PDR.
+ * Widget de anexos reutilizavel para NC, DFD, PDR e recolhimento de credito.
  *
  * Modos:
  *  - 'single' (NC/DFD): no maximo 1 anexo; reenviar substitui. Em edicao (com
  *    vinculo) o upload e imediato; em criacao (sem id ainda) o File fica retido
  *    e e enviado por flush(novoVinculo) depois que o registro pai e criado.
- *  - 'multi' (PDR): N anexos; sempre tem vinculo (pdr_ano), upload imediato.
+ *  - 'multi' (PDR, recolhimento): N anexos. O PDR sempre tem vinculo (pdr_ano) e
+ *    sobe na hora; o recolhimento pode nascer sem id, e ai o primeiro arquivo
+ *    fica retido e sobe no flush, como no modo single.
  *
  * @param {Object} opts
  * @param {'single'|'multi'} opts.mode
- * @param {Object|null} opts.vinculo - { nota_credito_id } | { dfd_id } | { pdr_ano }; sem id => diferido
+ * @param {Object|null} opts.vinculo - { nota_credito_id } | { dfd_id } |
+ *   { pdr_ano } | { recolhimento_id }; sem id => diferido
  * @param {string} [opts.accept] - accept do input file
  * @param {string} [opts.label]
  * @param {string} [opts.buttonLabel] - texto do botao quando vazio (ex.: 'Selecionar PDF')

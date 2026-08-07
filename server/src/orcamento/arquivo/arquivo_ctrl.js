@@ -16,21 +16,22 @@ const decodeNome = nome => Buffer.from(nome, 'latin1').toString('utf8')
 // Colunas devolvidas ao client (NUNCA o conteudo BYTEA: a listagem traz so os
 // metadados; os bytes saem apenas no download).
 const COLUNAS =
-  `id, nota_credito_id, dfd_id, pdr_ano, nome_original,
+  `id, nota_credito_id, dfd_id, pdr_ano, recolhimento_id, nome_original,
    extensao, mimetype, tamanho_bytes, data_cadastramento, usuario_cadastramento_uuid`
 
 const INSERT_SQL = `INSERT INTO orcamento.arquivo
-    (nota_credito_id, dfd_id, pdr_ano, nome_original,
+    (nota_credito_id, dfd_id, pdr_ano, recolhimento_id, nome_original,
      extensao, mimetype, tamanho_bytes, conteudo, usuario_cadastramento_uuid)
   VALUES
-    ($<notaCreditoId>, $<dfdId>, $<pdrAno>, $<nomeOriginal>,
+    ($<notaCreditoId>, $<dfdId>, $<pdrAno>, $<recolhimentoId>, $<nomeOriginal>,
      $<extensao>, $<mimetype>, $<tamanhoBytes>, $<conteudo>, $<usuarioUuid>)`
 
-// Normaliza o vinculo (NC | DFD | PDR-ano) num trio com null nos ausentes.
+// Normaliza o vinculo (NC | DFD | PDR-ano | recolhimento) com null nos ausentes.
 const normalizarVinculo = vinculo => ({
   notaCreditoId: vinculo.nota_credito_id != null ? vinculo.nota_credito_id : null,
   dfdId: vinculo.dfd_id != null ? vinculo.dfd_id : null,
-  pdrAno: vinculo.pdr_ano != null ? vinculo.pdr_ano : null
+  pdrAno: vinculo.pdr_ano != null ? vinculo.pdr_ano : null,
+  recolhimentoId: vinculo.recolhimento_id != null ? vinculo.recolhimento_id : null
 })
 
 // A linha do anexo para a AUDITORIA: os metadados e os tres vinculos, NUNCA o
@@ -43,7 +44,7 @@ const normalizarVinculo = vinculo => ({
 // auditoria continua declarando `omitir: ['conteudo']` como rede: se um dia
 // alguem passar a linha inteira por engano, os bytes nao entram no rastro.
 const SELECT_PARA_AUDITORIA = `
-  SELECT id, nota_credito_id, dfd_id, pdr_ano, nome_original,
+  SELECT id, nota_credito_id, dfd_id, pdr_ano, recolhimento_id, nome_original,
          extensao, mimetype, tamanho_bytes,
          data_cadastramento, usuario_cadastramento_uuid,
          data_modificacao, usuario_modificacao_uuid
@@ -73,7 +74,8 @@ const registrarExclusao = async (t, linha, usuarioUuid, contexto) =>
  * Chamada ANTES do DELETE do dono, dentro da mesma transacao.
  *
  * @param {object} t - a transacao do dono
- * @param {'nota_credito_id'|'dfd_id'} coluna - identificador interno, nunca entrada do usuario
+ * @param {'nota_credito_id'|'dfd_id'|'recolhimento_id'} coluna - identificador
+ *   interno, nunca entrada do usuario
  * @param {number|string} valor
  */
 controller.auditarCascata = async (t, coluna, valor, usuarioUuid, contexto) => {
@@ -87,8 +89,8 @@ controller.auditarCascata = async (t, coluna, valor, usuarioUuid, contexto) => {
 }
 
 controller.listarPorVinculo = async vinculo => {
-  const { notaCreditoId, dfdId, pdrAno } = normalizarVinculo(vinculo)
-  // Exatamente um dos tres e nao-nulo (garantido pelo schema); o branch ativo
+  const { notaCreditoId, dfdId, pdrAno, recolhimentoId } = normalizarVinculo(vinculo)
+  // Exatamente um dos quatro e nao-nulo (garantido pelo schema); o branch ativo
   // filtra pela coluna correspondente.
   return db.conn.any(
     `SELECT ${COLUNAS}
@@ -96,8 +98,9 @@ controller.listarPorVinculo = async vinculo => {
       WHERE ($<notaCreditoId>::bigint IS NOT NULL AND nota_credito_id = $<notaCreditoId>)
          OR ($<dfdId>::bigint IS NOT NULL AND dfd_id = $<dfdId>)
          OR ($<pdrAno>::smallint IS NOT NULL AND pdr_ano = $<pdrAno>)
+         OR ($<recolhimentoId>::bigint IS NOT NULL AND recolhimento_id = $<recolhimentoId>)
       ORDER BY data_cadastramento, id`,
-    { notaCreditoId, dfdId, pdrAno }
+    { notaCreditoId, dfdId, pdrAno, recolhimentoId }
   )
 }
 
@@ -105,9 +108,10 @@ controller.listarPorVinculo = async vinculo => {
 // NC/DFD (single) substitui o anexo anterior em transacao (apaga a linha antiga
 // e insere a nova). Devolve a lista atualizada do vinculo.
 controller.criar = async (file, vinculo, usuarioUuid, contexto) => {
-  const { notaCreditoId, dfdId, pdrAno } = normalizarVinculo(vinculo)
+  const { notaCreditoId, dfdId, pdrAno, recolhimentoId } = normalizarVinculo(vinculo)
 
-  // Valida o dono (NC/DFD). PDR e nivel ano: nao ha linha pai para checar.
+  // Valida o dono (NC/DFD/recolhimento). PDR e nivel ano: nao ha linha pai para
+  // checar.
   if (notaCreditoId != null) {
     const nc = await db.conn.oneOrNone(
       'SELECT 1 FROM orcamento.nota_credito WHERE id = $1',
@@ -124,6 +128,14 @@ controller.criar = async (file, vinculo, usuarioUuid, contexto) => {
     if (!dfd) {
       throw new AppError('DFD nao encontrado', httpCode.NotFound)
     }
+  } else if (recolhimentoId != null) {
+    const recolhimento = await db.conn.oneOrNone(
+      'SELECT 1 FROM orcamento.nota_credito_recolhimento WHERE id = $1',
+      [recolhimentoId]
+    )
+    if (!recolhimento) {
+      throw new AppError('Recolhimento nao encontrado', httpCode.NotFound)
+    }
   }
 
   const nomeOriginal = decodeNome(file.originalname)
@@ -131,6 +143,7 @@ controller.criar = async (file, vinculo, usuarioUuid, contexto) => {
     notaCreditoId,
     dfdId,
     pdrAno,
+    recolhimentoId,
     nomeOriginal,
     extensao: path.extname(nomeOriginal).replace('.', '').toLowerCase(),
     mimetype: file.mimetype || null,
@@ -167,7 +180,7 @@ controller.criar = async (file, vinculo, usuarioUuid, contexto) => {
     // SELECT_PARA_AUDITORIA: `RETURNING *` devolveria o BYTEA recem-gravado.
     const criado = await t.one(
       `${INSERT_SQL}
-       RETURNING id, nota_credito_id, dfd_id, pdr_ano, nome_original,
+       RETURNING id, nota_credito_id, dfd_id, pdr_ano, recolhimento_id, nome_original,
                  extensao, mimetype, tamanho_bytes,
                  data_cadastramento, usuario_cadastramento_uuid,
                  data_modificacao, usuario_modificacao_uuid`,

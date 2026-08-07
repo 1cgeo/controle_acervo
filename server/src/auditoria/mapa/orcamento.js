@@ -16,7 +16,7 @@
  *
  *   dfd            <- dfd, dfd_item
  *   pdr            <- pdr_item                     (o agregado e o ANO)
- *   nota_credito   <- nota_credito
+ *   nota_credito   <- nota_credito, nota_credito_recolhimento
  *   nota_empenho   <- nota_empenho, nota_empenho_nota_credito, liquidacao,
  *                     recebimento_material
  *   licitacao      <- licitacao
@@ -25,9 +25,10 @@
  *   dominio        <- natureza_despesa, plano_interno, ug
  *
  * E `orcamento.arquivo`, cujo agregado NAO e fixo: o CHECK `arquivo_um_vinculo`
- * garante que ele pertence a exatamente uma NC, um DFD ou o PDR de um ano, e o
- * historico dele tem de aparecer na ficha do dono. E a unica entrada do sistema
- * com `entidade` resolvida por linha (ver o comentario dela abaixo).
+ * garante que ele pertence a exatamente uma NC, um DFD, o PDR de um ano ou um
+ * documento de recolhimento, e o historico dele tem de aparecer na ficha do
+ * dono. E a unica entrada do sistema com `entidade` resolvida por linha (ver o
+ * comentario dela abaixo).
  */
 
 // DUAS TABELAS FILHAS SAO AUDITADAS COMO LISTA, e nao linha a linha:
@@ -140,9 +141,15 @@ module.exports = {
       },
       // O recebido, que NUNCA muda por devolucao.
       valor_nc: { rotulo: 'Valor da NC', tipo: 'dinheiro' },
-      // Informativo: nao altera valor_nc. Sem o rotulo, "valor_recolhido:
-      // 0 -> 500" se leria como corte do credito.
-      valor_recolhido: { rotulo: 'Valor recolhido (informativo)', tipo: 'dinheiro' },
+      // HISTORICO, e por isso FICA, pelo mesmo motivo do `meta_pit_id` acima. A
+      // coluna saiu na 1.40.0: a devolucao virou DOCUMENTO, em
+      // `orcamento.nota_credito_recolhimento`, e o recolhido passou a ser a soma
+      // das linhas de la. Os eventos gravados ate a 1.39.0 ainda trazem este
+      // campo, e sem a declaracao a ficha de uma NC antiga exibiria
+      // "valor_recolhido" cru onde hoje exibe o rotulo. Nenhum evento NOVO o traz.
+      valor_recolhido: {
+        rotulo: 'Valor recolhido (até 1.39.0)', tipo: 'dinheiro', historico: true
+      },
       doc_ro: { rotulo: 'Documento RO' },
       prazo_empenho: { rotulo: 'Prazo para empenho', tipo: 'data' },
       classificacao_id: { rotulo: 'Classificação', dominio: 'dominio.classificacao_nc' },
@@ -150,6 +157,35 @@ module.exports = {
       nc_complementada_id: { rotulo: 'NC complementada', entidade: 'nota_credito' },
       marcador: { rotulo: 'Marcador' },
       observacao: { rotulo: 'Observação' }
+    }
+  },
+
+  // O DOCUMENTO DE RECOLHIMENTO e da ficha da NC, e nao de uma ficha propria.
+  // Ninguem abre "recolhimento n.o 12": abre a nota de credito e olha o que dela
+  // foi devolvido, com que documento e em que data. E o mesmo criterio da
+  // liquidacao, que aparece na ficha da NE.
+  'orcamento.nota_credito_recolhimento': {
+    modulo: 'orcamento',
+    entidade: 'nota_credito',
+    agregado: (t, linha) => linha.nota_credito_id,
+    // O numero e o ano identificam o documento no SIAFI; o valor entra porque a
+    // pergunta que se faz do recolhimento e "de quanto foi".
+    resumo: linha => `Recolhimento ${linha.numero}/${linha.ano} de ${linha.valor}`,
+    campos: {
+      numero: { rotulo: 'Número' },
+      ano: { rotulo: 'Ano', tipo: 'numero' },
+      data_emissao: { rotulo: 'Data de emissão', tipo: 'data' },
+      // A ND da ANULACAO (339000, 449000), e nao a da NC alvo. Sem o rotulo, a
+      // ficha da NC mostraria duas NDs diferentes sem dizer que sao coisas
+      // distintas.
+      cod_nd: {
+        rotulo: 'ND da anulação', dominio: 'dominio.natureza_despesa'
+      },
+      ug_emitente: { rotulo: 'UG emitente', dominio: 'dominio.ug' },
+      valor: { rotulo: 'Valor recolhido', tipo: 'dinheiro' },
+      finalidade_historico: { rotulo: 'Finalidade / histórico' },
+      observacao: { rotulo: 'Observação' },
+      nota_credito_id: { rotulo: 'Nota de crédito', entidade: 'nota_credito' }
     }
   },
 
@@ -264,23 +300,38 @@ module.exports = {
   'orcamento.arquivo': {
     modulo: 'orcamento',
     // A UNICA entrada do sistema com `entidade` resolvida por LINHA. O CHECK
-    // `arquivo_um_vinculo` garante que o anexo pertence a exatamente um de
-    // nota_credito_id, dfd_id ou pdr_ano, e o historico dele tem de aparecer na
-    // ficha do dono: o PDF do SIAFI e parte da NC, e nao um registro que alguem
-    // abra por si. Uma entidade fixa mandaria os tres para a mesma ficha
-    // inexistente.
+    // `arquivo_um_vinculo` garante que o anexo pertence a exatamente um dono, e
+    // o historico dele tem de aparecer na ficha desse dono: o PDF do SIAFI e
+    // parte da NC, e nao um registro que alguem abra por si. Uma entidade fixa
+    // mandaria todos para a mesma ficha inexistente.
+    //
+    // O ANEXO DO RECOLHIMENTO CAI NA FICHA DA NC, e nao numa ficha propria, pelo
+    // mesmo motivo do proprio recolhimento: ele e parte do que aconteceu com
+    // aquele credito.
     entidade: linha =>
-      linha.nota_credito_id != null
+      linha.nota_credito_id != null || linha.recolhimento_id != null
         ? 'nota_credito'
         : linha.dfd_id != null
           ? 'dfd'
           : 'pdr',
-    agregado: (t, linha) =>
-      linha.nota_credito_id != null
-        ? linha.nota_credito_id
-        : linha.dfd_id != null
-          ? linha.dfd_id
-          : linha.pdr_ano,
+    // ASSINCRONA no caso do recolhimento: o dono esta a UM SALTO de distancia (o
+    // anexo aponta o recolhimento, e a NC esta adiante), como o arquivo do
+    // acervo que aponta a versao e chega ao produto. A linha ainda existe quando
+    // esta consulta roda, inclusive na exclusao em cascata: `auditarCascata` e
+    // chamada ANTES do DELETE do dono, na mesma transacao.
+    agregado: async (t, linha) => {
+      if (linha.nota_credito_id != null) return linha.nota_credito_id
+      if (linha.dfd_id != null) return linha.dfd_id
+      if (linha.recolhimento_id != null) {
+        const dono = await t.oneOrNone(
+          `SELECT nota_credito_id FROM orcamento.nota_credito_recolhimento
+            WHERE id = $<id>`,
+          { id: linha.recolhimento_id }
+        )
+        return dono ? dono.nota_credito_id : null
+      }
+      return linha.pdr_ano
+    },
     resumo: linha => `Anexo "${linha.nome_original}"`,
     // BYTEA. O `sanitizar` ja trocaria o Buffer por {_omitido, bytes}, mas o
     // controller nem o LE: `SELECT *` traria os bytes inteiros para a memoria so
@@ -293,7 +344,11 @@ module.exports = {
       tamanho_bytes: { rotulo: 'Tamanho em bytes', tipo: 'numero' },
       nota_credito_id: { rotulo: 'Nota de crédito', entidade: 'nota_credito' },
       dfd_id: { rotulo: 'DFD', entidade: 'dfd' },
-      pdr_ano: { rotulo: 'PDR do ano', tipo: 'numero' }
+      pdr_ano: { rotulo: 'PDR do ano', tipo: 'numero' },
+      // O sexto dono do vinculo, desde a 1.40.0. `entidade: 'nota_credito'`
+      // porque o link da ficha aponta a NC que o recolhimento abate, que e onde
+      // o anexo aparece.
+      recolhimento_id: { rotulo: 'Recolhimento', entidade: 'nota_credito' }
     }
   },
 

@@ -53,9 +53,31 @@ export async function renderExecucaoTab(container, store) {
   // A pergunta que a tela inicial do modulo tem de responder: como esta a
   // execucao AGORA. Os quatro valores acima nao a respondem sozinhos, porque a
   // conta de cabeca erra: o recolhido nao desconta do recebido em lugar nenhum.
-  const cardSaldo = mkCard('Saldo a empenhar', 'error', ICONS.storage);
+  //
+  // O SALDO VEM EM DUAS METADES, e nao num liquido so. O card unico somava
+  // credito por empenhar com saldo NEGATIVO e cancelava um com o outro. Medido
+  // em 2026-08-07: ele mostrava R$ 428,73, que eram R$ 5.612,10 por empenhar
+  // MENOS R$ 5.183,37 de negativo. Saldo negativo e impossivel (empenhado maior
+  // que o credito disponivel) e sempre aponta defeito de lancamento; naquele dia
+  // eram dois empenhos anulados no SIAFI que o SCA ainda contava.
+  const cardCreditoAEmpenhar = mkCard('Crédito a empenhar', 'success', ICONS.storage);
+  // So aparece quando EXISTE. Um card de inconsistencia zerado, todo mes na
+  // tela, ensina a ignora-lo, e no mes em que ele acender ninguem olha.
+  const cardSaldoNegativo = mkCard('Saldo negativo (inconsistência)', 'error', ICONS.warning);
+  // Nasce ESCONDIDO: enquanto a consulta nao voltou nao se sabe se ha
+  // inconsistencia, e um card de alerta piscando em toda carga vale zero.
+  cardSaldoNegativo.classList.add('hidden');
   const cardPctEmpenhado = mkCard('% empenhado do recebido', 'warning', ICONS.dataUsage, '%');
-  const cardPctRecebido = mkCard('% recebido do previsto', 'primary', ICONS.dataUsage, '%');
+  // O DENOMINADOR E O PDR, e o numerador tambem. O card dividia o recebido TOTAL
+  // (PDR mais Extra-PDR) pelo previsto, que e so do PDR: o Extra-PDR e, por
+  // definicao, o credito que o PDR nao previu, e nao tem denominador honesto.
+  // Medido em 2026-08-07: previsto R$ 569.300,66, recebido PDR R$ 279.016,07,
+  // recebido Extra-PDR R$ 386.254,00. O card mostrava 116,9% onde a execucao do
+  // PDR era 49,0%, que e a diferenca entre "estamos sobrando" e "falta metade do
+  // credito chegar".
+  const cardPctRecebido = mkCard('% recebido do previsto (PDR)', 'primary', ICONS.dataUsage, '%');
+  // O Extra-PDR ao lado, em VALOR ABSOLUTO e sem percentual nenhum.
+  const cardRecebidoExtraTotal = mkCard('Recebido Extra-PDR (sem previsão)', 'info', ICONS.download);
 
   const cardRecebidoPdr = mkCard('Recebido PDR', 'primary', ICONS.download);
   const cardRecolhidoPdr = mkCard('Recolhido PDR', 'info', ICONS.logout);
@@ -69,7 +91,8 @@ export async function renderExecucaoTab(container, store) {
 
   const todosCards = [
     cardPrevisto, cardRecebido, cardRecolhido, cardEmpenhado, cardLiquidado,
-    cardSaldo, cardPctEmpenhado, cardPctRecebido,
+    cardCreditoAEmpenhar, cardSaldoNegativo, cardPctEmpenhado,
+    cardPctRecebido, cardRecebidoExtraTotal,
     cardRecebidoPdr, cardRecolhidoPdr, cardEmpenhadoPdr, cardLiquidadoPdr,
     cardRecebidoExtra, cardRecolhidoExtra, cardEmpenhadoExtra, cardLiquidadoExtra,
   ];
@@ -99,7 +122,8 @@ export async function renderExecucaoTab(container, store) {
     el('div', { className: 'dashboard-cards' }, [
       grupoCards('Totais', [
         cardRecebido, cardRecolhido, cardEmpenhado, cardLiquidado,
-        cardSaldo, cardPctEmpenhado, cardPctRecebido,
+        cardCreditoAEmpenhar, cardSaldoNegativo, cardPctEmpenhado,
+        cardPctRecebido, cardRecebidoExtraTotal,
       ]),
       grupoCards('PDR', [
         cardPrevisto, cardRecebidoPdr, cardRecolhidoPdr, cardEmpenhadoPdr, cardLiquidadoPdr,
@@ -137,12 +161,33 @@ export async function renderExecucaoTab(container, store) {
       cardEmpenhado.update({ value: formatCurrency(empenhado), loading: false });
       cardLiquidado.update({ value: formatCurrency(total.liquidado), loading: false });
 
+      // AS DUAS METADES DO SALDO, somadas NOTA A NOTA no servidor. Somar aqui
+      // seria impossivel: `recebido - recolhido - empenhado` e um liquido, e o
+      // sinal de cada NC ja se perdeu nele.
+      //
       // O recolhido SAI da conta do saldo, ainda que nao saia do recebido: ele
       // e credito devolvido, e empenhar sobre ele produz nota devolvida no
       // SIAFI. Nenhuma soma da tela muda por causa disto.
-      cardSaldo.update({ value: formatCurrency(recebido - recolhido - empenhado), loading: false });
+      const saldoNegativo = Number(total.saldo_negativo || 0);
+      cardCreditoAEmpenhar.update({
+        value: formatCurrency(total.saldo_positivo), loading: false,
+      });
+      // O card da inconsistencia SOME quando nao ha nenhuma, em vez de mostrar
+      // "R$ 0,00". Ele vem NEGATIVO do servidor e sai assim, com o sinal: o
+      // sinal e o dado, e o modulo aqui esconderia que aquilo e um defeito.
+      // `createStatsCard` devolve o PROPRIO elemento, com `update` acoplado.
+      cardSaldoNegativo.classList.toggle('hidden', !(saldoNegativo < 0));
+      cardSaldoNegativo.update({
+        value: formatCurrency(saldoNegativo), loading: false,
+      });
       cardPctEmpenhado.update({ value: percentual(empenhado, recebido), loading: false });
-      cardPctRecebido.update({ value: percentual(recebido, total.previsto), loading: false });
+      // PDR sobre PDR. Ver o comentario da declaracao do card.
+      cardPctRecebido.update({
+        value: percentual(total.recebido_pdr, total.previsto), loading: false,
+      });
+      cardRecebidoExtraTotal.update({
+        value: formatCurrency(total.recebido_extra), loading: false,
+      });
 
       cardRecebidoPdr.update({ value: formatCurrency(total.recebido_pdr), loading: false });
       cardRecolhidoPdr.update({ value: formatCurrency(total.recolhido_pdr), loading: false });
@@ -170,6 +215,9 @@ export async function renderExecucaoTab(container, store) {
       // catch pintava tracos nos cards, e a tela dizia "sem execucao" quando o
       // certo era "nao consegui perguntar".
       todosCards.forEach(c => c.update({ value: '-', loading: false }));
+      // A falha nao afirma inconsistencia nenhuma: o card de alerta volta a se
+      // esconder, em vez de mostrar '-' como se algo estivesse errado no dado.
+      cardSaldoNegativo.classList.add('hidden');
       execucaoChart.update({ data: [], loading: false });
       mostrarErro(container, err, load);
     }

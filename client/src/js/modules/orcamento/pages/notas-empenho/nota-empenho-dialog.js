@@ -144,6 +144,8 @@ export async function openNotaEmpenhoDialog({
       return;
     }
     const teto = Number(nc.valor_nc);
+    // Soma dos documentos de recolhimento da NC. Desde a 1.40.0 ela substitui a
+    // coluna `valor_recolhido`, e o nome do campo na resposta segue o mesmo.
     const recolhido = Number(nc.valor_recolhido || 0);
     const valor = linha.valorField.getValue() || 0;
 
