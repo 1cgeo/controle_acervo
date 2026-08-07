@@ -46,6 +46,7 @@ const efetivoCtrl = require('../efetivo/efetivo_ctrl')
 const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
 const {
   domainConstants: {
+    SITUACAO_CARREGAMENTO,
     SITUACAO_PEDIDO,
     TIPO_CLIENTE,
     TIPO_LICITACAO,
@@ -235,10 +236,23 @@ const buscarTotaisProducao = async ({ ano, mes }) => {
 const montarTotaisProducao = ({ totais }) =>
   totais.map(t => [t.tipo_produto, numero(t.no_mes), numero(t.no_ano)])
 
-// 2.4: uma linha por folha entregue no mês, com o identificador que o BDGEx usa.
+// 2.4: uma linha por folha ENTREGUE no mês, com o identificador que o BDGEx usa.
 //
 // O `uuid_versao` É O MESMO com que o produto é publicado no BDGEx, e por isso a
 // coluna se chama "UUID BDGEx": não há um segundo identificador a guardar.
+//
+// ENTREGUE, E NÃO CONCLUÍDA (decisão do chefe, 2026-08-07). A subseção reporta o
+// que chegou ao destino final, então só entra a versão que tem ao menos um
+// arquivo com `situacao_carregamento` diferente de "Não carregado". Ficar pronta
+// não é ter sido entregue, e enquanto a 2.4 listava toda versão do mês ela
+// prometia no BDGEx folha que ninguém tinha carregado lá.
+//
+// É a mesma diferença que separa esta subseção da 2.2 ao lado: a 2.2 conta o que
+// a Divisão CONCLUIU no mês, e esta conta o que ela ENTREGOU. As duas divergirem
+// é o esperado, e a divergência é justamente a fila de carga.
+//
+// O filtro é `<> NAO_CARREGADO`, e não `= BDGEx`, porque o título da subseção
+// cobre os três destinos (BDGEx, IGW, EBGeo) e o domínio já os distingue.
 //
 // A META sai do vínculo da versão, e nunca de código digitado. Vem em branco na
 // folha que não cumpre meta (registro fora do plano, produção Extra-PIT), e isso
@@ -263,8 +277,18 @@ const buscarEntregasDetalhadas = async ({ ano, mes }) => {
      LEFT JOIN acervo.lote AS l ON l.id = v.lote_id
      WHERE v.tipo_versao_id = $<versaoRegular>
        AND ${filtroPeriodoMes('v.data_edicao', { cumulativo: false })}
+       AND EXISTS (
+         SELECT 1 FROM acervo.arquivo AS a
+         WHERE a.versao_id = v.id
+           AND a.situacao_carregamento_id <> $<naoCarregado>
+       )
      ORDER BY tp.nome, te.code, identificador`,
-    { ano, mes, versaoRegular: TIPO_VERSAO.REGULAR }
+    {
+      ano,
+      mes,
+      versaoRegular: TIPO_VERSAO.REGULAR,
+      naoCarregado: SITUACAO_CARREGAMENTO.NAO_CARREGADO
+    }
   )
 }
 

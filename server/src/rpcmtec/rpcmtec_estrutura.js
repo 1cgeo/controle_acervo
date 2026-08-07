@@ -107,8 +107,13 @@ const SECOES = [
         // CALCULADA desde 2026-08-05, pela mesma razao da 2.2. O identificador
         // que a coluna 'UUID BDGEx' pede E o `uuid_versao`: e com ele que o
         // produto e publicado la, e nao ha um segundo identificador a guardar.
+        //
+        // Desde 2026-08-07 ela lista so o que foi ENTREGUE, e nao tudo o que
+        // ficou pronto: entra a versao com arquivo carregado (BDGEx, IGW ou
+        // GEDW). Divergir da 2.2 ao lado passa a ser o esperado, e a diferenca
+        // entre as duas e a fila de carga.
         origem: ORIGEM.CALCULADA,
-        fonte: 'acervo.versao, tipo Regular, por mes de edicao',
+        fonte: 'acervo.versao Regular, por mes de edicao, so a que tem arquivo carregado',
         pendencia: 'Nenhuma entrega no mês',
         cabecalhos: ['Tipo produto', 'Escala', 'UUID BDGEx', 'Identificador',
           'Meta PIT', 'Lote SAP'],

@@ -765,6 +765,75 @@ describe('GET /api/rpcmtec/anuario', () => {
   })
 })
 
+// A 2.4 diz ENTREGA, e entrega é ter chegado ao destino final. Antes de
+// 2026-08-07 ela listava toda versão Regular do mês, carregada ou não, e assim
+// prometia no BDGEx folha que ninguém tinha subido lá: em julho/2026 ela
+// mostrava 8 produtos, e nenhum dos 8 tinha registro no BDGEx.
+//
+// O teste tem de REPROVAR o comportamento anterior, e é por isso que ele cria o
+// par: duas versões idênticas no mesmo mês, separadas SÓ pela situação de
+// carregamento do arquivo. Com o filtro removido, a asserção da não-carregada
+// falha na hora.
+describe('RPCMTec 2.4: só entra o que foi entregue', () => {
+  const { createFullProduct } = require('../helpers/fixtures')
+
+  // A 2.4 recorta por `data_edicao` no mês da edição (julho de 2026).
+  const NO_MES = { data_edicao: '2026-07-15', data_criacao: '2026-07-01' }
+
+  const linhas24 = async () => {
+    const doc = await documento(await criarEdicao())
+    return blocos(doc).find(b => b.numero === '2.4').linhas
+  }
+
+  test('a versão com arquivo carregado aparece; a não carregada, não', async () => {
+    const entregue = await createFullProduct({
+      produto: { mi: '2965-1-NE' },
+      versao: NO_MES,
+      // 2 = Carregado BDGEx Ostensivo
+      arquivo: { situacao_carregamento_id: 2 }
+    })
+    const naoEntregue = await createFullProduct({
+      produto: { mi: '2965-1-NO' },
+      versao: NO_MES,
+      // 1 = Não carregado
+      arquivo: { situacao_carregamento_id: 1 }
+    })
+
+    const uuids = (await linhas24()).map(l => l[2])
+
+    expect(uuids).toContain(entregue.versao.uuid_versao)
+    expect(uuids).not.toContain(naoEntregue.versao.uuid_versao)
+  })
+
+  test('o destino não importa: Operações conta como entrega', async () => {
+    // O título da subseção cobre BDGEx, IGW e EBGeo, então o filtro é
+    // "diferente de Não carregado", e não "igual a BDGEx Ostensivo".
+    const op = await createFullProduct({
+      produto: { mi: '2965-3-SE' },
+      versao: NO_MES,
+      // 3 = Carregado BDGEx Operações
+      arquivo: { situacao_carregamento_id: 3 }
+    })
+
+    expect((await linhas24()).map(l => l[2])).toContain(op.versao.uuid_versao)
+  })
+
+  test('basta UM arquivo carregado na versão', async () => {
+    // O registro do BDGEx agrega o conjunto da folha (GeoTIFF, PDF e XML), e o
+    // JSON de edição nunca sobe. Exigir todos os arquivos carregados sumiria
+    // com a folha inteira por causa do insumo que não é produto.
+    const { versao } = await createFullProduct({
+      produto: { mi: '2965-4-NO' },
+      versao: NO_MES,
+      arquivo: { situacao_carregamento_id: 2 }
+    })
+    const { createArquivo } = require('../helpers/fixtures')
+    await createArquivo(versao.id, { situacao_carregamento_id: 1, extensao: '.json' })
+
+    expect((await linhas24()).map(l => l[2])).toContain(versao.uuid_versao)
+  })
+})
+
 describe('RPCMTec: a guarda', () => {
   // O relatório traz valor de crédito, de empenho e de liquidação dos três
   // módulos. Não existe "perfil de RPCMTec" porque não existe módulo RPCMTec:
