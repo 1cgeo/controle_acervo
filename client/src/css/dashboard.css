@@ -136,7 +136,18 @@
 /* Stats cards grid */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit, e nao `repeat(4, 1fr)`.
+   *
+   * Com as quatro colunas fixas, a grade reservava lugar para cartao que nao
+   * existia. A aba Atendimento do dashboard da mapoteca tem UM cartao: ele
+   * ficava com 25% da largura e deixava 75% da linha em branco. A aba Pedidos
+   * tem tres, e sobrava uma coluna vazia a direita.
+   *
+   * O piso de 260px e o mesmo criterio do `.dashboard-cards-group` abaixo: o
+   * cartao gasta 48px de icone, 16px de gap e 48px de padding, e o que sobra
+   * tem de caber o numero em negrito sem cortar. Aqui o pior caso e uma
+   * contagem, e nao um valor em BRL, entao o piso e menor que os 300px de la. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--space-lg);
   margin-bottom: var(--space-lg);
 }
@@ -345,6 +356,24 @@
   font-size: var(--font-size-sm);
 }
 
+/* Estado VAZIO de uma secao inteira, quando mostrar os graficos em branco seria
+ * pior do que nao mostra-los.
+ *
+ * Distinto do `.chart-card__empty`, que e o vazio de UM grafico. Este substitui
+ * o bloco todo por uma frase que diz por que nao ha o que desenhar e o que
+ * fazer a respeito. Distinto tambem do estado de ERRO (`estado-erro.js`), que
+ * traz o botao de tentar de novo: aqui a carga deu certo, e a resposta e que
+ * nao ha lancamento. */
+.dashboard__vazio {
+  padding: var(--space-lg);
+  background: var(--bg-paper);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  max-width: 80ch;
+}
+
 /* Dashboard grid layouts */
 .dashboard-grid {
   display: grid;
@@ -464,11 +493,14 @@
 }
 
 /* Responsive */
-@media (max-width: 1200px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 
+/* Sem quebra por ponto de corte para a `.stats-grid`: ela e auto-fit desde a
+ * regra la de cima, e quebra sozinha pela LARGURA DISPONIVEL. As duas regras
+ * que viviam aqui (2 colunas abaixo de 1200px, 1 coluna abaixo de 900px) agora
+ * so atrapalhariam: numa janela de 1100px cabem quatro cartoes de 260px, e o
+ * ponto de corte forcaria dois. */
+
+@media (max-width: 1200px) {
   .summary-cards {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -483,10 +515,6 @@
 }
 
 @media (max-width: 900px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
   .dashboard-grid--2col {
     grid-template-columns: 1fr;
   }

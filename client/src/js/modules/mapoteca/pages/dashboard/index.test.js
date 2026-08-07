@@ -147,9 +147,13 @@ describe('renderDashboard da mapoteca', () => {
     cleanup();
   });
 
-  // As quatro secoes que o chefe mandou sair. O teste guarda a
-  // AUSENCIA, senao elas voltam em silencio numa refatoracao futura. Vale para a
-  // tela e para a requisicao: painel removido nao pode seguir pedindo dado.
+  // As secoes que o chefe mandou sair em 2026-07-27 (commit 10db3bd) e que
+  // CONTINUAM fora. O teste guarda a AUSENCIA, senao elas voltam em silencio
+  // numa refatoracao futura. Vale para a tela e para a requisicao: painel
+  // removido nao pode seguir pedindo dado.
+  //
+  // Duas daquelas quatro VOLTARAM em 2026-08-07, por decisao do chefe, e o
+  // teste logo abaixo guarda a presenca delas. Ver o comentario de la.
   test('nao monta os paineis removidos, nem pede o dado deles, em aba nenhuma', async () => {
     const container = document.createElement('div');
     const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
@@ -158,16 +162,49 @@ describe('renderDashboard da mapoteca', () => {
     for (const rotulo of ['Pedidos', 'Atendimento', 'Materiais']) {
       await abrirAba(container, rotulo);
       expect(container.textContent).not.toContain('Pedidos Pendentes');
-      expect(container.textContent).not.toContain('Tipo de Mídia');
     }
 
     // A aba Pedidos consome getPendingOrders no bloco "Pedidos parados", que
     // lista os pedidos abertos mais antigos. O laço acima abre aquela aba,
     // então aqui a rota já foi chamada.
     expect(svc.getPendingOrders).toHaveBeenCalled();
+    // A secao "Plotters" segue fora, e e a unica das quatro que nao voltou.
     expect(svc.getPlotterStatus).not.toHaveBeenCalled();
-    expect(svc.getEntregasPorMidia).not.toHaveBeenCalled();
-    expect(svc.getEntregasPorMes).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  // A VOLTA de dois paineis, por decisao do chefe em 2026-08-07.
+  //
+  // Eles sairam em 2026-07-27 pelo custo de requisicao: eram quatro chamadas a
+  // mais por carga, e outras quatro a cada refetch de 60 s, numa pagina unica
+  // que buscava os nove endpoints de uma vez. Duas coisas mudaram desde entao.
+  // A pagina virou cinco abas, e so a aba ATIVA existe no DOM, entao o custo
+  // caiu de "toda visita" para "quem abrir o Resumo Anual". E a medicao na
+  // producao mostrou que o dado que eles carregam nao estava em lugar nenhum:
+  // o dashboard tinha a curva mensal do PEDIDO e nao a da ENTREGA, que e o
+  // numero de que a DGEO presta contas; e `consumo_material` esta vazia, o que
+  // deixa a mídia como o unico sinal real de gasto de papel.
+  //
+  // O teste guarda a PRESENCA pela mesma razao que o de cima guarda a ausencia.
+  test('o Resumo Anual mostra entregas por mes e por midia, e busca as duas', async () => {
+    svc.getEntregasPorMes.mockResolvedValue([
+      { mes: 1, carta_topo: 289, carta_orto: 30, outros: 0, total: 319 },
+      { mes: 2, carta_topo: 1532, carta_orto: 106, outros: 30, total: 1668 },
+    ]);
+    svc.getEntregasPorMidia.mockResolvedValue([
+      { tipo_midia: 'Sulfite 120g', total_produtos: 6499 },
+      { tipo_midia: 'Glossy', total_produtos: 36 },
+    ]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(svc.getEntregasPorMes).toHaveBeenCalledWith(ANO_ATUAL);
+    expect(svc.getEntregasPorMidia).toHaveBeenCalledWith(ANO_ATUAL);
+    expect(container.textContent).toContain('Entregas por mês');
+    expect(container.textContent).toContain('Entregas por mídia');
 
     cleanup();
   });

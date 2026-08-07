@@ -3,6 +3,10 @@ import { el } from '@utils/dom.js';
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
+// Teto do rotulo de categoria no EIXO, em caracteres. O texto inteiro segue no
+// tooltip. Ver o comentario do `callback` do tick, abaixo, para o porque.
+const LIMITE_ROTULO_EIXO = 34;
+
 /**
  * Create a bar chart wrapped in a card.
  * Colors fall back to the CSS chart tokens (--chart-1..10).
@@ -15,6 +19,10 @@ Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, L
  * @param {boolean} [options.stacked]
  * @param {boolean} [options.horizontal] - horizontal bars (indexAxis 'y')
  * @param {boolean} [options.loading]
+ * @param {string} [options.emptyMessage] - texto de lista vazia. O padrao serve
+ *   ao grafico que so pode estar vazio por falta de dado; quem FILTRA os dados
+ *   precisa dizer outra coisa, porque "Sem dados disponiveis" num grafico de
+ *   "quem esta abaixo de 100%" se le como falha quando a resposta e "ninguem".
  * @returns {HTMLElement} - element with .update({ data, series, loading }) and ._cleanup()
  */
 export function createBarChart({
@@ -25,6 +33,7 @@ export function createBarChart({
   stacked = false,
   horizontal = false,
   loading = false,
+  emptyMessage = 'Sem dados disponíveis',
 }) {
   let chartInstance = null;
 
@@ -32,7 +41,7 @@ export function createBarChart({
   const loadingEl = el('div', { className: 'chart-card__loading' }, [
     el('div', { className: 'spinner' }),
   ]);
-  const emptyEl = el('div', { className: 'chart-card__empty', textContent: 'Sem dados disponíveis' });
+  const emptyEl = el('div', { className: 'chart-card__empty', textContent: emptyMessage });
 
   const titleEl = el('div', { className: 'chart-card__title', textContent: title });
   const card = el('div', { className: 'chart-card' }, [titleEl, chartBody]);
@@ -72,6 +81,24 @@ export function createBarChart({
         color: style.getPropertyValue('--text-secondary').trim(),
         maxRotation: 45,
         font: { size: 11 },
+        // O rotulo do eixo e CORTADO, e o inteiro fica no tooltip.
+        //
+        // O eixo de categoria vem de campo livre em varias telas, e o Chart.js
+        // nao quebra nem encurta linha nenhuma: ele desenha o texto todo. Medido
+        // na producao em 2026-08-07, no grafico de operacoes apoiadas da
+        // mapoteca: 8 dos 22 rotulos passavam de 40 caracteres, e o maior tinha
+        // 88 ("Exercicio Multinacional FELINO 2026, de 10 a 21 de agosto de
+        // 2026, em Foz do Iguacu (PR)"). Na barra horizontal esse rotulo comia a
+        // largura do desenho; na vertical, virava uma parede de texto inclinado.
+        //
+        // Cortar sem devolver o inteiro em algum lugar seria esconder dado, e por
+        // isso o tooltip abaixo reescreve o rotulo cru.
+        callback(valor) {
+          const bruto = String(this.getLabelForValue(valor) ?? '');
+          return bruto.length > LIMITE_ROTULO_EIXO
+            ? `${bruto.slice(0, LIMITE_ROTULO_EIXO - 1)}…`
+            : bruto;
+        },
       },
     };
 
@@ -123,6 +150,18 @@ export function createBarChart({
             bodyColor: style.getPropertyValue('--text-secondary').trim(),
             borderColor: style.getPropertyValue('--border-color').trim(),
             borderWidth: 1,
+            callbacks: {
+              // O rotulo INTEIRO, lido do dado cru e nao do eixo. O titulo
+              // padrao do Chart.js passa pelo mesmo `getLabelForValue` que o
+              // callback do tick encurta, entao sem esta linha o tooltip
+              // repetiria o texto cortado e o nome completo nao estaria em
+              // lugar nenhum da tela.
+              title: (itens) => {
+                const item = itens[0];
+                if (!item) return '';
+                return String(data[item.dataIndex]?.[xKey] ?? item.label ?? '');
+              },
+            },
           },
         },
         scales: horizontal

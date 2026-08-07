@@ -57,11 +57,25 @@ export async function renderMateriaisTab(container, getAno) {
   });
   const tituloConsumo = el('h2', { className: 'dashboard-section__title' });
 
+  // O ano SEM NENHUM lancamento de consumo tem uma frase, e nao dois graficos
+  // vazios.
+  //
+  // Medido na producao em 2026-08-07: `consumo_material` esta vazia, e os doze
+  // meses voltam zero em 2026 e em 2025. A tela mostrava a curva com "Sem dados
+  // disponiveis" ao lado de um Top 5 em branco, e metade da aba nao dizia nada.
+  // Duas caixas vazias tambem nao explicam POR QUE estao vazias, e a resposta
+  // aqui e acionavel: falta lancar, e o lancamento tem um lugar.
+  const semConsumo = el('p', { className: 'dashboard__vazio hidden' });
+  const graficosConsumo = el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [
+    consumoLine, topMateriaisBar,
+  ]);
+
   container.appendChild(escopoEstoque);
   container.appendChild(stockBar);
   container.appendChild(el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [tituloConsumo]),
-    el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [consumoLine, topMateriaisBar]),
+    semConsumo,
+    graficosConsumo,
   ]));
 
   async function load() {
@@ -91,21 +105,41 @@ export async function renderMateriaisTab(container, getAno) {
 
     if (consumoRes.status === 'fulfilled') {
       const consumo = consumoRes.value;
+      const mensal = consumo.consumo_mensal_total || [];
+      const top = consumo.materiais_mais_consumidos || [];
+
+      // "Nao houve lancamento" e diferente de "houve e deu zero". A checagem
+      // exige as DUAS coisas: nenhum material no Top 5 e nenhum mes com
+      // quantidade. Um mes zerado sozinho e informacao legitima, e nao motivo
+      // para trocar o grafico por uma frase.
+      const nenhumLancamento = top.length === 0
+        && mensal.every(m => Number(m.quantidade_total) === 0);
+
+      semConsumo.classList.toggle('hidden', !nenhumLancamento);
+      graficosConsumo.classList.toggle('hidden', nenhumLancamento);
+      semConsumo.textContent = `Nenhum consumo de material lançado em ${ano}. `
+        + 'O consumo sai da Seção, e se registra na tela de Materiais. '
+        + 'O gasto de papel por entrega está no Resumo Anual, em "Entregas por mídia".';
+
       consumoLine.update({
-        data: (consumo.consumo_mensal_total || []).map(m => ({
+        data: mensal.map(m => ({
           mes_nome: mesLabel(m.mes),
           quantidade_total: Number(m.quantidade_total),
         })),
         loading: false,
       });
       topMateriaisBar.update({
-        data: (consumo.materiais_mais_consumidos || []).map(m => ({
+        data: top.map(m => ({
           nome: m.nome,
           quantidade_total: Number(m.quantidade_total),
         })),
         loading: false,
       });
     } else {
+      // Falha de carga NAO pode cair no estado "nenhum lancamento": um manda
+      // tentar de novo, o outro manda ir lancar consumo.
+      semConsumo.classList.add('hidden');
+      graficosConsumo.classList.remove('hidden');
       consumoLine.update({ data: [], loading: false });
       topMateriaisBar.update({ data: [], loading: false });
       mostrarErroNoGrafico(consumoLine, consumoRes.reason, load);

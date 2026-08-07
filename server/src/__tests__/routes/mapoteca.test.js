@@ -21,6 +21,22 @@ afterEach(async () => {
 
 // --- Helpers locais ---------------------------------------------------------
 
+// Quantos meses uma serie mensal do dashboard deve trazer para um ano.
+//
+// NAO e 12 fixo, e nao pode ser 8 fixo tambem: as series param no mes
+// CORRENTE, e um numero cravado no teste passaria hoje e reprovaria em setembro
+// sem nada ter mudado no codigo. O helper carrega a regra, e nao o resultado
+// dela num dia.
+//
+// Ano passado devolve os doze; ano corrente, os decorridos; ano futuro, nenhum.
+// Ver MESES_DO_ANO em mapoteca/dashboard_ctrl.js.
+const mesesEsperados = (ano) => {
+  const hoje = new Date()
+  if (ano < hoje.getFullYear()) return 12
+  if (ano > hoje.getFullYear()) return 0
+  return hoje.getMonth() + 1
+}
+
 const criaCliente = async (overrides = {}) => {
   const body = {
     nome: 'OM Teste',
@@ -2099,11 +2115,16 @@ describe('Mapoteca Routes', () => {
         expect(r2025.body.dados.total).toBe(1)
       })
 
-      // Doze meses SEMPRE, mesmo vazios: sem eles, um ano com movimento em
-      // marco e outubro desenharia uma reta entre os dois, sugerindo movimento
-      // que nao houve. E a soma tem de fechar com o cartao, senao o grafico e o
-      // numero acima dele contam populacoes diferentes.
-      it('GET /dashboard/orders_timeline devolve os 12 meses do ano, e fecha com o cartao', async () => {
+      // Todo mes DECORRIDO, mesmo vazio: sem o mes vazio, um ano com movimento
+      // em marco e outubro desenharia uma reta entre os dois, sugerindo
+      // movimento que nao houve. E a soma tem de fechar com o cartao, senao o
+      // grafico e o numero acima dele contam populacoes diferentes.
+      //
+      // O mes que AINDA NAO CHEGOU fica de fora, e e diferente do mes vazio: o
+      // vazio afirma que nao houve movimento, e o futuro nao afirma nada. Com os
+      // doze fixos, a curva do ano corrente despencava a zero de setembro a
+      // dezembro, e a queda lia-se como colapso da producao.
+      it('GET /dashboard/orders_timeline devolve os meses decorridos do ano, e fecha com o cartao', async () => {
         await doisAnos()
 
         const res = await request(app)
@@ -2111,12 +2132,46 @@ describe('Mapoteca Routes', () => {
           .set('Authorization', generateUserToken())
 
         expect(res.status).toBe(200)
-        expect(res.body.dados).toHaveLength(12)
+        expect(res.body.dados).toHaveLength(mesesEsperados(2026))
         const soma = res.body.dados.reduce((a, m) => a + Number(m.total_pedidos), 0)
         expect(soma).toBe(2)
         // Marco e abril, um cada.
         expect(Number(res.body.dados[2].total_pedidos)).toBe(1)
         expect(Number(res.body.dados[3].total_pedidos)).toBe(1)
+      })
+
+      // A regra do corte, provada nos tres casos. O teste acima passaria com o
+      // corte OU sem ele enquanto o ano da fixture tiver movimento so em meses
+      // passados: e preciso um teste que reprove o codigo antigo.
+      it('a serie mensal para no mes corrente, e o ano futuro nao devolve mes nenhum', async () => {
+        await doisAnos()
+        const hoje = new Date()
+        const anoCorrente = hoje.getFullYear()
+
+        const corrente = await request(app)
+          .get(`/api/mapoteca/dashboard/orders_timeline?ano=${anoCorrente}`)
+          .set('Authorization', generateUserToken())
+        expect(corrente.status).toBe(200)
+        // O ultimo mes da serie e o mes de HOJE, e nao dezembro.
+        expect(corrente.body.dados).toHaveLength(hoje.getMonth() + 1)
+        const ultimo = corrente.body.dados[corrente.body.dados.length - 1]
+        expect(new Date(ultimo.mes).getUTCMonth()).toBe(hoje.getMonth())
+
+        // Ano que ainda nao comecou nao tem mes decorrido nenhum. Devolver doze
+        // zeros diria "nao houve movimento em 2027", que e afirmacao sobre o
+        // futuro.
+        const futuro = await request(app)
+          .get(`/api/mapoteca/dashboard/orders_timeline?ano=${anoCorrente + 1}`)
+          .set('Authorization', generateUserToken())
+        expect(futuro.status).toBe(200)
+        expect(futuro.body.dados).toHaveLength(0)
+
+        // Ano passado segue com os doze, porque todos decorreram.
+        const passado = await request(app)
+          .get(`/api/mapoteca/dashboard/orders_timeline?ano=${anoCorrente - 1}`)
+          .set('Authorization', generateUserToken())
+        expect(passado.status).toBe(200)
+        expect(passado.body.dados).toHaveLength(12)
       })
 
       it('GET /dashboard/client_activity conta so os pedidos do ano', async () => {
@@ -2195,7 +2250,7 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.manutencoes_count).toBe(0)
     })
 
-    it('GET /dashboard/entregas_por_mes should return 12 months', async () => {
+    it('GET /dashboard/entregas_por_mes devolve os meses decorridos do ano', async () => {
       await setupEntrega()
 
       const res = await request(app)
@@ -2203,7 +2258,9 @@ describe('Mapoteca Routes', () => {
         .set('Authorization', generateUserToken())
 
       expect(res.status).toBe(200)
-      expect(res.body.dados).toHaveLength(12)
+      // Os DECORRIDOS, e nao doze fixos: esta serie usa o mesmo MESES_DO_ANO
+      // das outras. Ver o helper no topo do arquivo.
+      expect(res.body.dados).toHaveLength(mesesEsperados(2026))
       const marco = res.body.dados.find(m => m.mes === 3)
       expect(marco.carta_topo).toBe(7)
       expect(marco.total).toBe(7)

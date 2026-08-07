@@ -54,8 +54,20 @@ const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 // A mudança preserva o recorte, inclusive nos nulos: pedido sem
 // `data_atendimento` não passava (NULL = ano dá NULL) e continua sem passar
 // (NULL >= data dá NULL). Requer os parâmetros $<situacoesEntregue:csv> e $<ano>.
+//
+// O recorte MILITAR mora aqui dentro, e nao em cada consulta. Sem ele, o lado
+// da ENTREGA do dashboard somava o cliente civil enquanto o lado do PEDIDO ja
+// o excluia: o cartao "Pedidos no ano" dizia 130 e o cartao vizinho "Produtos
+// entregues" contava uma populacao maior, sem nada na tela dizendo por que.
+// Medido na producao em 2026-08-07: os 33 pedidos civis entregues no ano tem
+// ZERO item de produto_pedido, porque a LAI entrega foto aerea por
+// `pedido.qtd_imagens`. O total nao se move hoje (6.535 antes e depois), e a
+// regra passa a valer para o dia em que um pedido civil tiver item.
+// As dez consultas de entrega deste arquivo (cartao, graficos e mapa) usam
+// este fragmento, entao a regra entra nas dez de uma vez.
 const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>)
-      AND ${filtroAno("ped.data_atendimento")}`;
+      AND ${filtroAno("ped.data_atendimento")}
+      AND ${PEDIDO_MILITAR('ped.cliente_id')}`;
 
 // Filtro "pedido do ano": pedido cuja DATA DE PEDIDO cai no ano consultado.
 //
@@ -71,12 +83,24 @@ const FILTRO_ENTREGUE_ANO = `ped.situacao_pedido_id IN ($<situacoesEntregue:csv>
 // EXTRACT(YEAR FROM col) = ano. Requer o parâmetro $<ano>.
 const FILTRO_ANO_PEDIDO = (alias = 'p') => filtroAno(`${alias}.data_pedido`);
 
-// Os doze meses do ano consultado, para os gráficos mensais. Substituiu a
-// janela deslizante ("últimos 6/12 meses"), que não tinha como respeitar um ano
-// de contexto: em 2025, "últimos 12 meses" continuaria terminando hoje.
+// Os meses JÁ DECORRIDOS do ano consultado, para os gráficos mensais.
+// Substituiu a janela deslizante ("últimos 6/12 meses"), que não tinha como
+// respeitar um ano de contexto: em 2025, "últimos 12 meses" continuaria
+// terminando hoje.
+//
+// O corte no mês corrente é a parte que importa. Com os doze meses fixos, o ano
+// em curso trazia zero de setembro a dezembro, e a linha do gráfico despencava:
+// a queda lia-se como colapso da produção, quando era só o futuro que ainda não
+// aconteceu. Pior no tempo médio de atendimento, onde o mês sem pedido descia a
+// curva a "0,0 dias", que se lê como entrega instantânea.
+//
+// O LEAST resolve os três casos com uma expressão: ano passado devolve os doze
+// meses, ano corrente para no mês de hoje, e ano futuro devolve conjunto VAZIO,
+// porque o primeiro mês já é maior que o último e o generate_series não gera
+// nada. Vazio é a resposta certa: nenhum mês de 2027 decorreu.
 const MESES_DO_ANO = `SELECT generate_series(
         make_date($<ano>, 1, 1),
-        make_date($<ano>, 12, 1),
+        LEAST(make_date($<ano>, 12, 1), date_trunc('month', CURRENT_DATE)::date),
         interval '1 month'
       )::date AS mes`;
 
@@ -229,7 +253,11 @@ controller.getAverageFulfillmentTime = async (ano) => {
       )
       SELECT
         m.mes,
-        COALESCE(AVG(p.data_atendimento::date - p.data_pedido::date), 0) AS media_dias,
+        -- SEM COALESCE para zero. Mes sem pedido concluido nao tem media, e
+        -- "0,0 dias" na linha do grafico le-se como entrega no mesmo dia, que e
+        -- o melhor desempenho possivel. Era o oposto do fato: nao houve
+        -- entrega. NULO deixa a serie com buraco, e buraco nao afirma nada.
+        AVG(p.data_atendimento::date - p.data_pedido::date) AS media_dias,
         COUNT(p.id) AS quantidade_pedidos
       FROM meses m
       LEFT JOIN mapoteca.pedido p ON
@@ -254,7 +282,12 @@ controller.getAverageFulfillmentTime = async (ano) => {
       })),
       mensal: monthlyAvg.map(item => ({
         mes: item.mes,
-        media_dias: parseFloat(item.media_dias).toFixed(1),
+        // O nulo do SQL atravessa como nulo. Sem esta guarda o parseFloat(null)
+        // devolveria NaN, e o JSON o serializa como `null` por acidente, o que
+        // funcionaria hoje e quebraria na primeira conta feita sobre o campo.
+        media_dias: item.media_dias === null
+          ? null
+          : parseFloat(item.media_dias).toFixed(1),
         quantidade_pedidos: parseInt(item.quantidade_pedidos)
       }))
     };
@@ -319,6 +352,19 @@ controller.getPendingOrders = async () => {
       -- ordenou, em vez de recalcular a data no navegador.
       -- O ::date vale com a coluna em TIMESTAMPTZ e em DATE.
       (current_date - p.data_pedido::date)::int AS dias_aberto,
+      -- A ULTIMA MOVIMENTACAO do registro, distinta da data do pedido.
+      --
+      -- Existe porque a idade sozinha nao discrimina nesta fila. Medido na
+      -- producao em 2026-08-07: 16 dos 31 pedidos abertos tem data_pedido
+      -- 01/01/2026, a data de carimbo da carga retroativa, e todos aparecem com
+      -- os mesmos 218 dias. As dez linhas do topo saiam identicas em data, em
+      -- idade e em prazo (nulo), e a tabela nao dizia qual pedido olhar.
+      --
+      -- A data_atualizacao NAO serve sozinha: e nula em 10 dos 31, porque o
+      -- pedido nunca foi alterado depois de criado. O COALESCE na criacao da a
+      -- coluna para todo pedido, e e ela que mostra que o pedido de "janeiro"
+      -- entrou no sistema em julho.
+      COALESCE(p.data_atualizacao, p.data_criacao) AS ultima_movimentacao,
       CASE
         WHEN p.prazo IS NULL THEN NULL
         WHEN current_date > p.prazo THEN true
@@ -533,6 +579,20 @@ controller.getEntregasPorMidia = async (ano) => {
 };
 
 // Operações apoiadas no ano (campo livre pedido.operacao)
+//
+// Conta o que a mapoteca ENTREGOU, e não o que lhe pediram. A consulta usava
+// `filtroAno(data_pedido)` sem filtro de situação, e o gráfico somava 8.097
+// exemplares ao lado de um cartão que dizia 6.535, na MESMA aba, sem explicação.
+//
+// A diferença não era arredondamento. Medido na produção em 2026-08-07: a maior
+// barra era "Exercício Combinado ARANDU 2026", com 4.436 exemplares, do pedido
+// 59, EM ANDAMENTO e sem data de atendimento. A segunda, "Racionalização do
+// acervo", tinha 5 dos 6 pedidos em andamento. As duas somavam 6.399 dos 8.097:
+// 79% do gráfico era trabalho ainda não feito, sob um título que diz "apoiadas".
+//
+// Com FILTRO_ENTREGUE_ANO o gráfico passa a fechar com o cartão "Produtos
+// entregues" e com o mapa, que já usavam este mesmo filtro. O recorte militar
+// vem junto, de dentro do fragmento.
 controller.getOperacoesApoiadas = async (ano) => {
   return db.conn.any(
     `
@@ -541,13 +601,16 @@ controller.getOperacoesApoiadas = async (ano) => {
       COUNT(DISTINCT ped.id)::int AS total_pedidos,
       COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_produtos
     FROM mapoteca.pedido ped
-    LEFT JOIN mapoteca.produto_pedido pp ON pp.pedido_id = ped.id
+    JOIN mapoteca.produto_pedido pp ON pp.pedido_id = ped.id
     WHERE ped.operacao IS NOT NULL AND ped.operacao <> ''
-      AND ${filtroAno("ped.data_pedido")}
+      AND ${FILTRO_ENTREGUE_ANO}
     GROUP BY ped.operacao
-    ORDER BY total_pedidos DESC
+    -- Por VOLUME, e nao por numero de pedidos: o grafico e de barras de
+    -- exemplares, e ordenar por outra coisa punha barra curta acima de barra
+    -- longa. O nome desempata, para a ordem nao variar entre chamadas iguais.
+    ORDER BY total_produtos DESC, ped.operacao
     `,
-    { ano }
+    { ano, situacoesEntregue: SITUACOES_ENTREGUE }
   );
 };
 
@@ -555,13 +618,12 @@ controller.getOperacoesApoiadas = async (ano) => {
 controller.getResumoAnual = async (ano) => {
   const row = await db.conn.one(
     `
-    SELECT p.total_pedidos, p.oms_distintas_count, p.operacoes_distintas_count,
+    SELECT p.total_pedidos, p.oms_distintas_count, o.operacoes_distintas_count,
            e.total_entregas, m.manutencoes_count, m.custo_manutencao_total
     FROM (
       SELECT
         COUNT(*)::int AS total_pedidos,
-        COUNT(DISTINCT cliente_id)::int AS oms_distintas_count,
-        (COUNT(DISTINCT operacao) FILTER (WHERE operacao IS NOT NULL AND operacao <> ''))::int AS operacoes_distintas_count
+        COUNT(DISTINCT cliente_id)::int AS oms_distintas_count
       FROM mapoteca.pedido
       WHERE ${filtroAno("data_pedido")}
         -- Recorte MILITAR, igual ao das outras metricas de pedido deste
@@ -571,6 +633,19 @@ controller.getResumoAnual = async (ano) => {
         -- relatorio proprio. Ver o comentario do topo do arquivo.
         AND ${PEDIDO_MILITAR('cliente_id')}
     ) p
+    CROSS JOIN (
+      -- O cartao de OPERACOES sai da mesma regra do grafico logo abaixo dele
+      -- (getOperacoesApoiadas): operacao com ENTREGA no ano. Antes ele vinha do
+      -- bloco de cima, por data_pedido e sem filtro de situacao, e podia contar
+      -- operacao que nao recebeu nada. Duas contas para o mesmo rotulo, uma no
+      -- cartao e outra no grafico, e quem lesse a tela nao tinha como saber
+      -- qual das duas valia.
+      SELECT COUNT(DISTINCT ped.operacao)::int AS operacoes_distintas_count
+      FROM mapoteca.pedido ped
+      JOIN mapoteca.produto_pedido pp ON pp.pedido_id = ped.id
+      WHERE ped.operacao IS NOT NULL AND ped.operacao <> ''
+        AND ${FILTRO_ENTREGUE_ANO}
+    ) o
     CROSS JOIN (
       SELECT COALESCE(SUM(${QTD_EFETIVA}), 0)::int AS total_entregas
       FROM mapoteca.produto_pedido pp
@@ -613,7 +688,11 @@ controller.getEntregasPorMes = async (ano) => {
   return db.conn.any(
     `
     WITH meses AS (
-      SELECT generate_series(1, 12) AS mes
+      -- O NUMERO do mes, tirado do mesmo MESES_DO_ANO das outras series
+      -- mensais. Um generate_series(1, 12) proprio aqui voltaria a trazer o
+      -- futuro como zero, e a curva de entrega cairia no mes que ainda nao
+      -- chegou. Uma fonte so para o corte, e as quatro series param juntas.
+      SELECT EXTRACT(MONTH FROM m.mes)::int AS mes FROM (${MESES_DO_ANO}) m
     ),
     itens AS (
       SELECT

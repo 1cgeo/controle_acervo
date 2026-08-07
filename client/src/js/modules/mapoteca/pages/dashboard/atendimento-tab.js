@@ -82,11 +82,14 @@ export async function renderAtendimentoTab(container, getAno) {
   const escopo = el('p', { className: 'dashboard__escopo' });
   const tituloClientes = el('h2', { className: 'dashboard-section__title' });
 
+  // A classe `--2col` entra e sai conforme a quebra por tipo de cliente tiver o
+  // que mostrar (ver `load`). Sem isso, esconder a segunda coluna deixaria a
+  // linha pela metade, com a curva mensal espremida em 50% da largura.
+  const graficos = el('div', { className: 'dashboard-grid' }, [fulfillmentLine, fulfillmentTipoBar]);
+
   container.appendChild(escopo);
   container.appendChild(el('div', { className: 'stats-grid' }, [cardTempoMedio]));
-  container.appendChild(
-    el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [fulfillmentLine, fulfillmentTipoBar])
-  );
+  container.appendChild(graficos);
   container.appendChild(el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [tituloClientes, clientesTotal]),
     clientesTable.element,
@@ -94,7 +97,8 @@ export async function renderAtendimentoTab(container, getAno) {
 
   async function load() {
     ano = getAno();
-    escopo.textContent = `Pedidos abertos em ${ano}, pela data do pedido.`;
+    escopo.textContent = `Pedidos abertos em ${ano}, pela data do pedido, e só de `
+      + 'cliente militar. O atendimento ao cliente civil tem relatório próprio.';
     tituloClientes.textContent = `Clientes Mais Ativos em ${ano} (Top 10)`;
 
     const [avgRes, clientesRes] = await Promise.allSettled([
@@ -113,12 +117,26 @@ export async function renderAtendimentoTab(container, getAno) {
       fulfillmentLine.update({
         data: (avg.mensal || []).map(m => ({
           mes_nome: mesLabel(m.mes),
-          media_dias: Number(m.media_dias),
+          // O NULO atravessa como nulo, e o Chart.js o desenha como BURACO na
+          // linha. `Number(null)` daria 0, e desfaria no navegador exatamente o
+          // que o servidor passou a devolver: mes sem pedido concluido nao tem
+          // media, e "0 dias" na curva le-se como entrega no mesmo dia.
+          media_dias: m.media_dias === null ? null : Number(m.media_dias),
         })),
         loading: false,
       });
+
+      // A quebra por tipo de cliente so entra na tela com DUAS categorias ou
+      // mais. Com uma, ela e o cartao "Tempo Medio" desenhado outra vez: o
+      // dashboard e militar, e a producao tem hoje um unico tipo (OM EB, 13,6
+      // dias), igual ao numero que ja esta logo acima. Um grafico de uma barra
+      // que repete o cartao ao lado gasta metade da linha para nao dizer nada.
+      const porTipo = avg.por_tipo_cliente || [];
+      const vaiMostrarTipo = porTipo.length > 1;
+      fulfillmentTipoBar.classList.toggle('hidden', !vaiMostrarTipo);
+      graficos.classList.toggle('dashboard-grid--2col', vaiMostrarTipo);
       fulfillmentTipoBar.update({
-        data: (avg.por_tipo_cliente || []).map(t => ({
+        data: porTipo.map(t => ({
           tipo_cliente: t.tipo_cliente,
           media_dias: Number(t.media_dias),
         })),
@@ -130,6 +148,11 @@ export async function renderAtendimentoTab(container, getAno) {
       // avisam por toast; esta falhava calada.
       cardTempoMedio.update({ value: '-', loading: false, suffix: '' });
       fulfillmentLine.update({ data: [], loading: false });
+      // Sem resposta nao ha quebra por tipo para mostrar, e o mesmo criterio da
+      // carga boa vale aqui: um grafico vazio ao lado da curva so ocuparia meia
+      // linha para dizer que nao sabe.
+      fulfillmentTipoBar.classList.add('hidden');
+      graficos.classList.remove('dashboard-grid--2col');
       fulfillmentTipoBar.update({ data: [], loading: false });
       showError(avgRes.reason?.message || 'Erro ao carregar o tempo médio de atendimento');
     }

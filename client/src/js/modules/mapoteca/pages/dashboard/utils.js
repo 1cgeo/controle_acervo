@@ -15,3 +15,18 @@ export function mesLabel(mesIso) {
   if (!ano || !mes) return String(mesIso);
   return `${monthName(Number(mes)).slice(0, 3)}/${ano.slice(2)}`;
 }
+
+/**
+ * Rotulo curto de mes ('Jan') a partir do NUMERO do mes.
+ *
+ * Irmao do `mesLabel`, para a serie que vem com o mes como inteiro de 1 a 12, e
+ * nao como data ISO. E o caso do `entregas_por_mes`, que agrupa por
+ * `EXTRACT(MONTH ...)`. Sem ano no rotulo: a serie inteira e de um ano so, e o
+ * filtro da pagina ja o diz.
+ *
+ * @param {number|string} mes
+ * @returns {string}
+ */
+export function mesLabelNumero(mes) {
+  return monthName(Number(mes)).slice(0, 3);
+}

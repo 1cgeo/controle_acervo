@@ -10,9 +10,8 @@ import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
 import { mesLabel } from './utils.js';
 
-// Quantas linhas o bloco "Pedidos parados" mostra. E um RECORTE, e a tela diz
-// isso: a fila inteira fica na pagina de pedidos.
-const LIMITE_PARADOS = 10;
+// Sem constante de recorte: o bloco "Pedidos parados" mostra a FILA INTEIRA,
+// paginada. Ver o comentario da tabela, abaixo.
 
 /**
  * Aba "Pedidos": quantos entraram no ano, em que situacao estao e como se
@@ -67,13 +66,25 @@ export async function renderPedidosTab(container, getAno) {
 
   // Bloco "Pedidos parados": a fila aberta, do mais ANTIGO para o mais novo.
   //
-  // Ordena por IDADE, e nunca por prazo. Medido na producao: so 33 dos 164
-  // pedidos tem prazo preenchido, e nenhum pedido aberto esta vencido hoje.
-  // Uma lista de "atrasados" mostraria zero por campo em branco, e nao por bom
+  // Ordena por IDADE, e nunca por prazo. Medido na producao: so 2 dos 32
+  // pedidos abertos tem prazo preenchido, e nenhum esta vencido hoje. Uma lista
+  // de "atrasados" mostraria zero por campo em branco, e nao por bom
   // desempenho. O prazo aparece na linha quando existe, mas nao manda na ordem.
   //
   // A ordem vem do servidor (GET /dashboard/pending_orders), junto com a idade
   // em dias, para a tela mostrar o mesmo numero que ordenou.
+  //
+  // A FILA INTEIRA, paginada, e nao um top 10. O recorte de 10 linhas escondia
+  // 21 dos 31 pedidos abertos, e as 10 que sobravam eram indistinguiveis entre
+  // si: medido na producao em 2026-08-07, todas as 10 tinham data_pedido
+  // 01/01/2026 (o carimbo da carga retroativa), os mesmos 218 dias e prazo
+  // nulo. Tres das seis colunas eram constantes, e a tabela nao dizia qual
+  // pedido olhar. Paginar mostra os 31 sem transformar a tela num rolo.
+  //
+  // As colunas ITENS e ULTIMA MOVIMENTACAO existem por causa disso. A idade
+  // sozinha nao separa a fila enquanto a carga dominar; a contagem de itens
+  // separa (8 valores distintos nas mesmas 10 linhas), e a data de movimentacao
+  // explica a idade, ao mostrar que o pedido de "janeiro" entrou em julho.
   const paradosTable = createDataTable({
     columns: [
       {
@@ -81,13 +92,39 @@ export async function renderPedidosTab(container, getAno) {
         label: 'Pedido',
         render: (row) => el('a', { href: `#/mapoteca/pedidos/${row.id}`, textContent: `#${row.id}` }),
       },
-      { key: 'cliente_nome', label: 'Cliente' },
-      { key: 'situacao_nome', label: 'Situação' },
-      { key: 'data_pedido', label: 'Data do pedido', render: (row) => formatDate(row.data_pedido) },
-      { key: 'dias_aberto', label: 'Dias em aberto', render: (row) => formatNumber(row.dias_aberto) },
+      { key: 'cliente_nome', label: 'Cliente', sortable: true },
+      { key: 'situacao_nome', label: 'Situação', sortable: true },
+      {
+        key: 'quantidade_produtos',
+        label: 'Itens',
+        sortable: true,
+        render: (row) => formatNumber(row.quantidade_produtos),
+      },
+      {
+        key: 'data_pedido',
+        label: 'Data do pedido',
+        sortable: true,
+        render: (row) => formatDate(row.data_pedido),
+      },
+      {
+        key: 'dias_aberto',
+        label: 'Dias em aberto',
+        sortable: true,
+        render: (row) => formatNumber(row.dias_aberto),
+      },
+      {
+        key: 'ultima_movimentacao',
+        label: 'Última movimentação',
+        sortable: true,
+        // Todo pedido tem esta data, porque o servidor cai na data de criacao
+        // quando o registro nunca foi alterado. O traco fica para o caso que
+        // nao deveria existir, e nao para o pedido novo.
+        render: (row) => (row.ultima_movimentacao ? formatDate(row.ultima_movimentacao) : '-'),
+      },
       {
         key: 'prazo',
         label: 'Prazo',
+        sortable: true,
         // "Sem prazo" e a MAIORIA dos pedidos, e a tela diz isso em vez de um
         // traco: o campo em branco explica por que a ordem nao usa prazo.
         render: (row) => {
@@ -97,9 +134,8 @@ export async function renderPedidosTab(container, getAno) {
       },
     ],
     rows: [],
-    // A tela ja corta em LIMITE_PARADOS linhas. Paginar o recorte esconderia
-    // metade de uma lista que cabe inteira.
-    paginated: false,
+    paginated: true,
+    pageSize: 10,
     loading: true,
     emptyMessage: 'Nenhum pedido em aberto',
   });
@@ -128,16 +164,16 @@ export async function renderPedidosTab(container, getAno) {
     // ano muda. Dizer isso evita a leitura de que ele contradiz os cartoes.
     el('p', {
       className: 'dashboard__escopo',
-      textContent: `Pedidos abertos de qualquer ano, do mais antigo para o mais novo. `
-        + `A tabela mostra até ${LIMITE_PARADOS} linhas.`,
+      textContent: 'Pedidos abertos de qualquer ano, do mais antigo para o mais novo. '
+        + 'A fila inteira, paginada. Clique no cabeçalho para reordenar.',
     }),
     avisoParados.element,
   ]));
 
   async function load() {
     ano = getAno();
-    escopo.textContent = `Pedidos abertos em ${ano}, pela data do pedido. `
-      + 'A entrega do ano está no Resumo Anual e no Mapa.';
+    escopo.textContent = `Pedidos abertos em ${ano}, pela data do pedido, e só de `
+      + 'cliente militar. A entrega do ano está no Resumo Anual e no Mapa.';
 
     paradosTable.update({ loading: true });
 
@@ -188,10 +224,9 @@ export async function renderPedidosTab(container, getAno) {
 
     if (paradosRes.status === 'fulfilled') {
       const abertos = paradosRes.value || [];
-      const recorte = abertos.slice(0, LIMITE_PARADOS);
-      paradosTable.update({ rows: recorte, loading: false });
+      paradosTable.update({ rows: abertos, loading: false });
       paradosMeta.textContent = abertos.length
-        ? `${formatNumber(recorte.length)} mais antigos de ${formatNumber(abertos.length)} em aberto`
+        ? `${formatNumber(abertos.length)} em aberto`
         : '';
       avisoParados.ok();
     } else {
