@@ -1,8 +1,49 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatNumber } from '@utils/format.js';
+import { formatNumber, formatDate } from '@utils/format.js';
 import { createStatsCard } from '@components/stats-card.js';
+import { createDataTable } from '@components/data-table/data-table.js';
+import { chip } from '@components/status-chip.js';
 import { estadoErro } from '@components/estado-erro.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
+
+/**
+ * "A produzir": a folha planejada que ainda nao virou edicao regular.
+ *
+ * VEIO DA ABA "Plano do Ano", que saiu em 2026-08-07. Das quatro tabelas dela,
+ * so esta e assunto do ACERVO: a grade de metas e o Extra-PIT sao o plano da
+ * Divisao (tela `/metas` e `/extra-pit`) e o lote em andamento e cadastro (a
+ * administracao do acervo). Repetidos aqui, o painel dava um segundo numero
+ * para o mesmo plano.
+ */
+const COLUNAS_PRODUZIR = [
+  { key: 'mi', label: 'MI', sortable: true },
+  { key: 'produto', label: 'Produto', sortable: true, className: 'data-table__cell--truncate' },
+  { key: 'tipo_produto', label: 'Tipo' },
+  { key: 'tipo_escala', label: 'Escala' },
+  { key: 'meta', label: 'Meta', render: (r) => r.meta || r.demanda_extra || '-' },
+  { key: 'lote', label: 'Lote', render: (r) => r.lote || '-' },
+  {
+    key: 'data_prevista',
+    label: 'Prometida para',
+    sortable: true,
+    // Sem promessa NAO e "-", e um AVISO. A folha planejada sem data e erro de
+    // cadastro, e some do planejado do PIT sem erro nenhum: o diagnostico do
+    // servidor a acusa, e aqui ela tem de saltar aos olhos na propria linha.
+    render: (r) => (r.data_prevista
+      ? formatDate(r.data_prevista)
+      : chip('Sem data prevista', 'error')),
+  },
+  {
+    key: 'dias_atraso',
+    label: 'Atraso',
+    sortable: true,
+    render: (r) => {
+      if (r.dias_atraso === null || r.dias_atraso === undefined) return '-';
+      const dias = Number(r.dias_atraso);
+      return dias > 0 ? chip(`${formatNumber(dias)} dia(s)`, 'error') : chip('No prazo', 'success');
+    },
+  },
+];
 
 /**
  * Monta o painel de alertas do sistema a partir de /dashboard/system_health.
@@ -89,7 +130,7 @@ export function createAlertPanel(health) {
 }
 
 /**
- * Aba "Visão Geral": seis cards e o painel de alertas.
+ * Aba "Visão Geral": seis cards, o painel de alertas e o que falta produzir.
  * @param {HTMLElement} container
  * @returns {Promise<{cleanup:Function, refresh:Function}>}
  */
@@ -127,12 +168,16 @@ export async function renderOverviewTab(container) {
   const alertContainer = el('div');
   container.appendChild(alertContainer);
 
+  const produzirContainer = el('div');
+  container.appendChild(produzirContainer);
+
   async function load() {
     // Promise.allSettled: um endpoint fora do ar nao derruba a aba inteira.
-    const [produtos, armazenamento, health] = await Promise.allSettled([
+    const [produtos, armazenamento, health, aProduzir] = await Promise.allSettled([
       acervoService.getProdutosTotal(),
       acervoService.getArquivosTotalGb(),
       acervoService.getSystemHealth(),
+      acervoService.getAProduzir(),
     ]);
     if (disposed) return;
 
@@ -183,6 +228,28 @@ export async function renderOverviewTab(container) {
       // a ausencia se le como "nao ha alerta". E o painel que o chefe olha para
       // saber se ha volume enchendo: dizer saude sem saber e a falha mais cara.
       alertContainer.replaceChildren(estadoErro(health.reason, load));
+    }
+
+    if (aProduzir.status === 'fulfilled') {
+      const linhas = Array.isArray(aProduzir.value) ? aProduzir.value : [];
+      const tabela = createDataTable({
+        columns: COLUNAS_PRODUZIR, rows: linhas, paginated: true,
+        pageSize: 10, searchable: true,
+        emptyMessage: 'Nenhuma folha planejada em aberto.',
+      });
+      produzirContainer.replaceChildren(el('div', { className: 'chart-card' }, [
+        el('div', { className: 'chart-card__title', textContent: 'A produzir' }),
+        el('div', {
+          className: 'chart-card__subtitle',
+          textContent: 'Folha planejada que ainda não virou edição regular.',
+        }),
+        tabela.element,
+      ]));
+    } else {
+      // Estado de erro DO BLOCO, e nao da aba: os cartoes vieram certos e
+      // continuam na tela. A tabela vazia diria "nada a produzir", que e a
+      // leitura oposta.
+      produzirContainer.replaceChildren(estadoErro(aProduzir.reason, load));
     }
   }
 

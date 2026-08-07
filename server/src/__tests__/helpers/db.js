@@ -42,97 +42,75 @@ const hashesDaSemente = () => {
 }
 
 /**
+ * As tabelas que o `cleanTestData` esvazia, num TRUNCATE SO.
+ *
+ * UM COMANDO, E NAO 43. Medido em 2026-08-07, com o banco sem concorrencia:
+ * as 43 uma a uma custavam 585 ms; as mesmas 43 juntas custam 234 ms. O resto
+ * do `cleanTestData` (o reseed dos dois usuarios da semente) custa 2 ms, entao
+ * ERA ISTO a suite inteira. Com 883 testes no pacote de banco, e ~0,3 s por
+ * teste, sao ~4,5 minutos de trabalho serial que somem.
+ *
+ * O ganho nao e so o relogio. Cada TRUNCATE toma ACCESS EXCLUSIVE e sincroniza
+ * arquivo; 43 por teste, vezes N workers, batem todos no MESMO PostgreSQL, e e
+ * essa disputa que fazia mais worker deixar a suite MAIS lenta em vez de mais
+ * rapida.
+ *
+ * A ORDEM NAO IMPORTA MAIS, e por isso a lista pode ser lida por assunto em vez
+ * de por dependencia: o TRUNCATE de varias tabelas as esvazia JUNTAS, e o
+ * CASCADE alcanca quem referencia e nao esta na lista. A ordem reversa que este
+ * arquivo mantinha existia porque os comandos eram separados.
+ *
+ * NAO ENTRAM aqui, e cada uma por um motivo:
+ *   - as tabelas de dominio, que sao carga do `er/`;
+ *   - `orcamento.configuracao`, singleton criada pelo `er/orcamento.sql`;
+ *   - `pit.exercicio` e `acervo.volume_armazenamento`, que sao SEMENTE (o
+ *     volume perde so as linhas que o teste acrescentou, logo abaixo);
+ *   - `dgeo.usuario`, que volta ao estado da semente em vez de sumir.
+ */
+const TABELAS_DO_CLEAN = `
+  auditoria.evento,
+  orcamento.arquivo, orcamento.rpnp, orcamento.recebimento_material,
+  orcamento.liquidacao, orcamento.nota_empenho_nota_credito,
+  orcamento.nota_empenho, orcamento.nota_credito, orcamento.pdr_item,
+  orcamento.licitacao, orcamento.dfd_item, orcamento.dfd,
+  pit.revisao, pit.meta,
+  rpcmtec.edicao,
+  mapoteca.impressao_item, mapoteca.consumo_material, mapoteca.estoque_material,
+  mapoteca.manutencao_plotter, mapoteca.produto_pedido, mapoteca.pedido,
+  mapoteca.plotter, mapoteca.cliente, mapoteca.tipo_material,
+  ponto_controle.upload_arquivo_temp, ponto_controle.upload_ponto_temp,
+  ponto_controle.upload_session, ponto_controle.arquivo, ponto_controle.ponto,
+  acervo.upload_session, acervo.download_deletado, acervo.download,
+  acervo.arquivo_deletado, acervo.arquivo, acervo.versao_relacionamento,
+  acervo.versao, acervo.lote, acervo.projeto, acervo.produto,
+  acervo.volume_tipo_produto,
+  dgeo.impedimento, dgeo.efetivo_periodo, dgeo.login`
+// O EFETIVO ESTA NA LISTA, e o TRUNCATE dela roda ANTES do `DELETE FROM
+// dgeo.usuario` la embaixo. As duas tabelas tem FK para `dgeo.usuario(uuid)` SEM
+// cascade, entao a passagem de um usuario que o clean apaga travaria aquele
+// DELETE. A ausencia delas ja foi defeito: o DELETE so alcanca quem NAO e da
+// semente, e a passagem lancada para `test_user` sobrevivia e vazava para o caso
+// seguinte. Como `efetivo_periodo` tem EXCLUDE de sobreposicao por pessoa, o
+// segundo teste que lancasse passagem para o mesmo militar levava 23P01, falha
+// em arquivo que ninguem tocou.
+
+/**
  * Cleans all test data from the database while preserving
  * domain/lookup tables and the seed users + volume.
- * Tables are truncated in reverse-dependency order.
  */
 const cleanTestData = async () => {
   await conn.tx(async t => {
-    // A RASTREABILIDADE entra primeiro, e por TRUNCATE proprio: `auditoria.evento`
-    // nao tem chave estrangeira nenhuma (de proposito, para o rastro sobreviver
-    // ao registro e ao usuario apagados), entao nenhum CASCADE a alcanca. Sem
-    // esta linha os eventos de um teste vazariam para o teste seguinte, e as
-    // contagens de "quantos eventos este caso gerou" passariam a depender da
-    // ordem dos arquivos. E o mesmo motivo pelo qual a antiga
-    // `mapoteca.pedido_auditoria` tinha a sua linha propria aqui, na secao da
-    // mapoteca, antes de virar `auditoria.evento`.
-    await t.none('TRUNCATE auditoria.evento CASCADE')
-
-    // Orcamento tables (modulo absorvido do SCO). A configuracao e singleton
-    // (linha id=1 criada pelo er/orcamento.sql), entao NAO entra no truncate.
-    await t.none('TRUNCATE orcamento.arquivo CASCADE')
-    await t.none('TRUNCATE orcamento.rpnp CASCADE')
-    await t.none('TRUNCATE orcamento.recebimento_material CASCADE')
-    await t.none('TRUNCATE orcamento.liquidacao CASCADE')
-    await t.none('TRUNCATE orcamento.nota_empenho_nota_credito CASCADE')
-    await t.none('TRUNCATE orcamento.nota_empenho CASCADE')
-    await t.none('TRUNCATE orcamento.nota_credito CASCADE')
-    await t.none('TRUNCATE orcamento.pdr_item CASCADE')
-    await t.none('TRUNCATE orcamento.licitacao CASCADE')
-    await t.none('TRUNCATE orcamento.dfd_item CASCADE')
-    await t.none('TRUNCATE orcamento.dfd CASCADE')
-    // A REVISAO vem ANTES da meta, e ela nao cai por CASCADE de `pit.meta`:
-    // `pit.revisao` aponta `pit.exercicio`, e nao a meta. Sem esta linha o
-    // rascunho de um teste sobrevive ao proximo, e o segundo `POST /revisoes`
-    // bate no indice parcial `unique_rascunho_por_ano`: 409 num teste que nao
-    // fala de revisao nenhuma.
-    await t.none('TRUNCATE pit.revisao CASCADE')
-    await t.none('TRUNCATE pit.meta CASCADE')
-
-    // A edicao mensal do RPCMTec. Mora em schema proprio, e nao no orcamento: o
-    // relatorio cruza os tres modulos (ver
-    // migrations/2026-08-01_rpcmtec_schema_proprio.sql).
-    await t.none('TRUNCATE rpcmtec.edicao CASCADE')
-
-    // Mapoteca tables.
-    await t.none('TRUNCATE mapoteca.impressao_item CASCADE')
-    await t.none('TRUNCATE mapoteca.consumo_material CASCADE')
-    await t.none('TRUNCATE mapoteca.estoque_material CASCADE')
-    await t.none('TRUNCATE mapoteca.manutencao_plotter CASCADE')
-    await t.none('TRUNCATE mapoteca.produto_pedido CASCADE')
-    await t.none('TRUNCATE mapoteca.pedido CASCADE')
-    await t.none('TRUNCATE mapoteca.plotter CASCADE')
-    await t.none('TRUNCATE mapoteca.cliente CASCADE')
-    await t.none('TRUNCATE mapoteca.tipo_material CASCADE')
-
-    // Ponto de controle. Entra ANTES do acervo: ponto.lote_id referencia
-    // acervo.lote, e o TRUNCATE do lote arrastaria os pontos por CASCADE.
-    await t.none('TRUNCATE ponto_controle.upload_arquivo_temp CASCADE')
-    await t.none('TRUNCATE ponto_controle.upload_ponto_temp CASCADE')
-    await t.none('TRUNCATE ponto_controle.upload_session CASCADE')
-    await t.none('TRUNCATE ponto_controle.arquivo CASCADE')
-    await t.none('TRUNCATE ponto_controle.ponto CASCADE')
-
-    // Sessão de envio do acervo. Uma tabela só: o rascunho inteiro mora no
-    // `payload` JSONB dela desde 06/08/2026.
-    await t.none('TRUNCATE acervo.upload_session CASCADE')
-
-    // Acervo main tables
-    await t.none('TRUNCATE acervo.download_deletado CASCADE')
-    await t.none('TRUNCATE acervo.download CASCADE')
-    await t.none('TRUNCATE acervo.arquivo_deletado CASCADE')
-    await t.none('TRUNCATE acervo.arquivo CASCADE')
-    await t.none('TRUNCATE acervo.versao_relacionamento CASCADE')
-    await t.none('TRUNCATE acervo.versao CASCADE')
-    await t.none('TRUNCATE acervo.lote CASCADE')
-    await t.none('TRUNCATE acervo.projeto CASCADE')
-    await t.none('TRUNCATE acervo.produto CASCADE')
-    await t.none('TRUNCATE acervo.volume_tipo_produto CASCADE')
+    // O ESVAZIAMENTO INTEIRO NUM COMANDO. Ver TABELAS_DO_CLEAN acima: era
+    // aqui, em 43 TRUNCATE separados, que a suite de banco gastava o relogio.
+    //
+    // `auditoria.evento` entra na lista como qualquer outra, mas por uma razao
+    // propria: ela nao tem chave estrangeira nenhuma (de proposito, para o
+    // rastro sobreviver ao registro e ao usuario apagados), entao CASCADE
+    // nenhum a alcanca. Fora da lista, os eventos de um teste vazariam para o
+    // seguinte e as contagens passariam a depender da ordem dos arquivos.
+    await t.none(`TRUNCATE ${TABELAS_DO_CLEAN} CASCADE`)
 
     await t.none('DELETE FROM acervo.volume_armazenamento WHERE id > 1')
-
-    // O EFETIVO SAI ANTES DOS USUARIOS, e as duas tabelas tem FK para
-    // `dgeo.usuario(uuid)` SEM cascade: passagem ou impedimento de um usuario
-    // que o clean apaga travaria o DELETE abaixo.
-    //
-    // ELAS PRECISAM ESTAR AQUI, e a ausencia era defeito: o `DELETE FROM
-    // dgeo.usuario` so alcanca quem NAO e da semente, entao a passagem lancada
-    // para `test_user` sobrevivia ao clean e vazava para o caso seguinte. Como
-    // `efetivo_periodo` tem EXCLUDE de sobreposicao por pessoa, o segundo teste
-    // que lancasse passagem para o mesmo militar levava 23P01 -- falha em
-    // arquivo que ninguem tocou, dependente da ordem.
-    await t.none('TRUNCATE dgeo.impedimento CASCADE')
-    await t.none('TRUNCATE dgeo.efetivo_periodo CASCADE')
 
     // Reset users to only seed rows (o perfil sai antes: FK para dgeo.usuario)
     await t.none(`DELETE FROM dgeo.usuario_perfil WHERE usuario_id IN (

@@ -1,10 +1,10 @@
 'use strict'
 
 /**
- * O PLANO DO ANO: o que o acervo ainda deve produzir.
+ * A PRODUZIR: a folha prometida que ainda nao virou edicao regular.
  *
- * A pergunta que nenhuma aba do painel respondia. As outras dizem o que o acervo
- * TEM e o que ENTROU; esta diz o que ele DEVE, e com prazo.
+ * A pergunta que nenhuma parte do painel respondia. As outras dizem o que o
+ * acervo TEM e o que ENTROU; esta diz o que ele DEVE, e com prazo.
  *
  * O que os testes fazem cumprir, e por que cada um existe:
  *
@@ -16,18 +16,18 @@
  *    despercebida.
  * 3. O atraso sai do SERVIDOR. A tela que subtrai datas erra o fuso, e duas
  *    telas subtraindo a mesma coisa chegariam a dois numeros.
- * 4. O lote NAO concluido entra, e nao so o "Em execucao". O Nao iniciado e o
- *    Pausado sao trabalho que o ano ainda deve.
+ * 4. A rota NAO tem parametro de ano. A versao planejada e um estado, e nao um
+ *    fato datado: a folha prometida para dezembro segue devida em janeiro.
  */
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
 const { generateAdminToken } = require('../helpers/auth')
-const { createProjeto, createLote, createProduto, createVersao } = require('../helpers/fixtures')
+const { createProduto, createVersao } = require('../helpers/fixtures')
 
 const {
-  domainConstants: { TIPO_VERSAO, STATUS_EXECUCAO }
+  domainConstants: { TIPO_VERSAO }
 } = require('../../utils')
 
 let app
@@ -42,9 +42,9 @@ afterEach(async () => {
   await cleanTestData()
 })
 
-const pedirPlano = (ano = 2026) =>
+const pedirAProduzir = () =>
   request(app)
-    .get(`/api/dashboard/plano_ano?ano=${ano}`)
+    .get('/api/dashboard/a_produzir')
     .set('Authorization', `Bearer ${token}`)
 
 /** Uma versao planejada, com a data prometida que se quiser. */
@@ -64,7 +64,7 @@ const semearPlanejada = async (mi, dataPrevista, overrides = {}) => {
   return versao
 }
 
-describe('GET /api/dashboard/plano_ano', () => {
+describe('GET /api/dashboard/a_produzir', () => {
   test('devolve so a versao PLANEJADA, e nao o registro historico sem arquivo', async () => {
     await semearPlanejada('2758-3-NE', '2026-10-31')
 
@@ -74,23 +74,26 @@ describe('GET /api/dashboard/plano_ano', () => {
       versao: '1ª Edição'
     })
 
-    const res = await pedirPlano()
+    const res = await pedirAProduzir()
 
     expect(res.status).toBe(200)
-    expect(res.body.dados.a_produzir).toHaveLength(1)
-    expect(res.body.dados.a_produzir[0].mi).toBe('2758-3-NE')
+    // A LISTA E O PAYLOAD, e nao um objeto com ela dentro: os dois outros blocos
+    // do antigo /plano_ano (lote em andamento e Extra-PIT) sairam para as telas
+    // do PIT e da administracao do acervo.
+    expect(Array.isArray(res.body.dados)).toBe(true)
+    expect(res.body.dados).toHaveLength(1)
+    expect(res.body.dados[0].mi).toBe('2758-3-NE')
   })
 
   test('a folha SEM data prevista vem primeiro', async () => {
     await semearPlanejada('2758-3-NE', '2026-01-31')
     await semearPlanejada('2784-1-NO', null)
 
-    const { body } = await pedirPlano()
-    const lista = body.dados.a_produzir
+    const { body } = await pedirAProduzir()
 
-    expect(lista).toHaveLength(2)
-    expect(lista[0].mi).toBe('2784-1-NO')
-    expect(lista[0].data_prevista).toBeNull()
+    expect(body.dados).toHaveLength(2)
+    expect(body.dados[0].mi).toBe('2784-1-NO')
+    expect(body.dados[0].data_prevista).toBeNull()
   })
 
   test('o atraso vem calculado, e nao negativo quando o prazo nao venceu', async () => {
@@ -99,45 +102,24 @@ describe('GET /api/dashboard/plano_ano', () => {
     await semearPlanejada('2758-3-NE', ontem)
     await semearPlanejada('2784-1-NO', daquiUmAno)
 
-    const { body } = await pedirPlano()
-    const porMi = Object.fromEntries(body.dados.a_produzir.map(r => [r.mi, r]))
+    const { body } = await pedirAProduzir()
+    const porMi = Object.fromEntries(body.dados.map(r => [r.mi, r]))
 
     expect(Number(porMi['2758-3-NE'].dias_atraso)).toBe(1)
     // Zero, e nao -365: "faltam N dias" a tela diz com a propria data_prevista.
     expect(Number(porMi['2784-1-NO'].dias_atraso)).toBe(0)
   })
 
-  test('o lote nao concluido entra, e o concluido nao', async () => {
-    const projeto = await createProjeto({ nome: 'Projeto do plano' })
-    await createLote(projeto.id, {
-      nome: 'Lote correndo', pit: 'PIT-CORRE',
-      status_execucao_id: STATUS_EXECUCAO.EM_EXECUCAO
-    })
-    await createLote(projeto.id, {
-      nome: 'Lote pausado', pit: 'PIT-PAUSA',
-      status_execucao_id: STATUS_EXECUCAO.PAUSADO
-    })
-    await createLote(projeto.id, {
-      nome: 'Lote fechado', pit: 'PIT-FECHA',
-      status_execucao_id: STATUS_EXECUCAO.CONCLUIDO
-    })
-
-    const { body } = await pedirPlano()
-    const nomes = body.dados.lotes_em_execucao.map(l => l.nome).sort()
-
-    expect(nomes).toEqual(['Lote correndo', 'Lote pausado'])
-  })
-
   test('cobra login', async () => {
-    const res = await request(app).get('/api/dashboard/plano_ano?ano=2026')
+    const res = await request(app).get('/api/dashboard/a_produzir')
     expect(res.status).toBe(401)
   })
 
-  test('recusa ano fora da faixa em vez de devolver lista vazia', async () => {
+  test('a rota antiga /plano_ano nao existe mais', async () => {
     const res = await request(app)
-      .get('/api/dashboard/plano_ano?ano=1500')
+      .get('/api/dashboard/plano_ano?ano=2026')
       .set('Authorization', `Bearer ${token}`)
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(404)
   })
 })

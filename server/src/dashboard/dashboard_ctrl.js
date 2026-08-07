@@ -2,7 +2,7 @@
 
 const { db } = require('../database')
 const {
-  domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO, STATUS_EXECUCAO }
+  domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO }
 } = require('../utils')
 
 const controller = {}
@@ -507,13 +507,7 @@ controller.getVersaoActivityTimeline = async (months = 12) => {
 }
 
 /**
- * O PLANO DO ANO: o que o acervo ainda deve produzir, e quando prometeu.
- *
- * POR QUE UMA CONSULTA SÓ, ao contrário do resto deste arquivo. As outras abas
- * do painel são assuntos independentes, e cada gráfico cai sozinho. Aqui é um
- * assunto só: ou se sabe o estado do plano ou não se sabe nada, e três
- * requisições pagariam três vezes a rede para montar uma tela que não faz
- * sentido pela metade. Mesma regra da aba de ponto de controle.
+ * A PRODUZIR: a folha prometida que ainda não virou edição regular.
  *
  * A FOLHA É A UNIDADE, e não o lote. `acervo.versao.data_prevista` é a promessa
  * por folha, e é dela que sai o planejado do PIT (ver o comentário da coluna em
@@ -524,18 +518,16 @@ controller.getVersaoActivityTimeline = async (months = 12) => {
  * (a coluna é DATE e chega como texto), e duas telas subtraindo a mesma coisa
  * chegariam a dois números.
  *
- * NÃO INCLUI a meta do PIT nem a grade: quem responde isso é `pit.meta_vigente`,
- * por `GET /metas/execucao`, que já existe e cobra gerente. Repetir a grade aqui
- * criaria um segundo planejado, calculado de outro jeito, na mesma tela.
+ * NÃO INCLUI a meta do PIT, o lote em andamento nem o Extra-PIT. Os três moram
+ * em tela própria (`/metas`, a administração do acervo, `/extra-pit`), com o
+ * guarda que lhes cabe. Repeti-los aqui criava uma segunda contagem do plano,
+ * calculada de outro jeito, dentro do painel do acervo.
  */
-controller.getPlanoDoAno = async (ano) => {
-  return db.conn.task(async t => {
-    // A PROMESSA EM ABERTO: a folha prometida que ainda não virou Regular.
-    //
-    // Filtra por tipo, e não por ausência de arquivo. "Sem arquivo" também é o
-    // estado do Registro Histórico (408 versões em 2026-08), que não é promessa
-    // nenhuma: é acervo antigo catalogado sem o digital.
-    const aProduzir = await t.any(`
+controller.getAProduzir = async () => {
+  // Filtra por tipo, e não por ausência de arquivo. "Sem arquivo" também é o
+  // estado do Registro Histórico (408 versões em 2026-08), que não é promessa
+  // nenhuma: é acervo antigo catalogado sem o digital.
+  return db.conn.any(`
       SELECT v.id, v.uuid_versao, v.versao, p.id AS produto_id, p.nome AS produto,
         p.mi, p.inom, tp.nome AS tipo_produto, te.nome AS tipo_escala,
         v.data_prevista::text AS data_prevista,
@@ -561,45 +553,6 @@ controller.getPlanoDoAno = async (ano) => {
       -- passar despercebida. Ver GET /metas/execucao/diagnostico.
       ORDER BY v.data_prevista NULLS FIRST, p.mi, tp.nome
     `)
-
-    // Os lotes que ainda correm, com o prazo que o lote declara.
-    const lotes = await t.any(`
-      SELECT l.id, l.pit, l.nome, pr.nome AS projeto,
-        l.data_inicio::text AS data_inicio, l.data_fim::text AS data_fim,
-        CASE WHEN l.data_fim IS NULL THEN NULL
-             ELSE GREATEST(0, (CURRENT_DATE - l.data_fim))
-        END AS dias_atraso,
-        (SELECT COUNT(*) FROM acervo.versao v WHERE v.lote_id = l.id)::int AS versoes,
-        (SELECT COUNT(*) FROM acervo.versao v
-          WHERE v.lote_id = l.id AND v.tipo_versao_id = ${TIPO_VERSAO.PLANEJADA})::int AS versoes_planejadas
-      FROM acervo.lote AS l
-      INNER JOIN acervo.projeto AS pr ON pr.id = l.projeto_id
-      -- Tudo que NÃO fechou, e não só o "Em execução". O lote Não iniciado e o
-      -- Pausado são trabalho que o ano ainda deve, e some-los de propósito faria
-      -- a tela dizer que só há uma corrida aberta quando há quatro.
-      WHERE l.status_execucao_id <> ${STATUS_EXECUCAO.CONCLUIDO}
-      ORDER BY l.data_fim NULLS LAST, l.pit
-    `)
-
-    // A exceção autorizada que ainda não virou folha.
-    //
-    // CONTA AS VERSÕES em vez de filtrar por elas: uma demanda com produção
-    // parcial (duas das seis folhas prontas) interessa mais do que uma sem nada,
-    // e a lista que só mostra as vazias esconde justamente essa.
-    const extraPit = await t.any(`
-      SELECT de.id, de.ano, de.descricao, de.tipo_produto, de.quantidade,
-        de.documento_autorizacao,
-        (SELECT COUNT(*) FROM acervo.versao v WHERE v.demanda_extra_id = de.id)::int AS versoes,
-        (SELECT COUNT(*) FROM acervo.versao v
-          WHERE v.demanda_extra_id = de.id
-            AND v.tipo_versao_id = ${TIPO_VERSAO.REGULAR})::int AS versoes_prontas
-      FROM pit.demanda_extra AS de
-      WHERE de.ano = $<ano>
-      ORDER BY de.id
-    `, { ano })
-
-    return { a_produzir: aProduzir, lotes_em_execucao: lotes, extra_pit: extraPit }
-  })
 }
 
 // Last 20 registered products

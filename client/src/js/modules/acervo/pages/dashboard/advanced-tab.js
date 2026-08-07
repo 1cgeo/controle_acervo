@@ -152,9 +152,8 @@ export async function renderAdvancedTab(container) {
   // inteiro (17.499 arquivos) foi carregado por UM login de carga: a tabela era
   // uma linha e nove zeros. A segunda desenhava duas pizzas para dizer que 17
   // projetos de 18 e 98 lotes de 99 estão concluídos, e o único "em execução" é
-  // um projeto guarda-chuva aberto em 1982. O que interessa do lote agora tem
-  // lugar melhor: a aba Plano do Ano mostra o lote que ainda não fechou, com
-  // prazo e atraso.
+  // um projeto guarda-chuva aberto em 1982. O que interessa do lote tem lugar
+  // melhor: a administração do acervo lista o lote com prazo e status.
   const subAbas = createTabs({
     className: 'sub-tabs',
     ariaLabel: 'Detalhe das análises',

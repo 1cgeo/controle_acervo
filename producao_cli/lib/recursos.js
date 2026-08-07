@@ -412,6 +412,19 @@ const RECURSOS = {
             'de vigência pode ser retroativa'
         }
       },
+      declarar: {
+        metodo: 'PUT',
+        caminho: '/metas/revisoes/:revisaoId/meta/:metaId',
+        params: 'declaracaoParams',
+        corpo: 'declararNaRevisao',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'o UNICO jeito de mudar o que o PIT promete. Acrescentar e a ' +
+          'primeira declaracao do item; alterar e uma declaracao nova com o ' +
+          'numero novo; cancelar e uma com cancelada=true. Na revisao ja ' +
+          'PUBLICADA o motivo e obrigatorio, porque ali se conserta a nossa ' +
+          'COPIA do documento assinado, e nao o plano'
+      },
       'remover-meta': {
         metodo: 'DELETE',
         caminho: '/metas/revisoes/:revisaoId/meta/:metaId',

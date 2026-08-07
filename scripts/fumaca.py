@@ -120,6 +120,16 @@ lista([
     ('/api/acervo/busca?tipo_escala_id=2&page=1&limit=5', 'busca de produtos', 1),
 ], tok)
 
+# A tabela "A produzir" da Visao Geral. Fora da `lista` acima porque o piso dela
+# e ZERO, e nao um: acervo sem folha planejada em aberto e estado legitimo, e
+# exigir >= 1 faria a fumaca reprovar no dia em que o plano fechasse. O que se
+# afere e a rota respondendo com uma LISTA. Ela nasceu em 2026-08-07 no lugar de
+# /dashboard/plano_ano, que devolvia um objeto de tres blocos.
+c, b = chamar('/api/dashboard/a_produzir', token=tok)
+checa('folhas a produzir (a tabela da Visao Geral do acervo)',
+      c == 200 and isinstance(b.get('dados'), list),
+      f"HTTP {c}, {len(b.get('dados') or [])} folhas planejadas")
+
 secao('MODULO MAPOTECA')
 lista([
     ('/api/mapoteca/cliente', 'clientes', 1),

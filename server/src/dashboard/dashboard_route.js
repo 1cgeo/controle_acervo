@@ -31,20 +31,22 @@ router.get(
   return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
 }));
 
-// O PLANO DO ANO: o que o acervo ainda deve produzir, e quando prometeu.
+// A PRODUZIR: a folha prometida que ainda nao virou edicao regular.
 //
-// CONSULTA, como o resto deste arquivo. A grade do PIT cobra gerente
-// (`GET /metas/execucao`, verifyGerente) porque ela e o plano da Divisao inteira;
-// aqui so sai o que ja e do ACERVO (versao planejada, lote, demanda extra), e
-// quem consulta o acervo ve o acervo. A aba do cliente mostra a faixa de metas so
-// para quem passa naquele guarda, e esta parte para todo mundo.
+// CONSULTA, como o resto deste arquivo, e o recorte e o ACERVO: quem consulta o
+// acervo ve o acervo. A grade de metas, o lote em andamento e o Extra-PIT, que a
+// aba "Plano do Ano" juntava aqui, moram nas telas do PIT e da administracao do
+// acervo, cada uma com o guarda que lhe cabe.
+//
+// SEM PARAMETRO DE ANO. A versao planejada e um ESTADO, e nao um fato datado: a
+// folha prometida para dezembro continua devida em janeiro. O `ano` que esta
+// rota exigia nunca entrou nesta consulta, e so servia aos blocos que sairam.
 router.get(
-  '/plano_ano',
+  '/a_produzir',
   verifyPerfil('consulta'),
-  schemaValidation({ query: dashboardSchema.anoQuery }),
   asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getPlanoDoAno(req.query.ano)
-    const msg = 'Plano do ano retornado com sucesso'
+    const dados = await dashboardCtrl.getAProduzir()
+    const msg = 'Versões planejadas retornadas com sucesso'
 
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   }))

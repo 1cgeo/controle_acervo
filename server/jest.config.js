@@ -38,6 +38,23 @@ const todos = listar(TESTES)
 const comBanco = todos.filter(usaBanco)
 const semBanco = todos.filter(f => !usaBanco(f))
 
+// TETO DE WORKERS, e o Jest nao tem um util por padrao: ele usa CPUs menos 1.
+//
+// Medido em 2026-08-07, na maquina de trabalho (20 nucleos logicos, 15,6 GB de
+// RAM, ~3 GB livres com o dia ja aberto). O padrao virava 19 workers, cada um um
+// processo Node de ~215 MB com o app inteiro carregado: ~4 GB pedidos onde havia
+// 3, e a maquina passava a paginar. Era esse o "estourou a memoria".
+//
+// E MAIS WORKER NAO COMPRA VELOCIDADE AQUI, porque o gargalo nao e CPU: os 883
+// testes do pacote de banco batem todos no MESMO PostgreSQL, e o `cleanTestData`
+// de cada teste toma lock exclusivo. Passado o numero de workers que satura o
+// banco, o proximo worker so acrescenta disputa.
+//
+// QUATRO, e nao uma fracao dos nucleos: a fracao amarra o teto ao processador de
+// quem roda, e quem limita e o banco, que e um so. Numa maquina com folga, subir
+// isto na linha de comando continua valendo: `npx jest --maxWorkers=8`.
+const MAX_WORKERS = 4
+
 const comum = {
   testEnvironment: 'node',
   rootDir: './src',
@@ -59,6 +76,12 @@ const comum = {
 }
 
 module.exports = {
+  // NA RAIZ, e nao dentro de cada `project`: `maxWorkers` e opcao GLOBAL do
+  // Jest, e posta num projeto ela e ignorada em silencio. E dela tambem que o
+  // `setup.js` tira quantos bancos clonar (`globalConfig.maxWorkers`): com o
+  // padrao de 19 ele criava 19 clones de 29 MB a cada rodada.
+  maxWorkers: MAX_WORKERS,
+
   // DOIS PACOTES, para nem toda mudanca cobrar a suite inteira.
   //
   //   npm run test:rapido  -> so o que nao toca o banco (segundos, em paralelo)

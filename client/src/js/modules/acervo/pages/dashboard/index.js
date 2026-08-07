@@ -2,7 +2,6 @@ import { el } from '@utils/dom.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { createExportBar } from '@components/export-bar/export-bar.js';
 import { invalidarDashboard, EXPORTACOES_ACERVO } from '@modules/acervo/services/acervo-service.js';
-import { renderPlanoTab } from './plano-tab.js';
 import { renderOverviewTab } from './overview-tab.js';
 import { renderDistributionTab } from './distribution-tab.js';
 import { renderActivityTab } from './activity-tab.js';
@@ -23,9 +22,17 @@ const REFRESH_MS = 5 * 60 * 1000;
 /**
  * Dashboard do acervo (#/acervo/dashboard): cinco abas e a barra de exportacao.
  *
- * A aba ativa se recarrega sozinha a cada 60 s. O cache do dashboard cai antes,
+ * A aba ativa se recarrega sozinha a cada 5 min. O cache do dashboard cai antes,
  * senao o `refresh` devolveria a mesma resposta guardada. So o prefixo
  * 'acervo:dashboard' e invalidado: o cache dos outros modulos fica de pe.
+ *
+ * SEM a aba "Plano do Ano", que existiu de 2026-08-05 a 2026-08-07. Ela juntava
+ * quatro assuntos que ja tinham tela propria: a grade de metas e o diagnostico
+ * do PIT (em `/metas`), o lote em andamento (na administracao do acervo) e o
+ * Extra-PIT (em `/extra-pit`). O painel do acervo repetia o plano da Divisao
+ * inteira, com outro recorte de guarda, e cobrava perfil de gerente para montar
+ * metade de si. Do que ela trazia, so a folha planejada e assunto do acervo, e
+ * essa vive agora na Visao Geral.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} [_ctx]
@@ -35,10 +42,6 @@ export async function renderDashboard(container, _ctx) {
   const abas = createTabs({
     ariaLabel: 'Painéis do acervo',
     tabs: [
-      // PRIMEIRA, e de propósito. As outras respondem o que o acervo TEM e o que
-      // ENTROU; só esta responde o que ele DEVE, com prazo. Estoque quase não
-      // muda, prazo muda todo dia.
-      { id: 'plano', label: 'Plano do Ano', render: renderPlanoTab },
       { id: 'overview', label: 'Visão Geral', render: renderOverviewTab },
       { id: 'distribution', label: 'Distribuição', render: renderDistributionTab },
       { id: 'activity', label: 'Atividade', render: renderActivityTab },

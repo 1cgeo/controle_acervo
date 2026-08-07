@@ -13,6 +13,7 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     total_pontos_controle: 314,
     versoes_carregadas_mes: 27,
   })),
+  getAProduzir: vi.fn(() => Promise.resolve([])),
 }));
 
 import { renderOverviewTab, createAlertPanel } from './overview-tab.js';
@@ -80,6 +81,52 @@ describe('renderOverviewTab', () => {
 
     await aba.refresh();
     expect(acervoService.getSystemHealth.mock.calls.length).toBe(antes + 1);
+
+    aba.cleanup();
+  });
+});
+
+// A tabela "A produzir" veio da aba "Plano do Ano", que saiu em 2026-08-07. Ela
+// e a unica parte daquela aba que e assunto do ACERVO: a grade de metas, o lote
+// e o Extra-PIT tem tela propria.
+describe('renderOverviewTab: a produzir', () => {
+  test('lista a folha planejada com o atraso que o servidor calculou', async () => {
+    acervoService.getAProduzir.mockResolvedValueOnce([
+      {
+        id: 1, mi: '2758-3-NE', produto: 'Folha 2758-3-NE',
+        tipo_produto: 'Carta Ortoimagem', tipo_escala: '1:25.000',
+        meta: '1.3', lote: '2026-1a', data_prevista: '2026-12-31', dias_atraso: 0,
+      },
+      {
+        id: 2, mi: '2784-1-NO', produto: 'Folha 2784-1-NO',
+        tipo_produto: 'Carta Topográfica', tipo_escala: '1:50.000',
+        meta: null, lote: null, data_prevista: null, dias_atraso: null,
+      },
+    ]);
+
+    const container = document.createElement('div');
+    const aba = await renderOverviewTab(container);
+
+    expect(acervoService.getAProduzir).toHaveBeenCalled();
+    expect(container.textContent).toContain('A produzir');
+    expect(container.textContent).toContain('2758-3-NE');
+    expect(container.textContent).toContain('No prazo');
+    // A folha SEM data prevista grita, e nao vira um traco: ela e erro de
+    // cadastro e some do planejado do PIT sem erro nenhum.
+    expect(container.textContent).toContain('Sem data prevista');
+
+    aba.cleanup();
+  });
+
+  test('a falha do bloco nao apaga os cartoes, e nao vira "nada a produzir"', async () => {
+    acervoService.getAProduzir.mockRejectedValueOnce(new Error('sem rede'));
+
+    const container = document.createElement('div');
+    const aba = await renderOverviewTab(container);
+
+    expect(container.querySelectorAll('.stats-card')).toHaveLength(6);
+    expect(container.querySelector('.dashboard-erro')).not.toBeNull();
+    expect(container.textContent).not.toContain('Nenhuma folha planejada em aberto.');
 
     aba.cleanup();
   });
