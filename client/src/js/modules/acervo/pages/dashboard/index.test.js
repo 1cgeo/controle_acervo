@@ -129,9 +129,10 @@ describe('renderDashboard do acervo', () => {
     botoes[2].click();
     await flush();
     expect(acervoService.getProdutosTipo).toHaveBeenCalled();
-    // SEIS: GB e quantidade por tipo de arquivo viraram dois gráficos, porque
-    // duas unidades no mesmo eixo Y não se comparam.
-    expect(container.querySelectorAll('.tabs__content .chart-card')).toHaveLength(6);
+    // SETE: GB e quantidade por tipo de arquivo viraram dois gráficos (duas
+    // unidades no mesmo eixo Y não se comparam), e a situação de carregamento
+    // voltou como barra quando a carga no BDGEx passou a ser registrada.
+    expect(container.querySelectorAll('.tabs__content .chart-card')).toHaveLength(7);
 
     botoes[3].click();
     await flush();

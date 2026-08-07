@@ -53,9 +53,23 @@ export async function renderDistributionTab(container) {
     loading: true,
   });
 
+  // BARRA, e não o setor que havia antes. A sub-aba com a pizza de situação de
+  // carregamento saiu em 2026-08-07 porque os 17.499 arquivos estavam num estado
+  // só, e fatia de 100% não responde nada. No mesmo dia a carga no BDGEx passou a
+  // ser registrada e a distribuição virou 17.121 / 239 / 139: o dado voltou a
+  // valer, mas 97,8% num setor continua ilegível. Em barra, a pergunta que
+  // interessa (quanto já subiu para o BDGEx) se lê pelo eixo.
+  const barSituacao = createBarChart({
+    title: 'Arquivos por situação de carregamento',
+    xKey: 'situacao',
+    series: [{ dataKey: 'quantidade', label: 'Arquivos' }],
+    loading: true,
+  });
+
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [pieTipo, pieEscala]));
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barGbTipo, barGbArquivo]));
   container.appendChild(el('div', { className: 'dashboard-grid dashboard-grid--2col' }, [barQtdArquivo, barVolume]));
+  container.appendChild(barSituacao);
 
   // Um bloco por grafico, e nao uma carga so.
   //
@@ -110,6 +124,11 @@ export async function renderDistributionTab(container) {
         };
       }),
     },
+    {
+      card: barSituacao,
+      buscar: acervoService.getSituacaoCarregamento,
+      dados: (linhas) => linhas.map(d => ({ ...d, quantidade: Number(d.quantidade) })),
+    },
   ];
 
   async function carregarBloco(bloco) {
@@ -134,7 +153,7 @@ export async function renderDistributionTab(container) {
   return {
     cleanup: () => {
       disposed = true;
-      [pieTipo, pieEscala, barGbTipo, barGbArquivo, barQtdArquivo, barVolume].forEach(c => c._cleanup && c._cleanup());
+      [pieTipo, pieEscala, barGbTipo, barGbArquivo, barQtdArquivo, barVolume, barSituacao].forEach(c => c._cleanup && c._cleanup());
     },
     refresh: load,
   };

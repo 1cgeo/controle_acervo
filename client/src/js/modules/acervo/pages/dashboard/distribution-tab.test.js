@@ -27,6 +27,10 @@ vi.mock('@modules/acervo/services/acervo-service.js', () => ({
     { nome_volume: 'Volume 1', total_gb: '80', capacidade_gb_volume: '100' },
     { nome_volume: 'Volume 2', total_gb: '150', capacidade_gb_volume: '100' },
   ])),
+  getSituacaoCarregamento: vi.fn(() => Promise.resolve([
+    { situacao: 'Não carregado', quantidade: '17121' },
+    { situacao: 'Carregado BDGEx Ostensivo', quantidade: '239' },
+  ])),
 }));
 
 import { renderDistributionTab } from './distribution-tab.js';
@@ -43,7 +47,7 @@ describe('renderDistributionTab', () => {
     expect(acervoService.getArquivosTipoArquivo).toHaveBeenCalled();
     expect(acervoService.getGbVolume).toHaveBeenCalled();
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(7);
     expect(container.querySelectorAll('.dashboard-grid--2col')).toHaveLength(3);
 
     aba.cleanup();
@@ -66,7 +70,7 @@ describe('renderDistributionTab', () => {
     const container = document.createElement('div');
     const aba = await renderDistributionTab(container);
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(7);
     aba.cleanup();
   });
 
@@ -88,7 +92,7 @@ describe('renderDistributionTab', () => {
 // dizer "Sem dados disponíveis": a frase do acervo sem produto daquele tipo.
 // Endpoint fora do ar lia-se como acervo vazio, que é a leitura oposta.
 describe('renderDistributionTab: falha por gráfico', () => {
-  test('só o gráfico que falhou vira estado de erro; os outros cinco ficam', async () => {
+  test('só o gráfico que falhou vira estado de erro; os outros seis ficam', async () => {
     acervoService.getProdutosTipo.mockRejectedValueOnce(new Error('sem rede'));
 
     const container = document.createElement('div');
@@ -98,7 +102,7 @@ describe('renderDistributionTab: falha por gráfico', () => {
     expect(comErro).toHaveLength(1);
     expect(comErro[0].querySelector('.dashboard-erro__detalhe').textContent).toBe('sem rede');
     // Os cinco cards continuam montados: o que falhou foi a pergunta, não a aba.
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(6);
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(7);
 
     aba.cleanup();
   });
