@@ -203,8 +203,8 @@ models.produtoPedidoId = Joi.object().keys({
 
 // CORRECAO de um registro de impressao ja gravado.
 //
-// Com o consumo de papel derivado da impressao, data errada joga o gasto no mes
-// errado do RPCMTec. Sem esta rota, corrigir exigiria apagar e recriar, o que
+// A impressao herdava a data da CARGA, e a carga de um mes empilhava ali a
+// impressao de varios. Sem esta rota, corrigir exigiria apagar e recriar, o que
 // perde o registro e o rastro dele. O MOTIVO e obrigatorio: quem le o historico
 // depois precisa saber por que o numero do mes mudou.
 models.impressaoId = Joi.object().keys({

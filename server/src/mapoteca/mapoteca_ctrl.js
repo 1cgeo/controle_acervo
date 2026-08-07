@@ -1507,12 +1507,16 @@ controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
  * E consertar QUANDO, que e transcricao, e a distincao e a mesma que separa
  * `corrigirTranscricao` de uma revisao do PIT.
  *
- * POR QUE A ROTA EXISTE: com o consumo de papel derivado da impressao, data
- * errada joga o gasto no mes errado do RPCMTec. Sem ela, corrigir exigiria
- * apagar e recriar a linha, o que perde o registro e o rastro dele.
+ * POR QUE A ROTA EXISTE: a impressao herdava a data da CARGA, e a carga de um
+ * mes empilhava ali a impressao de varios. Sem ela, corrigir exigiria apagar e
+ * recriar a linha, o que perde o registro e o rastro dele.
  *
- * O MOTIVO e obrigatorio e vai para o evento: mudar quando um gasto aconteceu
- * muda o numero que o relatorio reporta naquele mes.
+ * A data continua importando depois de 2026-08-07, quando a impressao deixou de
+ * contar como consumo (ver `getConsumoMensalPorTipo`): e ela que poe cada
+ * impressao no mes certo do historico do pedido e da coluna de CONFERENCIA.
+ *
+ * O MOTIVO e obrigatorio e vai para o evento: mudar quando uma impressao
+ * aconteceu muda o numero que a tela reporta naquele mes.
  */
 controller.corrigirDataImpressao = async (id, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
@@ -2565,30 +2569,31 @@ controller.getConsumoMaterial = async (filtros = null) => {
 };
 
 /**
- * Consumo de material por mês, de DUAS fontes que se somam.
+ * Consumo de material por mês. CONSUMO É O DECLARADO, e só ele.
  *
- * Lendo só `mapoteca.consumo_material`, as subseções 7.2 e 7.3 do RPCMTec saem
- * com "Consumo no mês = 0" e etiqueta "Calculada", enquanto `impressao_item`
- * guarda o gasto real. O número não fica faltando: fica ERRADO, e a etiqueta
- * convida a acreditar nele.
+ * O consumo é o que a Seção lança na aba "Consumo de material", em
+ * `mapoteca.consumo_material`. Vale para o papel (7.2 do RPCMTec) e para a
+ * tinta (7.3), pela mesma regra: decisão do chefe em 2026-08-07.
  *
- * As duas fontes, e o que separa uma da outra:
+ * ENTRE 2026-08 E ESTA DATA o papel somava a impressão derivada da mídia, e a
+ * tinta não. Isso deu uma coluna com DOIS significados na mesma tabela, e o
+ * relatório de julho mostrou onde isso quebra: o Papel Sulfite 120g saiu com
+ * "consumo 802" ao lado de "estoque 64". Os 802 vinham de 121 itens impressos;
+ * os 64, de uma contagem digitada. Nenhum lançamento de consumo de papel
+ * existia no ano inteiro, então o estoque nunca baixou. Um número media o
+ * mundo, o outro media o cadastro, e a subtração entre eles não significava
+ * nada.
  *
- *   IMPRESSÃO   derivada. Cada exemplar impresso gasta uma folha da mídia, e a
- *               mídia aponta o papel em `tipo_material.tipo_midia_id`. Não se
- *               grava nada: o evento é a impressão, e duplicá-lo numa linha de
- *               consumo criaria duas verdades que divergem na primeira
- *               correção.
- *   DECLARADO   `consumo_material`, onde alguém lança o que a impressão não
- *               explica: a folha perdida, o material transferido e -- o caso
- *               principal -- a TROCA DE CARTUCHO. Tinta não se deriva de folha
- *               impressa, porque quanto ela gasta depende do que está
- *               desenhado. Por isso a 7.3 continua vindo só daqui, e continua
- *               zerada enquanto ninguém declarar. Ali o número está VAZIO, que
- *               é diferente de errado.
+ * A FONTE ÚNICA É O QUE TORNA A CONTA FECHÁVEL. Os gatilhos de
+ * `consumo_material` baixam `estoque_material`: lançando o consumo, o estoque
+ * acompanha, e as duas colunas da 7.2 passam a falar da mesma coisa. Derivando
+ * da impressão, o consumo andava e o estoque não.
  *
- * A mídia FORNECIDA manda sobre a pedida (`COALESCE`): quem pediu tyvek e
- * recebeu sulfite gastou sulfite, e é o estoque do sulfite que baixou.
+ * `quantidade_impressa` FICA, e não entra na conta. Ela responde outra
+ * pergunta -- quanto se imprimiu naquela mídia --, e serve de CONFERÊNCIA: o
+ * mês com muita impressão e pouco consumo declarado indica lançamento em
+ * atraso, não consumo baixo. A mídia FORNECIDA manda sobre a pedida
+ * (`COALESCE`): quem pediu tyvek e recebeu sulfite imprimiu em sulfite.
  */
 controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
   return db.conn.any(`
@@ -2623,9 +2628,10 @@ controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
       tm.id AS tipo_material_id,
       tm.nome AS tipo_material_nome,
       m.mes,
-      COALESCE(d.quantidade, 0) + COALESCE(i.quantidade, 0) AS quantidade,
-      COALESCE(i.quantidade, 0) AS quantidade_impressa,
-      COALESCE(d.quantidade, 0) AS quantidade_declarada
+      -- O CONSUMO É O DECLARADO. A quantidade impressa viaja ao lado, para a
+      -- conferência, e somá-la aqui é o que se desfez em 2026-08-07.
+      COALESCE(d.quantidade, 0) AS quantidade,
+      COALESCE(i.quantidade, 0) AS quantidade_impressa
     FROM tipos_material tm
     CROSS JOIN meses m
     LEFT JOIN declarado d

@@ -736,14 +736,19 @@ const gerarRecebimentoMaterial = async ano => {
 // que alguém cadastrar "Tinta preta 300ml": a tabela erraria de lado sem erro
 // nenhum.
 //
-// O CONSUMO DO PAPEL sai da IMPRESSÃO, somado ao que for declarado à mão. Só de
-// `mapoteca.consumo_material`, que quase ninguém preenche, a coluna sai zerada
-// mesmo havendo milhares de exemplares impressos. Ver
-// `getConsumoMensalPorTipo`, que soma as duas fontes.
+// O CONSUMO NO MÊS É O DECLARADO, nas DUAS. É o que a Seção lança na aba
+// "Consumo de material", e nada além disso. Decisão do chefe em 2026-08-07,
+// depois que a 7.2 de julho saiu com "consumo 802, estoque 64": os 802 vinham
+// da impressão, os 64 de uma contagem digitada, e nenhum consumo de papel fora
+// lançado no ano inteiro. Duas fontes na mesma linha davam duas verdades que
+// não se subtraem.
 //
-// A TINTA continua vindo só do declarado, e é deliberado: quanto de cartucho
-// uma folha gasta depende do que está desenhado nela. Zero ali quer dizer
-// "ninguém declarou troca", que é diferente de errado.
+// A FONTE ÚNICA FECHA A CONTA. Lançado o consumo, o gatilho baixa o estoque, e
+// as duas colunas passam a medir a mesma coisa. Zero aqui quer dizer "ninguém
+// lançou", que é diferente de errado, e é um zero que a Seção conserta
+// lançando. O número que a impressão sugere continua visível na tela de
+// material (`quantidade_impressa`), como CONFERÊNCIA: muita impressão com
+// pouco consumo declarado é lançamento em atraso.
 //
 // AS DUAS COLUNAS QUE PARECEM PEDIR TABELA NOVA, e não pedem:
 //
