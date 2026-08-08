@@ -1,0 +1,228 @@
+/* Estilos exclusivos do modulo EQUIPAMENTO.
+ *
+ * Tudo aqui sai dos tokens de `css/design-tokens.css`: nenhuma cor literal, e
+ * por isso os dois temas ([data-theme="dark"] e o claro) saem legiveis sem uma
+ * segunda folha. Onde o fundo e SOLIDO, o texto vem de `--text-on-primary`
+ * (branco no claro, preto no escuro), que e o token que existe justamente para
+ * escrever por cima de cor forte. */
+
+/* --------------------------------------------------------------------------
+ * A situacao, quando ela precisa GRITAR
+ *
+ * As tres situacoes brandas (Disponivel, Afastado, Em manutencao) usam as
+ * variantes esmaecidas que o sistema ja tem (`chip--success`, `chip--info`,
+ * `chip--warning`). As duas abaixo sao SOLIDAS: numa lista de 105 bens, um
+ * quarto tom pastel nao se distingue dos outros tres, e "Indisponivel" e
+ * "Baixado" sao exatamente o que se procura ao abrir a tela.
+ * -------------------------------------------------------------------------- */
+
+.chip--equip-indisponivel {
+  background: var(--color-error);
+  color: var(--text-on-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Baixado NAO e um alerta: e um bem que saiu da carga. Ele le a distancia pelo
+   contraste, e nao pelo vermelho, que ja tem dono. */
+.chip--equip-baixado {
+  background: var(--text-secondary);
+  color: var(--bg-paper);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* --------------------------------------------------------------------------
+ * A faixa de severidade da LINHA
+ *
+ * A situacao e uma coluna entre seis, e quem varre a lista procurando o que
+ * esta parado nao deveria ler coluna por coluna. A faixa na borda esquerda diz
+ * o mesmo que o chip, no canto do olho.
+ * -------------------------------------------------------------------------- */
+
+.equip-linha--indisponivel td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--color-error);
+}
+
+.equip-linha--manutencao td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--color-warning);
+}
+
+.equip-linha--baixado td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--text-disabled);
+}
+
+/* O bem baixado sai de carga: ele continua na lista (o historico e dele), mas
+   nao compete com o que ainda esta em uso. */
+.equip-linha--baixado {
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------------
+ * Numero que se le DIGITO A DIGITO
+ *
+ * `nr_patrimonio` tem 15 digitos e e comparado com o que esta colado no
+ * equipamento. Com largura proporcional os digitos desalinham entre as linhas,
+ * e conferir vira contar com o dedo na tela.
+ * -------------------------------------------------------------------------- */
+
+.equip-patrimonio {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.equip-dias {
+  font-variant-numeric: tabular-nums;
+}
+
+.equip-numero {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+ * Vida util
+ * -------------------------------------------------------------------------- */
+
+.equip-vida-util {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "do tipo": o numero nao e do bem, e sim herdado do tipo de equipamento.
+   Editar o bem e o que o torna proprio. */
+.equip-vida-util__origem {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+ * Quebras de contagem do painel (por secao, por tipo)
+ *
+ * Nao sao graficos: sao listas de rotulo e numero, com uma barra proporcional
+ * atras. Um grafico de pizza para duas secoes custaria uma biblioteca inteira
+ * para dizer "101 e 4".
+ * -------------------------------------------------------------------------- */
+
+.equip-quebra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.equip-quebra__item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-xs) var(--space-sm);
+  align-items: baseline;
+}
+
+.equip-quebra__rotulo {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equip-quebra__valor {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.equip-quebra__barra {
+  grid-column: 1 / -1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.equip-quebra__barra-preenchida {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
+  transition: width var(--transition-normal);
+}
+
+.equip-quebra__vazio {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* --------------------------------------------------------------------------
+ * O painel: as duas quebras lado a lado
+ * -------------------------------------------------------------------------- */
+
+.equip-painel__quebras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.equip-painel__quebra {
+  background: var(--bg-paper);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg);
+}
+
+.equip-painel__quebra-titulo {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-md);
+}
+
+/* O bloco "Parados ha mais tempo" e o CORACAO da tela, e o desenho diz isso:
+   borda de aviso, e nao mais um cartao branco no meio de outros. */
+.equip-parados {
+  border-left: 4px solid var(--color-error);
+  border-radius: var(--radius-md);
+  padding-left: var(--space-md);
+}
+
+.equip-parados__nota {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-sm);
+}
+
+/* --------------------------------------------------------------------------
+ * Ficha do bem
+ * -------------------------------------------------------------------------- */
+
+/* Cada historico carrega SOZINHO, e a falha de um fica na secao dele. Este e o
+   no onde o estado de erro daquela secao entra. */
+.equip-secao__corpo {
+  min-height: 0;
+}
+
+/* O titulo e a situacao na MESMA linha. `.page__title` e um <h1>, ou seja, um
+   bloco: sem o flex a situacao cairia na linha de baixo e se leria como legenda
+   de outra coisa. */
+.equip-ficha__titulo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.equip-ficha__situacao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.equip-ficha__observacao {
+  white-space: pre-wrap;
+}

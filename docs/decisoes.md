@@ -213,6 +213,11 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   esteve na Divisão em março.
 - **A 6.1 sai com TRÊS colunas, e o modelo tem duas.** A terceira é o aproveitamento. Quem cola no Word
   apaga a coluna se não quiser, o que é barato; recuperar um número que não saiu não é.
+- **O recorte mensal da 6.1 é QUALQUER dia do mês, e o da 7.1 é o ÚLTIMO dia dele.** As duas leem
+  intervalo com fim anulável e as duas sabem o ano e o mês da edição, então a diferença não aparece
+  em teste nenhum nem na tela: está registrada em "RPCMTec e relatórios", com a razão de cada uma.
+  Aqui entra quem esteve na Divisão parte do mês, com o percentual dizendo quanto; lá o documento é
+  uma fotografia do fim do mês.
 - **O impedimento se cadastra a partir do MILITAR, e não por botão geral** (chefe): o mapa já respondeu
   "de quem". A passagem tem botão geral, porque a primeira de alguém é o caso em que a pessoa ainda
   não está no mapa.
@@ -257,10 +262,12 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   são do ACERVO embora morem na seção do PIT, e a 3.3 é de PRODUÇÃO embora more na da Mapoteca.
   Recortar por seção entregaria o Extra-PIT a quem atende balcão.
   **`modulo: null` é "de módulo nenhum", e fica com o administrador**: a finalidade (1.1), o
-  desenvolvimento e a TI (5.1 e 5.2), o equipamento técnico (7.1), a divulgação (8.1 a 8.5) e as
-  lições do chefe (9.1 a 9.3). Nenhuma tem cadastro em módulo algum do SCA, e não existe módulo de TI
-  nem de comunicação social: dar dono a elas por semelhança seria conceder acesso que ninguém
-  decidiu conceder.
+  desenvolvimento e a TI (5.1 e 5.2), a divulgação (8.1 a 8.5) e as lições do chefe (9.1 a 9.3).
+  Nenhuma tem cadastro em módulo algum do SCA, e não existe módulo de TI nem de comunicação social:
+  dar dono a elas por semelhança seria conceder acesso que ninguém decidiu conceder. **A 7.1 estava
+  nesta lista e saiu em 2026-08-08**, quando o módulo `equipamento` lhe deu cadastro: era o caso que
+  o próprio parágrafo previa ("o dia em que uma ganhar cadastro, ela ganha módulo aqui, numa
+  linha"), e foi isso, uma linha.
   **São DUAS guardas encadeadas, e não uma**, porque são duas perguntas: `verifyGerente` autentica e
   pergunta "é gerente de ALGUM módulo?"; `rpcmtec/verify_modulo_subsecao.js` pergunta "é gerente
   DESTE?". Ela é middleware, e não conferência no controlador, porque o alvo está em
@@ -268,7 +275,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   apareceria em quatro métodos e a quinta rota de subseção nasceria sem ela. Ela não mora em `login/`
   porque `login/` não sabe -- e não deve saber -- que "3.3" é uma subseção.
   **Onde o recorte rende mais é na marca de CONFERÊNCIA**, que vale para as três origens e alcança os
-  34 blocos, e não só os 13 digitados: cada gerente carimba o que é da área dele, e o administrador
+  33 blocos, e não só os 12 digitados: cada gerente carimba o que é da área dele, e o administrador
   deixa de ser o único par de olhos antes da assinatura.
 - **A CAPACITAÇÃO virou DUAS rotas, `/capacitacao/ministrada` e `/capacitacao/recebida`** (1.33.0),
   e é a única parte de `/api/rpcmtec` que não é `verifyAdmin`. Ela mora ali por endereço, e não por
@@ -318,14 +325,68 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **A execução por ND do painel NÃO foi junto:** é `/api/orcamento/dashboard/execucao_nd`, com
   `verifyPerfil('consulta','orcamento')`. O painel pede números quebrados em PDR e Extra-PDR, e servir
   os dois da mesma rota faria a guarda mais fraca valer para as duas.
-- **O documento tem 33 blocos, e o SCA CALCULA 19** (2.1, 2.2, 2.4, 2.6, 2.7, 3.1 a 3.4, 4.1 a 4.7,
-  6.1, 6.2 e 7.2). Os outros 14 não se calculam: 13 são DIGITADOS e um é FIXO (a 1.1). **Do SAP vêm
-  só a 2.3 e a 2.5**, que leem a PRODUÇÃO: a 2.2 e a 2.4 viraram calculadas em 2026-08-05, e a 7.3
-  sumiu na fusão de 2026-08-08.
+- **O documento tem 33 blocos, e o SCA CALCULA 20** (2.1, 2.2, 2.4, 2.6, 2.7, 3.1 a 3.4, 4.1 a 4.7,
+  6.1, 6.2, 7.1 e 7.2). Os outros 13 não se calculam: 12 são DIGITADOS e um é FIXO (a 1.1). **Do SAP
+  vêm só a 2.3 e a 2.5**, que leem a PRODUÇÃO: a 2.2 e a 2.4 viraram calculadas em 2026-08-05, a 7.3
+  sumiu na fusão de 2026-08-08 e a 7.1 virou calculada em 2026-08-08.
   Conte em `rpcmtec_estrutura.js` (`BLOCOS`, `NUMEROS_CALCULADOS`) antes de escrever um
   número aqui: esta linha já esteve errada por omitir a 2.2 e a 2.4 e por listar uma 7.3 que morreu.
   **As três linhas de total da 2.6 não saem**: o desenhador daqui não tem rodapé de tabela, e
   emiti-las como linha comum daria um total alinhado errado.
+- **A 7.1 (Equipamento Técnico Indisponível) virou CALCULADA em 2026-08-08, e de módulo nenhum passou
+  a ser do `equipamento`.** Ela não era digitada por escolha: o material permanente da Divisão vivia
+  numa planilha, e a lista mensal de quem estava parado era transcrita a mão dentro do relatório. Com
+  o módulo `equipamento` e a tabela `equipamento.indisponibilidade`, ela sai do banco, e o número do
+  relatório deixa de poder divergir do cadastro sem nada acusar. É a mesma razão que tirou a 2.2 e a
+  2.4 do 'SAP' em 2026-08-05, e a única diferença é que ali o cadastro já existia.
+  **O cabeçalho e a grade NÃO mudaram, e não é sorte**: são os do modelo da Divisão, e o DDL foi
+  DERIVADO deles (`data_inicio`, `motivo`, `previsao_retorno` nasceram com o nome da coluna do
+  documento). Esta subseção não tem divergência deliberada nenhuma em relação ao modelo.
+  **A coluna "Equipamento" é `{modelo} (Nr Patr {nr_patrimonio})`, SEMPRE** (chefe). É literalmente a
+  fórmula que o gestor digitou a mão em 2026-08-06, para separar dois plotters idênticos. A regra
+  condicional ("põe o patrimônio só quando o modelo repetir") faria o MESMO bem sair com nome
+  diferente conforme quem mais estivesse quebrado naquele mês, e duas edições vizinhas deixariam de
+  ser comparáveis linha a linha por causa de um terceiro equipamento.
+  **O SCHEMA PREVIU ISTO, e é por isso que a virada custou uma migração de DADO e nenhuma de
+  estrutura**: `rpcmtec.subsecao.origem_id` é gravado POR LINHA, e não lido de
+  `rpcmtec_estrutura.js` na hora de desenhar. Uma subseção pode GRADUAR de digitada para calculada, e
+  a edição fechada antes continua sendo o que foi -- o congelado tem de dizer o que o PDF assinado
+  diz. A mesma coluna é o que torna seguro apagar o digitado órfão sem tocar em edição fechada.
+  **A ORDEM DERRUBA O BOOT SE INVERTIDA**: todo `modulo` não-nulo de `rpcmtec_estrutura.js` tem de
+  existir no mapa `MODULO` de `login/verify_perfil.js`, e `rpcmtec/verify_modulo_subsecao.js` confere
+  isso no `require`, e não na primeira requisição. `'equipamento'` só pôde entrar na estrutura depois
+  de `equipamento: 6` entrar no mapa e de `(6, 'Equipamento', 'equipamento')` entrar em
+  `dominio.modulo` (1.46.0).
+- **O RECORTE DA 7.1 É O ÚLTIMO DIA DO MÊS, e DIVERGE do da 6.1, que recorta por qualquer dia dele**
+  (chefe, 2026-08-08). São `data_inicio <= <último dia> AND (data_fim IS NULL OR data_fim >= <último
+  dia>)`. A pergunta que a 7.1 responde é "o que ESTAVA parado quando o mês fechou": o documento é
+  uma fotografia do fim do mês, e é assim que o gestor a digitava. A 6.1 pergunta outra coisa, "quem
+  esteve na Divisão neste mês, e quanto rendeu", e por isso aceita quem passou parte do mês, com o
+  percentual dizendo quanto.
+  **A CONSEQUÊNCIA, para ninguém a descobrir como defeito: um equipamento parado do dia 2 ao dia 20
+  NÃO sai no relatório daquele mês.** Ele existiu, foi consertado dentro do mês, e a fotografia do
+  dia 31 não o mostra.
+  **Está registrado porque duas subseções recortando o MESMO FORMATO de dado de jeitos diferentes é
+  armadilha**, e a única defesa é o registro: as duas leem intervalo com fim anulável, as duas
+  sabem o ano e o mês da edição, e a diferença não aparece em teste nenhum nem na tela. Nas duas,
+  **quem recorta é a CONSULTA, e não um filtro no montador**: filtro no montador traz do banco linha
+  que ninguém vai imprimir, e a próxima pessoa que usar a função acha que ela devolve tudo.
+- **O digitado que sobrou nas subseções que VIRARAM calculadas foi APAGADO, com evento `D`**
+  (`2026-08-08_a_71_calculada.sql`, 1.47.0): as 12 linhas da 7.1 de julho/2026, as 6 marcações de
+  `sem_ocorrencia` de janeiro a junho, e as 203 células órfãs da 2.2 (8) e da 2.4 (195), estas
+  desde 2026-08-05. **Deixar não era neutro**, e o preço tinha três tempos: em edição ABERTA o
+  montador toma o ramo calculado e nunca lê a linha gravada, que fica dizendo uma coisa enquanto a
+  tela mostra outra; no FECHAMENTO o `ON CONFLICT ... DO UPDATE` a sobrescreve **sem rastro
+  próprio**, porque o `fechar` audita a EDIÇÃO e não cada subseção; e numa REABERTURA o
+  `DELETE ... WHERE origem_id <> DIGITADA` a apaga de vez. Não era hipótese: era o que já acontecia
+  com as 203 células. **Pelo precedente da 1.44.0, o DELETE é o único passo de migração que escreve
+  em `auditoria.evento`** -- cada linha vira um evento `D` com `dados_antes` inteiro, `origem =
+  'migracao'` e usuário nulo, e desfazer é ler o JSON de volta. **A edição FECHADA não é tocada**,
+  por duas condições que guardam a mesma coisa por caminhos diferentes: `data_fechamento IS NULL` e
+  `origem_id = 2`. **Janeiro a junho de 2026 deixam de sair "sem ocorrência" e passam a listar dez a
+  doze equipamentos, e é o comportamento certo**: aquelas marcações afirmavam que não havia
+  equipamento parado, e havia -- as indisponibilidades do DMT começam em 2019 e nenhuma tinha data
+  de fim. O relatório dizia "não houve" onde o certo era "ninguém transcreveu".
 - **O DOCX copia a FORMATAÇÃO do documento da Divisão, medida no OOXML.** As constantes de
   `rpcmtec_docx.js` são valores LIDOS do documento real, porque cada tabela tem de ser colável na
   subseção de mesmo número sem ninguém reformatar. Só saem as subseções preenchidas INTEIRAS, e o que

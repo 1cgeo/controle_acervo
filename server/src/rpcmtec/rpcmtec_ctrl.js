@@ -12,12 +12,18 @@
 // o calculado com o que o gestor digitou é `rpcmtec_edicao_ctrl.js`.
 //
 // AS VINTE QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a fonte
-// de cada uma ao lado. As dez restantes são digitadas na própria tela.
+// de cada uma ao lado. Das treze restantes, doze são digitadas na própria tela e
+// uma é texto fixo (a 1.1).
 //
 // A 2.2 e a 2.4 entraram em 2026-08-05: elas reportam a produção do mês, que o
 // acervo sabe contar, e estavam digitadas com fonte 'SAP' sem precisar. A 2.3
 // (lote) e a 2.5 (campo) continuam digitadas, e a diferença é real: aquelas duas
 // são do SAP e não têm entidade no SCA que as prove.
+//
+// A 7.1 entrou em 2026-08-08, quando o módulo `equipamento` deu cadastro ao que
+// ela sempre descreveu. Enquanto foi digitada, a lista de equipamento parado era
+// transcrita de uma planilha e podia divergir do cadastro em silêncio -- e não
+// havia cadastro nenhum de que divergir.
 //
 // A 2.1 sai INTEIRA daqui, inclusive as metas de produção, que hoje só têm
 // número se alguém lançar à mão. Uma tabela montada metade de um sistema e
@@ -495,16 +501,25 @@ const montarLai = ({ pedidosMes }) =>
 // 4.1 a 4.7 - orçamento
 // ---------------------------------------------------------------------------
 
-// Primeiro e último dia do recorte, em ISO 'YYYY-MM-DD', montados a partir dos
-// componentes numéricos (sem objeto Date) para não escorregar de fuso. O
-// RPCMTec do orçamento é sempre ACUMULADO no ano até o mês de corte: a pergunta
-// é "quanto do crédito do ano já foi executado", e não "quanto se moveu em
-// julho".
-const recorteDoAno = (ano, mes) => {
-  const ultimoDia = new Date(ano, mes, 0).getDate()
+// O último dia do mês da edição, em ISO 'AAAA-MM-DD', montado a partir dos
+// componentes numéricos (sem objeto Date na saída) para não escorregar de fuso.
+//
+// DOIS LEITORES, e por isso ele tem nome: o `cutoff` do orçamento, logo abaixo,
+// e o recorte da 7.1. Duas cópias da mesma aritmética de calendário divergem na
+// primeira correção aplicada a uma só.
+const ultimoDiaDoMes = (ano, mes) => {
+  const dia = new Date(ano, mes, 0).getDate()
   const dois = n => String(n).padStart(2, '0')
-  return { inicio: `${ano}-01-01`, cutoff: `${ano}-${dois(mes)}-${dois(ultimoDia)}` }
+  return `${ano}-${dois(mes)}-${dois(dia)}`
 }
+
+// Primeiro e último dia do recorte. O RPCMTec do orçamento é sempre ACUMULADO no
+// ano até o mês de corte: a pergunta é "quanto do crédito do ano já foi
+// executado", e não "quanto se moveu em julho".
+const recorteDoAno = (ano, mes) => ({
+  inicio: `${ano}-01-01`,
+  cutoff: ultimoDiaDoMes(ano, mes)
+})
 
 // 4.1: uma linha por natureza de despesa do domínio, na ordem do código.
 //
@@ -724,6 +739,77 @@ const gerarRecebimentoMaterial = async ano => {
     texto(l.situacao)
   ])
 }
+
+// ---------------------------------------------------------------------------
+// 7.1 - equipamento técnico indisponível
+// ---------------------------------------------------------------------------
+
+// CALCULADA desde 2026-08-08. Ela era digitada, e não por escolha: o material
+// permanente da Divisão vivia numa planilha, e a lista de quem estava parado era
+// transcrita a mão dentro do relatório. Com `equipamento.indisponibilidade` ela
+// sai do banco, como a 2.2 e a 2.4 saíram do 'SAP' em 2026-08-05.
+//
+// O RECORTE É O ÚLTIMO DIA DO MÊS, por decisão do chefe:
+//
+//   data_inicio <= <último dia> AND (data_fim IS NULL OR data_fim >= <último dia>)
+//
+// A pergunta que a 7.1 responde é "o que ESTAVA parado quando o mês fechou", e
+// não "o que esteve parado em algum momento dele". O documento é uma fotografia
+// do fim do mês, e é assim que o gestor a digitava.
+//
+// ISSO DIVERGE DA 6.1, E A DIVERGÊNCIA É DELIBERADA. A 6.1 recorta o mesmo
+// FORMATO de dado (`dgeo.efetivo_periodo`, intervalo com fim anulável) por
+// QUALQUER dia do mês: quem esteve na Divisão parte do mês entra, com o
+// percentual dizendo quanto. Aqui não: quem se resolveu antes do último dia não
+// aparece. Duas subseções recortando intervalo de jeitos diferentes é armadilha,
+// e a única defesa é o registro -- está aqui, em `rpcmtec_estrutura.js` e em
+// `docs/decisoes.md`.
+//
+// A CONSEQUÊNCIA, escrita para ninguém a descobrir como defeito: um equipamento
+// parado do dia 2 ao dia 20 NÃO sai no relatório daquele mês. Ele existiu, foi
+// consertado dentro do mês, e a fotografia do dia 31 não o mostra.
+//
+// QUEM RECORTA É A CONSULTA, e não um filtro no montador. É a mesma escolha da
+// 6.1: filtro no montador traz do banco linha que ninguém vai imprimir, e a
+// próxima pessoa que usar a função acha que ela devolve tudo.
+const buscarEquipamentoIndisponivel = async ({ ano, mes }) => {
+  return db.conn.any(
+    `SELECT e.modelo,
+            e.nr_patrimonio,
+            i.data_inicio::text AS data_inicio,
+            i.motivo,
+            i.previsao_retorno::text AS previsao_retorno
+     FROM equipamento.indisponibilidade AS i
+     INNER JOIN equipamento.equipamento AS e ON e.id = i.equipamento_id
+     WHERE i.data_inicio <= $<ultimoDia>::date
+       AND (i.data_fim IS NULL OR i.data_fim >= $<ultimoDia>::date)
+     ORDER BY i.data_inicio, e.nr_patrimonio`,
+    { ultimoDia: ultimoDiaDoMes(ano, mes) }
+  )
+}
+
+// A COLUNA "Equipamento" É `{modelo} (Nr Patr {nr_patrimonio})`, SEMPRE, e é
+// literalmente a fórmula que o gestor digitou a mão em 2026-08-06 para separar
+// dois plotters idênticos na edição de julho.
+//
+// SEMPRE, E NÃO SÓ QUANDO HOUVER HOMÔNIMO. A regra condicional ("põe o
+// patrimônio quando o modelo repetir") faria o MESMO bem sair com nome diferente
+// conforme quem mais estivesse quebrado naquele mês, e duas edições vizinhas
+// deixariam de ser comparáveis linha a linha por causa de um terceiro
+// equipamento.
+//
+// As datas saem do `formatDia`, que fatia a string 'AAAA-MM-DD' em vez de passar
+// por `new Date()`: só-data parseada assim vira meia-noite UTC, e em UTC-3 o dia
+// vira o anterior.
+const montarEquipamentoIndisponivel = ({ indisponibilidades }) =>
+  indisponibilidades.map(i => [
+    `${i.modelo} (Nr Patr ${i.nr_patrimonio})`,
+    formatDia(i.data_inicio),
+    texto(i.motivo),
+    // '-' quando não há previsão, que é como o modelo escreve "não há". A
+    // ausência de previsão é informação, e não célula por preencher.
+    texto(formatDia(i.previsao_retorno))
+  ])
 
 // ---------------------------------------------------------------------------
 // 7.2 - insumos de impressão
@@ -1145,7 +1231,8 @@ controller.calcular = async ({ ano, mes }) => {
     creditosExtraPdr,
     efetivo,
     capacitacaoRecebida,
-    estoqueAnterior
+    estoqueAnterior,
+    equipamentoIndisponivel
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
     // A 2.2 e a 2.4 saem do ACERVO desde 2026-08-05, e nao mais do SAP: as duas
@@ -1181,7 +1268,11 @@ controller.calcular = async ({ ano, mes }) => {
     // O estoque que a edição FECHADA do mês anterior reportou. É a única fonte
     // possível: `mapoteca.estoque_material` guarda o saldo de hoje, e o de maio
     // não existe mais lá.
-    buscarEstoqueDoMesAnterior({ ano, mes })
+    buscarEstoqueDoMesAnterior({ ano, mes }),
+    // A 7.1 sai do banco desde 2026-08-08. O recorte é o ÚLTIMO DIA DO MÊS, e
+    // ele mora na consulta: ver o comentário dela, com a divergência deliberada
+    // em relação à 6.1.
+    buscarEquipamentoIndisponivel({ ano, mes })
   ])
 
   // A janela de doze meses do `projetarFalta` atravessa a virada do ano, então
@@ -1215,6 +1306,11 @@ controller.calcular = async ({ ano, mes }) => {
     '4.7': creditosExtraPdr,
     '6.1': montarAproveitamento({ efetivo }),
     '6.2': montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida }),
+    // CALCULADA desde 2026-08-08, e digitada até ali. O recorte é o último dia
+    // do mês, e ele diverge do da 6.1 de propósito.
+    '7.1': montarEquipamentoIndisponivel({
+      indisponibilidades: equipamentoIndisponivel
+    }),
     // UMA tabela de insumos desde 2026-08-08, com papel e tinta juntos. NÃO
     // EXISTE MAIS a '7.3': o chefe fundiu as duas e nada foi renumerado.
     '7.2': montarInsumos({ tiposMaterial, consumoJanela, mes, ano, estoqueAnterior })

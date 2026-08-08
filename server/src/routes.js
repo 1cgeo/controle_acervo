@@ -22,6 +22,7 @@ const { limitesRoute } = require("./limites");
 const { pitRoute } = require("./pit");
 const { efetivoRoute } = require("./efetivo");
 const { auditoriaRoute } = require("./auditoria");
+const { equipamentoRoute } = require("./equipamento");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
@@ -112,6 +113,17 @@ router.use("/limites", limitesRoute);
 router.use("/mapoteca/dashboard", mapotecaDashboardRoute);
 
 router.use("/mapoteca", mapotecaRoute);
+
+// Módulo equipamento: o parque de material da Divisão (estação total, GNSS,
+// plotter, drone), a situação de cada bem hoje e o Relatório DMT. Módulo de
+// autorização próprio, com prefixo próprio: quem atende a mapoteca não precisa
+// mexer na carga de patrimônio.
+//
+// SEM sub-rota montada antes dele (como `/mapoteca/dashboard` exige): o painel e
+// o relatório são caminhos DENTRO do mesmo router, e a ordem que importa está
+// declarada em `equipamento/equipamento_route.js` -- toda rota literal antes de
+// `/:id`.
+router.use("/equipamento", equipamentoRoute);
 
 // Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
 router.use("/integracao", integracaoRoute);

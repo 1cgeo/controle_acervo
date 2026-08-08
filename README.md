@@ -2,7 +2,7 @@
 
 Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográfico do Exército Brasileiro (DSG/1CGEO). Gerencia produtos geográficos versionados (cartas, ortoimagens, modelos digitais de elevação), seus arquivos, volumes de armazenamento, a mapoteca física e o controle orçamentário da divisão.
 
-São **cinco módulos de autorização na mesma plataforma**, com um servidor, um banco e uma interface web: `acervo`, `mapoteca` e `orcamento`, que têm tela própria e prefixo de rota, mais `producao` e `efetivo`, que nasceram na 1.33.0 e guardam telas de PLATAFORMA (a execução do PIT, o Extra-PIT, a capacitação e o aproveitamento do efetivo), para haver como dar menos que a flag global nesse trabalho.
+São **seis módulos de autorização na mesma plataforma**, com um servidor, um banco e uma interface web: `acervo`, `mapoteca`, `orcamento` e `equipamento`, que têm tela própria e prefixo de rota, mais `producao` e `efetivo`, que nasceram na 1.33.0 e guardam telas de PLATAFORMA (a execução do PIT, o Extra-PIT, a capacitação e o aproveitamento do efetivo), para haver como dar menos que a flag global nesse trabalho. O `equipamento` nasceu na 1.46.0 e traz para o sistema o material permanente da Divisão, que vivia numa planilha (o Relatório DMT).
 
 A **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. Não há serviço de autenticação externo, e por isso não há um segundo serviço a subir para alguém conseguir entrar.
 
@@ -93,7 +93,7 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 
 Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 
-**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. São **cinco** módulos desde a 1.33.0: acervo, mapoteca, orçamento, **produção** e **efetivo**. Os dois últimos nasceram para haver como dar menos que a flag global no trabalho de produção e de pessoal, e guardam rotas que são de PLATAFORMA no endereço (`/api/metas/execucao`, `/api/metas/extra`, `/api/rpcmtec/capacitacao/*`, `/api/efetivo/*`). Antes deles a única guarda disponível ali era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). As outras guardas de plataforma continuam: `verifyAdmin` (usuários, edição do RPCMTec, views materializadas, limpeza de download, meta e revisão do PIT), `verifyGerente` (a grade de execução do PIT), `verifyAcesso` (leitura de meta e de Extra-PIT: exige perfil em ALGUM módulo, sem exigir um módulo específico) e `verifyLogin` (o próprio cadastro e a própria senha). A diferença entre as duas últimas é a conta recém-criada, que ainda não recebeu perfil nenhum: ela alcança a própria página e nada mais. Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
+**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. São **seis**: acervo, mapoteca, orçamento, **produção** e **efetivo** desde a 1.33.0, e **equipamento** desde a 1.46.0. Os dois últimos nasceram para haver como dar menos que a flag global no trabalho de produção e de pessoal, e guardam rotas que são de PLATAFORMA no endereço (`/api/metas/execucao`, `/api/metas/extra`, `/api/rpcmtec/capacitacao/*`, `/api/efetivo/*`). Antes deles a única guarda disponível ali era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). As outras guardas de plataforma continuam: `verifyAdmin` (usuários, edição do RPCMTec, views materializadas, limpeza de download, meta e revisão do PIT), `verifyGerente` (a grade de execução do PIT), `verifyAcesso` (leitura de meta e de Extra-PIT: exige perfil em ALGUM módulo, sem exigir um módulo específico) e `verifyLogin` (o próprio cadastro e a própria senha). A diferença entre as duas últimas é a conta recém-criada, que ainda não recebeu perfil nenhum: ela alcança a própria página e nada mais. Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
@@ -125,6 +125,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/orcamento/rpnp` | orcamento | Restos a pagar não processados |
 | `/api/orcamento/dashboard` | orcamento | Execução por ND para as abas do painel (números por PDR/Extra-PDR, com linha de total) |
 | `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
+| `/api/equipamento` | equipamento | O material permanente da Divisão (Classe VI e IX): o bem, os tipos, a indisponibilidade, o afastamento, a manutenção, a transferência e o painel. A **situação do bem não é campo**: ela vem de `equipamento.situacao_em(dia)` e sai resolvida na leitura. Ler é de **consulta**, lançar evento é de **operador**, e cadastrar bem ou transferência é de **gerente**. `/relatorio/dmt_ods` responde binário, e é a única rota do módulo que não sai por `sendJsonAndLog` |
 | `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet). O `POST /acervo/situacao_geral` é POST pelo tamanho da geometria no corpo, e não por mutar estado |
 
 O acervo também se **escreve pela interface web**: produto, versão e relacionamento. A geometria do
@@ -249,6 +250,7 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência, Consumo e Contagem) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita desde a 1.41.0) |
 | `orcamento` | 11 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo. Não há `configuracao`: ela foi podada na 1.34.0 |
+| `equipamento` | O material permanente: `equipamento` (o bem), `tipo_equipamento` (CADASTRO, não domínio: tipo novo entra pela tela), `indisponibilidade` e `afastamento` (INTERVALOS, com `EXCLUDE USING gist` como `dgeo.efetivo_periodo`), `manutencao`, `transferencia` e cinco tabelas de domínio. Não há coluna de situação: quem a responde é a função `situacao_em(dia)`, que recebe o dia e não olha para hoje |
 | `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o planejado e o realizado de cada mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
 | `rpcmtec` | `edicao` (o metadado da edição mensal), `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
 | `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
@@ -259,9 +261,9 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 
 ### Instalação nova
 
-Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `auditoria`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
+Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `auditoria`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `equipamento`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
 
-A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam, e depois de `dominio`, de onde saiu `situacao_extra_pit`; `rpcmtec` é o último dos schemas porque referencia `dgeo` e `dominio`.
+A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam, e depois de `dominio`, de onde saiu `situacao_extra_pit`; `equipamento` vem depois de `dgeo`, de onde sai a extensão `btree_gist` que o `EXCLUDE` das tabelas de intervalo exige, e não referencia módulo nenhum; `rpcmtec` é o último dos schemas porque referencia `dgeo` e `dominio`.
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 

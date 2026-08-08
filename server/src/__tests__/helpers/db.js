@@ -60,6 +60,15 @@ const hashesDaSemente = () => {
  * CASCADE alcanca quem referencia e nao esta na lista. A ordem reversa que este
  * arquivo mantinha existia porque os comandos eram separados.
  *
+ * `equipamento.tipo_equipamento` ENTRA, e ela e SEMEADA pelo `er/equipamento.sql`
+ * com os 9 tipos do QDMP. E deliberado, e tem consequencia: depois do primeiro
+ * `cleanTestData` os 9 nao estao mais la, e todo teste que precise de um tipo
+ * cria o dele. A alternativa -- deixa-la de fora, como `pit.exercicio` e
+ * `acervo.volume_armazenamento` -- daria o defeito oposto: um teste que cadastre
+ * tipo novo (a tela de cadastro existe, e e de operador) deixaria a linha para
+ * tras, e a contagem de tipos do painel passaria a depender da ordem dos
+ * arquivos. Semente que a APLICACAO edita nao e semente.
+ *
  * NAO ENTRAM aqui, e cada uma por um motivo:
  *   - as tabelas de dominio, que sao carga do `er/`;
  *   - `orcamento.configuracao`, singleton criada pelo `er/orcamento.sql`;
@@ -78,6 +87,9 @@ const TABELAS_DO_CLEAN = `
   mapoteca.impressao_item, mapoteca.movimento_material, mapoteca.estoque_material,
   mapoteca.manutencao_plotter, mapoteca.produto_pedido, mapoteca.pedido,
   mapoteca.plotter, mapoteca.cliente, mapoteca.tipo_material,
+  equipamento.transferencia, equipamento.manutencao, equipamento.afastamento,
+  equipamento.indisponibilidade, equipamento.equipamento,
+  equipamento.tipo_equipamento,
   ponto_controle.upload_arquivo_temp, ponto_controle.upload_ponto_temp,
   ponto_controle.upload_session, ponto_controle.arquivo, ponto_controle.ponto,
   acervo.upload_session, acervo.download_deletado, acervo.download,

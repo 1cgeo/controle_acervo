@@ -16,6 +16,7 @@ function logar({ administrador = true, perfis = {} } = {}) {
       { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
       { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
       { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
+      { code: 6, nome: 'Equipamento', nome_abrev: 'equipamento' },
     ],
   }, 'diniz');
 }
@@ -49,10 +50,10 @@ describe('createMainLayout', () => {
 
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
-    // A troca de modulo mora na sidebar, uma seção por modulo. São CINCO
-    // seções: os três módulos, mais Produção e Efetivo, que se desenham como
+    // A troca de modulo mora na sidebar, uma seção por modulo. São SEIS
+    // seções: os quatro módulos, mais Produção e Efetivo, que se desenham como
     // sistema sem ser módulo (ver sidebar.js).
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(6);
   });
 
   test('o nome do modulo vem do catalogo do servidor, nao decorado na tela', () => {
@@ -61,10 +62,12 @@ describe('createMainLayout', () => {
 
     const rotulos = [...ctrl.layout.querySelectorAll('.sidebar__module-header .sidebar__item-label')]
       .map(e => e.textContent);
-    // Os três primeiros são MÓDULOS, e o nome de cada um sai de `dominio.modulo`
-    // (auth-store.nomeModulo): trocar o nome no banco troca o menu, sem deploy.
-    expect(rotulos.slice(0, 3)).toEqual([
-      'Acervo', 'Mapoteca', 'Orçamento',
+    // Os quatro primeiros são MÓDULOS, e o nome de cada um sai de
+    // `dominio.modulo` (auth-store.nomeModulo): trocar o nome no banco troca o
+    // menu, sem deploy. O manifesto do equipamento NÃO carrega rótulo nenhum, e
+    // por isso "Equipamento" aqui é o `nome` do catálogo, e não o `id`.
+    expect(rotulos.slice(0, 4)).toEqual([
+      'Acervo', 'Mapoteca', 'Orçamento', 'Equipamento',
     ]);
     // "PIT" e "Efetivo" são a exceção, e são declarados na tela porque NÃO são
     // módulos: não estão em `dominio.modulo` e não entram no registry.
@@ -72,7 +75,7 @@ describe('createMainLayout', () => {
     // O rótulo "PIT" não é o nome do módulo: o módulo de permissão da seção é
     // 'producao', `dominio.modulo` code 4, e continua se chamando Produção no
     // banco. Só o menu fala do conteúdo das telas.
-    expect(rotulos.slice(3)).toEqual(['PIT', 'Efetivo']);
+    expect(rotulos.slice(4)).toEqual(['PIT', 'Efetivo']);
   });
 
   test('mudar o hash sincroniza o modulo aberto e o item ativo', () => {
@@ -94,8 +97,8 @@ describe('createMainLayout', () => {
     location.hash = '#/usuarios';
     window.dispatchEvent(new Event('hashchange'));
 
-    // Rota de plataforma não apaga o menu do módulo: as cinco seções ficam.
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(5);
+    // Rota de plataforma não apaga o menu do módulo: as seis seções ficam.
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(6);
     expect(ctrl.layout.querySelector('[data-id="acervo:dashboard"]')).not.toBeNull();
     expect(ctrl.layout.querySelector('[data-id="usuarios"]')
       .classList.contains('sidebar__item--active')).toBe(true);

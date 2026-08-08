@@ -40,7 +40,11 @@ const SEM_PAINEL_JUSTIFICADO = {
   // `orcamento.configuracao` e os domínios editáveis do orçamento vivem numa
   // tela de configuração que é uma lista de campos, e não uma ficha por
   // registro. O histórico deles se lê pela varredura, filtrando por entidade.
-  dominio: 'Tabela de domínio editável, sem ficha por registro'
+  dominio: 'Tabela de domínio editável, sem ficha por registro',
+  // `equipamento.tipo_equipamento` pela mesma razão do `dominio` acima: a tela
+  // de Tipos é uma LISTA com diálogo (`pages/tipos/list.js` e `tipo-dialog.js`),
+  // e não há ficha de um tipo para abrir. Quem tem ficha, e painel, é o BEM.
+  tipo_equipamento: 'Tabela de domínio editável, sem ficha por registro'
 }
 
 // DÍVIDA DECLARADA, que é coisa diferente de exceção: aqui o painel FALTA, e há
@@ -163,7 +167,7 @@ describe('A entrega do rastro', () => {
   // exceção vira regra. Entrada nova aqui derruba o caso e obriga a decisão.
   test('as listas de exceção e de dívida não crescem sem decisão', () => {
     expect(Object.keys(SEM_PAINEL_JUSTIFICADO).sort())
-      .toEqual(['dominio', 'manutencao'])
+      .toEqual(['dominio', 'manutencao', 'tipo_equipamento'])
 
     for (const motivo of Object.values(SEM_PAINEL_JUSTIFICADO)) {
       expect(motivo.length).toBeGreaterThan(20)

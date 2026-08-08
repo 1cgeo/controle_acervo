@@ -42,6 +42,15 @@
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA orcamento TO $1:name;
   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA orcamento TO $1:name;
 
+  -- `equipamento` guarda o material permanente da Divisao. O EXECUTE nao e
+  -- formalidade: `equipamento.situacao_em(dia)` e quem responde a situacao de
+  -- cada bem, que nao esta gravada em coluna nenhuma. Sem ele, a lista de bens e
+  -- o painel sobem sem situacao e a subsecao 7.1 do RPCMTec nao sai.
+  GRANT USAGE ON SCHEMA equipamento TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA equipamento TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA equipamento TO $1:name;
+  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA equipamento TO $1:name;
+
   -- `rpcmtec` guarda a edicao mensal do relatorio da Divisao. CRUD porque a
   -- edicao se cria, se assina e se corrige pela tela.
   GRANT USAGE ON SCHEMA rpcmtec TO $1:name;

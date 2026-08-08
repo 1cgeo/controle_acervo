@@ -169,8 +169,28 @@ dotenv.config({
 // duas colunas ainda estão nos SELECT. `MIN_DATABASE_VERSION` só cobra "o banco
 // é novo o bastante para ESTE código", e não o oposto; quem casa o outro lado é
 // implantar o servidor junto com a migração, que é como o serviço sobe.
+// A 1.46.0 SOBE O PISO, e é o caso simples da regra: ela ACRESCENTA um schema
+// inteiro. `equipamento` nasce com seis tabelas de dado (`tipo_equipamento`,
+// `equipamento`, `indisponibilidade`, `afastamento`, `manutencao`,
+// `transferencia`), cinco de domínio e a função `equipamento.situacao_em(dia)`,
+// e este código LÊ as doze em toda tela do módulo novo.
+//
+// Num banco 1.45.0 nada disso existe: a primeira requisição a `/api/equipamento`
+// falharia com "relação equipamento.equipamento não existe", e o painel, a ficha
+// do bem e o Relatório DMT quebrariam na abertura, não numa borda rara.
+//
+// E há a metade que quebra CALADO, que é a que obriga o piso: a 1.46.0 também
+// acrescenta a linha 6 em `dominio.modulo`. Sem ela, a chave estrangeira
+// `dgeo.usuario_perfil.modulo_id` recusa toda concessão de perfil no módulo, e
+// ninguém além do administrador global alcança as telas. O sistema subiria, a
+// tela de usuários mostraria cinco colunas em vez de seis, e o chefe concluiria
+// que a permissão nova não funciona. É exatamente o que aconteceu na 1.33.0, com
+// produção e efetivo, e o piso é o que impede que se repita.
+//
+// O piso pula da 1.43.0 direto para a 1.46.0: as 1.44.0 e 1.45.0 no meio do
+// caminho não subiam (poda da grade do PIT e o livro de movimentos do material).
 const VERSION = '1.38.0'
-const MIN_DATABASE_VERSION = '1.43.0'
+const MIN_DATABASE_VERSION = '1.46.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

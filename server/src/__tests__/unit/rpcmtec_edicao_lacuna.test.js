@@ -22,7 +22,8 @@ jest.mock('../../database', () => ({
 }))
 
 // O gerador inteiro fica de fora: aqui se testa o que a MONTAGEM faz com o que
-// ele devolve, e o `calcular` de verdade cruza dezenove consultas.
+// ele devolve, e o `calcular` de verdade cruza vinte consultas (a vigésima é a
+// 7.1, calculada desde 2026-08-08).
 jest.mock('../../rpcmtec/rpcmtec_ctrl', () => ({ calcular: jest.fn() }))
 
 const rpcmtecCtrl = require('../../rpcmtec/rpcmtec_ctrl')

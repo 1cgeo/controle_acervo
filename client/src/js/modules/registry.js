@@ -32,9 +32,15 @@ import { temAcessoModulo, temPerfil, ehDeAlgumPerfil, isAdmin } from '@store/aut
 import acervo from './acervo/index.js';
 import mapoteca from './mapoteca/index.js';
 import orcamento from './orcamento/index.js';
+import equipamento from './equipamento/index.js';
 
 // A ordem desta lista e a ordem do seletor e a ordem de desempate da rota raiz.
-export const MODULOS = [acervo, mapoteca, orcamento];
+//
+// EQUIPAMENTO entra por ULTIMO, e a ordem importa: quem tem perfil em mais de um
+// modulo entra pelo PRIMEIRO da lista, e mudar a posicao mudaria a porta de
+// entrada de quem ja trabalha aqui. O modulo e novo, e nenhum lugar do sistema
+// prometeu que ele seria a tela de abertura de alguem.
+export const MODULOS = [acervo, mapoteca, orcamento, equipamento];
 
 /**
  * Manifesto de um modulo pelo id.

@@ -115,11 +115,14 @@
 const acervo = require('./acervo')
 const mapoteca = require('./mapoteca')
 const orcamento = require('./orcamento')
+const equipamento = require('./equipamento')
 const plataforma = require('./plataforma')
 
-const MODULOS_VALIDOS = new Set(['acervo', 'mapoteca', 'orcamento', 'plataforma'])
+const MODULOS_VALIDOS = new Set([
+  'acervo', 'mapoteca', 'orcamento', 'equipamento', 'plataforma'
+])
 
-const mapa = { ...acervo, ...mapoteca, ...orcamento, ...plataforma }
+const mapa = { ...acervo, ...mapoteca, ...orcamento, ...equipamento, ...plataforma }
 
 // Conferencia no CARREGAMENTO do modulo, e nao na primeira escrita: entrada mal
 // formada derruba o boot com a mensagem certa, em vez de derrubar uma transacao

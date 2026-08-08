@@ -137,6 +137,11 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admi
     await t.none(readSqlFile('./er/acompanhamento.sql'));
     await t.none(readSqlFile('./er/mapoteca.sql'));
     await t.none(readSqlFile('./er/orcamento.sql'));
+    // Depois de dgeo, de onde vem a extensao btree_gist que o EXCLUDE das
+    // tabelas de intervalo exige, e depois de dominio, que traz a linha do
+    // modulo `equipamento`. Nao depende dos outros modulos: nenhuma chave
+    // estrangeira sai dele para acervo, mapoteca, orcamento ou pit.
+    await t.none(readSqlFile('./er/equipamento.sql'));
     // Depois de dgeo e de dominio, que a edicao referencia. O RPCMTec e da
     // Divisao inteira e nao depende dos tres modulos: ele os CONSULTA em tempo
     // de geracao, sem chave estrangeira para eles.

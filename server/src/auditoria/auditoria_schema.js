@@ -7,7 +7,7 @@ const models = {}
 // Os modulos que a rota aceita. 'plataforma' entra porque usuario, perfil, meta
 // do PIT e edicao do RPCMTec nao sao de modulo nenhum, e e la que moram os
 // eventos mais sensiveis do sistema.
-const MODULOS = ['acervo', 'mapoteca', 'orcamento', 'plataforma']
+const MODULOS = ['acervo', 'mapoteca', 'orcamento', 'equipamento', 'plataforma']
 
 models.historicoParams = Joi.object().keys({
   modulo: Joi.string().valid(...MODULOS).required(),

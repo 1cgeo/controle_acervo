@@ -136,7 +136,12 @@ const SUBSECOES = [
   ['2.7', 'acervo'],
   ['3.1', 'mapoteca'],
   ['4.2', 'orcamento'],
-  ['6.1', 'efetivo']
+  ['6.1', 'efetivo'],
+  // A 7.1 entrou em 2026-08-08, com o módulo `equipamento`. Ela era de módulo
+  // NENHUM (e estava na lista `SEM_MODULO` lá embaixo) até o material permanente
+  // da Divisão ganhar cadastro. Sem esta linha o módulo mais novo seria o único
+  // sem prova de que o mapa o alcança.
+  ['7.1', 'equipamento']
 ]
 
 // As três rotas que mudam UMA subseção pelo `:numero` do caminho. A quarta (a
@@ -207,10 +212,14 @@ describe.each(SUBSECOES)('A subseção %s, do módulo %s', (numero, modulo) => {
   )
 })
 
-// As de módulo nenhum: a finalidade, o desenvolvimento e a TI, o equipamento, a
-// divulgação e as lições do chefe. Elas ficaram com o administrador, e este é o
-// caso que impede o `null` de virar "passa qualquer um" numa refatoração.
-const SEM_MODULO = ['1.1', '5.2', '7.1', '8.4', '9.1']
+// As de módulo nenhum: a finalidade, o desenvolvimento e a TI, a divulgação e as
+// lições do chefe. Elas ficaram com o administrador, e este é o caso que impede o
+// `null` de virar "passa qualquer um" numa refatoração.
+//
+// A 7.1 SAIU DAQUI em 2026-08-08 e foi para a lista `SUBSECOES`: o equipamento
+// técnico ganhou cadastro (o módulo `equipamento`), e com dono ela deixou de ser
+// do administrador. É a troca que o comentário de `rpcmtec_estrutura.js` previa.
+const SEM_MODULO = ['1.1', '5.2', '8.4', '9.1']
 
 describe('Subseção de módulo nenhum continua sendo do administrador', () => {
   test.each(SEM_MODULO)('o gerente não altera a %s', async (numero) => {

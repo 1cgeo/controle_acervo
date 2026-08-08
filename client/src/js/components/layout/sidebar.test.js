@@ -21,21 +21,28 @@ const modulosNaTela = (raiz) => [...raiz.querySelectorAll('.sidebar__module-head
 
 beforeEach(() => localStorage.clear());
 
-describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
+describe('sidebar: os quatro modulos convivem, cada um colapsavel', () => {
   test('lista TODOS os modulos acessiveis, mesmo numa rota de plataforma', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
     //
-    // Depois dos três módulos vêm PIT e EFETIVO, que se desenham como
+    // Depois dos quatro módulos vêm PIT e EFETIVO, que se desenham como
     // sistema sem ser módulo. A ordem é asserida inteira
     // de propósito: a posição é metade do que ela comunica. PIT antes de
     // Efetivo porque é a seção que fala do TRABALHO, e Efetivo é quem o faz.
+    //
+    // EQUIPAMENTO fecha a fila dos módulos, e a home dele sai com a barra no
+    // fim: o manifesto declara `home: '/'` porque o painel mora em
+    // '#/equipamento', sem sufixo, e `rotaInicial` concatena prefixo e home. O
+    // router parte o caminho e descarta segmento vazio, então '#/equipamento/'
+    // abre a mesma tela que '#/equipamento'.
     expect(modulosNaTela(sidebar)).toEqual([
       '#/acervo/dashboard',
       '#/mapoteca/dashboard',
       '#/orcamento/dashboard',
+      '#/equipamento/',
       '#/metas',
       '#/acessos',
     ]);
@@ -62,12 +69,12 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     const secoes = () => [...ctrl.sidebar.querySelectorAll('.sidebar__module')]
       .map(s => s.classList.contains('sidebar__module--open'));
 
-    // Cinco seções: os três módulos, PIT e Efetivo, nesta ordem.
-    expect(secoes()).toEqual([false, false, true, false, false]);
+    // Seis seções: os quatro módulos, PIT e Efetivo, nesta ordem.
+    expect(secoes()).toEqual([false, false, true, false, false, false]);
     const antes = ids(ctrl.sidebar).length;
 
     ctrl.setModulo('acervo');
-    expect(secoes()).toEqual([true, false, false, false, false]);
+    expect(secoes()).toEqual([true, false, false, false, false, false]);
 
     // Nenhum item foi destruido: a sidebar so abriu e fechou seção.
     expect(ids(ctrl.sidebar).length).toBe(antes);
@@ -510,9 +517,17 @@ describe('sidebar: o menu de cada seção e plano, sem grupo colapsavel', () => 
         expect(item.children, `${modulo.id}: o item "${item.id}" voltou a ser grupo`)
           .toBeUndefined();
         // O corolario: todo item navega, porque so o cabeçalho de grupo nao
-        // tinha rota.
-        expect(item.path, `${modulo.id}: o item "${item.id}" nao aponta rota nenhuma`)
-          .toBeTruthy();
+        // tinha rota. O que separa um do outro e a rota estar DECLARADA, e nao
+        // ela ser um texto nao vazio: o item "Painel" do equipamento declara
+        // `path: ''`, que e a raiz do modulo ('#/equipamento'), e uma tela de
+        // verdade. Cobrar `toBeTruthy` aqui confundia "sem rota" com "rota na
+        // raiz" e reprovava um menu correto.
+        expect(typeof item.path, `${modulo.id}: o item "${item.id}" nao aponta rota nenhuma`)
+          .toBe('string');
+        // E o item continua apontando para dentro do modulo: caminho absoluto
+        // aqui viraria '#/orcamento//dfd' na hora de montar o href.
+        expect(item.path === '' || item.path.startsWith('/'),
+          `${modulo.id}: o item "${item.id}" tem caminho "${item.path}"`).toBe(true);
       }
     }
   });

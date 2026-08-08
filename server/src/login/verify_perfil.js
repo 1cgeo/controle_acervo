@@ -17,7 +17,7 @@ const PERFIL = {
   gerente: 3
 };
 
-// Espelha dominio.modulo, code a code. Os cinco sao compartimentos distintos de
+// Espelha dominio.modulo, code a code. Os seis sao compartimentos distintos de
 // proposito: quem atende a mapoteca nao precisa catalogar o acervo, quem lanca
 // empenho nao precisa de nenhum dos dois, e quem lanca a execucao do PIT nao
 // mexe em dinheiro.
@@ -32,12 +32,22 @@ const PERFIL = {
 // RECEBIDA (6.2). As METAS do PIT ficaram de fora, e nao por esquecimento:
 // altera-las e ato da DSG, e o que esta no sistema e transcricao de documento
 // assinado.
+//
+// EQUIPAMENTO entrou na 1.46.0, com o material permanente da Divisao (o antigo
+// Relatorio DMT, que era uma planilha). Ele e compartimento proprio pelo mesmo
+// criterio: quem controla estacao total e drone nao e quem atende a mapoteca,
+// ainda que os dois plotteres aparecam nos dois lugares por enquanto.
+//
+// O `code` NAO E SERIAL nem opiniao: ele espelha `dominio.modulo.code`, que
+// `dgeo.usuario_perfil.modulo_id` referencia. Os dois lados nascem juntos, no
+// mesmo commit, e divergir aqui derruba a autorizacao sem erro de sintaxe.
 const MODULO = {
   acervo: 1,
   mapoteca: 2,
   orcamento: 3,
   producao: 4,
-  efetivo: 5
+  efetivo: 5,
+  equipamento: 6
 };
 
 // Uso: verifyPerfil('operador') no acervo, verifyPerfil('gerente', 'mapoteca')

@@ -363,7 +363,8 @@ INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (2, 'Mapoteca', 'mapoteca'),
 (3, 'Orçamento', 'orcamento'),
 (4, 'Produção', 'producao'),
-(5, 'Efetivo', 'efetivo');
+(5, 'Efetivo', 'efetivo'),
+(6, 'Equipamento', 'equipamento');
 
 -- ---------------------------------------------------------------------------
 -- Domínios do PIT e do efetivo, absorvidos do SAP.

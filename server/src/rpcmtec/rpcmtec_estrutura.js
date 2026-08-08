@@ -45,12 +45,24 @@ const ORIGEM = {
 // cataloga nada.
 //
 // `modulo: null` NÃO é esquecimento: é "de módulo nenhum", e essas ficam com o
-// ADMINISTRADOR. São a finalidade (1.1), o desenvolvimento e a TI (5.1 e 5.2), o
-// equipamento técnico (7.1), a divulgação (8.1 a 8.5) e as lições do chefe (9.1
-// a 9.3). Nenhuma delas tem cadastro em módulo algum do SCA, e não existe módulo
-// de TI nem de comunicação social: dar dono a elas por semelhança seria conceder
-// acesso que ninguém decidiu conceder. O dia em que uma ganhar cadastro, ela
-// ganha módulo aqui, numa linha.
+// ADMINISTRADOR. São a finalidade (1.1), o desenvolvimento e a TI (5.1 e 5.2), a
+// divulgação (8.1 a 8.5) e as lições do chefe (9.1 a 9.3). Nenhuma delas tem
+// cadastro em módulo algum do SCA, e não existe módulo de TI nem de comunicação
+// social: dar dono a elas por semelhança seria conceder acesso que ninguém
+// decidiu conceder. O dia em que uma ganhar cadastro, ela ganha módulo aqui,
+// numa linha.
+//
+// O DIA CHEGOU PARA A 7.1, em 2026-08-08. O equipamento técnico ganhou cadastro
+// (o módulo `equipamento`, com `equipamento.indisponibilidade`), e a subseção
+// saiu desta lista e virou CALCULADA na mesma linha. Foram duas palavras
+// trocadas, e é exatamente o que a frase acima existia para permitir: a previsão
+// estava escrita aqui dois meses antes de alguém pedir.
+//
+// A ORDEM IMPORTA E DERRUBA O BOOT SE INVERTIDA: todo `modulo` não-nulo tem de
+// existir no mapa `MODULO` de `login/verify_perfil.js`, e
+// `verify_modulo_subsecao.js` confere isso no `require`, e não na primeira
+// requisição. `'equipamento'` só pôde entrar aqui depois de `equipamento: 6`
+// entrar lá e de `(6, 'Equipamento', 'equipamento')` entrar em `dominio.modulo`.
 //
 // A CHAVE É OBRIGATÓRIA em toda subseção, inclusive nas de módulo nenhum, e
 // `verify_modulo_subsecao.js` recusa CARREGAR se faltar em alguma: sem isso,
@@ -446,9 +458,28 @@ const SECOES = [
     subsecoes: [
       {
         numero: '7.1',
-        modulo: null,
+        modulo: 'equipamento',
         titulo: 'Equipamento Técnico Indisponível',
-        origem: ORIGEM.DIGITADA,
+        // CALCULADA desde 2026-08-08, e de módulo nenhum até ali. Ela era
+        // digitada porque não havia de onde ler: o material permanente da
+        // Divisão vivia numa PLANILHA, e a lista mensal era redigitada a mão
+        // dentro do relatório. Com o módulo `equipamento` e a tabela
+        // `equipamento.indisponibilidade`, ela sai do banco, e o número do
+        // relatório deixa de poder divergir do cadastro sem nada acusar. É a
+        // mesma razão que tirou a 2.2 e a 2.4 do 'SAP' em 2026-08-05.
+        //
+        // O CABEÇALHO E A GRADE NÃO MUDARAM, e não é sorte: são os do modelo da
+        // Divisão, e o DDL foi DERIVADO deles -- `data_inicio`, `motivo` e
+        // `previsao_retorno` nasceram com o nome da coluna do documento. Esta
+        // subseção não tem divergência deliberada nenhuma.
+        //
+        // O RECORTE É O ÚLTIMO DIA DO MÊS, e não qualquer dia dele (decisão do
+        // chefe). Ele DIVERGE da 6.1, que recorta por interseção com o mês
+        // inteiro, e a divergência é deliberada: ver o comentário da consulta em
+        // `rpcmtec_ctrl.js` e o registro em `docs/decisoes.md`.
+        origem: ORIGEM.CALCULADA,
+        fonte: 'equipamento.indisponibilidade aberta no último dia do mês',
+        pendencia: 'Nenhum equipamento indisponível no último dia do mês',
         cabecalhos: ['Equipamento', 'Data indisponibilidade',
           'Motivo indisponibilidade', 'Previsão de retorno'],
         grade: [2265, 2145, 3300, 2160]

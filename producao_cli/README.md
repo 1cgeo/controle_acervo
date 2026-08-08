@@ -20,7 +20,7 @@ Um agente que opera a API crua paga três impostos. Ele carrega um catálogo de 
 
 O limite disso é conhecido e tratado: o `describe()` não enxerga os comentários dos `*_schema.js` nem os invariantes dos controladores, e é neles que mora o porquê (que nulo e zero são coisas diferentes na célula da grade, por exemplo). Por isso `lib/regras.js` guarda a prosa curada, curta, só do que o Joi não sabe dizer. **Forma vem do Joi; porquê vem da prosa ao lado.**
 
-**2. Operação nomeada, não CRUD fingido.** A registry é a do `efetivo_cli`, e não a do `orcamento_cli`. Aqui nada é CRUD uniforme: a execução mensal é uma **célula** de grade que um POST só cria, altera e apaga; `fechar` e `reabrir` são **atos**; a subseção se endereça pelo rótulo do documento (`7.1`); o PDF e as planilhas saem fora do envelope JSON. Anunciar `listar/obter/criar/atualizar/deletar` produziria um mapa mentiroso, e o agente descobriria pelo 404.
+**2. Operação nomeada, não CRUD fingido.** A registry é a do `efetivo_cli`, e não a do `orcamento_cli`. Aqui nada é CRUD uniforme: a execução mensal é uma **célula** de grade que um POST só cria, altera e apaga; `fechar` e `reabrir` são **atos**; a subseção se endereça pelo rótulo do documento (`2.3`); o PDF e as planilhas saem fora do envelope JSON. Anunciar `listar/obter/criar/atualizar/deletar` produziria um mapa mentiroso, e o agente descobriria pelo 404.
 
 **3. Saída compacta por padrão.** O consumidor tem janela finita. O padrão é TSV recortado nas colunas que importam, e um array aninhado (os doze meses de uma meta) vira a contagem em vez de explodir a linha. `--json` continua devolvendo tudo, para quem vai encadear.
 

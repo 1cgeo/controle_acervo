@@ -207,11 +207,21 @@ describe('rastreabilidade: rota, destino e filtro', () => {
     // Fonte: o `entidade:` de cada entrada de server/src/auditoria/mapa/*.js.
     // 'aproveitamento' NÃO está lá: passagem e impedimento caem em 'usuario'.
     // 'configuracao' saiu em 2026-08-06, com a poda da orcamento.configuracao.
+    //
+    // O módulo `equipamento` acrescentou DUAS entidades, e não seis: o mapa
+    // registra dois agregados ('equipamento' e 'tipo_equipamento'), e as quatro
+    // tabelas de lançamento (indisponibilidade, afastamento, manutenção e
+    // transferência) são auditadas SOB O BEM, com o `entidade_id` dele. É o que
+    // faz a ficha responder "o que mudou neste equipamento" em vez de "o que
+    // mudou no cadastro dele".
+    //
+    // 'manutencao' já estava na lista, e é OUTRA COISA: a manutenção das visões
+    // materializadas do acervo. Os consertos de equipamento não entram por ali.
     const DO_SERVIDOR = [
-      'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao',
+      'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao', 'equipamento',
       'exercicio', 'extra_pit', 'licitacao', 'manutencao', 'material', 'meta',
       'nota_credito', 'nota_empenho', 'pdr', 'pedido', 'plotter', 'ponto',
-      'produto', 'projeto', 'rpnp', 'usuario', 'volume',
+      'produto', 'projeto', 'rpnp', 'tipo_equipamento', 'usuario', 'volume',
     ];
 
     expect(Object.keys(NOME_ENTIDADE).sort()).toEqual([...DO_SERVIDOR].sort());

@@ -363,14 +363,16 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .get('/api/usuarios/dominio/modulo')
       .set('Authorization', generateAdminToken())
     expect(modulos.status).toBe(200)
-    // CINCO desde a 1.33.0. A tela de usuarios monta uma coluna por linha deste
-    // catalogo, entao os dois modulos novos aparecem la sozinhos.
+    // SEIS: cinco desde a 1.33.0, mais `equipamento` na 1.46.0. A tela de
+    // usuarios monta uma coluna por linha deste catalogo, entao todo modulo novo
+    // aparece la sozinho.
     expect(modulos.body.dados.map(m => m.nome_abrev)).toEqual([
       'acervo',
       'mapoteca',
       'orcamento',
       'producao',
-      'efetivo'
+      'efetivo',
+      'equipamento'
     ])
 
     const perfis = await request(app)

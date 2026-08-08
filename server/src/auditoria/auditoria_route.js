@@ -89,7 +89,12 @@ const guardaDoHistorico = (req, res, next) => {
   if (modulo === 'plataforma') {
     return verifyAdmin(req, res, next)
   }
-  if (modulo === 'acervo' || modulo === 'mapoteca' || modulo === 'orcamento') {
+  if (
+    modulo === 'acervo' ||
+    modulo === 'mapoteca' ||
+    modulo === 'orcamento' ||
+    modulo === 'equipamento'
+  ) {
     return verifyPerfil('consulta', modulo)(req, res, next)
   }
 

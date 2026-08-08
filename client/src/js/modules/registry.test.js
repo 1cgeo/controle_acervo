@@ -10,6 +10,8 @@ const CATALOGO = [
   { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
   { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
+  // `dominio.modulo` code 6, semeado em er/dominio.sql:367.
+  { code: 6, nome: 'Equipamento', nome_abrev: 'equipamento' },
 ];
 
 function logar({ administrador = false, perfis = {} } = {}) {
@@ -19,8 +21,13 @@ function logar({ administrador = false, perfis = {} } = {}) {
 beforeEach(() => localStorage.clear());
 
 describe('registry: manifestos', () => {
-  test('os tres modulos estao registrados', () => {
-    expect(MODULOS.map(m => m.id)).toEqual(['acervo', 'mapoteca', 'orcamento']);
+  test('os quatro modulos estao registrados, nesta ordem', () => {
+    // A ORDEM E CONTEUDO, e nao arrumacao: quem tem perfil em mais de um modulo
+    // entra pelo PRIMEIRO da lista (`primeiroModuloAcessivel`). Equipamento e
+    // novo e entra por ULTIMO, para nao virar a porta de entrada de ninguem que
+    // ja trabalha aqui.
+    expect(MODULOS.map(m => m.id))
+      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento']);
   });
 
   test('o id do modulo casa com o nome_abrev do catalogo do servidor', () => {
@@ -75,7 +82,7 @@ describe('registry: o que a pessoa ve', () => {
     // Lista FIXA de propósito: comparar com `modulosPortados()` seria comparar
     // a função com ela mesma, e um módulo que sumisse dos dois lados passaria.
     expect(modulosAcessiveis().map(m => m.id))
-      .toEqual(['acervo', 'mapoteca', 'orcamento']);
+      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento']);
   });
 });
 

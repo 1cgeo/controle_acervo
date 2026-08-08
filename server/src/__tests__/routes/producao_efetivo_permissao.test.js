@@ -380,12 +380,17 @@ describe('O operador de Producao NAO alcanca o que continua sendo do administrad
     ['post', '/api/rpcmtec/1/fechar', null],
     // A SUBSECAO DE OUTRO MODULO. A `2.1` saiu desta lista em 2026-08-08: ela e
     // de PRODUCAO, e pela regra nova o gerente do modulo edita a subsecao dele.
-    // Entraram no lugar a `4.2`, que e do ORCAMENTO, e a `7.1`, que nao e de
-    // modulo nenhum (equipamento tecnico nao tem cadastro em modulo algum) --
-    // as duas continuam fechadas para o gerente de Producao, e sao elas que
-    // provam que o recorte novo RECORTA em vez de so afrouxar.
+    // Entraram no lugar a `4.2`, que e do ORCAMENTO, e a `8.4`, que nao e de
+    // modulo nenhum (materia de comunicacao social nao tem cadastro em modulo
+    // algum) -- as duas continuam fechadas para o gerente de Producao, e sao
+    // elas que provam que o recorte novo RECORTA em vez de so afrouxar.
+    //
+    // ERA A `7.1` NO LUGAR DA `8.4`, ate 2026-08-08 mais tarde: ela ganhou dono
+    // (o modulo `equipamento`) e virou um SEGUNDO caso de "outro modulo",
+    // duplicando o que a `4.2` ja provava e deixando o caso de modulo nenhum sem
+    // representante. As duas linhas provam coisas diferentes de novo.
     ['put', '/api/rpcmtec/1/subsecao/4.2', {}],
-    ['put', '/api/rpcmtec/1/subsecao/7.1', {}],
+    ['put', '/api/rpcmtec/1/subsecao/8.4', {}],
     // O cadastro de usuarios, que e a porta que da a flag global a alguem.
     ['put', `/api/usuarios/${USER_UUID}`, { administrador: true, ativo: true }]
   ]

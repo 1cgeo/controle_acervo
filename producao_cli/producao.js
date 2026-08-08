@@ -59,7 +59,7 @@ RPCMTec  (/api/rpcmtec; a EDIÇÃO exige administrador, a capacitação não)
   producao edicao reabrir --id 7 --confirmar 7       (descarta o congelado calculado)
   producao edicao conferir --id 7                    (o congelado x o banco de hoje)
   producao edicao anexar --id 7 --file rpcmtec.pdf
-  producao subsecao gravar --id 7 --numero 7.1 --data '{...}'
+  producao subsecao gravar --id 7 --numero 2.3 --data '{...}'
   producao capacitacao-ministrada listar --ano 2026   (2.6; módulo Produção)
   producao capacitacao-recebida listar --ano 2026     (6.2; módulo Efetivo)
   producao anuario ods --ano 2026 --mes 7 [--saida anuario.ods]

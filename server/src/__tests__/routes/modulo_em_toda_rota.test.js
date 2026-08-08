@@ -35,7 +35,12 @@ const SRC = path.resolve(__dirname, '..', '..')
 // routes/pit_route.test.js e routes/rpcmtec.test.js.
 const MODULOS = [
   { nome: 'orcamento', piso: 55 },
-  { nome: 'mapoteca', piso: 80 }
+  { nome: 'mapoteca', piso: 80 },
+  // EQUIPAMENTO entrou em 2026-08-08, no dia em que o módulo nasceu, e não
+  // meses depois: era esta a armadilha do CLAUDE.md ("em producao e em efetivo,
+  // ninguem cobra por voce"), e um módulo novo que ficasse de fora daqui a
+  // herdaria inteira. São 28 rotas, todas com o segundo argumento explícito.
+  { nome: 'equipamento', piso: 28 }
 ]
 
 const arquivosDeRota = dir =>

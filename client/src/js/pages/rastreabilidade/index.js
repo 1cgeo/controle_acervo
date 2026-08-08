@@ -47,6 +47,7 @@ const NOME_MODULO = {
   acervo: 'Acervo',
   mapoteca: 'Mapoteca',
   orcamento: 'Orçamento',
+  equipamento: 'Equipamento',
   plataforma: 'Plataforma',
 };
 
@@ -79,6 +80,8 @@ const DESTINO = {
   'mapoteca:plotter': { tipo: 'ficha', href: (id) => `#/mapoteca/plotters/${id}` },
   'orcamento:nota_empenho': { tipo: 'ficha', href: (id) => `#/orcamento/notas_empenho/${id}` },
   'plataforma:edicao': { tipo: 'ficha', href: (id) => `#/rpcmtec/${id}` },
+  // O bem tem ficha própria, e ela reúne os quatro históricos dele.
+  'equipamento:equipamento': { tipo: 'ficha', href: (id) => `#/equipamento/bens/${id}` },
   // O produto do acervo abre em DIÁLOGO, de dentro da busca, e por isso não tem
   // rota própria. A busca honra `?produto_id=` justamente para este link
   // existir: é o agregado com mais evento órfão.
@@ -100,6 +103,14 @@ const DESTINO = {
   // ela o agregado. Ela nunca gerou um evento, entao nenhum rastro antigo perde
   // o destino.
   'orcamento:dominio': { tipo: 'lista', href: () => '#/orcamento/configuracao' },
+  // O TIPO é cadastro, e a ficha dele é um diálogo aberto de dentro da lista.
+  //
+  // SÃO SÓ DUAS ENTRADAS PARA O MÓDULO INTEIRO, e não seis: a indisponibilidade,
+  // o afastamento, a manutenção e a transferência não são agregados próprios em
+  // `server/src/auditoria/mapa/equipamento.js` -- as quatro tabelas são
+  // auditadas SOB `equipamento`, com o `entidade_id` do BEM. É o mesmo recorte
+  // da ficha, e é por isso que o link acima leva direto a ela.
+  'equipamento:tipo_equipamento': { tipo: 'lista', href: () => '#/equipamento/tipos' },
   'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
   'plataforma:capacitacao': { tipo: 'lista', href: (id, evento) => telaDaCapacitacao(evento) },
   'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },
@@ -172,6 +183,12 @@ export const NOME_ENTIDADE = {
   licitacao: 'Licitações',
   rpnp: 'RPNP',
   dominio: 'Tabelas de domínio',
+  // O agregado do bem reúne CINCO tabelas: o equipamento, as indisponibilidades,
+  // as manutenções, os afastamentos e as transferências. É o mesmo recorte da
+  // ficha que a pessoa abre, e por isso ele serve de filtro: quem pergunta "o
+  // que mudou nos equipamentos" não quer saber em qual das cinco tabelas.
+  equipamento: 'Equipamentos, indisponibilidades e manutenções',
+  tipo_equipamento: 'Tipos de equipamento',
   manutencao: 'Manutenção das visões do acervo',
   usuario: 'Usuários, perfis e passagens',
   meta: 'Metas do PIT e execução',

@@ -124,14 +124,15 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
     expect(() => verifyPerfil('consulta', 'jabuticaba')).toThrow(/Módulo desconhecido/)
   })
 
-  test('os cinco modulos da plataforma sao aceitos', () => {
+  test('os seis modulos da plataforma sao aceitos', () => {
     expect(() => verifyPerfil('consulta', 'acervo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'mapoteca')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'orcamento')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'producao')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'efetivo')).not.toThrow()
+    expect(() => verifyPerfil('consulta', 'equipamento')).not.toThrow()
     expect(verifyPerfil.MODULO).toEqual({
-      acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5
+      acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5, equipamento: 6
     })
   })
 })

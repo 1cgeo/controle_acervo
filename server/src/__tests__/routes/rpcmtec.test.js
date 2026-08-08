@@ -20,7 +20,7 @@
 //     dar erro nenhum.
 //
 //  3. A DIVISÃO ENTRE CALCULADO E DIGITADO. Vinte subseções saem do banco e
-//     treze o gestor preenche. Uma calculada que vire digitada por descuido
+//     doze o gestor preenche. Uma calculada que vire digitada por descuido
 //     faria alguém redigitar todo mês um número que o sistema tem.
 //
 //  4. O CICLO DE FECHAMENTO, que é o coração do desenho: aberta o calculado
@@ -109,23 +109,45 @@ const SUBSECOES_CALCULADAS = [
   '3.1', '3.2', '3.3', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
   '6.1', '6.2',
+  // A 7.1 entrou em 2026-08-08, com o módulo `equipamento`: ela lista o
+  // equipamento parado no ÚLTIMO DIA do mês, lido de
+  // `equipamento.indisponibilidade`. Enquanto foi digitada, a lista era
+  // transcrita de uma planilha e não havia cadastro nenhum de que divergir.
+  //
+  // A ORDEM DESTE ARRAY É A DO DOCUMENTO, e o `toEqual` abaixo a compara: a 7.1
+  // vem entre a 6.2 e a 7.2 porque é assim que ela sai do montador.
+  '7.1',
   // UMA tabela de insumos desde 2026-08-08, e a 7.3 sumiu.
   '7.2'
 ]
 
-// As que o gestor digita. Nove vêm de outro sistema ou de fora (2.3 e 2.5 do
+// As que o gestor digita. Oito vêm de outro sistema ou de fora (2.3 e 2.5 do
 // SAP, 5.1 do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em
 // lugar nenhum.
 //
-// A 2.3 (lote) e a 2.5 (campo) FICAM digitadas, e a diferença para as duas que
+// A 2.3 (lote) e a 2.5 (campo) FICAM digitadas, e a diferença para as três que
 // saíram é real: as duas são do SAP e não têm entidade no SCA que as prove. A
-// régua não é "veio do SAP", é "o SCA sabe provar".
+// régua não é "veio do SAP", é "o SCA sabe provar" -- e foi ganhar cadastro que
+// tirou a 7.1 desta lista em 2026-08-08.
 const SUBSECOES_DIGITADAS = [
   '2.3', '2.5',
   '5.1', '5.2',
-  '7.1',
   '8.1', '8.2', '8.3', '8.4', '8.5',
   '9.1', '9.2', '9.3'
+]
+
+// A COBAIA DE SUBSEÇÃO DIGITADA deste arquivo, e ela tem nome porque já mudou.
+//
+// Era a 7.1 até 2026-08-08, e cinco casos a usavam para exercitar a gravação, a
+// recusa de linha curta, o não-herdar do mês anterior e a preservação do
+// digitado ao reabrir. Com a 7.1 calculada, nenhum deles provava mais nada: a
+// rota passaria a recusar por "calculada pelo sistema".
+//
+// A 5.2 (Backup) tem QUATRO colunas, como a 7.1 tinha, e é isso que mantém o
+// caso da linha curta ('2 células' contra '4 colunas') medindo o mesmo.
+const DIGITADA = '5.2'
+const LINHA_DIGITADA = [
+  'Banco do SCA', '31/07/2026', '120', '900'
 ]
 
 describe('RPCMTec: a estrutura do documento', () => {
@@ -150,7 +172,7 @@ describe('RPCMTec: a estrutura do documento', () => {
     expect(blocos(doc).filter(b => b.cabecalhos)).toHaveLength(29)
   })
 
-  test('dezenove subseções são calculadas e treze são digitadas', async () => {
+  test('vinte subseções são calculadas e doze são digitadas', async () => {
     const id = await criarEdicao()
     const doc = await documento(id)
 
@@ -597,20 +619,14 @@ describe('RPCMTec: o que o gestor digita', () => {
     const id = await criarEdicao()
 
     const res = await request(app)
-      .put(`/api/rpcmtec/${id}/subsecao/7.1`)
+      .put(`/api/rpcmtec/${id}/subsecao/${DIGITADA}`)
       .set('Authorization', admin())
-      .send({
-        linhas: [
-          ['GPS de Navegação', '26/07/2023', 'Falta conexão com pilhas', '-']
-        ]
-      })
+      .send({ linhas: [LINHA_DIGITADA] })
     expect(res.status).toBe(200)
 
-    const bloco = blocos(await documento(id)).find(b => b.numero === '7.1')
+    const bloco = blocos(await documento(id)).find(b => b.numero === DIGITADA)
     expect(bloco.preenchida).toBe(true)
-    expect(bloco.linhas).toEqual([
-      ['GPS de Navegação', '26/07/2023', 'Falta conexão com pilhas', '-']
-    ])
+    expect(bloco.linhas).toEqual([LINHA_DIGITADA])
   })
 
   test('recusa linha com número de células diferente do cabeçalho', async () => {
@@ -619,9 +635,9 @@ describe('RPCMTec: o que o gestor digita', () => {
     const id = await criarEdicao()
 
     const res = await request(app)
-      .put(`/api/rpcmtec/${id}/subsecao/7.1`)
+      .put(`/api/rpcmtec/${id}/subsecao/${DIGITADA}`)
       .set('Authorization', admin())
-      .send({ linhas: [['GPS', '26/07/2023']] })
+      .send({ linhas: [['Banco do SCA', '31/07/2026']] })
 
     expect(res.status).toBe(400)
     expect(res.body.message).toMatch(/2 células.*4 colunas/)
@@ -696,24 +712,24 @@ describe('RPCMTec: o que o gestor digita', () => {
 // RPCMTec é o relatório DAQUELE mês: a linha que chega pronta não é relida, e o
 // documento assinado passava a afirmar sobre agosto o que aconteceu em julho.
 //
-// Os casos abaixo REPROVAM o estado anterior. Com a ação viva, a 7.1 de julho
-// nascia com a linha de junho e o POST respondia 200.
+// Os casos abaixo REPROVAM o estado anterior. Com a ação viva, a subseção
+// digitada de julho nascia com a linha de junho e o POST respondia 200.
 describe('RPCMTec: a edição de julho não recebe nada de junho', () => {
   test('o digitado de junho não aparece na edição de julho', async () => {
     const junho = await criarEdicao({ mes: 6 })
     await request(app)
-      .put(`/api/rpcmtec/${junho}/subsecao/7.1`)
+      .put(`/api/rpcmtec/${junho}/subsecao/${DIGITADA}`)
       .set('Authorization', admin())
-      .send({ linhas: [['GPS de Navegação', '26/07/2023', 'Conector serial', '-']] })
+      .send({ linhas: [LINHA_DIGITADA] })
 
     // VARIÂNCIA: junho tem mesmo a linha. Sem esta conferência, "julho está
     // vazio" passaria com as duas edições vazias.
-    expect(blocos(await documento(junho)).find(b => b.numero === '7.1').linhas)
-      .toEqual([['GPS de Navegação', '26/07/2023', 'Conector serial', '-']])
+    expect(blocos(await documento(junho)).find(b => b.numero === DIGITADA).linhas)
+      .toEqual([LINHA_DIGITADA])
 
     const julho = await criarEdicao({ mes: 7 })
 
-    const bloco = blocos(await documento(julho)).find(b => b.numero === '7.1')
+    const bloco = blocos(await documento(julho)).find(b => b.numero === DIGITADA)
     expect(bloco.preenchida).toBe(false)
     // `null`, e nao `[]`: a subsecao DIGITADA sem linha gravada nao existe como
     // registro, e `montar` devolve nulo. Cobrar `[]` aqui seria uma assercao
@@ -800,8 +816,11 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
       .send({ ciente_revisao: true })
 
+    // NUMA DIGITADA, e não numa calculada: numa calculada o 400 poderia vir da
+    // outra recusa ('calculada pelo sistema'), e o caso deixaria de provar que
+    // é o FECHAMENTO que barra.
     const res = await request(app)
-      .put(`/api/rpcmtec/${id}/subsecao/7.1`)
+      .put(`/api/rpcmtec/${id}/subsecao/${DIGITADA}`)
       .set('Authorization', admin())
       .send({ linhas: [] })
 
@@ -868,13 +887,17 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
 
   test('reabrir descongela o calculado e PRESERVA o digitado', async () => {
     // Reabrir para corrigir um número do banco não é razão para o gestor
-    // redigitar as treze subseções que são dele.
+    // redigitar as doze subseções que são dele.
+    //
+    // A LINHA GRAVADA É NUMA DIGITADA DE VERDADE, e é disso que este caso
+    // depende: numa calculada a gravação seria recusada, `linhas` viria do
+    // gerador, e "preservou o digitado" passaria sem haver digitado nenhum.
     const id = await criarEdicao()
     await preencherTudo(id)
     await request(app)
-      .put(`/api/rpcmtec/${id}/subsecao/7.1`)
+      .put(`/api/rpcmtec/${id}/subsecao/${DIGITADA}`)
       .set('Authorization', admin())
-      .send({ linhas: [['GPS', '26/07/2023', 'Conector', '-']] })
+      .send({ linhas: [LINHA_DIGITADA] })
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
       .send({ ciente_revisao: true })
 
@@ -886,15 +909,15 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     const restantes = await conn.any(
       'SELECT numero, origem_id FROM rpcmtec.subsecao WHERE edicao_id = $1', [id]
     )
-    // Só as digitadas sobrevivem, e são as 13.
+    // Só as digitadas sobrevivem, e são as 12.
     expect(restantes).toHaveLength(SUBSECOES_DIGITADAS.length)
     expect(restantes.every(r => r.origem_id === 2)).toBe(true)
 
     const doc = await documento(id)
     expect(doc.fechada).toBe(false)
     expect(doc.pendentes).toEqual([])
-    expect(blocos(doc).find(b => b.numero === '7.1').linhas)
-      .toEqual([['GPS', '26/07/2023', 'Conector', '-']])
+    expect(blocos(doc).find(b => b.numero === DIGITADA).linhas)
+      .toEqual([LINHA_DIGITADA])
   })
 
   test('reabrir uma edição já aberta responde 400', async () => {
@@ -1127,11 +1150,16 @@ describe('RPCMTec: a guarda', () => {
     // A rota de trazer o mês anterior saiu da lista em 2026-08-06, com a
     // própria rota: sem ela, a guarda testaria um 404 e não um 403.
     //
-    // A 7.1 é de MÓDULO NENHUM (equipamento técnico não tem cadastro em módulo
-    // algum), então ela é o caso duplo: o usuário da semente para já na primeira
-    // guarda, e nem o gerente mais graduado passaria na segunda.
-    ['put', '/api/rpcmtec/1/subsecao/7.1'],
-    ['delete', '/api/rpcmtec/1/subsecao/7.1'],
+    // A 8.4 (matérias de comunicação social) é de MÓDULO NENHUM, então ela é o
+    // caso duplo: o usuário da semente para já na primeira guarda, e nem o
+    // gerente mais graduado passaria na segunda.
+    //
+    // AQUI ESTAVA A 7.1 até 2026-08-08. Ela deixou de servir a este caso porque
+    // ganhou dono: com o módulo `equipamento`, ela virou uma subseção COM
+    // módulo, como a 3.1 logo abaixo, e o caso de módulo nenhum ficaria sem
+    // representante nesta lista.
+    ['put', '/api/rpcmtec/1/subsecao/8.4'],
+    ['delete', '/api/rpcmtec/1/subsecao/8.4'],
     // E a 3.1, que TEM módulo (mapoteca): o usuário da semente é OPERADOR na
     // mapoteca, e operador não é gerente. Sem esta linha, a lista provaria só o
     // caso em que nem o módulo é consultado.

@@ -270,6 +270,68 @@ const SITUACAO_CAPACITACAO = {
   CANCELADA: 4
 }
 
+// equipamento.classe_suprimento
+//
+// OS CÓDIGOS SÃO OS ALGARISMOS ROMANOS, e não uma sequência: VI é 6 e IX é 9. As
+// duas são as classes de suprimento que a Divisão movimenta (VI com 102 bens e
+// IX com 3, medido na planilha do Relatório DMT de 2026-08-03), e no dia em que
+// aparecer a VII o código dela é 7, sem renumerar nada.
+const CLASSE_SUPRIMENTO = {
+  VI: 6,
+  IX: 9
+}
+
+// equipamento.secao_detentora: quem detém o bem hoje. São duas seções, e não a
+// estrutura inteira da Divisão, porque o que o Relatório DMT distingue é quem
+// guarda o equipamento de levantamento de quem guarda o de produção.
+const SECAO_DETENTORA = {
+  CIA_LEV: 1,
+  CIA_PROD: 2
+}
+
+// equipamento.situacao
+//
+// ESTA CONSTANTE NÃO NOMEIA UMA COLUNA. `equipamento.equipamento` não tem coluna
+// de situação: quem responde é a função `equipamento.situacao_em(dia)`, pelo
+// degrau de maior `precedencia` que se aplicar no dia perguntado. A prova de que
+// gravá-la seria redundante está na planilha de 2026-08-03: as 11 linhas
+// marcadas 'Indisponível' eram EXATAMENTE as 11 com motivo de indisponibilidade
+// preenchido.
+//
+// Os códigos aqui servem para LER o que a função devolveu e para filtrar a
+// lista, nunca para escrever.
+const SITUACAO_EQUIPAMENTO = {
+  DISPONIVEL: 1,
+  AFASTADO: 2,
+  EM_MANUTENCAO: 3,
+  INDISPONIVEL: 4,
+  BAIXADO: 5
+}
+
+// equipamento.situacao_transferencia: os estágios de uma saída ou entrada de
+// carga. A descarga nasce SOLICITADA muito antes de ser concluída, e era assim
+// que estavam as 10 da planilha de 2026-08-03: sem OM, sem documento e sem data.
+const SITUACAO_TRANSFERENCIA = {
+  SOLICITADA: 1,
+  AUTORIZADA: 2,
+  CONCLUIDA: 3,
+  CANCELADA: 4
+}
+
+// equipamento.tipo_transferencia
+const TIPO_TRANSFERENCIA = {
+  RECEBIMENTO: 1,
+  CESSAO: 2,
+  DESCARGA: 3
+}
+
+// NÃO EXISTE `TIPO_EQUIPAMENTO` aqui, e a ausência é a regra.
+// `equipamento.tipo_equipamento` é CADASTRO, com `id SERIAL` e tela de CRUD:
+// decisão do chefe em 2026-08-08, para tipo novo custar uma tela e não uma
+// migração. `id` de cadastro não vira constante, e nenhum SQL do módulo compara
+// `tipo_id` com número literal: quem precisa de um tipo específico o procura
+// pelo nome.
+
 module.exports = {
   STATUS_ARQUIVO,
   TIPO_ARQUIVO,
@@ -294,5 +356,10 @@ module.exports = {
   SITUACAO_EXTRA_PIT,
   TIPO_CAPACITACAO,
   SITUACAO_CAPACITACAO,
-  STATUS_EXECUCAO
+  STATUS_EXECUCAO,
+  CLASSE_SUPRIMENTO,
+  SECAO_DETENTORA,
+  SITUACAO_EQUIPAMENTO,
+  SITUACAO_TRANSFERENCIA,
+  TIPO_TRANSFERENCIA
 }
