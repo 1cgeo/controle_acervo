@@ -127,9 +127,11 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   vínculo que muda de significado sozinho na virada do ano, sem uma linha de código ter mudado.
 - **Só a meta-FOLHA recebe lançamento.** Lançar no cabeçalho contaria o total duas vezes, e as duas
   contas continuariam "certas" cada uma por si.
-- **`pit.execucao` é lançamento MANUAL para toda meta, e não há coluna de origem**, porque não há o
-  que calcular enquanto o SAP não entrar. **Custo aceito:** a meta 4 o SCA já sabe somar por
-  `mapoteca.pedido.meta_pit_id`, e quando o digitado divergir a 2.1 e o RTM vão se contradizer.
+- **O lançamento é MANUAL só no item de origem Manual**, e `pit.meta_item.origem_id` (1 Manual, 2
+  Capacitação, 3 Produção, 4 Impressão) é quem diz de onde vem o número. Nas três origens calculadas o
+  planejado e o realizado são CONTADOS na leitura, das entidades que cumprem o item, e a escrita à mão
+  ali é recusada com 400. Havia aqui, até 2026-08-08, a frase "não há coluna de origem, porque não há
+  o que calcular enquanto o SAP não entrar": ela descrevia o schema anterior à 1.30.0.
 - **O planejado é COLUNA de `pit.execucao`, e não tabela irmã.** As duas abas da planilha da Divisão
   têm as mesmas linhas e os mesmos doze meses; duas tabelas repetiriam a chave (meta, mês) e deixariam
   a comparação, que é a razão de as duas existirem, a um JOIN de distância.
@@ -137,7 +139,10 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   quando não bate; `quantidade_prevista` sozinha não diz em que mês a entrega foi prometida.
 - **`pit.execucao.quantidade` não tem NOT NULL.** A linha nasce com o plano, então NULO é "ninguém
   lançou" e zero é "conferi e não houve"; com NOT NULL, planejar um mês gravaria um realizado zero e a
-  2.1 afirmaria que se conferiu e não houve entrega. Um CHECK recusa os quatro campos nulos.
+  2.1 afirmaria que se conferiu e não houve entrega. Um CHECK
+  (`execucao_diz_alguma_coisa`) recusa a linha com os DOIS números nulos. **São DOIS termos, e foram
+  quatro até a 1.44.0**, quando `data_conclusao` e `observacao` saíram: o CHECK encolheu junto com a
+  tabela, no mesmo arquivo de migração.
 - **O nome `execucao` ficou, embora a tabela guarde as duas coisas.** Renomear orfanaria o rastro:
   `auditoria.evento` guarda o nome da tabela em cada linha, e aquele schema não tem UPDATE nem DELETE.
 - **A cor da grade é do ACUMULADO, nunca do mês sozinho.** A régua mensal não enxerga adiantamento, e
@@ -152,6 +157,39 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **Ficaram de fora, por falta de decisão do chefe:** `Situação` e `Pronto` da EXEC_PIT (vazias no
   arquivo); a importação do `pit.ods`, que exige decidir qual revisão vence; e o replanejamento, hoje
   só no rastro de auditoria.
+- **A GRADE FOI PODADA em 2026-08-08 (1.44.0), e o critério é o do próprio parágrafo acima.**
+  `data_conclusao` e `observacao` eram as ÚNICAS 2 colunas das 88 do schema `pit` nulas em 100% das
+  linhas (0 de 109), com ZERO aparições em 144 eventos de auditoria e sem uma única mensagem de commit
+  que as justificasse. Elas eram o mesmo erro que manteve `Situação` e `Pronto` de fora, cometido no
+  mesmo mês e não pego na hora: campo inventado sem se saber o que ele guarda. **Um beco sem saída
+  morreu junto:** a célula que só as tivesse não podia ser apagada pela tela, que só sabe mandar
+  planejada e realizada, e a limpeza deixava a linha viva e invisível. **Se a meta de ato único voltar
+  a fazer falta, ela volta com o caso na mão.**
+- **As 19 células de `pit.execucao` em item de origem CALCULADA foram APAGADAS na mesma migração, e
+  isso é dado morto, não schema.** Sete itens automáticos (1.3 com 6, 4.1 com 8, e 1.4, 1.8, 4.2, 4.3
+  e 5.1 com uma cada) carregavam lançamento manual de 2026-08-03, anterior à troca de `origem_id`.
+  Hoje ninguém as lê, porque a CTE `celula` escolhe o valor calculado; o custo era o dia em que um
+  item voltasse a ser Manual, o que é um clique na tela de metas: os 19 lançamentos REAPARECERIAM
+  como se alguém os tivesse feito, com números de agosto de 2026 e nada acusando. **O DELETE é o único
+  passo de migração que escreve em `auditoria.evento`:** cada linha virou um evento `D` com o
+  `dados_antes` inteiro, `origem = 'migracao'` e usuário nulo, gravado ANTES do `DROP COLUMN` para o
+  `to_jsonb` guardar o registro como ele era. Desfazer é ler o JSON de volta.
+- **A 1.44.0 NÃO sobe o piso do banco, e a 1.43.0 sobe** (`MIN_DATABASE_VERSION`, em
+  `server/src/config.js`). A regra é a mesma nas duas: remover só obriga a migrar quando o código
+  ainda lia o que saiu. Aqui ele parou de ler as duas colunas ANTES de elas caírem, então um banco que
+  ainda as tenha serve o servidor inteiro.
+- **O `resumoDoAno` lia a revisão do MÊS no FROM externo e a de HOJE na célula, e a correção de
+  2026-08-08 foi feita mesmo com a medição dizendo que o defeito não era alcançável.** Fica
+  registrado para ninguém reabrir o caso achando que há defeito latente: `pit.meta_em(d)` é a consulta
+  de `pit.meta_vigente` mais o predicado `data_vigencia <= d`, então todo item que ela lista está na
+  outra POR CONSTRUÇÃO, e o `LEFT JOIN` do resumo nunca perdia célula. Conferido contra a produção
+  restaurada, mês a mês de 2026: **zero itens em `meta_em(d)` fora de `meta_vigente`.** A correção
+  entrou assim mesmo porque passa a valer por construção em vez de por acidente de duas definições
+  coincidirem: `meta_vigente` é a única das duas sem teto de data, e no dia em que ela ganhar filtro
+  próprio o relatório de março mudaria sozinho, sem escrita nenhuma e sem erro nenhum. **O que a mesma
+  medição achou de verdade** foi outro defeito, esse alcançável: o resumo não filtrava meta cancelada,
+  e a 2.1 de julho de 2026 saía com 42 linhas onde deveriam ser 40 (os itens 5.2 e 5.3, cancelados
+  pela R1 em 2026-05-14).
 
 ## Efetivo
 
@@ -319,6 +357,53 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   2026-08-07 (1.40.0): o recolhimento virou `orcamento.nota_credito_recolhimento`, uma linha por
   documento, e o recolhido de uma NC passou a ser a SOMA delas, lida por seis consultas. A frase
   antiga sobreviveu à própria coluna por um dia, e descrevia um campo que ninguém mais podia ler.
+- **A CHAVE DO SIAFI da nota de empenho estava INERTE por 24 horas, e o conserto vale mais que a poda
+  que veio junto.** `nota_empenho.ug` e `.gestao` nasceram em 2026-08-07 com backfill de 91/91 e o
+  índice único `(ug, gestao, ano, numero)` nasceu junto, mas NENHUMA linha do servidor escrevia as
+  duas: nem o INSERT, nem o UPDATE, nem o Joi, nem o mapa de auditoria. A prova está no rastro: os 4
+  eventos de INSERT de NE posteriores àquela migração não trazem `ug` no `dados_depois`, e as duas
+  colunas não aparecem em nenhum dos 171 eventos do módulo. Toda NE nascia com `ug = NULL`, **e no
+  Postgres NULL não colide com NULL num índice único**: a proteção que custou a migração inteira já
+  não valia, e o problema que ela existiu para resolver (38 registros em 32 números) voltaria em
+  silêncio na próxima NE duplicada. O conserto de 2026-08-08 tem duas metades e uma sozinha não serve:
+  o servidor passa a DERIVAR e gravar as duas, e elas viram NOT NULL. **Elas não entram no Joi de
+  propósito:** ninguém digita a UG de um empenho, ela é consequência da NC representativa, e um campo
+  de formulário permitiria afirmar uma UG que o crédito desmente. Colidir agora responde 409.
+- **TRÊS colunas viraram DERIVADAS e continuam saindo na API com o mesmo nome, e a prova rodou dentro
+  da transação que as apagou:** `dfd_item.valor_total` era igual a `quantidade * valor_unitario` em
+  **31 de 31** linhas, `dfd.valor_estimado` era igual à soma dos totais dos itens em **8 de 8** DFDs, e
+  `pdr_item.gnd` era igual ao GND da natureza de despesa em **36 de 36**. Zero divergências nas três.
+  O que mudou é a FONTE, e não a resposta; o que elas perderam foi a DIGITAÇÃO, e mandá-las volta 400,
+  porque o módulo usa o validador estrito. **`valor_estimado` e `valor_total` saíram na MESMA
+  migração** de propósito: separá-las deixaria um dos dois derivando do outro que acabou de sumir. **O
+  `ROUND(..., 2)` não é enfeite:** `quantidade` é `NUMERIC(15,3)` e o produto cru sai com cinco casas,
+  então sem ele a API passaria a devolver `100.00000` onde a coluna dava `100.00`.
+- **O NUP da licitação foi REVERTIDO em quatro dias, e isso foi ATO DO CHEFE.** `licitacao.nup` e
+  `licitacao.fornecedor` nasceram em 2026-08-04, numa migração cuja justificativa era que "o chefe
+  acompanha as licitações pelo número do pregão e pelo NUP". Quatro dias depois, com as duas ainda em
+  **0 de 11**, ele decidiu que UM identificador basta: o `numero_pregao` fica, o NUP sai, e a
+  `data_homologacao` também fica. Está escrito aqui para quem ler as duas migrações não tratar a
+  remoção como esquecimento de quem leu a primeira pela metade.
+- **A poda de 2026-08-08 (1.43.0) tirou outras 6 colunas que nunca tiveram dado, e
+  `area_requisitante` ficou.** Saíram `dfd.justificativa`, `data_prevista_conclusao` e
+  `responsavel_cpf` (0 de 8 cada, e o CPF ainda era dado pessoal num repositório público),
+  `dfd.grau_prioridade_id` (1 de 8, um único código, levando `dominio.grau_prioridade` e a rota que a
+  servia), `dfd.vinculo_plano_gestao` (8 de 8 com UM valor, o nome de um plano que é um só) e
+  `nota_credito.marcador` (8 de 99, e já discordava do documento: 11 NCs tinham recolhimento integral
+  e só 8 estavam marcadas). **`area_requisitante` é a exceção que separa isto de uma regra
+  automática:** ela também tem um valor só hoje, mas é o único campo do módulo que diz DE QUEM é a
+  demanda, e no dia em que outra seção do CGEO pedir um DFD ela distingue.
+- **O par de carimbo sai SEMPRE junto, e só depois de conferida a auditoria.** "Mudou em 3 de agosto"
+  sem quem, ou "fulano mudou" sem quando, não respondem pergunta nenhuma; a razão do chefe é usar só
+  `auditoria.evento`, que guarda os dois e ainda diz O QUE mudou. As três tabelas estavam declaradas
+  no mapa de auditoria e registravam na mesma transação antes de a coluna cair. **Em `dfd_item` a
+  razão é estrutural:** o item é apagado e reinserido inteiro a cada salvamento, nunca sofre UPDATE, e
+  as duas colunas eram 0 de 31 por construção. **`orcamento.arquivo.data_modificacao` NÃO saiu**, é o
+  mesmo caso (0 de 54) e ficou: coluna que ninguém pediu para remover não se remove de carona.
+- **O cabeçalho da subseção 4.1 dizia "Valor previsto (Prioridade 1)" e a consulta nunca filtrou
+  prioridade nenhuma**, e `grau_prioridade_id` sequer existia em `pdr_item`. O documento assinado
+  afirmava um recorte que ninguém fazia. O cabeçalho passou a "Valor previsto", que é o que a consulta
+  sempre calculou, e é essa correção que liberou a poda da prioridade: sem ela, restaria um consumidor.
 
 ## Auditoria e rastreabilidade
 

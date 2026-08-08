@@ -85,9 +85,13 @@ controller.getTipoItemDfd = async () => {
   return db.conn.any('SELECT code, nome FROM dominio.tipo_item_dfd ORDER BY code')
 }
 
-controller.getGrauPrioridade = async () => {
-  return db.conn.any('SELECT code, nome FROM dominio.grau_prioridade ORDER BY code')
-}
+// NAO HA `getGrauPrioridade`, e a ausencia e a modelagem. `dominio.grau_prioridade`
+// (Alta, Normal, Baixa) tinha UM consumidor no sistema inteiro,
+// `orcamento.dfd.grau_prioridade_id`, preenchido em 1 linha de 8 e sempre com o
+// mesmo codigo. A coluna saiu na 1.43.0 e a tabela de dominio saiu no mesmo
+// commit, junto com a rota `GET /orcamento/dominio/grau_prioridade`: deixar o
+// catalogo servindo codigo que nada mais referencia e o tipo de meio cadaver que
+// a 1.34.0 ja recusou uma vez.
 
 // ---------------------------------------------------------------------------
 // CRUD dos dominios editaveis pela Configuracao: natureza de despesa, plano

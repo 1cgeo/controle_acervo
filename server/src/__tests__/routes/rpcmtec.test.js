@@ -34,6 +34,7 @@ const { conn, cleanTestData } = require('../helpers/db')
 const {
   generateAdminToken, generateUserToken, ADMIN_UUID, USER_UUID
 } = require('../helpers/auth')
+const { createProduto, createVersao } = require('../helpers/fixtures')
 const estrutura = require('../../rpcmtec/rpcmtec_estrutura')
 
 let app
@@ -42,8 +43,14 @@ beforeAll(async () => {
   app = await getApp()
 })
 
+// A ORDEM IMPORTA. `pit.demanda_extra` NÃO entra no `cleanTestData` (ela não
+// pende de `pit.meta`, que é o que a lista trunca), então a 3.3 vazaria de um
+// teste para o seguinte. E ela sai DEPOIS: `acervo.versao.demanda_extra_id`
+// aponta para cá, e apagar a demanda antes esbarra na chave estrangeira. É o
+// mesmo par de linhas de `routes/pit_extra.test.js`, e pela mesma razão.
 afterEach(async () => {
   await cleanTestData()
+  await conn.none('DELETE FROM pit.demanda_extra')
 })
 
 const admin = () => generateAdminToken()
@@ -242,6 +249,251 @@ describe('RPCMTec: a estrutura do documento', () => {
     const primeira = execucao.linhas[0]
     expect(primeira[1]).toBe('0,00')
     expect(primeira.slice(2)).toEqual(['-', '-', '-', '-'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A seção do PIT no documento assinado: a 2.1 e a 3.3
+//
+// As duas correções são de 2026-08-08, e as duas mudam o que o chefe assina.
+// Cada uma imprimia um número que o banco não afirma:
+//
+//   D3  a 2.1 comparava o realizado contra a promessa do ANO e nada mais. O
+//       `resumoDoAno` já calculava `planejado_ate` -- o `producao_cli` o
+//       imprimia --, e `montarEstadoPit` o descartava. Em agosto, uma meta em
+//       dia aparecia atrasada.
+//
+//   D4  a 3.3 imprimia `demanda_extra.quantidade`, que é o DECLARADO, e a
+//       contagem real (`quantidade_materializada`) chegava junto e era jogada
+//       fora. Medido na produção: a 3.3 de abril de 2026 afirmava 76 produtos
+//       onde o acervo tinha 26.
+// ---------------------------------------------------------------------------
+
+const linhasDaSubsecao = async (edicaoId, numero) => {
+  const doc = await documento(edicaoId)
+  return blocos(doc).find(b => b.numero === numero).linhas
+}
+
+/**
+ * Uma meta com UM item manual, declarada por uma revisão que vige em janeiro.
+ * Manual de propósito: origem calculada faria a célula sair das versões e dos
+ * pedidos, e o que se mede aqui é o LANÇAMENTO.
+ */
+const criarItemDoPit = async ({
+  numeroMeta = 1,
+  nome = 'Produção de Geoinformação',
+  item = '1.1',
+  descricao = 'Carta Topográfica 1:25.000.',
+  quantidadePrevista = 252
+} = {}) => {
+  const meta = await conn.one(
+    `INSERT INTO pit.meta (ano, numero_meta, nome, usuario_cadastramento_uuid)
+     VALUES (2026, $1, $2, $3) RETURNING id`,
+    [numeroMeta, nome, ADMIN_UUID]
+  )
+  const doItem = await conn.one(
+    `INSERT INTO pit.meta_item
+       (meta_id, item, unidade_id, origem_id, usuario_cadastramento_uuid)
+     VALUES ($1, $2, 1, 1, $3) RETURNING id`,
+    [meta.id, item, ADMIN_UUID]
+  )
+  const revisao = await conn.one(
+    `INSERT INTO pit.revisao (ano, codigo, data_vigencia, usuario_cadastramento_uuid)
+     VALUES (2026, 'R0', '2026-01-01', $1) RETURNING id`,
+    [ADMIN_UUID]
+  )
+  await conn.none(
+    `INSERT INTO pit.meta_item_revisao
+       (meta_item_id, revisao_id, descricao, quantidade_prevista,
+        usuario_cadastramento_uuid)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [doItem.id, revisao.id, descricao, quantidadePrevista, ADMIN_UUID]
+  )
+  return doItem.id
+}
+
+const lancarMes = (itemId, mes, planejada, realizada) => conn.none(
+  `INSERT INTO pit.execucao
+     (meta_id, mes, quantidade_planejada, quantidade, usuario_cadastramento_uuid)
+   VALUES ($1, $2, $3, $4, $5)`,
+  [itemId, mes, planejada, realizada, ADMIN_UUID]
+)
+
+describe('RPCMTec: a 2.1 imprime o PLANO ao lado do realizado', () => {
+  test('são oito colunas, e o plano encosta no realizado acumulado', async () => {
+    // A POSIÇÃO É A CORREÇÃO, tanto quanto o número: os dois são acumulados de
+    // janeiro até o mês da edição, e é um contra o outro que se leem. Uma coluna
+    // de data no meio deles destruiria a leitura, e é por isso que a nova entra
+    // ANTES de "Previsão de término", e não no fim da tabela.
+    const id = await criarEdicao()
+    const doc = await documento(id)
+    const cabecalhos = blocos(doc).find(b => b.numero === '2.1').cabecalhos
+
+    expect(cabecalhos).toEqual([
+      'Meta', 'Item', 'Produto ou serviço', 'Quantidade',
+      'Prontos no mês', 'Prontos', 'Plano até o mês', 'Previsão de término'
+    ])
+    expect(cabecalhos.indexOf('Plano até o mês'))
+      .toBe(cabecalhos.indexOf('Prontos') + 1)
+  })
+
+  /**
+   * QUATRO NÚMEROS DIFERENTES na mesma linha, de propósito: 252 é a promessa do
+   * ano, 18 é julho sozinho, 30 é o realizado de janeiro a julho e 45 é o que o
+   * plano pedia no mesmo intervalo. Com dois números iguais, uma coluna trocada
+   * de lugar passaria despercebida.
+   */
+  const cenarioDaMeta = async () => {
+    const item = await criarItemDoPit()
+    await lancarMes(item, 3, 20, 12)
+    await lancarMes(item, 7, 25, 18)
+    // SETEMBRO, que a edição de julho não pode contar. É a variância: sem ele,
+    // "o plano é 45" passaria com um gerador que somasse o ano inteiro.
+    await lancarMes(item, 9, 100, 100)
+    return item
+  }
+
+  test('a linha traz o plano acumulado até o mês da edição', async () => {
+    await cenarioDaMeta()
+    const id = await criarEdicao({ mes: 7 })
+
+    expect(await linhasDaSubsecao(id, '2.1')).toEqual([[
+      'Meta 1 - Produção de Geoinformação',
+      '1.1',
+      'Carta Topográfica 1:25.000.',
+      // A promessa do ANO, que é a coluna que já existia.
+      '252',
+      // Julho sozinho.
+      '18',
+      // De janeiro a julho.
+      '30',
+      // O que o plano pedia de janeiro a julho: 20 em março mais 25 em julho.
+      // Setembro não entra.
+      '45',
+      // Sem prazo declarado na revisão.
+      '-'
+    ]])
+  })
+
+  /**
+   * O CONTROLE. Sem ele, "o plano é 45" passaria com um número constante ou com
+   * o planejado de um mês só: o que prova que a coluna é ACUMULADA ATÉ O MÊS é
+   * ela crescer quando a edição avança, e crescer exatamente o que setembro
+   * lançou.
+   */
+  test('a edição de setembro traz o plano de setembro, e não o de julho', async () => {
+    await cenarioDaMeta()
+    const id = await criarEdicao({ mes: 9 })
+
+    const linha = (await linhasDaSubsecao(id, '2.1'))[0]
+    // 20 + 25 + 100 planejados, contra 12 + 18 + 100 prontos.
+    expect(linha[6]).toBe('145')
+    expect(linha[5]).toBe('130')
+  })
+})
+
+describe('RPCMTec: a 3.3 imprime o que MATERIALIZOU, e não o que foi declarado', () => {
+  /**
+   * A demanda entra por SQL, e não pela rota: a rota recusa origem Produção com
+   * situação que afirma entrega enquanto nenhuma versão aponta para ela, e o que
+   * este arquivo precisa é justamente do par declarado-versus-materializado com
+   * os dois números escolhidos.
+   */
+  const criarDemanda = async ({
+    quantidade,
+    origem = 3,
+    demandante = '14ª Bda Inf Mtz',
+    tipoProduto = 'Carta Orto Especial',
+    entrega = '2026-07-15'
+  }) => {
+    const { id } = await conn.one(
+      `INSERT INTO pit.demanda_extra
+         (ano, demandante, tipo_produto, quantidade, situacao_id, origem_id,
+          documento_autorizacao, descricao, data_entrega,
+          usuario_cadastramento_uuid)
+       VALUES (2026, $1, $2, $3, 4, $4, 'Extra-PIT 09', 'Apoio à operação',
+               $5, $6)
+       RETURNING id`,
+      [demandante, tipoProduto, quantidade, origem, entrega, ADMIN_UUID]
+    )
+    return id
+  }
+
+  let sequencia = 0
+  const ligarVersoes = async (demandaId, quantas) => {
+    for (let i = 0; i < quantas; i += 1) {
+      sequencia += 1
+      // `unique_produto_identidade` cobre mi, inom, escala e tipo: dois produtos
+      // com o padrão do fixture colidiriam dentro do mesmo teste.
+      const produto = await createProduto({
+        mi: `MI-EXTRA-33-${sequencia}`,
+        inom: `INOM-EXTRA-33-${sequencia}`
+      })
+      const versao = await createVersao(produto.id)
+      await conn.none(
+        'UPDATE acervo.versao SET demanda_extra_id = $1 WHERE id = $2',
+        [demandaId, versao.id]
+      )
+    }
+  }
+
+  test('o cabeçalho diz de onde vem o número, porque o número mudou', async () => {
+    // "Qtd" sobre uma contagem que deixou de ser a quantidade pedida mente de
+    // outro jeito, e mais caro: ninguém confere um rótulo que continua o mesmo.
+    const id = await criarEdicao()
+    const doc = await documento(id)
+
+    expect(blocos(doc).find(b => b.numero === '3.3').cabecalhos).toEqual([
+      'Demandante', 'Tipo de produto', 'Qtd no acervo', 'Situação',
+      'Documento autorização', 'Descrição'
+    ])
+  })
+
+  test('a coluna traz a contagem do acervo, e o declarado não sai em lugar nenhum', async () => {
+    // 74 declarados contra 3 no acervo, que é a forma do caso real: a demanda da
+    // 14ª Bda de abril de 2026 declara 74 e o acervo tem 26. Com o código
+    // antigo esta célula sairia '74'.
+    const demanda = await criarDemanda({ quantidade: 74 })
+    await ligarVersoes(demanda, 3)
+    const id = await criarEdicao({ mes: 7 })
+
+    const linhas = await linhasDaSubsecao(id, '3.3')
+    expect(linhas).toHaveLength(1)
+    expect(linhas[0][2]).toBe('3')
+    // O DECLARADO SUMIU DA TABELA INTEIRA, e não só da coluna: um gerador que o
+    // imprimisse numa coluna vizinha passaria na asserção acima.
+    expect(linhas[0]).not.toContain('74')
+  })
+
+  /**
+   * O PREÇO DA DECISÃO, escrito como teste para ninguém o descobrir no
+   * documento assinado. A demanda de origem MANUAL não tem versão para contar,
+   * e sai 0 -- na produção são 8 das 12 demandas com entrega. O 0 é verdade
+   * sobre o ACERVO, e não sobre o trabalho.
+   */
+  test('a demanda MANUAL sai zero, porque não há versão para contar', async () => {
+    await criarDemanda({
+      quantidade: 12, origem: 1, demandante: '6ª DE', tipoProduto: 'Mapa Temático'
+    })
+    const id = await criarEdicao({ mes: 7 })
+
+    const linhas = await linhasDaSubsecao(id, '3.3')
+    expect(linhas).toHaveLength(1)
+    expect(linhas[0][2]).toBe('0')
+  })
+
+  test('a demanda entregue em OUTRO mês não entra na edição de julho', async () => {
+    // A 3.3 é do MÊS DA ENTREGA desde 2026-08-06, como as vizinhas 3.1 e 3.4.
+    const abril = await criarDemanda({ quantidade: 74, entrega: '2026-04-20' })
+    await ligarVersoes(abril, 2)
+    const julho = await criarDemanda({
+      quantidade: 1, entrega: '2026-07-10', tipoProduto: 'Carta Topográfica'
+    })
+    await ligarVersoes(julho, 1)
+    const id = await criarEdicao({ mes: 7 })
+
+    const linhas = await linhasDaSubsecao(id, '3.3')
+    expect(linhas.map(l => [l[1], l[2]])).toEqual([['Carta Topográfica', '1']])
   })
 })
 

@@ -942,6 +942,16 @@ const formatPrazo = valor => {
  * A `unidade` da meta NÃO sai. O modelo tem uma coluna "Quantidade" e nenhuma de
  * unidade, e enfiar 'carta' dentro do número faria a coluna deixar de ser
  * numérica. Ela existe para qualificar o número na TELA.
+ *
+ * "PLANO ATÉ O MÊS" É A COLUNA NOVA, de 2026-08-08, e o número dela já vinha
+ * pronto: `resumoDoAno` calcula `planejado_ate` desde sempre, o `producao_cli` o
+ * imprimia, e aqui ele era descartado. Ele é o acumulado de janeiro até o mês da
+ * edição, o MESMO recorte de `realizado` -- é por isso que a coluna encosta em
+ * "Prontos", e não fica no fim da tabela.
+ *
+ * SEM ELE A 2.1 SÓ SABIA COMPARAR CONTRA O ANO. "Prontos 30" ao lado de
+ * "Quantidade 252" faz toda meta parecer atrasada em agosto; ao lado de "Plano
+ * até o mês 30" ela aparece em dia, que é o que o plano diz.
  */
 const montarEstadoPit = ({ metas }) => {
   const porNumero = new Map()
@@ -967,6 +977,7 @@ const montarEstadoPit = ({ metas }) => {
         numero(m.quantidade_prevista),
         numero(m.realizado_mes),
         numero(m.realizado),
+        numero(m.planejado_ate),
         formatPrazo(m.prazo)
       ])
     })
@@ -1026,17 +1037,32 @@ const montarCapacitacaoRecebida = ({ capacitacoes }) =>
 // ---------------------------------------------------------------------------
 // 3.3 Extra-PIT
 //
-// É do ANO, e não do mês, ao contrário das vizinhas 3.1, 3.2 e 3.4. A demanda
-// Extra-PIT é uma autorização que atravessa o ano e muda de situação; a edição
-// de agosto que só mostrasse a autorizada em agosto esconderia as sete que
-// continuam em produção.
+// É DO MÊS DA ENTREGA, como as vizinhas 3.1, 3.2 e 3.4, e quem faz o recorte é
+// `pitExtraCtrl.listarDoMes`. Ela foi do ANO até 2026-08-08, e o comentário que
+// morava aqui ainda dizia isso quatro linhas acima da chamada que já lia o mês:
+// a 3.3 de agosto repetia tudo o que a de julho reportara, e somar as doze
+// edições contaria cada demanda doze vezes.
+//
+// A QUANTIDADE É A MATERIALIZADA, e não a declarada, por decisão do chefe em
+// 2026-08-08. `d.quantidade` é o que a demanda PEDIU;
+// `d.quantidade_materializada` é quantas versões do acervo apontam para ela
+// (`acervo.versao.demanda_extra_id`), calculada na leitura pelo próprio
+// `pit_extra_ctrl.js`. As duas já chegavam aqui, e só a primeira saía: a 3.3 de
+// abril de 2026 afirmava 76 produtos onde o acervo tinha 26, e a de maio, 14
+// onde havia 2.
+//
+// O CABEÇALHO MUDOU JUNTO, para "Qtd no acervo" (ver `rpcmtec_estrutura.js`):
+// número novo debaixo de rótulo velho é a mentira que ninguém confere.
+//
+// SAI 0 NA DEMANDA MANUAL, e é o que se espera dela: não há versão no acervo
+// para contar. A ressalva está inteira na estrutura, ao lado do cabeçalho.
 // ---------------------------------------------------------------------------
 
 const montarExtraPit = ({ demandas }) =>
   demandas.map(d => [
     texto(d.demandante),
     texto(d.tipo_produto),
-    numero(d.quantidade),
+    numero(d.quantidade_materializada),
     texto(d.situacao),
     texto(d.documento_autorizacao),
     texto(d.descricao)

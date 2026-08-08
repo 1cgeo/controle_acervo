@@ -55,15 +55,38 @@ module.exports = {
       ano: { rotulo: 'Ano', tipo: 'numero' },
       rotulo: { rotulo: 'Rótulo' },
       objeto: { rotulo: 'Objeto' },
-      justificativa: { rotulo: 'Justificativa' },
       area_requisitante: { rotulo: 'Área requisitante' },
-      grau_prioridade_id: { rotulo: 'Grau de prioridade', dominio: 'dominio.grau_prioridade' },
-      data_prevista_conclusao: { rotulo: 'Data prevista de conclusão', tipo: 'data' },
-      responsavel_cpf: { rotulo: 'CPF do responsável' },
-      vinculo_plano_gestao: { rotulo: 'Vínculo com o plano de gestão' },
       // Distingue a demanda que esta no PCA da superveniente (ex.: DFD de IA).
       consta_pca: { rotulo: 'Consta do PCA', tipo: 'booleano' },
-      valor_estimado: { rotulo: 'Valor estimado', tipo: 'dinheiro' }
+
+      // AS SEIS QUE SAIRAM NA 1.43.0, todas HISTORICO pelo mesmo motivo do
+      // `meta_pit_id` da NC: `auditoria.evento` e append-only, e o evento ja
+      // gravado continua trazendo o campo. Sem a declaracao, a ficha de um DFD
+      // antigo exibiria o nome cru da coluna onde hoje exibe o rotulo. Evento
+      // NOVO nenhum traz qualquer uma delas.
+      //
+      // `grau_prioridade_id` perdeu tambem o `dominio`, e nao so por arrumacao:
+      // `dominio.grau_prioridade` saiu do banco no mesmo commit, e a varredura
+      // de `__tests__/auditoria/mapa.test.js` cobra que todo dominio citado
+      // exista nos `er/`. O codigo sai cru (1 Alta, 2 Normal, 3 Baixa), e e o
+      // maximo honesto que se pode dizer de um catalogo que nao existe mais.
+      justificativa: { rotulo: 'Justificativa (até 1.42.0)', historico: true },
+      grau_prioridade_id: {
+        rotulo: 'Grau de prioridade (até 1.42.0: 1 Alta, 2 Normal, 3 Baixa)',
+        historico: true
+      },
+      data_prevista_conclusao: {
+        rotulo: 'Data prevista de conclusão (até 1.42.0)', tipo: 'data', historico: true
+      },
+      responsavel_cpf: { rotulo: 'CPF do responsável (até 1.42.0)', historico: true },
+      vinculo_plano_gestao: {
+        rotulo: 'Vínculo com o plano de gestão (até 1.42.0)', historico: true
+      },
+      // Ele NAO sumiu da resposta da API: virou a soma dos itens, derivada em
+      // consulta. O que saiu foi a COLUNA, e por isso o campo e historico aqui.
+      valor_estimado: {
+        rotulo: 'Valor estimado (até 1.42.0: coluna)', tipo: 'dinheiro', historico: true
+      }
     }
   },
 
@@ -103,7 +126,12 @@ module.exports = {
       meta_pit_id: { rotulo: 'Meta do PIT', entidade: 'meta' },
       item_label: { rotulo: 'Item' },
       descricao: { rotulo: 'Descrição' },
-      gnd: { rotulo: 'GND', tipo: 'numero' },
+      // HISTORICO desde a 1.43.0. O GND deixou de ser coluna do item e passou a
+      // vir da natureza de despesa por JOIN: ele era igual ao
+      // `natureza_despesa.gnd` do `cod_nd` em 36 de 36 linhas de producao, e o
+      // formulario ja o exibia desabilitado. Ele continua SAINDO na leitura com
+      // o mesmo nome; o que mudou e a fonte. Evento novo nenhum o traz.
+      gnd: { rotulo: 'GND (até 1.42.0: coluna)', tipo: 'numero', historico: true },
       valor_solicitado: { rotulo: 'Valor solicitado', tipo: 'dinheiro' },
       valor_autorizado: { rotulo: 'Valor autorizado', tipo: 'dinheiro' },
       observacao: { rotulo: 'Observação' }
@@ -155,7 +183,14 @@ module.exports = {
       classificacao_id: { rotulo: 'Classificação', dominio: 'dominio.classificacao_nc' },
       pdr_item_id: { rotulo: 'Item do PDR', entidade: 'pdr' },
       nc_complementada_id: { rotulo: 'NC complementada', entidade: 'nota_credito' },
-      marcador: { rotulo: 'Marcador' },
+      // HISTORICO, e por isso FICA, pelo mesmo motivo dos dois campos acima. A
+      // coluna saiu na 1.43.0: ela era um texto livre de 8 caracteres em que se
+      // escrevia 'RECOLH' para marcar a NC devolvida por inteiro, e a pergunta
+      // que ela respondia passou a ter resposta exata na 1.40.0 (o recolhido e a
+      // soma dos documentos de recolhimento). Medido em 2026-08-08: 8 marcadas
+      // de 99, e 11 NCs com recolhimento integral -- o marcador discordava do
+      // dado em 3 de 11. Nenhum evento NOVO o traz.
+      marcador: { rotulo: 'Marcador (até 1.42.0)', historico: true },
       observacao: { rotulo: 'Observação' }
     }
   },
@@ -201,6 +236,20 @@ module.exports = {
     campos: {
       numero: { rotulo: 'Número' },
       ano: { rotulo: 'Ano', tipo: 'numero' },
+      // AS DUAS METADES QUE FALTAVAM DA CHAVE DO SIAFI. Elas nasceram em
+      // 2026-08-07 e o servidor so passou a grava-las em 2026-08-08: ate la
+      // nenhum evento as trazia, e o indice unico `uniq_nota_empenho_chave_siafi`
+      // aprovava numero repetido porque NULL nao colide com NULL. Sao DERIVADAS
+      // (a UG sai da emitente da NC representativa, a gestao e fixa), e por isso
+      // nao ha campo de formulario para elas -- mas mudam quando a NC muda, e o
+      // historico tem de dizer isso.
+      //
+      // SEM `dominio: 'dominio.ug'`, e a razão é o dado: a coluna não tem chave
+      // estrangeira e a 167382 não está no catálogo (ele lista quem EMITE
+      // crédito para nós, e ela é uma unidade gestora nossa). Traduzir pelo
+      // catálogo deixaria metade dos empenhos sem rótulo.
+      ug: { rotulo: 'UG do empenho' },
+      gestao: { rotulo: 'Gestão' },
       data_empenho: { rotulo: 'Data do empenho', tipo: 'data' },
       // A NC representativa: e ela que dirige ND, PI e classificacao.
       nota_credito_id: { rotulo: 'Nota de crédito', entidade: 'nota_credito' },
@@ -265,11 +314,17 @@ module.exports = {
       tipo_id: { rotulo: 'Tipo', dominio: 'dominio.tipo_licitacao' },
       objeto: { rotulo: 'Objeto' },
       numero_pregao: { rotulo: 'Número do pregão' },
-      nup: { rotulo: 'NUP do processo' },
       fase_id: { rotulo: 'Fase', dominio: 'dominio.fase_licitacao' },
       fase_atual: { rotulo: 'Fase atual' },
-      fornecedor: { rotulo: 'Fornecedor' },
       data_homologacao: { rotulo: 'Data de homologação', tipo: 'data' },
+      // HISTORICO desde a 1.43.0. As duas nasceram em 2026-08-04 com o
+      // `numero_pregao` e a `data_homologacao`, e sairam quatro dias depois com
+      // 0 de 11 preenchidas, por decisao do chefe: ele acompanha as licitacoes
+      // pelo PREGAO, que ficou. Os dois eventos de licitacao ja gravados trazem
+      // as duas colunas no `dados_antes`/`dados_depois`, porque o controller usa
+      // `RETURNING *`; sem estas linhas a ficha exibiria o nome cru.
+      nup: { rotulo: 'NUP do processo (até 1.42.0)', historico: true },
+      fornecedor: { rotulo: 'Fornecedor (até 1.42.0)', historico: true },
       valor_total_estimado: { rotulo: 'Valor total estimado', tipo: 'dinheiro' },
       valor_final_homologado: { rotulo: 'Valor final homologado', tipo: 'dinheiro' },
       om_gestora: { rotulo: 'OM gestora' }

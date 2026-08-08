@@ -28,6 +28,18 @@ const camposEcoDoClient = {
   tipo_item: Joi.any().strip(),
   data_cadastramento: Joi.any().strip(),
   usuario_cadastramento_uuid: Joi.any().strip(),
+  // `valor_total` entrou nesta lista na 1.43.0, e por MERECIMENTO: ele deixou de
+  // ser coluna e passou a ser DERIVADO (`quantidade * valor_unitario`, igual em
+  // 31 de 31 linhas de producao), mas continua saindo no GET com o mesmo nome,
+  // porque a tela e o CLI o exibem. Como o dialogo devolve o item inteiro no
+  // PUT, ele volta -- e recusa-lo tornaria a edicao de qualquer DFD com item
+  // impossivel. Chega, e o servidor o ignora: quem manda no total e a
+  // multiplicacao.
+  valor_total: Joi.any().strip(),
+  // As duas ainda sao descartadas por TOLERANCIA, e nao porque existam: elas
+  // sairam de `orcamento.dfd_item` na 1.43.0 e o GET nao as devolve mais. O
+  // dialogo antigo, que carregou os itens antes da atualizacao, continua
+  // reenviando-as, e um 400 aqui deixaria a tela travada ate o F5.
   data_modificacao: Joi.any().strip(),
   usuario_modificacao_uuid: Joi.any().strip()
 }
@@ -50,40 +62,43 @@ const item = Joi.object().keys({
   // valida contra ESTE mesmo schema antes de enviar.
   quantidade: Joi.number().min(0).strict().allow(null),
   valor_unitario: Joi.number().min(0).strict().allow(null),
-  valor_total: Joi.number().min(0).strict().allow(null),
+  // NAO HA `valor_total` GRAVAVEL aqui, e a ausencia e a modelagem: ele e o
+  // produto dos dois campos acima. Ele aparece na lista de eco logo abaixo, que
+  // e outra coisa -- ali ele e DESCARTADO, e nao aceito.
   ...camposEcoDoClient
 })
 
-models.criar = Joi.object().keys({
+// OS CAMPOS QUE SAIRAM NA 1.43.0, e por que NENHUM deles entra aqui com
+// `.strip()`:
+//
+//   `justificativa`, `data_prevista_conclusao`, `responsavel_cpf` -- 0 de 8 em
+//   producao, nunca preenchidas, e nenhum DFD jamais editado;
+//   `grau_prioridade_id` -- 1 de 8, um unico codigo, e levou
+//   `dominio.grau_prioridade` inteira junto;
+//   `vinculo_plano_gestao` -- 8 de 8 com UM valor distinto ('Plano de Gestão do
+//   1º CGEO'), uma constante digitada oito vezes;
+//   `valor_estimado` -- DERIVADO da soma dos itens, igual em 8 de 8.
+//
+// Nenhum entra porque o modulo orcamento usa o validador ESTRITO
+// (`orcamento/utils.js`): quem continuar mandando qualquer um deles recebe 400
+// dizendo o nome, em vez de 200 e a impressao de ter gravado. E a MESMA escolha
+// que `nota_credito.valor_recolhido` recebeu na 1.40.0, pelo mesmo motivo.
+// A excecao e o `valor_total` do ITEM, que o dialogo devolve por ECO do GET e
+// nao por digitacao -- esse esta declarado com `.strip()` acima.
+const camposDoDfd = {
   numero: Joi.string().max(20).required(),
   ano: Joi.number().integer().strict().required(),
   rotulo: Joi.string().max(120).allow(null, ''),
   objeto: Joi.string().allow(null, ''),
-  justificativa: Joi.string().allow(null, ''),
+  // FICA, e e a unica das constantes do DFD que ficou: no dia em que outra secao
+  // do CGEO pedir um DFD, e ele que distingue de quem e a demanda.
   area_requisitante: Joi.string().max(255).allow(null, ''),
-  grau_prioridade_id: Joi.number().integer().strict().allow(null),
-  data_prevista_conclusao: Joi.date().iso().raw().allow(null),
-  responsavel_cpf: Joi.string().max(14).allow(null, ''),
-  vinculo_plano_gestao: Joi.string().max(60).allow(null, ''),
   consta_pca: Joi.boolean().strict().default(true),
-  valor_estimado: Joi.number().min(0).strict().allow(null),
   itens: Joi.array().items(item).default([])
-})
+}
 
-models.atualizar = Joi.object().keys({
-  numero: Joi.string().max(20).required(),
-  ano: Joi.number().integer().strict().required(),
-  rotulo: Joi.string().max(120).allow(null, ''),
-  objeto: Joi.string().allow(null, ''),
-  justificativa: Joi.string().allow(null, ''),
-  area_requisitante: Joi.string().max(255).allow(null, ''),
-  grau_prioridade_id: Joi.number().integer().strict().allow(null),
-  data_prevista_conclusao: Joi.date().iso().raw().allow(null),
-  responsavel_cpf: Joi.string().max(14).allow(null, ''),
-  vinculo_plano_gestao: Joi.string().max(60).allow(null, ''),
-  consta_pca: Joi.boolean().strict().default(true),
-  valor_estimado: Joi.number().min(0).strict().allow(null),
-  itens: Joi.array().items(item).default([])
-})
+models.criar = Joi.object().keys(camposDoDfd)
+
+models.atualizar = Joi.object().keys(camposDoDfd)
 
 module.exports = models

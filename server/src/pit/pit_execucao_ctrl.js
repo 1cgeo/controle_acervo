@@ -250,28 +250,67 @@ const ORIGEM_CALCULA_REALIZADA = `m.origem_id IN (${ORIGENS_CALCULAM_REALIZADA.j
 // A uniao dos meses vem dos DOIS lados: a meta automatica tem mes que
 // `pit.execucao` nunca viu, e a meta que acabou de virar pode ter mes digitado
 // que o calculo nao reproduz -- e ver esse buraco e melhor do que esconde-lo.
-const CELULAS = `
+//
+// A FONTE DO ITEM E PARAMETRO, e nao `pit.meta_vigente` fixa. Quem chama passa a
+// MESMA fonte do seu FROM externo, e e essa igualdade que a funcao existe para
+// obrigar: a celula so aparece para o item que a consulta ja lista.
+//
+// DUAS FONTES PARA A MESMA PERGUNTA, ate 2026-08-08. O `resumoDoAno` lia o FROM
+// externo de `pit.meta_em(<ultimo dia do mes>)` -- a revisao DAQUELE mes -- e
+// esta CTE lia `pit.meta_vigente`, que e a revisao de HOJE e nao conhece mes
+// nenhum. A edicao de marco montava a linha por uma regra e a celula por outra.
+//
+// HOJE ISSO NAO IMPRIME ERRADO, e vale dizer por que em vez de deixar a proxima
+// pessoa descobrir sozinha: `meta_em(d)` e a MESMA consulta de `meta_vigente`
+// mais o predicado `data_vigencia <= d`, entao todo item que ela lista tem
+// declaracao publicada e esta na outra. Um e subconjunto do outro POR
+// CONSTRUCAO, e o LEFT JOIN do resumo nunca perdia celula. Conferido contra a
+// producao restaurada, mes a mes de 2026: zero itens em `meta_em(d)` fora de
+// `meta_vigente`.
+//
+// ENTAO POR QUE MUDAR. Porque a reprodutibilidade -- a edicao de marco reporta a
+// revisao de marco -- passa a valer por construcao em vez de por acidente de
+// duas definicoes coincidirem. `meta_vigente` ja e a unica das duas SEM teto de
+// data; no dia em que ela ganhar qualquer filtro proprio, a divergencia deixa de
+// ser latente e o relatorio de marco muda sozinho, sem escrita nenhuma e sem
+// erro nenhum. E o caso que er/pit.sql conta ter acontecido com os itens 1.9 a
+// 1.11 de 2026, que sairam da R0 e foram para o rascunho da R2.
+const celulasDe = fonte => `
   celula AS (
     SELECT ms.meta_id, ms.mes,
            CASE WHEN ${ORIGEM_CALCULA_PLANEJADA} THEN cc.soma_planejada
                 ELSE e.quantidade_planejada END AS planejada,
            CASE WHEN ${ORIGEM_CALCULA_REALIZADA} THEN cc.soma_realizada
                 ELSE e.quantidade END AS realizada,
-           CASE WHEN m.origem_id = ${ORIGEM_META.MANUAL} THEN e.id ELSE NULL END AS id,
-           e.data_conclusao, e.observacao
+           CASE WHEN m.origem_id = ${ORIGEM_META.MANUAL} THEN e.id ELSE NULL END AS id
     FROM (
       SELECT meta_id, mes FROM pit.execucao
       UNION
       SELECT meta_id, mes FROM calculada
     ) AS ms
-    INNER JOIN pit.meta_vigente AS m ON m.id = ms.meta_id
+    INNER JOIN ${fonte} AS m ON m.id = ms.meta_id
     LEFT JOIN pit.execucao AS e ON e.meta_id = ms.meta_id AND e.mes = ms.mes
     LEFT JOIN calculada AS cc ON cc.meta_id = ms.meta_id AND cc.mes = ms.mes
   )
 `
 
 // O prefixo comum das consultas que leem a grade.
-const COM_CELULAS = `WITH calculada AS (${CELULAS_CALCULADAS}), ${CELULAS}`
+const comCelulas = fonte =>
+  `WITH calculada AS (${CELULAS_CALCULADAS}), ${celulasDe(fonte)}`
+
+// A grade e a ficha da meta sao telas de HOJE, e por isso leem a revisao de
+// hoje nos dois lugares.
+const COM_CELULAS_VIGENTE = comCelulas('pit.meta_vigente')
+
+// O ULTIMO DIA DO MES pedido, ou hoje quando nao ha mes. Escrito UMA vez porque
+// o `resumoDoAno` o usa em DOIS lugares (a fonte da celula e o FROM externo), e
+// duas copias e onde a divergencia que este arquivo acabou de consertar
+// renasceria. Depende dos parametros `ano` e `mes` da consulta.
+const DATA_DA_EDICAO = `
+       CASE WHEN $<mes>::smallint IS NULL THEN CURRENT_DATE
+            ELSE (make_date($<ano>::int, $<mes>::int, 1)
+                  + INTERVAL '1 month' - INTERVAL '1 day')::date
+       END`
 
 /**
  * A GRADE do ano: uma linha por meta, com os doze meses e os dois números de
@@ -289,7 +328,7 @@ const COM_CELULAS = `WITH calculada AS (${CELULAS_CALCULADAS}), ${CELULAS}`
  */
 controller.grade = async ano => {
   return db.conn.any(
-    `${COM_CELULAS}
+    `${COM_CELULAS_VIGENTE}
      SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
@@ -317,14 +356,11 @@ controller.grade = async ano => {
                 'id', x.id,
                 'mes', x.mes,
                 'planejada', x.planejada,
-                'realizada', x.realizada,
-                'data_conclusao', x.data_conclusao::text,
-                'observacao', x.observacao
+                'realizada', x.realizada
               ) ORDER BY x.mes) AS lista
        FROM celula AS x
        WHERE x.meta_id = m.id
-         AND (x.planejada IS NOT NULL OR x.realizada IS NOT NULL
-              OR x.data_conclusao IS NOT NULL OR x.observacao IS NOT NULL)
+         AND (x.planejada IS NOT NULL OR x.realizada IS NOT NULL)
      ) AS mes ON TRUE
      -- Os totais saem de um LATERAL, e nao de GROUP BY. Agrupar exigiria a
      -- coluna dos meses na clausula, e o PostgreSQL nao sabe comparar json por
@@ -375,7 +411,7 @@ controller.grade = async ano => {
  */
 controller.resumoDoAno = async (ano, mes) => {
   return db.conn.any(
-    `${COM_CELULAS}
+    `${comCelulas(`pit.meta_em(${DATA_DA_EDICAO})`)}
      SELECT m.id AS meta_id, m.ano, m.numero_meta, m.nome, m.item, m.descricao,
             m.unidade, m.demandante, m.quantidade_prevista,
             m.prazo::text AS prazo,
@@ -395,14 +431,29 @@ controller.resumoDoAno = async (ano, mes) => {
      -- A REVISAO VIGENTE NAQUELE MES, e nao a de hoje. O RPCMTec
      -- de agosto tem de continuar reportando o que reportava depois de a DSG
      -- publicar uma revisao em setembro. Sem mes, vale a de hoje.
-     FROM pit.meta_em(
-       CASE WHEN $<mes>::smallint IS NULL THEN CURRENT_DATE
-            ELSE (make_date($<ano>::int, $<mes>::int, 1)
-                  + INTERVAL '1 month' - INTERVAL '1 day')::date
-       END
-     ) AS m
+     --
+     -- A MESMA DATA VAI PARA A CTE celula, la em cima. Enquanto ela lia
+     -- pit.meta_vigente, a linha saia de uma regra e a celula de outra; o
+     -- comentario de celulasDe explica por que isso ainda nao imprimia errado, e
+     -- por que mesmo assim mudou. (Sem crase: template literal.)
+     FROM pit.meta_em(${DATA_DA_EDICAO}) AS m
      LEFT JOIN celula AS e ON e.meta_id = m.id
      WHERE m.ano = $<ano>
+       -- A META CANCELADA SAI DO RESUMO, e com ela da subsecao 2.1 do RPCMTec.
+       --
+       -- MESMO FILTRO DA GRADE, e a falta dele aqui era o defeito: cancelar e o
+       -- unico ato de situacao que e da DSG, declarado numa revisao, e a 2.1 de
+       -- julho de 2026 imprimia 42 linhas com DUAS canceladas pela R1 em
+       -- 2026-05-14 (os itens 5.2 e 5.3). O campo cancelada chegava na linha e
+       -- ninguem o olhava. Decisao do chefe em 2026-08-08: sai do relatorio.
+       --
+       -- SAI DAQUI, e nao do sistema: a meta cancelada continua na tela de Metas
+       -- do PIT, marcada, porque apagar o fato faria o R0 e o R1 parecerem
+       -- iguais.
+       --
+       -- IS NOT TRUE, e nao NOT cancelada, pela mesma razao da grade: a
+       -- declaracao pode trazer cancelada nula, e NOT NULL nao e verdadeiro.
+       AND m.cancelada IS NOT TRUE
      -- TODAS as colunas, e não só m.id: pit.meta_em é FUNÇÃO, e o PostgreSQL só
      -- dispensa as demais quando o agrupamento é pela chave primária de uma
      -- TABELA. Com pit.meta isso funcionava; aqui não.
@@ -424,17 +475,15 @@ controller.resumoDoAno = async (ano, mes) => {
  */
 controller.listarDaMeta = async metaId => {
   return db.conn.any(
-    `${COM_CELULAS}
+    `${COM_CELULAS_VIGENTE}
      SELECT c.id, c.meta_id, c.mes,
             c.planejada AS quantidade_planejada, c.realizada AS quantidade,
-            c.data_conclusao::text AS data_conclusao, c.observacao,
             e.data_cadastramento, e.usuario_cadastramento_uuid,
             e.data_modificacao, e.usuario_modificacao_uuid
      FROM celula AS c
      LEFT JOIN pit.execucao AS e ON e.meta_id = c.meta_id AND e.mes = c.mes
      WHERE c.meta_id = $<metaId>
-       AND (c.planejada IS NOT NULL OR c.realizada IS NOT NULL
-            OR c.data_conclusao IS NOT NULL OR c.observacao IS NOT NULL)
+       AND (c.planejada IS NOT NULL OR c.realizada IS NOT NULL)
      ORDER BY c.mes`,
     { metaId }
   )
@@ -647,13 +696,16 @@ controller.ensaio = async (ano, metaId) => {
   )
 }
 
-// Os quatro campos que fazem a linha existir. Com os quatro nulos ela não diz
-// nada, e o banco a recusa pelo CHECK `execucao_diz_alguma_coisa`.
+// Os DOIS campos que fazem a linha existir. Com os dois nulos ela não diz nada,
+// e o banco a recusa pelo CHECK `execucao_diz_alguma_coisa`.
+//
+// ERAM QUATRO até a 1.44.0, e `data_conclusao` e `observacao` entravam nesta
+// conta. Isso era um beco sem saída: a linha que só as tivesse não podia ser
+// apagada pela tela, que só sabe mandar `planejada` e `realizada`. A poda das
+// duas colunas matou o beco junto.
 const vazia = linha =>
   linha.quantidade_planejada == null &&
-  linha.quantidade == null &&
-  linha.data_conclusao == null &&
-  (linha.observacao == null || linha.observacao === '')
+  linha.quantidade == null
 
 /**
  * Grava UMA célula da grade: o par (meta, mês).
@@ -667,8 +719,8 @@ const vazia = linha =>
  * a grade lançar o realizado sem carregar o plano junto, e o contrário: os dois
  * modos escrevem na mesma linha e nenhum limpa o do outro.
  *
- * Quando a célula fica sem nenhum dos quatro, a linha é APAGADA em vez de
- * guardada vazia. Sem isso o CHECK do banco recusaria a limpeza com um 500 cru.
+ * Quando a célula fica sem nenhum dos dois, a linha é APAGADA em vez de guardada
+ * vazia. Sem isso o CHECK do banco recusaria a limpeza com um 500 cru.
  */
 controller.salvar = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
@@ -760,9 +812,7 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
 
     const linha = {
       quantidade_planejada: campo('quantidade_planejada', antes ? antes.quantidade_planejada : null),
-      quantidade: campo('quantidade', antes ? antes.quantidade : null),
-      data_conclusao: campo('data_conclusao', antes ? antes.data_conclusao : null),
-      observacao: campo('observacao', antes ? antes.observacao : null)
+      quantidade: campo('quantidade', antes ? antes.quantidade : null)
     }
 
     if (vazia(linha)) {
@@ -784,7 +834,6 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
       const depois = await t.one(
         `UPDATE pit.execucao
          SET quantidade_planejada = $<quantidade_planejada>, quantidade = $<quantidade>,
-             data_conclusao = $<data_conclusao>, observacao = $<observacao>,
              data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
          RETURNING *`,
@@ -806,10 +855,9 @@ controller.salvar = async (dados, usuarioUuid, contexto) => {
 
     const criada = await t.one(
       `INSERT INTO pit.execucao
-         (meta_id, mes, quantidade_planejada, quantidade, data_conclusao,
-          observacao, usuario_cadastramento_uuid)
+         (meta_id, mes, quantidade_planejada, quantidade, usuario_cadastramento_uuid)
        VALUES ($<metaId>, $<mes>, $<quantidade_planejada>, $<quantidade>,
-               $<data_conclusao>, $<observacao>, $<usuarioUuid>)
+               $<usuarioUuid>)
        RETURNING *`,
       { ...linha, metaId: dados.meta_id, mes: dados.mes, usuarioUuid }
     )

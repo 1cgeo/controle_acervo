@@ -6,7 +6,6 @@ import { flush } from '@/__tests__/helpers/flush.js';
 // proprio filtro de ano e abre no ano ATUAL, sem nada guardado no localStorage.
 vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getDfds: vi.fn(() => Promise.resolve([])),
-  getGrauPrioridade: vi.fn(() => Promise.resolve([])),
   getTipoItemDfd: vi.fn(() => Promise.resolve([])),
   getAnos: vi.fn(() => Promise.resolve([2026, 2025])),
   getDfd: vi.fn(() => Promise.resolve({})),

@@ -28,7 +28,6 @@ const itemValido = {
   cod_nd: '339015',
   meta_pit_id: null,
   item_label: '1D',
-  gnd: 3,
   valor_solicitado: 50000,
   valor_autorizado: 50000
 }

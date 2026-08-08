@@ -5,7 +5,6 @@ import {
   createTextField,
   createSelectField,
   createNumberField,
-  createDateField,
   createTextareaField,
   createCheckboxField,
 } from '@components/form-fields/form-fields.js';
@@ -20,76 +19,62 @@ function orNull(value) {
 }
 
 /**
- * CPF no formato aceito: 11 digitos, com ou sem pontuacao.
- *
- * So o formato, e nao os digitos verificadores: o campo e antigo e ja tem valor
- * gravado. Reprovar um CPF legado aqui travaria a correcao de qualquer OUTRO
- * campo do mesmo DFD.
- *
- * @param {string} texto
- * @returns {boolean}
- */
-function cpfNoFormato(texto) {
-  return /^\d{11}$/.test(String(texto).replace(/\D/g, ''));
-}
-
-/**
  * Bloco de fatos de auditoria do registro: quando e por quem.
  *
- * O historico de alteracoes e mais novo que os DFDs ja gravados: para elas o
- * historico
- * abre vazio, e a data de cadastro e a unica rastreabilidade em tela.
+ * O historico de alteracoes e mais novo que os DFDs ja gravados: para eles o
+ * historico abre vazio, e a data de cadastro e a unica rastreabilidade em tela.
  *
- * @param {Object} registro - linha com as quatro colunas de auditoria
+ * SO O CADASTRO. `dfd.data_modificacao` e `dfd.usuario_modificacao_uuid` sairam
+ * do banco em 2026-08-08: nenhum DFD jamais foi editado em 8 de 8, e quem
+ * responde "o que mudou, quando e por quem" e o painel de historico logo abaixo,
+ * que traz o diff pronto.
+ *
+ * @param {Object} registro - linha com as colunas de cadastro
  * @returns {HTMLElement|null} null quando nao ha data de cadastro
  */
 function blocoDeFatos(registro) {
   if (!registro || !registro.data_cadastramento) return null;
 
-  const partes = [
-    `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
-      + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : ''),
-  ];
-  // A linha de alteracao so aparece quando houve alteracao: registro nunca
-  // editado nao ganha um campo vazio para a pessoa interpretar.
-  if (registro.data_modificacao) {
-    partes.push(
-      `Alterado em ${formatDateTime(registro.data_modificacao)}`
-        + (registro.usuario_modificacao ? ` por ${registro.usuario_modificacao}` : '')
-    );
-  }
+  const texto = `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
+    + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : '')
+    + '.';
 
   return el('p', {
     className: 'form-field__help',
-    textContent: partes.join('. ') + '.',
+    textContent: texto,
     style: { margin: '0' },
   });
 }
 
 /**
- * O total gravado do item foi digitado na mao?
+ * O total do item, para EXIBIR.
  *
- * Verdadeiro quando o item tem total e ele NAO e quantidade x unitario. Sem
- * quantidade ou sem unitario nao ha produto para comparar, e o total so pode ter
- * vindo da mao.
+ * O total nao e mais digitado: desde 2026-08-08 ele e derivado de
+ * quantidade x valor unitario, e o servidor e quem o calcula. O item que ja veio
+ * do servidor traz o numero pronto; o item recem-adicionado no editor inline
+ * ainda nao passou por la, e o produto e a mesma conta que o servidor vai fazer.
  *
- * @param {Object|null} item
- * @returns {boolean}
+ * @param {Object} item
+ * @returns {number|null} null quando nao ha o que multiplicar
  */
-function totalDivergeDoProduto(item) {
-  if (!item || item.valor_total == null) return false;
-  if (item.quantidade == null || item.valor_unitario == null) return true;
+function totalDoItem(item) {
+  if (!item) return null;
+  if (item.valor_total != null) return Number(item.valor_total);
+  if (item.quantidade == null || item.valor_unitario == null) return null;
   const produto = Math.round(Number(item.quantidade) * Number(item.valor_unitario) * 100) / 100;
-  if (isNaN(produto)) return true;
-  // Tolerancia de centavo: o produto de dois NUMERIC volta do banco como texto e
-  // a multiplicacao em ponto flutuante deixa residuo.
-  return Math.abs(Number(item.valor_total) - produto) >= 0.005;
+  return isNaN(produto) ? null : produto;
 }
 
 /**
  * Editor inline e enxuto de UM item do DFD. Aparece abaixo da tabela ao
- * adicionar ou editar um item. O valor total e calculado automaticamente
- * (quantidade x valor unitario) enquanto o usuario nao o edita na mao.
+ * adicionar ou editar um item.
+ *
+ * NAO HA CAMPO "Valor total". Ele era digitavel e vinha calculado, e nos 31
+ * itens reais era `quantidade x valor_unitario` em 31 de 31: um campo cujo unico
+ * estado possivel diferente do calculo seria um erro de digitacao. A coluna saiu
+ * do banco em 2026-08-08 e virou derivada; a TABELA ao lado continua mostrando o
+ * total, marcado como calculado.
+ *
  * @param {Object} options
  * @param {Array<{code:number, nome:string}>} options.tipoItem
  * @param {Object|null} [options.item] - item existente para editar
@@ -128,33 +113,25 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
     step: 0.01,
     value: item?.valor_unitario ?? undefined,
   });
-  const valorTotalField = createNumberField({
-    label: 'Valor total',
-    min: 0,
-    step: 0.01,
-    value: item?.valor_total ?? undefined,
-    helpText: 'Calculado da quantidade x unitário (editável).',
+  // O total APARECE enquanto se digita, e nao e um campo: quem preenche precisa
+  // ver o numero que vai valer antes de salvar, e nao ha o que ele possa fazer
+  // com ele alem de conferir.
+  const totalCalculado = el('p', {
+    className: 'form-field__help',
+    style: { margin: '0', alignSelf: 'end' },
   });
-
-  // Auto-calculo do total: enquanto o total gravado for o proprio produto
-  // quantidade x unitario, editar a quantidade recalcula o total.
-  //
-  // A marca antiga era `item?.valor_total != null`, verdadeira em TODA edicao de
-  // item ja salvo, nos 26 itens reais: o recalculo nunca disparava e o texto de
-  // ajuda prometia um comportamento que a tela nao tinha. Agora so conta como
-  // "digitado na mao" o total que DIVERGE do produto, com tolerancia de centavo.
-  let totalTocado = totalDivergeDoProduto(item);
-  function recalcula() {
-    if (totalTocado) return;
-    const q = quantidadeField.getValue();
-    const u = valorUnitarioField.getValue();
-    if (q != null && u != null) {
-      valorTotalField.setValue(Math.round(q * u * 100) / 100);
-    }
+  function pintarTotal() {
+    const total = totalDoItem({
+      quantidade: quantidadeField.getValue(),
+      valor_unitario: valorUnitarioField.getValue(),
+    });
+    totalCalculado.textContent = total == null
+      ? 'Valor total: informe quantidade e valor unitário.'
+      : `Valor total (calculado): ${formatCurrency(total)}`;
   }
-  quantidadeField.input.addEventListener('input', recalcula);
-  valorUnitarioField.input.addEventListener('input', recalcula);
-  valorTotalField.input.addEventListener('input', () => { totalTocado = true; });
+  quantidadeField.input.addEventListener('input', pintarTotal);
+  valorUnitarioField.input.addEventListener('input', pintarTotal);
+  pintarTotal();
 
   const cancelBtn = el('button', {
     className: 'btn btn--text btn--sm',
@@ -176,7 +153,7 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
       el('div', { className: 'form-grid__full' }, [descricaoField.element]),
       quantidadeField.element,
       valorUnitarioField.element,
-      valorTotalField.element,
+      totalCalculado,
     ]),
     el('div', { className: 'dfd-item-editor__actions' }, [cancelBtn, saveBtn]),
   ]);
@@ -203,7 +180,8 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
       descricao: descricaoField.getValue(),
       quantidade: quantidadeField.getValue(),
       valor_unitario: valorUnitarioField.getValue(),
-      valor_total: valorTotalField.getValue(),
+      // SEM `valor_total`: a coluna virou derivada em 2026-08-08, e o validador
+      // estrito do módulo devolve 400 para chave desconhecida.
     };
   }
 
@@ -224,7 +202,7 @@ function createItemEditor({ tipoItem = [], item = null, onSave, onCancel }) {
  * @param {number} [options.ano] - ano da TELA que abriu o dialog. O dialog nao
  *   tem barra de filtros, entao quem o abre passa o ano; ele nunca le um store
  *   global. Sem o parametro vale o ano atual, o mesmo padrao do filtro da tela.
- * @param {Object} options.dominios - { grauPrioridade, tipoItem }
+ * @param {Object} options.dominios - { tipoItem }
  * @param {Object} [options.padroes] - valores padrao do DFD novo, medidos na lista
  * @param {boolean} [options.somenteLeitura] - abre a ficha sem permitir salvar
  * @param {Function} [options.onSaved] - chamado apos salvar com sucesso
@@ -239,7 +217,6 @@ export function openDfdDialog({
 } = {}) {
   const isEdit = Boolean(dfd);
   const {
-    grauPrioridade = [],
     tipoItem = [],
   } = dominios;
 
@@ -249,10 +226,10 @@ export function openDfdDialog({
     label: 'Número',
     required: true,
     value: dfd?.numero ?? '',
-    // Os limites da tela seguem o DDL (er/orcamento.sql:40,42,49): `numero`
-    // VARCHAR(20), `rotulo` VARCHAR(120), `vinculo_plano_gestao` VARCHAR(60). A
-    // tela aceitava 50, 255 e 255, e o banco recusava o excedente na hora de
-    // salvar, depois do formulario inteiro preenchido.
+    // Os limites da tela seguem o DDL (er/orcamento.sql:40,42): `numero`
+    // VARCHAR(20) e `rotulo` VARCHAR(120). A tela aceitava 50 e 255, e o banco
+    // recusava o excedente na hora de salvar, depois do formulario inteiro
+    // preenchido.
     maxLength: 20,
   });
   const rotuloField = createTextField({
@@ -264,50 +241,33 @@ export function openDfdDialog({
     label: 'Objeto',
     value: dfd?.objeto ?? '',
   });
-  const justificativaField = createTextareaField({
-    label: 'Justificativa',
-    value: dfd?.justificativa ?? '',
-  });
-  // O DFD novo nasce com a area requisitante e o vinculo do plano de gestao que
-  // a lista do ano mostra: os dois campos sao iguais nos 8 DFDs reais.
+  // O DFD novo nasce com a area requisitante que a lista do ano mostra: ela e
+  // igual nos 8 DFDs reais, e redigita-la a cada cadastro so cria divergencia de
+  // grafia.
+  //
+  // OS CINCO CAMPOS QUE SAIRAM DAQUI em 2026-08-08: justificativa, grau de
+  // prioridade, data prevista de conclusao, CPF do responsavel e vinculo com o
+  // plano de gestao. Os tres primeiros e o CPF estavam em 0 de 8 DFDs, nenhum
+  // DFD jamais foi editado, e nada no sistema os lia; o vinculo tinha UM valor
+  // distinto em 8 de 8 ('Plano de Gestão do 1º CGEO'), que e uma constante
+  // disfarcada de coluna. O CPF tinha um motivo a mais: dado pessoal num
+  // repositorio publico e num banco que nao precisa dele.
   const areaField = createTextField({
     label: 'Área requisitante',
     value: dfd?.area_requisitante ?? padroes.area_requisitante ?? '',
     maxLength: 255,
   });
-  const grauField = createSelectField({
-    label: 'Grau de prioridade',
-    options: grauPrioridade.map((g) => ({ value: g.code, label: g.nome })),
-    value: dfd ? dfd.grau_prioridade_id : undefined,
-  });
-  const dataPrevistaField = createDateField({
-    label: 'Data prevista de conclusão',
-    value: dfd?.data_prevista_conclusao ?? '',
-  });
-  const cpfField = createTextField({
-    label: 'CPF do responsável',
-    value: dfd?.responsavel_cpf ?? '',
-    maxLength: 14,
-    placeholder: '000.000.000-00',
-    helpText: '11 dígitos, com ou sem pontuação.',
-  });
-  const vinculoField = createTextField({
-    label: 'Vínculo com plano de gestão',
-    value: dfd?.vinculo_plano_gestao ?? padroes.vinculo_plano_gestao ?? '',
-    maxLength: 60,
-  });
-  // O valor estimado e o numero que o DFD leva ao PCA, e a lista ja o mostrava
-  // numa coluna. Nenhuma tela permitia informa-lo: o corpo saia sem o campo e o
-  // servidor caia em resolveValorEstimado(undefined, itens), que grava null sem
-  // itens e 0 com itens sem valor_total. Editar o objeto de um DFD sem itens
-  // zerava o valor. Em branco, o servidor volta a somar os itens.
+  // O valor estimado e o numero que o DFD leva ao PCA, e a lista o mostra numa
+  // coluna. Ele NAO SE DIGITA MAIS: em 8 de 8 DFDs ele era exatamente a soma dos
+  // `valor_total` dos itens, e desde 2026-08-08 quem o calcula e o servidor. O
+  // campo fica na tela, desabilitado, pelo mesmo motivo do GND no item do PDR:
+  // quem preenche precisa ver o numero que vai valer.
   const valorEstimadoField = createNumberField({
     label: 'Valor estimado',
-    min: 0,
-    step: 0.01,
     value: dfd?.valor_estimado ?? undefined,
-    helpText: 'Em branco, soma os itens.',
+    helpText: 'Calculado: soma dos itens.',
   });
+  valorEstimadoField.input.disabled = true;
   const constaPcaField = createCheckboxField({
     label: 'Consta no PCA',
     checked: dfd ? Boolean(dfd.consta_pca) : true,
@@ -359,24 +319,42 @@ export function openDfdDialog({
     editor.focus();
   }
 
+  /**
+   * As celulas de dado de UMA linha, iguais em leitura e em edicao.
+   *
+   * A coluna CATMAT/CATSER entrou aqui em 2026-08-08: o editor pedia o codigo do
+   * catalogo federal desde sempre e a tabela ao lado nao tinha a coluna, entao
+   * ele era GRAVAVEL E INVISIVEL, como o ano de referencia do recebimento.
+   *
+   * O valor total sai de `totalDoItem`, e nao mais da coluna: ele e derivado
+   * desde 2026-08-08, e o item recem-adicionado no editor ainda nao passou pelo
+   * servidor que o calcula.
+   */
+  function celulasDoItem(it) {
+    return [
+      el('td', { textContent: tipoNome.get(String(it.tipo_item_id)) || '-' }),
+      el('td', { textContent: it.cod_catmat_catser || '-' }),
+      el('td', { textContent: it.descricao || '-' }),
+      el('td', { className: 'dfd-itens-table__num', textContent: it.quantidade != null ? String(it.quantidade) : '-' }),
+      el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_unitario) }),
+      el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(totalDoItem(it)) }),
+    ];
+  }
+
   function renderItens() {
     tbody.innerHTML = '';
     if (!itens.length) {
       tbody.appendChild(el('tr', {}, [
-        el('td', { className: 'dfd-itens-table__empty', colSpan: '6', textContent: 'Nenhum item adicionado' }),
+        el('td', { className: 'dfd-itens-table__empty', colSpan: '7', textContent: 'Nenhum item adicionado' }),
       ]));
       return;
     }
     itens.forEach((it, idx) => {
       // Em leitura a linha nao tem botao: a celula de acoes fica vazia, e a
-      // tabela mantem as seis colunas do cabecalho.
+      // tabela mantem as sete colunas do cabecalho.
       if (somenteLeitura) {
         tbody.appendChild(el('tr', {}, [
-          el('td', { textContent: tipoNome.get(String(it.tipo_item_id)) || '-' }),
-          el('td', { textContent: it.descricao || '-' }),
-          el('td', { className: 'dfd-itens-table__num', textContent: it.quantidade != null ? String(it.quantidade) : '-' }),
-          el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_unitario) }),
-          el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_total) }),
+          ...celulasDoItem(it),
           el('td', { className: 'dfd-itens-table__actions' }),
         ]));
         return;
@@ -397,11 +375,7 @@ export function openDfdDialog({
       }, [svgIcon(ICONS.delete, 16)]);
 
       tbody.appendChild(el('tr', {}, [
-        el('td', { textContent: tipoNome.get(String(it.tipo_item_id)) || '-' }),
-        el('td', { textContent: it.descricao || '-' }),
-        el('td', { className: 'dfd-itens-table__num', textContent: it.quantidade != null ? String(it.quantidade) : '-' }),
-        el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_unitario) }),
-        el('td', { className: 'dfd-itens-table__num', textContent: formatCurrency(it.valor_total) }),
+        ...celulasDoItem(it),
         el('td', { className: 'dfd-itens-table__actions' }, [editBtn, removeBtn]),
       ]));
     });
@@ -411,10 +385,14 @@ export function openDfdDialog({
     el('thead', {}, [
       el('tr', {}, [
         el('th', { textContent: 'Tipo' }),
+        el('th', { textContent: 'CATMAT/CATSER' }),
         el('th', { textContent: 'Descrição' }),
         el('th', { className: 'dfd-itens-table__num', textContent: 'Qtd' }),
         el('th', { className: 'dfd-itens-table__num', textContent: 'V. unitário' }),
-        el('th', { className: 'dfd-itens-table__num', textContent: 'V. total' }),
+        // O rotulo diz que o numero e CALCULADO: ele deixou de ser digitavel em
+        // 2026-08-08, e sem a marca a coluna se le como campo que alguem
+        // preencheu.
+        el('th', { className: 'dfd-itens-table__num', textContent: 'V. total (calc.)' }),
         el('th', { 'aria-label': 'Ações' }),
       ]),
     ]),
@@ -458,11 +436,6 @@ export function openDfdDialog({
         rotuloField.element,
         areaField.element,
         el('div', { className: 'form-grid__full' }, [objetoField.element]),
-        el('div', { className: 'form-grid__full' }, [justificativaField.element]),
-        grauField.element,
-        dataPrevistaField.element,
-        cpfField.element,
-        vinculoField.element,
         valorEstimadoField.element,
         el('div', { className: 'form-grid__full' }, [constaPcaField.element]),
         fatos ? el('div', { className: 'form-grid__full' }, [fatos]) : null,
@@ -487,11 +460,10 @@ export function openDfdDialog({
 
   // Leitura: os campos ficam desabilitados e o rodape so tem Fechar. O anexo
   // segue de fora, porque o widget tem gate proprio e quem consulta pode baixar.
+  // O valor estimado ja nasce desabilitado, nos dois modos.
   if (somenteLeitura) {
     for (const campo of [
-      numeroField, rotuloField, objetoField, justificativaField, areaField,
-      grauField, dataPrevistaField, cpfField, vinculoField, valorEstimadoField,
-      constaPcaField,
+      numeroField, rotuloField, objetoField, areaField, constaPcaField,
     ]) {
       campo.input.disabled = true;
     }
@@ -512,36 +484,27 @@ export function openDfdDialog({
         if (saving) return;
 
         numeroField.setError(null);
-        cpfField.setError(null);
 
         let valid = true;
         if (!numeroField.getValue()) {
           numeroField.setError('Informe o número do DFD');
           valid = false;
         }
-        // O CPF tinha maxLength e nenhuma validacao: qualquer texto de ate 14
-        // caracteres virava "CPF do responsavel" no PCA.
-        const cpf = cpfField.getValue();
-        if (cpf && !cpfNoFormato(cpf)) {
-          cpfField.setError('CPF deve ter 11 dígitos');
-          valid = false;
-        }
         // Se houver um item em edicao, tenta consolida-lo antes de salvar.
         if (editor && !editor.trySave()) valid = false;
         if (!valid) return;
 
+        // SEM `justificativa`, `grau_prioridade_id`, `data_prevista_conclusao`,
+        // `responsavel_cpf`, `vinculo_plano_gestao` e `valor_estimado`: as cinco
+        // primeiras sairam do banco em 2026-08-08 e a ultima virou derivada da
+        // soma dos itens. O validador estrito do modulo devolve 400 para chave
+        // desconhecida.
         const body = {
           numero: numeroField.getValue(),
           ano: isEdit ? dfd.ano : ano,
           rotulo: orNull(rotuloField.getValue()),
           objeto: orNull(objetoField.getValue()),
-          justificativa: orNull(justificativaField.getValue()),
           area_requisitante: orNull(areaField.getValue()),
-          grau_prioridade_id: grauField.getValue(),
-          data_prevista_conclusao: dataPrevistaField.getValue(),
-          responsavel_cpf: orNull(cpfField.getValue()),
-          vinculo_plano_gestao: orNull(vinculoField.getValue()),
-          valor_estimado: valorEstimadoField.getValue(),
           consta_pca: constaPcaField.getValue(),
           itens,
         };

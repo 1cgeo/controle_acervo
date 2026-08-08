@@ -30,7 +30,7 @@ describe('dfd_ctrl', () => {
         objeto: 'Aquisicao',
         consta_pca: true,
         itens: [
-          { tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50, valor_total: 100 }
+          { tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50 }
         ]
       },
       'uuid-1'

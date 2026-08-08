@@ -30,7 +30,9 @@ export const getTipoLicitacao = () => apiGet(`${API}/dominio/tipo_licitacao`);
 export const getFaseLicitacao = () => apiGet(`${API}/dominio/fase_licitacao`);
 export const getClassificacaoNc = () => apiGet(`${API}/dominio/classificacao_nc`);
 export const getTipoItemDfd = () => apiGet(`${API}/dominio/tipo_item_dfd`);
-export const getGrauPrioridade = () => apiGet(`${API}/dominio/grau_prioridade`);
+// SEM `getGrauPrioridade`: `dfd.grau_prioridade_id` saiu do banco em 2026-08-08,
+// e com a coluna sairam o dominio `dominio.grau_prioridade` e a rota que o
+// servia. Ela era a unica FK que apontava para aquele catalogo.
 
 // ---- Dominios editaveis (CRUD admin, geridos pela Configuracao) ----
 export const createNaturezaDespesa = (body) => apiPost(`${API}/dominio/natureza_despesa`, body);

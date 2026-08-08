@@ -36,10 +36,21 @@ const RECURSOS = {
     caminho: '/orcamento/dfd',
     schema: carregar('dfd/dfd_schema'),
     // Colunas padrao da listagem compacta. O listar do backend devolve tambem
-    // os quatro campos de auditoria (data/usuario de cadastramento e
-    // modificacao), que sao ruido para quem so quer ler: ficam de fora daqui e
-    // so aparecem com --campos explicito ou --json.
-    colunas: ['id', 'numero', 'ano', 'rotulo', 'objeto', 'grau_prioridade', 'valor_estimado', 'consta_pca'],
+    // os campos de cadastramento (data, uuid e nome de quem cadastrou), que sao
+    // ruido para quem so quer ler: ficam de fora daqui e so aparecem com
+    // --campos explicito ou --json. O PAR DE MODIFICACAO nao existe mais: saiu
+    // do DFD na 1.43.0, e quem guarda quem mexeu e quando e `auditoria.evento`.
+    //
+    // `area_requisitante` ESTA NO LUGAR DE `grau_prioridade`, e a troca e de
+    // 2026-08-08. A prioridade saiu do banco na 1.43.0 (1 de 8 preenchida, um
+    // unico codigo) e levou `dominio.grau_prioridade` junto; a area
+    // requisitante e o campo que sobrou dizendo DE QUEM e a demanda.
+    //
+    // `valor_estimado` FICA, e continua saindo com o mesmo nome: ele virou
+    // DERIVADO (a soma dos itens) na mesma migracao, e o que mudou foi a fonte,
+    // nao a resposta. Ver a nota em REGRAS.dfd sobre o que deixou de ser
+    // DIGITAVEL.
+    colunas: ['id', 'numero', 'ano', 'rotulo', 'objeto', 'area_requisitante', 'valor_estimado', 'consta_pca'],
     anexo: 'dfd_id'
   },
 
@@ -68,7 +79,16 @@ const RECURSOS = {
     nome: 'nota de empenho',
     caminho: '/orcamento/notas_empenho',
     schema: carregar('nota_empenho/nota_empenho_schema'),
-    colunas: ['id', 'numero', 'ano', 'data_empenho', 'nota_credito_numero', 'cod_nd', 'valor_empenhado', 'valor_anulado', 'valor_liquidado']
+    // `total_liquidado`, e nao `valor_liquidado`: quem se chama assim e a linha
+    // da LIQUIDACAO, e na NE o campo e a soma delas. O nome errado ficava aqui
+    // sem barulho nenhum, porque a coluna padrao que a resposta nao traz e
+    // DESCARTADA em silencio (saida.js so avisa o que veio por --campos).
+    //
+    // SEM `ug` e `gestao`, e nao por escolha de apresentacao: as duas viraram
+    // NOT NULL na 1.43.0 e sao a chave do SIAFI (ug, gestao, ano, numero), mas
+    // NENHUMA das duas consultas do servidor as devolve. Nao ha o que pedir aqui
+    // nem com --campos; o 409 da colisao e a unica forma de a chave aparecer.
+    colunas: ['id', 'numero', 'ano', 'data_empenho', 'nota_credito_numero', 'cod_nd', 'valor_empenhado', 'valor_anulado', 'total_liquidado']
   },
 
   liquidacao: {
@@ -184,12 +204,18 @@ const RECURSOS = {
     colunas: ['code', 'nome'],
     // Somente estes tres tem CRUD admin; os demais dominios sao so leitura.
     // A lista de leitura espelha os GET de orcamento/dominio/dominio_route.js:
-    // sub que falte aqui e sub que o CLI recusa antes de tentar a rota.
+    // sub que falte aqui e sub que o CLI recusa antes de tentar a rota, e sub
+    // que SOBRE aqui e 404 depois da rede, que e o pior dos dois -- o agente
+    // gasta uma chamada para descobrir o que o mapa ja sabia.
+    //
+    // SAO OITO desde 2026-08-08. `grau_prioridade` era a nona e saiu com a
+    // tabela: `dominio.grau_prioridade` foi apagada na 1.43.0, junto com
+    // `dfd.grau_prioridade_id`, que era a unica chave estrangeira que a
+    // apontava.
     subEscrita: ['natureza_despesa', 'plano_interno', 'ug'],
     subLeitura: [
       'tipo_posto_grad', 'natureza_despesa', 'plano_interno', 'ug',
-      'tipo_licitacao', 'fase_licitacao', 'classificacao_nc', 'tipo_item_dfd',
-      'grau_prioridade'
+      'tipo_licitacao', 'fase_licitacao', 'classificacao_nc', 'tipo_item_dfd'
     ]
   }
 }

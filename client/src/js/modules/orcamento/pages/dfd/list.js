@@ -12,10 +12,10 @@ import { openDfdDialog } from './dfd-dialog.js';
 /**
  * Valor que mais se repete numa coluna das linhas carregadas.
  *
- * Serve de valor padrao do DFD NOVO: `area_requisitante` e
- * `vinculo_plano_gestao` sao iguais nos 8 DFDs reais, e redigitar os dois a cada
- * cadastro so cria divergencia de grafia. O padrao sai do dado do proprio ano,
- * e nao de um literal no codigo, entao ele acompanha a realidade sozinho.
+ * Serve de valor padrao do DFD NOVO: `area_requisitante` e igual nos 8 DFDs
+ * reais, e redigita-la a cada cadastro so cria divergencia de grafia. O padrao
+ * sai do dado do proprio ano, e nao de um literal no codigo, entao ele acompanha
+ * a realidade sozinho.
  *
  * @param {Array<Object>} linhas
  * @param {string} campo
@@ -49,8 +49,9 @@ export async function renderDfdList(container, _ctx) {
   // consulta e fica para todo mundo.
   const pode = permissoes('orcamento');
   // Dominios e selects compartilhados pelos dialogs (carregados uma vez).
+  // SO `tipoItem`: o grau de prioridade saiu do DFD em 2026-08-08, e com a
+  // coluna sairam o dominio `dominio.grau_prioridade` e a rota que o servia.
   let dominios = {
-    grauPrioridade: [],
     tipoItem: [],
   };
   // Valores padrao do DFD novo, medidos nas linhas do ano carregado.
@@ -84,14 +85,12 @@ export async function renderDfdList(container, _ctx) {
       // A coluna "Ano" saiu daqui: a lista ja e filtrada pelo ano, entao ela
       // repetia o mesmo valor em toda linha. Pior, o numero real e "103/2025"
       // dentro do ano 2026, e as duas colunas lado a lado se liam como
-      // contradicao. O ano agora esta no titulo. O grau de prioridade, que o
-      // servidor ja mandava e nenhuma coluna mostrava, ocupa o lugar.
-      {
-        key: 'grau_prioridade',
-        label: 'Prioridade',
-        sortable: true,
-        render: (row) => row.grau_prioridade || '-',
-      },
+      // contradicao. O ano agora esta no titulo.
+      //
+      // A coluna "Prioridade" tambem saiu, em 2026-08-08: `grau_prioridade_id`
+      // estava preenchida em 1 de 8 DFDs, com um unico valor, e nenhum filtro,
+      // agrupamento ou relatorio a lia. A coluna do banco e o dominio inteiro
+      // sairam junto.
       { key: 'rotulo', label: 'Rótulo', render: (row) => row.rotulo || '-' },
       {
         // O texto INTEIRO vai para a celula, e o corte e da CSS. Cortar antes
@@ -106,8 +105,11 @@ export async function renderDfdList(container, _ctx) {
         render: (row) => row.objeto || '-',
       },
       {
+        // CALCULADO desde 2026-08-08: o servidor o deriva da soma dos itens, e
+        // ninguem mais o digita. A coluna fica, porque e o numero que o DFD leva
+        // ao PCA.
         key: 'valor_estimado',
-        label: 'Valor estimado',
+        label: 'Valor estimado (calc.)',
         sortable: true,
         // NUMERIC chega como texto, e a ordem por string mente. As irmas
         // (notas-empenho, rpnp) ja passam por toNumber.
@@ -127,10 +129,10 @@ export async function renderDfdList(container, _ctx) {
     emptyMessage: 'Nenhum DFD cadastrado',
     actions: [
       {
-        // SEM gate de perfil. O DFD leva justificativa, area requisitante,
-        // prazo, vinculo e a LISTA DE ITENS, que sao a substancia do PCA, e o
-        // unico caminho ate eles era o botao Editar, so de operador. Quem le o
-        // PCA para decidir e justamente o perfil de consulta.
+        // SEM gate de perfil. O DFD leva a area requisitante, o objeto e a
+        // LISTA DE ITENS, que sao a substancia do PCA, e o unico caminho ate
+        // eles era o botao Editar, so de operador. Quem le o PCA para decidir e
+        // justamente o perfil de consulta.
         icon: ICONS.visibility,
         title: 'Ver',
         onClick: (row) => handleVer(row),
@@ -204,16 +206,14 @@ export async function renderDfdList(container, _ctx) {
     title.textContent = `DFD ${ano}`;
     table.update({ loading: true });
     try {
-      const [dfds, grauPrioridade, tipoItem] = await Promise.all([
+      const [dfds, tipoItem] = await Promise.all([
         svc.getDfds(ano),
-        svc.getGrauPrioridade(),
         svc.getTipoItemDfd(),
       ]);
       if (disposed) return;
-      dominios = { grauPrioridade, tipoItem };
+      dominios = { tipoItem };
       padroes = {
         area_requisitante: valorMaisComum(dfds, 'area_requisitante'),
-        vinculo_plano_gestao: valorMaisComum(dfds, 'vinculo_plano_gestao'),
       };
       atualizarResumo(dfds);
       table.update({ rows: dfds, loading: false });

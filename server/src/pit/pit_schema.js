@@ -8,7 +8,7 @@ const models = {}
 // 'AAAA-MM-DD' em meia-noite UTC e a coluna guarda o dia anterior em UTC-3; sem
 // o `.iso()` a string segue crua para o Postgres, e '01/08/2026' vira 8 de
 // janeiro, porque o DateStyle padrão é MDY. É o padrão da casa, e vale para
-// `prazo`, `data_conclusao` e `data_entrega`.
+// `prazo` e `data_entrega`.
 const dia = Joi.date().iso().raw()
 
 models.idParams = Joi.object().keys({
@@ -198,7 +198,7 @@ models.metaIdParams = Joi.object().keys({
   metaId: Joi.number().integer().required()
 })
 
-// UMA CÉLULA da grade. Os quatro campos são OPCIONAIS, e a diferença entre
+// UMA CÉLULA da grade. Os dois números são OPCIONAIS, e a diferença entre
 // omitir e mandar nulo é o contrato desta rota: omitir é NÃO MEXER, mandar nulo
 // é APAGAR. É o que permite o modo "Executar" gravar o realizado sem carregar o
 // plano junto, e o modo "Planejar" fazer o contrário, escrevendo os dois na
@@ -206,13 +206,16 @@ models.metaIdParams = Joi.object().keys({
 //
 // Zero é valor legítimo e diferente de nulo nos dois números: "conferi o mês e
 // não houve" é uma resposta, e ela some da tela se for tratada como ausência.
+//
+// ERAM QUATRO CAMPOS até a 1.44.0. `data_conclusao` e `observacao` saíram do
+// banco e daqui junto: nulas em 109 de 109 linhas da produção, sem um único
+// evento de auditoria. Como este Joi é o contrato VIVO que os CLIs leem, tirá-las
+// aqui é o que faz o `producao_cli` parar de oferecê-las.
 models.salvarExecucao = Joi.object().keys({
   meta_id: Joi.number().integer().strict().required(),
   mes: Joi.number().integer().strict().min(1).max(12).required(),
   quantidade_planejada: Joi.number().integer().strict().min(0).allow(null),
-  quantidade: Joi.number().integer().strict().min(0).allow(null),
-  data_conclusao: dia.allow(null, ''),
-  observacao: Joi.string().allow(null, '')
+  quantidade: Joi.number().integer().strict().min(0).allow(null)
 })
 
 // --- Demanda Extra-PIT ------------------------------------------------------

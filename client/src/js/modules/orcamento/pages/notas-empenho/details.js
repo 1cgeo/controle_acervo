@@ -487,6 +487,10 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   ]);
 
   // ---- Secao: Recebimentos de material ----
+  // O ano da NE, lido pela coluna "Ano de referência" para dizer qual ano VALE
+  // quando o campo está em branco. Ele muda a cada recarga, e por isso mora numa
+  // variável em vez de ser fechado dentro do `render` da coluna.
+  let anoDaNe = null;
   const recebimentosTable = createDataTable({
     columns: [
       {
@@ -503,6 +507,32 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
         key: 'situacao',
         label: 'Situação',
         render: (row) => row.situacao || '-',
+      },
+      {
+        // O CAMPO ERA GRAVÁVEL E INVISÍVEL: o diálogo o oferece desde sempre e
+        // nenhuma coluna o mostrava, então quem lançava não via o que lançou.
+        //
+        // Ele DECIDE em qual RPCMTec o item aparece: a subseção 4.6 filtra por
+        // COALESCE(ano_referencia, ano da NE). É por ele que um material
+        // empenhado em 2025 e recebido em 2026 sai no relatório de 2026.
+        //
+        // Em branco a célula mostra o ano do EMPENHO, esmaecido: '-' esconderia
+        // justamente o ano que vale, e é o caso de 14 dos 15 recebimentos reais.
+        key: 'ano_referencia',
+        label: 'Ano de referência (4.6)',
+        sortable: true,
+        sortValue: (row) => (row.ano_referencia != null
+          ? Number(row.ano_referencia)
+          : (anoDaNe != null ? Number(anoDaNe) : null)),
+        render: (row) => {
+          if (row.ano_referencia != null) return String(row.ano_referencia);
+          if (anoDaNe == null) return '-';
+          return el('span', {
+            style: { color: 'var(--text-secondary)' },
+            textContent: String(anoDaNe),
+            title: 'Em branco no lançamento: vale o ano do empenho',
+          });
+        },
       },
       {
         key: 'data_cadastramento',
@@ -645,6 +675,10 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
 
   function pintarNota(nota) {
     titulo.textContent = `Nota de empenho ${nota.numero || `#${nota.id}`}`;
+
+    // Antes de repintar as tabelas: a coluna "Ano de referência" o lê para
+    // mostrar o ano que vale quando o recebimento não informa o próprio.
+    anoDaNe = nota.ano ?? null;
 
     linhaNumero.valor.textContent = nota.numero || '-';
     linhaAno.valor.textContent = nota.ano != null ? String(nota.ano) : '-';

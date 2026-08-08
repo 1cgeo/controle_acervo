@@ -18,9 +18,11 @@
 // escolhas nossas: o PDF que o sistema emite tem de ser o documento que a
 // Divisão já usa.
 //
-// AS QUATRO DIVERGÊNCIAS DELIBERADAS em relação ao modelo estão marcadas nas
-// subseções 3.4, 6.1 e 7.2 (esta com duas: as cinco colunas, e a fusão da antiga
-// 7.3 dentro dela), cada uma com a razão ao lado.
+// AS SEIS DIVERGÊNCIAS DELIBERADAS em relação ao modelo estão marcadas nas
+// subseções 2.1, 3.3, 3.4, 6.1 e 7.2 (esta com duas: as cinco colunas, e a fusão
+// da antiga 7.3 dentro dela), cada uma com a razão ao lado. As duas mais novas
+// são de 2026-08-08: a 2.1 ganhou a coluna "Plano até o mês", e a 3.3 trocou o
+// cabeçalho "Qtd" por "Qtd no acervo" porque o número dela mudou de significado.
 
 // Quem preenche. Espelha `dominio.origem_subsecao`.
 const ORIGEM = {
@@ -106,9 +108,43 @@ const SECOES = [
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.meta_vigente e pit.execucao',
         pendencia: 'Nenhum lançamento de meta no mês',
+        // OITO colunas, e o modelo tem sete. É a QUINTA divergência deliberada,
+        // decidida pelo chefe em 2026-08-08: entrou "Plano até o mês".
+        //
+        // O NÚMERO JÁ EXISTIA E SE PERDIA. `resumoDoAno` calcula `planejado_ate`
+        // com o comentário "é o que separa 'entregou 30 de 252' de 'entregou 30
+        // onde o plano pedia 30'", o `producao_cli` o imprimia, e o documento
+        // que o chefe assina, não. Sem ele a 2.1 só sabe comparar o mês contra a
+        // promessa do ANO, e em agosto toda meta parece atrasada.
+        //
+        // A POSIÇÃO É AO LADO DE "Prontos", e não no fim da tabela. O plano só
+        // significa alguma coisa encostado no realizado do MESMO recorte: os
+        // dois são acumulados de janeiro até o mês da edição, e lê-se um contra
+        // o outro. Pô-lo depois de "Previsão de término" deixaria uma coluna de
+        // data entre os dois números que se comparam, e a leitura morreria ali.
+        // As sete colunas do modelo continuam na ordem do modelo: a nova é
+        // INSERIDA antes da última, e nenhuma trocou de lugar.
+        //
+        // "Plano", e não "Planejado" nem "Previsto". `quantidade_prevista` é a
+        // promessa do ano, que já é a coluna "Quantidade": chamar a nova de
+        // "Previsto" faria duas colunas com o mesmo nome dizerem números
+        // diferentes. "Planejado" seria fiel a `quantidade_planejada`, mas a
+        // palavra sozinha ocupa 1.077 twip em Carlito 12 negrito e não cabe numa
+        // coluna de número sem roubar largura de quem tem texto.
         cabecalhos: ['Meta', 'Item', 'Produto ou serviço', 'Quantidade',
-          'Prontos no mês', 'Prontos', 'Previsão de término'],
-        grade: [1665, 825, 2835, 1425, 1005, 1035, 1365]
+          'Prontos no mês', 'Prontos', 'Plano até o mês', 'Previsão de término'],
+        // A GRADE FOI REFEITA, e não acrescida: a soma é a LARGURA DA TABELA na
+        // página do modelo, e ela continua 10155 twip, como antes da coluna
+        // nova. Os 1005 twip dela saíram de quem tinha folga -- 705 de "Produto
+        // ou serviço", que é prosa e reflui, 150 de "Previsão de término", que
+        // guarda 'AGO 26', e 150 de "Item", que guarda '1.10'.
+        //
+        // O QUE NÃO CEDEU, e por quê: "Meta" (1665) mal comporta
+        // 'Desenvolvimento' e já estoura em 'Aerolevantamento'; "Quantidade"
+        // (1425) tem 19 twip de sobra sobre o próprio cabeçalho; e as duas de
+        // "Prontos" (1005 e 1035) têm 38 e 68. Encolher qualquer uma dessas
+        // quatro quebra o cabeçalho ou a palavra dentro da célula.
+        grade: [1665, 675, 2130, 1425, 1005, 1035, 1005, 1215]
       },
       {
         numero: '2.2',
@@ -218,9 +254,33 @@ const SECOES = [
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.demanda_extra',
         pendencia: 'Nenhuma demanda Extra-PIT no mês',
-        cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd', 'Situação',
-          'Documento autorização', 'Descrição'],
-        grade: [1590, 1575, 630, 1215, 1455, 3360]
+        // "Qtd no acervo", e o modelo escreve "Qtd". O cabeçalho mudou porque o
+        // NÚMERO mudou, por decisão do chefe em 2026-08-08: a coluna imprimia
+        // `demanda_extra.quantidade`, que é o que a demanda DECLARA, e passou a
+        // imprimir `quantidade_materializada`, que é a contagem real de
+        // `acervo.versao.demanda_extra_id`. Na produção, a 3.3 de abril de 2026
+        // afirmava 76 produtos onde o acervo tinha 26.
+        //
+        // O CABEÇALHO TINHA DE MUDAR JUNTO. "Qtd" sobre um número que deixou de
+        // ser a quantidade pedida mente de outro jeito, e mais caro: ninguém
+        // desconfia de um rótulo que continua o de sempre. "Qtd no acervo" diz o
+        // que se conta e onde, e é a mesma palavra que a tela do Extra-PIT usa
+        // na coluna irmã ('No acervo', em `pages/extra-pit/list.js`).
+        //
+        // O PREÇO, e ele é real: a demanda de origem MANUAL não tem versão para
+        // contar, e sai 0. Na produção são 8 das 12 demandas com entrega, e as
+        // edições de fevereiro, março e junho de 2026 sairiam com a coluna toda
+        // zerada. O 0 é verdade sobre o ACERVO e não sobre o trabalho, e quem
+        // decide se isso basta é o chefe -- está registrado aqui para a próxima
+        // pessoa não tomar por descuido.
+        cabecalhos: ['Demandante', 'Tipo de produto', 'Qtd no acervo',
+          'Situação', 'Documento autorização', 'Descrição'],
+        // A soma continua 9825, a largura da tabela no modelo. Os 630 twip da
+        // antiga "Qtd" não comportam a palavra 'acervo' (701 twip em Carlito 12
+        // negrito, mais 126 de recuo), então a coluna foi a 945 e os 315 saíram
+        // de "Descrição", a única com folga: "Demandante" tem 110 twip de sobra
+        // sobre o próprio cabeçalho e "Documento autorização", 113.
+        grade: [1590, 1575, 945, 1215, 1455, 3045]
       },
       {
         numero: '3.4',
@@ -250,7 +310,16 @@ const SECOES = [
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.pdr_item e orcamento.nota_credito',
         pendencia: 'Nenhum item de PDR com crédito',
-        cabecalhos: ['ND', 'Valor previsto (Prioridade 1)', 'Valor recebido',
+        // "Valor previsto", e nao mais "Valor previsto (Prioridade 1)". O
+        // cabeçalho afirmava um recorte que a consulta NUNCA fez: ela soma todo
+        // `pdr_item.valor_autorizado` do ano, sem filtro de prioridade nenhum.
+        // A prioridade nem sequer existia em `pdr_item` -- ela morava em `dfd`,
+        // preenchida em 1 linha de 8, e saiu na 1.43.0 junto com
+        // `dominio.grau_prioridade`. Decisão do chefe em 2026-08-08: o cabeçalho
+        // passa a dizer o que a consulta faz, e não o contrário. A GRADE não
+        // muda: as larguras são as do modelo da Divisão, e a tabela tem de
+        // continuar colável na subseção de mesmo número.
+        cabecalhos: ['ND', 'Valor previsto', 'Valor recebido',
           'Valor empenhado', 'Valor liquidado total', 'Valor Recolhido'],
         grade: [1388, 2151, 1388, 1638, 1638, 1638]
       },

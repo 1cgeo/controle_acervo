@@ -25,8 +25,10 @@ const GRADE = [
     revisao_id: 4,
     folha: true,
     meses: [
-      { id: 90, mes: 3, planejada: 2, realizada: 2, data_conclusao: null, observacao: null },
-      { id: 91, mes: 4, planejada: 3, realizada: 0, data_conclusao: null, observacao: null }
+      // Quatro chaves, e nao seis: `data_conclusao` e `observacao` sairam da
+      // celula na 1.44.0. A amostra imita a resposta de hoje.
+      { id: 90, mes: 3, planejada: 2, realizada: 2 },
+      { id: 91, mes: 4, planejada: 3, realizada: 0 }
     ],
     realizado: 2,
     planejado: 5

@@ -10,6 +10,7 @@ const { AppError, httpCode } = require('../utils')
 const controller = {}
 
 // Colunas dos itens usadas para o insert em lote (db.pgp.helpers.insert).
+// SEM `valor_total`: ver o fragmento abaixo.
 const itemColumns = [
   'dfd_id',
   'tipo_item_id',
@@ -17,31 +18,48 @@ const itemColumns = [
   'descricao',
   'quantidade',
   'valor_unitario',
-  'valor_total',
   'usuario_cadastramento_uuid'
 ]
 
-// Calcula o valor estimado do DFD: usa o informado quando vier preenchido,
-// senao soma o valor_total dos itens (DFD nao tem coluna de ND, regra do dominio).
-const resolveValorEstimado = (valorEstimado, itens) => {
-  if (valorEstimado !== undefined && valorEstimado !== null) {
-    return valorEstimado
-  }
-  if (!itens || itens.length === 0) {
-    return null
-  }
-  const soma = itens.reduce((acc, item) => {
-    return acc + (item.valor_total !== undefined && item.valor_total !== null ? Number(item.valor_total) : 0)
-  }, 0)
-  return soma
-}
+// OS DOIS TOTAIS SAO DERIVADOS, e nao mais coluna. Fonte unica, nas quatro
+// consultas que os leem.
+//
+// `dfd_item.valor_total` era IGUAL a `quantidade * valor_unitario` em 31 de 31
+// linhas de producao, e `dfd.valor_estimado` era IGUAL a soma dos totais dos
+// itens em 8 de 8 DFDs. Zero divergencia dos dois lados, medido em 2026-08-08 e
+// provado de novo pela migracao 2026-08-08_poda_do_orcamento.sql, dentro da
+// mesma transacao que apagou as colunas.
+//
+// O ROUND(..., 2) NAO E ENFEITE: `quantidade` e NUMERIC(15,3) e `valor_unitario`
+// e NUMERIC(15,2), entao o produto cru sai com cinco casas. As colunas que
+// sairam eram NUMERIC(15,2), e sem o arredondamento a resposta da API mudaria de
+// forma no dia da poda -- a tela e o CLI passariam a receber '100.00000' onde
+// liam '100.00'.
+//
+// O NOME DO CAMPO NAO MUDOU na resposta: a tela, o CLI e a auditoria leem
+// `valor_total` e `valor_estimado`. O que mudou e a FONTE.
+const VALOR_TOTAL_ITEM = 'ROUND(i.quantidade * i.valor_unitario, 2)'
+
+// A soma dos itens de UM dfd. Fica NULO quando o DFD nao tem item nenhum, e e o
+// mesmo que a coluna guardava: o `resolveValorEstimado` antigo devolvia null
+// para lista vazia.
+const VALOR_ESTIMADO_DFD = `(
+         SELECT ROUND(SUM(i.quantidade * i.valor_unitario), 2)
+         FROM orcamento.dfd_item AS i
+         WHERE i.dfd_id = d.id
+       )`
 
 const getItens = async (conn, dfdId) => {
   return conn.any(
+    // SEM `data_modificacao` e `usuario_modificacao_uuid`: as duas sairam na
+    // 1.43.0. Elas eram ESTRUTURALMENTE nulas (0 de 31), porque o item e apagado
+    // e reinserido inteiro a cada salvamento e por isso nunca sofre UPDATE.
+    // Quem guarda quem mexeu e quando e `auditoria.evento`.
+    // (Sem crase neste comentario: template literal.)
     `SELECT i.id, i.dfd_id, i.tipo_item_id, ti.nome AS tipo_item,
-            i.cod_catmat_catser, i.descricao, i.quantidade, i.valor_unitario, i.valor_total,
-            i.data_cadastramento, i.usuario_cadastramento_uuid,
-            i.data_modificacao, i.usuario_modificacao_uuid
+            i.cod_catmat_catser, i.descricao, i.quantidade, i.valor_unitario,
+            ${VALOR_TOTAL_ITEM} AS valor_total,
+            i.data_cadastramento, i.usuario_cadastramento_uuid
      FROM orcamento.dfd_item AS i
      INNER JOIN dominio.tipo_item_dfd AS ti ON ti.code = i.tipo_item_id
      WHERE i.dfd_id = $<dfdId>
@@ -61,7 +79,6 @@ const inserirItens = async (t, dfdId, itens, usuarioUuid) => {
     descricao: item.descricao,
     quantidade: item.quantidade !== undefined ? item.quantidade : null,
     valor_unitario: item.valor_unitario !== undefined ? item.valor_unitario : null,
-    valor_total: item.valor_total !== undefined ? item.valor_total : null,
     usuario_cadastramento_uuid: usuarioUuid
   }))
 
@@ -101,11 +118,16 @@ const descreverItem = item => [
 // o mapa tira o agregado dono.
 const lerLinhaDosItens = async (t, dfdId) => {
   const linhas = await t.any(
-    `SELECT tipo_item_id, cod_catmat_catser, descricao,
-            quantidade, valor_unitario, valor_total
-     FROM orcamento.dfd_item
-     WHERE dfd_id = $<dfdId>
-     ORDER BY id`,
+    // O total sai DERIVADO aqui tambem, e nao por comodidade: a descricao do
+    // item e o que a ficha do DFD mostra como "antes" e "depois", e se ela
+    // deixasse de trazer o total o historico passaria a esconder exatamente a
+    // mudanca de preco. (Sem crase neste comentario: template literal.)
+    `SELECT i.tipo_item_id, i.cod_catmat_catser, i.descricao,
+            i.quantidade, i.valor_unitario,
+            ${VALOR_TOTAL_ITEM} AS valor_total
+     FROM orcamento.dfd_item AS i
+     WHERE i.dfd_id = $<dfdId>
+     ORDER BY i.id`,
     { dfdId }
   )
   return { dfd_id: dfdId, itens: linhas.map(descreverItem) }
@@ -131,25 +153,27 @@ const registrarItens = async (t, antes, depois, usuarioUuid, contexto) => {
   })
 }
 
-// O NOME de quem cadastrou e de quem alterou sai junto com o uuid: a tela nao
-// resolve uuid, e para o DFD anterior ao historico de alteracoes a data de
-// cadastro e o nome sao a unica rastreabilidade.
+// O NOME de quem cadastrou sai junto com o uuid: a tela nao resolve uuid, e para
+// o DFD anterior ao historico de alteracoes a data de cadastro e o nome sao a
+// unica rastreabilidade.
+//
+// SEM `data_modificacao` e `usuario_modificacao_uuid`, e por isso sem o segundo
+// LEFT JOIN em `dgeo.usuario`. As duas sairam na 1.43.0, e a razao do chefe e
+// que quem guarda "quem mexeu e quando" e `auditoria.evento`, que guarda os
+// dois. Medido: nenhum DFD jamais foi editado (0 de 8).
 controller.listar = async ano => {
   return db.conn.any(
-    `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto, d.justificativa,
-            d.area_requisitante, d.grau_prioridade_id, gp.nome AS grau_prioridade,
-            d.data_prevista_conclusao, d.responsavel_cpf, d.vinculo_plano_gestao,
-            d.consta_pca, d.valor_estimado,
+    // (Sem crase neste comentario: template literal.)
+    `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto,
+            d.area_requisitante,
+            d.consta_pca,
+            ${VALOR_ESTIMADO_DFD} AS valor_estimado,
             d.data_cadastramento, d.usuario_cadastramento_uuid,
             uc.nome AS usuario_cadastramento,
-            d.data_modificacao, d.usuario_modificacao_uuid,
-            um.nome AS usuario_modificacao,
             af.id AS arquivo_id, af.nome_original AS arquivo_nome
      FROM orcamento.dfd AS d
-     LEFT JOIN dominio.grau_prioridade AS gp ON gp.code = d.grau_prioridade_id
      LEFT JOIN orcamento.arquivo AS af ON af.dfd_id = d.id
      LEFT JOIN dgeo.usuario AS uc ON uc.uuid = d.usuario_cadastramento_uuid
-     LEFT JOIN dgeo.usuario AS um ON um.uuid = d.usuario_modificacao_uuid
      WHERE ($<ano> IS NULL OR d.ano = $<ano>)
      ORDER BY d.ano DESC, d.numero`,
     { ano: ano !== undefined ? ano : null }
@@ -158,18 +182,15 @@ controller.listar = async ano => {
 
 controller.getPorId = async id => {
   const dfd = await db.conn.oneOrNone(
-    `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto, d.justificativa,
-            d.area_requisitante, d.grau_prioridade_id, gp.nome AS grau_prioridade,
-            d.data_prevista_conclusao, d.responsavel_cpf, d.vinculo_plano_gestao,
-            d.consta_pca, d.valor_estimado,
+    // (Sem crase neste comentario: template literal.)
+    `SELECT d.id, d.numero, d.ano, d.rotulo, d.objeto,
+            d.area_requisitante,
+            d.consta_pca,
+            ${VALOR_ESTIMADO_DFD} AS valor_estimado,
             d.data_cadastramento, d.usuario_cadastramento_uuid,
-            uc.nome AS usuario_cadastramento,
-            d.data_modificacao, d.usuario_modificacao_uuid,
-            um.nome AS usuario_modificacao
+            uc.nome AS usuario_cadastramento
      FROM orcamento.dfd AS d
-     LEFT JOIN dominio.grau_prioridade AS gp ON gp.code = d.grau_prioridade_id
      LEFT JOIN dgeo.usuario AS uc ON uc.uuid = d.usuario_cadastramento_uuid
-     LEFT JOIN dgeo.usuario AS um ON um.uuid = d.usuario_modificacao_uuid
      WHERE d.id = $<id>`,
     { id }
   )
@@ -183,32 +204,22 @@ controller.getPorId = async id => {
 }
 
 controller.criar = async (dados, usuarioUuid, contexto) => {
-  const valorEstimado = resolveValorEstimado(dados.valor_estimado, dados.itens)
-
   return db.conn.tx(async t => {
     const dfd = await t.one(
       `INSERT INTO orcamento.dfd
-        (numero, ano, rotulo, objeto, justificativa, area_requisitante,
-         grau_prioridade_id, data_prevista_conclusao, responsavel_cpf, vinculo_plano_gestao,
-         consta_pca, valor_estimado, usuario_cadastramento_uuid)
+        (numero, ano, rotulo, objeto, area_requisitante,
+         consta_pca, usuario_cadastramento_uuid)
        VALUES
-        ($<numero>, $<ano>, $<rotulo>, $<objeto>, $<justificativa>, $<area_requisitante>,
-         $<grau_prioridade_id>, $<data_prevista_conclusao>, $<responsavel_cpf>, $<vinculo_plano_gestao>,
-         $<consta_pca>, $<valor_estimado>, $<usuarioUuid>)
+        ($<numero>, $<ano>, $<rotulo>, $<objeto>, $<area_requisitante>,
+         $<consta_pca>, $<usuarioUuid>)
        RETURNING *`,
       {
         numero: dados.numero,
         ano: dados.ano,
         rotulo: dados.rotulo,
         objeto: dados.objeto,
-        justificativa: dados.justificativa,
         area_requisitante: dados.area_requisitante,
-        grau_prioridade_id: dados.grau_prioridade_id,
-        data_prevista_conclusao: dados.data_prevista_conclusao,
-        responsavel_cpf: dados.responsavel_cpf,
-        vinculo_plano_gestao: dados.vinculo_plano_gestao,
         consta_pca: dados.consta_pca,
-        valor_estimado: valorEstimado,
         usuarioUuid
       }
     )
@@ -241,20 +252,18 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
 }
 
 controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
-  const valorEstimado = resolveValorEstimado(dados.valor_estimado, dados.itens)
-
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(t, 'orcamento.dfd', id, 'DFD')
     const itensAntes = await lerLinhaDosItens(t, id)
 
     const dfd = await t.one(
+      // SEM `data_modificacao` e `usuario_modificacao_uuid`: as duas sairam na
+      // 1.43.0, e o par que as substitui e o evento de auditoria registrado
+      // logo abaixo, na MESMA transacao.
       `UPDATE orcamento.dfd
        SET numero = $<numero>, ano = $<ano>, rotulo = $<rotulo>,
-           objeto = $<objeto>, justificativa = $<justificativa>, area_requisitante = $<area_requisitante>,
-           grau_prioridade_id = $<grau_prioridade_id>, data_prevista_conclusao = $<data_prevista_conclusao>,
-           responsavel_cpf = $<responsavel_cpf>, vinculo_plano_gestao = $<vinculo_plano_gestao>,
-           consta_pca = $<consta_pca>, valor_estimado = $<valor_estimado>,
-           data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
+           objeto = $<objeto>, area_requisitante = $<area_requisitante>,
+           consta_pca = $<consta_pca>
        WHERE id = $<id>
        RETURNING *`,
       {
@@ -263,16 +272,8 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         ano: dados.ano,
         rotulo: dados.rotulo,
         objeto: dados.objeto,
-        justificativa: dados.justificativa,
         area_requisitante: dados.area_requisitante,
-        grau_prioridade_id: dados.grau_prioridade_id,
-        data_prevista_conclusao: dados.data_prevista_conclusao,
-        responsavel_cpf: dados.responsavel_cpf,
-        vinculo_plano_gestao: dados.vinculo_plano_gestao,
-        consta_pca: dados.consta_pca,
-        valor_estimado: valorEstimado,
-        dataModificacao: new Date(),
-        usuarioUuid
+        consta_pca: dados.consta_pca
       }
     )
 

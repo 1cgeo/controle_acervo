@@ -19,7 +19,18 @@ const campos = {
   meta_pit_id: Joi.number().integer().strict().allow(null),
   item_label: Joi.string().max(10).allow(null, ''),
   descricao: Joi.string().allow(null, ''),
-  gnd: Joi.number().integer().strict().valid(3, 4).allow(null),
+  // NAO HA `gnd` AQUI, e a ausencia e a modelagem. Ate a 1.42.0 ele era uma
+  // coluna do item, e valia SEMPRE o `gnd` da natureza de despesa apontada por
+  // `cod_nd`: medido em 2026-08-08, os 36 itens de producao concordavam nos 36.
+  // Duas colunas afirmando a mesma coisa so tinham como discordar, e o proprio
+  // formulario ja exibia o campo DESABILITADO, derivando-o da ND. Desde a 1.43.0
+  // o GND e lido por JOIN e continua SAINDO na leitura com o mesmo nome de
+  // campo, porque a tela, o CLI e o cartao-resumo do PDR o exibem.
+  //
+  // O campo nao entra aqui nem com `.strip()`: o modulo usa o validador ESTRITO,
+  // entao quem continuar mandando `gnd` recebe 400 dizendo o nome, em vez de 200
+  // e a impressao de ter escolhido um GND. E a mesma escolha de
+  // `nota_credito.valor_recolhido` na 1.40.0.
   // min(0), como o valor de toda outra feature do modulo (licitacao, RPNP,
   // liquidacao): credito planejado nao e negativo, e as colunas nao tem CHECK
   // que barre. Sem o piso, um sinal trocado entrava calado e o painel somava

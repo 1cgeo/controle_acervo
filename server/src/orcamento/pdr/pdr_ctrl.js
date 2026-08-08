@@ -10,11 +10,12 @@ const controller = {}
 
 // Campos opcionais do item; normalizados para null antes da query (um request
 // valido que omite um opcional nao pode dar 500 por "Property doesn't exist").
+// SEM `gnd`: ele saiu da tabela na 1.43.0 e passou a vir da natureza de despesa
+// por JOIN. Ver o SELECT abaixo.
 const opcionais = [
   'meta_pit_id',
   'item_label',
   'descricao',
-  'gnd',
   'valor_solicitado',
   'valor_autorizado',
   'observacao'
@@ -26,9 +27,14 @@ const normaliza = item => {
   return out
 }
 
-// O NOME de quem cadastrou e de quem alterou sai junto com o uuid: a tela nao
-// resolve uuid, e para o item anterior ao historico de alteracoes a data de
-// cadastro e o nome sao a unica rastreabilidade que existe.
+// O NOME de quem cadastrou sai junto com o uuid: a tela nao resolve uuid, e para
+// o item anterior ao historico de alteracoes a data de cadastro e o nome sao a
+// unica rastreabilidade que existe.
+//
+// SEM `data_modificacao` e `usuario_modificacao_uuid`, e por isso sem o segundo
+// LEFT JOIN em `dgeo.usuario`: as duas sairam na 1.43.0 e quem guarda "quem
+// mexeu e quando" e `auditoria.evento`. Medido: nenhum item de PDR jamais foi
+// editado (0 de 36).
 const SELECT = `
   SELECT i.id, i.ano, i.cod_nd, nd.nome AS nd_nome,
          i.meta_pit_id, mp.numero_meta AS meta_numero,
@@ -38,12 +44,19 @@ const SELECT = `
          -- e sai na tela como '-'. (Sem crase: template literal.)
          NULL::varchar AS meta_item,
          mp.nome AS meta_descricao,
-         i.item_label, i.descricao, i.gnd,
+         i.item_label, i.descricao,
+         -- O GND E DA NATUREZA DE DESPESA, e nao mais coluna do item. Ele era
+         -- IGUAL ao natureza_despesa.gnd do cod_nd em 36 de 36 linhas de
+         -- producao, e o formulario ja o mostrava desabilitado, derivando-o da
+         -- ND. Duas colunas afirmando a mesma coisa so podiam discordar. O NOME
+         -- do campo na resposta nao mudou, porque a tela, o CLI e o
+         -- cartao-resumo do PDR o leem assim; o que mudou e a FONTE, e ela vem
+         -- pelo INNER JOIN que ja estava aqui.
+         -- (Sem crase neste comentario: template literal.)
+         nd.gnd,
          i.valor_solicitado, i.valor_autorizado, i.observacao,
          i.data_cadastramento, i.usuario_cadastramento_uuid,
-         uc.nome AS usuario_cadastramento,
-         i.data_modificacao, i.usuario_modificacao_uuid,
-         um.nome AS usuario_modificacao
+         uc.nome AS usuario_cadastramento
   FROM orcamento.pdr_item AS i
   INNER JOIN dominio.natureza_despesa AS nd ON nd.code = i.cod_nd
   -- A TABELA pit.meta, e nao a view pit.meta_vigente. Ate 1.29.0 o nome da meta
@@ -52,8 +65,7 @@ const SELECT = `
   -- hoje e do ITEM, e juntar por ela devolveria zero linha para todo item do
   -- PDR. (Sem crase neste comentario: template literal.)
   LEFT JOIN pit.meta AS mp ON mp.id = i.meta_pit_id
-  LEFT JOIN dgeo.usuario AS uc ON uc.uuid = i.usuario_cadastramento_uuid
-  LEFT JOIN dgeo.usuario AS um ON um.uuid = i.usuario_modificacao_uuid`
+  LEFT JOIN dgeo.usuario AS uc ON uc.uuid = i.usuario_cadastramento_uuid`
 
 controller.listar = async ano => {
   return db.conn.any(
@@ -79,10 +91,10 @@ controller.criar = async (item, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const criado = await t.one(
       `INSERT INTO orcamento.pdr_item
-         (ano, cod_nd, meta_pit_id, item_label, descricao, gnd,
+         (ano, cod_nd, meta_pit_id, item_label, descricao,
           valor_solicitado, valor_autorizado, observacao, usuario_cadastramento_uuid)
        VALUES
-         ($<ano>, $<cod_nd>, $<meta_pit_id>, $<item_label>, $<descricao>, $<gnd>,
+         ($<ano>, $<cod_nd>, $<meta_pit_id>, $<item_label>, $<descricao>,
           $<valor_solicitado>, $<valor_autorizado>, $<observacao>, $<usuarioUuid>)
        RETURNING *`,
       { ...normaliza(item), usuarioUuid }
@@ -115,15 +127,17 @@ controller.atualizar = async (id, item, usuarioUuid, contexto) => {
     )
 
     const depois = await t.one(
+      // SEM `data_modificacao` e `usuario_modificacao_uuid`: as duas sairam na
+      // 1.43.0, e quem guarda as duas coisas e o evento registrado logo abaixo,
+      // na MESMA transacao.
       `UPDATE orcamento.pdr_item SET
          ano = $<ano>, cod_nd = $<cod_nd>, meta_pit_id = $<meta_pit_id>,
-         item_label = $<item_label>, descricao = $<descricao>, gnd = $<gnd>,
+         item_label = $<item_label>, descricao = $<descricao>,
          valor_solicitado = $<valor_solicitado>, valor_autorizado = $<valor_autorizado>,
-         observacao = $<observacao>,
-         data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
+         observacao = $<observacao>
        WHERE id = $<id>
        RETURNING *`,
-      { ...normaliza(item), id, dataModificacao: new Date(), usuarioUuid }
+      { ...normaliza(item), id }
     )
 
     await auditoriaCtrl.registrar(t, {

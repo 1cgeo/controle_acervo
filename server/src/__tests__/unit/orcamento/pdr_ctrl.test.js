@@ -65,7 +65,7 @@ describe('pdr_ctrl.criar', () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 77, ano: 2026 }) // INSERT RETURNING *
 
     const r = await ctrl.criar(
-      { ano: 2026, cod_nd: '339015', gnd: 3, valor_autorizado: 50000 },
+      { ano: 2026, cod_nd: '339015', valor_autorizado: 50000 },
       'uuid'
     )
 
@@ -83,7 +83,9 @@ describe('pdr_ctrl.criar', () => {
     await ctrl.criar({ ano: 2026, cod_nd: '339015' }, 'uuid')
     expect(mockDb.conn.one).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ meta_pit_id: null, gnd: null, valor_autorizado: null })
+      // SEM `gnd`: ele saiu da tabela na 1.43.0 e passou a vir da natureza de
+      // despesa por JOIN, entao nao ha o que normalizar para null aqui.
+      expect.objectContaining({ meta_pit_id: null, valor_autorizado: null })
     )
   })
 })
@@ -95,8 +97,8 @@ describe('pdr_ctrl.criar', () => {
 // `RETURNING *`. E o mesmo numero de idas ao banco de antes.
 describe('pdr_ctrl.atualizar', () => {
   test('caminho feliz: le o estado anterior e devolve a linha nova', async () => {
-    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 10, ano: 2026, gnd: 3 })
-    mockDb.conn.one.mockResolvedValueOnce({ id: 10, ano: 2026, gnd: 4 })
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 10, ano: 2026, cod_nd: '339015' })
+    mockDb.conn.one.mockResolvedValueOnce({ id: 10, ano: 2026, cod_nd: '449052' })
 
     await expect(
       ctrl.atualizar(10, { ano: 2026, cod_nd: '339015' }, 'uuid')

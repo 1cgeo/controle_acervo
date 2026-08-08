@@ -57,7 +57,7 @@ describe('POST /dfd', () => {
         numero: 'DFD-001',
         ano: 2026,
         objeto: 'Aquisicao',
-        itens: [{ tipo_item_id: 1, descricao: 'Item A', valor_total: 100 }]
+        itens: [{ tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50 }]
       })
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
@@ -82,7 +82,7 @@ describe('POST /dfd', () => {
       .send({
         numero: 'DFD-001',
         ano: 2026,
-        itens: [{ tipo_item_id: 1, descricao: 'Item A', valor_total: 100 }]
+        itens: [{ tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50 }]
       })
 
     const eventos = eventosDeAuditoria(mockDb)
@@ -139,7 +139,7 @@ describe('POST /dfd', () => {
         numero: 'DFD-001',
         ano: 2026,
         objeto: 'Novo',
-        itens: [{ tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_total: 100 }]
+        itens: [{ tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50 }]
       })
     expect(res.status).toBe(200)
 

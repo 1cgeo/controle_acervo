@@ -201,7 +201,11 @@ export async function renderPdrList(container, _ctx) {
           });
         },
       },
-      { key: 'gnd', label: 'GND', sortable: true, render: (row) => (row.gnd ?? '-') },
+      // CALCULADO desde 2026-08-08: a coluna `pdr_item.gnd` saiu do banco e o
+      // servidor a devolve pelo JOIN com a natureza de despesa. A coluna da tela
+      // fica, porque o GND e o que separa custeio de capital, e os dois cartoes
+      // do resumo somam por ele.
+      { key: 'gnd', label: 'GND (calc.)', sortable: true, render: (row) => (row.gnd ?? '-') },
       {
         key: 'valor_solicitado',
         label: 'Solicitado',

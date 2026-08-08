@@ -32,9 +32,11 @@ const CENTAVO = 0.005;
  * A NC teve o credito devolvido POR INTEIRO?
  *
  * Em 2026 isso vale para 11 das 44 NCs, e a tela nao dizia: em 8 delas alguem
- * escreveu "RECOLH" no campo livre `marcador` para nao perder o fato. Exige
- * valor_nc positivo porque NC de valor zero satisfaria a comparacao sem que
- * devolucao nenhuma tivesse ocorrido.
+ * escrevia "RECOLH" num campo de texto livre para nao perder o fato, e esse
+ * campo DISCORDAVA do dado em 3 dos 11 casos. Ele saiu do banco em 2026-08-08,
+ * e esta conta e a resposta exata que ele tentava dar. Exige valor_nc positivo
+ * porque NC de valor zero satisfaria a comparacao sem que devolucao nenhuma
+ * tivesse ocorrido.
  * @param {Object} nc
  * @returns {boolean}
  */
@@ -296,6 +298,15 @@ export async function renderNotasCreditoList(container, _ctx) {
     rowClassName: (row) => (recolhidaPorInteiro(row) ? 'data-table__row--quitada' : ''),
     emptyMessage: 'Nenhuma nota de crédito cadastrada',
     actions: [
+      {
+        // A FICHA ABRE PARA TODO MUNDO, e é a primeira ação da linha. Sem ela,
+        // PTRES, fonte, PI, documento RO, finalidade e observação só existiam
+        // dentro do "Editar", que é de operador: quem tem perfil de consulta
+        // não tinha caminho nenhum até seis campos da NC.
+        icon: ICONS.visibility,
+        title: 'Ver ficha da NC',
+        onClick: (row) => { location.hash = `/orcamento/notas_credito/${row.id}`; },
+      },
       {
         // OS RECOLHIMENTOS ABREM PARA QUEM SÓ CONSULTA, e não só para o
         // operador: desde a 1.40.0 a coluna "Recolhido" é a soma de documentos,

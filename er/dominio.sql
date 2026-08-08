@@ -303,16 +303,14 @@ INSERT INTO dominio.tipo_item_dfd (code, nome) VALUES
 (1, 'Material'),
 (2, 'Serviço');
 
--- Grau de prioridade do DFD
-CREATE TABLE dominio.grau_prioridade(
-  code SMALLINT NOT NULL PRIMARY KEY,
-  nome VARCHAR(255) NOT NULL
-);
-
-INSERT INTO dominio.grau_prioridade (code, nome) VALUES
-(1, 'Alta'),
-(2, 'Normal'),
-(3, 'Baixa');
+-- NAO HA `dominio.grau_prioridade`, e a ausencia acompanha a coluna que a
+-- citava. Ela guardava Alta, Normal e Baixa, e a UNICA chave estrangeira para
+-- ela em todo o sistema era `orcamento.dfd.grau_prioridade_id`, preenchida em 1
+-- linha de 8 e sempre com o codigo 1. Nenhum WHERE, nenhuma agregacao, nenhum
+-- relatorio. Podar a coluna e deixar o catalogo servindo por
+-- `GET /orcamento/dominio/grau_prioridade` seria deixar meio cadaver, que e o
+-- que a 1.34.0 ja recusou uma vez: a coluna, a tabela e a rota sairam no MESMO
+-- commit. Ver migrations/2026-08-08_poda_do_orcamento.sql.
 
 -- Nivel de acesso DENTRO de um modulo, hierarquico (perfil_id >= minimo).
 -- O administrador NAO e um nivel daqui: e a coluna dgeo.usuario.administrador,

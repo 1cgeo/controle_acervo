@@ -79,10 +79,10 @@ export async function renderLicitacoesList(container, _ctx) {
   });
 
   const table = createDataTable({
-    // Sete campos novos entraram no cadastro e SO DOIS aparecem aqui. A lista
-    // identifica a licitacao (pregao, objeto, tipo) e diz em que pe ela esta;
-    // NUP, fornecedor e data de homologacao ficam no dialogo, que e onde se
-    // trabalha um processo de cada vez.
+    // A lista identifica a licitacao (pregao, objeto, tipo) e diz em que pe ela
+    // esta; a data de homologacao e a OM gestora ficam no dialogo, que e onde se
+    // trabalha um processo de cada vez. O NUP e o fornecedor sairam do banco em
+    // 2026-08-08, com 0 de 11 licitacoes preenchidas nos dois.
     columns: [
       {
         key: 'numero_pregao',

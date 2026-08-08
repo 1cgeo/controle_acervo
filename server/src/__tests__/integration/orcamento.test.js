@@ -557,8 +557,8 @@ describe('Orcamento contra o banco de verdade', () => {
     // evitar, e so o banco prova (os ids reais e o `RETURNING` de verdade).
     it('salvar o DFD sem mexer nos itens nao gera evento de itens', async () => {
       const itens = [
-        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5, valor_total: 50 },
-        { tipo_item_id: 1, descricao: 'Tinta', quantidade: 2, valor_unitario: 300, valor_total: 600 }
+        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5 },
+        { tipo_item_id: 1, descricao: 'Tinta', quantidade: 2, valor_unitario: 300 }
       ]
       // `consta_pca` explicito: este arquivo chama o CONTROLLER direto, e o
       // default TRUE mora no Joi da rota. A coluna e NOT NULL.
@@ -588,7 +588,7 @@ describe('Orcamento contra o banco de verdade', () => {
 
     it('mudar um item do DFD gera UM evento com a lista dos dois lados', async () => {
       const itens = [
-        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5, valor_total: 50 }
+        { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 10, valor_unitario: 5 }
       ]
       const dfd = await dfdCtrl.criar(
         { numero: 'DFD-901', ano: ANO, objeto: 'Aquisicao', consta_pca: true, itens },
@@ -603,7 +603,7 @@ describe('Orcamento contra o banco de verdade', () => {
           objeto: 'Aquisicao',
           consta_pca: true,
           itens: [
-            { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 25, valor_unitario: 5, valor_total: 125 }
+            { tipo_item_id: 1, descricao: 'Papel A0', quantidade: 25, valor_unitario: 5 }
           ]
         },
         ADMIN_UUID

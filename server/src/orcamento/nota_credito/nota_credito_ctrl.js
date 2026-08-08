@@ -120,7 +120,7 @@ controller.listar = async (filtros = {}) => {
             -- (pit.meta), e nao um item dela. A coluna fica na resposta
             -- porque a tela e o CLI a leem, e sai na tela como '-'.
             NULL::varchar AS meta_item, mp.nome AS meta_descricao,
-            nc.marcador, nc.nc_complementada_id,
+            nc.nc_complementada_id,
             -- Empenhado LIQUIDO contra esta NC, nas duas formas de vinculo: as
             -- linhas do rateio e as NEs antigas, que apontam a NC direto. Sem
             -- ele a tela de empenho so sabe o VALOR da NC, e nao o saldo, que e
@@ -214,7 +214,7 @@ controller.getPorId = async id => {
             nc.classificacao_id,
             cl.nome AS classificacao_nome,
             nc.pdr_item_id, nc.nc_complementada_id,
-            nc.marcador, nc.observacao,
+            nc.observacao,
             nc.data_cadastramento, nc.usuario_cadastramento_uuid,
             nc.data_modificacao, nc.usuario_modificacao_uuid
      FROM orcamento.nota_credito AS nc
@@ -244,16 +244,24 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       const criada = await t.one(
         // SEM `valor_recolhido`: a coluna saiu na 1.40.0. Quem grava devolucao e
         // a rota /api/orcamento/recolhimentos, uma linha por DOCUMENTO do SIAFI.
+        //
+        // SEM `marcador`: a coluna saiu na 1.43.0. Ela era o resto de vespera
+        // daquela mudanca -- um texto livre de 8 caracteres em que alguem
+        // escrevia 'RECOLH' para nao perder o fato de que a NC voltara inteira.
+        // Medido em 2026-08-08: 8 linhas marcadas de 99, e ONZE NCs com
+        // recolhimento integral. O marcador ja discordava do dado em 3 casos de
+        // 11, e em silencio. A pergunta que ele respondia tem resposta exata
+        // desde a 1.40.0, e a tela ja a usava: recolhido da NC = valor_nc.
         `INSERT INTO orcamento.nota_credito
           (numero, ano, data_emissao, cod_nd, ptres, fonte, cod_pi, ug_emitente,
            finalidade_historico, valor_nc, doc_ro, prazo_empenho,
-           classificacao_id, pdr_item_id, nc_complementada_id, marcador, observacao,
+           classificacao_id, pdr_item_id, nc_complementada_id, observacao,
            usuario_cadastramento_uuid)
          VALUES
           ($<numero>, $<ano>, $<dataEmissao>, $<codNd>, $<ptres>, $<fonte>, $<codPi>,
            $<ugEmitente>, $<finalidadeHistorico>, $<valorNc>, $<docRo>,
            $<prazoEmpenho>, $<classificacaoId>, $<pdrItemId>, $<ncComplementadaId>,
-           $<marcador>, $<observacao>, $<usuarioUuid>)
+           $<observacao>, $<usuarioUuid>)
          RETURNING *`,
         {
           numero: dados.numero,
@@ -272,7 +280,6 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
           pdrItemId,
           ncComplementadaId:
             dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
-          marcador: dados.marcador || null,
           observacao: dados.observacao || null,
           usuarioUuid
         }
@@ -319,7 +326,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            doc_ro = $<docRo>,
            prazo_empenho = $<prazoEmpenho>, classificacao_id = $<classificacaoId>,
            pdr_item_id = $<pdrItemId>, nc_complementada_id = $<ncComplementadaId>,
-           marcador = $<marcador>, observacao = $<observacao>,
+           observacao = $<observacao>,
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
@@ -342,7 +349,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           pdrItemId,
           ncComplementadaId:
             dados.nc_complementada_id != null ? dados.nc_complementada_id : null,
-          marcador: dados.marcador || null,
           observacao: dados.observacao || null,
           dataModificacao: new Date(),
           usuarioUuid

@@ -20,31 +20,26 @@ import { criarHistorico } from '@components/historico/historico.js';
  * Bloco de fatos de auditoria do registro: quando e por quem.
  *
  * O historico de alteracoes e mais novo que os itens do PDR ja gravados: para
- * eles ele abre
- * vazio, e a data de cadastro e a unica rastreabilidade em tela.
+ * eles ele abre vazio, e a data de cadastro e a unica rastreabilidade em tela.
  *
- * @param {Object} registro - linha com as quatro colunas de auditoria
+ * SO O CADASTRO. `pdr_item.data_modificacao` e `pdr_item.usuario_modificacao_uuid`
+ * sairam do banco em 2026-08-08: nenhum item de PDR jamais foi editado em 36 de
+ * 36, e quem responde "o que mudou, quando e por quem" e o painel de historico
+ * do ano, logo abaixo, que traz o diff pronto.
+ *
+ * @param {Object} registro - linha com as colunas de cadastro
  * @returns {HTMLElement|null} null quando nao ha data de cadastro
  */
 function blocoDeFatos(registro) {
   if (!registro || !registro.data_cadastramento) return null;
 
-  const partes = [
-    `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
-      + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : ''),
-  ];
-  // A linha de alteracao so aparece quando houve alteracao: registro nunca
-  // editado nao ganha um campo vazio para a pessoa interpretar.
-  if (registro.data_modificacao) {
-    partes.push(
-      `Alterado em ${formatDateTime(registro.data_modificacao)}`
-        + (registro.usuario_modificacao ? ` por ${registro.usuario_modificacao}` : '')
-    );
-  }
+  const texto = `Cadastrado em ${formatDateTime(registro.data_cadastramento)}`
+    + (registro.usuario_cadastramento ? ` por ${registro.usuario_cadastramento}` : '')
+    + '.';
 
   return el('p', {
     className: 'form-field__help',
-    textContent: partes.join('. ') + '.',
+    textContent: texto,
     style: { margin: '0' },
   });
 }
@@ -52,8 +47,9 @@ function blocoDeFatos(registro) {
 /**
  * Abre o dialog de criar/editar um item do PDR. O PDR e o conjunto dos itens do
  * ano: nao ha cabecalho de PDR, so o item. No create o ano e o da tela; no edit,
- * o ano do registro. Um item: { ano, cod_nd, meta_pit_id, item_label, gnd,
- * valor_solicitado, valor_autorizado, observacao }.
+ * o ano do registro. Um item: { ano, cod_nd, meta_pit_id, item_label, descricao,
+ * valor_solicitado, valor_autorizado, observacao }. O GND nao entra: ele e
+ * derivado da natureza de despesa.
  *
  * @param {Object} options
  * @param {Object|null} [options.item] - item existente para editar (null cria novo)
@@ -91,9 +87,10 @@ export async function openPdrItemDialog({
   }));
 
   // O GND e DERIVADO da ND: `dominio.natureza_despesa` traz o gnd de cada
-  // codigo, e nos 36 itens reais o GND digitado bate com o da ND em 36 de 36.
-  // Enquanto o campo era livre, um GND divergente da ND quebrava a divisao
-  // custeio/capital do cartao-resumo do PDR, sem aviso nenhum.
+  // codigo, e nos 36 itens reais o GND gravado batia com o da ND em 36 de 36.
+  // A coluna `pdr_item.gnd` saiu do banco em 2026-08-08 por causa disso, e o
+  // servidor passou a devolve-la pelo JOIN com a natureza de despesa. A tela
+  // continua mostrando o valor; o que acabou foi a chance de os dois divergirem.
   const gndPorNd = new Map((naturezas || []).map(nd => [String(nd.code), nd.gnd]));
   const gndDaNd = (codNd) => {
     if (codNd === null || codNd === undefined || codNd === '') return null;
@@ -134,9 +131,9 @@ export async function openPdrItemDialog({
     value: item?.descricao ?? '',
     helpText: 'O que o item financia. Aparece na lista do PDR.',
   });
-  // Somente leitura: quem manda e a ND. O campo continua na tela porque o GND e
-  // o que separa custeio de capital, e o usuario precisa ver o efeito da ND que
-  // escolheu antes de salvar.
+  // Somente leitura, e NAO VAI NO CORPO: quem manda e a ND. O campo continua na
+  // tela porque o GND e o que separa custeio de capital, e o usuario precisa ver
+  // o efeito da ND que escolheu antes de salvar.
   const gndField = createSelectField({
     label: 'GND',
     options: [
@@ -144,7 +141,7 @@ export async function openPdrItemDialog({
       { value: 4, label: '4 (capital)' },
     ],
     value: gndDaNd(item?.cod_nd) ?? item?.gnd ?? undefined,
-    helpText: 'Vem da natureza de despesa escolhida.',
+    helpText: 'Calculado: vem da natureza de despesa escolhida.',
   });
   gndField.input.disabled = true;
   const valorSolicitadoField = createNumberField({
@@ -231,7 +228,9 @@ export async function openPdrItemDialog({
             meta_pit_id: paraId(metaField.getValue()),
             item_label: itemLabelField.getValue() || null,
             descricao: descricaoField.getValue() || null,
-            gnd: gndField.getValue(),
+            // SEM `gnd`: a coluna virou derivada da natureza de despesa em
+            // 2026-08-08, e o validador estrito do módulo devolve 400 para
+            // chave desconhecida.
             valor_solicitado: valorSolicitadoField.getValue(),
             valor_autorizado: valorAutorizadoField.getValue(),
             observacao: observacaoField.getValue() || null,

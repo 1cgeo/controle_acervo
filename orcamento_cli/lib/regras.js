@@ -41,6 +41,9 @@ const REGRAS = {
     'a NC financia e a meta do pdr_item dela, e a leitura ja a devolve resolvida',
     'em meta_pit_id e numero_meta. Logo: NC Extra-PDR nao tem meta, porque nao tem',
     'item, e isso e a definicao dela, nao uma pendencia.',
+    'NAO HA `marcador` desde a 1.43.0, e manda-lo volta 400. Ele era o resto de',
+    'vespera do recolhido digitado ("RECOLH" para dizer que a NC voltou inteira)',
+    'e ja discordava do documento: 11 NCs com recolhimento integral, 8 marcadas.',
     'Unica por (ano, numero, cod_nd, ug_emitente): a numeracao do SIAFI e por UG',
     'emitente, entao o mesmo numero e ND podem existir para emitentes distintos.',
     'Colisao volta 409.',
@@ -73,7 +76,14 @@ const REGRAS = {
     'Todas as NCs de uma mesma NE precisam ter a mesma ND e a mesma classificacao',
     '(validado no controller).',
     'valor_anulado (default 0) nunca excede o empenhado total.',
-    'Saldo a liquidar = valor_empenhado - valor_anulado - SUM(liquidado).'
+    'Saldo a liquidar = valor_empenhado - valor_anulado - SUM(liquidado).',
+    'A CHAVE DO SIAFI e (ug, gestao, ano, numero), e QUEM GRAVA AS DUAS PRIMEIRAS',
+    'e o SERVIDOR: ele as deriva da UG emitente da NC representativa. Elas nao',
+    'estao no Joi de proposito -- ninguem digita a UG de um empenho, ela e',
+    'consequencia do credito, e um campo permitiria afirmar uma UG que a NC',
+    'desmente. Repetir a chave volta 409, e esse 409 e novo desde a 1.43.0: o',
+    'indice existia desde 2026-08-07, mas o servidor nunca escrevia `ug`, e no',
+    'Postgres NULL nao colide com NULL num indice unico.'
   ],
 
   liquidacao: [
@@ -90,6 +100,9 @@ const REGRAS = {
     'daquele ano. Cada item tem um rotulo (item_label: 1D, 1E, ...).',
     'valor_solicitado e o pedido; valor_autorizado e o que voltou aprovado, e e ele',
     'que vira a coluna Previsto da tabela 3.1.',
+    'O `gnd` CONTINUA NA RESPOSTA E DEIXOU DE SER DIGITADO, desde a 1.43.0: ele',
+    'sai do GET com o mesmo nome, agora lido de `dominio.natureza_despesa.gnd`',
+    'pelo cod_nd do item (eram iguais em 36 de 36). Manda-lo no corpo volta 400.',
     'O anexo do PDR e por ANO (vinculo pdr_ano), nao por item, e aceita varios',
     'arquivos (PDF e planilha).'
   ],
@@ -110,6 +123,18 @@ const REGRAS = {
 
   dfd: [
     'O conjunto dos DFDs de um ano E o PCA daquele ano; nao existe entidade PCA.',
+    'DOIS TOTAIS CONTINUAM NA RESPOSTA E DEIXARAM DE SER DIGITADOS, desde a',
+    '1.43.0: `dfd_item.valor_total` e `dfd.valor_estimado`. Eles saem do GET com',
+    'o mesmo nome de sempre, agora CALCULADOS (o item e quantidade *',
+    'valor_unitario, arredondado a 2 casas; o DFD e a soma dos itens, e fica',
+    'nulo no DFD sem item). Manda-los no corpo volta 400, porque o modulo usa o',
+    'validador ESTRITO. A unica excecao e o `valor_total` DENTRO de um item, que',
+    'o servidor descarta em silencio por ser eco do GET.',
+    'SAIRAM DO CADASTRO na mesma versao, e tambem voltam 400: justificativa,',
+    'grau_prioridade_id, data_prevista_conclusao, responsavel_cpf e',
+    'vinculo_plano_gestao. Com grau_prioridade_id saiu a tabela',
+    '`dominio.grau_prioridade` inteira, e com ela a rota que a servia.',
+    'area_requisitante FICOU, e e o unico campo que diz DE QUEM e a demanda.',
     'Aceita 1 anexo PDF; reenviar substitui o anterior.'
   ],
 
@@ -117,6 +142,9 @@ const REGRAS = {
     'Nao tem vinculo com DFD.',
     'Tres tipos, em dominio.tipo_licitacao (GCALC DSG, Propria, Participante); consulte',
     'os codigos com: orcamento dominio tipo_licitacao.',
+    'NAO HA `nup` nem `fornecedor` desde a 1.43.0, e manda-los volta 400. Os dois',
+    'nasceram em 2026-08-04 e ficaram em 0 de 11; o chefe decidiu em 2026-08-08',
+    'que UM identificador basta, e o que ficou e o `numero_pregao`.',
     'Alimenta a tabela 3.4 (GCALC DSG) e a 3.5 (proprias) do RPCMTec.'
   ],
 
@@ -158,7 +186,9 @@ const REGRAS = {
   dominio: [
     'GET exige perfil de consulta no modulo orcamento; nao e publico. POST, PUT e',
     'DELETE exigem administrador.',
-    'So natureza_despesa, plano_interno e ug tem CRUD; os demais sao so leitura.'
+    'So natureza_despesa, plano_interno e ug tem CRUD; os demais sao so leitura.',
+    'SAO OITO dominios desde a 1.43.0: `grau_prioridade` foi apagada junto com a',
+    'unica coluna que a apontava, e a rota que a servia saiu no mesmo commit.'
   ]
 }
 

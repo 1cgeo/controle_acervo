@@ -45,11 +45,11 @@ controller.listar = async (filtros = {}) => {
             li.tipo_id,
             tl.nome AS tipo_nome,
             li.objeto,
-            li.numero_pregao, li.nup,
+            li.numero_pregao,
             li.fase_id, fl.nome AS fase_nome,
             li.fase_atual,
             li.valor_total_estimado, li.valor_final_homologado,
-            li.data_homologacao, li.fornecedor,
+            li.data_homologacao,
             li.om_gestora
      FROM orcamento.licitacao AS li
      INNER JOIN dominio.tipo_licitacao AS tl ON tl.code = li.tipo_id
@@ -71,11 +71,11 @@ controller.getPorId = async id => {
             li.tipo_id,
             tl.nome AS tipo_nome,
             li.objeto,
-            li.numero_pregao, li.nup,
+            li.numero_pregao,
             li.fase_id, fl.nome AS fase_nome,
             li.fase_atual,
             li.valor_total_estimado, li.valor_final_homologado,
-            li.data_homologacao, li.fornecedor,
+            li.data_homologacao,
             li.om_gestora,
             li.data_cadastramento, li.usuario_cadastramento_uuid,
             li.data_modificacao, li.usuario_modificacao_uuid
@@ -93,6 +93,13 @@ controller.getPorId = async id => {
   return licitacao
 }
 
+// SEM `nup` e SEM `fornecedor`: as duas sairam na 1.43.0, por decisao do chefe
+// em 2026-08-08. Elas tinham quatro dias e 0 de 11 linhas preenchidas, e a
+// migracao que as criou em 2026-08-04 dizia que ele acompanha as licitacoes pelo
+// numero do pregao E pelo NUP. Ele decidiu ficar so com o PREGAO, que continua
+// aqui, e a decisao REVERTE aquela -- nao e descuido de quem escreveu esta
+// linha. Ver migrations/2026-08-08_poda_do_orcamento.sql.
+//
 // As tres funcoes de escrita rodam em TRANSACAO: a linha do rastro cai junto
 // com a mudanca ou nao cai.
 controller.criar = async (dados, usuarioUuid, contexto) => {
@@ -100,14 +107,14 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     .tx(async t => {
       const criada = await t.one(
         `INSERT INTO orcamento.licitacao
-          (ano, tipo_id, objeto, numero_pregao, nup, fase_id, fase_atual,
+          (ano, tipo_id, objeto, numero_pregao, fase_id, fase_atual,
            valor_total_estimado, valor_final_homologado,
-           data_homologacao, fornecedor, om_gestora,
+           data_homologacao, om_gestora,
            usuario_cadastramento_uuid)
          VALUES
-          ($<ano>, $<tipoId>, $<objeto>, $<numeroPregao>, $<nup>, $<faseId>, $<faseAtual>,
+          ($<ano>, $<tipoId>, $<objeto>, $<numeroPregao>, $<faseId>, $<faseAtual>,
            $<valorTotalEstimado>, $<valorFinalHomologado>,
-           $<dataHomologacao>, $<fornecedor>, $<omGestora>,
+           $<dataHomologacao>, $<omGestora>,
            $<usuarioUuid>)
          RETURNING *`,
         {
@@ -115,7 +122,6 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
           tipoId: dados.tipo_id,
           objeto: dados.objeto,
           numeroPregao: dados.numero_pregao || null,
-          nup: dados.nup || null,
           faseId: dados.fase_id != null ? dados.fase_id : null,
           faseAtual: dados.fase_atual || null,
           valorTotalEstimado:
@@ -125,7 +131,6 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
               ? dados.valor_final_homologado
               : null,
           dataHomologacao: dados.data_homologacao || null,
-          fornecedor: dados.fornecedor || null,
           omGestora: dados.om_gestora || null,
           usuarioUuid
         }
@@ -164,12 +169,11 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         `UPDATE orcamento.licitacao SET
            ano = $<ano>, tipo_id = $<tipoId>,
            objeto = $<objeto>,
-           numero_pregao = $<numeroPregao>, nup = $<nup>,
+           numero_pregao = $<numeroPregao>,
            fase_id = $<faseId>, fase_atual = $<faseAtual>,
            valor_total_estimado = $<valorTotalEstimado>,
            valor_final_homologado = $<valorFinalHomologado>,
            data_homologacao = $<dataHomologacao>,
-           fornecedor = $<fornecedor>,
            om_gestora = $<omGestora>,
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
@@ -181,7 +185,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           tipoId: dados.tipo_id,
           objeto: dados.objeto,
           numeroPregao: dados.numero_pregao || null,
-          nup: dados.nup || null,
           faseId: dados.fase_id != null ? dados.fase_id : null,
           faseAtual: dados.fase_atual || null,
           valorTotalEstimado:
@@ -191,7 +194,6 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
               ? dados.valor_final_homologado
               : null,
           dataHomologacao: dados.data_homologacao || null,
-          fornecedor: dados.fornecedor || null,
           omGestora: dados.om_gestora || null,
           dataModificacao: new Date(),
           usuarioUuid

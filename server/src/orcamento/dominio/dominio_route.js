@@ -88,14 +88,10 @@ router.get(
   })
 )
 
-router.get(
-  '/grau_prioridade',
-  verifyPerfil('consulta', 'orcamento'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await dominioCtrl.getGrauPrioridade()
-    return res.sendJsonAndLog(true, 'Domínio Grau de Prioridade retornado com sucesso', httpCode.OK, dados)
-  })
-)
+// NAO HA `GET /grau_prioridade`, e a ausencia acompanha a tabela: o unico campo
+// que apontava `dominio.grau_prioridade` era `orcamento.dfd.grau_prioridade_id`,
+// e os tres sairam juntos na 1.43.0 -- a coluna, o catalogo e esta rota. Ver
+// migrations/2026-08-08_poda_do_orcamento.sql.
 
 // ---------------------------------------------------------------------------
 // CRUD admin: natureza de despesa

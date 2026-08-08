@@ -19,6 +19,7 @@ import { renderConfiguracao } from './pages/configuracao/index.js';
 import { renderDfdList } from './pages/dfd/list.js';
 import { renderPdrList } from './pages/pdr/list.js';
 import { renderNotasCreditoList } from './pages/notas-credito/list.js';
+import { renderNotaCreditoDetails } from './pages/notas-credito/details.js';
 import { renderNotasEmpenhoList } from './pages/notas-empenho/list.js';
 import { renderNotaEmpenhoDetails } from './pages/notas-empenho/details.js';
 import { renderLicitacoesList } from './pages/licitacoes/list.js';
@@ -60,6 +61,11 @@ export default {
     { path: '/dfd', render: renderDfdList, perfil: 'consulta' },
     { path: '/pdr', render: renderPdrList, perfil: 'consulta' },
     { path: '/notas_credito', render: renderNotasCreditoList, perfil: 'consulta' },
+    // A FICHA DA NC E DE CONSULTA, e a razao de ela existir e essa: sete campos
+    // da NC (PTRES, fonte, PI, documento RO, finalidade e observacao) so
+    // apareciam no dialogo de EDICAO, que a lista esconde de quem nao e
+    // operador. Quem tem perfil de consulta nao alcancava nenhum deles.
+    { path: '/notas_credito/:id', render: renderNotaCreditoDetails, perfil: 'consulta' },
     { path: '/notas_empenho', render: renderNotasEmpenhoList, perfil: 'consulta' },
     { path: '/notas_empenho/:id', render: renderNotaEmpenhoDetails, perfil: 'consulta' },
     { path: '/licitacoes', render: renderLicitacoesList, perfil: 'consulta' },

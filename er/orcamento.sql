@@ -45,26 +45,58 @@ CREATE SCHEMA orcamento;
 -- DFD: documento de formalizacao da demanda, amarrado no ano. Nao ha mais
 -- entidade PCA: o "PCA do ano" e o conjunto de DFDs daquele ano. consta_pca
 -- distingue a demanda no PCA da superveniente (ex.: DFD de IA).
+--
+-- NAO HA `justificativa`, `data_prevista_conclusao` NEM `responsavel_cpf` AQUI,
+-- e a ausencia e a modelagem. As tres sao campos do modelo OFICIAL de DFD, e
+-- estavam preenchidas em 0 de 8 desde a carga de 2026-06-15 -- nao e "alguem
+-- preencheu e apagou", porque nenhum DFD jamais foi editado. O SCA guarda o
+-- RESUMO do DFD, e nao o documento; quem o imprime e o Comprasnet. O
+-- `responsavel_cpf` tinha um argumento a mais para sair: dado pessoal num
+-- repositorio publico que nao precisava dele.
+--
+-- NAO HA `grau_prioridade_id`, e ele levou `dominio.grau_prioridade` junto. Era
+-- a UNICA chave estrangeira para aquele catalogo em todo o sistema, preenchida
+-- em 1 linha de 8, sempre com o mesmo codigo, e nenhum WHERE, agregacao ou
+-- relatorio jamais a leu. A subsecao 4.1 do RPCMTec parecia le-la, e nao lia: o
+-- cabecalho dizia "Valor previsto (Prioridade 1)" e a consulta somava TODO o PDR
+-- autorizado do ano. Quem mudou foi o cabecalho.
+--
+-- NAO HA `vinculo_plano_gestao`. Preenchida em 8 de 8 com UM valor distinto
+-- ('Plano de Gestão do 1º CGEO'): uma constante que o formulario mandava
+-- redigitar. `area_requisitante` FICA pelo motivo OPOSTO do que parece -- ela
+-- tambem tem um valor so hoje, e e o unico campo que diz DE QUEM e a demanda no
+-- dia em que outra secao do CGEO pedir um DFD.
+--
+-- NAO HA `valor_estimado`: ele e a SOMA DOS ITENS, igual em 8 de 8, e agora sai
+-- derivado na consulta com o mesmo nome de campo.
+--
+-- NAO HA `data_modificacao` NEM `usuario_modificacao_uuid`, e as duas sairam
+-- JUNTAS de proposito: separadas nao significam nada. Quem guarda "quem mexeu e
+-- quando" e `auditoria.evento`, que guarda os dois e ainda diz O QUE mudou.
+--
+-- Ver migrations/2026-08-08_poda_do_orcamento.sql.
 CREATE TABLE orcamento.dfd(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   numero VARCHAR(20) NOT NULL,
   ano SMALLINT NOT NULL,
   rotulo VARCHAR(120),
   objeto TEXT,
-  justificativa TEXT,
   area_requisitante VARCHAR(255),
-  grau_prioridade_id SMALLINT REFERENCES dominio.grau_prioridade (code),
-  data_prevista_conclusao DATE,
-  responsavel_cpf VARCHAR(14),
-  vinculo_plano_gestao VARCHAR(60),
   consta_pca BOOLEAN NOT NULL DEFAULT TRUE,
-  valor_estimado NUMERIC(15,2),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
+-- NAO HA `valor_total` AQUI, e a ausencia e a modelagem: ele era
+-- `quantidade * valor_unitario` em 31 de 31 linhas de producao, zero
+-- divergencias. Ele continua saindo na leitura, com o mesmo nome de campo e
+-- arredondado a duas casas; o que mudou e a FONTE.
+--
+-- NAO HA `data_modificacao` NEM `usuario_modificacao_uuid`, e aqui a razao e
+-- ESTRUTURAL, e nao de uso: o item e apagado e reinserido INTEIRO a cada
+-- salvamento do DFD, entao nunca sofre UPDATE e as duas colunas nao tinham como
+-- receber valor -- 0 de 31, por construcao. O historico da lista de itens e um
+-- evento de auditoria do PAI.
 CREATE TABLE orcamento.dfd_item(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   dfd_id BIGINT NOT NULL REFERENCES orcamento.dfd (id),
@@ -73,11 +105,8 @@ CREATE TABLE orcamento.dfd_item(
   descricao TEXT NOT NULL,
   quantidade NUMERIC(15,3),
   valor_unitario NUMERIC(15,2),
-  valor_total NUMERIC(15,2),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
 -- Licitacao (4.4 GCALC DSG / 4.5 demais). Antes de nota_empenho (FK).
@@ -90,6 +119,20 @@ CREATE TABLE orcamento.dfd_item(
 -- agrupa) e o texto livre narra: um registro real guarda 103 caracteres
 -- explicando que o vencedor nao entregou e o pregao se tornou fracassado.
 -- Converter esse texto em codigo perderia a explicacao.
+--
+-- NAO HA `nup` NEM `fornecedor` AQUI, e a ausencia REVERTE uma decisao de quatro
+-- dias antes. A migracao de 2026-08-04 criou os dois junto com `numero_pregao` e
+-- `data_homologacao`, e a mensagem dela dizia que o chefe acompanha as
+-- licitacoes pelo numero do pregao E pelo NUP. Em 2026-08-08, com as quatro
+-- ainda em 0 de 11, ele decidiu ficar so com o PREGAO: um identificador basta
+-- para achar o processo fora do SCA, e o segundo so criava um campo que ninguem
+-- preenchia. O `fornecedor` saiu junto pela mesma medida.
+--
+-- ISTO FOI ATO DO CHEFE, e esta escrito aqui para ninguem tratar como descuido
+-- de quem leu a migracao de 2026-08-04 e esqueceu duas colunas. `numero_pregao`
+-- e `data_homologacao` FICAM, tambem por decisao dele.
+--
+-- Ver migrations/2026-08-08_poda_do_orcamento.sql.
 CREATE TABLE orcamento.licitacao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   ano SMALLINT NOT NULL,
@@ -97,16 +140,12 @@ CREATE TABLE orcamento.licitacao(
   objeto TEXT NOT NULL,
   -- Identificacao do processo, para achar a licitacao fora do SCA.
   numero_pregao VARCHAR(20),
-  -- Numero Unico de Protocolo, formato '64286.011195/2026-94' (21 caracteres).
-  nup VARCHAR(25),
   fase_id SMALLINT REFERENCES dominio.fase_licitacao (code),
   fase_atual TEXT,
   valor_total_estimado NUMERIC(15,2),
   valor_final_homologado NUMERIC(15,2),
   -- Dia da homologacao. Par de valor_final_homologado, que sozinho nao dizia quando.
   data_homologacao DATE,
-  -- Empresa vencedora. Nulo enquanto nao ha vencedor (fracassado ou deserto).
-  fornecedor VARCHAR(255),
   om_gestora VARCHAR(60),
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
@@ -149,14 +188,21 @@ CREATE TABLE orcamento.pdr_item(
   meta_pit_id BIGINT REFERENCES pit.meta (id),
   item_label VARCHAR(10),
   descricao TEXT,
-  gnd SMALLINT,
+  -- NAO HA `gnd` AQUI, e a ausencia e a modelagem. Ele era uma coluna do item e
+  -- valia SEMPRE o `gnd` da natureza de despesa apontada por `cod_nd`: medido em
+  -- 2026-08-08, os 36 itens de producao concordavam nos 36, e o proprio
+  -- formulario ja exibia o campo desabilitado, derivando-o da ND. Duas colunas
+  -- afirmando a mesma coisa so tinham como discordar. Ele continua saindo na
+  -- leitura, por JOIN, com o mesmo nome de campo.
+  --
+  -- NAO HA `data_modificacao` NEM `usuario_modificacao_uuid`, e as duas sairam
+  -- juntas: quem guarda "quem mexeu e quando" e `auditoria.evento`. Medido:
+  -- nenhum item de PDR jamais foi editado (0 de 36).
   valor_solicitado NUMERIC(15,2),
   valor_autorizado NUMERIC(15,2),
   observacao TEXT,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
-  data_modificacao TIMESTAMP WITH TIME ZONE,
-  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
 );
 
 -- Credito recebido (NC) e execucao (NE / liquidacao). Uma NC pode trazer mais de
@@ -224,7 +270,17 @@ CREATE TABLE orcamento.nota_credito(
   -- recusaria a correcao de uma NC mal classificada em vez de acompanha-la.
   pdr_item_id BIGINT REFERENCES orcamento.pdr_item (id),
   nc_complementada_id BIGINT REFERENCES orcamento.nota_credito (id),
-  marcador VARCHAR(8),
+  -- NAO HA `marcador` AQUI, e a ausencia e a modelagem. Ele era um texto livre
+  -- de 8 caracteres, e o unico valor que alguem escreveu nele foi 'RECOLH',
+  -- para marcar a NC devolvida por INTEIRO. Medido em 2026-08-08: 8 linhas
+  -- marcadas de 99, e ONZE NCs com recolhimento integral -- ele ja discordava do
+  -- dado em 3 casos de 11, e em silencio, porque nenhum WHERE, JOIN ou
+  -- agregacao jamais o leu.
+  --
+  -- Ele era o RESTO DE VESPERA da 1.40.0: enquanto o recolhido era um numero
+  -- digitado, marcar "voltou tudo" era a unica forma de guardar o fato. Desde
+  -- que cada devolucao virou documento em `nota_credito_recolhimento`, a
+  -- pergunta tem resposta exata: recolhido da NC = valor_nc.
   observacao TEXT,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
@@ -249,8 +305,22 @@ CREATE TABLE orcamento.nota_empenho(
   -- A UG que EMITE o empenho e a que recebeu o credito, e com a gestao, o ano e
   -- o numero ela forma a chave do SIAFI (ex.: 160382000012026NE000005). Sem
   -- ela, dois empenhos legitimos de unidades diferentes colidem.
-  ug VARCHAR(10),
-  gestao VARCHAR(5),
+  --
+  -- AS DUAS SAO `NOT NULL` DESDE A 1.43.0, e nasceram anulaveis em 2026-08-07
+  -- porque o servidor ainda nao as escrevia. Ele nao passou a escrever, e por 24
+  -- horas a protecao esteve INERTE: toda NE criada pela API nascia com
+  -- `ug = NULL`, e no Postgres NULL nunca colide com NULL num indice unico, de
+  -- modo que `uniq_nota_empenho_chave_siafi` aprovava numero repetido em
+  -- silencio. O `NOT NULL` e o que impede a proxima porta de escrita de repetir
+  -- o esquecimento sem nada acusar.
+  --
+  -- AS DUAS SAO DERIVADAS, e nao ha campo de formulario para elas: a UG sai da
+  -- emitente da NC representativa (167035 -> 167382; qualquer outra -> 160382) e
+  -- a gestao e fixa. A regra mora em `server/src/utils/domain_constants.js`.
+  -- SEM chave estrangeira para `dominio.ug`, de proposito: aquele catalogo lista
+  -- quem EMITE credito para nos, e a 167382 nao esta la nem deve estar.
+  ug VARCHAR(10) NOT NULL,
+  gestao VARCHAR(5) NOT NULL,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,

@@ -122,8 +122,55 @@ dotenv.config({
 // RPCMTec. Ela também APAGA `mapoteca.consumo_material` e três colunas de
 // `tipo_material`, e este código já não as escreve: num banco 1.40.0 as telas
 // falhariam com "relação não existe" na abertura, e não numa borda rara.
+// A 1.42.0 NAO SUBIU O PISO (poda do pedido: nada nasceu, e o filtro novo le uma
+// coluna que existe desde a instalacao).
+//
+// A 1.43.0 SOBE O PISO, e por REMOCAO, como a 1.31.0 e a 1.35.0. A regra do
+// paragrafo da 1.26.0 diz que remover so nao sobe o piso quando o codigo nunca
+// leu o que saiu, e AQUI ELE LIA todas: `orcamento.dfd.valor_estimado`,
+// `dfd_item.valor_total`, `pdr_item.gnd`, `nota_credito.marcador`,
+// `licitacao.nup` e `licitacao.fornecedor` estavam nos SELECT, nos INSERT e nos
+// UPDATE de cinco controladores, mais `dfd.grau_prioridade_id` com o JOIN em
+// `dominio.grau_prioridade`, que saiu inteira.
+//
+// Um servidor 1.42.0 contra um banco 1.43.0 quebra na ABERTURA de quatro telas
+// (DFD, PDR, Notas de Credito e Licitacoes), com "coluna nao existe", e nao numa
+// borda rara. E ele quebra tambem em toda gravacao de NOTA DE EMPENHO, e essa e
+// a metade que importa mais: a 1.43.0 poe `NOT NULL` em `nota_empenho.ug` e
+// `gestao`, e o servidor 1.42.0 nao escreve nenhuma das duas.
+//
+// O contrario tambem quebra, e sem barulho, que e pior: este codigo GRAVA `ug` e
+// `gestao` desde a 1.43.0, e num banco 1.42.0 (onde as colunas existem, mas
+// anulaveis) ele funcionaria -- so que o `NOT NULL` que torna a protecao real
+// nao estaria la, e qualquer outra porta de escrita voltaria a produzir NE com
+// UG nula, que no Postgres nao colide com nada num indice unico. Piso cobrado
+// para o par ficar sempre casado.
+//
+// A 1.44.0 NÃO SOBE O PISO, e ela é a poda da grade do PIT: `pit.execucao`
+// perde `data_conclusao` e `observacao`, o CHECK `execucao_diz_alguma_coisa`
+// encolhe de quatro termos para dois, e 19 lançamentos manuais em item de
+// origem calculada são apagados (com os 19 eventos `D` gravados na auditoria
+// antes do DELETE).
+//
+// Ela cai na regra do parágrafo da 1.26.0, e não na exceção da 1.31.0: aqui
+// nada nasce, e este código PAROU de ler as duas colunas ANTES de elas caírem.
+// Elas saíram do Joi, da CTE `celula`, da grade, do `listarDaMeta`, do merge do
+// `salvar` e do mapa de auditoria na mesma versão. Um banco 1.43.0, que ainda as
+// tenha, serve este servidor inteiro: nenhuma consulta as cita, e as colunas
+// sobrando apenas ficam paradas. Subir o piso obrigaria toda instalação a migrar
+// para não ganhar nada, que é exatamente o que o parágrafo da 1.26.0 recusa.
+//
+// A única assimetria num banco 1.43.0 é o CHECK antigo, de quatro termos,
+// aceitar uma linha que o novo recusa -- e ninguém tem porta para criar essa
+// linha, justamente porque os dois campos saíram do contrato desta versão.
+//
+// O SENTIDO CONTRÁRIO QUEBRA, e o piso não é o que o resolveria: um servidor
+// 1.43.0 contra um banco 1.44.0 falha em toda leitura da grade, porque lá as
+// duas colunas ainda estão nos SELECT. `MIN_DATABASE_VERSION` só cobra "o banco
+// é novo o bastante para ESTE código", e não o oposto; quem casa o outro lado é
+// implantar o servidor junto com a migração, que é como o serviço sobe.
 const VERSION = '1.38.0'
-const MIN_DATABASE_VERSION = '1.41.0'
+const MIN_DATABASE_VERSION = '1.43.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

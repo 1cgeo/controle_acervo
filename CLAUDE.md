@@ -70,6 +70,11 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
 - Código de tabela de domínio vem de `utils/domain_constants.js`, nunca número mágico no SQL.
 - Página nova no client segue o contrato de `client/src/js/modules/registry.js`. Perfil de rota no
   client é **só ergonomia**: quem barra escrita é o `verifyPerfil` no servidor.
+- **Uma chamada que falha num `Promise.all` derruba a TELA INTEIRA**, e a mensagem que sobra é a
+  dela. Mordeu três vezes em 2026-08-08: `#/aproveitamento` morria dizendo "necessita ser um
+  administrador" porque a quarta chamada era `verifyAdmin`, e a lista de DFD morreria com 404 de uma
+  rota de domínio apagada. Chamada de outro módulo, de outra guarda ou opcional carrega SOZINHA, com
+  o próprio `catch`, e a falha dela fica na seção dela.
 - `npm run test:rapido` no dia a dia e `npm run test:banco` antes de commitar, os dois em `server/`.
   Teste de schema prova o MOTIVO da recusa (`recusaPor`, de `__tests__/helpers/joi.js`), nunca só
   que houve recusa. O cliente é vitest, não jest.

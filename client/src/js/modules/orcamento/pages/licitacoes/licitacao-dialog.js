@@ -76,13 +76,10 @@ export async function openLicitacaoDialog({
     value: lic?.numero_pregao ?? '',
     helpText: 'Identifica o processo para quem o acompanha fora do sistema.',
   });
-  const nupField = createTextField({
-    label: 'NUP',
-    // 25 e o limite da coluna; o NUP real tem 21 caracteres.
-    maxLength: 25,
-    value: lic?.nup ?? '',
-    placeholder: 'Ex.: 64286.011195/2026-94',
-  });
+  // NAO HA CAMPO "NUP" NEM "Fornecedor" AQUI. As duas colunas nasceram em
+  // 2026-08-04 e sairam do banco em 2026-08-08, com 0 de 11 licitacoes
+  // preenchidas nas duas. O numero do pregao continua sendo o que identifica o
+  // processo na tela e na lista.
   const objetoField = createTextareaField({
     label: 'Objeto',
     required: true,
@@ -117,13 +114,6 @@ export async function openLicitacaoDialog({
   const dataHomologacaoField = createDateField({
     label: 'Data de homologação',
     value: lic?.data_homologacao ?? '',
-  });
-  const fornecedorField = createTextField({
-    label: 'Fornecedor',
-    // 255 e o limite da coluna.
-    maxLength: 255,
-    value: lic?.fornecedor ?? '',
-    helpText: 'A empresa vencedora. Fica vazio em licitação fracassada ou deserta.',
   });
   const omGestoraField = createTextField({
     label: 'OM gestora',
@@ -160,14 +150,12 @@ export async function openLicitacaoDialog({
   const content = el('div', { className: 'form-grid' }, [
     tipoField.element,
     numeroPregaoField.element,
-    nupField.element,
     el('div', { className: 'form-grid__full' }, [objetoField.element]),
     faseField.element,
     el('div', { className: 'form-grid__full' }, [faseAtualField.element]),
     valorEstimadoField.element,
     valorHomologadoField.element,
     dataHomologacaoField.element,
-    fornecedorField.element,
     omWrapper,
     historico
       ? el('div', { className: 'form-grid__full' }, [historico.element])
@@ -211,13 +199,14 @@ export async function openLicitacaoDialog({
             tipo_id: tipoId,
             objeto,
             numero_pregao: numeroPregaoField.getValue() || null,
-            nup: nupField.getValue() || null,
             fase_id: paraId(faseField.getValue()),
             fase_atual: faseAtualField.getValue() || null,
             valor_total_estimado: valorEstimadoField.getValue(),
             valor_final_homologado: valorHomologadoField.getValue(),
             data_homologacao: dataHomologacaoField.getValue() || null,
-            fornecedor: fornecedorField.getValue() || null,
+            // SEM `nup` nem `fornecedor`: as duas colunas sairam do banco em
+            // 2026-08-08, e o validador estrito do módulo devolve 400 para chave
+            // desconhecida.
             // OM gestora so vale para Participante; nos demais e a propria OM (null).
             om_gestora: Number(tipoId) === TIPO_PARTICIPANTE ? (omGestoraField.getValue() || null) : null,
           };

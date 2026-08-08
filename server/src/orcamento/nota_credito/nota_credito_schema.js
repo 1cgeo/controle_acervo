@@ -77,7 +77,16 @@ const camposBase = {
     .required(),
   // pdr_item_id e condicional a classificacao_id (ver alternatives abaixo)
   nc_complementada_id: Joi.number().integer().strict().allow(null),
-  marcador: Joi.string().max(8).allow(null, ''),
+  // NAO HA `marcador`. Ele era um texto livre de 8 caracteres, e o unico valor
+  // que alguem escreveu nele foi 'RECOLH', para nao perder o fato de que aquela
+  // NC voltara inteira. Medido em 2026-08-08: 8 linhas marcadas de 99, e ONZE
+  // com recolhimento integral -- o marcador ja discordava do dado em 3 casos de
+  // 11, sem nada acusar, porque ninguem filtrava, agrupava nem somava por ele.
+  // A pergunta "esta NC foi devolvida por inteiro?" tem resposta exata desde a
+  // 1.40.0 (o recolhido e a soma dos documentos de recolhimento), e a lista de
+  // NCs ja pintava o selo "integral" por essa conta.
+  // O campo nao entra aqui nem com `.strip()`, pelo mesmo motivo do
+  // `valor_recolhido` acima: quem continuar mandando recebe 400 dizendo o nome.
   observacao: Joi.string().allow(null, '')
 }
 

@@ -251,9 +251,12 @@ module.exports = {
       // Divisao tem duas abas com as mesmas linhas, e a diferenca entre elas e
       // qual dos dois numeros a celula guarda.
       quantidade_planejada: { rotulo: 'Quantidade planejada', tipo: 'numero' },
-      quantidade: { rotulo: 'Quantidade realizada', tipo: 'numero' },
-      data_conclusao: { rotulo: 'Data de conclusão', tipo: 'data' },
-      observacao: { rotulo: 'Observação' }
+      quantidade: { rotulo: 'Quantidade realizada', tipo: 'numero' }
+      // `data_conclusao` e `observacao` sairam do schema na 1.44.0, e sairam
+      // daqui junto. Os EVENTOS ANTIGOS que as citam continuam em
+      // `auditoria.evento` (aquele schema nao tem DELETE), e o campo sem rotulo
+      // no mapa e exibido pelo proprio nome de coluna: o rastro nao fica orfao,
+      // so deixa de ter apelido. Nao havia um unico evento delas em 144.
     }
   },
 

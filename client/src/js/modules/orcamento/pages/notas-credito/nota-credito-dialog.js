@@ -221,12 +221,15 @@ export async function openNotaCreditoDialog({
     options: ncComplementadaOptions,
     value: nc?.nc_complementada_id ?? undefined,
   });
-  const marcadorField = createTextField({
-    label: 'Marcador',
-    maxLength: 8,
-    placeholder: 'Ex.: *',
-    value: nc?.marcador ?? '',
-  });
+  // NÃO HÁ CAMPO "Marcador" AQUI, e a ausência é a regra de negócio. Era um
+  // texto livre de 8 caracteres, preenchido em 8 das 99 NCs, sempre com o mesmo
+  // valor ('RECOLH'), para marcar a NC devolvida por inteiro. Ninguém decidia
+  // nada com ele: não havia filtro, agrupamento nem relatório que o lesse.
+  //
+  // O CAMPO EXISTIU E MENTIA. Medido em 2026-08-08: 11 NCs tinham recolhimento
+  // integral e só 8 estavam marcadas. Desde a 1.40.0 a pergunta tem resposta
+  // exata (a soma dos recolhimentos igual ao valor da NC), e a lista já pinta o
+  // chip "devolvido por inteiro" por essa conta, sem olhar marcador nenhum.
   const observacaoField = createTextareaField({
     label: 'Observação',
     value: nc?.observacao ?? '',
@@ -291,7 +294,6 @@ export async function openNotaCreditoDialog({
     classificacaoField.element,
     pdrItemWrapper,
     ncComplementadaField.element,
-    marcadorField.element,
     el('div', { className: 'form-grid__full' }, [observacaoField.element]),
     el('div', { className: 'form-grid__full' }, [anexo.element]),
     historico ? el('div', { className: 'form-grid__full' }, [historico.element]) : null,
@@ -367,7 +369,8 @@ export async function openNotaCreditoDialog({
             prazo_empenho: prazoEmpenhoField.getValue(),
             classificacao_id: classificacaoId,
             nc_complementada_id: paraId(ncComplementadaField.getValue()),
-            marcador: marcadorField.getValue() || null,
+            // SEM `marcador`: a coluna saiu em 2026-08-08, e o validador estrito
+            // do módulo devolve 400 para chave desconhecida.
             observacao: observacaoField.getValue() || null,
           };
 

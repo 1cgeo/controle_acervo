@@ -37,8 +37,14 @@ const camposBase = {
   tipo_id: Joi.number().integer().strict().valid(...TIPOS).required(),
   objeto: Joi.string().required(),
   // Limites conferidos no DDL (er/orcamento.sql, orcamento.licitacao).
+  //
+  // O PREGAO FICA e o NUP SAI, e essa e a decisao. A migracao de 2026-08-04 que
+  // criou os dois dizia que o chefe acompanha as licitacoes pelo numero do
+  // pregao E pelo NUP; em 2026-08-08, com 0 de 11 preenchidas nas duas, ele
+  // decidiu ficar so com o pregao. `nup` e `fornecedor` sairam na 1.43.0, e
+  // quem le esta linha depois nao deve tratar aquilo como esquecimento: a
+  // reversao foi ato dele. Ver migrations/2026-08-08_poda_do_orcamento.sql.
   numero_pregao: Joi.string().max(20).allow(null, ''),
-  nup: Joi.string().max(25).allow(null, ''),
   // SEM valid() com a lista de codigos, ao contrario de tipo_id: o dominio
   // dominio.fase_licitacao cresce quando o gestor pedir uma fase nova, e a
   // lista fixa aqui recusaria o codigo novo sem ninguem entender por que. A
@@ -53,7 +59,6 @@ const camposBase = {
   // .raw() preserva a string 'YYYY-MM-DD' (sem converter para Date UTC), senao
   // o Postgres (sessao em UTC-3) gravaria o dia anterior ao informado.
   data_homologacao: Joi.date().iso().raw().allow(null),
-  fornecedor: Joi.string().max(255).allow(null, ''),
   om_gestora: Joi.string().max(60).allow(null, '')
 }
 

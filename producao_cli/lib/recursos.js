@@ -269,10 +269,17 @@ const RECURSOS = {
         params: 'metaIdParams',
         acesso: 'gerente',
         envelope: 'lista',
+        // SAO DOIS NUMEROS, e foram quatro campos ate a 1.44.0.
+        // `data_conclusao` e `observacao` sairam de `pit.execucao` em
+        // 2026-08-08 (nulas em 109 de 109 linhas, zero eventos de auditoria em
+        // 144), e com elas sairam do contrato vivo que este CLI le. Pedi-las
+        // aqui era anunciar coluna que a resposta nao traz.
         colunas: [
-          'id', 'meta_id', 'mes', 'quantidade_planejada', 'quantidade',
-          'data_conclusao', 'observacao'
-        ]
+          'id', 'meta_id', 'mes', 'quantidade_planejada', 'quantidade'
+        ],
+        nota: 'so o mes que tem numero: a celula sem planejado e sem realizado ' +
+          'nao existe. O `id` vem nulo no item de origem CALCULADA, porque ali ' +
+          'nao ha linha gravada para apontar'
       },
       ensaio: {
         metodo: 'GET',
@@ -296,7 +303,7 @@ const RECURSOS = {
         envelope: 'registro',
         nota: 'UMA rota cria, altera e APAGA a célula (meta, mês). Omitir um ' +
           'campo é NÃO MEXER; mandar nulo é APAGAR; e a célula sem nenhum dos ' +
-          'quatro campos some'
+          'DOIS números some'
       },
       excluir: {
         metodo: 'DELETE',

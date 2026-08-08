@@ -6,6 +6,8 @@ const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
 
 const { recolhidoDaNc } = require('../nota_credito/recolhido_sql')
 
+const { CHAVE_SIAFI_NE } = require('../../utils/domain_constants')
+
 const { AppError, httpCode } = require('../utils')
 
 const controller = {}
@@ -14,6 +16,12 @@ const controller = {}
 // Usado para traduzir o erro cru do banco numa mensagem amigavel (400),
 // quando nota_credito_id aponta para uma NC inexistente.
 const FK_VIOLATION = '23503'
+
+// SQLSTATE de violacao de UNIQUE. Aqui ele tem UM dono so: o indice
+// `uniq_nota_empenho_chave_siafi`, que e a chave do SIAFI inteira.
+const UNIQUE_VIOLATION = '23505'
+
+const CHAVE_SIAFI = 'uniq_nota_empenho_chave_siafi'
 
 // Mapa de coluna -> mensagem amigavel. A constraint exata depende do nome
 // gerado pelo banco; por isso casamos pela coluna citada no detalhe do erro
@@ -26,12 +34,56 @@ const mensagemFk = err => {
   return 'Referencia invalida em um dos campos da nota de empenho'
 }
 
-// Reembrulha violacao de FK como AppError 400 (amigavel); demais erros sobem.
-const tratarFk = err => {
+// Reembrulha os dois erros de banco que sao regra de negocio, e deixa o resto
+// subir.
+//
+// O 409 DA CHAVE DO SIAFI E NOVO, e antes dele nao havia erro nenhum: o indice
+// existia desde 2026-08-07 e o servidor nunca gravava `ug`, entao toda NE
+// nascia com `ug = NULL` e no Postgres NULL nao colide com NULL num indice
+// unico. Sem a UG gravada, o indice aprovava o numero repetido em silencio.
+const tratarErroDoBanco = err => {
   if (err && err.code === FK_VIOLATION) {
     throw new AppError(mensagemFk(err), httpCode.BadRequest, err)
   }
+  if (err && err.code === UNIQUE_VIOLATION && err.constraint === CHAVE_SIAFI) {
+    throw new AppError(
+      'Já existe uma nota de empenho com este número neste ano para a mesma UG. ' +
+        'Um empenho coberto por várias notas de crédito se representa pelo rateio, ' +
+        'e não por um registro por NC.',
+      httpCode.Conflict,
+      err
+    )
+  }
   throw err
+}
+
+// A CHAVE DO SIAFI, e quem a grava e o SERVIDOR.
+//
+// O empenho se identifica no SIAFI por UG + GESTAO + ANO + NUMERO, e
+// `uniq_nota_empenho_chave_siafi` cobra os quatro. As duas primeiras colunas
+// nasceram em 2026-08-07 com backfill de 91/91, e ate 2026-08-08 NENHUMA linha
+// do servidor as escrevia -- nem o INSERT, nem o UPDATE, nem o Joi, nem o mapa
+// de auditoria. A protecao que custou aquela migracao inteira estava INERTE, e
+// o problema que ela existiu para impedir (38 registros em 32 numeros, medidos
+// em producao) voltaria em silencio na proxima NE duplicada.
+//
+// AS DUAS NAO ENTRAM NO Joi, de proposito. Ninguem digita a UG de um empenho:
+// ela e consequencia da NC representativa, e um campo de formulario permitiria
+// afirmar uma UG que o credito desmente. A regra do backfill vale aqui inteira,
+// e mora em `utils/domain_constants.js`.
+const resolverChaveSiafi = async (t, notaCreditoId) => {
+  const nc = await t.oneOrNone(
+    'SELECT ug_emitente FROM orcamento.nota_credito WHERE id = $<id>',
+    { id: notaCreditoId }
+  )
+  // NC inexistente nao decide nada aqui: quem recusa e a chave estrangeira do
+  // INSERT logo abaixo, e a mensagem dela ja e a certa.
+  const emitente = nc && nc.ug_emitente != null ? String(nc.ug_emitente) : null
+  const ug =
+    (emitente && CHAVE_SIAFI_NE.UG_POR_EMITENTE[emitente]) ||
+    CHAVE_SIAFI_NE.UG_PADRAO
+
+  return { ug, gestao: CHAVE_SIAFI_NE.GESTAO_PADRAO }
 }
 
 // Normaliza a entrada nas duas formas (legada: nota_credito_id + valor_empenhado;
@@ -462,19 +514,23 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       await validarNcsHomogeneas(t, alocacoes)
       await validarTetoDasNcs(t, alocacoes, null, valorAnulado)
 
+      const { ug, gestao } = await resolverChaveSiafi(t, notaCreditoId)
+
       const ne = await t.one(
         `INSERT INTO orcamento.nota_empenho
-          (numero, ano, data_empenho, nota_credito_id,
+          (numero, ano, ug, gestao, data_empenho, nota_credito_id,
            finalidade, valor_empenhado, valor_anulado,
            usuario_cadastramento_uuid)
          VALUES
-          ($<numero>, $<ano>, $<dataEmpenho>, $<notaCreditoId>,
+          ($<numero>, $<ano>, $<ug>, $<gestao>, $<dataEmpenho>, $<notaCreditoId>,
            $<finalidade>, $<valorEmpenhado>, $<valorAnulado>,
            $<usuarioUuid>)
          RETURNING *`,
         {
           numero: dados.numero,
           ano: dados.ano,
+          ug,
+          gestao,
           dataEmpenho: dados.data_empenho || null,
           notaCreditoId,
           finalidade: dados.finalidade || null,
@@ -509,7 +565,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       // O `RETURNING *` e do rastro; a rota continua devolvendo so o id.
       return { id: ne.id }
     })
-    .catch(tratarFk)
+    .catch(tratarErroDoBanco)
 }
 
 controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
@@ -561,9 +617,16 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       // contra o proprio teto, senao salvar sem mudar valor ja estouraria.
       await validarTetoDasNcs(t, alocacoes, id, valorAnulado)
 
+      // A UG e a GESTAO sao REDERIVADAS a cada gravacao, e nao preservadas: a NC
+      // representativa pode ter mudado nesta mesma edicao, e a UG que empenha e
+      // consequencia dela. Congelar a UG do cadastro deixaria a chave do SIAFI
+      // descrevendo um empenho que a NC de hoje desmente.
+      const { ug, gestao } = await resolverChaveSiafi(t, notaCreditoId)
+
       const ne = await t.one(
         `UPDATE orcamento.nota_empenho SET
-           numero = $<numero>, ano = $<ano>, data_empenho = $<dataEmpenho>,
+           numero = $<numero>, ano = $<ano>, ug = $<ug>, gestao = $<gestao>,
+           data_empenho = $<dataEmpenho>,
            nota_credito_id = $<notaCreditoId>, finalidade = $<finalidade>,
            valor_empenhado = $<valorEmpenhado>, valor_anulado = $<valorAnulado>,
            data_modificacao = $<dataModificacao>,
@@ -574,6 +637,8 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           id,
           numero: dados.numero,
           ano: dados.ano,
+          ug,
+          gestao,
           dataEmpenho: dados.data_empenho || null,
           notaCreditoId,
           finalidade: dados.finalidade || null,
@@ -617,7 +682,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
 
       return { id: ne.id }
     })
-    .catch(tratarFk)
+    .catch(tratarErroDoBanco)
 }
 
 // EM TRANSACAO: sao quatro comandos (o teste de existencia, as duas checagens de

@@ -401,8 +401,17 @@ COMMENT ON FUNCTION pit.meta_em(DATE) IS
 -- de "conferi e não houve", que é o zero. Enquanto a linha só existia para o
 -- realizado, a ausência DA LINHA dizia isso; agora que ela também guarda o
 -- plano, a linha existe desde o começo do ano e o nulo é quem carrega o
--- recado. O CHECK do fim recusa a linha que não diz nada: quando os quatro
--- campos ficam nulos, o controlador apaga a linha em vez de guardá-la vazia.
+-- recado. O CHECK do fim recusa a linha que não diz nada: quando os dois
+-- números ficam nulos, o controlador apaga a linha em vez de guardá-la vazia.
+--
+-- SÃO DOIS CAMPOS, e foram quatro até a 1.44.0. A tabela nasceu com
+-- `data_conclusao` (a data em que a meta se cumpriria num ato só) e `observacao`
+-- (uma nota livre por célula), e a medição de 2026-08-08 contra a produção achou
+-- as duas NULAS em 109 de 109 linhas, com zero eventos numa auditoria de 144 e
+-- nenhuma mensagem de commit que as justificasse. Elas eram o mesmo erro que
+-- fez `Situacao` e `Pronto` da EXEC_PIT ficarem de fora: campo inventado sem se
+-- saber o que ele guarda. Se a meta de ato único voltar a fazer falta, ela volta
+-- com o caso na mão, e não antes dele.
 --
 -- O REALIZADO PODE PASSAR DO PLANEJADO, e passa: a meta 4.1 de 2026 planejou
 -- 327 e já entregou mais de cinco mil. Não há teto em lugar nenhum.
@@ -442,10 +451,6 @@ CREATE TABLE pit.execucao(
   mes SMALLINT NOT NULL CHECK (mes BETWEEN 1 AND 12),
   quantidade_planejada INTEGER CHECK (quantidade_planejada IS NULL OR quantidade_planejada >= 0),
   quantidade INTEGER CHECK (quantidade IS NULL OR quantidade >= 0),
-  -- A data em que aquilo ficou pronto, quando a meta se cumpre num ato só
-  -- (entregar um relatório) em vez de por quantidade acumulada.
-  data_conclusao DATE,
-  observacao TEXT,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,
@@ -456,8 +461,6 @@ CREATE TABLE pit.execucao(
   CONSTRAINT execucao_diz_alguma_coisa CHECK (
     quantidade_planejada IS NOT NULL
     OR quantidade IS NOT NULL
-    OR data_conclusao IS NOT NULL
-    OR observacao IS NOT NULL
   )
 );
 

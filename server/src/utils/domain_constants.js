@@ -154,6 +154,31 @@ const CLASSIFICACAO_NC = {
   EXTRA_PDR: 2
 }
 
+// A CHAVE DO SIAFI DA NOTA DE EMPENHO: UG + GESTÃO + ANO + NÚMERO
+// (`160382000012026NE000005`). É ela que `uniq_nota_empenho_chave_siafi` cobra,
+// e o servidor DERIVA as duas primeiras: elas não são campo de formulário.
+//
+// A REGRA SAI DO DADO, e é a mesma que o backfill de
+// `migrations/2026-08-07_identidade_da_nota_empenho.sql` mediu: quem empenha é a
+// UG que RECEBEU o crédito, e o crédito da 167382 é emitido pela UG 167035, do
+// mesmo modo que o da 160382 vem da 160035. A 167382 é unidade gestora distinta,
+// com numeração própria começando do 1: as duas têm legitimamente uma
+// 2026NE000005, e sem a UG na chave uma recusaria a outra.
+//
+// Os códigos são de `dominio.ug`, e não segredo nenhum: eles já estão no DDL e
+// na migração, os dois versionados.
+const CHAVE_SIAFI_NE = {
+  // UG emitente da NC representativa -> UG que emite o empenho.
+  UG_POR_EMITENTE: {
+    167035: '167382'
+  },
+  // Qualquer outra emitente cai aqui. É o 1º CGEO.
+  UG_PADRAO: '160382',
+  // Hoje só existe a 00001. A coluna guarda a gestão mesmo assim, porque ela faz
+  // parte da chave e o dia em que aparecer outra não pode custar outra migração.
+  GESTAO_PADRAO: '00001'
+}
+
 // mapoteca.tipo_localizacao
 const TIPO_LOCALIZACAO = {
   SECAO: 1,
@@ -254,6 +279,7 @@ module.exports = {
   FORMA_ENTREGA,
   TIPO_LICITACAO,
   CLASSIFICACAO_NC,
+  CHAVE_SIAFI_NE,
   TIPO_LOCALIZACAO,
   LOCALIZACOES_NA_CASA,
   TIPO_MOVIMENTO_MATERIAL,

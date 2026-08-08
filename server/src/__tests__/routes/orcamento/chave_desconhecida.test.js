@@ -132,8 +132,14 @@ describe('Corpo com chave desconhecida e recusado', () => {
     const res = await request(app)
       .post('/dfd')
       .send({
+        // SEM `valor_total`: ele deixou de ser coluna na 1.43.0 e virou
+        // `quantidade * valor_unitario`. Manda-lo continua NAO dando 400 (ele
+        // esta na lista de eco), mas passa a produzir aviso -- e este teste e o
+        // que prova que um corpo LIMPO nao produz nenhum.
         ...dfdValido,
-        itens: [{ tipo_item_id: 1, descricao: 'Item A', valor_total: 100 }]
+        itens: [
+          { tipo_item_id: 1, descricao: 'Item A', quantidade: 2, valor_unitario: 50 }
+        ]
       })
     expect([200, 201]).toContain(res.status)
     expect(res.body.success).toBe(true)
@@ -209,10 +215,16 @@ describe('Eco do client no item de DFD: descartado, nao recusado, e registrado',
         'itens[0].tipo_item',
         'itens[0].data_cadastramento',
         'itens[0].usuario_cadastramento_uuid',
+        // O OITAVO, desde a 1.43.0: `valor_total` deixou de ser coluna e virou
+        // calculo, mas continua SAINDO no GET, entao o dialogo continua
+        // devolvendo-o. Ele entrou na lista de eco pelo mesmo motivo dos outros
+        // sete, e nao por gentileza: recusa-lo travaria a edicao de qualquer DFD
+        // que ja tenha item.
+        'itens[0].valor_total',
         'itens[0].data_modificacao',
         'itens[0].usuario_modificacao_uuid'
       ])
     )
-    expect(meta.chaves).toHaveLength(7)
+    expect(meta.chaves).toHaveLength(8)
   })
 })
