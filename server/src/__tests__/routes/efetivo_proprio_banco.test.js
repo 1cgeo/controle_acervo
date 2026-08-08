@@ -129,6 +129,113 @@ describe('A listagem do próprio traz só as linhas da pessoa', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// A GRADE DO PRÓPRIO ANO: `GET /meu_aproveitamento`
+//
+// A seção "Meu aproveitamento" de `#/perfil` desenha o próprio ano com a MESMA
+// grade de `#/aproveitamento`. O irmão mockado prova que as duas consultas saem
+// com o uuid do token; aqui se prova o EFEITO, que nenhum dublê alcança:
+//
+//   A GRADE TRAZ MESMO uma pessoa só, e as 53 colunas continuam sendo o ANO, e
+//   não o período dela.
+//
+//   O NÚMERO BATE COM O DO MAPA DA DIVISÃO. É a razão de a rota reaproveitar
+//   `mapaAnual` e `resumoAnual` em vez de ter consulta própria: com duas
+//   consultas, a primeira correção aplicada a uma só faria a pessoa ler 61% na
+//   página dela e 58% no mapa que o gerente vê. Este caso é o que cobra isso, e
+//   um dublê não teria como.
+// ---------------------------------------------------------------------------
+describe('A grade do próprio ano é da pessoa, e bate com a da Divisão', () => {
+  it('devolve só a própria linha, e a Divisão inteira continua no /mapa', async () => {
+    await semearPassagem(USER_UUID, '2026-03-01')
+    await semearPassagem(ADMIN_UUID, '2026-01-01')
+
+    const res = await request(app)
+      .get('/api/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', usuario)
+
+    expect(res.status).toBe(200)
+    expect(res.body.dados.ano).toBe(2026)
+    expect(res.body.dados.anual).toHaveLength(1)
+    expect(res.body.dados.anual[0].usuario_uuid).toBe(USER_UUID)
+    expect(res.body.dados.semanas.every(s => s.usuario_uuid === USER_UUID)).toBe(true)
+
+    // O CONTROLE: a linha do outro existe, e é a rota da Divisão que a mostra.
+    // Sem ele, "não veio" poderia ser "não foi cadastrada".
+    const daDivisao = await request(app)
+      .get('/api/efetivo/mapa?ano=2026')
+      .set('Authorization', admin)
+    expect(daDivisao.body.dados.anual).toHaveLength(2)
+  })
+
+  // A GRADE É O ANO, e não o período da pessoa: quem chegou em março tem as
+  // mesmas 53 células, com as primeiras vazias. É o que separa "não estava" de
+  // "estava e não rendeu" na tela.
+  it('as 53 semanas saem inteiras, mesmo para quem chegou em março', async () => {
+    await semearPassagem(USER_UUID, '2026-03-01')
+
+    const res = await request(app)
+      .get('/api/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', usuario)
+
+    expect(res.body.dados.semanas).toHaveLength(53)
+    // A semana 1 existe na resposta e mede ZERO dia na DGEO: é a célula sem cor.
+    const primeira = res.body.dados.semanas.find(s => Number(s.semana) === 1)
+    expect(primeira.dias_na_dgeo).toBe(0)
+  })
+
+  // O CASO QUE JUSTIFICA A ROTA REAPROVEITAR AS DUAS FUNÇÕES DO CONTROLADOR.
+  it('o aproveitamento do próprio é o MESMO que o mapa da Divisão publica', async () => {
+    await semearPassagem(USER_UUID, '2026-03-01')
+    await semearPassagem(ADMIN_UUID, '2026-01-01')
+    await semearImpedimento(USER_UUID, 'Chefe do S5', '2026-05-01', '2026-06-30')
+
+    const proprio = await request(app)
+      .get('/api/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', usuario)
+
+    const daDivisao = await request(app)
+      .get('/api/efetivo/mapa?ano=2026')
+      .set('Authorization', admin)
+
+    const meuNoMapa = daDivisao.body.dados.anual
+      .find(m => m.usuario_uuid === USER_UUID)
+
+    expect(proprio.body.dados.anual[0].aproveitamento).toBe(meuNoMapa.aproveitamento)
+    expect(proprio.body.dados.anual[0].dias_na_dgeo).toBe(meuNoMapa.dias_na_dgeo)
+    // A VARIÂNCIA: o impedimento de dois meses tem de ter descontado alguma
+    // coisa, senão os dois lados baterem provaria só que os dois são 100%.
+    expect(Number(proprio.body.dados.anual[0].aproveitamento)).toBeLessThan(100)
+  })
+
+  // Quem nunca teve passagem lançada não tem grade nenhuma, e é o que a tela
+  // desenha como "Você não tem passagem pela DGEO cadastrada em 2026".
+  it('sem passagem no ano, a grade sai vazia em vez de uma linha zerada', async () => {
+    const res = await request(app)
+      .get('/api/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', usuario)
+
+    expect(res.status).toBe(200)
+    expect(res.body.dados.anual).toHaveLength(0)
+    expect(res.body.dados.semanas).toHaveLength(0)
+  })
+
+  // A GUARDA é `verifyAcesso`: o `test_user` da semente não tem linha nenhuma em
+  // Efetivo, e mesmo assim vê o próprio ano. É o requisito inteiro desta rota.
+  it('quem não tem perfil em Efetivo vê o próprio ano, e não o da Divisão', async () => {
+    const proprio = await request(app)
+      .get('/api/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', usuario)
+    expect(proprio.status).toBe(200)
+
+    const daDivisao = await request(app)
+      .get('/api/efetivo/mapa?ano=2026')
+      .set('Authorization', usuario)
+    expect(daDivisao.status).toBe(403)
+    expect(daDivisao.body.message).toMatch(/perfil consulta no módulo efetivo/i)
+  })
+})
+
 describe('O dono gravado é o do TOKEN', () => {
   it('POST /meu_periodo grava a linha da própria pessoa, e ignora o uuid do corpo', async () => {
     const res = await request(app)

@@ -87,7 +87,52 @@ describe('efetivo_ctrl, o payload do mapa', () => {
 
     expect(mockDb.conn.any).toHaveBeenCalledWith(
       expect.any(String),
-      { inicio: '2027-01-01', fim: '2027-12-31' }
+      // `usuarioUuid` NULO e o mapa da DIVISAO, que e o caso de
+      // `GET /efetivo/mapa`. Ele viaja sempre, e nao so quando ha recorte: o
+      // pg-promise recusa parametro nomeado ausente, e o SQL o cita ou nao.
+      { inicio: '2027-01-01', fim: '2027-12-31', usuarioUuid: null }
     )
+  })
+
+  // ---------------------------------------------------------------------------
+  // O RECORTE POR PESSOA, que a tela `#/perfil` usa para desenhar o proprio ano.
+  //
+  // POR QUE ELE E UM FILTRO NAS FUNCOES QUE JA EXISTEM: duas consultas que
+  // calculassem aproveitamento divergiriam na primeira correcao aplicada a uma
+  // so, e a pessoa leria um numero na propria pagina e outro no mapa da Divisao.
+  // ---------------------------------------------------------------------------
+  const EU = '11111111-1111-1111-1111-111111111111'
+
+  test('mapaAnual com uuid recorta em UMA pessoa, e dentro do `pessoas`', async () => {
+    await ctrl.mapaAnual(2026, EU)
+
+    const sql = sqlDaChamada()
+    // NO `pessoas`, e nao num WHERE por fora: filtrar depois do CROSS JOIN faria
+    // o Postgres montar a grade da Divisao inteira para devolver uma linha.
+    expect(sql).toMatch(/FROM dgeo\.efetivo_periodo AS p[\s\S]*AND p\.usuario_uuid = \$<usuarioUuid>[\s\S]*CROSS JOIN/)
+    expect(mockDb.conn.any.mock.calls[0][1].usuarioUuid).toBe(EU)
+  })
+
+  test('resumoAnual recorta pelo mesmo caminho', async () => {
+    await ctrl.resumoAnual(2026, EU)
+
+    expect(sqlDaChamada()).toMatch(/AND p\.usuario_uuid = \$<usuarioUuid>/)
+    expect(mockDb.conn.any.mock.calls[0][1].usuarioUuid).toBe(EU)
+  })
+
+  // A VARIANCIA: sem estes dois, um controlador que recortasse SEMPRE deixaria o
+  // bloco acima verde e esvaziaria o mapa da Divisao.
+  test('sem uuid, o SQL nao cita o filtro de pessoa', async () => {
+    await ctrl.mapaAnual(2026)
+
+    expect(sqlDaChamada()).not.toMatch(/p\.usuario_uuid = \$<usuarioUuid>/)
+  })
+
+  // A 6.1 do RPCMTec e da Divisao inteira, e nunca de uma pessoa: ela nao ganhou
+  // o parametro, e o SQL dela nao pode citar o filtro.
+  test('resumoMensal continua sem recorte de pessoa', async () => {
+    await ctrl.resumoMensal(2026, 3)
+
+    expect(sqlDaChamada()).not.toMatch(/p\.usuario_uuid = \$<usuarioUuid>/)
   })
 })

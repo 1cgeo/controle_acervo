@@ -12,6 +12,7 @@ import {
   getPostosGrad,
   getMeuPeriodoEfetivo,
   getMeuImpedimento,
+  getMeuAproveitamento,
 } from '@services/plataforma-service.js';
 // A MESMA ficha da tela `#/aproveitamento`, com a rota do PRÓPRIO injetada. Ver
 // o bloco "Meu aproveitamento" mais abaixo.
@@ -19,6 +20,16 @@ import {
   criarFichaEfetivo,
   API_PROPRIO,
 } from '@pages/aproveitamento/militar-dialog.js';
+// E A MESMA GRADE daquela tela, com UMA linha em vez de trinta. Ver o cabeçalho
+// de `mapa-grade.js`, que é onde mora o porquê de ela ser compartilhada.
+import {
+  pct,
+  montarMapaEfetivo,
+  legendaDoMapa,
+  resumoPonderado,
+  avisoProjecao,
+  anosComPassagem,
+} from '@pages/aproveitamento/mapa-grade.js';
 
 /**
  * Meu perfil (#/perfil). Tela de PLATAFORMA de qualquer pessoa logada.
@@ -50,7 +61,10 @@ import {
  * A QUARTA SEÇÃO É "MEU APROVEITAMENTO", e ela nasceu em 2026-08-08 junto com a
  * régua que tirou a tela `#/aproveitamento` do operador: cada pessoa passou a
  * cuidar do próprio aproveitamento aqui, e o dado da Divisão inteira ficou com
- * quem responde por ela. O porquê completo está no bloco da seção, mais abaixo.
+ * quem responde por ela. Ela tem a GRADE DO ANO (a mesma visualização daquela
+ * tela, com uma linha só) em cima das duas listas: a grade mostra onde estão os
+ * buracos, e as listas dizem por quê. O porquê completo está no bloco da seção,
+ * mais abaixo.
  *
  * A ORDEM DAS QUATRO tem razão: acessos, aproveitamento, dados, senha. Quem abre
  * esta página abre por causa das duas primeiras (o que eu posso, e o que eu
@@ -310,7 +324,50 @@ export async function renderPerfil(container, _ctx) {
   // SÓ PARA QUEM TEM ACESSO A ALGUM MÓDULO, porque é isso que as rotas exigem
   // (`verifyAcesso`). Quem não tem lê acima o pedido de acesso, e oferecer-lhe um
   // botão que responderia 403 seria prometer o que a conta ainda não pode.
+  //
+  // A GRADE VEM ANTES DAS DUAS LISTAS, e é deliberado. A pergunta que se faz
+  // nesta seção é "como foi o meu ano", e ela é visual: 53 células dizem de
+  // relance onde estão os buracos, e as listas logo abaixo dizem por quê. Ao
+  // contrário do mapa da Divisão, aqui não há outras linhas com que comparar a
+  // cor, e por isso a LEGENDA fica junto em vez de implícita.
+  //
+  // O SELETOR DE ANO É SÓ DA GRADE. As duas listas não têm recorte de ano (as
+  // rotas do próprio devolvem a vida inteira da pessoa na Divisão), então trocar
+  // o ano repinta a grade e deixa as listas onde estão.
   const temAcesso = acessos.length > 0;
+
+  const anoCorrente = new Date().getFullYear();
+  let anoSelecionado = anoCorrente;
+
+  // Guardadas para a grade: os impedimentos explicam a cor no `title` de cada
+  // célula, e as passagens dizem que anos o seletor oferece.
+  let periodos = [];
+  let impedimentos = [];
+
+  const anoFilter = createSelectField({
+    label: 'Ano',
+    options: [{ value: anoSelecionado, label: String(anoSelecionado) }],
+    placeholder: 'Ano',
+    value: anoSelecionado,
+    onChange: (valor) => {
+      if (valor === null) return;
+      anoSelecionado = Number(valor);
+      carregarGrade();
+    },
+  });
+
+  const mapa = el('div', { className: 'mapa-efetivo' });
+  const legenda = legendaDoMapa();
+  const resumoAno = el('p', { className: 'efetivo-resumo' });
+  const avisoAno = el('div');
+
+  const grade = el('div', { className: 'perfil__grade' }, [
+    el('div', { className: 'perfil__grade-filtros' }, [anoFilter.element]),
+    avisoAno,
+    resumoAno,
+    mapa,
+    legenda,
+  ]);
 
   const corpoAproveitamento = el('div', {
     className: 'perfil__carregando',
@@ -328,6 +385,7 @@ export async function renderPerfil(container, _ctx) {
         + 'sem tirá-lo dela (função acumulada, licença, curso, férias). É daqui '
         + 'que sai o aproveitamento do efetivo no relatório da Divisão.',
     }),
+    grade,
     corpoAproveitamento,
   ]);
 
@@ -356,14 +414,104 @@ export async function renderPerfil(container, _ctx) {
    * está na mesa.
    */
   async function carregarAproveitamento() {
-    const [periodos, impedimentos] = await Promise.all([
+    const [listaPeriodos, listaImpedimentos] = await Promise.all([
       getMeuPeriodoEfetivo(),
       getMeuImpedimento(),
     ]);
-    return { periodos: periodos || [], impedimentos: impedimentos || [] };
+    // GUARDADAS FORA, e não só devolvidas: a grade lê as duas (os impedimentos
+    // explicam a cor da célula, as passagens dizem que anos existem), e ela se
+    // repinta a cada gravação sem pedir as listas de novo.
+    periodos = listaPeriodos || [];
+    impedimentos = listaImpedimentos || [];
+    anoFilter.setOptions(
+      anosComPassagem(periodos, { anoCorrente, anoSelecionado })
+        .map(a => ({ value: a, label: String(a) }))
+    );
+    anoFilter.setValue(anoSelecionado);
+    return { periodos, impedimentos };
   }
 
-  async function montarAproveitamento() {
+  /**
+   * A GRADE do ano escolhido, pela rota do PRÓPRIO.
+   *
+   * `getMeuAproveitamento`, e NUNCA `getMapaEfetivo`: aquela é
+   * `verifyPerfil('consulta','efetivo')` e devolve a Divisão inteira, e quem
+   * trabalha só no acervo tomaria 403 nela. As duas rotas leem as MESMAS
+   * consultas do servidor, recortadas por pessoa, e é isso que faz o número
+   * daqui bater com o do mapa que o gerente vê.
+   *
+   * A FALHA FICA NA GRADE. As duas listas abaixo continuam de pé: elas vêm de
+   * outras rotas, e derrubar a seção inteira por causa desta repetiria o defeito
+   * do `Promise.all` que matava `#/aproveitamento`.
+   */
+  async function carregarGrade() {
+    mapa.innerHTML = '';
+    resumoAno.innerHTML = '';
+    avisoAno.innerHTML = '';
+    // CARREGANDO, e não a grade velha: sem isso o ano anterior fica na tela
+    // durante a espera com a cara de ser o ano novo.
+    mapa.appendChild(el('p', {
+      className: 'mapa-efetivo__carregando',
+      style: { padding: '24px', color: 'var(--text-secondary)' },
+      textContent: 'Carregando o seu ano.',
+    }));
+
+    let dados;
+    try {
+      dados = await getMeuAproveitamento(anoSelecionado);
+    } catch (err) {
+      if (disposed) return;
+      mapa.innerHTML = '';
+      mapa.appendChild(el('p', {
+        className: 'perfil__erro',
+        style: { padding: '24px' },
+        textContent: err.message || 'Erro ao carregar o seu ano',
+      }));
+      return;
+    }
+    if (disposed) return;
+
+    const anual = (dados && dados.anual) || [];
+
+    mapa.innerHTML = '';
+    const aviso = avisoProjecao(anoSelecionado, anoCorrente);
+    if (aviso) avisoAno.appendChild(aviso);
+    montarResumoDoAno(anual);
+    mapa.appendChild(montarMapaEfetivo({
+      ano: anoSelecionado,
+      semanas: (dados && dados.semanas) || [],
+      anual,
+      impedimentos,
+      // SEM `onLinhaClick`: no mapa da Divisão a linha abre a ficha da pessoa, e
+      // aqui essa ficha já está logo abaixo, aberta.
+      vazio: `Você não tem passagem pela DGEO cadastrada em ${anoSelecionado}.`,
+    }));
+  }
+
+  /**
+   * OS DOIS DENOMINADORES, e não um número só.
+   *
+   * A mesma conta do resumo da Divisão (`resumoPonderado`), com a frase de quem
+   * lê a própria linha. Quem chegou em novembro e rendeu tudo o que podia lê 17%
+   * sobre o ano e 100% sobre os dias em que esteve aqui, e as duas são verdade:
+   * a primeira é o número que o fechamento anual publica, e a segunda é a que
+   * responde "eu rendi?".
+   */
+  function montarResumoDoAno(anual) {
+    resumoAno.innerHTML = '';
+    if (!anual.length) return;
+
+    const { ponderada, simples, diasNaDgeo } = resumoPonderado(anual);
+    const dias = diasNaDgeo === 1 ? '1 dia' : `${diasNaDgeo} dias`;
+
+    resumoAno.append(
+      `Seu aproveitamento em ${anoSelecionado}, sobre o ano inteiro: `,
+      el('strong', { textContent: pct(simples) }),
+      `. Sobre os ${dias} em que você esteve na DGEO: ${pct(ponderada)}.`
+    );
+  }
+
+  async function montarFicha() {
     let listas;
     try {
       listas = await carregarAproveitamento();
@@ -398,7 +546,12 @@ export async function renderPerfil(container, _ctx) {
       // se repinta sem a tela inteira ser reconstruída.
       onSaved: async () => {
         try {
-          return await carregarAproveitamento();
+          const listasNovas = await carregarAproveitamento();
+          // A GRADE TAMBÉM SE REPINTA. Declarar um impedimento e ver a lista
+          // crescer sem a cor da semana mudar faria a grade parecer um retrato
+          // velho, e a pessoa duvidaria de qual dos dois vale.
+          await carregarGrade();
+          return listasNovas;
         } catch (err) {
           showError(err.message || 'Erro ao recarregar o seu aproveitamento');
           return null;
@@ -409,7 +562,17 @@ export async function renderPerfil(container, _ctx) {
     corpoAproveitamento.replaceWith(ficha.element);
   }
 
-  if (temAcesso) await montarAproveitamento();
+  // AS LISTAS PRIMEIRO, E A GRADE DEPOIS, e não as duas juntas: são os
+  // impedimentos que explicam a cor de cada célula no `title`, e desenhar a grade
+  // antes de eles chegarem daria um mapa certo com a explicação muda.
+  //
+  // CADA METADE TRATA A PRÓPRIA FALHA. `montarFicha` nunca rejeita, então a
+  // grade carrega mesmo quando as listas recusam, e vice-versa: elas vêm de
+  // rotas diferentes, e uma que recuse não pode apagar a outra.
+  if (temAcesso) {
+    await montarFicha();
+    await carregarGrade();
+  }
 
   return () => {
     disposed = true;

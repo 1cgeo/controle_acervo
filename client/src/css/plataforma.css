@@ -257,6 +257,32 @@
   line-height: 1.5;
 }
 
+/* A GRADE DO PROPRIO ANO, dentro de "Meu aproveitamento".
+ *
+ * E o mesmo componente de #/aproveitamento com UMA linha, e por isso ela nao
+ * tem estilo proprio de tabela: tudo o que desenha a grade mora no bloco
+ * `.mapa-efetivo`, mais abaixo. Daqui sai so o espacamento do bloco dentro da
+ * secao.
+ *
+ * A SECAO TEM 720px e a grade tem 53 colunas de 14px, entao ela ROLA na
+ * horizontal dentro de `.mapa-efetivo` (que ja tem `overflow-x: auto`). E
+ * deliberado: alargar a pagina inteira por causa de uma tabela deixaria os dois
+ * formularios com a largura de um monitor. */
+.perfil__grade {
+  margin-bottom: var(--space-lg);
+}
+
+/* O seletor de ano recorta SO a grade: as duas listas abaixo nao tem recorte de
+ * ano, porque as rotas do proprio devolvem a vida inteira da pessoa na Divisao. */
+.perfil__grade-filtros {
+  margin-bottom: var(--space-sm);
+  max-width: 160px;
+}
+
+.perfil__grade .efetivo-resumo {
+  margin: 0 0 var(--space-sm);
+}
+
 /* O item "Meu perfil" e um link, e o sublinhado padrao de <a> nao combina com
  * uma linha de menu. */
 .navbar__dropdown-item:hover {
@@ -485,6 +511,16 @@
 }
 
 .mapa-efetivo__linha { cursor: pointer; }
+
+/* A linha que NAO abre nada, que e a da propria pessoa em #/perfil: a ficha que
+ * o mapa da Divisao abre ao clicar ja esta logo abaixo, aberta. Sem isto a mao
+ * do ponteiro prometeria um clique que nao acontece. */
+.mapa-efetivo__linha--estatica { cursor: default; }
+
+.mapa-efetivo__linha--estatica:hover .mapa-efetivo__nome,
+.mapa-efetivo__linha--estatica:hover .mapa-efetivo__total {
+  background: var(--bg-paper);
+}
 
 .mapa-efetivo__legenda {
   display: flex;

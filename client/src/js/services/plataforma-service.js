@@ -254,6 +254,24 @@ export const deleteImpedimento = (id) => apiDelete(`/efetivo/impedimentos/${id}`
 // servidor o toma de `req.usuarioUuid`, e no PUT e no DELETE confere que a linha
 // e da propria pessoa antes de tocar nela (404 quando nao for). Acrescentar o
 // campo aqui nao mudaria nada no banco e faria a tela mentir sobre o contrato.
+/**
+ * A GRADE DO PROPRIO ANO: as 53 semanas e o fechamento anual de UMA pessoa.
+ *
+ * POR QUE ELA NAO E `getMapaEfetivo`. Aquela rota e `verifyPerfil('consulta',
+ * 'efetivo')` e devolve a Divisao inteira, nominalmente. Quem trabalha so no
+ * acervo nao tem perfil em Efetivo e mesmo assim precisa ver o proprio ano: e a
+ * mesma razao pela qual as outras rotas do proprio ficaram em `verifyAcesso`.
+ *
+ * O DONO NAO VIAJA. `usuario_uuid` nao e parametro desta rota: o servidor o toma
+ * de `req.usuarioUuid`, e o Joi da query so conhece `ano` -- mandar o campo aqui
+ * seria 400, e nao um mapa de outra pessoa.
+ *
+ * AS CONSULTAS SAO AS MESMAS do mapa da Divisao, recortadas por pessoa. E o que
+ * faz o numero da propria pagina bater com o do mapa que o gerente ve.
+ */
+export const getMeuAproveitamento = (ano) =>
+  apiGet(`/efetivo/meu_aproveitamento?ano=${ano}`);
+
 export const getMeuPeriodoEfetivo = () => apiGet('/efetivo/meu_periodo');
 export const createMeuPeriodoEfetivo = (body) => apiPost('/efetivo/meu_periodo', body);
 export const updateMeuPeriodoEfetivo = (id, body) =>

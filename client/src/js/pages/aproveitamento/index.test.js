@@ -14,6 +14,13 @@ import { flush } from '@/__tests__/helpers/flush.js';
 //  - o aproveitamento da Divisao e PONDERADO por dias na DGEO.
 //    Media simples de percentuais dava a quem ficou uma semana o mesmo peso de
 //    quem ficou o ano. As duas ficam a vista, cada uma com o seu nome.
+//
+// ESTE ARQUIVO TAMBEM PROTEGE UMA REFATORACAO. Desde 2026-08-08 o desenho da
+// grade mora em `mapa-grade.js`, compartilhado com a secao "Meu aproveitamento"
+// de `#/perfil`, que o usa para desenhar UMA linha. O que e desta tela e o
+// clique na linha (que abre a ficha do militar), o rodape de divergencias e o
+// texto do resumo; o resto e o componente. Os casos abaixo leem a tela inteira,
+// entao uma extracao que mudasse o desenho falha aqui.
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {
@@ -197,6 +204,44 @@ describe('renderAproveitamento', () => {
     expect(aviso).not.toBeNull();
     expect(aviso.textContent).toContain('1º Ten Ciclano');
 
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // -------------------------------------------------------------------------
+  // O QUE A EXTRACAO NAO PODE LEVAR EMBORA
+  //
+  // A grade e desenhada por `mapa-grade.js`, que `#/perfil` tambem usa. Os dois
+  // casos abaixo fixam o que e DESTA tela: a legenda das seis faixas (que aqui
+  // ja existia) e o clique que abre a ficha do militar, que la nao existe
+  // porque a ficha ja esta aberta na propria pagina.
+  // -------------------------------------------------------------------------
+  test('a legenda das seis faixas continua na tela, com "fora da DGEO"', async () => {
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+
+    const { container, cleanup } = await montar();
+
+    const legenda = container.querySelector('.mapa-efetivo__legenda');
+    expect(legenda.querySelectorAll('.mapa-efetivo__amostra')).toHaveLength(6);
+    // A ultima e a unica que nao fala de percentual: "fora da DGEO" e a ausencia
+    // de medida, e nao a medida mais baixa.
+    expect(legenda.textContent).toContain('fora da DGEO');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('clicar na linha abre a ficha daquele militar', async () => {
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+
+    const { container, cleanup } = await montar();
+
+    linhas(container)[1].click();
+    await flush();
+
+    const modal = document.querySelector('.modal');
+    expect(modal).not.toBeNull();
+    expect(modal.getAttribute('aria-label')).toContain('Beltrano');
+
+    document.body.innerHTML = '';
     if (typeof cleanup === 'function') cleanup();
   });
 

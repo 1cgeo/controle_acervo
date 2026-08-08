@@ -305,7 +305,7 @@ router.delete(
 // ---------------------------------------------------------------------------
 // O PRÓPRIO aproveitamento
 //
-// POR QUE ESTAS OITO ROTAS EXISTEM. Em 2026-08-08 a escrita das oito de cima
+// POR QUE ESTAS NOVE ROTAS EXISTEM. Em 2026-08-08 a escrita das oito de cima
 // subiu para GERENTE e a tela `#/aproveitamento` deixou de abrir para o operador.
 // Sem estas, o efeito colateral seria que ninguém abaixo do gerente teria como
 // declarar o PRÓPRIO impedimento -- e o aproveitamento da subseção 6.1 do RPCMTec
@@ -337,11 +337,47 @@ router.delete(
 //   quando não for, para a resposta não confirmar a existência do registro de
 //   terceiro. Quem faz isso é `exigirDono`, dentro da mesma transação da escrita.
 //
-// SEM RECORTE DE ANO na leitura, ao contrário das listas da Divisão: uma pessoa
-// tem poucas linhas, e a tela `#/perfil` não tem seletor de ano. Recortar aqui
-// faria a passagem antiga sumir da própria ficha sem nada na tela explicando o
-// sumiço.
+// SEM RECORTE DE ANO nas duas LISTAS, ao contrário das da Divisão: uma pessoa
+// tem poucas linhas, e recortá-las faria a passagem antiga sumir da própria ficha
+// sem nada na tela explicando o sumiço. A grade (`/meu_aproveitamento`) é a
+// exceção, e por definição: ela É o ano.
 // ---------------------------------------------------------------------------
+
+// A GRADE DO PRÓPRIO ANO: as 53 semanas e o fechamento anual de UMA pessoa.
+//
+// POR QUE ELA NÃO É `GET /efetivo/mapa`. Aquela é `verifyPerfil('consulta',
+// 'efetivo')` e devolve a Divisão inteira, nominalmente. Quem trabalha só no
+// acervo não tem perfil em Efetivo e mesmo assim precisa ver o próprio ano, que
+// é a mesma razão pela qual `/meu_periodo` e `/meu_impedimento` ficaram em
+// `verifyAcesso`: a obrigação é de quem está na Divisão, não do módulo.
+//
+// AS DUAS CONSULTAS SÃO AS MESMAS do mapa da Divisão, recortadas por pessoa
+// (ver `SO_ESTA_PESSOA` no controlador). Um par de consultas próprio calcularia
+// aproveitamento de novo, e a primeira correção aplicada a um lado só faria a
+// pessoa ler um número na própria página e outro no mapa da Divisão.
+//
+// O UUID SAI DO TOKEN. Ele não é parâmetro desta rota, e mandá-lo na query cai no
+// Joi como chave desconhecida: o `anoObrigatorioQuery` só conhece `ano`, e a
+// validação de query RECUSA com 400 em vez de descartar.
+//
+// COM RECORTE DE ANO, ao contrário das duas listas do próprio logo abaixo: a
+// grade É o ano, e sem o parâmetro não haveria as 53 colunas.
+router.get(
+  '/meu_aproveitamento',
+  verifyAcesso,
+  schemaValidation({ query: efetivoSchema.anoObrigatorioQuery }),
+  asyncHandler(async (req, res, next) => {
+    const [semanas, anual] = await Promise.all([
+      efetivoCtrl.mapaAnual(req.query.ano, req.usuarioUuid),
+      efetivoCtrl.resumoAnual(req.query.ano, req.usuarioUuid)
+    ])
+
+    return res.sendJsonAndLog(
+      true, 'Meu aproveitamento retornado com sucesso', httpCode.OK,
+      { ano: Number(req.query.ano), semanas, anual }
+    )
+  })
+)
 
 router.get(
   '/meu_periodo',

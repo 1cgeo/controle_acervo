@@ -117,6 +117,10 @@ beforeEach(() => mockDb.reset())
 // linha em `dgeo.usuario_perfil` de um módulo em que não mexe.
 // ---------------------------------------------------------------------------
 const ROTAS_DO_PROPRIO = [
+  // SEM `?ano=`, e de propósito: a guarda corre ANTES do `schemaValidation`, e é
+  // isso que estes casos leem. Se a ordem dos middlewares se invertesse, a rota
+  // passaria a responder 400 a quem nem entrou, e o 403 sumiria daqui.
+  ['get', '/efetivo/meu_aproveitamento'],
   ['get', '/efetivo/meu_periodo'],
   ['post', '/efetivo/meu_periodo'],
   ['put', '/efetivo/meu_periodo/1'],
@@ -184,6 +188,115 @@ describe('As rotas do próprio pedem ACESSO ao sistema, e não perfil em Efetivo
     const [sql, params] = mockDb.conn.any.mock.calls[0]
     expect(sql).toMatch(/i\.usuario_uuid = \$<usuarioUuid>/)
     expect(params.usuarioUuid).toBe(EU)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A GRADE DO PRÓPRIO ANO: `GET /efetivo/meu_aproveitamento`
+//
+// A tela `#/perfil` desenha o próprio ano com a MESMA grade de
+// `#/aproveitamento`, e por isso esta rota chama as MESMAS duas funções do
+// controlador (`mapaAnual` e `resumoAnual`), recortadas por pessoa. Um par de
+// consultas próprio calcularia aproveitamento de novo, e a primeira correção
+// aplicada a um lado só faria a pessoa ler um número na própria página e outro
+// no mapa da Divisão.
+//
+// O QUE ESTE BLOCO PROVA: as duas consultas saem com o uuid do TOKEN, e o uuid
+// que vier no pedido não é lido nem como filtro nem como campo.
+// ---------------------------------------------------------------------------
+describe('O mapa do próprio é o da pessoa do TOKEN', () => {
+  /** As chamadas de leitura que a rota disparou, na ordem. */
+  const consultas = () => mockDb.conn.any.mock.calls
+
+  it('as DUAS consultas saem recortadas pelo uuid do token', async () => {
+    entra()
+
+    const res = await request(app)
+      .get('/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', token())
+
+    expect(res.status).toBe(200)
+    // O mapa por semana e o fechamento anual, os dois. Recortar um só devolveria
+    // a grade de uma pessoa ao lado do total da Divisão.
+    expect(consultas()).toHaveLength(2)
+    for (const [sql, params] of consultas()) {
+      expect(sql).toMatch(/AND p\.usuario_uuid = \$<usuarioUuid>/)
+      expect(params.usuarioUuid).toBe(EU)
+    }
+  })
+
+  it('o envelope traz o ano, as semanas e o anual, como a tela desenha', async () => {
+    entra()
+    mockDb.conn.any
+      .mockResolvedValueOnce([{ usuario_uuid: EU, semana: 1 }])
+      .mockResolvedValueOnce([{ usuario_uuid: EU, aproveitamento: '82.5' }])
+
+    const res = await request(app)
+      .get('/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', token())
+
+    // NÚMERO, e não a string da query: a tela compara o ano com o corrente para
+    // decidir se o mapa é projeção, e '2026' > 2026 é falso em JavaScript.
+    expect(res.body.dados.ano).toBe(2026)
+    expect(res.body.dados.semanas).toHaveLength(1)
+    expect(res.body.dados.anual).toHaveLength(1)
+  })
+
+  // O CAMINHO DE FUGA ÓBVIO: pedir o ano de outra pessoa pela query. A validação
+  // de query do SCA não descarta chave desconhecida como faz a do corpo, ela
+  // RECUSA -- e é melhor assim: o pedido volta dizendo o que não existe, em vez
+  // de responder 200 com um mapa que não é o que se pediu.
+  it('`usuario_uuid` na query é recusado, e nenhuma consulta acontece', async () => {
+    entra()
+
+    const res = await request(app)
+      .get(`/efetivo/meu_aproveitamento?ano=2026&usuario_uuid=${OUTRO}`)
+      .set('Authorization', token())
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/usuario_uuid/)
+    expect(mockDb.conn.any).not.toHaveBeenCalled()
+  })
+
+  it('o uuid no CORPO não muda nada: a rota nem lê corpo', async () => {
+    entra()
+
+    const res = await request(app)
+      .get('/efetivo/meu_aproveitamento?ano=2026')
+      .set('Authorization', token())
+      .send({ usuario_uuid: OUTRO })
+
+    expect(res.status).toBe(200)
+    for (const [, params] of consultas()) expect(params.usuarioUuid).toBe(EU)
+  })
+
+  it('o ano é obrigatório: sem ele não há as 53 colunas', async () => {
+    entra()
+
+    const res = await request(app)
+      .get('/efetivo/meu_aproveitamento')
+      .set('Authorization', token())
+
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.any).not.toHaveBeenCalled()
+  })
+
+  // O CONTROLE. Sem ele, um controlador que recortasse SEMPRE por pessoa
+  // deixaria o bloco acima verde e esvaziaria o mapa da Divisão.
+  it('a rota da Divisão continua SEM recorte de pessoa', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      id: 1, administrador: false, perfil_id: PERFIL.consulta
+    })
+
+    const res = await request(app)
+      .get('/efetivo/mapa?ano=2026')
+      .set('Authorization', token())
+
+    expect(res.status).toBe(200)
+    for (const [sql, params] of consultas()) {
+      expect(sql).not.toMatch(/AND p\.usuario_uuid = \$<usuarioUuid>/)
+      expect(params.usuarioUuid).toBeNull()
+    }
   })
 })
 

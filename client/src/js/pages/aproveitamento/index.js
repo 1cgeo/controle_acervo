@@ -14,41 +14,17 @@ import {
 // na ficha que a linha do mapa abre. Um botao geral pediria
 // a pessoa primeiro, que e a pergunta que a tela ja respondeu.
 import { openPeriodoDialog, openMilitarDialog } from './militar-dialog.js';
-
-// As 53 semanas do ano, contadas a partir de 1º de janeiro. O rótulo de mês é
-// posto na PRIMEIRA semana de cada mês, e as demais ficam sem rótulo: doze
-// marcas num eixo de 53 células já orientam, e 53 rótulos não caberiam.
-const MESES_ABREV = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
-  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-
-const SEMANAS = 53;
-
-// A semana de um dia, pela MESMA régua do servidor: bloco de sete dias a partir
-// do dia 1. As duas contas têm de dar igual, senão o rótulo de mês aponta para a
-// coluna errada.
-function semanaDoDia(ano, mes, dia) {
-  const inicio = Date.UTC(ano, 0, 1);
-  const alvo = Date.UTC(ano, mes, dia);
-  return Math.floor((alvo - inicio) / 86400000 / 7) + 1;
-}
-
-// Cinco faixas, e não um gradiente: a diferença entre 71% e 73% não muda decisão
-// nenhuma, e um gradiente convida a compará-las.
-function faixa(disponibilidade) {
-  if (disponibilidade == null) return 'fora';
-  const v = Number(disponibilidade);
-  if (v >= 99.5) return 'f100';
-  if (v >= 75) return 'f75';
-  if (v >= 50) return 'f50';
-  if (v >= 25) return 'f25';
-  return 'f0';
-}
-
-const pct = (valor) => `${Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
-
-// A data do servidor chega como 'AAAA-MM-DD'. O recorte de dez caracteres torna
-// a comparacao de texto valida mesmo se vier com hora junto.
-const iso = (valor) => (valor ? String(valor).slice(0, 10) : null);
+// A GRADE É COMPARTILHADA com a seção "Meu aproveitamento" de `#/perfil`, que
+// desenha UMA linha com este mesmo componente. Ver o cabeçalho de `mapa-grade.js`.
+import {
+  iso,
+  pct,
+  montarMapaEfetivo,
+  legendaDoMapa,
+  resumoPonderado,
+  avisoProjecao as criarAvisoProjecao,
+  anosComPassagem,
+} from './mapa-grade.js';
 
 const primeiroDiaDoAno = (ano) => `${ano}-01-01`;
 const ultimoDiaDoAno = (ano) => `${ano}-12-31`;
@@ -62,15 +38,6 @@ function cruzaOAno(registro, ano) {
   return inicio <= ultimoDiaDoAno(ano)
     && (!fim || fim >= primeiroDiaDoAno(ano));
 }
-
-/** Dois intervalos se cruzam quando cada um começa antes de o outro acabar. */
-function intervalosSeCruzam(a, b) {
-  const fimA = iso(a.data_fim) || '9999-12-31';
-  const fimB = iso(b.data_fim) || '9999-12-31';
-  return iso(a.data_inicio) <= fimB && iso(b.data_inicio) <= fimA;
-}
-
-const nomeCurto = (r) => `${r.posto_abrev || ''} ${r.nome_guerra || ''}`.trim();
 
 /**
  * Aproveitamento do efetivo (#/aproveitamento).
@@ -141,7 +108,7 @@ export async function renderAproveitamento(container, ctx) {
   }, [svgIcon(ICONS.add, 16), 'Nova passagem']);
 
   const mapa = el('div', { className: 'mapa-efetivo' });
-  const legenda = montarLegenda();
+  const legenda = legendaDoMapa();
   const resumoDivisao = el('p', { className: 'efetivo-resumo', style: { margin: '0 0 8px' } });
   const avisoProjecao = el('div', { style: { margin: '0 0 12px' } });
   const rodape = el('div', { style: { marginTop: '16px' } });
@@ -161,155 +128,23 @@ export async function renderAproveitamento(container, ctx) {
   container.appendChild(page);
 
   /**
-   * Os anos que o seletor oferece: os que TÊM passagem, e não quatro fixos.
+   * O mapa da DIVISÃO: uma linha por militar, pelo mesmo componente com que
+   * `#/perfil` desenha uma linha só.
    *
-   * Passagem aberta não tem ano de fim, então ela vale até o ano que vem: é o
-   * horizonte da projeção, e oferecer mais seria oferecer adivinhação. O ano
-   * corrente entra sempre, senão uma base vazia deixaria o seletor sem opção.
+   * O que é DAQUI e não do componente: a linha abre a ficha do militar, e o
+   * texto do vazio fala da Divisão.
    */
-  function anosOferecidos() {
-    const anos = new Set([anoCorrente, anoSelecionado]);
-    for (const p of todosPeriodos) {
-      const inicio = Number(String(p.data_inicio).slice(0, 4));
-      if (!Number.isFinite(inicio)) continue;
-      const fim = p.data_fim
-        ? Number(String(p.data_fim).slice(0, 4))
-        : anoCorrente + 1;
-      for (let a = inicio; a <= Math.max(inicio, fim); a += 1) anos.add(a);
-    }
-    return [...anos].sort((a, b) => b - a);
-  }
-
-  function montarLegenda() {
-    const amostra = (classe, texto) => el('span', {}, [
-      el('span', { className: `mapa-efetivo__amostra mapa-efetivo__celula--${classe}` }),
-      texto,
-    ]);
-    return el('div', { className: 'mapa-efetivo__legenda' }, [
-      amostra('f100', '100%'),
-      amostra('f75', '75% ou mais'),
-      amostra('f50', '50% ou mais'),
-      amostra('f25', '25% ou mais'),
-      amostra('f0', 'abaixo de 25%'),
-      amostra('fora', 'fora da DGEO'),
-    ]);
-  }
-
-  /** A linha de rótulo de mês, alinhada às semanas em que cada mês começa. */
-  function cabecalhoMeses() {
-    const celulas = [el('th', { className: 'mapa-efetivo__nome' })];
-    const rotuloNaSemana = new Map();
-    for (let m = 0; m < 12; m += 1) {
-      rotuloNaSemana.set(semanaDoDia(anoSelecionado, m, 1), MESES_ABREV[m]);
-    }
-    for (let s = 1; s <= SEMANAS; s += 1) {
-      celulas.push(el('th', {
-        className: 'mapa-efetivo__mes',
-        textContent: rotuloNaSemana.get(s) || '',
-        // O rótulo de mês ocupa a coluna de UMA semana, então ele fica estreito.
-        // O `title` diz o mês inteiro para quem passar o ponteiro.
-        title: rotuloNaSemana.get(s) || '',
-      }));
-    }
-    celulas.push(el('th', { className: 'mapa-efetivo__total', textContent: 'Ano' }));
-    return el('tr', {}, celulas);
-  }
-
-  function impedimentosDaSemana(usuarioUuid, semana) {
-    // A janela da semana em dias do ano, para casar com o intervalo do
-    // impedimento sem refazer a conta do servidor no cliente.
-    const inicioAno = new Date(Date.UTC(anoSelecionado, 0, 1));
-    const primeiroDia = new Date(inicioAno.getTime() + (semana - 1) * 7 * 86400000);
-    const ultimoDia = new Date(primeiroDia.getTime() + 6 * 86400000);
-    const dataIso = (d) => d.toISOString().slice(0, 10);
-
-    return impedimentos
-      .filter(i => i.usuario_uuid === usuarioUuid
-        && iso(i.data_inicio) <= dataIso(ultimoDia)
-        && (!i.data_fim || iso(i.data_fim) >= dataIso(primeiroDia)))
-      .map(i => `${i.descricao} (${i.percentual}%)`);
-  }
-
   function montarMapa({ semanas, anual }) {
     mapa.innerHTML = '';
-
-    if (!anual.length) {
-      mapa.appendChild(el('p', {
-        style: { padding: '24px', color: 'var(--text-secondary)' },
-        textContent: 'Nenhum militar com passagem pela DGEO neste ano.',
-      }));
-      return;
-    }
-
-    // O servidor devolve uma linha por (pessoa, semana). Indexar aqui evita um
-    // laço aninhado de 30 x 53 buscas na lista.
-    const porPessoa = new Map();
-    for (const s of semanas) {
-      if (!porPessoa.has(s.usuario_uuid)) porPessoa.set(s.usuario_uuid, new Map());
-      porPessoa.get(s.usuario_uuid).set(Number(s.semana), s);
-    }
-
-    const linhas = anual.map(militar => {
-      const doMilitar = porPessoa.get(militar.usuario_uuid) || new Map();
-      const nome = nomeCurto(militar);
-
-      const celulas = [
-        el('td', {
-          className: 'mapa-efetivo__nome',
-          textContent: nome,
-          title: militar.ativo ? nome : `${nome} (desativado no cadastro)`,
-        }),
-      ];
-
-      for (let s = 1; s <= SEMANAS; s += 1) {
-        const semana = doMilitar.get(s);
-        const disponibilidade = semana && Number(semana.dias_na_dgeo) > 0
-          ? Number(semana.disponibilidade)
-          : null;
-
-        // O DENOMINADOR DA SEMANA É A SEMANA INTEIRA, e é por isso que ele
-        // precisa estar à vista: quem chega na quarta sai 71,4% com 5 de 7
-        // dias, e fica da mesma cor de quem esteve a semana toda a 71%. Sem
-        // "5 de 7 dias", a célula confunde "não estava" com "não rendeu".
-        const explicacao = disponibilidade == null
-          ? 'Fora da DGEO'
-          : [
-            pct(disponibilidade),
-            `${semana.dias_na_dgeo} de ${semana.dias} dias na DGEO`,
-            ...impedimentosDaSemana(militar.usuario_uuid, s),
-          ].join('\n');
-
-        celulas.push(el('td', {
-          className: `mapa-efetivo__celula mapa-efetivo__celula--${faixa(disponibilidade)}`,
-          title: explicacao,
-        }));
-      }
-
-      celulas.push(el('td', {
-        className: 'mapa-efetivo__total',
-        textContent: pct(militar.aproveitamento),
-        title: `${militar.dias_na_dgeo} de ${militar.dias_do_ano} dias na DGEO`,
-      }));
-
-      const destacada = Boolean(uuidDestacado) && militar.usuario_uuid === uuidDestacado;
-
-      const tr = el('tr', {
-        className: 'mapa-efetivo__linha'
-          + (destacada ? ' mapa-efetivo__linha--destaque' : ''),
-        onClick: () => abrirFicha(militar),
-      }, celulas);
-
-      // O destaque vem do link, e o CSS da tela não o conhece. Estilo em linha
-      // é o que faz o realce aparecer sem tocar na folha de estilo.
-      if (destacada) tr.style.outline = '2px solid var(--color-primary)';
-
-      return tr;
-    });
-
-    mapa.appendChild(el('table', { className: 'mapa-efetivo__tabela' }, [
-      el('thead', {}, [cabecalhoMeses()]),
-      el('tbody', {}, linhas),
-    ]));
+    mapa.appendChild(montarMapaEfetivo({
+      ano: anoSelecionado,
+      semanas,
+      anual,
+      impedimentos,
+      onLinhaClick: abrirFicha,
+      destaqueUuid: uuidDestacado,
+      vazio: 'Nenhum militar com passagem pela DGEO neste ano.',
+    }));
   }
 
   const periodosDo = (uuid) => periodos.filter(p => p.usuario_uuid === uuid);
@@ -334,34 +169,19 @@ export async function renderAproveitamento(container, ctx) {
   }
 
   /**
-   * O aproveitamento da DIVISÃO, PONDERADO por dias na Divisão.
+   * O aproveitamento da DIVISÃO, com as DUAS médias à vista.
    *
-   * A média simples de percentuais dá o mesmo peso a quem ficou uma semana e a
-   * quem ficou o ano, e é assim que um recém-chegado com 4% derruba o número da
-   * Divisão. A ponderada responde a pergunta certa: dos dias que as pessoas
-   * estiveram aqui, quantos renderam.
-   *
-   *   dias disponíveis = aproveitamento_i x dias_do_ano_i / 100  (o numerador
-   *                      do servidor, que tem o ano no denominador)
-   *   ponderada        = SOMA(dias disponíveis) / SOMA(dias_na_dgeo) x 100
-   *
-   * AS DUAS FICAM À VISTA, com o nome de cada uma. Um número de média sem dizer
-   * qual média é convida a comparar com o do ano passado, que era a outra.
+   * A CONTA é de `resumoPonderado`, compartilhada com `#/perfil`; a FRASE é
+   * daqui, porque só esta tela fala em Divisão e conta militares. Um número de
+   * média sem dizer qual média é convida a comparar com o do ano passado, que
+   * era a outra.
    */
   function montarResumo(anual) {
     resumoDivisao.innerHTML = '';
     if (!anual.length) return;
 
-    const diasNaDgeo = anual.reduce((t, m) => t + Number(m.dias_na_dgeo || 0), 0);
-    const diasDisponiveis = anual.reduce(
-      (t, m) => t + (Number(m.aproveitamento) * Number(m.dias_do_ano || 0)) / 100, 0
-    );
-    const simples = anual.reduce((t, m) => t + Number(m.aproveitamento), 0) / anual.length;
-    // Ninguém com dia na Divisão faz o denominador zerar. Sem a guarda o número
-    // sairia NaN, que se lê como defeito da tela e não como base vazia.
-    const ponderada = diasNaDgeo > 0 ? (diasDisponiveis / diasNaDgeo) * 100 : 0;
-
-    const quantos = anual.length === 1 ? '1 militar' : `${anual.length} militares`;
+    const { ponderada, simples, militares } = resumoPonderado(anual);
+    const quantos = militares === 1 ? '1 militar' : `${militares} militares`;
 
     resumoDivisao.append(
       `Aproveitamento da Divisão em ${anoSelecionado}, ponderado por dias na DGEO: `,
@@ -370,23 +190,11 @@ export async function renderAproveitamento(container, ctx) {
     );
   }
 
-  /**
-   * O ano à frente do corrente é PROJEÇÃO, e não medida.
-   *
-   * Impedimento sem data de término se estende por todo ano futuro, e o mapa de
-   * 2027 desenha isso como se já tivesse acontecido. O aviso é o que separa a
-   * conta que o sistema fez da coisa que o mundo decidiu.
-   */
+  /** O aviso de ano futuro, que é projeção e não medida. Ver `mapa-grade.js`. */
   function montarAvisoProjecao() {
     avisoProjecao.innerHTML = '';
-    if (anoSelecionado <= anoCorrente) return;
-
-    avisoProjecao.appendChild(el('p', {
-      className: 'efetivo-projecao',
-      style: { margin: '0', color: 'var(--color-warning)' },
-      textContent: `${anoSelecionado} ainda não aconteceu. Este mapa é projeção`
-        + ' dos impedimentos e das passagens em aberto, e não medida.',
-    }));
+    const aviso = criarAvisoProjecao(anoSelecionado, anoCorrente);
+    if (aviso) avisoProjecao.appendChild(aviso);
   }
 
   /**
@@ -522,7 +330,10 @@ export async function renderAproveitamento(container, ctx) {
         .sort((a, b) => (b.tipo_posto_grad_id - a.tipo_posto_grad_id)
           || a.nome_guerra.localeCompare(b.nome_guerra));
 
-      anoFilter.setOptions(anosOferecidos().map(a => ({ value: a, label: String(a) })));
+      anoFilter.setOptions(
+        anosComPassagem(todosPeriodos, { anoCorrente, anoSelecionado })
+          .map(a => ({ value: a, label: String(a) }))
+      );
       anoFilter.setValue(anoSelecionado);
 
       montarAvisoProjecao();

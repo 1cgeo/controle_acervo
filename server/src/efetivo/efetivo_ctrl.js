@@ -31,7 +31,7 @@ const controller = {}
 /**
  * A disponibilidade de cada pessoa em cada DIA do recorte.
  *
- * É a base de tudo o que esta tela mostra, e por isso mora numa constante só:
+ * É a base de tudo o que esta tela mostra, e por isso mora num molde só:
  * o mapa do ano, o resumo do mês e a subseção 6.1 do RPCMTec agregam ESTE
  * resultado de três jeitos diferentes. Três consultas parecidas divergiriam na
  * primeira regra nova.
@@ -39,8 +39,11 @@ const controller = {}
  * A grade é o produto cartesiano PESSOA x DIA, e não os dias de presença: sem
  * ela, quem esteve ausente o mês inteiro sumiria da lista em vez de aparecer
  * com zero, e a média da Divisão subiria por desaparecimento.
+ *
+ * `filtroDePessoa` RECORTA A GRADE em uma pessoa só, e é o que a tela `#/perfil`
+ * usa para desenhar o próprio ano. Ver `SO_ESTA_PESSOA`, logo abaixo.
  */
-const DISPONIBILIDADE_POR_DIA = `
+const DISPONIBILIDADE_POR_DIA = (filtroDePessoa = '') => `
   WITH dias AS (
     SELECT d::date AS dia
     FROM generate_series($<inicio>::date, $<fim>::date, INTERVAL '1 day') AS d
@@ -52,6 +55,7 @@ const DISPONIBILIDADE_POR_DIA = `
     FROM dgeo.efetivo_periodo AS p
     WHERE p.data_inicio <= $<fim>::date
       AND (p.data_fim IS NULL OR p.data_fim >= $<inicio>::date)
+      ${filtroDePessoa}
   ),
   grade AS (
     SELECT pe.usuario_uuid, d.dia
@@ -81,6 +85,22 @@ const DISPONIBILIDADE_POR_DIA = `
       AND (i.data_fim IS NULL OR g.dia <= i.data_fim)
   ) AS im ON TRUE
 `
+
+/**
+ * O RECORTE POR PESSOA do mapa e do fechamento anual.
+ *
+ * POR QUE ELE É UM FILTRO NAS FUNÇÕES QUE JÁ EXISTEM, e não uma consulta nova.
+ * A tela `#/perfil` desenha o PRÓPRIO ano com a mesma grade de
+ * `#/aproveitamento`, e as duas têm de dizer o mesmo número: uma segunda consulta
+ * que calculasse aproveitamento divergiria da primeira correção aplicada só a
+ * uma, e a pessoa leria 61% na própria página e 58% no mapa da Divisão sem nada
+ * na tela explicando a diferença.
+ *
+ * ELE ENTRA NO `pessoas`, e não num WHERE por fora: filtrar depois do CROSS JOIN
+ * faria o Postgres montar a grade da Divisão inteira (trinta pessoas x 365 dias)
+ * para devolver as 365 linhas de uma.
+ */
+const SO_ESTA_PESSOA = 'AND p.usuario_uuid = $<usuarioUuid>'
 
 const primeiroDia = ano => `${ano}-01-01`
 const ultimoDia = ano => `${ano}-12-31`
@@ -113,10 +133,16 @@ const fimDoMes = (ano, mes) => {
  * posto. A tela desenha `posto_abrev` e `nome_guerra`, e mais nada. Dado de
  * pessoal que trafega sem uso é vazamento à espera de um log. Quem escreve o
  * nome por extenso é a 6.1 do RPCMTec, por `resumoMensal`.
+ *
+ * `usuarioUuid` RECORTA EM UMA PESSOA, para a tela `#/perfil`. Nulo é o mapa da
+ * Divisão inteira, que é o caso de `GET /efetivo/mapa`. Ver `SO_ESTA_PESSOA`.
+ *
+ * @param {number|string} ano
+ * @param {?string} [usuarioUuid]
  */
-controller.mapaAnual = async ano => {
+controller.mapaAnual = async (ano, usuarioUuid = null) => {
   return db.conn.any(
-    `WITH base AS (${DISPONIBILIDADE_POR_DIA})
+    `WITH base AS (${DISPONIBILIDADE_POR_DIA(usuarioUuid ? SO_ESTA_PESSOA : '')})
      SELECT
        b.usuario_uuid,
        u.nome_guerra, u.ativo,
@@ -132,7 +158,7 @@ controller.mapaAnual = async ano => {
      GROUP BY b.usuario_uuid, u.nome_guerra, u.ativo,
               pg.nome_abrev, u.tipo_posto_grad_id, semana
      ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra, semana`,
-    { inicio: primeiroDia(ano), fim: ultimoDia(ano) }
+    { inicio: primeiroDia(ano), fim: ultimoDia(ano), usuarioUuid }
   )
 }
 
@@ -147,10 +173,17 @@ controller.mapaAnual = async ano => {
  *
  * Sem `u.nome`, `u.login` e o posto por extenso, pelo mesmo motivo do
  * `mapaAnual`: a tela não os desenha.
+ *
+ * `usuarioUuid` RECORTA EM UMA PESSOA, pela mesma razão e pelo mesmo caminho do
+ * `mapaAnual`: os dois saem juntos na resposta, e recortar um só deixaria a
+ * grade de uma pessoa ao lado do total da Divisão.
+ *
+ * @param {number|string} ano
+ * @param {?string} [usuarioUuid]
  */
-controller.resumoAnual = async ano => {
+controller.resumoAnual = async (ano, usuarioUuid = null) => {
   return db.conn.any(
-    `WITH base AS (${DISPONIBILIDADE_POR_DIA})
+    `WITH base AS (${DISPONIBILIDADE_POR_DIA(usuarioUuid ? SO_ESTA_PESSOA : '')})
      SELECT
        b.usuario_uuid,
        u.nome_guerra, u.ativo,
@@ -164,7 +197,7 @@ controller.resumoAnual = async ano => {
      GROUP BY b.usuario_uuid, u.nome_guerra, u.ativo,
               pg.nome_abrev, u.tipo_posto_grad_id
      ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra`,
-    { inicio: primeiroDia(ano), fim: ultimoDia(ano) }
+    { inicio: primeiroDia(ano), fim: ultimoDia(ano), usuarioUuid }
   )
 }
 
@@ -205,7 +238,7 @@ controller.resumoMensal = async (ano, mes) => {
   const fim = fimDoMes(ano, mes)
 
   return db.conn.any(
-    `WITH base AS (${DISPONIBILIDADE_POR_DIA}),
+    `WITH base AS (${DISPONIBILIDADE_POR_DIA()}),
      resumo AS (
        SELECT
          b.usuario_uuid,
