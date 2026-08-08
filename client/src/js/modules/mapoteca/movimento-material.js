@@ -11,10 +11,9 @@
 // aqui nao quebra o boot nem o teste do servidor: quebra a tela, calada. Por isso
 // os quatro tipos e as quatro localizacoes ficam juntos, num arquivo so.
 
-// O CODE 4 NAO ESTA AQUI, e continua no banco. Ele foi a Contagem, extinta em
-// 2026-08-08: a linha do dominio sobrevive so para a auditoria antiga se
-// traduzir, e nenhuma tela a lanca. O servidor a recusa no Joi, entao um botao
-// que a escrevesse so produziria 400.
+// SAO TRES, e o code 4 NAO EXISTE mais em lugar nenhum -- nem aqui, nem no
+// banco. Ele foi a Contagem, extinta em 2026-08-08, e a linha do dominio saiu
+// junto na 1.48.0: o historico que ela guardaria foi medido e estava vazio.
 /** mapoteca.tipo_movimento_material */
 export const TIPO_MOVIMENTO = {
   ENTRADA: 1,

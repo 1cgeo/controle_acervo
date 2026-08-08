@@ -101,10 +101,10 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
   mês anterior" da 7.2 vem da EDIÇÃO FECHADA anterior, nunca de saldo atual mais consumo.
 - **NÃO EXISTE movimento de AJUSTE de saldo, e a ausência é a regra.** O code 4 era a Contagem,
   extinta em 2026-08-08: o saldo tem de estar certo pelos três acima, e lançamento errado se conserta
-  EDITANDO ou apagando a linha errada, porque o gatilho desfaz o efeito dela. A linha 4 continua em
-  `dominio` como "Contagem (extinta)" só para a auditoria antiga se traduzir, e quem recusa lançá-la
-  é o `ELSE FALSE` do CHECK `movimento_material_forma`. Ressuscitar o tipo é decisão, e decisão se
-  registra em `docs/decisoes.md`.
+  EDITANDO ou apagando a linha errada, porque o gatilho desfaz o efeito dela. **São TRÊS codes, e o 4
+  não existe nem no domínio** desde a 1.48.0. Quem recusa lançá-lo é o `ELSE FALSE` do CHECK
+  `movimento_material_forma`, mais o Joi. Ressuscitar o tipo é decisão, e decisão se registra em
+  `docs/decisoes.md`.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).
 - **A numeração de `pit.meta` não é estável entre anos:** guarde o `id`, nunca o código.

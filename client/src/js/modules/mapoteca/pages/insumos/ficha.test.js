@@ -41,17 +41,11 @@ const MATERIAL = {
 // O LIVRO traz os TRES tipos. A ficha antiga mostrava so "Consumo recente", e
 // quem visse o saldo cair por uma transferencia nao tinha onde ler isso.
 //
-// A PRIMEIRA LINHA E DO TIPO EXTINTO, de proposito: banco migrado tem Contagens
-// lancadas antes de 2026-08-08, e a ficha continua sendo o lugar onde elas se
-// leem. Nada na tela filtra por tipo conhecido, e este caso e o que garante isso.
+// SAO TRES TIPOS, e nao ha um quarto. A Contagem (code 4) foi extinta em
+// 2026-08-08 e a linha dela saiu do dominio na 1.48.0, depois de medido que nao
+// havia um movimento desse tipo em banco nenhum. O NOME de cada tipo chega
+// resolvido do servidor (`tipo_movimento_nome`), e a tela nao o traduz.
 const LIVRO = [
-  {
-    id: 41, tipo_movimento_id: 4, tipo_movimento_nome: 'Contagem (extinta)',
-    quantidade: 2, data_movimento: '2026-08-08',
-    localizacao_origem_id: 1, localizacao_origem_nome: 'Seção',
-    localizacao_destino_id: null, localizacao_destino_nome: null,
-    motivo: 'Bobina molhada', usuario_criacao_nome: 'Sd Silva',
-  },
   {
     id: 32, tipo_movimento_id: 2, tipo_movimento_nome: 'Transferência',
     quantidade: 10, data_movimento: '2026-08-05',
@@ -119,9 +113,9 @@ describe('renderInsumoFicha', () => {
 
     const livro = secao(container, 'Livro de movimentos');
     const texto = livro.textContent;
-    // 'Contagem (extinta)' entra na lista porque o livro exibe o que ACONTECEU,
-    // e nao o que ainda se pode lancar: o nome vem do dominio, junto com a linha.
-    for (const tipo of ['Entrada', 'Transferência', 'Consumo', 'Contagem (extinta)']) {
+    // Os tres nomes vem do dominio, junto com cada linha: a tela nao guarda uma
+    // segunda copia da traducao para divergir da primeira.
+    for (const tipo of ['Entrada', 'Transferência', 'Consumo']) {
       expect(texto).toContain(tipo);
     }
     // As colunas De e Para juntas sao o que diz o que aconteceu: entrada tem so

@@ -144,9 +144,9 @@ const REGRAS = {
     'rolo de papel sao coisas separadas desde 2026-08-08.',
     'O banco RECUSA consumo sem saldo na Secao (o saldo nao pode ficar negativo).',
     'Nao ha rota de dominio para os tipos de movimento: os tres codes acima sao a',
-    'lista inteira que se pode ESCREVER, e a resposta traz tipo_movimento_nome ja',
-    'resolvido. Listagem de banco migrado ainda devolve linhas com tipo 4,',
-    '"Contagem (extinta)": elas sao historia, e o servidor recusa criar novas.'
+    'lista inteira, e a resposta traz tipo_movimento_nome ja resolvido. O code 4',
+    'foi a Contagem, extinta em 2026-08-08, e a linha dela saiu do dominio na',
+    '1.48.0: nao ha banco nenhum com movimento desse tipo para listar.'
   ],
 
   estoque: [

@@ -620,14 +620,23 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   tendo conserto, e é metade do argumento: lançamento ERRADO se corrige editando ou apagando a linha
   errada, porque os gatilhos de UPDATE e DELETE desfazem o efeito dela no saldo. Somar um ajuste em
   cima guardaria duas linhas para um evento que nunca houve.
-- **O code 4 FICA no domínio, renomeado para "Contagem (extinta)", e quem o recusa é o CHECK.**
-  Apagar a linha era o gesto óbvio e foi recusado por um consumidor: `auditoria.registro` guarda o
-  valor gravado, e quem o traduz é o catálogo VIVO da tabela (`auditoria/renderizar.js`), então sem
-  a linha todo registro de movimento anterior à migração exibiria "Tipo de movimento: 4", cru. Uma
-  linha de domínio que nada pode lançar custa uma linha; a história ilegível custa a auditoria. Ela
-  está nos DOIS caminhos (`er/` e migração) porque `ensaiar_migracao.cjs` compara o conteúdo das
-  tabelas de código linha a linha. Como a FK a aceita, quem barra o lançamento novo é o `ELSE FALSE`
-  do `movimento_material_forma`, mais o Joi de `mapoteca_schema.js`.
+- **O code 4 SAI do domínio, e o que mudou foi a medição, não o argumento**
+  (`2026-08-08_apagar_a_contagem_do_dominio.sql`, 1.48.0). A 1.45.0 o manteve, renomeado para
+  "Contagem (extinta)", por um consumidor real: `auditoria.evento` guarda o valor gravado, e quem o
+  traduz é o catálogo VIVO da tabela (`auditoria/renderizar.js`), então sem a linha um evento antigo
+  de movimento exibiria "Tipo de movimento: 4", cru. **O argumento continua correto; o histórico é
+  que não existe.** A janela em que uma Contagem podia ser lançada foi da 1.41.0 à 1.45.0, ambas de
+  2026-08-08, e nela houve zero movimentos de qualquer tipo, zero linhas de tipo 4 e zero eventos
+  citando 4 -- e no dump de produção do mesmo dia `mapoteca.movimento_material` **nem estava
+  criada**, porque o livro nasceu na 1.41.0, depois dele. A conversão da 1.45.0 tampouco deixa rastro
+  que precise da linha: ela troca o tipo com UPDATE direto, sem escrever em `auditoria.evento`.
+  Guardar um valor de domínio para um passado que não aconteceu não é prudência: é um código que só
+  pode confundir quem ler a tabela. **A migração carrega as duas guardas** e levanta exceção em vez
+  de apagar se achar linha do livro ou evento de auditoria com tipo 4, para que um ambiente que
+  ninguém mediu pare ali em vez de descobrir isso na tela. Quem barra o lançamento novo continua
+  sendo o `ELSE FALSE` do `movimento_material_forma` mais o Joi de `mapoteca_schema.js`, e agora
+  também a FK -- que não é observável, porque o CHECK é avaliado antes do gatilho dela. **O piso não
+  sobe:** este servidor não lê a linha 4 em lugar nenhum.
 - **As linhas tipo 4 que existiam foram CONVERTIDAS, e não apagadas** (`2026-08-08_fim_da_contagem.sql`,
   1.45.0): apagar zeraria o estoque, porque a Contagem É a semente do saldo inteiro -- a 1.41.0
   semeou o saldo daquele dia como Contagem, uma por linha de estoque (26 na produção). Cada uma vira

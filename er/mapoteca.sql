@@ -495,24 +495,23 @@ CREATE TABLE mapoteca.tipo_movimento_material(
     nome VARCHAR(255) NOT NULL
 );
 
--- O CODE 4 FICA, e fica MARCADO, em vez de sair da tabela. Ele foi a Contagem, e
--- nenhuma porta o lança mais: o CHECK de forma logo abaixo o recusa, o Joi de
--- `mapoteca_schema.js` não o aceita e nenhuma tela o oferece.
+-- SÃO TRÊS, e o code 4 NÃO EXISTE. Ele foi a Contagem, extinta em 2026-08-08, e
+-- por algumas horas ele sobreviveu aqui como "Contagem (extinta)" para que a
+-- auditoria antiga se traduzisse. Esse histórico foi MEDIDO no mesmo dia e não
+-- existe: zero linhas de tipo 4 em `movimento_material`, zero eventos citando 4
+-- em `auditoria.evento`, e no dump de produção de 2026-08-08 a tabela do livro
+-- nem estava criada (o livro nasceu na 1.41.0, depois dele). A conversão feita
+-- pela `2026-08-08_fim_da_contagem.sql` também não escreve evento: ela troca o
+-- tipo direto, com UPDATE.
 --
--- O que ele ainda serve é LER O PASSADO. `auditoria.registro` guarda o valor
--- gravado, e quem o traduz é o catálogo VIVO desta tabela
--- (`auditoria/renderizar.js`): sem a linha, todo registro de movimento anterior
--- a 2026-08-08 passa a exibir "Tipo de movimento: 4", cru. Uma linha de domínio
--- que nada pode lançar custa uma linha; a história ilegível custa a auditoria.
---
--- Ela está no er/ e na migração porque `ensaiar_migracao.cjs` compara o CONTEÚDO
--- das tabelas de código linha a linha, e instalação nova que não a tivesse
--- divergiria da migrada.
+-- Uma linha de domínio guardada para um passado que não chegou a acontecer não
+-- é prudência: é um valor que só pode confundir quem ler a tabela. Quem recusa
+-- lançar continua sendo o CHECK de forma logo abaixo, mais o Joi de
+-- `mapoteca_schema.js` -- e agora a FK também, porque não há para onde apontar.
 INSERT INTO mapoteca.tipo_movimento_material (code, nome) VALUES
 (1, 'Entrada'),
 (2, 'Transferência'),
-(3, 'Consumo'),
-(4, 'Contagem (extinta)');
+(3, 'Consumo');
 
 CREATE TABLE mapoteca.movimento_material (
     id BIGSERIAL PRIMARY KEY,

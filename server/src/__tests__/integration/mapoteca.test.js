@@ -234,16 +234,34 @@ describe('O que o banco recusa no livro', () => {
     ).rejects.toThrow(/movimento_material_forma/)
   })
 
-  it('a linha 4 continua no dominio, para a auditoria antiga se traduzir', async () => {
-    // Apagar a linha era o gesto obvio, e faria todo registro de movimento
-    // anterior a 1.45.0 exibir "Tipo de movimento: 4", cru: quem traduz e o
-    // catalogo VIVO desta tabela, lido por `auditoria/renderizar.js`.
-    const linha = await conn.oneOrNone(
-      'SELECT nome FROM mapoteca.tipo_movimento_material WHERE code = 4'
+  it('o dominio tem TRES tipos, e a linha 4 nao existe', async () => {
+    // A 1.45.0 DEIXOU a linha 4, marcada como "Contagem (extinta)", para que um
+    // evento antigo de `auditoria.evento` nao exibisse "Tipo de movimento: 4"
+    // cru -- quem traduz e o catalogo VIVO desta tabela, lido por
+    // `auditoria/renderizar.js`.
+    //
+    // A 1.48.0 a APAGOU, e o que mudou foi a medicao, nao o argumento: a janela
+    // em que uma Contagem podia ser lancada foi da 1.41.0 a 1.45.0, ambas de
+    // 2026-08-08, e nela nao houve UM movimento sequer. No dump de producao do
+    // mesmo dia a tabela do livro nem estava criada. Guardar um valor de dominio
+    // para um passado que nao aconteceu nao e prudencia: e um codigo que so pode
+    // confundir quem ler a tabela.
+    //
+    // A migracao carrega as duas guardas que este teste nao pode carregar: ela
+    // levanta excecao se achar linha do livro OU evento de auditoria com tipo 4.
+    //
+    // E NAO HA UM CASO PARA A CHAVE ESTRANGEIRA, de proposito. Sem a linha 4 a
+    // FK tambem passou a recusar o tipo, e seria a recusa mais barata das tres
+    // -- mas ela nao e OBSERVAVEL: o CHECK `movimento_material_forma` e avaliado
+    // durante o INSERT e o gatilho da FK so depois, entao a excecao que chega
+    // nomeia sempre o CHECK. Um caso que afirmasse a FK estaria medindo o teste
+    // acima com outro nome.
+    const linhas = await conn.any(
+      'SELECT code, nome FROM mapoteca.tipo_movimento_material ORDER BY code'
     )
 
-    expect(linha).not.toBeNull()
-    expect(linha.nome).toBe('Contagem (extinta)')
+    expect(linhas.map(l => l.code)).toEqual([1, 2, 3])
+    expect(linhas.map(l => l.nome)).toEqual(['Entrada', 'Transferência', 'Consumo'])
   })
 
   // RN01: consumo so sai da Secao, e o material tem de ter sido transferido para

@@ -99,10 +99,14 @@ const semear = async () => {
       SECAO_DETENTORA.CIA_LEV, ADMIN_UUID
     ]
   )
+  // A PARADA DO CENÁRIO NASCE FECHADA, e isso não é detalhe: o `EXCLUDE` do DDL
+  // recusa duas paradas abertas do mesmo bem (um `daterange` sem fim é infinito
+  // à direita e cruza qualquer outro), e o 409 dele se confundiria com a recusa
+  // por perfil que este arquivo mede.
   const parada = await conn.one(
     `INSERT INTO equipamento.indisponibilidade
-       (equipamento_id, motivo, data_inicio, usuario_cadastramento_uuid)
-     VALUES ($1, 'Erro de firmware', '2026-05-11', $2) RETURNING id`,
+       (equipamento_id, motivo, data_inicio, data_fim, usuario_cadastramento_uuid)
+     VALUES ($1, 'Erro de firmware', '2026-05-11', '2026-05-20', $2) RETURNING id`,
     [bem.id, ADMIN_UUID]
   )
   return { tipoId: tipo.id, bemId: bem.id, paradaId: parada.id }
@@ -137,7 +141,10 @@ const ROTAS = [
   ['operador', 'post', () => '/api/equipamento/indisponibilidade',
     c => ({ equipamento_id: c.bemId, data_inicio: '2026-09-01', motivo: 'Fonte' })],
   ['operador', 'put', c => `/api/equipamento/indisponibilidade/${c.paradaId}`,
-    c => ({ equipamento_id: c.bemId, data_inicio: '2026-05-11', motivo: 'Placa' })],
+    c => ({
+      equipamento_id: c.bemId, data_inicio: '2026-05-11', data_fim: '2026-05-20',
+      motivo: 'Placa'
+    })],
   ['operador', 'delete', c => `/api/equipamento/indisponibilidade/${c.paradaId}`, null],
   ['operador', 'post', () => '/api/equipamento/afastamento',
     c => ({

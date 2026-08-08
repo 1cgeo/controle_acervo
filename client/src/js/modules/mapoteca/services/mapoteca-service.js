@@ -460,8 +460,8 @@ export function getEstoqueMaterial() {
 // movimentos e por isso nunca explicou um saldo inteiro. LER e de consulta;
 // LANCAR e de operador.
 //
-// A LEITURA de banco migrado ainda traz linhas do tipo 4, "Contagem (extinta)":
-// elas sao historia, e nenhuma rota cria novas.
+// SAO TRES TIPOS, e so. A Contagem (code 4) saiu do dominio na 1.48.0, depois de
+// medido que nao havia uma linha dela em banco nenhum para preservar.
 
 /**
  * O livro, com filtro opcional. `tipo_movimento_id` existe porque a tela e UMA:
