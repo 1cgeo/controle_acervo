@@ -146,6 +146,59 @@ export function temAcessoModulo(modulo) {
 }
 
 /**
+ * A pessoa TEM ACESSO AO SISTEMA? Administrador global tem, e quem tem qualquer
+ * perfil em qualquer modulo tambem.
+ *
+ * ESTAR LOGADO E TER ACESSO NAO SAO A MESMA COISA. A conta que o administrador
+ * acabou de criar nasce SEM linha em `dgeo.usuario_perfil`: ela entra, e nao ha
+ * nada la dentro que seja dela. Para essa pessoa o sistema e uma tela so, a do
+ * proprio cadastro, com o pedido de acesso; o resto aparece quando a concessao
+ * chegar.
+ *
+ * Espelha o `verifyAcesso` do servidor, que pergunta o mesmo ao BANCO. Isto aqui
+ * so evita oferecer uma tela que responderia 403.
+ *
+ * @returns {boolean}
+ */
+export function temAlgumAcesso() {
+  if (isAdmin()) return true;
+  return Object.values(getPerfis()).some(nivel => Number(nivel) > 0);
+}
+
+/**
+ * Os acessos da pessoa, prontos para a tela: um item por modulo em que ela tem
+ * perfil, com o NOME do modulo (do catalogo do servidor) e o do nivel.
+ *
+ * O administrador global sai com a lista dos modulos TODOS, marcados como
+ * `administrador`: ele nao tem linha de perfil nenhuma, e uma lista vazia diria
+ * a ele que nao tem acesso a nada.
+ *
+ * @returns {Array<{modulo:string, nome:string, nivel:number, perfil:string}>}
+ */
+export function meusAcessos() {
+  const NOME_NIVEL = { 1: 'Consulta', 2: 'Operador', 3: 'Gerente' };
+
+  if (isAdmin()) {
+    return getCatalogoModulos().map(m => ({
+      modulo: m.nome_abrev,
+      nome: m.nome,
+      nivel: 0,
+      perfil: 'Administrador',
+    }));
+  }
+
+  return Object.entries(getPerfis())
+    .filter(([, nivel]) => Number(nivel) > 0)
+    .map(([modulo, nivel]) => ({
+      modulo,
+      nome: nomeModulo(modulo),
+      nivel: Number(nivel),
+      perfil: NOME_NIVEL[Number(nivel)] || String(nivel),
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
+/**
  * A pessoa e GERENTE de pelo menos um modulo?
  *
  * Existe para a tela de Rastreabilidade, que e do administrador global e do

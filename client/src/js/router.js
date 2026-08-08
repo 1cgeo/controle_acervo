@@ -1,6 +1,6 @@
 import {
   isAuthenticated, isAdmin, temPerfil, ehDeAlgumPerfil, temAcessoModulo,
-  ehGerenteDeAlgumModulo,
+  ehGerenteDeAlgumModulo, temAlgumAcesso,
 } from '@store/auth-store.js';
 import { primeiroModuloAcessivel, rotaInicial } from '@modules/registry.js';
 
@@ -191,8 +191,11 @@ class Router {
  *
  * A ORDEM segue a da sidebar: Producao antes de Efetivo.
  *
- * Com sessao e sem nada disso, a pessoa nao entra em lugar nenhum, que continua
- * sendo a resposta certa para quem ainda nao recebeu perfil.
+ * SEM NADA DISSO, A ENTRADA E '#/perfil', e nao mais '/unauthorized'. Quem ainda
+ * nao recebeu perfil nenhum tem UMA tela que e dela -- o proprio cadastro, a
+ * troca da propria senha e o pedido de acesso -- e cair num 403 na porta dizia a
+ * essa pessoa que ela nao tinha nem conta. Ter conta e ter acesso sao dois
+ * momentos, e o intervalo entre eles e justamente o que a tela de perfil cobre.
  * @returns {string}
  */
 export function rotaRaiz() {
@@ -207,7 +210,7 @@ export function rotaRaiz() {
   // consulta nao tem tela nenhuma, e cai no /unauthorized abaixo.
   if (temPerfil('gerente', 'efetivo')) return '/acessos';
   if (temPerfil('operador', 'efetivo')) return '/aproveitamento';
-  return '/unauthorized';
+  return '/perfil';
 }
 
 /**
@@ -233,6 +236,25 @@ export function adminLoader() {
   if (!isAdmin()) {
     return '/unauthorized';
   }
+  return true;
+}
+
+/**
+ * Guard: exige sessao valida E acesso ao sistema, isto e, perfil em algum
+ * modulo (ou a flag de administrador).
+ *
+ * E o piso das telas de PLATAFORMA que nao sao de modulo nenhum -- o PIT do ano
+ * e o Extra-PIT. Era `authLoader`, e a diferenca e a conta recem-criada, ainda
+ * sem concessao: ela nao ve o plano de trabalho da Divisao enquanto espera o
+ * acesso. O servidor cobra o mesmo com `verifyAcesso`, lendo o BANCO.
+ *
+ * NAO guarda '#/perfil': aquela e a tela que existe para essa pessoa.
+ * @returns {true|string}
+ */
+export function acessoLoader() {
+  const auth = authLoader();
+  if (auth !== true) return auth;
+  if (!temAlgumAcesso()) return '/unauthorized';
   return true;
 }
 

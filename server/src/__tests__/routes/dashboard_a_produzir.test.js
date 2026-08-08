@@ -42,6 +42,29 @@ afterEach(async () => {
   await cleanTestData()
 })
 
+/**
+ * Dia de calendario LOCAL, deslocado de N dias, no formato 'YYYY-MM-DD'.
+ *
+ * NAO use `new Date(...).toISOString().slice(0, 10)`, que era o que estava aqui:
+ * o `toISOString` fala UTC, e o `dias_atraso` sai de `CURRENT_DATE - data_prevista`
+ * no PostgreSQL, que fala o fuso do servidor (America/Sao_Paulo). Das 21h a
+ * meia-noite as duas leituras discordam em um dia, e o teste falhava TODA NOITE
+ * nessa janela de tres horas -- sem ninguem ter mexido em nada.
+ *
+ * E o mesmo fuso que obriga `Joi.date().iso().raw()` nos dias de calendario das
+ * rotas: dia de calendario nao e instante, e converte-lo para UTC anda um dia.
+ *
+ * @param {number} deslocamentoDias
+ * @returns {string}
+ */
+const diaLocal = (deslocamentoDias) => {
+  const d = new Date()
+  d.setDate(d.getDate() + deslocamentoDias)
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mes}-${dia}`
+}
+
 const pedirAProduzir = () =>
   request(app)
     .get('/api/dashboard/a_produzir')
@@ -97,8 +120,8 @@ describe('GET /api/dashboard/a_produzir', () => {
   })
 
   test('o atraso vem calculado, e nao negativo quando o prazo nao venceu', async () => {
-    const ontem = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-    const daquiUmAno = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10)
+    const ontem = diaLocal(-1)
+    const daquiUmAno = diaLocal(365)
     await semearPlanejada('2758-3-NE', ontem)
     await semearPlanejada('2784-1-NO', daquiUmAno)
 

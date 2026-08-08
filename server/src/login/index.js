@@ -6,6 +6,10 @@ module.exports = {
   // verifyAdmin passa a valer so para o que e da plataforma (usuarios, views
   // materializadas, limpeza). O resto vai por verifyPerfil, com modulo.
   verifyLogin: require('./verify_login'),
+  // Tem acesso ao sistema: administrador global ou qualquer perfil em qualquer
+  // modulo. E o piso do que nao e de modulo nenhum (o PIT do ano), e o que
+  // separa "esta logado" de "entrou no sistema".
+  verifyAcesso: require('./verify_acesso'),
   verifyAdmin: require('./verify_admin'),
   verifyPerfil: require('./verify_perfil'),
   // Administrador global OU gerente de qualquer módulo, lendo o perfil do BANCO.

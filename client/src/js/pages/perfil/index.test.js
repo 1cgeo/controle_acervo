@@ -19,6 +19,7 @@ vi.mock('@utils/toast.js', () => ({
 }));
 
 import { renderPerfil } from '@pages/perfil/index.js';
+import { saveAuth } from '@store/auth-store.js';
 import {
   getMeuPerfil, atualizarMeuPerfil, alterarMinhaSenha, getPostosGrad,
 } from '@services/plataforma-service.js';
@@ -40,9 +41,21 @@ const PERFIL = {
   ativo: true,
 };
 
+const CATALOGO = [
+  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
+];
+
+/** Sessao com os perfis dados, que e de onde a secao "Meus acessos" le. */
+function logar({ administrador = false, perfis = {} } = {}) {
+  saveAuth({ token: 't', administrador, uuid: 'u-1', perfis, modulos: CATALOGO }, 'sgt.silva');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = '';
+  localStorage.clear();
+  logar({ perfis: { mapoteca: 2 } });
   getMeuPerfil.mockResolvedValue(PERFIL);
   getPostosGrad.mockResolvedValue(POSTOS);
 });
@@ -174,6 +187,69 @@ describe('perfil: troca de senha', () => {
     await enviarSenha(container);
 
     expect(showError).toHaveBeenCalledWith('Senha atual incorreta');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Meus acessos
+//
+// A tela e a PORTA DE ENTRADA de quem ainda nao tem perfil nenhum: e o unico
+// lugar em que essa pessoa descobre o que pode e o que fazer a respeito.
+// ---------------------------------------------------------------------------
+describe('perfil: meus acessos', () => {
+  const acessos = (container) => [...container.querySelectorAll('.perfil__acesso')]
+    .map(li => li.textContent);
+
+  test('lista um modulo por linha, com o nome do modulo e o do perfil', async () => {
+    logar({ perfis: { mapoteca: 2, acervo: 3 } });
+    const { container, cleanup } = await montar();
+
+    const linhas = acessos(container);
+    expect(linhas).toHaveLength(2);
+    expect(linhas.join(' ')).toContain('Controle do Acervo');
+    expect(linhas.join(' ')).toContain('Gerente');
+    expect(linhas.join(' ')).toContain('Mapoteca');
+    expect(linhas.join(' ')).toContain('Operador');
+    expect(container.querySelector('.perfil__sem-acesso')).toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('sem perfil nenhum, a tela pede o acesso a um gerente', async () => {
+    logar({ perfis: {} });
+    const { container, cleanup } = await montar();
+
+    expect(acessos(container)).toHaveLength(0);
+    const aviso = container.querySelector('.perfil__sem-acesso');
+    expect(aviso).not.toBeNull();
+    expect(aviso.textContent).toContain('administrador do sistema');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Quem nao tem acesso a nada continua dono desta tela: os dois formularios
+  // seguem la, porque corrigir o proprio cadastro e trocar a propria senha e
+  // exatamente o que essa pessoa PODE fazer enquanto espera.
+  test('sem acesso nenhum, os dois formularios continuam na tela', async () => {
+    logar({ perfis: {} });
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelectorAll('.perfil__form')).toHaveLength(2);
+    expect(campo(container, 'Senha atual')).not.toBeUndefined();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O administrador global nao tem linha de perfil nenhuma. Sem este caso, a
+  // tela diria a quem administra o sistema que ele precisa pedir acesso.
+  test('o administrador global ve os modulos todos, e nao o pedido de acesso', async () => {
+    logar({ administrador: true, perfis: {} });
+    const { container, cleanup } = await montar();
+
+    expect(acessos(container)).toHaveLength(CATALOGO.length);
+    expect(container.querySelector('.perfil__sem-acesso')).toBeNull();
 
     if (typeof cleanup === 'function') cleanup();
   });

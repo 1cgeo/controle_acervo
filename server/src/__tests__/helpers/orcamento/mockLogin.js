@@ -21,6 +21,9 @@ const passthrough = (req, res, next) => {
 
 module.exports = {
   verifyLogin: passthrough,
+  // Tem acesso ao sistema (qualquer perfil em qualquer modulo, ou
+  // administrador). Passthrough pela mesma razao do verifyGerente abaixo.
+  verifyAcesso: passthrough,
   verifyAdmin: passthrough,
   // Administrador global OU gerente de qualquer modulo, do BANCO. Aqui vira
   // passthrough como os outros: o TEST_USER e administrador, e quem prova a

@@ -47,9 +47,18 @@ const arquivosDeRota = dir =>
         : []
   )
 
-/** Tira bloco `/* *\/` e linha `//`, para a varredura ver so codigo. */
+/**
+ * Tira bloco `/* *\/` e linha `//`, para a varredura ver so codigo.
+ *
+ * O `\r` CAI PRIMEIRO, e nao e detalhe: com `core.autocrlf` ligado (o padrao do
+ * Git no Windows) o fonte chega em CRLF, e o `.` do JavaScript nao casa `\r`.
+ * O `//.*$` parava antes do fim da linha, comentario nenhum era apagado, e a
+ * varredura reprovava por causa da PROSA que descreve a armadilha -- so na
+ * maquina de quem desenvolve no Windows.
+ */
 const semComentario = fonte =>
   fonte
+    .replace(/\r\n?/g, '\n')
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .split('\n')
     .map(linha => linha.replace(/(^|[^:])\/\/.*$/, '$1'))
@@ -115,5 +124,17 @@ describe('a limpeza de comentario nao come codigo', () => {
   it('nao confunde o // de uma URL com comentario', () => {
     const fonte = "const u = 'http://exemplo/x'\nverifyPerfil('consulta', 'mapoteca')"
     expect([...semComentario(fonte).matchAll(CHAMADA)]).toHaveLength(1)
+  })
+
+  // REGRESSAO: em CRLF a limpeza nao apagava nada, e a varredura reprovava a
+  // prosa. So aparecia em maquina Windows com `core.autocrlf` ligado.
+  it('apaga comentario tambem quando a linha termina em CRLF', () => {
+    const fonte = [
+      "// a irma do acervo e `verifyPerfil('consulta')` SEM modulo",
+      "router.get('/x', verifyPerfil('operador', 'mapoteca'), handler)"
+    ].join('\r\n')
+
+    const achados = [...semComentario(fonte).matchAll(CHAMADA)].map(a => a[0])
+    expect(achados).toEqual(["verifyPerfil('operador', 'mapoteca')"])
   })
 })

@@ -17,8 +17,8 @@ const path = require('path')
 // mentiroso, e o agente descobriria pelo 404.
 //
 // DOIS GRUPOS, os dois de PLATAFORMA (sem prefixo de modulo, como /usuarios):
-//   /api/metas     o PIT: meta, execucao mensal, exercicio, revisao, Extra-PIT
-//                  e o de-para de midia (server/src/pit/)
+//   /api/metas     o PIT: meta, execucao mensal, exercicio, revisao e o
+//                  Extra-PIT (server/src/pit/)
 //   /api/rpcmtec   a edicao mensal, o conteudo, o ciclo, a saida, os anexos e a
 //                  capacitacao (server/src/rpcmtec/)
 //
@@ -548,52 +548,6 @@ const RECURSOS = {
           param: 'id',
           motivo: 'a versão do acervo aponta a demanda por acervo.versao.' +
             'demanda_extra_id; excluir apaga o alvo desse vínculo'
-        }
-      }
-    }
-  },
-
-  midia: {
-    nome: 'de-para da mídia impressa para a meta (a fonte da meta 4)',
-    schema: carregar('pit/pit_schema'),
-    validacao: VALIDACAO.ESTRITO,
-    operacoes: {
-      listar: {
-        metodo: 'GET',
-        caminho: '/metas/midia',
-        query: 'midiaQuery',
-        acesso: 'login',
-        envelope: 'lista',
-        colunas: [
-          'id', 'ano', 'tipo_midia_id', 'tipo_midia', 'meta_pit_id',
-          'numero_meta', 'meta_item', 'meta_descricao'
-        ]
-      },
-      criar: {
-        metodo: 'POST',
-        caminho: '/metas/midia',
-        corpo: 'criarMidiaMeta',
-        acesso: 'admin',
-        envelope: 'registro'
-      },
-      atualizar: {
-        metodo: 'PUT',
-        caminho: '/metas/midia/:id',
-        params: 'idParams',
-        corpo: 'atualizarMidiaMeta',
-        acesso: 'admin',
-        envelope: 'mensagem'
-      },
-      excluir: {
-        metodo: 'DELETE',
-        caminho: '/metas/midia/:id',
-        params: 'idParams',
-        acesso: 'admin',
-        envelope: 'mensagem',
-        confirmar: {
-          param: 'id',
-          motivo: 'sem o de-para, a mídia impressa deixa de contar para a meta ' +
-            'que ela cumpre, e o número da 2.1 cai sem nada explicar'
         }
       }
     }

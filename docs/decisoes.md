@@ -43,7 +43,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   inteiro e o cadastro de usuários.
   **O que NÃO entrou, e continua `verifyAdmin`**: a META e a REVISÃO do PIT (alterar o PIT é ato da
   DSG, e o que está no sistema é transcrição de documento assinado), a EDIÇÃO do RPCMTec (o relatório
-  que o chefe assina), o de-para de mídia, o cadastro de usuários e o orçamento. Também ficaram de
+  que o chefe assina), o cadastro de usuários e o orçamento. Também ficaram de
   fora `POST` e `DELETE /metas/extra/:id/versoes`: elas gravam em `acervo.versao`, e quem manda no
   acervo é o módulo acervo.
   **A leitura do efetivo se partiu em dois níveis**: operador no cadastro (passagem e impedimento) e
@@ -52,6 +52,26 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   O código do módulo é fixo nos DOIS lados (`dominio.modulo` e o mapa `MODULO` de
   `verify_perfil.js`), e um teste compara os dois lendo o DDL: um módulo novo só num deles faria toda
   concessão cair em "Módulo desconhecido", ou a consulta procurar um `modulo_id` que a FK recusa.
+- **Ter conta e ter acesso são dois momentos, e o intervalo entre eles é uma TELA.** A conta que o
+  administrador acaba de criar nasce sem nenhuma linha em `dgeo.usuario_perfil`: a senha funciona, o
+  login responde, e não há nada lá dentro que seja dela. Até 2026-08-07 essa pessoa entrava e caía em
+  `#/unauthorized`, com "403 Acesso negado" e um botão **Sair** -- a tela dizia a quem tinha acabado
+  de receber uma conta que ela não tinha conta nenhuma. Agora a raiz dela é `#/perfil`: ela corrige o
+  próprio cadastro, troca a própria senha e lê, na seção **Meus acessos**, que ainda não tem acesso a
+  módulo nenhum e que o acesso se pede ao ADMINISTRADOR -- e não a um gerente, porque quem concede
+  perfil é `verifyAdmin` em `/api/usuarios`, e mandar pedir a quem não pode dar faria a pessoa
+  percorrer o caminho errado antes de chegar ao certo. É a única tela do sistema que nunca depende de
+  perfil (`authLoader`), e é de propósito: sem ela, trocar de senha seria privilégio de quem já tem
+  acesso.
+  **Do lado do servidor isso virou a guarda `verifyAcesso`** (administrador global OU qualquer perfil
+  em qualquer módulo, lido do BANCO a cada requisição), e as leituras do PIT e do Extra-PIT saíram de
+  `verifyLogin` para ela. Eram o que a conta sem concessão alcançava: o plano de trabalho da Divisão
+  inteira, no primeiro segundo de vida da conta. `verifyLogin` continua onde tem de continuar -- o
+  próprio cadastro (`/usuarios/perfil`) e a própria senha --, porque são justamente as rotas que essa
+  pessoa precisa alcançar, e trancá-las a deixaria do lado de fora da própria conta.
+  **O menu acompanha**: a seção Produção era a única coisa desenhada na sidebar de quem não tinha
+  perfil, e passou a exigir `temAlgumAcesso()`. Oferecer no menu uma tela que responde 403 é o mesmo
+  desencontro que `podeAbrirRota` existe para evitar do lado dos módulos.
 - **`/api/integracao/*` não tem autenticação.** Somente leitura, para o vault da DGEO consumir o SCA
   sem credencial; expõe cobertura, produtos concluídos no mês e o agregado da mapoteca, sem endereço,
   contato nem observação de impressão.
@@ -494,6 +514,38 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## Dependências e ambiente de teste
 
+- **O `create_config.js` lê os `er/*.sql` SEM `minify`.** O `er/limites.sql` traz o WKT da área de
+  suprimento quebrado em literais adjacentes de 72 caracteres, e o PostgreSQL só os concatena quando
+  há QUEBRA DE LINHA entre eles. O `pg-minify` troca a quebra por espaço, os literais deixam de se
+  juntar e a **instalação nova morria** com "erro de sintaxe" no meio de uma coordenada. Ficou
+  invisível porque o `globalSetup` do Jest sempre leu o arquivo cru: a suíte de banco passava com
+  `npm run config` quebrado. Ao mexer no carregamento dos `er/`, os dois caminhos leem o mesmo texto.
+- **Schema de ATUALIZAÇÃO não leva `.default()`, nem em campo de ação.** O guardrail do
+  `acervo_cli editar` recusa qualquer PUT cujo schema preencha por default um campo que a leitura não
+  trouxe, porque num PUT de objeto inteiro isso é gravar o padrão por cima do valor real, em
+  silêncio. Ele não distingue coluna de flag de ação, **e não deve**: uma lista de exceções
+  apodreceria, e a exceção de hoje é a Carta Militar despinada de amanhã. O `.default(false)` de
+  `migrar_subtipo_das_versoes` não mudava comportamento nenhum (o controller testa por falsidade),
+  e mesmo assim TRAVOU o `editar produto` inteiro -- toda edição de produto pelo CLI, não só a do
+  subtipo.
+- **Feature que sai do servidor sai do registry do CLI no MESMO commit.** O CLI lê o contrato do Joi
+  vivo, mas a lista de recursos é declarada, e declaração não some sozinha. Dois casos ficaram para
+  trás e só apareceram quando alguém rodou `npm run test-cli`: o `producao_cli` anunciava as quatro
+  rotas do de-para de mídia, apagadas na 1.29.0, e o `orcamento_cli` anunciava o CRUD do singleton de
+  `orcamento.configuracao`, podado na 1.34.0. O segundo era pior que uma rota morta: o `require` do
+  schema inexistente derrubava o `orcamento schema` de TODOS os recursos, e não só o dele.
+- **Teste que compara data com o `CURRENT_DATE` do banco monta o dia no calendário LOCAL.** O
+  `new Date(...).toISOString().slice(0, 10)` fala UTC, e o PostgreSQL fala o fuso do servidor
+  (`America/Sao_Paulo`): das 21h à meia-noite as duas leituras discordam em um dia. O
+  `dashboard_a_produzir.test.js` semeava "ontem" em UTC e cobrava `dias_atraso = 1`, e falhava TODA
+  NOITE naquela janela de três horas, sem ninguém ter mexido em nada -- o pior tipo de teste
+  vermelho, o que ensina a ignorar o vermelho. É o mesmo fuso que obriga `Joi.date().iso().raw()` nos
+  dias de calendário das rotas: dia de calendário não é instante.
+- **Teste que varre FONTE tem de normalizar o fim de linha.** Com `core.autocrlf` ligado (o padrão do
+  Git no Windows) o arquivo chega em CRLF, e o `.` do JavaScript não casa `\r`: um `//.*$` para antes
+  do fim da linha e não apaga comentário nenhum. Foi o que fez `modulo_em_toda_rota.test.js` reprovar
+  a PROSA que descreve a armadilha, e `mi.test.js` acusar divergência exibindo duas linhas
+  idênticas -- só na máquina de quem desenvolve no Windows.
 - **`archiver` fica na 7, e os `overrides` do `server/package.json` são o que zera a auditoria. NUNCA
   rode `npm audit fix --force` aqui.** A 8 é ESM puro e não exporta mais função chamável, e quebra no
   boot. O `readdir-glob` precisa de override próprio porque o `minimatch` 5 chama `brace-expansion`

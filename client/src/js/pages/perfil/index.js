@@ -1,5 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
+import { meusAcessos } from '@store/auth-store.js';
 import {
   createTextField,
   createSelectField,
@@ -26,6 +27,17 @@ import {
  * administrador. Fosse editável, "editar meu perfil" seria o caminho para se
  * promover. Ele aparece assim mesmo, desabilitado, porque é o que ela digita
  * para entrar e some da tela em qualquer outro lugar.
+ *
+ * A TERCEIRA SEÇÃO É "MEUS ACESSOS", e ela é a razão de esta tela ser a porta de
+ * entrada de quem ainda não tem perfil nenhum. Só aqui a pessoa descobre o que
+ * pode e, quando não pode nada, o que fazer a respeito: pedir a um gerente o
+ * acesso ao módulo de interesse. Sem ela, a conta recém-criada entrava, não via
+ * nada e não tinha como saber se o problema era com ela ou com o sistema.
+ *
+ * Os acessos saem do STORE, e não de uma rota nova: são os mesmos `perfis` que o
+ * `POST /api/login` devolveu, e que o `sincronizarSessao()` reconfere a cada
+ * boot. Uma rota só para repetir o que a sessão já sabe seria uma segunda fonte
+ * da mesma verdade, e as duas divergiriam no dia da concessão.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -217,9 +229,41 @@ export async function renderPerfil(container, _ctx) {
   }
 
   // ---------------------------------------------------------------------------
-  // Montagem
+  // Meus acessos
+  //
+  // A LISTA VEM PRIMEIRO na tela de quem não tem nenhum: para essa pessoa é a
+  // única informação nova da página, e a que diz o que fazer em seguida.
   // ---------------------------------------------------------------------------
+  const acessos = meusAcessos();
+
+  const listaAcessos = acessos.length
+    ? el('ul', { className: 'perfil__acessos' }, acessos.map(a => el('li', {
+      className: 'perfil__acesso',
+    }, [
+      el('span', { className: 'perfil__acesso-modulo', textContent: a.nome }),
+      el('span', { className: 'perfil__acesso-perfil', textContent: a.perfil }),
+    ])))
+    : el('div', { className: 'perfil__sem-acesso' }, [
+      el('p', {
+        className: 'perfil__sem-acesso-titulo',
+        textContent: 'Você ainda não tem acesso a nenhum módulo do sistema.',
+      }),
+      // "ADMINISTRADOR", e não "gerente": é o administrador global quem concede
+      // perfil (`/api/usuarios` é `verifyAdmin`), e mandar pedir a quem não pode
+      // dar faria a pessoa percorrer o caminho errado antes de chegar ao certo.
+      el('p', {
+        className: 'perfil__sem-acesso-texto',
+        textContent: 'Peça ao administrador do sistema o acesso ao módulo de interesse '
+          + '(Controle do Acervo, Mapoteca, Controle Orçamentário, Produção ou Efetivo). '
+          + 'Enquanto isso, esta página é sua: você pode corrigir seus dados e trocar sua senha.',
+      }),
+    ]);
+
   page.appendChild(el('div', { className: 'perfil' }, [
+    el('section', { className: 'perfil__secao' }, [
+      el('h2', { className: 'perfil__secao-titulo', textContent: 'Meus acessos' }),
+      listaAcessos,
+    ]),
     el('section', { className: 'perfil__secao' }, [
       el('h2', { className: 'perfil__secao-titulo', textContent: 'Meus dados' }),
       formCadastro,

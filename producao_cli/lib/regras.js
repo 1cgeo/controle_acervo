@@ -164,18 +164,6 @@ const REGRAS = {
     'Não há desconto na 2.1: o Extra-PIT não é lançado em `pit.execucao`.'
   ],
 
-  midia: [
-    'Responde outra pergunta que `mapoteca.pedido.meta_pit_id`, e os dois NÃO se',
-    'substituem. O campo do pedido diz "estava previsto no PIT sob esta meta"; a',
-    'meta 4 conta o que SAIU, e o que saiu está no ITEM entregue.',
-    'Pedido planejado em tyvek e atendido em sulfite conta na meta do SULFITE,',
-    'porque foi ele que saiu.',
-    'O ANO está na chave porque a numeração do PIT é reescrita todo ano.',
-    'O ano do corpo TAMBÉM está na meta, e a duplicata é deliberada: a UNIQUE',
-    '(ano, tipo_midia_id) não enxerga coluna de outra tabela. O controlador',
-    'confere que os dois casam antes de gravar.'
-  ],
-
   edicao: [
     'A regra que governa tudo é a ASSINATURA. Edição ABERTA: as subseções',
     'calculadas saem do banco a cada abertura, e só o digitado persiste. Edição',

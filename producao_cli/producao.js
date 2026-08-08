@@ -50,7 +50,6 @@ PIT  (/api/metas)
   producao revisao alteracoes --revisao 3            (leia contra o DIEx)
   producao revisao publicar --revisao 3 --data '{"data_vigencia":"2026-05-11"}' --confirmar 3
   producao extra listar --ano 2026
-  producao midia listar --ano 2026
 
 RPCMTec  (/api/rpcmtec; a EDIÇÃO exige administrador, a capacitação não)
   producao edicao listar --ano 2026

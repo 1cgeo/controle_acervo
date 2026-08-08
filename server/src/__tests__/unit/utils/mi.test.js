@@ -122,9 +122,13 @@ describe('gemeo do mapoteca_cli', () => {
     expect(inicio).toBeGreaterThanOrEqual(0)
     expect(fim).toBeGreaterThan(inicio)
 
+    // O FIM DE LINHA NAO ENTRA NA COMPARACAO. O que nao pode divergir e a REGRA
+    // que roda, e com `core.autocrlf` ligado os dois arquivos chegam ao disco
+    // com terminadores que dependem de como cada um entrou no repositorio: o
+    // teste acusava divergencia mostrando duas linhas identicas.
     return fonte
       .slice(inicio, fim)
-      .split('\n')
+      .split(/\r\n?|\n/)
       .filter(linha => linha.trim() && !linha.trim().startsWith('//'))
       .join('\n')
   }

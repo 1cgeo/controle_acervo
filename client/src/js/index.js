@@ -3,7 +3,7 @@ import { initTheme } from '@utils/theme.js';
 import { isAuthenticated } from '@store/auth-store.js';
 import { sincronizarSessao, EVENTO_SESSAO_MUDOU } from '@services/api-client.js';
 import Router, {
-  adminLoader, authLoader, gerenteLoader, perfilLoader, rotaRaiz,
+  acessoLoader, adminLoader, authLoader, gerenteLoader, perfilLoader, rotaRaiz,
 } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
 import { modulosPortados } from '@modules/registry.js';
@@ -116,14 +116,18 @@ router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 
 // O PIT DO ANO: o plano anual da Divisao, que os tres modulos consomem. Nao e
 // tela de modulo, senao quem so tem perfil na mapoteca nao veria a lista. Sem
-// `adminLoader`: LER e de qualquer pessoa logada, e o backend cobra o
+// `adminLoader`: LER e de quem tem acesso ao sistema, e o backend cobra o
 // administrador so na escrita.
+//
+// `acessoLoader`, e nao `authLoader`: quem ainda nao recebeu perfil nenhum esta
+// logado e nao esta no sistema, e o plano de trabalho da Divisao nao e o que ele
+// ve enquanto espera a concessao. O servidor cobra o mesmo com `verifyAcesso`.
 //
 // UMA TELA SO, no lugar de '/metas' e '/revisoes_pit'. As duas se liam juntas e
 // ninguem descobria pela interface que alterar o PIT e abrir uma revisao: o
 // botao de editar tinha virado um ato da OUTRA tela, e nada dizia isso. Agora o
 // exercicio, as revisoes e o consolidado moram na mesma pagina.
-router.add('/metas', withLayout(renderPitAno), { guard: authLoader });
+router.add('/metas', withLayout(renderPitAno), { guard: acessoLoader });
 
 // A ROTA VELHA DAS REVISOES continua respondendo, e DESVIA. Renomear URL quebra
 // link guardado, e '#/revisoes_pit' esta em favorito e em mensagem antiga. O
@@ -135,8 +139,8 @@ router.add('/metas', withLayout(renderPitAno), { guard: authLoader });
 // menos que dois desvios.
 router.add('/revisoes_pit', withLayout(renderPitAno), {
   guard: () => {
-    const auth = authLoader();
-    return auth === true ? '/metas' : auth;
+    const acesso = acessoLoader();
+    return acesso === true ? '/metas' : acesso;
   },
 });
 
@@ -150,7 +154,7 @@ router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: gerenteLoade
 
 // Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3). Mesma guarda,
 // pela mesma razao.
-router.add('/extra_pit', withLayout(renderExtraPitList), { guard: authLoader });
+router.add('/extra_pit', withLayout(renderExtraPitList), { guard: acessoLoader });
 
 // Aproveitamento do efetivo (6.1): o cadastro de quem esteve na Divisao e do que
 // impediu cada um.

@@ -462,3 +462,30 @@ describe('activeIdFromPath', () => {
     expect(activeIdFromPath('/orcamento')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// A conta SEM CONCESSAO NENHUMA.
+//
+// Ela esta logada e nao esta no sistema: o menu inteiro e dela e nao tem nada.
+// A tela dela e '#/perfil', que mora no menu da pessoa na navbar, e nao aqui.
+// Antes disto, "Produção" continuava desenhada, e era a unica coisa na sidebar
+// de quem nao tinha acesso a nada -- um sistema oferecido a quem levaria 403.
+// ---------------------------------------------------------------------------
+describe('sidebar: quem ainda nao tem acesso a nada', () => {
+  test('nao ve seção nenhuma, nem a de Produção', () => {
+    logar({ perfis: {} });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(modulosNaTela(sidebar)).toEqual([]);
+    expect(ids(sidebar)).toEqual([]);
+  });
+
+  // Um perfil qualquer, em qualquer modulo, ja devolve Produção: o PIT do ano e
+  // o plano da Divisao inteira, e nao pede perfil no modulo Produção.
+  test('com qualquer perfil, a seção de Produção volta', () => {
+    logar({ perfis: { mapoteca: 1 } });
+    const { sidebar } = createSidebar({ modulo: null });
+
+    expect(modulosNaTela(sidebar)).toContain('#/metas');
+  });
+});

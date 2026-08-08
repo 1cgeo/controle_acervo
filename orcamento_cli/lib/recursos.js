@@ -135,12 +135,22 @@ const RECURSOS = {
     ]
   },
 
+  // O QUE SOBROU da configuracao: os ANOS com dado, para o seletor de ano das
+  // telas. A tabela `orcamento.configuracao` foi podada na 1.34.0 (guardava
+  // `uasg` e `codom`, preenchidas e sem leitor), e com ela sairam o `GET /` e o
+  // `PUT /` do singleton, o schema da feature e o CRUD que este recurso
+  // anunciava. Esta rota le o `ano` das tabelas de NEGOCIO, e por isso nao
+  // dependia daquela tabela.
+  //
+  // SEM `schema`: a feature nao tem arquivo de schema nenhum, porque a rota que
+  // sobrou nao valida corpo nem query.
   configuracao: {
-    nome: 'configuracao (singleton id=1)',
+    nome: 'anos com dado no orcamento (o seletor de ano das telas)',
     caminho: '/orcamento/configuracao',
-    schema: carregar('configuracao/configuracao_schema'),
     colunas: null,
-    singleton: true
+    somenteLeitura: [
+      { caminho: 'anos', descricao: 'perfil consulta; sem query' }
+    ]
   },
 
   // O anexo NAO segue o CRUD por id: a listagem e por VINCULO na query, o upload

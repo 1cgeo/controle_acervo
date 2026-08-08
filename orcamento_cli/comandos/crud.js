@@ -193,12 +193,13 @@ async function executar (args, cfg) {
 
       let caminho = recurso.caminho
       let metodo = 'POST'
+      // TODO PUT do modulo leva id. O desvio de singleton que existia aqui
+      // servia a UM recurso, a `configuracao`, cujo `PUT /` sumiu com a poda da
+      // 1.34.0: sem ele, a excecao passou a descrever ninguem.
       if (acao === 'atualizar') {
         metodo = 'PUT'
-        if (!recurso.singleton) {
-          const id = argsLib.exigir(flags, 'id', `id do registro de ${chave} a atualizar`)
-          caminho = `${recurso.caminho}/${encodeURIComponent(id)}`
-        }
+        const id = argsLib.exigir(flags, 'id', `id do registro de ${chave} a atualizar`)
+        caminho = `${recurso.caminho}/${encodeURIComponent(id)}`
       }
 
       if (flags['dry-run']) {

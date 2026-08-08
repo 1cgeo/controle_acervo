@@ -234,7 +234,11 @@ function alinhar (campos) {
  * de criacao/atualizacao e o bloco de regras curado.
  */
 function contrato (chave, recurso) {
-  const modulo = recurso.schema()
+  // `schema` e OPCIONAL: ha recurso cuja feature nao tem arquivo de schema
+  // nenhum, porque as rotas dela nao validam corpo nem query (a `configuracao`,
+  // depois da poda da 1.34.0). Antes disto, um recurso assim derrubava o
+  // contrato de TODOS com "Cannot find module".
+  const modulo = typeof recurso.schema === 'function' ? recurso.schema() : {}
   const linhas = []
   const base = '/api' + recurso.caminho
 
@@ -256,9 +260,6 @@ function contrato (chave, recurso) {
     for (const sub of recurso.somenteLeitura) {
       linhas.push(`  GET    ${base}/${sub.caminho}   ${sub.descricao || ''}`.trimEnd())
     }
-  } else if (recurso.singleton) {
-    linhas.push(`  GET    ${base}`)
-    linhas.push(`  PUT    ${base}                 (singleton, sem id)`)
   } else if (chave === 'dominio') {
     linhas.push(`  GET    ${base}/<sub>            perfil consulta`)
     linhas.push(`  POST   ${base}/<sub>`)

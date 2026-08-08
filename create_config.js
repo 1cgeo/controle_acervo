@@ -13,9 +13,15 @@ const __dirname = dirname(__filename);
 
 const pgp = pgPromise();
 
+// SEM `minify`. O `er/limites.sql` traz o WKT da área de suprimento quebrado em
+// literais adjacentes, que o PostgreSQL só concatena quando há QUEBRA DE LINHA
+// entre eles. O minify troca a quebra por um espaço, os literais deixam de se
+// juntar e a instalação nova morria em "erro de sintaxe" no meio de uma
+// coordenada. O `globalSetup` do Jest sempre leu o arquivo cru, e por isso a
+// suíte de banco passava enquanto `npm run config` estava quebrado.
 const readSqlFile = (file) => {
   const fullPath = join(__dirname, file);
-  return new pgp.QueryFile(fullPath, { minify: true });
+  return new pgp.QueryFile(fullPath, { minify: false });
 };
 
 const verifyDotEnv = () => {

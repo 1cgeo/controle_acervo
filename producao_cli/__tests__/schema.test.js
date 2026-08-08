@@ -90,12 +90,20 @@ test('validarCorpo recusa corpo incompleto sem tocar a rede', () => {
   assert.ok(campos.includes('descricao'))
 })
 
+// COMPLETO quer dizer os CINCO obrigatórios do `criar`, e não os que bastavam
+// quando este teste foi escrito. `item` e `unidade_id` entraram na 1.30.0, com
+// as colunas `pit.meta_item.item` e `.unidade_id` NOT NULL: a meta se separou
+// entre a identidade (o cabeçalho, hoje `pit.meta.nome`) e o item, e quem
+// entrega é o item. O fixture ficou para trás e este teste passou a provar o
+// contrário do nome dele.
 test('validarCorpo aceita corpo completo', () => {
   const r = esquema.validarCorpo(pit.criar, {
     ano: 2026,
     numero_meta: 1,
+    item: '1.1',
     descricao: 'Carta Topográfica 1:25.000. COTER, 24',
-    quantidade_prevista: 24
+    quantidade_prevista: 24,
+    unidade_id: 1
   }, VALIDACAO.ESTRITO)
   assert.strictEqual(r.ok, true)
   assert.deepStrictEqual(r.descartados, [])

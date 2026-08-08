@@ -65,10 +65,20 @@ models.produtoAtualizacao = Joi.object().keys({
   // guarda das versoes, e mudar a versao batia no gatilho do banco. Nenhum dos
   // dois podia ir primeiro.
   //
-  // OPCIONAL e sem `.default(true)`: mudar o subtipo do produto reescreve a
+  // OPCIONAL e SEM DEFAULT NENHUM: mudar o subtipo do produto reescreve a
   // identidade de TODA versao dele, e isso nao pode acontecer por descuido de
   // quem so queria corrigir o nome. Quem quer, diz.
-  migrar_subtipo_das_versoes: Joi.boolean().default(false)
+  //
+  // O `.default(false)` que estava aqui nao mudava comportamento (o controller
+  // testa `if (!produto.migrar_subtipo_das_versoes)`, e undefined e falso do
+  // mesmo jeito), mas QUEBRAVA o `acervo_cli editar produto`: o guardrail dele
+  // recusa qualquer PUT cujo schema preencha por default um campo que a leitura
+  // nao trouxe, porque num PUT de objeto inteiro isso e gravar o padrao por
+  // cima do valor real, em silencio. O guardrail nao tem como saber que este
+  // campo e uma ACAO, e nao uma coluna -- e nem deve ter: uma lista de excecoes
+  // apodreceria. Num schema de ATUALIZACAO, default nenhum e a regra, e a linha
+  // acima de `subtipo_produto_id` ja dizia isso.
+  migrar_subtipo_das_versoes: Joi.boolean()
 })
 
 models.versaoAtualizacao = Joi.object().keys({

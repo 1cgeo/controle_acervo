@@ -10,7 +10,7 @@ const { asyncHandler, httpCode, AppError } = require('../utils')
 // de carga, onde um nome de campo errado descartado em silencio grava meia meta.
 const schemaValidation = require('../utils/schema_validation_estrito')
 
-const { verifyLogin, verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
+const { verifyAcesso, verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
 
 const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
@@ -25,17 +25,21 @@ const router = express.Router()
 
 // Metas do PIT: rota de PLATAFORMA, sem prefixo de modulo, como /usuarios.
 //
-// LER e de qualquer pessoa logada (`verifyLogin`), e nao de um perfil de modulo.
-// Todo modulo precisa oferecer a lista: o orcamento amarra a NC e o item do PDR
-// a meta que financiam, e a mapoteca amarra o pedido de impressao a meta que ele
-// cumpre.
+// LER e de quem TEM ACESSO AO SISTEMA (`verifyAcesso`): perfil em qualquer
+// modulo, sem exigir um modulo especifico. Todo modulo precisa oferecer a lista:
+// o orcamento amarra a NC e o item do PDR a meta que financiam, e a mapoteca
+// amarra o pedido de impressao a meta que ele cumpre.
+//
+// Era `verifyLogin`, e a diferenca e a conta recem-criada, ainda SEM concessao
+// nenhuma: ela esta logada e nao esta no sistema. O plano de trabalho da Divisao
+// nao e o que ela ve enquanto espera o acesso.
 //
 // ESCREVER e do administrador global (`verifyAdmin`): o PIT muda uma vez por
 // ano, vem de documento assinado, e errar nele contamina os tres modulos.
 
 router.get(
   '/',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ query: pitSchema.listarQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await pitCtrl.listar(req.query.ano)
@@ -47,7 +51,7 @@ router.get(
 // Antes de '/:id', senao 'anos' cai na rota do id e reprova na validacao.
 router.get(
   '/anos',
-  verifyLogin,
+  verifyAcesso,
   asyncHandler(async (req, res, next) => {
     const dados = await pitCtrl.anos()
 
@@ -173,7 +177,8 @@ router.delete(
 // ---------------------------------------------------------------------------
 // Demanda Extra-PIT (subseção 3.3 do RPCMTec)
 //
-// LER é de qualquer pessoa logada. ESCREVER é do OPERADOR DE PRODUÇÃO desde a
+// LER é de quem tem acesso ao sistema (`verifyAcesso`, perfil em qualquer
+// módulo). ESCREVER é do OPERADOR DE PRODUÇÃO desde a
 // 1.33.0, e era do administrador global: o Extra-PIT é a exceção AUTORIZADA ao
 // plano, e quem a cadastra é quem toca a produção.
 //
@@ -185,7 +190,7 @@ router.delete(
 
 router.get(
   '/extra',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ query: pitSchema.listarQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.listar(req.query.ano)
@@ -199,7 +204,7 @@ router.get(
 // Antes de '/extra/:id', pela mesma razão de '/anos'.
 router.get(
   '/extra/anos',
-  verifyLogin,
+  verifyAcesso,
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.anos()
 
@@ -211,7 +216,7 @@ router.get(
 
 router.get(
   '/extra/:id',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.getPorId(req.params.id)
@@ -298,7 +303,7 @@ router.delete(
 // Antes de '/extra/:id/versoes/:versao_id', pela mesma razão de '/anos'.
 router.get(
   '/extra/:id/versoes/candidatas',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({
     params: pitSchema.idParams,
     query: pitSchema.candidatasQuery
@@ -316,7 +321,7 @@ router.get(
 
 router.get(
   '/extra/:id/versoes',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.listarVersoes(req.params.id)
@@ -387,7 +392,7 @@ router.get(
 
 router.get(
   '/exercicios',
-  verifyLogin,
+  verifyAcesso,
   asyncHandler(async (req, res, next) => {
     const dados = await revisaoCtrl.listarExercicios()
 
@@ -428,7 +433,7 @@ router.put(
 
 router.get(
   '/revisoes',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ query: pitSchema.revisaoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await revisaoCtrl.listarRevisoes(req.query.ano)
@@ -441,7 +446,7 @@ router.get(
 // conferência: o gerente lê isto contra o DIEx antes de publicar.
 router.get(
   '/revisoes/:revisaoId/alteracoes',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.revisaoIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await revisaoCtrl.alteracoes(req.params.revisaoId)
@@ -452,7 +457,7 @@ router.get(
 
 router.get(
   '/revisoes/:revisaoId/anexos',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.revisaoIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await revisaoCtrl.listarAnexos(req.params.revisaoId)
@@ -486,7 +491,7 @@ router.post(
 
 router.get(
   '/revisoes/anexo/:anexoId/download',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.anexoIdParams }),
   asyncHandler(async (req, res, next) => {
     const arquivo = await revisaoCtrl.getAnexoParaDownload(req.params.anexoId)
@@ -597,7 +602,7 @@ router.delete(
 
 router.get(
   '/revisoes/:revisaoId',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.revisaoIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await revisaoCtrl.getRevisao(req.params.revisaoId)
@@ -658,7 +663,7 @@ router.delete(
 // O HISTÓRICO da meta: em que revisão ela mudou, e para quanto. Antes de '/:id'.
 router.get(
   '/:id/historico',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await pitCtrl.historico(req.params.id)
@@ -688,7 +693,7 @@ router.put(
 
 router.get(
   '/:id',
-  verifyLogin,
+  verifyAcesso,
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await pitCtrl.getPorId(req.params.id)

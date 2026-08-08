@@ -1,5 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { isAdmin, nomeModulo, ehGerenteDeAlgumModulo, temPerfil } from '@store/auth-store.js';
+import {
+  isAdmin, nomeModulo, ehGerenteDeAlgumModulo, temPerfil, temAlgumAcesso,
+} from '@store/auth-store.js';
 import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modules/registry.js';
 
 /**
@@ -136,16 +138,22 @@ const SISTEMA_EFETIVO = {
  * exceção a ela.
  *
  * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. Metas e execução são
- * `authLoader`: qualquer pessoa logada LÊ o plano anual, e o servidor cobra o
- * perfil só na escrita. A capacitação ministrada leva `visivel` no ITEM, porque
- * o servidor a guarda com `verifyPerfil('operador', 'producao')` desde a 1.33.0
- * -- oferecê-la a quem levaria 403 é o desencontro que `podeAbrirRota` existe
- * para evitar do lado dos módulos.
+ * `acessoLoader`: quem tem acesso ao sistema LÊ o plano anual, sem precisar de
+ * perfil no módulo Produção, e o servidor cobra o perfil só na escrita. A
+ * capacitação ministrada leva `visivel` no ITEM, porque o servidor a guarda com
+ * `verifyPerfil('operador', 'producao')` desde a 1.33.0 -- oferecê-la a quem
+ * levaria 403 é o desencontro que `podeAbrirRota` existe para evitar do lado dos
+ * módulos.
+ *
+ * O `visivel` da SEÇÃO é `temAlgumAcesso`, e é o que tira o menu inteiro de quem
+ * ainda não recebeu perfil nenhum: sem ele, a conta recém-criada entrava e via
+ * "Produção" como se fosse dela, que é a única coisa que sobrava na tela.
  */
 const SISTEMA_PRODUCAO = {
   id: 'producao-area',
   label: 'Produção',
   icon: ICONS.layers,
+  visivel: () => temAlgumAcesso(),
   home: '/metas',
   prefixo: '',
   chavePrefixo: '',

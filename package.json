@@ -41,5 +41,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.4"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.1"
   }
 }

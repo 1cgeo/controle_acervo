@@ -55,6 +55,10 @@
     "brace-expansion": "^5.0.9",
     "readdir-glob": {
       "minimatch": "^10.2.5"
+    },
+    "js-yaml": "^4.3.1",
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^3.15.1"
     }
   }
 }

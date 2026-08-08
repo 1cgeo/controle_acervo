@@ -55,6 +55,11 @@ dominio.modulo (code, nome, nome_abrev) -- 1 acervo, 2 mapoteca, 3 orcamento
   de módulo.
 - Quem não tem linha para um módulo **não acessa aquele módulo**. Conceder é ato explícito, nunca
   efeito colateral de migração.
+- **Ter conta não é ter acesso.** Quem não tem perfil em módulo NENHUM alcança só a própria página
+  (`#/perfil`, `GET`/`PUT /usuarios/perfil` e a própria senha), onde lê que precisa pedir o acesso a
+  um gerente. O que não é de módulo nenhum e mesmo assim é do sistema (a leitura do PIT e do
+  Extra-PIT) fica em `verifyAcesso`, que exige perfil em ALGUM módulo. Rota nova de plataforma
+  escolhe entre `verifyLogin` (a própria conta) e `verifyAcesso` (o resto).
 - `verifyAdmin` fica para rota de PLATAFORMA: usuários, PIT, RPCMTec, views materializadas, limpeza
   de download.
 
@@ -164,7 +169,9 @@ declara menu, rotas e o perfil mínimo de cada uma; o roteador não se toca. Rot
 - A **NE empenha contra uma NC obrigatória** e herda dela ND, PI e GND. A **licitação** não tem
   vínculo com DFD.
 - A **NC** tem o par `(ano, numero, cod_nd)` único por UG emitente, e `valor_recolhido` é informativo.
-- `orcamento.configuracao` é **singleton** (`CHECK (id = 1)`): o backend só faz `UPDATE`.
+- **Não existe `orcamento.configuracao`.** A tabela foi podada na 1.34.0 (guardava `uasg` e `codom`,
+  preenchidas e sem leitor). Sobrou só `GET /api/orcamento/configuracao/anos`, que lê o `ano` das
+  tabelas de negócio.
 
 ### PIT e RPCMTec
 

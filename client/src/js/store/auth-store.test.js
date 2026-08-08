@@ -3,7 +3,7 @@ import {
   saveAuth, getToken, getUsername, getUserUuid,
   isAuthenticated, isAdmin, clearAuth,
   getPerfil, temPerfil, temAcessoModulo, getCatalogoModulos, nomeModulo,
-  permissoes, atualizarSessao,
+  permissoes, atualizarSessao, temAlgumAcesso, meusAcessos,
 } from './auth-store.js';
 
 const CATALOGO = [
@@ -207,5 +207,58 @@ describe('auth-store: atualizarSessao', () => {
 
     expect(atualizarSessao({ administrador: true, perfis: {}, modulos: [] })).toBe(true);
     expect(isAdmin()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Acesso ao sistema: estar logado e ter acesso sao dois momentos.
+//
+// A conta que o administrador acaba de criar nasce SEM linha em
+// `dgeo.usuario_perfil`. Ela entra, e nao ha nada la dentro que seja dela: o que
+// ela ve e a propria pagina, com o pedido de acesso. Espelha o `verifyAcesso` do
+// servidor, que faz a mesma pergunta ao BANCO.
+// ---------------------------------------------------------------------------
+describe('auth-store: acesso ao sistema', () => {
+  test('sem perfil em modulo nenhum, nao tem acesso', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u', perfis: {}, modulos: CATALOGO }, 'x');
+    expect(temAlgumAcesso()).toBe(false);
+    expect(meusAcessos()).toEqual([]);
+  });
+
+  test('qualquer perfil em qualquer modulo ja e acesso', () => {
+    saveAuth(
+      { token: 'jwt', administrador: false, uuid: 'u', perfis: { mapoteca: 1 }, modulos: CATALOGO },
+      'x'
+    );
+    expect(temAlgumAcesso()).toBe(true);
+  });
+
+  // O administrador global nao tem linha de perfil nenhuma. Uma lista vazia
+  // diria a quem administra o sistema que ele nao tem acesso a nada.
+  test('o administrador global tem acesso, e a lista traz os modulos todos', () => {
+    saveAuth({ token: 'jwt', administrador: true, uuid: 'u', perfis: {}, modulos: CATALOGO }, 'x');
+
+    expect(temAlgumAcesso()).toBe(true);
+    const acessos = meusAcessos();
+    expect(acessos).toHaveLength(CATALOGO.length);
+    expect(acessos.every(a => a.perfil === 'Administrador')).toBe(true);
+  });
+
+  test('a lista traz o NOME do modulo e o do nivel, e nao os codigos', () => {
+    saveAuth(
+      {
+        token: 'jwt',
+        administrador: false,
+        uuid: 'u',
+        perfis: { orcamento: 3, mapoteca: 2 },
+        modulos: CATALOGO,
+      },
+      'x'
+    );
+
+    expect(meusAcessos()).toEqual([
+      { modulo: 'orcamento', nome: 'Controle Orçamentário', nivel: 3, perfil: 'Gerente' },
+      { modulo: 'mapoteca', nome: 'Mapoteca', nivel: 2, perfil: 'Operador' },
+    ]);
   });
 });

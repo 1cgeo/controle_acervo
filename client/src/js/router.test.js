@@ -1,7 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
-import Router, { authLoader, adminLoader, perfilLoader, rotaRaiz } from './router.js';
+import Router, {
+  acessoLoader, authLoader, adminLoader, perfilLoader, rotaRaiz,
+} from './router.js';
 
 const CATALOGO = [
   { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
@@ -31,6 +33,34 @@ describe('router: guardas', () => {
     expect(perfilLoader('acervo', 'consulta')()).toBe(true);
     // Gerente do acervo nao entra no orcamento
     expect(perfilLoader('orcamento', 'consulta')()).toBe('/unauthorized');
+  });
+
+  // ESTAR LOGADO E TER ACESSO nao sao a mesma coisa. A conta recem-criada nasce
+  // sem linha em `dgeo.usuario_perfil`, e as telas de PLATAFORMA que nao sao de
+  // modulo nenhum (o PIT do ano, o Extra-PIT) nao sao dela. O servidor cobra o
+  // mesmo com `verifyAcesso`.
+  test('acessoLoader barra quem nao tem perfil em modulo nenhum', () => {
+    logar({ perfis: {} });
+    expect(acessoLoader()).toBe('/unauthorized');
+  });
+
+  test('acessoLoader passa com qualquer perfil em qualquer modulo', () => {
+    logar({ perfis: { mapoteca: 1 } });
+    expect(acessoLoader()).toBe(true);
+  });
+
+  // O administrador global nao tem linha de perfil nenhuma, e passa por ser
+  // administrador. Sem isto, quem administra o sistema seria o unico barrado do
+  // plano anual dele.
+  test('acessoLoader passa o administrador global, que nao tem linha de perfil', () => {
+    logar({ administrador: true, perfis: {} });
+    expect(acessoLoader()).toBe(true);
+  });
+
+  test('acessoLoader manda ao login quem nao tem sessao', () => {
+    clearAuth();
+    location.hash = '/metas';
+    expect(acessoLoader()).toBe(`/login?from=${encodeURIComponent('/metas')}`);
   });
 
   test('perfilLoader respeita o nivel minimo dentro do modulo', () => {
@@ -64,9 +94,13 @@ describe('router: rota raiz', () => {
     expect(rotaRaiz()).toBe('/orcamento/dashboard');
   });
 
-  test('logado sem modulo acessivel cai no 403, nao numa tela vazia', () => {
+  // Quem nao tem perfil nenhum entra na PROPRIA pagina, e nao num 403. A conta
+  // existe e a senha funciona; o que falta e a concessao, e '#/perfil' e onde
+  // ela ve isso escrito e pede o acesso. Cair no 403 na porta dizia a essa
+  // pessoa que ela nao tinha nem conta.
+  test('logado sem modulo acessivel entra no proprio perfil', () => {
     logar({ perfis: {} });
-    expect(rotaRaiz()).toBe('/unauthorized');
+    expect(rotaRaiz()).toBe('/perfil');
   });
 
   // PRODUCAO e EFETIVO nao sao modulos do registry: eles existem em
@@ -85,10 +119,11 @@ describe('router: rota raiz', () => {
   });
 
   // CONSULTA em Efetivo nao abre tela nenhuma: a mais baixa da seção exige
-  // operador. O /unauthorized aqui e a resposta certa, e nao uma lacuna.
-  test('consulta em Efetivo continua sem porta de entrada', () => {
+  // operador. A pessoa TEM acesso ao sistema (tem perfil), entao ela nao esta no
+  // caso de cima; o que falta e tela, e a raiz cai no proprio perfil.
+  test('consulta em Efetivo continua sem tela propria, e cai no perfil', () => {
     logar({ perfis: { efetivo: 1 } });
-    expect(rotaRaiz()).toBe('/unauthorized');
+    expect(rotaRaiz()).toBe('/perfil');
   });
 
   // O modulo do registry VENCE: quem tem os dois entra pelo modulo, que e onde
