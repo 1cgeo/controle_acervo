@@ -78,7 +78,7 @@ const RECURSOS = {
   },
 
   tipo: {
-    nome: 'tipo de equipamento (o cadastro, não um domínio)',
+    nome: 'tipo de equipamento (a tela "Configuração"; cadastro, não domínio)',
     caminho: '/equipamento/tipo',
     schema: modulo('tipoCriar', 'tipoAtualizar'),
     colunas: ['id', 'nome', 'descricao', 'vida_util_meses', 'ativo'],
@@ -86,17 +86,22 @@ const RECURSOS = {
     // o servidor nunca expos a rota. Anunciar um GET /tipo/:id aqui renderia
     // 404 depois da rede.
     semObter: true,
+    // ESCREVER E DE GERENTE desde 2026-08-08, e LER continua em consulta. O
+    // catalogo carrega a `vida_util_meses` que todo bem sem valor proprio HERDA,
+    // entao uma linha alterada aqui muda dezenas de bens de uma vez; mas a
+    // leitura fica no piso porque a listagem de bens usa o catalogo para
+    // resolver o filtro por tipo.
     rotas: [
       'GET    <base> :: perfil consulta',
       '(sem GET por id: a lista inteira vem de uma vez)',
-      'POST   <base> :: perfil operador',
-      'PUT    <base>/:id :: perfil operador; SUBSTITUI a linha inteira',
+      'POST   <base> :: perfil GERENTE',
+      'PUT    <base>/:id :: perfil GERENTE; SUBSTITUI a linha inteira',
       'DELETE <base>/:id :: perfil GERENTE'
     ],
     verbos: [
       'equipamento tipo listar',
-      'equipamento tipo cadastrar --nome "..." [--vida_util_meses 120]   (operador)',
-      'equipamento tipo alterar --id N --ativo false                     (operador)',
+      'equipamento tipo cadastrar --nome "..." [--vida_util_meses 120]   (gerente)',
+      'equipamento tipo alterar --id N --ativo false                     (gerente)',
       'equipamento tipo apagar --id N --confirmar N                      (gerente)'
     ]
   },

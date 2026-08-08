@@ -14,7 +14,7 @@
  *                       manutencao, transferencia
  *   tipo_equipamento <- tipo_equipamento
  *
- * O TIPO TEM FICHA PROPRIA porque tem TELA propria (`#/equipamento/tipos`) e
+ * O TIPO TEM FICHA PROPRIA porque tem TELA propria (`#/equipamento/configuracao`) e
  * porque nao pertence a bem nenhum: ele e o cadastro que os bens apontam, e
  * mudar a vida util de um tipo muda o numero que aparece em TODO bem que a
  * herda. Mandar esse evento para a ficha de um bem esconderia justamente o

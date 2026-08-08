@@ -10,7 +10,14 @@ import { getTipos, deleteTipo } from '@modules/equipamento/services/equipamento-
 import { abrirTipoDialog } from './tipo-dialog.js';
 
 /**
- * Cadastro de TIPOS DE EQUIPAMENTO (#/equipamento/tipos).
+ * A tela CONFIGURAÇÃO do módulo (#/equipamento/configuracao), que hoje abriga o
+ * cadastro de TIPOS DE EQUIPAMENTO.
+ *
+ * É DE GERENTE, tela inteira, desde 2026-08-08: `vida_util_meses` do tipo é
+ * herdada por todo bem que não declare a própria, então uma linha alterada aqui
+ * muda dezenas de bens de uma vez, sem passar por nenhum deles. Quem esconde o
+ * item do menu é o `perfil: 'gerente'` da ROTA, no manifesto, e não uma regra
+ * escrita aqui.
  *
  * Nasce semeado com os nove tipos do QDMP (`er/equipamento.sql`), e é o único
  * cadastro do módulo: os outros cinco catálogos (classe de suprimento, seção
@@ -26,7 +33,7 @@ import { abrirTipoDialog } from './tipo-dialog.js';
  * @param {{params:Object, query:URLSearchParams}} [_ctx]
  * @returns {Promise<Function>} cleanup
  */
-export async function renderTiposList(container, _ctx) {
+export async function renderConfiguracao(container, _ctx) {
   let disposed = false;
   const pode = permissoes('equipamento');
 
@@ -85,7 +92,7 @@ export async function renderTiposList(container, _ctx) {
 
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
-      el('h1', { className: 'page__title', textContent: 'Tipos de equipamento' }),
+      el('h1', { className: 'page__title', textContent: 'Configuração' }),
       el('div', { className: 'page__actions' }, pode.operador ? [
         el('button', {
           className: 'btn btn--primary',

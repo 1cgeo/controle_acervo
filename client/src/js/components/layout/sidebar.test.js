@@ -34,7 +34,7 @@ describe('sidebar: os quatro modulos convivem, cada um colapsavel', () => {
     // Efetivo porque é a seção que fala do TRABALHO, e Efetivo é quem o faz.
     //
     // EQUIPAMENTO fecha a fila dos módulos, e a home dele sai com a barra no
-    // fim: o manifesto declara `home: '/'` porque o painel mora em
+    // fim: o manifesto declara `home: '/'` porque o Dashboard mora em
     // '#/equipamento', sem sufixo, e `rotaInicial` concatena prefixo e home. O
     // router parte o caminho e descarta segmento vazio, então '#/equipamento/'
     // abre a mesma tela que '#/equipamento'.
@@ -518,7 +518,7 @@ describe('sidebar: o menu de cada seção e plano, sem grupo colapsavel', () => 
           .toBeUndefined();
         // O corolario: todo item navega, porque so o cabeçalho de grupo nao
         // tinha rota. O que separa um do outro e a rota estar DECLARADA, e nao
-        // ela ser um texto nao vazio: o item "Painel" do equipamento declara
+        // ela ser um texto nao vazio: o item "Dashboard" do equipamento declara
         // `path: ''`, que e a raiz do modulo ('#/equipamento'), e uma tela de
         // verdade. Cobrar `toBeTruthy` aqui confundia "sem rota" com "rota na
         // raiz" e reprovava um menu correto.

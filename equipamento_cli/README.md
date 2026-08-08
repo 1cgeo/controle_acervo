@@ -125,9 +125,9 @@ O acesso é por **perfil** no módulo `equipamento`:
 
 | perfil | alcança |
 |---|---|
-| consulta | o parque, a ficha, o painel e o Relatório DMT |
-| operador | lança indisponibilidade, afastamento e manutenção, e cadastra tipo |
-| gerente | mexe na carga: cria, altera, baixa e apaga o bem, lança transferência e apaga tipo |
+| consulta | o parque, a ficha, o Dashboard e o Relatório DMT |
+| operador | o mesmo, mais lançar indisponibilidade, afastamento e manutenção |
+| gerente | o mesmo, mais a carga (cria, altera, baixa e apaga o bem), a transferência e a Configuração inteira (o cadastro de tipo) |
 
 O administrador passa em tudo. **O CLI não afrouxa nada**: quem recusa é o `verifyPerfil` do servidor, que lê o banco a cada requisição.
 

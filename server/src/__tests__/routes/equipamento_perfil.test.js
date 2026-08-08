@@ -5,11 +5,19 @@
 // A RÉGUA DA CASA, de 2026-08-08: `consulta` LÊ as telas do módulo, `operador`
 // LANÇA, `gerente` responde pela área. No equipamento isso quer dizer:
 //
-//   consulta  vê o parque, a ficha, o painel e tira o Relatório DMT
-//   operador  lança o que ACONTECE com o bem (indisponibilidade, afastamento,
-//             manutenção) e cadastra tipo novo
-//   gerente   mexe na CARGA: cria, altera e remove o BEM, remove tipo, e lança
-//             transferência e descarga, que são movimentação de patrimônio
+//   consulta  vê o parque, a ficha, o Dashboard e tira o Relatório DMT
+//   operador  o mesmo, mais LANÇAR o que ACONTECE com o bem (indisponibilidade,
+//             afastamento, manutenção)
+//   gerente   o mesmo, mais a CARGA (cria, altera e remove o BEM), a
+//             transferência e descarga, que são movimentação de patrimônio, e a
+//             tela "Configuração" inteira -- o cadastro de tipo
+//
+// A CONFIGURAÇÃO SUBIU DE PISO em 2026-08-08, e foi a única. `vida_util_meses`
+// do TIPO é HERDADA por todo bem que não declare a própria, então uma linha
+// alterada ali muda a vida útil de dezenas de bens de uma vez, sem passar por
+// nenhum deles. O GET do catálogo NÃO subiu, e a assimetria é deliberada: a
+// lista de bens o usa para montar o filtro por tipo, e cobrar gerente na leitura
+// deixaria esse filtro permanentemente vazio para quem só consulta.
 //
 // POR QUE NÃO SE DUBLA O LOGIN AQUI: `verifyPerfil` lê o BANCO a cada
 // requisição, e não o token. Dublá-lo provaria que a rota chama uma função;
@@ -135,8 +143,14 @@ const ROTAS = [
   ['consulta', 'get', c => `/api/equipamento/${c.bemId}`, null],
 
   // --- operador LANÇA ------------------------------------------------------
-  ['operador', 'post', () => '/api/equipamento/tipo', () => ({ nome: 'Teodolito' })],
-  ['operador', 'put', c => `/api/equipamento/tipo/${c.tipoId}`,
+  // O CADASTRO DE TIPO E A TELA "CONFIGURACAO", e ela subiu para GERENTE em
+  // 2026-08-08: `vida_util_meses` do tipo e HERDADA por todo bem que nao declare
+  // a propria, entao uma linha alterada aqui muda dezenas de bens de uma vez,
+  // sem passar por nenhum deles. Os tres verbos ficam juntos no mesmo piso; o
+  // GET continua em `consulta` porque a lista de bens usa o catalogo para montar
+  // o filtro por tipo.
+  ['gerente', 'post', () => '/api/equipamento/tipo', () => ({ nome: 'Teodolito' })],
+  ['gerente', 'put', c => `/api/equipamento/tipo/${c.tipoId}`,
     () => ({ nome: 'Teodolito renomeado' })],
   ['operador', 'post', () => '/api/equipamento/indisponibilidade',
     c => ({ equipamento_id: c.bemId, data_inicio: '2026-09-01', motivo: 'Fonte' })],
@@ -277,6 +291,40 @@ describe('o operador LANÇA, mas não mexe na carga', () => {
     expect(await conn.any(
       "SELECT id FROM equipamento.equipamento WHERE nr_patrimonio = '104821500017429'"
     )).toHaveLength(0)
+  })
+
+  test('operador NÃO mexe na Configuração, mas LÊ o catálogo de tipos', async () => {
+    // As duas metades da mesma decisão, num caso só: a tela é de gerente, e a
+    // leitura do catálogo não é. Separá-las em dois casos deixaria a assimetria
+    // parecer descuido de quem lesse um deles sozinho.
+    const c = await semear()
+    await daPerfil(NIVEL.operador)
+
+    const escrita = await request(app)
+      .post('/api/equipamento/tipo')
+      .set('Authorization', usuario())
+      .send({ nome: 'Teodolito do operador' })
+
+    expect(escrita.status).toBe(403)
+    expect(escrita.body.message).toMatch(/perfil gerente no módulo equipamento/i)
+    expect(await conn.any(
+      "SELECT id FROM equipamento.tipo_equipamento WHERE nome = 'Teodolito do operador'"
+    )).toHaveLength(0)
+
+    const alteracao = await request(app)
+      .put(`/api/equipamento/tipo/${c.tipoId}`)
+      .set('Authorization', usuario())
+      .send({ nome: 'Renomeado pelo operador' })
+
+    expect(alteracao.status).toBe(403)
+
+    // E a leitura passa: é ela que enche o filtro por tipo da lista de bens.
+    const leitura = await request(app)
+      .get('/api/equipamento/tipo')
+      .set('Authorization', usuario())
+
+    expect(leitura.status).toBe(200)
+    expect(leitura.body.dados.length).toBeGreaterThan(0)
   })
 
   test('operador NÃO lança transferência, que é movimentação de patrimônio', async () => {

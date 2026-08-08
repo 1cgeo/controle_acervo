@@ -110,7 +110,7 @@ const DESTINO = {
   // `server/src/auditoria/mapa/equipamento.js` -- as quatro tabelas são
   // auditadas SOB `equipamento`, com o `entidade_id` do BEM. É o mesmo recorte
   // da ficha, e é por isso que o link acima leva direto a ela.
-  'equipamento:tipo_equipamento': { tipo: 'lista', href: () => '#/equipamento/tipos' },
+  'equipamento:tipo_equipamento': { tipo: 'lista', href: () => '#/equipamento/configuracao' },
   'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
   'plataforma:capacitacao': { tipo: 'lista', href: (id, evento) => telaDaCapacitacao(evento) },
   'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },

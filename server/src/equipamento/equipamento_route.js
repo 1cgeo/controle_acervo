@@ -60,7 +60,20 @@ router.get(
   })
 )
 
-// --- Tipo de equipamento -----------------------------------------------------
+// --- Tipo de equipamento (a tela "Configuracao") ------------------------------
+//
+// A TELA E DE GERENTE, e a LEITURA nao. Decisao do chefe em 2026-08-08: quem
+// mexe no catalogo de tipos e quem responde pela area, porque `vida_util_meses`
+// do tipo e HERDADA por todo bem que nao declare a propria -- alterar uma linha
+// aqui muda a vida util de dezenas de bens de uma vez, sem passar por nenhum
+// deles.
+//
+// Mas o GET fica em `consulta`, e nao e incoerencia: quem le a lista de bens
+// precisa do catalogo para montar o FILTRO por tipo (`pages/bens/list.js` chama
+// `getTipos()` para as opcoes). Cobrar gerente no GET deixaria o filtro de tipo
+// vazio para todo mundo abaixo dele, de forma permanente, e a tela ja trata isso
+// como FALHA ("O filtro de tipo ficou vazio"). Esconder a tela e uma coisa;
+// tirar uma coluna de filtro de quem so consulta e outra.
 
 router.get(
   '/tipo',
@@ -75,7 +88,7 @@ router.get(
 
 router.post(
   '/tipo',
-  verifyPerfil('operador', 'equipamento'),
+  verifyPerfil('gerente', 'equipamento'),
   schemaValidation({ body: equipamentoSchema.tipoCriar }),
   asyncHandler(async (req, res, next) => {
     const dados = await equipamentoCtrl.criarTipo(req.body, req.usuarioUuid, req.contexto)
@@ -87,7 +100,7 @@ router.post(
 
 router.put(
   '/tipo/:id',
-  verifyPerfil('operador', 'equipamento'),
+  verifyPerfil('gerente', 'equipamento'),
   schemaValidation({
     params: equipamentoSchema.idParams,
     body: equipamentoSchema.tipoAtualizar

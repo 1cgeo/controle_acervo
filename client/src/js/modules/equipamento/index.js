@@ -11,15 +11,22 @@
 // servidor (`auth-store.nomeModulo`), lendo `dominio.modulo.nome`.
 //
 // O MENU NAO REPETE A RESTRICAO DA ROTA: a sidebar deriva a visibilidade de cada
-// item da rota que ele aponta (`registry.podeAbrirRota`). As quatro telas sao de
-// `consulta`, que e o piso do modulo, entao quem entra ve as quatro; o que muda
-// por perfil sao os BOTOES de lancamento, e quem barra escrita e o servidor.
+// item da rota que ele aponta (`registry.podeAbrirRota`). E o que faz o item
+// "Configuracao" sumir para quem nao e gerente, sem nenhuma regra de menu.
 //
 // PERFIL DE ROTA NO CLIENT E SO ERGONOMIA. O recorte real e este, e ele vive nas
 // rotas do servidor:
-//   consulta  le as quatro telas
-//   operador  lanca indisponibilidade, manutencao e afastamento, e cadastra tipo
-//   gerente   cadastra, altera e da baixa no BEM, e lanca transferencia e descarga
+//   consulta  le o Dashboard, a lista de Equipamentos e a ficha do bem
+//   operador  o mesmo, mais LANCAR indisponibilidade, manutencao e afastamento
+//   gerente   o mesmo, mais o BEM (cadastrar, alterar, dar baixa), a
+//             transferencia e descarga, e a tela de Configuracao inteira
+//
+// CONFIGURACAO E DE GERENTE desde 2026-08-08, e a razao esta na heranca:
+// `vida_util_meses` do TIPO vale para todo bem que nao declare a propria, entao
+// alterar uma linha daquela tela muda a vida util de dezenas de bens de uma vez,
+// sem passar por nenhum deles. O GET do catalogo continua em `consulta` porque a
+// lista de bens o usa para montar o filtro por tipo -- ver o comentario da rota
+// no `equipamento_route.js`.
 
 import { ICONS } from '@utils/dom.js';
 
@@ -28,7 +35,7 @@ import './equipamento.css';
 import { renderEquipamentoDashboard } from './pages/dashboard/index.js';
 import { renderBensList } from './pages/bens/list.js';
 import { renderBemDetails } from './pages/bens/details.js';
-import { renderTiposList } from './pages/tipos/list.js';
+import { renderConfiguracao } from './pages/configuracao/list.js';
 
 export default {
   id: 'equipamento',
@@ -56,9 +63,9 @@ export default {
   // ficha pela lista, e o item "Equipamentos" fica marcado enquanto ela esta
   // aberta, porque a chave do item ativo sai do segundo segmento da rota.
   menu: [
-    { id: 'painel', label: 'Painel', icon: ICONS.dashboard, path: '' },
+    { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '' },
     { id: 'bens', label: 'Equipamentos', icon: ICONS.layers, path: '/bens' },
-    { id: 'tipos', label: 'Tipos', icon: ICONS.category, path: '/tipos' },
+    { id: 'configuracao', label: 'Configuração', icon: ICONS.category, path: '/configuracao' },
   ],
 
   rotas: [
@@ -74,9 +81,11 @@ export default {
     // deles aparece em outra tela: cobrar operador aqui esconderia de quem so
     // consulta a unica visao completa do equipamento.
     { path: '/bens/:id', render: renderBemDetails, perfil: 'consulta' },
-    // O CADASTRO DE TIPO abre para consulta e ESCREVE para operador. A tela e
-    // uma lista de nove linhas que todo mundo do modulo precisa ler para
-    // entender a vida util herdada de cada bem; os botoes e que sao do operador.
-    { path: '/tipos', render: renderTiposList, perfil: 'consulta' },
+    // CONFIGURACAO E DE GERENTE, tela inteira. Ela abriga o catalogo de tipos, e
+    // um tipo carrega a `vida_util_meses` que todo bem sem valor proprio HERDA:
+    // uma edicao ali muda dezenas de bens de uma vez. Foi a unica tela do modulo
+    // que subiu de piso em 2026-08-08, e `podeAbrirRota` a esconde do menu de
+    // quem nao alcanca -- sem regra de menu nenhuma.
+    { path: '/configuracao', render: renderConfiguracao, perfil: 'gerente' },
   ],
 };

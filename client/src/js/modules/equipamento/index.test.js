@@ -28,7 +28,7 @@ describe('manifesto do equipamento: o que o registry exige', () => {
     expect(modulosPortados().map(m => m.id)).toContain('equipamento');
   });
 
-  test('a home NÃO é string vazia, e leva ao painel', () => {
+  test('a home NÃO é string vazia, e leva ao Dashboard', () => {
     // `registry.rotaInicial` faz `mod.home || '/dashboard'`: o vazio, sendo
     // falso, cairia numa rota '/equipamento/dashboard' que não existe, e o
     // cabeçalho do módulo na sidebar levaria a 404.
@@ -41,30 +41,51 @@ describe('manifesto do equipamento: o que o registry exige', () => {
     expect(getRota('equipamento', '')).not.toBeNull();
   });
 
-  test('as quatro telas estão declaradas, todas de consulta', () => {
+  test('as quatro telas estão declaradas, e só a Configuração sai do piso', () => {
     const rotas = equipamento.rotas.map(r => r.path);
-    expect(rotas).toEqual(['', '/bens', '/bens/:id', '/tipos']);
+    expect(rotas).toEqual(['', '/bens', '/bens/:id', '/configuracao']);
+
+    // O PISO POR TELA, escrito à mão. Derivá-lo do manifesto faria o teste
+    // concordar com qualquer troca de piso, que é justamente o que ele guarda.
+    const PISO = {
+      '': 'consulta',
+      '/bens': 'consulta',
+      // A ficha é a única visão completa do equipamento: cobrar operador ali a
+      // esconderia de quem só consulta.
+      '/bens/:id': 'consulta',
+      // A ÚNICA acima do piso, desde 2026-08-08. O tipo carrega a
+      // `vida_util_meses` que todo bem sem valor próprio HERDA, então uma edição
+      // aqui muda dezenas de bens de uma vez, sem passar por nenhum deles.
+      '/configuracao': 'gerente',
+    };
 
     for (const rota of equipamento.rotas) {
       expect(typeof rota.render, `${rota.path} não aponta função de render`).toBe('function');
-      // CONSULTA é o piso do módulo, e as quatro telas ficam nele de propósito:
-      // a ficha do bem é a única visão completa do equipamento, e cobrar
-      // operador ali a esconderia de quem só consulta. O que muda por perfil
-      // são os BOTÕES de lançamento.
-      expect(rota.perfil, `${rota.path} não é de consulta`).toBe('consulta');
+      expect(rota.perfil, `${rota.path} mudou de piso`).toBe(PISO[rota.path]);
       // Nem `admin`, nem lista NÃO hierárquica: as duas exceções do sistema são
-      // da mapoteca e do efetivo, e nenhuma tela daqui pediu uma.
+      // da mapoteca e do efetivo, e nenhuma tela daqui pediu uma. Em especial, a
+      // Configuração é de GERENTE e não de admin, então o gerente da área a
+      // alcança -- é a régua da casa, e o `admin: true` do orçamento é outra
+      // coisa.
       expect(rota.admin).toBeUndefined();
       expect(rota.perfis).toBeUndefined();
     }
   });
 
-  test('quem tem consulta abre as quatro, e o gerente não abre nenhuma a mais', () => {
-    logarComo({ equipamento: CONSULTA });
-    for (const rota of equipamento.rotas) {
-      expect(podeAbrirRota('equipamento', rota.path), `consulta perdeu ${rota.path}`).toBe(true);
+  test('consulta e operador abrem três telas, e o gerente abre as quatro', () => {
+    for (const nivel of [CONSULTA, OPERADOR]) {
+      localStorage.clear();
+      logarComo({ equipamento: nivel });
+      for (const rota of ['', '/bens', '/bens/:id']) {
+        expect(podeAbrirRota('equipamento', rota), `o nível ${nivel} perdeu ${rota}`).toBe(true);
+      }
+      expect(
+        podeAbrirRota('equipamento', '/configuracao'),
+        `a Configuração vazou para o nível ${nivel}`
+      ).toBe(false);
     }
 
+    localStorage.clear();
     logarComo({ equipamento: GERENTE });
     for (const rota of equipamento.rotas) {
       expect(podeAbrirRota('equipamento', rota.path)).toBe(true);
@@ -81,7 +102,9 @@ describe('manifesto do equipamento: o que o registry exige', () => {
 
 describe('manifesto do equipamento: o menu', () => {
   test('são TRÊS itens, e o quarto caminho é a ficha, que não vira item', () => {
-    expect(equipamento.menu.map(i => i.id)).toEqual(['painel', 'bens', 'tipos']);
+    expect(equipamento.menu.map(i => i.id)).toEqual(['dashboard', 'bens', 'configuracao']);
+    expect(equipamento.menu.map(i => i.label))
+      .toEqual(['Dashboard', 'Equipamentos', 'Configuração']);
 
     // Item de menu apontando para caminho com parâmetro levaria a /404: não há
     // id na mão para montar o href. É a mesma razão de `registry.rotaInicial`
@@ -127,23 +150,41 @@ describe('manifesto do equipamento: o menu', () => {
     // ('/bens/3') marca o mesmo item que a lista ('/bens').
     expect(activeIdFromPath('/equipamento/bens')).toBe('equipamento:bens');
     expect(activeIdFromPath('/equipamento/bens/3')).toBe('equipamento:bens');
-    expect(activeIdFromPath('/equipamento/tipos')).toBe('equipamento:tipos');
+    expect(activeIdFromPath('/equipamento/configuracao')).toBe('equipamento:configuracao');
   });
 });
 
-describe('manifesto do equipamento: o menu não esconde tela de ninguém', () => {
-  test('os três itens aparecem para consulta, operador e gerente', () => {
-    // As quatro telas são de consulta, que é o piso do módulo: quem entra vê
-    // as três entradas do menu, e o recorte por perfil fica nos botões.
-    for (const nivel of [CONSULTA, OPERADOR, GERENTE]) {
+describe('manifesto do equipamento: o menu segue a rota, e não uma regra própria', () => {
+  test('consulta e operador veem dois itens; o gerente vê os três', () => {
+    // A SIDEBAR NÃO TEM REGRA DE MENU: ela deriva a visibilidade de cada item da
+    // rota que ele aponta (`podeAbrirRota`). Este caso é o que prova isso -- o
+    // item "Configuração" some sozinho porque a ROTA dele subiu de piso, e não
+    // porque alguém escreveu uma condição no menu.
+    for (const nivel of [CONSULTA, OPERADOR]) {
       localStorage.clear();
       logarComo({ equipamento: nivel });
-      for (const item of equipamento.menu) {
-        expect(
-          podeAbrirRota('equipamento', item.path),
-          `o nível ${nivel} não alcança o item ${item.id}`
-        ).toBe(true);
-      }
+
+      const visiveis = equipamento.menu
+        .filter(i => podeAbrirRota('equipamento', i.path))
+        .map(i => i.id);
+
+      expect(visiveis, `menu errado para o nível ${nivel}`).toEqual(['dashboard', 'bens']);
     }
+
+    localStorage.clear();
+    logarComo({ equipamento: GERENTE });
+    const doGerente = equipamento.menu
+      .filter(i => podeAbrirRota('equipamento', i.path))
+      .map(i => i.id);
+    expect(doGerente).toEqual(['dashboard', 'bens', 'configuracao']);
+  });
+
+  test('o administrador global alcança a Configuração sem perfil no módulo', () => {
+    // `administrador` curto-circuita qualquer módulo, e não existe administrador
+    // de módulo. Sem este caso, "só gerente e admin" ficaria provado pela metade.
+    localStorage.clear();
+    logarComo({}, { administrador: true });
+
+    expect(podeAbrirRota('equipamento', '/configuracao')).toBe(true);
   });
 });

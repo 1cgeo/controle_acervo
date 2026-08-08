@@ -70,10 +70,12 @@ const REGRAS = {
     'novo pela tela ou por aqui. Por isso ele nao esta em domain_constants.js, e por',
     'isso o id de um tipo nunca vira constante no codigo.',
     'O nome e UNICO no banco: repetir volta 409.',
-    'vida_util_meses do TIPO e a que o bem HERDA quando nao declara a propria.',
-    'Apagar um tipo com bem cadastrado e recusado: marque ativo = false. E o unico',
-    'apagar de tipo que existe na pratica, e por isso a rota e de GERENTE, e nao de',
-    'operador como o cadastrar: apagar um tipo reclassificaria o cadastro inteiro.'
+    'vida_util_meses do TIPO e a que o bem HERDA quando nao declara a propria, e e',
+    'por causa dela que ESCREVER aqui e de GERENTE desde 2026-08-08: uma linha',
+    'alterada muda a vida util de dezenas de bens de uma vez, sem passar por nenhum.',
+    'LER continua em consulta, porque a listagem de bens usa o catalogo para montar',
+    'o filtro por tipo. Na interface esta tela se chama Configuracao.',
+    'Apagar um tipo com bem cadastrado e recusado: marque ativo = false.'
   ],
 
   indisponibilidade: [
