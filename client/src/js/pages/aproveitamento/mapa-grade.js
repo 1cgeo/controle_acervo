@@ -89,23 +89,47 @@ export function legendaDoMapa() {
   ]);
 }
 
-/** A linha de rótulo de mês, alinhada às semanas em que cada mês começa. */
-function cabecalhoMeses(ano) {
-  const celulas = [el('th', { className: 'mapa-efetivo__nome' })];
-  const rotuloNaSemana = new Map();
+/**
+ * A linha de rótulo de mês, cada um ABRINDO SOBRE as semanas que ele tem.
+ *
+ * ANTES CADA MÊS OCUPAVA UMA COLUNA SÓ, a da semana em que começava, e as outras
+ * 41 saíam vazias. O defeito não era o vazio: era que 'JAN' precisa de mais
+ * largura do que uma célula de semana tem, e a célula ESTICAVA para caber. Isso
+ * deformava a grade inteira -- as doze colunas de início de mês ficavam mais
+ * largas que as outras 41, a tabela crescia além do necessário, e no modo
+ * compacto o rótulo era cortado no meio da letra.
+ *
+ * Com `colSpan`, o rótulo tem a largura do mês inteiro (4 ou 5 semanas), fica
+ * centrado sobre os dias de que fala, e não empurra coluna nenhuma. De quebra o
+ * cabeçalho passa a dizer onde cada mês TERMINA, e não só onde começa.
+ *
+ * A soma dos `colSpan` é exatamente SEMANAS: dezembro leva o resto, e é o que
+ * fecha a conta em ano de 53 semanas.
+ *
+ * @param {number} ano
+ * @param {boolean} comIdentificacao - Falso na grade de UMA pessoa, que não tem
+ *   de quem identificar.
+ */
+function cabecalhoMeses(ano, comIdentificacao) {
+  const celulas = comIdentificacao
+    ? [el('th', { className: 'mapa-efetivo__nome' })]
+    : [];
+
+  const inicioDoMes = m => semanaDoDia(ano, m, 1);
+
   for (let m = 0; m < 12; m += 1) {
-    rotuloNaSemana.set(semanaDoDia(ano, m, 1), MESES_ABREV[m]);
-  }
-  for (let s = 1; s <= SEMANAS; s += 1) {
+    const semanas = (m === 11 ? SEMANAS + 1 : inicioDoMes(m + 1)) - inicioDoMes(m);
     celulas.push(el('th', {
       className: 'mapa-efetivo__mes',
-      textContent: rotuloNaSemana.get(s) || '',
-      // O rótulo de mês ocupa a coluna de UMA semana, então ele fica estreito.
-      // O `title` diz o mês inteiro para quem passar o ponteiro.
-      title: rotuloNaSemana.get(s) || '',
+      colSpan: semanas,
+      textContent: MESES_ABREV[m],
+      title: MESES_ABREV[m],
     }));
   }
-  celulas.push(el('th', { className: 'mapa-efetivo__total', textContent: 'Ano' }));
+
+  if (comIdentificacao) {
+    celulas.push(el('th', { className: 'mapa-efetivo__total', textContent: 'Ano' }));
+  }
   return el('tr', {}, celulas);
 }
 
@@ -149,6 +173,18 @@ export function montarMapaEfetivo({
   onLinhaClick = null,
   destaqueUuid = null,
   vazio = 'Nenhum militar com passagem pela DGEO neste ano.',
+  // A COLUNA DE NOME E A DE ANO SÓ FAZEM SENTIDO COM MAIS DE UMA LINHA.
+  //
+  // No mapa da Divisão elas são obrigatórias: o nome fica grudado na esquerda
+  // para quem rola até dezembro não perder de quem é a linha, e a coluna "Ano"
+  // é o que se compara entre pessoas.
+  //
+  // Em `#/perfil` as duas são ruído puro: a pessoa sabe quem é, e o número do
+  // ano já está na frase do resumo, com os DOIS denominadores. Pior que ruído,
+  // elas custam largura: são as duas colunas largas de uma tabela de 53
+  // estreitas, e é o par delas que empurrava a grade para o overflow
+  // horizontal numa tela que tem uma linha só.
+  comIdentificacao = true,
 }) {
   if (!anual.length) {
     return el('p', {
@@ -170,13 +206,15 @@ export function montarMapaEfetivo({
     const doMilitar = porPessoa.get(militar.usuario_uuid) || new Map();
     const nome = nomeCurto(militar);
 
-    const celulas = [
-      el('td', {
-        className: 'mapa-efetivo__nome',
-        textContent: nome,
-        title: militar.ativo ? nome : `${nome} (desativado no cadastro)`,
-      }),
-    ];
+    const celulas = comIdentificacao
+      ? [
+        el('td', {
+          className: 'mapa-efetivo__nome',
+          textContent: nome,
+          title: militar.ativo ? nome : `${nome} (desativado no cadastro)`,
+        }),
+      ]
+      : [];
 
     for (let s = 1; s <= SEMANAS; s += 1) {
       const semana = doMilitar.get(s);
@@ -202,11 +240,13 @@ export function montarMapaEfetivo({
       }));
     }
 
-    celulas.push(el('td', {
-      className: 'mapa-efetivo__total',
-      textContent: pct(militar.aproveitamento),
-      title: `${militar.dias_na_dgeo} de ${militar.dias_do_ano} dias na DGEO`,
-    }));
+    if (comIdentificacao) {
+      celulas.push(el('td', {
+        className: 'mapa-efetivo__total',
+        textContent: pct(militar.aproveitamento),
+        title: `${militar.dias_na_dgeo} de ${militar.dias_do_ano} dias na DGEO`,
+      }));
+    }
 
     const destacada = Boolean(destaqueUuid) && militar.usuario_uuid === destaqueUuid;
 
@@ -226,8 +266,13 @@ export function montarMapaEfetivo({
     return tr;
   });
 
-  return el('table', { className: 'mapa-efetivo__tabela' }, [
-    el('thead', {}, [cabecalhoMeses(ano)]),
+  // `--compacta` encolhe a célula da semana para as 53 caberem sem barra de
+  // rolagem na largura de uma seção da página de perfil.
+  return el('table', {
+    className: 'mapa-efetivo__tabela'
+      + (comIdentificacao ? '' : ' mapa-efetivo__tabela--compacta'),
+  }, [
+    el('thead', {}, [cabecalhoMeses(ano, comIdentificacao)]),
     el('tbody', {}, linhas),
   ]);
 }

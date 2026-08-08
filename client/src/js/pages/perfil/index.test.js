@@ -517,7 +517,7 @@ describe('perfil: a grade do proprio ano', () => {
     return container.querySelector(`#${label.getAttribute('for')}`);
   };
 
-  test('desenha UMA linha, com as 53 semanas do ano e a coluna do total', async () => {
+  test('desenha UMA linha, com as 53 semanas do ano e SEM identificacao', async () => {
     comGrade();
     const { container, cleanup } = await montar();
 
@@ -530,10 +530,43 @@ describe('perfil: a grade do proprio ano', () => {
     // mesmas 53 celulas, com as primeiras vazias.
     expect(celulas(linhas(container)[0])).toHaveLength(53);
 
-    const total = container.querySelector('tbody .mapa-efetivo__total');
-    // O denominador e o ano INTEIRO, e e o que faz 301 dias darem 82,5%.
-    expect(total.textContent).toBe('82,5%');
-    expect(total.title).toBe('301 de 365 dias na DGEO');
+    // SEM a coluna de NOME e SEM a de ANO, desde 2026-08-08. Numa linha so elas
+    // nao dizem nada que a pagina ja nao diga -- o nome esta no topo e o numero
+    // do ano esta na frase do resumo, com os DOIS denominadores --, e eram as
+    // duas colunas largas de uma tabela de 53 estreitas, que empurravam a grade
+    // para o overflow horizontal dentro da secao.
+    expect(container.querySelector('.mapa-efetivo__nome')).toBeNull();
+    expect(container.querySelector('.mapa-efetivo__total')).toBeNull();
+    // A linha tem SO as semanas: nenhuma celula sobrando de nenhum dos dois
+    // lados. Sem esta contagem, uma coluna esquecida passaria pelas duas
+    // asercoes acima se trocasse de classe.
+    expect(linhas(container)[0].querySelectorAll('td')).toHaveLength(53);
+
+    // O numero do ano continua na tela, na frase do resumo.
+    expect(container.textContent).toContain('82,5%');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O CABECALHO DE MES abre sobre as semanas do mes (`colSpan`), e nao ocupa uma
+  // coluna de semana. Antes cada rotulo morava na coluna da semana em que o mes
+  // comecava, e como 'JAN' e mais largo que uma celula de 14px, ela ESTICAVA:
+  // doze colunas ficavam mais largas que as outras 41 e a grade saia deformada,
+  // nas duas telas. A soma dos `colSpan` tem de fechar as 53 semanas, senao o
+  // cabecalho desalinha das celulas de baixo.
+  test('os doze meses abrem sobre as 53 semanas, sem sobra nem falta', async () => {
+    comGrade();
+    const { container, cleanup } = await montar();
+
+    const meses = [...container.querySelectorAll('.mapa-efetivo__mes')];
+    expect(meses).toHaveLength(12);
+    expect(meses.map(m => m.textContent)).toEqual([
+      'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+      'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
+    ]);
+
+    const soma = meses.reduce((total, m) => total + Number(m.getAttribute('colspan')), 0);
+    expect(soma).toBe(53);
 
     if (typeof cleanup === 'function') cleanup();
   });

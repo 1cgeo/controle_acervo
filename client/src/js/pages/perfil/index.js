@@ -484,6 +484,13 @@ export async function renderPerfil(container, _ctx) {
       impedimentos,
       // SEM `onLinhaClick`: no mapa da Divisão a linha abre a ficha da pessoa, e
       // aqui essa ficha já está logo abaixo, aberta.
+      //
+      // SEM IDENTIFICAÇÃO: numa linha só, a coluna de nome e a de "Ano" não
+      // dizem nada que a página já não diga -- o nome está no topo e o número
+      // do ano está na frase do resumo, com os dois denominadores. E eram as
+      // duas colunas largas de uma tabela de 53 estreitas, que empurravam a
+      // grade para o overflow horizontal dentro da seção.
+      comIdentificacao: false,
       vazio: `Você não tem passagem pela DGEO cadastrada em ${anoSelecionado}.`,
     }));
   }

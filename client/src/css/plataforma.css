@@ -468,13 +468,25 @@
   border-right: 1px solid var(--border-color);
 }
 
+/* O mês abre sobre as 4 ou 5 semanas dele (`colSpan`), e por isso o rótulo cabe
+ * inteiro sem esticar coluna nenhuma. A borda da ESQUERDA marca onde o mês
+ * começa: sem ela, doze palavras centradas numa faixa contínua não dizem onde
+ * uma acaba e a outra principia. */
 .mapa-efetivo__mes {
-  padding: 4px 0;
+  padding: 4px 2px;
   font-weight: 600;
   color: var(--text-secondary);
   font-size: 0.75rem;
   text-align: center;
   border-bottom: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-color);
+}
+
+/* Menos o primeiro, que encostaria na coluna de nome e duplicaria a divisa que
+ * ela já desenha. */
+.mapa-efetivo__mes:first-child,
+.mapa-efetivo__nome + .mapa-efetivo__mes {
+  border-left: none;
 }
 
 .mapa-efetivo__celula {
@@ -483,6 +495,28 @@
   height: 20px;
   padding: 0;
   border: 1px solid var(--bg-paper);
+}
+
+/* A GRADE DE UMA PESSOA SÓ, em `#/perfil`.
+ *
+ * Ela não tem a coluna de nome nem a de "Ano", que são as duas largas, e a
+ * tabela passa a ocupar a largura toda da seção em vez de rolar: `table-layout:
+ * fixed` mais `width: 100%` distribuem as 53 semanas pelo espaço disponível,
+ * qualquer que seja ele.
+ *
+ * A célula perde a largura FIXA e ganha um piso pequeno: com 53 colunas numa
+ * seção de 720px, cada uma fica com cerca de 13px, e o piso de 8px é o que
+ * impede a faixa de cor de virar um risco ilegível numa janela estreita. Abaixo
+ * disso o `overflow-x: auto` do bloco volta a agir, que é o comportamento certo
+ * no celular. */
+.mapa-efetivo__tabela--compacta {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.mapa-efetivo__tabela--compacta .mapa-efetivo__celula {
+  width: auto;
+  min-width: 8px;
 }
 
 /* Cinco faixas, e nao um gradiente continuo: a diferenca entre 71% e 73% nao
