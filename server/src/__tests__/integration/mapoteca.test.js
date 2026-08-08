@@ -50,7 +50,9 @@ const criarMaterial = (nome) =>
   )
 
 // SECAO = 1, ALMOXARIFADO = 2, AQUISICAO_REALIZADA = 3 (mapoteca.tipo_localizacao)
-// ENTRADA = 1, TRANSFERENCIA = 2, CONSUMO = 3, CONTAGEM = 4
+// ENTRADA = 1, TRANSFERENCIA = 2, CONSUMO = 3. O 4 era a Contagem, extinta em
+// 2026-08-08: ele nao esta no mapa, e o caso que prova a recusa dele o escreve
+// cru, de proposito.
 const { TIPO_LOCALIZACAO: LOCAL, TIPO_MOVIMENTO_MATERIAL: MOV } =
   require('../../utils/domain_constants')
 
@@ -206,30 +208,42 @@ describe('O que o banco recusa no livro', () => {
     ).rejects.toThrow(/movimento_material_forma/)
   })
 
-  it('a CONTAGEM exige motivo', async () => {
-    // Ela e o unico movimento que ninguem viu acontecer: a Entrada tem nota, a
-    // Transferencia tem quem carregou e o Consumo tem o trabalho que o gastou.
-    // Sem o porque, o ajuste do saldo fica sem explicacao.
-    const papel = await criarMaterial('Papel contado sem motivo')
+  // O TIPO 4 FOI EXTINTO em 2026-08-08, e este caso e o que o mantem extinto NO
+  // BANCO -- que e onde importa, porque a linha do dominio continua la.
+  //
+  // Ela ficou para a auditoria antiga se traduzir, entao a FK aceita o valor 4
+  // sem reclamar: sem o `ELSE FALSE` do CHECK, um INSERT por psql, CLI ou carga
+  // ressuscitaria a Contagem sem passar por tela nenhuma.
+  it('o CHECK recusa o tipo 4, a Contagem extinta, com qualquer forma', async () => {
+    const papel = await criarMaterial('Papel que ninguem conta mais')
+    const CONTAGEM = 4
 
-    await expect(
-      lancar({ material: papel.id, tipo: MOV.CONTAGEM, quantidade: 5, destino: LOCAL.SECAO })
-    ).rejects.toThrow(/movimento_material_contagem_exige_motivo/)
-  })
-
-  it('a CONTAGEM recusa os dois lados, e recusa nenhum', async () => {
-    const papel = await criarMaterial('Papel contado dos dois lados')
-
+    // A forma que ela tinha: exatamente um lado, com motivo.
     await expect(
       lancar({
-        material: papel.id, tipo: MOV.CONTAGEM, quantidade: 5, motivo: 'Conferência',
-        origem: LOCAL.SECAO, destino: LOCAL.ALMOXARIFADO
+        material: papel.id, tipo: CONTAGEM, quantidade: 5,
+        destino: LOCAL.SECAO, motivo: 'Conferência'
       })
     ).rejects.toThrow(/movimento_material_forma/)
 
     await expect(
-      lancar({ material: papel.id, tipo: MOV.CONTAGEM, quantidade: 5, motivo: 'Conferência' })
+      lancar({
+        material: papel.id, tipo: CONTAGEM, quantidade: 5,
+        origem: LOCAL.SECAO, motivo: 'Conferência'
+      })
     ).rejects.toThrow(/movimento_material_forma/)
+  })
+
+  it('a linha 4 continua no dominio, para a auditoria antiga se traduzir', async () => {
+    // Apagar a linha era o gesto obvio, e faria todo registro de movimento
+    // anterior a 1.45.0 exibir "Tipo de movimento: 4", cru: quem traduz e o
+    // catalogo VIVO desta tabela, lido por `auditoria/renderizar.js`.
+    const linha = await conn.oneOrNone(
+      'SELECT nome FROM mapoteca.tipo_movimento_material WHERE code = 4'
+    )
+
+    expect(linha).not.toBeNull()
+    expect(linha.nome).toBe('Contagem (extinta)')
   })
 
   // RN01: consumo so sai da Secao, e o material tem de ter sido transferido para
@@ -274,26 +288,64 @@ describe('O que o banco recusa no livro', () => {
   })
 })
 
-describe('A contagem de prateleira', () => {
-  it('sobrou material: a diferenca ENTRA na localizacao', async () => {
-    const papel = await criarMaterial('Papel que sobrou')
+// O QUE SUBSTITUIU A CONTAGEM, e a razao de ela ter podido sair.
+//
+// Ate 2026-08-08 a prateleira que nao batia com o sistema se resolvia lancando a
+// DIFERENCA, num tipo proprio. A decisao do chefe naquele dia foi que o saldo
+// tem de estar certo por Entrada, Transferencia e Consumo -- e o argumento de
+// engenharia e este describe: o livro ja sabia desfazer, entao lancamento errado
+// nunca precisou de um lancamento a mais.
+//
+// Prova o GATILHO, com SQL cru. Pela rota, o Joi barraria primeiro e o caso
+// passaria a verde sem exercitar o `TG_OP IN ('UPDATE','DELETE')`.
+describe('O conserto de um lancamento errado, que e o que sobrou no lugar da Contagem', () => {
+  it('corrigir a QUANTIDADE de um consumo devolve a diferenca ao saldo', async () => {
+    const papel = await criarMaterial('Papel com consumo digitado errado')
     await lancar({ material: papel.id, tipo: MOV.ENTRADA, quantidade: 10, destino: LOCAL.SECAO })
 
-    await lancar({
-      material: papel.id, tipo: MOV.CONTAGEM, quantidade: 3, destino: LOCAL.SECAO,
-      motivo: 'Conferência de prateleira: havia três rolos a mais'
+    // Quem lancou digitou 8 onde saiu 3.
+    const errado = await lancar({
+      material: papel.id, tipo: MOV.CONSUMO, quantidade: 8, origem: LOCAL.SECAO
     })
+    expect(await saldo(papel.id)).toBe(2)
 
-    expect(await saldo(papel.id)).toBe(13)
+    await conn.none(
+      'UPDATE mapoteca.movimento_material SET quantidade = 3 WHERE id = $1',
+      [errado.id]
+    )
+
+    // 10 - 3, e nao 2 + 5: o gatilho DESFAZ a linha antiga inteira e aplica a
+    // nova. E o que faz o saldo voltar EXATO, sem somar ao livro um evento que
+    // nunca aconteceu.
+    expect(await saldo(papel.id)).toBe(7)
+    expect(await somaDoLivro(papel.id, LOCAL.SECAO)).toBe(7)
   })
 
-  it('faltou material: a diferenca SAI da localizacao', async () => {
-    const papel = await criarMaterial('Papel que faltou')
+  it('apagar um movimento inteiro devolve o efeito dele', async () => {
+    const papel = await criarMaterial('Papel com consumo que nunca houve')
+    await lancar({ material: papel.id, tipo: MOV.ENTRADA, quantidade: 10, destino: LOCAL.SECAO })
+
+    const inventado = await lancar({
+      material: papel.id, tipo: MOV.CONSUMO, quantidade: 4, origem: LOCAL.SECAO
+    })
+    expect(await saldo(papel.id)).toBe(6)
+
+    await conn.none('DELETE FROM mapoteca.movimento_material WHERE id = $1', [inventado.id])
+
+    expect(await saldo(papel.id)).toBe(10)
+    expect(await somaDoLivro(papel.id, LOCAL.SECAO)).toBe(10)
+  })
+
+  it('material que de fato SUMIU sai como Consumo, e nao ha outro caminho', async () => {
+    // A consequencia aceita junto com a decisao: sem a Contagem, quebra e
+    // extravio entram na 7.2 do RPCMTec como gasto, porque nao ha mais onde
+    // separar um do outro. O motivo continua cabendo, e agora e opcional.
+    const papel = await criarMaterial('Papel que molhou')
     await lancar({ material: papel.id, tipo: MOV.ENTRADA, quantidade: 10, destino: LOCAL.SECAO })
 
     await lancar({
-      material: papel.id, tipo: MOV.CONTAGEM, quantidade: 4, origem: LOCAL.SECAO,
-      motivo: 'Conferência de prateleira: faltavam quatro rolos'
+      material: papel.id, tipo: MOV.CONSUMO, quantidade: 4, origem: LOCAL.SECAO,
+      motivo: 'Bobina molhada na enchente'
     })
 
     expect(await saldo(papel.id)).toBe(6)

@@ -38,11 +38,15 @@ const MATERIAL = {
   consumo: { total_consumido: 88, ultimo_consumo: '2026-06-05', total_registros: 3 },
 };
 
-// O LIVRO traz os QUATRO tipos. A ficha antiga mostrava so "Consumo recente", e
+// O LIVRO traz os TRES tipos. A ficha antiga mostrava so "Consumo recente", e
 // quem visse o saldo cair por uma transferencia nao tinha onde ler isso.
+//
+// A PRIMEIRA LINHA E DO TIPO EXTINTO, de proposito: banco migrado tem Contagens
+// lancadas antes de 2026-08-08, e a ficha continua sendo o lugar onde elas se
+// leem. Nada na tela filtra por tipo conhecido, e este caso e o que garante isso.
 const LIVRO = [
   {
-    id: 41, tipo_movimento_id: 4, tipo_movimento_nome: 'Contagem',
+    id: 41, tipo_movimento_id: 4, tipo_movimento_nome: 'Contagem (extinta)',
     quantidade: 2, data_movimento: '2026-08-08',
     localizacao_origem_id: 1, localizacao_origem_nome: 'Seção',
     localizacao_destino_id: null, localizacao_destino_nome: null,
@@ -110,12 +114,14 @@ describe('renderInsumoFicha', () => {
     cleanup();
   });
 
-  test('o livro mostra os QUATRO tipos de movimento, e nao so o consumo', async () => {
+  test('o livro mostra os TRES tipos de movimento, e nao so o consumo', async () => {
     const { container, cleanup } = await montar();
 
     const livro = secao(container, 'Livro de movimentos');
     const texto = livro.textContent;
-    for (const tipo of ['Entrada', 'Transferência', 'Consumo', 'Contagem']) {
+    // 'Contagem (extinta)' entra na lista porque o livro exibe o que ACONTECEU,
+    // e nao o que ainda se pode lancar: o nome vem do dominio, junto com a linha.
+    for (const tipo of ['Entrada', 'Transferência', 'Consumo', 'Contagem (extinta)']) {
       expect(texto).toContain(tipo);
     }
     // As colunas De e Para juntas sao o que diz o que aconteceu: entrada tem so
@@ -169,13 +175,16 @@ describe('renderInsumoFicha', () => {
     cleanup();
   });
 
-  test('o operador ve as cinco acoes, com Consumir na frente', async () => {
+  // QUATRO, e nao cinco: a Contagem saiu em 2026-08-08. Nao ha acao de ajustar
+  // saldo, e a lista prova a ausencia -- um botao que a ressuscitasse cairia
+  // aqui antes de chegar ao 400 do servidor.
+  test('o operador ve as quatro acoes, com Consumir na frente', async () => {
     const { container, cleanup } = await montar();
 
     const acoes = [...container.querySelectorAll('.page__actions .btn')]
       .map(b => b.textContent.trim());
     expect(acoes).toEqual([
-      'Consumir', 'Entrada', 'Transferir', 'Contagem', 'Editar cadastro',
+      'Consumir', 'Entrada', 'Transferir', 'Editar cadastro',
     ]);
 
     cleanup();

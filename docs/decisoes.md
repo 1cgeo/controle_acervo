@@ -545,10 +545,39 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   sequência VIRGEM em nove dias de uso real, contra cinco edições de saldo a mão em 2026-08-06, duas
   delas decrementos unitários, que é a forma exata de um consumo. A tabela do consumo não estava
   subutilizada por acaso: a Seção conta a PRATELEIRA, e não declara cada uso, e o que ela tinha a
-  registrar ia parar na única porta que aceitava, a que edita saldo. **Os quatro tipos são o que de fato acontece**: o
-  material CHEGA (1 Entrada), MUDA de lugar (2 Transferência), ACABA (3 Consumo) e é CONFERIDO contra
-  o sistema (4 Contagem). Em quatro tabelas, "o que aconteceu com este material" viraria um UNION que
-  alguém esquece de estender no dia do quinto tipo.
+  registrar ia parar na única porta que aceitava, a que edita saldo. **Os tipos são o que de fato
+  acontece**: o material CHEGA (1 Entrada), MUDA de lugar (2 Transferência) e ACABA (3 Consumo).
+  Nasceu com um quarto, a Contagem, extinta no mesmo dia (bullet abaixo). Em uma tabela por tipo, "o
+  que aconteceu com este material" viraria um UNION que alguém esquece de estender no dia do próximo.
+- **A CONTAGEM (tipo 4) FOI EXTINTA no mesmo 2026-08-08 em que nasceu** (decisão do chefe): o saldo
+  tem de estar certo por Entrada, Transferência e Consumo, e não existe movimento cujo trabalho seja
+  empurrar o saldo até o número da prateleira. Ela lançava a DIFERENÇA entre a prateleira e o
+  sistema, com motivo obrigatório, e existia para separar o que a Seção GASTOU do que ela PERDEU.
+  **O que isso custa, e foi aceito junto:** falta na prateleira vira Consumo e sobra vira Entrada,
+  então quebra e extravio passam a ser reportados na 7.2 do RPCMTec como gasto de material da
+  Divisão -- não há mais onde dizer "sumiu" em vez de "gastei". **O que NÃO era caso dela** continua
+  tendo conserto, e é metade do argumento: lançamento ERRADO se corrige editando ou apagando a linha
+  errada, porque os gatilhos de UPDATE e DELETE desfazem o efeito dela no saldo. Somar um ajuste em
+  cima guardaria duas linhas para um evento que nunca houve.
+- **O code 4 FICA no domínio, renomeado para "Contagem (extinta)", e quem o recusa é o CHECK.**
+  Apagar a linha era o gesto óbvio e foi recusado por um consumidor: `auditoria.registro` guarda o
+  valor gravado, e quem o traduz é o catálogo VIVO da tabela (`auditoria/renderizar.js`), então sem
+  a linha todo registro de movimento anterior à migração exibiria "Tipo de movimento: 4", cru. Uma
+  linha de domínio que nada pode lançar custa uma linha; a história ilegível custa a auditoria. Ela
+  está nos DOIS caminhos (`er/` e migração) porque `ensaiar_migracao.cjs` compara o conteúdo das
+  tabelas de código linha a linha. Como a FK a aceita, quem barra o lançamento novo é o `ELSE FALSE`
+  do `movimento_material_forma`, mais o Joi de `mapoteca_schema.js`.
+- **As linhas tipo 4 que existiam foram CONVERTIDAS, e não apagadas** (`2026-08-08_fim_da_contagem.sql`,
+  1.45.0): apagar zeraria o estoque, porque a Contagem É a semente do saldo inteiro -- a 1.41.0
+  semeou o saldo daquele dia como Contagem, uma por linha de estoque (26 na produção). Cada uma vira
+  o tipo do que representa: com DESTINO é Entrada, com ORIGEM 1 é Consumo, e o motivo ganha o prefixo
+  `[Contagem convertida]` para o livro não passar por lançado assim. **A que sai de FORA da Seção
+  aborta a migração de propósito**, porque não cabe em tipo nenhum (Consumo só sai da Seção) e
+  escolher entre transferir e dar baixa seria inventar um movimento. **Os gatilhos são desligados
+  durante a conversão** (`DISABLE TRIGGER USER`): ela é saldo-neutra, mas o gatilho de UPDATE desfaz
+  antes de refazer, e o desfazer de uma semente de 26 já consumida até sobrar 6 estouraria "Estoque
+  insuficiente" por um negativo que só existe entre duas instruções. **O piso não sobe** (segue
+  1.43.0): a migração só remove.
 - **O saldo continua sendo TABELA, escrito por GATILHO, e sem porta própria.** A view sobre a soma do
   livro foi recusada por uma razão: são o `CHECK (quantidade >= 0)` e a `UNIQUE (tipo_material_id,
   localizacao_id)` de `estoque_material` que RECUSAM o consumo sem saldo; numa view o livro aceitaria

@@ -211,8 +211,11 @@ module.exports = {
   },
 
   // O LIVRO. Entrou em 2026-08-08 no lugar de `mapoteca.consumo_material`, que
-  // guardava so um dos quatro movimentos e por isso nunca explicou um saldo
-  // inteiro.
+  // guardava so um dos movimentos e por isso nunca explicou um saldo inteiro.
+  //
+  // O `dominio` traduz tambem o code 4, a Contagem extinta no mesmo dia: a linha
+  // continua em `mapoteca.tipo_movimento_material` justamente para o registro
+  // antigo daqui nao virar "Tipo de movimento: 4", cru.
   'mapoteca.movimento_material': {
     modulo: 'mapoteca',
     entidade: 'material',

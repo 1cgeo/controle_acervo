@@ -8,9 +8,8 @@ import { TIPO_MOVIMENTO, TIPO_LOCALIZACAO } from './movimento-material.js';
 //
 // `movimento-material.js` repete os códigos de `mapoteca.tipo_movimento_material`
 // e de `mapoteca.tipo_localizacao` porque a tela precisa deles para ESCREVER: a
-// regra "consumo só sai da Seção" compara contra o 1, e a Contagem escolhe entre
-// origem e destino pelo código. Nenhum dos dois chega pronto do servidor, porque
-// `tipo_movimento_material` não tem rota de domínio.
+// regra "consumo só sai da Seção" compara contra o 1. Nenhum dos dois chega
+// pronto do servidor, porque `tipo_movimento_material` não tem rota de domínio.
 //
 // O PROBLEMA QUE ISSO CRIA, e que o próprio arquivo declara: trocar um código em
 // `server/src/utils/domain_constants.js` sem trocar aqui não quebra o boot, não
@@ -72,9 +71,18 @@ describe('os códigos de domínio do livro batem com os do servidor', () => {
     const movimento = constantesDoServidor('TIPO_MOVIMENTO_MATERIAL');
     const localizacao = constantesDoServidor('TIPO_LOCALIZACAO');
 
-    expect(Object.keys(movimento).length).toBeGreaterThanOrEqual(4);
+    // TRÊS movimentos desde 2026-08-08, e não quatro: a Contagem (code 4) foi
+    // extinta, e o mapa do servidor não a lista mais. O piso é o que o mapa tem
+    // hoje, e não uma folga -- baixá-lo para caber numa remoção futura é o mesmo
+    // que desligar o controle.
+    expect(Object.keys(movimento).length).toBeGreaterThanOrEqual(3);
     expect(Object.keys(localizacao).length).toBeGreaterThanOrEqual(4);
     expect(movimento.CONSUMO).toBe(3);
     expect(localizacao.SECAO).toBe(1);
+
+    // O 4 SAIU, e este caso é o que impede a volta silenciosa: o banco ainda tem
+    // a linha do domínio (a auditoria antiga se traduz por ela), então nada além
+    // do Joi e deste teste barra um `CONTAGEM: 4` que reaparecesse no mapa.
+    expect(movimento.CONTAGEM).toBeUndefined();
   });
 });

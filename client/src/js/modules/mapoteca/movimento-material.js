@@ -11,12 +11,15 @@
 // aqui nao quebra o boot nem o teste do servidor: quebra a tela, calada. Por isso
 // os quatro tipos e as quatro localizacoes ficam juntos, num arquivo so.
 
+// O CODE 4 NAO ESTA AQUI, e continua no banco. Ele foi a Contagem, extinta em
+// 2026-08-08: a linha do dominio sobrevive so para a auditoria antiga se
+// traduzir, e nenhuma tela a lanca. O servidor a recusa no Joi, entao um botao
+// que a escrevesse so produziria 400.
 /** mapoteca.tipo_movimento_material */
 export const TIPO_MOVIMENTO = {
   ENTRADA: 1,
   TRANSFERENCIA: 2,
   CONSUMO: 3,
-  CONTAGEM: 4,
 };
 
 /** mapoteca.tipo_localizacao */
@@ -36,8 +39,7 @@ export const TIPO_LOCALIZACAO = {
 // fonte para divergir da primeira, e ela divergiria calada.
 //
 // O que NAO chega pronto, e por isso mora aqui, e o CODIGO que a tela precisa
-// para ESCREVER: a regra "consumo so sai da Seção" compara contra o 1, e
-// "contou menos" escolhe entre origem e destino.
+// para ESCREVER: a regra "consumo so sai da Seção" compara contra o 1.
 
 /** Rotulo de cada localizacao, para os cartoes e os selects. */
 export const NOME_LOCALIZACAO = {

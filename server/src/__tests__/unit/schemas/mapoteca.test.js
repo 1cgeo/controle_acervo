@@ -11,7 +11,7 @@
 // prova campo e motivo, pelo helper __tests__/helpers/joi.js.
 
 const mapotecaSchema = require('../../../mapoteca/mapoteca_schema')
-const { recusaPor, recusaRegraDeObjeto, aceita } = require('../../helpers/joi')
+const { recusaPor, aceita } = require('../../helpers/joi')
 const {
   TIPO_MOVIMENTO_MATERIAL: TIPO_MOVIMENTO,
   TIPO_LOCALIZACAO: LOCAL
@@ -378,45 +378,48 @@ describe('Schemas da mapoteca', () => {
       )
     })
 
-    it('Contagem exige MOTIVO', () => {
-      // E o unico movimento que ninguem viu acontecer: sem o porque, o ajuste
-      // do saldo fica sem explicacao.
+    // A CONTAGEM (tipo 4) FOI EXTINTA em 2026-08-08, e estes dois casos sao o
+    // que impede a volta dela por descuido.
+    //
+    // O 4 nao sumiu do banco: a linha continua em
+    // `mapoteca.tipo_movimento_material` para a auditoria antiga se traduzir. Um
+    // corpo com tipo 4 e, portanto, uma FK VALIDA -- quem o recusa e este Joi,
+    // e o `ELSE FALSE` do CHECK de forma atras dele.
+    it('recusa o tipo 4, a Contagem extinta', () => {
+      // Recusado ANTES da forma: nao importa quais lados o corpo traga, o valor
+      // do tipo ja nao esta na lista.
       recusaPor(
         mapotecaSchema.movimentoMaterial.validate({
           ...base,
-          tipo_movimento_id: TIPO_MOVIMENTO.CONTAGEM,
-          localizacao_destino_id: LOCAL.SECAO
+          tipo_movimento_id: 4,
+          localizacao_destino_id: LOCAL.SECAO,
+          motivo: 'Conferencia de prateleira'
         }),
-        'motivo',
-        'any.required'
+        'tipo_movimento_id',
+        'any.only'
       )
     })
 
-    it('Contagem tem exatamente um dos dois lados', () => {
-      const contagem = extra => mapotecaSchema.movimentoMaterial.validate({
+    it('o motivo e opcional nos tres tipos', () => {
+      // A exigencia que existia era da Contagem, e saiu com ela: os tres que
+      // ficaram se explicam pelo proprio tipo. Sem esta prova, um `.required()`
+      // que voltasse ao MOTIVO passaria despercebido ate a tela recusar.
+      aceita(mapotecaSchema.movimentoMaterial.validate({
         ...base,
-        tipo_movimento_id: TIPO_MOVIMENTO.CONTAGEM,
-        motivo: 'Conferencia de prateleira',
-        ...extra
-      })
-
-      // Sobrou material: a diferenca ENTRA.
-      aceita(contagem({ localizacao_destino_id: LOCAL.SECAO }))
-      // Faltou: a diferenca SAI.
-      aceita(contagem({ localizacao_origem_id: LOCAL.SECAO }))
-
-      // Os dois seriam uma transferencia disfarcada; nenhum nao mexeria em
-      // saldo nenhum. As duas recusas sao regra de OBJETO, com caminho vazio.
-      recusaRegraDeObjeto(
-        contagem({ localizacao_origem_id: LOCAL.SECAO, localizacao_destino_id: LOCAL.ALMOXARIFADO }),
-        'object.xor',
-        ['localizacao_origem_id', 'localizacao_destino_id']
-      )
-      recusaRegraDeObjeto(
-        contagem({}),
-        'object.missing',
-        ['localizacao_origem_id', 'localizacao_destino_id']
-      )
+        tipo_movimento_id: TIPO_MOVIMENTO.ENTRADA,
+        localizacao_destino_id: LOCAL.ALMOXARIFADO
+      }))
+      aceita(mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.TRANSFERENCIA,
+        localizacao_origem_id: LOCAL.ALMOXARIFADO,
+        localizacao_destino_id: LOCAL.SECAO
+      }))
+      aceita(mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+        localizacao_origem_id: LOCAL.SECAO
+      }))
     })
   })
 

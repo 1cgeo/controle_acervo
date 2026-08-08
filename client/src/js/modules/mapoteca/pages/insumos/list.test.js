@@ -158,8 +158,10 @@ describe('renderInsumosList', () => {
       .map(b => b.getAttribute('title'));
     // A ficha primeiro (e o clique no nome), e logo em seguida Consumir: e o
     // lancamento de todo dia, e o unico que alimenta a 7.2 do RPCMTec.
+    // CINCO, e nao seis: a Contagem saiu em 2026-08-08, e nao ha acao de
+    // ajustar saldo. A lista inteira prova a ausencia.
     expect(acoes).toEqual([
-      'Abrir a ficha', 'Consumir', 'Entrada', 'Transferir', 'Contagem', 'Editar cadastro',
+      'Abrir a ficha', 'Consumir', 'Entrada', 'Transferir', 'Editar cadastro',
     ]);
 
     cleanup();

@@ -200,13 +200,18 @@ const LOCALIZACOES_NA_CASA = [
 
 // mapoteca.tipo_movimento_material: o livro de movimentos do material.
 //
-// São as quatro coisas que acontecem com o material: ele CHEGA, MUDA de lugar,
-// ACABA e é CONFERIDO na prateleira contra o que o sistema diz.
+// São as três coisas que acontecem com o material: ele CHEGA, MUDA de lugar e
+// ACABA. Não há ajuste de saldo, e a ausência é a regra: o saldo tem de estar
+// certo por estes três, e lançamento errado se conserta editando a linha errada.
+//
+// O CODE 4 NÃO ENTRA AQUI, e continua no banco. Ele foi a Contagem, extinta em
+// 2026-08-08, e a linha do domínio sobrevive só para a auditoria antiga se
+// traduzir. Ressuscitá-lo neste mapa daria ao Joi um valor que o CHECK do banco
+// recusa, e a recusa chegaria como 500 em vez de 400.
 const TIPO_MOVIMENTO_MATERIAL = {
   ENTRADA: 1,
   TRANSFERENCIA: 2,
-  CONSUMO: 3,
-  CONTAGEM: 4
+  CONSUMO: 3
 }
 
 // dominio.tipo_relacionamento

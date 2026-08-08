@@ -96,9 +96,15 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
 ## Regras de negócio que o código não impede
 
 - **O saldo de material é DERIVADO do livro** (`mapoteca.movimento_material`: 1 Entrada, 2
-  Transferência, 3 Consumo, 4 Contagem), por gatilho: `estoque_material` não tem porta de escrita, e
-  abrir uma faz a soma do livro deixar de bater com o saldo no primeiro uso. É o saldo de HOJE: o
-  "estoque do mês anterior" da 7.2 vem da EDIÇÃO FECHADA anterior, nunca de saldo atual mais consumo.
+  Transferência, 3 Consumo), por gatilho: `estoque_material` não tem porta de escrita, e abrir uma
+  faz a soma do livro deixar de bater com o saldo no primeiro uso. É o saldo de HOJE: o "estoque do
+  mês anterior" da 7.2 vem da EDIÇÃO FECHADA anterior, nunca de saldo atual mais consumo.
+- **NÃO EXISTE movimento de AJUSTE de saldo, e a ausência é a regra.** O code 4 era a Contagem,
+  extinta em 2026-08-08: o saldo tem de estar certo pelos três acima, e lançamento errado se conserta
+  EDITANDO ou apagando a linha errada, porque o gatilho desfaz o efeito dela. A linha 4 continua em
+  `dominio` como "Contagem (extinta)" só para a auditoria antiga se traduzir, e quem recusa lançá-la
+  é o `ELSE FALSE` do CHECK `movimento_material_forma`. Ressuscitar o tipo é decisão, e decisão se
+  registra em `docs/decisoes.md`.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).
 - **A numeração de `pit.meta` não é estável entre anos:** guarde o `id`, nunca o código.

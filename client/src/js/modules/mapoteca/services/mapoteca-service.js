@@ -434,9 +434,9 @@ export function deleteTiposMaterial(ids) {
 // sem data e sem motivo.
 //
 // Hoje o saldo e o acumulado do LIVRO, aplicado por gatilho. Quem quer mudar o
-// saldo lanca um movimento: Entrada, Transferencia, Consumo ou Contagem. Manter
-// uma porta de escrita ao lado do livro faria a soma do livro deixar de bater
-// com o saldo no primeiro uso, e ai nenhum dos dois explicaria mais nada.
+// saldo lanca um movimento: Entrada, Transferencia ou Consumo. Manter uma porta
+// de escrita ao lado do livro faria a soma do livro deixar de bater com o saldo
+// no primeiro uso, e ai nenhum dos dois explicaria mais nada.
 
 /** Linhas de saldo (material x localizacao), com quem alterou e quando. */
 export function getEstoqueMaterial() {
@@ -455,10 +455,13 @@ export function getEstoqueMaterial() {
 // O LIVRO DE MOVIMENTOS
 // ---------------------------------------------------------------------------
 //
-// Entrada, Transferencia, Consumo e Contagem, numa lista so e cada linha com
-// data, origem, destino e motivo. Ele substituiu `/consumo_material`, que
-// guardava so um dos quatro movimentos e por isso nunca explicou um saldo
-// inteiro. LER e de consulta; LANCAR e de operador, inclusive a Contagem.
+// Entrada, Transferencia e Consumo, numa lista so e cada linha com data, origem,
+// destino e motivo. Ele substituiu `/consumo_material`, que guardava so um dos
+// movimentos e por isso nunca explicou um saldo inteiro. LER e de consulta;
+// LANCAR e de operador.
+//
+// A LEITURA de banco migrado ainda traz linhas do tipo 4, "Contagem (extinta)":
+// elas sao historia, e nenhuma rota cria novas.
 
 /**
  * O livro, com filtro opcional. `tipo_movimento_id` existe porque a tela e UMA:
@@ -497,7 +500,10 @@ export function getConsumoMensal(ano) {
  *   Entrada        sem origem, com destino
  *   Transferencia  origem e destino, DIFERENTES entre si
  *   Consumo        origem = Seção, sem destino
- *   Contagem       EXATAMENTE UM dos dois lados, e `motivo` obrigatorio
+ *
+ * Nao ha tipo de AJUSTE: o saldo se corrige pelo movimento que de fato
+ * aconteceu, e lancamento errado se conserta por `updateMovimentoMaterial` ou
+ * `deleteMovimentosMaterial`, que mexem no saldo pelo gatilho.
  *
  * O gatilho do banco recusa saldo insuficiente com uma mensagem em portugues
  * pronta para o toast, e ela sai literal.

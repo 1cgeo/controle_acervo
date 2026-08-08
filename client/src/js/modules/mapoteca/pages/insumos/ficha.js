@@ -18,7 +18,6 @@ import {
   openConsumoDialog,
   openEntradaDialog,
   openTransferenciaDialog,
-  openContagemDialog,
 } from './movimento-dialogs.js';
 
 /**
@@ -89,10 +88,13 @@ function intervalo(ano, mes) {
  * FICHA DO INSUMO (#/mapoteca/insumos/:id): o LIVRO daquele material e as acoes.
  *
  * A pergunta que ela responde e "o que aconteceu com este material", e ela nao
- * se responde com um quarto dos movimentos: a tabela do livro traz os QUATRO
- * tipos (Entrada, Transferencia, Consumo e Contagem), filtraveis por mes. A
- * ficha antiga mostrava so "Consumo recente", e quem visse o saldo cair por uma
- * transferencia nao tinha onde ler isso.
+ * se responde com um terco dos movimentos: a tabela do livro traz os TRES tipos
+ * (Entrada, Transferencia e Consumo), filtraveis por mes. A ficha antiga
+ * mostrava so "Consumo recente", e quem visse o saldo cair por uma transferencia
+ * nao tinha onde ler isso.
+ *
+ * Ela mostra tambem o tipo EXTINTO: banco migrado tem linhas que foram Contagem
+ * antes de 2026-08-08, e o nome delas vem do dominio, junto com a linha.
  *
  * @param {HTMLElement} container
  * @param {{params:{id:string}, query:URLSearchParams}} ctx
@@ -175,8 +177,6 @@ export async function renderInsumoFicha(container, { params }) {
         () => openEntradaDialog({ material, onSaved: recarregar })),
       botao('Transferir', ICONS.swapHoriz, 'secondary',
         () => openTransferenciaDialog({ material, saldos, onSaved: recarregar })),
-      botao('Contagem', ICONS.checkCircle, 'secondary',
-        () => openContagemDialog({ material, saldos, onSaved: recarregar })),
       botao('Editar cadastro', ICONS.edit, 'text',
         () => openMaterialDialog({ material, onSaved: recarregar })),
     ];
@@ -225,8 +225,7 @@ export async function renderInsumoFicha(container, { params }) {
     // -------------------------------------------------------------------------
     // As colunas de origem e destino SAO DUAS, e nao uma de "movimentação": e a
     // combinacao delas que diz o que aconteceu. Entrada tem so destino, consumo
-    // tem so origem, e contagem tem exatamente um dos dois, conforme a
-    // prateleira tenha sobrado ou faltado.
+    // tem so origem, e transferencia tem os dois.
     const livroTable = createDataTable({
       columns: [
         {

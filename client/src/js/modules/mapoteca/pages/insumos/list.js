@@ -12,7 +12,6 @@ import {
   openConsumoDialog,
   openEntradaDialog,
   openTransferenciaDialog,
-  openContagemDialog,
 } from './movimento-dialogs.js';
 
 /**
@@ -88,13 +87,6 @@ export async function renderInsumosList(container, _ctx) {
       icon: ICONS.swapHoriz,
       title: 'Transferir',
       onClick: (row) => openTransferenciaDialog({
-        material: row, saldos: row.saldos, onSaved: load,
-      }),
-    },
-    {
-      icon: ICONS.checkCircle,
-      title: 'Contagem',
-      onClick: (row) => openContagemDialog({
         material: row, saldos: row.saldos, onSaved: load,
       }),
     },
@@ -212,10 +204,10 @@ export async function renderInsumosList(container, _ctx) {
           na_secao: doMaterial.get(TIPO_LOCALIZACAO.SECAO) || 0,
           no_almoxarifado: doMaterial.get(TIPO_LOCALIZACAO.ALMOXARIFADO) || 0,
           consumo_no_mes: consumoDoMes.get(Number(r.id)) || 0,
-          // O saldo por localizacao viaja com a linha: os dialogos de Consumir,
-          // Transferir e Contagem precisam dele para dizer de quanto o saldo
-          // sai, e uma segunda busca no clique mostraria um numero diferente do
-          // que a tabela acabou de mostrar.
+          // O saldo por localizacao viaja com a linha: os dialogos de Consumir e
+          // Transferir precisam dele para dizer de quanto o saldo sai, e uma
+          // segunda busca no clique mostraria um numero diferente do que a
+          // tabela acabou de mostrar.
           saldos: doMaterial,
         };
       });

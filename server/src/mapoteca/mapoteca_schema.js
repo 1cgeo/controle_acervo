@@ -367,8 +367,8 @@ const LOCALIZACAO = Joi.number()
   .integer()
   .valid(...Object.values(TIPO_LOCALIZACAO))
 
-// A quantidade é SEMPRE POSITIVA, inclusive na Contagem: o sentido não mora no
-// sinal, mora em qual dos dois lados está preenchido. INTEIRA porque material se
+// A quantidade é SEMPRE POSITIVA: o sentido não mora no sinal, mora em qual dos
+// dois lados está preenchido. INTEIRA porque material se
 // conta em UNIDADE e meia folha não existe -- a coluna do banco também é
 // INTEGER, então aceitar 1,5 aqui só produziria um 400 mais adiante ou um
 // arredondamento silencioso.
@@ -394,10 +394,7 @@ const ORIGEM_POR_TIPO = Joi.any().when('tipo_movimento_id', {
     {
       is: TIPO_MOVIMENTO_MATERIAL.CONSUMO,
       then: Joi.number().integer().valid(TIPO_LOCALIZACAO.SECAO).required()
-    },
-    // Contagem: um lado ou o outro, e quem cobra o "exatamente um" é o `.xor`
-    // abaixo.
-    { is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM, then: LOCALIZACAO.allow(null) }
+    }
   ],
   otherwise: LOCALIZACAO.allow(null)
 })
@@ -409,20 +406,17 @@ const DESTINO_POR_TIPO = Joi.any().when('tipo_movimento_id', {
     // `.assert` do objeto, logo abaixo. Ver o comentário lá.
     { is: TIPO_MOVIMENTO_MATERIAL.TRANSFERENCIA, then: LOCALIZACAO.required() },
     // Consumo vai para FORA do controle.
-    { is: TIPO_MOVIMENTO_MATERIAL.CONSUMO, then: Joi.any().valid(null) },
-    { is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM, then: LOCALIZACAO.allow(null) }
+    { is: TIPO_MOVIMENTO_MATERIAL.CONSUMO, then: Joi.any().valid(null) }
   ],
   otherwise: LOCALIZACAO.allow(null)
 })
 
-// A Contagem é o único movimento que ninguém viu acontecer: a Entrada tem nota,
-// a Transferência tem quem carregou e o Consumo tem o trabalho que o gastou.
-// Sem o porquê ela vira um ajuste mudo do saldo.
-const MOTIVO_POR_TIPO = Joi.any().when('tipo_movimento_id', {
-  is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM,
-  then: Joi.string().trim().min(1).required(),
-  otherwise: Joi.string().allow(null, '')
-})
+// O MOTIVO É SEMPRE OPCIONAL desde 2026-08-08, e a exceção que havia saiu junto
+// com a Contagem: ela era o único movimento que ninguém via acontecer, e por
+// isso tinha de dizer por quê. Os três que ficaram se explicam pelo tipo -- a
+// Entrada tem nota, a Transferência tem quem carregou e o Consumo tem o trabalho
+// que o gastou.
+const MOTIVO = Joi.string().allow(null, '')
 
 const movimentoMaterialBase = {
   tipo_material_id: Joi.number().integer().required(),
@@ -436,28 +430,27 @@ const movimentoMaterialBase = {
   data_movimento: Joi.date().iso().raw().required(),
   localizacao_origem_id: ORIGEM_POR_TIPO,
   localizacao_destino_id: DESTINO_POR_TIPO,
-  motivo: MOTIVO_POR_TIPO
+  motivo: MOTIVO
 }
 
-// AS DUAS REGRAS QUE SÃO SOBRE O PAR DE LADOS, e por isso não cabem num campo:
+// A REGRA QUE É SOBRE O PAR DE LADOS, e por isso não cabe num campo: na
+// TRANSFERÊNCIA o destino tem de ser DIFERENTE da origem. Sem isso, uma
+// transferência de A para A somaria e subtrairia o mesmo saldo e passaria por
+// lançamento válido.
 //
-//   TRANSFERÊNCIA  destino DIFERENTE da origem. Sem isso, uma transferência de A
-//                  para A somaria e subtrairia o mesmo saldo e passaria por
-//                  lançamento válido.
-//   CONTAGEM       EXATAMENTE UM lado. Sobrou material na prateleira e a
-//                  diferença ENTRA (destino); faltou e ela SAI (origem). Os dois
-//                  lados seriam uma transferência disfarçada, e nenhum não
-//                  mexeria em saldo nenhum.
+// Eram DUAS até 2026-08-08. A outra era o `.xor` da Contagem ("exatamente um
+// lado"), e saiu com ela: os três tipos que ficaram têm a forma inteiramente
+// decidida pelo `tipo_movimento_id`, então cada campo se basta.
 //
-// A PRIMEIRA VIVE NUM `.assert` e não num `.invalid(Joi.ref(...))`, que seria o
+// ELA VIVE NUM `.assert` e não num `.invalid(Joi.ref(...))`, que seria o
 // idiomático: `localizacao_destino_id` já tem `.valid(...)` com as quatro
 // localizações, e `.valid()` põe o Joi em modo lista-branca, onde valor aceito
 // sai antes de qualquer outra regra rodar. `.invalid()`, `.custom()` e `.not()`
 // no mesmo campo simplesmente nunca são consultados: a transferência de A para A
 // passava, e nada acusava. Medido em joi 18.2.3.
 //
-// As duas recusam com `path` VAZIO, porque o erro é da RELAÇÃO entre chaves, e
-// não de uma delas. A mensagem nomeia as duas.
+// Ela recusa com `path` VAZIO, porque o erro é da RELAÇÃO entre chaves, e não de
+// uma delas. A mensagem nomeia as duas.
 const comRegrasDoPar = schema => schema
   .assert(
     '.localizacao_destino_id',
@@ -466,10 +459,6 @@ const comRegrasDoPar = schema => schema
       then: Joi.not(Joi.ref('/localizacao_origem_id'))
     }),
     'ser diferente da origem'
-  )
-  .when(
-    Joi.object({ tipo_movimento_id: TIPO_MOVIMENTO_MATERIAL.CONTAGEM }).unknown(),
-    { then: Joi.object().xor('localizacao_origem_id', 'localizacao_destino_id') }
   )
 
 models.movimentoMaterial = comRegrasDoPar(

@@ -2065,9 +2065,9 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
       ORDER BY tl.nome
     `, [tipoMaterialId]);
 
-    // O LIVRO deste material, os últimos primeiro. São os QUATRO tipos juntos, e
+    // O LIVRO deste material, os últimos primeiro. São os TRÊS tipos juntos, e
     // não só o consumo: a pergunta que a ficha responde é "o que aconteceu com
-    // este material", e ela não se responde com um quarto dos movimentos.
+    // este material", e ela não se responde com um terço dos movimentos.
     const movimentosRecentes = await t.any(`
       SELECT
         mm.id, mm.tipo_material_id, mm.tipo_movimento_id,
@@ -2337,10 +2337,14 @@ controller.getEstoquePorLocalizacao = async () => {
 // soma do livro deixaria de bater com o saldo no primeiro uso, e aí nenhuma das
 // duas explicaria mais nada. Cada uma das quatro tem hoje o seu movimento:
 //
-//   criar/definir estoque  ->  Entrada (tipo 1), ou Contagem (tipo 4) quando é
-//                              conferência de prateleira contra o sistema;
+//   criar/definir estoque  ->  Entrada (tipo 1);
 //   transferir             ->  Transferência (tipo 2);
-//   corrigir para menos    ->  Contagem com o lado de ORIGEM preenchido.
+//   corrigir para menos    ->  Consumo (tipo 3), quando o material de fato saiu.
+//
+// NÃO HÁ AJUSTE DE SALDO desde 2026-08-08, quando a Contagem (tipo 4) foi
+// extinta: o saldo tem de estar certo pelos três movimentos acima, e lançamento
+// ERRADO se conserta editando ou apagando a linha errada -- o gatilho desfaz o
+// efeito dela e o saldo volta exato.
 
 // ---------------------------------------------------------------------------
 // O LIVRO DE MOVIMENTOS
@@ -2551,17 +2555,9 @@ const traduzirErroMovimento = err => {
     throw new AppError(
       'A forma deste movimento não confere com o tipo escolhido. ' +
       'Entrada não tem origem; Transferência tem origem e destino diferentes; ' +
-      'Consumo sai da Seção e não tem destino; Contagem tem exatamente um dos ' +
-      'dois lados (destino se sobrou material na prateleira, origem se faltou).',
-      httpCode.BadRequest,
-      err
-    );
-  }
-  if (err && err.code === CHECK_VIOLATION &&
-      /movimento_material_contagem_exige_motivo/.test(err.message || '')) {
-    throw new AppError(
-      'A Contagem exige motivo. Ela é o único movimento que ninguém viu ' +
-      'acontecer: sem o porquê, o ajuste do saldo fica sem explicação.',
+      'Consumo sai da Seção e não tem destino. Não existe movimento de ajuste: ' +
+      'o saldo se corrige pelo movimento que de fato aconteceu, e lançamento ' +
+      'errado se conserta editando ou apagando a linha errada.',
       httpCode.BadRequest,
       err
     );
@@ -2738,7 +2734,7 @@ controller.getManutencaoPlotterById = async (id) => {
 };
 
 // `getConsumoMaterialById` SAIU em 2026-08-08. Quem responde por um lançamento
-// hoje é `getMovimentoMaterialById`, que serve os quatro tipos: uma leitura só
+// hoje é `getMovimentoMaterialById`, que serve os três tipos: uma leitura só
 // para o consumo faria a tela do livro ter dois caminhos, e o segundo nasceria
 // sem os campos de origem e destino.
 

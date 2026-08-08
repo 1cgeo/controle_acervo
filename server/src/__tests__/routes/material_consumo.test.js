@@ -123,10 +123,18 @@ const declararConsumo = (materialId, quantidade, data) =>
     material: materialId, tipo: MOV.CONSUMO, quantidade, data, origem: LOCAL.SECAO
   })
 
-// Deixa o saldo da Secao no valor pedido, DEPOIS dos lancamentos: os consumos ja
+// Deixa o disponivel no valor pedido, DEPOIS dos lancamentos: os consumos ja
 // baixaram o estoque, e a previsao de falta se mede contra um saldo escolhido.
-// A porta e a CONTAGEM, que e exatamente "o que esta na prateleira hoje", com o
-// motivo que ela exige.
+//
+// SOBE POR ENTRADA, DESCE POR TRANSFERENCIA, e nenhum dos dois e consumo. A
+// porta era a CONTAGEM ate 2026-08-08, quando ela foi extinta -- e o substituto
+// obvio, um Consumo, seria justamente o errado aqui: ele entraria na media
+// mensal que estes casos medem, e o cenario passaria a mentir sobre o proprio
+// numero que prova.
+//
+// A transferencia vai para 'Aquisicao realizada' porque o DISPONIVEL da 7.2 e
+// Secao + Almoxarifado: mandar para o Almoxarifado tiraria da Secao sem tirar do
+// disponivel, e o saldo medido nao mudaria.
 const fixarEstoque = async (materialId, quantidade) => {
   const linha = await conn.oneOrNone(
     `SELECT quantidade FROM mapoteca.estoque_material
@@ -139,11 +147,16 @@ const fixarEstoque = async (materialId, quantidade) => {
 
   await lancar({
     material: materialId,
-    tipo: MOV.CONTAGEM,
     quantidade: Math.abs(diferenca),
     data: '2026-03-31',
-    motivo: 'Conferência de prateleira',
-    ...(diferenca > 0 ? { destino: LOCAL.SECAO } : { origem: LOCAL.SECAO })
+    motivo: 'Ajuste do cenario de teste',
+    ...(diferenca > 0
+      ? { tipo: MOV.ENTRADA, destino: LOCAL.SECAO }
+      : {
+          tipo: MOV.TRANSFERENCIA,
+          origem: LOCAL.SECAO,
+          destino: LOCAL.AQUISICAO_REALIZADA
+        })
   })
 }
 
@@ -226,8 +239,8 @@ describe('Consumo de material: a impressao NAO e consumo', () => {
     expect(Number((await consumoDoMes(papel.id, 7)).quantidade)).toBe(0)
   })
 
-  test('so o tipo CONSUMO conta: entrada, transferencia e contagem nao gastam', async () => {
-    // As quatro moram na mesma tabela. Sem o filtro, o agregado somaria a
+  test('so o tipo CONSUMO conta: entrada e transferencia nao gastam', async () => {
+    // Os tres moram na mesma tabela. Sem o filtro, o agregado somaria a
     // reposicao junto com o gasto e o grafico subiria justamente no mes em que o
     // material chegou.
     const papel = await criarMaterial('Papel Sulfite 120g (tipos)')
@@ -238,10 +251,6 @@ describe('Consumo de material: a impressao NAO e consumo', () => {
     await lancar({
       material: papel.id, tipo: MOV.TRANSFERENCIA, quantidade: 60,
       data: '2026-02-06', origem: LOCAL.ALMOXARIFADO, destino: LOCAL.SECAO
-    })
-    await lancar({
-      material: papel.id, tipo: MOV.CONTAGEM, quantidade: 5,
-      data: '2026-02-07', origem: LOCAL.SECAO, motivo: 'Conferência de prateleira'
     })
     await declararConsumo(papel.id, 8, '2026-02-10')
 

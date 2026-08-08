@@ -1162,7 +1162,7 @@ describe('Rastreabilidade da mapoteca - o livro e o efeito de gatilho', () => {
     expect(saldos[1][1]).toBe(100)
   })
 
-  it('a CONTAGEM registra o motivo, que e o que ela tem de proprio', async () => {
+  it('o CONSUMO registra o motivo, e o gatilho do saldo entra no mesmo lote', async () => {
     const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 100)
 
@@ -1171,24 +1171,28 @@ describe('Rastreabilidade da mapoteca - o livro e o efeito de gatilho', () => {
       .set('Authorization', generateUserToken())
       .send({
         tipo_material_id: tipoId,
-        tipo_movimento_id: 4,
+        tipo_movimento_id: 3,
         quantidade: 7,
         data_movimento: '2026-03-11',
         localizacao_origem_id: 1,
-        motivo: 'Conferência de prateleira: faltavam sete'
+        motivo: 'Bobina molhada'
       })
     expect(res.status).toBe(201)
 
     const linhas = await historico('material', tipoId)
-    const contagem = eventosDe(linhas, 'mapoteca.movimento_material', 'I')
+    const consumo = eventosDe(linhas, 'mapoteca.movimento_material', 'I')
       .find(l => Number(l.registro_id) === Number(res.body.dados.id))
 
-    expect(contagem.dados_depois.motivo).toBe('Conferência de prateleira: faltavam sete')
+    // O MOTIVO E OPCIONAL desde 2026-08-08, quando a Contagem foi extinta e
+    // levou junto a unica exigencia dele. Opcional nao e descartado: quando vem,
+    // e ele que explica um consumo que nao foi trabalho -- que e todo o registro
+    // que sobrou de quebra e extravio.
+    expect(consumo.dados_depois.motivo).toBe('Bobina molhada')
 
     const gatilho = linhas.find(
       l => l.tabela === 'mapoteca.estoque_material' &&
         l.origem === 'gatilho' &&
-        l.lote_id === contagem.lote_id
+        l.lote_id === consumo.lote_id
     )
     expect(Number(gatilho.dados_depois.quantidade)).toBe(93)
   })

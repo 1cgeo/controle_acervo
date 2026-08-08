@@ -193,7 +193,7 @@ export async function renderMateriaisTab(container, getAno) {
       // 2026-08-05.
       semConsumo.textContent = `Nenhum consumo de material lançado em ${ano}. `
         + 'O consumo sai da Seção, e se lança na tela Insumos, pela ação '
-        + '"Consumir" ou pela Contagem da prateleira. '
+        + '"Consumir". '
         + 'O gasto de papel por entrega está no Resumo Anual, em "Entregas por mídia".';
 
       consumoLine.update({

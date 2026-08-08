@@ -128,19 +128,21 @@ test('renderiza o switch do livro: qual lado cada tipo de movimento exige', () =
   // 3 Consumo vai para fora do controle: sem destino.
   assert.ok(destino.notas.join(' ').includes('tipo_movimento_id=3: any =null'))
 
-  // 4 Contagem e o unico que exige motivo.
-  assert.ok(/tipo_movimento_id=4: string\(>=1\) OBRIGATORIO/.test(campos.motivo.notas.join(' ')))
+  // O MOTIVO NAO E CONDICIONAL, e a ausencia e a prova: quem o exigia era a
+  // Contagem (tipo 4), extinta em 2026-08-08. Um `.when` que voltasse ao motivo
+  // faria o campo virar 'condicional' e cairia aqui.
+  assert.strictEqual(campos.motivo.obrigatorio, false)
+  assert.strictEqual(campos.motivo.tipo, "string |null|''")
+  assert.deepStrictEqual(
+    campos.motivo.notas, [],
+    `o motivo voltou a depender do tipo: ${campos.motivo.notas.join(' | ')}`
+  )
 })
 
-test('mostra as duas regras do par de lados do movimento', () => {
-  // Nenhuma das duas e de um campo so, e nenhuma aparece em `dependencies` do
-  // topo: o xor vive dentro de um when do objeto e a outra e um .assert.
-  const deps = esquema.dependenciasDe(models.movimentoMaterial)
-  assert.ok(
-    deps.some(d => d.includes('tipo_movimento_id=4') && d.includes('exatamente um de')),
-    `faltou o xor da Contagem: ${deps.join(' | ')}`
-  )
-
+test('mostra a regra do par de lados do movimento', () => {
+  // Ela nao e de um campo so, e nao aparece em `dependencies` do topo: e um
+  // .assert. Era um par de regras ate 2026-08-08, quando o xor da Contagem saiu
+  // com ela.
   const assercoes = esquema.assercoesDe(models.movimentoMaterial)
   assert.ok(
     assercoes.some(a =>
@@ -156,7 +158,9 @@ test('o contrato do movimento imprime as regras entre campos', () => {
   const texto = esquema.contrato('movimento', RECURSOS.movimento)
   assert.ok(texto.includes('regras entre campos'))
   assert.ok(texto.includes('ser diferente da origem'))
-  assert.ok(texto.includes('exatamente um de'))
+  // Era DUAS ate 2026-08-08: o 'exatamente um de' era o xor da Contagem, e saiu
+  // com ela. Sobrou a assercao da Transferencia, e ela basta para provar que a
+  // secao ainda e impressa -- que e o que este caso guarda.
 })
 
 test('o contrato do estoque diz que ele e so leitura e onde se escreve', () => {

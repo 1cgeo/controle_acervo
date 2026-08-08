@@ -89,16 +89,20 @@ describe('a aba Materiais do dashboard', () => {
   });
 
   // A frase mandava a pessoa para "a tela de Materiais" desde 2026-08-05, e o
-  // consumo se lancava em OUTRA tela. Hoje a tela se chama Insumos e o
-  // lancamento tem dois caminhos, os dois nomeados.
+  // consumo se lancava em OUTRA tela. Hoje a tela se chama Insumos e o caminho
+  // e UM, "Consumir" -- eram dois ate a Contagem sair, em 2026-08-08.
   test('o ano sem consumo diz ONDE se lanca, e o lugar existe', async () => {
     const { container, aba } = await montar();
 
     const vazio = container.querySelector('.dashboard__vazio');
     expect(vazio.classList.contains('hidden')).toBe(false);
     expect(vazio.textContent).toContain('na tela Insumos');
-    expect(vazio.textContent).toContain('Contagem');
+    expect(vazio.textContent).toContain('"Consumir"');
     expect(vazio.textContent).not.toContain('tela de Materiais');
+    // A Contagem saiu em 2026-08-08, e mandar alguem procurar por ela seria o
+    // mesmo defeito que esta frase existe para consertar: um caminho que nao
+    // existe mais.
+    expect(vazio.textContent).not.toContain('Contagem');
 
     aba.cleanup();
   });

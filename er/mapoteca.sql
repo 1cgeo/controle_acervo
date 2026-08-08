@@ -470,23 +470,49 @@ INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
 -- (a única com data, e a única que virava histórico). O saldo era o único
 -- registro do que acontecera, e ele não responde "quando" nem "por quê".
 --
--- Os QUATRO tipos são as quatro coisas que de fato acontecem com o material:
--- ele CHEGA (Entrada), MUDA de lugar (Transferência), ACABA (Consumo) e é
--- CONFERIDO na prateleira contra o que o sistema diz (Contagem).
+-- Os TRÊS tipos são as três coisas que de fato acontecem com o material: ele
+-- CHEGA (Entrada), MUDA de lugar (Transferência) e ACABA (Consumo).
 --
--- UMA TABELA, e não quatro: o que se pergunta é "o que aconteceu com este
--- material", em ordem de data. Em quatro tabelas essa pergunta vira um UNION
--- que alguém esquece de estender no dia em que nascer o quinto tipo.
+-- NÃO EXISTE AJUSTE DE SALDO, e a ausência é a regra (decisão do chefe em
+-- 2026-08-08). Houve um quarto tipo, Contagem, que lançava a diferença entre a
+-- prateleira e o sistema, e ele saiu: o saldo tem de estar certo por Entrada,
+-- Transferência e Consumo, e nada mais. O que se contava como Contagem passa a
+-- ter o tipo do que de fato aconteceu -- faltou na prateleira é Consumo, sobrou
+-- é Entrada -- e a consequência foi aceita junto com a decisão: quebra e
+-- extravio entram na 7.2 do RPCMTec como gasto, porque não há mais onde separar
+-- um do outro.
+--
+-- Erro de LANÇAMENTO não é caso disto: ele se conserta editando ou apagando a
+-- linha errada do livro, e os gatilhos de UPDATE e DELETE desfazem o efeito
+-- dela no saldo. Somar um ajuste em cima seria guardar duas linhas para um
+-- evento que nunca houve.
+--
+-- UMA TABELA, e não três: o que se pergunta é "o que aconteceu com este
+-- material", em ordem de data. Em três tabelas essa pergunta vira um UNION
+-- que alguém esquece de estender no dia em que nascer o quarto tipo.
 CREATE TABLE mapoteca.tipo_movimento_material(
     code SMALLINT NOT NULL PRIMARY KEY,
     nome VARCHAR(255) NOT NULL
 );
 
+-- O CODE 4 FICA, e fica MARCADO, em vez de sair da tabela. Ele foi a Contagem, e
+-- nenhuma porta o lança mais: o CHECK de forma logo abaixo o recusa, o Joi de
+-- `mapoteca_schema.js` não o aceita e nenhuma tela o oferece.
+--
+-- O que ele ainda serve é LER O PASSADO. `auditoria.registro` guarda o valor
+-- gravado, e quem o traduz é o catálogo VIVO desta tabela
+-- (`auditoria/renderizar.js`): sem a linha, todo registro de movimento anterior
+-- a 2026-08-08 passa a exibir "Tipo de movimento: 4", cru. Uma linha de domínio
+-- que nada pode lançar custa uma linha; a história ilegível custa a auditoria.
+--
+-- Ela está no er/ e na migração porque `ensaiar_migracao.cjs` compara o CONTEÚDO
+-- das tabelas de código linha a linha, e instalação nova que não a tivesse
+-- divergiria da migrada.
 INSERT INTO mapoteca.tipo_movimento_material (code, nome) VALUES
 (1, 'Entrada'),
 (2, 'Transferência'),
 (3, 'Consumo'),
-(4, 'Contagem');
+(4, 'Contagem (extinta)');
 
 CREATE TABLE mapoteca.movimento_material (
     id BIGSERIAL PRIMARY KEY,
@@ -496,10 +522,9 @@ CREATE TABLE mapoteca.movimento_material (
     -- cartucho, rolo), e meia folha nao existe. Em DECIMAL, a tela exibe
     -- "150,00" onde a pessoa escreveu 150 e sobra saldo de 0,01 que nunca fecha.
     --
-    -- SEMPRE POSITIVA, inclusive na Contagem: o SENTIDO nao mora no sinal, mora
-    -- em qual dos dois lados esta preenchido. Quantidade negativa e um segundo
-    -- jeito de dizer a mesma coisa, e dois jeitos e o que faz duas consultas
-    -- discordarem.
+    -- SEMPRE POSITIVA: o SENTIDO nao mora no sinal, mora em qual dos dois lados
+    -- esta preenchido. Quantidade negativa e um segundo jeito de dizer a mesma
+    -- coisa, e dois jeitos e o que faz duas consultas discordarem.
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
     -- DIA de calendário, e não instante: quem lança escolhe o dia em que o
     -- material entrou ou saiu, e todo consumidor exibe o dia. Em TIMESTAMPTZ a
@@ -514,7 +539,7 @@ CREATE TABLE mapoteca.movimento_material (
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     data_atualizacao TIMESTAMP WITH TIME ZONE,
-    -- A FORMA DE CADA TIPO, num CHECK só, porque as quatro regras são a mesma
+    -- A FORMA DE CADA TIPO, num CHECK só, porque as três regras são a mesma
     -- pergunta: quais lados esta linha tem de ter.
     --
     --   Entrada        o material CHEGA: não tem origem, e tem destino.
@@ -527,12 +552,11 @@ CREATE TABLE mapoteca.movimento_material (
     --                  são ETAPAS da vida do material, e não prateleiras --
     --                  consumir de "Saldo no empenho" seria gastar, no papel, o
     --                  que ainda está com o fornecedor.
-    --   Contagem       EXATAMENTE UM lado. A conferência lança a DIFERENÇA entre
-    --                  a prateleira e o sistema: sobrou, e a diferença ENTRA
-    --                  naquela localização (destino); faltou, e ela SAI
-    --                  (origem). Os dois lados preenchidos seriam uma
-    --                  transferência disfarçada, e nenhum não mexeria em saldo
-    --                  nenhum.
+    --
+    -- O `ELSE FALSE` É QUEM RECUSA O CODE 4, e por isso ele não é sobra de
+    -- escrita: a linha da Contagem continua no domínio para a auditoria antiga
+    -- se traduzir, então a FK a aceitaria. É este CHECK, e só ele no banco, que
+    -- impede um movimento novo de nascer com o tipo extinto.
     --
     -- O nome e o mesmo da migracao, senao instalacao nova divergiria da migrada.
     CONSTRAINT movimento_material_forma CHECK (
@@ -544,24 +568,15 @@ CREATE TABLE mapoteca.movimento_material (
                     AND localizacao_origem_id <> localizacao_destino_id
             WHEN 3 THEN localizacao_origem_id = 1
                     AND localizacao_destino_id IS NULL
-            WHEN 4 THEN num_nonnulls(localizacao_origem_id, localizacao_destino_id) = 1
             ELSE FALSE
         END
-    ),
-    -- CONTAGEM EXIGE MOTIVO. Ela é o único movimento que ninguém viu acontecer:
-    -- a Entrada tem nota, a Transferência tem quem carregou e o Consumo tem o
-    -- trabalho que o gastou, mas a Contagem é a diferença entre o que está na
-    -- prateleira e o que o sistema achava. Sem o porquê ela vira um ajuste mudo,
-    -- que é exatamente o que o livro existe para acabar.
-    CONSTRAINT movimento_material_contagem_exige_motivo CHECK (
-        tipo_movimento_id <> 4 OR motivo IS NOT NULL
     )
 );
 
 COMMENT ON TABLE mapoteca.movimento_material IS
-    'Livro de movimentos do material: Entrada, Transferência, Consumo e Contagem, cada linha com data. O saldo de mapoteca.estoque_material é o acumulado deste livro, aplicado por gatilho.';
+    'Livro de movimentos do material: Entrada, Transferência e Consumo, cada linha com data. O saldo de mapoteca.estoque_material é o acumulado deste livro, aplicado por gatilho, e não há ajuste: o saldo se corrige pelo movimento que de fato aconteceu.';
 COMMENT ON COLUMN mapoteca.movimento_material.motivo IS
-    'Por que o movimento aconteceu. Obrigatório na Contagem, que é o único movimento que ninguém viu acontecer.';
+    'Por que o movimento aconteceu. Sempre opcional: a Entrada tem nota, a Transferência tem quem carregou e o Consumo tem o trabalho que o gastou.';
 
 CREATE INDEX idx_movimento_material_tipo_material ON mapoteca.movimento_material(tipo_material_id);
 CREATE INDEX idx_movimento_material_data ON mapoteca.movimento_material(data_movimento);
@@ -696,10 +711,10 @@ CREATE INDEX idx_estoque_material_localizacao ON mapoteca.estoque_material(local
 -- O SALDO É O ACUMULADO DO LIVRO, e quem o aplica é o gatilho
 --
 -- Uma linha do livro mexe em NO MÁXIMO dois saldos, e a regra é a mesma para os
--- quatro tipos: o que está em `localizacao_origem_id` SAI, e o que está em
+-- três tipos: o que está em `localizacao_origem_id` SAI, e o que está em
 -- `localizacao_destino_id` ENTRA. É por isso que o sentido não mora no sinal da
--- quantidade -- com quatro tipos e um sinal, haveria oito combinações a
--- interpretar, e só quatro delas fariam sentido.
+-- quantidade -- com três tipos e um sinal, haveria seis combinações a
+-- interpretar, e só três delas fariam sentido.
 --
 -- NÃO EXISTE MAIS `mapoteca.consumo_material` nem
 -- `mapoteca.devolver_estoque_secao`. A primeira virou o tipo 3 do livro; a
@@ -783,8 +798,12 @@ $$ LANGUAGE plpgsql;
 -- para "o material mudou" -- aqui isso é o caso geral, sem ramo nenhum.
 --
 -- AFTER, e não BEFORE: quando o gatilho roda, os CHECKs da linha já a
--- aprovaram, então a forma do movimento (Consumo só da Seção, Contagem com um
--- lado só) nunca precisa ser reconferida aqui.
+-- aprovaram, então a forma do movimento (Consumo só da Seção, Transferência com
+-- os dois lados diferentes) nunca precisa ser reconferida aqui.
+--
+-- O DESFAZER É O QUE CONSERTA LANÇAMENTO ERRADO, e é a razão de não haver tipo
+-- de ajuste no livro: corrigir a linha errada devolve o saldo exato, e não
+-- acrescenta ao livro um evento que nunca aconteceu.
 CREATE OR REPLACE FUNCTION mapoteca.trg_movimento_material()
 RETURNS TRIGGER AS $$
 BEGIN

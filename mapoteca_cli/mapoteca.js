@@ -84,7 +84,7 @@ RECURSOS  (${listarChaves().join(', ')})
       e sempre de UM ano, e sem --ano vem o ano corrente. Ela aceita tambem
       --palavra_chave, que casa a etiqueta INTEIRA e soma com o ano
       MATERIAL: quem escreve e "movimento" (o LIVRO: 1 Entrada, 2 Transferencia,
-      3 Consumo, 4 Contagem). "estoque" e o saldo derivado dele, SO LEITURA.
+      3 Consumo). "estoque" e o saldo derivado dele, SO LEITURA.
   mapoteca <recurso> obter     --id 42
   mapoteca <recurso> criar     --data '{...}'              [--dry-run]
   mapoteca <recurso> atualizar --data '{...}'              [--dry-run]

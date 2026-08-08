@@ -259,10 +259,14 @@ function textoDep (dep) {
  * Dependencias declaradas no nivel do objeto: `.or`, `.xor`, `.and`, `.with`,
  * inclusive as que valem SO em certa condicao, dentro de um `.when()` do objeto.
  *
- * O livro de movimentos e o caso vivo: o `.xor` de origem e destino so vale na
- * Contagem, e por isso ele nao esta em `dependencies` do topo, e sim dentro do
- * when. Lido so no topo, o contrato calava a unica regra que separa a Contagem
- * de uma transferencia disfarcada.
+ * O caso que ensinou isto foi o livro de movimentos: o `.xor` de origem e
+ * destino so valia na Contagem, e por isso nao estava em `dependencies` do topo,
+ * e sim dentro do when. Lido so no topo, o contrato calava a unica regra que
+ * separava aquele tipo de uma transferencia disfarcada.
+ *
+ * A Contagem foi extinta em 2026-08-08 e o `.xor` saiu com ela, mas a leitura
+ * fica: e o unico jeito de um `.when` de objeto aparecer no contrato, e o
+ * proximo schema que precisar de um nao vai avisar.
  */
 function dependenciasDe (schemaJoi) {
   if (!schemaJoi || typeof schemaJoi.describe !== 'function') return []
