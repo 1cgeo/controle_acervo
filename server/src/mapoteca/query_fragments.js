@@ -12,10 +12,26 @@ const {
  * prod = acervo.produto, te = dominio.tipo_escala.
  */
 
-// Quantidade efetivamente entregue: fornecida com fallback na prevista
-const QTD_EFETIVA = "COALESCE(pp.quantidade_fornecida, pp.quantidade)";
+// A quantidade efetivamente entregue de um item.
+//
+// ERA `COALESCE(pp.quantidade_fornecida, pp.quantidade)`, e virou a coluna
+// prevista SOZINHA em 2026-08-08, quando `quantidade_fornecida` foi podada:
+// medida na produção, ela era IGUAL a `quantidade` em 1759 de 1759 linhas
+// preenchidas, sem uma única divergência. Nenhum número publicado mudou -- onde
+// a coluna era nula o COALESCE já caía aqui, e onde era preenchida ela valia
+// isto mesmo.
+//
+// O FRAGMENTO CONTINUA EXISTINDO, e não virou `pp.quantidade` escrito nas onze
+// consultas que o usam. Ele é o lugar onde a pergunta "quanto se entregou" tem
+// UMA resposta; o dia em que ela voltar a ter duas partes (e o candidato natural
+// é a soma de `mapoteca.impressao_item`), muda aqui e muda em todas.
+const QTD_EFETIVA = "pp.quantidade";
 
-// Mídia efetivamente usada: fornecida com fallback na prevista
+// A mídia efetivamente usada: fornecida com fallback na prevista.
+//
+// NÃO caiu junto com a quantidade acima, e o sufixo igual é coincidência: esta
+// tem 25 DIVERGÊNCIAS reais nas mesmas 1759 linhas (item pedido em tyvek e
+// atendido em sulfite). O COALESCE aqui decide de verdade.
 const MIDIA_EFETIVA = "COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)";
 
 // NAO existe fragmento de "data efetiva de entrega": a data de entrega e do
@@ -83,9 +99,10 @@ const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 //
 // Havia aqui um `SITUACOES_EM_ABERTO` único, com 1, 2 e 3. O nome não dizia EM
 // ABERTO PARA QUEM, e a mesma lista respondia a duas perguntas diferentes. As
-// situações vêm de `mapoteca.situacao_pedido` (er/mapoteca.sql, linhas 26 a 33):
-// 1 Pré cadastramento, 2 DIEx/Ofício recebido, 3 Em andamento, 4 Remetido,
-// 5 Concluído, 6 Cancelado, 7 Aguardando produção.
+// situações vêm de `mapoteca.situacao_pedido` (er/mapoteca.sql):
+// 2 Pedido Recebido, 3 Em andamento, 4 Remetido, 5 Concluído, 6 Cancelado,
+// 7 Aguardando produção. NÃO EXISTE 1: 'Pré cadastramento' saiu em 2026-08-08
+// com zero pedidos, e as duas listas perderam um elemento cada.
 //
 // A pergunta de quem IMPRIME: o que ainda falta imprimir?
 // A pergunta de quem ATENDE: o que ainda falta FECHAR?
@@ -104,8 +121,7 @@ const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 // lista de download a partir dela. Remetido NÃO entra: reimprimir o que já saiu
 // é o erro que esta lista existe para evitar.
 const SITUACOES_FILA_IMPRESSAO = [
-  SITUACAO_PEDIDO.PRE_CADASTRAMENTO,
-  SITUACAO_PEDIDO.DOCUMENTO_RECEBIDO,
+  SITUACAO_PEDIDO.PEDIDO_RECEBIDO,
   SITUACAO_PEDIDO.EM_ANDAMENTO
 ];
 

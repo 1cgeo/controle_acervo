@@ -2,7 +2,7 @@
 
 const Joi = require('joi')
 
-const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO, CATEGORIA_MATERIAL } = require('../utils/domain_constants')
+const { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, TIPO_MOVIMENTO_MATERIAL, TIPO_CLIENTE, TIPO_MIDIA, FORMA_ENTREGA, TIPO_ANEXO_PEDIDO, CANAL_RECEBIMENTO } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -80,11 +80,16 @@ const pedidoBase = {
   endereco_entrega: Joi.string().allow(null, ''),
   // Como o material sai daqui. É campo do PEDIDO, e não do item.
   forma_entrega_id: Joi.number().integer().valid(...Object.values(FORMA_ENTREGA)).allow(null),
+  // Etiquetas livres. São o que o filtro `palavra_chave` de GET /pedido casa,
+  // por etiqueta INTEIRA: quem digita aqui está escrevendo o termo de busca de
+  // amanhã, e não uma observação.
   palavras_chave: Joi.array().items(Joi.string()).default([]),
   operacao: Joi.string().allow(null, ''),
   prazo: Joi.date().iso().raw().allow(null),
   demandante: Joi.string().max(255).allow(null, ''),
-  omds: Joi.string().max(255).allow(null, ''),
+  // Sem `omds`: a coluna saiu em 2026-08-08, medida com 124 linhas preenchidas
+  // e UM valor distinto em todas ('1º CGEO'). Corpo que ainda a mande cai no
+  // `stripUnknown` do `schemaValidation`, com o aviso no envelope.
   previsto_pit: Joi.boolean().default(false),
   // Item do PIT que o pedido atende, por CHAVE ESTRANGEIRA para `pit.meta_item`, e
   // nunca pelo código digitado à mão. NÃO se deriva do material: a numeração das
@@ -167,8 +172,13 @@ const produtoPedidoBase = {
   descricao_avulso: Joi.string().allow(null, ''),
   pedido_id: Joi.number().integer().required(),
   quantidade: Joi.number().integer().min(1).required(),
-  quantidade_fornecida: Joi.number().integer().min(0).allow(null),
+  // Sem `quantidade_fornecida`: a coluna saiu em 2026-08-08, medida IGUAL a
+  // `quantidade` em 1759 de 1759 linhas preenchidas. O que de fato saiu da
+  // impressora se lança em `mapoteca.impressao_item`, com data e autor.
   tipo_midia_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).required(),
+  // A MÍDIA fornecida FICA. O sufixo igual ao da coluna que acabou de sair é
+  // coincidência: esta tem 25 divergências reais (tyvek pedido, sulfite
+  // entregue), e é o único registro delas.
   tipo_midia_fornecida_id: Joi.number().integer().valid(...Object.values(TIPO_MIDIA)).allow(null),
   // A meta do PIT que ESTE item cumpre, quando difere da declarada no pedido.
   // NULL significa "a mesma do pedido", e não "fora do PIT": quem diz isso é
@@ -303,91 +313,175 @@ models.tipoMaterialIds = Joi.object().keys({
     .required()
 })
 
+// NÃO EXISTEM MAIS `categoria_id`, `tipo_midia_id` e `meta_anual`, desde
+// 2026-08-08. A categoria só decidia entre a 7.2 (Papel) e a 7.3 (Tintas) do
+// RPCMTec, e o chefe fundiu as duas na 7.2; a mídia era a ponte impressão ->
+// consumo, e a ponte morreu; a meta anual nunca teve leitor.
+//
+// A UNIDADE VAI NO NOME, e não em coluna própria: o "Papel Sulfite 120g" são
+// rolos de 50 m e o "Cartucho MK - T730" é unidade avulsa. É decisão do chefe, e
+// a pendência conhecida é que a 7.2 fundida soma rolo e cartucho na mesma coluna
+// de total.
 const tipoMaterialBase = {
+  // O nome é ÚNICO no banco: a 7.2 do RPCMTec casa a linha do mês anterior por
+  // ele, e com a fusão papel e tinta passaram a dividir um espaço de nomes só.
   nome: Joi.string().max(100).required(),
   descricao: Joi.string().allow(null, ''),
-  // Papel, Tinta ou Outro, de dominio.categoria_material. É o que separa as
-  // tabelas 7.2 e 7.3 do RPCMTec. O default Outro é deliberado: material sem
-  // categoria escolhida fica FORA das duas tabelas, e faltar de uma tabela é
-  // visível, ao contrário de aparecer na errada.
-  categoria_id: Joi.number()
-    .integer()
-    .valid(...Object.values(CATEGORIA_MATERIAL))
-    .default(CATEGORIA_MATERIAL.OUTRO),
-  // Inteiros: contam o MESMO material que o estoque e o consumo, em unidade.
+  // Inteiro: conta o MESMO material que o estoque e o livro, em unidade.
   estoque_minimo: Joi.number().integer().min(0).allow(null),
-  meta_anual: Joi.number().integer().min(0).allow(null),
-  // A MIDIA cuja impressao gasta este material. E o que faz o consumo de papel
-  // sair da impressao, em vez de depender de alguem lancar consumo a mao. SO
-  // PAPEL: o CHECK do banco recusa a tinta apontando midia, porque quanto de
-  // cartucho uma folha gasta depende do que esta desenhado nela.
-  tipo_midia_id: Joi.number().integer().min(1).allow(null),
   ativo: Joi.boolean().default(true)
 }
 
 models.tipoMaterial = Joi.object().keys(tipoMaterialBase)
 
-// Sem default no ativo nem na categoria: chave omitida quer dizer "não mexe".
-// Com o default, um PUT que só corrige o nome ressuscitava material desativado
-// (o caso que gerou a regra) e, agora, jogaria a categoria de volta para Outro,
-// tirando o material da tabela 7.2 ou 7.3 do RPCMTec sem ninguém pedir. Quem
-// preserva de fato é o preserveOmitted do ctrl. Ver o comentário em
-// pedidoAtualizacao.
+// Sem default no ativo: chave omitida quer dizer "não mexe". Com o default, um
+// PUT que só corrige o nome ressuscitava material desativado, que é o caso que
+// gerou a regra. Quem preserva de fato é o preserveOmitted do ctrl. Ver o
+// comentário em pedidoAtualizacao.
 models.tipoMaterialAtualizacao = Joi.object().keys({
   id: Joi.number().integer().required(),
   ...tipoMaterialBase,
-  ativo: Joi.boolean(),
-  categoria_id: Joi.number().integer().valid(...Object.values(CATEGORIA_MATERIAL)),
-  tipo_midia_id: Joi.number().integer().min(1).allow(null)
+  ativo: Joi.boolean()
 })
 
-// Esquemas para Estoque de Material
-models.estoqueMaterialIds = Joi.object().keys({
-  estoque_material_ids: Joi.array()
-    .items(Joi.number().integer().required())
-    .min(1)
-    .required()
-})
+// NÃO EXISTEM MAIS `estoqueMaterial`, `estoqueMaterialAtualizacao` nem
+// `estoqueMaterialIds`: o saldo virou derivado do livro em 2026-08-08, e as
+// rotas que o escreviam saíram. Só sobrou `estoqueMaterialId`, que a leitura por
+// caminho usa.
 
-// quantidade aceita 0 (CHECK do banco é >= 0; consumo/transferência podem
-// zerar o estoque e correções manuais precisam poder registrar zero).
+// O LIVRO DE MOVIMENTOS
 //
-// INTEIRA: material conta-se em UNIDADE, e meia folha não existe. As colunas do
-// banco também são INTEGER, então aceitar 1,5 aqui só produziria um 400 mais
-// adiante, ou um arredondamento silencioso.
-models.estoqueMaterial = Joi.object().keys({
-  tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().integer().min(0).required(),
-  localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
-})
-
-models.estoqueMaterialAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().required(),
-  tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().integer().min(0).required(),
-  localizacao_id: Joi.number().integer().valid(...Object.values(TIPO_LOCALIZACAO)).required()
-})
-
-// Esquemas para Consumo de Material
-models.consumoMaterialIds = Joi.object().keys({
-  consumo_material_ids: Joi.array()
+// A FORMA de cada tipo é cobrada AQUI e no CHECK do banco, e as duas cobranças
+// existem por razões diferentes: o Joi devolve um 400 limpo que nomeia o campo,
+// e o CHECK garante que nenhuma outra porta (CLI, carga, psql) grave a
+// combinação inválida. Escrever a regra num lugar só sempre escolhe qual dos
+// dois problemas aceitar.
+models.movimentoMaterialIds = Joi.object().keys({
+  movimento_material_ids: Joi.array()
     .items(Joi.number().integer().required())
     .min(1)
     .required()
 })
 
-models.consumoMaterial = Joi.object().keys({
-  tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().integer().positive().required(),
-  data_consumo: Joi.date().iso().raw().required()
+const LOCALIZACAO = Joi.number()
+  .integer()
+  .valid(...Object.values(TIPO_LOCALIZACAO))
+
+// A quantidade é SEMPRE POSITIVA, inclusive na Contagem: o sentido não mora no
+// sinal, mora em qual dos dois lados está preenchido. INTEIRA porque material se
+// conta em UNIDADE e meia folha não existe -- a coluna do banco também é
+// INTEGER, então aceitar 1,5 aqui só produziria um 400 mais adiante ou um
+// arredondamento silencioso.
+// A REGRA DE FORMA mora em CADA CAMPO, e não num `.custom` sobre o objeto: assim
+// a mensagem de recusa NOMEIA o campo que está errado, e o `recusaPor` dos testes
+// consegue provar o MOTIVO, e não só que houve recusa.
+//
+// `Joi.any().when(...)` e não `LOCALIZACAO.when(...)`: o `when` CONCATENA a base
+// com o ramo, e concatenar dois `.valid()` faz a UNIÃO dos valores permitidos.
+// Com a base já restringindo as quatro localizações, o ramo do Consumo ("só a
+// Seção") viraria "Seção ou qualquer uma das outras três", e a regra passaria a
+// não recusar nada. Foi exatamente o que aconteceu na primeira versão deste
+// schema.
+const ORIGEM_POR_TIPO = Joi.any().when('tipo_movimento_id', {
+  switch: [
+    // Entrada: o material chega de fora, então não tem origem.
+    { is: TIPO_MOVIMENTO_MATERIAL.ENTRADA, then: Joi.any().valid(null) },
+    // Transferência: sai de algum lugar.
+    { is: TIPO_MOVIMENTO_MATERIAL.TRANSFERENCIA, then: LOCALIZACAO.required() },
+    // Consumo: SÓ DA SEÇÃO. As localizações são etapas da vida do material, e
+    // não prateleiras: consumir de 'Saldo no empenho' seria gastar, no papel, o
+    // que ainda está com o fornecedor.
+    {
+      is: TIPO_MOVIMENTO_MATERIAL.CONSUMO,
+      then: Joi.number().integer().valid(TIPO_LOCALIZACAO.SECAO).required()
+    },
+    // Contagem: um lado ou o outro, e quem cobra o "exatamente um" é o `.xor`
+    // abaixo.
+    { is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM, then: LOCALIZACAO.allow(null) }
+  ],
+  otherwise: LOCALIZACAO.allow(null)
 })
 
-models.consumoMaterialAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().required(),
-  tipo_material_id: Joi.number().integer().required(),
-  quantidade: Joi.number().integer().positive().required(),
-  data_consumo: Joi.date().iso().raw().required()
+const DESTINO_POR_TIPO = Joi.any().when('tipo_movimento_id', {
+  switch: [
+    { is: TIPO_MOVIMENTO_MATERIAL.ENTRADA, then: LOCALIZACAO.required() },
+    // O "diferente da origem" NÃO cabe aqui, e a razão é do Joi: quem cobra é o
+    // `.assert` do objeto, logo abaixo. Ver o comentário lá.
+    { is: TIPO_MOVIMENTO_MATERIAL.TRANSFERENCIA, then: LOCALIZACAO.required() },
+    // Consumo vai para FORA do controle.
+    { is: TIPO_MOVIMENTO_MATERIAL.CONSUMO, then: Joi.any().valid(null) },
+    { is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM, then: LOCALIZACAO.allow(null) }
+  ],
+  otherwise: LOCALIZACAO.allow(null)
 })
+
+// A Contagem é o único movimento que ninguém viu acontecer: a Entrada tem nota,
+// a Transferência tem quem carregou e o Consumo tem o trabalho que o gastou.
+// Sem o porquê ela vira um ajuste mudo do saldo.
+const MOTIVO_POR_TIPO = Joi.any().when('tipo_movimento_id', {
+  is: TIPO_MOVIMENTO_MATERIAL.CONTAGEM,
+  then: Joi.string().trim().min(1).required(),
+  otherwise: Joi.string().allow(null, '')
+})
+
+const movimentoMaterialBase = {
+  tipo_material_id: Joi.number().integer().required(),
+  tipo_movimento_id: Joi.number()
+    .integer()
+    .valid(...Object.values(TIPO_MOVIMENTO_MATERIAL))
+    .required(),
+  quantidade: Joi.number().integer().positive().required(),
+  // Dia de CALENDÁRIO: `.iso()` para '01/08/2026' não virar 8 de janeiro, e
+  // `.raw()` para a coluna não guardar o dia anterior em UTC-3.
+  data_movimento: Joi.date().iso().raw().required(),
+  localizacao_origem_id: ORIGEM_POR_TIPO,
+  localizacao_destino_id: DESTINO_POR_TIPO,
+  motivo: MOTIVO_POR_TIPO
+}
+
+// AS DUAS REGRAS QUE SÃO SOBRE O PAR DE LADOS, e por isso não cabem num campo:
+//
+//   TRANSFERÊNCIA  destino DIFERENTE da origem. Sem isso, uma transferência de A
+//                  para A somaria e subtrairia o mesmo saldo e passaria por
+//                  lançamento válido.
+//   CONTAGEM       EXATAMENTE UM lado. Sobrou material na prateleira e a
+//                  diferença ENTRA (destino); faltou e ela SAI (origem). Os dois
+//                  lados seriam uma transferência disfarçada, e nenhum não
+//                  mexeria em saldo nenhum.
+//
+// A PRIMEIRA VIVE NUM `.assert` e não num `.invalid(Joi.ref(...))`, que seria o
+// idiomático: `localizacao_destino_id` já tem `.valid(...)` com as quatro
+// localizações, e `.valid()` põe o Joi em modo lista-branca, onde valor aceito
+// sai antes de qualquer outra regra rodar. `.invalid()`, `.custom()` e `.not()`
+// no mesmo campo simplesmente nunca são consultados: a transferência de A para A
+// passava, e nada acusava. Medido em joi 18.2.3.
+//
+// As duas recusam com `path` VAZIO, porque o erro é da RELAÇÃO entre chaves, e
+// não de uma delas. A mensagem nomeia as duas.
+const comRegrasDoPar = schema => schema
+  .assert(
+    '.localizacao_destino_id',
+    Joi.any().when('/tipo_movimento_id', {
+      is: TIPO_MOVIMENTO_MATERIAL.TRANSFERENCIA,
+      then: Joi.not(Joi.ref('/localizacao_origem_id'))
+    }),
+    'ser diferente da origem'
+  )
+  .when(
+    Joi.object({ tipo_movimento_id: TIPO_MOVIMENTO_MATERIAL.CONTAGEM }).unknown(),
+    { then: Joi.object().xor('localizacao_origem_id', 'localizacao_destino_id') }
+  )
+
+models.movimentoMaterial = comRegrasDoPar(
+  Joi.object().keys(movimentoMaterialBase)
+)
+
+models.movimentoMaterialAtualizacao = comRegrasDoPar(
+  Joi.object().keys({
+    id: Joi.number().integer().required(),
+    ...movimentoMaterialBase
+  })
+)
 
 // Esquemas para GET by ID (sem .strict(): params de URL chegam como string
 // e dependem da coerção do Joi)
@@ -395,7 +489,7 @@ models.manutencaoPlotterId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
-models.consumoMaterialId = Joi.object().keys({
+models.movimentoMaterialId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
@@ -407,34 +501,22 @@ models.tipoMaterialId = Joi.object().keys({
   id: Joi.number().integer().required()
 })
 
-// Esquemas para filtragem de consumo
-models.consumoMaterialFiltro = Joi.object().keys({
+// Filtro da lista do LIVRO. O tipo de movimento entra aqui porque a tela é UMA:
+// quem quer só o consumo filtra o tipo 3, em vez de existir uma segunda rota só
+// para ele.
+models.movimentoMaterialFiltro = Joi.object().keys({
   data_inicio: Joi.date().iso().raw(),
   data_fim: Joi.date().iso().raw(),
-  tipo_material_id: Joi.number().integer()
+  tipo_material_id: Joi.number().integer(),
+  tipo_movimento_id: Joi.number()
+    .integer()
+    .valid(...Object.values(TIPO_MOVIMENTO_MATERIAL))
 })
 
-// Esquema para transferência de material entre localizações
-models.transferenciaEstoque = Joi.object()
-  .keys({
-    tipo_material_id: Joi.number().integer().required(),
-    origem_id: Joi.number()
-      .integer()
-      .valid(...Object.values(TIPO_LOCALIZACAO))
-      .required(),
-    destino_id: Joi.number()
-      .integer()
-      .valid(...Object.values(TIPO_LOCALIZACAO))
-      .required(),
-    // Inteira, como o estoque: transferir 1,5 folha nao existe.
-    quantidade: Joi.number().integer().positive().required()
-  })
-  .custom((value, helpers) => {
-    if (value.origem_id === value.destino_id) {
-      return helpers.message('Origem e destino não podem ser iguais')
-    }
-    return value
-  })
+// NÃO EXISTE MAIS `transferenciaEstoque`, desde 2026-08-08. Transferir virou o
+// tipo 2 do livro (`movimentoMaterial`), com a mesma regra de origem diferente
+// de destino, só que agora com DATA e com motivo, e somando no mesmo lugar que a
+// entrada e o consumo.
 
 // Query da fila de pedidos abertos (GET /pedido/em_aberto). Escolhe QUAL fila:
 // falso é a de impressão (o que falta imprimir), verdadeiro é a de atendimento
@@ -458,6 +540,18 @@ models.anoQuery = Joi.object().keys({
     .min(2000)
     .max(2100)
     .default(() => new Date().getFullYear())
+})
+
+// A query da LISTA de pedidos: o ano de contexto, mais o filtro por etiqueta.
+//
+// `palavra_chave` casa a etiqueta INTEIRA, e não um pedaço dela, porque é assim
+// que o índice GIN de `mapoteca.pedido.palavras_chave` responde (ver o
+// comentário de `getPedidos`). O `.trim()` existe porque a etiqueta com espaço
+// na ponta nunca casaria nada e a lista voltaria vazia sem dizer por quê; o
+// `.min(1)` recusa a string em branco, que pediria "todo pedido com a etiqueta
+// vazia" e é sempre engano de quem apagou o campo sem limpar a URL.
+models.pedidoListaQuery = models.anoQuery.keys({
+  palavra_chave: Joi.string().trim().min(1).max(255)
 })
 
 // Top N de clientes do ano: o limite, mais o ano de contexto.

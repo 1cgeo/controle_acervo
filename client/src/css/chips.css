@@ -10,7 +10,9 @@
   white-space: nowrap;
 }
 
-/* 1 - Pré-cadastramento */
+/* A variante NEUTRA, e a queda de qualquer situação sem cor própria. A situação
+   1 (Pré cadastramento) saiu do domínio em 2026-08-08, e a lacuna na numeração
+   abaixo é ela. */
 .chip--default {
   background: rgba(0, 0, 0, 0.08);
   color: var(--text-secondary);
@@ -21,7 +23,7 @@
   color: var(--text-primary);
 }
 
-/* 2 - DIEx/Ofício recebido */
+/* 2 - Pedido Recebido */
 .chip--info {
   background: rgba(2, 136, 209, 0.12);
   color: var(--color-info);

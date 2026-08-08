@@ -22,13 +22,46 @@ beforeAll(async () => {
   app = await getApp()
 })
 
-// Devolve o usuario de teste ao perfil semeado, para nao vazar entre testes
-afterEach(async () => {
+// Devolve o usuario de teste ao estado semeado, para nao vazar entre testes.
+//
+// `administrador = FALSE` entrou aqui em 2026-08-08, e nao e zelo: a flag
+// CURTO-CIRCUITA o `verifyPerfil` inteiro, entao um teste de OUTRO arquivo que a
+// ligue no mesmo usuario e nao a desligue faz TODO caso deste arquivo passar a
+// medir outra coisa. Os arquivos do pacote `banco` dividem o banco do worker, e
+// nada aqui pode depender da ordem em que eles rodaram.
+//
+// O sintoma nao e um 403 virando 200, que se leria facil: e o caso que espera
+// 403 recebendo 500, porque o administrador ATRAVESSA a guarda e morre depois,
+// na chave estrangeira de um dado que o TRUNCATE levou.
+const devolverAoSemeado = async () => {
+  // APAGA TODAS as linhas e recria as DUAS semeadas, em vez de devolver modulo a
+  // modulo. A versao anterior listava acervo, mapoteca e orcamento, e por isso
+  // nao limpava `producao` nem `efetivo`: os dois nasceram na 1.33.0, e as
+  // suites que os concedem a este mesmo usuario semeado chegaram depois. O
+  // sintoma foi o caso `GET /api/usuarios devolve o perfil por modulo`, que
+  // compara o mapa INTEIRO com `{ acervo: 1, mapoteca: 2 }` e passou a ver um
+  // terceiro modulo que ninguem deste arquivo concedeu.
+  //
+  // A lista nomeada tambem envelheceria de novo no proximo modulo. O DELETE sem
+  // filtro de modulo nao envelhece.
+  await conn.none(
+    `DELETE FROM dgeo.usuario_perfil
+      WHERE usuario_id = (SELECT id FROM dgeo.usuario WHERE uuid = $1)`,
+    [USER_UUID]
+  )
   await definePerfil(MODULO.acervo, NIVEL.consulta)
   await definePerfil(MODULO.mapoteca, NIVEL.operador)
-  await removePerfil(MODULO.orcamento)
-  await conn.none('UPDATE dgeo.usuario SET ativo = TRUE WHERE uuid = $1', [USER_UUID])
-})
+  await conn.none(
+    'UPDATE dgeo.usuario SET ativo = TRUE, administrador = FALSE WHERE uuid = $1',
+    [USER_UUID]
+  )
+}
+
+// ANTES e DEPOIS: o `afterEach` protege quem vem a seguir, e o `beforeEach`
+// protege este arquivo de quem veio antes. So o segundo defende do vazamento de
+// outro arquivo, que e o que de fato aconteceu.
+beforeEach(devolverAoSemeado)
+afterEach(devolverAoSemeado)
 
 const definePerfil = async (moduloId, perfilId) => {
   await conn.none(
@@ -61,33 +94,58 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     expect(res.body.message).toMatch(/perfil operador no módulo acervo/i)
   })
 
-  // As DUAS telas do perfil de OPERADOR da mapoteca: atender
-  // pedidos e consumo de material. Este teste guarda a fronteira nos dois
-  // sentidos, porque esconder o item no menu nao barra nada: o perfil do client e
-  // ergonomia, e quem barra leitura e o verifyPerfil.
-  it('operador da mapoteca tem atendimento e consumo de material; consulta nao tem', async () => {
-    const AS_DUAS = [
-      '/api/mapoteca/pedido/em_aberto',
-      '/api/mapoteca/consumo_material'
-    ]
+  // A FILA de atendimento e do OPERADOR da mapoteca, e a fronteira se guarda nos
+  // dois sentidos: esconder o item no menu nao barra nada, porque o perfil do
+  // client e ergonomia e quem barra leitura e o verifyPerfil.
+  //
+  // O CONSUMO SAIU DESTA LISTA em 2026-08-08, e a mudanca e a regua nova: quem
+  // tem CONSULTA no modulo LE as telas dele, e so LANCAR e do operador. Ele
+  // continua aqui, do outro lado da fronteira, porque a lista de lancamentos
+  // deixar de abrir para a consulta seria regressao -- e porque ela ja abria pela
+  // rota do client, que ganhou `consulta` no mesmo dia e passou meia hora
+  // levando 403 na tabela enquanto mostrava o grafico do agregado.
+  it('operador da mapoteca tem a fila de atendimento; consulta nao tem', async () => {
     const ler = rota => request(app).get(rota).set('Authorization', generateUserToken())
 
     await definePerfil(MODULO.mapoteca, NIVEL.consulta)
-    for (const rota of AS_DUAS) {
-      const res = await ler(rota)
-      expect(res.status).toBe(403)
-      expect(res.body.message).toMatch(/perfil operador no módulo mapoteca/i)
-    }
-    // O AGREGADO do consumo fica em consulta de propósito: o total do mês é
-    // informação de gestão, a lista de lançamentos é trabalho de quem opera.
+    const negado = await ler('/api/mapoteca/pedido/em_aberto')
+    expect(negado.status).toBe(403)
+    expect(negado.body.message).toMatch(/perfil operador no módulo mapoteca/i)
+
+    // O que a CONSULTA alcanca: o livro de movimentos (onde o consumo virou um
+    // tipo, em 2026-08-08), o agregado mensal dele, e a lista de pedidos. Ver o
+    // pedido, sim; a fila, nao.
+    expect((await ler('/api/mapoteca/movimento_material')).status).toBe(200)
     expect((await ler('/api/mapoteca/consumo_mensal?ano=2026')).status).toBe(200)
-    // E a lista de pedidos também: quem consulta vê o pedido, não a fila.
     expect((await ler('/api/mapoteca/pedido?ano=2026')).status).toBe(200)
 
     await definePerfil(MODULO.mapoteca, NIVEL.operador)
-    for (const rota of AS_DUAS) {
-      expect((await ler(rota)).status).toBe(200)
-    }
+    expect((await ler('/api/mapoteca/pedido/em_aberto')).status).toBe(200)
+    expect((await ler('/api/mapoteca/movimento_material')).status).toBe(200)
+  })
+
+  // LANCAR continua sendo do OPERADOR: o que baixou para consulta foi a LEITURA.
+  // Sem este caso, baixar a escrita junto passaria despercebido.
+  //
+  // O ENDERECO MUDOU em 2026-08-08, e a regra nao: `consumo_material` virou o
+  // TIPO 3 do livro de movimentos, e a rota de consumo deixou de existir. O
+  // corpo abaixo e um consumo: origem na Secao (1), sem destino.
+  it('consulta da mapoteca LE o movimento, e nao LANCA', async () => {
+    await definePerfil(MODULO.mapoteca, NIVEL.consulta)
+
+    const res = await request(app)
+      .post('/api/mapoteca/movimento_material')
+      .set('Authorization', generateUserToken())
+      .send({
+        tipo_material_id: 1,
+        tipo_movimento_id: 3,
+        quantidade: 1,
+        data_movimento: '2026-08-08',
+        localizacao_origem_id: 1
+      })
+
+    expect(res.status).toBe(403)
+    expect(res.body.message).toMatch(/perfil operador no módulo mapoteca/i)
   })
 
   it('gerente do acervo NAO cadastra pedido na mapoteca', async () => {

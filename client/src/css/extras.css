@@ -31,6 +31,14 @@
   gap: var(--space-xs);
 }
 
+/* Campo de texto que BUSCA NO SERVIDOR dentro da barra (a palavra-chave dos
+ * pedidos). A largura minima existe porque o `flex` encolhe o input ate ele
+ * caber, e uma etiqueta como "Mapeamento Sistematico" ficaria com metade das
+ * letras fora de vista enquanto se digita. */
+.filtro-barra__busca {
+  min-width: 260px;
+}
+
 .page__meta {
   margin-left: auto;
   font-size: var(--font-size-sm);

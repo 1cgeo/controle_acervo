@@ -811,9 +811,12 @@ export async function renderPedidoDetails(container, { params }) {
    * A linha SAI DO DOM, e nao se esconde por CSS, pelo motivo dos blocos
    * condicionais desta tela: escondida, ela continuaria no texto da pagina.
    *
-   * Vazio nao quer dizer "sem informacao". Endereco de entrega nulo quer dizer
-   * que o pedido usa o endereco da OM. Por isso a linha some e NADA se escreve
-   * no lugar dela: texto de ausencia inventaria significado campo a campo.
+   * Vazio nao quer dizer "sem informacao", e por isso a linha some e NADA se
+   * escreve no lugar dela: texto de ausencia inventaria significado campo a
+   * campo. O ENDERECO DE ENTREGA e a excecao, e ela e do lado de quem PINTA, e
+   * nao daqui: ele nunca chega vazio a esta linha, porque o campo nulo tem
+   * significado conhecido ("usa o do cadastro do cliente") e quem pinta cai no
+   * endereco do cliente com a marca de onde ele veio.
    *
    * O card recebe linhas soltas e SUBSECOES (ver `subsecao`), na ordem em que
    * aparecem. Linha solta vem antes da primeira subsecao: depois dela, o olho
@@ -931,7 +934,10 @@ export async function renderPedidoDetails(container, { params }) {
       ['nup', 'NUP'],
       ['palavrasChave', 'Palavras-chave'],
       ['demandante', 'Demandante'],
-      ['omds', 'OM responsável'],
+      // Sem a linha "OM responsável": `pedido.omds` saiu do banco em
+      // 2026-08-08. Ela tinha 124 linhas preenchidas e UM valor distinto em
+      // todas ('1º CGEO'), ou seja, a ficha gastava uma linha para repetir o
+      // nome da própria unidade.
       ['previstoPit', 'Previsto no PIT'],
       ['metaPit', 'Meta do PIT'],
     ]),
@@ -1050,30 +1056,17 @@ export async function renderPedidoDetails(container, { params }) {
         sortable: true,
         render: (row) => formatNumber(row.quantidade),
       },
-      {
-        key: 'quantidade_fornecida',
-        label: 'Qtd. fornecida',
-        // Fornecida e IMPRESSA sao coisas diferentes, e as duas ficam na
-        // tabela por decisao do chefe: a fornecida e o que foi
-        // ENTREGUE, e faz par com tipo_midia_fornecida_id; a impressa e o que
-        // saiu do plotter.
-        //
-        // Divergir entre as duas e ALARME de dado errado, e nao caso comum. Por
-        // isso a marca so aparece quando ha diferenca.
-        render: (row) => {
-          if (row.quantidade_fornecida == null) return '-';
-          const fornecida = Number(row.quantidade_fornecida);
-          const impressa = Number(row.quantidade_impressa);
-          const diverge = Number.isFinite(fornecida) && Number.isFinite(impressa)
-            && fornecida !== impressa;
-          return el('span', { className: 'flex gap-sm' }, [
-            el('span', { textContent: formatNumber(row.quantidade_fornecida) }),
-            diverge
-              ? chip(`difere da impressa (${formatNumber(impressa)})`, 'warning')
-              : null,
-          ].filter(Boolean));
-        },
-      },
+      // SEM a coluna "Qtd. fornecida": `produto_pedido.quantidade_fornecida`
+      // saiu do banco em 2026-08-08, medida IGUAL a `quantidade` em 1759 de
+      // 1759 linhas preenchidas, sem uma divergencia em nove meses. A coluna
+      // ao lado ("Impressão") e quem responde o que de fato saiu, e ela le
+      // `mapoteca.impressao_item`, com data e autor de cada sessao.
+      //
+      // A GEMEA `tipo_midia_fornecida_id` FICOU, e continua chegando no item.
+      // As duas tinham o mesmo sufixo e o mesmo formulario, e destinos opostos:
+      // a midia mediu 25 divergencias REAIS (folha pedida em tyvek e atendida
+      // em sulfite), e e o unico registro delas. Quem for podar a proxima coluna
+      // "fornecida" mede antes; o sufixo nao e argumento.
       {
         key: 'impressao_concluida',
         label: 'Impressão',
@@ -1312,13 +1305,22 @@ export async function renderPedidoDetails(container, { params }) {
     L.tipoCliente.definir(pedido.tipo_cliente_nome);
     L.contatoPedido.definir(pedido.ponto_contato);
     L.contatoOm.definir(pedido.cliente_ponto_contato);
-    L.enderecoEntrega.definir(pedido.endereco_entrega);
+    // O ENDERECO EM BRANCO NAO E FALTA DE DADO, e por isso a linha nao some
+    // como as outras vazias: `pedido.endereco_entrega` nulo quer dizer "usa o
+    // do cadastro do cliente", e e exatamente isso que o servidor faz
+    // (`COALESCE(p.endereco_entrega, c.endereco_entrega_principal)`) e o que a
+    // etiqueta de envio imprime. A ficha mostra o endereco que VAI VALER e diz
+    // de onde ele veio; sem a marca, os dois casos ficariam iguais na tela e
+    // ninguem saberia se aquele endereco e deste pedido ou do cadastro.
+    L.enderecoEntrega.definir(pedido.endereco_entrega
+      || (pedido.cliente_endereco_entrega
+        ? `${pedido.cliente_endereco_entrega} (do cadastro do cliente)`
+        : null));
 
     L.documento.definir(pedido.documento_solicitacao);
     L.nup.definir(pedido.documento_solicitacao_nup);
     L.palavrasChave.definir((pedido.palavras_chave || []).join(', '));
     L.demandante.definir(pedido.demandante);
-    L.omds.definir(pedido.omds);
     L.previstoPit.definir(formatBoolean(pedido.previsto_pit));
     L.metaPit.definir(pedido.meta_pit_codigo);
 

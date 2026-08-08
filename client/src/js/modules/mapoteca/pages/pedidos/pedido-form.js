@@ -27,10 +27,15 @@ export const TIPO_CLIENTE_LAI = 9;
 // 3 Marinha. Todo o resto (órgão público, empresa, pessoa física, LAI) é civil.
 export const TIPOS_CLIENTE_MILITAR = [1, 2, 3];
 
-// Campos que só o pedido militar usa: demandante, OMDS, operação e o vínculo
-// com o PIT. Em pedido civil eles ficam vazios.
+// Campos que só o pedido militar usa: demandante, operação e o vínculo com o
+// PIT. Em pedido civil eles ficam vazios.
+//
+// Sem `omds`: a coluna saiu do banco em 2026-08-08. Ela estava preenchida em
+// 124 linhas com UM único valor distinto em todas ('1º CGEO'), ou seja, era uma
+// constante disfarçada de campo, e o formulário pedia que se redigitasse o nome
+// da própria unidade em todo pedido.
 const CAMPOS_SO_MILITAR = [
-  'demandante', 'omds', 'operacao', 'previsto_pit', 'meta_pit_id',
+  'demandante', 'operacao', 'previsto_pit', 'meta_pit_id',
   // A data prevista acompanha a meta: ela só existe para dizer em que mês o
   // pedido entra no planejado do PIT, e pedido civil não cumpre meta.
   'data_prevista',
@@ -73,9 +78,9 @@ function campoVazio(field) {
 /**
  * Mostra só os campos do modo, escondendo o campo do OUTRO modo que está VAZIO.
  *
- * O campo PREENCHIDO nunca some, mesmo fora do modo: há pedido civil com OMDS
- * gravado, e esconder às cegas deixaria dado gravado e invisível, sem ninguém
- * conseguir corrigi-lo.
+ * O campo PREENCHIDO nunca some, mesmo fora do modo: há pedido civil com
+ * demandante e com operação gravados, e esconder às cegas deixaria dado gravado
+ * e invisível, sem ninguém conseguir corrigi-lo.
  *
  * A visibilidade não muda o payload: getValues lê todos os campos, então o
  * campo escondido continua enviando o valor que já tinha.
@@ -193,12 +198,6 @@ export function createPedidoFormFields({
       maxLength: 255,
       helpText: 'Quem encaminhou o pedido (ex.: CMS)',
     }),
-    omds: createTextField({
-      label: 'OM responsável (OMDS)',
-      value: (pedido && pedido.omds) || '',
-      maxLength: 255,
-      helpText: 'OM responsável pelo atendimento (ex.: 1º CGEO)',
-    }),
     operacao: createTextField({
       label: 'Operação',
       value: (pedido && pedido.operacao) || '',
@@ -246,14 +245,30 @@ export function createPedidoFormFields({
       value: isoDateOrEmpty(pedido && pedido.data_prevista),
       helpText: 'O mês em que NÓS planejamos imprimir. É daqui que sai o planejado do PIT.',
     }),
+    // O endereço DESTE pedido, que nem sempre é o do cadastro do cliente: o
+    // material da OM vai muitas vezes para a seção que pediu, para um exercício
+    // no campo ou para um endereço que veio escrito no próprio DIEx.
+    //
+    // EM BRANCO NÃO É FALTA DE DADO: o servidor cai no endereço do cadastro do
+    // cliente (`COALESCE(p.endereco_entrega, c.endereco_entrega_principal)`), e
+    // a etiqueta de envio faz a mesma queda. O aviso está no campo porque, sem
+    // ele, quem vê o campo vazio copia o endereço do cliente para dentro dele e
+    // congela ali um endereço que o cadastro vai corrigir depois.
     endereco_entrega: createTextareaField({
       label: 'Endereço de entrega',
       value: (pedido && pedido.endereco_entrega) || '',
       rows: 2,
+      helpText: 'Só quando a entrega for para um endereço diferente do cadastro. Em branco, vale o endereço do cliente.',
     }),
+    // As etiquetas do pedido, e é por elas que a lista de pedidos filtra. A
+    // busca casa a etiqueta INTEIRA e diferencia maiúscula de minúscula, então
+    // o que se digita aqui é o termo de busca de amanhã: escrever 'Extra-PIT'
+    // hoje e 'extra-pit' na semana que vem cria duas etiquetas, e cada busca
+    // acha metade dos pedidos.
     palavras_chave: createChipInput({
       label: 'Palavras-chave',
       values: (pedido && pedido.palavras_chave) || [],
+      helpText: 'Etiquetas para achar o pedido depois. A busca da lista casa a etiqueta inteira e diferencia maiúscula de minúscula.',
     }),
     observacao_envio: createTextareaField({
       label: 'Observação de envio',
@@ -325,7 +340,6 @@ export function createPedidoFormFields({
   const adicionalElement = el('div', { className: 'form-grid' }, [
     fields.ponto_contato.element,
     fields.demandante.element,
-    fields.omds.element,
     fields.operacao.element,
     fields.forma_entrega_id.element,
     fields.localizador_envio.element,
@@ -422,7 +436,6 @@ export function createPedidoFormFields({
       palavras_chave: fields.palavras_chave.getValue(),
       operacao: orNull(fields.operacao.getValue()),
       demandante: orNull(fields.demandante.getValue()),
-      omds: orNull(fields.omds.getValue()),
       previsto_pit: fields.previsto_pit.getValue(),
       meta_pit_id: fields.meta_pit_id.getValue(),
       data_prevista: fields.data_prevista.getValue() || null,

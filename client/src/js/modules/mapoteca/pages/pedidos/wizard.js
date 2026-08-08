@@ -190,8 +190,8 @@ export async function renderPedidoWizard(container, _ctx) {
   // pedido, e a maioria deles fica vazia: endereco de entrega, previsto no PIT,
   // meta do PIT, palavras-chave e localizador de envio sao a excecao, e o motivo
   // do cancelamento so existe em pedido cancelado. Os frequentes ficam a
-  // vista (demandante 157, omds 123, observacao interna 106, observacao 82,
-  // forma de entrega 89, ponto de contato 80).
+  // vista (demandante 157, observacao interna 106, observacao 82, forma de
+  // entrega 89, ponto de contato 80).
   //
   // NENHUM campo foi removido. Os de uso raro so mudaram de lugar, para uma
   // secao recolhida. O recurso e o elemento details do HTML, o mesmo que a
@@ -368,12 +368,18 @@ export async function renderPedidoWizard(container, _ctx) {
       el('div', { className: 'detail-card__title', textContent: 'Dados adicionais' }),
       infoRow('Ponto de contato do pedido', valores.ponto_contato),
       infoRow('Demandante', valores.demandante),
-      infoRow('OM responsável (OMDS)', valores.omds),
       infoRow('Previsto no PIT', formatBoolean(valores.previsto_pit)),
       infoRow('Meta do PIT', rotuloMetaPit(
         (metas || []).find(m => m.id === valores.meta_pit_id)
       ) || '-'),
-      infoRow('Endereço de entrega', valores.endereco_entrega),
+      // O endereço em branco não é falta de dado: o servidor cai no endereço do
+      // cadastro do cliente. A revisão mostra QUAL endereço vai valer, e de
+      // onde ele veio, senão quem confirma o pedido lê um traço e acha que a
+      // remessa vai sair sem endereço nenhum.
+      infoRow('Endereço de entrega', valores.endereco_entrega
+        || (cliente && cliente.endereco_entrega_principal
+          ? `${cliente.endereco_entrega_principal} (do cadastro do cliente)`
+          : null)),
       infoRow('Palavras-chave', valores.palavras_chave.length ? valores.palavras_chave.join(', ') : '-'),
       infoRow('Operação', valores.operacao),
       // A forma de entrega e do PEDIDO, e nao do item. Ela tem de aparecer na

@@ -90,10 +90,10 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
 
 ## Regras de negócio que o código não impede
 
-- **`tipo_material.categoria_id` é COLUNA** (default `3`, Outro), e é ela que separa as tabelas 7.2 e
-  7.3 do RPCMTec. Nunca derive do nome.
-- **O estoque da mapoteca guarda só o saldo de HOJE**, sem histórico mensal: "estoque do mês
-  anterior" e "previsão de falta" saem `-`, e não se derivam de saldo atual mais consumo.
+- **O saldo de material é DERIVADO do livro** (`mapoteca.movimento_material`: 1 Entrada, 2
+  Transferência, 3 Consumo, 4 Contagem), por gatilho: `estoque_material` não tem porta de escrita, e
+  abrir uma faz a soma do livro deixar de bater com o saldo no primeiro uso. É o saldo de HOJE: o
+  "estoque do mês anterior" da 7.2 vem da EDIÇÃO FECHADA anterior, nunca de saldo atual mais consumo.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).
 - **A numeração de `pit.meta` não é estável entre anos:** guarde o `id`, nunca o código.

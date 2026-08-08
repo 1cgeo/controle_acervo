@@ -408,7 +408,7 @@ router.get(
   })
 )
 
-// O DOCUMENTO INTEIRO: os 34 blocos, com o calculado do banco (edição aberta)
+// O DOCUMENTO INTEIRO: os 33 blocos, com o calculado do banco (edição aberta)
 // ou o congelado (edição fechada). É o que a tela desenha e o que vira PDF, do
 // mesmo objeto -- com a tela lendo de um lugar e o arquivo de outro, os dois
 // divergiriam e quem confere veria diferença onde não há.
@@ -508,7 +508,7 @@ router.delete(
 // Fechamento e reabertura
 //
 // POST, e não PUT: fechar e reabrir são ATOS, e não a gravação de um campo. O
-// fechamento congela os 34 blocos e recusa a edição com subseção por
+// fechamento congela os 33 blocos e recusa a edição com subseção por
 // preencher; a reabertura descongela e preserva o digitado.
 //
 // OS DOIS SÃO DO ADMINISTRADOR, e ficaram de fora do recorte por módulo de
@@ -634,10 +634,10 @@ router.post(
 // Não é a mesma pergunta que "preenchida". Uma subseção calculada nasce
 // preenchida e continua precisando de olho humano: o número pode estar certo e
 // o CADASTRO que o alimenta, errado. Quem confere o relatório antes de assinar
-// percorre os 34 blocos, e até aqui não tinha onde registrar por onde já passou.
+// percorre os 33 blocos, e até aqui não tinha onde registrar por onde já passou.
 //
 // É AQUI QUE O RECORTE POR MÓDULO RENDE MAIS. Conferir vale para as três
-// origens, então esta rota alcança os 34 blocos, e não os 13 digitados: com ela
+// origens, então esta rota alcança os 33 blocos, e não os 13 digitados: com ela
 // recortada, cada gerente carimba o que é da área dele e o administrador deixa
 // de ser o único par de olhos antes da assinatura.
 router.put(

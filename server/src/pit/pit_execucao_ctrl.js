@@ -29,6 +29,13 @@ const {
 
 const { auditoriaCtrl } = require('../auditoria')
 
+// A quantidade entregue de um item de pedido, do MESMO fragmento que a mapoteca
+// e o RPCMTec usam. Escrita a mão aqui até 2026-08-08, ela era
+// `COALESCE(pp.quantidade_fornecida, pp.quantidade)`, e a poda daquela coluna
+// teria deixado a grade do PIT com "coluna não existe" na abertura da tela. É
+// exatamente o que o fragmento existe para não deixar acontecer de novo.
+const { QTD_EFETIVA } = require('../mapoteca/query_fragments')
+
 const controller = {}
 
 // `dominio.origem_meta` (er/dominio.sql). Nao esta em `utils/domain_constants`
@@ -189,8 +196,8 @@ const CELULAS_CALCULADAS = `
     UNION ALL
 
     -- Impressao, realizado: folha ENTREGUE pelo pedido ligado a meta, no mes em
-    -- que o pedido fechou. A quantidade FORNECIDA manda sobre a pedida porque o
-    -- que a meta conta e o que saiu. (Sem crase aqui: template literal.)
+    -- que o pedido fechou. A quantidade sai do fragmento QTD_EFETIVA, que e o
+    -- mesmo do dashboard e do RPCMTec. (Sem crase aqui: template literal.)
     --
     -- MESMA FONTE DO PLANEJADO ACIMA, e so a data muda. Ate 2026-08-05 o
     -- realizado saia de um de-para de midia para meta, e a MEDICAO o reprovou:
@@ -202,7 +209,7 @@ const CELULAS_CALCULADAS = `
     SELECT ${META_DO_ITEM},
            EXTRACT(MONTH FROM p.data_atendimento)::smallint,
            NULL::int,
-           SUM(COALESCE(pp.quantidade_fornecida, pp.quantidade))::int
+           SUM(${QTD_EFETIVA})::int
     FROM mapoteca.pedido AS p
     INNER JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
     INNER JOIN pit.meta_item AS mi ON mi.id = ${META_DO_ITEM}

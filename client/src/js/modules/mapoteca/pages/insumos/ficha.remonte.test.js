@@ -3,32 +3,32 @@ import { flush } from '@/__tests__/helpers/flush.js';
 
 // O que esta tela NAO pode fazer: jogar a pagina fora a cada carga.
 //
-// O chefe mediu o defeito: "quando edita a UI reconstroi, que
-// torna muito chato ficar editando pois a tela fica se movendo". A causa era o
-// `load()` recriar tudo, inclusive as duas tabelas.
+// O chefe mediu o defeito: "quando edita a UI reconstroi, que torna muito chato
+// ficar editando pois a tela fica se movendo". A causa era o `load()` recriar
+// tudo, inclusive as tabelas.
 //
 // Estes testes provam a IDENTIDADE do no (toBe), e nao o texto na tela. Repintar
 // tudo tambem acerta o texto, e perde no caminho a ordenacao, a pagina atual e o
 // foco do teclado. O gatilho de recarga usado aqui e a troca de ano no filtro do
-// grafico de consumo, o unico bloco da ficha que tem ano.
+// livro, que e tambem o que a ficha recarrega depois de cada lancamento.
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
   const { mockMapotecaService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockMapotecaService();
 });
 
-import { renderMaterialDetails } from '@modules/mapoteca/pages/materiais/details.js';
+import { renderInsumoFicha } from '@modules/mapoteca/pages/insumos/ficha.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
-import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
+import { logarComo, OPERADOR } from '@/__tests__/helpers/sessao.js';
 
 // O filtro e desta tela e abre no ano ATUAL.
 const ANO_ATUAL = new Date().getFullYear();
 const ANO_ANTERIOR = ANO_ATUAL - 1;
 
-/** O select do filtro de ano, na barra de controle do grafico de consumo. */
+/** O select de ANO: o primeiro da barra de controle do livro. */
 const filtroAno = (container) => container.querySelector('.export-bar select');
 
-/** Troca o ano do grafico. E o gatilho de recarga da ficha. */
+/** Troca o ano. E o gatilho de recarga da ficha. */
 async function trocarAno(container, ano) {
   const select = filtroAno(container);
   select.value = String(ano);
@@ -42,20 +42,34 @@ const MATERIAL = {
   descricao: 'Bobina de papel',
   ativo: true,
   estoque_minimo: 20,
-  meta_anual: 100,
   estoque: {
-    total: 12,
+    total: 52,
+    disponivel: 12,
+    localizacoes: 2,
     registros: [
-      { id: 11, localizacao_nome: 'Seção', quantidade: 12, data_atualizacao: '2026-06-01T10:00:00Z' },
-      { id: 12, localizacao_nome: 'Almoxarifado', quantidade: 40, data_atualizacao: '2026-06-02T10:00:00Z' },
+      {
+        id: 11, localizacao_id: 1, localizacao_nome: 'Seção', quantidade: 12,
+        data_atualizacao: '2026-06-01T10:00:00Z',
+      },
+      {
+        id: 12, localizacao_id: 2, localizacao_nome: 'Almoxarifado', quantidade: 40,
+        data_atualizacao: '2026-06-02T10:00:00Z',
+      },
     ],
   },
-  consumo: {
-    total_consumido: 88,
-    ultimo_consumo: '2026-06-05',
-    registros_recentes: [{ id: 21, data_consumo: '2026-06-05', quantidade: 3 }],
-  },
+  movimentos: { registros_recentes: [] },
+  consumo: { total_consumido: 88, ultimo_consumo: '2026-06-05', total_registros: 3 },
 };
+
+const LIVRO = [
+  {
+    id: 21, tipo_movimento_id: 3, tipo_movimento_nome: 'Consumo',
+    quantidade: 3, data_movimento: '2026-06-05',
+    localizacao_origem_id: 1, localizacao_origem_nome: 'Seção',
+    localizacao_destino_id: null, localizacao_destino_nome: null,
+    motivo: null, usuario_criacao_nome: 'Sd Silva',
+  },
+];
 
 /** A pagina precisa estar no documento: sem isso o foco do teclado nao existe. */
 function novoContainer() {
@@ -80,7 +94,7 @@ const cabecalho = (secaoEl, rotulo) =>
 
 async function montar() {
   const container = novoContainer();
-  const cleanup = await renderMaterialDetails(container, {
+  const cleanup = await renderInsumoFicha(container, {
     params: { id: '1' },
     query: new URLSearchParams(),
   });
@@ -88,10 +102,11 @@ async function montar() {
   return { container, cleanup };
 }
 
-describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
+describe('renderInsumoFicha, o que sobrevive a uma recarga', () => {
   beforeEach(() => {
-    logarComo({ mapoteca: GERENTE });
+    logarComo({ mapoteca: OPERADOR });
     svc.getTipoMaterial.mockResolvedValue(MATERIAL);
+    svc.getMovimentosMaterial.mockResolvedValue(LIVRO);
     svc.getConsumoMensal.mockResolvedValue([]);
     svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
   });
@@ -100,17 +115,19 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     document.body.innerHTML = '';
   });
 
-  // O ano nao vem mais da navbar: e desta tela, e recorta SO o grafico de
-  // consumo mensal. O cadastro, o estoque e o consumo recente nao tem ano.
-  test('o grafico abre no ano ATUAL e trocar o ano recarrega', async () => {
+  test('a ficha abre no ano ATUAL e trocar o ano recarrega as tres buscas', async () => {
     const { container, cleanup } = await montar();
 
     expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
-    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ATUAL);
 
     await trocarAno(container, ANO_ANTERIOR);
 
     expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(ANO_ANTERIOR);
+    expect(svc.getMovimentosMaterial).toHaveBeenLastCalledWith({
+      tipo_material_id: 1,
+      data_inicio: `${ANO_ANTERIOR}-01-01`,
+      data_fim: `${ANO_ANTERIOR}-12-31`,
+    });
     expect(svc.getTipoMaterial).toHaveBeenLastCalledWith(1);
     cleanup();
   });
@@ -128,12 +145,12 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
   test('as duas tabelas sao as MESMAS depois da recarga', async () => {
     const { container, cleanup } = await montar();
     const estoqueAntes = tabelaDe(container, 'Estoque por localização');
-    const consumoAntes = tabelaDe(container, 'Consumo recente');
+    const livroAntes = tabelaDe(container, 'Livro de movimentos');
 
     await trocarAno(container, ANO_ANTERIOR);
 
     expect(tabelaDe(container, 'Estoque por localização')).toBe(estoqueAntes);
-    expect(tabelaDe(container, 'Consumo recente')).toBe(consumoAntes);
+    expect(tabelaDe(container, 'Livro de movimentos')).toBe(livroAntes);
     cleanup();
   });
 
@@ -169,7 +186,7 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
 
     svc.getTipoMaterial.mockResolvedValue({
       ...MATERIAL,
-      estoque: { ...MATERIAL.estoque, total: 30 },
+      estoque: { ...MATERIAL.estoque, disponivel: 30 },
     });
     await trocarAno(container, ANO_ANTERIOR);
 
@@ -178,17 +195,17 @@ describe('renderMaterialDetails, o que sobrevive a uma recarga', () => {
     cleanup();
   });
 
-  test('o foco no botao Editar sobrevive a recarga', async () => {
+  test('o foco no botao Consumir sobrevive a recarga', async () => {
     const { container, cleanup } = await montar();
-    const editar = [...container.querySelectorAll('button')]
-      .find(b => b.textContent.includes('Editar'));
-    editar.focus();
-    expect(document.activeElement).toBe(editar);
+    const consumir = [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Consumir'));
+    consumir.focus();
+    expect(document.activeElement).toBe(consumir);
 
     await trocarAno(container, ANO_ANTERIOR);
 
-    expect(container.contains(editar)).toBe(true);
-    expect(document.activeElement).toBe(editar);
+    expect(container.contains(consumir)).toBe(true);
+    expect(document.activeElement).toBe(consumir);
     cleanup();
   });
 });

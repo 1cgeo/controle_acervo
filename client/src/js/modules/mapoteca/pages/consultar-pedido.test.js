@@ -110,9 +110,9 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).not.toContain('Data de envio/entrega');
   });
 
-  // Colapsavel vazio era um convite a clicar para nao achar nada. No
-  // pre-cadastramento e no pedido de LAI (que nao usa folha MI), pedido sem item
-  // e o normal, nao cadastro pela metade.
+  // Colapsavel vazio era um convite a clicar para nao achar nada. No pedido
+  // recem-recebido e no de LAI (que nao usa folha MI), pedido sem item e o
+  // normal, nao cadastro pela metade.
   test('pedido sem item nao mostra o bloco colapsavel', async () => {
     svc.getPedidoPorLocalizador.mockResolvedValue({ ...PEDIDO, produtos: [] });
     const container = await montar('AB12-CD34-EF56');

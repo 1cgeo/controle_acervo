@@ -80,8 +80,11 @@ describe('dialogo do item', () => {
 
     expect(campoPorRotulo(document.body, 'Forma de entrega')).toBeNull();
     expect(campoPorRotulo(document.body, 'Data de entrega')).toBeNull();
-    // O que continua sendo do item nao pode ter saido junto.
-    expect(campoPorRotulo(document.body, 'Quantidade fornecida')).not.toBeNull();
+    // A quantidade fornecida saiu depois, na poda de 2026-08-08: media IGUAL a
+    // pedida em 1759 de 1759 linhas.
+    expect(campoPorRotulo(document.body, 'Quantidade fornecida')).toBeNull();
+    // A MIDIA fornecida FICA, e nao e o par da quantidade: ela mediu 25
+    // divergencias reais (tyvek pedido, sulfite entregue) nas mesmas linhas.
     expect(campoPorRotulo(document.body, 'Mídia fornecida')).not.toBeNull();
   });
 

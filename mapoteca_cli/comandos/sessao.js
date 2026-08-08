@@ -60,10 +60,10 @@ async function executar (args, cfg) {
   const exp = http.expiracaoDoToken(token)
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
-  // O acesso e por PERFIL no modulo mapoteca: consulta ve, operador imprime e da
-  // baixa no material, gerente cadastra pedido e exclui. Administrador e global
-  // e passa em tudo. Dizer isso agora e mais barato que descobrir no 403 depois
-  // de montar um plano inteiro.
+  // O acesso e por PERFIL no modulo mapoteca: consulta ve, operador imprime e faz
+  // TUDO de material (lanca movimento, cadastra e conta), gerente cadastra pedido
+  // e exclui. Administrador e global e passa em tudo. Dizer isso agora e mais
+  // barato que descobrir no 403 depois de montar um plano inteiro.
   const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }
   const nivel = NIVEL[perfis.mapoteca] || null
   const quem = administrador
@@ -80,12 +80,13 @@ async function executar (args, cfg) {
     )
   } else if (!administrador && perfis.mapoteca === 1) {
     avisos.push(
-      'Perfil de consulta: leitura funciona, mas imprimir exige operador e ' +
-      'cadastrar pedido, cliente ou anexo exige gerente.'
+      'Perfil de consulta: leitura funciona (inclusive o livro de material), mas ' +
+      'imprimir e lancar movimento de material exigem operador, e cadastrar ' +
+      'pedido, cliente ou anexo exige gerente.'
     )
   } else if (!administrador && perfis.mapoteca === 2) {
     avisos.push(
-      'Perfil de operador: imprimir e dar baixa em material funcionam, mas ' +
+      'Perfil de operador: imprimir e lancar movimento de material funcionam, mas ' +
       'cadastrar pedido, cliente ou anexo exige gerente.'
     )
   }

@@ -370,8 +370,9 @@ export async function renderAtendimento(container) {
   /**
    * O BECO SEM SAÍDA QUE ESTA SEÇÃO FECHA.
    *
-   * A fila mostra só Pré cadastramento, DIEx recebido e Em andamento (o
-   * `SITUACOES_EM_ABERTO` de server/src/mapoteca/query_fragments.js). Marcar o
+   * A fila mostra só Pedido Recebido e Em andamento (o
+   * `SITUACOES_FILA_IMPRESSAO` de server/src/mapoteca/query_fragments.js;
+   * a situação Pré cadastramento saiu do domínio em 2026-08-08). Marcar o
    * pedido como Remetido é a última ação de quem atende, e é ela que APAGA o
    * pedido desta tela. Dali em diante ele depende de alguém abrir a lista de
    * pedidos, achar o filtro "Remetido" e marcar Concluído. Nada nesta tela

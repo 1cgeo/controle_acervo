@@ -156,8 +156,8 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   function showItens(produtos) {
     // Pedido SEM item cadastrado nao mostra bloco nenhum.
     // O colapsavel vazio era um convite a clicar para nao achar nada, e no
-    // pre-cadastramento (situacao 1) e no pedido de LAI, que nao usa folha MI,
-    // essa e a situacao NORMAL, nao um cadastro pela metade.
+    // pedido recem-recebido (situacao 2) e no pedido de LAI, que nao usa folha
+    // MI, essa e a situacao NORMAL, nao um cadastro pela metade.
     if (!produtos.length) return;
 
     const nExemplares = produtos.reduce((soma, r) => soma + (Number(r.quantidade) || 0), 0);

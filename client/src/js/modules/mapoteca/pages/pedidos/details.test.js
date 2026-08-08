@@ -186,3 +186,88 @@ describe('renderPedidoDetails', () => {
   });
 
 });
+
+// A PODA DO PEDIDO, de 2026-08-08. `pedido.omds` tinha 124 linhas preenchidas e
+// UM valor distinto em todas ('1º CGEO'): a ficha gastava uma linha para
+// repetir o nome da propria unidade.
+describe('o que a poda tirou da ficha do pedido', () => {
+  beforeEach(() => {
+    svc.getAnexosPedido.mockResolvedValue([]);
+  });
+
+  test('nao existe mais a linha "OM responsavel", nem com o dado antigo na mao', async () => {
+    svc.getPedido.mockResolvedValue({ ...PEDIDO, omds: '1º CGEO' });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    const rotulos = [...container.querySelectorAll('.detail-card__label')]
+      .map(e => e.textContent.trim());
+    expect(rotulos).not.toContain('OM responsável');
+    expect(container.textContent).not.toContain('OMDS');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// O endereco de entrega do PEDIDO pode diferir do endereco do cadastro do
+// cliente, e o servidor cai de um para o outro
+// (`COALESCE(p.endereco_entrega, c.endereco_entrega_principal)`). A ficha
+// mostra o endereco que VAI VALER e diz de onde ele veio: sem a marca, os dois
+// casos ficariam iguais na tela.
+describe('endereço de entrega na ficha do pedido', () => {
+  beforeEach(() => {
+    svc.getAnexosPedido.mockResolvedValue([]);
+  });
+
+  test('o endereço DO PEDIDO aparece, sem marca de cadastro', async () => {
+    svc.getPedido.mockResolvedValue({
+      ...PEDIDO,
+      endereco_entrega: 'Rua Marechal Deodoro, 100 - Porto Alegre',
+      cliente_endereco_entrega: 'Av. do Cadastro, 1 - Viamão',
+    });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Endereço de entrega');
+    expect(container.textContent).toContain('Rua Marechal Deodoro, 100');
+    expect(container.textContent).not.toContain('do cadastro do cliente');
+    // O endereço do cadastro NAO aparece junto: quem entrega leria dois
+    // endereços sem saber para qual mandar.
+    expect(container.textContent).not.toContain('Av. do Cadastro');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('sem endereço no pedido, mostra o do cliente e DIZ que veio do cadastro', async () => {
+    svc.getPedido.mockResolvedValue({
+      ...PEDIDO,
+      endereco_entrega: null,
+      cliente_endereco_entrega: 'Av. do Cadastro, 1 - Viamão',
+    });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).toContain('Av. do Cadastro, 1 - Viamão');
+    expect(container.textContent).toContain('do cadastro do cliente');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Sem endereço nenhum dos dois lados, a linha some, como qualquer outra
+  // vazia: inventar um texto de ausência aqui não diria nada a quem embala.
+  test('sem endereço nos dois lados, a linha some', async () => {
+    svc.getPedido.mockResolvedValue({
+      ...PEDIDO, endereco_entrega: null, cliente_endereco_entrega: null,
+    });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidoDetails(container, { params: { id: '55' }, query: new URLSearchParams() });
+    await flush();
+
+    expect(container.textContent).not.toContain('Endereço de entrega');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});

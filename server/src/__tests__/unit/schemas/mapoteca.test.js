@@ -11,7 +11,11 @@
 // prova campo e motivo, pelo helper __tests__/helpers/joi.js.
 
 const mapotecaSchema = require('../../../mapoteca/mapoteca_schema')
-const { recusaPor, aceita } = require('../../helpers/joi')
+const { recusaPor, recusaRegraDeObjeto, aceita } = require('../../helpers/joi')
+const {
+  TIPO_MOVIMENTO_MATERIAL: TIPO_MOVIMENTO,
+  TIPO_LOCALIZACAO: LOCAL
+} = require('../../../utils/domain_constants')
 
 const UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
 
@@ -22,39 +26,47 @@ describe('Schemas da mapoteca', () => {
   // Decisao do chefe: as colunas de quantidade viraram INTEGER.
   // Aceitar 100,5 aqui produziria erro mais adiante, no banco, ou um
   // arredondamento silencioso -- que e pior, porque some do relatorio sem
-  // avisar. Vale para o estoque e para o consumo, entao os dois entram juntos.
+  // avisar.
   describe('quantidade de material e inteira', () => {
     const entrada = {
-      estoqueMaterial: { tipo_material_id: 1, localizacao_id: 1 },
-      consumoMaterial: { tipo_material_id: 1, data_consumo: '2026-01-01' }
+      tipo_material_id: 1,
+      tipo_movimento_id: TIPO_MOVIMENTO.ENTRADA,
+      data_movimento: '2026-01-01',
+      localizacao_destino_id: LOCAL.SECAO
     }
 
-    it.each(Object.keys(entrada))('%s aceita quantidade inteira', (schema) => {
-      aceita(mapotecaSchema[schema].validate({ ...entrada[schema], quantidade: 100 }))
+    it('movimento aceita quantidade inteira', () => {
+      aceita(mapotecaSchema.movimentoMaterial.validate({ ...entrada, quantidade: 100 }))
     })
 
-    it.each(Object.keys(entrada))('%s recusa quantidade fracionaria', (schema) => {
+    it('movimento recusa quantidade fracionaria', () => {
       recusaPor(
-        mapotecaSchema[schema].validate({ ...entrada[schema], quantidade: 100.5 }),
+        mapotecaSchema.movimentoMaterial.validate({ ...entrada, quantidade: 100.5 }),
         'quantidade',
         'number.integer'
       )
     })
 
-    // O estoque aceita ZERO (o CHECK do banco e >= 0: material que acabou
-    // continua cadastrado com saldo zero), mas nao aceita negativo.
-    it('estoque aceita zero, que e o material que acabou', () => {
-      const value = aceita(mapotecaSchema.estoqueMaterial.validate({
-        ...entrada.estoqueMaterial, quantidade: 0
-      }))
-      expect(value.quantidade).toBe(0)
+    // ZERO NAO E MOVIMENTO. O saldo pode ser zero (o CHECK do banco e >= 0:
+    // material que acabou continua cadastrado), mas movimentar zero nao move
+    // nada -- e uma linha no livro que nao explica saldo nenhum.
+    it('movimento recusa quantidade zero', () => {
+      recusaPor(
+        mapotecaSchema.movimentoMaterial.validate({ ...entrada, quantidade: 0 }),
+        'quantidade',
+        'number.positive'
+      )
     })
 
-    it('estoque recusa saldo negativo', () => {
+    // NEGATIVO TAMBEM NAO, e a razao nao e so "quantidade nao e negativa": o
+    // SENTIDO do movimento mora em qual dos dois lados esta preenchido, e nao
+    // no sinal. Aceitar -5 daria um segundo jeito de dizer a mesma coisa, e
+    // dois jeitos e o que faz duas consultas discordarem.
+    it('movimento recusa quantidade negativa: o sentido nao mora no sinal', () => {
       recusaPor(
-        mapotecaSchema.estoqueMaterial.validate({ ...entrada.estoqueMaterial, quantidade: -1 }),
+        mapotecaSchema.movimentoMaterial.validate({ ...entrada, quantidade: -5 }),
         'quantidade',
-        'number.min'
+        'number.positive'
       )
     })
   })
@@ -85,6 +97,116 @@ describe('Schemas da mapoteca', () => {
   })
 
   // -------------------------------------------------------------------------
+  // A PODA DO PEDIDO (2026-08-08)
+  // -------------------------------------------------------------------------
+  // Tres colunas sairam por MEDICAO contra a producao, e a prova de que sairam
+  // e que elas nao voltam por acidente:
+  //
+  //   situacao_pedido code 1  'Pre cadastramento', ZERO pedidos em 166;
+  //   pedido.omds             124 preenchidas, UM valor distinto em todas;
+  //   produto_pedido.quantidade_fornecida
+  //                           igual a `quantidade` em 1759 de 1759.
+  //
+  // A gemea `tipo_midia_fornecida_id` NAO saiu, e tem caso proprio abaixo: ela
+  // tem 25 divergencias reais. O sufixo igual nao e argumento.
+  describe('a poda do pedido', () => {
+    const pedidoBase = {
+      data_pedido: '2026-01-01',
+      cliente_id: 1,
+      situacao_pedido_id: 2
+    }
+
+    it('a situacao 1 nao existe mais, e o Joi diz que o valor nao esta na lista', () => {
+      recusaPor(
+        mapotecaSchema.pedido.validate({ ...pedidoBase, situacao_pedido_id: 1 }),
+        'situacao_pedido_id',
+        'any.only'
+      )
+    })
+
+    it('a situacao 2 continua valendo: mudou o rotulo, nao o code', () => {
+      const value = aceita(mapotecaSchema.pedido.validate(pedidoBase))
+      expect(value.situacao_pedido_id).toBe(2)
+    })
+
+    it('as outras cinco situacoes continuam valendo', () => {
+      for (const code of [3, 4, 7]) {
+        aceita(mapotecaSchema.pedido.validate({ ...pedidoBase, situacao_pedido_id: code }))
+      }
+      // 5 exige data_atendimento e 6 exige motivo, pelas RN02 e RN03.
+      aceita(mapotecaSchema.pedido.validate({
+        ...pedidoBase, situacao_pedido_id: 5, data_atendimento: '2026-01-02'
+      }))
+      aceita(mapotecaSchema.pedido.validate({
+        ...pedidoBase, situacao_pedido_id: 6, motivo_cancelamento: 'desistência'
+      }))
+    })
+
+    // DESCARTA, e nao recusa: o schemaValidation roda com stripUnknown e devolve
+    // o aviso no envelope. O que se prova e que a chave nao chega ao controller,
+    // que e o que a faria virar coluna de novo.
+    it('omds nao volta: a chave e descartada do corpo do pedido', () => {
+      const value = aceita(mapotecaSchema.pedido.validate(
+        { ...pedidoBase, omds: '1º CGEO' },
+        { stripUnknown: true }
+      ))
+      expect(value).not.toHaveProperty('omds')
+    })
+
+    it('quantidade_fornecida nao volta: a chave e descartada do item', () => {
+      const value = aceita(mapotecaSchema.produtoPedido.validate(
+        { uuid_versao: UUID, pedido_id: 1, quantidade: 10, tipo_midia_id: 1, quantidade_fornecida: 10 },
+        { stripUnknown: true }
+      ))
+      expect(value).not.toHaveProperty('quantidade_fornecida')
+    })
+
+    // A GEMEA QUE FICOU. Sem este caso, alguem lendo "fornecida saiu" apagaria
+    // as duas, e as 25 divergencias de midia perderiam o unico registro delas.
+    it('tipo_midia_fornecida_id FICA, e chega ao controller', () => {
+      const value = aceita(mapotecaSchema.produtoPedido.validate({
+        uuid_versao: UUID, pedido_id: 1, quantidade: 10,
+        tipo_midia_id: 8, tipo_midia_fornecida_id: 5
+      }))
+      expect(value.tipo_midia_fornecida_id).toBe(5)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // O filtro por palavra-chave da lista de pedidos
+  // -------------------------------------------------------------------------
+  // A etiqueta e casada INTEIRA, pelo indice GIN da coluna, e por isso o schema
+  // cuida de duas bordas que fariam a lista voltar vazia sem dizer por que: o
+  // espaco na ponta (que nunca casaria nada) e a string em branco (que pediria
+  // "pedido com a etiqueta vazia", e e sempre engano).
+  describe('filtro por palavra-chave da lista de pedidos', () => {
+    it('a palavra-chave e opcional: sem ela a lista e a do ano inteiro', () => {
+      const value = aceita(mapotecaSchema.pedidoListaQuery.validate({ ano: 2026 }))
+      expect(value).not.toHaveProperty('palavra_chave')
+    })
+
+    it('apara o espaco da ponta, que nunca casaria etiqueta nenhuma', () => {
+      const value = aceita(mapotecaSchema.pedidoListaQuery.validate({
+        ano: 2026, palavra_chave: '  Extra-PIT  '
+      }))
+      expect(value.palavra_chave).toBe('Extra-PIT')
+    })
+
+    it('recusa a palavra-chave em branco', () => {
+      recusaPor(
+        mapotecaSchema.pedidoListaQuery.validate({ ano: 2026, palavra_chave: '   ' }),
+        'palavra_chave',
+        'string.empty'
+      )
+    })
+
+    it('o ano continua caindo no corrente quando nao vem', () => {
+      const value = aceita(mapotecaSchema.pedidoListaQuery.validate({ palavra_chave: '5ª DE' }))
+      expect(value.ano).toBe(new Date().getFullYear())
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Defaults que o controller assume
   // -------------------------------------------------------------------------
   // Cada um destes existe porque ALGUEM depende dele adiante: o array vazio
@@ -94,7 +216,7 @@ describe('Schemas da mapoteca', () => {
   describe('defaults', () => {
     it('pedido nasce com palavras_chave vazia e fora do PIT', () => {
       const value = aceita(mapotecaSchema.pedido.validate({
-        data_pedido: '2026-01-01', cliente_id: 1, situacao_pedido_id: 1
+        data_pedido: '2026-01-01', cliente_id: 1, situacao_pedido_id: 2
       }))
       expect(value.palavras_chave).toEqual([])
       expect(value.previsto_pit).toBe(false)
@@ -166,14 +288,135 @@ describe('Schemas da mapoteca', () => {
       aceita(mapotecaSchema.pedido.validate({
         data_pedido: '2026-01-01',
         cliente_id: 1,
-        situacao_pedido_id: 1,
+        situacao_pedido_id: 2,
         data_atendimento: null
       }))
     })
 
-    it('filtro de consumo sem nenhum campo e valido: e a listagem inteira', () => {
-      const value = aceita(mapotecaSchema.consumoMaterialFiltro.validate({}))
+    it('filtro do livro sem nenhum campo e valido: e a listagem inteira', () => {
+      const value = aceita(mapotecaSchema.movimentoMaterialFiltro.validate({}))
       expect(value).toEqual({})
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // A FORMA de cada tipo de movimento
+  // -------------------------------------------------------------------------
+  // A regra vive em DOIS lugares, e as duas cobrancas existem por razoes
+  // diferentes: o Joi devolve um 400 limpo que NOMEIA o campo, e o CHECK do
+  // banco garante que nenhuma outra porta (CLI, carga, psql) grave a combinacao
+  // invalida. Aqui se prova o Joi; o CHECK tem prova propria contra o banco.
+  describe('a forma de cada tipo de movimento', () => {
+    const base = { tipo_material_id: 1, quantidade: 10, data_movimento: '2026-01-01' }
+
+    it('Entrada nao tem origem: o material chega de fora', () => {
+      aceita(mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.ENTRADA,
+        localizacao_destino_id: LOCAL.ALMOXARIFADO
+      }))
+
+      recusaPor(
+        mapotecaSchema.movimentoMaterial.validate({
+          ...base,
+          tipo_movimento_id: TIPO_MOVIMENTO.ENTRADA,
+          localizacao_origem_id: LOCAL.SECAO,
+          localizacao_destino_id: LOCAL.ALMOXARIFADO
+        }),
+        'localizacao_origem_id',
+        'any.only'
+      )
+    })
+
+    it('Transferencia recusa origem igual ao destino', () => {
+      // Somaria e subtrairia o mesmo saldo, e passaria por lancamento valido.
+      //
+      // A recusa vem com caminho VAZIO porque e uma regra do PAR, e nao de um
+      // campo. O `recusaPor` nao serve aqui, e o `recusaRegraDeObjeto` tambem
+      // nao: `object.assert` nao traz `peers`. O que se prende e a REGRA e o
+      // campo que ela nomeia na mensagem.
+      const { error } = mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.TRANSFERENCIA,
+        localizacao_origem_id: LOCAL.SECAO,
+        localizacao_destino_id: LOCAL.SECAO
+      })
+
+      expect(error).toBeDefined()
+      expect(error.details[0].type).toBe('object.assert')
+      expect(error.details[0].message)
+        .toBe('"value" is invalid because "localizacao_destino_id" failed to ser diferente da origem')
+    })
+
+    it('Transferencia aceita origem diferente do destino', () => {
+      aceita(mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.TRANSFERENCIA,
+        localizacao_origem_id: LOCAL.ALMOXARIFADO,
+        localizacao_destino_id: LOCAL.SECAO
+      }))
+    })
+
+    it('Consumo so sai da Secao, e nao tem destino', () => {
+      aceita(mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+        localizacao_origem_id: LOCAL.SECAO
+      }))
+
+      // Consumir do Almoxarifado seria gastar material que ainda nao foi
+      // trazido para onde se usa; do 'Saldo no empenho', material que ainda
+      // esta com o fornecedor.
+      recusaPor(
+        mapotecaSchema.movimentoMaterial.validate({
+          ...base,
+          tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+          localizacao_origem_id: LOCAL.ALMOXARIFADO
+        }),
+        'localizacao_origem_id',
+        'any.only'
+      )
+    })
+
+    it('Contagem exige MOTIVO', () => {
+      // E o unico movimento que ninguem viu acontecer: sem o porque, o ajuste
+      // do saldo fica sem explicacao.
+      recusaPor(
+        mapotecaSchema.movimentoMaterial.validate({
+          ...base,
+          tipo_movimento_id: TIPO_MOVIMENTO.CONTAGEM,
+          localizacao_destino_id: LOCAL.SECAO
+        }),
+        'motivo',
+        'any.required'
+      )
+    })
+
+    it('Contagem tem exatamente um dos dois lados', () => {
+      const contagem = extra => mapotecaSchema.movimentoMaterial.validate({
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.CONTAGEM,
+        motivo: 'Conferencia de prateleira',
+        ...extra
+      })
+
+      // Sobrou material: a diferenca ENTRA.
+      aceita(contagem({ localizacao_destino_id: LOCAL.SECAO }))
+      // Faltou: a diferenca SAI.
+      aceita(contagem({ localizacao_origem_id: LOCAL.SECAO }))
+
+      // Os dois seriam uma transferencia disfarcada; nenhum nao mexeria em
+      // saldo nenhum. As duas recusas sao regra de OBJETO, com caminho vazio.
+      recusaRegraDeObjeto(
+        contagem({ localizacao_origem_id: LOCAL.SECAO, localizacao_destino_id: LOCAL.ALMOXARIFADO }),
+        'object.xor',
+        ['localizacao_origem_id', 'localizacao_destino_id']
+      )
+      recusaRegraDeObjeto(
+        contagem({}),
+        'object.missing',
+        ['localizacao_origem_id', 'localizacao_destino_id']
+      )
     })
   })
 
@@ -188,7 +431,13 @@ describe('Schemas da mapoteca', () => {
     const corpos = {
       clienteAtualizacao: { nome: '6 RCB', tipo_cliente_id: 1 },
       plotterAtualizacao: { nr_serie: 'X1', modelo: 'HP', ativo: true },
-      estoqueMaterialAtualizacao: { tipo_material_id: 1, quantidade: 1, localizacao_id: 1 },
+      movimentoMaterialAtualizacao: {
+        tipo_material_id: 1,
+        tipo_movimento_id: 1,
+        quantidade: 1,
+        data_movimento: '2026-01-01',
+        localizacao_destino_id: 1
+      },
       manutencaoPlotterAtualizacao: { plotter_id: 1, data_manutencao: '2026-01-01', valor: 1 }
     }
 

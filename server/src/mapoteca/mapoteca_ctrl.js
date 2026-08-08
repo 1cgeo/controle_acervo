@@ -3,7 +3,7 @@
 
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 const { db } = require("../database");
-const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, STATUS_ARQUIVO, TIPO_ARQUIVO, CATEGORIA_MATERIAL } } = require("../utils");
+const { AppError, httpCode, preserveOmitted, domainConstants: { SITUACAO_PEDIDO, TIPO_LOCALIZACAO, LOCALIZACOES_NA_CASA, TIPO_MOVIMENTO_MATERIAL, STATUS_ARQUIVO, TIPO_ARQUIVO } } = require("../utils");
 const generateLocalizador = require("../utils/generate_localizador");
 // A rastreabilidade e do SISTEMA, e nao da mapoteca. O `modulo`, a `entidade` e
 // o `entidade_id` de cada evento saem do mapa (`../auditoria/mapa/mapoteca.js`),
@@ -65,7 +65,8 @@ const PEDIDO_COLS = [
   { name: 'operacao', def: null },
   { name: 'prazo', def: null },
   { name: 'demandante', def: null },
-  { name: 'omds', def: null },
+  // Sem `omds`: a coluna saiu em 2026-08-08 por medicao (124 linhas
+  // preenchidas, UM valor distinto em todas). Ver er/mapoteca.sql.
   { name: 'previsto_pit', def: false },
   { name: 'meta_pit_id', def: null },
   // O mês em que este pedido PROMETE ser impresso, e de onde a meta 4 do PIT
@@ -90,8 +91,12 @@ const PRODUTO_PEDIDO_COLS = [
   { name: 'nome_avulso', def: null },
   { name: 'descricao_avulso', def: null },
   'pedido_id', 'quantidade',
-  { name: 'quantidade_fornecida', def: null },
+  // Sem `quantidade_fornecida`: a coluna saiu em 2026-08-08 por medicao (igual
+  // a `quantidade` em 1759 de 1759 linhas preenchidas). Quem guarda o que de
+  // fato saiu da impressora e `mapoteca.impressao_item`, com data e autor.
   'tipo_midia_id',
+  // A MIDIA fornecida FICA, e o sufixo igual ao da coluna acima e coincidencia:
+  // esta tem 25 divergencias reais (tyvek pedido, sulfite entregue).
   { name: 'tipo_midia_fornecida_id', def: null },
   // A meta do PIT que ESTE item cumpre, quando difere da do pedido. NULL = a
   // mesma do pedido (ver o comentário da coluna em er/mapoteca.sql).
@@ -437,7 +442,18 @@ controller.deleteClientes = async (clienteIds, usuarioUuid, contexto) => {
 // janeiro deixa de aparecer quando vira o ano, e é preciso trocar o ano do
 // filtro para achá-lo. Em troca, a lista para de crescer indefinidamente e casa
 // com o Dashboard, que conta pedido pelo mesmo critério.
-controller.getPedidos = async (ano) => {
+//
+// `palavraChave` é OPCIONAL e casa a ETIQUETA INTEIRA, nunca um pedaço dela.
+// Não é preguiça: `pedido.palavras_chave` é VARCHAR[] com índice GIN
+// (`idx_pedido_palavras_chave`), e o opclass default de array só responde a
+// `@>`, `<@`, `&&` e `=`. Um `ILIKE` sobre `unnest(palavras_chave)` leria a
+// tabela inteira com o índice ao lado sem tocar nele, e a etiqueta existe
+// justamente para ser escolhida de uma lista, e não digitada por aproximação.
+//
+// Por isso o filtro também é sensível a maiúscula: `lower(pk) = lower($1)`
+// abandonaria o índice pelo mesmo motivo. É o preço de a busca ser da ETIQUETA,
+// e a etiqueta é escrita uma vez no cadastro.
+controller.getPedidos = async (ano, palavraChave = null) => {
   return db.conn.any(`
     SELECT p.id, p.data_pedido, p.data_atendimento,
            p.cliente_id, c.nome AS cliente_nome,
@@ -446,7 +462,11 @@ controller.getPedidos = async (ano) => {
            c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
-           p.prazo, p.demandante, p.omds, p.previsto_pit, p.operacao,
+           p.prazo, p.demandante, p.previsto_pit, p.operacao,
+           -- As etiquetas do pedido saem na LISTA desde 2026-08-08, porque é
+           -- por elas que se filtra: uma lista que filtra por algo que não
+           -- mostra deixa quem filtrou sem saber POR QUE aquela linha entrou.
+           p.palavras_chave,
            -- A meta e chave estrangeira, e nunca o codigo digitado a mao. O id
            -- serve a escrita; o codigo serve a tela e a planilha.
            -- O ::int pela mesma razao do detalhe: BIGINT sai do driver como texto.
@@ -475,8 +495,13 @@ controller.getPedidos = async (ano) => {
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
     LEFT JOIN pit.meta_vigente AS mp ON mp.id = p.meta_pit_id
     WHERE ${filtroAno('p.data_pedido')}
+      ${palavraChave
+        ? `-- O operador e @>, e o cast para varchar[] existe para ele: o GIN de
+           -- array atende @>, <@, && e =, e nao atende = ANY(palavras_chave).
+           AND p.palavras_chave @> ARRAY[$<palavraChave>]::varchar[]`
+        : ''}
     ORDER BY p.data_pedido DESC
-  `, { ano });
+  `, { ano, palavraChave });
 };
 
 /**
@@ -728,7 +753,7 @@ controller.getPedidoById = async (pedidoId) => {
              -- Do PEDIDO, e nao de cada item.
              p.forma_entrega_id, fe.nome AS forma_entrega_nome,
              p.palavras_chave, p.operacao, p.prazo,
-             p.demandante, p.omds, p.previsto_pit,
+             p.demandante, p.previsto_pit,
              -- O ::int porque a coluna e BIGINT, e o driver devolve int8 como
              -- TEXTO. O Joi da escrita e number().integer().strict(), sem
              -- coercao: quem lia o pedido e o reenviava (o comando
@@ -767,7 +792,7 @@ controller.getPedidoById = async (pedidoId) => {
     const produtos = await t.any(`
       -- pedido_id vai junto porque o PUT /mapoteca/produto_pedido o exige:
       -- sem ele, o item que esta leitura devolve não serve de corpo de escrita
-      SELECT pp.id, pp.pedido_id, pp.uuid_versao, pp.quantidade, pp.quantidade_fornecida,
+      SELECT pp.id, pp.pedido_id, pp.uuid_versao, pp.quantidade,
              pp.tipo_midia_id, tm.nome AS tipo_midia_nome,
              pp.tipo_midia_fornecida_id, tmf.nome AS tipo_midia_fornecida_nome,
              -- A meta que o item declara por conta própria, e NÃO a que ele
@@ -910,8 +935,11 @@ controller.atualizaPedido = async (pedido, usuarioUuid, contexto) => {
     delete pedido.localizador_pedido;
 
     // Chave ausente = "não mexe". Antes, quem editava um pedido a partir da
-    // LISTA (que não devolve palavras_chave) zerava as palavras-chave e
-    // desmarcava previsto_pit sem erro nenhum.
+    // LISTA (que na época não devolvia palavras_chave) zerava as palavras-chave
+    // e desmarcava previsto_pit sem erro nenhum. A lista passou a devolver as
+    // palavras-chave em 2026-08-08, junto com o filtro por elas, e a guarda
+    // FICA: o que a protege não é a lista devolver o campo, é a chave ausente
+    // nunca significar "apague".
     await preserveOmitted(t, {
       schema: 'mapoteca',
       table: 'pedido',
@@ -1969,47 +1997,50 @@ controller.deleteManutencoesPlotter = async (manutencaoIds, usuarioUuid, context
 };
 
 // Funções para Tipo de Material
+//
+// SÃO DOIS TOTAIS, e eles não são o mesmo:
+//
+//   estoque_total       o que existe em QUALQUER das quatro localizações;
+//   estoque_disponivel  só Seção + Almoxarifado, que é o que de fato está aqui.
+//
+// 'Aquisição realizada' e 'Saldo no empenho' são material comprado e ainda não
+// entregue. O ALERTA de estoque mínimo e a coluna "Estoque atual" da 7.2 do
+// RPCMTec contam o disponível, e não o total: alertar contra o total esconderia
+// a falta na Seção atrás de uma compra que ainda está com o fornecedor. Os dois
+// saem na resposta porque quem olha a tela do material também quer saber o que
+// vem vindo.
 controller.getTiposMaterial = async () => {
   return db.conn.any(`
     SELECT tm.id, tm.nome, tm.descricao,
-           tm.categoria_id, cm.nome AS categoria,
-           -- A MIDIA cuja impressao gasta este material: e dela que sai o
-           -- consumo da 7.2 do RPCMTec. Sem esta coluna na leitura, o
-           -- formulario abriria sempre com o campo vazio e apagaria o vinculo
-           -- no primeiro salvamento.
-           tm.tipo_midia_id, tmi.nome AS tipo_midia,
-           tm.estoque_minimo, tm.meta_anual, tm.ativo,
+           tm.estoque_minimo, tm.ativo,
            COALESCE(est.estoque_total, 0) AS estoque_total,
+           COALESCE(est.estoque_disponivel, 0) AS estoque_disponivel,
            COALESCE(est.localizacoes_armazenadas, 0) AS localizacoes_armazenadas,
            (
              tm.estoque_minimo IS NOT NULL AND
-             COALESCE(est.estoque_total, 0) < tm.estoque_minimo
+             COALESCE(est.estoque_disponivel, 0) < tm.estoque_minimo
            ) AS abaixo_minimo
     FROM mapoteca.tipo_material AS tm
-    JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
-    LEFT JOIN mapoteca.tipo_midia AS tmi ON tmi.code = tm.tipo_midia_id
     LEFT JOIN (
       SELECT tipo_material_id,
              SUM(quantidade) AS estoque_total,
+             SUM(quantidade) FILTER (
+               WHERE localizacao_id IN ($<naCasa:csv>)
+             ) AS estoque_disponivel,
              COUNT(DISTINCT localizacao_id)::int AS localizacoes_armazenadas
       FROM mapoteca.estoque_material
       GROUP BY tipo_material_id
     ) est ON est.tipo_material_id = tm.id
     ORDER BY tm.nome
-  `);
+  `, { naCasa: LOCALIZACOES_NA_CASA });
 };
 
 controller.getTipoMaterialById = async (tipoMaterialId) => {
   return db.conn.task(async t => {
     // Buscar informações do tipo de material
     const tipoMaterial = await t.oneOrNone(`
-      SELECT tm.id, tm.nome, tm.descricao,
-             tm.categoria_id, cm.nome AS categoria,
-             tm.tipo_midia_id, tmi.nome AS tipo_midia,
-             tm.estoque_minimo, tm.meta_anual, tm.ativo
+      SELECT tm.id, tm.nome, tm.descricao, tm.estoque_minimo, tm.ativo
       FROM mapoteca.tipo_material AS tm
-      JOIN dominio.categoria_material AS cm ON cm.code = tm.categoria_id
-      LEFT JOIN mapoteca.tipo_midia AS tmi ON tmi.code = tm.tipo_midia_id
       WHERE tm.id = $1
     `, [tipoMaterialId]);
 
@@ -2017,13 +2048,14 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
-    // Buscar informações de estoque
+    // O SALDO POR LOCALIZAÇÃO. Ele é derivado do livro desde 2026-08-08, e por
+    // isso não há mais `PUT /estoque_material` que o edite: quem o move é um
+    // movimento.
     const estoqueInfo = await t.any(`
-      SELECT 
-        -- tipo_material_id é exigido pelo PUT /mapoteca/estoque_material
+      SELECT
         em.id, em.tipo_material_id, em.quantidade, em.localizacao_id, tl.nome AS localizacao_nome,
         em.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
-        em.data_criacao, em.usuario_atualizacao_id, 
+        em.data_criacao, em.usuario_atualizacao_id,
         ua.nome AS usuario_atualizacao_nome, em.data_atualizacao
       FROM mapoteca.estoque_material AS em
       LEFT JOIN mapoteca.tipo_localizacao AS tl ON tl.code = em.localizacao_id
@@ -2033,30 +2065,46 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
       ORDER BY tl.nome
     `, [tipoMaterialId]);
 
-    // Buscar histórico de consumo recente
-    const consumoRecente = await t.any(`
-      SELECT 
-        -- tipo_material_id é exigido pelo PUT /mapoteca/consumo_material
-        cm.id, cm.tipo_material_id, cm.quantidade, cm.data_consumo,
-        cm.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
-        cm.data_criacao
-      FROM mapoteca.consumo_material AS cm
-      LEFT JOIN dgeo.usuario AS uc ON uc.id = cm.usuario_criacao_id
-      WHERE cm.tipo_material_id = $1
-      ORDER BY cm.data_consumo DESC
+    // O LIVRO deste material, os últimos primeiro. São os QUATRO tipos juntos, e
+    // não só o consumo: a pergunta que a ficha responde é "o que aconteceu com
+    // este material", e ela não se responde com um quarto dos movimentos.
+    const movimentosRecentes = await t.any(`
+      SELECT
+        mm.id, mm.tipo_material_id, mm.tipo_movimento_id,
+        tmv.nome AS tipo_movimento_nome,
+        mm.quantidade, mm.data_movimento,
+        mm.localizacao_origem_id, lo.nome AS localizacao_origem_nome,
+        mm.localizacao_destino_id, ld.nome AS localizacao_destino_nome,
+        mm.motivo,
+        mm.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
+        mm.data_criacao
+      FROM mapoteca.movimento_material AS mm
+      INNER JOIN mapoteca.tipo_movimento_material AS tmv ON tmv.code = mm.tipo_movimento_id
+      LEFT JOIN mapoteca.tipo_localizacao AS lo ON lo.code = mm.localizacao_origem_id
+      LEFT JOIN mapoteca.tipo_localizacao AS ld ON ld.code = mm.localizacao_destino_id
+      LEFT JOIN dgeo.usuario AS uc ON uc.id = mm.usuario_criacao_id
+      WHERE mm.tipo_material_id = $1
+      ORDER BY mm.data_movimento DESC, mm.id DESC
       LIMIT 10
     `, [tipoMaterialId]);
 
-    // Calcular estatísticas de consumo
+    // Estatísticas do CONSUMO, e não do livro inteiro: é o consumo que responde
+    // "quanto deste material a Divisão gasta", e Entrada e Transferência não
+    // gastam nada.
     const estatisticasConsumo = await t.oneOrNone(`
-      SELECT 
+      SELECT
         SUM(quantidade) AS total_consumido,
         AVG(quantidade) AS media_por_consumo,
         COUNT(*) AS total_registros_consumo,
-        MAX(data_consumo) AS ultimo_consumo
-      FROM mapoteca.consumo_material
-      WHERE tipo_material_id = $1
-    `, [tipoMaterialId]);
+        MAX(data_movimento) AS ultimo_consumo
+      FROM mapoteca.movimento_material
+      WHERE tipo_material_id = $<tipoMaterialId>
+        AND tipo_movimento_id = $<consumo>
+    `, { tipoMaterialId, consumo: TIPO_MOVIMENTO_MATERIAL.CONSUMO });
+
+    const naCasa = estoqueInfo.filter(
+      e => LOCALIZACOES_NA_CASA.includes(Number(e.localizacao_id))
+    );
 
     // Combinar resultados
     return {
@@ -2064,10 +2112,14 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
       estoque: {
         registros: estoqueInfo,
         total: estoqueInfo.reduce((sum, item) => sum + parseFloat(item.quantidade), 0),
+        // Seção + Almoxarifado, que é o que o alerta e a 7.2 do RPCMTec contam.
+        disponivel: naCasa.reduce((sum, item) => sum + parseFloat(item.quantidade), 0),
         localizacoes: estoqueInfo.length
       },
+      movimentos: {
+        registros_recentes: movimentosRecentes
+      },
       consumo: {
-        registros_recentes: consumoRecente,
         total_consumido: parseFloat(estatisticasConsumo?.total_consumido || 0),
         media_por_consumo: parseFloat(estatisticasConsumo?.media_por_consumo || 0),
         total_registros: parseInt(estatisticasConsumo?.total_registros_consumo || 0),
@@ -2079,27 +2131,19 @@ controller.getTipoMaterialById = async (tipoMaterialId) => {
 
 // `mapoteca.tipo_material` tambem nao tem coluna de escrituracao, e esta funcao
 // recebia `usuarioUuid` e o ignorava. O autor passa a viver no evento.
-// SQLSTATE de violacao de CHECK (23514) e de UNIQUE (23505). As duas guardas
-// novas do material dizem coisas que o usuario pode consertar, e um 500 cru
-// diria "erro no servidor" para quem so escolheu a categoria errada.
-const CHECK_VIOLATION = '23514';
+//
+// SQLSTATE de violacao de UNIQUE (23505). O nome do material virou UNICO em
+// 2026-08-08, e a recusa diz algo que o usuario pode consertar: um 500 cru diria
+// "erro no servidor" para quem so repetiu um nome que ja existe.
 const UNIQUE_VIOLATION_MATERIAL = '23505';
 
 const traduzirErroMaterial = err => {
-  if (err && err.code === CHECK_VIOLATION && /midia_so_para_papel/.test(err.message || '')) {
-    throw new AppError(
-      'Só material da categoria Papel pode apontar uma mídia. ' +
-      'Tinta não se deriva de folha impressa: quanto de cartucho uma folha ' +
-      'gasta depende do que está desenhado nela.',
-      httpCode.BadRequest,
-      err
-    );
-  }
   if (err && err.code === UNIQUE_VIOLATION_MATERIAL &&
-      /unique_material_por_midia/.test(err.message || '')) {
+      /unique_tipo_material_nome/.test(err.message || '')) {
     throw new AppError(
-      'Já existe outro material apontando esta mídia. ' +
-      'Duas linhas na mesma mídia fariam a mesma folha baixar dois estoques.',
+      'Já existe um material com este nome. O nome é único porque a tabela 7.2 ' +
+      'do RPCMTec casa a linha do mês anterior por ele, e dois homônimos fariam ' +
+      'a coluna "Estoque mês anterior" trazer o saldo do outro.',
       httpCode.Conflict,
       err
     );
@@ -2112,14 +2156,7 @@ controller.criaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) => {
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
-      // Outro, o mesmo default da coluna. Material sem categoria escolhida não
-      // sai em nenhuma das duas tabelas de insumo do RPCMTec.
-      { name: 'categoria_id', def: CATEGORIA_MATERIAL.OUTRO },
       { name: 'estoque_minimo', def: null },
-      { name: 'meta_anual', def: null },
-      // A MIDIA cuja impressao gasta este material. E o que faz o consumo de
-      // papel sair da impressao em vez de ficar zerado.
-      { name: 'tipo_midia_id', def: null },
       { name: 'ativo', def: true }
     ]);
 
@@ -2152,24 +2189,20 @@ controller.atualizaTipoMaterial = async (tipoMaterial, usuarioUuid, contexto) =>
       t, 'mapoteca.tipo_material', tipoMaterial.id, 'Tipo de material'
     );
 
-    // Chave ausente = "não mexe": omitir ativo ressuscitava material desativado,
-    // e omitir categoria_id jogaria o material de volta para Outro, tirando-o
-    // da tabela 7.2 ou 7.3 do RPCMTec sem ninguém ter pedido.
+    // Chave ausente = "não mexe": omitir `ativo` ressuscitava material
+    // desativado, que é o caso que gerou a regra.
     await preserveOmitted(t, {
       schema: 'mapoteca',
       table: 'tipo_material',
       id: tipoMaterial.id,
-      fields: ['ativo', 'categoria_id', 'tipo_midia_id'],
+      fields: ['ativo'],
       body: tipoMaterial
     });
 
     const cs = new db.pgp.helpers.ColumnSet([
       'nome',
       { name: 'descricao', def: null },
-      { name: 'categoria_id', def: CATEGORIA_MATERIAL.OUTRO },
       { name: 'estoque_minimo', def: null },
-      { name: 'meta_anual', def: null },
-      { name: 'tipo_midia_id', def: null },
       { name: 'ativo', def: true }
     ], { table: { table: 'tipo_material', schema: 'mapoteca' } });
 
@@ -2204,9 +2237,32 @@ controller.deleteTiposMaterial = async (tipoMaterialIds, usuarioUuid, contexto) 
       throw new AppError(`Os seguintes tipos de material não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
     }
 
-    // Verificar se há estoque associado
+    // O MOVIMENTO VEM ANTES DO ESTOQUE, e a ordem é a da causa: desde
+    // 2026-08-08 o saldo é o acumulado do livro, então todo material com estoque
+    // tem movimento, e a recusa por estoque diria a consequência em vez do
+    // motivo. Apagar o material apagaria o LIVRO dele, que é a única coisa que
+    // explica de onde veio o saldo: material com história se DESATIVA
+    // (`ativo = false`), e não se exclui.
+    const associatedMovement = await t.any(
+      `SELECT tipo_material_id FROM mapoteca.movimento_material
+       WHERE tipo_material_id IN ($1:csv)
+       GROUP BY tipo_material_id`,
+      [tipoMaterialIds]
+    );
+
+    if (associatedMovement.length > 0) {
+      const typesWithMovement = associatedMovement.map(c => c.tipo_material_id);
+      throw new AppError(
+        `Não é possível excluir os tipos de material com IDs: ${typesWithMovement.join(', ')} pois possuem movimentos lançados. Desative o material em vez de excluí-lo: apagá-lo apagaria o histórico que explica o saldo.`,
+        httpCode.BadRequest
+      );
+    }
+
+    // O ESTOQUE, como segunda guarda. Ele não deveria existir sem movimento, e
+    // se existir (carga direta, banco anterior à migração), a FK recusaria com
+    // um 500 cru em vez desta frase.
     const associatedStock = await t.any(
-      `SELECT tipo_material_id FROM mapoteca.estoque_material 
+      `SELECT tipo_material_id FROM mapoteca.estoque_material
        WHERE tipo_material_id IN ($1:csv)
        GROUP BY tipo_material_id`,
       [tipoMaterialIds]
@@ -2215,23 +2271,7 @@ controller.deleteTiposMaterial = async (tipoMaterialIds, usuarioUuid, contexto) 
     if (associatedStock.length > 0) {
       const typesWithStock = associatedStock.map(s => s.tipo_material_id);
       throw new AppError(
-        `Não é possível excluir os tipos de material com IDs: ${typesWithStock.join(', ')} pois possuem estoque associado`,
-        httpCode.BadRequest
-      );
-    }
-
-    // Verificar se há consumo associado
-    const associatedConsumption = await t.any(
-      `SELECT tipo_material_id FROM mapoteca.consumo_material 
-       WHERE tipo_material_id IN ($1:csv)
-       GROUP BY tipo_material_id`,
-      [tipoMaterialIds]
-    );
-
-    if (associatedConsumption.length > 0) {
-      const typesWithConsumption = associatedConsumption.map(c => c.tipo_material_id);
-      throw new AppError(
-        `Não é possível excluir os tipos de material com IDs: ${typesWithConsumption.join(', ')} pois possuem consumo associado`,
+        `Não é possível excluir os tipos de material com IDs: ${typesWithStock.join(', ')} pois possuem estoque associado. Desative o material em vez de excluí-lo.`,
         httpCode.BadRequest
       );
     }
@@ -2284,316 +2324,100 @@ controller.getEstoquePorLocalizacao = async () => {
   `);
 };
 
-controller.criaEstoqueMaterial = async (estoqueMaterial, usuarioUuid, contexto) => {
-  const usuarioId = await getUsuarioId(usuarioUuid);
+// NÃO EXISTEM MAIS `criaEstoqueMaterial`, `atualizaEstoqueMaterial`,
+// `deleteEstoqueMaterial` nem `transferirMaterial`, desde 2026-08-08.
+//
+// As quatro escreviam `mapoteca.estoque_material` DIRETO, sem data e sem motivo:
+// o upsert REDEFINIA a quantidade, a transferência fazia dois UPDATEs, e nenhuma
+// delas deixava rastro do que aconteceu, só do que ficou. O saldo era o único
+// registro, e ele não responde "quando" nem "por quê".
+//
+// Hoje o saldo é o ACUMULADO do livro de movimentos, aplicado por gatilho. Uma
+// porta de escrita ao lado do livro não é conveniência: é a garantia de que a
+// soma do livro deixaria de bater com o saldo no primeiro uso, e aí nenhuma das
+// duas explicaria mais nada. Cada uma das quatro tem hoje o seu movimento:
+//
+//   criar/definir estoque  ->  Entrada (tipo 1), ou Contagem (tipo 4) quando é
+//                              conferência de prateleira contra o sistema;
+//   transferir             ->  Transferência (tipo 2);
+//   corrigir para menos    ->  Contagem com o lado de ORIGEM preenchido.
 
-  return db.conn.tx(async t => {
-    // Verificar se o tipo de material existe
-    const tipoMaterialExiste = await t.oneOrNone(
-      `SELECT id FROM mapoteca.tipo_material WHERE id = $1`,
-      [estoqueMaterial.tipo_material_id]
-    );
+// ---------------------------------------------------------------------------
+// O LIVRO DE MOVIMENTOS
+// ---------------------------------------------------------------------------
 
-    if (!tipoMaterialExiste) {
-      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
-    }
-
-    // Verificar se a localização existe
-    const localizacaoExiste = await t.oneOrNone(
-      `SELECT code FROM mapoteca.tipo_localizacao WHERE code = $1`,
-      [estoqueMaterial.localizacao_id]
-    );
-
-    if (!localizacaoExiste) {
-      throw new AppError('Localização não encontrada', httpCode.NotFound);
-    }
-
-    // "Criar" AQUI pode ser um UPDATE mudo: a rota e um upsert, e quem chama
-    // duas vezes com o mesmo par (material, localizacao) esta redefinindo o
-    // nivel de estoque, nao criando linha nova. O evento tem de dizer QUAL dos
-    // dois foi, senao o historico do material registraria uma criacao que nunca
-    // houve. Por isso a leitura antes: a linha anterior e o `dados_antes`, e a
-    // ausencia dela e o que faz a operacao ser 'I'.
-    const antes = await t.oneOrNone(
-      `SELECT * FROM mapoteca.estoque_material
-        WHERE tipo_material_id = $1 AND localizacao_id = $2`,
-      [estoqueMaterial.tipo_material_id, estoqueMaterial.localizacao_id]
-    );
-
-    // Upsert atômico (check-then-insert tinha corrida com a UNIQUE
-    // tipo_material/localizacao). Semântica preservada: define o nível
-    // de estoque (substitui a quantidade existente).
-    const depois = await t.one(
-      `INSERT INTO mapoteca.estoque_material
-         (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
-       VALUES ($1, $2, $3, $4, $4)
-       ON CONFLICT (tipo_material_id, localizacao_id)
-       DO UPDATE SET quantidade = EXCLUDED.quantidade,
-                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id,
-                     data_atualizacao = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [estoqueMaterial.tipo_material_id, estoqueMaterial.quantidade, estoqueMaterial.localizacao_id, usuarioId]
-    );
-
-    await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.estoque_material',
-      registroId: depois.id,
-      operacao: antes ? 'U' : 'I',
-      antes,
-      depois,
-      usuarioUuid,
-      contexto
-    });
-
-    return depois.id;
-  });
+const FILTROS_MOVIMENTO = {
+  data_inicio: 'mm.data_movimento >= $<data_inicio>',
+  data_fim: 'mm.data_movimento <= $<data_fim>',
+  tipo_material_id: 'mm.tipo_material_id = $<tipo_material_id>',
+  tipo_movimento_id: 'mm.tipo_movimento_id = $<tipo_movimento_id>'
 };
 
-controller.atualizaEstoqueMaterial = async (estoqueMaterial, usuarioUuid, contexto) => {
-  const usuarioId = await getUsuarioId(usuarioUuid);
+const SELECT_MOVIMENTO = `
+  SELECT mm.id, mm.tipo_material_id, tm.nome AS tipo_material_nome,
+         mm.tipo_movimento_id, tmv.nome AS tipo_movimento_nome,
+         mm.quantidade, mm.data_movimento,
+         mm.localizacao_origem_id, lo.nome AS localizacao_origem_nome,
+         mm.localizacao_destino_id, ld.nome AS localizacao_destino_nome,
+         mm.motivo,
+         mm.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
+         mm.data_criacao, mm.usuario_atualizacao_id,
+         ua.nome AS usuario_atualizacao_nome, mm.data_atualizacao
+  FROM mapoteca.movimento_material AS mm
+  INNER JOIN mapoteca.tipo_material AS tm ON tm.id = mm.tipo_material_id
+  INNER JOIN mapoteca.tipo_movimento_material AS tmv ON tmv.code = mm.tipo_movimento_id
+  LEFT JOIN mapoteca.tipo_localizacao AS lo ON lo.code = mm.localizacao_origem_id
+  LEFT JOIN mapoteca.tipo_localizacao AS ld ON ld.code = mm.localizacao_destino_id
+  LEFT JOIN dgeo.usuario AS uc ON uc.id = mm.usuario_criacao_id
+  LEFT JOIN dgeo.usuario AS ua ON ua.id = mm.usuario_atualizacao_id
+`;
 
-  return db.conn.tx(async t => {
-    const antes = await auditoriaCtrl.lerAntes(
-      t, 'mapoteca.estoque_material', estoqueMaterial.id, 'Registro de estoque'
-    );
+controller.getMovimentosMaterial = async (filtros = null) => {
+  const condicoes = Object.entries(FILTROS_MOVIMENTO)
+    .filter(([chave]) => filtros && filtros[chave] !== undefined && filtros[chave] !== null)
+    .map(([, sql]) => sql);
 
-    estoqueMaterial.usuario_atualizacao_id = usuarioId;
-    estoqueMaterial.data_atualizacao = new Date();
+  const onde = condicoes.length > 0 ? ` WHERE ${condicoes.join(' AND ')}` : '';
 
-    const cs = new db.pgp.helpers.ColumnSet([
-      'tipo_material_id', 'quantidade', 'localizacao_id',
-      'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: { table: 'estoque_material', schema: 'mapoteca' } });
-
-    const query = db.pgp.helpers.update(estoqueMaterial, cs) + ' WHERE id = $1 RETURNING *';
-
-    let depois;
-    try {
-      depois = await t.one(query, [estoqueMaterial.id]);
-    } catch (error) {
-      // 23505: mover o registro para material+localização que já existem
-      if (error.code === '23505') {
-        throw new AppError('Já existe registro de estoque para este material nesta localização', httpCode.BadRequest, error);
-      }
-      throw error;
-    }
-
-    await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.estoque_material',
-      registroId: estoqueMaterial.id,
-      operacao: 'U',
-      antes,
-      depois,
-      usuarioUuid,
-      contexto
-    });
-  });
+  // Do mais recente para o mais antigo, e o id desempata: dois movimentos no
+  // mesmo dia sairiam em ordem que muda entre duas chamadas iguais.
+  return db.conn.any(
+    `${SELECT_MOVIMENTO}${onde} ORDER BY mm.data_movimento DESC, mm.id DESC`,
+    filtros || {}
+  );
 };
 
-controller.deleteEstoqueMaterial = async (estoqueMaterialIds, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem.
-    // SELECT * porque a linha inteira e o `dados_antes` do evento.
-    const existingStock = await t.any(
-      `SELECT * FROM mapoteca.estoque_material WHERE id IN ($1:csv)`,
-      [estoqueMaterialIds]
-    );
+controller.getMovimentoMaterialById = async (id) => {
+  const movimento = await db.conn.oneOrNone(
+    `${SELECT_MOVIMENTO} WHERE mm.id = $<id>`, { id }
+  );
 
-    if (existingStock.length !== estoqueMaterialIds.length) {
-      const existingIds = existingStock.map(s => s.id);
-      const missingIds = estoqueMaterialIds.filter(id => !existingIds.includes(parseInt(id)));
-      throw new AppError(`Os seguintes registros de estoque não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
-    }
-
-    for (const estoque of existingStock) {
-      await auditoriaCtrl.registrar(t, {
-        tabela: 'mapoteca.estoque_material',
-        registroId: estoque.id,
-        operacao: 'D',
-        antes: estoque,
-        usuarioUuid,
-        contexto
-      });
-    }
-
-    return t.any(
-      `DELETE FROM mapoteca.estoque_material WHERE id IN ($1:csv)`,
-      [estoqueMaterialIds]
-    );
-  });
-};
-
-// Transferência de material entre localizações
-// FOR UPDATE na origem serializa transferências simultâneas do mesmo material;
-// upsert no destino usa o UNIQUE (tipo_material_id, localizacao_id)
-controller.transferirMaterial = async (data, usuarioUuid, contexto) => {
-  const usuarioId = await getUsuarioId(usuarioUuid);
-
-  const { tipo_material_id: tipoMaterialId, origem_id: origemId, destino_id: destinoId, quantidade } = data;
-
-  return db.conn.tx(async t => {
-    const tipoMaterialExiste = await t.oneOrNone(
-      `SELECT id FROM mapoteca.tipo_material WHERE id = $<tipoMaterialId>`,
-      { tipoMaterialId }
-    );
-
-    if (!tipoMaterialExiste) {
-      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
-    }
-
-    // Travar origem e destino em ordem determinística de localizacao_id.
-    // Transferências opostas simultâneas (A→B e B→A) não deadlockam.
-    //
-    // SELECT * porque estas MESMAS linhas sao o `dados_antes` dos dois eventos:
-    // a transferencia escreve DUAS linhas de estoque, e cada uma tem o seu.
-    // O destino pode nao existir ainda (o upsert abaixo o cria), e ai o `antes`
-    // dele e legitimamente nulo e a operacao e uma insercao.
-    const estoques = await t.any(
-      `SELECT *
-       FROM mapoteca.estoque_material
-       WHERE tipo_material_id = $<tipoMaterialId>
-         AND localizacao_id IN ($<origemId>, $<destinoId>)
-       ORDER BY localizacao_id
-       FOR UPDATE`,
-      { tipoMaterialId, origemId, destinoId }
-    );
-
-    const origem = estoques.find(e => e.localizacao_id === origemId);
-    const destinoAntes = estoques.find(e => e.localizacao_id === destinoId) || null;
-
-    if (!origem) {
-      throw new AppError(
-        'Não há estoque na localização de origem para este material',
-        httpCode.BadRequest
-      );
-    }
-
-    if (parseFloat(origem.quantidade) < quantidade) {
-      throw new AppError(
-        `Quantidade insuficiente na origem. Disponível: ${origem.quantidade}, solicitado: ${quantidade}`,
-        httpCode.BadRequest
-      );
-    }
-
-    const origemDepois = await t.one(
-      `UPDATE mapoteca.estoque_material
-       SET quantidade = quantidade - $<quantidade>,
-           data_atualizacao = CURRENT_TIMESTAMP,
-           usuario_atualizacao_id = $<usuarioId>
-       WHERE id = $<id>
-       RETURNING *`,
-      { id: origem.id, quantidade, usuarioId }
-    );
-
-    const destinoDepois = await t.one(
-      `INSERT INTO mapoteca.estoque_material
-         (tipo_material_id, localizacao_id, quantidade, usuario_criacao_id, usuario_atualizacao_id)
-       VALUES ($<tipoMaterialId>, $<destinoId>, $<quantidade>, $<usuarioId>, $<usuarioId>)
-       ON CONFLICT (tipo_material_id, localizacao_id)
-       DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
-                     data_atualizacao = CURRENT_TIMESTAMP,
-                     usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id
-       RETURNING *`,
-      { tipoMaterialId, destinoId, quantidade, usuarioId }
-    );
-
-    // DOIS eventos, um por linha de estoque escrita, e nao um evento "de
-    // transferencia": o historico do material e lido por linha de estoque, e um
-    // evento agregado nao diria de qual localizacao o saldo saiu nem para qual
-    // entrou. O `loteId` do contexto e o mesmo nos dois, e e ele que diz que os
-    // dois sao um ato so.
-    await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.estoque_material',
-      registroId: origemDepois.id,
-      operacao: 'U',
-      antes: origem,
-      depois: origemDepois,
-      usuarioUuid,
-      contexto
-    });
-
-    await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.estoque_material',
-      registroId: destinoDepois.id,
-      // O destino pode nascer aqui: o upsert cria a linha quando o material
-      // nunca esteve naquela localizacao.
-      operacao: destinoAntes ? 'U' : 'I',
-      antes: destinoAntes,
-      depois: destinoDepois,
-      usuarioUuid,
-      contexto
-    });
-  });
-};
-
-// Funções para Consumo de Material
-controller.getConsumoMaterial = async (filtros = null) => {
-  let query = `
-    SELECT cm.id, cm.tipo_material_id, tm.nome AS tipo_material_nome,
-           cm.quantidade, cm.data_consumo,
-           cm.usuario_criacao_id, uc.nome AS usuario_criacao_nome,
-           cm.data_criacao, cm.usuario_atualizacao_id, 
-           ua.nome AS usuario_atualizacao_nome, cm.data_atualizacao
-    FROM mapoteca.consumo_material AS cm
-    LEFT JOIN mapoteca.tipo_material AS tm ON tm.id = cm.tipo_material_id
-    LEFT JOIN dgeo.usuario AS uc ON uc.id = cm.usuario_criacao_id
-    LEFT JOIN dgeo.usuario AS ua ON ua.id = cm.usuario_atualizacao_id
-  `;
-
-  const queryParams = [];
-  const conditions = [];
-
-  // Aplicar filtros se existirem
-  if (filtros) {
-    if (filtros.data_inicio) {
-      queryParams.push(filtros.data_inicio);
-      conditions.push(`cm.data_consumo >= $${queryParams.length}`);
-    }
-    if (filtros.data_fim) {
-      queryParams.push(filtros.data_fim);
-      conditions.push(`cm.data_consumo <= $${queryParams.length}`);
-    }
-    if (filtros.tipo_material_id) {
-      queryParams.push(filtros.tipo_material_id);
-      conditions.push(`cm.tipo_material_id = $${queryParams.length}`);
-    }
+  if (!movimento) {
+    throw new AppError('Movimento de material não encontrado', httpCode.NotFound);
   }
 
-  if (conditions.length > 0) {
-    query += ` WHERE ${conditions.join(' AND ')}`;
-  }
-
-  query += ` ORDER BY cm.data_consumo DESC`;
-
-  return db.conn.any(query, queryParams);
+  return movimento;
 };
 
 /**
- * Consumo de material por mês. CONSUMO É O DECLARADO, e só ele.
+ * Consumo de material por mês, do LIVRO e só do tipo Consumo.
  *
- * O consumo é o que a Seção lança na aba "Consumo de material", em
- * `mapoteca.consumo_material`. Vale para o papel (7.2 do RPCMTec) e para a
- * tinta (7.3), pela mesma regra: decisão do chefe em 2026-08-07.
+ * O CONSUMO É O DECLARADO. É o que a Seção lança, e nada além disso. Decisão do
+ * chefe em 2026-08-07, depois que a 7.2 de julho saiu com "consumo 802, estoque
+ * 64": os 802 vinham da impressão, os 64 de uma contagem digitada, e nenhum
+ * consumo de papel fora lançado no ano inteiro. Um número media o mundo, o outro
+ * media o cadastro, e a subtração entre eles não significava nada.
  *
- * ENTRE 2026-08 E ESTA DATA o papel somava a impressão derivada da mídia, e a
- * tinta não. Isso deu uma coluna com DOIS significados na mesma tabela, e o
- * relatório de julho mostrou onde isso quebra: o Papel Sulfite 120g saiu com
- * "consumo 802" ao lado de "estoque 64". Os 802 vinham de 121 itens impressos;
- * os 64, de uma contagem digitada. Nenhum lançamento de consumo de papel
- * existia no ano inteiro, então o estoque nunca baixou. Um número media o
- * mundo, o outro media o cadastro, e a subtração entre eles não significava
- * nada.
+ * NÃO EXISTE MAIS `quantidade_impressa` AO LADO. Ela era o número de
+ * conferência, derivado da mídia do item impresso, e morreu em 2026-08-08 com a
+ * ponte impressão -> consumo: produto impresso e rolo de papel são coisas
+ * separadas, e `tipo_material.tipo_midia_id` era a única coisa que ligava as
+ * duas. Sem a coluna não há como saber qual papel uma impressão gastou -- e essa
+ * é justamente a afirmação que a ponte fazia e não podia sustentar.
  *
- * A FONTE ÚNICA É O QUE TORNA A CONTA FECHÁVEL. Os gatilhos de
- * `consumo_material` baixam `estoque_material`: lançando o consumo, o estoque
- * acompanha, e as duas colunas da 7.2 passam a falar da mesma coisa. Derivando
- * da impressão, o consumo andava e o estoque não.
- *
- * `quantidade_impressa` FICA, e não entra na conta. Ela responde outra
- * pergunta -- quanto se imprimiu naquela mídia --, e serve de CONFERÊNCIA: o
- * mês com muita impressão e pouco consumo declarado indica lançamento em
- * atraso, não consumo baixo. A mídia FORNECIDA manda sobre a pedida
- * (`COALESCE`): quem pediu tyvek e recebeu sulfite imprimiu em sulfite.
+ * A FONTE ÚNICA É O QUE TORNA A CONTA FECHÁVEL. O gatilho do livro baixa o
+ * saldo: lançando o consumo, o estoque acompanha, e as duas colunas da 7.2
+ * passam a falar da mesma coisa.
  */
 controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
   return db.conn.any(`
@@ -2606,74 +2430,89 @@ controller.getConsumoMensalPorTipo = async (ano = new Date().getFullYear()) => {
     declarado AS (
       SELECT
         tipo_material_id,
-        EXTRACT(MONTH FROM data_consumo) AS mes,
+        EXTRACT(MONTH FROM data_movimento) AS mes,
         SUM(quantidade) AS quantidade
-      FROM mapoteca.consumo_material
-      WHERE EXTRACT(YEAR FROM data_consumo) = $1
-      GROUP BY tipo_material_id, EXTRACT(MONTH FROM data_consumo)
-    ),
-    impresso AS (
-      SELECT
-        tm.id AS tipo_material_id,
-        EXTRACT(MONTH FROM ii.data_impressao) AS mes,
-        SUM(ii.quantidade) AS quantidade
-      FROM mapoteca.impressao_item ii
-      INNER JOIN mapoteca.produto_pedido pp ON pp.id = ii.produto_pedido_id
-      INNER JOIN mapoteca.tipo_material tm
-        ON tm.tipo_midia_id = COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)
-      WHERE EXTRACT(YEAR FROM ii.data_impressao) = $1
-      GROUP BY tm.id, EXTRACT(MONTH FROM ii.data_impressao)
+      FROM mapoteca.movimento_material
+      WHERE tipo_movimento_id = $<consumo>
+        AND EXTRACT(YEAR FROM data_movimento) = $<ano>
+      GROUP BY tipo_material_id, EXTRACT(MONTH FROM data_movimento)
     )
     SELECT
       tm.id AS tipo_material_id,
       tm.nome AS tipo_material_nome,
       m.mes,
-      -- O CONSUMO É O DECLARADO. A quantidade impressa viaja ao lado, para a
-      -- conferência, e somá-la aqui é o que se desfez em 2026-08-07.
-      COALESCE(d.quantidade, 0) AS quantidade,
-      COALESCE(i.quantidade, 0) AS quantidade_impressa
+      COALESCE(d.quantidade, 0) AS quantidade
     FROM tipos_material tm
     CROSS JOIN meses m
     LEFT JOIN declarado d
       ON d.tipo_material_id = tm.id AND d.mes = m.mes
-    LEFT JOIN impresso i
-      ON i.tipo_material_id = tm.id AND i.mes = m.mes
     ORDER BY tm.nome, m.mes
-  `, [ano]);
+  `, { ano, consumo: TIPO_MOVIMENTO_MATERIAL.CONSUMO });
 };
 
 // O EFEITO DE GATILHO NO ESTOQUE, e por que ele vira evento
 // ---------------------------------------------------------------------------
-// Os tres gatilhos de mapoteca.consumo_material (er/mapoteca.sql) mexem em
-// mapoteca.estoque_material: inserir consumo decrementa o saldo da Secao, apagar
-// devolve, alterar acerta a diferenca. Auditando so o consumo, o historico do
-// estoque ficaria VAZIO no exato momento em que o estoque muda, e a tela de
-// estoque nao teria como explicar de onde veio o saldo.
+// O gatilho de `mapoteca.movimento_material` (er/mapoteca.sql) mexe em
+// `mapoteca.estoque_material`: o que está em `localizacao_origem_id` sai, e o
+// que está em `localizacao_destino_id` entra. Auditando só o movimento, o
+// histórico do estoque ficaria VAZIO no exato momento em que o estoque muda, e a
+// tela de estoque não teria como explicar de onde veio o saldo.
 //
-// A saida e o controller LER a linha de estoque afetada antes e depois, dentro
-// da mesma transacao, e gravar o evento com `origem: 'gatilho'` -- porque a
-// pessoa nao mexeu naquela linha diretamente, e um evento indistinguivel de uma
-// edicao manual de estoque diria que alguem a editou.
+// A saída é o controller LER as linhas de estoque afetadas antes e depois,
+// dentro da mesma transação, e gravar o evento com `origem: 'gatilho'` -- porque
+// a pessoa não mexeu naquela linha diretamente, e um evento indistinguível de
+// uma edição manual diria que alguém a editou.
 //
-// A alternativa (declarar o estoque derivado e nao audita-lo) foi descartada:
-// o estoque e o numero que a mapoteca confere, e "derivado" nao e resposta para
+// A alternativa (declarar o estoque derivado e não auditá-lo) foi descartada: o
+// estoque é o número que a mapoteca confere, e "derivado" não é resposta para
 // quem pergunta por que o saldo caiu.
 const contextoDeGatilho = contexto => ({ ...(contexto || {}), origem: 'gatilho' });
 
-// O saldo da Secao de um material, que e a UNICA linha que os gatilhos de
-// consumo tocam (o consumo so pode sair da Secao, RN01). Devolve null quando a
-// linha ainda nao existe: `devolver_estoque_secao` a CRIA, entao o `antes` pode
-// ser legitimamente nulo e o evento e uma insercao.
-const lerEstoqueSecao = (t, tipoMaterialId) =>
-  t.oneOrNone(
-    `SELECT * FROM mapoteca.estoque_material
-      WHERE tipo_material_id = $<tipoMaterialId> AND localizacao_id = $<secao>`,
-    { tipoMaterialId, secao: TIPO_LOCALIZACAO.SECAO }
-  );
+// O saldo de UMA localização de um material. Devolve null quando a linha ainda
+// não existe: o gatilho a CRIA no lado que recebe, então o `antes` pode ser
+// legitimamente nulo e o evento é uma inserção.
+const lerEstoqueLocal = (t, tipoMaterialId, localizacaoId) =>
+  localizacaoId == null
+    ? Promise.resolve(null)
+    : t.oneOrNone(
+      `SELECT * FROM mapoteca.estoque_material
+        WHERE tipo_material_id = $<tipoMaterialId> AND localizacao_id = $<localizacaoId>`,
+      { tipoMaterialId, localizacaoId }
+    );
 
-// Grava o evento do estoque quando (e so quando) o gatilho mexeu nele. Sem a
-// comparacao, um consumo que nao muda quantidade nenhuma deixaria uma linha de
-// historico dizendo que o estoque mudou.
+// As linhas de estoque que UM movimento pode tocar: até duas, uma por lado.
+// Numa alteração, o movimento antigo e o novo podem tocar materiais e
+// localizações diferentes -- por isso a lista é a UNIÃO dos dois, e não a do
+// novo. Ler só o novo perderia metade do efeito, que é justamente a devolução.
+const ladosTocados = (...movimentos) => {
+  const pares = new Map();
+  for (const mov of movimentos) {
+    if (!mov) continue;
+    for (const local of [mov.localizacao_origem_id, mov.localizacao_destino_id]) {
+      if (local == null) continue;
+      pares.set(`${mov.tipo_material_id}|${local}`, {
+        tipoMaterialId: Number(mov.tipo_material_id),
+        localizacaoId: Number(local)
+      });
+    }
+  }
+  return [...pares.values()];
+};
+
+const lerLados = async (t, lados) => {
+  const mapa = new Map();
+  for (const { tipoMaterialId, localizacaoId } of lados) {
+    mapa.set(
+      `${tipoMaterialId}|${localizacaoId}`,
+      await lerEstoqueLocal(t, tipoMaterialId, localizacaoId)
+    );
+  }
+  return mapa;
+};
+
+// Grava o evento do estoque quando (e só quando) o gatilho mexeu nele. Sem a
+// comparação, um movimento que não muda quantidade nenhuma deixaria uma linha de
+// histórico dizendo que o estoque mudou.
 const registrarEfeitoNoEstoque = async (t, { antes, depois, usuarioUuid, contexto }) => {
   if (!depois) return;
   if (antes && String(antes.quantidade) === String(depois.quantidade)) return;
@@ -2685,74 +2524,95 @@ const registrarEfeitoNoEstoque = async (t, { antes, depois, usuarioUuid, context
     antes,
     depois,
     usuarioUuid,
-    contexto: contextoDeGatilho(contexto)
+    contexto
   });
 };
 
-controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) => {
+const registrarEfeitoDosLados = async (t, { lados, antes, usuarioUuid, contexto }) => {
+  for (const { tipoMaterialId, localizacaoId } of lados) {
+    await registrarEfeitoNoEstoque(t, {
+      antes: antes.get(`${tipoMaterialId}|${localizacaoId}`),
+      depois: await lerEstoqueLocal(t, tipoMaterialId, localizacaoId),
+      usuarioUuid,
+      contexto: contextoDeGatilho(contexto)
+    });
+  }
+};
+
+// SQLSTATE de violação de CHECK. Os dois CHECK do livro dizem coisas que quem
+// lança pode consertar, e um 500 cru diria "erro no servidor" para quem só
+// escolheu a localização errada. O `RAISE` do gatilho (saldo insuficiente) já
+// chega com a frase que ensina o conserto, e é reemitido como 400.
+const CHECK_VIOLATION = '23514';
+
+const traduzirErroMovimento = err => {
+  if (err && err.code === CHECK_VIOLATION &&
+      /movimento_material_forma/.test(err.message || '')) {
+    throw new AppError(
+      'A forma deste movimento não confere com o tipo escolhido. ' +
+      'Entrada não tem origem; Transferência tem origem e destino diferentes; ' +
+      'Consumo sai da Seção e não tem destino; Contagem tem exatamente um dos ' +
+      'dois lados (destino se sobrou material na prateleira, origem se faltou).',
+      httpCode.BadRequest,
+      err
+    );
+  }
+  if (err && err.code === CHECK_VIOLATION &&
+      /movimento_material_contagem_exige_motivo/.test(err.message || '')) {
+    throw new AppError(
+      'A Contagem exige motivo. Ela é o único movimento que ninguém viu ' +
+      'acontecer: sem o porquê, o ajuste do saldo fica sem explicação.',
+      httpCode.BadRequest,
+      err
+    );
+  }
+  // A mensagem do gatilho já ensina o conserto ("transfira para a Seção antes"),
+  // então ela sobe inteira em vez de virar a genérica de 500.
+  if (err && err.message &&
+      (err.message.includes('Estoque insuficiente') || err.message.includes('não tem estoque em'))) {
+    throw new AppError(err.message, httpCode.BadRequest, err);
+  }
+  throw err;
+};
+
+const COLUNAS_MOVIMENTO = [
+  'tipo_material_id', 'tipo_movimento_id', 'quantidade', 'data_movimento',
+  { name: 'localizacao_origem_id', def: null },
+  { name: 'localizacao_destino_id', def: null },
+  { name: 'motivo', def: null }
+];
+
+controller.criaMovimentoMaterial = async (movimento, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
-    // Verificar se o tipo de material existe
     const tipoMaterialExiste = await t.oneOrNone(
-      `SELECT id FROM mapoteca.tipo_material WHERE id = $1`,
-      [consumoMaterial.tipo_material_id]
+      `SELECT id FROM mapoteca.tipo_material WHERE id = $<id>`,
+      { id: movimento.tipo_material_id }
     );
 
     if (!tipoMaterialExiste) {
       throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
     }
 
-    // Verificar se há estoque suficiente na Seção.
-    // O consumo só pode ocorrer a partir do estoque da Seção (RN01).
-    //
-    // A linha INTEIRA, e nao so a quantidade: esta pre-checagem ja existia e
-    // descartava o resto: agora ela e tambem o `dados_antes` do evento de
-    // estoque, sem custar uma ida a mais ao banco.
-    const estoqueSecao = await lerEstoqueSecao(t, consumoMaterial.tipo_material_id);
-
-    if (!estoqueSecao) {
-      throw new AppError(
-        'Não há estoque na Seção para o material informado. O material deve primeiro ser transferido para a Seção antes de ser consumido.',
-        httpCode.BadRequest
-      );
-    }
-
-    if (parseFloat(estoqueSecao.quantidade) < parseFloat(consumoMaterial.quantidade)) {
-      throw new AppError(
-        `Estoque insuficiente na Seção. Disponível: ${estoqueSecao.quantidade}, Solicitado: ${consumoMaterial.quantidade}`,
-        httpCode.BadRequest
-      );
-    }
-
-    consumoMaterial.usuario_criacao_id = usuarioId;
-    consumoMaterial.usuario_atualizacao_id = usuarioId;
+    const lados = ladosTocados(movimento);
+    const estoqueAntes = await lerLados(t, lados);
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'tipo_material_id', 'quantidade', 'data_consumo',
-      'usuario_criacao_id', 'usuario_atualizacao_id'
+      ...COLUNAS_MOVIMENTO, 'usuario_criacao_id', 'usuario_atualizacao_id'
     ]);
 
-    // O trigger trg_consumo_material_insert decrementa automaticamente o estoque na Seção.
-    // RETURNING * porque a linha gravada e o `dados_depois` do evento.
-    const query = db.pgp.helpers.insert(consumoMaterial, cs, {
-      table: 'consumo_material',
-      schema: 'mapoteca'
-    }) + ' RETURNING *';
+    // RETURNING * porque a linha gravada é o `dados_depois` do evento.
+    const query = db.pgp.helpers.insert(
+      { ...movimento, usuario_criacao_id: usuarioId, usuario_atualizacao_id: usuarioId },
+      cs,
+      { table: 'movimento_material', schema: 'mapoteca' }
+    ) + ' RETURNING *';
 
-    let criado;
-    try {
-      criado = await t.one(query);
-    } catch (error) {
-      // Sob corrida, a pré-verificação pode passar e o trigger rejeitar, 400 amigável
-      if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
-        throw new AppError(error.message, httpCode.BadRequest, error);
-      }
-      throw error;
-    }
+    const criado = await t.one(query).catch(traduzirErroMovimento);
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.consumo_material',
+      tabela: 'mapoteca.movimento_material',
       registroId: criado.id,
       operacao: 'I',
       depois: criado,
@@ -2760,65 +2620,39 @@ controller.criaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) 
       contexto
     });
 
-    // O saldo DEPOIS, relido do banco: o gatilho ja rodou, e o que interessa
-    // auditar e o que o banco gravou, nao a subtracao que o JS faria de cabeca.
-    await registrarEfeitoNoEstoque(t, {
-      antes: estoqueSecao,
-      depois: await lerEstoqueSecao(t, criado.tipo_material_id),
-      usuarioUuid,
-      contexto
-    });
+    // O saldo DEPOIS, relido do banco: o gatilho já rodou, e o que interessa
+    // auditar é o que o banco gravou, não a subtração que o JS faria de cabeça.
+    await registrarEfeitoDosLados(t, { lados, antes: estoqueAntes, usuarioUuid, contexto });
 
     return criado.id;
   });
 };
 
-controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid, contexto) => {
+controller.atualizaMovimentoMaterial = async (movimento, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
-      t, 'mapoteca.consumo_material', consumoMaterial.id, 'Registro de consumo'
+      t, 'mapoteca.movimento_material', movimento.id, 'Movimento de material'
     );
 
-    // DOIS materiais podem ser tocados, e nao um: quando o tipo de material
-    // muda, o gatilho devolve o saldo do ANTIGO e consome do NOVO. Ler so o
-    // novo perderia metade do efeito, que e justamente a devolucao.
-    const materiaisTocados = [...new Set([
-      Number(antes.tipo_material_id),
-      Number(consumoMaterial.tipo_material_id)
-    ])];
-
-    const estoqueAntes = new Map();
-    for (const tipoMaterialId of materiaisTocados) {
-      estoqueAntes.set(tipoMaterialId, await lerEstoqueSecao(t, tipoMaterialId));
-    }
-
-    consumoMaterial.usuario_atualizacao_id = usuarioId;
-    consumoMaterial.data_atualizacao = new Date();
+    const lados = ladosTocados(antes, movimento);
+    const estoqueAntes = await lerLados(t, lados);
 
     const cs = new db.pgp.helpers.ColumnSet([
-      'tipo_material_id', 'quantidade', 'data_consumo',
-      'usuario_atualizacao_id', 'data_atualizacao'
-    ], { table: { table: 'consumo_material', schema: 'mapoteca' } });
+      ...COLUNAS_MOVIMENTO, 'usuario_atualizacao_id', 'data_atualizacao'
+    ], { table: { table: 'movimento_material', schema: 'mapoteca' } });
 
-    // O trigger trg_consumo_material_update ajusta automaticamente o estoque na Seção
-    const query = db.pgp.helpers.update(consumoMaterial, cs) + ' WHERE id = $1 RETURNING *';
+    const query = db.pgp.helpers.update(
+      { ...movimento, usuario_atualizacao_id: usuarioId, data_atualizacao: new Date() },
+      cs
+    ) + ' WHERE id = $1 RETURNING *';
 
-    let depois;
-    try {
-      depois = await t.one(query, [consumoMaterial.id]);
-    } catch (error) {
-      // Exceções de regra de negócio dos triggers viram 400 com a mensagem original
-      if (error.message && (error.message.includes('Estoque insuficiente') || error.message.includes('Não há estoque'))) {
-        throw new AppError(error.message, httpCode.BadRequest, error);
-      }
-      throw error;
-    }
+    const depois = await t.one(query, [movimento.id]).catch(traduzirErroMovimento);
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'mapoteca.consumo_material',
-      registroId: consumoMaterial.id,
+      tabela: 'mapoteca.movimento_material',
+      registroId: movimento.id,
       operacao: 'U',
       antes,
       depois,
@@ -2826,72 +2660,61 @@ controller.atualizaConsumoMaterial = async (consumoMaterial, usuarioUuid, contex
       contexto
     });
 
-    for (const tipoMaterialId of materiaisTocados) {
-      await registrarEfeitoNoEstoque(t, {
-        antes: estoqueAntes.get(tipoMaterialId),
-        depois: await lerEstoqueSecao(t, tipoMaterialId),
-        usuarioUuid,
-        contexto
-      });
-    }
+    await registrarEfeitoDosLados(t, { lados, antes: estoqueAntes, usuarioUuid, contexto });
   });
 };
 
-controller.deleteConsumoMaterial = async (consumoMaterialIds, usuarioUuid, contexto) => {
+controller.deleteMovimentosMaterial = async (movimentoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
-    // Verificar se todos os IDs existem.
-    // SELECT * porque a linha inteira e o `dados_antes` do evento.
-    const existingConsumption = await t.any(
-      `SELECT * FROM mapoteca.consumo_material WHERE id IN ($1:csv)`,
-      [consumoMaterialIds]
+    // SELECT * porque a linha inteira é o `dados_antes` do evento.
+    const existentes = await t.any(
+      `SELECT * FROM mapoteca.movimento_material WHERE id IN ($1:csv)`,
+      [movimentoIds]
     );
 
-    if (existingConsumption.length !== consumoMaterialIds.length) {
-      const existingIds = existingConsumption.map(c => c.id);
-      const missingIds = consumoMaterialIds.filter(id => !existingIds.includes(parseInt(id)));
-      throw new AppError(`Os seguintes registros de consumo não foram encontrados: ${missingIds.join(', ')}`, httpCode.NotFound);
+    if (existentes.length !== movimentoIds.length) {
+      const achados = existentes.map(m => m.id);
+      const faltando = movimentoIds.filter(id => !achados.includes(parseInt(id)));
+      throw new AppError(
+        `Os seguintes movimentos não foram encontrados: ${faltando.join(', ')}`,
+        httpCode.NotFound
+      );
     }
 
-    // UM DELETE POR LINHA, e nao o `IN (...)` de antes.
+    // UM DELETE POR LINHA, e não o `IN (...)`.
     //
-    // O gatilho trg_consumo_material_delete e FOR EACH ROW: num delete em lote
-    // ele dispara N vezes, cada uma devolvendo a quantidade daquela linha ao
-    // saldo da Secao. Num comando so, o JS enxerga apenas o saldo inicial e o
-    // final, e os N eventos de estoque teriam de ser INVENTADOS por subtracao
-    // -- que e exatamente o que o desenho proibe (os dois lados do diff saem do
-    // BANCO). Apagando linha a linha, cada evento traz uma leitura de verdade, e
-    // o `loteId` do contexto e o mesmo em todos: e ele que diz que foi um ato so.
-    //
-    // O custo e N comandos em vez de um, dentro da transacao que ja existe. O
-    // banco ja fazia N unidades de trabalho, porque o gatilho e por linha.
-    for (const consumo of existingConsumption) {
-      const estoqueAntes = await lerEstoqueSecao(t, consumo.tipo_material_id);
+    // O gatilho é FOR EACH ROW: num delete em lote ele dispara N vezes, cada uma
+    // desfazendo aquele movimento. Num comando só, o JS enxergaria apenas o
+    // saldo inicial e o final, e os N eventos de estoque teriam de ser
+    // INVENTADOS por subtração -- que é exatamente o que o desenho proíbe (os
+    // dois lados do diff saem do BANCO). Apagando linha a linha, cada evento traz
+    // uma leitura de verdade, e o `loteId` do contexto é o mesmo em todos: é ele
+    // que diz que foi um ato só.
+    for (const movimento of existentes) {
+      const lados = ladosTocados(movimento);
+      const estoqueAntes = await lerLados(t, lados);
 
       await auditoriaCtrl.registrar(t, {
-        tabela: 'mapoteca.consumo_material',
-        registroId: consumo.id,
+        tabela: 'mapoteca.movimento_material',
+        registroId: movimento.id,
         operacao: 'D',
-        antes: consumo,
+        antes: movimento,
         usuarioUuid,
         contexto
       });
 
       await t.none(
-        `DELETE FROM mapoteca.consumo_material WHERE id = $<id>`,
-        { id: consumo.id }
-      );
+        `DELETE FROM mapoteca.movimento_material WHERE id = $<id>`,
+        { id: movimento.id }
+      ).catch(traduzirErroMovimento);
 
-      await registrarEfeitoNoEstoque(t, {
-        antes: estoqueAntes,
-        depois: await lerEstoqueSecao(t, consumo.tipo_material_id),
-        usuarioUuid,
-        contexto
-      });
+      await registrarEfeitoDosLados(t, { lados, antes: estoqueAntes, usuarioUuid, contexto });
     }
 
-    return existingConsumption;
+    return existentes;
   });
 };
+
 
 controller.getManutencaoPlotterById = async (id) => {
   const manutencao = await db.conn.oneOrNone(
@@ -2914,26 +2737,10 @@ controller.getManutencaoPlotterById = async (id) => {
   return manutencao;
 };
 
-controller.getConsumoMaterialById = async (id) => {
-  const consumo = await db.conn.oneOrNone(
-    `SELECT cm.id, cm.tipo_material_id, cm.quantidade, cm.data_consumo,
-      cm.data_criacao, cm.usuario_criacao_id,
-      cm.data_atualizacao, cm.usuario_atualizacao_id,
-      tm.nome AS tipo_material_nome,
-      u.nome AS usuario_nome
-    FROM mapoteca.consumo_material cm
-    INNER JOIN mapoteca.tipo_material tm ON tm.id = cm.tipo_material_id
-    LEFT JOIN dgeo.usuario u ON u.id = cm.usuario_criacao_id
-    WHERE cm.id = $1`,
-    [id]
-  );
-
-  if (!consumo) {
-    throw new AppError('Registro de consumo não encontrado', httpCode.NotFound);
-  }
-
-  return consumo;
-};
+// `getConsumoMaterialById` SAIU em 2026-08-08. Quem responde por um lançamento
+// hoje é `getMovimentoMaterialById`, que serve os quatro tipos: uma leitura só
+// para o consumo faria a tela do livro ter dois caminhos, e o segundo nasceria
+// sem os campos de origem e destino.
 
 controller.getEstoqueMaterialById = async (id) => {
   const estoque = await db.conn.oneOrNone(

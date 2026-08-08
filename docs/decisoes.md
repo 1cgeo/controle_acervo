@@ -280,9 +280,14 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **A execução por ND do painel NÃO foi junto:** é `/api/orcamento/dashboard/execucao_nd`, com
   `verifyPerfil('consulta','orcamento')`. O painel pede números quebrados em PDR e Extra-PDR, e servir
   os dois da mesma rota faria a guarda mais fraca valer para as duas.
-- **O SCA gera 18 subseções (2.1, 2.6, 2.7, 3.1 a 3.4, 4.1 a 4.7, 6.1, 6.2, 7.2 e 7.3);** ficam no SAP
-  a 2.2 a 2.5, que leem a PRODUÇÃO. **As três linhas de total da 2.6 não saem**: o desenhador daqui
-  não tem rodapé de tabela, e emiti-las como linha comum daria um total alinhado errado.
+- **O documento tem 33 blocos, e o SCA CALCULA 19** (2.1, 2.2, 2.4, 2.6, 2.7, 3.1 a 3.4, 4.1 a 4.7,
+  6.1, 6.2 e 7.2). Os outros 14 não se calculam: 13 são DIGITADOS e um é FIXO (a 1.1). **Do SAP vêm
+  só a 2.3 e a 2.5**, que leem a PRODUÇÃO: a 2.2 e a 2.4 viraram calculadas em 2026-08-05, e a 7.3
+  sumiu na fusão de 2026-08-08.
+  Conte em `rpcmtec_estrutura.js` (`BLOCOS`, `NUMEROS_CALCULADOS`) antes de escrever um
+  número aqui: esta linha já esteve errada por omitir a 2.2 e a 2.4 e por listar uma 7.3 que morreu.
+  **As três linhas de total da 2.6 não saem**: o desenhador daqui não tem rodapé de tabela, e
+  emiti-las como linha comum daria um total alinhado errado.
 - **O DOCX copia a FORMATAÇÃO do documento da Divisão, medida no OOXML.** As constantes de
   `rpcmtec_docx.js` são valores LIDOS do documento real, porque cada tabela tem de ser colável na
   subseção de mesmo número sem ninguém reformatar. Só saem as subseções preenchidas INTEIRAS, e o que
@@ -309,7 +314,11 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   escolheria um DFD arbitrário entre os que a licitação atende.
 - **A NC tem o par `(ano, numero, cod_nd)` único por UG emitente, e não o número sozinho.** A mesma
   UG emite números que se repetem entre anos, e a mesma nota chega quebrada por natureza de despesa.
-  **`valor_recolhido` é informativo**, e não desconta do saldo: o recolhimento é documento à parte.
+- **O RECOLHIDO virou DOCUMENTO, e deixou de ser coluna.** Havia aqui, até 2026-08-08, a frase
+  "`valor_recolhido` é informativo, e não desconta do saldo". A coluna não existe mais desde
+  2026-08-07 (1.40.0): o recolhimento virou `orcamento.nota_credito_recolhimento`, uma linha por
+  documento, e o recolhido de uma NC passou a ser a SOMA delas, lida por seis consultas. A frase
+  antiga sobreviveu à própria coluna por um dia, e descrevia um campo que ninguém mais podia ler.
 
 ## Auditoria e rastreabilidade
 
@@ -442,11 +451,83 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## Mapoteca e plugin
 
+- **ESTOQUE E CONSUMO VIRARAM UM LIVRO SÓ** (`mapoteca.movimento_material`, 2026-08-08, decisão do
+  chefe). Havia três portas mexendo no saldo e só uma guardava data: o `POST /estoque_material` era
+  um upsert que REDEFINIA a quantidade, o `POST /estoque_material/transferir` eram dois UPDATEs, e
+  `mapoteca.consumo_material` era a única com histórico, e mesmo assim só do consumo. O saldo era o
+  único registro do que acontecera, e ele não responde "quando" nem "por quê". **Os números que
+  decidiram**, medidos em 2026-08-08 contra o banco de produção: `consumo_material` com ZERO linhas e
+  sequência VIRGEM em nove dias de uso real, contra cinco edições de saldo a mão em 2026-08-06, duas
+  delas decrementos unitários, que é a forma exata de um consumo. A tabela do consumo não estava
+  subutilizada por acaso: a Seção conta a PRATELEIRA, e não declara cada uso, e o que ela tinha a
+  registrar ia parar na única porta que aceitava, a que edita saldo. **Os quatro tipos são o que de fato acontece**: o
+  material CHEGA (1 Entrada), MUDA de lugar (2 Transferência), ACABA (3 Consumo) e é CONFERIDO contra
+  o sistema (4 Contagem). Em quatro tabelas, "o que aconteceu com este material" viraria um UNION que
+  alguém esquece de estender no dia do quinto tipo.
+- **O saldo continua sendo TABELA, escrito por GATILHO, e sem porta própria.** A view sobre a soma do
+  livro foi recusada por uma razão: são o `CHECK (quantidade >= 0)` e a `UNIQUE (tipo_material_id,
+  localizacao_id)` de `estoque_material` que RECUSAM o consumo sem saldo; numa view o livro aceitaria
+  a linha e o saldo ficaria negativo. E as rotas de escrita do saldo saíram inteiras (`POST`, `PUT`,
+  `DELETE` e `/transferir`): uma delas sobrevivendo ao lado do livro faria a soma do livro deixar de
+  bater com o saldo no primeiro uso, e aí nenhuma das duas explicaria mais nada.
 - **O CONSUMO só sai da Seção** (`tipo_localizacao` code 1), e material que está em outra
   localização tem de ser TRANSFERIDO para lá antes; o trigger recusa consumo sem saldo. As quatro
   localizações são etapas da vida do material, e não prateleiras: 1 Seção (onde se usa), 2
   Almoxarifado, 3 Aquisição realizada e 4 Saldo no empenho (comprado e ainda não entregue). Deixar
   consumir de qualquer uma faria a Divisão gastar, no papel, resma que ainda está com o fornecedor.
+  A regra era um IF dentro do gatilho e **subiu para um CHECK da tabela**: o gatilho recusava, e o
+  banco aceitava a mesma linha por qualquer outra porta.
+- **A 7.2 e a 7.3 do RPCMTec viraram UMA (a 7.2), e a 7.3 sumiu sem renumerar nada** (2026-08-08,
+  chefe). O que as separava era `tipo_material.categoria_id`, uma coluna cuja única função era
+  escolher em qual das duas tabelas a linha sairia: as duas tinham as MESMAS cinco colunas, a mesma
+  grade e a mesma fonte, e ninguém lê "só as tintas". Uma coluna que só pode errar, e que erra calada
+  no primeiro material cadastrado sem escolher, não paga uma quebra de tabela. **Custou ZERO**:
+  nenhuma edição de RPCMTec fechada e nenhuma linha 7.2 ou 7.3 gravada em `rpcmtec.subsecao`.
+  Entraram junto duas consequências: `tipo_material.nome` virou UNIQUE (a 7.2 casa o mês anterior
+  pelo NOME, e papel e tinta passaram a dividir um espaço de nomes só) e **todo material ativo entra
+  na tabela**, e não só o insumo de impressão, porque o cabeçote acaba do mesmo jeito que o cartucho.
+  **Pendência conhecida e aceita:** a coluna "Estoque atual" soma ROLO e CARTUCHO, então o total dela
+  não tem significado físico, e cada LINHA continua tendo. O conserto, se um dia incomodar, é a
+  unidade virar dado, e não a tabela voltar a se partir.
+- **Morreu a ponte impressão -> consumo, e com ela `tipo_material.tipo_midia_id` e
+  `quantidade_impressa`.** O consumo do RPCMTec e do painel é o DECLARADO, e nada além. A 7.2 de
+  julho saiu com "consumo 802, estoque 64": os 802 vinham da impressão, os 64 de uma contagem
+  digitada, e nenhum consumo de papel fora lançado no ano inteiro. Um número media o mundo, o outro
+  media o cadastro, e a subtração entre eles não significava nada. Produto impresso e rolo de papel
+  são coisas separadas: sem a mídia não há como saber qual papel uma impressão gastou, e essa é
+  justamente a afirmação que a ponte fazia e não podia sustentar. Zero na coluna quer dizer "ninguém
+  lançou", que é diferente de errado, e é um zero que a Seção conserta lançando. Caiu junto
+  `tipo_material.meta_anual`, que nunca teve leitor e estava NULA nas 34 linhas da produção.
+- **A PODA DO PEDIDO foi por MEDIÇÃO, e cada coluna caiu por um número** (2026-08-08, 1.42.0):
+  `situacao_pedido` code 1 ("Pré cadastramento do pedido realizado") saiu com ZERO pedidos usando, e o
+  code 2 virou "Pedido Recebido" sem trocar de código, porque o rótulo antigo ("DIEx/Ofício do pedido
+  recebido") nomeava o documento e não a situação. `pedido.omds` tinha 124 linhas preenchidas e **um
+  único valor distinto** ("1º CGEO"), mais 42 vazias: era uma constante que o formulário mandava
+  redigitar a cada pedido, e as 42 vazias são o que acontece quando se pede isso. Ela vive hoje como a
+  constante `OMDS` de `relatorio_ctrl.js`, e a coluna do RTM passou a sair SEMPRE preenchida.
+  `produto_pedido.quantidade_fornecida` era igual a `quantidade` em **1759 de 1759** linhas
+  preenchidas, sem uma divergência: virou o fragmento `QTD_EFETIVA`, e os 795 itens de 2026 que saíam
+  com a célula em branco no RTM passaram a sair com número. **Nenhum número publicado mudou para pior
+  em nenhum dos dois casos: as duas podas só encheram célula que saía vazia.**
+- **`tipo_midia_fornecida_id` NÃO caiu junto, e o sufixo igual é coincidência.** Ela tem **25
+  divergências reais** nas mesmas 1759 linhas (item pedido em tyvek e atendido em sulfite), contra
+  zero da quantidade: o `COALESCE` de `MIDIA_EFETIVA` decide de verdade, e o de `QTD_EFETIVA` não
+  decidia nada. É o par que alguém poda junto por simetria de nome, e por isso está escrito aqui.
+- **`QTD_EFETIVA` continua sendo FRAGMENTO, e não virou `pp.quantidade` escrito em onze consultas.**
+  Ele é o lugar onde "quanto se entregou" tem UMA resposta; o dia em que ela voltar a ter partes (e o
+  candidato natural é a soma de `mapoteca.impressao_item`), muda ali e muda em todas.
+- **O filtro por etiqueta usa `@>`, e não `ILIKE`, e por isso casa a palavra INTEIRA e com maiúscula.**
+  `GET /pedido?ano=&palavra_chave=` é o primeiro leitor do índice GIN que `pedido.palavras_chave` tinha
+  desde a instalação e que não servia consulta nenhuma. `lower()` ou `ILIKE` casariam pedaço, e
+  abandonariam o índice: foi medido com EXPLAIN. O filtro **soma** com o ano e não o substitui, porque
+  a etiqueta se repete de um ano para o outro ('Extra-PIT', '5ª DE'). E a lista passou a MOSTRAR
+  `palavras_chave`: lista que filtra por algo que não mostra deixa quem filtrou sem saber por que
+  aquela linha entrou.
+- **`impressao_item`, `plotter` e `manutencao_plotter` NÃO foram podadas** (chefe), embora a
+  cardinalidade de hoje seja 1:1 e convide a isso. A impressão é ATO FÍSICO: um soldado imprime, pode
+  levar mais de um dia, pode parar no meio, e é preciso saber quem imprimiu o quê e quando. A
+  cardinalidade atual é acidente da carga inicial, e não do processo, e colapsar a tabela numa coluna
+  do item trocaria o histórico por um número que só responde "quanto", nunca "quem" nem "quando".
 - **A ESCALA de item de pedido nunca sai NULA, e quem garante isso é UM fragmento de SQL.** O item
   avulso não tem carta e por isso não tem escala, e a ausência vira `'Sem escala'` no `COALESCE` do
   `ESCALA_DISPLAY_ITEM`, e não em cada consulta: repetido consulta a consulta, o relatório que
@@ -523,9 +604,10 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **O ano é filtro DE CADA TELA, e começa sempre no ano atual** (chefe). Um ano de contexto no
   `localStorage` fazia abrir o mapa de 2025 mudar calado a lista de pedidos. A diferença entre módulos
   é o parâmetro `permitirOutroAno`: no orçamento o ano decide **onde se cadastra**; na mapoteca ele só
-  **filtra o que já aconteceu**. Ficam sem ano os **clientes** (cadastro, não movimento) e o
-  **estoque** (saldo de hoje). Custo deliberado: o pedido de dezembro concluído em janeiro só aparece
-  trocando o ano.
+  **filtra o que já aconteceu**. Ficam sem ano os **clientes** (cadastro, não movimento) e a LISTA de
+  material, que mostra o saldo de hoje; a FICHA de um material tem ano, porque ali o que se lê é o
+  livro de movimentos, que é histórico. Custo deliberado: o pedido de dezembro concluído em janeiro
+  só aparece trocando o ano.
 - **No dashboard da mapoteca existem DOIS recortes anuais, e cada aba diz na tela qual é o dela.**
   Resumo Anual e Mapa contam por data de **entrega**; Pedidos e Atendimento, por data do **pedido**. Os
   dois estão certos, e sem `.dashboard__escopo` os números pareceriam se contradizer. Janelas

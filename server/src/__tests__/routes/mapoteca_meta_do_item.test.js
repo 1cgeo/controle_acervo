@@ -107,7 +107,7 @@ const criaPedido = async (clienteId, overrides = {}) => {
     .send({
       data_pedido: '2026-06-01T10:00:00-03:00',
       cliente_id: clienteId,
-      situacao_pedido_id: 1,
+      situacao_pedido_id: 2,
       ...overrides
     })
   expect(res.status).toBe(201)

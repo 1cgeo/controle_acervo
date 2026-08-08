@@ -1,7 +1,8 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createDataTable } from '@components/data-table/data-table.js';
+import { createTextField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
-import { chipSituacaoPedido } from '@components/status-chip.js';
+import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
 import {
   getPedidos, deletePedidos, getAnosMapoteca,
@@ -23,6 +24,10 @@ import { criarAvisoDeErro } from '../aviso-carga.js';
  * a fila de atendimento manda quem clicou em "Ver na lista de pedidos" cair
  * direto no recorte certo, em vez de chegar em "Todos" e ter de achar o botao.
  * Valor desconhecido cai em "Todos", que e o que a tela ja mostrava.
+ *
+ * Aceita tambem `?palavra_chave=<etiqueta>`, que abre a tela ja com a busca do
+ * servidor feita. E o que permite mandar a alguem o link de um recorte
+ * ("os pedidos do Extra-PIT") em vez de instrucoes de como chegar nele.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} ctx
  * @returns {Function} cleanup
@@ -72,6 +77,10 @@ export async function renderPedidosList(container, ctx) {
   let filtroAtual = FILTROS.some(f => f.id === filtroPedido) ? filtroPedido : 'todos';
   // O ano da ultima carga, para o contador dizer de que ano e a contagem.
   let ano = null;
+  // A etiqueta da ultima carga. Nulo e "o ano inteiro"; e o VALOR JA BUSCADO, e
+  // nao o que esta digitado no campo, para o contador nunca falar de uma busca
+  // que ainda nao aconteceu.
+  let palavraChave = ctx && ctx.query ? (ctx.query.get('palavra_chave') || null) : null;
   const pode = permissoes('mapoteca');
 
   // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Sem "+ Outro
@@ -83,20 +92,60 @@ export async function renderPedidosList(container, ctx) {
     onChange: () => load(),
   });
 
+  // A BUSCA POR ETIQUETA E DO SERVIDOR, e nao a busca da tabela ao lado.
+  //
+  // Sao duas coisas diferentes na mesma tela, e o rotulo tem de separa-las: a
+  // caixa da tabela filtra por pedaco de texto o que JA esta na tela (o ano
+  // inteiro), e esta aqui vai ao servidor e casa a ETIQUETA INTEIRA, com
+  // maiuscula e minuscula contando.
+  //
+  // A exigencia nao e capricho, e o texto de ajuda diz isso com palavra de
+  // gente: `mapoteca.pedido.palavras_chave` tem indice GIN, o operador que ele
+  // atende e o `@>` (continencia), e um `ILIKE` ou um `lower()` abandonariam o
+  // indice e leriam a tabela inteira. Sem o aviso, quem digitar 'extra' e nao
+  // achar 'Extra-PIT' conclui que a busca esta quebrada.
+  const buscaEtiqueta = createTextField({
+    label: 'Palavra-chave',
+    value: palavraChave || '',
+    placeholder: 'Ex.: Extra-PIT',
+    maxLength: 255,
+    helpText: 'Busca no servidor pela etiqueta inteira, com maiúscula e minúscula contando: "extra" não acha "Extra-PIT". Enter busca, campo vazio traz o ano todo.',
+  });
+  buscaEtiqueta.element.classList.add('filtro-barra__busca');
+  // Enter BUSCA. Sem isto o campo pareceria filtrar enquanto se digita, como o
+  // da tabela ao lado, e nunca buscaria nada.
+  buscaEtiqueta.input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscar();
+    }
+  });
+
+  /** Repete a carga com o que esta digitado no campo de etiqueta. */
+  function buscar() {
+    const digitado = buscaEtiqueta.getValue();
+    palavraChave = digitado === '' ? null : digitado;
+    load();
+  }
+
   function aplicarFiltro() {
     const filtro = FILTROS.find(f => f.id === filtroAtual) || FILTROS[0];
     const linhas = todosPedidos.filter(filtro.casa);
     table.update({ rows: linhas, loading: false });
+    // A etiqueta entra no contador porque ela recorta ANTES de a lista chegar:
+    // sem dize-la, "3 pedido(s) em 2026" seria a contagem do ano, e nao a do
+    // que a tela esta mostrando.
+    const comEtiqueta = palavraChave ? ` com a palavra-chave "${palavraChave}"` : '';
     contador.textContent = filtroAtual === 'todos'
-      ? `${linhas.length} pedido(s) em ${ano}`
-      : `${linhas.length} de ${todosPedidos.length} pedido(s) em ${ano}`;
+      ? `${linhas.length} pedido(s) em ${ano}${comEtiqueta}`
+      : `${linhas.length} de ${todosPedidos.length} pedido(s) em ${ano}${comEtiqueta}`;
   }
 
   async function load() {
     ano = filtroAno.getAno();
     table.update({ loading: true });
     try {
-      const pedidos = await getPedidos(ano);
+      const pedidos = await getPedidos(ano, palavraChave);
       if (disposed) return;
       todosPedidos = pedidos;
       aplicarFiltro();
@@ -164,6 +213,32 @@ export async function renderPedidosList(container, ctx) {
       { key: 'tipo_cliente_nome', label: 'Tipo', sortable: true },
       { key: 'documento_solicitacao', label: 'Documento' },
       {
+        key: 'palavras_chave',
+        label: 'Palavras-chave',
+        // A COLUNA EXISTE POR CAUSA DO FILTRO. Filtrar por algo que a tela nao
+        // mostra deixa quem filtrou sem saber POR QUE aquela linha entrou, e
+        // sem saber com que grafia a etiqueta foi gravada, que e justamente o
+        // que a busca exige acertar.
+        //
+        // O CLIQUE NA ETIQUETA BUSCA POR ELA. E a unica forma de acertar a
+        // grafia sem adivinhar: o texto vai para o campo exatamente como esta
+        // gravado, e a busca sai de la.
+        render: (row) => {
+          const etiquetas = row.palavras_chave || [];
+          if (!etiquetas.length) return '-';
+          return el('span', { className: 'flex gap-sm' }, etiquetas.map((etiqueta) => {
+            const alvo = chip(etiqueta, 'secondary');
+            alvo.title = `Buscar os pedidos com a palavra-chave "${etiqueta}"`;
+            alvo.style.cursor = 'pointer';
+            alvo.addEventListener('click', () => {
+              buscaEtiqueta.setValue(etiqueta);
+              buscar();
+            });
+            return alvo;
+          }));
+        },
+      },
+      {
         key: 'situacao_pedido_nome',
         label: 'Situação',
         render: (row) => chipSituacaoPedido(row.situacao_pedido_id, row.situacao_pedido_nome),
@@ -211,7 +286,7 @@ export async function renderPedidosList(container, ctx) {
     // Sem o ano no texto, de proposito: a mensagem e montada uma vez e o ano
     // muda no filtro. Quem diz de que ano e a lista e o contador ao lado dos
     // filtros, que se repinta a cada carga.
-    emptyMessage: 'Nenhum pedido neste ano. Troque o ano no filtro para ver outro.',
+    emptyMessage: 'Nenhum pedido neste ano com estes filtros. Troque o ano ou apague a palavra-chave.',
     actions: [
       {
         icon: ICONS.visibility,
@@ -247,9 +322,17 @@ export async function renderPedidosList(container, ctx) {
       ]),
     ]),
     el('div', { className: 'filtro-barra' }, [
-      // O ano vem PRIMEIRO: ele decide o que o servidor traz, e os botoes ao
-      // lado so recortam o que ja chegou.
+      // O ano vem PRIMEIRO e a etiqueta logo depois: os dois decidem o que o
+      // SERVIDOR traz, e os botoes ao lado so recortam o que ja chegou. A ordem
+      // na barra e a ordem em que o recorte acontece.
       filtroAno.element,
+      buscaEtiqueta.element,
+      el('button', {
+        className: 'btn btn--sm btn--secondary',
+        type: 'button',
+        textContent: 'Buscar',
+        onClick: buscar,
+      }),
       el('div', { className: 'filtro-barra__grupo', role: 'group', 'aria-label': 'Filtrar os pedidos' }, botoesFiltro),
       contador,
     ]),

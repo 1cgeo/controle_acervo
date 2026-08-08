@@ -42,6 +42,19 @@ const ESCALAS_PADRAO = [
   TIPO_ESCALA.ESCALA_250K
 ];
 
+// A coluna "OMDS" da aba META4_DETALHADA do RTM: a OM Diretamente Subordinada
+// responsável pelo atendimento, que é SEMPRE esta casa.
+//
+// Ela foi coluna de `mapoteca.pedido` até 2026-08-08, e saiu por medição: 124
+// linhas preenchidas e UM único valor distinto em todas ('1º CGEO'), mais 42
+// vazias. Era uma constante que o formulário pedia que se redigitasse a cada
+// pedido, e as 42 vazias eram o que acontece quando se pede isso.
+//
+// Continua SAINDO na planilha, porque a aba do RTM tem quinze colunas fixas e
+// esta é a primeira delas. Vira literal aqui, como o cabeçalho do PDF do RPCMTec
+// já fazia (`rpcmtec_pdf.js`): quem gera o relatório do 1º CGEO é o 1º CGEO.
+const OMDS = "1º CGEO";
+
 /**
  * Relatório anual de pedidos militares (reproduz a aba "Mil" da planilha).
  * Uma linha por pedido, com pivô de quantidades por escala × tipo de produto.
@@ -156,7 +169,8 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
   return db.conn.any(
     `
     SELECT
-      p.omds,
+      -- Literal, e não coluna: ver a constante OMDS no topo deste arquivo.
+      $<omds> AS omds,
       p.demandante,
       c.nome AS om_destino,
       p.previsto_pit,
@@ -181,7 +195,17 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       ${ITEM_E_AVULSO} AS item_avulso,
       pp.quantidade AS quantidade_prevista,
       tm.nome AS material_previsto,
-      pp.quantidade_fornecida,
+      -- A coluna "Qnt Fornecida" da aba, que era pp.quantidade_fornecida até
+      -- 2026-08-08 (sem crase: template literal). A coluna saiu, igual à
+      -- prevista em 1759 de 1759 linhas preenchidas, e quem responde a pergunta
+      -- passa a ser o fragmento de sempre.
+      --
+      -- O que MUDA na planilha, e é a única mudança visível desta poda: onde a
+      -- coluna era NULA (795 itens de 2026) a célula saía em BRANCO e agora sai
+      -- com o número. Nenhum valor já escrito muda; some o branco, que dizia
+      -- "ninguém redigitou" e se lia como "não foi entregue".
+      ${QTD_EFETIVA} AS quantidade_fornecida,
+      -- A MÍDIA fornecida continua sendo coluna, com as 25 divergências dela.
       tmf.nome AS material_fornecido,
       -- As colunas "Data da Entrega" e "Forma da Entrega" da aba saem do PEDIDO,
       -- e nao do item. O nome da chave (data_entrega, forma_entrega) e o rotulo
@@ -216,7 +240,7 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
     WHERE ${mes ? filtroPeriodoMes("p.data_pedido", { cumulativo: true }) : filtroAno("p.data_pedido")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
-    { ano, mes }
+    { ano, mes, omds: OMDS }
   );
 };
 

@@ -6,7 +6,7 @@
 // O que estes casos fixam:
 //
 // 1. A marca vale para as TRES origens. Calculada, digitada e fixa: quem confere
-//    o relatorio antes de assinar percorre os 34 blocos, e a calculada e
+//    o relatorio antes de assinar percorre os 33 blocos, e a calculada e
 //    justamente a que mais precisa de olho (o numero pode estar certo e o
 //    cadastro que o alimenta, errado).
 // 2. A marca MORRE quando o conteudo muda. Nao literalmente: ela continua la,

@@ -472,7 +472,7 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
 /**
  * Congela a edição.
  *
- * Materializa os 34 blocos em `rpcmtec.subsecao`, inclusive os calculados, e
+ * Materializa os 33 blocos em `rpcmtec.subsecao`, inclusive os calculados, e
  * carimba `data_fechamento`. A partir daí o documento não muda quando o banco
  * mudar.
  *

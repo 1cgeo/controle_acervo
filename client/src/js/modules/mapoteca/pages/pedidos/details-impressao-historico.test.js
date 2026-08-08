@@ -48,7 +48,7 @@ const PEDIDO = {
     {
       id: 900, produto_nome: 'Porto Alegre', mi: '2987-2', escala: '1:25.000',
       tipo_midia_nome: 'Papel', quantidade: 50, quantidade_impressa: 50,
-      quantidade_restante: 0, impressao_concluida: true, quantidade_fornecida: 50,
+      quantidade_restante: 0, impressao_concluida: true,
     },
   ],
   impressao: { concluida: true, itens_concluidos: 1, total_itens: 1 },
@@ -85,10 +85,10 @@ const AUDITORIA = [
   {
     id: 2, tabela: 'mapoteca.produto_pedido', registro_id: 900, operacao: 'U',
     resumo: 'Item da versão 9f1e-...',
-    campos_alterados: ['quantidade_fornecida'],
+    campos_alterados: ['quantidade'],
     mudancas: [{
-      campo: 'quantidade_fornecida',
-      rotulo: 'Quantidade fornecida',
+      campo: 'quantidade',
+      rotulo: 'Quantidade',
       tipo: 'numero',
       declarado: true,
       antes: 40, depois: 50,
@@ -253,11 +253,11 @@ describe('detalhe do pedido: historico do pedido', () => {
     const { container, cleanup } = await montar();
     const texto = container.textContent;
 
-    expect(texto).toContain('Quantidade fornecida');
+    expect(texto).toContain('Quantidade');
     expect(texto).toContain('40');
     expect(texto).toContain('50');
     // O nome cru da coluna nao aparece mais: quem le a mapoteca nao fala assim.
-    expect(texto).not.toContain('quantidade_fornecida');
+    expect(texto).not.toContain('produto_pedido');
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -347,37 +347,36 @@ describe('detalhe do pedido: historico do pedido', () => {
   });
 });
 
-describe('detalhe do pedido: fornecida x impressa', () => {
-  // Medido na producao: nos 1.928 itens as duas nunca divergiram.
-  // A marca e alarme de dado errado, e por isso nao aparece no caso normal.
-  test('iguais, mostra so o numero, sem marca', async () => {
+// A coluna "Qtd. fornecida" e a comparacao dela com a impressa sairam da tela
+// em 2026-08-08, junto com `produto_pedido.quantidade_fornecida`: a coluna era
+// IGUAL a `quantidade` em 1759 de 1759 linhas preenchidas, e o alarme de
+// divergencia nunca teve o que alarmar. O que de fato saiu da impressora fica
+// na coluna "Impressão", que le `mapoteca.impressao_item`.
+describe('detalhe do pedido: o que a poda tirou da tabela de itens', () => {
+  test('nao existe mais coluna de quantidade fornecida', async () => {
     const { container, cleanup } = await montar();
 
-    expect(container.textContent).not.toContain('difere da impressa');
+    const cabecalhos = [...container.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    expect(cabecalhos).not.toContain('Qtd. fornecida');
+    // A quantidade PEDIDA fica, e a impressao tambem: a poda tirou uma das
+    // tres, e nao as tres.
+    expect(cabecalhos).toContain('Qtd.');
+    expect(cabecalhos).toContain('Impressão');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('diferentes, marca a divergencia com o numero impresso', async () => {
+  test('o alarme de divergencia sumiu junto, ate com o dado antigo na mao', async () => {
+    // Um item como o banco antigo o devolvia, com fornecida diferente da
+    // impressa: a tela ignora a chave morta em vez de pintar um alarme.
     svc.getPedido.mockResolvedValue({
       ...PEDIDO,
       produtos: [{ ...PEDIDO.produtos[0], quantidade_fornecida: 48 }],
     });
     const { container, cleanup } = await montar();
 
-    expect(container.textContent).toContain('difere da impressa (50)');
-
-    if (typeof cleanup === 'function') cleanup();
-  });
-
-  test('item sem quantidade fornecida nao vira alarme', async () => {
-    svc.getPedido.mockResolvedValue({
-      ...PEDIDO,
-      produtos: [{ ...PEDIDO.produtos[0], quantidade_fornecida: null }],
-    });
-    const { container, cleanup } = await montar();
-
     expect(container.textContent).not.toContain('difere da impressa');
+    expect(container.textContent).not.toContain('48');
 
     if (typeof cleanup === 'function') cleanup();
   });

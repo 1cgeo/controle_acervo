@@ -322,8 +322,17 @@ export async function openProdutoPedidoDialog({
   // A data nao virou campo novo: o pedido ja tem data_atendimento, o dia em que
   // o material saiu.
   //
-  // Ficam aqui a quantidade fornecida e a midia fornecida, que sao do ITEM: uma
-  // carta pode sair em papel e outra em PDF no mesmo pedido.
+  // A QUANTIDADE FORNECIDA TAMBEM SAIU, em 2026-08-08, e por medicao: ela era
+  // IGUAL a quantidade pedida em 1759 de 1759 linhas preenchidas, sem uma
+  // divergencia em nove meses. Quem guarda o que de fato saiu da impressora e
+  // `mapoteca.impressao_item`, uma linha por sessao, com quantidade, data e
+  // autor, e e ele que a tela de detalhe mostra na coluna "Impressão".
+  //
+  // A MIDIA FORNECIDA FICA, e nao e o par da que saiu. As duas tinham o mesmo
+  // sufixo e o mesmo formulario, e destinos opostos: a midia mediu 25
+  // DIVERGENCIAS REAIS nas mesmas 1759 linhas (folha pedida em tyvek e
+  // atendida em sulfite), e este campo e o unico registro delas. Quem for
+  // podar a proxima coluna "fornecida" mede antes de agrupar pelo nome.
   const midiaOptions = tiposMidia.map(t => ({ value: t.code, label: t.nome }));
 
   const midiaField = createSelectField({
@@ -337,12 +346,6 @@ export async function openProdutoPedidoDialog({
     required: true,
     min: 1,
     value: item ? item.quantidade : 1,
-  });
-  const qtdFornecidaField = createNumberField({
-    label: 'Quantidade fornecida',
-    min: 0,
-    value: item && item.quantidade_fornecida != null ? item.quantidade_fornecida : undefined,
-    helpText: 'Quantidade efetivamente entregue',
   });
   const midiaFornecidaField = createSelectField({
     label: 'Mídia fornecida',
@@ -396,7 +399,6 @@ export async function openProdutoPedidoDialog({
     el('div', { className: 'form-grid' }, [
       midiaField.element,
       quantidadeField.element,
-      qtdFornecidaField.element,
       midiaFornecidaField.element,
       ...(pedidoEhDoPit ? [metaItemField.element] : []),
       producaoField.element,
@@ -527,8 +529,6 @@ export async function openProdutoPedidoDialog({
           versaoField.setError(null);
           midiaField.setError(null);
           quantidadeField.setError(null);
-          qtdFornecidaField.setError(null);
-
           nomeAvulsoField.setError(null);
 
           let ok = true;
@@ -555,11 +555,6 @@ export async function openProdutoPedidoDialog({
             quantidadeField.setError('Informe uma quantidade maior que zero');
             ok = false;
           }
-          const qtdFornecida = qtdFornecidaField.getValue();
-          if (qtdFornecida !== null && qtdFornecida < 0) {
-            qtdFornecidaField.setError('A quantidade fornecida não pode ser negativa');
-            ok = false;
-          }
           if (!ok) return;
 
           // Aviso, nunca bloqueio: o chefe pode ter motivo para pedir a folha
@@ -581,7 +576,6 @@ export async function openProdutoPedidoDialog({
               ? { nome_avulso: nomeAvulso, descricao_avulso: descricaoAvulsoField.getValue() || null }
               : { uuid_versao: uuidVersao }),
             quantidade,
-            quantidade_fornecida: qtdFornecida,
             tipo_midia_id: midiaField.getValue(),
             tipo_midia_fornecida_id: midiaFornecidaField.getValue(),
             observacao: observacaoField.getValue() || null,

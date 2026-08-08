@@ -81,7 +81,10 @@ ACOMPANHAMENTO
 RECURSOS  (${listarChaves().join(', ')})
   mapoteca <recurso> listar [--campos a,b] [--formato tsv|tabela|json]
       os filtros aceitos saem do schema de query do recurso; a lista de pedidos
-      e sempre de UM ano, e sem --ano vem o ano corrente
+      e sempre de UM ano, e sem --ano vem o ano corrente. Ela aceita tambem
+      --palavra_chave, que casa a etiqueta INTEIRA e soma com o ano
+      MATERIAL: quem escreve e "movimento" (o LIVRO: 1 Entrada, 2 Transferencia,
+      3 Consumo, 4 Contagem). "estoque" e o saldo derivado dele, SO LEITURA.
   mapoteca <recurso> obter     --id 42
   mapoteca <recurso> criar     --data '{...}'              [--dry-run]
   mapoteca <recurso> atualizar --data '{...}'              [--dry-run]
@@ -110,10 +113,11 @@ FLAGS GLOBAIS
   --novo          em pedido cadastrar: cria outro pedido mesmo achando duplicata
   --sem-verificacao   em pedido cadastrar: pula a releitura de conferencia
 
-O acesso e por PERFIL no modulo mapoteca: consulta le, operador imprime e da
-baixa em material, gerente cadastra pedido, cliente e anexo. O administrador
-passa em tudo. Publicos, sem login: /api (health), /api/login e a consulta por
-localizador. Os GET de dominio exigem perfil de consulta.`
+O acesso e por PERFIL no modulo mapoteca: consulta le, operador imprime e faz
+tudo de material (lanca movimento, cadastra e conta), gerente cadastra pedido,
+cliente, item e anexo. O administrador passa em tudo. Publicos, sem login: /api
+(health), /api/login e a consulta por localizador. Os GET de dominio exigem
+perfil de consulta.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

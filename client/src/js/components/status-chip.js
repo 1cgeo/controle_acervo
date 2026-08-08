@@ -2,11 +2,15 @@ import { el } from '@utils/dom.js';
 
 /**
  * Map of situacao_pedido_id -> chip color variant.
- * 1 Pré-cadastramento, 2 DIEx/Ofício recebido, 3 Em andamento, 4 Remetido,
- * 5 Concluído, 6 Cancelado, 7 Aguardando produção.
+ * 2 Pedido Recebido, 3 Em andamento, 4 Remetido, 5 Concluído, 6 Cancelado,
+ * 7 Aguardando produção.
+ *
+ * COMEÇA NO 2 de propósito: o code 1 (Pré cadastramento) saiu do domínio em
+ * 2026-08-08, e a lacuna na numeração fica, porque code de domínio não se
+ * renumera. O `|| 'default'` de `chipSituacaoPedido` cobre qualquer code que
+ * não esteja aqui, então nada quebra se um registro antigo aparecer.
  */
 const SITUACAO_PEDIDO_VARIANT = {
-  1: 'default',
   2: 'info',
   3: 'primary',
   4: 'secondary',

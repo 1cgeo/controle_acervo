@@ -2,7 +2,7 @@
 
 // O que o GESTOR digita no RPCMTec.
 //
-// Quinze dos 34 blocos do documento o SCA não sabe calcular, e eles são
+// Catorze dos 33 blocos do documento o SCA não sabe calcular, e eles são
 // preenchidos aqui, e não no Word. Onze vêm de outro
 // sistema ou de fora (2.2 a 2.5 do SAP, 5.1 do painel do GitHub, 8.3 do
 // doc_dgeo) e quatro não têm cadastro em lugar nenhum (5.2, 7.1, 8.1 a 8.5,

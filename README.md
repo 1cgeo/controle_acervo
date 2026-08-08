@@ -102,7 +102,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
 | `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; LANÇAR a execução e cadastrar Extra-PIT exige operador em **produção**; alterar a META e a REVISÃO exige administrador, porque mudar o PIT é ato da DSG |
 | `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS): tudo admin, porque cruza os três módulos e traz valor de crédito. A **capacitação** é a exceção, e são DUAS rotas: `/capacitacao/ministrada` (operador em **produção**, subseção 2.6) e `/capacitacao/recebida` (operador em **efetivo**, 6.2). O `tipo_id` não vai no corpo: quem o fixa é a rota |
-| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: **consulta** lê a tela inteira, **gerente** escreve o dado dos outros (2026-08-08). O PRÓPRIO aproveitamento tem porta separada (`/meu_periodo` e `/meu_impedimento`), sob `verifyAcesso`: o dono sai do token, e o `:id` alheio responde 404 |
+| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: **consulta** lê a tela inteira, **gerente** escreve o dado dos outros (2026-08-08). O PRÓPRIO aproveitamento tem porta separada (`/meu_aproveitamento`, `/meu_periodo` e `/meu_impedimento`), sob `verifyAcesso`: o dono sai do token, e o `:id` alheio responde 404. `/meu_aproveitamento?ano=` é a grade do ano de UMA pessoa, pelas mesmas consultas do mapa da Divisão |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
@@ -111,7 +111,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/ponto_controle` | acervo | Pontos de controle geodésico |
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
-| `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, materiais, relatórios CSV e impressão |
+| `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, relatórios CSV e impressão. O material tem o `movimento_material` (o LIVRO) como única porta de escrita, e o `estoque_material` é só leitura: ler é de **consulta**, lançar é de **operador** |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
 | `/api/orcamento/configuracao/anos` | orcamento | Anos com dado, para o seletor de ano das telas |
@@ -223,7 +223,7 @@ client/src/js/
 └── modules/
     ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
     ├── acervo/       # Dashboard, busca, pontos de controle, cadastro de produto e versão
-    ├── mapoteca/     # Clientes, pedidos, materiais, estoque, consumo, plotters, relatórios
+    ├── mapoteca/     # Clientes, pedidos, material e o livro de movimentos, plotters, relatórios
     └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
 ```
 
@@ -247,7 +247,7 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 |---|---|
 | `acervo` | projeto, lote, produto, versao, arquivo, download, miniatura, sessões de upload |
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
-| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
+| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência, Consumo e Contagem) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita desde a 1.41.0) |
 | `orcamento` | 11 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo. Não há `configuracao`: ela foi podada na 1.34.0 |
 | `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o planejado e o realizado de cada mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
 | `rpcmtec` | `edicao` (o metadado da edição mensal), `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |

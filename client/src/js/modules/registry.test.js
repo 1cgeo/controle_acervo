@@ -128,38 +128,38 @@ describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
 
   // CONJUNTO de perfis (`perfis`) e o modelo da MAPOTECA: la o
   // operador nao e "consulta com mais poder", e um papel com telas proprias. Com
-  // nivel minimo ele veria clientes, pedidos e o catalogo de material, que e o
-  // que o chefe recusou.
+  // nivel minimo ele veria clientes e pedidos, que e o que o chefe recusou.
   //
-  // O EXEMPLO MUDOU EM 2026-08-08, e a regra nao. O Dashboard e o Consumo eram a
-  // prova de que a lista nao e hierarquica; hoje os dois sao TERRENO COMUM (o
-  // dashboard ganhou o operador, que precisa ver a fila que vai atender, e o
-  // consumo ganhou a consulta, que le sem lancar). Quem prova a regra agora sao
-  // as telas de LEITURA da mapoteca, que o operador continua sem ver embora
-  // esteja um nivel acima de quem as ve.
+  // O EXEMPLO MUDOU DUAS VEZES, e a regra nao. O Dashboard e o Consumo eram a
+  // prova de que a lista nao e hierarquica; o dashboard virou TERRENO COMUM (o
+  // operador precisa ver a fila que vai atender), e em 2026-08-08 as telas de
+  // material sairam da lista de vez: a tela unica de Insumos declara nivel
+  // MINIMO, porque ali os tres perfis se ordenam de verdade. Quem prova a regra
+  // agora sao Clientes, Pedidos e Plotters, que o operador continua sem ver
+  // embora esteja um nivel acima de quem as ve.
   test('rota com CONJUNTO de perfis nao e hierarquica', () => {
     logar({ perfis: { mapoteca: 2 } });  // operador
     expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(true);
-    expect(podeAbrirRota('mapoteca', '/consumo')).toBe(true);
     expect(podeAbrirRota('mapoteca', '/dashboard')).toBe(true);
+    // E a tela de nivel minimo, que o operador alcanca justamente por estar
+    // acima da consulta.
+    expect(podeAbrirRota('mapoteca', '/insumos')).toBe(true);
     // O operador esta ACIMA da consulta e mesmo assim nao alcanca estas: e
     // exatamente isto que uma hierarquia nao consegue descrever.
     expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/clientes')).toBe(false);
-    expect(podeAbrirRota('mapoteca', '/materiais')).toBe(false);
-    expect(podeAbrirRota('mapoteca', '/estoque')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/plotters')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(false);
 
     logar({ perfis: { mapoteca: 1 } });  // consulta
     expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(true);
     expect(podeAbrirRota('mapoteca', '/dashboard')).toBe(true);
-    expect(podeAbrirRota('mapoteca', '/consumo')).toBe(true);
-    // Ler o consumo, sim; atender o pedido, nao.
+    expect(podeAbrirRota('mapoteca', '/insumos')).toBe(true);
+    // Ler os insumos, sim; atender o pedido, nao.
     expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(false);
 
     logar({ perfis: { mapoteca: 3 } });  // gerente: executa E gerencia
-    for (const rota of ['/dashboard', '/pedidos', '/pedidos/novo', '/atendimento', '/consumo']) {
+    for (const rota of ['/dashboard', '/pedidos', '/pedidos/novo', '/atendimento', '/insumos']) {
       expect(podeAbrirRota('mapoteca', rota)).toBe(true);
     }
   });

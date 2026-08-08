@@ -158,20 +158,36 @@ function renderCondicional (desc) {
   const casos = []
   for (const w of desc.whens || []) {
     const refPath = w.ref && w.ref.path ? w.ref.path.join('.') : 'condicao'
-    const aceitos = w.is && Array.isArray(w.is.allow) ? semSentinela(w.is.allow) : []
-    const alvo = aceitos.length ? aceitos.map(formatarValor).join('|') : '?'
 
-    if (w.then) {
-      const obrigatorio = w.then.flags && w.then.flags.presence === 'required'
-      const notas = anotacoes(w.then)
+    // Joi.when({ switch: [...] }) chega como UM when com uma lista de ramos, e
+    // nao como varios whens. Sem este laco, o campo saia como "condicional" e
+    // NENHUM caso: e a forma que o livro de movimentos usa para dizer quais
+    // lados cada tipo de movimento exige, ou seja, exatamente a regra que custa
+    // um 400 para descobrir.
+    const ramos = Array.isArray(w.switch) && w.switch.length
+      ? w.switch
+      : [{ is: w.is, then: w.then }]
+
+    for (const ramo of ramos) {
+      const aceitos = ramo.is && Array.isArray(ramo.is.allow)
+        ? semSentinela(ramo.is.allow)
+        : []
+      const alvo = aceitos.length ? aceitos.map(formatarValor).join('|') : '?'
+
+      if (!ramo.then) continue
+      const obrigatorio = ramo.then.flags && ramo.then.flags.presence === 'required'
+      const notas = anotacoes(ramo.then)
       casos.push(
-        `${refPath}=${alvo}: ${tipoDe(w.then)}${sufixoValores(w.then)}` +
+        `${refPath}=${alvo}: ${tipoDe(ramo.then)}${sufixoValores(ramo.then)}` +
         (obrigatorio ? ' OBRIGATORIO' : '') +
         (notas.length ? ` (${notas.join(', ')})` : '')
       )
     }
-    if (w.otherwise) {
-      const outro = w.otherwise
+
+    // O `otherwise` de um switch mora no ULTIMO ramo; fora dele, no proprio when.
+    const ultimo = ramos[ramos.length - 1]
+    const outro = w.otherwise || (ultimo && ultimo.otherwise)
+    if (outro) {
       // .strip() no otherwise = o campo e descartado silenciosamente.
       const descartado = outro.flags && outro.flags.result === 'strip'
       casos.push(
@@ -211,30 +227,83 @@ function camposDe (schemaJoi) {
   return Object.entries(desc.keys).map(([nome, d]) => descreverCampo(nome, d))
 }
 
+/** Le a condicao de um `is`, seja ele um valor (when por ref) ou um objeto. */
+function condicaoDe (is, ref) {
+  if (!is) return 'condicao'
+  if (is.type === 'object' && is.keys) {
+    return Object.entries(is.keys)
+      .map(([nome, d]) => `${nome}=${semSentinela(d.allow).map(formatarValor).join('|')}`)
+      .join(' e ')
+  }
+  const alvo = semSentinela(is.allow).map(formatarValor).join('|')
+  const campo = ref && ref.path ? ref.path.join('.') : 'condicao'
+  return alvo ? `${campo}=${alvo}` : campo
+}
+
+const ROTULO_DEP = {
+  or: 'pelo menos um de',
+  xor: 'exatamente um de',
+  oxor: 'no maximo um de',
+  and: 'todos ou nenhum de',
+  nand: 'nunca juntos'
+}
+
+function textoDep (dep) {
+  const pares = (dep.peers || []).map(p =>
+    typeof p === 'string' ? p : (p.path ? p.path.join('.') : String(p))
+  )
+  return `${ROTULO_DEP[dep.rel] || dep.rel}: ${pares.join(', ')}`
+}
+
 /**
- * Dependencias declaradas no nivel do objeto: `.or`, `.xor`, `.and`, `.with`.
- * A mapoteca hoje nao usa nenhuma, mas ler isso do describe e o que garante que
- * o dia em que alguem acrescentar uma, o contrato ja a mostre sem tocar no CLI.
+ * Dependencias declaradas no nivel do objeto: `.or`, `.xor`, `.and`, `.with`,
+ * inclusive as que valem SO em certa condicao, dentro de um `.when()` do objeto.
+ *
+ * O livro de movimentos e o caso vivo: o `.xor` de origem e destino so vale na
+ * Contagem, e por isso ele nao esta em `dependencies` do topo, e sim dentro do
+ * when. Lido so no topo, o contrato calava a unica regra que separa a Contagem
+ * de uma transferencia disfarcada.
  */
 function dependenciasDe (schemaJoi) {
   if (!schemaJoi || typeof schemaJoi.describe !== 'function') return []
   const desc = schemaJoi.describe()
-  if (!Array.isArray(desc.dependencies)) return []
 
-  const rotulo = {
-    or: 'pelo menos um de',
-    xor: 'exatamente um de',
-    oxor: 'no maximo um de',
-    and: 'todos ou nenhum de',
-    nand: 'nunca juntos'
+  const linhas = (desc.dependencies || []).map(textoDep)
+
+  for (const w of desc.whens || []) {
+    for (const dep of (w.then && w.then.dependencies) || []) {
+      linhas.push(`quando ${condicaoDe(w.is, w.ref)}, ${textoDep(dep)}`)
+    }
   }
 
-  return desc.dependencies.map(dep => {
-    const pares = (dep.peers || []).map(p =>
-      typeof p === 'string' ? p : (p.path ? p.path.join('.') : String(p))
-    )
-    return `${rotulo[dep.rel] || dep.rel}: ${pares.join(', ')}`
-  })
+  return linhas
+}
+
+/**
+ * Regras `.assert()` do objeto: o describe traz a MENSAGEM que o autor escreveu
+ * ("ser diferente da origem") e o campo sobre o qual ela recai, e isso ja e a
+ * regra inteira em prosa. Sem imprimi-las, o contrato omite invariante entre
+ * campos que so aparece no 400 -- e o `.assert` e justamente o que a mapoteca usa
+ * quando `.invalid()` nao funcionaria (campo com `.valid()` sai antes).
+ */
+function assercoesDe (schemaJoi) {
+  if (!schemaJoi || typeof schemaJoi.describe !== 'function') return []
+  const desc = schemaJoi.describe()
+
+  return (desc.rules || [])
+    .filter(r => r.name === 'assert' && r.args)
+    .map(r => {
+      const subject = r.args.subject
+      const campo = subject && subject.ref && subject.ref.path
+        ? subject.ref.path.join('.')
+        : '(corpo)'
+      const quando = ((r.args.schema && r.args.schema.whens) || [])
+        .filter(w => w.is)
+        .map(w => condicaoDe(w.is, w.ref))
+        .join('; ')
+      const mensagem = r.args.message || 'regra sem mensagem'
+      return quando ? `${campo} tem de ${mensagem} quando ${quando}` : `${campo} tem de ${mensagem}`
+    })
 }
 
 /**
@@ -330,9 +399,18 @@ function contrato (chave, recurso) {
   } else {
     linhas.push(`  (sem GET proprio: os itens vem dentro de GET /api/mapoteca/pedido/:id)`)
   }
-  linhas.push(`  POST   ${base}`)
-  linhas.push(`  PUT    ${base}                 o id vai no CORPO, nao na URL`)
-  linhas.push(`  DELETE ${base}                 corpo {"${recurso.chaveIds}": [ids]}, sempre em LOTE`)
+  // Recurso derivado nao tem porta de escrita: anunciar POST, PUT e DELETE que
+  // nao existem so renderia 404 depois de o agente montar o corpo inteiro.
+  if (recurso.somenteLeitura) {
+    linhas.push('  (SO LEITURA: nao ha POST, PUT nem DELETE nesta rota)')
+    if (recurso.escritaPor) {
+      linhas.push(`  para escrever, use o recurso "${recurso.escritaPor}": mapoteca schema ${recurso.escritaPor}`)
+    }
+  } else {
+    linhas.push(`  POST   ${base}`)
+    linhas.push(`  PUT    ${base}                 o id vai no CORPO, nao na URL`)
+    linhas.push(`  DELETE ${base}                 corpo {"${recurso.chaveIds}": [ids]}, sempre em LOTE`)
+  }
   linhas.push('')
 
   const campos = camposDe(modulo.criar)
@@ -341,7 +419,7 @@ function contrato (chave, recurso) {
     linhas.push(...alinhar(campos))
     linhas.push('')
 
-    const deps = dependenciasDe(modulo.criar)
+    const deps = [...dependenciasDe(modulo.criar), ...assercoesDe(modulo.criar)]
     if (deps.length) {
       linhas.push('  regras entre campos')
       linhas.push(...deps.map(d => '    ' + d))
@@ -462,6 +540,7 @@ module.exports = {
   soData,
   filtrosDe,
   dependenciasDe,
+  assercoesDe,
   customDe,
   descreverCampo,
   tipoDe,

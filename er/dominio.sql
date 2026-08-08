@@ -279,28 +279,19 @@ INSERT INTO dominio.classificacao_nc (code, nome) VALUES
 (1, 'PDR'),
 (2, 'Extra-PDR');
 
--- Categoria do material de impressão da mapoteca.
+-- NAO EXISTE `dominio.categoria_material`, desde 2026-08-08. Ela separava o
+-- material da mapoteca em Papel, Tinta e Outro, e a unica coisa que a separacao
+-- decidia era em qual das duas tabelas de insumo do RPCMTec o material sairia:
+-- a 7.2 (Papel) ou a 7.3 (Tintas).
 --
--- Existe porque o RPCMTec separa o estoque em duas tabelas, "Insumos de
--- Impressão - Papel" (7.2) e "- Tintas" (7.3), e a separação PRECISA ser um
--- dado. Derivá-la do nome ("começa com Cartucho") funcionaria com o catálogo de
--- hoje e cairia calada no dia em que alguém cadastrasse "Tinta preta 300ml": o
--- material iria para a tabela errada sem erro nenhum, e o relatório do chefe
--- mentiria sem avisar. Ver migrations/2026-08-01_material_categoria.sql.
+-- O chefe FUNDIU as duas na 7.2, e a 7.3 sumiu. Sem duas tabelas, a coluna
+-- `mapoteca.tipo_material.categoria_id` deixou de decidir qualquer coisa: ela
+-- classificava para um recorte que nao existe mais. Ver
+-- migrations/2026-08-08_livro_de_movimentos.sql, que a apaga junto com a mesa
+-- de dominio, e a secao "Mapoteca e plugin" de docs/decisoes.md.
 --
--- OUTRO existe para o material que não é insumo de impressão (cabeçote, peça de
--- reposição). Ele não sai em nenhuma das duas tabelas do RPCMTec, e é assim que
--- se declara isso: sem a opção, alguém teria de escolher entre papel e tinta
--- para algo que não é nem um nem outro.
-CREATE TABLE dominio.categoria_material(
-  code SMALLINT NOT NULL PRIMARY KEY,
-  nome VARCHAR(255) NOT NULL
-);
-
-INSERT INTO dominio.categoria_material (code, nome) VALUES
-(1, 'Papel'),
-(2, 'Tinta'),
-(3, 'Outro');
+-- A CATEGORIA DE 29 MATERIAIS foi dumpada antes do DROP, porque ela nao existe
+-- em nenhum outro lugar do banco. O arquivo esta FORA do repositorio.
 
 -- Tipo de item do DFD (material / servico)
 CREATE TABLE dominio.tipo_item_dfd(

@@ -154,14 +154,23 @@ router.delete(
 // Rotas para Pedido
 // Do ANO consultado, pela data do pedido. O ano vem do contexto do módulo
 // (seletor da navbar) e cai no ano corrente quando não vem na query.
+//
+// `palavra_chave` é OPCIONAL e casa a etiqueta INTEIRA de
+// `pedido.palavras_chave`, usando o índice GIN que a coluna tem desde a
+// instalação e que até 2026-08-08 não servia consulta nenhuma. Ele NÃO
+// substitui o filtro de ano: os dois somam, porque a etiqueta se repete de um
+// ano para o outro ('Extra-PIT', '5ª DE') e a lista continua sendo do ano.
 router.get(
   '/pedido',
   verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    query: mapotecaSchema.anoQuery
+    query: mapotecaSchema.pedidoListaQuery
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getPedidos(req.query.ano)
+    const dados = await mapotecaCtrl.getPedidos(
+      req.query.ano,
+      req.query.palavra_chave
+    )
     const msg = 'Pedidos retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
@@ -582,6 +591,19 @@ router.delete(
 )
 
 // Rotas para Tipo de Material
+//
+// O CADASTRO DE MATERIAL É DO OPERADOR desde 2026-08-08, e era de gerente.
+//
+// A régua da casa diz que `consulta` LÊ as telas do módulo, `operador` LANÇA e
+// `gerente` responde pela área. Cadastrar insumo é lançar: quem lança consumo e
+// faz contagem na prateleira é a mesma pessoa que descobre, ali, que o cartucho
+// novo ainda não existe no sistema. Exigir gerente para essa linha fazia a
+// contagem parar e esperar.
+//
+// Morreu junto a LISTA NÃO HIERÁRQUICA que servia a tela de material
+// (`perfis: ['consulta','gerente']`, que exclui o operador): ela existia porque
+// a tela era de cadastro e o operador não a via. Com a tela única do livro, o
+// operador é justamente quem mais a usa.
 router.get(
   '/tipo_material',
   verifyPerfil('consulta', 'mapoteca'),
@@ -608,7 +630,7 @@ router.get(
 
 router.post(
   '/tipo_material',
-  verifyPerfil('gerente', 'mapoteca'),
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterial
   }),
@@ -621,7 +643,7 @@ router.post(
 
 router.put(
   '/tipo_material',
-  verifyPerfil('gerente', 'mapoteca'),
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterialAtualizacao
   }),
@@ -634,7 +656,7 @@ router.put(
 
 router.delete(
   '/tipo_material',
-  verifyPerfil('gerente', 'mapoteca'),
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
     body: mapotecaSchema.tipoMaterialIds
   }),
@@ -646,6 +668,15 @@ router.delete(
 )
 
 // Rotas para Estoque de Material
+//
+// SÓ LEITURA desde 2026-08-08. O saldo é o ACUMULADO do livro de movimentos,
+// aplicado por gatilho, e por isso não tem mais porta própria de escrita: as
+// antigas `POST`, `PUT`, `DELETE` e `POST /transferir` mexiam na quantidade sem
+// data e sem motivo, e uma delas sobrevivendo ao lado do livro faria a soma do
+// livro deixar de bater com o saldo no primeiro uso.
+//
+// Quem quer mudar o saldo lança um movimento: Entrada, Transferência, Consumo ou
+// Contagem. Ver `POST /movimento_material`, logo abaixo.
 router.get(
   '/estoque_material',
   verifyPerfil('consulta', 'mapoteca'),
@@ -666,19 +697,6 @@ router.get(
   })
 )
 
-router.post(
-  '/estoque_material/transferir',
-  verifyPerfil('operador', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.transferenciaEstoque
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.transferirMaterial(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Transferência realizada com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
 router.get(
   '/estoque_material/:id',
   verifyPerfil('consulta', 'mapoteca'),
@@ -692,62 +710,29 @@ router.get(
   })
 )
 
-router.post(
-  '/estoque_material',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.estoqueMaterial
-  }),
-  asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaEstoqueMaterial(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Estoque de material criado/atualizado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
-  })
-)
-
-router.put(
-  '/estoque_material',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.estoqueMaterialAtualizacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaEstoqueMaterial(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Estoque de material atualizado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-router.delete(
-  '/estoque_material',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.estoqueMaterialIds
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteEstoqueMaterial(req.body.estoque_material_ids, req.usuarioUuid, req.contexto)
-    const msg = 'Registros de estoque deletados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-// A LISTA de lancamentos e OPERADOR: consumo de material e a segunda tela do
-// perfil de operador da mapoteca, junto do atendimento. Nao basta esconder o
-// item no menu, porque o perfil do client e so ergonomia: quem barra leitura e
-// este `verifyPerfil`.
+// O LIVRO DE MOVIMENTOS
 //
-// O que fica em CONSULTA de proposito: '/consumo_mensal' (abaixo) e o
-// '/dashboard/material_consumption', que sao o AGREGADO. O total do mes e
-// informacao de gestao; a lista de lancamentos e trabalho de quem opera.
+// Entrada, Transferência, Consumo e Contagem, numa tabela só e cada linha com
+// data. Ele substituiu `/consumo_material`, que guardava só um dos quatro
+// movimentos e por isso nunca explicou um saldo inteiro.
+//
+// LER é de CONSULTA e LANÇAR é de OPERADOR, inclusive a Contagem. A régua manda
+// separar quem lê de quem lança, e não esconder de quem lê o que o agregado
+// mensal dele já mostra somado: a lista de lançamentos deixar de abrir para a
+// consulta seria regressão, e foi um 403 vivo em 2026-08-08.
+//
+// A ROTA LITERAL VEM ANTES da rota com parâmetro: o Express casa na ordem de
+// declaração, e `/consumo_mensal` cairia em `/movimento_material/:id` se as duas
+// dividissem prefixo.
 router.get(
-  '/consumo_material',
-  verifyPerfil('operador', 'mapoteca'),
+  '/movimento_material',
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    query: mapotecaSchema.consumoMaterialFiltro
+    query: mapotecaSchema.movimentoMaterialFiltro
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getConsumoMaterial(req.query)
-    const msg = 'Registros de consumo retornados com sucesso'
+    const dados = await mapotecaCtrl.getMovimentosMaterial(req.query)
+    const msg = 'Movimentos de material retornados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
@@ -766,56 +751,57 @@ router.get(
 )
 
 router.get(
-  '/consumo_material/:id',
-  verifyPerfil('operador', 'mapoteca'),
+  '/movimento_material/:id',
+  verifyPerfil('consulta', 'mapoteca'),
   schemaValidation({
-    params: mapotecaSchema.consumoMaterialId
+    params: mapotecaSchema.movimentoMaterialId
   }),
   asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getConsumoMaterialById(req.params.id)
-    const msg = 'Consumo de material retornado com sucesso'
+    const dados = await mapotecaCtrl.getMovimentoMaterialById(req.params.id)
+    const msg = 'Movimento de material retornado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )
 
 router.post(
-  '/consumo_material',
+  '/movimento_material',
   verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
-    body: mapotecaSchema.consumoMaterial
+    body: mapotecaSchema.movimentoMaterial
   }),
   asyncHandler(async (req, res, next) => {
-    const id = await mapotecaCtrl.criaConsumoMaterial(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Registro de consumo criado com sucesso'
+    const id = await mapotecaCtrl.criaMovimentoMaterial(req.body, req.usuarioUuid, req.contexto)
+    const msg = 'Movimento de material registrado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.Created, { id })
   })
 )
 
 router.put(
-  '/consumo_material',
+  '/movimento_material',
   verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
-    body: mapotecaSchema.consumoMaterialAtualizacao
+    body: mapotecaSchema.movimentoMaterialAtualizacao
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaConsumoMaterial(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Registro de consumo atualizado com sucesso'
+    await mapotecaCtrl.atualizaMovimentoMaterial(req.body, req.usuarioUuid, req.contexto)
+    const msg = 'Movimento de material atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
 
 router.delete(
-  '/consumo_material',
-  verifyPerfil('gerente', 'mapoteca'),
+  '/movimento_material',
+  verifyPerfil('operador', 'mapoteca'),
   schemaValidation({
-    body: mapotecaSchema.consumoMaterialIds
+    body: mapotecaSchema.movimentoMaterialIds
   }),
   asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteConsumoMaterial(req.body.consumo_material_ids, req.usuarioUuid, req.contexto)
-    const msg = 'Registros de consumo deletados com sucesso'
+    await mapotecaCtrl.deleteMovimentosMaterial(req.body.movimento_material_ids, req.usuarioUuid, req.contexto)
+    const msg = 'Movimentos de material deletados com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK)
   })
 )
+
 
 // Rotas de relatórios anuais (reproduzem as abas da planilha de controle).
 // Aceitam ?ano= (default ano corrente) e ?formato=csv para download.

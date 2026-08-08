@@ -28,8 +28,10 @@ test('valid() vira lista exaustiva com = e allow() vira lista aditiva com |', ()
   const porNome = Object.fromEntries(
     esquema.camposDe(models.pedido).map(c => [c.nome, c])
   )
-  // .valid(...Object.values(SITUACAO_PEDIDO)): so estes sete codes.
-  assert.strictEqual(porNome.situacao_pedido_id.tipo, 'int =1|2|3|4|5|6|7')
+  // .valid(...Object.values(SITUACAO_PEDIDO)): so estes SEIS codes. Eram sete
+  // ate 2026-08-08, quando o code 1 saiu do dominio; este teste le a constante
+  // viva, entao foi ele que acusou.
+  assert.strictEqual(porNome.situacao_pedido_id.tipo, 'int =2|3|4|5|6|7')
   // .allow(null, ''): alem do tipo base.
   assert.ok(porNome.ponto_contato.tipo.includes("|null|''"))
 })
@@ -97,11 +99,73 @@ test('mostra a description que o autor do schema escreveu', () => {
   assert.ok(campo.notas.some(n => n.toLowerCase().includes('meses')))
 })
 
-test('acusa a validacao .custom() que o describe nao consegue detalhar', () => {
-  // A transferencia de estoque recusa origem igual ao destino num .custom(): o
-  // contrato impresso NAO e exaustivo ali, e isso precisa ser dito.
-  assert.strictEqual(esquema.customDe(models.transferenciaEstoque), true)
+test('nao ha .custom() de objeto na mapoteca, e o aviso so sai quando houver', () => {
+  // O aviso de "contrato nao exaustivo" existe para o dia em que alguem escrever
+  // um .custom() no nivel do objeto. Hoje nenhum schema tem, e emiti-lo a toa
+  // ensinaria o agente a desconfiar de um contrato que esta completo.
   assert.strictEqual(esquema.customDe(models.pedido), false)
+  assert.strictEqual(esquema.customDe(models.movimentoMaterial), false)
+})
+
+test('renderiza o switch do livro: qual lado cada tipo de movimento exige', () => {
+  // A regra da FORMA mora num Joi.when({switch:[...]}), que chega ao describe
+  // como UM when com varios ramos. Lido como um when comum, o campo saia como
+  // "condicional" e nenhum caso, e a regra que mais custa (Consumo so da Secao)
+  // sumia do contrato.
+  const campos = Object.fromEntries(
+    esquema.camposDe(models.movimentoMaterial).map(c => [c.nome, c])
+  )
+
+  const origem = campos.localizacao_origem_id
+  assert.strictEqual(origem.tipo, 'condicional')
+  const notasOrigem = origem.notas.join(' ')
+  // 1 Entrada vem de fora: sem origem.
+  assert.ok(notasOrigem.includes('tipo_movimento_id=1: any =null'), notasOrigem)
+  // 3 Consumo: SO da Secao (code 1), e obrigatorio.
+  assert.ok(/tipo_movimento_id=3: int =1 OBRIGATORIO/.test(notasOrigem), notasOrigem)
+
+  const destino = campos.localizacao_destino_id
+  // 3 Consumo vai para fora do controle: sem destino.
+  assert.ok(destino.notas.join(' ').includes('tipo_movimento_id=3: any =null'))
+
+  // 4 Contagem e o unico que exige motivo.
+  assert.ok(/tipo_movimento_id=4: string\(>=1\) OBRIGATORIO/.test(campos.motivo.notas.join(' ')))
+})
+
+test('mostra as duas regras do par de lados do movimento', () => {
+  // Nenhuma das duas e de um campo so, e nenhuma aparece em `dependencies` do
+  // topo: o xor vive dentro de um when do objeto e a outra e um .assert.
+  const deps = esquema.dependenciasDe(models.movimentoMaterial)
+  assert.ok(
+    deps.some(d => d.includes('tipo_movimento_id=4') && d.includes('exatamente um de')),
+    `faltou o xor da Contagem: ${deps.join(' | ')}`
+  )
+
+  const assercoes = esquema.assercoesDe(models.movimentoMaterial)
+  assert.ok(
+    assercoes.some(a =>
+      a.includes('localizacao_destino_id') &&
+      a.includes('ser diferente da origem') &&
+      a.includes('tipo_movimento_id=2')
+    ),
+    `faltou a assercao da Transferencia: ${assercoes.join(' | ')}`
+  )
+})
+
+test('o contrato do movimento imprime as regras entre campos', () => {
+  const texto = esquema.contrato('movimento', RECURSOS.movimento)
+  assert.ok(texto.includes('regras entre campos'))
+  assert.ok(texto.includes('ser diferente da origem'))
+  assert.ok(texto.includes('exatamente um de'))
+})
+
+test('o contrato do estoque diz que ele e so leitura e onde se escreve', () => {
+  // O saldo e derivado do livro desde 2026-08-08: anunciar POST, PUT e DELETE
+  // que nao existem renderia 404 depois de o agente montar o corpo inteiro.
+  const texto = esquema.contrato('estoque', RECURSOS.estoque)
+  assert.ok(texto.includes('SO LEITURA'))
+  assert.ok(texto.includes('mapoteca schema movimento'))
+  assert.ok(!texto.includes('POST   /api/mapoteca/estoque_material'))
 })
 
 test('camposDataDe acha as datas, inclusive dentro de um when()', () => {
@@ -120,13 +184,21 @@ test('soData recorta o timestamp ISO que o servidor devolve', () => {
 })
 
 test('deriva os filtros de listagem do proprio schema de query', () => {
-  const filtros = esquema.filtrosDe(obter('consumo').schema()).map(f => f.nome)
-  assert.deepStrictEqual(filtros.sort(), ['data_fim', 'data_inicio', 'tipo_material_id'])
+  // A tela do material e UMA: quem quer so o consumo filtra tipo_movimento_id 3,
+  // em vez de existir uma segunda rota so para ele.
+  const filtros = esquema.filtrosDe(obter('movimento').schema()).map(f => f.nome)
+  assert.deepStrictEqual(
+    filtros.sort(),
+    ['data_fim', 'data_inicio', 'tipo_material_id', 'tipo_movimento_id']
+  )
   // A listagem de pedidos e de UM ano so, e o servidor cai no ano corrente
   // quando a query nao traz `ano`. Sem declarar o filtro, o --ano do agente
-  // virava aviso de "filtro ignorado" e a resposta vinha do ano errado.
+  // virava aviso de "filtro ignorado" e a resposta vinha do ano errado. O
+  // `palavra_chave` entrou em 2026-08-08 e chega aqui de graca, porque a
+  // registry aponta o schema de query e nao uma lista escrita a mao.
   assert.deepStrictEqual(
-    esquema.filtrosDe(obter('pedido').schema()).map(f => f.nome), ['ano']
+    esquema.filtrosDe(obter('pedido').schema()).map(f => f.nome),
+    ['ano', 'palavra_chave']
   )
 })
 
@@ -194,13 +266,41 @@ test('explicarErro imprime o contrato so dos campos que falharam', () => {
 
 test('todo recurso da registry renderiza contrato sem quebrar', () => {
   for (const chave of Object.keys(RECURSOS)) {
-    const texto = esquema.contrato(chave, RECURSOS[chave])
+    const recurso = RECURSOS[chave]
+    const texto = esquema.contrato(chave, recurso)
     assert.ok(texto.length > 0, `${chave} devolveu contrato vazio`)
     assert.ok(texto.includes('rotas'), `${chave} nao listou rotas`)
-    // A forma do CRUD da mapoteca precisa aparecer em TODO recurso: e o que
-    // impede o agente de tentar PUT /recurso/:id e levar 404.
+    if (recurso.somenteLeitura) {
+      assert.ok(texto.includes('SO LEITURA'), `${chave} nao avisou que nao se escreve nele`)
+      continue
+    }
+    // A forma do CRUD da mapoteca precisa aparecer em TODO recurso que escreve:
+    // e o que impede o agente de tentar PUT /recurso/:id e levar 404.
     assert.ok(texto.includes('o id vai no CORPO'), `${chave} nao avisou do PUT`)
     assert.ok(texto.includes('sempre em LOTE'), `${chave} nao avisou do DELETE em lote`)
+  }
+})
+
+test('todo recurso citado na registry existe no schema vivo do server', () => {
+  // O CLI le o Joi vivo: recurso que aponte uma chave que o schema nao tem mais
+  // (o `consumoMaterial`, ate 2026-08-08) so falharia no comando daquele
+  // recurso, em producao, e nao aqui.
+  for (const chave of Object.keys(RECURSOS)) {
+    const recurso = RECURSOS[chave]
+    const modulo = recurso.schema()
+    if (recurso.somenteLeitura) {
+      assert.strictEqual(
+        modulo.criar, null,
+        `${chave} e so leitura e nao devia ter schema de criacao`
+      )
+      continue
+    }
+    for (const papel of ['criar', 'atualizar', 'ids']) {
+      assert.ok(
+        modulo[papel] && typeof modulo[papel].describe === 'function',
+        `${chave}: o schema de "${papel}" nao existe no mapoteca_schema.js`
+      )
+    }
   }
 })
 
@@ -209,6 +309,7 @@ test('a chave de ids do delete bate com a que o schema exige', () => {
   // recusa. Este teste amarra os dois.
   for (const chave of Object.keys(RECURSOS)) {
     const recurso = RECURSOS[chave]
+    if (recurso.somenteLeitura) continue
     const doSchema = esquema.camposDe(recurso.schema().ids).map(c => c.nome)
     assert.deepStrictEqual(
       doSchema, [recurso.chaveIds],

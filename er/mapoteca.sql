@@ -23,9 +23,17 @@ CREATE TABLE mapoteca.situacao_pedido(
 	nome VARCHAR(255) NOT NULL
 );
 
+-- O CODE 1 NAO EXISTE MAIS, e o buraco na numeracao e deliberado: ele era o
+-- 'Pre cadastramento do pedido realizado', usado por ZERO dos 166 pedidos da
+-- producao em 2026-08-08. Renumerar as outras seis reescreveria a situacao de
+-- 166 pedidos para fechar uma lacuna que ninguem le, e o code de dominio e
+-- justamente o que nao se renumera.
+--
+-- O 2 mudou de ROTULO em 2026-08-08 e nao de code: 'DIEx/Oficio do pedido
+-- recebido' nomeava o documento em vez do fato, e o pedido de civil chega por
+-- e-mail, sem DIEx nenhum.
 INSERT INTO mapoteca.situacao_pedido (code, nome) VALUES
-(1, 'Pré cadastramento do pedido realizado'),
-(2, 'DIEx/Ofício do pedido recebido'),
+(2, 'Pedido Recebido'),
 (3, 'Em andamento'),
 (4, 'Remetido'),
 (5, 'Concluído'),
@@ -130,11 +138,20 @@ CREATE TABLE mapoteca.pedido(
     -- le. Instalacao existente chega aqui pela migracao
     -- 2026-07-30_entrega_no_pedido.sql, que aplica a maioria por contagem.
     forma_entrega_id SMALLINT REFERENCES mapoteca.forma_entrega (code),
+    -- ETIQUETAS do pedido, e o filtro de busca da lista casa por elas.
+    -- VARCHAR[] com indice GIN (idx_pedido_palavras_chave, no fim deste
+    -- arquivo), entao a busca e por CONTINENCIA de elemento (`@>`) e nunca por
+    -- ILIKE: o opclass `array_ops` so responde a `@>`, `<@`, `&&` e `=`, e um
+    -- ILIKE sobre unnest varreria a tabela inteira com o indice ao lado.
     palavras_chave VARCHAR[] NOT NULL DEFAULT '{}',
     operacao TEXT,
     prazo DATE,
     demandante VARCHAR(255),
-    omds VARCHAR(255),
+    -- SEM `omds`. A coluna existiu ate 2026-08-08 e guardava a OM Diretamente
+    -- Subordinada responsavel pelo atendimento; media 124 linhas preenchidas e
+    -- UM unico valor distinto em todas ('1º CGEO'), ou seja, uma constante
+    -- disfarcada de coluna. Quem preenche a coluna "OMDS" do RTM e o proprio
+    -- 1º CGEO, e isso nao e dado de pedido.
     previsto_pit BOOLEAN NOT NULL DEFAULT FALSE,
     -- Item do PIT que o pedido atende, por chave estrangeira para
     -- `pit.meta_item` e nunca por codigo digitado a mao ('4.1'). NAO se deriva
@@ -198,8 +215,8 @@ CREATE TABLE mapoteca.pedido(
 
 COMMENT ON COLUMN mapoteca.pedido.demandante IS
     'Quem encaminhou o pedido (ex: CMS encaminhando pedido do 18º BI Mtz).';
-COMMENT ON COLUMN mapoteca.pedido.omds IS
-    'OM Diretamente Subordinada responsável pelo atendimento (ex: 1º CGEO).';
+COMMENT ON COLUMN mapoteca.pedido.palavras_chave IS
+    'Etiquetas livres do pedido. Consultadas pelo filtro da lista por continência (@>), que é o que o índice GIN atende; ILIKE não o usaria.';
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
 COMMENT ON COLUMN mapoteca.pedido.meta_pit_id IS
@@ -251,9 +268,17 @@ CREATE TABLE mapoteca.produto_pedido(
     descricao_avulso TEXT,
 	pedido_id BIGINT NOT NULL REFERENCES mapoteca.pedido (id),
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
-    quantidade_fornecida INTEGER
-        CHECK (quantidade_fornecida IS NULL OR quantidade_fornecida >= 0),
+    -- SEM `quantidade_fornecida`. A coluna existiu ate 2026-08-08 e prometia
+    -- guardar "quanto se entregou de fato"; medida na producao, era IGUAL a
+    -- `quantidade` em 1759 de 1759 linhas preenchidas, ZERO divergencias. Quem
+    -- guarda o que de fato saiu da impressora e `mapoteca.impressao_item`, com
+    -- data e autor de cada sessao.
+    --
+    -- ATENCAO: a gemea abaixo NAO caiu junto, e o sufixo igual e coincidencia.
     tipo_midia_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_midia (code),
+    -- A midia FICA, e e o contrario da quantidade: 25 itens foram pedidos numa
+    -- midia e atendidos noutra (tyvek pedido, sulfite entregue). Divergencia
+    -- real, medida, que so esta coluna registra.
     tipo_midia_fornecida_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
     -- A meta do PIT que ESTE item cumpre, quando difere da declarada no pedido.
     --
@@ -291,8 +316,6 @@ CREATE TABLE mapoteca.produto_pedido(
         CHECK ((uuid_versao IS NOT NULL) <> (nome_avulso IS NOT NULL))
 );
 
-COMMENT ON COLUMN mapoteca.produto_pedido.quantidade_fornecida IS
-    'Quantidade efetivamente entregue, quando diverge da prevista.';
 COMMENT ON COLUMN mapoteca.produto_pedido.meta_pit_id IS
     'Item do PIT que ESTE item cumpre, quando difere do declarado no pedido (pit.meta_item). NULL significa "o mesmo do pedido", e não "fora do PIT": quem diz isso é pedido.previsto_pit. Existe porque a Meta 4 se divide por material e o material é do item: o pedido 140 tem 8 folhas em tyvek (4.2) e 32 em sulfite (4.1).';
 
@@ -344,120 +367,225 @@ CREATE INDEX idx_manutencao_plotter_plotter ON mapoteca.manutencao_plotter(plott
 
 CREATE TABLE mapoteca.tipo_material (
     id SERIAL PRIMARY KEY,
+    -- A UNIDADE VAI NO NOME ("Papel Sulfite 120g" sao rolos de 50 m, e
+    -- "Cartucho MK - T730" e unidade avulsa). NAO existe coluna `unidade`, e a
+    -- decisao e do chefe: uma coluna a mais so para rotular nao paga o preco de
+    -- ser preenchida em 34 linhas e de rotular errado na primeira que ninguem
+    -- revisar.
+    --
+    -- PENDENCIA CONHECIDA, e ela nasceu com a fusao das tabelas 7.2 e 7.3: a
+    -- 7.2 do RPCMTec agora soma ROLO e CARTUCHO na mesma coluna "Estoque
+    -- atual". O numero total daquela coluna nao tem significado fisico, e cada
+    -- LINHA continua tendo. Se um dia isso incomodar, o conserto e a unidade
+    -- virar dado, e nao a tabela voltar a se partir em duas.
+    --
+    -- UNICO, e nao so por higiene: a 7.2 casa a linha do MES ANTERIOR pelo
+    -- NOME (o id do material nunca vai para o documento assinado, e nao
+    -- deveria ir). Com a fusao, papel e tinta passaram a dividir um espaco de
+    -- nomes so, e dois materiais homonimos fariam a coluna "Estoque mes
+    -- anterior" pegar o saldo do outro sem erro nenhum.
     nome VARCHAR(100) NOT NULL,
     descricao TEXT,
-    -- Papel, tinta ou outro. E o que separa as tabelas 7.2 e 7.3 do RPCMTec, e
-    -- por isso e COLUNA e nao regra sobre o nome: "comeca com Cartucho" acerta
-    -- o catalogo de hoje e erra calado no primeiro "Tinta preta 300ml". Default
-    -- 3 (Outro) para que material novo entre sem categoria errada -- quem nao
-    -- escolheu nao aparece em nenhuma das duas tabelas, que e melhor do que
-    -- aparecer na errada.
-    categoria_id SMALLINT NOT NULL DEFAULT 3 REFERENCES dominio.categoria_material (code),
-    -- INTEIROS: sao quantidades do MESMO material contado em unidade, entao
-    -- seguem a regra do estoque e do consumo.
+    -- INTEIRO: e quantidade do MESMO material contado em unidade, entao segue a
+    -- regra do estoque e do livro de movimentos.
     estoque_minimo INTEGER,
-    meta_anual INTEGER,
-    -- A MIDIA cuja impressao gasta este material. Existe porque o
-    -- consumo saia so de `consumo_material`, que ninguem preenche, e as
-    -- subsecoes 7.2 e 7.3 do RPCMTec reportavam "Consumo no mes = 0" nas
-    -- dezessete linhas enquanto havia 1.753 impressoes registradas: o numero
-    -- nao faltava, estava ERRADO, com etiqueta de calculado.
-    --
-    -- UM PARA UM, e por isso e coluna e nao tabela de ligacao: uma midia gasta
-    -- um papel, e um papel serve a uma midia. Ligacao admitiria dois papeis
-    -- para a mesma midia, e nada diria qual baixar.
-    --
-    -- SO PAPEL. Tinta nao se deriva de folha impressa: quanto de cartucho uma
-    -- folha gasta depende do que esta desenhado nela. O consumo de tinta
-    -- continua vindo de `consumo_material`, onde alguem declara a troca.
-    tipo_midia_id SMALLINT REFERENCES mapoteca.tipo_midia (code),
     ativo BOOLEAN NOT NULL DEFAULT TRUE,
-    -- SO PAPEL aponta midia (categoria 1). Sem isto, um cartucho poderia
-    -- reivindicar 'Sulfite 120g' e o consumo de tinta passaria a ser derivado
-    -- de folha impressa, que e o que nao se faz.
-    CONSTRAINT midia_so_para_papel CHECK (tipo_midia_id IS NULL OR categoria_id = 1)
+    -- Nome explicito, e nao o que o Postgres geraria: a migracao cria a
+    -- constraint com o MESMO nome, senao instalacao nova divergiria da migrada
+    -- e o ensaiar_migracao.cjs reprovaria.
+    CONSTRAINT unique_tipo_material_nome UNIQUE (nome)
 );
 
--- UM material por midia: duas linhas apontando a mesma midia fariam a mesma
--- folha baixar dois estoques.
-CREATE UNIQUE INDEX unique_material_por_midia
-  ON mapoteca.tipo_material (tipo_midia_id)
-  WHERE tipo_midia_id IS NOT NULL;
+-- NAO EXISTEM MAIS `categoria_id`, `tipo_midia_id` e `meta_anual`, desde
+-- 2026-08-08 (ver migrations/2026-08-08_livro_de_movimentos.sql):
+--
+--   categoria_id   so decidia entre a 7.2 (Papel) e a 7.3 (Tintas) do RPCMTec,
+--                  e o chefe fundiu as duas na 7.2. Classificar para um recorte
+--                  que nao existe mais e trabalho que so pode errar.
+--   tipo_midia_id  era a ponte impressao -> consumo, e a ponte MORREU: produto
+--                  impresso e rolo de papel sao coisas separadas. Com ela caiu
+--                  `quantidade_impressa`, o numero de conferencia que so
+--                  existia porque a ponte existira.
+--   meta_anual     nunca teve leitor de verdade e estava NULA nas 34 linhas da
+--                  producao em 2026-08-08.
+--
+-- Caiu junto o CHECK `midia_so_para_papel` e o indice `unique_material_por_midia`,
+-- que so faziam sentido enquanto as duas colunas existiam.
 
-COMMENT ON COLUMN mapoteca.tipo_material.categoria_id IS
-    'Papel (7.2 do RPCMTec), Tinta (7.3) ou Outro (fora das duas). Dado, e nao regra sobre o nome.';
-
+COMMENT ON COLUMN mapoteca.tipo_material.nome IS
+    'Nome do insumo, com a UNIDADE embutida (rolo, cartucho, folha). Único: a 7.2 do RPCMTec casa o mês anterior pelo nome.';
 COMMENT ON COLUMN mapoteca.tipo_material.estoque_minimo IS
-    'Limiar para alertar estoque baixo na UI (badge). NULL = sem alerta.';
-COMMENT ON COLUMN mapoteca.tipo_material.meta_anual IS
-    'Consumo anual previsto. Usado em relatório Consumo × Necessário × Pendente.';
-COMMENT ON COLUMN mapoteca.tipo_material.tipo_midia_id IS
-    'A mídia cuja impressão gasta este material. Só papel: tinta não se deriva de folha impressa.';
+    'Limiar para alertar estoque baixo na UI (badge). NULL = sem alerta. Compara-se contra Seção + Almoxarifado, e não contra o total: o que está em Aquisição realizada ou em Saldo no empenho ainda não chegou aqui.';
 
 -- Seed do controle de material de impressão (referência: planilha "Controle de
--- Material de Impressão" da Seção; dados de implantação no CLAUDE.md raiz)
-
--- Cartuchos Plotter T730 (categoria 2 = Tinta, tabela 7.3 do RPCMTec)
-INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
-('Cartucho CY - T730',         'Cartucho Ciano para plotter HP T730 (P2V62A)', 2),
-('Cartucho MG - T730',         'Cartucho Magenta para plotter HP T730 (P2V63A)', 2),
-('Cartucho Y - T730',          'Cartucho Yellow para plotter HP T730 (P2V64A)', 2),
-('Cartucho MK - T730',         'Cartucho Matte Black 130ml para plotter HP T730 (P2V65A)', 2),
-('Cartucho MK - T730 300ml',   'Cartucho Matte Black 300ml para plotter HP T730', 2),
-('Cartucho GR - T730',         'Cartucho Gray para plotter HP T730 (P2V66A)', 2),
-('Cartucho GR - T730 300ml',   'Cartucho Gray 300ml para plotter HP T730', 2),
-('Cartucho PK - T730',         'Cartucho Photo Black para plotter HP T730 (P2V67A)', 2);
-
--- Cartuchos HP M470 (categoria 2 = Tinta)
-INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
-('Cartucho Black - HP M470',   'Cartucho Black para impressora HP M470 (W2020XC)', 2),
-('Cartucho Ciano - HP M470',   'Cartucho Ciano para impressora HP M470 (W2021XC)', 2),
-('Cartucho Magenta - HP M470', 'Cartucho Magenta para impressora HP M470 (W2023XC)', 2),
-('Cartucho Yellow - HP M470',  'Cartucho Yellow para impressora HP M470 (W2022XC)', 2);
-
--- Cabeçotes (categoria 3 = Outro): são peça de reposição do plotter, não insumo
--- de impressão. Não saem nem na 7.2 nem na 7.3.
-INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id) VALUES
-('Cabeçote Universal',   'Cabeçote Universal novo (P2V27A, ficha C2982)', 3),
-('Cabeçote MK/Y usado',  'Cabeçote MK/Y reutilizado', 3),
-('Cabeçote CY/MG usado', 'Cabeçote CY/MG reutilizado', 3),
-('Cabeçote G/PK usado',  'Cabeçote G/PK reutilizado', 3);
-
--- Papéis (categoria 1 = Papel, tabela 7.2 do RPCMTec). O banner de tecido entra
--- aqui: o RPCMTec o lista como "Papel Tecido" na mesma tabela, porque o que ela
--- controla é a MÍDIA em que se imprime, e não a fibra.
+-- Material de Impressão" da Seção; dados de implantação no CLAUDE.md raiz).
 --
--- A MÍDIA VEM NA PRÓPRIA LINHA, e não por um UPDATE depois. Até 2026-08-06 este
--- seed inseria os papéis sem `tipo_midia_id` e quem os ligava era a migração
--- 2026-08-04_material_da_midia.sql: instalação nova ficava com os cinco papéis
--- em NULL e instalação migrada com os cinco ligados. O `ensaiar_migracao.cjs`
--- compara DDL e não compara DADO, então a divergência passava sem alarme.
-INSERT INTO mapoteca.tipo_material (nome, descricao, categoria_id, tipo_midia_id) VALUES
-('Papel Sulfite 75g',   'Papel sulfite 75g/m² para plotter', 1, 9),
-('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter', 1, 5),
-('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter', 1, 6),
-('Papel Glossy',        'Papel glossy para plotter', 1, 2),
-('Banner (tecido)',     'Banner em tecido', 1, 1),
-('Tyvek',               'Papel sintético Tyvek para plotter', 1, 8);
+-- SEM CATEGORIA E SEM MIDIA: as duas colunas sairam em 2026-08-08. A ordem e a
+-- do catálogo real, e não a de nenhum agrupamento: a 7.2 fundida lista TODO
+-- material ativo, em ordem de nome.
 
-CREATE TABLE mapoteca.consumo_material (
-    id SERIAL PRIMARY KEY,
+-- Cartuchos Plotter T730
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cartucho CY - T730',         'Cartucho Ciano para plotter HP T730 (P2V62A)'),
+('Cartucho MG - T730',         'Cartucho Magenta para plotter HP T730 (P2V63A)'),
+('Cartucho Y - T730',          'Cartucho Yellow para plotter HP T730 (P2V64A)'),
+('Cartucho MK - T730',         'Cartucho Matte Black 130ml para plotter HP T730 (P2V65A)'),
+('Cartucho MK - T730 300ml',   'Cartucho Matte Black 300ml para plotter HP T730'),
+('Cartucho GR - T730',         'Cartucho Gray para plotter HP T730 (P2V66A)'),
+('Cartucho GR - T730 300ml',   'Cartucho Gray 300ml para plotter HP T730'),
+('Cartucho PK - T730',         'Cartucho Photo Black para plotter HP T730 (P2V67A)');
+
+-- Cartuchos HP M470
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cartucho Black - HP M470',   'Cartucho Black para impressora HP M470 (W2020XC)'),
+('Cartucho Ciano - HP M470',   'Cartucho Ciano para impressora HP M470 (W2021XC)'),
+('Cartucho Magenta - HP M470', 'Cartucho Magenta para impressora HP M470 (W2023XC)'),
+('Cartucho Yellow - HP M470',  'Cartucho Yellow para impressora HP M470 (W2022XC)');
+
+-- Cabeçotes: são peça de reposição do plotter, e não insumo de impressão. Eles
+-- SAEM na 7.2 desde a fusão, porque a decisão do chefe é que a tabela liste todo
+-- material ativo: o que se controla ali é o estoque da Seção, e o cabeçote
+-- acaba do mesmo jeito que o cartucho.
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Cabeçote Universal',   'Cabeçote Universal novo (P2V27A, ficha C2982)'),
+('Cabeçote MK/Y usado',  'Cabeçote MK/Y reutilizado'),
+('Cabeçote CY/MG usado', 'Cabeçote CY/MG reutilizado'),
+('Cabeçote G/PK usado',  'Cabeçote G/PK reutilizado');
+
+-- Papéis. O banner de tecido entra aqui: o RPCMTec o lista como "Papel Tecido",
+-- porque o que se controla é a MÍDIA em que se imprime, e não a fibra.
+INSERT INTO mapoteca.tipo_material (nome, descricao) VALUES
+('Papel Sulfite 75g',   'Papel sulfite 75g/m² para plotter'),
+('Papel Sulfite 90g',   'Papel sulfite 90g/m² para plotter'),
+('Papel Sulfite 120g',  'Papel sulfite 120g/m² para plotter (rolo de 50 m)'),
+('Papel Glossy',        'Papel glossy para plotter'),
+('Banner (tecido)',     'Banner em tecido'),
+('Tyvek',               'Papel sintético Tyvek para plotter');
+
+-- O LIVRO DE MOVIMENTOS do material, e por que ele é UMA tabela
+--
+-- Até 2026-08-07 havia três portas mexendo no saldo, e nenhuma delas guardava
+-- data: `POST /estoque_material` (upsert que REDEFINIA a quantidade),
+-- `POST /estoque_material/transferir` (dois UPDATEs) e `mapoteca.consumo_material`
+-- (a única com data, e a única que virava histórico). O saldo era o único
+-- registro do que acontecera, e ele não responde "quando" nem "por quê".
+--
+-- Os QUATRO tipos são as quatro coisas que de fato acontecem com o material:
+-- ele CHEGA (Entrada), MUDA de lugar (Transferência), ACABA (Consumo) e é
+-- CONFERIDO na prateleira contra o que o sistema diz (Contagem).
+--
+-- UMA TABELA, e não quatro: o que se pergunta é "o que aconteceu com este
+-- material", em ordem de data. Em quatro tabelas essa pergunta vira um UNION
+-- que alguém esquece de estender no dia em que nascer o quinto tipo.
+CREATE TABLE mapoteca.tipo_movimento_material(
+    code SMALLINT NOT NULL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO mapoteca.tipo_movimento_material (code, nome) VALUES
+(1, 'Entrada'),
+(2, 'Transferência'),
+(3, 'Consumo'),
+(4, 'Contagem');
+
+CREATE TABLE mapoteca.movimento_material (
+    id BIGSERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
+    tipo_movimento_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_movimento_material (code),
     -- INTEGER de proposito: material da mapoteca conta-se em UNIDADE (folha,
     -- cartucho, rolo), e meia folha nao existe. Em DECIMAL, a tela exibe
     -- "150,00" onde a pessoa escreveu 150 e sobra saldo de 0,01 que nunca fecha.
+    --
+    -- SEMPRE POSITIVA, inclusive na Contagem: o SENTIDO nao mora no sinal, mora
+    -- em qual dos dois lados esta preenchido. Quantidade negativa e um segundo
+    -- jeito de dizer a mesma coisa, e dois jeitos e o que faz duas consultas
+    -- discordarem.
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
-    data_consumo DATE NOT NULL,
+    -- DIA de calendário, e não instante: quem lança escolhe o dia em que o
+    -- material entrou ou saiu, e todo consumidor exibe o dia. Em TIMESTAMPTZ a
+    -- data atravessaria o fuso da sessão e decidiria o MÊS do RPCMTec pelo fuso.
+    data_movimento DATE NOT NULL,
+    -- DE ONDE o material saiu, e PARA ONDE foi. Nulo quer dizer "de fora" ou
+    -- "para fora" do controle: a Entrada vem de fora e o Consumo vai para fora.
+    localizacao_origem_id SMALLINT REFERENCES mapoteca.tipo_localizacao (code),
+    localizacao_destino_id SMALLINT REFERENCES mapoteca.tipo_localizacao (code),
+    motivo TEXT,
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
     data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_atualizacao TIMESTAMP WITH TIME ZONE
+    data_atualizacao TIMESTAMP WITH TIME ZONE,
+    -- A FORMA DE CADA TIPO, num CHECK só, porque as quatro regras são a mesma
+    -- pergunta: quais lados esta linha tem de ter.
+    --
+    --   Entrada        o material CHEGA: não tem origem, e tem destino.
+    --   Transferência  MUDA de lugar: tem os dois, e eles têm de diferir. Sem o
+    --                  `<>`, uma transferência de A para A somaria e subtrairia
+    --                  o mesmo saldo e passaria por lançamento válido.
+    --   Consumo        SÓ DA SEÇÃO (code 1) e para fora. Era um IF dentro do
+    --                  gatilho, e subiu para cá: o gatilho recusava e o banco
+    --                  aceitava a linha em qualquer outra porta. As localizações
+    --                  são ETAPAS da vida do material, e não prateleiras --
+    --                  consumir de "Saldo no empenho" seria gastar, no papel, o
+    --                  que ainda está com o fornecedor.
+    --   Contagem       EXATAMENTE UM lado. A conferência lança a DIFERENÇA entre
+    --                  a prateleira e o sistema: sobrou, e a diferença ENTRA
+    --                  naquela localização (destino); faltou, e ela SAI
+    --                  (origem). Os dois lados preenchidos seriam uma
+    --                  transferência disfarçada, e nenhum não mexeria em saldo
+    --                  nenhum.
+    --
+    -- O nome e o mesmo da migracao, senao instalacao nova divergiria da migrada.
+    CONSTRAINT movimento_material_forma CHECK (
+        CASE tipo_movimento_id
+            WHEN 1 THEN localizacao_origem_id IS NULL
+                    AND localizacao_destino_id IS NOT NULL
+            WHEN 2 THEN localizacao_origem_id IS NOT NULL
+                    AND localizacao_destino_id IS NOT NULL
+                    AND localizacao_origem_id <> localizacao_destino_id
+            WHEN 3 THEN localizacao_origem_id = 1
+                    AND localizacao_destino_id IS NULL
+            WHEN 4 THEN num_nonnulls(localizacao_origem_id, localizacao_destino_id) = 1
+            ELSE FALSE
+        END
+    ),
+    -- CONTAGEM EXIGE MOTIVO. Ela é o único movimento que ninguém viu acontecer:
+    -- a Entrada tem nota, a Transferência tem quem carregou e o Consumo tem o
+    -- trabalho que o gastou, mas a Contagem é a diferença entre o que está na
+    -- prateleira e o que o sistema achava. Sem o porquê ela vira um ajuste mudo,
+    -- que é exatamente o que o livro existe para acabar.
+    CONSTRAINT movimento_material_contagem_exige_motivo CHECK (
+        tipo_movimento_id <> 4 OR motivo IS NOT NULL
+    )
 );
 
+COMMENT ON TABLE mapoteca.movimento_material IS
+    'Livro de movimentos do material: Entrada, Transferência, Consumo e Contagem, cada linha com data. O saldo de mapoteca.estoque_material é o acumulado deste livro, aplicado por gatilho.';
+COMMENT ON COLUMN mapoteca.movimento_material.motivo IS
+    'Por que o movimento aconteceu. Obrigatório na Contagem, que é o único movimento que ninguém viu acontecer.';
+
+CREATE INDEX idx_movimento_material_tipo_material ON mapoteca.movimento_material(tipo_material_id);
+CREATE INDEX idx_movimento_material_data ON mapoteca.movimento_material(data_movimento);
+CREATE INDEX idx_movimento_material_tipo_movimento ON mapoteca.movimento_material(tipo_movimento_id);
+
+-- O SALDO, e por que ele continua sendo TABELA e não virou VIEW
+--
+-- Desde 2026-08-08 esta tabela é DERIVADA: quem a escreve é o gatilho do livro
+-- de movimentos, e não mais três rotas. A tentação óbvia era transformá-la numa
+-- view sobre a soma do livro, e ela foi recusada por uma razão: são o
+-- `CHECK (quantidade >= 0)` e a `UNIQUE (tipo_material_id, localizacao_id)`
+-- desta tabela que RECUSAM o consumo sem saldo. Numa view, o livro aceitaria a
+-- linha e o saldo simplesmente ficaria negativo -- a recusa migraria para um
+-- IF dentro do gatilho, que é justamente o lugar de onde a regra do Consumo
+-- acabou de sair.
 CREATE TABLE mapoteca.estoque_material (
     id SERIAL PRIMARY KEY,
     tipo_material_id INTEGER NOT NULL REFERENCES mapoteca.tipo_material(id),
-    -- INTEGER pela mesma razao do consumo. Aceita zero: o estoque pode zerar.
+    -- INTEGER pela mesma razao do livro. Aceita zero: o estoque pode zerar.
+    --
+    -- O CHECK e a ULTIMA guarda, e nao a primeira: o gatilho do livro confere o
+    -- saldo com FOR UPDATE e recusa com uma frase que ensina o conserto. Sob
+    -- corrida, duas transacoes podem passar pela conferencia e so uma pelo
+    -- CHECK, e e assim que tem de ser.
     quantidade INTEGER NOT NULL CHECK (quantidade >= 0),
     localizacao_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_localizacao (code),
     usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
@@ -554,151 +682,152 @@ CREATE INDEX idx_pedido_data_pedido ON mapoteca.pedido(data_pedido);
 CREATE INDEX idx_pedido_data_atendimento ON mapoteca.pedido(data_atendimento);
 CREATE INDEX idx_pedido_meta_pit ON mapoteca.pedido(meta_pit_id);
 CREATE INDEX idx_pedido_operacao ON mapoteca.pedido(operacao) WHERE operacao IS NOT NULL;
+-- GIN com o opclass default de VARCHAR[] (`array_ops`), que responde a `@>`,
+-- `<@`, `&&` e `=`. E o que o filtro `palavra_chave` de GET /pedido usa, e a
+-- razao de aquele filtro ser por etiqueta INTEIRA e nao por pedaco de palavra:
+-- um ILIKE sobre unnest(palavras_chave) leria a tabela toda com o indice aqui
+-- do lado, sem tocar nele.
 CREATE INDEX idx_pedido_palavras_chave ON mapoteca.pedido USING GIN (palavras_chave);
 CREATE INDEX idx_produto_pedido_pedido ON mapoteca.produto_pedido(pedido_id);
 CREATE INDEX idx_produto_pedido_uuid_versao ON mapoteca.produto_pedido(uuid_versao);
-CREATE INDEX idx_consumo_material_tipo ON mapoteca.consumo_material(tipo_material_id);
-CREATE INDEX idx_consumo_material_data ON mapoteca.consumo_material(data_consumo);
 CREATE INDEX idx_estoque_material_tipo ON mapoteca.estoque_material(tipo_material_id);
 CREATE INDEX idx_estoque_material_localizacao ON mapoteca.estoque_material(localizacao_id);
 
--- Trigger: consumo de material só pode ocorrer a partir do estoque na Seção (localizacao_id = 1)
--- Na inserção, decrementa o estoque da Seção; na deleção, restaura.
-CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_insert()
-RETURNS TRIGGER AS $$
-DECLARE
-    estoque_atual DECIMAL(10, 2);
-BEGIN
-    -- Verificar se existe estoque na Seção para este tipo de material
-    SELECT quantidade INTO estoque_atual
-    FROM mapoteca.estoque_material
-    WHERE tipo_material_id = NEW.tipo_material_id
-      AND localizacao_id = 1  -- 1 = Seção
-    FOR UPDATE;
+-- O SALDO É O ACUMULADO DO LIVRO, e quem o aplica é o gatilho
+--
+-- Uma linha do livro mexe em NO MÁXIMO dois saldos, e a regra é a mesma para os
+-- quatro tipos: o que está em `localizacao_origem_id` SAI, e o que está em
+-- `localizacao_destino_id` ENTRA. É por isso que o sentido não mora no sinal da
+-- quantidade -- com quatro tipos e um sinal, haveria oito combinações a
+-- interpretar, e só quatro delas fariam sentido.
+--
+-- NÃO EXISTE MAIS `mapoteca.consumo_material` nem
+-- `mapoteca.devolver_estoque_secao`. A primeira virou o tipo 3 do livro; a
+-- segunda era a metade "devolve" de três gatilhos que agora são um só.
 
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Não há estoque na Seção para o material informado. O material deve primeiro ser transferido para a Seção antes de ser consumido.';
-    END IF;
-
-    IF estoque_atual < NEW.quantidade THEN
-        RAISE EXCEPTION 'Estoque insuficiente na Seção. Disponível: %, Solicitado: %', estoque_atual, NEW.quantidade;
-    END IF;
-
-    -- Decrementar estoque na Seção
-    UPDATE mapoteca.estoque_material
-    SET quantidade = quantidade - NEW.quantidade,
-        data_atualizacao = CURRENT_TIMESTAMP
-    WHERE tipo_material_id = NEW.tipo_material_id
-      AND localizacao_id = 1;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Helper: devolve quantidade ao estoque da Seção, criando a linha se não
--- existir (upsert atômico, sem o check-then-insert que perdia estoque ou
--- violava a UNIQUE sob concorrência)
-CREATE OR REPLACE FUNCTION mapoteca.devolver_estoque_secao(
+CREATE OR REPLACE FUNCTION mapoteca.aplicar_saldo_material(
     p_tipo_material_id INTEGER,
-    p_quantidade DECIMAL(10, 2),
+    p_localizacao_id SMALLINT,
+    p_quantidade INTEGER,
+    p_entra BOOLEAN,
     p_usuario_id INTEGER
 ) RETURNS void AS $$
-BEGIN
-    INSERT INTO mapoteca.estoque_material
-        (tipo_material_id, quantidade, localizacao_id, usuario_criacao_id, usuario_atualizacao_id)
-    VALUES (p_tipo_material_id, p_quantidade, 1, p_usuario_id, p_usuario_id)
-    ON CONFLICT (tipo_material_id, localizacao_id)
-    DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
-                  data_atualizacao = CURRENT_TIMESTAMP;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_delete()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Restaurar o estoque na Seção ao deletar um registro de consumo
-    PERFORM mapoteca.devolver_estoque_secao(OLD.tipo_material_id, OLD.quantidade, OLD.usuario_criacao_id);
-    RETURN OLD;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION mapoteca.trg_consumo_material_update()
-RETURNS TRIGGER AS $$
 DECLARE
-    estoque_atual DECIMAL(10, 2);
-    diferenca DECIMAL(10, 2);
+    v_saldo INTEGER;
+    v_local TEXT;
+    v_material TEXT;
 BEGIN
-    -- Calcular a diferença (positiva = consumiu mais, negativa = consumiu menos)
-    diferenca := NEW.quantidade - OLD.quantidade;
-
-    -- Se a quantidade não mudou ou o tipo de material não mudou, verificar se precisa atualizar
-    IF OLD.tipo_material_id = NEW.tipo_material_id THEN
-        IF diferenca > 0 THEN
-            -- Consumiu mais: verificar se há estoque suficiente na Seção
-            SELECT quantidade INTO estoque_atual
-            FROM mapoteca.estoque_material
-            WHERE tipo_material_id = NEW.tipo_material_id
-              AND localizacao_id = 1
-            FOR UPDATE;
-
-            IF NOT FOUND OR estoque_atual < diferenca THEN
-                RAISE EXCEPTION 'Estoque insuficiente na Seção para atualizar o consumo. Disponível: %, Necessário adicionalmente: %', COALESCE(estoque_atual, 0), diferenca;
-            END IF;
-
-            UPDATE mapoteca.estoque_material
-            SET quantidade = quantidade - diferenca,
-                data_atualizacao = CURRENT_TIMESTAMP
-            WHERE tipo_material_id = NEW.tipo_material_id
-              AND localizacao_id = 1;
-        ELSIF diferenca < 0 THEN
-            -- Consumiu menos: devolver a diferença ao estoque da Seção
-            -- (upsert: cria a linha se não existir, senão a devolução se perderia)
-            PERFORM mapoteca.devolver_estoque_secao(NEW.tipo_material_id, ABS(diferenca), NEW.usuario_atualizacao_id);
-        END IF;
-    ELSE
-        -- Tipo de material mudou: devolver o antigo e consumir o novo
-        -- Devolver estoque do material antigo (upsert, idem acima)
-        PERFORM mapoteca.devolver_estoque_secao(OLD.tipo_material_id, OLD.quantidade, NEW.usuario_atualizacao_id);
-
-        -- Verificar e consumir do novo material
-        SELECT quantidade INTO estoque_atual
-        FROM mapoteca.estoque_material
-        WHERE tipo_material_id = NEW.tipo_material_id
-          AND localizacao_id = 1
-        FOR UPDATE;
-
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'Não há estoque na Seção para o novo material informado.';
-        END IF;
-
-        IF estoque_atual < NEW.quantidade THEN
-            RAISE EXCEPTION 'Estoque insuficiente na Seção para o novo material. Disponível: %, Solicitado: %', estoque_atual, NEW.quantidade;
-        END IF;
-
-        UPDATE mapoteca.estoque_material
-        SET quantidade = quantidade - NEW.quantidade,
-            data_atualizacao = CURRENT_TIMESTAMP
-        WHERE tipo_material_id = NEW.tipo_material_id
-          AND localizacao_id = 1;
+    -- Lado ausente: a Entrada não tem origem e o Consumo não tem destino.
+    IF p_localizacao_id IS NULL THEN
+        RETURN;
     END IF;
 
+    IF p_entra THEN
+        -- Upsert atômico. O check-then-insert perdia estoque sob concorrência,
+        -- ou violava a UNIQUE.
+        INSERT INTO mapoteca.estoque_material
+            (tipo_material_id, quantidade, localizacao_id,
+             usuario_criacao_id, usuario_atualizacao_id)
+        VALUES (p_tipo_material_id, p_quantidade, p_localizacao_id,
+                p_usuario_id, p_usuario_id)
+        ON CONFLICT (tipo_material_id, localizacao_id)
+        DO UPDATE SET quantidade = mapoteca.estoque_material.quantidade + EXCLUDED.quantidade,
+                      usuario_atualizacao_id = EXCLUDED.usuario_atualizacao_id,
+                      data_atualizacao = CURRENT_TIMESTAMP;
+        RETURN;
+    END IF;
+
+    -- SAÍDA. O FOR UPDATE serializa duas saídas simultâneas do mesmo saldo.
+    SELECT quantidade INTO v_saldo
+    FROM mapoteca.estoque_material
+    WHERE tipo_material_id = p_tipo_material_id
+      AND localizacao_id = p_localizacao_id
+    FOR UPDATE;
+
+    SELECT nome INTO v_local
+    FROM mapoteca.tipo_localizacao WHERE code = p_localizacao_id;
+    SELECT nome INTO v_material
+    FROM mapoteca.tipo_material WHERE id = p_tipo_material_id;
+
+    -- A MENSAGEM ENSINA O CONSERTO, e não só nomeia a recusa. Quem lança consumo
+    -- de um material que está no Almoxarifado precisa saber que o caminho é
+    -- transferir para a Seção antes, e não que "houve um erro".
+    IF v_saldo IS NULL THEN
+        RAISE EXCEPTION
+            '% não tem estoque em %. Transfira o material para lá antes de lançar esta saída, ou lance primeiro a Entrada que o trouxe.',
+            COALESCE(v_material, 'O material'), COALESCE(v_local, 'essa localização');
+    END IF;
+
+    IF v_saldo < p_quantidade THEN
+        RAISE EXCEPTION
+            'Estoque insuficiente de % em %. Disponível: %, solicitado: %. Transfira mais material para lá ou corrija a quantidade do movimento.',
+            COALESCE(v_material, 'material'), COALESCE(v_local, 'essa localização'),
+            v_saldo, p_quantidade;
+    END IF;
+
+    UPDATE mapoteca.estoque_material
+    SET quantidade = quantidade - p_quantidade,
+        usuario_atualizacao_id = p_usuario_id,
+        data_atualizacao = CURRENT_TIMESTAMP
+    WHERE tipo_material_id = p_tipo_material_id
+      AND localizacao_id = p_localizacao_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- UM gatilho para as três operações, e não três funções.
+--
+-- Alterar um movimento é DESFAZER o antigo e APLICAR o novo, nesta ordem: o
+-- contrário deixa passar a alteração que aumenta o consumo além do saldo mas
+-- caberia depois da devolução. Os três antigos gatilhos de `consumo_material`
+-- tinham essa lógica escrita três vezes, e o de UPDATE tinha um ramo próprio só
+-- para "o material mudou" -- aqui isso é o caso geral, sem ramo nenhum.
+--
+-- AFTER, e não BEFORE: quando o gatilho roda, os CHECKs da linha já a
+-- aprovaram, então a forma do movimento (Consumo só da Seção, Contagem com um
+-- lado só) nunca precisa ser reconferida aqui.
+CREATE OR REPLACE FUNCTION mapoteca.trg_movimento_material()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        -- Desfaz o movimento antigo: o que tinha saído volta, e o que tinha
+        -- entrado sai.
+        PERFORM mapoteca.aplicar_saldo_material(
+            OLD.tipo_material_id, OLD.localizacao_origem_id, OLD.quantidade,
+            TRUE, OLD.usuario_criacao_id);
+        PERFORM mapoteca.aplicar_saldo_material(
+            OLD.tipo_material_id, OLD.localizacao_destino_id, OLD.quantidade,
+            FALSE, OLD.usuario_criacao_id);
+    END IF;
+
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        PERFORM mapoteca.aplicar_saldo_material(
+            NEW.tipo_material_id, NEW.localizacao_origem_id, NEW.quantidade,
+            FALSE, NEW.usuario_atualizacao_id);
+        PERFORM mapoteca.aplicar_saldo_material(
+            NEW.tipo_material_id, NEW.localizacao_destino_id, NEW.quantidade,
+            TRUE, NEW.usuario_atualizacao_id);
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_consumo_material_insert
-BEFORE INSERT ON mapoteca.consumo_material
+CREATE TRIGGER trg_movimento_material_insert
+AFTER INSERT ON mapoteca.movimento_material
 FOR EACH ROW
-EXECUTE FUNCTION mapoteca.trg_consumo_material_insert();
+EXECUTE FUNCTION mapoteca.trg_movimento_material();
 
-CREATE TRIGGER trg_consumo_material_update
-BEFORE UPDATE ON mapoteca.consumo_material
+CREATE TRIGGER trg_movimento_material_update
+AFTER UPDATE ON mapoteca.movimento_material
 FOR EACH ROW
-EXECUTE FUNCTION mapoteca.trg_consumo_material_update();
+EXECUTE FUNCTION mapoteca.trg_movimento_material();
 
-CREATE TRIGGER trg_consumo_material_delete
-AFTER DELETE ON mapoteca.consumo_material
+CREATE TRIGGER trg_movimento_material_delete
+AFTER DELETE ON mapoteca.movimento_material
 FOR EACH ROW
-EXECUTE FUNCTION mapoteca.trg_consumo_material_delete();
+EXECUTE FUNCTION mapoteca.trg_movimento_material();
 
 COMMIT;

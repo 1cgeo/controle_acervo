@@ -92,9 +92,19 @@ const TIPO_CLIENTE = {
 }
 
 // mapoteca.situacao_pedido
+//
+// NAO COMECA EM 1, e o buraco e deliberado. O code 1 era 'Pre cadastramento do
+// pedido realizado' e saiu em 2026-08-08 com ZERO pedidos: a mapoteca nunca
+// trabalhou o estagio "alguem avisou que vem um pedido". Renumerar as outras
+// seis reescreveria a situacao dos 166 pedidos e mentiria sobre o que ja esta
+// gravado em `auditoria.evento`, entao a lacuna fica.
+//
+// O 2 se chamava DOCUMENTO_RECEBIDO ('DIEx/Oficio do pedido recebido') e virou
+// PEDIDO_RECEBIDO no mesmo dia. So o rotulo mudou: o code e o mesmo, porque o
+// estagio existe -- ele so estava nomeado pelo DOCUMENTO, e o pedido de civil
+// chega por e-mail, sem DIEx nenhum.
 const SITUACAO_PEDIDO = {
-  PRE_CADASTRAMENTO: 1,
-  DOCUMENTO_RECEBIDO: 2,
+  PEDIDO_RECEBIDO: 2,
   EM_ANDAMENTO: 3,
   REMETIDO: 4,
   CONCLUIDO: 5,
@@ -124,14 +134,12 @@ const FORMA_ENTREGA = {
   OUTROS: 5
 }
 
-// dominio.categoria_material (o que separa as tabelas 7.2 e 7.3 do RPCMTec)
-const CATEGORIA_MATERIAL = {
-  PAPEL: 1,
-  TINTA: 2,
-  // Material que não é insumo de impressão (cabeçote, peça). Não sai em
-  // nenhuma das duas tabelas do RPCMTec.
-  OUTRO: 3
-}
+// NÃO EXISTE `CATEGORIA_MATERIAL`, desde 2026-08-08. Ela espelhava
+// `dominio.categoria_material`, e a única coisa que a categoria decidia era em
+// qual das duas tabelas de insumo do RPCMTec o material sairia: a 7.2 (Papel) ou
+// a 7.3 (Tintas). O chefe fundiu as duas na 7.2, e a 7.3 sumiu -- a tabela de
+// domínio, a coluna e esta constante foram junto. Ver
+// migrations/2026-08-08_livro_de_movimentos.sql.
 
 // dominio.tipo_licitacao (4.4 GCALC DSG / 4.5 demais licitações)
 const TIPO_LICITACAO = {
@@ -152,6 +160,28 @@ const TIPO_LOCALIZACAO = {
   ALMOXARIFADO: 2,
   AQUISICAO_REALIZADA: 3,
   SALDO_NO_EMPENHO: 4
+}
+
+// ONDE O MATERIAL ESTÁ DE VERDADE. As quatro localizações são ETAPAS da vida do
+// material, e não prateleiras: 'Aquisição realizada' e 'Saldo no empenho' são
+// material COMPRADO e ainda não entregue. Somá-las ao estoque faria a Divisão
+// contar, como disponível, resma que ainda está com o fornecedor -- e é por isso
+// que tanto a coluna "Estoque atual" da 7.2 do RPCMTec quanto o alerta de
+// estoque mínimo contam só estas duas.
+const LOCALIZACOES_NA_CASA = [
+  TIPO_LOCALIZACAO.SECAO,
+  TIPO_LOCALIZACAO.ALMOXARIFADO
+]
+
+// mapoteca.tipo_movimento_material: o livro de movimentos do material.
+//
+// São as quatro coisas que acontecem com o material: ele CHEGA, MUDA de lugar,
+// ACABA e é CONFERIDO na prateleira contra o que o sistema diz.
+const TIPO_MOVIMENTO_MATERIAL = {
+  ENTRADA: 1,
+  TRANSFERENCIA: 2,
+  CONSUMO: 3,
+  CONTAGEM: 4
 }
 
 // dominio.tipo_relacionamento
@@ -222,10 +252,11 @@ module.exports = {
   SITUACAO_PEDIDO,
   TIPO_MIDIA,
   FORMA_ENTREGA,
-  CATEGORIA_MATERIAL,
   TIPO_LICITACAO,
   CLASSIFICACAO_NC,
   TIPO_LOCALIZACAO,
+  LOCALIZACOES_NA_CASA,
+  TIPO_MOVIMENTO_MATERIAL,
   TIPO_RELACIONAMENTO,
   TIPO_ANEXO_PEDIDO,
   CANAL_RECEBIMENTO,

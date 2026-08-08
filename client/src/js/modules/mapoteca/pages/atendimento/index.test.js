@@ -31,7 +31,9 @@ const PEDIDOS = [
   },
   {
     id: 57, localizador_pedido: 'QQ11-WW22-EE33', cliente_nome: '3º RCC',
-    situacao_pedido_id: 2, situacao_pedido_nome: 'DIEx recebido',
+    // O rotulo do code 2 mudou em 2026-08-08: 'DIEx/Oficio do pedido recebido'
+    // virou 'Pedido Recebido'. O code NAO mudou.
+    situacao_pedido_id: 2, situacao_pedido_nome: 'Pedido Recebido',
     data_pedido: '2026-07-20', prazo: '2026-08-30', dias_para_prazo: 31,
     documento_solicitacao: 'DIEx 789', total_itens: 1, itens_impressos: 1,
     quantidade_pedida: 5, quantidade_impressa: 5,

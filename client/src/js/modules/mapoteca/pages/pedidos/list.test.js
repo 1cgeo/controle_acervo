@@ -26,6 +26,7 @@ const PEDIDOS = [
     tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
     documento_solicitacao: 'DIEx 123', situacao_pedido_id: 3,
     situacao_pedido_nome: 'Em andamento', prazo: '2026-06-30',
+    palavras_chave: ['Extra-PIT', 'Adestramento'],
     quantidade_produtos: 8, itens_impressos: 3, localizador_pedido: 'AB12-CD34-EF56',
   },
   {
@@ -33,6 +34,7 @@ const PEDIDOS = [
     tipo_cliente_id: 6, tipo_cliente_nome: 'Órgão Publico Municipal',
     documento_solicitacao: 'Ofício 9', situacao_pedido_id: 5,
     situacao_pedido_nome: 'Concluído', prazo: '2026-07-01',
+    palavras_chave: [],
     quantidade_produtos: 2, itens_impressos: 2, localizador_pedido: 'ZZ99-YY88-XX77',
   },
   {
@@ -57,6 +59,16 @@ const PEDIDO_AGUARDANDO = {
 
 /** Texto das linhas visiveis da tabela (o filtro age no corpo, nao no cabecalho). */
 const corpo = (container) => [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
+
+/** O campo de busca por palavra-chave, na barra de filtros. */
+const campoEtiqueta = (container) => container.querySelector('.filtro-barra__busca input');
+
+/** Digita a etiqueta e busca por Enter, como quem usa a tela. */
+const buscarEtiqueta = (container, texto) => {
+  const campo = campoEtiqueta(container);
+  campo.value = texto;
+  campo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+};
 
 /** Clica no botao de filtro pelo rotulo. */
 const clicarFiltro = (container, rotulo) => {
@@ -83,13 +95,14 @@ describe('renderPedidosList', () => {
     await flush();
 
     expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
-    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL);
+    // Sem palavra-chave, o segundo argumento vai NULO: e o ano inteiro.
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL, null);
 
     filtroAno(container).value = String(ANO_ANTERIOR);
     filtroAno(container).dispatchEvent(new Event('change', { bubbles: true }));
     await flush();
 
-    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ANTERIOR);
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ANTERIOR, null);
     // O contador diz de que ano e a contagem que esta na tela.
     expect(container.querySelector('.page__meta').textContent).toContain(String(ANO_ANTERIOR));
 
@@ -276,6 +289,144 @@ describe('renderPedidosList', () => {
 
     expect(container.textContent).toContain('Falha ao consultar os pedidos');
     expect(container.textContent).not.toContain('Nenhum pedido neste ano');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// A BUSCA POR PALAVRA-CHAVE, de 2026-08-08. `pedido.palavras_chave` tinha 18
+// linhas preenchidas e NENHUM leitor: o indice GIN existia desde a instalacao e
+// nao servia consulta nenhuma. O que faltava era a consulta, e ela e do
+// SERVIDOR, porque casa a etiqueta inteira por continencia (@>).
+describe('busca por palavra-chave na lista de pedidos', () => {
+  beforeEach(() => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getPedidos.mockResolvedValue(PEDIDOS);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
+  });
+
+  test('o campo fica na barra de filtros, ao lado do ano', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(campoEtiqueta(container)).not.toBeNull();
+    // O ano continua sendo o primeiro da barra: ele e quem decide o que o
+    // servidor traz, e a etiqueta so recorta dentro dele.
+    expect(filtroAno(container)).not.toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('buscar chama a ROTA com o parametro palavra_chave', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    buscarEtiqueta(container, 'Extra-PIT');
+    await flush();
+
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL, 'Extra-PIT');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('apagar o campo e buscar de novo traz o ano inteiro', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    buscarEtiqueta(container, 'Extra-PIT');
+    await flush();
+    buscarEtiqueta(container, '');
+    await flush();
+
+    // Nulo, e nao string em branco: o Joi do servidor recusa o `.min(1)`, que
+    // pediria "todo pedido com a etiqueta vazia".
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL, null);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Filtrar por algo que a tela nao mostra deixa quem filtrou sem saber por que
+  // aquela linha entrou, e sem saber com que grafia a etiqueta foi gravada, que
+  // e justamente o que a busca exige acertar.
+  test('a coluna de palavras-chave aparece, com as etiquetas da linha', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const cabecalhos = [...container.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    expect(cabecalhos).toContain('Palavras-chave');
+    // A linha do pedido 55 e a unica com etiqueta; a tabela abre ordenada por
+    // data decrescente, entao ela nao e a primeira.
+    const linha = corpo(container).find(t => t.includes('AB12-CD34-EF56'));
+    expect(linha).toContain('Extra-PIT');
+    expect(linha).toContain('Adestramento');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O clique e a unica forma de acertar a grafia sem adivinhar: a busca casa a
+  // etiqueta INTEIRA e diferencia maiuscula de minuscula.
+  test('clicar na etiqueta busca por ela, com a grafia gravada', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const etiqueta = [...container.querySelectorAll('tbody .chip')]
+      .find(c => c.textContent === 'Extra-PIT');
+    etiqueta.click();
+    await flush();
+
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL, 'Extra-PIT');
+    expect(campoEtiqueta(container).value).toBe('Extra-PIT');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A busca casa a etiqueta INTEIRA e e sensivel a maiuscula, de proposito: e o
+  // que usa o indice GIN. Sem o aviso no campo, quem digitar 'extra' e nao
+  // achar 'Extra-PIT' conclui que a busca esta quebrada.
+  test('a ajuda do campo explica que a etiqueta casa inteira e com maiuscula', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const ajuda = container.querySelector('.filtro-barra__busca').textContent;
+    expect(ajuda).toContain('etiqueta inteira');
+    expect(ajuda).toContain('maiúscula');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o contador diz qual etiqueta recortou a lista', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    svc.getPedidos.mockResolvedValue([PEDIDOS[0]]);
+    buscarEtiqueta(container, 'Extra-PIT');
+    await flush();
+
+    const meta = container.querySelector('.page__meta').textContent;
+    expect(meta).toContain('1 pedido(s)');
+    expect(meta).toContain('Extra-PIT');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Mandar a alguem o link de um recorte vale mais do que instruir como chegar
+  // nele, e e a mesma ideia do `?filtro=` que a fila de atendimento ja usa.
+  test('?palavra_chave= na URL abre a tela com a busca ja feita', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(
+      container, { params: {}, query: new URLSearchParams('palavra_chave=Extra-PIT') }
+    );
+    await flush();
+
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ATUAL, 'Extra-PIT');
+    expect(campoEtiqueta(container).value).toBe('Extra-PIT');
 
     if (typeof cleanup === 'function') cleanup();
   });

@@ -117,7 +117,7 @@ describe('A forma de entrega vive no PEDIDO', () => {
       .send({
         data_pedido: '2026-03-10',
         cliente_id: clienteId,
-        situacao_pedido_id: 1,
+        situacao_pedido_id: 2,
         forma_entrega_id: 99
       })
 

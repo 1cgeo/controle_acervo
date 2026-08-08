@@ -26,8 +26,9 @@ const CLIENTES = [
 const SITUACOES = [{ code: 3, nome: 'Em andamento' }, { code: 5, nome: 'Concluído' }];
 const CANAIS = [{ code: 1, nome: 'Ouvidoria/LAI' }];
 
-// Pedido militar. O omds preenchido reproduz a produção: os 33 pedidos civis
-// também têm este campo gravado com "1º CGEO".
+// Pedido militar. A `operacao` preenchida reproduz a produção: há pedido de
+// civil com campo de militar gravado, e é o que faz a regra do campo
+// preenchido valer alguma coisa.
 const PEDIDO_MILITAR = {
   id: 55,
   cliente_id: 7,
@@ -39,7 +40,7 @@ const PEDIDO_MILITAR = {
   situacao_pedido_nome: 'Em andamento',
   data_pedido: '2026-06-10',
   demandante: 'CMS',
-  omds: '1º CGEO',
+  operacao: 'Operação Fronteira',
   palavras_chave: [],
   produtos: [],
   impressao: { concluida: false, itens_concluidos: 0, total_itens: 0 },
@@ -111,8 +112,8 @@ describe('modo do pedido na edição', () => {
 
     // Demandante está vazio neste pedido de civil, então some.
     expect(campo('Demandante').classList.contains('hidden')).toBe(true);
-    // OMDS tem "1º CGEO" gravado, então fica na tela para poder ser corrigido.
-    expect(campo('OM responsável').classList.contains('hidden')).toBe(false);
+    // Operação tem valor gravado, então fica na tela para poder ser corrigida.
+    expect(campo('Operação').classList.contains('hidden')).toBe(false);
     expect(campo('Canal de recebimento').classList.contains('hidden')).toBe(false);
 
     if (typeof cleanup === 'function') cleanup();

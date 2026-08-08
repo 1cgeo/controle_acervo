@@ -59,8 +59,14 @@ mapoteca relatorio detalhado --ano 2026 --csv
 mapoteca relatorio impressao --ano 2026 --ods   # a aba META4_DETALHADA
 mapoteca anuario --ano 2026 --mes 7 --ods       # Anuário Estatístico (exige admin)
 
+# material: o LIVRO escreve, o saldo só se lê
+mapoteca movimento listar --tipo_movimento_id 3 --data_inicio 2026-07-01
+mapoteca movimento criar --data '{"tipo_material_id":18,"tipo_movimento_id":3,"quantidade":2,"data_movimento":"2026-08-08","localizacao_origem_id":1}'
+mapoteca estoque listar                   # o saldo de hoje, por localização
+
 # CRUD, quando o verbo de intenção não cobre
 mapoteca pedido listar --ano 2025 --campos id,prazo,cliente_nome
+mapoteca pedido listar --ano 2026 --palavra_chave Extra-PIT   # etiqueta INTEIRA, com maiúscula
 mapoteca cliente criar --data '{...}' --dry-run
 mapoteca pedido deletar --ids 116 --confirmar 116
 
@@ -116,6 +122,7 @@ O comando é **idempotente**: rodá-lo de novo com o mesmo plano completa o que 
 - **A armadilha do PUT**: o `PUT` da mapoteca vai na coleção, leva o id no **corpo** e **substitui a linha inteira**. Mandar só o campo que mudou zera todos os outros, calado. O CLI lista exatamente quais campos voltariam ao default antes de enviar, e o verbo `pedido situacao` faz o ciclo ler, alterar e reenviar por você.
 - **Data que grava o dia anterior**: o servidor devolve as datas como timestamp ISO e o schema as regrava cruas numa coluna `DATE`. Num fuso a oeste de Greenwich isso grava `D-1`. Todo reenvio passa pelo recorte para `YYYY-MM-DD`.
 - **Exclusão em lote e irreversível**: o `DELETE` sempre leva um array de ids, e excluir um pedido apaga todos os itens dele junto. Exige `--confirmar` com a mesma lista repetida; confirmar `42` quando se pediu `42,43` não passa.
+- **Escrita em recurso derivado**: `estoque` é só leitura desde 2026-08-08, porque o saldo passou a ser o acumulado do livro de movimentos. `estoque criar` não monta corpo nenhum nem gasta requisição: responde que a escrita é em `movimento` e qual contrato ler.
 - **MI ambíguo ou ausente**: o `resolver` nunca escolhe no escuro. Duas versões candidatas viram aviso e nenhuma escolha.
 - **Duas linhas com o mesmo MI**: viram **um** item, com a quantidade de uma linha, nunca a soma (a duplicata é erro de cópia do solicitante, e imprimir o dobro é o erro caro). A fusão nunca é silenciosa: sai aviso e o rastro das duas linhas fica na observação do item.
 - **Falha parcial**: não há transação entre criar o pedido, criar os itens e subir o anexo. Quando o anexo falha, o CLI diz explicitamente para não repetir o `cadastrar` e dá o comando de reenviar só o anexo.
@@ -143,7 +150,7 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 
 O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção; e no diretório do SCA, não da mapoteca, porque o token vale para a API inteira. `--sem-cache` desliga.
 
-O acesso é por **perfil** no módulo `mapoteca`: consulta lê, operador imprime e dá baixa em material, gerente cadastra pedido, cliente e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
+O acesso é por **perfil** no módulo `mapoteca`: consulta lê (inclusive o livro de material), operador imprime e faz tudo de material (lança movimento, cadastra e conta), gerente cadastra pedido, cliente, item e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
 
 ## Testes
 

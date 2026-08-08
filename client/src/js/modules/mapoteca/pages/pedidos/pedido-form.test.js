@@ -72,19 +72,17 @@ describe('aplicarModoPedido', () => {
     aplicarModoPedido({ fields: form.fields, modo: 'civil', civilElement });
 
     expect(escondido(form.fields.demandante)).toBe(true);
-    expect(escondido(form.fields.omds)).toBe(true);
     expect(escondido(form.fields.operacao)).toBe(true);
     expect(escondido(form.fields.previsto_pit)).toBe(true);
     expect(escondido(form.fields.meta_pit_id)).toBe(true);
     expect(civilElement.classList.contains('hidden')).toBe(false);
   });
 
-  // A regra que protege o dado gravado.: os 33
-  // pedidos civis têm omds com o valor constante "1º CGEO".
+  // A regra que protege o dado gravado: há pedido de civil com campo de militar
+  // preenchido, e esconder às cegas deixaria o dado gravado e invisível.
   test('o modo civil NÃO esconde o campo militar PREENCHIDO', () => {
     const { form, civilElement } = montar({
       demandante: 'CMS',
-      omds: '1º CGEO',
       previsto_pit: true,
       meta_pit_id: 8,
     });
@@ -92,7 +90,6 @@ describe('aplicarModoPedido', () => {
     aplicarModoPedido({ fields: form.fields, modo: 'civil', civilElement });
 
     expect(escondido(form.fields.demandante)).toBe(false);
-    expect(escondido(form.fields.omds)).toBe(false);
     expect(escondido(form.fields.previsto_pit)).toBe(false);
     expect(escondido(form.fields.meta_pit_id)).toBe(false);
     // O campo militar que ficou vazio continua escondido.
@@ -131,7 +128,6 @@ describe('aplicarModoPedido', () => {
       documento_solicitacao: 'DIEx 123',
       ponto_contato: 'Cap Silva',
       demandante: 'CMS',
-      omds: '1º CGEO',
       operacao: 'Operação Fronteira',
       previsto_pit: true,
       meta_pit_id: 8,
@@ -160,7 +156,57 @@ describe('aplicarModoPedido', () => {
     const valores = form.getValues();
 
     expect(Object.keys(valores)).toContain('demandante');
-    expect(Object.keys(valores)).toContain('omds');
     expect(valores.previsto_pit).toBe(false);
+  });
+});
+
+// A PODA DO PEDIDO, de 2026-08-08. As duas colunas sairam do banco, e o corpo
+// que ainda as mandasse cairia no `stripUnknown` do servidor, calado.
+describe('o que a poda do pedido tirou do formulario', () => {
+  test('nao existe mais campo de OM responsavel (OMDS)', () => {
+    const { form } = montar({ omds: '1º CGEO' });
+
+    expect(form.fields.omds).toBeUndefined();
+    expect(Object.keys(form.getValues())).not.toContain('omds');
+    // Nem escondido: o rotulo sumiu da tela inteira.
+    const raiz = document.createElement('div');
+    raiz.appendChild(form.adicionalElement);
+    expect(raiz.textContent).not.toContain('OM responsável');
+    expect(raiz.textContent).not.toContain('OMDS');
+  });
+});
+
+// O endereco de entrega ja existia no banco (`pedido.endereco_entrega`) e a
+// tela nunca o pedia: 3 pedidos preenchidos em 166. O campo entrou, e com ele o
+// aviso de que vazio NAO e falta de dado.
+describe('endereço de entrega no formulário', () => {
+  test('o campo grava o que foi digitado no payload', () => {
+    const { form } = montar();
+
+    form.fields.endereco_entrega.setValue('Rua Marechal Deodoro, 100 - Porto Alegre');
+
+    expect(form.getValues().endereco_entrega)
+      .toBe('Rua Marechal Deodoro, 100 - Porto Alegre');
+  });
+
+  test('vazio vira null, e nao string em branco', () => {
+    const { form } = montar();
+
+    expect(form.getValues().endereco_entrega).toBeNull();
+  });
+
+  test('o pedido gravado abre com o endereço dele', () => {
+    const { form } = montar({ endereco_entrega: 'Av. Bento Gonçalves, 2 - Viamão' });
+
+    expect(form.getValues().endereco_entrega).toBe('Av. Bento Gonçalves, 2 - Viamão');
+  });
+
+  // Sem esta frase no campo, quem o vê vazio copia para dentro dele o endereço
+  // do cliente e congela ali um endereço que o cadastro vai corrigir depois.
+  test('a ajuda diz que vazio significa usar o endereço do cliente', () => {
+    const { form } = montar();
+    const ajuda = form.fields.endereco_entrega.element.textContent;
+
+    expect(ajuda).toContain('Em branco, vale o endereço do cliente');
   });
 });

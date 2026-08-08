@@ -123,7 +123,7 @@ export async function renderResumoAnualTab(container, getAno) {
   // O CONSUMO DE MIDIA, que tambem so saia em CSV.
   //
   // E a entrada direta da compra de papel, e o unico dado real de gasto de
-  // insumo enquanto `mapoteca.consumo_material` estiver sem lancamento (a aba
+  // insumo enquanto o LIVRO de movimentos estiver sem consumo lancado (a aba
   // Materiais mostra zero nos doze meses).
   const entregasMidiaChart = createBarChart({
     title: 'Entregas por mídia',

@@ -118,6 +118,20 @@ async function executar (args, cfg) {
     padrao: recurso.colunas
   }
 
+  // Recurso DERIVADO nao tem rota de escrita, e o erro util e o encaminhamento.
+  // Sem isto, `mapoteca estoque criar` montaria um corpo contra um schema
+  // inexistente e sairia com 404 do servidor, sem nunca dizer onde se escreve.
+  if (recurso.somenteLeitura && acao !== 'listar' && acao !== 'obter') {
+    const erro = new Error(
+      `${chave} e SO LEITURA: nao ha POST, PUT nem DELETE em /api${recurso.caminho}.\n` +
+      (recurso.escritaPor
+        ? `Quem escreve e "${recurso.escritaPor}": mapoteca schema ${recurso.escritaPor}`
+        : 'Este recurso e derivado de outro.')
+    )
+    erro.jaFormatado = true
+    throw erro
+  }
+
   switch (acao) {
     // -----------------------------------------------------------------------
     case 'listar': {
@@ -301,6 +315,10 @@ function precisaServidor (args) {
   const recurso = RECURSOS[args._[0]]
   const acao = args._[1] || 'listar'
   if (recurso && recurso.semListar && (acao === 'listar' || acao === 'obter')) return false
+  // Mesma razao, do outro lado: escrever num recurso so de leitura nao chega a
+  // requisicao nenhuma, e exigir SCA_URL trocaria o erro que ensina por um erro
+  // de configuracao.
+  if (recurso && recurso.somenteLeitura && acao !== 'listar' && acao !== 'obter') return false
   return true
 }
 

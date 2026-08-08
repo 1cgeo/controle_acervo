@@ -1,7 +1,7 @@
 "use strict";
 
 const { db } = require("../database");
-const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO, TIPO_CLIENTE } } = require("../utils");
+const { AppError, httpCode, domainConstants: { SITUACAO_PEDIDO, TIPO_PRODUTO, TIPO_CLIENTE, TIPO_MOVIMENTO_MATERIAL } } = require("../utils");
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
@@ -408,6 +408,11 @@ controller.getStockByLocation = async () => {
 // meses, que não tem como respeitar um ano de contexto (em 2025 ela continuaria
 // terminando hoje). A tela de consumo (#/mapoteca/consumo) já é por ano, então
 // os dois passam a contar a mesma coisa.
+//
+// A FONTE é o LIVRO, filtrado no tipo Consumo, desde 2026-08-08. Entrada,
+// Transferência e Contagem moram na mesma tabela e não gastam nada: sem o
+// filtro, o painel somaria a reposição junto com o gasto e o gráfico subiria
+// justamente no mês em que o material chegou.
 controller.getMaterialConsumptionTrends = async (ano) => {
   return db.conn.task(async t => {
     const monthlyConsumption = await t.any(`
@@ -418,8 +423,9 @@ controller.getMaterialConsumptionTrends = async (ano) => {
         m.mes,
         COALESCE(SUM(cm.quantidade), 0) AS quantidade_total
       FROM meses m
-      LEFT JOIN mapoteca.consumo_material cm ON
-        date_trunc('month', cm.data_consumo)::date = m.mes
+      LEFT JOIN mapoteca.movimento_material cm ON
+        cm.tipo_movimento_id = ${TIPO_MOVIMENTO_MATERIAL.CONSUMO} AND
+        date_trunc('month', cm.data_movimento)::date = m.mes
       GROUP BY m.mes
       ORDER BY m.mes
     `, { ano });
@@ -430,9 +436,10 @@ controller.getMaterialConsumptionTrends = async (ano) => {
         tm.id,
         tm.nome,
         SUM(cm.quantidade) AS quantidade_total
-      FROM mapoteca.consumo_material cm
+      FROM mapoteca.movimento_material cm
       JOIN mapoteca.tipo_material tm ON cm.tipo_material_id = tm.id
-      WHERE ${filtroAno('cm.data_consumo')}
+      WHERE cm.tipo_movimento_id = ${TIPO_MOVIMENTO_MATERIAL.CONSUMO}
+        AND ${filtroAno('cm.data_movimento')}
       GROUP BY tm.id, tm.nome
       ORDER BY quantidade_total DESC
       LIMIT 5
@@ -467,8 +474,9 @@ controller.getMaterialConsumptionTrends = async (ano) => {
       FROM meses m
       CROSS JOIN material_ids mi
       JOIN mapoteca.tipo_material tm ON mi.material_id = tm.id
-      LEFT JOIN mapoteca.consumo_material cm ON
-        date_trunc('month', cm.data_consumo)::date = m.mes AND
+      LEFT JOIN mapoteca.movimento_material cm ON
+        cm.tipo_movimento_id = ${TIPO_MOVIMENTO_MATERIAL.CONSUMO} AND
+        date_trunc('month', cm.data_movimento)::date = m.mes AND
         cm.tipo_material_id = mi.material_id
       GROUP BY m.mes, mi.material_id, tm.nome
       ORDER BY m.mes, mi.material_id

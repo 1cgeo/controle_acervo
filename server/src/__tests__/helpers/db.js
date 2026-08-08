@@ -75,7 +75,7 @@ const TABELAS_DO_CLEAN = `
   orcamento.licitacao, orcamento.dfd_item, orcamento.dfd,
   pit.revisao, pit.meta,
   rpcmtec.edicao,
-  mapoteca.impressao_item, mapoteca.consumo_material, mapoteca.estoque_material,
+  mapoteca.impressao_item, mapoteca.movimento_material, mapoteca.estoque_material,
   mapoteca.manutencao_plotter, mapoteca.produto_pedido, mapoteca.pedido,
   mapoteca.plotter, mapoteca.cliente, mapoteca.tipo_material,
   ponto_controle.upload_arquivo_temp, ponto_controle.upload_ponto_temp,

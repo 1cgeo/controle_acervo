@@ -112,7 +112,7 @@ describe('RPCMTec: solicitante pela sigla', () => {
     conn.one(
       `INSERT INTO mapoteca.pedido
          (cliente_id, data_pedido, situacao_pedido_id, usuario_criacao_id, usuario_atualizacao_id)
-       VALUES ($1, $2, 1, 1, 1) RETURNING id`,
+       VALUES ($1, $2, 2, 1, 1) RETURNING id`,
       [clienteId, data]
     )
 

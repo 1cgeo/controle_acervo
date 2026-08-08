@@ -41,9 +41,13 @@ export function getDominioTipoMidia() {
 }
 
 /** @returns {Promise<Array<{code:number, nome:string}>>} */
-export function getDominioTipoLocalizacao() {
-  return cachedFetch('dominio:tipo_localizacao', () => apiGet(`${BASE}/dominio/tipo_localizacao`), TTL_DOMINIO);
-}
+// SEM `getDominioTipoLocalizacao`. As quatro localizacoes deixaram de vir por
+// rota em 2026-08-08, e os codigos delas passaram a viver em
+// `@modules/mapoteca/movimento-material.js`. A razao e que a tela nao usa a
+// localizacao so como RÓTULO: a regra "consumo so sai da Seção" precisa comparar
+// contra o CODIGO 1, e um codigo lido de uma resposta HTTP nao serve de
+// constante. Com os codigos ali, buscar os nomes de novo seria uma segunda fonte
+// para a mesma coisa.
 
 /** @returns {Promise<Array<{code:number, nome:string}>>} */
 export function getDominioFormaEntrega() {
@@ -89,14 +93,33 @@ export function deleteClientes(ids) {
 // ---------------------------------------------------------------------------
 
 /**
- * Pedidos do ANO, com cliente, contagem de produtos e `itens_impressos`.
+ * Pedidos do ANO, com cliente, contagem de produtos, `itens_impressos` e as
+ * `palavras_chave` de cada linha.
+ *
+ * A PALAVRA-CHAVE FILTRA NO SERVIDOR, e nao aqui. Ela casa a etiqueta INTEIRA e
+ * diferencia maiuscula de minuscula, porque e assim que o indice GIN de
+ * `mapoteca.pedido.palavras_chave` responde: o opclass default de array atende
+ * `@>`, `<@`, `&&` e `=`, e um `ILIKE` ou um `lower()` leriam a tabela inteira
+ * com o indice ao lado sem tocar nele. Filtrar aqui, sobre a lista ja baixada,
+ * daria a busca "por pedaco" que o campo NAO promete, e as duas telas passariam
+ * a discordar do que e um acerto.
+ *
  * @param {number} ano
+ * @param {string|null} [palavraChave] - etiqueta inteira; nulo traz o ano todo
  */
-export function getPedidos(ano) {
-  // Por ANO, e a chave de cache junto: voltar ao ano anterior nao paga a busca
-  // de novo, e `invalidate('pedidos')` continua limpando todos, porque a
-  // invalidacao e por prefixo.
-  return cachedFetch(`pedidos:list:${ano}`, () => apiGet(`${BASE}/pedido?ano=${ano}`), TTL_LISTA);
+export function getPedidos(ano, palavraChave = null) {
+  // Por ANO e por ETIQUETA, e a chave de cache junto: voltar ao ano anterior ou
+  // repetir a mesma busca nao paga a requisicao de novo, e
+  // `invalidate('pedidos')` continua limpando todas, porque a invalidacao e por
+  // prefixo.
+  const filtro = palavraChave
+    ? `&palavra_chave=${encodeURIComponent(palavraChave)}`
+    : '';
+  return cachedFetch(
+    `pedidos:list:${ano}:${palavraChave || ''}`,
+    () => apiGet(`${BASE}/pedido?ano=${ano}${filtro}`),
+    TTL_LISTA
+  );
 }
 
 /**
@@ -149,11 +172,15 @@ export function deletePedidos(ids) {
 /**
  * Add an item to an order. `uuid_versao` is required (RN08, no loose items).
  * @param {{uuid_versao:string, pedido_id:number, quantidade:number, tipo_midia_id:number,
- *   producao_especifica?:boolean, quantidade_fornecida?:number, tipo_midia_fornecida_id?:number,
+ *   producao_especifica?:boolean, tipo_midia_fornecida_id?:number,
  *   observacao?:string}} item
  *
  * A forma de entrega e a data de entrega são do PEDIDO (`forma_entrega_id` e
  * `data_atendimento`), e não do item.
+ *
+ * A quantidade fornecida saiu do item em 2026-08-08: media IGUAL à pedida em
+ * 1759 de 1759 linhas. A MÍDIA fornecida ficou, com as 25 divergências reais
+ * dela; o sufixo comum às duas era coincidência.
  */
 export function createProdutoPedido(item) {
   invalidate('pedidos');
@@ -350,20 +377,33 @@ export function deleteManutencoes(ids) {
 }
 
 // ---------------------------------------------------------------------------
-// Tipos de material
+// Insumos (tipo de material)
 // ---------------------------------------------------------------------------
+//
+// O CADASTRO DE INSUMO E DO OPERADOR desde 2026-08-08, e era de gerente: quem
+// faz a contagem na prateleira e quem descobre, ali, que o cartucho novo ainda
+// nao existe no sistema. Quem barra a escrita segue sendo o servidor.
+//
+// O material NAO tem mais `categoria_id`, `tipo_midia_id` nem `meta_anual`. A
+// categoria so escolhia entre a 7.2 (Papel) e a 7.3 (Tintas) do RPCMTec, e o
+// chefe fundiu as duas; a midia era a ponte impressao -> consumo, e a ponte
+// morreu; a meta anual nunca teve leitor. A UNIDADE vai no NOME do insumo.
 
-/** All material types with total stock and `abaixo_minimo` flag. */
+/**
+ * Todo insumo, com os DOIS totais e o alerta de minimo ja resolvido:
+ * `estoque_total` (as quatro localizacoes), `estoque_disponivel` (Secao +
+ * Almoxarifado) e `abaixo_minimo`, que compara contra o DISPONIVEL.
+ */
 export function getTiposMaterial() {
   return cachedFetch('materiais:list', () => apiGet(`${BASE}/tipo_material`), TTL_LISTA);
 }
 
-/** Material type details with stock per location and recent consumption. */
+/** Ficha do insumo: saldo por localizacao, livro recente e estatisticas de consumo. */
 export function getTipoMaterial(id) {
   return cachedFetch(`materiais:item:${id}`, () => apiGet(`${BASE}/tipo_material/${id}`), TTL_LISTA);
 }
 
-/** @param {{nome:string, descricao?:string, estoque_minimo?:number, meta_anual?:number, ativo?:boolean}} material */
+/** @param {{nome:string, descricao?:string, estoque_minimo?:number, ativo?:boolean}} material */
 export function createTipoMaterial(material) {
   invalidate('materiais');
   return apiPost(`${BASE}/tipo_material`, material);
@@ -379,123 +419,116 @@ export function updateTipoMaterial(material) {
 export function deleteTiposMaterial(ids) {
   invalidate('materiais');
   invalidate('estoque');
-  invalidate('consumo');
+  invalidate('movimentos');
   return apiDelete(`${BASE}/tipo_material`, { tipo_material_ids: ids });
 }
 
 // ---------------------------------------------------------------------------
-// Estoque de material
+// Estoque de material: SO LEITURA
 // ---------------------------------------------------------------------------
+//
+// NAO EXISTEM MAIS `createEstoqueMaterial`, `updateEstoqueMaterial`,
+// `deleteEstoqueMaterial` nem `transferirEstoque`, desde 2026-08-08. As quatro
+// rotas sairam do servidor (`POST`, `PUT`, `DELETE /estoque_material` e
+// `POST /estoque_material/transferir`), e as quatro escreviam o saldo DIRETO,
+// sem data e sem motivo.
+//
+// Hoje o saldo e o acumulado do LIVRO, aplicado por gatilho. Quem quer mudar o
+// saldo lanca um movimento: Entrada, Transferencia, Consumo ou Contagem. Manter
+// uma porta de escrita ao lado do livro faria a soma do livro deixar de bater
+// com o saldo no primeiro uso, e ai nenhum dos dois explicaria mais nada.
 
-/** All stock records with material/location info. */
+/** Linhas de saldo (material x localizacao), com quem alterou e quando. */
 export function getEstoqueMaterial() {
   return cachedFetch('estoque:list', () => apiGet(`${BASE}/estoque_material`), TTL_LISTA);
 }
 
-/** Stock aggregated per location (cards). */
-export function getEstoquePorLocalizacao() {
-  return cachedFetch('estoque:por_localizacao', () => apiGet(`${BASE}/estoque_por_localizacao`), TTL_LISTA);
-}
-
-// SEM `getEstoqueMaterialItem(id)`: a lista de estoque e a ficha do material já
-// trazem a linha inteira (material, localização, quantidade, quem alterou e
-// quando). O diálogo de editar abre com a linha que a tabela tem na mão.
-
-/**
- * Create/upsert a stock record (unique key material + location).
- * @param {{tipo_material_id:number, localizacao_id:number, quantidade:number}} estoque
- */
-export function createEstoqueMaterial(estoque) {
-  invalidate('estoque');
-  invalidate('materiais');
-  invalidate('dashboard');
-  return apiPost(`${BASE}/estoque_material`, estoque);
-}
-
-/** Same payload as createEstoqueMaterial plus `id`. */
-export function updateEstoqueMaterial(estoque) {
-  invalidate('estoque');
-  invalidate('materiais');
-  invalidate('dashboard');
-  return apiPut(`${BASE}/estoque_material`, estoque);
-}
-
-/** @param {number[]} ids */
-export function deleteEstoqueMaterial(ids) {
-  invalidate('estoque');
-  invalidate('materiais');
-  invalidate('dashboard');
-  return apiDelete(`${BASE}/estoque_material`, { estoque_material_ids: ids });
-}
-
-/**
- * Transfer material between locations (single transaction, FOR UPDATE lock).
- * Fails with 400 + clear message when the origin has insufficient balance.
- * @param {{tipo_material_id:number, origem_id:number, destino_id:number, quantidade:number}} transferencia
- */
-export function transferirEstoque(transferencia) {
-  invalidate('estoque');
-  invalidate('materiais');
-  invalidate('dashboard');
-  return apiPost(`${BASE}/estoque_material/transferir`, transferencia);
-}
+// SEM `getEstoqueMaterialItem(id)`: a ficha do insumo ja traz a linha inteira
+// (localização, quantidade, quem alterou e quando).
+//
+// SEM `getEstoquePorLocalizacao`, desde 2026-08-08. Ela alimentava os cartoes da
+// tela de Estoque, que nao existe mais; o grafico "Estoque por Localização" do
+// dashboard sai de `getStockByLocation`, que e outra rota e ja existia. Duas
+// funcoes para o mesmo agregado so dariam dois numeros para divergir.
 
 // ---------------------------------------------------------------------------
-// Consumo de material
+// O LIVRO DE MOVIMENTOS
 // ---------------------------------------------------------------------------
+//
+// Entrada, Transferencia, Consumo e Contagem, numa lista so e cada linha com
+// data, origem, destino e motivo. Ele substituiu `/consumo_material`, que
+// guardava so um dos quatro movimentos e por isso nunca explicou um saldo
+// inteiro. LER e de consulta; LANCAR e de operador, inclusive a Contagem.
 
 /**
- * Consumption records with optional filters.
- * @param {{data_inicio?:string, data_fim?:string, tipo_material_id?:number}} [filtros]
+ * O livro, com filtro opcional. `tipo_movimento_id` existe porque a tela e UMA:
+ * quem quer so o consumo filtra o tipo 3, em vez de existir uma segunda rota.
+ * @param {{data_inicio?:string, data_fim?:string, tipo_material_id?:number,
+ *   tipo_movimento_id?:number}} [filtros]
  */
-export function getConsumoMaterial(filtros = {}) {
+export function getMovimentosMaterial(filtros = {}) {
   const params = new URLSearchParams();
   if (filtros.data_inicio) params.set('data_inicio', filtros.data_inicio);
   if (filtros.data_fim) params.set('data_fim', filtros.data_fim);
   if (filtros.tipo_material_id) params.set('tipo_material_id', String(filtros.tipo_material_id));
+  if (filtros.tipo_movimento_id) params.set('tipo_movimento_id', String(filtros.tipo_movimento_id));
   const qs = params.toString();
-  const key = `consumo:list:${qs}`;
-  return cachedFetch(key, () => apiGet(`${BASE}/consumo_material${qs ? `?${qs}` : ''}`), TTL_LISTA);
+  return cachedFetch(
+    `movimentos:list:${qs}`,
+    () => apiGet(`${BASE}/movimento_material${qs ? `?${qs}` : ''}`),
+    TTL_LISTA
+  );
 }
-
-/** Monthly consumption per material type for a year. */
-export function getConsumoMensal(ano) {
-  const anoParam = ano || new Date().getFullYear();
-  return cachedFetch(`consumo:mensal:${anoParam}`, () => apiGet(`${BASE}/consumo_mensal?ano=${anoParam}`), TTL_LISTA);
-}
-
-// SEM `getConsumoMaterialItem(id)`: mesma razão do estoque acima. A lista de
-// consumo traz a linha inteira, e é dela que o diálogo de editar parte.
 
 /**
- * Register consumption (always taken from Seção; the DB trigger enforces stock
- * and returns a verbatim pt-BR message on insufficient balance, show it in a toast).
- * @param {{tipo_material_id:number, quantidade:number, data_consumo:string}} consumo
+ * Consumo mes a mes por insumo, do ano. E a MESMA fonte da coluna "Consumo no
+ * mes" da 7.2 do RPCMTec (`getConsumoMensalPorTipo` no servidor): a tela le o
+ * numero que o relatorio imprime, para os dois nao poderem divergir.
  */
-export function createConsumoMaterial(consumo) {
-  invalidate('consumo');
-  invalidate('estoque');
-  invalidate('materiais');
-  invalidate('dashboard');
-  return apiPost(`${BASE}/consumo_material`, consumo);
+export function getConsumoMensal(ano) {
+  const anoParam = ano || new Date().getFullYear();
+  return cachedFetch(`movimentos:mensal:${anoParam}`, () => apiGet(`${BASE}/consumo_mensal?ano=${anoParam}`), TTL_LISTA);
 }
 
-/** Same payload as createConsumoMaterial plus `id`. */
-export function updateConsumoMaterial(consumo) {
-  invalidate('consumo');
+/**
+ * Lanca um movimento. A FORMA depende do tipo, e o servidor recusa com 400
+ * nomeando o campo:
+ *
+ *   Entrada        sem origem, com destino
+ *   Transferencia  origem e destino, DIFERENTES entre si
+ *   Consumo        origem = Seção, sem destino
+ *   Contagem       EXATAMENTE UM dos dois lados, e `motivo` obrigatorio
+ *
+ * O gatilho do banco recusa saldo insuficiente com uma mensagem em portugues
+ * pronta para o toast, e ela sai literal.
+ * @param {{tipo_material_id:number, tipo_movimento_id:number, quantidade:number,
+ *   data_movimento:string, localizacao_origem_id?:number|null,
+ *   localizacao_destino_id?:number|null, motivo?:string|null}} movimento
+ */
+export function createMovimentoMaterial(movimento) {
+  invalidate('movimentos');
   invalidate('estoque');
   invalidate('materiais');
   invalidate('dashboard');
-  return apiPut(`${BASE}/consumo_material`, consumo);
+  return apiPost(`${BASE}/movimento_material`, movimento);
+}
+
+/** Same payload as createMovimentoMaterial plus `id`. */
+export function updateMovimentoMaterial(movimento) {
+  invalidate('movimentos');
+  invalidate('estoque');
+  invalidate('materiais');
+  invalidate('dashboard');
+  return apiPut(`${BASE}/movimento_material`, movimento);
 }
 
 /** @param {number[]} ids */
-export function deleteConsumoMaterial(ids) {
-  invalidate('consumo');
+export function deleteMovimentosMaterial(ids) {
+  invalidate('movimentos');
   invalidate('estoque');
   invalidate('materiais');
   invalidate('dashboard');
-  return apiDelete(`${BASE}/consumo_material`, { consumo_material_ids: ids });
+  return apiDelete(`${BASE}/movimento_material`, { movimento_material_ids: ids });
 }
 
 // SEM as chamadas do RPCMTec: elas vivem em @services/rpcmtec-service.js, junto

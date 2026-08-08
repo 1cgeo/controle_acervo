@@ -33,7 +33,6 @@ module.exports = {
       documento_solicitacao_nup: { rotulo: 'NUP do documento' },
       endereco_entrega: { rotulo: 'Endereço de entrega' },
       demandante: { rotulo: 'Demandante' },
-      omds: { rotulo: 'OM/DS' },
       municipio: { rotulo: 'Município' },
       operacao: { rotulo: 'Operação' },
       qtd_imagens: { rotulo: 'Quantidade de imagens', tipo: 'numero' },
@@ -65,8 +64,9 @@ module.exports = {
         : `Item da versão ${linha.uuid_versao}`,
     campos: {
       quantidade: { rotulo: 'Quantidade', tipo: 'numero' },
-      quantidade_fornecida: { rotulo: 'Quantidade fornecida', tipo: 'numero' },
       tipo_midia_id: { rotulo: 'Mídia', dominio: 'mapoteca.tipo_midia' },
+      // A MÍDIA fornecida ficou, ao contrário da quantidade fornecida, que saiu
+      // em 2026-08-08 sem uma única divergência em 1759 linhas. Esta tem 25.
       tipo_midia_fornecida_id: { rotulo: 'Mídia fornecida', dominio: 'mapoteca.tipo_midia' },
       // O rótulo diz "deste item" porque o pedido TAMBÉM tem um "Item do PIT", e
       // no histórico do pedido os dois eventos aparecem lado a lado.
@@ -177,9 +177,10 @@ module.exports = {
   },
 
   // --- Agregado: material ---------------------------------------------------
-  // Tipo, estoque e consumo se leem JUNTOS: o consumo so sai da Secao, e o
-  // estoque e o que o gatilho mexe quando alguem lanca consumo. Separa-los em
-  // tres agregados esconderia justamente a relacao que a tela mostra.
+  // Tipo, estoque e movimento se leem JUNTOS: o saldo e o acumulado do livro, e
+  // quem o escreve e o gatilho do movimento. Separa-los em tres agregados
+  // esconderia justamente a relacao que a tela mostra -- "o saldo caiu porque
+  // alguem lancou este consumo, neste dia".
 
   'mapoteca.tipo_material': {
     modulo: 'mapoteca',
@@ -187,16 +188,12 @@ module.exports = {
     agregado: (t, linha) => linha.id,
     resumo: linha => linha.nome,
     campos: {
+      // O nome carrega a UNIDADE (rolo, cartucho, folha) e e UNICO: a 7.2 do
+      // RPCMTec casa a linha do mes anterior por ele. Renomear material muda o
+      // que aquela coluna acha, entao a troca precisa aparecer no historico.
       nome: { rotulo: 'Nome' },
-      // COLUNA, e nao derivada do nome: e ela que separa as tabelas 7.2 (Papel)
-      // e 7.3 (Tintas) do RPCMTec.
-      categoria_id: { rotulo: 'Categoria', dominio: 'dominio.categoria_material' },
       descricao: { rotulo: 'Descrição' },
       estoque_minimo: { rotulo: 'Estoque mínimo', tipo: 'numero' },
-      meta_anual: { rotulo: 'Meta anual', tipo: 'numero' },
-      // Trocar a midia muda de onde sai o CONSUMO deste material na 7.2 do
-      // RPCMTec, entao a troca precisa aparecer no historico.
-      tipo_midia_id: { rotulo: 'Mídia que o consome', dominio: 'mapoteca.tipo_midia' },
       ativo: { rotulo: 'Ativo', tipo: 'booleano' }
     }
   },
@@ -213,14 +210,24 @@ module.exports = {
     }
   },
 
-  'mapoteca.consumo_material': {
+  // O LIVRO. Entrou em 2026-08-08 no lugar de `mapoteca.consumo_material`, que
+  // guardava so um dos quatro movimentos e por isso nunca explicou um saldo
+  // inteiro.
+  'mapoteca.movimento_material': {
     modulo: 'mapoteca',
     entidade: 'material',
     agregado: (t, linha) => linha.tipo_material_id,
-    resumo: linha => `Consumo de ${linha.quantidade}`,
+    resumo: linha => `Movimento de ${linha.quantidade}`,
     campos: {
-      quantidade: { rotulo: 'Quantidade consumida', tipo: 'numero' },
-      data_consumo: { rotulo: 'Data do consumo', tipo: 'data' },
+      tipo_movimento_id: {
+        rotulo: 'Tipo de movimento',
+        dominio: 'mapoteca.tipo_movimento_material'
+      },
+      quantidade: { rotulo: 'Quantidade', tipo: 'numero' },
+      data_movimento: { rotulo: 'Data do movimento', tipo: 'data' },
+      localizacao_origem_id: { rotulo: 'Origem', dominio: 'mapoteca.tipo_localizacao' },
+      localizacao_destino_id: { rotulo: 'Destino', dominio: 'mapoteca.tipo_localizacao' },
+      motivo: { rotulo: 'Motivo' },
       tipo_material_id: { rotulo: 'Material', entidade: 'material' }
     }
   }

@@ -125,20 +125,25 @@ const criaTipoMaterial = async (nome = 'Sulfite auditado') => {
   const res = await request(app)
     .post('/api/mapoteca/tipo_material')
     .set('Authorization', generateAdminToken())
-    .send({ nome, categoria_id: 1, estoque_minimo: 10 })
+    .send({ nome, estoque_minimo: 10 })
   expect(res.status).toBe(201)
   return Number(res.body.dados.id)
 }
 
-// Estoque na SECAO (localizacao 1), que e a unica de onde o consumo pode sair.
+// O SALDO NAO TEM MAIS PORTA PROPRIA DE ESCRITA desde 2026-08-08: ele e o
+// acumulado do LIVRO. Semear estoque e lancar uma ENTRADA (tipo 1), que e como o
+// material chega de verdade. O default e a SECAO (localizacao 1), a unica de
+// onde o consumo pode sair.
 const criaEstoque = async (tipoMaterialId, quantidade, localizacaoId = 1) => {
   const res = await request(app)
-    .post('/api/mapoteca/estoque_material')
+    .post('/api/mapoteca/movimento_material')
     .set('Authorization', generateAdminToken())
     .send({
       tipo_material_id: tipoMaterialId,
+      tipo_movimento_id: 1,
       quantidade,
-      localizacao_id: localizacaoId
+      data_movimento: '2026-03-10',
+      localizacao_destino_id: localizacaoId
     })
   expect(res.status).toBe(201)
   return Number(res.body.dados.id)
@@ -146,12 +151,14 @@ const criaEstoque = async (tipoMaterialId, quantidade, localizacaoId = 1) => {
 
 const criaConsumo = async (tipoMaterialId, quantidade, token = generateUserToken()) => {
   const res = await request(app)
-    .post('/api/mapoteca/consumo_material')
+    .post('/api/mapoteca/movimento_material')
     .set('Authorization', token)
     .send({
       tipo_material_id: tipoMaterialId,
+      tipo_movimento_id: 3,
       quantidade,
-      data_consumo: '2026-03-11'
+      data_movimento: '2026-03-11',
+      localizacao_origem_id: 1
     })
   expect(res.status).toBe(201)
   return Number(res.body.dados.id)
@@ -217,13 +224,13 @@ const COBERTAS = new Set([
   'POST /tipo_material',
   'PUT /tipo_material',
   'DELETE /tipo_material',
-  'POST /estoque_material',
-  'PUT /estoque_material',
-  'DELETE /estoque_material',
-  'POST /estoque_material/transferir',
-  'POST /consumo_material',
-  'PUT /consumo_material',
-  'DELETE /consumo_material'
+  // O ESTOQUE PERDEU AS QUATRO PORTAS DE ESCRITA em 2026-08-08 (o upsert, o
+  // PUT, o DELETE e a transferencia): ele virou o acumulado do LIVRO, e quem o
+  // move e o gatilho. Sobrou o livro, e ele audita nos tres sentidos, com o
+  // efeito no saldo junto e no mesmo lote.
+  'POST /movimento_material',
+  'PUT /movimento_material',
+  'DELETE /movimento_material'
 ])
 
 // Rotas de escrita que NAO alteram dado da mapoteca. Cada uma com o motivo,
@@ -897,13 +904,17 @@ describe('Rastreabilidade da mapoteca - tipo de material', () => {
     expect(criacao[0].dados_depois.nome).toBe('Sulfite auditado')
   })
 
-  it('PUT /tipo_material registra a troca de categoria com o nome do dominio', async () => {
+  it('PUT /tipo_material registra a troca de NOME, que muda o que a 7.2 acha', async () => {
+    // Era a troca de CATEGORIA ate 2026-08-08, quando a coluna saiu com a fusao
+    // das tabelas 7.2 e 7.3. O que sobrou de decisivo no material e o NOME: a
+    // 7.2 casa a linha do mes anterior por ele, entao renomear muda o numero que
+    // a coluna "Estoque mes anterior" traz.
     const tipoId = await criaTipoMaterial()
 
     const res = await request(app)
       .put('/api/mapoteca/tipo_material')
       .set('Authorization', generateAdminToken())
-      .send({ id: tipoId, nome: 'Sulfite auditado', categoria_id: 2 })
+      .send({ id: tipoId, nome: 'Sulfite renomeado' })
     expect(res.status).toBe(200)
 
     const alteracao = eventosDe(
@@ -911,16 +922,12 @@ describe('Rastreabilidade da mapoteca - tipo de material', () => {
     )
 
     expect(alteracao).toHaveLength(1)
-    // `estoque_minimo` cai junto porque o PUT nao o preserva: o que importa
-    // aqui e a categoria, que decide a tabela do RPCMTec.
-    expect(alteracao[0].campos_alterados).toContain('categoria_id')
-    expect(Number(alteracao[0].dados_antes.categoria_id)).toBe(1)
-    expect(Number(alteracao[0].dados_depois.categoria_id)).toBe(2)
+    expect(alteracao[0].campos_alterados).toContain('nome')
+    expect(alteracao[0].dados_antes.nome).toBe('Sulfite auditado')
+    expect(alteracao[0].dados_depois.nome).toBe('Sulfite renomeado')
 
-    const mudanca = alteracao[0].mudancas.find(m => m.campo === 'categoria_id')
-    expect(mudanca.rotulo).toBe('Categoria')
-    expect(mudanca.antes_texto).toMatch(/\(1\)$/)
-    expect(mudanca.depois_texto).toMatch(/\(2\)$/)
+    const mudanca = alteracao[0].mudancas.find(m => m.campo === 'nome')
+    expect(mudanca.rotulo).toBe('Nome')
   })
 
   it('DELETE /tipo_material registra o que se perdeu', async () => {
@@ -939,79 +946,88 @@ describe('Rastreabilidade da mapoteca - tipo de material', () => {
     expect(exclusao).toHaveLength(1)
     expect(exclusao[0].dados_antes.nome).toBe('Material sem estoque')
   })
+
+  it('DELETE /tipo_material recusa material com movimento, e manda DESATIVAR', async () => {
+    // Apagar o material apagaria o LIVRO dele, que e a unica coisa que explica
+    // de onde veio o saldo.
+    const tipoId = await criaTipoMaterial('Material com historia')
+    await criaEstoque(tipoId, 5)
+
+    const res = await request(app)
+      .delete('/api/mapoteca/tipo_material')
+      .set('Authorization', generateAdminToken())
+      .send({ tipo_material_ids: [tipoId] })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/Desative o material/)
+  })
 })
 
-describe('Rastreabilidade da mapoteca - estoque', () => {
-  it('POST /estoque_material diz QUAL das duas operacoes o upsert fez', async () => {
+describe('Rastreabilidade da mapoteca - o livro e o efeito de gatilho', () => {
+  it('POST /movimento_material registra o movimento E o efeito no saldo', async () => {
     const tipoId = await criaTipoMaterial()
+    const entradaId = await criaEstoque(tipoId, 100)
 
+    const linhas = await historico('material', tipoId)
+
+    const movimento = eventosDe(linhas, 'mapoteca.movimento_material', 'I')
+    expect(movimento).toHaveLength(1)
+    expect(Number(movimento[0].registro_id)).toBe(entradaId)
+    expect(movimento[0].origem).toBe('desconhecido')
+
+    // O gatilho do livro escreve `estoque_material`, e sem este evento o
+    // historico do material ficaria vazio no exato momento em que o saldo muda.
+    // O destino NAO existia: o upsert o cria, e por isso a operacao e 'I'.
+    const gatilho = linhas.filter(
+      l => l.tabela === 'mapoteca.estoque_material' && l.origem === 'gatilho'
+    )
+    expect(gatilho).toHaveLength(1)
+    expect(gatilho[0].operacao).toBe('I')
+    expect(Number(gatilho[0].dados_depois.quantidade)).toBe(100)
+    // A pessoa nao editou a linha de estoque: quem a mexeu foi o gatilho. Um
+    // evento com origem 'web' aqui diria que alguem a editou a mao.
+    expect(gatilho[0].lote_id).toBe(movimento[0].lote_id)
+  })
+
+  it('o CONSUMO registra a baixa do saldo da Secao', async () => {
+    const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 100)
-    const linhasApos1 = await historico('material', tipoId)
-    expect(eventosDe(linhasApos1, 'mapoteca.estoque_material', 'I')).toHaveLength(1)
-    expect(eventosDe(linhasApos1, 'mapoteca.estoque_material', 'U')).toHaveLength(0)
+    const consumoId = await criaConsumo(tipoId, 30)
 
-    // A MESMA rota, o MESMO par (material, localizacao): o upsert redefine o
-    // nivel, e nao cria linha nova. Um evento de criacao aqui registraria uma
-    // criacao que nunca houve.
-    await criaEstoque(tipoId, 250)
-    const linhasApos2 = await historico('material', tipoId)
-    const upsert = eventosDe(linhasApos2, 'mapoteca.estoque_material', 'U')
+    const linhas = await historico('material', tipoId)
 
-    expect(eventosDe(linhasApos2, 'mapoteca.estoque_material', 'I')).toHaveLength(1)
-    expect(upsert).toHaveLength(1)
-    expect(Number(upsert[0].dados_antes.quantidade)).toBe(100)
-    expect(Number(upsert[0].dados_depois.quantidade)).toBe(250)
+    const consumo = eventosDe(linhas, 'mapoteca.movimento_material', 'I')
+      .find(l => Number(l.registro_id) === consumoId)
+    expect(consumo).toBeDefined()
+    expect(consumo.usuario_uuid).toBe(USER_UUID)
+
+    const gatilho = linhas.find(
+      l => l.tabela === 'mapoteca.estoque_material' &&
+        l.origem === 'gatilho' &&
+        l.lote_id === consumo.lote_id
+    )
+    expect(gatilho.operacao).toBe('U')
+    expect(Number(gatilho.dados_antes.quantidade)).toBe(100)
+    expect(Number(gatilho.dados_depois.quantidade)).toBe(70)
+    expect(gatilho.usuario_uuid).toBe(USER_UUID)
   })
 
-  it('PUT e DELETE de estoque registram os dois lados', async () => {
-    const tipoId = await criaTipoMaterial()
-    const estoqueId = await criaEstoque(tipoId, 100)
-
-    const alterado = await request(app)
-      .put('/api/mapoteca/estoque_material')
-      .set('Authorization', generateAdminToken())
-      .send({
-        id: estoqueId,
-        tipo_material_id: tipoId,
-        quantidade: 80,
-        localizacao_id: 1
-      })
-    expect(alterado.status).toBe(200)
-
-    const alteracao = eventosDe(
-      await historico('material', tipoId), 'mapoteca.estoque_material', 'U'
-    )
-    expect(alteracao).toHaveLength(1)
-    expect(Number(alteracao[0].dados_antes.quantidade)).toBe(100)
-    expect(Number(alteracao[0].dados_depois.quantidade)).toBe(80)
-
-    const apagado = await request(app)
-      .delete('/api/mapoteca/estoque_material')
-      .set('Authorization', generateAdminToken())
-      .send({ estoque_material_ids: [estoqueId] })
-    expect(apagado.status).toBe(200)
-
-    const exclusao = eventosDe(
-      await historico('material', tipoId), 'mapoteca.estoque_material', 'D'
-    )
-    expect(exclusao).toHaveLength(1)
-    expect(Number(exclusao[0].dados_antes.quantidade)).toBe(80)
-  })
-
-  it('a transferencia grava DOIS eventos, um por linha de estoque, no mesmo lote', async () => {
+  it('a TRANSFERENCIA grava DOIS eventos de estoque, um por lado, no mesmo lote', async () => {
     const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 500, 2) // Almoxarifado
 
     const res = await request(app)
-      .post('/api/mapoteca/estoque_material/transferir')
+      .post('/api/mapoteca/movimento_material')
       .set('Authorization', generateUserToken())
       .send({
         tipo_material_id: tipoId,
-        origem_id: 2,
-        destino_id: 1,
-        quantidade: 200
+        tipo_movimento_id: 2,
+        quantidade: 200,
+        data_movimento: '2026-03-11',
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1
       })
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(201)
 
     const linhas = await historico('material', tipoId)
     const daTransferencia = linhas.filter(
@@ -1039,96 +1055,63 @@ describe('Rastreabilidade da mapoteca - estoque', () => {
     expect(Number(destino.dados_depois.localizacao_id)).toBe(1)
     expect(Number(destino.dados_depois.quantidade)).toBe(200)
   })
-})
 
-describe('Rastreabilidade da mapoteca - consumo e o efeito de gatilho', () => {
-  it('POST /consumo_material registra o consumo E a baixa do estoque', async () => {
-    const tipoId = await criaTipoMaterial()
-    await criaEstoque(tipoId, 100)
-    const consumoId = await criaConsumo(tipoId, 30)
-
-    const linhas = await historico('material', tipoId)
-
-    const consumo = eventosDe(linhas, 'mapoteca.consumo_material', 'I')
-    expect(consumo).toHaveLength(1)
-    expect(Number(consumo[0].registro_id)).toBe(consumoId)
-    expect(consumo[0].usuario_uuid).toBe(USER_UUID)
-    expect(consumo[0].origem).toBe('desconhecido')
-
-    // O gatilho trg_consumo_material_insert decrementa o saldo da Secao, e sem
-    // este evento o historico do material ficaria vazio no exato momento em que
-    // o estoque muda.
-    const gatilho = linhas.filter(
-      l => l.tabela === 'mapoteca.estoque_material' && l.origem === 'gatilho'
-    )
-    expect(gatilho).toHaveLength(1)
-    expect(gatilho[0].operacao).toBe('U')
-    expect(Number(gatilho[0].dados_antes.quantidade)).toBe(100)
-    expect(Number(gatilho[0].dados_depois.quantidade)).toBe(70)
-    // A pessoa nao editou a linha de estoque: quem a mexeu foi o gatilho. Um
-    // evento com origem 'web' aqui diria que alguem a editou a mao.
-    expect(gatilho[0].usuario_uuid).toBe(USER_UUID)
-    // O lote e o mesmo do consumo que o provocou.
-    expect(gatilho[0].lote_id).toBe(consumo[0].lote_id)
-  })
-
-  it('PUT /consumo_material registra o acerto do estoque nos dois sentidos', async () => {
+  it('PUT /movimento_material registra o acerto do saldo nos dois sentidos', async () => {
     const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 100)
     const consumoId = await criaConsumo(tipoId, 30)
 
     // Consumiu MENOS: o gatilho devolve a diferenca ao saldo da Secao.
     const res = await request(app)
-      .put('/api/mapoteca/consumo_material')
+      .put('/api/mapoteca/movimento_material')
       .set('Authorization', generateUserToken())
       .send({
         id: consumoId,
         tipo_material_id: tipoId,
+        tipo_movimento_id: 3,
         quantidade: 10,
-        data_consumo: '2026-03-11'
+        data_movimento: '2026-03-11',
+        localizacao_origem_id: 1
       })
     expect(res.status).toBe(200)
 
     const linhas = await historico('material', tipoId)
 
-    const alteracao = eventosDe(linhas, 'mapoteca.consumo_material', 'U')
+    const alteracao = eventosDe(linhas, 'mapoteca.movimento_material', 'U')
     expect(alteracao).toHaveLength(1)
     expect(Number(alteracao[0].dados_antes.quantidade)).toBe(30)
     expect(Number(alteracao[0].dados_depois.quantidade)).toBe(10)
 
-    const gatilhos = linhas.filter(
-      l => l.tabela === 'mapoteca.estoque_material' && l.origem === 'gatilho'
+    const daAtualizacao = linhas.find(
+      l => l.tabela === 'mapoteca.estoque_material' &&
+        l.origem === 'gatilho' &&
+        l.lote_id === alteracao[0].lote_id
     )
-    // Dois: o da insercao (100 -> 70) e o desta atualizacao (70 -> 90).
-    expect(gatilhos).toHaveLength(2)
-    const daAtualizacao = gatilhos.find(g => g.lote_id === alteracao[0].lote_id)
+    // O gatilho DESFAZ o antigo e APLICA o novo, entao o antes e o saldo de
+    // depois do consumo de 30, e o depois ja tem so os 10 baixados.
     expect(Number(daAtualizacao.dados_antes.quantidade)).toBe(70)
     expect(Number(daAtualizacao.dados_depois.quantidade)).toBe(90)
   })
 
-  it('DELETE /consumo_material devolve o estoque, e o evento diz isso', async () => {
+  it('DELETE /movimento_material devolve o saldo, e o evento diz isso', async () => {
     const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 100)
     const consumoId = await criaConsumo(tipoId, 30)
 
-    // DELETE de consumo e GERENTE: o test_user e operador na mapoteca.
-    const recusado = await request(app)
-      .delete('/api/mapoteca/consumo_material')
-      .set('Authorization', generateUserToken())
-      .send({ consumo_material_ids: [consumoId] })
-    expect(recusado.status).toBe(403)
-
+    // APAGAR MOVIMENTO E DO OPERADOR desde 2026-08-08, e era de gerente no
+    // consumo. A regua diz que operador LANCA, e desfazer o proprio lancamento
+    // errado faz parte de lancar: com gerente, o erro de digitacao esperava.
     const res = await request(app)
-      .delete('/api/mapoteca/consumo_material')
-      .set('Authorization', generateAdminToken())
-      .send({ consumo_material_ids: [consumoId] })
+      .delete('/api/mapoteca/movimento_material')
+      .set('Authorization', generateUserToken())
+      .send({ movimento_material_ids: [consumoId] })
     expect(res.status).toBe(200)
 
     const linhas = await historico('material', tipoId)
 
-    const exclusao = eventosDe(linhas, 'mapoteca.consumo_material', 'D')
+    const exclusao = eventosDe(linhas, 'mapoteca.movimento_material', 'D')
     expect(exclusao).toHaveLength(1)
-    expect(exclusao[0].usuario_uuid).toBe(ADMIN_UUID)
+    expect(exclusao[0].usuario_uuid).toBe(USER_UUID)
     expect(Number(exclusao[0].dados_antes.quantidade)).toBe(30)
 
     const daExclusao = linhas.filter(
@@ -1141,20 +1124,20 @@ describe('Rastreabilidade da mapoteca - consumo e o efeito de gatilho', () => {
     expect(Number(daExclusao[0].dados_depois.quantidade)).toBe(100)
   })
 
-  it('exclusao em LOTE grava um evento de estoque por linha de consumo apagada', async () => {
+  it('exclusao em LOTE grava um evento de estoque por linha apagada', async () => {
     const tipoId = await criaTipoMaterial()
     await criaEstoque(tipoId, 100)
     const consumo1 = await criaConsumo(tipoId, 30)
     const consumo2 = await criaConsumo(tipoId, 20)
 
     const res = await request(app)
-      .delete('/api/mapoteca/consumo_material')
+      .delete('/api/mapoteca/movimento_material')
       .set('Authorization', generateAdminToken())
-      .send({ consumo_material_ids: [consumo1, consumo2] })
+      .send({ movimento_material_ids: [consumo1, consumo2] })
     expect(res.status).toBe(200)
 
     const linhas = await historico('material', tipoId)
-    const exclusoes = eventosDe(linhas, 'mapoteca.consumo_material', 'D')
+    const exclusoes = eventosDe(linhas, 'mapoteca.movimento_material', 'D')
     expect(exclusoes).toHaveLength(2)
 
     // O gatilho e FOR EACH ROW: num lote de dois ele dispara DUAS vezes, e o
@@ -1177,5 +1160,36 @@ describe('Rastreabilidade da mapoteca - consumo e o efeito de gatilho', () => {
       .sort((a, b) => a[0] - b[0])
     expect(saldos[0][0]).toBe(50)
     expect(saldos[1][1]).toBe(100)
+  })
+
+  it('a CONTAGEM registra o motivo, que e o que ela tem de proprio', async () => {
+    const tipoId = await criaTipoMaterial()
+    await criaEstoque(tipoId, 100)
+
+    const res = await request(app)
+      .post('/api/mapoteca/movimento_material')
+      .set('Authorization', generateUserToken())
+      .send({
+        tipo_material_id: tipoId,
+        tipo_movimento_id: 4,
+        quantidade: 7,
+        data_movimento: '2026-03-11',
+        localizacao_origem_id: 1,
+        motivo: 'Conferência de prateleira: faltavam sete'
+      })
+    expect(res.status).toBe(201)
+
+    const linhas = await historico('material', tipoId)
+    const contagem = eventosDe(linhas, 'mapoteca.movimento_material', 'I')
+      .find(l => Number(l.registro_id) === Number(res.body.dados.id))
+
+    expect(contagem.dados_depois.motivo).toBe('Conferência de prateleira: faltavam sete')
+
+    const gatilho = linhas.find(
+      l => l.tabela === 'mapoteca.estoque_material' &&
+        l.origem === 'gatilho' &&
+        l.lote_id === contagem.lote_id
+    )
+    expect(Number(gatilho.dados_depois.quantidade)).toBe(93)
   })
 })

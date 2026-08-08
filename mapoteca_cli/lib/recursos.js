@@ -43,21 +43,42 @@ function modulo (criar, atualizar, ids, filtro) {
   }
 }
 
+// Recurso SEM porta de escrita na API. Nao ha schema de criacao, de atualizacao
+// nem de exclusao porque nao ha rota: `somenteLeitura` no recurso e o que faz o
+// contrato impresso e o CRUD generico dizerem isso, em vez de o agente montar um
+// POST que volta 404.
+function soLeitura (filtro) {
+  return () => {
+    const models = carregarSchema()
+    return {
+      criar: null,
+      atualizar: null,
+      ids: null,
+      listarQuery: filtro ? models[filtro] : null
+    }
+  }
+}
+
 const RECURSOS = {
   pedido: {
     nome: 'pedido da mapoteca',
     caminho: '/mapoteca/pedido',
     // A listagem e SEMPRE de um ano so: sem `ano` na query o servidor cai no ano
-    // corrente. Declarar o `anoQuery` aqui e o que faz `--ano` chegar la.
-    schema: modulo('pedido', 'pedidoAtualizacao', 'pedidoIds', 'anoQuery'),
+    // corrente. Declarar o `pedidoListaQuery` aqui e o que faz `--ano` e
+    // `--palavra_chave` chegarem la. Era o `anoQuery` ate 2026-08-08, quando a
+    // lista ganhou o filtro por etiqueta.
+    schema: modulo('pedido', 'pedidoAtualizacao', 'pedidoIds', 'pedidoListaQuery'),
     chaveIds: 'pedido_ids',
     // Colunas padrao da listagem compacta. O listar do backend devolve tambem
     // os campos de auditoria e os contadores de impressao, que sao ruido para
     // quem so quer ver a fila: ficam de fora daqui e so aparecem com --campos
-    // explicito ou --json.
+    // explicito ou --json. `palavras_chave` entra porque e por ela que se
+    // filtra, e uma lista que filtra por algo que nao mostra deixa quem filtrou
+    // sem saber por que aquela linha entrou.
     colunas: [
       'id', 'data_pedido', 'cliente_nome', 'situacao_pedido_nome', 'prazo',
-      'documento_solicitacao', 'quantidade_produtos', 'localizador_pedido'
+      'documento_solicitacao', 'palavras_chave', 'quantidade_produtos',
+      'localizador_pedido'
     ],
     anexo: true
   },
@@ -81,8 +102,11 @@ const RECURSOS = {
     // Nao ha GET de colecao nem GET por id de item: os itens so aparecem dentro
     // do GET /pedido/:id. Por isso "mapoteca pedido itens --id N" existe.
     semListar: true,
+    // Sem `quantidade_fornecida`: a coluna foi podada em 2026-08-08 por ser
+    // igual a `quantidade` em 1759 de 1759 linhas. O que se entregou le-se pelo
+    // par quantidade / quantidade_impressa.
     colunas: [
-      'id', 'mi', 'produto_nome', 'escala', 'quantidade', 'quantidade_fornecida',
+      'id', 'mi', 'produto_nome', 'escala', 'quantidade',
       'tipo_midia_nome', 'quantidade_impressa', 'quantidade_restante'
     ]
   },
@@ -104,27 +128,46 @@ const RECURSOS = {
   },
 
   tipo_material: {
-    nome: 'tipo de material de consumo',
+    nome: 'material de consumo (o cadastro do insumo)',
     caminho: '/mapoteca/tipo_material',
     schema: modulo('tipoMaterial', 'tipoMaterialAtualizacao', 'tipoMaterialIds'),
     chaveIds: 'tipo_material_ids',
-    colunas: ['id', 'nome', 'descricao', 'estoque_minimo', 'meta_anual', 'ativo']
+    // Os dois totais e o alerta sao CALCULADOS pelo servidor a partir do saldo,
+    // e nao colunas do cadastro: por isso aparecem na listagem e nao no corpo do
+    // POST. `estoque_disponivel` e o que o alerta compara, e nao o total.
+    colunas: [
+      'id', 'nome', 'descricao', 'estoque_minimo', 'estoque_disponivel',
+      'estoque_total', 'abaixo_minimo', 'ativo'
+    ]
   },
 
   estoque: {
-    nome: 'estoque de material',
+    nome: 'saldo de material por localizacao (SO LEITURA)',
     caminho: '/mapoteca/estoque_material',
-    schema: modulo('estoqueMaterial', 'estoqueMaterialAtualizacao', 'estoqueMaterialIds'),
-    chaveIds: 'estoque_material_ids',
-    colunas: ['id', 'tipo_material_id', 'tipo_material_nome', 'quantidade', 'localizacao_nome']
+    // SO LEITURA desde 2026-08-08: o saldo virou o ACUMULADO do livro de
+    // movimentos, aplicado por gatilho, e as rotas que o escreviam (POST, PUT,
+    // DELETE e POST /transferir) sairam. Quem quer mudar saldo lanca um
+    // movimento.
+    schema: soLeitura(),
+    somenteLeitura: true,
+    escritaPor: 'movimento',
+    colunas: [
+      'id', 'tipo_material_id', 'tipo_material_nome', 'quantidade', 'localizacao_nome'
+    ]
   },
 
-  consumo: {
-    nome: 'consumo de material',
-    caminho: '/mapoteca/consumo_material',
-    schema: modulo('consumoMaterial', 'consumoMaterialAtualizacao', 'consumoMaterialIds', 'consumoMaterialFiltro'),
-    chaveIds: 'consumo_material_ids',
-    colunas: ['id', 'tipo_material_id', 'tipo_material_nome', 'quantidade', 'data_consumo']
+  movimento: {
+    nome: 'movimento de material (o LIVRO: entrada, transferencia, consumo, contagem)',
+    caminho: '/mapoteca/movimento_material',
+    schema: modulo(
+      'movimentoMaterial', 'movimentoMaterialAtualizacao',
+      'movimentoMaterialIds', 'movimentoMaterialFiltro'
+    ),
+    chaveIds: 'movimento_material_ids',
+    colunas: [
+      'id', 'data_movimento', 'tipo_movimento_nome', 'tipo_material_nome',
+      'quantidade', 'localizacao_origem_nome', 'localizacao_destino_nome', 'motivo'
+    ]
   }
 }
 

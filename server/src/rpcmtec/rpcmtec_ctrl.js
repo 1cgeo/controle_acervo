@@ -58,7 +58,6 @@ const {
     TIPO_PRODUTO,
     TIPO_VERSAO,
     CLASSIFICACAO_NC,
-    CATEGORIA_MATERIAL,
     TIPO_CAPACITACAO
   }
 } = require('../utils')
@@ -727,42 +726,41 @@ const gerarRecebimentoMaterial = async ano => {
 }
 
 // ---------------------------------------------------------------------------
-// 7.2 e 7.3 - insumos de impressão
+// 7.2 - insumos de impressão
 // ---------------------------------------------------------------------------
 
-// A separação entre papel (7.2) e tinta (7.3) sai de
-// `mapoteca.tipo_material.categoria`, uma COLUNA, e não do nome do material.
-// Derivar de "começa com Cartucho" funcionaria hoje e quebraria calado no dia em
-// que alguém cadastrar "Tinta preta 300ml": a tabela erraria de lado sem erro
-// nenhum.
+// UMA TABELA SÓ, desde 2026-08-08. Havia duas, 7.2 (Papel) e 7.3 (Tintas), e o
+// que as separava era `mapoteca.tipo_material.categoria_id` -- uma coluna cuja
+// única função era escolher o lado. As duas tinham as mesmas cinco colunas, a
+// mesma grade e a mesma fonte, e a categoria só podia errar, calada, no primeiro
+// material que alguém cadastrasse sem escolher. O chefe fundiu, a 7.3 sumiu e
+// nada foi renumerado.
 //
-// O CONSUMO NO MÊS É O DECLARADO, nas DUAS. É o que a Seção lança na aba
-// "Consumo de material", e nada além disso. Decisão do chefe em 2026-08-07,
-// depois que a 7.2 de julho saiu com "consumo 802, estoque 64": os 802 vinham
-// da impressão, os 64 de uma contagem digitada, e nenhum consumo de papel fora
-// lançado no ano inteiro. Duas fontes na mesma linha davam duas verdades que
-// não se subtraem.
+// ENTRA TODO MATERIAL ATIVO, e não só o insumo de impressão: o cabeçote acaba do
+// mesmo jeito que o cartucho.
+//
+// O CONSUMO NO MÊS É O DECLARADO. É o que a Seção lança no livro de movimentos,
+// tipo Consumo, e nada além disso. Decisão do chefe em 2026-08-07, depois que a
+// 7.2 de julho saiu com "consumo 802, estoque 64": os 802 vinham da impressão,
+// os 64 de uma contagem digitada, e nenhum consumo de papel fora lançado no ano
+// inteiro. Duas fontes na mesma linha davam duas verdades que não se subtraem.
 //
 // A FONTE ÚNICA FECHA A CONTA. Lançado o consumo, o gatilho baixa o estoque, e
 // as duas colunas passam a medir a mesma coisa. Zero aqui quer dizer "ninguém
-// lançou", que é diferente de errado, e é um zero que a Seção conserta
-// lançando. O número que a impressão sugere continua visível na tela de
-// material (`quantidade_impressa`), como CONFERÊNCIA: muita impressão com
-// pouco consumo declarado é lançamento em atraso.
+// lançou", que é diferente de errado, e é um zero que a Seção conserta lançando.
 //
 // AS DUAS COLUNAS QUE PARECEM PEDIR TABELA NOVA, e não pedem:
 //
-//   "Estoque mês anterior"  vem da EDIÇÃO FECHADA do mês anterior, que
-//                           congelou a própria 7.2. `estoque_material` guarda
-//                           só o saldo de hoje, e derivá-lo de "atual mais
-//                           consumo" ignoraria as ENTRADAS (compra,
-//                           transferência) e erraria calado todo mês com
-//                           reposição.
-//   "Previsão de falta"     vem do ritmo dos meses JÁ FECHADOS.
+//   "Estoque mês anterior"  vem da EDIÇÃO FECHADA do mês anterior, que congelou
+//                           a própria 7.2. `estoque_material` guarda só o saldo
+//                           de hoje, e derivá-lo de "atual mais consumo"
+//                           ignoraria as ENTRADAS (compra, transferência) e
+//                           erraria calado todo mês com reposição.
+//   "Previsão de falta"     vem do ritmo dos DOZE MESES anteriores, atravessando
+//                           a virada do ano.
 //
-// As duas continuam saindo '-' quando não há base: mês anterior não fechado, ou
-// menos de três meses com consumo. Traço é a resposta honesta; número inventado
-// a partir do saldo de hoje pareceria apurado e não seria.
+// As duas continuam saindo '-' quando não há base. Traço é a resposta honesta;
+// número inventado a partir do saldo de hoje pareceria apurado e não seria.
 
 /**
  * O ESTOQUE que a edição do mês anterior reportou, por nome de insumo.
@@ -777,29 +775,39 @@ const gerarRecebimentoMaterial = async ano => {
  * no instante do fechamento. É a comparação que o relatório quer: "o que
  * reportamos no mês passado", e não "o que o banco acha que era".
  *
+ * LÊ A 7.2 E A 7.3, e não só a 7.2. É deliberado e é temporário por natureza: no
+ * mês seguinte à fusão, o mês anterior fechado ainda tem as tintas gravadas na
+ * 7.3, e ler só a 7.2 faria metade da tabela sair '-' exatamente uma vez, sem
+ * que nada tivesse acontecido com aqueles materiais. As duas nunca repetem
+ * insumo (a categoria as separava), então a união não tem colisão.
+ *
  * Sem edição fechada no mês anterior, devolve vazio e a coluna sai '-'. Isso é
  * deliberado e tem de continuar visível: inventar o número a partir do saldo de
  * hoje daria uma coluna que parece apurada e não é.
  */
-const buscarEstoqueDoMesAnterior = async ({ ano, mes, numero }) => {
+const buscarEstoqueDoMesAnterior = async ({ ano, mes }) => {
   const anterior = mesAnterior({ ano, mes })
 
-  const gravada = await db.conn.oneOrNone(
+  const gravadas = await db.conn.any(
     `SELECT s.linhas
      FROM rpcmtec.subsecao AS s
      INNER JOIN rpcmtec.edicao AS e ON e.id = s.edicao_id
      WHERE e.ano = $<ano> AND e.mes = $<mes>
        AND e.data_fechamento IS NOT NULL
-       AND s.numero = $<numero>`,
-    { ...anterior, numero }
+       AND s.numero IN ('7.2', '7.3')`,
+    anterior
   )
 
   const mapa = new Map()
-  for (const linha of (gravada && gravada.linhas) || []) {
-    // A linha congelada é [insumo, estoque atual, mês anterior, consumo,
-    // previsão]. Casa-se pelo NOME porque é o que a linha guarda: o id do
-    // material não vai para o documento, e não deveria ir.
-    if (Array.isArray(linha) && linha.length >= 2) mapa.set(linha[0], linha[1])
+  for (const gravada of gravadas) {
+    for (const linha of (gravada && gravada.linhas) || []) {
+      // A linha congelada é [insumo, estoque atual, mês anterior, consumo,
+      // previsão]. Casa-se pelo NOME porque é o que a linha guarda: o id do
+      // material não vai para o documento, e não deveria ir. É por isso que
+      // `mapoteca.tipo_material.nome` é UNIQUE desde 2026-08-08 -- com a fusão,
+      // papel e tinta passaram a dividir um espaço de nomes só.
+      if (Array.isArray(linha) && linha.length >= 2) mapa.set(linha[0], linha[1])
+    }
   }
   return mapa
 }
@@ -808,21 +816,42 @@ const buscarEstoqueDoMesAnterior = async ({ ano, mes, numero }) => {
 // sobre o acaso do que sobre o ritmo, e a coluna sai '-'.
 const MESES_MINIMOS_PARA_PROJETAR = 3
 
+// O tamanho da JANELA, em meses. Doze, e não "o ano civil até aqui".
+//
+// O ano civil era o recorte até 2026-08-08, e ele tinha um defeito de calendário:
+// em janeiro a série ZERAVA, e a coluna só voltava a existir em abril, quando
+// houvesse três meses fechados no ano novo. Toda previsão de falta sumia de
+// janeiro a março, todo ano, sem que nada tivesse mudado no consumo. A janela
+// deslizante atravessa a virada e o ritmo de dezembro continua contando em
+// janeiro.
+const MESES_DA_JANELA = 12
+
+// O índice absoluto de um mês, para comparar (2025, 12) com (2026, 1) sem
+// aritmética de calendário espalhada por três lugares.
+const indiceDoMes = (ano, mes) => Number(ano) * 12 + (Number(mes) - 1)
+
 /**
- * Quando o estoque acaba, no ritmo dos últimos meses.
+ * Quando o estoque acaba, no ritmo dos últimos doze meses.
  *
- * Média dos meses que TIVERAM consumo, e não dos doze: dividir por doze num
- * ano que começou em março afundaria a média e empurraria a falta para longe.
+ * Média dos meses que TIVERAM consumo dentro da janela, e não dos doze: dividir
+ * por doze quando só houve gasto em quatro afundaria a média e empurraria a
+ * falta para longe.
  *
  * Devolve o mês no formato do documento ('NOV 26'), 'Sem estoque' quando já
  * zerou com consumo acontecendo, e '-' quando não há série que sustente a
  * conta.
  */
 const projetarFalta = ({ estoque, consumoPorMes, ano, mes }) => {
-  // Só os meses JÁ FECHADOS até o corte: o mês corrente ainda está andando, e
+  // Só os meses JÁ FECHADOS antes do corte: o mês corrente ainda está andando, e
   // entrar com ele pela metade puxa a média para baixo.
+  const fim = indiceDoMes(ano, mes)
+  const inicio = fim - MESES_DA_JANELA
+
   const meses = consumoPorMes
-    .filter(l => Number(l.mes) < Number(mes) && Number(l.quantidade) > 0)
+    .filter(l => {
+      const idx = indiceDoMes(l.ano, l.mes)
+      return idx >= inicio && idx < fim && Number(l.quantidade) > 0
+    })
     .map(l => Number(l.quantidade))
 
   if (meses.length < MESES_MINIMOS_PARA_PROJETAR) return '-'
@@ -836,19 +865,23 @@ const projetarFalta = ({ estoque, consumoPorMes, ano, mes }) => {
   return `${MESES_ABREV[alvo.getMonth()]} ${String(alvo.getFullYear()).slice(-2)}`
 }
 
-const montarInsumos = ({ tiposMaterial, consumoAno, mes, ano, categoria, estoqueAnterior }) => {
-  const consumoDoMes = consumoAno.reduce((mapa, linha) => {
-    if (Number(linha.mes) === Number(mes)) {
+const montarInsumos = ({ tiposMaterial, consumoJanela, mes, ano, estoqueAnterior }) => {
+  const consumoDoMes = consumoJanela.reduce((mapa, linha) => {
+    if (Number(linha.ano) === Number(ano) && Number(linha.mes) === Number(mes)) {
       mapa[linha.tipo_material_id] = Number(linha.quantidade)
     }
     return mapa
   }, {})
 
   return tiposMaterial
-    .filter(tm => tm.ativo && tm.categoria_id === categoria)
+    .filter(tm => tm.ativo)
     .map(tm => {
-      const estoque = Number(tm.estoque_total)
-      const doMaterial = consumoAno.filter(l => l.tipo_material_id === tm.id)
+      // SEÇÃO + ALMOXARIFADO, e não o total das quatro localizações:
+      // 'Aquisição realizada' e 'Saldo no empenho' são material comprado e ainda
+      // não entregue, e reportá-los como estoque faria a Divisão contar, no
+      // papel, a resma que está com o fornecedor.
+      const estoque = Number(tm.estoque_disponivel)
+      const doMaterial = consumoJanela.filter(l => l.tipo_material_id === tm.id)
 
       return [
         texto(tm.nome),
@@ -861,6 +894,7 @@ const montarInsumos = ({ tiposMaterial, consumoAno, mes, ano, categoria, estoque
       ]
     })
 }
+
 
 // ---------------------------------------------------------------------------
 // 2.1 Estado Atual do PIT
@@ -1075,6 +1109,7 @@ controller.calcular = async ({ ano, mes }) => {
     demandasExtra,
     tiposMaterial,
     consumoAno,
+    consumoAnoAnterior,
     execucaoPorNd,
     creditosPdr,
     rpnp,
@@ -1084,8 +1119,7 @@ controller.calcular = async ({ ano, mes }) => {
     creditosExtraPdr,
     efetivo,
     capacitacaoRecebida,
-    estoqueAnteriorPapel,
-    estoqueAnteriorTinta
+    estoqueAnterior
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
     // A 2.2 e a 2.4 saem do ACERVO desde 2026-08-05, e nao mais do SAP: as duas
@@ -1103,7 +1137,12 @@ controller.calcular = async ({ ano, mes }) => {
     // contaria cada demanda doze vezes.
     pitExtraCtrl.listarDoMes(ano, mes),
     mapotecaCtrl.getTiposMaterial(),
+    // DOIS ANOS de consumo, e não um. A previsão de falta da 7.2 olha os DOZE
+    // meses anteriores ao corte, e em janeiro, fevereiro e março esses doze
+    // meses caem quase todos no ano passado. Com um ano só, a coluna saía '-' de
+    // janeiro a março todo ano, sem que nada tivesse mudado no consumo.
     mapotecaCtrl.getConsumoMensalPorTipo(ano),
+    mapotecaCtrl.getConsumoMensalPorTipo(ano - 1),
     gerarExecucaoPorNd(ano, inicio, cutoff),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.PDR),
     gerarRpnp(ano),
@@ -1116,9 +1155,17 @@ controller.calcular = async ({ ano, mes }) => {
     // O estoque que a edição FECHADA do mês anterior reportou. É a única fonte
     // possível: `mapoteca.estoque_material` guarda o saldo de hoje, e o de maio
     // não existe mais lá.
-    buscarEstoqueDoMesAnterior({ ano, mes, numero: '7.2' }),
-    buscarEstoqueDoMesAnterior({ ano, mes, numero: '7.3' })
+    buscarEstoqueDoMesAnterior({ ano, mes })
   ])
+
+  // A janela de doze meses do `projetarFalta` atravessa a virada do ano, então
+  // cada linha precisa dizer de que ANO ela é: dois meses "3" de anos
+  // diferentes não se distinguem sozinhos.
+  const comAno = (linhas, doAno) => linhas.map(l => ({ ...l, ano: doAno }))
+  const consumoJanela = [
+    ...comAno(consumoAnoAnterior, ano - 1),
+    ...comAno(consumoAno, ano)
+  ]
 
   return {
     '2.1': montarEstadoPit({ metas: metasPit }),
@@ -1142,16 +1189,9 @@ controller.calcular = async ({ ano, mes }) => {
     '4.7': creditosExtraPdr,
     '6.1': montarAproveitamento({ efetivo }),
     '6.2': montarCapacitacaoRecebida({ capacitacoes: capacitacaoRecebida }),
-    '7.2': montarInsumos({
-      tiposMaterial, consumoAno, mes, ano,
-      categoria: CATEGORIA_MATERIAL.PAPEL,
-      estoqueAnterior: estoqueAnteriorPapel
-    }),
-    '7.3': montarInsumos({
-      tiposMaterial, consumoAno, mes, ano,
-      categoria: CATEGORIA_MATERIAL.TINTA,
-      estoqueAnterior: estoqueAnteriorTinta
-    })
+    // UMA tabela de insumos desde 2026-08-08, com papel e tinta juntos. NÃO
+    // EXISTE MAIS a '7.3': o chefe fundiu as duas e nada foi renumerado.
+    '7.2': montarInsumos({ tiposMaterial, consumoJanela, mes, ano, estoqueAnterior })
   }
 }
 

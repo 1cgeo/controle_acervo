@@ -21,9 +21,9 @@ import { vi } from 'vitest';
 /** Leituras que devolvem lista. O default e `[]`. */
 const LISTAS = [
   'getDominioTipoCliente', 'getDominioSituacaoPedido', 'getDominioCanalRecebimento',
-  'getDominioTipoMidia', 'getDominioTipoLocalizacao', 'getDominioFormaEntrega',
+  'getDominioTipoMidia', 'getDominioFormaEntrega',
   'getClientes', 'getPedidos', 'getPlotters', 'getManutencoes', 'getTiposMaterial',
-  'getEstoqueMaterial', 'getEstoquePorLocalizacao', 'getConsumoMaterial',
+  'getEstoqueMaterial', 'getMovimentosMaterial',
   'getConsumoMensal', 'getOrdersTimeline', 'getClientActivity',
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
@@ -47,9 +47,9 @@ const ACOES = [
   'createPlotter', 'updatePlotter', 'deletePlotters',
   'createManutencao', 'updateManutencao', 'deleteManutencoes',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',
-  'createEstoqueMaterial', 'updateEstoqueMaterial', 'deleteEstoqueMaterial',
-  'transferirEstoque',
-  'createConsumoMaterial', 'updateConsumoMaterial', 'deleteConsumoMaterial',
+  // O estoque nao tem mutacao: o saldo e o acumulado do LIVRO, e quem o move e
+  // um movimento.
+  'createMovimentoMaterial', 'updateMovimentoMaterial', 'deleteMovimentosMaterial',
   'downloadDashboardCsv',
   'getPedidosEmAberto', 'getImpressaoDoPedido', 'baixarCartaDoPedido',
   'downloadAnexoPedido', 'deleteAnexoPedido',

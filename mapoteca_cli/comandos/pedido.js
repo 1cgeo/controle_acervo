@@ -875,9 +875,10 @@ async function corrigir (args, cfg) {
  * Move itens de um pedido para outro trocando `pedido_id`.
  *
  * Existe porque a carga historica prendeu os itens de um documento no pedido de
- * OUTRO documento, e o conserto obvio (apagar la e cadastrar aqui) perderia
- * quantidade_fornecida e observacao, alem de ser irreversivel. O
- * PUT do produto_pedido aceita pedido_id, entao mover e uma ATUALIZACAO.
+ * OUTRO documento, e o conserto obvio (apagar la e cadastrar aqui) perderia a
+ * midia fornecida, a observacao e as impressoes ja lancadas, alem de ser
+ * irreversivel. O PUT do produto_pedido aceita pedido_id, entao mover e uma
+ * ATUALIZACAO.
  */
 async function mover (args, cfg) {
   const flags = args.flags
@@ -939,7 +940,11 @@ async function mover (args, cfg) {
 
   const linhas = corpos.map(({ item }) =>
     `  item ${item.id}  ${item.mi || item.produto_nome || '-'}  ${item.escala || ''}  ` +
-    `q=${item.quantidade}  forn=${item.quantidade_fornecida === null ? '-' : item.quantidade_fornecida}`
+    // `impressa` no lugar do antigo `forn=`: `quantidade_fornecida` foi podada
+    // em 2026-08-08 e sairia `undefined` aqui. O que interessa antes de mover e
+    // se o item ja rendeu impressao, que e o que se perderia apagando e
+    // recriando.
+    `q=${item.quantidade}  impressa=${item.quantidade_impressa === undefined ? '-' : item.quantidade_impressa}`
   )
   const cabecalho =
     `${alvo.length} item(ns) de #${de} "${origem.documento_solicitacao || '-'}" ` +

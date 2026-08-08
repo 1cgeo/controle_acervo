@@ -183,7 +183,7 @@ describe('renderDashboard da mapoteca', () => {
   // caiu de "toda visita" para "quem abrir o Resumo Anual". E a medicao na
   // producao mostrou que o dado que eles carregam nao estava em lugar nenhum:
   // o dashboard tinha a curva mensal do PEDIDO e nao a da ENTREGA, que e o
-  // numero de que a DGEO presta contas; e `consumo_material` esta vazia, o que
+  // numero de que a DGEO presta contas; e o consumo esta sem lancamento, o que
   // deixa a mídia como o unico sinal real de gasto de papel.
   //
   // O teste guarda a PRESENCA pela mesma razao que o de cima guarda a ausencia.

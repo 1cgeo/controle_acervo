@@ -15,7 +15,7 @@
 //     subseção de X e não a de Y) é de `routes/rpcmtec_guarda.test.js`, com o
 //     banco dublê: aqui a semente não tem gerente para encenar os cinco casos.
 //
-//  2. A ESTRUTURA. São 34 blocos em nove seções, na numeração do documento da
+//  2. A ESTRUTURA. São 33 blocos em nove seções, na numeração do documento da
 //     Divisão. Uma subseção que muda de número, ou some, quebra o documento sem
 //     dar erro nenhum.
 //
@@ -91,7 +91,8 @@ const preencherTudo = async id => {
 }
 
 // A numeração do documento da Divisão, medida no OOXML da edição de
-// julho/2026. São 34 blocos: 30 tabelas mais a 1.1 e as três da seção 9.
+// julho/2026. São 33 blocos: 29 tabelas mais a 1.1 e as três da seção 9.
+// Eram 34 até 2026-08-08, quando a 7.3 (Tintas) foi fundida na 7.2 (Papel).
 const SUBSECOES_CALCULADAS = [
   // A 2.2 e a 2.4 entraram em 2026-08-05, por decisao do chefe: as duas
   // reportam a versao Regular que ficou pronta no mes, e isso o acervo sabe
@@ -101,7 +102,8 @@ const SUBSECOES_CALCULADAS = [
   '3.1', '3.2', '3.3', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
   '6.1', '6.2',
-  '7.2', '7.3'
+  // UMA tabela de insumos desde 2026-08-08, e a 7.3 sumiu.
+  '7.2'
 ]
 
 // As que o gestor digita. Nove vêm de outro sistema ou de fora (2.3 e 2.5 do
@@ -120,7 +122,7 @@ const SUBSECOES_DIGITADAS = [
 ]
 
 describe('RPCMTec: a estrutura do documento', () => {
-  test('são 34 blocos em nove seções, na numeração do documento', async () => {
+  test('são 33 blocos em nove seções, na numeração do documento', async () => {
     const id = await criarEdicao()
     const doc = await documento(id)
 
@@ -137,11 +139,11 @@ describe('RPCMTec: a estrutura do documento', () => {
       '9. BOAS PRÁTICAS, LIÇÕES APRENDIDAS E OPORTUNIDADES DE MELHORIA'
     ])
 
-    expect(blocos(doc)).toHaveLength(34)
-    expect(blocos(doc).filter(b => b.cabecalhos)).toHaveLength(30)
+    expect(blocos(doc)).toHaveLength(33)
+    expect(blocos(doc).filter(b => b.cabecalhos)).toHaveLength(29)
   })
 
-  test('vinte subseções são calculadas e treze são digitadas', async () => {
+  test('dezenove subseções são calculadas e treze são digitadas', async () => {
     const id = await criarEdicao()
     const doc = await documento(id)
 
@@ -515,7 +517,7 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     expect(res.body.message).toMatch(/assinante/i)
   })
 
-  test('fechar congela os 34 blocos, e o congelado não muda quando o banco muda', async () => {
+  test('fechar congela os 33 blocos, e o congelado não muda quando o banco muda', async () => {
     const id = await criarEdicao()
     await preencherTudo(id)
 
@@ -526,12 +528,12 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
       .set('Authorization', admin())
       .send({ ciente_revisao: true })
     expect(fechada.status).toBe(200)
-    expect(fechada.body.dados.subsecoes).toBe(34)
+    expect(fechada.body.dados.subsecoes).toBe(33)
 
     const gravadas = await conn.any(
       'SELECT numero FROM rpcmtec.subsecao WHERE edicao_id = $1 ORDER BY ordem', [id]
     )
-    expect(gravadas).toHaveLength(34)
+    expect(gravadas).toHaveLength(33)
 
     const doc = await documento(id)
     expect(doc.fechada).toBe(true)
@@ -911,8 +913,24 @@ describe('RPCMTec: o gerente do módulo escreve a subseção do módulo dele', (
     [USER_UUID, MODULO_PRODUCAO, NIVEL_GERENTE]
   )
 
-  // O `cleanTestData` do `afterEach` devolve o usuário ao perfil da semente
-  // (consulta no acervo, operador na mapoteca), então a concessão não vaza.
+  // A CONCESSÃO SE DESFAZ AQUI, e não pelo `cleanTestData`.
+  //
+  // Havia um comentário nesta linha afirmando que o `afterEach` devolvia o
+  // usuário ao perfil da semente. Ele estava errado: `cleanTestData` apaga
+  // `dgeo.usuario_perfil` só de quem está FORA da semente (helpers/db.js), e o
+  // usuário de teste está DENTRO. A linha de produção ficava, e vazava para todo
+  // arquivo que rodasse depois neste worker.
+  //
+  // Quem pagou foi `perfil_modulo.test.js`, cujo caso `GET /api/usuarios devolve
+  // o perfil por módulo` compara o mapa INTEIRO com `{ acervo: 1, mapoteca: 2 }`
+  // e passava a ver um terceiro módulo que nenhum teste dele concedeu. O sintoma
+  // aparecia só na suíte cheia, e sumia ao rodar qualquer um dos dois sozinho.
+  afterEach(() => conn.none(
+    `DELETE FROM dgeo.usuario_perfil
+      WHERE modulo_id = $2 AND usuario_id = (
+        SELECT id FROM dgeo.usuario WHERE uuid = $1)`,
+    [USER_UUID, MODULO_PRODUCAO]
+  ))
 
   test('a 2.3, que é de produção, aceita o gerente de produção', async () => {
     const id = await criarEdicao()

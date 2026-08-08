@@ -1,7 +1,8 @@
 'use strict'
 
-// A ESTRUTURA do RPCMTec: os 34 blocos do documento, em ordem, com quem
-// preenche cada um.
+// A ESTRUTURA do RPCMTec: os 33 blocos do documento, em ordem, com quem
+// preenche cada um. Eram 34 até 2026-08-08, quando o chefe fundiu a 7.3
+// (Tintas) na 7.2 (Papel) e a 7.3 sumiu. Nada foi renumerado.
 //
 // DEFINIÇÃO ÚNICA. Daqui saem quatro coisas que antes moravam em quatro
 // lugares e escorregavam uma da outra:
@@ -17,8 +18,9 @@
 // escolhas nossas: o PDF que o sistema emite tem de ser o documento que a
 // Divisão já usa.
 //
-// AS TRÊS DIVERGÊNCIAS DELIBERADAS em relação ao modelo estão marcadas nas
-// subseções 3.4, 6.1 e 7.3, cada uma com a razão ao lado.
+// AS QUATRO DIVERGÊNCIAS DELIBERADAS em relação ao modelo estão marcadas nas
+// subseções 3.4, 6.1 e 7.2 (esta com duas: as cinco colunas, e a fusão da antiga
+// 7.3 dentro dela), cada uma com a razão ao lado.
 
 // Quem preenche. Espelha `dominio.origem_subsecao`.
 const ORIGEM = {
@@ -385,31 +387,41 @@ const SECOES = [
       {
         numero: '7.2',
         modulo: 'mapoteca',
-        titulo: 'Estoque de Insumos de Impressão - Papel',
+        // UMA TABELA DE INSUMOS, e o modelo tem duas ("- Papel" e "- Tintas").
+        // É a QUARTA divergência deliberada, decidida pelo chefe em 2026-08-08,
+        // e a 7.3 SUMIU: nada foi renumerado, e a seção 7 passou a ser 7.1
+        // Equipamento e 7.2 Insumos.
+        //
+        // A separação exigia uma coluna (`tipo_material.categoria_id`) cuja
+        // única função era escolher em qual das duas tabelas a linha sairia. Ela
+        // classificava para um recorte que o documento não usava para nada: as
+        // duas tinham as MESMAS cinco colunas, a mesma grade e a mesma fonte, e
+        // ninguém olha "só as tintas". Uma coluna que só pode errar, e que erra
+        // calada, não paga uma quebra de tabela.
+        //
+        // TODO MATERIAL ATIVO entra, e não só o insumo de impressão. O cabeçote
+        // acaba do mesmo jeito que o cartucho, e ficar de fora por ser "peça"
+        // era decisão que se tomava no cadastro e se descobria no relatório.
+        //
+        // PENDÊNCIA CONHECIDA, e ela nasceu com a fusão: a coluna "Estoque
+        // atual" agora soma ROLO e CARTUCHO. O total da coluna não tem
+        // significado físico, e cada LINHA continua tendo. O conserto, se um dia
+        // incomodar, é a unidade virar dado -- não a tabela voltar a se partir.
+        titulo: 'Estoque de Insumos de Impressão',
         origem: ORIGEM.CALCULADA,
-        pendencia: 'Nenhum papel em estoque',
-        // O consumo do papel é DERIVADO da impressão: cada exemplar gasta uma
-        // folha da mídia, e a mídia aponta o papel. Só de `consumo_material`,
-        // que ninguém preenche, a coluna sai zerada.
-        fonte: 'estoque atual e do mês anterior, consumo das impressões, projeção pelo ritmo',
-        cabecalhos: COLUNAS_INSUMO,
-        grade: [3374, 1554, 1554, 1491, 1896]
-      },
-      {
-        numero: '7.3',
-        modulo: 'mapoteca',
-        titulo: 'Estoque de Insumos de Impressão - Tintas',
-        origem: ORIGEM.CALCULADA,
-        pendencia: 'Nenhuma tinta em estoque',
-        // A tinta NÃO se deriva da impressão: quanto de cartucho uma folha
-        // gasta depende do que está desenhado nela. O consumo vem da troca
-        // DECLARADA, e fica zerado enquanto ninguém a declarar -- o que é
-        // diferente de estar errado.
-        fonte: 'estoque atual e do mês anterior, consumo declarado em mapoteca.consumo_material',
-        // CINCO colunas, e o modelo tem oito: lá as tintas se abriam em uma
-        // coluna por plotter (HP 70, HP 72, HP 730), e aqui cada cartucho é
-        // uma LINHA de `mapoteca.tipo_material`. Por isso a 7.3 usa a grade da
-        // 7.2, que tem as mesmas cinco colunas.
+        pendencia: 'Nenhum insumo de impressão cadastrado',
+        // O CONSUMO É O DECLARADO, e só ele. Este texto dizia "consumo das
+        // impressões" até 2026-08-08: era o que valia antes de 2026-08-07,
+        // quando o chefe desfez a derivação, e ficou aqui apontando uma fonte
+        // que o gerador já não usava.
+        //
+        // "Estoque atual" conta SÓ Seção + Almoxarifado: 'Aquisição realizada' e
+        // 'Saldo no empenho' são material comprado e ainda não entregue, e
+        // somá-los reportaria como estoque a resma que está com o fornecedor.
+        fonte: 'estoque na Seção e no Almoxarifado, estoque do mês anterior, consumo declarado em mapoteca.movimento_material',
+        // CINCO colunas, e o modelo da tabela de tintas tinha oito: lá elas se
+        // abriam em uma coluna por plotter (HP 70, HP 72, HP 730), e aqui cada
+        // cartucho é uma LINHA de `mapoteca.tipo_material`.
         cabecalhos: COLUNAS_INSUMO,
         grade: [3374, 1554, 1554, 1491, 1896]
       }

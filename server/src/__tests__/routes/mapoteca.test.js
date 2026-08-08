@@ -146,17 +146,32 @@ const criaTipoMaterial = async (overrides = {}) => {
   return res.body.dados.id
 }
 
+// O ESTOQUE NAO TEM MAIS PORTA PROPRIA DE ESCRITA desde 2026-08-08: o saldo e o
+// acumulado do livro de movimentos. Semear estoque e lancar uma ENTRADA, que e
+// como o material chega de verdade.
 const criaEstoque = async (tipoMaterialId, localizacaoId, quantidade) => {
   const res = await request(app)
-    .post('/api/mapoteca/estoque_material')
+    .post('/api/mapoteca/movimento_material')
     .set('Authorization', generateAdminToken())
     .send({
       tipo_material_id: tipoMaterialId,
+      tipo_movimento_id: 1,
       quantidade,
-      localizacao_id: localizacaoId
+      data_movimento: '2026-08-08',
+      localizacao_destino_id: localizacaoId
     })
   expect(res.status).toBe(201)
 }
+
+const transferir = (corpo, token = generateAdminToken()) =>
+  request(app)
+    .post('/api/mapoteca/movimento_material')
+    .set('Authorization', token)
+    .send({
+      tipo_movimento_id: 2,
+      data_movimento: '2026-08-08',
+      ...corpo
+    })
 
 const getEstoque = async (tipoMaterialId, localizacaoId) => {
   return conn.oneOrNone(
@@ -452,7 +467,6 @@ describe('Mapoteca Routes', () => {
         nome_avulso: 'Papel quadriculado do teste',
         pedido_id: pedido.id,
         quantidade: 100,
-        quantidade_fornecida: 100,
         tipo_midia_id: 6
       })
 
@@ -476,8 +490,8 @@ describe('Mapoteca Routes', () => {
     // trocando o ano na navbar.
     it('GET /api/mapoteca/pedido devolve so os pedidos do ano', async () => {
       const clienteId = await criaCliente({ nome: 'OM Lista Ano' })
-      await criaPedido(clienteId, { data_pedido: '2025-12-20', data_atendimento: null, situacao_pedido_id: 1 })
-      await criaPedido(clienteId, { data_pedido: '2026-02-05', data_atendimento: null, situacao_pedido_id: 1 })
+      await criaPedido(clienteId, { data_pedido: '2025-12-20', data_atendimento: null, situacao_pedido_id: 2 })
+      await criaPedido(clienteId, { data_pedido: '2026-02-05', data_atendimento: null, situacao_pedido_id: 2 })
 
       const r2026 = await request(app)
         .get('/api/mapoteca/pedido?ano=2026')
@@ -493,12 +507,11 @@ describe('Mapoteca Routes', () => {
       expect(r2025.body.dados[0].data_pedido).toContain('2025-12-20')
     })
 
-    it('POST /api/mapoteca/pedido should create with demandante/omds/previsto_pit', async () => {
+    it('POST /api/mapoteca/pedido should create with demandante/previsto_pit', async () => {
       const clienteId = await criaCliente()
       const metaId = await criaMeta('4.1')
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
-        omds: '1º CGEO',
         previsto_pit: true,
         meta_pit_id: metaId
       })
@@ -512,7 +525,6 @@ describe('Mapoteca Routes', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.dados.demandante).toBe('CMS')
-      expect(res.body.dados.omds).toBe('1º CGEO')
       expect(res.body.dados.previsto_pit).toBe(true)
       // O id serve a escrita; o codigo derivado e o que a tela e a planilha leem.
       // NUMERO, e nao texto: as tres consultas de pedido trazem `meta_pit_id::int`
@@ -1107,11 +1119,15 @@ describe('Mapoteca Routes', () => {
         data_atendimento: '2026-03-20'
       })
 
+      // A MIDIA diverge, e a QUANTIDADE nao tem como divergir: pedido em
+      // sulfite (5) e atendido em tyvek (8). A `quantidade_fornecida` saiu em
+      // 2026-08-08 (igual a `quantidade` em 1759 de 1759 linhas da producao); a
+      // midia fornecida ficou, com 25 divergencias reais medidas nas mesmas
+      // linhas.
       await criaProdutoPedido({
         uuid_versao: versao.uuid_versao,
         pedido_id: pedido.id,
         quantidade: 10,
-        quantidade_fornecida: 8,
         tipo_midia_id: 5,
         tipo_midia_fornecida_id: 8,
         observacao: 'Entrega parcial'
@@ -1130,7 +1146,8 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.data_atendimento).toBe('2026-03-20')
       const item = res.body.dados.produtos[0]
       expect(item.quantidade).toBe(10)
-      expect(item.quantidade_fornecida).toBe(8)
+      // A coluna saiu, e o detalhe do pedido nao a inventa de volta.
+      expect(item).not.toHaveProperty('quantidade_fornecida')
       expect(item.tipo_midia_fornecida_nome).toBe('Tyvek')
       expect(item.observacao).toBe('Entrega parcial')
       expect(item.tipo_produto_nome).toBe('Carta Topográfica')
@@ -1167,11 +1184,12 @@ describe('Mapoteca Routes', () => {
   })
 
   describe('Tipo de Material', () => {
-    it('POST with estoque_minimo/meta_anual/ativo should persist; list returns abaixo_minimo', async () => {
+    it('POST with estoque_minimo/ativo should persist; list returns abaixo_minimo', async () => {
+      // meta_anual saiu em 2026-08-08, junto com categoria_id e tipo_midia_id:
+      // estava NULA nas 34 linhas da producao e nao tinha leitor.
       const id = await criaTipoMaterial({
         nome: 'Papel Sulfite 90g',
         estoque_minimo: 10,
-        meta_anual: 100,
         ativo: true
       })
 
@@ -1183,29 +1201,78 @@ describe('Mapoteca Routes', () => {
       const material = res.body.dados.find(m => m.id === id)
       expect(material).toBeDefined()
       expect(parseFloat(material.estoque_minimo)).toBe(10)
-      expect(parseFloat(material.meta_anual)).toBe(100)
       expect(material.ativo).toBe(true)
       // Sem estoque cadastrado: 0 < 10 → abaixo do mínimo
       expect(material.abaixo_minimo).toBe(true)
     })
+
+    it('o alerta de estoque mínimo conta só Seção + Almoxarifado', async () => {
+      // 'Aquisição realizada' (3) é material comprado e ainda não entregue.
+      // Contá-lo no alerta esconderia a falta na Seção atrás de uma compra que
+      // ainda está com o fornecedor.
+      const id = await criaTipoMaterial({ nome: 'Tyvek comprado', estoque_minimo: 10 })
+      await criaEstoque(id, 3, 50)
+
+      const res = await request(app)
+        .get('/api/mapoteca/tipo_material')
+        .set('Authorization', generateUserToken())
+
+      const material = res.body.dados.find(m => m.id === id)
+      // O total mostra os 50 que vêm vindo; o disponível é zero, e é ele que
+      // dispara o alerta.
+      expect(parseFloat(material.estoque_total)).toBe(50)
+      expect(parseFloat(material.estoque_disponivel)).toBe(0)
+      expect(material.abaixo_minimo).toBe(true)
+    })
+
+    it('o nome do material é ÚNICO, e a recusa explica por quê', async () => {
+      // A 7.2 do RPCMTec casa a linha do mês anterior pelo NOME, e com a fusão
+      // de 2026-08-08 papel e tinta passaram a dividir um espaço de nomes só.
+      await criaTipoMaterial({ nome: 'Cartucho homônimo' })
+
+      const res = await request(app)
+        .post('/api/mapoteca/tipo_material')
+        .set('Authorization', generateAdminToken())
+        .send({ nome: 'Cartucho homônimo' })
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/Já existe um material com este nome/)
+    })
+
+    it('o OPERADOR cadastra material, e a consulta não cadastra', async () => {
+      // Era de GERENTE até 2026-08-08. Quem faz contagem na prateleira é quem
+      // descobre, ali, que o cartucho novo ainda não existe no sistema: exigir
+      // gerente para essa linha fazia a contagem parar e esperar.
+      const doOperador = await request(app)
+        .post('/api/mapoteca/tipo_material')
+        .set('Authorization', generateUserToken())
+        .send({ nome: 'Material do operador' })
+      expect(doOperador.status).not.toBe(403)
+
+      const leitura = await request(app)
+        .get('/api/mapoteca/tipo_material')
+        .set('Authorization', generateUserToken())
+      expect(leitura.status).toBe(200)
+    })
   })
 
-  describe('Transferência de estoque', () => {
-    it('should move quantity between locations (happy path)', async () => {
+  // A TRANSFERENCIA virou o tipo 2 do LIVRO em 2026-08-08. Era
+  // POST /estoque_material/transferir, que fazia dois UPDATEs sem data e sem
+  // motivo: o saldo mudava e nada dizia quando nem por que. As regras de negocio
+  // sao as mesmas; o que mudou foi o endereco e o rastro.
+  describe('Transferência entre localizações, pelo livro', () => {
+    it('move a quantidade entre as localizações', async () => {
       const materialId = await criaTipoMaterial()
       await criaEstoque(materialId, 2, 10) // Almoxarifado
 
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 2,
-          destino_id: 1,
-          quantidade: 4
-        })
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1,
+        quantidade: 4
+      })
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(201)
 
       const origem = await getEstoque(materialId, 2)
       const destino = await getEstoque(materialId, 1)
@@ -1213,107 +1280,113 @@ describe('Mapoteca Routes', () => {
       expect(parseFloat(destino.quantidade)).toBe(4)
     })
 
-    it('should increment existing destination stock', async () => {
+    it('soma no destino que já tinha saldo', async () => {
       const materialId = await criaTipoMaterial()
       await criaEstoque(materialId, 2, 10)
       await criaEstoque(materialId, 1, 3)
 
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 2,
-          destino_id: 1,
-          quantidade: 2
-        })
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1,
+        quantidade: 2
+      })
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(201)
       const destino = await getEstoque(materialId, 1)
       expect(parseFloat(destino.quantidade)).toBe(5)
     })
 
-    it('should return 400 when origin stock is insufficient', async () => {
+    it('recusa com 400 quando a origem não tem saldo suficiente', async () => {
       const materialId = await criaTipoMaterial()
       await criaEstoque(materialId, 2, 1)
 
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 2,
-          destino_id: 1,
-          quantidade: 100
-        })
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1,
+        quantidade: 100
+      })
 
       expect(res.status).toBe(400)
       expect(res.body.message).toContain('insuficiente')
     })
 
-    it('should return 400 when origin has no stock record', async () => {
+    it('recusa com 400 quando a origem não tem estoque nenhum, e ensina o conserto', async () => {
       const materialId = await criaTipoMaterial()
 
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 3,
-          destino_id: 1,
-          quantidade: 1
-        })
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 3,
+        localizacao_destino_id: 1,
+        quantidade: 1
+      })
+
+      expect(res.status).toBe(400)
+      // A mensagem do gatilho sobe inteira, em vez de virar a genérica de 500.
+      expect(res.body.message).toMatch(/não tem estoque em/)
+    })
+
+    it('recusa com 400 origem igual ao destino', async () => {
+      // Somaria e subtrairia o mesmo saldo, e passaria por lançamento válido.
+      const materialId = await criaTipoMaterial()
+
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 1,
+        localizacao_destino_id: 1,
+        quantidade: 1
+      })
 
       expect(res.status).toBe(400)
     })
 
-    it('should return 400 when origem equals destino', async () => {
+    it('recusa com 400 quantidade não positiva', async () => {
       const materialId = await criaTipoMaterial()
 
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 1,
-          destino_id: 1,
-          quantidade: 1
-        })
+      const res = await transferir({
+        tipo_material_id: materialId,
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1,
+        quantidade: 0
+      })
 
       expect(res.status).toBe(400)
     })
 
-    it('should return 400 for non-positive quantidade', async () => {
-      const materialId = await criaTipoMaterial()
-
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateAdminToken())
-        .send({
-          tipo_material_id: materialId,
-          origem_id: 2,
-          destino_id: 1,
-          quantidade: 0
-        })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('aceita o operador da mapoteca (dar baixa e transferir e rotina de quem imprime)', async () => {
-      const res = await request(app)
-        .post('/api/mapoteca/estoque_material/transferir')
-        .set('Authorization', generateUserToken())
-        .send({
-          tipo_material_id: 1,
-          origem_id: 2,
-          destino_id: 1,
-          quantidade: 1
-        })
+    it('aceita o operador da mapoteca (lançar movimento é rotina de quem imprime)', async () => {
+      const res = await transferir({
+        tipo_material_id: 1,
+        localizacao_origem_id: 2,
+        localizacao_destino_id: 1,
+        quantidade: 1
+      }, generateUserToken())
 
       // O que se afirma aqui e a AUTORIZACAO: o operador nao e barrado por
       // perfil. O resultado de negocio depende do estoque semeado, entao a
       // asserção é sobre nao levar 403.
       expect(res.status).not.toBe(403)
+    })
+
+    it('a leitura do livro é de CONSULTA, e o estoque não tem mais porta de escrita', async () => {
+      const leitura = await request(app)
+        .get('/api/mapoteca/movimento_material')
+        .set('Authorization', generateUserToken())
+      expect(leitura.status).toBe(200)
+
+      // As quatro portas antigas do saldo sumiram: uma delas viva ao lado do
+      // livro faria a soma do livro deixar de bater com o saldo no primeiro uso.
+      const upsert = await request(app)
+        .post('/api/mapoteca/estoque_material')
+        .set('Authorization', generateAdminToken())
+        .send({ tipo_material_id: 1, quantidade: 1, localizacao_id: 1 })
+      expect(upsert.status).toBe(404)
+
+      const antiga = await request(app)
+        .post('/api/mapoteca/estoque_material/transferir')
+        .set('Authorization', generateAdminToken())
+        .send({ tipo_material_id: 1, origem_id: 2, destino_id: 1, quantidade: 1 })
+      expect(antiga.status).toBe(404)
     })
   })
 
@@ -1350,9 +1423,12 @@ describe('Mapoteca Routes', () => {
       const versao = await createVersao(produto.id)
       const clienteId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
       const metaId = await criaMeta('4.1')
+      // Sem `omds`: a coluna saiu em 2026-08-08, e a coluna "OMDS" da aba do
+      // RTM passou a ser o literal '1º CGEO' (ver a constante OMDS em
+      // relatorio_ctrl.js). O caso do relatorio abaixo continua exigindo o
+      // valor, e e ele que guarda essa troca.
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
-        omds: '1º CGEO',
         previsto_pit: true,
         meta_pit_id: metaId,
         operacao: 'Operação Teste',

@@ -18,9 +18,10 @@
 
 const GERAL = [
   'A mapoteca e o modulo de PEDIDOS do SCA: um cliente (OM ou civil) pede cartas e a',
-  'DGEO atende. O acesso e por PERFIL no modulo: consulta le, operador imprime e da',
-  'baixa em material, gerente cadastra pedido, cliente e anexo. O administrador passa',
-  'em tudo. Publico, sem login, so a consulta por localizador (e o /api e o /api/login).',
+  'DGEO atende. O acesso e por PERFIL no modulo: consulta LE tudo (inclusive o livro',
+  'de material), operador imprime e faz TUDO de material (lanca movimento, cadastra e',
+  'conta), gerente cadastra pedido, cliente, item e anexo. O administrador passa em',
+  'tudo. Publico, sem login, so a consulta por localizador (e o /api e o /api/login).',
   'O CRUD tem forma propria e nao segue /recurso/:id:',
   '  PUT    vai na COLECAO com o id dentro do corpo, e SUBSTITUI a linha inteira;',
   '  DELETE vai na COLECAO com um ARRAY de ids, ou seja, e sempre operacao em lote.',
@@ -44,8 +45,14 @@ const REGRAS = {
     'contato perene da OM. Ele costuma estar no FECHO do documento, depois da tabela.',
     'prazo so se o documento der DATA explicita. Exercicio citado sem data nao vira',
     'prazo: deixe nulo e registre em observacao. Prazo inventado vira cobranca errada.',
-    'demandante e a secao ou a sigla que pediu (ex.: "6 RCB / 3a Secao"); omds e a OM',
-    'de destino. O nome do cliente e sempre por extenso, e vem do cadastro.',
+    'demandante e a secao ou a sigla que pediu (ex.: "6 RCB / 3a Secao"). O nome do',
+    'cliente e sempre por extenso, e vem do cadastro. NAO existe mais `omds`: a coluna',
+    'foi podada em 2026-08-08 por ser a mesma casa em todas as 124 linhas preenchidas,',
+    'e no relatorio ela virou constante.',
+    'palavras_chave sao etiquetas livres, e o filtro --palavra_chave da listagem casa a',
+    'etiqueta INTEIRA e sensivel a maiuscula ("Extra-PIT" nao acha "extra-pit", e',
+    '"Extra" nao acha "Extra-PIT"). E o operador @> do indice GIN: casar pedaco',
+    'abandonaria o indice. O filtro SOMA com o ano, nunca o substitui.',
     'Campos de pedido civil (canal_recebimento_id, municipio, qtd_imagens) ficam nulos',
     'em pedido de OM.',
     'previsto_pit responde se o atendimento estava previsto no PIT do ano; e o que',
@@ -85,9 +92,13 @@ const REGRAS = {
     'O item NAO tem forma nem data de entrega: as duas sao do PEDIDO (forma_entrega_id',
     'e data_atendimento). Mandar essas chaves no item nao grava nada, e a resposta traz',
     'o aviso de campo ignorado.',
-    'quantidade e o pedido; quantidade_fornecida e o entregue. Os relatorios contam o',
-    'fornecido com queda para o previsto, entao item nunca entregue com quantidade',
-    'preenchida ainda aparece como se tivesse saido.',
+    'quantidade e o que se pediu, e e tambem o que os relatorios contam como entregue:',
+    'NAO existe mais `quantidade_fornecida`, podada em 2026-08-08 por ser igual a',
+    'quantidade em 1759 de 1759 linhas. O que de fato saiu da impressora e',
+    'quantidade_impressa, que vem do lancamento de impressao e nao do item.',
+    'tipo_midia_fornecida_id FICOU, e nao caiu junto so por ter sufixo parecido: ele',
+    'tem 25 divergencias reais (item pedido em tyvek e atendido em sulfite). Preencha',
+    'so quando a midia usada DIFERIR da pedida; nulo quer dizer "saiu como pedido".',
     'producao_especifica marca a folha que precisa ser produzida antes de atender.'
   ],
 
@@ -103,21 +114,57 @@ const REGRAS = {
     'Cliente com pedido associado NAO pode ser excluido: o servidor recusa com 400.'
   ],
 
-  consumo: [
-    'Consumo so pode sair da localizacao 1 (Secao). Material que esta no almoxarifado',
-    'precisa ser transferido para a Secao antes de ser consumido.'
+  movimento: [
+    'O LIVRO e a UNICA porta de escrita do material. O saldo por localizacao e o',
+    'ACUMULADO deste livro, aplicado por gatilho: nao ha rota que edite saldo.',
+    'Os quatro tipos sao as quatro coisas que acontecem com o material, e o',
+    'tipo_movimento_id decide QUAIS lados a linha tem de ter:',
+    '  1 Entrada        chega de fora: SEM origem, COM destino.',
+    '  2 Transferencia  muda de lugar: os dois lados, e destino DIFERENTE da origem.',
+    '  3 Consumo        acaba: origem = 1 (Secao) e SEM destino.',
+    '  4 Contagem       conferencia: EXATAMENTE UM lado, e motivo OBRIGATORIO.',
+    'Consumo so sai da SECAO. As localizacoes sao etapas da vida do material, e nao',
+    'prateleiras: consumir de "Saldo no empenho" seria gastar, no papel, o que ainda',
+    'esta com o fornecedor. Material no Almoxarifado precisa de uma Transferencia',
+    'antes de ser consumido.',
+    'A Contagem lanca a DIFERENCA entre a prateleira e o sistema, nao o total contado:',
+    'sobrou, e ela ENTRA (destino); faltou, e ela SAI (origem). Lancar o total contado',
+    'soma em cima do saldo que ja existe.',
+    'quantidade e sempre POSITIVA e INTEIRA, inclusive na Contagem: o sentido mora em',
+    'qual lado esta preenchido, nunca no sinal.',
+    'O consumo do RPCMTec (7.2) e do painel e o DECLARADO, ou seja, exatamente o que',
+    'for lancado como tipo 3 aqui. Nada e derivado da impressao: produto impresso e',
+    'rolo de papel sao coisas separadas desde 2026-08-08.',
+    'O banco RECUSA consumo sem saldo na Secao (o saldo nao pode ficar negativo).',
+    'Editar ou excluir um movimento MEXE NO SALDO: o gatilho desfaz o efeito da linha',
+    'antiga e aplica a nova. Corrigir para mais um consumo que ja esvaziou a',
+    'prateleira volta 400 por falta de saldo, e nao e engano.',
+    'Nao ha rota de dominio para os tipos de movimento: os quatro codes acima sao a',
+    'lista inteira, e a resposta traz tipo_movimento_nome ja resolvido.'
   ],
 
   estoque: [
-    'O POST de estoque cria OU soma na linha existente daquele material e localizacao;',
-    'nao e um insert cego.',
-    'A transferencia entre localizacoes tem rota propria (POST',
-    '/api/mapoteca/estoque_material/transferir) e recusa origem igual ao destino.'
+    'SO LEITURA. O saldo e derivado do livro de movimentos, e as rotas que o',
+    'escreviam (POST, PUT, DELETE e POST /estoque_material/transferir) sairam em',
+    '2026-08-08. Para mudar saldo, lance um movimento: mapoteca schema movimento.',
+    'Uma linha por par (material, localizacao), e so as que existem: material sem',
+    'saldo em lugar nenhum nao aparece aqui, e aparece em tipo_material com zero.',
+    'O saldo guarda so o dia de HOJE, sem historico mensal. Quem quer o passado le o',
+    'livro por data (mapoteca movimento listar --data_inicio ... --data_fim ...).'
   ],
 
   tipo_material: [
-    'estoque_minimo alimenta o alerta de reposicao; meta_anual e a referencia do',
-    'consumo planejado do ano.'
+    'A UNIDADE VAI NO NOME, e nao em coluna propria: "Papel Sulfite 120g" sao rolos',
+    'de 50 m e "Cartucho MK - T730" e unidade avulsa. O nome e UNICO no banco.',
+    'estoque_minimo alimenta o alerta de reposicao e compara contra o DISPONIVEL',
+    '(Secao + Almoxarifado), nunca contra o total: o que esta em "Aquisicao realizada"',
+    'ou em "Saldo no empenho" foi comprado e ainda nao chegou aqui.',
+    'A listagem devolve estoque_disponivel, estoque_total e abaixo_minimo calculados',
+    'do saldo; nenhum dos tres se envia no corpo.',
+    'Cadastrar material e de OPERADOR, nao de gerente: quem faz a contagem na',
+    'prateleira e quem descobre ali que o cartucho novo ainda nao existe no sistema.',
+    'Material com movimento ou com saldo NAO pode ser excluido; desative com',
+    'ativo = false.'
   ],
 
   plotter: [

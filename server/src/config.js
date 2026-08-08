@@ -114,8 +114,16 @@ dotenv.config({
 // a mídia Sulfite 75g (code 9), e o code entra no `TIPO_MIDIA` que o Joi usa
 // para validar. Num banco 1.37.0 este código ACEITARIA o 9 no corpo e o banco o
 // recusaria pela chave estrangeira, ou seja, 500 onde deveria haver cadastro.
+//
+// A 1.41.0 SOBE O PISO, e as 1.39.0 e 1.40.0 no meio do caminho não subiam
+// (só removiam). Ela ACRESCENTA `mapoteca.movimento_material` e
+// `mapoteca.tipo_movimento_material`, e este código passa a ler o livro em toda
+// tela de material, no painel de consumo e na coluna "Consumo no mês" da 7.2 do
+// RPCMTec. Ela também APAGA `mapoteca.consumo_material` e três colunas de
+// `tipo_material`, e este código já não as escreve: num banco 1.40.0 as telas
+// falhariam com "relação não existe" na abertura, e não numa borda rara.
 const VERSION = '1.38.0'
-const MIN_DATABASE_VERSION = '1.38.0'
+const MIN_DATABASE_VERSION = '1.41.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

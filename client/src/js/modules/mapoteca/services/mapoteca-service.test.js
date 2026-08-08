@@ -40,9 +40,6 @@ describe('mapoteca-service: dominios', () => {
     await svc.getDominioTipoMidia();
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/dominio/tipo_midia');
 
-    await svc.getDominioTipoLocalizacao();
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/dominio/tipo_localizacao');
-
     await svc.getDominioFormaEntrega();
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/dominio/forma_entrega');
   });
@@ -80,6 +77,33 @@ describe('mapoteca-service: clientes e pedidos', () => {
 
     await svc.deletePedidos([9]);
     expect(apiDelete).toHaveBeenCalledWith('/mapoteca/pedido', { pedido_ids: [9] });
+  });
+
+  // A busca por etiqueta e do SERVIDOR: ela usa o indice GIN de
+  // `mapoteca.pedido.palavras_chave`, e filtrar aqui, sobre a lista ja baixada,
+  // daria a busca "por pedaco" que o campo nao promete.
+  test('getPedidos manda a palavra-chave na query, escapada', async () => {
+    await svc.getPedidos(2026, 'Extra-PIT');
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido?ano=2026&palavra_chave=Extra-PIT');
+
+    await svc.getPedidos(2026, 'Mapeamento Sistemático');
+    expect(apiGet).toHaveBeenCalledWith(
+      '/mapoteca/pedido?ano=2026&palavra_chave=Mapeamento%20Sistem%C3%A1tico'
+    );
+  });
+
+  // A chave de cache tem de carregar a etiqueta: sem ela, buscar 'Extra-PIT'
+  // depois de abrir o ano devolveria a lista inteira, servida do cache.
+  test('a etiqueta entra na chave de cache, e nao serve a busca anterior', async () => {
+    apiGet.mockClear();
+
+    await svc.getPedidos(2030);
+    await svc.getPedidos(2030, 'Extra-PIT');
+    await svc.getPedidos(2030, 'Adestramento');
+    // A repetida sai do cache, e nao paga a requisicao de novo.
+    await svc.getPedidos(2030, 'Extra-PIT');
+
+    expect(apiGet).toHaveBeenCalledTimes(3);
   });
 
   test('getPedidoPorLocalizador escapa o codigo na URL', async () => {
@@ -139,29 +163,66 @@ describe('mapoteca-service: clientes e pedidos', () => {
   });
 });
 
-describe('mapoteca-service: material, estoque e consumo', () => {
-  test('tipo_material e estoque', async () => {
+describe('mapoteca-service: insumos, estoque e o livro de movimentos', () => {
+  test('tipo_material e a leitura do estoque', async () => {
     await svc.getTiposMaterial();
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/tipo_material');
 
     await svc.getEstoqueMaterial();
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/estoque_material');
-
-    await svc.getEstoquePorLocalizacao();
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/estoque_por_localizacao');
-
-    await svc.transferirEstoque({ tipo_material_id: 1, origem_id: 1, destino_id: 2, quantidade: 5 });
-    expect(apiPost).toHaveBeenCalledWith('/mapoteca/estoque_material/transferir', {
-      tipo_material_id: 1, origem_id: 1, destino_id: 2, quantidade: 5,
-    });
   });
 
-  test('getConsumoMaterial monta a query so com o filtro preenchido', async () => {
-    await svc.getConsumoMaterial();
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/consumo_material');
+  // A PODA DAS ROTAS DE ESCRITA DE ESTOQUE, de 2026-08-08. As quatro sairam do
+  // servidor, e uma funcao sobrevivente aqui produziria 404 no clique -- ou, pior,
+  // voltaria a existir junto com a rota e faria a soma do livro deixar de bater
+  // com o saldo. O saldo e o acumulado do livro, e nao ha segunda porta.
+  test('o service NAO tem mais escrita de estoque', () => {
+    expect(svc.createEstoqueMaterial).toBeUndefined();
+    expect(svc.updateEstoqueMaterial).toBeUndefined();
+    expect(svc.deleteEstoqueMaterial).toBeUndefined();
+    expect(svc.transferirEstoque).toBeUndefined();
+  });
 
-    await svc.getConsumoMaterial({ data_inicio: '2026-01-01', tipo_material_id: 3 });
-    expect(apiGet).toHaveBeenCalledWith('/mapoteca/consumo_material?data_inicio=2026-01-01&tipo_material_id=3');
+  // `consumo_material` virou UM dos quatro tipos do livro. A rota inteira sumiu.
+  test('o service NAO fala mais em consumo_material', () => {
+    expect(svc.getConsumoMaterial).toBeUndefined();
+    expect(svc.createConsumoMaterial).toBeUndefined();
+    expect(svc.updateConsumoMaterial).toBeUndefined();
+    expect(svc.deleteConsumoMaterial).toBeUndefined();
+  });
+
+  test('getMovimentosMaterial monta a query so com o filtro preenchido', async () => {
+    await svc.getMovimentosMaterial();
+    expect(apiGet).toHaveBeenCalledWith('/mapoteca/movimento_material');
+
+    await svc.getMovimentosMaterial({
+      data_inicio: '2026-01-01', tipo_material_id: 3, tipo_movimento_id: 3,
+    });
+    expect(apiGet).toHaveBeenCalledWith(
+      '/mapoteca/movimento_material?data_inicio=2026-01-01&tipo_material_id=3&tipo_movimento_id=3'
+    );
+  });
+
+  test('as tres mutacoes do livro batem na rota do livro', async () => {
+    const movimento = {
+      tipo_material_id: 1,
+      tipo_movimento_id: 3,
+      quantidade: 2,
+      data_movimento: '2026-08-08',
+      localizacao_origem_id: 1,
+      localizacao_destino_id: null,
+      motivo: null,
+    };
+    await svc.createMovimentoMaterial(movimento);
+    expect(apiPost).toHaveBeenCalledWith('/mapoteca/movimento_material', movimento);
+
+    await svc.updateMovimentoMaterial({ id: 9, ...movimento });
+    expect(apiPut).toHaveBeenCalledWith('/mapoteca/movimento_material', { id: 9, ...movimento });
+
+    await svc.deleteMovimentosMaterial([9]);
+    expect(apiDelete).toHaveBeenCalledWith('/mapoteca/movimento_material', {
+      movimento_material_ids: [9],
+    });
   });
 
   test('getConsumoMensal usa o ano pedido', async () => {

@@ -73,7 +73,9 @@ const DESTINO = {
   // --- ficha própria (rota com :id) -----------------------------------------
   'mapoteca:pedido': { tipo: 'ficha', href: (id) => `#/mapoteca/pedidos/${id}` },
   'mapoteca:cliente': { tipo: 'ficha', href: (id) => `#/mapoteca/clientes/${id}` },
-  'mapoteca:material': { tipo: 'ficha', href: (id) => `#/mapoteca/materiais/${id}` },
+  // A ficha do insumo, e nao a de "materiais": as tres telas de material viraram
+  // uma em 2026-08-08, e a rota velha caia em /404.
+  'mapoteca:material': { tipo: 'ficha', href: (id) => `#/mapoteca/insumos/${id}` },
   'mapoteca:plotter': { tipo: 'ficha', href: (id) => `#/mapoteca/plotters/${id}` },
   'orcamento:nota_empenho': { tipo: 'ficha', href: (id) => `#/orcamento/notas_empenho/${id}` },
   'plataforma:edicao': { tipo: 'ficha', href: (id) => `#/rpcmtec/${id}` },
